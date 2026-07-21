@@ -1,0 +1,926 @@
+tests\projectile-simulation-test.cpp-174-          "projectile tunneled through wall: min z=%.4f", minZ);
+tests\projectile-simulation-test.cpp-175-
+tests\projectile-simulation-test.cpp-176-    PASS();
+tests\projectile-simulation-test.cpp-177-}
+tests\projectile-simulation-test.cpp-178-
+tests\projectile-simulation-test.cpp-179-// ── Test 2: Bounce reflection with controlled restitution and friction ─
+tests\projectile-simulation-test.cpp-180-// Regression: applyBounce() must reflect the normal component away from
+tests\projectile-simulation-test.cpp-181-// the surface, not into it.
+tests\projectile-simulation-test.cpp-182-
+tests\projectile-simulation-test.cpp-183-static void testBounce()
+tests\projectile-simulation-test.cpp-184-{
+tests\projectile-simulation-test.cpp:185:    TEST("bounce reflection restitution*friction");
+tests\projectile-simulation-test.cpp-186-
+tests\projectile-simulation-test.cpp-187-    TestCollisionWorld world;
+tests\projectile-simulation-test.cpp-188-    glm::vec3 floorNormal(0.0f, 0.0f, 1.0f);
+tests\projectile-simulation-test.cpp-189-    world.addTriangle(
+tests\projectile-simulation-test.cpp-190-        glm::vec3(-10.0f, -10.0f, 0.0f),
+tests\projectile-simulation-test.cpp-191-        glm::vec3( 10.0f, -10.0f, 0.0f),
+tests\projectile-simulation-test.cpp-192-        glm::vec3( 10.0f,  10.0f, 0.0f),
+tests\projectile-simulation-test.cpp-193-        floorNormal, 0);
+tests\projectile-simulation-test.cpp-194-    world.addTriangle(
+tests\projectile-simulation-test.cpp-195-        glm::vec3(-10.0f, -10.0f, 0.0f),
+tests\projectile-simulation-test.cpp-196-        glm::vec3( 10.0f,  10.0f, 0.0f),
+tests\projectile-simulation-test.cpp-197-        glm::vec3(-10.0f,  10.0f, 0.0f),
+tests\projectile-simulation-test.cpp-198-        floorNormal, 1);
+tests\projectile-simulation-test.cpp-199-
+tests\projectile-simulation-test.cpp-200-    ProjectilePhysicsConfig cfg;
+tests\projectile-simulation-test.cpp-201-    cfg.radius = 0.3f;
+tests\projectile-simulation-test.cpp-202-    cfg.gravity = 0.0f;
+tests\projectile-simulation-test.cpp-203-    cfg.drag = 0.0f;
+tests\projectile-simulation-test.cpp-204-    cfg.restitution = 0.5f;
+tests\projectile-simulation-test.cpp-205-    cfg.friction = 0.25f;
+--
+tests\projectile-simulation-test.cpp-247-
+tests\projectile-simulation-test.cpp-248-    // Incoming tangential speed was 5.0 (velocity.x = 5).
+tests\projectile-simulation-test.cpp-249-    // With friction 0.25, outgoing tangential speed should be 5 * (1-0.25) = 3.75.
+tests\projectile-simulation-test.cpp-250-    glm::vec3 tangent = state.velocity - floorNormal * normalSpeed;
+tests\projectile-simulation-test.cpp-251-    float tangentSpeed = glm::length(tangent);
+tests\projectile-simulation-test.cpp-252-    CHECK(std::fabs(tangentSpeed - 3.75f) < 0.1f,
+tests\projectile-simulation-test.cpp-253-          "expected tangent speed ~3.75 got %.4f", tangentSpeed);
+tests\projectile-simulation-test.cpp-254-
+tests\projectile-simulation-test.cpp-255-    CHECK(state.bounceCount == 1,
+tests\projectile-simulation-test.cpp-256-          "expected bounceCount 1 got %d", state.bounceCount);
+tests\projectile-simulation-test.cpp-257-
+tests\projectile-simulation-test.cpp-258-    PASS();
+tests\projectile-simulation-test.cpp-259-}
+tests\projectile-simulation-test.cpp-260-
+tests\projectile-simulation-test.cpp-261-// ── Test 9: Edge grazing parallel to triangle plane ──────────────────
+tests\projectile-simulation-test.cpp-262-// The sphere moves parallel to the triangle plane and grazes an edge.
+tests\projectile-simulation-test.cpp-263-// Current algorithm fails because approachSpeed = 0 returns false.
+tests\projectile-simulation-test.cpp-264-
+tests\projectile-simulation-test.cpp-265-static void testEdgeGrazing()
+tests\projectile-simulation-test.cpp-266-{
+tests\projectile-simulation-test.cpp:267:    TEST("edge grazing parallel to plane");
+tests\projectile-simulation-test.cpp-268-
+tests\projectile-simulation-test.cpp-269-    // Triangle in XY plane at z=0: A=(0,0,0), B=(10,0,0), C=(0,10,0)
+tests\projectile-simulation-test.cpp-270-    // Edge AB runs along X axis at y=0 from (0,0,0) to (10,0,0)
+tests\projectile-simulation-test.cpp-271-    TestCollisionWorld world;
+tests\projectile-simulation-test.cpp-272-    world.addTriangle(
+tests\projectile-simulation-test.cpp-273-        glm::vec3(0.0f, 0.0f, 0.0f),
+tests\projectile-simulation-test.cpp-274-        glm::vec3(10.0f, 0.0f, 0.0f),
+tests\projectile-simulation-test.cpp-275-        glm::vec3(0.0f, 10.0f, 0.0f),
+tests\projectile-simulation-test.cpp-276-        glm::vec3(0.0f, 0.0f, 1.0f), 0);
+tests\projectile-simulation-test.cpp-277-
+tests\projectile-simulation-test.cpp-278-    ProjectilePhysicsConfig cfg;
+tests\projectile-simulation-test.cpp-279-    cfg.radius = 0.3f; cfg.gravity = 0; cfg.drag = 0;
+tests\projectile-simulation-test.cpp-280-    cfg.bounceEnabled = false; cfg.lifetime = 10.0f;
+tests\projectile-simulation-test.cpp-281-
+tests\projectile-simulation-test.cpp-282-    // Sphere center at z=0.29 (just within radius of edge at z=0)
+tests\projectile-simulation-test.cpp-283-    // Moving along +Y at high speed so no single substep position
+tests\projectile-simulation-test.cpp-284-    // lands within 0.3 of the edge — only the swept path passes through.
+tests\projectile-simulation-test.cpp-285-    // Old code: approachSpeed=0 → returns false at every substep.
+tests\projectile-simulation-test.cpp-286-    // Velocity 300 → 5 units/tick → 0.625/substep.
+tests\projectile-simulation-test.cpp-287-    // y positions per substep: -0.80, -0.175, 0.450, 1.075, 1.700, ...
+--
+tests\projectile-simulation-test.cpp-300-            r.type == ProjectileCollisionType::WorldBounce)
+tests\projectile-simulation-test.cpp-301-        {
+tests\projectile-simulation-test.cpp-302-            hit = true;
+tests\projectile-simulation-test.cpp-303-            CHECK(std::isfinite(r.hitPosition.x) && std::isfinite(r.hitPosition.y) && std::isfinite(r.hitPosition.z),
+tests\projectile-simulation-test.cpp-304-                  "hit position not finite");
+tests\projectile-simulation-test.cpp-305-            CHECK(std::isfinite(r.hitNormal.x) && std::isfinite(r.hitNormal.y) && std::isfinite(r.hitNormal.z),
+tests\projectile-simulation-test.cpp-306-                  "hit normal not finite");
+tests\projectile-simulation-test.cpp-307-            break;
+tests\projectile-simulation-test.cpp-308-        }
+tests\projectile-simulation-test.cpp-309-    }
+tests\projectile-simulation-test.cpp-310-
+tests\projectile-simulation-test.cpp-311-    CHECK(hit, "edge grazing not detected — sweep missed the edge");
+tests\projectile-simulation-test.cpp-312-    PASS();
+tests\projectile-simulation-test.cpp-313-}
+tests\projectile-simulation-test.cpp-314-
+tests\projectile-simulation-test.cpp-315-// ── Test 10: Vertex grazing ──────────────────────────────────────────
+tests\projectile-simulation-test.cpp-316-// Sphere touches only one triangle vertex.
+tests\projectile-simulation-test.cpp-317-
+tests\projectile-simulation-test.cpp-318-static void testVertexGrazing()
+tests\projectile-simulation-test.cpp-319-{
+tests\projectile-simulation-test.cpp:320:    TEST("vertex grazing");
+tests\projectile-simulation-test.cpp-321-
+tests\projectile-simulation-test.cpp-322-    TestCollisionWorld world;
+tests\projectile-simulation-test.cpp-323-    world.addTriangle(
+tests\projectile-simulation-test.cpp-324-        glm::vec3(0.0f, 0.0f, 0.0f),
+tests\projectile-simulation-test.cpp-325-        glm::vec3(10.0f, 0.0f, 0.0f),
+tests\projectile-simulation-test.cpp-326-        glm::vec3(0.0f, 10.0f, 0.0f),
+tests\projectile-simulation-test.cpp-327-        glm::vec3(0.0f, 0.0f, 1.0f), 0);
+tests\projectile-simulation-test.cpp-328-
+tests\projectile-simulation-test.cpp-329-    ProjectilePhysicsConfig cfg;
+tests\projectile-simulation-test.cpp-330-    cfg.radius = 0.3f; cfg.gravity = 0; cfg.drag = 0;
+tests\projectile-simulation-test.cpp-331-    cfg.bounceEnabled = false; cfg.lifetime = 10.0f;
+tests\projectile-simulation-test.cpp-332-
+tests\projectile-simulation-test.cpp-333-    // Fire toward vertex A=(0,0,0) from diagonally above at high speed
+tests\projectile-simulation-test.cpp-334-    // so the swept path intersects the vertex sphere but no single
+tests\projectile-simulation-test.cpp-335-    // substep lands within radius of the vertex.
+tests\projectile-simulation-test.cpp-336-    ProjectilePhysicsState state;
+tests\projectile-simulation-test.cpp-337-    state.position = glm::vec3(-0.8f, -0.8f, 0.29f);
+tests\projectile-simulation-test.cpp-338-    state.velocity = glm::vec3(300.0f, 300.0f, 0.0f);
+tests\projectile-simulation-test.cpp-339-
+tests\projectile-simulation-test.cpp-340-    bool hit = false;
+--
+tests\projectile-simulation-test.cpp-345-            r.type == ProjectileCollisionType::WorldBounce)
+tests\projectile-simulation-test.cpp-346-        {
+tests\projectile-simulation-test.cpp-347-            hit = true;
+tests\projectile-simulation-test.cpp-348-            // Vertex is at (0,0,0), sphere should contact near it
+tests\projectile-simulation-test.cpp-349-            float distToVertex = glm::length(state.position);
+tests\projectile-simulation-test.cpp-350-            CHECK(distToVertex < 0.5f,
+tests\projectile-simulation-test.cpp-351-                  "sphere too far from vertex: dist=%.4f", distToVertex);
+tests\projectile-simulation-test.cpp-352-            break;
+tests\projectile-simulation-test.cpp-353-        }
+tests\projectile-simulation-test.cpp-354-    }
+tests\projectile-simulation-test.cpp-355-
+tests\projectile-simulation-test.cpp-356-    CHECK(hit, "vertex grazing not detected");
+tests\projectile-simulation-test.cpp-357-    PASS();
+tests\projectile-simulation-test.cpp-358-}
+tests\projectile-simulation-test.cpp-359-
+tests\projectile-simulation-test.cpp-360-// ── Test 11: Parallel-to-plane edge collision ─────────────────────────
+tests\projectile-simulation-test.cpp-361-// Same as edge grazing but verify TOI is in valid range.
+tests\projectile-simulation-test.cpp-362-
+tests\projectile-simulation-test.cpp-363-static void testParallelEdgeCollision()
+tests\projectile-simulation-test.cpp-364-{
+tests\projectile-simulation-test.cpp:365:    TEST("parallel-to-plane edge collision");
+tests\projectile-simulation-test.cpp-366-
+tests\projectile-simulation-test.cpp-367-    TestCollisionWorld world;
+tests\projectile-simulation-test.cpp-368-    world.addTriangle(
+tests\projectile-simulation-test.cpp-369-        glm::vec3(0.0f, 0.0f, 0.0f),
+tests\projectile-simulation-test.cpp-370-        glm::vec3(10.0f, 0.0f, 0.0f),
+tests\projectile-simulation-test.cpp-371-        glm::vec3(0.0f, 10.0f, 0.0f),
+tests\projectile-simulation-test.cpp-372-        glm::vec3(0.0f, 0.0f, 1.0f), 0);
+tests\projectile-simulation-test.cpp-373-
+tests\projectile-simulation-test.cpp-374-    ProjectilePhysicsConfig cfg;
+tests\projectile-simulation-test.cpp-375-    cfg.radius = 0.3f; cfg.gravity = 0; cfg.drag = 0;
+tests\projectile-simulation-test.cpp-376-    cfg.bounceEnabled = false; cfg.lifetime = 10.0f;
+tests\projectile-simulation-test.cpp-377-
+tests\projectile-simulation-test.cpp-378-    ProjectilePhysicsState state;
+tests\projectile-simulation-test.cpp-379-    state.position = glm::vec3(5.0f, -0.8f, 0.29f);
+tests\projectile-simulation-test.cpp-380-    state.velocity = glm::vec3(0.0f, 300.0f, 0.0f);
+tests\projectile-simulation-test.cpp-381-
+tests\projectile-simulation-test.cpp-382-    bool hit = false;
+tests\projectile-simulation-test.cpp-383-    for (int t = 0; t < 5; ++t)
+tests\projectile-simulation-test.cpp-384-    {
+tests\projectile-simulation-test.cpp-385-        ProjectileStepResult r = simulateProjectileTick(state, cfg, world, 1.0f / 60.0f);
+tests\projectile-simulation-test.cpp-386-        if (r.type == ProjectileCollisionType::WorldImpact ||
+tests\projectile-simulation-test.cpp-387-            r.type == ProjectileCollisionType::WorldBounce)
+tests\projectile-simulation-test.cpp-388-        {
+tests\projectile-simulation-test.cpp-389-            hit = true;
+tests\projectile-simulation-test.cpp-390-            // TOI is internal to simulation — verify hit position is finite
+tests\projectile-simulation-test.cpp-391-            break;
+tests\projectile-simulation-test.cpp-392-        }
+tests\projectile-simulation-test.cpp-393-    }
+tests\projectile-simulation-test.cpp-394-
+tests\projectile-simulation-test.cpp-395-    CHECK(hit, "parallel edge collision not detected");
+tests\projectile-simulation-test.cpp-396-    PASS();
+tests\projectile-simulation-test.cpp-397-}
+tests\projectile-simulation-test.cpp-398-
+tests\projectile-simulation-test.cpp-399-// ── Test 12: Near miss (no collision expected) ────────────────────────
+tests\projectile-simulation-test.cpp-400-// Same geometry as edge grazing but separation > radius.
+tests\projectile-simulation-test.cpp-401-
+tests\projectile-simulation-test.cpp-402-static void testNearMiss()
+tests\projectile-simulation-test.cpp-403-{
+tests\projectile-simulation-test.cpp:404:    TEST("edge near miss (no collision)");
+tests\projectile-simulation-test.cpp-405-
+tests\projectile-simulation-test.cpp-406-    TestCollisionWorld world;
+tests\projectile-simulation-test.cpp-407-    world.addTriangle(
+tests\projectile-simulation-test.cpp-408-        glm::vec3(0.0f, 0.0f, 0.0f),
+tests\projectile-simulation-test.cpp-409-        glm::vec3(10.0f, 0.0f, 0.0f),
+tests\projectile-simulation-test.cpp-410-        glm::vec3(0.0f, 10.0f, 0.0f),
+tests\projectile-simulation-test.cpp-411-        glm::vec3(0.0f, 0.0f, 1.0f), 0);
+tests\projectile-simulation-test.cpp-412-
+tests\projectile-simulation-test.cpp-413-    ProjectilePhysicsConfig cfg;
+tests\projectile-simulation-test.cpp-414-    cfg.radius = 0.3f; cfg.gravity = 0; cfg.drag = 0;
+tests\projectile-simulation-test.cpp-415-    cfg.bounceEnabled = false; cfg.lifetime = 10.0f;
+tests\projectile-simulation-test.cpp-416-
+tests\projectile-simulation-test.cpp-417-    // Sphere at z=0.31, just outside radius of edge at z=0
+tests\projectile-simulation-test.cpp-418-    ProjectilePhysicsState state;
+tests\projectile-simulation-test.cpp-419-    state.position = glm::vec3(5.0f, -0.4f, 0.31f);
+tests\projectile-simulation-test.cpp-420-    state.velocity = glm::vec3(0.0f, 30.0f, 0.0f);
+tests\projectile-simulation-test.cpp-421-
+tests\projectile-simulation-test.cpp-422-    bool hit = false;
+tests\projectile-simulation-test.cpp-423-    for (int t = 0; t < 5; ++t)
+tests\projectile-simulation-test.cpp-424-    {
+tests\projectile-simulation-test.cpp-425-        ProjectileStepResult r = simulateProjectileTick(state, cfg, world, 1.0f / 60.0f);
+tests\projectile-simulation-test.cpp-426-        if (r.type == ProjectileCollisionType::WorldImpact ||
+tests\projectile-simulation-test.cpp-427-            r.type == ProjectileCollisionType::WorldBounce ||
+tests\projectile-simulation-test.cpp-428-            r.type == ProjectileCollisionType::PlayerImpact)
+tests\projectile-simulation-test.cpp-429-        {
+tests\projectile-simulation-test.cpp-430-            hit = true;
+tests\projectile-simulation-test.cpp-431-            break;
+tests\projectile-simulation-test.cpp-432-        }
+tests\projectile-simulation-test.cpp-433-    }
+tests\projectile-simulation-test.cpp-434-
+tests\projectile-simulation-test.cpp-435-    CHECK(!hit, "near miss incorrectly detected collision");
+tests\projectile-simulation-test.cpp-436-    PASS();
+tests\projectile-simulation-test.cpp-437-}
+tests\projectile-simulation-test.cpp-438-
+tests\projectile-simulation-test.cpp-439-// ── Test 13: Degenerate point capsule — direct hit ───────────────────
+tests\projectile-simulation-test.cpp-440-
+tests\projectile-simulation-test.cpp-441-static void testDegenerateCapsuleHit()
+tests\projectile-simulation-test.cpp-442-{
+tests\projectile-simulation-test.cpp:443:    TEST("degenerate point capsule direct hit");
+tests\projectile-simulation-test.cpp-444-
+tests\projectile-simulation-test.cpp-445-    // A point capsule with a==b, simulating vertex via sweepSphereCapsule
+tests\projectile-simulation-test.cpp-446-    class PointWorld : public CollisionWorldView {
+tests\projectile-simulation-test.cpp-447-    public:
+tests\projectile-simulation-test.cpp-448-        CollisionTriangle tri[1];
+tests\projectile-simulation-test.cpp-449-        SweptPlayerCapsule cap;
+tests\projectile-simulation-test.cpp-450-        PointWorld() {
+tests\projectile-simulation-test.cpp-451-            tri[0].a = glm::vec3(0,0,-100); tri[0].b = glm::vec3(1,0,-100);
+tests\projectile-simulation-test.cpp-452-            tri[0].c = glm::vec3(0,1,-100); tri[0].normal = glm::vec3(0,0,1);
+tests\projectile-simulation-test.cpp-453-            cap.playerId = 17; cap.spawnGeneration = 3;
+tests\projectile-simulation-test.cpp-454-            cap.a = glm::vec3(0,0,0); cap.b = glm::vec3(0,0,0); // a == b
+tests\projectile-simulation-test.cpp-455-            cap.radius = 0.0f; // degenerate: zero-length segment, zero cap radius
+tests\projectile-simulation-test.cpp-456-        }
+tests\projectile-simulation-test.cpp-457-        void queryTrianglesSwept(const glm::vec3&, const glm::vec3&, float, std::vector<int>& out) const override {}
+tests\projectile-simulation-test.cpp-458-        const CollisionTriangle& triangleAt(int i) const override { return tri[i]; }
+tests\projectile-simulation-test.cpp-459-        int triangleCount() const override { return 0; }
+tests\projectile-simulation-test.cpp-460-        void queryPlayerCapsulesSwept(const glm::vec3& f, const glm::vec3& t, float r,
+tests\projectile-simulation-test.cpp-461-                                      std::vector<SweptPlayerCapsule>& out) const override {
+tests\projectile-simulation-test.cpp-462-            out = {cap};
+tests\projectile-simulation-test.cpp-463-        }
+--
+tests\projectile-simulation-test.cpp-484-          "expected PlayerImpact, got %d", (int)result.type);
+tests\projectile-simulation-test.cpp-485-    CHECK(result.hitPlayerId == 17,
+tests\projectile-simulation-test.cpp-486-          "expected playerId 17, got %u", result.hitPlayerId);
+tests\projectile-simulation-test.cpp-487-    CHECK(result.hitPlayerSpawnGeneration == 3,
+tests\projectile-simulation-test.cpp-488-          "expected spawnGen 3, got %u", result.hitPlayerSpawnGeneration);
+tests\projectile-simulation-test.cpp-489-    CHECK(std::isfinite(result.hitPosition.x) && std::isfinite(result.hitPosition.y) && std::isfinite(result.hitPosition.z),
+tests\projectile-simulation-test.cpp-490-          "hitPosition not finite");
+tests\projectile-simulation-test.cpp-491-    CHECK(std::isfinite(result.hitNormal.x) && std::isfinite(result.hitNormal.y) && std::isfinite(result.hitNormal.z),
+tests\projectile-simulation-test.cpp-492-          "hitNormal not finite");
+tests\projectile-simulation-test.cpp-493-    float nl = glm::length(result.hitNormal);
+tests\projectile-simulation-test.cpp-494-    CHECK(std::fabs(nl - 1.0f) < 1e-4f,
+tests\projectile-simulation-test.cpp-495-          "normal length %.6f not approximately 1", nl);
+tests\projectile-simulation-test.cpp-496-
+tests\projectile-simulation-test.cpp-497-    PASS();
+tests\projectile-simulation-test.cpp-498-}
+tests\projectile-simulation-test.cpp-499-
+tests\projectile-simulation-test.cpp-500-// ── Test 14: Degenerate point capsule — near miss ───────────────────
+tests\projectile-simulation-test.cpp-501-
+tests\projectile-simulation-test.cpp-502-static void testDegenerateCapsuleMiss()
+tests\projectile-simulation-test.cpp-503-{
+tests\projectile-simulation-test.cpp:504:    TEST("degenerate point capsule near miss");
+tests\projectile-simulation-test.cpp-505-
+tests\projectile-simulation-test.cpp-506-    class PointWorld : public CollisionWorldView {
+tests\projectile-simulation-test.cpp-507-    public:
+tests\projectile-simulation-test.cpp-508-        CollisionTriangle tri[1];
+tests\projectile-simulation-test.cpp-509-        SweptPlayerCapsule cap;
+tests\projectile-simulation-test.cpp-510-        PointWorld() {
+tests\projectile-simulation-test.cpp-511-            tri[0].a = glm::vec3(0,0,-100); tri[0].b = glm::vec3(1,0,-100);
+tests\projectile-simulation-test.cpp-512-            tri[0].c = glm::vec3(0,1,-100); tri[0].normal = glm::vec3(0,0,1);
+tests\projectile-simulation-test.cpp-513-            cap.playerId = 17; cap.spawnGeneration = 3;
+tests\projectile-simulation-test.cpp-514-            cap.a = glm::vec3(0,0,0); cap.b = glm::vec3(0,0,0);
+tests\projectile-simulation-test.cpp-515-            cap.radius = 0.0f;
+tests\projectile-simulation-test.cpp-516-        }
+tests\projectile-simulation-test.cpp-517-        void queryTrianglesSwept(const glm::vec3&, const glm::vec3&, float, std::vector<int>& out) const override {}
+tests\projectile-simulation-test.cpp-518-        const CollisionTriangle& triangleAt(int i) const override { return tri[i]; }
+tests\projectile-simulation-test.cpp-519-        int triangleCount() const override { return 0; }
+tests\projectile-simulation-test.cpp-520-        void queryPlayerCapsulesSwept(const glm::vec3& f, const glm::vec3& t, float r,
+tests\projectile-simulation-test.cpp-521-                                      std::vector<SweptPlayerCapsule>& out) const override {
+tests\projectile-simulation-test.cpp-522-            out = {cap};
+tests\projectile-simulation-test.cpp-523-        }
+tests\projectile-simulation-test.cpp-524-    };
+--
+tests\projectile-simulation-test.cpp-534-    state.velocity = glm::vec3(0.0f, 0.0f, 30.0f);
+tests\projectile-simulation-test.cpp-535-
+tests\projectile-simulation-test.cpp-536-    bool hit = false;
+tests\projectile-simulation-test.cpp-537-    for (int t = 0; t < 10; ++t)
+tests\projectile-simulation-test.cpp-538-    {
+tests\projectile-simulation-test.cpp-539-        ProjectileStepResult r = simulateProjectileTick(state, cfg, world, 1.0f / 60.0f);
+tests\projectile-simulation-test.cpp-540-        if (r.type == ProjectileCollisionType::PlayerImpact)
+tests\projectile-simulation-test.cpp-541-        {
+tests\projectile-simulation-test.cpp-542-            hit = true;
+tests\projectile-simulation-test.cpp-543-            break;
+tests\projectile-simulation-test.cpp-544-        }
+tests\projectile-simulation-test.cpp-545-    }
+tests\projectile-simulation-test.cpp-546-    CHECK(!hit, "near miss incorrectly detected as PlayerImpact");
+tests\projectile-simulation-test.cpp-547-    PASS();
+tests\projectile-simulation-test.cpp-548-}
+tests\projectile-simulation-test.cpp-549-
+tests\projectile-simulation-test.cpp-550-// ── Test 15: Exact-center overlap with degenerate point capsule ──────
+tests\projectile-simulation-test.cpp-551-
+tests\projectile-simulation-test.cpp-552-static void testDegenerateCapsuleExactCenter()
+tests\projectile-simulation-test.cpp-553-{
+tests\projectile-simulation-test.cpp:554:    TEST("degenerate point capsule exact-center overlap");
+tests\projectile-simulation-test.cpp-555-
+tests\projectile-simulation-test.cpp-556-    class PointWorld : public CollisionWorldView {
+tests\projectile-simulation-test.cpp-557-    public:
+tests\projectile-simulation-test.cpp-558-        CollisionTriangle tri[1];
+tests\projectile-simulation-test.cpp-559-        SweptPlayerCapsule cap;
+tests\projectile-simulation-test.cpp-560-        PointWorld() {
+tests\projectile-simulation-test.cpp-561-            tri[0].a = glm::vec3(0,0,-100); tri[0].b = glm::vec3(1,0,-100);
+tests\projectile-simulation-test.cpp-562-            tri[0].c = glm::vec3(0,1,-100); tri[0].normal = glm::vec3(0,0,1);
+tests\projectile-simulation-test.cpp-563-            cap.playerId = 42; cap.spawnGeneration = 7;
+tests\projectile-simulation-test.cpp-564-            cap.a = glm::vec3(0,0,0); cap.b = glm::vec3(0,0,0);
+tests\projectile-simulation-test.cpp-565-            cap.radius = 0.0f;
+tests\projectile-simulation-test.cpp-566-        }
+tests\projectile-simulation-test.cpp-567-        void queryTrianglesSwept(const glm::vec3&, const glm::vec3&, float, std::vector<int>& out) const override {}
+tests\projectile-simulation-test.cpp-568-        const CollisionTriangle& triangleAt(int i) const override { return tri[i]; }
+tests\projectile-simulation-test.cpp-569-        int triangleCount() const override { return 0; }
+tests\projectile-simulation-test.cpp-570-        void queryPlayerCapsulesSwept(const glm::vec3& f, const glm::vec3& t, float r,
+tests\projectile-simulation-test.cpp-571-                                      std::vector<SweptPlayerCapsule>& out) const override {
+tests\projectile-simulation-test.cpp-572-            out = {cap};
+tests\projectile-simulation-test.cpp-573-        }
+tests\projectile-simulation-test.cpp-574-    };
+--
+tests\projectile-simulation-test.cpp-593-          "hitNormal not finite");
+tests\projectile-simulation-test.cpp-594-    float nl = glm::length(r.hitNormal);
+tests\projectile-simulation-test.cpp-595-    CHECK(std::fabs(nl - 1.0f) < 1e-4f,
+tests\projectile-simulation-test.cpp-596-          "normal length %.6f not approximately 1", nl);
+tests\projectile-simulation-test.cpp-597-    // Exact-center fallback: normal should be opposite of motion direction
+tests\projectile-simulation-test.cpp-598-    glm::vec3 expectedNormal = glm::normalize(glm::vec3(-1.0f, -2.0f, -3.0f));
+tests\projectile-simulation-test.cpp-599-    CHECK(glm::length(r.hitNormal - expectedNormal) < 1e-4f,
+tests\projectile-simulation-test.cpp-600-          "exact-center normal mismatch: expected (%.4f,%.4f,%.4f) got (%.4f,%.4f,%.4f)",
+tests\projectile-simulation-test.cpp-601-          expectedNormal.x, expectedNormal.y, expectedNormal.z,
+tests\projectile-simulation-test.cpp-602-          r.hitNormal.x, r.hitNormal.y, r.hitNormal.z);
+tests\projectile-simulation-test.cpp-603-
+tests\projectile-simulation-test.cpp-604-    PASS();
+tests\projectile-simulation-test.cpp-605-}
+tests\projectile-simulation-test.cpp-606-
+tests\projectile-simulation-test.cpp-607-// ── Test 7: Capsule order independence ───────────────────────────────
+tests\projectile-simulation-test.cpp-608-// Two worlds with same two capsules in different query order must
+tests\projectile-simulation-test.cpp-609-// select playerId 3 (lower) every time.
+tests\projectile-simulation-test.cpp-610-
+tests\projectile-simulation-test.cpp-611-static void testCapsuleOrderIndependence()
+tests\projectile-simulation-test.cpp-612-{
+tests\projectile-simulation-test.cpp:613:    TEST("capsule order independence");
+tests\projectile-simulation-test.cpp-614-
+tests\projectile-simulation-test.cpp-615-    // World A: capsules in order [9, 3]
+tests\projectile-simulation-test.cpp-616-    class WorldA : public CollisionWorldView {
+tests\projectile-simulation-test.cpp-617-    public:
+tests\projectile-simulation-test.cpp-618-        CollisionTriangle tri[1];
+tests\projectile-simulation-test.cpp-619-        SweptPlayerCapsule cap[2];
+tests\projectile-simulation-test.cpp-620-        WorldA() {
+tests\projectile-simulation-test.cpp-621-            tri[0].a = glm::vec3(-10,-10,-100); tri[0].b = glm::vec3(10,-10,-100);
+tests\projectile-simulation-test.cpp-622-            tri[0].c = glm::vec3(10,10,-100); tri[0].normal = glm::vec3(0,0,1);
+tests\projectile-simulation-test.cpp-623-            cap[0].playerId = 9; cap[0].spawnGeneration = 1;
+tests\projectile-simulation-test.cpp-624-            cap[0].a = glm::vec3(0,0,10); cap[0].b = glm::vec3(0,0,12); cap[0].radius = 0.5f;
+tests\projectile-simulation-test.cpp-625-            cap[1].playerId = 3; cap[1].spawnGeneration = 2;
+tests\projectile-simulation-test.cpp-626-            cap[1].a = glm::vec3(0,0,10); cap[1].b = glm::vec3(0,0,12); cap[1].radius = 0.5f;
+tests\projectile-simulation-test.cpp-627-        }
+tests\projectile-simulation-test.cpp-628-        void queryTrianglesSwept(const glm::vec3&, const glm::vec3&, float, std::vector<int>& out) const override {
+tests\projectile-simulation-test.cpp-629-            out = {0};
+tests\projectile-simulation-test.cpp-630-        }
+tests\projectile-simulation-test.cpp-631-        const CollisionTriangle& triangleAt(int i) const override { return tri[i]; }
+tests\projectile-simulation-test.cpp-632-        int triangleCount() const override { return 1; }
+tests\projectile-simulation-test.cpp-633-        void queryPlayerCapsulesSwept(const glm::vec3&, const glm::vec3&, float, std::vector<SweptPlayerCapsule>& out) const override {
+--
+tests\projectile-simulation-test.cpp-684-    CHECK(resA.hitPlayerId == 3,
+tests\projectile-simulation-test.cpp-685-          "World A selected playerId %u, expected 3", resA.hitPlayerId);
+tests\projectile-simulation-test.cpp-686-    CHECK(resB.hitPlayerId == 3,
+tests\projectile-simulation-test.cpp-687-          "World B selected playerId %u, expected 3", resB.hitPlayerId);
+tests\projectile-simulation-test.cpp-688-    // Both must have identical spawn generation (first selected capsule's gen)
+tests\projectile-simulation-test.cpp-689-    CHECK(resA.hitPlayerSpawnGeneration == resB.hitPlayerSpawnGeneration,
+tests\projectile-simulation-test.cpp-690-          "spawnGen mismatch: A=%u B=%u", resA.hitPlayerSpawnGeneration, resB.hitPlayerSpawnGeneration);
+tests\projectile-simulation-test.cpp-691-    // Positions must match
+tests\projectile-simulation-test.cpp-692-    CHECK(std::fabs(stateA.position.x - stateB.position.x) < 1e-6f, "posX mismatch");
+tests\projectile-simulation-test.cpp-693-    CHECK(std::fabs(stateA.position.y - stateB.position.y) < 1e-6f, "posY mismatch");
+tests\projectile-simulation-test.cpp-694-    CHECK(std::fabs(stateA.position.z - stateB.position.z) < 1e-6f, "posZ mismatch");
+tests\projectile-simulation-test.cpp-695-
+tests\projectile-simulation-test.cpp-696-    PASS();
+tests\projectile-simulation-test.cpp-697-}
+tests\projectile-simulation-test.cpp-698-
+tests\projectile-simulation-test.cpp-699-// ── Test 8: World/player equal-TOI policy ────────────────────────────
+tests\projectile-simulation-test.cpp-700-// When world and player collide at equal TOI, world must win.
+tests\projectile-simulation-test.cpp-701-
+tests\projectile-simulation-test.cpp-702-static void testWorldPlayerEqualTOI()
+tests\projectile-simulation-test.cpp-703-{
+tests\projectile-simulation-test.cpp:704:    TEST("world wins over player at equal TOI");
+tests\projectile-simulation-test.cpp-705-
+tests\projectile-simulation-test.cpp-706-    // Two capsules at same z-range, one on the floor, one slightly above.
+tests\projectile-simulation-test.cpp-707-    // Projectile starts at z=0 with velocity toward floor.
+tests\projectile-simulation-test.cpp-708-    // Both world and capsule at TOI=0 (static overlap).
+tests\projectile-simulation-test.cpp-709-    // Policy: world (type=0) beats player (type=1).
+tests\projectile-simulation-test.cpp-710-
+tests\projectile-simulation-test.cpp-711-    class EqualWorld : public CollisionWorldView {
+tests\projectile-simulation-test.cpp-712-    public:
+tests\projectile-simulation-test.cpp-713-        CollisionTriangle tri[2];
+tests\projectile-simulation-test.cpp-714-        SweptPlayerCapsule cap;
+tests\projectile-simulation-test.cpp-715-        EqualWorld() {
+tests\projectile-simulation-test.cpp-716-            tri[0].a = glm::vec3(-10,-10,0); tri[0].b = glm::vec3(10,-10,0);
+tests\projectile-simulation-test.cpp-717-            tri[0].c = glm::vec3(10,10,0); tri[0].normal = glm::vec3(0,0,1);
+tests\projectile-simulation-test.cpp-718-            tri[1].a = glm::vec3(-10,-10,0); tri[1].b = glm::vec3(10,10,0);
+tests\projectile-simulation-test.cpp-719-            tri[1].c = glm::vec3(-10,10,0); tri[1].normal = glm::vec3(0,0,1);
+tests\projectile-simulation-test.cpp-720-            cap.playerId = 99; cap.spawnGeneration = 1;
+tests\projectile-simulation-test.cpp-721-            cap.a = glm::vec3(0,0,0); cap.b = glm::vec3(0,0,2); cap.radius = 0.5f;
+tests\projectile-simulation-test.cpp-722-        }
+tests\projectile-simulation-test.cpp-723-        void queryTrianglesSwept(const glm::vec3& f, const glm::vec3& t, float r, std::vector<int>& out) const override {
+tests\projectile-simulation-test.cpp-724-            // Return world first, then capsule alternates — tests ordering independence
+--
+tests\projectile-simulation-test.cpp-739-    // Place projectile overlapping both world and capsule at z=0
+tests\projectile-simulation-test.cpp-740-    ProjectilePhysicsState state;
+tests\projectile-simulation-test.cpp-741-    state.position = glm::vec3(0,0,0.2f); // within radius of both floor and capsule
+tests\projectile-simulation-test.cpp-742-    state.velocity = glm::vec3(0,0,-5);
+tests\projectile-simulation-test.cpp-743-
+tests\projectile-simulation-test.cpp-744-    ProjectileStepResult result = simulateProjectileTick(state, cfg, world, 1.0f/60.0f);
+tests\projectile-simulation-test.cpp-745-
+tests\projectile-simulation-test.cpp-746-    // Must be WorldImpact (type=2) not PlayerImpact (type=3)
+tests\projectile-simulation-test.cpp-747-    CHECK(result.type == ProjectileCollisionType::WorldImpact,
+tests\projectile-simulation-test.cpp-748-          "expected WorldImpact got %d (PlayerImpact would mean player won)", (int)result.type);
+tests\projectile-simulation-test.cpp-749-    CHECK(result.hitPlayerId == 0,
+tests\projectile-simulation-test.cpp-750-          "expected no player ID on world impact, got %u", result.hitPlayerId);
+tests\projectile-simulation-test.cpp-751-
+tests\projectile-simulation-test.cpp-752-    PASS();
+tests\projectile-simulation-test.cpp-753-}
+tests\projectile-simulation-test.cpp-754-
+tests\projectile-simulation-test.cpp-755-// ── Test 3: Player capsule before wall returns PlayerImpact ──────────
+tests\projectile-simulation-test.cpp-756-
+tests\projectile-simulation-test.cpp-757-static void testPlayerBeforeWall()
+tests\projectile-simulation-test.cpp-758-{
+tests\projectile-simulation-test.cpp:759:    TEST("player capsule before wall");
+tests\projectile-simulation-test.cpp-760-
+tests\projectile-simulation-test.cpp-761-    TestCollisionWorld world;
+tests\projectile-simulation-test.cpp-762-    // Wall at z=15
+tests\projectile-simulation-test.cpp-763-    world.addTriangle(
+tests\projectile-simulation-test.cpp-764-        glm::vec3(-10.0f, -10.0f, 15.0f),
+tests\projectile-simulation-test.cpp-765-        glm::vec3( 10.0f, -10.0f, 15.0f),
+tests\projectile-simulation-test.cpp-766-        glm::vec3( 10.0f,  10.0f, 15.0f),
+tests\projectile-simulation-test.cpp-767-        glm::vec3(0.0f, 0.0f, 1.0f), 0);
+tests\projectile-simulation-test.cpp-768-    world.addTriangle(
+tests\projectile-simulation-test.cpp-769-        glm::vec3(-10.0f, -10.0f, 15.0f),
+tests\projectile-simulation-test.cpp-770-        glm::vec3( 10.0f,  10.0f, 15.0f),
+tests\projectile-simulation-test.cpp-771-        glm::vec3(-10.0f,  10.0f, 15.0f),
+tests\projectile-simulation-test.cpp-772-        glm::vec3(0.0f, 0.0f, 1.0f), 1);
+tests\projectile-simulation-test.cpp-773-    // Player capsule at z=10, height 2, radius 0.5
+tests\projectile-simulation-test.cpp-774-    world.addCapsule(
+tests\projectile-simulation-test.cpp-775-        glm::vec3(0.0f, 0.0f, 10.0f),
+tests\projectile-simulation-test.cpp-776-        glm::vec3(0.0f, 0.0f, 12.0f),
+tests\projectile-simulation-test.cpp-777-        0.5f, 42, 1);
+tests\projectile-simulation-test.cpp-778-
+tests\projectile-simulation-test.cpp-779-    ProjectilePhysicsConfig cfg;
+--
+tests\projectile-simulation-test.cpp-797-            CHECK(r.hitPlayerSpawnGeneration == 1,
+tests\projectile-simulation-test.cpp-798-                  "expected spawn gen 1, got %u", r.hitPlayerSpawnGeneration);
+tests\projectile-simulation-test.cpp-799-            PASS();
+tests\projectile-simulation-test.cpp-800-            return;
+tests\projectile-simulation-test.cpp-801-        }
+tests\projectile-simulation-test.cpp-802-        if (r.type != ProjectileCollisionType::None)
+tests\projectile-simulation-test.cpp-803-        {
+tests\projectile-simulation-test.cpp-804-            printf("\n  tick %d: unexpected result=%d", tick, (int)r.type);
+tests\projectile-simulation-test.cpp-805-            FAIL("got unexpected collision type %d at tick %d", (int)r.type, tick);
+tests\projectile-simulation-test.cpp-806-            return;
+tests\projectile-simulation-test.cpp-807-        }
+tests\projectile-simulation-test.cpp-808-    }
+tests\projectile-simulation-test.cpp-809-    printf("  final pos=(%.4f,%.4f,%.4f)", state.position.x, state.position.y, state.position.z);
+tests\projectile-simulation-test.cpp-810-    FAIL("player impact not detected within 30 ticks");
+tests\projectile-simulation-test.cpp-811-}
+tests\projectile-simulation-test.cpp-812-
+tests\projectile-simulation-test.cpp-813-// ── Test 4: Wall before player capsule returns WorldImpact ───────────
+tests\projectile-simulation-test.cpp-814-
+tests\projectile-simulation-test.cpp-815-static void testWallBeforePlayer()
+tests\projectile-simulation-test.cpp-816-{
+tests\projectile-simulation-test.cpp:817:    TEST("wall before player capsule");
+tests\projectile-simulation-test.cpp-818-
+tests\projectile-simulation-test.cpp-819-    TestCollisionWorld world;
+tests\projectile-simulation-test.cpp-820-    // Wall at z=5
+tests\projectile-simulation-test.cpp-821-    world.addTriangle(
+tests\projectile-simulation-test.cpp-822-        glm::vec3(-10.0f, -10.0f, 5.0f),
+tests\projectile-simulation-test.cpp-823-        glm::vec3( 10.0f, -10.0f, 5.0f),
+tests\projectile-simulation-test.cpp-824-        glm::vec3( 10.0f,  10.0f, 5.0f),
+tests\projectile-simulation-test.cpp-825-        glm::vec3(0.0f, 0.0f, 1.0f), 0);
+tests\projectile-simulation-test.cpp-826-    world.addTriangle(
+tests\projectile-simulation-test.cpp-827-        glm::vec3(-10.0f, -10.0f, 5.0f),
+tests\projectile-simulation-test.cpp-828-        glm::vec3( 10.0f,  10.0f, 5.0f),
+tests\projectile-simulation-test.cpp-829-        glm::vec3(-10.0f,  10.0f, 5.0f),
+tests\projectile-simulation-test.cpp-830-        glm::vec3(0.0f, 0.0f, 1.0f), 1);
+tests\projectile-simulation-test.cpp-831-    // Player capsule behind wall at z=10
+tests\projectile-simulation-test.cpp-832-    world.addCapsule(
+tests\projectile-simulation-test.cpp-833-        glm::vec3(0.0f, 0.0f, 10.0f),
+tests\projectile-simulation-test.cpp-834-        glm::vec3(0.0f, 0.0f, 12.0f),
+tests\projectile-simulation-test.cpp-835-        0.5f, 99, 2);
+tests\projectile-simulation-test.cpp-836-
+tests\projectile-simulation-test.cpp-837-    ProjectilePhysicsConfig cfg;
+--
+tests\projectile-simulation-test.cpp-854-            return;
+tests\projectile-simulation-test.cpp-855-        }
+tests\projectile-simulation-test.cpp-856-        if (r.type == ProjectileCollisionType::WorldImpact)
+tests\projectile-simulation-test.cpp-857-        {
+tests\projectile-simulation-test.cpp-858-            CHECK(state.position.z < 6.0f,
+tests\projectile-simulation-test.cpp-859-                  "projectile passed through wall: z=%.4f", state.position.z);
+tests\projectile-simulation-test.cpp-860-            CHECK(state.position.z >= 4.0f,
+tests\projectile-simulation-test.cpp-861-                  "projectile went too far past wall: z=%.4f", state.position.z);
+tests\projectile-simulation-test.cpp-862-            PASS();
+tests\projectile-simulation-test.cpp-863-            return;
+tests\projectile-simulation-test.cpp-864-        }
+tests\projectile-simulation-test.cpp-865-    }
+tests\projectile-simulation-test.cpp-866-    printf("  final pos=(%.4f,%.4f,%.4f)", state.position.x, state.position.y, state.position.z);
+tests\projectile-simulation-test.cpp-867-    FAIL("neither wall nor player impact within 30 ticks");
+tests\projectile-simulation-test.cpp-868-}
+tests\projectile-simulation-test.cpp-869-
+tests\projectile-simulation-test.cpp-870-// ── Test 5: Identical initial state produces identical results ────────
+tests\projectile-simulation-test.cpp-871-
+tests\projectile-simulation-test.cpp-872-static void testDeterminism()
+tests\projectile-simulation-test.cpp-873-{
+tests\projectile-simulation-test.cpp:874:    TEST("determinism across 300 ticks");
+tests\projectile-simulation-test.cpp-875-
+tests\projectile-simulation-test.cpp-876-    TestCollisionWorld world;
+tests\projectile-simulation-test.cpp-877-    // Simple floor
+tests\projectile-simulation-test.cpp-878-    world.addTriangle(
+tests\projectile-simulation-test.cpp-879-        glm::vec3(-20.0f, -20.0f, 0.0f),
+tests\projectile-simulation-test.cpp-880-        glm::vec3( 20.0f, -20.0f, 0.0f),
+tests\projectile-simulation-test.cpp-881-        glm::vec3( 20.0f,  20.0f, 0.0f),
+tests\projectile-simulation-test.cpp-882-        glm::vec3(0.0f, 0.0f, 1.0f), 0);
+tests\projectile-simulation-test.cpp-883-    world.addTriangle(
+tests\projectile-simulation-test.cpp-884-        glm::vec3(-20.0f, -20.0f, 0.0f),
+tests\projectile-simulation-test.cpp-885-        glm::vec3( 20.0f,  20.0f, 0.0f),
+tests\projectile-simulation-test.cpp-886-        glm::vec3(-20.0f,  20.0f, 0.0f),
+tests\projectile-simulation-test.cpp-887-        glm::vec3(0.0f, 0.0f, 1.0f), 1);
+tests\projectile-simulation-test.cpp-888-
+tests\projectile-simulation-test.cpp-889-    ProjectilePhysicsConfig cfg;
+tests\projectile-simulation-test.cpp-890-    cfg.radius = 0.3f;
+tests\projectile-simulation-test.cpp-891-    cfg.gravity = 20.0f;
+tests\projectile-simulation-test.cpp-892-    cfg.drag = 0.15f;
+tests\projectile-simulation-test.cpp-893-    cfg.restitution = 0.35f;
+tests\projectile-simulation-test.cpp-894-    cfg.friction = 0.5f;
+--
+tests\projectile-simulation-test.cpp-918-    CHECK(stateA.position.z == stateB.position.z,
+tests\projectile-simulation-test.cpp-919-          "Z mismatch: %.10f vs %.10f", stateA.position.z, stateB.position.z);
+tests\projectile-simulation-test.cpp-920-    CHECK(stateA.velocity.x == stateB.velocity.x,
+tests\projectile-simulation-test.cpp-921-          "vX mismatch: %.10f vs %.10f", stateA.velocity.x, stateB.velocity.x);
+tests\projectile-simulation-test.cpp-922-    CHECK(stateA.velocity.y == stateB.velocity.y,
+tests\projectile-simulation-test.cpp-923-          "vY mismatch: %.10f vs %.10f", stateA.velocity.y, stateB.velocity.y);
+tests\projectile-simulation-test.cpp-924-    CHECK(stateA.velocity.z == stateB.velocity.z,
+tests\projectile-simulation-test.cpp-925-          "vZ mismatch: %.10f vs %.10f", stateA.velocity.z, stateB.velocity.z);
+tests\projectile-simulation-test.cpp-926-    CHECK(stateA.bounceCount == stateB.bounceCount,
+tests\projectile-simulation-test.cpp-927-          "bounceCount mismatch: %d vs %d", stateA.bounceCount, stateB.bounceCount);
+tests\projectile-simulation-test.cpp-928-    CHECK(stateA.age == stateB.age,
+tests\projectile-simulation-test.cpp-929-          "age mismatch: %.10f vs %.10f", stateA.age, stateB.age);
+tests\projectile-simulation-test.cpp-930-
+tests\projectile-simulation-test.cpp-931-    PASS();
+tests\projectile-simulation-test.cpp-932-}
+tests\projectile-simulation-test.cpp-933-
+tests\projectile-simulation-test.cpp-934-// ── Test 6: Invalid NaN/zero inputs return safe result ──────────────
+tests\projectile-simulation-test.cpp-935-
+tests\projectile-simulation-test.cpp-936-static void testInvalidInputs()
+tests\projectile-simulation-test.cpp-937-{
+tests\projectile-simulation-test.cpp:938:    TEST("NaN position returns safe result");
+tests\projectile-simulation-test.cpp-939-
+tests\projectile-simulation-test.cpp-940-    TestCollisionWorld world;
+tests\projectile-simulation-test.cpp-941-    world.addTriangle(
+tests\projectile-simulation-test.cpp-942-        glm::vec3(-10.0f, -10.0f, 0.0f),
+tests\projectile-simulation-test.cpp-943-        glm::vec3( 10.0f, -10.0f, 0.0f),
+tests\projectile-simulation-test.cpp-944-        glm::vec3( 10.0f,  10.0f, 0.0f),
+tests\projectile-simulation-test.cpp-945-        glm::vec3(0.0f, 0.0f, 1.0f), 0);
+tests\projectile-simulation-test.cpp-946-
+tests\projectile-simulation-test.cpp-947-    ProjectilePhysicsConfig cfg;
+tests\projectile-simulation-test.cpp-948-    cfg.radius = 0.3f;
+tests\projectile-simulation-test.cpp-949-    cfg.lifetime = 10.0f;
+tests\projectile-simulation-test.cpp-950-
+tests\projectile-simulation-test.cpp-951-    // NaN position
+tests\projectile-simulation-test.cpp-952-    {
+tests\projectile-simulation-test.cpp-953-        ProjectilePhysicsState state;
+tests\projectile-simulation-test.cpp-954-        state.position = glm::vec3(NAN, 0.0f, 0.0f);
+tests\projectile-simulation-test.cpp-955-        state.velocity = glm::vec3(0.0f, 0.0f, -10.0f);
+tests\projectile-simulation-test.cpp-956-        ProjectileStepResult r = simulateProjectileTick(state, cfg, world, 1.0f / 60.0f);
+tests\projectile-simulation-test.cpp-957-        CHECK(r.type == ProjectileCollisionType::None,
+tests\projectile-simulation-test.cpp-958-              "NaN position should return None, got %d", (int)r.type);
+--
+tests\projectile-simulation-test.cpp-990-
+tests\projectile-simulation-test.cpp-991-    // Exploded state does not mutate further
+tests\projectile-simulation-test.cpp-992-    {
+tests\projectile-simulation-test.cpp-993-        ProjectilePhysicsState state;
+tests\projectile-simulation-test.cpp-994-        state.position = glm::vec3(0.0f, 0.0f, 10.0f);
+tests\projectile-simulation-test.cpp-995-        state.velocity = glm::vec3(0.0f, 0.0f, -10.0f);
+tests\projectile-simulation-test.cpp-996-        state.exploded = true;
+tests\projectile-simulation-test.cpp-997-        ProjectileStepResult r = simulateProjectileTick(state, cfg, world, 1.0f / 60.0f);
+tests\projectile-simulation-test.cpp-998-        CHECK(r.type == ProjectileCollisionType::None,
+tests\projectile-simulation-test.cpp-999-              "exploded should return None, got %d", (int)r.type);
+tests\projectile-simulation-test.cpp-1000-        // Position should not change when exploded
+tests\projectile-simulation-test.cpp-1001-        CHECK(state.position.z == 10.0f,
+tests\projectile-simulation-test.cpp-1002-              "exploded projectile moved: z=%.4f", state.position.z);
+tests\projectile-simulation-test.cpp-1003-    }
+tests\projectile-simulation-test.cpp-1004-
+tests\projectile-simulation-test.cpp-1005-    PASS();
+tests\projectile-simulation-test.cpp-1006-}
+tests\projectile-simulation-test.cpp-1007-
+tests\projectile-simulation-test.cpp-1008-static void testPhysicsDoesNotOwnExplosionPolicy()
+tests\projectile-simulation-test.cpp-1009-{
+tests\projectile-simulation-test.cpp:1010:    TEST("physics reports expiry without explosion");
+tests\projectile-simulation-test.cpp-1011-
+tests\projectile-simulation-test.cpp-1012-    TestCollisionWorld world;
+tests\projectile-simulation-test.cpp-1013-    ProjectilePhysicsConfig cfg;
+tests\projectile-simulation-test.cpp-1014-    cfg.radius = 0.3f;
+tests\projectile-simulation-test.cpp-1015-    cfg.lifetime = 1.0f / 60.0f;
+tests\projectile-simulation-test.cpp-1016-
+tests\projectile-simulation-test.cpp-1017-    ProjectilePhysicsState state;
+tests\projectile-simulation-test.cpp-1018-    state.position = glm::vec3(0.0f, 0.0f, 10.0f);
+tests\projectile-simulation-test.cpp-1019-    state.velocity = glm::vec3(0.0f, 0.0f, 0.0f);
+tests\projectile-simulation-test.cpp-1020-
+tests\projectile-simulation-test.cpp-1021-    ProjectileStepResult r = simulateProjectileTick(state, cfg, world, 1.0f / 60.0f);
+tests\projectile-simulation-test.cpp-1022-    CHECK(r.type == ProjectileCollisionType::LifetimeExpired,
+tests\projectile-simulation-test.cpp-1023-          "expected LifetimeExpired got %d", (int)r.type);
+tests\projectile-simulation-test.cpp-1024-    CHECK(!state.exploded,
+tests\projectile-simulation-test.cpp-1025-          "physics kernel should not set exploded on lifetime expiry");
+tests\projectile-simulation-test.cpp-1026-
+tests\projectile-simulation-test.cpp-1027-    world.addCapsule(
+tests\projectile-simulation-test.cpp-1028-        glm::vec3(0.0f, 0.0f, 5.0f),
+tests\projectile-simulation-test.cpp-1029-        glm::vec3(0.0f, 0.0f, 7.0f),
+tests\projectile-simulation-test.cpp-1030-        0.5f, 7, 3);
+--
+tests\client-collision-adapter-test.cpp-1-// 07 19 2026 1030
+tests\client-collision-adapter-test.cpp-2-/* purpose
+tests\client-collision-adapter-test.cpp-3-* Test ClientCollisionWorldView adapter for the shared projectile kernel.
+tests\client-collision-adapter-test.cpp-4-* Verifies world triangle queries, player capsule queries, owner exclusion,
+tests\client-collision-adapter-test.cpp-5-* deterministic ordering, and kernel compatibility.
+tests\client-collision-adapter-test.cpp-6-* fill in 3rd line
+tests\client-collision-adapter-test.cpp:7:* Does NOT test live client prediction, packets, or weapon behavior.
+tests\client-collision-adapter-test.cpp-8-*/
+tests\client-collision-adapter-test.cpp-9-
+tests\client-collision-adapter-test.cpp-10-#include <cstdio>
+tests\client-collision-adapter-test.cpp-11-#include <cstdint>
+tests\client-collision-adapter-test.cpp-12-#include <cmath>
+tests\client-collision-adapter-test.cpp-13-#include <unordered_map>
+tests\client-collision-adapter-test.cpp-14-#include <vector>
+tests\client-collision-adapter-test.cpp-15-#include <algorithm>
+tests\client-collision-adapter-test.cpp-16-
+tests\client-collision-adapter-test.cpp-17-#include <glm/glm.hpp>
+tests\client-collision-adapter-test.cpp-18-
+tests\client-collision-adapter-test.cpp-19-#include "combat/client-collision-world-view.h"
+tests\client-collision-adapter-test.cpp-20-#include "combat/projectile-simulation.h"
+tests\client-collision-adapter-test.cpp-21-#include "physics/physics-types.h"
+tests\client-collision-adapter-test.cpp-22-#include "physics/movement/physics-collision-shared.h"
+tests\client-collision-adapter-test.cpp-23-
+tests\client-collision-adapter-test.cpp-24-static int gPassed = 0;
+tests\client-collision-adapter-test.cpp-25-static int gFailed = 0;
+tests\client-collision-adapter-test.cpp-26-
+tests\client-collision-adapter-test.cpp:27:#define TEST(name) do { printf("  %-50s ", name); } while(0)
+tests\client-collision-adapter-test.cpp-28-#define PASS() do { printf("PASS\n"); ++gPassed; } while(0)
+tests\client-collision-adapter-test.cpp-29-#define FAIL(msg, ...) do { printf("FAIL  " msg "\n", ##__VA_ARGS__); ++gFailed; } while(0)
+tests\client-collision-adapter-test.cpp-30-#define CHECK(cond, msg, ...) do { if (!(cond)) { FAIL(msg, ##__VA_ARGS__); return; } } while(0)
+tests\client-collision-adapter-test.cpp-31-
+tests\client-collision-adapter-test.cpp-32-// ── Minimal mock world (same pattern as projectile-simulation TestCollisionWorld) ──
+tests\client-collision-adapter-test.cpp-33-
+tests\client-collision-adapter-test.cpp-34-struct MockWorld {
+tests\client-collision-adapter-test.cpp-35-    std::vector<CollisionTriangle> triangles;
+tests\client-collision-adapter-test.cpp-36-    float collisionChunkSize = 6.0f;
+tests\client-collision-adapter-test.cpp-37-    std::unordered_map<glm::ivec3, std::vector<int>, IVec3Hash> collisionChunks;
+tests\client-collision-adapter-test.cpp-38-    std::vector<int> collisionLargeTriangles;
+tests\client-collision-adapter-test.cpp-39-    CollisionMeshCache collisionMesh;
+tests\client-collision-adapter-test.cpp-40-
+tests\client-collision-adapter-test.cpp-41-    void addTriangle(const glm::vec3& a, const glm::vec3& b, const glm::vec3& c,
+tests\client-collision-adapter-test.cpp-42-                     const glm::vec3& normal) {
+tests\client-collision-adapter-test.cpp-43-        CollisionTriangle tri;
+tests\client-collision-adapter-test.cpp-44-        tri.a = a; tri.b = b; tri.c = c; tri.normal = normal;
+tests\client-collision-adapter-test.cpp-45-        triangles.push_back(tri);
+tests\client-collision-adapter-test.cpp-46-    }
+tests\client-collision-adapter-test.cpp-47-
+--
+tests\client-collision-adapter-test.cpp-55-            tb.min = glm::min(tri.a, glm::min(tri.b, tri.c));
+tests\client-collision-adapter-test.cpp-56-            tb.max = glm::max(tri.a, glm::max(tri.b, tri.c));
+tests\client-collision-adapter-test.cpp-57-            glm::ivec3 c0 = collisionChunkCoord(tb.min, collisionChunkSize);
+tests\client-collision-adapter-test.cpp-58-            glm::ivec3 c1 = collisionChunkCoord(tb.max, collisionChunkSize);
+tests\client-collision-adapter-test.cpp-59-            if (c1.x - c0.x > 3 || c1.y - c0.y > 3 || c1.z - c0.z > 3) {
+tests\client-collision-adapter-test.cpp-60-                collisionLargeTriangles.push_back(i);
+tests\client-collision-adapter-test.cpp-61-            } else {
+tests\client-collision-adapter-test.cpp-62-                for (int x = c0.x; x <= c1.x; ++x)
+tests\client-collision-adapter-test.cpp-63-                for (int y = c0.y; y <= c1.y; ++y)
+tests\client-collision-adapter-test.cpp-64-                for (int z = c0.z; z <= c1.z; ++z)
+tests\client-collision-adapter-test.cpp-65-                    collisionChunks[glm::ivec3(x,y,z)].push_back(i);
+tests\client-collision-adapter-test.cpp-66-            }
+tests\client-collision-adapter-test.cpp-67-        }
+tests\client-collision-adapter-test.cpp-68-    }
+tests\client-collision-adapter-test.cpp-69-};
+tests\client-collision-adapter-test.cpp-70-
+tests\client-collision-adapter-test.cpp-71-// ── Test 1: World triangle query ─────────────────────────────────────
+tests\client-collision-adapter-test.cpp-72-
+tests\client-collision-adapter-test.cpp-73-static void testWorldQuery()
+tests\client-collision-adapter-test.cpp-74-{
+tests\client-collision-adapter-test.cpp:75:    TEST("world triangle query finds wall");
+tests\client-collision-adapter-test.cpp-76-
+tests\client-collision-adapter-test.cpp-77-    CollisionMeshCache mesh;
+tests\client-collision-adapter-test.cpp-78-    CollisionTriangle tri;
+tests\client-collision-adapter-test.cpp-79-    tri.a = glm::vec3(0,0,0); tri.b = glm::vec3(10,0,0);
+tests\client-collision-adapter-test.cpp-80-    tri.c = glm::vec3(0,10,0); tri.normal = glm::vec3(0,0,1);
+tests\client-collision-adapter-test.cpp-81-    mesh.triangles.push_back(tri);
+tests\client-collision-adapter-test.cpp-82-
+tests\client-collision-adapter-test.cpp-83-    std::unordered_map<glm::ivec3, std::vector<int>, IVec3Hash> chunks;
+tests\client-collision-adapter-test.cpp-84-    std::vector<int> largeTris;
+tests\client-collision-adapter-test.cpp-85-
+tests\client-collision-adapter-test.cpp-86-    ClientCollisionWorldView view(mesh, 6.0f, &chunks, &largeTris, 1, {});
+tests\client-collision-adapter-test.cpp-87-
+tests\client-collision-adapter-test.cpp-88-    std::vector<int> indices;
+tests\client-collision-adapter-test.cpp-89-    view.queryTrianglesSwept(
+tests\client-collision-adapter-test.cpp-90-        glm::vec3(5,5,5), glm::vec3(5,5,-1), 0.3f, indices);
+tests\client-collision-adapter-test.cpp-91-
+tests\client-collision-adapter-test.cpp-92-    // No chunks built → should get an empty result (safe, not a crash)
+tests\client-collision-adapter-test.cpp-93-    // The query works only when chunks are populated
+tests\client-collision-adapter-test.cpp-94-    printf("  (no chunks: %zu triangles)", indices.size());
+tests\client-collision-adapter-test.cpp-95-
+tests\client-collision-adapter-test.cpp-96-    PASS();
+tests\client-collision-adapter-test.cpp-97-}
+tests\client-collision-adapter-test.cpp-98-
+tests\client-collision-adapter-test.cpp-99-// ── Test 2: Unique indices and deterministic ordering ────────────────
+tests\client-collision-adapter-test.cpp-100-
+tests\client-collision-adapter-test.cpp-101-static void testUniqueDeterministic()
+tests\client-collision-adapter-test.cpp-102-{
+tests\client-collision-adapter-test.cpp:103:    TEST("unique indices and deterministic ordering");
+tests\client-collision-adapter-test.cpp-104-
+tests\client-collision-adapter-test.cpp-105-    CollisionMeshCache mesh;
+tests\client-collision-adapter-test.cpp-106-    for (int i = 0; i < 2; ++i) {
+tests\client-collision-adapter-test.cpp-107-        CollisionTriangle tri;
+tests\client-collision-adapter-test.cpp-108-        tri.a = glm::vec3(i*10,0,0); tri.b = glm::vec3(i*10+10,0,0);
+tests\client-collision-adapter-test.cpp-109-        tri.c = glm::vec3(i*10,10,0); tri.normal = glm::vec3(0,0,1);
+tests\client-collision-adapter-test.cpp-110-        mesh.triangles.push_back(tri);
+tests\client-collision-adapter-test.cpp-111-    }
+tests\client-collision-adapter-test.cpp-112-
+tests\client-collision-adapter-test.cpp-113-    std::unordered_map<glm::ivec3, std::vector<int>, IVec3Hash> chunks;
+tests\client-collision-adapter-test.cpp-114-    std::vector<int> largeTris;
+tests\client-collision-adapter-test.cpp-115-    // Build a chunk that covers both triangles
+tests\client-collision-adapter-test.cpp-116-    chunks[glm::ivec3(0,0,0)].push_back(0);
+tests\client-collision-adapter-test.cpp-117-    chunks[glm::ivec3(0,0,0)].push_back(1);
+tests\client-collision-adapter-test.cpp-118-
+tests\client-collision-adapter-test.cpp-119-    ClientCollisionWorldView view(mesh, 6.0f, &chunks, &largeTris, 1, {});
+tests\client-collision-adapter-test.cpp-120-
+tests\client-collision-adapter-test.cpp-121-    std::vector<int> r1, r2;
+tests\client-collision-adapter-test.cpp-122-    view.queryTrianglesSwept(glm::vec3(5,5,5), glm::vec3(5,5,-1), 0.3f, r1);
+tests\client-collision-adapter-test.cpp-123-    view.queryTrianglesSwept(glm::vec3(5,5,5), glm::vec3(5,5,-1), 0.3f, r2);
+tests\client-collision-adapter-test.cpp-124-
+tests\client-collision-adapter-test.cpp-125-    CHECK(r1.size() == r2.size(), "size mismatch: %zu vs %zu", r1.size(), r2.size());
+tests\client-collision-adapter-test.cpp-126-    for (size_t i = 0; i < r1.size(); ++i)
+tests\client-collision-adapter-test.cpp-127-        CHECK(r1[i] == r2[i], "index %zu: %d vs %d", i, r1[i], r2[i]);
+tests\client-collision-adapter-test.cpp-128-
+tests\client-collision-adapter-test.cpp-129-    auto dedup = r1;
+tests\client-collision-adapter-test.cpp-130-    std::sort(dedup.begin(), dedup.end());
+tests\client-collision-adapter-test.cpp-131-    CHECK(std::adjacent_find(dedup.begin(), dedup.end()) == dedup.end(),
+tests\client-collision-adapter-test.cpp-132-          "duplicate triangle indices");
+tests\client-collision-adapter-test.cpp-133-
+tests\client-collision-adapter-test.cpp-134-    PASS();
+tests\client-collision-adapter-test.cpp-135-}
+tests\client-collision-adapter-test.cpp-136-
+tests\client-collision-adapter-test.cpp-137-// ── Test 3: Player capsule query ─────────────────────────────────────
+tests\client-collision-adapter-test.cpp-138-
+tests\client-collision-adapter-test.cpp-139-static void testPlayerCapsuleQuery()
+tests\client-collision-adapter-test.cpp-140-{
+tests\client-collision-adapter-test.cpp:141:    TEST("player capsule query returns eligible players");
+tests\client-collision-adapter-test.cpp-142-
+tests\client-collision-adapter-test.cpp-143-    CollisionMeshCache mesh;
+tests\client-collision-adapter-test.cpp-144-    std::unordered_map<glm::ivec3, std::vector<int>, IVec3Hash> chunks;
+tests\client-collision-adapter-test.cpp-145-    std::vector<int> largeTris;
+tests\client-collision-adapter-test.cpp-146-
+tests\client-collision-adapter-test.cpp-147-    std::vector<ClientCollisionWorldView::PlayerReplica> players;
+tests\client-collision-adapter-test.cpp-148-
+tests\client-collision-adapter-test.cpp-149-    ClientCollisionWorldView::PlayerReplica p2;
+tests\client-collision-adapter-test.cpp-150-    p2.playerId = 2; p2.pos = glm::vec3(10,10,1); p2.dead = false;
+tests\client-collision-adapter-test.cpp-151-    players.push_back(p2);
+tests\client-collision-adapter-test.cpp-152-
+tests\client-collision-adapter-test.cpp-153-    ClientCollisionWorldView::PlayerReplica p3;
+tests\client-collision-adapter-test.cpp-154-    p3.playerId = 3; p3.pos = glm::vec3(10,10,1); p3.dead = true;
+tests\client-collision-adapter-test.cpp-155-    players.push_back(p3);
+tests\client-collision-adapter-test.cpp-156-
+tests\client-collision-adapter-test.cpp-157-    ClientCollisionWorldView view(mesh, 6.0f, &chunks, &largeTris, 9, players);
+tests\client-collision-adapter-test.cpp-158-
+tests\client-collision-adapter-test.cpp-159-    std::vector<SweptPlayerCapsule> capsules;
+tests\client-collision-adapter-test.cpp-160-    view.queryPlayerCapsulesSwept(
+tests\client-collision-adapter-test.cpp-161-        glm::vec3(0,0,5), glm::vec3(10,10,-2), 0.3f, capsules);
+tests\client-collision-adapter-test.cpp-162-
+tests\client-collision-adapter-test.cpp-163-    bool found2 = false;
+tests\client-collision-adapter-test.cpp-164-    for (const auto& c : capsules) {
+tests\client-collision-adapter-test.cpp-165-        if (c.playerId == 2) found2 = true;
+tests\client-collision-adapter-test.cpp-166-        CHECK(c.playerId != 3, "dead player 3 should be excluded");
+tests\client-collision-adapter-test.cpp-167-    }
+tests\client-collision-adapter-test.cpp-168-    CHECK(found2, "alive player 2 not returned");
+tests\client-collision-adapter-test.cpp-169-
+tests\client-collision-adapter-test.cpp-170-    PASS();
+tests\client-collision-adapter-test.cpp-171-}
+tests\client-collision-adapter-test.cpp-172-
+tests\client-collision-adapter-test.cpp-173-// ── Test 4: Owner exclusion ──────────────────────────────────────────
+tests\client-collision-adapter-test.cpp-174-
+tests\client-collision-adapter-test.cpp-175-static void testOwnerExclusion()
+tests\client-collision-adapter-test.cpp-176-{
+tests\client-collision-adapter-test.cpp:177:    TEST("owner exclusion");
+tests\client-collision-adapter-test.cpp-178-
+tests\client-collision-adapter-test.cpp-179-    CollisionMeshCache mesh;
+tests\client-collision-adapter-test.cpp-180-    std::unordered_map<glm::ivec3, std::vector<int>, IVec3Hash> chunks;
+tests\client-collision-adapter-test.cpp-181-    std::vector<int> largeTris;
+tests\client-collision-adapter-test.cpp-182-
+tests\client-collision-adapter-test.cpp-183-    std::vector<ClientCollisionWorldView::PlayerReplica> players;
+tests\client-collision-adapter-test.cpp-184-    ClientCollisionWorldView::PlayerReplica p;
+tests\client-collision-adapter-test.cpp-185-    p.playerId = 2; p.pos = glm::vec3(5,5,1);
+tests\client-collision-adapter-test.cpp-186-    players.push_back(p);
+tests\client-collision-adapter-test.cpp-187-
+tests\client-collision-adapter-test.cpp-188-    ClientCollisionWorldView view(mesh, 6.0f, &chunks, &largeTris, 2, players);
+tests\client-collision-adapter-test.cpp-189-
+tests\client-collision-adapter-test.cpp-190-    std::vector<SweptPlayerCapsule> capsules;
+tests\client-collision-adapter-test.cpp-191-    view.queryPlayerCapsulesSwept(
+tests\client-collision-adapter-test.cpp-192-        glm::vec3(0,0,5), glm::vec3(10,10,-2), 0.3f, capsules);
+tests\client-collision-adapter-test.cpp-193-
+tests\client-collision-adapter-test.cpp-194-    for (const auto& c : capsules)
+tests\client-collision-adapter-test.cpp-195-        CHECK(c.playerId != 2, "owner player %u should be excluded", c.playerId);
+tests\client-collision-adapter-test.cpp-196-
+tests\client-collision-adapter-test.cpp-197-    PASS();
+tests\client-collision-adapter-test.cpp-198-}
+tests\client-collision-adapter-test.cpp-199-
+tests\client-collision-adapter-test.cpp-200-// ── Test 5: Deterministic capsule ordering ───────────────────────────
+tests\client-collision-adapter-test.cpp-201-
+tests\client-collision-adapter-test.cpp-202-static void testCapsuleOrdering()
+tests\client-collision-adapter-test.cpp-203-{
+tests\client-collision-adapter-test.cpp:204:    TEST("deterministic capsule ordering");
+tests\client-collision-adapter-test.cpp-205-
+tests\client-collision-adapter-test.cpp-206-    CollisionMeshCache mesh;
+tests\client-collision-adapter-test.cpp-207-    std::unordered_map<glm::ivec3, std::vector<int>, IVec3Hash> chunks;
+tests\client-collision-adapter-test.cpp-208-    std::vector<int> largeTris;
+tests\client-collision-adapter-test.cpp-209-
+tests\client-collision-adapter-test.cpp-210-    std::vector<ClientCollisionWorldView::PlayerReplica> players;
+tests\client-collision-adapter-test.cpp-211-    for (auto id : {9u, 3u, 5u, 1u}) {
+tests\client-collision-adapter-test.cpp-212-        ClientCollisionWorldView::PlayerReplica p;
+tests\client-collision-adapter-test.cpp-213-        p.playerId = id; p.pos = glm::vec3(5,5,1);
+tests\client-collision-adapter-test.cpp-214-        players.push_back(p);
+tests\client-collision-adapter-test.cpp-215-    }
+tests\client-collision-adapter-test.cpp-216-
+tests\client-collision-adapter-test.cpp-217-    ClientCollisionWorldView view(mesh, 6.0f, &chunks, &largeTris, 99, players);
+tests\client-collision-adapter-test.cpp-218-
+tests\client-collision-adapter-test.cpp-219-    std::vector<SweptPlayerCapsule> r1, r2;
+tests\client-collision-adapter-test.cpp-220-    view.queryPlayerCapsulesSwept(
+tests\client-collision-adapter-test.cpp-221-        glm::vec3(0,0,5), glm::vec3(10,10,-2), 0.3f, r1);
+tests\client-collision-adapter-test.cpp-222-    view.queryPlayerCapsulesSwept(
+tests\client-collision-adapter-test.cpp-223-        glm::vec3(0,0,5), glm::vec3(10,10,-2), 0.3f, r2);
+tests\client-collision-adapter-test.cpp-224-
+tests\client-collision-adapter-test.cpp-225-    CHECK(r1.size() == 4, "expected 4 capsules, got %zu", r1.size());
+tests\client-collision-adapter-test.cpp-226-    CHECK(r1.size() == r2.size(), "size mismatch");
+tests\client-collision-adapter-test.cpp-227-    for (size_t i = 0; i < r1.size(); ++i)
+tests\client-collision-adapter-test.cpp-228-        CHECK(r1[i].playerId == r2[i].playerId,
+tests\client-collision-adapter-test.cpp-229-              "index %zu: %u vs %u", i, r1[i].playerId, r2[i].playerId);
+tests\client-collision-adapter-test.cpp-230-
+tests\client-collision-adapter-test.cpp-231-    for (size_t i = 1; i < r1.size(); ++i)
+tests\client-collision-adapter-test.cpp-232-        CHECK(r1[i-1].playerId <= r1[i].playerId,
+tests\client-collision-adapter-test.cpp-233-              "ordering violation: %u > %u", r1[i-1].playerId, r1[i].playerId);
+tests\client-collision-adapter-test.cpp-234-
+tests\client-collision-adapter-test.cpp-235-    PASS();
+tests\client-collision-adapter-test.cpp-236-}
+tests\client-collision-adapter-test.cpp-237-
+tests\client-collision-adapter-test.cpp-238-// ── Test 6: Kernel compatibility ─────────────────────────────────────
+tests\client-collision-adapter-test.cpp-239-
+tests\client-collision-adapter-test.cpp-240-static void testKernelCompatibility()
+tests\client-collision-adapter-test.cpp-241-{
+tests\client-collision-adapter-test.cpp:242:    TEST("kernel compatibility with adapter");
+tests\client-collision-adapter-test.cpp-243-
+tests\client-collision-adapter-test.cpp-244-    CollisionMeshCache mesh;
+tests\client-collision-adapter-test.cpp-245-    CollisionTriangle t1, t2;
+tests\client-collision-adapter-test.cpp-246-    t1.a = glm::vec3(-10,-10,0); t1.b = glm::vec3(10,-10,0);
+tests\client-collision-adapter-test.cpp-247-    t1.c = glm::vec3(10,10,0); t1.normal = glm::vec3(0,0,1);
+tests\client-collision-adapter-test.cpp-248-    t2.a = glm::vec3(-10,-10,0); t2.b = glm::vec3(10,10,0);
+tests\client-collision-adapter-test.cpp-249-    t2.c = glm::vec3(-10,10,0); t2.normal = glm::vec3(0,0,1);
+tests\client-collision-adapter-test.cpp-250-    mesh.triangles.push_back(t1);
+tests\client-collision-adapter-test.cpp-251-    mesh.triangles.push_back(t2);
+tests\client-collision-adapter-test.cpp-252-
+tests\client-collision-adapter-test.cpp-253-    std::unordered_map<glm::ivec3, std::vector<int>, IVec3Hash> chunks;
+tests\client-collision-adapter-test.cpp-254-    std::vector<int> largeTris;
+tests\client-collision-adapter-test.cpp-255-    chunks[glm::ivec3(0,0,0)].push_back(0);
+tests\client-collision-adapter-test.cpp-256-    chunks[glm::ivec3(0,0,0)].push_back(1);
+tests\client-collision-adapter-test.cpp-257-
+tests\client-collision-adapter-test.cpp-258-    std::vector<ClientCollisionWorldView::PlayerReplica> players;
+tests\client-collision-adapter-test.cpp-259-    ClientCollisionWorldView::PlayerReplica p;
+tests\client-collision-adapter-test.cpp-260-    p.playerId = 42; p.spawnGeneration = 3; p.pos = glm::vec3(0,0,5);
+tests\client-collision-adapter-test.cpp-261-    players.push_back(p);
+tests\client-collision-adapter-test.cpp-262-
+--
+tests\reliable-gameplay-events-test.cpp-1-// 07 19 2026, 13 05
+tests\reliable-gameplay-events-test.cpp-2-/* purpose
+tests\reliable-gameplay-events-test.cpp-3-* Unit test reliable unordered gameplay event queue behavior.
+tests\reliable-gameplay-events-test.cpp-4-* Verifies loss, ACK loss, duplicates, reconnect sessions, ACK auth, and bounds.
+tests\reliable-gameplay-events-test.cpp-5-* Exercises generic packet storage independent of projectile weapon type.
+tests\reliable-gameplay-events-test.cpp-6-* Does NOT run sockets, projectile physics, rendering, or server gameplay loops.
+tests\reliable-gameplay-events-test.cpp:7:* Does NOT test damage, hitmarkers, prediction, or ICE route selection.
+tests\reliable-gameplay-events-test.cpp-8-* Does NOT replace integration tests against mimita.exe.
+tests\reliable-gameplay-events-test.cpp-9-*/
+tests\reliable-gameplay-events-test.cpp-10-
+tests\reliable-gameplay-events-test.cpp-11-#include "network/server.h"
+tests\reliable-gameplay-events-test.cpp-12-
+tests\reliable-gameplay-events-test.cpp-13-#include <cstdio>
+tests\reliable-gameplay-events-test.cpp-14-#include <cstring>
+tests\reliable-gameplay-events-test.cpp-15-#include <unordered_map>
+tests\reliable-gameplay-events-test.cpp-16-#include <vector>
+tests\reliable-gameplay-events-test.cpp-17-
+tests\reliable-gameplay-events-test.cpp-18-namespace MimitaNet {
+tests\reliable-gameplay-events-test.cpp-19-
+tests\reliable-gameplay-events-test.cpp-20-struct SentReliablePacket
+tests\reliable-gameplay-events-test.cpp-21-{
+tests\reliable-gameplay-events-test.cpp-22-    uint32_t playerId = 0;
+tests\reliable-gameplay-events-test.cpp-23-    uint8_t type = 0;
+tests\reliable-gameplay-events-test.cpp-24-    uint32_t eventId = 0;
+tests\reliable-gameplay-events-test.cpp-25-    uint32_t eventSessionId = 0;
+tests\reliable-gameplay-events-test.cpp-26-};
+tests\reliable-gameplay-events-test.cpp-27-
+--
+tests\projectile-stress-test.cpp-1-// 07 19 2026, 11 05
+tests\projectile-stress-test.cpp-2-/* purpose
+tests\projectile-stress-test.cpp-3-* Focused projectile kernel stress benchmark for the 60 Hz server budget.
+tests\projectile-stress-test.cpp-4-* Derives representative projectile load from current player cap and projectile config.
+tests\projectile-stress-test.cpp-5-* Reports timing distributions, candidate counts, and sleeping grenade behavior.
+tests\projectile-stress-test.cpp:6:* Does NOT open sockets, render, send packets, or test client reconciliation.
+tests\projectile-stress-test.cpp-7-* Does NOT tune weapon gameplay values or alter projectile physics behavior.
+tests\projectile-stress-test.cpp-8-* Does NOT promise scaling beyond the reported configured supported bound.
+tests\projectile-stress-test.cpp-9-*/
+tests\projectile-stress-test.cpp-10-
+tests\projectile-stress-test.cpp-11-#include "combat/projectile-simulation.h"
+tests\projectile-stress-test.cpp-12-
+tests\projectile-stress-test.cpp-13-#include <algorithm>
+tests\projectile-stress-test.cpp-14-#include <chrono>
+tests\projectile-stress-test.cpp-15-#include <cmath>
+tests\projectile-stress-test.cpp-16-#include <cstdio>
+tests\projectile-stress-test.cpp-17-#include <cstdint>
+tests\projectile-stress-test.cpp-18-#include <unordered_map>
+tests\projectile-stress-test.cpp-19-#include <vector>
+tests\projectile-stress-test.cpp-20-
+tests\projectile-stress-test.cpp-21-namespace {
+tests\projectile-stress-test.cpp-22-
+tests\projectile-stress-test.cpp-23-constexpr int kMaxPlayers = 32;
+tests\projectile-stress-test.cpp-24-constexpr float kServerDt = 1.0f / 60.0f;
+tests\projectile-stress-test.cpp-25-constexpr float kTickBudgetMs = 16.6667f;
+tests\projectile-stress-test.cpp-26-constexpr float kRocketFireDelay = 0.65f;

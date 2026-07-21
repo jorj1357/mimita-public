@@ -1,4 +1,5 @@
 {
+  "comment 7 20 2026": "this is the .json file at C:/important/mimita-priv-v8/config/weapons.json defining behavior for all weapons in mimita",
   "revolver": {
     "id": "revolver",
     "display_name": "Revolver",

@@ -1,3 +1,13 @@
+// 07 20 2026, 20 00
+/* purpose
+* Declares multiplayer client context, packets, prediction state, and public network helpers.
+* Owns pending request bookkeeping shared by packet send, receive, and focused tests.
+* Provides small inline reconciliation helpers for projectile fire result lifecycle state.
+* Does NOT implement transport polling, rendering, audio, or server authority.
+* Does NOT define movement math or client transform validation.
+* Does NOT own weapon data, projectile physics constants, or map loading.
+*/
+
 #pragma once
 
 #include "network/net_common.h"
@@ -381,6 +391,68 @@ struct MultiplayerContext
     // Set on host register or client join, cleared on disconnect/leave.
     std::string currentRoomCode;
 };
+
+struct ProjectileFireResultApplyOutcome
+{
+    bool accepted = false;
+    bool clearedGenericPending = false;
+    bool clearedProjectilePending = false;
+    bool queuedRejection = false;
+    bool duplicateOrStaleRejection = false;
+};
+
+inline ProjectileFireResultApplyOutcome mpApplyProjectileFireResultToPending(
+    MultiplayerContext& ctx,
+    const ProjectileFireResultPacket& event)
+{
+    ProjectileFireResultApplyOutcome outcome;
+    outcome.accepted = event.accepted != 0;
+
+    auto genIt = ctx.pendingAttackRequests.find(event.fireSerial);
+    if (genIt != ctx.pendingAttackRequests.end())
+    {
+        ctx.pendingAttackRequests.erase(genIt);
+        outcome.clearedGenericPending = true;
+    }
+
+    auto fireIt = ctx.pendingFireRequests.find(event.fireSerial);
+    if (outcome.accepted)
+    {
+        if (fireIt != ctx.pendingFireRequests.end())
+        {
+            ctx.pendingFireRequests.erase(fireIt);
+            outcome.clearedProjectilePending = true;
+        }
+        return outcome;
+    }
+
+    if (fireIt == ctx.pendingFireRequests.end())
+    {
+        outcome.duplicateOrStaleRejection =
+            ctx.processedRefundSerials.count(event.fireSerial) != 0;
+        return outcome;
+    }
+
+    if (ctx.processedRefundSerials.count(event.fireSerial) == 0)
+    {
+        MultiplayerContext::FireRejection fr;
+        fr.fireSerial = event.fireSerial;
+        fr.weapon = event.weapon;
+        fr.reason = event.reason;
+        fr.cooldownRemaining = event.cooldownRemaining;
+        ctx.fireRejections.push_back(fr);
+        ctx.processedRefundSerials.insert(event.fireSerial);
+        outcome.queuedRejection = true;
+    }
+    else
+    {
+        outcome.duplicateOrStaleRejection = true;
+    }
+
+    ctx.pendingFireRequests.erase(fireIt);
+    outcome.clearedProjectilePending = true;
+    return outcome;
+}
 
 struct MpInput
 {

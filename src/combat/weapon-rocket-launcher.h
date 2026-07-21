@@ -1,6 +1,17 @@
+// 07 20 2026, 19 43
+/* purpose
+* Declares rocket launcher runtime state and helper entry points.
+* Exposes local prediction identity helpers for network adoption and removal.
+* Shares the rocket state shape with weapon code and focused networking tests.
+* Does NOT implement rocket physics, damage, rendering, or audio behavior.
+* Does NOT own projectile packet routing or server authority.
+* Does NOT define non-rocket weapon runtime state.
+*/
+
 #pragma once
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <vector>
 
 class Camera;
@@ -51,9 +62,64 @@ void update(
     float dt);
 
 void clear(RocketLauncherState& state);
-void tagLatestLocalRocket(RocketLauncherState& state, uint32_t fireSerial);
-bool attachAuthoritativeRocket(RocketLauncherState& state, uint32_t fireSerial, uint32_t projectileId);
-bool removeAuthoritativeRocket(RocketLauncherState& state, uint32_t projectileId);
-bool removeLocalRocketByFireSerial(RocketLauncherState& state, uint32_t fireSerial);
+
+inline void tagLatestLocalRocket(RocketLauncherState& state, uint32_t fireSerial)
+{
+    if (fireSerial == 0 || state.activeRockets.empty())
+        return;
+    for (auto it = state.activeRockets.rbegin(); it != state.activeRockets.rend(); ++it)
+    {
+        if (it->fireSerial == 0 && it->authoritativeProjectileId == 0)
+        {
+            it->fireSerial = fireSerial;
+            return;
+        }
+    }
+}
+
+inline bool attachAuthoritativeRocket(RocketLauncherState& state, uint32_t fireSerial, uint32_t projectileId)
+{
+    if (fireSerial == 0 || projectileId == 0)
+        return false;
+    for (auto& rocket : state.activeRockets)
+    {
+        if (rocket.fireSerial == fireSerial)
+        {
+            rocket.authoritativeProjectileId = projectileId;
+            return true;
+        }
+    }
+    return false;
+}
+
+inline bool removeAuthoritativeRocket(RocketLauncherState& state, uint32_t projectileId)
+{
+    if (projectileId == 0)
+        return false;
+    for (auto it = state.activeRockets.begin(); it != state.activeRockets.end(); ++it)
+    {
+        if (it->authoritativeProjectileId == projectileId)
+        {
+            state.activeRockets.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
+
+inline bool removeLocalRocketByFireSerial(RocketLauncherState& state, uint32_t fireSerial)
+{
+    if (fireSerial == 0)
+        return false;
+    for (auto it = state.activeRockets.begin(); it != state.activeRockets.end(); ++it)
+    {
+        if (it->fireSerial == fireSerial)
+        {
+            state.activeRockets.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
 
 } // namespace WeaponRocketLauncher
