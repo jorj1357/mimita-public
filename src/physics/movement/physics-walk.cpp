@@ -1,21 +1,12 @@
-// C:\important\quiet\n\mimita-priv-v7\src\physics\movement\physics-walk.cpp
-// feb 10 2026
-/**
- * purpose
- * all logic for walking goes here
- * literallt just
- * wasd = forward back left right
- * exposes walk(direction, velocity) to other files 
- */
-
-//
-// Purpose:
-// - Ground walk (instant response)
-// - Air movement (instant response, camera-relative)
-//
-// Uses physics/config.h
-// Debug heavy
-// No friction, no dash, no collisions
+// 07 21 2026, 10 54
+/* purpose
+* Adapts current Player walking to the shared Stage 2A walk helper.
+* Preserves instant horizontal velocity replacement, size scaling, and diagnostics.
+* Leaves current physics ordering and Player-specific logging in the legacy wrapper.
+* Does NOT apply gravity, jump, friction, dash, freeze, or collision.
+* Does NOT poll input, send packets, render, play audio, or decide authority.
+* Does NOT replace the complete movement orchestrator.
+*/
 
 #include <cstdio>
 #include <algorithm>
@@ -23,6 +14,7 @@
 
 #include "physics/config.h"
 #include "config/size-scaling-config.h"
+#include "physics/movement/movement-step.h"
 #include "entities/player.h"
 #include "debug/debug-log.h"
 
@@ -61,10 +53,11 @@ void doWalk(
     // Set horizontal velocity to max speed along wish direction.
     // Instant direction change. No additive accumulation.
     const auto& sc = SizeScalingConfig::instance().data();
-    float s = std::max(p.sizeScale, 0.001f);
-    float maxSpeed = (onGround ? PHYS.moveSpeed : AIR_SPEED) * sc.scale(1.0f, sc.movementSpeedExponent, s);
-    p.vel.x = wishDir.x * maxSpeed;
-    p.vel.y = wishDir.y * maxSpeed;
+    float maxSpeed = (onGround ? PHYS.moveSpeed : AIR_SPEED) *
+                     movementSizeScaleFactor(p.sizeScale, sc.movementSpeedExponent);
+    movementApplyWalkVelocity(
+        p.vel, wishMoveXY, onGround, p.sizeScale, PHYS.moveSpeed, AIR_SPEED,
+        sc.movementSpeedExponent);
 
     // Debug: air control summary (0.5s throttle)
     if (!onGround)

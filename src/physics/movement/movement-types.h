@@ -108,6 +108,7 @@ struct MovementGroundState {
     bool wasOnGround = false;
     bool hasWorldContact = false;
     bool realWorldContactThisFrame = false;
+    bool didLand = false;
     glm::vec3 groundNormal{0.0f, 0.0f, 1.0f};
     float groundLostTimerSeconds = 0.0f;
     float airborneTimerSeconds = 0.0f;
@@ -185,13 +186,16 @@ struct MovementState {
 struct MovementConfig {
     uint32_t simulationHz = 60;
     float fixedDeltaSeconds = 1.0f / 60.0f;
+    float maximumDeltaSeconds = 0.033f;
 
     float groundSpeed = 0.0f;
     float airSpeed = 0.0f;
+    float movementSpeedSizeExponent = 0.5f;
     float gravityZ = 0.0f;
     float maximumFallSpeed = 0.0f;
 
     float jumpVerticalSpeed = 0.0f;
+    float jumpHeightSizeExponent = 0.5f;
     float jumpBufferSeconds = 0.0f;
     float coyoteSeconds = 0.0f;
     int maximumAirJumps = 0;
@@ -208,10 +212,17 @@ struct MovementConfig {
     float externalImpulseDecay = 0.0f;
     float externalImpulseSteerRate = 0.0f;
     float externalImpulseBrakeRate = 0.0f;
+    float groundFrictionAmount = 0.0f;
+    float airFrictionAmount = 0.0f;
+    float frictionSizeExponent = -0.5f;
+    float almostZeroSpeed = 0.00001f;
 
     float walkableSlopeDot = 0.0f;
     float collisionSkin = 0.0f;
     float maximumStepHeight = 0.0f;
+    float stableGroundGraceSeconds = 0.08f;
+    float landingMinimumAirborneSeconds = 0.08f;
+    float landingCooldownResetSeconds = 0.3f;
 };
 
 enum class MovementContactKind : uint8_t {
@@ -274,6 +285,7 @@ inline bool movementEventMatchesLifecycle(const MovementExternalEvent& event,
 struct MovementStepEvents {
     bool didGroundJump = false;
     bool didAirJump = false;
+    bool leftGround = false;
     bool didDash = false;
     bool didDownDash = false;
     bool didLand = false;
@@ -341,5 +353,15 @@ inline bool movementIsFinite(const MovementState& state)
            movementIsFinite(state.lastInputMoveAxes) &&
            movementIsFinite(state.yaw) &&
            movementIsFinite(state.sizeScale) &&
-           movementIsFinite(state.ground.groundNormal);
+           movementIsFinite(state.ground.groundNormal) &&
+           movementIsFinite(state.ground.groundLostTimerSeconds) &&
+           movementIsFinite(state.ground.airborneTimerSeconds) &&
+           movementIsFinite(state.ground.landingCooldownSeconds) &&
+           movementIsFinite(state.ground.worldContactLostTimerSeconds) &&
+           movementIsFinite(state.jump.jumpIntentTimerSeconds) &&
+           movementIsFinite(state.jump.coyoteTimerSeconds) &&
+           movementIsFinite(state.dash.frictionOverride) &&
+           movementIsFinite(state.freeze.timerSeconds) &&
+           movementIsFinite(state.groundReturn.rechargeTimerSeconds) &&
+           movementIsFinite(state.dashMomentumProtection.protectedMoveAxes);
 }

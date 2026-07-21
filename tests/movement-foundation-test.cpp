@@ -118,12 +118,14 @@ void testDefaults()
     check(state.movementEnabled == true, "movement state defaults enabled");
     checkVec3(state.ground.groundNormal, glm::vec3(0.0f, 0.0f, 1.0f),
               "ground normal defaults up");
+    check(!state.ground.didLand, "ground didLand defaults false");
     check(state.dash.dashAvailable == true, "dash availability default matches runtime new-life state");
     check(state.freeze.available == true, "freeze availability default matches runtime new-life state");
     check(contact.kind == MovementContactKind::Unknown, "contact kind defaults unknown");
     checkVec3(contact.normal, glm::vec3(0.0f, 0.0f, 1.0f), "contact normal defaults up");
     check(event.type == MovementExternalEventType::AddImpulse,
           "external event defaults to add impulse");
+    check(!result.events.leftGround, "step result left-ground event defaults false");
     check(result.events.contacts.empty(), "step result contacts default empty");
 }
 
@@ -197,6 +199,7 @@ void fillPlayerMovementFields(Player& player)
     player.ground.wasOnGround = false;
     player.ground.hasWorldContact = true;
     player.ground.realWorldContactThisFrame = true;
+    player.ground.didLand = true;
     player.ground.groundLostTimer = 0.1f;
     player.ground.airborneTimer = 0.2f;
     player.ground.landingCooldown = 0.3f;
@@ -253,6 +256,7 @@ void testPlayerMappingAndApply()
     checkVec2(state.lastInputMoveAxes, glm::vec2(0.25f, -0.5f),
               "player maps last input axes");
     check(state.ground.realWorldContactThisFrame, "player maps real world contact");
+    check(state.ground.didLand, "player maps landing event");
     check(state.jump.airJumpLocked, "player maps air jump lock");
     check(state.dash.tickPerfectDash, "player maps tick-perfect dash");
     check(!state.downDash.available, "player maps down dash availability");
@@ -273,6 +277,7 @@ void testPlayerMappingAndApply()
     checkVec3(target.vel, state.baseVelocity, "apply writes player velocity");
     checkVec3(target.externalImpulse, state.externalImpulse, "apply writes external impulse");
     check(target.ground.onGround == state.ground.onGround, "apply writes ground state");
+    check(target.ground.didLand == state.ground.didLand, "apply writes landing event");
     check(target.jump.airJumpsLeft == state.jump.airJumpsLeft, "apply writes jump state");
     check(target.dash.downDashAvailable == state.downDash.available,
           "apply writes down dash state");
@@ -377,10 +382,16 @@ void testConfigAndFreezeCurve()
     check(config.simulationHz == 60, "config maps simulation hz");
     checkNear(config.fixedDeltaSeconds, 1.0f / 60.0f, 0.000001f,
               "config maps fixed delta");
+    checkNear(config.maximumDeltaSeconds, 0.033f, 0.000001f,
+              "config maps physics dt clamp");
     checkNear(config.groundSpeed, 20.0f, 0.0001f, "config maps ground speed");
     checkNear(config.airSpeed, 20.0f, 0.0001f, "config maps air speed");
+    checkNear(config.movementSpeedSizeExponent, 0.5f, 0.0001f,
+              "config maps movement speed size exponent");
     checkNear(config.gravityZ, -58.0f, 0.0001f, "config maps gravity");
     checkNear(config.jumpVerticalSpeed, 19.0f, 0.0001f, "config maps jump speed");
+    checkNear(config.jumpHeightSizeExponent, 0.5f, 0.0001f,
+              "config maps jump height size exponent");
     checkNear(config.groundDashImpulse, 100.0f, 0.0001f,
               "config maps current ground/server dash impulse");
     checkNear(config.airDashImpulse, 50.0f, 0.0001f,
@@ -391,6 +402,24 @@ void testConfigAndFreezeCurve()
               "config maps freeze duration");
     checkNear(config.freezeCurveExponent, 4.0f, 0.0001f,
               "config uses target quartic freeze curve exponent");
+    checkNear(config.maximumExternalImpulseSpeed, 120.0f, 0.0001f,
+              "config maps external impulse clamp");
+    checkNear(config.externalImpulseDecay, 0.6f, 0.0001f,
+              "config maps external impulse decay");
+    checkNear(config.groundFrictionAmount, 10.0f, 0.0001f,
+              "config maps ground friction");
+    checkNear(config.airFrictionAmount, 2.0f, 0.0001f,
+              "config maps air friction");
+    checkNear(config.frictionSizeExponent, -0.5f, 0.0001f,
+              "config maps friction size exponent");
+    checkNear(config.almostZeroSpeed, 0.00001f, 0.000001f,
+              "config maps almost-zero threshold");
+    checkNear(config.stableGroundGraceSeconds, 0.08f, 0.000001f,
+              "config maps stable ground grace");
+    checkNear(config.landingMinimumAirborneSeconds, 0.08f, 0.000001f,
+              "config maps landing airborne threshold");
+    checkNear(config.landingCooldownResetSeconds, 0.3f, 0.000001f,
+              "config maps landing cooldown reset");
 
     checkNear(movementFreezeHorizontalPassThrough(0.0f), 0.0f, 0.000001f,
               "freeze curve at 0 seconds");
