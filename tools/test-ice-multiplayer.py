@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-# 07 19 2026, 11 15
+# 07 21 2026, 17 32
 # purpose
-# Runs automated local ICE host/join validation against a local coordinator.
-# Emulates the production coordinator's ICE signaling route shape for tests.
-# Captures child process logs and reports join/candidate/snapshot milestones.
+# Runs automated full-server ICE gameplay validation against a local coordinator.
+# Routes ICE clients through the authoritative dedicated server packet pipeline.
+# Captures lifecycle, movement-validator, snapshot, death, and reconnect proof.
+# Does NOT use the lightweight ICE gameplay host as a passing criterion.
 # Does NOT fake JoinAccept, inject clients into the server, or bypass tokens.
-# Does NOT simulate gameplay, projectile, weapon, damage, or prediction logic.
 # Does NOT log credentials, complete tokens, or full ICE descriptions.
 import argparse
 import datetime as _dt
+import hashlib
 import json
 import os
 import queue
@@ -23,13 +24,63 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXE = ROOT / "mimita.exe"
+EXE = None
 LOG_ROOT = ROOT / "build" / "ice-multiplayer-logs"
 EVENT_PREFIX = "[MIMITA_TEST_EVENT] "
+SMOKE = ROOT / "build" / "network-protocol-smoke.exe"
+ROOM_RE = re.compile(r"code=([A-Z0-9]+)")
+READY_RE = re.compile(r"\[SERVER TRANSPORT READY\].*actual=([0-9.]+:\d+)")
+STATUS_RE = re.compile(r"\[SERVER STATUS\]\s+(.*)")
+SMOKE_RE = re.compile(r"\[PROTOCOL SMOKE\]\s+(.*)")
+MOVEMENT_RE = re.compile(r"\[SERVER MOVEMENT RX\].*transport=ice.*decision=([a-z]+).*reason=([a-zA-Z0-9_-]+)")
 
 
 def now_stamp():
     return _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest().upper()
+
+
+def resolve_exe(args):
+    selected = args.exe or os.environ.get("MIMITA_TEST_EXE")
+    if not selected:
+        print("FAIL: exact executable required; pass --exe or set MIMITA_TEST_EXE")
+        return None
+    exe = Path(selected).resolve()
+    if not exe.exists():
+        print(f"FAIL: missing executable {exe}")
+        return None
+    if not exe.is_file():
+        print(f"FAIL: executable path is not a file {exe}")
+        return None
+    return exe
+
+
+def parse_kv(text):
+    out = {}
+    for part in text.split():
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        value = value.rstrip(",")
+        try:
+            out[key] = int(value)
+            continue
+        except ValueError:
+            pass
+        try:
+            out[key] = float(value)
+            continue
+        except ValueError:
+            pass
+        out[key] = value
+    return out
 
 
 class LocalIceCoordinator:
@@ -102,10 +153,16 @@ class LocalIceCoordinator:
                     print(f"[LOCAL ICE COORD] begin-join room={code} status=missing")
                     return {"ok": False, "error": "room-not-found"}
                 slot = next((s for s in room["host_slots"] if not s["assigned"]), None)
+                reused_slot = False
                 if not slot:
-                    print(f"[LOCAL ICE COORD] begin-join room={code} status=no-host-slot")
-                    return {"ok": False, "error": "no-host-slot"}
-                slot["assigned"] = True
+                    if room["host_slots"]:
+                        slot = room["host_slots"][0]
+                        reused_slot = True
+                    else:
+                        print(f"[LOCAL ICE COORD] begin-join room={code} status=no-host-slot")
+                        return {"ok": False, "error": "no-host-slot"}
+                if not reused_slot:
+                    slot["assigned"] = True
                 request_id = self._new_token()
                 token = self._new_token()
                 self.tokens[token] = {
@@ -121,7 +178,7 @@ class LocalIceCoordinator:
                     "host_peer_sdp": "",
                     "status": "pending_host",
                 }
-                print(f"[LOCAL ICE COORD] begin-join room={code} req={request_id[:12]} status=queued")
+                print(f"[LOCAL ICE COORD] begin-join room={code} req={request_id[:12]} status=queued reusedSlot={int(reused_slot)}")
                 return {
                     "ok": True,
                     "request_id": request_id,
@@ -168,7 +225,7 @@ class LocalIceCoordinator:
                 request = room and room.get("requests", {}).get(request_id)
                 if not request:
                     return {"ok": False, "status": "missing", "error": "request-not-found"}
-                if request["status"] == "host_answered" and request["host_peer_sdp"]:
+                if request["host_peer_sdp"] and request["status"] in ("host_answered", "complete"):
                     print(f"[LOCAL ICE COORD] client-poll room={code} req={request_id[:12]} status=answer-ready")
                     return {
                         "ok": True,
@@ -183,7 +240,8 @@ class LocalIceCoordinator:
                 room = self.rooms.get(code)
                 request = room and room.get("requests", {}).get(request_id)
                 if request:
-                    request["status"] = "complete"
+                    if not request["host_peer_sdp"]:
+                        request["status"] = "complete"
                 print(f"[LOCAL ICE COORD] request-complete room={code} req={request_id[:12]} found={int(bool(request))}")
                 return {"ok": True}
 
@@ -324,6 +382,19 @@ def start_process(name, args, env, log_dir):
     return ProcessLog(name, proc, log_dir)
 
 
+def start_command(name, command, env, log_dir):
+    proc = subprocess.Popen(
+        command,
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
+    return ProcessLog(name, proc, log_dir)
+
+
 def terminate_all(processes):
     for item in processes:
         if item.proc.poll() is None:
@@ -350,13 +421,12 @@ def collect_events(processes):
 
 def find_room(process, timeout):
     deadline = time.time() + timeout
-    room_re = re.compile(r"code=([A-Z0-9]+)")
     while time.time() < deadline:
         for event in process.events:
             if event.get("type") == "room_created" and event.get("code"):
                 return event["code"]
         for line in process.lines:
-            m = room_re.search(line)
+            m = ROOM_RE.search(line)
             if m:
                 return m.group(1)
         if process.proc.poll() is not None:
@@ -365,12 +435,105 @@ def find_room(process, timeout):
     return None
 
 
+def find_udp_endpoint(process, timeout):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        for line in process.lines:
+            m = READY_RE.search(line)
+            if m:
+                return m.group(1)
+        if process.proc.poll() is not None:
+            break
+        time.sleep(0.05)
+    return None
+
+
+def parse_smoke_fields(process):
+    fields = {}
+    for line in process.lines:
+        match = SMOKE_RE.search(line)
+        if match:
+            fields = parse_kv(match.group(1))
+    return fields
+
+
 def event_count(events, event_type, process_prefix=None):
     return sum(
         1 for event in events
         if event.get("type") == event_type and
         (process_prefix is None or str(event.get("process", "")).startswith(process_prefix))
     )
+
+
+def first_event(events, event_type, process_name=None):
+    for event in events:
+        if event.get("type") != event_type:
+            continue
+        if process_name is not None and event.get("process") != process_name:
+            continue
+        return event
+    return None
+
+
+def wait_for_event(process, event_type, timeout):
+    deadline = time.time() + timeout
+    seen = 0
+    while time.time() < deadline:
+        while seen < len(process.events):
+            event = process.events[seen]
+            seen += 1
+            if event.get("type") == event_type:
+                return dict(event)
+        if process.proc.poll() is not None:
+            while seen < len(process.events):
+                event = process.events[seen]
+                seen += 1
+                if event.get("type") == event_type:
+                    return dict(event)
+            break
+        time.sleep(0.05)
+    return None
+
+
+def wait_process(process, timeout):
+    deadline = time.time() + timeout
+    while process.proc.poll() is None and time.time() < deadline:
+        time.sleep(0.05)
+    return process.proc.poll() is not None
+
+
+def derive_server_evidence(server):
+    stats = {}
+    movement_decisions = []
+    for line in server.lines:
+        status = STATUS_RE.search(line)
+        if status:
+            stats = parse_kv(status.group(1))
+        movement = MOVEMENT_RE.search(line)
+        if movement:
+            movement_decisions.append({
+                "decision": movement.group(1),
+                "reason": movement.group(2),
+                "line": line,
+            })
+    return {
+        "server_started": any("[SERVER TRANSPORT READY]" in line for line in server.lines),
+        "ice_gather_complete": any("[ICE HOST GATHER]" in line and "complete" in line for line in server.lines),
+        "ice_connected": sum(1 for line in server.lines if "[ICE HOST CONNECT]" in line and "connected" in line),
+        "join_received": sum(1 for line in server.lines if "[SERVER PLAYER SPAWN] reason=join_request" in line or "[SERVER JOIN]" in line and "token=" in line),
+        "map_ready": sum(1 for line in server.lines if "[SERVER MAP READY]" in line),
+        "spawn_sent": sum(1 for line in server.lines if "[SPAWN TX CREATE]" in line),
+        "spawn_ack": sum(1 for line in server.lines if "[SPAWN ACK ACCEPT]" in line),
+        "snapshot_sent": sum(1 for line in server.lines if "[SERVER SNAPSHOT SEND]" in line),
+        "death_events": sum(1 for line in server.lines if "[SERVER DEATH]" in line),
+        "respawn_events": sum(1 for line in server.lines if "[SERVER RESPAWN]" in line),
+        "reconnect_success": sum(1 for line in server.lines if "[SERVER RECONNECT] accepted" in line),
+        "movement_decisions": movement_decisions,
+        "movement_validator_reached": bool(movement_decisions),
+        "movement_accepted": any(item["decision"] in ("accept", "correct") for item in movement_decisions),
+        "movement_rejected_dead": any(item["decision"] == "reject" and item["reason"] == "dead" for item in movement_decisions),
+        "latest_status": stats,
+    }
 
 
 def diagnose(processes, events):
@@ -389,7 +552,9 @@ def diagnose(processes, events):
 
 
 def main():
+    global EXE
     parser = argparse.ArgumentParser(description="Run automated MiMITA ICE multiplayer process test.")
+    parser.add_argument("--exe", type=str, default="")
     parser.add_argument("--clients", type=int, default=2)
     parser.add_argument("--duration", type=int, default=60)
     parser.add_argument("--build", action="store_true")
@@ -399,6 +564,9 @@ def main():
     parser.add_argument("--packet-loss", type=float, default=0.0)
     parser.add_argument("--latency-ms", type=int, default=0)
     parser.add_argument("--jitter-ms", type=int, default=0)
+    parser.add_argument("--death-respawn-cycles", type=int, default=10)
+    parser.add_argument("--reconnect-cycles", type=int, default=3)
+    parser.add_argument("--mixed-udp-client", action="store_true")
     parser.add_argument("--keep-logs", action="store_true")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
@@ -406,13 +574,19 @@ def main():
     if args.force_relay and args.disable_relay:
         parser.error("--force-relay and --disable-relay are mutually exclusive")
 
-    if not EXE.exists():
-        print(f"FAIL: missing executable {EXE}")
+    EXE = resolve_exe(args)
+    if EXE is None:
         return 2
+    if args.mixed_udp_client and not SMOKE.exists():
+        print(f"FAIL: missing mixed UDP smoke executable {SMOKE}")
+        return 2
+    exe_sha = sha256_file(EXE)
 
     log_dir = LOG_ROOT / now_stamp()
     log_dir.mkdir(parents=True, exist_ok=True)
     print(f"[ICE HARNESS] logs={log_dir}")
+    print(f"[ICE HARNESS] exe={EXE}")
+    print(f"[ICE HARNESS] exe_sha256={exe_sha}")
 
     coordinator = LocalIceCoordinator()
     coordinator_url = coordinator.start()
@@ -423,65 +597,170 @@ def main():
     if args.same_machine and args.disable_relay and not args.force_relay:
         env["MIMITA_ICE_LOCAL_ONLY"] = "1"
 
-    mode_flags = ["--timeout-seconds", str(max(args.duration + 5, 15))]
+    client_timeout = max(args.duration + 20, args.death_respawn_cycles * 3 + 20, 20)
+    mode_flags = ["--timeout-seconds", str(client_timeout)]
     if args.disable_relay:
         mode_flags.append("--disable-relay")
     if args.force_relay:
         mode_flags.append("--force-relay")
 
     processes = []
+    initial_clients = []
+    reconnect_processes = []
+    mixed_process = None
     try:
-        host = start_process(
-            "host",
-            ["--ice-host-only", "--once", "--clients", str(args.clients)] + mode_flags,
+        server_timeout = max(client_timeout + args.reconnect_cycles * 15 + 20, 45)
+        server_args = [
+            "--server", "--ice", "--bind", "127.0.0.1:0",
+            "--timeout", str(server_timeout),
+        ]
+        if not args.mixed_udp_client:
+            server_args.append("--no-npcs")
+        server = start_process(
+            "server",
+            server_args,
             env,
             log_dir,
         )
-        processes.append(host)
-        room = find_room(host, 30)
+        processes.append(server)
+        room = find_room(server, 45)
         if not room:
-            print("FAIL: host did not emit a room code")
+            print("FAIL: authoritative ICE server did not emit a room code")
             return 3
         print(f"[ICE HARNESS] room={room}")
+        udp_endpoint = find_udp_endpoint(server, 8)
+        if args.mixed_udp_client and not udp_endpoint:
+            print("FAIL: mixed UDP+ICE requested but server did not emit a UDP endpoint")
+            return 4
 
         for i in range(args.clients):
+            death_cycles = args.death_respawn_cycles if i == 0 else 0
             client = start_process(
                 f"client{i + 1}",
-                ["--ice-join-only", room] + mode_flags,
+                ["--ice-connect", room,
+                 "--client-index", str(i + 1),
+                 "--death-respawn-cycles", str(death_cycles)] + mode_flags,
                 env,
                 log_dir,
             )
             processes.append(client)
+            initial_clients.append(client)
             time.sleep(0.25)
 
-        deadline = time.time() + max(args.duration + 30, 45)
+        if args.mixed_udp_client:
+            mixed_env = env.copy()
+            mixed_env["MIMITA_TEST_SERVER_ADDR"] = udp_endpoint
+            mixed_process = start_command(
+                "mixed-udp-smoke",
+                [str(SMOKE)],
+                mixed_env,
+                log_dir,
+            )
+            processes.append(mixed_process)
+
+        deadline = time.time() + max(client_timeout + 30, 60)
         while time.time() < deadline:
-            if all(p.proc.poll() is not None for p in processes):
+            initial_done = all(p.proc.poll() is not None for p in initial_clients)
+            mixed_done = mixed_process is None or mixed_process.proc.poll() is not None
+            if initial_done and mixed_done:
                 break
             time.sleep(0.1)
 
-        terminate_all(processes)
-        coordinator.stop()
-
+        terminate_all(initial_clients)
+        if mixed_process:
+            wait_process(mixed_process, 2)
         events = collect_events(processes)
-        (log_dir / "events.json").write_text(
-            json.dumps(events, indent=2),
-            encoding="utf-8",
-        )
+        join_event = first_event(events, "join_accepted", "client1")
+        reconnect_token = join_event.get("reconnectToken") if join_event else ""
+
+        if reconnect_token:
+            for cycle in range(args.reconnect_cycles):
+                reconnect = start_process(
+                    f"reconnect{cycle + 1}",
+                    ["--ice-connect", room,
+                     "--client-index", "1",
+                     "--reconnect-token", reconnect_token] + mode_flags,
+                    env,
+                    log_dir,
+                )
+                processes.append(reconnect)
+                reconnect_processes.append(reconnect)
+                confirmed = wait_for_event(reconnect, "reconnect_confirmed", 35)
+                if confirmed and confirmed.get("reconnectToken"):
+                    reconnect_token = confirmed["reconnectToken"]
+                wait_for_event(reconnect, "post_reconnect_movement", 10)
+                wait_process(reconnect, 5)
+                terminate_all([reconnect])
+                time.sleep(0.25)
+
+        time.sleep(1.0)
+        events = collect_events(processes)
+        server_evidence = derive_server_evidence(server)
+
         for process in processes:
             print(f"[ICE HARNESS] {process.name} returncode={process.proc.returncode}")
 
-        host_ok = host.proc.returncode == 0
-        clients_ok = all(p.proc.returncode == 0 for p in processes if p.name.startswith("client"))
+        clients_ok = all(p.proc.returncode == 0 for p in initial_clients)
+        reconnect_ok = all(p.proc.returncode == 0 for p in reconnect_processes)
         connected_clients = event_count(events, "ice_connected", "client")
         accepted_clients = event_count(events, "join_accepted", "client")
+        clients_spawned = event_count(events, "spawn_sent", "client")
+        spawn_acks = event_count(events, "spawn_ack", "client")
+        spawn_activated = event_count(events, "spawn_activated", "client")
         snapshots = event_count(events, "snapshot_received", "client")
-        inputs = event_count(events, "input_received", "host")
+        remote_snapshots = event_count(events, "remote_snapshot_received", "client")
+        deaths = event_count(events, "death_confirmed", "client1")
+        respawns = event_count(events, "respawn_confirmed", "client1")
+        post_respawn = event_count(events, "post_respawn_movement", "client1") > 0
+        reconnects = event_count(events, "reconnect_confirmed", "reconnect")
+        post_reconnect = event_count(events, "post_reconnect_movement", "reconnect") >= args.reconnect_cycles
+        movement_validator_reached = server_evidence["movement_validator_reached"]
+        movement_accepted = server_evidence["movement_accepted"]
+        mixed_smoke_fields = parse_smoke_fields(mixed_process) if mixed_process else {}
+        mixed_ok = (
+            not args.mixed_udp_client or
+            (mixed_process is not None and mixed_process.proc.returncode == 0)
+        )
+        mixed_passed = args.mixed_udp_client and mixed_ok
+
+        summary = {
+            "transport": "ice",
+            "full_server_path": True,
+            "protocol_version": 24,
+            "executable": str(EXE),
+            "sha256": exe_sha,
+            "clients_connected": min(connected_clients, args.clients),
+            "clients_joined": accepted_clients,
+            "clients_spawned": clients_spawned,
+            "spawn_acks": spawn_acks,
+            "spawn_activated": spawn_activated,
+            "movement_validator_reached": movement_validator_reached,
+            "movement_accepted": movement_accepted,
+            "remote_snapshot_received": remote_snapshots > 0,
+            "death_respawn_cycles": respawns,
+            "reconnect_cycles": reconnects,
+            "post_respawn_movement": post_respawn,
+            "post_reconnect_movement": post_reconnect,
+            "mixed_udp_ice": args.mixed_udp_client,
+            "mixed_udp_ice_passed": mixed_passed,
+            "mixed_udp_returncode": mixed_process.proc.returncode if mixed_process else None,
+            "mixed_udp_smoke": mixed_smoke_fields,
+            "server_evidence": server_evidence,
+            "events": events,
+        }
+        (log_dir / "events.json").write_text(
+            json.dumps(summary, indent=2),
+            encoding="utf-8",
+        )
 
         print(
             "[ICE HARNESS SUMMARY] "
             f"clients={args.clients} connected={connected_clients} "
-            f"accepted={accepted_clients} snapshots={snapshots} inputs={inputs}"
+            f"accepted={accepted_clients} spawned={clients_spawned} "
+            f"spawnAck={spawn_acks} snapshots={snapshots} "
+            f"remoteSnapshots={remote_snapshots} validator={int(movement_validator_reached)} "
+            f"movementAccepted={int(movement_accepted)} deaths={deaths} "
+            f"respawns={respawns} reconnects={reconnects} mixedUdp={int(mixed_passed)}"
         )
 
         if args.clients > 1 and accepted_clients < args.clients:
@@ -489,18 +768,42 @@ def main():
             print(f"DIAGNOSIS: {diagnose(processes, events)}")
             return 10
 
-        if not host_ok or not clients_ok:
+        if not clients_ok or not reconnect_ok:
             print(f"FAIL: child process failed. DIAGNOSIS: {diagnose(processes, events)}")
             return 11
+
+        if not mixed_ok:
+            print("FAIL: mixed UDP+ICE smoke client failed")
+            return 19
 
         if connected_clients < args.clients or accepted_clients < args.clients or snapshots == 0:
             print(f"FAIL: missing expected events. DIAGNOSIS: {diagnose(processes, events)}")
             return 12
 
-        if inputs < args.clients:
-            print("FAIL: host did not receive input from every client")
+        if clients_spawned < args.clients or spawn_acks < args.clients or spawn_activated < args.clients:
+            print("FAIL: ICE clients did not complete authoritative spawn lifecycle")
             print(f"DIAGNOSIS: {diagnose(processes, events)}")
             return 13
+
+        if not movement_validator_reached or not movement_accepted:
+            print("FAIL: server did not prove Stage 3A movement validation over ICE")
+            return 14
+
+        if remote_snapshots == 0:
+            print("FAIL: no ICE client saw a remote authoritative player snapshot")
+            return 15
+
+        if respawns < args.death_respawn_cycles or deaths < args.death_respawn_cycles:
+            print("FAIL: ICE death/respawn cycle count was not met")
+            return 16
+
+        if args.death_respawn_cycles > 0 and not post_respawn:
+            print("FAIL: no post-respawn movement event was observed")
+            return 17
+
+        if reconnects < args.reconnect_cycles or not post_reconnect:
+            print("FAIL: ICE reconnect cycle count was not met")
+            return 18
 
         print("[ICE HARNESS] PASS")
         return 0

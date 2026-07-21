@@ -14,6 +14,7 @@
 #include "network/packets.h"
 #include "network/game-transport.h"
 #include "network/ice/ice-agent.h"
+#include "network/movement-validation.h"
 #include "network/simulation-constants.h"
 #include "physics/physics-types.h"
 #include "physics/config.h"
@@ -84,11 +85,71 @@ struct ServerInput
     glm::vec2 wish{0.0f};
     glm::vec3 camForward{1.0f, 0.0f, 0.0f};
     float yaw = 0.0f;
+    float lookPitch = 0.0f;
     bool jumpHeld = false;
     bool dashPressed = false;
+    bool downDashPressed = false;
     bool attackPressed = false;
     bool freezeHeld = false;
     uint32_t tick = 0;
+};
+
+enum class TransportKind : uint8_t
+{
+    Udp,
+    Ice,
+    Relay
+};
+
+struct TransportConnectionId
+{
+    TransportKind kind = TransportKind::Udp;
+    uint64_t value = 0;
+
+    bool operator==(const TransportConnectionId& other) const
+    {
+        return kind == other.kind && value == other.value;
+    }
+};
+
+struct TransportReceiveEvent
+{
+    TransportConnectionId connectionId{};
+    sockaddr_in remoteEndpoint{};
+    const uint8_t* payload = nullptr;
+    int payloadBytes = 0;
+    uint64_t receivedAtMs = 0;
+    TransportKind transportKind = TransportKind::Udp;
+};
+
+struct PendingServerTransport
+{
+    TransportConnectionId connectionId{};
+    sockaddr_in diagnosticEndpoint{};
+    uint64_t connectedAtMs = 0;
+    std::unique_ptr<IGameTransport> transport;
+};
+
+struct ServerPacketStats
+{
+    uint64_t recvAttempts = 0;
+    uint64_t recvWouldBlock = 0;
+    uint64_t recvErrors = 0;
+    uint64_t malformedPackets = 0;
+    uint64_t protocolMismatches = 0;
+    uint64_t unknownPacketTypes = 0;
+    uint64_t helloPackets = 0;
+    uint64_t joinPackets = 0;
+    uint64_t reconnectPackets = 0;
+    uint64_t inputPackets = 0;
+};
+
+struct ServerPacketProcessResult
+{
+    bool decoded = false;
+    bool handled = false;
+    bool transportConsumed = false;
+    uint32_t playerId = 0;
 };
 
 struct PositionHistoryEntry
@@ -103,6 +164,8 @@ struct ServerPlayer
     uint32_t id = 0;
     std::string name;
     sockaddr_in addr{};
+    TransportConnectionId connectionId{};
+    bool hasConnectionId = false;
     glm::vec3 pos{0.0f};
     glm::vec3 vel{0.0f};
     float yaw = 0.0f;
@@ -192,6 +255,12 @@ struct ServerPlayer
     int deaths = 0;
     uint16_t transformEpoch = 0;
 
+    // ── Shared movement parity and Stage 3A report validation ─────────
+    MovementState movement;
+    MovementValidationCounters movementValidation;
+    uint32_t lastMovementSequence = 0;
+    bool hasMovementSequence = false;
+
     // ── Authoritative transform acknowledgement gate ──────────────────
     // When the server sets a discontinuous transform (spawn, respawn,
     // teleport, map change), it increments the epoch and marks this flag.
@@ -234,18 +303,6 @@ enum class ReliableGameplayEventQueueResult : uint8_t
     ConnectionUnavailable,
     BacklogSaturated
 };
-
-// ── Movement validation constants ────────────────────────────────────
-// Derived from PHYS config and gameplay values in physics/config.h:
-//   DASH_IMPULSE = 100, jump strength = 19, gravity = -58,
-//   MAX_FALL_SPEED = 400, DOWN_DASH_SPEED = -100.
-// Knockback can add ~120 horizontal, ~80 vertical.
-constexpr float MAX_HORIZONTAL_SPEED = 150.0f;   // dash 100 + knockback ~50
-constexpr float MAX_UPWARD_SPEED    = 80.0f;     // knockback + jump
-constexpr float MAX_DOWNWARD_SPEED  = 400.0f;    // matches MAX_FALL_SPEED
-constexpr float HORIZONTAL_NET_TOL  = 4.0f;      // ~2 units per tick + buffer
-constexpr float VERTICAL_NET_TOL    = 8.0f;      // ~6.7 units per tick + buffer
-constexpr float FALL_PREDICTION_TOL = 15.0f;     // generous for packet delay/predict mismatch
 
 enum class ServerNpcState {
     Chase,
@@ -402,17 +459,29 @@ bool serverRayTriangle(const glm::vec3& origin, const glm::vec3& direction,
 bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
                          float maxDist, const HeadlessWorld& world,
                          glm::vec3& outHitPos, glm::vec3& outNormal);
+const char* transportKindName(TransportKind kind);
+TransportConnectionId makeUdpConnectionId(const sockaddr_in& endpoint);
+TransportConnectionId allocateIceConnectionId();
+sockaddr_in legacyEndpointForTransportConnection(TransportConnectionId id);
+bool playerOwnsConnectionSource(const ServerPlayer& player,
+                                const sockaddr_in* endpoint,
+                                const TransportConnectionId* connectionId);
 
 // Packet handlers
 void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                  std::unordered_map<uint32_t, ServerPlayer>& players,
                  uint32_t& nextPlayerId, uint32_t tick, uint64_t& totalPacketsOut,
-                 const HeadlessWorld* world = nullptr);
+                 const HeadlessWorld* world = nullptr,
+                 const TransportConnectionId* connectionId = nullptr,
+                 std::unique_ptr<IGameTransport>* claimedTransport = nullptr);
 void handleInputPacket(const char* buffer, int bytes,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
                        const HeadlessWorld& world,
                        uint32_t& nextEntityId,
-                       std::unordered_map<uint32_t, ServerNpc>& npcs);
+                       std::unordered_map<uint32_t, ServerNpc>& npcs,
+                       const sockaddr_in* from = nullptr,
+                       uint32_t serverTick = 0,
+                       const TransportConnectionId* connectionId = nullptr);
 void handleDisconnect(std::unordered_map<uint32_t, ServerPlayer>& players,
                       const char* buffer);
 void handleSpawnNpcRequest(const char* buffer, int bytes,
@@ -470,15 +539,6 @@ void tickServerSwordCombat(SOCKET sock,
                            std::unordered_map<uint32_t, ServerPlayer>& players,
                            const HeadlessWorld& world,
                            float dt, uint32_t tick, uint64_t& totalPacketsOut);
-void tickServerIceTransports(SOCKET sock,
-                             std::unordered_map<uint32_t, ServerPlayer>& players,
-                             std::unordered_map<uint32_t, ServerNpc>& npcs,
-                             std::unordered_map<uint32_t, ServerProjectile>& projectiles,
-                             uint32_t& nextEntityId,
-                             uint32_t& nextPlayerId,
-                             std::vector<std::unique_ptr<IGameTransport>>& pendingIceTransports,
-                             const HeadlessWorld& world,
-                             uint32_t tick, uint64_t& totalPacketsOut);
 bool serverSendToPlayer(SOCKET sock, const ServerPlayer& player,
                          const void* data, size_t size);
 void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
@@ -493,7 +553,7 @@ void handleChatMessage(SOCKET sock, const char* buffer, int bytes,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
                        uint32_t tick, uint64_t& totalPacketsOut);
 void handlePing(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
-                uint32_t tick);
+                uint32_t tick, const ServerPlayer* authenticatedPlayer = nullptr);
 void handleNpcDamageRequest(SOCKET sock, const char* buffer, int bytes,
                             const sockaddr_in& from,
                             std::unordered_map<uint32_t, ServerPlayer>& players,
@@ -507,10 +567,32 @@ void handleServerCommand(const char* buffer, int bytes,
 void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
                        uint32_t& nextPlayerId, uint32_t tick, uint64_t& totalPacketsOut,
-                       const HeadlessWorld* world = nullptr);
+                       const HeadlessWorld* world = nullptr,
+                       const TransportConnectionId* connectionId = nullptr,
+                       std::unique_ptr<IGameTransport>* claimedTransport = nullptr);
 void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                             std::unordered_map<uint32_t, ServerPlayer>& players,
-                            uint32_t tick, uint64_t& totalPacketsOut);
+                            uint32_t tick, uint64_t& totalPacketsOut,
+                            const TransportConnectionId* connectionId = nullptr,
+                            std::unique_ptr<IGameTransport>* claimedTransport = nullptr);
+
+ServerPacketProcessResult processServerPacket(
+    SOCKET sock,
+    const TransportReceiveEvent& event,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs,
+    std::unordered_map<uint32_t, ServerProjectile>& projectiles,
+    uint32_t& nextPlayerId,
+    uint32_t& nextEntityId,
+    uint32_t& nextProjectileId,
+    const HeadlessWorld& world,
+    uint32_t tick,
+    uint64_t& totalPacketsIn,
+    uint64_t& totalPacketsOut,
+    ServerPacketStats* stats = nullptr,
+    DisagreementRetransmitState* retransmitState = nullptr,
+    ServerPlayer* authenticatedPlayer = nullptr,
+    std::unique_ptr<IGameTransport>* claimedTransport = nullptr);
 
 // Generate a secure reconnect token
 std::string generateReconnectToken();
@@ -668,7 +750,7 @@ struct ListenServerState
     uint64_t lastIceCoordinatorPollMs = 0;
     // Pending ICE transports: agents created for new clients but not yet
     // associated with a player (waiting for first Hello packet).
-    std::vector<std::unique_ptr<IGameTransport>> pendingIceTransports;
+    std::vector<PendingServerTransport> pendingIceTransports;
 };
 
 bool startListenServer(ListenServerState& state, uint16_t port,
@@ -694,17 +776,22 @@ extern std::vector<std::unique_ptr<PendingIcePeer>> gPendingIcePeers;
 bool initServerIceListener(ListenServerState& state);
 void tickIceCoordinator(ListenServerState& state);
 void tickIcePeers(const std::string& serverCode, const std::string& iceSessionId,
-                  std::vector<std::unique_ptr<IGameTransport>>& pendingIceTransports);
+                  std::vector<PendingServerTransport>& pendingIceTransports);
 bool waitForAgentState(class IceAgent& agent, IceAgentState target, int timeoutMs);
 void tickServerIceTransports(SOCKET sock,
                              std::unordered_map<uint32_t, ServerPlayer>& players,
                              std::unordered_map<uint32_t, ServerNpc>& npcs,
                              std::unordered_map<uint32_t, ServerProjectile>& projectiles,
                              uint32_t& nextEntityId,
+                             uint32_t& nextProjectileId,
                              uint32_t& nextPlayerId,
-                             std::vector<std::unique_ptr<IGameTransport>>& pendingIceTransports,
+                             std::vector<PendingServerTransport>& pendingIceTransports,
                              const HeadlessWorld& world,
-                             uint32_t tick, uint64_t& totalPacketsOut);
+                             uint32_t tick,
+                             uint64_t& totalPacketsIn,
+                             uint64_t& totalPacketsOut,
+                             ServerPacketStats* stats = nullptr,
+                             DisagreementRetransmitState* retransmitState = nullptr);
 bool serverSendToPlayer(SOCKET sock, const ServerPlayer& player, const void* data, size_t size);
 uint32_t serverReliableEventSessionId();
 uint32_t nextReliableGameplayEventId();

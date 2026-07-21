@@ -1,10 +1,10 @@
-// 07 21 2026, 10 54
+// 07 21 2026, 17 25
 /* purpose
-* Implements the shared movement kernel and pure formula helpers.
+* Implements the shared movement kernel, pure formula helpers, and contact reset consumer.
 * Preserves local collision boundaries by splitting pre and post collision phases.
-* Reuses one formula for walking, gravity, jump, impulse, dash, down dash, and freeze.
+* Reuses one formula for walking, gravity, jump, impulse, dash, down dash, freeze, and touch reset.
 * Does NOT perform collision sweeps, packet handling, rendering, audio, or authority decisions.
-* Does NOT migrate universal contact generation, Ground Return, or server prediction history.
+* Does NOT generate collision facts, migrate networking, or own server prediction history.
 * Does NOT own presentation state or mutate Player directly.
 */
 
@@ -54,17 +54,6 @@ void applyBasicFrictionOverrideRecovery(MovementState& state,
     state.dash.tickPerfectDash = false;
 }
 
-void applyGroundedResourceSafetyReset(MovementState& state,
-                                      const MovementConfig& config,
-                                      bool groundedThisFrame)
-{
-    if (!groundedThisFrame)
-        return;
-
-    state.jump.airJumpsLeft = config.maximumAirJumps;
-    restoreSpecialAbilityAvailability(state);
-}
-
 void applyBasicLandingTimers(MovementState& state,
                              const MovementConfig& config,
                              bool previousStableOnGround,
@@ -91,6 +80,60 @@ void applyBasicLandingTimers(MovementState& state,
     }
 
     state.ground.wasOnGround = state.ground.stableOnGround;
+}
+
+uint8_t saturatingAddContactCount(uint8_t value, uint16_t add)
+{
+    const uint16_t next = static_cast<uint16_t>(value) + add;
+    return static_cast<uint8_t>(std::min<uint16_t>(next, 255));
+}
+
+MovementAbilityResetResult restoreTouchAvailability(MovementState& state,
+                                                    const MovementConfig* config,
+                                                    bool includeAirJump)
+{
+    MovementAbilityResetResult result;
+
+    if (includeAirJump && config) {
+        result.airJumpRestored =
+            state.jump.airJumpsLeft != config->maximumAirJumps ||
+            !state.jump.airJumpArmed ||
+            state.jump.airJumpLocked;
+        state.jump.airJumpsLeft = config->maximumAirJumps;
+        state.jump.airJumpArmed = true;
+        state.jump.airJumpLocked = false;
+    }
+
+    result.dashRestored = !state.dash.dashAvailable;
+    state.dash.dashAvailable = true;
+
+    result.groundReturnRestored = !state.groundReturn.available;
+    state.groundReturn.available = true;
+
+    result.downDashRestored = !state.downDash.available;
+    state.downDash.available = true;
+
+    result.freezeRestored = !state.freeze.available;
+    state.freeze.available = true;
+
+    result.anyRestored =
+        result.airJumpRestored ||
+        result.dashRestored ||
+        result.downDashRestored ||
+        result.freezeRestored ||
+        result.groundReturnRestored;
+    return result;
+}
+
+void markContactEventKind(MovementStepEvents& events, MovementContactKind kind)
+{
+    if (kind == MovementContactKind::Ground ||
+        kind == MovementContactKind::Step)
+        events.touchedGround = true;
+    else if (kind == MovementContactKind::Wall)
+        events.touchedWall = true;
+    else if (kind == MovementContactKind::Ceiling)
+        events.touchedCeiling = true;
 }
 
 } // namespace
@@ -368,12 +411,202 @@ glm::vec3 calculateEffectiveMovementVelocity(const MovementState& state,
     return view.effectiveBaseVelocity + view.effectiveExternalImpulse;
 }
 
+MovementContactKind classifyMovementContactKindFromNormal(const glm::vec3& normal,
+                                                          const MovementConfig& config,
+                                                          bool grounded,
+                                                          bool step)
+{
+    if (step)
+        return MovementContactKind::Step;
+    if (!movementIsFinite(normal))
+        return MovementContactKind::StaticWorld;
+
+    const float walkableDot =
+        config.walkableSlopeDot > 0.0f ? config.walkableSlopeDot : 0.7f;
+    if (grounded && normal.z > 0.0f)
+        return MovementContactKind::Ground;
+    if (normal.z > walkableDot)
+        return MovementContactKind::Ground;
+    if (normal.z > 0.0f)
+        return MovementContactKind::Slope;
+    if (normal.z < -walkableDot)
+        return MovementContactKind::Ceiling;
+    return MovementContactKind::Wall;
+}
+
+MovementContact makeStaticWorldMovementContact(MovementContactKind kind,
+                                               uint64_t simulationTick,
+                                               MovementLifecycleIdentity targetLifecycle,
+                                               const glm::vec3& point,
+                                               const glm::vec3& normal,
+                                               uint32_t surfaceId,
+                                               float penetrationDepth,
+                                               bool resetsAbilities)
+{
+    MovementContact contact;
+    contact.kind = kind;
+    contact.source = MovementContactSource::StaticWorld;
+    contact.targetLifecycle = targetLifecycle;
+    contact.surfaceId = surfaceId;
+    contact.simulationTick = simulationTick;
+    contact.point = movementIsFinite(point) ? point : glm::vec3(0.0f);
+    contact.normal =
+        movementIsFinite(normal) ? normal : glm::vec3(0.0f, 0.0f, 1.0f);
+    contact.penetrationDepth = penetrationDepth;
+    contact.strength = penetrationDepth;
+    contact.resetsAbilities = resetsAbilities;
+    return contact;
+}
+
+MovementContact makeEntityMovementContact(MovementContactKind kind,
+                                          MovementContactSource source,
+                                          uint32_t sourceEntityId,
+                                          uint64_t contactId,
+                                          uint64_t sourceEventId,
+                                          uint64_t simulationTick,
+                                          MovementLifecycleIdentity targetLifecycle,
+                                          const glm::vec3& point,
+                                          const glm::vec3& normal,
+                                          float strength,
+                                          bool resetsAbilities)
+{
+    MovementContact contact;
+    contact.kind = kind;
+    contact.source = source;
+    contact.targetLifecycle = targetLifecycle;
+    contact.contactId = contactId;
+    contact.sourceEventId = sourceEventId;
+    contact.sourceEntityId = sourceEntityId;
+    contact.simulationTick = simulationTick;
+    contact.point = movementIsFinite(point) ? point : glm::vec3(0.0f);
+    contact.normal =
+        movementIsFinite(normal) ? normal : glm::vec3(0.0f, 0.0f, 1.0f);
+    contact.strength = strength;
+    contact.resetsAbilities = resetsAbilities;
+    return contact;
+}
+
+MovementContact makeProjectileMovementContact(uint32_t projectileId,
+                                              uint64_t eventId,
+                                              uint64_t simulationTick,
+                                              MovementLifecycleIdentity targetLifecycle,
+                                              const glm::vec3& point,
+                                              const glm::vec3& normal,
+                                              MovementContactSource source)
+{
+    return makeEntityMovementContact(MovementContactKind::Projectile,
+                                     source,
+                                     projectileId,
+                                     0,
+                                     eventId,
+                                     simulationTick,
+                                     targetLifecycle,
+                                     point,
+                                     normal,
+                                     0.0f,
+                                     true);
+}
+
+MovementContact makeExplosionMovementContact(uint64_t explosionEventId,
+                                             uint32_t sourceEntityId,
+                                             uint64_t simulationTick,
+                                             MovementLifecycleIdentity targetLifecycle,
+                                             const glm::vec3& center,
+                                             float strength)
+{
+    return makeEntityMovementContact(MovementContactKind::Explosion,
+                                     MovementContactSource::Explosion,
+                                     sourceEntityId,
+                                     0,
+                                     explosionEventId,
+                                     simulationTick,
+                                     targetLifecycle,
+                                     center,
+                                     glm::vec3(0.0f, 0.0f, 1.0f),
+                                     strength,
+                                     true);
+}
+
+MovementAbilityResetResult resetTouchAbilities(MovementState& state,
+                                               const MovementConfig& config)
+{
+    return restoreTouchAvailability(state, &config, true);
+}
+
+MovementContactConsumeResult consumeMovementContacts(
+    MovementState& state,
+    const MovementConfig& config,
+    const MovementContactSet& contacts,
+    MovementContactHistory& history,
+    MovementStepEvents& events)
+{
+    MovementContactConsumeResult result;
+    result.contactOverflowCount = contacts.overflowCount;
+    result.duplicateContactCount =
+        static_cast<uint8_t>(std::min<uint16_t>(contacts.duplicateCount, 255));
+
+    history.ensureLifecycle(state.lifecycle);
+
+    bool acceptedResetContact = false;
+    for (const MovementContact& contact : contacts) {
+        events.contacts.addDeduplicated(contact);
+        markContactEventKind(events, contact.kind);
+
+        if (!movementContactMatchesLifecycle(contact, state.lifecycle)) {
+            result.ignoredLifecycleCount =
+                saturatingAddContactCount(result.ignoredLifecycleCount, 1);
+            continue;
+        }
+        if (!contact.resetsAbilities)
+            continue;
+
+        result.consumedAnyContact = true;
+        result.qualifyingContactCount =
+            saturatingAddContactCount(result.qualifyingContactCount, 1);
+
+        if (history.containsStable(contact)) {
+            result.duplicateContactCount =
+                saturatingAddContactCount(result.duplicateContactCount, 1);
+            continue;
+        }
+
+        history.recordStable(contact);
+        acceptedResetContact = true;
+    }
+
+    result.contactOverflowCount =
+        static_cast<uint16_t>(result.contactOverflowCount + events.contacts.overflowCount);
+    result.duplicateContactCount = saturatingAddContactCount(
+        result.duplicateContactCount, events.contacts.duplicateCount);
+
+    events.qualifyingContactCount = saturatingAddContactCount(
+        events.qualifyingContactCount, result.qualifyingContactCount);
+    events.dedupedContactCount = saturatingAddContactCount(
+        events.dedupedContactCount, result.duplicateContactCount);
+    events.contactOverflowCount =
+        static_cast<uint16_t>(events.contactOverflowCount + result.contactOverflowCount);
+
+    if (!acceptedResetContact)
+        return result;
+
+    result.appliedReset = true;
+    result.reset = resetTouchAbilities(state, config);
+    if (!result.reset.anyRestored)
+        return result;
+
+    events.abilitiesReset = true;
+    events.resetAirControlAbilities = true;
+    events.airJumpRestored = result.reset.airJumpRestored;
+    events.dashRestored = result.reset.dashRestored;
+    events.downDashRestored = result.reset.downDashRestored;
+    events.freezeRestored = result.reset.freezeRestored;
+    events.groundReturnRestored = result.reset.groundReturnRestored;
+    return result;
+}
+
 void restoreSpecialAbilityAvailability(MovementState& state)
 {
-    state.dash.dashAvailable = true;
-    state.groundReturn.available = true;
-    state.downDash.available = true;
-    state.freeze.available = true;
+    restoreTouchAvailability(state, nullptr, false);
 }
 
 void resetSpecialMovementLifecycleState(MovementState& state)
@@ -383,6 +616,7 @@ void resetSpecialMovementLifecycleState(MovementState& state)
     state.freeze = MovementFreezeState{};
     state.groundReturn = MovementGroundReturnState{};
     state.dashMomentumProtection = MovementDashMomentumProtectionState{};
+    state.contactHistory.clear();
 }
 
 bool shouldWalkingOverwriteDashMomentum(const MovementState& state,
@@ -725,6 +959,20 @@ static MovementStepResult applyPostCollisionMovementInternal(
     if (movementIsFinite(collision.groundNormal))
         state.ground.groundNormal = collision.groundNormal;
 
+    MovementContactSet contacts = collision.contacts;
+    if (contacts.empty() && collision.onGround) {
+        contacts.addDeduplicated(makeStaticWorldMovementContact(
+            MovementContactKind::Ground,
+            collision.simulationTick,
+            state.lifecycle,
+            state.position,
+            state.ground.groundNormal,
+            0,
+            0.0f));
+    }
+    consumeMovementContacts(
+        state, config, contacts, state.contactHistory, events);
+
     if (!collision.onGround && command.movementDirectionPressed) {
         if (state.dash.dashMovementTicks < 99)
             ++state.dash.dashMovementTicks;
@@ -752,7 +1000,6 @@ static MovementStepResult applyPostCollisionMovementInternal(
         applySpecialMovementPostCollision(state, command, config, dt, events);
     applyBasicJump(state, command, config, dt, &events);
     applyBasicFrictionOverrideRecovery(state, command);
-    applyGroundedResourceSafetyReset(state, config, collision.onGround);
     applyBasicFriction(state, config, dt);
     applyBasicLandingTimers(
         state, config, previousStableOnGround, previousAirborneSeconds, dt, events);

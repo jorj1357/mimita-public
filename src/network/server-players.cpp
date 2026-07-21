@@ -1,14 +1,54 @@
+// 07 21 2026, 17 10
+/* purpose
+* Owns authoritative server player names, spawning, collision, simulation, and snapshot entity state.
+* Keeps server Player lifecycle, movement parity state, and weapon spawn inventory synchronized.
+* Provides small helpers used by the dedicated and listen-server loops.
+* Does NOT parse client packets, render players, or define network packet layouts.
+* Does NOT own weapon definitions, projectile simulation, or client prediction.
+* Does NOT let stale movement sequences survive spawn, respawn, teleport, or death.
+*/
+
 #include "network/server.h"
 #include "network/network-weapons.h"
+#include "physics/movement/movement-conversion.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
 #include "debug/debug-log.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
 
 namespace MimitaNet {
+namespace {
+
+float safeServerSizeScale(float sizeScale)
+{
+    return std::isfinite(sizeScale) && sizeScale > 0.0f ? sizeScale : 1.0f;
+}
+
+void syncServerMovementRuntime(ServerPlayer& player, bool movementEnabled)
+{
+    player.movement.lifecycle = MovementLifecycleIdentity{
+        player.spawnGeneration,
+        static_cast<uint32_t>(player.transformEpoch)};
+    player.movement.movementEnabled =
+        movementEnabled && !player.dead && player.spawnState == ServerPlayer::Active;
+    player.movement.position = player.pos;
+    if (!movementIsFinite(player.movement.externalImpulse))
+        player.movement.externalImpulse = glm::vec3(0.0f);
+    player.movement.baseVelocity = player.vel - player.movement.externalImpulse;
+    player.movement.lastInputMoveAxes = movementClampUnitOrZero(player.input.wish);
+    player.movement.yaw = player.yaw;
+    player.movement.sizeScale = safeServerSizeScale(player.sizeScale);
+    player.movement.ground.onGround = player.onGround;
+    player.movement.ground.stableOnGround = player.onGround;
+    player.movement.ground.hasWorldContact = player.onGround;
+    player.movement.dash.dashAvailable = player.dashAvailable;
+}
+
+} // namespace
 
 void copyName(char (&dst)[MAX_NAME_BYTES], const std::string& name)
 {
@@ -221,6 +261,14 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
 
     // Clear transient combat/reload state
     player.projectileFireCooldown = 0.0f;
+    player.input = {};
+    player.inputStateFlags = 0;
+    player.attackQueued = false;
+    player.clientStateUpdated = false;
+    player.dashAvailable = true;
+    player.onGround = false;
+    resetServerMovementForAuthoritativeLifecycle(
+        player, makeCurrentRuntimeMovementConfig());
 
     printf("[SERVER SPAWN RESET] playerId=%u spawnGeneration=%u ownedWeapons=%zu"
            " isInitialSpawn=%d\n",
@@ -235,6 +283,8 @@ void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitia
 {
     resetPlayerForSpawn(player, isInitialSpawn);
     player.spawnState = ServerPlayer::AwaitingSpawnAck;
+    resetServerMovementForAuthoritativeLifecycle(
+        player, makeCurrentRuntimeMovementConfig());
 
     PlayerRespawnedPacket spawnSync{};
     spawnSync.header.type = PACKET_PLAYER_RESPAWNED;
@@ -373,6 +423,8 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
     if (p.dead)
     {
         p.vel = glm::vec3(0.0f);
+        p.movement.externalImpulse = glm::vec3(0.0f);
+        syncServerMovementRuntime(p, false);
         p.projectileFireCooldown = std::max(0.0f, p.projectileFireCooldown - SERVER_DT);
         // Instant respawn request from client Space press
         if (p.instantRespawnRequested)
@@ -406,6 +458,7 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
             p.dashAvailable = true;
             p.onGround = false;
             p.respawnSeconds = 0.0f;
+            syncServerMovementRuntime(p, false);
             printf("%s [SERVER RESPAWN] playerId=%u position=(%.2f,%.2f,%.2f) epoch=%u spawnpoints=%zu spawnGeneration=%u health=%d\n",
                    serverTimestamp(), p.id, p.pos.x, p.pos.y, p.pos.z, (unsigned)p.transformEpoch,
                    world.spawnPoints.size(), p.spawnGeneration, p.health);
@@ -417,7 +470,9 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
     if (p.spawnState != ServerPlayer::Active)
     {
         p.vel = glm::vec3(0.0f);
+        p.movement.externalImpulse = glm::vec3(0.0f);
         p.clientStateUpdated = false;
+        syncServerMovementRuntime(p, false);
         return;
     }
 
@@ -427,6 +482,7 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
     {
         p.clientStateUpdated = false;
         resolveWorldCollision(p, world);
+        syncServerMovementRuntime(p, true);
         return;
     }
 
@@ -486,6 +542,7 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
     resolveWorldCollision(p, world);
     if (p.onGround)
         p.dashAvailable = true;
+    syncServerMovementRuntime(p, true);
 }
 
 void pushPositionHistory(ServerPlayer& p, uint32_t tick)

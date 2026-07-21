@@ -1,3 +1,13 @@
+// 07 21 2026, 17 25
+/* purpose
+* Runs GLB collision snap, floor recovery, rotation safety, and final safety passes.
+* Emits movement contact facts from recovery contacts without changing safety correction behavior.
+* Maintains collision trace diagnostics for local physics verification.
+* Does NOT own movement reset formulas, networking, rendering effects, audio, or damage.
+* Does NOT change projectile, weapon, death, respawn, ICE, or packet behavior.
+* Does NOT replace sweep-slide, body, or block collision phases.
+*/
+
 #include "physics/movement/physics-collision-glb-safety.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/movement/physics-collision-glb-sweep.h"
@@ -153,6 +163,14 @@ void doFloorRecovery(Player& p, const World& world, bool& groundedThisFrame)
                 p.vel.z = std::min(p.vel.z, 0.0f);
                 groundedThisFrame = true;
                 liftAmount = lift;
+                const CollisionTriangle& tri = world.collisionMesh.triangles[bestFloorTri];
+                appendPlayerMovementContact(
+                    p,
+                    MovementContactKind::Ground,
+                    tri.normal,
+                    glm::vec3(fCap.a.x, fCap.a.y, bestFloorZ),
+                    lift,
+                    bestFloorTri);
             }
         }
 

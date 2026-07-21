@@ -1,3 +1,13 @@
+// 07 21 2026, 17 10
+/* purpose
+* Owns authoritative server damage application and confirmed damage event packet creation.
+* Bridges server-owned knockback into shared movement external impulse state.
+* Keeps kill, death, health, and damage-confirmed replication decisions server-side.
+* Does NOT trust client health, ammo, score, damage, projectile hits, or knockback outcomes.
+* Does NOT simulate movement frames, poll sockets, or render damage presentation.
+* Does NOT let death leave active movement impulse state behind.
+*/
+
 #include "network/server.h"
 
 #include <algorithm>
@@ -54,6 +64,7 @@ ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>&
     const int clampedDamage = std::clamp(damage, 1, 500);
     target.health = std::max(0, target.health - clampedDamage);
     target.vel += knockback;
+    recordServerMovementExternalImpulse(target, knockback);
     result.applied = true;
     result.healthAfter = target.health;
 
@@ -62,6 +73,9 @@ ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>&
         target.dead = true;
         target.respawnSeconds = 2.0f;
         target.vel = glm::vec3(0.0f);
+        target.movement.movementEnabled = false;
+        target.movement.baseVelocity = glm::vec3(0.0f);
+        target.movement.externalImpulse = glm::vec3(0.0f);
         target.attackQueued = false;
         target.deaths += 1;
         if (attackerPlayerId != target.id)

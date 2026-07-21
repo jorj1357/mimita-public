@@ -181,6 +181,9 @@ static void physicsMainUpdate_Internal(
     if (dt <= 0.0f)
         return;
 
+    ++p.movementSimulationTick;
+    p.movementContacts.clear();
+
     MovementCommand command = buildMovementCommandFromPhysicsInputs(
         p,
         wishMoveXY,
@@ -195,6 +198,7 @@ static void physicsMainUpdate_Internal(
         freezeHeld,
         freezePressed,
         inputMovementHeldDuration);
+    command.clientSimulationTick = p.movementSimulationTick;
 
     MovementState movementState =
         movementStateFromPlayer(p, command.lifecycle);
@@ -233,6 +237,8 @@ static void physicsMainUpdate_Internal(
     collisionFeedback.hasWorldContact = p.ground.hasWorldContact;
     collisionFeedback.realWorldContactThisFrame =
         p.ground.realWorldContactThisFrame;
+    collisionFeedback.simulationTick = command.clientSimulationTick;
+    collisionFeedback.contacts = p.movementContacts;
 
     const bool prevOnGround = collisionState.ground.onGround;
     const float previousAirborneTime =

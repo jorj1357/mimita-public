@@ -1,3 +1,13 @@
+// 07 21 2026, 17 10
+/* purpose
+* Owns client-side remote entity interpolation and remote movement presentation triggers.
+* Filters remote snapshots by server tick, spawn generation, and transform epoch.
+* Applies accepted snapshot targets to rendered remote player replicas.
+* Does NOT parse sockets, validate client movement reports, or own packet schemas.
+* Does NOT simulate authoritative server movement or local prediction.
+* Does NOT interpolate across respawn, teleport, or stale lifecycle boundaries.
+*/
+
 #include "network/multiplayer-context.h"
 #include "network/net_common.h"
 #include "avatar/avatar.h"
@@ -40,19 +50,37 @@ SnapshotTransform transformFromEntity(const SnapshotEntity& entity)
     transform.directionChangeSerial = entity.directionChangeSerial;
     transform.equipSerial = entity.equipSerial;
     transform.freezeSerial = entity.freezeSerial;
+    transform.spawnGeneration = entity.spawnGeneration;
     return transform;
 }
 
 } // anonymous namespace
 
-void pushInterpolationTarget(
+bool pushInterpolationTarget(
     EntityInterpolationState& interpolation,
     const SnapshotEntity& entity,
     uint32_t serverTick)
 {
+    if (interpolation.hasTarget &&
+        !movementSnapshotIsFresh(serverTick,
+                                 entity.spawnGeneration,
+                                 entity.transformEpoch,
+                                 interpolation.lastServerTick,
+                                 interpolation.lastSpawnGeneration,
+                                 interpolation.lastSnapshotTransformEpoch))
+    {
+        return false;
+    }
+
     SnapshotTransform next = transformFromEntity(entity);
     next.serverTick = serverTick;
-    if (interpolation.hasTarget) {
+    const bool newLifecycle = interpolation.hasTarget &&
+        ((entity.spawnGeneration != 0 &&
+          entity.spawnGeneration != interpolation.lastSpawnGeneration) ||
+         (entity.transformEpoch != 0 &&
+          entity.transformEpoch != interpolation.lastTransformEpoch));
+
+    if (interpolation.hasTarget && !newLifecycle) {
         interpolation.previous = interpolation.target;
         interpolation.hasPrevious = true;
     } else {
@@ -63,6 +91,11 @@ void pushInterpolationTarget(
     interpolation.hasTarget = true;
     interpolation.networkEntityId = entity.networkEntityId;
     interpolation.displayName = entity.displayName;
+    interpolation.lastServerTick = serverTick;
+    interpolation.lastSpawnGeneration = entity.spawnGeneration;
+    if (entity.transformEpoch != 0)
+        interpolation.lastSnapshotTransformEpoch = entity.transformEpoch;
+    return true;
 }
 
 static void resetPresentationAfterRespawn(Player& player, const SnapshotTransform& target)
@@ -242,6 +275,7 @@ void updateRenderedReplica(
     if (player.networkShootEffectTimer > 0.0f)
         player.networkWeaponState |= 1u;
     player.sizeScale = interpolation.target.sizeScale;
+    player.spawnGeneration = interpolation.target.spawnGeneration;
     player.username = interpolation.displayName;
     player.networkStateFlags = interpolation.target.stateFlags;
     player.ground.onGround = interpolation.target.onGround;

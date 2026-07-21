@@ -9,6 +9,9 @@ struct IceTestOptions
     bool once = false;
     int timeoutSeconds = 60;
     int expectedClients = 1;
+    int deathRespawnCycles = 0;
+    int clientIndex = 0;
+    std::string reconnectToken;
 };
 
 bool runIceHostOnly(const IceTestOptions& opts);

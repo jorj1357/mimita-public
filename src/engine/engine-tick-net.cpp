@@ -1,3 +1,13 @@
+// 07 21 2026, 17 10
+/* purpose
+* Owns per-frame multiplayer integration between engine state, local player state, and network tick.
+* Builds client movement input packets from shared physics results and presentation serials.
+* Applies network reconciliation, weapon result processing, and remote network updates.
+* Does NOT define packet schemas, server movement validation, or authoritative damage rules.
+* Does NOT run the main physics simulation or own renderer/world loading code.
+* Does NOT invent movement availability separate from Player shared movement state.
+*/
+
 #include "engine/engine-tick-net.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
@@ -58,8 +68,23 @@ void engineTickNet(Engine& engine, float dt)
         MimitaNet::MpInput mpInput;
         mpInput.position = player.pos;
         mpInput.velocity = player.vel;
+        mpInput.externalImpulse = player.externalImpulse;
         mpInput.yaw = camera.yaw;
+        mpInput.lookPitch = camera.pitch;
         mpInput.camForward = camera.front;
+        mpInput.movementSimulationTick = player.movementSimulationTick;
+        mpInput.onGround = player.ground.onGround;
+        mpInput.stableOnGround = player.ground.stableOnGround;
+        mpInput.hasWorldContact = player.ground.hasWorldContact;
+        mpInput.realWorldContactThisFrame = player.ground.realWorldContactThisFrame;
+        mpInput.airJumpArmed = player.jump.airJumpArmed;
+        mpInput.airJumpLocked = player.jump.airJumpLocked;
+        mpInput.dashAvailable = player.dash.dashAvailable;
+        mpInput.dashMomentumProtectionActive = player.dash.momentumProtectionActive;
+        mpInput.downDashAvailable = player.dash.downDashAvailable;
+        mpInput.freezeActive = player.freeze.freezeActive;
+        mpInput.freezeAvailable = player.freeze.freezeAvailable;
+        mpInput.groundReturnAvailable = player.groundReturn.available;
         mpInput.wishX = 0.0f;
         mpInput.wishY = 0.0f;
         if (glfwGetKey(engine.window(), GLFW_KEY_W) == GLFW_PRESS) mpInput.wishY += 1.0f;
@@ -68,6 +93,7 @@ void engineTickNet(Engine& engine, float dt)
         if (glfwGetKey(engine.window(), GLFW_KEY_D) == GLFW_PRESS) mpInput.wishX += 1.0f;
         mpInput.jumpHeld = glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
         mpInput.dashPressed = glfwGetKey(engine.window(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
+        mpInput.downDashPressed = InputCommandSystem::instance().isDownDashPressed();
         mpInput.freezeHeld = InputCommandSystem::instance().isFreezeHeld();
         mpInput.attackPressed = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
         mpInput.equippedSlot = player.equippedSlot;

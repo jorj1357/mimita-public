@@ -1,22 +1,229 @@
+// 07 21 2026, 17 10
+/* purpose
+* Owns server packet handlers for joins, input, lifecycle requests, and small gameplay commands.
+* Converts client movement packets into validated server movement reports.
+* Keeps packet parsing close to UDP and ICE transport dispatch code.
+* Does NOT own the server tick loop, render clients, or define packet schemas.
+* Does NOT simulate shared movement formulas or weapon projectile internals.
+* Does NOT bypass lifecycle, ownership, or movement validation before mutating players.
+*/
+
 #include "network/server.h"
 #include "network/multiplayer-context.h"
 #include "network/coordinator-client.h"
 #include "network/snapshot-chunks.h"
 #include "network/network-weapons.h"
+#include "physics/movement/movement-conversion.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
 #include "debug/debug-log.h"
 #include "void-death/void-death.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <chrono>
-#include <limits>
 #include <random>
 #include <unordered_map>
 
 namespace MimitaNet {
+namespace {
+
+uint16_t validClientVisualStateFlags(uint16_t flags)
+{
+    constexpr uint16_t kValid =
+        NET_STATE_WALKING |
+        NET_STATE_JUMPING |
+        NET_STATE_DASHING |
+        NET_STATE_DOWN_DASHING |
+        NET_STATE_FREEZING |
+        NET_STATE_ATTACKING;
+    return flags & kValid;
+}
+
+uint32_t movementReportFlagsFromInput(const InputPacket& input,
+                                      const ServerPlayer& player)
+{
+    uint32_t flags = input.movementFlags;
+    if (flags == 0)
+    {
+        if (player.onGround || player.movement.ground.onGround)
+            flags |= MOVEMENT_REPORT_ON_GROUND |
+                MOVEMENT_REPORT_STABLE_ON_GROUND |
+                MOVEMENT_REPORT_HAS_WORLD_CONTACT;
+        if (player.movement.ground.realWorldContactThisFrame)
+            flags |= MOVEMENT_REPORT_REAL_WORLD_CONTACT;
+        if (player.movement.jump.airJumpArmed)
+            flags |= MOVEMENT_REPORT_AIR_JUMP_ARMED;
+        if (player.movement.jump.airJumpLocked)
+            flags |= MOVEMENT_REPORT_AIR_JUMP_LOCKED;
+        if (player.movement.dash.dashAvailable || player.dashAvailable)
+            flags |= MOVEMENT_REPORT_DASH_AVAILABLE;
+        if (player.movement.dashMomentumProtection.active)
+            flags |= MOVEMENT_REPORT_DASH_PROTECTED;
+        if (player.movement.downDash.available)
+            flags |= MOVEMENT_REPORT_DOWN_DASH_AVAILABLE;
+        if (player.movement.freeze.active)
+            flags |= MOVEMENT_REPORT_FREEZE_ACTIVE;
+        if (player.movement.freeze.available)
+            flags |= MOVEMENT_REPORT_FREEZE_AVAILABLE;
+        if (player.movement.groundReturn.available)
+            flags |= MOVEMENT_REPORT_GROUND_RETURN_AVAILABLE;
+    }
+
+    if ((input.stateFlags & NET_STATE_JUMPING) != 0)
+        flags |= MOVEMENT_REPORT_JUMP_HELD;
+    if ((input.stateFlags & NET_STATE_DASHING) != 0)
+        flags |= MOVEMENT_REPORT_DASH_PRESSED;
+    if ((input.stateFlags & NET_STATE_DOWN_DASHING) != 0)
+        flags |= MOVEMENT_REPORT_DOWN_DASH_PRESSED;
+    if ((input.stateFlags & NET_STATE_FREEZING) != 0)
+        flags |= MOVEMENT_REPORT_FREEZE_HELD;
+    return flags;
+}
+
+ClientMovementReport movementReportFromInputPacket(const InputPacket& input,
+                                                   const ServerPlayer& player)
+{
+    ClientMovementReport report;
+    report.playerId = input.header.playerId;
+    report.movementSequence = input.movementSequence;
+    report.clientSimulationTick = input.clientSimulationTick != 0
+        ? input.clientSimulationTick
+        : input.header.tick;
+    report.lifecycle.spawnGeneration = input.spawnGeneration;
+    report.lifecycle.transformEpoch = input.transformEpoch != 0
+        ? input.transformEpoch
+        : input.header.transformEpoch;
+    report.moveAxes = {input.wishX, input.wishY};
+    report.horizontalCameraForward = {
+        input.camForwardX,
+        input.camForwardY,
+        input.camForwardZ};
+    report.position = {input.clientPx, input.clientPy, input.clientPz};
+    report.baseVelocity = {input.clientVx, input.clientVy, input.clientVz};
+    report.externalImpulse = {
+        input.externalImpulseX,
+        input.externalImpulseY,
+        input.externalImpulseZ};
+    report.yaw = input.yaw;
+    report.lookPitch = input.lookPitch;
+    report.sizeScale = input.sizeScale;
+    report.movementFlags = movementReportFlagsFromInput(input, player);
+    report.clientPingMs = input.clientPingMs;
+    report.dashSerial = input.dashSerial;
+    report.groundJumpSerial = input.groundJumpSerial;
+    report.airJumpSerial = input.airJumpSerial;
+    report.downDashSerial = input.downDashSerial;
+    report.freezeSerial = input.freezeSerial;
+    return report;
+}
+
+void applyAcceptedInputPresentation(ServerPlayer& player,
+                                    const InputPacket& input,
+                                    const ClientMovementReport& report)
+{
+    player.input.wish = movementClampUnitOrZero(report.moveAxes);
+    player.input.camForward = report.horizontalCameraForward;
+    if (!movementIsFinite(player.input.camForward) ||
+        glm::length(player.input.camForward) <= 0.0001f)
+    {
+        player.input.camForward = {1.0f, 0.0f, 0.0f};
+    }
+    player.input.yaw = report.yaw;
+    player.input.lookPitch = report.lookPitch;
+    player.input.tick = static_cast<uint32_t>(report.clientSimulationTick);
+    player.input.jumpHeld =
+        (report.movementFlags & MOVEMENT_REPORT_JUMP_HELD) != 0;
+    player.input.dashPressed =
+        (report.movementFlags & MOVEMENT_REPORT_DASH_PRESSED) != 0;
+    player.input.downDashPressed =
+        (report.movementFlags & MOVEMENT_REPORT_DOWN_DASH_PRESSED) != 0;
+    player.input.freezeHeld =
+        (report.movementFlags & MOVEMENT_REPORT_FREEZE_HELD) != 0;
+
+    player.equippedSlot = input.equippedSlot;
+    player.weaponState = input.weaponState;
+    player.pingMs = std::clamp(input.clientPingMs, 0, 9999);
+    player.sizeScale = std::max(input.sizeScale, 0.001f);
+    player.inputStateFlags = validClientVisualStateFlags(input.stateFlags);
+
+    if (input.dashSerial != 0 && input.dashSerial != player.lastDashSerial)
+    {
+        player.lastDashSerial = input.dashSerial;
+        player.input.dashPressed = true;
+    }
+    if (input.groundJumpSerial != 0 &&
+        input.groundJumpSerial != player.lastPresentationGroundJumpSerial)
+        player.lastPresentationGroundJumpSerial = input.groundJumpSerial;
+    if (input.airJumpSerial != 0 &&
+        input.airJumpSerial != player.lastPresentationAirJumpSerial)
+        player.lastPresentationAirJumpSerial = input.airJumpSerial;
+    if (input.downDashSerial != 0 &&
+        input.downDashSerial != player.lastPresentationDownDashSerial)
+        player.lastPresentationDownDashSerial = input.downDashSerial;
+    if (input.freezeSerial != 0 &&
+        input.freezeSerial != player.lastPresentationFreezeSerial)
+        player.lastPresentationFreezeSerial = input.freezeSerial;
+    if (input.directionChangeSerial != 0 &&
+        input.directionChangeSerial != player.lastPresentationDirectionChangeSerial)
+        player.lastPresentationDirectionChangeSerial = input.directionChangeSerial;
+    if (input.equipSerial != 0 && input.equipSerial != player.lastEquipSerial)
+    {
+        player.lastEquipSerial = input.equipSerial;
+        player.equippedSlot = input.equippedSlot;
+    }
+    if (input.dashSerial != 0 &&
+        input.dashSerial != player.lastPresentationDashSerial)
+        player.lastPresentationDashSerial = input.dashSerial;
+
+    const bool attackPressed = input.attackPressed != 0;
+    if (attackPressed && !player.input.attackPressed)
+        player.attackQueued = true;
+    player.input.attackPressed = attackPressed;
+}
+
+void logMovementValidation(const ServerPlayer& player,
+                           const ClientMovementReport& report,
+                           const MovementValidationResult& result)
+{
+    if (result.decision == MovementValidationDecision::Accept)
+        return;
+
+    const MovementCorrectionClass correctionClass =
+        classifyMovementCorrection(result.metrics.positionError,
+                                   makeMovementValidationConfig(
+                                       makeCurrentRuntimeMovementConfig()));
+    Debug::logThrottled(
+        Debug::Category::Networking,
+        "server-movement-validation",
+        0.5f,
+        "[SERVER MOVEMENT VALIDATION] player=%u decision=%s reason=%s "
+        "class=%s seq=%u clientTick=%llu serverEpoch=%u reportEpoch=%u "
+        "serverSpawn=%u reportSpawn=%u posError=%.2f hDelta=%.2f vDelta=%.2f "
+        "allowH=%.2f allowV=%.2f baseSpeed=%.2f extH=%.2f combined=%.2f\n",
+        player.id,
+        movementValidationDecisionName(result.decision),
+        movementValidationReasonName(result.reason),
+        movementCorrectionClassName(correctionClass),
+        report.movementSequence,
+        (unsigned long long)report.clientSimulationTick,
+        (unsigned)player.transformEpoch,
+        (unsigned)report.lifecycle.transformEpoch,
+        player.spawnGeneration,
+        report.lifecycle.spawnGeneration,
+        result.metrics.positionError,
+        result.metrics.horizontalDelta,
+        result.metrics.verticalDelta,
+        result.metrics.allowedHorizontalDelta,
+        result.metrics.allowedVerticalDelta,
+        result.metrics.horizontalBaseSpeed,
+        result.metrics.horizontalExternalImpulse,
+        result.metrics.combinedSpeed);
+}
+
+} // namespace
 
 // ── Global server code for coordinator validation ────────────────────
 // Set by the server when it registers with the coordinator.
@@ -38,9 +245,115 @@ const std::string& getServerCoordinatorJoinToken() { return gServerCoordinatorJo
 void setServerMapId(const std::string& mapId) { gServerMapId = mapId; }
 const std::string& getServerMapId() { return gServerMapId; }
 
+const char* transportKindName(TransportKind kind)
+{
+    switch (kind)
+    {
+    case TransportKind::Udp: return "udp";
+    case TransportKind::Ice: return "ice";
+    case TransportKind::Relay: return "relay";
+    }
+    return "unknown";
+}
+
+TransportConnectionId makeUdpConnectionId(const sockaddr_in& endpoint)
+{
+    const uint64_t ip = static_cast<uint64_t>(ntohl(endpoint.sin_addr.s_addr));
+    const uint64_t port = static_cast<uint64_t>(ntohs(endpoint.sin_port));
+    return {TransportKind::Udp, (ip << 16) | port};
+}
+
+TransportConnectionId allocateIceConnectionId()
+{
+    static std::atomic<uint64_t> sNextIceConnectionId{1};
+    return {TransportKind::Ice, sNextIceConnectionId.fetch_add(1)};
+}
+
+sockaddr_in legacyEndpointForTransportConnection(TransportConnectionId id)
+{
+    sockaddr_in endpoint{};
+    endpoint.sin_family = AF_INET;
+    if (id.kind == TransportKind::Udp)
+        return endpoint;
+
+    const uint32_t low = static_cast<uint32_t>(id.value & 0x00ffffffu);
+    endpoint.sin_addr.s_addr = htonl(0x0a000000u | low);
+    endpoint.sin_port = htons(static_cast<uint16_t>(1 + (id.value & 0x7fffu)));
+    return endpoint;
+}
+
 bool sameAddress(const sockaddr_in& a, const sockaddr_in& b)
 {
     return a.sin_addr.s_addr == b.sin_addr.s_addr && a.sin_port == b.sin_port;
+}
+
+bool playerOwnsConnectionSource(const ServerPlayer& player,
+                                const sockaddr_in* endpoint,
+                                const TransportConnectionId* connectionId)
+{
+    if (connectionId && player.hasConnectionId)
+        return player.connectionId == *connectionId;
+    return endpoint == nullptr || sameAddress(player.addr, *endpoint);
+}
+
+static bool sendToSourceOrPlayer(SOCKET sock,
+                                 const sockaddr_in& from,
+                                 const ServerPlayer* player,
+                                 std::unique_ptr<IGameTransport>* transport,
+                                 const void* data,
+                                 size_t size)
+{
+    if (player)
+        return serverSendToPlayer(sock, *player, data, size);
+    if (transport && transport->get())
+        return (*transport)->send(data, size);
+    if (sock == INVALID_SOCKET)
+        return false;
+    int sent = sendto(sock, (const char*)data, (int)size, 0,
+                      (sockaddr*)&from, sizeof(from));
+    return sent != SOCKET_ERROR;
+}
+
+static void bindPlayerConnection(ServerPlayer& player,
+                                 const sockaddr_in& from,
+                                 const TransportConnectionId* connectionId,
+                                 std::unique_ptr<IGameTransport>* claimedTransport)
+{
+    player.addr = from;
+    if (connectionId)
+    {
+        player.connectionId = *connectionId;
+        player.hasConnectionId = true;
+    }
+    else
+    {
+        player.connectionId = makeUdpConnectionId(from);
+        player.hasConnectionId = true;
+    }
+
+    if (claimedTransport && claimedTransport->get())
+    {
+        if (player.transport)
+            player.transport->close();
+        player.transport = std::move(*claimedTransport);
+    }
+}
+
+static bool isKnownPacketType(uint8_t type)
+{
+    return type >= PACKET_HELLO && type <= PACKET_DAMAGE_CONFIRMED_EVENT;
+}
+
+static void countPacketType(ServerPacketStats& stats, uint8_t type)
+{
+    if (type == PACKET_HELLO)
+        ++stats.helloPackets;
+    else if (type == PACKET_JOIN_REQUEST)
+        ++stats.joinPackets;
+    else if (type == PACKET_RECONNECT_REQUEST)
+        ++stats.reconnectPackets;
+    else if (type == PACKET_INPUT)
+        ++stats.inputPackets;
 }
 
 bool serverRayTriangle(const glm::vec3& origin, const glm::vec3& direction,
@@ -98,19 +411,21 @@ void logSnapshotEntity(const SnapshotEntity& entity)
 void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                  std::unordered_map<uint32_t, ServerPlayer>& players,
                  uint32_t& nextPlayerId, uint32_t tick, uint64_t& totalPacketsOut,
-                 const HeadlessWorld* world)
+                 const HeadlessWorld* world,
+                 const TransportConnectionId* connectionId,
+                 std::unique_ptr<IGameTransport>* claimedTransport)
 {
     if (bytes < (int)sizeof(HelloPacket))
         return;
     uint32_t existingId = 0;
     for (const auto& kv : players)
-        if (sameAddress(kv.second.addr, from))
+        if (playerOwnsConnectionSource(kv.second, &from, connectionId))
             existingId = kv.first;
 
     uint32_t id = existingId ? existingId : nextPlayerId++;
     ServerPlayer& p = players[id];
     p.id = id;
-    p.addr = from;
+    bindPlayerConnection(p, from, connectionId, claimedTransport);
     p.lastHeardMs = nowMs();
     p.lastShotSerial = 0;
     p.lastProjectileFireSerial = 0;
@@ -164,425 +479,120 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
     std::strncpy(welcome.reconnectToken, p.reconnectToken.c_str(), sizeof(welcome.reconnectToken) - 1);
     std::memset(welcome.mapId, 0, sizeof(welcome.mapId));
     std::strncpy(welcome.mapId, gServerMapId.c_str(), sizeof(welcome.mapId) - 1);
-    sendto(sock, (const char*)&welcome, sizeof(welcome), 0, (sockaddr*)&from, sizeof(from));
-    ++totalPacketsOut;
+    if (sendToSourceOrPlayer(sock, from, &p, nullptr, &welcome, sizeof(welcome)))
+        ++totalPacketsOut;
 }
 
 void handleInputPacket(const char* buffer, int bytes,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
                        const HeadlessWorld& world,
                        uint32_t& nextEntityId,
-                       std::unordered_map<uint32_t, ServerNpc>& npcs)
+                       std::unordered_map<uint32_t, ServerNpc>& npcs,
+                       const sockaddr_in* from,
+                       uint32_t serverTick,
+                       const TransportConnectionId* connectionId)
 {
     if (bytes < (int)sizeof(InputPacket))
         return;
+
     const InputPacket* in = reinterpret_cast<const InputPacket*>(buffer);
     auto it = players.find(in->header.playerId);
     if (it == players.end())
         return;
+
     ServerPlayer& p = it->second;
-    p.lastHeardMs = nowMs();
+    const bool ownsConnection =
+        playerOwnsConnectionSource(p, from, connectionId);
+    const uint64_t currentMs = nowMs();
+    if (ownsConnection)
+        p.lastHeardMs = currentMs;
 
-    // ── Skip unspawned players (ClientMapReady not yet received) ──────
-    if (!p.spawned)
-    {
-        static uint64_t lastSpawnedLogMs = 0;
-        uint64_t nowSpawned = nowMs();
-        if (nowSpawned - lastSpawnedLogMs >= 1000)
-        {
-            printf("%s [SERVER INPUT SKIP] playerId=%u reason=not-spawned "
-                   "connected=1 lastHeardMs=%llu\n",
-                   serverTimestamp(), p.id,
-                   (unsigned long long)(nowSpawned - p.lastHeardMs));
-            lastSpawnedLogMs = nowSpawned;
-        }
-        return;
-    }
+    const ClientMovementReport report = movementReportFromInputPacket(*in, p);
+    const MovementConfig movementConfig = makeCurrentRuntimeMovementConfig();
+    const MovementValidationConfig validationConfig =
+        makeMovementValidationConfig(movementConfig, &world);
+    MovementValidationContext validationContext;
+    validationContext.playerExists = true;
+    validationContext.connectionActive = true;
+    validationContext.connectionOwnsPlayer = ownsConnection;
+    validationContext.serverTick = serverTick;
+    validationContext.nowMs = currentMs;
+    validationContext.world = &world;
 
-    // ── Transform epoch check ─────────────────────────────────────
-    // Discard packets from before the player's most recent spawn/respawn.
-    if (in->header.transformEpoch != 0 && in->header.transformEpoch < p.transformEpoch)
-    {
-        static uint64_t lastEpochLogMs = 0;
-        uint64_t now = nowMs();
-        if (now - lastEpochLogMs >= 1000)
-        {
-            printf("%s [SERVER INPUT DROP] reason=OLD_TRANSFORM_EPOCH playerId=%u "
-                   "packetEpoch=%u currentEpoch=%u dead=%d serverPos=(%.2f,%.2f,%.2f)\n",
-                   serverTimestamp(), p.id, in->header.transformEpoch, p.transformEpoch,
-                   (int)p.dead, p.pos.x, p.pos.y, p.pos.z);
-            lastEpochLogMs = now;
-        }
-        return;
-    }
-
-    // Log first accepted packet matching the new epoch
-    if (in->header.transformEpoch == p.transformEpoch)
-    {
-        static uint64_t lastEpochAcceptLogMs = 0;
-        uint64_t nowAccept = nowMs();
-        if (nowAccept - lastEpochAcceptLogMs >= 5000)
-        {
-            printf("%s [SERVER INPUT EPOCH ACCEPT] playerId=%u epoch=%u "
-                   "clientPos=(%.2f,%.2f,%.2f) serverPosBefore=(%.2f,%.2f,%.2f)\n",
-                   serverTimestamp(), p.id, in->header.transformEpoch,
-                   in->clientPx, in->clientPy, in->clientPz,
-                   p.pos.x, p.pos.y, p.pos.z);
-            lastEpochAcceptLogMs = nowAccept;
-        }
-    }
-
-    // Process respawn serial even when dead — Space press requests instant respawn
-    if (in->respawnSerial != 0 && in->respawnSerial != p.lastRespawnSerial)
+    // Process respawn serial before dead-state movement rejection. Ownership
+    // still applies; spoofed packets must not request another player's respawn.
+    if (ownsConnection &&
+        in->respawnSerial != 0 &&
+        in->respawnSerial != p.lastRespawnSerial)
     {
         p.lastRespawnSerial = in->respawnSerial;
-        printf("%s [SERVER RESPAWN REQUEST] playerId=%u dead=%d respawnSerial=%u\n",
-               serverTimestamp(), p.id, (int)p.dead, (unsigned)in->respawnSerial);
+        Debug::warn(Debug::Category::Networking,
+            "[SERVER RESPAWN REQUEST] playerId=%u dead=%d respawnSerial=%u\n",
+            p.id, (int)p.dead, (unsigned)in->respawnSerial);
         if (p.dead)
-        {
             p.instantRespawnRequested = true;
-            printf("%s [SERVER RESPAWN ACCEPT] playerId=%u reason=instant-respawn-serial\n",
-                   serverTimestamp(), p.id);
+    }
+
+    MovementValidationResult result =
+        validateClientMovementReport(p, report, validationContext, validationConfig);
+    applyMovementValidationCounters(p.movementValidation, result, report);
+    logMovementValidation(p, report, result);
+    if (connectionId)
+    {
+        static int sIceMovementDiagnosticsRemaining = 64;
+        if (connectionId->kind == TransportKind::Ice &&
+            sIceMovementDiagnosticsRemaining > 0)
+        {
+            --sIceMovementDiagnosticsRemaining;
+            Debug::warn(Debug::Category::Networking,
+                "[SERVER MOVEMENT RX] transport=%s connection=%llu player=%u "
+                "seq=%u clientTick=%llu spawnGen=%u epoch=%u decision=%s "
+                "reason=%s serverTick=%u\n",
+                transportKindName(connectionId->kind),
+                (unsigned long long)connectionId->value,
+                p.id,
+                report.movementSequence,
+                (unsigned long long)report.clientSimulationTick,
+                report.lifecycle.spawnGeneration,
+                (unsigned)report.lifecycle.transformEpoch,
+                movementValidationDecisionName(result.decision),
+                movementValidationReasonName(result.reason),
+                serverTick);
         }
     }
 
-    if (p.dead)
+    if (result.decision == MovementValidationDecision::Reject)
     {
-        p.input.attackPressed = false;
+        if (p.dead)
+            p.input.attackPressed = false;
         return;
     }
-    p.input.wish = {in->wishX, in->wishY};
-    p.input.camForward = {in->camForwardX, in->camForwardY, in->camForwardZ};
-    p.input.yaw = in->yaw;
-    p.input.tick = in->header.tick;
 
+    if (result.clearsAuthoritativeTransformAck)
     {
-        static uint64_t lastLookServerRxLogMs = 0;
-        uint64_t nowLookRx = nowMs();
-        if (nowLookRx - lastLookServerRxLogMs >= 1000)
-        {
-            printf("[LOOK SERVER RX] playerId=%u serverTick=%u yaw=%.2f forward=(%.2f,%.2f,%.2f) "
-                   "pos=(%.2f,%.2f,%.2f)\n",
-                   p.id, nowMs() % 65536,
-                   in->yaw, in->camForwardX, in->camForwardY, in->camForwardZ,
-                   p.pos.x, p.pos.y, p.pos.z);
-            lastLookServerRxLogMs = nowLookRx;
-        }
-    }
-    p.equippedSlot = in->equippedSlot;
-    p.weaponState = in->weaponState;
-    p.pingMs = std::clamp(in->clientPingMs, 0, 9999);
-    p.sizeScale = std::max(in->sizeScale, 0.001f);
-
-    // Reconstruct per-input booleans from state flags for existing server code
-    p.input.jumpHeld = (in->stateFlags & NET_STATE_JUMPING) != 0;
-    p.input.dashPressed = (in->stateFlags & NET_STATE_DASHING) != 0;
-    p.input.freezeHeld = (in->stateFlags & NET_STATE_FREEZING) != 0;
-
-    // Store the received visual state flags by replacement (not OR).
-    // This preserves client walking/freezing/dashing state for snapshot replication.
-    {
-        constexpr uint16_t VALID_STATE_FLAGS =
-            NET_STATE_WALKING | NET_STATE_JUMPING |
-            NET_STATE_DASHING | NET_STATE_DOWN_DASHING |
-            NET_STATE_FREEZING | NET_STATE_ATTACKING;
-        p.inputStateFlags = in->stateFlags & VALID_STATE_FLAGS;
-
-        static uint64_t lastWalkStoreLogMs = 0;
-        uint64_t nowWalkStore = nowMs();
-        if (nowWalkStore - lastWalkStoreLogMs >= 1000)
-        {
-            printf("[WALK SERVER STORE] playerId=%u storedStateFlags=0x%04x walkingBit=%d\n",
-                   p.id, (unsigned)p.inputStateFlags,
-                   (int)((p.inputStateFlags & NET_STATE_WALKING) != 0));
-            lastWalkStoreLogMs = nowWalkStore;
-        }
+        p.awaitingAuthoritativeTransformAck = false;
+        Debug::warn(Debug::Category::Networking,
+            "[SERVER TRANSFORM ACK] playerId=%u epoch=%u seq=%u "
+            "distance=%.2f assignedMsAgo=%llu\n",
+            p.id,
+            (unsigned)p.transformEpoch,
+            report.movementSequence,
+            glm::length(report.position - p.authoritativeTransformPosition),
+            (unsigned long long)(currentMs - p.authoritativeTransformAssignedMs));
     }
 
-    {
-        static uint64_t lastWalkRxLogMs = 0;
-        uint64_t nowWalkRx = nowMs();
-        if (nowWalkRx - lastWalkRxLogMs >= 1000)
-        {
-            printf("[WALK SERVER RX] playerId=%u receivedStateFlags=0x%04x "
-                   "walkingBit=%d wish=(%.2f,%.2f) clientVel=(%.2f,%.2f,%.2f)\n",
-                   p.id, (unsigned)in->stateFlags,
-                   (int)((in->stateFlags & NET_STATE_WALKING) != 0),
-                   in->wishX, in->wishY, in->clientVx, in->clientVy, in->clientVz);
-            lastWalkRxLogMs = nowWalkRx;
-        }
-    }
+    applyMovementStateToServerPlayer(result.acceptedState, p);
+    applyAcceptedInputPresentation(p, *in, report);
 
-    // Update event serials from input
-    // Dash serial: first new serial also triggers server-side dash impulse
-    if (in->dashSerial != 0 && in->dashSerial != p.lastDashSerial)
-    {
-        p.lastDashSerial = in->dashSerial;
-        p.input.dashPressed = true;
-    }
-    if (in->groundJumpSerial != 0 && in->groundJumpSerial != p.lastPresentationGroundJumpSerial)
-        p.lastPresentationGroundJumpSerial = in->groundJumpSerial;
-    if (in->airJumpSerial != 0 && in->airJumpSerial != p.lastPresentationAirJumpSerial)
-        p.lastPresentationAirJumpSerial = in->airJumpSerial;
-    if (in->downDashSerial != 0 && in->downDashSerial != p.lastPresentationDownDashSerial)
-        p.lastPresentationDownDashSerial = in->downDashSerial;
-    if (in->freezeSerial != 0 && in->freezeSerial != p.lastPresentationFreezeSerial)
-        p.lastPresentationFreezeSerial = in->freezeSerial;
-    if (in->directionChangeSerial != 0 && in->directionChangeSerial != p.lastPresentationDirectionChangeSerial)
-        p.lastPresentationDirectionChangeSerial = in->directionChangeSerial;
-    if (in->equipSerial != 0 && in->equipSerial != p.lastEquipSerial)
-    {
-        p.lastEquipSerial = in->equipSerial;
-        p.equippedSlot = in->equippedSlot;
-    }
+    p.clientStateUpdated = true;
+    p.lastAcceptedClientPosition = result.acceptedState.position;
+    p.lastAcceptedClientVelocity =
+        result.acceptedState.baseVelocity + result.acceptedState.externalImpulse;
+    p.lastAcceptedClientTransformMs = currentMs;
+    p.hasAcceptedClientTransform = true;
+    p.lastMovementSequence = report.movementSequence;
+    p.hasMovementSequence = true;
 
-    // Also update presentation dash serial from input (separate from simulation serial)
-    if (in->dashSerial != 0 && in->dashSerial != p.lastPresentationDashSerial)
-    {
-        p.lastPresentationDashSerial = in->dashSerial;
-        printf("%s [DASH PRESENTATION SERIAL] playerId=%u dashSerial=%u lastSimSerial=%u\n",
-               serverTimestamp(), p.id, (unsigned)in->dashSerial, (unsigned)p.lastDashSerial);
-    }
-
-    const bool attackPressed = in->attackPressed != 0;
-    if (attackPressed && !p.input.attackPressed)
-        p.attackQueued = true;
-    p.input.attackPressed = attackPressed;
-
-    const glm::vec3 reportedPosition{
-        in->clientPx, in->clientPy, in->clientPz};
-    const glm::vec3 reportedVelocity{
-        in->clientVx, in->clientVy, in->clientVz};
-    const bool finiteState =
-        std::isfinite(reportedPosition.x) &&
-        std::isfinite(reportedPosition.y) &&
-        std::isfinite(reportedPosition.z) &&
-        std::isfinite(reportedVelocity.x) &&
-        std::isfinite(reportedVelocity.y) &&
-        std::isfinite(reportedVelocity.z);
-    const float reportedSpeed = finiteState
-        ? glm::length(reportedVelocity)
-        : std::numeric_limits<float>::infinity();
-    const float stateDelta = finiteState
-        ? glm::length(reportedPosition - p.pos)
-        : std::numeric_limits<float>::infinity();
-
-    bool allowClientTransform = true;
-    const char* rejectReason = nullptr;
-
-    // ── Authoritative transform gate ──────────────────────────────────
-    // After a spawn, respawn, teleport, or epoch change, the server waits
-    // for the client to acknowledge the new authoritative position before
-    // accepting any client-reported transform.
-    if (p.awaitingAuthoritativeTransformAck)
-    {
-        const bool epochMatches =
-            in->header.transformEpoch == p.authoritativeTransformEpoch;
-        const float distanceFromAuthoritative = finiteState
-            ? glm::length(reportedPosition - p.authoritativeTransformPosition)
-            : std::numeric_limits<float>::infinity();
-        constexpr float AUTHORITATIVE_ACK_DISTANCE = 5.0f;
-        const bool acknowledged =
-            epochMatches && finiteState &&
-            distanceFromAuthoritative <= AUTHORITATIVE_ACK_DISTANCE;
-
-        if (!acknowledged)
-        {
-            allowClientTransform = false;
-            if (!epochMatches)
-                rejectReason = "wrong-epoch";
-            else if (!finiteState)
-                rejectReason = "non-finite";
-            else
-                rejectReason = "too-far-from-authoritative";
-        }
-        else
-        {
-            p.awaitingAuthoritativeTransformAck = false;
-            printf("%s [SERVER TRANSFORM ACK] playerId=%u epoch=%u "
-                   "position=(%.2f,%.2f,%.2f) distance=%.2f timeSinceAssignment=%llums\n",
-                   serverTimestamp(), p.id,
-                   (unsigned)p.transformEpoch,
-                   reportedPosition.x, reportedPosition.y, reportedPosition.z,
-                   distanceFromAuthoritative,
-                   (unsigned long long)(nowMs() - p.authoritativeTransformAssignedMs));
-        }
-    }
-
-    // ── Component-aware movement validation ────────────────────────────
-    // Validate horizontal, upward, and downward velocity separately so
-    // that a fast fall cannot be blocked by a combined total-speed limit.
-    const glm::vec2 reportedHorizontalVelocity{
-        reportedVelocity.x, reportedVelocity.y};
-    const float horizontalSpeed = glm::length(reportedHorizontalVelocity);
-    const float upwardSpeed = std::max(0.0f, reportedVelocity.z);
-    const float downwardSpeed = std::max(0.0f, -reportedVelocity.z);
-
-    bool speedValid = false;
-    const char* speedFailReason = nullptr;
-
-    if (horizontalSpeed <= MAX_HORIZONTAL_SPEED &&
-        upwardSpeed <= MAX_UPWARD_SPEED &&
-        downwardSpeed <= MAX_DOWNWARD_SPEED)
-    {
-        speedValid = true;
-    }
-    else if (horizontalSpeed > MAX_HORIZONTAL_SPEED)
-        speedFailReason = "horizontal-speed";
-    else if (upwardSpeed > MAX_UPWARD_SPEED)
-        speedFailReason = "upward-speed";
-    else
-        speedFailReason = "downward-speed";
-
-    // ── Elapsed-time trajectory validation ─────────────────────────────
-    // Compare the reported position against the last *accepted* client
-    // transform, not against the server-simulated p.pos.  This prevents
-    // a single rejected packet from freezing movement permanently.
-    const uint64_t currentMs = nowMs();
-    const float elapsedSeconds =
-        p.hasAcceptedClientTransform
-            ? std::clamp(
-                float(currentMs - p.lastAcceptedClientTransformMs) / 1000.0f,
-                1.0f / 240.0f,
-                0.5f)
-            : SERVER_DT;
-
-    const glm::vec3 acceptedDelta =
-        reportedPosition - p.lastAcceptedClientPosition;
-
-    const float horizontalDelta =
-        glm::length(glm::vec2(acceptedDelta.x, acceptedDelta.y));
-    const float verticalDelta = std::abs(acceptedDelta.z);
-
-    const float allowedHorizontalDelta =
-        MAX_HORIZONTAL_SPEED * elapsedSeconds + HORIZONTAL_NET_TOL;
-    const float allowedVerticalDelta =
-        MAX_DOWNWARD_SPEED * elapsedSeconds + VERTICAL_NET_TOL;
-
-    const bool trajectoryValid =
-        horizontalDelta <= allowedHorizontalDelta &&
-        verticalDelta <= allowedVerticalDelta;
-
-    // ── Continuous-fall recovery path ──────────────────────────────────
-    // If the raw position delta exceeds the envelope, but the client is
-    // clearly falling (descending, downward velocity, horizontal within
-    // bounds), re-acquire via gravity prediction.
-    bool accept = false;
-    const char* acceptReason = nullptr;
-
-    if (allowClientTransform && finiteState && speedValid)
-    {
-        if (trajectoryValid)
-        {
-            accept = true;
-            acceptReason = "normal";
-        }
-        else if (downwardSpeed > 0.0f &&
-                 reportedPosition.z <= p.lastAcceptedClientPosition.z + 2.0f &&
-                 horizontalDelta <= allowedHorizontalDelta &&
-                 !p.dead &&
-                 !p.awaitingAuthoritativeTransformAck)
-        {
-            // Predict Z from last accepted state using server gravity
-            const float predictedZ =
-                p.lastAcceptedClientPosition.z +
-                p.lastAcceptedClientVelocity.z * elapsedSeconds +
-                0.5f * (-58.0f) * elapsedSeconds * elapsedSeconds;
-
-            if (std::abs(reportedPosition.z - predictedZ) <= FALL_PREDICTION_TOL)
-            {
-                accept = true;
-                acceptReason = "continuous-fall";
-            }
-        }
-    }
-
-    if (accept)
-    {
-        p.pos = reportedPosition;
-        p.vel = reportedVelocity;
-        p.clientStateUpdated = true;
-
-        p.lastAcceptedClientPosition = reportedPosition;
-        p.lastAcceptedClientVelocity = reportedVelocity;
-        p.lastAcceptedClientTransformMs = currentMs;
-        p.hasAcceptedClientTransform = true;
-
-        // Log continuous-fall acceptances below map bounds
-        if (strcmp(acceptReason, "continuous-fall") == 0 &&
-            reportedPosition.z < 0.0f)
-        {
-            static uint64_t lastFallAcceptLogMs = 0;
-            if (currentMs - lastFallAcceptLogMs >= 250)
-            {
-                printf("%s [SERVER FALL ACCEPT] playerId=%u "
-                       "posZ=%.2f velZ=%.2f horizontalSpeed=%.2f "
-                       "downwardSpeed=%.2f elapsedMs=%llu "
-                       "horizontalDelta=%.2f verticalDelta=%.2f "
-                       "allowedHorizontal=%.2f allowedVertical=%.2f\n",
-                       serverTimestamp(), p.id,
-                       reportedPosition.z, reportedVelocity.z,
-                       horizontalSpeed, downwardSpeed,
-                       (unsigned long long)(currentMs - p.lastAcceptedClientTransformMs),
-                       horizontalDelta, verticalDelta,
-                       allowedHorizontalDelta, allowedVerticalDelta);
-                lastFallAcceptLogMs = currentMs;
-            }
-        }
-    }
-    else if (allowClientTransform)
-    {
-        static uint64_t lastRejectedStateLogMs = 0;
-        if (currentMs - lastRejectedStateLogMs >= 500)
-        {
-            printf("%s [SERVER MOVEMENT REJECT] playerId=%u "
-                   "reason=%s "
-                   "horizontalSpeed=%.2f upwardSpeed=%.2f downwardSpeed=%.2f "
-                   "horizontalDelta=%.2f verticalDelta=%.2f "
-                   "allowedHorizontal=%.2f allowedVertical=%.2f "
-                   "elapsedMs=%llu "
-                   "lastAcceptedPos=(%.2f,%.2f,%.2f) "
-                   "serverPos=(%.2f,%.2f,%.2f) "
-                   "clientPos=(%.2f,%.2f,%.2f)\n",
-                   serverTimestamp(), p.id,
-                   speedValid
-                       ? (trajectoryValid ? "unknown" : "trajectory")
-                       : speedFailReason,
-                   horizontalSpeed, upwardSpeed, downwardSpeed,
-                   horizontalDelta, verticalDelta,
-                   allowedHorizontalDelta, allowedVerticalDelta,
-                   (unsigned long long)(currentMs - p.lastAcceptedClientTransformMs),
-                   p.lastAcceptedClientPosition.x,
-                   p.lastAcceptedClientPosition.y,
-                   p.lastAcceptedClientPosition.z,
-                   p.pos.x, p.pos.y, p.pos.z,
-                   reportedPosition.x, reportedPosition.y, reportedPosition.z);
-            lastRejectedStateLogMs = currentMs;
-        }
-    }
-    else
-    {
-        static uint64_t lastTransformGateLogMs = 0;
-        const uint64_t gateNowMs = nowMs();
-        if (gateNowMs - lastTransformGateLogMs >= 500)
-        {
-            printf("%s [SERVER TRANSFORM GATE] playerId=%u "
-                   "accepted=0 packetEpoch=%u expectedEpoch=%u "
-                   "clientPos=(%.2f,%.2f,%.2f) authoritativePos=(%.2f,%.2f,%.2f) "
-                   "distance=%.2f reason=%s\n",
-                   serverTimestamp(), p.id,
-                   in->header.transformEpoch, (unsigned)p.authoritativeTransformEpoch,
-                   reportedPosition.x, reportedPosition.y, reportedPosition.z,
-                   p.authoritativeTransformPosition.x,
-                   p.authoritativeTransformPosition.y,
-                   p.authoritativeTransformPosition.z,
-                   finiteState
-                       ? glm::length(reportedPosition - p.authoritativeTransformPosition)
-                       : std::numeric_limits<float>::infinity(),
-                   rejectReason ? rejectReason : "unknown");
-            lastTransformGateLogMs = gateNowMs;
-        }
-    }
     if (in->spawnNpcPressed)
     {
         ServerNpc npc;
@@ -685,7 +695,9 @@ void handleExplodeRequest(const char* buffer, int bytes,
 void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
                        uint32_t& nextPlayerId, uint32_t tick, uint64_t& totalPacketsOut,
-                       const HeadlessWorld* world)
+                       const HeadlessWorld* world,
+                       const TransportConnectionId* connectionId,
+                       std::unique_ptr<IGameTransport>* claimedTransport)
 {
     if (bytes < (int)sizeof(JoinRequestPacket))
         return;
@@ -698,8 +710,13 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         reject.header.type = PACKET_JOIN_REJECT;
         reject.header.tick = tick;
         reject.reason = 1; // full
-        sendto(sock, (const char*)&reject, sizeof(reject), 0, (sockaddr*)&from, sizeof(from));
-        ++totalPacketsOut;
+        if (sendToSourceOrPlayer(sock, from, nullptr, claimedTransport, &reject, sizeof(reject)))
+            ++totalPacketsOut;
+        if (claimedTransport && claimedTransport->get())
+        {
+            (*claimedTransport)->close();
+            claimedTransport->reset();
+        }
         printf("%s [SERVER JOIN REJECT] reason=server-full\n", serverTimestamp());
         return;
     }
@@ -712,8 +729,13 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         reject.header.type = PACKET_JOIN_REJECT;
         reject.header.tick = tick;
         reject.reason = 2; // bad token
-        sendto(sock, (const char*)&reject, sizeof(reject), 0, (sockaddr*)&from, sizeof(from));
-        ++totalPacketsOut;
+        if (sendToSourceOrPlayer(sock, from, nullptr, claimedTransport, &reject, sizeof(reject)))
+            ++totalPacketsOut;
+        if (claimedTransport && claimedTransport->get())
+        {
+            (*claimedTransport)->close();
+            claimedTransport->reset();
+        }
         printf("%s [SERVER JOIN REJECT] reason=empty-token\n", serverTimestamp());
         return;
     }
@@ -723,7 +745,8 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     {
         printf("[ROOM TOKEN VALIDATE] api=coordinatorValidateJoin code=%s tokenPrefix=%s\n",
                gServerCoordinatorCode.c_str(), joinTokenStr.substr(0, 12).c_str());
-        if (!coordinatorValidateJoin(gServerCoordinatorCode, joinTokenStr))
+        if (!coordinatorValidateJoin(gServerCoordinatorCode, joinTokenStr) &&
+            !coordinatorIceValidateJoin(gServerCoordinatorCode, joinTokenStr))
         {
             printf("[ROOM TOKEN VALIDATE] api=coordinatorValidateJoin code=%s tokenPrefix=%s valid=0\n",
                    gServerCoordinatorCode.c_str(), joinTokenStr.substr(0, 12).c_str());
@@ -739,8 +762,13 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
                 reject.header.type = PACKET_JOIN_REJECT;
                 reject.header.tick = tick;
                 reject.reason = 2; // bad token
-                sendto(sock, (const char*)&reject, sizeof(reject), 0, (sockaddr*)&from, sizeof(from));
-                ++totalPacketsOut;
+                if (sendToSourceOrPlayer(sock, from, nullptr, claimedTransport, &reject, sizeof(reject)))
+                    ++totalPacketsOut;
+                if (claimedTransport && claimedTransport->get())
+                {
+                    (*claimedTransport)->close();
+                    claimedTransport->reset();
+                }
                 printf("%s [SERVER JOIN REJECT] reason=coordinator-rejected-token\n", serverTimestamp());
                 return;
             }
@@ -770,7 +798,7 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     uint32_t id = existingId ? existingId : nextPlayerId++;
     ServerPlayer& p = players[id];
     p.id = id;
-    p.addr = from;
+    bindPlayerConnection(p, from, connectionId, claimedTransport);
     p.lastHeardMs = nowMs();
     p.lastShotSerial = 0;
     p.lastProjectileFireSerial = 0;
@@ -831,13 +859,15 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     std::strncpy(accept.reconnectToken, p.reconnectToken.c_str(), sizeof(accept.reconnectToken) - 1);
     std::memset(accept.mapId, 0, sizeof(accept.mapId));
     std::strncpy(accept.mapId, gServerMapId.c_str(), sizeof(accept.mapId) - 1);
-    sendto(sock, (const char*)&accept, sizeof(accept), 0, (sockaddr*)&from, sizeof(from));
-    ++totalPacketsOut;
+    if (sendToSourceOrPlayer(sock, from, &p, nullptr, &accept, sizeof(accept)))
+        ++totalPacketsOut;
 }
 
 void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                             std::unordered_map<uint32_t, ServerPlayer>& players,
-                            uint32_t tick, uint64_t& totalPacketsOut)
+                            uint32_t tick, uint64_t& totalPacketsOut,
+                            const TransportConnectionId* connectionId,
+                            std::unique_ptr<IGameTransport>* claimedTransport)
 {
     if (bytes < (int)sizeof(ReconnectRequestPacket))
         return;
@@ -858,11 +888,16 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
     {
         printf("%s [SERVER RECONNECT] rejected token=%s not-found\n",
                serverTimestamp(), req->reconnectToken);
+        if (claimedTransport && claimedTransport->get())
+        {
+            (*claimedTransport)->close();
+            claimedTransport->reset();
+        }
         return;
     }
 
     ServerPlayer& p = players[foundId];
-    p.addr = from;
+    bindPlayerConnection(p, from, connectionId, claimedTransport);
     p.lastHeardMs = nowMs();
     p.pendingReliableEvents.clear();
     p.reliableEventSessionId = 0;
@@ -873,9 +908,11 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
     accept.header.type = PACKET_RECONNECT_ACCEPT;
     accept.header.tick = tick;
     accept.header.playerId = foundId;
+    accept.header.transformEpoch = p.transformEpoch;
     accept.assignedPlayerId = foundId;
     accept.reliableEventSessionId = reliableGameplayEventSessionForPlayer(p);
     accept.tickRate = SERVER_TICK_RATE;
+    accept.spawnGeneration = p.spawnGeneration;
     copyName(accept.approvedName, p.name);
     std::memset(accept.reconnectToken, 0, sizeof(accept.reconnectToken));
     std::strncpy(accept.reconnectToken, p.reconnectToken.c_str(), sizeof(accept.reconnectToken) - 1);
@@ -885,11 +922,319 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
     accept.restorePx = p.pos.x;
     accept.restorePy = p.pos.y;
     accept.restorePz = p.pos.z;
-    sendto(sock, (const char*)&accept, sizeof(accept), 0, (sockaddr*)&from, sizeof(from));
-    ++totalPacketsOut;
+    if (sendToSourceOrPlayer(sock, from, &p, nullptr, &accept, sizeof(accept)))
+        ++totalPacketsOut;
 
     printf("%s [SERVER RECONNECT] accepted id=%u name=\"%s\" health=%d\n",
            serverTimestamp(), foundId, p.name.c_str(), p.health);
+}
+
+ServerPacketProcessResult processServerPacket(
+    SOCKET sock,
+    const TransportReceiveEvent& event,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs,
+    std::unordered_map<uint32_t, ServerProjectile>& projectiles,
+    uint32_t& nextPlayerId,
+    uint32_t& nextEntityId,
+    uint32_t& nextProjectileId,
+    const HeadlessWorld& world,
+    uint32_t tick,
+    uint64_t& totalPacketsIn,
+    uint64_t& totalPacketsOut,
+    ServerPacketStats* stats,
+    DisagreementRetransmitState* retransmitState,
+    ServerPlayer* authenticatedPlayer,
+    std::unique_ptr<IGameTransport>* claimedTransport)
+{
+    ServerPacketProcessResult result{};
+    ++totalPacketsIn;
+
+    char buffer[2048];
+    const std::string source = addressToString(event.remoteEndpoint);
+
+    if (!event.payload || event.payloadBytes <= 0)
+    {
+        if (stats)
+            ++stats->malformedPackets;
+        printf("%s [SERVER PACKET] rejected reason=empty-payload transport=%s connection=%llu source=%s\n",
+               serverTimestamp(), transportKindName(event.transportKind),
+               (unsigned long long)event.connectionId.value, source.c_str());
+        return result;
+    }
+
+    if (event.payloadBytes < (int)sizeof(PacketHeader))
+    {
+        if (stats)
+            ++stats->malformedPackets;
+        printf("%s [SERVER PACKET] rejected reason=too-small bytes=%d transport=%s "
+               "connection=%llu source=%s minBytes=%zu\n",
+               serverTimestamp(), event.payloadBytes,
+               transportKindName(event.transportKind),
+               (unsigned long long)event.connectionId.value,
+               source.c_str(), sizeof(PacketHeader));
+        return result;
+    }
+
+    if (event.payloadBytes > (int)sizeof(buffer) ||
+        event.payloadBytes > MAX_GAME_DATAGRAM_BYTES)
+    {
+        if (stats)
+            ++stats->malformedPackets;
+        printf("%s [SERVER PACKET] rejected reason=too-large bytes=%d maxBytes=%d "
+               "transport=%s connection=%llu source=%s\n",
+               serverTimestamp(), event.payloadBytes, MAX_GAME_DATAGRAM_BYTES,
+               transportKindName(event.transportKind),
+               (unsigned long long)event.connectionId.value,
+               source.c_str());
+        return result;
+    }
+
+    std::memcpy(buffer, event.payload, event.payloadBytes);
+    PacketHeader* header = reinterpret_cast<PacketHeader*>(buffer);
+    result.decoded = true;
+
+    if (header->magic != PROTOCOL_MAGIC || header->version != PROTOCOL_VERSION)
+    {
+        if (stats)
+            ++stats->protocolMismatches;
+        printf("%s [SERVER PACKET] rejected reason=protocol-mismatch bytes=%d "
+               "transport=%s connection=%llu source=%s magic=0x%08x "
+               "expectedMagic=0x%08x version=%u expectedVersion=%u type=%u\n",
+               serverTimestamp(), event.payloadBytes,
+               transportKindName(event.transportKind),
+               (unsigned long long)event.connectionId.value,
+               source.c_str(), header->magic, PROTOCOL_MAGIC,
+               header->version, PROTOCOL_VERSION, header->type);
+        return result;
+    }
+
+    if (!isKnownPacketType(header->type))
+    {
+        if (stats)
+            ++stats->unknownPacketTypes;
+        printf("%s [SERVER PACKET] rejected reason=unknown-type bytes=%d "
+               "transport=%s connection=%llu source=%s type=%u\n",
+               serverTimestamp(), event.payloadBytes,
+               transportKindName(event.transportKind),
+               (unsigned long long)event.connectionId.value,
+               source.c_str(), header->type);
+        return result;
+    }
+
+    if (stats)
+        countPacketType(*stats, header->type);
+
+    if (header->type != PACKET_HELLO)
+    {
+        auto it = players.find(header->playerId);
+        if (it != players.end() &&
+            playerOwnsConnectionSource(
+                it->second, &event.remoteEndpoint, &event.connectionId))
+        {
+            it->second.lastHeardMs = nowMs();
+        }
+    }
+
+    const TransportConnectionId* sourceConnection = &event.connectionId;
+    const sockaddr_in& from = event.remoteEndpoint;
+    const int bytes = event.payloadBytes;
+    result.playerId = header->playerId;
+
+    if (header->type == PACKET_HELLO)
+    {
+        handleHello(sock, from, buffer, bytes, players, nextPlayerId, tick,
+                    totalPacketsOut, &world, sourceConnection, claimedTransport);
+        result.handled = true;
+        result.transportConsumed = claimedTransport && !claimedTransport->get();
+    }
+    else if (header->type == PACKET_JOIN_REQUEST)
+    {
+        handleJoinRequest(sock, from, buffer, bytes, players, nextPlayerId, tick,
+                          totalPacketsOut, &world, sourceConnection,
+                          claimedTransport);
+        result.handled = true;
+        result.transportConsumed = claimedTransport && !claimedTransport->get();
+    }
+    else if (header->type == PACKET_RECONNECT_REQUEST)
+    {
+        handleReconnectRequest(sock, from, buffer, bytes, players, tick,
+                               totalPacketsOut, sourceConnection,
+                               claimedTransport);
+        result.handled = true;
+        result.transportConsumed = claimedTransport && !claimedTransport->get();
+    }
+    else if (header->type == PACKET_INPUT)
+    {
+        handleInputPacket(buffer, bytes, players, world, nextEntityId, npcs,
+                          &from, tick, sourceConnection);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_DISCONNECT)
+    {
+        handleDisconnect(players, buffer);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_SPAWN_NPC_REQUEST)
+    {
+        handleSpawnNpcRequest(buffer, bytes, players, nextEntityId, npcs);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_TELEPORT_REQUEST)
+    {
+        handleTeleportRequest(buffer, bytes, players, world);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_EXPLODE_REQUEST)
+    {
+        handleExplodeRequest(buffer, bytes, players);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_SHOT_REQUEST)
+    {
+        handleShotRequest(sock, from, buffer, bytes, players, world, tick,
+                          totalPacketsOut, retransmitState);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_PELLET_BLAST_REQUEST)
+    {
+        handlePelletBlastRequest(sock, from, buffer, bytes, players, world, tick,
+                                 totalPacketsOut, retransmitState);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_PROJECTILE_FIRE_REQUEST)
+    {
+        handleProjectileFireRequest(sock, from, buffer, bytes, players,
+                                    projectiles, nextProjectileId, world, tick,
+                                    totalPacketsOut);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_ATTACK_REQUEST)
+    {
+        handleAttackRequest(sock, from, buffer, bytes, players, projectiles,
+                            nextProjectileId, world, tick, totalPacketsOut);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_MELEE_HIT_REQUEST)
+    {
+        handleMeleeHitRequest(sock, from, buffer, bytes, players, tick,
+                              totalPacketsOut);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_CHAT_MESSAGE)
+    {
+        handleChatMessage(sock, buffer, bytes, players, tick, totalPacketsOut);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_PING)
+    {
+        handlePing(sock, from, buffer, bytes, tick, authenticatedPlayer);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_RELOAD_REQUEST)
+    {
+        handleReloadRequest(sock, from, buffer, bytes, players, tick,
+                            totalPacketsOut);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_GODBALL_STATE)
+    {
+        handleGodballState(sock, players, buffer, bytes);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_NPC_DAMAGE_REQUEST)
+    {
+        handleNpcDamageRequest(sock, buffer, bytes, from, players, npcs, tick,
+                               totalPacketsOut);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_SERVER_COMMAND)
+    {
+        handleServerCommand(buffer, bytes, players, npcs);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_SPAWN_ACK &&
+             bytes >= (int)sizeof(SpawnAckPacket))
+    {
+        handleSpawnAck(sock, buffer, bytes, players, tick);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_RELIABLE_EVENT_ACK &&
+             bytes >= (int)sizeof(ReliableEventAckPacket))
+    {
+        handleReliableEventAck(buffer, bytes, players, &from,
+                               authenticatedPlayer);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_CLIENT_MAP_READY &&
+             bytes >= (int)sizeof(ClientMapReadyPacket))
+    {
+        const ClientMapReadyPacket* ready =
+            reinterpret_cast<const ClientMapReadyPacket*>(buffer);
+        if (ready->header.playerId != ready->assignedPlayerId)
+        {
+            printf("%s [SERVER MAP READY REJECT] reason=assignedPlayerId-mismatch "
+                   "headerPlayerId=%u assignedPlayerId=%u\n",
+                   serverTimestamp(), ready->header.playerId,
+                   ready->assignedPlayerId);
+        }
+        else
+        {
+            auto it = players.find(ready->assignedPlayerId);
+            if (it == players.end())
+            {
+                printf("%s [SERVER MAP READY REJECT] reason=player-not-found id=%u\n",
+                       serverTimestamp(), ready->assignedPlayerId);
+            }
+            else if (!playerOwnsConnectionSource(
+                it->second, &from, sourceConnection))
+            {
+                printf("%s [SERVER MAP READY REJECT] reason=connection-mismatch "
+                       "id=%u transport=%s connection=%llu\n",
+                       serverTimestamp(), ready->assignedPlayerId,
+                       transportKindName(event.transportKind),
+                       (unsigned long long)event.connectionId.value);
+            }
+            else
+            {
+                std::string readyMap = normalizeMapId(ready->mapId);
+                std::string serverMap = normalizeMapId(getServerMapId());
+                if (readyMap != serverMap)
+                {
+                    printf("%s [SERVER MAP READY REJECT] reason=map-mismatch id=%u "
+                           "readyMap=%s serverMap=%s\n",
+                           serverTimestamp(), ready->assignedPlayerId,
+                           readyMap.c_str(), serverMap.c_str());
+                }
+                else if (!it->second.spawned)
+                {
+                    it->second.spawned = true;
+                    it->second.vel = glm::vec3(0.0f);
+                    it->second.clientStateUpdated = false;
+                    completeAuthoritativeSpawn(sock, it->second, true);
+                    printf("%s [SERVER MAP READY] transport=%s connection=%llu "
+                           "id=%u name=\"%s\"\n",
+                           serverTimestamp(), transportKindName(event.transportKind),
+                           (unsigned long long)event.connectionId.value,
+                           it->second.id, it->second.name.c_str());
+                }
+            }
+        }
+        result.handled = true;
+    }
+    else
+    {
+        if (stats)
+            ++stats->unknownPacketTypes;
+        printf("%s [SERVER PACKET] rejected reason=unsupported-or-short type=%u "
+               "bytes=%d transport=%s connection=%llu source=%s\n",
+               serverTimestamp(), header->type, bytes,
+               transportKindName(event.transportKind),
+               (unsigned long long)event.connectionId.value,
+               source.c_str());
+    }
+
+    return result;
 }
 
 void beginAuthoritativeTransform(ServerPlayer& player,
@@ -911,6 +1256,8 @@ void beginAuthoritativeTransform(ServerPlayer& player,
     player.lastAcceptedClientVelocity = velocity;
     player.lastAcceptedClientTransformMs = nowMs();
     player.hasAcceptedClientTransform = true;
+    resetServerMovementForAuthoritativeLifecycle(
+        player, makeCurrentRuntimeMovementConfig());
 
     printf("%s [SERVER AUTHORITATIVE TRANSFORM] playerId=%u reason=%s "
            "epoch=%u position=(%.2f,%.2f,%.2f) awaitingAck=1\n",
@@ -1278,6 +1625,8 @@ void handleSpawnAck(SOCKET sock, const char* buffer, int bytes,
     }
 
     p.spawnState = ServerPlayer::Active;
+    resetServerMovementForAuthoritativeLifecycle(
+        p, makeCurrentRuntimeMovementConfig());
     Debug::log(Debug::Category::Weapons, "[SPAWN ACK ACCEPT] playerId=%u spawnGen=%u epoch=%u — now Active\n",
                p.id, ack->spawnGeneration, ack->transformEpoch);
 

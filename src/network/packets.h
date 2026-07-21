@@ -1,3 +1,13 @@
+// 07 21 2026, 16 45
+/* purpose
+* Defines MiMITA network packet IDs, fixed wire structs, flags, and datagram limits.
+* Carries compact gameplay state for join, input, snapshots, weapons, projectiles, and lifecycle.
+* Keeps packet layouts explicit and protocol-versioned for client/server compatibility.
+* Does NOT own transport sockets, validation policy, gameplay simulation, or rendering.
+* Does NOT trust client health, damage, death, ammo, score, projectile hits, or weapon outcomes.
+* Does NOT encode private runtime-only Player or MovementState object layouts.
+*/
+
 #pragma once
 
 #include <cstdint>
@@ -5,7 +15,7 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 23;
+constexpr uint16_t PROTOCOL_VERSION = 24;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -186,11 +196,15 @@ struct PacketHeader
     uint32_t transformEpoch = 0;
 };
 
+static_assert(sizeof(PacketHeader) == 20, "PacketHeader wire size changed");
+
 struct HelloPacket
 {
     PacketHeader header;
     char name[MAX_NAME_BYTES];
 };
+
+static_assert(sizeof(HelloPacket) == 52, "HelloPacket wire size changed");
 
 struct WelcomePacket
 {
@@ -202,6 +216,8 @@ struct WelcomePacket
     char reconnectToken[MAX_RECONNECT_TOKEN_BYTES];
     char mapId[MAX_NAME_BYTES];
 };
+
+static_assert(sizeof(WelcomePacket) == 160, "WelcomePacket wire size changed");
 
 struct InputPacket
 {
@@ -235,7 +251,19 @@ struct InputPacket
     float sizeScale = 1.0f;
     uint32_t transformEpoch = 0;
     uint16_t respawnSerial = 0;
+    uint32_t movementSequence = 0;
+    uint64_t clientSimulationTick = 0;
+    uint32_t spawnGeneration = 0;
+    float externalImpulseX = 0.0f;
+    float externalImpulseY = 0.0f;
+    float externalImpulseZ = 0.0f;
+    float lookPitch = 0.0f;
+    uint32_t movementFlags = 0;
 };
+
+static_assert(sizeof(InputPacket) == 140, "InputPacket wire size changed");
+static_assert(sizeof(InputPacket) <= 160,
+              "InputPacket must stay compact enough for one safe datagram");
 
 struct ProfilePacket
 {
@@ -347,6 +375,7 @@ struct SnapshotChunkPacket
 
 static_assert(sizeof(SnapshotChunkPacket) < MAX_GAME_DATAGRAM_BYTES,
               "SnapshotChunkPacket exceeds safe datagram limit");
+static_assert(sizeof(SnapshotChunkPacket) == 1112, "SnapshotChunkPacket wire size changed");
 
 struct SpawnNpcRequestPacket
 {
@@ -704,6 +733,8 @@ struct JoinRequestPacket
     char name[MAX_NAME_BYTES];
 };
 
+static_assert(sizeof(JoinRequestPacket) == 116, "JoinRequestPacket wire size changed");
+
 struct JoinAcceptPacket
 {
     PacketHeader header;
@@ -714,6 +745,8 @@ struct JoinAcceptPacket
     char reconnectToken[MAX_RECONNECT_TOKEN_BYTES];
     char mapId[MAX_NAME_BYTES];
 };
+
+static_assert(sizeof(JoinAcceptPacket) == 160, "JoinAcceptPacket wire size changed");
 
 struct JoinRejectPacket
 {
@@ -728,12 +761,15 @@ struct ReconnectRequestPacket
     char reconnectToken[MAX_RECONNECT_TOKEN_BYTES];
 };
 
+static_assert(sizeof(ReconnectRequestPacket) == 84, "ReconnectRequestPacket wire size changed");
+
 struct ReconnectAcceptPacket
 {
     PacketHeader header;
     uint32_t assignedPlayerId = 0;
     uint32_t reliableEventSessionId = 0;
     float tickRate = 60.0f;
+    uint32_t spawnGeneration = 0;
     char approvedName[MAX_NAME_BYTES];
     char reconnectToken[MAX_RECONNECT_TOKEN_BYTES];
     // Restored state
@@ -745,12 +781,16 @@ struct ReconnectAcceptPacket
     float restorePz = 0.0f;
 };
 
+static_assert(sizeof(ReconnectAcceptPacket) == 156, "ReconnectAcceptPacket wire size changed");
+
 struct ClientMapReadyPacket
 {
     PacketHeader header;
     uint32_t assignedPlayerId = 0;
     char mapId[MAX_NAME_BYTES];
 };
+
+static_assert(sizeof(ClientMapReadyPacket) == 56, "ClientMapReadyPacket wire size changed");
 
 struct DisagreementPacket
 {

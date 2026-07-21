@@ -1,4 +1,4 @@
-// 07 19 2026, 10 16
+// 07 21 2026, 17 20
 /* purpose
 * Owns lightweight command-line self-tests and diagnostic launch paths.
 * Runs requested checks before normal graphics or gameplay startup.
@@ -137,87 +137,16 @@ bool handleGameCLI(int argc, char** argv)
 {
     if (argc <= 1) return false;
 
-    // ── Lightweight ICE Host Only (no game engine init) ─────────
-    if (std::string(argv[1]) == "--ice-host-only") {
-        IceTestOptions opts;
-        for (int i = 2; i < argc; ++i) {
-            std::string a = argv[i];
-            if (a == "--once") opts.once = true;
-            else if (a == "--force-relay") opts.forceRelay = true;
-            else if (a == "--disable-relay") opts.disableRelay = true;
-            else if (a == "--timeout-seconds" && i + 1 < argc)
-                opts.timeoutSeconds = std::max(1, std::atoi(argv[++i]));
-            else if (a == "--clients" && i + 1 < argc)
-                opts.expectedClients = std::max(1, std::atoi(argv[++i]));
-        }
-        const bool ok = runIceHostOnly(opts);
-        std::exit(ok ? 0 : 1);
-    }
-
-    // ── Lightweight ICE Join Only (no game engine init) ─────────
-    if (std::string(argv[1]) == "--ice-join-only") {
-        if (argc < 3) {
-            printf("[ICE ONLY] usage: mimita.exe --ice-join-only <room-code> [options]\n");
-            return true;
-        }
-        IceTestOptions opts;
-        for (int i = 3; i < argc; ++i) {
-            std::string a = argv[i];
-            if (a == "--once") opts.once = true;
-            else if (a == "--force-relay") opts.forceRelay = true;
-            else if (a == "--disable-relay") opts.disableRelay = true;
-            else if (a == "--timeout-seconds" && i + 1 < argc)
-                opts.timeoutSeconds = std::max(1, std::atoi(argv[++i]));
-        }
-        const bool ok = runIceJoinOnly(argv[2], opts);
-        std::exit(ok ? 0 : 1);
-    }
-
-    // ── ICE Game Host (lightweight server with Input/Snapshot) ─────
-    if (std::string(argv[1]) == "--ice-game-host") {
-        IceTestOptions opts;
-        for (int i = 2; i < argc; ++i) {
-            std::string a = argv[i];
-            if (a == "--force-relay") opts.forceRelay = true;
-            else if (a == "--disable-relay") opts.disableRelay = true;
-            else if (a == "--timeout-seconds" && i + 1 < argc)
-                opts.timeoutSeconds = std::max(1, std::atoi(argv[++i]));
-        }
-        runIceGameHost(opts);
-        return true;
-    }
-
-    // ── ICE Game Client (authenticated join + Input/Snapshot) ─────
-    if (std::string(argv[1]) == "--ice-game-client") {
-        if (argc < 3) {
-            printf("[ICE GAME] usage: mimita.exe --ice-game-client <room-code>\n");
-            return true;
-        }
-        IceTestOptions opts;
-        for (int i = 3; i < argc; ++i) {
-            std::string a = argv[i];
-            if (a == "--force-relay") opts.forceRelay = true;
-            else if (a == "--disable-relay") opts.disableRelay = true;
-            else if (a == "--timeout-seconds" && i + 1 < argc)
-                opts.timeoutSeconds = std::max(1, std::atoi(argv[++i]));
-        }
-        runIceGameClient(argv[2], opts);
-        return true;
-    }
-
-    // ── ICE Server (dedicated server with real game engine) ───────
-    if (std::string(argv[1]) == "--ice-server") {
-        IceTestOptions opts;
-        for (int i = 2; i < argc; ++i) {
-            std::string a = argv[i];
-            if (a == "--disable-relay") opts.disableRelay = true;
-            else if (a == "--timeout-seconds" && i + 1 < argc)
-                opts.timeoutSeconds = std::max(1, std::atoi(argv[++i]));
-        }
-        // runIceServer calls into ice-server.cpp which uses the real server loop
-        // but with ICE transport. It returns 0 on success.
-        runIceServer(opts);
-        return true;
+    const std::string command = argv[1];
+    if (command == "--ice-host-only" ||
+        command == "--ice-join-only" ||
+        command == "--ice-game-host" ||
+        command == "--ice-game-client" ||
+        command == "--ice-server")
+    {
+        printf("[ICE LEGACY DISABLED] command=%s reason=Stage3C-unified-server-path\n", argv[1]);
+        printf("[ICE LEGACY DISABLED] use --server --ice --timeout <secs> for hosting and --ice-connect <room-code> for a client probe\n");
+        std::exit(2);
     }
 
     // ── ICE Connect (client connects via ICE to an ICE server) ────
@@ -232,6 +161,12 @@ bool handleGameCLI(int argc, char** argv)
             if (a == "--disable-relay") opts.disableRelay = true;
             else if (a == "--timeout-seconds" && i + 1 < argc)
                 opts.timeoutSeconds = std::max(1, std::atoi(argv[++i]));
+            else if (a == "--death-respawn-cycles" && i + 1 < argc)
+                opts.deathRespawnCycles = std::max(0, std::atoi(argv[++i]));
+            else if (a == "--client-index" && i + 1 < argc)
+                opts.clientIndex = std::max(0, std::atoi(argv[++i]));
+            else if (a == "--reconnect-token" && i + 1 < argc)
+                opts.reconnectToken = argv[++i];
         }
         runIceConnect(argv[2], opts);
         return true;

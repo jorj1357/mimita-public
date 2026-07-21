@@ -1,9 +1,9 @@
-// 07 21 2026, 10 54
+// 07 21 2026, 17 25
 /* purpose
-* Declares the shared walking, gravity, jump, impulse, and special movement kernel.
+* Declares the shared walking, gravity, jump, impulse, special movement, and contact reset kernel.
 * Exposes pure movement helpers so legacy Player wrappers and shared state reuse one formula.
-* Keeps the collision phase represented as explicit feedback instead of owning collision.
-* Does NOT implement collision sweeps, contact generation, or universal contact reset migration.
+* Keeps collision represented as explicit feedback and typed contact facts instead of owning sweeps.
+* Does NOT implement collision sweeps, network transport, rendering, audio, or authority decisions.
 * Does NOT include Player, server, renderer, audio, weapon, packet, or authority logic.
 * Does NOT replace the complete local physics orchestrator.
 */
@@ -18,7 +18,9 @@ struct MovementCollisionFeedback {
     bool onGround = false;
     bool hasWorldContact = false;
     bool realWorldContactThisFrame = false;
+    uint64_t simulationTick = 0;
     glm::vec3 groundNormal{0.0f, 0.0f, 1.0f};
+    MovementContactSet contacts;
 };
 
 float movementClampStepDelta(float dt, const MovementConfig& config);
@@ -97,6 +99,51 @@ MovementVelocityView movementVelocityViewForCollision(const MovementState& state
                                                       const MovementConfig& config);
 glm::vec3 calculateEffectiveMovementVelocity(const MovementState& state,
                                              const MovementConfig& config);
+MovementContactKind classifyMovementContactKindFromNormal(const glm::vec3& normal,
+                                                          const MovementConfig& config,
+                                                          bool grounded,
+                                                          bool step = false);
+MovementContact makeStaticWorldMovementContact(MovementContactKind kind,
+                                               uint64_t simulationTick,
+                                               MovementLifecycleIdentity targetLifecycle,
+                                               const glm::vec3& point,
+                                               const glm::vec3& normal,
+                                               uint32_t surfaceId = 0,
+                                               float penetrationDepth = 0.0f,
+                                               bool resetsAbilities = true);
+MovementContact makeEntityMovementContact(MovementContactKind kind,
+                                          MovementContactSource source,
+                                          uint32_t sourceEntityId,
+                                          uint64_t contactId,
+                                          uint64_t sourceEventId,
+                                          uint64_t simulationTick,
+                                          MovementLifecycleIdentity targetLifecycle,
+                                          const glm::vec3& point,
+                                          const glm::vec3& normal,
+                                          float strength = 0.0f,
+                                          bool resetsAbilities = true);
+MovementContact makeProjectileMovementContact(uint32_t projectileId,
+                                              uint64_t eventId,
+                                              uint64_t simulationTick,
+                                              MovementLifecycleIdentity targetLifecycle,
+                                              const glm::vec3& point,
+                                              const glm::vec3& normal,
+                                              MovementContactSource source =
+                                                  MovementContactSource::Projectile);
+MovementContact makeExplosionMovementContact(uint64_t explosionEventId,
+                                             uint32_t sourceEntityId,
+                                             uint64_t simulationTick,
+                                             MovementLifecycleIdentity targetLifecycle,
+                                             const glm::vec3& center,
+                                             float strength);
+MovementAbilityResetResult resetTouchAbilities(MovementState& state,
+                                               const MovementConfig& config);
+MovementContactConsumeResult consumeMovementContacts(
+    MovementState& state,
+    const MovementConfig& config,
+    const MovementContactSet& contacts,
+    MovementContactHistory& history,
+    MovementStepEvents& events);
 void restoreSpecialAbilityAvailability(MovementState& state);
 void resetSpecialMovementLifecycleState(MovementState& state);
 bool shouldWalkingOverwriteDashMomentum(const MovementState& state,

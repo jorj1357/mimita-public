@@ -1,3 +1,13 @@
+// 07 21 2026, 17 25
+/* purpose
+* Implements core shared helpers for Player collision recovery and contact response.
+* Emits neutral movement contact facts while preserving existing collision projection behavior.
+* Keeps local GLB/block collision files using one contact adapter.
+* Does NOT own movement reset formulas, network packets, rendering, audio, or damage.
+* Does NOT change projectile authority, weapon firing, server reconciliation, or input polling.
+* Does NOT replace specialized GLB, block, body, or safety collision passes.
+*/
+
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -16,6 +26,7 @@
 #include "config/player-settings.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
+#include "physics/movement/movement-step.h"
 
 #define PHYS_LOG(...) Debug::logThrottled(Debug::Category::Collision, "physics-collision", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 #define LOG_COLLISION(K, ...) Debug::logThrottled(Debug::Category::Collision, K, 0.25f, __VA_ARGS__)
@@ -41,6 +52,75 @@ void recoverInvalidPlayerCollisionState(Player& p, const glm::vec3& frameStart, 
     p.externalImpulse = glm::vec3(0.0f);
     p.syncLegacyStateToLayers();
     p.updateModelWorldTransforms();
+}
+
+static uint32_t movementSurfaceIdFromTriangle(int triangleIndex)
+{
+    return triangleIndex >= 0 ? static_cast<uint32_t>(triangleIndex + 1) : 0;
+}
+
+MovementContactKind classifyCollisionMovementContactKind(const glm::vec3& normal,
+                                                         bool grounded,
+                                                         bool step)
+{
+    MovementConfig config;
+    config.walkableSlopeDot = MAX_WALKABLE_SLOPE_DOT;
+    return classifyMovementContactKindFromNormal(normal, config, grounded, step);
+}
+
+void appendPlayerMovementContact(Player& p,
+                                 MovementContactKind kind,
+                                 const glm::vec3& normal,
+                                 glm::vec3 point,
+                                 float penetration,
+                                 int triangleIndex,
+                                 MovementContactSource source)
+{
+    MovementContact contact;
+    if (source == MovementContactSource::StaticWorld) {
+        contact = makeStaticWorldMovementContact(
+            kind,
+            p.movementSimulationTick,
+            MovementLifecycleIdentity{p.spawnGeneration, 0},
+            point,
+            normal,
+            movementSurfaceIdFromTriangle(triangleIndex),
+            penetration);
+    } else {
+        contact = makeEntityMovementContact(
+            kind,
+            source,
+            0,
+            0,
+            0,
+            p.movementSimulationTick,
+            MovementLifecycleIdentity{p.spawnGeneration, 0},
+            point,
+            normal,
+            penetration);
+        contact.surfaceId = movementSurfaceIdFromTriangle(triangleIndex);
+        contact.penetrationDepth = penetration;
+    }
+    p.movementContacts.addDeduplicated(contact);
+}
+
+void appendPlayerMovementContactForNormal(Player& p,
+                                          bool grounded,
+                                          bool step,
+                                          const glm::vec3& normal,
+                                          glm::vec3 point,
+                                          float penetration,
+                                          int triangleIndex,
+                                          MovementContactSource source)
+{
+    appendPlayerMovementContact(
+        p,
+        classifyCollisionMovementContactKind(normal, grounded, step),
+        normal,
+        point,
+        penetration,
+        triangleIndex,
+        source);
 }
 
 void applyCollisionContact(
@@ -75,7 +155,8 @@ void applyCollisionContact(
                           point.z, feetZ, penetration, p.vel.z);
 
             groundedThisFrame = true;
-            applyTouchResets(p);
+            appendPlayerMovementContact(
+                p, MovementContactKind::Ground, normal, point, penetration, triangleIndex);
 
             if (p.vel.z < 0.0f)
                 p.vel.z = 0.0f;
@@ -91,6 +172,8 @@ void applyCollisionContact(
                 label, triangleIndex, normal.x, normal.y, normal.z,
                 point.x, point.y, point.z, feetZ, point.z - feetZ,
                 p.pos.x, p.pos.y, p.pos.z);
+            appendPlayerMovementContact(
+                p, MovementContactKind::StaticWorld, normal, point, penetration, triangleIndex);
             projectVelocityAgainstNormal(p, normal);
         }
     }
@@ -98,14 +181,16 @@ void applyCollisionContact(
     {
         LOG_COLLISION("contact_slope", "[CONTACT] SLOPE label=%s normal=(%.3f,%.3f,%.3f) pen=%.4f vel projected",
                       label ? label : "?", normal.x, normal.y, normal.z, penetration);
-        applyTouchResets(p);
+        appendPlayerMovementContact(
+            p, MovementContactKind::Slope, normal, point, penetration, triangleIndex);
         projectVelocityAgainstNormal(p, normal);
     }
     else if (normal.z < -MAX_WALKABLE_SLOPE_DOT)
     {
         LOG_COLLISION("contact_ceiling", "[CONTACT] CEILING label=%s normal=(%.3f,%.3f,%.3f) velZ=%.3f",
                       label ? label : "?", normal.x, normal.y, normal.z, p.vel.z);
-        applyTouchResets(p);
+        appendPlayerMovementContact(
+            p, MovementContactKind::Ceiling, normal, point, penetration, triangleIndex);
         if (p.vel.z > 0.0f)
             p.vel.z = 0.0f;
     }
@@ -114,21 +199,11 @@ void applyCollisionContact(
         LOG_COLLISION("contact_wall", "[CONTACT] WALL label=%s normal=(%.3f,%.3f,%.3f) velZ=%.3f",
                       label ? label : "?", normal.x, normal.y, normal.z, p.vel.z);
         projectVelocityAgainstNormal(p, normal);
-        applyTouchResets(p);
+        appendPlayerMovementContact(
+            p, MovementContactKind::Wall, normal, point, penetration, triangleIndex);
     }
 
     DebugVis::recordContact(point, normal, penetration, triangleIndex, label);
-}
-
-void applyTouchResets(Player& p)
-{
-    p.jump.airJumpsLeft = AIR_JUMPS_MAX;
-    p.jump.airJumpArmed = true;
-    p.jump.airJumpLocked = false;
-    p.dash.dashAvailable = true;
-    p.groundReturn.available = true;
-    p.dash.downDashAvailable = true;
-    p.freeze.freezeAvailable = true;
 }
 
 glm::vec3 solveBatchedCorrection(

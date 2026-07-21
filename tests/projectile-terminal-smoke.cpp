@@ -11,6 +11,7 @@
 #include "network/net_common.h"
 #include "network/packets.h"
 #include "network/snapshot-chunks.h"
+#include "network/movement-validation.h"
 
 #include <chrono>
 #include <cmath>
@@ -27,6 +28,7 @@ struct Client
     uint32_t id = 0;
     uint32_t spawnGeneration = 0;
     uint32_t transformEpoch = 0;
+    uint32_t movementSequence = 1;
     std::string mapId;
     MimitaNet::SnapshotPacket snapshot{};
 };
@@ -40,7 +42,21 @@ void copyName(char (&out)[MimitaNet::MAX_NAME_BYTES], const char* name)
 bool openClient(Client& c)
 {
     c.socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    return c.socket != INVALID_SOCKET && MimitaNet::setNonBlocking(c.socket);
+    if (c.socket == INVALID_SOCKET || !MimitaNet::setNonBlocking(c.socket))
+        return false;
+
+    sockaddr_in bindAddress{};
+    bindAddress.sin_family = AF_INET;
+    bindAddress.sin_addr.s_addr = htonl(INADDR_ANY);
+    bindAddress.sin_port = htons(0);
+    if (bind(c.socket, (sockaddr*)&bindAddress, sizeof(bindAddress)) ==
+        SOCKET_ERROR)
+    {
+        std::printf("[projectile-terminal-smoke] bind failed error=%d\n",
+                    WSAGetLastError());
+        return false;
+    }
+    return true;
 }
 
 void sendHello(Client& c, const sockaddr_in& server, const char* name)
@@ -65,6 +81,7 @@ void sendSpawnAck(Client& c, const MimitaNet::PlayerRespawnedPacket& spawn, cons
 {
     c.spawnGeneration = spawn.spawnGeneration;
     c.transformEpoch = spawn.transformEpoch;
+    c.movementSequence = 1;
     MimitaNet::SpawnAckPacket p{};
     p.header.type = MimitaNet::PACKET_SPAWN_ACK;
     p.header.playerId = c.id;
@@ -126,11 +143,20 @@ void sendPosition(Client& c, const sockaddr_in& server, float x, float y, float 
     p.header.type = MimitaNet::PACKET_INPUT;
     p.header.playerId = c.id;
     p.header.transformEpoch = c.transformEpoch;
+    p.header.tick = c.movementSequence;
     p.clientPx = x;
     p.clientPy = y;
     p.clientPz = z;
     p.camForwardX = 1.0f;
     p.transformEpoch = c.transformEpoch;
+    p.spawnGeneration = c.spawnGeneration;
+    p.movementSequence = c.movementSequence++;
+    p.clientSimulationTick = p.movementSequence;
+    p.movementFlags =
+        MimitaNet::MOVEMENT_REPORT_DASH_AVAILABLE |
+        MimitaNet::MOVEMENT_REPORT_DOWN_DASH_AVAILABLE |
+        MimitaNet::MOVEMENT_REPORT_FREEZE_AVAILABLE |
+        MimitaNet::MOVEMENT_REPORT_GROUND_RETURN_AVAILABLE;
     p.sizeScale = 1.0f;
     sendto(c.socket, (const char*)&p, sizeof(p), 0, (const sockaddr*)&server, sizeof(server));
 }

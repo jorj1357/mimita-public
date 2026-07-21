@@ -1,7 +1,18 @@
+// 07 21 2026, 17 10
+/* purpose
+* Owns the legacy standalone UDP multiplayer client loop.
+* Sends protocol-compatible movement reports and basic lifecycle acknowledgements.
+* Provides a simple debug client path outside the main in-game multiplayer context.
+* Does NOT own modern ICE connection flow, server validation policy, or packet schemas.
+* Does NOT simulate authoritative server movement or weapon runtime reconciliation.
+* Does NOT send stale protocol input without spawn generation, epoch, sequence, and movement flags.
+*/
+
 #include "network/net_mode.h"
 
 #include "network/net_common.h"
 #include "network/packets.h"
+#include "network/movement-validation.h"
 #include "engine/engine.h"
 #include "world/world.h"
 #include "world/world-gltf-loader.h"
@@ -112,6 +123,7 @@ int runClient(const LaunchOptions& options)
 
     uint32_t localPlayerId = 0;
     uint32_t clientTick = 0;
+    uint32_t movementSequence = 1;
     uint64_t lastHelloMs = 0;
     uint64_t lastLogMs = nowMs();
     uint64_t packetsSent = 0;
@@ -120,6 +132,8 @@ int runClient(const LaunchOptions& options)
     std::unordered_map<uint32_t, Player> players;
     std::unordered_map<uint32_t, Player> npcs;
     std::string approvedName = options.name;
+    uint32_t spawnGeneration = 0;
+    uint32_t transformEpoch = 0;
 
     while (engine.running())
     {
@@ -172,8 +186,38 @@ int runClient(const LaunchOptions& options)
                 WelcomePacket* welcome = reinterpret_cast<WelcomePacket*>(buffer);
                 localPlayerId = welcome->assignedPlayerId;
                 approvedName = welcome->approvedName;
+                transformEpoch = welcome->header.transformEpoch;
                 printf("[CLIENT] connected assigned player id=%u serverTick=%u tickRate=%.0f\n",
                        localPlayerId, welcome->header.tick, welcome->tickRate);
+
+                ClientMapReadyPacket ready{};
+                ready.header.type = PACKET_CLIENT_MAP_READY;
+                ready.header.playerId = localPlayerId;
+                ready.header.transformEpoch = transformEpoch;
+                ready.assignedPlayerId = localPlayerId;
+                copyName(ready.mapId, welcome->mapId[0] ? welcome->mapId : clientMap.c_str());
+                sendto(sock, (const char*)&ready, sizeof(ready), 0,
+                       (sockaddr*)&serverAddr, sizeof(serverAddr));
+                ++packetsSent;
+            }
+            else if (header->type == PACKET_PLAYER_RESPAWNED &&
+                     bytes >= (int)sizeof(PlayerRespawnedPacket))
+            {
+                const PlayerRespawnedPacket* spawn =
+                    reinterpret_cast<const PlayerRespawnedPacket*>(buffer);
+                spawnGeneration = spawn->spawnGeneration;
+                transformEpoch = spawn->transformEpoch;
+                movementSequence = 1;
+
+                SpawnAckPacket ack{};
+                ack.header.type = PACKET_SPAWN_ACK;
+                ack.header.playerId = localPlayerId;
+                ack.header.transformEpoch = transformEpoch;
+                ack.spawnGeneration = spawnGeneration;
+                ack.transformEpoch = transformEpoch;
+                sendto(sock, (const char*)&ack, sizeof(ack), 0,
+                       (sockaddr*)&serverAddr, sizeof(serverAddr));
+                ++packetsSent;
             }
             else if (header->type == PACKET_SNAPSHOT && bytes >= (int)sizeof(SnapshotPacket))
             {
@@ -226,6 +270,7 @@ int runClient(const LaunchOptions& options)
                     p.yaw = entity.yaw;
                     p.ground.onGround = entity.onGround != 0;
                     p.currentHp = entity.health;
+                    p.spawnGeneration = entity.spawnGeneration;
                     p.username = entity.displayName;
                     p.updateProceduralAnimation(dt);
                     (*seen)[entity.networkEntityId] = true;
@@ -262,6 +307,7 @@ int runClient(const LaunchOptions& options)
             in.header.type = PACKET_INPUT;
             in.header.tick = clientTick;
             in.header.playerId = localPlayerId;
+            in.header.transformEpoch = transformEpoch;
             in.wishX = input.wishMoveXY.x;
             in.wishY = input.wishMoveXY.y;
             in.camForwardX = input.camForward.x;
@@ -276,14 +322,46 @@ int runClient(const LaunchOptions& options)
                 in.clientVx = localIt->second.vel.x;
                 in.clientVy = localIt->second.vel.y;
                 in.clientVz = localIt->second.vel.z;
+                in.spawnGeneration = localIt->second.spawnGeneration != 0
+                    ? localIt->second.spawnGeneration
+                    : spawnGeneration;
             }
             {
                 uint16_t sf = 0;
                 if (input.jumpHeld) sf |= NET_STATE_JUMPING;
                 if (input.dashPressed) sf |= NET_STATE_DASHING;
+                if (input.downDashPressed) sf |= NET_STATE_DOWN_DASHING;
                 if (input.freezeHeld) sf |= NET_STATE_FREEZING;
                 in.stateFlags = sf;
             }
+            in.movementSequence = movementSequence++;
+            if (movementSequence == 0)
+                movementSequence = 1;
+            in.clientSimulationTick = clientTick;
+            if (in.spawnGeneration == 0)
+                in.spawnGeneration = spawnGeneration;
+            in.transformEpoch = transformEpoch;
+            in.externalImpulseX = localIt != players.end() ? localIt->second.externalImpulse.x : 0.0f;
+            in.externalImpulseY = localIt != players.end() ? localIt->second.externalImpulse.y : 0.0f;
+            in.externalImpulseZ = localIt != players.end() ? localIt->second.externalImpulse.z : 0.0f;
+            in.lookPitch = camera.pitch;
+            uint32_t movementFlags =
+                MOVEMENT_REPORT_DASH_AVAILABLE |
+                MOVEMENT_REPORT_DOWN_DASH_AVAILABLE |
+                MOVEMENT_REPORT_FREEZE_AVAILABLE |
+                MOVEMENT_REPORT_GROUND_RETURN_AVAILABLE;
+            if (input.jumpHeld) movementFlags |= MOVEMENT_REPORT_JUMP_HELD;
+            if (input.dashPressed) movementFlags |= MOVEMENT_REPORT_DASH_PRESSED;
+            if (input.downDashPressed) movementFlags |= MOVEMENT_REPORT_DOWN_DASH_PRESSED;
+            if (input.freezeHeld) movementFlags |= MOVEMENT_REPORT_FREEZE_HELD;
+            if (localIt != players.end() && localIt->second.ground.onGround)
+            {
+                movementFlags |= MOVEMENT_REPORT_ON_GROUND |
+                    MOVEMENT_REPORT_STABLE_ON_GROUND |
+                    MOVEMENT_REPORT_HAS_WORLD_CONTACT |
+                    MOVEMENT_REPORT_AIR_JUMP_ARMED;
+            }
+            in.movementFlags = movementFlags;
             in.attackPressed = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS ? 1 : 0;
             sendto(sock, (const char*)&in, sizeof(in), 0, (sockaddr*)&serverAddr, sizeof(serverAddr));
             ++packetsSent;

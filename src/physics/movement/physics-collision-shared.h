@@ -1,3 +1,13 @@
+// 07 21 2026, 17 25
+/* purpose
+* Declares shared helpers used by the Player collision implementation.
+* Keeps collision response, contact fact emission, and diagnostics reachable across collision files.
+* Bridges current local collision facts into neutral movement contact data.
+* Does NOT own movement reset formulas, packet transport, rendering, audio, or weapon behavior.
+* Does NOT decide network authority, projectile damage, or server/client reconciliation.
+* Does NOT replace the collision pipeline implementations declared below.
+*/
+
 #pragma once
 
 #include <vector>
@@ -9,6 +19,7 @@
 #include "physics/config.h"
 #include "entities/player.h"
 #include "physics/movement/physics-collision.h"
+#include "physics/movement/movement-types.h"
 
 class Player;
 class CollisionTriangle;
@@ -63,7 +74,26 @@ void applyCollisionContact(
     const char* label
 );
 
-void applyTouchResets(Player& p);
+MovementContactKind classifyCollisionMovementContactKind(const glm::vec3& normal,
+                                                         bool grounded,
+                                                         bool step = false);
+void appendPlayerMovementContact(Player& p,
+                                 MovementContactKind kind,
+                                 const glm::vec3& normal,
+                                 glm::vec3 point,
+                                 float penetration,
+                                 int triangleIndex,
+                                 MovementContactSource source =
+                                     MovementContactSource::StaticWorld);
+void appendPlayerMovementContactForNormal(Player& p,
+                                          bool grounded,
+                                          bool step,
+                                          const glm::vec3& normal,
+                                          glm::vec3 point,
+                                          float penetration,
+                                          int triangleIndex,
+                                          MovementContactSource source =
+                                              MovementContactSource::StaticWorld);
 
 void recoverInvalidPlayerCollisionState(Player& p, const glm::vec3& frameStart, const char* phase);
 
