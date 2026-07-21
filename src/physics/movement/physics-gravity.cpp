@@ -1,26 +1,18 @@
-// C:\important\quiet\n\mimita-priv-v7\src\physics\movement\physics-gravity.cpp
-// feb 10 2026
-/**
- * purpose
- * handles all gravity
- * should expose like
- * applygravity(args)
- * and just gets called by other files
- * maibe called bi the specific files? or the phsics main file itself, idk
- */
-
-// Purpose:
-// - Apply gravity to player vertical velocity
-// - Clamp fall speed
-// - Nothing else
-//
-// Uses physics/config.h
-// Debug heavy
+// 07 21 2026, 10 54
+/* purpose
+* Adapts current Player gravity to the shared Stage 2A gravity helper.
+* Preserves local vertical acceleration, dt clamp, fall clamp, and diagnostics.
+* Keeps Player-specific logging outside the neutral shared movement kernel.
+* Does NOT handle collision, grounding, jump, dash, freeze, walking, or friction.
+* Does NOT decide network authority or mutate packet/server state.
+* Does NOT launch or own any runtime test harness.
+*/
 
 #include <cstdio>
 #include <algorithm>
 
 #include "physics/config.h"
+#include "physics/movement/movement-step.h"
 #include "entities/player.h"
 #include "debug/debug-log.h"
 
@@ -43,12 +35,9 @@ void doGravity(
 
     float beforeVelZ = p.vel.z;
 
-    // Apply gravity
-    p.vel.z += PHYS.gravity * safeDt;
+    p.vel.z = movementApplyGravityZ(p.vel.z, PHYS.gravity, MAX_FALL_SPEED, safeDt);
 
-    // Clamp fall speed
-    if (p.vel.z < -MAX_FALL_SPEED) {
-        p.vel.z = -MAX_FALL_SPEED;
+    if (p.vel.z <= -MAX_FALL_SPEED && beforeVelZ + PHYS.gravity * safeDt < -MAX_FALL_SPEED) {
         GRAV_LOG(
             "[GRAVITY] Clamp fall speed -> %.3f\n",
             p.vel.z

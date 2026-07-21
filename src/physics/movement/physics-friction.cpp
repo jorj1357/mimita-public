@@ -1,4 +1,12 @@
-// C:\important\quiet\n\mimita-priv-v7\src\physics\movement\physics-friction.cpp
+// 07 21 2026, 10 54
+/* purpose
+* Adapts current Player friction and external impulse decay to shared helpers.
+* Preserves base X/Y friction, friction override, impulse decay, and impulse clamp.
+* Keeps Player-specific diagnostics outside the neutral Stage 2A movement kernel.
+* Does NOT apply walking, gravity, jump, collision, dash, down dash, or freeze.
+* Does NOT send packets, play audio, render, or decide movement authority.
+* Does NOT own projectile, weapon, damage, or contact reset behavior.
+*/
 
 #include <cstdio>
 #include <cmath>
@@ -6,16 +14,11 @@
 #include <glm/glm.hpp>
 
 #include "physics/config.h"
-#include "config/size-scaling-config.h"
+#include "physics/movement/movement-step.h"
 #include "entities/player.h"
 #include "debug/debug-log.h"
 
 #define FRICTION_LOG(...) Debug::logThrottled(Debug::Category::Physics, "friction", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
-
-static inline float expDecay(float amount, float dt)
-{
-    return std::exp(-amount * dt);
-}
 
 void doFriction(
     Player& p,
@@ -37,42 +40,19 @@ void doFriction(
 
     if (!(onGround && hasMoveInput))
     {
-        const auto& sc = SizeScalingConfig::instance().data();
-        float s = std::max(p.sizeScale, 0.001f);
-        float frictionAmount =
-            (onGround
-            ? GROUND_FRICTION_AMOUNT
-            : AIR_FRICTION_AMOUNT)
-            * frictionMul * sc.scale(1.0f, -0.5f, s); // larger = less friction
-
-        float decay = expDecay(frictionAmount, dt);
-        velXY *= decay;
-
-        if (glm::length(velXY) < ALMOST_ZERO)
-            velXY = glm::vec2(0.0f);
-
+        velXY = movementApplyBaseFrictionXY(
+            velXY, onGround, hasMoveInput, p.sizeScale, frictionMul,
+            GROUND_FRICTION_AMOUNT, AIR_FRICTION_AMOUNT, -0.5f,
+            ALMOST_ZERO, dt);
         p.vel.x = velXY.x;
         p.vel.y = velXY.y;
     }
 
     // External momentum fades slowly and independently of walk friction.
     // Apply friction override so tick-perfect preserves external impulse too.
-    float impulseDecay =
-        expDecay(EXTERNAL_IMPULSE_DECAY * frictionMul, dt);
-
-    p.externalImpulse *= impulseDecay;
-
-    if (glm::length(p.externalImpulse) < ALMOST_ZERO)
-        p.externalImpulse = glm::vec3(0.0f);
-
-    glm::vec2 impulseXY(p.externalImpulse.x, p.externalImpulse.y);
-    float impulseSpeed = glm::length(impulseXY);
-    if (impulseSpeed > MAX_EXTERNAL_IMPULSE_SPEED)
-    {
-        impulseXY *= MAX_EXTERNAL_IMPULSE_SPEED / impulseSpeed;
-        p.externalImpulse.x = impulseXY.x;
-        p.externalImpulse.y = impulseXY.y;
-    }
+    movementDecayAndClampExternalImpulse(
+        p.externalImpulse, EXTERNAL_IMPULSE_DECAY, frictionMul,
+        MAX_EXTERNAL_IMPULSE_SPEED, ALMOST_ZERO, dt);
 
     if (speedBefore > ALMOST_ZERO)
     {

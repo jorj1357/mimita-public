@@ -13,6 +13,7 @@
 #include <cmath>
 
 #include "entities/player.h"
+#include "config/size-scaling-config.h"
 #include "network/server.h"
 #include "network/simulation-constants.h"
 #include "physics/config.h"
@@ -114,6 +115,7 @@ MovementState movementStateFromPlayer(const Player& player,
     state.ground.wasOnGround = player.ground.wasOnGround;
     state.ground.hasWorldContact = player.ground.hasWorldContact;
     state.ground.realWorldContactThisFrame = player.ground.realWorldContactThisFrame;
+    state.ground.didLand = player.ground.didLand;
     state.ground.groundLostTimerSeconds = player.ground.groundLostTimer;
     state.ground.airborneTimerSeconds = player.ground.airborneTimer;
     state.ground.landingCooldownSeconds = player.ground.landingCooldown;
@@ -167,6 +169,7 @@ void applyMovementStateToPlayer(const MovementState& state, Player& player)
     player.ground.wasOnGround = state.ground.wasOnGround;
     player.ground.hasWorldContact = state.ground.hasWorldContact;
     player.ground.realWorldContactThisFrame = state.ground.realWorldContactThisFrame;
+    player.ground.didLand = state.ground.didLand;
     player.ground.groundLostTimer = state.ground.groundLostTimerSeconds;
     player.ground.airborneTimer = state.ground.airborneTimerSeconds;
     player.ground.landingCooldown = state.ground.landingCooldownSeconds;
@@ -243,11 +246,15 @@ MovementConfig makeCurrentRuntimeMovementConfig()
     MovementConfig config;
     config.simulationHz = MimitaNet::GAMEPLAY_SIMULATION_HZ;
     config.fixedDeltaSeconds = MimitaNet::GAMEPLAY_FIXED_DT;
+    config.maximumDeltaSeconds = 0.033f;
     config.groundSpeed = PHYS.moveSpeed;
     config.airSpeed = AIR_SPEED;
+    const auto& sizeScaling = SizeScalingConfig::instance().data();
+    config.movementSpeedSizeExponent = sizeScaling.movementSpeedExponent;
     config.gravityZ = PHYS.gravity;
     config.maximumFallSpeed = MAX_FALL_SPEED;
     config.jumpVerticalSpeed = PHYS.jumpStrength;
+    config.jumpHeightSizeExponent = sizeScaling.jumpHeightExponent;
     config.jumpBufferSeconds = JUMP_BUFFER_TIME;
     config.coyoteSeconds = COYOTE_JUMP_TIME;
     config.maximumAirJumps = AIR_JUMPS_MAX;
@@ -261,9 +268,16 @@ MovementConfig makeCurrentRuntimeMovementConfig()
     config.externalImpulseDecay = EXTERNAL_IMPULSE_DECAY;
     config.externalImpulseSteerRate = EXTERNAL_IMPULSE_STEER_RATE;
     config.externalImpulseBrakeRate = EXTERNAL_IMPULSE_BRAKE_RATE;
+    config.groundFrictionAmount = GROUND_FRICTION_AMOUNT;
+    config.airFrictionAmount = AIR_FRICTION_AMOUNT;
+    config.frictionSizeExponent = -0.5f;
+    config.almostZeroSpeed = ALMOST_ZERO;
     config.walkableSlopeDot = MAX_WALKABLE_SLOPE_DOT;
     config.collisionSkin = COLLISION_SKIN;
     config.maximumStepHeight = MAX_STEP_HEIGHT;
+    config.stableGroundGraceSeconds = 0.08f;
+    config.landingMinimumAirborneSeconds = 0.08f;
+    config.landingCooldownResetSeconds = 0.3f;
     return config;
 }
 
