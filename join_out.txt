@@ -1,2 +1,0 @@
-[ICE JOIN] usage: mimita.exe --ice-join-test <room-code>
-FAIL

@@ -389,20 +389,23 @@ void guiMain(GLFWwindow* win, GameState& state)
 
     // Poll for room code from external server process (non-blocking).
     // Returns true when the room code file was successfully read.
+    // 7 22 2026 1230 no localhost 
     if (pollPendingServerRoomCode())
     {
-        printf("[COMMUNITY AUTO CONNECT] localhost=127.0.0.1:%u room=%s\n",
-               gServerLaunchSettings.port, gServerLaunchSettings.serverCode.c_str());
+        Debug::log(
+            Debug::Category::Networking,
+            "[COMMUNITY AUTO CONNECT] room=%s transport=room-code\n",
+            gServerLaunchSettings.serverCode.c_str());
 
         gPendingConnect = {};
         gPendingConnect.shouldConnect = true;
-        gPendingConnect.address = "127.0.0.1";
-        gPendingConnect.port = gServerLaunchSettings.port;
         gPendingConnect.roomCode = gServerLaunchSettings.serverCode;
-        gPendingConnect.useIce = false;
+        gPendingConnect.useIce = true;
 
         onlineMenuSetActive(false);
-        state = GAME_PLAYING;
+
+        // The engine will consume gPendingConnect and begin joining.
+        // Do not enter GAME_PLAYING until the server connection succeeds.
         return;
     }
 
@@ -748,19 +751,34 @@ void guiMain(GLFWwindow* win, GameState& state)
                                    gServerLaunchSettings.port, gListenServer.serverCode.c_str(),
                                    gServerLaunchSettings.mapName.c_str());
 
-                            // Auto-connect to the listen server via localhost
-                            printf("[COMMUNITY AUTO CONNECT] listen-server localhost=127.0.0.1:%u room=%s\n",
-                                   gServerLaunchSettings.port, gListenServer.serverCode.c_str());
+                            // // Auto-connect to the listen server via localhost
+                            // printf("[COMMUNITY AUTO CONNECT] listen-server localhost=127.0.0.1:%u room=%s\n",
+                            //        gServerLaunchSettings.port, gListenServer.serverCode.c_str());
+
+                            // gPendingConnect = {};
+                            // gPendingConnect.shouldConnect = true;
+                            // gPendingConnect.address = "127.0.0.1";
+                            // gPendingConnect.port = gServerLaunchSettings.port;
+                            // gPendingConnect.roomCode = gListenServer.serverCode;
+                            // gPendingConnect.useIce = false;
+
+                            // onlineMenuSetActive(false);
+                            // state = GAME_PLAYING;
+
+                            // 7 22 2026 attempting room join fix 
+                            Debug::log(
+                                Debug::Category::Networking,
+                                "[COMMUNITY AUTO CONNECT] room=%s transport=room-code source=listen-server\n",
+                                gListenServer.serverCode.c_str());
 
                             gPendingConnect = {};
                             gPendingConnect.shouldConnect = true;
-                            gPendingConnect.address = "127.0.0.1";
-                            gPendingConnect.port = gServerLaunchSettings.port;
                             gPendingConnect.roomCode = gListenServer.serverCode;
-                            gPendingConnect.useIce = false;
+                            gPendingConnect.useIce = true;
 
                             onlineMenuSetActive(false);
-                            state = GAME_PLAYING;
+
+                            // Do not enter GAME_PLAYING yet.
                         }
                     }
                 }
@@ -779,17 +797,18 @@ void guiMain(GLFWwindow* win, GameState& state)
                     onlineMenuSetServerCode("");
                 }
             }
-            else if (r.connectLocalhost)
-            {
-                // Direct localhost connection
-                gPendingConnect.shouldConnect = true;
-                gPendingConnect.address = "127.0.0.1";
-                gPendingConnect.port = MimitaNet::DEFAULT_PORT;
-                gPendingConnect.roomCode = r.roomCode;
-                printf("[COMMUNITY CONNECT] localhost direct 127.0.0.1:%u\n", MimitaNet::DEFAULT_PORT);
-                onlineMenuSetActive(false);
-                state = GAME_PLAYING;
-            }
+            // 7 22 2026 1225 no local host at allll none at all 
+            // else if (r.connectLocalhost)
+            // {
+            //     // Direct localhost connection
+            //     gPendingConnect.shouldConnect = true;
+            //     gPendingConnect.address = "127.0.0.1";
+            //     gPendingConnect.port = MimitaNet::DEFAULT_PORT;
+            //     gPendingConnect.roomCode = r.roomCode;
+            //     printf("[COMMUNITY CONNECT] localhost direct 127.0.0.1:%u\n", MimitaNet::DEFAULT_PORT);
+            //     onlineMenuSetActive(false);
+            //     state = GAME_PLAYING;
+            // }
             else if (r.connectToServer)
             {
                 gPendingConnect.shouldConnect = true;

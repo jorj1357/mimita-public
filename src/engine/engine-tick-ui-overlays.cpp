@@ -446,8 +446,9 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             float lineGap = 16.0f;
             uiDrawText(line1, cx - line1W * 0.5f, instrY, instrScale, {0.75f, 0.85f, 1.0f, 1.0f});
             uiDrawText(line2, cx - line2W * 0.5f, instrY + lineGap, instrScale, {0.75f, 0.85f, 1.0f, 1.0f});
-            printf("[ROOMCODE HUD] active=%d connected=%d roomCode=%s\n",
-                   (int)mpContext.active, (int)mpContext.connected, code.c_str());
+            // dont do this bro  just dont 7 22 2026 1228 no printfs
+            // printf("[ROOMCODE HUD] active=%d connected=%d roomCode=%s\n",
+            //        (int)mpContext.active, (int)mpContext.connected, code.c_str());
         }
     }
 }
