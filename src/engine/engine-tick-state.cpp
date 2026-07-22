@@ -200,27 +200,25 @@ void engineTickState(Engine& engine, float dt)
 
                     player.username = AuthSystem::instance().displayName();
                     player.reset();
-                    bool connected = false;
-                    if (!mci.roomCode.empty())
+                    // 7 22 2026 1227 attempting fix 
+                    // no more local host 
+                    bool connectionStarted = false;
+
+                    if (mci.roomCode.empty())
                     {
-                        mpContext.currentRoomCode = mci.roomCode;
-                        printf("[ROOMCODE SET] source=join-attempt old= new=%s\n", mci.roomCode.c_str());
-                    }
-                    if (mci.useIce)
-                    {
-                        connected = MimitaNet::mpIceConnect(
-                            mpContext, mci.roomCode, player.username);
-                    }
-                    else if (!mci.joinToken.empty())
-                    {
-                        connected = MimitaNet::mpConnectWithToken(
-                            mpContext, mci.address, mci.port, mci.joinToken, player.username);
+                        Debug::warn(
+                            Debug::Category::Networking,
+                            "[ROOM JOIN FAILED] reason=empty-room-code\n");
                     }
                     else
                     {
-                        connected = MimitaNet::mpInit(mpContext, mci.address, player.username);
-                    }
-                    if (connected) {
+                        mpContext.currentRoomCode = mci.roomCode;
+
+                        connectionStarted = MimitaNet::mpIceConnect(
+                            mpContext,
+                            mci.roomCode,
+                            player.username);
+                    }                    if (connected) {
                         printf("[MAIN] multiplayer connected to %s\n", mci.address.c_str());
                         glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                     }

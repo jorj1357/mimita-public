@@ -491,19 +491,34 @@ MovementValidationResult validateClientMovementReport(
         return reject(MovementValidationReason::MalformedState);
     }
 
+    // if (player.awaitingAuthoritativeTransformAck)
+    // {
+    //     const float distanceFromAuthoritative =
+    //         glm::length(report.position - player.authoritativeTransformPosition);
+    //     if (report.lifecycle.transformEpoch != player.authoritativeTransformEpoch)
+    //         return reject(MovementValidationReason::TransformEpochMismatch);
+    //     if (distanceFromAuthoritative > config.authoritativeAckDistance)
+    //     {
+    //         MovementValidationResult ackReject =
+    //             reject(MovementValidationReason::TooFarFromAuthoritative);
+    //         ackReject.metrics.positionError = distanceFromAuthoritative;
+    //         return ackReject;
+    //     }
+    //     result.clearsAuthoritativeTransformAck = true;
+    // }
+
+    // 7 22 2026 1209 testing so we can actual move 
+    // 7 22 2026 1215 it didnt work 
     if (player.awaitingAuthoritativeTransformAck)
     {
-        const float distanceFromAuthoritative =
-            glm::length(report.position - player.authoritativeTransformPosition);
+        // The epoch is the acknowledgement.
+        //
+        // Do not require the client to remain within a tiny radius after applying
+        // the transform. The locally predicted player may legitimately move before
+        // the first matching-epoch report reaches the server.
         if (report.lifecycle.transformEpoch != player.authoritativeTransformEpoch)
             return reject(MovementValidationReason::TransformEpochMismatch);
-        if (distanceFromAuthoritative > config.authoritativeAckDistance)
-        {
-            MovementValidationResult ackReject =
-                reject(MovementValidationReason::TooFarFromAuthoritative);
-            ackReject.metrics.positionError = distanceFromAuthoritative;
-            return ackReject;
-        }
+
         result.clearsAuthoritativeTransformAck = true;
     }
 

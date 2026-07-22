@@ -61,14 +61,16 @@ SandboxMapSelection getPendingSandboxMapSelection();
 void clearPendingSandboxMapSelection();
 void reportSandboxMapLoadResult(const std::string& message, bool success);
 
+// 7 22 2026 1225 
+/**
+ * The UI should not decide between ICE, 
+ * localhost, token, or direct UDP. It should only say:
+ * join this room
+ */
 struct MultiplayerConnectInfo
 {
     bool shouldConnect = false;
-    std::string address = "127.0.0.1:1357";
-    std::string joinToken;
-    uint16_t port = 1357;
     std::string roomCode;
-    bool useIce = false;
 };
 MultiplayerConnectInfo getPendingMultiplayerConnect();
 void clearPendingMultiplayerConnect();
