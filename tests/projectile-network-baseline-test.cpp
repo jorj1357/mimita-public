@@ -935,6 +935,30 @@ void testRocketExplosionDamageDeathAndRespawnFire(const WeaponDefinition& rocket
     checkEq(runtimeAmmo(fixture.players.at(3), rocket), respawnAmmoBefore - 1, "respawned victim fire consumes one round");
 }
 
+void testAttackReconcilesValidEquipRace(const WeaponDefinition& grenade)
+{
+    Fixture fixture;
+    fixture.addPlayer(1, 4801);
+
+    auto& shooter = fixture.players.at(1);
+    shooter.pos = glm::vec3(0.0f);
+    equipProjectileWeapon(shooter, grenade, 50);
+    shooter.equippedSlot = 0;
+
+    fixture.clearCaptures();
+    AttackRequestPacket request = makeAttackRequest(
+        shooter, grenade, 9100, 1400,
+        shooter.pos, glm::vec3(1.0f, 0.0f, 0.0f));
+    sendGenericAttack(fixture, shooter, request, 1400);
+
+    auto fireResult = onlyProjectileResult(fixture.capture(shooter.id));
+    check(fireResult.has_value(), "equip-race attack returns projectile result");
+    if (fireResult)
+        checkEq(fireResult->accepted, static_cast<uint8_t>(1), "equip-race attack accepted");
+    checkEq(shooter.equippedSlot, grenade.slot, "equip-race reconciles authoritative slot");
+    checkEq(fixture.projectiles.size(), static_cast<size_t>(1), "equip-race spawns projectile");
+}
+
 } // namespace
 
 int main()
@@ -953,6 +977,7 @@ int main()
         testGenericAcceptAndRejects(*refs.grenade, NETWORK_WEAPON_GRENADE_LAUNCHER, 4000);
         testDuplicateAndDifferentRequestIds(*refs.grenade, NETWORK_WEAPON_GRENADE_LAUNCHER, 5000);
         testOldLifeRejectionAndRespawnFire(*refs.grenade, NETWORK_WEAPON_GRENADE_LAUNCHER, 6000);
+        testAttackReconcilesValidEquipRace(*refs.grenade);
     }
     testRocketPredictionIdentityHelpers();
     testClientProjectileFireResultPendingState();

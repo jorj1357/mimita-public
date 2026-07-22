@@ -1,13 +1,17 @@
-// C:\important\mimita-priv-v8\src\network\multiplayer-projectiles.cpp
-/** 7 18 2026 0845
- * purpose
- * todo fill in cuz we need to migrate from multiplayer and duplicated code 
- * to just server/client, even local play, just uses localhost
- */
+// 07 21 2026, 23 20
+/* purpose
+* Owns client-side network projectile prediction, adoption, correction, and rendering.
+* Steps rocket and grenade projectiles through the shared projectile physics kernel.
+* Processes authoritative projectile spawn, state, explosion, despawn, and attack results.
+* Does NOT validate projectile hits, damage, ammo, cooldowns, death, or server authority.
+* Does NOT send legacy direct projectile fire packets for active gameplay.
+* Does NOT own local single-player rocket or persistent grenade simulation.
+*/
 
 #include "network/multiplayer-context.h"
 #include "network/confirmed-damage-presentation.h"
 #include "network/network-weapons.h"
+#include "network/weapon-runtime-reconciliation.h"
 #include "debug/structured-log.h"
 
 #include <algorithm>
@@ -20,7 +24,9 @@
 
 #include "audio/audio.h"
 #include "camera.h"
+#include "combat/client-collision-world-view.h"
 #include "combat/projectile-render.h"
+#include "combat/projectile-simulation.h"
 #include "combat/weapon-system.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
@@ -29,6 +35,7 @@
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "terminal/terminal-state.h"
+#include "world/world.h"
 
 namespace MimitaNet {
 namespace {
@@ -77,9 +84,13 @@ bool finiteVec(const glm::vec3& v)
 
 const WeaponDefinition* projectileDefinition(uint8_t weapon)
 {
-    const char* id = weapon == NETWORK_WEAPON_GRENADE_LAUNCHER
-        ? "grenade_launcher"
-        : "rocket_launcher";
+    const char* id = nullptr;
+    if (weapon == NETWORK_WEAPON_GRENADE_LAUNCHER)
+        id = "grenade_launcher";
+    else if (weapon == NETWORK_WEAPON_ROCKET_LAUNCHER)
+        id = "rocket_launcher";
+    if (!id)
+        return nullptr;
     return WeaponRegistry::instance().get(id);
 }
 
@@ -126,6 +137,117 @@ ProjectileVisualConfig projectileVisualConfig(uint8_t weapon)
     cfg.glowAlpha = cp(def, "projectileGlowAlpha", 0.15f);
     cfg.glowRadiusMultiplier = cp(def, "projectileGlowRadiusMultiplier", 3.0f);
     return cfg;
+}
+
+uint32_t provisionalProjectileId(uint32_t requestId)
+{
+    if (requestId == 0)
+        return 0;
+    return 0x80000000u | (requestId & 0x7fffffffu);
+}
+
+void configureNetworkProjectile(NetworkProjectile& projectile,
+                                const WeaponDefinition* def)
+{
+    if (!def)
+        return;
+    projectile.lifetime = def->projectileLifetime > 0.0f
+        ? def->projectileLifetime
+        : projectile.lifetime;
+    projectile.radius = def->projectileRadius > 0.0f
+        ? def->projectileRadius
+        : projectile.radius;
+    projectile.gravity = cp(def, "gravity", 20.0f);
+    projectile.drag = cp(def, "drag", 0.15f);
+    projectile.restitution = cp(def, "bounceRestitution", 0.35f);
+    projectile.friction = cp(def, "bounceFriction", 0.5f);
+    projectile.armingDistance = cp(def, "armingDistance", 2.0f);
+    projectile.armingTime = cp(def, "armingTime", 0.0f);
+    projectile.minBounceSpeed = cp(def, "minBounceSpeed", 0.1f);
+    projectile.angularDrag = cp(def, "angularDrag", 0.3f);
+    projectile.maxBounceCount = (int)cp(def, "maxBounceCount", 10.0f);
+    projectile.explodeOnPlayerImpact = cp(def, "explodeOnPlayerImpact", 1.0f) > 0.0f;
+    projectile.explodeOnWorldImpact = cp(def, "explodeOnWorldImpact", 0.0f) > 0.0f;
+    projectile.explodeOnLifetime = cp(def, "explodeOnLifetime", 1.0f) > 0.0f;
+}
+
+ProjectilePhysicsState makePhysicsState(const NetworkProjectile& projectile)
+{
+    ProjectilePhysicsState state;
+    state.position = projectile.position;
+    state.velocity = projectile.velocity;
+    state.rotation = projectile.rotation;
+    state.angularVelocity = projectile.angularVelocity;
+    state.age = projectile.age;
+    state.bounceCount = projectile.bounceCount;
+    state.exploded = projectile.exploded;
+    state.sleeping = projectile.worldTouched &&
+        glm::length(projectile.velocity) <= 0.0001f &&
+        glm::length(projectile.angularVelocity) <= 0.0001f;
+    return state;
+}
+
+ProjectilePhysicsConfig makePhysicsConfig(const NetworkProjectile& projectile)
+{
+    ProjectilePhysicsConfig config;
+    config.speed = glm::length(projectile.velocity);
+    config.radius = projectile.radius;
+    config.lifetime = projectile.lifetime;
+    config.armingDistance = projectile.armingDistance;
+    config.gravity = projectile.gravity;
+    config.drag = projectile.drag;
+    config.angularDrag = projectile.angularDrag;
+    config.restitution = projectile.restitution;
+    config.friction = projectile.friction;
+    config.maxBounceCount = projectile.maxBounceCount;
+    config.minBounceSpeed = projectile.minBounceSpeed;
+    config.bounceEnabled = projectile.maxBounceCount > 0;
+    return config;
+}
+
+void applyPhysicsState(NetworkProjectile& projectile,
+                       const ProjectilePhysicsState& state)
+{
+    projectile.position = state.position;
+    projectile.velocity = state.velocity;
+    projectile.rotation = state.rotation;
+    projectile.angularVelocity = state.angularVelocity;
+    projectile.age = state.age;
+    projectile.bounceCount = state.bounceCount;
+}
+
+std::vector<ClientCollisionWorldView::PlayerReplica> projectileReplicas(
+    const MultiplayerContext& ctx)
+{
+    std::vector<ClientCollisionWorldView::PlayerReplica> replicas;
+    replicas.reserve(ctx.remotePlayers.size());
+    for (const auto& entry : ctx.remotePlayers)
+    {
+        const Player& player = entry.second;
+        ClientCollisionWorldView::PlayerReplica replica;
+        replica.playerId = entry.first;
+        replica.spawnGeneration = player.spawnGeneration;
+        replica.pos = player.pos;
+        replica.dead = player.dead;
+        replica.sizeScale = player.sizeScale;
+        Capsule capsule = player.getCapsule();
+        replica.capsuleRadius = capsule.r;
+        replica.capsuleHeight = std::max(0.001f, capsule.b.z - capsule.a.z);
+        replica.capsuleCenter = (capsule.a + capsule.b) * 0.5f;
+        replicas.push_back(replica);
+    }
+    return replicas;
+}
+
+void removePredictedProjectileForRequest(MultiplayerContext& ctx,
+                                         uint32_t requestId)
+{
+    const uint32_t provisionalId = provisionalProjectileId(requestId);
+    if (provisionalId != 0)
+    {
+        ctx.predictedProjectileIds.erase(provisionalId);
+        ctx.networkProjectiles.erase(provisionalId);
+    }
 }
 
 void spawnProjectileTrail(NetworkProjectile& projectile, float dt)
@@ -203,59 +325,94 @@ uint32_t mpSendProjectileFireRequest(
     const glm::vec3& origin,
     const glm::vec3& direction)
 {
-    if (!ctx.active || !ctx.localPlayerId ||
-        !networkWeaponTypeIsProjectile(weapon) ||
+    (void)ctx;
+    (void)weapon;
+    (void)origin;
+    (void)direction;
+    printf("[PROJECTILE FIRE REQUEST SEND] accepted=0 reason=legacy-direct-packet-disabled\n");
+    return 0;
+}
+
+uint32_t mpPredictProjectileAttack(
+    MultiplayerContext& ctx,
+    uint32_t requestId,
+    uint16_t weaponDefNetworkId,
+    const glm::vec3& origin,
+    const glm::vec3& direction)
+{
+    if (!ctx.active || !ctx.localPlayerId || requestId == 0 ||
         !finiteVec(origin) || !finiteVec(direction) ||
         glm::length(direction) <= 0.001f)
         return 0;
 
-    ProjectileFireRequestPacket packet{};
-    packet.header.type = PACKET_PROJECTILE_FIRE_REQUEST;
-    packet.header.tick = ctx.tick;
-    packet.header.playerId = ctx.localPlayerId;
-    packet.fireSerial = ctx.nextLocalProjectileFireSerial++;
-    if (ctx.nextLocalProjectileFireSerial == 0)
-        ctx.nextLocalProjectileFireSerial = 1;
-    packet.lastServerTick = ctx.latestServerTick;
-    packet.weapon = weapon;
+    const std::string* weaponId = weaponIdForDefNetworkId(weaponDefNetworkId);
+    if (!weaponId)
+        return 0;
+    const WeaponDefinition* def = WeaponRegistry::instance().get(*weaponId);
+    if (!def || def->executionType != WeaponExecutionType::Projectile)
+        return 0;
+    const uint8_t networkWeapon = networkWeaponTypeForDefinition(*def);
+    if (!networkWeaponTypeIsProjectile(networkWeapon))
+        return 0;
+
+    const uint32_t provisionalId = provisionalProjectileId(requestId);
+    if (provisionalId == 0)
+        return 0;
+
     const glm::vec3 dir = glm::normalize(direction);
-    packet.originX = origin.x;
-    packet.originY = origin.y;
-    packet.originZ = origin.z;
-    packet.dirX = dir.x;
-    packet.dirY = dir.y;
-    packet.dirZ = dir.z;
-    mpSendPacket(ctx, &packet, sizeof(packet));
+    const float speed = def->projectileSpeed > 0.0f ? def->projectileSpeed : 40.0f;
+    const float upBias = cp(def, "upBias", 4.0f);
+    NetworkProjectile projectile;
+    projectile.projectileId = provisionalId;
+    projectile.ownerPlayerId = ctx.localPlayerId;
+    projectile.fireSerial = requestId;
+    projectile.weaponType = networkWeapon;
+    projectile.position = origin;
+    projectile.previousPosition = origin;
+    projectile.velocity = dir * speed + glm::vec3(0.0f, 0.0f, upBias);
+    projectile.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    projectile.angularVelocity = glm::vec3(0.0f);
+    projectile.lifetime = def->projectileLifetime > 0.0f ? def->projectileLifetime : 5.0f;
+    projectile.radius = def->projectileRadius > 0.0f ? def->projectileRadius : 0.3f;
+    projectile.predicted = true;
+    projectile.exploded = false;
+    configureNetworkProjectile(projectile, def);
+    if (networkWeapon == NETWORK_WEAPON_GRENADE_LAUNCHER)
+    {
+        glm::vec3 forward = glm::length(dir) > 0.0001f ? dir : glm::vec3(1.0f, 0.0f, 0.0f);
+        glm::vec3 refUp = std::fabs(forward.z) < 0.99f
+            ? glm::vec3(0.0f, 0.0f, 1.0f)
+            : glm::vec3(1.0f, 0.0f, 0.0f);
+        glm::vec3 right = glm::normalize(glm::cross(forward, refUp));
+        projectile.angularVelocity = right * cp(def, "angSpeed", 6.0f);
+    }
 
-    // Track pending fire request for retransmission
-    MultiplayerContext::PendingFireRequest pfr;
-    pfr.fireSerial = packet.fireSerial;
-    pfr.weapon = weapon;
-    pfr.origin = origin;
-    pfr.direction = dir;
-    pfr.firstSentMs = nowMs();
-    pfr.lastSentMs = nowMs();
-    pfr.attempts = 1;
-    ctx.pendingFireRequests[packet.fireSerial] = pfr;
+    projectile.renderPosition = projectile.position;
+    projectile.renderVelocity = projectile.velocity;
+    projectile.renderRotation = projectile.rotation;
+    projectile.renderAngularVelocity = projectile.angularVelocity;
+    projectile.prevStatePos = projectile.position;
+    projectile.prevStateVel = projectile.velocity;
+    projectile.prevStateRot = projectile.rotation;
+    projectile.targetStatePos = projectile.position;
+    projectile.targetStateVel = projectile.velocity;
+    projectile.targetStateRot = projectile.rotation;
 
-    logGrenadeEvent(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Important,
-        "GRENADE_CLIENT_REQUEST",
-        "GRENADE_P" + std::to_string(ctx.localPlayerId) + "_F" + std::to_string(packet.fireSerial) + "_J0",
-        "send",
-        "playerId=%u fireSerial=%u weapon=%s origin=(%.6f,%.6f,%.6f) dir=(%.6f,%.6f,%.6f) "
-        "clientTick=%u pending=%zu attempt=1 transport=%d",
-        ctx.localPlayerId, packet.fireSerial, networkWeaponTypeName(weapon),
-        origin.x, origin.y, origin.z, dir.x, dir.y, dir.z,
-        ctx.tick, ctx.pendingFireRequests.size() + 1, (int)(ctx.transport != nullptr));
+    ctx.networkProjectiles[provisionalId] = projectile;
+    ctx.predictedProjectileIds.insert(provisionalId);
 
-    printf("[PROJECTILE FIRE REQUEST SEND] localPlayerId=%u localFireSerial=%u "
-           "weapon=%s origin=(%.2f,%.2f,%.2f) direction=(%.3f,%.3f,%.3f) "
-           "velocity=(server-derived) clientTick=%u\n",
-           ctx.localPlayerId, packet.fireSerial,
-           networkWeaponTypeName(weapon),
-           origin.x, origin.y, origin.z,
-           dir.x, dir.y, dir.z, ctx.tick);
-    return packet.fireSerial;
+    printf("[PROJECTILE CLIENT PREDICT] requestId=%u provisionalId=%u weapon=%s "
+           "pos=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f)\n",
+           requestId, provisionalId, networkWeaponTypeName(networkWeapon),
+           projectile.position.x, projectile.position.y, projectile.position.z,
+           projectile.velocity.x, projectile.velocity.y, projectile.velocity.z);
+    return provisionalId;
+}
+
+void mpCancelPredictedProjectileAttack(MultiplayerContext& ctx,
+                                       uint32_t requestId)
+{
+    removePredictedProjectileForRequest(ctx, requestId);
 }
 
 uint32_t mpSendMeleeHitRequest(
@@ -313,41 +470,54 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
         return;
     }
 
-    // Mark pending fire request as acknowledged
     if (event->fireSerial != 0)
-        ctx.pendingFireRequests.erase(event->fireSerial);
-
-    // Rocket launcher: local simulation handles it — suppress server interpolation
-    if (event->ownerPlayerId == ctx.localPlayerId &&
-        event->weapon == NETWORK_WEAPON_ROCKET_LAUNCHER)
     {
-        ctx.predictedProjectileIds.insert(event->projectileId);
-        if (gpWeapons)
-            gpWeapons->attachAuthoritativeRocket(event->fireSerial, event->projectileId);
-        printf("[PROJECTILE PREDICTED] projectileId=%u fireSerial=%u weapon=%s "
-               "pos=(%.2f,%.2f,%.2f) — suppressed server interpolation\n",
-               event->projectileId, event->fireSerial,
-               networkWeaponTypeName(event->weapon),
-               event->posX, event->posY, event->posZ);
-        return;
+        ctx.pendingFireRequests.erase(event->fireSerial);
+        auto pendingAttack = ctx.pendingAttackRequests.find(event->fireSerial);
+        if (pendingAttack != ctx.pendingAttackRequests.end())
+            ctx.pendingAttackRequests.erase(pendingAttack);
     }
 
+    const uint32_t provisionalId = provisionalProjectileId(event->fireSerial);
+    const bool localOwner = event->ownerPlayerId == ctx.localPlayerId;
+    auto predictedIt = localOwner && provisionalId != 0
+        ? ctx.networkProjectiles.find(provisionalId)
+        : ctx.networkProjectiles.end();
+    const bool adoptedPrediction = predictedIt != ctx.networkProjectiles.end();
+    NetworkProjectile adopted;
+    if (adoptedPrediction)
+    {
+        adopted = predictedIt->second;
+        ctx.networkProjectiles.erase(predictedIt);
+        ctx.predictedProjectileIds.erase(provisionalId);
+    }
     NetworkProjectile& projectile = ctx.networkProjectiles[event->projectileId];
+    if (adoptedPrediction)
+        projectile = adopted;
 
     projectile.projectileId = event->projectileId;
     projectile.ownerPlayerId = event->ownerPlayerId;
     projectile.fireSerial = event->fireSerial;
     projectile.weaponType = event->weapon;
-    projectile.position = {event->posX, event->posY, event->posZ};
+    const glm::vec3 serverPosition(event->posX, event->posY, event->posZ);
+    const glm::vec3 serverVelocity(event->velX, event->velY, event->velZ);
+    if (!adoptedPrediction)
+        projectile.position = serverPosition;
     projectile.previousPosition = projectile.position;
-    projectile.velocity = {event->velX, event->velY, event->velZ};
-    projectile.rotation = glm::quat(event->rotW, event->rotX, event->rotY, event->rotZ);
-    projectile.angularVelocity = {event->angVelX, event->angVelY, event->angVelZ};
-    projectile.age = 0.0f;
+    if (!adoptedPrediction)
+    {
+        projectile.velocity = serverVelocity;
+        projectile.rotation = glm::quat(event->rotW, event->rotX, event->rotY, event->rotZ);
+        projectile.angularVelocity = {event->angVelX, event->angVelY, event->angVelZ};
+    }
+    projectile.age = adoptedPrediction ? projectile.age : 0.0f;
     projectile.lifetime = event->lifetime;
     projectile.radius = event->radius;
-    projectile.predicted = false; // grenades are never predicted — server is authoritative
+    projectile.predicted = adoptedPrediction;
     projectile.exploded = false;
+    configureNetworkProjectile(projectile, projectileDefinition(event->weapon));
+    if (projectile.predicted)
+        ctx.predictedProjectileIds.insert(event->projectileId);
 
     // Initialize render state directly from spawn (first state = immediate render)
     projectile.renderPosition = projectile.position;
@@ -362,9 +532,9 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
     projectile.prevStateRot = projectile.rotation;
 
     projectile.targetStateTick = event->spawnTick;
-    projectile.targetStatePos = projectile.position;
-    projectile.targetStateVel = projectile.velocity;
-    projectile.targetStateRot = projectile.rotation;
+    projectile.targetStatePos = serverPosition;
+    projectile.targetStateVel = serverVelocity;
+    projectile.targetStateRot = glm::quat(event->rotW, event->rotX, event->rotY, event->rotZ);
 
     projectile.latestAcceptedTick = event->spawnTick;
     projectile.lastTargetReceivedMs = nowMs();
@@ -384,11 +554,11 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
             authCorr,
             "promote",
             "ownerId=%u fireSerial=%u authoritativeId=%u provisionalCorr=%s pendingMatched=%d "
-            "predicted=%d provObjectExists=0 "
+            "predicted=%d provObjectExists=%d "
             "spawnPos=(%.6f,%.6f,%.6f) spawnVel=(%.6f,%.6f,%.6f)",
             projectile.ownerPlayerId, projectile.fireSerial, projectile.projectileId,
             provCorr.c_str(), (int)pendingMatched,
-            (int)projectile.predicted,
+            (int)projectile.predicted, (int)adoptedPrediction,
             event->posX, event->posY, event->posZ,
             event->velX, event->velY, event->velZ);
     }
@@ -428,10 +598,6 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
         return;
     }
 
-    // Skip state updates for rocket-predicted projectiles
-    if (ctx.predictedProjectileIds.count(event->projectileId))
-        return;
-
     auto it = ctx.networkProjectiles.find(event->projectileId);
     if (it == ctx.networkProjectiles.end())
     {
@@ -450,6 +616,7 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
         projectile.radius = 0.0f;
         projectile.predicted = false;
         projectile.exploded = false;
+        configureNetworkProjectile(projectile, projectileDefinition(event->weapon));
         // Initialize render state for recovery
         projectile.renderPosition = projectile.position;
         projectile.renderVelocity = projectile.velocity;
@@ -495,48 +662,21 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
     projectile.targetStateVel = {event->velX, event->velY, event->velZ};
     projectile.targetStateRot = glm::quat(event->rotW, event->rotX, event->rotY, event->rotZ);
 
-    // For predicted projectiles, store as correction target without overwriting live state
-    if (projectile.predicted)
-    {
-        projectile.angularVelocity = {event->angVelX, event->angVelY, event->angVelZ};
-        projectile.age = event->age;
-        logGrenadeEvent(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Verbose,
-            "GRENADE_CLIENT_STATE",
-            "GRENADE_P" + std::to_string(projectile.ownerPlayerId) + "_F" + std::to_string(projectile.fireSerial) + "_J" + std::to_string(projectile.projectileId),
-            "correction-target",
-            "predicted=1 overwrite=0 tick=%u age=%.6f serverPos=(%.6f,%.6f,%.6f) serverVel=(%.6f,%.6f,%.6f) "
-            "predictedPos=(%.6f,%.6f,%.6f) predictedVel=(%.6f,%.6f,%.6f) posErr=%.6f velErr=%.6f",
-            newTick, event->age,
-            event->posX, event->posY, event->posZ,
-            event->velX, event->velY, event->velZ,
-            projectile.position.x, projectile.position.y, projectile.position.z,
-            projectile.velocity.x, projectile.velocity.y, projectile.velocity.z,
-            glm::length(glm::vec3(event->posX, event->posY, event->posZ) - projectile.position),
-            glm::length(glm::vec3(event->velX, event->velY, event->velZ) - projectile.velocity));
-    }
-    else
-    {
-        glm::vec3 oldPredPos = projectile.position;
-        glm::vec3 oldPredVel = projectile.velocity;
-        projectile.position = projectile.targetStatePos;
-        projectile.velocity = projectile.targetStateVel;
-        projectile.rotation = projectile.targetStateRot;
-        projectile.angularVelocity = {event->angVelX, event->angVelY, event->angVelZ};
-        projectile.age = event->age;
-        logGrenadeEvent(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Verbose,
-            "GRENADE_CLIENT_STATE",
-            "GRENADE_P" + std::to_string(projectile.ownerPlayerId) + "_F" + std::to_string(projectile.fireSerial) + "_J" + std::to_string(projectile.projectileId),
-            "overwrite",
-            "predicted=0 overwrite=1 tick=%u age=%.6f serverPos=(%.6f,%.6f,%.6f) oldPos=(%.6f,%.6f,%.6f) "
-            "serverVel=(%.6f,%.6f,%.6f) oldVel=(%.6f,%.6f,%.6f) posErr=%.6f velErr=%.6f",
-            newTick, event->age,
-            event->posX, event->posY, event->posZ,
-            oldPredPos.x, oldPredPos.y, oldPredPos.z,
-            event->velX, event->velY, event->velZ,
-            oldPredVel.x, oldPredVel.y, oldPredVel.z,
-            glm::length(glm::vec3(event->posX, event->posY, event->posZ) - oldPredPos),
-            glm::length(glm::vec3(event->velX, event->velY, event->velZ) - oldPredVel));
-    }
+    projectile.angularVelocity = {event->angVelX, event->angVelY, event->angVelZ};
+    projectile.age = event->age;
+    logGrenadeEvent(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Verbose,
+        "GRENADE_CLIENT_STATE",
+        "GRENADE_P" + std::to_string(projectile.ownerPlayerId) + "_F" + std::to_string(projectile.fireSerial) + "_J" + std::to_string(projectile.projectileId),
+        "correction-target",
+        "predicted=%d overwrite=0 tick=%u age=%.6f serverPos=(%.6f,%.6f,%.6f) serverVel=(%.6f,%.6f,%.6f) "
+        "localPos=(%.6f,%.6f,%.6f) localVel=(%.6f,%.6f,%.6f) posErr=%.6f velErr=%.6f",
+        (int)projectile.predicted, newTick, event->age,
+        event->posX, event->posY, event->posZ,
+        event->velX, event->velY, event->velZ,
+        projectile.position.x, projectile.position.y, projectile.position.z,
+        projectile.velocity.x, projectile.velocity.y, projectile.velocity.z,
+        glm::length(glm::vec3(event->posX, event->posY, event->posZ) - projectile.position),
+        glm::length(glm::vec3(event->velX, event->velY, event->velZ) - projectile.velocity));
 
     projectile.latestAcceptedTick = newTick;
     projectile.lastTargetReceivedMs = nowMs();
@@ -773,6 +913,41 @@ void mpProcessProjectileFireResultPacket(MultiplayerContext& ctx, const Projecti
     }
 }
 
+void mpProcessAttackResultPacket(MultiplayerContext& ctx, const AttackResultPacket* event)
+{
+    bool projectilePending = false;
+    auto pendingIt = ctx.pendingAttackRequests.find(event->requestId);
+    if (pendingIt != ctx.pendingAttackRequests.end())
+    {
+        const std::string* weaponId =
+            weaponIdForDefNetworkId(pendingIt->second.weaponDefNetworkId);
+        const WeaponDefinition* def = weaponId
+            ? WeaponRegistry::instance().get(*weaponId)
+            : nullptr;
+        projectilePending = def &&
+            def->executionType == WeaponExecutionType::Projectile &&
+            networkWeaponTypeIsProjectile(networkWeaponTypeForDefinition(*def));
+        ctx.pendingAttackRequests.erase(pendingIt);
+    }
+
+    if (!event->accepted && projectilePending)
+        removePredictedProjectileForRequest(ctx, event->requestId);
+
+    if (event->weaponDefNetworkId != 0 &&
+        event->magazineAmmo >= 0 && event->reserveAmmo >= 0)
+    {
+        ctx.pendingAttackResults.push_back(*event);
+        if (ctx.pendingAttackResults.size() > 64)
+            ctx.pendingAttackResults.erase(ctx.pendingAttackResults.begin());
+    }
+
+    printf("[ATTACK RESULT RX] playerId=%u requestId=%u accepted=%d "
+           "reason=%d ammo=%d/%d projId=%u projectilePending=%d\n",
+           ctx.localPlayerId, event->requestId, (int)event->accepted,
+           (int)event->reason, event->magazineAmmo, event->reserveAmmo,
+           event->projectileId, (int)projectilePending);
+}
+
 void mpProcessProjectileDespawnEventPacket(MultiplayerContext& ctx, const ProjectileDespawnEventPacket* event)
 {
     if (!acceptReliableEventOnce(ctx, event->eventId, event->eventSessionId))
@@ -976,38 +1151,14 @@ void mpUpdateRemoteSwordStates(MultiplayerContext& ctx, float dt)
     }
 }
 
-void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt)
+void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& world)
 {
     // ── Retransmit unacknowledged fire requests ─────────────────────
     const uint64_t now = nowMs();
     for (auto it = ctx.pendingFireRequests.begin(); it != ctx.pendingFireRequests.end(); )
     {
         MultiplayerContext::PendingFireRequest& pfr = it->second;
-        if (pfr.acknowledged)
-        {
-            it = ctx.pendingFireRequests.erase(it);
-            continue;
-        }
-        // Retry every 100ms, up to 10 attempts
-        if (now - pfr.lastSentMs >= 100 && pfr.attempts < 10)
-        {
-            ProjectileFireRequestPacket packet{};
-            packet.header.type = PACKET_PROJECTILE_FIRE_REQUEST;
-            packet.header.tick = ctx.tick;
-            packet.header.playerId = ctx.localPlayerId;
-            packet.fireSerial = pfr.fireSerial;
-            packet.lastServerTick = ctx.latestServerTick;
-            packet.weapon = pfr.weapon;
-            packet.originX = pfr.origin.x; packet.originY = pfr.origin.y; packet.originZ = pfr.origin.z;
-            packet.dirX = pfr.direction.x; packet.dirY = pfr.direction.y; packet.dirZ = pfr.direction.z;
-            mpSendPacket(ctx, &packet, sizeof(packet));
-            pfr.lastSentMs = now;
-            pfr.attempts++;
-            printf("[PROJECTILE FIRE RETRY] fireSerial=%u attempt=%d\n",
-                   pfr.fireSerial, pfr.attempts);
-        }
-        // Timeout after 3 seconds
-        if (now - pfr.firstSentMs > 3000)
+        if (pfr.acknowledged || now - pfr.firstSentMs > 3000)
         {
             printf("[FIRE_TIMEOUT] fireSerial=%u weapon=%s — refund queued\n",
                    pfr.fireSerial, networkWeaponTypeName(pfr.weapon));
@@ -1025,15 +1176,46 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt)
         }
         else
         {
-            ++it;
+            printf("[PROJECTILE LEGACY PENDING DROP] fireSerial=%u weapon=%s "
+                   "reason=legacy-direct-packet-disabled\n",
+                   pfr.fireSerial, networkWeaponTypeName(pfr.weapon));
+            it = ctx.pendingFireRequests.erase(it);
         }
     }
+
+    std::vector<ClientCollisionWorldView::PlayerReplica> replicas =
+        projectileReplicas(ctx);
 
     for (auto it = ctx.networkProjectiles.begin(); it != ctx.networkProjectiles.end(); )
     {
         NetworkProjectile& projectile = it->second;
         projectile.previousPosition = projectile.position;
-        projectile.age += dt;
+
+        if (networkWeaponTypeIsProjectile(projectile.weaponType) &&
+            projectile.radius > 0.0f && dt > 0.0f)
+        {
+            ClientCollisionWorldView physicsWorld(
+                world.collisionMesh,
+                world.collisionChunkSize,
+                &world.collisionChunks,
+                &world.collisionLargeTriangles,
+                projectile.ownerPlayerId,
+                replicas);
+            ProjectilePhysicsState state = makePhysicsState(projectile);
+            ProjectilePhysicsConfig config = makePhysicsConfig(projectile);
+            ProjectileStepResult step =
+                simulateProjectileTick(state, config, physicsWorld, dt);
+            applyPhysicsState(projectile, state);
+            projectile.distanceTraveled += step.travelDistance;
+            if (state.sleeping || step.type == ProjectileCollisionType::WorldBounce ||
+                step.type == ProjectileCollisionType::WorldImpact)
+                projectile.worldTouched = true;
+        }
+        else
+        {
+            projectile.age += dt;
+            projectile.position += projectile.velocity * dt;
+        }
 
         if (projectile.lifetime > 0.0f && projectile.age > projectile.lifetime + 1.0f)
         {
@@ -1052,41 +1234,28 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt)
 
         if (projectile.hasTargetState)
         {
-            // Normal interpolation or extrapolation
-            constexpr float SERVER_TICK_INTERVAL = 1.0f / 60.0f; // 60 Hz server
-            constexpr float EXTRAPOLATION_LIMIT = 0.15f; // 150ms max extrapolation
-
-            const uint64_t nowMsVal = nowMs();
-            const float elapsedSinceTargetMs = (float)(nowMsVal - projectile.lastTargetReceivedMs);
-
-            if (elapsedSinceTargetMs < 200.0f)
+            const glm::vec3 posError = projectile.targetStatePos - projectile.position;
+            const glm::vec3 velError = projectile.targetStateVel - projectile.velocity;
+            const float err = glm::length(posError);
+            if (err > 8.0f)
             {
-                // Normal interpolation between previous and target
-                const float timeBetweenStates = (float)(projectile.targetStateTick - projectile.prevStateTick) * SERVER_TICK_INTERVAL;
-                const float timeSincePrev = elapsedSinceTargetMs / 1000.0f;
-                const float alpha = timeBetweenStates > 0.001f
-                    ? std::clamp(timeSincePrev / timeBetweenStates, 0.0f, 1.0f)
-                    : 1.0f;
-
-                projectile.renderPosition = glm::mix(projectile.prevStatePos, projectile.targetStatePos, alpha);
-                projectile.renderVelocity = glm::mix(projectile.prevStateVel, projectile.targetStateVel, alpha);
-                projectile.renderRotation = glm::normalize(glm::slerp(projectile.prevStateRot, projectile.targetStateRot, alpha));
+                projectile.position = projectile.targetStatePos;
+                projectile.velocity = projectile.targetStateVel;
+                projectile.rotation = projectile.targetStateRot;
             }
-            else
+            else if (err > 0.01f)
             {
-                // Extrapolation: continue from target state with its velocity
-                const float extrapSec = std::min((elapsedSinceTargetMs - 200.0f) / 1000.0f, EXTRAPOLATION_LIMIT);
-                projectile.renderPosition = projectile.targetStatePos + projectile.targetStateVel * extrapSec;
-                projectile.renderVelocity = projectile.targetStateVel;
-                projectile.renderRotation = projectile.targetStateRot;
+                const float posBlend = projectile.predicted ? 0.12f : 0.35f;
+                projectile.position += posError * posBlend;
+                projectile.velocity += velError * 0.25f;
+                projectile.rotation = glm::normalize(
+                    glm::slerp(projectile.rotation, projectile.targetStateRot, 0.20f));
             }
         }
-        else
-        {
-            // Fallback: just use authoritative position directly
-            projectile.renderPosition = projectile.position;
-            projectile.renderVelocity = projectile.velocity;
-        }
+
+        projectile.renderPosition = projectile.position;
+        projectile.renderVelocity = projectile.velocity;
+        projectile.renderRotation = projectile.rotation;
 
         // Rotation: grenades keep integrated quaternion (tumbling); rockets face velocity
         if (projectile.weaponType != NETWORK_WEAPON_GRENADE_LAUNCHER)

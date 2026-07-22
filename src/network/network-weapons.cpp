@@ -1,3 +1,13 @@
+// 07 21 2026, 23 38
+/* purpose
+* Maps weapon definitions, slots, and stable definition ids to compact network weapon ids.
+* Provides family predicates used by generic AttackRequest routing and packet presentation.
+* Keeps string weapon ownership at the registry boundary and byte ids at the packet boundary.
+* Does NOT own weapon JSON parsing, packet structs, runtime ammo, damage, or cooldown mutation.
+* Does NOT send packets, simulate projectiles, render effects, or validate server authority.
+* Does NOT infer weapon ids from unordered spawn inventory packet order.
+*/
+
 #include "network/network-weapons.h"
 
 #include "combat/weapon-types.h"

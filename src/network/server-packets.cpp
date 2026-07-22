@@ -42,6 +42,78 @@ uint16_t validClientVisualStateFlags(uint16_t flags)
     return flags & kValid;
 }
 
+const WeaponDefinition* weaponDefinitionForSlot(int slot)
+{
+    if (slot <= 0)
+        return nullptr;
+    for (const auto& kv : WeaponRegistry::instance().all())
+    {
+        if (kv.second.slot == slot)
+            return &kv.second;
+    }
+    return nullptr;
+}
+
+bool playerCanEquipSlot(const ServerPlayer& player, int slot)
+{
+    if (slot == 0)
+        return true;
+    const WeaponDefinition* def = weaponDefinitionForSlot(slot);
+    if (!def)
+        return false;
+    auto rt = player.weaponRuntimes.find(def->id);
+    return rt != player.weaponRuntimes.end() && rt->second.initialized;
+}
+
+bool applyEquipIntentFromInput(ServerPlayer& player,
+                               const InputPacket& input,
+                               const char* source)
+{
+    const bool serialChanged =
+        input.equipSerial != 0 && input.equipSerial != player.lastEquipSerial;
+    const bool initialUnsyncedSlot =
+        input.equipSerial == 0 &&
+        player.lastEquipSerial == 0 &&
+        player.equippedSlot == 0 &&
+        input.equippedSlot != 0;
+    const bool slotChanged =
+        input.equippedSlot != player.equippedSlot &&
+        (serialChanged || initialUnsyncedSlot);
+    if (!serialChanged && !slotChanged)
+        return false;
+
+    if (!playerCanEquipSlot(player, input.equippedSlot))
+    {
+        Debug::logThrottled(
+            Debug::Category::Weapons,
+            "server-equip-invalid-slot",
+            0.5f,
+            "[SERVER EQUIP REJECT] playerId=%u requestedSlot=%d "
+            "equipSerial=%u source=%s reason=not-owned-or-unknown\n",
+            player.id,
+            input.equippedSlot,
+            input.equipSerial,
+            source);
+        return false;
+    }
+
+    const int oldSlot = player.equippedSlot;
+    if (input.equipSerial != 0)
+        player.lastEquipSerial = input.equipSerial;
+    player.equippedSlot = input.equippedSlot;
+    player.weaponState = input.weaponState;
+    Debug::log(
+        Debug::Category::Weapons,
+        "[SERVER EQUIP ACCEPT] playerId=%u oldSlot=%d newSlot=%d "
+        "equipSerial=%u source=%s\n",
+        player.id,
+        oldSlot,
+        player.equippedSlot,
+        input.equipSerial,
+        source);
+    return true;
+}
+
 uint32_t movementReportFlagsFromInput(const InputPacket& input,
                                       const ServerPlayer& player)
 {
@@ -143,8 +215,8 @@ void applyAcceptedInputPresentation(ServerPlayer& player,
     player.input.freezeHeld =
         (report.movementFlags & MOVEMENT_REPORT_FREEZE_HELD) != 0;
 
-    player.equippedSlot = input.equippedSlot;
     player.weaponState = input.weaponState;
+    applyEquipIntentFromInput(player, input, "accepted-input");
     player.pingMs = std::clamp(input.clientPingMs, 0, 9999);
     player.sizeScale = std::max(input.sizeScale, 0.001f);
     player.inputStateFlags = validClientVisualStateFlags(input.stateFlags);
@@ -169,11 +241,6 @@ void applyAcceptedInputPresentation(ServerPlayer& player,
     if (input.directionChangeSerial != 0 &&
         input.directionChangeSerial != player.lastPresentationDirectionChangeSerial)
         player.lastPresentationDirectionChangeSerial = input.directionChangeSerial;
-    if (input.equipSerial != 0 && input.equipSerial != player.lastEquipSerial)
-    {
-        player.lastEquipSerial = input.equipSerial;
-        player.equippedSlot = input.equippedSlot;
-    }
     if (input.dashSerial != 0 &&
         input.dashSerial != player.lastPresentationDashSerial)
         player.lastPresentationDashSerial = input.dashSerial;
@@ -533,6 +600,17 @@ void handleInputPacket(const char* buffer, int bytes,
             p.instantRespawnRequested = true;
     }
 
+    const bool equipLifecycleMatches =
+        ownsConnection &&
+        p.spawned &&
+        p.spawnState == ServerPlayer::Active &&
+        !p.dead &&
+        in->spawnGeneration == p.spawnGeneration &&
+        ((in->transformEpoch != 0 ? in->transformEpoch : in->header.transformEpoch) ==
+            p.transformEpoch);
+    if (equipLifecycleMatches)
+        applyEquipIntentFromInput(p, *in, "owned-input");
+
     MovementValidationResult result =
         validateClientMovementReport(p, report, validationContext, validationConfig);
     applyMovementValidationCounters(p.movementValidation, result, report);
@@ -872,14 +950,25 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
     if (bytes < (int)sizeof(ReconnectRequestPacket))
         return;
     const ReconnectRequestPacket* req = reinterpret_cast<const ReconnectRequestPacket*>(buffer);
+    const std::string requestedToken = req->reconnectToken;
+    const uint64_t currentMs = nowMs();
 
     // Find player with matching reconnect token
     uint32_t foundId = 0;
+    bool resendExistingAccept = false;
     for (auto& kv : players)
     {
-        if (kv.second.reconnectToken == req->reconnectToken)
+        if (kv.second.reconnectToken == requestedToken)
         {
             foundId = kv.first;
+            break;
+        }
+        if (!kv.second.previousReconnectToken.empty() &&
+            kv.second.previousReconnectToken == requestedToken &&
+            currentMs <= kv.second.previousReconnectTokenValidUntilMs)
+        {
+            foundId = kv.first;
+            resendExistingAccept = true;
             break;
         }
     }
@@ -887,7 +976,7 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
     if (foundId == 0)
     {
         printf("%s [SERVER RECONNECT] rejected token=%s not-found\n",
-               serverTimestamp(), req->reconnectToken);
+               serverTimestamp(), requestedToken.c_str());
         if (claimedTransport && claimedTransport->get())
         {
             (*claimedTransport)->close();
@@ -898,11 +987,17 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
 
     ServerPlayer& p = players[foundId];
     bindPlayerConnection(p, from, connectionId, claimedTransport);
-    p.lastHeardMs = nowMs();
-    p.pendingReliableEvents.clear();
-    p.reliableEventSessionId = 0;
-    p.reconnectToken = generateReconnectToken(); // rotate token
-    beginAuthoritativeTransform(p, p.pos, p.vel, p.yaw, "reconnect");
+    p.lastHeardMs = currentMs;
+    if (!resendExistingAccept)
+    {
+        p.pendingReliableEvents.clear();
+        p.reliableEventSessionId = 0;
+        p.previousReconnectToken = requestedToken;
+        p.previousReconnectTokenValidUntilMs = currentMs + 5000;
+        p.reconnectToken = generateReconnectToken(); // rotate token
+        beginAuthoritativeTransform(p, p.pos, p.vel, p.yaw, "reconnect");
+        p.awaitingAuthoritativeTransformAck = false;
+    }
 
     ReconnectAcceptPacket accept{};
     accept.header.type = PACKET_RECONNECT_ACCEPT;
@@ -922,11 +1017,16 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
     accept.restorePx = p.pos.x;
     accept.restorePy = p.pos.y;
     accept.restorePz = p.pos.z;
-    if (sendToSourceOrPlayer(sock, from, &p, nullptr, &accept, sizeof(accept)))
-        ++totalPacketsOut;
+    const int acceptCopies = resendExistingAccept ? 1 : 4;
+    for (int i = 0; i < acceptCopies; ++i)
+    {
+        if (sendToSourceOrPlayer(sock, from, &p, nullptr, &accept, sizeof(accept)))
+            ++totalPacketsOut;
+    }
 
-    printf("%s [SERVER RECONNECT] accepted id=%u name=\"%s\" health=%d\n",
-           serverTimestamp(), foundId, p.name.c_str(), p.health);
+    printf("%s [SERVER RECONNECT] %s id=%u name=\"%s\" health=%d copies=%d\n",
+           serverTimestamp(), resendExistingAccept ? "resent" : "accepted",
+           foundId, p.name.c_str(), p.health, acceptCopies);
 }
 
 ServerPacketProcessResult processServerPacket(

@@ -1,8 +1,12 @@
-/**
- * 7 18 2026 0850
- * purpose: what does this file even do
- * we need to put purposes at the tops of files always and maintain them 
- */
+// 07 21 2026, 23 35
+/* purpose
+* Owns local weapon runtime, viewmodel updates, firing entrypoints, reload, equip, and rendering.
+* Routes local and multiplayer weapon presentation through shared weapon definitions.
+* Keeps single-player projectile behavior while letting multiplayer projectiles use network prediction.
+* Does NOT validate server damage, packet authority, auth state, or remote player ownership.
+* Does NOT own packet serialization, server projectile simulation, or multiplayer transport.
+* Does NOT define weapon JSON parsing, collision mesh loading, or world tick scheduling.
+*/
 
 #include "weapon-system.h"
 #include "physics/movement/physics-collision.h"
@@ -910,8 +914,10 @@ RevolverShotResult WeaponSystem::fireRocketLauncher(Camera& camera, Player& play
         // Fire loaded projectile, interrupt reload, discard partial progress
     } else if (rt->currentAmmo <= 0) {
         playWorldSound("ui/click", player.pos, 0.4f, 0.75f, 10.0f);
-        if (!rt->isReloading && rt->reserveAmmo > 0)
+        if (!rt->isReloading && rt->reserveAmmo > 0) {
             reload(player);
+            result.autoReloadTriggered = true;
+        }
         return result;
     } else if (rt->fireCooldown > 0.0f) {
         return result;
@@ -946,7 +952,17 @@ RevolverShotResult WeaponSystem::fireRocketLauncher(Camera& camera, Player& play
     result.start = muzzlePos;
     result.end = muzzlePos + dir;
     result.hitNormal = -dir;
-    WeaponRocketLauncher::fire(mRocketState, *def, *rt, player, muzzlePos, dir);
+    if (remotePlayers)
+    {
+        rt->currentAmmo--;
+        rt->fireCooldown = def->fireDelay;
+        if (!def->soundShoot.empty())
+            WeaponAudio::playShootSound(*def, muzzlePos);
+    }
+    else
+    {
+        WeaponRocketLauncher::fire(mRocketState, *def, *rt, player, muzzlePos, dir);
+    }
     rt->shootEffectTimer = weaponParamOr(*def, "shootPoseTime", 0.12f);
     mShotCooldown = def->fireDelay;
     AnalyticsManager::instance().trackWeaponUsed(def->id);

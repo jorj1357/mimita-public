@@ -12,6 +12,7 @@
 #include "network/network-weapons.h"
 #include "physics/movement/movement-conversion.h"
 #include "combat/weapon-registry.h"
+#include "combat/weapon-runtime.h"
 #include "combat/weapon-types.h"
 #include "debug/debug-log.h"
 
@@ -249,8 +250,7 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
 
         ServerPlayer::ServerWeaponRuntime rt;
         rt.magazineAmmo = def->magazineSize;
-        auto it = def->customParams.find("reserveAmmo");
-        rt.reserveAmmo = (it != def->customParams.end()) ? (int)it->second : 0;
+        rt.reserveAmmo = initialReserveAmmoForDefinition(*def);
         rt.nextAllowedFireTick = 0;  // cooldown cleared — new life may fire immediately
         rt.reloading = false;
         rt.reloadCompleteTick = 0;
@@ -261,6 +261,18 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
 
     // Clear transient combat/reload state
     player.projectileFireCooldown = 0.0f;
+    player.nextProjectileFireTick = 0;
+    player.lastShotSerial = 0;
+    player.lastProjectileFireSerial = 0;
+    player.lastMeleeAttackSerial = 0;
+    player.swordswordState = SwordswordState{};
+    player.meleeCooldownTimer = 0.0f;
+    player.godballActive = false;
+    player.godballX = player.godballY = player.godballZ = 0.0f;
+    player.hasLastPhysicalWeaponShape = false;
+    player.lastPhysicalWeaponDefNetworkId = 0;
+    player.nextPhysicalContactSerial = 1;
+    player.physicalContactEpisodes.clear();
     player.input = {};
     player.inputStateFlags = 0;
     player.attackQueued = false;
@@ -466,13 +478,15 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         return;
     }
 
-    // If not Active (awaiting spawn ack), freeze movement
-    if (p.spawnState != ServerPlayer::Active)
+    // If the lifecycle/transform handshake is not complete, freeze movement.
+    if (p.spawnState != ServerPlayer::Active ||
+        p.awaitingAuthoritativeTransformAck)
     {
         p.vel = glm::vec3(0.0f);
         p.movement.externalImpulse = glm::vec3(0.0f);
         p.clientStateUpdated = false;
-        syncServerMovementRuntime(p, false);
+        syncServerMovementRuntime(
+            p, p.spawnState == ServerPlayer::Active);
         return;
     }
 

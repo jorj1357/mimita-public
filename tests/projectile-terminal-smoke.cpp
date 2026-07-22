@@ -1,7 +1,7 @@
 // 07 19 2026, 12 20
 /* purpose
 * Focused UDP smoke for authoritative projectile terminal events.
-* Verifies a server rocket PlayerImpact is broadcast to both connected clients.
+* Verifies a generic rocket AttackRequest terminal event is broadcast to both clients.
 * Confirms the terminal packet carries damage and a single authoritative projectile ID.
 * Does NOT launch the server process, render pixels, or inspect OpenGL state.
 * Does NOT trust client-reported impact or change server damage behavior.
@@ -13,6 +13,7 @@
 #include "network/snapshot-chunks.h"
 #include "network/movement-validation.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -32,6 +33,8 @@ struct Client
     std::string mapId;
     MimitaNet::SnapshotPacket snapshot{};
 };
+
+const MimitaNet::SnapshotEntity* findEntity(const Client& c, uint32_t id);
 
 void copyName(char (&out)[MimitaNet::MAX_NAME_BYTES], const char* name)
 {
@@ -91,6 +94,12 @@ void sendSpawnAck(Client& c, const MimitaNet::PlayerRespawnedPacket& spawn, cons
     sendto(c.socket, (const char*)&p, sizeof(p), 0, (const sockaddr*)&server, sizeof(server));
 }
 
+void syncMovementSequenceToSnapshot(Client& c, uint32_t serverTick)
+{
+    if (serverTick != 0)
+        c.movementSequence = std::max(c.movementSequence, serverTick + 1u);
+}
+
 bool pumpJoin(Client& c, const sockaddr_in& server, uint64_t deadline)
 {
     char buffer[16384];
@@ -124,9 +133,11 @@ bool pumpJoin(Client& c, const sockaddr_in& server, uint64_t deadline)
             if (bytes >= (int)sizeof(MimitaNet::SnapshotPacket))
             {
                 c.snapshot = *reinterpret_cast<MimitaNet::SnapshotPacket*>(buffer);
+                syncMovementSequenceToSnapshot(c, c.snapshot.header.tick);
             }
             else if (MimitaNet::parseSnapshotChunk(buffer, (size_t)bytes, chunk))
             {
+                syncMovementSequenceToSnapshot(c, chunk.serverTick);
                 MimitaNet::clearSnapshotPacket(c.snapshot, chunk.header.tick);
                 MimitaNet::appendSnapshotChunkToPacket(chunk, c.snapshot);
             }
@@ -161,6 +172,34 @@ void sendPosition(Client& c, const sockaddr_in& server, float x, float y, float 
     sendto(c.socket, (const char*)&p, sizeof(p), 0, (const sockaddr*)&server, sizeof(server));
 }
 
+void sendEquip(Client& c, const sockaddr_in& server, int slot, uint16_t serial)
+{
+    MimitaNet::InputPacket p{};
+    p.header.type = MimitaNet::PACKET_INPUT;
+    p.header.playerId = c.id;
+    p.header.transformEpoch = c.transformEpoch;
+    p.header.tick = c.movementSequence;
+    p.equippedSlot = (int16_t)slot;
+    p.equipSerial = serial;
+    if (const MimitaNet::SnapshotEntity* entity = findEntity(c, c.id))
+    {
+        p.clientPx = entity->px;
+        p.clientPy = entity->py;
+        p.clientPz = entity->pz;
+    }
+    p.transformEpoch = c.transformEpoch;
+    p.spawnGeneration = c.spawnGeneration;
+    p.movementSequence = c.movementSequence++;
+    p.clientSimulationTick = p.movementSequence;
+    p.movementFlags =
+        MimitaNet::MOVEMENT_REPORT_DASH_AVAILABLE |
+        MimitaNet::MOVEMENT_REPORT_DOWN_DASH_AVAILABLE |
+        MimitaNet::MOVEMENT_REPORT_FREEZE_AVAILABLE |
+        MimitaNet::MOVEMENT_REPORT_GROUND_RETURN_AVAILABLE;
+    p.sizeScale = 1.0f;
+    sendto(c.socket, (const char*)&p, sizeof(p), 0, (const sockaddr*)&server, sizeof(server));
+}
+
 const MimitaNet::SnapshotEntity* findEntity(const Client& c, uint32_t id)
 {
     for (uint32_t i = 0; i < c.snapshot.entityCount && i < MimitaNet::MAX_SNAPSHOT_ENTITIES; ++i)
@@ -181,15 +220,23 @@ bool sendRocket(Client& shooter, const Client& target, const sockaddr_in& server
     float oy = s->py;
     float oz = s->pz;
 
-    MimitaNet::ProjectileFireRequestPacket p{};
-    p.header.type = MimitaNet::PACKET_PROJECTILE_FIRE_REQUEST;
+    MimitaNet::AttackRequestPacket p{};
+    p.header.type = MimitaNet::PACKET_ATTACK_REQUEST;
+    p.header.tick = shooter.movementSequence;
     p.header.playerId = shooter.id;
-    p.fireSerial = 77;
-    p.weapon = MimitaNet::NETWORK_WEAPON_ROCKET_LAUNCHER;
-    p.originX = ox;
-    p.originY = oy;
-    p.originZ = oz;
-    p.dirZ = -1.0f;
+    p.requestId = 77;
+    p.spawnGeneration = shooter.spawnGeneration;
+    p.clientSimulationTick = shooter.movementSequence;
+    p.basedOnInputSequence = (uint16_t)shooter.movementSequence;
+    p.equippedSlot = 7;
+    p.weaponDefNetworkId = 7;
+    p.aimOriginX = ox;
+    p.aimOriginY = oy;
+    p.aimOriginZ = oz;
+    p.aimDirZ = -1.0f;
+    p.muzzlePosX = ox;
+    p.muzzlePosY = oy;
+    p.muzzlePosZ = oz;
     sendto(shooter.socket, (const char*)&p, sizeof(p), 0, (const sockaddr*)&server, sizeof(server));
     return true;
 }
@@ -256,6 +303,14 @@ int main()
     {
         readyA = pumpJoin(a, server, MimitaNet::nowMs() + 20) || readyA;
         readyB = pumpJoin(b, server, MimitaNet::nowMs() + 20) || readyB;
+    }
+    const uint64_t equipDeadline = MimitaNet::nowMs() + 500;
+    uint16_t equipSerial = 51;
+    while (MimitaNet::nowMs() < equipDeadline)
+    {
+        sendEquip(a, server, 7, equipSerial++);
+        pumpJoin(a, server, MimitaNet::nowMs() + 20);
+        pumpJoin(b, server, MimitaNet::nowMs() + 20);
     }
 
     bool rocketSent = sendRocket(a, b, server);

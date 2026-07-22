@@ -14,6 +14,7 @@
 #include "network/movement-validation.h"
 
 #include <cstdio>
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -33,6 +34,14 @@ struct TestClient
     uint32_t spawnGeneration = 0;
     uint32_t transformEpoch = 0;
     uint32_t movementSequence = 1;
+    bool hasReconnectRestore = false;
+    float reconnectRestoreX = 0.0f;
+    float reconnectRestoreY = 0.0f;
+    float reconnectRestoreZ = 0.0f;
+    bool hasLastInputPosition = false;
+    float lastInputX = 0.0f;
+    float lastInputY = 0.0f;
+    float lastInputZ = 30.0f;
     bool mapReadySent = false;
     MimitaNet::SnapshotPacket snapshot{};
 };
@@ -51,6 +60,7 @@ bool openClient(TestClient& client)
     if (client.socket == INVALID_SOCKET ||
         !MimitaNet::setNonBlocking(client.socket))
         return false;
+    MimitaNet::disableUdpConnReset(client.socket);
 
     sockaddr_in bindAddress{};
     bindAddress.sin_family = AF_INET;
@@ -111,7 +121,16 @@ void sendSpawnAck(TestClient& client,
            (const sockaddr*)&server, sizeof(server));
 }
 
-bool pump(TestClient& client, uint64_t deadline, const sockaddr_in* server = nullptr)
+void syncMovementSequenceToSnapshot(TestClient& client, uint32_t serverTick)
+{
+    if (serverTick != 0)
+        client.movementSequence = std::max(client.movementSequence, serverTick + 1u);
+}
+
+bool pump(TestClient& client,
+          uint64_t deadline,
+          const sockaddr_in* server = nullptr,
+          bool returnOnReadySnapshot = true)
 {
     char buffer[16384];
     while (MimitaNet::nowMs() < deadline)
@@ -156,19 +175,35 @@ bool pump(TestClient& client, uint64_t deadline, const sockaddr_in* server = nul
                  bytes >= (int)sizeof(MimitaNet::ReconnectAcceptPacket))
         {
             auto* accept = reinterpret_cast<MimitaNet::ReconnectAcceptPacket*>(buffer);
+            const bool duplicateAccept =
+                client.id == accept->assignedPlayerId &&
+                client.reconnectToken == accept->reconnectToken &&
+                client.hasReconnectRestore;
             client.id = accept->assignedPlayerId;
             client.approvedName = accept->approvedName;
             client.reconnectToken = accept->reconnectToken;
             client.spawnGeneration = accept->spawnGeneration;
             client.transformEpoch = accept->header.transformEpoch;
-            client.movementSequence = 1;
+            if (!duplicateAccept)
+            {
+                const uint32_t freshSequence =
+                    accept->header.tick != 0 ? accept->header.tick + 1u : 1u;
+                client.movementSequence =
+                    std::max(client.movementSequence, freshSequence);
+            }
+            client.hasReconnectRestore = true;
+            client.reconnectRestoreX = accept->restorePx;
+            client.reconnectRestoreY = accept->restorePy;
+            client.reconnectRestoreZ = accept->restorePz;
         }
         else if (header->type == MimitaNet::PACKET_SNAPSHOT &&
                  bytes >= (int)sizeof(MimitaNet::SnapshotPacket))
         {
             client.snapshot =
                 *reinterpret_cast<MimitaNet::SnapshotPacket*>(buffer);
-            if (client.id && client.snapshot.playerCount >= 2 &&
+            syncMovementSequenceToSnapshot(client, client.snapshot.header.tick);
+            if (returnOnReadySnapshot &&
+                client.id && client.snapshot.playerCount >= 2 &&
                 client.snapshot.npcCount >= 3)
                 return true;
         }
@@ -177,10 +212,12 @@ bool pump(TestClient& client, uint64_t deadline, const sockaddr_in* server = nul
             MimitaNet::SnapshotChunkPacket chunk{};
             if (!MimitaNet::parseSnapshotChunk(buffer, (size_t)bytes, chunk))
                 continue;
+            syncMovementSequenceToSnapshot(client, chunk.serverTick);
             MimitaNet::clearSnapshotPacket(client.snapshot, chunk.header.tick);
             if (!MimitaNet::appendSnapshotChunkToPacket(chunk, client.snapshot))
                 continue;
-            if (client.id && client.snapshot.playerCount >= 2 &&
+            if (returnOnReadySnapshot &&
+                client.id && client.snapshot.playerCount >= 2 &&
                 client.snapshot.npcCount >= 3)
                 return true;
         }
@@ -209,7 +246,9 @@ void sendPosition(
     float x,
     float y,
     float z,
-    uint16_t respawnSerial = 0)
+    uint16_t respawnSerial = 0,
+    int16_t equippedSlot = 0,
+    uint16_t equipSerial = 0)
 {
     MimitaNet::InputPacket input{};
     input.header.type = MimitaNet::PACKET_INPUT;
@@ -231,8 +270,14 @@ void sendPosition(
         MimitaNet::MOVEMENT_REPORT_GROUND_RETURN_AVAILABLE;
     input.sizeScale = 1.0f;
     input.respawnSerial = respawnSerial;
+    input.equippedSlot = equippedSlot;
+    input.equipSerial = equipSerial;
     sendto(client.socket, (const char*)&input, sizeof(input), 0,
            (const sockaddr*)&server, sizeof(server));
+    client.hasLastInputPosition = true;
+    client.lastInputX = x;
+    client.lastInputY = y;
+    client.lastInputZ = z;
 }
 
 void sendExplode(TestClient& client, const sockaddr_in& server)
@@ -434,7 +479,23 @@ int main()
     bool noDoubleRespawn = entityHealth(first, second.id) == 100;
 
     // ── Test 4: Living player sending respawnSerial does nothing ──────
-    sendPosition(first, server, 0.0f, 0.0f, 30.0f, 99 /* respawnSerial from living player */);
+    float livingX = 0.0f;
+    float livingY = 0.0f;
+    float livingZ = 30.0f;
+    if (first.hasLastInputPosition)
+    {
+        livingX = first.lastInputX;
+        livingY = first.lastInputY;
+        livingZ = first.lastInputZ;
+    }
+    else if (const MimitaNet::SnapshotEntity* livingEntity = findEntity(first, first.id))
+    {
+        livingX = livingEntity->px;
+        livingY = livingEntity->py;
+        livingZ = livingEntity->pz;
+    }
+    sendPosition(first, server, livingX, livingY, livingZ,
+                 99 /* respawnSerial from living player */);
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     pump(first, MimitaNet::nowMs() + 120);
     pump(second, MimitaNet::nowMs() + 120);
@@ -443,6 +504,7 @@ int main()
     // ── Test 5: Reconnect preserves player id and accepts new input ──
     bool reconnectPassed = false;
     bool postReconnectMovement = false;
+    bool reconnectAccepted = false;
     const uint32_t secondOriginalId = second.id;
     const std::string previousReconnectToken = second.reconnectToken;
     if (!previousReconnectToken.empty() && secondOriginalId != 0)
@@ -456,43 +518,79 @@ int main()
             sendReconnect(second, server, previousReconnectToken);
 
             const uint64_t reconnectDeadline = MimitaNet::nowMs() + 2000;
+            uint64_t nextReconnectRetry = MimitaNet::nowMs() + 200;
             while (MimitaNet::nowMs() < reconnectDeadline)
             {
+                if (MimitaNet::nowMs() >= nextReconnectRetry)
+                {
+                    sendReconnect(second, server, previousReconnectToken);
+                    nextReconnectRetry = MimitaNet::nowMs() + 200;
+                }
                 pump(first, MimitaNet::nowMs() + 30);
-                pump(second, MimitaNet::nowMs() + 30, &server);
+                pump(second, MimitaNet::nowMs() + 30, &server, false);
                 if (second.id == secondOriginalId &&
                     !second.reconnectToken.empty() &&
                     second.reconnectToken != previousReconnectToken)
                     break;
             }
+            reconnectAccepted =
+                second.id == secondOriginalId &&
+                !second.reconnectToken.empty() &&
+                second.reconnectToken != previousReconnectToken;
 
-            const MimitaNet::SnapshotEntity* reconnectEntity =
-                findEntity(second, second.id);
-            if (reconnectEntity)
+            float reconnectBaseX = second.reconnectRestoreX;
+            float reconnectBaseY = second.reconnectRestoreY;
+            float reconnectBaseZ = second.reconnectRestoreZ;
+            bool hasReconnectBase = second.hasReconnectRestore;
+            if (!hasReconnectBase)
             {
-                const float beforeReconnectMoveX = reconnectEntity->px;
-                sendPosition(second, server,
-                             reconnectEntity->px + 1.25f,
-                             reconnectEntity->py,
-                             reconnectEntity->pz);
+                const MimitaNet::SnapshotEntity* reconnectEntity =
+                    findEntity(second, second.id);
+                if (reconnectEntity)
+                {
+                    reconnectBaseX = reconnectEntity->px;
+                    reconnectBaseY = reconnectEntity->py;
+                    reconnectBaseZ = reconnectEntity->pz;
+                    hasReconnectBase = true;
+                }
+            }
 
-                const uint64_t moveDeadline = MimitaNet::nowMs() + 1500;
-                while (!postReconnectMovement && MimitaNet::nowMs() < moveDeadline)
+            if (hasReconnectBase)
+            {
+                sendPosition(second, server,
+                             reconnectBaseX,
+                             reconnectBaseY,
+                             reconnectBaseZ);
+                const uint64_t ackDeadline = MimitaNet::nowMs() + 500;
+                while (MimitaNet::nowMs() < ackDeadline)
                 {
                     pump(first, MimitaNet::nowMs() + 30);
-                    pump(second, MimitaNet::nowMs() + 30);
+                }
+
+                const float beforeReconnectMoveX = reconnectBaseX;
+                int movementStep = 0;
+                const uint64_t moveDeadline = MimitaNet::nowMs() + 2600;
+                while (!postReconnectMovement && MimitaNet::nowMs() < moveDeadline)
+                {
+                    const float offset = std::min(1.25f, 0.04f * (float)++movementStep);
+                    sendPosition(second, server,
+                                 reconnectBaseX + offset,
+                                 reconnectBaseY,
+                                 reconnectBaseZ);
+                    pump(first, MimitaNet::nowMs() + 30);
+                    pump(second, MimitaNet::nowMs() + 30, nullptr, false);
                     const MimitaNet::SnapshotEntity* seen =
                         findEntity(first, second.id);
+                    const MimitaNet::SnapshotEntity* selfSeen =
+                        findEntity(second, second.id);
                     postReconnectMovement =
-                        seen && std::fabs(seen->px - beforeReconnectMoveX) >= 0.5f;
+                        (seen && std::fabs(seen->px - beforeReconnectMoveX) >= 0.5f) ||
+                        (selfSeen && std::fabs(selfSeen->px - beforeReconnectMoveX) >= 0.5f);
                 }
             }
 
             reconnectPassed =
-                second.id == secondOriginalId &&
-                !second.reconnectToken.empty() &&
-                second.reconnectToken != previousReconnectToken &&
-                postReconnectMovement;
+                reconnectAccepted && postReconnectMovement;
         }
     }
 
@@ -503,21 +601,27 @@ int main()
     bool grenadeSecondAcceptPassed = false;
     uint32_t firstProjectileId = 0;
     uint32_t secondProjectileId = 0;
+    constexpr uint16_t GRENADE_LAUNCHER_DEF_NETWORK_ID = 8;
 
-    // Helper: send ProjectileFireRequestPacket for grenade launcher
+    // Helper: send generic AttackRequestPacket for grenade launcher
     auto sendGrenadeRequest = [&](TestClient& client, uint32_t serial,
                                   float ox, float oy, float oz,
                                   float dx, float dy, float dz) {
-        MimitaNet::ProjectileFireRequestPacket req{};
-        req.header.type = MimitaNet::PACKET_PROJECTILE_FIRE_REQUEST;
+        MimitaNet::AttackRequestPacket req{};
+        req.header.type = MimitaNet::PACKET_ATTACK_REQUEST;
+        req.header.tick = client.movementSequence;
         req.header.playerId = client.id;
-        req.fireSerial = serial;
-        req.lastServerTick = 0;
-        req.weapon = MimitaNet::NETWORK_WEAPON_GRENADE_LAUNCHER;
+        req.requestId = serial;
+        req.spawnGeneration = client.spawnGeneration;
+        req.clientSimulationTick = client.movementSequence;
+        req.basedOnInputSequence = (uint16_t)client.movementSequence;
+        req.equippedSlot = 8;
+        req.weaponDefNetworkId = GRENADE_LAUNCHER_DEF_NETWORK_ID;
         float len = std::sqrt(dx*dx + dy*dy + dz*dz);
         if (len > 0.001f) { dx /= len; dy /= len; dz /= len; }
-        req.originX = ox; req.originY = oy; req.originZ = oz;
-        req.dirX = dx; req.dirY = dy; req.dirZ = dz;
+        req.aimOriginX = ox; req.aimOriginY = oy; req.aimOriginZ = oz;
+        req.aimDirX = dx; req.aimDirY = dy; req.aimDirZ = dz;
+        req.muzzlePosX = ox; req.muzzlePosY = oy; req.muzzlePosZ = oz;
         sendto(client.socket, (const char*)&req, sizeof(req), 0,
                (const sockaddr*)&server, sizeof(server));
     };
@@ -547,13 +651,13 @@ int main()
                 header->magic != MimitaNet::PROTOCOL_MAGIC ||
                 header->version != MimitaNet::PROTOCOL_VERSION)
                 continue;
-            if (header->type == MimitaNet::PACKET_PROJECTILE_FIRE_RESULT &&
-                bytes >= (int)sizeof(MimitaNet::ProjectileFireResultPacket))
+            if (header->type == MimitaNet::PACKET_ATTACK_RESULT &&
+                bytes >= (int)sizeof(MimitaNet::AttackResultPacket))
             {
-                auto* result = reinterpret_cast<MimitaNet::ProjectileFireResultPacket*>(buffer);
-                if (result->fireSerial == serial)
+                auto* result = reinterpret_cast<MimitaNet::AttackResultPacket*>(buffer);
+                if (result->requestId == serial)
                 {
-                    lastResult.fireSerial = result->fireSerial;
+                    lastResult.fireSerial = result->requestId;
                     lastResult.projectileId = result->projectileId;
                     lastResult.accepted = result->accepted != 0;
                     lastResult.reason = result->reason;
@@ -565,34 +669,32 @@ int main()
         return false;
     };
 
-    // Equip grenade launcher (slot 8) by sending input packet with equipSerial
+    // Equip grenade launcher (slot 8) through the same accepted movement path
+    // used by normal client input, retrying briefly because this smoke runs UDP.
     {
-        MimitaNet::InputPacket input{};
-        input.header.type = MimitaNet::PACKET_INPUT;
-        input.header.playerId = first.id;
-        input.header.transformEpoch = first.transformEpoch;
-        input.header.tick = first.movementSequence;
-        input.equippedSlot = 8;
-        input.equipSerial = 42;
-        input.transformEpoch = first.transformEpoch;
-        input.spawnGeneration = first.spawnGeneration;
-        input.movementSequence = first.movementSequence++;
-        input.clientSimulationTick = input.movementSequence;
-        input.movementFlags =
-            MimitaNet::MOVEMENT_REPORT_DASH_AVAILABLE |
-            MimitaNet::MOVEMENT_REPORT_DOWN_DASH_AVAILABLE |
-            MimitaNet::MOVEMENT_REPORT_FREEZE_AVAILABLE |
-            MimitaNet::MOVEMENT_REPORT_GROUND_RETURN_AVAILABLE;
+        float equipX = 0.0f;
+        float equipY = 0.0f;
+        float equipZ = 30.0f;
         if (const MimitaNet::SnapshotEntity* playerEntity = findEntity(first, first.id))
         {
-            input.clientPx = playerEntity->px;
-            input.clientPy = playerEntity->py;
-            input.clientPz = playerEntity->pz;
+            equipX = playerEntity->px;
+            equipY = playerEntity->py;
+            equipZ = playerEntity->pz;
         }
-        input.camForwardX = 1.0f;
-        input.sizeScale = 1.0f;
-        sendto(first.socket, (const char*)&input, sizeof(input), 0,
-               (const sockaddr*)&server, sizeof(server));
+        else if (first.hasLastInputPosition)
+        {
+            equipX = first.lastInputX;
+            equipY = first.lastInputY;
+            equipZ = first.lastInputZ;
+        }
+        const uint64_t equipDeadline = MimitaNet::nowMs() + 500;
+        uint16_t equipSerial = 42;
+        while (MimitaNet::nowMs() < equipDeadline)
+        {
+            sendPosition(first, server, equipX, equipY, equipZ, 0, 8, equipSerial++);
+            pump(first, MimitaNet::nowMs() + 30);
+            pump(second, MimitaNet::nowMs() + 30);
+        }
     }
 
     // Test 6a: Send serial 1, expect accepted
@@ -602,6 +704,12 @@ int main()
         origin[0] = playerEntity->px;
         origin[1] = playerEntity->py;
         origin[2] = playerEntity->pz + 0.8f;
+    }
+    else if (first.hasLastInputPosition)
+    {
+        origin[0] = first.lastInputX;
+        origin[1] = first.lastInputY;
+        origin[2] = first.lastInputZ + 0.8f;
     }
     sendGrenadeRequest(first, 1, origin[0], origin[1], origin[2], 1.0f, 0.0f, 0.0f);
     if (pumpExpectResult(first, 1, 2000) && lastResult.accepted && lastResult.projectileId != 0)
@@ -624,9 +732,24 @@ int main()
         grenadeRejectionPassed = true;
     }
 
-    // Test 6d: Wait for cooldown (~1s), send serial 3, expect new projectile
-    std::this_thread::sleep_for(std::chrono::milliseconds(1200));
-    sendGrenadeRequest(first, 3, origin[0], origin[1], origin[2], 1.0f, 0.0f, 0.0f);
+    // Test 6d: Wait just past cooldown, send serial 3, expect new projectile
+    {
+        const uint64_t secondFireDeadline = MimitaNet::nowMs() + 600;
+        while (MimitaNet::nowMs() < secondFireDeadline)
+        {
+            pump(first, MimitaNet::nowMs() + 30);
+            pump(second, MimitaNet::nowMs() + 30);
+        }
+    }
+    float secondOrigin[3] = {origin[0], origin[1], origin[2]};
+    if (const MimitaNet::SnapshotEntity* playerEntity = findEntity(first, first.id))
+    {
+        secondOrigin[0] = playerEntity->px;
+        secondOrigin[1] = playerEntity->py;
+        secondOrigin[2] = playerEntity->pz + 0.8f;
+    }
+    sendGrenadeRequest(first, 3, secondOrigin[0], secondOrigin[1], secondOrigin[2],
+                       1.0f, 0.0f, 0.0f);
     if (pumpExpectResult(first, 3, 2000) && lastResult.accepted && lastResult.projectileId != 0)
     {
         grenadeSecondAcceptPassed = (lastResult.projectileId != firstProjectileId);
@@ -671,7 +794,7 @@ int main()
     std::printf(
         "[PROTOCOL SMOKE] first=%u/%s second=%u/%s players=%u npcs=%u "
         "movement=%d spawned=%d/%d lifecycleDeath=%d autoRespawn=%d "
-        "instantRespawn=%d noDouble=%d livingNoEffect=%d reconnect=%d reconnectMovement=%d "
+        "instantRespawn=%d noDouble=%d livingNoEffect=%d reconnectAccepted=%d reconnect=%d reconnectMovement=%d "
         "grenadeAccept=%d grenadeIdempotent=%d grenadeReject=%d grenadeSecondAccept=%d "
         "statePackets=%d firstProjId=%u secondProjId=%u\n",
         first.id, first.approvedName.c_str(),
@@ -681,6 +804,7 @@ int main()
         (int)firstSawSpawn, (int)secondSawSpawn,
         (int)sawDeath, (int)sawAutoRespawn,
         (int)sawInstantRespawn, (int)noDoubleRespawn, (int)livingNoEffect,
+        (int)reconnectAccepted,
         (int)reconnectPassed, (int)postReconnectMovement,
         (int)grenadeTestPassed, (int)grenadeIdempotentPassed,
         (int)grenadeRejectionPassed, (int)grenadeSecondAcceptPassed,

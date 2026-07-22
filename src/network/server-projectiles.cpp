@@ -24,7 +24,9 @@
 
 #include "combat/projectile-simulation.h"
 #include "combat/weapon-registry.h"
+#include "combat/weapon-runtime.h"
 #include "combat/weapon-types.h"
+#include "physics/movement/movement-step.h"
 #include "physics/movement/physics-collision-shared.h"
 
 namespace MimitaNet {
@@ -163,34 +165,19 @@ struct ProjectileConfig
     float angularSpeed = 6.0f;
 };
 
-std::optional<ProjectileConfig> projectileConfig(uint8_t weapon)
+std::optional<ProjectileConfig> projectileConfigFromDefinition(
+    const WeaponDefinition& def,
+    uint8_t weapon)
 {
     ProjectileConfig cfg;
-
-    const char* weaponId = nullptr;
-    if (weapon == NETWORK_WEAPON_ROCKET_LAUNCHER)
-        weaponId = "rocket_launcher";
-    else if (weapon == NETWORK_WEAPON_GRENADE_LAUNCHER)
-        weaponId = "grenade_launcher";
-    else
-        return std::nullopt;
-
-    const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
-    if (!def)
-    {
-        printf("[PROJECTILE CONFIG] weapon=%s NOT FOUND in registry (id=%s) — rejecting request\n",
-               networkWeaponTypeName(weapon), weaponId);
-        return std::nullopt;
-    }
-
-    cfg.speed = def->projectileSpeed > 0.0f ? def->projectileSpeed : 40.0f;
-    cfg.lifetime = def->projectileLifetime > 0.0f ? def->projectileLifetime : 5.0f;
-    cfg.radius = def->projectileRadius > 0.0f ? def->projectileRadius : 0.3f;
-    cfg.fireDelay = def->fireDelay > 0.0f ? def->fireDelay : 1.0f;
+    cfg.speed = def.projectileSpeed > 0.0f ? def.projectileSpeed : 40.0f;
+    cfg.lifetime = def.projectileLifetime > 0.0f ? def.projectileLifetime : 5.0f;
+    cfg.radius = def.projectileRadius > 0.0f ? def.projectileRadius : 0.3f;
+    cfg.fireDelay = def.fireDelay > 0.0f ? def.fireDelay : 1.0f;
 
     auto cp = [&](const char* key, float fallback) -> float {
-        auto it = def->customParams.find(key);
-        return it != def->customParams.end() ? it->second : fallback;
+        auto it = def.customParams.find(key);
+        return it != def.customParams.end() ? it->second : fallback;
     };
 
     cfg.splashRadius = cp("splashRadius", 8.0f);
@@ -210,7 +197,6 @@ std::optional<ProjectileConfig> projectileConfig(uint8_t weapon)
     cfg.angularDrag = cp("angularDrag", 0.3f);
     cfg.angularSpeed = cp("angSpeed", 6.0f);
 
-    // Validate essential config values; reject if critical fields are invalid
     bool valid = true;
     if (cfg.speed <= 0.0f || !std::isfinite(cfg.speed))
     { printf("[PROJECTILE CONFIG] weapon=%s INVALID speed=%.2f\n", networkWeaponTypeName(weapon), cfg.speed); valid = false; }
@@ -236,7 +222,7 @@ std::optional<ProjectileConfig> projectileConfig(uint8_t weapon)
            "lifetime=%.2f splashRadius=%.2f splashDamage=%.2f gravity=%.2f "
            "drag=%.2f restitution=%.2f friction=%.2f upBias=%.2f "
            "armingDistance=%.2f maxBounce=%d minBounceSpeed=%.2f "
-           "angularDrag=%.2f source=weapon-registry\n",
+           "angularDrag=%.2f source=weapon-definition\n",
            networkWeaponTypeName(weapon),
            cfg.speed, cfg.radius, cfg.fireDelay,
            cfg.lifetime, cfg.splashRadius, cfg.splashDamage, cfg.gravity,
@@ -244,6 +230,27 @@ std::optional<ProjectileConfig> projectileConfig(uint8_t weapon)
            cfg.armingDistance, cfg.maxBounceCount, cfg.minBounceSpeed,
            cfg.angularDrag);
     return cfg;
+}
+
+std::optional<ProjectileConfig> projectileConfig(uint8_t weapon)
+{
+    const char* weaponId = nullptr;
+    if (weapon == NETWORK_WEAPON_ROCKET_LAUNCHER)
+        weaponId = "rocket_launcher";
+    else if (weapon == NETWORK_WEAPON_GRENADE_LAUNCHER)
+        weaponId = "grenade_launcher";
+    else
+        return std::nullopt;
+
+    const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
+    if (!def)
+    {
+        printf("[PROJECTILE CONFIG] weapon=%s NOT FOUND in registry (id=%s) — rejecting request\n",
+               networkWeaponTypeName(weapon), weaponId);
+        return std::nullopt;
+    }
+
+    return projectileConfigFromDefinition(*def, weapon);
 }
 
 namespace {
@@ -491,6 +498,25 @@ void explodeProjectile(SOCKET sock,
     packet.posZ = position.z;
     packet.radius = projectile.splashRadius;
 
+    if (directTargetId != 0)
+    {
+        auto directIt = players.find(directTargetId);
+        if (directIt != players.end() && !directIt->second.dead)
+        {
+            ServerPlayer& target = directIt->second;
+            MovementLifecycleIdentity lifecycle{
+                target.spawnGeneration,
+                static_cast<uint32_t>(target.transformEpoch)};
+            const glm::vec3 normal = glm::length(target.pos - position) > 0.001f
+                ? glm::normalize(target.pos - position)
+                : glm::vec3(0.0f, 0.0f, 1.0f);
+            MovementContact contact = makeProjectileMovementContact(
+                projectile.id, packet.eventId, tick, lifecycle,
+                position, normal);
+            target.movement.contactHistory.recordStable(contact);
+        }
+    }
+
     uint8_t victimsLogged = 0;
     const ServerDamageSource source =
         projectile.weaponType == NETWORK_WEAPON_GRENADE_LAUNCHER
@@ -530,6 +556,16 @@ void explodeProjectile(SOCKET sock,
         ServerDamageResult damage = applyServerDamage(
             players, victim, projectile.ownerPlayerId, finalDamage,
             knockback, source);
+        if (damage.applied)
+        {
+            MovementLifecycleIdentity lifecycle{
+                victim.spawnGeneration,
+                static_cast<uint32_t>(victim.transformEpoch)};
+            MovementContact contact = makeExplosionMovementContact(
+                packet.eventId, projectile.ownerPlayerId, tick,
+                lifecycle, position, glm::length(knockback));
+            victim.movement.contactHistory.recordStable(contact);
+        }
         queueServerDamageConfirmedEvent(
             sock, players, tick, totalPacketsOut, projectile.ownerPlayerId, victim,
             finalDamage, damage, center, dir, knockback, source,
@@ -598,6 +634,186 @@ void explodeProjectile(SOCKET sock,
 
 } // namespace
 
+ServerProjectileAttackResult handleGenericProjectileAttack(
+    SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerProjectile>& projectiles,
+    uint32_t& nextProjectileId,
+    ServerPlayer& shooter,
+    const WeaponDefinition& definition,
+    uint32_t requestId,
+    const glm::vec3& origin,
+    const glm::vec3& direction,
+    uint32_t tick,
+    uint64_t& totalPacketsOut)
+{
+    ServerProjectileAttackResult result;
+
+    auto rtIt = shooter.weaponRuntimes.find(definition.id);
+    if (rtIt != shooter.weaponRuntimes.end())
+    {
+        result.magazineAmmo = rtIt->second.magazineAmmo;
+        result.reserveAmmo = rtIt->second.reserveAmmo;
+        result.nextAllowedFireTick = rtIt->second.nextAllowedFireTick;
+        result.stateRevision = rtIt->second.stateRevision;
+    }
+
+    const uint8_t networkWeapon = networkWeaponTypeForDefinition(definition);
+    const float originDistance = finiteVec(origin)
+        ? glm::length(origin - shooter.pos)
+        : 99999.0f;
+    const float directionLength = finiteVec(direction)
+        ? glm::length(direction)
+        : 0.0f;
+
+    if (shooter.dead)
+    {
+        result.reason = 2;
+        return result;
+    }
+    if (requestId == 0)
+    {
+        result.reason = 8;
+        return result;
+    }
+    if (definition.executionType != WeaponExecutionType::Projectile ||
+        !networkWeaponTypeIsProjectile(networkWeapon))
+    {
+        result.reason = 7;
+        return result;
+    }
+    if (rtIt == shooter.weaponRuntimes.end() || !rtIt->second.initialized)
+    {
+        result.reason = 7;
+        return result;
+    }
+    if (!finiteVec(origin) || originDistance > 12.0f ||
+        directionLength < 0.5f || directionLength > 1.5f)
+    {
+        result.reason = 5;
+        return result;
+    }
+
+    ServerPlayer::ServerWeaponRuntime& runtime = rtIt->second;
+    const bool consumesAmmo = definition.magazineSize > 0;
+    if (consumesAmmo && runtime.magazineAmmo <= 0)
+    {
+        result.reason = 3;
+        result.magazineAmmo = runtime.magazineAmmo;
+        result.reserveAmmo = runtime.reserveAmmo;
+        result.nextAllowedFireTick = runtime.nextAllowedFireTick;
+        result.stateRevision = runtime.stateRevision;
+        return result;
+    }
+
+    constexpr uint64_t COOLDOWN_GRACE_TICKS = 2;
+    if (tick + COOLDOWN_GRACE_TICKS < runtime.nextAllowedFireTick)
+    {
+        result.reason = 1;
+        result.magazineAmmo = runtime.magazineAmmo;
+        result.reserveAmmo = runtime.reserveAmmo;
+        result.nextAllowedFireTick = runtime.nextAllowedFireTick;
+        result.stateRevision = runtime.stateRevision;
+        return result;
+    }
+
+    auto cfgOpt = projectileConfigFromDefinition(definition, networkWeapon);
+    if (!cfgOpt)
+    {
+        result.reason = 7;
+        result.magazineAmmo = runtime.magazineAmmo;
+        result.reserveAmmo = runtime.reserveAmmo;
+        result.nextAllowedFireTick = runtime.nextAllowedFireTick;
+        result.stateRevision = runtime.stateRevision;
+        return result;
+    }
+    const ProjectileConfig& cfg = *cfgOpt;
+    const glm::vec3 dir = glm::normalize(direction);
+
+    ServerProjectile projectile;
+    projectile.id = nextProjectileId++;
+    if (nextProjectileId == 0)
+        nextProjectileId = 1;
+    projectile.ownerPlayerId = shooter.id;
+    projectile.fireSerial = requestId;
+    projectile.weaponType = networkWeapon;
+    projectile.position = origin;
+    projectile.previousPosition = origin;
+    projectile.velocity = dir * cfg.speed + glm::vec3(0.0f, 0.0f, cfg.upBias);
+    projectile.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    if (networkWeapon == NETWORK_WEAPON_GRENADE_LAUNCHER)
+    {
+        glm::vec3 forward = glm::length(dir) > 0.0001f ? dir : glm::vec3(1.0f, 0.0f, 0.0f);
+        glm::vec3 refUp = std::fabs(forward.z) < 0.99f
+            ? glm::vec3(0.0f, 0.0f, 1.0f)
+            : glm::vec3(1.0f, 0.0f, 0.0f);
+        glm::vec3 right = glm::normalize(glm::cross(forward, refUp));
+        projectile.angularVelocity = right * cfg.angularSpeed;
+    }
+    projectile.lifetime = cfg.lifetime;
+    projectile.radius = cfg.radius;
+    projectile.splashRadius = cfg.splashRadius;
+    projectile.splashDamage = cfg.splashDamage;
+    projectile.splashExponent = cfg.splashExponent;
+    projectile.knockbackStrength = cfg.knockbackStrength;
+    projectile.selfKnockbackMultiplier = cfg.selfKnockbackMultiplier;
+    projectile.gravity = cfg.gravity;
+    projectile.drag = cfg.drag;
+    projectile.restitution = cfg.restitution;
+    projectile.friction = cfg.friction;
+    projectile.armingDistance = cfg.armingDistance;
+    projectile.armingTime = cfg.armingTime;
+    projectile.minBounceSpeed = cfg.minBounceSpeed;
+    projectile.angularDrag = cfg.angularDrag;
+    projectile.maxBounceCount = cfg.maxBounceCount;
+    auto cp = [&](const char* key, float fallback) -> float {
+        auto it = definition.customParams.find(key);
+        return it != definition.customParams.end() ? it->second : fallback;
+    };
+    projectile.explodeOnPlayerImpact = cp("explodeOnPlayerImpact", 1.0f) > 0.0f;
+    projectile.explodeOnWorldImpact = cp("explodeOnWorldImpact", 0.0f) > 0.0f;
+    projectile.explodeOnLifetime = cp("explodeOnLifetime", 1.0f) > 0.0f;
+    projectile.spawnTick = tick;
+
+    if (consumesAmmo && runtime.magazineAmmo > 0)
+        --runtime.magazineAmmo;
+    runtime.nextAllowedFireTick = (uint64_t)tick +
+        (uint64_t)std::ceil(cfg.fireDelay * SERVER_TICK_RATE);
+    runtime.reloading = false;
+    runtime.reloadCompleteTick = 0;
+    ++runtime.stateRevision;
+
+    shooter.lastProjectileFireSerial = requestId;
+    shooter.nextProjectileFireTick = runtime.nextAllowedFireTick;
+    shooter.projectileFireCooldown = cfg.fireDelay;
+
+    ProjectileSpawnEventPacket spawn{};
+    spawn.header.type = PACKET_PROJECTILE_SPAWN_EVENT;
+    spawn.header.tick = tick;
+    fillProjectilePose(spawn, projectile);
+    projectiles[projectile.id] = projectile;
+    broadcastPacket(sock, players, spawn, totalPacketsOut);
+
+    printf("%s [PROJECTILE GENERIC ACCEPT] playerId=%u requestId=%u "
+           "projectileId=%u weapon=%s ammo=%d/%d nextAllowedTick=%llu "
+           "position=(%.2f,%.2f,%.2f) velocity=(%.2f,%.2f,%.2f)\n",
+           serverTimestamp(), shooter.id, requestId, projectile.id,
+           networkWeaponTypeName(networkWeapon),
+           runtime.magazineAmmo, runtime.reserveAmmo,
+           (unsigned long long)runtime.nextAllowedFireTick,
+           projectile.position.x, projectile.position.y, projectile.position.z,
+           projectile.velocity.x, projectile.velocity.y, projectile.velocity.z);
+
+    result.accepted = true;
+    result.reason = 0;
+    result.projectileId = projectile.id;
+    result.magazineAmmo = runtime.magazineAmmo;
+    result.reserveAmmo = runtime.reserveAmmo;
+    result.nextAllowedFireTick = runtime.nextAllowedFireTick;
+    result.stateRevision = runtime.stateRevision;
+    return result;
+}
+
 void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                                  std::unordered_map<uint32_t, ServerPlayer>& players,
                                  std::unordered_map<uint32_t, ServerProjectile>& projectiles,
@@ -611,6 +827,24 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
     const ProjectileFireRequestPacket* request =
         reinterpret_cast<const ProjectileFireRequestPacket*>(buffer);
 
+    ProjectileFireResultPacket reject{};
+    reject.header.type = PACKET_PROJECTILE_FIRE_RESULT;
+    reject.header.tick = tick;
+    reject.header.playerId = request->header.playerId;
+    reject.fireSerial = request->fireSerial;
+    reject.weapon = request->weapon;
+    reject.accepted = 0;
+    reject.reason = PROJECTILE_FIRE_CONFIG_MISSING;
+    auto legacyShooter = players.find(request->header.playerId);
+    if (legacyShooter != players.end() && sameAddress(legacyShooter->second.addr, from))
+        serverSendToPlayer(sock, legacyShooter->second, &reject, sizeof(reject));
+    printf("%s [PROJECTILE FIRE REQUEST RX] playerId=%u fireSerial=%u "
+           "weapon=%s accepted=0 reason=legacy-direct-packet-disabled\n",
+           serverTimestamp(), request->header.playerId, request->fireSerial,
+           networkWeaponTypeName(request->weapon));
+    return;
+
+#if 0
     auto shooterIt = players.find(request->header.playerId);
     const bool ownsShooter =
         shooterIt != players.end() &&
@@ -707,8 +941,7 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
             {
                 ServerPlayer::ServerWeaponRuntime rt;
                 rt.magazineAmmo = def->magazineSize;
-                rt.reserveAmmo = (int)def->customParams.count("reserveAmmo")
-                    ? (int)def->customParams.at("reserveAmmo") : 1337;
+                rt.reserveAmmo = initialReserveAmmoForDefinition(*def);
                 rt.nextAllowedFireTick = 0;
                 rt.initialized = true;
                 shooter.weaponRuntimes[wepId] = rt;
@@ -999,6 +1232,7 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
     result.reason = PROJECTILE_FIRE_ACCEPTED;
     result.cooldownRemaining = shooter.projectileFireCooldown;
     serverSendToPlayer(sock, shooter, &result, sizeof(result));
+#endif
 }
 
 void tickServerProjectiles(SOCKET sock,

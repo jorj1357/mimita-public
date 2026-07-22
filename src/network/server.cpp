@@ -263,6 +263,7 @@ int runServer(const LaunchOptions& options)
         netShutdown();
         return 1;
     }
+    disableUdpConnReset(sock);
 
     int reuseAddr = 1;
     if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuseAddr, sizeof(reuseAddr)) == SOCKET_ERROR)
@@ -526,7 +527,7 @@ int runServer(const LaunchOptions& options)
             for (auto& kv : npcs)
                 simulateNpc(kv.second, players);
             tickServerProjectiles(sock, players, projectiles, world, SERVER_DT, tick, totalPacketsOut);
-            tickServerSwordCombat(sock, players, world, SERVER_DT, tick, totalPacketsOut);
+            tickServerPhysicalContactWeapons(sock, players, world, SERVER_DT, tick, totalPacketsOut);
 
             if (iceEnabled)
                 tickIceCoordinator(dedicatedIceState);
@@ -652,6 +653,7 @@ bool startListenServer(ListenServerState& state, uint16_t port,
         netShutdown();
         return false;
     }
+    disableUdpConnReset(state.sock);
 
     int reuseAddr = 1;
     setsockopt(state.sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuseAddr, sizeof(reuseAddr));
@@ -893,9 +895,9 @@ static void simulateOneServerTick(ListenServerState& state)
                               state.world, SERVER_DT, state.tick,
                               state.totalPacketsOut);
 
-        tickServerSwordCombat(state.sock, state.players,
-                              state.world, SERVER_DT, state.tick,
-                              state.totalPacketsOut);
+        tickServerPhysicalContactWeapons(state.sock, state.players,
+                                         state.world, SERVER_DT, state.tick,
+                                         state.totalPacketsOut);
 
         tickIceCoordinator(state);
         tickIcePeers(state.serverCode, state.iceSessionId, state.pendingIceTransports);

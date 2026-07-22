@@ -104,6 +104,11 @@ void weaponJsonBehaviorType(const json& root, WeaponDefinition& def)
         def.behaviorType = WeaponBehaviorType::Hitscan;
 }
 
+void applyWeaponExecutionType(WeaponDefinition& def)
+{
+    def.executionType = weaponExecutionTypeForBehavior(def.behaviorType);
+}
+
 void applyWeaponIdentityJson(WeaponDefinition& def, const json& root)
 {
     weaponJsonString(root, "id", def.id);
@@ -186,6 +191,7 @@ void applyWeaponJson(WeaponDefinition& def, const json& root)
         return;
     applyWeaponIdentityJson(def, root);
     applyWeaponStatsJson(def, root);
+    applyWeaponExecutionType(def);
     applyWeaponSoundJson(def, root);
     applyWeaponCustomParamsJson(def, root);
     applyWeaponRenderJson(def, root);
@@ -219,6 +225,8 @@ void registerWeaponFromJson(WeaponDefinition def)
 {
     if (gWeaponConfigRoot.contains(def.id))
         applyWeaponJson(def, gWeaponConfigRoot[def.id]);
+    else
+        applyWeaponExecutionType(def);
     WeaponRegistry::instance().registerWeapon(def);
     // Assign a stable network ID for the generic AttackRequest pipeline
     MimitaNet::registerWeaponDefNetworkId(def.id);

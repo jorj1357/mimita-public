@@ -32,6 +32,7 @@ void netShutdown();
 std::string normalizeMapId(const std::string& mapId);
 bool mapIdsReferToSameMap(const std::string& a, const std::string& b);
 bool setNonBlocking(SOCKET socketHandle);
+bool disableUdpConnReset(SOCKET socketHandle);
 bool parseAddress(const std::string& text, sockaddr_in& out, bool allowPortZero = false);
 std::string addressToString(const sockaddr_in& addr);
 uint64_t nowMs();

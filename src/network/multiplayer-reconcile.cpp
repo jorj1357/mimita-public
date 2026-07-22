@@ -178,58 +178,6 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     }
     ctx.lastSeenServerHealth = ctx.localServerHealth;
 
-    if (!player.dead)
-    {
-        const Capsule localCapsule = player.getCapsule();
-        for (const auto& entry : ctx.remotePlayers)
-        {
-            const Player& remote = entry.second;
-            if (remote.dead)
-                continue;
-
-            const Capsule remoteCapsule = remote.getCapsule();
-            const float localBottom = localCapsule.a.z - localCapsule.r;
-            const float localTop = localCapsule.b.z + localCapsule.r;
-            const float remoteBottom = remoteCapsule.a.z - remoteCapsule.r;
-            const float remoteTop = remoteCapsule.b.z + remoteCapsule.r;
-            if (localTop <= remoteBottom || remoteTop <= localBottom)
-                continue;
-
-            glm::vec2 delta(player.pos.x - remote.pos.x, player.pos.y - remote.pos.y);
-            float distance = glm::length(delta);
-            const float minimumDistance = localCapsule.r + remoteCapsule.r;
-            if (distance >= minimumDistance)
-                continue;
-
-            glm::vec2 normal(1.0f, 0.0f);
-            if (distance > 0.0001f)
-                normal = delta / distance;
-            const float penetration = minimumDistance - distance;
-            player.pos += glm::vec3(normal * penetration, 0.0f);
-
-            glm::vec2 planarVelocity(player.vel.x, player.vel.y);
-            const float intoRemote = glm::dot(planarVelocity, normal);
-            if (intoRemote < 0.0f)
-            {
-                planarVelocity -= normal * intoRemote;
-                player.vel.x = planarVelocity.x;
-                player.vel.y = planarVelocity.y;
-            }
-
-            static uint64_t lastCollisionLogMs = 0;
-            const uint64_t collisionNowMs = nowMs();
-            if (collisionNowMs - lastCollisionLogMs >= 250)
-            {
-                printf("[CLIENT PLAYER COLLISION] localId=%u remoteId=%u penetration=%.3f "
-                       "localPos=(%.2f,%.2f,%.2f) remotePos=(%.2f,%.2f,%.2f)\n",
-                       ctx.localPlayerId, entry.first, penetration,
-                       player.pos.x, player.pos.y, player.pos.z,
-                       remote.pos.x, remote.pos.y, remote.pos.z);
-                lastCollisionLogMs = collisionNowMs;
-            }
-        }
-    }
-
     const bool logCorrection =
         initialSpawn || applyPosition || error >= CORRECTION_LOG_DISTANCE;
     if (logCorrection &&

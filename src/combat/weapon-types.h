@@ -1,3 +1,13 @@
+// 07 21 2026, 20 45
+/* purpose
+* Declares weapon definition, runtime, behavior, execution, and shot result data.
+* Keeps weapon config ownership neutral so local, client, and server paths share metadata.
+* Provides compact runtime fields needed by ammo, cooldown, and authoritative reconciliation.
+* Does NOT implement weapon simulation, networking, rendering, or audio playback.
+* Does NOT own JSON parsing, packet transport, or server damage authority.
+* Does NOT specialize runtime state by client/server launch mode.
+*/
+
 #pragma once
 
 #include <string>
@@ -20,6 +30,31 @@ enum class WeaponBehaviorType {
     GrenadeLauncher,
     Hafs
 };
+
+enum class WeaponExecutionType {
+    Hitscan,
+    Projectile,
+    PhysicalContact
+};
+
+inline WeaponExecutionType weaponExecutionTypeForBehavior(WeaponBehaviorType behavior)
+{
+    switch (behavior)
+    {
+    case WeaponBehaviorType::Hitscan:
+        return WeaponExecutionType::Hitscan;
+    case WeaponBehaviorType::RocketLauncher:
+    case WeaponBehaviorType::GrenadeLauncher:
+    case WeaponBehaviorType::Projectile:
+        return WeaponExecutionType::Projectile;
+    case WeaponBehaviorType::Godball:
+    case WeaponBehaviorType::Swordsword:
+    case WeaponBehaviorType::Melee:
+    case WeaponBehaviorType::Hafs:
+        return WeaponExecutionType::PhysicalContact;
+    }
+    return WeaponExecutionType::Hitscan;
+}
 
 enum class WeaponFireMode {
     SemiAuto,
@@ -54,6 +89,7 @@ struct WeaponDefinition {
 
     WeaponFireMode fireMode = WeaponFireMode::SemiAuto;
     WeaponBehaviorType behaviorType = WeaponBehaviorType::Hitscan;
+    WeaponExecutionType executionType = WeaponExecutionType::Hitscan;
     bool hitscan = true;
     bool usesPhysicsProjectile = false;
 

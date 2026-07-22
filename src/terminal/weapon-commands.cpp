@@ -1,3 +1,13 @@
+// 07 21 2026, 21 30
+/* purpose
+* Registers terminal commands for weapon firing, reload, equip, debug, and inspection controls.
+* Routes online weapon attacks through shared network helpers while preserving local prediction.
+* Keeps command-line gameplay actions aligned with hotkeys and automated test entry points.
+* Does NOT implement server weapon authority, packet receive handling, or damage validation.
+* Does NOT own weapon JSON loading, rendering, physics, or audio backend internals.
+* Does NOT create separate online-only weapon gameplay implementations.
+*/
+
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -125,7 +135,10 @@ void registerWeaponCommands()
                     MimitaNet::networkWeaponTypeIsProjectile(netWeapon);
                 const bool usesHitscanPath =
                     MimitaNet::networkWeaponTypeIsHitscan(netWeapon);
-                printf("[WEAPON FIRE ROUTE] playerId=%u weaponId=%s behaviorType=%d "
+                const bool usesPhysicalContactPath =
+                    wdef && wdef->executionType == WeaponExecutionType::PhysicalContact;
+                Debug::log(Debug::Category::Weapons,
+                       "[WEAPON FIRE ROUTE] playerId=%u weaponId=%s behaviorType=%d "
                        "usesHitscanPath=%d usesProjectilePath=%d shotResultFired=%d "
                        "shotResultTargetRemote=%d shotResultTargetId=%u shotResultDamage=%.0f "
                        "networkAction=%s\n",
@@ -136,28 +149,32 @@ void registerWeaponCommands()
                        (int)shot.fired, (int)shot.targetIsRemotePlayer,
                        shot.targetId, shot.damage,
                        netWeapon == MimitaNet::NETWORK_WEAPON_NONE ? "reject-unknown-weapon" :
-                       usesProjectilePath ? "send-projectile-request" :
-                       netWeapon == MimitaNet::NETWORK_WEAPON_SWORDSWORD ? "send-melee-request" :
-                       "send-shot-request");
+                       (usesProjectilePath || usesHitscanPath || usesPhysicalContactPath) ?
+                           "send-generic-attack-request" :
+                       "no-network-route");
 
                 if (netWeapon == MimitaNet::NETWORK_WEAPON_NONE) {
                     Terminal::instance().addLog("[WEAPON] network weapon mapping missing; shot not sent");
                     return;
                 }
 
-                if (usesProjectilePath) {
-                    // Send generic AttackRequest (migration from ProjectileFireRequest)
+                if (usesProjectilePath || usesHitscanPath || usesPhysicalContactPath) {
+                    // Send generic AttackRequest for all migrated weapon execution families.
                     const WeaponDefinition* wdef2 = weapons.getCurrentDef(player);
                     if (wdef2)
                     {
                         uint16_t netId = MimitaNet::weaponDefNetworkIdFor(wdef2->id);
                         if (netId != 0)
                         {
+                            const uint8_t attackVariant =
+                                wdef2->behaviorType == WeaponBehaviorType::Swordsword ? 1 : 0;
                             uint32_t requestId = MimitaNet::mpSendAttackRequest(
                                 mpContext, netId, wdef2->slot,
-                                shot.start, direction, shot.start);
-                            if (requestId != 0 && netWeapon == MimitaNet::NETWORK_WEAPON_ROCKET_LAUNCHER)
-                                weapons.tagLatestLocalRocket(requestId);
+                                shot.start, direction, shot.start, attackVariant);
+                            if (requestId != 0 && usesProjectilePath)
+                                MimitaNet::mpPredictProjectileAttack(
+                                    mpContext, requestId, netId,
+                                    shot.start, direction);
                             Debug::log(Debug::Category::Weapons,
                                        "[ATTACK] sent for weapon=%s netId=%u\n",
                                        wdef2->id.c_str(), netId);
@@ -166,37 +183,10 @@ void registerWeaponCommands()
                     Terminal::instance().addLog("[WEAPON] fired");
                     return;
                 }
-
-                // Multi-pellet weapons (shotgun, AA12) use dedicated blast request
-                if (netWeapon == MimitaNet::NETWORK_WEAPON_SHOTGUN ||
-                    netWeapon == MimitaNet::NETWORK_WEAPON_AA12)
-                {
-                    unsigned int seed = (unsigned int)(shot.start.x * 73856093)
-                        ^ (unsigned int)(shot.start.y * 19349663)
-                        ^ (unsigned int)(shot.start.z * 83492791)
-                        ^ mpContext.nextLocalShotSerial;
-                    MimitaNet::mpSendPelletBlastRequest(
-                        mpContext, netWeapon, shot.start, direction, seed);
-                    Terminal::instance().addLog("[WEAPON] fired");
-                    return;
-                }
-
-                if (netWeapon == MimitaNet::NETWORK_WEAPON_SWORDSWORD) {
-                    // Send attack-start command. Server simulates the full attack.
-                    MimitaNet::mpSendMeleeHitRequest(
-                        mpContext, 0, 0, netWeapon, 1,
-                        glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f),
-                        glm::vec3(0.0f), 0.0f);
-                    Terminal::instance().addLog("[WEAPON] fired");
-                    return;
-                }
-                MimitaNet::mpSendShotEvent(
-                    mpContext, targetId, damage, shot.damage,
-                    effectFlags,
-                    netWeapon,
-                    impactType,
-                    shot.start, shot.end, direction, shot.hitNormal,
-                    shot.knockbackImpulse);
+                (void)targetId;
+                (void)damage;
+                (void)effectFlags;
+                (void)impactType;
             }
             Terminal::instance().addLog("[WEAPON] fired");
         }
