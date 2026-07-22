@@ -15,7 +15,7 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 25;
+constexpr uint16_t PROTOCOL_VERSION = 26;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -304,6 +304,7 @@ struct SnapshotEntity
     uint16_t equipSerial = 0;
     uint16_t freezeSerial = 0;
     uint32_t spawnGeneration = 0;
+    uint32_t acknowledgedMovementSequence = 0;
     char displayName[MAX_NAME_BYTES];
 };
 
@@ -357,11 +358,12 @@ struct CompactEntityData
     uint16_t equipSerial = 0;
     uint16_t freezeSerial = 0;
     uint32_t spawnGeneration = 0;
+    uint32_t acknowledgedMovementSequence = 0;
     char displayName[32]; // MAX_NAME_BYTES
 };
 #pragma pack(pop)
 
-static_assert(sizeof(CompactEntityData) == 120, "CompactEntityData unexpected size");
+static_assert(sizeof(CompactEntityData) == 124, "CompactEntityData unexpected size");
 
 struct SnapshotChunkPacket
 {
@@ -371,12 +373,12 @@ struct SnapshotChunkPacket
     uint16_t chunkCount = 1;
     uint16_t entityCount = 0;
     uint16_t payloadBytes = 0;
-    CompactEntityData entities[9]; // 9 * 120 + header(32) = 1112 < 1200
+    CompactEntityData entities[9]; // 9 * 124 + header(32) = 1148 < 1200
 };
 
 static_assert(sizeof(SnapshotChunkPacket) < MAX_GAME_DATAGRAM_BYTES,
               "SnapshotChunkPacket exceeds safe datagram limit");
-static_assert(sizeof(SnapshotChunkPacket) == 1112, "SnapshotChunkPacket wire size changed");
+static_assert(sizeof(SnapshotChunkPacket) == 1148, "SnapshotChunkPacket wire size changed");
 
 struct SpawnNpcRequestPacket
 {

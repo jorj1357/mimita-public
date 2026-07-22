@@ -323,6 +323,7 @@ UIButtonState drawGuiElement(GLFWwindow* win, const GuiElement& elem,
                 tiOpts.password = false;
         }
         tiOpts.selectAllOnFocus = elem.selectAllOnFocus;
+        tiState.submitOnEnter = elem.submitOnEnter;
 
         // Character filter based on element property
         tiOpts.characterFilter = nullptr;

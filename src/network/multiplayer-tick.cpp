@@ -146,6 +146,8 @@ static void processSnapshotEntities(
             ctx.localServerHealth = entity.health;
             ctx.localServerEpoch = entity.transformEpoch;
             ctx.localPingMs = entity.pingMs;
+            ctx.localServerAcknowledgedMovementSequence =
+                entity.acknowledgedMovementSequence;
             ctx.latestLocalSnapshotTick = serverTick;
             if (entity.spawnGeneration != 0)
                 ctx.lastKnownSpawnGeneration = entity.spawnGeneration;
@@ -345,6 +347,8 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
     uint32_t oldGen = ctx.lastKnownSpawnGeneration;
     ctx.lastKnownSpawnGeneration = spawn->spawnGeneration;
     ctx.nextMovementSequence = 1;
+    ctx.localServerAcknowledgedMovementSequence = 0;
+    ctx.sentMovementHistory.clear();
 
     // Cancel old-life pending attack requests
     for (auto it = ctx.pendingAttackRequests.begin(); it != ctx.pendingAttackRequests.end(); )
@@ -917,7 +921,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                        ctx.localPlayerId, ctx.transformEpoch,
                        (uint32_t)ctx.localServerEpoch, (uint32_t)ctx.lastAppliedEpoch,
                        input->position.x, input->position.y, input->position.z,
-                       (int)(input->position.y < -10.0f ? 1 : 0));
+                       (int)(input->position.z < -10.0f ? 1 : 0));
                 lastInputEpochLogMs = nowInputLog;
             }
         }
@@ -1064,7 +1068,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                        ctx.localPlayerId, ctx.pendingRespawnSerial,
                        ctx.transformEpoch,
                        (unsigned long long)(nowRespawnLog - ctx.pendingRespawnStartedMs),
-                       (int)(input->position.y < -10.0f ? 1 : 0),
+                       (int)(input->position.z < -10.0f ? 1 : 0),
                        ctx.localServerHealth);
                 ctx.pendingRespawnLastSendLogMs = nowRespawnLog;
             }
@@ -1072,6 +1076,19 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         in.attackPressed = input->attackPressed ? 1 : 0;
         in.sizeScale = input->sizeScale;
         mpSendPacket(ctx, &in, sizeof(in));
+
+        // Record sent movement report for acknowledged-input reconciliation
+        SentMovementReportState sent;
+        sent.sequence = in.movementSequence;
+        sent.clientSimulationTick = in.clientSimulationTick;
+        sent.spawnGeneration = in.spawnGeneration;
+        sent.transformEpoch = in.transformEpoch;
+        sent.position = {in.clientPx, in.clientPy, in.clientPz};
+        sent.velocity = {in.clientVx, in.clientVy, in.clientVz};
+        sent.externalImpulse = {in.externalImpulseX, in.externalImpulseY, in.externalImpulseZ};
+        ctx.sentMovementHistory.push_back(sent);
+        while (ctx.sentMovementHistory.size() > MAX_SENT_MOVEMENT_HISTORY)
+            ctx.sentMovementHistory.pop_front();
 
     }
 

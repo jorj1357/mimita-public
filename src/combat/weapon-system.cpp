@@ -368,56 +368,6 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
             }
         }
 
-        // ── Cool shot line (camforward aiming beam) ──────────
-        {
-            bool coolLineActive = DebugConfig::COOL_SHOT_LINE_ENABLED
-                && GameplayConfig::instance().aimMode() == GameplayAimMode::CamForward
-                && def;
-            if (coolLineActive)
-            {
-                glm::vec3 beamOrigin = muzzlePos;
-                glm::vec3 beamDir = glm::normalize(camera.front);
-                float beamLen = std::max(0.1f, DebugConfig::COOL_SHOT_LINE_LENGTH);
-                float startAlpha = glm::clamp(DebugConfig::COOL_SHOT_LINE_START_ALPHA, 0.0f, 1.0f);
-                float endAlpha = glm::clamp(DebugConfig::COOL_SHOT_LINE_END_ALPHA, 0.0f, 1.0f);
-                float startSize = std::max(0.0f, DebugConfig::COOL_SHOT_LINE_START_SIZE);
-                float endSize = std::max(0.0f, DebugConfig::COOL_SHOT_LINE_END_SIZE);
-                glm::vec4 beamColor(
-                    DebugConfig::COOL_SHOT_LINE_COLOR_R,
-                    DebugConfig::COOL_SHOT_LINE_COLOR_G,
-                    DebugConfig::COOL_SHOT_LINE_COLOR_B,
-                    1.0f);
-
-                // Raycast along beam to find world obstruction
-                float hitDist = beamLen;
-                for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
-                    float d = 0.0f;
-                    if (WeaponFire::rayTriangle(beamOrigin, beamDir, tri, d) && d < hitDist) {
-                        hitDist = d;
-                    }
-                }
-
-                // Draw segmented tapered beam
-                constexpr int SEGMENTS = 32;
-                float segLen = hitDist / (float)SEGMENTS;
-                for (int s = 0; s < SEGMENTS; ++s) {
-                    float t0 = (float)s / (float)SEGMENTS;
-                    float t1 = (float)(s + 1) / (float)SEGMENTS;
-                    float a0 = glm::mix(startAlpha, endAlpha, t0);
-                    float a1 = glm::mix(startAlpha, endAlpha, t1);
-                    float size0 = glm::mix(startSize, endSize, t0);
-                    float size1 = glm::mix(startSize, endSize, t1);
-                    glm::vec3 segStart = beamOrigin + beamDir * (t0 * hitDist);
-                    glm::vec3 segEnd = beamOrigin + beamDir * (t1 * hitDist);
-                    glm::vec3 segMid = (segStart + segEnd) * 0.5f;
-                    float midAlpha = (a0 + a1) * 0.5f;
-                    float midSize = (size0 + size1) * 0.5f;
-                    if (midAlpha > 0.001f && midSize > 0.0001f)
-                        DebugVis::drawFilledCylinder(camera, segMid, beamDir, midSize * 0.02f, segLen, glm::vec4(beamColor.r, beamColor.g, beamColor.b, midAlpha));
-                }
-            }
-        }
-
         // ── Render aim trail ─────────────────────────────────────
         if (DebugConfig::WORLD_XH_TRAIL_ENABLED)
         {
@@ -505,6 +455,56 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
                         pushTri(pt.pos, e1, e2, trailCol);
                     }
                 }
+            }
+        }
+    }
+
+    // ── Cool shot line (camforward aiming beam) — independent of world_xh_enabled ──
+    {
+        bool coolLineActive = DebugConfig::COOL_SHOT_LINE_ENABLED && def && rt;
+        if (coolLineActive)
+        {
+            int idx = slotIndex(def->slot);
+            const WeaponViewModel& vm = mViewModels[idx];
+            glm::vec3 beamOrigin = vm.muzzle;
+            glm::vec3 beamDir = glm::normalize(camera.front);
+            float beamLen = std::max(0.1f, DebugConfig::COOL_SHOT_LINE_LENGTH);
+            float startAlpha = glm::clamp(DebugConfig::COOL_SHOT_LINE_START_ALPHA, 0.0f, 1.0f);
+            float endAlpha = glm::clamp(DebugConfig::COOL_SHOT_LINE_END_ALPHA, 0.0f, 1.0f);
+            float startSize = std::max(0.0f, DebugConfig::COOL_SHOT_LINE_START_SIZE);
+            float endSize = std::max(0.0f, DebugConfig::COOL_SHOT_LINE_END_SIZE);
+            glm::vec4 beamColor(
+                DebugConfig::COOL_SHOT_LINE_COLOR_R,
+                DebugConfig::COOL_SHOT_LINE_COLOR_G,
+                DebugConfig::COOL_SHOT_LINE_COLOR_B,
+                1.0f);
+
+            // Raycast along beam to find world obstruction
+            float hitDist = beamLen;
+            for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
+                float d = 0.0f;
+                if (WeaponFire::rayTriangle(beamOrigin, beamDir, tri, d) && d < hitDist) {
+                    hitDist = d;
+                }
+            }
+
+            // Draw segmented tapered beam
+            constexpr int SEGMENTS = 32;
+            float segLen = hitDist / (float)SEGMENTS;
+            for (int s = 0; s < SEGMENTS; ++s) {
+                float t0 = (float)s / (float)SEGMENTS;
+                float t1 = (float)(s + 1) / (float)SEGMENTS;
+                float a0 = glm::mix(startAlpha, endAlpha, t0);
+                float a1 = glm::mix(startAlpha, endAlpha, t1);
+                float size0 = glm::mix(startSize, endSize, t0);
+                float size1 = glm::mix(startSize, endSize, t1);
+                glm::vec3 segStart = beamOrigin + beamDir * (t0 * hitDist);
+                glm::vec3 segEnd = beamOrigin + beamDir * (t1 * hitDist);
+                glm::vec3 segMid = (segStart + segEnd) * 0.5f;
+                float midAlpha = (a0 + a1) * 0.5f;
+                float midSize = (size0 + size1) * 0.5f;
+                if (midAlpha > 0.001f && midSize > 0.0001f)
+                    DebugVis::drawFilledCylinder(camera, segMid, beamDir, midSize * 0.02f, segLen, glm::vec4(beamColor.r, beamColor.g, beamColor.b, midAlpha));
             }
         }
     }

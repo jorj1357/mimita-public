@@ -180,20 +180,15 @@ void gameInitSubsystems(Engine& engine)
     LoadAccountConfig("default");
     LoadDuelStats("default");
 
-    MusicManager::instance().init();
-    MusicManager::instance().setVolume(GetPlayerSettings().musicVolume);
-    MusicManager::instance().setMuted(GetPlayerSettings().musicMuted);
+    // MusicManager is lazy-initialized on first update() — not blocking startup
 
     VideoSettings::instance().load();
     VideoSettings::instance().apply();
     gFramePacer.setMaxFrames(VideoSettings::instance().maxFrames());
     gFramePacer.setVSync(VideoSettings::instance().vsync());
 
-    {
-        extern Renderer* gRenderer;
-        PostFX::instance().loadConfig("config/postfx.json");
-        PostFX::instance().initFBO(gRenderer->width, gRenderer->height);
-    }
+    PostFX::instance().loadConfig("config/postfx.json");
+    // PostFX FBO is lazily initialized on first bindFBO() call
 
     InputCommandSystem::instance().init(engine.window());
     InputCommandSystem::instance().loadBinds("config/accounts/default.json");
@@ -209,7 +204,7 @@ void gameInitSubsystems(Engine& engine)
     HealthbarConfig::instance().load();
 
     EffectPartSystem::instance().init();
-    HotReloadSystem::instance().loadGameDLL();
+    // HotReload DLL is lazy-loaded on first reloadGameDLLIfChanged() call
     printf("[MAIN] dev tools initialized\n");
 
     glEnable(GL_BLEND);

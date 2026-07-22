@@ -427,7 +427,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
     if (gRoomCodeShow && !gReplayExportRenderMode && !gReplayCinematicMode)
     {
         const std::string& code = mpContext.currentRoomCode;
-        if (mpContext.active && !code.empty())
+        if (!code.empty())
         {
             char buf[80];
             snprintf(buf, sizeof(buf), "Room code: %s", code.c_str());

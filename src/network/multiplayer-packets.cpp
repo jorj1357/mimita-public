@@ -730,28 +730,87 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
     }
     printf("[ICE CONNECT] candidates gathered\n");
 
-    // Exchange SDP via coordinator
+    // Exchange SDP via coordinator (two-phase offer/answer)
     std::string sessionId = "client_" + std::to_string(GetCurrentProcessId())
         + "_" + std::to_string(nowMs());
     ctx.connectionStatus = "ICE: contacting coordinator...";
 
-    auto joinResult = coordinatorIceJoin(roomCode, sessionId, agentPtr->localSdp());
-    if (!joinResult.ok || joinResult.hostIceDescription.empty())
+    auto beginJoin = coordinatorIceBeginJoin(roomCode, sessionId, agentPtr->localSdp());
+    if (!beginJoin.ok || beginJoin.requestId.empty())
     {
-        printf("[ICE CONNECT] FATAL: coordinator ICE join failed\n");
+        printf("[ICE CONNECT] FATAL: coordinator ICE begin-join failed "
+               "room=%s error=%s requestIdEmpty=%d\n",
+               roomCode.c_str(),
+               beginJoin.errorCode.c_str(),
+               (int)beginJoin.requestId.empty());
         netShutdown();
         return false;
     }
-    printf("[ICE CONNECT] received host SDP (%zu bytes)\n",
-           joinResult.hostIceDescription.size());
+
+    printf("[ICE CONNECT] begin-join accepted room=%s request=%s\n",
+           roomCode.c_str(),
+           beginJoin.requestId.substr(0, std::min<size_t>(12, beginJoin.requestId.size())).c_str());
+
+    ctx.connectionStatus = "ICE: waiting for server answer...";
+
+    // The answer may already be included, but normally the dedicated server
+    // creates a per-client ICE agent and posts the answer asynchronously.
+    std::string hostIceDescription = beginJoin.hostIceDescription;
+
+    const uint64_t answerWaitStartedMs = nowMs();
+    constexpr uint64_t kHostAnswerTimeoutMs = 30000;
+
+    while (hostIceDescription.empty() &&
+           nowMs() - answerWaitStartedMs < kHostAnswerTimeoutMs)
+    {
+        auto pollResult =
+            coordinatorIceClientPoll(roomCode, beginJoin.requestId);
+
+        if (pollResult.ok && !pollResult.hostIceDescription.empty())
+        {
+            hostIceDescription = pollResult.hostIceDescription;
+            break;
+        }
+
+        if (pollResult.status == "failed" ||
+            pollResult.status == "expired")
+        {
+            printf("[ICE CONNECT] FATAL: server answer failed "
+                   "room=%s request=%s status=%s error=%s\n",
+                   roomCode.c_str(),
+                   beginJoin.requestId.substr(0, std::min<size_t>(12, beginJoin.requestId.size())).c_str(),
+                   pollResult.status.c_str(),
+                   pollResult.errorCode.c_str());
+            netShutdown();
+            return false;
+        }
+
+        Sleep(100);
+    }
+
+    if (hostIceDescription.empty())
+    {
+        printf("[ICE CONNECT] FATAL: server answer timeout "
+               "room=%s request=%s timeoutMs=%llu\n",
+               roomCode.c_str(),
+               beginJoin.requestId.substr(0, std::min<size_t>(12, beginJoin.requestId.size())).c_str(),
+               (unsigned long long)kHostAnswerTimeoutMs);
+        netShutdown();
+        return false;
+    }
+
+    printf("[ICE CONNECT] received host SDP request=%s bytes=%zu\n",
+           beginJoin.requestId.substr(0, std::min<size_t>(12, beginJoin.requestId.size())).c_str(),
+           hostIceDescription.size());
 
     // Set remote description (host's SDP)
-    if (!agentPtr->setRemoteDescription(joinResult.hostIceDescription))
+    if (!agentPtr->setRemoteDescription(hostIceDescription))
     {
         printf("[ICE CONNECT] FATAL: setRemoteDescription failed\n");
         netShutdown();
         return false;
     }
+    printf("[ICE CONNECT] remote description applied\n");
     ctx.connectionStatus = "ICE: connecting...";
 
     // Wait for ICE connection
@@ -788,7 +847,7 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
     ctx.hasLocalServerPosition = false;
     ctx.localPlayerReconciled = false;
     ctx.connectionState = ConnectionState::Connecting;
-    ctx.joinToken = joinResult.joinToken;
+    ctx.joinToken = beginJoin.joinToken;
     ctx.serverAddress = "ice:" + roomCode;
     ctx.connected = false;
     ctx.connectFailed = false;

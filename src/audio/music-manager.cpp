@@ -204,7 +204,9 @@ void MusicManager::shutdown()
 
 void MusicManager::update(float dt)
 {
-    if (!mInitialized) return;
+    if (!mInitialized) {
+        init();
+    }
     // Hot reload: check if config file changed on disk
     {
         std::error_code ec;

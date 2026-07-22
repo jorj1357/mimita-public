@@ -342,7 +342,7 @@ MovementCorrectionClass classifyMovementCorrection(
         return MovementCorrectionClass::None;
     if (errorDistance <= config.smallCorrectionDistance)
         return MovementCorrectionClass::Small;
-    if (errorDistance <= config.mediumCorrectionDistance)
+    if (errorDistance < config.majorCorrectionDistance)
         return MovementCorrectionClass::Medium;
     return MovementCorrectionClass::Major;
 }

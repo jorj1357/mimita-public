@@ -7,7 +7,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/mat4x4.hpp>
 
-struct CollisionTriangle;
+struct World;
 
 inline float CAMERA_SENS = 0.15f;
 
@@ -36,7 +36,7 @@ double lastX = 400, lastY = 300;
     void addPunch(float pitchAmount, float yawAmount);
     void updateMouse(double xpos, double ypos);
     void follow(const glm::vec3& target, const glm::vec3& offset, float stiffness);
-    void smoothCollision(const glm::vec3& playerPos, const std::vector<CollisionTriangle>& triangles, float dt, float stiffness, bool stiffnessEnabled, bool collisionEnabled);
+    void smoothCollision(const glm::vec3& playerPos, const World& world, float dt, float stiffness, bool stiffnessEnabled, bool collisionEnabled, bool collisionPushEnabled = true, float collisionPushback = 0.3f);
     glm::mat4 getView() const;
     glm::mat4 getProj(float width, float height) const;
 

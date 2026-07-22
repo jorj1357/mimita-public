@@ -11,6 +11,8 @@ struct CameraConfigData {
     float rotationStiffness = 1.0f;
     bool stiffnessEnabled = true;
     bool collisionEnabled = true;
+    bool collisionPushEnabled = true;
+    float collisionPushback = 0.3f;
     float lookAheadDistance = 0.0f;
 };
 

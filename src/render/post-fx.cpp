@@ -289,6 +289,8 @@ void PostFX::bindFBO()
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         return;
     }
+    if (!mFbo && gRenderer)
+        initFBO(gRenderer->width, gRenderer->height);
     if (!mFbo) return;
     glBindFramebuffer(GL_FRAMEBUFFER, mFbo);
     // Clear the FBO's color and depth buffers.
