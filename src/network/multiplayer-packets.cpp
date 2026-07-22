@@ -221,6 +221,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.fireRejections.clear();
     ctx.processedRefundSerials.clear();
     ctx.pendingFireRequests.clear();
+    ctx.pendingAttackRequests.clear();
     ctx.pendingReloadRequests.clear();
     ctx.pendingKnockback = glm::vec3(0.0f);
     ctx.pendingKnockbackSource.clear();
@@ -454,7 +455,8 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     int16_t equippedSlot,
     const glm::vec3& aimOrigin,
     const glm::vec3& aimDirection,
-    const glm::vec3& predictedMuzzle)
+    const glm::vec3& predictedMuzzle,
+    uint8_t attackVariant)
 {
     if (!ctx.active || !ctx.localPlayerId)
         return 0;
@@ -469,8 +471,8 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     req.header.playerId = ctx.localPlayerId;
     req.requestId = requestId;
     req.spawnGeneration = ctx.lastKnownSpawnGeneration;
-    req.clientSimulationTick = 0;
-    req.basedOnInputSequence = 0;
+    req.clientSimulationTick = ctx.latestLocalSnapshotTick;
+    req.basedOnInputSequence = (uint16_t)std::min<uint32_t>(ctx.nextMovementSequence, 0xffffu);
     req.equippedSlot = equippedSlot;
     req.weaponDefNetworkId = weaponDefNetworkId;
     req.aimOriginX = aimOrigin.x;
@@ -484,6 +486,7 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     req.muzzlePosY = predictedMuzzle.y;
     req.muzzlePosZ = predictedMuzzle.z;
     req.deterministicSeed = (uint32_t)(requestId * 73856093);
+    req.attackVariant = attackVariant;
 
     mpSendPacket(ctx, &req, sizeof(req));
 
@@ -493,9 +496,13 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     pending.spawnGeneration = req.spawnGeneration;
     pending.weaponDefNetworkId = weaponDefNetworkId;
     pending.equippedSlot = equippedSlot;
+    pending.clientSimulationTick = req.clientSimulationTick;
+    pending.basedOnInputSequence = req.basedOnInputSequence;
     pending.aimOrigin = aimOrigin;
     pending.aimDirection = dir;
     pending.predictedMuzzle = predictedMuzzle;
+    pending.deterministicSeed = req.deterministicSeed;
+    pending.attackVariant = req.attackVariant;
     pending.firstSentMs = nowMs();
     pending.lastSentMs = nowMs();
     pending.attempts = 1;

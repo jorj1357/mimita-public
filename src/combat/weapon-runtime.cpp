@@ -8,11 +8,16 @@
 #include <cstdio>
 #include <filesystem>
 
+int initialReserveAmmoForDefinition(const WeaponDefinition& def)
+{
+    auto it = def.customParams.find("reserveAmmo");
+    return (it != def.customParams.end()) ? (int)it->second : 1337;
+}
+
 void WeaponRuntime::reset(const WeaponDefinition& def)
 {
     currentAmmo = def.magazineSize;
-    auto it = def.customParams.find("reserveAmmo");
-    reserveAmmo = (it != def.customParams.end()) ? (int)it->second : 1337;
+    reserveAmmo = initialReserveAmmoForDefinition(def);
     pendingReloadRounds = 0;
     fireCooldown = 0.0f;
     reloadTimer = 0.0f;
@@ -28,8 +33,7 @@ void WeaponRuntime::reset(const WeaponDefinition& def)
 
 void WeaponRuntimeHelper::initRuntime(WeaponRuntime& rt, const WeaponDefinition& def) {
     rt.currentAmmo = def.magazineSize;
-    auto it = def.customParams.find("reserveAmmo");
-    rt.reserveAmmo = (it != def.customParams.end()) ? (int)it->second : 1337;
+    rt.reserveAmmo = initialReserveAmmoForDefinition(def);
     rt.pendingReloadRounds = 0;
     rt.fireCooldown = 0.0f;
     rt.reloadTimer = 0.0f;

@@ -1,3 +1,13 @@
+// 07 21 2026, 21 30
+/* purpose
+* Preserves legacy melee packet compatibility while Stage 4A uses generic physical contact.
+* Leaves old MeleeHitRequest authority inert so Swordsword damage is no longer packet-specific.
+* Retains historical code for reference until old packet compatibility can be deleted safely.
+* Does NOT receive authoritative Swordsword damage, target, death, health, or knockback claims.
+* Does NOT tick the active Stage 4A physical-contact weapon path.
+* Does NOT render sword visuals or process local player input.
+*/
+
 #include "network/server.h"
 #include "network/network-weapons.h"
 #include "combat/weapon-registry.h"
@@ -115,6 +125,13 @@ void handleMeleeHitRequest(SOCKET sock, const sockaddr_in& from, const char* buf
         return;
     const MeleeHitRequestPacket* request =
         reinterpret_cast<const MeleeHitRequestPacket*>(buffer);
+    (void)sock;
+    (void)from;
+    (void)players;
+    (void)tick;
+    (void)totalPacketsOut;
+    (void)request;
+    return;
 
     auto attackerIt = players.find(request->header.playerId);
     const bool ownsAttacker =

@@ -345,6 +345,51 @@ static void testNoWeaponBranch()
     PASS();
 }
 
+// ── Test 15: Rejected attack result restores predicted ammo ──────────
+
+static void testRejectedAttackRestoresAmmo()
+{
+    TEST("rejected attack restores ammo");
+    std::unordered_map<std::string, WeaponRuntime> runtimes;
+    runtimes["revolver"].currentAmmo = 0;
+    runtimes["revolver"].reserveAmmo = 1337;
+    runtimes["revolver"].authoritativeStateRevision = 2;
+    bool ok = reconcile(runtimes, "revolver", 1, 1337, 0, false, 0, 3, 1, EST_SERVER_TICK);
+    CHECK(ok, "rejected authoritative state should apply");
+    CHECK(runtimes["revolver"].currentAmmo == 1, "ammo=%d", runtimes["revolver"].currentAmmo);
+    CHECK(runtimes["revolver"].reserveAmmo == 1337, "reserve=%d", runtimes["revolver"].reserveAmmo);
+    PASS();
+}
+
+// ── Test 16: Newer reload result blocks older attack rollback ────────
+
+static void testAttackAfterReloadNoRollback()
+{
+    TEST("attack after newer reload cannot roll back");
+    std::unordered_map<std::string, WeaponRuntime> runtimes;
+    reconcile(runtimes, "rocket_launcher", 1, 1336, 0, false, 0, 20, 4, EST_SERVER_TICK);
+    bool ok = reconcile(runtimes, "rocket_launcher", 0, 1337, 0, false, 0, 19, 4, EST_SERVER_TICK);
+    CHECK(!ok, "older attack result should be stale");
+    CHECK(runtimes["rocket_launcher"].currentAmmo == 1, "ammo=%d", runtimes["rocket_launcher"].currentAmmo);
+    CHECK(runtimes["rocket_launcher"].reserveAmmo == 1336, "reserve=%d", runtimes["rocket_launcher"].reserveAmmo);
+    PASS();
+}
+
+// ── Test 17: Full-mag hitscan preserves reserve from authority ───────
+
+static void testHitscanReserveAfterFullMag()
+{
+    TEST("revolver/shotgun reserve after full magazine");
+    std::unordered_map<std::string, WeaponRuntime> runtimes;
+    CHECK(reconcile(runtimes, "revolver", 0, 1337, 0, false, 0, 6, 1, EST_SERVER_TICK), "revolver result");
+    CHECK(reconcile(runtimes, "shotgun", 0, 1337, 0, false, 0, 2, 1, EST_SERVER_TICK), "shotgun result");
+    CHECK(runtimes["revolver"].currentAmmo == 0 && runtimes["revolver"].reserveAmmo == 1337,
+          "revolver ammo=%d/%d", runtimes["revolver"].currentAmmo, runtimes["revolver"].reserveAmmo);
+    CHECK(runtimes["shotgun"].currentAmmo == 0 && runtimes["shotgun"].reserveAmmo == 1337,
+          "shotgun ammo=%d/%d", runtimes["shotgun"].currentAmmo, runtimes["shotgun"].reserveAmmo);
+    PASS();
+}
+
 int main()
 {
     printf("=== Weapon Runtime Reconciliation Tests ===\n\n");
@@ -364,6 +409,9 @@ int main()
     testNoServerTickPolicy();
     testReloadFalseCancelsTimer();
     testNoWeaponBranch();
+    testRejectedAttackRestoresAmmo();
+    testAttackAfterReloadNoRollback();
+    testHitscanReserveAfterFullMag();
 
     printf("\n=== Results: %d passed, %d failed ===\n",
            gPassed, gFailed);

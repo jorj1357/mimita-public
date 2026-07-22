@@ -1,3 +1,13 @@
+// 07 21 2026, 21 30
+/* purpose
+* Implements miscellaneous legacy and utility server packet handlers.
+* Keeps non-migrated packet handling for chat, ping, NPC, reload, spawn, and compatibility paths.
+* Leaves Stage 4A weapon-specific shot, pellet, melee, and Godball packets inert.
+* Does NOT own generic AttackRequest execution, projectile ticking, or transport receive loops.
+* Does NOT trust client weapon damage, target, health, death, or contact claims.
+* Does NOT implement client rendering, audio, or local prediction.
+*/
+
 #include "network/server.h"
 #include "network/multiplayer-context.h"
 #include "network/network-weapons.h"
@@ -25,6 +35,15 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         return;
     const ShotRequestPacket* shot =
         reinterpret_cast<const ShotRequestPacket*>(buffer);
+    (void)sock;
+    (void)from;
+    (void)players;
+    (void)world;
+    (void)tick;
+    (void)totalPacketsOut;
+    (void)retransmitState;
+    (void)shot;
+    return;
     auto shooterIt = players.find(shot->header.playerId);
     const bool ownsShooter =
         shooterIt != players.end() &&
@@ -437,6 +456,15 @@ void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* 
         return;
     const PelletBlastRequestPacket* request =
         reinterpret_cast<const PelletBlastRequestPacket*>(buffer);
+    (void)sock;
+    (void)from;
+    (void)players;
+    (void)world;
+    (void)tick;
+    (void)totalPacketsOut;
+    (void)retransmitState;
+    (void)request;
+    return;
     auto shooterIt = players.find(request->header.playerId);
     const bool ownsShooter =
         shooterIt != players.end() &&
@@ -779,6 +807,10 @@ void handleGodballState(SOCKET sock,
                         char* buffer, int bytes) {
     if (bytes < (int)sizeof(GodballStatePacket)) return;
     GodballStatePacket* pkt = reinterpret_cast<GodballStatePacket*>(buffer);
+    (void)sock;
+    (void)players;
+    (void)pkt;
+    return;
     auto it = players.find(pkt->ownerPlayerId);
     if (it == players.end()) {
         printf("[GODBALL SERVER RX] playerId=%u NOT FOUND in players\n", pkt->ownerPlayerId);

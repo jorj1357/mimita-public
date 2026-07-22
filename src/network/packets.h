@@ -15,7 +15,7 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 24;
+constexpr uint16_t PROTOCOL_VERSION = 25;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -99,7 +99,8 @@ enum DamageConfirmedSource : uint8_t
     DAMAGE_CONFIRMED_HITSCAN = 1,
     DAMAGE_CONFIRMED_MELEE = 2,
     DAMAGE_CONFIRMED_ROCKET_EXPLOSION = 3,
-    DAMAGE_CONFIRMED_GRENADE_EXPLOSION = 4
+    DAMAGE_CONFIRMED_GRENADE_EXPLOSION = 4,
+    DAMAGE_CONFIRMED_PHYSICAL_CONTACT = 5
 };
 
 enum EntityType : uint8_t
@@ -933,21 +934,24 @@ struct AttackRequestPacket
     float aimDirX = 0, aimDirY = 0, aimDirZ = 0;
     float muzzlePosX = 0, muzzlePosY = 0, muzzlePosZ = 0;
     uint32_t deterministicSeed = 0;
+    uint8_t attackVariant = 0;
+    uint8_t reservedAttack[3] = {};
 };
 
 struct AttackResultPacket
 {
     PacketHeader header;
+    uint64_t nextAllowedFireTick = 0;
     uint32_t requestId = 0;
     uint32_t spawnGeneration = 0;
-    uint8_t accepted = 0;
-    uint8_t reason = 0;
     uint32_t projectileId = 0;
     int32_t magazineAmmo = 0;
     int32_t reserveAmmo = 0;
-    uint64_t nextAllowedFireTick = 0;
     uint32_t stateRevision = 0;
     uint32_t serverTick = 0;
+    uint16_t weaponDefNetworkId = 0;
+    uint8_t accepted = 0;
+    uint8_t reason = 0;
 };
 
 // ── Reload request/result ────────────────────────────────────────────

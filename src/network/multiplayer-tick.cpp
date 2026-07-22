@@ -65,6 +65,20 @@ uint32_t movementReportFlagsFromMpInput(const MpInput& input)
     return flags;
 }
 
+static void eraseLocalReplica(MultiplayerContext& ctx, uint32_t entityId,
+                              const char* reason)
+{
+    if (entityId == 0)
+        return;
+    const bool hadPlayer = ctx.remotePlayers.erase(entityId) != 0;
+    const bool hadInterp = ctx.remotePlayerInterpolation.erase(entityId) != 0;
+    if (hadPlayer || hadInterp)
+    {
+        printf("[CLIENT LOCAL REPLICA DROP] playerId=%u entityId=%u reason=%s\n",
+               ctx.localPlayerId, entityId, reason);
+    }
+}
+
 // ── Shared snapshot entity processing ──────────────────────────────
 // Called by both legacy (SnapshotPacket) and chunked (CompactEntityData)
 // snapshot paths.  Handles local-player state, remote-player/NPC creation,
@@ -92,9 +106,12 @@ static void processSnapshotEntities(
 
         const bool isLocal =
             entity.entityType == ENTITY_PLAYER &&
-            entity.ownerClientId == ctx.localPlayerId;
+            (entity.ownerClientId == ctx.localPlayerId ||
+             entity.networkEntityId == ctx.localPlayerId);
         if (isLocal)
         {
+            eraseLocalReplica(ctx, entity.networkEntityId, "authoritative-local-snapshot");
+
             const bool olderEpoch = entity.transformEpoch != 0 &&
                 ctx.localServerEpoch != 0 &&
                 (uint32_t)entity.transformEpoch < (uint32_t)ctx.localServerEpoch;
@@ -180,6 +197,12 @@ static void processSnapshotEntities(
         const char* typeName = nullptr;
         if (entity.entityType == ENTITY_PLAYER)
         {
+            if (entity.networkEntityId == ctx.localPlayerId ||
+                entity.ownerClientId == ctx.localPlayerId)
+            {
+                eraseLocalReplica(ctx, entity.networkEntityId, "local-identity-guard");
+                continue;
+            }
             replicas = &ctx.remotePlayers;
             interpolationMap = &ctx.remotePlayerInterpolation;
             seen = &seenPlayers;
@@ -500,6 +523,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 ctx.localPlayerId,
                 0
             };
+            eraseLocalReplica(ctx, ctx.localPlayerId, "welcome");
             printf("[NET CONNECT] player=%u serverTick=%u tickRate=%.0f mapId=%s\n",
                    ctx.localPlayerId, welcome->header.tick, welcome->tickRate,
                    welcome->mapId);
@@ -535,6 +559,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 ctx.localPlayerId,
                 0
             };
+            eraseLocalReplica(ctx, ctx.localPlayerId, "join-accept");
             printf("[NET CONNECT] join accepted player=%u tickRate=%.0f mapId=%s\n",
                    ctx.localPlayerId, accept->tickRate, accept->mapId);
         }
@@ -568,6 +593,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.localPlayerReconciled = false;
             ctx.teleportResync = false;
             ctx.awaitingTeleportAck = false;
+            eraseLocalReplica(ctx, ctx.localPlayerId, "reconnect-accept");
             printf("[NET RECONNECT] accepted player=%u health=%d kills=%d deaths=%d epoch=%u spawnGen=%u\n",
                    ctx.localPlayerId, accept->restoredHealth,
                    accept->restoredKills, accept->restoredDeaths,
@@ -717,15 +743,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                  bytes >= (int)sizeof(AttackResultPacket))
         {
             const AttackResultPacket* ar = reinterpret_cast<const AttackResultPacket*>(buffer);
-            // Erase pending attack request
-            auto pendingIt = ctx.pendingAttackRequests.find(ar->requestId);
-            if (pendingIt != ctx.pendingAttackRequests.end())
-                ctx.pendingAttackRequests.erase(pendingIt);
-            Debug::log(Debug::Category::Weapons, "[ATTACK RESULT RX] playerId=%u requestId=%u accepted=%d reason=%d ammo=%d/%d projId=%u\n",
-                       ctx.localPlayerId, ar->requestId, (int)ar->accepted, (int)ar->reason,
-                       ar->magazineAmmo, ar->reserveAmmo, ar->projectileId);
-            // TODO: reconcile client-side weapon runtime from ar values
-            // when ammo/cooldown fields are wired to player state
+            mpProcessAttackResultPacket(ctx, ar);
         }
         else if (header->type == PACKET_PROJECTILE_FIRE_RESULT &&
                  bytes >= (int)sizeof(ProjectileFireResultPacket))
@@ -814,22 +832,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         else if (header->type == PACKET_GODBALL_STATE &&
                  bytes >= (int)sizeof(GodballStatePacket))
         {
-            const GodballStatePacket* gbPkt =
-                reinterpret_cast<const GodballStatePacket*>(buffer);
-            printf("[GODBALL CLIENT RX] ownerId=%u pos=(%.1f,%.1f,%.1f) active=%d\n",
-                   gbPkt->ownerPlayerId, gbPkt->posX, gbPkt->posY, gbPkt->posZ,
-                   (int)gbPkt->active);
-            auto it = ctx.remotePlayers.find(gbPkt->ownerPlayerId);
-            if (it != ctx.remotePlayers.end())
-            {
-                it->second.godballPosition = {gbPkt->posX, gbPkt->posY, gbPkt->posZ};
-                it->second.godballActive = gbPkt->active != 0;
-            }
-            else
-            {
-                printf("[GODBALL CLIENT RX] ownerId=%u NOT FOUND in remotePlayers\n",
-                       gbPkt->ownerPlayerId);
-            }
+            Debug::log(Debug::Category::Weapons,
+                       "[GODBALL LEGACY STATE RX] ignored after physical-contact migration\n");
         }
         else if (header->type == PACKET_PING &&
                  bytes >= (int)sizeof(PingPacket))
@@ -1069,38 +1073,6 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         in.sizeScale = input->sizeScale;
         mpSendPacket(ctx, &in, sizeof(in));
 
-        // Send godball position if godball is active (for remote visual replication)
-        {
-            static GodballStatePacket lastSentGb = {};
-            GodballStatePacket gbPkt{};
-            gbPkt.header.type = PACKET_GODBALL_STATE;
-            gbPkt.header.tick = ctx.tick;
-            gbPkt.header.playerId = ctx.localPlayerId;
-            gbPkt.ownerPlayerId = ctx.localPlayerId;
-            glm::vec3 gbPos = input->godballPosition;
-            bool gbActive = input->godballActive;
-            gbPkt.posX = gbPos.x;
-            gbPkt.posY = gbPos.y;
-            gbPkt.posZ = gbPos.z;
-            gbPkt.active = gbActive ? 1 : 0;
-            // Send if state changed or rate-limit to ~20Hz
-            uint64_t now = nowMs();
-            static uint64_t lastGbSendMs = 0;
-            bool stateChanged = (gbPkt.posX != lastSentGb.posX || gbPkt.posY != lastSentGb.posY ||
-                                 gbPkt.posZ != lastSentGb.posZ || gbPkt.active != lastSentGb.active);
-            if (gbActive && (stateChanged || now - lastGbSendMs >= 50))
-            {
-                lastGbSendMs = now;
-                lastSentGb = gbPkt;
-                mpSendPacket(ctx, &gbPkt, sizeof(gbPkt));
-            }
-            else if (!gbActive && lastSentGb.active != 0)
-            {
-                // Send one final deactivate packet
-                lastSentGb = gbPkt;
-                mpSendPacket(ctx, &gbPkt, sizeof(gbPkt));
-            }
-        }
     }
 
     // ── Retry unacknowledged generic attack requests ────────────────────
@@ -1123,6 +1095,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 retry.header.playerId = ctx.localPlayerId;
                 retry.requestId = p.requestId;
                 retry.spawnGeneration = p.spawnGeneration;
+                retry.clientSimulationTick = p.clientSimulationTick;
+                retry.basedOnInputSequence = p.basedOnInputSequence;
                 retry.equippedSlot = p.equippedSlot;
                 retry.weaponDefNetworkId = p.weaponDefNetworkId;
                 retry.aimOriginX = p.aimOrigin.x;
@@ -1134,6 +1108,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 retry.muzzlePosX = p.predictedMuzzle.x;
                 retry.muzzlePosY = p.predictedMuzzle.y;
                 retry.muzzlePosZ = p.predictedMuzzle.z;
+                retry.deterministicSeed = p.deterministicSeed;
+                retry.attackVariant = p.attackVariant;
                 mpSendPacket(ctx, &retry, sizeof(retry));
                 p.lastSentMs = now;
                 p.attempts++;
@@ -1145,7 +1121,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             {
                 Debug::log(Debug::Category::Weapons, "[ATTACK TIMEOUT] requestId=%u — removing\n",
                            p.requestId);
-                // TODO: reconcile predicted state on timeout
+                mpCancelPredictedProjectileAttack(ctx, p.requestId);
                 it = ctx.pendingAttackRequests.erase(it);
             }
             else
@@ -1157,7 +1133,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
 
     mpUpdateRemoteEntities(ctx, dt);
     mpUpdateRemoteSwordStates(ctx, dt);
-    mpUpdateNetworkProjectiles(ctx, dt);
+    mpUpdateNetworkProjectiles(ctx, dt, world);
 
     if (ctx.connected && currentMs - ctx.lastPingSentMs >= 1000)
     {

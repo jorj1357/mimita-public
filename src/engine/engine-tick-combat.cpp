@@ -1,3 +1,13 @@
+// 07 21 2026, 21 30
+/* purpose
+* Runs frame-level combat, weapon, duel, replay, and gameplay input orchestration.
+* Bridges hotkeys and mouse actions into shared terminal/weapon/network command paths.
+* Keeps online weapon actions on generic request helpers after local prediction runs.
+* Does NOT own server damage authority, network packet dispatch, or transport sockets.
+* Does NOT implement weapon JSON parsing, collision solvers, or projectile server simulation.
+* Does NOT launch executables, build assets, or manage deployment.
+*/
+
 #include "engine/engine-tick-combat.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
@@ -90,29 +100,6 @@ void engineTickCombat(Engine& engine, float dt)
     if (!replayPlaybackActive) {
         PersistentPhysicsSystem::instance().update(dt, world, player, npcSystem, &camera);
     }
-    if (mpContext.active)
-    {
-        const std::vector<RevolverShotResult> godballHits =
-            weapons.collectRemoteGodballHits(
-                player, mpContext.remotePlayers, dt);
-        for (const RevolverShotResult& hit : godballHits)
-        {
-            const glm::vec3 direction =
-                glm::length(hit.end - hit.start) > 0.001f
-                ? glm::normalize(hit.end - hit.start)
-                : glm::vec3(0.0f, 1.0f, 0.0f);
-            MimitaNet::mpSendShotEvent(
-                mpContext, hit.targetId, (int)hit.damage, hit.damage,
-                MimitaNet::SHOT_EFFECT_ENTITY_IMPACT |
-                    MimitaNet::SHOT_EFFECT_BLOOD |
-                    MimitaNet::SHOT_EFFECT_HIT_SOUND,
-                MimitaNet::NETWORK_WEAPON_GODBALL,
-                MimitaNet::SHOT_IMPACT_ENTITY,
-                hit.start, hit.end, direction, -direction,
-                hit.knockbackImpulse);
-        }
-    }
-
     if (!replayPlaybackActive) {
         if (gDuelManager.enabled()) {
             gDuelManager.update(dt, player, npcSystem, world, camera);
@@ -241,16 +228,14 @@ void engineTickCombat(Engine& engine, float dt)
         if (!editorMode) {
             RevolverShotResult altResult = weapons.fireAlt(camera, player, npcSystem, world);
             // For Swordsword lunge in online mode, send attack-start
-            if (altResult.fired && mpContext.active) {
+            if (altResult.fired && mpContext.active && mpContext.gameplayActive) {
                 const WeaponDefinition* curDef = weapons.getCurrentDef(player);
                 if (curDef && curDef->behaviorType == WeaponBehaviorType::Swordsword) {
-                    uint8_t netWeapon = MimitaNet::networkWeaponTypeForDefinition(*curDef);
-                    if (netWeapon == MimitaNet::NETWORK_WEAPON_SWORDSWORD) {
-                        MimitaNet::mpSendMeleeHitRequest(
-                            mpContext, 0, 0, netWeapon, 2,
-                            glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f),
-                            glm::vec3(0.0f), 0.0f);
-                    }
+                    uint16_t netId = MimitaNet::weaponDefNetworkIdFor(curDef->id);
+                    if (netId != 0)
+                        MimitaNet::mpSendAttackRequest(
+                            mpContext, netId, curDef->slot,
+                            player.pos, camera.front, player.pos, 2);
                 }
             }
         }

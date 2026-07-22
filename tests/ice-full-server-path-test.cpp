@@ -139,8 +139,8 @@ bool require(bool condition, const char* message)
 
 int main()
 {
-    static_assert(PROTOCOL_VERSION == 24,
-                  "Stage 3C did not require a protocol bump");
+    static_assert(PROTOCOL_VERSION == 25,
+                  "Stage 4A generic AttackRequest layout requires protocol 25");
     static_assert(sizeof(InputPacket) == 140,
                   "InputPacket layout changed unexpectedly");
     static_assert(sizeof(JoinRequestPacket) == 116,

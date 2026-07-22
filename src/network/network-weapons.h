@@ -1,3 +1,13 @@
+// 07 21 2026, 23 38
+/* purpose
+* Declares network weapon id helpers for generic client/server weapon routing.
+* Exposes stable weapon-definition id registration and lookup at the packet boundary.
+* Groups compact weapon ids by execution family for migrated attack requests.
+* Does NOT own weapon definition storage, JSON parsing, ammo, cooldown, or damage.
+* Does NOT send packets, simulate projectiles, render effects, or mutate runtime state.
+* Does NOT derive weapon ids from unordered spawn inventory packet order.
+*/
+
 #pragma once
 
 #include <cstdint>

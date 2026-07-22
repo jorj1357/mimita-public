@@ -18,6 +18,7 @@
 #include "network/simulation-constants.h"
 #include "physics/physics-types.h"
 #include "physics/config.h"
+#include "combat/weapon-execution.h"
 #include "combat/weapon-swordsword.h"
 
 #include <memory>
@@ -216,6 +217,11 @@ struct ServerPlayer
     uint32_t spawnGeneration = 0;
     std::vector<std::string> ownedWeaponIds;
     bool justRespawned = false;  // set by simulatePlayer when respawn timer fires
+    WeaponExecution::PhysicalContactShape lastPhysicalWeaponShape;
+    bool hasLastPhysicalWeaponShape = false;
+    uint16_t lastPhysicalWeaponDefNetworkId = 0;
+    uint32_t nextPhysicalContactSerial = 1;
+    std::unordered_map<uint32_t, WeaponExecution::PhysicalContactEpisode> physicalContactEpisodes;
 
     // ── Spawn handshake lifecycle ───────────────────────────────────
     enum SpawnState : uint8_t {
@@ -249,6 +255,8 @@ struct ServerPlayer
     // ── Migration: auth + reconnect ───────────────────────────────────
     std::string joinToken;
     std::string reconnectToken;
+    std::string previousReconnectToken;
+    uint64_t previousReconnectTokenValidUntilMs = 0;
     bool joinTokenValidated = false;
     bool spawned = false;
     int kills = 0;
@@ -333,6 +341,7 @@ enum class ServerDamageSource : uint8_t
 {
     Hitscan,
     Melee,
+    PhysicalContact,
     RocketExplosion,
     GrenadeExplosion
 };
@@ -397,6 +406,17 @@ struct ServerProjectilePerfStats
     uint32_t activeProjectiles = 0;
     uint32_t movingProjectiles = 0;
     uint32_t sleepingProjectiles = 0;
+};
+
+struct ServerProjectileAttackResult
+{
+    bool accepted = false;
+    uint8_t reason = 0;
+    uint32_t projectileId = 0;
+    int32_t magazineAmmo = -1;
+    int32_t reserveAmmo = -1;
+    uint64_t nextAllowedFireTick = 0;
+    uint32_t stateRevision = 0;
 };
 
 ServerProjectilePerfStats consumeServerProjectilePerfStats();
@@ -527,6 +547,18 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
                                  uint32_t& nextProjectileId,
                                  const HeadlessWorld& world,
                                  uint32_t tick, uint64_t& totalPacketsOut);
+ServerProjectileAttackResult handleGenericProjectileAttack(
+    SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerProjectile>& projectiles,
+    uint32_t& nextProjectileId,
+    ServerPlayer& shooter,
+    const WeaponDefinition& definition,
+    uint32_t requestId,
+    const glm::vec3& origin,
+    const glm::vec3& direction,
+    uint32_t tick,
+    uint64_t& totalPacketsOut);
 void tickServerProjectiles(SOCKET sock,
                            std::unordered_map<uint32_t, ServerPlayer>& players,
                            std::unordered_map<uint32_t, ServerProjectile>& projectiles,
@@ -539,6 +571,11 @@ void tickServerSwordCombat(SOCKET sock,
                            std::unordered_map<uint32_t, ServerPlayer>& players,
                            const HeadlessWorld& world,
                            float dt, uint32_t tick, uint64_t& totalPacketsOut);
+void tickServerPhysicalContactWeapons(SOCKET sock,
+                                      std::unordered_map<uint32_t, ServerPlayer>& players,
+                                      const HeadlessWorld& world,
+                                      float dt, uint32_t tick,
+                                      uint64_t& totalPacketsOut);
 bool serverSendToPlayer(SOCKET sock, const ServerPlayer& player,
                          const void* data, size_t size);
 void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,

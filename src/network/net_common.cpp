@@ -44,6 +44,27 @@ bool setNonBlocking(SOCKET socketHandle)
     return result == 0;
 }
 
+bool disableUdpConnReset(SOCKET socketHandle)
+{
+#ifndef SIO_UDP_CONNRESET
+#define SIO_UDP_CONNRESET _WSAIOW(IOC_VENDOR, 12)
+#endif
+    BOOL disabled = FALSE;
+    DWORD bytesReturned = 0;
+    int result = WSAIoctl(socketHandle, SIO_UDP_CONNRESET,
+                          &disabled, sizeof(disabled),
+                          nullptr, 0, &bytesReturned,
+                          nullptr, nullptr);
+    if (result != 0)
+    {
+        int err = WSAGetLastError();
+        if (err != WSAEINVAL && err != WSAEOPNOTSUPP)
+            printf("[NET] WSAIoctl SIO_UDP_CONNRESET failed error=%d\n", err);
+        return false;
+    }
+    return true;
+}
+
 bool parseAddress(const std::string& text, sockaddr_in& out, bool allowPortZero)
 {
     if (text.empty())

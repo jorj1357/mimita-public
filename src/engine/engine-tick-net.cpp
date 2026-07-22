@@ -274,6 +274,29 @@ void engineTickNet(Engine& engine, float dt)
         }
         mpContext.pendingReloadResults.clear();
 
+        // ── Process pending attack results ────────────────────────────────
+        for (const auto& ar : mpContext.pendingAttackResults)
+        {
+            const std::string* weaponId = MimitaNet::weaponIdForDefNetworkId(ar.weaponDefNetworkId);
+            bool keepReloading = false;
+            if (weaponId)
+            {
+                auto rtIt = player.weaponRuntimes.find(*weaponId);
+                if (rtIt != player.weaponRuntimes.end())
+                    keepReloading = rtIt->second.isReloading;
+            }
+            MimitaNet::reconcileAuthoritativeWeaponRuntime(
+                mpContext, player, ar.weaponDefNetworkId,
+                ar.magazineAmmo, ar.reserveAmmo,
+                ar.nextAllowedFireTick,
+                keepReloading,
+                0,
+                ar.stateRevision,
+                ar.spawnGeneration,
+                ar.accepted ? "attack-result-accepted" : "attack-result-rejected");
+        }
+        mpContext.pendingAttackResults.clear();
+
         // ── Process pending authoritative spawn ───────────────────────────
         if (mpContext.pendingAuthoritativeSpawn.has_value())
         {

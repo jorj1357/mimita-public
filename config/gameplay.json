@@ -1,6 +1,6 @@
 {
     "comment 7 20 2026": "this is the .json file at C:/important/mimita-priv-v8/config/gameplay.json defining some gameplay behaviors such as aim mode, movement mode, etc in mimita",
-    "aim_mode": "farpoint",
+    "aim_mode": "crosshair",
     "dash_mode": "tf2",
     "farpoint_distance": 999999.0
 }

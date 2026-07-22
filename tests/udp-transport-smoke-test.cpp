@@ -2,7 +2,7 @@
 /* purpose
 * Runs a focused UDP socket transport smoke test for MiMITA networking helpers.
 * Verifies IPv4 endpoint parsing, localhost normalization, nonblocking receive, and echo.
-* Confirms protocol 24 packet helpers still report the expected wire identity.
+* Confirms protocol 25 packet helpers still report the expected wire identity.
 * Does NOT launch mimita.exe, contact the coordinator, or run gameplay simulation.
 * Does NOT test ICE, movement formulas, weapons, projectiles, or rendering.
 * Does NOT rely on stale server processes or fixed UDP ports.

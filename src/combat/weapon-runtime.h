@@ -6,6 +6,7 @@
 
 class Player;
 
+int initialReserveAmmoForDefinition(const WeaponDefinition& def);
 void resetAllWeaponRuntimesForSpawn(Player& player, const char* caller = "unknown");
 
 struct WeaponRuntimeHelper {

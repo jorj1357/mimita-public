@@ -1,12 +1,76 @@
+// 07 21 2026, 21 30
+/* purpose
+* Handles authoritative generic AttackRequest validation and execution dispatch.
+* Routes hitscan, physical-contact, and projectile weapon definitions through one request path.
+* Owns attack idempotency, ammo/cooldown mutation, and server damage decisions for migrated weapons.
+* Does NOT trust client target, damage, death, health, or projectile hit outcomes.
+* Does NOT implement packet polling, client prediction, rendering, or audio presentation.
+* Does NOT own projectile simulation internals, render correction, or legacy direct fire packets.
+*/
+
 #include "network/server.h"
 #include "network/packets.h"
 #include "network/network-weapons.h"
+#include "combat/weapon-execution.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
 #include "combat/weapon-fire.h"
 #include "debug/debug-log.h"
 
+#include <cmath>
+#include <vector>
+
 namespace MimitaNet {
+namespace {
+
+static bool finiteVec3(const glm::vec3& v)
+{
+    return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+}
+
+static glm::vec3 normalizedOrZero(const glm::vec3& v)
+{
+    if (!finiteVec3(v) || glm::length(v) <= 0.0001f)
+        return glm::vec3(0.0f);
+    return glm::normalize(v);
+}
+
+static uint64_t cooldownTickFor(const WeaponDefinition& def, uint32_t tick)
+{
+    if (def.fireDelay <= 0.0f)
+        return tick;
+    return (uint64_t)tick + (uint64_t)std::ceil(def.fireDelay * SERVER_TICK_RATE);
+}
+
+static void startServerSwordAttack(ServerPlayer& attacker,
+                                   const WeaponDefinition& def,
+                                   uint8_t attackVariant)
+{
+    const bool lunge = attackVariant == 2;
+    const float slashWindup = WeaponExecution::paramOr(def, "slashWindupTime", 0.08f);
+    const float slashActive = WeaponExecution::paramOr(def, "slashActiveTime", 0.15f);
+    const float slashRecover = WeaponExecution::paramOr(def, "slashRecoverTime", 0.10f);
+    const float lungeWindup = WeaponExecution::paramOr(def, "lungeWindupTime", 0.10f);
+    const float lungeActive = WeaponExecution::paramOr(def, "lungeActiveTime", 0.20f);
+    const float lungeRecover = WeaponExecution::paramOr(def, "lungeRecoverTime", 0.12f);
+    const float fallbackCooldown = lunge
+        ? lungeWindup + lungeActive + lungeRecover + 0.05f
+        : slashWindup + slashActive + slashRecover + 0.05f;
+    const float cooldown = lunge
+        ? WeaponExecution::paramOr(def, "lungeCooldown", fallbackCooldown)
+        : WeaponExecution::paramOr(def, "slashCooldown", fallbackCooldown);
+
+    attacker.swordswordState = SwordswordState{};
+    attacker.swordswordState.state = lunge
+        ? SwordswordState::AttackState::LungeWindup
+        : SwordswordState::AttackState::SlashWindup;
+    attacker.swordswordState.stateTimer = 0.0f;
+    attacker.swordswordState.animTimer = 0.0f;
+    attacker.meleeCooldownTimer = std::max(0.0f, cooldown);
+    attacker.hasLastPhysicalWeaponShape = false;
+}
+
+} // namespace
 
 // ── Idempotent attack result cache ────────────────────────────────────
 // Keyed by (playerId, spawnGeneration, requestId).
@@ -22,6 +86,7 @@ struct CachedAttackResult {
     int32_t reserveAmmo = 0;
     uint64_t nextAllowedFireTick = 0;
     uint32_t stateRevision = 0;
+    uint16_t weaponDefNetworkId = 0;
     bool valid = false;
 };
 static CachedAttackResult s_attackCache[64];
@@ -43,6 +108,7 @@ static void cacheAttackResult(const ServerPlayer& player, const AttackRequestPac
     slot.reserveAmmo = reserveAmmo;
     slot.nextAllowedFireTick = nextAllowedFireTick;
     slot.stateRevision = stateRevision;
+    slot.weaponDefNetworkId = req->weaponDefNetworkId;
     slot.valid = true;
     s_attackCacheNext = (s_attackCacheNext + 1) % 64;
 }
@@ -67,6 +133,7 @@ static bool lookupCachedAttackResult(const ServerPlayer& player, const AttackReq
             out.reserveAmmo = c.reserveAmmo;
             out.nextAllowedFireTick = c.nextAllowedFireTick;
             out.stateRevision = c.stateRevision;
+            out.weaponDefNetworkId = c.weaponDefNetworkId;
             return true;
         }
     }
@@ -94,6 +161,7 @@ static void sendAttackResult(SOCKET sock, const ServerPlayer& player,
     result.nextAllowedFireTick = nextAllowedFireTick;
     result.stateRevision = stateRevision;
     result.serverTick = tick;
+    result.weaponDefNetworkId = req->weaponDefNetworkId;
 
     // Cache the result so retries are idempotent
     cacheAttackResult(player, req, accepted, reason, projectileId,
@@ -178,15 +246,6 @@ void handleAttackRequest(
         return;
     }
 
-    // ── Validate equipped slot ─────────────────────────────────────────
-    if (req->equippedSlot != shooter.equippedSlot)
-    {
-        Debug::log(Debug::Category::Weapons, "[ATTACK REJECT] playerId=%u requestId=%u slot mismatch req=%d cur=%d\n",
-                   shooter.id, req->requestId, req->equippedSlot, shooter.equippedSlot);
-        sendAttackResult(sock, shooter, req, tick, false, 4, 0, -1, -1, 0, 0);
-        return;
-    }
-
     // ── Dead check ────────────────────────────────────────────────────
     if (shooter.dead)
     {
@@ -208,8 +267,29 @@ void handleAttackRequest(
 
     ServerPlayer::ServerWeaponRuntime& rt = rtIt->second;
 
+    // ── Validate or reconcile equipped slot ───────────────────────────
+    if (req->equippedSlot != def->slot)
+    {
+        Debug::log(Debug::Category::Weapons,
+                   "[ATTACK REJECT] playerId=%u requestId=%u request slot does not match weapon req=%d def=%d\n",
+                   shooter.id, req->requestId, req->equippedSlot, def->slot);
+        sendAttackResult(sock, shooter, req, tick, false, 4, 0, -1, -1, 0, 0);
+        return;
+    }
+    if (req->equippedSlot != shooter.equippedSlot)
+    {
+        Debug::log(Debug::Category::Weapons,
+                   "[ATTACK EQUIP RECONCILE] playerId=%u requestId=%u oldSlot=%d newSlot=%d weapon=%s\n",
+                   shooter.id, req->requestId, shooter.equippedSlot,
+                   req->equippedSlot, def->id.c_str());
+        shooter.equippedSlot = req->equippedSlot;
+    }
+
+    const bool consumesAmmo = def->executionType != WeaponExecutionType::PhysicalContact &&
+        def->magazineSize > 0;
+
     // ── Ammo check ────────────────────────────────────────────────────
-    if (rt.magazineAmmo <= 0)
+    if (consumesAmmo && rt.magazineAmmo <= 0)
     {
         Debug::log(Debug::Category::Weapons, "[ATTACK REJECT] playerId=%u requestId=%u out of ammo ammo=%d\n",
                    shooter.id, req->requestId, rt.magazineAmmo);
@@ -221,7 +301,8 @@ void handleAttackRequest(
 
     // ── Cooldown check (tick-based) ────────────────────────────────────
     constexpr uint64_t COOLDOWN_GRACE_TICKS = 2;
-    if (tick + COOLDOWN_GRACE_TICKS < rt.nextAllowedFireTick)
+    if (def->executionType != WeaponExecutionType::PhysicalContact &&
+        tick + COOLDOWN_GRACE_TICKS < rt.nextAllowedFireTick)
     {
         Debug::log(Debug::Category::Weapons, "[ATTACK REJECT] playerId=%u requestId=%u cooldown tick=%u nextAllowed=%llu\n",
                    shooter.id, req->requestId, tick, (unsigned long long)rt.nextAllowedFireTick);
@@ -236,68 +317,162 @@ void handleAttackRequest(
     // The weapon runtime state is read AFTER the cache check to avoid
     // mutating state for duplicate requests.
 
-    // ── Dispatch by fire type ─────────────────────────────────────────
-    // Currently only projectile weapons are supported via the migration bridge.
-    // Hitscan and melee return explicit unsupported.
-    if (def->behaviorType == WeaponBehaviorType::Hitscan)
+    // ── Dispatch by execution family ──────────────────────────────────
+    if (def->executionType == WeaponExecutionType::Hitscan)
     {
-        Debug::log(Debug::Category::Weapons, "[ATTACK] playerId=%u requestId=%u hitscan not yet migrated\n",
-                   shooter.id, req->requestId);
-        sendAttackResult(sock, shooter, req, tick, false, 9, 0,
-                         rt.magazineAmmo, rt.reserveAmmo,
-                         rt.nextAllowedFireTick, rt.stateRevision);
-        return;
-    }
-
-    if (def->behaviorType == WeaponBehaviorType::Swordsword ||
-        def->behaviorType == WeaponBehaviorType::Hafs)
-    {
-        Debug::log(Debug::Category::Weapons, "[ATTACK] playerId=%u requestId=%u melee not yet migrated\n",
-                   shooter.id, req->requestId);
-        sendAttackResult(sock, shooter, req, tick, false, 9, 0,
-                         rt.magazineAmmo, rt.reserveAmmo,
-                         rt.nextAllowedFireTick, rt.stateRevision);
-        return;
-    }
-
-    // ── Projectile weapons (grenade, rocket) — delegate to existing handler ──
-    if (def->behaviorType == WeaponBehaviorType::RocketLauncher ||
-        def->behaviorType == WeaponBehaviorType::GrenadeLauncher)
-    {
-        glm::vec3 origin(req->aimOriginX, req->aimOriginY, req->aimOriginZ);
-        glm::vec3 direction(req->aimDirX, req->aimDirY, req->aimDirZ);
-        direction = glm::normalize(direction);
-
-        uint8_t netWeapon = networkWeaponTypeForDefinition(*def);
-        if (netWeapon == NETWORK_WEAPON_NONE)
+        const glm::vec3 reqOrigin(req->muzzlePosX, req->muzzlePosY, req->muzzlePosZ);
+        const glm::vec3 fallbackOrigin(req->aimOriginX, req->aimOriginY, req->aimOriginZ);
+        glm::vec3 origin = finiteVec3(reqOrigin) ? reqOrigin : fallbackOrigin;
+        glm::vec3 direction = normalizedOrZero(
+            glm::vec3(req->aimDirX, req->aimDirY, req->aimDirZ));
+        if (!finiteVec3(origin) || glm::length(direction) <= 0.0001f ||
+            glm::length(origin - shooter.pos) > 12.0f)
         {
-            sendAttackResult(sock, shooter, req, tick, false, 7, 0,
+            Debug::log(Debug::Category::Weapons,
+                "[ATTACK REJECT] playerId=%u requestId=%u invalid hitscan geometry\n",
+                shooter.id, req->requestId);
+            sendAttackResult(sock, shooter, req, tick, false, 5, 0,
                              rt.magazineAmmo, rt.reserveAmmo,
                              rt.nextAllowedFireTick, rt.stateRevision);
             return;
         }
 
-        // Rebuild a ProjectileFireRequestPacket from the generic request
-        ProjectileFireRequestPacket pfr{};
-        pfr.header.type = PACKET_PROJECTILE_FIRE_REQUEST;
-        pfr.header.tick = req->header.tick;
-        pfr.header.playerId = req->header.playerId;
-        pfr.fireSerial = req->requestId;
-        pfr.weapon = netWeapon;
-        pfr.originX = req->aimOriginX;
-        pfr.originY = req->aimOriginY;
-        pfr.originZ = req->aimOriginZ;
-        pfr.dirX = req->aimDirX;
-        pfr.dirY = req->aimDirY;
-        pfr.dirZ = req->aimDirZ;
+        const float maxRange = WeaponExecution::paramOr(*def, "range",
+            WeaponExecution::paramOr(*def, "maxRange", WeaponExecution::DEFAULT_HITSCAN_RANGE));
+        glm::vec3 worldHit;
+        glm::vec3 worldNormal;
+        float worldBlockDistance = maxRange;
+        if (serverRaycastWorld(origin, direction, maxRange, world, worldHit, worldNormal))
+            worldBlockDistance = glm::length(worldHit - origin);
 
-        handleProjectileFireRequest(sock, from,
-            reinterpret_cast<const char*>(&pfr), sizeof(pfr),
-            players, projectiles, nextProjectileId, world, tick, totalPacketsOut);
+        std::vector<WeaponExecution::PlayerTarget> targets;
+        targets.reserve(players.size());
+        for (const auto& targetEntry : players)
+        {
+            const ServerPlayer& target = targetEntry.second;
+            if (target.id == shooter.id || target.dead ||
+                target.spawnState != ServerPlayer::Active)
+                continue;
+            WeaponExecution::PlayerTarget targetDesc;
+            targetDesc.playerId = target.id;
+            targetDesc.spawnGeneration = target.spawnGeneration;
+            targetDesc.position = target.pos;
+            targetDesc.radius = PLAYER_RADIUS;
+            targetDesc.height = PLAYER_HEIGHT;
+            targetDesc.dead = target.dead;
+            targets.push_back(targetDesc);
+        }
 
-        // The projectile handler already sends its own result (ProjectileFireResultPacket).
-        // The client may handle both the old result type and eventually the new one.
-        // For now, we rely on the old result path for client reconciliation.
+        WeaponExecution::HitscanTraceConfig traceConfig;
+        traceConfig.maxRange = maxRange;
+        traceConfig.damage = std::max(1.0f, def->damage);
+        traceConfig.headshotMultiplier = std::max(1.0f, def->headshotMultiplier);
+        traceConfig.pelletCount = std::max(1, def->pelletCount);
+        traceConfig.spreadDegrees = def->spread;
+        traceConfig.deterministicSeed = req->deterministicSeed;
+        traceConfig.worldBlockDistance = worldBlockDistance;
+        traceConfig.knockbackPerDamage = WeaponExecution::paramOr(*def, "knockbackPerDamage", 0.08f);
+        WeaponExecution::HitscanTraceResult trace =
+            WeaponExecution::traceHitscan(*def, origin, direction, traceConfig, targets);
+
+        rt.magazineAmmo--;
+        rt.nextAllowedFireTick = cooldownTickFor(*def, tick);
+        rt.reloading = false;
+        rt.stateRevision++;
+
+        const uint8_t netWeapon = networkWeaponTypeForDefinition(*def);
+        for (const WeaponExecution::HitscanDamageAggregate& aggregate : trace.aggregates)
+        {
+            auto targetIt = players.find(aggregate.targetPlayerId);
+            if (targetIt == players.end() ||
+                targetIt->second.spawnGeneration != aggregate.targetSpawnGeneration)
+                continue;
+            ServerPlayer& target = targetIt->second;
+            ServerDamageResult dmgResult = applyServerDamage(
+                players, target, shooter.id, aggregate.damage,
+                aggregate.knockback, ServerDamageSource::Hitscan);
+            queueServerDamageConfirmedEvent(
+                sock, players, tick, totalPacketsOut, shooter.id, target,
+                aggregate.damage, dmgResult,
+                aggregate.hitPosition, aggregate.hitNormal, aggregate.knockback,
+                ServerDamageSource::Hitscan, netWeapon, req->requestId);
+        }
+
+        Debug::log(Debug::Category::Weapons,
+            "[ATTACK HITSCAN ACCEPT] playerId=%u requestId=%u weapon=%s pellets=%d targets=%zu ammo=%d/%d stateRev=%u\n",
+            shooter.id, req->requestId, def->id.c_str(), trace.pelletCount,
+            trace.aggregates.size(), rt.magazineAmmo, rt.reserveAmmo,
+            rt.stateRevision);
+        sendAttackResult(sock, shooter, req, tick, true, 0, 0,
+                         rt.magazineAmmo, rt.reserveAmmo,
+                         rt.nextAllowedFireTick, rt.stateRevision);
+        return;
+    }
+
+    if (def->executionType == WeaponExecutionType::PhysicalContact)
+    {
+        if (def->behaviorType == WeaponBehaviorType::Swordsword)
+        {
+            if (shooter.meleeCooldownTimer > 0.0f)
+            {
+                sendAttackResult(sock, shooter, req, tick, false, 1, 0,
+                                 rt.magazineAmmo, rt.reserveAmmo,
+                                 rt.nextAllowedFireTick, rt.stateRevision);
+                return;
+            }
+            shooter.lastMeleeAttackSerial = req->requestId;
+            startServerSwordAttack(shooter, *def, req->attackVariant);
+        }
+        rt.stateRevision++;
+        Debug::log(Debug::Category::Weapons,
+            "[ATTACK PHYSICAL ACCEPT] playerId=%u requestId=%u weapon=%s variant=%u stateRev=%u\n",
+            shooter.id, req->requestId, def->id.c_str(),
+            (unsigned)req->attackVariant, rt.stateRevision);
+        sendAttackResult(sock, shooter, req, tick, true, 0, 0,
+                         rt.magazineAmmo, rt.reserveAmmo,
+                         rt.nextAllowedFireTick, rt.stateRevision);
+        return;
+    }
+
+    // ── Projectile weapons (grenade, rocket) ─────────────────────────
+    if (def->executionType == WeaponExecutionType::Projectile &&
+        (def->behaviorType == WeaponBehaviorType::RocketLauncher ||
+         def->behaviorType == WeaponBehaviorType::GrenadeLauncher))
+    {
+        glm::vec3 origin(req->muzzlePosX, req->muzzlePosY, req->muzzlePosZ);
+        if (!finiteVec3(origin))
+            origin = glm::vec3(req->aimOriginX, req->aimOriginY, req->aimOriginZ);
+        glm::vec3 direction(req->aimDirX, req->aimDirY, req->aimDirZ);
+        direction = normalizedOrZero(direction);
+        if (glm::length(direction) <= 0.0001f)
+        {
+            sendAttackResult(sock, shooter, req, tick, false, 5, 0,
+                             rt.magazineAmmo, rt.reserveAmmo,
+                             rt.nextAllowedFireTick, rt.stateRevision);
+            return;
+        }
+
+        ServerProjectileAttackResult projectileResult =
+            handleGenericProjectileAttack(
+                sock, players, projectiles, nextProjectileId,
+                shooter, *def, req->requestId, origin, direction,
+                tick, totalPacketsOut);
+        sendAttackResult(sock, shooter, req, tick,
+                         projectileResult.accepted,
+                         projectileResult.reason,
+                         projectileResult.projectileId,
+                         projectileResult.magazineAmmo,
+                         projectileResult.reserveAmmo,
+                         projectileResult.nextAllowedFireTick,
+                         projectileResult.stateRevision);
+        Debug::log(Debug::Category::Weapons,
+            "[ATTACK PROJECTILE %s] playerId=%u requestId=%u weapon=%s projectileId=%u ammo=%d/%d stateRev=%u\n",
+            projectileResult.accepted ? "ACCEPT" : "REJECT",
+            shooter.id, req->requestId, def->id.c_str(),
+            projectileResult.projectileId,
+            projectileResult.magazineAmmo,
+            projectileResult.reserveAmmo,
+            projectileResult.stateRevision);
         return;
     }
 

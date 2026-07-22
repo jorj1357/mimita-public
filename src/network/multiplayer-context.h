@@ -139,9 +139,24 @@ struct NetworkProjectile
     float age = 0.0f;
     float lifetime = 0.0f;
     float radius = 0.0f;
+    float gravity = 0.0f;
+    float drag = 0.0f;
+    float restitution = 0.0f;
+    float friction = 0.0f;
+    float armingDistance = 0.0f;
+    float armingTime = 0.0f;
+    float minBounceSpeed = 0.0f;
+    float angularDrag = 0.0f;
+    float distanceTraveled = 0.0f;
     float smokeAccumulator = 0.0f;
+    int bounceCount = 0;
+    int maxBounceCount = 0;
     bool predicted = false;
     bool exploded = false;
+    bool worldTouched = false;
+    bool explodeOnPlayerImpact = true;
+    bool explodeOnWorldImpact = false;
+    bool explodeOnLifetime = true;
 
     // Interpolation state (for smooth visual rendering)
     glm::vec3 renderPosition{0.0f};
@@ -343,9 +358,13 @@ struct MultiplayerContext
         uint32_t spawnGeneration = 0;
         uint16_t weaponDefNetworkId = 0;
         int16_t equippedSlot = 0;
+        uint32_t clientSimulationTick = 0;
+        uint16_t basedOnInputSequence = 0;
         glm::vec3 aimOrigin{0.0f};
         glm::vec3 aimDirection{0.0f};
         glm::vec3 predictedMuzzle{0.0f};
+        uint32_t deterministicSeed = 0;
+        uint8_t attackVariant = 0;
         uint64_t firstSentMs = 0;
         uint64_t lastSentMs = 0;
         int attempts = 0;
@@ -365,6 +384,9 @@ struct MultiplayerContext
 
     // ── Pending reload result (queued outside mpTick for player-scoped processing) ──
     std::vector<ReloadResultPacket> pendingReloadResults;
+
+    // ── Pending attack result (queued outside mpTick for player-scoped weapon reconciliation) ──
+    std::vector<AttackResultPacket> pendingAttackResults;
 
     // ── Pending authoritative spawn (queued outside mpTick for player-scoped weapon reconciliation) ──
     // Stores the most recent PlayerRespawnedPacket until weapon runtimes are reconciled
@@ -537,7 +559,8 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     int16_t equippedSlot,
     const glm::vec3& aimOrigin,
     const glm::vec3& aimDirection,
-    const glm::vec3& predictedMuzzle);
+    const glm::vec3& predictedMuzzle,
+    uint8_t attackVariant = 0);
 void mpSendServerCommand(MultiplayerContext& ctx, const std::string& command);
 uint32_t mpSendShotEvent(
     MultiplayerContext& ctx,
@@ -557,6 +580,14 @@ uint32_t mpSendProjectileFireRequest(
     uint8_t weapon,
     const glm::vec3& origin,
     const glm::vec3& direction);
+uint32_t mpPredictProjectileAttack(
+    MultiplayerContext& ctx,
+    uint32_t requestId,
+    uint16_t weaponDefNetworkId,
+    const glm::vec3& origin,
+    const glm::vec3& direction);
+void mpCancelPredictedProjectileAttack(MultiplayerContext& ctx,
+                                       uint32_t requestId);
 bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
                   const std::string& playerName);
 uint32_t mpSendMeleeHitRequest(
@@ -586,6 +617,7 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
 void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const ProjectileExplodeEventPacket* event);
 void mpProcessProjectileDespawnEventPacket(MultiplayerContext& ctx, const ProjectileDespawnEventPacket* event);
 void mpProcessProjectileFireResultPacket(MultiplayerContext& ctx, const ProjectileFireResultPacket* event);
+void mpProcessAttackResultPacket(MultiplayerContext& ctx, const AttackResultPacket* event);
 void mpProcessMeleeHitEventPacket(MultiplayerContext& ctx, const MeleeHitEventPacket* event);
 struct ConfirmedDamagePresentationSink;
 void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
@@ -594,7 +626,7 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
 void mpUpdateRemoteSwordStates(MultiplayerContext& ctx, float dt);
 void mpSendPelletBlastRequest(MultiplayerContext& ctx, uint8_t weapon, const glm::vec3& origin, const glm::vec3& baseDirection, uint32_t spreadSeed);
 void mpProcessPelletBlastEventPacket(MultiplayerContext& ctx, const PelletBlastEventPacket* event);
-void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt);
+void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const class World& world);
 void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& camera);
 
 // Called from mpTick (defined in multiplayer-chat.cpp)
