@@ -10,6 +10,8 @@
     "rotationStiffness": 9.0,
     "stiffnessEnabled": false,
     "collisionEnabled": true,
+    "collisionPushEnabled": true,
+    "collisionPushback": 0.3,
     "lookAheadDistance": -10.0
   }
 }

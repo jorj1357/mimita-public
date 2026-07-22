@@ -29,3 +29,9 @@ private:
 void guiBindingsSetWindow(GLFWwindow* win);
 void guiBindingsHandleChar(unsigned int codepoint);
 void guiBindingsHandleKey(int key, int action, int mods);
+
+// Set when Enter is pressed on a text input with submitOnEnter=true.
+// The menu checks this after draw to trigger the submit action.
+// Binding string is the GuiBindings key (e.g. "join.code").
+// Cleared after each frame by the consumer.
+extern std::string gSubmittedBinding;

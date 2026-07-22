@@ -42,6 +42,7 @@ std::string gPrevHoverOwnerKey;
 bool gOverlapDebugEnabled = false;
 bool gCoordDebug = false;
 double gScrollYOffset = 0.0;
+bool gDropdownModalActive = false;
 }
 
 using namespace UISys;

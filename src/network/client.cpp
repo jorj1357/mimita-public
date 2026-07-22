@@ -226,10 +226,12 @@ int runClient(const LaunchOptions& options)
                 uint32_t count = std::min(snapshot->entityCount, (uint32_t)MAX_SNAPSHOT_ENTITIES);
                 const bool logSnapshot = snapshot->header.tick % 60 == 0;
                 if (logSnapshot)
-                // disabled 7 22 2026 1229 clogging file 
+                {
+                    // disabled 7 22 2026 1229 clogging file 
                     // printf("[CLIENT SNAPSHOT RECV] localClientId=%u bytes=%d entityCount=%u playerCount=%u npcCount=%u\n",
                     //        localPlayerId, bytes, snapshot->entityCount,
                     //        snapshot->playerCount, snapshot->npcCount);
+                }
                 std::unordered_map<uint32_t, bool> seenPlayers;
                 std::unordered_map<uint32_t, bool> seenNpcs;
                 for (uint32_t i = 0; i < count; ++i)
@@ -375,7 +377,7 @@ int runClient(const LaunchOptions& options)
             auto& camCfg = CamConfig::instance().data();
             camera.fov = camCfg.fov;
             camera.follow(localIt->second.pos, camCfg.offset, camCfg.positionStiffness);
-            camera.smoothCollision(localIt->second.pos, world.collisionMesh.triangles, 1.0f / 60.0f, camCfg.positionStiffness, camCfg.stiffnessEnabled, camCfg.collisionEnabled);
+            camera.smoothCollision(localIt->second.pos, world, 1.0f / 60.0f, camCfg.positionStiffness, camCfg.stiffnessEnabled, camCfg.collisionEnabled, camCfg.collisionPushEnabled, camCfg.collisionPushback);
         }
 
         renderWorld(world, camera);

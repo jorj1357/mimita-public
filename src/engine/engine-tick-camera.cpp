@@ -851,7 +851,7 @@ void engineTickCamera(Engine& engine, float dt)
         auto& camCfg = CamConfig::instance().data();
         camera.fov = camCfg.fov;
         camera.follow(gDuelManager.winnerCameraTarget(), camCfg.offset, camCfg.positionStiffness);
-        camera.smoothCollision(gDuelManager.winnerCameraTarget(), world.collisionMesh.triangles, dt, camCfg.positionStiffness, camCfg.stiffnessEnabled, camCfg.collisionEnabled);
+        camera.smoothCollision(gDuelManager.winnerCameraTarget(), world, dt, camCfg.positionStiffness, camCfg.stiffnessEnabled, camCfg.collisionEnabled, camCfg.collisionPushEnabled, camCfg.collisionPushback);
     } else if (!camera.thirdPerson) {
         // First-person camera at eye height
         float eyeHeight = PLAYER_HEIGHT * 0.52f;
@@ -862,7 +862,7 @@ void engineTickCamera(Engine& engine, float dt)
         auto& camCfg = CamConfig::instance().data();
         camera.fov = camCfg.fov;
         camera.follow(player.pos, camCfg.offset, camCfg.positionStiffness);
-        camera.smoothCollision(player.pos, world.collisionMesh.triangles, dt, camCfg.positionStiffness, camCfg.stiffnessEnabled, camCfg.collisionEnabled);
+        camera.smoothCollision(player.pos, world, dt, camCfg.positionStiffness, camCfg.stiffnessEnabled, camCfg.collisionEnabled, camCfg.collisionPushEnabled, camCfg.collisionPushback);
     }
 
     // Debug: final camera state after all evaluation

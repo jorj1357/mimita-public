@@ -8,6 +8,8 @@
 #include <cmath>
 #include "combat/weapon-fire.h"
 #include "physics/physics-types.h"
+#include "physics/movement/physics-collision.h"
+#include "world/world.h"
 
 void Camera::updateMouse(double xpos, double ypos) {
     if (firstMouse) { lastX = xpos; lastY = ypos; firstMouse = false; }
@@ -99,11 +101,13 @@ glm::mat4 Camera::getProj(float width, float height) const {
 
 void Camera::smoothCollision(
     const glm::vec3& playerPos,
-    const std::vector<CollisionTriangle>& triangles,
+    const World& world,
     float dt,
     float stiffness,
     bool stiffnessEnabled,
-    bool collisionEnabled
+    bool collisionEnabled,
+    bool collisionPushEnabled,
+    float collisionPushback
 ) {
     // First frame: snap instantly
     if (mFirstFrame) {
@@ -138,26 +142,15 @@ void Camera::smoothCollision(
     dir /= dist;
 
     float hitDist = dist;
-    bool hit = false;
-
-    for (const CollisionTriangle& tri : triangles) {
-        float d = 0.0f;
-
-        if (WeaponFire::rayTriangle(playerPos, dir, tri, d)
-            && d > 0.2f
-            && d < hitDist)
-        {
-            hitDist = d;
-            hit = true;
-        }
-    }
+    glm::vec3 hitNormal;
+    bool hit = rayTraverseGridCells(world, playerPos, dir, dist, hitDist, &hitNormal);
 
     glm::vec3 targetPos = pos;
 
-    if (hit) {
+    if (hit && collisionPushEnabled && hitDist > 0.2f) {
         targetPos =
             playerPos +
-            dir * std::max(hitDist - 0.3f, 0.3f);
+            dir * std::max(hitDist - collisionPushback, collisionPushback);
     }
 
     if (!stiffnessEnabled) {

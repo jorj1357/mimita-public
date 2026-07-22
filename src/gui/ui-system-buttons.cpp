@@ -37,7 +37,7 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
     UIButtonState s;
     const bool rawHovered = pointIn(fbx, fby, fbR);
     s.pressed = rawHovered && gMouseDown;
-    s.clicked = !gUiEditMode && rawHovered && gMouseClickEdge;
+    s.clicked = !gUiEditMode && rawHovered && gMouseClickEdge && !gDropdownModalActive;
 
     const char* key = id ? id : text;
 

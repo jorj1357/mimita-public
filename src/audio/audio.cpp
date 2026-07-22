@@ -66,6 +66,11 @@ static bool gSoundDebug = true;
 
 static std::unordered_map<std::string, std::vector<uint8_t>> gSoundFileCache;
 
+// Background cache queue: one sound loaded per frame in audioUpdate()
+static std::vector<const char*> gSoundCacheQueue;
+static size_t gSoundCacheIndex = 0;
+static bool gSoundCacheComplete = false;
+
 static std::string soundPath(const std::string& name)
 {
     std::string path = "assets/sound/" + name;
@@ -114,6 +119,10 @@ static const std::vector<uint8_t>& getCachedSoundData(const std::string& name)
         return empty;
     }
     std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) {
+        static std::vector<uint8_t> empty;
+        return empty;
+    }
     size_t size = (size_t)file.tellg();
     file.seekg(0);
     std::vector<uint8_t> data(size);
@@ -186,7 +195,7 @@ static void initAudioOnce()
     gAudioInit = true;
     printf("[AUDIO] Engine initialized\n");
 
-    // Pre-cache all combat sound files into memory
+    // Queue combat sounds for background caching (one per frame in audioUpdate)
     const char* combatSounds[] = {
         "revolvershoot", "revolverreload", "revolverchamber",
         "shotgunshoot", "shotgunreload",
@@ -199,9 +208,9 @@ static void initAudioOnce()
         "dash", "jump", "land",
         "ui/hover"
     };
-    for (const char* name : combatSounds)
-        getCachedSoundData(name);
-    printf("[AUDIO] Combat sounds cached: %zu files\n", gSoundFileCache.size());
+    gSoundCacheQueue.assign(combatSounds, combatSounds + sizeof(combatSounds) / sizeof(combatSounds[0]));
+    gSoundCacheIndex = 0;
+    gSoundCacheComplete = false;
 }
 
 void audioUpdate(float dt)
@@ -210,6 +219,23 @@ void audioUpdate(float dt)
     gAudioTime += dt;
     if (airJumpCooldown > 0.0f)
         airJumpCooldown -= dt;
+
+    // Initialize audio engine early (first frame, fast — no I/O)
+    if (!gAudioInit)
+        initAudioOnce();
+
+    // Background cache: one sound per frame, never block
+    if (gAudioInit && !gSoundCacheComplete && gSoundCacheIndex < gSoundCacheQueue.size())
+    {
+        getCachedSoundData(gSoundCacheQueue[gSoundCacheIndex]);
+        ++gSoundCacheIndex;
+        if (gSoundCacheIndex >= gSoundCacheQueue.size())
+        {
+            gSoundCacheComplete = true;
+            printf("[AUDIO] Combat sounds cached: %zu files\n", gSoundFileCache.size());
+        }
+    }
+
     gActiveSounds.erase(
         std::remove_if(gActiveSounds.begin(), gActiveSounds.end(), [](const std::unique_ptr<ActiveSound>& active) {
             if (!active || !active->initialized || ma_sound_at_end(&active->sound)) {

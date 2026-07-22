@@ -621,6 +621,7 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     out.pingMs = player.pingMs;
     out.sizeScale = player.sizeScale;
     out.spawnGeneration = player.spawnGeneration;
+    out.acknowledgedMovementSequence = player.movementValidation.lastAcceptedSequence;
 
     {
         static uint64_t lastLookSnapshotLogMs = 0;

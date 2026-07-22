@@ -5,6 +5,7 @@
 #include <cstdio>
 
 #include "../gui/ui-system.h"
+#include "../gui/ui-system-internal.h"
 #include "../gui/gui-coord.h"
 
 static void drawListBackground(float x, float y, float w, float h)
@@ -32,10 +33,12 @@ int drawDropdown(GLFWwindow* win, DropdownState& state,
         state.open = !state.open;
         if (state.open && !wasOpen) {
             state.openThisFrame = true;
+            UISys::gDropdownModalActive = true;
             return -1;
         }
         if (!state.open) {
             // Just closed via header click — no selection
+            UISys::gDropdownModalActive = false;
             return -1;
         }
     }
@@ -55,6 +58,9 @@ int drawDropdownOverlay(GLFWwindow* win, DropdownState& state,
                          float x, float y, float w, float itemH,
                          const std::vector<std::string>& items)
 {
+    // Allow overlay item clicks regardless of modal state
+    UISys::gDropdownModalActive = false;
+
     if (!state.open || items.empty())
         return -1;
 
@@ -89,6 +95,7 @@ int drawDropdownOverlay(GLFWwindow* win, DropdownState& state,
         {
             state.selectedIndex = i;
             state.open = false;
+            UISys::gDropdownModalActive = false;
             result = i;
         }
         iy += itemH;

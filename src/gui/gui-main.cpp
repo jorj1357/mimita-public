@@ -24,6 +24,7 @@
 #include "ui-system.h"
 #include "gui-editor.h"
 #include "camera.h"
+#include "debug/debug-log.h"
 #include "render/render-player.h"
 #include "render/lighting-config.h"
 #include "gui-layout.h"
@@ -127,7 +128,11 @@ static void readServerSettingsFromBindings()
     gServerLaunchSettings.serverName = name;
     gServerLaunchSettings.mapName = mapName;
     gServerLaunchSettings.maxPlayers = (uint32_t)std::max(1, std::atoi(playerLimitStr.c_str()));
-    gServerLaunchSettings.startupNpcsEnabled = npcsStr == "true";
+    gServerLaunchSettings.startupNpcsEnabled =
+        npcsStr == "true" ||
+        npcsStr == "1" ||
+        npcsStr == "yes" ||
+        npcsStr == "on";
     gServerLaunchSettings.startupNpcCount = (uint32_t)std::max(0, std::atoi(npcCountStr.c_str()));
     gServerLaunchSettings.port = MimitaNet::DEFAULT_PORT;
     gServerLaunchSettings.resolvedMapPath = "assets/maps/" + mapName + ".glb";
@@ -138,6 +143,13 @@ static void readServerSettingsFromBindings()
     printf("[COMMUNITY SERVER START] requestedMap=%s serverName=%s maxPlayers=%u npcs=%d count=%u ice=%d\n",
            mapName.c_str(), name.c_str(), gServerLaunchSettings.maxPlayers,
            (int)gServerLaunchSettings.startupNpcsEnabled, gServerLaunchSettings.startupNpcCount);
+
+    printf(
+        "[SERVER SETTINGS AUTHORITATIVE] "
+        "startupNpcsBinding=\"%s\" enabled=%d count=%u\n",
+        npcsStr.c_str(),
+        (int)gServerLaunchSettings.startupNpcsEnabled,
+        gServerLaunchSettings.startupNpcCount);
 }
 
 static bool launchServerProcess(const MimitaNet::ServerLaunchSettings& settings)
@@ -161,7 +173,7 @@ static bool launchServerProcess(const MimitaNet::ServerLaunchSettings& settings)
 
     std::string args = "\"" + std::string(exePath) + "\""
         + " --server"
-        + " --connect 127.0.0.1:" + std::to_string(settings.port)
+        + " --bind 0.0.0.0:" + std::to_string(settings.port)
         + " --name \"" + settings.serverName + "\""
         + " --map \"" + settings.mapName + "\""
         + " --room-file \"" + roomFilePath + "\""
@@ -184,6 +196,11 @@ static bool launchServerProcess(const MimitaNet::ServerLaunchSettings& settings)
 
     printf("[SERVER LAUNCH] launched server process pid=%lu\n",
            (unsigned long)gServerProcessInfo.dwProcessId);
+
+    printf("[SERVER LAUNCH ARGS] npcFlag=%s\n",
+           settings.startupNpcsEnabled
+               ? ("--npcs " + std::to_string(settings.startupNpcCount)).c_str()
+               : "--no-npcs");
     gServerProcessLaunched = true;
     gServerProcessLaunchMs = MimitaNet::nowMs();
 
@@ -394,7 +411,7 @@ void guiMain(GLFWwindow* win, GameState& state)
     {
         Debug::log(
             Debug::Category::Networking,
-            "[COMMUNITY AUTO CONNECT] room=%s transport=room-code\n",
+            "[COMMUNITY AUTO CONNECT] room=%s\n",
             gServerLaunchSettings.serverCode.c_str());
 
         gPendingConnect = {};
@@ -403,9 +420,7 @@ void guiMain(GLFWwindow* win, GameState& state)
         gPendingConnect.useIce = true;
 
         onlineMenuSetActive(false);
-
-        // The engine will consume gPendingConnect and begin joining.
-        // Do not enter GAME_PLAYING until the server connection succeeds.
+        state = GAME_PLAYING;
         return;
     }
 
@@ -751,24 +766,9 @@ void guiMain(GLFWwindow* win, GameState& state)
                                    gServerLaunchSettings.port, gListenServer.serverCode.c_str(),
                                    gServerLaunchSettings.mapName.c_str());
 
-                            // // Auto-connect to the listen server via localhost
-                            // printf("[COMMUNITY AUTO CONNECT] listen-server localhost=127.0.0.1:%u room=%s\n",
-                            //        gServerLaunchSettings.port, gListenServer.serverCode.c_str());
-
-                            // gPendingConnect = {};
-                            // gPendingConnect.shouldConnect = true;
-                            // gPendingConnect.address = "127.0.0.1";
-                            // gPendingConnect.port = gServerLaunchSettings.port;
-                            // gPendingConnect.roomCode = gListenServer.serverCode;
-                            // gPendingConnect.useIce = false;
-
-                            // onlineMenuSetActive(false);
-                            // state = GAME_PLAYING;
-
-                            // 7 22 2026 attempting room join fix 
                             Debug::log(
                                 Debug::Category::Networking,
-                                "[COMMUNITY AUTO CONNECT] room=%s transport=room-code source=listen-server\n",
+                                "[COMMUNITY AUTO CONNECT] room=%s source=listen-server\n",
                                 gListenServer.serverCode.c_str());
 
                             gPendingConnect = {};
@@ -777,8 +777,7 @@ void guiMain(GLFWwindow* win, GameState& state)
                             gPendingConnect.useIce = true;
 
                             onlineMenuSetActive(false);
-
-                            // Do not enter GAME_PLAYING yet.
+                            state = GAME_PLAYING;
                         }
                     }
                 }
@@ -797,39 +796,34 @@ void guiMain(GLFWwindow* win, GameState& state)
                     onlineMenuSetServerCode("");
                 }
             }
-            // 7 22 2026 1225 no local host at allll none at all 
-            // else if (r.connectLocalhost)
-            // {
-            //     // Direct localhost connection
-            //     gPendingConnect.shouldConnect = true;
-            //     gPendingConnect.address = "127.0.0.1";
-            //     gPendingConnect.port = MimitaNet::DEFAULT_PORT;
-            //     gPendingConnect.roomCode = r.roomCode;
-            //     printf("[COMMUNITY CONNECT] localhost direct 127.0.0.1:%u\n", MimitaNet::DEFAULT_PORT);
-            //     onlineMenuSetActive(false);
-            //     state = GAME_PLAYING;
-            // }
             else if (r.connectToServer)
-            {
-                gPendingConnect.shouldConnect = true;
-                gPendingConnect.address = r.connectAddress;
-                gPendingConnect.port = r.connectPort;
-                gPendingConnect.joinToken = r.joinToken;
-                gPendingConnect.roomCode = r.roomCode;
+                {
+                    if (r.roomCode.empty())
+                    {
+                        Debug::warn(
+                            Debug::Category::Networking,
+                            "[ROOM JOIN FAILED] reason=empty-room-code\n");
 
-                // Detect ICE mode: address starts with "ice:" or has room code and non-localhost
-                bool iceDetected = (r.connectAddress.find("ice:") == 0);
-                if (!iceDetected && !r.roomCode.empty() && r.connectAddress.find("127.0.0.1") != 0)
-                    iceDetected = true;
-                gPendingConnect.useIce = iceDetected;
+                        onlineMenuSetServerCode("Enter a room code");
+                    }
+                    else
+                    {
+                        gPendingConnect = {};
+                        gPendingConnect.shouldConnect = true;
+                        gPendingConnect.roomCode = r.roomCode;
+                        gPendingConnect.useIce = true;
 
-                printf("[COMMUNITY CONNECT] address=%s port=%u useIce=%d mapId=%s\n",
-                       gPendingConnect.address.c_str(), gPendingConnect.port,
-                       (int)gPendingConnect.useIce,
-                       gServerLaunchSettings.mapName.c_str());
-                onlineMenuSetActive(false);
-                state = GAME_PLAYING;
-            }
+                        Debug::log(
+                            Debug::Category::Networking,
+                            "[ROOM JOIN REQUEST] room=%s transport=room-code\n",
+                            r.roomCode.c_str());
+
+                        onlineMenuSetActive(false);
+
+                        // Temporary until there is a dedicated GAME_CONNECTING state.
+                        state = GAME_PLAYING;     
+                        }
+                }
             else if (r.goBack)
             {
                 onlineMenuSetActive(false);
@@ -881,8 +875,8 @@ void guiMain(GLFWwindow* win, GameState& state)
             {
                 serverInfoMenuSetActive(false);
                 gPendingConnect.shouldConnect = true;
-                gPendingConnect.address = gServerAddress;
                 gPendingConnect.roomCode = gListenServer.active ? gListenServer.serverCode : onlineMenuGetServerCode();
+                gPendingConnect.useIce = !gPendingConnect.roomCode.empty();
                 state = GAME_PLAYING;
             }
             else if (r.goBack)

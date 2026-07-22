@@ -17,6 +17,7 @@ struct UITextInputState
     int selectionStart = -1;
     bool focused = false;
     bool selectAllOnFocus = false;
+    bool submitOnEnter = false;
     float horizontalScrollPx = 0.0f;
     uint64_t lastActivityMs = 0;
     // Mouse drag selection state

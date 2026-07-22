@@ -6,6 +6,8 @@
 #include <unordered_map>
 #include <GLFW/glfw3.h>
 
+std::string gSubmittedBinding;
+
 GuiBindings& GuiBindings::instance()
 {
     static GuiBindings bindings;
@@ -120,6 +122,12 @@ void guiBindingsHandleKey(int key, int action, int mods)
             {
                 it->second.focused = false;
                 b.clearFocus();
+                if (it->second.submitOnEnter)
+                {
+                    std::string bindingKey = b.get(fid + ".binding");
+                    if (!bindingKey.empty())
+                        gSubmittedBinding = bindingKey;
+                }
             }
         }
         // Sync back to binding

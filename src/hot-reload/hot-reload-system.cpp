@@ -138,6 +138,10 @@ void HotReloadSystem::unloadGameDLL()
 
 bool HotReloadSystem::reloadGameDLLIfChanged()
 {
+    if (!module_) {
+        loadGameDLL();
+        return module_ != nullptr;
+    }
     rebuildIfSourcesChanged();
 
     const std::uint64_t writeTime = getDLLWriteTime();

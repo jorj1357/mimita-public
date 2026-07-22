@@ -72,6 +72,8 @@ bool CamConfig::load(const std::string& path)
             next.rotationStiffness = tp.value("rotationStiffness", next.rotationStiffness);
             next.stiffnessEnabled = tp.value("stiffnessEnabled", next.stiffnessEnabled);
             next.collisionEnabled = tp.value("collisionEnabled", next.collisionEnabled);
+            next.collisionPushEnabled = tp.value("collisionPushEnabled", next.collisionPushEnabled);
+            next.collisionPushback = tp.value("collisionPushback", next.collisionPushback);
             next.lookAheadDistance = tp.value("lookAheadDistance", next.lookAheadDistance);
         }
 
@@ -79,10 +81,11 @@ bool CamConfig::load(const std::string& path)
         mLastWrite = writeTime;
         Debug::warn(Debug::Category::General,
             "[CAM CONFIG] Loaded successfully: %s  "
-            "offset=(%.1f %.1f %.1f) fov=%.0f stiffness=%.2f stiffEnabled=%d collision=%d\n",
+            "offset=(%.1f %.1f %.1f) fov=%.0f stiffness=%.2f stiffEnabled=%d collision=%d pushEnabled=%d pushback=%.2f\n",
             fileName.c_str(),
             mData.offset.x, mData.offset.y, mData.offset.z,
-            mData.fov, mData.positionStiffness, (int)mData.stiffnessEnabled, (int)mData.collisionEnabled);
+            mData.fov, mData.positionStiffness, (int)mData.stiffnessEnabled, (int)mData.collisionEnabled,
+            (int)mData.collisionPushEnabled, mData.collisionPushback);
         return true;
     } catch (const json::parse_error& e) {
         mLastWrite = writeTime;

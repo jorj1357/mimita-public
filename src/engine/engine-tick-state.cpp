@@ -214,16 +214,40 @@ void engineTickState(Engine& engine, float dt)
                     {
                         mpContext.currentRoomCode = mci.roomCode;
 
+                        Debug::log(
+                            Debug::Category::Networking,
+                            "[ROOM JOIN START] room=%s\n",
+                            mci.roomCode.c_str());
+
                         connectionStarted = MimitaNet::mpIceConnect(
                             mpContext,
                             mci.roomCode,
                             player.username);
-                    }                    if (connected) {
-                        printf("[MAIN] multiplayer connected to %s\n", mci.address.c_str());
-                        glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                     }
-                    clearPendingMultiplayerConnect();
-                }
+
+                    if (connectionStarted)
+                    {
+                        Debug::log(
+                            Debug::Category::Networking,
+                            "[ROOM JOIN STARTED] room=%s\n",
+                            mci.roomCode.c_str());
+
+                        // mpIceConnect started the connection process.
+                        // It does not necessarily mean the server handshake is complete yet.
+                    }
+                    else
+                    {
+                        Debug::warn(
+                            Debug::Category::Networking,
+                            "[ROOM JOIN FAILED] room=%s reason=ice-start-failed\n",
+                            mci.roomCode.c_str());
+
+                        // Keep roomCode visible in HUD so it can be shared even
+                        // if this client's connection failed.
+                    }
+
+                    clearPendingMultiplayerConnect();              
+                    }
             }
             if (gameState == GAME_PLAYING && worldLoaded &&
                 !gReplayRecorder.isRecording()) {

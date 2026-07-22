@@ -1018,15 +1018,17 @@ static int64_t gCoolShotLineLastModified = 0;
 static bool gCoolShotLineWatchLogged = false;
 
 struct CoolShotLineState {
+    // alpha values in JSON use 0-255 range (Source Engine style).
+    // They are divided by 255.0f internally for rendering.
     bool enabled = true;
     float length = 50.0f;
-    float startAlpha = 1.0f;
+    float startAlpha = 255.0f;
     float endAlpha = 0.0f;
     float r = 1.0f;
     float g = 0.0f;
     float b = 0.0f;
-    float startSize = 1.0f;
-    float endSize = 0.0f;
+    float startSize = 10.0f;
+    float endSize = 2.0f;
 };
 
 static int64_t coolShotLineModifiedTime()
@@ -1043,8 +1045,9 @@ static CoolShotLineState currentCoolShotLineState()
     CoolShotLineState s;
     s.enabled = DebugConfig::COOL_SHOT_LINE_ENABLED;
     s.length = DebugConfig::COOL_SHOT_LINE_LENGTH;
-    s.startAlpha = DebugConfig::COOL_SHOT_LINE_START_ALPHA;
-    s.endAlpha = DebugConfig::COOL_SHOT_LINE_END_ALPHA;
+    // Read back as 0-255 for display (internally stored as 0.0-1.0)
+    s.startAlpha = DebugConfig::COOL_SHOT_LINE_START_ALPHA * 255.0f;
+    s.endAlpha = DebugConfig::COOL_SHOT_LINE_END_ALPHA * 255.0f;
     s.r = DebugConfig::COOL_SHOT_LINE_COLOR_R;
     s.g = DebugConfig::COOL_SHOT_LINE_COLOR_G;
     s.b = DebugConfig::COOL_SHOT_LINE_COLOR_B;
@@ -1062,8 +1065,9 @@ static bool applyCoolShotLineState(const CoolShotLineState& s)
 {
     DebugConfig::COOL_SHOT_LINE_ENABLED = s.enabled;
     DebugConfig::COOL_SHOT_LINE_LENGTH = std::max(0.1f, s.length);
-    DebugConfig::COOL_SHOT_LINE_START_ALPHA = glm::clamp(s.startAlpha, 0.0f, 1.0f);
-    DebugConfig::COOL_SHOT_LINE_END_ALPHA = glm::clamp(s.endAlpha, 0.0f, 1.0f);
+    // Convert from 0-255 (JSON) to 0.0-1.0 (internal rendering)
+    DebugConfig::COOL_SHOT_LINE_START_ALPHA = glm::clamp(s.startAlpha, 0.0f, 255.0f) / 255.0f;
+    DebugConfig::COOL_SHOT_LINE_END_ALPHA = glm::clamp(s.endAlpha, 0.0f, 255.0f) / 255.0f;
     DebugConfig::COOL_SHOT_LINE_COLOR_R = glm::clamp(s.r, 0.0f, 1.0f);
     DebugConfig::COOL_SHOT_LINE_COLOR_G = glm::clamp(s.g, 0.0f, 1.0f);
     DebugConfig::COOL_SHOT_LINE_COLOR_B = glm::clamp(s.b, 0.0f, 1.0f);
@@ -1133,6 +1137,14 @@ void loadCoolShotLineConfig()
 
 void pollCoolShotLineConfig()
 {
+    // Rate limit: check at most every 250ms
+    static auto gCoolShotLineLastCheck = std::chrono::steady_clock::time_point{};
+    const auto checkNow = std::chrono::steady_clock::now();
+    if (gCoolShotLineLastCheck.time_since_epoch().count() != 0 &&
+        checkNow - gCoolShotLineLastCheck < std::chrono::milliseconds(250))
+        return;
+    gCoolShotLineLastCheck = checkNow;
+
     const int64_t now = coolShotLineModifiedTime();
     if (now == 0 || now == gCoolShotLineLastModified)
         return;
