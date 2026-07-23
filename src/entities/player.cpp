@@ -163,6 +163,14 @@ void Player::updateModelWorldTransforms()
 
     glm::mat4 rootWorld = transformMatrix(movementCapsule.position, movementCapsule.rotation);
 
+    // Death animation: freeze position at death point, apply rotation lerp
+    if (deathAnim.active) {
+        float progress = std::min(1.0f, (float)deathAnim.tick / (float)std::max(deathAnim.totalTicks, 1));
+        glm::vec3 euler = glm::mix(deathAnim.startRotation, deathAnim.endRotation, progress);
+        glm::quat extraRot(glm::radians(euler));
+        rootWorld = transformMatrix(deathAnim.frozenPosition, movementCapsule.rotation * extraRot);
+    }
+
     for (int i = 0; i < (int)perfectPoseSkeleton.nodes.size(); ++i)
     {
         TransformNode& poseNode = perfectPoseSkeleton.nodes[i];

@@ -172,8 +172,8 @@ void testValidationDecisions()
     report = baseReport(player, 2, 500);
     result = MimitaNet::validateClientMovementReport(
         player, report, validationContext(), config);
-    check(result.reason == MimitaNet::MovementValidationReason::FutureClientTick,
-          "future client tick rejected");
+    check(result.decision == MimitaNet::MovementValidationDecision::Accept,
+          "large client tick jump after baseline accepted (independent counters)");
 
     report = baseReport(player, 2, 101);
     report.externalImpulse = {30.0f, 0.0f, 0.0f};
@@ -184,6 +184,48 @@ void testValidationDecisions()
           "bounded external impulse accepted");
     check(std::abs(result.acceptedState.externalImpulse.x - 30.0f) < 0.001f,
           "accepted state preserves external impulse");
+}
+
+void testClientTickSemantics()
+{
+    // After spawn, lastAcceptedClientTick=0 — first packet establishes baseline
+    MimitaNet::ServerPlayer freshPlayer = activePlayer();
+    freshPlayer.hasAcceptedClientTransform = false;  // simulating post-reset state
+    const MovementConfig movementConfig = baseMovementConfig();
+    MimitaNet::MovementValidationConfig config =
+        MimitaNet::makeMovementValidationConfig(movementConfig);
+
+    // Client tick 20 with server tick 100000 must not be rejected as stale
+    MimitaNet::MovementValidationContext ctx = validationContext();
+    ctx.serverTick = 100000;
+    MimitaNet::ClientMovementReport report = baseReport(freshPlayer, 1, 20);
+    MimitaNet::MovementValidationResult result =
+        MimitaNet::validateClientMovementReport(
+            freshPlayer, report, ctx, config);
+    check(result.decision == MimitaNet::MovementValidationDecision::Accept,
+          "client tick 20 with server tick 100000 accepted (independent counters)");
+    MimitaNet::applyMovementValidationCounters(
+        freshPlayer.movementValidation, result, report);
+
+    // Same tick again — must be rejected as stale
+    result = MimitaNet::validateClientMovementReport(
+        freshPlayer, report, ctx, config);
+    check(result.reason == MimitaNet::MovementValidationReason::DuplicateSequence,
+          "same tick with same seq rejected as duplicate");
+
+    // Lower tick than last accepted — stale
+    report = baseReport(freshPlayer, 2, 15);
+    result = MimitaNet::validateClientMovementReport(
+        freshPlayer, report, ctx, config);
+    check(result.reason == MimitaNet::MovementValidationReason::StaleClientTick,
+          "lower client tick than last accepted rejected as stale");
+
+    // Normal sequential progression — accepted
+    report = baseReport(freshPlayer, 3, 21);
+    result = MimitaNet::validateClientMovementReport(
+        freshPlayer, report, ctx, config);
+    check(result.decision == MimitaNet::MovementValidationDecision::Accept,
+          "sequential client tick progression accepted");
 }
 
 void testCorrections()
@@ -323,6 +365,7 @@ int main()
     testCorrections();
     testLifecycleHelpers();
     testExternalImpulseBridge();
+    testClientTickSemantics();
     testRandomizedAcceptedReports();
     std::printf("[movement-network-integration-test] PASS seed=%u randomizedCases=256\n",
                 kSeed);

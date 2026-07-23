@@ -11,6 +11,8 @@
 #include "network/server.h"
 #include "network/network-weapons.h"
 #include "physics/movement/movement-conversion.h"
+#include "physics/movement/movement-step.h"
+#include "physics/movement/physics-collision.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
 #include "combat/weapon-types.h"
@@ -191,27 +193,15 @@ void resolveWorldCollision(ServerPlayer& p, const HeadlessWorld& world)
     // void-death threshold.  Actual collision triangles handle platforms.
 }
 
+// ═══ Player‑to‑player de‑penetration ═══════════════════════════════
+// TEMPORARY: active client‑controlled players use validated client‑transform
+// authority.  Direct server positional pushes conflict with that model
+// because the clients have not applied the same push.
+// This function is preserved for future NPC or server‑controlled entities.
 void resolvePlayerCollision(std::unordered_map<uint32_t, ServerPlayer>& players)
 {
-    for (auto a = players.begin(); a != players.end(); ++a)
-    {
-        auto b = a;
-        ++b;
-        for (; b != players.end(); ++b)
-        {
-            if (a->second.dead || b->second.dead)
-                continue;
-            glm::vec2 delta = glm::vec2(a->second.pos - b->second.pos);
-            float dist = glm::length(delta);
-            float minDist = PLAYER_RADIUS * 2.0f;
-            if (dist >= minDist || dist < 0.0001f)
-                continue;
-            glm::vec2 n = delta / dist;
-            float push = (minDist - dist) * 0.5f;
-            a->second.pos += glm::vec3(n * push, 0.0f);
-            b->second.pos -= glm::vec3(n * push, 0.0f);
-        }
-    }
+    // Client-transform authority: do not silently shift accepted player positions.
+    (void)players;
 }
 
 // ── Initial inventory: temporary — grants non-restricted weapons ─────
@@ -492,70 +482,90 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
 
     p.projectileFireCooldown = std::max(0.0f, p.projectileFireCooldown - SERVER_DT);
 
-    if (p.clientStateUpdated)
+    // ── Server-side movement simulation from input commands (spec) ─────
+    // The server simulates movement using the SAME kernel as the client.
+    // Input is taken from the most recent received input command.
     {
-        p.clientStateUpdated = false;
+        // Find the most recent valid input command
+        MovementCommand cmd;
+        bool hasInput = false;
+        for (int i = ServerPlayer::INPUT_COMMAND_BUFFER_SIZE - 1; i >= 0; --i)
+        {
+            auto& entry = p.inputCommandBuffer[i];
+            if (entry.valid)
+            {
+                cmd = entry.command;
+                hasInput = true;
+                p.lastProcessedInputCommandSequence = cmd.sequence;
+                entry.valid = false;
+                break;
+            }
+        }
+        if (!hasInput)
+        {
+            cmd = movementCommandFromServerInput(
+                p.input, p.lastMovementSequence,
+                MovementLifecycleIdentity{p.spawnGeneration, p.transformEpoch});
+        }
+
+        const MovementConfig cfg = makeCurrentRuntimeMovementConfig();
+        MovementState state = movementStateFromServerPlayer(p);
+
+        // Phase 1: Pre-collision movement (gravity, walk, jump, dash)
+        applyPreCollisionBasicMovement(state, cmd, cfg, SERVER_DT);
+        MovementStepEvents preEvents;
+        applySpecialMovementPreCollision(state, cmd, cfg, SERVER_DT, preEvents);
+        applyMovementStateToServerPlayer(state, p);
+
+        // Phase 2: World collision resolve
         resolveWorldCollision(p, world);
-        syncServerMovementRuntime(p, true);
-        return;
-    }
 
-    // Log server-simulated fall when below bounds and no client state accepted
-    if (p.pos.z < -50.0f)
-    {
-        static uint64_t lastFallSimLogMs = 0;
-        uint64_t nowFs = nowMs();
-        if (nowFs - lastFallSimLogMs >= 500)
+        // Phase 3: Build collision feedback and run post-collision movement
+        state = movementStateFromServerPlayer(p);
+        MovementCollisionFeedback collision;
+        collision.onGround = p.onGround;
+        collision.hasWorldContact = p.onGround;
+        collision.realWorldContactThisFrame = p.onGround;
+        collision.groundNormal = {0.0f, 0.0f, 1.0f};
+        collision.simulationTick = cmd.clientSimulationTick;
+
+        MovementStepResult stepResult = applyPostCollisionMovementWithSpecials(
+            state, cmd, cfg, collision, SERVER_DT, preEvents);
+        applyMovementStateToServerPlayer(stepResult.state, p);
+        p.clientStateUpdated = false;
+
         {
-            printf("%s [SERVER FALL SIM] playerId=%u "
-                   "beforeZ=%.2f beforeVelZ=%.2f onGround=%d\n",
-                   serverTimestamp(), p.id,
-                   p.pos.z, p.vel.z, (int)p.onGround);
-            lastFallSimLogMs = nowFs;
+            static uint64_t lastDivergenceLogMs = 0;
+            uint64_t nowDiv = nowMs();
+            const float simDivergence = glm::length(p.pos - p.lastAcceptedClientPosition);
+            if (simDivergence > 2.0f && nowDiv - lastDivergenceLogMs >= 1000)
+            {
+                lastDivergenceLogMs = nowDiv;
+                Debug::warn(Debug::Category::Networking,
+                    "[SERVER SIM DIVERGENCE] playerId=%u simPos=(%.1f,%.1f,%.1f) "
+                    "acceptedPos=(%.1f,%.1f,%.1f) distance=%.1f seq=%u tick=%llu\n",
+                    p.id,
+                    p.pos.x, p.pos.y, p.pos.z,
+                    p.lastAcceptedClientPosition.x,
+                    p.lastAcceptedClientPosition.y,
+                    p.lastAcceptedClientPosition.z,
+                    simDivergence, cmd.sequence,
+                    (unsigned long long)cmd.clientSimulationTick);
+            }
+        }
+
+        if (DebugConfig::DEBUG_MOVEMENT_SIM)
+        {
+            Debug::log(Debug::Category::Networking,
+                "[SERVER MOVE SIM] playerId=%u seq=%u tick=%llu "
+                "pos=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f) ground=%d\n",
+                p.id, cmd.sequence,
+                (unsigned long long)cmd.clientSimulationTick,
+                p.pos.x, p.pos.y, p.pos.z,
+                p.vel.x, p.vel.y, p.vel.z,
+                (int)p.onGround);
         }
     }
-
-    glm::vec2 wish = p.input.wish;
-    float wishLen = glm::length(wish);
-    if (wishLen > 1.0f)
-        wish /= wishLen;
-
-    const float maxSpeed = PHYS.moveSpeed;
-    const float accel = p.onGround ? 55.0f : 22.0f;
-    glm::vec2 horiz(p.vel.x, p.vel.y);
-    glm::vec2 target = wish * maxSpeed;
-    horiz += (target - horiz) * std::min(1.0f, accel * SERVER_DT);
-    if (wishLen < 0.01f && p.onGround)
-        horiz *= 0.82f;
-
-    p.vel.x = horiz.x;
-    p.vel.y = horiz.y;
-    p.vel.z += PHYS.gravity * SERVER_DT;
-
-    if (p.input.jumpHeld && p.onGround)
-    {
-        p.vel.z = PHYS.jumpStrength;
-        p.onGround = false;
-    }
-
-    if (p.input.dashPressed && p.dashAvailable)
-    {
-        glm::vec2 dashDir = wishLen > 0.01f ? wish : glm::normalize(glm::vec2(p.input.camForward.x, p.input.camForward.y));
-        if (glm::length(dashDir) > 0.01f)
-        {
-            p.vel.x += dashDir.x * DASH_IMPULSE;
-            p.vel.y += dashDir.y * DASH_IMPULSE;
-            p.dashAvailable = false;
-            // Do NOT increment lastDashSerial here — that field is reserved for
-            // client-originated serial comparison. Presentation serials
-            // (lastPresentationDashSerial etc.) pass through unchanged
-            // and are emitted in the snapshot for remote VFX/anim trigger.
-        }
-    }
-    p.pos += p.vel * SERVER_DT;
-    resolveWorldCollision(p, world);
-    if (p.onGround)
-        p.dashAvailable = true;
     syncServerMovementRuntime(p, true);
 }
 
@@ -607,8 +617,20 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     out.entityType = ENTITY_PLAYER;
     out.active = 1;
     out.ownerClientId = player.id;
-    out.px = player.pos.x; out.py = player.pos.y; out.pz = player.pos.z;
-    out.vx = player.vel.x; out.vy = player.vel.y; out.vz = player.vel.z;
+    if (player.hasAcceptedClientTransform)
+    {
+        out.px = player.lastAcceptedClientPosition.x;
+        out.py = player.lastAcceptedClientPosition.y;
+        out.pz = player.lastAcceptedClientPosition.z;
+        out.vx = player.lastAcceptedClientVelocity.x;
+        out.vy = player.lastAcceptedClientVelocity.y;
+        out.vz = player.lastAcceptedClientVelocity.z;
+    }
+    else
+    {
+        out.px = player.pos.x; out.py = player.pos.y; out.pz = player.pos.z;
+        out.vx = player.vel.x; out.vy = player.vel.y; out.vz = player.vel.z;
+    }
     out.yaw = player.yaw;
     out.health = player.health;
     out.onGround = player.onGround ? 1 : 0;
@@ -621,7 +643,6 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     out.pingMs = player.pingMs;
     out.sizeScale = player.sizeScale;
     out.spawnGeneration = player.spawnGeneration;
-    out.acknowledgedMovementSequence = player.movementValidation.lastAcceptedSequence;
 
     {
         static uint64_t lastLookSnapshotLogMs = 0;

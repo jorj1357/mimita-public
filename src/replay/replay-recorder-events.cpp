@@ -18,6 +18,7 @@ using json = nlohmann::json;
 void ReplayRecorder::recordEffectEvent(const ReplayEffectEvent& inputEvent)
 {
     if (!mRecording) return;
+    std::lock_guard<std::mutex> lock(mRingMutex);
     if (gShotProfiler) gShotProfiler->replayEventsCreated++;
     {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->replayRecordMs : nullptr);
@@ -44,6 +45,7 @@ void ReplayRecorder::recordEffectEvent(const ReplayEffectEvent& inputEvent)
 void ReplayRecorder::recordSoundEvent(const ReplaySoundEvent& inputEvent)
 {
     if (!mRecording) return;
+    std::lock_guard<std::mutex> lock(mRingMutex);
     ReplaySoundEvent event = inputEvent;
     event.tick = (int)mEventTick;
     mSoundEvents.push_back(event);
@@ -58,6 +60,7 @@ void ReplayRecorder::recordSoundEvent(const ReplaySoundEvent& inputEvent)
 void ReplayRecorder::recordKillfeedEvent(const ReplayKillfeedEvent& inputEvent)
 {
     if (!mRecording) return;
+    std::lock_guard<std::mutex> lock(mRingMutex);
     ReplayKillfeedEvent event = inputEvent;
     event.tick = (int)mEventTick;
     mKillfeedEvents.push_back(event);

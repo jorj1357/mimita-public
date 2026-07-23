@@ -122,10 +122,19 @@ void Player::renderCurrentPose(unsigned int shader,
         // Set debug view (UV checker etc.) for player too
         glUniform1i(uDebugViewLoc, DebugVis::shaderDebugView());
 
+        // Compute death animation alpha override
+        float deathAlpha = 1.0f;
+        if (dead && deathAnim.active) {
+            float t = std::min(1.0f, (float)deathAnim.tick / (float)std::max(deathAnim.totalTicks, 1));
+            deathAlpha = glm::mix(deathAnim.startAlpha, deathAnim.endAlpha, t);
+        }
+
         // Set alpha cutoff from current avatar mode
         float alphaCutoff = 0.0f;
         int alphaBlendMode = 2; // 0=opaque, 1=cutout, 2=blend
-        if (AvatarSystem::instance().hasAvatar()) {
+        if (deathAlpha < 1.0f) {
+            alphaBlendMode = 2; // force alpha blend during death fade
+        } else if (AvatarSystem::instance().hasAvatar()) {
             const auto& av = AvatarSystem::instance().current();
             if (av.textureMode == "uv_atlas") {
                 if (av.alphaMode == "cutout") {
@@ -175,7 +184,7 @@ void Player::renderCurrentPose(unsigned int shader,
             glm::vec3 tint(1.0f);
             if (!whiteOverride && i < outfitPartColors.size())
                 tint = outfitPartColors[i];
-            glUniform4f(uColorLoc, tint.r, tint.g, tint.b, 1.0f);
+            glUniform4f(uColorLoc, tint.r, tint.g, tint.b, deathAlpha);
 
             for (const Mesh::Batch& batch : mesh.batches)
             {

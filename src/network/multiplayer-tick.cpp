@@ -146,8 +146,6 @@ static void processSnapshotEntities(
             ctx.localServerHealth = entity.health;
             ctx.localServerEpoch = entity.transformEpoch;
             ctx.localPingMs = entity.pingMs;
-            ctx.localServerAcknowledgedMovementSequence =
-                entity.acknowledgedMovementSequence;
             ctx.latestLocalSnapshotTick = serverTick;
             if (entity.spawnGeneration != 0)
                 ctx.lastKnownSpawnGeneration = entity.spawnGeneration;
@@ -347,8 +345,6 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
     uint32_t oldGen = ctx.lastKnownSpawnGeneration;
     ctx.lastKnownSpawnGeneration = spawn->spawnGeneration;
     ctx.nextMovementSequence = 1;
-    ctx.localServerAcknowledgedMovementSequence = 0;
-    ctx.sentMovementHistory.clear();
 
     // Cancel old-life pending attack requests
     for (auto it = ctx.pendingAttackRequests.begin(); it != ctx.pendingAttackRequests.end(); )
@@ -709,9 +705,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             for (const auto& ce : outEntities)
                 snapshotEntities.push_back(snapshotEntityFromCompact(ce));
 
-            printf("[CLIENT CHUNK SNAPSHOT] tick=%u chunks=%d entities=%zu snapshotsReceived=%llu\n",
-                   chunk.header.tick, chunk.chunkCount, snapshotEntities.size(),
-                   (unsigned long long)ctx.snapshotsReceived);
+            // printf("[CLIENT CHUNK SNAPSHOT] tick=%u chunks=%d entities=%zu snapshotsReceived=%llu\n",
+            //        chunk.header.tick, chunk.chunkCount, snapshotEntities.size(),
+            //        (unsigned long long)ctx.snapshotsReceived);
 
             processSnapshotEntities(ctx, snapshotEntities.data(),
                                     (uint32_t)snapshotEntities.size(),
@@ -1038,6 +1034,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         in.movementSequence = ctx.nextMovementSequence++;
         if (ctx.nextMovementSequence == 0)
             ctx.nextMovementSequence = 1;
+        in.inputCommandSequence = ctx.nextInputCommandSequence++;
+        if (ctx.nextInputCommandSequence == 0)
+            ctx.nextInputCommandSequence = 1;
         in.clientSimulationTick = input->movementSimulationTick != 0
             ? input->movementSimulationTick
             : ctx.tick;
@@ -1076,19 +1075,6 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         in.attackPressed = input->attackPressed ? 1 : 0;
         in.sizeScale = input->sizeScale;
         mpSendPacket(ctx, &in, sizeof(in));
-
-        // Record sent movement report for acknowledged-input reconciliation
-        SentMovementReportState sent;
-        sent.sequence = in.movementSequence;
-        sent.clientSimulationTick = in.clientSimulationTick;
-        sent.spawnGeneration = in.spawnGeneration;
-        sent.transformEpoch = in.transformEpoch;
-        sent.position = {in.clientPx, in.clientPy, in.clientPz};
-        sent.velocity = {in.clientVx, in.clientVy, in.clientVz};
-        sent.externalImpulse = {in.externalImpulseX, in.externalImpulseY, in.externalImpulseZ};
-        ctx.sentMovementHistory.push_back(sent);
-        while (ctx.sentMovementHistory.size() > MAX_SENT_MOVEMENT_HISTORY)
-            ctx.sentMovementHistory.pop_front();
 
     }
 

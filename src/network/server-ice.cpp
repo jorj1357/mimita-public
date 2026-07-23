@@ -317,7 +317,22 @@ void tickServerIceTransports(SOCKET sock,
         }
 
         std::vector<ReceivedPacket> pkts;
-        player.transport->poll(pkts);
+        {
+            uint64_t pollStart = nowMs();
+            player.transport->poll(pkts);
+            uint64_t pollUs = nowMs() - pollStart;
+            if (pollUs > 5)
+            {
+                static uint64_t lastIcePollLogMs = 0;
+                uint64_t nowIcePoll = nowMs();
+                if (nowIcePoll - lastIcePollLogMs >= 1000)
+                {
+                    lastIcePollLogMs = nowIcePoll;
+                    printf("[ICE POLL] playerId=%u pollUs=%llu pkts=%zu\n",
+                           player.id, (unsigned long long)pollUs, pkts.size());
+                }
+            }
+        }
 
         for (const ReceivedPacket& rp : pkts)
         {

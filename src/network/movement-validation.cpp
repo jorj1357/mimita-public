@@ -463,10 +463,11 @@ MovementValidationResult validateClientMovementReport(
                                            player.lastMovementSequence))
             return reject(MovementValidationReason::OldSequence);
     }
-    if (tickTooOld(player, report, context, config))
+    if (player.movementValidation.lastAcceptedClientTick != 0 &&
+        report.clientSimulationTick <= player.movementValidation.lastAcceptedClientTick)
+    {
         return reject(MovementValidationReason::StaleClientTick);
-    if (tickTooFuture(report, context, config))
-        return reject(MovementValidationReason::FutureClientTick);
+    }
 
     MovementValidationResult result;
     result.acceptedState = stateFromAcceptedReport(player, report, config);
@@ -522,79 +523,15 @@ MovementValidationResult validateClientMovementReport(
         result.clearsAuthoritativeTransformAck = true;
     }
 
-    const float baseHorizontal = horizontalLength(report.baseVelocity);
-    const float baseUp = std::max(0.0f, report.baseVelocity.z);
-    const float baseDown = std::max(0.0f, -report.baseVelocity.z);
-    const float externalHorizontal = horizontalLength(report.externalImpulse);
-    const float externalVertical = std::abs(report.externalImpulse.z);
-    const glm::vec3 combinedVelocity =
-        report.baseVelocity + report.externalImpulse;
-    const float combinedSpeed = glm::length(combinedVelocity);
-
-    result.metrics.horizontalBaseSpeed = baseHorizontal;
-    result.metrics.upwardBaseSpeed = baseUp;
-    result.metrics.downwardBaseSpeed = baseDown;
-    result.metrics.horizontalExternalImpulse = externalHorizontal;
-    result.metrics.verticalExternalImpulse = externalVertical;
-    result.metrics.combinedSpeed = combinedSpeed;
-
-    if (baseHorizontal > config.maximumBaseHorizontalSpeed ||
-        baseUp > config.maximumBaseUpwardSpeed ||
-        baseDown > config.maximumBaseDownwardSpeed ||
-        externalHorizontal > config.maximumExternalHorizontalImpulse ||
-        externalVertical > config.maximumExternalVerticalImpulse ||
-        combinedSpeed > config.maximumCombinedEmergencySpeed)
-    {
-        return reject(MovementValidationReason::ImpossibleVelocity);
-    }
-
-    if (invalidAbilityTransition(player, report))
-        return reject(MovementValidationReason::AbilityTransition);
+    // ── Active human players use validated client-transform authority ──
+    // Skip per‑packet speed, displacement, and ability‑transition checks.
+    // The client owns its movement integration and world collision.
+    // The server retains only structural, lifecycle, sequence, finite‑value,
+    // and catastrophic‑bound validation.
 
     const glm::vec3 previousPosition = player.hasAcceptedClientTransform
         ? player.lastAcceptedClientPosition
         : player.pos;
-    const glm::vec3 previousVelocity = player.hasAcceptedClientTransform
-        ? player.lastAcceptedClientVelocity
-        : player.vel;
-    const glm::vec3 delta = report.position - previousPosition;
-    result.metrics.positionError = glm::length(report.position - player.pos);
-    result.metrics.velocityError = glm::length(combinedVelocity - previousVelocity);
-    result.metrics.horizontalDelta = glm::length(glm::vec2(delta.x, delta.y));
-    result.metrics.verticalDelta = std::abs(delta.z);
-
-    const float elapsedSeconds = clientElapsedSeconds(player, report, context);
-    const float latencySeconds =
-        std::clamp(static_cast<float>(std::max(0, report.clientPingMs)) / 1000.0f,
-                   0.0f,
-                   0.5f);
-    const bool freshDash = report.dashSerial != 0 &&
-        report.dashSerial != player.lastPresentationDashSerial;
-    const bool freshDownDash = report.downDashSerial != 0 &&
-        report.downDashSerial != player.lastPresentationDownDashSerial;
-
-    result.metrics.allowedHorizontalDelta =
-        config.ordinaryDisplacementTolerance +
-        (std::max(baseHorizontal, horizontalLength(previousVelocity)) *
-         elapsedSeconds) +
-        externalHorizontal * config.externalImpulseDisplacementSeconds +
-        config.latencyDisplacementAllowance * latencySeconds +
-        config.collisionDepenetrationAllowance +
-        (freshDash ? config.dashDisplacementAllowance : 0.0f);
-    result.metrics.allowedVerticalDelta =
-        config.ordinaryDisplacementTolerance +
-        std::max(std::max(baseUp, baseDown), std::abs(previousVelocity.z)) *
-            elapsedSeconds +
-        externalVertical * config.externalImpulseDisplacementSeconds +
-        config.latencyDisplacementAllowance * latencySeconds +
-        config.collisionDepenetrationAllowance +
-        (freshDownDash ? config.downDashDisplacementAllowance : 0.0f);
-
-    if (result.metrics.horizontalDelta > result.metrics.allowedHorizontalDelta ||
-        result.metrics.verticalDelta > result.metrics.allowedVerticalDelta)
-    {
-        return reject(MovementValidationReason::ImpossibleDisplacement);
-    }
 
     if (!insideBounds(report.position, config))
     {
@@ -707,8 +644,14 @@ void resetServerMovementForAuthoritativeLifecycle(
     player.movement = state;
     player.hasMovementSequence = false;
     player.lastMovementSequence = 0;
+    player.hasAcceptedClientTransform = false;
     player.movementValidation.lastAcceptedSequence = 0;
     player.movementValidation.lastAcceptedClientTick = 0;
+    // Reset input command buffer (spec: no stale inputs across lives)
+    player.lastInputCommandSequence = 0;
+    player.lastProcessedInputCommandSequence = 0;
+    for (auto& entry : player.inputCommandBuffer)
+        entry.valid = false;
 }
 
 void recordServerMovementExternalImpulse(ServerPlayer& player,

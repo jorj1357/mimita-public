@@ -15,6 +15,7 @@
 #include "network/disagreement-visuals.h"
 #include "config/camera-config.h"
 #include "config/weapon-hitfx-config.h"
+#include "config/ragdoll-death-config.h"
 #include "hot-reload/hot-reload-system.h"
 #include "debug/debug-visuals.h"
 #include "gui/ui-system.h"
@@ -42,6 +43,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     SizeScalingConfig::instance().pollReload();
     AvatarSystem::instance().pollHotReload();
     RagdollConfig::instance().pollReload();
+    RagdollDeathConfig::instance().pollReload();
     WeaponHitFxConfig::instance().pollReload();
     worldPassRan = false;
 

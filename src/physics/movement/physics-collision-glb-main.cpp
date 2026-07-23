@@ -395,7 +395,7 @@ void doGLBTriangleCollisions(
     int bodySphereCount = (int)collectPlayerBodyCollisionSamples(p).size();
     trackGrowth(p, trace.maxCandidates, trace.maxRecoveryContacts, bodySphereCount);
 
-    // ── Trend detection: detect if any stage time grows for 5+ consecutive frames ──
+    // ── Trend detection: detect if any stage time grows for 20+ consecutive frames ──
     {
         static double prevSweepMs = 0, prevBodyMs = 0, prevDepenMs = 0;
         static int sweepGrowthFrames = 0, bodyGrowthFrames = 0, depenGrowthFrames = 0;
@@ -403,8 +403,8 @@ void doGLBTriangleCollisions(
         auto checkTrend = [&](const char* name, double current, double& prev, int& frames) {
             if (current > prev + 0.1) frames++;
             else if (current < prev - 0.1) frames = 0;
-            if (frames >= 5)
-                Debug::warn(Debug::Category::Collision,
+            if (frames >= 20)
+                Debug::log(Debug::Category::Collision,
                     "[TREND WARNING] %s increasing for %d frames (now=%.2fms, prev=%.2fms)\n",
                     name, frames, current, prev);
             prev = current;

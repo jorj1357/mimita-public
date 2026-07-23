@@ -109,7 +109,7 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
     Perf::state().bloodCount = EffectPartSystem::instance().activeCount();
     Perf::state().particleCount = EffectPartSystem::instance().activeCount();
     Perf::state().effectCount = (int)EffectPartSystem::instance().activeCount();
-    Perf::state().corpseCount = (int)DeathSystem::instance().corpses().size();
+    Perf::state().corpseCount = 0;
     if (gReplayPlayer.isPlaying())
         Perf::state().replayMemoryMb = (double)gReplayPlayer.totalTicks() * sizeof(ReplaySceneFrame) / (1024.0 * 1024.0);
     uiEndFrame();

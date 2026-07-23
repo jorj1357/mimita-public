@@ -391,6 +391,19 @@ public:
     bool hasAimData = false;
     float weaponSwayTime = 0.0f;
 
+    // -------- Death animation --------
+    struct DeathAnimState {
+        bool active = false;
+        int tick = 0;
+        int totalTicks = 180;
+        float startAlpha = 1.0f;
+        float endAlpha = 0.0f;
+        glm::vec3 startRotation{0.0f, 0.0f, 0.0f};
+        glm::vec3 endRotation{-90.0f, 0.0f, 0.0f};
+        glm::vec3 frozenPosition{0.0f};
+    };
+    DeathAnimState deathAnim;
+
     // -------- Rendering --------
     bool renderGhost = false; // rendered as transparent ghost (server_showghost)
     glm::vec3 meshScale  {1,1,1};

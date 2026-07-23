@@ -574,6 +574,32 @@ void handleInputPacket(const char* buffer, int bytes,
     if (ownsConnection)
         p.lastHeardMs = currentMs;
 
+    // Store input command for server-side movement simulation (spec: input-command authority)
+    if (ownsConnection && in->inputCommandSequence != 0 &&
+        in->inputCommandSequence > p.lastInputCommandSequence)
+    {
+        p.lastInputCommandSequence = in->inputCommandSequence;
+        auto& slot = p.inputCommandBuffer[p.nextInputCommandSlot];
+        slot.command.sequence = in->inputCommandSequence;
+        slot.command.clientSimulationTick = in->clientSimulationTick;
+        slot.command.lifecycle.spawnGeneration = in->spawnGeneration;
+        slot.command.lifecycle.transformEpoch =
+            in->transformEpoch != 0 ? in->transformEpoch : in->header.transformEpoch;
+        slot.command.moveAxes = movementClampUnitOrZero({in->wishX, in->wishY});
+        slot.command.horizontalCameraForward = {
+            in->camForwardX, in->camForwardY, in->camForwardZ};
+        slot.command.lookYaw = in->yaw;
+        slot.command.lookPitch = in->lookPitch;
+        slot.command.jumpHeld = (in->stateFlags & NET_STATE_JUMPING) != 0;
+        slot.command.dashPressed = (in->stateFlags & NET_STATE_DASHING) != 0;
+        slot.command.downDashPressed = (in->stateFlags & NET_STATE_DOWN_DASHING) != 0;
+        slot.command.freezeHeld = (in->stateFlags & NET_STATE_FREEZING) != 0;
+        slot.command.movementDirectionPressed =
+            std::abs(in->wishX) > 0.001f || std::abs(in->wishY) > 0.001f;
+        slot.valid = true;
+        p.nextInputCommandSlot = (p.nextInputCommandSlot + 1) % ServerPlayer::INPUT_COMMAND_BUFFER_SIZE;
+    }
+
     const ClientMovementReport report = movementReportFromInputPacket(*in, p);
     const MovementConfig movementConfig = makeCurrentRuntimeMovementConfig();
     const MovementValidationConfig validationConfig =
@@ -617,25 +643,56 @@ void handleInputPacket(const char* buffer, int bytes,
     logMovementValidation(p, report, result);
     if (connectionId)
     {
-        static int sIceMovementDiagnosticsRemaining = 64;
-        if (connectionId->kind == TransportKind::Ice &&
-            sIceMovementDiagnosticsRemaining > 0)
+        static uint64_t sLastMovementDecisionLogMs = 0;
+        static int sLastDecision = -1;
+        static int sLastReason = -1;
+        static uint64_t sLastDecisionHash = 0;
+        uint64_t decisionHash = (uint64_t)(uint8_t)result.decision * 1000u +
+                                (uint64_t)(uint8_t)result.reason;
+
+        bool logThis = false;
+        if (decisionHash != sLastDecisionHash)
         {
-            --sIceMovementDiagnosticsRemaining;
+            logThis = true;
+            sLastDecisionHash = decisionHash;
+        }
+        else if (result.decision == MovementValidationDecision::Reject &&
+                 currentMs - sLastMovementDecisionLogMs >= 500)
+        {
+            logThis = true;
+        }
+        if (result.decision == MovementValidationDecision::Accept &&
+            sLastDecision == (int)MovementValidationDecision::Reject)
+        {
+            // First acceptance after a rejection — always log.
+            logThis = true;
+        }
+
+        if (logThis)
+        {
+            sLastMovementDecisionLogMs = currentMs;
+            sLastDecision = (int)result.decision;
+            sLastReason = (int)result.reason;
+
             Debug::warn(Debug::Category::Networking,
-                "[SERVER MOVEMENT RX] transport=%s connection=%llu player=%u "
-                "seq=%u clientTick=%llu spawnGen=%u epoch=%u decision=%s "
-                "reason=%s serverTick=%u\n",
-                transportKindName(connectionId->kind),
-                (unsigned long long)connectionId->value,
+                "[SERVER MOVEMENT DECISION] "
+                "playerId=%u seq=%u clientTick=%llu lastAcceptedTick=%llu serverTick=%u "
+                "decision=%s reason=%s recovered=%d "
+                "spawnGen=%u epoch=%u "
+                "reportPos=(%.2f,%.2f,%.2f) serverPos=(%.2f,%.2f,%.2f)\n",
                 p.id,
                 report.movementSequence,
                 (unsigned long long)report.clientSimulationTick,
-                report.lifecycle.spawnGeneration,
-                (unsigned)report.lifecycle.transformEpoch,
+                (unsigned long long)p.movementValidation.lastAcceptedClientTick,
+                serverTick,
                 movementValidationDecisionName(result.decision),
                 movementValidationReasonName(result.reason),
-                serverTick);
+                (result.decision == MovementValidationDecision::Accept &&
+                 sLastDecision == (int)MovementValidationDecision::Reject) ? 1 : 0,
+                report.lifecycle.spawnGeneration,
+                (unsigned)report.lifecycle.transformEpoch,
+                report.position.x, report.position.y, report.position.z,
+                p.pos.x, p.pos.y, p.pos.z);
         }
     }
 
@@ -661,6 +718,18 @@ void handleInputPacket(const char* buffer, int bytes,
 
     applyMovementStateToServerPlayer(result.acceptedState, p);
     applyAcceptedInputPresentation(p, *in, report);
+
+    if (!p.hasAcceptedClientTransform)
+    {
+        Debug::warn(Debug::Category::Networking,
+            "[SERVER MOVEMENT BASELINE] playerId=%u seq=%u clientTick=%llu "
+            "pos=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f) spawnGen=%u epoch=%u\n",
+            p.id, report.movementSequence,
+            (unsigned long long)report.clientSimulationTick,
+            report.position.x, report.position.y, report.position.z,
+            report.baseVelocity.x, report.baseVelocity.y, report.baseVelocity.z,
+            report.lifecycle.spawnGeneration, (unsigned)report.lifecycle.transformEpoch);
+    }
 
     p.clientStateUpdated = true;
     p.lastAcceptedClientPosition = result.acceptedState.position;

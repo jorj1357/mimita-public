@@ -194,20 +194,6 @@ struct EntityInterpolationState
     std::string displayName;
 };
 
-// ── Sent movement report history for acknowledged-input reconciliation ──
-struct SentMovementReportState
-{
-    uint32_t sequence = 0;
-    uint64_t clientSimulationTick = 0;
-    uint32_t spawnGeneration = 0;
-    uint32_t transformEpoch = 0;
-    glm::vec3 position{0.0f};
-    glm::vec3 velocity{0.0f};
-    glm::vec3 externalImpulse{0.0f};
-};
-
-constexpr size_t MAX_SENT_MOVEMENT_HISTORY = 256;
-
 struct MultiplayerContext
 {
     bool active = false;
@@ -310,14 +296,11 @@ struct MultiplayerContext
     uint64_t serverProcessLaunchMs = 0;
     uint16_t serverPort = 1357;
 
-    // ── Movement acknowledgement reconciliation ───────────────────────
-    uint32_t localServerAcknowledgedMovementSequence = 0;
-    std::deque<SentMovementReportState> sentMovementHistory;
-
     // ── Transform epoch for spawn/resync detection ────────────────────
     uint32_t transformEpoch = 0;
     uint32_t lastKnownSpawnGeneration = 0;  // from server's PlayerRespawned
     uint32_t nextMovementSequence = 1;
+    uint32_t nextInputCommandSequence = 1;  // spec: increasing inputCommandSequence per sent input
     bool gameplayActive = false;  // true after SpawnActivated received (not just transport connected)
 
     // ── Ghost: show authoritative server position ─────────────────────

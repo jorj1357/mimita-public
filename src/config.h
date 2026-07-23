@@ -81,6 +81,8 @@ namespace DebugConfig
     inline bool WEAPON_PERF_SHOTS = false;
     // Debug shot line: red beam + sphere. Set 0 to hide debug visuals.
     inline bool DEBUG_WPN_SHOT_LINE = true;
+    // Server-side movement simulation debug logging
+    inline bool DEBUG_MOVEMENT_SIM = false;
 
     // Cool shot line: configurable aiming beam for camforward mode
     inline bool COOL_SHOT_LINE_ENABLED = false;

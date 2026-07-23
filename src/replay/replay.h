@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <deque>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -119,6 +120,7 @@ public:
     }
 
 private:
+    mutable std::mutex mRingMutex;
     bool mRecording = false;
     uint32_t mTick = 0;
     uint32_t mEventTick = 0;
