@@ -346,7 +346,7 @@ void IceAgent::handleRecv(const char* data, size_t size)
 {
     if (!data || size == 0) return;
 
-    printf("[ICE RECV CB] bytes=%zu data=%.*s\n", size, (int)(size > 64 ? 64 : size), data);
+    // printf("[ICE RECV CB] bytes=%zu data=%.*s\n", size, (int)(size > 64 ? 64 : size), data);
     fflush(stdout);
 
     IceEvent ev;

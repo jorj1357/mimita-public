@@ -126,14 +126,12 @@ void ReplayFactory::finalizeAndSave(PendingClip& pending)
         : 0u;
     const uint32_t endTick = killTick + postSeconds * ReplayRingBuffer::TickRate;
 
-    ReplayClip clip = mRing.makeClip(startTick, endTick, killTick,
-                                      pending.killerId, pending.victimId);
-    if (clip.sceneFrames.empty()) {
-        printf("[REPLAY FACTORY] empty clip, not saving\n");
+    if (!mWorker) {
+        printf("[REPLAY FACTORY] ERROR: worker missing, refusing synchronous replay save\n");
         return;
     }
 
-    // Classify the highlight
+    // Copy data needed by the worker for classification + naming
     KillContext ctx;
     ctx.killerId = pending.killerId;
     ctx.victimId = pending.victimId;
@@ -144,53 +142,49 @@ void ReplayFactory::finalizeAndSave(PendingClip& pending)
     ctx.killCountLast5Sec = pending.killCountInWindow;
     ctx.ticksSinceLastKill = pending.ticksSinceLastKill;
     ctx.roundWinning = pending.roundWinning;
-    HighlightType type = classifyHighlight(ctx);
 
-    // Build info (for caller reference — not used by worker)
-    pending.info.mapName = std::string(clip.header.mapName);
-    pending.info.killerName = pending.killerId;
-    pending.info.victimName = pending.victimId;
-    pending.info.weaponName = pending.weaponId;
-    pending.info.highlightType = type;
-    pending.info.durationTicks = clip.header.tickCount;
-    pending.info.tickRate = clip.header.tickRate;
-    pending.info.killTick = killTick;
-    pending.info.distance = pending.distance;
-    pending.info.roundWinning = pending.roundWinning;
-
-    // Generate filename with timestamp and killTick to avoid collisions
-    std::time_t now = std::time(nullptr);
-    std::tm localTime{};
-#ifdef _WIN32
-    localtime_s(&localTime, &now);
-#else
-    localtime_r(&now, &localTime);
-#endif
-    char fileName[128];
-    std::strftime(fileName, sizeof(fileName), "%Y-%m-%d_%H-%M-%S", &localTime);
-
-    std::string typeStr = highlightTypeName(type);
-    std::string clipName = std::string(fileName) + "_" + std::to_string(killTick) + "_" + typeStr + ".mclip.json";
-    std::string path = (std::filesystem::path("replays") / "clips" / clipName).string();
-
-    pending.info.path = path;
-    pending.info.filename = clipName;
-    pending.info.timestamp = fileName;
-
-    printf("[REPLAY FACTORY] enqueuing clip save: %s  type=%s killer=%s victim=%s weapon=%s dist=%.1f\n",
-           path.c_str(), typeStr.c_str(),
-           pending.killerId.c_str(), pending.victimId.c_str(),
-           pending.weaponId.c_str(), pending.distance);
-
-    // ── Offload everything to background worker ──────────────────
-    if (!mWorker) {
-        printf("[REPLAY FACTORY] ERROR: worker missing, refusing synchronous replay save\n");
-        return;
-    }
-
+    // ── Offload clip creation + save to background worker ──
+    // makeClip() copies data from the ring buffer (heap alloc + vector copies).
+    // Running it on the worker thread prevents main-thread frame spikes.
     mWorker->enqueue(
-        [clip = std::move(clip), path = std::move(path)]() mutable
+        [this, startTick, endTick, killTick,
+         killerId = pending.killerId, victimId = pending.victimId,
+         weaponId = pending.weaponId, distance = pending.distance,
+         roundWinning = pending.roundWinning, ctx]() mutable
         {
+            ReplayClip clip = mRing.makeClip(startTick, endTick, killTick,
+                                              killerId, victimId);
+            if (clip.sceneFrames.empty()) {
+                printf("[REPLAY FACTORY] empty clip, not saving\n");
+                return;
+            }
+
+            clip.weaponId = weaponId;
+            clip.killDistance = distance;
+
+            HighlightType type = classifyHighlight(ctx);
+
+            // Build filename with timestamp
+            std::time_t now = std::time(nullptr);
+            std::tm localTime{};
+        #ifdef _WIN32
+            localtime_s(&localTime, &now);
+        #else
+            localtime_r(&now, &localTime);
+        #endif
+            char fileName[128];
+            std::strftime(fileName, sizeof(fileName), "%Y-%m-%d_%H-%M-%S", &localTime);
+
+            std::string typeStr = highlightTypeName(type);
+            std::string clipName = std::string(fileName) + "_" + std::to_string(killTick)
+                                   + "_" + typeStr + ".mclip.json";
+            std::string path = (std::filesystem::path("replays") / "clips" / clipName).string();
+
+            printf("[REPLAY FACTORY] saving clip: %s  type=%s killer=%s victim=%s weapon=%s dist=%.1f\n",
+                   path.c_str(), typeStr.c_str(),
+                   killerId.c_str(), victimId.c_str(),
+                   weaponId.c_str(), distance);
+
             saveClipJob(std::move(clip), std::move(path));
         });
 }

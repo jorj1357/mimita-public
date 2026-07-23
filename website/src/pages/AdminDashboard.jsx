@@ -208,10 +208,14 @@ export default function AdminDashboard() {
                 {/* Tier S - Growth */}
                 <div className="adminSection">
                     <h2>growth (tier s)</h2>
-                    {cardObj("visitors today", M.site_visitors_today)}
-                    {cardObj("visitors 7d", M.site_visitors_7d)}
-                    {cardObj("visitors 30d", M.site_visitors_30d)}
-                    {cardObj("visitors all time", M.site_visitors_all, "allTime")}
+                    {cardObj("page loads today", M.page_loads_today)}
+                    {cardObj("page loads 7d", M.page_loads_7d)}
+                    {cardObj("page loads 30d", M.page_loads_30d)}
+                    {cardObj("page loads all time", M.page_loads_all, "allTime")}
+                    {cardObj("unique visitors today", M.unique_visitors_today)}
+                    {cardObj("unique visitors 7d", M.unique_visitors_7d)}
+                    {cardObj("unique visitors 30d", M.unique_visitors_30d)}
+                    {cardObj("unique visitors all time", M.unique_visitors_all, "allTime")}
                     {cardObj("downloads today", M.downloads_today)}
                     {cardObj("downloads all time", M.downloads_all, "allTime")}
                     {cardObj("accounts today", M.accounts_created_today)}

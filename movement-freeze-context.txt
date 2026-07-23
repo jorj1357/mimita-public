@@ -1,0 +1,1909 @@
+﻿src/network/multiplayer-reconcile.cpp-213-            {
+src/network/multiplayer-reconcile.cpp-214-                planarVelocity -= normal * intoRemote;
+src/network/multiplayer-reconcile.cpp-215-                player.vel.x = planarVelocity.x;
+src/network/multiplayer-reconcile.cpp-216-                player.vel.y = planarVelocity.y;
+src/network/multiplayer-reconcile.cpp-217-            }
+src/network/multiplayer-reconcile.cpp-218-
+src/network/multiplayer-reconcile.cpp-219-            static uint64_t lastCollisionLogMs = 0;
+src/network/multiplayer-reconcile.cpp-220-            const uint64_t collisionNowMs = nowMs();
+src/network/multiplayer-reconcile.cpp-221-            if (collisionNowMs - lastCollisionLogMs >= 250)
+src/network/multiplayer-reconcile.cpp-222-            {
+src/network/multiplayer-reconcile.cpp-223-                printf("[CLIENT PLAYER COLLISION] localId=%u remoteId=%u penetration=%.3f "
+src/network/multiplayer-reconcile.cpp-224-                       "localPos=(%.2f,%.2f,%.2f) remotePos=(%.2f,%.2f,%.2f)\n",
+src/network/multiplayer-reconcile.cpp-225-                       ctx.localPlayerId, entry.first, penetration,
+src/network/multiplayer-reconcile.cpp-226-                       player.pos.x, player.pos.y, player.pos.z,
+src/network/multiplayer-reconcile.cpp-227-                       remote.pos.x, remote.pos.y, remote.pos.z);
+src/network/multiplayer-reconcile.cpp-228-                lastCollisionLogMs = collisionNowMs;
+src/network/multiplayer-reconcile.cpp-229-            }
+src/network/multiplayer-reconcile.cpp-230-        }
+src/network/multiplayer-reconcile.cpp-231-    }
+src/network/multiplayer-reconcile.cpp-232-
+src/network/multiplayer-reconcile.cpp-233-    const bool logCorrection =
+src/network/multiplayer-reconcile.cpp-234-        initialSpawn || applyPosition || error >= CORRECTION_LOG_DISTANCE;
+src/network/multiplayer-reconcile.cpp-235-    if (logCorrection &&
+src/network/multiplayer-reconcile.cpp-236-        (applyPosition || currentMs - ctx.lastLocalCorrectionLogMs >= 500))
+src/network/multiplayer-reconcile.cpp-237-    {
+src/network/multiplayer-reconcile.cpp:238:        printf("[LOCAL CORRECTION] distance=%.3f class=%s "
+src/network/multiplayer-reconcile.cpp-239-               "serverPos=(%.2f,%.2f,%.2f) clientPos=(%.2f,%.2f,%.2f) "
+src/network/multiplayer-reconcile.cpp:240:               "applied=%d reason=%s localEpoch=%u serverEpoch=%u lastAppliedEpoch=%u\n",
+src/network/multiplayer-reconcile.cpp-241-               error,
+src/network/multiplayer-reconcile.cpp-242-               movementCorrectionClassName(correctionClass),
+src/network/multiplayer-reconcile.cpp-243-               ctx.localServerPosition.x,
+src/network/multiplayer-reconcile.cpp-244-               ctx.localServerPosition.y,
+src/network/multiplayer-reconcile.cpp-245-               ctx.localServerPosition.z,
+src/network/multiplayer-reconcile.cpp-246-               clientPosition.x,
+src/network/multiplayer-reconcile.cpp-247-               clientPosition.y,
+src/network/multiplayer-reconcile.cpp-248-               clientPosition.z,
+src/network/multiplayer-reconcile.cpp-249-               (int)applyPosition,
+src/network/multiplayer-reconcile.cpp-250-                initialSpawn ? "initial-spawn" :
+src/network/multiplayer-reconcile.cpp-251-                serverRespawnedPlayer ? "server-respawn" :
+src/network/multiplayer-reconcile.cpp-252-                catastrophicDivergence ? "catastrophic-divergence" :
+src/network/multiplayer-reconcile.cpp-253-                epochChanged ? "epoch-changed" :
+src/network/multiplayer-reconcile.cpp-254-                serverKilledPlayer ? "server-death" : "within-tolerance",
+src/network/multiplayer-reconcile.cpp-255-               ctx.transformEpoch,
+src/network/multiplayer-reconcile.cpp-256-               (uint32_t)ctx.localServerEpoch,
+src/network/multiplayer-reconcile.cpp-257-               (uint32_t)ctx.lastAppliedEpoch);
+src/network/multiplayer-reconcile.cpp-258-        ctx.lastLocalCorrectionLogMs = currentMs;
+src/network/multiplayer-reconcile.cpp-259-    }
+src/network/multiplayer-reconcile.cpp-260-    ctx.localPlayerReconciled = true;
+src/network/multiplayer-reconcile.cpp-261-}
+src/network/multiplayer-reconcile.cpp-262-
+src/network/multiplayer-reconcile.cpp-263-} // namespace MimitaNet
+--
+src/network/server.cpp-314-    uint64_t lastLog = nowMs();
+src/network/server.cpp-315-    uint64_t totalPacketsIn = 0;
+src/network/server.cpp-316-    uint64_t totalPacketsOut = 0;
+src/network/server.cpp-317-    ServerPacketStats transportStats;
+src/network/server.cpp-318-    DisagreementRetransmitState disagreementRetransmit;
+src/network/server.cpp-319-
+src/network/server.cpp-320-    // ── Dedicated server ICE support ──
+src/network/server.cpp-321-    bool iceEnabled = options.iceEnabled;
+src/network/server.cpp-322-    ListenServerState dedicatedIceState;
+src/network/server.cpp-323-    dedicatedIceState.iceEnabled = iceEnabled;
+src/network/server.cpp-324-    std::vector<PendingServerTransport> pendingIceTransports;
+src/network/server.cpp-325-
+src/network/server.cpp-326-    // Startup NPCs (controlled by --npcs and --no-npcs flags)
+src/network/server.cpp-327-    {
+src/network/server.cpp-328-        uint32_t npcCount = options.npcsEnabled ? options.npcCount : 0;
+src/network/server.cpp-329-        for (uint32_t i = 0; i < npcCount; ++i)
+src/network/server.cpp-330-        {
+src/network/server.cpp-331-            ServerNpc npc;
+src/network/server.cpp-332-            npc.entityId = nextEntityId++;
+src/network/server.cpp-333-            npc.name = "NPC " + std::to_string(i + 1);
+src/network/server.cpp-334-            if (!world.spawnPoints.empty())
+src/network/server.cpp-335-            {
+src/network/server.cpp-336-                size_t idx = i % world.spawnPoints.size();
+src/network/server.cpp-337-                npc.pos = world.spawnPoints[idx].position;
+src/network/server.cpp-338-                npc.yaw = world.spawnPoints[idx].yaw;
+src/network/server.cpp:339:                printf("%s [SERVER NPC SPAWN] reason=startup entityId=%u npcIndex=%u "
+src/network/server.cpp-340-                       "spawnpoint=%zu position=(%.2f,%.2f,%.2f)\n",
+src/network/server.cpp-341-                       serverTimestamp(), npc.entityId, i, idx,
+src/network/server.cpp-342-                       npc.pos.x, npc.pos.y, npc.pos.z);
+src/network/server.cpp-343-            }
+src/network/server.cpp-344-            else
+src/network/server.cpp-345-            {
+src/network/server.cpp-346-                npc.pos = {4.0f + i * 2.0f, 8.0f, 30.0f};
+src/network/server.cpp-347-            }
+src/network/server.cpp-348-            npc.phase = i * 2.0f;
+src/network/server.cpp-349-            npcs[npc.entityId] = npc;
+src/network/server.cpp-350-        }
+src/network/server.cpp-351-        printf("%s [SERVER NPC STARTUP] enabled=%d requested=%u spawned=%zu\n",
+src/network/server.cpp-352-               serverTimestamp(), (int)options.npcsEnabled, npcCount, npcs.size());
+src/network/server.cpp-353-    }
+src/network/server.cpp-354-
+src/network/server.cpp-355-    // ── Register server with coordinator ──
+src/network/server.cpp-356-    // When ICE is enabled, use coordinatorIceHost which handles NAT traversal.
+src/network/server.cpp-357-    // Otherwise use the normal coordinatorRegister for LAN/direct-IP servers.
+src/network/server.cpp-358-    std::string serverCode = options.serverCode.empty() ? generateServerCode() : options.serverCode;
+src/network/server.cpp-359-    std::string serverJoinToken;
+src/network/server.cpp-360-    {
+src/network/server.cpp-361-        if (options.noCoordinator)
+src/network/server.cpp-362-        {
+src/network/server.cpp-363-            printf("%s [SERVER] coordinator disabled by --no-coordinator; LAN-only code=%s\n",
+src/network/server.cpp-364-                   serverTimestamp(), serverCode.c_str());
+--
+src/network/server.cpp-517-                }
+src/network/server.cpp-518-                // Retry spawn sync for players awaiting ACK (every 6 ticks ≈ 100ms)
+src/network/server.cpp-519-                if (kv.second.spawnState == ServerPlayer::AwaitingSpawnAck && (tick % 6 == 0))
+src/network/server.cpp-520-                    retrySpawnSync(sock, kv.second);
+src/network/server.cpp-521-            }
+src/network/server.cpp-522-            tickWeaponRuntimes(players, tick);
+src/network/server.cpp-523-
+src/network/server.cpp-524-            resolvePlayerCollision(players);
+src/network/server.cpp-525-            checkVoidDeath(players, npcs);
+src/network/server.cpp-526-
+src/network/server.cpp-527-            for (auto& kv : npcs)
+src/network/server.cpp-528-                simulateNpc(kv.second, players);
+src/network/server.cpp-529-            tickServerProjectiles(sock, players, projectiles, world, SERVER_DT, tick, totalPacketsOut);
+src/network/server.cpp-530-            tickServerPhysicalContactWeapons(sock, players, world, SERVER_DT, tick, totalPacketsOut);
+src/network/server.cpp-531-
+src/network/server.cpp-532-            if (iceEnabled)
+src/network/server.cpp-533-                tickIceCoordinator(dedicatedIceState);
+src/network/server.cpp-534-            tickIcePeers(serverCode, dedicatedIceState.iceSessionId,
+src/network/server.cpp-535-                         pendingIceTransports);
+src/network/server.cpp-536-            tickServerIceTransports(sock, players, npcs, projectiles,
+src/network/server.cpp-537-                                    nextEntityId, nextProjectileId,
+src/network/server.cpp-538-                                    nextPlayerId, pendingIceTransports, world,
+src/network/server.cpp-539-                                    tick, totalPacketsIn, totalPacketsOut,
+src/network/server.cpp-540-                                    &transportStats, &disagreementRetransmit);
+src/network/server.cpp-541-
+src/network/server.cpp:542:            buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
+src/network/server.cpp-543-            tickDisagreementRetransmit(sock, players, disagreementRetransmit, totalPacketsOut);
+src/network/server.cpp-544-            tickReliableGameplayEvents(sock, players, totalPacketsOut);
+src/network/server.cpp-545-
+src/network/server.cpp-546-            accumulator -= (double)SERVER_DT;
+src/network/server.cpp-547-            ++tick;
+src/network/server.cpp-548-            ++steps;
+src/network/server.cpp-549-        }
+src/network/server.cpp-550-        const bool cappedCatchup = steps >= MAX_STEPS && accumulator >= (double)SERVER_DT;
+src/network/server.cpp-551-
+src/network/server.cpp-552-        // Heartbeat to coordinator every ~15 seconds
+src/network/server.cpp-553-        {
+src/network/server.cpp-554-            const uint64_t now = nowMs();
+src/network/server.cpp-555-            if (!options.noCoordinator && !serverCode.empty() && now - lastCoordinatorHb >= 15000)
+src/network/server.cpp-556-            {
+src/network/server.cpp-557-                coordinatorHeartbeat(serverCode, (int)players.size());
+src/network/server.cpp-558-                lastCoordinatorHb = now;
+src/network/server.cpp-559-            }
+src/network/server.cpp-560-        }
+src/network/server.cpp-561-
+src/network/server.cpp-562-        // Timing measurement every 600 ticks (~10 seconds)
+src/network/server.cpp-563-        static uint32_t s_lastTimingTick = 0;
+src/network/server.cpp-564-        static uint64_t s_timingStartMs = nowMs();
+src/network/server.cpp-565-        if (tick - s_lastTimingTick >= 600)
+src/network/server.cpp-566-        {
+src/network/server.cpp-567-            uint64_t nowMsVal = nowMs();
+--
+src/network/server.cpp-700-    state.nextProjectileId = 1;
+src/network/server.cpp-701-    state.tick = 0;
+src/network/server.cpp-702-    state.lastLog = 0;
+src/network/server.cpp-703-    state.totalPacketsIn = 0;
+src/network/server.cpp-704-    state.totalPacketsOut = 0;
+src/network/server.cpp-705-    state.startTimeMs = nowMs();
+src/network/server.cpp-706-    state.accumulator = 0.0f;
+src/network/server.cpp-707-    state.lastHeartbeatMs = 0;
+src/network/server.cpp-708-
+src/network/server.cpp-709-    if (settings)
+src/network/server.cpp-710-        state.serverName = settings->serverName;
+src/network/server.cpp-711-
+src/network/server.cpp-712-    // Startup NPCs
+src/network/server.cpp-713-    bool npcsEnabled = !settings || settings->startupNpcsEnabled;
+src/network/server.cpp-714-    uint32_t npcCount = npcsEnabled ? (settings ? settings->startupNpcCount : 3) : 0;
+src/network/server.cpp-715-    for (uint32_t i = 0; i < npcCount; ++i)
+src/network/server.cpp-716-    {
+src/network/server.cpp-717-        ServerNpc npc;
+src/network/server.cpp-718-        npc.entityId = state.nextEntityId++;
+src/network/server.cpp-719-        npc.name = "NPC " + std::to_string(i + 1);
+src/network/server.cpp-720-        if (!state.world.spawnPoints.empty())
+src/network/server.cpp-721-        {
+src/network/server.cpp-722-            size_t idx = i % state.world.spawnPoints.size();
+src/network/server.cpp-723-            npc.pos = state.world.spawnPoints[idx].position;
+src/network/server.cpp-724-            npc.yaw = state.world.spawnPoints[idx].yaw;
+src/network/server.cpp:725:            printf("[LISTEN SERVER NPC SPAWN] reason=startup entityId=%u npcIndex=%u "
+src/network/server.cpp-726-                   "spawnpoint=%zu position=(%.2f,%.2f,%.2f)\n",
+src/network/server.cpp-727-                   npc.entityId, i, idx,
+src/network/server.cpp-728-                   npc.pos.x, npc.pos.y, npc.pos.z);
+src/network/server.cpp-729-        }
+src/network/server.cpp-730-        else
+src/network/server.cpp-731-        {
+src/network/server.cpp-732-            npc.pos = {4.0f + i * 2.0f, 8.0f, 30.0f};
+src/network/server.cpp-733-        }
+src/network/server.cpp-734-        npc.phase = i * 2.0f;
+src/network/server.cpp-735-        state.npcs[npc.entityId] = npc;
+src/network/server.cpp-736-    }
+src/network/server.cpp-737-    printf("[LISTEN SERVER NPC STARTUP] enabled=%d requested=%u spawned=%zu\n",
+src/network/server.cpp-738-           (int)npcsEnabled, npcCount, state.npcs.size());
+src/network/server.cpp-739-
+src/network/server.cpp-740-    // Register with coordinator (skip if external server process handles it)
+src/network/server.cpp-741-    if (!settings || !settings->externalProcessLaunched)
+src/network/server.cpp-742-    {
+src/network/server.cpp-743-        if (hostedRoomSession().active)
+src/network/server.cpp-744-        {
+src/network/server.cpp-745-            printf("[ROOM DUPLICATE ERROR] existingCode=%s attemptedCode=%s caller=startListenServer\n",
+src/network/server.cpp-746-                   hostedRoomSession().roomCode.c_str(), state.serverCode.c_str());
+src/network/server.cpp-747-        }
+src/network/server.cpp-748-
+src/network/server.cpp-749-        if (settings && settings->iceEnabled)
+src/network/server.cpp-750-        {
+--
+src/network/server.cpp-887-                retrySpawnSync(state.sock, kv.second);
+src/network/server.cpp-888-        }
+src/network/server.cpp-889-        tickWeaponRuntimes(state.players, state.tick);
+src/network/server.cpp-890-        resolvePlayerCollision(state.players);
+src/network/server.cpp-891-        checkVoidDeath(state.players, state.npcs);
+src/network/server.cpp-892-        for (auto& kv : state.npcs)
+src/network/server.cpp-893-            simulateNpc(kv.second, state.players);
+src/network/server.cpp-894-        tickServerProjectiles(state.sock, state.players, state.projectiles,
+src/network/server.cpp-895-                              state.world, SERVER_DT, state.tick,
+src/network/server.cpp-896-                              state.totalPacketsOut);
+src/network/server.cpp-897-
+src/network/server.cpp-898-        tickServerPhysicalContactWeapons(state.sock, state.players,
+src/network/server.cpp-899-                                         state.world, SERVER_DT, state.tick,
+src/network/server.cpp-900-                                         state.totalPacketsOut);
+src/network/server.cpp-901-
+src/network/server.cpp-902-        tickIceCoordinator(state);
+src/network/server.cpp-903-        tickIcePeers(state.serverCode, state.iceSessionId, state.pendingIceTransports);
+src/network/server.cpp-904-        tickServerIceTransports(state.sock, state.players, state.npcs,
+src/network/server.cpp-905-                                state.projectiles, state.nextEntityId,
+src/network/server.cpp-906-                                state.nextProjectileId, state.nextPlayerId,
+src/network/server.cpp-907-                                state.pendingIceTransports, state.world,
+src/network/server.cpp-908-                                state.tick, state.totalPacketsIn,
+src/network/server.cpp-909-                                state.totalPacketsOut, nullptr,
+src/network/server.cpp-910-                                &state.disagreementRetransmit);
+src/network/server.cpp-911-
+src/network/server.cpp:912:        buildAndSendSnapshot(state.sock, state.players, state.npcs,
+src/network/server.cpp-913-                             state.tick, state.totalPacketsOut);
+src/network/server.cpp-914-
+src/network/server.cpp-915-        tickDisagreementRetransmit(state.sock, state.players,
+src/network/server.cpp-916-                                   state.disagreementRetransmit,
+src/network/server.cpp-917-                                   state.totalPacketsOut);
+src/network/server.cpp-918-        tickReliableGameplayEvents(state.sock, state.players,
+src/network/server.cpp-919-                                   state.totalPacketsOut);
+src/network/server.cpp-920-
+src/network/server.cpp-921-        uint64_t now = nowMs();
+src/network/server.cpp-922-        if (now - state.lastLog >= 1000)
+src/network/server.cpp-923-        {
+src/network/server.cpp-924-            printf("[LISTEN SERVER] tick=%u players=%zu packetsIn=%llu packetsOut=%llu code=%s\n",
+src/network/server.cpp-925-                   state.tick, state.players.size(),
+src/network/server.cpp-926-                   (unsigned long long)state.totalPacketsIn,
+src/network/server.cpp-927-                   (unsigned long long)state.totalPacketsOut,
+src/network/server.cpp-928-                   state.serverCode.c_str());
+src/network/server.cpp-929-            if (state.players.size() <= 10)
+src/network/server.cpp-930-            {
+src/network/server.cpp-931-                for (const auto& kv : state.players)
+src/network/server.cpp-932-                    printf("[LISTEN SERVER] player id=%u name=\"%s\" pos=(%.1f,%.1f,%.1f)\n",
+src/network/server.cpp-933-                           kv.second.id, kv.second.name.c_str(),
+src/network/server.cpp-934-                           kv.second.pos.x, kv.second.pos.y, kv.second.pos.z);
+src/network/server.cpp-935-            }
+src/network/server.cpp-936-            state.lastLog = now;
+src/network/server.cpp-937-        }
+--
+src/physics/movement/movement-conversion.cpp-237-        !movementIsFinite(state.externalImpulse) ||
+src/physics/movement/movement-conversion.cpp-238-        glm::length((state.baseVelocity + state.externalImpulse) - player.vel) > 0.25f)
+src/physics/movement/movement-conversion.cpp-239-    {
+src/physics/movement/movement-conversion.cpp-240-        if (movementIsFinite(state.externalImpulse))
+src/physics/movement/movement-conversion.cpp-241-            state.baseVelocity = player.vel - state.externalImpulse;
+src/physics/movement/movement-conversion.cpp-242-        else
+src/physics/movement/movement-conversion.cpp-243-        {
+src/physics/movement/movement-conversion.cpp-244-            state.baseVelocity = player.vel;
+src/physics/movement/movement-conversion.cpp-245-            state.externalImpulse = glm::vec3(0.0f);
+src/physics/movement/movement-conversion.cpp-246-        }
+src/physics/movement/movement-conversion.cpp-247-    }
+src/physics/movement/movement-conversion.cpp-248-    state.lastInputMoveAxes = movementClampUnitOrZero(player.input.wish);
+src/physics/movement/movement-conversion.cpp-249-    state.yaw = player.yaw;
+src/physics/movement/movement-conversion.cpp-250-    state.sizeScale = player.sizeScale;
+src/physics/movement/movement-conversion.cpp-251-    state.ground.onGround = player.onGround;
+src/physics/movement/movement-conversion.cpp-252-    state.ground.stableOnGround = player.onGround;
+src/physics/movement/movement-conversion.cpp-253-    state.ground.hasWorldContact = player.onGround;
+src/physics/movement/movement-conversion.cpp-254-    state.dash.dashAvailable = player.dashAvailable;
+src/physics/movement/movement-conversion.cpp-255-    state.downDash.available = player.movement.downDash.available;
+src/physics/movement/movement-conversion.cpp-256-    state.freeze.available = player.movement.freeze.available;
+src/physics/movement/movement-conversion.cpp-257-    state.freeze.active = player.movement.freeze.active;
+src/physics/movement/movement-conversion.cpp-258-    state.freeze.heldPreviously = player.input.freezeHeld;
+src/physics/movement/movement-conversion.cpp-259-    return state;
+src/physics/movement/movement-conversion.cpp-260-}
+src/physics/movement/movement-conversion.cpp-261-
+src/physics/movement/movement-conversion.cpp:262:void applyMovementStateToServerPlayer(const MovementState& state,
+src/physics/movement/movement-conversion.cpp-263-                                      MimitaNet::ServerPlayer& player)
+src/physics/movement/movement-conversion.cpp-264-{
+src/physics/movement/movement-conversion.cpp-265-    player.spawnGeneration = state.lifecycle.spawnGeneration;
+src/physics/movement/movement-conversion.cpp-266-    player.transformEpoch = static_cast<uint16_t>(state.lifecycle.transformEpoch);
+src/physics/movement/movement-conversion.cpp-267-    player.movement = state;
+src/physics/movement/movement-conversion.cpp-268-    player.pos = state.position;
+src/physics/movement/movement-conversion.cpp-269-    player.vel = state.baseVelocity + state.externalImpulse;
+src/physics/movement/movement-conversion.cpp-270-    player.yaw = state.yaw;
+src/physics/movement/movement-conversion.cpp-271-    player.sizeScale = state.sizeScale;
+src/physics/movement/movement-conversion.cpp-272-    player.onGround = state.ground.onGround;
+src/physics/movement/movement-conversion.cpp-273-    player.dashAvailable = state.dash.dashAvailable;
+src/physics/movement/movement-conversion.cpp-274-    player.input.wish = movementClampUnitOrZero(state.lastInputMoveAxes);
+src/physics/movement/movement-conversion.cpp-275-}
+src/physics/movement/movement-conversion.cpp-276-
+src/physics/movement/movement-conversion.cpp-277-MovementConfig makeCurrentRuntimeMovementConfig()
+src/physics/movement/movement-conversion.cpp-278-{
+src/physics/movement/movement-conversion.cpp-279-    MovementConfig config;
+src/physics/movement/movement-conversion.cpp-280-    config.simulationHz = MimitaNet::GAMEPLAY_SIMULATION_HZ;
+src/physics/movement/movement-conversion.cpp-281-    config.fixedDeltaSeconds = MimitaNet::GAMEPLAY_FIXED_DT;
+src/physics/movement/movement-conversion.cpp-282-    config.maximumDeltaSeconds = 0.033f;
+src/physics/movement/movement-conversion.cpp-283-    config.groundSpeed = PHYS.moveSpeed;
+src/physics/movement/movement-conversion.cpp-284-    config.airSpeed = AIR_SPEED;
+src/physics/movement/movement-conversion.cpp-285-    const auto& sizeScaling = SizeScalingConfig::instance().data();
+src/physics/movement/movement-conversion.cpp-286-    config.movementSpeedSizeExponent = sizeScaling.movementSpeedExponent;
+src/physics/movement/movement-conversion.cpp-287-    config.gravityZ = PHYS.gravity;
+--
+src/network/server-players.cpp-242-        rt.nextAllowedFireTick = 0;  // cooldown cleared — new life may fire immediately
+src/network/server-players.cpp-243-        rt.reloading = false;
+src/network/server-players.cpp-244-        rt.reloadCompleteTick = 0;
+src/network/server-players.cpp-245-        rt.stateRevision = 0;
+src/network/server-players.cpp-246-        rt.initialized = true;
+src/network/server-players.cpp-247-        player.weaponRuntimes[wepId] = rt;
+src/network/server-players.cpp-248-    }
+src/network/server-players.cpp-249-
+src/network/server-players.cpp-250-    // Clear transient combat/reload state
+src/network/server-players.cpp-251-    player.projectileFireCooldown = 0.0f;
+src/network/server-players.cpp-252-    player.nextProjectileFireTick = 0;
+src/network/server-players.cpp-253-    player.lastShotSerial = 0;
+src/network/server-players.cpp-254-    player.lastProjectileFireSerial = 0;
+src/network/server-players.cpp-255-    player.lastMeleeAttackSerial = 0;
+src/network/server-players.cpp-256-    player.swordswordState = SwordswordState{};
+src/network/server-players.cpp-257-    player.meleeCooldownTimer = 0.0f;
+src/network/server-players.cpp-258-    player.godballActive = false;
+src/network/server-players.cpp-259-    player.godballX = player.godballY = player.godballZ = 0.0f;
+src/network/server-players.cpp-260-    player.hasLastPhysicalWeaponShape = false;
+src/network/server-players.cpp-261-    player.lastPhysicalWeaponDefNetworkId = 0;
+src/network/server-players.cpp-262-    player.nextPhysicalContactSerial = 1;
+src/network/server-players.cpp-263-    player.physicalContactEpisodes.clear();
+src/network/server-players.cpp-264-    player.input = {};
+src/network/server-players.cpp-265-    player.inputStateFlags = 0;
+src/network/server-players.cpp-266-    player.attackQueued = false;
+src/network/server-players.cpp:267:    player.clientStateUpdated = false;
+src/network/server-players.cpp-268-    player.dashAvailable = true;
+src/network/server-players.cpp-269-    player.onGround = false;
+src/network/server-players.cpp-270-    resetServerMovementForAuthoritativeLifecycle(
+src/network/server-players.cpp-271-        player, makeCurrentRuntimeMovementConfig());
+src/network/server-players.cpp-272-
+src/network/server-players.cpp-273-    printf("[SERVER SPAWN RESET] playerId=%u spawnGeneration=%u ownedWeapons=%zu"
+src/network/server-players.cpp-274-           " isInitialSpawn=%d\n",
+src/network/server-players.cpp-275-           player.id, player.spawnGeneration, player.ownedWeaponIds.size(),
+src/network/server-players.cpp-276-           (int)isInitialSpawn);
+src/network/server-players.cpp-277-}
+src/network/server-players.cpp-278-
+src/network/server-players.cpp-279-// ── Complete authoritative spawn and notify client ────────────────────
+src/network/server-players.cpp-280-// Called from every spawn path: initial spawn, auto-respawn, instant-respawn.
+src/network/server-players.cpp-281-// Sends PlayerRespawnedPacket with authoritative generation and inventory.
+src/network/server-players.cpp-282-void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitialSpawn)
+src/network/server-players.cpp-283-{
+src/network/server-players.cpp-284-    resetPlayerForSpawn(player, isInitialSpawn);
+src/network/server-players.cpp-285-    player.spawnState = ServerPlayer::AwaitingSpawnAck;
+src/network/server-players.cpp-286-    resetServerMovementForAuthoritativeLifecycle(
+src/network/server-players.cpp-287-        player, makeCurrentRuntimeMovementConfig());
+src/network/server-players.cpp-288-
+src/network/server-players.cpp-289-    PlayerRespawnedPacket spawnSync{};
+src/network/server-players.cpp-290-    spawnSync.header.type = PACKET_PLAYER_RESPAWNED;
+src/network/server-players.cpp-291-    spawnSync.header.tick = 0;
+src/network/server-players.cpp-292-    spawnSync.header.playerId = player.id;
+src/network/server-players.cpp-293-    spawnSync.spawnGeneration = player.spawnGeneration;
+src/network/server-players.cpp-294-    spawnSync.transformEpoch = player.transformEpoch;
+src/network/server-players.cpp-295-    spawnSync.health = player.health;
+src/network/server-players.cpp-296-    spawnSync.weaponCount = 0;
+src/network/server-players.cpp-297-    for (const auto& wkv : player.weaponRuntimes)
+src/network/server-players.cpp-298-    {
+src/network/server-players.cpp-299-        if (spawnSync.weaponCount >= 16) break;
+src/network/server-players.cpp-300-        uint16_t wid = weaponDefNetworkIdFor(wkv.first);
+src/network/server-players.cpp-301-        if (wid == 0) continue;
+src/network/server-players.cpp-302-        auto& ws = spawnSync.weapons[spawnSync.weaponCount++];
+src/network/server-players.cpp-303-        ws.weaponDefNetworkId = wid;
+src/network/server-players.cpp-304-        ws.magazineAmmo = wkv.second.magazineAmmo;
+src/network/server-players.cpp-305-        ws.reserveAmmo = wkv.second.reserveAmmo;
+src/network/server-players.cpp-306-        ws.nextAllowedFireTick = wkv.second.nextAllowedFireTick;
+src/network/server-players.cpp-307-        ws.stateRevision = wkv.second.stateRevision;
+src/network/server-players.cpp-308-        ws.reloading = wkv.second.reloading ? 1 : 0;
+src/network/server-players.cpp-309-    }
+src/network/server-players.cpp-310-
+src/network/server-players.cpp-311-    // Send to this player only
+src/network/server-players.cpp-312-    if (player.transport)
+src/network/server-players.cpp-313-        player.transport->send(&spawnSync, sizeof(spawnSync));
+src/network/server-players.cpp-314-    else
+src/network/server-players.cpp-315-        sendto(sock, (const char*)&spawnSync, sizeof(spawnSync), 0,
+src/network/server-players.cpp-316-               (sockaddr*)&player.addr, sizeof(player.addr));
+src/network/server-players.cpp-317-
+src/network/server-players.cpp:318:    printf("[SPAWN TX CREATE] id=%u spawnGen=%u epoch=%u reason=%s health=%d ownedWeapons=%zu\n",
+src/network/server-players.cpp-319-           player.id, player.spawnGeneration, player.transformEpoch,
+src/network/server-players.cpp-320-           isInitialSpawn ? "initial" : "respawn", player.health, player.ownedWeaponIds.size());
+src/network/server-players.cpp-321-}
+src/network/server-players.cpp-322-
+src/network/server-players.cpp-323-// ── Retransmit SpawnConfirmed while awaiting ack ─────────────────────
+src/network/server-players.cpp-324-void retrySpawnSync(SOCKET sock, ServerPlayer& player)
+src/network/server-players.cpp-325-{
+src/network/server-players.cpp-326-    if (player.spawnState != ServerPlayer::AwaitingSpawnAck)
+src/network/server-players.cpp-327-        return;
+src/network/server-players.cpp-328-
+src/network/server-players.cpp-329-    // Rebuild and resend the identical spawn transaction
+src/network/server-players.cpp-330-    PlayerRespawnedPacket spawnSync{};
+src/network/server-players.cpp-331-    spawnSync.header.type = PACKET_PLAYER_RESPAWNED;
+src/network/server-players.cpp-332-    spawnSync.header.tick = 0;
+src/network/server-players.cpp-333-    spawnSync.header.playerId = player.id;
+src/network/server-players.cpp-334-    spawnSync.spawnGeneration = player.spawnGeneration;
+src/network/server-players.cpp-335-    spawnSync.transformEpoch = player.transformEpoch;
+src/network/server-players.cpp-336-    spawnSync.health = player.health;
+src/network/server-players.cpp-337-    spawnSync.weaponCount = 0;
+src/network/server-players.cpp-338-    for (const auto& wkv : player.weaponRuntimes)
+src/network/server-players.cpp-339-    {
+src/network/server-players.cpp-340-        if (spawnSync.weaponCount >= 16) break;
+src/network/server-players.cpp-341-        uint16_t wid = weaponDefNetworkIdFor(wkv.first);
+src/network/server-players.cpp-342-        if (wid == 0) continue;
+src/network/server-players.cpp-343-        auto& ws = spawnSync.weapons[spawnSync.weaponCount++];
+--
+src/network/server-players.cpp-383-                {
+src/network/server-players.cpp-384-                    rt.magazineAmmo++;
+src/network/server-players.cpp-385-                    rt.reserveAmmo--;
+src/network/server-players.cpp-386-                    rt.stateRevision++;
+src/network/server-players.cpp-387-                }
+src/network/server-players.cpp-388-                // Schedule next shell or finish
+src/network/server-players.cpp-389-                if (rt.magazineAmmo < def->magazineSize && rt.reserveAmmo > 0)
+src/network/server-players.cpp-390-                {
+src/network/server-players.cpp-391-                    float reloadInterval = def->customParams.count("reloadTimePerShell")
+src/network/server-players.cpp-392-                        ? def->customParams.at("reloadTimePerShell") : (def->reloadTime > 0 ? def->reloadTime : 0.55f);
+src/network/server-players.cpp-393-                    rt.reloadCompleteTick = currentTick + (uint32_t)std::ceil(reloadInterval * 60.0f);
+src/network/server-players.cpp-394-                }
+src/network/server-players.cpp-395-                else
+src/network/server-players.cpp-396-                {
+src/network/server-players.cpp-397-                    rt.reloading = false;
+src/network/server-players.cpp-398-                }
+src/network/server-players.cpp-399-            }
+src/network/server-players.cpp-400-        }
+src/network/server-players.cpp-401-    }
+src/network/server-players.cpp-402-}
+src/network/server-players.cpp-403-
+src/network/server-players.cpp-404-void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
+src/network/server-players.cpp-405-{
+src/network/server-players.cpp-406-    // Apply input yaw BEFORE any non-dead early return.
+src/network/server-players.cpp-407-    // Orientation comes from current input and must update every frame,
+src/network/server-players.cpp:408:    // even when clientStateUpdated causes an early return.
+src/network/server-players.cpp-409-    p.yaw = p.input.yaw;
+src/network/server-players.cpp-410-
+src/network/server-players.cpp-411-    {
+src/network/server-players.cpp-412-        static uint64_t lastLookApplyLogMs = 0;
+src/network/server-players.cpp-413-        uint64_t nowLookApply = nowMs();
+src/network/server-players.cpp-414-        if (nowLookApply - lastLookApplyLogMs >= 1000)
+src/network/server-players.cpp-415-        {
+src/network/server-players.cpp-416-            printf("[LOOK SERVER APPLY] playerId=%u inputYaw=%.2f oldYaw=%.2f newYaw=%.2f "
+src/network/server-players.cpp:417:                   "clientStateUpdated=%d\n",
+src/network/server-players.cpp:418:                   p.id, p.input.yaw, p.yaw, p.input.yaw, (int)p.clientStateUpdated);
+src/network/server-players.cpp-419-            lastLookApplyLogMs = nowLookApply;
+src/network/server-players.cpp-420-        }
+src/network/server-players.cpp-421-    }
+src/network/server-players.cpp-422-
+src/network/server-players.cpp-423-    if (p.dead)
+src/network/server-players.cpp-424-    {
+src/network/server-players.cpp-425-        p.vel = glm::vec3(0.0f);
+src/network/server-players.cpp-426-        p.movement.externalImpulse = glm::vec3(0.0f);
+src/network/server-players.cpp-427-        syncServerMovementRuntime(p, false);
+src/network/server-players.cpp-428-        p.projectileFireCooldown = std::max(0.0f, p.projectileFireCooldown - SERVER_DT);
+src/network/server-players.cpp-429-        // Instant respawn request from client Space press
+src/network/server-players.cpp-430-        if (p.instantRespawnRequested)
+src/network/server-players.cpp-431-        {
+src/network/server-players.cpp-432-            p.instantRespawnRequested = false;
+src/network/server-players.cpp-433-            p.respawnSeconds = 0.0f;
+src/network/server-players.cpp-434-            printf("%s [SERVER RESPAWN INSTANT] playerId=%u trigger=instantRespawnRequested\n",
+src/network/server-players.cpp-435-                   serverTimestamp(), p.id);
+src/network/server-players.cpp-436-        }
+src/network/server-players.cpp-437-        p.respawnSeconds -= SERVER_DT;
+src/network/server-players.cpp-438-        if (p.respawnSeconds <= 0.0f)
+src/network/server-players.cpp-439-        {
+src/network/server-players.cpp-440-            glm::vec3 respawnPos;
+src/network/server-players.cpp-441-            float respawnYaw = 0.0f;
+src/network/server-players.cpp-442-            if (!world.spawnPoints.empty())
+src/network/server-players.cpp-443-            {
+--
+src/network/server-players.cpp-450-                respawnPos = {1.0f + (float)(p.id - 1) * 1.5f, 5.0f, 30.0f};
+src/network/server-players.cpp-451-            }
+src/network/server-players.cpp-452-            beginAuthoritativeTransform(p, respawnPos, glm::vec3(0.0f), respawnYaw, "respawn");
+src/network/server-players.cpp-453-            // resetPlayerForSpawn is called by completeAuthoritativeSpawn
+src/network/server-players.cpp-454-            // which is triggered by justRespawned flag in the server pump.
+src/network/server-players.cpp-455-            p.justRespawned = true;  // signal caller to send spawn sync
+src/network/server-players.cpp-456-            p.input = {};
+src/network/server-players.cpp-457-            p.attackQueued = false;
+src/network/server-players.cpp-458-            p.dashAvailable = true;
+src/network/server-players.cpp-459-            p.onGround = false;
+src/network/server-players.cpp-460-            p.respawnSeconds = 0.0f;
+src/network/server-players.cpp-461-            syncServerMovementRuntime(p, false);
+src/network/server-players.cpp-462-            printf("%s [SERVER RESPAWN] playerId=%u position=(%.2f,%.2f,%.2f) epoch=%u spawnpoints=%zu spawnGeneration=%u health=%d\n",
+src/network/server-players.cpp-463-                   serverTimestamp(), p.id, p.pos.x, p.pos.y, p.pos.z, (unsigned)p.transformEpoch,
+src/network/server-players.cpp-464-                   world.spawnPoints.size(), p.spawnGeneration, p.health);
+src/network/server-players.cpp-465-        }
+src/network/server-players.cpp-466-        return;
+src/network/server-players.cpp-467-    }
+src/network/server-players.cpp-468-
+src/network/server-players.cpp-469-    // If the lifecycle/transform handshake is not complete, freeze movement.
+src/network/server-players.cpp-470-    if (p.spawnState != ServerPlayer::Active ||
+src/network/server-players.cpp-471-        p.awaitingAuthoritativeTransformAck)
+src/network/server-players.cpp-472-    {
+src/network/server-players.cpp-473-        p.vel = glm::vec3(0.0f);
+src/network/server-players.cpp-474-        p.movement.externalImpulse = glm::vec3(0.0f);
+src/network/server-players.cpp:475:        p.clientStateUpdated = false;
+src/network/server-players.cpp-476-        syncServerMovementRuntime(
+src/network/server-players.cpp-477-            p, p.spawnState == ServerPlayer::Active);
+src/network/server-players.cpp-478-        return;
+src/network/server-players.cpp-479-    }
+src/network/server-players.cpp-480-
+src/network/server-players.cpp-481-    p.projectileFireCooldown = std::max(0.0f, p.projectileFireCooldown - SERVER_DT);
+src/network/server-players.cpp-482-
+src/network/server-players.cpp-483-    // Active connected players use validated client-transform authority.
+src/network/server-players.cpp-484-    // The accepted client report already contains the final post-collision
+src/network/server-players.cpp-485-    // transform. Do not apply server-side gravity, acceleration, position
+src/network/server-players.cpp-486-    // integration, or world collision.
+src/network/server-players.cpp:487:    if (p.clientStateUpdated)
+src/network/server-players.cpp:488:        p.clientStateUpdated = false;
+src/network/server-players.cpp-489-
+src/network/server-players.cpp-490-    syncServerMovementRuntime(p, true);
+src/network/server-players.cpp-491-}
+src/network/server-players.cpp-492-
+src/network/server-players.cpp-493-void pushPositionHistory(ServerPlayer& p, uint32_t tick)
+src/network/server-players.cpp-494-{
+src/network/server-players.cpp-495-    p.posHistory.push_back({p.pos, p.vel, tick});
+src/network/server-players.cpp-496-    while (p.posHistory.size() > 30)
+src/network/server-players.cpp-497-        p.posHistory.pop_front();
+src/network/server-players.cpp-498-}
+src/network/server-players.cpp-499-
+src/network/server-players.cpp-500-bool getPositionAtTick(const ServerPlayer& p, uint32_t targetTick, glm::vec3& outPos)
+src/network/server-players.cpp-501-{
+src/network/server-players.cpp-502-    if (p.posHistory.empty())
+src/network/server-players.cpp-503-        return false;
+src/network/server-players.cpp-504-    if (targetTick >= p.posHistory.back().tick)
+src/network/server-players.cpp-505-    {
+src/network/server-players.cpp-506-        outPos = p.pos;
+src/network/server-players.cpp-507-        return true;
+src/network/server-players.cpp-508-    }
+src/network/server-players.cpp-509-    if (targetTick <= p.posHistory.front().tick)
+src/network/server-players.cpp-510-    {
+src/network/server-players.cpp-511-        outPos = p.posHistory.front().pos;
+src/network/server-players.cpp-512-        return true;
+src/network/server-players.cpp-513-    }
+src/network/server-players.cpp-514-    for (int i = (int)p.posHistory.size() - 1; i > 0; --i)
+src/network/server-players.cpp-515-    {
+src/network/server-players.cpp-516-        if (p.posHistory[i].tick == targetTick)
+src/network/server-players.cpp-517-        {
+src/network/server-players.cpp-518-            outPos = p.posHistory[i].pos;
+src/network/server-players.cpp-519-            return true;
+src/network/server-players.cpp-520-        }
+src/network/server-players.cpp-521-        if (p.posHistory[i].tick < targetTick)
+src/network/server-players.cpp-522-        {
+src/network/server-players.cpp-523-            const auto& a = p.posHistory[i];
+src/network/server-players.cpp-524-            const auto& b = p.posHistory[i + 1];
+src/network/server-players.cpp-525-            float frac = float(targetTick - a.tick) / float(b.tick - a.tick);
+src/network/server-players.cpp-526-            outPos = glm::mix(a.pos, b.pos, frac);
+src/network/server-players.cpp-527-            return true;
+src/network/server-players.cpp-528-        }
+src/network/server-players.cpp-529-    }
+src/network/server-players.cpp-530-    outPos = p.posHistory.front().pos;
+src/network/server-players.cpp-531-    return true;
+src/network/server-players.cpp-532-}
+src/network/server-players.cpp-533-
+src/network/server-players.cpp:534:SnapshotEntity makePlayerEntity(const ServerPlayer& player)
+src/network/server-players.cpp-535-{
+src/network/server-players.cpp-536-    SnapshotEntity out{};
+src/network/server-players.cpp-537-    out.networkEntityId = player.id;
+src/network/server-players.cpp-538-    out.entityType = ENTITY_PLAYER;
+src/network/server-players.cpp-539-    out.active = 1;
+src/network/server-players.cpp-540-    out.ownerClientId = player.id;
+src/network/server-players.cpp-541-    out.px = player.pos.x; out.py = player.pos.y; out.pz = player.pos.z;
+src/network/server-players.cpp-542-    out.vx = player.vel.x; out.vy = player.vel.y; out.vz = player.vel.z;
+src/network/server-players.cpp-543-    out.yaw = player.yaw;
+src/network/server-players.cpp-544-    out.health = player.health;
+src/network/server-players.cpp-545-    out.onGround = player.onGround ? 1 : 0;
+src/network/server-players.cpp-546-    out.equippedSlot = (int16_t)player.equippedSlot;
+src/network/server-players.cpp-547-    out.weaponState = player.weaponState;
+src/network/server-players.cpp-548-    out.transformEpoch = player.transformEpoch;
+src/network/server-players.cpp-549-    out.aimX = player.input.camForward.x;
+src/network/server-players.cpp-550-    out.aimY = player.input.camForward.y;
+src/network/server-players.cpp-551-    out.aimZ = player.input.camForward.z;
+src/network/server-players.cpp-552-    out.pingMs = player.pingMs;
+src/network/server-players.cpp-553-    out.sizeScale = player.sizeScale;
+src/network/server-players.cpp-554-    out.spawnGeneration = player.spawnGeneration;
+src/network/server-players.cpp-555-
+src/network/server-players.cpp-556-    {
+src/network/server-players.cpp-557-        static uint64_t lastLookSnapshotLogMs = 0;
+src/network/server-players.cpp-558-        uint64_t nowLookSnap = nowMs();
+src/network/server-players.cpp-559-        if (nowLookSnap - lastLookSnapshotLogMs >= 1000)
+src/network/server-players.cpp-560-        {
+src/network/server-players.cpp:561:            printf("[LOOK SNAPSHOT BUILD] playerId=%u yaw=%.2f aim=(%.2f,%.2f,%.2f) "
+src/network/server-players.cpp-562-                   "pos=(%.2f,%.2f,%.2f)\n",
+src/network/server-players.cpp-563-                   player.id, player.yaw,
+src/network/server-players.cpp-564-                   player.input.camForward.x, player.input.camForward.y, player.input.camForward.z,
+src/network/server-players.cpp-565-                   player.pos.x, player.pos.y, player.pos.z);
+src/network/server-players.cpp-566-            lastLookSnapshotLogMs = nowLookSnap;
+src/network/server-players.cpp-567-        }
+src/network/server-players.cpp-568-    }
+src/network/server-players.cpp-569-
+src/network/server-players.cpp-570-    // Build snapshot state flags from client input state + server authoritative state.
+src/network/server-players.cpp-571-    // Use client-validated visual flags for cosmetic animation replication
+src/network/server-players.cpp-572-    // so that walking animation works even when server onGround is temporarily wrong.
+src/network/server-players.cpp-573-    {
+src/network/server-players.cpp-574-        constexpr uint16_t CLIENT_VISUAL_FLAGS =
+src/network/server-players.cpp-575-            NET_STATE_WALKING | NET_STATE_JUMPING |
+src/network/server-players.cpp-576-            NET_STATE_DASHING | NET_STATE_DOWN_DASHING |
+src/network/server-players.cpp-577-            NET_STATE_FREEZING | NET_STATE_ATTACKING;
+src/network/server-players.cpp-578-
+src/network/server-players.cpp-579-        uint16_t flags = player.inputStateFlags & CLIENT_VISUAL_FLAGS;
+src/network/server-players.cpp-580-
+src/network/server-players.cpp-581-        // Server retains authority over ON_GROUND
+src/network/server-players.cpp-582-        if (player.onGround)
+src/network/server-players.cpp-583-            flags |= NET_STATE_ON_GROUND;
+src/network/server-players.cpp-584-        else
+src/network/server-players.cpp-585-            flags &= ~NET_STATE_ON_GROUND;
+src/network/server-players.cpp-586-
+--
+src/network/multiplayer-tick.cpp-52-        flags |= MOVEMENT_REPORT_FREEZE_ACTIVE;
+src/network/multiplayer-tick.cpp-53-    if (input.freezeAvailable)
+src/network/multiplayer-tick.cpp-54-        flags |= MOVEMENT_REPORT_FREEZE_AVAILABLE;
+src/network/multiplayer-tick.cpp-55-    if (input.groundReturnAvailable)
+src/network/multiplayer-tick.cpp-56-        flags |= MOVEMENT_REPORT_GROUND_RETURN_AVAILABLE;
+src/network/multiplayer-tick.cpp-57-    if (input.jumpHeld)
+src/network/multiplayer-tick.cpp-58-        flags |= MOVEMENT_REPORT_JUMP_HELD;
+src/network/multiplayer-tick.cpp-59-    if (input.dashPressed)
+src/network/multiplayer-tick.cpp-60-        flags |= MOVEMENT_REPORT_DASH_PRESSED;
+src/network/multiplayer-tick.cpp-61-    if (input.downDashPressed)
+src/network/multiplayer-tick.cpp-62-        flags |= MOVEMENT_REPORT_DOWN_DASH_PRESSED;
+src/network/multiplayer-tick.cpp-63-    if (input.freezeHeld)
+src/network/multiplayer-tick.cpp-64-        flags |= MOVEMENT_REPORT_FREEZE_HELD;
+src/network/multiplayer-tick.cpp-65-    return flags;
+src/network/multiplayer-tick.cpp-66-}
+src/network/multiplayer-tick.cpp-67-
+src/network/multiplayer-tick.cpp-68-static void eraseLocalReplica(MultiplayerContext& ctx, uint32_t entityId,
+src/network/multiplayer-tick.cpp-69-                              const char* reason)
+src/network/multiplayer-tick.cpp-70-{
+src/network/multiplayer-tick.cpp-71-    if (entityId == 0)
+src/network/multiplayer-tick.cpp-72-        return;
+src/network/multiplayer-tick.cpp-73-    const bool hadPlayer = ctx.remotePlayers.erase(entityId) != 0;
+src/network/multiplayer-tick.cpp-74-    const bool hadInterp = ctx.remotePlayerInterpolation.erase(entityId) != 0;
+src/network/multiplayer-tick.cpp-75-    if (hadPlayer || hadInterp)
+src/network/multiplayer-tick.cpp-76-    {
+src/network/multiplayer-tick.cpp:77:        printf("[CLIENT LOCAL REPLICA DROP] playerId=%u entityId=%u reason=%s\n",
+src/network/multiplayer-tick.cpp-78-               ctx.localPlayerId, entityId, reason);
+src/network/multiplayer-tick.cpp-79-    }
+src/network/multiplayer-tick.cpp-80-}
+src/network/multiplayer-tick.cpp-81-
+src/network/multiplayer-tick.cpp-82-// ── Shared snapshot entity processing ──────────────────────────────
+src/network/multiplayer-tick.cpp-83-// Called by both legacy (SnapshotPacket) and chunked (CompactEntityData)
+src/network/multiplayer-tick.cpp-84-// snapshot paths.  Handles local-player state, remote-player/NPC creation,
+src/network/multiplayer-tick.cpp-85-// interpolation, and cleanup of missing entities.
+src/network/multiplayer-tick.cpp-86-static void processSnapshotEntities(
+src/network/multiplayer-tick.cpp-87-    MultiplayerContext& ctx,
+src/network/multiplayer-tick.cpp-88-    const SnapshotEntity* entities,
+src/network/multiplayer-tick.cpp-89-    uint32_t entityCount,
+src/network/multiplayer-tick.cpp-90-    uint32_t serverTick,
+src/network/multiplayer-tick.cpp-91-    float dt,
+src/network/multiplayer-tick.cpp-92-    const char* sourceName)
+src/network/multiplayer-tick.cpp-93-{
+src/network/multiplayer-tick.cpp-94-    std::unordered_map<uint32_t, bool> seenPlayers;
+src/network/multiplayer-tick.cpp-95-    std::unordered_map<uint32_t, bool> seenNpcs;
+src/network/multiplayer-tick.cpp-96-
+src/network/multiplayer-tick.cpp-97-    for (uint32_t i = 0; i < entityCount; ++i)
+src/network/multiplayer-tick.cpp-98-    {
+src/network/multiplayer-tick.cpp-99-        const SnapshotEntity& entity = entities[i];
+src/network/multiplayer-tick.cpp-100-        if (!entity.active || entity.networkEntityId == 0)
+src/network/multiplayer-tick.cpp-101-        {
+src/network/multiplayer-tick.cpp:102:            printf("[CLIENT ENTITY SKIP] entityId=%u reason=inactive-or-zero-id\n",
+src/network/multiplayer-tick.cpp-103-                   entity.networkEntityId);
+src/network/multiplayer-tick.cpp-104-            continue;
+src/network/multiplayer-tick.cpp-105-        }
+src/network/multiplayer-tick.cpp-106-
+src/network/multiplayer-tick.cpp-107-        const bool isLocal =
+src/network/multiplayer-tick.cpp-108-            entity.entityType == ENTITY_PLAYER &&
+src/network/multiplayer-tick.cpp-109-            (entity.ownerClientId == ctx.localPlayerId ||
+src/network/multiplayer-tick.cpp-110-             entity.networkEntityId == ctx.localPlayerId);
+src/network/multiplayer-tick.cpp-111-        if (isLocal)
+src/network/multiplayer-tick.cpp-112-        {
+src/network/multiplayer-tick.cpp-113-            eraseLocalReplica(ctx, entity.networkEntityId, "authoritative-local-snapshot");
+src/network/multiplayer-tick.cpp-114-
+src/network/multiplayer-tick.cpp-115-            const bool olderEpoch = entity.transformEpoch != 0 &&
+src/network/multiplayer-tick.cpp-116-                ctx.localServerEpoch != 0 &&
+src/network/multiplayer-tick.cpp-117-                (uint32_t)entity.transformEpoch < (uint32_t)ctx.localServerEpoch;
+src/network/multiplayer-tick.cpp-118-            const bool sameEpochOlderTick = entity.transformEpoch == ctx.localServerEpoch &&
+src/network/multiplayer-tick.cpp-119-                serverTick <= ctx.latestLocalSnapshotTick;
+src/network/multiplayer-tick.cpp-120-            const bool acceptLifecycle = !olderEpoch && !sameEpochOlderTick;
+src/network/multiplayer-tick.cpp-121-
+src/network/multiplayer-tick.cpp-122-            if (!acceptLifecycle)
+src/network/multiplayer-tick.cpp-123-            {
+src/network/multiplayer-tick.cpp-124-                Debug::logThrottled(
+src/network/multiplayer-tick.cpp-125-                    Debug::Category::Networking,
+src/network/multiplayer-tick.cpp-126-                    "client-local-stale-snapshot",
+src/network/multiplayer-tick.cpp-127-                    0.5f,
+src/network/multiplayer-tick.cpp:128:                    "[CLIENT SNAPSHOT DROP] entityId=%u reason=stale-local "
+src/network/multiplayer-tick.cpp-129-                    "tick=%u latestTick=%u epoch=%u localEpoch=%u spawnGen=%u "
+src/network/multiplayer-tick.cpp-130-                    "knownSpawnGen=%u\n",
+src/network/multiplayer-tick.cpp-131-                    entity.networkEntityId,
+src/network/multiplayer-tick.cpp-132-                    serverTick,
+src/network/multiplayer-tick.cpp-133-                    ctx.latestLocalSnapshotTick,
+src/network/multiplayer-tick.cpp-134-                    (unsigned)entity.transformEpoch,
+src/network/multiplayer-tick.cpp-135-                    (unsigned)ctx.localServerEpoch,
+src/network/multiplayer-tick.cpp-136-                    entity.spawnGeneration,
+src/network/multiplayer-tick.cpp-137-                    ctx.lastKnownSpawnGeneration);
+src/network/multiplayer-tick.cpp-138-                continue;
+src/network/multiplayer-tick.cpp-139-            }
+src/network/multiplayer-tick.cpp-140-
+src/network/multiplayer-tick.cpp-141-            ctx.localServerPosition = {entity.px, entity.py, entity.pz};
+src/network/multiplayer-tick.cpp-142-            ctx.localServerVelocity = {entity.vx, entity.vy, entity.vz};
+src/network/multiplayer-tick.cpp-143-            ctx.localServerYaw = entity.yaw;
+src/network/multiplayer-tick.cpp-144-            ctx.localServerOnGround = entity.onGround != 0;
+src/network/multiplayer-tick.cpp-145-            ctx.hasLocalServerPosition = true;
+src/network/multiplayer-tick.cpp-146-            ctx.localServerHealth = entity.health;
+src/network/multiplayer-tick.cpp-147-            ctx.localServerEpoch = entity.transformEpoch;
+src/network/multiplayer-tick.cpp-148-            ctx.localPingMs = entity.pingMs;
+src/network/multiplayer-tick.cpp-149-            ctx.latestLocalSnapshotTick = serverTick;
+src/network/multiplayer-tick.cpp-150-            if (entity.spawnGeneration != 0)
+src/network/multiplayer-tick.cpp-151-                ctx.lastKnownSpawnGeneration = entity.spawnGeneration;
+src/network/multiplayer-tick.cpp-152-            if (entity.health > 0)
+src/network/multiplayer-tick.cpp-153-                ctx.latestAliveSnapshotTick = serverTick;
+--
+src/network/multiplayer-tick.cpp-198-        if (entity.entityType == ENTITY_PLAYER)
+src/network/multiplayer-tick.cpp-199-        {
+src/network/multiplayer-tick.cpp-200-            if (entity.networkEntityId == ctx.localPlayerId ||
+src/network/multiplayer-tick.cpp-201-                entity.ownerClientId == ctx.localPlayerId)
+src/network/multiplayer-tick.cpp-202-            {
+src/network/multiplayer-tick.cpp-203-                eraseLocalReplica(ctx, entity.networkEntityId, "local-identity-guard");
+src/network/multiplayer-tick.cpp-204-                continue;
+src/network/multiplayer-tick.cpp-205-            }
+src/network/multiplayer-tick.cpp-206-            replicas = &ctx.remotePlayers;
+src/network/multiplayer-tick.cpp-207-            interpolationMap = &ctx.remotePlayerInterpolation;
+src/network/multiplayer-tick.cpp-208-            seen = &seenPlayers;
+src/network/multiplayer-tick.cpp-209-            typeName = "Player";
+src/network/multiplayer-tick.cpp-210-            ctx.playerRegistry[entity.networkEntityId] = {
+src/network/multiplayer-tick.cpp-211-                entity.displayName, entity.networkEntityId, entity.pingMs
+src/network/multiplayer-tick.cpp-212-            };
+src/network/multiplayer-tick.cpp-213-        }
+src/network/multiplayer-tick.cpp-214-        else if (entity.entityType == ENTITY_NPC)
+src/network/multiplayer-tick.cpp-215-        {
+src/network/multiplayer-tick.cpp-216-            replicas = &ctx.remoteNpcs;
+src/network/multiplayer-tick.cpp-217-            interpolationMap = &ctx.remoteNpcInterpolation;
+src/network/multiplayer-tick.cpp-218-            seen = &seenNpcs;
+src/network/multiplayer-tick.cpp-219-            typeName = "NPC";
+src/network/multiplayer-tick.cpp-220-        }
+src/network/multiplayer-tick.cpp-221-        else
+src/network/multiplayer-tick.cpp-222-        {
+src/network/multiplayer-tick.cpp:223:            printf("[CLIENT ENTITY SKIP] entityId=%u reason=unknown-entity-type-%u\n",
+src/network/multiplayer-tick.cpp-224-                   entity.networkEntityId, entity.entityType);
+src/network/multiplayer-tick.cpp-225-            continue;
+src/network/multiplayer-tick.cpp-226-        }
+src/network/multiplayer-tick.cpp-227-
+src/network/multiplayer-tick.cpp-228-        bool existsBefore = replicas->find(entity.networkEntityId) != replicas->end();
+src/network/multiplayer-tick.cpp-229-        Player& p = (*replicas)[entity.networkEntityId];
+src/network/multiplayer-tick.cpp-230-        bool isNew = !existsBefore;
+src/network/multiplayer-tick.cpp-231-        EntityInterpolationState& interpolation = (*interpolationMap)[entity.networkEntityId];
+src/network/multiplayer-tick.cpp-232-        if (isNew)
+src/network/multiplayer-tick.cpp-233-        {
+src/network/multiplayer-tick.cpp-234-            if (GetPlayerSettings().avatarName.empty()) {
+src/network/multiplayer-tick.cpp-235-                AvatarSystem::applySingleTexture(p, GetPlayerSettings().outfitPath);
+src/network/multiplayer-tick.cpp-236-            } else {
+src/network/multiplayer-tick.cpp-237-                AvatarSystem::instance().applyToPlayer(p);
+src/network/multiplayer-tick.cpp-238-            }
+src/network/multiplayer-tick.cpp-239-            interpolation.renderRegistered = true;
+src/network/multiplayer-tick.cpp-240-            printf("[CLIENT ENTITY CREATE] entityId=%u type=%s ownerClientId=%u "
+src/network/multiplayer-tick.cpp-241-                   "mesh=%s position=(%.2f,%.2f,%.2f)\n",
+src/network/multiplayer-tick.cpp-242-                   entity.networkEntityId, typeName, entity.ownerClientId,
+src/network/multiplayer-tick.cpp-243-                   p.modelLoaded ? "player-glb" : "fallback-capsule",
+src/network/multiplayer-tick.cpp-244-                   entity.px, entity.py, entity.pz);
+src/network/multiplayer-tick.cpp-245-        }
+src/network/multiplayer-tick.cpp-246-
+src/network/multiplayer-tick.cpp-247-        if (!pushInterpolationTarget(interpolation, entity, serverTick))
+src/network/multiplayer-tick.cpp-248-            continue;
+src/network/multiplayer-tick.cpp-249-        p.spawnGeneration = entity.spawnGeneration;
+src/network/multiplayer-tick.cpp-250-        if (isNew)
+src/network/multiplayer-tick.cpp-251-            updateRenderedReplica(p, interpolation, dt);
+src/network/multiplayer-tick.cpp-252-        (*seen)[entity.networkEntityId] = true;
+src/network/multiplayer-tick.cpp-253-
+src/network/multiplayer-tick.cpp-254-        static uint64_t lastEntityLogMs = 0;
+src/network/multiplayer-tick.cpp-255-        uint64_t nowEnt = nowMs();
+src/network/multiplayer-tick.cpp-256-        if (isNew || nowEnt - lastEntityLogMs >= 1000)
+src/network/multiplayer-tick.cpp-257-        {
+src/network/multiplayer-tick.cpp-258-            lastEntityLogMs = nowEnt;
+src/network/multiplayer-tick.cpp-259-            printf("[CLIENT ENTITY] entityId=%u type=%s ownerId=%u isLocal=0 existsBefore=%d "
+src/network/multiplayer-tick.cpp-260-                   "createdReplica=%d renderRegistered=%d position=(%.2f,%.2f,%.2f) rot=%.2f name=%s\n",
+src/network/multiplayer-tick.cpp-261-                   entity.networkEntityId, typeName, entity.ownerClientId,
+src/network/multiplayer-tick.cpp-262-                   (int)existsBefore, (int)isNew, (int)interpolation.renderRegistered,
+src/network/multiplayer-tick.cpp-263-                   entity.px, entity.py, entity.pz, entity.yaw,
+src/network/multiplayer-tick.cpp-264-                   entity.displayName);
+src/network/multiplayer-tick.cpp-265-        }
+src/network/multiplayer-tick.cpp-266-    }
+src/network/multiplayer-tick.cpp-267-
+src/network/multiplayer-tick.cpp-268-    // Clean up missing entities
+src/network/multiplayer-tick.cpp-269-    for (auto it = ctx.remotePlayers.begin(); it != ctx.remotePlayers.end(); )
+src/network/multiplayer-tick.cpp-270-    {
+src/network/multiplayer-tick.cpp-271-        if (!seenPlayers[it->first])
+src/network/multiplayer-tick.cpp-272-        {
+src/network/multiplayer-tick.cpp-273-            const uint32_t eid = it->first;
+src/network/multiplayer-tick.cpp:274:            printf("[ENTITY DESTROY] reason=missing-from-snapshot entityId=%u type=Player name=\"%s\"\n",
+src/network/multiplayer-tick.cpp-275-                   eid, ctx.playerRegistry[eid].name.c_str());
+src/network/multiplayer-tick.cpp-276-            it = ctx.remotePlayers.erase(it);
+src/network/multiplayer-tick.cpp-277-            ctx.remotePlayerInterpolation.erase(eid);
+src/network/multiplayer-tick.cpp-278-            ctx.playerRegistry.erase(eid);
+src/network/multiplayer-tick.cpp-279-        }
+src/network/multiplayer-tick.cpp-280-        else
+src/network/multiplayer-tick.cpp-281-            ++it;
+src/network/multiplayer-tick.cpp-282-    }
+src/network/multiplayer-tick.cpp-283-    for (auto it = ctx.remoteNpcs.begin(); it != ctx.remoteNpcs.end(); )
+src/network/multiplayer-tick.cpp-284-    {
+src/network/multiplayer-tick.cpp-285-        if (!seenNpcs[it->first])
+src/network/multiplayer-tick.cpp-286-        {
+src/network/multiplayer-tick.cpp-287-            const uint32_t eid = it->first;
+src/network/multiplayer-tick.cpp:288:            printf("[ENTITY DESTROY] reason=missing-from-snapshot entityId=%u type=NPC name=\"%s\"\n",
+src/network/multiplayer-tick.cpp-289-                   eid, it->second.username.c_str());
+src/network/multiplayer-tick.cpp-290-            it = ctx.remoteNpcs.erase(it);
+src/network/multiplayer-tick.cpp-291-            ctx.remoteNpcInterpolation.erase(eid);
+src/network/multiplayer-tick.cpp-292-        }
+src/network/multiplayer-tick.cpp-293-        else
+src/network/multiplayer-tick.cpp-294-            ++it;
+src/network/multiplayer-tick.cpp-295-    }
+src/network/multiplayer-tick.cpp-296-}
+src/network/multiplayer-tick.cpp-297-
+src/network/multiplayer-tick.cpp-298-// (anonymous namespace continues below)
+src/network/multiplayer-tick.cpp-299-
+src/network/multiplayer-tick.cpp-300-bool isSameAddress(const sockaddr_in& a, const sockaddr_in& b)
+src/network/multiplayer-tick.cpp-301-{
+src/network/multiplayer-tick.cpp-302-    return a.sin_family == b.sin_family &&
+src/network/multiplayer-tick.cpp-303-        a.sin_port == b.sin_port &&
+src/network/multiplayer-tick.cpp-304-        a.sin_addr.s_addr == b.sin_addr.s_addr;
+src/network/multiplayer-tick.cpp-305-}
+src/network/multiplayer-tick.cpp-306-
+src/network/multiplayer-tick.cpp-307-void copyName(char (&dst)[MAX_NAME_BYTES], const std::string& name)
+src/network/multiplayer-tick.cpp-308-{
+src/network/multiplayer-tick.cpp-309-    std::memset(dst, 0, sizeof(dst));
+src/network/multiplayer-tick.cpp-310-    std::strncpy(dst, name.c_str(), sizeof(dst) - 1);
+src/network/multiplayer-tick.cpp-311-}
+src/network/multiplayer-tick.cpp-312-
+src/network/multiplayer-tick.cpp-313-void sendJoinRequest(MultiplayerContext& ctx, const std::string& playerName)
+--
+src/network/multiplayer-tick.cpp-372-    Debug::log(Debug::Category::Weapons, "[SPAWN SYNC APPLY] oldGen=%u newGen=%u health=%d weapons=%u\n",
+src/network/multiplayer-tick.cpp-373-               oldGen, spawn->spawnGeneration, spawn->health, spawn->weaponCount);
+src/network/multiplayer-tick.cpp-374-}
+src/network/multiplayer-tick.cpp-375-
+src/network/multiplayer-tick.cpp-376-void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input, const World& world)
+src/network/multiplayer-tick.cpp-377-{
+src/network/multiplayer-tick.cpp-378-    if (!ctx.active)
+src/network/multiplayer-tick.cpp-379-        return;
+src/network/multiplayer-tick.cpp-380-    if (ctx.sock == INVALID_SOCKET && !ctx.transport)
+src/network/multiplayer-tick.cpp-381-    {
+src/network/multiplayer-tick.cpp-382-        Debug::warn(Debug::Category::Networking,
+src/network/multiplayer-tick.cpp-383-               "[NET TICK] sock=INVALID_SOCKET state=%s connected=%d active=%d transport=%d\n",
+src/network/multiplayer-tick.cpp-384-               connectionStateName(ctx.connectionState), (int)ctx.connected, (int)ctx.active,
+src/network/multiplayer-tick.cpp-385-               (int)(ctx.transport != nullptr));
+src/network/multiplayer-tick.cpp-386-        return;
+src/network/multiplayer-tick.cpp-387-    }
+src/network/multiplayer-tick.cpp-388-
+src/network/multiplayer-tick.cpp-389-    uint64_t currentMs = nowMs();
+src/network/multiplayer-tick.cpp-390-
+src/network/multiplayer-tick.cpp-391-    const uint64_t CLIENT_TIMEOUT_MS = MimitaNet::CLIENT_TIMEOUT_MS;
+src/network/multiplayer-tick.cpp-392-    if (ctx.connected && ctx.lastHeardServerMs > 0 &&
+src/network/multiplayer-tick.cpp-393-        currentMs - ctx.lastHeardServerMs > CLIENT_TIMEOUT_MS)
+src/network/multiplayer-tick.cpp-394-    {
+src/network/multiplayer-tick.cpp-395-        if (currentMs - ctx.lastDisconnectLogMs >= 1000)
+src/network/multiplayer-tick.cpp-396-        {
+src/network/multiplayer-tick.cpp:397:            printf("[NET TIMEOUT] player=%u reason=server-silent lastPacket=%llums ago\n",
+src/network/multiplayer-tick.cpp-398-                   ctx.localPlayerId,
+src/network/multiplayer-tick.cpp-399-                   (unsigned long long)(currentMs - ctx.lastHeardServerMs));
+src/network/multiplayer-tick.cpp-400-            ctx.lastDisconnectLogMs = currentMs;
+src/network/multiplayer-tick.cpp-401-        }
+src/network/multiplayer-tick.cpp:402:        printf("[NET DISCONNECT] player=%u reason=heartbeat_timeout duration=%llums\n",
+src/network/multiplayer-tick.cpp-403-               ctx.localPlayerId,
+src/network/multiplayer-tick.cpp-404-               (unsigned long long)(currentMs - ctx.lastHeardServerMs));
+src/network/multiplayer-tick.cpp-405-
+src/network/multiplayer-tick.cpp-406-        // Try reconnect if we have a reconnect token
+src/network/multiplayer-tick.cpp-407-        if (!ctx.reconnectToken.empty())
+src/network/multiplayer-tick.cpp-408-        {
+src/network/multiplayer-tick.cpp-409-            ctx.connected = false;
+src/network/multiplayer-tick.cpp-410-            ctx.connectionState = ConnectionState::Reconnecting;
+src/network/multiplayer-tick.cpp-411-            mpStartReconnect(ctx);
+src/network/multiplayer-tick.cpp-412-            return;
+src/network/multiplayer-tick.cpp-413-        }
+src/network/multiplayer-tick.cpp-414-
+src/network/multiplayer-tick.cpp-415-        teardownPreviousSession(ctx, DisconnectPolicy::ConnectionFailure);
+src/network/multiplayer-tick.cpp-416-        return;
+src/network/multiplayer-tick.cpp-417-    }
+src/network/multiplayer-tick.cpp-418-
+src/network/multiplayer-tick.cpp-419-    // Decay old disagreement events
+src/network/multiplayer-tick.cpp-420-    {
+src/network/multiplayer-tick.cpp-421-        constexpr uint64_t DISAGREEMENT_LIFETIME_MS = 3000;
+src/network/multiplayer-tick.cpp-422-        for (size_t i = 0; i < ctx.disagreementEvents.size(); )
+src/network/multiplayer-tick.cpp-423-        {
+src/network/multiplayer-tick.cpp-424-            if (currentMs - ctx.disagreementEvents[i].timeMs > DISAGREEMENT_LIFETIME_MS)
+src/network/multiplayer-tick.cpp-425-                ctx.disagreementEvents.erase(ctx.disagreementEvents.begin() + i);
+src/network/multiplayer-tick.cpp-426-            else
+src/network/multiplayer-tick.cpp-427-                ++i;
+--
+src/network/multiplayer-tick.cpp-545-            ctx.clientMapReadySent = false;
+src/network/multiplayer-tick.cpp-546-            ctx.clientMapReadySentForMap.clear();
+src/network/multiplayer-tick.cpp-547-            ctx.clientMapReadySentForPlayerId = 0;
+src/network/multiplayer-tick.cpp-548-            // Reset reconciliation state for new connection
+src/network/multiplayer-tick.cpp-549-            ctx.hasLocalServerPosition = false;
+src/network/multiplayer-tick.cpp-550-            ctx.localPlayerReconciled = false;
+src/network/multiplayer-tick.cpp-551-            ctx.localServerEpoch = 0;
+src/network/multiplayer-tick.cpp-552-            ctx.lastAppliedEpoch = 0;
+src/network/multiplayer-tick.cpp-553-            ctx.teleportResync = false;
+src/network/multiplayer-tick.cpp-554-            ctx.awaitingTeleportAck = false;
+src/network/multiplayer-tick.cpp-555-            printf("[NET CONNECT] join accepted player=%u tickRate=%.0f mapId=%s epoch=%u\n",
+src/network/multiplayer-tick.cpp-556-                   ctx.localPlayerId, accept->tickRate, accept->mapId, ctx.transformEpoch);
+src/network/multiplayer-tick.cpp-557-            ctx.playerRegistry[ctx.localPlayerId] = {
+src/network/multiplayer-tick.cpp-558-                ctx.approvedLocalName.empty() ? playerName : ctx.approvedLocalName,
+src/network/multiplayer-tick.cpp-559-                ctx.localPlayerId,
+src/network/multiplayer-tick.cpp-560-                0
+src/network/multiplayer-tick.cpp-561-            };
+src/network/multiplayer-tick.cpp-562-            eraseLocalReplica(ctx, ctx.localPlayerId, "join-accept");
+src/network/multiplayer-tick.cpp-563-            printf("[NET CONNECT] join accepted player=%u tickRate=%.0f mapId=%s\n",
+src/network/multiplayer-tick.cpp-564-                   ctx.localPlayerId, accept->tickRate, accept->mapId);
+src/network/multiplayer-tick.cpp-565-        }
+src/network/multiplayer-tick.cpp-566-        else if (header->type == PACKET_JOIN_REJECT && bytes >= (int)sizeof(JoinRejectPacket))
+src/network/multiplayer-tick.cpp-567-        {
+src/network/multiplayer-tick.cpp-568-            const JoinRejectPacket* reject = reinterpret_cast<const JoinRejectPacket*>(buffer);
+src/network/multiplayer-tick.cpp-569-            ctx.connectionStatus = "Join rejected";
+src/network/multiplayer-tick.cpp:570:            printf("[NET CONNECT] join rejected reason=%u\n", reject->reason);
+src/network/multiplayer-tick.cpp-571-            teardownPreviousSession(ctx, DisconnectPolicy::Rejected);
+src/network/multiplayer-tick.cpp-572-        }
+src/network/multiplayer-tick.cpp-573-        else if (header->type == PACKET_RECONNECT_ACCEPT && bytes >= (int)sizeof(ReconnectAcceptPacket))
+src/network/multiplayer-tick.cpp-574-        {
+src/network/multiplayer-tick.cpp-575-            const ReconnectAcceptPacket* accept = reinterpret_cast<const ReconnectAcceptPacket*>(buffer);
+src/network/multiplayer-tick.cpp-576-            ctx.localPlayerId = accept->assignedPlayerId;
+src/network/multiplayer-tick.cpp-577-            ctx.connected = true;
+src/network/multiplayer-tick.cpp-578-            ctx.connectFailed = false;
+src/network/multiplayer-tick.cpp-579-            ctx.connectionState = ConnectionState::Connected;
+src/network/multiplayer-tick.cpp-580-            ctx.connectionStatus = "Reconnected";
+src/network/multiplayer-tick.cpp-581-            ctx.approvedLocalName = accept->approvedName;
+src/network/multiplayer-tick.cpp-582-            ctx.reconnectToken = accept->reconnectToken;
+src/network/multiplayer-tick.cpp-583-            ctx.reliableEventSessionId = accept->reliableEventSessionId;
+src/network/multiplayer-tick.cpp-584-            if (accept->spawnGeneration != 0)
+src/network/multiplayer-tick.cpp-585-                ctx.lastKnownSpawnGeneration = accept->spawnGeneration;
+src/network/multiplayer-tick.cpp-586-            ctx.localServerPosition = {accept->restorePx, accept->restorePy, accept->restorePz};
+src/network/multiplayer-tick.cpp-587-            ctx.localServerHealth = accept->restoredHealth;
+src/network/multiplayer-tick.cpp-588-            ctx.hasLocalServerPosition = true;
+src/network/multiplayer-tick.cpp-589-            ctx.transformEpoch = accept->header.transformEpoch;
+src/network/multiplayer-tick.cpp-590-            ctx.localServerEpoch = accept->header.transformEpoch;
+src/network/multiplayer-tick.cpp-591-            ctx.nextMovementSequence = 1;
+src/network/multiplayer-tick.cpp-592-            ctx.lastAppliedEpoch = 0;
+src/network/multiplayer-tick.cpp-593-            ctx.localPlayerReconciled = false;
+src/network/multiplayer-tick.cpp-594-            ctx.teleportResync = false;
+src/network/multiplayer-tick.cpp-595-            ctx.awaitingTeleportAck = false;
+--
+src/network/multiplayer-tick.cpp-751-            mpProcessProjectileFireResultPacket(
+src/network/multiplayer-tick.cpp-752-                ctx, reinterpret_cast<const ProjectileFireResultPacket*>(buffer));
+src/network/multiplayer-tick.cpp-753-        }
+src/network/multiplayer-tick.cpp-754-        else if (header->type == PACKET_PELLET_BLAST_EVENT &&
+src/network/multiplayer-tick.cpp-755-                 bytes >= (int)sizeof(PelletBlastEventPacket))
+src/network/multiplayer-tick.cpp-756-        {
+src/network/multiplayer-tick.cpp-757-            mpProcessPelletBlastEventPacket(
+src/network/multiplayer-tick.cpp-758-                ctx, reinterpret_cast<const PelletBlastEventPacket*>(buffer));
+src/network/multiplayer-tick.cpp-759-        }
+src/network/multiplayer-tick.cpp-760-        else if (header->type == PACKET_MELEE_HIT_EVENT &&
+src/network/multiplayer-tick.cpp-761-                 bytes >= (int)sizeof(MeleeHitEventPacket))
+src/network/multiplayer-tick.cpp-762-        {
+src/network/multiplayer-tick.cpp-763-            mpProcessMeleeHitEventPacket(
+src/network/multiplayer-tick.cpp-764-                ctx, reinterpret_cast<const MeleeHitEventPacket*>(buffer));
+src/network/multiplayer-tick.cpp-765-        }
+src/network/multiplayer-tick.cpp-766-        else if (header->type == PACKET_DAMAGE_CONFIRMED_EVENT &&
+src/network/multiplayer-tick.cpp-767-                 bytes >= (int)sizeof(DamageConfirmedEventPacket))
+src/network/multiplayer-tick.cpp-768-        {
+src/network/multiplayer-tick.cpp-769-            mpProcessDamageConfirmedEventPacket(
+src/network/multiplayer-tick.cpp-770-                ctx, reinterpret_cast<const DamageConfirmedEventPacket*>(buffer));
+src/network/multiplayer-tick.cpp-771-        }
+src/network/multiplayer-tick.cpp-772-        else if (header->type == PACKET_RELOAD_RESULT &&
+src/network/multiplayer-tick.cpp-773-                 bytes >= (int)sizeof(ReloadResultPacket))
+src/network/multiplayer-tick.cpp-774-        {
+src/network/multiplayer-tick.cpp-775-            const ReloadResultPacket* rr = reinterpret_cast<const ReloadResultPacket*>(buffer);
+src/network/multiplayer-tick.cpp:776:            Debug::log(Debug::Category::Weapons, "[RELOAD RESULT RX] playerId=%u requestId=%u accepted=%d reason=%d ammo=%d/%d stateRev=%u\n",
+src/network/multiplayer-tick.cpp-777-                       ctx.localPlayerId, rr->requestId, (int)rr->accepted, (int)rr->reason,
+src/network/multiplayer-tick.cpp-778-                       rr->magazineAmmo, rr->reserveAmmo, rr->stateRevision);
+src/network/multiplayer-tick.cpp-779-
+src/network/multiplayer-tick.cpp-780-            // Store for processing outside mpTick where Player is in scope
+src/network/multiplayer-tick.cpp-781-            ctx.pendingReloadResults.push_back(*rr);
+src/network/multiplayer-tick.cpp-782-            if (ctx.pendingReloadResults.size() > 64)
+src/network/multiplayer-tick.cpp-783-                ctx.pendingReloadResults.erase(ctx.pendingReloadResults.begin());
+src/network/multiplayer-tick.cpp-784-        }
+src/network/multiplayer-tick.cpp-785-        else if (header->type == PACKET_NPC_DAMAGE_EVENT &&
+src/network/multiplayer-tick.cpp-786-                 bytes >= (int)sizeof(NpcDamageEventPacket))
+src/network/multiplayer-tick.cpp-787-        {
+src/network/multiplayer-tick.cpp-788-            mpProcessNpcDamageEventPacket(ctx, reinterpret_cast<const NpcDamageEventPacket*>(buffer));
+src/network/multiplayer-tick.cpp-789-        }
+src/network/multiplayer-tick.cpp-790-        else if (header->type == PACKET_PLAYER_RESPAWNED &&
+src/network/multiplayer-tick.cpp-791-                 bytes >= (int)sizeof(PlayerRespawnedPacket))
+src/network/multiplayer-tick.cpp-792-        {
+src/network/multiplayer-tick.cpp-793-            const PlayerRespawnedPacket* pr = reinterpret_cast<const PlayerRespawnedPacket*>(buffer);
+src/network/multiplayer-tick.cpp-794-
+src/network/multiplayer-tick.cpp-795-            // Reject older spawn generation
+src/network/multiplayer-tick.cpp-796-            if (pr->spawnGeneration < ctx.lastKnownSpawnGeneration)
+src/network/multiplayer-tick.cpp-797-            {
+src/network/multiplayer-tick.cpp-798-                Debug::log(Debug::Category::Weapons, "[SPAWN RESPAWN REJECT] old spawnGen=%u < %u\n",
+src/network/multiplayer-tick.cpp-799-                           pr->spawnGeneration, ctx.lastKnownSpawnGeneration);
+src/network/multiplayer-tick.cpp-800-                return;
+src/network/multiplayer-tick.cpp-801-            }
+--
+src/network/multiplayer-tick.cpp-868-    {
+src/network/multiplayer-tick.cpp-869-        sockaddr_in from{};
+src/network/multiplayer-tick.cpp-870-        int fromLen = sizeof(from);
+src/network/multiplayer-tick.cpp-871-        int bytes = recvfrom(ctx.sock, buffer, sizeof(buffer), 0,
+src/network/multiplayer-tick.cpp-872-                             (sockaddr*)&from, &fromLen);
+src/network/multiplayer-tick.cpp-873-        if (bytes <= 0)
+src/network/multiplayer-tick.cpp-874-        {
+src/network/multiplayer-tick.cpp-875-            int wsaErr = WSAGetLastError();
+src/network/multiplayer-tick.cpp-876-            if (wsaErr == WSAEWOULDBLOCK)
+src/network/multiplayer-tick.cpp-877-                break;
+src/network/multiplayer-tick.cpp-878-            if (wsaErr == WSAEINVAL)
+src/network/multiplayer-tick.cpp-879-            {
+src/network/multiplayer-tick.cpp-880-                Debug::warn(Debug::Category::Networking,
+src/network/multiplayer-tick.cpp-881-                       "[NET RX SOCKET BUG] recvfrom WSAEINVAL sock=%d "
+src/network/multiplayer-tick.cpp-882-                       "state=%s connected=%d active=%d\n",
+src/network/multiplayer-tick.cpp-883-                       (int)ctx.sock, connectionStateName(ctx.connectionState),
+src/network/multiplayer-tick.cpp-884-                       (int)ctx.connected, (int)ctx.active);
+src/network/multiplayer-tick.cpp-885-                break;
+src/network/multiplayer-tick.cpp-886-            }
+src/network/multiplayer-tick.cpp-887-            printf("[NET RX ERROR] recvfrom failed error=%d\n", wsaErr);
+src/network/multiplayer-tick.cpp-888-            break;
+src/network/multiplayer-tick.cpp-889-        }
+src/network/multiplayer-tick.cpp-890-        ++ctx.packetsReceived;
+src/network/multiplayer-tick.cpp-891-        if (!isSameAddress(from, ctx.serverAddr))
+src/network/multiplayer-tick.cpp-892-        {
+src/network/multiplayer-tick.cpp:893:            printf("[NET PACKET FILTER] accepted=0 reason=not-server from=%s\n",
+src/network/multiplayer-tick.cpp-894-                   addressToString(from).c_str());
+src/network/multiplayer-tick.cpp-895-            continue;
+src/network/multiplayer-tick.cpp-896-        }
+src/network/multiplayer-tick.cpp-897-        processPacket(bytes);
+src/network/multiplayer-tick.cpp-898-    }
+src/network/multiplayer-tick.cpp-899-    }
+src/network/multiplayer-tick.cpp-900-
+src/network/multiplayer-tick.cpp-901-    if (ctx.connected && ctx.localPlayerId && input)
+src/network/multiplayer-tick.cpp-902-    {
+src/network/multiplayer-tick.cpp-903-        InputPacket in{};
+src/network/multiplayer-tick.cpp-904-        in.header.type = PACKET_INPUT;
+src/network/multiplayer-tick.cpp-905-        in.header.tick = ctx.tick;
+src/network/multiplayer-tick.cpp-906-        in.header.playerId = ctx.localPlayerId;
+src/network/multiplayer-tick.cpp-907-        in.header.transformEpoch = ctx.transformEpoch;
+src/network/multiplayer-tick.cpp-908-
+src/network/multiplayer-tick.cpp-909-        // Rate-limited log around respawn epoch
+src/network/multiplayer-tick.cpp-910-        {
+src/network/multiplayer-tick.cpp-911-            static uint64_t lastInputEpochLogMs = 0;
+src/network/multiplayer-tick.cpp-912-            uint64_t nowInputLog = nowMs();
+src/network/multiplayer-tick.cpp-913-            if (nowInputLog - lastInputEpochLogMs >= 1000)
+src/network/multiplayer-tick.cpp-914-            {
+src/network/multiplayer-tick.cpp-915-                printf("[CLIENT INPUT EPOCH] player=%u packetEpoch=%u serverEpoch=%u lastAppliedEpoch=%u "
+src/network/multiplayer-tick.cpp-916-                       "pos=(%.2f,%.2f,%.2f) dead=%d\n",
+src/network/multiplayer-tick.cpp-917-                       ctx.localPlayerId, ctx.transformEpoch,
+src/network/multiplayer-tick.cpp-918-                       (uint32_t)ctx.localServerEpoch, (uint32_t)ctx.lastAppliedEpoch,
+--
+src/network/multiplayer-tick.cpp-979-            in.clientVx = ctx.localServerVelocity.x;
+src/network/multiplayer-tick.cpp-980-            in.clientVy = ctx.localServerVelocity.y;
+src/network/multiplayer-tick.cpp-981-            in.clientVz = ctx.localServerVelocity.z;
+src/network/multiplayer-tick.cpp-982-            in.externalImpulseX = 0.0f;
+src/network/multiplayer-tick.cpp-983-            in.externalImpulseY = 0.0f;
+src/network/multiplayer-tick.cpp-984-            in.externalImpulseZ = 0.0f;
+src/network/multiplayer-tick.cpp-985-        }
+src/network/multiplayer-tick.cpp-986-        else
+src/network/multiplayer-tick.cpp-987-        {
+src/network/multiplayer-tick.cpp-988-            in.clientPx = input->position.x;
+src/network/multiplayer-tick.cpp-989-            in.clientPy = input->position.y;
+src/network/multiplayer-tick.cpp-990-            in.clientPz = input->position.z;
+src/network/multiplayer-tick.cpp-991-            in.clientVx = input->velocity.x;
+src/network/multiplayer-tick.cpp-992-            in.clientVy = input->velocity.y;
+src/network/multiplayer-tick.cpp-993-            in.clientVz = input->velocity.z;
+src/network/multiplayer-tick.cpp-994-            in.externalImpulseX = input->externalImpulse.x;
+src/network/multiplayer-tick.cpp-995-            in.externalImpulseY = input->externalImpulse.y;
+src/network/multiplayer-tick.cpp-996-            in.externalImpulseZ = input->externalImpulse.z;
+src/network/multiplayer-tick.cpp-997-        }
+src/network/multiplayer-tick.cpp-998-
+src/network/multiplayer-tick.cpp-999-        {
+src/network/multiplayer-tick.cpp-1000-            static uint64_t lastTransformGateLogMs = 0;
+src/network/multiplayer-tick.cpp-1001-            uint64_t nowGate = nowMs();
+src/network/multiplayer-tick.cpp-1002-            if (nowGate - lastTransformGateLogMs >= 1000)
+src/network/multiplayer-tick.cpp-1003-            {
+src/network/multiplayer-tick.cpp:1004:                printf("[CLIENT TRANSFORM GATE] playerId=%u "
+src/network/multiplayer-tick.cpp-1005-                       "usingAuthoritative=%d packetEpoch=%u serverEpoch=%u "
+src/network/multiplayer-tick.cpp-1006-                       "lastAppliedEpoch=%u reconciled=%d hasServerPos=%d "
+src/network/multiplayer-tick.cpp-1007-                       "inputPos=(%.2f,%.2f,%.2f) outgoingPos=(%.2f,%.2f,%.2f)\n",
+src/network/multiplayer-tick.cpp-1008-                       ctx.localPlayerId,
+src/network/multiplayer-tick.cpp-1009-                       (int)(!authoritativeTransformApplied && ctx.hasLocalServerPosition),
+src/network/multiplayer-tick.cpp-1010-                       ctx.transformEpoch, (uint32_t)ctx.localServerEpoch,
+src/network/multiplayer-tick.cpp-1011-                       (uint32_t)ctx.lastAppliedEpoch, (int)ctx.localPlayerReconciled,
+src/network/multiplayer-tick.cpp-1012-                       (int)ctx.hasLocalServerPosition,
+src/network/multiplayer-tick.cpp-1013-                       input->position.x, input->position.y, input->position.z,
+src/network/multiplayer-tick.cpp-1014-                       ctx.hasLocalServerPosition
+src/network/multiplayer-tick.cpp-1015-                           ? (in.clientPx == ctx.localServerPosition.x
+src/network/multiplayer-tick.cpp-1016-                               ? ctx.localServerPosition.x : input->position.x)
+src/network/multiplayer-tick.cpp-1017-                           : input->position.x,
+src/network/multiplayer-tick.cpp-1018-                       ctx.hasLocalServerPosition
+src/network/multiplayer-tick.cpp-1019-                           ? (in.clientPy == ctx.localServerPosition.y
+src/network/multiplayer-tick.cpp-1020-                               ? ctx.localServerPosition.y : input->position.y)
+src/network/multiplayer-tick.cpp-1021-                           : input->position.y,
+src/network/multiplayer-tick.cpp-1022-                       ctx.hasLocalServerPosition
+src/network/multiplayer-tick.cpp-1023-                           ? (in.clientPz == ctx.localServerPosition.z
+src/network/multiplayer-tick.cpp-1024-                               ? ctx.localServerPosition.z : input->position.z)
+src/network/multiplayer-tick.cpp-1025-                           : input->position.z);
+src/network/multiplayer-tick.cpp-1026-                lastTransformGateLogMs = nowGate;
+src/network/multiplayer-tick.cpp-1027-            }
+src/network/multiplayer-tick.cpp-1028-        }
+src/network/multiplayer-tick.cpp-1029-
+--
+src/network/server-packets.cpp-67-
+src/network/server-packets.cpp-68-bool applyEquipIntentFromInput(ServerPlayer& player,
+src/network/server-packets.cpp-69-                               const InputPacket& input,
+src/network/server-packets.cpp-70-                               const char* source)
+src/network/server-packets.cpp-71-{
+src/network/server-packets.cpp-72-    const bool serialChanged =
+src/network/server-packets.cpp-73-        input.equipSerial != 0 && input.equipSerial != player.lastEquipSerial;
+src/network/server-packets.cpp-74-    const bool initialUnsyncedSlot =
+src/network/server-packets.cpp-75-        input.equipSerial == 0 &&
+src/network/server-packets.cpp-76-        player.lastEquipSerial == 0 &&
+src/network/server-packets.cpp-77-        player.equippedSlot == 0 &&
+src/network/server-packets.cpp-78-        input.equippedSlot != 0;
+src/network/server-packets.cpp-79-    const bool slotChanged =
+src/network/server-packets.cpp-80-        input.equippedSlot != player.equippedSlot &&
+src/network/server-packets.cpp-81-        (serialChanged || initialUnsyncedSlot);
+src/network/server-packets.cpp-82-    if (!serialChanged && !slotChanged)
+src/network/server-packets.cpp-83-        return false;
+src/network/server-packets.cpp-84-
+src/network/server-packets.cpp-85-    if (!playerCanEquipSlot(player, input.equippedSlot))
+src/network/server-packets.cpp-86-    {
+src/network/server-packets.cpp-87-        Debug::logThrottled(
+src/network/server-packets.cpp-88-            Debug::Category::Weapons,
+src/network/server-packets.cpp-89-            "server-equip-invalid-slot",
+src/network/server-packets.cpp-90-            0.5f,
+src/network/server-packets.cpp-91-            "[SERVER EQUIP REJECT] playerId=%u requestedSlot=%d "
+src/network/server-packets.cpp:92:            "equipSerial=%u source=%s reason=not-owned-or-unknown\n",
+src/network/server-packets.cpp-93-            player.id,
+src/network/server-packets.cpp-94-            input.equippedSlot,
+src/network/server-packets.cpp-95-            input.equipSerial,
+src/network/server-packets.cpp-96-            source);
+src/network/server-packets.cpp-97-        return false;
+src/network/server-packets.cpp-98-    }
+src/network/server-packets.cpp-99-
+src/network/server-packets.cpp-100-    const int oldSlot = player.equippedSlot;
+src/network/server-packets.cpp-101-    if (input.equipSerial != 0)
+src/network/server-packets.cpp-102-        player.lastEquipSerial = input.equipSerial;
+src/network/server-packets.cpp-103-    player.equippedSlot = input.equippedSlot;
+src/network/server-packets.cpp-104-    player.weaponState = input.weaponState;
+src/network/server-packets.cpp-105-    Debug::log(
+src/network/server-packets.cpp-106-        Debug::Category::Weapons,
+src/network/server-packets.cpp-107-        "[SERVER EQUIP ACCEPT] playerId=%u oldSlot=%d newSlot=%d "
+src/network/server-packets.cpp-108-        "equipSerial=%u source=%s\n",
+src/network/server-packets.cpp-109-        player.id,
+src/network/server-packets.cpp-110-        oldSlot,
+src/network/server-packets.cpp-111-        player.equippedSlot,
+src/network/server-packets.cpp-112-        input.equipSerial,
+src/network/server-packets.cpp-113-        source);
+src/network/server-packets.cpp-114-    return true;
+src/network/server-packets.cpp-115-}
+src/network/server-packets.cpp-116-
+src/network/server-packets.cpp-117-uint32_t movementReportFlagsFromInput(const InputPacket& input,
+--
+src/network/server-packets.cpp-244-    if (input.dashSerial != 0 &&
+src/network/server-packets.cpp-245-        input.dashSerial != player.lastPresentationDashSerial)
+src/network/server-packets.cpp-246-        player.lastPresentationDashSerial = input.dashSerial;
+src/network/server-packets.cpp-247-
+src/network/server-packets.cpp-248-    const bool attackPressed = input.attackPressed != 0;
+src/network/server-packets.cpp-249-    if (attackPressed && !player.input.attackPressed)
+src/network/server-packets.cpp-250-        player.attackQueued = true;
+src/network/server-packets.cpp-251-    player.input.attackPressed = attackPressed;
+src/network/server-packets.cpp-252-}
+src/network/server-packets.cpp-253-
+src/network/server-packets.cpp-254-void logMovementValidation(const ServerPlayer& player,
+src/network/server-packets.cpp-255-                           const ClientMovementReport& report,
+src/network/server-packets.cpp-256-                           const MovementValidationResult& result)
+src/network/server-packets.cpp-257-{
+src/network/server-packets.cpp-258-    if (result.decision == MovementValidationDecision::Accept)
+src/network/server-packets.cpp-259-        return;
+src/network/server-packets.cpp-260-
+src/network/server-packets.cpp-261-    const MovementCorrectionClass correctionClass =
+src/network/server-packets.cpp-262-        classifyMovementCorrection(result.metrics.positionError,
+src/network/server-packets.cpp-263-                                   makeMovementValidationConfig(
+src/network/server-packets.cpp-264-                                       makeCurrentRuntimeMovementConfig()));
+src/network/server-packets.cpp-265-    Debug::logThrottled(
+src/network/server-packets.cpp-266-        Debug::Category::Networking,
+src/network/server-packets.cpp-267-        "server-movement-validation",
+src/network/server-packets.cpp-268-        0.5f,
+src/network/server-packets.cpp:269:        "[SERVER MOVEMENT VALIDATION] player=%u decision=%s reason=%s "
+src/network/server-packets.cpp-270-        "class=%s seq=%u clientTick=%llu serverEpoch=%u reportEpoch=%u "
+src/network/server-packets.cpp-271-        "serverSpawn=%u reportSpawn=%u posError=%.2f hDelta=%.2f vDelta=%.2f "
+src/network/server-packets.cpp-272-        "allowH=%.2f allowV=%.2f baseSpeed=%.2f extH=%.2f combined=%.2f\n",
+src/network/server-packets.cpp-273-        player.id,
+src/network/server-packets.cpp-274-        movementValidationDecisionName(result.decision),
+src/network/server-packets.cpp-275-        movementValidationReasonName(result.reason),
+src/network/server-packets.cpp-276-        movementCorrectionClassName(correctionClass),
+src/network/server-packets.cpp-277-        report.movementSequence,
+src/network/server-packets.cpp-278-        (unsigned long long)report.clientSimulationTick,
+src/network/server-packets.cpp-279-        (unsigned)player.transformEpoch,
+src/network/server-packets.cpp-280-        (unsigned)report.lifecycle.transformEpoch,
+src/network/server-packets.cpp-281-        player.spawnGeneration,
+src/network/server-packets.cpp-282-        report.lifecycle.spawnGeneration,
+src/network/server-packets.cpp-283-        result.metrics.positionError,
+src/network/server-packets.cpp-284-        result.metrics.horizontalDelta,
+src/network/server-packets.cpp-285-        result.metrics.verticalDelta,
+src/network/server-packets.cpp-286-        result.metrics.allowedHorizontalDelta,
+src/network/server-packets.cpp-287-        result.metrics.allowedVerticalDelta,
+src/network/server-packets.cpp-288-        result.metrics.horizontalBaseSpeed,
+src/network/server-packets.cpp-289-        result.metrics.horizontalExternalImpulse,
+src/network/server-packets.cpp-290-        result.metrics.combinedSpeed);
+src/network/server-packets.cpp-291-}
+src/network/server-packets.cpp-292-
+src/network/server-packets.cpp-293-} // namespace
+src/network/server-packets.cpp-294-
+--
+src/network/server-packets.cpp-489-        if (playerOwnsConnectionSource(kv.second, &from, connectionId))
+src/network/server-packets.cpp-490-            existingId = kv.first;
+src/network/server-packets.cpp-491-
+src/network/server-packets.cpp-492-    uint32_t id = existingId ? existingId : nextPlayerId++;
+src/network/server-packets.cpp-493-    ServerPlayer& p = players[id];
+src/network/server-packets.cpp-494-    p.id = id;
+src/network/server-packets.cpp-495-    bindPlayerConnection(p, from, connectionId, claimedTransport);
+src/network/server-packets.cpp-496-    p.lastHeardMs = nowMs();
+src/network/server-packets.cpp-497-    p.lastShotSerial = 0;
+src/network/server-packets.cpp-498-    p.lastProjectileFireSerial = 0;
+src/network/server-packets.cpp-499-    p.lastMeleeAttackSerial = 0;
+src/network/server-packets.cpp-500-    p.projectileFireCooldown = 0.0f;
+src/network/server-packets.cpp-501-    p.name = uniquePlayerName(
+src/network/server-packets.cpp-502-        players, reinterpret_cast<const HelloPacket*>(buffer)->name, id);
+src/network/server-packets.cpp-503-
+src/network/server-packets.cpp-504-    if (!existingId)
+src/network/server-packets.cpp-505-    {
+src/network/server-packets.cpp-506-        // Use map spawnpoints if available
+src/network/server-packets.cpp-507-        glm::vec3 spawnPos;
+src/network/server-packets.cpp-508-        float spawnYaw = 0.0f;
+src/network/server-packets.cpp-509-        if (world && !world->spawnPoints.empty())
+src/network/server-packets.cpp-510-        {
+src/network/server-packets.cpp-511-            size_t idx = (id - 1) % world->spawnPoints.size();
+src/network/server-packets.cpp-512-            spawnPos = world->spawnPoints[idx].position;
+src/network/server-packets.cpp-513-            spawnYaw = world->spawnPoints[idx].yaw;
+src/network/server-packets.cpp:514:            printf("%s [SERVER PLAYER SPAWN] reason=initial_join id=%u name=\"%s\" "
+src/network/server-packets.cpp-515-                   "spawnpoint=%zu position=(%.2f,%.2f,%.2f) yaw=%.1f\n",
+src/network/server-packets.cpp-516-                   serverTimestamp(), id, p.name.c_str(), idx,
+src/network/server-packets.cpp-517-                   spawnPos.x, spawnPos.y, spawnPos.z, glm::degrees(spawnYaw));
+src/network/server-packets.cpp-518-        }
+src/network/server-packets.cpp-519-        else
+src/network/server-packets.cpp-520-        {
+src/network/server-packets.cpp-521-            spawnPos = {1.0f + (float)(id - 1) * 1.5f, 5.0f, 30.0f};
+src/network/server-packets.cpp-522-            printf("%s [SERVER JOIN] id=%u name=\"%s\" addr=%s spawn=(%.1f,%.1f,%.1f) "
+src/network/server-packets.cpp-523-                   "(no spawnpoints in map)\n",
+src/network/server-packets.cpp-524-                   serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str(),
+src/network/server-packets.cpp-525-                   spawnPos.x, spawnPos.y, spawnPos.z);
+src/network/server-packets.cpp-526-        }
+src/network/server-packets.cpp-527-        beginAuthoritativeTransform(p, spawnPos, glm::vec3(0.0f), spawnYaw, "initial_join");
+src/network/server-packets.cpp-528-        // resetPlayerForSpawn and inventory setup happen in completeAuthoritativeSpawn
+src/network/server-packets.cpp-529-        // when the client sends ClientMapReady and spawned becomes true.
+src/network/server-packets.cpp-530-        // Wait for ClientMapReady before including in snapshots.
+src/network/server-packets.cpp-531-        // The client must load the required map first.
+src/network/server-packets.cpp-532-        p.spawned = false;
+src/network/server-packets.cpp-533-    }
+src/network/server-packets.cpp-534-
+src/network/server-packets.cpp-535-    p.reconnectToken = generateReconnectToken();
+src/network/server-packets.cpp-536-    WelcomePacket welcome{};
+src/network/server-packets.cpp-537-    welcome.header.type = PACKET_WELCOME;
+src/network/server-packets.cpp-538-    welcome.header.tick = tick;
+src/network/server-packets.cpp-539-    welcome.header.playerId = id;
+--
+src/network/server-packets.cpp-601-    }
+src/network/server-packets.cpp-602-
+src/network/server-packets.cpp-603-    const bool equipLifecycleMatches =
+src/network/server-packets.cpp-604-        ownsConnection &&
+src/network/server-packets.cpp-605-        p.spawned &&
+src/network/server-packets.cpp-606-        p.spawnState == ServerPlayer::Active &&
+src/network/server-packets.cpp-607-        !p.dead &&
+src/network/server-packets.cpp-608-        in->spawnGeneration == p.spawnGeneration &&
+src/network/server-packets.cpp-609-        ((in->transformEpoch != 0 ? in->transformEpoch : in->header.transformEpoch) ==
+src/network/server-packets.cpp-610-            p.transformEpoch);
+src/network/server-packets.cpp-611-    if (equipLifecycleMatches)
+src/network/server-packets.cpp-612-        applyEquipIntentFromInput(p, *in, "owned-input");
+src/network/server-packets.cpp-613-
+src/network/server-packets.cpp-614-    MovementValidationResult result =
+src/network/server-packets.cpp-615-        validateClientMovementReport(p, report, validationContext, validationConfig);
+src/network/server-packets.cpp-616-    applyMovementValidationCounters(p.movementValidation, result, report);
+src/network/server-packets.cpp-617-    logMovementValidation(p, report, result);
+src/network/server-packets.cpp-618-    if (connectionId)
+src/network/server-packets.cpp-619-    {
+src/network/server-packets.cpp-620-        static int sIceMovementDiagnosticsRemaining = 64;
+src/network/server-packets.cpp-621-        if (connectionId->kind == TransportKind::Ice &&
+src/network/server-packets.cpp-622-            sIceMovementDiagnosticsRemaining > 0)
+src/network/server-packets.cpp-623-        {
+src/network/server-packets.cpp-624-            --sIceMovementDiagnosticsRemaining;
+src/network/server-packets.cpp-625-            Debug::warn(Debug::Category::Networking,
+src/network/server-packets.cpp:626:                "[SERVER MOVEMENT RX] transport=%s connection=%llu player=%u "
+src/network/server-packets.cpp-627-                "seq=%u clientTick=%llu spawnGen=%u epoch=%u decision=%s "
+src/network/server-packets.cpp:628:                "reason=%s serverTick=%u\n",
+src/network/server-packets.cpp-629-                transportKindName(connectionId->kind),
+src/network/server-packets.cpp-630-                (unsigned long long)connectionId->value,
+src/network/server-packets.cpp-631-                p.id,
+src/network/server-packets.cpp-632-                report.movementSequence,
+src/network/server-packets.cpp-633-                (unsigned long long)report.clientSimulationTick,
+src/network/server-packets.cpp-634-                report.lifecycle.spawnGeneration,
+src/network/server-packets.cpp-635-                (unsigned)report.lifecycle.transformEpoch,
+src/network/server-packets.cpp-636-                movementValidationDecisionName(result.decision),
+src/network/server-packets.cpp-637-                movementValidationReasonName(result.reason),
+src/network/server-packets.cpp-638-                serverTick);
+src/network/server-packets.cpp-639-        }
+src/network/server-packets.cpp-640-    }
+src/network/server-packets.cpp-641-
+src/network/server-packets.cpp-642-    if (result.decision == MovementValidationDecision::Reject)
+src/network/server-packets.cpp-643-    {
+src/network/server-packets.cpp-644-        if (p.dead)
+src/network/server-packets.cpp-645-            p.input.attackPressed = false;
+src/network/server-packets.cpp-646-        return;
+src/network/server-packets.cpp-647-    }
+src/network/server-packets.cpp-648-
+src/network/server-packets.cpp-649-    if (result.clearsAuthoritativeTransformAck)
+src/network/server-packets.cpp-650-    {
+src/network/server-packets.cpp-651-        p.awaitingAuthoritativeTransformAck = false;
+src/network/server-packets.cpp-652-        Debug::warn(Debug::Category::Networking,
+src/network/server-packets.cpp-653-            "[SERVER TRANSFORM ACK] playerId=%u epoch=%u seq=%u "
+src/network/server-packets.cpp-654-            "distance=%.2f assignedMsAgo=%llu\n",
+src/network/server-packets.cpp-655-            p.id,
+src/network/server-packets.cpp-656-            (unsigned)p.transformEpoch,
+src/network/server-packets.cpp-657-            report.movementSequence,
+src/network/server-packets.cpp-658-            glm::length(report.position - p.authoritativeTransformPosition),
+src/network/server-packets.cpp-659-            (unsigned long long)(currentMs - p.authoritativeTransformAssignedMs));
+src/network/server-packets.cpp-660-    }
+src/network/server-packets.cpp-661-
+src/network/server-packets.cpp:662:    applyMovementStateToServerPlayer(result.acceptedState, p);
+src/network/server-packets.cpp-663-    applyAcceptedInputPresentation(p, *in, report);
+src/network/server-packets.cpp-664-
+src/network/server-packets.cpp:665:    p.clientStateUpdated = true;
+src/network/server-packets.cpp:666:    p.lastAcceptedClientPosition = result.acceptedState.position;
+src/network/server-packets.cpp-667-    p.lastAcceptedClientVelocity =
+src/network/server-packets.cpp-668-        result.acceptedState.baseVelocity + result.acceptedState.externalImpulse;
+src/network/server-packets.cpp-669-    p.lastAcceptedClientTransformMs = currentMs;
+src/network/server-packets.cpp-670-    p.hasAcceptedClientTransform = true;
+src/network/server-packets.cpp-671-    p.lastMovementSequence = report.movementSequence;
+src/network/server-packets.cpp-672-    p.hasMovementSequence = true;
+src/network/server-packets.cpp-673-
+src/network/server-packets.cpp-674-    if (in->spawnNpcPressed)
+src/network/server-packets.cpp-675-    {
+src/network/server-packets.cpp-676-        ServerNpc npc;
+src/network/server-packets.cpp-677-        npc.entityId = nextEntityId++;
+src/network/server-packets.cpp-678-        npc.name = "NPC " + std::to_string(npc.entityId);
+src/network/server-packets.cpp-679-        npc.pos = p.pos + glm::vec3(2.0f, 0.0f, 0.0f);
+src/network/server-packets.cpp-680-        npcs[npc.entityId] = npc;
+src/network/server-packets.cpp-681-        printf("%s [SERVER ENTITY SPAWN] entityId=%u type=NPC ownerClientId=0 position=(%.2f,%.2f,%.2f)\n",
+src/network/server-packets.cpp-682-               serverTimestamp(), npc.entityId, npc.pos.x, npc.pos.y, npc.pos.z);
+src/network/server-packets.cpp-683-    }
+src/network/server-packets.cpp-684-}
+src/network/server-packets.cpp-685-
+src/network/server-packets.cpp-686-void handleDisconnect(std::unordered_map<uint32_t, ServerPlayer>& players,
+src/network/server-packets.cpp-687-                      const char* buffer)
+src/network/server-packets.cpp-688-{
+src/network/server-packets.cpp-689-    const PacketHeader* header = reinterpret_cast<const PacketHeader*>(buffer);
+src/network/server-packets.cpp-690-    auto it = players.find(header->playerId);
+src/network/server-packets.cpp-691-    if (it != players.end())
+--
+src/network/server-packets.cpp-773-void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
+src/network/server-packets.cpp-774-                       std::unordered_map<uint32_t, ServerPlayer>& players,
+src/network/server-packets.cpp-775-                       uint32_t& nextPlayerId, uint32_t tick, uint64_t& totalPacketsOut,
+src/network/server-packets.cpp-776-                       const HeadlessWorld* world,
+src/network/server-packets.cpp-777-                       const TransportConnectionId* connectionId,
+src/network/server-packets.cpp-778-                       std::unique_ptr<IGameTransport>* claimedTransport)
+src/network/server-packets.cpp-779-{
+src/network/server-packets.cpp-780-    if (bytes < (int)sizeof(JoinRequestPacket))
+src/network/server-packets.cpp-781-        return;
+src/network/server-packets.cpp-782-    const JoinRequestPacket* join = reinterpret_cast<const JoinRequestPacket*>(buffer);
+src/network/server-packets.cpp-783-
+src/network/server-packets.cpp-784-    // Check if server is full
+src/network/server-packets.cpp-785-    if (players.size() >= MAX_PLAYERS)
+src/network/server-packets.cpp-786-    {
+src/network/server-packets.cpp-787-        JoinRejectPacket reject{};
+src/network/server-packets.cpp-788-        reject.header.type = PACKET_JOIN_REJECT;
+src/network/server-packets.cpp-789-        reject.header.tick = tick;
+src/network/server-packets.cpp-790-        reject.reason = 1; // full
+src/network/server-packets.cpp-791-        if (sendToSourceOrPlayer(sock, from, nullptr, claimedTransport, &reject, sizeof(reject)))
+src/network/server-packets.cpp-792-            ++totalPacketsOut;
+src/network/server-packets.cpp-793-        if (claimedTransport && claimedTransport->get())
+src/network/server-packets.cpp-794-        {
+src/network/server-packets.cpp-795-            (*claimedTransport)->close();
+src/network/server-packets.cpp-796-            claimedTransport->reset();
+src/network/server-packets.cpp-797-        }
+src/network/server-packets.cpp:798:        printf("%s [SERVER JOIN REJECT] reason=server-full\n", serverTimestamp());
+src/network/server-packets.cpp-799-        return;
+src/network/server-packets.cpp-800-    }
+src/network/server-packets.cpp-801-
+src/network/server-packets.cpp-802-    // Validate join token — coordinator validation
+src/network/server-packets.cpp-803-    const std::string joinTokenStr = join->joinToken;
+src/network/server-packets.cpp-804-    if (joinTokenStr.empty())
+src/network/server-packets.cpp-805-    {
+src/network/server-packets.cpp-806-        JoinRejectPacket reject{};
+src/network/server-packets.cpp-807-        reject.header.type = PACKET_JOIN_REJECT;
+src/network/server-packets.cpp-808-        reject.header.tick = tick;
+src/network/server-packets.cpp-809-        reject.reason = 2; // bad token
+src/network/server-packets.cpp-810-        if (sendToSourceOrPlayer(sock, from, nullptr, claimedTransport, &reject, sizeof(reject)))
+src/network/server-packets.cpp-811-            ++totalPacketsOut;
+src/network/server-packets.cpp-812-        if (claimedTransport && claimedTransport->get())
+src/network/server-packets.cpp-813-        {
+src/network/server-packets.cpp-814-            (*claimedTransport)->close();
+src/network/server-packets.cpp-815-            claimedTransport->reset();
+src/network/server-packets.cpp-816-        }
+src/network/server-packets.cpp:817:        printf("%s [SERVER JOIN REJECT] reason=empty-token\n", serverTimestamp());
+src/network/server-packets.cpp-818-        return;
+src/network/server-packets.cpp-819-    }
+src/network/server-packets.cpp-820-
+src/network/server-packets.cpp-821-    // If registered with coordinator, validate the join token
+src/network/server-packets.cpp-822-    if (!gServerCoordinatorCode.empty())
+src/network/server-packets.cpp-823-    {
+src/network/server-packets.cpp-824-        printf("[ROOM TOKEN VALIDATE] api=coordinatorValidateJoin code=%s tokenPrefix=%s\n",
+src/network/server-packets.cpp-825-               gServerCoordinatorCode.c_str(), joinTokenStr.substr(0, 12).c_str());
+src/network/server-packets.cpp-826-        if (!coordinatorValidateJoin(gServerCoordinatorCode, joinTokenStr) &&
+src/network/server-packets.cpp-827-            !coordinatorIceValidateJoin(gServerCoordinatorCode, joinTokenStr))
+src/network/server-packets.cpp-828-        {
+src/network/server-packets.cpp-829-            printf("[ROOM TOKEN VALIDATE] api=coordinatorValidateJoin code=%s tokenPrefix=%s valid=0\n",
+src/network/server-packets.cpp-830-                   gServerCoordinatorCode.c_str(), joinTokenStr.substr(0, 12).c_str());
+src/network/server-packets.cpp-831-            // Fallback: check against stored join token from registration
+src/network/server-packets.cpp-832-            if (joinTokenStr == gServerCoordinatorJoinToken)
+src/network/server-packets.cpp-833-            {
+src/network/server-packets.cpp-834-                printf("[ROOM TOKEN VALIDATE] fallback local token match code=%s\n",
+src/network/server-packets.cpp-835-                       gServerCoordinatorCode.c_str());
+src/network/server-packets.cpp-836-            }
+src/network/server-packets.cpp-837-            else
+src/network/server-packets.cpp-838-            {
+src/network/server-packets.cpp-839-                JoinRejectPacket reject{};
+src/network/server-packets.cpp-840-                reject.header.type = PACKET_JOIN_REJECT;
+src/network/server-packets.cpp-841-                reject.header.tick = tick;
+src/network/server-packets.cpp-842-                reject.reason = 2; // bad token
+src/network/server-packets.cpp-843-                if (sendToSourceOrPlayer(sock, from, nullptr, claimedTransport, &reject, sizeof(reject)))
+src/network/server-packets.cpp-844-                    ++totalPacketsOut;
+src/network/server-packets.cpp-845-                if (claimedTransport && claimedTransport->get())
+src/network/server-packets.cpp-846-                {
+src/network/server-packets.cpp-847-                    (*claimedTransport)->close();
+src/network/server-packets.cpp-848-                    claimedTransport->reset();
+src/network/server-packets.cpp-849-                }
+src/network/server-packets.cpp:850:                printf("%s [SERVER JOIN REJECT] reason=coordinator-rejected-token\n", serverTimestamp());
+src/network/server-packets.cpp-851-                return;
+src/network/server-packets.cpp-852-            }
+src/network/server-packets.cpp-853-        }
+src/network/server-packets.cpp-854-        printf("[ROOM TOKEN VALIDATE] api=coordinatorValidateJoin code=%s tokenPrefix=%s valid=1\n",
+src/network/server-packets.cpp-855-               gServerCoordinatorCode.c_str(), joinTokenStr.substr(0, 12).c_str());
+src/network/server-packets.cpp-856-        printf("%s [SERVER JOIN] coordinator validated token for %s\n",
+src/network/server-packets.cpp-857-               serverTimestamp(), join->name);
+src/network/server-packets.cpp-858-    }
+src/network/server-packets.cpp-859-    else
+src/network/server-packets.cpp-860-    {
+src/network/server-packets.cpp-861-        printf("%s [SERVER JOIN] no coordinator — accepting %s without validation\n",
+src/network/server-packets.cpp-862-               serverTimestamp(), join->name);
+src/network/server-packets.cpp-863-    }
+src/network/server-packets.cpp-864-
+src/network/server-packets.cpp-865-    // Check for existing reconnection
+src/network/server-packets.cpp-866-    uint32_t existingId = 0;
+src/network/server-packets.cpp-867-    for (auto& kv : players)
+src/network/server-packets.cpp-868-    {
+src/network/server-packets.cpp-869-        if (kv.second.reconnectToken == join->joinToken && !kv.second.dead)
+src/network/server-packets.cpp-870-        {
+src/network/server-packets.cpp-871-            existingId = kv.first;
+src/network/server-packets.cpp-872-            break;
+src/network/server-packets.cpp-873-        }
+src/network/server-packets.cpp-874-    }
+src/network/server-packets.cpp-875-
+src/network/server-packets.cpp-876-    uint32_t id = existingId ? existingId : nextPlayerId++;
+src/network/server-packets.cpp-877-    ServerPlayer& p = players[id];
+src/network/server-packets.cpp-878-    p.id = id;
+src/network/server-packets.cpp-879-    bindPlayerConnection(p, from, connectionId, claimedTransport);
+src/network/server-packets.cpp-880-    p.lastHeardMs = nowMs();
+src/network/server-packets.cpp-881-    p.lastShotSerial = 0;
+src/network/server-packets.cpp-882-    p.lastProjectileFireSerial = 0;
+src/network/server-packets.cpp-883-    p.lastMeleeAttackSerial = 0;
+src/network/server-packets.cpp-884-    p.projectileFireCooldown = 0.0f;
+src/network/server-packets.cpp-885-    p.joinToken = join->joinToken;
+src/network/server-packets.cpp-886-    p.joinTokenValidated = true;
+src/network/server-packets.cpp-887-    p.reconnectToken = generateReconnectToken();
+src/network/server-packets.cpp-888-    p.name = uniquePlayerName(players, join->name, id);
+src/network/server-packets.cpp-889-
+src/network/server-packets.cpp-890-    if (!existingId)
+src/network/server-packets.cpp-891-    {
+src/network/server-packets.cpp-892-        // Use map spawnpoints if available
+src/network/server-packets.cpp-893-        glm::vec3 spawnPos;
+src/network/server-packets.cpp-894-        float spawnYaw = 0.0f;
+src/network/server-packets.cpp-895-        if (world && !world->spawnPoints.empty())
+src/network/server-packets.cpp-896-        {
+src/network/server-packets.cpp-897-            size_t idx = (id - 1) % world->spawnPoints.size();
+src/network/server-packets.cpp-898-            spawnPos = world->spawnPoints[idx].position;
+src/network/server-packets.cpp-899-            spawnYaw = world->spawnPoints[idx].yaw;
+src/network/server-packets.cpp:900:            printf("%s [SERVER PLAYER SPAWN] reason=join_request id=%u name=\"%s\" "
+src/network/server-packets.cpp-901-                   "spawnpoint=%zu position=(%.2f,%.2f,%.2f) yaw=%.1f token=%s\n",
+src/network/server-packets.cpp-902-                   serverTimestamp(), id, p.name.c_str(), idx,
+src/network/server-packets.cpp-903-                   spawnPos.x, spawnPos.y, spawnPos.z, glm::degrees(spawnYaw),
+src/network/server-packets.cpp-904-                   p.reconnectToken.c_str());
+src/network/server-packets.cpp-905-        }
+src/network/server-packets.cpp-906-        else
+src/network/server-packets.cpp-907-        {
+src/network/server-packets.cpp-908-            spawnPos = {1.0f + (float)(id - 1) * 1.5f, 5.0f, 30.0f};
+src/network/server-packets.cpp-909-            printf("%s [SERVER JOIN] id=%u name=\"%s\" addr=%s spawn=(%.1f,%.1f,%.1f) "
+src/network/server-packets.cpp-910-                   "(no spawnpoints) token=%s\n",
+src/network/server-packets.cpp-911-                   serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str(),
+src/network/server-packets.cpp-912-                   spawnPos.x, spawnPos.y, spawnPos.z, p.reconnectToken.c_str());
+src/network/server-packets.cpp-913-        }
+src/network/server-packets.cpp-914-        beginAuthoritativeTransform(p, spawnPos, glm::vec3(0.0f), spawnYaw, "join_request");
+src/network/server-packets.cpp-915-        // Player registered but not yet spawned — waits for ClientMapReady.
+src/network/server-packets.cpp-916-        // Server will simulate and include in snapshots only after spawned=true.
+src/network/server-packets.cpp-917-        p.spawned = false;
+src/network/server-packets.cpp-918-    }
+src/network/server-packets.cpp-919-    else
+src/network/server-packets.cpp-920-    {
+src/network/server-packets.cpp-921-        printf("%s [SERVER REJOIN] id=%u name=\"%s\" addr=%s\n",
+src/network/server-packets.cpp-922-               serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str());
+src/network/server-packets.cpp-923-        beginAuthoritativeTransform(p, p.pos, p.vel, p.yaw, "rejoin");
+src/network/server-packets.cpp-924-        p.spawned = true;
+src/network/server-packets.cpp-925-    }
+--
+src/network/server-packets.cpp-1035-    std::unordered_map<uint32_t, ServerPlayer>& players,
+src/network/server-packets.cpp-1036-    std::unordered_map<uint32_t, ServerNpc>& npcs,
+src/network/server-packets.cpp-1037-    std::unordered_map<uint32_t, ServerProjectile>& projectiles,
+src/network/server-packets.cpp-1038-    uint32_t& nextPlayerId,
+src/network/server-packets.cpp-1039-    uint32_t& nextEntityId,
+src/network/server-packets.cpp-1040-    uint32_t& nextProjectileId,
+src/network/server-packets.cpp-1041-    const HeadlessWorld& world,
+src/network/server-packets.cpp-1042-    uint32_t tick,
+src/network/server-packets.cpp-1043-    uint64_t& totalPacketsIn,
+src/network/server-packets.cpp-1044-    uint64_t& totalPacketsOut,
+src/network/server-packets.cpp-1045-    ServerPacketStats* stats,
+src/network/server-packets.cpp-1046-    DisagreementRetransmitState* retransmitState,
+src/network/server-packets.cpp-1047-    ServerPlayer* authenticatedPlayer,
+src/network/server-packets.cpp-1048-    std::unique_ptr<IGameTransport>* claimedTransport)
+src/network/server-packets.cpp-1049-{
+src/network/server-packets.cpp-1050-    ServerPacketProcessResult result{};
+src/network/server-packets.cpp-1051-    ++totalPacketsIn;
+src/network/server-packets.cpp-1052-
+src/network/server-packets.cpp-1053-    char buffer[2048];
+src/network/server-packets.cpp-1054-    const std::string source = addressToString(event.remoteEndpoint);
+src/network/server-packets.cpp-1055-
+src/network/server-packets.cpp-1056-    if (!event.payload || event.payloadBytes <= 0)
+src/network/server-packets.cpp-1057-    {
+src/network/server-packets.cpp-1058-        if (stats)
+src/network/server-packets.cpp-1059-            ++stats->malformedPackets;
+src/network/server-packets.cpp:1060:        printf("%s [SERVER PACKET] rejected reason=empty-payload transport=%s connection=%llu source=%s\n",
+src/network/server-packets.cpp-1061-               serverTimestamp(), transportKindName(event.transportKind),
+src/network/server-packets.cpp-1062-               (unsigned long long)event.connectionId.value, source.c_str());
+src/network/server-packets.cpp-1063-        return result;
+src/network/server-packets.cpp-1064-    }
+src/network/server-packets.cpp-1065-
+src/network/server-packets.cpp-1066-    if (event.payloadBytes < (int)sizeof(PacketHeader))
+src/network/server-packets.cpp-1067-    {
+src/network/server-packets.cpp-1068-        if (stats)
+src/network/server-packets.cpp-1069-            ++stats->malformedPackets;
+src/network/server-packets.cpp:1070:        printf("%s [SERVER PACKET] rejected reason=too-small bytes=%d transport=%s "
+src/network/server-packets.cpp-1071-               "connection=%llu source=%s minBytes=%zu\n",
+src/network/server-packets.cpp-1072-               serverTimestamp(), event.payloadBytes,
+src/network/server-packets.cpp-1073-               transportKindName(event.transportKind),
+src/network/server-packets.cpp-1074-               (unsigned long long)event.connectionId.value,
+src/network/server-packets.cpp-1075-               source.c_str(), sizeof(PacketHeader));
+src/network/server-packets.cpp-1076-        return result;
+src/network/server-packets.cpp-1077-    }
+src/network/server-packets.cpp-1078-
+src/network/server-packets.cpp-1079-    if (event.payloadBytes > (int)sizeof(buffer) ||
+src/network/server-packets.cpp-1080-        event.payloadBytes > MAX_GAME_DATAGRAM_BYTES)
+src/network/server-packets.cpp-1081-    {
+src/network/server-packets.cpp-1082-        if (stats)
+src/network/server-packets.cpp-1083-            ++stats->malformedPackets;
+src/network/server-packets.cpp:1084:        printf("%s [SERVER PACKET] rejected reason=too-large bytes=%d maxBytes=%d "
+src/network/server-packets.cpp-1085-               "transport=%s connection=%llu source=%s\n",
+src/network/server-packets.cpp-1086-               serverTimestamp(), event.payloadBytes, MAX_GAME_DATAGRAM_BYTES,
+src/network/server-packets.cpp-1087-               transportKindName(event.transportKind),
+src/network/server-packets.cpp-1088-               (unsigned long long)event.connectionId.value,
+src/network/server-packets.cpp-1089-               source.c_str());
+src/network/server-packets.cpp-1090-        return result;
+src/network/server-packets.cpp-1091-    }
+src/network/server-packets.cpp-1092-
+src/network/server-packets.cpp-1093-    std::memcpy(buffer, event.payload, event.payloadBytes);
+src/network/server-packets.cpp-1094-    PacketHeader* header = reinterpret_cast<PacketHeader*>(buffer);
+src/network/server-packets.cpp-1095-    result.decoded = true;
+src/network/server-packets.cpp-1096-
+src/network/server-packets.cpp-1097-    if (header->magic != PROTOCOL_MAGIC || header->version != PROTOCOL_VERSION)
+src/network/server-packets.cpp-1098-    {
+src/network/server-packets.cpp-1099-        if (stats)
+src/network/server-packets.cpp-1100-            ++stats->protocolMismatches;
+src/network/server-packets.cpp:1101:        printf("%s [SERVER PACKET] rejected reason=protocol-mismatch bytes=%d "
+src/network/server-packets.cpp-1102-               "transport=%s connection=%llu source=%s magic=0x%08x "
+src/network/server-packets.cpp-1103-               "expectedMagic=0x%08x version=%u expectedVersion=%u type=%u\n",
+src/network/server-packets.cpp-1104-               serverTimestamp(), event.payloadBytes,
+src/network/server-packets.cpp-1105-               transportKindName(event.transportKind),
+src/network/server-packets.cpp-1106-               (unsigned long long)event.connectionId.value,
+src/network/server-packets.cpp-1107-               source.c_str(), header->magic, PROTOCOL_MAGIC,
+src/network/server-packets.cpp-1108-               header->version, PROTOCOL_VERSION, header->type);
+src/network/server-packets.cpp-1109-        return result;
+src/network/server-packets.cpp-1110-    }
+src/network/server-packets.cpp-1111-
+src/network/server-packets.cpp-1112-    if (!isKnownPacketType(header->type))
+src/network/server-packets.cpp-1113-    {
+src/network/server-packets.cpp-1114-        if (stats)
+src/network/server-packets.cpp-1115-            ++stats->unknownPacketTypes;
+src/network/server-packets.cpp:1116:        printf("%s [SERVER PACKET] rejected reason=unknown-type bytes=%d "
+src/network/server-packets.cpp-1117-               "transport=%s connection=%llu source=%s type=%u\n",
+src/network/server-packets.cpp-1118-               serverTimestamp(), event.payloadBytes,
+src/network/server-packets.cpp-1119-               transportKindName(event.transportKind),
+src/network/server-packets.cpp-1120-               (unsigned long long)event.connectionId.value,
+src/network/server-packets.cpp-1121-               source.c_str(), header->type);
+src/network/server-packets.cpp-1122-        return result;
+src/network/server-packets.cpp-1123-    }
+src/network/server-packets.cpp-1124-
+src/network/server-packets.cpp-1125-    if (stats)
+src/network/server-packets.cpp-1126-        countPacketType(*stats, header->type);
+src/network/server-packets.cpp-1127-
+src/network/server-packets.cpp-1128-    if (header->type != PACKET_HELLO)
+src/network/server-packets.cpp-1129-    {
+src/network/server-packets.cpp-1130-        auto it = players.find(header->playerId);
+src/network/server-packets.cpp-1131-        if (it != players.end() &&
+src/network/server-packets.cpp-1132-            playerOwnsConnectionSource(
+src/network/server-packets.cpp-1133-                it->second, &event.remoteEndpoint, &event.connectionId))
+src/network/server-packets.cpp-1134-        {
+src/network/server-packets.cpp-1135-            it->second.lastHeardMs = nowMs();
+src/network/server-packets.cpp-1136-        }
+src/network/server-packets.cpp-1137-    }
+src/network/server-packets.cpp-1138-
+src/network/server-packets.cpp-1139-    const TransportConnectionId* sourceConnection = &event.connectionId;
+src/network/server-packets.cpp-1140-    const sockaddr_in& from = event.remoteEndpoint;
+src/network/server-packets.cpp-1141-    const int bytes = event.payloadBytes;
+--
+src/network/server-packets.cpp-1251-    else if (header->type == PACKET_SERVER_COMMAND)
+src/network/server-packets.cpp-1252-    {
+src/network/server-packets.cpp-1253-        handleServerCommand(buffer, bytes, players, npcs);
+src/network/server-packets.cpp-1254-        result.handled = true;
+src/network/server-packets.cpp-1255-    }
+src/network/server-packets.cpp-1256-    else if (header->type == PACKET_SPAWN_ACK &&
+src/network/server-packets.cpp-1257-             bytes >= (int)sizeof(SpawnAckPacket))
+src/network/server-packets.cpp-1258-    {
+src/network/server-packets.cpp-1259-        handleSpawnAck(sock, buffer, bytes, players, tick);
+src/network/server-packets.cpp-1260-        result.handled = true;
+src/network/server-packets.cpp-1261-    }
+src/network/server-packets.cpp-1262-    else if (header->type == PACKET_RELIABLE_EVENT_ACK &&
+src/network/server-packets.cpp-1263-             bytes >= (int)sizeof(ReliableEventAckPacket))
+src/network/server-packets.cpp-1264-    {
+src/network/server-packets.cpp-1265-        handleReliableEventAck(buffer, bytes, players, &from,
+src/network/server-packets.cpp-1266-                               authenticatedPlayer);
+src/network/server-packets.cpp-1267-        result.handled = true;
+src/network/server-packets.cpp-1268-    }
+src/network/server-packets.cpp-1269-    else if (header->type == PACKET_CLIENT_MAP_READY &&
+src/network/server-packets.cpp-1270-             bytes >= (int)sizeof(ClientMapReadyPacket))
+src/network/server-packets.cpp-1271-    {
+src/network/server-packets.cpp-1272-        const ClientMapReadyPacket* ready =
+src/network/server-packets.cpp-1273-            reinterpret_cast<const ClientMapReadyPacket*>(buffer);
+src/network/server-packets.cpp-1274-        if (ready->header.playerId != ready->assignedPlayerId)
+src/network/server-packets.cpp-1275-        {
+src/network/server-packets.cpp:1276:            printf("%s [SERVER MAP READY REJECT] reason=assignedPlayerId-mismatch "
+src/network/server-packets.cpp-1277-                   "headerPlayerId=%u assignedPlayerId=%u\n",
+src/network/server-packets.cpp-1278-                   serverTimestamp(), ready->header.playerId,
+src/network/server-packets.cpp-1279-                   ready->assignedPlayerId);
+src/network/server-packets.cpp-1280-        }
+src/network/server-packets.cpp-1281-        else
+src/network/server-packets.cpp-1282-        {
+src/network/server-packets.cpp-1283-            auto it = players.find(ready->assignedPlayerId);
+src/network/server-packets.cpp-1284-            if (it == players.end())
+src/network/server-packets.cpp-1285-            {
+src/network/server-packets.cpp:1286:                printf("%s [SERVER MAP READY REJECT] reason=player-not-found id=%u\n",
+src/network/server-packets.cpp-1287-                       serverTimestamp(), ready->assignedPlayerId);
+src/network/server-packets.cpp-1288-            }
+src/network/server-packets.cpp-1289-            else if (!playerOwnsConnectionSource(
+src/network/server-packets.cpp-1290-                it->second, &from, sourceConnection))
+src/network/server-packets.cpp-1291-            {
+src/network/server-packets.cpp:1292:                printf("%s [SERVER MAP READY REJECT] reason=connection-mismatch "
+src/network/server-packets.cpp-1293-                       "id=%u transport=%s connection=%llu\n",
+src/network/server-packets.cpp-1294-                       serverTimestamp(), ready->assignedPlayerId,
+src/network/server-packets.cpp-1295-                       transportKindName(event.transportKind),
+src/network/server-packets.cpp-1296-                       (unsigned long long)event.connectionId.value);
+src/network/server-packets.cpp-1297-            }
+src/network/server-packets.cpp-1298-            else
+src/network/server-packets.cpp-1299-            {
+src/network/server-packets.cpp-1300-                std::string readyMap = normalizeMapId(ready->mapId);
+src/network/server-packets.cpp-1301-                std::string serverMap = normalizeMapId(getServerMapId());
+src/network/server-packets.cpp-1302-                if (readyMap != serverMap)
+src/network/server-packets.cpp-1303-                {
+src/network/server-packets.cpp:1304:                    printf("%s [SERVER MAP READY REJECT] reason=map-mismatch id=%u "
+src/network/server-packets.cpp-1305-                           "readyMap=%s serverMap=%s\n",
+src/network/server-packets.cpp-1306-                           serverTimestamp(), ready->assignedPlayerId,
+src/network/server-packets.cpp-1307-                           readyMap.c_str(), serverMap.c_str());
+src/network/server-packets.cpp-1308-                }
+src/network/server-packets.cpp-1309-                else if (!it->second.spawned)
+src/network/server-packets.cpp-1310-                {
+src/network/server-packets.cpp-1311-                    it->second.spawned = true;
+src/network/server-packets.cpp-1312-                    it->second.vel = glm::vec3(0.0f);
+src/network/server-packets.cpp:1313:                    it->second.clientStateUpdated = false;
+src/network/server-packets.cpp-1314-                    completeAuthoritativeSpawn(sock, it->second, true);
+src/network/server-packets.cpp-1315-                    printf("%s [SERVER MAP READY] transport=%s connection=%llu "
+src/network/server-packets.cpp-1316-                           "id=%u name=\"%s\"\n",
+src/network/server-packets.cpp-1317-                           serverTimestamp(), transportKindName(event.transportKind),
+src/network/server-packets.cpp-1318-                           (unsigned long long)event.connectionId.value,
+src/network/server-packets.cpp-1319-                           it->second.id, it->second.name.c_str());
+src/network/server-packets.cpp-1320-                }
+src/network/server-packets.cpp-1321-            }
+src/network/server-packets.cpp-1322-        }
+src/network/server-packets.cpp-1323-        result.handled = true;
+src/network/server-packets.cpp-1324-    }
+src/network/server-packets.cpp-1325-    else
+src/network/server-packets.cpp-1326-    {
+src/network/server-packets.cpp-1327-        if (stats)
+src/network/server-packets.cpp-1328-            ++stats->unknownPacketTypes;
+src/network/server-packets.cpp:1329:        printf("%s [SERVER PACKET] rejected reason=unsupported-or-short type=%u "
+src/network/server-packets.cpp-1330-               "bytes=%d transport=%s connection=%llu source=%s\n",
+src/network/server-packets.cpp-1331-               serverTimestamp(), header->type, bytes,
+src/network/server-packets.cpp-1332-               transportKindName(event.transportKind),
+src/network/server-packets.cpp-1333-               (unsigned long long)event.connectionId.value,
+src/network/server-packets.cpp-1334-               source.c_str());
+src/network/server-packets.cpp-1335-    }
+src/network/server-packets.cpp-1336-
+src/network/server-packets.cpp-1337-    return result;
+src/network/server-packets.cpp-1338-}
+src/network/server-packets.cpp-1339-
+src/network/server-packets.cpp-1340-void beginAuthoritativeTransform(ServerPlayer& player,
+src/network/server-packets.cpp-1341-    const glm::vec3& position, const glm::vec3& velocity, float yaw,
+src/network/server-packets.cpp-1342-    const char* reason)
+src/network/server-packets.cpp-1343-{
+src/network/server-packets.cpp-1344-    player.pos = position;
+src/network/server-packets.cpp-1345-    player.vel = velocity;
+src/network/server-packets.cpp-1346-    player.yaw = yaw;
+src/network/server-packets.cpp-1347-    ++player.transformEpoch;
+src/network/server-packets.cpp-1348-    player.awaitingAuthoritativeTransformAck = true;
+src/network/server-packets.cpp-1349-    player.authoritativeTransformPosition = position;
+src/network/server-packets.cpp-1350-    player.authoritativeTransformEpoch = player.transformEpoch;
+src/network/server-packets.cpp-1351-    player.authoritativeTransformAssignedMs = nowMs();
+src/network/server-packets.cpp:1352:    player.clientStateUpdated = false;
+src/network/server-packets.cpp-1353-
+src/network/server-packets.cpp-1354-    // Reset accepted-client-state tracking for the new transform
+src/network/server-packets.cpp:1355:    player.lastAcceptedClientPosition = position;
+src/network/server-packets.cpp-1356-    player.lastAcceptedClientVelocity = velocity;
+src/network/server-packets.cpp-1357-    player.lastAcceptedClientTransformMs = nowMs();
+src/network/server-packets.cpp-1358-    player.hasAcceptedClientTransform = true;
+src/network/server-packets.cpp-1359-    resetServerMovementForAuthoritativeLifecycle(
+src/network/server-packets.cpp-1360-        player, makeCurrentRuntimeMovementConfig());
+src/network/server-packets.cpp-1361-
+src/network/server-packets.cpp:1362:    printf("%s [SERVER AUTHORITATIVE TRANSFORM] playerId=%u reason=%s "
+src/network/server-packets.cpp-1363-           "epoch=%u position=(%.2f,%.2f,%.2f) awaitingAck=1\n",
+src/network/server-packets.cpp-1364-           serverTimestamp(), player.id, reason,
+src/network/server-packets.cpp-1365-           (unsigned)player.transformEpoch,
+src/network/server-packets.cpp-1366-           position.x, position.y, position.z);
+src/network/server-packets.cpp-1367-}
+src/network/server-packets.cpp-1368-
+src/network/server-packets.cpp-1369-std::string generateReconnectToken()
+src/network/server-packets.cpp-1370-{
+src/network/server-packets.cpp-1371-    static const char chars[] = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+src/network/server-packets.cpp-1372-    static std::mt19937 rng((unsigned int)std::chrono::steady_clock::now().time_since_epoch().count());
+src/network/server-packets.cpp-1373-    std::uniform_int_distribution<int> dist(0, 61);
+src/network/server-packets.cpp-1374-    std::string token;
+src/network/server-packets.cpp-1375-    for (int i = 0; i < 24; ++i)
+src/network/server-packets.cpp-1376-        token += chars[dist(rng)];
+src/network/server-packets.cpp-1377-    return token;
+src/network/server-packets.cpp-1378-}
+src/network/server-packets.cpp-1379-
+src/network/server-packets.cpp:1380:void buildAndSendSnapshot(SOCKET sock,
+src/network/server-packets.cpp-1381-                          const std::unordered_map<uint32_t, ServerPlayer>& players,
+src/network/server-packets.cpp-1382-                          const std::unordered_map<uint32_t, ServerNpc>& npcs,
+src/network/server-packets.cpp-1383-                          uint32_t tick, uint64_t& totalPacketsOut)
+src/network/server-packets.cpp-1384-{
+src/network/server-packets.cpp-1385-    // Build compact entity list
+src/network/server-packets.cpp-1386-    CompactEntityData entities[MAX_SNAPSHOT_ENTITIES];
+src/network/server-packets.cpp-1387-    uint32_t entityCount = 0;
+src/network/server-packets.cpp-1388-
+src/network/server-packets.cpp-1389-    for (const auto& kv : players)
+src/network/server-packets.cpp-1390-    {
+src/network/server-packets.cpp-1391-        if (entityCount >= MAX_SNAPSHOT_ENTITIES)
+src/network/server-packets.cpp-1392-            break;
+src/network/server-packets.cpp-1393-        if (!kv.second.spawned)
+src/network/server-packets.cpp-1394-        {
+src/network/server-packets.cpp-1395-            static std::unordered_map<uint32_t, uint64_t> lastSkipLogMs;
+src/network/server-packets.cpp-1396-            uint64_t nowSkip = nowMs();
+src/network/server-packets.cpp-1397-            uint64_t& lastLog = lastSkipLogMs[kv.first];
+src/network/server-packets.cpp-1398-            if (nowSkip - lastLog >= 1000)
+src/network/server-packets.cpp-1399-            {
+src/network/server-packets.cpp:1400:                printf("%s [SERVER SNAPSHOT SKIP] playerId=%u reason=not-spawned "
+src/network/server-packets.cpp-1401-                       "connected=1 lastHeardAgoMs=%llu mapReadyReceived=0 serverMap=%s\n",
+src/network/server-packets.cpp-1402-                       serverTimestamp(), kv.first,
+src/network/server-packets.cpp-1403-                       (unsigned long long)(nowSkip - kv.second.lastHeardMs),
+src/network/server-packets.cpp-1404-                       getServerMapId().c_str());
+src/network/server-packets.cpp-1405-                lastLog = nowSkip;
+src/network/server-packets.cpp-1406-            }
+src/network/server-packets.cpp-1407-            continue;
+src/network/server-packets.cpp-1408-        }
+src/network/server-packets.cpp:1409:        entities[entityCount++] = compactEntityFromSnapshot(makePlayerEntity(kv.second));
+src/network/server-packets.cpp-1410-    }
+src/network/server-packets.cpp-1411-    for (const auto& kv : npcs)
+src/network/server-packets.cpp-1412-    {
+src/network/server-packets.cpp-1413-        if (entityCount >= MAX_SNAPSHOT_ENTITIES)
+src/network/server-packets.cpp-1414-            break;
+src/network/server-packets.cpp-1415-        entities[entityCount++] = compactEntityFromSnapshot(makeNpcEntity(kv.second));
+src/network/server-packets.cpp-1416-    }
+src/network/server-packets.cpp-1417-
+src/network/server-packets.cpp-1418-    if (tick % 120 == 0)
+src/network/server-packets.cpp-1419-    {
+src/network/server-packets.cpp:1420:        printf("%s [SERVER SNAPSHOT BUILD] tick=%u entities=%u\n",
+src/network/server-packets.cpp-1421-               serverTimestamp(), tick, entityCount);
+src/network/server-packets.cpp-1422-    }
+src/network/server-packets.cpp-1423-
+src/network/server-packets.cpp-1424-    // Build chunks from compact entities
+src/network/server-packets.cpp-1425-    std::vector<std::vector<uint8_t>> chunks;
+src/network/server-packets.cpp-1426-    if (!buildSnapshotChunks(entities, entityCount, tick, 0, chunks))
+src/network/server-packets.cpp-1427-    {
+src/network/server-packets.cpp-1428-        printf("%s [SERVER SNAPSHOT] chunk build failed for tick=%u\n",
+src/network/server-packets.cpp-1429-               serverTimestamp(), tick);
+src/network/server-packets.cpp-1430-        return;
+src/network/server-packets.cpp-1431-    }
+src/network/server-packets.cpp-1432-
+src/network/server-packets.cpp-1433-    if (tick % 120 == 0)
+src/network/server-packets.cpp-1434-    {
+src/network/server-packets.cpp-1435-        printf("%s [SERVER SNAPSHOT CHUNKS] tick=%u chunks=%zu maxChunkBytes=%zu\n",
+src/network/server-packets.cpp-1436-               serverTimestamp(), tick, chunks.size(),
+src/network/server-packets.cpp-1437-               chunks.empty() ? 0 : chunks[0].size());
+src/network/server-packets.cpp-1438-    }
+src/network/server-packets.cpp-1439-
+src/network/server-packets.cpp-1440-    for (const auto& kv : players)
+src/network/server-packets.cpp-1441-    {
+src/network/server-packets.cpp-1442-        for (const auto& chunk : chunks)
+src/network/server-packets.cpp-1443-        {
+src/network/server-packets.cpp-1444-            bool sent = false;
+src/network/server-packets.cpp-1445-            if (kv.second.transport)
+--
+src/network/server-packets.cpp-1476-                           glm::vec3 correction,
+src/network/server-packets.cpp-1477-                           const char* description,
+src/network/server-packets.cpp-1478-                           uint32_t tick,
+src/network/server-packets.cpp-1479-                           uint64_t& totalPacketsOut,
+src/network/server-packets.cpp-1480-                           DisagreementRetransmitState* retransmitState)
+src/network/server-packets.cpp-1481-{
+src/network/server-packets.cpp-1482-    DisagreementPacket packet{};
+src/network/server-packets.cpp-1483-    packet.header.type = PACKET_DISAGREEMENT;
+src/network/server-packets.cpp-1484-    packet.header.tick = tick;
+src/network/server-packets.cpp-1485-    packet.reason = (uint8_t)reason;
+src/network/server-packets.cpp-1486-    packet.eventId = eventId;
+src/network/server-packets.cpp-1487-    packet.relatedSerial = relatedSerial;
+src/network/server-packets.cpp-1488-    packet.sourcePlayerId = sourcePlayerId;
+src/network/server-packets.cpp-1489-    packet.targetPlayerId = targetPlayerId;
+src/network/server-packets.cpp-1490-    packet.posX = position.x;
+src/network/server-packets.cpp-1491-    packet.posY = position.y;
+src/network/server-packets.cpp-1492-    packet.posZ = position.z;
+src/network/server-packets.cpp-1493-    packet.correctionX = correction.x;
+src/network/server-packets.cpp-1494-    packet.correctionY = correction.y;
+src/network/server-packets.cpp-1495-    packet.correctionZ = correction.z;
+src/network/server-packets.cpp-1496-    std::memset(packet.description, 0, sizeof(packet.description));
+src/network/server-packets.cpp-1497-    if (description)
+src/network/server-packets.cpp-1498-        std::strncpy(packet.description, description, sizeof(packet.description) - 1);
+src/network/server-packets.cpp-1499-
+src/network/server-packets.cpp-1500-    printf("%s [SERVER DISAGREEMENT SEND] eventId=%u shotSerial=%u shooter=%u target=%u "
+src/network/server-packets.cpp:1501:           "reason=%u pos=(%.1f,%.1f,%.1f) correction=(%.1f,%.1f,%.1f) desc=\"%s\" players=%zu\n",
+src/network/server-packets.cpp-1502-           serverTimestamp(), eventId, relatedSerial, sourcePlayerId, targetPlayerId,
+src/network/server-packets.cpp-1503-           (unsigned)reason,
+src/network/server-packets.cpp-1504-           position.x, position.y, position.z,
+src/network/server-packets.cpp-1505-           correction.x, correction.y, correction.z,
+src/network/server-packets.cpp-1506-           description ? description : "",
+src/network/server-packets.cpp-1507-           players.size());
+src/network/server-packets.cpp-1508-
+src/network/server-packets.cpp-1509-    for (const auto& kv : players)
+src/network/server-packets.cpp-1510-    {
+src/network/server-packets.cpp-1511-        bool ok = false;
+src/network/server-packets.cpp-1512-        if (kv.second.transport)
+src/network/server-packets.cpp-1513-            ok = kv.second.transport->send(&packet, sizeof(packet));
+src/network/server-packets.cpp-1514-        else
+src/network/server-packets.cpp-1515-        {
+src/network/server-packets.cpp-1516-            int bytesSent = sendto(
+src/network/server-packets.cpp-1517-                sock, (const char*)&packet, sizeof(packet), 0,
+src/network/server-packets.cpp-1518-                (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+src/network/server-packets.cpp-1519-            ok = (bytesSent != SOCKET_ERROR);
+src/network/server-packets.cpp-1520-            if (!ok)
+src/network/server-packets.cpp-1521-                printf("%s [NET TX ERROR] sendDisagreementToAll failed id=%u error=%d\n",
+src/network/server-packets.cpp-1522-                       serverTimestamp(), kv.first, WSAGetLastError());
+src/network/server-packets.cpp-1523-        }
+src/network/server-packets.cpp-1524-        ++totalPacketsOut;
+src/network/server-packets.cpp-1525-    }
+src/network/server-packets.cpp-1526-
+--
+src/network/server-packets.cpp-1531-        {
+src/network/server-packets.cpp-1532-            if (!retransmitState->events[i].active)
+src/network/server-packets.cpp-1533-            {
+src/network/server-packets.cpp-1534-                retransmitState->events[i].packet = packet;
+src/network/server-packets.cpp-1535-                retransmitState->events[i].retransmitsLeft = DISAGREEMENT_RETRANSMIT_TICKS;
+src/network/server-packets.cpp-1536-                retransmitState->events[i].active = true;
+src/network/server-packets.cpp-1537-                break;
+src/network/server-packets.cpp-1538-            }
+src/network/server-packets.cpp-1539-        }
+src/network/server-packets.cpp-1540-    }
+src/network/server-packets.cpp-1541-}
+src/network/server-packets.cpp-1542-
+src/network/server-packets.cpp-1543-// ── Retransmit pending disagreements (best-effort reliability) ────────
+src/network/server-packets.cpp-1544-void tickDisagreementRetransmit(SOCKET sock,
+src/network/server-packets.cpp-1545-                                const std::unordered_map<uint32_t, ServerPlayer>& players,
+src/network/server-packets.cpp-1546-                                DisagreementRetransmitState& state,
+src/network/server-packets.cpp-1547-                                uint64_t& totalPacketsOut)
+src/network/server-packets.cpp-1548-{
+src/network/server-packets.cpp-1549-    for (int i = 0; i < DISAGREEMENT_RETRANSMIT_MAX; ++i)
+src/network/server-packets.cpp-1550-    {
+src/network/server-packets.cpp-1551-        PendingDisagreement& pd = state.events[i];
+src/network/server-packets.cpp-1552-        if (!pd.active)
+src/network/server-packets.cpp-1553-            continue;
+src/network/server-packets.cpp-1554-
+src/network/server-packets.cpp-1555-        printf("%s [SERVER DISAGREEMENT SEND] eventId=%u attempt=%d recipients=%zu "
+src/network/server-packets.cpp:1556:               "reason=%u\n",
+src/network/server-packets.cpp-1557-               serverTimestamp(), pd.packet.eventId,
+src/network/server-packets.cpp-1558-               DISAGREEMENT_RETRANSMIT_TICKS - pd.retransmitsLeft + 1,
+src/network/server-packets.cpp-1559-               players.size(), (unsigned)pd.packet.reason);
+src/network/server-packets.cpp-1560-
+src/network/server-packets.cpp-1561-        for (const auto& kv : players)
+src/network/server-packets.cpp-1562-        {
+src/network/server-packets.cpp-1563-            if (kv.second.transport)
+src/network/server-packets.cpp-1564-                kv.second.transport->send(&pd.packet, sizeof(pd.packet));
+src/network/server-packets.cpp-1565-            else
+src/network/server-packets.cpp-1566-                sendto(sock, (const char*)&pd.packet, sizeof(pd.packet), 0,
+src/network/server-packets.cpp-1567-                       (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+src/network/server-packets.cpp-1568-            ++totalPacketsOut;
+src/network/server-packets.cpp-1569-        }
+src/network/server-packets.cpp-1570-
+src/network/server-packets.cpp-1571-        --pd.retransmitsLeft;
+src/network/server-packets.cpp-1572-        if (pd.retransmitsLeft <= 0)
+src/network/server-packets.cpp-1573-            pd.active = false;
+src/network/server-packets.cpp-1574-    }
+src/network/server-packets.cpp-1575-}
+src/network/server-packets.cpp-1576-
+src/network/server-packets.cpp-1577-// ── Reload request (with idempotent caching) ─────────────────────────
+src/network/server-packets.cpp-1578-void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
+src/network/server-packets.cpp-1579-                          std::unordered_map<uint32_t, ServerPlayer>& players,
+src/network/server-packets.cpp-1580-                          uint32_t tick, uint64_t& totalPacketsOut)
+src/network/server-packets.cpp-1581-{

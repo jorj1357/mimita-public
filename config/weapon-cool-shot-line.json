@@ -1,9 +1,9 @@
 {
     "enabled": true,
-    "length": 50.0,
-    "start_alpha": 255.0,
-    "end_alpha": 0.0,
-    "color": [1.0, 0.0, 0.0],
-    "start_size": 10.0,
-    "end_size": 2.0
+    "length": 122.0,
+    "start_alpha": 100.0,
+    "end_alpha": 100.0,
+    "color": [1.0, 0.0, 1.0],
+    "start_size": 5.0,
+    "end_size": 5.0
 }

@@ -4,6 +4,23 @@
     Camera ray checks world/NPC/player geometry.
     The weapon aims toward the camera ray hit point.
 
+    7 22 2026
+    crosshair is sooooo satisfing
+    but feels too like 
+    simple?
+    7 23 2026 it also isnt aligned with where ur actuallt shooting, it hits world geometry but thats stupid
+    aiming at the ground on coolplace it hits like much before ur actually aiming 
+    like aim at ground = hit like below ur crosshair thats bad 
+    no inconsistentices allowed at all
+    7 22 2026
+    need better feedback on kills
+    camfrowrard feeels more grown up and mature
+    esepecaillt with the coolwpnshotline
+    butit just ughhhh
+    no
+    the crosshair mode is much mroe fun 
+    idk im gona leave these editabel u can pick whtevr mode u want 
+
     OTHER AIM MODES:
 
     "world_hit"

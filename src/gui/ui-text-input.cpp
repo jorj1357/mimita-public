@@ -436,7 +436,7 @@ bool uiTextInputRender(GLFWwindow* window, const char* id, UIRect designRect,
     bool mouseDown = UISys::gMouseDown;
     bool clickEdge = UISys::gMouseClickEdge;
 
-    if (rawHovered && clickEdge)
+    if (rawHovered && clickEdge && !UISys::gDropdownModalActive)
     {
         // Click inside field → focus and place caret
         float localX = (float)(fbx - textOriginX + state.horizontalScrollPx);

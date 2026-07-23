@@ -4,6 +4,7 @@
 #include "../gui-bindings.h"
 #include "../gui-coord.h"
 #include "../ui-system.h"
+#include "../ui-system-internal.h"
 #include "../../map/map-catalog.h"
 #include "../../avatar/avatar-editor-dropdown.h"
 #include "../../network/multiplayer-context.h"
@@ -152,6 +153,15 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
     }
 
     GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/community-menu.json");
+
+    // Derive dropdown modal state from actual open dropdowns (blocks Phase 1 clicks)
+    UISys::gDropdownModalActive = false;
+    for (auto& kv : getDropdownStates()) {
+        if (kv.second.open && !kv.second.openThisFrame) {
+            UISys::gDropdownModalActive = true;
+            break;
+        }
+    }
 
     // Phase 1: draw all elements sorted by layer
     std::vector<std::pair<int, std::string>> sorted;

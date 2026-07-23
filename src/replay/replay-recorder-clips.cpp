@@ -12,6 +12,7 @@ ReplayClip ReplayRecorder::makeClip(
     const std::string& killerId, const std::string& victimId) const
 {
     MIMITA_PERF_SCOPE("Replay::MakeClip");
+    std::lock_guard<std::mutex> lock(mRingMutex);
     ReplayClip clip;
     clip.header = mHeader;
     clip.header.tickCount = 0;
@@ -87,6 +88,7 @@ ReplayClip ReplayRecorder::makeClip(
 
 void ReplayRecorder::stopRecording() {
     if (!mRecording) return;
+    std::lock_guard<std::mutex> lock(mRingMutex);
     if (!mPendingEffects.empty()) {
         ReplaySceneFrame finalFrame;
         finalFrame.tick = (int)mTick;

@@ -80,6 +80,7 @@ std::vector<ReplayBodyPartState> captureReplayBodyParts(const Player& player)
 // ============================================================
 
 void ReplayRecorder::beginRecording(float randomSeed, const char* mapName) {
+    std::lock_guard<std::mutex> lock(mRingMutex);
     mFrames.clear();
     mSceneFrames.clear();
     mAssets.clear();
@@ -116,6 +117,7 @@ void ReplayRecorder::beginRecording(float randomSeed, const char* mapName) {
 
 void ReplayRecorder::recordFrame(const InputFrame& frame) {
     if (!mRecording) return;
+    std::lock_guard<std::mutex> lock(mRingMutex);
 
     ReplayFrame rf;
     rf.tick = mTick++;
@@ -130,6 +132,7 @@ void ReplayRecorder::recordFrame(const InputFrame& frame) {
 void ReplayRecorder::recordSceneFrame(const ReplaySceneFrame& inputFrame)
 {
     if (!mRecording) return;
+    std::lock_guard<std::mutex> lock(mRingMutex);
 
     ReplaySceneFrame frame = inputFrame;
     frame.effects.insert(frame.effects.end(), mPendingEffects.begin(), mPendingEffects.end());
@@ -172,11 +175,13 @@ void ReplayRecorder::registerAsset(
 
 void ReplayRecorder::setWorldMetadata(const ReplayWorldMetadata& world)
 {
+    std::lock_guard<std::mutex> lock(mRingMutex);
     mWorld = world;
 }
 
 void ReplayRecorder::setLighting(const ReplayLightingState& lighting)
 {
+    std::lock_guard<std::mutex> lock(mRingMutex);
     mLighting = lighting;
 }
 

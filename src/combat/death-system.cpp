@@ -1,5 +1,6 @@
 #include "combat/death-system.h"
 #include "combat/weapon-runtime.h"
+#include "config/ragdoll-death-config.h"
 
 #include <algorithm>
 #include <chrono>
@@ -20,7 +21,6 @@
 #include "physics/config.h"
 #include "physics/physics-mini.h"
 #include "physics/movement/physics-collision.h"
-#include "ragdoll/ragdoll.h"
 #include "render/render-player.h"
 #include "renderer/renderer.h"
 #include "replay/replay.h"
@@ -38,14 +38,6 @@ extern Renderer* gRenderer;
 
 namespace {
 constexpr float RESPAWN_SECONDS = 3.0f;
-constexpr float CORPSE_STAGE1_SECONDS = 2.0f;
-constexpr float CORPSE_STAGE2_SECONDS = 1.0f;
-constexpr float CORPSE_TOTAL_SECONDS = 3.0f;
-constexpr float DEAD_WORLD_FLOOR = -500.0f;
-
-#define DEAD_LOG(fmt, ...) \
-    do { if (DebugConfig::DEBUG_RAGDOLL) \
-        printf("[DEAD] " fmt "\n", ##__VA_ARGS__); } while(0)
 
 void emitLifecycleEvent(const char* type,
                         const Player& actor,
@@ -125,84 +117,18 @@ bool DeathSystem::kill(
     printf("[DEATH] victim=%s hitDir=(%.2f %.2f %.2f) damage=%.0f\n",
            victim.username.c_str(), direction.x, direction.y, direction.z, lethalForce);
 
-    DeadBody body;
-    body.id = actorId + "_corpse_" + std::to_string(++mCorpseSerial);
-    body.name = victim.username + " corpse";
-    body.spawnPosition = victimPos;
-    body.transferredVelocity = linearVel;
-    body.deathImpulse = direction * lethalForce;
-
-    body.debugId = mCorpseSerial;
-    body.debugDeathDir = direction;
-
-    if (DebugConfig::DEBUG_NPC_DEATH) {
-        Debug::log(Debug::Category::Ragdoll, "[RAGDOLL SPAWN]\n");
-        Debug::log(Debug::Category::Ragdoll, "  id=%s\n", body.id.c_str());
-        Debug::log(Debug::Category::Ragdoll, "  deathPos=(%.2f %.2f %.2f)\n", victimPos.x, victimPos.y, victimPos.z);
-        Debug::log(Debug::Category::Ragdoll, "  deathVel=(%.2f %.2f %.2f)\n", linearVel.x, linearVel.y, linearVel.z);
-        Debug::log(Debug::Category::Ragdoll, "  deathSpeed=%.2f\n", glm::length(linearVel));
-        Debug::log(Debug::Category::Ragdoll, "  deathImpulse=(%.2f %.2f %.2f)\n",
-               body.deathImpulse.x, body.deathImpulse.y, body.deathImpulse.z);
-        Debug::log(Debug::Category::Ragdoll, "  deathDir=(%.2f %.2f %.2f)\n", direction.x, direction.y, direction.z);
-        Debug::log(Debug::Category::Ragdoll, "  lethalForce=%.1f\n", lethalForce);
-        Debug::log(Debug::Category::Ragdoll, "  corpseInitialVel=(%.2f %.2f %.2f)\n",
-               body.velocity.x, body.velocity.y, body.velocity.z);
-        Debug::log(Debug::Category::Ragdoll, "  corpseAngVel=(%.2f %.2f %.2f)\n",
-               body.angularVelocity.x, body.angularVelocity.y, body.angularVelocity.z);
-        Debug::log(Debug::Category::Ragdoll, "  velocityInherited=(%.2f %.2f %.2f)\n",
-               linearVel.x, linearVel.y, linearVel.z);
-        Debug::log(Debug::Category::Ragdoll, "  diffBeforeAfter=(%.2f %.2f %.2f)\n",
-               linearVel.x - body.velocity.x,
-               linearVel.y - body.velocity.y,
-               linearVel.z - body.velocity.z);
-        Debug::log(Debug::Category::Ragdoll, "[/RAGDOLL SPAWN]\n\n");
+    // Initialize death animation
+    {
+        const auto& cfg = RagdollDeathConfig::instance();
+        victim.deathAnim.active = true;
+        victim.deathAnim.tick = 0;
+        victim.deathAnim.totalTicks = cfg.totalTicks();
+        victim.deathAnim.startAlpha = cfg.startAlpha();
+        victim.deathAnim.endAlpha = cfg.endAlpha();
+        victim.deathAnim.startRotation = cfg.startRotation();
+        victim.deathAnim.endRotation = cfg.endRotation();
+        victim.deathAnim.frozenPosition = victimPos;
     }
-
-    // Single physics body slightly above death position to avoid floor embedding
-    body.position = victimPos + glm::vec3(0.0f, 0.0f, 0.1f);
-    body.rotation = victimRotation;
-
-    // Capsule dimensions matching the player
-    body.capsuleRadius = PLAYER_RADIUS;
-    body.capsuleHeight = PLAYER_HEIGHT;
-
-    // Inherit velocity — clamped to prevent launch, preserve momentum feel
-    float velMag = glm::length(linearVel + externalVel);
-    float maxInherit = 8.0f;
-    if (velMag > maxInherit) {
-        body.velocity = (linearVel + externalVel) * (maxInherit / velMag);
-    } else {
-        body.velocity = linearVel + externalVel;
-    }
-
-    // Death impulse scales with hit force — flings body backward on strong hits
-    body.velocity += direction * (lethalForce * 0.5f);
-
-    // Angular velocity from shot direction — brief tumble, not helicopter spin.
-    // Cross product with Z-up gives rotation axis perpendicular to shot.
-    // Reduced multiplier so body gets one natural roll, not infinite spinning.
-    float angForce = (lethalForce * 0.06f + 0.3f);
-    body.angularVelocity = glm::cross(direction, glm::vec3(0.0f, 0.0f, 1.0f)) * angForce;
-    float angSpeed = glm::length(body.angularVelocity);
-    if (angSpeed > 4.0f) {
-        body.angularVelocity = (body.angularVelocity / angSpeed) * 4.0f;
-    }
-
-    // Freeze skeleton pose from current physical body transforms
-    body.frozenParts.reserve(victim.physicalBody.parts.size());
-    body.partMeshes = victim.physicalBody.partMeshes;
-    for (size_t i = 0; i < victim.physicalBody.parts.size(); ++i) {
-        DeadBody::FrozenPart fp;
-        fp.name = victim.physicalBody.parts[i].name;
-        fp.nodeIndex = victim.physicalBody.parts[i].nodeIndex;
-        fp.worldTransform = victim.physicalBody.parts[i].worldTransform;
-        body.frozenParts.push_back(std::move(fp));
-    }
-
-    if (DebugConfig::DEBUG_DEATH_TIMELINE)
-        Debug::log(Debug::Category::Ragdoll, "[DEATH TIMELINE] t=%lldms corpse created (parts=%zu)\n",
-            std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - tStart).count(),
-            body.frozenParts.size());
 
     emitLifecycleEvent("death", victim, actorId, killer);
 
@@ -249,28 +175,9 @@ bool DeathSystem::kill(
     if (actorType == "npc")
         Debug::log(Debug::Category::NpcCombat, "[NPC] Respawning in %.2f seconds\n", victim.respawnTimer);
 
-    Debug::log(Debug::Category::Ragdoll, "[RAGDOLL] player=%s activated=true parts=%zu\n",
-           victim.username.c_str(), body.frozenParts.size());
-    Debug::log(Debug::Category::Ragdoll, "[RAGDOLL IMPULSE] force=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f)\n",
-           body.deathImpulse.x, body.deathImpulse.y, body.deathImpulse.z,
-           body.velocity.x, body.velocity.y, body.velocity.z);
-
     if (actorType == "npc")
         AudioManager::instance().play(
             {"npc_death", AudioCategory::NPC, true, victimPos, 1.0f, 0.9f, 45.0f, 0});
-
-    ReplayEffectEvent corpseEvent;
-    corpseEvent.type = "corpse_spawn";
-    corpseEvent.position = victimPos;
-    corpseEvent.direction = direction;
-    corpseEvent.velocity = linearVel;
-    corpseEvent.sourceActorId = actorId;
-    corpseEvent.targetActorId = body.id;
-    captureReplayEffect(corpseEvent);
-
-    mCorpses.push_back(std::move(body));
-
-    // [RAGDOLL REMOVED] — using simple DeadBody physics instead
 
     // Spawn death ellipsoid effect at the victim position, elongated along the kill direction
     const auto& deCfg = HitEffects::config().deathEllipsoid;
@@ -329,6 +236,7 @@ void DeathSystem::respawn(Player& actor, const std::string& actorId, const World
         actor.currentHp = actor.maxHp;
     }
     actor.dead = false;
+    actor.deathAnim = Player::DeathAnimState{};
     actor.proceduralFrozen = false;
     actor.respawnTimer = 0.0f;
     actor.voidDeathTriggered = false;
@@ -378,89 +286,17 @@ void DeathSystem::update(
         }
     }
 
-    // Update all dead bodies
-    for (DeadBody& body : mCorpses) {
-        body.age += dt;
-
-        // Debug freeze: skip physics update
-        if (DebugConfig::DEBUG_NPC_DEATH_FREEZE && body.debugFreeze)
-            continue;
-
-        // Underworld safety
-        if (body.position.z < DEAD_WORLD_FLOOR) {
-            DEAD_LOG("[UNDERWORLD] Body '%s' at z=%.1f, cleaning up",
-                     body.id.c_str(), body.position.z);
-            body.age = CORPSE_TOTAL_SECONDS;
-            continue;
-        }
-
-        if (body.age < CORPSE_STAGE1_SECONDS) {
-            body.blackness = std::clamp(body.age / CORPSE_STAGE1_SECONDS, 0.0f, 1.0f);
-            body.fade = 0.0f;
-
-            // Per-frame tick log (0.25s interval)
-            if (DebugConfig::DEBUG_NPC_DEATH) {
-                body.debugTickTimer += dt;
-                if (body.debugTickTimer >= 0.25f) {
-                    body.debugTickTimer = 0.0f;
-                    float distFromSpawn = glm::length(body.position - body.spawnPosition);
-                    float gravDot = glm::dot(body.velocity, body.debugGravity);
-                    Debug::log(Debug::Category::Ragdoll, "[RAGDOLL TICK] id=%s pos=(%.2f %.2f %.2f) "
-                           "vel=(%.2f %.2f %.2f) speed=%.2f "
-                           "angVel=(%.2f %.2f %.2f) "
-                           "distFromDeath=%.2f "
-                           "gravityDot=%.2f "
-                           "sleeping=%d\n",
-                           body.id.c_str(),
-                           body.position.x, body.position.y, body.position.z,
-                           body.velocity.x, body.velocity.y, body.velocity.z,
-                           glm::length(body.velocity),
-                           body.angularVelocity.x, body.angularVelocity.y, body.angularVelocity.z,
-                           distFromSpawn,
-                           gravDot,
-                           (int)body.sleeping);
-                }
-            }
-
-            // Sleep check
-            if (trySleepBody(body, dt))
-                continue;
-
-            // Physics update — single body, no constraints
-            updateDeadBodyPhysics(body, world, dt);
-        } else {
-            body.blackness = 1.0f;
-            body.fade = std::clamp(
-                (body.age - CORPSE_STAGE1_SECONDS) / CORPSE_STAGE2_SECONDS,
-                0.0f, 1.0f);
-        }
-    }
-
-    // Re-freeze corpses after stepping one frame
-    if (DebugConfig::DEBUG_NPC_DEATH_FREEZE) {
-        for (DeadBody& body : mCorpses)
-            body.debugFreeze = true;
-    }
-
-    // [RAGDOLL UPDATE REMOVED] — simple DeadBody physics handles corpses
-
-    // Remove expired corpses
-    {
-        MIMITA_PERF_SCOPE("CorpseCleanup");
-        size_t before = mCorpses.size();
-        auto tCleanup = std::chrono::steady_clock::now();
-        mCorpses.erase(
-            std::remove_if(mCorpses.begin(), mCorpses.end(), [](const DeadBody& body) {
-                return body.age >= CORPSE_TOTAL_SECONDS;
-            }),
-            mCorpses.end());
-        size_t removed = before - mCorpses.size();
-        if (DebugConfig::DEBUG_DEATH_PERF && removed > 0)
-            Debug::log(Debug::Category::Ragdoll, "[DEATH PERF] corpse cleanup removed=%zu elapsed=%.3fms\n",
-                removed,
-                std::chrono::duration<float, std::chrono::milliseconds::period>(
-                    std::chrono::steady_clock::now() - tCleanup).count());
-    }
+    // Tick death animation for dead entities
+    auto tickDeathAnim = [](Player& p) {
+        if (!p.dead || !p.deathAnim.active)
+            return;
+        p.deathAnim.tick++;
+        if (p.deathAnim.tick >= p.deathAnim.totalTicks)
+            p.deathAnim.active = false;
+    };
+    tickDeathAnim(player);
+    for (Npc& npc : npcs.all())
+        tickDeathAnim(npc.body);
 
     // Respawn logic
     if (player.dead)

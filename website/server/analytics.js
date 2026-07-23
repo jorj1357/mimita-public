@@ -1,10 +1,14 @@
 import { pool } from "./db.js"
 
 const DEFAULT_METRICS = [
-    "site_visitors_today",
-    "site_visitors_7d",
-    "site_visitors_30d",
-    "site_visitors_all",
+    "page_loads_today",
+    "page_loads_7d",
+    "page_loads_30d",
+    "page_loads_all",
+    "unique_visitors_today",
+    "unique_visitors_7d",
+    "unique_visitors_30d",
+    "unique_visitors_all",
     "downloads_today",
     "downloads_7d",
     "downloads_30d",
@@ -223,9 +227,9 @@ export async function getMetrics() {
         ? topPageResult.rows[0].page_url
         : null
 
-    if (metrics.site_visitors_all.allTime > 0) {
+    if (metrics.page_loads_all.allTime > 0) {
         metrics.download_conversion_pct = Number(
-            ((metrics.downloads_all.allTime / metrics.site_visitors_all.allTime) * 100).toFixed(2)
+            ((metrics.downloads_all.allTime / metrics.page_loads_all.allTime) * 100).toFixed(2)
         )
     }
     if (metrics.downloads_all.allTime > 0) {
@@ -243,13 +247,38 @@ export async function getMetrics() {
 export async function refreshMetrics() {
     const today = new Date().toISOString().split("T")[0]
 
-    // site visitors
-    await updateMetric("site_visitors_today", today, await countEvents("page_visit", "day"))
+    // page loads (raw event count, no dedup)
+    await updateMetric("page_loads_today", today, await countEvents("page_visit", "day"))
 
     const days7Ago = new Date(Date.now() - 7 * 86400000).toISOString()
-    await updateMetric("site_visitors_7d", today, await countEventsSince("page_visit", days7Ago))
-    await updateMetric("site_visitors_30d", today, await countEventsSince("page_visit", new Date(Date.now() - 30 * 86400000).toISOString()))
-    await updateMetric("site_visitors_all", today, await countEvents("page_visit", "all"))
+    await updateMetric("page_loads_7d", today, await countEventsSince("page_visit", days7Ago))
+    await updateMetric("page_loads_30d", today, await countEventsSince("page_visit", new Date(Date.now() - 30 * 86400000).toISOString()))
+    await updateMetric("page_loads_all", today, await countEvents("page_visit", "all"))
+
+    // unique visitors (distinct IP addresses)
+    const uvToday = await pool.query(`
+        SELECT COUNT(DISTINCT ip_address) AS count FROM analytics_events
+        WHERE event_name = 'page_visit' AND created_at >= CURRENT_DATE
+    `)
+    await updateMetric("unique_visitors_today", today, Number(uvToday.rows[0].count))
+
+    const uv7d = await pool.query(`
+        SELECT COUNT(DISTINCT ip_address) AS count FROM analytics_events
+        WHERE event_name = 'page_visit' AND created_at >= CURRENT_DATE - INTERVAL '7 days'
+    `)
+    await updateMetric("unique_visitors_7d", today, Number(uv7d.rows[0].count))
+
+    const uv30d = await pool.query(`
+        SELECT COUNT(DISTINCT ip_address) AS count FROM analytics_events
+        WHERE event_name = 'page_visit' AND created_at >= CURRENT_DATE - INTERVAL '30 days'
+    `)
+    await updateMetric("unique_visitors_30d", today, Number(uv30d.rows[0].count))
+
+    const uvAll = await pool.query(`
+        SELECT COUNT(DISTINCT ip_address) AS count FROM analytics_events
+        WHERE event_name = 'page_visit'
+    `)
+    await updateMetric("unique_visitors_all", today, Number(uvAll.rows[0].count))
 
     // downloads
     await updateMetric("downloads_today", today, await countEvents("download", "day"))

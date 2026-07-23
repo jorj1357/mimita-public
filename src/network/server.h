@@ -263,6 +263,19 @@ struct ServerPlayer
     int deaths = 0;
     uint16_t transformEpoch = 0;
 
+    // ── Input command buffer for server-side movement simulation ──────
+    // Spec: server stores received input commands and simulates movement
+    // from them using the shared movement kernel.
+    static constexpr uint8_t INPUT_COMMAND_BUFFER_SIZE = 32;
+    struct InputCommandEntry {
+        MovementCommand command;
+        bool valid = false;
+    };
+    InputCommandEntry inputCommandBuffer[INPUT_COMMAND_BUFFER_SIZE] = {};
+    uint8_t nextInputCommandSlot = 0;
+    uint32_t lastInputCommandSequence = 0;
+    uint32_t lastProcessedInputCommandSequence = 0;
+
     // ── Shared movement parity and Stage 3A report validation ─────────
     MovementState movement;
     MovementValidationCounters movementValidation;

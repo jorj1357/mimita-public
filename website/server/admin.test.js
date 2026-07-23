@@ -123,7 +123,8 @@ test("getMetrics returns expected structure", async () => {
     assert.ok(typeof metrics.active_sessions === "number")
     assert.ok(typeof metrics.total_feedback === "number")
     assert.ok(Array.isArray(metrics.feedback_by_category))
-    assert.ok("site_visitors_today" in metrics)
+    assert.ok("page_loads_today" in metrics)
+    assert.ok("unique_visitors_today" in metrics)
 })
 
 test("refreshMetrics populates metrics", async () => {

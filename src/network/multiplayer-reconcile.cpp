@@ -59,12 +59,14 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         // Sync outgoing epoch so the client-transform gate uses the new epoch
         if ((uint32_t)ctx.localServerEpoch > ctx.transformEpoch)
             ctx.transformEpoch = ctx.localServerEpoch;
-
-        // Clear movement history for new lifecycle
-        ctx.localServerAcknowledgedMovementSequence = 0;
-        ctx.sentMovementHistory.clear();
     }
 
+    const glm::vec3 clientPosition = player.pos;
+    const glm::vec3 correction = ctx.localServerPosition - player.pos;
+    const float error = glm::length(correction);
+    const MovementValidationConfig correctionConfig;
+    const MovementCorrectionClass correctionClass =
+        classifyMovementCorrection(error, correctionConfig);
     constexpr float CORRECTION_LOG_DISTANCE = 0.5f;
     constexpr uint64_t TELEPORT_ACK_TIMEOUT_MS = 1500;
     const uint64_t currentMs = nowMs();
@@ -97,53 +99,20 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         ctx.lastSeenServerHealth <= 0 &&
         ctx.localPlayerReconciled;
 
-    // ── Acknowledged-input reconciliation ──────────────────────────────
-    // Instead of comparing current prediction against raw server position
-    // (which creates a rubberband loop), find the sent movement report
-    // that the server acknowledges and compute the error from that point.
-    const MovementValidationConfig correctionConfig;
+    // Catastrophic divergence: only apply after the current authoritative
+    // epoch has been applied locally.  This prevents a stale server position
+    // from snapping the player while initial spawn/respawn/teleport
+    // acknowledgement is still in flight.
     const bool authoritativeEpochReady =
         ctx.localServerEpoch != 0 &&
         ctx.transformEpoch == ctx.localServerEpoch &&
         ctx.lastAppliedEpoch == ctx.localServerEpoch;
-    const bool sameEpoch =
-        ctx.lastAppliedEpoch != 0 &&
-        ctx.lastAppliedEpoch == ctx.localServerEpoch;
-
-    // Find matching history entry for acknowledged sequence
-    glm::vec3 acknowledgedError{0.0f};
-    bool hasAcknowledgedHistory = false;
-    glm::vec3 sentPositionAtAck{0.0f};
-    uint32_t acknowledgedSeq = 0;
-
-    if (sameEpoch && ctx.localServerAcknowledgedMovementSequence != 0)
-    {
-        acknowledgedSeq = ctx.localServerAcknowledgedMovementSequence;
-        for (const auto& entry : ctx.sentMovementHistory)
-        {
-            if (entry.sequence == acknowledgedSeq &&
-                entry.spawnGeneration == ctx.lastKnownSpawnGeneration &&
-                entry.transformEpoch == ctx.lastAppliedEpoch)
-            {
-                sentPositionAtAck = entry.position;
-                acknowledgedError = ctx.localServerPosition - entry.position;
-                hasAcknowledgedHistory = true;
-                break;
-            }
-        }
-
-        // Prune acknowledged entries from history
-        while (!ctx.sentMovementHistory.empty() &&
-               ctx.sentMovementHistory.front().sequence < acknowledgedSeq)
-            ctx.sentMovementHistory.pop_front();
-    }
-
-    const float rawError = glm::length(ctx.localServerPosition - player.pos);
-    const float acknowledgedErrorLen = hasAcknowledgedHistory
-        ? glm::length(acknowledgedError) : rawError;
-
-    const MovementCorrectionClass correctionClass =
-        classifyMovementCorrection(acknowledgedErrorLen, correctionConfig);
+    const bool catastrophicDivergence =
+        authoritativeEpochReady &&
+        ctx.localPlayerReconciled &&
+        correctionClass == MovementCorrectionClass::Major &&
+        !ctx.awaitingTeleportAck &&
+        !player.dead;
 
     const bool teleportCompletionResync =
         ctx.teleportResync && !ctx.awaitingTeleportAck;
@@ -151,13 +120,6 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         ctx.localPlayerReconciled &&
         ctx.localServerEpoch != ctx.lastAppliedEpoch &&
         ctx.localServerEpoch != 0;
-    const bool catastrophicDivergence =
-        authoritativeEpochReady &&
-        ctx.localPlayerReconciled &&
-        acknowledgedErrorLen >= correctionConfig.majorCorrectionDistance &&
-        !ctx.awaitingTeleportAck &&
-        !player.dead;
-
     const bool applyPosition =
         initialSpawn || serverRespawnedPlayer || catastrophicDivergence ||
         teleportCompletionResync || epochChanged;
@@ -165,12 +127,6 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     if (applyPosition)
         ctx.teleportResync = false;
 
-    // ── Apply correction ──────────────────────────────────────────────
-    // Only hard-snap for authoritative lifecycle changes (spawn, respawn,
-    // teleport, epoch change) or true catastrophic divergence (>=100m).
-    // Ordinary prediction errors are trusted — the client's predicted
-    // position is used as-is. The server validates and accepts input;
-    // small disagreements converge naturally during normal gameplay.
     if (applyPosition)
     {
         player.pos = ctx.localServerPosition;
@@ -222,33 +178,83 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     }
     ctx.lastSeenServerHealth = ctx.localServerHealth;
 
-    const glm::vec3 clientPosition = player.pos;
+    if (!player.dead)
+    {
+        const Capsule localCapsule = player.getCapsule();
+        for (const auto& entry : ctx.remotePlayers)
+        {
+            const Player& remote = entry.second;
+            if (remote.dead)
+                continue;
+
+            const Capsule remoteCapsule = remote.getCapsule();
+            const float localBottom = localCapsule.a.z - localCapsule.r;
+            const float localTop = localCapsule.b.z + localCapsule.r;
+            const float remoteBottom = remoteCapsule.a.z - remoteCapsule.r;
+            const float remoteTop = remoteCapsule.b.z + remoteCapsule.r;
+            if (localTop <= remoteBottom || remoteTop <= localBottom)
+                continue;
+
+            glm::vec2 delta(player.pos.x - remote.pos.x, player.pos.y - remote.pos.y);
+            float distance = glm::length(delta);
+            const float minimumDistance = localCapsule.r + remoteCapsule.r;
+            if (distance >= minimumDistance)
+                continue;
+
+            glm::vec2 normal(1.0f, 0.0f);
+            if (distance > 0.0001f)
+                normal = delta / distance;
+            const float penetration = minimumDistance - distance;
+            player.pos += glm::vec3(normal * penetration, 0.0f);
+
+            glm::vec2 planarVelocity(player.vel.x, player.vel.y);
+            const float intoRemote = glm::dot(planarVelocity, normal);
+            if (intoRemote < 0.0f)
+            {
+                planarVelocity -= normal * intoRemote;
+                player.vel.x = planarVelocity.x;
+                player.vel.y = planarVelocity.y;
+            }
+
+            static uint64_t lastCollisionLogMs = 0;
+            const uint64_t collisionNowMs = nowMs();
+            if (collisionNowMs - lastCollisionLogMs >= 250)
+            {
+                printf("[CLIENT PLAYER COLLISION] localId=%u remoteId=%u penetration=%.3f "
+                       "localPos=(%.2f,%.2f,%.2f) remotePos=(%.2f,%.2f,%.2f)\n",
+                       ctx.localPlayerId, entry.first, penetration,
+                       player.pos.x, player.pos.y, player.pos.z,
+                       remote.pos.x, remote.pos.y, remote.pos.z);
+                lastCollisionLogMs = collisionNowMs;
+            }
+        }
+    }
+
     const bool logCorrection =
-        initialSpawn || applyPosition || rawError >= CORRECTION_LOG_DISTANCE;
+        initialSpawn || applyPosition || error >= CORRECTION_LOG_DISTANCE;
     if (logCorrection &&
         (applyPosition || currentMs - ctx.lastLocalCorrectionLogMs >= 500))
     {
-        printf("[LOCAL CORRECTION] serverTick=%u ackSeq=%u historyFound=%d "
-               "sentAtAck=(%.2f,%.2f,%.2f) serverPos=(%.2f,%.2f,%.2f) "
-               "currentPredicted=(%.2f,%.2f,%.2f) ackErr=%.3f rawErr=%.3f "
-               "class=%s action=%s epoch=%u spawnGen=%u\n",
-               ctx.latestLocalSnapshotTick,
-               acknowledgedSeq,
-               (int)hasAcknowledgedHistory,
-               sentPositionAtAck.x, sentPositionAtAck.y, sentPositionAtAck.z,
+        printf("[LOCAL CORRECTION] distance=%.3f class=%s "
+               "serverPos=(%.2f,%.2f,%.2f) clientPos=(%.2f,%.2f,%.2f) "
+               "applied=%d reason=%s localEpoch=%u serverEpoch=%u lastAppliedEpoch=%u\n",
+               error,
+               movementCorrectionClassName(correctionClass),
                ctx.localServerPosition.x,
                ctx.localServerPosition.y,
                ctx.localServerPosition.z,
                clientPosition.x,
                clientPosition.y,
                clientPosition.z,
-               acknowledgedErrorLen,
-               rawError,
-               movementCorrectionClassName(correctionClass),
-                applyPosition ? "hard-snap" :
-                "trust-client",
-                ctx.transformEpoch,
-                ctx.lastKnownSpawnGeneration);
+               (int)applyPosition,
+                initialSpawn ? "initial-spawn" :
+                serverRespawnedPlayer ? "server-respawn" :
+                catastrophicDivergence ? "catastrophic-divergence" :
+                epochChanged ? "epoch-changed" :
+                serverKilledPlayer ? "server-death" : "within-tolerance",
+               ctx.transformEpoch,
+               (uint32_t)ctx.localServerEpoch,
+               (uint32_t)ctx.lastAppliedEpoch);
         ctx.lastLocalCorrectionLogMs = currentMs;
     }
     ctx.localPlayerReconciled = true;
