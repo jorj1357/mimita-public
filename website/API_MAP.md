@@ -152,7 +152,8 @@ Metrics are stored daily. Refresh via:
 - Automatically on dashboard GET
 
 Tracked metrics:
-- site_visitors (today, 7d, 30d, all)
+- page_loads (today, 7d, 30d, all) — raw event count
+- unique_visitors (today, 7d, 30d, all) — COUNT(DISTINCT ip_address)
 - downloads (today, all)
 - accounts_created (today, all)
 - game sessions, session duration buckets, crashes, disconnects, failed logins
