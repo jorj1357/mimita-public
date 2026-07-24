@@ -73,8 +73,17 @@ void CharacterRegistry::scanAll(const std::string& charactersDir)
         });
 }
 
-const CharacterManifest* CharacterRegistry::get(const std::string& name) const
+void CharacterRegistry::ensureScanned() const
 {
+    if (!mScanned) {
+        const_cast<CharacterRegistry*>(this)->scanAll();
+        const_cast<CharacterRegistry*>(this)->mScanned = true;
+    }
+}
+
+const CharacterManifest* CharacterRegistry::get(const std::string& name)
+{
+    ensureScanned();
     for (const auto& c : mCharacters)
     {
         if (c.name == name)
@@ -85,6 +94,7 @@ const CharacterManifest* CharacterRegistry::get(const std::string& name) const
 
 std::vector<std::string> CharacterRegistry::names() const
 {
+    ensureScanned();
     std::vector<std::string> result;
     for (const auto& c : mCharacters)
     {
@@ -96,6 +106,7 @@ std::vector<std::string> CharacterRegistry::names() const
 
 const CharacterManifest* CharacterRegistry::firstAvailable() const
 {
+    ensureScanned();
     for (const auto& c : mCharacters)
     {
         if (!c.hidden)

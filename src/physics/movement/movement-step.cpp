@@ -399,8 +399,10 @@ MovementVelocityView movementVelocityViewForCollision(const MovementState& state
     view.effectiveExternalImpulse = state.externalImpulse;
     view.effectiveBaseVelocity.x *= view.horizontalPassThrough;
     view.effectiveBaseVelocity.y *= view.horizontalPassThrough;
+    view.effectiveBaseVelocity.z *= view.horizontalPassThrough;
     view.effectiveExternalImpulse.x *= view.horizontalPassThrough;
     view.effectiveExternalImpulse.y *= view.horizontalPassThrough;
+    view.effectiveExternalImpulse.z *= view.horizontalPassThrough;
     return view;
 }
 
@@ -733,6 +735,7 @@ void updateFreeze(MovementState& state,
     if (freezePressed && state.freeze.available) {
         state.baseVelocity.x = 0.0f;
         state.baseVelocity.y = 0.0f;
+        state.baseVelocity.z = 0.0f;
         state.freeze.active = true;
         state.freeze.available = false;
         state.freeze.timerSeconds = 0.0f;
@@ -771,14 +774,11 @@ void applyBasicExternalImpulseControl(MovementState& state,
                                       const MovementCommand& command)
 {
     if (!command.movementDirectionPressed &&
-        !command.dashPressed &&
-        !command.freezeHeld) {
+        !command.dashPressed) {
         return;
     }
 
-    const float upZ = state.externalImpulse.z > 0.0f ? state.externalImpulse.z : 0.0f;
     state.externalImpulse = glm::vec3(0.0f);
-    state.externalImpulse.z = upZ;
 }
 
 static void applySpecialExternalImpulseControl(MovementState& state,

@@ -208,6 +208,7 @@ void Terminal::init(GLFWwindow* window) {
 
 void Terminal::toggle() {
     mOpen = !mOpen;
+    InputCommandSystem::instance().setKeyboardEnabled(!mOpen);
     if (mOpen) {
         if (mTextState) {
             mTextState->value.clear();

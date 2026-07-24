@@ -9,7 +9,9 @@
 */
 
 #pragma once
+#include <atomic>
 #include <cstdint>
+#include <memory>
 #include <glm/glm.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -23,6 +25,7 @@
 #include "avatar/avatar.h"
 #include "combat/weapon-types.h"
 #include "physics/movement/movement-types.h"
+#include "tinygltf/tiny_gltf.h"
 
 
 struct ReplayBodyPartState;
@@ -116,6 +119,26 @@ struct PhysicalBodyPart {
 struct PhysicalBody {
     std::vector<PhysicalBodyPart> parts;
     std::vector<Mesh> partMeshes;
+};
+
+struct PendingPlayerModel {
+    std::atomic<bool> ready{false};
+    std::string path;
+    std::string resolvedPath;
+    std::string glbDir;
+    bool loadOk = false;
+
+    std::vector<TransformNode> nodes;
+    std::vector<glm::mat4> restLocalTransforms;
+    std::vector<Collider> bodyColliders;
+    std::vector<BodyPart> bodyParts;
+    std::vector<Mesh> bodyPartMeshes;
+    PerfectPoseSkeleton perfectPose;
+    PhysicalBody physicalBodyData;
+    Mesh renderMeshData;
+
+    std::vector<tinygltf::Image> images;
+    int imageCount = 0;
 };
 
 struct AxisLock {
@@ -451,6 +474,11 @@ public:
     // -------- Character Loading --------
     bool loadCharacter(const std::string& characterName);
     const std::string& characterName() const { return mCharacterName; }
+    void ensureCharacterLoaded();
+    bool mLazyLoadRequested = false;
+    void requestModelLoad(const std::string& filepath);
+    void finalizeModelIfReady();
+    std::shared_ptr<PendingPlayerModel> mPendingModel;
 
     // -------- Systems --------
     void updateAudio(float dt);

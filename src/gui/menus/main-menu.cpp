@@ -90,20 +90,24 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
     avatarPreview.update(0.016f, glm::vec3(0.0f, 1.0f, 0.0f));
     avatarPreview.draw(fbW, fbH);
 
-    // Apply current avatar to preview player if it changed
+    // Apply current avatar to preview player if it changed (async model + atlas)
     {
         Player* previewPlayer = avatarPreview.player();
-        if (previewPlayer && previewPlayer->modelLoaded)
+        if (previewPlayer)
         {
             AvatarSystem& av = AvatarSystem::instance();
             static std::string lastAvatar;
             std::string current = av.hasAvatar() ? av.currentName() : "";
             if (!current.empty() && current != lastAvatar)
             {
-                av.applyToPlayer(*previewPlayer);
+                av.requestModelLoad(*previewPlayer);
+                av.requestAtlasBuild(*previewPlayer);
                 lastAvatar = current;
-                printf("[MAIN MENU] Applied avatar: %s\n", current.c_str());
+                printf("[MAIN MENU] Requested async load for: %s\n", current.c_str());
             }
+            // Finalize model + atlas if worker threads are done
+            previewPlayer->finalizeModelIfReady();
+            av.finalizeAtlasIfReady(*previewPlayer);
         }
     }
 

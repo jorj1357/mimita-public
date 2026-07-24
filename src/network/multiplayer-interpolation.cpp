@@ -102,6 +102,7 @@ static void resetPresentationAfterRespawn(Player& player, const SnapshotTransfor
 {
     player.proceduralFrozen = false;
     player.dead = false;
+    player.deathAnim = Player::DeathAnimState{};
     player.currentHp = target.health;
 
     // Walking/idle animation state

@@ -187,6 +187,14 @@ void MusicManager::init()
         mMenuTracks.size() + mIngameTracks.size(), mMenuTracks.size(), mIngameTracks.size());
 
     loadConfig();
+
+    // Force-unmute on first boot so theme music plays immediately.
+    // After this, the user's manual mute/unmute is always respected.
+    if (!mMenuTracks.empty() && mMuted && !mFirstBootComplete) {
+        mFirstBootComplete = true;
+        setMuted(false);
+    }
+
     mInitialized = true;
     enterMenuMode();
 }
@@ -407,9 +415,11 @@ void MusicManager::loadConfig()
             float speed = j["playbackSpeed"];
             setPlaybackSpeed(speed);
         }
+        if (j.contains("firstBootComplete"))
+            mFirstBootComplete = j["firstBootComplete"];
         std::error_code ec;
         mConfigLastWrite = std::filesystem::last_write_time(mConfigPath, ec);
-        Debug::log(Debug::Category::Audio, "[MUSIC CONFIG] loaded path=%s musicMuted=%d volume=%.2f playbackSpeed=%.2f\n",
+        Debug::log(Debug::Category::Audio, "[MUSIC CONFIG] loaded path=%s musicMuted=%d volume=%.2f playbackSpeed=%.2f firstBoot=%d\n",
                    mConfigPath.c_str(), (int)mMuted, mVolume, mPlaybackSpeed);
     } catch (const std::exception& e) {
         Debug::log(Debug::Category::Audio, "[MUSIC] config parse error: %s\n", e.what());
@@ -426,6 +436,7 @@ void MusicManager::saveConfig()
         j["musicEnabled"] = !mMuted;
         j["musicVolume"] = mVolume;
         j["playbackSpeed"] = mPlaybackSpeed;
+        j["firstBootComplete"] = mFirstBootComplete;
         std::ofstream file(mConfigPath);
         if (file.is_open()) {
             file << j.dump(4);

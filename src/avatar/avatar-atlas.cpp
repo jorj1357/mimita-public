@@ -5,6 +5,13 @@
 #include <cstdio>
 #include <cstring>
 #include <numeric>
+#include <thread>
+
+#include <nlohmann/json.hpp>
+
+#include "avatar/character-manifest.h"
+#include "avatar/character-registry.h"
+extern nlohmann::json gAvatarBodypartOverrides;
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -276,12 +283,12 @@ static void applyCrop(std::vector<unsigned char>& pixels, int srcW, int srcH) {
 
 } // anonymous namespace
 
-bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
-    printf("[AVATAR ATLAS] buildAtlas: advancedMode=%d relayTextures=%d\n",
-           (int)mAvatar.advancedMode, (int)reloadTextures);
-    if (!mAvatar.advancedMode) {
-        printf("[AVATAR ATLAS] NOT in advanced mode! Running expandSimple()\n");
-        const_cast<AvatarDefinition&>(mAvatar).expandSimple();
+// CPU-only phase: build atlas pixels without any GL calls.
+// Thread-safe if avatar def and basePath are not mutated during the call.
+static std::vector<unsigned char> buildAtlasPixels(const AvatarDefinition& avatar, const std::string& basePath) {
+    AvatarDefinition mutableAvatar = avatar;
+    if (!mutableAvatar.advancedMode) {
+        mutableAvatar.expandSimple();
     }
 
     std::vector<unsigned char> atlasPixels(ATLAS_SIZE * ATLAS_SIZE * 4, 0);
@@ -295,52 +302,36 @@ bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
     };
 
     for (int pi = 0; pi < 6; ++pi) {
-        const FaceVector& part = mAvatar.*partPtrs[pi];
+        const FaceVector& part = mutableAvatar.*partPtrs[pi];
         for (int fi = 0; fi < 6; ++fi) {
             const FaceSettings& fs = part.byName(faces[fi]);
             std::string path = fs.texture;
-            if (path.empty()) {
-                printf("[AVATAR ATLAS] %s/%s: NO TEXTURE ASSIGNED\n", parts[pi].c_str(), faces[fi].c_str());
-                continue;
-            }
+            if (path.empty()) continue;
 
-            printf("[AVATAR ATLAS] %s/%s: texture='%s' rotation=%.1f scale=(%.2f,%.2f) offset=(%.0f,%.0f)\n",
-                   parts[pi].c_str(), faces[fi].c_str(), path.c_str(),
-                   fs.transform.rotation, fs.transform.scaleX, fs.transform.scaleY,
-                   fs.transform.offsetX, fs.transform.offsetY);
-
-            std::string fullPath = resolvePath(path);
-            if (!std::filesystem::exists(fullPath)) {
-                Terminal::instance().addLog("[AVATAR] Missing texture: " + fullPath + " (face " + parts[pi] + "/" + faces[fi] + ")");
-                continue;
-            }
+            std::string fullPath = path;
+            if (!std::filesystem::path(fullPath).is_absolute())
+                fullPath = basePath + "/" + path;
+            if (!std::filesystem::exists(fullPath)) continue;
 
             int w, h, n;
             unsigned char* data = stbi_load(fullPath.c_str(), &w, &h, &n, 4);
-            if (!data) {
-                Terminal::instance().addLog("[AVATAR] Failed to load: " + fullPath);
-                continue;
-            }
+            if (!data) continue;
 
             bool hasScaleOffset = (fs.transform.scaleX != 1.0f || fs.transform.scaleY != 1.0f ||
                                    fs.transform.offsetX != 0.0f || fs.transform.offsetY != 0.0f);
 
-            // Rendering pipeline: load → scale+offset → resize → rotation → color/transparency → HSB
             std::vector<unsigned char> cellPixels;
             if (hasScaleOffset) {
-                // Apply scale+offset on full-resolution data, then resize to USABLE
                 cellPixels.assign(data, data + w * h * 4);
                 stbi_image_free(data);
                 applyScaleAndOffset(cellPixels, w, h,
                                     fs.transform.scaleX, fs.transform.scaleY,
                                     fs.transform.offsetX, fs.transform.offsetY);
             } else if (fs.transform.stretchMode == 1) {
-                // Crop mode: preserve aspect ratio, fill cell
                 cellPixels.assign(data, data + w * h * 4);
                 stbi_image_free(data);
                 applyCrop(cellPixels, w, h);
             } else {
-                // Stretch mode: resize directly to fill cell
                 std::vector<unsigned char> scaled(USABLE * USABLE * 4);
                 if (w != USABLE || h != USABLE)
                     stbir_resize_uint8_linear(data, w, h, 0, scaled.data(), USABLE, USABLE, 0, STBIR_RGBA);
@@ -350,24 +341,12 @@ bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
                 cellPixels = std::move(scaled);
             }
 
-            // Apply default 90-degree CCW rotation, then per-face rotation on top.
-            // Rotation is applied before color/transparency so rotation works on
-            // the original pixel values and color/transparency are the final pass.
             float totalRotation = DEFAULT_TEXTURE_ROTATION;
             if (fs.transform.rotation != 0.0f)
                 totalRotation = fmod(totalRotation + fs.transform.rotation, 360.0f);
             if (totalRotation != 0.0f)
                 rotateImage(cellPixels, USABLE, totalRotation);
 
-            if (totalRotation != 0.0f || fs.transform.scaleX != 1.0f || fs.transform.scaleY != 1.0f ||
-                fs.transform.offsetX != 0.0f || fs.transform.offsetY != 0.0f) {
-                printf("[Avatar] %s/%s rotation=%.1f° scale=%.2f,%.2f offset=%.0f,%.0f\n",
-                       parts[pi].c_str(), faces[fi].c_str(),
-                       totalRotation, fs.transform.scaleX, fs.transform.scaleY,
-                       fs.transform.offsetX, fs.transform.offsetY);
-            }
-
-            // Apply per-face color multiplier (RGB multiply) and transparency (alpha multiply)
             float opacity = 1.0f - std::clamp(fs.transform.transparency, 0.0f, 1.0f);
             if (fs.transform.color != glm::vec3(1.0f) || opacity < 1.0f) {
                 for (int py = 0; py < USABLE; ++py)
@@ -388,7 +367,6 @@ bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
                                  fs.transform.hueShift, fs.transform.saturation, fs.transform.brightness);
             }
 
-            // Blit to atlas (textures are stored in logical column order: top, bottom, front, back, left, right)
             int cellX = PADDING + fi * (CELL_SIZE + GAP) + INSET;
             int cellY = PADDING + pi * (CELL_SIZE + GAP) + INSET;
             for (int y = 0; y < USABLE; ++y) {
@@ -400,6 +378,14 @@ bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
             }
         }
     }
+    return atlasPixels;
+}
+
+bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
+    printf("[AVATAR ATLAS] buildAtlas: advancedMode=%d relayTextures=%d\n",
+           (int)mAvatar.advancedMode, (int)reloadTextures);
+
+    std::vector<unsigned char> atlasPixels = buildAtlasPixels(mAvatar, mBasePath);
 
     if (mAtlasTexture) {
         glDeleteTextures(1, &mAtlasTexture);
@@ -420,6 +406,65 @@ bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
     printf("[AVATAR ATLAS] Built atlas texture ID=%u for %s\n", mAtlasTexture, mAvatarName.c_str());
     Terminal::instance().addLog("[AVATAR] Built atlas texture for: " + mAvatarName);
     return true;
+}
+
+void AvatarSystem::requestAtlasBuild(Player& player) {
+    if (!mHasAvatar || mAvatarName.empty()) return;
+    if (mAtlasThreadRunning.load()) return;
+    if (mPendingAtlas && mPendingAtlas->ready.load()) return;
+
+    // Apply bodypart overrides to the global before model finalizes
+    if (!mAvatar.bodypartOverrides.is_null())
+        gAvatarBodypartOverrides = mAvatar.bodypartOverrides;
+
+    mPendingAtlas = std::make_unique<PendingAtlasResult>();
+    mPendingAvatarName = mAvatarName;
+
+    AvatarDefinition avatarCopy = mAvatar;
+    std::string basePathCopy = mBasePath;
+    PendingAtlasResult* result = mPendingAtlas.get();
+
+    mAtlasThreadRunning = true;
+    std::thread t([result, avatarCopy, basePathCopy]() {
+        result->pixels = buildAtlasPixels(avatarCopy, basePathCopy);
+        result->ready = true;
+    });
+    t.detach();
+}
+
+void AvatarSystem::finalizeAtlasIfReady(Player& player) {
+    if (!mPendingAtlas || !mPendingAtlas->ready.load()) return;
+    if (mAtlasThreadRunning.load()) {
+        // Thread is done — upload to GPU on main thread
+        mAtlasThreadRunning = false;
+
+        if (mAtlasTexture) {
+            glDeleteTextures(1, &mAtlasTexture);
+            mAtlasTexture = 0;
+        }
+
+        glGenTextures(1, &mAtlasTexture);
+        glBindTexture(GL_TEXTURE_2D, mAtlasTexture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ATLAS_SIZE, ATLAS_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, mPendingAtlas->pixels.data());
+        glGenerateMipmap(GL_TEXTURE_2D);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+
+        printf("[AVATAR ATLAS] Async atlas texture ready ID=%u for %s\n", mAtlasTexture, mAvatarName.c_str());
+
+        // Wait for model to be loaded before applying atlas
+        if (!player.modelLoaded || player.physicalBody.parts.empty()) {
+            printf("[AVATAR ATLAS] Model not ready yet; deferring atlas application\n");
+            return;
+        }
+
+        applyAtlasToPlayer(player);
+        mPendingAtlas.reset();
+    }
 }
 
 bool AvatarSystem::applyAtlasToPlayer(Player& player) {
@@ -473,4 +518,33 @@ bool AvatarSystem::applyAtlasToPlayer(Player& player) {
     player.bodyPartMeshes = player.physicalBody.partMeshes;
     Terminal::instance().addLog("[AVATAR] Applied atlas to player");
     return true;
+}
+
+void AvatarSystem::requestModelLoad(Player& player) {
+    if (!mHasAvatar || mAvatarName.empty()) return;
+    if (player.modelLoaded) return;
+    if (player.mPendingModel) return; // thread already started
+
+    // Use avatar's custom model path, or fall back to default character GLB
+    std::string modelPath;
+    if (!mAvatar.playerModel.empty()) {
+        modelPath = mAvatar.playerModel;
+        printf("[AVATAR] Requesting async model load: %s\n", modelPath.c_str());
+        if (!mAvatar.bodypartOverrides.is_null())
+            gAvatarBodypartOverrides = mAvatar.bodypartOverrides;
+    } else {
+        // Resolve default character's GLB path for async loading
+        std::string charName = player.mCharacterName;
+        if (charName.empty()) charName = "DefaultGuy";
+        const CharacterManifest* manifest = CharacterRegistry::instance().get(charName);
+        if (manifest) {
+            modelPath = "Characters/" + charName + "/" + manifest->model;
+            printf("[AVATAR] Requesting async default model load: %s\n", modelPath.c_str());
+        } else {
+            modelPath = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
+        }
+    }
+
+    if (!modelPath.empty())
+        player.requestModelLoad(modelPath);
 }

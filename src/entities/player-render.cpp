@@ -29,6 +29,7 @@ void Player::render(unsigned int shader,
                     const glm::mat4& proj,
                     bool hideHead) const
 {
+    const_cast<Player*>(this)->finalizeModelIfReady();
     const_cast<Player*>(this)->updateModelWorldTransforms();
     bool flash = spawnFlashTimer > 0.0f;
     renderCurrentPose(shader, view, proj, flash, hideHead);
@@ -319,6 +320,7 @@ void Player::renderCurrentPose(unsigned int shader,
 
 void Player::renderDepth(unsigned int shadowShader, const glm::mat4& lightViewProj) const
 {
+    const_cast<Player*>(this)->finalizeModelIfReady();
     const_cast<Player*>(this)->updateModelWorldTransforms();
 
     glUseProgram(shadowShader);

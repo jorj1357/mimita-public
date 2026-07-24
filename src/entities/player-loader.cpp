@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <fstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "avatar/character-registry.h"
@@ -529,4 +530,226 @@ bool Player::loadCharacter(const std::string& characterName)
            manifest->capsule.radius, manifest->capsule.height,
            manifest->camera.distance, manifest->camera.height, manifest->camera.shoulderOffset);
     return true;
+}
+
+void Player::ensureCharacterLoaded()
+{
+    if (modelLoaded || mLazyLoadRequested)
+        return;
+    mLazyLoadRequested = true;
+    printf("[PLAYER] lazy-loading character '%s'\n", mCharacterName.c_str());
+    loadCharacter(mCharacterName);
+}
+
+// ── Threaded model load ──────────────────────────────────────────
+
+static void buildPlayerDataFromModel(PendingPlayerModel* d, const tinygltf::Model& model)
+{
+    d->nodes.resize(model.nodes.size());
+    d->restLocalTransforms.resize(model.nodes.size(), glm::mat4(1.0f));
+    d->perfectPose.nodes.clear();
+    d->perfectPose.nodes.resize(model.nodes.size());
+    d->perfectPose.restLocalTransforms.clear();
+    d->perfectPose.restLocalTransforms.resize(model.nodes.size(), glm::mat4(1.0f));
+
+    for (int i = 0; i < (int)model.nodes.size(); ++i)
+    {
+        const tinygltf::Node& gltfNode = model.nodes[i];
+        TransformNode& node = d->nodes[i];
+        node.name = gltfNode.name;
+        node.localTransform = nodeMatrix(gltfNode);
+        d->restLocalTransforms[i] = node.localTransform;
+        node.worldTransform = node.localTransform;
+        node.children = gltfNode.children;
+
+        TransformNode& poseNode = d->perfectPose.nodes[i];
+        poseNode.name = gltfNode.name;
+        poseNode.localTransform = node.localTransform;
+        poseNode.worldTransform = node.worldTransform;
+        poseNode.children = node.children;
+        d->perfectPose.restLocalTransforms[i] = node.localTransform;
+
+        for (int child : gltfNode.children)
+            if (child >= 0 && child < (int)d->nodes.size())
+            {
+                d->nodes[child].parent = i;
+                d->perfectPose.nodes[child].parent = i;
+            }
+    }
+
+    for (int i = 0; i < (int)model.nodes.size(); ++i)
+    {
+        const std::string& name = d->nodes[i].name;
+        if (!isPlayerBodyPart(name))
+            continue;
+
+        Collider collider;
+        collider.name = name;
+        appendNodeCollider(model, i, collider);
+        d->bodyColliders.push_back(collider);
+
+        BodyPart part;
+        part.name = name;
+        part.nodeIndex = i;
+        part.collider = collider;
+        d->bodyParts.push_back(part);
+
+        PhysicalBodyPart physicalPart;
+        physicalPart.name = name;
+        physicalPart.nodeIndex = i;
+        physicalPart.collider = collider;
+        d->physicalBodyData.parts.push_back(physicalPart);
+
+        Mesh bodyMesh;
+        appendNodeRenderMesh(model, i, bodyMesh);
+        d->bodyPartMeshes.push_back(bodyMesh);
+        d->physicalBodyData.partMeshes.push_back(bodyMesh);
+    }
+}
+
+static void modelLoadThreadFunc(PendingPlayerModel* d)
+{
+    tinygltf::TinyGLTF loader;
+    tinygltf::Model model;
+    std::string err, warn;
+
+    bool ok = loader.LoadBinaryFromFile(&model, &err, &warn, d->resolvedPath);
+    if (!warn.empty()) printf("[PLAYER GLB WARNING] %s\n", warn.c_str());
+    if (!err.empty()) printf("[PLAYER GLB ERROR] %s\n", err.c_str());
+    if (!ok) {
+        printf("[PLAYER GLB ERROR] failed async load %s\n", d->path.c_str());
+        d->ready = true;
+        return;
+    }
+
+    d->loadOk = true;
+    d->glbDir = std::filesystem::path(d->resolvedPath).parent_path().string();
+    d->images = std::move(model.images);
+    d->imageCount = (int)d->images.size();
+
+    buildPlayerDataFromModel(d, model);
+    d->ready = true;
+}
+
+void Player::requestModelLoad(const std::string& filepath)
+{
+    if (modelLoaded) return;
+    if (mPendingModel) return;
+
+    auto data = std::make_shared<PendingPlayerModel>();
+    data->path = filepath;
+    data->resolvedPath = resolveAssetPath(filepath);
+
+    mPendingModel = data;
+    PendingPlayerModel* raw = mPendingModel.get();
+
+    std::thread t(modelLoadThreadFunc, raw);
+    t.detach();
+}
+
+static GLuint uploadPlayerTexture(const tinygltf::Image& image)
+{
+    if (image.image.empty() || image.width <= 0 || image.height <= 0)
+        return 0;
+    if (image.component < 1 || image.component > 4)
+        return 0;
+
+    GLuint tex = 0;
+    glGenTextures(1, &tex);
+    if (!tex) return 0;
+    glBindTexture(GL_TEXTURE_2D, tex);
+
+    GLenum srcFormat = GL_RGBA;
+    if (image.component == 1) srcFormat = GL_RED;
+    else if (image.component == 2) srcFormat = GL_RG;
+    else if (image.component == 3) srcFormat = GL_RGB;
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.width, image.height, 0,
+                 srcFormat, GL_UNSIGNED_BYTE, image.image.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+
+    return tex;
+}
+
+void Player::finalizeModelIfReady()
+{
+    if (!mPendingModel || modelLoaded) return;
+    if (!mPendingModel->ready.load()) return;
+
+    PendingPlayerModel* d = mPendingModel.get();
+    if (!d->loadOk) {
+        mPendingModel.reset();
+        return;
+    }
+
+    // Upload textures to GL (must be on main thread)
+    std::vector<GLuint> texIds;
+    texIds.reserve(d->images.size());
+    for (const auto& img : d->images) {
+        GLuint t = uploadPlayerTexture(img);
+        texIds.push_back(t);
+    }
+
+    // Build combined renderMesh from body part meshes
+    {
+        Mesh combined;
+        size_t offset = 0;
+        for (const auto& bpm : d->bodyPartMeshes) {
+            combined.verts.insert(combined.verts.end(), bpm.verts.begin(), bpm.verts.end());
+            for (const auto& batch : bpm.batches) {
+                Mesh::Batch cb = batch;
+                cb.first += offset;
+                combined.batches.push_back(cb);
+            }
+            offset += bpm.verts.size();
+        }
+        renderMesh = std::move(combined);
+    }
+
+    // Assign all data to Player
+    nodes = std::move(d->nodes);
+    restLocalTransforms = std::move(d->restLocalTransforms);
+    bodyColliders = std::move(d->bodyColliders);
+    bodyParts = std::move(d->bodyParts);
+    bodyPartMeshes = std::move(d->bodyPartMeshes);
+    perfectPoseSkeleton = std::move(d->perfectPose);
+    physicalBody = std::move(d->physicalBodyData);
+
+    // Assign texture IDs to body part mesh batches (overwrite any existing)
+    int tidx = 0;
+    for (Mesh& bpm : bodyPartMeshes) {
+        for (auto& batch : bpm.batches) {
+            if (tidx < (int)texIds.size()) {
+                batch.texture = texIds[tidx++];
+            }
+        }
+    }
+    for (Mesh& bpm : physicalBody.partMeshes) {
+        for (auto& batch : bpm.batches) {
+            if (tidx < (int)texIds.size()) {
+                batch.texture = texIds[tidx++];
+            }
+        }
+    }
+
+    // Apply bodypart config overrides
+    applyBodypartConfigOverrides(restLocalTransforms, nodes);
+    for (int i = 0; i < (int)restLocalTransforms.size(); ++i) {
+        perfectPoseSkeleton.restLocalTransforms[i] = restLocalTransforms[i];
+        nodes[i].localTransform = restLocalTransforms[i];
+        perfectPoseSkeleton.nodes[i].localTransform = restLocalTransforms[i];
+    }
+
+    updateModelWorldTransforms();
+    modelLoaded = true;
+
+    printf("[PLAYER] async model loaded: path=%s nodes=%zu bodyParts=%zu textures=%d\n",
+           d->path.c_str(), nodes.size(), bodyParts.size(), (int)texIds.size());
+    mPendingModel.reset();
 }

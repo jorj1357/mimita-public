@@ -357,6 +357,7 @@ int runServer(const LaunchOptions& options)
     // Otherwise use the normal coordinatorRegister for LAN/direct-IP servers.
     std::string serverCode = options.serverCode.empty() ? generateServerCode() : options.serverCode;
     std::string serverJoinToken;
+    bool iceRegistrationSucceeded = false;
     {
         if (options.noCoordinator)
         {
@@ -375,15 +376,17 @@ int runServer(const LaunchOptions& options)
             {
                 serverCode = dedicatedIceState.serverCode;
                 serverJoinToken = dedicatedIceState.joinToken;
+                iceRegistrationSucceeded = true;
                 printf("%s [SERVER ICE] registered: code=%s\n",
                        serverTimestamp(), serverCode.c_str());
             }
             else
             {
-                printf("%s [SERVER ICE] init failed; LAN only\n", serverTimestamp());
+                printf("%s [SERVER ICE] init failed; falling back to normal coordinator registration\n",
+                       serverTimestamp());
             }
         }
-        else if (!options.noCoordinator)
+        if (!options.noCoordinator && !iceRegistrationSucceeded)
         {
             // ── Normal (non-ICE) mode: standard coordinator registration ──
             std::string regMapName = options.mapName.empty() ? "funworld3" : options.mapName;
@@ -746,6 +749,7 @@ bool startListenServer(ListenServerState& state, uint16_t port,
                    hostedRoomSession().roomCode.c_str(), state.serverCode.c_str());
         }
 
+        bool iceRegistrationSucceeded = false;
         if (settings && settings->iceEnabled)
         {
             // ── ICE mode: single registration via coordinatorIceHost ──
@@ -753,13 +757,14 @@ bool startListenServer(ListenServerState& state, uint16_t port,
             {
                 printf("[LISTEN SERVER] ICE registered: code=%s\n", state.serverCode.c_str());
                 hostedRoomSession().coordinatorRoomType = "ice";
+                iceRegistrationSucceeded = true;
             }
             else
             {
-                printf("[LISTEN SERVER] ICE init failed; LAN only\n");
+                printf("[LISTEN SERVER] ICE init failed; falling back to normal coordinator registration\n");
             }
         }
-        else
+        if (!iceRegistrationSucceeded)
         {
             // ── Normal (non-ICE) mode: standard coordinator registration ──
             std::string regMap = settings ? settings->mapName : "funworld3";
