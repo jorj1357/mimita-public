@@ -140,13 +140,17 @@ static void reconcileEffectiveCollisionVelocity(
     if (overrideState.horizontalPassThrough > restoreThreshold) {
         state.baseVelocity.x /= overrideState.horizontalPassThrough;
         state.baseVelocity.y /= overrideState.horizontalPassThrough;
+        state.baseVelocity.z /= overrideState.horizontalPassThrough;
         state.externalImpulse.x /= overrideState.horizontalPassThrough;
         state.externalImpulse.y /= overrideState.horizontalPassThrough;
+        state.externalImpulse.z /= overrideState.horizontalPassThrough;
     } else {
         state.baseVelocity.x = overrideState.storedBaseVelocity.x;
         state.baseVelocity.y = overrideState.storedBaseVelocity.y;
+        state.baseVelocity.z = overrideState.storedBaseVelocity.z;
         state.externalImpulse.x = overrideState.storedExternalImpulse.x;
         state.externalImpulse.y = overrideState.storedExternalImpulse.y;
+        state.externalImpulse.z = overrideState.storedExternalImpulse.z;
     }
 }
 

@@ -145,6 +145,7 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         player.currentHp = ctx.localServerHealth;
         player.dead = false;
         player.proceduralFrozen = false;
+        player.deathAnim = Player::DeathAnimState{};
         player.respawnTimer = 0.0f;
         player.killedBy.clear();
         resetAllWeaponRuntimesForSpawn(player, "multiplayer-reconcile spawn");

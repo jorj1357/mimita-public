@@ -310,11 +310,11 @@ CoordinatorLookupResult coordinatorIceLookup(const std::string& roomCode)
         result.maxPlayers = jsonInt(j, "max_players");
         result.passwordProtected = jsonBool(j, "password_protected");
     } catch (const std::exception& e) {
-        printf("[ICE ROOM LOOKUP] parse error: %s\n", e.what());
+        printf("[ICE ROOM LOOKUP] parse error: %s response=%.200s\n", e.what(), response.c_str());
     }
-    printf("[ICE ROOM LOOKUP] code=%s exists=%d isIce=%d status=%s duration=%llums\n",
+    printf("[ICE ROOM LOOKUP] code=%s exists=%d isIce=%d status=%s httpCode=%ld duration=%llums\n",
            roomCode.c_str(), (int)result.exists, (int)result.isIce,
-           result.status.c_str(), nowMs() - t0);
+           result.status.c_str(), httpCode, nowMs() - t0);
     return result;
 }
 

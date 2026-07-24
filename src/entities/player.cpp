@@ -44,7 +44,7 @@ glm::mat4 transformMatrix(const glm::vec3& position, const glm::quat& rotation)
 }
 
 Player::Player()
-    : Player(true)
+    : Player(false)
 {
 }
 

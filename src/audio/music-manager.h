@@ -99,6 +99,7 @@ private:
     std::mt19937 mRng;
 
     bool mInitialized = false;
+    bool mFirstBootComplete = false;
 
     // Music widget hover state
     float mWidgetDt = 0.0f;

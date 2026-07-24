@@ -29,6 +29,18 @@ void renderPlayerInternal(
     uint32_t networkEntityId,
     bool isLocal)
 {
+    Player& p = const_cast<Player&>(player);
+    AvatarSystem& av = AvatarSystem::instance();
+
+    // Kick async load once per player
+    if (!p.modelLoaded && !p.mLazyLoadRequested && av.hasAvatar()) {
+        p.mLazyLoadRequested = true;
+        av.requestModelLoad(p);
+        av.requestAtlasBuild(p);
+    }
+    p.finalizeModelIfReady();
+    av.finalizeAtlasIfReady(p);
+
     static std::unordered_map<uint32_t, uint64_t> lastLogMs;
     const uint64_t nowMs = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();

@@ -134,7 +134,7 @@ Player* MenuAvatarPreview::ensurePlayer()
     if (!mPlayer)
     {
         printf("[MENU PREVIEW] Creating preview player...\n");
-        mPlayer = new Player();
+        mPlayer = new Player(false);
     }
     return mPlayer;
 }
@@ -183,6 +183,10 @@ void MenuAvatarPreview::update(float dt, const glm::vec3& camForward)
 {
     Player* p = ensurePlayer();
     if (!p) return;
+
+    // Check if async model + atlas build finished
+    p->finalizeModelIfReady();
+    AvatarSystem::instance().finalizeAtlasIfReady(*p);
 
     float speedDt = dt * mConfig.animationSpeed;
     p->proceduralTime += speedDt * mConfig.idleSpeed;

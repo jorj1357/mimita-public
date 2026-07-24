@@ -4,6 +4,9 @@
 #include <unordered_map>
 #include <chrono>
 #include <filesystem>
+#include <atomic>
+#include <thread>
+#include <memory>
 #include <glm/glm.hpp>
 #include <glad/glad.h>
 #include <nlohmann/json.hpp>
@@ -128,6 +131,9 @@ public:
     bool loadAvatar(const std::string& avatarName);
     bool applyToPlayer(Player& player, bool reloadTextures = false);
     void pollHotReload();
+    void requestAtlasBuild(Player& player);
+    void finalizeAtlasIfReady(Player& player);
+    void requestModelLoad(Player& player);
 
     const AvatarDefinition& current() const { return mAvatar; }
     bool hasAvatar() const { return mHasAvatar; }
@@ -183,6 +189,14 @@ private:
     bool buildAtlas(Player& player, bool reloadTextures);
     bool applyAtlasToPlayer(Player& player);
     std::string resolvePath(const std::string& relativePath) const;
+
+    struct PendingAtlasResult {
+        std::atomic<bool> ready{false};
+        std::vector<unsigned char> pixels;
+    };
+    std::unique_ptr<PendingAtlasResult> mPendingAtlas;
+    std::atomic<bool> mAtlasThreadRunning{false};
+    std::string mPendingAvatarName;
 
     std::string mAvatarName;
     std::string mBasePath;

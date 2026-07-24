@@ -221,15 +221,14 @@ void gameInitSubsystems(Engine& engine)
     player.username = AuthSystem::instance().displayName();
     Debug::warn(Debug::Category::Auth, "[BOOT] player.username=%s\n", player.username.c_str());
     player.equippedSlot = GetPlayerSettings().equippedSlot;
-    CharacterRegistry::instance().scanAll();
-    if (!GetPlayerSettings().characterName.empty())
-        player.loadCharacter(GetPlayerSettings().characterName);
+    player.mCharacterName = GetPlayerSettings().characterName;
+    if (player.mCharacterName.empty())
+        player.mCharacterName = "DefaultGuy";
 
-
+    // Avatar metadata is loaded at boot (fast ~1ms JSON parse).
+    // Model + atlas are loaded lazily on first render via worker threads.
     if (!GetPlayerSettings().avatarName.empty())
         AvatarSystem::instance().loadAvatar(GetPlayerSettings().avatarName);
-    if (AvatarSystem::instance().hasAvatar())
-        AvatarSystem::instance().applyToPlayer(player);
 
     printf("[MAIN] player made\n");
 

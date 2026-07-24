@@ -380,22 +380,39 @@ void tickWeaponRuntimes(std::unordered_map<uint32_t, ServerPlayer>& players, uin
                     rt.reloading = false;
                     continue;
                 }
-                // Add one shell
-                if (rt.magazineAmmo < def->magazineSize && rt.reserveAmmo > 0)
+
+                bool oneAtATime = false;
+                auto cit = def->customParams.find("reloadOneAtATime");
+                if (cit != def->customParams.end()) oneAtATime = (cit->second != 0.0f);
+
+                if (oneAtATime)
                 {
-                    rt.magazineAmmo++;
-                    rt.reserveAmmo--;
-                    rt.stateRevision++;
-                }
-                // Schedule next shell or finish
-                if (rt.magazineAmmo < def->magazineSize && rt.reserveAmmo > 0)
-                {
-                    float reloadInterval = def->customParams.count("reloadTimePerShell")
-                        ? def->customParams.at("reloadTimePerShell") : (def->reloadTime > 0 ? def->reloadTime : 0.55f);
-                    rt.reloadCompleteTick = currentTick + (uint32_t)std::ceil(reloadInterval * 60.0f);
+                    // Load +1 shell, schedule next if more needed
+                    if (rt.magazineAmmo < def->magazineSize && rt.reserveAmmo > 0)
+                    {
+                        rt.magazineAmmo++;
+                        rt.reserveAmmo--;
+                        rt.stateRevision++;
+                    }
+                    if (rt.magazineAmmo < def->magazineSize && rt.reserveAmmo > 0)
+                    {
+                        float reloadInterval = def->customParams.count("reloadTimePerShell")
+                            ? def->customParams.at("reloadTimePerShell") : (def->reloadTime > 0 ? def->reloadTime : 0.55f);
+                        rt.reloadCompleteTick = currentTick + (uint32_t)std::ceil(reloadInterval * 60.0f);
+                    }
+                    else
+                    {
+                        rt.reloading = false;
+                    }
                 }
                 else
                 {
+                    // Bulk reload — fill all missing shells at once
+                    int needed = def->magazineSize - rt.magazineAmmo;
+                    int loaded = std::min(needed, rt.reserveAmmo);
+                    rt.magazineAmmo += loaded;
+                    rt.reserveAmmo -= loaded;
+                    rt.stateRevision++;
                     rt.reloading = false;
                 }
             }
