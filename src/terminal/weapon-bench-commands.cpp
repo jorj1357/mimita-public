@@ -29,7 +29,7 @@ static std::string benchLogPath(const std::string& suffix)
     std::tm tm;
     localtime_s(&tm, &t);
     char dateBuf[16], timeBuf[16];
-    std::strftime(dateBuf, sizeof(dateBuf), "%d-%m-%Y", &tm);
+    std::strftime(dateBuf, sizeof(dateBuf), "%m-%d-%Y", &tm);
     std::strftime(timeBuf, sizeof(timeBuf), "%H-%M-%S", &tm);
     std::error_code ec;
     std::filesystem::create_directories("logs/" + std::string(dateBuf), ec);

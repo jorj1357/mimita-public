@@ -48,7 +48,7 @@ SOURCE_EXTENSIONS = {
 
 DEFAULT_IGNORED_DIRS = {
     ".git", ".idea", ".vs", ".vscode", "__pycache__",
-    "build", "dist", "out", "node_modules",
+    "build", "dist", "out", "node_modules", "include",
     "third_party", "third-party", "vendor", "external", "extern",
     "generated", "deps", "dependencies",
 }
@@ -73,11 +73,17 @@ MIN_CALLS_FOR_CALLSET_WARNING = 4
 
 RAW_OUTPUT_PATTERNS = [
     ("printf", re.compile(r"(?<![\w:])printf\s*\(")),
+    ("std::printf", re.compile(r"\bstd::printf\s*\(")),
     ("fprintf", re.compile(r"(?<![\w:])fprintf\s*\(")),
+    ("std::fprintf", re.compile(r"\bstd::fprintf\s*\(")),
     ("puts", re.compile(r"(?<![\w:])puts\s*\(")),
+    ("std::puts", re.compile(r"\bstd::puts\s*\(")),
     ("std::cout", re.compile(r"\bstd::cout\b")),
     ("std::cerr", re.compile(r"\bstd::cerr\b")),
     ("OutputDebugString", re.compile(r"\bOutputDebugString(?:A|W)?\s*\(")),
+    ("print", re.compile(r"\bprint\s*\(")),
+    ("RLOG/RLOGF", re.compile(r"\bRLOG(?:F)?\s*\(")),
+    ("SPAWNLOG", re.compile(r"\bSPAWNLOG\s*\(")),
 ]
 
 SUSPICIOUS_NAME_WORDS = {
@@ -205,13 +211,55 @@ def add_finding(
 
 
 def check_raw_output(path: Path, text: str, findings: list[Finding]) -> None:
+    is_python = path.suffix.lower() == ".py"
+    is_cpp = path.suffix.lower() in HEADER_REQUIRED_EXTENSIONS
+    if not is_python and not is_cpp:
+        return
+
+    patterns: list[tuple[str, re.Pattern]] = []
+    for label, pattern in RAW_OUTPUT_PATTERNS:
+        if label == "print":
+            if is_python and relative(path).startswith("src/"):
+                patterns.append((label, pattern))
+        elif is_cpp:
+            patterns.append((label, pattern))
+    if not patterns:
+        return
+
     lines = text.splitlines()
+    in_block_comment = False
+
     for index, raw_line in enumerate(lines, start=1):
-        stripped = raw_line.strip()
-        if stripped.startswith("//") or stripped.startswith("*"):
+        if is_cpp:
+            if in_block_comment:
+                if "*/" in raw_line:
+                    in_block_comment = False
+                    scan_line = raw_line.split("*/", 1)[1]
+                    scan_line = scan_line.split("//", 1)[0]
+                else:
+                    continue
+            else:
+                line_part = raw_line.split("//", 1)[0]
+                if "/*" in line_part:
+                    before, rest = line_part.split("/*", 1)
+                    if "*/" in rest:
+                        before_rest, after_rest = rest.split("*/", 1)
+                        scan_line = before + after_rest
+                    else:
+                        scan_line = before
+                        in_block_comment = True
+                else:
+                    scan_line = line_part
+        elif is_python:
+            scan_line = raw_line.split("#", 1)[0]
+        else:
             continue
-        for label, pattern in RAW_OUTPUT_PATTERNS:
-            if pattern.search(raw_line):
+
+        if not scan_line.strip():
+            continue
+
+        for label, pattern in patterns:
+            if pattern.search(scan_line):
                 add_finding(
                     findings,
                     "ERROR",
@@ -219,7 +267,7 @@ def check_raw_output(path: Path, text: str, findings: list[Finding]) -> None:
                     path,
                     index,
                     f"Raw output via {label}; use centralized Debug::log / Debug::warn / Debug::logThrottled.",
-                    raw_line,
+                    raw_line.strip(),
                 )
 
 

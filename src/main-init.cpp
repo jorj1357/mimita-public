@@ -183,7 +183,6 @@ void gameInit(int argc, char** argv, Engine& engine)
         }
     }
 
-    LogManager::instance().init();
     StructuredLogger::instance().init();
     AnalyticsManager::instance().init(LocalProfileSystem::instance().currentUsername());
 

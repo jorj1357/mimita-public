@@ -31,19 +31,19 @@ static std::string dateDirName()
     std::tm tm;
     localtime_s(&tm, &t);
     char buf[16];
-    std::strftime(buf, sizeof(buf), "%d-%m-%Y", &tm);
+    std::strftime(buf, sizeof(buf), "%m-%d-%Y", &tm);
     return std::string(buf);
 }
 
-static std::string timeFileName()
+static std::string timeFileName(const std::string& logType)
 {
     auto now = std::chrono::system_clock::now();
     std::time_t t = std::chrono::system_clock::to_time_t(now);
     std::tm tm;
     localtime_s(&tm, &t);
     char buf[16];
-    std::strftime(buf, sizeof(buf), "%H-%M-%S", &tm);
-    return std::string(buf) + "-log.txt";
+    std::strftime(buf, sizeof(buf), "%H%M%S", &tm);
+    return logType + "_log_" + std::string(buf) + ".txt";
 }
 
 LogManager& LogManager::instance()
@@ -61,7 +61,7 @@ bool LogManager::createDirectories()
 
 bool LogManager::openFile()
 {
-    mPath = "logs/" + dateDirName() + "/" + timeFileName();
+    mPath = "logs/" + dateDirName() + "/" + timeFileName(mLogType);
     mFile = fopen(mPath.c_str(), "w");
     if (!mFile) {
         printf("[LOGMANAGER] Failed to open log: %s\n", mPath.c_str());
@@ -82,8 +82,15 @@ void LogManager::rotateLogs()
     for (auto& entry : fs::recursive_directory_iterator("logs", ec)) {
         if (!entry.is_regular_file()) continue;
         std::string name = entry.path().filename().string();
-        if (name.size() > 8 && name.substr(name.size() - 8) == "-log.txt")
-            logFiles.push_back(entry.path());
+        if (name.find("_log_") != std::string::npos) {
+            // Only rotate files matching our managed log types
+            bool isOurs = false;
+            for (auto& ft : {"Server_", "Gameterminal_", "Client_", "Game_"}) {
+                if (name.find(ft) == 0) { isOurs = true; break; }
+            }
+            if (isOurs)
+                logFiles.push_back(entry.path());
+        }
     }
 
     if ((int)logFiles.size() <= MAX_LOGS) return;
@@ -112,11 +119,11 @@ void LogManager::writeHeader()
     if (!mFile) return;
     fprintf(mFile,
         "==================================================\n"
-        "MIMITA RUN LOG\n"
+        "MIMITA %s LOG\n"
         "Start Time: %s\n"
         "Build: debug\n"
         "==================================================\n",
-        timestamp().c_str());
+        mLogType.c_str(), timestamp().c_str());
 
     if (mRotationDeleted > 0) {
         fprintf(mFile, "\n[LOG ROTATION] Removed %d old logs\n", mRotationDeleted);
@@ -160,8 +167,11 @@ int LogManager::fileCount() const
     for (auto& entry : fs::recursive_directory_iterator("logs", ec)) {
         if (!entry.is_regular_file()) continue;
         std::string name = entry.path().filename().string();
-        if (name.size() > 8 && name.substr(name.size() - 8) == "-log.txt")
-            count++;
+        if (name.find("_log_") != std::string::npos) {
+            for (auto& ft : {"Server_", "Gameterminal_", "Client_", "Game_"}) {
+                if (name.find(ft) == 0) { count++; break; }
+            }
+        }
     }
     return count;
 }
@@ -184,9 +194,47 @@ static void captureThreadFunc(int readFd, LogManager* mgr, std::atomic<bool>& ru
     }
 }
 
+void LogManager::cleanupOldFormat()
+{
+    std::error_code ec;
+    if (!fs::exists("logs", ec)) return;
+    for (auto& entry : fs::directory_iterator("logs", ec)) {
+        if (!entry.is_directory()) continue;
+        std::string dirName = entry.path().filename().string();
+        // Check for files matching old pattern: HH-MM-SS-log.txt (dashed time + "-log.txt")
+        for (auto& file : fs::directory_iterator(entry.path(), ec)) {
+            if (!file.is_regular_file()) continue;
+            std::string name = file.path().filename().string();
+            if (name.size() > 8 && name.substr(name.size() - 8) == "-log.txt") {
+                fs::remove_all(entry.path(), ec);
+                printf("[LOGMANAGER] Cleaned up old-format log dir: %s\n", dirName.c_str());
+                break;
+            }
+        }
+        // Also delete empty directories whose name matches DD-MM-YYYY with DD > 12
+        // (unambiguously old date format, not MM-DD-YYYY)
+        if (dirName.size() == 10 && dirName[2] == '-' && dirName[5] == '-') {
+            int firstNum = std::atoi(dirName.substr(0, 2).c_str());
+            if (firstNum > 12) {
+                bool empty = true;
+                for (auto& f : fs::directory_iterator(entry.path(), ec)) {
+                    (void)f; empty = false; break;
+                }
+                if (empty) {
+                    if (fs::remove(entry.path(), ec)) {
+                        printf("[LOGMANAGER] Cleaned up old-format empty log dir: %s\n", dirName.c_str());
+                    }
+                }
+            }
+        }
+    }
+}
+
 bool LogManager::init()
 {
     if (mFile) return true;
+
+    cleanupOldFormat();
 
     if (!createDirectories()) {
         printf("[LOGMANAGER] Failed to create log directories\n");

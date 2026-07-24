@@ -9,6 +9,7 @@ class LogManager {
 public:
     static LogManager& instance();
 
+    void setLogType(const char* type) { mLogType = type; }
     bool init();
     void shutdown();
 
@@ -30,6 +31,7 @@ private:
     void writeHeader();
     void writeFooter();
     void rotateLogs();
+    void cleanupOldFormat();
 
     std::string mPath;
     FILE* mFile = nullptr;
@@ -42,4 +44,5 @@ private:
     std::atomic<bool> mRunning{false};
 
     int mRotationDeleted = 0;
+    std::string mLogType{"Game"};
 };
