@@ -753,7 +753,6 @@ struct ServerLaunchSettings
     uint16_t port = DEFAULT_PORT;
     std::string serverCode;
     bool externalProcessLaunched = false;
-    bool iceEnabled = false;
     std::string turnPassword;
 
     // Resolved state (set during startup, not from UI)
@@ -794,7 +793,6 @@ struct ListenServerState
     DisagreementRetransmitState disagreementRetransmit;
 
     // ── ICE server support ─────────────────────────────────────────────
-    bool iceEnabled = false;
     std::unique_ptr<class IceAgent> iceListenerAgent;
     std::string iceSessionId;
     uint64_t lastIceCoordinatorPollMs = 0;
@@ -861,6 +859,5 @@ void tickReliableGameplayEvents(SOCKET sock,
                                 std::unordered_map<uint32_t, ServerPlayer>& players,
                                 uint64_t& totalPacketsOut);
 void setReliableGameplayEventTestNowMs(uint64_t nowMsOverride);
-std::string generateServerCode();
 
 } // namespace MimitaNet
