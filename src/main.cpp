@@ -240,15 +240,25 @@ int main(int argc, char** argv)
     if (launchOptions.server)
     {
         printf("[BOOT MODE] mode=headless-server graphicsInitialized=0 uiInitialized=0\n");
-        return MimitaNet::runServer(launchOptions);
+        LogManager::instance().setLogType("Server");
+        LogManager::instance().init();
+        int ret = MimitaNet::runServer(launchOptions);
+        LogManager::instance().shutdown();
+        return ret;
     }
     if (launchOptions.client)
     {
         printf("[BOOT MODE] mode=standalone-client graphicsInitialized=0 uiInitialized=0\n");
-        return MimitaNet::runClient(launchOptions);
+        LogManager::instance().setLogType("Client");
+        LogManager::instance().init();
+        int ret = MimitaNet::runClient(launchOptions);
+        LogManager::instance().shutdown();
+        return ret;
     }
 
     printf("[BOOT MODE] mode=full-client graphicsInitialized=1 uiInitialized=1\n");
+    LogManager::instance().setLogType("Gameterminal");
+    LogManager::instance().init();
 
     Engine engine;
     gameInit(argc, argv, engine);
