@@ -41,8 +41,6 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
             options.sessionToken = argv[++i];
         else if (std::strcmp(argv[i], "--map") == 0 && i + 1 < argc)
             options.mapName = argv[++i];
-        else if (std::strcmp(argv[i], "--code") == 0 && i + 1 < argc)
-            options.serverCode = argv[++i];
         else if (std::strcmp(argv[i], "--npcs") == 0 && i + 1 < argc)
             options.npcCount = (uint32_t)std::max(0, std::atoi(argv[++i]));
         else if (std::strcmp(argv[i], "--no-npcs") == 0)
@@ -51,10 +49,6 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
             options.roomFilePath = argv[++i];
         else if (std::strcmp(argv[i], "--timeout") == 0 && i + 1 < argc)
             options.timeoutSecs = (uint32_t)std::max(0, std::atoi(argv[++i]));
-        else if (std::strcmp(argv[i], "--ice") == 0)
-            options.iceEnabled = true;
-        else if (std::strcmp(argv[i], "--no-coordinator") == 0)
-            options.noCoordinator = true;
         else if (std::strcmp(argv[i], "--udp-echo") == 0)
         {
             options.udpEcho = true;
@@ -68,15 +62,14 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
 
 void printLaunchUsage()
 {
-    printf("Mimita local multiplayer test mode:\n");
-    printf("  mimita.exe --server [--bind 0.0.0.0:1357] [--timeout <secs>] [--no-coordinator]\n");
-    printf("  mimita.exe --server --udp-echo --bind 127.0.0.1:0 --timeout <secs> --no-coordinator\n");
+    printf("Mimita multiplayer mode:\n");
+    printf("  mimita.exe --server [--bind 0.0.0.0:1357] [--timeout <secs>]\n");
+    printf("  mimita.exe --server --udp-echo --bind 127.0.0.1:0 --timeout <secs>\n");
     printf("  mimita.exe --client --name client1 --connect 127.0.0.1:1357\n");
     printf("  mimita.exe --session <token>\n");
     printf("  --bind <addr:port> Server UDP bind address (IPv4; port 0 allowed for harnesses)\n");
     printf("  --timeout <secs>  Auto-exit server after N seconds (0=no timeout, default)\n");
-    printf("  --no-coordinator  Skip room registration and heartbeats for local harnesses\n");
-    printf("  --ice             Enable ICE NAT traversal for global connections\n");
+    printf("  --ice             ICE NAT traversal is always enabled\n");
     printf("No args keeps the normal single-player/menu flow.\n");
 }
 

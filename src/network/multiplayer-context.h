@@ -199,7 +199,6 @@ struct MultiplayerContext
     bool active = false;
     SOCKET sock = INVALID_SOCKET;
     std::unique_ptr<IGameTransport> transport;
-    bool useIce = false;
     sockaddr_in serverAddr{};
     uint32_t localPlayerId = 0;
     uint32_t tick = 0;
@@ -530,18 +529,11 @@ enum class DisconnectPolicy : uint8_t {
 };
 const char* disconnectPolicyName(DisconnectPolicy policy);
 void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy);
-void beginConnectionAttempt(MultiplayerContext& ctx, const std::string& roomCode,
-    const std::string& address, uint16_t port);
-
 bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::string& playerName);
 void mpShutdown(MultiplayerContext& ctx);
 void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input, const class World& world);
 void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt);
 void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacket* spawn);
-
-// ── Migration: connection with room code + join token ─────────────────
-bool mpConnectWithToken(MultiplayerContext& ctx, const std::string& address,
-    uint16_t port, const std::string& joinToken, const std::string& playerName);
 
 // ── Migration: disagreement packet processing ─────────────────────────
 void mpProcessDisagreementPacket(MultiplayerContext& ctx, const DisagreementPacket* packet);

@@ -1,17 +1,9 @@
 #pragma once
 
 #include <string>
-#include <functional>
 #include <cstdint>
 
 namespace MimitaNet {
-
-// ── Room registration ────────────────────────────────────────────────
-struct CoordinatorRoomInfo
-{
-    std::string code;
-    std::string joinToken;
-};
 
 // ── Room lookup (non-mutating) ───────────────────────────────────────
 struct CoordinatorLookupResult
@@ -25,17 +17,7 @@ struct CoordinatorLookupResult
     int maxPlayers = 0;
     bool passwordProtected = false;
     std::string status;
-    bool isIce = false;       // room was created via ice/host
-};
-
-// ── Normal join ──────────────────────────────────────────────────────
-struct CoordinatorJoinResult
-{
-    bool ok = false;
-    std::string joinToken;
-    std::string serverIp;
-    uint16_t serverPort = 0;
-    std::string serverName;
+    bool isIce = false;
 };
 
 // ── ICE: host registration ───────────────────────────────────────────
@@ -151,43 +133,5 @@ void coordinatorIceDone(const std::string& roomCode);
 
 // ── TURN credentials ─────────────────────────────────────────────────
 TurnCredentials coordinatorRequestTurnCredentials();
-
-// ── Standard room operations ─────────────────────────────────────────
-CoordinatorRoomInfo coordinatorRegister(
-    const std::string& hostSessionId,
-    const std::string& publicIp,
-    uint16_t port,
-    const std::string& serverName,
-    const std::string& mapName,
-    const std::string& gamemode,
-    int maxPlayers);
-
-bool coordinatorHeartbeat(const std::string& code, int playerCount);
-bool coordinatorLeave(const std::string& code);
-CoordinatorLookupResult coordinatorLookup(const std::string& code);
-CoordinatorJoinResult coordinatorJoin(const std::string& code, const std::string& playerName);
-bool coordinatorValidateJoin(const std::string& code, const std::string& joinToken);
-
-bool coordinatorHttpGet(const std::string& url, std::string& response, int timeoutMs = 5000);
-
-// ── Async coordinator lookup (non-blocking, uses background thread) ──
-struct AsyncLookupResult {
-    bool pending = false;
-    bool done = false;
-    bool failed = false;
-    std::string code;
-    CoordinatorLookupResult result;
-};
-void coordinatorLookupAsync(AsyncLookupResult& state, const std::string& code);
-
-struct AsyncJoinResult {
-    bool pending = false;
-    bool done = false;
-    bool failed = false;
-    std::string code;
-    std::string playerName;
-    CoordinatorJoinResult result;
-};
-void coordinatorJoinAsync(AsyncJoinResult& state, const std::string& code, const std::string& playerName);
 
 } // namespace MimitaNet

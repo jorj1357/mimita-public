@@ -887,48 +887,50 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         return;
     }
 
-    // If registered with coordinator, validate the join token
+    // Validate ICE join token with coordinator
     if (!gServerCoordinatorCode.empty())
     {
-        printf("[ROOM TOKEN VALIDATE] api=coordinatorValidateJoin code=%s tokenPrefix=%s\n",
+        printf("[ICE TOKEN VALIDATE] code=%s tokenPrefix=%s\n",
                gServerCoordinatorCode.c_str(), joinTokenStr.substr(0, 12).c_str());
-        if (!coordinatorValidateJoin(gServerCoordinatorCode, joinTokenStr) &&
-            !coordinatorIceValidateJoin(gServerCoordinatorCode, joinTokenStr))
+        if (!coordinatorIceValidateJoin(gServerCoordinatorCode, joinTokenStr))
         {
-            printf("[ROOM TOKEN VALIDATE] api=coordinatorValidateJoin code=%s tokenPrefix=%s valid=0\n",
+            printf("[ICE TOKEN VALIDATE] code=%s tokenPrefix=%s REJECTED\n",
                    gServerCoordinatorCode.c_str(), joinTokenStr.substr(0, 12).c_str());
-            // Fallback: check against stored join token from registration
-            if (joinTokenStr == gServerCoordinatorJoinToken)
+            JoinRejectPacket reject{};
+            reject.header.type = PACKET_JOIN_REJECT;
+            reject.header.tick = tick;
+            reject.reason = 2;
+            if (sendToSourceOrPlayer(sock, from, nullptr, claimedTransport, &reject, sizeof(reject)))
+                ++totalPacketsOut;
+            if (claimedTransport && claimedTransport->get())
             {
-                printf("[ROOM TOKEN VALIDATE] fallback local token match code=%s\n",
-                       gServerCoordinatorCode.c_str());
+                (*claimedTransport)->close();
+                claimedTransport->reset();
             }
-            else
-            {
-                JoinRejectPacket reject{};
-                reject.header.type = PACKET_JOIN_REJECT;
-                reject.header.tick = tick;
-                reject.reason = 2; // bad token
-                if (sendToSourceOrPlayer(sock, from, nullptr, claimedTransport, &reject, sizeof(reject)))
-                    ++totalPacketsOut;
-                if (claimedTransport && claimedTransport->get())
-                {
-                    (*claimedTransport)->close();
-                    claimedTransport->reset();
-                }
-                printf("%s [SERVER JOIN REJECT] reason=coordinator-rejected-token\n", serverTimestamp());
-                return;
-            }
+            printf("%s [SERVER JOIN REJECT] reason=coordinator-rejected-token\n", serverTimestamp());
+            return;
         }
-        printf("[ROOM TOKEN VALIDATE] api=coordinatorValidateJoin code=%s tokenPrefix=%s valid=1\n",
+        printf("[ICE TOKEN VALIDATE] code=%s tokenPrefix=%s valid\n",
                gServerCoordinatorCode.c_str(), joinTokenStr.substr(0, 12).c_str());
         printf("%s [SERVER JOIN] coordinator validated token for %s\n",
                serverTimestamp(), join->name);
     }
     else
     {
-        printf("%s [SERVER JOIN] no coordinator — accepting %s without validation\n",
-               serverTimestamp(), join->name);
+        printf("%s [SERVER JOIN] no coordinator code — rejecting\n", serverTimestamp());
+        JoinRejectPacket reject{};
+        reject.header.type = PACKET_JOIN_REJECT;
+        reject.header.tick = tick;
+        reject.reason = 2;
+        if (sendToSourceOrPlayer(sock, from, nullptr, claimedTransport, &reject, sizeof(reject)))
+            ++totalPacketsOut;
+        if (claimedTransport && claimedTransport->get())
+        {
+            (*claimedTransport)->close();
+            claimedTransport->reset();
+        }
+        printf("%s [SERVER JOIN REJECT] reason=no-coordinator-code\n", serverTimestamp());
+        return;
     }
 
     // Check for existing reconnection

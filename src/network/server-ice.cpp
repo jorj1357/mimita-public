@@ -115,7 +115,6 @@ bool initServerIceListener(ListenServerState& state)
     state.serverCode = hostResult.roomCode;
     state.joinToken = hostResult.joinToken;
     state.iceListenerAgent = std::move(agent);
-    state.iceEnabled = true;
     state.lastIceCoordinatorPollMs = nowMs();
 
     hostedRoomSession().active = true;
@@ -136,7 +135,7 @@ bool initServerIceListener(ListenServerState& state)
 
 void tickIceCoordinator(ListenServerState& state)
 {
-    if (!state.iceEnabled || !state.iceListenerAgent)
+    if (!state.iceListenerAgent)
         return;
 
     uint64_t now = nowMs();

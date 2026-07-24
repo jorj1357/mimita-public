@@ -136,12 +136,10 @@ static void readServerSettingsFromBindings()
     gServerLaunchSettings.startupNpcCount = (uint32_t)std::max(0, std::atoi(npcCountStr.c_str()));
     gServerLaunchSettings.port = MimitaNet::DEFAULT_PORT;
     gServerLaunchSettings.resolvedMapPath = "assets/maps/" + mapName + ".glb";
-    // ICE is always enabled for global play. Setting to false disables
-    // NAT traversal (LAN/localhost only).
-    gServerLaunchSettings.iceEnabled = true;
 
-    printf("[COMMUNITY SERVER START] requestedMap=%s serverName=%s maxPlayers=%u npcs=%d count=%u ice=%d\n",
-           mapName.c_str(), name.c_str(), gServerLaunchSettings.maxPlayers,
+    printf("[COMMUNITY SERVER START] requestedMap=%s serverName=%s maxPlayers=%u npcs=%d count=%u\n",
+           mapName.c_str(), gServerLaunchSettings.serverName.c_str(),
+           gServerLaunchSettings.maxPlayers,
            (int)gServerLaunchSettings.startupNpcsEnabled, gServerLaunchSettings.startupNpcCount);
 
     printf(
@@ -179,8 +177,7 @@ static bool launchServerProcess(const MimitaNet::ServerLaunchSettings& settings)
         + " --room-file \"" + roomFilePath + "\""
         + (settings.startupNpcsEnabled
             ? " --npcs " + std::to_string(settings.startupNpcCount)
-            : " --no-npcs")
-        + (settings.iceEnabled ? " --ice" : "");
+            : " --no-npcs");
 
     STARTUPINFOA si = { sizeof(si) };
     si.dwFlags = STARTF_USESHOWWINDOW;
@@ -417,7 +414,6 @@ void guiMain(GLFWwindow* win, GameState& state)
         gPendingConnect = {};
         gPendingConnect.shouldConnect = true;
         gPendingConnect.roomCode = gServerLaunchSettings.serverCode;
-        gPendingConnect.useIce = true;
 
         onlineMenuSetActive(false);
         state = GAME_PLAYING;
@@ -774,7 +770,6 @@ void guiMain(GLFWwindow* win, GameState& state)
                             gPendingConnect = {};
                             gPendingConnect.shouldConnect = true;
                             gPendingConnect.roomCode = gListenServer.serverCode;
-                            gPendingConnect.useIce = true;
 
                             onlineMenuSetActive(false);
                             state = GAME_PLAYING;
@@ -811,7 +806,6 @@ void guiMain(GLFWwindow* win, GameState& state)
                         gPendingConnect = {};
                         gPendingConnect.shouldConnect = true;
                         gPendingConnect.roomCode = r.roomCode;
-                        gPendingConnect.useIce = true;
 
                         Debug::log(
                             Debug::Category::Networking,
@@ -876,7 +870,6 @@ void guiMain(GLFWwindow* win, GameState& state)
                 serverInfoMenuSetActive(false);
                 gPendingConnect.shouldConnect = true;
                 gPendingConnect.roomCode = gListenServer.active ? gListenServer.serverCode : onlineMenuGetServerCode();
-                gPendingConnect.useIce = !gPendingConnect.roomCode.empty();
                 state = GAME_PLAYING;
             }
             else if (r.goBack)

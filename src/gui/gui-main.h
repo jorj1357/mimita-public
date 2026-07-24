@@ -70,7 +70,6 @@ void reportSandboxMapLoadResult(const std::string& message, bool success);
 struct MultiplayerConnectInfo
 {
     bool shouldConnect = false;
-    bool useIce = false;
     std::string roomCode;
 };
 MultiplayerConnectInfo getPendingMultiplayerConnect();

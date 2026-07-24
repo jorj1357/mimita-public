@@ -26,12 +26,9 @@ struct LaunchOptions
     std::string name;
     std::string sessionToken;
     std::string mapName;
-    std::string serverCode;
     bool npcsEnabled = true;
     uint32_t npcCount = 3;
-    uint32_t timeoutSecs = 0; // 0 = no timeout (default), >0 = auto-exit after N seconds
-    bool iceEnabled = false;  // enable ICE for NAT traversal
-    bool noCoordinator = false;
+    uint32_t timeoutSecs = 0;
     bool udpEcho = false;
 };
 

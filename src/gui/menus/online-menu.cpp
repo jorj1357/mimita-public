@@ -210,45 +210,14 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
 
             if (!code.empty())
             {
-                // Non-mutating lookup: check if room exists and its type
                 printf("[ROOM JOIN] looking up code=%s\n", code.c_str());
                 MimitaNet::CoordinatorLookupResult lookup =
                     MimitaNet::coordinatorIceLookup(code);
-                if (lookup.reachable && lookup.isIce && lookup.exists)
+                if (lookup.reachable && lookup.exists)
                 {
-                    // ICE room — full ICE negotiation happens in mpIceConnect.
                     r.roomCode = code;
                     r.connectToServer = true;
-                    r.connectAddress = "ice:" + code;  // ICE marker address
-                    r.connectPort = 0;
-                    printf("[ONLINE MENU] ICE room code=%s\n", code.c_str());
-                }
-                else if (lookup.reachable && lookup.exists && lookup.status == "online")
-                {
-                    // Normal (non-ICE) room
-                    MimitaNet::CoordinatorJoinResult joinResult =
-                        MimitaNet::coordinatorJoin(code,
-                            AuthSystem::instance().displayName());
-                    if (joinResult.ok)
-                    {
-                        r.roomCode = code;
-                        r.connectToServer = true;
-                        r.connectAddress = joinResult.serverIp;
-                        r.connectPort = joinResult.serverPort;
-                        r.joinToken = joinResult.joinToken;
-                        printf("[ONLINE MENU] normal join code=%s server=%s:%u\n",
-                               code.c_str(), joinResult.serverIp.c_str(),
-                               joinResult.serverPort);
-                    }
-                    else
-                    {
-                        b.set("join.code", "Join failed");
-                        printf("[ONLINE MENU] join FAILED for code=%s\n", code.c_str());
-                    }
-                }
-                else if (lookup.exists)
-                {
-                    b.set("join.code", "Server offline");
+                    printf("[ONLINE MENU] found room code=%s\n", code.c_str());
                 }
                 else if (!lookup.reachable)
                 {
@@ -278,37 +247,12 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
             printf("[ROOM JOIN] enter-submit code=%s\n", code.c_str());
             MimitaNet::CoordinatorLookupResult lookup =
                 MimitaNet::coordinatorIceLookup(code);
-            if (lookup.reachable && lookup.isIce && lookup.exists)
+            if (lookup.reachable && lookup.exists)
             {
                 r.roomCode = code;
                 r.connectToServer = true;
-                r.connectAddress = "ice:" + code;
-                r.connectPort = 0;
-                printf("[ONLINE MENU] enter ICE room code=%s\n", code.c_str());
+                printf("[ONLINE MENU] enter found room code=%s\n", code.c_str());
             }
-            else if (lookup.reachable && lookup.exists && lookup.status == "online")
-            {
-                MimitaNet::CoordinatorJoinResult joinResult =
-                    MimitaNet::coordinatorJoin(code,
-                        AuthSystem::instance().displayName());
-                if (joinResult.ok)
-                {
-                    r.roomCode = code;
-                    r.connectToServer = true;
-                    r.connectAddress = joinResult.serverIp;
-                    r.connectPort = joinResult.serverPort;
-                    r.joinToken = joinResult.joinToken;
-                    printf("[ONLINE MENU] enter join code=%s server=%s:%u\n",
-                           code.c_str(), joinResult.serverIp.c_str(),
-                           joinResult.serverPort);
-                }
-                else
-                {
-                    b.set("join.code", "Join failed");
-                }
-            }
-            else if (lookup.exists)
-                b.set("join.code", "Server offline");
             else if (!lookup.reachable)
                 b.set("join.code", "Coordinator unreachable");
             else

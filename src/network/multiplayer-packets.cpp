@@ -256,31 +256,6 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     printf("[NET TEARDOWN] complete policy=%s\n", disconnectPolicyName(policy));
 }
 
-void beginConnectionAttempt(MultiplayerContext& ctx, const std::string& roomCode,
-    const std::string& address, uint16_t port)
-{
-    // Tear down any previous session first
-    teardownPreviousSession(ctx, DisconnectPolicy::NewConnection);
-
-    // Increment attempt ID (never reset, permanently monotonic)
-    ++ctx.connectionAttemptId;
-
-    // Install new connection parameters
-    ctx.roomCode = roomCode;
-    ctx.serverAddress = address;
-    ctx.serverPort = port;
-    ctx.currentRoomCode = roomCode;
-
-    // Enter initial connecting state
-    ctx.connectionState = ConnectionState::Connecting;
-    ctx.active = true;
-    ctx.connectStartMs = nowMs();
-    ctx.connectionStatus = "Connecting...";
-
-    printf("[NET CONNECT ATTEMPT] attemptId=%u room=%s addr=%s:%u\n",
-           ctx.connectionAttemptId, roomCode.c_str(), address.c_str(), port);
-}
-
 bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::string& playerName)
 {
     ctx.serverAddress = address;
@@ -548,105 +523,6 @@ const char* connectionStateName(ConnectionState state)
     return "Unknown";
 }
 
-// ── Migration: connect with join token ────────────────────────────────
-
-bool mpConnectWithToken(MultiplayerContext& ctx, const std::string& address,
-    uint16_t port, const std::string& joinToken, const std::string& playerName)
-{
-    // beginConnectionAttempt must be called first. This function does NOT
-    // tear down the previous session — that ownership belongs to beginConnectionAttempt.
-    if (!netStartup())
-    {
-        printf("[NET CONNECT] FATAL: WSAStartup failed\n");
-        return false;
-    }
-
-    ctx.sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (ctx.sock == INVALID_SOCKET)
-    {
-        printf("[NET CONNECT] FATAL: socket() failed error=%d\n", WSAGetLastError());
-        netShutdown();
-        return false;
-    }
-    setNonBlocking(ctx.sock);
-    printf("[NET SOCKET] created sock=%d\n", (int)ctx.sock);
-
-    {
-        sockaddr_in localBind{};
-        localBind.sin_family = AF_INET;
-        localBind.sin_addr.s_addr = htonl(INADDR_ANY);
-        localBind.sin_port = htons(0);
-        if (bind(ctx.sock, (sockaddr*)&localBind, sizeof(localBind)) == SOCKET_ERROR)
-            printf("[NET CONNECT] WARNING: bind() port=0 failed error=%d (non-fatal)\n", WSAGetLastError());
-        else
-        {
-            sockaddr_in actual{};
-            int actualLen = sizeof(actual);
-            if (getsockname(ctx.sock, (sockaddr*)&actual, &actualLen) == 0)
-                printf("[NET SOCKET] bound local endpoint=%s\n", addressToString(actual).c_str());
-        }
-    }
-
-    ctx.serverAddr = {};
-    ctx.serverAddr.sin_family = AF_INET;
-    ctx.serverAddr.sin_port = htons(port);
-    if (inet_pton(AF_INET, address.c_str(), &ctx.serverAddr.sin_addr) != 1)
-    {
-        printf("[NET CONNECT] FATAL: invalid address: %s\n", address.c_str());
-        closesocket(ctx.sock);
-        netShutdown();
-        return false;
-    }
-
-    ctx.transport = std::make_unique<UdpTransport>(ctx.sock, ctx.serverAddr);
-    ctx.active = true;
-    ctx.localPlayerId = 0;
-    ctx.tick = 0;
-    ctx.lastHelloMs = 0;
-    ctx.lastSnapshotReceivedMs = 0;
-    ctx.connectStartMs = nowMs();
-    ctx.packetsSent = 0;
-    ctx.packetsReceived = 0;
-    ctx.snapshotsReceived = 0;
-    ctx.snapshotsMissed = 0;
-    ctx.remotePlayers.clear();
-    ctx.remoteNpcs.clear();
-    ctx.remotePlayerInterpolation.clear();
-    ctx.remoteNpcInterpolation.clear();
-    ctx.networkProjectiles.clear();
-    ctx.projectileTerminals.clear();
-    ctx.playerRegistry.clear();
-    ctx.approvedLocalName.clear();
-    ctx.hasLocalServerPosition = false;
-    ctx.localPlayerReconciled = false;
-    ctx.connectionState = ConnectionState::Connecting;
-    ctx.joinToken = joinToken;
-    ctx.serverAddress = address + ":" + std::to_string(port);
-    ctx.connected = false;
-    ctx.connectFailed = false;
-    ctx.connectionStatus = "Connecting...";
-    ctx.outgoingQueue.clear();
-    ctx.shotEvents.clear();
-    ctx.lastReceivedShotSerial.clear();
-    ctx.nextLocalShotSerial = 1;
-    ctx.nextLocalProjectileFireSerial = 1;
-    ctx.nextLocalMeleeAttackSerial = 1;
-    ctx.lastPingSentMs = 0;
-    ctx.localPingMs = 0;
-    ctx.lastHeardServerMs = 0;
-    ctx.lastDisconnectLogMs = 0;
-    ctx.disagreementEvents.clear();
-    ctx.processedDisagreementIds.clear();
-    ctx.reliableEventSessionId = 0;
-    ctx.processedReliableEventIds.clear();
-    ctx.processedReliableEventOrder.clear();
-    ctx.serverPort = port;
-
-    printf("[NET CONNECT] connecting to %s:%u with join token as \"%s\"\n",
-           address.c_str(), port, playerName.c_str());
-    return true;
-}
-
 // ── ICE client connection ──────────────────────────────────────────────
 // Connects to an ICE-enabled server via the coordinator.
 // Creates an IceAgent, exchanges SDP through coordinator, establishes
@@ -826,7 +702,6 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
 
     // Create ICE transport, reset multiplayer context state
     ctx.transport = std::make_unique<IceTransport>(std::move(agentPtr));
-    ctx.useIce = true;
     ctx.active = true;
     ctx.localPlayerId = 0;
     ctx.tick = 0;
