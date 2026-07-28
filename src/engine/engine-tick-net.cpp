@@ -362,7 +362,9 @@ void engineTickNet(Engine& engine, float dt)
                 printf("[NET MAP REQUIRED] mapId=%s path=%s loadingMap=1\n",
                        mpContext.requiredMapId.c_str(), requiredPath.c_str());
 
-                if (loadWorldFromGLB(world, requiredPath.c_str()))
+                GAME_STATE = GAME_LOADING_MAP;
+                bool loadOk = loadWorldFromGLB(world, requiredPath.c_str());
+                if (loadOk)
                 {
                     ACTIVE_MAP_PATH = requiredPath;
                     WORLD_LOADED = true;
@@ -374,6 +376,7 @@ void engineTickNet(Engine& engine, float dt)
                 {
                     printf("[CLIENT MAP ERROR] failed to load map=%s\n", requiredPath.c_str());
                 }
+                GAME_STATE = GAME_PLAYING;
                 mpContext.waitingForMapLoad = false;
             }
 

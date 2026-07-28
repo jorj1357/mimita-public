@@ -639,6 +639,8 @@ void Player::requestModelLoad(const std::string& filepath)
     auto data = std::make_shared<PendingPlayerModel>();
     data->path = filepath;
     data->resolvedPath = resolveAssetPath(filepath);
+    if (!gAvatarBodypartOverrides.is_null())
+        data->bodypartOverrides = gAvatarBodypartOverrides;
 
     mPendingModel = data;
     PendingPlayerModel* raw = mPendingModel.get();
@@ -737,6 +739,10 @@ void Player::finalizeModelIfReady()
             }
         }
     }
+
+    // Restore bodypart overrides from saved state (in case global was overwritten)
+    if (!d->bodypartOverrides.is_null())
+        gAvatarBodypartOverrides = d->bodypartOverrides;
 
     // Apply bodypart config overrides
     applyBodypartConfigOverrides(restLocalTransforms, nodes);
