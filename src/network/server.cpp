@@ -387,6 +387,15 @@ int runServer(const LaunchOptions& options)
 
     uint64_t serverStartMs = nowMs();
 
+    // Install crash handler to catch access violations and other fatal errors
+    SetUnhandledExceptionFilter([](EXCEPTION_POINTERS* ep) -> LONG {
+        printf("[SERVER CRASH] code=0x%08X at address=%p\n",
+               ep->ExceptionRecord->ExceptionCode,
+               ep->ExceptionRecord->ExceptionAddress);
+        fflush(stdout);
+        return EXCEPTION_EXECUTE_HANDLER;
+    });
+
     // Accumulator-based fixed-step timing
     auto previousTime = std::chrono::steady_clock::now();
     double accumulator = 0.0;
@@ -397,6 +406,10 @@ int runServer(const LaunchOptions& options)
 
     while (true)
     {
+        printf("[LOOP TOP] tick=%u players=%zu entering main loop iteration\n",
+               tick, players.size());
+        fflush(stdout);
+
         auto loopStart = std::chrono::steady_clock::now();
         // Auto-exit when --timeout is set (for CI/agent testing)
         if (options.timeoutSecs > 0 && nowMs() - serverStartMs > (uint64_t)options.timeoutSecs * 1000)
@@ -522,6 +535,18 @@ int runServer(const LaunchOptions& options)
                    players.size(), projectiles.size());
             s_lastTimingTick = tick;
             s_timingStartMs = nowMsVal;
+        }
+
+        // Heartbeat every ~300 ticks (~5 seconds) to prove server is alive
+        {
+            static uint32_t s_lastHeartbeatTick = 0;
+            if (tick - s_lastHeartbeatTick >= 300)
+            {
+                printf("%s [SERVER HEARTBEAT] tick=%u players=%zu — alive\n",
+                       serverTimestamp(), tick, players.size());
+                fflush(stdout);
+                s_lastHeartbeatTick = tick;
+            }
         }
 
         // Status log every second
