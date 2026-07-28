@@ -84,7 +84,11 @@ ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>&
         {
             auto attacker = players.find(attackerPlayerId);
             if (attacker != players.end())
+            {
                 attacker->second.kills += 1;
+                // Heal the attacker to full health
+                attacker->second.health = 100;
+            }
         }
         result.killed = true;
     }

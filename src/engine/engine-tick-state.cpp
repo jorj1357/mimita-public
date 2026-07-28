@@ -14,6 +14,7 @@
 #include "game/spawn-override.h"
 #include "network/multiplayer-context.h"
 #include "network/net_mode.h"
+#include "network/server.h"
 #include "profile/local-profile-system.h"
 #include "auth/auth-system.h"
 #include "devtools/terminal.h"
@@ -125,10 +126,32 @@ void engineTickState(Engine& engine, float dt)
                         "Loaded: " + selectedPath, true);
                     printf("[SANDBOX MAP] load success path=%s spawns=%zu\n",
                            activeMapPath.c_str(), world.spawnPoints.size());
+
+                    // Start a local-only server for sandbox mode
+                    MimitaNet::ServerLaunchSettings s;
+                    s.startLocalServer = true;
+                    s.mapName = activeMapPath;
+                    s.startupNpcsEnabled = true;
+                    s.startupNpcCount = 3;
+                    MimitaNet::ListenServerState* ls = getListenServerState();
+                    if (ls && !ls->active) {
+                        if (MimitaNet::startListenServer(*ls, MimitaNet::DEFAULT_PORT, "", "", &s)) {
+                            printf("[SANDBOX] local server started code=%s\n", ls->serverCode.c_str());
+                            // Connect client to local server
+                            if (MimitaNet::mpInit(mpContext, "127.0.0.1:" + std::to_string(MimitaNet::DEFAULT_PORT),
+                                                  AuthSystem::instance().displayName())) {
+                                printf("[SANDBOX] connected to local server\n");
+                            } else {
+                                printf("[SANDBOX] WARNING: failed to connect to local server\n");
+                            }
+                        } else {
+                            printf("[SANDBOX] WARNING: failed to start local server\n");
+                        }
+                    }
                 }
             }
 
-            if (gameState == GAME_PLAYING && !worldLoaded)
+            if (gameState == GAME_PLAYING && !worldLoaded && !mpContext.active)
             {
                 printf("[MAIN] PLAY requested without sandbox selection; loading default world\n");
                 if (loadWorldFromGLB(world, defaultMapPath.c_str()))

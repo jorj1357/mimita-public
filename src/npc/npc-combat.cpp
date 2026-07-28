@@ -361,6 +361,10 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         aimDir = aimAtTarget(npc, npcPos, npc.sensors.targetPos, npc.sensors.targetVel);
     }
 
+    glm::vec3 planarAim = glm::normalize(glm::vec3(aimDir.x, aimDir.y, 0.0f));
+    if (glm::length(planarAim) > 0.001f)
+        npc.currentFacing = planarAim;
+
     glm::vec3 idealDir = glm::normalize(npc.sensors.targetPos + glm::vec3(0.0f, 0.0f, 0.8f) - npcPos);
     float errorDeg = aimErrorDegrees(npc.difficulty);
     float angleDiff = glm::degrees(std::acos(std::clamp(glm::dot(idealDir, aimDir), -1.0f, 1.0f)));

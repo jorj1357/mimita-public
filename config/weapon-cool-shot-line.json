@@ -1,9 +1,10 @@
 {
-    "enabled": true,
-    "length": 122.0,
-    "start_alpha": 100.0,
-    "end_alpha": 100.0,
-    "color": [1.0, 0.0, 1.0],
+    "commnet 7 28 2026 1124": "its cool but lowk annouing i think and im just gona put crosshair only and let ppl figure out that its cam forward",
+    "enabled": false,
+    "length": 15.0,
+    "start_alpha": 255.0,
+    "end_alpha": 0.0,
+    "color": [1.0, 0.0, 0.0],
     "start_size": 5.0,
-    "end_size": 5.0
+    "end_size": 0.0
 }

@@ -67,7 +67,6 @@ public:
         if (mAgent)
         {
             mAgent->shutdown();
-            mAgent.reset();
         }
     }
 

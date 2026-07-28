@@ -429,26 +429,30 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         const std::string& code = mpContext.currentRoomCode;
         if (!code.empty())
         {
-            char buf[80];
-            snprintf(buf, sizeof(buf), "Room code: %s", code.c_str());
+            bool isLocal = code.find("LOCAL-") == 0;
+            char buf[96];
+            if (isLocal)
+                snprintf(buf, sizeof(buf), "Room: %s  (local)", code.c_str());
+            else
+                snprintf(buf, sizeof(buf), "Room: %s", code.c_str());
             float cx = uiScreenW() * 0.5f;
-            // 7 16 2026 todo make this hot reloadable, all things in gui should be hot
-            // reloadable, but do later 
             float codeScale = 0.50f;
             float codeW = uiMeasureText(buf, codeScale);
-            uiDrawText(buf, cx - codeW * 0.5f, 18.0f, codeScale, {1.0f, 1.0f, 1.0f, 1.0f});
+            glm::vec4 codeColor = isLocal
+                ? glm::vec4(0.6f, 1.0f, 0.6f, 1.0f)
+                : glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+            uiDrawText(buf, cx - codeW * 0.5f, 18.0f, codeScale, codeColor);
             float instrScale = 0.32f;
             const char* line1 = "Press ` to open console";
-            const char* line2 = "Type roomcodeshow 0 to hide the code Vro :heart:";
+            const char* line2 = isLocal
+                ? "Type goonline to make this server public"
+                : "Type roomcodeshow 0 to hide the code";
             float line1W = uiMeasureText(line1, instrScale);
             float line2W = uiMeasureText(line2, instrScale);
             float instrY = 46.0f;
             float lineGap = 16.0f;
             uiDrawText(line1, cx - line1W * 0.5f, instrY, instrScale, {0.75f, 0.85f, 1.0f, 1.0f});
             uiDrawText(line2, cx - line2W * 0.5f, instrY + lineGap, instrScale, {0.75f, 0.85f, 1.0f, 1.0f});
-            // dont do this bro  just dont 7 22 2026 1228 no printfs
-            // printf("[ROOMCODE HUD] active=%d connected=%d roomCode=%s\n",
-            //        (int)mpContext.active, (int)mpContext.connected, code.c_str());
         }
     }
 }

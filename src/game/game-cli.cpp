@@ -28,6 +28,7 @@
 #include "npc/npc.h"
 #include "camera.h"
 #include "terminal/terminal-state.h"
+#include "gui/menus/online-menu.h"
 #include "replay/replay.h"
 #include "replay/replay-export.h"
 #include "replay/replay-factory.h"
@@ -100,6 +101,8 @@ void forceMainMenu()
         printf("[MAINMENU] cleaning network\n");
         Debug::log(Debug::Category::General, "[MAINMENU] disconnecting multiplayer");
         MimitaNet::mpShutdown(MP_CONTEXT);
+        onlineMenuSetServerCode("");
+        onlineMenuSetServerRunning(false);
         logPhase("Network Cleanup");
         Debug::log(Debug::Category::General, "[MAINMENU] client disconnected");
     }

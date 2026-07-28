@@ -4,11 +4,13 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <random>
 #include <shellapi.h>
 #include "devtools/terminal.h"
 #include "terminal/terminal-state.h"
 #include "network/net_mode.h"
 #include "network/server.h"
+#include "network/coordinator-client.h"
 #include "network/multiplayer-context.h"
 #include "network/disagreement-visuals.h"
 #include "gui/gui-main.h"
@@ -498,6 +500,64 @@ void registerNetworkCommands()
             int val = MimitaNet::isRejectAllHitsEnabled() ? 1 : 0;
             printf("[SERVER] rejectAllHits=%d (edit config/serverdisagree.json to change)\n", val);
             Terminal::instance().addLog(std::string("[SERVER] rejectAllHits=") + std::to_string(val) + " (edit config to change)");
+        }
+    });
+
+    // ── goonline / gooffline ──────────────────────────────────────────
+    Terminal::instance().registerCommand({
+        "goonline", "Make local server visible to others on the coordinator",
+        "goonline",
+        [](const std::vector<std::string>&) {
+            MimitaNet::ListenServerState* ls = getListenServerState();
+            if (!ls || !ls->active) {
+                Terminal::instance().addLog("[SERVER] no server running");
+                return;
+            }
+            if (ls->serverCode.find("LOCAL-") != 0) {
+                Terminal::instance().addLog("[SERVER] already online — code: " + ls->serverCode);
+                return;
+            }
+            Terminal::instance().addLog("[SERVER] contacting coordinator...");
+            if (MimitaNet::initServerIceListener(*ls)) {
+                Terminal::instance().addLog("[SERVER] now online — room: " + ls->serverCode);
+            } else {
+                Terminal::instance().addLog("[SERVER] failed to go online — check internet connectivity");
+            }
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "gooffline", "Hide server from coordinator (local only, invisible)",
+        "gooffline",
+        [](const std::vector<std::string>&) {
+            MimitaNet::ListenServerState* ls = getListenServerState();
+            if (!ls || !ls->active) {
+                Terminal::instance().addLog("[SERVER] no server running");
+                return;
+            }
+            if (ls->serverCode.find("LOCAL-") == 0) {
+                Terminal::instance().addLog("[SERVER] already offline (local only)");
+                return;
+            }
+            // Deregister with coordinator
+            if (!ls->serverCode.empty())
+                MimitaNet::coordinatorIceDone(ls->serverCode);
+            // Generate new local code
+            const char* chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+            std::string suffix;
+            {
+                std::random_device rd;
+                std::mt19937 gen(rd());
+                std::uniform_int_distribution<> dist(0, 31);
+                for (int i = 0; i < 4; ++i)
+                    suffix += chars[dist(gen)];
+            }
+            ls->serverCode = "LOCAL-" + suffix;
+            ls->iceListenerAgent.reset();
+            MimitaNet::setServerCoordinatorState("LOCAL", "");
+            MimitaNet::hostedRoomSession().active = false;
+            MimitaNet::hostedRoomSession().roomCode.clear();
+            Terminal::instance().addLog("[SERVER] now offline (local only) — code: " + ls->serverCode);
         }
     });
 }

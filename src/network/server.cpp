@@ -505,6 +505,7 @@ int runServer(const LaunchOptions& options)
         // Poll coordinator for incoming ICE requests every outer loop
         // (rate-limited to 500ms inside tickIceCoordinator).
         tickIceCoordinator(dedicatedIceState);
+        fflush(stdout);
 
         // ICE rooms stay alive via coordinatorIceHostPoll in tickIceCoordinator
 
@@ -574,6 +575,11 @@ int runServer(const LaunchOptions& options)
     }
 
     ::StructuredLogger::instance().shutdown();
+    if (!serverCode.empty())
+    {
+        printf("%s [SERVER] deregistering room %s\n", serverTimestamp(), serverCode.c_str());
+        coordinatorIceDone(serverCode);
+    }
     closesocket(sock);
     netShutdown();
     printf("%s [SERVER] shutdown complete\n", serverTimestamp());
@@ -608,9 +614,11 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     setsockopt(state.sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuseAddr, sizeof(reuseAddr));
     setNonBlocking(state.sock);
 
+    const bool localOnly = settings && settings->startLocalServer;
+
     sockaddr_in bindAddr{};
     bindAddr.sin_family = AF_INET;
-    bindAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    bindAddr.sin_addr.s_addr = localOnly ? inet_addr("127.0.0.1") : htonl(INADDR_ANY);
     bindAddr.sin_port = htons(port);
 
     if (bind(state.sock, (sockaddr*)&bindAddr, sizeof(bindAddr)) == SOCKET_ERROR)
@@ -624,7 +632,10 @@ bool startListenServer(ListenServerState& state, uint16_t port,
         return false;
     }
 
-    printf("[LISTEN SERVER] bound to port %u (all interfaces)\n", port);
+    if (localOnly)
+        printf("[LISTEN SERVER] bound to port %u (localhost only)\n", port);
+    else
+        printf("[LISTEN SERVER] bound to port %u (all interfaces)\n", port);
 
     // Determine map path from settings
     std::string mapName = settings ? settings->mapName : "funworld3";
@@ -683,8 +694,24 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     printf("[LISTEN SERVER NPC STARTUP] enabled=%d requested=%u spawned=%zu\n",
            (int)npcsEnabled, npcCount, state.npcs.size());
 
-    // Register with coordinator (skip if external server process handles it)
-    if (!settings || !settings->externalProcessLaunched)
+    // Register with coordinator (skip if external server process handles it, or local-only)
+    if (localOnly)
+    {
+        // Generate a local-only room code (LOCAL-XXXX)
+        const char* chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        std::string suffix;
+        {
+            std::random_device rd;
+            std::mt19937 gen(rd());
+            std::uniform_int_distribution<> dist(0, 31);
+            for (int i = 0; i < 4; ++i)
+                suffix += chars[dist(gen)];
+        }
+        state.serverCode = "LOCAL-" + suffix;
+        setServerCoordinatorState("LOCAL", "");
+        printf("[LISTEN SERVER] local-only mode: code=%s\n", state.serverCode.c_str());
+    }
+    else if (!settings || !settings->externalProcessLaunched)
     {
         if (hostedRoomSession().active)
         {
@@ -727,8 +754,8 @@ void stopListenServer(ListenServerState& state)
     if (state.serverThread.joinable())
         state.serverThread.join();
 
-    // Deregister with coordinator
-    if (!state.serverCode.empty())
+    // Deregister with coordinator (skip for local-only servers)
+    if (!state.serverCode.empty() && state.serverCode.find("LOCAL-") != 0)
         coordinatorIceDone(state.serverCode);
 
     closesocket(state.sock);
@@ -807,8 +834,12 @@ static void simulateOneServerTick(ListenServerState& state)
                                          state.world, SERVER_DT, state.tick,
                                          state.totalPacketsOut);
 
-        tickIceCoordinator(state);
-        tickIcePeers(state.serverCode, state.iceSessionId, state.pendingIceTransports);
+        // Skip ICE coordinator for local-only servers
+        if (state.serverCode.find("LOCAL-") != 0)
+        {
+            tickIceCoordinator(state);
+            tickIcePeers(state.serverCode, state.iceSessionId, state.pendingIceTransports);
+        }
         tickServerIceTransports(state.sock, state.players, state.npcs,
                                 state.projectiles, state.nextEntityId,
                                 state.nextProjectileId, state.nextPlayerId,

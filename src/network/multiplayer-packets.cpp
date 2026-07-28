@@ -157,7 +157,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     // Clear join token, room code, session identity
     ctx.joinToken.clear();
     ctx.roomCode.clear();
-    ctx.serverAddress = "127.0.0.1:1357";
+    ctx.serverAddress.clear();
     ctx.serverPort = 1357;
     ctx.currentRoomCode.clear();
     ctx.sessionId.clear();
@@ -574,14 +574,28 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
     }
 
     IceConfiguration iceConfig = loadIceConfig();
-    if (iceConfig.turn.password.empty())
+
+    // Fetch TURN credentials from coordinator (overrides local ice-dev.json)
     {
-        printf("[ICE CONNECT] WARNING: no TURN password in ice-dev.json; "
-               "direct connections may fail behind symmetric NAT\n");
+        TurnCredentials turnCreds = coordinatorRequestTurnCredentials();
+        if (turnCreds.ok && !turnCreds.credential.empty())
+        {
+            iceConfig.turn.host = turnCreds.host;
+            iceConfig.turn.port = turnCreds.port;
+            iceConfig.turn.username = turnCreds.username;
+            iceConfig.turn.password = turnCreds.credential;
+            printf("[ICE CONNECT] TURN credentials fetched from coordinator: %s:%u\n",
+                   turnCreds.host.c_str(), turnCreds.port);
+        }
+        else
+        {
+            printf("[ICE CONNECT] WARNING: no TURN credentials from coordinator; "
+                   "direct connections may fail behind symmetric NAT\n");
+        }
     }
 
     // Retry ICE connection with backoff on transient coordinator/server failures
-    constexpr int kMaxRetries = 3;
+    constexpr int kMaxRetries = 5;
     constexpr uint64_t kInitialBackoffMs = 2000;
     uint64_t backoffMs = kInitialBackoffMs;
 
@@ -639,6 +653,7 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
         std::string hostIceDescription = beginJoin.hostIceDescription;
         const uint64_t answerWaitStartedMs = nowMs();
         constexpr uint64_t kHostAnswerTimeoutMs = 15000;
+        bool retriedBeginJoin = false;
 
         while (hostIceDescription.empty() &&
                nowMs() - answerWaitStartedMs < kHostAnswerTimeoutMs)
@@ -662,6 +677,32 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
                        pollResult.status.c_str(),
                        pollResult.errorCode.c_str(), attempt);
                 break;
+            }
+
+            // If pending for >5s, cancel the stale request and create a fresh one.
+            // This handles coordinator-side request loss or race conditions.
+            if (!retriedBeginJoin && nowMs() - answerWaitStartedMs > 5000)
+            {
+                printf("[ICE CONNECT] request stale, retrying begin-join room=%s (attempt %d)\n",
+                       roomCode.c_str(), attempt);
+                coordinatorIceRequestComplete(roomCode, beginJoin.requestId);
+                std::string retrySessionId = sessionId + "_retry";
+                auto retryJoin = coordinatorIceBeginJoin(roomCode, retrySessionId, agentPtr->localSdp());
+                if (retryJoin.ok && !retryJoin.requestId.empty())
+                {
+                    beginJoin.requestId = retryJoin.requestId;
+                    beginJoin.joinToken = retryJoin.joinToken;
+                    hostIceDescription = retryJoin.hostIceDescription;
+                    retriedBeginJoin = true;
+                    printf("[ICE CONNECT] retry begin-join accepted room=%s request=%s\n",
+                           roomCode.c_str(),
+                           retryJoin.requestId.substr(0, std::min<size_t>(12, retryJoin.requestId.size())).c_str());
+                    continue;
+                }
+                else
+                {
+                    printf("[ICE CONNECT] retry begin-join also failed\n");
+                }
             }
 
             Sleep(100);
@@ -747,6 +788,20 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
     }
 
     printf("[ICE CONNECT] FATAL: all %d attempts failed room=%s\n", kMaxRetries, roomCode.c_str());
+
+    // Check if room still exists — helps user understand the failure
+    CoordinatorLookupResult lookup = coordinatorIceLookup(roomCode);
+    if (!lookup.exists)
+    {
+        printf("[ICE CONNECT] room %s no longer exists on coordinator\n", roomCode.c_str());
+    }
+    else
+    {
+        printf("[ICE CONNECT] room %s still exists (%d/%d players) — "
+               "connection failed. Check NAT/firewall or set MIMITA_TURN_PASSWORD env var.\n",
+               roomCode.c_str(), lookup.players, lookup.maxPlayers);
+    }
+
     netShutdown();
     return false;
 }

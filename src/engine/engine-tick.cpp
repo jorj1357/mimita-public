@@ -16,6 +16,7 @@
 #include "engine/engine.h"
 #include "gui/gui-main.h"
 #include "gui/ui-system.h"
+#include "gui/menus/online-menu.h"
 #include "devtools/dev-overlay.h"
 #include "devtools/terminal.h"
 #include "debug/debug-diag.h"
@@ -143,6 +144,8 @@ void engineTick(Engine& engine)
             }
             if (MP_CONTEXT.active) {
                 MimitaNet::mpShutdown(MP_CONTEXT);
+                onlineMenuSetServerCode("");
+                onlineMenuSetServerRunning(false);
             }
             Debug::log(Debug::Category::Duel, "[DUEL] escape: transitioning to main menu");
             GAME_STATE = GAME_MENU;

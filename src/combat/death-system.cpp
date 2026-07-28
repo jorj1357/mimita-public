@@ -30,6 +30,7 @@
 #include "game/spawn-override.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "terminal/terminal-state.h"
 #include "killfeed/killfeed.h"
 
 extern DuelManager gDuelManager;
@@ -116,6 +117,48 @@ bool DeathSystem::kill(
 
     printf("[DEATH] victim=%s hitDir=(%.2f %.2f %.2f) damage=%.0f\n",
            victim.username.c_str(), direction.x, direction.y, direction.z, lethalForce);
+
+    // ── Heal the killer (local path) ──────────────────────────────
+    {
+        std::string killerName = killer;
+        if (killerName.empty() || killerName == "unknown") {
+            if (!victim.lastDamagedBy.empty())
+                killerName = victim.lastDamagedBy;
+        }
+        if (!killerName.empty() && killerName != "unknown")
+        {
+            if (gpPlayer && killerName == gpPlayer->username)
+            {
+                int newHp = DevOverrides::healthOverrideEnabled
+                    ? DevOverrides::healthOverrideValue
+                    : gpPlayer->maxHp;
+                int healed = newHp - gpPlayer->currentHp;
+                if (healed > 0)
+                {
+                    gpPlayer->currentHp = newHp;
+                    HitEffects::spawnHealthGainedEffect(gpPlayer->pos);
+                    EffectPartSystem::instance().spawnDamage(gpPlayer->pos, killerName, -healed);
+                }
+            }
+            else if (gpNpcSystem)
+            {
+                for (Npc& npc : gpNpcSystem->all())
+                {
+                    if (npc.body.username == killerName)
+                    {
+                        int healed = npc.body.maxHp - npc.body.currentHp;
+                        if (healed > 0)
+                        {
+                            npc.body.currentHp = npc.body.maxHp;
+                            HitEffects::spawnHealthGainedEffect(npc.body.pos);
+                            EffectPartSystem::instance().spawnDamage(npc.body.pos, killerName, -healed);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
 
     // Initialize death animation
     {

@@ -550,6 +550,7 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
                        DisagreementRetransmitState* retransmitState = nullptr);
 void handleAttackRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                          std::unordered_map<uint32_t, ServerPlayer>& players,
+                         std::unordered_map<uint32_t, ServerNpc>& npcs,
                          std::unordered_map<uint32_t, ServerProjectile>& projectiles,
                          uint32_t& nextProjectileId,
                          const HeadlessWorld& world,
@@ -753,6 +754,7 @@ struct ServerLaunchSettings
     uint16_t port = DEFAULT_PORT;
     std::string serverCode;
     bool externalProcessLaunched = false;
+    bool startLocalServer = false;
     std::string turnPassword;
 
     // Resolved state (set during startup, not from UI)

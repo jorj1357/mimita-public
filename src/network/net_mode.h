@@ -18,7 +18,7 @@ struct LaunchOptions
 {
     bool server = false;
     bool client = false;
-    std::string connect = "127.0.0.1:1357";
+    std::string connect;
     bool connectExplicit = false;
     std::string bind = "0.0.0.0:1357";
     bool bindExplicit = false;
