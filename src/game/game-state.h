@@ -18,5 +18,6 @@ enum GameState
 {
     GAME_MENU,
     GAME_PLAYING,
-    GAME_PAUSED
+    GAME_PAUSED,
+    GAME_LOADING_MAP
 };

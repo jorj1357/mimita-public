@@ -573,7 +573,6 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
         return false;
     }
 
-    // Load ICE config (STUN + optional TURN from VPS)
     IceConfiguration iceConfig = loadIceConfig();
     if (iceConfig.turn.password.empty())
     {
@@ -581,168 +580,175 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
                "direct connections may fail behind symmetric NAT\n");
     }
 
-    // Create ICE agent on heap (IceAgent is not movable)
-    auto agentPtr = std::make_unique<IceAgent>();
-    if (!agentPtr->initialize(iceConfig))
+    // Retry ICE connection with backoff on transient coordinator/server failures
+    constexpr int kMaxRetries = 3;
+    constexpr uint64_t kInitialBackoffMs = 2000;
+    uint64_t backoffMs = kInitialBackoffMs;
+
+    for (int attempt = 1; attempt <= kMaxRetries; ++attempt)
     {
-        printf("[ICE CONNECT] FATAL: agent initialization failed\n");
-        netShutdown();
-        return false;
-    }
-    ctx.connectionState = ConnectionState::NatNegotiating;
-    ctx.connectionStatus = "ICE: gathering candidates...";
+        printf("[ICE CONNECT] attempt %d/%d room=%s\n", attempt, kMaxRetries, roomCode.c_str());
 
-    if (!agentPtr->gatherCandidates())
-    {
-        printf("[ICE CONNECT] FATAL: candidate gathering failed\n");
-        netShutdown();
-        return false;
-    }
-    if (!waitForIceAgentState(*agentPtr, IceAgentState::GatheringComplete, 15000))
-    {
-        printf("[ICE CONNECT] FATAL: gather timeout (15s)\n");
-        netShutdown();
-        return false;
-    }
-    printf("[ICE CONNECT] candidates gathered\n");
-
-    // Exchange SDP via coordinator (two-phase offer/answer)
-    std::string sessionId = "client_" + std::to_string(GetCurrentProcessId())
-        + "_" + std::to_string(nowMs());
-    ctx.connectionStatus = "ICE: contacting coordinator...";
-
-    auto beginJoin = coordinatorIceBeginJoin(roomCode, sessionId, agentPtr->localSdp());
-    if (!beginJoin.ok || beginJoin.requestId.empty())
-    {
-        printf("[ICE CONNECT] FATAL: coordinator ICE begin-join failed "
-               "room=%s error=%s requestIdEmpty=%d\n",
-               roomCode.c_str(),
-               beginJoin.errorCode.c_str(),
-               (int)beginJoin.requestId.empty());
-        netShutdown();
-        return false;
-    }
-
-    printf("[ICE CONNECT] begin-join accepted room=%s request=%s\n",
-           roomCode.c_str(),
-           beginJoin.requestId.substr(0, std::min<size_t>(12, beginJoin.requestId.size())).c_str());
-
-    ctx.connectionStatus = "ICE: waiting for server answer...";
-
-    // The answer may already be included, but normally the dedicated server
-    // creates a per-client ICE agent and posts the answer asynchronously.
-    std::string hostIceDescription = beginJoin.hostIceDescription;
-
-    const uint64_t answerWaitStartedMs = nowMs();
-    constexpr uint64_t kHostAnswerTimeoutMs = 30000;
-
-    while (hostIceDescription.empty() &&
-           nowMs() - answerWaitStartedMs < kHostAnswerTimeoutMs)
-    {
-        auto pollResult =
-            coordinatorIceClientPoll(roomCode, beginJoin.requestId);
-
-        if (pollResult.ok && !pollResult.hostIceDescription.empty())
+        auto agentPtr = std::make_unique<IceAgent>();
+        if (!agentPtr->initialize(iceConfig))
         {
-            hostIceDescription = pollResult.hostIceDescription;
-            break;
+            printf("[ICE CONNECT] agent initialization failed (attempt %d)\n", attempt);
+            if (attempt < kMaxRetries) { Sleep(backoffMs); backoffMs *= 2; }
+            continue;
         }
+        ctx.connectionState = ConnectionState::NatNegotiating;
+        ctx.connectionStatus = "ICE: gathering candidates...";
 
-        if (pollResult.status == "failed" ||
-            pollResult.status == "expired")
+        if (!agentPtr->gatherCandidates())
         {
-            printf("[ICE CONNECT] FATAL: server answer failed "
-                   "room=%s request=%s status=%s error=%s\n",
+            printf("[ICE CONNECT] candidate gathering failed (attempt %d)\n", attempt);
+            if (attempt < kMaxRetries) { Sleep(backoffMs); backoffMs *= 2; }
+            continue;
+        }
+        if (!waitForIceAgentState(*agentPtr, IceAgentState::GatheringComplete, 15000))
+        {
+            printf("[ICE CONNECT] gather timeout (15s) (attempt %d)\n", attempt);
+            if (attempt < kMaxRetries) { Sleep(backoffMs); backoffMs *= 2; }
+            continue;
+        }
+        printf("[ICE CONNECT] candidates gathered (attempt %d)\n", attempt);
+
+        // Exchange SDP via coordinator (two-phase offer/answer)
+        std::string sessionId = "client_" + std::to_string(GetCurrentProcessId())
+            + "_" + std::to_string(nowMs()) + "_" + std::to_string(attempt);
+        ctx.connectionStatus = "ICE: contacting coordinator...";
+
+        auto beginJoin = coordinatorIceBeginJoin(roomCode, sessionId, agentPtr->localSdp());
+        if (!beginJoin.ok || beginJoin.requestId.empty())
+        {
+            printf("[ICE CONNECT] coordinator ICE begin-join failed "
+                   "room=%s error=%s (attempt %d)\n",
                    roomCode.c_str(),
-                   beginJoin.requestId.substr(0, std::min<size_t>(12, beginJoin.requestId.size())).c_str(),
-                   pollResult.status.c_str(),
-                   pollResult.errorCode.c_str());
-            netShutdown();
-            return false;
+                   beginJoin.errorCode.c_str(), attempt);
+            if (attempt < kMaxRetries) { Sleep(backoffMs); backoffMs *= 2; }
+            continue;
         }
 
-        Sleep(100);
-    }
-
-    if (hostIceDescription.empty())
-    {
-        printf("[ICE CONNECT] FATAL: server answer timeout "
-               "room=%s request=%s timeoutMs=%llu\n",
+        printf("[ICE CONNECT] begin-join accepted room=%s request=%s (attempt %d)\n",
                roomCode.c_str(),
                beginJoin.requestId.substr(0, std::min<size_t>(12, beginJoin.requestId.size())).c_str(),
-               (unsigned long long)kHostAnswerTimeoutMs);
-        netShutdown();
-        return false;
+               attempt);
+
+        ctx.connectionStatus = "ICE: waiting for server answer...";
+
+        std::string hostIceDescription = beginJoin.hostIceDescription;
+        const uint64_t answerWaitStartedMs = nowMs();
+        constexpr uint64_t kHostAnswerTimeoutMs = 15000;
+
+        while (hostIceDescription.empty() &&
+               nowMs() - answerWaitStartedMs < kHostAnswerTimeoutMs)
+        {
+            auto pollResult =
+                coordinatorIceClientPoll(roomCode, beginJoin.requestId);
+
+            if (pollResult.ok && !pollResult.hostIceDescription.empty())
+            {
+                hostIceDescription = pollResult.hostIceDescription;
+                break;
+            }
+
+            if (pollResult.status == "failed" ||
+                pollResult.status == "expired")
+            {
+                printf("[ICE CONNECT] server answer failed "
+                       "room=%s request=%s status=%s error=%s (attempt %d)\n",
+                       roomCode.c_str(),
+                       beginJoin.requestId.substr(0, std::min<size_t>(12, beginJoin.requestId.size())).c_str(),
+                       pollResult.status.c_str(),
+                       pollResult.errorCode.c_str(), attempt);
+                break;
+            }
+
+            Sleep(100);
+        }
+
+        if (hostIceDescription.empty())
+        {
+            printf("[ICE CONNECT] server answer timeout "
+                   "room=%s request=%s (attempt %d)\n",
+                   roomCode.c_str(),
+                   beginJoin.requestId.substr(0, std::min<size_t>(12, beginJoin.requestId.size())).c_str(),
+                   attempt);
+            if (attempt < kMaxRetries) { Sleep(backoffMs); backoffMs *= 2; }
+            continue;
+        }
+
+        printf("[ICE CONNECT] received host SDP request=%s bytes=%zu (attempt %d)\n",
+               beginJoin.requestId.substr(0, std::min<size_t>(12, beginJoin.requestId.size())).c_str(),
+               hostIceDescription.size(), attempt);
+
+        if (!agentPtr->setRemoteDescription(hostIceDescription))
+        {
+            printf("[ICE CONNECT] setRemoteDescription failed (attempt %d)\n", attempt);
+            if (attempt < kMaxRetries) { Sleep(backoffMs); backoffMs *= 2; }
+            continue;
+        }
+        printf("[ICE CONNECT] remote description applied (attempt %d)\n", attempt);
+        ctx.connectionStatus = "ICE: connecting...";
+
+        std::string earlyRecv;
+        if (!waitForIceAgentState(*agentPtr, IceAgentState::Connected, 30000, &earlyRecv))
+        {
+            printf("[ICE CONNECT] connection timeout (30s) (attempt %d)\n", attempt);
+            if (attempt < kMaxRetries) { Sleep(backoffMs); backoffMs *= 2; }
+            continue;
+        }
+        printf("[ICE CONNECT] ICE connection established (attempt %d)\n", attempt);
+        agentPtr->logSelectedPath();
+
+        // Success — create transport and set up context
+        ctx.transport = std::make_unique<IceTransport>(std::move(agentPtr));
+        ctx.active = true;
+        ctx.localPlayerId = 0;
+        ctx.tick = 0;
+        ctx.lastHelloMs = 0;
+        ctx.lastSnapshotReceivedMs = 0;
+        ctx.connectStartMs = nowMs();
+        ctx.packetsSent = 0;
+        ctx.packetsReceived = 0;
+        ctx.snapshotsReceived = 0;
+        ctx.snapshotsMissed = 0;
+        ctx.remotePlayers.clear();
+        ctx.remoteNpcs.clear();
+        ctx.remotePlayerInterpolation.clear();
+        ctx.remoteNpcInterpolation.clear();
+        ctx.networkProjectiles.clear();
+        ctx.playerRegistry.clear();
+        ctx.approvedLocalName.clear();
+        ctx.hasLocalServerPosition = false;
+        ctx.localPlayerReconciled = false;
+        ctx.connectionState = ConnectionState::Connecting;
+        ctx.joinToken = beginJoin.joinToken;
+        ctx.serverAddress = "ice:" + roomCode;
+        ctx.connected = false;
+        ctx.connectFailed = false;
+        ctx.connectionStatus = "Connected via ICE";
+        ctx.outgoingQueue.clear();
+        ctx.shotEvents.clear();
+        ctx.lastReceivedShotSerial.clear();
+        ctx.nextLocalShotSerial = 1;
+        ctx.nextLocalProjectileFireSerial = 1;
+        ctx.nextLocalMeleeAttackSerial = 1;
+        ctx.lastPingSentMs = 0;
+        ctx.localPingMs = 0;
+        ctx.lastHeardServerMs = 0;
+        ctx.lastDisconnectLogMs = 0;
+        ctx.disagreementEvents.clear();
+        ctx.processedDisagreementIds.clear();
+        ctx.currentRoomCode = roomCode;
+
+        printf("[ICE CONNECT] connected via ICE to room=%s\n", roomCode.c_str());
+        return true;
     }
 
-    printf("[ICE CONNECT] received host SDP request=%s bytes=%zu\n",
-           beginJoin.requestId.substr(0, std::min<size_t>(12, beginJoin.requestId.size())).c_str(),
-           hostIceDescription.size());
-
-    // Set remote description (host's SDP)
-    if (!agentPtr->setRemoteDescription(hostIceDescription))
-    {
-        printf("[ICE CONNECT] FATAL: setRemoteDescription failed\n");
-        netShutdown();
-        return false;
-    }
-    printf("[ICE CONNECT] remote description applied\n");
-    ctx.connectionStatus = "ICE: connecting...";
-
-    // Wait for ICE connection
-    std::string earlyRecv;
-    if (!waitForIceAgentState(*agentPtr, IceAgentState::Connected, 30000, &earlyRecv))
-    {
-        printf("[ICE CONNECT] FATAL: connection timeout (30s)\n");
-        netShutdown();
-        return false;
-    }
-    printf("[ICE CONNECT] ICE connection established\n");
-    agentPtr->logSelectedPath();
-
-    // Create ICE transport, reset multiplayer context state
-    ctx.transport = std::make_unique<IceTransport>(std::move(agentPtr));
-    ctx.active = true;
-    ctx.localPlayerId = 0;
-    ctx.tick = 0;
-    ctx.lastHelloMs = 0;
-    ctx.lastSnapshotReceivedMs = 0;
-    ctx.connectStartMs = nowMs();
-    ctx.packetsSent = 0;
-    ctx.packetsReceived = 0;
-    ctx.snapshotsReceived = 0;
-    ctx.snapshotsMissed = 0;
-    ctx.remotePlayers.clear();
-    ctx.remoteNpcs.clear();
-    ctx.remotePlayerInterpolation.clear();
-    ctx.remoteNpcInterpolation.clear();
-    ctx.networkProjectiles.clear();
-    ctx.playerRegistry.clear();
-    ctx.approvedLocalName.clear();
-    ctx.hasLocalServerPosition = false;
-    ctx.localPlayerReconciled = false;
-    ctx.connectionState = ConnectionState::Connecting;
-    ctx.joinToken = beginJoin.joinToken;
-    ctx.serverAddress = "ice:" + roomCode;
-    ctx.connected = false;
-    ctx.connectFailed = false;
-    ctx.connectionStatus = "Connected via ICE";
-    ctx.outgoingQueue.clear();
-    ctx.shotEvents.clear();
-    ctx.lastReceivedShotSerial.clear();
-    ctx.nextLocalShotSerial = 1;
-    ctx.nextLocalProjectileFireSerial = 1;
-    ctx.nextLocalMeleeAttackSerial = 1;
-    ctx.lastPingSentMs = 0;
-    ctx.localPingMs = 0;
-    ctx.lastHeardServerMs = 0;
-    ctx.lastDisconnectLogMs = 0;
-    ctx.disagreementEvents.clear();
-    ctx.processedDisagreementIds.clear();
-    ctx.currentRoomCode = roomCode;
-
-    printf("[ICE CONNECT] connected via ICE to room=%s\n", roomCode.c_str());
-    return true;
+    printf("[ICE CONNECT] FATAL: all %d attempts failed room=%s\n", kMaxRetries, roomCode.c_str());
+    netShutdown();
+    return false;
 }
 
 // ── Migration: disagreement processing ────────────────────────────────

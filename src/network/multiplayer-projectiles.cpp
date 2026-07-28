@@ -834,6 +834,21 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
 
     presentConfirmedDamage(ctx, *event, sink);
 
+    const glm::vec3 knockback(event->knockX, event->knockY, event->knockZ);
+    if (glm::length(knockback) > 0.001f)
+    {
+        if (event->targetPlayerId == ctx.localPlayerId)
+        {
+            ctx.pendingKnockback += knockback;
+        }
+        else
+        {
+            auto remote = ctx.remotePlayers.find(event->targetPlayerId);
+            if (remote != ctx.remotePlayers.end())
+                remote->second.externalImpulse += knockback;
+        }
+    }
+
     printf("[NET DAMAGE CONFIRMED] eventId=%u source=%u attacker=%u target=%u damage=%d healthBefore=%d healthAfter=%d killed=%d\n",
            event->eventId, (unsigned)event->source, event->attackerPlayerId,
            event->targetPlayerId, event->damage, event->healthBefore,

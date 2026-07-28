@@ -196,6 +196,8 @@ private:
     };
     std::unique_ptr<PendingAtlasResult> mPendingAtlas;
     std::atomic<bool> mAtlasThreadRunning{false};
+    int mAtlasGeneration = 0;
+    int mPendingAtlasGeneration = 0;
     std::string mPendingAvatarName;
 
     std::string mAvatarName;

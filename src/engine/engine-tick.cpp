@@ -82,15 +82,16 @@ void engineTick(Engine& engine)
         (getReplayExportJob().state == ReplayExportJob::Capturing ||
          getReplayExportJob().state == ReplayExportJob::Encoding) && WORLD_LOADED;
 
-    if (GAME_STATE == GAME_PLAYING || replayExportForceRender)
+    if (GAME_STATE == GAME_PLAYING || GAME_STATE == GAME_LOADING_MAP || replayExportForceRender)
     {
         { MIMITA_PERF_SCOPE("Replay"); engineTickReplay(engine, dt); } HEARTBEAT("after replay");
         { MIMITA_PERF_SCOPE("Networking"); engineTickNet(engine, dt); } HEARTBEAT("after net");
-        { MIMITA_PERF_SCOPE("Camera"); engineTickCamera(engine, dt); } HEARTBEAT("after camera");
-        { MIMITA_PERF_SCOPE("Combat"); engineTickCombat(engine, dt); } HEARTBEAT("after combat");
-        { MIMITA_PERF_SCOPE("Rendering"); engineTickRender(engine, dt, worldPassRan); } HEARTBEAT("after render");
-        { MIMITA_PERF_SCOPE("UI"); engineTickUI(engine, dt, worldPassRan); } HEARTBEAT("after ui");
-
+        if (GAME_STATE == GAME_PLAYING) {
+            { MIMITA_PERF_SCOPE("Camera"); engineTickCamera(engine, dt); } HEARTBEAT("after camera");
+            { MIMITA_PERF_SCOPE("Combat"); engineTickCombat(engine, dt); } HEARTBEAT("after combat");
+            { MIMITA_PERF_SCOPE("Rendering"); engineTickRender(engine, dt, worldPassRan); } HEARTBEAT("after render");
+            { MIMITA_PERF_SCOPE("UI"); engineTickUI(engine, dt, worldPassRan); } HEARTBEAT("after ui");
+        }
         { MIMITA_PERF_SCOPE("DevOverlay");
         if (!gReplayExportRenderMode || ReplayExportUI::showDevOverlay)
             DevOverlay::instance().render();

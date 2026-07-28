@@ -484,7 +484,6 @@ int runServer(const LaunchOptions& options)
             tickServerProjectiles(sock, players, projectiles, world, SERVER_DT, tick, totalPacketsOut);
             tickServerPhysicalContactWeapons(sock, players, world, SERVER_DT, tick, totalPacketsOut);
 
-            tickIceCoordinator(dedicatedIceState);
             tickIcePeers(serverCode, dedicatedIceState.iceSessionId,
                          pendingIceTransports);
             tickServerIceTransports(sock, players, npcs, projectiles,
@@ -502,6 +501,10 @@ int runServer(const LaunchOptions& options)
             ++steps;
         }
         const bool cappedCatchup = steps >= MAX_STEPS && accumulator >= (double)SERVER_DT;
+
+        // Poll coordinator for incoming ICE requests every outer loop
+        // (rate-limited to 500ms inside tickIceCoordinator).
+        tickIceCoordinator(dedicatedIceState);
 
         // ICE rooms stay alive via coordinatorIceHostPoll in tickIceCoordinator
 

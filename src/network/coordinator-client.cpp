@@ -371,7 +371,11 @@ IceHostPendingRequest coordinatorIceHostPoll(const std::string& roomCode,
     long httpCode = 0;
     uint64_t t0 = nowMs();
     if (!httpPostJsonInner(gCoordinatorUrl + "/api/coordinator/ice/host-poll", body, response, 5000, httpCode))
+    {
+        printf("[ICE HOST POLL] code=%s status=%ld duration=%llums HTTP-FAIL\n",
+               roomCode.c_str(), httpCode, nowMs() - t0);
         return result;
+    }
     try {
         auto j = json::parse(response);
         result.hasRequest = jsonBool(j, "has_request");
@@ -379,6 +383,10 @@ IceHostPendingRequest coordinatorIceHostPoll(const std::string& roomCode,
             result.requestId = jsonStr(j, "request_id");
             result.clientSessionId = jsonStr(j, "client_session_id");
             result.clientIceDescription = jsonStr(j, "client_ice_description");
+        }
+        printf("[ICE HOST POLL] code=%s hasRequest=%d duration=%llums status=%ld\n",
+               roomCode.c_str(), (int)result.hasRequest, nowMs() - t0, httpCode);
+        if (result.hasRequest) {
             printf("[ICE HOST REQUEST] code=%s req=%s client=%s sdp=%s duration=%llums\n",
                    roomCode.c_str(), result.requestId.substr(0, 12).c_str(),
                    result.clientSessionId.substr(0, 12).c_str(),
@@ -506,7 +514,10 @@ TurnCredentials coordinatorRequestTurnCredentials()
     long httpCode = 0;
     uint64_t t0 = nowMs();
     if (!httpPostJsonInner(gCoordinatorUrl + "/api/coordinator/turn-credentials", "{}", response, 5000, httpCode))
+    {
+        printf("[TURN CREDENTIALS] status=%ld duration=%llums HTTP-FAIL\n", httpCode, nowMs() - t0);
         return result;
+    }
     try {
         auto j = json::parse(response);
         result.ok = true;

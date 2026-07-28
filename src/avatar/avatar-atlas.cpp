@@ -382,8 +382,9 @@ static std::vector<unsigned char> buildAtlasPixels(const AvatarDefinition& avata
 }
 
 bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
-    printf("[AVATAR ATLAS] buildAtlas: advancedMode=%d relayTextures=%d\n",
-           (int)mAvatar.advancedMode, (int)reloadTextures);
+    mAtlasGeneration++;
+    printf("[AVATAR ATLAS] buildAtlas: advancedMode=%d relayTextures=%d generation=%d\n",
+           (int)mAvatar.advancedMode, (int)reloadTextures, mAtlasGeneration);
 
     std::vector<unsigned char> atlasPixels = buildAtlasPixels(mAvatar, mBasePath);
 
@@ -413,12 +414,9 @@ void AvatarSystem::requestAtlasBuild(Player& player) {
     if (mAtlasThreadRunning.load()) return;
     if (mPendingAtlas && mPendingAtlas->ready.load()) return;
 
-    // Apply bodypart overrides to the global before model finalizes
-    if (!mAvatar.bodypartOverrides.is_null())
-        gAvatarBodypartOverrides = mAvatar.bodypartOverrides;
-
     mPendingAtlas = std::make_unique<PendingAtlasResult>();
     mPendingAvatarName = mAvatarName;
+    mPendingAtlasGeneration = mAtlasGeneration;
 
     AvatarDefinition avatarCopy = mAvatar;
     std::string basePathCopy = mBasePath;
@@ -434,8 +432,15 @@ void AvatarSystem::requestAtlasBuild(Player& player) {
 
 void AvatarSystem::finalizeAtlasIfReady(Player& player) {
     if (!mPendingAtlas || !mPendingAtlas->ready.load()) return;
+
+    // Discard stale pending atlas if a synchronous build happened since build was requested
+    if (mPendingAtlasGeneration != mAtlasGeneration) {
+        mPendingAtlas.reset();
+        return;
+    }
+
+    // Upload atlas texture to GPU once (when thread is done)
     if (mAtlasThreadRunning.load()) {
-        // Thread is done — upload to GPU on main thread
         mAtlasThreadRunning = false;
 
         if (mAtlasTexture) {
@@ -455,13 +460,10 @@ void AvatarSystem::finalizeAtlasIfReady(Player& player) {
         glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 
         printf("[AVATAR ATLAS] Async atlas texture ready ID=%u for %s\n", mAtlasTexture, mAvatarName.c_str());
+    }
 
-        // Wait for model to be loaded before applying atlas
-        if (!player.modelLoaded || player.physicalBody.parts.empty()) {
-            printf("[AVATAR ATLAS] Model not ready yet; deferring atlas application\n");
-            return;
-        }
-
+    // Retry application every frame until model is ready
+    if (player.modelLoaded && !player.physicalBody.parts.empty()) {
         applyAtlasToPlayer(player);
         mPendingAtlas.reset();
     }
