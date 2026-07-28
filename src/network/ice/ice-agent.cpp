@@ -9,6 +9,7 @@
 */
 
 #include "network/ice/ice-agent.h"
+#include "network/net_common.h"
 #include "debug/debug-log.h"
 
 #include <cstdio>
@@ -168,6 +169,9 @@ void IceAgent::shutdown()
 {
     if (mAgent)
     {
+        printf("[ICE AGENT SHUTDOWN] destroying agent=%p pendingEvents=%zu\n",
+               (void*)this, mEvents.size());
+        fflush(stdout);
         juice_destroy(mAgent);
         mAgent = nullptr;
     }
@@ -346,8 +350,22 @@ void IceAgent::handleRecv(const char* data, size_t size)
 {
     if (!data || size == 0) return;
 
-    // printf("[ICE RECV CB] bytes=%zu data=%.*s\n", size, (int)(size > 64 ? 64 : size), data);
-    fflush(stdout);
+    // After shutdown, discard stale ghost packets from the OS queue.
+    // Without this guard, mEvents grows unboundedly (no one polls a
+    // dead transport) until a reallocation fails — crash.
+    if (!mAgent)
+    {
+        static uint64_t lastDropLog = 0;
+        uint64_t now = MimitaNet::nowMs();
+        if (now - lastDropLog >= 1000)
+        {
+            printf("[ICE GHOST DROP] agent=%p pendingEvents=%zu discarded after shutdown\n",
+                   (void*)this, mEvents.size());
+            fflush(stdout);
+            lastDropLog = now;
+        }
+        return;
+    }
 
     IceEvent ev;
     ev.type = IceEventType::Recv;
@@ -357,6 +375,4 @@ void IceAgent::handleRecv(const char* data, size_t size)
         std::lock_guard<std::mutex> lock(mMutex);
         mEvents.push_back(ev);
     }
-
-    Debug::warn(Debug::Category::Networking, "ICE RECV bytes=%zu\n", size);
 }

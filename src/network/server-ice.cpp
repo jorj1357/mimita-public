@@ -321,6 +321,10 @@ void tickServerIceTransports(SOCKET sock,
                              DisagreementRetransmitState* retransmitState)
 {
     // 1. Poll existing players' ICE transports
+    // Deferred erasure: handleDisconnect pushes to this vector instead of
+    // erasing from the map during iteration, avoiding iterator invalidation.
+    std::vector<uint32_t> pendingRemovals;
+
     for (auto& kv : players)
     {
         ServerPlayer& player = kv.second;
@@ -379,10 +383,32 @@ void tickServerIceTransports(SOCKET sock,
             processServerPacket(sock, event, players, npcs, projectiles,
                                 nextPlayerId, nextEntityId, nextProjectileId,
                                 world, tick, totalPacketsIn, totalPacketsOut,
-                                stats, retransmitState, &player, nullptr);
+                                stats, retransmitState, &player, nullptr,
+                                &pendingRemovals);
             ++packetsProcessed;
         }
+
+        printf("[ICE POLL DONE] playerId=%u pkts=%zu processed=%zu — return to loop\n",
+               player.id, pkts.size(), packetsProcessed);
+        fflush(stdout);
     }
+
+    // Deferred erasure: remove players that disconnected via ICE transport.
+    // The transport was already closed in handleDisconnect; erasing the
+    // ServerPlayer here frees the IGameTransport wrapper safely, after the
+    // iteration over the map has completed.
+    for (uint32_t id : pendingRemovals)
+    {
+        auto it = players.find(id);
+        if (it != players.end())
+        {
+            printf("[DEFERRED REMOVE] removing id=%u — players left: %zu\n",
+                   id, players.size() - 1);
+            players.erase(it);
+        }
+    }
+    if (!pendingRemovals.empty())
+        fflush(stdout);
 
     // 2. Process pending ICE transports (unregistered clients)
     for (auto it = pendingIceTransports.begin(); it != pendingIceTransports.end(); )

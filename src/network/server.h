@@ -643,7 +643,8 @@ ServerPacketProcessResult processServerPacket(
     ServerPacketStats* stats = nullptr,
     DisagreementRetransmitState* retransmitState = nullptr,
     ServerPlayer* authenticatedPlayer = nullptr,
-    std::unique_ptr<IGameTransport>* claimedTransport = nullptr);
+    std::unique_ptr<IGameTransport>* claimedTransport = nullptr,
+    std::vector<uint32_t>* pendingRemovals = nullptr);
 
 // Generate a secure reconnect token
 std::string generateReconnectToken();

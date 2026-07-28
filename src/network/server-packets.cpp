@@ -753,7 +753,8 @@ void handleInputPacket(const char* buffer, int bytes,
 }
 
 void handleDisconnect(std::unordered_map<uint32_t, ServerPlayer>& players,
-                      const char* buffer)
+                      const char* buffer,
+                      std::vector<uint32_t>* pendingRemovals)
 {
     const PacketHeader* header = reinterpret_cast<const PacketHeader*>(buffer);
     auto it = players.find(header->playerId);
@@ -762,15 +763,22 @@ void handleDisconnect(std::unordered_map<uint32_t, ServerPlayer>& players,
         printf("%s [SERVER LEAVE] id=%u name=\"%s\"\n",
                serverTimestamp(), it->second.id, it->second.name.c_str());
 
-        // Close the ICE transport to stop the agent's socket.
-        // The IceAgent wrapper stays alive (not freed) so any lingering
-        // background-thread callbacks access valid memory.
-        // The transport (and IceAgent) are freed when players.erase destroys
-        // the ServerPlayer.
         if (it->second.transport)
             it->second.transport->close();
 
-        players.erase(it);
+        if (pendingRemovals)
+        {
+            pendingRemovals->push_back(header->playerId);
+            printf("%s [SERVER POST-LEAVE] players=%zu — pending removal (deferred)\n",
+                   serverTimestamp(), players.size());
+        }
+        else
+        {
+            players.erase(it);
+            printf("%s [SERVER POST-LEAVE] players=%zu — server continuing\n",
+                   serverTimestamp(), players.size());
+        }
+        fflush(stdout);
     }
 }
 
@@ -1131,7 +1139,8 @@ ServerPacketProcessResult processServerPacket(
     ServerPacketStats* stats,
     DisagreementRetransmitState* retransmitState,
     ServerPlayer* authenticatedPlayer,
-    std::unique_ptr<IGameTransport>* claimedTransport)
+    std::unique_ptr<IGameTransport>* claimedTransport,
+    std::vector<uint32_t>* pendingRemovals)
 {
     ServerPacketProcessResult result{};
     ++totalPacketsIn;
@@ -1258,7 +1267,7 @@ ServerPacketProcessResult processServerPacket(
     }
     else if (header->type == PACKET_DISCONNECT)
     {
-        handleDisconnect(players, buffer);
+        handleDisconnect(players, buffer, pendingRemovals);
         result.handled = true;
     }
     else if (header->type == PACKET_SPAWN_NPC_REQUEST)
