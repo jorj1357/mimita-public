@@ -232,7 +232,7 @@ struct MultiplayerContext
     int localServerHealth = 100;
     int lastSeenServerHealth = 100;
     std::string approvedLocalName;
-    std::string serverAddress = "127.0.0.1:1357";
+    std::string serverAddress;
     std::string connectionStatus;
     bool connected = false;
     bool connectFailed = false;

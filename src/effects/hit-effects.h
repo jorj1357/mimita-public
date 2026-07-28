@@ -203,6 +203,7 @@ struct HitFxConfig {
     MovementDashBurstConfig airJumpBurst;
     MovementDashBurstConfig walkBurst;
     MovementDashBurstConfig landingBurst;
+    MovementDashBurstConfig healthGained;
     DeathEllipsoidConfig deathEllipsoid;
     DamageNumberConfig damageNumber;
 };
@@ -226,7 +227,8 @@ enum class BurstType {
     GroundJump,
     AirJump,
     Walk,
-    Landing
+    Landing,
+    HealthGained
 };
 
 struct HitBurstEffect {
@@ -264,6 +266,7 @@ void spawnGroundJumpBurst(const glm::vec3& position, const glm::vec3& direction)
 void spawnAirJumpBurst(const glm::vec3& position, const glm::vec3& direction);
 void spawnWalkBurst(const glm::vec3& position, const glm::vec3& direction, float speed = 0.0f);
 void spawnLandingBurst(const glm::vec3& position, const glm::vec3& direction, float speed = 0.0f);
+void spawnHealthGainedEffect(const glm::vec3& position);
 
 void updateHitBursts(float dt);
 void renderHitBursts(const Camera& camera);

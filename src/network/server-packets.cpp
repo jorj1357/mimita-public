@@ -761,6 +761,15 @@ void handleDisconnect(std::unordered_map<uint32_t, ServerPlayer>& players,
     {
         printf("%s [SERVER LEAVE] id=%u name=\"%s\"\n",
                serverTimestamp(), it->second.id, it->second.name.c_str());
+
+        // Close the ICE transport to stop the agent's socket.
+        // The IceAgent wrapper stays alive (not freed) so any lingering
+        // background-thread callbacks access valid memory.
+        // The transport (and IceAgent) are freed when players.erase destroys
+        // the ServerPlayer.
+        if (it->second.transport)
+            it->second.transport->close();
+
         players.erase(it);
     }
 }
@@ -888,7 +897,13 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     }
 
     // Validate ICE join token with coordinator
-    if (!gServerCoordinatorCode.empty())
+    // (skip validation for local-only servers)
+    if (gServerCoordinatorCode == "LOCAL")
+    {
+        printf("%s [SERVER JOIN] local server — accepting join for %s\n",
+               serverTimestamp(), join->name);
+    }
+    else if (!gServerCoordinatorCode.empty())
     {
         printf("[ICE TOKEN VALIDATE] code=%s tokenPrefix=%s\n",
                gServerCoordinatorCode.c_str(), joinTokenStr.substr(0, 12).c_str());
@@ -1282,7 +1297,7 @@ ServerPacketProcessResult processServerPacket(
     }
     else if (header->type == PACKET_ATTACK_REQUEST)
     {
-        handleAttackRequest(sock, from, buffer, bytes, players, projectiles,
+        handleAttackRequest(sock, from, buffer, bytes, players, npcs, projectiles,
                             nextProjectileId, world, tick, totalPacketsOut);
         result.handled = true;
     }

@@ -117,6 +117,20 @@ bool HitEffects::loadConfig(const std::string& path)
         cfg.landingBurst.upOffset = -0.5f;
         cfg.landingBurst.lifetimeTicks = 12;
 
+        // healthGained defaults
+        cfg.healthGained.lifetimeTicks = 60;
+        cfg.healthGained.lengthStart = 2.0f;
+        cfg.healthGained.lengthEnd = 4.0f;
+        cfg.healthGained.radiusStart = 0.4f;
+        cfg.healthGained.radiusEnd = 0.1f;
+        cfg.healthGained.alphaStart = 0.5f;
+        cfg.healthGained.alphaEnd = 0.0f;
+        cfg.healthGained.brightnessStart = 2.0f;
+        cfg.healthGained.brightnessEnd = 0.0f;
+        cfg.healthGained.colorStart = {0.0f, 1.0f, 0.0f};
+        cfg.healthGained.colorEnd = {0.0f, 0.6f, 0.0f};
+        cfg.healthGained.stretchAxis = "world_z";
+
         if (j.contains("enabled")) cfg.enabled = j["enabled"];
         if (j.contains("hotReload")) cfg.hotReload = j["hotReload"];
 
@@ -387,6 +401,7 @@ bool HitEffects::loadConfig(const std::string& path)
         if (j.contains("airJumpBurst")) loadBurstConfig(j["airJumpBurst"], cfg.airJumpBurst);
         if (j.contains("walkBurst")) loadBurstConfig(j["walkBurst"], cfg.walkBurst);
         if (j.contains("landingBurst")) loadBurstConfig(j["landingBurst"], cfg.landingBurst);
+        if (j.contains("healthGained")) loadBurstConfig(j["healthGained"], cfg.healthGained);
 
         gConfig = cfg;
         auto ec = std::filesystem::last_write_time(path);

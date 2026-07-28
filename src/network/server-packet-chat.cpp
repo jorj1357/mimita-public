@@ -71,6 +71,10 @@ void handleNpcDamageRequest(SOCKET sock, const char* buffer, int bytes,
         printf("%s [NET NPC KILL] shooter=%u npcId=%u name=\"%s\"\n",
                serverTimestamp(), req->header.playerId,
                target.entityId, target.name.c_str());
+        // Heal the shooter to full health
+        auto shooterIt = players.find(req->header.playerId);
+        if (shooterIt != players.end())
+            shooterIt->second.health = 100;
     }
 
     NpcDamageEventPacket event{};
@@ -146,6 +150,8 @@ void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players)
             printf("%s [NET DISCONNECT] reason=heartbeat_timeout id=%u name=\"%s\" lastHeard=%llums ago ping=%dms\n",
                    serverTimestamp(), it->second.id, it->second.name.c_str(),
                    (unsigned long long)silentMs, it->second.pingMs);
+            if (it->second.transport)
+                it->second.transport->close();
             it = players.erase(it);
         }
         else

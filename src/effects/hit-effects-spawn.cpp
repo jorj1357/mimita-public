@@ -181,6 +181,26 @@ void HitEffects::spawnWalkBurst(const glm::vec3& position, const glm::vec3& dire
     b.burstType = BurstType::Walk;
 }
 
+void HitEffects::spawnHealthGainedEffect(const glm::vec3& position)
+{
+    if (!gConfig.enabled || !gConfig.healthGained.enabled) return;
+    if (gBurstCount >= MAX_BURSTS) {
+        gBursts[0] = gBursts[gBurstCount - 1];
+        gBurstCount--;
+    }
+    const auto& cfg = gConfig.healthGained;
+    HitBurstEffect& b = gBursts[gBurstCount++];
+    b.position = position;
+    b.direction = glm::vec3(0.0f, 0.0f, 1.0f);
+    b.normal = glm::vec3(0.0f, 0.0f, 1.0f);
+    b.spawnTick = gGlobalTick;
+    b.totalTicks = cfg.lifetimeTicks;
+    b.alive = true;
+    b.dashBurst = false;
+    b.dashSpeed = 0.0f;
+    b.burstType = BurstType::HealthGained;
+}
+
 void HitEffects::spawnLandingBurst(const glm::vec3& position, const glm::vec3& direction, float speed)
 {
     if (!gConfig.enabled || !gConfig.landingBurst.enabled || !gDashFXEnabled) return;

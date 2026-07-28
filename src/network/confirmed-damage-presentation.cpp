@@ -14,6 +14,8 @@
 #include "config/weapon-hitfx-config.h"
 #include "network/multiplayer-context.h"
 #include "network/network-weapons.h"
+#include "effects/hit-effects.h"
+#include "terminal/terminal-state.h"
 #include "ui/hitmarker.h"
 
 #include <cstdio>
@@ -128,10 +130,17 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
                                         hit.damage, hit.attacker, hit.victim, true);
     }
 
-    printf("[NET DAMAGE PRESENT] eventId=%u attacker=%u target=%u damage=%d weapon=%u hitmarker=%d sound=%d damageNumber=%d\n",
+    // On kill, play health-gained effect at the attacker's position
+    if (event.killed && gpPlayer)
+    {
+        HitEffects::spawnHealthGainedEffect(gpPlayer->pos);
+        printf("[NET KILL HEAL] attacker=%u health restored\n", event.attackerPlayerId);
+    }
+
+    printf("[NET DAMAGE PRESENT] eventId=%u attacker=%u target=%u damage=%d weapon=%u hitmarker=%d sound=%d damageNumber=%d killed=%d\n",
            event.eventId, event.attackerPlayerId, event.targetPlayerId,
            event.damage, (unsigned)event.weapon, (int)presentation.hitmarker,
-           (int)presentation.hitSound, (int)presentation.damageNumber);
+           (int)presentation.hitSound, (int)presentation.damageNumber, (int)event.killed);
     return true;
 }
 

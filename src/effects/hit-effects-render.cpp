@@ -91,6 +91,7 @@ static const MovementDashBurstConfig& burstConfigForType(BurstType type) {
         case BurstType::AirJump: return gConfig.airJumpBurst;
         case BurstType::Walk: return gConfig.walkBurst;
         case BurstType::Landing: return gConfig.landingBurst;
+        case BurstType::HealthGained: return gConfig.healthGained;
         default: return gConfig.movementDashBurst;
     }
 }
@@ -157,7 +158,8 @@ void HitEffects::renderHitBursts(const Camera& camera)
         int age = gGlobalTick - b.spawnTick;
 
         if (b.dashBurst || b.burstType == BurstType::GroundJump || b.burstType == BurstType::AirJump
-            || b.burstType == BurstType::Walk || b.burstType == BurstType::Landing) {
+            || b.burstType == BurstType::Walk || b.burstType == BurstType::Landing
+            || b.burstType == BurstType::HealthGained) {
             renderDirectionalBurst(b, age, camera);
         } else {
             renderSphereTimeline(b, age, camera);

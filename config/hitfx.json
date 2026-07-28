@@ -238,5 +238,21 @@
         "colorStart": [0.6, 0.6, 0.6],
         "colorEnd": [0.2, 0.2, 0.2],
         "stretchAxis": "up"
+    },
+
+    "healthGained": {
+        "enabled": true,
+        "lifetimeTicks": 60,
+        "lengthStart": 2.0,
+        "lengthEnd": 4.0,
+        "radiusStart": 0.4,
+        "radiusEnd": 0.1,
+        "alphaStart": 0.5,
+        "alphaEnd": 0.0,
+        "brightnessStart": 2.0,
+        "brightnessEnd": 0.0,
+        "colorStart": [0.0, 1.0, 0.0],
+        "colorEnd": [0.0, 0.6, 0.0],
+        "stretchAxis": "world_z"
     }
 }

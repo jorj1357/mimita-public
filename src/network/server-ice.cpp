@@ -135,13 +135,31 @@ bool initServerIceListener(ListenServerState& state)
 
 void tickIceCoordinator(ListenServerState& state)
 {
-    if (!state.iceListenerAgent)
-        return;
+    static uint64_t s_lastDebugLog = 0;
+    static uint64_t s_lastEntryLog = 0;
+    uint64_t nowDbg = nowMs();
 
-    uint64_t now = nowMs();
-    if (now - state.lastIceCoordinatorPollMs < 500)
+    // Unconditional heartbeat — proves function is reached at runtime
+    if (nowDbg - s_lastEntryLog >= 10000) {
+        printf("[TICK ICE ENTERED] agent=%d serverCode=%s\n",
+               (int)(state.iceListenerAgent != nullptr), state.serverCode.c_str());
+        fflush(stdout);
+        s_lastEntryLog = nowDbg;
+    }
+
+    if (!state.iceListenerAgent)
+    {
+        if (nowDbg - s_lastDebugLog >= 5000) {
+            printf("[ICE COORD DEBUG] no listener agent; serverCode=%s\n", state.serverCode.c_str());
+            fflush(stdout);
+            s_lastDebugLog = nowDbg;
+        }
         return;
-    state.lastIceCoordinatorPollMs = now;
+    }
+
+    if (nowDbg - state.lastIceCoordinatorPollMs < 500)
+        return;
+    state.lastIceCoordinatorPollMs = nowDbg;
 
     // Non-blocking: poll coordinator for pending client requests
     auto pending = coordinatorIceHostPoll(state.serverCode, state.iceSessionId);
@@ -161,8 +179,8 @@ void tickIceCoordinator(ListenServerState& state)
         peer->requestId = pending.requestId;
         peer->clientSessionId = pending.clientSessionId;
         peer->clientIceDescription = pending.clientIceDescription;
-        peer->startedAtMs = now;
-        peer->lastEventMs = now;
+        peer->startedAtMs = nowDbg;
+        peer->lastEventMs = nowDbg;
 
         printf("[ICE HOST REQUEST] req=%s client=%s creating peer agent...\n",
                pending.requestId.substr(0, 12).c_str(),
@@ -333,8 +351,24 @@ void tickServerIceTransports(SOCKET sock,
             }
         }
 
+        // Limit processed packets per poll to prevent flooding from
+        // a single transport (e.g. stale ICE packets after disconnect).
+        constexpr size_t kMaxPacketsPerPoll = 64;
+        size_t packetsProcessed = 0;
         for (const ReceivedPacket& rp : pkts)
         {
+            if (packetsProcessed >= kMaxPacketsPerPoll)
+            {
+                static uint64_t lastDropLog = 0;
+                uint64_t nowDrop = nowMs();
+                if (nowDrop - lastDropLog >= 1000)
+                {
+                    printf("[ICE DROP] playerId=%u dropped=%zu total=%zu\n",
+                           player.id, pkts.size() - kMaxPacketsPerPoll, pkts.size());
+                    lastDropLog = nowDrop;
+                }
+                break;
+            }
             TransportReceiveEvent event{};
             event.connectionId = player.connectionId;
             event.remoteEndpoint = player.addr;
@@ -346,6 +380,7 @@ void tickServerIceTransports(SOCKET sock,
                                 nextPlayerId, nextEntityId, nextProjectileId,
                                 world, tick, totalPacketsIn, totalPacketsOut,
                                 stats, retransmitState, &player, nullptr);
+            ++packetsProcessed;
         }
     }
 

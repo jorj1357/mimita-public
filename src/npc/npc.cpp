@@ -260,8 +260,9 @@ InputState buildInputState(Npc& npc, glm::vec3 moveDir, bool jump, bool dash, bo
     }
     else if (npc.sensors.hasTarget)
     {
-        glm::vec3 toTarget = npc.sensors.predictedTarget - npc.body.pos;
-        desiredFwd = safePlanarNormal(toTarget, {1.0f, 0.0f, 0.0f});
+        glm::vec3 npcEye = npc.body.pos + glm::vec3(0.0f, 0.0f, 0.8f);
+        glm::vec3 aimDir = NpcCombat::aimAtTarget(npc, npcEye, npc.sensors.targetPos, npc.sensors.targetVel);
+        desiredFwd = safePlanarNormal(aimDir, {1.0f, 0.0f, 0.0f});
     }
     else
     {

@@ -177,6 +177,7 @@ void handleAttackRequest(
     const char* buffer,
     int bytes,
     std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs,
     std::unordered_map<uint32_t, ServerProjectile>& projectiles,
     uint32_t& nextProjectileId,
     const HeadlessWorld& world,
@@ -346,7 +347,7 @@ void handleAttackRequest(
             worldBlockDistance = glm::length(worldHit - origin);
 
         std::vector<WeaponExecution::PlayerTarget> targets;
-        targets.reserve(players.size());
+        targets.reserve(players.size() + npcs.size());
         for (const auto& targetEntry : players)
         {
             const ServerPlayer& target = targetEntry.second;
@@ -360,6 +361,21 @@ void handleAttackRequest(
             targetDesc.radius = PLAYER_RADIUS;
             targetDesc.height = PLAYER_HEIGHT;
             targetDesc.dead = target.dead;
+            targets.push_back(targetDesc);
+        }
+        // Also include NPCs as trace targets
+        for (const auto& npcEntry : npcs)
+        {
+            const ServerNpc& npc = npcEntry.second;
+            if (npc.health <= 0)
+                continue;
+            WeaponExecution::PlayerTarget targetDesc;
+            targetDesc.playerId = npc.entityId; // use entityId as pseudo-playerId
+            targetDesc.spawnGeneration = 0;
+            targetDesc.position = npc.pos;
+            targetDesc.radius = PLAYER_RADIUS;
+            targetDesc.height = PLAYER_HEIGHT;
+            targetDesc.dead = false;
             targets.push_back(targetDesc);
         }
 
@@ -383,6 +399,30 @@ void handleAttackRequest(
         const uint8_t netWeapon = networkWeaponTypeForDefinition(*def);
         for (const WeaponExecution::HitscanDamageAggregate& aggregate : trace.aggregates)
         {
+            // Check if target is an NPC (NPC entityIds start at 1000+)
+            auto npcIt = npcs.find(aggregate.targetPlayerId);
+            if (npcIt != npcs.end())
+            {
+                ServerNpc& npcTarget = npcIt->second;
+                npcTarget.health -= aggregate.damage;
+                if (npcTarget.health <= 0)
+                {
+                    npcTarget.health = 0;
+                    printf("%s [SERVER NPC KILL] shooter=%u npcId=%u name=\"%s\"\n",
+                           serverTimestamp(), shooter.id,
+                           npcTarget.entityId, npcTarget.name.c_str());
+                    // Award kill credit to shooter and heal to full
+                    auto attacker = players.find(shooter.id);
+                    if (attacker != players.end())
+                    {
+                        attacker->second.kills += 1;
+                        attacker->second.health = 100;
+                    }
+                    // Remove NPC
+                    npcs.erase(npcIt);
+                }
+                continue;
+            }
             auto targetIt = players.find(aggregate.targetPlayerId);
             if (targetIt == players.end() ||
                 targetIt->second.spawnGeneration != aggregate.targetSpawnGeneration)
