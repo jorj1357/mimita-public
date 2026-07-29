@@ -1,4 +1,4 @@
-// MimitaLauncher v2 — GitHub Release bootstrap, full installer download
+// MimitaLauncher v2 — Self-extracting, GitHub Release bootstrap
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -8,6 +8,7 @@
 #include <dbghelp.h>
 #include <cstdio>
 #include <cstdlib>
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <fstream>
@@ -16,6 +17,8 @@
 #pragma comment(lib, "dbghelp.lib")
 
 namespace {
+
+const char* PAK_MAGIC = "MIMIPAK!";
 
 std::wstring widen(const std::string& s)
 {
@@ -42,6 +45,13 @@ std::string appExeName()
     std::string path = buf;
     auto p = path.find_last_of("\\/");
     return (p != std::string::npos) ? path.substr(p + 1) : path;
+}
+
+std::string selfPath()
+{
+    char buf[MAX_PATH];
+    GetModuleFileNameA(nullptr, buf, MAX_PATH);
+    return buf;
 }
 
 std::string readFile(const std::string& path)
@@ -231,33 +241,47 @@ bool sha256File(const std::string& path, std::string& hex)
     return true;
 }
 
+// ── ZIP extraction via PowerShell Expand-Archive ─────────────────────────
+bool extractZip(const std::string& zipPath, const std::string& destDir)
+{
+    CreateDirectoryA(destDir.c_str(), nullptr);
+    
+    // Use PowerShell's built-in Expand-Archive (available on Win10+)
+    std::string cmd = "powershell -Command \"Expand-Archive -Path '"
+        + zipPath + "' -DestinationPath '" + destDir + "' -Force\"";
+    
+    STARTUPINFOA si = { sizeof(si) };
+    PROCESS_INFORMATION pi;
+    if (CreateProcessA(nullptr, &cmd[0], nullptr, nullptr, FALSE,
+        CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+        WaitForSingleObject(pi.hProcess, INFINITE);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        return true;
+    }
+    return false;
+}
+
 // ── GitHub API: get latest release info ───────────────────────────────────
-// Returns version string (e.g. "2.0.0"), installer download URL, and SHA-256
-// from https://api.github.com/repos/jorj1357/mimita-public/releases/latest
-bool getGitHubLatestRelease(std::string& outVersion, std::string& outInstallerUrl, std::string& outSha256)
+// Returns version, ZIP download URL, ZIP SHA-256 from release body
+bool getGitHubReleaseInfo(std::string& outVersion, std::string& outZipUrl, std::string& outSha256)
 {
     std::string json;
     if (!httpGETWithHeaders("https://api.github.com/repos/jorj1357/mimita-public/releases/latest",
                             json, L"Accept: application/vnd.github+json\r\n"))
         return false;
 
-    // Extract tag_name
     std::string tag = extractJsonStr(json, "tag_name");
     if (tag.empty()) return false;
-
-    // Convert "v2.0.0" → "2.0.0"
     if (tag.size() > 1 && tag[0] == 'v') tag = tag.substr(1);
     outVersion = tag;
 
-    // Find the MimitaSetup asset in the assets array
-    // Scan for "name":"MimitaSetup-..." and get its browser_download_url
-    std::string searchKey = "\"name\":\"MimitaSetup-";
+    // Find the mimita-game.zip asset
+    std::string searchKey = "\"name\":\"mimita-game.zip\"";
     auto assetPos = json.find(searchKey);
     if (assetPos == std::string::npos) return false;
 
-    // Find browser_download_url after this asset entry
     auto urlKey = json.rfind("\"browser_download_url\"", assetPos);
-    // If not found before this asset, search forward
     if (urlKey == std::string::npos || urlKey > json.find('}', assetPos))
         urlKey = json.find("\"browser_download_url\"", assetPos);
     if (urlKey == std::string::npos) return false;
@@ -266,10 +290,8 @@ bool getGitHubLatestRelease(std::string& outVersion, std::string& outInstallerUr
     if (us == std::string::npos) return false;
     auto ue = json.find('"', us + 1);
     if (ue == std::string::npos) return false;
-    outInstallerUrl = json.substr(us + 1, ue - us - 1);
+    outZipUrl = json.substr(us + 1, ue - us - 1);
 
-    // Extract SHA-256 from the release body
-    // Look for "SHA-256:" followed by backtick-delimited hash in body field
     std::string body = extractJsonStr(json, "body");
     if (!body.empty()) {
         auto sh = body.find("SHA-256:");
@@ -279,7 +301,6 @@ bool getGitHubLatestRelease(std::string& outVersion, std::string& outInstallerUr
                 auto be = body.find('`', bt + 1);
                 if (be != std::string::npos) {
                     std::string hash = body.substr(bt + 1, be - bt - 1);
-                    // Validate it looks like a SHA-256 hex string
                     if (hash.size() == 64) {
                         bool valid = true;
                         for (char c : hash) {
@@ -292,7 +313,6 @@ bool getGitHubLatestRelease(std::string& outVersion, std::string& outInstallerUr
             }
         }
     }
-
     return true;
 }
 
@@ -324,7 +344,7 @@ void writeMinidump(DWORD pid, const std::string& path)
     CloseHandle(p);
 }
 
-bool spawnSelfUpdate(const std::string& installerPath, const std::string& dir)
+bool spawnSelfUpdate(const std::string& newLauncherPath, const std::string& dir)
 {
     char td[MAX_PATH]; GetTempPathA(MAX_PATH, td);
     std::string bp = std::string(td) + "mimita-update.cmd";
@@ -332,8 +352,8 @@ bool spawnSelfUpdate(const std::string& installerPath, const std::string& dir)
     std::string batch =
         "@echo off\r\n"
         "ping -n 3 127.0.0.1 > nul\r\n"
-        "\"" + installerPath + "\" /VERYSILENT /NORESTART /DIR=\"" + dir + "\"\r\n"
-        "del \"" + installerPath + "\"\r\n"
+        "copy /Y \"" + newLauncherPath + "\" \"" + dir + "\\" + en + "\"\r\n"
+        "del \"" + newLauncherPath + "\"\r\n"
         "start \"\" \"" + dir + "\\" + en + "\"\r\n"
         "del \"%~f0\"\r\n";
     HANDLE h = CreateFileA(bp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -389,7 +409,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR lpCmdLine, int)
     std::string gameExe = dir + "\\mimita.exe";
     bool gameExists = GetFileAttributesA(gameExe.c_str()) != INVALID_FILE_ATTRIBUTES;
 
-    // Clean up old files
     DeleteFileA((dir + "\\MimitaLauncher.old.exe").c_str());
 
     // ── Handle mimita:// protocol ─────────────────────────────────────────────
@@ -438,74 +457,47 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR lpCmdLine, int)
     }
 
     // ── Check GitHub for latest release ───────────────────────────────────────
-    std::string latestVer, installerUrl, installerSha256;
-    bool gotLatest = getGitHubLatestRelease(latestVer, installerUrl, installerSha256);
+    std::string latestVer, zipUrl, zipSha256;
+    bool gotLatest = getGitHubReleaseInfo(latestVer, zipUrl, zipSha256);
 
-    // ── If game needs update or doesn't exist, download and run installer ─────
-    bool needsInstall = !gameExists || (gotLatest && latestVer != localVer);
+    // ── If game needs install or update, download ZIP and extract ─────────────
+    bool needsUpdate = !gameExists || (gotLatest && latestVer != localVer);
 
-    if (needsInstall)
+    if (needsUpdate && gotLatest)
     {
-        if (!gotLatest)
-        {
-            // GitHub unreachable and no game — can't bootstrap
-            if (!gameExists) {
-                MessageBoxA(nullptr,
-                    "Could not connect to GitHub to download Mimita.\n"
-                    "Check your internet connection and try again.",
-                    "Mimita Launcher", MB_OK | MB_ICONERROR);
-                return 1;
-            }
-            // GitHub unreachable but game exists — launch it anyway
-        }
-        else
-        {
-            // Download installer from GitHub
-            char td[MAX_PATH]; GetTempPathA(MAX_PATH, td);
-            std::string installerPath = std::string(td) + "MimitaSetup-" + latestVer + ".exe";
+        char td[MAX_PATH]; GetTempPathA(MAX_PATH, td);
+        std::string zipPath = std::string(td) + "mimita-game-" + latestVer + ".zip";
 
-            if (downloadFileTo(installerUrl, installerPath, 0))
-            {
-                // Verify SHA-256 if available
-                bool hashOk = true;
-                if (!installerSha256.empty()) {
-                    std::string dlHash;
-                    if (sha256File(installerPath, dlHash) && dlHash == installerSha256) {
-                        // Hash matches
-                    } else {
-                        hashOk = false;
-                    }
-                }
-
-                if (hashOk) {
-                    if (spawnSelfUpdate(installerPath, dir)) {
-                        Sleep(500);
-                        // The batch script re-launches us after install
-                        return 0;
-                    }
+        if (downloadFileTo(zipUrl, zipPath, 0))
+        {
+            bool hashOk = true;
+            if (!zipSha256.empty()) {
+                std::string dlHash;
+                if (sha256File(zipPath, dlHash) && dlHash == zipSha256) {
+                    // Hash matches
+                } else {
+                    hashOk = false;
                 }
             }
 
-            // Download or hash verify failed — fall back to launching existing game
-            if (!gameExists) {
-                MessageBoxA(nullptr,
-                    "Failed to download or verify the Mimita installer.\n"
-                    "Try again or download manually from:\n"
-                    "https://github.com/jorj1357/mimita-public/releases",
-                    "Mimita Launcher", MB_OK | MB_ICONERROR);
-                return 1;
+            if (hashOk) {
+                if (extractZip(zipPath, dir)) {
+                    writeFile(dir + "\\version.txt", latestVer);
+                    DeleteFileA(zipPath.c_str());
+                    gameExists = GetFileAttributesA(gameExe.c_str()) != INVALID_FILE_ATTRIBUTES;
+                }
             }
         }
     }
 
     // ── Launch game ──────────────────────────────────────────────────────────
     if (!gameExists) {
-        MessageBoxA(nullptr, "Mimita is not installed. The launcher will install it when online.",
-                    "Mimita Launcher", MB_OK | MB_ICONINFORMATION);
+        MessageBoxA(nullptr,
+            "Mimita is not installed. The launcher will install it when online.",
+            "Mimita Launcher", MB_OK | MB_ICONINFORMATION);
         return 1;
     }
 
-    // Check for stored session token
     std::string sessionArg;
     {
         std::string authJson = readFile(dir + "\\config\\auth-token.json");

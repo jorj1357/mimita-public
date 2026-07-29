@@ -1,5 +1,5 @@
 @echo off
-REM Build everything: version -> game -> pack-assets -> launcher -> manifest -> installer
+REM Build everything: version -> game -> launcher -> bundle -> deploy to website
 REM Usage: build-all.bat [release]
 
 set BUILD_MODE=%1
@@ -39,6 +39,17 @@ if %ERRORLEVEL% neq 0 (
 
 echo.
 echo ==========================================
+echo Creating mimita-game.zip for launcher download...
+echo ==========================================
+
+python devscripts\bundle-game.py
+if %ERRORLEVEL% neq 0 (
+    echo [FAIL] Bundle failed
+    exit /b 1
+)
+
+echo.
+echo ==========================================
 echo Generating update manifest...
 echo ==========================================
 
@@ -50,31 +61,13 @@ if %ERRORLEVEL% neq 0 (
 
 echo.
 echo ==========================================
-echo Building Installer...
-echo ==========================================
-
-set ISCC="%LOCALAPPDATA%\Programs\Inno Setup 6\iscc.exe"
-if not exist %ISCC% (
-    echo [FAIL] Inno Setup not found at %ISCC%
-    echo Install Inno Setup 6 from https://jrsoftware.org/isinfo.php
-    exit /b 1
-)
-
-%ISCC% installer\setup.iss
-if %ERRORLEVEL% neq 0 (
-    echo [FAIL] Installer build failed
-    exit /b 1
-)
-
-echo.
-echo ==========================================
 echo Copying files to website directory...
 echo ==========================================
 
 set /p VER=<version.txt
 
 copy /Y manifests\%VER%.json website\server\manifests\%VER%.json
-copy /Y installer\MimitaSetup-%VER%.exe website\server\downloads\MimitaSetup-%VER%.exe
+copy /Y MimitaLauncher.exe website\server\downloads\MimitaLauncher.exe
 
 echo.
 echo ==========================================
@@ -82,7 +75,7 @@ echo BUILD COMPLETE
 echo ==========================================
 echo Version: %VER%
 echo Game: mimita.exe
-echo Launcher: MimitaLauncher.exe
-echo Installer: installer\MimitaSetup-%VER%.exe
-echo Website: website\server\downloads\MimitaSetup-%VER%.exe
+echo Launcher: MimitaLauncher.exe (self-contained, ~45 MB)
+echo Manifest: manifests\%VER%.json
+echo Website: website\server\downloads\MimitaLauncher.exe
 echo.
