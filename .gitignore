@@ -95,6 +95,10 @@ Desktop.ini
 *.bak
 *.tmp
 
+# ── Game distribution archives ────────────────────────────────────────────────
+mimita-game.zip
+*.pak
+
 # ── Aider ────────────────────────────────────────────────────────────────────
 .aider*
 
