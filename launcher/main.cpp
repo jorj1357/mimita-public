@@ -242,14 +242,11 @@ bool sha256File(const std::string& path, std::string& hex)
 }
 
 // ── ZIP extraction via PowerShell Expand-Archive ─────────────────────────
-bool extractZip(const std::string& zipPath, const std::string& destDir)
+bool extractZipFile(const std::string& zipPath, const std::string& destDir)
 {
     CreateDirectoryA(destDir.c_str(), nullptr);
-    
-    // Use PowerShell's built-in Expand-Archive (available on Win10+)
     std::string cmd = "powershell -Command \"Expand-Archive -Path '"
         + zipPath + "' -DestinationPath '" + destDir + "' -Force\"";
-    
     STARTUPINFOA si = { sizeof(si) };
     PROCESS_INFORMATION pi;
     if (CreateProcessA(nullptr, &cmd[0], nullptr, nullptr, FALSE,
@@ -260,6 +257,79 @@ bool extractZip(const std::string& zipPath, const std::string& destDir)
         return true;
     }
     return false;
+}
+
+// ── Embedded ZIP extraction ──────────────────────────────────────────────
+// Layout: [EXE][ZIP data][ZIP size:4][MIMIZIP! magic:8]
+// The last 12 bytes are always [zip_size][MIMIZIP!]
+const char* ZIP_MAGIC = "MIMIZIP!";
+
+bool hasEmbeddedZip()
+{
+    HANDLE f = CreateFileA(selfPath().c_str(), GENERIC_READ, FILE_SHARE_READ,
+        nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return false;
+    SetFilePointer(f, -(LONG)8, nullptr, FILE_END); // last 8 bytes = magic
+    char magic[8];
+    DWORD rd = 0;
+    bool found = ReadFile(f, magic, 8, &rd, nullptr) && rd == 8 && memcmp(magic, ZIP_MAGIC, 8) == 0;
+    CloseHandle(f);
+    return found;
+}
+
+bool extractEmbeddedZip(const std::string& destDir)
+{
+    CreateDirectoryA(destDir.c_str(), nullptr);
+
+    HANDLE f = CreateFileA(selfPath().c_str(), GENERIC_READ, FILE_SHARE_READ,
+        nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return false;
+
+    // Read magic from last 8 bytes
+    LARGE_INTEGER li;
+    li.QuadPart = -(LONGLONG)8;
+    SetFilePointerEx(f, li, nullptr, FILE_END);
+    char magic[8];
+    DWORD rd = 0;
+    if (!ReadFile(f, magic, 8, &rd, nullptr) || rd != 8 || memcmp(magic, ZIP_MAGIC, 8) != 0) {
+        CloseHandle(f); return false;
+    }
+
+    // Read ZIP size from 4 bytes before magic
+    li.QuadPart = -(LONGLONG)(8 + 4);
+    SetFilePointerEx(f, li, nullptr, FILE_END);
+    uint32_t zipSize = 0;
+    if (!ReadFile(f, &zipSize, 4, &rd, nullptr) || rd != 4 || zipSize == 0) {
+        CloseHandle(f); return false;
+    }
+
+    // Seek to start of ZIP data (zip_size + 12 bytes from end)
+    li.QuadPart = -(LONGLONG)(zipSize + (uint64_t)12);
+    SetFilePointerEx(f, li, nullptr, FILE_END);
+
+    // Write ZIP to temp file
+    char td[MAX_PATH]; GetTempPathA(MAX_PATH, td);
+    std::string tmpZip = std::string(td) + "mimita-extract.zip";
+    HANDLE wf = CreateFileA(tmpZip.c_str(), GENERIC_WRITE, 0, nullptr,
+        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (wf == INVALID_HANDLE_VALUE) { CloseHandle(f); return false; }
+
+    char buf[65536];
+    uint32_t remaining = zipSize;
+    while (remaining > 0) {
+        DWORD toRead = (remaining > sizeof(buf)) ? (DWORD)sizeof(buf) : remaining;
+        DWORD r = 0;
+        if (!ReadFile(f, buf, toRead, &r, nullptr) || r == 0) break;
+        DWORD wr = 0;
+        WriteFile(wf, buf, r, &wr, nullptr);
+        remaining -= r;
+    }
+    CloseHandle(wf);
+    CloseHandle(f);
+
+    bool success = extractZipFile(tmpZip, destDir);
+    DeleteFileA(tmpZip.c_str());
+    return success;
 }
 
 // ── GitHub API: get latest release info ───────────────────────────────────
@@ -456,14 +526,24 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR lpCmdLine, int)
         return 0;
     }
 
-    // ── Check GitHub for latest release ───────────────────────────────────────
+    // ── Self-extract on first run (embedded ZIP) ──────────────────────────────
+    if (!gameExists && hasEmbeddedZip())
+    {
+        if (extractEmbeddedZip(dir))
+        {
+            // Write version from our own version tag (read from GitHub or fallback)
+            // We know our tag from self knowledge, or just write a placeholder
+            // The launcher's own version.txt is part of the extraction
+            gameExists = GetFileAttributesA(gameExe.c_str()) != INVALID_FILE_ATTRIBUTES;
+        }
+    }
+
+    // ── Check GitHub for updates ──────────────────────────────────────────────
     std::string latestVer, zipUrl, zipSha256;
     bool gotLatest = getGitHubReleaseInfo(latestVer, zipUrl, zipSha256);
 
-    // ── If game needs install or update, download ZIP and extract ─────────────
-    bool needsUpdate = !gameExists || (gotLatest && latestVer != localVer);
-
-    if (needsUpdate && gotLatest)
+    // ── If newer version on GitHub, download and self-update ──────────────────
+    if (gotLatest && gameExists && latestVer != localVer)
     {
         char td[MAX_PATH]; GetTempPathA(MAX_PATH, td);
         std::string zipPath = std::string(td) + "mimita-game-" + latestVer + ".zip";
@@ -481,10 +561,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR lpCmdLine, int)
             }
 
             if (hashOk) {
-                if (extractZip(zipPath, dir)) {
+                if (extractZipFile(zipPath, dir)) {
                     writeFile(dir + "\\version.txt", latestVer);
                     DeleteFileA(zipPath.c_str());
-                    gameExists = GetFileAttributesA(gameExe.c_str()) != INVALID_FILE_ATTRIBUTES;
                 }
             }
         }
