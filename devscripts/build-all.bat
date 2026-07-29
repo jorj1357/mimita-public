@@ -1,6 +1,9 @@
 @echo off
-REM Build everything: version -> game -> launcher -> installer
+REM Build everything: version -> game -> pack-assets -> launcher -> manifest -> installer
 REM Usage: build-all.bat [release]
+
+set BUILD_MODE=%1
+if "%BUILD_MODE%"=="" set BUILD_MODE=release
 
 echo ==========================================
 echo Generating version files...
@@ -14,12 +17,23 @@ if %ERRORLEVEL% neq 0 (
 
 echo.
 echo ==========================================
-echo Building Mimita Game...
+echo Building Mimita Game (%BUILD_MODE%)...
 echo ==========================================
 
-python build_agent.py
+python build_agent.py %BUILD_MODE%
 if %ERRORLEVEL% neq 0 (
     echo [FAIL] Game build failed
+    exit /b 1
+)
+
+echo.
+echo ==========================================
+echo Packing assets...
+echo ==========================================
+
+python devscripts\pack-assets.py
+if %ERRORLEVEL% neq 0 (
+    echo [FAIL] Asset packing failed
     exit /b 1
 )
 

@@ -1025,6 +1025,110 @@ If overseer.py cannot run (e.g., Python not available), explain exactly why in t
 
 overseer.py is currently broken and needs to be fixed. Until it is repaired, treat it as a warning, not a blocker. Do not let overseer failure prevent task completion. Focus on building and verifying via build_agent.py instead.
 
+## VPS and Production Deployment Rules
+
+The production VPS (107.191.48.226) must not be edited directly.
+
+All application changes must follow this path:
+1. Make the change in the local repository.
+2. Test the change locally.
+3. Commit it to Git.
+4. Push it to GitHub.
+5. Deploy by pulling the committed revision on the VPS.
+6. Restart or reload only the affected service.
+7. Verify health and logs after deployment.
+
+### Known Production Paths and Services
+
+Verified 2026-07-29 via read-only SSH audit:
+
+| Path on VPS | Service | Port | Git Tracked |
+|---|---|---|---|
+| `/root/mimita-site` (Git clone) | Website API (Node.js) | 3002 | Yes — `avatar-editor-6-27-2026` branch |
+| `/root/mimita-coordinator/server.js` (standalone) | ICE Coordinator (Node.js) | 3001 | **Moved to `coordinator-server/server.js` in repo** |
+| `/etc/turnserver.conf` | coTURN STUN/TURN | 3478 | No — config provided in repo |
+| nginx (system service) | Reverse proxy | 80 / 443 | Config not yet in repo |
+
+### Approved Deployment Workflow
+
+For the **coordinator** (once VPS migrates to Git clone):
+```bash
+ssh root@107.191.48.226 "cd /root/mimita-coordinator && git pull && pm2 restart mimita-coordinator"
+```
+
+For the **website API** (already Git-tracked):
+```bash
+ssh root@107.191.48.226 "cd /root/mimita-site && git pull && pm2 restart mimita-api"
+```
+
+Current state: the website at `/root/mimita-site` is on branch `avatar-editor-6-27-2026` (commit `12e8d82`). The coordinator at `/root/mimita-coordinator` is a standalone directory — it must be migrated to a Git clone for reproducible deployment.
+
+### Allowed Direct VPS Actions
+
+- Read logs (`journalctl -u <service> -n 100`, `pm2 logs <name> --lines 100 --nostream`, `tail -n 100 <path>`)
+- Inspect service status (`systemctl status <name>`, `pm2 status`, `pm2 describe <name>`)
+- Inspect ports and process state (`ss -lntup`, `ps aux | grep <name>`)
+- Check Git state (`git status --short`, `git log -5 --oneline`, `git rev-parse HEAD`)
+- Verify environment-variable presence WITHOUT printing values (`echo NAME:${VAR:+SET}:${VAR:-UNSET}`)
+- Pull an already reviewed and committed revision
+- Restart or reload a service as part of an intentional deployment
+- Roll back to a known committed revision (`git checkout <sha>`)
+
+### Forbidden Direct VPS Actions
+
+- Editing production source or configuration files with an editor (`vim`, `nano`, `vi`)
+- Using `sed -i`, `echo ... > file`, `cat > file`, or any file redirection to patch production
+- Creating changes that exist only on the VPS (untracked fixes or configs)
+- Committing secrets or printing secret values in logs, reports, or AGENTS.md
+- Force-resetting or force-pushing without explicit user approval
+- Treating the VPS as the canonical copy of the project
+- Installing or removing system packages
+
+If a production-only fix appears necessary, first implement it in the repository, commit it, and deploy it through Git. Do not patch in place on the VPS.
+
+### Post-Deployment Health Checks
+
+After any deployment:
+
+```bash
+# Website API
+curl -f http://localhost:3002/api/game/version
+
+# Coordinator
+curl -s -X POST http://localhost:3001/api/coordinator/ice/lookup \
+  -H 'Content-Type: application/json' -d '{"code":"test"}' | grep -q exists
+
+# TURN
+ss -lntup | grep 3478
+
+# PM2 status
+pm2 status | grep -E 'mimita|coordinator|api'
+
+# Recent errors
+pm2 logs mimita-coordinator --lines 20 --nostream 2>/dev/null
+```
+
+### Secret Protection
+
+Never put IP credentials, passwords, tokens, private keys, session cookies, database connection strings, or secret environment values in AGENTS.md, commit messages, or reports. When verifying environment variables on the VPS, use the `:${VAR:+SET}:${VAR:-UNSET}` pattern to confirm presence without leaking the value.
+
+### Coordinator Source
+
+Production coordinator source is at `coordinator-server/server.js` in this repository. It is a zero-dependency Node.js HTTP server. Run it with:
+
+```bash
+# Set TURN shared secret (must match coturn's static-auth-secret)
+export MIMITA_TURN_SECRET="..."
+
+# Start
+node coordinator-server/server.js
+
+# Or with PM2
+pm2 start coordinator-server/server.js --name mimita-coordinator --update-env
+```
+
+The coordinator requires only `MIMITA_TURN_SECRET` in the environment. Without it, TURN credential issuance is disabled (direct connections still work). No npm install is needed — it uses only built-in Node.js modules (`http`, `crypto`, `fs`, `path`).
+
 ## Extending
 
 To add a new checker, create a new directory under `.opencode/skills/<name>/` with a `checker.py` that:
