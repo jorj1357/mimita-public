@@ -147,8 +147,12 @@ if __name__ == "__main__":
 
     start = datetime.datetime.now()
 
+    build_args = [sys.executable, "build.py", "build-only"]
+    if "release" in sys.argv:
+        build_args.append("release")
+
     result = subprocess.run(
-        [sys.executable, "build.py", "build-only"],
+        build_args,
         capture_output=True,
         text=True,
     )

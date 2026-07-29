@@ -65,7 +65,8 @@ if len(sys.argv) > 1:
     for arg in sys.argv[1:]:
         a = arg.lower()
         if a in ("build-only", "compile-only", "norun", "no-run"):
-            MODE = "debug"
+            if MODE != "release":
+                MODE = "debug"
             RUN_AFTER_BUILD = False
         elif a in ("auto-close", "timeout"):
             AUTO_CLOSE_SECONDS = 5
@@ -78,7 +79,8 @@ if MODE == "release":
     CXX_FLAGS = [
         "-std=c++17",
         "-O2",
-        "-march=native",
+        "-march=x86-64-v2",
+        "-s",
         "-pipe",
         "-MMD",
         "-MP",
@@ -479,12 +481,19 @@ for src_name in juice_sources:
         ]
 
         # Use C flags (no -std=c++17) for libjuice C sources
-        cmd += [
-            "-std=c11",
-            "-O0",
-            "-g",
-            "-pipe",
-        ]
+        if MODE == "release":
+            cmd += [
+                "-std=c11",
+                "-O2",
+                "-pipe",
+            ]
+        else:
+            cmd += [
+                "-std=c11",
+                "-O0",
+                "-g",
+                "-pipe",
+            ]
         cmd += DEFINE_FLAGS
         for f in juice_include_flags:
             cmd.append(f)
