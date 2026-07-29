@@ -28,17 +28,6 @@ if %ERRORLEVEL% neq 0 (
 
 echo.
 echo ==========================================
-echo Packing assets...
-echo ==========================================
-
-python devscripts\pack-assets.py
-if %ERRORLEVEL% neq 0 (
-    echo [FAIL] Asset packing failed
-    exit /b 1
-)
-
-echo.
-echo ==========================================
 echo Building Mimita Launcher...
 echo ==========================================
 

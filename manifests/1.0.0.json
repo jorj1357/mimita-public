@@ -3,13 +3,13 @@
   "files": [
     {
       "path": "mimita.exe",
-      "size": 239281134,
-      "sha256": "099668aba79421c34b845808d165fb2aebb0fbbea3628bbb1adbeed298aaa4cb"
+      "size": 12540058,
+      "sha256": "fea42f5079606834ea5ac3ef7a729b9a75588d10d81a238f9d2bd7bae78eff9a"
     },
     {
       "path": "MimitaLauncher.exe",
-      "size": 1061376,
-      "sha256": "fb91b86d60db3334ce3be650cea9d42c6311ed589218f7c49d6dc0161d814748"
+      "size": 1047040,
+      "sha256": "21936245623a3770dc633f210886019c33ecb65b5866387313ccdfd6a7fad22e"
     },
     {
       "path": "version.txt",
@@ -52,14 +52,609 @@
       "sha256": "99b15ba1f0d62fe89f8793fca88a9566a40f9376b270990a17f290f00cc2a34c"
     },
     {
+      "path": "assets/avatars/debug_faces/avatar.json",
+      "size": 11981,
+      "sha256": "5bc72142c909415a33ca30790a9c86726c150dde8abca6344554f75019789c5e"
+    },
+    {
+      "path": "assets/avatars/debug_faces/back_green.png",
+      "size": 99,
+      "sha256": "51df2ff10cab827662832f4bed115f3840eee15ee5b064f62cc187c980de4114"
+    },
+    {
+      "path": "assets/avatars/debug_faces/bottom_black.png",
+      "size": 100,
+      "sha256": "aa2b873744956cb19e6ff68921cca47460bdd98795903746c3b57d5abb5991a9"
+    },
+    {
+      "path": "assets/avatars/debug_faces/front_red.png",
+      "size": 100,
+      "sha256": "92352ae0133129c4cba2085c5118c1858471329e7440e612bfd1d62e7236876c"
+    },
+    {
+      "path": "assets/avatars/debug_faces/left_blue.png",
+      "size": 99,
+      "sha256": "e5df67a569b79908323d8ea1b5fe510996c51aa27261d01156dd449879a80342"
+    },
+    {
+      "path": "assets/avatars/debug_faces/right_yellow.png",
+      "size": 100,
+      "sha256": "9e69d5ac8118c68c9288299f44e8d8d66872d6906a4bd71980b45314d5e2bee8"
+    },
+    {
+      "path": "assets/avatars/debug_faces/top_white.png",
+      "size": 98,
+      "sha256": "0ef494696c1d5792fde371da1ac80c500774fc1c2ced0dcef89ecbff584e405f"
+    },
+    {
+      "path": "assets/avatars/jorj1357/avatar girl kinda 6 28 2026.txt",
+      "size": 7296,
+      "sha256": "574fba291fab7ef487d2975baefd1ec962a6343b11d5fbc469bdb32a8b561c11"
+    },
+    {
+      "path": "assets/avatars/jorj1357/avatar.backup.json",
+      "size": 13001,
+      "sha256": "111763988b8d270138d50c82f2add7b062544633ab410fe4d0d046eed12ed2b5"
+    },
+    {
+      "path": "assets/avatars/jorj1357/avatar.json",
+      "size": 5733,
+      "sha256": "496e5c441cd5892711f3d6e1a833cc37c0cb71498b25194b26d8e6b5042a4fbe"
+    },
+    {
+      "path": "assets/avatars/jorj1357/clown.jpg",
+      "size": 22700,
+      "sha256": "7f71782c814b4d4ec1c1b26004aeda083ec17fdc4b4079df07b0c4cdc0b4484b"
+    },
+    {
+      "path": "assets/avatars/jorj1357/clown1.png",
+      "size": 156148,
+      "sha256": "d4d9b37ad3c8a370d35322b151c7437f5b28d902761465ac068730b069475c7c"
+    },
+    {
+      "path": "assets/avatars/jorj1357/croptoparmsides.png",
+      "size": 22290,
+      "sha256": "95aaea06cfbeb88d40c71b38d5bbf773d5c15723c7802f4e4913c036036a280c"
+    },
+    {
+      "path": "assets/avatars/jorj1357/croptopback.png",
+      "size": 69330,
+      "sha256": "60e12228dc21fce795732c1e1fe94912763ac3aa2cf2806c8d0d43f1877a5db3"
+    },
+    {
+      "path": "assets/avatars/jorj1357/croptopfront.png",
+      "size": 114254,
+      "sha256": "36e9091f5a10ad4f0225233cf40d1b1e9723c55e093968f9121f4627b6645258"
+    },
+    {
+      "path": "assets/avatars/jorj1357/croptopleftarmfront.png",
+      "size": 25079,
+      "sha256": "1ce36012cf48da3296b41923b90751865703336d8a304cf758481f1a7c5ba8ae"
+    },
+    {
+      "path": "assets/avatars/jorj1357/croptoprightarmfront.png",
+      "size": 24264,
+      "sha256": "b781c9b1dbba77b6c0d458d196efe8bed6405eda39632b75a741c46cd4d0d99f"
+    },
+    {
+      "path": "assets/avatars/jorj1357/croptoptorsoleft.png",
+      "size": 39365,
+      "sha256": "8e06e3a20b881238599a8569cc8fb3dce7733d85f86cf1a480b593bdf87f6c38"
+    },
+    {
+      "path": "assets/avatars/jorj1357/croptoptorsoright.png",
+      "size": 39067,
+      "sha256": "bb2ca924e61f4c43b9065a43a2411ee01649c4d68d3341078ffad1f43837d8b2"
+    },
+    {
+      "path": "assets/avatars/jorj1357/croptoptorsotop.png",
+      "size": 46663,
+      "sha256": "df1bea0e4eb289261e3a99273fc066449ca5a5421cdd880458df54372ade2cdd"
+    },
+    {
+      "path": "assets/avatars/jorj1357/evil1.png",
+      "size": 66499,
+      "sha256": "62564d0ffdfb2974649432e567fb91d4e8fcb0c91aaab807c2834b25427abb5b"
+    },
+    {
+      "path": "assets/avatars/jorj1357/fishnetbottomfoot.png",
+      "size": 12715,
+      "sha256": "55d9ea0abf3929fc9bb87139e99e00324e53e70fd3b6c6acdd43b9e494422f9f"
+    },
+    {
+      "path": "assets/avatars/jorj1357/fishnetfrontleg.png",
+      "size": 80863,
+      "sha256": "500a7f1b0241bef7d6ca068fea8fb3ff1459b4b54c295bb3499f9222f77ead96"
+    },
+    {
+      "path": "assets/avatars/jorj1357/fishnetsidelegs.png",
+      "size": 73576,
+      "sha256": "3398c0f57e936b53e4e11ad94184eb1ed613d629c569622803f1490f8a5e892d"
+    },
+    {
+      "path": "assets/avatars/jorj1357/fishnettopface.png",
+      "size": 19188,
+      "sha256": "46e3bb1990df32b9ef418930722186849989f091f70be57b0b63c234b1a7c952"
+    },
+    {
+      "path": "assets/avatars/jorj1357/girl face 3 6 28 2026.txt",
+      "size": 6649,
+      "sha256": "782be6c4b063470ae8fd947bd53ed06b16dd1c386cdb4d52d22acd69c45dc6e8"
+    },
+    {
+      "path": "assets/avatars/jorj1357/girl face v1.txt",
+      "size": 6579,
+      "sha256": "03aac609ca97021669dbd93adc1e32d294182cf16091277da80896f166ec9ae4"
+    },
+    {
+      "path": "assets/avatars/jorj1357/girlface.png",
+      "size": 78611,
+      "sha256": "492f4a30492d45156c724244f117b4940963771b0c4d01134870bfe804efc678"
+    },
+    {
+      "path": "assets/avatars/jorj1357/girlface2.png",
+      "size": 221267,
+      "sha256": "15e185b1343984df4f09e502a1f8210c1ef7dae02f080617ea3c4500b10ec1b2"
+    },
+    {
+      "path": "assets/avatars/jorj1357/girlface3.png",
+      "size": 257979,
+      "sha256": "cb1b30cfb59a0036ee552cab59dfe315661519a0e6df2882b0d8047422f8dfc4"
+    },
+    {
+      "path": "assets/avatars/jorj1357/girlface4.png",
+      "size": 80331,
+      "sha256": "900f91ee1c833d617f598ac9426a62d9a441540d2178f1ce1a4901d2011f84ee"
+    },
+    {
+      "path": "assets/avatars/jorj1357/hair2.png",
+      "size": 15721,
+      "sha256": "448e2405e262ef79cf309e744e3845a245c56f4e70699a0f3f0a5479b2d45bff"
+    },
+    {
+      "path": "assets/avatars/jorj1357/hairsides.png",
+      "size": 16110,
+      "sha256": "5c4a240235caa25271e46224fbe161c33b8021c3d430dea7a21a57ff2942bb1e"
+    },
+    {
+      "path": "assets/avatars/jorj1357/hey.png",
+      "size": 153467,
+      "sha256": "ebc26cd148dfb99c42dd146456d32157ecd5cbc4fc0c8d58fe1a50ac227cbb67"
+    },
+    {
+      "path": "assets/avatars/jorj1357/jeansbackleft.png",
+      "size": 64319,
+      "sha256": "6ace06a3940d005a93874bb5544842bdb1bc98a86677c9f6bb95901fc7025ad3"
+    },
+    {
+      "path": "assets/avatars/jorj1357/jeansbackright.png",
+      "size": 64319,
+      "sha256": "6ace06a3940d005a93874bb5544842bdb1bc98a86677c9f6bb95901fc7025ad3"
+    },
+    {
+      "path": "assets/avatars/jorj1357/jeansfrontleft.png",
+      "size": 64319,
+      "sha256": "6ace06a3940d005a93874bb5544842bdb1bc98a86677c9f6bb95901fc7025ad3"
+    },
+    {
+      "path": "assets/avatars/jorj1357/jeansfrontright.png",
+      "size": 64319,
+      "sha256": "6ace06a3940d005a93874bb5544842bdb1bc98a86677c9f6bb95901fc7025ad3"
+    },
+    {
+      "path": "assets/avatars/jorj1357/jeansmisc.png",
+      "size": 22623,
+      "sha256": "47fbd14b724b938108b65451a20d8fc190bc7e33141a2848839191bd83020e78"
+    },
+    {
+      "path": "assets/avatars/jorj1357/outfit.json",
+      "size": 1536,
+      "sha256": "00703bfb7a2e5045acd3a84ad7ee9104f1b8a1ef023ae230b4cd18ccc596faab"
+    },
+    {
+      "path": "assets/avatars/jorj1357/suitarm.png",
+      "size": 42555,
+      "sha256": "a46949b160c7e52436c6a2913cf91c0472cc16b0657e662bde7db39252792687"
+    },
+    {
+      "path": "assets/avatars/jorj1357/suitfront.png",
+      "size": 87793,
+      "sha256": "3bf1c8c5ba99b19e41e76afa81f5057a9a8d512c24d750e608fc6f7d32baca22"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/avatar girl kinda 6 28 2026.txt",
+      "size": 7296,
+      "sha256": "574fba291fab7ef487d2975baefd1ec962a6343b11d5fbc469bdb32a8b561c11"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/avatar.backup.json",
+      "size": 1697,
+      "sha256": "14f7b5631b1c8de92358b96c30ee82242ddb0a7a79c7436baea1405d0eb97ef9"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/avatar.json",
+      "size": 1697,
+      "sha256": "755a19475faa493495da8d5797c75e1b40017c7eef13ba213550770de3fc3f96"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/clown.jpg",
+      "size": 22700,
+      "sha256": "7f71782c814b4d4ec1c1b26004aeda083ec17fdc4b4079df07b0c4cdc0b4484b"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/clown1.png",
+      "size": 156148,
+      "sha256": "d4d9b37ad3c8a370d35322b151c7437f5b28d902761465ac068730b069475c7c"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/croptoparmsides.png",
+      "size": 22290,
+      "sha256": "95aaea06cfbeb88d40c71b38d5bbf773d5c15723c7802f4e4913c036036a280c"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/croptopback.png",
+      "size": 69330,
+      "sha256": "60e12228dc21fce795732c1e1fe94912763ac3aa2cf2806c8d0d43f1877a5db3"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/croptopfront.png",
+      "size": 114254,
+      "sha256": "36e9091f5a10ad4f0225233cf40d1b1e9723c55e093968f9121f4627b6645258"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/croptopleftarmfront.png",
+      "size": 25079,
+      "sha256": "1ce36012cf48da3296b41923b90751865703336d8a304cf758481f1a7c5ba8ae"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/croptoprightarmfront.png",
+      "size": 24264,
+      "sha256": "b781c9b1dbba77b6c0d458d196efe8bed6405eda39632b75a741c46cd4d0d99f"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/croptoptorsoleft.png",
+      "size": 39365,
+      "sha256": "8e06e3a20b881238599a8569cc8fb3dce7733d85f86cf1a480b593bdf87f6c38"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/croptoptorsoright.png",
+      "size": 39067,
+      "sha256": "bb2ca924e61f4c43b9065a43a2411ee01649c4d68d3341078ffad1f43837d8b2"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/croptoptorsotop.png",
+      "size": 46663,
+      "sha256": "df1bea0e4eb289261e3a99273fc066449ca5a5421cdd880458df54372ade2cdd"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/evil1.png",
+      "size": 66499,
+      "sha256": "62564d0ffdfb2974649432e567fb91d4e8fcb0c91aaab807c2834b25427abb5b"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/fishnetbottomfoot.png",
+      "size": 12715,
+      "sha256": "55d9ea0abf3929fc9bb87139e99e00324e53e70fd3b6c6acdd43b9e494422f9f"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/fishnetfrontleg.png",
+      "size": 80863,
+      "sha256": "500a7f1b0241bef7d6ca068fea8fb3ff1459b4b54c295bb3499f9222f77ead96"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/fishnetsidelegs.png",
+      "size": 73576,
+      "sha256": "3398c0f57e936b53e4e11ad94184eb1ed613d629c569622803f1490f8a5e892d"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/fishnettopface.png",
+      "size": 19188,
+      "sha256": "46e3bb1990df32b9ef418930722186849989f091f70be57b0b63c234b1a7c952"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/girl face 3 6 28 2026.txt",
+      "size": 6649,
+      "sha256": "782be6c4b063470ae8fd947bd53ed06b16dd1c386cdb4d52d22acd69c45dc6e8"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/girl face v1.txt",
+      "size": 6579,
+      "sha256": "03aac609ca97021669dbd93adc1e32d294182cf16091277da80896f166ec9ae4"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/girlface.png",
+      "size": 78611,
+      "sha256": "492f4a30492d45156c724244f117b4940963771b0c4d01134870bfe804efc678"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/girlface2.png",
+      "size": 221267,
+      "sha256": "15e185b1343984df4f09e502a1f8210c1ef7dae02f080617ea3c4500b10ec1b2"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/girlface3.png",
+      "size": 257979,
+      "sha256": "cb1b30cfb59a0036ee552cab59dfe315661519a0e6df2882b0d8047422f8dfc4"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/girlface4.png",
+      "size": 80331,
+      "sha256": "900f91ee1c833d617f598ac9426a62d9a441540d2178f1ce1a4901d2011f84ee"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/hairsides.png",
+      "size": 16110,
+      "sha256": "5c4a240235caa25271e46224fbe161c33b8021c3d430dea7a21a57ff2942bb1e"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/hey.png",
+      "size": 153467,
+      "sha256": "ebc26cd148dfb99c42dd146456d32157ecd5cbc4fc0c8d58fe1a50ac227cbb67"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/jeansbackleft.png",
+      "size": 64319,
+      "sha256": "6ace06a3940d005a93874bb5544842bdb1bc98a86677c9f6bb95901fc7025ad3"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/jeansbackright.png",
+      "size": 64319,
+      "sha256": "6ace06a3940d005a93874bb5544842bdb1bc98a86677c9f6bb95901fc7025ad3"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/jeansfrontleft.png",
+      "size": 64319,
+      "sha256": "6ace06a3940d005a93874bb5544842bdb1bc98a86677c9f6bb95901fc7025ad3"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/jeansfrontright.png",
+      "size": 64319,
+      "sha256": "6ace06a3940d005a93874bb5544842bdb1bc98a86677c9f6bb95901fc7025ad3"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/jeansmisc.png",
+      "size": 22623,
+      "sha256": "47fbd14b724b938108b65451a20d8fc190bc7e33141a2848839191bd83020e78"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/outfit.json",
+      "size": 1536,
+      "sha256": "00703bfb7a2e5045acd3a84ad7ee9104f1b8a1ef023ae230b4cd18ccc596faab"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/suitarm.png",
+      "size": 42555,
+      "sha256": "a46949b160c7e52436c6a2913cf91c0472cc16b0657e662bde7db39252792687"
+    },
+    {
+      "path": "assets/avatars/jorj1357atlas/suitfront.png",
+      "size": 87793,
+      "sha256": "3bf1c8c5ba99b19e41e76afa81f5057a9a8d512c24d750e608fc6f7d32baca22"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/avatar.json",
+      "size": 5164,
+      "sha256": "e02d67f1fa68db5a1a1601f56f08fe7991a564d5eeee311944113a84c46a754c"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/clown.jpg",
+      "size": 22700,
+      "sha256": "7f71782c814b4d4ec1c1b26004aeda083ec17fdc4b4079df07b0c4cdc0b4484b"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/clown1.png",
+      "size": 156148,
+      "sha256": "d4d9b37ad3c8a370d35322b151c7437f5b28d902761465ac068730b069475c7c"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/croptoparmsides.png",
+      "size": 22290,
+      "sha256": "95aaea06cfbeb88d40c71b38d5bbf773d5c15723c7802f4e4913c036036a280c"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/croptopback.png",
+      "size": 69330,
+      "sha256": "60e12228dc21fce795732c1e1fe94912763ac3aa2cf2806c8d0d43f1877a5db3"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/croptopfront.png",
+      "size": 114254,
+      "sha256": "36e9091f5a10ad4f0225233cf40d1b1e9723c55e093968f9121f4627b6645258"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/croptopleftarmfront.png",
+      "size": 25079,
+      "sha256": "1ce36012cf48da3296b41923b90751865703336d8a304cf758481f1a7c5ba8ae"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/croptoprightarmfront.png",
+      "size": 24264,
+      "sha256": "b781c9b1dbba77b6c0d458d196efe8bed6405eda39632b75a741c46cd4d0d99f"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/croptoptorsoleft.png",
+      "size": 39365,
+      "sha256": "8e06e3a20b881238599a8569cc8fb3dce7733d85f86cf1a480b593bdf87f6c38"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/croptoptorsoright.png",
+      "size": 39067,
+      "sha256": "bb2ca924e61f4c43b9065a43a2411ee01649c4d68d3341078ffad1f43837d8b2"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/croptoptorsotop.png",
+      "size": 46663,
+      "sha256": "df1bea0e4eb289261e3a99273fc066449ca5a5421cdd880458df54372ade2cdd"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/evil1.png",
+      "size": 66499,
+      "sha256": "62564d0ffdfb2974649432e567fb91d4e8fcb0c91aaab807c2834b25427abb5b"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/fishnetbottomfoot.png",
+      "size": 12715,
+      "sha256": "55d9ea0abf3929fc9bb87139e99e00324e53e70fd3b6c6acdd43b9e494422f9f"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/fishnetfrontleg.png",
+      "size": 80863,
+      "sha256": "500a7f1b0241bef7d6ca068fea8fb3ff1459b4b54c295bb3499f9222f77ead96"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/fishnetsidelegs.png",
+      "size": 73576,
+      "sha256": "3398c0f57e936b53e4e11ad94184eb1ed613d629c569622803f1490f8a5e892d"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/fishnettopface.png",
+      "size": 19188,
+      "sha256": "46e3bb1990df32b9ef418930722186849989f091f70be57b0b63c234b1a7c952"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/girlface.png",
+      "size": 78611,
+      "sha256": "492f4a30492d45156c724244f117b4940963771b0c4d01134870bfe804efc678"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/girlface2.png",
+      "size": 221267,
+      "sha256": "15e185b1343984df4f09e502a1f8210c1ef7dae02f080617ea3c4500b10ec1b2"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/girlface3.png",
+      "size": 257979,
+      "sha256": "cb1b30cfb59a0036ee552cab59dfe315661519a0e6df2882b0d8047422f8dfc4"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/girlface4.png",
+      "size": 80331,
+      "sha256": "900f91ee1c833d617f598ac9426a62d9a441540d2178f1ce1a4901d2011f84ee"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/hair2.png",
+      "size": 15721,
+      "sha256": "448e2405e262ef79cf309e744e3845a245c56f4e70699a0f3f0a5479b2d45bff"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/hairsides.png",
+      "size": 16110,
+      "sha256": "5c4a240235caa25271e46224fbe161c33b8021c3d430dea7a21a57ff2942bb1e"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/hey.png",
+      "size": 153467,
+      "sha256": "ebc26cd148dfb99c42dd146456d32157ecd5cbc4fc0c8d58fe1a50ac227cbb67"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/jeansbackleft.png",
+      "size": 64319,
+      "sha256": "6ace06a3940d005a93874bb5544842bdb1bc98a86677c9f6bb95901fc7025ad3"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/jeansbackright.png",
+      "size": 64319,
+      "sha256": "6ace06a3940d005a93874bb5544842bdb1bc98a86677c9f6bb95901fc7025ad3"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/jeansfrontleft.png",
+      "size": 64319,
+      "sha256": "6ace06a3940d005a93874bb5544842bdb1bc98a86677c9f6bb95901fc7025ad3"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/jeansfrontright.png",
+      "size": 64319,
+      "sha256": "6ace06a3940d005a93874bb5544842bdb1bc98a86677c9f6bb95901fc7025ad3"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/jeansmisc.png",
+      "size": 22623,
+      "sha256": "47fbd14b724b938108b65451a20d8fc190bc7e33141a2848839191bd83020e78"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/suitarm.png",
+      "size": 42555,
+      "sha256": "a46949b160c7e52436c6a2913cf91c0472cc16b0657e662bde7db39252792687"
+    },
+    {
+      "path": "assets/avatars/jorj1357large/suitfront.png",
+      "size": 87793,
+      "sha256": "3bf1c8c5ba99b19e41e76afa81f5057a9a8d512c24d750e608fc6f7d32baca22"
+    },
+    {
+      "path": "assets/avatars/New Outfit/avatar.json",
+      "size": 11228,
+      "sha256": "e1a14669b9fe06fdd722f254821ec682f1571c2243480756eb9a45f4429ae821"
+    },
+    {
+      "path": "assets/avatars/New Outfit/outfit.json",
+      "size": 513,
+      "sha256": "e63c93b504aa285dc7ca64a920c840334b5532ad2fb03329de3cf3ee76dbb20c"
+    },
+    {
+      "path": "assets/avatars/New Outfit 1/avatar.json",
+      "size": 1489,
+      "sha256": "fdaccc200872a1b30d7bc1a2c2ba73c1702bb0a6b8367b7bb5bf8752f80619cb"
+    },
+    {
+      "path": "assets/avatars/New Outfit 2/avatar.json",
+      "size": 1489,
+      "sha256": "112eec735cc6451a86209b8ecf583a666dbb860a7e9585db6e4ebdc29bea53e7"
+    },
+    {
+      "path": "assets/avatars/New Outfit 3/avatar.json",
+      "size": 1489,
+      "sha256": "a1b0fdc7ae5e7a84104cb3068e57ab5ffe8481bbdc5eae773f0d68dd3b781071"
+    },
+    {
+      "path": "assets/avatars/New Outfit 4/avatar.json",
+      "size": 1489,
+      "sha256": "5024c7dd87f35555678925d4bd9a5ba31b6372d582ddd19f48d56813bb9b6f34"
+    },
+    {
+      "path": "assets/avatars/New Outfit 5/avatar.json",
+      "size": 1489,
+      "sha256": "f2693835fcf290e839b470a509ea08baa8bd44828ee128f0368bcd9783a2d69a"
+    },
+    {
+      "path": "assets/avatars/New Outfit 6/avatar.json",
+      "size": 1489,
+      "sha256": "1760dd72185876b31cef227af9707d99ba6e915fd7b5fefeb4d40a1c9445b3f9"
+    },
+    {
+      "path": "assets/avatars/New Outfit 7/avatar.json",
+      "size": 1489,
+      "sha256": "40b5310964367b1e9d2d7021ba7c7917babfe08ca346d531f698fb6d8752600e"
+    },
+    {
+      "path": "assets/avatars/New Outfit 8/avatar.json",
+      "size": 1489,
+      "sha256": "b283b7c8f92b0a329d5eee0c93214fc329dfb39e10d011c6d4232419a24a96ab"
+    },
+    {
+      "path": "assets/avatars/New Outfit 9/avatar.backup.json",
+      "size": 1535,
+      "sha256": "f7ddc38a05f4b19ab20daf807867e1d29fdc0a096a2f52e52a9ca28083b0437f"
+    },
+    {
+      "path": "assets/avatars/New Outfit 9/avatar.json",
+      "size": 1535,
+      "sha256": "9758e23737a1cffda316877986539cf69272d9cfa3c9febae719ebe6e4b95de6"
+    },
+    {
       "path": "assets/avatars/test_avatar/avatar.json",
-      "size": 188,
-      "sha256": "7421d58ddd3209400fc90363b1a26ae8f3c1d7d7f16d1e968e52fc433e9eecdb"
+      "size": 11691,
+      "sha256": "652eae76dbbc7e67bd6e3f320b0a6740ed7a0888b4e6833485f5a6d84a0fd857"
     },
     {
       "path": "assets/avatars/test_avatar/face.png",
       "size": 208,
       "sha256": "0177b7ea54fe36afbe25a554bcc48a9030d1bde01ad62c9d26dc4545834d598e"
+    },
+    {
+      "path": "assets/avatars/test_avatar/outfit.json",
+      "size": 1393,
+      "sha256": "854d17efdc1fc69c473f6b3bafd112c05183242f8b34376b1548f32aa19f9fd6"
     },
     {
       "path": "assets/avatars/test_avatar/pants.png",
@@ -77,6 +672,46 @@
       "sha256": "b8197317f308e2d8b3f59a7845d26926f6e40cb5b35161cfe5b4d1c30cfbc692"
     },
     {
+      "path": "assets/avatars/test_avatar2/avatar.backup.json",
+      "size": 1859,
+      "sha256": "d53b852e7129d9e80b2c3cfebb26556c6a7cc93e9a23273afe0d147b30081cd5"
+    },
+    {
+      "path": "assets/avatars/test_avatar2/avatar.json",
+      "size": 1859,
+      "sha256": "228eb6a285d4de2a3166a0eac8fb84e4027f95d5e801c6f6123c08ac0f6307c9"
+    },
+    {
+      "path": "assets/avatars/test_avatar2/clown1.png",
+      "size": 156148,
+      "sha256": "d4d9b37ad3c8a370d35322b151c7437f5b28d902761465ac068730b069475c7c"
+    },
+    {
+      "path": "assets/avatars/test_avatar2/face.png",
+      "size": 208,
+      "sha256": "0177b7ea54fe36afbe25a554bcc48a9030d1bde01ad62c9d26dc4545834d598e"
+    },
+    {
+      "path": "assets/avatars/test_avatar2/outfit.json",
+      "size": 1393,
+      "sha256": "854d17efdc1fc69c473f6b3bafd112c05183242f8b34376b1548f32aa19f9fd6"
+    },
+    {
+      "path": "assets/avatars/test_avatar2/pants.png",
+      "size": 209,
+      "sha256": "90af37f7ad9667b5d4fbb3a8b3812192c7b4981210a8c901268a2c56ef4b8d4c"
+    },
+    {
+      "path": "assets/avatars/test_avatar2/shirt.png",
+      "size": 207,
+      "sha256": "0eaefe6616256d1b2c8be058a85313aa231be3e86a576ea2247bd285c942ba65"
+    },
+    {
+      "path": "assets/avatars/test_avatar2/skin.png",
+      "size": 208,
+      "sha256": "b8197317f308e2d8b3f59a7845d26926f6e40cb5b35161cfe5b4d1c30cfbc692"
+    },
+    {
       "path": "assets/crosshair/crosshairhit.png",
       "size": 1228,
       "sha256": "d16d9cbd1de0be09c028fbb853cddf2f675d05cee20417b24dc37b9b558d2fa4"
@@ -87,19 +722,69 @@
       "sha256": "d4d68d4d3ce73757454d1b2b18a5045b58b49ba7c479c83a078897eae8abcde6"
     },
     {
-      "path": "assets/entity/player/default/mimita-char-concise-v3.obj",
-      "size": 4185,
-      "sha256": "f51724c7e994b780553e386bfb12dc62973d9858774f091f45130d625f3abbb5"
-    },
-    {
       "path": "assets/entity/player/default/mimita-char-no-animations-v4.glb",
       "size": 10204,
       "sha256": "6cc093dddc606b09d90785d81f6afd97d712198c1b70186c81955115348739e1"
     },
     {
-      "path": "assets/entity/player/default/mimita-dev-player-v1.obj",
-      "size": 71524,
-      "sha256": "4d9910545632866cc6f5b60e63290ece06767c2496b9d9c8fa7d214873f10640"
+      "path": "assets/entity/player/girl/mimita-girl-char-YES-Y-UP-YES-TRANSFORMS-ONLY-ROT-AND-SCALE-v3.glb",
+      "size": 14972,
+      "sha256": "683c22290c0f234636b6efdba8e31b58c010b4bfb7e1479c8dcc0ac934c74748"
+    },
+    {
+      "path": "assets/entity/player/girl/mimita-girl-char-YES-Y-UP-YES-TRANSFORMS-ONLY-ROT-AND-SCALE-v4-head-at-negative-y.glb",
+      "size": 14664,
+      "sha256": "01588088856ea6929d15f4860b3d8817c61209d858ac03aa8ce8bf29c514ad6e"
+    },
+    {
+      "path": "assets/entity/player/girl/mimita-girl-v5.glb",
+      "size": 14692,
+      "sha256": "c093a035c1e3e76a2a95c377c845f2c403518ee8cba3951eaa9ff606be5fc567"
+    },
+    {
+      "path": "assets/entity/player/girl/mimita-girl-v6.glb",
+      "size": 14700,
+      "sha256": "c839d2c40116b3f5984a88afe9778e77a8fcdb2864e159ac43b6002ece737407"
+    },
+    {
+      "path": "assets/entity/player/girl/mimita-girl-v7.glb",
+      "size": 14828,
+      "sha256": "1e5023f02d7df470e21c995a5f09bcf23575e94b4a1384ffeb02601ac9fb5c47"
+    },
+    {
+      "path": "assets/entity/player/girllarge/girl-large-mimita-v1.glb",
+      "size": 138188,
+      "sha256": "610103402e73cdf1ef74745bfe6c0cb69f29dbae233a7bdca7093c0b17a7db24"
+    },
+    {
+      "path": "assets/entity/player/girllarge/girl-large-mimita-v2.glb",
+      "size": 138188,
+      "sha256": "a6bed2efada41dd127cff6cb15c89e58b8437460f4fb5eee876a8b4c954509ed"
+    },
+    {
+      "path": "assets/entity/player/girllarge/girl-large-mimita-v3.glb",
+      "size": 138244,
+      "sha256": "26e4befc818dd7cc32d1b54925d0692f20843b33ef37349a9be34396c6b67c76"
+    },
+    {
+      "path": "assets/entity/player/girllarge/girl-large-mimita-v4.glb",
+      "size": 138204,
+      "sha256": "ce3914922db093c8ea15a4d14df8103c9ab408d513980c514562e95dcf91f458"
+    },
+    {
+      "path": "assets/entity/player/girllarge/girl-large-mimita-v5.glb",
+      "size": 138204,
+      "sha256": "1c031f28c589cd87c457fd7afb11f5d1bbd1b08194ccc0484cdb2ba65ac8bf57"
+    },
+    {
+      "path": "assets/entity/player/girllarge/girl-large-mimita-v6.glb",
+      "size": 138148,
+      "sha256": "c3a8f12d767e9fd1098604070eabc935314230f0fab4ab80b301a331b423731a"
+    },
+    {
+      "path": "assets/entity/player/girllarge/girl-large-mimita-v7.glb",
+      "size": 139412,
+      "sha256": "ea4e72a75f22a952c95ab69ec3b7b141f076c23bcb5deff6f7c71fa5613a2714"
     },
     {
       "path": "assets/font/mingliu-mimita-v3.fnt",
@@ -137,9 +822,19 @@
       "sha256": "619d62cc2f093064f2d078847ce5088dd65af7850ab14f2c7c97b54f74f7b863"
     },
     {
-      "path": "assets/font/OLDmingliu-mimita-v3_1 - Copy (2).png",
-      "size": 15625,
-      "sha256": "edec10a0c048c02d4654fbd81e4b5f7f01aa79beb42e96971bd9f7da3878be6d"
+      "path": "assets/maps/badmallv1.glb",
+      "size": 2434924,
+      "sha256": "437e9d54016ac10c25abe4826632c36ec199a527d175074c68f769c334c45cdb"
+    },
+    {
+      "path": "assets/maps/bigslide.glb",
+      "size": 460016,
+      "sha256": "584f2a9091f3cf4849550b6a9301c9f48f695d21a20d6a9873dbccc78b9bb915"
+    },
+    {
+      "path": "assets/maps/chainofjudgement.glb",
+      "size": 3165384,
+      "sha256": "bc978a78e961ca37301ca3d8cfb60be7ccfb81f018dc5bf80c74aa36e5d28318"
     },
     {
       "path": "assets/maps/colltest.glb",
@@ -147,9 +842,24 @@
       "sha256": "4ca5454384ae652e9b90a33820cc7519cf49e8bf7504ac1762ab7aa70f6b0438"
     },
     {
+      "path": "assets/maps/coolplace.glb",
+      "size": 2591328,
+      "sha256": "037f6850015b38963251cf595c74d47531bd73f3f75a72b9a563601431f496f5"
+    },
+    {
+      "path": "assets/maps/cramped.glb",
+      "size": 1223816,
+      "sha256": "20aef879fc19565af37803be622653fbf53dcaab1f42000bd2a833692222be69"
+    },
+    {
       "path": "assets/maps/funworld.glb",
       "size": 1832392,
       "sha256": "dda28f8e8a9cbeb0aac737325fdd5d4864c64d0769f7c91787003cb60a3d3c4b"
+    },
+    {
+      "path": "assets/maps/funworld3.glb",
+      "size": 3266008,
+      "sha256": "e90ac17bf42da593ee95073ec56c007a189137c77820eb522d03344b0284325b"
     },
     {
       "path": "assets/maps/ideas-map-v1.glb",
@@ -165,6 +875,11 @@
       "path": "assets/maps/mimita-duels-map-v3.glb",
       "size": 1618464,
       "sha256": "c447c79628c368a0d27a4257c39e24257a5b7629616ba44d9973336c9d0b1e04"
+    },
+    {
+      "path": "assets/maps/mimita-funworld-v4.glb",
+      "size": 3858464,
+      "sha256": "881d1a82dc397db11b301ed03d27b5a83eade98a07c450b6223b71936cac0060"
     },
     {
       "path": "assets/maps/mimita-garage-map-v1.glb",
@@ -192,14 +907,39 @@
       "sha256": "933439b552895aaed7bdadb66a8f573091b2e4d637dd43c1719b7bb77c6deec0"
     },
     {
+      "path": "assets/maps/tutorial.glb",
+      "size": 4316908,
+      "sha256": "b11c3ff1158846a59356639b9e6f7f4324ccbbccb7d0d1ecebea47047828c8c0"
+    },
+    {
       "path": "assets/objects/things/readme.txt",
       "size": 91,
       "sha256": "6f2f21b0c51b958e47f839f50f0cdf03596e8dc2e0d9d26d9c50603d6a7f604f"
     },
     {
+      "path": "assets/objects/weapons/mimita-hafs-v1.glb",
+      "size": 114720,
+      "sha256": "097a5e7766b666d9d2f3504035f2a80b7dd4629c4b4e0ff5d1b1a8de7c7f21ec"
+    },
+    {
+      "path": "assets/objects/weapons/mimita-nadelauncher-v1.glb",
+      "size": 327812,
+      "sha256": "49dfec00e744e1cfc54f5161dd9e0d235862195430b359cfdacfe70250075e73"
+    },
+    {
       "path": "assets/objects/weapons/mimita-revolver-v1.glb",
       "size": 122348,
       "sha256": "da0fbed383e2c5709f1cb9adc10ffc550ff56328934ae9c5f416e8d6cf40294c"
+    },
+    {
+      "path": "assets/objects/weapons/mimita-rpg-v3.glb",
+      "size": 55284,
+      "sha256": "6297210b27e6be312535179dc1350a26f81ffedfeca113d045379e3a1ad0b96e"
+    },
+    {
+      "path": "assets/objects/weapons/mimita-scythe-v1.glb",
+      "size": 295284,
+      "sha256": "85fb3bcee3b13b1a96df4779f1d3509841d6fa5f8b49462e7a560cccbe814ac9"
     },
     {
       "path": "assets/objects/weapons/mimita-shotgun-v1.glb",
@@ -225,6 +965,11 @@
       "path": "assets/outfits/suitv4debug.png",
       "size": 1348564,
       "sha256": "012a0ab76fccc9a927a68ae863bd1aa971c5cab19d38aff802807b22d160738f"
+    },
+    {
+      "path": "assets/outfitsv2/mimita character atlas v1.kra.png",
+      "size": 362145,
+      "sha256": "ebe8406834994244d0cb40392047dea7604d0f7bdc9b36b3b7db6d5d2a24db91"
     },
     {
       "path": "assets/skybox/readme-howto.txt",
@@ -300,6 +1045,11 @@
       "path": "assets/sound/hitworld.mp3",
       "size": 22000,
       "sha256": "22509324fcdbc7ec1a504f39683d1dc6ccc296206be64f10bb9b3f47fa562c5c"
+    },
+    {
+      "path": "assets/sound/serverdisagree.wav",
+      "size": 763996,
+      "sha256": "e3af2f1b5515d6dba3b987ee77919ac1c1d57de8296ee0a4022ed73bad17980e"
     },
     {
       "path": "assets/sound/U mimita sound effects.wav  - ambient bad.mp3",
@@ -473,8 +1223,8 @@
     },
     {
       "path": "assets/sound/music/credits.json",
-      "size": 362,
-      "sha256": "8e417f0d01ae79b997dfd172f84a7f2063f4511c6351c6879211901e985f1fc0"
+      "size": 376,
+      "sha256": "e68d83d2d510c795862ca0177e5d374eb751c6ba498b39af3ca85889841ec146"
     },
     {
       "path": "assets/sound/music/ingame/readmedonttrack.txt",
@@ -482,39 +1232,14 @@
       "sha256": "962cfe91391ed4f943c37a1c874da78212332ae0466a851fd7ae12b6319c9b67"
     },
     {
-      "path": "assets/sound/music/ingame/donttrack/.gitignore",
-      "size": 94,
-      "sha256": "d183b8e51620a488242ea91fc362055a92e03ae3d2f04e648325445bf5822160"
+      "path": "assets/sound/music/ingame/donttrack/i know i.opus",
+      "size": 248244,
+      "sha256": "ce9fd920ade4e6bad91fd993397bdbba1791adb72ddc7439d7586e8e1aba4148"
     },
     {
-      "path": "assets/sound/music/ingame/donttrack/i know i.mp3",
-      "size": 1130528,
-      "sha256": "e22b199b71f4c52fae0c5f11203856658b9dfe0046fa141db9f13debc7874d56"
-    },
-    {
-      "path": "assets/sound/music/ingame/donttrack/my audio drivers broke while streaming fortnite.mp3",
-      "size": 1362757,
-      "sha256": "528723eb2c1950139cfaa12cb7b3980893fa254c0711b9f6dbb82134608fefbe"
-    },
-    {
-      "path": "assets/sound/music/ingame/donttrack/README.md",
-      "size": 425,
-      "sha256": "84f3108e26a377042ac4f085e530573e899cb7a9381612ea15ca3dd58bb2804c"
-    },
-    {
-      "path": "assets/sound/music/ingame/donttrack/U ez win 2 shorterr.wav - bhop funk normal.wav",
-      "size": 16962792,
-      "sha256": "547196fefaeeff3ad4c7b297b1347aa08a919d7f90e941847ea418080946081c"
-    },
-    {
-      "path": "assets/sound/music/ingame/donttrack/UW anime  skull kid laugh.wav - full v2 dadian.wav",
-      "size": 83307924,
-      "sha256": "08c37e3ee2bad3cdce563853f67f0d49388feee0adac6ee191df905ba31db07f"
-    },
-    {
-      "path": "assets/sound/music/ingame/donttrack/UW eric scp 066 A creep phonk that  WOTN like.wav dadian.wav",
-      "size": 30268732,
-      "sha256": "75294f9210a7508eeeda86eb37548c59512b56e5044f0caed1cb1a941b5c5db6"
+      "path": "assets/sound/music/ingame/donttrack/my audio drivers broke while streaming fortnite.opus",
+      "size": 292147,
+      "sha256": "1ee8b6386541e15117fb5cf29df7bd4a708123519a2830f9bcd4349c766998dd"
     },
     {
       "path": "assets/sound/music/mainmenu/jorj1357-mimita-theme-v1.mp3",
@@ -572,6 +1297,46 @@
       "sha256": "e68364a485063101c3df882295d91b667010079ca9afb4d183826007677cfe19"
     },
     {
+      "path": "assets/sound/weapon/grenadelauncher/grenadelauncherexplode.wav",
+      "size": 54868,
+      "sha256": "fa73749015f803a624700056ee934781926053edbfb6a5b9baa80c73d715459f"
+    },
+    {
+      "path": "assets/sound/weapon/grenadelauncher/grenadelauncherload.wav",
+      "size": 65452,
+      "sha256": "26c4b86fa5e87becd64e062ac69e47fe92dbe0e02d5e3b4233e5c05c87f15a8d"
+    },
+    {
+      "path": "assets/sound/weapon/grenadelauncher/grenadelaunchershoot.wav",
+      "size": 23116,
+      "sha256": "e55cef273c4377830178b5a609fbbf2474cb817921ba0c6c6446da52a84aeb72"
+    },
+    {
+      "path": "assets/sound/weapon/hafs/hafsequip.wav",
+      "size": 360920,
+      "sha256": "7afc86e5ffa9b84418aea043e4440b069b9f41210881c7d254ad551a22604079"
+    },
+    {
+      "path": "assets/sound/weapon/hafs/hafsknockback.wav",
+      "size": 173056,
+      "sha256": "c9d2fcd994c4a1db488957feec22515e0c0514e66ee420efb8ebe13bf03607c5"
+    },
+    {
+      "path": "assets/sound/weapon/hafs/hafslunge.wav",
+      "size": 178348,
+      "sha256": "9145171140c43f50c46157e8974cfa95e5bddcd2d6f041fa47928ffcb683fb06"
+    },
+    {
+      "path": "assets/sound/weapon/hafs/hafsswing.wav",
+      "size": 53984,
+      "sha256": "e48aafb0eda9b51bd866b125712551795fe25cfd74513a0892878b5e54b80923"
+    },
+    {
+      "path": "assets/sound/weapon/hafs/hafsWorldHit.wav",
+      "size": 36344,
+      "sha256": "46eed1137df6e631036b09a753519df4ef1ffcd27fa655bd032b2a0f7cf836d7"
+    },
+    {
       "path": "assets/sound/weapon/revolver/.gitkeep",
       "size": 0,
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -590,6 +1355,26 @@
       "path": "assets/sound/weapon/revolver/revolvershoot.wav",
       "size": 245096,
       "sha256": "1694f565f2e76420e1381540a050093d71156b571dc7dc1726d119ed79d1713e"
+    },
+    {
+      "path": "assets/sound/weapon/rocketlauncher/rocketlauncherexplode.wav",
+      "size": 321232,
+      "sha256": "549a82082009c6e65b8fd37028b8452d0c1c800e6fb4c66b2045620f0c2d2291"
+    },
+    {
+      "path": "assets/sound/weapon/rocketlauncher/rocketlauncherinair.wav",
+      "size": 44284,
+      "sha256": "dc68032d170065a4474a735dadecf615fc1bf89e8824a2ae2731a82c819a01da"
+    },
+    {
+      "path": "assets/sound/weapon/rocketlauncher/rocketlauncherreload.wav",
+      "size": 94560,
+      "sha256": "188a899dae16ea537e5beeb5d844eecf445011c346dc38dcf7245dd0c44a9fa1"
+    },
+    {
+      "path": "assets/sound/weapon/rocketlauncher/rocketshoot.wav",
+      "size": 5355688,
+      "sha256": "4b1bf1a4589bf6d386f6c8b2e75718e500a62d3af8d6858a1bf922e483a2f7e7"
     },
     {
       "path": "assets/sound/weapon/shotgun/.gitkeep",
@@ -683,8 +1468,8 @@
     },
     {
       "path": "assets/textures/cursor.png",
-      "size": 6710,
-      "sha256": "1d7249f0877c2ec219de546a4a5c921ff496038604c49914c458133172ac71ab"
+      "size": 8521,
+      "sha256": "2d4f8cb29812f52bf2805d6eccb60d71e63c9ea06a0d1950722b3a01b79748bc"
     },
     {
       "path": "assets/textures/cursor12.png",
@@ -892,14 +1677,109 @@
       "sha256": "4ac64391db87ff909914612d36f0dcad732dbcd7804506009b838872848516f2"
     },
     {
+      "path": "assets/textureshq/240sx.png",
+      "size": 103101,
+      "sha256": "0be07f65285b0d5543700e27acca0393a9bfd7710b68520de63e3645eb224ae3"
+    },
+    {
+      "path": "assets/textureshq/blackeyes.png",
+      "size": 16158,
+      "sha256": "2a3bfac48f44f8e4eaf931b390cd42f9e11620e5f7b08b09838ac0bef274f9e5"
+    },
+    {
+      "path": "assets/textureshq/bluebrick1.png",
+      "size": 68005,
+      "sha256": "91e6b1270afdaf7e50be8d52dd8a7f504271ff6f637e42a7b52bc4e3c9cf024c"
+    },
+    {
+      "path": "assets/textureshq/bluecircuit1.png",
+      "size": 130847,
+      "sha256": "cc145568dec9e0e33965949257ccda0e50ed1a4e66f1e545470339e0a30af3b0"
+    },
+    {
+      "path": "assets/textureshq/bluecircuit2.png",
+      "size": 120479,
+      "sha256": "0b13bb77d9844c68f252c2183a5d6ff474a9eddb61d5f5f82d74d48ad5d5c236"
+    },
+    {
+      "path": "assets/textureshq/brick2.png",
+      "size": 60323,
+      "sha256": "15ada9c419028408b479f0db36b770ced76533fddcb54a70fc6811009792b5c6"
+    },
+    {
+      "path": "assets/textureshq/brick3.png",
+      "size": 111184,
+      "sha256": "08d02060a172ee87da29bc366728888ab78b5b250aff440682f24abeaee9bfff"
+    },
+    {
+      "path": "assets/textureshq/brick4.png",
+      "size": 96507,
+      "sha256": "114555963da047a023d8aadc162ca454b7b222f42bd9ef708a38f48ee80a66ae"
+    },
+    {
+      "path": "assets/textureshq/brick5.png",
+      "size": 89586,
+      "sha256": "2cd6418d5e74694de54a93d7135352e57d94517d5fafd16073bbed723f7ce7f1"
+    },
+    {
+      "path": "assets/textureshq/brick6.png",
+      "size": 142342,
+      "sha256": "57f0bb784acd5342e5af0e306015d38e47b494270af6c70fb9f2f9b642731ae5"
+    },
+    {
+      "path": "assets/textureshq/brick7.png",
+      "size": 126264,
+      "sha256": "4b82736e2273b4bc983401c19178a226364841f11f3f2a770b8fb65cce698f16"
+    },
+    {
+      "path": "assets/textureshq/bricknormals.png",
+      "size": 164814,
+      "sha256": "f9c8cfaea6dc3b7d77031a91dfcfb7da31217dfbcec259b3a147758df38344ae"
+    },
+    {
       "path": "assets/textureshq/chainwall1.png",
       "size": 98313,
       "sha256": "14ab8055601e8aa4402d3a4fa5c669b32c196fc0089b260b9d3a51dda804b4a0"
     },
     {
+      "path": "assets/textureshq/city1.png",
+      "size": 19678,
+      "sha256": "3af2c562e97638a91d3fdabd17d702d2be374d286f3a4cc9246ad96aa5656d2f"
+    },
+    {
+      "path": "assets/textureshq/city2.png",
+      "size": 56375,
+      "sha256": "238415fcda6fa5914db07c5d5cac2bfaa55865714559b0dd8511da07a2dc5fbe"
+    },
+    {
+      "path": "assets/textureshq/city3.png",
+      "size": 96667,
+      "sha256": "006022d8c00048e1352b4786ce202129b9fd3564813bec792f2326072b0f2e9a"
+    },
+    {
+      "path": "assets/textureshq/colorful1.png",
+      "size": 125269,
+      "sha256": "adf5d4a2393a5e1204b6fca8fc1d6696af91a34eccb9c10a2a7c7039f436b373"
+    },
+    {
+      "path": "assets/textureshq/colorful2.png",
+      "size": 129745,
+      "sha256": "c2e497db7f44982532f7615f51463d393c36cc3eee46c8fa669e5961868f1ad9"
+    },
+    {
+      "path": "assets/textureshq/colorful3.png",
+      "size": 83624,
+      "sha256": "d0ee9a012a4187ef9106b3a055ba58cfdf42b2f5ebe57306abda361f871bfcb1"
+    },
+    {
       "path": "assets/textureshq/crackground1.png",
       "size": 126720,
       "sha256": "29cab0ac571bdb520cf684fcff8b339f1afd90830be897414a9f3d46a1872b85"
+    },
+    {
+      "path": "assets/textureshq/dark1.png",
+      "size": 46950,
+      "sha256": "f593e6e5488797be43d51688670e178a229b3227ad497f5cf945601412a8449e"
     },
     {
       "path": "assets/textureshq/dead1.png",
@@ -910,6 +1790,26 @@
       "path": "assets/textureshq/floor1.png",
       "size": 122411,
       "sha256": "8f4b8c2c4820a253b8c8d660509f771dc2c2a7c51428bdce8c8999b67c704583"
+    },
+    {
+      "path": "assets/textureshq/found1.png",
+      "size": 97465,
+      "sha256": "174a5cddcd28528bfe00b10c72bee56ae785e71ff7e0263b7deb1a59d22c1320"
+    },
+    {
+      "path": "assets/textureshq/fun.png",
+      "size": 117983,
+      "sha256": "52afce87f3e6f62db087ecfe9cb5c23c11dab1da3e1d3aae02723e675e3c2c91"
+    },
+    {
+      "path": "assets/textureshq/gate1.png",
+      "size": 95488,
+      "sha256": "20af43250ab33e8fdfe9e70534a9df7fbfe55b25bda82905ada6a3ee062685d7"
+    },
+    {
+      "path": "assets/textureshq/girlbathroom1.png",
+      "size": 37033,
+      "sha256": "080865e22edfd7413f2549ff8d69e21901632f4440021a6e5c2913a2c1510c21"
     },
     {
       "path": "assets/textureshq/grass1.png",
@@ -949,7 +1849,7 @@
     {
       "path": "assets/textureshq/gross3.png~",
       "size": 91359,
-      "sha256": "e5837fa1126b6f1558637ffd880077ee1b6467e5ad55341ee482f9e957fac320"
+      "sha256": "aebeaa05627ca9ae545335b59b3212a3411c1af111e929b68c5cbfe235876b3e"
     },
     {
       "path": "assets/textureshq/grossground1.png",
@@ -972,6 +1872,11 @@
       "sha256": "0e60b53bb9a5367e9eb1b2ad45640713d15b2a2f290bc606cd02bc862570c6e2"
     },
     {
+      "path": "assets/textureshq/ground4.png",
+      "size": 35868,
+      "sha256": "4d3dc0630b4bdd36463cf127fe78f4c5d00dbd296344a02a6bce412f047f3450"
+    },
+    {
       "path": "assets/textureshq/hello1.png",
       "size": 124023,
       "sha256": "8ec37b64d9dca72625bdaa021832b01e0c6a7671b3901a6031533b7371ad1280"
@@ -982,9 +1887,74 @@
       "sha256": "4f316e7d7d19c38d283b6881855f2af4211311ffba3373d140b080fda6a2c6b1"
     },
     {
+      "path": "assets/textureshq/land1.png",
+      "size": 98482,
+      "sha256": "a56ef310282d2fea8ad39dff72ed86aa66bde664ab9eaadfab3bdb98df9aeedf"
+    },
+    {
       "path": "assets/textureshq/look1.png",
       "size": 167006,
       "sha256": "8c7d1a94155247737144d1ff16d194fe6c8b26786725bc5a34f2bd33184cca1f"
+    },
+    {
+      "path": "assets/textureshq/meat1.png",
+      "size": 91210,
+      "sha256": "621d44970036f30dfef34c999e65447eb5bc65163224bf60385bc08a2a970dcf"
+    },
+    {
+      "path": "assets/textureshq/meatcomputer1.png",
+      "size": 139758,
+      "sha256": "f1663ae4b81def41fb230814479aa18bb042dd1c66ebd01139f57b446e1edbab"
+    },
+    {
+      "path": "assets/textureshq/message1.png",
+      "size": 15606,
+      "sha256": "57e47d8fa60e2336c37adfeef7f4a826b1cdb50806469862cf65fc1e88f0776d"
+    },
+    {
+      "path": "assets/textureshq/mutecity1.png",
+      "size": 157941,
+      "sha256": "56cf2e40935d2e5b98321fd7e1856a8306cce6adf5362f6f63110595002b1a70"
+    },
+    {
+      "path": "assets/textureshq/n0kia4ngelz.png",
+      "size": 75735,
+      "sha256": "25eb8d300c4886c32b8f50c003ae65688ebb8da0e2d9ad38d69a711068d38cc7"
+    },
+    {
+      "path": "assets/textureshq/nexttime1.png",
+      "size": 82767,
+      "sha256": "4ab9238dfe1d21324877cea3a472ec4d5bdec451ba07e50cf210506392d120fc"
+    },
+    {
+      "path": "assets/textureshq/pavement1.png",
+      "size": 93964,
+      "sha256": "f1dbbc958c257d8c41d10e7960fbe84ec3062d2b7cb9023949a70a947697a7e2"
+    },
+    {
+      "path": "assets/textureshq/planet.png",
+      "size": 47195,
+      "sha256": "74b564039aaa6fdcc2f78bc02c57a6dfdcfa4d89e57e416ea954549c2abacc86"
+    },
+    {
+      "path": "assets/textureshq/plants1.png",
+      "size": 94862,
+      "sha256": "625a2a989c2b43c525a23f906d051e2d01adecca0720135bd9aac3f90318972c"
+    },
+    {
+      "path": "assets/textureshq/ps2.png",
+      "size": 79276,
+      "sha256": "bc5e8083c76e61d7cb960e844ad8400ab3f41c3f85c6b8b8273eef435de3eb2a"
+    },
+    {
+      "path": "assets/textureshq/ps2v2.png",
+      "size": 40164,
+      "sha256": "fafc89650598bf660e9a3a1541c8341f9ae2413517a752078647200856ef0ba3"
+    },
+    {
+      "path": "assets/textureshq/ps2v3.png",
+      "size": 27140,
+      "sha256": "6d7a2637766df8d639a3b8e4f1362e5796f6e2f91b62520b193d395c302a1598"
     },
     {
       "path": "assets/textureshq/purple1.png",
@@ -992,9 +1962,39 @@
       "sha256": "84f706b39ed836e31cba211f1a482a14579001a400b21362bc8c8f3e3e1fa31b"
     },
     {
+      "path": "assets/textureshq/purple2.png",
+      "size": 117800,
+      "sha256": "3c8baf9fdd79d38cccc6e8c7d4ac8c5581d39c6ddf4da0a9f6e4ed995cbe7928"
+    },
+    {
+      "path": "assets/textureshq/purple3.png",
+      "size": 48962,
+      "sha256": "c6726a18805a33b92708a258f416590cc3248f58c9725e67890bb629fdb53d80"
+    },
+    {
+      "path": "assets/textureshq/question1.png",
+      "size": 90465,
+      "sha256": "0c613bce282e46400744d1d725e77ade89a5cd9ce2c00fd7cdf5ed0bfcaa743f"
+    },
+    {
+      "path": "assets/textureshq/redhair.png",
+      "size": 99923,
+      "sha256": "e5fe6bbe2d727a8a0752db54e77418a92d5bbe8945204d0e55b3c6145a8321cc"
+    },
+    {
       "path": "assets/textureshq/rock1.png",
       "size": 87672,
       "sha256": "afe6a894a9721843afa6988da26ac9fe441550ae98faa31c4365e65d7369adbf"
+    },
+    {
+      "path": "assets/textureshq/room1.png",
+      "size": 72303,
+      "sha256": "f6816e550cc507e9cb73d4a3a0f1b5de2bdafa6106ea461fdeebf121f35828d9"
+    },
+    {
+      "path": "assets/textureshq/sad.png",
+      "size": 48610,
+      "sha256": "cb2e280c573bf99140a97e5c519b72c59a0cef0ef68ca7bff9d48fe7e65c9bf2"
     },
     {
       "path": "assets/textureshq/saw1.png",
@@ -1017,6 +2017,36 @@
       "sha256": "9a945850ad2f105dec9d75da275584b97ffa0b8bb900dfb9e1e2630bf0ba1d70"
     },
     {
+      "path": "assets/textureshq/see1.png",
+      "size": 143083,
+      "sha256": "fcdab96690415a8095f7a7cd7d9bb4818ab979e91818f6ca6fd2ed33b5bc9241"
+    },
+    {
+      "path": "assets/textureshq/skyline.png",
+      "size": 123148,
+      "sha256": "d1a1a176239f9f448b7ebafb418159118fa21cb95034b77958792ff0e9351aa2"
+    },
+    {
+      "path": "assets/textureshq/stone1.png",
+      "size": 112199,
+      "sha256": "27d8b6e3ce4e9bc93aae9525e9db75423aadc1ef0e361ec50777b0e72eee38aa"
+    },
+    {
+      "path": "assets/textureshq/stretched.png",
+      "size": 43069,
+      "sha256": "9a671360533fa754411b4404d035ae1b6bb0b1e0f62f8edf98ddd60e078918db"
+    },
+    {
+      "path": "assets/textureshq/sunlight1.png",
+      "size": 109439,
+      "sha256": "6b8921089ecb944e4fa3f3c83d19dea896d425d8ae7fa04e734c7c0fb7983570"
+    },
+    {
+      "path": "assets/textureshq/supra.png",
+      "size": 128302,
+      "sha256": "38cfd72b1ad9eb2668f597462c00028d1bcdfd5f761600e60e18e322adeebf65"
+    },
+    {
       "path": "assets/textureshq/tile1.png",
       "size": 111207,
       "sha256": "a576f309d1a649c3939990b4abb1f010a61554ce574acda5bfea1681da39b764"
@@ -1025,6 +2055,16 @@
       "path": "assets/textureshq/tile2.png",
       "size": 105634,
       "sha256": "2c7b7c6bd15113eb4a0f886766b69f545a5bc7b55fac20d1972d000083447454"
+    },
+    {
+      "path": "assets/textureshq/tile3.png",
+      "size": 107757,
+      "sha256": "cb040e7053f0050557a4402192ed76c53463ad3f7109f17bb00f75e34fadb5d1"
+    },
+    {
+      "path": "assets/textureshq/tile3.png~",
+      "size": 107757,
+      "sha256": "cb040e7053f0050557a4402192ed76c53463ad3f7109f17bb00f75e34fadb5d1"
     },
     {
       "path": "assets/textureshq/tilewall1.png",
@@ -1042,19 +2082,434 @@
       "sha256": "d17a13f638643dad2217fd1cd604b8615694d7683dba28d127bbf79b9049eeb9"
     },
     {
+      "path": "assets/textureshq/wall3.png",
+      "size": 85548,
+      "sha256": "3ff9105148a2f49986b1890fcbe30288d881e31a997704c4f2b209bf2650ce41"
+    },
+    {
+      "path": "assets/textureshq/warehouse.png",
+      "size": 39414,
+      "sha256": "035478ecdbc71381e513547bdf4c7826323dd69cf03293f45cc329145b0ae66e"
+    },
+    {
+      "path": "assets/textureshq/whiteeyes.png",
+      "size": 16272,
+      "sha256": "29c6109ac2fb0ceb52cd9e1e24d8d471281b5a641a92848215501d705e167625"
+    },
+    {
+      "path": "assets/uitextures/mimita desktop icon v1.ico",
+      "size": 372526,
+      "sha256": "4862f7fa1cc136c1321a01f577d60fd187ed8f175642793cd132e00d680d10e8"
+    },
+    {
+      "path": "assets/uitextures/mimita-cover-v1.png",
+      "size": 58296,
+      "sha256": "828305e7b8c7e5924397f276023e8f73d11367c275eddd026afb726852231364"
+    },
+    {
       "path": "assets/video/mimitaoutrov1.webm",
       "size": 639545,
       "sha256": "bee50ea9fd3141ade7b460033f39b57ac2d397c97c8b66169137f23ece879806"
     },
     {
-      "path": "config/accounts/default.json",
-      "size": 1029,
-      "sha256": "42627a75dbc6e5ab6becf308d8f759b77b0de7beb563aef2e93eae1904578fdc"
+      "path": "config/analytics.json",
+      "size": 679,
+      "sha256": "90c5a35e808157eb3e86c37047c06a3a534f20bba9e76206340e998e3a44a2f2"
+    },
+    {
+      "path": "config/animations.json",
+      "size": 33340,
+      "sha256": "30960825459c8045bfecd6da74701e2fc072dfb8c75495a255d677314e92ad0f"
+    },
+    {
+      "path": "config/avatar-editor-ui.json",
+      "size": 8602,
+      "sha256": "b75f3c5aa602dd37ca1768927875fcf5dc5cdbdadf28ee52374cce06f0623a8b"
+    },
+    {
+      "path": "config/bodyparts.json",
+      "size": 802,
+      "sha256": "664d33609165679a7d49d11baaad57e2776c9d6811dcce9629bf503dcaf06d9f"
+    },
+    {
+      "path": "config/camconfig 7 22 2026 0644.txt",
+      "size": 281,
+      "sha256": "4cdb5703d105f6c81c79e541e29e741457b2b71a958364a6e31d0577a478fb21"
+    },
+    {
+      "path": "config/camconfig.json",
+      "size": 330,
+      "sha256": "ca9feea169323531563d0c3adcb78a50bec201c8e539e596002ef32ca3600dab"
+    },
+    {
+      "path": "config/collision.json",
+      "size": 90,
+      "sha256": "85488b772e3c73c7c02c7f7cd68c2528d60fc86658804fce58215c01c7416973"
+    },
+    {
+      "path": "config/crosshair-world.json",
+      "size": 629,
+      "sha256": "4e5bc5cb19d0ea09f5b51e0ce4e1a657b9933c66729676932fc53a1fbb177bb5"
+    },
+    {
+      "path": "config/crosshair.json",
+      "size": 452,
+      "sha256": "6cf79b2be1220d0c07a55db6f9e8b9bc7a79b30a2f9e0a5f920d8a8877e2d83a"
     },
     {
       "path": "config/current-profile.json",
       "size": 21,
       "sha256": "377265e08dc867a72ac91841dd5975c6b953534f426c3c479297600a55ca362a"
+    },
+    {
+      "path": "config/debuglogger.json",
+      "size": 2328,
+      "sha256": "008c4a4afcddadd83adc39819de91053a6c8183f974ace8ba6c2114bbd069d47"
+    },
+    {
+      "path": "config/dev_controls.txt",
+      "size": 765,
+      "sha256": "60484619177473a2c13be788d3a9b5e0240eae9703432910e8eb18c7ffc0c518"
+    },
+    {
+      "path": "config/gameplay-options.txt",
+      "size": 2448,
+      "sha256": "1e06b7e24122c1d209081f0322b8df83e44e3ab1527ece6ca028466182b601e1"
+    },
+    {
+      "path": "config/gameplay.json",
+      "size": 275,
+      "sha256": "4e83e46e0e75e49d3da6d1026bc850fb7a5dbb56db9e431b5f757c7064ee25bb"
+    },
+    {
+      "path": "config/healthbar.json",
+      "size": 676,
+      "sha256": "e85f4a469a390e87af9bc4c71d3258fc6722463a026c06291d096df8e20b7feb"
+    },
+    {
+      "path": "config/high saturation postfx.txt",
+      "size": 678,
+      "sha256": "6069ea9d6533dd26c68cb06883769e61744bedb9ef3c6eea62c0987850e2616b"
+    },
+    {
+      "path": "config/hitfx.json",
+      "size": 6932,
+      "sha256": "9985ca36b2e2b144d5d558158c8d846c98e04ff49e988488b4c10c7dd3aaa33c"
+    },
+    {
+      "path": "config/lighting.json",
+      "size": 821,
+      "sha256": "307d5c5da7ca3519f8fdebcb0a22e5ab8b6f1fff2ab8ee4c719dc792d2a0927c"
+    },
+    {
+      "path": "config/main_menu_character_preview.json",
+      "size": 495,
+      "sha256": "1abc6f65292c46681ea396dde6256608c49fc6b3df2a9b78beeffcecc75b840a"
+    },
+    {
+      "path": "config/player-procedural.json",
+      "size": 2116,
+      "sha256": "2a45d9db9870ecb240e1b3aa6fe200a3eba05502c7fcd57ba53179bc25d42724"
+    },
+    {
+      "path": "config/postfx.json",
+      "size": 674,
+      "sha256": "3292b0153dd0061dcb22de4f4a4a123d4e68b046005dba9c8bfd01d30da642f2"
+    },
+    {
+      "path": "config/profiles.json",
+      "size": 89,
+      "sha256": "44bc57369fdabf27182c55f932981da54aeeae47eeea568451f97c6d4375c7ac"
+    },
+    {
+      "path": "config/ragdolldeath.json",
+      "size": 167,
+      "sha256": "4ddf7ee7d55d21a28807adea23200f25c4a2322677607492bb7d7ae39961c9cc"
+    },
+    {
+      "path": "config/serverdisagree.json",
+      "size": 2535,
+      "sha256": "d33cb13d9cb90438fb79cf5f202a0b3114a167fc96064f99d399aece3e341179"
+    },
+    {
+      "path": "config/shadows.json",
+      "size": 636,
+      "sha256": "5e77da2924f5c1fc1ec8a5834ba9eee279b7497a680cbad3ae73de1024e9a452"
+    },
+    {
+      "path": "config/size_scaling.json",
+      "size": 939,
+      "sha256": "ae2b41141d89ce84a402aec6ba3d9e7a07f91f3473eb7eac50c55927b282f1ec"
+    },
+    {
+      "path": "config/skybox.json",
+      "size": 728,
+      "sha256": "89ef3a180bdd2ae6d46c81dbb2246e7738ae8ff83f09cb116848927a88909a2e"
+    },
+    {
+      "path": "config/stable-post-fx-6-17-2026.txt",
+      "size": 706,
+      "sha256": "ea8c3402b1889680684c52efd0345af73e34eb0924fa77bd5a1e4cf3796767e8"
+    },
+    {
+      "path": "config/tips.json",
+      "size": 3187,
+      "sha256": "bc2e3bff1ff49c25d48bd2f9d9e944e035ee4256f8040dd523facf10bfe71acb"
+    },
+    {
+      "path": "config/version.json",
+      "size": 110,
+      "sha256": "93b773db34959e1993819194f2107b83686df256648b44d8f3daca115cf22162"
+    },
+    {
+      "path": "config/video-settings.json",
+      "size": 129,
+      "sha256": "b352abc46b9ff412d746d1a2b91ebf3309ecc702786c0ed241fdbd8e1c0b92df"
+    },
+    {
+      "path": "config/visuals-post-fx-6-17-2026.txt",
+      "size": 709,
+      "sha256": "f1288c4ea24d65455caa13a5c314558cb98d22f967e310400c90478bde697229"
+    },
+    {
+      "path": "config/visuals-post-fx-6-28-2026.txt",
+      "size": 676,
+      "sha256": "4012d9a7c8f75bdc4f32bac26315811a3ba973eb52e8b6025267e1af5a3ec4d8"
+    },
+    {
+      "path": "config/weapon-cool-shot-line.json",
+      "size": 314,
+      "sha256": "1e228e9aa419e993dc4111eb419b1b892443bbc19339e715598ccfec1a34826f"
+    },
+    {
+      "path": "config/weaponcollisions.json",
+      "size": 5092,
+      "sha256": "f1a52d3aeccd1b7c090295fe1a7c6dde3bb0db97a671d7b5cba7f2f32f27144a"
+    },
+    {
+      "path": "config/weapons.json",
+      "size": 20368,
+      "sha256": "45542b137f94525c3641d5d40487f50276f5d7e29adb0769dd0e014531fcf412"
+    },
+    {
+      "path": "config/weapon_hitfx.json",
+      "size": 3874,
+      "sha256": "6c10af6858da330f55394d78e32c18be96ec717886af62f2ac391e3207ddf764"
+    },
+    {
+      "path": "config/accounts/default (1).json",
+      "size": 902,
+      "sha256": "47049e8182ba0c5bb7f0e6d91b075c852e3d6bc83e7d00c8c80763d96282c8e4"
+    },
+    {
+      "path": "config/accounts/default.json",
+      "size": 902,
+      "sha256": "0fbeb23b283c092b4d484124b52f8715ccdf29449706b3dfa3dc1b95db92f5c4"
+    },
+    {
+      "path": "config/audio/hitmarker.json",
+      "size": 145,
+      "sha256": "f53d56728643faf34c20447d7813bb6c63a783e0bc7e42ad42b191e8abe95c25"
+    },
+    {
+      "path": "config/audio/music-settings.json",
+      "size": 116,
+      "sha256": "8ab83f579b5eb6db7707e6f8389904bbb59fca02f78cfea0ea76c86257577b49"
+    },
+    {
+      "path": "config/audio/replay-hitmarkers.json",
+      "size": 68,
+      "sha256": "652f153c218efd2ba7f61b95121729da2a581ecf81a43906900f36dafa2e8583"
+    },
+    {
+      "path": "config/debug/debug-settings.json",
+      "size": 46,
+      "sha256": "59c198afe3629179cece25464a811943f9647b1a1e4f2a90939416880b37e656"
+    },
+    {
+      "path": "config/effects/death-impact-ellipsoid.json",
+      "size": 160,
+      "sha256": "0f636547e9dc90b7c7930c06a7e5861e0ebb4b36fbd9c19db9ea72c9bec84ca4"
+    },
+    {
+      "path": "config/effects/spawn-fx.json",
+      "size": 191,
+      "sha256": "d271734872a5242bc3ec026b6be28b99e4a1f51b3fc7107b2ebba7d8b241c74c"
+    },
+    {
+      "path": "config/gameplay/void-death.json",
+      "size": 71,
+      "sha256": "aa1027a1c45e196952e36af995e654e00c76bc28a67b145d667bf2065a8efc6a"
+    },
+    {
+      "path": "config/gui/account-panel.json",
+      "size": 2049,
+      "sha256": "57d065d24ed972c01b8f2375f0e54c9a2258b6976e7495deaeb14b518f82f614"
+    },
+    {
+      "path": "config/gui/auth-code-dialog.json",
+      "size": 3546,
+      "sha256": "0035776e30326292ba20dfa4f1070ab829b015de363d9a269db87a22ca06d1a1"
+    },
+    {
+      "path": "config/gui/avatar-creator.json",
+      "size": 14043,
+      "sha256": "0d34d6007ed253d61a576b4c1b9e61f5498c983089d92c4f6f385e7dca7ce964"
+    },
+    {
+      "path": "config/gui/bomb-tag-config.json",
+      "size": 2492,
+      "sha256": "36ea24795eab3a1b1d9e5ac98d7c20103eaa3b34693d515ff90be4973453b34b"
+    },
+    {
+      "path": "config/gui/bomb-tag-hud.json",
+      "size": 2987,
+      "sha256": "29a014b1b5769c8f96cf10a58b5a197e103993183fb11a61b0baa48c3708e554"
+    },
+    {
+      "path": "config/gui/client-hud.json",
+      "size": 754,
+      "sha256": "afff0c1377e95b35c43d92f29394cfd47dba0bb5af136d46f1f43e98758cbe15"
+    },
+    {
+      "path": "config/gui/community-menu copy.json,bak",
+      "size": 9315,
+      "sha256": "7c3329c0bbd4b5d8aa07b9bcb15e38934b780581db176abdf1721a30b8c118a4"
+    },
+    {
+      "path": "config/gui/community-menu.json",
+      "size": 10693,
+      "sha256": "0231b862085023284f7496daf604857399850a93231da109e4dbeb87b212cef1"
+    },
+    {
+      "path": "config/gui/competitive-menu.json",
+      "size": 825,
+      "sha256": "d14c40145585dc82e720ae9af2d6132aea21229b7e8db7dcb3962a3cc8eeae00"
+    },
+    {
+      "path": "config/gui/competitive-result.json",
+      "size": 583,
+      "sha256": "fd7c804c8bd437efb87cb52002273c690525e77da5a0b5bc283ec9e06c285958"
+    },
+    {
+      "path": "config/gui/debug-menu.json",
+      "size": 1120,
+      "sha256": "b211d76962dcdfe489b49cd7dc56bceb6d9f83849d3133b5c34b97ea2bd737dd"
+    },
+    {
+      "path": "config/gui/dev-overlay.json",
+      "size": 231,
+      "sha256": "afcf8c6399eaf09b69dcfe2fb387671cc3c7c70645bc4eebbdf9fad9f27ea9ed"
+    },
+    {
+      "path": "config/gui/duel-config-menu.json",
+      "size": 3375,
+      "sha256": "d08c4708ffaff1b53e0f479268d189f43c21d0256f71676d59202dc354414698"
+    },
+    {
+      "path": "config/gui/duel-hud.json",
+      "size": 1123,
+      "sha256": "a1d3688f93acebf2fe662bfc4e28658085a531c4abacb25bede07c6626e6db0d"
+    },
+    {
+      "path": "config/gui/duel-match-end.json",
+      "size": 836,
+      "sha256": "83ed25408d336fe155e0e5c1f5a3cda5dc3ac0e05dd5925fdd1a2a65b7c2198d"
+    },
+    {
+      "path": "config/gui/graphics-menu.json",
+      "size": 180,
+      "sha256": "2614663ee1ef6ba6b1809568cf9b8cae16e69fb9e2e29219d042e0a8ecec6cc6"
+    },
+    {
+      "path": "config/gui/help-menu.json",
+      "size": 7550,
+      "sha256": "e246beaf99979bc075b366ed2c4e224b15711a431bb08f4ea6ec3caea10d1fa6"
+    },
+    {
+      "path": "config/gui/hud.json",
+      "size": 5364,
+      "sha256": "9716e3655af8becb2ed37bfb71ef136121e16ed7992762659c0771eddf183b9f"
+    },
+    {
+      "path": "config/gui/input-debug.json",
+      "size": 230,
+      "sha256": "faccc349cd5aa15abe18e29d8eba39b4abae87ffbbc79faa6047d647ae8c7d49"
+    },
+    {
+      "path": "config/gui/layout-config.json",
+      "size": 339,
+      "sha256": "18a4fa2e78d3d71022c1f048e5d8b2f79033397b42b19421e560f73c83218630"
+    },
+    {
+      "path": "config/gui/login-menu.json",
+      "size": 3159,
+      "sha256": "45817acb5bc9e1ad74aa07fca00fcf25ca0c937741c8e92bf81ec1120877d340"
+    },
+    {
+      "path": "config/gui/main-menu.json",
+      "size": 3241,
+      "sha256": "cfd4bfd6b682a737c0e401e45aebcea30a3252553a0a8960e65d81d7557145b3"
+    },
+    {
+      "path": "config/gui/menu-avatar-preview.json",
+      "size": 1717,
+      "sha256": "ad8498d0e32fdbc0fa43f00eb3c92e7f13fc032e6f75c1198afad120ccfdc040"
+    },
+    {
+      "path": "config/gui/music-widget.json",
+      "size": 5724,
+      "sha256": "b5943b31c3f7cce1498a29e3f185bd6710b3f7335bc9088ce07c079699448db3"
+    },
+    {
+      "path": "config/gui/play-menu.json",
+      "size": 3414,
+      "sha256": "2facd874f7d5a7e4b8badb827bcd9ea28df34b04e67afaae799ae38b0350f771"
+    },
+    {
+      "path": "config/gui/practice-menu.json",
+      "size": 1068,
+      "sha256": "fcfa3fbaea9d049b4a1bd192782e8f1faf29e8a62ba1dfc0e7fe542a6bf20834"
+    },
+    {
+      "path": "config/gui/replay-menu.json",
+      "size": 180,
+      "sha256": "2614663ee1ef6ba6b1809568cf9b8cae16e69fb9e2e29219d042e0a8ecec6cc6"
+    },
+    {
+      "path": "config/gui/sandbox-map-menu.json",
+      "size": 1527,
+      "sha256": "d6a2cc0fcbc29be8b3e4e7b9feffadd1ac859ac61570c139c97513dcf115a276"
+    },
+    {
+      "path": "config/gui/server-info-menu.json",
+      "size": 1937,
+      "sha256": "371b1259b2064e2c890b2a7717f9acb4cf9e14eb235fb87e56c32319cf6a716e"
+    },
+    {
+      "path": "config/gui/settings-menu.json",
+      "size": 2257,
+      "sha256": "7fad17d5e7e66b940a17ecdc371bb378053c1e17976503913e057e6a755fb3f9"
+    },
+    {
+      "path": "config/gui/sign-in-menu.json",
+      "size": 1542,
+      "sha256": "b2f54d410e7dc3c8ac332d23f231031d4567f5396665ed3d324651847557bac3"
+    },
+    {
+      "path": "config/network/ice-dev.json",
+      "size": 205,
+      "sha256": "8b62963d8ed017c6093f599b3c03adb550e0f457333be676e169da9f21c6adc2"
+    },
+    {
+      "path": "config/replay/replay-export.json",
+      "size": 132,
+      "sha256": "243305a2641c305d88204bc470cdc94f347f13f9c9b37bf5ecfd8f2f42c3c5bb"
+    },
+    {
+      "path": "config/video/outro.json",
+      "size": 76,
+      "sha256": "862a780d1ec7089f1f9484ccc8679665c482295cb9c2e6e76278bb06ee185b35"
     }
   ]
 }
