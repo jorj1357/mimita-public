@@ -47,9 +47,13 @@ def build_manifest():
             rel = os.path.relpath(full, ROOT)
             include_patterns.append(rel)
 
-    # Include default config
-    include_patterns.append("config/accounts/default.json")
-    include_patterns.append("config/current-profile.json")
+    # Include all config files (auto-discovered)
+    config_dir = os.path.join(ROOT, "config")
+    for dirpath, dirnames, filenames in os.walk(config_dir):
+        for fn in filenames:
+            full = os.path.join(dirpath, fn)
+            rel = os.path.relpath(full, ROOT)
+            include_patterns.append(rel)
 
     files = []
     for pattern in include_patterns:

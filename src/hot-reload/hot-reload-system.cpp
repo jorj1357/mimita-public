@@ -51,7 +51,6 @@ HotReloadSystem::~HotReloadSystem()
 bool HotReloadSystem::loadGameDLL()
 {
     if (!std::filesystem::exists(sourceDLL_)) {
-        std::printf("[HOT RELOAD] reload failed: missing %s\n", sourceDLL_.string().c_str());
         return false;
     }
     return loadCandidate(sourceDLL_);

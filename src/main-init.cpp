@@ -167,22 +167,7 @@ void gameInit(int argc, char** argv, Engine& engine)
     printf("[MAIN] start\n");
     installCrashHandler();
 
-    // Extract assets.pak if present (check marker first to skip PAK header read)
-    {
-        DWORD marker = GetFileAttributesA(".pak-extracted");
-        if (marker == INVALID_FILE_ATTRIBUTES)
-        {
-            PakFile pak;
-            if (pak.open("assets.pak")) {
-                printf("[PAK] Extracting %d files to current directory\n", pak.numFiles());
-                pak.extractAllTo(".");
-                FILE* m = fopen(".pak-extracted", "w");
-                if (m) { fprintf(m, "1"); fclose(m); }
-                printf("[PAK] Extraction complete\n");
-            }
-        }
-    }
-
+    
     StructuredLogger::instance().init();
     AnalyticsManager::instance().init(LocalProfileSystem::instance().currentUsername());
 
