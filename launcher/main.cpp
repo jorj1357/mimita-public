@@ -1,4 +1,4 @@
-// MimitaLauncher v2 — differential updates, SHA-256 verify, minidump
+// MimitaLauncher v2 — GitHub Release bootstrap, full installer download
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -106,14 +106,17 @@ HINTERNET hRequest(HINTERNET c, const UrlParts& u, LPCWSTR method, LPCWSTR hdrs 
         u.secure ? WINHTTP_FLAG_SECURE : 0);
 }
 
-bool httpGET(const std::string& url, std::string& out)
+bool httpGETWithHeaders(const std::string& url, std::string& out, const std::wstring& extraHeaders = L"")
 {
     UrlParts u;
     if (!parseUrl(url, u)) return false;
     HINTERNET s = hOpen(); if (!s) return false;
     HINTERNET c = hConnect(s, u); if (!c) { WinHttpCloseHandle(s); return false; }
     HINTERNET r = hRequest(c, u, L"GET"); if (!r) { WinHttpCloseHandle(c); WinHttpCloseHandle(s); return false; }
-    BOOL ok = WinHttpSendRequest(r, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
+    BOOL ok = WinHttpSendRequest(r,
+        extraHeaders.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : extraHeaders.c_str(),
+        extraHeaders.empty() ? 0 : (DWORD)-1L,
+        WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
     if (ok) ok = WinHttpReceiveResponse(r, nullptr);
     DWORD st = 0, sz = sizeof(st);
     if (ok) { WinHttpQueryHeaders(r, WINHTTP_QUERY_STATUS_CODE|WINHTTP_QUERY_FLAG_NUMBER,
@@ -126,6 +129,11 @@ bool httpGET(const std::string& url, std::string& out)
     }
     WinHttpCloseHandle(r); WinHttpCloseHandle(c); WinHttpCloseHandle(s);
     return ok;
+}
+
+bool httpGET(const std::string& url, std::string& out)
+{
+    return httpGETWithHeaders(url, out, L"");
 }
 
 bool httpPOST(const std::string& url, const std::string& body, std::string& out)
@@ -145,7 +153,7 @@ bool httpPOST(const std::string& url, const std::string& body, std::string& out)
     if (ok) {
         std::vector<char> b;
         DWORD rd = 0;
-        do { char t[4096]; if (!WinHttpReadData(r, t, sizeof(t), &rd)) break;         b.insert(b.end(), t, t + rd); } while (rd > 0);
+        do { char t[4096]; if (!WinHttpReadData(r, t, sizeof(t), &rd)) break;         b.insert(b.end(), b.data(), b.data() + rd); } while (rd > 0);
         out.assign(b.data(), b.size());
     }
     WinHttpCloseHandle(r); WinHttpCloseHandle(c); WinHttpCloseHandle(s);
@@ -223,6 +231,71 @@ bool sha256File(const std::string& path, std::string& hex)
     return true;
 }
 
+// ── GitHub API: get latest release info ───────────────────────────────────
+// Returns version string (e.g. "2.0.0"), installer download URL, and SHA-256
+// from https://api.github.com/repos/jorj1357/mimita-public/releases/latest
+bool getGitHubLatestRelease(std::string& outVersion, std::string& outInstallerUrl, std::string& outSha256)
+{
+    std::string json;
+    if (!httpGETWithHeaders("https://api.github.com/repos/jorj1357/mimita-public/releases/latest",
+                            json, L"Accept: application/vnd.github+json\r\n"))
+        return false;
+
+    // Extract tag_name
+    std::string tag = extractJsonStr(json, "tag_name");
+    if (tag.empty()) return false;
+
+    // Convert "v2.0.0" → "2.0.0"
+    if (tag.size() > 1 && tag[0] == 'v') tag = tag.substr(1);
+    outVersion = tag;
+
+    // Find the MimitaSetup asset in the assets array
+    // Scan for "name":"MimitaSetup-..." and get its browser_download_url
+    std::string searchKey = "\"name\":\"MimitaSetup-";
+    auto assetPos = json.find(searchKey);
+    if (assetPos == std::string::npos) return false;
+
+    // Find browser_download_url after this asset entry
+    auto urlKey = json.rfind("\"browser_download_url\"", assetPos);
+    // If not found before this asset, search forward
+    if (urlKey == std::string::npos || urlKey > json.find('}', assetPos))
+        urlKey = json.find("\"browser_download_url\"", assetPos);
+    if (urlKey == std::string::npos) return false;
+
+    auto us = json.find('"', urlKey + 21);
+    if (us == std::string::npos) return false;
+    auto ue = json.find('"', us + 1);
+    if (ue == std::string::npos) return false;
+    outInstallerUrl = json.substr(us + 1, ue - us - 1);
+
+    // Extract SHA-256 from the release body
+    // Look for "SHA-256:" followed by backtick-delimited hash in body field
+    std::string body = extractJsonStr(json, "body");
+    if (!body.empty()) {
+        auto sh = body.find("SHA-256:");
+        if (sh != std::string::npos) {
+            auto bt = body.find('`', sh);
+            if (bt != std::string::npos) {
+                auto be = body.find('`', bt + 1);
+                if (be != std::string::npos) {
+                    std::string hash = body.substr(bt + 1, be - bt - 1);
+                    // Validate it looks like a SHA-256 hex string
+                    if (hash.size() == 64) {
+                        bool valid = true;
+                        for (char c : hash) {
+                            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+                                { valid = false; break; }
+                        }
+                        if (valid) outSha256 = hash;
+                    }
+                }
+            }
+        }
+    }
+
+    return true;
+}
+
 void sendCrashReport(const std::string& ver, DWORD code, DWORD ms)
 {
     std::string b = "{\"event_name\":\"crash_detected\",\"app_version\":\""
@@ -280,7 +353,6 @@ void storeSessionToken(const std::string& dir, const std::string& token)
     writeFile(configDir + "\\auth-token.json", "{\"session_token\":\"" + token + "\"}\n");
 }
 
-// ── URL decode helper ──────────────────────────────────────────────────────────
 std::string urlDecode(const std::string& input)
 {
     std::string out;
@@ -315,16 +387,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR lpCmdLine, int)
     if (localVer.empty()) localVer = "0.0.0";
 
     std::string gameExe = dir + "\\mimita.exe";
+    bool gameExists = GetFileAttributesA(gameExe.c_str()) != INVALID_FILE_ATTRIBUTES;
 
     // Clean up old files
     DeleteFileA((dir + "\\MimitaLauncher.old.exe").c_str());
 
     // ── Handle mimita:// protocol ─────────────────────────────────────────────
-    // When the browser launches us with mimita://login?token=<exchange_token>
-    // we exchange the one-time token for a real session and launch the game.
     if (cmdLine.find("mimita://") != std::string::npos)
     {
-        // Extract the query string (everything after ?)
         auto qpos = cmdLine.find('?');
         if (qpos != std::string::npos)
         {
@@ -338,7 +408,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR lpCmdLine, int)
                 if (tend == std::string::npos) tend = query.size();
                 std::string exchangeToken = urlDecode(query.substr(tpos, tend - tpos));
 
-                // Exchange the token with the backend
                 std::string reqBody = "{\"exchange_token\":\"" + exchangeToken + "\"}";
                 std::string respBody;
                 if (httpPOST("https://mimita.fun/api/auth/exchange-session", reqBody, respBody))
@@ -346,209 +415,103 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR lpCmdLine, int)
                     std::string sessionToken = extractJsonStr(respBody, "session_token");
                     if (!sessionToken.empty())
                     {
-                        // Store session token and launch game directly
                         storeSessionToken(dir, sessionToken);
-                        std::string cli = gameExe + " --session \"" + sessionToken + "\"";
-                        STARTUPINFOA si = { sizeof(si) };
-                        PROCESS_INFORMATION pi;
-                        if (CreateProcessA(nullptr, &cli[0], nullptr, nullptr, FALSE, 0,
-                                            nullptr, dir.c_str(), &si, &pi))
-                        {
-                            WaitForSingleObject(pi.hProcess, INFINITE);
-                            CloseHandle(pi.hProcess);
-                            CloseHandle(pi.hThread);
+                        if (gameExists) {
+                            std::string cli = gameExe + " --session \"" + sessionToken + "\"";
+                            STARTUPINFOA si = { sizeof(si) };
+                            PROCESS_INFORMATION pi;
+                            if (CreateProcessA(nullptr, &cli[0], nullptr, nullptr, FALSE, 0,
+                                                nullptr, dir.c_str(), &si, &pi))
+                            {
+                                WaitForSingleObject(pi.hProcess, INFINITE);
+                                CloseHandle(pi.hProcess);
+                                CloseHandle(pi.hThread);
+                            }
                         }
                         return 0;
                     }
                 }
-                // Fallback: store the exchange token as a session token and let game validate
                 storeSessionToken(dir, exchangeToken);
             }
         }
         return 0;
     }
-    // ── End protocol handling ─────────────────────────────────────────────────
 
-    // ── Fetch version + manifest ──────────────────────────────────────────────
-    std::string versionJson, manifestJson, latestVer, manifestUrl;
-    if (httpGET("https://mimita.fun/api/game/version", versionJson))
-        latestVer = extractJsonStr(versionJson, "version");
+    // ── Check GitHub for latest release ───────────────────────────────────────
+    std::string latestVer, installerUrl, installerSha256;
+    bool gotLatest = getGitHubLatestRelease(latestVer, installerUrl, installerSha256);
 
-    if (!latestVer.empty() && latestVer != localVer) {
-        // Get manifest URL
-        std::string uv;
-        if (httpGET("https://mimita.fun/api/update/latest-version", uv))
-            manifestUrl = extractJsonStr(uv, "manifest_url");
+    // ── If game needs update or doesn't exist, download and run installer ─────
+    bool needsInstall = !gameExists || (gotLatest && latestVer != localVer);
 
-        if (!manifestUrl.empty()) {
-            std::string fullUrl = "https://mimita.fun" + manifestUrl;
-            httpGET(fullUrl, manifestJson);
-        }
-    }
-
-    // ── Differential update ───────────────────────────────────────────────────
-    bool updated = false;
-    if (!manifestJson.empty() && manifestJson[0] == '{') {
-        std::string pendingDir = dir + "\\pending";
-        CreateDirectoryA(pendingDir.c_str(), nullptr);
-        bool allOk = true;
-
-        // Parse files array — simple scan for "path" and "sha256"
-        size_t pos = 0, end = manifestJson.size();
-        while ((pos = manifestJson.find("\"path\"", pos)) != std::string::npos) {
-            auto ps = manifestJson.find('"', pos + 7);
-            if (ps == std::string::npos) break;
-            auto pe = manifestJson.find('"', ps + 1);
-            if (pe == std::string::npos) break;
-            std::string relPath = manifestJson.substr(ps + 1, pe - ps - 1);
-            pos = pe;
-
-            // Find sha256
-            auto sh = manifestJson.find("\"sha256\"", pos);
-            if (sh == std::string::npos) break;
-            auto ss = manifestJson.find('"', sh + 9);
-            if (ss == std::string::npos) break;
-            auto se = manifestJson.find('"', ss + 1);
-            if (se == std::string::npos) break;
-            std::string wantHash = manifestJson.substr(ss + 1, se - ss - 1);
-            pos = se;
-
-            std::string localPath = dir + "\\" + relPath;
-            std::string localHash;
-            bool needDownload = true;
-
-            if (sha256File(localPath, localHash) && localHash == wantHash)
-                needDownload = false;
-
-            if (needDownload) {
-                std::string dlUrl = "https://mimita.fun/api/download/file/" + relPath;
-                std::string destPath = pendingDir + "\\" + relPath;
-
-                // Ensure subdirectory exists
-                auto slash = destPath.find_last_of("\\");
-                if (slash != std::string::npos) {
-                    std::string sub = destPath.substr(0, slash);
-                    CreateDirectoryA(sub.c_str(), nullptr);
-                }
-
-                // Resume partial download
-                DWORD existing = 0;
-                {
-                    HANDLE pf = CreateFileA((destPath + ".part").c_str(), GENERIC_READ,
-                        FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-                    if (pf != INVALID_HANDLE_VALUE) {
-                        existing = GetFileSize(pf, nullptr);
-                        CloseHandle(pf);
-                    }
-                }
-
-                std::string remoteUrl = dlUrl;
-                if (!downloadFileTo(remoteUrl, destPath, existing)) {
-                    allOk = false;
-                    break;
-                }
-
-                // Verify downloaded file
-                std::string dlHash;
-                if (!sha256File(destPath, dlHash) || dlHash != wantHash) {
-                    allOk = false;
-                    break;
-                }
+    if (needsInstall)
+    {
+        if (!gotLatest)
+        {
+            // GitHub unreachable and no game — can't bootstrap
+            if (!gameExists) {
+                MessageBoxA(nullptr,
+                    "Could not connect to GitHub to download Mimita.\n"
+                    "Check your internet connection and try again.",
+                    "Mimita Launcher", MB_OK | MB_ICONERROR);
+                return 1;
             }
+            // GitHub unreachable but game exists — launch it anyway
         }
+        else
+        {
+            // Download installer from GitHub
+            char td[MAX_PATH]; GetTempPathA(MAX_PATH, td);
+            std::string installerPath = std::string(td) + "MimitaSetup-" + latestVer + ".exe";
 
-        if (allOk) {
-            // Walk pending dir tree and copy over originals
-            std::vector<std::string> dirs = { "" };
-            while (!dirs.empty()) {
-                std::string prefix = dirs.back(); dirs.pop_back();
-                std::string search = pendingDir + "\\" + prefix + "*";
-                WIN32_FIND_DATAA fd;
-                HANDLE ff = FindFirstFileA(search.c_str(), &fd);
-                if (ff == INVALID_HANDLE_VALUE) continue;
-                do {
-                    std::string name = fd.cFileName;
-                    if (name == "." || name == "..") continue;
-                    std::string rel = prefix + name;
-                    std::string src = pendingDir + "\\" + rel;
-                    if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-                        dirs.push_back(rel + "\\");
-                    } else {
-                        std::string dst = dir + "\\" + rel;
-                        CreateDirectoryA(dst.substr(0, dst.find_last_of("\\")).c_str(), nullptr);
-                        CopyFileA(src.c_str(), dst.c_str(), FALSE);
-                    }
-                } while (FindNextFileA(ff, &fd));
-                FindClose(ff);
-            }
-
-            // Clean up pending
+            if (downloadFileTo(installerUrl, installerPath, 0))
             {
-                std::vector<std::string> dirs2 = { "" };
-                while (!dirs2.empty()) {
-                    std::string p = dirs2.back(); dirs2.pop_back();
-                    std::string s = pendingDir + "\\" + p + "*";
-                    WIN32_FIND_DATAA fd;
-                    HANDLE ff = FindFirstFileA(s.c_str(), &fd);
-                    if (ff == INVALID_HANDLE_VALUE) continue;
-                    do {
-                        std::string n = fd.cFileName;
-                        if (n == "." || n == "..") continue;
-                        std::string r = p + n;
-                        std::string fp = pendingDir + "\\" + r;
-                        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-                            dirs2.push_back(r + "\\");
-                        } else {
-                            DeleteFileA(fp.c_str());
-                        }
-                    } while (FindNextFileA(ff, &fd));
-                    FindClose(ff);
+                // Verify SHA-256 if available
+                bool hashOk = true;
+                if (!installerSha256.empty()) {
+                    std::string dlHash;
+                    if (sha256File(installerPath, dlHash) && dlHash == installerSha256) {
+                        // Hash matches
+                    } else {
+                        hashOk = false;
+                    }
                 }
-                RemoveDirectoryA(pendingDir.c_str());
-            }
 
-            // Update version
-            writeFile(dir + "\\version.txt", latestVer);
-            updated = true;
-        }
-    }
-
-    // ── Full installer fallback (with SHA-256 verify) ──────────────────────
-    if (!updated && !latestVer.empty() && latestVer != localVer) {
-        std::string wantHash = extractJsonStr(versionJson, "installer_sha256");
-        char td[MAX_PATH]; GetTempPathA(MAX_PATH, td);
-        std::string ip = std::string(td) + "MimitaSetup-" + latestVer + ".exe";
-
-        if (downloadFileTo("https://mimita.fun/api/download/latest", ip, 0)) {
-            std::string dlHash;
-            bool ok = true;
-            if (!wantHash.empty()) {
-                if (sha256File(ip, dlHash) && dlHash == wantHash) {
-                    // Hash matches — proceed
-                } else {
-                    ok = false; // hash mismatch or missing, don't run
+                if (hashOk) {
+                    if (spawnSelfUpdate(installerPath, dir)) {
+                        Sleep(500);
+                        // The batch script re-launches us after install
+                        return 0;
+                    }
                 }
             }
-            if (ok) {
-                if (spawnSelfUpdate(ip, dir)) { Sleep(500); return 0; }
+
+            // Download or hash verify failed — fall back to launching existing game
+            if (!gameExists) {
+                MessageBoxA(nullptr,
+                    "Failed to download or verify the Mimita installer.\n"
+                    "Try again or download manually from:\n"
+                    "https://github.com/jorj1357/mimita-public/releases",
+                    "Mimita Launcher", MB_OK | MB_ICONERROR);
+                return 1;
             }
         }
     }
 
-    // ── Check for stored session token ───────────────────────────────────────
+    // ── Launch game ──────────────────────────────────────────────────────────
+    if (!gameExists) {
+        MessageBoxA(nullptr, "Mimita is not installed. The launcher will install it when online.",
+                    "Mimita Launcher", MB_OK | MB_ICONINFORMATION);
+        return 1;
+    }
+
+    // Check for stored session token
     std::string sessionArg;
     {
         std::string authJson = readFile(dir + "\\config\\auth-token.json");
         std::string token = extractJsonStr(authJson, "session_token");
         if (!token.empty())
             sessionArg = " --session \"" + token + "\"";
-    }
-
-    // ── Launch game ──────────────────────────────────────────────────────────
-    if (GetFileAttributesA(gameExe.c_str()) == INVALID_FILE_ATTRIBUTES) {
-        MessageBoxA(nullptr, "Mimita not found. Run MimitaSetup.exe to install.",
-                    "Mimita Launcher", MB_OK | MB_ICONERROR);
-        return 1;
     }
 
     STARTUPINFOA si = { sizeof(si) };
@@ -566,7 +529,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR lpCmdLine, int)
     DWORD elapsed = GetTickCount() - start;
 
     if (exitCode != 0 && elapsed > 1000) {
-        // Write minidump
         std::string dumpPath = dir + "\\crash-" + std::to_string(GetTickCount()) + ".dmp";
         writeMinidump(pi.dwProcessId, dumpPath);
         sendCrashReport(localVer, exitCode, elapsed);
