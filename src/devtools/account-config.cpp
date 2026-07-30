@@ -112,7 +112,7 @@ std::string getAccountConfigPath(const std::string& account) {
 }
 
 void ensureConfigDir() {
-    std::filesystem::create_directories("config/accounts");
+    std::error_code ec; std::filesystem::create_directories("config/accounts", ec);
 }
 
 } // namespace

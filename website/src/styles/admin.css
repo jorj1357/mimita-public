@@ -869,3 +869,20 @@
     gap: 12px;
   }
 }
+
+/* Error Log */
+.adminLogBadge {
+  display: inline-block;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+}
+.adminLogBadge--signup { color: #f87171; border-color: #f8717144; background: #f8711111; }
+.adminLogBadge--server { color: #fb923c; border-color: #fb923c44; background: #fb923c11; }
+.adminLogBadge--crash  { color: #e879f9; border-color: #e879f944; background: #e879f911; }
+.adminLogBadge--auth   { color: #fbbf24; border-color: #fbbf2444; background: #fbbf2411; }
+.adminLogBadge--general { color: #94a3b8; border-color: #94a3b844; background: #94a3b811; }

@@ -296,4 +296,21 @@ void registerDebugToggleCommands()
         },
         "2026-06-30", CommandCategory::Debug
     });
+
+    term.registerCommand({
+        "chat_debug",
+        "Toggle chat debug logging (0=off, 1=on)",
+        "chat_debug <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                DebugConfig::DEBUG_CHAT = !DebugConfig::DEBUG_CHAT;
+            } else {
+                DebugConfig::DEBUG_CHAT = args[0] != "0";
+            }
+            Terminal::instance().addLog(
+                DebugConfig::DEBUG_CHAT
+                ? "[OK] chat debug enabled"
+                : "[OK] chat debug disabled");
+        }
+    });
 }

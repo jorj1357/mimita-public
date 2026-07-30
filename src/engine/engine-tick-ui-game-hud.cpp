@@ -20,6 +20,7 @@
 #include "gui/gui-element-render.h"
 #include "gui/hud/player-nameplates.h"
 #include "gui/hud/chat-bubble.h"
+#include "gui/hud/chat-window.h"
 #include "gui/gui-editor.h"
 #include "ui/hitmarker.h"
 #include "crosshair/crosshair-render.h"
@@ -384,4 +385,8 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         uiDrawText(dbg, 24, 184, 0.30f, {1.0f, 0.9f, 0.45f, 1.0f});
     }
     }
+
+    // ── Chat Window ─────────────────────────────────────
+    renderChatWindow(gChatWindowState, engine.window(), gChatHistory,
+                     gChatUiTickClock, uiScreenW(), uiScreenH());
 }

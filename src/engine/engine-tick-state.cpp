@@ -7,6 +7,7 @@
 #include "world/world-gltf-loader.h"
 #include "audio/music-manager.h"
 #include "gui/gui-main.h"
+#include "gui/hud/chat-window.h"
 #include "gui/menus/duel-config-menu.h"
 #include "game/duel.h"
 #include "game/bomb-tag.h"
@@ -280,7 +281,7 @@ void engineTickState(Engine& engine, float dt)
             }
             bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd;
             glfwSetInputMode(engine.window(), GLFW_CURSOR,
-                gameState == GAME_PLAYING && !Terminal::instance().isOpen() && !duelMatchOver
+                gameState == GAME_PLAYING && !Terminal::instance().isOpen() && !isChatOpen() && !duelMatchOver
                     ? GLFW_CURSOR_DISABLED
                     : GLFW_CURSOR_NORMAL);
         }
@@ -309,7 +310,7 @@ void engineTickState(Engine& engine, float dt)
             prevDuelPhase = gDuelManager.phase();
             bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd;
             glfwSetInputMode(engine.window(), GLFW_CURSOR,
-                gameState == GAME_PLAYING && !Terminal::instance().isOpen() && !duelMatchOver
+                gameState == GAME_PLAYING && !Terminal::instance().isOpen() && !isChatOpen() && !duelMatchOver
                     ? GLFW_CURSOR_DISABLED
                     : GLFW_CURSOR_NORMAL);
         }
@@ -324,7 +325,7 @@ void engineTickState(Engine& engine, float dt)
         Terminal::instance().toggle();
         bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd;
         glfwSetInputMode(engine.window(), GLFW_CURSOR,
-            Terminal::instance().isOpen() ? GLFW_CURSOR_NORMAL :
+            Terminal::instance().isOpen() || isChatOpen() ? GLFW_CURSOR_NORMAL :
             (gameState == GAME_PLAYING && !duelMatchOver ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL));
     }
     gravePrev = graveDown;

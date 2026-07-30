@@ -15,6 +15,8 @@
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
 #include "terminal/terminal-state.h"
+#include "gui/hud/chat-history.h"
+#include "gui/hud/chat-bubble.h"
 #include "world/world.h"
 
 #include <algorithm>
@@ -828,6 +830,62 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                  bytes >= (int)sizeof(ChatPacket))
         {
             mpProcessChatPacket(ctx, reinterpret_cast<const ChatPacket*>(buffer));
+        }
+        else if (header->type == PACKET_CHAT_MESSAGE_EVENT &&
+                 bytes >= (int)sizeof(ChatMessageEventPacket))
+        {
+            const ChatMessageEventPacket* ev =
+                reinterpret_cast<const ChatMessageEventPacket*>(buffer);
+
+            ChatHistoryEntry entry;
+            entry.messageId = ev->messageId;
+            entry.serverTick = ev->serverTick;
+            entry.utcUnixMilliseconds = ev->utcUnixMilliseconds;
+            entry.senderEntityId = ev->senderEntityId;
+            entry.senderAccountId = ev->senderAccountId;
+            entry.senderType = static_cast<ChatSenderType>(ev->senderType);
+            entry.senderName = ev->senderName;
+            entry.text = ev->utf8Message;
+            entry.muted = false;
+
+            if (gpChatHistory)
+                gChatHistory.append(entry);
+
+            // Also add to 3D chat bubble for the sender
+            if (ev->senderType == 0) // Player
+            {
+                bool found = false;
+                for (auto& kv : ctx.remotePlayers)
+                {
+                    if (kv.second.username == ev->senderName)
+                    {
+                        addChatMessage(kv.second.chatState, ev->utf8Message, ev->senderName);
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                {
+                    // Could be our own message or a new player
+                    // Check if it matches local player
+                    if (ev->header.playerId == ctx.localPlayerId)
+                    {
+                        // Already handled locally via requestSendChatMessage
+                    }
+                }
+                playChatSound((int)std::strlen(ev->utf8Message));
+
+                ReplayEffectEvent chatEvent;
+                chatEvent.type = "chat";
+                chatEvent.sourceActorId = ev->senderName;
+                chatEvent.assetId = ev->utf8Message;
+                chatEvent.lifetime = computeChatDuration((int)std::strlen(ev->utf8Message));
+                captureReplayEffect(chatEvent);
+            }
+
+            Debug::log(Debug::Category::Chat, "[CHAT V2 RECV] messageId=%llu sender=%s tick=%llu\n",
+                       (unsigned long long)ev->messageId, ev->senderName,
+                       (unsigned long long)ev->serverTick);
         }
         else if (header->type == PACKET_GODBALL_STATE &&
                  bytes >= (int)sizeof(GodballStatePacket))

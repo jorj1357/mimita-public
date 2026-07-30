@@ -1321,6 +1321,11 @@ ServerPacketProcessResult processServerPacket(
         handleChatMessage(sock, buffer, bytes, players, tick, totalPacketsOut);
         result.handled = true;
     }
+    else if (header->type == PACKET_CHAT_REQUEST)
+    {
+        handleChatRequestV2(sock, buffer, bytes, players, tick, totalPacketsOut);
+        result.handled = true;
+    }
     else if (header->type == PACKET_PING)
     {
         handlePing(sock, from, buffer, bytes, tick, authenticatedPlayer);

@@ -83,7 +83,8 @@ bool LoadPlayerSettings(const std::string& account)
 
 bool SavePlayerSettings(const std::string& account)
 {
-    std::filesystem::create_directories("config/accounts");
+    std::error_code ec;
+    std::filesystem::create_directories("config/accounts", ec);
     const std::string path = configPath(account);
     json root = json::object();
 
@@ -128,7 +129,6 @@ bool SavePlayerSettings(const std::string& account)
     output << root.dump(2);
     output.close();
 
-    std::error_code ec;
     std::filesystem::remove(path, ec);
     ec.clear();
     std::filesystem::rename(temporary, path, ec);

@@ -1,0 +1,17 @@
+{
+  "cardWidth": 280,
+  "cardHeight": 360,
+  "avatarSize": 64,
+  "backgroundColor": [0.08, 0.08, 0.12, 0.95],
+  "borderColor": [0.35, 0.4, 0.5, 0.8],
+  "textColor": [1.0, 1.0, 1.0, 1.0],
+  "labelColor": [0.6, 0.6, 0.7, 1.0],
+  "font": "MingLiU",
+  "showAvatar": true,
+  "showUsername": true,
+  "showRole": true,
+  "showJoinDate": true,
+  "showMMR": true,
+  "showStats": true,
+  "showProfileLink": true
+}

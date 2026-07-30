@@ -1,0 +1,13 @@
+{
+  "rateLimiting": {
+    "bucketSize": 5,
+    "refillRate": 0.0333,
+    "maxRefillTicks": 300
+  },
+  "maxMessageLength": 256,
+  "maxHistoryMessages": 100,
+  "fadeHoldTicks": 600,
+  "fadeDurationTicks": 300,
+  "maxBackgroundOpacity": 0.5,
+  "minimumTicksBetweenMessages": 30
+}

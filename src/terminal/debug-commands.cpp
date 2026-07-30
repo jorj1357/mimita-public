@@ -175,7 +175,7 @@ void registerDebugCommands()
 
     Terminal::instance().registerCommand({
         "healthme",
-        "Override local player HP for testing. Syntax: healthme <hp> | healthme default|reset",
+        "Override only your own HP. Syntax: healthme <hp> | healthme default|reset",
         "healthme <value>",
         [](const std::vector<std::string>& args) {
             Player& player = THE_PLAYER;
@@ -186,13 +186,13 @@ void registerDebugCommands()
             }
 
             if (args[0] == "default" || args[0] == "reset") {
-                DevOverrides::healthOverrideEnabled = false;
+                DevOverrides::playerHealthOverrideEnabled = false;
                 Debug::warn(Debug::Category::General,
                     "\n==================================\n"
-                    "Developer Health Override Disabled\n"
+                    "Player Health Override Disabled\n"
                     "Using default player health.\n"
                     "==================================\n");
-                Terminal::instance().addLog("[HEALTHME] Override disabled. Next respawn will use normal HP.");
+                Terminal::instance().addLog("[HEALTHME] Player override disabled. Next respawn will use normal HP.");
                 return;
             }
 
@@ -208,8 +208,8 @@ void registerDebugCommands()
                 return;
             }
 
-            DevOverrides::healthOverrideEnabled = true;
-            DevOverrides::healthOverrideValue = value;
+            DevOverrides::playerHealthOverrideEnabled = true;
+            DevOverrides::playerHealthOverrideValue = value;
 
             // Apply immediately
             player.maxHp = value;
@@ -218,17 +218,66 @@ void registerDebugCommands()
             char buf[256];
             snprintf(buf, sizeof(buf),
                 "\n==================================\n"
-                "Developer Health Override Enabled\n"
+                "Player Health Override Enabled\n"
                 "Current HP: %d\n"
                 "Max HP: %d\n"
-                "Persistent: YES\n"
                 "Applies on Respawn: YES\n"
                 "==================================",
                 value, value);
             Debug::warn(Debug::Category::General, "%s\n", buf);
-            Terminal::instance().addLog(std::string("[HEALTHME] HP set to ") + std::to_string(value));
+            Terminal::instance().addLog(std::string("[HEALTHME] Player HP set to ") + std::to_string(value));
         },
         "2026-07-04", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "healthall",
+        "Set spawn HP for ALL entities (player, NPCs). Syntax: healthall <hp> | healthall default|reset",
+        "healthall <value>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[HEALTHALL] Usage: healthall <hp> or healthall default|reset");
+                return;
+            }
+
+            if (args[0] == "default" || args[0] == "reset") {
+                DevOverrides::healthOverrideEnabled = false;
+                Debug::warn(Debug::Category::General,
+                    "\n==================================\n"
+                    "All-Entities Health Override Disabled\n"
+                    "Using default spawn health.\n"
+                    "==================================\n");
+                Terminal::instance().addLog("[HEALTHALL] Override disabled. Future spawns will use normal HP.");
+                return;
+            }
+
+            int value;
+            try { value = std::stoi(args[0]); }
+            catch (...) {
+                Terminal::instance().addLog("[HEALTHALL] Invalid value. Use a positive integer or 'default'.");
+                return;
+            }
+
+            if (value < 0) {
+                Terminal::instance().addLog("[HEALTHALL] Negative values not allowed.");
+                return;
+            }
+
+            DevOverrides::healthOverrideEnabled = true;
+            DevOverrides::healthOverrideValue = value;
+
+            char buf[256];
+            snprintf(buf, sizeof(buf),
+                "\n==================================\n"
+                "All-Entities Health Override Enabled\n"
+                "HP: %d\n"
+                "Applies to all future spawns/respawns\n"
+                "==================================",
+                value);
+            Debug::warn(Debug::Category::General, "%s\n", buf);
+            Terminal::instance().addLog(std::string("[HEALTHALL] All-entities spawn HP set to ") + std::to_string(value));
+        },
+        "2026-07-30", CommandCategory::Debug
     });
 
     // GUI binding debug commands

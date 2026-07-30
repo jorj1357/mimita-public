@@ -1,0 +1,10 @@
+{
+  "maxVisible": 3,
+  "defaultDurationTicks": 300,
+  "position": {
+    "anchor": "bottom_right",
+    "offsetX": -16,
+    "offsetY": -16
+  },
+  "spacing": 8
+}

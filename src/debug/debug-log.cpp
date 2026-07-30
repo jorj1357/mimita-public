@@ -37,6 +37,7 @@ const char* categoryName(Debug::Category category)
         case Debug::Category::World: return "WORLD";
         case Debug::Category::Duel: return "DUEL";
         case Debug::Category::Auth: return "AUTH";
+        case Debug::Category::Chat: return "CHAT";
         default: return "DEBUG";
     }
 }
@@ -59,6 +60,7 @@ const char* categoryColor(Debug::Category category)
         case Debug::Category::Duel: return "\033[35m";      // Magenta
         case Debug::Category::World: return "\033[32m";     // Green
         case Debug::Category::NpcMovement: return "\033[33m"; // Yellow
+        case Debug::Category::Chat: return "\033[36m";   // Cyan
         default: return "\033[0m";  // Reset
     }
 }
@@ -98,6 +100,8 @@ bool Debug::enabled(Category category)
         case Category::Duel: return DebugConfig::DEBUG_DUEL;
         case Category::Auth: return DebugConfig::ENABLE_DEBUG_LOGS ||
                                    DebugConfig::DEBUG_AUTH;
+        case Category::Chat: return DebugConfig::ENABLE_DEBUG_LOGS ||
+                                   DebugConfig::DEBUG_CHAT;
         default:
             return DebugConfig::ENABLE_DEBUG_LOGS ||
                    DebugConfig::DEBUG_TICKS ||

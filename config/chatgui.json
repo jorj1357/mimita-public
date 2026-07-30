@@ -1,0 +1,13 @@
+{
+  "chatWindow": {
+    "anchor": "bottom_left",
+    "widthNormalized": 0.25,
+    "heightNormalized": 0.25,
+    "offsetPixels": [12, -12],
+    "maximumBackgroundOpacity": 0.5,
+    "font": "MingLiU",
+    "maximumMessages": 100,
+    "showTickNumber": true,
+    "showUtcTimeOnHover": true
+  }
+}

@@ -37,6 +37,7 @@
 #include "gui/gui-editor.h"
 #include "gui/gui-element-render.h"
 #include "gui/hud/player-nameplates.h"
+#include "gui/hud/chat-history.h"
 #include "gui/font-stuff/font-loader.h"
 #include "game/game-state.h"
 #include "game/game-cli.h"
@@ -160,6 +161,7 @@ extern std::unordered_map<int, bool>* gpBindPrev;
 extern DuelConfig* gpDuelConfig;
 extern MimitaNet::MultiplayerContext* gpMpContext;
 extern GameState* gpGameState;
+extern ChatHistory* gpChatHistory;
 extern bool gReplayExportRenderMode;
 extern bool gReplayCinematicMode;
 extern bool gNetPresentationDebug;
@@ -280,6 +282,8 @@ void gameInitSubsystems(Engine& engine)
     static std::unordered_map<int, bool> G_BIND_PREV;
     static std::mt19937 rng(std::random_device{}());
 
+    static ChatHistory gChatHistory;
+
     static DuelConfig gDuelConfig;
 
     static MimitaNet::MultiplayerContext mpContext;
@@ -319,6 +323,7 @@ void gameInitSubsystems(Engine& engine)
     gpCommandBinds = &G_COMMAND_BINDS;
     gpBindPrev = &G_BIND_PREV;
     gpGameState = &gameState;
+    gpChatHistory = &gChatHistory;
     gpWorld = &world;
     gpActiveMapPath = &activeMapPath;
     gpNpcSystem = &npcSystem;

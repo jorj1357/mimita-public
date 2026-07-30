@@ -24,7 +24,8 @@ namespace Debug
         World,
         Duel,
         Auth,
-        Avatar
+        Avatar,
+        Chat
     };
 
     bool enabled(Category category);

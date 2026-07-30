@@ -16,6 +16,7 @@
 #include "engine/engine.h"
 #include "gui/gui-main.h"
 #include "gui/ui-system.h"
+#include "gui/hud/chat-window.h"
 #include "gui/menus/online-menu.h"
 #include "devtools/dev-overlay.h"
 #include "devtools/terminal.h"
@@ -63,6 +64,8 @@ extern bool gReplayExportRenderMode;
 void engineTick(Engine& engine)
 {
     MIMITA_PERF_SCOPE("EngineTick");
+    // Step UI tick clock (60 Hz fixed step, independent of render FPS)
+    gChatUiTickClock.tick();
     auto tFrameStart = std::chrono::steady_clock::now();
     HEARTBEAT("FRAME START");
 
@@ -156,7 +159,7 @@ void engineTick(Engine& engine)
 
     static bool f10Prev = false;
     bool f10Down = glfwGetKey(engine.window(), GLFW_KEY_F10) == GLFW_PRESS;
-    if (f10Down && !f10Prev) {
+    if (!Terminal::instance().isOpen() && f10Down && !f10Prev) {
         ShellExecuteA(NULL, "open", "replays", NULL, NULL, SW_SHOWNORMAL);
         Debug::log(Debug::Category::General, "[MAIN] opened replays folder");
     }

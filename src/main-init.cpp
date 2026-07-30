@@ -2,6 +2,7 @@
 #include "main-systems.h"
 #include "gui/ui-system-internal.h"
 #include "gui/gui-bindings.h"
+#include "gui/hud/chat-window.h"
 #include "auth/auth-popup.h"
 #include <cstdio>
 #include <cstdlib>
@@ -123,6 +124,9 @@
 #include <windows.h>
 #include <glad/glad.h>
 
+// Forward declaration from player-commands.cpp
+void requestSendChatMessage(const std::string& message);
+
 extern DuelManager gDuelManager;
 extern BombTagManager gBombTagManager;
 extern FramePacer gFramePacer;
@@ -188,19 +192,28 @@ void gameInit(int argc, char** argv, Engine& engine)
         avatarMenuHandleChar(codepoint);
         serverInfoMenuHandleChar(codepoint);
         onlineMenuHandleChar(codepoint);
+        handleChatWindowChar(gChatWindowState, codepoint);
         guiBindingsHandleChar(codepoint);
         Terminal::instance().handleChar(codepoint);
         GuiEditor::instance().handleChar(codepoint);
     });
     guiBindingsSetWindow(engine.window());
-    glfwSetKeyCallback(engine.window(), [](GLFWwindow*, int key, int scancode, int action, int mods) {
+    glfwSetWindowUserPointer(engine.window(), &engine);
+    glfwSetKeyCallback(engine.window(), [](GLFWwindow* win, int key, int scancode, int action, int mods) {
         (void)scancode;
+        (void)win;
         if (action == GLFW_PRESS || action == GLFW_REPEAT) {
             authPopupHandleKey(key, action);
             signInMenuHandleKey(key, action);
             avatarMenuHandleKey(key, action);
             serverInfoMenuHandleKey(key, action, mods);
             onlineMenuHandleKey(key, action);
+            std::string chatMsg;
+            bool consumed = handleChatWindowKey(gChatWindowState, key, action, mods,
+                glfwGetCurrentContext(), gChatUiTickClock, chatMsg);
+            if (!chatMsg.empty())
+                requestSendChatMessage(chatMsg);
+            if (consumed) return;
             guiBindingsHandleKey(key, action, mods);
             Terminal::instance().handleKey(key, mods);
         }

@@ -21,8 +21,6 @@ import atexit
 ROOT = os.path.dirname(os.path.abspath(__file__))
 BUILD_DIR = os.path.join(ROOT, "build")
 LOCK_FILE = os.path.join(BUILD_DIR, "build-agent.lock")
-LOCK_WAIT_SECONDS = 900
-LOCK_POLL_SECONDS = 2
 
 # ── Build history tracker ─────────────────────────────────────────────
 BUILD_HISTORY_FILE = os.path.join(
@@ -66,8 +64,6 @@ def _format_lock_info(info):
 
 def acquire_build_lock():
     os.makedirs(BUILD_DIR, exist_ok=True)
-    deadline = time.time() + LOCK_WAIT_SECONDS
-    warned_owner = None
     payload = {
         "pid": os.getpid(),
         "host": socket.gethostname(),
@@ -75,32 +71,26 @@ def acquire_build_lock():
         "cmd": " ".join([sys.executable] + sys.argv),
     }
 
-    while True:
-        try:
-            fd = os.open(LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(payload, f, indent=2)
-            print(f"[BUILD LOCK] acquired pid={payload['pid']} file={LOCK_FILE}")
-            return True
-        except FileExistsError:
-            info = _read_lock_info()
-            owner = _format_lock_info(info)
-            owner_pid = int(info.get("pid", 0) or 0)
-            if not _process_is_running(owner_pid):
-                print(f"[BUILD LOCK] removing stale lock: {owner}")
-                try:
-                    os.remove(LOCK_FILE)
-                    continue
-                except OSError:
-                    pass
-
-            if owner != warned_owner:
-                print(f"[BUILD LOCK] waiting for active build: {owner}")
-                warned_owner = owner
-            if time.time() >= deadline:
-                print(f"[BUILD LOCK] timeout waiting for active build: {owner}")
-                return False
-            time.sleep(LOCK_POLL_SECONDS)
+    try:
+        fd = os.open(LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+        print(f"[BUILD LOCK] acquired pid={payload['pid']} file={LOCK_FILE}")
+        return True
+    except FileExistsError:
+        info = _read_lock_info()
+        owner = _format_lock_info(info)
+        owner_pid = int(info.get("pid", 0) or 0)
+        if not _process_is_running(owner_pid):
+            print(f"[BUILD LOCK] removing stale lock: {owner}")
+            try:
+                os.remove(LOCK_FILE)
+                return acquire_build_lock()
+            except OSError:
+                pass
+        print(f"[BUILD LOCK] another build already running: {owner}")
+        print("[BUILD LOCK] skipping — build is already in progress")
+        sys.exit(0)
 
 
 def release_build_lock():

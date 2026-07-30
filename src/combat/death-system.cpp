@@ -268,13 +268,13 @@ void DeathSystem::respawn(Player& actor, const std::string& actorId, const World
     actor.vel = glm::vec3(0.0f);
     actor.externalImpulse = glm::vec3(0.0f);
     // Apply developer HP override if enabled
-    if (DevOverrides::healthOverrideEnabled) {
+    bool isNpc = actorId.find("npc_") == 0;
+    if (!isNpc && DevOverrides::playerHealthOverrideEnabled) {
+        actor.maxHp = DevOverrides::playerHealthOverrideValue;
+        actor.currentHp = DevOverrides::playerHealthOverrideValue;
+    } else if (DevOverrides::healthOverrideEnabled) {
         actor.maxHp = DevOverrides::healthOverrideValue;
         actor.currentHp = DevOverrides::healthOverrideValue;
-        Debug::warn(Debug::Category::General,
-            "\nDeveloper Health Override Applied\n"
-            "HP: %d / %d\n",
-            actor.currentHp, actor.maxHp);
     } else {
         actor.currentHp = actor.maxHp;
     }

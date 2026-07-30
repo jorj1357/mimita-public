@@ -1,0 +1,3 @@
+// launcher.rc — Resource script for MimitaLauncher
+// Embeds the loading screen image directly into the EXE.
+IDB_LOADING_IMAGE RCDATA "..\\assets\\uitextures\\mimita-loading-v1.png"

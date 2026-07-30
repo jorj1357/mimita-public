@@ -17,6 +17,7 @@ export default function Account() {
     const [cropFile, setCropFile] = useState(null)
     const [dangerOpen, setDangerOpen] = useState(false)
     const [changePw, setChangePw] = useState({ current: "", newPass: "", confirm: "" })
+    const [toast, setToast] = useState(null)
 
     useEffect(() => {
         apiRequest("/api/auth/me")
@@ -146,7 +147,7 @@ export default function Account() {
     async function changePassword(event) {
         event.preventDefault()
         if (changePw.newPass !== changePw.confirm) {
-            setMessage("new passwords do not match")
+            showToast("new passwords do not match", "error")
             return
         }
         try {
@@ -154,11 +155,16 @@ export default function Account() {
                 method: "POST",
                 body: JSON.stringify({ currentPassword: changePw.current, newPassword: changePw.newPass })
             })
-            setMessage("password changed successfully")
+            showToast(`password changed — confirmation sent to ${user.email}`, "success")
             setChangePw({ current: "", newPass: "", confirm: "" })
         } catch (error) {
-            setMessage(error.message)
+            showToast(error.message || "password change failed", "error")
         }
+    }
+
+    function showToast(text, type) {
+        setToast({ text, type })
+        setTimeout(() => setToast(null), 6000)
     }
 
     async function deleteAccount(event) {
@@ -331,6 +337,13 @@ export default function Account() {
                     onSave={handleCropSave}
                     onClose={() => setCropFile(null)}
                 />
+            )}
+
+            {toast && (
+                <div className={`accountToast accountToast--${toast.type}`} onClick={() => setToast(null)}>
+                    {toast.text}
+                    <span className="accountToastClose">&times;</span>
+                </div>
             )}
         </Layout>
     )

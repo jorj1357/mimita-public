@@ -1,0 +1,18 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 3,
+  "elements": {
+    "chatWindowBg": {
+      "type": "panel",
+      "x": 12, "y": 810,
+      "width": 480, "height": 270,
+      "backgroundColor": [0.02, 0.025, 0.035, 0.5]
+    },
+    "chatInputBg": {
+      "type": "panel",
+      "x": 12, "y": 1050,
+      "width": 480, "height": 30,
+      "backgroundColor": [0.05, 0.06, 0.08, 0.6]
+    }
+  }
+}

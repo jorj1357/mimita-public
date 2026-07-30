@@ -37,6 +37,7 @@ import gameAuthRouter from "./game-auth.js"
 import gameApiRouter from "./game-api.js"
 import emailCampaignsRouter from "./email-campaigns.js"
 import { trackEvent } from "./analytics.js"
+import { pushError } from "./error-queue.js"
 import { createRateLimit } from "./rateLimit.js"
 import {
     parseCookies,
@@ -263,6 +264,7 @@ app.post("/api/auth/signup", authRateLimit, async (req, res, next) => {
         }
 
         logAuth("signup", "failed")
+        pushError({ category: "signup", level: "error", message: error.message, method: "POST", path: "/api/auth/signup" })
         next(error)
     }
 })
@@ -605,6 +607,51 @@ app.patch(
         }
     }
 )
+
+app.post("/api/account/change-password", authenticate, async (req, res, next) => {
+    try {
+        const { currentPassword, newPassword } = req.body
+
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ success: false, message: "current password and new password required" })
+        }
+
+        const result = await pool.query(
+            `SELECT password_hash FROM users WHERE id = $1 AND deleted_at IS NULL`,
+            [req.user.id]
+        )
+
+        if (!result.rowCount) {
+            return res.status(404).json({ success: false, message: "user not found" })
+        }
+
+        const valid = await verifyPassword(currentPassword, result.rows[0].password_hash)
+        if (!valid) {
+            return res.status(403).json({ success: false, message: "current password is incorrect" })
+        }
+
+        const validation = validatePassword(newPassword)
+        if (!validation.ok) {
+            return res.status(400).json({ success: false, message: validation.message })
+        }
+
+        const newHash = await hashPassword(newPassword)
+
+        await pool.query(
+            `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`,
+            [newHash, req.user.id]
+        )
+
+        await safelySend("password_changed", () => sendPasswordChangedEmail(req.user.email, req.user.username))
+
+        logAuth("password_change", `success user_id=${req.user.id}`)
+        res.json({ success: true, message: "password changed" })
+    }
+    catch (error) {
+        logAuth("password_change", "failed")
+        next(error)
+    }
+})
 
 app.get("/api/users", async (req, res, next) => {
     try {
@@ -1395,8 +1442,8 @@ app.get("/api/download/latest", (req, res) => {
 })
 
 app.use((error, req, res, next) => {
-    void req
     void next
+    pushError({ category: "server", level: "error", message: error.message, method: req.method, path: req.originalUrl })
     const logData = {
         type: error.constructor?.name || "Error",
         message: error.message,
