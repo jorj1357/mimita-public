@@ -270,8 +270,8 @@ bool downloadFileTo(const std::string& url, const std::string& dest, DWORD resum
                 DWORD wr = 0;
                 if (!WriteFile(f, tmp, rd, &wr, nullptr) || wr != rd) { ok = FALSE; break; }
                 totalRead += rd;
-                int pct = (int)(totalRead * 100 / contentLen);
-                if (pct > 100) pct = 100;
+                int pct = (int)(totalRead * 85 / contentLen);
+                if (pct > 85) pct = 85;
                 setProgress(pct);
             }
         } while (rd > 0);
@@ -313,21 +313,87 @@ bool sha256File(const std::string& path, std::string& hex)
     return true;
 }
 
-bool extractZipFile(const std::string& zipPath, const std::string& destDir)
+bool extractZipFileWithProgress(const std::string& zipPath, const std::string& destDir)
 {
     CreateDirectoryA(destDir.c_str(), nullptr);
-    std::string cmd = "powershell -Command \"Expand-Archive -Path '"
-        + zipPath + "' -DestinationPath '" + destDir + "' -Force\"";
-    STARTUPINFOA si = { sizeof(si) };
-    PROCESS_INFORMATION pi;
-    if (CreateProcessA(nullptr, &cmd[0], nullptr, nullptr, FALSE,
-        CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
-        WaitForSingleObject(pi.hProcess, INFINITE);
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-        return true;
+
+    // Write PowerShell extraction script to temp file
+    char tempDir[MAX_PATH];
+    GetTempPathA(MAX_PATH, tempDir);
+    std::string psPath = std::string(tempDir) + "mimita-extract.ps1";
+
+    std::string ps =
+        "param($zip,$dest)\n"
+        "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8\n"
+        "Add-Type -AssemblyName System.IO.Compression.FileSystem\n"
+        "$z=[System.IO.Compression.ZipFile]::OpenRead($zip)\n"
+        "$e=$z.Entries;$t=$e.Count;$i=0\n"
+        "foreach($f in $e){\n"
+        "  $p=[int](++$i*100/$t)\n"
+        "  Write-Output \"$p|$($f.FullName)\"\n"
+        "  $d=Join-Path $dest $f.FullName\n"
+        "  $dn=[IO.Path]::GetDirectoryName($d)\n"
+        "  if(!(Test-Path $dn)){New-Item -ItemType Directory -Path $dn -Force|Out-Null}\n"
+        "  if(!$f.FullName.EndsWith('/')){$s=$f.Open();$ds=[IO.File]::Create($d);$s.CopyTo($ds);$ds.Close();$s.Close()}\n"
+        "}\n"
+        "$z.Dispose()\n";
+
+    writeFile(psPath, ps);
+
+    std::string cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File \""
+        + psPath + "\" \"" + zipPath + "\" \"" + destDir + "\"";
+
+    // Create pipe to capture stdout
+    HANDLE hRead, hWrite;
+    SECURITY_ATTRIBUTES sa = { sizeof(sa), nullptr, TRUE };
+    if (!CreatePipe(&hRead, &hWrite, &sa, 0)) { DeleteFileA(psPath.c_str()); return false; }
+    SetHandleInformation(hRead, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdOutput = hWrite;
+    si.hStdError = hWrite;
+    PROCESS_INFORMATION pi = {};
+
+    BOOL ok = CreateProcessA(nullptr, &cmd[0], nullptr, nullptr, TRUE,
+        CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+    CloseHandle(hWrite);
+
+    if (!ok) { CloseHandle(hRead); DeleteFileA(psPath.c_str()); return false; }
+
+    // Read output lines: "pct|filepath"
+    char buf[4096];
+    DWORD rd = 0;
+    std::string leftover;
+    while (ReadFile(hRead, buf, sizeof(buf) - 1, &rd, nullptr) && rd > 0) {
+        buf[rd] = '\0';
+        leftover += buf;
+        size_t nl;
+        while ((nl = leftover.find('\n')) != std::string::npos) {
+            std::string ln = leftover.substr(0, nl);
+            if (!ln.empty() && ln.back() == '\r') ln.pop_back();
+            leftover.erase(0, nl + 1);
+            auto sep = ln.find('|');
+            if (sep != std::string::npos) {
+                int pct = atoi(ln.substr(0, sep).c_str());
+                std::string fname = ln.substr(sep + 1);
+                if (fname.size() > 65) fname = "..." + fname.substr(fname.size() - 62);
+                setProgress(pct);
+                setStatusText(("Extracting: " + fname).c_str());
+            }
+            pumpMessages();
+        }
     }
-    return false;
+
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD psExit = 0;
+    GetExitCodeProcess(pi.hProcess, &psExit);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    CloseHandle(hRead);
+    DeleteFileA(psPath.c_str());
+    return psExit == 0;
 }
 
 bool getGitHubReleaseInfo(std::string& outVersion, std::string& outZipUrl, std::string& outSha256)
@@ -645,17 +711,16 @@ HWND makeEdit(HWND parent, const char* text, int x, int y, int w, int h, int id)
 
 void setStatusText(const char* text)
 {
-    HWND hStatus = g_pageControls[1][0];
+    HWND hStatus = g_pageControls[1][1];
     if (hStatus) SetWindowTextA(hStatus, text);
     pumpMessages();
 }
 
 void setProgress(int percent)
 {
-    HWND hBar = g_pageControls[1][1];
+    HWND hBar = g_pageControls[1][2];
     if (hBar) SendMessageA(hBar, PBM_SETPOS, percent, 0);
     if (percent >= 100) {
-        // Turn green at 100%
         SendMessageA(hBar, PBM_SETBARCOLOR, 0, RGB(0, 180, 60));
     }
     pumpMessages();
@@ -815,8 +880,8 @@ void createShortcuts()
 void runInstall(HWND hwnd)
 {
     g_installing = true;
-    setStatusText("Checking for updates...");
 
+    setStatusText("Checking for updates...");
     CreateDirectoryA(g_installDir.c_str(), nullptr);
 
     if (!getGitHubReleaseInfo(g_latestVer, g_zipUrl, g_zipSha256)) {
@@ -826,7 +891,7 @@ void runInstall(HWND hwnd)
     }
 
     setProgress(0);
-    setStatusText("Downloading Mimita...");
+    setStatusText("Downloading...");
 
     char td[MAX_PATH]; GetTempPathA(MAX_PATH, td);
     std::string zipPath = std::string(td) + "mimita-game-" + g_latestVer + ".zip";
@@ -840,26 +905,26 @@ void runInstall(HWND hwnd)
     if (!g_zipSha256.empty()) {
         std::string dlHash;
         if (sha256File(zipPath, dlHash) && dlHash != g_zipSha256) {
-            MessageBoxA(hwnd, "Download verification failed. The file may be corrupted.\nPlease try again.",
+            MessageBoxA(hwnd, "Download verification failed.\nPlease try again.",
                 "Verification Error", MB_OK | MB_ICONERROR);
             DeleteFileA(zipPath.c_str());
             return;
         }
     }
 
-    setProgress(90);
-    setStatusText("Extracting files...");
+    setProgress(85);
+    setStatusText("Extracting...");
 
-    if (!extractZipFile(zipPath, g_installDir)) {
-        MessageBoxA(hwnd, "Failed to extract Mimita files.\nThe downloaded file may be corrupted.",
+    if (!extractZipFileWithProgress(zipPath, g_installDir)) {
+        MessageBoxA(hwnd, "Failed to extract files.\nThe download may be corrupted.",
             "Extraction Error", MB_OK | MB_ICONERROR);
         DeleteFileA(zipPath.c_str());
         return;
     }
+    // extractZipFileWithProgress updates progress 85→98 per-file
 
     DeleteFileA(zipPath.c_str());
 
-    // Create writable directories the game expects
     CreateDirectoryA((g_installDir + "\\config\\accounts").c_str(), nullptr);
     CreateDirectoryA((g_installDir + "\\logs").c_str(), nullptr);
     CreateDirectoryA((g_installDir + "\\replays").c_str(), nullptr);
@@ -869,21 +934,17 @@ void runInstall(HWND hwnd)
 
     g_gameExePath = g_installDir + "\\mimita.exe";
 
-    setProgress(95);
+    setProgress(98);
     setStatusText("Creating shortcuts...");
     createShortcuts();
 
     setProgress(100);
-    setStatusText("Ready!");
+    setStatusText("Complete!");
 
-    // Wait 1 second so user sees the green bar, then launch and close
     Sleep(1000);
     pumpMessages();
 
-    // Launch game
     launchGame(g_gameExePath, g_installDir);
-
-    // Close launcher
     DestroyWindow(g_hWnd);
     PostQuitMessage(0);
 }
@@ -956,6 +1017,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 return 0;
             }
             EnableWindow(g_pageControls[0][7], FALSE);
+            createPage2();
             showPage(1);
             runInstall(hwnd);
             return 0;
@@ -1096,16 +1158,22 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
 
     if (alreadyInstalled)
     {
-        // ── Fast path: already installed, just update-check and launch ──
-        // Show page 2-style status briefly
+        // ── Fast path: show green bar, then check updates, then launch ──
+        ShowWindow(g_hWnd, SW_SHOW);
         createPage2();
-        showPage(1); // index 1 = page 2
-        setStatusText("Checking for updates...");
+        showPage(1);
+        setProgress(100);
+        setStatusText("Complete!");
+        pumpMessages();
 
         g_gotLatest = getGitHubReleaseInfo(g_latestVer, g_zipUrl, g_zipSha256);
 
         if (g_gotLatest && g_latestVer != localVer)
         {
+            // Update available — do full install flow
+            g_installing = true;
+            g_installDir = installDir;
+            setProgress(0);
             setStatusText("Downloading update...");
             char td[MAX_PATH]; GetTempPathA(MAX_PATH, td);
             std::string zipPath = std::string(td) + "mimita-game-" + g_latestVer + ".zip";
@@ -1114,52 +1182,29 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 bool hashOk = true;
                 if (!g_zipSha256.empty()) {
                     std::string dlHash;
-                    if (sha256File(zipPath, dlHash) && dlHash == g_zipSha256) {
-                        // OK
-                    } else {
+                    if (sha256File(zipPath, dlHash) && dlHash != g_zipSha256)
                         hashOk = false;
-                    }
                 }
                 if (hashOk) {
-                    setStatusText("Extracting update...");
-                    if (extractZipFile(zipPath, installDir)) {
+                    if (extractZipFileWithProgress(zipPath, installDir)) {
                         writeFile(installDir + "\\version.txt", g_latestVer);
-                        // Update the launcher itself too if needed
+
                         std::string newLauncher = installDir + "\\MimitaLauncher.exe";
                         if (GetFileAttributesA(newLauncher.c_str()) != INVALID_FILE_ATTRIBUTES) {
-                            std::string thisLauncher = launcherDir + "\\" + appExeName();
-                            if (thisLauncher != newLauncher) {
-                                // Copy updated launcher to install dir, swap on next boot
+                            if (launcherDir + "\\" + appExeName() != newLauncher)
                                 spawnSelfUpdate(newLauncher, launcherDir);
-                            }
                         }
                     }
                 }
                 DeleteFileA(zipPath.c_str());
             }
+            setProgress(100);
+            setStatusText("Complete!");
+            Sleep(500);
+            pumpMessages();
         }
 
-        // Launch game — don't wait, close launcher immediately
-        if (GetFileAttributesA(gameExePath.c_str()) != INVALID_FILE_ATTRIBUTES) {
-            std::string sessionArg;
-            {
-                std::string authJson = readFile(installDir + "\\config\\auth-token.json");
-                std::string token = extractJsonStr(authJson, "session_token");
-                if (!token.empty())
-                    sessionArg = " --session \"" + token + "\"";
-            }
-
-            STARTUPINFOA si = { sizeof(si) };
-            PROCESS_INFORMATION pi;
-            std::string cli = gameExePath + sessionArg;
-            if (CreateProcessA(nullptr, &cli[0], nullptr, nullptr, FALSE, 0,
-                               nullptr, installDir.c_str(), &si, &pi))
-            {
-                CloseHandle(pi.hProcess);
-                CloseHandle(pi.hThread);
-            }
-        }
-
+        launchGame(gameExePath, installDir);
         DestroyWindow(g_hWnd);
     }
     else

@@ -1,0 +1,1045 @@
+﻿MiMITALauncher Specification
+7 30 2026 1646
+1. Product definition
+MiMITALauncher.exe is the single official entrance into MiMITA.
+The user should always start MiMITA through:
+MiMITALauncher.exe
+The launcher is simultaneously:
+* The first-time installer
+* The game launcher
+* The updater
+* The file-health checker
+* The repair system
+* The uninstaller
+* The installation manager
+* The crash and launch-log collector
+* The future foundation for the complete MiMITA platform
+The user should never need to manually locate or directly start mimita.exe.
+The launcher owns the process of preparing MiMITA and then starts mimita.exe automatically.
+________________
+
+
+2. Core user experience
+Normal launch
+When an existing user opens MiMITALauncher.exe:
+1. A small launcher window appears immediately.
+2. It checks the local installation.
+3. It checks whether an update is available.
+4. It shows a white progress bar.
+5. When everything is ready, the progress bar reaches 100% and turns green.
+6. It automatically starts mimita.exe.
+7. The visible launcher window disappears.
+8. The launcher remains running silently in the background to monitor the game. and its super lightwieght it should cost as minimal processing power as possible
+Example:
+MiMITA
+
+
+Checking files...
+Checking for updates...
+Everything looks good.
+
+
+████████████████████ 100%
+
+
+Starting MiMITA...
+The healthy path should require:
+0 additional clicks
+The user double-clicks the launcher and enters the game.
+________________
+
+
+3. First-time installation
+MiMITALauncher.exe is also the installer.
+The user must not download or run a second installer.
+The same executable handles:
+* Installation
+* Updating
+* Repairing
+* Starting the game
+* Uninstallation
+* Moving installations
+* Managing multiple installations
+Default installation directory
+The default directory is:
+%LOCALAPPDATA%\MiMITA
+Example:
+C:\Users\Johnjohn\AppData\Local\MiMITA
+Using %LOCALAPPDATA% avoids unnecessary administrator permission requirements.
+First-time flow
+When MiMITA is not installed:
+Screen 1
+Install MiMITA
+
+
+Install location:
+C:\Users\<user>\AppData\Local\MiMITA
+
+
+[Install]
+[Change location]
+Pressing Enter activates:
+Install
+The default location must be safe and appropriate for nearly every user.
+Screen 2
+The launcher downloads and installs MiMITA.
+Installing MiMITA...
+
+
+██████████████░░░░░░ 70%
+Screen 3
+When installation finishes:
+Complete!!!!!
+The launcher starts the game automatically after a single frame of visible completion. a single frame. super quick
+Enter-key rule
+A user should be able to complete installation by repeatedly pressing Enter.
+Default actions:
+Enter 1: Install to the default directory
+Enter 2: Launch MiMITA
+Every default selection must be:
+* Safe
+* Reversible
+* Appropriate for most users
+* The action requiring the least technical knowledge
+________________
+
+
+4. Simplicity requirements
+The launcher must be understandable to:
+* A five-year-old
+* Someone who does not speak English
+* Someone who has never installed a computer game
+* Someone who does not understand files, directories, versions, permissions, or updates
+Important actions should use:
+* Large buttons
+* Clear symbols
+* Very little text
+* Obvious visual hierarchy
+* A safe default action
+* Keyboard, mouse, touchscreen, and controller-friendly interaction
+Avoid technical messages such as:
+Manifest validation failed with error code 0x80070005.
+Instead show:
+MiMITA could not update.
+
+
+You can still play.
+
+
+[Play anyway]
+[Send problem]
+Technical details may be available behind:
+Show details
+
+________________
+5. Installation detection
+The launcher must determine whether MiMITA is:
+* Not installed
+* Installed and healthy
+* Installed but outdated
+* Installed but partially damaged
+* Installed in more than one location
+* Installed but currently unavailable
+* Installed with user modifications
+For the first implementation, the launcher may detect installation using:
+installation.json
+version.txt
+mimita.exe
+Example installation.json:
+{
+  "install_id": "generated-unique-id",
+  "install_directory": "C:\\Users\\User\\AppData\\Local\\MiMITA",
+  "installed_version": "2.0.0",
+  "update_channel": "stable",
+  "installed_at_utc": "2026-07-30T20:00:00Z"
+}
+The launcher should not trust only version.txt.
+It should compare the installed build against an official signed update manifest.
+________________
+
+
+6. File-health verification
+The launcher should protect official MiMITA files without destroying user-created modifications.
+Official managed files
+The launcher may verify files such as:
+mimita.exe
+official DLL files
+official engine files
+official shaders
+official required assets
+official maps
+official launcher integration files
+Each official file should be represented in an update manifest using:
+relative path
+file size
+cryptographic hash
+download location
+version
+Use a secure hash such as:
+SHA-256
+Do not rely exclusively on the visible version number inside version.txt.
+A modified or corrupted executable could retain the same version number.
+User-controlled files
+The launcher must not automatically overwrite or delete:
+mods\
+user_mods\
+config\
+avatars\
+screenshots\
+replays\
+maps\custom\
+workshop\
+user_content\
+saves\
+The exact directory names can change, but official content and user-owned content must be clearly separated.
+Core rule
+Official files are launcher-managed.
+User files are user-managed.
+The update system should be designed around that boundary.
+________________
+
+
+7. Update behavior
+Normal update check
+Every time the launcher starts:
+1. Read the installed version.
+2. Download the small current-version manifest.
+3. Compare installed official files against the manifest.
+4. Determine which files changed.
+5. Download only the changed files.
+6. Validate downloaded files.
+7. Install the update.
+8. Start MiMITA.
+The launcher must not redownload the entire game because one file changed.
+Delta-style file updating
+For the first version, “only changed files” means:
+* Compare each file hash against the official manifest.
+* Download only files whose hashes differ or that are missing.
+* Leave matching files untouched.
+Later, binary patches may update only the changed bytes inside large files.
+That is optional. File-level differential updates are sufficient for the first reliable version.
+Update prompt
+For the current version, updates are checked immediately when launching.
+When an update is available:
+A MiMITA update is ready.
+
+
+Version 2.1.0
+
+
+[Install update]
+[Play without updating]
+Pressing Enter selects:
+Install update
+The safest normal path is updating before playing.
+Background preparation
+The update may download and prepare in the background while the launcher is visible.
+However, files actively used by the running game must not be replaced while the game is running.
+A prepared update may be staged and applied during the next launch.
+Offline behavior
+If the launcher cannot reach the update service:
+MiMITA could not check for updates.
+
+
+Starting your installed version.
+The launcher should automatically start the installed game when possible.
+No internet must not prevent offline play.
+________________
+
+
+8. Transactional updates
+Updates must never leave the working installation half-updated.
+Use a staged update process:
+1. Download files into a staging directory.
+2. Verify every downloaded file.
+3. Confirm sufficient required files are present.
+4. Prepare the new version.
+5. Atomically switch the active installation to the new version.
+6. Preserve the previous working version for rollback.
+Example directories:
+%LOCALAPPDATA%\MiMITA\
+    installations\
+        stable-2.0.0\
+        stable-2.1.0\
+    user-data\
+    launcher-data\
+    active-installation.json
+This directory model makes the following features easier:
+* Safe updates
+* Rollback
+* Repairs
+* Multiple installations
+* Beta channels
+* Moving the installation
+* Preserving mods
+* Avoiding damage to the currently working version
+________________
+
+
+9. Repair behavior
+Repair must never destructively overwrite a user's modified installation.
+If the launcher detects damage:
+1. Preserve the existing installation.
+2. Create a separate fresh installation directory.
+3. Download or reconstruct the official version there.
+4. Verify the new installation.
+5. Start the fresh installation.
+6. Keep the old installation available.
+7. Clearly label the old installation as damaged or modified.
+Example:
+MiMITA found a problem with the current installation.
+
+
+Your existing files will not be changed.
+
+
+Creating a clean copy...
+Possible directory result:
+MiMITA\
+    installations\
+        original-modified-copy\
+        repaired-2.1.0\
+The launcher should not assume a difference is damage.
+A difference may be:
+* A mod
+* A user experiment
+* A custom executable
+* A development build
+* A corrupted file
+Therefore, the old installation must remain intact unless the user explicitly chooses to delete it.
+________________
+
+
+10. Failure handling
+No internet
+Behavior:
+Update check unavailable.
+Launch the installed version automatically.
+Allow offline play.
+Do not block launch merely because the internet is unavailable.
+Insufficient disk space
+If the currently installed game is launchable:
+There is not enough space to install the update.
+
+
+Starting your current version.
+Offer:
+[Free space help]
+[Change installation location]
+[Play current version]
+The default action should launch the current version.
+If MiMITA is not installed yet, installation cannot continue, so show a simple explanation and allow the user to select another drive.
+Permissions problem
+Show:
+MiMITA could not write to this folder.
+
+
+[Fix automatically]
+[Choose another folder]
+[Send problem]
+The launcher should first attempt safe automatic recovery.
+Because the default path is inside %LOCALAPPDATA%, normal installation should usually not require administrator privileges.
+Antivirus or security software interference
+Show:
+Your computer stopped MiMITA from opening or updating.
+
+
+[Try again]
+[Show fix]
+[Send problem]
+[Play current version]
+The launcher should collect non-sensitive diagnostics such as:
+* Launcher version
+* Operating system version
+* Failed file path
+* Error code
+* Operation attempted
+* Timestamp
+* Whether the file exists
+* Whether writing or execution was denied
+The report must not upload personal files without explicit permission.
+API or update-server outage
+Show:
+MiMITA services are temporarily unavailable.
+
+
+You can still play offline.
+
+
+[Start MiMITA]
+[Service status]
+[Send problem]
+The launcher should automatically start the game if an installed version works.
+Corrupted launcher
+A corrupted launcher cannot reliably repair itself while executing.
+Use several layers of protection:
+1. Digitally sign the launcher.
+2. Publish the official launcher hash.
+3. Let the website verify and redownload the launcher.
+4. Include a small external bootstrap or recovery mechanism later.
+5. Make mimita.exe capable of directing users to the official recovery page when launched without a healthy launcher.
+6. Keep the launcher itself small and stable.
+7. Avoid updating the active launcher directly without a staged replacement.
+For the first version, the recovery message can be:
+This MiMITALauncher file appears damaged or outdated.
+
+
+Download a fresh copy from:
+mimita.fun/download
+A README.txt beside the installation may contain the same recovery instructions.
+________________
+
+
+11. Feedback and urgent diagnostics
+Every serious failure screen should include:
+[Send problem]
+This should open a focused launcher-problem report, not a generic feedback form.
+The report should automatically attach safe diagnostics after the user approves.
+Example:
+Tell MiMITA what happened
+
+
+We will include:
+✓ Launcher version
+✓ Error code
+✓ Failed operation
+✓ Operating system
+✓ Recent launcher log
+
+
+We will not include:
+✗ Personal files
+✗ Passwords
+✗ Account tokens
+✗ Browser history
+
+
+[Send]
+Important launcher failures should be visibly prioritized in the administration system.
+Possible classifications:
+INSTALL_BLOCKED
+UPDATE_FAILED
+PERMISSION_DENIED
+SECURITY_SOFTWARE_BLOCKED
+LAUNCH_FAILED
+GAME_CRASHED
+MANIFEST_UNAVAILABLE
+DISK_FULL
+LAUNCHER_CORRUPTED
+This directly supports the goal that when a school, antivirus program, permissions system, or unusual computer blocks MiMITA, the developer can see the exact failure and improve compatibility.
+________________
+
+
+12. Account behavior
+The launcher must not require an account.
+A user may:
+* Install anonymously
+* Launch anonymously
+* Play as a guest
+* Remain a guest forever
+* Use offline features
+* Use guest-compatible online features
+For the first version:
+All account creation, login, linking, profile setup, avatars, and guest conversion happen inside mimita.exe.
+The launcher focuses on reaching the game as quickly as possible.
+The game may encourage account creation by explaining useful benefits such as:
+* Persistent identity
+* Saved progress
+* Synced avatars
+* Statistics
+* Friends
+* Messages
+* Cosmetics
+* Event participation
+* Cross-device data
+* Creation and publishing tools
+Account creation must remain optional.
+Avoid designing the guest experience to be intentionally frustrating.
+Accounts should provide additional continuity and identity rather than functioning as a punishment-removal purchase.
+________________
+
+
+13. Launcher background process
+After starting mimita.exe, the launcher remains hidden.
+This means the initial Windows implementation will normally involve two operating-system processes:
+MiMITALauncher.exe
+mimita.exe
+The product still has one user-visible entrance.
+The important rule is:
+One entrance does not require literally one operating-system process.
+Trying to force the launcher and game into one process would make crash isolation, updating, recovery, and monitoring less reliable.
+Background responsibilities
+While the game is running, the hidden launcher may:
+* Detect whether the game exits normally
+* Detect crashes
+* Record launch duration
+* Save crash metadata
+* Offer to send a crash report
+* Restart the game when explicitly requested
+* Apply a staged update after the game closes
+* Restore the previous version after a failed update
+Resource requirements
+While monitoring the game, the launcher must:
+* Use nearly zero CPU while idle
+* Avoid polling every frame
+* Avoid GPU usage
+* Avoid continuous disk writes
+* Avoid constant network requests
+* Sleep while waiting for process events
+* Use operating-system process-wait mechanisms
+* Keep memory usage small
+* Batch logs rather than writing every millisecond
+Target behavior:
+CPU while idle: approximately 0%
+GPU while idle: 0%
+Network while idle: 0 B/s except occasional required service checks
+Disk while idle: no continuous writes
+The launcher does not need to watch game health at 60 Hz.
+It can wait for:
+* Process exit
+* Crash signal
+* Operating-system event
+* Occasional low-frequency heartbeat
+* Explicit IPC message from the game
+________________
+
+
+14. Crash monitoring and logs
+The launcher should record:
+Launch timestamp
+Launcher version
+Game version
+Installation ID
+Update channel
+Install directory
+Command-line arguments
+Game process start result
+Game process exit code
+Whether exit was expected
+Whether a crash dump exists
+Last update result
+Logs should be stored in:
+%LOCALAPPDATA%\MiMITA\launcher-data\logs\
+Logs should have:
+* Maximum file size
+* Rotation
+* Maximum retained age
+* No passwords
+* No authentication tokens
+* No unnecessary personal information
+After an unexpected crash:
+MiMITA closed unexpectedly.
+
+
+[Start again]
+[Send crash report]
+[Close]
+The launcher may start silently unless repeated crashing suggests the user needs help.
+________________
+
+
+15. Multiple installations
+The launcher should support multiple MiMITA installations.
+Examples:
+Stable
+Beta
+Experimental
+Development
+Modified
+Previous stable version
+Custom-location installation
+Each installation needs a unique installation ID.
+Example:
+{
+  "install_id": "6adbd46f-95bf-495b-8654-e861dee34e38",
+  "name": "Stable",
+  "channel": "stable",
+  "path": "D:\\Games\\MiMITA\\stable",
+  "version": "2.1.0",
+  "active": true
+}
+The normal user should not have to understand this system.
+By default, the launcher should automatically use the primary stable installation.
+Advanced installation management can appear behind:
+Installations
+
+________________
+16. Update channels
+The launcher owns update-channel selection.
+Initial supported channels:
+Stable
+Beta
+Experimental
+Default:
+Stable
+Channel selection should be stored per installation, not globally.
+A beta installation should not overwrite the user's stable installation by default.
+Instead:
+Stable and beta may exist side by side.
+
+________________
+17. Rollback
+The launcher should retain at least one previously working official version when practical.
+Rollback should be offered when:
+* The new version fails to launch
+* The game repeatedly crashes immediately after updating
+* Validation fails after installation
+* The user explicitly selects rollback
+Example:
+The latest version did not start correctly.
+
+
+[Restore previous version]
+[Try again]
+[Send problem]
+Rollback must not delete user data.
+________________
+
+
+18. Uninstallation
+The launcher should offer:
+Uninstall MiMITA
+Uninstall options:
+Remove game files only
+Remove game files and launcher
+Remove everything, including user data
+The default should preserve:
+* Avatars
+* Screenshots
+* Replays
+* Custom maps
+* Mods
+* Configurations
+* Saved creations
+The destructive option must clearly state what it removes.
+________________
+
+
+19. Moving MiMITA to another drive
+The launcher should support:
+Move installation
+Flow:
+1. Select the destination.
+2. Confirm enough space exists.
+3. Copy or move the official installation.
+4. Verify the destination.
+5. Update launcher metadata.
+6. Launch-test the moved installation.
+7. Remove the previous official copy only after success.
+8. Preserve user data or move it according to an explicit choice.
+The old installation must not be deleted before the new installation is verified.
+________________
+
+
+20. Shortcuts
+The launcher manages:
+* Desktop shortcut
+* Start-menu shortcut
+* File associations later
+* Protocol links later
+All shortcuts should point to:
+MiMITALauncher.exe
+They should not point directly to:
+mimita.exe
+This ensures every launch receives:
+* Health checking
+* Update checking
+* Repair support
+* Crash monitoring
+* Version selection
+________________
+
+
+21. Language
+The launcher owns its own language setting.
+The first launch may:
+1. Detect the operating-system language.
+2. Use that language when supported.
+3. Fall back to simple English and universal symbols.
+4. Allow language changes from the launcher settings.
+The launcher language is separate from the game's language.
+Text should remain minimal enough that basic installation remains visually understandable without reading.
+________________
+
+
+22. Notifications
+Later versions of the launcher may show notifications for:
+* New MiMITA updates
+* New maps
+* Implemented player suggestions
+* Events
+* Tournaments
+* Friends
+* Messages
+* New games or experiences
+* Creation updates
+Notifications must not delay launching the game.
+They should appear after the essential health and update checks or through the operating system when appropriate.
+For the first version, notifications are outside the minimum launcher scope.
+________________
+
+
+23. Future MiMITA platform
+In the future, the launcher may evolve into a broader MiMITA home application similar in scope to a lightweight game platform.
+Possible future sections:
+Home
+Profile
+Avatar
+Messages
+Mail
+Friends
+Games
+Creations
+Events
+Servers
+Library
+Settings
+The launcher could eventually become the home for:
+* MiMITA games
+* User-created games
+* Mods
+* Maps
+* Community content
+* Profiles
+* Avatars
+* Events
+* Messages
+* Publishing tools
+This future platform must preserve the original rule:
+Opening MiMITA and playing immediately must remain fast.
+Platform expansion must not turn the launcher into a slow obstacle.
+________________
+
+
+24. Cross-platform strategy
+The immediate goal is Windows.
+Future platforms may include:
+Windows
+Linux
+macOS
+Android
+iPhone and iPad
+VR systems
+Consoles
+Web-compatible environments
+Other future devices
+The realistic cross-platform rule is:
+One universal behavior specification.
+Platform-specific executables where necessary.
+Shared core logic wherever practical.
+A single binary file format that executes natively on every operating system does not currently exist in a practical way.
+Different operating systems require different:
+* Executable formats
+* Signing systems
+* Permission models
+* Installation systems
+* Update restrictions
+* Sandboxing rules
+* App-store requirements
+Therefore:
+Windows: MiMITALauncher.exe
+macOS: MiMITALauncher.app
+Linux: AppImage, Flatpak, package, or native launcher
+Android: APK or app bundle
+iOS: signed iOS application
+They should all follow the same product behavior and shared protocol.
+The launcher architecture should separate:
+Launcher core
+Platform integration
+User interface
+Update transport
+Installation storage
+Game process control
+This allows the universal specification to remain stable while each platform implements the necessary native details.
+________________
+
+
+25. Suggested architecture
+MiMITALauncher
+│
+├── Launcher Core
+│   ├── State machine
+│   ├── Installation discovery
+│   ├── Version comparison
+│   ├── Manifest processing
+│   ├── File validation
+│   ├── Update planning
+│   ├── Repair planning
+│   └── Error classification
+│
+├── Platform Layer
+│   ├── Process launching
+│   ├── Shortcut creation
+│   ├── Filesystem locations
+│   ├── Permissions
+│   ├── Notifications
+│   └── Crash detection
+│
+├── Update System
+│   ├── Manifest downloader
+│   ├── Changed-file downloader
+│   ├── Hash validator
+│   ├── Staging directory
+│   ├── Atomic activation
+│   └── Rollback
+│
+├── User Interface
+│   ├── Install screen
+│   ├── Progress screen
+│   ├── Update prompt
+│   ├── Error screen
+│   └── Advanced installation manager
+│
+├── Diagnostics
+│   ├── Structured logs
+│   ├── Crash metadata
+│   ├── Feedback reports
+│   └── Privacy filtering
+│
+└── Game Integration
+    ├── Start mimita.exe
+    ├── Wait for process exit
+    ├── Receive health signals
+    └── Detect abnormal termination
+
+________________
+26. Launcher state machine
+The launcher should have explicit states:
+STARTING
+DISCOVERING_INSTALLATIONS
+FIRST_TIME_INSTALL
+CHECKING_LOCAL_FILES
+CHECKING_FOR_UPDATES
+UPDATE_AVAILABLE
+DOWNLOADING_UPDATE
+VERIFYING_UPDATE
+ACTIVATING_UPDATE
+READY
+STARTING_GAME
+MONITORING_GAME
+GAME_EXITED
+GAME_CRASHED
+OFFLINE
+REPAIR_REQUIRED
+REPAIRING
+ROLLING_BACK
+ERROR
+Example healthy path:
+STARTING
+→ DISCOVERING_INSTALLATIONS
+→ CHECKING_LOCAL_FILES
+→ CHECKING_FOR_UPDATES
+→ READY
+→ STARTING_GAME
+→ MONITORING_GAME
+Example first-time path:
+STARTING
+→ DISCOVERING_INSTALLATIONS
+→ FIRST_TIME_INSTALL
+→ DOWNLOADING_UPDATE
+→ VERIFYING_UPDATE
+→ ACTIVATING_UPDATE
+→ READY
+→ STARTING_GAME
+Example offline path:
+STARTING
+→ DISCOVERING_INSTALLATIONS
+→ CHECKING_LOCAL_FILES
+→ CHECKING_FOR_UPDATES
+→ OFFLINE
+→ READY
+→ STARTING_GAME
+
+________________
+27. Update manifest example
+{
+  "schema_version": 1,
+  "channel": "stable",
+  "latest_version": "2.1.0",
+  "minimum_online_version": "2.0.0",
+  "published_at_utc": "2026-07-30T20:00:00Z",
+  "files": [
+    {
+      "path": "mimita.exe",
+      "size": 184422400,
+      "sha256": "EXAMPLE_HASH",
+      "url": "https://downloads.mimita.fun/2.1.0/mimita.exe"
+    },
+    {
+      "path": "assets/maps/funworld3.glb",
+      "size": 24983040,
+      "sha256": "EXAMPLE_HASH",
+      "url": "https://downloads.mimita.fun/2.1.0/assets/maps/funworld3.glb"
+    }
+  ],
+  "signature": "SIGNED_MANIFEST_DATA"
+}
+The manifest itself should be digitally signed.
+The launcher must reject a manifest whose signature is invalid.
+________________
+
+
+28. Security requirements
+The launcher must:
+* Use HTTPS for downloads
+* Validate a signed update manifest
+* Verify SHA-256 hashes before activating files
+* Digitally sign official launcher releases
+* Never execute partially downloaded files
+* Never silently execute arbitrary content from an update response
+* Protect account tokens if account support is added later
+* Avoid requiring administrator permissions when unnecessary
+* Treat server responses as untrusted until validated
+* Store no secrets in plain-text logs
+* Prevent path traversal from manifest paths
+* Prevent update files from writing outside the selected installation directory
+User modification support must not mean update-system insecurity.
+Official builds, modified builds, and user content should remain clearly distinguishable.
+________________
+
+
+29. MVP scope
+The first good version should implement only the highest-leverage foundation.
+Required now
+One MiMITALauncher.exe download
+First-time installation
+Default %LOCALAPPDATA%\MiMITA directory
+Custom installation directory
+Enter-to-accept defaults
+Desktop and Start-menu shortcuts
+Installation detection
+version.txt plus installation metadata
+Signed update manifest
+Changed-file-only updates
+Update confirmation with Yes selected by default
+Offline launch
+Automatic game launch
+Hidden low-resource process monitoring
+Structured launch logs
+Crash detection
+Basic feedback link
+Safe staged installation
+Preserve user-modified installation during repair
+Add after the foundation works
+Automatic repair
+Multiple installations UI
+Stable, beta, and experimental channels
+Rollback UI
+Move-installation UI
+Integrated feedback submission
+Crash-report upload
+Automatic staged background updates
+Launcher notifications
+Self-repair bootstrap
+Much later
+Accounts
+Profiles
+Avatars
+Messages
+Friends
+Library
+Events
+Creation tools
+Multiple MiMITA games
+Full cross-platform MiMITA platform
+
+________________
+30. Acceptance tests
+Existing healthy user
+Given MiMITA is installed and current
+When the user opens MiMITALauncher.exe
+Then the launcher visibly checks the installation
+And displays a green 100% state
+And automatically starts mimita.exe
+And requires no additional clicks
+First-time user
+Given MiMITA is not installed
+When the user opens MiMITALauncher.exe
+And repeatedly presses Enter
+Then MiMITA installs to %LOCALAPPDATA%\MiMITA
+And a launcher shortcut is created
+And mimita.exe starts
+Available update
+Given an update exists
+When the launcher starts
+Then it shows an update prompt
+And Enter selects Install update
+And only changed files are downloaded
+And the update is verified before activation
+And MiMITA starts after completion
+No internet
+Given MiMITA is already installed
+And the update service cannot be reached
+When the launcher starts
+Then it does not block the user
+And it automatically starts the installed game
+Modified installation
+Given the user modified official game files
+When the launcher detects differences
+Then it does not destroy the modified installation
+And it may create a separate clean installation
+And the user's old files remain available
+Failed update
+Given an update download or validation fails
+When a previously working installation exists
+Then the working installation remains unchanged
+And the launcher starts that version when possible
+Game crash
+Given mimita.exe exits unexpectedly
+When the launcher detects the exit
+Then it records the exit code
+And preserves useful logs
+And offers restart and feedback options
+Resource usage
+Given mimita.exe is running normally
+When MiMITALauncher.exe is hidden
+Then the launcher uses no GPU
+And approximately zero CPU while idle
+And performs no continuous disk writes
+
+________________
+31. Absolute design laws
+1. MiMITALauncher is the one official entrance into MiMITA.
+
+
+2. Healthy returning users should reach the game with zero extra clicks.
+
+
+3. A first-time user can install by pressing Enter repeatedly.
+
+
+4. The launcher must never require an account.
+
+
+5. No internet must not prevent offline launch.
+
+
+6. Updates download only changed files.
+
+
+7. An update must never destroy a working installation.
+
+
+8. Repair must not destroy mods or user-created files.
+
+
+9. User content and official launcher-managed content must be separated.
+
+
+10. The launcher must stay extremely lightweight while the game runs.
+
+
+11. Error screens must offer a direct path to report the actual problem.
+
+
+12. Every platform follows the same behavior specification, even when its native executable format differs.
+
+
+13. Advanced platform features must never make launching MiMITA slower or more confusing.
+
+
+14. The launcher should automate every safe technical task that a person would otherwise need to perform manually.
+
+
+15. The fastest path is always the default path.
+
