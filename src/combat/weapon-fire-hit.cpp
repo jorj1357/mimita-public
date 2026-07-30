@@ -73,7 +73,8 @@ RevolverShotResult tryFireHitscan(
 
     BeamCollisionResult beam = collideBeam(
         rayOrigin, shotDirection, MAX_SHOT_DISTANCE, def.beamThickness,
-        world, &npcs, remotePlayers, nullptr);
+        world, &npcs, remotePlayers, nullptr,
+        aim.usesCameraTarget);
 
     float nearest = beam.nearest;
     bool hitWorld = beam.hitWorld;
@@ -146,6 +147,10 @@ RevolverShotResult tryFireHitscan(
         processRemotePlayerHit(result, def, hitPart, hitNormal, result.end, shotDirection, nearest, shooter, remoteTargetId, remoteVictim);
     } else if (hitWorld) {
         processWorldHit(result, def, result.end, worldNormal, shotDirection, shooter.username);
+    } else if (aim.usesCameraTarget) {
+        result.end = aim.aimPoint;
+        result.hitNormal = aim.cameraWorldNormal;
+        processWorldHit(result, def, aim.aimPoint, aim.cameraWorldNormal, shotDirection, shooter.username);
     }
 
     return result;
@@ -244,11 +249,13 @@ void fireMultiPellet(
     float spreadDeg = std::max(0.1f, def.spread);
 
     glm::vec3 baseDir;
+    bool aimUsesCameraTarget = false;
     {
         auto ts = ShotProfiler::Scope(&shotProf.aimMs);
         AimSolution aim = computeAim(camera, world, npcs, muzzlePos, remotePlayers);
         logAimDebug("multi_pellet", camera, aim);
         baseDir = aim.direction;
+        aimUsesCameraTarget = aim.usesCameraTarget;
     }
 
     Debug::warn(Debug::Category::Weapons,
@@ -313,7 +320,8 @@ void fireMultiPellet(
                 shotProf.collisionCalls++;
                 BeamCollisionResult pelletBeam = collideBeam(
                     muzzlePos, pelletDir, MAX_SHOT_DISTANCE, def.beamThickness,
-                    world, &npcs, remotePlayers, nullptr);
+                    world, &npcs, remotePlayers, nullptr,
+                    aimUsesCameraTarget);
                 (void)tc;
 
                 float pelletNearest = pelletBeam.nearest;

@@ -29,6 +29,7 @@ struct AimTarget {
     glm::vec3 worldPoint;
     float cameraDistance;
     AimHitKind hitKind = AimHitKind::None;
+    glm::vec3 worldNormal{0.0f, 0.0f, 1.0f};
 };
 
 struct AimSolution {
@@ -39,6 +40,7 @@ struct AimSolution {
     const char* modeName;
     AimHitKind cameraHitKind = AimHitKind::None;
     bool usesCameraTarget = false;
+    glm::vec3 cameraWorldNormal{0.0f, 0.0f, 1.0f};
 };
 
 AimTarget computeAimTarget(
@@ -145,7 +147,8 @@ BeamCollisionResult collideBeam(
     const World& world,
     NpcSystem* npcs,
     const std::unordered_map<uint32_t, Player>* remotePlayers,
-    const Player* targetPlayer
+    const Player* targetPlayer,
+    bool skipWorldCollision = false
 );
 
 bool rayTriangle(const glm::vec3& origin, const glm::vec3& direction,

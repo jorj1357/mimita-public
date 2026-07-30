@@ -36,6 +36,7 @@
 #include "render/render-player.h"
 #include "perf/perf.h"
 #include "debug/debug-log.h"
+#include "devtools/terminal.h"
 #include "game/game-state.h"
 #include "world/world-gltf-loader.h"
 #include "terminal/terminal-state.h"
@@ -85,17 +86,19 @@ void engineTickNet(Engine& engine, float dt)
         mpInput.freezeActive = player.freeze.freezeActive;
         mpInput.freezeAvailable = player.freeze.freezeAvailable;
         mpInput.groundReturnAvailable = player.groundReturn.available;
+        const auto& cmd = InputCommandSystem::instance();
         mpInput.wishX = 0.0f;
         mpInput.wishY = 0.0f;
-        if (glfwGetKey(engine.window(), GLFW_KEY_W) == GLFW_PRESS) mpInput.wishY += 1.0f;
-        if (glfwGetKey(engine.window(), GLFW_KEY_S) == GLFW_PRESS) mpInput.wishY -= 1.0f;
-        if (glfwGetKey(engine.window(), GLFW_KEY_A) == GLFW_PRESS) mpInput.wishX -= 1.0f;
-        if (glfwGetKey(engine.window(), GLFW_KEY_D) == GLFW_PRESS) mpInput.wishX += 1.0f;
-        mpInput.jumpHeld = glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
-        mpInput.dashPressed = glfwGetKey(engine.window(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
-        mpInput.downDashPressed = InputCommandSystem::instance().isDownDashPressed();
-        mpInput.freezeHeld = InputCommandSystem::instance().isFreezeHeld();
-        mpInput.attackPressed = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+        if (cmd.getState("walkforward").held) mpInput.wishY += 1.0f;
+        if (cmd.getState("walkback").held)    mpInput.wishY -= 1.0f;
+        if (cmd.getState("walkleft").held)    mpInput.wishX -= 1.0f;
+        if (cmd.getState("walkright").held)   mpInput.wishX += 1.0f;
+        mpInput.jumpHeld = cmd.isJumpHeld();
+        mpInput.dashPressed = cmd.isDashPressed();
+        mpInput.downDashPressed = cmd.isDownDashPressed();
+        mpInput.freezeHeld = cmd.isFreezeHeld();
+        mpInput.attackPressed = !Terminal::instance().isOpen() &&
+            glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
         mpInput.equippedSlot = player.equippedSlot;
         mpInput.weaponState = weapons.networkVisualState(player);
         mpInput.sizeScale = player.sizeScale;
@@ -664,12 +667,16 @@ void engineTickNet(Engine& engine, float dt)
         // The engine-tick-net.cpp duplicate InputPacket has been removed.
         // Position, velocity, yaw, look, and wish are all captured together inside mpTick's MpInput.
 
-        mpContext.showPlayerList = glfwGetKey(engine.window(), GLFW_KEY_TAB) == GLFW_PRESS;
-        static bool f3Prev = false;
-        bool f3Down = glfwGetKey(engine.window(), GLFW_KEY_F3) == GLFW_PRESS;
-        if (f3Down && !f3Prev)
-            mpContext.showDebugOverlay = !mpContext.showDebugOverlay;
-        f3Prev = f3Down;
+        if (Terminal::instance().isOpen()) {
+            mpContext.showPlayerList = false;
+        } else {
+            mpContext.showPlayerList = glfwGetKey(engine.window(), GLFW_KEY_TAB) == GLFW_PRESS;
+            static bool f3Prev = false;
+            bool f3Down = glfwGetKey(engine.window(), GLFW_KEY_F3) == GLFW_PRESS;
+            if (f3Down && !f3Prev)
+                mpContext.showDebugOverlay = !mpContext.showDebugOverlay;
+            f3Prev = f3Down;
+        }
 
         // Process server disagreement events (spawn visual effects)
         // Events are consumed once and cleared to prevent re-spawning every frame.

@@ -18,6 +18,8 @@ export default function AdminDashboard() {
     const [adminsLoading, setAdminsLoading] = useState(true)
     const [adminsError, setAdminsError] = useState("")
     const [flagged, setFlagged] = useState([])
+    const [errorLog, setErrorLog] = useState([])
+    const [errorLogLoading, setErrorLogLoading] = useState(true)
     const fetchedRef = useRef(false)
 
     useEffect(() => {
@@ -27,6 +29,7 @@ export default function AdminDashboard() {
         fetchFeedback()
         fetchAdmins()
         fetchFlagged()
+        fetchErrorLog()
     }, [])
 
     async function fetchFlagged() {
@@ -102,6 +105,14 @@ export default function AdminDashboard() {
         catch (err) {
             console.log("[ADMIN] feedback API error:", err)
         }
+    }
+
+    async function fetchErrorLog() {
+        try {
+            const data = await apiRequest("/api/admin/error-log?limit=30")
+            if (data.success) setErrorLog(data.errors || [])
+        } catch (e) { console.log("[ADMIN] error-log fetch:", e.message) }
+        finally { setErrorLogLoading(false) }
     }
 
     async function handleRefresh() {
@@ -485,6 +496,36 @@ export default function AdminDashboard() {
                             Open Email Campaign Dashboard
                         </Link>
                     </div>
+                </div>
+
+                {/* Error Log */}
+                <div className="adminSection adminSectionWide">
+                    <h2>error log</h2>
+                    {errorLogLoading ? (
+                        <p className="adminEmpty">loading...</p>
+                    ) : errorLog.length === 0 ? (
+                        <p className="adminEmpty">no errors logged</p>
+                    ) : (
+                        <div className="adminFeedbackFeed">
+                            {errorLog.map(e => (
+                                <div key={e.id} className="adminFeedbackItem" style={{ borderLeft: `3px solid ${e.level === "error" ? "#f87171" : "#fbbf24"}` }}>
+                                    <span className="adminFeedbackTime" style={{ minWidth: "60px", fontSize: "11px" }}>
+                                        {new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                                    </span>
+                                    <span className="adminFeedbackUser" style={{ minWidth: "80px" }}>
+                                        <span className={`adminLogBadge adminLogBadge--${e.category}`}>{e.category}</span>
+                                    </span>
+                                    <span className="adminFeedbackText" style={{ flex: 1, fontSize: "12px" }}>
+                                        {e.message}
+                                        {e.path && <span className="adminFeedbackPage">{e.method} {e.path}</span>}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    <button className="adminRefreshBtn" onClick={fetchErrorLog} style={{ marginTop: "8px" }}>
+                        refresh error log
+                    </button>
                 </div>
 
             </div>

@@ -134,7 +134,8 @@ void LoadCompetitiveProfile(const std::string& account)
 void SaveCompetitiveProfile(const std::string& account)
 {
     std::string path = "config/accounts/" + account + ".json";
-    std::filesystem::create_directories("config/accounts");
+    std::error_code ec;
+    std::filesystem::create_directories("config/accounts", ec);
 
     json root;
     {
@@ -164,7 +165,6 @@ void SaveCompetitiveProfile(const std::string& account)
     if (!out.is_open()) return;
     out << root.dump(2);
     out.close();
-    std::error_code ec;
     std::filesystem::rename(tmp, path, ec);
     if (ec)
         printf("[COMPETITIVE] Save failed: %s\n", ec.message().c_str());

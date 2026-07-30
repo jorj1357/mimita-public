@@ -57,11 +57,13 @@ AimSolution computeAim(
         result.cameraHitKind = AimHitKind::None;
         result.usesCameraTarget = false;
     } else if (mode == GameplayAimMode::CamForward) {
-        result.aimPoint = muzzlePos + glm::normalize(camera.front) * kMaxShotDistance;
-        result.cameraDistance = kMaxShotDistance;
+        AimTarget target = computeAimTarget(camera, world, npcs, remotePlayers);
+        result.aimPoint = target.worldPoint;
+        result.cameraDistance = target.cameraDistance;
         result.modeName = "camforward";
-        result.cameraHitKind = AimHitKind::None;
-        result.usesCameraTarget = false;
+        result.cameraHitKind = target.hitKind;
+        result.usesCameraTarget = true;
+        result.cameraWorldNormal = target.worldNormal;
     } else {
         result.aimPoint = camera.pos + camera.front * kMaxShotDistance;
         result.modeName = "world_hit";
@@ -107,12 +109,15 @@ AimTarget computeAimTarget(
 {
     float cameraNearest = kMaxShotDistance;
     AimHitKind hitKind = AimHitKind::None;
+    glm::vec3 worldNormal{0.0f, 0.0f, 1.0f};
 
     {
         float hitDist = 0.0f;
-        if (rayTraverseGridCells(world, camera.pos, camera.front, cameraNearest, hitDist) && hitDist < cameraNearest) {
+        glm::vec3 hitNml;
+        if (rayTraverseGridCells(world, camera.pos, camera.front, cameraNearest, hitDist, &hitNml) && hitDist < cameraNearest) {
             cameraNearest = hitDist;
             hitKind = AimHitKind::World;
+            worldNormal = hitNml;
         }
     }
     for (Npc& npc : npcs.all()) {
@@ -156,6 +161,7 @@ AimTarget computeAimTarget(
     result.worldPoint = camera.pos + camera.front * cameraNearest;
     result.cameraDistance = cameraNearest;
     result.hitKind = hitKind;
+    result.worldNormal = worldNormal;
     return result;
 }
 
@@ -199,7 +205,8 @@ BeamCollisionResult collideBeam(
     const World& world,
     NpcSystem* npcs,
     const std::unordered_map<uint32_t, Player>* remotePlayers,
-    const Player* targetPlayer)
+    const Player* targetPlayer,
+    bool skipWorldCollision)
 {
     BeamCollisionResult result;
     result.nearest = maxDistance;
@@ -214,7 +221,7 @@ BeamCollisionResult collideBeam(
 
     bool useSphereCast = (beamThickness > 0.0f);
 
-    {
+    if (!skipWorldCollision) {
         if (useSphereCast) {
             glm::vec3 hNml(0.0f);
             float hDist = 0.0f;

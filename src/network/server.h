@@ -603,6 +603,9 @@ void handleGodballState(SOCKET sock,
 void handleChatMessage(SOCKET sock, const char* buffer, int bytes,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
                        uint32_t tick, uint64_t& totalPacketsOut);
+void handleChatRequestV2(SOCKET sock, const char* buffer, int bytes,
+                          std::unordered_map<uint32_t, ServerPlayer>& players,
+                          uint32_t tick, uint64_t& totalPacketsOut);
 void handlePing(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                 uint32_t tick, const ServerPlayer* authenticatedPlayer = nullptr);
 void handleNpcDamageRequest(SOCKET sock, const char* buffer, int bytes,

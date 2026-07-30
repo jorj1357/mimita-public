@@ -85,8 +85,10 @@ if MODE == "release":
         "-MMD",
         "-MP",
     ]
+    LINK_FLAGS = []
 else:
     MODE = "debug"
+    LINK_FLAGS = []
 
     # MUCH faster compile times
     CXX_FLAGS = [
@@ -559,6 +561,9 @@ cmd = [
 cmd += object_files
 cmd += LIB_FLAGS
 cmd += LINK_LIBS
+
+if MODE == "release" and LINK_FLAGS:
+    cmd += LINK_FLAGS
 
 cmd += [
     "-o",

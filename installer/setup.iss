@@ -1,11 +1,12 @@
 ; Mimita Windows Installer
 ; Inno Setup Script (Inno Setup 6)
+; Ships only the launcher — game files are downloaded from GitHub on first run.
 
 #define MyAppName "Mimita"
 #define MyAppVersion "2.0.0"
 #define MyAppPublisher "Mimita"
 #define MyAppURL "https://mimita.fun"
-#define MyAppExeName "mimita.exe"
+#define MyAppLauncherName "MimitaLauncher.exe"
 
 [Setup]
 AppName={#MyAppName}
@@ -29,7 +30,7 @@ DisableWelcomePage=yes
 DisableDirPage=auto
 DisableReadyPage=yes
 CloseApplications=no
-UninstallDisplayIcon={app}\{#MyAppExeName}
+UninstallDisplayIcon={app}\{#MyAppLauncherName}
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -38,37 +39,22 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: checkedonce
 
 [Files]
-Source: "..\mimita.exe"; DestDir: "{app}"; Flags: ignoreversion
+; Only ship the launcher — it downloads the game from GitHub on first run
+Source: "..\MimitaLauncher.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\version.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\glfw3.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\libgcc_s_seh-1.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\libstdc++-6.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\libwinpthread-1.dll"; DestDir: "{app}"; Flags: ignoreversion
-
-; Assets (all loose files — no more assets.pak)
-Source: "..\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-; Shaders
-Source: "..\shaders\*"; DestDir: "{app}\shaders"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-; Characters
-Source: "..\Characters\*"; DestDir: "{app}\Characters"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-; Config (all files — auto-discovered)
-Source: "..\config\*"; DestDir: "{app}\config"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\uitextures\mimita desktop icon v1.ico"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppLauncherName}"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\assets\uitextures\mimita desktop icon v1.ico"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppLauncherName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppLauncherName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
 
 [Registry]
 Root: HKCU; Subkey: "Software\Classes\mimita"; ValueType: string; ValueName: ""; ValueData: "URL:Mimita Protocol"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\mimita"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\mimita\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName},0"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\mimita\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\mimita\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppLauncherName},0"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\mimita\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppLauncherName}"" ""%1"""; Flags: uninsdeletekey
 
 [UninstallRun]

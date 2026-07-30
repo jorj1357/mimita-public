@@ -1,4 +1,6 @@
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 #include "devtools/terminal.h"
@@ -6,13 +8,92 @@
 #include "input/input-commands.h"
 #include "network/net_mode.h"
 #include "combat/death-system.h"
+#include "debug/debug-log.h"
 #include "input/input-poll.h"
 #include "config/player-settings.h"
 #include "config/size-scaling-config.h"
 #include "network/packets.h"
+#include "network/multiplayer-context.h"
+#include "gui/hud/chat-bubble.h"
+#include "gui/hud/chat-history.h"
+#include "replay/replay-scene.h"
 #include "avatar/avatar.h"
 
 // TODO(main-cleanup): move to devtools/dev-teleport.cpp
+// Shared function: both the console "chat" command and GUI text input call this.
+void requestSendChatMessage(const std::string& message)
+{
+    Player& player = THE_PLAYER;
+    if (message.empty())
+        return;
+
+    // Trim whitespace
+    std::string trimmed = message;
+    trimmed.erase(0, trimmed.find_first_not_of(" \t\n\r"));
+    trimmed.erase(trimmed.find_last_not_of(" \t\n\r") + 1);
+
+    if (trimmed.empty())
+    {
+        Terminal::instance().addLog("[server]: u cant send nothing, silly!");
+        return;
+    }
+
+    // Limit to 256 Unicode code points (byte-safe: truncate at 256 bytes for now,
+    // full Unicode-codepoint validation is a future enhancement)
+    if (trimmed.size() > 256)
+        trimmed.resize(256);
+
+    Debug::log(Debug::Category::Chat, "[CHAT SEND] player=%s len=%zu\n",
+               player.username.c_str(), trimmed.size());
+
+    addChatMessage(player.chatState, trimmed, player.username);
+    playChatSound((int)trimmed.size());
+
+    {
+        ReplayEffectEvent chatEvent;
+        chatEvent.type = "chat";
+        chatEvent.sourceActorId = player.username;
+        chatEvent.assetId = trimmed;
+        chatEvent.lifetime = computeChatDuration((int)trimmed.size());
+        captureReplayEffect(chatEvent);
+    }
+
+    // Add to local chat history
+    ChatHistoryEntry entry;
+    entry.messageId = 0; // assigned by server when online
+    entry.serverTick = 0;
+    entry.utcUnixMilliseconds = 0;
+    entry.senderEntityId = 0;
+    entry.senderAccountId = 0;
+    entry.senderType = ChatSenderType::Player;
+    entry.senderName = player.username;
+    entry.text = trimmed;
+    gChatHistory.append(entry);
+
+    MimitaNet::MultiplayerContext& mpContext = MP_CONTEXT;
+    if (mpContext.active && mpContext.localPlayerId != 0)
+    {
+        // Use new v2 chat request packet
+        MimitaNet::ChatRequestPacket req{};
+        req.header.type = MimitaNet::PACKET_CHAT_REQUEST;
+        req.header.tick = mpContext.tick;
+        req.header.playerId = mpContext.localPlayerId;
+        req.requestId = mpContext.nextActionRequestId++;
+        req.clientSimulationTick = mpContext.tick;
+        std::strncpy(req.utf8Message, trimmed.c_str(), sizeof(req.utf8Message) - 1);
+        MimitaNet::mpSendPacket(mpContext, &req, sizeof(req));
+    }
+}
+
+// Preferences for chat features
+namespace {
+    bool gChatWindowEnabled = true;
+    bool gChatTipsEnabled = true;
+    bool gFloatingTipsEnabled = true;
+    bool gNotificationsEnabled = true;
+    uint64_t gNotificationMuteUntilTick = 0;
+}
+
 static bool parseTeleportPosition(
     const std::vector<std::string>& args,
     glm::vec3& position)
@@ -137,7 +218,6 @@ void registerPlayerCommands()
     Terminal::instance().registerCommand({
         "chat", "Send a chat message visible above your character", "chat <message>",
         [](const std::vector<std::string>& args) {
-            Player& player = THE_PLAYER;
             if (args.empty())
             {
                 Terminal::instance().addLog("[CHAT] usage: chat <message>");
@@ -149,44 +229,126 @@ void registerPlayerCommands()
                 if (i > 0) message += " ";
                 message += args[i];
             }
-            if (message.size() > 240)
-            {
-                message.resize(240);
-                Terminal::instance().addLog("[CHAT] message truncated to 240 characters");
+            requestSendChatMessage(message);
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "chatwindow", "Show or hide the chat window (0=hide, 1=show)", "chatwindow <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(gChatWindowEnabled ? "[CHAT] chatwindow 1" : "[CHAT] chatwindow 0");
+                return;
             }
+            gChatWindowEnabled = args[0] != "0";
+            Terminal::instance().addLog(gChatWindowEnabled ? "[CHAT] chat window enabled" : "[CHAT] chat window disabled");
+        }
+    });
 
-            printf("[CHAT] %s: %s\n", player.username.c_str(), message.c_str());
-            Terminal::instance().addLog("[CHAT] " + player.username + ": " + message);
-            Terminal::instance().addLog("[CHAT] bubble added");
-
-            addChatMessage(player.chatState, message, player.username);
-            playChatSound((int)message.size());
-
-            {
-                ReplayEffectEvent chatEvent;
-                chatEvent.type = "chat";
-                chatEvent.sourceActorId = player.username;
-                chatEvent.assetId = message;
-                chatEvent.lifetime = computeChatDuration((int)message.size());
-                captureReplayEffect(chatEvent);
-                Terminal::instance().addLog("[CHAT] replay event recorded");
+    Terminal::instance().registerCommand({
+        "chattips", "Show or hide automated chat tips (0=hide, 1=show)", "chattips <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(gChatTipsEnabled ? "[CHAT] chattips 1" : "[CHAT] chattips 0");
+                return;
             }
+            gChatTipsEnabled = args[0] != "0";
+            Terminal::instance().addLog(gChatTipsEnabled ? "[CHAT] chat tips enabled" : "[CHAT] chat tips disabled");
+        }
+    });
 
+    Terminal::instance().registerCommand({
+        "tips", "Show or hide the floating tip box (0=hide, 1=show)", "tips <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(gFloatingTipsEnabled ? "[CHAT] tips 1" : "[CHAT] tips 0");
+                return;
+            }
+            gFloatingTipsEnabled = args[0] != "0";
+            Terminal::instance().addLog(gFloatingTipsEnabled ? "[CHAT] floating tips enabled" : "[CHAT] floating tips disabled");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "listusers", "List all connected users with temporary numeric indices", "listusers",
+        [](const std::vector<std::string>&) {
+            Player& player = THE_PLAYER;
+            int idx = 1;
+            Terminal::instance().addLog("[CHAT] Connected users:");
+            Terminal::instance().addLog(std::to_string(idx++) + ". " + player.username + " (you)");
             MimitaNet::MultiplayerContext& mpContext = MP_CONTEXT;
-            if (mpContext.active && mpContext.localPlayerId != 0)
+            for (auto& kv : mpContext.remotePlayers)
             {
-                MimitaNet::ChatPacket chatPacket{};
-                chatPacket.header.type = MimitaNet::PACKET_CHAT_MESSAGE;
-                chatPacket.header.tick = mpContext.tick;
-                chatPacket.header.playerId = mpContext.localPlayerId;
-                std::memset(chatPacket.senderName, 0, sizeof(chatPacket.senderName));
-                std::strncpy(chatPacket.senderName, player.username.c_str(),
-                             sizeof(chatPacket.senderName) - 1);
-                std::memset(chatPacket.text, 0, sizeof(chatPacket.text));
-                std::strncpy(chatPacket.text, message.c_str(), sizeof(chatPacket.text) - 1);
-                MimitaNet::mpSendPacket(mpContext, &chatPacket, sizeof(chatPacket));
-                Terminal::instance().addLog("[CHAT] replicated");
+                char buf[128];
+                std::snprintf(buf, sizeof(buf), "%d. %s", idx++, kv.second.username.c_str());
+                Terminal::instance().addLog(buf);
             }
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "chatmute", "Mute or unmute a player by username or list index", "chatmute <username|index>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[CHAT] usage: chatmute <username or listusers index>");
+                return;
+            }
+            // TODO: Implement local mute map and rendering
+            Terminal::instance().addLog("[CHAT] chatmute not yet fully implemented");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "reportuser", "Report a player to the moderation team (interactive)",
+        "reportuser",
+        [](const std::vector<std::string>&) {
+            // TODO: Implement interactive report flow
+            Terminal::instance().addLog("[CHAT] reportuser not yet fully implemented");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "servermessage", "Send a server-wide message (host/operator only)", "servermessage <message>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[CHAT] usage: servermessage <message>");
+                return;
+            }
+            // TODO: Implement permission check and server message broadcast
+            Terminal::instance().addLog("[CHAT] servermessage not yet fully implemented");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "notifs", "Show or hide notifications (0=hide, 1=show)", "notifs <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(gNotificationsEnabled ? "[CHAT] notifs 1" : "[CHAT] notifs 0");
+                return;
+            }
+            gNotificationsEnabled = args[0] != "0";
+            Terminal::instance().addLog(gNotificationsEnabled ? "[CHAT] notifications enabled" : "[CHAT] notifications disabled");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "notifstempmute", "Temporarily mute notifications for N hours", "notifstempmute <hours>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[CHAT] usage: notifstempmute <hours>");
+                return;
+            }
+            double hours = std::atof(args[0].c_str());
+            if (hours <= 0.0) {
+                gNotificationMuteUntilTick = 0;
+                Terminal::instance().addLog("[CHAT] notification mute cleared");
+                return;
+            }
+            uint64_t muteTicks = static_cast<uint64_t>(hours * 3600.0 * 60.0);
+            gNotificationMuteUntilTick = 0 + muteTicks; // UI tick clock integration TBD
+            char buf[128];
+            std::snprintf(buf, sizeof(buf), "[CHAT] notifications muted for %.1f hours (%llu ticks)", hours, (unsigned long long)muteTicks);
+            Terminal::instance().addLog(buf);
         }
     });
 

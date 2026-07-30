@@ -203,6 +203,7 @@ DuelConfig* gpDuelConfig = nullptr;
 MimitaNet::MultiplayerContext* gpMpContext = nullptr;
 
 GameState* gpGameState = nullptr;
+ChatHistory* gpChatHistory = nullptr;
 
 // mainmenu debug flag (toggle with mainmenu_debug command)
 bool gMainmenuDebug = false;

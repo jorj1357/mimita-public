@@ -44,7 +44,7 @@ public:
     void init(GLFWwindow* window);
     void update(float dt);
     void pulseAction(const std::string& actionName);
-    void setKeyboardEnabled(bool enabled) { mKeyboardEnabled = enabled; }
+    void setKeyboardEnabled(bool enabled);
 
     // GLFW key callback — captures every key event, not just polling snapshots
     static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);

@@ -17,6 +17,7 @@
 #include "game/duel.h"
 #include "game/game-state.h"
 #include "gui/hud/chat-bubble.h"
+#include "gui/hud/chat-history.h"
 #include "combat/weapon-viewmodel.h"
 
 #define GP_ACCESS(Name, Field, Type) \
@@ -54,6 +55,7 @@ extern DuelConfig* gpDuelConfig;
 extern MimitaNet::MultiplayerContext* gpMpContext;
 
 extern GameState* gpGameState;
+extern ChatHistory* gpChatHistory;
 
 // Convenience accessors (non-null after main() init)
 #define REPLAY_RECORDER (*gpReplayRecorder)
@@ -84,3 +86,4 @@ extern GameState* gpGameState;
 #define DUEL_CONFIG (*gpDuelConfig)
 #define MP_CONTEXT (*gpMpContext)
 #define GAME_STATE (*gpGameState)
+#define gChatHistory (*gpChatHistory)

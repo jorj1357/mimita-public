@@ -3,6 +3,7 @@ import { hashToken, getClientIp, verifyPassword, usernameKey, normalizeEmail } f
 import { pool } from "./db.js"
 import { getMetrics, refreshMetrics } from "./analytics.js"
 import { getFeedback, FEEDBACK_PRESETS } from "./feedback.js"
+import { getErrors, getErrorCount } from "./error-queue.js"
 import {
     parseCookies,
     clearSessionCookie,
@@ -303,6 +304,15 @@ router.get("/admins", requireAdmin, async (req, res, next) => {
     catch (error) {
         next(error)
     }
+})
+
+router.get("/error-log", requireAdmin, (req, res) => {
+    const limit = Math.min(Number(req.query.limit) || 50, 200)
+    res.json({
+        success: true,
+        errors: getErrors(limit),
+        total: getErrorCount()
+    })
 })
 
 router.get("/flagged-accounts", requireAdmin, async (req, res, next) => {

@@ -383,6 +383,12 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
 
     float safeDt = std::max(dt, 0.0001f);
 
+    if (npc.wakeupTimer > 0.0f) {
+        npc.wakeupTimer -= safeDt;
+        npc.body.updateModelWorldTransforms();
+        return;
+    }
+
     npc.dashCooldown = std::max(0.0f, npc.dashCooldown - safeDt);
     npc.downDashCooldown = std::max(0.0f, npc.downDashCooldown - safeDt);
     npc.attackCooldown = std::max(0.0f, npc.attackCooldown - safeDt);

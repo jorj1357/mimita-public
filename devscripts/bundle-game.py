@@ -1,5 +1,6 @@
 """Create mimita-game.zip of all runtime files.
-The launcher downloads this from GitHub on first run."""
+The launcher downloads this from GitHub on first run.
+Excludes MimitaLauncher.exe to avoid file-lock conflicts on extraction."""
 
 import os
 import zipfile
@@ -9,7 +10,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def collect_files():
     files = []
-    for name in ["mimita.exe", "MimitaLauncher.exe", "version.txt",
+    for name in ["mimita.exe", "version.txt",
                   "glfw3.dll", "libgcc_s_seh-1.dll", "libstdc++-6.dll",
                   "libwinpthread-1.dll"]:
         full = os.path.join(ROOT, name)

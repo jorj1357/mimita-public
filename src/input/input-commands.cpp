@@ -38,6 +38,22 @@ void InputCommandSystem::init(GLFWwindow* window) {
     printf("[INPUT COMMANDS] Initialized with callback\n");
 }
 
+void InputCommandSystem::setKeyboardEnabled(bool enabled) {
+    if (mKeyboardEnabled == enabled) return;
+    mKeyboardEnabled = enabled;
+    if (mWindow && enabled) {
+        for (int i = 0; i < 512; i++) {
+            mPrevKeyStates[i] = glfwGetKey(mWindow, i) == GLFW_PRESS;
+            mKeyPressTime[i] = 0.0;
+            mKeyReleaseTime[i] = 0.0;
+        }
+        mJumpBuffer.active = false;
+        mDashBuffer.active = false;
+        mDownDashBuffer.active = false;
+        mPendingPulses.clear();
+    }
+}
+
 // GLFW key callback — fires on every press/release, not just polling frames.
 // This callback overwrites glfwSetKeyCallback from main.cpp, so it MUST forward
 // to Terminal, sign-in, server-info, and online-menu key handlers.
@@ -126,8 +142,11 @@ void InputCommandSystem::update(float dt) {
 
         // Callback-based press detection: a press occurred if the callback
         // timestamp is more recent than the last poll timestamp
+        // Must also gate on mKeyboardEnabled — when terminal is open the
+        // callback still records timestamps (before the terminal check) but
+        // those presses belong to the terminal, not to game actions.
         double lastPollTime = mCurrentTime - dt;
-        bool callbackPress = mKeyPressTime[key] > lastPollTime && mKeyPressTime[key] > mKeyReleaseTime[key];
+        bool callbackPress = mKeyboardEnabled && mKeyPressTime[key] > lastPollTime && mKeyPressTime[key] > mKeyReleaseTime[key];
         bool callbackRelease = mKeyReleaseTime[key] > lastPollTime && mKeyReleaseTime[key] > mKeyPressTime[key];
 
         // Prefer callback edges, fall back to polling edges for safety

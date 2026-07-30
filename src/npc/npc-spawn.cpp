@@ -7,6 +7,7 @@
 
 #include <glm/gtc/constants.hpp>
 
+#include "config.h"
 #include "debug/debug-log.h"
 #include "perf/perf-spike.h"
 #include "perf/perf-frame.h"
@@ -85,11 +86,17 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn,
     body.reset();
     body.username = "npc-" + std::to_string(id);
     body.currentHp = body.maxHp;
+    if (DevOverrides::healthOverrideEnabled) {
+        body.maxHp = DevOverrides::healthOverrideValue;
+        body.currentHp = DevOverrides::healthOverrideValue;
+    }
     body.pos = spawn;
     body.respawnPosition = spawn;
     body.vel = {0.0f, 0.0f, 0.0f};
     body.syncLegacyStateToLayers();
     previousPosition = body.pos;
+
+    wakeupTimer = 3.0f;  // 180 ticks @ 60 Hz
 
     stateMachine.nextDecisionTime = 0.0f;
     stateMachine.wanderTarget = spawn + randomPlanarDirection(rngState) * 5.0f;
@@ -105,6 +112,22 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn,
     // Equip weapon (default revolver, or specified via parameter)
     if (!equipNpcWeapon(*this, weaponId.empty() ? "revolver" : weaponId, 1)) {
         equipNpcWeapon(*this, "revolver", 1);  // fallback to revolver
+    }
+
+    // Spawn wakeup visual sphere (30 ticks @ 60 Hz = 0.5s)
+    {
+        EffectPart sphere;
+        sphere.position = spawn;
+        sphere.replayType = "npc_spawn_sphere";
+        sphere.color = {0.5f, 0.0f, 0.0f};
+        sphere.alpha = 0.5f;
+        sphere.maxLifetime = 0.5f;
+        sphere.scale = PLAYER_RADIUS;
+        sphere.endScale = PLAYER_RADIUS * 1.5f;
+        sphere.sticky = true;
+        sphere.billboardText = false;
+        sphere.ownerId = id;
+        EffectPartSystem::instance().spawn(sphere);
     }
 
     Debug::log(Debug::Category::General,

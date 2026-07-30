@@ -241,7 +241,7 @@ void engineTickCamera(Engine& engine, float dt)
         // Process keyframe prompt
         // Keyboard 1/2/3 handled here; visual popup drawn in engine-tick-ui-replay-hud.cpp.
         // Popup handles mouse clicks; Escape cancels.
-        if (gReplayEditor.keyframePromptStage > 0) {
+        if (!Terminal::instance().isOpen() && gReplayEditor.keyframePromptStage > 0) {
             // Escape cancels prompt
             static bool escWasDown = false;
             bool escDown = glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS;
@@ -799,7 +799,7 @@ void engineTickCamera(Engine& engine, float dt)
             "CAM_FINAL_STATE", "Final camera state after keyframe evaluation");
     }
 
-    if (anyFreecam) {
+    if (anyFreecam && !Terminal::instance().isOpen()) {
         // Mouse look: rely on existing camera.updateMouse() callback
         if (glfwGetInputMode(engine.window(), GLFW_CURSOR) != GLFW_CURSOR_DISABLED) {
             glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);

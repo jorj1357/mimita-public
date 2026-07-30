@@ -129,6 +129,7 @@ namespace DebugConfig
 
     inline bool DEBUG_ROTATION = false;
     inline bool DEBUG_AUTH = false;
+    inline bool DEBUG_CHAT = false;
     inline bool DEBUG_DEATH_TIMELINE = false;
     inline bool DEBUG_DEATH_PERF = false;
     inline bool DEBUG_WEAPON_SPAWN_LOG = false;
@@ -176,14 +177,17 @@ namespace DebugConfig
         DEBUG_REPLAY = false;
         DEBUG_NETWORKING = false;
         DEBUG_DUEL = false;
+        DEBUG_CHAT = false;
         DEBUG_NPC_COMBAT = false;
     }
 }
 
 namespace DevOverrides
 {
-    inline bool healthOverrideEnabled = false;
-    inline int healthOverrideValue = 100; // both currentHp and maxHp
+    inline bool healthOverrideEnabled = false;       // "healthall" — all entities
+    inline int healthOverrideValue = 100;
+    inline bool playerHealthOverrideEnabled = false;  // "healthme" — player only
+    inline int playerHealthOverrideValue = 100;
 }
 
 namespace CursorConfig
