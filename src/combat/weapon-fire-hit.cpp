@@ -253,6 +253,7 @@ void fireMultiPellet(
         auto ts = ShotProfiler::Scope(&shotProf.audioMs);
         WeaponAudio::playShootSound(def, muzzlePos);
     }
+    EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, shooter.username, shooter.sizeScale);
 
     float spreadDeg = std::max(0.1f, def.spread);
 

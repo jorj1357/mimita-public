@@ -10,6 +10,7 @@
 
 #include "network/multiplayer-context.h"
 #include "network/server.h"
+#include "network/disagreement-visuals.h"
 #include "combat/weapon-runtime.h"
 
 #include <algorithm>
@@ -129,6 +130,7 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
 
     if (applyPosition)
     {
+        const glm::vec3 predictedPosition = player.pos;
         player.pos = ctx.localServerPosition;
         player.vel = ctx.localServerVelocity;
         player.yaw = ctx.localServerYaw;
@@ -137,6 +139,20 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         player.syncLegacyStateToLayers();
         player.updateModelWorldTransforms();
         ctx.lastAppliedEpoch = ctx.localServerEpoch;
+
+        // Local-only correction indicator for the corrected player.
+        // Catastrophic divergence is the one applyPosition case that is a real
+        // client/server disagreement (not spawn, respawn, or a requested teleport).
+        if (catastrophicDivergence)
+        {
+            DisagreementEvent event;
+            event.timeMs = currentMs;
+            event.reason = DISAGREEMENT_POSITION_CORRECTION;
+            event.position = predictedPosition;
+            event.correction = ctx.localServerPosition - predictedPosition;
+            event.description = "catastrophic divergence";
+            spawnLocalDisagreementIndicator(event);
+        }
     }
 
     // ── Lifecycle-aware health reconciliation ─────────────────────────

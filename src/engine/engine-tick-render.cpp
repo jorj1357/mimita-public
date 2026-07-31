@@ -28,6 +28,7 @@
 #include "debug/debug-diag.h"
 #include "debug/debug-log.h"
 #include "debug/transform-debug.h"
+#include "network/badconn/badconn.h"
 #include "network/multiplayer-context.h"
 #include "engine/engine-tick-net.h"
 #include "perf/perf.h"
@@ -483,6 +484,25 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             DebugVis::drawWorldLabel(
                 mpContext.localServerPosition + glm::vec3(0.0f, 0.0f, 2.3f),
                 serverLabel, serverColor);
+        }
+
+        if (badconn::active())
+        {
+            const badconn::BadConnMetrics& bc = badconn::metrics();
+            char badConnLabel[256];
+            snprintf(badConnLabel, sizeof(badConnLabel),
+                     "BADCONN %s '%s' delay=%llu drop=%llu reorder=%llu "
+                     "blackout=%d%s",
+                     badconn::activePresetId().c_str(),
+                     badconn::activePresetName().c_str(),
+                     (unsigned long long)bc.packetsDelayed,
+                     (unsigned long long)bc.packetsDropped,
+                     (unsigned long long)bc.packetsReordered,
+                     (int)bc.blackoutActive,
+                     bc.blackoutActive ? " ACTIVE" : "");
+            DebugVis::drawWorldLabel(
+                player.pos + glm::vec3(0.0f, 0.0f, 3.4f),
+                badConnLabel, glm::vec4(1.0f, 0.4f, 0.2f, 1.0f));
         }
 
         for (const auto& kv : mpContext.remotePlayers)

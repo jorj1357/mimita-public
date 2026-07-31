@@ -15,6 +15,7 @@
 #include "network/ice/ice-agent.h"
 #include "network/ice/ice-config.h"
 #include "network/coordinator-client.h"
+#include "network/badconn/badconn.h"
 #include "analytics/analytics-manager.h"
 #include "debug/debug-log.h"
 
@@ -32,6 +33,10 @@ void mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes)
     if (!ctx.transport && ctx.sock == INVALID_SOCKET)
         return;
 
+    // Per-client badconn simulator may delay, reorder, or drop this packet.
+    if (badconn::processOutgoing(data, (size_t)bytes))
+        return;
+
     // Use ICE transport if available
     if (ctx.transport)
     {
@@ -40,91 +45,13 @@ void mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes)
         return;
     }
 
-    int delayMs = 0;
-    if (ctx.fakeLagMode == 1)
-        delayMs = ctx.fakeLagCurrentMs;
-    else if (ctx.fakeLagMode == 2)
-        delayMs = ctx.fakeLagStaticMs;
-
-    if (delayMs <= 0)
-    {
-        int sentBytes = sendto(ctx.sock, (const char*)data, bytes, 0,
-                               (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
-        if (sentBytes == SOCKET_ERROR)
-            printf("[NET TX ERROR] sendto failed error=%d\n", WSAGetLastError());
-        else
-            printf("[NET TX] type=%d bytes=%d\n", ((PacketHeader*)data)->type, bytes);
-        ++ctx.packetsSent;
-        return;
-    }
-
-    QueuedPacket queued;
-    queued.bytes.assign((const char*)data, (const char*)data + bytes);
-    queued.deliverAtMs = nowMs() + (uint64_t)delayMs;
-    ctx.outgoingQueue.push_back(std::move(queued));
-    const uint64_t currentMs = nowMs();
-    if (currentMs - ctx.lastFakeLagLogMs >= 250)
-    {
-        printf("[FAKELAG] mode=%d delay=%d packetQueued=%zu\n",
-               ctx.fakeLagMode, delayMs, ctx.outgoingQueue.size());
-        ctx.lastFakeLagLogMs = currentMs;
-    }
-}
-
-void flushOutgoingPackets(MultiplayerContext& ctx)
-{
-    if (!ctx.active)
-        return;
-    if (!ctx.transport && ctx.sock == INVALID_SOCKET)
-        return;
-
-    const uint64_t currentMs = nowMs();
-    for (size_t i = 0; i < ctx.outgoingQueue.size(); )
-    {
-        QueuedPacket& queued = ctx.outgoingQueue[i];
-        if (queued.deliverAtMs > currentMs)
-        {
-            ++i;
-            continue;
-        }
-
-        if (ctx.transport)
-            ctx.transport->send(queued.bytes.data(), queued.bytes.size());
-        else
-            sendto(ctx.sock, queued.bytes.data(), (int)queued.bytes.size(), 0,
-                   (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
-        ++ctx.packetsSent;
-        ctx.outgoingQueue.erase(ctx.outgoingQueue.begin() + i);
-    }
-}
-
-void mpSetFakeLagMode(MultiplayerContext& ctx, int mode)
-{
-    ctx.fakeLagMode = std::clamp(mode, 0, 2);
-    ctx.fakeLagNextRandomizeMs = 0;
-    if (ctx.fakeLagMode == 0)
-    {
-        ctx.fakeLagCurrentMs = 0;
-        for (QueuedPacket& queued : ctx.outgoingQueue)
-            queued.deliverAtMs = 0;
-        flushOutgoingPackets(ctx);
-    }
-}
-
-void mpSetFakeLagStatic(MultiplayerContext& ctx, int milliseconds)
-{
-    ctx.fakeLagStaticMs = std::clamp(milliseconds, 0, 5000);
-}
-
-void mpSetFakeLagRange(MultiplayerContext& ctx, int minimumMs, int maximumMs)
-{
-    minimumMs = std::clamp(minimumMs, 0, 5000);
-    maximumMs = std::clamp(maximumMs, 0, 5000);
-    if (minimumMs > maximumMs)
-        std::swap(minimumMs, maximumMs);
-    ctx.fakeLagMinMs = minimumMs;
-    ctx.fakeLagMaxMs = maximumMs;
-    ctx.fakeLagNextRandomizeMs = 0;
+    int sentBytes = sendto(ctx.sock, (const char*)data, bytes, 0,
+                           (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
+    if (sentBytes == SOCKET_ERROR)
+        printf("[NET TX ERROR] sendto failed error=%d\n", WSAGetLastError());
+    else
+        printf("[NET TX] type=%d bytes=%d\n", ((PacketHeader*)data)->type, bytes);
+    ++ctx.packetsSent;
 }
 
 // ── Connection lifecycle ──────────────────────────────────────────────
@@ -226,7 +153,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.pendingKnockback = glm::vec3(0.0f);
     ctx.pendingKnockbackSource.clear();
     ctx.incomingChatMessages.clear();
-    ctx.outgoingQueue.clear();
+    badconn::noteConnectionTeardown();
 
     // Reset reconnect timers
     ctx.reconnectAttempts = 0;
@@ -335,7 +262,6 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.connected = false;
     ctx.connectFailed = false;
     ctx.connectionStatus = "Connecting...";
-    ctx.outgoingQueue.clear();
     ctx.shotEvents.clear();
     ctx.lastReceivedShotSerial.clear();
     ctx.nextLocalShotSerial = 1;
@@ -345,7 +271,7 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.localPingMs = 0;
     ctx.lastHeardServerMs = 0;
     ctx.lastDisconnectLogMs = 0;
-    ctx.lastFakeLagLogMs = 0;
+    badconn::noteConnectionEstablished();
 
     printf("[NET CONNECT] connecting to %s as \"%s\"\n", address.c_str(), playerName.c_str());
     return true;
@@ -769,7 +695,7 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
         ctx.connected = false;
         ctx.connectFailed = false;
         ctx.connectionStatus = "Connected via ICE";
-        ctx.outgoingQueue.clear();
+        badconn::noteConnectionEstablished();
         ctx.shotEvents.clear();
         ctx.lastReceivedShotSerial.clear();
         ctx.nextLocalShotSerial = 1;

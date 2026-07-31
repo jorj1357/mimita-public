@@ -1,0 +1,52 @@
+{
+    "version": 1,
+    "comment": "Per-client network-condition presets for the 'badconn' terminal commands. Loaded at startup; 'badconn reload' re-reads this file. A preset only affects the client process where 'badconn N' was typed.",
+    "presets": {
+        "1": {
+            "name": "Slight lag",
+            "latency": { "direction": "both", "min_ms": 50, "max_ms": 150 }
+        },
+        "2": {
+            "name": "High latency",
+            "latency": { "direction": "both", "min_ms": 250, "max_ms": 999 }
+        },
+        "3": {
+            "name": "Packet loss",
+            "loss": { "direction": "both", "min_percent": 20, "max_percent": 60 }
+        },
+        "4": {
+            "name": "Reordering",
+            "reorder": { "direction": "both", "min_percent": 10, "max_percent": 90, "window": 8 }
+        },
+        "5": {
+            "name": "Severe combined",
+            "latency": { "direction": "both", "min_ms": 250, "max_ms": 999 },
+            "loss": { "direction": "both", "min_percent": 20, "max_percent": 60 },
+            "reorder": { "direction": "both", "min_percent": 10, "max_percent": 90, "window": 8 }
+        },
+        "6": {
+            "name": "5 second blackout",
+            "blackout": {
+                "enabled": true,
+                "start_probability_per_second": 0.02,
+                "min_ms": 5000,
+                "max_ms": 5000,
+                "cooldown_ms": 15000,
+                "direction": "both",
+                "release_queued": false
+            }
+        },
+        "7": {
+            "name": "15 second blackout",
+            "blackout": {
+                "enabled": true,
+                "start_probability_per_second": 0.01,
+                "min_ms": 15000,
+                "max_ms": 15000,
+                "cooldown_ms": 20000,
+                "direction": "both",
+                "release_queued": false
+            }
+        }
+    }
+}

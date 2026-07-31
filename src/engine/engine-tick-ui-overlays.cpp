@@ -26,6 +26,7 @@
 #include "competitive/competitive-ui.h"
 #include "gui/gui-main.h"
 #include "game/game-state.h"
+#include "notifications/notifications.h"
 #include "ui/hitmarker.h"
 #include "crosshair/crosshair-render.h"
 #include "crosshair/crosshair-config.h"
@@ -373,6 +374,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         }
     }
     MusicManager::instance().drawAllOverlay();
+    NotificationSystem::instance().render();
     if (gFramePacer.showFPS() && (!gReplayExportRenderMode || ReplayExportUI::showFps))
     {
         const GuiElement* fpsEl = hudLayout.get("fpsText");

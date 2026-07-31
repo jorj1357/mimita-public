@@ -11,6 +11,7 @@
 #include "network/multiplayer-context.h"
 #include "network/packets.h"
 #include "network/snapshot-chunks.h"
+#include "network/badconn/badconn.h"
 #include "avatar/avatar.h"
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
@@ -430,18 +431,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         }
     }
 
-    if (ctx.fakeLagMode == 1 &&
-        (ctx.fakeLagNextRandomizeMs == 0 ||
-         currentMs >= ctx.fakeLagNextRandomizeMs))
-    {
-        const int span = std::max(0, ctx.fakeLagMaxMs - ctx.fakeLagMinMs);
-        ctx.fakeLagCurrentMs = ctx.fakeLagMinMs +
-            (span > 0 ? std::rand() % (span + 1) : 0);
-        ctx.fakeLagNextRandomizeMs = currentMs + 1000;
-        printf("[FAKELAG] mode=1 delay=%d packetQueued=%zu\n",
-               ctx.fakeLagCurrentMs, ctx.outgoingQueue.size());
-    }
-    flushOutgoingPackets(ctx);
+    badconn::tick(ctx.transport.get());
     if (!ctx.connected && !ctx.connectFailed && currentMs - ctx.connectStartMs > 6000)
     {
         ctx.connectionStatus = "Connection timed out";
@@ -909,6 +899,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     {
         std::vector<ReceivedPacket> pkts;
         ctx.transport->poll(pkts);
+        badconn::processIncoming(pkts);
         for (const ReceivedPacket& rp : pkts)
         {
             if (rp.bytes.size() < (int)sizeof(PacketHeader))
@@ -923,38 +914,52 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     else
     {
         // ── Raw UDP recv loop ──
+        std::vector<ReceivedPacket> rawPkts;
         for (;;)
-    {
-        sockaddr_in from{};
-        int fromLen = sizeof(from);
-        int bytes = recvfrom(ctx.sock, buffer, sizeof(buffer), 0,
-                             (sockaddr*)&from, &fromLen);
-        if (bytes <= 0)
         {
-            int wsaErr = WSAGetLastError();
-            if (wsaErr == WSAEWOULDBLOCK)
-                break;
-            if (wsaErr == WSAEINVAL)
+            sockaddr_in from{};
+            int fromLen = sizeof(from);
+            int bytes = recvfrom(ctx.sock, buffer, sizeof(buffer), 0,
+                                 (sockaddr*)&from, &fromLen);
+            if (bytes <= 0)
             {
-                Debug::warn(Debug::Category::Networking,
-                       "[NET RX SOCKET BUG] recvfrom WSAEINVAL sock=%d "
-                       "state=%s connected=%d active=%d\n",
-                       (int)ctx.sock, connectionStateName(ctx.connectionState),
-                       (int)ctx.connected, (int)ctx.active);
+                int wsaErr = WSAGetLastError();
+                if (wsaErr == WSAEWOULDBLOCK)
+                    break;
+                if (wsaErr == WSAEINVAL)
+                {
+                    Debug::warn(Debug::Category::Networking,
+                           "[NET RX SOCKET BUG] recvfrom WSAEINVAL sock=%d "
+                           "state=%s connected=%d active=%d\n",
+                           (int)ctx.sock, connectionStateName(ctx.connectionState),
+                           (int)ctx.connected, (int)ctx.active);
+                    break;
+                }
+                printf("[NET RX ERROR] recvfrom failed error=%d\n", wsaErr);
                 break;
             }
-            printf("[NET RX ERROR] recvfrom failed error=%d\n", wsaErr);
-            break;
+            ++ctx.packetsReceived;
+            if (!isSameAddress(from, ctx.serverAddr))
+            {
+                printf("[NET PACKET FILTER] accepted=0 reason=not-server from=%s\n",
+                       addressToString(from).c_str());
+                continue;
+            }
+            ReceivedPacket rp;
+            rp.bytes.assign(buffer, buffer + bytes);
+            rp.receivedAtMs = nowMs();
+            rawPkts.push_back(std::move(rp));
         }
-        ++ctx.packetsReceived;
-        if (!isSameAddress(from, ctx.serverAddr))
+        badconn::processIncoming(rawPkts);
+        for (const ReceivedPacket& rp : rawPkts)
         {
-            printf("[NET PACKET FILTER] accepted=0 reason=not-server from=%s\n",
-                   addressToString(from).c_str());
-            continue;
+            if (rp.bytes.size() < (int)sizeof(PacketHeader))
+                continue;
+            if (rp.bytes.size() > sizeof(buffer))
+                continue;
+            memcpy(buffer, rp.bytes.data(), rp.bytes.size());
+            processPacket((int)rp.bytes.size());
         }
-        processPacket(bytes);
-    }
     }
 
     if (ctx.connected && ctx.localPlayerId && input)

@@ -540,6 +540,11 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
     projectile.lastTargetReceivedMs = nowMs();
     projectile.hasTargetState = true;
 
+    // Muzzle flash on fire for remote shooters (owner already has the
+    // instant client-side muzzle flash from local prediction).
+    if (!localOwner)
+        EffectPartSystem::instance().spawnMuzzleFlash(serverPosition, networkWeaponTypeName(event->weapon));
+
     // ── Correlation promotion: provisional fireSerial now has authoritative projectileId ──
     {
         bool pendingMatched = (event->fireSerial != 0) &&
@@ -718,72 +723,79 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
             removedLegacy = gpWeapons->removeLocalRocketByFireSerial(event->fireSerial);
     }
 
-    playWorldSound(
-        event->weapon == NETWORK_WEAPON_GRENADE_LAUNCHER
-            ? "grenadelauncher/grenadelauncherexplode"
-            : "rocketlauncher/rocketlauncherexplode",
-        position, 1.0f, 1.0f, 50.0f);
-    EffectPartSystem::instance().spawnMuzzleFlash(position, std::string(weaponName) + "_explosion");
-    EffectPartSystem::instance().spawnWorldDebris(position, glm::vec3(0.0f, 0.0f, 1.0f), 3.0f);
-    // Explosion smoke burst — config-driven burst for rockets and grenades
+    // Visuals only for clients that did NOT predict this explosion locally.
+    // The owner already has the instant client-side explosion playing; the
+    // server confirmation applies state but never redraws it (no duplicates).
+    if (event->ownerPlayerId != ctx.localPlayerId)
     {
-        const std::string weaponId = weaponName;
-        const auto& expCfg = WeaponHitFxConfig::instance().explosionBurstFor(weaponId);
-        if (expCfg.smoke.enabled)
+        playWorldSound(
+            event->weapon == NETWORK_WEAPON_GRENADE_LAUNCHER
+                ? "grenadelauncher/grenadelauncherexplode"
+                : "rocketlauncher/rocketlauncherexplode",
+            position, 1.0f, 1.0f, 50.0f);
+        EffectPartSystem::instance().spawnMuzzleFlash(position, std::string(weaponName) + "_explosion");
+        EffectPartSystem::instance().spawnWorldDebris(position, glm::vec3(0.0f, 0.0f, 1.0f), 3.0f);
+        EffectPartSystem::instance().spawnImpactSphereTick(position, {1.0f, 0.15f, 0.05f}, 0.5f);
+        // Explosion smoke burst — config-driven burst for rockets and grenades
         {
-            for (int i = 0; i < expCfg.smoke.count; ++i)
+            const std::string weaponId = weaponName;
+            const auto& expCfg = WeaponHitFxConfig::instance().explosionBurstFor(weaponId);
+            if (expCfg.smoke.enabled)
             {
-                EffectPart part;
-                part.position = position + glm::vec3(
-                    ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.spread,
-                    ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.spread,
-                    ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.spread);
-                part.velocity = glm::vec3(
-                    ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.speed,
-                    ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.speed,
-                    (float)rand() / RAND_MAX * expCfg.smoke.speed * 0.5f + expCfg.smoke.upwardBias);
-                part.lifetime = 0.0f;
-                part.maxLifetime = expCfg.smoke.lifetime + (float)rand() / RAND_MAX * expCfg.smoke.lifetime * 0.3f;
-                part.scale = expCfg.smoke.size + (float)rand() / RAND_MAX * expCfg.smoke.size * 0.5f;
-                part.endScale = expCfg.smoke.endSize + (float)rand() / RAND_MAX * expCfg.smoke.endSize * 0.5f;
-                part.color = expCfg.smoke.color;
-                part.alpha = expCfg.smoke.alpha;
-                part.gravity = 1.0f;
-                part.affectedByGravity = true;
-                part.billboardText = false;
-                part.replayType = std::string(weaponName) + "_explosion_smoke";
-                EffectPartSystem::instance().spawn(part);
+                for (int i = 0; i < expCfg.smoke.count; ++i)
+                {
+                    EffectPart part;
+                    part.position = position + glm::vec3(
+                        ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.spread,
+                        ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.spread,
+                        ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.spread);
+                    part.velocity = glm::vec3(
+                        ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.speed,
+                        ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.speed,
+                        (float)rand() / RAND_MAX * expCfg.smoke.speed * 0.5f + expCfg.smoke.upwardBias);
+                    part.lifetime = 0.0f;
+                    part.maxLifetime = expCfg.smoke.lifetime + (float)rand() / RAND_MAX * expCfg.smoke.lifetime * 0.3f;
+                    part.scale = expCfg.smoke.size + (float)rand() / RAND_MAX * expCfg.smoke.size * 0.5f;
+                    part.endScale = expCfg.smoke.endSize + (float)rand() / RAND_MAX * expCfg.smoke.endSize * 0.5f;
+                    part.color = expCfg.smoke.color;
+                    part.alpha = expCfg.smoke.alpha;
+                    part.gravity = 1.0f;
+                    part.affectedByGravity = true;
+                    part.billboardText = false;
+                    part.replayType = std::string(weaponName) + "_explosion_smoke";
+                    EffectPartSystem::instance().spawn(part);
+                }
             }
         }
-    }
 
-    // ── Config-driven explosion sphere ─────────────────────────────────
-    {
-        const std::string weaponId = weaponName;
-        const auto& expCfg = WeaponHitFxConfig::instance().explosionBurstFor(weaponId);
-        if (expCfg.sphere.enabled)
+        // ── Config-driven explosion sphere ─────────────────────────────────
         {
-            EffectPart sphere;
-            sphere.position = position;
-            sphere.maxLifetime = (float)expCfg.sphere.lifetimeTicks / 60.0f;
-            sphere.scale = expCfg.sphere.startRadius;
-            sphere.endScale = expCfg.sphere.endRadius;
-            sphere.color = expCfg.sphere.startColor * expCfg.sphere.brightnessStart;
-            sphere.alpha = expCfg.sphere.alphaStart;
-            sphere.billboardText = false;
-            sphere.replayType = std::string(weaponName) + "_explosion_sphere";
-            EffectPartSystem::instance().spawn(sphere);
+            const std::string weaponId = weaponName;
+            const auto& expCfg = WeaponHitFxConfig::instance().explosionBurstFor(weaponId);
+            if (expCfg.sphere.enabled)
+            {
+                EffectPart sphere;
+                sphere.position = position;
+                sphere.maxLifetime = (float)expCfg.sphere.lifetimeTicks / 60.0f;
+                sphere.scale = expCfg.sphere.startRadius;
+                sphere.endScale = expCfg.sphere.endRadius;
+                sphere.color = glm::clamp(expCfg.sphere.startColor * expCfg.sphere.brightnessStart, 0.0f, 1.0f);
+                sphere.alpha = expCfg.sphere.alphaStart;
+                sphere.billboardText = false;
+                sphere.replayType = std::string(weaponName) + "_explosion_sphere";
+                EffectPartSystem::instance().spawn(sphere);
+            }
         }
-    }
 
-    HitEvent hit;
-    hit.position = position;
-    hit.normal = glm::vec3(0.0f, 0.0f, 1.0f);
-    hit.hitWorld = true;
-    hit.damage = 0;
-    hit.attacker = "player_" + std::to_string(event->ownerPlayerId);
-    hit.weaponSource = weaponName;
-    HitEffects::onHit(hit);
+        HitEvent hit;
+        hit.position = position;
+        hit.normal = glm::vec3(0.0f, 0.0f, 1.0f);
+        hit.hitWorld = true;
+        hit.damage = 0;
+        hit.attacker = "player_" + std::to_string(event->ownerPlayerId);
+        hit.weaponSource = weaponName;
+        HitEffects::onHit(hit);
+    }
 
     for (uint8_t i = 0; i < event->victimCount && i < MAX_PROJECTILE_DAMAGE_RESULTS; ++i)
     {

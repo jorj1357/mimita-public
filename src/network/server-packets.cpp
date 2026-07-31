@@ -557,7 +557,10 @@ void handleInputPacket(const char* buffer, int bytes,
                        std::unordered_map<uint32_t, ServerNpc>& npcs,
                        const sockaddr_in* from,
                        uint32_t serverTick,
-                       const TransportConnectionId* connectionId)
+                       const TransportConnectionId* connectionId,
+                       SOCKET sock,
+                       uint64_t* totalPacketsOut,
+                       DisagreementRetransmitState* retransmitState)
 {
     if (bytes < (int)sizeof(InputPacket))
         return;
@@ -714,6 +717,24 @@ void handleInputPacket(const char* buffer, int bytes,
             report.movementSequence,
             glm::length(report.position - p.authoritativeTransformPosition),
             (unsigned long long)(currentMs - p.authoritativeTransformAssignedMs));
+    }
+
+    // Server corrected the client's claimed movement (out of bounds, geometry
+    // block). Broadcast a disagreement so clients can show the correction.
+    if (result.decision == MovementValidationDecision::Correct &&
+        retransmitState && totalPacketsOut && sock != INVALID_SOCKET)
+    {
+        const glm::vec3 correction =
+            result.acceptedState.position - report.position;
+        if (glm::length(correction) > 0.001f)
+        {
+            const uint32_t eventId = retransmitState->nextEventId++;
+            sendDisagreementToAll(sock, players, DISAGREEMENT_POSITION_CORRECTION,
+                                  eventId, report.movementSequence, p.id, 0u,
+                                  report.position, correction,
+                                  "server corrected movement",
+                                  serverTick, *totalPacketsOut, retransmitState);
+        }
     }
 
     applyMovementStateToServerPlayer(result.acceptedState, p);
@@ -1262,7 +1283,8 @@ ServerPacketProcessResult processServerPacket(
     else if (header->type == PACKET_INPUT)
     {
         handleInputPacket(buffer, bytes, players, world, nextEntityId, npcs,
-                          &from, tick, sourceConnection);
+                          &from, tick, sourceConnection, sock, &totalPacketsOut,
+                          retransmitState);
         result.handled = true;
     }
     else if (header->type == PACKET_DISCONNECT)
@@ -1307,7 +1329,8 @@ ServerPacketProcessResult processServerPacket(
     else if (header->type == PACKET_ATTACK_REQUEST)
     {
         handleAttackRequest(sock, from, buffer, bytes, players, npcs, projectiles,
-                            nextProjectileId, world, tick, totalPacketsOut);
+                            nextProjectileId, world, tick, totalPacketsOut,
+                            retransmitState);
         result.handled = true;
     }
     else if (header->type == PACKET_MELEE_HIT_REQUEST)

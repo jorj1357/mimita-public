@@ -54,3 +54,30 @@ To bind a test server to another localhost port:
 ```
 
 i put 1357 becusae jorj1357 Heheh ehehe Hehe
+
+## badconn (per-client network simulation)
+
+In any GUI client, open the console (`~`) and use `badconn`:
+
+| Command | What it does |
+|---|---|
+| `badconn list` | Lists every preset from `config/badconnconfig.json` |
+| `badconn <N>` | Activates preset N for THIS client only (e.g. `badconn 2` = high latency) |
+| `badconn 0` | Disables all simulated problems and flushes queues |
+| `badconn` | Shows current preset + counters |
+| `badconn reload` | Re-reads `config/badconnconfig.json` |
+
+Behavior notes:
+
+- Presets only affect the client process where the command was typed. The server
+  and other clients are untouched. If the host runs `badconn`, only the host's own
+  client side is impaired.
+- Presets reset on every launch — nothing is persisted.
+- The `~` console and `badconn` only exist in the graphical client, not in the
+  headless `--client` debug path.
+- Preset 7 (`15 second blackout`) is silence on both directions. The server
+  removes a player that stops sending for ~10s (`SERVER_TIMEOUT_MS`), so a long
+  blackout can kick the player — that's expected timeout behavior, not a bug.
+  Use preset 6 (`5 second blackout`) to test choppy/frozen remote movement
+  without a disconnect.
+- Press `F3` while a preset is active to see a `BADCONN` summary label.

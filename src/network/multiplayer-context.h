@@ -95,12 +95,6 @@ struct SnapshotTransform
     uint32_t spawnGeneration = 0;
 };
 
-struct QueuedPacket
-{
-    std::vector<char> bytes;
-    uint64_t deliverAtMs = 0;
-};
-
 struct NetworkShotEvent
 {
     uint32_t shotSerial = 0;
@@ -238,14 +232,6 @@ struct MultiplayerContext
     bool connectFailed = false;
     bool showPlayerList = false;
     bool showDebugOverlay = true;
-    int fakeLagMode = 0;
-    int fakeLagStaticMs = 0;
-    int fakeLagMinMs = 0;
-    int fakeLagMaxMs = 0;
-    int fakeLagCurrentMs = 0;
-    uint64_t fakeLagNextRandomizeMs = 0;
-    uint64_t lastFakeLagLogMs = 0;
-    std::vector<QueuedPacket> outgoingQueue;
     std::vector<NetworkShotEvent> shotEvents;
     std::unordered_map<uint32_t, NetworkProjectile> networkProjectiles;
     ProjectileTerminalDedupe projectileTerminals;
@@ -594,13 +580,6 @@ uint32_t mpSendMeleeHitRequest(
     const glm::vec3& knockback,
     float weaponSpeed);
 void mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes);
-
-// Packet queue flush (defined in multiplayer-packets.cpp)
-void flushOutgoingPackets(MultiplayerContext& ctx);
-
-void mpSetFakeLagMode(MultiplayerContext& ctx, int mode);
-void mpSetFakeLagStatic(MultiplayerContext& ctx, int milliseconds);
-void mpSetFakeLagRange(MultiplayerContext& ctx, int minimumMs, int maximumMs);
 
 // Called from mpTick (defined in multiplayer-shots.cpp)
 void mpProcessShotEventPacket(MultiplayerContext& ctx, const ShotEventPacket* event);

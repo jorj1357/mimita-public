@@ -121,6 +121,7 @@
 #include "gui/gui-editor-commands.h"
 #include "camera/camera-commands.h"
 #include "audio/music-commands.h"
+#include "notifications/notifications.h"
 #include <windows.h>
 #include <glad/glad.h>
 
@@ -239,5 +240,8 @@ void gameInit(int argc, char** argv, Engine& engine)
     printf("[MAIN] after DebugVis::init()\n");
 
     gameInitSubsystems(engine);
+
+    NotificationSystem::instance().loadConfig();
+    NotificationSystem::instance().pushBuildNotice();
 }
 

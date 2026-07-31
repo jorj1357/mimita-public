@@ -1,3 +1,10 @@
+// 07 31 2026, 14 50
+/* purpose
+* Declares the EffectPart particle/effect pool and the EffectPartSystem spawn API.
+* Owns effect spawn helpers for tracers, muzzle flashes, impacts, debris, and tick spheres.
+* Does NOT own server weapon authority, packet send/receive, or damage validation.
+* Does NOT render effects or run the fixed-step simulation tick.
+*/
 #pragma once
 
 #include <array>
@@ -99,6 +106,7 @@ public:
     EffectPart* spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId = {}, float sizeScale = 1.0f);
     EffectPart* spawnTracer(glm::vec3 start, glm::vec3 end, const std::string& sourceActorId = {}, float sizeScale = 1.0f);
     EffectPart* spawnBulletImpact(glm::vec3 position, float sizeScale = 1.0f);
+    EffectPart* spawnImpactSphereTick(glm::vec3 position, glm::vec3 color, float radius = 0.15f);
     EffectPart* spawnDeathEllipsoid(glm::vec3 position, glm::vec3 direction, float length = 8.0f,
                                     float radius = 1.5f, float lifetime = 3.0f, float sizeScale = 1.0f);
     EffectPart* spawnFreezeTrail(glm::vec3 position);
