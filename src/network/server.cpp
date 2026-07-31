@@ -387,14 +387,10 @@ int runServer(const LaunchOptions& options)
 
     uint64_t serverStartMs = nowMs();
 
-    // Install crash handler to catch access violations and other fatal errors
-    SetUnhandledExceptionFilter([](EXCEPTION_POINTERS* ep) -> LONG {
-        printf("[SERVER CRASH] code=0x%08X at address=%p\n",
-               ep->ExceptionRecord->ExceptionCode,
-               ep->ExceptionRecord->ExceptionAddress);
-        fflush(stdout);
-        return EXCEPTION_EXECUTE_HANDLER;
-    });
+    // Server runs in-process — do NOT override the game's crash handler.
+    // The game's crash handler (installCrashHandler) writes minidumps and
+    // crash logs. Overriding it would suppress those diagnostics and
+    // change the exit code to STATUS_CONTROL_C_EXIT (0xC000013A).
 
     // Accumulator-based fixed-step timing
     auto previousTime = std::chrono::steady_clock::now();

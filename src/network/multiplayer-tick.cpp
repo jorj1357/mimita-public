@@ -846,13 +846,14 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             entry.senderType = static_cast<ChatSenderType>(ev->senderType);
             entry.senderName = ev->senderName;
             entry.text = ev->utf8Message;
+            entry.channel = ev->channel;
             entry.muted = false;
 
             if (gpChatHistory)
                 gChatHistory.append(entry);
 
             // Also add to 3D chat bubble for the sender
-            if (ev->senderType == 0) // Player
+            if (ev->senderType == (uint8_t)ChatSenderType::Player)
             {
                 bool found = false;
                 for (auto& kv : ctx.remotePlayers)
