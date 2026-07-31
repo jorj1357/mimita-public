@@ -29,6 +29,15 @@ void simulateNpc(ServerNpc& npc, const std::unordered_map<uint32_t, ServerPlayer
     // Yaw toward target
     npc.yaw = glm::degrees(std::atan2(chaseDir.y, chaseDir.x));
 
+    // Apply external knockback impulse (from explosions, hitscan, etc.)
+    if (glm::length(npc.knockbackImpulse) > 0.05f)
+    {
+        npc.pos += npc.knockbackImpulse * SERVER_DT;
+        npc.knockbackImpulse *= std::exp(-8.0f * SERVER_DT);
+        if (glm::length(npc.knockbackImpulse) < 0.05f)
+            npc.knockbackImpulse = glm::vec3(0.0f);
+    }
+
     // State machine
     npc.stateTimer -= SERVER_DT;
     if (npc.stateTimer <= 0.0f)
