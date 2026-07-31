@@ -46,12 +46,11 @@ GLFW_LIB = r"C:\important\glfw-3.4.bin.WIN64\lib-mingw-w64"
 
 SRC_DIR = os.path.join(ROOT, "src")
 BUILD_DIR = os.path.join(ROOT, "build")
-OBJ_DIR = os.path.join(BUILD_DIR, "obj")
+# OBJ_DIR and PCH_OUTPUT are set per build mode after MODE is resolved below.
 
 EXE_NAME = os.environ.get("MIMITA_EXE_NAME", "mimita.exe")
 
 PCH_HEADER = os.path.join(SRC_DIR, "pch.h")
-PCH_OUTPUT = os.path.join(SRC_DIR, "pch.h.gch")
 
 # ============================================================
 # BUILD MODE
@@ -99,6 +98,11 @@ else:
         "-MMD",
         "-MP",
     ]
+
+# Debug and release use separate object/PCH dirs so switching modes never
+# links stale objects compiled with the other mode's flags.
+OBJ_DIR = os.path.join(BUILD_DIR, "obj-" + MODE)
+PCH_OUTPUT = os.path.join(SRC_DIR, "pch-" + MODE + ".h.gch")
 
 # ============================================================
 # FLAGS

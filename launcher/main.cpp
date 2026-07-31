@@ -63,6 +63,10 @@ bool g_useLocalZip = false;
 std::string g_localZipPath;
 bool g_noVerify = false;
 
+// Suppress modal error dialogs (used by automated tests so an invalid game
+// executable cannot block the process on OS or launcher message boxes).
+bool g_noErrorDialogs = false;
+
 // Page control IDs
 enum {
     IDC_PATH_EDIT = 200,
@@ -94,15 +98,6 @@ std::string appDir()
     std::string path = buf;
     auto p = path.find_last_of("\\/");
     return (p != std::string::npos) ? path.substr(0, p) : path;
-}
-
-std::string appExeName()
-{
-    char buf[MAX_PATH];
-    GetModuleFileNameA(nullptr, buf, MAX_PATH);
-    std::string path = buf;
-    auto p = path.find_last_of("\\/");
-    return (p != std::string::npos) ? path.substr(p + 1) : path;
 }
 
 std::string readFile(const std::string& path)
@@ -161,6 +156,7 @@ void printHelp()
         "  --local-zip <path>  Use a local mimita-game.zip instead of\n"
         "                      downloading from GitHub.\n"
         "  --no-verify         Skip SHA-256 verification of the ZIP.\n"
+        "  --no-error-dialogs  Never show modal error dialogs (tests).\n"
         "\n"
         "Examples:\n"
         "  MimitaLauncher.exe --local-zip mimita-game.zip\n"
@@ -515,26 +511,6 @@ void writeMinidump(DWORD pid, const std::string& path)
     MiniDumpWriteDump(p, pid, f, MiniDumpNormal, nullptr, nullptr, nullptr);
     CloseHandle(f);
     CloseHandle(p);
-}
-
-bool spawnSelfUpdate(const std::string& newLauncherPath, const std::string& dir)
-{
-    char td[MAX_PATH]; GetTempPathA(MAX_PATH, td);
-    std::string bp = std::string(td) + "mimita-update.cmd";
-    std::string en = appExeName();
-    std::string batch =
-        "@echo off\r\n"
-        "ping -n 3 127.0.0.1 > nul\r\n"
-        "copy /Y \"" + newLauncherPath + "\" \"" + dir + "\\" + en + "\"\r\n"
-        "del \"" + newLauncherPath + "\"\r\n"
-        "start \"\" \"" + dir + "\\" + en + "\"\r\n"
-        "del \"%~f0\"\r\n";
-    HANDLE h = CreateFileA(bp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (h == INVALID_HANDLE_VALUE) return false;
-    DWORD wr = 0; WriteFile(h, batch.data(), (DWORD)batch.size(), &wr, nullptr); CloseHandle(h);
-    SHELLEXECUTEINFOA si = { sizeof(si) };
-    si.lpFile = bp.c_str(); si.nShow = SW_HIDE;
-    return ShellExecuteExA(&si);
 }
 
 void storeSessionToken(const std::string& dir, const std::string& token)
@@ -990,6 +966,61 @@ CrashRecoveryAction showCrashRecoveryDialog(const std::string& crashDir,
     return CRASH_RECOVER_CLOSE;
 }
 
+// ── Game launch helpers ───────────────────────────────────────
+
+bool isValidPeExecutable(const std::string& path)
+{
+    HANDLE h = CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ,
+                           nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    BYTE buf[4096];
+    DWORD rd = 0;
+    bool ok = false;
+    if (ReadFile(h, buf, sizeof(buf), &rd, nullptr) && rd >= 0x40) {
+        if (buf[0] == 'M' && buf[1] == 'Z') {
+            DWORD e_lfanew = *(DWORD*)(buf + 0x3C);
+            if (e_lfanew + 4 <= rd)
+                ok = (buf[e_lfanew] == 'P' && buf[e_lfanew + 1] == 'E' &&
+                      buf[e_lfanew + 2] == 0 && buf[e_lfanew + 3] == 0);
+        }
+    }
+    CloseHandle(h);
+    return ok;
+}
+
+std::string win32ErrorMessage(DWORD err)
+{
+    LPSTR msg = nullptr;
+    DWORD n = FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER |
+                             FORMAT_MESSAGE_FROM_SYSTEM |
+                             FORMAT_MESSAGE_IGNORE_INSERTS,
+                             nullptr, err, 0, (LPSTR)&msg, 0, nullptr);
+    std::string out = (n && msg) ? std::string(msg, n) : "unknown error";
+    if (msg) LocalFree(msg);
+    while (!out.empty() && (out.back() == '\n' || out.back() == '\r' || out.back() == ' '))
+        out.pop_back();
+    return out;
+}
+
+void reportLaunchFailure(const std::string& workDir, const std::string& exePath,
+                         const std::string& reason, DWORD win32Error)
+{
+    std::string msg = "Game launch failed: path=\"" + exePath
+                    + "\" win32_error=" + std::to_string(win32Error)
+                    + " message=\"" + reason + "\"";
+    printf("%s\n", msg.c_str());
+    fflush(stdout);
+
+    std::string logDir = workDir + "\\launcher-data\\logs";
+    CreateDirectoryA((workDir + "\\launcher-data").c_str(), nullptr);
+    CreateDirectoryA(logDir.c_str(), nullptr);
+    std::string logPath = logDir + "\\launch-error-" + std::to_string(GetTickCount()) + ".txt";
+    writeFile(logPath, msg + "\n");
+
+    if (!g_noErrorDialogs)
+        MessageBoxA(nullptr, msg.c_str(), "Mimita Launcher", MB_OK | MB_ICONERROR);
+}
+
 void launchGame(const std::string& exePath, const std::string& workDir)
 {
     std::string sessionArg;
@@ -1004,13 +1035,25 @@ void launchGame(const std::string& exePath, const std::string& workDir)
     if (g_hWnd) ShowWindow(g_hWnd, SW_HIDE);
     pumpMessages();
 
+    if (!isValidPeExecutable(exePath)) {
+        // Never hand a non-PE file to CreateProcessA: Windows would pop a
+        // modal "Unsupported 16-Bit Application" dialog and block this thread.
+        reportLaunchFailure(workDir, exePath,
+            "not a valid Windows executable (PE header check failed)", 193);
+        return;
+    }
+
     STARTUPINFOA si = { sizeof(si) };
     PROCESS_INFORMATION pi;
     std::string cli = exePath + sessionArg;
     bool started = CreateProcessA(nullptr, &cli[0], nullptr, nullptr, FALSE, 0,
                                   nullptr, workDir.c_str(), &si, &pi);
 
-    if (!started) return;
+    if (!started) {
+        DWORD err = GetLastError();
+        reportLaunchFailure(workDir, exePath, win32ErrorMessage(err), err);
+        return;
+    }
 
     DWORD start = GetTickCount();
 
@@ -1236,6 +1279,12 @@ void runInstall(HWND hwnd)
     CreateDirectoryA((g_installDir + "\\logs").c_str(), nullptr);
     CreateDirectoryA((g_installDir + "\\replays").c_str(), nullptr);
 
+    // A local zip carries its own version.txt — prefer it over the version
+    // guessed from the launcher's folder so the installed version is real.
+    if (g_useLocalZip) {
+        std::string zippedVer = readFile(g_installDir + "\\version.txt");
+        if (!zippedVer.empty()) g_latestVer = zippedVer;
+    }
     writeFile(g_installDir + "\\version.txt", g_latestVer);
     saveInstallConfig(g_installDir);
 
@@ -1393,10 +1442,22 @@ HWND createWizardWindow(HINSTANCE hInst)
 
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
 {
+    // Never let the OS pop its own critical-error dialogs (e.g. the
+    // "Unsupported 16-Bit Application" box) while this launcher is running.
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
+
     std::string cmdLine = lpCmdLine ? lpCmdLine : "";
+
+    // Single-instance guard: another launcher is already running (e.g. one
+    // waiting on the game). Exit immediately so launchers never spawn
+    // themselves in a loop.
+    HANDLE hSingleton = CreateMutexA(nullptr, FALSE, "MimitaLauncherSingleton");
+    if (hSingleton && GetLastError() == ERROR_ALREADY_EXISTS) {
+        CloseHandle(hSingleton);
+        return 0;
+    }
+
     std::string launcherDir = appDir();
-    std::string localVer = readFile(launcherDir + "\\version.txt");
-    if (localVer.empty()) localVer = "0.0.0";
 
     // ── Parse command-line flags ──────────────────────────────
     if (hasFlag(cmdLine, "--help")) {
@@ -1415,6 +1476,21 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
     }
     if (hasFlag(cmdLine, "--no-verify") && !g_useLocalZip) {
         g_noVerify = true;
+    }
+    if (hasFlag(cmdLine, "--no-error-dialogs")) {
+        g_noErrorDialogs = true;
+    }
+
+    // Auto-detect a local mimita-game.zip next to this launcher. In dev mode
+    // the zip sits beside the launcher exe, so use it instead of downloading
+    // from GitHub. End users never have a zip beside the installed launcher,
+    // so they always get the release ZIP from GitHub.
+    if (!g_useLocalZip) {
+        std::string localZipPath = launcherDir + "\\mimita-game.zip";
+        if (GetFileAttributesA(localZipPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+            g_useLocalZip = true;
+            g_localZipPath = localZipPath;
+        }
     }
 
     DeleteFileA((launcherDir + "\\MimitaLauncher.old.exe").c_str());
@@ -1461,6 +1537,15 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         gameExePath = installDir + "\\mimita.exe";
         alreadyInstalled = (GetFileAttributesA(gameExePath.c_str()) != INVALID_FILE_ATTRIBUTES);
     }
+
+    // Version to compare against the latest release. When the game is already
+    // installed, use the installed game's version.txt — not the file next to
+    // this launcher executable, which may live in a different directory
+    // (e.g. a dev folder) and cause needless re-installs.
+    std::string localVer = alreadyInstalled
+        ? readFile(installDir + "\\version.txt")
+        : readFile(launcherDir + "\\version.txt");
+    if (localVer.empty()) localVer = "0.0.0";
 
     // ── Initialize COM, GDI+, common controls, fonts ──────────
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -1539,13 +1624,13 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 }
                 if (hashOk) {
                     if (extractZipFileWithProgress(zipPath, installDir)) {
-                        writeFile(installDir + "\\version.txt", g_latestVer);
-
-                        std::string newLauncher = installDir + "\\MimitaLauncher.exe";
-                        if (GetFileAttributesA(newLauncher.c_str()) != INVALID_FILE_ATTRIBUTES) {
-                            if (launcherDir + "\\" + appExeName() != newLauncher)
-                                spawnSelfUpdate(newLauncher, launcherDir);
+                        // A local zip carries its own version.txt — prefer it
+                        // over the version guessed from the launcher's folder.
+                        if (g_useLocalZip) {
+                            std::string zippedVer = readFile(installDir + "\\version.txt");
+                            if (!zippedVer.empty()) g_latestVer = zippedVer;
                         }
+                        writeFile(installDir + "\\version.txt", g_latestVer);
                     }
                 }
                 if (!g_useLocalZip) DeleteFileA(zipPath.c_str());
