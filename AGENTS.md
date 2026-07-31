@@ -1129,6 +1129,53 @@ pm2 start coordinator-server/server.js --name mimita-coordinator --update-env
 
 The coordinator requires only `MIMITA_TURN_SECRET` in the environment. Without it, TURN credential issuance is disabled (direct connections still work). No npm install is needed — it uses only built-in Node.js modules (`http`, `crypto`, `fs`, `path`).
 
+# Release and Branch Policy
+
+## v2.0.0 Release (Frozen)
+
+- **Commit:** `2ef371e5005195d6b1181837584df6a9abe06e0d`
+- **Tag:** `v2.0.0` at `e20b8c0` ("v2.0.0: single Inno Setup installer, no launcher")
+- **Branch:** `release/v2.0.0` at `2ef371e` — the working networking release
+- Both the tag and branch are **frozen**. No new features, fixes, cleanup, version changes, or any other edits.
+- A change to the old release requires a new patch branch and version, such as `release/v2.0.1`.
+
+## Current Development
+
+- **Branch:** `develop/v2.0.1`
+- **Version:** 2.0.1 (prerelease)
+- All new development belongs here or on feature branches based on it.
+- Version metadata source of truth: `config/version.json`
+- To update version: edit `config/version.json`, then run `python devscripts/generate-version.py`
+
+## Local ZIP Testing
+
+The launcher supports local ZIP testing without downloading from GitHub:
+
+```
+MimitaLauncher.exe --local-zip mimita-game.zip
+MimitaLauncher.exe --local-zip mimita-game.zip --no-verify
+```
+
+### Build and test flow:
+
+1. Build the game: `python build_agent.py`
+2. Bundle into ZIP: `python devscripts/bundle-game.py`
+3. Run launcher with local ZIP: `MimitaLauncher.exe --local-zip mimita-game.zip --no-verify`
+
+### Available flags:
+
+| Flag | Description |
+|---|---|
+| `--help` | Show help message and exit |
+| `--local-zip <path>` | Use a local mimita-game.zip instead of downloading from GitHub |
+| `--no-verify` | Skip SHA-256 verification of the ZIP |
+
+## VPS Deployment
+
+- The production VPS (107.191.48.226) is not edited directly.
+- All changes follow: local implementation → Git commit → push → pull on VPS → restart service.
+- Release binaries must identify the exact Git commit they were built from.
+
 ## Extending
 
 To add a new checker, create a new directory under `.opencode/skills/<name>/` with a `checker.py` that:

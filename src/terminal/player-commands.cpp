@@ -58,17 +58,20 @@ void requestSendChatMessage(const std::string& message)
         captureReplayEffect(chatEvent);
     }
 
-    // Add to local chat history
-    ChatHistoryEntry entry;
-    entry.messageId = 0; // assigned by server when online
-    entry.serverTick = 0;
-    entry.utcUnixMilliseconds = 0;
-    entry.senderEntityId = 0;
-    entry.senderAccountId = 0;
-    entry.senderType = ChatSenderType::Player;
-    entry.senderName = player.username;
-    entry.text = trimmed;
-    gChatHistory.append(entry);
+    // Add to local chat history (chat history is not available in every mode)
+    if (gpChatHistory)
+    {
+        ChatHistoryEntry entry;
+        entry.messageId = 0; // assigned by server when online
+        entry.serverTick = 0;
+        entry.utcUnixMilliseconds = 0;
+        entry.senderEntityId = 0;
+        entry.senderAccountId = 0;
+        entry.senderType = ChatSenderType::Player;
+        entry.senderName = player.username;
+        entry.text = trimmed;
+        gChatHistory.append(entry);
+    }
 
     MimitaNet::MultiplayerContext& mpContext = MP_CONTEXT;
     if (mpContext.active && mpContext.localPlayerId != 0)

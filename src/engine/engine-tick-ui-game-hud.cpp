@@ -387,6 +387,9 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     }
 
     // ── Chat Window ─────────────────────────────────────
-    renderChatWindow(gChatWindowState, engine.window(), gChatHistory,
-                     gChatUiTickClock, uiScreenW(), uiScreenH());
+    if (gpChatHistory)
+    {
+        renderChatWindow(gChatWindowState, engine.window(), gChatHistory,
+                         gChatUiTickClock, uiScreenW(), uiScreenH());
+    }
 }

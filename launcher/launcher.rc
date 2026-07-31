@@ -1,3 +1,9 @@
 // launcher.rc — Resource script for MimitaLauncher
 // Embeds the loading screen image directly into the EXE.
 IDB_LOADING_IMAGE RCDATA "..\\assets\\uitextures\\mimita-loading-v1.png"
+
+// Common-Controls v6 manifest so TaskDialogIndirect resolves against comctl32
+// v6 (the v5.82 System32 copy does not export it). Resource type must be the
+// numeric RT_MANIFEST (24) — windres treats the bare token as a string name,
+// which the loader ignores.
+1 24 "launcher.manifest"

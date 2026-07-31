@@ -29,6 +29,7 @@ struct ChatHistoryEntry
     uint32_t senderEntityId = 0;
     uint32_t senderAccountId = 0;
     ChatSenderType senderType = ChatSenderType::Player;
+    uint8_t channel = 0;
     std::string senderName;
     std::string text;
     bool muted = false; // local mute flag, not networked

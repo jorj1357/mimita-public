@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+# 07 31 2026, 00 00
+# purpose
+# Regression check for the MimitaLauncher TaskDialogIndirect startup bug.
+# Verifies the launcher EXE does NOT statically import TaskDialogIndirect and
+# that its import table names COMCTL32 (not the launcher itself) for comctl32.
+# Also verifies the launcher process starts and stays alive (no 0xC0000139).
+# Does NOT launch the game, touch the VPS, or download anything.
+
+import os
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+OBJDUMP = r"C:\important\winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4\mingw64\bin\objdump.exe"
+LAUNCHER = ROOT / "MimitaLauncher.exe"
+
+
+def imports_table():
+    result = subprocess.run(
+        [OBJDUMP, "-p", str(LAUNCHER)],
+        capture_output=True, text=True, errors="replace")
+    return result.stdout
+
+
+def main():
+    if not LAUNCHER.exists():
+        print(f"FAIL: launcher missing: {LAUNCHER}")
+        return 1
+    if LAUNCHER.stat().st_size == 0:
+        print("FAIL: launcher is zero bytes")
+        return 1
+
+    text = imports_table()
+    ok = True
+
+    # 1. TaskDialogIndirect must NOT be a static import at all.
+    if re.search(r"TaskDialogIndirect", text):
+        print("FAIL: TaskDialogIndirect is statically imported in the PE")
+        ok = False
+    else:
+        print("PASS: TaskDialogIndirect is not a static import")
+
+    # 2. COMCTL32 must be imported from COMCTL32.dll, never from the launcher.
+    #    The bug symptom was the loader searching the EXE itself.
+    if "DLL Name: COMCTL32.dll" not in text:
+        print("FAIL: COMCTL32.dll is not in the import table")
+        ok = False
+    else:
+        print("PASS: COMCTL32.dll present in import table")
+    if re.search(r"DLL Name: [^\n]*MimitaLauncher\.exe", text, re.IGNORECASE):
+        print("FAIL: import table references the launcher itself as a DLL")
+        ok = False
+    else:
+        print("PASS: import table does not reference MimitaLauncher.exe as a DLL")
+
+    # 3. Embedded v6 manifest present (comctl32 v6 -> TaskDialogIndirect exists).
+    #    The resource must be numeric RT_MANIFEST (type 0x18 = 24); windres
+    #    writes the bare token as a string name unless given "24".
+    has_manifest_res = ("RT_MANIFEST" in text
+                        or "ID: 0x000018" in text
+                        or "0x000018" in text)
+    if has_manifest_res:
+        print("PASS: common-controls v6 manifest embedded (RT_MANIFEST/24)")
+    else:
+        print("FAIL: manifest resource not embedded as RT_MANIFEST type 24")
+        ok = False
+
+    # 4. Launcher process must start and stay alive (no STATUS_ENTRYPOINT_NOT_FOUND).
+    proc = subprocess.Popen([str(LAUNCHER)])
+    time.sleep(3)
+    if proc.poll() is None:
+        print(f"PASS: launcher started and is running (pid={proc.pid})")
+        proc.terminate()
+        time.sleep(1)
+        if proc.poll() is None:
+            proc.kill()
+    else:
+        code = proc.returncode
+        print(f"FAIL: launcher exited immediately with code={code} (0x{code & 0xFFFFFFFF:08X})")
+        if code == -1073741511 or (code & 0xFFFFFFFF) == 0xC0000139:
+            print("      -> STATUS_ENTRYPOINT_NOT_FOUND (TaskDialogIndirect bug)")
+        ok = False
+
+    print()
+    print("[LAUNCHER-IMPORT-TEST]", "PASS" if ok else "FAIL")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -20,6 +20,7 @@
 #include <bcrypt.h>
 #include <dbghelp.h>
 #include <gdiplus.h>
+#include <commctrl.h>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -56,6 +57,11 @@ bool g_createDesktop = true;
 
 // Install guard: prevent force-close during install
 bool g_installing = false;
+
+// Local ZIP testing flags
+bool g_useLocalZip = false;
+std::string g_localZipPath;
+bool g_noVerify = false;
 
 // Page control IDs
 enum {
@@ -124,6 +130,42 @@ std::string extractJsonStr(const std::string& json, const std::string& key)
     if (k == std::string::npos) return "";
     auto s = k + 1, e = json.find('"', s);
     return (e == std::string::npos) ? "" : json.substr(s, e - s);
+}
+
+bool hasFlag(const std::string& cmd, const std::string& flag)
+{
+    return cmd.find(flag) != std::string::npos;
+}
+
+std::string getFlagValue(const std::string& cmd, const std::string& flag)
+{
+    auto pos = cmd.find(flag);
+    if (pos == std::string::npos) return "";
+    pos += flag.size();
+    while (pos < cmd.size() && (cmd[pos] == ' ' || cmd[pos] == '=')) ++pos;
+    auto end = pos;
+    while (end < cmd.size() && cmd[end] != ' ') ++end;
+    return cmd.substr(pos, end - pos);
+}
+
+void printHelp()
+{
+    // Help text uses printf since this runs before window creation
+    printf(
+        "MimitaLauncher - Installer and launcher for Mimita\n"
+        "\n"
+        "Usage: MimitaLauncher.exe [options]\n"
+        "\n"
+        "Options:\n"
+        "  --help              Show this help message and exit.\n"
+        "  --local-zip <path>  Use a local mimita-game.zip instead of\n"
+        "                      downloading from GitHub.\n"
+        "  --no-verify         Skip SHA-256 verification of the ZIP.\n"
+        "\n"
+        "Examples:\n"
+        "  MimitaLauncher.exe --local-zip mimita-game.zip\n"
+        "  MimitaLauncher.exe --local-zip build/mimita-game.zip --no-verify\n"
+    );
 }
 
 // Forward declarations
@@ -832,6 +874,122 @@ bool browseForFolder(HWND parent, std::string& outPath)
 
 // ── New: Launch game helper ────────────────────────────────────
 
+void writeCrashLog(const std::string& path, const std::string& version,
+                   DWORD exitCode, DWORD uptimeMs)
+{
+    char hex[16];
+    snprintf(hex, sizeof(hex), "0x%08lx", (unsigned long)exitCode);
+    std::string log =
+        "Launcher Crash Report\n"
+        "=====================\n"
+        "Timestamp: " + std::to_string(GetTickCount()) + " ms since boot\n"
+        "Launcher Version: " + version + "\n"
+        "Game Version: " + version + "\n"
+        "Exit Code: " + std::string(hex) + "\n"
+        "Uptime: " + std::to_string(uptimeMs) + " ms\n"
+        "Process: mimita.exe\n"
+        "\n"
+        "The game's crash handler also writes a minidump and detailed\n"
+        "crash report to: %LOCALAPPDATA%\\MiMITA\\crashes\\\n";
+    writeFile(path, log);
+}
+
+// Crash recovery dialog actions
+enum CrashRecoveryAction {
+    CRASH_RECOVER_CLOSE = 0,
+    CRASH_RECOVER_RESTART = 1,
+    CRASH_RECOVER_OPEN_FOLDER = 2,
+    CRASH_RECOVER_COPY = 3,
+};
+
+// Returns true if the crash directory contains a nonzero file matching prefix+ext.
+bool crashArtifactExists(const std::string& dir, const std::string& prefix,
+                         const std::string& ext)
+{
+    std::string path = dir + "\\" + prefix + ext;
+    HANDLE h = CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ,
+                           nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    DWORD hi = 0;
+    bool ok = GetFileSize(h, &hi) > 0;
+    CloseHandle(h);
+    return ok;
+}
+
+// TaskDialogIndirect comes from comctl32 v6. It is NOT exported by the v5.82
+// copy that the loader binds to without a side-by-side manifest, so importing
+// it statically makes the launcher fail to start on a fresh load. Resolve it
+// at runtime and fall back to MessageBoxA so startup never depends on it.
+typedef HRESULT(WINAPI* TaskDialogIndirectFn)(const TASKDIALOGCONFIG* pTaskConfig,
+                                              int* pnButton, int* pnRadioButton,
+                                              BOOL* pfVerificationFlagChecked);
+
+// Inspect the crash directory and show one recovery window. Returns the chosen
+// action. Never claims a file was saved unless it exists and is nonzero.
+CrashRecoveryAction showCrashRecoveryDialog(const std::string& crashDir,
+                                            const std::string& details,
+                                            bool txtOk, bool dmpOk)
+{
+    std::wstring dirW = widen(crashDir);
+    std::wstring detailsW = widen(details);
+
+    // Load comctl32.dll and resolve TaskDialogIndirect at runtime. Never a
+    // static import: if the system copy lacks it (e.g. v5.82 without a v6
+    // manifest), fall back to a plain message box instead of failing startup.
+    HMODULE hComctl = LoadLibraryW(L"comctl32.dll");
+    TaskDialogIndirectFn taskDialogIndirect = nullptr;
+    if (hComctl)
+        taskDialogIndirect = reinterpret_cast<TaskDialogIndirectFn>(
+            (void*)GetProcAddress(hComctl, "TaskDialogIndirect"));
+
+    if (taskDialogIndirect)
+    {
+        const TASKDIALOG_BUTTON buttons[] = {
+            { CRASH_RECOVER_RESTART, L"Restart MiMITA" },
+            { CRASH_RECOVER_OPEN_FOLDER, L"Open crash folder" },
+            { CRASH_RECOVER_COPY, L"Copy error details" },
+            { CRASH_RECOVER_CLOSE, L"Close" },
+        };
+
+        TASKDIALOGCONFIG cfg = {};
+        cfg.cbSize = sizeof(cfg);
+        cfg.hwndParent = nullptr;
+        cfg.dwFlags = TDF_USE_COMMAND_LINKS | TDF_ALLOW_DIALOG_CANCELLATION;
+        cfg.pszMainIcon = TD_ERROR_ICON;
+        cfg.pszWindowTitle = L"Mimita Launcher";
+        cfg.pszMainInstruction = L"Mimita closed unexpectedly";
+        std::wstring content;
+        content += L"Exit code: " + widen(details.empty() ? "?" : details) + L"\n";
+        content += txtOk ? L"Crash report: saved\n" : L"Crash report: not saved\n";
+        content += dmpOk ? L"Minidump: saved\n" : L"Minidump: not saved\n";
+        content += L"\nCrash folder:\n" + dirW;
+        cfg.pszContent = content.c_str();
+        cfg.cButtons = 4;
+        cfg.pButtons = buttons;
+        cfg.nDefaultButton = CRASH_RECOVER_RESTART;
+
+        int clicked = CRASH_RECOVER_CLOSE;
+        HRESULT hr = taskDialogIndirect(&cfg, &clicked, nullptr, nullptr);
+        if (hComctl) FreeLibrary(hComctl);
+        if (SUCCEEDED(hr))
+            return (CrashRecoveryAction)clicked;
+        // Fall through to the plain message box on TaskDialog failure.
+    }
+
+    std::string msg = "Mimita closed unexpectedly.\n\n"
+        "Exit code: " + (details.empty() ? std::string("?") : details) + "\n"
+        "Crash report: " + std::string(txtOk ? "saved" : "not saved") + "\n"
+        "Minidump: " + std::string(dmpOk ? "saved" : "not saved") + "\n\n"
+        "Crash folder:\n" + crashDir + "\n\n"
+        "Choose Yes to restart, No to open the crash folder, Cancel to close.";
+    int choice = MessageBoxA(nullptr, msg.c_str(), "Mimita Launcher",
+                             MB_YESNOCANCEL | MB_ICONERROR | MB_DEFBUTTON1);
+    if (hComctl) FreeLibrary(hComctl);
+    if (choice == IDYES) return CRASH_RECOVER_RESTART;
+    if (choice == IDNO) return CRASH_RECOVER_OPEN_FOLDER;
+    return CRASH_RECOVER_CLOSE;
+}
+
 void launchGame(const std::string& exePath, const std::string& workDir)
 {
     std::string sessionArg;
@@ -842,15 +1000,152 @@ void launchGame(const std::string& exePath, const std::string& workDir)
             sessionArg = " --session \"" + token + "\"";
     }
 
+    // Hide launcher window before starting the game
+    if (g_hWnd) ShowWindow(g_hWnd, SW_HIDE);
+    pumpMessages();
+
     STARTUPINFOA si = { sizeof(si) };
     PROCESS_INFORMATION pi;
     std::string cli = exePath + sessionArg;
-    if (CreateProcessA(nullptr, &cli[0], nullptr, nullptr, FALSE, 0,
-                       nullptr, workDir.c_str(), &si, &pi))
+    bool started = CreateProcessA(nullptr, &cli[0], nullptr, nullptr, FALSE, 0,
+                                  nullptr, workDir.c_str(), &si, &pi);
+
+    if (!started) return;
+
+    DWORD start = GetTickCount();
+
+    // Wait for game to exit (zero CPU — kernel wait)
+    WaitForSingleObject(pi.hProcess, INFINITE);
+
+    DWORD exitCode = 0;
+    GetExitCodeProcess(pi.hProcess, &exitCode);
+    DWORD elapsed = GetTickCount() - start;
+
+    // On abnormal exit (crash), write diagnostics
+    if (exitCode != 0 && elapsed > 1000)
     {
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
+        std::string ts = std::to_string(GetTickCount());
+
+        // Ensure logs directory exists
+        std::string logDir = workDir + "\\launcher-data\\logs";
+        std::string dumpDir = workDir + "\\launcher-data\\dumps";
+        CreateDirectoryA((workDir + "\\launcher-data").c_str(), nullptr);
+        CreateDirectoryA(logDir.c_str(), nullptr);
+        CreateDirectoryA(dumpDir.c_str(), nullptr);
+
+        // Write text crash log (launcher-side summary)
+        std::string logPath = logDir + "\\crash-" + ts + ".txt";
+        std::string version = readFile(workDir + "\\version.txt");
+        if (version.empty()) version = "unknown";
+        writeCrashLog(logPath, version, exitCode, elapsed);
+
+        // Verify log file is non-zero
+        bool logOk = false;
+        HANDLE hCheck = CreateFileA(logPath.c_str(), GENERIC_READ,
+            FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (hCheck != INVALID_HANDLE_VALUE) {
+            DWORD hi = 0;
+            logOk = GetFileSize(hCheck, &hi) > 0;
+            CloseHandle(hCheck);
+        }
+        if (!logOk) DeleteFileA(logPath.c_str());
+
+        // Send lightweight analytics event (tiny JSON, ~200 bytes)
+        sendCrashReport(version, exitCode, elapsed);
+
+        // Brief console output + notification
+        printf("[LAUNCHER] Game crashed. Exit code=0x%08lx uptime=%lums\n",
+               (unsigned long)exitCode, (unsigned long)elapsed);
+        if (logOk) printf("[LAUNCHER] Log: %s\n", logPath.c_str());
+        else printf("[LAUNCHER] Log FAILED to write\n");
+        fflush(stdout);
+
+        // Inspect the game's crash directory and verify artifacts actually exist
+        char crashDirBuf[MAX_PATH];
+        std::string crashDir;
+        if (SHGetFolderPathA(nullptr, CSIDL_LOCAL_APPDATA, nullptr, SHGFP_TYPE_CURRENT, crashDirBuf) == S_OK) {
+            crashDir = std::string(crashDirBuf) + "\\MiMITA\\crashes";
+        }
+
+        // The game names artifacts crash-<time>-<pid>.txt/.dmp. Check for any
+        // nonzero file matching those prefixes so we never claim a save that
+        // did not happen.
+        bool txtArtifactOk = false;
+        bool dmpArtifactOk = false;
+        WIN32_FIND_DATAA fd{};
+        std::string search = crashDir + "\\crash-*.txt";
+        HANDLE hFind = FindFirstFileA(search.c_str(), &fd);
+        if (hFind != INVALID_HANDLE_VALUE) {
+            do {
+                std::string p = crashDir + "\\" + fd.cFileName;
+                HANDLE hf = CreateFileA(p.c_str(), GENERIC_READ, FILE_SHARE_READ,
+                    nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+                if (hf != INVALID_HANDLE_VALUE) {
+                    DWORD hi = 0;
+                    if (GetFileSize(hf, &hi) > 0) { txtArtifactOk = true; }
+                    CloseHandle(hf);
+                }
+            } while (FindNextFileA(hFind, &fd));
+            FindClose(hFind);
+        }
+        search = crashDir + "\\crash-*.dmp";
+        hFind = FindFirstFileA(search.c_str(), &fd);
+        if (hFind != INVALID_HANDLE_VALUE) {
+            do {
+                std::string p = crashDir + "\\" + fd.cFileName;
+                HANDLE hf = CreateFileA(p.c_str(), GENERIC_READ, FILE_SHARE_READ,
+                    nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+                if (hf != INVALID_HANDLE_VALUE) {
+                    DWORD hi = 0;
+                    if (GetFileSize(hf, &hi) > 0) { dmpArtifactOk = true; }
+                    CloseHandle(hf);
+                }
+            } while (FindNextFileA(hFind, &fd));
+            FindClose(hFind);
+        }
+
+        char hex[16];
+        snprintf(hex, sizeof(hex), "0x%08lx", (unsigned long)exitCode);
+        std::string details = std::string(hex) + ", uptime=" + std::to_string(elapsed) + " ms";
+
+        CrashRecoveryAction action = showCrashRecoveryDialog(crashDir, details,
+                                                             txtArtifactOk, dmpArtifactOk);
+
+        if (action == CRASH_RECOVER_OPEN_FOLDER && !crashDir.empty())
+            ShellExecuteA(nullptr, "open", crashDir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        else if (action == CRASH_RECOVER_COPY)
+        {
+            std::string copyText = "Mimita crash report\n"
+                "====================\n"
+                "Exit code: " + std::string(hex) + "\n"
+                "Uptime: " + std::to_string(elapsed) + " ms\n"
+                "Crash folder: " + crashDir + "\n"
+                "Launcher log: " + logPath + "\n"
+                "Text report saved: " + (txtArtifactOk ? "yes" : "no") + "\n"
+                "Minidump saved: " + (dmpArtifactOk ? "yes" : "no") + "\n";
+            if (OpenClipboard(nullptr)) {
+                EmptyClipboard();
+                HGLOBAL mem = GlobalAlloc(GMEM_MOVEABLE, copyText.size() + 1);
+                if (mem) {
+                    void* p = GlobalLock(mem);
+                    memcpy(p, copyText.c_str(), copyText.size() + 1);
+                    GlobalUnlock(mem);
+                    SetClipboardData(CF_TEXT, mem);
+                }
+                CloseClipboard();
+            }
+        }
+        else if (action == CRASH_RECOVER_RESTART)
+        {
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+            launchGame(exePath, workDir);
+            return;
+        }
     }
+
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
 }
 
 // ── New: Shortcut creation ────────────────────────────────────
@@ -884,31 +1179,42 @@ void runInstall(HWND hwnd)
     setStatusText("Checking for updates...");
     CreateDirectoryA(g_installDir.c_str(), nullptr);
 
-    if (!getGitHubReleaseInfo(g_latestVer, g_zipUrl, g_zipSha256)) {
-        MessageBoxA(hwnd, "Could not connect to GitHub to download Mimita.\nCheck your internet connection and try again.",
-            "Download Error", MB_OK | MB_ICONERROR);
-        return;
+    std::string zipPath;
+    if (g_useLocalZip)
+    {
+        // Use local ZIP instead of downloading from GitHub
+        zipPath = g_localZipPath;
+        g_latestVer = readFile(appDir() + "\\version.txt");
+        if (g_latestVer.empty()) g_latestVer = "0.0.0";
     }
-
-    setProgress(0);
-    setStatusText("Downloading...");
-
-    char td[MAX_PATH]; GetTempPathA(MAX_PATH, td);
-    std::string zipPath = std::string(td) + "mimita-game-" + g_latestVer + ".zip";
-
-    if (!downloadFileTo(g_zipUrl, zipPath, 0)) {
-        MessageBoxA(hwnd, "Failed to download Mimita.\nCheck your internet connection and try again.",
-            "Download Error", MB_OK | MB_ICONERROR);
-        return;
-    }
-
-    if (!g_zipSha256.empty()) {
-        std::string dlHash;
-        if (sha256File(zipPath, dlHash) && dlHash != g_zipSha256) {
-            MessageBoxA(hwnd, "Download verification failed.\nPlease try again.",
-                "Verification Error", MB_OK | MB_ICONERROR);
-            DeleteFileA(zipPath.c_str());
+    else
+    {
+        if (!getGitHubReleaseInfo(g_latestVer, g_zipUrl, g_zipSha256)) {
+            MessageBoxA(hwnd, "Could not connect to GitHub to download Mimita.\nCheck your internet connection and try again.",
+                "Download Error", MB_OK | MB_ICONERROR);
             return;
+        }
+
+        setProgress(0);
+        setStatusText("Downloading...");
+
+        char td[MAX_PATH]; GetTempPathA(MAX_PATH, td);
+        zipPath = std::string(td) + "mimita-game-" + g_latestVer + ".zip";
+
+        if (!downloadFileTo(g_zipUrl, zipPath, 0)) {
+            MessageBoxA(hwnd, "Failed to download Mimita.\nCheck your internet connection and try again.",
+                "Download Error", MB_OK | MB_ICONERROR);
+            return;
+        }
+
+        if (!g_zipSha256.empty() && !g_noVerify) {
+            std::string dlHash;
+            if (sha256File(zipPath, dlHash) && dlHash != g_zipSha256) {
+                MessageBoxA(hwnd, "Download verification failed.\nPlease try again.",
+                    "Verification Error", MB_OK | MB_ICONERROR);
+                DeleteFileA(zipPath.c_str());
+                return;
+            }
         }
     }
 
@@ -918,12 +1224,13 @@ void runInstall(HWND hwnd)
     if (!extractZipFileWithProgress(zipPath, g_installDir)) {
         MessageBoxA(hwnd, "Failed to extract files.\nThe download may be corrupted.",
             "Extraction Error", MB_OK | MB_ICONERROR);
-        DeleteFileA(zipPath.c_str());
+        if (!g_useLocalZip) DeleteFileA(zipPath.c_str());
         return;
     }
     // extractZipFileWithProgress updates progress 85→98 per-file
 
-    DeleteFileA(zipPath.c_str());
+    // Only delete the ZIP if we downloaded it (not a local file)
+    if (!g_useLocalZip) DeleteFileA(zipPath.c_str());
 
     CreateDirectoryA((g_installDir + "\\config\\accounts").c_str(), nullptr);
     CreateDirectoryA((g_installDir + "\\logs").c_str(), nullptr);
@@ -1091,6 +1398,25 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
     std::string localVer = readFile(launcherDir + "\\version.txt");
     if (localVer.empty()) localVer = "0.0.0";
 
+    // ── Parse command-line flags ──────────────────────────────
+    if (hasFlag(cmdLine, "--help")) {
+        printHelp();
+        return 0;
+    }
+    if (hasFlag(cmdLine, "--local-zip")) {
+        g_localZipPath = getFlagValue(cmdLine, "--local-zip");
+        if (g_localZipPath.empty()) {
+            MessageBoxA(nullptr, "--local-zip requires a path argument.\n\nExample:\n  MimitaLauncher.exe --local-zip mimita-game.zip",
+                "Command-Line Error", MB_OK | MB_ICONERROR);
+            return 1;
+        }
+        g_useLocalZip = true;
+        if (hasFlag(cmdLine, "--no-verify")) g_noVerify = true;
+    }
+    if (hasFlag(cmdLine, "--no-verify") && !g_useLocalZip) {
+        g_noVerify = true;
+    }
+
     DeleteFileA((launcherDir + "\\MimitaLauncher.old.exe").c_str());
 
     // ── Handle mimita:// protocol ─────────────────────────────
@@ -1166,21 +1492,47 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         setStatusText("Complete!");
         pumpMessages();
 
-        g_gotLatest = getGitHubReleaseInfo(g_latestVer, g_zipUrl, g_zipSha256);
+        bool shouldUpdate = false;
+        std::string updateZipPath;
 
-        if (g_gotLatest && g_latestVer != localVer)
+        if (g_useLocalZip)
+        {
+            // Local ZIP mode: always apply the local ZIP
+            shouldUpdate = true;
+            updateZipPath = g_localZipPath;
+            g_latestVer = localVer;
+        }
+        else
+        {
+            g_gotLatest = getGitHubReleaseInfo(g_latestVer, g_zipUrl, g_zipSha256);
+            shouldUpdate = (g_gotLatest && g_latestVer != localVer);
+        }
+
+        if (shouldUpdate)
         {
             // Update available — do full install flow
             g_installing = true;
             g_installDir = installDir;
             setProgress(0);
-            setStatusText("Downloading update...");
-            char td[MAX_PATH]; GetTempPathA(MAX_PATH, td);
-            std::string zipPath = std::string(td) + "mimita-game-" + g_latestVer + ".zip";
+            setStatusText("Applying update...");
+            std::string zipPath;
 
-            if (downloadFileTo(g_zipUrl, zipPath, 0)) {
+            if (g_useLocalZip)
+            {
+                zipPath = updateZipPath;
+            }
+            else
+            {
+                setStatusText("Downloading update...");
+                char td[MAX_PATH]; GetTempPathA(MAX_PATH, td);
+                zipPath = std::string(td) + "mimita-game-" + g_latestVer + ".zip";
+                if (!downloadFileTo(g_zipUrl, zipPath, 0)) { zipPath.clear(); }
+            }
+
+            if (!zipPath.empty())
+            {
                 bool hashOk = true;
-                if (!g_zipSha256.empty()) {
+                if (!g_zipSha256.empty() && !g_noVerify) {
                     std::string dlHash;
                     if (sha256File(zipPath, dlHash) && dlHash != g_zipSha256)
                         hashOk = false;
@@ -1196,8 +1548,9 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                         }
                     }
                 }
-                DeleteFileA(zipPath.c_str());
+                if (!g_useLocalZip) DeleteFileA(zipPath.c_str());
             }
+
             setProgress(100);
             setStatusText("Complete!");
             Sleep(500);
