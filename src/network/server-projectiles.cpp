@@ -346,10 +346,12 @@ class ServerProjectileWorldView final : public CollisionWorldView
 public:
     ServerProjectileWorldView(const HeadlessWorld& world,
                               const std::unordered_map<uint32_t, ServerPlayer>& players,
+                              const std::unordered_map<uint32_t, ServerNpc>& npcs,
                               uint32_t ownerPlayerId,
                               bool skipOwner)
         : mWorld(world),
           mPlayers(players),
+          mNpcs(npcs),
           mOwnerPlayerId(ownerPlayerId),
           mSkipOwner(skipOwner)
     {
@@ -413,6 +415,28 @@ public:
                 out.push_back(cap);
         }
 
+        for (const auto& entry : mNpcs)
+        {
+            const ServerNpc& npc = entry.second;
+            if (npc.health <= 0)
+                continue;
+
+            SweptPlayerCapsule cap;
+            cap.playerId = npc.entityId;
+            cap.spawnGeneration = 0;
+            cap.a = npc.pos + glm::vec3(0.0f, 0.0f,
+                                        -PLAYER_HEIGHT * 0.5f + PLAYER_RADIUS);
+            cap.b = npc.pos + glm::vec3(0.0f, 0.0f,
+                                        PLAYER_HEIGHT * 0.5f - PLAYER_RADIUS);
+            cap.radius = PLAYER_RADIUS;
+
+            AABB capsuleBounds;
+            capsuleBounds.min = glm::min(cap.a, cap.b) - glm::vec3(cap.radius);
+            capsuleBounds.max = glm::max(cap.a, cap.b) + glm::vec3(cap.radius);
+            if (overlaps(projectileBounds, capsuleBounds))
+                out.push_back(cap);
+        }
+
         std::sort(out.begin(), out.end(),
                   [](const SweptPlayerCapsule& a, const SweptPlayerCapsule& b) {
                       if (a.playerId != b.playerId)
@@ -424,6 +448,7 @@ public:
 private:
     const HeadlessWorld& mWorld;
     const std::unordered_map<uint32_t, ServerPlayer>& mPlayers;
+    const std::unordered_map<uint32_t, ServerNpc>& mNpcs;
     uint32_t mOwnerPlayerId = 0;
     bool mSkipOwner = false;
 };
@@ -473,6 +498,7 @@ void applyPhysicsState(ServerProjectile& projectile,
 
 void explodeProjectile(SOCKET sock,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
+                       std::unordered_map<uint32_t, ServerNpc>& npcs,
                        ServerProjectile& projectile,
                        const glm::vec3& position,
                        const char* impactType,
@@ -593,6 +619,86 @@ void explodeProjectile(SOCKET sock,
                (int)damage.killed);
     }
 
+    for (auto& npcEntry : npcs)
+    {
+        ServerNpc& npc = npcEntry.second;
+        if (npc.health <= 0)
+            continue;
+
+        const glm::vec3 npcCenter = npc.pos + glm::vec3(0.0f, 0.0f, PLAYER_HEIGHT * 0.25f);
+        const glm::vec3 toNpc = npcCenter - position;
+        const float dist = glm::length(toNpc);
+        if (dist >= projectile.splashRadius)
+            continue;
+
+        const glm::vec3 dir = dist > 0.001f
+            ? toNpc / dist
+            : glm::vec3(0.0f, 1.0f, 0.0f);
+        float damageValue = projectile.splashDamage *
+            std::exp(-std::pow(dist / projectile.splashRadius, 2.0f) *
+                     projectile.splashExponent);
+        const int finalDamage = std::max(1, (int)std::round(damageValue));
+
+        const float t = dist / projectile.splashRadius;
+        const float knockScale = (1.0f - t * t) * 0.85f + 0.15f;
+        const glm::vec3 knockback =
+            dir * projectile.knockbackStrength * knockScale;
+
+        npc.health -= finalDamage;
+        npc.knockbackImpulse += knockback;
+        const bool killed = npc.health <= 0;
+        if (killed)
+        {
+            npc.health = 0;
+            auto attacker = players.find(projectile.ownerPlayerId);
+            if (attacker != players.end())
+                attacker->second.health = 100;
+        }
+
+        NpcDamageEventPacket npcEvent{};
+        npcEvent.header.type = PACKET_NPC_DAMAGE_EVENT;
+        npcEvent.header.tick = tick;
+        npcEvent.header.playerId = projectile.ownerPlayerId;
+        npcEvent.npcEntityId = npc.entityId;
+        npcEvent.shooterPlayerId = projectile.ownerPlayerId;
+        npcEvent.damage = finalDamage;
+        npcEvent.npcHealth = npc.health;
+        npcEvent.killed = killed ? 1 : 0;
+        npcEvent.originX = position.x;
+        npcEvent.originY = position.y;
+        npcEvent.originZ = position.z;
+        npcEvent.hitX = npcCenter.x;
+        npcEvent.hitY = npcCenter.y;
+        npcEvent.hitZ = npcCenter.z;
+        npcEvent.dirX = dir.x;
+        npcEvent.dirY = dir.y;
+        npcEvent.dirZ = dir.z;
+        npcEvent.normalX = -dir.x;
+        npcEvent.normalY = -dir.y;
+        npcEvent.normalZ = -dir.z;
+        npcEvent.weapon = projectile.weaponType;
+        npcEvent.impactType = SHOT_IMPACT_ENTITY;
+
+        for (const auto& pe : players)
+        {
+            if (pe.second.transport)
+                pe.second.transport->send(&npcEvent, sizeof(npcEvent));
+            else
+                sendto(sock, (const char*)&npcEvent, sizeof(npcEvent), 0,
+                       (sockaddr*)&pe.second.addr,
+                       sizeof(pe.second.addr));
+            ++totalPacketsOut;
+        }
+
+        printf("%s [EXPLOSION NPC DAMAGE] projectileId=%u ownerPlayerId=%u "
+               "npcId=%u distance=%.2f damage=%d healthAfter=%d killed=%d\n",
+               serverTimestamp(), projectile.id, projectile.ownerPlayerId,
+               npc.entityId, dist, finalDamage, npc.health, (int)killed);
+
+        if (killed)
+            npcs.erase(npcEntry.first);
+    }
+
     printf("%s [PROJECTILE SERVER IMPACT] projectileId=%u weapon=%s "
            "impactType=%s position=(%.2f,%.2f,%.2f) directTargetId=%u\n",
            serverTimestamp(), projectile.id,
@@ -637,6 +743,7 @@ void explodeProjectile(SOCKET sock,
 ServerProjectileAttackResult handleGenericProjectileAttack(
     SOCKET sock,
     std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs,
     std::unordered_map<uint32_t, ServerProjectile>& projectiles,
     uint32_t& nextProjectileId,
     ServerPlayer& shooter,
@@ -1237,6 +1344,7 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
 
 void tickServerProjectiles(SOCKET sock,
                            std::unordered_map<uint32_t, ServerPlayer>& players,
+                           std::unordered_map<uint32_t, ServerNpc>& npcs,
                            std::unordered_map<uint32_t, ServerProjectile>& projectiles,
                            const HeadlessWorld& world,
                            float dt, uint32_t tick, uint64_t& totalPacketsOut)
@@ -1267,7 +1375,7 @@ void tickServerProjectiles(SOCKET sock,
             ProjectilePhysicsState state = makePhysicsState(projectile);
             ProjectilePhysicsConfig config = makePhysicsConfig(projectile);
             ServerProjectileWorldView physicsWorld(
-                world, players, projectile.ownerPlayerId,
+                world, players, npcs, projectile.ownerPlayerId,
                 projectile.distanceTraveled < projectile.armingDistance);
 
             auto simStart = std::chrono::steady_clock::now();
@@ -1318,18 +1426,18 @@ void tickServerProjectiles(SOCKET sock,
 
             if (step.type == ProjectileCollisionType::LifetimeExpired && projectile.explodeOnLifetime)
             {
-                explodeProjectile(sock, players, projectile, projectile.position,
+                explodeProjectile(sock, players, npcs, projectile, projectile.position,
                                   "lifetime", 0, tick, totalPacketsOut);
             }
             else if (step.type == ProjectileCollisionType::PlayerImpact && projectile.explodeOnPlayerImpact)
             {
-                explodeProjectile(sock, players, projectile, step.hitPosition,
+                explodeProjectile(sock, players, npcs, projectile, step.hitPosition,
                                   "player", step.hitPlayerId, tick,
                                   totalPacketsOut);
             }
             else if (step.type == ProjectileCollisionType::WorldImpact && projectile.explodeOnWorldImpact)
             {
-                explodeProjectile(sock, players, projectile, step.hitPosition,
+                explodeProjectile(sock, players, npcs, projectile, step.hitPosition,
                                   "world", 0, tick, totalPacketsOut);
             }
 
@@ -1347,7 +1455,7 @@ void tickServerProjectiles(SOCKET sock,
             projectile.age += dt;
             if (projectile.age >= projectile.lifetime)
             {
-                explodeProjectile(sock, players, projectile, projectile.position,
+                explodeProjectile(sock, players, npcs, projectile, projectile.position,
                                   "lifetime", 0, tick, totalPacketsOut);
             }
         }

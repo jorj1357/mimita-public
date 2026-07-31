@@ -348,6 +348,7 @@ struct ServerNpc
     float stateTimer = 0.0f;
     float orbitAngle = 0.0f;
     ServerNpcState aiState = ServerNpcState::Chase;
+    glm::vec3 knockbackImpulse{0.0f};
 };
 
 enum class ServerDamageSource : uint8_t
@@ -564,6 +565,7 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
 ServerProjectileAttackResult handleGenericProjectileAttack(
     SOCKET sock,
     std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs,
     std::unordered_map<uint32_t, ServerProjectile>& projectiles,
     uint32_t& nextProjectileId,
     ServerPlayer& shooter,
@@ -575,6 +577,7 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
     uint64_t& totalPacketsOut);
 void tickServerProjectiles(SOCKET sock,
                            std::unordered_map<uint32_t, ServerPlayer>& players,
+                           std::unordered_map<uint32_t, ServerNpc>& npcs,
                            std::unordered_map<uint32_t, ServerProjectile>& projectiles,
                            const HeadlessWorld& world,
                            float dt, uint32_t tick, uint64_t& totalPacketsOut);

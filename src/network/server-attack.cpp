@@ -405,6 +405,7 @@ void handleAttackRequest(
             {
                 ServerNpc& npcTarget = npcIt->second;
                 npcTarget.health -= aggregate.damage;
+                npcTarget.knockbackImpulse += aggregate.knockback;
                 if (npcTarget.health <= 0)
                 {
                     npcTarget.health = 0;
@@ -443,6 +444,159 @@ void handleAttackRequest(
             shooter.id, req->requestId, def->id.c_str(), trace.pelletCount,
             trace.aggregates.size(), rt.magazineAmmo, rt.reserveAmmo,
             rt.stateRevision);
+
+        // ── Broadcast shot visuals to all players ──────────────────────
+        if (trace.pelletCount <= 1)
+        {
+            // Single-pellet (revolver): broadcast ShotEventPacket
+            glm::vec3 hitPos = origin + direction * traceConfig.maxRange;
+            glm::vec3 hitNml = -direction;
+            uint32_t hitTarget = 0;
+            if (!trace.aggregates.empty())
+            {
+                hitPos = trace.aggregates[0].hitPosition;
+                hitNml = trace.aggregates[0].hitNormal;
+                hitTarget = trace.aggregates[0].targetPlayerId;
+            }
+            else if (glm::length(worldHit - origin) < traceConfig.maxRange)
+            {
+                hitPos = worldHit;
+                hitNml = worldNormal;
+            }
+
+            uint16_t effectFlags = SHOT_EFFECT_MUZZLE | SHOT_EFFECT_TRACER |
+                SHOT_EFFECT_SHOOT_SOUND | SHOT_EFFECT_WEAPON_TRIGGER;
+            uint8_t impactType = SHOT_IMPACT_NONE;
+            if (hitTarget != 0)
+            {
+                impactType = SHOT_IMPACT_ENTITY;
+                effectFlags |= SHOT_EFFECT_ENTITY_IMPACT | SHOT_EFFECT_BLOOD | SHOT_EFFECT_HIT_SOUND;
+            }
+            else if (glm::length(hitPos - origin) < traceConfig.maxRange - 0.1f)
+            {
+                impactType = SHOT_IMPACT_WORLD;
+                effectFlags |= SHOT_EFFECT_WORLD_IMPACT | SHOT_EFFECT_DEBRIS | SHOT_EFFECT_HIT_SOUND;
+            }
+
+            ShotEventPacket shotEvent{};
+            shotEvent.header.type = PACKET_SHOT_EVENT;
+            shotEvent.header.tick = tick;
+            shotEvent.header.playerId = shooter.id;
+            shotEvent.shotSerial = req->requestId;
+            shotEvent.clientTimeMs = req->clientSimulationTick;
+            shotEvent.shooterPlayerId = shooter.id;
+            shotEvent.targetPlayerId = hitTarget;
+            shotEvent.weapon = netWeapon;
+            shotEvent.impactType = impactType;
+            shotEvent.effectFlags = effectFlags;
+            shotEvent.originX = origin.x;
+            shotEvent.originY = origin.y;
+            shotEvent.originZ = origin.z;
+            shotEvent.hitX = hitPos.x;
+            shotEvent.hitY = hitPos.y;
+            shotEvent.hitZ = hitPos.z;
+            shotEvent.dirX = direction.x;
+            shotEvent.dirY = direction.y;
+            shotEvent.dirZ = direction.z;
+            shotEvent.normalX = hitNml.x;
+            shotEvent.normalY = hitNml.y;
+            shotEvent.normalZ = hitNml.z;
+
+            for (const auto& pe : players)
+            {
+                if (pe.second.transport)
+                    pe.second.transport->send(&shotEvent, sizeof(shotEvent));
+                else
+                    sendto(sock, (const char*)&shotEvent, sizeof(shotEvent), 0,
+                           (sockaddr*)&pe.second.addr,
+                           sizeof(pe.second.addr));
+                ++totalPacketsOut;
+            }
+        }
+        else
+        {
+            // Multi-pellet (shotgun/AA12): broadcast PelletBlastEventPacket
+            glm::vec3 pelletDirs[MAX_PELLETS_PER_BLAST]{};
+            int pelletCount = WeaponExecution::buildPelletDirections(
+                *def, direction, req->deterministicSeed,
+                pelletDirs, MAX_PELLETS_PER_BLAST);
+
+            PelletBlastEventPacket blastEvent{};
+            blastEvent.header.type = PACKET_PELLET_BLAST_EVENT;
+            blastEvent.header.tick = tick;
+            blastEvent.shooterPlayerId = shooter.id;
+            blastEvent.shotSerial = req->requestId;
+            blastEvent.clientTimeMs = req->clientSimulationTick;
+            blastEvent.spreadSeed = req->deterministicSeed;
+            blastEvent.originX = origin.x;
+            blastEvent.originY = origin.y;
+            blastEvent.originZ = origin.z;
+            blastEvent.baseDirX = direction.x;
+            blastEvent.baseDirY = direction.y;
+            blastEvent.baseDirZ = direction.z;
+            blastEvent.weapon = netWeapon;
+            blastEvent.pelletCount = (uint8_t)std::min(pelletCount, (int)MAX_NETWORK_PELLETS);
+
+            for (int i = 0; i < pelletCount && i < MAX_NETWORK_PELLETS; ++i)
+            {
+                NetworkPelletResult& r = blastEvent.pellets[i];
+                r.pelletIndex = (uint8_t)i;
+
+                if (trace.pellets[i].hit && trace.pellets[i].targetPlayerId != 0)
+                {
+                    r.hitX = trace.pellets[i].hitPosition.x;
+                    r.hitY = trace.pellets[i].hitPosition.y;
+                    r.hitZ = trace.pellets[i].hitPosition.z;
+                    r.normalX = trace.pellets[i].hitNormal.x;
+                    r.normalY = trace.pellets[i].hitNormal.y;
+                    r.normalZ = trace.pellets[i].hitNormal.z;
+                    r.targetPlayerId = trace.pellets[i].targetPlayerId;
+                    r.impactType = PELLET_IMPACT_PLAYER;
+                    r.bodyPart = trace.pellets[i].headshot ? 0 : 1;
+                }
+                else
+                {
+                    glm::vec3 pelletEnd = origin + pelletDirs[i] * traceConfig.worldBlockDistance;
+                    r.hitX = pelletEnd.x;
+                    r.hitY = pelletEnd.y;
+                    r.hitZ = pelletEnd.z;
+                    r.normalX = -pelletDirs[i].x;
+                    r.normalY = -pelletDirs[i].y;
+                    r.normalZ = -pelletDirs[i].z;
+                    r.targetPlayerId = 0;
+                    r.impactType = PELLET_IMPACT_WORLD;
+                }
+            }
+
+            blastEvent.targetCount = 0;
+            for (const auto& agg : trace.aggregates)
+            {
+                if (blastEvent.targetCount >= MAX_PELLET_BLAST_TARGETS)
+                    break;
+                PelletBlastTargetResult& t = blastEvent.targets[blastEvent.targetCount++];
+                t.targetPlayerId = agg.targetPlayerId;
+                t.totalDamage = (int16_t)agg.damage;
+                t.knockX = 0;
+                t.knockY = 0;
+                t.knockZ = 0;
+                t.pelletsHit = (uint8_t)agg.pelletHits;
+                auto vit = players.find(agg.targetPlayerId);
+                t.healthAfter = vit != players.end() ? (int16_t)vit->second.health : 0;
+                t.killed = 0;
+            }
+
+            for (const auto& pe : players)
+            {
+                if (pe.second.transport)
+                    pe.second.transport->send(&blastEvent, sizeof(blastEvent));
+                else
+                    sendto(sock, (const char*)&blastEvent, sizeof(blastEvent), 0,
+                           (sockaddr*)&pe.second.addr,
+                           sizeof(pe.second.addr));
+                ++totalPacketsOut;
+            }
+        }
+
         sendAttackResult(sock, shooter, req, tick, true, 0, 0,
                          rt.magazineAmmo, rt.reserveAmmo,
                          rt.nextAllowedFireTick, rt.stateRevision);
@@ -494,7 +648,7 @@ void handleAttackRequest(
 
         ServerProjectileAttackResult projectileResult =
             handleGenericProjectileAttack(
-                sock, players, projectiles, nextProjectileId,
+                sock, players, npcs, projectiles, nextProjectileId,
                 shooter, *def, req->requestId, origin, direction,
                 tick, totalPacketsOut);
         sendAttackResult(sock, shooter, req, tick,

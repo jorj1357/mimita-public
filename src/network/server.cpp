@@ -490,7 +490,7 @@ int runServer(const LaunchOptions& options)
 
             for (auto& kv : npcs)
                 simulateNpc(kv.second, players);
-            tickServerProjectiles(sock, players, projectiles, world, SERVER_DT, tick, totalPacketsOut);
+            tickServerProjectiles(sock, players, npcs, projectiles, world, SERVER_DT, tick, totalPacketsOut);
             tickServerPhysicalContactWeapons(sock, players, world, SERVER_DT, tick, totalPacketsOut);
 
             tickIcePeers(serverCode, dedicatedIceState.iceSessionId,
@@ -847,7 +847,7 @@ static void simulateOneServerTick(ListenServerState& state)
         checkVoidDeath(state.players, state.npcs);
         for (auto& kv : state.npcs)
             simulateNpc(kv.second, state.players);
-        tickServerProjectiles(state.sock, state.players, state.projectiles,
+        tickServerProjectiles(state.sock, state.players, state.npcs, state.projectiles,
                               state.world, SERVER_DT, state.tick,
                               state.totalPacketsOut);
 

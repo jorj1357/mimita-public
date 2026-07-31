@@ -205,6 +205,7 @@ struct Fixture
 
     HeadlessWorld world;
     std::unordered_map<uint32_t, ServerPlayer> players;
+    std::unordered_map<uint32_t, ServerNpc> npcs;
     std::unordered_map<uint32_t, ServerProjectile> projectiles;
     std::unordered_map<uint32_t, CaptureTransport*> captures;
     uint32_t nextProjectileId = 100;
@@ -344,6 +345,7 @@ void sendGenericAttack(Fixture& fixture,
         reinterpret_cast<const char*>(&request),
         static_cast<int>(sizeof(request)),
         fixture.players,
+        fixture.npcs,
         fixture.projectiles,
         fixture.nextProjectileId,
         fixture.world,
@@ -872,6 +874,7 @@ void testRocketExplosionDamageDeathAndRespawnFire(const WeaponDefinition& rocket
         tickServerProjectiles(
             INVALID_SOCKET,
             fixture.players,
+            fixture.npcs,
             fixture.projectiles,
             fixture.world,
             1.0f / 60.0f,
@@ -903,6 +906,7 @@ void testRocketExplosionDamageDeathAndRespawnFire(const WeaponDefinition& rocket
         tickServerProjectiles(
             INVALID_SOCKET,
             fixture.players,
+            fixture.npcs,
             fixture.projectiles,
             fixture.world,
             1.0f / 60.0f,
