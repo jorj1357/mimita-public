@@ -1,3 +1,11 @@
+// 07 31 2026, 13 34
+/* purpose
+* Implements local hitscan firing prediction: aim computation, single-ray
+* (revolver) and multi-pellet (shotgun) collision, and tracer/muzzle-flash spawning.
+* Routes local hits into damage/effect handlers shared with the network event path.
+* Does NOT own server weapon authority, packet send/receive, or damage validation.
+* Does NOT simulate projectiles, drive audio backends, or render viewmodels.
+*/
 #include "weapon-fire.h"
 
 #include <algorithm>
@@ -250,12 +258,16 @@ void fireMultiPellet(
 
     glm::vec3 baseDir;
     bool aimUsesCameraTarget = false;
+    glm::vec3 cameraAimPoint(0.0f);
+    glm::vec3 cameraAimNormal(0.0f, 0.0f, 1.0f);
     {
         auto ts = ShotProfiler::Scope(&shotProf.aimMs);
         AimSolution aim = computeAim(camera, world, npcs, muzzlePos, remotePlayers);
         logAimDebug("multi_pellet", camera, aim);
         baseDir = aim.direction;
         aimUsesCameraTarget = aim.usesCameraTarget;
+        cameraAimPoint = aim.aimPoint;
+        cameraAimNormal = aim.cameraWorldNormal;
     }
 
     Debug::warn(Debug::Category::Weapons,
@@ -364,7 +376,14 @@ void fireMultiPellet(
                 } else {
                     shotProf.misses++;
                     ++missedPellets;
-                    if (pelletNearest < nearestPelletDist) {
+                    if (aimUsesCameraTarget) {
+                        // Camera-target aim skips world collision (collideBeam
+                        // skipWorldCollision), so render the world impact at the
+                        // crosshair aim point instead (mirrors tryFireHitscan).
+                        processMultiPelletWorldHit(def, cameraAimPoint, cameraAimNormal,
+                            pelletDir, pelletNearest, shooter, anyHitWorld,
+                            nearestPelletDist, lastPelletEnd, lastHitNormal);
+                    } else if (pelletNearest < nearestPelletDist) {
                         nearestPelletDist = pelletNearest;
                         lastPelletEnd = pelletEnd;
                     }

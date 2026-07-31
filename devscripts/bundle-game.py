@@ -1,12 +1,37 @@
 """Create mimita-game.zip of all runtime files.
 The launcher downloads this from GitHub on first run.
-Excludes MimitaLauncher.exe to avoid file-lock conflicts on extraction."""
+Excludes MimitaLauncher.exe to avoid file-lock conflicts on extraction.
+Refuses to bundle a debug build (huge mimita.exe) unless --allow-debug is passed."""
 
 import os
+import sys
 import zipfile
 import hashlib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Debug builds embed DWARF symbols (-Og -g) and are ~300+ MB.
+# Release builds (-O2 -march=x86-64-v2 -s) are ~15-20 MB.
+DEBUG_EXE_SIZE_BYTES = 60 * 1024 * 1024
+
+def check_release_build():
+    allow_debug = "--allow-debug" in sys.argv
+    exe = os.path.join(ROOT, "mimita.exe")
+    if not os.path.isfile(exe):
+        print("[FAIL] mimita.exe not found. Build it first (python build_agent.py release).")
+        sys.exit(1)
+    size = os.path.getsize(exe)
+    mb = size / 1e6
+    if size > DEBUG_EXE_SIZE_BYTES:
+        print(f"[FAIL] mimita.exe is {mb:.1f} MB — this is a DEBUG build.")
+        print("       End users must get the release build (~15-20 MB).")
+        print("       Build release first:  python build_agent.py release")
+        if not allow_debug:
+            print("       (or pass --allow-debug to bundle the debug exe anyway)")
+            sys.exit(1)
+        print("       Bundling debug exe anyway (--allow-debug).")
+        return
+    print(f"[OK]   mimita.exe is {mb:.1f} MB — release build.")
 
 def collect_files():
     files = []
@@ -55,4 +80,5 @@ def build_zip():
     print(f"     SHA-256: {sha.hexdigest()}")
 
 if __name__ == "__main__":
+    check_release_build()
     build_zip()
