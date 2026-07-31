@@ -84,6 +84,7 @@ static void doExplosion(
 
     EffectPartSystem::instance().spawnMuzzleFlash(position, "rocket_explosion", owner.sizeScale);
     EffectPartSystem::instance().spawnWorldDebris(position, glm::vec3(0.0f, 0.0f, 1.0f), 3.0f, owner.sizeScale);
+    EffectPartSystem::instance().spawnImpactSphereTick(position, {1.0f, 0.15f, 0.05f}, 0.5f);
     {
         const auto& expCfg = WeaponHitFxConfig::instance().explosionBurstFor("rocket_launcher");
         if (expCfg.smoke.enabled)
@@ -123,7 +124,7 @@ static void doExplosion(
             sphere.maxLifetime = (float)expCfg.sphere.lifetimeTicks / 60.0f;
             sphere.scale = expCfg.sphere.startRadius;
             sphere.endScale = expCfg.sphere.endRadius;
-            sphere.color = expCfg.sphere.startColor * expCfg.sphere.brightnessStart;
+            sphere.color = glm::clamp(expCfg.sphere.startColor * expCfg.sphere.brightnessStart, 0.0f, 1.0f);
             sphere.alpha = expCfg.sphere.alphaStart;
             sphere.billboardText = false;
             sphere.replayType = "rocket_launcher_explosion_sphere";
@@ -267,6 +268,8 @@ void fire(
 
     runtime.currentAmmo--;
     runtime.fireCooldown = def.fireDelay;
+
+    EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, owner.username, owner.sizeScale);
 
     if (!def.soundShoot.empty())
         WeaponAudio::playShootSound(def, owner.pos);

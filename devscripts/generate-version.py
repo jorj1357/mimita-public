@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+from datetime import datetime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -24,6 +25,7 @@ def sha256(path):
 
 def write_version_h(v):
     s = ver_str(v)
+    build_stamp = datetime.now().strftime("%m-%d-%Y %H:%M:%S")
     path = os.path.join(ROOT, "src", "game", "version.h")
     with open(path, "w") as f:
         f.write(f"""#pragma once
@@ -33,8 +35,9 @@ def write_version_h(v):
 #define MIMITA_VERSION_PATCH {v['patch']}
 
 #define MIMITA_VERSION_STRING "{s}"
+#define MIMITA_BUILD_TIMESTAMP "{build_stamp}"
 """)
-    print(f"[GEN] {os.path.relpath(path, ROOT)}")
+    print(f"[GEN] {os.path.relpath(path, ROOT)} (build {build_stamp})")
 
 def write_version_txt(v):
     path = os.path.join(ROOT, "version.txt")

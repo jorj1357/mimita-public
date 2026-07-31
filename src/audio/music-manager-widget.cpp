@@ -8,6 +8,10 @@
 #include "gui/gui-layout.h"
 #include "gui/gui-element-render.h"
 
+// Reserve space on the right edge for the notification popup stack so the
+// music player never sits underneath incoming notifications.
+static constexpr float NOTIF_RESERVE = 380.0f;
+
 void MusicManager::drawNowPlayingPopup()
 {
     if (!mTrackJustChanged) return;
@@ -17,7 +21,7 @@ void MusicManager::drawNowPlayingPopup()
 
     float pw = 340.0f;
     float ph = 72.0f;
-    float px = sw - pw - 20.0f + mPopupSlide;
+    float px = sw - pw - 20.0f - NOTIF_RESERVE + mPopupSlide;
     float py = sh - ph - 100.0f;
 
     UIRect popupRect = {px, py, pw, ph};
@@ -65,7 +69,7 @@ void MusicManager::drawMusicWidget()
 
     // Widget layout in design coordinates (1920x1080)
     const float iconS = 36.0f;
-    const float iconX = 1920.0f - iconS - 10.0f;
+    const float iconX = 1920.0f - iconS - 10.0f - NOTIF_RESERVE;
     const float iconY = 1080.0f - iconS - 10.0f;
     const UIRect iconRect = {iconX, iconY, iconS, iconS};
 

@@ -1,3 +1,10 @@
+// 07 31 2026, 14 50
+/* purpose
+* Sends and receives shot and pellet-blast packets, and reconstructs shot visuals.
+* Replays authoritative tracer and hit effects for non-shooter clients.
+* Does NOT own server weapon authority, damage validation, or socket transport.
+* Does NOT run the fixed-step simulation tick or render viewmodels.
+*/
 #include "network/multiplayer-context.h"
 #include "network/net_common.h"
 #include "network/packets.h"
@@ -241,6 +248,7 @@ void mpProcessPelletBlastEventPacket(MultiplayerContext& ctx, const PelletBlastE
                 ev.attacker = weaponName;
                 ev.weaponSource = "pellet_blast";
                 HitEffects::onHit(ev);
+                EffectPartSystem::instance().spawnImpactSphereTick(hitPos, {0.1f, 0.5f, 1.0f});
             }
         }
         else if (pellet.impactType == PELLET_IMPACT_PLAYER && !isLocalShooter)

@@ -502,6 +502,7 @@ bool playerOwnsConnectionSource(const ServerPlayer& player,
                                 const TransportConnectionId* connectionId);
 
 // Packet handlers
+struct DisagreementRetransmitState;
 void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                  std::unordered_map<uint32_t, ServerPlayer>& players,
                  uint32_t& nextPlayerId, uint32_t tick, uint64_t& totalPacketsOut,
@@ -515,7 +516,10 @@ void handleInputPacket(const char* buffer, int bytes,
                        std::unordered_map<uint32_t, ServerNpc>& npcs,
                        const sockaddr_in* from = nullptr,
                        uint32_t serverTick = 0,
-                       const TransportConnectionId* connectionId = nullptr);
+                       const TransportConnectionId* connectionId = nullptr,
+                       SOCKET sock = INVALID_SOCKET,
+                       uint64_t* totalPacketsOut = nullptr,
+                       DisagreementRetransmitState* retransmitState = nullptr);
 void handleDisconnect(std::unordered_map<uint32_t, ServerPlayer>& players,
                       const char* buffer);
 void handleSpawnNpcRequest(const char* buffer, int bytes,
@@ -555,7 +559,8 @@ void handleAttackRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
                          std::unordered_map<uint32_t, ServerProjectile>& projectiles,
                          uint32_t& nextProjectileId,
                          const HeadlessWorld& world,
-                         uint32_t tick, uint64_t& totalPacketsOut);
+                         uint32_t tick, uint64_t& totalPacketsOut,
+                         DisagreementRetransmitState* retransmitState = nullptr);
 void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                                  std::unordered_map<uint32_t, ServerPlayer>& players,
                                  std::unordered_map<uint32_t, ServerProjectile>& projectiles,

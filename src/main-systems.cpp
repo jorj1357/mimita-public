@@ -119,6 +119,8 @@ void registerCursorCommands();
 #include "terminal/duel-commands.h"
 #include "terminal/editor-commands.h"
 #include "terminal/network-commands.h"
+#include "terminal/badconn-commands.h"
+#include "network/badconn/badconn.h"
 #include "terminal/auth-commands.h"
 #include "perf/perf.h"
 #include "replay/replay-export.h"
@@ -129,6 +131,7 @@ void registerCursorCommands();
 #include "gui/gui-editor-commands.h"
 #include "camera/camera-commands.h"
 #include "audio/music-commands.h"
+#include "notifications/notification-commands.h"
 #include <windows.h>
 #include <glad/glad.h>
 
@@ -351,6 +354,7 @@ void gameInitSubsystems(Engine& engine)
     registerLightingCommands();
     registerVideoCommands();
     registerMusicCommands();
+    registerNotificationCommands();
     registerDevLogCommands();
     registerDevOverlayCommands();
 
@@ -359,6 +363,8 @@ void gameInitSubsystems(Engine& engine)
 
     registerEditorCommands();
     registerNetworkCommands();
+    badconn::loadConfig(badconn::configPath());
+    registerBadConnCommands();
 
     registerReplayCaptureCommands();
     registerReplayCommands();

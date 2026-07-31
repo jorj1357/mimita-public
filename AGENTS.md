@@ -136,6 +136,25 @@ Status: SUCCESS|NOTHING_CHANGED|FAILED
 
 Always check this status after building. If the human built between your source edits and your build_agent.py call, you will see NOTHING_CHANGED even though your edits should trigger a rebuild. Delete mimita.exe and rebuild in that case.
 
+# Single Shared Build (Multiple Agents)
+
+Multiple people/agents share one machine and one `build_agent.py` build lock. To keep agents from interfering:
+
+1. **Before building, always check if a build is already running:**
+   ```powershell
+   Get-Content "build\build-agent.lock" -ErrorAction SilentlyContinue | ConvertFrom-Json
+   ```
+   If the file exists, look up the owner PID with `Get-Process -Id <pid>`. If that process is alive, a build is in progress.
+
+2. **If a build is already running — DO NOT start another one.** Use that running build's log to verify your own changes:
+   - Read `build/changelog.txt` (written after every run; first three lines show `Status: SUCCESS|NOTHING_CHANGED|FAILED`).
+   - Check that your scope's object files under `build/obj-debug/` / `build/obj-release/` are newer than your edited sources (confirming your changes got compiled), and that `mimita.exe` was relinked after them.
+   - Only fix YOUR OWN errors from that shared log. Do not fix errors from other agents' files unless you own that code.
+
+3. **Only run a new `python build_agent.py` if no build is running** (lock file missing, or its owner PID is gone).
+
+4. Never delete the build lock or run a second build to "speed things up." The lock serializes builds; the first build wins. If your changes landed after the running build compiled, wait for it to finish, then run your own build to compile the remainder.
+
 ---
 
 # Core Philosophy

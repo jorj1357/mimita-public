@@ -18,6 +18,7 @@
 #include "gui/ui-system.h"
 #include "gui/hud/chat-window.h"
 #include "gui/menus/online-menu.h"
+#include "notifications/notifications.h"
 #include "devtools/dev-overlay.h"
 #include "devtools/terminal.h"
 #include "debug/debug-diag.h"
@@ -66,6 +67,7 @@ void engineTick(Engine& engine)
     MIMITA_PERF_SCOPE("EngineTick");
     // Step UI tick clock (60 Hz fixed step, independent of render FPS)
     gChatUiTickClock.tick();
+    NotificationSystem::instance().advanceTicks();
     auto tFrameStart = std::chrono::steady_clock::now();
     HEARTBEAT("FRAME START");
 

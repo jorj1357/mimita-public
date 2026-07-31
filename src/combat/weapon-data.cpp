@@ -1,3 +1,10 @@
+// 07 31 2026, 14 50
+/* purpose
+* Defines built-in weapon definitions and their gameplay/visual custom params.
+* Owns default projectile glow, smoke, and fire behavior tuning.
+* Does NOT own server weapon authority, packet send/receive, or damage validation.
+* Does NOT run the fixed-step simulation tick or render viewmodels.
+*/
 #include "weapon-data.h"
 #include "weapon-json-config.h"
 #include "weapon-registry.h"
@@ -555,10 +562,10 @@ WeaponDefinition createRocketLauncherDefinition() {
     def.customParams["projectileOutlineScale"] = 1.15f;
     def.customParams["projectileGlowEnabled"] = 1.0f;
     def.customParams["projectileGlowColorR"] = 1.0f;
-    def.customParams["projectileGlowColorG"] = 0.6f;
-    def.customParams["projectileGlowColorB"] = 0.0f;
-    def.customParams["projectileGlowAlpha"] = 0.15f;
-    def.customParams["projectileGlowRadiusMultiplier"] = 3.0f;
+    def.customParams["projectileGlowColorG"] = 0.85f;
+    def.customParams["projectileGlowColorB"] = 0.5f;
+    def.customParams["projectileGlowAlpha"] = 0.45f;
+    def.customParams["projectileGlowRadiusMultiplier"] = 5.0f;
 
     // Smoke effect defaults
     def.customParams["smokeEnabled"] = 1.0f;

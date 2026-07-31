@@ -1,3 +1,10 @@
+// 07 31 2026, 14 50
+/* purpose
+* Implements grenade launcher firing, spark trail update, and projectile spawn.
+* Owns the local client grenade prediction and fire-time muzzle flash.
+* Does NOT own server projectile authority or packet routing.
+* Does NOT render viewmodels or run the fixed-step simulation tick.
+*/
 #include "weapon-grenade-launcher.h"
 #include "weapon-types.h"
 
@@ -65,6 +72,7 @@ void fire(const WeaponDefinition& def, WeaponRuntime& runtime,
 
     PersistentPhysicsSystem::instance().spawn(cfg, muzzlePos, vel, angVel,
                                               0, owner.username, def.id, owner.pos);
+    EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, owner.username, owner.sizeScale);
 
     Debug::log(Debug::Category::Weapons, "[GRENADE LAUNCHER] fired pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) "
                "projectileSpeed=%.1f radius=%.2f armingDist=%.1f bounceRest=%.2f bounceFric=%.2f\n",

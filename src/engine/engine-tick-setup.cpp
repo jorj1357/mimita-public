@@ -17,6 +17,7 @@
 #include "config/weapon-hitfx-config.h"
 #include "config/ragdoll-death-config.h"
 #include "hot-reload/hot-reload-system.h"
+#include "notifications/notifications.h"
 #include "debug/debug-visuals.h"
 #include "gui/ui-system.h"
 #include "devtools/terminal.h"
@@ -45,6 +46,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     RagdollConfig::instance().pollReload();
     RagdollDeathConfig::instance().pollReload();
     WeaponHitFxConfig::instance().pollReload();
+    NotificationSystem::instance().pollReload();
     worldPassRan = false;
 
     {

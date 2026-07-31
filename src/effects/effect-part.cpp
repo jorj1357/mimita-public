@@ -1,3 +1,10 @@
+// 07 31 2026, 14 50
+/* purpose
+* Implements the EffectPartSystem spawn helpers and the hot-reload game DLL effect updater.
+* Provides pool-backed effect creation for tracers, muzzle flashes, impacts, and tick spheres.
+* Does NOT own server weapon authority, packet send/receive, or damage validation.
+* Does NOT render effects; rendering lives in effect-part-render.cpp.
+*/
 #if defined(MIMITA_GAME_DLL)
 
 #include "hot-reload/game-api.h"
@@ -149,6 +156,21 @@ EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position, const std::st
     e.billboardText = false;
     e.sticky = true;
     e.sourceActorId = sourceActorId;
+    return spawn(e);
+}
+
+EffectPart* EffectPartSystem::spawnImpactSphereTick(glm::vec3 position, glm::vec3 color, float radius) {
+    EffectPart e;
+    e.position = position;
+    e.replayType = "impact_tick";
+    e.color = color;
+    e.maxLifetime = 1.0f / 60.0f;
+    e.lifetime = 0.0f;
+    e.scale = radius;
+    e.endScale = radius;
+    e.alpha = 1.0f;
+    e.billboardText = false;
+    e.sticky = true;
     return spawn(e);
 }
 

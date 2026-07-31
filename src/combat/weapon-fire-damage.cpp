@@ -1,3 +1,10 @@
+// 07 31 2026, 14 50
+/* purpose
+* Applies local hitscan damage, knockback, hit effects, and world-impact visuals.
+* Handles single-ray and multi-pellet hit processing shared by local prediction.
+* Does NOT own server weapon authority, packet send/receive, or damage validation.
+* Does NOT run the fixed-step simulation tick or render viewmodels.
+*/
 #include "weapon-fire.h"
 
 #include <algorithm>
@@ -241,6 +248,7 @@ void processWorldHit(
         HitEffects::onHit(ev);
     }
     EffectPartSystem::instance().spawnWorldDebris(hitEnd, worldNormal, std::clamp(def.damage / 100.0f, 0.1f, 5.0f));
+    EffectPartSystem::instance().spawnImpactSphereTick(hitEnd, {0.1f, 0.5f, 1.0f});
     float dist = glm::length(hitEnd - audioListenerPosition());
     float directness = std::abs(glm::dot(-shotDirection, worldNormal));
     float severity = std::clamp(directness, 0.0f, 1.0f);
@@ -396,6 +404,7 @@ void processMultiPelletWorldHit(
     EffectPartSystem::instance().queueWorldHit(
         hitEnd, worldNml, pelletDir, debrisForce,
         shooter.username, def.id);
+    EffectPartSystem::instance().spawnImpactSphereTick(hitEnd, {0.1f, 0.5f, 1.0f});
 
     if (pelletNearest < nearestPelletDist) {
         nearestPelletDist = pelletNearest;
