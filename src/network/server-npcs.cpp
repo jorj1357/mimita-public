@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 
 namespace MimitaNet {
 
@@ -17,8 +18,19 @@ void simulateNpc(ServerNpc& npc, const std::unordered_map<uint32_t, ServerPlayer
     glm::vec3 target(1.0f, 5.0f, 30.0f);
     if (!players.empty())
     {
-        // Target the first player
-        target = players.begin()->second.pos;
+        // Target the nearest player so NPC behavior is sensible with several
+        // clients instead of always picking the first in the map.
+        float bestDist2 = std::numeric_limits<float>::max();
+        for (const auto& kv : players)
+        {
+            const glm::vec2 d(kv.second.pos.x - npc.pos.x, kv.second.pos.y - npc.pos.y);
+            const float d2 = d.x * d.x + d.y * d.y;
+            if (d2 < bestDist2)
+            {
+                bestDist2 = d2;
+                target = kv.second.pos;
+            }
+        }
     }
 
     glm::vec2 toTarget(target.x - npc.pos.x, target.y - npc.pos.y);

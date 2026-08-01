@@ -10,15 +10,14 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <cstdlib>
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/quaternion.hpp>
 
 #include "audio/audio.h"
 #include "camera.h"
+#include "combat/explosion-fx.h"
 #include "config.h"
-#include "config/weapon-hitfx-config.h"
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
 #include "effects/effect-part.h"
@@ -367,72 +366,7 @@ void PersistentPhysicsSystem::doExplosion(
     Debug::log(Debug::Category::Weapons, "[POBJ] EXPLOSION id=%u pos=(%.2f %.2f %.2f) radius=%.1f damage=%.0f exponent=%.1f\n",
                obj.id, pos.x, pos.y, pos.z, radius, baseDamage, splashExp);
 
-    if (!obj.cfg.explosionSound.empty()) {
-        Debug::log(Debug::Category::Audio, "[POBJ] sound=explosion path=%s pos=(%.2f %.2f %.2f)\n",
-                   obj.cfg.explosionSound.c_str(), pos.x, pos.y, pos.z);
-        playWorldSound(obj.cfg.explosionSound, pos, 1.0f, 1.0f, 50.0f);
-    }
-
-    {
-        HitEvent ev;
-        ev.position = pos;
-        ev.normal = glm::vec3(0.0f, 0.0f, 1.0f);
-        ev.direction = glm::vec3(0.0f);
-        ev.hitWorld = true;
-        ev.hitEntity = false;
-        ev.damage = 0;
-        ev.attacker = obj.ownerName;
-        ev.weaponSource = obj.weaponId;
-        HitEffects::onHit(ev);
-    }
-
-    EffectPartSystem::instance().spawnMuzzleFlash(pos, obj.weaponId + "_explosion");
-    EffectPartSystem::instance().spawnWorldDebris(pos, glm::vec3(0.0f, 0.0f, 1.0f), 3.0f);
-    EffectPartSystem::instance().spawnImpactSphereTick(pos, {1.0f, 0.15f, 0.05f}, 0.5f);
-
-    // Config-driven explosion smoke burst + fireball (mirrors rocket/network path)
-    {
-        const auto& expCfg = WeaponHitFxConfig::instance().explosionBurstFor(obj.weaponId);
-        if (expCfg.smoke.enabled)
-        {
-            for (int i = 0; i < expCfg.smoke.count; ++i)
-            {
-                EffectPart part;
-                part.position = pos + glm::vec3(
-                    ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.spread,
-                    ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.spread,
-                    ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.spread);
-                part.velocity = glm::vec3(
-                    ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.speed,
-                    ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.speed,
-                    (float)rand() / RAND_MAX * expCfg.smoke.speed * 0.5f + expCfg.smoke.upwardBias);
-                part.lifetime = 0.0f;
-                part.maxLifetime = expCfg.smoke.lifetime + (float)rand() / RAND_MAX * expCfg.smoke.lifetime * 0.3f;
-                part.scale = expCfg.smoke.size + (float)rand() / RAND_MAX * expCfg.smoke.size * 0.5f;
-                part.endScale = expCfg.smoke.endSize + (float)rand() / RAND_MAX * expCfg.smoke.endSize * 0.5f;
-                part.color = expCfg.smoke.color;
-                part.alpha = expCfg.smoke.alpha;
-                part.gravity = 1.0f;
-                part.affectedByGravity = true;
-                part.billboardText = false;
-                part.replayType = obj.weaponId + "_explosion_smoke";
-                EffectPartSystem::instance().spawn(part);
-            }
-        }
-        if (expCfg.sphere.enabled)
-        {
-            EffectPart sphere;
-            sphere.position = pos;
-            sphere.maxLifetime = (float)expCfg.sphere.lifetimeTicks / 60.0f;
-            sphere.scale = expCfg.sphere.startRadius;
-            sphere.endScale = expCfg.sphere.endRadius;
-            sphere.color = glm::clamp(expCfg.sphere.startColor * expCfg.sphere.brightnessStart, 0.0f, 1.0f);
-            sphere.alpha = expCfg.sphere.alphaStart;
-            sphere.billboardText = false;
-            sphere.replayType = obj.weaponId + "_explosion_sphere";
-            EffectPartSystem::instance().spawn(sphere);
-        }
-    }
+    spawnExplosionFx(pos, obj.weaponId, obj.ownerName);
 
     if (camera) {
         float distToCam = glm::length(pos - camera->pos);

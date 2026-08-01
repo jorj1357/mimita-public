@@ -21,7 +21,7 @@
 
 #include "gui/gui-layout.h"
 #include "gui/gui-element-render.h"
-#include "game/version.h"
+#include "game/build-stamp.h"
 #include "debug/debug-log.h"
 
 using json = nlohmann::json;
@@ -130,7 +130,7 @@ void NotificationSystem::pushBuildNotice()
     a.type = ActionType::OpenUrl;
     a.payload = "https://www.mimita.fun";
     a.label = "mimita.fun";
-    push("mimita.exe", std::string("build ") + MIMITA_BUILD_TIMESTAMP,
+    push("mimita.exe", std::string("build ") + MIMITA_BUILD_TIME,
          mDefaultDurationTicks, a);
 }
 

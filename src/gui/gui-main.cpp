@@ -23,6 +23,7 @@
 #include "competitive/competitive-match.h"
 #include "ui-system.h"
 #include "gui-editor.h"
+#include "notifications/notifications.h"
 #include "camera.h"
 #include "debug/debug-log.h"
 #include "render/render-player.h"
@@ -1021,6 +1022,7 @@ void guiMain(GLFWwindow* win, GameState& state)
     drawAuthCodeDialog(win);
 
     MusicManager::instance().drawAllOverlay();
+    NotificationSystem::instance().render();
     InputCommandSystem::instance().drawInputDebug();
     AnalyticsManager::instance().drawFirstLaunchPopup(win);
     uiRenderFrameDebugOverlay(win, "MENU", false);

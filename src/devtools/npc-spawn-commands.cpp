@@ -7,6 +7,7 @@
 #include "world/world.h"
 #include "entities/player.h"
 #include "devtools/dev-overlay.h"
+#include "terminal/terminal-state.h"
 #include <cstdio>
 #include <vector>
 #include <string>
@@ -20,6 +21,13 @@ void QueueNpcSpawnCommand(const std::vector<std::string>& args) {
 }
 
 void ProcessNpcSpawnCommands(NpcSystem& npcSystem, const Camera& camera, const World& world, const Player& player) {
+    // While online, NPCs are server-authoritative. Local spawns would be
+    // invisible to other clients, so drop them (use npc_spawn which routes
+    // through the server).
+    if (MP_CONTEXT.active) {
+        gPendingNpcSpawnCommands.clear();
+        return;
+    }
     for (const auto& args : gPendingNpcSpawnCommands) {
         glm::vec3 spawnPos;
         float difficulty = 1.0f;
@@ -90,6 +98,11 @@ void QueueNpcTrainingSpawnCommand(const std::vector<std::string>& args) {
 }
 
 void ProcessNpcTrainingSpawnCommands(NpcSystem& npcSystem, const Camera& camera, const World& world, const Player& player) {
+    // Same online guard as ProcessNpcSpawnCommands.
+    if (MP_CONTEXT.active) {
+        gPendingTrainingSpawnCommands.clear();
+        return;
+    }
     for (const auto& args : gPendingTrainingSpawnCommands) {
         glm::vec3 spawnPos;
         float difficulty = 1.0f;

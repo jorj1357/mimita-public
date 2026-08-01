@@ -11,10 +11,12 @@
 #include "network/server.h"
 #include "network/packets.h"
 #include "network/network-weapons.h"
+#include "network/disagreement-visuals.h"
 #include "combat/weapon-execution.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
 #include "combat/weapon-fire.h"
+#include "combat/weapon-runtime.h"
 #include "debug/debug-log.h"
 
 #include <cmath>
@@ -183,6 +185,9 @@ static void emitAttackRejection(
 {
     if (!retransmitState)
         return;
+    if (!shouldEmitDisagreement(retransmitState->rateLimit, tick,
+                                disagreementMinTicks()))
+        return;
     const glm::vec3 at = shooter.pos + glm::vec3(0.0f, 0.0f, 1.2f);
     sendDisagreementToAll(sock, players, DISAGREEMENT_INVALID_STATE,
                           retransmitState->nextEventId++, requestId,
@@ -237,7 +242,7 @@ void handleAttackRequest(
         Debug::log(Debug::Category::Weapons, "[ATTACK REJECT] playerId=%u requestId=%u spawnState not Active — awaiting spawn ack\n",
                    shooter.id, req->requestId);
         emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
-                            shooter, req->requestId, "REJECTED: NOT SPAWNED");
+                            shooter, req->requestId, "NOT SPAWNED");
         sendAttackResult(sock, shooter, req, tick, false, 8, 0, -1, -1, 0, 0);
         return;
     }
@@ -249,7 +254,7 @@ void handleAttackRequest(
         Debug::log(Debug::Category::Weapons, "[ATTACK] playerId=%u requestId=%u unknown weaponDefNetworkId=%u\n",
                    shooter.id, req->requestId, req->weaponDefNetworkId);
         emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
-                            shooter, req->requestId, "REJECTED: UNKNOWN WEAPON");
+                            shooter, req->requestId, "UNKNOWN WEAPON");
         sendAttackResult(sock, shooter, req, tick, false, 7, 0, -1, -1, 0, 0);
         return;
     }
@@ -260,7 +265,7 @@ void handleAttackRequest(
         Debug::log(Debug::Category::Weapons, "[ATTACK] playerId=%u requestId=%u weaponId=%s not in registry\n",
                    shooter.id, req->requestId, wepId->c_str());
         emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
-                            shooter, req->requestId, "REJECTED: UNKNOWN WEAPON");
+                            shooter, req->requestId, "UNKNOWN WEAPON");
         sendAttackResult(sock, shooter, req, tick, false, 7, 0, -1, -1, 0, 0);
         return;
     }
@@ -271,7 +276,7 @@ void handleAttackRequest(
         Debug::log(Debug::Category::Weapons, "[ATTACK REJECT] playerId=%u requestId=%u stale spawnGeneration req=%u cur=%u\n",
                    shooter.id, req->requestId, req->spawnGeneration, shooter.spawnGeneration);
         emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
-                            shooter, req->requestId, "REJECTED: STALE SPAWN GENERATION");
+                            shooter, req->requestId, "STALE SPAWN GENERATION");
         sendAttackResult(sock, shooter, req, tick, false, 8, 0, -1, -1, 0, 0);
         return;
     }
@@ -282,21 +287,45 @@ void handleAttackRequest(
         Debug::log(Debug::Category::Weapons, "[ATTACK REJECT] playerId=%u requestId=%u dead\n",
                    shooter.id, req->requestId);
         emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
-                            shooter, req->requestId, "REJECTED: PLAYER DEAD");
+                            shooter, req->requestId, "PLAYER DEAD");
         sendAttackResult(sock, shooter, req, tick, false, 2, 0, -1, -1, 0, 0);
         return;
     }
 
     // ── Resolve authoritative weapon runtime ──────────────────────────
+    // If the client is using a weapon the server hasn't granted yet (e.g. a
+    // restricted weapon from a custom loadout), initialize its runtime on
+    // demand instead of rejecting. Damage, ammo, and cooldown stay
+    // server-authoritative; this only stops refusing a weapon the player has.
     auto rtIt = shooter.weaponRuntimes.find(*wepId);
     if (rtIt == shooter.weaponRuntimes.end() || !rtIt->second.initialized)
     {
-        Debug::log(Debug::Category::Weapons, "[ATTACK REJECT] playerId=%u requestId=%u weapon runtime not initialized\n",
-                   shooter.id, req->requestId);
-        emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
-                            shooter, req->requestId, "REJECTED: WEAPON RUNTIME");
-        sendAttackResult(sock, shooter, req, tick, false, 7, 0, -1, -1, 0, 0);
-        return;
+        ServerPlayer::ServerWeaponRuntime fresh;
+        fresh.magazineAmmo = def->magazineSize;
+        fresh.reserveAmmo = initialReserveAmmoForDefinition(*def);
+        fresh.nextAllowedFireTick = 0;
+        fresh.reloading = false;
+        fresh.reloadCompleteTick = 0;
+        fresh.stateRevision = 0;
+        fresh.initialized = true;
+        shooter.weaponRuntimes[*wepId] = fresh;
+
+        bool alreadyOwned = false;
+        for (const std::string& owned : shooter.ownedWeaponIds)
+        {
+            if (owned == *wepId)
+            {
+                alreadyOwned = true;
+                break;
+            }
+        }
+        if (!alreadyOwned)
+            shooter.ownedWeaponIds.push_back(*wepId);
+
+        rtIt = shooter.weaponRuntimes.find(*wepId);
+        Debug::log(Debug::Category::Weapons,
+                   "[ATTACK RUNTIME LAZY-GRANT] playerId=%u weapon=%s granted on first use\n",
+                   shooter.id, wepId->c_str());
     }
 
     ServerPlayer::ServerWeaponRuntime& rt = rtIt->second;
@@ -308,7 +337,7 @@ void handleAttackRequest(
                    "[ATTACK REJECT] playerId=%u requestId=%u request slot does not match weapon req=%d def=%d\n",
                    shooter.id, req->requestId, req->equippedSlot, def->slot);
         emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
-                            shooter, req->requestId, "REJECTED: SLOT MISMATCH");
+                            shooter, req->requestId, "SLOT MISMATCH");
         sendAttackResult(sock, shooter, req, tick, false, 4, 0, -1, -1, 0, 0);
         return;
     }
@@ -330,7 +359,7 @@ void handleAttackRequest(
         Debug::log(Debug::Category::Weapons, "[ATTACK REJECT] playerId=%u requestId=%u out of ammo ammo=%d\n",
                    shooter.id, req->requestId, rt.magazineAmmo);
         emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
-                            shooter, req->requestId, "REJECTED: NO AMMO");
+                            shooter, req->requestId, "NO AMMO");
         sendAttackResult(sock, shooter, req, tick, false, 3, 0,
                          rt.magazineAmmo, rt.reserveAmmo,
                          rt.nextAllowedFireTick, rt.stateRevision);
@@ -345,7 +374,7 @@ void handleAttackRequest(
         Debug::log(Debug::Category::Weapons, "[ATTACK REJECT] playerId=%u requestId=%u cooldown tick=%u nextAllowed=%llu\n",
                    shooter.id, req->requestId, tick, (unsigned long long)rt.nextAllowedFireTick);
         emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
-                            shooter, req->requestId, "REJECTED: COOLDOWN");
+                            shooter, req->requestId, "COOLDOWN");
         sendAttackResult(sock, shooter, req, tick, false, 1, 0,
                          rt.magazineAmmo, rt.reserveAmmo,
                          rt.nextAllowedFireTick, rt.stateRevision);
@@ -372,7 +401,7 @@ void handleAttackRequest(
                 "[ATTACK REJECT] playerId=%u requestId=%u invalid hitscan geometry\n",
                 shooter.id, req->requestId);
             emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
-                                shooter, req->requestId, "REJECTED: INVALID GEOMETRY");
+                                shooter, req->requestId, "INVALID GEOMETRY");
             sendAttackResult(sock, shooter, req, tick, false, 5, 0,
                              rt.magazineAmmo, rt.reserveAmmo,
                              rt.nextAllowedFireTick, rt.stateRevision);

@@ -28,4 +28,8 @@ void pollDisagreementReload();
 // Reads from the "rejectAllHits" field in config/serverdisagree.json.
 bool isRejectAllHitsEnabled();
 
+// Minimum number of server ticks between broadcast disagreement effects.
+// Reads from "minTicksBetweenEffects" in config/serverdisagree.json.
+int disagreementMinTicks();
+
 } // namespace MimitaNet

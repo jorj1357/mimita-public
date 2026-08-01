@@ -13,6 +13,7 @@
 #include "network/net_common.h"
 #include "network/packets.h"
 #include "network/game-transport.h"
+#include "network/disagreement-rate-limit.h"
 #include "network/ice/ice-agent.h"
 #include "network/movement-validation.h"
 #include "network/simulation-constants.h"
@@ -546,6 +547,8 @@ struct DisagreementRetransmitState
 {
     PendingDisagreement events[DISAGREEMENT_RETRANSMIT_MAX];
     uint32_t nextEventId = 1;
+    // Global server-wide rate limit for disagreement broadcasts.
+    DisagreementRateLimitState rateLimit;
 };
 
 void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,

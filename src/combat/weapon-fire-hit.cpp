@@ -99,6 +99,11 @@ RevolverShotResult tryFireHitscan(
     result.end = beam.hitPosition;
     result.hitNormal = victim || remoteVictim ? hitNormal : worldNormal;
 
+    // Crosshair aim skips world collision so the beam hits exactly the camera
+    // aim point; stop the tracer at that surface instead of running through it.
+    if (aim.usesCameraTarget && !victim && !remoteVictim && !hitWorld)
+        result.end = aim.aimPoint;
+
     if (gDebugWeapon)
     {
         printf("[BEAM COLLISION] weapon=%s type=%s radius=%.2f "
@@ -331,10 +336,11 @@ void fireMultiPellet(
             {
                 auto tc = ShotProfiler::Scope(&shotProf.worldCollisionMs);
                 shotProf.collisionCalls++;
+                glm::vec3 pelletOrigin = muzzlePos + pelletDir * 0.01f;
                 BeamCollisionResult pelletBeam = collideBeam(
-                    muzzlePos, pelletDir, MAX_SHOT_DISTANCE, def.beamThickness,
+                    pelletOrigin, pelletDir, MAX_SHOT_DISTANCE, def.beamThickness,
                     world, &npcs, remotePlayers, nullptr,
-                    aimUsesCameraTarget);
+                    false);
                 (void)tc;
 
                 float pelletNearest = pelletBeam.nearest;

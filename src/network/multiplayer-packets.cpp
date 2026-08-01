@@ -113,6 +113,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.processedReliableEventOrder.clear();
     ctx.playerRegistry.clear();
     ctx.predictedProjectileIds.clear();
+    ctx.predictedExplosions.clear();
     ctx.remoteSwordStates.clear();
 
     // Clear reconciliation state
@@ -149,6 +150,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.processedRefundSerials.clear();
     ctx.pendingFireRequests.clear();
     ctx.pendingAttackRequests.clear();
+    ctx.pendingHitClaims.clear();
     ctx.pendingReloadRequests.clear();
     ctx.pendingKnockback = glm::vec3(0.0f);
     ctx.pendingKnockbackSource.clear();
@@ -263,6 +265,7 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.connectFailed = false;
     ctx.connectionStatus = "Connecting...";
     ctx.shotEvents.clear();
+    ctx.pendingHitClaims.clear();
     ctx.lastReceivedShotSerial.clear();
     ctx.nextLocalShotSerial = 1;
     ctx.nextLocalProjectileFireSerial = 1;
@@ -357,7 +360,9 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     const glm::vec3& aimOrigin,
     const glm::vec3& aimDirection,
     const glm::vec3& predictedMuzzle,
-    uint8_t attackVariant)
+    uint8_t attackVariant,
+    uint32_t claimedTargetId,
+    const glm::vec3& claimedHit)
 {
     if (!ctx.active || !ctx.localPlayerId)
         return 0;
@@ -408,6 +413,18 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     pending.lastSentMs = nowMs();
     pending.attempts = 1;
     ctx.pendingAttackRequests[requestId] = pending;
+
+    // Record the client's local hit claim so a server disagreement (rejected
+    // attack, different target, or a miss) can spawn a "HIT REJECTED" effect.
+    if (claimedTargetId != 0)
+    {
+        MultiplayerContext::PendingHitClaim claim;
+        claim.requestId = requestId;
+        claim.claimedTargetId = claimedTargetId;
+        claim.claimedHit = claimedHit;
+        claim.sentMs = nowMs();
+        ctx.pendingHitClaims[requestId] = claim;
+    }
 
     Debug::log(Debug::Category::Weapons, "[ATTACK REQUEST SEND] playerId=%u requestId=%u weaponDefNetId=%u spawnGen=%u pending=%zu\n",
                ctx.localPlayerId, requestId, weaponDefNetworkId, req.spawnGeneration,
@@ -697,6 +714,7 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
         ctx.connectionStatus = "Connected via ICE";
         badconn::noteConnectionEstablished();
         ctx.shotEvents.clear();
+        ctx.pendingHitClaims.clear();
         ctx.lastReceivedShotSerial.clear();
         ctx.nextLocalShotSerial = 1;
         ctx.nextLocalProjectileFireSerial = 1;

@@ -257,6 +257,25 @@ if MODE == "clean":
     sys.exit(0)
 
 # ============================================================
+# BUILD STAMP
+# ============================================================
+
+# Write the current build time into a gitignored header. notifications.cpp
+# includes it, so every build recompiles that one file and the exe always
+# reports the real "last built" time.
+def write_build_stamp():
+    stamp = time.strftime("%m-%d-%Y %H:%M:%S")
+    header = os.path.join(ROOT, "src", "game", "build-stamp.h")
+    content = '#pragma once\n\n#define MIMITA_BUILD_TIME "%s"\n' % stamp
+    try:
+        with open(header, "w") as f:
+            f.write(content)
+    except OSError as e:
+        print("[BUILD STAMP] write failed:", e)
+    print("Build stamp:", stamp)
+
+
+# ============================================================
 # MAIN
 # ============================================================
 
@@ -266,6 +285,8 @@ game_dll_build = subprocess.run([sys.executable, os.path.join(ROOT, "build_game_
 if game_dll_build.returncode != 0:
     print("[HOT RELOAD] reload failed")
     sys.exit(game_dll_build.returncode)
+
+write_build_stamp()
 
 print("==================================================")
 print(" MiMITA Build System")

@@ -48,7 +48,6 @@ void engineTickNet(Engine& engine, float dt)
     Player& player = THE_PLAYER;
     Camera& camera = THE_CAMERA;
     World& world = THE_WORLD;
-    NpcSystem& npcSystem = THE_NPC_SYSTEM;
     WeaponSystem& weapons = THE_WEAPONS;
     bool& worldLoaded = WORLD_LOADED;
     GameState& gameState = GAME_STATE;
@@ -646,26 +645,6 @@ void engineTickNet(Engine& engine, float dt)
                    player.pos.x, player.pos.y, player.pos.z);
             mpContext.pendingKnockback = glm::vec3(0.0f);
             mpContext.pendingKnockbackSource.clear();
-        }
-
-        {
-            static std::unordered_set<uint32_t> spawnedNpcIds;
-            for (const auto& kv : mpContext.remoteNpcs) {
-                const uint32_t entityId = kv.first;
-                if (spawnedNpcIds.find(entityId) == spawnedNpcIds.end()) {
-                    spawnedNpcIds.insert(entityId);
-                    float diff = 1.0f;
-                    npcSystem.spawnNpc(entityId, diff, kv.second.pos);
-                }
-            }
-            for (auto it = spawnedNpcIds.begin(); it != spawnedNpcIds.end(); ) {
-                if (mpContext.remoteNpcs.find(*it) == mpContext.remoteNpcs.end()) {
-                    npcSystem.destroySelected({*it});
-                    it = spawnedNpcIds.erase(it);
-                } else {
-                    ++it;
-                }
-            }
         }
 
         // Input is sent inside mpTick() above — do NOT send a second packet here.

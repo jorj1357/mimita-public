@@ -1,3 +1,10 @@
+// 07 31 2026, 15 38
+/* purpose
+* Computes weapon aim solutions and performs hitscan ray/AABB collision.
+* Owns aim-mode behavior (crosshair, camforward, farpoint) and shared beam collision.
+* Does NOT apply damage, spawn hit effects, or render tracers.
+* Does NOT own server weapon authority, packet send/receive, or damage validation.
+*/
 #include "combat/weapon-fire.h"
 #include <cstdio>
 #include <algorithm>
@@ -57,13 +64,14 @@ AimSolution computeAim(
         result.cameraHitKind = AimHitKind::None;
         result.usesCameraTarget = false;
     } else if (mode == GameplayAimMode::CamForward) {
-        AimTarget target = computeAimTarget(camera, world, npcs, remotePlayers);
-        result.aimPoint = target.worldPoint;
-        result.cameraDistance = target.cameraDistance;
+        // Beam travels exactly along camera forward from the muzzle, parallel to
+        // the camera. It never aims at the crosshair/world point; world and entity
+        // collision still run in collideBeam (usesCameraTarget = false).
+        result.aimPoint = camera.pos + camera.front * kMaxShotDistance;
+        result.cameraDistance = kMaxShotDistance;
         result.modeName = "camforward";
-        result.cameraHitKind = target.hitKind;
-        result.usesCameraTarget = true;
-        result.cameraWorldNormal = target.worldNormal;
+        result.cameraHitKind = AimHitKind::None;
+        result.usesCameraTarget = false;
     } else {
         result.aimPoint = camera.pos + camera.front * kMaxShotDistance;
         result.modeName = "world_hit";
@@ -71,10 +79,15 @@ AimSolution computeAim(
         result.usesCameraTarget = false;
     }
 
-    glm::vec3 direction = result.aimPoint - muzzlePos;
-    if (glm::length(direction) <= 0.001f)
-        direction = camera.front;
-    result.direction = glm::normalize(direction);
+    if (mode == GameplayAimMode::CamForward) {
+        // 1:1 parallel to the camera look direction, full 3D, never aimed at a point.
+        result.direction = camera.front;
+    } else {
+        glm::vec3 direction = result.aimPoint - muzzlePos;
+        if (glm::length(direction) <= 0.001f)
+            direction = camera.front;
+        result.direction = glm::normalize(direction);
+    }
     return result;
 }
 
