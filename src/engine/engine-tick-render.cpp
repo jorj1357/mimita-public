@@ -30,6 +30,7 @@
 #include "debug/transform-debug.h"
 #include "network/badconn/badconn.h"
 #include "network/multiplayer-context.h"
+#include "config/networking-config.h"
 #include "engine/engine-tick-net.h"
 #include "perf/perf.h"
 #include "replay/replay.h"
@@ -315,12 +316,20 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             }
             for (auto& kv : mpContext.remoteNpcs) {
                 renderNetworkPlayer(kv.second, camera, kv.first, false);
+                weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt);
             }
             MimitaNet::mpRenderNetworkProjectiles(mpContext, camera);
             // Render server position ghost if enabled
             engineRenderGhost(player, camera);
         }
         npcSystem.render(camera);
+        if (!replayPlaybackActive) {
+            for (const Npc& npc : npcSystem.all()) {
+                if (npc.body.dead || npc.body.currentHp <= 0)
+                    continue;
+                weapons.renderRemoteWeapon(npc.id, npc.body, camera, dt);
+            }
+        }
     }
     diagRenderStage(3);
     {   static float rlogTimer = 0.0f; rlogTimer -= dt;
@@ -397,6 +406,34 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                     rp.vel.x, rp.vel.y, rp.vel.z, rp.yaw);
                 uiDrawText(buf, 10.0f, debugY, 0.28f, {0.6f,0.7f,0.9f,1});
                 debugY += 20.0f;
+            }
+        }
+    }
+
+    if (mpContext.active)
+    {
+        const NetworkingConfigData& netCfg = NetworkingConfig::instance().data();
+        if (netCfg.debug.showBufferSize || netCfg.debug.showInterpolatedPosition ||
+            MimitaNet::gNetInterpDebug)
+        {
+            float debugY = 300.0f;
+            char buf[256];
+            snprintf(buf, sizeof(buf), "NETINTERP renderTick=%.1f clockStarted=%d delayMs=%.0f",
+                     mpContext.interpolationRenderTick,
+                     (int)mpContext.interpolationClockStarted,
+                     NetworkingConfig::instance().effectiveRemoteInterpolationDelaySeconds() * 1000.0);
+            uiDrawText(buf, 10.0f, debugY, 0.28f, {0.9f, 0.9f, 0.4f, 1.0f});
+            debugY += 18.0f;
+            for (const auto& kv : mpContext.remotePlayerInterpolation)
+            {
+                snprintf(buf, sizeof(buf), "  id=%u buffer=%zu newestTick=%u pos=(%.1f,%.1f,%.1f)",
+                         kv.first, kv.second.buffer.size(),
+                         kv.second.hasTarget ? kv.second.target.serverTick : 0u,
+                         kv.second.hasTarget ? kv.second.target.position.x : 0.0f,
+                         kv.second.hasTarget ? kv.second.target.position.y : 0.0f,
+                         kv.second.hasTarget ? kv.second.target.position.z : 0.0f);
+                uiDrawText(buf, 10.0f, debugY, 0.24f, {0.7f, 0.8f, 1.0f, 1.0f});
+                debugY += 16.0f;
             }
         }
     }

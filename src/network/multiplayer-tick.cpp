@@ -14,6 +14,7 @@
 #include "network/badconn/badconn.h"
 #include "avatar/avatar.h"
 #include "config/player-settings.h"
+#include "config/networking-config.h"
 #include "debug/debug-log.h"
 #include "terminal/terminal-state.h"
 #include "gui/hud/chat-history.h"
@@ -240,10 +241,15 @@ static void processSnapshotEntities(
         EntityInterpolationState& interpolation = (*interpolationMap)[entity.networkEntityId];
         if (isNew)
         {
-            if (GetPlayerSettings().avatarName.empty()) {
-                AvatarSystem::applySingleTexture(p, GetPlayerSettings().outfitPath);
-            } else {
-                AvatarSystem::instance().applyToPlayer(p);
+            // Server NPCs use the default body so they don't clone the local
+            // player's avatar; only real player replicas inherit the avatar.
+            if (entity.entityType != ENTITY_NPC)
+            {
+                if (GetPlayerSettings().avatarName.empty()) {
+                    AvatarSystem::applySingleTexture(p, GetPlayerSettings().outfitPath);
+                } else {
+                    AvatarSystem::instance().applyToPlayer(p);
+                }
             }
             interpolation.renderRegistered = true;
             printf("[CLIENT ENTITY CREATE] entityId=%u type=%s ownerClientId=%u "
@@ -257,7 +263,7 @@ static void processSnapshotEntities(
             continue;
         p.spawnGeneration = entity.spawnGeneration;
         if (isNew)
-            updateRenderedReplica(p, interpolation, dt);
+            updateRenderedReplica(p, interpolation, ctx.interpolationRenderTick, dt);
         (*seen)[entity.networkEntityId] = true;
 
         static uint64_t lastEntityLogMs = 0;
@@ -354,6 +360,9 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
     uint32_t oldGen = ctx.lastKnownSpawnGeneration;
     ctx.lastKnownSpawnGeneration = spawn->spawnGeneration;
     ctx.nextMovementSequence = 1;
+    Debug::log(Debug::Category::Weapons,
+               "[SPAWN_GENERATION_CHANGED] playerId=%u oldGen=%u newGen=%u epoch=%u\n",
+               ctx.localPlayerId, oldGen, spawn->spawnGeneration, spawn->transformEpoch);
 
     // Cancel old-life pending attack requests
     for (auto it = ctx.pendingAttackRequests.begin(); it != ctx.pendingAttackRequests.end(); )
@@ -398,7 +407,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
 
     uint64_t currentMs = nowMs();
 
-    const uint64_t CLIENT_TIMEOUT_MS = MimitaNet::CLIENT_TIMEOUT_MS;
+    const uint64_t CLIENT_TIMEOUT_MS =
+        (uint64_t)NetworkingConfig::instance().data().timeouts.clientTimeoutMs;
     if (ctx.connected && ctx.lastHeardServerMs > 0 &&
         currentMs - ctx.lastHeardServerMs > CLIENT_TIMEOUT_MS)
     {
@@ -656,9 +666,11 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             {
                 // Clean stale buffers
                 uint64_t nowClean = nowMs();
+                const uint64_t chunkTimeoutMs = (uint64_t)(
+                    NetworkingConfig::instance().data().snapshotBuffer.chunkReassemblyTimeoutSeconds * 1000.0);
                 for (auto it = ctx.snapshotChunkBuffers.begin(); it != ctx.snapshotChunkBuffers.end(); )
                 {
-                    if (nowClean - it->second.lastReceiveMs > 1000)
+                    if (nowClean - it->second.lastReceiveMs > chunkTimeoutMs)
                         it = ctx.snapshotChunkBuffers.erase(it);
                     else ++it;
                 }
@@ -842,6 +854,16 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 ctx.gameplayActive = true;
                 Debug::log(Debug::Category::Weapons, "[SPAWN ACTIVATED RX] playerId=%u spawnGen=%u epoch=%u — gameplay enabled\n",
                            ctx.localPlayerId, act->spawnGeneration, act->transformEpoch);
+            }
+            else
+            {
+                // Visible diagnostic: a stale/delayed activation is silently
+                // skipped. If this repeats, gameplay stays disabled and all
+                // attacks are blocked.
+                Debug::logThrottled(Debug::Category::Weapons, "spawn-activated-skip", 0.5f,
+                                    "[SPAWN ACTIVATED SKIPPED] playerId=%u recvGen=%u currentGen=%u\n",
+                                    ctx.localPlayerId, act->spawnGeneration,
+                                    ctx.lastKnownSpawnGeneration);
             }
         }
         else if (header->type == PACKET_CHAT_MESSAGE &&
