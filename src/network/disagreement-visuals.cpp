@@ -127,6 +127,7 @@ struct DisagreementReasonColorConfig {
 struct DisagreementConfig {
     bool hotReload = true;
     bool rejectAllHits = false;
+    int minTicksBetweenEffects = 60;
     DisagreementSoundConfig sound;
     DisagreementPulseConfig pulse;
     DisagreementBeamConfig beam;
@@ -248,6 +249,11 @@ static bool loadDisagreementConfig(const std::string& path)
 
         if (j.contains("hotReload")) gDisagreeConfig.hotReload = j["hotReload"];
         if (j.contains("rejectAllHits")) gDisagreeConfig.rejectAllHits = j["rejectAllHits"];
+        if (j.contains("minTicksBetweenEffects"))
+        {
+            const int minTicks = j["minTicksBetweenEffects"];
+            gDisagreeConfig.minTicksBetweenEffects = std::max(1, minTicks);
+        }
         if (j.contains("sound")) loadSound(j["sound"], gDisagreeConfig.sound);
         if (j.contains("pulse")) loadPulse(j["pulse"], gDisagreeConfig.pulse);
         if (j.contains("beam")) loadBeam(j["beam"], gDisagreeConfig.beam);
@@ -331,71 +337,16 @@ static const char* reasonLabel(DisagreementReason reason)
     }
 }
 
-static glm::vec3 reasonColor(DisagreementReason reason)
-{
-    const auto& rc = gDisagreeConfig.reasonColors;
-    switch (reason)
-    {
-        case DISAGREEMENT_OCCLUDED_SHOT:  return rc.occludedShot;
-        case DISAGREEMENT_INVALID_DAMAGE: return rc.invalidDamage;
-        case DISAGREEMENT_POSITION_CORRECTION: return rc.positionCorrection;
-        case DISAGREEMENT_INVALID_MOVEMENT: return rc.invalidMovement;
-        case DISAGREEMENT_INVALID_STATE: return rc.invalidState;
-        case DISAGREEMENT_REWIND_MISS:   return rc.rewindMiss;
-        case DISAGREEMENT_TARGET_NOT_FOUND: return rc.targetNotFound;
-        case DISAGREEMENT_TARGET_DEAD:   return rc.targetDead;
-        case DISAGREEMENT_SELF_TARGET:   return rc.selfTarget;
-        default: return rc.defaultColor;
-    }
-}
-
-static float correctionMagnitude(const DisagreementEvent& event)
-{
-    return glm::length(event.correction);
-}
-
-static bool isHitRejection(DisagreementReason reason)
-{
-    return reason == DISAGREEMENT_OCCLUDED_SHOT ||
-           reason == DISAGREEMENT_REWIND_MISS ||
-           reason == DISAGREEMENT_TARGET_NOT_FOUND ||
-           reason == DISAGREEMENT_TARGET_DEAD ||
-           reason == DISAGREEMENT_SELF_TARGET ||
-           reason == DISAGREEMENT_INVALID_DAMAGE;
-}
-
-static float severityRadius(const DisagreementEvent& event)
-{
-    const auto& sv = gDisagreeConfig.severity;
-    float mag = correctionMagnitude(event);
-    float radius = sv.smallRadius;
-    if (mag > sv.largeCorrectionMag) radius = sv.largeRadius;
-    else if (mag > sv.smallCorrectionMag) radius = sv.mediumRadius;
-    if (isHitRejection(event.reason))
-        radius = std::max(radius, sv.hitRejectionMinRadius);
-    return radius;
-}
-
-static float severityLifetime(const DisagreementEvent& event)
-{
-    const auto& sv = gDisagreeConfig.severity;
-    float mag = correctionMagnitude(event);
-    float lifetime = sv.smallLifetime;
-    if (mag > sv.largeCorrectionMag) lifetime = sv.largeLifetime;
-    else if (mag > sv.smallCorrectionMag) lifetime = sv.mediumLifetime;
-    if (isHitRejection(event.reason))
-        lifetime = std::max(lifetime, sv.hitRejectionMinLifetime);
-    return lifetime;
-}
-
 // ── Public API ─────────────────────────────────────────────────────────
 
 void spawnDisagreementEffect(const DisagreementEvent& event)
 {
     const auto& cfg = gDisagreeConfig;
-    const glm::vec3 color = reasonColor(event.reason);
-    float radius = severityRadius(event);
-    float lifetime = severityLifetime(event);
+    // Uniform presentation: every disagreement uses the same small size,
+    // lifetime, and dark-turquoise color. Only the text popup varies.
+    const glm::vec3 color = cfg.reasonColors.defaultColor;
+    const float radius = cfg.severity.smallRadius;
+    const float lifetime = cfg.severity.smallLifetime;
     const glm::vec3 pos = event.position;
 
     // Sound
@@ -446,7 +397,7 @@ void spawnDisagreementEffect(const DisagreementEvent& event)
         EffectPart e;
         e.position = pos;
         e.endPosition = pos + event.correction;
-        e.color = cfg.tracer.color;
+        e.color = color;
         e.maxLifetime = cfg.tracer.lifetime;
         e.scale = cfg.tracer.startScale;
         e.endScale = cfg.tracer.endScale;
@@ -458,7 +409,7 @@ void spawnDisagreementEffect(const DisagreementEvent& event)
         EffectPartSystem::instance().spawn(e);
     }
 
-    // Floating description text
+    // Damage-number-style text popup
     if (cfg.text.enabled)
     {
         EffectPart e;
@@ -468,7 +419,7 @@ void spawnDisagreementEffect(const DisagreementEvent& event)
         if (!event.description.empty())
             e.label = cfg.text.prefix + event.description;
         else
-            e.label = reasonLabel(event.reason);
+            e.label = cfg.text.prefix + reasonLabel(event.reason);
         e.billboardText = true;
         e.scale = cfg.text.scale;
         e.replayType = "server_disagreement_text";
@@ -518,7 +469,7 @@ void spawnDisagreementEffect(const DisagreementEvent& event)
         radius, lifetime,
         pos.x, pos.y, pos.z,
         event.correction.x, event.correction.y, event.correction.z,
-        correctionMagnitude(event),
+        glm::length(event.correction),
         event.description.c_str());
 }
 
@@ -576,6 +527,11 @@ void spawnLocalDisagreementIndicator(const DisagreementEvent& event)
 bool isRejectAllHitsEnabled()
 {
     return gDisagreeConfig.rejectAllHits;
+}
+
+int disagreementMinTicks()
+{
+    return gDisagreeConfig.minTicksBetweenEffects;
 }
 
 } // namespace MimitaNet

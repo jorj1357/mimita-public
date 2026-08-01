@@ -13,6 +13,7 @@
 #include "network/coordinator-client.h"
 #include "network/snapshot-chunks.h"
 #include "network/network-weapons.h"
+#include "network/disagreement-visuals.h"
 #include "physics/movement/movement-conversion.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
@@ -726,13 +727,15 @@ void handleInputPacket(const char* buffer, int bytes,
     {
         const glm::vec3 correction =
             result.acceptedState.position - report.position;
-        if (glm::length(correction) > 0.001f)
+        if (glm::length(correction) > 0.001f &&
+            shouldEmitDisagreement(retransmitState->rateLimit, serverTick,
+                                   disagreementMinTicks()))
         {
             const uint32_t eventId = retransmitState->nextEventId++;
             sendDisagreementToAll(sock, players, DISAGREEMENT_POSITION_CORRECTION,
                                   eventId, report.movementSequence, p.id, 0u,
                                   report.position, correction,
-                                  "server corrected movement",
+                                  "POSITION CORRECTION",
                                   serverTick, *totalPacketsOut, retransmitState);
         }
     }

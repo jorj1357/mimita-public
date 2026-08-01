@@ -21,9 +21,9 @@
 
 #include "audio/audio.h"
 #include "camera.h"
+#include "combat/explosion-fx.h"
 #include "combat/projectile-render.h"
 #include "config/size-scaling-config.h"
-#include "config/weapon-hitfx-config.h"
 #include "entities/player.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
@@ -67,70 +67,7 @@ static void doExplosion(
     const float knockbackHorizontalMul = cp(def, "knockbackHorizontalMultiplier", 1.0f);
     const float knockbackVerticalMul = cp(def, "knockbackVerticalMultiplier", 1.0f);
 
-    playWorldSound("rocketlauncher/rocketlauncherexplode", position, 1.0f, 1.0f, 50.0f);
-
-    {
-        HitEvent ev;
-        ev.position = position;
-        ev.normal = glm::vec3(0.0f, 0.0f, 1.0f);
-        ev.direction = glm::vec3(0.0f);
-        ev.hitWorld = true;
-        ev.hitEntity = false;
-        ev.damage = 0;
-        ev.attacker = owner.username;
-        ev.weaponSource = "rocket_launcher";
-        HitEffects::onHit(ev);
-    }
-
-    EffectPartSystem::instance().spawnMuzzleFlash(position, "rocket_explosion", owner.sizeScale);
-    EffectPartSystem::instance().spawnWorldDebris(position, glm::vec3(0.0f, 0.0f, 1.0f), 3.0f, owner.sizeScale);
-    EffectPartSystem::instance().spawnImpactSphereTick(position, {1.0f, 0.15f, 0.05f}, 0.5f);
-    {
-        const auto& expCfg = WeaponHitFxConfig::instance().explosionBurstFor("rocket_launcher");
-        if (expCfg.smoke.enabled)
-        {
-            for (int i = 0; i < expCfg.smoke.count; ++i) {
-                EffectPart p;
-                p.position = position + glm::vec3(
-                    ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.spread,
-                    ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.spread,
-                    ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.spread);
-                p.velocity = glm::vec3(
-                    ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.speed,
-                    ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.speed,
-                    (float)rand() / RAND_MAX * expCfg.smoke.speed * 0.5f + expCfg.smoke.upwardBias);
-                p.lifetime = 0.0f;
-                p.maxLifetime = expCfg.smoke.lifetime + (float)rand() / RAND_MAX * expCfg.smoke.lifetime * 0.3f;
-                p.scale = expCfg.smoke.size + (float)rand() / RAND_MAX * expCfg.smoke.size * 0.5f;
-                p.endScale = expCfg.smoke.endSize + (float)rand() / RAND_MAX * expCfg.smoke.endSize * 0.5f;
-                p.color = expCfg.smoke.color;
-                p.alpha = expCfg.smoke.alpha;
-                p.gravity = 1.0f;
-                p.affectedByGravity = true;
-                p.billboardText = false;
-                p.replayType = "rocket_launcher_explosion_smoke";
-                EffectPartSystem::instance().spawn(p);
-            }
-        }
-    }
-
-    // ── Config-driven explosion sphere (expanding fireball) ──────────
-    {
-        const auto& expCfg = WeaponHitFxConfig::instance().explosionBurstFor("rocket_launcher");
-        if (expCfg.sphere.enabled)
-        {
-            EffectPart sphere;
-            sphere.position = position;
-            sphere.maxLifetime = (float)expCfg.sphere.lifetimeTicks / 60.0f;
-            sphere.scale = expCfg.sphere.startRadius;
-            sphere.endScale = expCfg.sphere.endRadius;
-            sphere.color = glm::clamp(expCfg.sphere.startColor * expCfg.sphere.brightnessStart, 0.0f, 1.0f);
-            sphere.alpha = expCfg.sphere.alphaStart;
-            sphere.billboardText = false;
-            sphere.replayType = "rocket_launcher_explosion_sphere";
-            EffectPartSystem::instance().spawn(sphere);
-        }
-    }
+    spawnExplosionFx(position, "rocket_launcher", owner.username, owner.sizeScale);
 
     {
         float distToCam = glm::length(position - camera.pos);

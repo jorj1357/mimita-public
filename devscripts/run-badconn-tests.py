@@ -52,6 +52,13 @@ def run_test(exe, timeout=120):
 def main():
     ok = True
 
+    # Standalone rate-limit window test (no badconn sources needed).
+    rate_exe = compile_test("disagreement-rate-limit-test",
+                            [ROOT / "tests" / "disagreement-rate-limit-test.cpp"])
+    if run_test(rate_exe) != 0:
+        print("[FAIL] disagreement-rate-limit-test")
+        ok = False
+
     for name in ("badconn-config-test", "badconn-core-test"):
         test_sources = BADCONN_SOURCES + [ROOT / "tests" / f"{name}.cpp"]
         exe = compile_test(name, test_sources)

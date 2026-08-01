@@ -374,6 +374,21 @@ struct MultiplayerContext
     // ── Pending attack result (queued outside mpTick for player-scoped weapon reconciliation) ──
     std::vector<AttackResultPacket> pendingAttackResults;
 
+    // ── Pending hit claims (client-local "server disagree" detection) ──
+    // Records every hitscan shot where the client's local trace claimed a hit
+    // on a remote player, so a mismatch with the server's authoritative trace
+    // (rejection, different target, or a miss) can spawn a disagreement effect.
+    struct PendingHitClaim {
+        uint32_t requestId = 0;
+        uint32_t claimedTargetId = 0;
+        glm::vec3 claimedHit{0.0f};
+        uint64_t sentMs = 0;
+        bool confirmed = false;
+        bool resolved = false;
+    };
+    std::unordered_map<uint32_t, PendingHitClaim> pendingHitClaims;
+
+
     // ── Pending authoritative spawn (queued outside mpTick for player-scoped weapon reconciliation) ──
     // Stores the most recent PlayerRespawnedPacket until weapon runtimes are reconciled
     // and SpawnAck is sent in engineTickNet where Player is in scope.
@@ -382,6 +397,9 @@ struct MultiplayerContext
 
     // ── Predicted projectile IDs (locally simulated, suppress server interpolation) ──
     std::unordered_set<uint32_t> predictedProjectileIds;
+    // fireSerial -> predicted explosion position for client-side projectile
+    // explosion prediction. Used to reconcile against the server's explode event.
+    std::unordered_map<uint32_t, glm::vec3> predictedExplosions;
 
     // ── Snapshot chunk reassembly buffers ─────────────────────────────
     struct SnapshotChunkBuffer {
@@ -539,7 +557,9 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     const glm::vec3& aimOrigin,
     const glm::vec3& aimDirection,
     const glm::vec3& predictedMuzzle,
-    uint8_t attackVariant = 0);
+    uint8_t attackVariant = 0,
+    uint32_t claimedTargetId = 0,
+    const glm::vec3& claimedHit = glm::vec3(0.0f));
 void mpSendServerCommand(MultiplayerContext& ctx, const std::string& command);
 uint32_t mpSendShotEvent(
     MultiplayerContext& ctx,
@@ -595,6 +615,9 @@ struct ConfirmedDamagePresentationSink;
 void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
                                          const DamageConfirmedEventPacket* event,
                                          const ConfirmedDamagePresentationSink* sink = nullptr);
+// Called from mpTick: times out unresolved hit claims so a client-local
+// "server disagree: HIT REJECTED" effect spawns when the server's trace missed.
+void mpSweepHitClaims(MultiplayerContext& ctx);
 void mpUpdateRemoteSwordStates(MultiplayerContext& ctx, float dt);
 void mpSendPelletBlastRequest(MultiplayerContext& ctx, uint8_t weapon, const glm::vec3& origin, const glm::vec3& baseDirection, uint32_t spreadSeed);
 void mpProcessPelletBlastEventPacket(MultiplayerContext& ctx, const PelletBlastEventPacket* event);

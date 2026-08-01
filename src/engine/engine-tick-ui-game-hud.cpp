@@ -347,6 +347,14 @@ void engineTickUIGameHUD(Engine& engine, float dt)
             }
         }
 
+        // Server-authoritative NPCs render as network entities (no local
+        // NpcSystem mirror), so draw their health bars here too.
+        for (const auto& kv : mpContext.remoteNpcs)
+        {
+            if (kv.second.dead || kv.second.currentHp <= 0) continue;
+            drawPlayerHealthbar(kv.second, camera, "network-npc-hp", "live_world");
+        }
+
         if (logHealthbars)
             lastHealthbarLogMs = healthbarNowMs;
     }

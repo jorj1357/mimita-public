@@ -168,9 +168,12 @@ void registerWeaponCommands()
                         {
                             const uint8_t attackVariant =
                                 wdef2->behaviorType == WeaponBehaviorType::Swordsword ? 1 : 0;
+                            const uint32_t claimedTargetId =
+                                shot.targetIsRemotePlayer ? shot.targetId : 0;
                             uint32_t requestId = MimitaNet::mpSendAttackRequest(
                                 mpContext, netId, wdef2->slot,
-                                shot.start, direction, shot.start, attackVariant);
+                                shot.start, direction, shot.start, attackVariant,
+                                claimedTargetId, shot.end);
                             if (requestId != 0 && usesProjectilePath)
                                 MimitaNet::mpPredictProjectileAttack(
                                     mpContext, requestId, netId,

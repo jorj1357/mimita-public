@@ -1,3 +1,10 @@
+// 07 31 2026, 18 41
+/* purpose
+* Renders the EffectPartSystem effect pool (spheres, beams, boxes, decals, text).
+* Owns per-effect render distance culling and distance fade for all effect types.
+* Does NOT spawn effects, apply damage, or own server authority.
+* Does NOT render viewmodels or run the fixed-step simulation tick.
+*/
 #include "effect-part.h"
 #include "renderer/renderer.h"
 #include "camera.h"
@@ -127,11 +134,23 @@ void EffectPartSystem::render(const Camera& camera) const {
             effect.replayType == "server_disagreement_text" ||
             effect.replayType == "server_disagreement_particle";
 
+        // Explosion fireball/smoke also render at long range so the fireball is
+        // visible wherever its shadow is (the shadow pass has no distance cull).
+        bool isExplosionEffect =
+            effect.replayType.find("_explosion_sphere") != std::string::npos ||
+            effect.replayType.find("_explosion_smoke") != std::string::npos;
+
         float distFade;
         if (isDisagreementEffect)
         {
             if (dist > 200.0f) continue;
             distFade = (dist > 150.0f) ? (200.0f - dist) / 50.0f : 1.0f;
+        }
+        else if (isExplosionEffect)
+        {
+            const float cullDist = 120.0f;
+            if (dist > cullDist) continue;
+            distFade = (dist > cullDist * 0.5f) ? (cullDist - dist) / (cullDist * 0.5f) : 1.0f;
         }
         else
         {
@@ -140,7 +159,8 @@ void EffectPartSystem::render(const Camera& camera) const {
         }
 
         float t = std::clamp(effect.lifetime / effect.maxLifetime, 0.0f, 1.0f);
-        const bool damageNumber = effect.replayType == "damage_number";
+        const bool damageNumber = effect.replayType == "damage_number" ||
+                                  effect.replayType == "server_disagreement_text";
         float alpha = effect.alpha * distFade;
         if (!damageNumber && (effect.replayType != "death_ellipsoid" || HitEffects::config().deathEllipsoid.fade))
             alpha *= (1.0f - t);

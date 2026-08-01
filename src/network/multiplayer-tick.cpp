@@ -150,7 +150,13 @@ static void processSnapshotEntities(
             ctx.localServerEpoch = entity.transformEpoch;
             ctx.localPingMs = entity.pingMs;
             ctx.latestLocalSnapshotTick = serverTick;
-            if (entity.spawnGeneration != 0)
+            // Spawn generations are monotonic (the server never decrements
+            // them), so only advance. A stale pre-respawn snapshot reordered
+            // past a newer spawn must NOT revert lastKnownSpawnGeneration,
+            // or the SpawnActivated generation check would silently fail and
+            // leave gameplay permanently disabled.
+            if (entity.spawnGeneration != 0 &&
+                entity.spawnGeneration > ctx.lastKnownSpawnGeneration)
                 ctx.lastKnownSpawnGeneration = entity.spawnGeneration;
             if (entity.health > 0)
                 ctx.latestAliveSnapshotTick = serverTick;
@@ -367,6 +373,7 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
     // Clear old-life predicted state
     ctx.networkProjectiles.clear();
     ctx.predictedProjectileIds.clear();
+    ctx.predictedExplosions.clear();
     ctx.pendingFireRequests.clear();
     ctx.pendingReloadRequests.clear();
     ctx.fireRejections.clear();
@@ -432,6 +439,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     }
 
     badconn::tick(ctx.transport.get());
+    mpSweepHitClaims(ctx);
     if (!ctx.connected && !ctx.connectFailed && currentMs - ctx.connectStartMs > 6000)
     {
         ctx.connectionStatus = "Connection timed out";
@@ -789,6 +797,26 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             {
                 Debug::log(Debug::Category::Weapons, "[SPAWN RESPAWN REJECT] old spawnGen=%u < %u\n",
                            pr->spawnGeneration, ctx.lastKnownSpawnGeneration);
+                return;
+            }
+
+            // Duplicate spawn sync for the generation already applied (server
+            // retry while awaiting our ACK, or a snapshot already advanced the
+            // generation). Re-queue for weapon reconcile + ack so the server can
+            // still reach Active, but do NOT re-apply the spawn and do NOT
+            // re-disable gameplay: a retry arriving after SpawnActivated would
+            // otherwise leave gameplayActive permanently false.
+            if (pr->spawnGeneration == ctx.lastKnownSpawnGeneration)
+            {
+                if (ctx.active && ctx.localPlayerId)
+                {
+                    ctx.pendingAuthoritativeSpawn = *pr;
+                    ctx.transformEpoch = pr->transformEpoch;
+                    Debug::log(Debug::Category::Weapons,
+                               "[SPAWN RESPAWN DUPLICATE] playerId=%u spawnGen=%u epoch=%u — re-queued, gameplay kept %d\n",
+                               ctx.localPlayerId, pr->spawnGeneration, pr->transformEpoch,
+                               (int)ctx.gameplayActive);
+                }
                 return;
             }
 

@@ -12,6 +12,7 @@
 #include "network/confirmed-damage-presentation.h"
 #include "network/network-weapons.h"
 #include "network/weapon-runtime-reconciliation.h"
+#include "network/disagreement-visuals.h"
 #include "debug/structured-log.h"
 
 #include <algorithm>
@@ -25,15 +26,14 @@
 #include "audio/audio.h"
 #include "camera.h"
 #include "combat/client-collision-world-view.h"
+#include "combat/explosion-fx.h"
 #include "combat/projectile-render.h"
 #include "combat/projectile-simulation.h"
 #include "combat/weapon-system.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
 #include "combat/weapon-types.h"
-#include "config/weapon-hitfx-config.h"
 #include "effects/effect-part.h"
-#include "effects/hit-effects.h"
 #include "terminal/terminal-state.h"
 #include "world/world.h"
 
@@ -242,6 +242,7 @@ std::vector<ClientCollisionWorldView::PlayerReplica> projectileReplicas(
 void removePredictedProjectileForRequest(MultiplayerContext& ctx,
                                          uint32_t requestId)
 {
+    ctx.predictedExplosions.erase(requestId);
     const uint32_t provisionalId = provisionalProjectileId(requestId);
     if (provisionalId != 0)
     {
@@ -723,78 +724,51 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
             removedLegacy = gpWeapons->removeLocalRocketByFireSerial(event->fireSerial);
     }
 
-    // Visuals only for clients that did NOT predict this explosion locally.
-    // The owner already has the instant client-side explosion playing; the
-    // server confirmation applies state but never redraws it (no duplicates).
-    if (event->ownerPlayerId != ctx.localPlayerId)
+    // ── Explosion visuals: reconcile against the client-predicted explosion ──
+    // The local owner predicts the explosion instantly. The server confirm either
+    // agrees (let the predicted effect play out — no redraw) or disagrees (show a
+    // disagreement marker + the corrected explosion). Other clients always render
+    // the server-confirmed explosion.
+    constexpr float kExplosionAgreeDistance = 3.0f;
+    std::string attacker = "player_" + std::to_string(event->ownerPlayerId);
     {
-        playWorldSound(
-            event->weapon == NETWORK_WEAPON_GRENADE_LAUNCHER
-                ? "grenadelauncher/grenadelauncherexplode"
-                : "rocketlauncher/rocketlauncherexplode",
-            position, 1.0f, 1.0f, 50.0f);
-        EffectPartSystem::instance().spawnMuzzleFlash(position, std::string(weaponName) + "_explosion");
-        EffectPartSystem::instance().spawnWorldDebris(position, glm::vec3(0.0f, 0.0f, 1.0f), 3.0f);
-        EffectPartSystem::instance().spawnImpactSphereTick(position, {1.0f, 0.15f, 0.05f}, 0.5f);
-        // Explosion smoke burst — config-driven burst for rockets and grenades
+        auto pi = ctx.playerRegistry.find(event->ownerPlayerId);
+        if (pi != ctx.playerRegistry.end())
+            attacker = pi->second.name;
+    }
+    const auto predIt = ctx.predictedExplosions.find(event->fireSerial);
+    if (predIt != ctx.predictedExplosions.end())
+    {
+        const glm::vec3 predictedPos = predIt->second;
+        ctx.predictedExplosions.erase(predIt);
+        if (glm::length(predictedPos - position) <= kExplosionAgreeDistance)
         {
-            const std::string weaponId = weaponName;
-            const auto& expCfg = WeaponHitFxConfig::instance().explosionBurstFor(weaponId);
-            if (expCfg.smoke.enabled)
-            {
-                for (int i = 0; i < expCfg.smoke.count; ++i)
-                {
-                    EffectPart part;
-                    part.position = position + glm::vec3(
-                        ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.spread,
-                        ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.spread,
-                        ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.spread);
-                    part.velocity = glm::vec3(
-                        ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.speed,
-                        ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.speed,
-                        (float)rand() / RAND_MAX * expCfg.smoke.speed * 0.5f + expCfg.smoke.upwardBias);
-                    part.lifetime = 0.0f;
-                    part.maxLifetime = expCfg.smoke.lifetime + (float)rand() / RAND_MAX * expCfg.smoke.lifetime * 0.3f;
-                    part.scale = expCfg.smoke.size + (float)rand() / RAND_MAX * expCfg.smoke.size * 0.5f;
-                    part.endScale = expCfg.smoke.endSize + (float)rand() / RAND_MAX * expCfg.smoke.endSize * 0.5f;
-                    part.color = expCfg.smoke.color;
-                    part.alpha = expCfg.smoke.alpha;
-                    part.gravity = 1.0f;
-                    part.affectedByGravity = true;
-                    part.billboardText = false;
-                    part.replayType = std::string(weaponName) + "_explosion_smoke";
-                    EffectPartSystem::instance().spawn(part);
-                }
-            }
+            printf("[EXPLOSION RECONCILE] fireSerial=%u agree predicted=(%.2f,%.2f,%.2f) "
+                   "server=(%.2f,%.2f,%.2f)\n",
+                   event->fireSerial, predictedPos.x, predictedPos.y, predictedPos.z,
+                   position.x, position.y, position.z);
         }
-
-        // ── Config-driven explosion sphere ─────────────────────────────────
+        else
         {
-            const std::string weaponId = weaponName;
-            const auto& expCfg = WeaponHitFxConfig::instance().explosionBurstFor(weaponId);
-            if (expCfg.sphere.enabled)
-            {
-                EffectPart sphere;
-                sphere.position = position;
-                sphere.maxLifetime = (float)expCfg.sphere.lifetimeTicks / 60.0f;
-                sphere.scale = expCfg.sphere.startRadius;
-                sphere.endScale = expCfg.sphere.endRadius;
-                sphere.color = glm::clamp(expCfg.sphere.startColor * expCfg.sphere.brightnessStart, 0.0f, 1.0f);
-                sphere.alpha = expCfg.sphere.alphaStart;
-                sphere.billboardText = false;
-                sphere.replayType = std::string(weaponName) + "_explosion_sphere";
-                EffectPartSystem::instance().spawn(sphere);
-            }
+            printf("[EXPLOSION RECONCILE] fireSerial=%u disagree predicted=(%.2f,%.2f,%.2f) "
+                   "server=(%.2f,%.2f,%.2f) dist=%.2f\n",
+                   event->fireSerial, predictedPos.x, predictedPos.y, predictedPos.z,
+                   position.x, position.y, position.z,
+                   glm::length(predictedPos - position));
+            DisagreementEvent de;
+            de.timeMs = nowMs();
+            de.reason = DISAGREEMENT_POSITION_CORRECTION;
+            de.sourcePlayerId = event->ownerPlayerId;
+            de.position = predictedPos;
+            de.correction = position - predictedPos;
+            de.description = "explosion position mismatch";
+            spawnDisagreementEffect(de);
+            spawnExplosionFx(position, weaponName, attacker);
         }
-
-        HitEvent hit;
-        hit.position = position;
-        hit.normal = glm::vec3(0.0f, 0.0f, 1.0f);
-        hit.hitWorld = true;
-        hit.damage = 0;
-        hit.attacker = "player_" + std::to_string(event->ownerPlayerId);
-        hit.weaponSource = weaponName;
-        HitEffects::onHit(hit);
+    }
+    else
+    {
+        spawnExplosionFx(position, weaponName, attacker);
     }
 
     for (uint8_t i = 0; i < event->victimCount && i < MAX_PROJECTILE_DAMAGE_RESULTS; ++i)
@@ -833,6 +807,47 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
            (int)removedVisual, (int)removedLegacy, (int)wasPredicted);
 }
 
+// ── Client-local "server disagree: hit rejected" detection ────────────
+// Spawns a world effect at the position where the client's local trace claimed
+// a hit, when the server's authoritative trace disagreed (shot rejected, a
+// different target, or a miss that never produced a confirmation).
+static void spawnHitClaimDisagreement(MultiplayerContext& ctx,
+                                      const MultiplayerContext::PendingHitClaim& claim,
+                                      const char* description)
+{
+    DisagreementEvent event;
+    event.timeMs = nowMs();
+    event.reason = DISAGREEMENT_INVALID_STATE;
+    event.position = claim.claimedHit;
+    event.correction = glm::vec3(0.0f);
+    event.sourcePlayerId = ctx.localPlayerId;
+    event.targetPlayerId = claim.claimedTargetId;
+    event.description = description;
+    spawnDisagreementEffect(event);
+    logDisagreement(event);
+}
+
+void mpSweepHitClaims(MultiplayerContext& ctx)
+{
+    constexpr uint64_t HIT_CLAIM_TIMEOUT_MS = 800;
+    const uint64_t now = nowMs();
+    for (auto it = ctx.pendingHitClaims.begin(); it != ctx.pendingHitClaims.end(); )
+    {
+        if (it->second.resolved || it->second.confirmed)
+        {
+            it = ctx.pendingHitClaims.erase(it);
+            continue;
+        }
+        if (now - it->second.sentMs >= HIT_CLAIM_TIMEOUT_MS)
+        {
+            spawnHitClaimDisagreement(ctx, it->second, "HIT REJECTED");
+            it = ctx.pendingHitClaims.erase(it);
+            continue;
+        }
+        ++it;
+    }
+}
+
 void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
                                          const DamageConfirmedEventPacket* event,
                                          const ConfirmedDamagePresentationSink* sink)
@@ -842,6 +857,24 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
         printf("[NET DAMAGE CONFIRMED] eventId=%u target=%u accepted=0 reason=duplicate-or-stale\n",
                event->eventId, event->targetPlayerId);
         return;
+    }
+
+    // Hit-claim correlation: causeSerial is our attack requestId. If the server
+    // confirmed damage on the claimed target, the hit agreed. If it confirmed
+    // damage on a DIFFERENT target, the server's trace disagreed with ours.
+    if (event->attackerPlayerId == ctx.localPlayerId)
+    {
+        auto claimIt = ctx.pendingHitClaims.find(event->causeSerial);
+        if (claimIt != ctx.pendingHitClaims.end())
+        {
+            const bool targetMatched =
+                claimIt->second.claimedTargetId == event->targetPlayerId;
+            claimIt->second.confirmed = true;
+            claimIt->second.resolved = true;
+            if (!targetMatched)
+                spawnHitClaimDisagreement(ctx, claimIt->second, "HIT REJECTED");
+            ctx.pendingHitClaims.erase(claimIt);
+        }
     }
 
     presentConfirmedDamage(ctx, *event, sink);
@@ -955,6 +988,15 @@ void mpProcessAttackResultPacket(MultiplayerContext& ctx, const AttackResultPack
             def->executionType == WeaponExecutionType::Projectile &&
             networkWeaponTypeIsProjectile(networkWeaponTypeForDefinition(*def));
         ctx.pendingAttackRequests.erase(pendingIt);
+    }
+
+    // Hit-claim resolution: the server rejected the shot outright, so our local
+    // hit claim disagreed with what the server accepted.
+    auto claimIt = ctx.pendingHitClaims.find(event->requestId);
+    if (claimIt != ctx.pendingHitClaims.end() && !event->accepted)
+    {
+        spawnHitClaimDisagreement(ctx, claimIt->second, "HIT REJECTED");
+        ctx.pendingHitClaims.erase(claimIt);
     }
 
     if (!event->accepted && projectilePending)
@@ -1237,6 +1279,48 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
             if (state.sleeping || step.type == ProjectileCollisionType::WorldBounce ||
                 step.type == ProjectileCollisionType::WorldImpact)
                 projectile.worldTouched = true;
+
+            // ── Client-side explosion prediction (instant feedback) ──
+            // Mirrors the server's explode policy (server-projectiles.cpp) using the
+            // same deterministic physics kernel. Only the local owner's predicted
+            // projectile predicts the explosion; the server confirm reconciles it.
+            if (projectile.predicted &&
+                projectile.ownerPlayerId == ctx.localPlayerId &&
+                !projectile.exploded)
+            {
+                bool shouldExplode = false;
+                glm::vec3 explodePos = projectile.position;
+                if (step.type == ProjectileCollisionType::LifetimeExpired && projectile.explodeOnLifetime)
+                {
+                    shouldExplode = true;
+                    explodePos = projectile.position;
+                }
+                else if (step.type == ProjectileCollisionType::PlayerImpact && projectile.explodeOnPlayerImpact)
+                {
+                    shouldExplode = true;
+                    explodePos = step.hitPosition;
+                }
+                else if (step.type == ProjectileCollisionType::WorldImpact && projectile.explodeOnWorldImpact)
+                {
+                    shouldExplode = true;
+                    explodePos = step.hitPosition;
+                }
+                if (shouldExplode)
+                {
+                    projectile.exploded = true;
+                    const char* weaponId = networkWeaponTypeName(projectile.weaponType);
+                    std::string attacker = "player_" + std::to_string(ctx.localPlayerId);
+                    auto pi = ctx.playerRegistry.find(ctx.localPlayerId);
+                    if (pi != ctx.playerRegistry.end())
+                        attacker = pi->second.name;
+                    spawnExplosionFx(explodePos, weaponId, attacker);
+                    ctx.predictedExplosions[projectile.fireSerial] = explodePos;
+                    printf("[PROJECTILE CLIENT PREDICTED EXPLOSION] fireSerial=%u weapon=%s "
+                           "pos=(%.2f,%.2f,%.2f)\n",
+                           projectile.fireSerial, weaponId,
+                           explodePos.x, explodePos.y, explodePos.z);
+                }
+            }
         }
         else
         {
