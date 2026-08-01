@@ -36,11 +36,18 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+
+// Forward declarations so the server can hold a real client NpcSystem/World/
+// Player for authoritative NPC simulation without pulling those headers in.
+class NpcSystem;
+struct World;
+struct Player;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -350,6 +357,10 @@ struct ServerNpc
     float orbitAngle = 0.0f;
     ServerNpcState aiState = ServerNpcState::Chase;
     glm::vec3 knockbackImpulse{0.0f};
+    // Replicated weapon presentation: which slot the NPC holds and its
+    // runtime state (firing / reloading / empty), mirroring player snapshots.
+    int16_t equippedSlot = 0;
+    uint8_t weaponState = 0;
 };
 
 enum class ServerDamageSource : uint8_t
@@ -484,8 +495,25 @@ bool getPositionAtTick(const ServerPlayer& p, uint32_t targetTick, glm::vec3& ou
 SnapshotEntity makePlayerEntity(const ServerPlayer& player);
 
 // NPC simulation
-void simulateNpc(ServerNpc& npc, const std::unordered_map<uint32_t, ServerPlayer>& players);
 SnapshotEntity makeNpcEntity(const ServerNpc& npc);
+
+// Build a CPU-only client World (collision only — no GPU upload) for the real
+// NpcSystem to simulate against, derived from the headless collision world.
+void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw);
+
+// Server-side NPC simulation that reuses the real client NpcSystem so online
+// NPCs behave exactly like the local ones (movement, aim, firing). The
+// existing ServerNpc map is kept as the snapshot/broadcast representation and
+// is rebuilt from the simulated NPCs every tick.
+void simulateSharedNpcs(SOCKET sock,
+                        std::unordered_map<uint32_t, ServerPlayer>& players,
+                        std::unordered_map<uint32_t, ServerNpc>& npcs,
+                        NpcSystem& npcSystem,
+                        World& world,
+                        Player& mirrorPlayer,
+                        std::unordered_set<uint32_t>& npcIdsAlive,
+                        uint32_t tick,
+                        uint64_t& totalPacketsOut);
 
 // Raycast
 bool serverRayTriangle(const glm::vec3& origin, const glm::vec3& direction,
@@ -780,6 +808,10 @@ struct ServerLaunchSettings
 
 struct ListenServerState
 {
+    // Out-of-line destructor: the unique_ptr members hold incomplete types in
+    // headers, and the state object outlives its defining TU in some binaries.
+    ~ListenServerState();
+
     bool active = false;
     SOCKET sock = INVALID_SOCKET;
     std::unordered_map<uint32_t, ServerPlayer> players;
@@ -808,6 +840,12 @@ struct ListenServerState
     std::string publicIp;
     std::string hostSessionId;
     DisagreementRetransmitState disagreementRetransmit;
+
+    // ── Real NPC simulation (reuses the client NpcSystem) ─────────
+    std::unique_ptr<NpcSystem> npcSystem;
+    std::unique_ptr<World> npcWorld;
+    std::unique_ptr<Player> mirrorPlayer;
+    std::unordered_set<uint32_t> npcIdsAlive;
 
     // ── ICE server support ─────────────────────────────────────────────
     std::unique_ptr<class IceAgent> iceListenerAgent;

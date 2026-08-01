@@ -99,7 +99,10 @@ const char* directionName(Direction direction)
 }
 
 // Returns true when the packet was consumed (delayed, reordered, or dropped).
-bool processPacketDirection(Sim& sim, std::vector<uint8_t> bytes, bool isOutgoing)
+// Takes a const reference: classification never owns the bytes, and exempt
+// (pass-through) packets must reach the caller intact. Consuming paths copy
+// into their queues via badConnDelayPacket.
+bool processPacketDirection(Sim& sim, const std::vector<uint8_t>& bytes, bool isOutgoing)
 {
     const uint64_t now = nowMs();
     const uint8_t type = packetType(bytes);
@@ -172,7 +175,7 @@ bool processOutgoing(const void* data, size_t bytes)
     std::vector<uint8_t> copy(
         static_cast<const uint8_t*>(data),
         static_cast<const uint8_t*>(data) + bytes);
-    return processPacketDirection(sim, std::move(copy), true);
+    return processPacketDirection(sim, copy, true);
 }
 
 void processIncoming(std::vector<ReceivedPacket>& raw)
@@ -189,7 +192,7 @@ void processIncoming(std::vector<ReceivedPacket>& raw)
     for (ReceivedPacket& received : raw)
     {
         std::vector<uint8_t> bytes = std::move(received.bytes);
-        if (processPacketDirection(sim, std::move(bytes), false))
+        if (processPacketDirection(sim, bytes, false))
             continue;
         ReceivedPacket passThrough;
         passThrough.bytes = std::move(bytes);
@@ -261,6 +264,17 @@ void tick(IGameTransport* transport)
 
     sim.metrics.outQueueSize = sim.outLatency.size() + sim.outReorder.size();
     sim.metrics.inQueueSize = sim.inLatency.size() + sim.inReorder.size();
+
+    // Aggregated impairment counters (once per second, never per packet).
+    Debug::logThrottled(Debug::Category::Networking, "badconn-aggregate", 1.0,
+                        "[BADCONN] agg delayed=%llu dropped=%llu reordered=%llu stale=%llu "
+                        "blackouts=%llu queues(out=%zu/in=%zu)\n",
+                        (unsigned long long)sim.metrics.packetsDelayed,
+                        (unsigned long long)sim.metrics.packetsDropped,
+                        (unsigned long long)sim.metrics.packetsReordered,
+                        (unsigned long long)sim.metrics.staleDiscarded,
+                        (unsigned long long)sim.metrics.blackoutsStarted,
+                        sim.metrics.outQueueSize, sim.metrics.inQueueSize);
 }
 
 void noteConnectionEstablished()

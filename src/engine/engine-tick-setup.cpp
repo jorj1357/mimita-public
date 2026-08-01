@@ -9,6 +9,7 @@
 
 #include "crosshair/crosshair-config.h"
 #include "config/gameplay-config.h"
+#include "config/networking-config.h"
 #include "config/size-scaling-config.h"
 #include "gui/hud/healthbar-config.h"
 #include "effects/hit-effects.h"
@@ -47,6 +48,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     RagdollDeathConfig::instance().pollReload();
     WeaponHitFxConfig::instance().pollReload();
     NotificationSystem::instance().pollReload();
+    NetworkingConfig::instance().pollReload();
     worldPassRan = false;
 
     {

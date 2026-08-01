@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "comment": "Live networking tuning. Save to reload while the game is running (no restart). Invalid edits keep the previous valid values.",
+  "hot_reload": {
+    "enabled": true,
+    "poll_interval_ms": 250,
+    "log_changes": true
+  },
+
+  "remote_player_interpolation": {
+    "enabled": true,
+    "interpolation_delay_ms": 100,
+    "maximum_buffered_snapshots": 64,
+    "minimum_snapshots_before_rendering": 2,
+    "position_mode": "linear",
+    "rotation_mode": "slerp",
+    "allow_extrapolation": true,
+    "maximum_extrapolation_ms": 100,
+    "teleport_distance": 1000.0,
+    "snap_on_spawn": true,
+    "snap_on_respawn": true,
+    "snap_on_map_change": true
+  },
+
+  "local_player_reconciliation": {
+    "enabled": true,
+    "correction_mode": "hard",
+    "correction_duration_ms": 100,
+    "hard_snap_distance": 100.0
+  },
+
+  "snapshot_buffer": {
+    "use_server_tick": true,
+    "discard_duplicate_snapshots": true,
+    "allow_out_of_order_insertion": true,
+    "maximum_snapshot_age_ms": 2000,
+    "chunk_reassembly_timeout_ms": 1000
+  },
+
+  "network_timeouts": {
+    "client_timeout_ms": 10000,
+    "server_timeout_ms": 10000,
+    "connect_timeout_ms": 6000
+  },
+
+  "debug": {
+    "show_remote_snapshot_positions": false,
+    "show_interpolated_position": false,
+    "show_buffer_size": false,
+    "log_snapshot_arrival": false,
+    "log_interpolation_state": false
+  }
+}

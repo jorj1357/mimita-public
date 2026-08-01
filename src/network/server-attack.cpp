@@ -582,6 +582,12 @@ void handleAttackRequest(
                            sizeof(pe.second.addr));
                 ++totalPacketsOut;
             }
+
+            Debug::log(Debug::Category::Weapons,
+                       "[WEAPON_EVENT_BROADCAST] shooter=%u requestId=%u weapon=%s "
+                       "impact=%u target=%u recipients=%zu\n",
+                       shooter.id, req->requestId, def->id.c_str(),
+                       (unsigned)impactType, hitTarget, players.size());
         }
         else
         {

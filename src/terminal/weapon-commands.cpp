@@ -174,6 +174,12 @@ void registerWeaponCommands()
                                 mpContext, netId, wdef2->slot,
                                 shot.start, direction, shot.start, attackVariant,
                                 claimedTargetId, shot.end);
+                            Debug::log(Debug::Category::Weapons,
+                                       "[ATTACK] INPUT_FIRE playerId=%u weapon=%s slot=%d "
+                                       "requestId=%u claimedTarget=%u gameplay=%d\n",
+                                       mpContext.localPlayerId, wdef2->id.c_str(), wdef2->slot,
+                                       requestId, claimedTargetId,
+                                       (int)mpContext.gameplayActive);
                             if (requestId != 0 && usesProjectilePath)
                                 MimitaNet::mpPredictProjectileAttack(
                                     mpContext, requestId, netId,

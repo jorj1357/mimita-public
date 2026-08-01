@@ -269,6 +269,41 @@ void testIncomingLatency()
     badconn::disable();
 }
 
+void testExemptIncomingPassThrough()
+{
+    writeTempConfig("latency.json", kLatencyConfig);
+    badconn::loadConfig(tempPath("latency.json"));
+    badconn::activatePreset("1");
+
+    const std::vector<uint8_t> spawnActivated =
+        makePacket(MimitaNet::PACKET_SPAWN_ACTIVATED);
+    const size_t originalSize = spawnActivated.size();
+
+    std::vector<ReceivedPacket> raw;
+    ReceivedPacket rp;
+    rp.bytes = spawnActivated;
+    raw.push_back(std::move(rp));
+
+    badconn::processIncoming(raw);
+
+    // Exempt control packets must survive pass-through with their bytes
+    // intact. Regression: processIncoming previously moved bytes into a
+    // by-value classifier, emptying the pass-through packet so mpTick dropped
+    // SpawnActivated and gameplay never re-enabled after respawn.
+    check(raw.size() == 1, "exempt: packet survives processIncoming");
+    if (raw.size() == 1)
+    {
+        check(raw[0].bytes.size() == originalSize,
+              "exempt: packet bytes intact after processIncoming");
+        check(raw[0].bytes.size() >= sizeof(MimitaNet::PacketHeader) &&
+              reinterpret_cast<const MimitaNet::PacketHeader*>(raw[0].bytes.data())->type ==
+                  MimitaNet::PACKET_SPAWN_ACTIVATED,
+              "exempt: header type preserved");
+    }
+
+    badconn::disable();
+}
+
 } // namespace
 
 int main()
@@ -282,6 +317,7 @@ int main()
     testTeardownClearsQueues();
     testBlackoutStartsAndEnds();
     testIncomingLatency();
+    testExemptIncomingPassThrough();
 
     std::printf("[badconn-core-test] passed=%d failed=%d\n", gPassed, gFailed);
     return gFailed > 0 ? 1 : 0;

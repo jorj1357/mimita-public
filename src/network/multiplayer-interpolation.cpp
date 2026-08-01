@@ -10,6 +10,8 @@
 
 #include "network/multiplayer-context.h"
 #include "network/net_common.h"
+#include "network/simulation-constants.h"
+#include "config/networking-config.h"
 #include "avatar/avatar.h"
 #include "config/player-settings.h"
 #include "combat/weapon-registry.h"
@@ -24,6 +26,9 @@
 #include <glm/glm.hpp>
 
 namespace MimitaNet {
+
+bool gNetInterpDebug = false;
+
 namespace {
 
 SnapshotTransform transformFromEntity(const SnapshotEntity& entity)
@@ -52,6 +57,15 @@ SnapshotTransform transformFromEntity(const SnapshotEntity& entity)
     transform.freezeSerial = entity.freezeSerial;
     transform.spawnGeneration = entity.spawnGeneration;
     return transform;
+}
+
+// Shortest-path angular interpolation (yaw is in radians).
+float lerpAngle(float a, float b, float t)
+{
+    float delta = std::fmod(b - a, 6.28318530718f);
+    if (delta > 3.14159265359f) delta -= 6.28318530718f;
+    if (delta < -3.14159265359f) delta += 6.28318530718f;
+    return a + delta * t;
 }
 
 } // anonymous namespace
@@ -95,6 +109,34 @@ bool pushInterpolationTarget(
     interpolation.lastSpawnGeneration = entity.spawnGeneration;
     if (entity.transformEpoch != 0)
         interpolation.lastSnapshotTransformEpoch = entity.transformEpoch;
+
+    // ── Tick-ordered snapshot buffer (time-based interpolation) ─────
+    const auto& interpCfg = NetworkingConfig::instance().data().remotePlayers;
+
+    // Lifecycle change (respawn/teleport) resets the buffer so the render
+    // snaps to the new life instead of smearing across it.
+    if (newLifecycle && interpCfg.snapOnRespawn)
+        interpolation.buffer.clear();
+
+    // Same-tick duplicate: replace in place (keep latest state).
+    for (auto it = interpolation.buffer.begin(); it != interpolation.buffer.end(); ++it)
+    {
+        if (it->serverTick == serverTick)
+        {
+            *it = next;
+            return true;
+        }
+    }
+
+    // Out-of-order insertion keeps the buffer ascending by serverTick.
+    auto insertIt = interpolation.buffer.begin();
+    while (insertIt != interpolation.buffer.end() && insertIt->serverTick < serverTick)
+        ++insertIt;
+    interpolation.buffer.insert(insertIt, next);
+
+    while (interpolation.buffer.size() > interpCfg.maximumBufferedSnapshots)
+        interpolation.buffer.pop_front();
+
     return true;
 }
 
@@ -159,6 +201,7 @@ static void resetPresentationAfterRespawn(Player& player, const SnapshotTransfor
 void updateRenderedReplica(
     Player& player,
     EntityInterpolationState& interpolation,
+    double renderTick,
     float dt)
 {
     if (!interpolation.hasTarget)
@@ -166,17 +209,7 @@ void updateRenderedReplica(
 
     player.dash.didDash = false;
 
-    constexpr double INTERPOLATION_DELAY_MS = 50.0;
-    float t = 1.0f;
-    if (interpolation.hasPrevious) {
-        const double span = double(interpolation.target.receivedMs - interpolation.previous.receivedMs);
-        if (span > 1.0) {
-            const double renderTime = double(nowMs()) - INTERPOLATION_DELAY_MS;
-            t = std::clamp(
-                float((renderTime - double(interpolation.previous.receivedMs)) / span),
-                0.0f, 1.0f);
-        }
-    }
+    const auto& interpCfg = NetworkingConfig::instance().data().remotePlayers;
 
     const uint32_t entityId = interpolation.networkEntityId;
     const uint16_t targetEpoch = interpolation.target.transformEpoch;
@@ -195,8 +228,6 @@ void updateRenderedReplica(
             if (wasDead || nowAlive || interpolation.lastTransformEpoch != 0)
             {
                 // Hard-snap position: no lerp from corpse to spawn
-                t = 1.0f;
-                // Run presentation reset once
                 resetPresentationAfterRespawn(player, interpolation.target);
                 respawned = true;
                 printf("[NET EPOCH RESPAWN] entityId=%u oldEpoch=%u newEpoch=%u "
@@ -211,27 +242,135 @@ void updateRenderedReplica(
         interpolation.lastTransformEpoch = targetEpoch;
     }
 
-    // Position uses interpolation for smooth movement.
-    if (respawned) {
-        // After respawn, snap directly to target position
-        player.pos = interpolation.target.position;
-    } else {
-        player.pos = interpolation.previous.position +
+    // ── Render position/rotation: time-based buffer interpolation ────
+    // Rendering is driven by the fixed server tick clock (renderTick), not by
+    // packet arrival, so uneven/jittery arrivals do not cause stepping.
+    glm::vec3 renderPos = interpolation.target.position;
+    float renderYaw = interpolation.target.yaw;
+    glm::vec3 renderAim = interpolation.target.aimDirection;
+
+    if (interpCfg.enabled && interpolation.buffer.size() >= 2)
+    {
+        const double tickSeconds = 1.0 / (double)GAMEPLAY_SIMULATION_HZ;
+        const double delayTicks = NetworkingConfig::instance()
+                                      .effectiveRemoteInterpolationDelaySeconds() / tickSeconds;
+        const uint32_t oldestTick = interpolation.buffer.front().serverTick;
+        const uint32_t newestTick = interpolation.buffer.back().serverTick;
+
+        double clampedTick = renderTick;
+        double maxTick = (double)newestTick - delayTicks;
+        if (maxTick < (double)oldestTick)
+            maxTick = (double)oldestTick;
+        clampedTick = std::clamp(clampedTick, (double)oldestTick, maxTick);
+
+        // Find the surrounding pair for the render tick.
+        const SnapshotTransform* older = &interpolation.buffer.front();
+        const SnapshotTransform* newer = &interpolation.buffer[1];
+        const uint32_t renderFloor = (uint32_t)std::floor(clampedTick);
+        for (size_t i = 0; i + 1 < interpolation.buffer.size(); ++i)
+        {
+            const SnapshotTransform& a = interpolation.buffer[i];
+            const SnapshotTransform& b = interpolation.buffer[i + 1];
+            if (a.serverTick <= renderFloor)
+            {
+                older = &a;
+                if (b.serverTick > renderFloor)
+                {
+                    newer = &b;
+                    break;
+                }
+            }
+        }
+
+        // Short extrapolation while the buffer is stalled (no new snapshots
+        // for longer than the delay). Time-limited; never a speed clamp.
+        bool extrapolating = false;
+        if (interpCfg.allowExtrapolation && clampedTick >= maxTick - 0.001)
+        {
+            const uint64_t now = nowMs();
+            const double stallSeconds =
+                (double)(now - interpolation.buffer.back().receivedMs) / 1000.0;
+            if (stallSeconds > NetworkingConfig::instance()
+                                   .effectiveRemoteInterpolationDelaySeconds())
+            {
+                const double extrapSeconds = std::min(
+                    stallSeconds - NetworkingConfig::instance()
+                                       .effectiveRemoteInterpolationDelaySeconds(),
+                    interpCfg.maximumExtrapolationSeconds);
+                const SnapshotTransform& newest = interpolation.buffer.back();
+                renderPos = newest.position + newest.velocity * (float)extrapSeconds;
+                renderYaw = newest.yaw;
+                renderAim = newest.aimDirection;
+                extrapolating = true;
+                if (gNetInterpDebug)
+                    printf("[NETINTERP EXTRAP] id=%u stall=%.2fs over=%.2fs\n",
+                           entityId, stallSeconds, extrapSeconds);
+            }
+        }
+
+        if (!extrapolating)
+        {
+            double alpha = 1.0;
+            if (newer->serverTick > older->serverTick)
+            {
+                alpha = (clampedTick - (double)older->serverTick) /
+                        (double)(newer->serverTick - older->serverTick);
+                alpha = std::clamp(alpha, 0.0, 1.0);
+            }
+
+            // Corruption protection only: an absurd per-segment gap without a
+            // lifecycle change is treated as a teleport. Not a speed limit.
+            const float gapDist = glm::length(newer->position - older->position);
+            if (gapDist > interpCfg.teleportDistance)
+            {
+                renderPos = interpolation.target.position;
+                renderYaw = interpolation.target.yaw;
+                renderAim = interpolation.target.aimDirection;
+            }
+            else
+            {
+                renderPos = older->position +
+                    (newer->position - older->position) * (float)alpha;
+                renderYaw = lerpAngle(older->yaw, newer->yaw, (float)alpha);
+                glm::vec3 aim = older->aimDirection * (1.0f - (float)alpha) +
+                                newer->aimDirection * (float)alpha;
+                if (glm::dot(aim, aim) > 0.000001f)
+                    renderAim = glm::normalize(aim);
+            }
+        }
+    }
+    else if (!interpCfg.enabled && interpolation.hasPrevious)
+    {
+        // Legacy two-snapshot lerp (rollback path when interpolation is disabled).
+        constexpr double LEGACY_DELAY_MS = 50.0;
+        float t = 1.0f;
+        const double span = double(interpolation.target.receivedMs -
+                                   interpolation.previous.receivedMs);
+        if (span > 1.0)
+        {
+            const double renderTime = double(nowMs()) - LEGACY_DELAY_MS;
+            t = std::clamp(float((renderTime - double(interpolation.previous.receivedMs)) / span),
+                           0.0f, 1.0f);
+        }
+        renderPos = interpolation.previous.position +
             (interpolation.target.position - interpolation.previous.position) * t;
     }
+
+    if (respawned)
+        player.pos = interpolation.target.position;
+    else
+        player.pos = renderPos;
     player.vel = interpolation.target.velocity;
     player.currentHp = interpolation.target.health;
     player.dead = interpolation.target.health <= 0;
 
-    // Body-facing yaw and aim use the NEWEST target snapshot directly.
+    // Body-facing yaw and aim use the interpolated render values.
     {
-        const float targetYaw = interpolation.target.yaw;
-        player.yaw = targetYaw;
-        const glm::vec3 newestAim = interpolation.target.aimDirection;
-        if (std::isfinite(newestAim.x) && std::isfinite(newestAim.y) && std::isfinite(newestAim.z) &&
-            glm::dot(newestAim, newestAim) > 0.000001f)
+        player.yaw = renderYaw;
+        if (std::isfinite(renderAim.x) && std::isfinite(renderAim.y) && std::isfinite(renderAim.z) &&
+            glm::dot(renderAim, renderAim) > 0.000001f)
         {
-            player.aimDirection = glm::normalize(newestAim);
+            player.aimDirection = glm::normalize(renderAim);
             player.hasAimData = true;
         }
         else
@@ -430,17 +569,39 @@ void updateRenderedReplica(
 
 void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)
 {
+    // Advance the interpolation render clock at the fixed 60 tick/s rate so
+    // rendering is time-based rather than tied to packet arrival.
+    if (!ctx.interpolationClockStarted)
+    {
+        uint32_t newest = 0;
+        for (const auto& kv : ctx.remotePlayerInterpolation)
+            if (kv.second.hasTarget && kv.second.target.serverTick > newest)
+                newest = kv.second.target.serverTick;
+        for (const auto& kv : ctx.remoteNpcInterpolation)
+            if (kv.second.hasTarget && kv.second.target.serverTick > newest)
+                newest = kv.second.target.serverTick;
+        if (newest != 0)
+        {
+            ctx.interpolationRenderTick = (double)newest;
+            ctx.interpolationClockStarted = true;
+        }
+    }
+    else
+    {
+        ctx.interpolationRenderTick += (double)dt * (double)GAMEPLAY_SIMULATION_HZ;
+    }
+
     for (auto& kv : ctx.remotePlayers)
     {
         auto interpolation = ctx.remotePlayerInterpolation.find(kv.first);
         if (interpolation != ctx.remotePlayerInterpolation.end())
-            updateRenderedReplica(kv.second, interpolation->second, dt);
+            updateRenderedReplica(kv.second, interpolation->second, ctx.interpolationRenderTick, dt);
     }
     for (auto& kv : ctx.remoteNpcs)
     {
         auto interpolation = ctx.remoteNpcInterpolation.find(kv.first);
         if (interpolation != ctx.remoteNpcInterpolation.end())
-            updateRenderedReplica(kv.second, interpolation->second, dt);
+            updateRenderedReplica(kv.second, interpolation->second, ctx.interpolationRenderTick, dt);
     }
 }
 

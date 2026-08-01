@@ -13,6 +13,7 @@
 #include "network/coordinator-client.h"
 #include "network/multiplayer-context.h"
 #include "network/disagreement-visuals.h"
+#include "config/networking-config.h"
 #include "gui/gui-main.h"
 #include "auth/auth-system.h"
 
@@ -498,6 +499,84 @@ void registerNetworkCommands()
             MimitaNet::hostedRoomSession().active = false;
             MimitaNet::hostedRoomSession().roomCode.clear();
             Terminal::instance().addLog("[SERVER] now offline (local only) — code: " + ls->serverCode);
+        }
+    });
+
+    // ── Live networking config control ─────────────────────────────────
+    Terminal::instance().registerCommand({
+        "networkconfig", "Networking config control: reload | path | print | reset",
+        "networkconfig <reload|path|print|reset>",
+        [](const std::vector<std::string>& args) {
+            NetworkingConfig& cfg = NetworkingConfig::instance();
+            const std::string sub = args.empty() ? "" : args[0];
+            if (sub == "reload") {
+                bool ok = cfg.reloadFromDisk();
+                Terminal::instance().addLog(std::string("[NETWORK CONFIG] ") +
+                    (ok ? "reloaded" : "reload FAILED (kept previous valid values)"));
+            } else if (sub == "path") {
+                Terminal::instance().addLog("[NETWORK CONFIG] path=" + cfg.configPath());
+            } else if (sub == "print") {
+                const auto& d = cfg.data();
+                char buf[256];
+                snprintf(buf, sizeof(buf), "[NETWORK CONFIG] delayMs=%.0f (override=%s) "
+                         "enabled=%d buffer=%zu extrap=%d maxExtrapMs=%.0f",
+                         cfg.effectiveRemoteInterpolationDelaySeconds() * 1000.0,
+                         cfg.overrideInterpolationDelayMs().has_value() ? "yes" : "no",
+                         (int)d.remotePlayers.enabled,
+                         d.remotePlayers.maximumBufferedSnapshots,
+                         (int)d.remotePlayers.allowExtrapolation,
+                         d.remotePlayers.maximumExtrapolationSeconds * 1000.0);
+                Terminal::instance().addLog(buf);
+            } else if (sub == "reset") {
+                cfg.resetToDefaults();
+                Terminal::instance().addLog("[NETWORK CONFIG] reset to compiled defaults");
+            } else {
+                Terminal::instance().addLog("[NETWORK CONFIG] usage: networkconfig <reload|path|print|reset>");
+            }
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "netinterp", "Remote-player interpolation control: debug | delay | buffer",
+        "netinterp <debug [0|1] | delay <ms> | buffer>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[NETINTERP] usage: netinterp <debug [0|1] | delay <ms> | buffer>");
+                return;
+            }
+            const std::string sub = args[0];
+            if (sub == "debug") {
+                bool val = args.size() > 1 ? (args[1] == "1") : !MimitaNet::gNetInterpDebug;
+                MimitaNet::gNetInterpDebug = val;
+                Terminal::instance().addLog(std::string("[NETINTERP] debug=") + (val ? "1" : "0"));
+            } else if (sub == "delay") {
+                if (args.size() < 2) {
+                    NetworkingConfig& cfg = NetworkingConfig::instance();
+                    Terminal::instance().addLog("[NETINTERP] delayMs=" +
+                        std::to_string((int)(cfg.effectiveRemoteInterpolationDelaySeconds() * 1000.0)));
+                    return;
+                }
+                double ms = std::atof(args[1].c_str());
+                NetworkingConfig::instance().setOverrideInterpolationDelayMs(ms);
+                Terminal::instance().addLog("[NETINTERP] delay override = " +
+                    std::to_string((int)ms) + "ms (in-memory; file reload clears it)");
+            } else if (sub == "buffer") {
+                const auto& cfg = NetworkingConfig::instance().data();
+                MimitaNet::MultiplayerContext& mp = MP_CONTEXT;
+                char buf[256];
+                snprintf(buf, sizeof(buf), "[NETINTERP] renderTick=%.1f clockStarted=%d enabled=%d",
+                         mp.interpolationRenderTick, (int)mp.interpolationClockStarted,
+                         (int)cfg.remotePlayers.enabled);
+                Terminal::instance().addLog(buf);
+                for (const auto& kv : mp.remotePlayerInterpolation) {
+                    snprintf(buf, sizeof(buf), "  id=%u buffer=%zu newestTick=%u",
+                             kv.first, kv.second.buffer.size(),
+                             kv.second.hasTarget ? kv.second.target.serverTick : 0u);
+                    Terminal::instance().addLog(buf);
+                }
+            } else {
+                Terminal::instance().addLog("[NETINTERP] usage: netinterp <debug [0|1] | delay <ms> | buffer>");
+            }
         }
     });
 }

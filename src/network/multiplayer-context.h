@@ -30,6 +30,9 @@
 
 namespace MimitaNet {
 
+// Debug toggle for remote-player interpolation state (terminal: netinterp debug).
+extern bool gNetInterpDebug;
+
 // ── Connection state machine ──────────────────────────────────────────
 enum class ConnectionState : uint8_t
 {
@@ -175,6 +178,13 @@ struct NetworkProjectile
 
 struct EntityInterpolationState
 {
+    // Ordered snapshot history for time-based interpolation. Sorted by
+    // serverTick; new snapshots insert in order (out-of-order allowed),
+    // same-tick snapshots replace, and the newest entry mirrors `target`.
+    std::deque<SnapshotTransform> buffer;
+
+    // Newest snapshot (== buffer.back() when buffer non-empty). Kept for the
+    // legacy two-snapshot fallback path and for state/event VFX sourcing.
     SnapshotTransform previous;
     SnapshotTransform target;
     bool hasPrevious = false;
@@ -204,6 +214,11 @@ struct MultiplayerContext
     uint64_t packetsReceived = 0;
     uint64_t snapshotsReceived = 0;
     uint64_t snapshotsMissed = 0;
+
+    // Remote-player interpolation clock: advances at the fixed 60 tick/s rate
+    // using wall-clock frame time, so rendering is time-based, not packet-based.
+    double interpolationRenderTick = 0.0;
+    bool interpolationClockStarted = false;
     std::unordered_map<uint32_t, Player> remotePlayers;
     std::unordered_map<uint32_t, Player> remoteNpcs;
     std::unordered_map<uint32_t, EntityInterpolationState> remotePlayerInterpolation;
@@ -629,7 +644,7 @@ void mpProcessChatPacket(MultiplayerContext& ctx, const ChatPacket* chat);
 
 // Interpolation helpers (defined in multiplayer-interpolation.cpp)
 bool pushInterpolationTarget(EntityInterpolationState& interpolation, const SnapshotEntity& entity, uint32_t serverTick);
-void updateRenderedReplica(Player& player, EntityInterpolationState& interpolation, float dt);
+void updateRenderedReplica(Player& player, EntityInterpolationState& interpolation, double renderTick, float dt);
 void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt);
 
 // Debug flags for damage/hit/net diagnostics (extern, set from terminal commands)

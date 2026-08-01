@@ -17,6 +17,9 @@
 #include "void-death/void-death.h"
 #include "combat/weapon-data.h"
 #include "combat/weapon-registry.h"
+#include "npc/npc.h"
+#include "entities/player.h"
+#include "world/world.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 
@@ -249,6 +252,13 @@ int runServer(const LaunchOptions& options)
     HeadlessWorld world;
     if (!loadHeadlessWorld(mapPath.c_str(), world))
         printf("%s [SERVER WORLD] WARNING: headless GLB collision load failed; using floor fallback\n", serverTimestamp());
+
+    // Real client World + NpcSystem so online NPCs run the exact local NPC AI.
+    World npcWorld;
+    buildNpcWorldCollision(npcWorld, world);
+    NpcSystem npcSystem;
+    Player mirrorPlayer;
+    std::unordered_set<uint32_t> npcIdsAlive;
 
     if (!netStartup())
     {
@@ -489,7 +499,8 @@ int runServer(const LaunchOptions& options)
             checkVoidDeath(players, npcs);
 
             for (auto& kv : npcs)
-                simulateNpc(kv.second, players);
+                simulateSharedNpcs(sock, players, npcs, npcSystem, npcWorld,
+                                   mirrorPlayer, npcIdsAlive, tick, totalPacketsOut);
             tickServerProjectiles(sock, players, npcs, projectiles, world, SERVER_DT, tick, totalPacketsOut);
             tickServerPhysicalContactWeapons(sock, players, world, SERVER_DT, tick, totalPacketsOut);
 
@@ -609,6 +620,12 @@ int runServer(const LaunchOptions& options)
 
 // ─── Listen Server ─────────────────────────────────────────────────────────
 
+ListenServerState::~ListenServerState()
+{
+    // Unique_ptr members (NpcSystem/World/Player) need complete types; this
+    // TU includes them, so the state can safely outlive other translation units.
+}
+
 bool startListenServer(ListenServerState& state, uint16_t port,
     const std::string& publicIp, const std::string& hostSessionId,
     const ServerLaunchSettings* settings)
@@ -667,6 +684,13 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     printf("[LISTEN SERVER MAP] mapId=%s path=%s\n", mapName.c_str(), mapPath.c_str());
     if (!loadHeadlessWorld(mapPath.c_str(), state.world))
         printf("[LISTEN SERVER] WARNING: headless world load failed; using floor fallback\n");
+
+    // Real client World + NpcSystem so online NPCs run the exact local NPC AI.
+    state.npcWorld = std::make_unique<World>();
+    buildNpcWorldCollision(*state.npcWorld, state.world);
+    state.npcSystem = std::make_unique<NpcSystem>();
+    state.mirrorPlayer = std::make_unique<Player>();
+    state.npcIdsAlive.clear();
 
     state.publicIp = publicIp;
     state.hostSessionId = hostSessionId;
@@ -845,8 +869,9 @@ static void simulateOneServerTick(ListenServerState& state)
         tickWeaponRuntimes(state.players, state.tick);
         resolvePlayerCollision(state.players);
         checkVoidDeath(state.players, state.npcs);
-        for (auto& kv : state.npcs)
-            simulateNpc(kv.second, state.players);
+        simulateSharedNpcs(state.sock, state.players, state.npcs,
+                           *state.npcSystem, *state.npcWorld, *state.mirrorPlayer,
+                           state.npcIdsAlive, state.tick, state.totalPacketsOut);
         tickServerProjectiles(state.sock, state.players, state.npcs, state.projectiles,
                               state.world, SERVER_DT, state.tick,
                               state.totalPacketsOut);
