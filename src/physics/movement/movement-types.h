@@ -439,6 +439,12 @@ enum class MovementWalkMode : uint8_t {
     Accel = 1
 };
 
+enum class MovementSpeedCapMode : uint8_t {
+    None = 0,
+    Hard = 1,
+    Soft = 2
+};
+
 struct MovementConfig {
     uint32_t simulationHz = 60;
     float fixedDeltaSeconds = 1.0f / 60.0f;
@@ -447,11 +453,27 @@ struct MovementConfig {
     MovementWalkMode walkMode = MovementWalkMode::Override;
     bool airControlEnabled = true;
     bool bunnyHopEnabled = false;
+    bool autoBhopEnabled = true;
+
+    bool preserveStraightSpeed = true;
+    float minimumStrafeAngleDegrees = 0.0f;
+    float maximumAccelerationPerTick = 0.0f;
+    bool diagonalInputNormalization = true;
+
+    bool speedCapEnabled = false;
+    MovementSpeedCapMode maximumBhopSpeedMode = MovementSpeedCapMode::None;
+    float accelerationFalloffNearCap = 0.0f;
+    float landingSpeedRetention = 0.0f;
+    bool debugDrawEnabled = false;
 
     float groundSpeed = 0.0f;
     float airSpeed = 0.0f;
     float groundAcceleration = 0.0f;
     float airAcceleration = 0.0f;
+    float airMaxWishspeed = 0.0f;
+    float airControl = 0.0f;
+    float stopspeed = 0.0f;
+    float bunnyHopSpeedCap = 0.0f;
     float movementSpeedSizeExponent = 0.5f;
     float gravityZ = 0.0f;
     float maximumFallSpeed = 0.0f;

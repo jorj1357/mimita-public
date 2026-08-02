@@ -403,6 +403,7 @@ const MIGRATION_STATEMENTS = [
         paid_at TIMESTAMPTZ
     )`,
     `CREATE INDEX IF NOT EXISTS banner_payment_orders_status_idx ON banner_payment_orders(status, created_at DESC)`,
+    `ALTER TABLE banner_payment_orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP`,
     `CREATE INDEX IF NOT EXISTS banner_payment_orders_session_idx ON banner_payment_orders(stripe_checkout_session_id) WHERE stripe_checkout_session_id <> ''`,
     `CREATE INDEX IF NOT EXISTS banner_payment_orders_event_idx ON banner_payment_orders(stripe_event_id) WHERE stripe_event_id <> ''`,
 ]

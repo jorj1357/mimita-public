@@ -304,7 +304,8 @@ MovementValidationConfig makeMovementValidationConfig(
     config.maximumBaseHorizontalSpeed =
         std::max(180.0f, movementConfig.groundSpeed +
                             movementConfig.groundDashImpulse +
-                            movementConfig.maximumExternalImpulseSpeed);
+                            movementConfig.maximumExternalImpulseSpeed +
+                            movementConfig.bunnyHopSpeedCap);
     config.maximumBaseUpwardSpeed =
         std::max(180.0f, movementConfig.jumpVerticalSpeed + 120.0f);
     config.maximumBaseDownwardSpeed =
@@ -321,7 +322,12 @@ MovementValidationConfig makeMovementValidationConfig(
     if (world && movementIsFinite(world->boundsMin) && movementIsFinite(world->boundsMax) &&
         glm::length(world->boundsMax - world->boundsMin) > 0.001f)
     {
-        config.worldBoundsMin = world->boundsMin;
+        // Keep the map's XY bounds for anti-glitch protection, but leave the
+        // Z floor far below any void-death threshold so players falling off a
+        // map can reach the void instead of being clamped back above it.
+        config.worldBoundsMin = glm::vec3(world->boundsMin.x,
+                                          world->boundsMin.y,
+                                          -100000.0f);
         config.worldBoundsMax = world->boundsMax;
     }
     return config;
@@ -549,13 +555,19 @@ MovementValidationResult validateClientMovementReport(
                                 report.position,
                                 config.wallSweepTolerance))
     {
-        result.decision = MovementValidationDecision::Correct;
-        result.reason = MovementValidationReason::BlockingGeometry;
-        result.acceptedState.position = previousPosition;
-        result.acceptedState.baseVelocity = glm::vec3(0.0f);
-        result.acceptedState.externalImpulse = glm::vec3(0.0f);
-        result.metrics.positionError = glm::length(report.position - previousPosition);
-        return result;
+        // Skip the correction when the player is falling into the void below
+        // the map. Void death handles the fall; snapping back up would
+        // rubberband the player above the kill threshold forever.
+        if (!(context.world && report.position.z < context.world->boundsMin.z))
+        {
+            result.decision = MovementValidationDecision::Correct;
+            result.reason = MovementValidationReason::BlockingGeometry;
+            result.acceptedState.position = previousPosition;
+            result.acceptedState.baseVelocity = glm::vec3(0.0f);
+            result.acceptedState.externalImpulse = glm::vec3(0.0f);
+            result.metrics.positionError = glm::length(report.position - previousPosition);
+            return result;
+        }
     }
 
     result.decision = MovementValidationDecision::Accept;

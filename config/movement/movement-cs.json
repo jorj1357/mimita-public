@@ -1,14 +1,28 @@
 {
     "name": "counterstrike",
-    "comment": "Counter-Strike style movement. WASD accelerates toward the wish direction. Air strafing builds speed past air_speed (soft cap). Bunny hop preserves speed across hops. Tune ground_acceleration / air_acceleration to taste.",
+    "comment": "Counter-Strike style movement (Source engine). WASD accelerates toward the wish direction. In the air the wishspeed is capped low (air_max_wishspeed), so holding a key alone barely moves you - you must turn the camera while holding the key to air-strafe and gain speed. Holding Space auto-jumps; straight W+Space preserves speed. Tune the knobs to taste; values are in Mimita's unit scale.",
     "movement_mode": "accel",
     "air_strafing": true,
     "bunny_hop": true,
+    "auto_bhop_enabled": true,
+    "preserve_straight_speed": true,
+    "diagonal_input_normalization": true,
+    "minimum_strafe_angle": 20.0,
+    "maximum_acceleration_per_tick": 0.0,
+    "speed_cap_enabled": true,
+    "maximum_bhop_speed": 999.0,
+    "maximum_bhop_speed_mode": "soft",
+    "acceleration_falloff_near_cap": 0.5,
+    "landing_speed_retention": 1.0,
+    "debug_draw_enabled": false,
 
     "ground_speed": 20.0,
     "air_speed": 20.0,
-    "ground_acceleration": 5.5,
+    "ground_acceleration": 9.5,
     "air_acceleration": 12.0,
+    "air_max_wishspeed": 11.0,
+    "air_control": 0.0,
+    "stopspeed": 5.0,
     "gravity": -58.0,
     "jump_strength": 19.0,
     "max_fall_speed": 400.0,
@@ -16,12 +30,16 @@
     "coyote_time": 0.001,
     "max_air_jumps": 1,
 
-    "ground_friction": 5.0,
+    "ground_friction": 4.0,
     "air_friction": 0.0,
     "external_impulse_decay": 0.6,
     "max_external_impulse_speed": 120.0,
 
     "ground_dash_impulse": 100.0,
     "air_dash_impulse": 50.0,
-    "down_dash_speed": -100.0
+    "down_dash_speed": -100.0,
+
+    "source_engine_reference": {
+        "comment": "Mapping to Source engine cvars. air_acceleration=sv_airaccelerate, ground_acceleration=sv_accelerate, ground_friction=sv_friction, stopspeed=sv_stopspeed, air_max_wishspeed=sv_air_max_wishspeed, air_control=sv_aircontrol, gravity=sv_gravity, jump_strength=sv_jump_impulse, ground_speed=sv_maxspeed, preserve_straight_speed+minimum_strafe_angle = explicit straight-line dead-zone (no hidden forward accel), maximum_bhop_speed+maximum_bhop_speed_mode = bhop speed cap (none/hard/soft), landing_speed_retention = keep momentum on landing while moving."
+    }
 }

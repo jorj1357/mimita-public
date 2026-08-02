@@ -53,6 +53,27 @@ bool parseWalkMode(const json& value, MovementWalkMode& out)
     return false;
 }
 
+bool parseSpeedCapMode(const json& value, MovementSpeedCapMode& out)
+{
+    if (!value.is_string())
+        return false;
+
+    const std::string mode = value.get<std::string>();
+    if (mode == "none") {
+        out = MovementSpeedCapMode::None;
+        return true;
+    }
+    if (mode == "hard") {
+        out = MovementSpeedCapMode::Hard;
+        return true;
+    }
+    if (mode == "soft") {
+        out = MovementSpeedCapMode::Soft;
+        return true;
+    }
+    return false;
+}
+
 // Base used before JSON overrides. Mirrors the constants in src/physics/config.h.
 MovementConfig defaultMovementConfig()
 {
@@ -96,8 +117,22 @@ MovementConfig defaultMovementConfig()
     config.walkMode = MovementWalkMode::Override;
     config.airControlEnabled = true;
     config.bunnyHopEnabled = false;
+    config.autoBhopEnabled = true;
+    config.preserveStraightSpeed = true;
+    config.minimumStrafeAngleDegrees = 0.0f;
+    config.maximumAccelerationPerTick = 0.0f;
+    config.diagonalInputNormalization = true;
+    config.speedCapEnabled = false;
+    config.maximumBhopSpeedMode = MovementSpeedCapMode::None;
+    config.accelerationFalloffNearCap = 0.0f;
+    config.landingSpeedRetention = 0.0f;
+    config.debugDrawEnabled = false;
     config.groundAcceleration = 55.0f;
     config.airAcceleration = 22.0f;
+    config.airMaxWishspeed = 0.0f;
+    config.airControl = 0.0f;
+    config.stopspeed = 0.0f;
+    config.bunnyHopSpeedCap = 0.0f;
     return config;
 }
 
@@ -113,16 +148,48 @@ void applyPresetOverrides(const json& root, MovementConfig& config)
         config.airControlEnabled = root["air_strafing"].get<bool>();
     if (root.contains("bunny_hop") && root["bunny_hop"].is_boolean())
         config.bunnyHopEnabled = root["bunny_hop"].get<bool>();
+    if (root.contains("auto_bhop_enabled") && root["auto_bhop_enabled"].is_boolean())
+        config.autoBhopEnabled = root["auto_bhop_enabled"].get<bool>();
+    if (root.contains("preserve_straight_speed") && root["preserve_straight_speed"].is_boolean())
+        config.preserveStraightSpeed = root["preserve_straight_speed"].get<bool>();
+    if (root.contains("diagonal_input_normalization") &&
+        root["diagonal_input_normalization"].is_boolean())
+        config.diagonalInputNormalization = root["diagonal_input_normalization"].get<bool>();
+    if (root.contains("speed_cap_enabled") && root["speed_cap_enabled"].is_boolean())
+        config.speedCapEnabled = root["speed_cap_enabled"].get<bool>();
+    if (root.contains("debug_draw_enabled") && root["debug_draw_enabled"].is_boolean())
+        config.debugDrawEnabled = root["debug_draw_enabled"].get<bool>();
+    if (root.contains("maximum_bhop_speed_mode") &&
+        !parseSpeedCapMode(root["maximum_bhop_speed_mode"], config.maximumBhopSpeedMode)) {
+        Debug::error(Debug::Category::Physics,
+            "[MOVEMENT CONFIG] Invalid maximum_bhop_speed_mode; "
+            "expected \"none\", \"hard\", or \"soft\".\n");
+    }
 
     const auto readFloat = [&root](const char* key, float& target) {
         if (root.contains(key) && root[key].is_number())
             target = root[key].get<float>();
     };
 
+    readFloat("minimum_strafe_angle", config.minimumStrafeAngleDegrees);
+    config.minimumStrafeAngleDegrees =
+        std::clamp(config.minimumStrafeAngleDegrees, 0.0f, 90.0f);
+    readFloat("maximum_acceleration_per_tick", config.maximumAccelerationPerTick);
+    readFloat("acceleration_falloff_near_cap", config.accelerationFalloffNearCap);
+    config.accelerationFalloffNearCap =
+        std::clamp(config.accelerationFalloffNearCap, 0.0f, 1.0f);
+    readFloat("landing_speed_retention", config.landingSpeedRetention);
+    config.landingSpeedRetention =
+        std::clamp(config.landingSpeedRetention, 0.0f, 1.0f);
+
     readFloat("ground_speed", config.groundSpeed);
     readFloat("air_speed", config.airSpeed);
     readFloat("ground_acceleration", config.groundAcceleration);
     readFloat("air_acceleration", config.airAcceleration);
+    readFloat("air_max_wishspeed", config.airMaxWishspeed);
+    readFloat("air_control", config.airControl);
+    readFloat("stopspeed", config.stopspeed);
+    readFloat("bhop_speed_cap", config.bunnyHopSpeedCap);
     readFloat("gravity", config.gravityZ);
     readFloat("max_fall_speed", config.maximumFallSpeed);
     readFloat("jump_strength", config.jumpVerticalSpeed);

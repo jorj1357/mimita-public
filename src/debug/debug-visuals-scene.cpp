@@ -15,6 +15,7 @@
 #include "world/world.h"
 #include "debug/debug-log.h"
 #include "config.h"
+#include "config/movement-config.h"
 
 extern Renderer* gRenderer;
 
@@ -39,8 +40,52 @@ extern void drawTransformAxes(const Camera& camera, const glm::mat4& transform, 
 // Toggle with: cam_axis_debug 1|0
 bool gCamAxisDebug = false;
 
+// Bunny-hop / air-acceleration overlay. Gated only by the movement config's
+// debug_draw_enabled flag so it works independently of the master debug gate.
+static void drawBhopDebug(const Player& player, const Camera& camera)
+{
+    const auto& cfg = MovementJsonConfig::instance().config();
+    if (!cfg.debugDrawEnabled)
+        return;
+
+    // Horizontal velocity line
+    const glm::vec4 velColor{0.0f, 1.0f, 0.4f, 1.0f};
+    drawLine(camera, player.pos,
+             player.pos + glm::vec3(player.vel.x, player.vel.y, 0.0f) * 0.25f,
+             velColor);
+
+    // Wish direction arrow (camera-relative wish rotated into world space)
+    const glm::vec2 wish = player.inputWishMove;
+    if (glm::length(wish) > 0.001f)
+    {
+        const float yawRad = glm::radians(player.yaw);
+        const glm::vec2 forward(std::cos(yawRad), std::sin(yawRad));
+        const glm::vec2 right(-forward.y, forward.x);
+        const glm::vec2 worldWish = wish.x * right + wish.y * forward;
+        drawLine(camera, player.pos,
+                 player.pos + glm::vec3(worldWish.x, worldWish.y, 0.0f) * 0.5f,
+                 {1.0f, 0.6f, 0.0f, 1.0f});
+    }
+
+    // Speed / cap label
+    const float hSpeed = glm::length(glm::vec2(player.vel.x, player.vel.y));
+    const float airWish = cfg.airMaxWishspeed > 0.0f
+        ? std::min(cfg.airSpeed, cfg.airMaxWishspeed)
+        : cfg.airSpeed;
+    char buf[192];
+    std::snprintf(buf, sizeof(buf),
+        "BHOP speed=%.1f ground=%d airWish=%.1f cap=%.1f mode=%s",
+        hSpeed, (int)player.ground.onGround, airWish, cfg.bunnyHopSpeedCap,
+        cfg.maximumBhopSpeedMode == MovementSpeedCapMode::Hard ? "hard" :
+        cfg.maximumBhopSpeedMode == MovementSpeedCapMode::Soft ? "soft" : "none");
+    drawWorldLabel(player.pos + glm::vec3(0.0f, 0.0f, 1.2f), buf,
+                   {0.0f, 1.0f, 1.0f, 1.0f});
+}
+
 void drawDebugStuff(const Player& player, const Camera& camera, const World& world)
 {
+    drawBhopDebug(player, camera);
+
     if (!DebugVis::enabled()) return;
 
     if (DebugVis::physics()) {
