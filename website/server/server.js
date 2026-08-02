@@ -36,6 +36,7 @@ import clientLoginRouter from "./client-login.js"
 import gameAuthRouter from "./game-auth.js"
 import gameApiRouter from "./game-api.js"
 import emailCampaignsRouter from "./email-campaigns.js"
+import { createCheckoutSessionRouter, createWebhookRouter } from "./banner-payments.js"
 import { trackEvent } from "./analytics.js"
 import { pushError } from "./error-queue.js"
 import { createRateLimit } from "./rateLimit.js"
@@ -97,7 +98,12 @@ app.use(cors({
     origin: process.env.APP_ORIGIN || "http://localhost:5173",
     credentials: true
 }))
-app.use(express.json({ limit: "32kb" }))
+app.use(express.json({
+    limit: "32kb",
+    verify: (req, res, buf) => {
+        req.rawBody = buf
+    }
+}))
 app.use("/avatars", express.static(AVATAR_DIR))
 
 app.use((req, res, next) => {
@@ -127,6 +133,7 @@ app.use((req, res, next) => {
     if (req.path === "/api/auth/signin") return next()
     if (req.path === "/api/auth/signout") return next()
     if (req.path.startsWith("/api/client-login/")) return next()
+    if (req.path === "/api/banner/payment/webhook") return next()
     if (req.headers["authorization"]?.startsWith("Bearer ")) return next()
     return csrfProtection(req, res, next)
 })
@@ -1118,6 +1125,8 @@ app.use("/api/admin", adminRateLimit, adminRouter)
 app.use("/api/admin/email-campaigns", adminRateLimit, emailCampaignsRouter)
 app.use("/api/debug", debugRouter)
 app.use("/api/game/analytics", gameAnalyticsRateLimit, gameAnalyticsRouter)
+app.use("/api/banner/payment", createCheckoutSessionRouter())
+app.use("/api/banner/payment/webhook", createWebhookRouter())
 app.use("/api", gameApiRouter)
 
 // Serve generated article/news JSON — the admin editor is the source of truth
@@ -1212,7 +1221,7 @@ app.post("/api/auth/link-code", (req, res) => {
         const { code, grantToken } = generateLinkCode()
         res.json({ success: true, code, grant_token: grantToken, url: "https://mimita.fun/link" })
     }
-    catch (error) {
+    catch {
         res.status(500).json({ success: false, message: "failed to generate code" })
     }
 })

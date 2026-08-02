@@ -108,6 +108,9 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn,
     reactionTimer = 0.0f;
     moveNoiseTimer = 0.1f + random01(rngState) * 0.3f;
     moveOffset = {0.0f, 0.0f};
+    // Non-zero so the server firing-broadcast heuristic (timeSinceLastShot
+    // resets to 0 only on an actual fire) never fires during the wakeup window.
+    timeSinceLastShot = 1.0f;
 
     // Equip weapon (default revolver, or specified via parameter)
     if (!equipNpcWeapon(*this, weaponId.empty() ? "revolver" : weaponId, 1)) {

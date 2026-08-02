@@ -474,14 +474,25 @@ void engineTickNet(Engine& engine, float dt)
 
             if (!localShooter)
             {
-                auto remoteShooter = mpContext.remotePlayers.find(
-                    event.shooterPlayerId);
-                if (remoteShooter != mpContext.remotePlayers.end() &&
-                    (event.effectFlags &
-                     MimitaNet::SHOT_EFFECT_WEAPON_TRIGGER))
+                if (event.effectFlags & MimitaNet::SHOT_EFFECT_WEAPON_TRIGGER)
                 {
-                    remoteShooter->second.networkShootEffectTimer = 0.1f;
-                    remoteShooter->second.networkWeaponState |= 1u;
+                    auto remoteShooter = mpContext.remotePlayers.find(
+                        event.shooterPlayerId);
+                    if (remoteShooter != mpContext.remotePlayers.end())
+                    {
+                        remoteShooter->second.networkShootEffectTimer = 0.1f;
+                        remoteShooter->second.networkWeaponState |= 1u;
+                    }
+                    else
+                    {
+                        auto remoteNpc = mpContext.remoteNpcs.find(
+                            event.shooterPlayerId);
+                        if (remoteNpc != mpContext.remoteNpcs.end())
+                        {
+                            remoteNpc->second.networkShootEffectTimer = 0.1f;
+                            remoteNpc->second.networkWeaponState |= 1u;
+                        }
+                    }
                 }
 
                 if (event.weapon ==

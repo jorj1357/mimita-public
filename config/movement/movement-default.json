@@ -1,0 +1,27 @@
+{
+    "name": "default",
+    "comment": "Current Mimita behavior. WASD overrides horizontal velocity instantly (no acceleration). Dash recharges on world touch, not on a timer.",
+    "movement_mode": "override",
+    "air_strafing": true,
+    "bunny_hop": false,
+
+    "ground_speed": 20.0,
+    "air_speed": 20.0,
+    "ground_acceleration": 55.0,
+    "air_acceleration": 22.0,
+    "gravity": -58.0,
+    "jump_strength": 19.0,
+    "max_fall_speed": 400.0,
+    "jump_buffer_time": 0.12,
+    "coyote_time": 0.001,
+    "max_air_jumps": 1,
+
+    "ground_friction": 10.0,
+    "air_friction": 2.0,
+    "external_impulse_decay": 0.6,
+    "max_external_impulse_speed": 120.0,
+
+    "ground_dash_impulse": 100.0,
+    "air_dash_impulse": 50.0,
+    "down_dash_speed": -100.0
+}

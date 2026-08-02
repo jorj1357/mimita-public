@@ -1,6 +1,7 @@
 // 07 31 2026, 15 30
 /* purpose
-* Loads and validates config/badconnconfig.json into runtime preset structs.
+* Loads and validates the badconn preset block from config/networkingconfig.json
+* into runtime preset structs (single source of truth with the networking config).
 * Warns on unknown fields, skips invalid presets, and fails safe with no impairments.
 * Keeps per-preset parsing isolated so one bad preset never blocks the rest.
 * Does NOT own packet processing, queues, or the simulator state.
@@ -97,9 +98,11 @@ bool loadLatencyBlock(const nlohmann::json& block, const char* file,
         warnInvalidField(file, presetId, "latency", "block", "must be an object");
         return false;
     }
-    warnUnknownKeys(block, file, presetId, "latency", {"direction", "min_ms", "max_ms"});
+    warnUnknownKeys(block, file, presetId, "latency",
+                    {"direction", "min_ms", "max_ms", "base_ms", "jitter_ms"});
 
-    if (!block.contains("min_ms") && !block.contains("max_ms"))
+    if (!block.contains("min_ms") && !block.contains("max_ms") &&
+        !block.contains("base_ms"))
     {
         preset.latency.enabled = false;
         return true;
@@ -116,9 +119,20 @@ bool loadLatencyBlock(const nlohmann::json& block, const char* file,
         return false;
     }
 
+    const int baseMs = block.value("base_ms", 0);
+    const int jitterMs = block.value("jitter_ms", 0);
+    if (baseMs < 0 || baseMs > 10000 || jitterMs < 0 || jitterMs > 2000)
+    {
+        warnInvalidField(file, presetId, "latency", "base_ms/jitter_ms",
+                         "need 0 <= base_ms <= 10000 and 0 <= jitter_ms <= 2000");
+        return false;
+    }
+
     preset.latency.enabled = true;
     preset.latency.minMs = minMs;
     preset.latency.maxMs = maxMs;
+    preset.latency.baseMs = baseMs;
+    preset.latency.jitterMs = jitterMs;
     return true;
 }
 
@@ -131,7 +145,8 @@ bool loadLossBlock(const nlohmann::json& block, const char* file,
         return false;
     }
     warnUnknownKeys(block, file, presetId, "loss",
-                    {"direction", "min_percent", "max_percent"});
+                    {"direction", "min_percent", "max_percent",
+                     "burst_percent", "burst_probability"});
 
     if (!block.contains("min_percent") && !block.contains("max_percent"))
     {
@@ -151,9 +166,21 @@ bool loadLossBlock(const nlohmann::json& block, const char* file,
         return false;
     }
 
+    const float burstPercent = block.value("burst_percent", 0.0f);
+    const float burstProbability = block.value("burst_probability", 0.0f);
+    if (burstPercent < 0.0f || burstPercent > 100.0f ||
+        burstProbability < 0.0f || burstProbability > 1.0f)
+    {
+        warnInvalidField(file, presetId, "loss", "burst_percent/burst_probability",
+                         "need 0 <= burst_percent <= 100 and 0 <= burst_probability <= 1");
+        return false;
+    }
+
     preset.loss.enabled = true;
     preset.loss.minPercent = minPercent;
     preset.loss.maxPercent = maxPercent;
+    preset.loss.burstPercent = burstPercent;
+    preset.loss.burstProbability = burstProbability;
     return true;
 }
 
@@ -267,11 +294,32 @@ bool loadConfig(const std::string& path)
         nlohmann::json root;
         stream >> root;
 
-        if (!root.is_object() || !root.contains("presets") ||
-            !root["presets"].is_object())
+        if (!root.is_object())
         {
             Debug::warn(Debug::Category::Networking,
-                        "[BADCONN CFG] %s missing \"presets\" object — no presets active\n",
+                        "[BADCONN CFG] %s root is not an object — no presets active\n",
+                        path.c_str());
+            applyLoadedPresets(std::move(loaded));
+            return false;
+        }
+
+        // Badconn presets live inside the shared networkingconfig.json under
+        // "badconn.presets"; fall back to the old top-level "presets" shape.
+        const nlohmann::json* presetsJson = nullptr;
+        if (root.contains("badconn") && root["badconn"].is_object() &&
+            root["badconn"].contains("presets") &&
+            root["badconn"]["presets"].is_object())
+        {
+            presetsJson = &root["badconn"]["presets"];
+        }
+        else if (root.contains("presets") && root["presets"].is_object())
+        {
+            presetsJson = &root["presets"];
+        }
+        if (!presetsJson)
+        {
+            Debug::warn(Debug::Category::Networking,
+                        "[BADCONN CFG] %s missing badconn.presets object — no presets active\n",
                         path.c_str());
             applyLoadedPresets(std::move(loaded));
             return false;
@@ -287,7 +335,7 @@ bool loadConfig(const std::string& path)
             return false;
         }
 
-        for (auto it = root["presets"].begin(); it != root["presets"].end(); ++it)
+        for (auto it = presetsJson->begin(); it != presetsJson->end(); ++it)
         {
             const std::string id = it.key();
             const nlohmann::json& presetJson = it.value();

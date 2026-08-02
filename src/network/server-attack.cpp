@@ -416,6 +416,12 @@ void handleAttackRequest(
         if (serverRaycastWorld(origin, direction, maxRange, world, worldHit, worldNormal))
             worldBlockDistance = glm::length(worldHit - origin);
 
+        // Lag compensation: validate the trace at the tick the attacker was
+        // actually looking at (their fire-time snapshot minus the remote
+        // interpolation buffer), so shots land where the attacker saw them.
+        const uint32_t rewindTick =
+            estimateServerRewindTick(shooter, req->clientSimulationTick, tick);
+
         std::vector<WeaponExecution::PlayerTarget> targets;
         targets.reserve(players.size() + npcs.size());
         for (const auto& targetEntry : players)
@@ -427,7 +433,11 @@ void handleAttackRequest(
             WeaponExecution::PlayerTarget targetDesc;
             targetDesc.playerId = target.id;
             targetDesc.spawnGeneration = target.spawnGeneration;
-            targetDesc.position = target.pos;
+            glm::vec3 rewoundPos;
+            if (getPositionAtTick(target, rewindTick, rewoundPos))
+                targetDesc.position = rewoundPos;
+            else
+                targetDesc.position = target.pos;
             targetDesc.radius = PLAYER_RADIUS;
             targetDesc.height = PLAYER_HEIGHT;
             targetDesc.dead = target.dead;
@@ -474,9 +484,13 @@ void handleAttackRequest(
             if (npcIt != npcs.end())
             {
                 ServerNpc& npcTarget = npcIt->second;
-                npcTarget.health -= aggregate.damage;
-                npcTarget.knockbackImpulse += aggregate.knockback;
-                if (npcTarget.health <= 0)
+                if (npcTarget.health > 0)
+                {
+                    npcTarget.health -= aggregate.damage;
+                    npcTarget.knockbackImpulse += aggregate.knockback;
+                }
+                const bool killed = npcTarget.health <= 0;
+                if (killed)
                 {
                     npcTarget.health = 0;
                     printf("%s [SERVER NPC KILL] shooter=%u npcId=%u name=\"%s\"\n",
@@ -489,9 +503,14 @@ void handleAttackRequest(
                         attacker->second.kills += 1;
                         attacker->second.health = 100;
                     }
-                    // Remove NPC
-                    npcs.erase(npcIt);
+                    // Do NOT erase: syncServerNpcDamageToNpc marks the real NPC
+                    // dead and respawnServerNpc re-admits it after the delay.
                 }
+                broadcastNpcDamageEvent(
+                    sock, players, tick, totalPacketsOut, shooter.id, npcTarget,
+                    aggregate.damage, killed,
+                    origin, aggregate.hitPosition, direction, aggregate.hitNormal,
+                    netWeapon);
                 continue;
             }
             auto targetIt = players.find(aggregate.targetPlayerId);
@@ -514,6 +533,12 @@ void handleAttackRequest(
             shooter.id, req->requestId, def->id.c_str(), trace.pelletCount,
             trace.aggregates.size(), rt.magazineAmmo, rt.reserveAmmo,
             rt.stateRevision);
+
+        Debug::logThrottled(Debug::Category::Weapons, "attack-rewind", 1.0,
+            "[ATTACK REWIND] playerId=%u requestId=%u fireSnapshotTick=%u "
+            "serverTick=%u rewindTick=%u delayTicks=%u\n",
+            shooter.id, req->requestId, req->clientSimulationTick,
+            tick, rewindTick, REWIND_INTERP_DELAY_TICKS);
 
         // ── Broadcast shot visuals to all players ──────────────────────
         if (trace.pelletCount <= 1)

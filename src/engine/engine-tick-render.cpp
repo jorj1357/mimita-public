@@ -564,11 +564,26 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                     camera, kv.second.pos, interpolation->second.target.position, serverColor);
             }
             char label[128];
+            char interpBuf[32];
+            if (interpolation != mpContext.remotePlayerInterpolation.end() &&
+                interpolation->second.hasTarget)
+            {
+                if (NetworkingConfig::instance().data().remotePlayers.directRender)
+                    snprintf(interpBuf, sizeof(interpBuf), "direct");
+                else
+                    snprintf(interpBuf, sizeof(interpBuf), "%.0fms",
+                             (double)(MimitaNet::nowMs() -
+                                      interpolation->second.target.receivedMs));
+            }
+            else
+            {
+                snprintf(interpBuf, sizeof(interpBuf), "n/a");
+            }
             snprintf(
                 label, sizeof(label),
-                "REMOTE PLAYER id=%u HP=%d anchor=%s interp=100ms",
+                "REMOTE PLAYER id=%u HP=%d anchor=%s interp=%s",
                 kv.first, kv.second.currentHp,
-                usedHeadTransform ? "head" : "fallback");
+                usedHeadTransform ? "head" : "fallback", interpBuf);
             DebugVis::drawDiagnosticWorldLabel(
                 healthbarAnchor + glm::vec3(0.0f, 0.0f, 0.25f),
                 label, remoteColor);
@@ -586,8 +601,23 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                     camera, kv.second.pos, interpolation->second.target.position, serverColor);
             }
             char label[128];
-            snprintf(label, sizeof(label), "NPC id=%u HP=%d interp=100ms",
-                     kv.first, kv.second.currentHp);
+            char interpBuf[32];
+            if (interpolation != mpContext.remoteNpcInterpolation.end() &&
+                interpolation->second.hasTarget)
+            {
+                if (NetworkingConfig::instance().data().remotePlayers.directRender)
+                    snprintf(interpBuf, sizeof(interpBuf), "direct");
+                else
+                    snprintf(interpBuf, sizeof(interpBuf), "%.0fms",
+                             (double)(MimitaNet::nowMs() -
+                                      interpolation->second.target.receivedMs));
+            }
+            else
+            {
+                snprintf(interpBuf, sizeof(interpBuf), "n/a");
+            }
+            snprintf(label, sizeof(label), "NPC id=%u HP=%d interp=%s",
+                     kv.first, kv.second.currentHp, interpBuf);
             DebugVis::drawDiagnosticWorldLabel(
                 kv.second.pos + glm::vec3(0.0f, 0.0f, 2.0f),
                 label, npcColor);

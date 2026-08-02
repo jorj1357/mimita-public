@@ -434,13 +434,24 @@ struct MovementState {
     MovementContactHistory contactHistory;
 };
 
+enum class MovementWalkMode : uint8_t {
+    Override = 0,
+    Accel = 1
+};
+
 struct MovementConfig {
     uint32_t simulationHz = 60;
     float fixedDeltaSeconds = 1.0f / 60.0f;
     float maximumDeltaSeconds = 0.033f;
 
+    MovementWalkMode walkMode = MovementWalkMode::Override;
+    bool airControlEnabled = true;
+    bool bunnyHopEnabled = false;
+
     float groundSpeed = 0.0f;
     float airSpeed = 0.0f;
+    float groundAcceleration = 0.0f;
+    float airAcceleration = 0.0f;
     float movementSpeedSizeExponent = 0.5f;
     float gravityZ = 0.0f;
     float maximumFallSpeed = 0.0f;

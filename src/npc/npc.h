@@ -116,6 +116,10 @@ public:
     void destroySelected(const std::vector<std::uint32_t>& ids);
     void destroyAll();
     void update(const World& world, Player& player, float dt);
+    // Server hook: simulate a single NPC against a specific player target so
+    // each online NPC can target its own nearest live player (instead of a
+    // single shared mirror). Advances that NPC's AI, movement, and firing.
+    void updateOneWithTarget(uint32_t npcId, const World& world, Player& player, float dt);
     void render(const Camera& camera) const;
     void drawDebug(const Camera& camera) const;
     std::vector<DebugVis::NpcDebugInfo> debugInfo() const;

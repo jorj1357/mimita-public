@@ -63,6 +63,11 @@ constexpr float SERVER_DT = GAMEPLAY_FIXED_DT;
 constexpr float PLAYER_RADIUS = 0.65f;
 constexpr float PLAYER_HEIGHT = 3.5f;
 
+// Hit-rewind lookback: how many ticks before the attacker's fire-time snapshot
+// the server validates hits. In direct mode the attacker renders the newest
+// snapshot, so 0 is the exact "what you saw" tick — the mathematical minimum.
+constexpr uint32_t REWIND_INTERP_DELAY_TICKS = 0;
+
 struct ServerSpawnPoint
 {
     glm::vec3 position{0.0f};
@@ -311,6 +316,29 @@ struct ServerPlayer
     uint64_t lastAcceptedClientTransformMs = 0;
     bool hasAcceptedClientTransform = false;
 
+    // ── Server broadcast interpolation (smoothing between accepted reports) ─
+    // The server linearly moves the broadcast position from the previously
+    // accepted report toward the newest accepted report over the client-tick
+    // interval between them. This fills gaps so remote players move smoothly
+    // even when reports arrive sparsely, at most one report behind the newest.
+    // The same position is stored in posHistory so hit rewind validates
+    // exactly what clients saw.
+    glm::vec3 broadcastPosition{0.0f};
+    glm::vec3 broadcastVelocity{0.0f};
+    bool hasBroadcastTransform = false;
+
+    glm::vec3 interpFromPos{0.0f};
+    glm::vec3 interpToPos{0.0f};
+    uint32_t interpToTick = 0;
+    uint32_t interpDurationTicks = 2;
+    uint32_t interpSegmentStartTick = 0;
+    bool hasInterpSegment = false;
+
+    // Server tick at which the newest accepted client report was applied.
+    // Paired with movementValidation.lastAcceptedClientTick it maps client
+    // ticks into the server tick domain for hit-rewind fallback.
+    uint32_t lastAcceptedServerTick = 0;
+
     // ── Reliable unordered gameplay events ───────────────────────────
     uint32_t reliableEventSessionId = 0;
     struct PendingReliableEvent
@@ -492,6 +520,14 @@ void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
 void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world);
 void pushPositionHistory(ServerPlayer& p, uint32_t tick);
 bool getPositionAtTick(const ServerPlayer& p, uint32_t targetTick, glm::vec3& outPos);
+// Begin a new broadcast-smoothing segment toward the just-accepted report.
+void beginServerBroadcastInterp(ServerPlayer& player, uint32_t serverTick);
+// Advance the broadcast-smoothing segment by one server tick.
+void updateServerBroadcastInterp(ServerPlayer& player, uint32_t serverTick);
+// Map an attack's fire-time snapshot tick into a server rewind tick.
+uint32_t estimateServerRewindTick(const ServerPlayer& attacker,
+                                  uint32_t clientSimulationTick,
+                                  uint32_t serverTick);
 SnapshotEntity makePlayerEntity(const ServerPlayer& player);
 
 // NPC simulation
@@ -514,6 +550,24 @@ void simulateSharedNpcs(SOCKET sock,
                         std::unordered_set<uint32_t>& npcIdsAlive,
                         uint32_t tick,
                         uint64_t& totalPacketsOut);
+
+// Broadcast an NpcDamageEventPacket to every connected player. Used by all
+// server-side NPC damage sources (hitscan, projectiles, npc_damage command)
+// so clients can present hit feedback and deaths through one path.
+void broadcastNpcDamageEvent(
+    SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    uint32_t tick,
+    uint64_t& totalPacketsOut,
+    uint32_t shooterPlayerId,
+    const ServerNpc& npc,
+    int damage,
+    bool killed,
+    const glm::vec3& origin,
+    const glm::vec3& hit,
+    const glm::vec3& dir,
+    const glm::vec3& normal,
+    uint8_t weapon);
 
 // Raycast
 bool serverRayTriangle(const glm::vec3& origin, const glm::vec3& direction,

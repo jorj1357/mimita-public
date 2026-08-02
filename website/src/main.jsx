@@ -44,6 +44,7 @@ import RhythmTestV1 from "./pages/RhythmTestV1"
 import DreamToy from "./pages/DreamToy"
 import AdminArticleEditor from "./pages/AdminArticleEditor"
 import Jorj from "./pages/Socials-jorj"
+import BannerPayTest from "./pages/BannerPayTest"
 
 /* =========================
    APP
@@ -99,6 +100,8 @@ ReactDOM.createRoot(
         <Route path="/games/aim-test-v1" element={<AimTestV1 />} />
         <Route path="/games/rhythm-test-v1" element={<RhythmTestV1 />} />
         <Route path="/games/dream-toy" element={<DreamToy />} />
+
+        <Route path="/banner-pay-test" element={<BannerPayTest />} />
 
         <Route path="*" element={<NotFound />} />
 

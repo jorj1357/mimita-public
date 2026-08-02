@@ -16,7 +16,16 @@
 struct RemotePlayerInterpolationConfig
 {
     bool enabled = true;
-    double interpolationDelaySeconds = 0.100;
+    // Direct mode: render the newest authoritative snapshot for position,
+    // velocity, and animation state together (zero artificial delay, humans
+    // and NPCs share the same path). When false the time-based interpolation
+    // buffer below is used.
+    bool directRender = true;
+    // Server-side gap smoothing between accepted movement reports. Defaults
+    // off (raw broadcast) so remote bodies are not held back by a smoothing
+    // segment; kept for when jitter needs filling later.
+    bool serverSmoothing = false;
+    double interpolationDelaySeconds = 0.033;
     std::size_t maximumBufferedSnapshots = 64;
     std::size_t minimumSnapshotsBeforeRendering = 2;
     bool allowExtrapolation = true;

@@ -33,11 +33,22 @@ std::string presetSummary(const badconn::BadConnPreset& preset)
         summary += text;
     };
     if (preset.latency.enabled)
-        append("latency " + std::to_string(preset.latency.minMs) + "-" +
-               std::to_string(preset.latency.maxMs) + "ms");
+    {
+        if (preset.latency.baseMs > 0)
+            append("latency " + std::to_string(preset.latency.baseMs) + "ms +-" +
+                   std::to_string(preset.latency.jitterMs) + "ms jitter");
+        else
+            append("latency " + std::to_string(preset.latency.minMs) + "-" +
+                   std::to_string(preset.latency.maxMs) + "ms");
+    }
     if (preset.loss.enabled)
-        append("loss " + std::to_string((int)preset.loss.minPercent) + "-" +
-               std::to_string((int)preset.loss.maxPercent) + "%");
+    {
+        std::string lossText = "loss " + std::to_string((int)preset.loss.minPercent) + "-" +
+            std::to_string((int)preset.loss.maxPercent) + "%";
+        if (preset.loss.burstProbability > 0.0f)
+            lossText += " burst" + std::to_string((int)preset.loss.burstPercent) + "%";
+        append(lossText);
+    }
     if (preset.reorder.enabled)
         append("reorder " + std::to_string((int)preset.reorder.minPercent) + "-" +
                std::to_string((int)preset.reorder.maxPercent) + "%");

@@ -183,35 +183,13 @@ void handleNpcDamageRequest(SOCKET sock, const char* buffer, int bytes,
             shooterIt->second.health = 100;
     }
 
-    NpcDamageEventPacket event{};
-    event.header.type = PACKET_NPC_DAMAGE_EVENT;
-    event.header.tick = tick;
-    event.header.playerId = req->header.playerId;
-    event.npcEntityId = req->npcEntityId;
-    event.shooterPlayerId = req->header.playerId;
-    event.damage = clamped;
-    event.npcHealth = target.health;
-    event.killed = killed ? 1 : 0;
-    event.originX = req->originX; event.originY = req->originY; event.originZ = req->originZ;
-    event.hitX = req->hitX; event.hitY = req->hitY; event.hitZ = req->hitZ;
-    event.dirX = req->dirX; event.dirY = req->dirY; event.dirZ = req->dirZ;
-    event.normalX = req->normalX; event.normalY = req->normalY; event.normalZ = req->normalZ;
-    event.effectFlags = req->effectFlags;
-    event.weapon = req->weapon;
-    event.impactType = req->impactType;
-
-    for (const auto& pe : players)
-    {
-        if (pe.second.transport)
-            pe.second.transport->send(&event, sizeof(event));
-        else
-            sendto(sock, (const char*)&event, sizeof(event), 0,
-                   (sockaddr*)&pe.second.addr, sizeof(pe.second.addr));
-        ++totalPacketsOut;
-    }
-
-    if (killed)
-        npcs.erase(npcIt);
+    const glm::vec3 origin(req->originX, req->originY, req->originZ);
+    const glm::vec3 hit(req->hitX, req->hitY, req->hitZ);
+    const glm::vec3 dir(req->dirX, req->dirY, req->dirZ);
+    const glm::vec3 normal(req->normalX, req->normalY, req->normalZ);
+    broadcastNpcDamageEvent(
+        sock, players, tick, totalPacketsOut, req->header.playerId,
+        target, clamped, killed, origin, hit, dir, normal, req->weapon);
 }
 
 void handleServerCommand(const char* buffer, int bytes,

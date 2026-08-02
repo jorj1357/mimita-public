@@ -655,48 +655,15 @@ void explodeProjectile(SOCKET sock,
                 attacker->second.health = 100;
         }
 
-        NpcDamageEventPacket npcEvent{};
-        npcEvent.header.type = PACKET_NPC_DAMAGE_EVENT;
-        npcEvent.header.tick = tick;
-        npcEvent.header.playerId = projectile.ownerPlayerId;
-        npcEvent.npcEntityId = npc.entityId;
-        npcEvent.shooterPlayerId = projectile.ownerPlayerId;
-        npcEvent.damage = finalDamage;
-        npcEvent.npcHealth = npc.health;
-        npcEvent.killed = killed ? 1 : 0;
-        npcEvent.originX = position.x;
-        npcEvent.originY = position.y;
-        npcEvent.originZ = position.z;
-        npcEvent.hitX = npcCenter.x;
-        npcEvent.hitY = npcCenter.y;
-        npcEvent.hitZ = npcCenter.z;
-        npcEvent.dirX = dir.x;
-        npcEvent.dirY = dir.y;
-        npcEvent.dirZ = dir.z;
-        npcEvent.normalX = -dir.x;
-        npcEvent.normalY = -dir.y;
-        npcEvent.normalZ = -dir.z;
-        npcEvent.weapon = projectile.weaponType;
-        npcEvent.impactType = SHOT_IMPACT_ENTITY;
-
-        for (const auto& pe : players)
-        {
-            if (pe.second.transport)
-                pe.second.transport->send(&npcEvent, sizeof(npcEvent));
-            else
-                sendto(sock, (const char*)&npcEvent, sizeof(npcEvent), 0,
-                       (sockaddr*)&pe.second.addr,
-                       sizeof(pe.second.addr));
-            ++totalPacketsOut;
-        }
+        broadcastNpcDamageEvent(
+            sock, players, tick, totalPacketsOut, projectile.ownerPlayerId,
+            npc, finalDamage, killed,
+            position, npcCenter, dir, -dir, projectile.weaponType);
 
         printf("%s [EXPLOSION NPC DAMAGE] projectileId=%u ownerPlayerId=%u "
                "npcId=%u distance=%.2f damage=%d healthAfter=%d killed=%d\n",
                serverTimestamp(), projectile.id, projectile.ownerPlayerId,
                npc.entityId, dist, finalDamage, npc.health, (int)killed);
-
-        if (killed)
-            npcs.erase(npcEntry.first);
     }
 
     printf("%s [PROJECTILE SERVER IMPACT] projectileId=%u weapon=%s "

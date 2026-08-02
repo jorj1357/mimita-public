@@ -74,6 +74,14 @@ public:
     void execute(const std::string& input);
     void addLog(const std::string& text);
 
+    // Multi-step interactive input: the next submitted line is routed to the
+    // callback (instead of being run as a command). Used by interactive flows
+    // such as 'networkconfig save'. Pass an empty string to cancel/clear.
+    void requestInput(const std::string& prompt,
+                      std::function<void(const std::string&)> callback);
+    bool hasPendingInput() const { return mPendingCallback != nullptr; }
+    const std::string& pendingPrompt() const { return mPendingPrompt; }
+
     struct ReplayPickerEntry {
         std::string path;
         std::string filename;
@@ -118,6 +126,9 @@ private:
 
     std::unordered_map<std::string, ConsoleCommand> mCommands;
     std::vector<std::string> mRegistrationOrder;
+
+    std::string mPendingPrompt;
+    std::function<void(const std::string&)> mPendingCallback;
 
     float mCursorBlink = 0.0f;
     int mScrollOffset = 0;

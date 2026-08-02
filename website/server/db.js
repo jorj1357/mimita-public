@@ -29,23 +29,6 @@ export const pool = new Pool({
         : undefined
 })
 
-const LOG_ENABLED = process.env.DB_LOG !== "false"
-
-function truncate(str, max = 150) {
-    if (!str) return ""
-    const s = typeof str === "string" ? str : String(str)
-    if (s.length <= max) return s
-    return s.slice(0, max) + "..."
-}
-
-function formatQuery(text) {
-    return truncate(text.replace(/\s+/g, " ").trim())
-}
-
-function logMigration(sql) {
-    console.log(`[DB] SQL: ${sql.substring(0, 120)}`)
-}
-
 const MIGRATION_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS newsletter (
         id BIGSERIAL PRIMARY KEY,
@@ -391,6 +374,25 @@ const MIGRATION_STATEMENTS = [
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS client_build TEXT NOT NULL DEFAULT ''`,
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ`,
     `CREATE INDEX IF NOT EXISTS sessions_refresh_token_idx ON sessions(refresh_token_hash) WHERE refresh_token_hash IS NOT NULL`,
+
+    // ── Banner Payment Orders (Stripe sandbox pipeline) ─────────────────
+
+    `CREATE TABLE IF NOT EXISTS banner_payment_orders (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        duration_days INT NOT NULL CHECK (duration_days BETWEEN 1 AND 7),
+        amount_cents INT NOT NULL CHECK (amount_cents > 0),
+        currency TEXT NOT NULL DEFAULT 'usd',
+        status TEXT NOT NULL DEFAULT 'pending'
+            CHECK (status IN ('pending','paid','failed','cancelled')),
+        stripe_checkout_session_id TEXT NOT NULL DEFAULT '',
+        stripe_event_id TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        paid_at TIMESTAMPTZ
+    )`,
+    `CREATE INDEX IF NOT EXISTS banner_payment_orders_status_idx ON banner_payment_orders(status, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS banner_payment_orders_session_idx ON banner_payment_orders(stripe_checkout_session_id) WHERE stripe_checkout_session_id <> ''`,
+    `CREATE INDEX IF NOT EXISTS banner_payment_orders_event_idx ON banner_payment_orders(stripe_event_id) WHERE stripe_event_id <> ''`,
 ]
 
 export async function runMigrations() {
@@ -457,7 +459,8 @@ export function getDbConfig() {
     "user_tags",
     "email_templates",
     "email_campaigns",
-    "email_campaign_recipients"
+    "email_campaign_recipients",
+    "banner_payment_orders"
 ]
     }
 }
