@@ -85,6 +85,23 @@ export async function sendPasswordChangeCodeEmail(email, code) {
     })
 }
 
+export async function sendPasswordResetCodeEmail(email, code) {
+    await sendMail({
+        to: email,
+        subject: "Mimita password reset code",
+        text: `Your Mimita password reset code is ${code}. It expires in 10 minutes.`,
+        html: `
+            <h1>Password reset request</h1>
+            <p>Your reset code is:</p>
+            <p style="font-size:32px;font-weight:bold;letter-spacing:6px">
+                ${code}
+            </p>
+            <p>This code expires in 10 minutes.</p>
+            <p>If you did not request this, you can safely ignore this email.</p>
+        `
+    })
+}
+
 export async function sendPasswordChangedEmail(
     email,
     changedAt,

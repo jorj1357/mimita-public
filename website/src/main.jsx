@@ -25,6 +25,7 @@ import Contribute from "./pages/Contribute"
 import Terms from "./pages/Terms"
 import NotFound from "./pages/NotFound"
 import Auth from "./pages/Auth"
+import ForgotPassword from "./pages/ForgotPassword"
 import ArticlesIndex from "./pages/ArticlesIndex"
 import ArticlePage from "./pages/ArticlePage"
 import Account from "./pages/Account"
@@ -73,6 +74,7 @@ ReactDOM.createRoot(
 
         <Route path="/signup" element={<Auth mode="signup" />} />
         <Route path="/signin" element={<Auth mode="signin" />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/account" element={<Account />} />
 
         <Route path="/users" element={<Users />} />
