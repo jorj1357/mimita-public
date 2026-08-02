@@ -12,6 +12,7 @@
 #include "network/badconn/badconn-internal.h"
 #include "network/packets.h"
 #include "debug/debug-log.h"
+#include "utils/path_utils.h"
 
 #include <deque>
 
@@ -35,6 +36,10 @@ struct Sim
     std::deque<BadConnQueuedPacket> outReorder;
     std::deque<BadConnQueuedPacket> inReorder;
     BadConnBlackoutState blackoutState;
+    BadConnJitterState outJitter;
+    BadConnJitterState inJitter;
+    BadConnBurstState outLossBurst;
+    BadConnBurstState inLossBurst;
     BadConnMetrics metrics;
 };
 
@@ -80,6 +85,50 @@ bool isExemptType(uint8_t type)
     }
 }
 
+// Returns true when bytes is an attack request that is already in flight in
+// the outbound queues (same requestId, playerId, and spawn generation). The
+// client retries unacknowledged attacks every 100 ms; without this collapse
+// each retry would re-roll a fresh random latency and let a retry overtake the
+// movement packets it depends on, letting attacks bypass the configured delay.
+bool isDuplicateInFlightAttack(const Sim& sim, const std::vector<uint8_t>& bytes)
+{
+    if (bytes.size() < sizeof(MimitaNet::AttackRequestPacket))
+        return false;
+    const MimitaNet::PacketHeader* header =
+        reinterpret_cast<const MimitaNet::PacketHeader*>(bytes.data());
+    if (header->magic != MimitaNet::PROTOCOL_MAGIC ||
+        header->version != MimitaNet::PROTOCOL_VERSION ||
+        header->type != MimitaNet::PACKET_ATTACK_REQUEST)
+        return false;
+    const MimitaNet::AttackRequestPacket* req =
+        reinterpret_cast<const MimitaNet::AttackRequestPacket*>(bytes.data());
+
+    const auto matches = [req](const BadConnQueuedPacket& queued)
+    {
+        if (queued.bytes.size() < sizeof(MimitaNet::AttackRequestPacket))
+            return false;
+        const MimitaNet::PacketHeader* h =
+            reinterpret_cast<const MimitaNet::PacketHeader*>(queued.bytes.data());
+        if (h->magic != MimitaNet::PROTOCOL_MAGIC ||
+            h->version != MimitaNet::PROTOCOL_VERSION ||
+            h->type != MimitaNet::PACKET_ATTACK_REQUEST)
+            return false;
+        const MimitaNet::AttackRequestPacket* q =
+            reinterpret_cast<const MimitaNet::AttackRequestPacket*>(queued.bytes.data());
+        return q->requestId == req->requestId &&
+               q->header.playerId == req->header.playerId &&
+               q->spawnGeneration == req->spawnGeneration;
+    };
+
+    for (const BadConnQueuedPacket& queued : sim.outLatency)
+        if (matches(queued))
+            return true;
+    for (const BadConnQueuedPacket& queued : sim.outReorder)
+        if (matches(queued))
+            return true;
+    return false;
+}
+
 void clearQueues(Sim& sim)
 {
     sim.outLatency.clear();
@@ -116,8 +165,17 @@ bool processPacketDirection(Sim& sim, const std::vector<uint8_t>& bytes, bool is
         return true;
     }
 
+    // Collapse attack retries that duplicate an in-flight request so they
+    // cannot re-roll a cheaper latency and overtake their own movement.
+    if (isOutgoing && isDuplicateInFlightAttack(sim, bytes))
+    {
+        ++sim.metrics.attackRetriesCollapsed;
+        return true;
+    }
+
     if (badConnDirectionApplies(sim.preset.loss.direction, isOutgoing) &&
-        badConnRollLoss(sim.preset.loss, sim.rng))
+        badConnRollLoss(sim.preset.loss, sim.rng,
+                        isOutgoing ? sim.outLossBurst : sim.inLossBurst))
     {
         ++sim.metrics.packetsDropped;
         return true;
@@ -130,7 +188,9 @@ bool processPacketDirection(Sim& sim, const std::vector<uint8_t>& bytes, bool is
             isOutgoing ? sim.outReorder : sim.inReorder;
         const int holdMs = badConnReorderDelayMs(sim.preset.reorder);
         badConnDelayPacket(buffer, kReorderQueueCapacity, bytes,
-                           holdMs, holdMs, sim.sessionGeneration, sim.rng, now);
+                           holdMs, holdMs, 0, 0,
+                           isOutgoing ? sim.outJitter : sim.inJitter,
+                           sim.sessionGeneration, sim.rng, now);
         ++sim.metrics.packetsReordered;
         return true;
     }
@@ -143,6 +203,8 @@ bool processPacketDirection(Sim& sim, const std::vector<uint8_t>& bytes, bool is
         const int delayMs = badConnDelayPacket(
             queue, kLatencyQueueCapacity, bytes,
             sim.preset.latency.minMs, sim.preset.latency.maxMs,
+            sim.preset.latency.baseMs, sim.preset.latency.jitterMs,
+            isOutgoing ? sim.outJitter : sim.inJitter,
             sim.sessionGeneration, sim.rng, now);
         sim.metrics.lastLatencyMs = delayMs;
         ++sim.metrics.packetsDelayed;
@@ -162,9 +224,12 @@ void sendAll(IGameTransport* transport, const std::vector<std::vector<uint8_t>>&
 
 } // namespace
 
-const char* configPath()
+const std::string& configPath()
 {
-    return "config/badconnconfig.json";
+    // Badconn presets live inside the shared networking config file so the
+    // networking settings have a single source of truth that hot-reloads.
+    static const std::string path = resolveAssetPath("config/networkingconfig.json");
+    return path;
 }
 
 bool processOutgoing(const void* data, size_t bytes)
@@ -267,11 +332,12 @@ void tick(IGameTransport* transport)
 
     // Aggregated impairment counters (once per second, never per packet).
     Debug::logThrottled(Debug::Category::Networking, "badconn-aggregate", 1.0,
-                        "[BADCONN] agg delayed=%llu dropped=%llu reordered=%llu stale=%llu "
+                        "[BADCONN] agg delayed=%llu dropped=%llu reordered=%llu attackCollapsed=%llu stale=%llu "
                         "blackouts=%llu queues(out=%zu/in=%zu)\n",
                         (unsigned long long)sim.metrics.packetsDelayed,
                         (unsigned long long)sim.metrics.packetsDropped,
                         (unsigned long long)sim.metrics.packetsReordered,
+                        (unsigned long long)sim.metrics.attackRetriesCollapsed,
                         (unsigned long long)sim.metrics.staleDiscarded,
                         (unsigned long long)sim.metrics.blackoutsStarted,
                         sim.metrics.outQueueSize, sim.metrics.inQueueSize);
@@ -357,6 +423,7 @@ const std::vector<BadConnPreset>& presets()
 void applyLoadedPresets(std::vector<BadConnPreset> loadedPresets)
 {
     Sim& sim = simInstance();
+    const std::string previousActiveId = sim.active ? sim.activePresetId : std::string();
     clearQueues(sim);
     sim.active = false;
     sim.activePresetId.clear();
@@ -364,6 +431,26 @@ void applyLoadedPresets(std::vector<BadConnPreset> loadedPresets)
     sim.blackoutState = BadConnBlackoutState{};
     sim.metrics = BadConnMetrics{};
     sim.presets = std::move(loadedPresets);
+
+    // Hot-reload: keep the currently active preset active (with new values).
+    if (!previousActiveId.empty())
+    {
+        for (const BadConnPreset& preset : sim.presets)
+        {
+            if (preset.id != previousActiveId)
+                continue;
+            sim.active = true;
+            sim.preset = preset;
+            sim.activePresetId = preset.id;
+            sim.rng.seed(preset.seed);
+            sim.blackoutState = BadConnBlackoutState{};
+            sim.metrics = BadConnMetrics{};
+            Debug::warn(Debug::Category::Networking,
+                        "[BADCONN] preset %s '%s' re-activated after config reload\n",
+                        preset.id.c_str(), preset.name.c_str());
+            break;
+        }
+    }
 }
 
 } // namespace badconn

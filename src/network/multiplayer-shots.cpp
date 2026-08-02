@@ -11,9 +11,13 @@
 #include "network/network-weapons.h"
 #include "combat/weapon-fire.h"
 #include "combat/death-system.h"
+#include "combat/weapon-registry.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "audio/audio.h"
+#include "audio/hitmarker-audio.h"
+#include "ui/hitmarker.h"
+#include "killfeed/killfeed.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -65,25 +69,92 @@ void mpProcessShotEventPacket(MultiplayerContext& ctx, const ShotEventPacket* ev
 
 void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEventPacket* event)
 {
+    const bool isLocalShooter = event->shooterPlayerId == ctx.localPlayerId;
+
+    std::string shooterName;
+    {
+        auto si = ctx.playerRegistry.find(event->shooterPlayerId);
+        shooterName = si != ctx.playerRegistry.end()
+            ? si->second.name
+            : "player_" + std::to_string(event->shooterPlayerId);
+    }
+
+    std::string npcName = "NPC " + std::to_string(event->npcEntityId);
     auto npcIt = ctx.remoteNpcs.find(event->npcEntityId);
     if (npcIt != ctx.remoteNpcs.end())
     {
         Player& npc = npcIt->second;
+        if (!npc.username.empty())
+            npcName = npc.username;
         npc.currentHp = event->npcHealth;
         printf("[NET NPC DAMAGE RECV] npcId=%u damage=%d health=%d killed=%d\n",
                event->npcEntityId, event->damage, event->npcHealth,
                (int)event->killed);
+    }
+    else
+    {
+        printf("[NET NPC DAMAGE RECV] npcId=%u not-found\n", event->npcEntityId);
+    }
 
-        if (event->killed)
+    const glm::vec3 hitPos(event->hitX, event->hitY, event->hitZ);
+    const glm::vec3 hitNml(event->normalX, event->normalY, event->normalZ);
+    const glm::vec3 hitDir(event->dirX, event->dirY, event->dirZ);
+    const char* weaponId = networkWeaponTypeName(event->weapon);
+
+    // Attacker-only presentation for the local shooter (observers see impact
+    // effects through the broadcast ShotEventPacket instead).
+    if (isLocalShooter && event->damage > 0)
+    {
+        hitmarker(event->damage);
+        playHitmarkerSound(event->damage);
+        HitEvent ev;
+        ev.position = hitPos;
+        ev.normal = glm::length(hitNml) > 0.001f
+            ? glm::normalize(hitNml) : glm::vec3(0.0f, 0.0f, 1.0f);
+        ev.direction = glm::length(hitDir) > 0.001f
+            ? glm::normalize(hitDir) : -ev.normal;
+        ev.hitEntity = true;
+        ev.damage = event->damage;
+        ev.attacker = shooterName;
+        ev.victim = npcName;
+        ev.weaponSource = weaponId;
+        HitEffects::onHit(ev);
+        printf("[NET NPC HIT PRESENT] shooter=%u npc=%u damage=%d\n",
+               event->shooterPlayerId, event->npcEntityId, event->damage);
+    }
+
+    if (event->killed)
+    {
+        // Death effect + sound (mirrors DeathSystem::kill for local NPCs).
+        {
+            const glm::vec3 deathDir = glm::length(hitDir) > 0.001f
+                ? glm::normalize(hitDir) : glm::vec3(0.0f, 0.0f, -1.0f);
+            const auto& deCfg = HitEffects::config().deathEllipsoid;
+            if (deCfg.enabled)
+            {
+                EffectPartSystem::instance().spawnDeathEllipsoid(
+                    hitPos, deathDir, deCfg.length, deCfg.radius,
+                    deCfg.lifetime, 1.0f);
+            }
+            AudioManager::instance().play(
+                {"npc_death", AudioCategory::NPC, true, hitPos, 1.0f, 0.9f, 45.0f, 0});
+        }
+        // Killfeed entry: killer, NPC, weapon.
+        {
+            const WeaponDefinition* wdef = WeaponRegistry::instance().get(weaponId);
+            std::string weaponDisplay = (wdef && !wdef->displayName.empty())
+                ? wdef->displayName
+                : ((weaponId && weaponId[0]) ? weaponId : "unknown");
+            KillfeedManager::instance().onKill(shooterName, npcName, weaponDisplay);
+        }
+        printf("[NET NPC KILL PRESENT] shooter=%u npc=%u name=\"%s\"\n",
+               event->shooterPlayerId, event->npcEntityId, npcName.c_str());
+        if (npcIt != ctx.remoteNpcs.end())
         {
             ctx.remoteNpcs.erase(npcIt);
             ctx.remoteNpcInterpolation.erase(event->npcEntityId);
             printf("[NET NPC KILL RECV] npcId=%u removed\n", event->npcEntityId);
         }
-    }
-    else
-    {
-        printf("[NET NPC DAMAGE RECV] npcId=%u not-found\n", event->npcEntityId);
     }
 }
 

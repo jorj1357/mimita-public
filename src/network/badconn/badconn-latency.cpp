@@ -31,16 +31,42 @@ bool badConnDirectionApplies(Direction blockDirection, bool isOutgoing)
 
 int badConnDelayPacket(std::deque<BadConnQueuedPacket>& queue, size_t capacity,
                        const std::vector<uint8_t>& bytes, int minMs, int maxMs,
+                       int baseMs, int jitterMs, BadConnJitterState& jitter,
                        uint64_t sessionGeneration, BadConnRng& rng, uint64_t now)
 {
     if (queue.size() >= capacity)
         queue.pop_front();
 
-    const int delayMs = rng.nextInt(minMs, maxMs);
+    int delayMs;
+    if (baseMs > 0)
+    {
+        // Realistic model: fixed base latency plus a correlated random walk.
+        // Real delay drifts (queueing/interference) instead of jumping
+        // independently per packet, so jitter evolves in bounded small steps.
+        delayMs = baseMs + jitter.currentMs;
+        const int step = std::max(1, jitterMs / 5);
+        jitter.currentMs += rng.nextInt(-step, step);
+        if (jitter.currentMs > jitterMs)
+            jitter.currentMs = jitterMs;
+        if (jitter.currentMs < -jitterMs)
+            jitter.currentMs = -jitterMs;
+    }
+    else
+    {
+        delayMs = rng.nextInt(minMs, maxMs);
+    }
+
     BadConnQueuedPacket queued;
     queued.bytes = bytes;
     queued.sessionGeneration = sessionGeneration;
-    queued.deliverAtMs = now + static_cast<uint64_t>(std::max(0, delayMs));
+    // FIFO link model: a packet enqueued later must never release before a
+    // packet already in the queue, otherwise the simulator invents reordering
+    // (up to max-min ms) that a real network link would not produce. Per-packet
+    // jitter stays within the configured range; it only ever delays a packet.
+    uint64_t deliverAtMs = now + static_cast<uint64_t>(std::max(0, delayMs));
+    if (!queue.empty() && deliverAtMs < queue.back().deliverAtMs + 1)
+        deliverAtMs = queue.back().deliverAtMs + 1;
+    queued.deliverAtMs = deliverAtMs;
     queue.push_back(std::move(queued));
     return delayMs;
 }

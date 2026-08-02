@@ -37,8 +37,7 @@ void resetBasicOneTickState(MovementState& state)
 
 void applyBasicFrictionOverrideRecovery(MovementState& state,
                                         const MovementCommand& command)
-{
-    if (state.dash.frictionOverride >= 1.0f || state.dash.didDash)
+{    if (state.dash.frictionOverride >= 1.0f || state.dash.didDash)
         return;
 
     const bool inputDetected =
@@ -796,13 +795,67 @@ static void applySpecialExternalImpulseControl(MovementState& state,
     applyBasicExternalImpulseControl(state, command);
 }
 
+static void applyAccelWalk(MovementState& state,
+                           const glm::vec2& wish,
+                           const MovementConfig& config,
+                           float fixedDt)
+{
+    const float dt = std::max(movementClampStepDelta(fixedDt, config), 0.0001f);
+    const glm::vec2 wishDir = movementNormalizeDirectionOrZero(wish);
+    const bool onGround = state.ground.onGround;
+
+    const float maxSpeed = onGround
+        ? movementScaledGroundSpeed(config, state.sizeScale)
+        : movementScaledAirSpeed(config, state.sizeScale);
+    const float accel = onGround
+        ? config.groundAcceleration
+        : config.airAcceleration;
+
+    glm::vec2 vel(state.baseVelocity.x, state.baseVelocity.y);
+    const float currentSpeed = glm::dot(vel, wishDir);
+    float addSpeed = maxSpeed - currentSpeed;
+    if (addSpeed <= 0.0f)
+        return;
+    addSpeed = std::min(addSpeed, accel * dt);
+
+    vel += wishDir * addSpeed;
+
+    // Ground clamps planar speed to max speed. Air keeps a soft cap so
+    // strafing can build speed past air speed (enables bhop/air-strafe gain).
+    const bool preserveMomentum =
+        config.bunnyHopEnabled && onGround &&
+        state.jump.jumpIntentTimerSeconds > 0.0f;
+    if (onGround && !preserveMomentum) {
+        const float planar = glm::length(vel);
+        if (planar > maxSpeed && planar > 0.0f)
+            vel *= maxSpeed / planar;
+    }
+
+    state.baseVelocity.x = vel.x;
+    state.baseVelocity.y = vel.y;
+}
+
 void applyBasicWalk(MovementState& state,
                     const MovementCommand& command,
-                    const MovementConfig& config)
+                    const MovementConfig& config,
+                    float fixedDt)
 {
+    // Air strafing toggle: while airborne, WASD does not steer when disabled.
+    if (!config.airControlEnabled && !state.ground.onGround)
+        return;
+
+    const glm::vec2 wish = movementClampUnitOrZero(command.moveAxes);
+    if (!movementHasMoveInput(wish))
+        return;
+
+    if (config.walkMode == MovementWalkMode::Accel) {
+        applyAccelWalk(state, wish, config, fixedDt);
+        return;
+    }
+
     const glm::vec2 next =
         movementWalkVelocityXY(glm::vec2(state.baseVelocity),
-                               command.moveAxes,
+                               wish,
                                state.ground.onGround,
                                state.sizeScale,
                                config);
@@ -993,7 +1046,7 @@ static MovementStepResult applyPostCollisionMovementInternal(
     if (command.movementDirectionPressed &&
         state.dash.frictionOverride >= 1.0f &&
         walkingMayOverwriteDash) {
-        applyBasicWalk(state, command, config);
+        applyBasicWalk(state, command, config, dt);
     }
 
     if (specialMovementEnabled)

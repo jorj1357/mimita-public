@@ -357,7 +357,34 @@ void Terminal::executeCurrent() {
     mTabCycleIndex = -1;
 }
 
+void Terminal::requestInput(const std::string& prompt,
+                            std::function<void(const std::string&)> callback)
+{
+    mPendingPrompt = prompt;
+    mPendingCallback = std::move(callback);
+}
+
 void Terminal::execute(const std::string& input) {
+    // Pending interactive prompt: route the raw line to the callback instead
+    // of running it as a command.
+    if (mPendingCallback)
+    {
+        std::string answer = input;
+        // Trim surrounding whitespace.
+        size_t first = answer.find_first_not_of(" \t");
+        size_t last = answer.find_last_not_of(" \t");
+        if (first == std::string::npos)
+            answer.clear();
+        else
+            answer = answer.substr(first, last - first + 1);
+
+        auto callback = std::move(mPendingCallback);
+        mPendingCallback = nullptr;
+        mPendingPrompt.clear();
+        callback(answer);
+        return;
+    }
+
     std::istringstream iss(input);
     std::string cmdName;
     iss >> cmdName;

@@ -29,8 +29,13 @@ struct BadConnLatency
 {
     bool enabled = false;
     Direction direction = Direction::Both;
+    // Uniform per-packet delay range (legacy model).
     int minMs = 0;
     int maxMs = 0;
+    // Realistic model: fixed base latency + correlated random-walk jitter.
+    // When baseMs > 0 this model is used instead of minMs/maxMs.
+    int baseMs = 0;
+    int jitterMs = 0;
 };
 
 struct BadConnLoss
@@ -39,6 +44,9 @@ struct BadConnLoss
     Direction direction = Direction::Both;
     float minPercent = 0.0f;
     float maxPercent = 0.0f;
+    // Burst model: occasionally enter a short high-loss burst (bad wifi).
+    float burstPercent = 0.0f;
+    float burstProbability = 0.0f;
 };
 
 struct BadConnReorder
@@ -77,6 +85,7 @@ struct BadConnMetrics
     uint64_t packetsDelayed = 0;
     uint64_t packetsDropped = 0;
     uint64_t packetsReordered = 0;
+    uint64_t attackRetriesCollapsed = 0;
     uint64_t staleDiscarded = 0;
     uint64_t blackoutsStarted = 0;
     bool blackoutActive = false;
@@ -86,7 +95,7 @@ struct BadConnMetrics
     size_t inQueueSize = 0;
 };
 
-const char* configPath();
+const std::string& configPath();
 bool loadConfig(const std::string& path);
 const std::vector<BadConnPreset>& presets();
 bool activatePreset(const std::string& id);

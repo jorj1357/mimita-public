@@ -129,9 +129,12 @@ void Terminal::render() {
     float promptX = 16.0f;
     float textScale = 0.42f;
 
-    // Draw prompt
-    uiDrawText("] ", promptX, inputLineY, textScale, {0.85f, 0.85f, 0.85f, 1.0f});
-    float promptW = uiMeasureText("] ", textScale);
+    // Draw prompt (shows the pending interactive prompt when active)
+    const std::string promptText = hasPendingInput() ? pendingPrompt() : "] ";
+    uiDrawText(promptText.c_str(), promptX, inputLineY, textScale,
+               hasPendingInput() ? glm::vec4{0.3f, 0.9f, 0.6f, 1.0f}
+                                 : glm::vec4{0.85f, 0.85f, 0.85f, 1.0f});
+    float promptW = uiMeasureText(promptText.c_str(), textScale);
 
     // Draw selection highlight background (use UITextInput)
     if (mTextState && uiTextInputHasSelection(*mTextState)) {

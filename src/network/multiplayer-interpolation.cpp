@@ -19,6 +19,7 @@
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "audio/audio.h"
+#include "debug/debug-log.h"
 
 #include <algorithm>
 #include <cmath>
@@ -242,14 +243,18 @@ void updateRenderedReplica(
         interpolation.lastTransformEpoch = targetEpoch;
     }
 
-    // ── Render position/rotation: time-based buffer interpolation ────
-    // Rendering is driven by the fixed server tick clock (renderTick), not by
-    // packet arrival, so uneven/jittery arrivals do not cause stepping.
+    // ── Render position/rotation ─────────────────────────────────────
+    // Direct mode (default): render the newest authoritative snapshot for
+    // position, velocity, and animation state together. Position and animation
+    // then come from the same snapshot, so they can never desync, and there is
+    // zero artificial delay. The time-based buffer path below is kept for when
+    // smoothing is re-enabled.
     glm::vec3 renderPos = interpolation.target.position;
     float renderYaw = interpolation.target.yaw;
     glm::vec3 renderAim = interpolation.target.aimDirection;
 
-    if (interpCfg.enabled && interpolation.buffer.size() >= 2)
+    if (!interpCfg.directRender &&
+        interpCfg.enabled && interpolation.buffer.size() >= 2)
     {
         const double tickSeconds = 1.0 / (double)GAMEPLAY_SIMULATION_HZ;
         const double delayTicks = NetworkingConfig::instance()
@@ -339,7 +344,8 @@ void updateRenderedReplica(
             }
         }
     }
-    else if (!interpCfg.enabled && interpolation.hasPrevious)
+    else if (!interpCfg.directRender &&
+             !interpCfg.enabled && interpolation.hasPrevious)
     {
         // Legacy two-snapshot lerp (rollback path when interpolation is disabled).
         constexpr double LEGACY_DELAY_MS = 50.0;
@@ -602,6 +608,54 @@ void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)
         auto interpolation = ctx.remoteNpcInterpolation.find(kv.first);
         if (interpolation != ctx.remoteNpcInterpolation.end())
             updateRenderedReplica(kv.second, interpolation->second, ctx.interpolationRenderTick, dt);
+    }
+
+    // ── Remote-NPC position alignment diagnostic (once per second, aggregate) ─
+    // Proves body / hitbox / muzzle alignment after the direct-render fix:
+    // authoritative pos, rendered body pos, hitbox, muzzle, distances, velocity,
+    // snapshot age, and interpolation mode.
+    {
+        static uint64_t lastNpcAlignLog = 0;
+        const uint64_t nowDiag = nowMs();
+        if (nowDiag - lastNpcAlignLog >= 1000 && !ctx.remoteNpcs.empty())
+        {
+            lastNpcAlignLog = nowDiag;
+            std::string summary;
+            for (const auto& kv : ctx.remoteNpcs)
+            {
+                const auto it = ctx.remoteNpcInterpolation.find(kv.first);
+                const SnapshotTransform* target =
+                    (it != ctx.remoteNpcInterpolation.end() && it->second.hasTarget)
+                        ? &it->second.target : nullptr;
+                const glm::vec3 auth = target ? target->position : kv.second.pos;
+                const glm::vec3 render = kv.second.pos;
+                const Capsule cap = kv.second.getCapsule();
+                const glm::vec3 hitbox = (cap.a + cap.b) * 0.5f;
+                const glm::vec3 muzzle = render + glm::vec3(0.0f, 0.0f, 0.8f);
+                const uint64_t ageMs = target
+                    ? (nowDiag > target->receivedMs ? nowDiag - target->receivedMs : 0)
+                    : 0;
+                char buf[256];
+                snprintf(buf, sizeof(buf),
+                    "npc=%u auth=(%.1f,%.1f,%.1f) render=(%.1f,%.1f,%.1f) "
+                    "hitbox=(%.1f,%.1f,%.1f) muzzle=(%.1f,%.1f,%.1f) "
+                    "dAuthRender=%.2f dRenderMuzzle=%.2f vel=(%.1f,%.1f,%.1f) "
+                    "ageMs=%llu interp=%s; ",
+                    kv.first,
+                    auth.x, auth.y, auth.z,
+                    render.x, render.y, render.z,
+                    hitbox.x, hitbox.y, hitbox.z,
+                    muzzle.x, muzzle.y, muzzle.z,
+                    glm::length(auth - render), glm::length(render - muzzle),
+                    kv.second.vel.x, kv.second.vel.y, kv.second.vel.z,
+                    (unsigned long long)ageMs,
+                    NetworkingConfig::instance().data().remotePlayers.directRender
+                        ? "direct" : "interp");
+                summary += buf;
+            }
+            Debug::warn(Debug::Category::NpcCombat,
+                "[CLIENT NPC ALIGN] %s\n", summary.c_str());
+        }
     }
 }
 

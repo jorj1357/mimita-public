@@ -251,6 +251,10 @@ static void processSnapshotEntities(
                     AvatarSystem::instance().applyToPlayer(p);
                 }
             }
+            else
+            {
+                p.username = entity.displayName;
+            }
             interpolation.renderRegistered = true;
             printf("[CLIENT ENTITY CREATE] entityId=%u type=%s ownerClientId=%u "
                    "mesh=%s position=(%.2f,%.2f,%.2f)\n",

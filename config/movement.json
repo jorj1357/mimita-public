@@ -1,0 +1,4 @@
+{
+    "comment": "Selects the active movement preset from config/movement/. Set preset to a preset name (matches each preset file's 'name' field, e.g. 'default' or 'counterstrike'). Hot-reloads while the game runs.",
+    "preset": "default"
+}

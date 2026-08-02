@@ -43,6 +43,19 @@ struct BadConnBlackoutState
     uint64_t lastEndMs = 0;
 };
 
+// Correlated delay variation (random walk) for the realistic latency model.
+struct BadConnJitterState
+{
+    int currentMs = 0;
+};
+
+// Short high-loss burst state (bad wifi) for the realistic loss model.
+struct BadConnBurstState
+{
+    bool inBurst = false;
+    int packetsRemaining = 0;
+};
+
 uint64_t nowMs();
 
 bool badConnDirectionApplies(Direction blockDirection, bool isOutgoing);
@@ -50,13 +63,15 @@ bool badConnDirectionApplies(Direction blockDirection, bool isOutgoing);
 // latency (also used for bounded reorder holds)
 int badConnDelayPacket(std::deque<BadConnQueuedPacket>& queue, size_t capacity,
                        const std::vector<uint8_t>& bytes, int minMs, int maxMs,
+                       int baseMs, int jitterMs, BadConnJitterState& jitter,
                        uint64_t sessionGeneration, BadConnRng& rng, uint64_t now);
 void badConnFlushDue(std::deque<BadConnQueuedPacket>& queue, uint64_t now,
                      uint64_t currentGeneration, std::vector<std::vector<uint8_t>>& due,
                      uint64_t& staleDiscarded);
 
 // loss
-bool badConnRollLoss(const BadConnLoss& block, BadConnRng& rng);
+bool badConnRollLoss(const BadConnLoss& block, BadConnRng& rng,
+                     BadConnBurstState& burst);
 
 // reorder
 bool badConnRollReorder(const BadConnReorder& block, BadConnRng& rng);

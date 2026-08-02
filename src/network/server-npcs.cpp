@@ -13,9 +13,14 @@
 #include "network/server.h"
 
 #include "npc/npc.h"
+#include "npc/npc-combat.h"
 #include "entities/player.h"
 #include "world/world.h"
 #include "physics/movement/physics-collision-shared.h"
+#include "combat/weapon-registry.h"
+#include "combat/weapon-runtime.h"
+#include "network/network-weapons.h"
+#include "debug/debug-log.h"
 
 #include <algorithm>
 #include <cmath>
@@ -23,6 +28,58 @@
 #include <limits>
 
 namespace MimitaNet {
+
+// How long a killed online NPC stays dead before respawning at its spawn
+// point. The shared npcRespawnDelaySeconds is ~0.01s (imperceptible); a real
+// delay lets the client show the death effect, sound, and killfeed entry.
+constexpr float SERVER_NPC_RESPAWN_SECONDS = 2.0f;
+
+void broadcastNpcDamageEvent(
+    SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    uint32_t tick,
+    uint64_t& totalPacketsOut,
+    uint32_t shooterPlayerId,
+    const ServerNpc& npc,
+    int damage,
+    bool killed,
+    const glm::vec3& origin,
+    const glm::vec3& hit,
+    const glm::vec3& dir,
+    const glm::vec3& normal,
+    uint8_t weapon)
+{
+    NpcDamageEventPacket ev{};
+    ev.header.type = PACKET_NPC_DAMAGE_EVENT;
+    ev.header.tick = tick;
+    ev.header.playerId = shooterPlayerId;
+    ev.npcEntityId = npc.entityId;
+    ev.shooterPlayerId = shooterPlayerId;
+    ev.damage = damage;
+    ev.npcHealth = npc.health;
+    ev.killed = killed ? 1 : 0;
+    ev.originX = origin.x; ev.originY = origin.y; ev.originZ = origin.z;
+    ev.hitX = hit.x; ev.hitY = hit.y; ev.hitZ = hit.z;
+    ev.dirX = dir.x; ev.dirY = dir.y; ev.dirZ = dir.z;
+    ev.normalX = normal.x; ev.normalY = normal.y; ev.normalZ = normal.z;
+    ev.weapon = weapon;
+    ev.impactType = SHOT_IMPACT_ENTITY;
+
+    for (const auto& pe : players)
+    {
+        if (pe.second.transport)
+            pe.second.transport->send(&ev, sizeof(ev));
+        else
+            sendto(sock, (const char*)&ev, sizeof(ev), 0,
+                   (sockaddr*)&pe.second.addr,
+                   sizeof(pe.second.addr));
+        ++totalPacketsOut;
+    }
+
+    printf("%s [NPC DAMAGE BROADCAST] shooter=%u npc=%u damage=%d health=%d killed=%d weapon=%u\n",
+           serverTimestamp(), shooterPlayerId, npc.entityId, damage, npc.health,
+           (int)killed, (unsigned)weapon);
+}
 
 void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
 {
@@ -105,8 +162,96 @@ static void syncServerNpcDamageToNpc(const std::unordered_map<uint32_t, ServerNp
                 n.body.currentHp = kv.second.health;
             if (glm::length(kv.second.knockbackImpulse) > 0.05f)
                 n.body.externalImpulse += kv.second.knockbackImpulse;
+            // A killed ServerNpc must stop acting immediately and start its
+            // respawn countdown. updateOneNpc early-returns on dead, so the
+            // body freezes until respawnServerNpc resets it.
+            if (kv.second.health <= 0 && !n.body.dead)
+            {
+                n.body.currentHp = 0;
+                n.body.dead = true;
+                n.body.respawnTimer = SERVER_NPC_RESPAWN_SECONDS;
+            }
             break;
         }
+    }
+}
+
+// Reset a killed server NPC body back to full health at its spawn point so the
+// snapshot pipeline re-admits it (rebuildServerNpcMap skips dead bodies).
+static void respawnServerNpc(Npc& npc)
+{
+    const glm::vec3 spawnPos = npc.body.respawnPosition;
+    npc.body.pos = spawnPos;
+    npc.body.respawnPosition = spawnPos;
+    npc.body.vel = glm::vec3(0.0f);
+    npc.body.externalImpulse = glm::vec3(0.0f);
+    npc.body.currentHp = npc.body.maxHp;
+    npc.body.dead = false;
+    npc.body.respawnTimer = 0.0f;
+    npc.body.killedBy.clear();
+    npc.body.spawnFlashTimer = 10.0f;
+    npc.attackCooldown = 0.0f;
+    resetAllWeaponRuntimesForSpawn(npc.body, "server-npc-respawn");
+    npc.body.syncLegacyStateToLayers();
+    npc.body.updateModelWorldTransforms();
+    printf("%s [SERVER NPC RESPAWN] id=%u pos=(%.2f,%.2f,%.2f)\n",
+           serverTimestamp(), npc.id, spawnPos.x, spawnPos.y, spawnPos.z);
+}
+
+// Broadcast the visual/sound of an NPC's weapon firing to every client so the
+// shot (muzzle flash, tracer, sound, weapon trigger) shows up remotely.
+static void broadcastNpcFiring(SOCKET sock,
+                               std::unordered_map<uint32_t, ServerPlayer>& players,
+                               const NpcSystem& npcSystem,
+                               uint32_t tick,
+                               uint64_t& totalPacketsOut)
+{
+    for (const Npc& n : npcSystem.all())
+    {
+        if (n.body.dead || n.body.currentHp <= 0) continue;
+        // timeSinceLastShot is reset to 0 on fire inside updateOneNpc.
+        if (n.timeSinceLastShot >= SERVER_DT * 0.5f) continue;
+        const WeaponDefinition* wdef = WeaponRegistry::instance().get(n.body.equippedWeaponId);
+        if (!wdef) continue;
+        const uint8_t netWeapon = networkWeaponTypeForDefinition(*wdef);
+        if (netWeapon == NETWORK_WEAPON_NONE) continue;
+
+        const glm::vec3 origin = n.body.pos + NpcCombat::npcMuzzleOffset();
+        const glm::vec3 dir = glm::length(n.currentFacing) > 0.001f
+            ? glm::normalize(n.currentFacing)
+            : glm::vec3(1.0f, 0.0f, 0.0f);
+        const glm::vec3 hit = origin + dir * 100.0f;
+
+        ShotEventPacket ev{};
+        ev.header.type = PACKET_SHOT_EVENT;
+        ev.header.tick = tick;
+        ev.header.playerId = n.id;
+        ev.shotSerial = 0;
+        ev.clientTimeMs = 0;
+        ev.shooterPlayerId = n.id;
+        ev.targetPlayerId = 0;
+        ev.weapon = netWeapon;
+        ev.impactType = SHOT_IMPACT_NONE;
+        ev.effectFlags = SHOT_EFFECT_MUZZLE | SHOT_EFFECT_TRACER |
+            SHOT_EFFECT_SHOOT_SOUND | SHOT_EFFECT_WEAPON_TRIGGER;
+        ev.originX = origin.x; ev.originY = origin.y; ev.originZ = origin.z;
+        ev.hitX = hit.x; ev.hitY = hit.y; ev.hitZ = hit.z;
+        ev.dirX = dir.x; ev.dirY = dir.y; ev.dirZ = dir.z;
+        ev.normalX = -dir.x; ev.normalY = -dir.y; ev.normalZ = -dir.z;
+
+        for (const auto& pe : players)
+        {
+            if (pe.second.transport)
+                pe.second.transport->send(&ev, sizeof(ev));
+            else
+                sendto(sock, (const char*)&ev, sizeof(ev), 0,
+                       (sockaddr*)&pe.second.addr,
+                       sizeof(pe.second.addr));
+            ++totalPacketsOut;
+        }
+
+        printf("%s [NPC FIRED] npc=%u weapon=%s dir=(%.2f %.2f %.2f)\n",
+               serverTimestamp(), n.id, wdef->id.c_str(), dir.x, dir.y, dir.z);
     }
 }
 
@@ -164,41 +309,91 @@ void simulateSharedNpcs(SOCKET sock,
     adoptNewServerNpcs(npcs, npcSystem, npcIdsAlive);
     syncServerNpcDamageToNpc(npcs, npcSystem, npcIdsAlive);
 
-    // Pick the nearest live player (to the first NPC) as the shared AI target.
-    ServerPlayer* target = nullptr;
-    float bestD2 = std::numeric_limits<float>::max();
-    glm::vec3 anchor(0.0f, 0.0f, 0.0f);
-    if (!npcSystem.all().empty())
-        anchor = npcSystem.all().front().body.pos;
-    for (auto& kv : players)
+    // Each NPC targets its own nearest live player so range never blocks firing
+    // for NPCs far from a single shared target. Damage stays server-authoritative:
+    // an NPC's damage to its mirror is routed onto the real player it targeted.
+    for (Npc& n : npcSystem.all())
     {
-        ServerPlayer& p = kv.second;
-        if (p.dead) continue;
-        const glm::vec3 d = p.pos - anchor;
-        const float d2 = glm::dot(d, d);
-        if (d2 < bestD2) { bestD2 = d2; target = &p; }
+        if (n.body.dead || n.body.currentHp <= 0)
+            continue;
+
+        ServerPlayer* nearest = nullptr;
+        float bestD2 = std::numeric_limits<float>::max();
+        for (auto& kv : players)
+        {
+            ServerPlayer& p = kv.second;
+            if (p.dead) continue;
+            const glm::vec3 d = p.pos - n.body.pos;
+            const float d2 = glm::dot(d, d);
+            if (d2 < bestD2) { bestD2 = d2; nearest = &p; }
+        }
+        if (!nearest)
+            continue;
+
+        mirrorPlayer.pos = nearest->pos;
+        mirrorPlayer.vel = nearest->vel;
+        mirrorPlayer.currentHp = nearest->health;
+        mirrorPlayer.dead = nearest->dead;
+        const int hpBefore = mirrorPlayer.currentHp;
+
+        npcSystem.updateOneWithTarget(n.id, world, mirrorPlayer, SERVER_DT);
+
+        if (hpBefore > mirrorPlayer.currentHp)
+        {
+            const int damage = hpBefore - mirrorPlayer.currentHp;
+            ServerDamageResult result = applyServerDamage(
+                players, *nearest, 0, damage, glm::vec3(0.0f),
+                ServerDamageSource::Hitscan);
+            queueServerDamageConfirmedEvent(
+                sock, players, tick, totalPacketsOut, 0, *nearest, damage, result,
+                mirrorPlayer.pos, glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f),
+                ServerDamageSource::Hitscan, NETWORK_WEAPON_NONE);
+        }
     }
 
-    mirrorPlayer.pos = target ? target->pos : anchor;
-    mirrorPlayer.vel = target ? target->vel : glm::vec3(0.0f);
-    mirrorPlayer.currentHp = target ? target->health : 100;
-    mirrorPlayer.dead = target ? target->dead : false;
-    const int hpBefore = mirrorPlayer.currentHp;
-
-    npcSystem.update(world, mirrorPlayer, SERVER_DT);
-
-    // Route hitscan damage the NPCs dealt to the mirror back onto the real
-    // nearest player. The snapshot then carries the new HP to the victim.
-    if (target && hpBefore > mirrorPlayer.currentHp)
+    // Respawn killed NPCs (updateOneNpc freezes dead bodies; this loop drives
+    // their countdown and resets them so rebuildServerNpcMap re-admits them).
+    for (Npc& n : npcSystem.all())
     {
-        const int damage = hpBefore - mirrorPlayer.currentHp;
-        ServerDamageResult result = applyServerDamage(
-            players, *target, 0, damage, glm::vec3(0.0f),
-            ServerDamageSource::Hitscan);
-        queueServerDamageConfirmedEvent(
-            sock, players, tick, totalPacketsOut, 0, *target, damage, result,
-            mirrorPlayer.pos, glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f),
-            ServerDamageSource::Hitscan, NETWORK_WEAPON_NONE);
+        if (!n.body.dead) continue;
+        n.body.respawnTimer = std::max(0.0f, n.body.respawnTimer - SERVER_DT);
+        if (n.body.respawnTimer <= 0.0f)
+            respawnServerNpc(n);
+    }
+
+    // Broadcast NPC weapon fire so clients see/hear the shot.
+    broadcastNpcFiring(sock, players, npcSystem, tick, totalPacketsOut);
+
+    // Once-per-second per-NPC fire-state summary: which gate would block firing
+    // (state, ammo, reload, cooldown, distance, LOS). One aggregate line, never
+    // per-frame spam.
+    {
+        static uint64_t lastFireStateLog = 0;
+        const uint64_t nowFire = nowMs();
+        if (nowFire - lastFireStateLog >= 1000)
+        {
+            lastFireStateLog = nowFire;
+            std::string summary;
+            for (const Npc& n : npcSystem.all())
+            {
+                const auto& rtIt = n.body.weaponRuntimes.find(n.body.equippedWeaponId);
+                const bool hasRt = rtIt != n.body.weaponRuntimes.end();
+                char buf[256];
+                snprintf(buf, sizeof(buf),
+                    "id=%u state=%s ammo=%d reserve=%d reloading=%d cd=%.2f "
+                    "dist=%.1f los=%d hasTarget=%d; ",
+                    n.id, npcStateName(n.stateMachine.currentState).c_str(),
+                    hasRt ? rtIt->second.currentAmmo : -1,
+                    hasRt ? rtIt->second.reserveAmmo : -1,
+                    hasRt ? (int)rtIt->second.isReloading : -1,
+                    n.attackCooldown,
+                    n.sensors.targetDistance,
+                    (int)n.cachedLoSBlocked, (int)n.sensors.hasTarget);
+                summary += buf;
+            }
+            Debug::warn(Debug::Category::NpcCombat,
+                "[SERVER NPC FIRE-STATE] %s\n", summary.c_str());
+        }
     }
 
     rebuildServerNpcMap(npcs, npcSystem, npcIdsAlive);

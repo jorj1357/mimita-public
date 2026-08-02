@@ -20,6 +20,7 @@
 #include "npc/npc.h"
 #include "entities/player.h"
 #include "world/world.h"
+#include "config/networking-config.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 
@@ -424,6 +425,10 @@ int runServer(const LaunchOptions& options)
             break;
         }
 
+        // Hot-reload networkingconfig.json so the hosted/dedicated server picks
+        // up server_smoothing (and the shared badconn block) live.
+        NetworkingConfig::instance().pollReload();
+
         // Measure wall-clock elapsed time
         auto currentTime = std::chrono::steady_clock::now();
         double elapsed = std::chrono::duration<double>(currentTime - previousTime).count();
@@ -479,11 +484,10 @@ int runServer(const LaunchOptions& options)
         {
             handleClientTimeout(players);
             for (auto& kv : players)
-                pushPositionHistory(kv.second, tick);
-
-            for (auto& kv : players)
             {
                 simulatePlayer(kv.second, world);
+                updateServerBroadcastInterp(kv.second, tick);
+                pushPositionHistory(kv.second, tick);
                 if (kv.second.justRespawned)
                 {
                     kv.second.justRespawned = false;
@@ -498,9 +502,11 @@ int runServer(const LaunchOptions& options)
             resolvePlayerCollision(players);
             checkVoidDeath(players, npcs);
 
-            for (auto& kv : npcs)
-                simulateSharedNpcs(sock, players, npcs, npcSystem, npcWorld,
-                                   mirrorPlayer, npcIdsAlive, tick, totalPacketsOut);
+            // Simulate all NPCs once per tick. simulateSharedNpcs already walks
+            // the entire NpcSystem; looping over npcs here would advance every
+            // NPC once per NPC and make them move N× faster.
+            simulateSharedNpcs(sock, players, npcs, npcSystem, npcWorld,
+                               mirrorPlayer, npcIdsAlive, tick, totalPacketsOut);
             tickServerProjectiles(sock, players, npcs, projectiles, world, SERVER_DT, tick, totalPacketsOut);
             tickServerPhysicalContactWeapons(sock, players, world, SERVER_DT, tick, totalPacketsOut);
 
@@ -814,6 +820,9 @@ void stopListenServer(ListenServerState& state)
 // and extracted from the old tickListenServer accumulator loop.
 static void simulateOneServerTick(ListenServerState& state)
 {
+    // Hot-reload networkingconfig.json so hosted servers pick up changes live.
+    NetworkingConfig::instance().pollReload();
+
     {
         char buffer[2048];
         sockaddr_in from{};
@@ -854,10 +863,10 @@ static void simulateOneServerTick(ListenServerState& state)
 
         handleClientTimeout(state.players);
         for (auto& kv : state.players)
-            pushPositionHistory(kv.second, state.tick);
-        for (auto& kv : state.players)
         {
             simulatePlayer(kv.second, state.world);
+            updateServerBroadcastInterp(kv.second, state.tick);
+            pushPositionHistory(kv.second, state.tick);
             if (kv.second.justRespawned)
             {
                 kv.second.justRespawned = false;

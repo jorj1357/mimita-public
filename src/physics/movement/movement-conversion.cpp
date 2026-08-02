@@ -13,10 +13,10 @@
 #include <cmath>
 
 #include "entities/player.h"
+#include "config/movement-config.h"
 #include "config/size-scaling-config.h"
 #include "network/server.h"
 #include "network/simulation-constants.h"
-#include "physics/config.h"
 
 namespace {
 
@@ -276,43 +276,12 @@ void applyMovementStateToServerPlayer(const MovementState& state,
 
 MovementConfig makeCurrentRuntimeMovementConfig()
 {
-    MovementConfig config;
+    MovementConfig config = MovementJsonConfig::instance().config();
     config.simulationHz = MimitaNet::GAMEPLAY_SIMULATION_HZ;
     config.fixedDeltaSeconds = MimitaNet::GAMEPLAY_FIXED_DT;
-    config.maximumDeltaSeconds = 0.033f;
-    config.groundSpeed = PHYS.moveSpeed;
-    config.airSpeed = AIR_SPEED;
     const auto& sizeScaling = SizeScalingConfig::instance().data();
     config.movementSpeedSizeExponent = sizeScaling.movementSpeedExponent;
-    config.gravityZ = PHYS.gravity;
-    config.maximumFallSpeed = MAX_FALL_SPEED;
-    config.jumpVerticalSpeed = PHYS.jumpStrength;
     config.jumpHeightSizeExponent = sizeScaling.jumpHeightExponent;
-    config.jumpBufferSeconds = JUMP_BUFFER_TIME;
-    config.coyoteSeconds = COYOTE_JUMP_TIME;
-    config.maximumAirJumps = AIR_JUMPS_MAX;
-    config.groundDashImpulse = DASH_IMPULSE;
-    config.airDashImpulse = AIR_DASH_IMPULSE;
-    config.dashHorizontalImpulse = AIR_DASH_IMPULSE;
-    config.downDashVerticalSpeed = DOWN_DASH_SPEED;
-    config.groundReturnVerticalSpeed = GROUND_RETURN_SPEED;
-    config.freezeDurationSeconds = FREEZE_MAX_TIME;
-    config.freezeCurveExponent = 4.0f;
-    config.freezeDashMinimumPassThrough = 0.001f;
-    config.maximumExternalImpulseSpeed = MAX_EXTERNAL_IMPULSE_SPEED;
-    config.externalImpulseDecay = EXTERNAL_IMPULSE_DECAY;
-    config.externalImpulseSteerRate = EXTERNAL_IMPULSE_STEER_RATE;
-    config.externalImpulseBrakeRate = EXTERNAL_IMPULSE_BRAKE_RATE;
-    config.groundFrictionAmount = GROUND_FRICTION_AMOUNT;
-    config.airFrictionAmount = AIR_FRICTION_AMOUNT;
-    config.frictionSizeExponent = -0.5f;
-    config.almostZeroSpeed = ALMOST_ZERO;
-    config.walkableSlopeDot = MAX_WALKABLE_SLOPE_DOT;
-    config.collisionSkin = COLLISION_SKIN;
-    config.maximumStepHeight = MAX_STEP_HEIGHT;
-    config.stableGroundGraceSeconds = 0.08f;
-    config.landingMinimumAirborneSeconds = 0.08f;
-    config.landingCooldownResetSeconds = 0.3f;
     return config;
 }
 

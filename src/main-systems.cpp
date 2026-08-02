@@ -91,6 +91,7 @@
 #include "config/gameplay-config.h"
 #include "config/player-settings.h"
 #include "config/size-scaling-config.h"
+#include "config/movement-config.h"
 #include "avatar/avatar.h"
 #include "avatar/avatar-commands.h"
 void registerCompetitiveCommands();
@@ -113,6 +114,7 @@ void registerCursorCommands();
 #include "terminal/replay-commands.h"
 #include "terminal/debug-commands.h"
 #include "terminal/player-commands.h"
+#include "terminal/movement-commands.h"
 #include "terminal/weapon-commands.h"
 #include "terminal/weapon-bench-commands.h"
 #include "terminal/npc-commands.h"
@@ -204,6 +206,7 @@ void gameInitSubsystems(Engine& engine)
     LightingConfig::instance().load("config/lighting.json");
     ShadowConfig::instance().load("config/shadows.json");
     GameplayConfig::instance().load("config/gameplay.json");
+    MovementJsonConfig::instance().load("config/movement.json");
     CrosshairConfig::instance().load();
     registerCrosshairCommands();
     HealthbarConfig::instance().load();
@@ -339,6 +342,7 @@ void gameInitSubsystems(Engine& engine)
     gpMpContext = &mpContext;
 
     registerPlayerCommands();
+    registerMovementCommands();
     registerAuthCommands();
     registerWeaponCommands();
     registerWeaponBenchCommands();

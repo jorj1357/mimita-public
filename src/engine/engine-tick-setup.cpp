@@ -9,6 +9,7 @@
 
 #include "crosshair/crosshair-config.h"
 #include "config/gameplay-config.h"
+#include "config/movement-config.h"
 #include "config/networking-config.h"
 #include "config/size-scaling-config.h"
 #include "gui/hud/healthbar-config.h"
@@ -35,6 +36,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     AnalyticsManager::instance().update(dt);
     updatePlayerProceduralHotReload(dt);
     GameplayConfig::instance().pollReload();
+    MovementJsonConfig::instance().pollReload();
     CrosshairConfig::instance().pollReload();
     pollWorldCrosshairConfig();
     pollCoolShotLineConfig();

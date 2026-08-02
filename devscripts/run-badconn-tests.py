@@ -24,6 +24,7 @@ BADCONN_SOURCES = [
     ROOT / "src" / "network" / "badconn" / "badconn-reorder.cpp",
     ROOT / "src" / "network" / "badconn" / "badconn-blackout.cpp",
     ROOT / "src" / "debug" / "debug-log.cpp",
+    ROOT / "src" / "utils" / "path_utils.cpp",
 ]
 
 

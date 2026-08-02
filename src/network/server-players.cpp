@@ -16,6 +16,7 @@
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
 #include "combat/weapon-types.h"
+#include "config/networking-config.h"
 #include "debug/debug-log.h"
 
 #include <cmath>
@@ -271,6 +272,16 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
     player.onGround = false;
     resetServerMovementForAuthoritativeLifecycle(
         player, makeCurrentRuntimeMovementConfig());
+
+    // Hard-reset broadcast interpolation so a fresh life starts at the spawn
+    // position instead of lerping from the previous life.
+    player.hasBroadcastTransform = false;
+    player.hasInterpSegment = false;
+    player.interpFromPos = player.pos;
+    player.interpToPos = player.pos;
+    player.interpToTick = 0;
+    player.interpDurationTicks = 2;
+    player.interpSegmentStartTick = 0;
 
     printf("[SERVER SPAWN RESET] playerId=%u spawnGeneration=%u ownedWeapons=%zu"
            " isInitialSpawn=%d\n",
@@ -588,7 +599,11 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
 
 void pushPositionHistory(ServerPlayer& p, uint32_t tick)
 {
-    p.posHistory.push_back({p.pos, p.vel, tick});
+    // Record the position actually broadcast to clients (the smoothed
+    // interpolated one), so hit rewind reads exactly what attackers saw.
+    const glm::vec3 histPos = p.hasBroadcastTransform ? p.broadcastPosition : p.pos;
+    const glm::vec3 histVel = p.hasBroadcastTransform ? p.broadcastVelocity : p.vel;
+    p.posHistory.push_back({histPos, histVel, tick});
     while (p.posHistory.size() > 30)
         p.posHistory.pop_front();
 }
@@ -599,7 +614,7 @@ bool getPositionAtTick(const ServerPlayer& p, uint32_t targetTick, glm::vec3& ou
         return false;
     if (targetTick >= p.posHistory.back().tick)
     {
-        outPos = p.pos;
+        outPos = p.posHistory.back().pos;
         return true;
     }
     if (targetTick <= p.posHistory.front().tick)
@@ -627,6 +642,114 @@ bool getPositionAtTick(const ServerPlayer& p, uint32_t targetTick, glm::vec3& ou
     return true;
 }
 
+void beginServerBroadcastInterp(ServerPlayer& player, uint32_t serverTick)
+{
+    if (!player.hasAcceptedClientTransform)
+        return;
+
+    const bool smoothingEnabled =
+        NetworkingConfig::instance().data().remotePlayers.serverSmoothing;
+
+    // When smoothing is off (default) the broadcast is simply the newest
+    // accepted report — coherent with the animation state carried in the same
+    // snapshot. The lerp segment is only kept for the re-enabled case.
+    if (!smoothingEnabled)
+    {
+        player.broadcastPosition = player.lastAcceptedClientPosition;
+        player.broadcastVelocity = player.lastAcceptedClientVelocity;
+        player.hasBroadcastTransform = true;
+        player.hasInterpSegment = false;
+        return;
+    }
+
+    const uint32_t newTick = player.movementValidation.lastAcceptedClientTick;
+
+    // Carry the current broadcast position forward as the segment start so a
+    // freshly accepted report never causes a jump.
+    if (player.hasInterpSegment)
+        player.interpFromPos = player.broadcastPosition;
+    else
+        player.interpFromPos = player.lastAcceptedClientPosition;
+
+    // Segment duration = client-tick interval between the two reports (both
+    // domains tick at GAMEPLAY_SIMULATION_HZ), preserving real speed. Guard
+    // against lifecycle resets: lastAcceptedClientTick drops to 0 on
+    // respawn/teleport while the client's long-running tick stays huge, so an
+    // absurd or backward delta falls back to a small default duration.
+    uint32_t durationTicks = 2;
+    if (player.hasInterpSegment)
+    {
+        const uint32_t prevTick = player.interpToTick;
+        if (newTick >= prevTick && (newTick - prevTick) < 600)
+            durationTicks = std::max(1u, newTick - prevTick);
+    }
+
+    player.interpToPos = player.lastAcceptedClientPosition;
+    player.interpToTick = newTick;
+    player.interpDurationTicks = durationTicks;
+    player.interpSegmentStartTick = serverTick;
+    player.hasInterpSegment = true;
+    player.broadcastVelocity = player.lastAcceptedClientVelocity;
+    player.hasBroadcastTransform = true;
+}
+
+void updateServerBroadcastInterp(ServerPlayer& player, uint32_t serverTick)
+{
+    if (!player.hasAcceptedClientTransform)
+        return;
+
+    const bool smoothingEnabled =
+        NetworkingConfig::instance().data().remotePlayers.serverSmoothing;
+    if (!smoothingEnabled)
+    {
+        player.broadcastPosition = player.lastAcceptedClientPosition;
+        player.broadcastVelocity = player.lastAcceptedClientVelocity;
+        player.hasBroadcastTransform = true;
+        return;
+    }
+
+    if (!player.hasInterpSegment)
+    {
+        player.broadcastPosition = player.lastAcceptedClientPosition;
+        player.broadcastVelocity = player.lastAcceptedClientVelocity;
+        player.hasBroadcastTransform = true;
+        return;
+    }
+
+    const uint32_t duration = std::max(1u, player.interpDurationTicks);
+    const uint32_t elapsed = serverTick >= player.interpSegmentStartTick
+        ? (serverTick - player.interpSegmentStartTick)
+        : 0u;
+    const float alpha = elapsed >= duration
+        ? 1.0f
+        : (float)elapsed / (float)duration;
+    player.broadcastPosition = player.interpFromPos +
+        (player.interpToPos - player.interpFromPos) * alpha;
+    player.broadcastVelocity = player.lastAcceptedClientVelocity;
+    player.hasBroadcastTransform = true;
+}
+
+uint32_t estimateServerRewindTick(const ServerPlayer& attacker,
+                                  uint32_t clientSimulationTick,
+                                  uint32_t serverTick)
+{
+    // clientSimulationTick carries the newest server tick the attacker had
+    // rendered (the client stamps it from the local-player snapshot tick), so
+    // it is already in the server tick domain. Their view is that tick minus
+    // the remote interpolation buffer.
+    int64_t rewind;
+    if (clientSimulationTick != 0)
+        rewind = (int64_t)clientSimulationTick - (int64_t)REWIND_INTERP_DELAY_TICKS;
+    else if (attacker.movementValidation.lastAcceptedClientTick != 0 &&
+             attacker.lastAcceptedServerTick != 0)
+        rewind = (int64_t)attacker.lastAcceptedServerTick -
+                 (int64_t)REWIND_INTERP_DELAY_TICKS;
+    else
+        rewind = (int64_t)serverTick - (int64_t)REWIND_INTERP_DELAY_TICKS;
+    rewind = std::clamp<int64_t>(rewind, 0, (int64_t)serverTick);
+    return (uint32_t)rewind;
+}
+
 SnapshotEntity makePlayerEntity(const ServerPlayer& player)
 {
     SnapshotEntity out{};
@@ -634,7 +757,16 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     out.entityType = ENTITY_PLAYER;
     out.active = 1;
     out.ownerClientId = player.id;
-    if (player.hasAcceptedClientTransform)
+    if (player.hasBroadcastTransform)
+    {
+        out.px = player.broadcastPosition.x;
+        out.py = player.broadcastPosition.y;
+        out.pz = player.broadcastPosition.z;
+        out.vx = player.broadcastVelocity.x;
+        out.vy = player.broadcastVelocity.y;
+        out.vz = player.broadcastVelocity.z;
+    }
+    else if (player.hasAcceptedClientTransform)
     {
         out.px = player.lastAcceptedClientPosition.x;
         out.py = player.lastAcceptedClientPosition.y;

@@ -763,6 +763,8 @@ void handleInputPacket(const char* buffer, int bytes,
     p.hasAcceptedClientTransform = true;
     p.lastMovementSequence = report.movementSequence;
     p.hasMovementSequence = true;
+    p.lastAcceptedServerTick = serverTick;
+    beginServerBroadcastInterp(p, serverTick);
 
     if (in->spawnNpcPressed)
     {
@@ -1484,6 +1486,18 @@ void beginAuthoritativeTransform(ServerPlayer& player,
     player.hasAcceptedClientTransform = true;
     resetServerMovementForAuthoritativeLifecycle(
         player, makeCurrentRuntimeMovementConfig());
+
+    // Hard-reset broadcast interpolation: spawn/respawn/teleport must snap to
+    // the authoritative position, never lerp across the discontinuity.
+    player.broadcastPosition = position;
+    player.broadcastVelocity = velocity;
+    player.hasBroadcastTransform = true;
+    player.hasInterpSegment = false;
+    player.interpFromPos = position;
+    player.interpToPos = position;
+    player.interpToTick = 0;
+    player.interpDurationTicks = 2;
+    player.interpSegmentStartTick = 0;
 
     printf("%s [SERVER AUTHORITATIVE TRANSFORM] playerId=%u reason=%s "
            "epoch=%u position=(%.2f,%.2f,%.2f) awaitingAck=1\n",

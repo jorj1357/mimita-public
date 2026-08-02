@@ -8,12 +8,14 @@
 */
 
 #include "network/badconn/badconn.h"
+#include "network/badconn/badconn-internal.h"
 #include "network/game-transport.h"
 #include "network/packets.h"
 
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <deque>
 #include <fstream>
 #include <thread>
 #include <vector>
@@ -59,6 +61,21 @@ std::vector<uint8_t> makePacket(uint8_t type)
     header.tick = 1;
     std::vector<uint8_t> bytes(sizeof(header));
     std::memcpy(bytes.data(), &header, sizeof(header));
+    return bytes;
+}
+
+std::vector<uint8_t> makeAttackRequest(uint32_t requestId, uint32_t playerId,
+                                       uint32_t spawnGen)
+{
+    MimitaNet::AttackRequestPacket req{};
+    req.header.magic = MimitaNet::PROTOCOL_MAGIC;
+    req.header.version = MimitaNet::PROTOCOL_VERSION;
+    req.header.type = MimitaNet::PACKET_ATTACK_REQUEST;
+    req.header.playerId = playerId;
+    req.requestId = requestId;
+    req.spawnGeneration = spawnGen;
+    std::vector<uint8_t> bytes(sizeof(req));
+    std::memcpy(bytes.data(), &req, sizeof(req));
     return bytes;
 }
 
@@ -304,6 +321,65 @@ void testExemptIncomingPassThrough()
     badconn::disable();
 }
 
+void testLatencyFifoOrdering()
+{
+    badconn::disable();
+
+    std::deque<badconn::BadConnQueuedPacket> queue;
+    badconn::BadConnRng rng;
+    rng.seed(1);
+    badconn::BadConnJitterState jitter;
+    const uint64_t generation = 1;
+    const std::vector<uint8_t> first = makePacket(MimitaNet::PACKET_INPUT);
+    const std::vector<uint8_t> second = makePacket(MimitaNet::PACKET_INPUT);
+
+    // First packet rolls 50ms; the second rolls only 10ms and, without the
+    // FIFO link model, would release 40ms before the first. The fix clamps the
+    // second to release after the first.
+    badconn::badConnDelayPacket(queue, 16, first, 50, 50, 0, 0, jitter, generation, rng, 1000);
+    badconn::badConnDelayPacket(queue, 16, second, 10, 10, 0, 0, jitter, generation, rng, 1001);
+
+    check(queue.size() == 2, "fifo: both packets queued");
+    check(queue[0].deliverAtMs == 1050, "fifo: first packet releases at its own delay");
+    check(queue[1].deliverAtMs == 1051, "fifo: later packet cannot overtake earlier packet");
+    check(queue[0].bytes == first && queue[1].bytes == second,
+          "fifo: queue order matches send order");
+
+    badconn::disable();
+}
+
+void testAttackRetryCollapsed()
+{
+    writeTempConfig("latency.json", kLatencyConfig);
+    badconn::loadConfig(tempPath("latency.json"));
+    check(badconn::activatePreset("1"), "attack-collapse: preset activates");
+
+    FakeTransport transport;
+    const std::vector<uint8_t> original = makeAttackRequest(42, 1, 5);
+    const std::vector<uint8_t> retry = makeAttackRequest(42, 1, 5);
+    const std::vector<uint8_t> different = makeAttackRequest(43, 1, 5);
+
+    check(badconn::processOutgoing(original.data(), original.size()),
+          "attack-collapse: original request consumed (delayed)");
+    check(badconn::processOutgoing(retry.data(), retry.size()),
+          "attack-collapse: duplicate retry consumed (collapsed)");
+    check(badconn::metrics().attackRetriesCollapsed == 1,
+          "attack-collapse: retry collapse counter set");
+
+    const uint64_t collapsedBefore = badconn::metrics().attackRetriesCollapsed;
+    check(badconn::processOutgoing(different.data(), different.size()),
+          "attack-collapse: different request consumed (delayed, not collapsed)");
+    check(badconn::metrics().attackRetriesCollapsed == collapsedBefore,
+          "attack-collapse: different request not collapsed");
+
+    sleepMs(60);
+    badconn::tick(&transport);
+    check(transport.sent.size() == 2,
+          "attack-collapse: only original + distinct request delivered");
+
+    badconn::disable();
+}
+
 } // namespace
 
 int main()
@@ -318,6 +394,8 @@ int main()
     testBlackoutStartsAndEnds();
     testIncomingLatency();
     testExemptIncomingPassThrough();
+    testLatencyFifoOrdering();
+    testAttackRetryCollapsed();
 
     std::printf("[badconn-core-test] passed=%d failed=%d\n", gPassed, gFailed);
     return gFailed > 0 ? 1 : 0;

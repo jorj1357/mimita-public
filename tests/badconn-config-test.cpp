@@ -46,15 +46,16 @@ void writeTempConfig(const char* name, const std::string& json)
 void testRealConfigLoads()
 {
     badconn::disable();
-    const bool ok = badconn::loadConfig("config/badconnconfig.json");
+    // Badconn presets now live inside the shared networking config file.
+    const bool ok = badconn::loadConfig(badconn::configPath());
     check(ok, "real config loads");
     check(badconn::presets().size() >= 5, "real config has at least 5 presets");
 
     bool foundHighLatency = false;
     for (const badconn::BadConnPreset& preset : badconn::presets())
     {
-        if (preset.name == "High latency" && preset.latency.enabled &&
-            preset.latency.minMs == 250 && preset.latency.maxMs == 999)
+        if (preset.name == "High latency (steady)" && preset.latency.enabled &&
+            preset.latency.baseMs == 250)
             foundHighLatency = true;
     }
     check(foundHighLatency, "real config contains the high-latency preset");

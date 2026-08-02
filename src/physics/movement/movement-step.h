@@ -175,7 +175,8 @@ void applyBasicExternalImpulseControl(MovementState& state,
 
 void applyBasicWalk(MovementState& state,
                     const MovementCommand& command,
-                    const MovementConfig& config);
+                    const MovementConfig& config,
+                    float fixedDt);
 
 void applyBasicJump(MovementState& state,
                     const MovementCommand& command,

@@ -9,6 +9,8 @@
 
 #include "config/networking-config.h"
 
+#include "network/badconn/badconn.h"
+
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -166,6 +168,8 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
         const json& r = root["remote_player_interpolation"];
         RemotePlayerInterpolationConfig& c = next.remotePlayers;
         c.enabled = readBool(r, "enabled", c.enabled);
+        c.directRender = readBool(r, "direct_render", c.directRender);
+        c.serverSmoothing = readBool(r, "server_smoothing", c.serverSmoothing);
         c.interpolationDelaySeconds =
             clampMin(readDouble(r, "interpolation_delay_ms", c.interpolationDelaySeconds * 1000.0) / 1000.0, 0.0);
         c.maximumBufferedSnapshots = (std::size_t)clampMin(
@@ -279,6 +283,10 @@ bool NetworkingConfig::load(const std::string& path)
     mData = next;
     mOverrideInterpolationDelayMs.reset();
     mLastWrite = getLastWrite(mPath);
+
+    // The same file also owns the badconn preset block — re-apply it so both
+    // share one source of truth and hot-reload together.
+    badconn::loadConfig(badconn::configPath());
 
     Debug::warn(Debug::Category::Networking,
                 "[NETWORK CONFIG] Loaded: %s (delay=%.0fms buffer=%zu extrap=%d)\n",

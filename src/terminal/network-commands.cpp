@@ -1,10 +1,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
+#include <cctype>
 #include <string>
 #include <vector>
 #include <algorithm>
 #include <random>
+#include <filesystem>
 #include <shellapi.h>
 #include "devtools/terminal.h"
 #include "terminal/terminal-state.h"
@@ -14,11 +16,166 @@
 #include "network/multiplayer-context.h"
 #include "network/disagreement-visuals.h"
 #include "config/networking-config.h"
+#include "utils/path_utils.h"
 #include "gui/gui-main.h"
 #include "auth/auth-system.h"
 
 extern bool gNetPresentationDebug;
 extern bool gRoomCodeShow;
+
+namespace {
+
+// Networking preset snapshots live in a folder next to the live config file.
+std::string networkPresetsDir()
+{
+    return resolveAssetPath("config/networking/presets/");
+}
+
+std::vector<std::string> listNetworkPresetNames()
+{
+    std::vector<std::string> names;
+    std::error_code ec;
+    for (auto& entry : std::filesystem::directory_iterator(networkPresetsDir(), ec))
+    {
+        if (ec || !entry.is_regular_file(ec))
+            continue;
+        std::string name = entry.path().filename().string();
+        if (name.size() >= 5 && name.compare(name.size() - 5, 5, ".json") == 0)
+            names.push_back(name.substr(0, name.size() - 5));
+    }
+    std::sort(names.begin(), names.end());
+    return names;
+}
+
+bool copyLiveConfigTo(const std::string& destination)
+{
+    std::error_code ec;
+    std::filesystem::create_directories(networkPresetsDir(), ec);
+    if (ec)
+        return false;
+    std::filesystem::copy_file(
+        NetworkingConfig::defaultPath(), destination,
+        std::filesystem::copy_options::overwrite_existing, ec);
+    return !ec;
+}
+
+std::string sanitizePresetName(const std::string& raw)
+{
+    std::string safe;
+    safe.reserve(raw.size());
+    for (const char c : raw)
+    {
+        if (std::isalnum((unsigned char)c) || c == '_' || c == '-')
+            safe.push_back(c);
+        else if (c == ' ' || c == '.')
+            safe.push_back('_');
+    }
+    return safe;
+}
+
+void startInteractiveSave()
+{
+    const std::vector<std::string> names = listNetworkPresetNames();
+    std::string prompt = "[NETWORK CONFIG] What preset do you want to save to?";
+    for (size_t i = 0; i < names.size(); ++i)
+        prompt += "\n  " + std::to_string(i + 1) + ": " + names[i];
+    prompt += "\n  " + std::to_string(names.size() + 1) + ": New preset";
+    prompt += "\n  (type 'cancel' to abort)";
+    Terminal::instance().addLog(prompt);
+
+    Terminal::instance().requestInput("[save to preset] > ",
+        [names](const std::string& answer) {
+            if (answer.empty() || answer == "cancel")
+            {
+                Terminal::instance().addLog("[NETWORK CONFIG] save cancelled");
+                return;
+            }
+            bool numeric = !answer.empty();
+            for (const char c : answer)
+                if (!std::isdigit((unsigned char)c)) { numeric = false; break; }
+            if (!numeric)
+            {
+                Terminal::instance().addLog("[NETWORK CONFIG] invalid preset number — cancelled");
+                return;
+            }
+            const int number = std::atoi(answer.c_str());
+            if (number >= 1 && (size_t)number <= names.size())
+            {
+                const std::string file = names[(size_t)number - 1];
+                if (copyLiveConfigTo(networkPresetsDir() + file + ".json"))
+                    Terminal::instance().addLog("[NETWORK CONFIG] saved to preset " +
+                        std::to_string(number) + " (" + file + ")");
+                else
+                    Terminal::instance().addLog("[NETWORK CONFIG] save FAILED");
+                return;
+            }
+            if (number == (int)names.size() + 1)
+            {
+                Terminal::instance().requestInput("[name the preset] > ",
+                    [](const std::string& rawName) {
+                        if (rawName.empty() || rawName == "cancel")
+                        {
+                            Terminal::instance().addLog("[NETWORK CONFIG] save cancelled");
+                            return;
+                        }
+                        const std::string safe = sanitizePresetName(rawName);
+                        if (safe.empty())
+                        {
+                            Terminal::instance().addLog("[NETWORK CONFIG] invalid preset name — cancelled");
+                            return;
+                        }
+                        if (copyLiveConfigTo(networkPresetsDir() + safe + ".json"))
+                            Terminal::instance().addLog("[NETWORK CONFIG] saved new preset '" + safe + "'");
+                        else
+                            Terminal::instance().addLog("[NETWORK CONFIG] save FAILED");
+                    });
+                return;
+            }
+            Terminal::instance().addLog("[NETWORK CONFIG] invalid preset number — cancelled");
+        });
+}
+
+void listNetworkPresets()
+{
+    const std::vector<std::string> names = listNetworkPresetNames();
+    if (names.empty())
+    {
+        Terminal::instance().addLog("[NETWORK CONFIG] no presets found in " + networkPresetsDir());
+        return;
+    }
+    Terminal::instance().addLog("[NETWORK CONFIG] presets:");
+    for (size_t i = 0; i < names.size(); ++i)
+        Terminal::instance().addLog("  " + std::to_string(i + 1) + ": " + names[i]);
+}
+
+void loadNetworkPreset(int number)
+{
+    const std::vector<std::string> names = listNetworkPresetNames();
+    if (number < 1 || (size_t)number > names.size())
+    {
+        Terminal::instance().addLog("[NETWORK CONFIG] preset " + std::to_string(number) +
+                                    " not found — use 'networkconfig list'");
+        return;
+    }
+    const std::string name = names[(size_t)number - 1];
+    std::error_code ec;
+    std::filesystem::copy_file(
+        networkPresetsDir() + name + ".json",
+        NetworkingConfig::defaultPath(),
+        std::filesystem::copy_options::overwrite_existing, ec);
+    if (ec)
+    {
+        Terminal::instance().addLog("[NETWORK CONFIG] could not load preset '" + name + "'");
+        return;
+    }
+    if (NetworkingConfig::instance().reloadFromDisk())
+        Terminal::instance().addLog("[NETWORK CONFIG] loaded preset " + std::to_string(number) +
+                                    " ('" + name + "') — hot-reloaded everywhere");
+    else
+        Terminal::instance().addLog("[NETWORK CONFIG] preset '" + name + "' loaded but file invalid — keeping previous config");
+}
+
+} // namespace
 
 void registerNetworkCommands()
 {
@@ -504,8 +661,8 @@ void registerNetworkCommands()
 
     // ── Live networking config control ─────────────────────────────────
     Terminal::instance().registerCommand({
-        "networkconfig", "Networking config control: reload | path | print | reset",
-        "networkconfig <reload|path|print|reset>",
+        "networkconfig", "Networking config control: reload | list | load | save | print | reset",
+        "networkconfig <reload|list|load N|save|print|reset>",
         [](const std::vector<std::string>& args) {
             NetworkingConfig& cfg = NetworkingConfig::instance();
             const std::string sub = args.empty() ? "" : args[0];
@@ -515,11 +672,46 @@ void registerNetworkCommands()
                     (ok ? "reloaded" : "reload FAILED (kept previous valid values)"));
             } else if (sub == "path") {
                 Terminal::instance().addLog("[NETWORK CONFIG] path=" + cfg.configPath());
+            } else if (sub == "list") {
+                listNetworkPresets();
+            } else if (sub == "load") {
+                if (args.size() < 2 || !std::isdigit((unsigned char)args[1][0])) {
+                    Terminal::instance().addLog("[NETWORK CONFIG] usage: networkconfig load <N> (see 'networkconfig list')");
+                } else {
+                    loadNetworkPreset(std::atoi(args[1].c_str()));
+                }
+            } else if (sub == "save") {
+                if (args.size() >= 3 && args[1] == "new") {
+                    const std::string safe = sanitizePresetName(args[2]);
+                    if (safe.empty()) {
+                        Terminal::instance().addLog("[NETWORK CONFIG] invalid preset name");
+                    } else if (copyLiveConfigTo(networkPresetsDir() + safe + ".json")) {
+                        Terminal::instance().addLog("[NETWORK CONFIG] saved new preset '" + safe + "'");
+                    } else {
+                        Terminal::instance().addLog("[NETWORK CONFIG] save FAILED");
+                    }
+                } else if (args.size() >= 2 && std::isdigit((unsigned char)args[1][0])) {
+                    const std::vector<std::string> names = listNetworkPresetNames();
+                    const int number = std::atoi(args[1].c_str());
+                    if (number < 1 || (size_t)number > names.size()) {
+                        Terminal::instance().addLog("[NETWORK CONFIG] preset " + std::to_string(number) + " not found");
+                    } else if (copyLiveConfigTo(networkPresetsDir() + names[(size_t)number - 1] + ".json")) {
+                        Terminal::instance().addLog("[NETWORK CONFIG] saved to preset " + std::to_string(number) +
+                                                    " (" + names[(size_t)number - 1] + ")");
+                    } else {
+                        Terminal::instance().addLog("[NETWORK CONFIG] save FAILED");
+                    }
+                } else {
+                    startInteractiveSave();
+                }
             } else if (sub == "print") {
                 const auto& d = cfg.data();
                 char buf[256];
-                snprintf(buf, sizeof(buf), "[NETWORK CONFIG] delayMs=%.0f (override=%s) "
+                snprintf(buf, sizeof(buf), "[NETWORK CONFIG] directRender=%d serverSmoothing=%d "
+                         "delayMs=%.0f (override=%s) "
                          "enabled=%d buffer=%zu extrap=%d maxExtrapMs=%.0f",
+                         (int)d.remotePlayers.directRender,
+                         (int)d.remotePlayers.serverSmoothing,
                          cfg.effectiveRemoteInterpolationDelaySeconds() * 1000.0,
                          cfg.overrideInterpolationDelayMs().has_value() ? "yes" : "no",
                          (int)d.remotePlayers.enabled,
@@ -531,7 +723,7 @@ void registerNetworkCommands()
                 cfg.resetToDefaults();
                 Terminal::instance().addLog("[NETWORK CONFIG] reset to compiled defaults");
             } else {
-                Terminal::instance().addLog("[NETWORK CONFIG] usage: networkconfig <reload|path|print|reset>");
+                Terminal::instance().addLog("[NETWORK CONFIG] usage: networkconfig <reload|path|list|load N|save|print|reset>");
             }
         }
     });

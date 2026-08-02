@@ -374,9 +374,23 @@ void NpcSystem::update(const World& world, Player& player, float dt)
     Perf::flushNpcProfiles();
 }
 
+void NpcSystem::updateOneWithTarget(uint32_t npcId, const World& world, Player& player, float dt)
+{
+    for (Npc& nc : npcs)
+    {
+        if (nc.id != npcId)
+            continue;
+        // Register NPC weapon fire for other NPCs' hearing (same as update()).
+        if (nc.attackCooldown > 0.0f && nc.sensors.hasTarget)
+            notifyCombatSound(nc.body.pos, 0.5f);
+        updateOneNpc(nc, world, player, dt);
+        break;
+    }
+}
+
 void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float dt)
 {
-    if (npc.body.dead) {
+    if (npc.body.dead || npc.body.currentHp <= 0) {
         npc.body.updateModelWorldTransforms();
         return;
     }
@@ -563,10 +577,8 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         if (++npc.losTickCounter >= LOS_INTERVAL)
             npc.losTickCounter = 0;
 
-        glm::vec3 fromPos = npc.body.pos;
-        fromPos.z += 0.8f;
-        glm::vec3 toPos = npc.sensors.targetPos;
-        toPos.z += 0.8f;
+        glm::vec3 fromPos = npc.body.pos + NpcCombat::npcMuzzleOffset();
+        glm::vec3 toPos = npc.sensors.targetPos + NpcCombat::npcMuzzleOffset();
         glm::vec3 losDir = toPos - fromPos;
         float losDist = glm::length(losDir);
 

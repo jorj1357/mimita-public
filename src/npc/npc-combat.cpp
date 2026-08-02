@@ -285,12 +285,14 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         return false;
     }
 
-    float maxRange = effectiveRange(*def);
-    if (dist > maxRange)
+    // Range gate is effectively unlimited so an NPC never idles purely because
+    // a target is far away. The hitscan/projectile itself still has its own
+    // weapon range, so damage only lands within reach; the NPC always fires.
+    if (npcFiringRangeBlocked(dist))
     {
         Debug::logThrottled(Debug::Category::NpcCombat, "npc-range",
-            DebugConfig::PRINT_INTERVAL, "[NPC] id=%u fire blocked: dist=%.1f > maxRange=%.1f\n",
-            npc.id, dist, maxRange);
+            DebugConfig::PRINT_INTERVAL, "[NPC] id=%u fire blocked: dist=%.1f > cap=%.1f\n",
+            npc.id, dist, NpcCombat::kNpcFiringRangeCap);
         return false;
     }
 
@@ -335,8 +337,7 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     }
 
     glm::vec3 aimDir;
-    glm::vec3 npcPos = npc.body.pos;
-    npcPos.z += 0.8f;
+    glm::vec3 npcPos = npc.body.pos + npcMuzzleOffset();
 
     // Use cached LOS from updateOneNpc (avoids redundant gather + triangle loop)
     if (npc.cachedLoSBlocked)
