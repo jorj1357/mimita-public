@@ -42,9 +42,9 @@ export function amountCentsForDays(days) {
     return days * PRICE_CENTS_PER_DAY
 }
 
-function frontendUrl(path) {
-    const origin = process.env.APP_ORIGIN || ""
-    return origin ? `${origin}${path}` : path
+function frontendUrl(req, path) {
+    const origin = req.headers.origin || process.env.APP_ORIGIN || "http://localhost:5173"
+    return `${origin}${path}`
 }
 
 function cleanOrderId(value) {
@@ -89,14 +89,23 @@ function createCheckoutSessionRouter(deps = {}) {
 
             const session = await stripe.checkout.sessions.create({
                 mode: "payment",
-                amount: amountCents,
-                currency: ORDER_CURRENCY,
+                line_items: [{
+                    price_data: {
+                        currency: ORDER_CURRENCY,
+                        unit_amount: amountCents,
+                        product_data: {
+                            name: "MiMITA banner time",
+                            description: `${durationDays} banner day${durationDays === 1 ? "" : "s"}`
+                        }
+                    },
+                    quantity: 1
+                }],
                 metadata: {
                     banner_order_id: String(orderId),
                     source: FLOW_SOURCE
                 },
-                success_url: frontendUrl("/banner-pay-test?status=success"),
-                cancel_url: frontendUrl("/banner-pay-test?status=cancelled")
+                success_url: frontendUrl(req, "/banner-pay-test?status=success"),
+                cancel_url: frontendUrl(req, "/banner-pay-test?status=cancelled")
             })
 
             await query(

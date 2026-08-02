@@ -804,31 +804,85 @@ static void applyAccelWalk(MovementState& state,
     const glm::vec2 wishDir = movementNormalizeDirectionOrZero(wish);
     const bool onGround = state.ground.onGround;
 
-    const float maxSpeed = onGround
+    float wishspeed = onGround
         ? movementScaledGroundSpeed(config, state.sizeScale)
         : movementScaledAirSpeed(config, state.sizeScale);
+    // Air wishspeed cap (Source sv_air_max_wishspeed): a low cap makes air accel
+    // weak unless the camera turns, which is what forces CS-style strafing.
+    if (!onGround && config.airMaxWishspeed > 0.0f)
+        wishspeed = std::min(wishspeed, config.airMaxWishspeed);
+
+    // Input magnitude scales the wishspeed target. The input pipeline
+    // normalizes diagonals, so this is 1.0 for any held key.
+    const float inputMagnitude = glm::length(wish);
+    wishspeed *= std::min(inputMagnitude, 1.0f);
+
     const float accel = onGround
         ? config.groundAcceleration
         : config.airAcceleration;
 
     glm::vec2 vel(state.baseVelocity.x, state.baseVelocity.y);
+    const float totalSpeed = glm::length(vel);
+
+    // Straight-line preservation: when airborne, if the current velocity is
+    // already aligned with the wish direction at or above the wish speed, do
+    // not accelerate. This guarantees holding W + Space while looking
+    // perfectly straight keeps horizontal speed exactly instead of creeping
+    // forward every jump.
+    if (!onGround && config.preserveStraightSpeed && totalSpeed > 0.0001f) {
+        const float alignment = std::fabs(glm::dot(vel / totalSpeed, wishDir));
+        const float minCos =
+            std::cos(glm::radians(config.minimumStrafeAngleDegrees));
+        if (alignment > minCos && totalSpeed >= wishspeed)
+            return;
+    }
+
     const float currentSpeed = glm::dot(vel, wishDir);
-    float addSpeed = maxSpeed - currentSpeed;
-    if (addSpeed <= 0.0f)
-        return;
-    addSpeed = std::min(addSpeed, accel * dt);
+    float addSpeed = wishspeed - currentSpeed;
+    if (addSpeed > 0.0f) {
+        // Source Accelerate(): gain per frame is accel * wishspeed * dt.
+        addSpeed = std::min(addSpeed, accel * wishspeed * dt);
+        if (config.maximumAccelerationPerTick > 0.0f)
+            addSpeed = std::min(addSpeed, config.maximumAccelerationPerTick);
 
-    vel += wishDir * addSpeed;
+        // Soft cap: fade acceleration as total speed approaches the cap.
+        if (!onGround && config.speedCapEnabled &&
+            config.maximumBhopSpeedMode == MovementSpeedCapMode::Soft &&
+            config.bunnyHopSpeedCap > 0.0f) {
+            if (totalSpeed >= config.bunnyHopSpeedCap) {
+                addSpeed = 0.0f;
+            } else if (config.accelerationFalloffNearCap > 0.0f) {
+                const float distanceToCap = config.bunnyHopSpeedCap - totalSpeed;
+                const float fade = std::clamp(
+                    distanceToCap /
+                        (config.bunnyHopSpeedCap * config.accelerationFalloffNearCap),
+                    0.0f, 1.0f);
+                addSpeed *= fade;
+            }
+        }
 
-    // Ground clamps planar speed to max speed. Air keeps a soft cap so
-    // strafing can build speed past air speed (enables bhop/air-strafe gain).
-    const bool preserveMomentum =
-        config.bunnyHopEnabled && onGround &&
-        state.jump.jumpIntentTimerSeconds > 0.0f;
-    if (onGround && !preserveMomentum) {
+        vel += wishDir * addSpeed;
+    }
+
+    // Surf-style air control (Source sv_aircontrol): actively steer the
+    // velocity toward the wish direction while airborne.
+    if (!onGround && config.airControl > 0.0f) {
+        const float velLen = glm::length(vel);
+        if (velLen > 0.0001f) {
+            const float velDot = glm::dot(vel / velLen, wishDir);
+            const float steer = config.airControl *
+                (1.0f - std::fabs(velDot)) * wishspeed * dt;
+            vel += wishDir * steer;
+        }
+    }
+
+    // Hard cap: clamp planar speed to the configured maximum.
+    if (!onGround && config.speedCapEnabled &&
+        config.maximumBhopSpeedMode == MovementSpeedCapMode::Hard &&
+        config.bunnyHopSpeedCap > 0.0f) {
         const float planar = glm::length(vel);
-        if (planar > maxSpeed && planar > 0.0f)
-            vel *= maxSpeed / planar;
+        if (planar > config.bunnyHopSpeedCap && planar > 0.0f)
+            vel *= config.bunnyHopSpeedCap / planar;
     }
 
     state.baseVelocity.x = vel.x;
@@ -878,7 +932,7 @@ void applyBasicJump(MovementState& state,
     if (state.ground.onGround)
         state.jump.coyoteTimerSeconds = config.coyoteSeconds;
 
-    if (command.jumpHeld)
+    if (command.jumpHeld && config.autoBhopEnabled)
         state.jump.jumpIntentTimerSeconds = config.jumpBufferSeconds;
 
     const bool jumpPressedThisFrame =
@@ -928,6 +982,44 @@ void applyBasicJump(MovementState& state,
     }
 }
 
+static void applySourceFriction(MovementState& state,
+                                const MovementConfig& config,
+                                float fixedDt)
+{
+    const float dt = movementClampStepDelta(fixedDt, config);
+    const float frictionMul = std::clamp(state.dash.frictionOverride, 0.0f, 1.0f);
+
+    if (state.ground.onGround) {
+        glm::vec2 vel(state.baseVelocity.x, state.baseVelocity.y);
+        const float speed = glm::length(vel);
+        if (speed > 0.1f) {
+            // Source Friction(): below stopspeed the control value stays at
+            // stopspeed, so the player actually comes to a stop.
+            const float control =
+                config.stopspeed > 0.0f ? std::max(speed, config.stopspeed) : speed;
+            // landing_speed_retention scales friction while moving: 1.0 keeps
+            // the speed gained from bhop/air-strafe on landing, 0.0 applies
+            // the normal friction. Releasing the keys always stops the player.
+            const bool hasMoveInput = movementHasMoveInput(state.lastInputMoveAxes);
+            const float retentionScale =
+                hasMoveInput ? (1.0f - config.landingSpeedRetention) : 1.0f;
+            const float drop = control * config.groundFrictionAmount *
+                retentionScale * frictionMul * dt;
+            const float newspeed = std::max(0.0f, speed - drop);
+            if (newspeed > 0.0f)
+                vel *= newspeed / speed;
+            state.baseVelocity.x = vel.x;
+            state.baseVelocity.y = vel.y;
+        }
+    } else if (config.airFrictionAmount > 0.0f) {
+        // Optional air drag. Source has none, so this defaults to 0.
+        glm::vec2 vel(state.baseVelocity.x, state.baseVelocity.y);
+        vel *= expDecay(config.airFrictionAmount * frictionMul, dt);
+        state.baseVelocity.x = vel.x;
+        state.baseVelocity.y = vel.y;
+    }
+}
+
 void applyBasicFriction(MovementState& state,
                         const MovementConfig& config,
                         float fixedDt)
@@ -936,16 +1028,20 @@ void applyBasicFriction(MovementState& state,
     const bool hasMoveInput = movementHasMoveInput(state.lastInputMoveAxes);
     const float frictionOverride = std::clamp(state.dash.frictionOverride, 0.0f, 1.0f);
 
-    const glm::vec2 frictioned = movementApplyBaseFrictionXY(
-        glm::vec2(state.baseVelocity),
-        state.ground.stableOnGround,
-        hasMoveInput,
-        state.sizeScale,
-        frictionOverride,
-        config,
-        dt);
-    state.baseVelocity.x = frictioned.x;
-    state.baseVelocity.y = frictioned.y;
+    if (config.walkMode == MovementWalkMode::Accel) {
+        applySourceFriction(state, config, dt);
+    } else {
+        const glm::vec2 frictioned = movementApplyBaseFrictionXY(
+            glm::vec2(state.baseVelocity),
+            state.ground.stableOnGround,
+            hasMoveInput,
+            state.sizeScale,
+            frictionOverride,
+            config,
+            dt);
+        state.baseVelocity.x = frictioned.x;
+        state.baseVelocity.y = frictioned.y;
+    }
 
     movementDecayAndClampExternalImpulse(
         state.externalImpulse, config, frictionOverride, dt);

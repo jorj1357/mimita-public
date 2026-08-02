@@ -72,6 +72,26 @@ void registerMovementCommands()
     }, CommandCategory::Physics);
 
     Terminal::instance().registerCommand({
+        "movement_debug",
+        "Toggle the bhop/air-accel debug overlay (0=off, 1=on)",
+        "movement_debug <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(
+                    "[MOVEMENT] Usage: movement_debug <0|1>. Currently " +
+                    std::string(MovementJsonConfig::instance().config().debugDrawEnabled
+                                    ? "on" : "off"));
+                return;
+            }
+            const bool enabled = args[0] == "1";
+            MovementJsonConfig::instance().setDebugDrawEnabled(enabled);
+            Terminal::instance().addLog(
+                enabled ? "[MOVEMENT] bhop debug overlay ON"
+                        : "[MOVEMENT] bhop debug overlay OFF");
+        }
+    }, CommandCategory::Physics);
+
+    Terminal::instance().registerCommand({
         "movement_print",
         "Print the active movement tuning values",
         "movement_print",
@@ -79,15 +99,30 @@ void registerMovementCommands()
             const auto& cfg = MovementJsonConfig::instance().config();
             char buf[512];
             std::snprintf(buf, sizeof(buf),
-                "[MOVEMENT] preset=%s mode=%s air_strafing=%d bhop=%d",
+                "[MOVEMENT] preset=%s mode=%s air_strafing=%d bhop=%d auto_bhop=%d",
                 MovementJsonConfig::instance().activePresetName().c_str(),
                 cfg.walkMode == MovementWalkMode::Accel ? "accel" : "override",
-                (int)cfg.airControlEnabled, (int)cfg.bunnyHopEnabled);
+                (int)cfg.airControlEnabled, (int)cfg.bunnyHopEnabled,
+                (int)cfg.autoBhopEnabled);
             Terminal::instance().addLog(buf);
             std::snprintf(buf, sizeof(buf),
                 "[MOVEMENT] ground_speed=%.1f air_speed=%.1f ground_accel=%.1f air_accel=%.1f",
                 cfg.groundSpeed, cfg.airSpeed,
                 cfg.groundAcceleration, cfg.airAcceleration);
+            Terminal::instance().addLog(buf);
+            std::snprintf(buf, sizeof(buf),
+                "[MOVEMENT] air_max_wishspeed=%.1f air_control=%.1f stopspeed=%.1f bhop_cap=%.1f",
+                cfg.airMaxWishspeed, cfg.airControl,
+                cfg.stopspeed, cfg.bunnyHopSpeedCap);
+            Terminal::instance().addLog(buf);
+            std::snprintf(buf, sizeof(buf),
+                "[MOVEMENT] preserve_straight=%d strafe_angle=%.1f max_accel_tick=%.1f "
+                "cap_mode=%s falloff=%.2f retention=%.2f",
+                (int)cfg.preserveStraightSpeed, cfg.minimumStrafeAngleDegrees,
+                cfg.maximumAccelerationPerTick,
+                cfg.maximumBhopSpeedMode == MovementSpeedCapMode::Hard ? "hard" :
+                cfg.maximumBhopSpeedMode == MovementSpeedCapMode::Soft ? "soft" : "none",
+                cfg.accelerationFalloffNearCap, cfg.landingSpeedRetention);
             Terminal::instance().addLog(buf);
             std::snprintf(buf, sizeof(buf),
                 "[MOVEMENT] gravity=%.1f jump=%.1f max_fall=%.1f air_jumps=%d",
