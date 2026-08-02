@@ -26,13 +26,15 @@ import {
     sendAccountWelcomeEmail,
     sendNewsletterWelcomeEmail,
     sendPasswordChangedEmail,
-    sendPasswordChangeCodeEmail
+    sendPasswordChangeCodeEmail,
+    sendPasswordResetCodeEmail
 } from "./mail.js"
 import adminRouter, { regenerateJson } from "./admin.js"
 import debugRouter from "./debug.js"
 import gameAnalyticsRouter from "./gameAnalytics.js"
 import tokenExchangeRouter from "./token-exchange.js"
 import clientLoginRouter from "./client-login.js"
+import { createForgotPasswordRouter } from "./forgot-password.js"
 import gameAuthRouter from "./game-auth.js"
 import gameApiRouter from "./game-api.js"
 import emailCampaignsRouter from "./email-campaigns.js"
@@ -84,6 +86,7 @@ const gameAnalyticsRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 120, 
 const avatarRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 3, name: "avatar" })
 const feedbackRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 5, name: "feedback" })
 const passwordChangeRateLimit = createRateLimit({ windowMs: 60 * 60 * 1000, max: 5, name: "password_change" })
+const forgotPasswordRateLimit = createRateLimit({ windowMs: 60 * 60 * 1000, max: 5, name: "forgot_password" })
 const downloadTrackRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 10, name: "download_track" })
 
 const app = express()
@@ -1051,6 +1054,20 @@ app.post(
             client.release()
         }
     }
+)
+
+app.use(
+    "/api/auth/forgot-password",
+    createForgotPasswordRouter({
+        pool,
+        rateLimit: forgotPasswordRateLimit,
+        sessionSecret,
+        logAuth,
+        sendResetCodeEmail: (email, code) =>
+            safelySend("reset_code_sent", () => sendPasswordResetCodeEmail(email, code)),
+        sendPasswordChangedEmail: (email, at, browser, ip) =>
+            safelySend("reset_password_changed", () => sendPasswordChangedEmail(email, at, browser, ip))
+    })
 )
 
 app.delete("/api/account", authenticate, async (req, res, next) => {

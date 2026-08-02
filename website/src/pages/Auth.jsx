@@ -163,6 +163,14 @@ export default function Auth({ mode }) {
                             {signup ? "Sign in" : "Sign up"}
                         </Link>
                     </p>
+
+                    {!signup && (
+                        <p className="authSwitch">
+                            <Link to="/forgot-password">
+                                Forgot password?
+                            </Link>
+                        </p>
+                    )}
                 </form>
             </section>
         </Layout>

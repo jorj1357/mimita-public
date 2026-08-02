@@ -84,12 +84,20 @@ router.post("/login", loginRateLimit, async (req, res, next) => {
         )
         const user = result.rows[0]
 
-        if (!user || !(await verifyPassword(password, user.password_hash))) {
-            console.log(`[GAME AUTH] login failed identifier=${identifier}`)
+        if (!user) {
+            console.log(`[GAME AUTH] login failed: account not found identifier=${identifier}`)
+            return res.status(401).json({
+                ok: false,
+                error: { code: "ACCOUNT_NOT_FOUND", message: "That user doesn't exist." }
+            })
+        }
+
+        if (!(await verifyPassword(password, user.password_hash))) {
+            console.log(`[GAME AUTH] login failed: wrong password identifier=${identifier}`)
             await recordFailedAttempt(identifier, getClientIp(req))
             return res.status(401).json({
                 ok: false,
-                error: { code: "INVALID_CREDENTIALS", message: "The username/email or password was incorrect." }
+                error: { code: "INVALID_PASSWORD", message: "Wrong password. Try again." }
             })
         }
 

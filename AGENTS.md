@@ -1048,6 +1048,8 @@ overseer.py is currently broken and needs to be fixed. Until it is repaired, tre
 
 The production VPS (107.191.48.226) must not be edited directly.
 
+**Code is never written to the VPS. The VPS only ever receives code by pulling changes that were committed locally and pushed to GitHub.** No file writes, no `scp`, no editors, no patches on the VPS. This guarantees the deployed files always match GitHub exactly and prevents version mismatches between GitHub and the VPS. If a file exists on the VPS that is not on GitHub (or differs from GitHub), that is a bug and must be reconciled by committing the correct version locally and deploying via `git pull`.
+
 All application changes must follow this path:
 1. Make the change in the local repository.
 2. Test the change locally.

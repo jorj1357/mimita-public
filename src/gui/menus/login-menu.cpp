@@ -1,3 +1,13 @@
+// 08 02 2026, 18 30
+/* purpose
+* Draws the login menu GUI and drives sign-in, back, sign-up, and
+* forgot-password actions from the layout-defined elements.
+* Syncs the auth form bindings with the AuthController.
+* DOES NOT perform network authentication itself (see auth-controller).
+* DOES NOT render the main menu, account panel, or sign-in-code dialog.
+* DOES NOT handle website password-reset logic (that lives on the website).
+*/
+
 #include "gui/menus/login-menu.h"
 #include "gui/gui-layout.h"
 #include "gui/gui-element-render.h"
@@ -14,6 +24,14 @@
 namespace {
 
 bool gActive = false;
+
+void openBrowser(const char* url)
+{
+    Debug::log(Debug::Category::Gui, "login menu opening %s\n", url);
+    HINSTANCE h = ShellExecuteA(nullptr, "open", url, nullptr, nullptr, SW_SHOWNORMAL);
+    if ((INT_PTR)h <= 32)
+        Debug::warn(Debug::Category::Gui, "login menu ShellExecuteA failed for %s (result=%lld)\n", url, (long long)(INT_PTR)h);
+}
 
 void syncBindingsToForm()
 {
@@ -118,6 +136,23 @@ LoginMenuResult drawLoginMenu(GLFWwindow* window)
                 result.goBack = true;
             }
         }
+        else if (id == "signUpButton")
+        {
+            UIButtonState s = drawGuiElement(window, *elem);
+            if (s.clicked)
+            {
+                openBrowser("https://mimita.fun/signup");
+                result.createAccount = true;
+            }
+        }
+        else if (id == "forgotPasswordButton")
+        {
+            UIButtonState s = drawGuiElement(window, *elem);
+            if (s.clicked)
+            {
+                openBrowser("https://mimita.fun/forgot-password");
+            }
+        }
         else if (id == "statusText" && !rt.statusText.empty())
         {
             GuiElement dyn = *elem;
@@ -129,10 +164,6 @@ LoginMenuResult drawLoginMenu(GLFWwindow* window)
             GuiElement dyn = *elem;
             dyn.text = rt.errorMessage;
             drawGuiElement(window, dyn);
-        }
-        else if (id == "createAccountNote")
-        {
-            drawGuiElement(window, *elem);
         }
         else
         {
