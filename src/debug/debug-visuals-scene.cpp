@@ -74,10 +74,11 @@ static void drawBhopDebug(const Player& player, const Camera& camera)
         : cfg.airSpeed;
     char buf[192];
     std::snprintf(buf, sizeof(buf),
-        "BHOP speed=%.1f ground=%d airWish=%.1f cap=%.1f mode=%s",
+        "BHOP speed=%.1f ground=%d airWish=%.1f cap=%.1f mode=%s strafeTol=%.0f",
         hSpeed, (int)player.ground.onGround, airWish, cfg.bunnyHopSpeedCap,
         cfg.maximumBhopSpeedMode == MovementSpeedCapMode::Hard ? "hard" :
-        cfg.maximumBhopSpeedMode == MovementSpeedCapMode::Soft ? "soft" : "none");
+        cfg.maximumBhopSpeedMode == MovementSpeedCapMode::Soft ? "soft" : "none",
+        cfg.strafeAngularToleranceDegrees);
     drawWorldLabel(player.pos + glm::vec3(0.0f, 0.0f, 1.2f), buf,
                    {0.0f, 1.0f, 1.0f, 1.0f});
 }

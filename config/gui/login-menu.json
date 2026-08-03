@@ -4,11 +4,13 @@
   "elements": {
     "loginBg": {
       "type": "panel",
+      "layer": 0,
       "x": 0, "y": 0, "width": 1920, "height": 1080,
       "backgroundColor": [0.035, 0.04, 0.052, 1.0]
     },
     "loginTitle": {
       "type": "text",
+      "layer": 1,
       "x": 810, "y": 100, "width": 300, "height": 50,
       "text": "Sign In",
       "fontSize": 0.65,
@@ -16,6 +18,7 @@
     },
     "identifierLabel": {
       "type": "text",
+      "layer": 1,
       "x": 720, "y": 200, "width": 480, "height": 24,
       "text": "Username or Email",
       "fontSize": 0.32,
@@ -23,6 +26,7 @@
     },
     "identifierInput": {
       "type": "text_input",
+      "layer": 1,
       "x": 720, "y": 228, "width": 480, "height": 44,
       "binding": "auth.form.identifier",
       "fontSize": 0.34,
@@ -34,6 +38,7 @@
     },
     "passwordLabel": {
       "type": "text",
+      "layer": 1,
       "x": 720, "y": 284, "width": 480, "height": 24,
       "text": "Password",
       "fontSize": 0.32,
@@ -41,6 +46,7 @@
     },
     "passwordInput": {
       "type": "password_input",
+      "layer": 1,
       "x": 720, "y": 312, "width": 480, "height": 44,
       "binding": "auth.form.password",
       "fontSize": 0.34,
@@ -52,6 +58,7 @@
     },
     "rememberMeCheckbox": {
       "type": "checkbox",
+      "layer": 1,
       "x": 720, "y": 374, "width": 20, "height": 20,
       "binding": "auth.form.remember_me",
       "text": "Remember Me",
@@ -61,6 +68,7 @@
     },
     "signInButton": {
       "type": "button",
+      "layer": 1,
       "x": 810, "y": 424, "width": 300, "height": 54,
       "text": "Sign In",
       "fontSize": 0.38,
@@ -70,6 +78,7 @@
     },
     "cancelButton": {
       "type": "button",
+      "layer": 1,
       "x": 40, "y": 40, "width": 120, "height": 50,
       "text": "Back",
       "fontSize": 0.38,
@@ -78,6 +87,7 @@
     },
     "statusText": {
       "type": "text",
+      "layer": 1,
       "x": 720, "y": 504, "width": 480, "height": 30,
       "binding": "auth.runtime.status_text",
       "fontSize": 0.32,
@@ -85,6 +95,7 @@
     },
     "errorText": {
       "type": "text",
+      "layer": 1,
       "x": 720, "y": 504, "width": 480, "height": 30,
       "binding": "auth.runtime.error_message",
       "fontSize": 0.32,
@@ -92,6 +103,7 @@
     },
     "forgotPasswordButton": {
       "type": "button",
+      "layer": 1,
       "x": 810, "y": 552, "width": 300, "height": 40,
       "text": "Forgot Password?",
       "fontSize": 0.28,
@@ -101,6 +113,7 @@
     },
     "signUpButton": {
       "type": "button",
+      "layer": 1,
       "x": 810, "y": 604, "width": 300, "height": 50,
       "text": "Sign Up",
       "fontSize": 0.36,

@@ -74,6 +74,24 @@ bool parseSpeedCapMode(const json& value, MovementSpeedCapMode& out)
     return false;
 }
 
+bool parseStationaryCameraInputMode(const json& value,
+                                    StationaryCameraInputMode& out)
+{
+    if (!value.is_string())
+        return false;
+
+    const std::string mode = value.get<std::string>();
+    if (mode == "strict") {
+        out = StationaryCameraInputMode::Strict;
+        return true;
+    }
+    if (mode == "steering") {
+        out = StationaryCameraInputMode::Steering;
+        return true;
+    }
+    return false;
+}
+
 // Base used before JSON overrides. Mirrors the constants in src/physics/config.h.
 MovementConfig defaultMovementConfig()
 {
@@ -127,7 +145,17 @@ MovementConfig defaultMovementConfig()
     config.accelerationFalloffNearCap = 0.0f;
     config.landingSpeedRetention = 0.0f;
     config.debugDrawEnabled = false;
+    config.requireActiveWishRotation = true;
+    config.stationaryCameraInputMode = StationaryCameraInputMode::Strict;
+    config.airSteeringRateDegreesPerSecond = 0.0f;
+    config.maximumSteeringDegreesPerSecond = 0.0f;
+    config.minimumCameraYawDeltaDegrees = 0.25f;
+    config.minimumWishRotationDegrees = 0.25f;
+    config.strafeAngularToleranceDegrees = 60.0f;
+    config.softCapStart = 0.0f;
     config.groundAcceleration = 55.0f;
+    config.groundDeceleration = 0.0f;
+    config.groundDirectionChangeResponse = 0.0f;
     config.airAcceleration = 22.0f;
     config.airMaxWishspeed = 0.0f;
     config.airControl = 0.0f;
@@ -165,16 +193,31 @@ void applyPresetOverrides(const json& root, MovementConfig& config)
             "[MOVEMENT CONFIG] Invalid maximum_bhop_speed_mode; "
             "expected \"none\", \"hard\", or \"soft\".\n");
     }
+    if (root.contains("stationary_camera_input_mode") &&
+        !parseStationaryCameraInputMode(root["stationary_camera_input_mode"],
+                                        config.stationaryCameraInputMode)) {
+        Debug::error(Debug::Category::Physics,
+            "[MOVEMENT CONFIG] Invalid stationary_camera_input_mode; "
+            "expected \"strict\" or \"steering\".\n");
+    }
 
+    const auto readBool = [&root](const char* key, bool& target) {
+        if (root.contains(key) && root[key].is_boolean())
+            target = root[key].get<bool>();
+    };
     const auto readFloat = [&root](const char* key, float& target) {
         if (root.contains(key) && root[key].is_number())
             target = root[key].get<float>();
     };
 
+    readBool("require_active_wish_rotation", config.requireActiveWishRotation);
+    readBool("preserve_speed_when_not_strafing", config.preserveStraightSpeed);
+
     readFloat("minimum_strafe_angle", config.minimumStrafeAngleDegrees);
     config.minimumStrafeAngleDegrees =
         std::clamp(config.minimumStrafeAngleDegrees, 0.0f, 90.0f);
     readFloat("maximum_acceleration_per_tick", config.maximumAccelerationPerTick);
+    readFloat("maximum_speed_gain_per_tick", config.maximumAccelerationPerTick);
     readFloat("acceleration_falloff_near_cap", config.accelerationFalloffNearCap);
     config.accelerationFalloffNearCap =
         std::clamp(config.accelerationFalloffNearCap, 0.0f, 1.0f);
@@ -182,14 +225,42 @@ void applyPresetOverrides(const json& root, MovementConfig& config)
     config.landingSpeedRetention =
         std::clamp(config.landingSpeedRetention, 0.0f, 1.0f);
 
+    readFloat("air_steering_rate_degrees_per_second",
+              config.airSteeringRateDegreesPerSecond);
+    config.airSteeringRateDegreesPerSecond =
+        std::max(0.0f, config.airSteeringRateDegreesPerSecond);
+    readFloat("maximum_steering_degrees_per_second",
+              config.maximumSteeringDegreesPerSecond);
+    config.maximumSteeringDegreesPerSecond =
+        std::max(0.0f, config.maximumSteeringDegreesPerSecond);
+    readFloat("minimum_camera_yaw_delta_degrees",
+              config.minimumCameraYawDeltaDegrees);
+    config.minimumCameraYawDeltaDegrees =
+        std::clamp(config.minimumCameraYawDeltaDegrees, 0.0f, 180.0f);
+    readFloat("minimum_wish_rotation_degrees", config.minimumWishRotationDegrees);
+    config.minimumWishRotationDegrees =
+        std::clamp(config.minimumWishRotationDegrees, 0.0f, 180.0f);
+    readFloat("strafe_angular_tolerance_degrees",
+              config.strafeAngularToleranceDegrees);
+    config.strafeAngularToleranceDegrees =
+        std::clamp(config.strafeAngularToleranceDegrees, 0.0f, 90.0f);
+    readFloat("soft_cap_start", config.softCapStart);
+    config.softCapStart = std::max(0.0f, config.softCapStart);
+
     readFloat("ground_speed", config.groundSpeed);
     readFloat("air_speed", config.airSpeed);
     readFloat("ground_acceleration", config.groundAcceleration);
+    readFloat("ground_deceleration", config.groundDeceleration);
+    readFloat("ground_direction_change_response",
+              config.groundDirectionChangeResponse);
     readFloat("air_acceleration", config.airAcceleration);
+    readFloat("air_speed_gain_acceleration", config.airAcceleration);
     readFloat("air_max_wishspeed", config.airMaxWishspeed);
+    readFloat("air_wish_speed", config.airMaxWishspeed);
     readFloat("air_control", config.airControl);
     readFloat("stopspeed", config.stopspeed);
     readFloat("bhop_speed_cap", config.bunnyHopSpeedCap);
+    readFloat("speed_cap", config.bunnyHopSpeedCap);
     readFloat("gravity", config.gravityZ);
     readFloat("max_fall_speed", config.maximumFallSpeed);
     readFloat("jump_strength", config.jumpVerticalSpeed);

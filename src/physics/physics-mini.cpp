@@ -82,7 +82,9 @@ static MovementCommand buildMovementCommandFromPhysicsInputs(
     command.lifecycle = MovementLifecycleIdentity{p.spawnGeneration, 0};
     command.moveAxes = movementClampUnitOrZero(wishMoveXY);
     command.horizontalCameraForward = camForward;
-    command.lookYaw = p.yaw;
+    // Current camera yaw, not the stale player facing: the airborne strafe
+    // eligibility layer measures per-tick camera turn from this value.
+    command.lookYaw = glm::degrees(std::atan2(camForward.y, camForward.x));
     command.jumpHeld = jumpHeld;
     command.jumpPressed = jumpPressed;
     command.dashPressed = dashPressed;

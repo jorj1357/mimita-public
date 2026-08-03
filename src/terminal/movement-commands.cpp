@@ -125,6 +125,23 @@ void registerMovementCommands()
                 cfg.accelerationFalloffNearCap, cfg.landingSpeedRetention);
             Terminal::instance().addLog(buf);
             std::snprintf(buf, sizeof(buf),
+                "[MOVEMENT] ground_accel=%.1f ground_decel=%.1f ground_response=%.1f ground_friction=%.1f",
+                cfg.groundAcceleration, cfg.groundDeceleration,
+                cfg.groundDirectionChangeResponse, cfg.groundFrictionAmount);
+            Terminal::instance().addLog(buf);
+            std::snprintf(buf, sizeof(buf),
+                "[MOVEMENT] air_steer=%.0f deg/s steer_cap=%.0f gain=%.1f wish=%.1f "
+                "mode=%s yawDelta>=%.2f wishDelta>=%.2f tol=%.0f softStart=%.1f",
+                cfg.airSteeringRateDegreesPerSecond,
+                cfg.maximumSteeringDegreesPerSecond,
+                cfg.airAcceleration, cfg.airMaxWishspeed,
+                cfg.stationaryCameraInputMode == StationaryCameraInputMode::Strict
+                    ? "strict" : "steering",
+                cfg.minimumCameraYawDeltaDegrees,
+                cfg.minimumWishRotationDegrees,
+                cfg.strafeAngularToleranceDegrees, cfg.softCapStart);
+            Terminal::instance().addLog(buf);
+            std::snprintf(buf, sizeof(buf),
                 "[MOVEMENT] gravity=%.1f jump=%.1f max_fall=%.1f air_jumps=%d",
                 cfg.gravityZ, cfg.jumpVerticalSpeed,
                 cfg.maximumFallSpeed, cfg.maximumAirJumps);

@@ -151,6 +151,39 @@ export async function sendDataDeletionRequestEmail(request) {
     })
 }
 
+export async function sendSupportNotificationEmail({ requestId, topic, username, email, subject, message, bannerOrderId, createdAt }) {
+    const origin = process.env.APP_ORIGIN || "https://mimita.fun"
+    const adminUrl = `${origin}/admin/support`
+    const text =
+        `New support request #${requestId}\n\n` +
+        `Topic: ${topic}\n` +
+        `Sender: ${username}\n` +
+        `Email: ${email}\n` +
+        `Subject: ${subject}\n` +
+        `Message: ${message}\n` +
+        `Related banner order: ${bannerOrderId || "none"}\n` +
+        `Timestamp: ${createdAt || new Date().toISOString()}\n` +
+        `Admin: ${adminUrl}\n`
+
+    await sendMail({
+        to: "hello@mimita.fun",
+        subject: `Support request #${requestId}: ${subject.slice(0, 80)}`,
+        text,
+        html: `
+            <h1>New support request</h1>
+            <p><strong>Request id:</strong> ${escapeHtml(String(requestId))}</p>
+            <p><strong>Topic:</strong> ${escapeHtml(topic)}</p>
+            <p><strong>Sender:</strong> ${escapeHtml(username)}</p>
+            <p><strong>Email:</strong> ${escapeHtml(email)}</p>
+            <p><strong>Subject:</strong> ${escapeHtml(subject)}</p>
+            <p><strong>Message:</strong> ${escapeHtml(message)}</p>
+            <p><strong>Related banner order:</strong> ${bannerOrderId ? escapeHtml(String(bannerOrderId)) : "none"}</p>
+            <p><strong>Timestamp:</strong> ${escapeHtml(createdAt || new Date().toISOString())}</p>
+            <p><a href="${escapeHtml(adminUrl)}">Open the admin support dashboard</a></p>
+        `
+    })
+}
+
 function escapeHtml(value) {
     return String(value)
         .replaceAll("&", "&amp;")

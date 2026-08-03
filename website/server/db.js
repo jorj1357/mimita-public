@@ -443,6 +443,45 @@ const MIGRATION_STATEMENTS = [
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`,
     `CREATE INDEX IF NOT EXISTS banner_reports_banner_idx ON banner_reports(banner_id, created_at DESC)`,
+
+    // ── Banner schema additions (v2) ─────────────────────────────────────
+
+    `ALTER TABLE banner_payment_orders ADD COLUMN IF NOT EXISTS payment_intent_id TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE site_banners ADD COLUMN IF NOT EXISTS remaining_days DOUBLE PRECISION`,
+    `ALTER TABLE site_banners ADD COLUMN IF NOT EXISTS moderation_state TEXT NOT NULL DEFAULT 'ok'
+        CHECK (moderation_state IN ('ok','flagged','removed'))`,
+    `ALTER TABLE site_banners ADD COLUMN IF NOT EXISTS refund_status TEXT NOT NULL DEFAULT ''
+        CHECK (refund_status IN ('','refund_requested','refunded'))`,
+
+    `CREATE TABLE IF NOT EXISTS support_requests (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+        email TEXT NOT NULL DEFAULT '',
+        topic TEXT NOT NULL DEFAULT 'other'
+            CHECK (topic IN ('user_issue','game_issue','payment_finance','security','other')),
+        subject TEXT NOT NULL DEFAULT '',
+        message TEXT NOT NULL DEFAULT '',
+        url TEXT NOT NULL DEFAULT '',
+        banner_order_id BIGINT REFERENCES banner_payment_orders(id) ON DELETE SET NULL,
+        status TEXT NOT NULL DEFAULT 'new'
+            CHECK (status IN ('new','open','in_progress','resolved')),
+        priority TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE INDEX IF NOT EXISTS support_requests_created_idx ON support_requests(created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS support_requests_topic_idx ON support_requests(topic, created_at DESC)`,
+
+    `CREATE TABLE IF NOT EXISTS admin_actions (
+        id BIGSERIAL PRIMARY KEY,
+        admin_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+        action TEXT NOT NULL DEFAULT '',
+        banner_id BIGINT,
+        previous_state TEXT NOT NULL DEFAULT '',
+        new_state TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE INDEX IF NOT EXISTS admin_actions_created_idx ON admin_actions(created_at DESC)`,
 ]
 
 export async function runMigrations() {
@@ -513,7 +552,9 @@ export function getDbConfig() {
     "email_campaign_recipients",
     "banner_payment_orders",
     "site_banners",
-    "banner_reports"
+    "banner_reports",
+    "support_requests",
+    "admin_actions"
 ]
     }
 }

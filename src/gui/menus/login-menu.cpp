@@ -20,10 +20,28 @@
 
 #include <cstdio>
 #include <shellapi.h>
+#include <algorithm>
 
 namespace {
 
 bool gActive = false;
+
+std::vector<std::string> elementIdsByLayer(const GuiLayout& layout)
+{
+    std::vector<std::pair<int, std::string>> sorted;
+    for (const std::string& id : layout.elementIds())
+    {
+        const GuiElement* e = layout.get(id);
+        if (e) sorted.push_back({e->layer, id});
+    }
+    std::sort(sorted.begin(), sorted.end(),
+        [](const std::pair<int, std::string>& a, const std::pair<int, std::string>& b) {
+            return a.first < b.first;
+        });
+    std::vector<std::string> ids;
+    for (const auto& pair : sorted) ids.push_back(pair.second);
+    return ids;
+}
 
 void openBrowser(const char* url)
 {
@@ -76,7 +94,7 @@ LoginMenuResult drawLoginMenu(GLFWwindow* window)
 
     if (rt.state == AuthState::SigningIn || rt.state == AuthState::LoadingAccount)
     {
-        for (const std::string& id : layout.elementIds())
+        for (const std::string& id : elementIdsByLayer(layout))
         {
             const GuiElement* elem = layout.get(id);
             if (!elem || !elem->visible) continue;
@@ -110,7 +128,7 @@ LoginMenuResult drawLoginMenu(GLFWwindow* window)
 
     syncBindingsToForm();
 
-    for (const std::string& id : layout.elementIds())
+    for (const std::string& id : elementIdsByLayer(layout))
     {
         const GuiElement* elem = layout.get(id);
         if (!elem || !elem->visible) continue;

@@ -1,28 +1,33 @@
 {
     "name": "counterstrike",
-    "comment": "Counter-Strike style movement (Source engine). WASD accelerates toward the wish direction. In the air the wishspeed is capped low (air_max_wishspeed), so holding a key alone barely moves you - you must turn the camera while holding the key to air-strafe and gain speed. Holding Space auto-jumps; straight W+Space preserves speed. Tune the knobs to taste; values are in Mimita's unit scale.",
+    "comment": "CS:GO-inspired movement. Grounded: WASD converges toward a single camera-relative desired velocity (releasing a key removes stale drift). Airborne: momentum persists; speed only grows from a valid strafe (movement input + matching camera rotation). Holding Space auto-jumps. Strict mode = stationary-camera A/D does nothing. All values are in Mimita's scale (ground_speed 20, dt 1/60).",
     "movement_mode": "accel",
-    "air_strafing": true,
-    "bunny_hop": true,
-    "auto_bhop_enabled": true,
-    "preserve_straight_speed": true,
-    "diagonal_input_normalization": true,
-    "minimum_strafe_angle": 20.0,
-    "maximum_acceleration_per_tick": 0.0,
-    "speed_cap_enabled": true,
-    "maximum_bhop_speed": 999.0,
-    "maximum_bhop_speed_mode": "soft",
-    "acceleration_falloff_near_cap": 0.5,
-    "landing_speed_retention": 1.0,
-    "debug_draw_enabled": false,
 
     "ground_speed": 20.0,
-    "air_speed": 20.0,
-    "ground_acceleration": 9.5,
-    "air_acceleration": 12.0,
-    "air_max_wishspeed": 11.0,
-    "air_control": 0.0,
-    "stopspeed": 5.0,
+    "ground_acceleration": 400.0,
+    "ground_deceleration": 5100.0,
+    "ground_direction_change_response": 650.0,
+    "ground_friction": 80.0,
+    "normalize_diagonal_input": true,
+
+    "bunny_hop": true,
+    "auto_bhop_enabled": true,
+    "air_strafing": true,
+    "require_active_wish_rotation": false,
+    "stationary_camera_input_mode": "strict",
+    "air_steering_rate_degrees_per_second": 300.0,
+    "maximum_steering_degrees_per_second": 720.0,
+    "air_speed_gain_acceleration": 3022.0,
+    "air_wish_speed": 228.0,
+    "minimum_camera_yaw_delta_degrees": 0.25,
+    "minimum_wish_rotation_degrees": 0.25,
+    "strafe_angular_tolerance_degrees": 60.0,
+    "speed_cap_mode": "soft",
+    "speed_cap": 420.0,
+    "soft_cap_start": 30.0,
+    "maximum_speed_gain_per_tick": 0.0,
+    "preserve_speed_when_not_strafing": true,
+
     "gravity": -58.0,
     "jump_strength": 19.0,
     "max_fall_speed": 400.0,
@@ -30,7 +35,6 @@
     "coyote_time": 0.001,
     "max_air_jumps": 1,
 
-    "ground_friction": 4.0,
     "air_friction": 0.0,
     "external_impulse_decay": 0.6,
     "max_external_impulse_speed": 120.0,
@@ -39,7 +43,9 @@
     "air_dash_impulse": 50.0,
     "down_dash_speed": -100.0,
 
-    "source_engine_reference": {
-        "comment": "Mapping to Source engine cvars. air_acceleration=sv_airaccelerate, ground_acceleration=sv_accelerate, ground_friction=sv_friction, stopspeed=sv_stopspeed, air_max_wishspeed=sv_air_max_wishspeed, air_control=sv_aircontrol, gravity=sv_gravity, jump_strength=sv_jump_impulse, ground_speed=sv_maxspeed, preserve_straight_speed+minimum_strafe_angle = explicit straight-line dead-zone (no hidden forward accel), maximum_bhop_speed+maximum_bhop_speed_mode = bhop speed cap (none/hard/soft), landing_speed_retention = keep momentum on landing while moving."
+    "debug_draw_enabled": false,
+
+    "tuning_notes": {
+        "comment": "air_steering_rate_degrees_per_second = steering responsiveness (independent of speed gain). air_speed_gain_acceleration = how much a valid strafe adds. strafe_angular_tolerance_degrees = how far the wish may be from perpendicular to velocity. ground_direction_change_response = how fast stale lateral velocity is removed after releasing a key. speed_cap_mode none/hard/soft; hard caps only player-controlled bhop speed. All fields hot-reload."
     }
 }

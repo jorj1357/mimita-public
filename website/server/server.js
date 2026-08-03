@@ -44,6 +44,7 @@ import {
     createSiteBannerUserRouter,
     createSiteBannerAdminRouter
 } from "./site-banner.js"
+import { createSupportRouter, createSupportAdminRouter } from "./support.js"
 import { trackEvent } from "./analytics.js"
 import { pushError } from "./error-queue.js"
 import { createRateLimit } from "./rateLimit.js"
@@ -1152,6 +1153,8 @@ app.use("/api/banner/payment/webhook", createWebhookRouter())
 app.use("/api/site", createSiteBannerPublicRouter())
 app.use("/api/banner", createSiteBannerUserRouter())
 app.use("/api/admin/banners", adminRateLimit, createSiteBannerAdminRouter())
+app.use("/api/support", createSupportRouter())
+app.use("/api/admin/support", adminRateLimit, createSupportAdminRouter())
 app.use("/api", gameApiRouter)
 
 // Serve generated article/news JSON — the admin editor is the source of truth
