@@ -12,6 +12,8 @@
 #include "network/multiplayer-context.h"
 #include "network/network-weapons.h"
 #include "network/disagreement-visuals.h"
+#include "network/simulation-constants.h"
+#include "config/networking-config.h"
 #include "void-death/void-death.h"
 #include "combat/pellet-pattern.h"
 #include "combat/weapon-registry.h"
@@ -19,6 +21,7 @@
 #include "physics/movement/physics-collision.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <limits>
@@ -261,9 +264,18 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         ServerPlayer& target = targetIt->second;
         event.targetTransformEpoch = target.transformEpoch;
 
+        // Same rewind compensation as estimateServerRewindTick: shift the
+        // pellet path's rewind tick by the tunable rewind_compensation_ms so
+        // hits land on the body the shooter rendered under jitter/smoothing.
+        const int64_t compTicks = (int64_t)std::llround(
+            NetworkingConfig::instance().data().remotePlayers
+                .rewindCompensationSeconds * (double)GAMEPLAY_SIMULATION_HZ);
+        const int64_t rawRewind = (int64_t)shot->lastServerTick - compTicks;
+        const uint32_t rewindTick = (uint32_t)std::clamp<int64_t>(
+            rawRewind, 0, (int64_t)shot->lastServerTick);
+
         glm::vec3 rewoundPos;
-        bool hasRewound = getPositionAtTick(
-            target, shot->lastServerTick, rewoundPos);
+        bool hasRewound = getPositionAtTick(target, rewindTick, rewoundPos);
 
         glm::vec3 checkPos = hasRewound
             ? rewoundPos
@@ -284,12 +296,14 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
                    origin.x, origin.y, origin.z,
                    direction.x, direction.y, direction.z,
                    position.x, position.y, position.z,
-                   shot->lastServerTick, rewindDistance,
+                   rewindTick, rewindDistance,
                    checkPos.x, checkPos.y, checkPos.z,
                    target.pos.x, target.pos.y, target.pos.z);
         }
 
-        if (rewindDistance <= 2.5f)
+        const float hitTolerance =
+            NetworkingConfig::instance().data().remotePlayers.rewindHitTolerance;
+        if (rewindDistance <= hitTolerance)
         {
             glm::vec3 shotDir = glm::normalize(direction);
             glm::vec3 worldHit, worldNormal;

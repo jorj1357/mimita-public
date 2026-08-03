@@ -162,11 +162,19 @@ void buildReceiveTimeRender(const EntityInterpolationState& interpolation,
     }
 
     out = *newer;
-    out.position = older->position +
-        (newer->position - older->position) * (float)alpha;
+    // position_mode: "linear" (default) lerps a straight line between samples.
+    if (interpCfg.positionMode == "linear")
+        out.position = older->position +
+            (newer->position - older->position) * (float)alpha;
+    else
+        out.position = glm::mix(older->position, newer->position, (float)alpha);
     out.velocity = older->velocity +
         (newer->velocity - older->velocity) * (float)alpha;
-    out.yaw = lerpAngle(older->yaw, newer->yaw, (float)alpha);
+    // rotation_mode: "slerp" (default) takes the shortest angular path.
+    if (interpCfg.rotationMode == "slerp")
+        out.yaw = lerpAngle(older->yaw, newer->yaw, (float)alpha);
+    else
+        out.yaw = older->yaw + (newer->yaw - older->yaw) * (float)alpha;
     {
         glm::vec3 aim = older->aimDirection * (1.0f - (float)alpha) +
                         newer->aimDirection * (float)alpha;

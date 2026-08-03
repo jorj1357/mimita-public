@@ -1,10 +1,11 @@
-// 07 31 2026, 15 00
+// 08 03 2026, 12 00
 /* purpose
 * Registers terminal commands for the notification system.
 * notifs toggles notifications on/off; notifsingame toggles showing them during
-* gameplay; notifstempmute mutes for N hours; notifs_test pushes a sample popup;
-* notiftest pushes a random tip immediately; tips toggles periodic gameplay tips;
-* notifs_history prints recent popups.
+* gameplay; notifstempmute mutes for N hours; notifs_test pushes a sample popup
+* (pass "long" to exercise typewriter scrolling); notiftest pushes a random tip
+* immediately; tips toggles periodic gameplay tips; notifs_history prints
+* recent popups.
 * Does NOT render, load config, or persist anything itself.
 */
 #include <cstdio>
@@ -82,9 +83,25 @@ void registerNotificationCommands()
     });
 
     Terminal::instance().registerCommand({
-        "notifs_test", "Push a test notification", "notifs_test",
-        [](const std::vector<std::string>&) {
-            NotificationSystem::instance().push("test", "this is a test notification", 0, {});
+        "notifs_test", "Push a test notification (\"long\" = long message)", "notifs_test [long]",
+        [](const std::vector<std::string>& args) {
+            if (!args.empty() && args[0] == "long") {
+                NotificationSystem::instance().push(
+                    "long test",
+                    "This is a very long notification message that should wrap across "
+                    "many lines and then scroll inside the notification box once it gets "
+                    "taller than the configured maximum height. The typewriter effect "
+                    "reveals each character one at a time, and the panel grows with the "
+                    "content until it hits the cap. Keep reading: line after line after "
+                    "line after line after line after line after line after line after "
+                    "line after line after line after line after line after line after "
+                    "line after line after line after line after line after line after "
+                    "line after line. That should be enough text to overflow the box and "
+                    "trigger the scrollbar and mouse wheel scrolling.",
+                    0, {});
+            } else {
+                NotificationSystem::instance().push("test", "this is a test notification", 0, {});
+            }
             Terminal::instance().addLog("[NOTIFS] pushed test notification");
         },
         "2026-07-31", CommandCategory::UI

@@ -7,7 +7,9 @@
 #include <algorithm>
 #include <random>
 #include <filesystem>
+#include <fstream>
 #include <shellapi.h>
+#include <nlohmann/json.hpp>
 #include "devtools/terminal.h"
 #include "terminal/terminal-state.h"
 #include "network/net_mode.h"
@@ -173,6 +175,146 @@ void loadNetworkPreset(int number)
                                     " ('" + name + "') — hot-reloaded everywhere");
     else
         Terminal::instance().addLog("[NETWORK CONFIG] preset '" + name + "' loaded but file invalid — keeping previous config");
+}
+
+// Live-editable knobs under remote_player_interpolation. `set` writes the new
+// value into networkingconfig.json and hot-reloads so every client + hosted/
+// dedicated server picks it up within ~250ms.
+struct NetConfigKnob
+{
+    const char* key;
+    bool isMs;      // value is milliseconds (stored as seconds internally)
+    bool isBool;
+    bool isString;  // arbitrary string value (mode names, etc.)
+    double minMs = 0.0;
+    double maxMs = 60000.0;
+};
+
+const std::vector<NetConfigKnob>& netConfigKnobs()
+{
+    static const std::vector<NetConfigKnob> knobs = {
+        {"interpolation_delay_ms", true, false, false, 0.0, 500.0},
+        {"server_broadcast_delay_ms", true, false, false, 0.0, 1000.0},
+        {"server_broadcast_extrapolation_ms", true, false, false, 0.0, 1000.0},
+        {"maximum_extrapolation_ms", true, false, false, 0.0, 1000.0},
+        {"maximum_buffered_snapshots", false, false, false, 2.0, 256.0},
+        {"minimum_snapshots_before_rendering", false, false, false, 1.0, 64.0},
+        {"server_smoothing_duration_ticks", false, false, false, 1.0, 32.0},
+        {"teleport_distance", false, false, false, 0.1, 100000.0},
+        {"rewind_compensation_ms", true, false, false, -2000.0, 2000.0},
+        {"rewind_hit_tolerance", false, false, false, 0.1, 100.0},
+        {"server_broadcast_max_speed", false, false, false, 0.0, 100000.0},
+        {"direct_render", false, true, false, 0.0, 1.0},
+        {"server_smoothing", false, true, false, 0.0, 1.0},
+        {"allow_extrapolation", false, true, false, 0.0, 1.0},
+        {"enabled", false, true, false, 0.0, 1.0},
+        {"position_mode", false, false, true, 0.0, 1.0},
+        {"rotation_mode", false, false, true, 0.0, 1.0},
+    };
+    return knobs;
+}
+
+bool networkConfigSetKey(const std::string& key, const std::string& value)
+{
+    const std::vector<NetConfigKnob>& knobs = netConfigKnobs();
+    const NetConfigKnob* knob = nullptr;
+    for (const auto& k : knobs)
+        if (key == k.key) { knob = &k; break; }
+    if (!knob)
+        return false;
+
+    if (knob->isString)
+    {
+        if (value.empty())
+            return false;
+    }
+    else
+    {
+        double parsed = 0.0;
+        if (knob->isBool)
+        {
+            if (value == "1" || value == "true" || value == "on") parsed = 1.0;
+            else if (value == "0" || value == "false" || value == "off") parsed = 0.0;
+            else return false;
+        }
+        else
+        {
+            parsed = std::atof(value.c_str());
+            if (parsed == 0.0 && value != "0" && value != "0.0") return false;
+            if (knob->isMs)
+            {
+                parsed = std::max(knob->minMs, std::min(knob->maxMs, parsed));
+            }
+            else
+            {
+                parsed = std::max(knob->minMs, std::min(knob->maxMs, parsed));
+            }
+        }
+
+        const std::string path = NetworkingConfig::defaultPath();
+        std::ifstream in(path);
+        if (!in.is_open())
+            return false;
+        nlohmann::json root;
+        try { in >> root; }
+        catch (...) { return false; }
+        in.close();
+
+        if (!root.is_object())
+            root = nlohmann::json::object();
+        if (!root.contains("remote_player_interpolation") ||
+            !root["remote_player_interpolation"].is_object())
+            root["remote_player_interpolation"] = nlohmann::json::object();
+
+        nlohmann::json& block = root["remote_player_interpolation"];
+        if (knob->isBool)
+            block[key] = parsed != 0.0;
+        else
+            block[key] = parsed;
+
+        std::ofstream out(path);
+        if (!out.is_open())
+            return false;
+        out << root.dump(2) << "\n";
+        out.close();
+
+        return NetworkingConfig::instance().reloadFromDisk();
+    }
+
+    // String-valued knob path.
+    {
+        const std::string path = NetworkingConfig::defaultPath();
+        std::ifstream in(path);
+        if (!in.is_open())
+            return false;
+        nlohmann::json root;
+        try { in >> root; }
+        catch (...) { return false; }
+        in.close();
+
+        if (!root.is_object())
+            root = nlohmann::json::object();
+        if (!root.contains("remote_player_interpolation") ||
+            !root["remote_player_interpolation"].is_object())
+            root["remote_player_interpolation"] = nlohmann::json::object();
+
+        root["remote_player_interpolation"][key] = value;
+
+        std::ofstream out(path);
+        if (!out.is_open())
+            return false;
+        out << root.dump(2) << "\n";
+        out.close();
+
+        return NetworkingConfig::instance().reloadFromDisk();
+    }
+}
+
+void listNetworkConfigKnobs()
+{
+    for (const auto& k : netConfigKnobs())
+        Terminal::instance().addLog("  " + std::string(k.key) +
+            (k.isMs ? " (ms)" : k.isBool ? " (0/1)" : k.isString ? " (string)" : ""));
 }
 
 } // namespace
@@ -661,8 +803,8 @@ void registerNetworkCommands()
 
     // ── Live networking config control ─────────────────────────────────
     Terminal::instance().registerCommand({
-        "networkconfig", "Networking config control: reload | list | load | save | print | reset",
-        "networkconfig <reload|list|load N|save|print|reset>",
+        "networkconfig", "Networking config control: reload | list | load | save | print | set | knobs | reset",
+        "networkconfig <reload|list|load N|save|print|set <key> <value>|knobs|reset>",
         [](const std::vector<std::string>& args) {
             NetworkingConfig& cfg = NetworkingConfig::instance();
             const std::string sub = args.empty() ? "" : args[0];
@@ -709,7 +851,8 @@ void registerNetworkCommands()
                 char buf[256];
                 snprintf(buf, sizeof(buf), "[NETWORK CONFIG] directRender=%d serverSmoothing=%d "
                          "delayMs=%.0f (override=%s) "
-                         "enabled=%d buffer=%zu extrap=%d maxExtrapMs=%.0f",
+                         "enabled=%d buffer=%zu extrap=%d maxExtrapMs=%.0f "
+                         "serverDelayMs=%.0f serverExtrapMs=%.0f serverTicks=%u",
                          (int)d.remotePlayers.directRender,
                          (int)d.remotePlayers.serverSmoothing,
                          cfg.effectiveRemoteInterpolationDelaySeconds() * 1000.0,
@@ -717,13 +860,31 @@ void registerNetworkCommands()
                          (int)d.remotePlayers.enabled,
                          d.remotePlayers.maximumBufferedSnapshots,
                          (int)d.remotePlayers.allowExtrapolation,
-                         d.remotePlayers.maximumExtrapolationSeconds * 1000.0);
+                         d.remotePlayers.maximumExtrapolationSeconds * 1000.0,
+                         d.remotePlayers.serverBroadcastDelaySeconds * 1000.0,
+                         d.remotePlayers.serverBroadcastExtrapolationSeconds * 1000.0,
+                         (unsigned)d.remotePlayers.serverSmoothingDurationTicks);
                 Terminal::instance().addLog(buf);
+            } else if (sub == "set") {
+                if (args.size() < 3) {
+                    Terminal::instance().addLog("[NETWORK CONFIG] usage: networkconfig set <key> <value>");
+                    listNetworkConfigKnobs();
+                } else {
+                    const bool ok = networkConfigSetKey(args[1], args[2]);
+                    if (ok)
+                        Terminal::instance().addLog("[NETWORK CONFIG] set " + args[1] + " = " +
+                            args[2] + " — hot-reloaded everywhere");
+                    else
+                        Terminal::instance().addLog("[NETWORK CONFIG] unknown key or bad value: " + args[1] +
+                            " — use 'networkconfig knobs' to list editable keys");
+                }
+            } else if (sub == "knobs") {
+                listNetworkConfigKnobs();
             } else if (sub == "reset") {
                 cfg.resetToDefaults();
                 Terminal::instance().addLog("[NETWORK CONFIG] reset to compiled defaults");
             } else {
-                Terminal::instance().addLog("[NETWORK CONFIG] usage: networkconfig <reload|path|list|load N|save|print|reset>");
+                Terminal::instance().addLog("[NETWORK CONFIG] usage: networkconfig <reload|path|list|load N|save|print|set <key> <value>|knobs|reset>");
             }
         }
     });

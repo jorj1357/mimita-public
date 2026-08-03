@@ -1,14 +1,12 @@
-// 07 31 2026, 15 00
+// 08 03 2026, 12 00
 /* purpose
-* Provides the general-purpose in-game notification popup system.
-* Shows up to N notifications stacked at the bottom-right of the screen,
-* newest at the bottom, oldest at the top, with tick-based (FPS-independent)
-* durations, an optional action button, a close button, and a hover brighten.
-* Schedules periodic gameplay tips from config/tips.json at random tick
-* intervals configured in config/tipsconfig.json, each with a "NEW TIP"
-* action button. Keeps an in-memory history of the last 100 notifications.
-* Loads behavior from config/notifications.json and styling from the
-* config/gui/notifications.json GUI layout; all configs hot-reload.
+* Provides the general-purpose in-game notification popup system: up to N
+* notifications stacked at an anchored screen edge with tick-based durations,
+* an optional action button, a close button, and hover brighten. Panels size
+* themselves to content and long messages type in character by character, then
+* scroll inside a capped box (wheel + scrollbar). Schedules periodic gameplay
+* tips from config/tips.json. Loads behavior from config/notifications.json and
+* styling from config/gui/notifications.json; all configs hot-reload.
 * Does NOT own the music player, chat, killfeed, or DevOverlay notifications.
 * Does NOT render 3D world UI or handle network events.
 */
@@ -42,7 +40,9 @@ public:
         std::string message;
         uint64_t startTick = 0;
         uint64_t durationTicks = 300;
+        uint64_t revealTicks = 0;   // ticks over which the message types out; 0 = instant
         Action action;
+        UIScrollState scroll;       // vertical scroll state for the message box
     };
 
     // In-memory log of pushed notifications (title, message, tick).
@@ -94,6 +94,29 @@ private:
     NotificationSystem(const NotificationSystem&) = delete;
     NotificationSystem& operator=(const NotificationSystem&) = delete;
 
+    // Per-notification layout computed each frame: panel height grows with the
+    // wrapped message lines (capped by max_text_height) plus title and optional
+    // action row. Reveal progress drives the typewriter.
+    struct NotificationLayout {
+        float alpha = 1.0f;
+        float slide = 0.0f;
+        float panelH = 76.0f;
+        float textY = 0.0f;      // design Y offset of the message area within the panel
+        float textH = 20.0f;     // design height of the message area
+        float contentHPx = 0.0f; // wrapped message height in screen px
+        float lineHPx = 0.0f;
+        float fontSize = 0.0f;
+        float boxW = 0.0f;       // message box width (design)
+        float padX = 12.0f;
+        bool scrollable = false;
+        bool hasAction = false;
+        std::vector<std::string> lines;
+    };
+
+    NotificationLayout computeLayout(size_t index, uint64_t elapsed);
+    void drawMessage(size_t index, const UIRect& box, const NotificationLayout& layout,
+                     bool mouseUnlocked, float cursorX, float cursorY);
+
     void saveConfig();
     void saveTipsConfig();
     void pruneExpired();
@@ -128,6 +151,19 @@ private:
     bool mEnabled = true;
     bool mShowInGame = true;
     uint64_t mTempMuteUntilTick = 0;
+
+    // Typewriter (config/notifications.json)
+    bool mTypewriterEnabled = true;
+    uint64_t mCharsPerTick = 1;
+    uint64_t mTypewriterDelayTicks = 4;
+
+    // Dynamic layout (config/gui/notifications.json "render")
+    float mPaddingX = 12.0f;
+    float mPaddingY = 8.0f;
+    float mGapTitleText = 6.0f;
+    float mGapTextAction = 8.0f;
+    float mMaxTextHeight = 120.0f;
+    float mMinFontScale = 0.7f;
 
     bool mTipsEnabled = true;
     uint64_t mNextTipTick = 0;

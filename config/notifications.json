@@ -6,5 +6,8 @@
   "fade_out_ticks": 30,
   "enabled": true,
   "show_in_game": true,
+  "typewriter_enabled": true,
+  "chars_per_tick": 1,
+  "typewriter_delay_ticks": 4,
   "temp_mute_hours": 0
 }
