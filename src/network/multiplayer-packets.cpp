@@ -10,6 +10,7 @@
 
 #include "network/multiplayer-context.h"
 #include "network/packets.h"
+#include "network/simulation-constants.h"
 #include "network/udp-transport.h"
 #include "network/ice-transport.h"
 #include "network/ice/ice-agent.h"
@@ -30,11 +31,26 @@ namespace MimitaNet {
 uint32_t mpFireRenderTick(const MultiplayerContext& ctx, uint32_t fallbackNewestTick)
 {
     const auto& interpCfg = NetworkingConfig::instance().data().remotePlayers;
-    if (!interpCfg.directRender && interpCfg.enabled && ctx.interpolationClockStarted)
+    if (!interpCfg.directRender && interpCfg.enabled)
     {
-        const double tick = ctx.interpolationRenderTick;
-        if (tick > 1.0)
-            return (uint32_t)tick;
+        // Remote bodies render at `now - interpolationDelay`. The rewind tick
+        // the server should validate against is the newest tick we've received
+        // minus that fixed delay — the exact tick the shooter was looking at.
+        // ctx.latestServerTick is updated on every snapshot/chunk arrival.
+        const double delayTicks =
+            NetworkingConfig::instance()
+                .effectiveRemoteInterpolationDelaySeconds() *
+            (double)GAMEPLAY_SIMULATION_HZ;
+        const uint32_t delay = (uint32_t)std::max(0.0, std::round(delayTicks));
+        const uint32_t newest = ctx.latestServerTick != 0
+            ? ctx.latestServerTick
+            : ctx.latestLocalSnapshotTick;
+        if (newest != 0)
+        {
+            const uint32_t view = newest > delay ? newest - delay : 0;
+            if (view != 0)
+                return view;
+        }
     }
     return fallbackNewestTick;
 }
