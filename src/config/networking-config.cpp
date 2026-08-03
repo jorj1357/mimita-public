@@ -175,6 +175,21 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
                     readDouble(r, "server_smoothing_duration_ticks",
                                (double)c.serverSmoothingDurationTicks),
                     1.0));
+        c.serverBroadcastDelaySeconds =
+            clampMin(readDouble(r, "server_broadcast_delay_ms",
+                                c.serverBroadcastDelaySeconds * 1000.0) / 1000.0, 0.0);
+        c.serverBroadcastExtrapolationSeconds =
+            clampMin(readDouble(r, "server_broadcast_extrapolation_ms",
+                                c.serverBroadcastExtrapolationSeconds * 1000.0) / 1000.0, 0.0);
+        c.rewindCompensationSeconds =
+            readDouble(r, "rewind_compensation_ms",
+                       c.rewindCompensationSeconds * 1000.0) / 1000.0;
+        c.rewindHitTolerance = (float)std::max(
+            0.1, readDouble(r, "rewind_hit_tolerance",
+                            (double)c.rewindHitTolerance));
+        c.serverBroadcastMaxSpeed = clampMin(
+            readDouble(r, "server_broadcast_max_speed",
+                       c.serverBroadcastMaxSpeed), 0.0);
         c.interpolationDelaySeconds =
             clampMin(readDouble(r, "interpolation_delay_ms", c.interpolationDelaySeconds * 1000.0) / 1000.0, 0.0);
         c.maximumBufferedSnapshots = (std::size_t)clampMin(
@@ -188,6 +203,8 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
         c.snapOnSpawn = readBool(r, "snap_on_spawn", c.snapOnSpawn);
         c.snapOnRespawn = readBool(r, "snap_on_respawn", c.snapOnRespawn);
         c.snapOnMapChange = readBool(r, "snap_on_map_change", c.snapOnMapChange);
+        c.positionMode = readString(r, "position_mode", c.positionMode);
+        c.rotationMode = readString(r, "rotation_mode", c.rotationMode);
     }
 
     // ── local_player_reconciliation ───────────────────────────────────

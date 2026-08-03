@@ -334,6 +334,25 @@ struct ServerPlayer
     uint32_t interpSegmentStartTick = 0;
     bool hasInterpSegment = false;
 
+    // ── Server receive-time broadcast smoothing ──────────────────────────
+    // Buffers every accepted client report keyed by server acceptance time
+    // (nowMs at acceptance). Each server tick the broadcast position is
+    // rendered at `now - serverBroadcastDelay` by lerping between the two
+    // samples whose acceptance times bracket that instant — the same
+    // receive-time technique the client uses. This spreads bursty accepted
+    // reports (badconn jitter/loss/reorder) into a smooth broadcast stream
+    // so every client sees steady motion regardless of report cadence.
+    struct BroadcastSample
+    {
+        uint64_t acceptedMs = 0;
+        glm::vec3 position{0.0f};
+        glm::vec3 velocity{0.0f};
+    };
+    std::deque<BroadcastSample> broadcastSamples;
+    bool broadcastSamplesSeeded = false;
+    uint32_t broadcastSamplesSpawnGeneration = 0;
+    uint16_t broadcastSamplesEpoch = 0;
+
     // Server tick at which the newest accepted client report was applied.
     // Paired with movementValidation.lastAcceptedClientTick it maps client
     // ticks into the server tick domain for hit-rewind fallback.

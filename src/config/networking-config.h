@@ -30,7 +30,30 @@ struct RemotePlayerInterpolationConfig
     // window keeps the broadcast stream smooth and bounded even when reports
     // arrive in bursts under jitter/loss/reorder (a report-gap-derived window
     // is what made remote bodies lag hundreds of ms behind their positions).
+    // Only used as the fallback when serverBroadcastDelaySeconds == 0.
     uint32_t serverSmoothingDurationTicks = 2;
+    // Server receive-time broadcast buffer. The server renders each remote
+    // player's broadcast position at `now - serverBroadcastDelaySeconds` by
+    // lerping between accepted reports keyed by acceptance time, so bursty
+    // reports from a bad-connection client become a smooth stream for everyone.
+    // 0 disables this and falls back to serverSmoothingDurationTicks.
+    double serverBroadcastDelaySeconds = 0.050;
+    // How long the server keeps a remote body moving along its last accepted
+    // velocity once the receive-time buffer runs dry (no fresh reports), before
+    // holding. 0 = hold immediately.
+    double serverBroadcastExtrapolationSeconds = 0.100;
+    // Extra ticks subtracted from the hit-rewind tick beyond the client-stamped
+    // view tick. Positive = rewind further back into the past. Compensates for
+    // residual see=hit drift under jitter and server broadcast smoothing.
+    // Stored in seconds; exposed in ms.
+    double rewindCompensationSeconds = 0.0;
+    // How close a claimed hit must land to the rewound body (units) for the
+    // pellet/shot validation path to accept it. Replaces the hardcoded 2.5f.
+    float rewindHitTolerance = 2.5f;
+    // Max units/sec the server-smoothed broadcast position may move per tick.
+    // 0 = unlimited. Clamps residual catch-up spikes from bursty reports so
+    // even a bad-connection client's bursts render as steady motion.
+    double serverBroadcastMaxSpeed = 0.0;
     double interpolationDelaySeconds = 0.033;
     std::size_t maximumBufferedSnapshots = 64;
     std::size_t minimumSnapshotsBeforeRendering = 2;
@@ -40,6 +63,10 @@ struct RemotePlayerInterpolationConfig
     bool snapOnSpawn = true;
     bool snapOnRespawn = true;
     bool snapOnMapChange = true;
+    // Render interpolation modes for remote actors. "linear" position lerps
+    // straight lines; "slerp" rotation takes the shortest angular path.
+    std::string positionMode = "linear";
+    std::string rotationMode = "slerp";
 };
 
 struct LocalReconciliationConfig

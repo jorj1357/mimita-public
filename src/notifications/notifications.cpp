@@ -1,15 +1,14 @@
-// 07 31 2026, 15 00
+// 08 03 2026, 12 00
 /* purpose
-* Implements the in-game notification popup system.
-* Rendering is fully driven by JSON: config/gui/notifications.json controls all
-* GUI — the "render" object holds anchor/offsets/spacing/slide/panel-alpha/
-* hover-brighten, and the elements define panel + title/text/close/action
-* geometry, colors, and fonts. The tip text box uses notifText width (X) and
-* height (Y): the message word-wraps to fit the width and the font auto-scales
-* to fit the height. Behavior (max count, durations, fade, enabled, show in
-* game) and tip scheduling come from config/notifications.json and
-* config/tipsconfig.json. All configs hot-reload. Keeps an in-memory log of
-* the last 100 popups and persists behavior settings to config/notifications.json.
+* Implements the in-game notification popup system. Rendering is driven by JSON:
+* config/gui/notifications.json controls GUI (anchor/offsets/spacing/slide plus
+* dynamic-layout keys and the panel/title/text/close/action elements) and
+* config/notifications.json controls behavior (max count, durations, fade,
+* typewriter speed, enabled). Panels auto-size to content: the message word-wraps
+* to the text box width, the box grows with the wrapped lines up to
+* max_text_height, and overlong content scrolls (wheel + scrollbar). The message
+* types in over revealTicks and the duration timer starts after typing finishes.
+* All configs hot-reload; keeps an in-memory log of the last 100 popups.
 * Does NOT build notifications for other subsystems or drive any audio.
 * Does NOT mutate player settings, network state, or world data.
 */
@@ -110,14 +109,19 @@ void NotificationSystem::loadConfig()
         mFadeOutTicks = j.value("fade_out_ticks", 30u);
         mEnabled = j.value("enabled", true);
         mShowInGame = j.value("show_in_game", true);
+        mTypewriterEnabled = j.value("typewriter_enabled", true);
+        mCharsPerTick = j.value("chars_per_tick", 1u);
+        if (mCharsPerTick < 1) mCharsPerTick = 1;
+        mTypewriterDelayTicks = j.value("typewriter_delay_ticks", 4u);
         float hours = j.value("temp_mute_hours", 0.0f);
         mTempMuteUntilTick = hours > 0.0f
             ? nowTick() + (uint64_t)(hours * 3600.0 * 60.0)
             : 0;
         std::error_code ec;
         mConfigLastWrite = std::filesystem::last_write_time(mConfigPath, ec);
-        Debug::log(Debug::Category::Gui, "[NOTIFS CONFIG] loaded max=%d durationTicks=%llu enabled=%d showInGame=%d\n",
-                   mMaxCount, (unsigned long long)mDefaultDurationTicks, (int)mEnabled, (int)mShowInGame);
+        Debug::log(Debug::Category::Gui, "[NOTIFS CONFIG] loaded max=%d durationTicks=%llu enabled=%d showInGame=%d typewriter=%d\n",
+                   mMaxCount, (unsigned long long)mDefaultDurationTicks, (int)mEnabled, (int)mShowInGame,
+                   (int)mTypewriterEnabled);
     } catch (const std::exception& e) {
         Debug::log(Debug::Category::Gui, "[NOTIFS] config parse error: %s\n", e.what());
     }
@@ -137,6 +141,9 @@ void NotificationSystem::saveConfig()
         j["fade_out_ticks"] = mFadeOutTicks;
         j["enabled"] = mEnabled;
         j["show_in_game"] = mShowInGame;
+        j["typewriter_enabled"] = mTypewriterEnabled;
+        j["chars_per_tick"] = mCharsPerTick;
+        j["typewriter_delay_ticks"] = mTypewriterDelayTicks;
         j["temp_mute_hours"] = (float)tempMuteRemainingTicks() / (3600.0f * 60.0f);
         std::ofstream file(mConfigPath);
         if (file.is_open()) {
@@ -167,12 +174,18 @@ void NotificationSystem::loadGuiConfig()
         mSlideInPx = r.value("slide_in_px", 200.0f);
         mPanelAlpha = r.value("panel_alpha", 0.95f);
         mHoverBrighten = r.value("hover_brighten", 0.15f);
+        mPaddingX = r.value("padding_x", 12.0f);
+        mPaddingY = r.value("padding_y", 8.0f);
+        mGapTitleText = r.value("gap_title_text", 6.0f);
+        mGapTextAction = r.value("gap_text_action", 8.0f);
+        mMaxTextHeight = r.value("max_text_height", 120.0f);
+        mMinFontScale = r.value("min_font_scale", 0.7f);
         std::error_code ec;
         mGuiConfigLastWrite = std::filesystem::last_write_time(mGuiConfigPath, ec);
         Debug::log(Debug::Category::Gui,
-                   "[NOTIFS GUI] loaded anchor=%s offsets=(%g,%g,%g,%g) spacing=%g slide=%g\n",
+                   "[NOTIFS GUI] loaded anchor=%s offsets=(%g,%g,%g,%g) spacing=%g slide=%g maxTextH=%g minFontScale=%g\n",
                    mAnchor.c_str(), mOffsetRight, mOffsetBottom, mOffsetTop, mOffsetLeft,
-                   mSpacing, mSlideInPx);
+                   mSpacing, mSlideInPx, mMaxTextHeight, mMinFontScale);
     } catch (const std::exception& e) {
         Debug::log(Debug::Category::Gui, "[NOTIFS GUI] render config parse error: %s\n", e.what());
     }
@@ -292,6 +305,19 @@ void NotificationSystem::push(const std::string& title, const std::string& messa
     n.startTick = nowTick();
     n.durationTicks = durationTicks > 0 ? durationTicks : mDefaultDurationTicks;
     n.action = action;
+
+    // Typewriter: reveal the message over revealTicks and start the lifetime
+    // timer AFTER typing finishes so the full text stays visible for the
+    // requested duration.
+    n.revealTicks = 0;
+    if (mTypewriterEnabled && !n.message.empty()) {
+        uint64_t typeTicks =
+            (uint64_t)((n.message.size() + mCharsPerTick - 1) / mCharsPerTick) +
+            mTypewriterDelayTicks;
+        n.revealTicks = typeTicks;
+        n.durationTicks += typeTicks;
+    }
+
     mNotifications.push_back(n);
     recordHistory(n);
 
@@ -395,6 +421,169 @@ void NotificationSystem::pruneExpired()
         mNotifications.end());
 }
 
+NotificationSystem::NotificationLayout
+NotificationSystem::computeLayout(size_t index, uint64_t elapsed)
+{
+    const Notification& notif = mNotifications[index];
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout(mGuiConfigPath);
+    const GuiElement* panelEl = layout.get("notifPanel");
+    const GuiElement* titleEl = layout.get("notifTitle");
+    const GuiElement* textEl = layout.get("notifText");
+    const GuiElement* actionEl = layout.get("notifAction");
+
+    NotificationLayout L;
+
+    if (elapsed < mFadeInTicks) {
+        float t = mFadeInTicks > 0 ? (float)elapsed / (float)mFadeInTicks : 1.0f;
+        L.alpha = t;
+        L.slide = (1.0f - t) * mSlideInPx;
+    } else if (elapsed >= notif.durationTicks - mFadeOutTicks) {
+        float t = mFadeOutTicks > 0
+            ? (float)(elapsed - (notif.durationTicks - mFadeOutTicks)) / (float)mFadeOutTicks
+            : 1.0f;
+        L.alpha = 1.0f - t;
+    }
+
+    // Typewriter reveal: the message is progressively exposed over revealTicks.
+    // The reveal window is linear so the whole message is shown exactly when
+    // revealTicks elapses.
+    const size_t len = notif.message.size();
+    size_t revealCount = len;
+    if (notif.revealTicks > 0) {
+        uint64_t prog = std::min<uint64_t>(elapsed, notif.revealTicks);
+        revealCount = (size_t)(len * (double)prog / (double)notif.revealTicks);
+        if (revealCount > len) revealCount = len;
+    }
+    const std::string revealed = notif.message.substr(0, revealCount);
+
+    // Message box width comes from notifText.width (X); fallback near-full.
+    const float w = panelEl && panelEl->w > 0.0f ? panelEl->w : 360.0f;
+    L.padX = mPaddingX;
+    L.boxW = textEl && textEl->w > 0.0f ? textEl->w : (w - 56.0f);
+    const float availWPx = cs.designToScreenX(L.boxW - L.padX * 2.0f);
+
+    // Wrap at the configured font size. The font only shrinks when a single
+    // unbreakable word is wider than the box, clamped to min_font_scale.
+    L.fontSize = textEl && textEl->fontSize > 0.0f ? textEl->fontSize : 0.34f;
+    std::string wrapped = wrapTipText(revealed, availWPx, L.fontSize);
+    std::vector<std::string> lines = splitLines(wrapped);
+    float maxLineW = 0.0f;
+    for (const std::string& ln : lines)
+        maxLineW = std::max(maxLineW, uiMeasureText(ln.c_str(), L.fontSize));
+    if (maxLineW > availWPx && maxLineW > 0.0f) {
+        float shrink = std::max(mMinFontScale, availWPx / maxLineW);
+        if (shrink < 1.0f) {
+            L.fontSize *= shrink;
+            wrapped = wrapTipText(revealed, availWPx, L.fontSize);
+            lines = splitLines(wrapped);
+        }
+    }
+    L.lines = lines;
+    L.lineHPx = (float)fontLineHeight * L.fontSize;
+    L.contentHPx = (float)L.lines.size() * L.lineHPx;
+
+    // The message area grows with the wrapped content, capped, then scrolls.
+    L.textH = std::min(L.contentHPx / cs.scaleY(), mMaxTextHeight);
+    L.scrollable = L.contentHPx > cs.designToScreenY(L.textH) + 0.5f;
+    L.hasAction = actionEl && notif.action.type != ActionType::None;
+
+    const float padY = mPaddingY;
+    const float titleH = titleEl && titleEl->h > 0.0f ? titleEl->h : 18.0f;
+    const float actionH = actionEl && actionEl->h > 0.0f ? actionEl->h : 22.0f;
+    L.textY = padY + titleH + mGapTitleText;
+    L.panelH = L.textY + L.textH + padY;
+    if (L.hasAction) L.panelH += mGapTextAction + actionH;
+    return L;
+}
+
+void NotificationSystem::drawMessage(size_t index, const UIRect& box,
+                                     const NotificationLayout& L,
+                                     bool mouseUnlocked, float cursorX, float cursorY)
+{
+    Notification& notif = mNotifications[index];
+    const uint64_t elapsed = mClock.getElapsedTicks(notif.startTick);
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+    const GuiElement* textEl = GuiLayoutManager::instance()
+        .getLayout(mGuiConfigPath).get("notifText");
+    if (!textEl) return;
+
+    // Scissored box, wheel scroll, and auto-follow the newest text while the
+    // typewriter is still revealing.
+    const float drawX = box.x + L.padX;
+    const float drawY = box.y + L.textY;
+    const float drawW = (textEl->w > 0.0f ? textEl->w : L.boxW) - L.padX * 2.0f;
+    const float sx = cs.designToScreenX(drawX);
+    const float sy = cs.designToScreenY(drawY);
+    const float clipW = cs.designToScreenX(drawW);
+    const float clipH = cs.designToScreenY(L.textH);
+
+    float maxScroll = std::max(0.0f, L.contentHPx - clipH);
+    UIScrollState& sc = notif.scroll;
+
+    // Wheel scroll while hovering the message area.
+    if (mouseUnlocked && maxScroll > 0.0f &&
+        pointIn(cursorX, cursorY, UIRect{sx, sy, clipW, clipH})) {
+        double delta = UISys::gScrollYOffset;
+        UISys::gScrollYOffset = 0.0;
+        sc.scrollY = std::clamp(sc.scrollY - (float)(delta * 40.0), 0.0f, maxScroll);
+    }
+
+    // Auto-follow the newest text unless the user scrolled up.
+    const bool typing = notif.revealTicks > 0 && elapsed < notif.revealTicks;
+    const bool atBottom = sc.scrollY >= maxScroll - 1.0f;
+    if ((typing || elapsed >= notif.revealTicks) && atBottom)
+        sc.scrollY = maxScroll;
+    sc.scrollY = std::clamp(sc.scrollY, 0.0f, maxScroll);
+
+    // Vertical alignment only applies when the content fits the box.
+    float vShift = 0.0f;
+    if (!L.scrollable) {
+        if (textEl->verticalAlign == "middle")
+            vShift = (clipH - L.contentHPx) * 0.5f;
+        else if (textEl->verticalAlign == "bottom")
+            vShift = clipH - L.contentHPx;
+    }
+
+    // Scissor the message to its box so scrolled text stays clipped.
+    GLboolean scissorWas = glIsEnabled(GL_SCISSOR_TEST);
+    GLint scissorBox[4];
+    glGetIntegerv(GL_SCISSOR_BOX, scissorBox);
+    glEnable(GL_SCISSOR_TEST);
+    glScissor((int)sx, (int)((float)UISys::gFbH - sy - clipH),
+              std::max(0, (int)clipW), std::max(0, (int)clipH));
+
+    glm::vec4 color = textEl->getTextColorVec();
+    color.a *= L.alpha;
+    float yPx = sy + vShift - sc.scrollY;
+    for (const std::string& ln : L.lines) {
+        float lx = sx;
+        if (textEl->textAlign == "center")
+            lx += (clipW - uiMeasureText(ln.c_str(), L.fontSize)) * 0.5f;
+        else if (textEl->textAlign == "right")
+            lx += clipW - uiMeasureText(ln.c_str(), L.fontSize);
+        uiDrawText(ln.c_str(), lx, yPx, L.fontSize, color);
+        yPx += L.lineHPx;
+    }
+
+    // Restore scissor.
+    if (!scissorWas)
+        glDisable(GL_SCISSOR_TEST);
+    else
+        glScissor(scissorBox[0], scissorBox[1], scissorBox[2], scissorBox[3]);
+
+    // Scrollbar, drawn only when the content overflows the box.
+    if (maxScroll > 0.0f) {
+        const float sbW = 6.0f;
+        const float sbX = sx + clipW - sbW - 2.0f;
+        const float thumbH = std::min(clipH, std::max(24.0f, clipH * (clipH / L.contentHPx)));
+        const float track = clipH - thumbH;
+        const float thumbY = sy + (track > 0.0f ? (sc.scrollY / maxScroll) * track : 0.0f);
+        uiDrawRect({sbX, sy, sbW, clipH}, {0.10f, 0.12f, 0.16f, 0.35f}, "notif-scroll-track");
+        uiDrawRect({sbX, thumbY, sbW, thumbH}, {0.3f, 0.5f, 0.7f, 0.6f}, "notif-scroll-thumb");
+    }
+}
+
 void NotificationSystem::render(bool inGameplay)
 {
     if (!mEnabled) { clear(); return; }
@@ -403,23 +592,20 @@ void NotificationSystem::render(bool inGameplay)
     if (tempMuted() || mNotifications.empty()) return;
 
     GLFWwindow* win = glfwGetCurrentContext();
-    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/notifications.json");
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout(mGuiConfigPath);
     const GuiElement* panelEl = layout.get("notifPanel");
     const GuiElement* titleEl = layout.get("notifTitle");
-    const GuiElement* textEl = layout.get("notifText");
     const GuiElement* closeEl = layout.get("notifClose");
     const GuiElement* actionEl = layout.get("notifAction");
 
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+
     const float w = panelEl && panelEl->w > 0.0f ? panelEl->w : 360.0f;
-    const float h = panelEl && panelEl->h > 0.0f ? panelEl->h : 76.0f;
     const float gap = mSpacing;
     const bool anchoredBottom = mAnchor == "bottom_right" || mAnchor == "bottom_left";
     const bool anchoredLeft = mAnchor == "bottom_left" || mAnchor == "top_left";
     const float x = anchoredLeft ? mOffsetLeft : (1920.0f - w - mOffsetRight);
     const float stackEdge = anchoredBottom ? (1080.0f - mOffsetBottom) : mOffsetTop;
-    const float originX = panelEl ? panelEl->x : x;
-    const float originY = panelEl ? panelEl->y
-        : (anchoredBottom ? (stackEdge - h) : stackEdge);
 
     // Only honor clicks when the mouse is unlocked (menus/chat open). During
     // gameplay the locked cursor sits at screen center, far from these boxes.
@@ -431,55 +617,58 @@ void NotificationSystem::render(bool inGameplay)
     double cursorX = 0.0, cursorY = 0.0;
     if (win && mouseUnlocked) {
         glfwGetCursorPos(win, &mx, &my);
-        GuiCoordinateSystem::instance().cursorWindowToScreen(mx, my, cursorX, cursorY);
+        cs.cursorWindowToScreen(mx, my, cursorX, cursorY);
+    }
+
+    // Title/action/close geometry derived from the layout elements.
+    const float padX = mPaddingX;
+    const float padY = mPaddingY;
+    const float titleH = titleEl && titleEl->h > 0.0f ? titleEl->h : 18.0f;
+    const float closeW = closeEl && closeEl->w > 0.0f ? closeEl->w : 26.0f;
+    const float closeH = closeEl && closeEl->h > 0.0f ? closeEl->h : 26.0f;
+    const float actionW = actionEl && actionEl->w > 0.0f ? actionEl->w : 100.0f;
+    const float actionH = actionEl && actionEl->h > 0.0f ? actionEl->h : 22.0f;
+
+    // ── Pass 1: layout each notification. Panel height grows with the wrapped
+    // message lines (capped by max_text_height) plus title and optional action
+    // row, so each panel sizes itself to its content. ──
+    const size_t n = mNotifications.size();
+    std::vector<NotificationLayout> info(n);
+    for (size_t i = 0; i < n; ++i) {
+        const uint64_t elapsed = mClock.getElapsedTicks(mNotifications[i].startTick);
+        info[i] = computeLayout(i, elapsed);
+    }
+
+    // ── Stack panels from the anchor edge using each panel's own height. ──
+    std::vector<float> boxY(n);
+    {
+        float yCursor = stackEdge;
+        for (size_t k = n; k-- > 0;) { // newest (i = n-1) sits nearest the anchor edge
+            if (anchoredBottom) {
+                boxY[k] = yCursor - info[k].panelH;
+                yCursor = boxY[k] - gap;
+            } else {
+                boxY[k] = yCursor;
+                yCursor = boxY[k] + info[k].panelH + gap;
+            }
+        }
     }
 
     std::vector<size_t> toRemove;
-    const size_t n = mNotifications.size();
     for (size_t i = 0; i < n; ++i) {
-        const Notification& notif = mNotifications[i];
-        uint64_t elapsed = mClock.getElapsedTicks(notif.startTick);
+        Notification& notif = mNotifications[i];
+        NotificationLayout& L = info[i];
+        if (L.alpha < 0.01f) continue;
 
-        float alpha = 1.0f;
-        float slide = 0.0f;
-        if (elapsed < mFadeInTicks) {
-            float t = mFadeInTicks > 0 ? (float)elapsed / (float)mFadeInTicks : 1.0f;
-            alpha = t;
-            slide = (1.0f - t) * mSlideInPx;
-        } else if (elapsed >= notif.durationTicks - mFadeOutTicks) {
-            float t = mFadeOutTicks > 0
-                ? (float)(elapsed - (notif.durationTicks - mFadeOutTicks)) / (float)mFadeOutTicks
-                : 1.0f;
-            alpha = 1.0f - t;
-        }
-        if (alpha < 0.01f) continue;
-
-        // Stack from the anchor edge: bottom anchors grow upward (newest at the
-        // bottom), top anchors grow downward (newest at the top). The panel's
-        // bottom/top edge sits exactly at the anchor offset.
-        float y;
-        if (anchoredBottom)
-            y = stackEdge - h - (n - 1 - i) * (h + gap);
-        else
-            y = stackEdge + (n - 1 - i) * (h + gap);
-        const UIRect box = {x + slide, y, w, h};
-
-        // Child element rects are derived from the GUI layout config, relative
-        // to the panel's configured origin. Fallbacks only apply if an element
-        // is missing from the layout file.
-        auto childRect = [&](const GuiElement* el, float fbX, float fbY, float fbW, float fbH) {
-            if (el && el->w > 0.0f && el->h > 0.0f)
-                return UIRect{box.x + (el->x - originX), box.y + (el->y - originY), el->w, el->h};
-            return UIRect{box.x + fbX, box.y + fbY, fbW, fbH};
-        };
+        const UIRect box = {x + L.slide, boxY[i], w, L.panelH};
 
         const bool hovered = mouseUnlocked && pointIn(cursorX, cursorY,
-            GuiCoordinateSystem::instance().designToScreen(box));
+            cs.designToScreen(box));
 
         if (panelEl) {
             GuiElement tmp = *panelEl;
             if (tmp.backgroundColor.size() >= 4) {
-                tmp.backgroundColor[3] = alpha * mPanelAlpha;
+                tmp.backgroundColor[3] = L.alpha * mPanelAlpha;
                 if (hovered) {
                     tmp.backgroundColor[0] = std::min(1.0f, tmp.backgroundColor[0] + mHoverBrighten);
                     tmp.backgroundColor[1] = std::min(1.0f, tmp.backgroundColor[1] + mHoverBrighten);
@@ -494,62 +683,19 @@ void NotificationSystem::render(bool inGameplay)
         if (titleEl) {
             GuiElement tmp = *titleEl;
             tmp.text = notif.title;
-            if (tmp.textColor.size() >= 4) tmp.textColor[3] = alpha;
-            UIRect r = childRect(titleEl, 12.0f, 8.0f, w - 56.0f, 18.0f);
+            if (tmp.textColor.size() >= 4) tmp.textColor[3] = L.alpha;
+            UIRect r = {box.x + padX, box.y + padY,
+                        w - padX * 2.0f - closeW - 6.0f, titleH};
             drawGuiElement(win, tmp, nullptr, &r);
         }
 
-        if (textEl) {
-            // Tip text box: notifText.width (X) and notifText.height (Y) from
-            // config/gui/notifications.json define the box. The message wraps to
-            // fit the width and the font auto-scales down to fit the height.
-            const float boxX = box.x + (textEl->x - originX);
-            const float boxY = box.y + (textEl->y - originY);
-            const float boxW = textEl->w > 0.0f ? textEl->w : (w - 56.0f);
-            const float boxH = textEl->h > 0.0f ? textEl->h : 20.0f;
-            const float padX = textEl->paddingX > 0.0f ? textEl->paddingX : 0.0f;
-            const float padY = textEl->paddingY > 0.0f ? textEl->paddingY : 0.0f;
-            float fontSize = textEl->fontSize > 0.0f ? textEl->fontSize : 0.26f;
-
-            GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
-            const float sx = cs.designToScreenX(boxX + padX);
-            const float sy = cs.designToScreenY(boxY + padY);
-            const float availWPx = cs.designToScreenX(boxW - padX * 2.0f);
-            const float availHPx = cs.designToScreenY(boxH - padY * 2.0f);
-            const float lineH = (float)fontLineHeight * fontSize;
-
-            std::string wrapped = wrapTipText(notif.message, availWPx, fontSize);
-            size_t lineCount = splitLines(wrapped).size();
-            float needHPx = (float)lineCount * lineH;
-            if (needHPx > availHPx && needHPx > 0.0f && availHPx > 0.0f) {
-                fontSize = fontSize * (availHPx / needHPx);
-                if (fontSize < 0.12f) fontSize = 0.12f;
-                wrapped = wrapTipText(notif.message, availWPx, fontSize);
-                lineCount = splitLines(wrapped).size();
-                needHPx = (float)lineCount * ((float)fontLineHeight * fontSize);
-            }
-
-            glm::vec4 color = textEl->getTextColorVec();
-            color.a *= alpha;
-            float y = sy;
-            if (textEl->verticalAlign == "middle")
-                y += (availHPx - needHPx) * 0.5f;
-            else if (textEl->verticalAlign == "bottom")
-                y += availHPx - needHPx;
-            for (const std::string& ln : splitLines(wrapped)) {
-                float lx = sx;
-                if (textEl->textAlign == "center")
-                    lx += (availWPx - uiMeasureText(ln.c_str(), fontSize)) * 0.5f;
-                else if (textEl->textAlign == "right")
-                    lx += availWPx - uiMeasureText(ln.c_str(), fontSize);
-                uiDrawText(ln.c_str(), lx, y, fontSize, color);
-                y += (float)fontLineHeight * fontSize;
-            }
-        }
+        // Message area: scissored box, wheel scroll, and auto-follow while the
+        // typewriter reveals (see drawMessage).
+        drawMessage(i, box, L, mouseUnlocked, cursorX, cursorY);
 
         if (closeEl) {
             GuiElement tmp = *closeEl;
-            UIRect r = childRect(closeEl, w - 32.0f, 6.0f, 26.0f, 26.0f);
+            UIRect r = {box.x + w - padX - closeW, box.y + padY, closeW, closeH};
             UIButtonState s = drawGuiElement(win, tmp, nullptr, &r);
             if (mouseUnlocked && s.clicked) toRemove.push_back(i);
         }
@@ -557,7 +703,8 @@ void NotificationSystem::render(bool inGameplay)
         if (actionEl && notif.action.type != ActionType::None) {
             GuiElement tmp = *actionEl;
             tmp.text = notif.action.label.empty() ? "OPEN" : notif.action.label;
-            UIRect r = childRect(actionEl, w - 96.0f - 12.0f, h - 26.0f - 8.0f, 96.0f, 26.0f);
+            UIRect r = {box.x + w - padX - actionW,
+                        box.y + L.panelH - padY - actionH, actionW, actionH};
             UIButtonState s = drawGuiElement(win, tmp, nullptr, &r);
             if (mouseUnlocked && s.clicked) {
                 if (notif.action.type == ActionType::OpenUrl && !notif.action.payload.empty())

@@ -642,45 +642,63 @@ bool getPositionAtTick(const ServerPlayer& p, uint32_t targetTick, glm::vec3& ou
     return true;
 }
 
+namespace {
+// Cap the per-player broadcast sample ring so a bad-connection client that
+// floods reports cannot grow it unboundedly. ~2s at 60Hz is far beyond the
+// receive-time delay and keeps rewind lookups cheap.
+constexpr size_t kMaxBroadcastSamples = 128;
+}
+
 void beginServerBroadcastInterp(ServerPlayer& player, uint32_t serverTick)
 {
     if (!player.hasAcceptedClientTransform)
         return;
 
-    const bool smoothingEnabled =
-        NetworkingConfig::instance().data().remotePlayers.serverSmoothing;
+    const auto& interpCfg = NetworkingConfig::instance().data().remotePlayers;
 
-    // When smoothing is off (default) the broadcast is simply the newest
-    // accepted report — coherent with the animation state carried in the same
-    // snapshot. The lerp segment is only kept for the re-enabled case.
-    if (!smoothingEnabled)
+    // When smoothing is off the broadcast is simply the newest accepted report
+    // — coherent with the animation state carried in the same snapshot.
+    if (!interpCfg.serverSmoothing)
     {
         player.broadcastPosition = player.lastAcceptedClientPosition;
         player.broadcastVelocity = player.lastAcceptedClientVelocity;
         player.hasBroadcastTransform = true;
         player.hasInterpSegment = false;
+        player.broadcastSamples.clear();
+        player.broadcastSamplesSeeded = false;
         return;
     }
 
-    const uint32_t newTick = player.movementValidation.lastAcceptedClientTick;
+    // Lifecycle reset (respawn / teleport / map change): drop all history so
+    // the broadcast snaps to the new life instead of smearing across it.
+    if (!player.broadcastSamplesSeeded)
+    {
+        player.broadcastSamplesSeeded = true;
+        player.broadcastSamplesSpawnGeneration = player.spawnGeneration;
+        player.broadcastSamplesEpoch = player.transformEpoch;
+    }
+    else if (player.spawnGeneration != player.broadcastSamplesSpawnGeneration ||
+             player.transformEpoch != player.broadcastSamplesEpoch)
+    {
+        player.broadcastSamples.clear();
+        player.broadcastSamplesSpawnGeneration = player.spawnGeneration;
+        player.broadcastSamplesEpoch = player.transformEpoch;
+    }
 
-    // Carry the current broadcast position forward as the segment start so a
-    // freshly accepted report never causes a jump.
+    // Buffer the accepted report keyed by server acceptance time.
+    player.broadcastSamples.push_back({
+        nowMs(), player.lastAcceptedClientPosition, player.lastAcceptedClientVelocity});
+    while (player.broadcastSamples.size() > kMaxBroadcastSamples)
+        player.broadcastSamples.pop_front();
+
+    // Keep the fixed-window lerp fields fresh as the fallback path used when
+    // serverBroadcastDelaySeconds == 0.
+    const uint32_t newTick = player.movementValidation.lastAcceptedClientTick;
     if (player.hasInterpSegment)
         player.interpFromPos = player.broadcastPosition;
     else
         player.interpFromPos = player.lastAcceptedClientPosition;
-
-    // Segment duration = FIXED smoothing window (server_smoothing_duration_ticks),
-    // NOT the client-tick gap between reports. Under jitter/loss/reorder the
-    // accepted reports arrive in bursts; spreading the lerp over the whole gap
-    // is what made remote bodies lag hundreds of ms behind their accepted
-    // positions. A fixed small window converges every report in ~33ms so the
-    // broadcast stream stays smooth and bounded regardless of report cadence.
-    player.interpDurationTicks = std::max(
-        1u, NetworkingConfig::instance().data().remotePlayers
-                .serverSmoothingDurationTicks);
-
+    player.interpDurationTicks = std::max(1u, interpCfg.serverSmoothingDurationTicks);
     player.interpToPos = player.lastAcceptedClientPosition;
     player.interpToTick = newTick;
     player.interpSegmentStartTick = serverTick;
@@ -694,9 +712,9 @@ void updateServerBroadcastInterp(ServerPlayer& player, uint32_t serverTick)
     if (!player.hasAcceptedClientTransform)
         return;
 
-    const bool smoothingEnabled =
-        NetworkingConfig::instance().data().remotePlayers.serverSmoothing;
-    if (!smoothingEnabled)
+    const auto& interpCfg = NetworkingConfig::instance().data().remotePlayers;
+
+    if (!interpCfg.serverSmoothing)
     {
         player.broadcastPosition = player.lastAcceptedClientPosition;
         player.broadcastVelocity = player.lastAcceptedClientVelocity;
@@ -704,6 +722,99 @@ void updateServerBroadcastInterp(ServerPlayer& player, uint32_t serverTick)
         return;
     }
 
+    // ── Receive-time broadcast rendering (primary path) ───────────────
+    // Render the broadcast at `now - serverBroadcastDelaySeconds`, lerping
+    // between the two accepted reports whose acceptance times bracket that
+    // instant. Bursts of reports arriving together are spread out over the
+    // delay window, producing a smooth stream for every client.
+    if (interpCfg.serverBroadcastDelaySeconds > 0.0 &&
+        player.broadcastSamples.size() >= 2)
+    {
+        const uint64_t now = nowMs();
+        const double renderMs = (double)now -
+            interpCfg.serverBroadcastDelaySeconds * 1000.0;
+
+        // Optional speed clamp: cap how far the broadcast may move per tick so
+        // a burst report cannot make the body lurch even through the buffer.
+        // 0 = unlimited.
+        const float maxDelta = interpCfg.serverBroadcastMaxSpeed > 0.0
+            ? (float)(interpCfg.serverBroadcastMaxSpeed * (double)SERVER_DT)
+            : 0.0f;
+        const auto clampDelta = [&](const glm::vec3& target) {
+            if (maxDelta <= 0.0f)
+            {
+                player.broadcastPosition = target;
+                return;
+            }
+            const glm::vec3 delta = target - player.broadcastPosition;
+            const float len = glm::length(delta);
+            player.broadcastPosition = (len > maxDelta)
+                ? player.broadcastPosition + delta * (maxDelta / len)
+                : target;
+        };
+
+        const ServerPlayer::BroadcastSample* older = nullptr;
+        const ServerPlayer::BroadcastSample* newer = nullptr;
+        for (const auto& s : player.broadcastSamples)
+        {
+            if (s.acceptedMs <= (uint64_t)renderMs)
+                older = &s;   // keep the latest one at/before renderMs
+            else
+            {
+                newer = &s;   // first sample after renderMs
+                break;
+            }
+        }
+
+        if (older && newer)
+        {
+            double alpha = 1.0;
+            if (newer->acceptedMs > older->acceptedMs)
+            {
+                alpha = (renderMs - (double)older->acceptedMs) /
+                        (double)(newer->acceptedMs - older->acceptedMs);
+                alpha = std::clamp(alpha, 0.0, 1.0);
+            }
+            clampDelta(older->position +
+                (newer->position - older->position) * (float)alpha);
+            player.broadcastVelocity = older->velocity +
+                (newer->velocity - older->velocity) * (float)alpha;
+            player.hasBroadcastTransform = true;
+            return;
+        }
+
+        if (!older)
+        {
+            // renderMs older than everything buffered (fresh start): hold the
+            // oldest sample until enough history accumulates.
+            const auto& newest = player.broadcastSamples.front();
+            clampDelta(newest.position);
+            player.broadcastVelocity = newest.velocity;
+            player.hasBroadcastTransform = true;
+            return;
+        }
+
+        // Buffer ran dry (no fresh reports): extrapolate along the newest
+        // velocity for a short time, then hold.
+        const auto& newest = player.broadcastSamples.back();
+        const double dryMs = renderMs - (double)newest.acceptedMs;
+        if (interpCfg.serverBroadcastExtrapolationSeconds > 0.0 && dryMs > 0.0)
+        {
+            const double extrapMs = std::min(
+                dryMs, interpCfg.serverBroadcastExtrapolationSeconds * 1000.0);
+            clampDelta(newest.position +
+                newest.velocity * (float)(extrapMs / 1000.0));
+            player.broadcastVelocity = newest.velocity;
+            player.hasBroadcastTransform = true;
+            return;
+        }
+        clampDelta(newest.position);
+        player.broadcastVelocity = newest.velocity;
+        player.hasBroadcastTransform = true;
+        return;
+    }
+
+    // ── Fallback: fixed-window lerp (serverBroadcastDelaySeconds == 0) ──
     if (!player.hasInterpSegment)
     {
         player.broadcastPosition = player.lastAcceptedClientPosition;
@@ -733,15 +844,21 @@ uint32_t estimateServerRewindTick(const ServerPlayer& attacker,
     // rendered (the client stamps it from the local-player snapshot tick), so
     // it is already in the server tick domain. Their view is that tick minus
     // the remote interpolation buffer.
+    // rewind_compensation_ms adds an extra tunable offset (in server ticks)
+    // so hits land on the body the shooter actually rendered under jitter and
+    // server broadcast smoothing. Positive = rewind further back.
+    const int64_t compTicks = (int64_t)std::llround(
+        NetworkingConfig::instance().data().remotePlayers
+            .rewindCompensationSeconds * (double)GAMEPLAY_SIMULATION_HZ);
     int64_t rewind;
     if (clientSimulationTick != 0)
-        rewind = (int64_t)clientSimulationTick - (int64_t)REWIND_INTERP_DELAY_TICKS;
+        rewind = (int64_t)clientSimulationTick - (int64_t)REWIND_INTERP_DELAY_TICKS - compTicks;
     else if (attacker.movementValidation.lastAcceptedClientTick != 0 &&
              attacker.lastAcceptedServerTick != 0)
         rewind = (int64_t)attacker.lastAcceptedServerTick -
-                 (int64_t)REWIND_INTERP_DELAY_TICKS;
+                 (int64_t)REWIND_INTERP_DELAY_TICKS - compTicks;
     else
-        rewind = (int64_t)serverTick - (int64_t)REWIND_INTERP_DELAY_TICKS;
+        rewind = (int64_t)serverTick - (int64_t)REWIND_INTERP_DELAY_TICKS - compTicks;
     rewind = std::clamp<int64_t>(rewind, 0, (int64_t)serverTick);
     return (uint32_t)rewind;
 }
