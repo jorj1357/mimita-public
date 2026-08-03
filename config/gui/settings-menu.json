@@ -5,7 +5,7 @@
     "settingsBg": {
       "type": "panel",
       "x": 0, "y": 0, "width": 1920, "height": 1080,
-      "backgroundColor": [0.02, 0.025, 0.035, 1.0]
+      "backgroundColor": [0.02, 0.025, 0.035, 0.0]
     },
     "settingsTitle": {
       "type": "text",

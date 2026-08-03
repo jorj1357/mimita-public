@@ -46,8 +46,11 @@ void registerWeaponCommands()
             const auto* remotePlayers = mpContext.active
                 ? &mpContext.remotePlayers
                 : nullptr;
+            std::unordered_map<uint32_t, Player>* remoteNpcs = mpContext.active
+                ? &mpContext.remoteNpcs
+                : nullptr;
             RevolverShotResult shot = weapons.fire(
-                camera, player, npcSystem, world, remotePlayers);
+                camera, player, npcSystem, world, remotePlayers, remoteNpcs);
 
             // Auto-reload on empty trigger: send ReloadRequest before returning
             if (shot.autoReloadTriggered && mpContext.active && mpContext.localPlayerId)

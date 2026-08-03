@@ -368,6 +368,13 @@ enum class ServerNpcState {
     Orbit
 };
 
+struct ServerNpcPositionSample {
+    glm::vec3 pos{0.0f};
+    glm::vec3 vel{0.0f};
+    float yaw = 0.0f;
+    uint32_t tick = 0;
+};
+
 struct ServerNpc
 {
     uint32_t entityId = 0;
@@ -389,6 +396,12 @@ struct ServerNpc
     // runtime state (firing / reloading / empty), mirroring player snapshots.
     int16_t equippedSlot = 0;
     uint8_t weaponState = 0;
+    // Per-tick broadcast position history for hit-rewind validation. The
+    // client fires at the NPC pose it actually saw (the newest snapshot),
+    // so the server validates the trace against the matching historical pose
+    // instead of the NPC's current position. Mirrors ServerPlayer::posHistory.
+    std::deque<ServerNpcPositionSample> posHistory;
+    static constexpr size_t MAX_POS_HISTORY = 60;
 };
 
 enum class ServerDamageSource : uint8_t
@@ -532,6 +545,9 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player);
 
 // NPC simulation
 SnapshotEntity makeNpcEntity(const ServerNpc& npc);
+// Hit-rewind lag compensation for NPCs (mirrors the player posHistory path).
+void pushNpcPositionHistory(ServerNpc& npc, uint32_t tick);
+bool getNpcPositionAtTick(const ServerNpc& npc, uint32_t targetTick, glm::vec3& outPos);
 
 // Build a CPU-only client World (collision only — no GPU upload) for the real
 // NpcSystem to simulate against, derived from the headless collision world.

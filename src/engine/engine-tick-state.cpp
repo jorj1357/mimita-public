@@ -16,6 +16,7 @@
 #include "network/multiplayer-context.h"
 #include "network/net_mode.h"
 #include "network/server.h"
+#include "input/mouse-lock.h"
 #include "profile/local-profile-system.h"
 #include "auth/auth-system.h"
 #include "devtools/terminal.h"
@@ -281,7 +282,7 @@ void engineTickState(Engine& engine, float dt)
             }
             bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd;
             glfwSetInputMode(engine.window(), GLFW_CURSOR,
-                gameState == GAME_PLAYING && !Terminal::instance().isOpen() && !isChatOpen() && !duelMatchOver
+                gameState == GAME_PLAYING && !Terminal::instance().isOpen() && !isChatOpen() && !duelMatchOver && MouseLock::locked()
                     ? GLFW_CURSOR_DISABLED
                     : GLFW_CURSOR_NORMAL);
         }
@@ -310,7 +311,7 @@ void engineTickState(Engine& engine, float dt)
             prevDuelPhase = gDuelManager.phase();
             bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd;
             glfwSetInputMode(engine.window(), GLFW_CURSOR,
-                gameState == GAME_PLAYING && !Terminal::instance().isOpen() && !isChatOpen() && !duelMatchOver
+                gameState == GAME_PLAYING && !Terminal::instance().isOpen() && !isChatOpen() && !duelMatchOver && MouseLock::locked()
                     ? GLFW_CURSOR_DISABLED
                     : GLFW_CURSOR_NORMAL);
         }
@@ -326,7 +327,7 @@ void engineTickState(Engine& engine, float dt)
         bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd;
         glfwSetInputMode(engine.window(), GLFW_CURSOR,
             Terminal::instance().isOpen() || isChatOpen() ? GLFW_CURSOR_NORMAL :
-            (gameState == GAME_PLAYING && !duelMatchOver ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL));
+            (gameState == GAME_PLAYING && !duelMatchOver && MouseLock::locked() ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL));
     }
     gravePrev = graveDown;
 }

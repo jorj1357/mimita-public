@@ -31,6 +31,7 @@ const char* aimHitKindName(AimHitKind kind)
         case AimHitKind::World: return "world";
         case AimHitKind::Npc: return "npc";
         case AimHitKind::RemotePlayer: return "remote_player";
+        case AimHitKind::RemoteNpc: return "remote_npc";
         case AimHitKind::None:
         default: return "none";
     }
@@ -41,7 +42,8 @@ AimSolution computeAim(
     const World& world,
     NpcSystem& npcs,
     const glm::vec3& muzzlePos,
-    const std::unordered_map<uint32_t, Player>* remotePlayers)
+    const std::unordered_map<uint32_t, Player>* remotePlayers,
+    std::unordered_map<uint32_t, Player>* remoteNpcs)
 {
     AimSolution result;
     result.origin = muzzlePos;
@@ -50,7 +52,7 @@ AimSolution computeAim(
     const GameplayConfig& cfg = GameplayConfig::instance();
     const GameplayAimMode mode = cfg.aimMode();
     if (mode == GameplayAimMode::Crosshair) {
-        AimTarget target = computeAimTarget(camera, world, npcs, remotePlayers);
+        AimTarget target = computeAimTarget(camera, world, npcs, remotePlayers, remoteNpcs);
         result.aimPoint = target.worldPoint;
         result.cameraDistance = target.cameraDistance;
         result.modeName = "crosshair";
@@ -118,7 +120,8 @@ AimTarget computeAimTarget(
     const Camera& camera,
     const World& world,
     NpcSystem& npcs,
-    const std::unordered_map<uint32_t, Player>* remotePlayers)
+    const std::unordered_map<uint32_t, Player>* remotePlayers,
+    std::unordered_map<uint32_t, Player>* remoteNpcs)
 {
     float cameraNearest = kMaxShotDistance;
     AimHitKind hitKind = AimHitKind::None;
@@ -166,6 +169,39 @@ AimTarget computeAimTarget(
             if (rayAabb(camera.pos, camera.front, mn, mx, d, nml) && d < cameraNearest) {
                 cameraNearest = d;
                 hitKind = AimHitKind::RemotePlayer;
+            }
+        }
+    }
+    if (remoteNpcs) {
+        for (auto& entry : *remoteNpcs) {
+            Player& remote = entry.second;
+            if (remote.dead || remote.currentHp <= 0)
+                continue;
+            // Remote NPC replicas are rendered at their interpolated pose, so
+            // aim at the same body-part/capsule representation the beam uses.
+            if (!remote.physicalBody.parts.empty()) {
+                remote.updateModelWorldTransforms();
+                for (const PhysicalBodyPart& part : remote.physicalBody.parts) {
+                    glm::vec3 localCenter = (part.collider.localMin + part.collider.localMax) * 0.5f;
+                    glm::vec3 center = glm::vec3(part.worldTransform * glm::vec4(localCenter, 1.0f));
+                    glm::vec3 half = glm::max((part.collider.localMax - part.collider.localMin) * 0.5f, glm::vec3(0.12f));
+                    float d = 0.0f;
+                    glm::vec3 nml;
+                    if (rayAabb(camera.pos, camera.front, center - half, center + half, d, nml) && d < cameraNearest) {
+                        cameraNearest = d;
+                        hitKind = AimHitKind::RemoteNpc;
+                    }
+                }
+            } else {
+                const Capsule capsule = remote.getCapsule();
+                const glm::vec3 mn(remote.pos.x - capsule.r, remote.pos.y - capsule.r, capsule.a.z - capsule.r);
+                const glm::vec3 mx(remote.pos.x + capsule.r, remote.pos.y + capsule.r, capsule.b.z + capsule.r);
+                float d = 0.0f;
+                glm::vec3 nml;
+                if (rayAabb(camera.pos, camera.front, mn, mx, d, nml) && d < cameraNearest) {
+                    cameraNearest = d;
+                    hitKind = AimHitKind::RemoteNpc;
+                }
             }
         }
     }
@@ -219,7 +255,8 @@ BeamCollisionResult collideBeam(
     NpcSystem* npcs,
     const std::unordered_map<uint32_t, Player>* remotePlayers,
     const Player* targetPlayer,
-    bool skipWorldCollision)
+    bool skipWorldCollision,
+    std::unordered_map<uint32_t, Player>* remoteNpcs)
 {
     BeamCollisionResult result;
     result.nearest = maxDistance;
@@ -228,6 +265,8 @@ BeamCollisionResult collideBeam(
     result.victim = nullptr;
     result.remoteVictim = nullptr;
     result.remoteTargetId = 0;
+    result.remoteNpcVictim = nullptr;
+    result.remoteNpcTargetId = 0;
     result.hitPart.clear();
     result.hitPosition = origin + direction * maxDistance;
     result.sweepCenterPosition = result.hitPosition;
@@ -281,6 +320,10 @@ BeamCollisionResult collideBeam(
                     result.nearest = d;
                     result.hitWorld = false;
                     result.victim = &npc;
+                    result.remoteVictim = nullptr;
+                    result.remoteTargetId = 0;
+                    result.remoteNpcVictim = nullptr;
+                    result.remoteNpcTargetId = 0;
                     result.hitPart = part.name;
                     result.hitNormal = nml;
                     glm::vec3 sweepCenter = origin + direction * d;
@@ -321,6 +364,8 @@ BeamCollisionResult collideBeam(
                 result.victim = nullptr;
                 result.remoteVictim = &remote;
                 result.remoteTargetId = entry.first;
+                result.remoteNpcVictim = nullptr;
+                result.remoteNpcTargetId = 0;
                 result.hitNormal = nml;
                 glm::vec3 sweepCenter = origin + direction * d;
                 result.sweepCenterPosition = sweepCenter;
@@ -331,6 +376,84 @@ BeamCollisionResult collideBeam(
                     (sweepCenter.z - mn.z) / std::max(mx.z - mn.z, 0.001f), 0.0f, 1.0f);
                 result.hitPart = result.localHeight > 0.78f ? "head" :
                     result.localHeight > 0.32f ? "torso" : "leg";
+            }
+        }
+    }
+
+    if (remoteNpcs) {
+        for (auto& entry : *remoteNpcs) {
+            Player& remote = entry.second;
+            if (remote.dead || remote.currentHp <= 0) continue;
+            if (!remote.physicalBody.parts.empty()) {
+                remote.updateModelWorldTransforms();
+                for (const PhysicalBodyPart& part : remote.physicalBody.parts) {
+                    glm::vec3 localCenter = (part.collider.localMin + part.collider.localMax) * 0.5f;
+                    glm::vec3 center = glm::vec3(part.worldTransform * glm::vec4(localCenter, 1.0f));
+                    glm::vec3 half = glm::max((part.collider.localMax - part.collider.localMin) * 0.5f, glm::vec3(0.12f));
+                    float d = 0.0f;
+                    glm::vec3 nml;
+                    bool h = false;
+                    if (useSphereCast) {
+                        h = sweptSphereAabb(origin, direction, beamThickness, center - half, center + half, result.nearest, d, nml);
+                    } else {
+                        h = rayAabb(origin, direction, center - half, center + half, d, nml);
+                    }
+                    if (h && d < result.nearest) {
+                        result.nearest = d;
+                        result.hitWorld = false;
+                        result.victim = nullptr;
+                        result.remoteVictim = nullptr;
+                        result.remoteTargetId = 0;
+                        result.remoteNpcVictim = &remote;
+                        result.remoteNpcTargetId = entry.first;
+                        result.hitPart = part.name;
+                        result.hitNormal = nml;
+                        glm::vec3 sweepCenter = origin + direction * d;
+                        result.sweepCenterPosition = sweepCenter;
+                        result.hitPosition = useSphereCast
+                            ? sweepCenter - nml * beamThickness
+                            : sweepCenter;
+                        result.localHeight = std::clamp(
+                            (sweepCenter.z - (center.z - half.z)) / (half.z * 2.0f), 0.0f, 1.0f);
+                    }
+                }
+            } else {
+                const Capsule capsule = remote.getCapsule();
+                const glm::vec3 mn(
+                    remote.pos.x - capsule.r,
+                    remote.pos.y - capsule.r,
+                    capsule.a.z - capsule.r);
+                const glm::vec3 mx(
+                    remote.pos.x + capsule.r,
+                    remote.pos.y + capsule.r,
+                    capsule.b.z + capsule.r);
+                float d = 0.0f;
+                glm::vec3 nml;
+                bool h = false;
+                if (useSphereCast) {
+                    h = sweptSphereAabb(origin, direction, beamThickness, mn, mx, result.nearest, d, nml);
+                } else {
+                    h = rayAabb(origin, direction, mn, mx, d, nml);
+                }
+                if (h && d < result.nearest) {
+                    result.nearest = d;
+                    result.hitWorld = false;
+                    result.victim = nullptr;
+                    result.remoteVictim = nullptr;
+                    result.remoteTargetId = 0;
+                    result.remoteNpcVictim = &remote;
+                    result.remoteNpcTargetId = entry.first;
+                    result.hitNormal = nml;
+                    glm::vec3 sweepCenter = origin + direction * d;
+                    result.sweepCenterPosition = sweepCenter;
+                    result.hitPosition = useSphereCast
+                        ? sweepCenter - nml * beamThickness
+                        : sweepCenter;
+                    result.localHeight = std::clamp(
+                        (sweepCenter.z - mn.z) / std::max(mx.z - mn.z, 0.001f), 0.0f, 1.0f);
+                    result.hitPart = result.localHeight > 0.78f ? "head" :
+                        result.localHeight > 0.32f ? "torso" : "leg";
+                }
             }
         }
     }

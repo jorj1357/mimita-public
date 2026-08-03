@@ -97,6 +97,7 @@ void engineTickNet(Engine& engine, float dt)
         mpInput.downDashPressed = cmd.isDownDashPressed();
         mpInput.freezeHeld = cmd.isFreezeHeld();
         mpInput.attackPressed = !Terminal::instance().isOpen() &&
+            glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED &&
             glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
         mpInput.equippedSlot = player.equippedSlot;
         mpInput.weaponState = weapons.networkVisualState(player);

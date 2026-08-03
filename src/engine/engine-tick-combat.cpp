@@ -204,7 +204,8 @@ void engineTickCombat(Engine& engine, float dt)
     }
     if (!replayPlaybackActive && !duelEndVisible && !duelCountdown &&
         !bombTagEndVisible && !bombTagCountdown &&
-        !Terminal::instance().isOpen() && mouseDown) {
+        !Terminal::instance().isOpen() && mouseDown &&
+        glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
         const WeaponDefinition* curDef = weapons.getCurrentDef(player);
         bool isAuto = curDef && curDef->fireMode == WeaponFireMode::Automatic;
         bool shouldFire = isAuto || (!isAuto && mouseDown && !mousePrev);
@@ -224,7 +225,8 @@ void engineTickCombat(Engine& engine, float dt)
     static bool rightMousePrev = false;
     bool rightMouseDown = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
     if (!replayPlaybackActive && !duelCountdown &&
-        !Terminal::instance().isOpen() && rightMouseDown && !rightMousePrev) {
+        !Terminal::instance().isOpen() && rightMouseDown && !rightMousePrev &&
+        glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
         if (!editorMode) {
             RevolverShotResult altResult = weapons.fireAlt(camera, player, npcSystem, world);
             // For Swordsword lunge in online mode, send attack-start

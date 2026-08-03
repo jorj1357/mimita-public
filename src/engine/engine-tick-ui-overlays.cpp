@@ -27,6 +27,7 @@
 #include "gui/gui-main.h"
 #include "game/game-state.h"
 #include "notifications/notifications.h"
+#include "input/mouse-lock.h"
 #include "ui/hitmarker.h"
 #include "crosshair/crosshair-render.h"
 #include "crosshair/crosshair-config.h"
@@ -374,7 +375,20 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         }
     }
     MusicManager::instance().drawAllOverlay();
-    NotificationSystem::instance().render();
+    NotificationSystem::instance().render(true);
+    // Gameplay mouse-lock indicator (right side). Red = locked, green = unlocked.
+    if ((!gReplayExportRenderMode || ReplayExportUI::showDevOverlay) && GAME_STATE == GAME_PLAYING)
+    {
+        const bool lockOn = MouseLock::locked();
+        const char* lockText = lockOn
+            ? "MOUSE LOCKED - PRESS L TO UNLOCK"
+            : "MOUSE UNLOCKED - PRESS L TO LOCK";
+        const float lockScale = 0.30f;
+        const float lockW = uiMeasureText(lockText, lockScale);
+        uiDrawText(lockText, uiScreenW() - lockW - 20.0f, uiScaleY(300.0f), lockScale,
+                   lockOn ? glm::vec4(1.0f, 0.30f, 0.30f, 0.95f)
+                          : glm::vec4(0.30f, 1.0f, 0.40f, 0.95f));
+    }
     if (gFramePacer.showFPS() && (!gReplayExportRenderMode || ReplayExportUI::showFps))
     {
         const GuiElement* fpsEl = hudLayout.get("fpsText");
