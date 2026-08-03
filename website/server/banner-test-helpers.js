@@ -221,6 +221,11 @@ export function makeDispatch(store) {
             return { rows: banner ? [{ status: banner.status }] : [] }
         }
 
+        if (text.includes("SELECT kind FROM site_banners WHERE id")) {
+            const banner = store.banners.get(params[0])
+            return { rows: banner ? [{ kind: banner.kind }] : [] }
+        }
+
         if (text.includes("SET status = 'replaced'")) {
             const banner = store.banners.get(params[0])
             if (banner) banner.status = "replaced"

@@ -21,7 +21,7 @@ import { clearRateLimitStores } from "./rateLimit.js"
 
 function seedBanner(store, overrides = {}) {
     const id = store.nextBannerId++
-    const userId = overrides.user_id ?? store.addUser("user" + id)
+    const userId = overrides.user_id ?? store.addUser("user" + id, overrides.email || "")
     const days = overrides.days ?? 1
     const banner = {
         id,
@@ -36,6 +36,9 @@ function seedBanner(store, overrides = {}) {
         status: overrides.status || "active",
         starts_at: new Date(),
         expires_at: overrides.expires_at || new Date(Date.now() + days * 86400000),
+        remaining_days: overrides.remaining_days ?? null,
+        moderation_state: overrides.moderation_state || "ok",
+        refund_status: overrides.refund_status || "",
         created_at: new Date(),
         updated_at: new Date()
     }
@@ -226,19 +229,39 @@ test("queued free banner activates with full duration after active ends", async 
 
 // ── placeBanner overwrite rules at the DB level ────────────
 
-test("paid overwrites a shorter paid banner; shorter paid queues", async () => {
+test("paid overwrites a shorter paid banner and preserves its remaining time", async () => {
     const client = makeClient(store)
     seedBanner(store, { kind: "paid", days: 3, payment_order_id: 1, status: "active" })
     seedBanner(store, { kind: "paid", days: 5, payment_order_id: 2, status: "pending_payment" })
     const outcome = await placeBanner(client, 2)
     assert.equal(outcome.action, "overwrite")
-    assert.equal(store.banners.get(1).status, "replaced")
+    assert.equal(store.banners.get(1).status, "queued")
+    assert.ok(store.banners.get(1).remaining_days > 0)
+    assert.equal(store.banners.get(1).starts_at, null)
+    assert.equal(store.banners.get(1).expires_at, null)
     assert.equal(store.banners.get(2).status, "active")
 
     seedBanner(store, { kind: "paid", days: 2, payment_order_id: 3, status: "pending_payment" })
     const second = await placeBanner(client, 3)
     assert.equal(second.action, "queued")
     assert.equal(store.banners.get(3).status, "queued")
+})
+
+test("a displaced paid banner is re-activated with its remaining time", async () => {
+    const client = makeClient(store)
+    seedBanner(store, { kind: "paid", days: 3, payment_order_id: 1, status: "active", expires_at: new Date(Date.now() + 2.5 * 86400000) })
+    seedBanner(store, { kind: "paid", days: 7, payment_order_id: 2, status: "pending_payment" })
+    await placeBanner(client, 2)
+    assert.equal(store.banners.get(1).status, "queued")
+    assert.ok(Math.abs(store.banners.get(1).remaining_days - 2.5) < 0.01)
+
+    // expire the active 7-day so the preserved banner is promoted with its remaining time
+    store.banners.get(2).expires_at = new Date(Date.now() - 1000)
+    await advanceBannerQueue(client)
+    const reActivated = store.banners.get(1)
+    assert.equal(reActivated.status, "active")
+    const duration = (reActivated.expires_at - reActivated.starts_at) / 86400000
+    assert.ok(Math.abs(duration - 2.5) < 0.01)
 })
 
 test("a 7-day paid banner is never overwritten", async () => {
@@ -251,13 +274,14 @@ test("a 7-day paid banner is never overwritten", async () => {
     assert.equal(store.banners.get(2).status, "queued")
 })
 
-test("admin banner overwrites any banner", async () => {
+test("admin banner overwrites any banner and preserves displaced paid time", async () => {
     const client = makeClient(store)
     seedBanner(store, { kind: "paid", days: 7, payment_order_id: 1, status: "active" })
     seedBanner(store, { kind: "admin", days: 30, status: "draft" })
     const outcome = await placeBanner(client, 2)
     assert.equal(outcome.action, "overwrite")
-    assert.equal(store.banners.get(1).status, "replaced")
+    assert.equal(store.banners.get(1).status, "queued")
+    assert.ok(store.banners.get(1).remaining_days > 0)
     assert.equal(store.banners.get(2).status, "active")
 })
 
@@ -349,7 +373,71 @@ test("admin can create an admin banner that takes the slot", async () => {
     seedBanner(store, { kind: "paid", days: 7, payment_order_id: 10 })
     const res = await request(app).post("/api/admin/banners").send({ ...VALID_CONTENT, days: 30 })
     assert.equal(res.status, 201)
-    assert.equal(store.banners.get(1).status, "replaced")
+    assert.equal(store.banners.get(1).status, "queued")
+    assert.ok(store.banners.get(1).remaining_days > 0)
     assert.equal(store.banners.get(2).status, "active")
     assert.equal(store.banners.get(2).kind, "admin")
+})
+
+test("admin can re-enable a disabled banner", async () => {
+    seedBanner(store, { kind: "free", days: 1, status: "disabled" })
+    const res = await request(app).patch("/api/admin/banners/1/re-enable").send({})
+    assert.equal(res.status, 200)
+    assert.equal(store.banners.get(1).status, "active")
+})
+
+test("admin actions are logged", async () => {
+    seedBanner(store, { kind: "free", days: 1 })
+    await request(app).patch("/api/admin/banners/1/disable").send({ reason: "spam" })
+    assert.ok(store.adminActions.length >= 1)
+    const action = store.adminActions[store.adminActions.length - 1]
+    assert.equal(action.action, "disable")
+    assert.equal(action.banner_id, 1)
+    assert.equal(action.admin_user_id, 99)
+})
+
+test("public schedule endpoint returns active and ordered queue", async () => {
+    seedBanner(store, { kind: "paid", days: 7, payment_order_id: 10 })
+    seedBanner(store, { kind: "paid", days: 5, payment_order_id: 11, status: "queued" })
+    seedBanner(store, { kind: "free", days: 1, status: "queued" })
+    const res = await request(app).get("/api/site/banner/schedule")
+    assert.equal(res.status, 200)
+    assert.ok(res.body.schedule.active)
+    assert.equal(res.body.schedule.active.id, 1)
+    assert.equal(res.body.schedule.queue.length, 2)
+    assert.equal(res.body.schedule.queue[0].banner.id, 2)
+    assert.equal(res.body.schedule.queue[1].banner.id, 3)
+    assert.equal(res.body.schedule.queue[0].position, 1)
+    assert.equal(res.body.schedule.queue[1].position, 2)
+    assert.ok(res.body.schedule.queue[1].estimated_start > res.body.schedule.queue[0].estimated_start)
+})
+
+test("my banners endpoint returns own banners and schedule", async () => {
+    seedBanner(store, { kind: "free", days: 1, user_id: 1 })
+    seedBanner(store, { kind: "paid", days: 5, payment_order_id: 10, user_id: 2, status: "queued" })
+    const res = await request(app).get("/api/banner/mine")
+    assert.equal(res.status, 200)
+    assert.equal(res.body.banners.length, 1)
+    assert.equal(res.body.banners[0].id, 1)
+    assert.equal(res.body.schedule.queue.length, 1)
+})
+
+test("order status endpoint is owner-only", async () => {
+    store.orders.set(1, { id: 1, user_id: 1, duration_days: 3, amount_cents: 300, currency: "usd", status: "paid", stripe_checkout_session_id: "", stripe_event_id: "", payment_intent_id: "", created_at: new Date(), paid_at: new Date() })
+    seedBanner(store, { kind: "paid", days: 3, payment_order_id: 1 })
+    const res = await request(app).get("/api/banner/orders/1")
+    assert.equal(res.status, 200)
+    assert.equal(res.body.order.id, 1)
+    assert.equal(res.body.banner.id, 1)
+
+    currentUserRef.current = { id: 7, username: "other" }
+    const denied = await request(app).get("/api/banner/orders/1")
+    assert.equal(denied.status, 403)
+})
+
+test("paid banner maximum is enforced server-side", async () => {
+    const res = await request(app)
+        .post("/api/admin/banners")
+        .send({ ...VALID_CONTENT, days: 366 })
+    assert.equal(res.status, 400)
 })

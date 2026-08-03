@@ -57,7 +57,7 @@ export function canOverwrite(incoming, active) {
     return false
 }
 
-function queueReason(banner, active, position) {
+function queueReason(banner, active) {
     if (!active) return "waiting for the active slot to free"
     if (banner.kind === "free") {
         if (active.kind === "paid") return "a paid banner is currently active"
@@ -107,7 +107,7 @@ export function computeSchedule(rows, now = Date.now()) {
             remaining_days: durationDays,
             priority_amount_cents: bannerPriorityAmount(b),
             overwrite_eligibility: active ? canOverwrite(b, active) : true,
-            reason: queueReason(b, active ? active.banner : null, i)
+            reason: queueReason(b, active ? active.banner : null)
         }
     })
 

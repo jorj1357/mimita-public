@@ -4,6 +4,15 @@ import { apiRequest } from "../lib/api.js"
 import Layout from "../components/Layout"
 import "../styles/banner.css"
 
+const CONTENT_RULES = [
+    "Do not submit malicious links.",
+    "Do not submit slurs or hateful content.",
+    "Do not impersonate another person or organization.",
+    "Do not submit scams, malware, phishing, or deceptive content.",
+    "Aim to add joy instead of adding negativity.",
+    "Admin has final say."
+]
+
 export default function BannerCreate() {
     const navigate = useNavigate()
     const [user, setUser] = useState(null)
@@ -13,9 +22,9 @@ export default function BannerCreate() {
         free_days: 1,
         paid_min_days: 2,
         paid_max_days: 7,
-        admin_max_days: 365,
         cooldown_minutes: 5
     })
+    const [schedule, setSchedule] = useState(null)
     const [mode, setMode] = useState("free")
     const [days, setDays] = useState(2)
     const [message, setMessage] = useState("")
@@ -30,21 +39,26 @@ export default function BannerCreate() {
             .then(r => r.json())
             .then(d => { if (d?.pricing) setPricing(prev => ({ ...prev, ...d.pricing })) })
             .catch(() => {})
+        fetch("/api/site/banner/schedule", { credentials: "include" })
+            .then(r => r.json())
+            .then(d => { if (d?.schedule) setSchedule(d.schedule) })
+            .catch(() => {})
         fetch("/api/auth/me", { credentials: "include" })
             .then(r => r.json())
             .then(d => { setUser(d.success ? d.user : null); setChecking(false) })
             .catch(() => setChecking(false))
     }, [])
 
-    const isAdmin = Boolean(user && ["admin", "owner"].includes(user.role))
     const totalUsd = days * pricing.price_per_day_usd
 
     function switchMode(next) {
         setMode(next)
         setError("")
         if (next === "free") setDays(pricing.free_days)
-        else setDays(isAdmin ? 1 : pricing.paid_min_days)
+        else setDays(pricing.paid_min_days)
     }
+
+    const freeShowsNow = !schedule || !schedule.active || schedule.active.kind === "free"
 
     async function handleSubmit(e) {
         e.preventDefault()
@@ -57,15 +71,7 @@ export default function BannerCreate() {
             text_color: textColor
         }
         try {
-            if (isAdmin) {
-                const data = await apiRequest("/api/admin/banners", {
-                    method: "POST",
-                    body: JSON.stringify({ ...body, days })
-                })
-                if (data?.success) navigate("/")
-                else setError(data?.message || "failed to place banner")
-            }
-            else if (mode === "free") {
+            if (mode === "free") {
                 const data = await apiRequest("/api/banner/free", {
                     method: "POST",
                     body: JSON.stringify(body)
@@ -82,8 +88,8 @@ export default function BannerCreate() {
                 else setError(data?.message || "failed to start payment")
             }
         }
-        catch (e) {
-            setError(e.message || "request failed")
+        catch (e2) {
+            setError(e2.message || "request failed")
         }
         finally {
             setSubmitting(false)
@@ -115,8 +121,8 @@ export default function BannerCreate() {
                 <h1 className="bannerCreatorTitle">make your own banner</h1>
 
                 <p className="bannerCreatorBlurb">
-                    Banners are community-powered. They are replaceable and not meant to be super serious —
-                    just a way for community members to tell people about things and promote their own projects.
+                    Banners are community-powered. They are replaceable and not meant to be super serious.
+                    They are a way for community members to tell people about things and promote their own projects.
                 </p>
 
                 <form className="bannerCreatorForm" onSubmit={handleSubmit}>
@@ -145,45 +151,51 @@ export default function BannerCreate() {
 
                     <div className="bannerCreatorField">
                         <label>how long</label>
-                        {!isAdmin ? (
-                            <div className="bannerCreatorModes">
-                                <button type="button" className={"bannerCreatorMode" + (mode === "free" ? " active" : "")} onClick={() => switchMode("free")}>
-                                    free ({pricing.free_days} day, $0)
-                                </button>
-                                <button type="button" className={"bannerCreatorMode" + (mode === "paid" ? " active" : "")} onClick={() => switchMode("paid")}>
-                                    paid (${pricing.price_per_day_usd}/day)
-                                </button>
-                            </div>
-                        ) : (
-                            <p className="bannerCreatorAdminNote">admin banner — any length, no payment</p>
-                        )}
+                        <div className="bannerCreatorModes">
+                            <button type="button" className={"bannerCreatorMode" + (mode === "free" ? " active" : "")} onClick={() => switchMode("free")}>
+                                free ({pricing.free_days} day, $0)
+                            </button>
+                            <button type="button" className={"bannerCreatorMode" + (mode === "paid" ? " active" : "")} onClick={() => switchMode("paid")}>
+                                paid (${pricing.price_per_day_usd}/day)
+                            </button>
+                        </div>
 
                         <select
                             className="bannerCreatorSelect"
                             value={days}
                             onChange={e => setDays(Number(e.target.value))}
                         >
-                            {isAdmin
-                                ? Array.from({ length: pricing.admin_max_days }, (_, i) => i + 1).map(d => (
-                                    <option key={d} value={d}>{d} day{d === 1 ? "" : "s"}</option>
-                                ))
-                                : mode === "free"
-                                    ? <option value={pricing.free_days}>{pricing.free_days} day (free)</option>
-                                    : Array.from({ length: pricing.paid_max_days - pricing.paid_min_days + 1 }, (_, i) => pricing.paid_min_days + i).map(d => (
-                                        <option key={d} value={d}>{d} days</option>
-                                    ))}
+                            {mode === "free"
+                                ? <option value={pricing.free_days}>{pricing.free_days} day (free)</option>
+                                : Array.from({ length: pricing.paid_max_days - pricing.paid_min_days + 1 }, (_, i) => pricing.paid_min_days + i).map(d => (
+                                    <option key={d} value={d}>{d} days</option>
+                                ))}
                         </select>
 
-                        {!isAdmin && mode === "paid" && (
+                        {mode === "paid" && (
                             <p className="bannerCreatorPrice">
                                 total: <strong>${totalUsd.toFixed(2)}</strong> ({days} × ${pricing.price_per_day_usd})
                             </p>
                         )}
 
-                        {days >= pricing.paid_max_days && (
+                        {mode === "free" && (
                             <p className="bannerCreatorNote">
-                                {days} days is the maximum — nothing can be longer, so this banner can never be
-                                overwritten. it shows its full {days} days.
+                                {freeShowsNow
+                                    ? "your free banner shows immediately for 1 day."
+                                    : "a paid banner is showing, so your free banner will wait in line until it ends."}
+                            </p>
+                        )}
+
+                        {mode === "paid" && days >= pricing.paid_max_days && (
+                            <p className="bannerCreatorNote">
+                                {days} days is the maximum. Nothing can be longer, so this banner can never be overwritten.
+                                It shows its full {days} days.
+                            </p>
+                        )}
+
+                        {mode === "paid" && (
+                            <p className="bannerCreatorNote">
+                                You will be redirected to Stripe to complete payment securely.
                             </p>
                         )}
                     </div>
@@ -210,16 +222,27 @@ export default function BannerCreate() {
                         </div>
                     </div>
 
+                    <div className="bannerCreatorField">
+                        <label>rules</label>
+                        <ul className="bannerCreatorRules">
+                            {CONTENT_RULES.map(r => <li key={r}>{r}</li>)}
+                        </ul>
+                    </div>
+
+                    <p className="bannerCreatorNote">
+                        Banner purchases are fully refundable within 30 days of purchase.{" "}
+                        <Link to="/support" style={{ color: "#40e0d0" }}>Go to /support</Link> and choose Payment or finance.
+                        Admin has final say.
+                    </p>
+
                     {error && <p className="bannerCreatorError">{error}</p>}
 
                     <button type="submit" className="bannerCreatorSubmit" disabled={submitting}>
                         {submitting
                             ? "working..."
-                            : isAdmin
-                                ? "place admin banner"
-                                : mode === "free"
-                                    ? "place free banner"
-                                    : `pay $${totalUsd.toFixed(2)}`}
+                            : mode === "free"
+                                ? "place free banner"
+                                : `pay $${totalUsd.toFixed(2)}`}
                     </button>
                 </form>
             </div>

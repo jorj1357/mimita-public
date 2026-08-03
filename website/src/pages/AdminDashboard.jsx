@@ -503,11 +503,22 @@ export default function AdminDashboard() {
                     <h2>Site Banner</h2>
                     <div className="adminCard">
                         <p>Review every banner ever made, disable or delete them, and place your own.</p>
-                        <Link to="/banner/create" className="adminButton" style={{ display: "inline-block", marginTop: "8px", marginRight: "8px", textDecoration: "none" }}>
-                            Create a Banner
-                        </Link>
-                        <Link to="/admin/banners" className="adminButton" style={{ display: "inline-block", marginTop: "8px", textDecoration: "none" }}>
+                        <Link to="/admin/banners" className="adminButton" style={{ display: "inline-block", marginTop: "8px", marginRight: "8px", textDecoration: "none" }}>
                             Open Banner Dashboard
+                        </Link>
+                        <Link to="/banner/status" className="adminButton" style={{ display: "inline-block", marginTop: "8px", textDecoration: "none" }}>
+                            Banner Status
+                        </Link>
+                    </div>
+                </div>
+
+                {/* Support */}
+                <div className="adminSection">
+                    <h2>Support</h2>
+                    <div className="adminCard">
+                        <p>Review support requests, filter by topic, and update status.</p>
+                        <Link to="/admin/support" className="adminButton" style={{ display: "inline-block", marginTop: "8px", textDecoration: "none" }}>
+                            Open Support Dashboard
                         </Link>
                     </div>
                 </div>

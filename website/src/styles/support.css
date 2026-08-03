@@ -70,3 +70,9 @@
   padding: 2rem 0;
   line-height: 1.6;
 }
+
+.supportError {
+  color: #f87171;
+  font-size: 0.9rem;
+}
+
