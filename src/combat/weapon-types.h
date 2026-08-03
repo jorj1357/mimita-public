@@ -106,6 +106,10 @@ struct WeaponDefinition {
     glm::vec3 tint{1.0f};  // RGB multiplier for rendering (1,1,1 = no tint)
 
     float beamThickness = 0.0f;  // hitscan collision radius (0 = thin ray)
+    // World/occlusion radius for hitscan (0 = thin world rays). Separate from
+    // beamThickness so a thick entity-hit beam doesn't clip wall edges and
+    // break the shotgun pellet pattern at the aim direction.
+    float beamWorldThickness = 0.0f;
     bool weaponCollisionEnabled = true;
     bool restricted = false;  // admin/dev weapons — not granted in normal loadout
 

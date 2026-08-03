@@ -1,10 +1,18 @@
+# 08 03 2026, 13 15
+# purpose
+# Rebuilds the hot-reload game DLL (build/mimita-game.dll) from src/effects/effect-part.cpp.
+# Skips the rebuild when the DLL is already newer than the source, and uses ccache.
+# Is invoked automatically at the start of every build.py run.
+# Does NOT compile any other source files or modify game source code.
+# Does NOT link mimita.exe or launch the game.
+
 import os
-import shutil
 import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 COMPILER = r"C:\important\winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4\mingw64\bin\g++.exe"
+CCACHE = os.path.join(os.path.dirname(COMPILER), "ccache.exe")
 GLFW_INCLUDE = r"C:\important\glfw-3.4.bin.WIN64\include"
 BUILD_DIR = os.path.join(ROOT, "build")
 SOURCE = os.path.join(ROOT, "src", "effects", "effect-part.cpp")
@@ -13,7 +21,16 @@ OUTPUT_DLL = os.path.join(BUILD_DIR, "mimita-game.dll")
 
 os.makedirs(BUILD_DIR, exist_ok=True)
 
+os.environ.setdefault("CCACHE_DIR", os.path.join(BUILD_DIR, "ccache"))
+os.environ.setdefault("CCACHE_SLOPPINESS", "time_macros,file_macro")
+os.environ.setdefault("CCACHE_MAXSIZE", "8G")
+
+if os.path.exists(OUTPUT_DLL) and os.path.getmtime(SOURCE) < os.path.getmtime(OUTPUT_DLL):
+    print("[HOT RELOAD] DLL up to date, skipping")
+    sys.exit(0)
+
 command = [
+    CCACHE,
     COMPILER,
     "-std=c++17",
     "-Og",

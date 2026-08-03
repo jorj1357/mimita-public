@@ -475,6 +475,13 @@ void engineTickNet(Engine& engine, float dt)
 
             if (!localShooter)
             {
+                // Re-base the visual muzzle/tracer onto the shooter's rendered
+                // replica body so the shot visibly originates from where the
+                // body is drawn, not from the lagged authoritative snapshot.
+                const glm::vec3 visualDelta =
+                    MimitaNet::mpRemoteShooterRenderDelta(
+                        mpContext, event.shooterPlayerId);
+
                 if (event.effectFlags & MimitaNet::SHOT_EFFECT_WEAPON_TRIGGER)
                 {
                     auto remoteShooter = mpContext.remotePlayers.find(
@@ -501,10 +508,10 @@ void engineTickNet(Engine& engine, float dt)
                 {
                     ReplayEffectEvent gunshotEvent;
                     gunshotEvent.type = "gunshot";
-                    gunshotEvent.position = event.origin;
+                    gunshotEvent.position = event.origin + visualDelta;
                     gunshotEvent.direction = event.direction;
-                    gunshotEvent.from = event.origin;
-                    gunshotEvent.to = event.hit;
+                    gunshotEvent.from = event.origin + visualDelta;
+                    gunshotEvent.to = event.hit + visualDelta;
                     gunshotEvent.normal = event.normal;
                     gunshotEvent.sourceActorId = shooterName;
                     captureReplayEffect(gunshotEvent);
@@ -512,10 +519,10 @@ void engineTickNet(Engine& engine, float dt)
 
                 if (event.effectFlags & MimitaNet::SHOT_EFFECT_MUZZLE)
                     EffectPartSystem::instance().spawnMuzzleFlash(
-                        event.origin, shooterName);
+                        event.origin + visualDelta, shooterName);
                 if (event.effectFlags & MimitaNet::SHOT_EFFECT_TRACER)
                     EffectPartSystem::instance().spawnTracer(
-                        event.origin, event.hit, shooterName);
+                        event.origin + visualDelta, event.hit + visualDelta, shooterName);
                 if (event.effectFlags &
                     MimitaNet::SHOT_EFFECT_SHOOT_SOUND)
                 {
@@ -524,7 +531,7 @@ void engineTickNet(Engine& engine, float dt)
                         event.weapon == MimitaNet::NETWORK_WEAPON_AA12)
                         shootSound = "shotgunshoot";
                     playWorldSound(
-                        shootSound, event.origin,
+                        shootSound, event.origin + visualDelta,
                         1.0f, 1.0f, 80.0f);
                 }
 

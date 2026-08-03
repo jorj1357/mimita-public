@@ -578,6 +578,42 @@ void updateRenderedReplica(
     );
 }
 
+glm::vec3 mpRemoteShooterRenderDelta(const MultiplayerContext& ctx, uint32_t shooterId)
+{
+    if (shooterId == 0 || shooterId == ctx.localPlayerId)
+        return glm::vec3(0.0f);
+
+    // Rendered replica body vs. newest authoritative snapshot position.
+    // Re-basing muzzle/tracer visuals by this delta puts the shot exactly on
+    // the body the client sees instead of the lagged/ghost authoritative spot.
+    auto findDelta = [](const Player& replica,
+                        const EntityInterpolationState* interp) -> glm::vec3 {
+        if (!interp || !interp->hasTarget)
+            return glm::vec3(0.0f);
+        return replica.pos - interp->target.position;
+    };
+
+    auto playerIt = ctx.remotePlayers.find(shooterId);
+    if (playerIt != ctx.remotePlayers.end())
+    {
+        auto interpIt = ctx.remotePlayerInterpolation.find(shooterId);
+        return findDelta(playerIt->second,
+                         interpIt != ctx.remotePlayerInterpolation.end()
+                             ? &interpIt->second : nullptr);
+    }
+
+    auto npcIt = ctx.remoteNpcs.find(shooterId);
+    if (npcIt != ctx.remoteNpcs.end())
+    {
+        auto interpIt = ctx.remoteNpcInterpolation.find(shooterId);
+        return findDelta(npcIt->second,
+                         interpIt != ctx.remoteNpcInterpolation.end()
+                             ? &interpIt->second : nullptr);
+    }
+
+    return glm::vec3(0.0f);
+}
+
 void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)
 {
     // Advance the interpolation render clock at the fixed 60 tick/s rate so

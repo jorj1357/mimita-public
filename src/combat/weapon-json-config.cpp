@@ -11,15 +11,54 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <vector>
 
 #include <nlohmann/json.hpp>
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 
 namespace WeaponData {
 namespace {
 
 using json = nlohmann::json;
 
-const char* WEAPON_CONFIG_PATH = "config/weapons.json";
+// Resolve config/weapons.json across candidate locations so the file is found
+// regardless of the process working directory (launcher runs extract the game
+// to a different folder than the repo). Candidates are checked in order.
+static std::string resolveWeaponConfigPathOnce()
+{
+    const char* primary = "config/weapons.json";
+    std::error_code ec;
+    if (std::filesystem::exists(primary, ec) && !ec)
+        return primary;
+
+    char exePath[MAX_PATH];
+    const DWORD n = GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+    if (n > 0 && n < MAX_PATH)
+    {
+        const std::filesystem::path exeDir = std::filesystem::path(exePath).parent_path();
+        const std::vector<std::string> candidates = {
+            (exeDir / "config" / "weapons.json").string(),
+            (exeDir.parent_path() / "config" / "weapons.json").string(),
+        };
+        for (const std::string& c : candidates)
+        {
+            if (std::filesystem::exists(c, ec) && !ec)
+                return c;
+        }
+    }
+    return primary;  // fall back to CWD-relative (may fail -> builtin defaults)
+}
+
+const std::string& weaponConfigPath()
+{
+    static const std::string path = resolveWeaponConfigPathOnce();
+    return path;
+}
+
 json gWeaponConfigRoot = json::object();
 std::filesystem::file_time_type gWeaponConfigLastWrite{};
 std::chrono::steady_clock::time_point gWeaponConfigLastCheck{};
@@ -149,6 +188,7 @@ void applyWeaponStatsJson(WeaponDefinition& def, const json& root)
     weaponJsonBehaviorType(root, def);
     weaponJsonBool(root, "hitscan", def.hitscan);
     weaponJsonFloat(root, "beam_thickness", def.beamThickness);
+    weaponJsonFloat(root, "beam_world_thickness", def.beamWorldThickness);
     weaponJsonBool(root, "uses_physics_projectile", def.usesPhysicsProjectile);
     weaponJsonString(root, "pose_id", def.poseId);
 }
@@ -203,16 +243,23 @@ void applyWeaponJson(WeaponDefinition& def, const json& root)
 void loadWeaponJsonConfig()
 {
     gWeaponConfigRoot = json::object();
-    std::ifstream file(WEAPON_CONFIG_PATH);
+    std::ifstream file(weaponConfigPath());
     if (!file.is_open())
+    {
+        Debug::warn(Debug::Category::Weapons,
+            "[WEAPON CONFIG] could not open %s; using builtin defaults\n",
+            weaponConfigPath().c_str());
         return;
+    }
+    Debug::log(Debug::Category::Weapons,
+        "[WEAPON CONFIG] loaded %s\n", weaponConfigPath().c_str());
     try {
         file >> gWeaponConfigRoot;
         if (!gWeaponConfigRoot.is_object())
             gWeaponConfigRoot = json::object();
         std::error_code ec;
-        if (std::filesystem::exists(WEAPON_CONFIG_PATH, ec) && !ec) {
-            gWeaponConfigLastWrite = std::filesystem::last_write_time(WEAPON_CONFIG_PATH, ec);
+        if (std::filesystem::exists(weaponConfigPath(), ec) && !ec) {
+            gWeaponConfigLastWrite = std::filesystem::last_write_time(weaponConfigPath(), ec);
             gWeaponConfigHasWriteTime = !ec;
         }
     } catch (const std::exception& e) {
@@ -241,16 +288,16 @@ bool reloadBuiltinWeaponsIfChanged()
     gWeaponConfigLastCheck = now;
 
     std::error_code ec;
-    if (!std::filesystem::exists(WEAPON_CONFIG_PATH, ec) || ec)
+    if (!std::filesystem::exists(weaponConfigPath(), ec) || ec)
         return false;
-    const auto writeTime = std::filesystem::last_write_time(WEAPON_CONFIG_PATH, ec);
+    const auto writeTime = std::filesystem::last_write_time(weaponConfigPath(), ec);
     if (ec || (gWeaponConfigHasWriteTime && writeTime == gWeaponConfigLastWrite))
         return false;
 
     gWeaponConfigLastWrite = writeTime;
     gWeaponConfigHasWriteTime = true;
     registerBuiltinWeapons();
-    Debug::log(Debug::Category::Weapons, "[WEAPON] hot reloaded %s", WEAPON_CONFIG_PATH);
+    Debug::log(Debug::Category::Weapons, "[WEAPON] hot reloaded %s", weaponConfigPath().c_str());
     return true;
 }
 

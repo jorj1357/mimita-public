@@ -3,7 +3,8 @@
 * Registers terminal commands for the notification system.
 * notifs toggles notifications on/off; notifsingame toggles showing them during
 * gameplay; notifstempmute mutes for N hours; notifs_test pushes a sample popup;
-* tips toggles periodic gameplay tips; notifs_history prints recent popups.
+* notiftest pushes a random tip immediately; tips toggles periodic gameplay tips;
+* notifs_history prints recent popups.
 * Does NOT render, load config, or persist anything itself.
 */
 #include <cstdio>
@@ -87,6 +88,15 @@ void registerNotificationCommands()
             Terminal::instance().addLog("[NOTIFS] pushed test notification");
         },
         "2026-07-31", CommandCategory::UI
+    });
+
+    Terminal::instance().registerCommand({
+        "notiftest", "Push a random gameplay tip immediately", "notiftest",
+        [](const std::vector<std::string>&) {
+            NotificationSystem::instance().pushTip(true);
+            Terminal::instance().addLog("[NOTIFS] pushed random tip");
+        },
+        "2026-08-03", CommandCategory::UI
     });
 
     Terminal::instance().registerCommand({

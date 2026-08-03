@@ -438,7 +438,7 @@ uint32_t mpSendMeleeHitRequest(
     packet.attackSerial = ctx.nextLocalMeleeAttackSerial++;
     if (ctx.nextLocalMeleeAttackSerial == 0)
         ctx.nextLocalMeleeAttackSerial = 1;
-    packet.lastServerTick = ctx.latestServerTick;
+    packet.lastServerTick = mpFireRenderTick(ctx, ctx.latestServerTick);
     packet.targetPlayerId = targetPlayerId;
     packet.damage = std::clamp(damage, 1, 200);
     packet.weapon = weapon;

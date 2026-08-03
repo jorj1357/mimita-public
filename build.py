@@ -1,21 +1,13 @@
-# build.py
-# MiMITA incremental build system
-# 5 23 2026
-#
-# !!! AI AGENTS: DO NOT USE THIS FILE DIRECTLY !!!
-# Use build_agent.py instead (python build_agent.py).
-# build.py auto-runs the game after linking, blocking the terminal
-# until you close the game window. build_agent.py just builds.
-#
-# goals:
-# - MUCH faster rebuilds
-# - only rebuild changed cpp files
-# - debug/release modes
-# - automatic obj folder
-# - auto run after build
-# - readable logs
-# - future-proof for bigger engine
-#
+# 08 03 2026, 13 15
+# purpose
+# MiMITA incremental build system normally invoked through build_agent.py.
+# Compiles only changed cpp files in parallel, uses a ccache wrapper and a
+# precompiled header (pch.h), then links mimita.exe.
+# Supports debug/release modes, clean, build-only, and auto-close flags.
+# Does NOT auto-run the game when given build-only; agents must use build_agent.py.
+# Does NOT rebuild translation units whose objects are up to date.
+# Does NOT modify source files.
+
 # usage:
 #
 # python build.py
@@ -40,6 +32,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
 COMPILER = r"C:\important\winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4\mingw64\bin\g++.exe"
+CCACHE = os.path.join(os.path.dirname(COMPILER), "ccache.exe")
+
+def ccache_cmd():
+    return [CCACHE, COMPILER]
 
 GLFW_INCLUDE = r"C:\important\glfw-3.4.bin.WIN64\include"
 GLFW_LIB = r"C:\important\glfw-3.4.bin.WIN64\lib-mingw-w64"
@@ -83,6 +79,7 @@ if MODE == "release":
         "-pipe",
         "-MMD",
         "-MP",
+        "-fpch-preprocess",
     ]
     LINK_FLAGS = []
 else:
@@ -97,12 +94,15 @@ else:
         "-pipe",
         "-MMD",
         "-MP",
+        "-fpch-preprocess",
     ]
 
-# Debug and release use separate object/PCH dirs so switching modes never
+# Debug and release use separate object dirs so switching modes never
 # links stale objects compiled with the other mode's flags.
 OBJ_DIR = os.path.join(BUILD_DIR, "obj-" + MODE)
-PCH_OUTPUT = os.path.join(SRC_DIR, "pch-" + MODE + ".h.gch")
+# GCC loads the precompiled header for "-include pch.h" from pch.h.gch
+# (next to pch.h), and accepts it across -Og/-O2, so a single shared PCH is used.
+PCH_OUTPUT = os.path.join(SRC_DIR, "pch.h.gch")
 
 # ============================================================
 # FLAGS
@@ -256,24 +256,6 @@ if MODE == "clean":
     print("Clean complete.")
     sys.exit(0)
 
-# ============================================================
-# BUILD STAMP
-# ============================================================
-
-# Write the current build time into a gitignored header. notifications.cpp
-# includes it, so every build recompiles that one file and the exe always
-# reports the real "last built" time.
-def write_build_stamp():
-    stamp = time.strftime("%m-%d-%Y %H:%M:%S")
-    header = os.path.join(ROOT, "src", "game", "build-stamp.h")
-    content = '#pragma once\n\n#define MIMITA_BUILD_TIME "%s"\n' % stamp
-    try:
-        with open(header, "w") as f:
-            f.write(content)
-    except OSError as e:
-        print("[BUILD STAMP] write failed:", e)
-    print("Build stamp:", stamp)
-
 
 # ============================================================
 # MAIN
@@ -281,12 +263,14 @@ def write_build_stamp():
 
 ensure_dirs()
 
+os.environ.setdefault("CCACHE_DIR", os.path.join(BUILD_DIR, "ccache"))
+os.environ.setdefault("CCACHE_SLOPPINESS", "time_macros,file_macro")
+os.environ.setdefault("CCACHE_MAXSIZE", "8G")
+
 game_dll_build = subprocess.run([sys.executable, os.path.join(ROOT, "build_game_dll.py")])
 if game_dll_build.returncode != 0:
     print("[HOT RELOAD] reload failed")
     sys.exit(game_dll_build.returncode)
-
-write_build_stamp()
 
 print("==================================================")
 print(" MiMITA Build System")
@@ -357,8 +341,7 @@ def compile_cpp_file(src):
 
     print("[CXX ]", os.path.relpath(src, ROOT))
 
-    cmd = [
-        COMPILER,
+    cmd = ccache_cmd() + [
 
         "-c",
         src,
@@ -431,8 +414,7 @@ if source_changed(glad_path):
 
     print("[CC  ] src/glad.c")
 
-    cmd = [
-        COMPILER,
+    cmd = ccache_cmd() + [
         "-c",
         glad_path,
         "-o",
@@ -478,65 +460,79 @@ juice_include_flags = [
     "-DJUICE_STATIC",
 ]
 
-for src_name in juice_sources:
+def compile_juice_file(src_name):
     src_path = os.path.join(juice_src_dir, src_name)
-    obj_name = "juice_" + src_name.replace(".c", ".o")
-    obj_path_full = os.path.join(OBJ_DIR, obj_name)
+    obj_path_full = os.path.join(OBJ_DIR, "juice_" + src_name.replace(".c", ".o"))
 
-    object_files.append(obj_path_full)
-
-    # Check if juice object needs rebuild (use simple mtime check since .d not generated for C files)
-    needs_compile = False
-    if not os.path.exists(obj_path_full):
-        needs_compile = True
-    else:
+    # Simple mtime check since .d files are not generated for libjuice C sources
+    if os.path.exists(obj_path_full):
         obj_mtime = os.path.getmtime(obj_path_full)
         src_mtime = os.path.getmtime(src_path)
-        if src_mtime >= obj_mtime:
-            needs_compile = True
+        if src_mtime < obj_mtime:
+            return ("skip", src_name)
 
-    if needs_compile:
-        print("[CC  ] external/libjuice/src/" + src_name)
+    print("[CC  ] external/libjuice/src/" + src_name)
 
-        cmd = [
-            COMPILER,
-            "-x", "c",
-            "-c",
-            src_path,
-            "-o",
-            obj_path_full,
+    cmd = ccache_cmd() + [
+        "-x", "c",
+        "-c",
+        src_path,
+        "-o",
+        obj_path_full,
+    ]
+
+    # Use C flags (no -std=c++17) for libjuice C sources
+    if MODE == "release":
+        cmd += [
+            "-std=c11",
+            "-O2",
+            "-pipe",
         ]
+    else:
+        cmd += [
+            "-std=c11",
+            "-O0",
+            "-g",
+            "-pipe",
+        ]
+    cmd += DEFINE_FLAGS
+    for f in juice_include_flags:
+        cmd.append(f)
 
-        # Use C flags (no -std=c++17) for libjuice C sources
-        if MODE == "release":
-            cmd += [
-                "-std=c11",
-                "-O2",
-                "-pipe",
-            ]
-        else:
-            cmd += [
-                "-std=c11",
-                "-O0",
-                "-g",
-                "-pipe",
-            ]
-        cmd += DEFINE_FLAGS
-        for f in juice_include_flags:
-            cmd.append(f)
+    result = subprocess.run(cmd)
 
-        result = subprocess.run(cmd)
+    if result.returncode != 0:
+        return ("fail", src_name)
 
-        if result.returncode != 0:
+    return ("compiled", src_name)
+
+for src_name in juice_sources:
+    object_files.append(os.path.join(OBJ_DIR, "juice_" + src_name.replace(".c", ".o")))
+
+with ThreadPoolExecutor(max_workers=os.cpu_count()) as juice_executor:
+
+    juice_futures = [
+        juice_executor.submit(compile_juice_file, src_name)
+        for src_name in juice_sources
+    ]
+
+    for future in as_completed(juice_futures):
+
+        status, src_name = future.result()
+
+        if status == "skip":
+            skipped_count += 1
+
+        elif status == "compiled":
+            compiled_count += 1
+
+        elif status == "fail":
+
             print()
             print("==================================================")
             print(" BUILD FAILED (libjuice)")
             print("==================================================")
             sys.exit(1)
-
-        compiled_count += 1
-    else:
-        skipped_count += 1
 
 # ============================================================
 # DETERMINE IF LINK NEEDED
@@ -579,9 +575,7 @@ if not needs_link:
 print()
 print("[LINK]", EXE_NAME)
 
-cmd = [
-    COMPILER,
-]
+cmd = ccache_cmd()
 
 cmd += object_files
 cmd += LIB_FLAGS

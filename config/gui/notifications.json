@@ -1,4 +1,15 @@
 {
+  "render": {
+    "anchor": "bottom_right",
+    "offset_right": 20,
+    "offset_bottom": 10,
+    "offset_top": 10,
+    "offset_left": 20,
+    "spacing": 8,
+    "slide_in_px": 200,
+    "panel_alpha": 0.95,
+    "hover_brighten": 0.15
+  },
   "elements": [
     {
       "backgroundColor": [
@@ -7,7 +18,7 @@
         0.12000000476837158,
         0.949999988079071
       ],
-      "height": 76.0,
+      "height": 330.0,
       "id": "notifPanel",
       "outlineColor": [
         0.4000000059604645,
@@ -54,8 +65,9 @@
         0.30000001192092896,
         1.0
       ],
-      "fontSize": 0.25999999046325684,
-      "height": 16.0,
+      "fontSize": 1
+      ,
+      "height": 310.0,
       "id": "notifText",
       "textColor": [
         0.8500000238418579,
@@ -64,9 +76,9 @@
         1.0
       ],
       "type": "text",
-      "width": 280.0,
+      "width": 220.0,
       "x": 1552.0,
-      "y": 1024.0
+      "y": 1030.0
     },
     {
       "backgroundColor": [
@@ -98,7 +110,7 @@
         1.0
       ],
       "fontSize": 0.27000001072883606,
-      "height": 26.0,
+      "height": 22.0,
       "id": "notifAction",
       "text": "OPEN",
       "textColor": [
@@ -108,9 +120,9 @@
         1.0
       ],
       "type": "button",
-      "width": 96.0,
-      "x": 1792.0,
-      "y": 1044.0
+      "width": 100.0,
+      "x": 1780.0,
+      "y": 1064.0
     }
   ],
   "format": "mimita-gui-layout",

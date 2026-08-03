@@ -243,6 +243,7 @@ void gameInit(int argc, char** argv, Engine& engine)
     gameInitSubsystems(engine);
 
     NotificationSystem::instance().loadConfig();
+    NotificationSystem::instance().loadGuiConfig();
     NotificationSystem::instance().loadTipsConfig();
     Tips::load();
     NotificationSystem::instance().pushBuildNotice();

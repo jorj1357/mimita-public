@@ -37,7 +37,7 @@
         1.0
       ]
     },
-    "damage": 50.0,
+    "damage": 16.0,
     "headshot_multiplier": 2.0,
     "fire_delay": 0.008,
     "reload_time": 1.0,
@@ -51,7 +51,8 @@
     "fire_mode": "semi_auto",
     "behavior_type": "hitscan",
     "hitscan": true,
-    "beam_thickness": 1.0,
+    "beam_thickness": 2.0,
+    "beam_world_thickness": 0.0,
     "uses_physics_projectile": false,
     "sound": {
       "shoot": "revolvershoot",
@@ -61,8 +62,9 @@
       "equip": "weapon/revolver/revolverequip"
     },
     "custom_params": {
-      "distanceFalloffStart": 110.0,
+      "distanceFalloffStart": 200.0,
       "minDamageFraction": 0.5,
+      "limbDamageMultiplier": 0.75,
       "minAngleFactor": 0.45,
       "shootPoseTime": 0.12,
       "equipPoseTime": 0.18
@@ -195,7 +197,7 @@
         1.0
       ]
     },
-    "damage": 12.0,
+    "damage": 6.0,
     "headshot_multiplier": 2.0,
     "fire_delay": 0.025,
     "reload_time": 1.5,
@@ -209,7 +211,8 @@
     "fire_mode": "semi_auto",
     "behavior_type": "hitscan",
     "hitscan": true,
-    "beam_thickness": 0.0,
+    "beam_thickness": 2.0,
+    "beam_world_thickness": 0.0,
     "uses_physics_projectile": false,
     "sound": {
       "shoot": "shotgunshoot",
@@ -221,6 +224,7 @@
     "custom_params": {
       "distanceFalloffStart": 60.0,
       "minDamageFraction": 0.05,
+      "limbDamageMultiplier": 0.75,
       "minAngleFactor": 0.15,
       "shootPoseTime": 0.14,
       "equipPoseTime": 0.22
@@ -784,7 +788,7 @@
     "fire_mode": "automatic",
     "behavior_type": "hitscan",
     "hitscan": true,
-    "beam_thickness": 1.0,
+    "beam_thickness": 2.0,
     "uses_physics_projectile": false,
     "pose_id": "revolver",
     "sound": {

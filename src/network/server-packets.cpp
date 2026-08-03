@@ -15,6 +15,7 @@
 #include "network/network-weapons.h"
 #include "network/disagreement-visuals.h"
 #include "physics/movement/movement-conversion.h"
+#include "physics/movement/physics-collision.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
 #include "debug/debug-log.h"
@@ -462,6 +463,35 @@ bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
     }
     if (hit)
         outHitPos = origin + direction * closest;
+    return hit;
+}
+
+// Swept-sphere world trace (thick beam): same contract as serverRaycastWorld but
+// the ray is a sphere of `radius`, so a thick beam is blocked by walls the same
+// way the client's swept-sphere beam is. `hitDist`/`outNormal` are the first
+// contact along the sphere centerline.
+bool serverSweptSphereWorld(const glm::vec3& origin, const glm::vec3& direction,
+                            float maxDist, float radius, const HeadlessWorld& world,
+                            float& outHitDist, glm::vec3& outNormal)
+{
+    float closest = maxDist;
+    glm::vec3 bestN(0.0f);
+    bool hit = false;
+    for (const CollisionTriangle& tri : world.triangles)
+    {
+        float d = 0.0f;
+        glm::vec3 n(0.0f);
+        glm::vec3 p(0.0f);
+        if (sweptSphereTriangle(origin, direction, radius, tri, maxDist, d, n, p) && d < closest)
+        {
+            closest = d;
+            bestN = n;
+            hit = true;
+        }
+    }
+    if (hit)
+        outNormal = bestN;
+    outHitDist = closest;
     return hit;
 }
 

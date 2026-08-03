@@ -183,7 +183,7 @@ uint32_t mpSendShotEvent(
     if (ctx.nextLocalShotSerial == 0)
         ctx.nextLocalShotSerial = 1;
     packet.clientTimeMs = nowMs();
-    packet.lastServerTick = ctx.latestServerTick;
+    packet.lastServerTick = mpFireRenderTick(ctx, ctx.latestServerTick);
     packet.targetPlayerId = targetPlayerId;
     packet.damage = damage;
     packet.power = power;
@@ -245,7 +245,7 @@ void mpSendPelletBlastRequest(MultiplayerContext& ctx, uint8_t weapon,
     if (ctx.nextLocalShotSerial == 0)
         ctx.nextLocalShotSerial = 1;
     packet.clientTimeMs = nowMs();
-    packet.lastServerTick = ctx.latestServerTick;
+    packet.lastServerTick = mpFireRenderTick(ctx, ctx.latestServerTick);
     packet.spreadSeed = spreadSeed;
     packet.weapon = weapon;
     packet.originX = origin.x; packet.originY = origin.y; packet.originZ = origin.z;
@@ -281,6 +281,12 @@ void mpProcessPelletBlastEventPacket(MultiplayerContext& ctx, const PelletBlastE
     const glm::vec3 baseDir(event->baseDirX, event->baseDirY, event->baseDirZ);
     const char* weaponName = networkWeaponTypeName(event->weapon);
 
+    // Re-base visuals onto the shooter's rendered replica body so the blast
+    // visibly originates from where the body is drawn, not the ghost position.
+    const glm::vec3 visualDelta =
+        mpRemoteShooterRenderDelta(ctx, event->shooterPlayerId);
+    const glm::vec3 visualOrigin = origin + visualDelta;
+
     printf("[PELLET BLAST CLIENT RECV] shooter=%u serial=%u weapon=%s "
            "pelletCount=%u origin=(%.2f,%.2f,%.2f) localShooter=%d\n",
            event->shooterPlayerId, event->shotSerial, weaponName,
@@ -289,8 +295,8 @@ void mpProcessPelletBlastEventPacket(MultiplayerContext& ctx, const PelletBlastE
     // For non-shooter: play sound and muzzle flash once
     if (!isLocalShooter)
     {
-        playWorldSound("shotgunshoot", origin, 1.0f, 1.0f, 80.0f);
-        EffectPartSystem::instance().spawnMuzzleFlash(origin, weaponName);
+        playWorldSound("shotgunshoot", visualOrigin, 1.0f, 1.0f, 80.0f);
+        EffectPartSystem::instance().spawnMuzzleFlash(visualOrigin, weaponName);
     }
 
     // Render each pellet tracer + impact
@@ -303,7 +309,7 @@ void mpProcessPelletBlastEventPacket(MultiplayerContext& ctx, const PelletBlastE
         // Only render tracers for non-shooter (shooter already predicted)
         if (!isLocalShooter)
         {
-            EffectPartSystem::instance().spawnTracer(origin, hitPos, weaponName);
+            EffectPartSystem::instance().spawnTracer(visualOrigin, hitPos + visualDelta, weaponName);
         }
 
         if (pellet.impactType == PELLET_IMPACT_WORLD)

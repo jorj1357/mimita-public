@@ -1,11 +1,10 @@
 {
-  "comment 7 28 2026 1118": "disabling it kinda is cool bc the wpn cool shot line works with the  cam forward aim mode and i like that more ",
-  "alpha": 180,
+  "alpha": 200,
   "blue": 255,
   "dot": false,
   "dynamic": false,
   "enabled": true,
-  "gap": 4,
+  "gap": 4.0,
   "green": 255,
   "outline": true,
   "outlineThickness": 1.0,
@@ -14,6 +13,6 @@
   "showLeft": true,
   "showRight": true,
   "showTop": true,
-  "size": 5,
-  "thickness": 2
+  "size": 5.0,
+  "thickness": 2.0
 }

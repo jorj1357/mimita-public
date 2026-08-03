@@ -429,6 +429,10 @@ int runServer(const LaunchOptions& options)
         // up server_smoothing (and the shared badconn block) live.
         NetworkingConfig::instance().pollReload();
 
+        // Hot-reload config/weapons.json (rate-limited to 250ms internally) so
+        // live weapon damage/falloff edits apply without a server restart.
+        WeaponData::reloadBuiltinWeaponsIfChanged();
+
         // Measure wall-clock elapsed time
         auto currentTime = std::chrono::steady_clock::now();
         double elapsed = std::chrono::duration<double>(currentTime - previousTime).count();

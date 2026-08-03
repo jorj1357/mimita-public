@@ -158,7 +158,8 @@ BeamCollisionResult collideBeam(
     const std::unordered_map<uint32_t, Player>* remotePlayers,
     const Player* targetPlayer,
     bool skipWorldCollision = false,
-    std::unordered_map<uint32_t, Player>* remoteNpcs = nullptr
+    std::unordered_map<uint32_t, Player>* remoteNpcs = nullptr,
+    float beamWorldThickness = 0.0f
 );
 
 bool rayTriangle(const glm::vec3& origin, const glm::vec3& direction,
