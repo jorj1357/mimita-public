@@ -45,6 +45,9 @@ SnapshotTransform transformFromEntity(const SnapshotEntity& entity)
     transform.weaponState = entity.weaponState;
     transform.aimDirection = {entity.aimX, entity.aimY, entity.aimZ};
     transform.pingMs = entity.pingMs;
+    transform.vipAppearance = MimitaVip::appearanceFromBytes(
+        entity.vipTier, entity.vipStyleKind, entity.vipColorR,
+        entity.vipColorG, entity.vipColorB, entity.vipFlags);
     transform.receivedMs = nowMs();
     transform.stateFlags = entity.stateFlags;
     transform.sizeScale = entity.sizeScale;
@@ -70,59 +73,68 @@ float lerpAngle(float a, float b, float t)
     return a + delta * t;
 }
 
-// Builds the render-time snapshot for a remote actor using receive-time
-// interpolation. Renders at `nowMs() - interpolationDelayMs`, lerping between
-// the two buffered snapshots whose `receivedMs` bracket that instant. Because
-// the delay is in receive time (not server tick), jitter/loss/reorder can no
-// longer freeze-then-jump the body: we always lerp between whatever arrived
-// just before and just after the render instant. Fills `out`; the caller
-// decides how to use the result (thin-buffer handling lives in the caller).
-void buildReceiveTimeRender(const EntityInterpolationState& interpolation,
+// Builds the render-time snapshot for a remote actor using tick-based
+// interpolation with a clamped per-entity render clock. The clock advances at
+// most dt*60 per frame and is capped at `newestBufferedTick - delayTicks`, so
+// bursts of reordered snapshots (badconn) catch up smoothly over a few frames
+// instead of flashing the body forward. Interpolating by server tick (uniform
+// 60Hz) rather than arrival time keeps motion uniform under reordering.
+void buildReceiveTimeRender(EntityInterpolationState& interpolation,
                             const RemotePlayerInterpolationConfig& interpCfg,
                             const double delaySeconds,
+                            float dt,
                             SnapshotTransform& out)
 {
-    const uint64_t now = nowMs();
-    const double renderMs = (double)now - delaySeconds * 1000.0;
+    const uint32_t oldestTick = interpolation.buffer.front().serverTick;
+    const uint32_t newestTick = interpolation.buffer.back().serverTick;
 
-    const SnapshotTransform* older = nullptr;
-    const SnapshotTransform* newer = nullptr;
-    uint64_t olderMs = 0;
-    uint64_t newerMs = 0;
+    const double delayTicks = delaySeconds * (double)GAMEPLAY_SIMULATION_HZ;
+    const double targetTick = (double)newestTick - delayTicks;
 
-    // Buffer is ordered by serverTick, so scan by receivedMs to stay robust
-    // against reorder. Find the largest receivedMs <= renderMs (older) and the
-    // smallest receivedMs > renderMs (newer).
-    for (const SnapshotTransform& s : interpolation.buffer)
+    // Advance the clamped render clock. Never exceed the target, so a burst of
+    // new snapshots cannot make it jump; it catches up smoothly instead.
+    if (interpolation.renderTick <= 0.0)
+        interpolation.renderTick = targetTick;
+    else
+        interpolation.renderTick += (double)dt * (double)GAMEPLAY_SIMULATION_HZ;
+    interpolation.renderTick = std::min(interpolation.renderTick, targetTick);
+    const double renderTick = std::max(interpolation.renderTick, (double)oldestTick);
+    const uint32_t renderFloor = (uint32_t)std::floor(renderTick);
+
+    const SnapshotTransform* older = &interpolation.buffer.front();
+    const SnapshotTransform* newer = &interpolation.buffer.back();
+    for (size_t i = 0; i + 1 < interpolation.buffer.size(); ++i)
     {
-        if (s.receivedMs <= (uint64_t)renderMs)
+        const SnapshotTransform& a = interpolation.buffer[i];
+        const SnapshotTransform& b = interpolation.buffer[i + 1];
+        if (a.serverTick <= renderFloor)
         {
-            if (!older || s.receivedMs > olderMs)
+            older = &a;
+            if (b.serverTick > renderFloor)
             {
-                older = &s;
-                olderMs = s.receivedMs;
+                newer = &b;
+                break;
             }
         }
         else
         {
-            if (!newer || s.receivedMs < newerMs)
-            {
-                newer = &s;
-                newerMs = s.receivedMs;
-            }
+            older = &a;
+            newer = &b;
+            break;
         }
     }
 
-    if (!newer)
+    // Buffer ran dry: renderTick is newer than everything buffered. Extrapolate
+    // along the newest velocity (time-limited) if allowed, else hold newest.
+    if (renderTick > (double)newestTick)
     {
-        // Buffer ran dry: renderTime is newer than everything buffered.
-        // Extrapolate along the newest velocity (time-limited) if allowed,
-        // otherwise hold the newest snapshot exactly.
         const SnapshotTransform& newest = interpolation.buffer.back();
         out = newest;
         if (interpCfg.allowExtrapolation)
         {
-            const double extraMs = renderMs - (double)newest.receivedMs;
+            const double extraTicks = renderTick - (double)newestTick;
+            const double extraMs =
+                extraTicks / (double)GAMEPLAY_SIMULATION_HZ * 1000.0;
             const double extrapMs = std::min(
                 extraMs, interpCfg.maximumExtrapolationSeconds * 1000.0);
             if (extrapMs > 0.0)
@@ -137,18 +149,19 @@ void buildReceiveTimeRender(const EntityInterpolationState& interpolation,
         return;
     }
 
-    if (!older)
+    if (renderTick < (double)oldestTick)
     {
-        // renderTime is older than everything buffered (fresh spawn / very
-        // thin buffer): hold the oldest snapshot. No lerp yet.
-        out = *newer;
+        // renderTick older than everything buffered (fresh spawn / very thin
+        // buffer): hold the oldest snapshot. No lerp yet.
+        out = *older;
         return;
     }
 
     double alpha = 1.0;
-    if (newerMs > olderMs)
+    if (newer->serverTick > older->serverTick)
     {
-        alpha = (renderMs - (double)olderMs) / (double)(newerMs - olderMs);
+        alpha = (renderTick - (double)older->serverTick) /
+                (double)(newer->serverTick - older->serverTick);
         alpha = std::clamp(alpha, 0.0, 1.0);
     }
 
@@ -366,8 +379,9 @@ void updateRenderedReplica(
     // One rule: position, velocity, yaw, aim, animation state, and weapon all
     // come from the SAME render-time snapshot, so the body can never desync
     // from its own animation or shots. The render snapshot is produced at
-    // `now - interpolationDelay` via receive-time interpolation (or is the
-    // newest snapshot in direct-render mode, which is internally consistent).
+    // `newestBufferedTick - interpolationDelay` via tick-based interpolation
+    // with a clamped per-entity clock (or is the newest snapshot in
+    // direct-render mode, which is internally consistent).
     const double delaySeconds =
         NetworkingConfig::instance().effectiveRemoteInterpolationDelaySeconds();
 
@@ -378,7 +392,7 @@ void updateRenderedReplica(
         if (interpolation.buffer.size() >= 2)
         {
             buildReceiveTimeRender(
-                interpolation, interpCfg, delaySeconds, render);
+                interpolation, interpCfg, delaySeconds, dt, render);
         }
         else if (interpolation.hasRendered)
         {
@@ -469,6 +483,7 @@ void updateRenderedReplica(
     player.sizeScale = render.sizeScale;
     player.spawnGeneration = interpolation.target.spawnGeneration;
     player.username = interpolation.displayName;
+    player.vipAppearance = render.vipAppearance;
     player.networkStateFlags = render.stateFlags;
     player.ground.onGround = render.onGround;
 

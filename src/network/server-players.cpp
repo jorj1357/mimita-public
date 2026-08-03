@@ -685,15 +685,20 @@ void beginServerBroadcastInterp(ServerPlayer& player, uint32_t serverTick)
         player.broadcastSamplesEpoch = player.transformEpoch;
     }
 
-    // Buffer the accepted report keyed by server acceptance time.
+    // Buffer the accepted report. Interpolation is keyed by the client's own
+    // movement tick (uniform 60Hz), not by server arrival time, so reordered
+    // and bursty arrivals render as uniform motion.
+    const uint32_t acceptedClientTick =
+        player.movementValidation.lastAcceptedClientTick;
     player.broadcastSamples.push_back({
-        nowMs(), player.lastAcceptedClientPosition, player.lastAcceptedClientVelocity});
+        nowMs(), acceptedClientTick,
+        player.lastAcceptedClientPosition, player.lastAcceptedClientVelocity});
     while (player.broadcastSamples.size() > kMaxBroadcastSamples)
         player.broadcastSamples.pop_front();
 
     // Keep the fixed-window lerp fields fresh as the fallback path used when
     // serverBroadcastDelaySeconds == 0.
-    const uint32_t newTick = player.movementValidation.lastAcceptedClientTick;
+    const uint32_t newTick = acceptedClientTick;
     if (player.hasInterpSegment)
         player.interpFromPos = player.broadcastPosition;
     else
@@ -722,17 +727,18 @@ void updateServerBroadcastInterp(ServerPlayer& player, uint32_t serverTick)
         return;
     }
 
-    // ── Receive-time broadcast rendering (primary path) ───────────────
-    // Render the broadcast at `now - serverBroadcastDelaySeconds`, lerping
-    // between the two accepted reports whose acceptance times bracket that
-    // instant. Bursts of reports arriving together are spread out over the
-    // delay window, producing a smooth stream for every client.
+    // ── Client-tick broadcast rendering (primary path) ───────────────
+    // Render the broadcast at `newestClientTick - delayTicks`, lerping between
+    // the two accepted reports whose client movement ticks bracket that
+    // instant. Client ticks are uniform 60Hz, so even reordered/bursty
+    // arrivals produce uniform motion — no arrival-cluster "flash-then-hold".
     if (interpCfg.serverBroadcastDelaySeconds > 0.0 &&
         player.broadcastSamples.size() >= 2)
     {
-        const uint64_t now = nowMs();
-        const double renderMs = (double)now -
-            interpCfg.serverBroadcastDelaySeconds * 1000.0;
+        const uint32_t newestClientTick = player.broadcastSamples.back().clientTick;
+        const double delayTicks =
+            interpCfg.serverBroadcastDelaySeconds * (double)GAMEPLAY_SIMULATION_HZ;
+        const double targetTick = (double)newestClientTick - delayTicks;
 
         // Optional speed clamp: cap how far the broadcast may move per tick so
         // a burst report cannot make the body lurch even through the buffer.
@@ -757,11 +763,11 @@ void updateServerBroadcastInterp(ServerPlayer& player, uint32_t serverTick)
         const ServerPlayer::BroadcastSample* newer = nullptr;
         for (const auto& s : player.broadcastSamples)
         {
-            if (s.acceptedMs <= (uint64_t)renderMs)
-                older = &s;   // keep the latest one at/before renderMs
+            if ((double)s.clientTick <= targetTick)
+                older = &s;   // keep the latest one at/before targetTick
             else
             {
-                newer = &s;   // first sample after renderMs
+                newer = &s;   // first sample after targetTick
                 break;
             }
         }
@@ -769,10 +775,10 @@ void updateServerBroadcastInterp(ServerPlayer& player, uint32_t serverTick)
         if (older && newer)
         {
             double alpha = 1.0;
-            if (newer->acceptedMs > older->acceptedMs)
+            if (newer->clientTick > older->clientTick)
             {
-                alpha = (renderMs - (double)older->acceptedMs) /
-                        (double)(newer->acceptedMs - older->acceptedMs);
+                alpha = (targetTick - (double)older->clientTick) /
+                        (double)(newer->clientTick - older->clientTick);
                 alpha = std::clamp(alpha, 0.0, 1.0);
             }
             clampDelta(older->position +
@@ -785,7 +791,7 @@ void updateServerBroadcastInterp(ServerPlayer& player, uint32_t serverTick)
 
         if (!older)
         {
-            // renderMs older than everything buffered (fresh start): hold the
+            // targetTick older than everything buffered (fresh start): hold the
             // oldest sample until enough history accumulates.
             const auto& newest = player.broadcastSamples.front();
             clampDelta(newest.position);
@@ -795,9 +801,10 @@ void updateServerBroadcastInterp(ServerPlayer& player, uint32_t serverTick)
         }
 
         // Buffer ran dry (no fresh reports): extrapolate along the newest
-        // velocity for a short time, then hold.
+        // velocity for a short wall-clock time, then hold.
         const auto& newest = player.broadcastSamples.back();
-        const double dryMs = renderMs - (double)newest.acceptedMs;
+        const double dryTicks = targetTick - (double)newest.clientTick;
+        const double dryMs = dryTicks / (double)GAMEPLAY_SIMULATION_HZ * 1000.0;
         if (interpCfg.serverBroadcastExtrapolationSeconds > 0.0 && dryMs > 0.0)
         {
             const double extrapMs = std::min(
@@ -964,6 +971,9 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     out.equipSerial = player.lastEquipSerial;
     out.freezeSerial = player.lastPresentationFreezeSerial;
     copyName(out.displayName, player.name);
+    MimitaVip::copyAppearanceToBytes(
+        player.vipAppearance, out.vipTier, out.vipStyleKind,
+        out.vipColorR, out.vipColorG, out.vipColorB, out.vipFlags);
     return out;
 }
 

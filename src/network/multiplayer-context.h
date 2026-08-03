@@ -70,6 +70,7 @@ struct PlayerInfo
     std::string name;
     uint32_t id = 0;
     int pingMs = 0;
+    MimitaVip::VipAppearance vipAppearance;
 };
 
 struct SnapshotTransform
@@ -97,6 +98,7 @@ struct SnapshotTransform
     uint16_t equipSerial = 0;
     uint16_t freezeSerial = 0;
     uint32_t spawnGeneration = 0;
+    MimitaVip::VipAppearance vipAppearance;
 };
 
 struct NetworkShotEvent
@@ -202,6 +204,10 @@ struct EntityInterpolationState
     // buffer runs thin, so movement/animation can never desync mid-buffer.
     bool hasRendered = false;
     SnapshotTransform lastRender;
+    // Per-entity interpolation render clock (in server-tick units). Advances at
+    // most dt*60 per frame and is clamped to `newestBufferedTick - delayTicks`,
+    // so bursts of reordered snapshots catch up smoothly instead of flashing.
+    double renderTick = 0.0;
     uint32_t networkEntityId = 0;
     uint16_t lastTransformEpoch = 0;
     uint32_t lastServerTick = 0;
@@ -283,6 +289,8 @@ struct MultiplayerContext
     ConnectionState connectionState = ConnectionState::Disconnected;
     std::string roomCode;
     std::string joinToken;
+    std::string vipJoinTicket;
+    bool vipJoinTicketRequested = false;
     std::string reconnectToken;
     std::string requiredMapId;
     int reconnectAttempts = 0;

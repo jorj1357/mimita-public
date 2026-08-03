@@ -1,4 +1,14 @@
+// 08 03 2026, 17 20
+/* purpose
+* Owns compact snapshot chunk encode, decode, reassembly, and self-test coverage.
+* Keeps multiplayer entity snapshot payloads under the safe datagram size limit.
+* Copies bounded VIP appearance bytes through legacy and chunked snapshot paths.
+* DOES NOT own server entitlement verification or render interpolation policy.
+* DOES NOT send full player profile, style JSON, or payment state over the network.
+* DOES NOT mutate gameplay entities outside snapshot serialization.
+*/
 #include "network/snapshot-chunks.h"
+#include "vip/vip-appearance.h"
 
 #include <algorithm>
 #include <cmath>
@@ -63,6 +73,10 @@ CompactEntityData makeTestEntity(uint32_t id)
     e.equipSerial = (uint16_t)(id * 6);
     e.freezeSerial = (uint16_t)(id * 7);
     snprintf(e.displayName, sizeof(e.displayName), "Player_%u", id);
+    MimitaVip::VipAppearance vip = MimitaVip::tierDefaultAppearance(
+        (uint8_t)(id % (MimitaVip::VIP_TIER_ULTRA_VIP + 1)));
+    MimitaVip::copyAppearanceToBytes(
+        vip, e.vipTier, e.vipStyleKind, e.vipColorR, e.vipColorG, e.vipColorB, e.vipFlags);
     return e;
 }
 
@@ -123,6 +137,12 @@ CompactEntityData compactEntityFromSnapshot(const SnapshotEntity& entity)
     out.equipSerial = entity.equipSerial;
     out.freezeSerial = entity.freezeSerial;
     out.spawnGeneration = entity.spawnGeneration;
+    out.vipTier = entity.vipTier;
+    out.vipStyleKind = entity.vipStyleKind;
+    out.vipColorR = entity.vipColorR;
+    out.vipColorG = entity.vipColorG;
+    out.vipColorB = entity.vipColorB;
+    out.vipFlags = entity.vipFlags;
     std::memset(out.displayName, 0, sizeof(out.displayName));
     std::strncpy(out.displayName, entity.displayName, sizeof(out.displayName) - 1);
     return out;
@@ -161,6 +181,12 @@ SnapshotEntity snapshotEntityFromCompact(const CompactEntityData& entity)
     out.equipSerial = entity.equipSerial;
     out.freezeSerial = entity.freezeSerial;
     out.spawnGeneration = entity.spawnGeneration;
+    out.vipTier = entity.vipTier;
+    out.vipStyleKind = entity.vipStyleKind;
+    out.vipColorR = entity.vipColorR;
+    out.vipColorG = entity.vipColorG;
+    out.vipColorB = entity.vipColorB;
+    out.vipFlags = entity.vipFlags;
     std::memset(out.displayName, 0, sizeof(out.displayName));
     std::strncpy(out.displayName, entity.displayName, sizeof(out.displayName) - 1);
     return out;

@@ -296,6 +296,14 @@ bool storeProfileCache(const CachedProfile& profile)
         j["display_name"] = profile.displayName;
         j["avatar_url"] = profile.avatarUrl;
         j["supporter_tier"] = profile.supporterTier;
+        j["vip_appearance"] = {
+            {"tier", profile.vipAppearance.tier},
+            {"style_kind", profile.vipAppearance.styleKind},
+            {"color_r", profile.vipAppearance.colorR},
+            {"color_g", profile.vipAppearance.colorG},
+            {"color_b", profile.vipAppearance.colorB},
+            {"flags", profile.vipAppearance.flags}
+        };
 
         std::ofstream out(profileCachePath(), std::ios::trunc);
         if (!out)
@@ -329,6 +337,19 @@ CachedProfile loadProfileCache()
         profile.displayName = j.value("display_name", "");
         profile.avatarUrl = j.value("avatar_url", "");
         profile.supporterTier = j.value("supporter_tier", "free");
+        profile.vipAppearance = MimitaVip::tierDefaultAppearance(
+            MimitaVip::tierFromString(profile.supporterTier));
+        if (j.contains("vip_appearance") && j["vip_appearance"].is_object())
+        {
+            const json& vip = j["vip_appearance"];
+            profile.vipAppearance.tier = (uint8_t)vip.value("tier", (int)profile.vipAppearance.tier);
+            profile.vipAppearance.styleKind = (uint8_t)vip.value("style_kind", (int)profile.vipAppearance.styleKind);
+            profile.vipAppearance.colorR = (uint8_t)vip.value("color_r", (int)profile.vipAppearance.colorR);
+            profile.vipAppearance.colorG = (uint8_t)vip.value("color_g", (int)profile.vipAppearance.colorG);
+            profile.vipAppearance.colorB = (uint8_t)vip.value("color_b", (int)profile.vipAppearance.colorB);
+            profile.vipAppearance.flags = (uint8_t)vip.value("flags", (int)profile.vipAppearance.flags);
+            profile.supporterTier = MimitaVip::tierToString(profile.vipAppearance.tier);
+        }
 
         if (!profile.username.empty())
             printf("[AUTH] profile cache loaded: %s\n", profile.username.c_str());

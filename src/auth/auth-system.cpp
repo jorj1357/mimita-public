@@ -36,6 +36,7 @@ static void applyInfo(AuthUser& user, const GameUserInfo& info)
     user.avatarUrl = info.avatarUrl;
     user.avatarData = info.avatarData;
     user.supporterTier = info.supporterTier;
+    user.vipAppearance = info.vipAppearance;
     user.role = info.role;
     user.emailVerified = info.emailVerified;
     user.createdAt = info.createdAt;
@@ -49,6 +50,7 @@ static void cacheAndFinish(AuthUser& user)
     cache.displayName = user.displayName;
     cache.avatarUrl = user.avatarUrl;
     cache.supporterTier = user.supporterTier;
+    cache.vipAppearance = user.vipAppearance;
     storeProfileCache(cache);
 }
 
@@ -85,6 +87,7 @@ void AuthSystem::init(const std::string& cliSessionToken)
         mUser.displayName = cached.displayName;
         mUser.avatarUrl = cached.avatarUrl;
         mUser.supporterTier = cached.supporterTier;
+        mUser.vipAppearance = cached.vipAppearance;
         Debug::warn(Debug::Category::Auth, "using cached profile: %s\n", cached.username.c_str());
     }
 }
@@ -124,7 +127,7 @@ void AuthSystem::applyUserInfo(const GameUserInfo& info)
     if (gpPlayer)
         gpPlayer->username = displayName();
     storeProfileCache({
-        info.id, info.username, info.displayName, info.avatarUrl, info.supporterTier
+        info.id, info.username, info.displayName, info.avatarUrl, info.supporterTier, info.vipAppearance
     });
 }
 

@@ -1,3 +1,13 @@
+// 08 03 2026, 17 20
+/* purpose
+* Renders world-space player healthbars and name labels.
+* Projects player head anchors into HUD space for readable combat state.
+* Applies compact VIP appearance when drawing player names.
+* DOES NOT own entitlement verification, network packet parsing, or website API calls.
+* DOES NOT load badge image assets or full VIP preset JSON.
+* DOES NOT mutate player combat, movement, or account state.
+*/
+
 #include "player-nameplates.h"
 #include "healthbar-config.h"
 
@@ -16,6 +26,7 @@
 #include "debug/debug-log.h"
 #include "replay/replay-export.h"
 #include "terminal/terminal-state.h"
+#include "vip/vip-name-render.h"
 
 namespace {
 
@@ -246,10 +257,13 @@ HealthbarRenderResult drawPlayerHealthbar(
 
         if ((!cfg.showNameInAimMode || textColor.a > 0.01f) && textColor.a > 0.01f)
         {
-            const float nameWidth = uiMeasureText(player.username.c_str(), 0.28f);
-            uiDrawText(
-                player.username.c_str(), x - nameWidth * 0.5f, y - 31.0f,
-                0.28f, textColor);
+            VipNameDrawOptions nameOptions;
+            nameOptions.scale = 0.28f;
+            nameOptions.alpha = textColor.a;
+            nameOptions.phase = (float)gFrameCounter / 8.0f;
+            vipDrawStyledNameCentered(
+                player.username, player.vipAppearance, x, y - 31.0f,
+                nameOptions);
         }
 
         if ((!cfg.showHpTextInAimMode || textColor.a > 0.01f) && textColor.a > 0.01f)

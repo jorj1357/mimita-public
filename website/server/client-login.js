@@ -3,6 +3,7 @@ import { getClientIp, hashToken, createSecretToken } from "./authCore.js"
 import { pool } from "./db.js"
 import { authenticate, sessionSecret, sessionDays } from "./session.js"
 import { createRateLimit } from "./rateLimit.js"
+import { getVipStateForUser } from "./vip-entitlements.js"
 
 const router = Router()
 const clientLoginRateLimit = createRateLimit({ windowMs: 10 * 1000, max: 10, name: "client_login" })
@@ -37,7 +38,7 @@ router.post("/preview", clientLoginRateLimit, async (req, res, next) => {
         const codeHash = hashToken(code, sessionSecret)
 
         const result = await pool.query(
-            `SELECT u.username, u.avatar_url, u.supporter_tier
+            `SELECT u.id, u.username, u.display_name, u.avatar_url, u.supporter_tier, u.role
              FROM client_login_codes c
              JOIN users u ON u.id = c.user_id
              WHERE c.code_hash = $1
@@ -51,12 +52,16 @@ router.post("/preview", clientLoginRateLimit, async (req, res, next) => {
             return res.json({ success: true, valid: false })
         }
 
+        const vip = await getVipStateForUser(result.rows[0], pool)
+
         res.json({
             success: true,
             valid: true,
             username: result.rows[0].username,
+            display_name: result.rows[0].display_name || result.rows[0].username,
             avatar_url: result.rows[0].avatar_url || "",
-            supporter_tier: result.rows[0].supporter_tier || "free"
+            supporter_tier: vip.active_tier,
+            vip
         })
     }
     catch (error) {
@@ -70,7 +75,7 @@ router.post("/confirm", clientLoginRateLimit, async (req, res, next) => {
         const codeHash = hashToken(code, sessionSecret)
 
         const result = await pool.query(
-            `SELECT c.id, c.user_id, u.username
+            `SELECT c.id, c.user_id, u.username, u.display_name, u.role
              FROM client_login_codes c
              JOIN users u ON u.id = c.user_id
              WHERE c.code_hash = $1
@@ -97,12 +102,20 @@ router.post("/confirm", clientLoginRateLimit, async (req, res, next) => {
             [result.rows[0].user_id, tokenHash, "game-client", getClientIp(req), sessionDays]
         )
 
+        const vip = await getVipStateForUser({
+            id: result.rows[0].user_id,
+            role: result.rows[0].role || "user"
+        }, pool)
+
         res.json({
             success: true,
             session_token: token,
             account: {
                 id: result.rows[0].user_id,
-                username: result.rows[0].username
+                username: result.rows[0].username,
+                display_name: result.rows[0].display_name || result.rows[0].username,
+                supporter_tier: vip.active_tier,
+                vip
             }
         })
     }

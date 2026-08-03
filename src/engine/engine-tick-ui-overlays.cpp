@@ -1,3 +1,13 @@
+// 08 03 2026, 17 20
+/* purpose
+* Renders gameplay UI overlays such as pause state, player list, and network debug panels.
+* Uses active engine, multiplayer, and replay state to draw lightweight HUD overlays.
+* Applies compact VIP appearance to multiplayer player-list names.
+* DOES NOT own network packet parsing, entitlement verification, or menu routing.
+* DOES NOT mutate gameplay state except explicit overlay button actions.
+* DOES NOT load full VIP presets or website badge image assets.
+*/
+
 #include "engine/engine-tick-ui.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
@@ -16,6 +26,7 @@
 #include "replay/replay-export-ui.h"
 #include "replay/replay-factory.h"
 #include "gui/ui-system.h"
+#include "vip/vip-name-render.h"
 #include "gui/gui-layout.h"
 #include "gui/gui-layout.h"
 #include "gui/gui-element-render.h"
@@ -226,10 +237,23 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         if (mpContext.localPlayerId)
         {
             const char* localName = player.username.empty() ? "you" : player.username.c_str();
-            char localLine[128];
-            snprintf(localLine, sizeof(localLine), "%u   %s   %dms (you)",
-                     mpContext.localPlayerId, localName, mpContext.localPingMs);
-            uiDrawText(localLine, listX + 10.0f, y, 0.32f, {0.3f, 1.0f, 0.4f, 1.0f});
+            MimitaVip::VipAppearance localVip = MimitaVip::freeAppearance();
+            auto localInfo = mpContext.playerRegistry.find(mpContext.localPlayerId);
+            if (localInfo != mpContext.playerRegistry.end())
+                localVip = localInfo->second.vipAppearance;
+            char localPrefix[32];
+            snprintf(localPrefix, sizeof(localPrefix), "%u   ", mpContext.localPlayerId);
+            float x = listX + 10.0f;
+            uiDrawText(localPrefix, x, y, 0.32f, {0.3f, 1.0f, 0.4f, 1.0f});
+            x += uiMeasureText(localPrefix, 0.32f);
+            VipNameDrawOptions nameOptions;
+            nameOptions.scale = 0.32f;
+            nameOptions.alpha = 1.0f;
+            vipDrawStyledName(localName, localVip, x, y, nameOptions);
+            x += vipMeasureStyledName(localName, localVip, nameOptions);
+            char localPing[48];
+            snprintf(localPing, sizeof(localPing), "   %dms (you)", mpContext.localPingMs);
+            uiDrawText(localPing, x, y, 0.32f, {0.3f, 1.0f, 0.4f, 1.0f});
             y += lineH;
         }
 
@@ -238,10 +262,19 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             if (kv.first == mpContext.localPlayerId)
                 continue;
             const char* pname = kv.second.name.c_str();
-            char remoteLine[128];
-            snprintf(remoteLine, sizeof(remoteLine), "%u  %s  %dms",
-                     kv.first, pname, kv.second.pingMs);
-            uiDrawText(remoteLine, listX + 10.0f, y, 0.32f, {0.9f, 0.95f, 1.0f, 1.0f});
+            char remotePrefix[32];
+            snprintf(remotePrefix, sizeof(remotePrefix), "%u  ", kv.first);
+            float x = listX + 10.0f;
+            uiDrawText(remotePrefix, x, y, 0.32f, {0.9f, 0.95f, 1.0f, 1.0f});
+            x += uiMeasureText(remotePrefix, 0.32f);
+            VipNameDrawOptions nameOptions;
+            nameOptions.scale = 0.32f;
+            nameOptions.alpha = 1.0f;
+            vipDrawStyledName(pname, kv.second.vipAppearance, x, y, nameOptions);
+            x += vipMeasureStyledName(pname, kv.second.vipAppearance, nameOptions);
+            char remotePing[32];
+            snprintf(remotePing, sizeof(remotePing), "  %dms", kv.second.pingMs);
+            uiDrawText(remotePing, x, y, 0.32f, {0.9f, 0.95f, 1.0f, 1.0f});
             y += lineH;
         }
     }

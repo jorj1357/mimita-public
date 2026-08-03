@@ -21,6 +21,7 @@
 #include "physics/config.h"
 #include "combat/weapon-execution.h"
 #include "combat/weapon-swordsword.h"
+#include "vip/vip-appearance.h"
 
 #include <memory>
 
@@ -177,6 +178,9 @@ struct ServerPlayer
 {
     uint32_t id = 0;
     std::string name;
+    int vipAccountId = 0;
+    std::string accountRole;
+    MimitaVip::VipAppearance vipAppearance;
     sockaddr_in addr{};
     TransportConnectionId connectionId{};
     bool hasConnectionId = false;
@@ -342,9 +346,13 @@ struct ServerPlayer
     // receive-time technique the client uses. This spreads bursty accepted
     // reports (badconn jitter/loss/reorder) into a smooth broadcast stream
     // so every client sees steady motion regardless of report cadence.
+    // NOTE: interpolation is keyed by clientTick (the client's 60Hz movement
+    // tick), not by wall-clock arrival, so reordered/bursty arrivals produce
+    // uniform motion instead of the arrival-cluster "flash-then-hold" snap.
     struct BroadcastSample
     {
         uint64_t acceptedMs = 0;
+        uint32_t clientTick = 0;
         glm::vec3 position{0.0f};
         glm::vec3 velocity{0.0f};
     };

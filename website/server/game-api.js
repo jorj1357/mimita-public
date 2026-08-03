@@ -12,6 +12,7 @@ import { Router } from "express"
 import { hashToken, getClientIp } from "./authCore.js"
 import { pool } from "./db.js"
 import { parseCookies, sessionCookieName, sessionSecret } from "./session.js"
+import { getVipStateForUser } from "./vip-entitlements.js"
 import crypto from "crypto"
 
 const router = Router()
@@ -40,7 +41,7 @@ function defaultStats() {
     }
 }
 
-function profileFromUser(u) {
+function profileFromUser(u, vip = null) {
     return {
         id: u.id,
         username: u.username,
@@ -49,10 +50,11 @@ function profileFromUser(u) {
         bio: u.bio,
         avatar_url: u.avatar_url,
         avatar_data: u.avatar_data,
-        supporter_tier: u.supporter_tier,
+        supporter_tier: vip?.active_tier || u.supporter_tier,
         role: u.role,
         created_at: u.created_at,
-        email_verified: u.email_verified
+        email_verified: u.email_verified,
+        vip
     }
 }
 
@@ -98,6 +100,16 @@ function defaultTitles(user) {
     }
 }
 
+async function attachVipToRows(rows) {
+    return Promise.all(rows.map(async row => {
+        const vip = await getVipStateForUser({ id: row.id, role: row.role || "user" }, pool)
+        return {
+            ...row,
+            supporter_tier: vip.active_tier,
+            vip
+        }
+    }))
+}
 function withDefaultTitle(user, titles) {
     const result = titles && typeof titles === "object" ? { ...titles } : defaultTitles(user)
     const baseTitle = roleTitleForUser(user)
@@ -174,6 +186,8 @@ async function authenticateToken(req, res, next) {
 
 router.get("/game/me", authenticateToken, async (req, res, next) => {
     try {
+        const vip = await getVipStateForUser(req.user, pool)
+        req.user.supporter_tier = vip.active_tier
         const data = await getAccountData(req.user)
 
         res.json({
@@ -182,9 +196,10 @@ router.get("/game/me", authenticateToken, async (req, res, next) => {
                 id: req.user.id,
                 username: req.user.username,
                 permissions: [req.user.role || "user"],
-                supporter_tier: req.user.supporter_tier || "free"
+                supporter_tier: vip.active_tier,
+                vip
             },
-            profile: profileFromUser(req.user),
+            profile: profileFromUser(req.user, vip),
             stats: data.stats,
             settings: data.settings,
             avatar: {
@@ -290,12 +305,18 @@ router.post("/game/titles", authenticateToken, async (req, res, next) => {
     }
 })
 
-router.get("/profile", authenticateToken, (req, res) => {
-    const u = req.user
-    res.json({
-        success: true,
-        profile: profileFromUser(u)
-    })
+router.get("/profile", authenticateToken, async (req, res, next) => {
+    try {
+        const vip = await getVipStateForUser(req.user, pool)
+        req.user.supporter_tier = vip.active_tier
+        res.json({
+            success: true,
+            profile: profileFromUser(req.user, vip)
+        })
+    }
+    catch (error) {
+        next(error)
+    }
 })
 
 router.patch("/profile", authenticateToken, async (req, res, next) => {
@@ -459,7 +480,7 @@ router.get("/leaderboard", async (req, res, next) => {
         const result = await pool.query(
             `SELECT
                 ROW_NUMBER() OVER (ORDER BY ${orderBy}) AS rank,
-                u.id, u.username, u.avatar_url, u.supporter_tier,
+                u.id, u.username, u.avatar_url, u.supporter_tier, u.role,
                 gs.wins, gs.losses, gs.kills, gs.deaths,
                 gs.games_played, gs.playtime_seconds,
                 gs.highest_mmr, gs.current_mmr,
@@ -472,7 +493,7 @@ router.get("/leaderboard", async (req, res, next) => {
             [limit]
         )
 
-        res.json({ success: true, leaderboard: result.rows })
+        res.json({ success: true, leaderboard: await attachVipToRows(result.rows) })
     }
     catch (error) {
         next(error)
@@ -656,7 +677,7 @@ router.get("/games/:gameId/leaderboard", async (req, res, next) => {
         const result = await pool.query(
             `SELECT
                 ROW_NUMBER() OVER (ORDER BY gs.score_value ${desc ? "DESC" : "ASC"}) AS rank,
-                u.id, u.username, u.avatar_url, u.supporter_tier,
+                u.id, u.username, u.avatar_url, u.supporter_tier, u.role,
                 gs.score_value, gs.created_at
              FROM game_scores gs
              JOIN users u ON u.id = gs.user_id
@@ -674,7 +695,7 @@ router.get("/games/:gameId/leaderboard", async (req, res, next) => {
             lastEntry: rows.length > 0 ? { rank: rows[rows.length - 1].rank, username: rows[rows.length - 1].username, score: rows[rows.length - 1].score_value } : null,
         }))
 
-        res.json({ success: true, leaderboard: rows })
+        res.json({ success: true, leaderboard: await attachVipToRows(rows) })
     } catch (error) {
         next(error)
     }

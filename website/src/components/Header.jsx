@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom"
 import { useState, useEffect, useRef } from "react"
 import Avatar from "./Avatar"
+import Username from "./Username"
 import RainbowText from "./RainbowText"
 import { logAuthEvent } from "../lib/api-log"
 import { apiRequest } from "../lib/api"
@@ -22,6 +23,7 @@ const HAMBURGER_ITEMS = [
     { label: "MiMITA News!!!", path: "/news", rainbow: true },
     { label: "Profile", path: "/profile", auth: true },
     { label: "Support", path: "/support" },
+    { label: "VIP", path: "/vip", auth: true },
     { label: "Terms", path: "/terms" },
     { label: "Users", path: "/users" },
 ]
@@ -169,6 +171,7 @@ export default function Header() {
                     </a>
                     <Link className="headerMainLink" to="/jorj1357">jorj1357</Link>
                     <Link className="headerMainLink" to="/contribute">Donate</Link>
+                    <Link className="headerMainLink" to="/vip">VIP</Link>
                 </div>
 
                 <div className="headerRight">
@@ -190,7 +193,7 @@ export default function Header() {
                                     <div className="profileDropdownHeader">
                                         <Avatar user={user} size="sm" />
                                         <div className="profileDropdownUser">
-                                            <span className="profileDropdownName">{user.username}</span>
+                                            <span className="profileDropdownName"><Username user={user} size="sm" /></span>
                                         </div>
                                     </div>
                                     <Link to={profilePath} onClick={() => setProfileOpen(false)}>
@@ -198,6 +201,9 @@ export default function Header() {
                                     </Link>
                                     <Link to="/account" onClick={() => setProfileOpen(false)}>
                                         Edit Account
+                                    </Link>
+                                    <Link to="/vip" onClick={() => setProfileOpen(false)}>
+                                        VIP
                                     </Link>
                                     <button
                                         type="button"

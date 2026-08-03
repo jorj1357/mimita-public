@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { Link, useLocation } from "react-router-dom"
 import { apiRequest } from "../lib/api.js"
 import { formatCountdown, isBannerCollapsed, setBannerCollapsed } from "../lib/bannerUtils.js"
+import Username from "./Username"
 import "../styles/banner.css"
 
 const CACHE_TTL_MS = 30_000
@@ -159,7 +160,7 @@ export default function SiteBanner() {
                 <span className="siteBannerInfo">
                     by{" "}
                     <Link className="siteBannerAuthor" to={`/users/${encodeURIComponent(banner.username)}`}>
-                        {banner.username}
+                        <Username user={banner} size="sm" />
                     </Link>
                     {" · "}
                     {formatUtc(banner.created_at)}

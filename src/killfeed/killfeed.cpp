@@ -1,3 +1,13 @@
+// 08 03 2026, 17 20
+/* purpose
+* Implements the short-lived on-screen killfeed renderer.
+* Draws killer and victim names with compact VIP appearance metadata.
+* Keeps replay and live killfeed presentation through one manager.
+* DOES NOT own damage resolution, packet parsing, or entitlement verification.
+* DOES NOT persist VIP state or full style presets in replay files.
+* DOES NOT render chat, nameplates, or menu account panels.
+*/
+
 #include "killfeed.h"
 
 #include <algorithm>
@@ -7,6 +17,7 @@
 #include "replay/replay.h"
 #include "replay/replay-export.h"
 #include "terminal/terminal-state.h"
+#include "vip/vip-name-render.h"
 
 KillfeedManager& KillfeedManager::instance()
 {
@@ -19,10 +30,24 @@ void KillfeedManager::onKill(const std::string& killerName,
                               const std::string& weaponName,
                               bool fromReplay)
 {
+    onKillStyled(killerName, MimitaVip::freeAppearance(),
+                 victimName, MimitaVip::freeAppearance(),
+                 weaponName, fromReplay);
+}
+
+void KillfeedManager::onKillStyled(const std::string& killerName,
+                                   const MimitaVip::VipAppearance& killerVipAppearance,
+                                   const std::string& victimName,
+                                   const MimitaVip::VipAppearance& victimVipAppearance,
+                                   const std::string& weaponName,
+                                   bool fromReplay)
+{
     KillfeedEntry entry;
     entry.killerName = killerName;
     entry.victimName = victimName;
     entry.weaponName = weaponName;
+    entry.killerVipAppearance = killerVipAppearance;
+    entry.victimVipAppearance = victimVipAppearance;
     entry.age = 0.0f;
     entry.opacity = STILL_OPACITY;
     mEntries.push_back(std::move(entry));
@@ -71,14 +96,30 @@ void KillfeedManager::render()
 
         if (rendered) {
             float screenW = uiScreenW();
-            std::string text = entry.killerName + " killed " +
-                               entry.victimName + " with " +
-                               entry.weaponName;
-            float textW = uiMeasureText(text.c_str(), ENTRY_FONT_SCALE);
-            float x = screenW - textW - ENTRY_X_OFFSET;
             float textOpacity = std::max(opacity, 0.05f);
+            VipNameDrawOptions nameOptions;
+            nameOptions.scale = ENTRY_FONT_SCALE;
+            nameOptions.alpha = textOpacity;
+            nameOptions.phase = (float)i;
+            const char* killedText = " killed ";
+            const char* withText = " with ";
+            const float totalW =
+                vipMeasureStyledName(entry.killerName, entry.killerVipAppearance, nameOptions) +
+                uiMeasureText(killedText, ENTRY_FONT_SCALE) +
+                vipMeasureStyledName(entry.victimName, entry.victimVipAppearance, nameOptions) +
+                uiMeasureText(withText, ENTRY_FONT_SCALE) +
+                uiMeasureText(entry.weaponName.c_str(), ENTRY_FONT_SCALE);
+            float x = screenW - totalW - ENTRY_X_OFFSET;
             glm::vec4 color = {1.0f, 1.0f, 1.0f, textOpacity};
-            uiDrawText(text.c_str(), x, y, ENTRY_FONT_SCALE, color);
+            vipDrawStyledName(entry.killerName, entry.killerVipAppearance, x, y, nameOptions);
+            x += vipMeasureStyledName(entry.killerName, entry.killerVipAppearance, nameOptions);
+            uiDrawText(killedText, x, y, ENTRY_FONT_SCALE, color);
+            x += uiMeasureText(killedText, ENTRY_FONT_SCALE);
+            vipDrawStyledName(entry.victimName, entry.victimVipAppearance, x, y, nameOptions);
+            x += vipMeasureStyledName(entry.victimName, entry.victimVipAppearance, nameOptions);
+            uiDrawText(withText, x, y, ENTRY_FONT_SCALE, color);
+            x += uiMeasureText(withText, ENTRY_FONT_SCALE);
+            uiDrawText(entry.weaponName.c_str(), x, y, ENTRY_FONT_SCALE, color);
             y += ENTRY_HEIGHT;
         }
 

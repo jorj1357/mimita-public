@@ -16,6 +16,8 @@
 #include "avatar/avatar.h"
 #include "config/player-settings.h"
 #include "config/networking-config.h"
+#include "auth/auth-system.h"
+#include "website/api-client.h"
 #include "debug/debug-log.h"
 #include "terminal/terminal-state.h"
 #include "gui/hud/chat-history.h"
@@ -31,6 +33,13 @@
 namespace MimitaNet {
 
 namespace {
+
+MimitaVip::VipAppearance vipAppearanceFromEntity(const SnapshotEntity& entity)
+{
+    return MimitaVip::appearanceFromBytes(
+        entity.vipTier, entity.vipStyleKind, entity.vipColorR,
+        entity.vipColorG, entity.vipColorB, entity.vipFlags);
+}
 
 uint32_t movementReportFlagsFromMpInput(const MpInput& input)
 {
@@ -216,7 +225,8 @@ static void processSnapshotEntities(
             if (ctx.awaitingExplodeDeath && entity.health <= 0)
                 ctx.awaitingExplodeDeath = false;
             ctx.playerRegistry[entity.networkEntityId] = {
-                entity.displayName, entity.networkEntityId, entity.pingMs
+                entity.displayName, entity.networkEntityId, entity.pingMs,
+                vipAppearanceFromEntity(entity)
             };
             static uint64_t lastLocalSnapshotLogMs = 0;
             uint64_t nowLocalSnap = nowMs();
@@ -247,7 +257,8 @@ static void processSnapshotEntities(
             seen = &seenPlayers;
             typeName = "Player";
             ctx.playerRegistry[entity.networkEntityId] = {
-                entity.displayName, entity.networkEntityId, entity.pingMs
+                entity.displayName, entity.networkEntityId, entity.pingMs,
+                vipAppearanceFromEntity(entity)
             };
         }
         else if (entity.entityType == ENTITY_NPC)
@@ -437,11 +448,30 @@ void sendJoinRequest(MultiplayerContext& ctx, const std::string& playerName)
         printf("[NET CONNECT] sendJoinRequest skipped: no transport\n");
         return;
     }
+    if (ctx.vipJoinTicket.empty() && !ctx.vipJoinTicketRequested)
+    {
+        ctx.vipJoinTicketRequested = true;
+        const AuthUser& authUser = AuthSystem::instance().user();
+        const std::string roomCode = !ctx.currentRoomCode.empty()
+            ? ctx.currentRoomCode
+            : ctx.roomCode;
+        if (!authUser.sessionToken.empty())
+        {
+            ctx.vipJoinTicket = requestVipJoinTicket(authUser.sessionToken, roomCode, "");
+            Debug::warn(Debug::Category::Networking,
+                "[VIP JOIN] ticket request result=%s room=%s\n",
+                ctx.vipJoinTicket.empty() ? "free-fallback" : "issued",
+                roomCode.empty() ? "empty" : "present");
+        }
+    }
+
     JoinRequestPacket join{};
     join.header.type = PACKET_JOIN_REQUEST;
     join.header.tick = ctx.tick;
     std::memset(join.joinToken, 0, sizeof(join.joinToken));
     std::strncpy(join.joinToken, ctx.joinToken.c_str(), sizeof(join.joinToken) - 1);
+    std::memset(join.vipJoinTicket, 0, sizeof(join.vipJoinTicket));
+    std::strncpy(join.vipJoinTicket, ctx.vipJoinTicket.c_str(), sizeof(join.vipJoinTicket) - 1);
     std::memset(join.name, 0, sizeof(join.name));
     std::strncpy(join.name, playerName.c_str(), sizeof(join.name) - 1);
     mpSendPacket(ctx, &join, sizeof(join));
@@ -641,7 +671,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.playerRegistry[ctx.localPlayerId] = {
                 ctx.approvedLocalName.empty() ? playerName : ctx.approvedLocalName,
                 ctx.localPlayerId,
-                0
+                0,
+                MimitaVip::freeAppearance()
             };
             eraseLocalReplica(ctx, ctx.localPlayerId, "welcome");
             printf("[NET CONNECT] player=%u serverTick=%u tickRate=%.0f mapId=%s\n",
@@ -677,7 +708,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.playerRegistry[ctx.localPlayerId] = {
                 ctx.approvedLocalName.empty() ? playerName : ctx.approvedLocalName,
                 ctx.localPlayerId,
-                0
+                0,
+                MimitaVip::freeAppearance()
             };
             eraseLocalReplica(ctx, ctx.localPlayerId, "join-accept");
             printf("[NET CONNECT] join accepted player=%u tickRate=%.0f mapId=%s\n",
@@ -1004,6 +1036,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             entry.text = ev->utf8Message;
             entry.channel = ev->channel;
             entry.muted = false;
+            auto vipIt = ctx.playerRegistry.find(ev->senderEntityId);
+            if (vipIt != ctx.playerRegistry.end())
+                entry.senderVipAppearance = vipIt->second.vipAppearance;
 
             if (gpChatHistory)
                 gChatHistory.append(entry);

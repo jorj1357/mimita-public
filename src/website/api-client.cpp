@@ -12,6 +12,7 @@
 
 #include <cstdlib>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -123,6 +124,98 @@ bool httpRequest(const std::string& method, const std::string& url,
     return ok;
 }
 
+
+int hexValue(char c)
+{
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+    if (c >= 'A' && c <= 'F') return 10 + c - 'A';
+    return -1;
+}
+
+bool parseHexColor(const std::string& hex, uint8_t& r, uint8_t& g, uint8_t& b)
+{
+    if (hex.size() != 7 || hex[0] != '#')
+        return false;
+    int values[6];
+    for (int i = 0; i < 6; ++i)
+    {
+        values[i] = hexValue(hex[(size_t)i + 1]);
+        if (values[i] < 0)
+            return false;
+    }
+    r = (uint8_t)((values[0] << 4) | values[1]);
+    g = (uint8_t)((values[2] << 4) | values[3]);
+    b = (uint8_t)((values[4] << 4) | values[5]);
+    return true;
+}
+
+const char* staffColorForRole(const std::string& role)
+{
+    if (role == "owner") return "#000000";
+    if (role == "admin") return "#191919";
+    if (role == "moderator") return "#ff0000";
+    return "";
+}
+
+MimitaVip::VipAppearance parseVipAppearanceJson(const json& owner,
+                                                const std::string& fallbackTier,
+                                                const std::string& role)
+{
+    std::string tier = fallbackTier.empty() ? "free" : fallbackTier;
+    json vip = json::object();
+    if (owner.contains("vip") && owner["vip"].is_object())
+    {
+        vip = owner["vip"];
+        tier = vip.value("active_tier", tier);
+    }
+
+    MimitaVip::VipAppearance out =
+        MimitaVip::tierDefaultAppearance(MimitaVip::tierFromString(tier));
+
+    if (vip.contains("name_style") && vip["name_style"].is_object())
+    {
+        const json& style = vip["name_style"];
+        const uint8_t styleKind = MimitaVip::styleKindFromString(style.value("kind", ""));
+        if (styleKind != MimitaVip::VIP_STYLE_NONE)
+            out.styleKind = styleKind;
+
+        uint8_t r = out.colorR;
+        uint8_t g = out.colorG;
+        uint8_t b = out.colorB;
+        bool hasColor = false;
+        if (style.contains("solid_color") && style["solid_color"].is_string())
+            hasColor = parseHexColor(style["solid_color"].get<std::string>(), r, g, b);
+        if (!hasColor && style.contains("colors") && style["colors"].is_array() && !style["colors"].empty() && style["colors"][0].is_string())
+            hasColor = parseHexColor(style["colors"][0].get<std::string>(), r, g, b);
+        if (hasColor)
+        {
+            out.colorR = r;
+            out.colorG = g;
+            out.colorB = b;
+        }
+    }
+
+    std::string staffHex;
+    if (vip.contains("display") && vip["display"].is_object())
+        staffHex = vip["display"].value("name_color_override", "");
+    if (staffHex.empty())
+        staffHex = staffColorForRole(role);
+
+    uint8_t r = 0;
+    uint8_t g = 0;
+    uint8_t b = 0;
+    if (parseHexColor(staffHex, r, g, b))
+    {
+        out.colorR = r;
+        out.colorG = g;
+        out.colorB = b;
+        out.styleKind = MimitaVip::VIP_STYLE_SOLID;
+        out.flags |= MimitaVip::VIP_APPEARANCE_STAFF_OVERRIDE;
+    }
+
+    return out;
+}
 }
 
 static void parseUserInfo(GameUserInfo& info, const json& u)
@@ -146,6 +239,8 @@ static void parseUserInfo(GameUserInfo& info, const json& u)
         info.avatarData = u["avatar_data"];
     info.supporterTier = u.value("supporter_tier", "free");
     info.role = u.value("role", "user");
+    info.vipAppearance = parseVipAppearanceJson(u, info.supporterTier, info.role);
+    info.supporterTier = MimitaVip::tierToString(info.vipAppearance.tier);
     info.emailVerified = u.value("email_verified", false);
     info.createdAt = u.value("created_at", "");
 }
@@ -406,6 +501,8 @@ std::vector<LeaderboardEntry> getLeaderboard(const std::string& type, int limit)
             le.username = entry.value("username", "");
             le.avatarUrl = entry.value("avatar_url", "");
             le.supporterTier = entry.value("supporter_tier", "free");
+            le.vipAppearance = parseVipAppearanceJson(entry, le.supporterTier, entry.value("role", "user"));
+            le.supporterTier = MimitaVip::tierToString(le.vipAppearance.tier);
             auto& s = le.stats;
             s.wins = entry.value("wins", 0);
             s.losses = entry.value("losses", 0);
@@ -688,7 +785,9 @@ GameLoginResult gameLogin(const std::string& identifier, const std::string& pass
         }
         result.username = acct.value("username", "");
         result.supporterTier = acct.value("supporter_tier", "free");
-        for (const auto& p : acct["permissions"])
+        result.vipAppearance = parseVipAppearanceJson(acct, result.supporterTier, acct.value("role", "user"));
+        result.supporterTier = MimitaVip::tierToString(result.vipAppearance.tier);
+        for (const auto& p : acct.value("permissions", json::array()))
             result.permissions.push_back(p.get<std::string>());
         result.accessToken = ses.value("access_token", "");
         result.accessExpiresAt = ses.value("access_expires_at", "");
@@ -740,6 +839,12 @@ GameRefreshResult gameRefresh(const std::string& refreshToken, const std::string
         result.accessExpiresAt = j.value("access_expires_at", "");
         result.refreshToken = j.value("refresh_token", refreshToken);
         result.refreshExpiresAt = j.value("refresh_expires_at", "");
+        if (j.contains("account") && j["account"].is_object())
+        {
+            const json& acct = j["account"];
+            result.vipAppearance = parseVipAppearanceJson(
+                acct, acct.value("supporter_tier", "free"), acct.value("role", "user"));
+        }
     } catch (...) {
         result.errorCode = "AUTH_INVALID_RESPONSE";
     }
@@ -787,6 +892,8 @@ ClientCodePreview previewClientCode(const std::string& code)
             if (j.contains("avatar_data") && !j["avatar_data"].is_null())
                 result.avatarData = j["avatar_data"];
             result.supporterTier = j.value("supporter_tier", "free");
+            result.vipAppearance = parseVipAppearanceJson(j, result.supporterTier, j.value("role", "user"));
+            result.supporterTier = MimitaVip::tierToString(result.vipAppearance.tier);
         }
     } catch (...) {}
     return result;
@@ -813,7 +920,95 @@ ClientCodeConfirm confirmClientCode(const std::string& code)
             auto account = j.value("account", json::object());
             result.accountId = account.value("id", 0);
             result.username = account.value("username", "");
+            result.displayName = account.value("display_name", result.username);
+            result.supporterTier = account.value("supporter_tier", "free");
+            result.vipAppearance = parseVipAppearanceJson(account, result.supporterTier, account.value("role", "user"));
+            result.supporterTier = MimitaVip::tierToString(result.vipAppearance.tier);
         }
     } catch (...) {}
+    return result;
+}
+std::string requestVipJoinTicket(const std::string& sessionToken,
+                                 const std::string& roomCode,
+                                 const std::string& joinToken)
+{
+    if (sessionToken.empty())
+        return "";
+
+    json req;
+    req["room_code"] = roomCode;
+    (void)joinToken;
+
+    std::string respBody;
+    int httpCode = 0;
+    bool ok = httpRequest("POST", "https://mimita.fun/api/vip/join-ticket",
+                          req.dump(), sessionToken, respBody, httpCode);
+    if (!ok || httpCode != 200)
+        return "";
+
+    try {
+        json j = json::parse(respBody);
+        if (!j.value("success", false))
+            return "";
+        return j.value("join_ticket", "");
+    } catch (...) {}
+    return "";
+}
+
+VipJoinTicketResult verifyVipJoinTicket(const std::string& joinTicket,
+                                        const std::string& roomCode,
+                                        const std::string& joinToken)
+{
+    VipJoinTicketResult result;
+    if (joinTicket.empty())
+    {
+        result.reason = "missing_ticket";
+        return result;
+    }
+
+    json req;
+    req["join_ticket"] = joinTicket;
+    req["room_code"] = roomCode;
+    (void)joinToken;
+
+    std::string respBody;
+    int httpCode = 0;
+    bool ok = httpRequest("POST", "https://mimita.fun/api/vip/verify-join-ticket",
+                          req.dump(), "", respBody, httpCode);
+    result.ok = ok && httpCode == 200;
+    if (!result.ok)
+    {
+        result.reason = "website_unavailable";
+        return result;
+    }
+
+    try {
+        json j = json::parse(respBody);
+        if (!j.value("success", false))
+        {
+            result.reason = "verify_rejected";
+            return result;
+        }
+        result.verified = j.value("verified", false);
+        result.reason = j.value("reason", "");
+        result.accountId = j.value("account_id", 0);
+        result.username = j.value("username", "");
+        result.displayName = j.value("display_name", result.username);
+        result.role = j.value("role", "user");
+        if (j.contains("vip") && j["vip"].is_object())
+        {
+            result.supporterTier = j["vip"].value("active_tier", "free");
+            json owner;
+            owner["supporter_tier"] = result.supporterTier;
+            owner["role"] = result.role;
+            owner["vip"] = j["vip"];
+            result.vipAppearance = parseVipAppearanceJson(owner, result.supporterTier, result.role);
+            result.supporterTier = MimitaVip::tierToString(result.vipAppearance.tier);
+        }
+    } catch (...) {
+        result.ok = false;
+        result.verified = false;
+        result.reason = "invalid_response";
+    }
     return result;
 }

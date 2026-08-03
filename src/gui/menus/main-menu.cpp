@@ -1,3 +1,13 @@
+// 08 03 2026, 17 20
+/* purpose
+* Renders the main menu background, avatar preview, account panel, and actions.
+* Uses GUI layout data for menu button placement and authenticated account display.
+* Applies authenticated VIP appearance to menu account names.
+* DOES NOT own backend authentication, entitlement verification, or player networking.
+* DOES NOT load website badge assets or full VIP preset JSON.
+* DOES NOT mutate gameplay state except explicit menu actions.
+*/
+
 #include "main-menu.h"
 #include "account-panel.h"
 #include "menu-avatar-preview.h"
@@ -17,6 +27,7 @@
 #include <shellapi.h>
 #include "debug/debug-log.h"
 #include "world/texture-store.h"
+#include "vip/vip-name-render.h"
 
 namespace {
 
@@ -195,11 +206,14 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
                     "username being displayed=%s source=AuthSystem.displayName()\n",
                     display.c_str());
                 float nameSize = 0.40f;
-                float nameW = uiMeasureText(display.c_str(), nameSize);
                 float cx = cs.designToScreenX(accountSection->x + accountSection->w * 0.5f);
                 float cy = cs.designToScreenY(150.0f);
-                uiDrawText(display.c_str(), cx - nameW * 0.5f, cy, nameSize,
-                           {0.9f, 0.95f, 1.0f, 1.0f});
+                VipNameDrawOptions nameOptions;
+                nameOptions.scale = nameSize;
+                nameOptions.alpha = 1.0f;
+                vipDrawStyledNameCentered(
+                    display, AuthSystem::instance().user().vipAppearance,
+                    cx, cy, nameOptions);
 
                 // MMR
                 char mmrBuf[64];

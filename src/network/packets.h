@@ -15,7 +15,7 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 25;
+constexpr uint16_t PROTOCOL_VERSION = 26;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -30,6 +30,7 @@ enum NetworkPlayerStateFlags : uint16_t
 };
 constexpr int MAX_RECONNECT_TOKEN_BYTES = 64;
 constexpr int MAX_JOIN_TOKEN_BYTES = 64;
+constexpr int MAX_VIP_JOIN_TICKET_BYTES = 64;
 constexpr int MAX_PLAYERS = 32;
 constexpr int MAX_SNAPSHOT_ENTITIES = 96;
 constexpr int MAX_NAME_BYTES = 32;
@@ -311,6 +312,13 @@ struct SnapshotEntity
     uint16_t freezeSerial = 0;
     uint32_t spawnGeneration = 0;
     char displayName[MAX_NAME_BYTES];
+    uint8_t vipTier = 0;
+    uint8_t vipStyleKind = 0;
+    uint8_t vipColorR = 158;
+    uint8_t vipColorG = 158;
+    uint8_t vipColorB = 158;
+    uint8_t vipFlags = 0;
+    uint8_t vipReserved[2] = {};
 };
 
 struct SnapshotPacket
@@ -364,10 +372,17 @@ struct CompactEntityData
     uint16_t freezeSerial = 0;
     uint32_t spawnGeneration = 0;
     char displayName[32]; // MAX_NAME_BYTES
+    uint8_t vipTier = 0;
+    uint8_t vipStyleKind = 0;
+    uint8_t vipColorR = 158;
+    uint8_t vipColorG = 158;
+    uint8_t vipColorB = 158;
+    uint8_t vipFlags = 0;
+    uint8_t vipReserved[2] = {};
 };
 #pragma pack(pop)
 
-static_assert(sizeof(CompactEntityData) == 120, "CompactEntityData unexpected size");
+static_assert(sizeof(CompactEntityData) == 128, "CompactEntityData unexpected size");
 
 struct SnapshotChunkPacket
 {
@@ -377,12 +392,12 @@ struct SnapshotChunkPacket
     uint16_t chunkCount = 1;
     uint16_t entityCount = 0;
     uint16_t payloadBytes = 0;
-    CompactEntityData entities[9]; // 9 * 120 + header(32) = 1112 < 1200
+    CompactEntityData entities[9]; // 9 * 128 + header(32) = 1184 < 1200
 };
 
 static_assert(sizeof(SnapshotChunkPacket) < MAX_GAME_DATAGRAM_BYTES,
               "SnapshotChunkPacket exceeds safe datagram limit");
-static_assert(sizeof(SnapshotChunkPacket) == 1112, "SnapshotChunkPacket wire size changed");
+static_assert(sizeof(SnapshotChunkPacket) == 1184, "SnapshotChunkPacket wire size changed");
 
 struct SpawnNpcRequestPacket
 {
@@ -778,10 +793,11 @@ struct JoinRequestPacket
 {
     PacketHeader header;
     char joinToken[MAX_JOIN_TOKEN_BYTES];
+    char vipJoinTicket[MAX_VIP_JOIN_TICKET_BYTES];
     char name[MAX_NAME_BYTES];
 };
 
-static_assert(sizeof(JoinRequestPacket) == 116, "JoinRequestPacket wire size changed");
+static_assert(sizeof(JoinRequestPacket) == 180, "JoinRequestPacket wire size changed");
 
 struct JoinAcceptPacket
 {
