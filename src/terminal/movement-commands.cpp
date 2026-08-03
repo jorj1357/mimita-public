@@ -130,9 +130,9 @@ void registerMovementCommands()
                 cfg.groundDirectionChangeResponse, cfg.groundFrictionAmount);
             Terminal::instance().addLog(buf);
             std::snprintf(buf, sizeof(buf),
-                "[MOVEMENT] air_steer=%.0f deg/s steer_cap=%.0f gain=%.1f wish=%.1f "
+                "[MOVEMENT] air_steer_resp=%.2f steer_cap=%.0f gain=%.1f wish=%.1f "
                 "mode=%s yawDelta>=%.2f wishDelta>=%.2f tol=%.0f softStart=%.1f",
-                cfg.airSteeringRateDegreesPerSecond,
+                cfg.airSteeringResponse,
                 cfg.maximumSteeringDegreesPerSecond,
                 cfg.airAcceleration, cfg.airMaxWishspeed,
                 cfg.stationaryCameraInputMode == StationaryCameraInputMode::Strict

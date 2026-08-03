@@ -476,7 +476,10 @@ struct MovementConfig {
     bool requireActiveWishRotation = true;
     StationaryCameraInputMode stationaryCameraInputMode =
         StationaryCameraInputMode::Strict;
-    float airSteeringRateDegreesPerSecond = 0.0f;
+    // Air steering responsiveness: how closely the airborne velocity tracks the
+    // rotating wish reference (unitless multiplier on the per-tick wish
+    // rotation; 1.0 = velocity curves exactly with the camera turn).
+    float airSteeringResponse = 1.0f;
     float maximumSteeringDegreesPerSecond = 0.0f;
     float minimumCameraYawDeltaDegrees = 0.25f;
     float minimumWishRotationDegrees = 0.25f;

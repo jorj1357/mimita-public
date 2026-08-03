@@ -5,6 +5,7 @@
 #include <random>
 #include <thread>
 #include <filesystem>
+#include <algorithm>
 #include <GLFW/glfw3.h>
 #include "world/world.h"
 #include "npc/npc.h"
@@ -42,6 +43,12 @@ extern DuelManager gDuelManager;
 extern BombTagManager gBombTagManager;
 
 constexpr double SIM_DT = 1.0 / 60.0;
+
+// Maximum fixed simulation ticks that may be caught up in a single rendered
+// frame after a stall. Bounding this prevents a long presentation stall
+// (e.g. ~1 s under Wine) from queuing dozens of full simulation ticks and
+// freezing the game for seconds. Tunable at runtime with `sim.catchup`.
+int gSimMaxCatchupTicks = 6;
 
 void engineTickReplay(Engine& engine, float dt)
 {
@@ -184,11 +191,17 @@ void engineTickReplay(Engine& engine, float dt)
     }
     setReplayCaptureEnabled(!replayPlaybackActive);
 
-    // Fixed-tick simulation accumulator
-    simAccumulator += (double)dt;
+    // Fixed-tick simulation accumulator.
+    // Cap the accumulated backlog so a stall can never queue more than
+    // gSimMaxCatchupTicks of simulation time; excess real time is dropped so
+    // the game snaps back to live rather than spiraling through catch-up.
+    simAccumulator = std::min(
+        simAccumulator + (double)dt,
+        (double)std::max(gSimMaxCatchupTicks, 1) * SIM_DT);
 
     { Perf::ScopedTimer _t("Simulation");
-    while (simAccumulator >= SIM_DT) {
+    int simTicksRun = 0;
+    while (simAccumulator >= SIM_DT && simTicksRun < gSimMaxCatchupTicks) {
         InputFrame tickFrame;
 
         if (!replayPlaybackActive) {
@@ -456,6 +469,7 @@ void engineTickReplay(Engine& engine, float dt)
         }
 
         simAccumulator -= SIM_DT;
+        simTicksRun++;
     }
     } // Perf::ScopedTimer Simulation
 

@@ -5,6 +5,7 @@
 #include <fstream>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include "avatar/character-registry.h"
@@ -124,7 +125,62 @@ bool isPlayerBodyPart(const std::string& name)
             name == "leftLeg" || name == "rightLeg";
 }
 
-// ── Body part config override ───────────────────────────────
+// ── Immutable GLB parse cache ─────────────────────────────────────
+// Parsing a player GLB (tinygltf file IO + hierarchy + colliders +
+// part meshes) is expensive and identical for every replica of the same
+// model. Cache the immutable parsed result per resolved path so creating
+// a remote player replica reuses CPU/GPU-ready data instead of reparsing.
+// Mutable per-player state (animation time, health, transform, runtime
+// weapon state, interpolation buffer) stays on the Player, never shared.
+struct CachedPlayerModel
+{
+    Mesh renderMesh;
+    std::vector<TransformNode> nodes;
+    std::vector<glm::mat4> restLocalTransforms;
+    std::vector<Collider> bodyColliders;
+    std::vector<BodyPart> bodyParts;
+    std::vector<Mesh> bodyPartMeshes;
+    PerfectPoseSkeleton perfectPose;
+    bool valid = false;
+};
+
+std::unordered_map<std::string, CachedPlayerModel>& playerModelCache()
+{
+    static std::unordered_map<std::string, CachedPlayerModel> cache;
+    return cache;
+}
+
+void clearPlayerModelCache()
+{
+    playerModelCache().clear();
+}
+
+// Copies the immutable parsed model data into a Player, then rebuilds the
+// physical body with FRESH collider references so mutable per-player pose,
+// spring, and world-transform state is never shared across replicas.
+void copyCachedModelIntoPlayer(const CachedPlayerModel& cached, Player& player)
+{
+    player.renderMesh = cached.renderMesh;
+    player.nodes = cached.nodes;
+    player.restLocalTransforms = cached.restLocalTransforms;
+    player.bodyColliders = cached.bodyColliders;
+    player.bodyParts = cached.bodyParts;
+    player.bodyPartMeshes = cached.bodyPartMeshes;
+    player.perfectPoseSkeleton = cached.perfectPose;
+    player.physicalBody.parts.clear();
+    player.physicalBody.partMeshes.clear();
+    for (const BodyPart& part : cached.bodyParts)
+    {
+        PhysicalBodyPart physicalPart;
+        physicalPart.name = part.name;
+        physicalPart.nodeIndex = part.nodeIndex;
+        physicalPart.collider = part.collider;
+        player.physicalBody.parts.push_back(physicalPart);
+    }
+    player.physicalBody.partMeshes = cached.bodyPartMeshes;
+    player.modelLoaded = !player.renderMesh.verts.empty();
+}
+
 // Loads config/bodyparts.json and overrides the GLB's rest-pose
 // transforms for each matching body part node.
 static void applyBodypartConfigOverrides(
@@ -379,6 +435,32 @@ void appendNodeRenderMesh(
 
 bool Player::loadModel(const char* path)
 {
+    const std::string resolvedPath = resolveAssetPath(path);
+    auto& cache = playerModelCache();
+
+    // Fast path: reuse the parsed immutable GLB data. The cache stores the
+    // pristine skeleton as read from the file (pre-override); per-avatar
+    // body-part overrides are applied fresh on this player's copy, so shared
+    // cache entries never leak mutable per-player state.
+    auto cacheIt = cache.find(resolvedPath);
+    if (cacheIt != cache.end() && cacheIt->second.valid)
+    {
+        const CachedPlayerModel& cached = cacheIt->second;
+        copyCachedModelIntoPlayer(cached, *this);
+
+        // Apply body part config overrides from config/bodyparts.json + avatar overrides
+        applyBodypartConfigOverrides(restLocalTransforms, nodes);
+        for (int i = 0; i < (int)restLocalTransforms.size(); ++i) {
+            perfectPoseSkeleton.restLocalTransforms[i] = restLocalTransforms[i];
+            nodes[i].localTransform = restLocalTransforms[i];
+            perfectPoseSkeleton.nodes[i].localTransform = restLocalTransforms[i];
+        }
+
+        updateModelWorldTransforms();
+        printf("[AVATAR CACHE] model=%s result=hit\n", resolvedPath.c_str());
+        return modelLoaded;
+    }
+
     renderMesh = loadGLB(path);
     modelLoaded = !renderMesh.verts.empty();
 
@@ -386,7 +468,6 @@ bool Player::loadModel(const char* path)
     tinygltf::Model model;
     std::string err;
     std::string warn;
-    std::string resolvedPath = resolveAssetPath(path);
     bool ok = loader.LoadBinaryFromFile(&model, &err, &warn, resolvedPath);
 
     if (!warn.empty()) printf("[PLAYER GLB WARNING] %s\n", warn.c_str());
@@ -436,6 +517,16 @@ bool Player::loadModel(const char* path)
             }
     }
 
+    // ── Snapshot pristine (pre-override) skeleton + mesh data ─────────
+    // Body-part overrides mutate restLocalTransforms/nodes per avatar, so
+    // they must be re-applied on every load, not baked into the cache.
+    CachedPlayerModel cached;
+    cached.renderMesh = renderMesh;
+    cached.nodes = nodes;
+    cached.restLocalTransforms = restLocalTransforms;
+    cached.perfectPose = perfectPoseSkeleton;
+    cached.valid = true;
+
     // Apply body part config overrides from config/bodyparts.json + avatar overrides
     applyBodypartConfigOverrides(restLocalTransforms, nodes);
     // Sync perfectPoseSkeleton and node localTransforms
@@ -483,6 +574,13 @@ bool Player::loadModel(const char* path)
             collider.localMax.x, collider.localMax.y, collider.localMax.z
         );
     }
+
+    // Publish the full immutable parse result into the cache.
+    cached.bodyColliders = bodyColliders;
+    cached.bodyParts = bodyParts;
+    cached.bodyPartMeshes = bodyPartMeshes;
+    cache[resolvedPath] = std::move(cached);
+    printf("[AVATAR CACHE] model=%s result=miss (skeleton)\n", resolvedPath.c_str());
 
     updateModelWorldTransforms();
     printf("[PLAYER GLB] hierarchy nodes=%zu bodyColliders=%zu root=plrOrigin expected\n",

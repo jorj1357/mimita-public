@@ -52,10 +52,10 @@ MovementConfig csgoConfig()
     c.autoBhopEnabled = true;
     c.requireActiveWishRotation = true;
     c.stationaryCameraInputMode = StationaryCameraInputMode::Strict;
-    c.airSteeringRateDegreesPerSecond = 300.0f;
+    c.airSteeringResponse = 1.0f;
     c.maximumSteeringDegreesPerSecond = 720.0f;
     c.airAcceleration = 30.0f;
-    c.airMaxWishspeed = 8.0f;
+    c.airMaxWishspeed = 40.0f;
     c.minimumCameraYawDeltaDegrees = 0.25f;
     c.minimumWishRotationDegrees = 0.25f;
     c.strafeAngularToleranceDegrees = 60.0f;
@@ -63,7 +63,7 @@ MovementConfig csgoConfig()
     c.maximumBhopSpeedMode = MovementSpeedCapMode::Soft;
     c.bunnyHopSpeedCap = 40.0f;
     c.softCapStart = 30.0f;
-    c.maximumAccelerationPerTick = 0.0f;
+    c.maximumAccelerationPerTick = 1.0f;
     c.preserveStraightSpeed = true;
     c.groundSpeed = 20.0f;
     c.airSpeed = 20.0f;
@@ -234,6 +234,8 @@ int main()
         for (int i = 0; i < 60; ++i)
             s = runTicks(s, strafeCmd(s, yaw, 2.0f, +1), noCap, airCollision(), 1);
         check(hSpeed(s) > 20.0f + 5.0f, "A + turn left gains speed (valid strafe)");
+        check(s.baseVelocity.x < 0.0f,
+              "A + turn left curves velocity left (pole steering)");
     }
 
     // ── 7. Valid D-right strafe gains speed ────────────────────────────
@@ -247,7 +249,7 @@ int main()
         check(hSpeed(s) > 20.0f + 5.0f, "D + turn right gains speed (valid strafe)");
     }
 
-    // ── 8. Invalid strafe (A + turn right) does not gain speed ─────────
+    // ── 8. Any-key rule: A + turn right also gains ─────────────────────
     {
         MovementConfig noCap = cfg;
         noCap.speedCapEnabled = false;
@@ -255,7 +257,22 @@ int main()
         float yaw = 0.0f;
         for (int i = 0; i < 60; ++i)
             s = runTicks(s, strafeCmd(s, yaw, -2.0f, +1), noCap, airCollision(), 1);
-        checkNear(hSpeed(s), 20.0f, 1.0f, "A + turn right does not gain speed");
+        check(hSpeed(s) > 20.0f + 2.0f, "A + turn right gains speed (any-key rule)");
+    }
+
+    // ── 8b. W + turn gains speed (any-key rule) ────────────────────────
+    {
+        MovementConfig noCap = cfg;
+        noCap.speedCapEnabled = false;
+        MovementState s = freshState(glm::vec2(0.0f, 20.0f));
+        float yaw = 0.0f;
+        for (int i = 0; i < 60; ++i) {
+            yaw += 2.0f;
+            const float yr = glm::radians(yaw);
+            s = runTicks(s, cmdFor(glm::vec2(std::cos(yr), std::sin(yr)), yaw, true),
+                         noCap, airCollision(), 1);
+        }
+        check(hSpeed(s) > 20.0f + 2.0f, "W + turn gains speed (any-key rule)");
     }
 
     // ── 9. Backward strafe gains speed (direction-agnostic rule) ───────

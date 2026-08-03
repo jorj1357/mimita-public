@@ -11,6 +11,7 @@
 #include "network/multiplayer-context.h"
 #include "network/packets.h"
 #include "network/snapshot-chunks.h"
+#include "network/remote-entity-lifecycle.h"
 #include "network/badconn/badconn.h"
 #include "avatar/avatar.h"
 #include "config/player-settings.h"
@@ -95,6 +96,28 @@ static void processSnapshotEntities(
     float dt,
     const char* sourceName)
 {
+    // ── Authoritative membership ordering gate ──────────────────────────
+    // A snapshot older than the newest already-applied membership snapshot
+    // must NOT create, destroy, remove, or revive remote entities. It may
+    // only feed interpolation history (which independently rejects stale
+    // transform samples). Out-of-order snapshots are never allowed to
+    // reconcile world membership against newer state.
+    const bool membershipAllowed = snapshotMayMutateMembership(
+        serverTick, ctx.latestAppliedMembershipTick);
+    if (!membershipAllowed)
+    {
+        Debug::logThrottled(
+            Debug::Category::Networking,
+            "snapshot-membership-skip",
+            0.25f,
+            "[SNAPSHOT MEMBERSHIP SKIP] tick=%u latestAppliedMembershipTick=%u "
+            "reason=older-than-current-membership\n",
+            serverTick, ctx.latestAppliedMembershipTick);
+    }
+
+    const auto& lifecycleCfg =
+        NetworkingConfig::instance().data().remoteEntityLifecycle;
+
     std::unordered_map<uint32_t, bool> seenPlayers;
     std::unordered_map<uint32_t, bool> seenNpcs;
 
@@ -195,9 +218,15 @@ static void processSnapshotEntities(
             ctx.playerRegistry[entity.networkEntityId] = {
                 entity.displayName, entity.networkEntityId, entity.pingMs
             };
-            printf("[CLIENT SNAPSHOT] %s tick=%u local pos=(%.2f,%.2f,%.2f) hp=%d epoch=%u\n",
-                   sourceName, serverTick,
-                   entity.px, entity.py, entity.pz, entity.health, entity.transformEpoch);
+            static uint64_t lastLocalSnapshotLogMs = 0;
+            uint64_t nowLocalSnap = nowMs();
+            if (nowLocalSnap - lastLocalSnapshotLogMs >= 250)
+            {
+                lastLocalSnapshotLogMs = nowLocalSnap;
+                printf("[CLIENT SNAPSHOT] %s tick=%u local pos=(%.2f,%.2f,%.2f) hp=%d epoch=%u\n",
+                       sourceName, serverTick,
+                       entity.px, entity.py, entity.pz, entity.health, entity.transformEpoch);
+            }
             continue;
         }
 
@@ -236,6 +265,12 @@ static void processSnapshotEntities(
         }
 
         bool existsBefore = replicas->find(entity.networkEntityId) != replicas->end();
+        // A stale snapshot must never create new entities: creation implies
+        // authoritative membership that only the newest complete snapshot
+        // may assert. Existing entities may still receive interpolation
+        // samples, which are independently freshness-rejected.
+        if (!membershipAllowed && !existsBefore)
+            continue;
         Player& p = (*replicas)[entity.networkEntityId];
         bool isNew = !existsBefore;
         EntityInterpolationState& interpolation = (*interpolationMap)[entity.networkEntityId];
@@ -267,8 +302,17 @@ static void processSnapshotEntities(
             continue;
         p.spawnGeneration = entity.spawnGeneration;
         if (isNew)
+        {
+            // Seed serial baselines so creating a replica does not replay
+            // already-occurred presentation events (dash, jumps, freeze).
+            baselinePresentationSerials(p, interpolation.target);
             updateRenderedReplica(p, interpolation, ctx.interpolationRenderTick, dt);
-        (*seen)[entity.networkEntityId] = true;
+        }
+        if (membershipAllowed)
+        {
+            (*seen)[entity.networkEntityId] = true;
+            interpolation.missingTracker.noteSeen();
+        }
 
         static uint64_t lastEntityLogMs = 0;
         uint64_t nowEnt = nowMs();
@@ -284,17 +328,52 @@ static void processSnapshotEntities(
         }
     }
 
-    // Clean up missing entities
+    if (!membershipAllowed)
+    {
+        // Old snapshot: interpolation history may have been updated, but the
+        // live entity registry must not be reconciled. Advance the membership
+        // tick only for snapshots that are actually applied as members.
+        return;
+    }
+
+    ctx.latestAppliedMembershipTick = serverTick;
+    const uint64_t nowMissingMs = nowMs();
+
+    // Clean up missing entities — only after a complete, newer membership
+    // snapshot, and only after the entity has been absent across enough
+    // snapshots for long enough to be authoritative rather than packet loss.
     for (auto it = ctx.remotePlayers.begin(); it != ctx.remotePlayers.end(); )
     {
         if (!seenPlayers[it->first])
         {
             const uint32_t eid = it->first;
-            printf("[ENTITY DESTROY] reason=missing-from-snapshot entityId=%u type=Player name=\"%s\"\n",
-                   eid, ctx.playerRegistry[eid].name.c_str());
-            it = ctx.remotePlayers.erase(it);
-            ctx.remotePlayerInterpolation.erase(eid);
-            ctx.playerRegistry.erase(eid);
+            EntityInterpolationState& interp =
+                ctx.remotePlayerInterpolation[eid];
+            interp.missingTracker.noteMissing(nowMissingMs);
+            if (interp.missingTracker.shouldRemove(
+                    lifecycleCfg.missingSnapshotConfirmationCount,
+                    lifecycleCfg.missingSnapshotGraceMs, nowMissingMs))
+            {
+                printf("[ENTITY DESTROY] reason=missing-from-snapshot-confirmed "
+                       "entityId=%u type=Player name=\"%s\" tick=%u "
+                       "confirmations=%u\n",
+                       eid, ctx.playerRegistry[eid].name.c_str(), serverTick,
+                       interp.missingTracker.confirmations);
+                it = ctx.remotePlayers.erase(it);
+                ctx.remotePlayerInterpolation.erase(eid);
+                ctx.playerRegistry.erase(eid);
+            }
+            else
+            {
+                Debug::logThrottled(
+                    Debug::Category::Networking,
+                    "remote-entity-retain-player",
+                    0.5f,
+                    "[REMOTE ENTITY RETAIN] entityId=%u type=Player "
+                    "snapshotTick=%u confirmations=%u reason=grace-not-elapsed\n",
+                    eid, serverTick, interp.missingTracker.confirmations);
+                ++it;
+            }
         }
         else
             ++it;
@@ -304,10 +383,32 @@ static void processSnapshotEntities(
         if (!seenNpcs[it->first])
         {
             const uint32_t eid = it->first;
-            printf("[ENTITY DESTROY] reason=missing-from-snapshot entityId=%u type=NPC name=\"%s\"\n",
-                   eid, it->second.username.c_str());
-            it = ctx.remoteNpcs.erase(it);
-            ctx.remoteNpcInterpolation.erase(eid);
+            EntityInterpolationState& interp =
+                ctx.remoteNpcInterpolation[eid];
+            interp.missingTracker.noteMissing(nowMissingMs);
+            if (interp.missingTracker.shouldRemove(
+                    lifecycleCfg.missingSnapshotConfirmationCount,
+                    lifecycleCfg.missingSnapshotGraceMs, nowMissingMs))
+            {
+                printf("[ENTITY DESTROY] reason=missing-from-snapshot-confirmed "
+                       "entityId=%u type=NPC name=\"%s\" tick=%u "
+                       "confirmations=%u\n",
+                       eid, it->second.username.c_str(), serverTick,
+                       interp.missingTracker.confirmations);
+                it = ctx.remoteNpcs.erase(it);
+                ctx.remoteNpcInterpolation.erase(eid);
+            }
+            else
+            {
+                Debug::logThrottled(
+                    Debug::Category::Networking,
+                    "remote-entity-retain-npc",
+                    0.5f,
+                    "[REMOTE ENTITY RETAIN] entityId=%u type=NPC "
+                    "snapshotTick=%u confirmations=%u reason=grace-not-elapsed\n",
+                    eid, serverTick, interp.missingTracker.confirmations);
+                ++it;
+            }
         }
         else
             ++it;
@@ -505,6 +606,11 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         printf("[NET RX] type=%d seq=%u bytes=%d\n",
                header->type, header->tick, bytes);
 
+        // Any validated packet from the server resets the real-time heartbeat
+        // so connection timeouts are measured with monotonic wall-clock time,
+        // never snapshot sequence gaps or entity absence.
+        ctx.lastHeardServerMs = nowMs();
+
         if (header->type == PACKET_WELCOME && bytes >= (int)sizeof(WelcomePacket))
         {
             WelcomePacket* welcome = reinterpret_cast<WelcomePacket*>(buffer);
@@ -630,8 +736,12 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 ctx.connectionState == ConnectionState::Connecting)
                 ctx.connectionState = ConnectionState::Connected;
             ++ctx.snapshotsReceived;
-            ctx.lastSnapshotTick = snapshot->header.tick;
-            ctx.latestServerTick = snapshot->header.tick;
+            // Monotonic: a reordered older snapshot must never regress the
+            // newest-seen tick used for missed-snapshot accounting and UI.
+            if (snapshot->header.tick > ctx.lastSnapshotTick)
+                ctx.lastSnapshotTick = snapshot->header.tick;
+            if (snapshot->header.tick > ctx.latestServerTick)
+                ctx.latestServerTick = snapshot->header.tick;
             ctx.lastSnapshotReceivedMs = nowMs();
             uint32_t count = std::min(snapshot->entityCount, (uint32_t)MAX_SNAPSHOT_ENTITIES);
 
@@ -657,7 +767,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 return;
 
             // Buffer the chunk
-            ctx.latestServerTick = chunk.header.tick;
+            if (chunk.header.tick > ctx.latestServerTick)
+                ctx.latestServerTick = chunk.header.tick;
             auto& bufMap = ctx.snapshotChunkBuffers[chunk.header.tick];
             bufMap.chunks[chunk.chunkIndex] = chunk;
             bufMap.lastReceiveMs = nowMs();
@@ -712,7 +823,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
 
             // Update stats exactly once per complete snapshot
             ++ctx.snapshotsReceived;
-            ctx.lastSnapshotTick = chunk.header.tick;
+            if (chunk.header.tick > ctx.lastSnapshotTick)
+                ctx.lastSnapshotTick = chunk.header.tick;
             ctx.lastSnapshotReceivedMs = nowMs();
 
             // Convert compact entities to snapshot entities and process

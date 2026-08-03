@@ -8,6 +8,16 @@
 * Does NOT send stale protocol input without spawn generation, epoch, sequence, and movement flags.
 */
 
+// ═══════════════════════════════════════════════════════════════════════
+// NOT USED. Legacy debug-only path, reachable only via `mimita.exe --client`.
+// The actual game (hosting, joining, badconn, remote players, snapshots)
+// runs through mpTick() in src/network/multiplayer-tick.cpp and the
+// MultiplayerContext. client.cpp keeps its own inline snapshot handling and
+// does NOT benefit from the remote-entity lifecycle fixes. Do not rely on
+// this file for real multiplayer behavior; do not extend it — if it is ever
+// needed again, migrate it onto mpTick() instead of fixing this copy.
+// ═══════════════════════════════════════════════════════════════════════
+
 #include "network/net_mode.h"
 
 #include "network/net_common.h"

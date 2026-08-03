@@ -174,6 +174,10 @@ struct RevolverShotResult {
     bool hitEntity = false;
     glm::vec3 start{0.0f};
     glm::vec3 end{0.0f};
+    // The actual fired direction (aim.direction / camera forward in camforward
+    // mode), kept separate from the hit geometry so network requests always
+    // send the real aim direction instead of one derived from a contact point.
+    glm::vec3 direction{0.0f};
     std::string bodyPart;
     float damage = 0.0f;
     uint32_t targetId = 0;

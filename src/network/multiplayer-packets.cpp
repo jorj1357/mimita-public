@@ -131,6 +131,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.nextMovementSequence = 1;
     ctx.latestLocalSnapshotTick = 0;
     ctx.latestAliveSnapshotTick = 0;
+    ctx.latestAppliedMembershipTick = 0;
     ctx.gameplayActive = false;
     ctx.pendingTeleportPosition = glm::vec3(0.0f);
     ctx.pendingTeleportSentMs = 0;

@@ -23,6 +23,7 @@
 #include "stb_image.h"
 #include "utils/path_utils.h"
 #include "debug/gl-debug.h"
+#include "debug/debug-log.h"
 
 static std::string readTextFile(const char* path)
 {
@@ -177,6 +178,11 @@ Renderer::Renderer(int w, int h, const char* title) {
 
     glfwMakeContextCurrent(window);
 
+    // VSync defaults OFF. The setting is re-applied later from
+    // VideoSettings once config loads; this guarantees uncapped swaps
+    // even before that, so Wine/Mesa never lock the game to the refresh rate.
+    glfwSwapInterval(0);
+
     // this might go here idk ? mar 6 2026
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
@@ -303,6 +309,12 @@ float Renderer::beginFrame() {
     float dt = float(now - last);
     last = now;
 
+    // Clamp the frame delta so a long presentation stall (e.g. ~1 s under
+    // Wine) cannot inject a huge simulation step or a giant animation jump.
+    // Mirrors FramePacer::beginFrame clamping (max 0.1 s).
+    if (dt < 0.0f) dt = 0.0f;
+    if (dt > 0.1f) dt = 0.1f;
+
     glfwGetFramebufferSize(window, &width, &height);
     if (width <= 0) width = 1;
     if (height <= 0) height = 1;
@@ -372,4 +384,17 @@ void Renderer::applyVideoMode(int w, int h, bool fullscreen)
     width = w;
     height = h;
     printf("[RENDERER] Video mode applied: %dx%d fullscreen=%d\n", w, h, (int)fullscreen);
+
+    // Some GLFW/driver paths reset the swap interval when the window monitor
+    // changes (fullscreen/windowed switch). Re-apply our intended vsync state.
+    glfwSwapInterval(mVSync ? 1 : 0);
+}
+
+void Renderer::setVSync(bool on)
+{
+    if (window)
+        glfwSwapInterval(on ? 1 : 0);
+    mVSync = on;
+    Debug::log(Debug::Category::Render, "[RENDERER] vsync=%s (swap interval %d)\n",
+               on ? "ON" : "OFF", on ? 1 : 0);
 }

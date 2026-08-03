@@ -292,6 +292,7 @@ void avatarToJson(const AvatarDefinition& avatar, json& j) {
 
 // ── Load / Save ─────────────────────────────────────────────────────
 bool AvatarSystem::loadAvatar(const std::string& avatarName) {
+    markAtlasDirty();
     mAvatarName = avatarName;
     mBasePath = avatarPath(avatarName);
     mAvatar.clear();
@@ -584,6 +585,7 @@ void AvatarSystem::setPartFace(const std::string& part, const std::string& face,
     };
     FaceVector* p = getPart();
     if (p) p->byName(face).texture = texturePath;
+    markAtlasDirty();
 }
 
 void AvatarSystem::setPartFaceTransform(const std::string& part, const std::string& face, const FaceTransform& transform) {
@@ -598,6 +600,7 @@ void AvatarSystem::setPartFaceTransform(const std::string& part, const std::stri
     };
     FaceVector* p = getPart();
     if (p) p->byName(face).transform = transform;
+    markAtlasDirty();
 }
 
 void AvatarSystem::setPartColor(const std::string& part, const glm::vec3& color) {
@@ -607,6 +610,7 @@ void AvatarSystem::setPartColor(const std::string& part, const glm::vec3& color)
     else if (part == "rightArm") mAvatar.colors.rightArm = color;
     else if (part == "leftLeg") mAvatar.colors.leftLeg = color;
     else if (part == "rightLeg") mAvatar.colors.rightLeg = color;
+    markAtlasDirty();
 }
 
 glm::vec3 AvatarSystem::partColor(const std::string& part) const {

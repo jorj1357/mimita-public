@@ -71,6 +71,8 @@ void VideoSettings::setVSync(bool on)
 {
     mVSync = on;
     printf("[VIDEO] vsync=%s\n", on ? "ON" : "OFF");
+    if (gRenderer)
+        gRenderer->setVSync(on);
     save();
 }
 
@@ -82,6 +84,8 @@ void VideoSettings::apply()
         return;
     }
     gRenderer->applyVideoMode(width(), height(), mFullscreen);
+    // applyVideoMode may reset the driver swap interval; restore the config.
+    gRenderer->setVSync(mVSync);
     PostFX::instance().initFBO(gRenderer->width, gRenderer->height);
 }
 

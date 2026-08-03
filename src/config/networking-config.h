@@ -53,6 +53,18 @@ struct SnapshotBufferConfig
     double chunkReassemblyTimeoutSeconds = 1.0;
 };
 
+struct RemoteEntityLifecycleConfig
+{
+    // A remote entity is only removed after being absent from this many
+    // complete, newer membership snapshots...
+    uint32_t missingSnapshotConfirmationCount = 3;
+    // ...and after this much wall-clock time has elapsed since first absence.
+    double missingSnapshotGraceMs = 1000.0;
+    // Removal requires a snapshot newer than the newest applied membership
+    // snapshot (never an out-of-order older snapshot).
+    bool requireNewerCompleteSnapshots = true;
+};
+
 struct NetworkingTimeoutConfig
 {
     double clientTimeoutMs = 10000.0;
@@ -78,6 +90,7 @@ struct NetworkingConfigData
     RemotePlayerInterpolationConfig remotePlayers;
     LocalReconciliationConfig localReconciliation;
     SnapshotBufferConfig snapshotBuffer;
+    RemoteEntityLifecycleConfig remoteEntityLifecycle;
     NetworkingTimeoutConfig timeouts;
     NetworkingDebugConfig debug;
 };

@@ -4,16 +4,38 @@
     "id": "revolver",
     "display_name": "Revolver",
     "slot": 1,
-    "model": { "path": "assets/objects/weapons/mimita-revolver-v1.glb" },
+    "model": {
+      "path": "assets/objects/weapons/mimita-revolver-v1.glb"
+    },
     "viewmodel": {
       "enabled": true,
-      "position": [0.0, 0.0, 0.0],
-      "rotation_degrees": [0.0, 0.0, 0.0],
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
       "attachment": {
-        "position": [-0.2, 0.0, 0.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
+        "position": [
+          -0.2,
+          0.0,
+          0.0
+        ],
+        "rotation_degrees": [
+          0.0,
+          0.0,
+          0.0
+        ]
       },
-      "scale": [1.0, 1.0, 1.0]
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
     },
     "damage": 50.0,
     "headshot_multiplier": 2.0,
@@ -48,13 +70,29 @@
     "animations": {
       "fire": {
         "duration": 0.12,
-        "position_offset": [-0.06, 0.02, -0.08],
-        "rotation_offset": [-6.0, 1.5, 1.0],
+        "position_offset": [
+          -0.06,
+          0.02,
+          -0.08
+        ],
+        "rotation_offset": [
+          -6.0,
+          1.5,
+          1.0
+        ],
         "recover": true
       },
       "reload_pose": {
-        "position": [0.04, -0.12, -0.04],
-        "rotation": [-18.0, 5.0, 8.0]
+        "position": [
+          0.04,
+          -0.12,
+          -0.04
+        ],
+        "rotation": [
+          -18.0,
+          5.0,
+          8.0
+        ]
       }
     }
   },
@@ -62,12 +100,26 @@
     "id": "godball",
     "display_name": "Godball",
     "slot": 2,
-    "model": { "path": "" },
+    "model": {
+      "path": ""
+    },
     "viewmodel": {
       "enabled": true,
-      "position": [0.0, 0.0, 0.0],
-      "rotation_degrees": [0.0, 0.0, 0.0],
-      "scale": [1.0, 1.0, 1.0]
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
     },
     "damage": 10.0,
     "headshot_multiplier": 1.0,
@@ -110,16 +162,38 @@
     "id": "shotgun",
     "display_name": "Shotgun",
     "slot": 3,
-    "model": { "path": "assets/objects/weapons/mimita-shotgun-v1.glb" },
+    "model": {
+      "path": "assets/objects/weapons/mimita-shotgun-v1.glb"
+    },
     "viewmodel": {
       "enabled": true,
-      "position": [0.0, 0.0, 0.5],
-      "rotation_degrees": [0.0, 0.0, 0.0],
+      "position": [
+        0.0,
+        0.0,
+        0.5
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
       "attachment": {
-        "position": [0.0, 0.05, -1.5],
-        "rotation_degrees": [0.0, -5.0, -90.0]
+        "position": [
+          0.0,
+          0.05,
+          -1.5
+        ],
+        "rotation_degrees": [
+          0.0,
+          -5.0,
+          -90.0
+        ]
       },
-      "scale": [1.0, 1.0, 1.0]
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
     },
     "damage": 12.0,
     "headshot_multiplier": 2.0,
@@ -154,13 +228,29 @@
     "animations": {
       "fire": {
         "duration": 0.14,
-        "position_offset": [-0.08, 0.03, -0.18],
-        "rotation_offset": [-8.0, 3.0, 2.0],
+        "position_offset": [
+          -0.08,
+          0.03,
+          -0.18
+        ],
+        "rotation_offset": [
+          -8.0,
+          3.0,
+          2.0
+        ],
         "recover": true
       },
       "reload_pose": {
-        "position": [0.15, -0.35, -0.08],
-        "rotation": [-32.0, 10.0, 22.0]
+        "position": [
+          0.15,
+          -0.35,
+          -0.08
+        ],
+        "rotation": [
+          -32.0,
+          10.0,
+          22.0
+        ]
       }
     }
   },
@@ -168,12 +258,26 @@
     "id": "swordsword",
     "display_name": "Swordsword",
     "slot": 4,
-    "model": { "path": "assets/objects/weapons/mimita-hafs-v1.glb" },
+    "model": {
+      "path": "assets/objects/weapons/mimita-hafs-v1.glb"
+    },
     "viewmodel": {
       "enabled": true,
-      "position": [-9.0, 0.2, 0],
-      "rotation_degrees": [100.0, 0.0, 0.0],
-      "scale": [0.6, 0.3, 0.3]
+      "position": [
+        -9.0,
+        0.2,
+        0
+      ],
+      "rotation_degrees": [
+        100.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        0.6,
+        0.3,
+        0.3
+      ]
     },
     "damage": 35.0,
     "headshot_multiplier": 1.5,
@@ -187,12 +291,12 @@
     "projectile_radius": 0.0,
     "projectile_lifetime": 0.0,
     "fire_mode": "semi_auto",
-  "behavior_type": "swordsword",
-  "hitscan": false,
-  "uses_physics_projectile": false,
-  "pose_id": "hafs",
-  "sound": {
-    "shoot": "",
+    "behavior_type": "swordsword",
+    "hitscan": false,
+    "uses_physics_projectile": false,
+    "pose_id": "hafs",
+    "sound": {
+      "shoot": "",
       "reload": "",
       "hit": "",
       "dry_fire": "",
@@ -220,12 +324,26 @@
     "id": "op_revolver",
     "display_name": "OP Revolver",
     "slot": 5,
-    "model": { "path": "assets/objects/weapons/mimita-revolver-v1.glb" },
+    "model": {
+      "path": "assets/objects/weapons/mimita-revolver-v1.glb"
+    },
     "viewmodel": {
       "enabled": true,
-      "position": [0.0, 0.0, 0.0],
-      "rotation_degrees": [0.0, 0.0, 0.0],
-      "scale": [1.0, 1.0, 1.0]
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
     },
     "damage": 50.0,
     "headshot_multiplier": 2.0,
@@ -264,12 +382,26 @@
     "id": "aa12",
     "display_name": "AA12",
     "slot": 6,
-    "model": { "path": "assets/objects/weapons/mimita-shotgun-v1.glb" },
+    "model": {
+      "path": "assets/objects/weapons/mimita-shotgun-v1.glb"
+    },
     "viewmodel": {
       "enabled": true,
-      "position": [0.0, 0.0, 0.5],
-      "rotation_degrees": [0.0, 0.0, 0.0],
-      "scale": [1.0, 1.0, 1.0]
+      "position": [
+        0.0,
+        0.0,
+        0.5
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
     },
     "damage": 12.0,
     "headshot_multiplier": 2.0,
@@ -309,12 +441,26 @@
     "id": "rocket_launcher",
     "display_name": "Rocket Launcher",
     "slot": 7,
-    "model": { "path": "assets/objects/weapons/mimita-rpg-v3.glb" },
+    "model": {
+      "path": "assets/objects/weapons/mimita-rpg-v3.glb"
+    },
     "viewmodel": {
       "enabled": true,
-      "position": [0.2, 0.0, -1.5],
-      "rotation_degrees": [0.0, 0.0, -90.0],
-      "scale": [1.5, 1.5, 1.5]
+      "position": [
+        0.2,
+        0.0,
+        -1.5
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -90.0
+      ],
+      "scale": [
+        1.5,
+        1.5,
+        1.5
+      ]
     },
     "damage": 0.0,
     "headshot_multiplier": 1.0,
@@ -351,7 +497,6 @@
       "knockbackVerticalMultiplier": 0.1,
       "firingRecoilStrength": 30.0,
       "reserveAmmo": 1337.0,
-
       "gravity": 0.0,
       "drag": 0.0,
       "angularDrag": 0.0,
@@ -366,7 +511,6 @@
       "shootPoseTime": 0.12,
       "equipPoseTime": 0.24,
       "reloadOneAtATime": 1.0,
-
       "projectileVisualLength": 1.5,
       "projectileVisualRadius": 0.18,
       "projectileVisualScaleX": 1.0,
@@ -390,7 +534,6 @@
       "projectileGlowColorB": 0.5,
       "projectileGlowAlpha": 0.45,
       "projectileGlowRadiusMultiplier": 5.0,
-
       "smokeEnabled": 1.0,
       "smokeEmissionRate": 50.0,
       "smokeParticlesPerEmission": 3,
@@ -422,13 +565,29 @@
     "animations": {
       "fire": {
         "duration": 0.12,
-        "position_offset": [-0.08, 0.03, -0.18],
-        "rotation_offset": [-8.0, 3.0, 2.0],
+        "position_offset": [
+          -0.08,
+          0.03,
+          -0.18
+        ],
+        "rotation_offset": [
+          -8.0,
+          3.0,
+          2.0
+        ],
         "recover": true
       },
       "reload_pose": {
-        "position": [0.15, -0.45, -0.10],
-        "rotation": [-40.0, 15.0, 35.0]
+        "position": [
+          0.15,
+          -0.45,
+          -0.1
+        ],
+        "rotation": [
+          -40.0,
+          15.0,
+          35.0
+        ]
       }
     }
   },
@@ -436,18 +595,32 @@
     "id": "grenade_launcher",
     "display_name": "Grenade Launcher",
     "slot": 8,
-    "model": { "path": "assets/objects/weapons/mimita-nadelauncher-v1.glb" },
+    "model": {
+      "path": "assets/objects/weapons/mimita-nadelauncher-v1.glb"
+    },
     "viewmodel": {
       "enabled": true,
-      "position": [-1, 0.3, 0.6],
-      "rotation_degrees": [-100.0, -5.0, 168.0],
-      "scale": [0.8, 0.4, 0.4]
+      "position": [
+        -1,
+        0.3,
+        0.6
+      ],
+      "rotation_degrees": [
+        -100.0,
+        -5.0,
+        168.0
+      ],
+      "scale": [
+        0.8,
+        0.4,
+        0.4
+      ]
     },
     "damage": 0.0,
     "headshot_multiplier": 1.0,
-      "fire_delay": 0.6,
-      "reload_time": 0.55,
-      "magazine_size": 4,
+    "fire_delay": 0.6,
+    "reload_time": 0.55,
+    "magazine_size": 4,
     "pellet_count": 1,
     "spread": 0.0,
     "recoil": 30.0,
@@ -493,7 +666,6 @@
       "explodeOnPlayerImpact": 1.0,
       "explodeOnWorldImpact": 0.0,
       "explodeOnLifetime": 1.0,
-
       "projectileVisualLength": 1.8,
       "projectileVisualRadius": 0.28,
       "projectileVisualScaleX": 1.0,
@@ -517,7 +689,6 @@
       "projectileGlowColorB": 0.5,
       "projectileGlowAlpha": 0.45,
       "projectileGlowRadiusMultiplier": 5.0,
-
       "sparkEnabled": 1.0,
       "sparkEmissionRate": 45.0,
       "sparkParticlesPerEmission": 2,
@@ -548,13 +719,29 @@
     "animations": {
       "fire": {
         "duration": 0.15,
-        "position_offset": [-0.08, 0.04, -0.20],
-        "rotation_offset": [-10.0, 4.0, 2.0],
+        "position_offset": [
+          -0.08,
+          0.04,
+          -0.2
+        ],
+        "rotation_offset": [
+          -10.0,
+          4.0,
+          2.0
+        ],
         "recover": true
       },
       "reload_pose": {
-        "position": [0.15, -0.45, -0.10],
-        "rotation": [-40.0, 15.0, 35.0]
+        "position": [
+          0.15,
+          -0.45,
+          -0.1
+        ],
+        "rotation": [
+          -40.0,
+          15.0,
+          35.0
+        ]
       }
     }
   },
@@ -562,12 +749,26 @@
     "id": "admin_revolver",
     "display_name": "Admin Revolver",
     "slot": 9,
-    "model": { "path": "assets/objects/weapons/mimita-revolver-v1.glb" },
+    "model": {
+      "path": "assets/objects/weapons/mimita-revolver-v1.glb"
+    },
     "viewmodel": {
       "enabled": true,
-      "position": [0.0, 0.0, 0.0],
-      "rotation_degrees": [0.0, 0.0, 0.0],
-      "scale": [1.0, 1.0, 1.0]
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
     },
     "damage": 50.0,
     "headshot_multiplier": 2.0,
@@ -604,13 +805,29 @@
     "animations": {
       "fire": {
         "duration": 0.12,
-        "position_offset": [-0.06, 0.02, -0.08],
-        "rotation_offset": [-6.0, 1.5, 1.0],
+        "position_offset": [
+          -0.06,
+          0.02,
+          -0.08
+        ],
+        "rotation_offset": [
+          -6.0,
+          1.5,
+          1.0
+        ],
         "recover": true
       },
       "reload_pose": {
-        "position": [0.04, -0.12, -0.04],
-        "rotation": [-18.0, 5.0, 8.0]
+        "position": [
+          0.04,
+          -0.12,
+          -0.04
+        ],
+        "rotation": [
+          -18.0,
+          5.0,
+          8.0
+        ]
       }
     }
   },
@@ -618,16 +835,38 @@
     "id": "hafs",
     "display_name": "HAFS",
     "slot": 10,
-    "model": { "path": "assets/objects/weapons/mimita-hafs-v1.glb" },
+    "model": {
+      "path": "assets/objects/weapons/mimita-hafs-v1.glb"
+    },
     "viewmodel": {
       "enabled": true,
-      "position": [-9.0, -3.0, 0.5],
-      "rotation_degrees": [0.0, 0.0, 0.0],
+      "position": [
+        -9.0,
+        -3.0,
+        0.5
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
       "attachment": {
-        "position": [0.25, -0.05, -0.25],
-        "rotation_degrees": [90.0, 10.0, -25.0]
+        "position": [
+          0.25,
+          -0.05,
+          -0.25
+        ],
+        "rotation_degrees": [
+          90.0,
+          10.0,
+          -25.0
+        ]
       },
-      "scale": [1.5, 1.5, 1.5]
+      "scale": [
+        1.5,
+        1.5,
+        1.5
+      ]
     },
     "damage": 0.0,
     "headshot_multiplier": 1.0,
@@ -678,11 +917,11 @@
       "slashPose": "slash",
       "slashWindupTime": 0.08,
       "slashActiveTime": 0.14,
-      "slashRecoverTime": 0.10,
+      "slashRecoverTime": 0.1,
       "slashDamageMultiplier": 1.0,
       "slashKnockbackMultiplier": 1.0,
       "lungePose": "lunge",
-      "lungeWindupTime": 0.10,
+      "lungeWindupTime": 0.1,
       "lungeActiveTime": 0.18,
       "lungeRecoverTime": 0.12,
       "lungeDamageMultiplier": 1.4,

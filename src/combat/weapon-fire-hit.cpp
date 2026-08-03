@@ -65,6 +65,7 @@ RevolverShotResult tryFireHitscan(
 
     static unsigned int spreadRng = 1;
     shotDirection = computeSpreadDirection(shotDirection, def.spread, spreadRng);
+    result.direction = shotDirection;
     Debug::warn(Debug::Category::Weapons,
         "[AIM] Final Direction Sent Into Weapon: (%.4f, %.4f, %.4f)\n",
         shotDirection.x, shotDirection.y, shotDirection.z);
@@ -406,6 +407,7 @@ void fireMultiPellet(
     EffectPartSystem::instance().drainPendingWorldHits(6);
 
     finalizeMultiPelletResult(outResult, muzzlePos, lastPelletEnd, lastHitNormal, accumulatedDamage, anyHitEntity, anyHitWorld, lastTargetId, accumulatedKnockback, totalPellets, def, shooter);
+    outResult.direction = baseDir;
     printf("[SHOTGUN LOCAL RESULT] shotSerial=pending pelletCount=%d remotePlayersHit=%d "
            "totalRemoteDamage=%.0f primaryTargetId=%u returnedTargetId=%u "
            "returnedDamage=%.0f worldPellets=%d missedPellets=%d\n",
