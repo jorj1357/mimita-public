@@ -105,6 +105,4 @@ mimita-game.zip
 # ── Overseer / Dev tools ────────────────────────────────────────────────────
 overseer_test.py
 
-# Generated per build; feeds the in-game build-time notification
-src/game/build-stamp.h
 

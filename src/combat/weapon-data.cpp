@@ -692,6 +692,41 @@ void registerBuiltinWeapons() {
     registerWeaponFromJson(createAdminRevolverDefinition());
     registerWeaponFromJson(createHafsDefinition());
     Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver, hafs");
+
+    // Diagnostics: print the actually-loaded weapon stats so config edits are
+    // verifiable in logs (reveals builtin-default fallback when the JSON file
+    // is missing or unreachable).
+    {
+        auto stat = [](const WeaponDefinition* def, const char* key, float fallback) -> float {
+            if (!def) return fallback;
+            auto it = def->customParams.find(key);
+            return it != def->customParams.end() ? it->second : fallback;
+        };
+        const WeaponDefinition* rev = WeaponRegistry::instance().get("revolver");
+        const WeaponDefinition* shg = WeaponRegistry::instance().get("shotgun");
+        Debug::warn(Debug::Category::Weapons,
+            "[WEAPON CONFIG] revolver damage=%.1f headshot=%.1f fireDelay=%.3f "
+            "falloffStart=%.1f minFraction=%.2f limbMult=%.2f beam=%.2f worldBeam=%.2f\n",
+            rev ? rev->damage : -1.0f,
+            rev ? rev->headshotMultiplier : -1.0f,
+            rev ? rev->fireDelay : -1.0f,
+            stat(rev, "distanceFalloffStart", 0.0f),
+            stat(rev, "minDamageFraction", 0.05f),
+            stat(rev, "limbDamageMultiplier", 0.75f),
+            rev ? rev->beamThickness : -1.0f,
+            rev ? rev->beamWorldThickness : -1.0f);
+        Debug::warn(Debug::Category::Weapons,
+            "[WEAPON CONFIG] shotgun damage=%.1f headshot=%.1f pellets=%d "
+            "falloffStart=%.1f minFraction=%.2f limbMult=%.2f beam=%.2f worldBeam=%.2f\n",
+            shg ? shg->damage : -1.0f,
+            shg ? shg->headshotMultiplier : -1.0f,
+            shg ? shg->pelletCount : -1,
+            stat(shg, "distanceFalloffStart", 0.0f),
+            stat(shg, "minDamageFraction", 0.05f),
+            stat(shg, "limbDamageMultiplier", 0.75f),
+            shg ? shg->beamThickness : -1.0f,
+            shg ? shg->beamWorldThickness : -1.0f);
+    }
 }
 
 } // namespace WeaponData

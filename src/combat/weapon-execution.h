@@ -40,6 +40,13 @@ struct PlayerTarget
     bool dead = false;
 };
 
+enum class HitBodyPart : uint8_t
+{
+    Torso,
+    Head,
+    Leg
+};
+
 struct HitscanPelletHit
 {
     bool hit = false;
@@ -51,6 +58,7 @@ struct HitscanPelletHit
     float distance = 0.0f;
     float damage = 0.0f;
     bool headshot = false;
+    HitBodyPart bodyPart = HitBodyPart::Torso;
 };
 
 struct HitscanDamageAggregate
@@ -75,6 +83,19 @@ struct HitscanTraceConfig
     uint32_t deterministicSeed = 0;
     float worldBlockDistance = DEFAULT_HITSCAN_RANGE;
     float knockbackPerDamage = 0.08f;
+    // Range falloff: factor = clamp(1 - distance/start, minFraction, 1).
+    // 0 means no falloff (backward compatible with weapons that don't set it).
+    float distanceFalloffStart = 0.0f;
+    float minDamageFraction = 0.05f;
+    // Body-part multiplier for limb hits (torso = 1x, head = headshotMultiplier).
+    float limbDamageMultiplier = 0.75f;
+    // Swept-sphere radius for the hit beam (0 = infinitely thin ray). The same
+    // value is used by the client so online hits match what the shooter sees.
+    float beamThickness = 0.0f;
+    // World/occlusion radius (0 = thin world rays). Separate from beamThickness
+    // so a thick entity-hit beam doesn't clip wall edges and break the pellet
+    // pattern at the aim direction.
+    float beamWorldThickness = 0.0f;
 };
 
 struct HitscanTraceResult
@@ -129,6 +150,7 @@ int buildPelletDirections(const WeaponDefinition& def, const glm::vec3& aimDirec
                           uint32_t seed, glm::vec3* outDirections, int capacity);
 bool rayPlayerTarget(const glm::vec3& origin, const glm::vec3& direction,
                      const PlayerTarget& target, float maxDistance,
+                     float beamRadius,
                      HitscanPelletHit& outHit);
 HitscanTraceResult traceHitscan(const WeaponDefinition& def,
                                 const glm::vec3& origin,

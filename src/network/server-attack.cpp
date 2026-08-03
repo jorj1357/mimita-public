@@ -410,11 +410,30 @@ void handleAttackRequest(
 
         const float maxRange = WeaponExecution::paramOr(*def, "range",
             WeaponExecution::paramOr(*def, "maxRange", WeaponExecution::DEFAULT_HITSCAN_RANGE));
+        const float beamThickness = std::max(0.0f, def->beamThickness);
+        const float beamWorldThickness = std::max(0.0f, def->beamWorldThickness);
         glm::vec3 worldHit;
         glm::vec3 worldNormal;
         float worldBlockDistance = maxRange;
-        if (serverRaycastWorld(origin, direction, maxRange, world, worldHit, worldNormal))
-            worldBlockDistance = glm::length(worldHit - origin);
+        if (beamWorldThickness > 0.0f)
+        {
+            // Thick world beam: swept-sphere world trace so the beam is blocked
+            // by a wall at the same distance the client's swept beam would be.
+            float sweptDist = 0.0f;
+            if (serverSweptSphereWorld(origin, direction, maxRange, beamWorldThickness,
+                                       world, sweptDist, worldNormal))
+            {
+                worldBlockDistance = sweptDist;
+                worldHit = origin + direction * sweptDist;
+            }
+        }
+        else
+        {
+            // Thin world rays (default): precise aim, so a shotgun pellet
+            // pattern at the aim direction is never clipped by wall edges.
+            if (serverRaycastWorld(origin, direction, maxRange, world, worldHit, worldNormal))
+                worldBlockDistance = glm::length(worldHit - origin);
+        }
 
         // Lag compensation: validate the trace at the tick the attacker was
         // actually looking at (their fire-time snapshot minus the remote
@@ -493,6 +512,11 @@ void handleAttackRequest(
         traceConfig.deterministicSeed = req->deterministicSeed;
         traceConfig.worldBlockDistance = worldBlockDistance;
         traceConfig.knockbackPerDamage = WeaponExecution::paramOr(*def, "knockbackPerDamage", 0.08f);
+        traceConfig.distanceFalloffStart = WeaponExecution::paramOr(*def, "distanceFalloffStart", 0.0f);
+        traceConfig.minDamageFraction = WeaponExecution::paramOr(*def, "minDamageFraction", 0.05f);
+        traceConfig.limbDamageMultiplier = WeaponExecution::paramOr(*def, "limbDamageMultiplier", 0.75f);
+        traceConfig.beamThickness = beamThickness;
+        traceConfig.beamWorldThickness = beamWorldThickness;
         WeaponExecution::HitscanTraceResult trace =
             WeaponExecution::traceHitscan(*def, origin, direction, traceConfig, targets);
 

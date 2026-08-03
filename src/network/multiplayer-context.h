@@ -628,6 +628,19 @@ uint32_t mpSendMeleeHitRequest(
     float weaponSpeed);
 void mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes);
 
+// Returns the server tick the client is currently rendering remote entities at.
+// In interpolation mode (direct_render=false) this is the delayed buffer clock,
+// so attack/melee requests carry the exact tick the shooter saw and the server's
+// hit-rewind lands on the rendered body (see=hit). In direct-render mode the
+// rendered position IS the newest snapshot, so fallbackNewestTick is returned.
+uint32_t mpFireRenderTick(const MultiplayerContext& ctx, uint32_t fallbackNewestTick);
+
+// Returns the render-bias delta (rendered replica position minus newest
+// authoritative snapshot position) for a remote shooter, so muzzle/tracer shot
+// visuals can be re-based onto the body the client actually renders. Zero when
+// the shooter is local/unknown or interpolation is inactive (direct render).
+glm::vec3 mpRemoteShooterRenderDelta(const MultiplayerContext& ctx, uint32_t shooterId);
+
 // Called from mpTick (defined in multiplayer-shots.cpp)
 void mpProcessShotEventPacket(MultiplayerContext& ctx, const ShotEventPacket* event);
 void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEventPacket* event);

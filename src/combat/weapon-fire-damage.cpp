@@ -29,6 +29,14 @@ static void fireSound(const WeaponDefinition& def, const glm::vec3& muzzlePos)
     WeaponAudio::playShootSound(def, muzzlePos);
 }
 
+// Config-driven limb damage multiplier (0.75 default) so client prediction
+// matches the server damage model.
+static float limbMultiplier(const WeaponDefinition& def)
+{
+    auto it = def.customParams.find("limbDamageMultiplier");
+    return it != def.customParams.end() ? it->second : 0.75f;
+}
+
 void processNpcHit(
     RevolverShotResult& result,
     const WeaponDefinition& def,
@@ -104,7 +112,7 @@ void processRemotePlayerHit(
     if (hitPart == "head")
         damage *= def.headshotMultiplier;
     else if (hitPart == "leg")
-        damage *= 0.5f;
+        damage *= limbMultiplier(def);
 
     const float falloffStart = def.customParams.count("distanceFalloffStart")
         ? def.customParams.at("distanceFalloffStart") : 110.0f;
@@ -195,7 +203,7 @@ void processPlayerHit(
     if (hitPart == "head")
         damage *= def.headshotMultiplier;
     else if (hitPart == "leg")
-        damage *= 0.5f;
+        damage *= limbMultiplier(def);
 
     const float falloffStart = def.customParams.count("distanceFalloffStart")
         ? def.customParams.at("distanceFalloffStart") : 110.0f;
@@ -295,7 +303,7 @@ float computeFalloffDamage(
     if (hitPart == "head")
         damage *= def.headshotMultiplier;
     else if (hitPart == "leg")
-        damage *= 0.5f;
+        damage *= limbMultiplier(def);
 
     const float falloffStart = def.customParams.count("distanceFalloffStart")
         ? def.customParams.at("distanceFalloffStart") : 110.0f;
@@ -372,7 +380,8 @@ void processMultiPelletRemoteHit(
 {
     float dmg = def.damage;
     if (hitPart == "head") dmg *= def.headshotMultiplier;
-    else if (hitPart == "leg") dmg *= 0.5f;
+    else if (hitPart == "leg")
+        dmg *= limbMultiplier(def);
 
     float falloffStart = 110.0f;
     auto fit = def.customParams.find("distanceFalloffStart");

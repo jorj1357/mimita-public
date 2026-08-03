@@ -57,6 +57,7 @@ public:
 
     // Lifecycle
     void loadConfig();
+    void loadGuiConfig();
     void loadTipsConfig();
     void pollReload();
     void advanceTicks(); // step the 60 Hz UI tick clock
@@ -67,7 +68,7 @@ public:
     void push(const std::string& title, const std::string& message,
               uint64_t durationTicks, const Action& action);
     void pushBuildNotice();
-    void pushTip();
+    void pushTip(bool force = false);
     void clear() { mNotifications.clear(); }
 
     const std::vector<HistoryEntry>& history() const { return mHistory; }
@@ -105,11 +106,14 @@ private:
 
     std::string mConfigPath = "config/notifications.json";
     std::filesystem::file_time_type mConfigLastWrite;
+    std::string mGuiConfigPath = "config/gui/notifications.json";
+    std::filesystem::file_time_type mGuiConfigLastWrite;
     std::string mTipsConfigPath = "config/tipsconfig.json";
     std::filesystem::file_time_type mTipsConfigLastWrite;
 
     int mMaxCount = 3;
     uint64_t mDefaultDurationTicks = 300;
+    uint64_t mTipDurationTicks = 0;
     uint64_t mFadeInTicks = 12;
     uint64_t mFadeOutTicks = 30;
     std::string mAnchor = "bottom_right"; // bottom_right | top_right | bottom_left | top_left

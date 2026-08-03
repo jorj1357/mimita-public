@@ -84,7 +84,7 @@ RevolverShotResult tryFireHitscan(
     BeamCollisionResult beam = collideBeam(
         rayOrigin, shotDirection, MAX_SHOT_DISTANCE, def.beamThickness,
         world, &npcs, remotePlayers, nullptr,
-        aim.usesCameraTarget, remoteNpcs);
+        aim.usesCameraTarget, remoteNpcs, def.beamWorldThickness);
 
     float nearest = beam.nearest;
     bool hitWorld = beam.hitWorld;
@@ -206,7 +206,8 @@ RevolverShotResult tryFireHitscanDir(
 
     BeamCollisionResult beam = collideBeam(
         rayOrigin, shotDirection, MAX_SHOT_DISTANCE, def.beamThickness,
-        world, nullptr, nullptr, targetPlayer);
+        world, nullptr, nullptr, targetPlayer, false, nullptr,
+        def.beamWorldThickness);
 
     float nearest = beam.nearest;
     bool hitWorld = beam.hitWorld;
@@ -348,7 +349,7 @@ void fireMultiPellet(
                 BeamCollisionResult pelletBeam = collideBeam(
                     pelletOrigin, pelletDir, MAX_SHOT_DISTANCE, def.beamThickness,
                     world, &npcs, remotePlayers, nullptr,
-                    false, remoteNpcs);
+                    false, remoteNpcs, def.beamWorldThickness);
                 (void)tc;
 
                 float pelletNearest = pelletBeam.nearest;

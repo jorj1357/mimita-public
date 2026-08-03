@@ -16,6 +16,7 @@
 #include "network/ice/ice-config.h"
 #include "network/coordinator-client.h"
 #include "network/badconn/badconn.h"
+#include "config/networking-config.h"
 #include "analytics/analytics-manager.h"
 #include "debug/debug-log.h"
 
@@ -25,6 +26,18 @@
 #include <cstring>
 
 namespace MimitaNet {
+
+uint32_t mpFireRenderTick(const MultiplayerContext& ctx, uint32_t fallbackNewestTick)
+{
+    const auto& interpCfg = NetworkingConfig::instance().data().remotePlayers;
+    if (!interpCfg.directRender && interpCfg.enabled && ctx.interpolationClockStarted)
+    {
+        const double tick = ctx.interpolationRenderTick;
+        if (tick > 1.0)
+            return (uint32_t)tick;
+    }
+    return fallbackNewestTick;
+}
 
 void mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes)
 {
@@ -382,7 +395,7 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     req.header.playerId = ctx.localPlayerId;
     req.requestId = requestId;
     req.spawnGeneration = ctx.lastKnownSpawnGeneration;
-    req.clientSimulationTick = ctx.latestLocalSnapshotTick;
+    req.clientSimulationTick = mpFireRenderTick(ctx, ctx.latestLocalSnapshotTick);
     req.basedOnInputSequence = (uint16_t)std::min<uint32_t>(ctx.nextMovementSequence, 0xffffu);
     req.equippedSlot = equippedSlot;
     req.weaponDefNetworkId = weaponDefNetworkId;

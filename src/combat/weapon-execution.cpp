@@ -134,6 +134,7 @@ bool rayPlayerTarget(const glm::vec3& origin,
                      const glm::vec3& direction,
                      const PlayerTarget& target,
                      float maxDistance,
+                     float beamRadius,
                      HitscanPelletHit& outHit)
 {
     if (target.dead || target.playerId == 0 || !finiteVec3(target.position))
@@ -143,9 +144,16 @@ bool rayPlayerTarget(const glm::vec3& origin,
     const float halfHeight = std::max(target.height, radius * 2.0f) * 0.5f;
     const glm::vec3 bmin = target.position + glm::vec3(-radius, -radius, -halfHeight);
     const glm::vec3 bmax = target.position + glm::vec3(radius, radius, halfHeight);
-    float distance = 0.0f;
     const glm::vec3 dir = safeNormalize(direction, glm::vec3(1.0f, 0.0f, 0.0f));
-    if (!rayAabb(origin, dir, bmin, bmax, maxDistance, distance))
+
+    // Swept-sphere vs AABB == thin ray vs AABB grown by the beam radius. The
+    // sphere center at contact drives body-part classification; the stored hit
+    // position is projected back to the target surface for effect placement.
+    const float grow = std::max(beamRadius, 0.0f);
+    const glm::vec3 ebmin = bmin - glm::vec3(grow);
+    const glm::vec3 ebmax = bmax + glm::vec3(grow);
+    float distance = 0.0f;
+    if (!rayAabb(origin, dir, ebmin, ebmax, maxDistance, distance))
         return false;
 
     outHit.hit = true;
@@ -153,10 +161,29 @@ bool rayPlayerTarget(const glm::vec3& origin,
     outHit.targetSpawnGeneration = target.spawnGeneration;
     outHit.distance = distance;
     outHit.direction = dir;
-    outHit.hitPosition = origin + dir * distance;
-    const glm::vec3 fromCenter = outHit.hitPosition - target.position;
+    const glm::vec3 sweepCenter = origin + dir * distance;
+    const glm::vec3 fromCenter = sweepCenter - target.position;
     outHit.hitNormal = safeNormalize(fromCenter, -dir);
-    outHit.headshot = fromCenter.z > halfHeight * 0.45f;
+    outHit.hitPosition = grow > 0.0f
+        ? sweepCenter - outHit.hitNormal * grow
+        : sweepCenter;
+    // Body-part classification by sphere-center height over the original target
+    // box (matches the client's localHeight thresholds): top ~22% head, bottom
+    // ~32% limbs, middle torso. `headshot` stays the flag for effects/killfeed.
+    const float localHeight = (sweepCenter.z - bmin.z) / (bmax.z - bmin.z);
+    if (localHeight > 0.78f)
+    {
+        outHit.bodyPart = HitBodyPart::Head;
+        outHit.headshot = true;
+    }
+    else if (localHeight > 0.32f)
+    {
+        outHit.bodyPart = HitBodyPart::Torso;
+    }
+    else
+    {
+        outHit.bodyPart = HitBodyPart::Leg;
+    }
     return true;
 }
 
@@ -185,7 +212,8 @@ HitscanTraceResult traceHitscan(const WeaponDefinition& def,
         for (const PlayerTarget& target : targets)
         {
             HitscanPelletHit hit;
-            if (!rayPlayerTarget(origin, pelletDirs[i], target, maxRange, hit))
+            if (!rayPlayerTarget(origin, pelletDirs[i], target, maxRange,
+                                 config.beamThickness, hit))
                 continue;
             if (hit.distance < closest.distance)
                 closest = hit;
@@ -194,7 +222,19 @@ HitscanTraceResult traceHitscan(const WeaponDefinition& def,
         if (!closest.hit || closest.distance > worldBlockDistance)
             continue;
 
-        closest.damage = config.damage * (closest.headshot ? config.headshotMultiplier : 1.0f);
+        // Damage model: base x body-part multiplier x range falloff.
+        // head = headshotMultiplier, torso = 1x, limbs = limbDamageMultiplier.
+        // falloff = clamp(1 - distance/falloffStart, minFraction, 1); 0 disables.
+        float partMultiplier = 1.0f;
+        if (closest.bodyPart == HitBodyPart::Head)
+            partMultiplier = config.headshotMultiplier;
+        else if (closest.bodyPart == HitBodyPart::Leg)
+            partMultiplier = config.limbDamageMultiplier;
+        float falloff = 1.0f;
+        if (config.distanceFalloffStart > 0.0f)
+            falloff = std::clamp(1.0f - closest.distance / config.distanceFalloffStart,
+                                 config.minDamageFraction, 1.0f);
+        closest.damage = config.damage * partMultiplier * falloff;
         result.pellets[i] = closest;
 
         auto aggregateIt = std::find_if(result.aggregates.begin(), result.aggregates.end(),

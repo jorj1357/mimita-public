@@ -592,6 +592,11 @@ bool serverRayTriangle(const glm::vec3& origin, const glm::vec3& direction,
 bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
                          float maxDist, const HeadlessWorld& world,
                          glm::vec3& outHitPos, glm::vec3& outNormal);
+// Swept-sphere world trace for thick-beam hitscan (same contract as
+// serverRaycastWorld but the beam has `radius` so walls block it correctly).
+bool serverSweptSphereWorld(const glm::vec3& origin, const glm::vec3& direction,
+                            float maxDist, float radius, const HeadlessWorld& world,
+                            float& outHitDist, glm::vec3& outNormal);
 const char* transportKindName(TransportKind kind);
 TransportConnectionId makeUdpConnectionId(const sockaddr_in& endpoint);
 TransportConnectionId allocateIceConnectionId();

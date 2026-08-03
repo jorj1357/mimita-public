@@ -256,7 +256,8 @@ BeamCollisionResult collideBeam(
     const std::unordered_map<uint32_t, Player>* remotePlayers,
     const Player* targetPlayer,
     bool skipWorldCollision,
-    std::unordered_map<uint32_t, Player>* remoteNpcs)
+    std::unordered_map<uint32_t, Player>* remoteNpcs,
+    float beamWorldThickness)
 {
     BeamCollisionResult result;
     result.nearest = maxDistance;
@@ -274,12 +275,14 @@ BeamCollisionResult collideBeam(
     bool useSphereCast = (beamThickness > 0.0f);
 
     if (!skipWorldCollision) {
-        if (useSphereCast) {
+        // World/occlusion radius is separate from the entity-hit radius so a
+        // thick beam never clips wall edges and breaks the pellet pattern.
+        if (beamWorldThickness > 0.0f) {
             glm::vec3 hNml(0.0f);
             float hDist = 0.0f;
             glm::vec3 hPt(0.0f);
             if (sweptSphereTraverseGridCells(world, origin, direction, maxDistance,
-                                              beamThickness, hDist, hNml, hPt) && hDist < result.nearest) {
+                                              beamWorldThickness, hDist, hNml, hPt) && hDist < result.nearest) {
                 result.nearest = hDist;
                 result.hitWorld = true;
                 result.worldNormal = hNml;
