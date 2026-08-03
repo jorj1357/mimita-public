@@ -144,10 +144,10 @@ public:
     std::vector<std::string> listAvatars() const;
     std::vector<std::string> listPngs(const std::string& avatarName) const;
 
-    void setSimple(const SimpleAvatar& simple) { mAvatar.simple = simple; mAvatar.expandSimple(); }
+    void setSimple(const SimpleAvatar& simple) { mAvatar.simple = simple; mAvatar.expandSimple(); markAtlasDirty(); }
     void setPartFace(const std::string& part, const std::string& face, const std::string& texturePath);
     void setPartFaceTransform(const std::string& part, const std::string& face, const FaceTransform& transform);
-    void setAdvancedMode(bool v) { mAvatar.advancedMode = v; }
+    void setAdvancedMode(bool v) { mAvatar.advancedMode = v; markAtlasDirty(); }
 
     void setPartColor(const std::string& part, const glm::vec3& color);
     glm::vec3 partColor(const std::string& part) const;
@@ -190,6 +190,10 @@ private:
     bool applyAtlasToPlayer(Player& player);
     std::string resolvePath(const std::string& relativePath) const;
 
+    // Bumps the atlas generation so the atlas-reuse cache is invalidated
+    // whenever the avatar definition is edited in place.
+    void markAtlasDirty() { ++mAtlasGeneration; }
+
     struct PendingAtlasResult {
         std::atomic<bool> ready{false};
         std::vector<unsigned char> pixels;
@@ -199,6 +203,12 @@ private:
     int mAtlasGeneration = 0;
     int mPendingAtlasGeneration = 0;
     std::string mPendingAvatarName;
+
+    // Atlas reuse cache: when the avatar definition has not changed since
+    // the last build, the existing atlas texture is reused instead of
+    // rebuilding 2000x2000 pixels + GPU upload for every replica.
+    std::string mLastAtlasAvatarName;
+    int mLastAtlasBuildGeneration = -1;
 
     std::string mAvatarName;
     std::string mBasePath;

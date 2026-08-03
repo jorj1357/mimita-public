@@ -101,9 +101,15 @@ void registerWeaponCommands()
                     Terminal::instance().addLog("[WEAPON] not yet ready");
                     return;
                 }
-                const glm::vec3 direction = glm::length(shot.end - shot.start) > 0.001f
-                    ? glm::normalize(shot.end - shot.start)
-                    : camera.front;
+                // Prefer the actual fired direction (aim.direction / camera
+                // forward in camforward mode) over one derived from the hit
+                // geometry, so the server always traces the real aim direction.
+                const glm::vec3 direction =
+                    glm::length(shot.direction) > 0.001f
+                        ? glm::normalize(shot.direction)
+                        : (glm::length(shot.end - shot.start) > 0.001f
+                               ? glm::normalize(shot.end - shot.start)
+                               : camera.front);
                 uint16_t effectFlags =
                     MimitaNet::SHOT_EFFECT_MUZZLE |
                     MimitaNet::SHOT_EFFECT_TRACER |

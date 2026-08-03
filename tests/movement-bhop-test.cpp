@@ -59,7 +59,7 @@ MovementConfig csConfig()
     c.accelerationFalloffNearCap = 0.5f;
     c.requireActiveWishRotation = true;
     c.stationaryCameraInputMode = StationaryCameraInputMode::Strict;
-    c.airSteeringRateDegreesPerSecond = 300.0f;
+    c.airSteeringResponse = 1.0f;
     c.maximumSteeringDegreesPerSecond = 720.0f;
     c.minimumCameraYawDeltaDegrees = 0.25f;
     c.minimumWishRotationDegrees = 0.25f;

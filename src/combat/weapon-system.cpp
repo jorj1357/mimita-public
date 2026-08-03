@@ -744,6 +744,7 @@ RevolverShotResult WeaponSystem::fire(
         result.fired = true;
         result.start = muzzlePos;
         result.end = muzzlePos + dir;
+        result.direction = dir;
         result.hitNormal = -dir;
         // Always play sound — the actual grenade is created on the server
         // after it accepts the AttackRequest. No local grenade spawn here.
@@ -951,6 +952,7 @@ RevolverShotResult WeaponSystem::fireRocketLauncher(Camera& camera, Player& play
     result.fired = true;
     result.start = muzzlePos;
     result.end = muzzlePos + dir;
+    result.direction = dir;
     result.hitNormal = -dir;
     if (remotePlayers)
     {
@@ -1141,18 +1143,9 @@ void WeaponSystem::renderRemoteWeapon(uint32_t entityId, const Player& player, c
             if (it != gbDef->customParams.end())
                 radius = it->second;
         }
-        printf("[GODBALL RENDER] entityId=%u pos=(%.1f,%.1f,%.1f) radius=%.2f\n",
-               entityId, player.godballPosition.x, player.godballPosition.y,
-               player.godballPosition.z, radius);
         DebugVis::drawFilledSphere(camera, player.godballPosition, radius,
                                     {0.2f, 0.4f, 0.8f, 0.6f});
         DebugVis::drawWireSphere(camera, player.godballPosition, radius,
                                  {0.4f, 0.6f, 1.0f, 0.8f});
-    }
-    else
-    {
-        printf("[GODBALL RENDER] entityId=%u godballActive=0 (equippedSlot=%d def=%s)\n",
-               entityId, player.equippedSlot,
-               def ? def->id.c_str() : "null");
     }
 }

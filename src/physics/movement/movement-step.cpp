@@ -99,6 +99,10 @@ struct AirStrafeEvaluation {
     AirStrafeRejection rejection = AirStrafeRejection::None;
     float cameraYawDelta = 0.0f;
     float wishAngleDelta = 0.0f;
+    // Signed wish-direction rotation this tick (0 on a fresh key press), used
+    // as the steering scale: the mouse rotates the wish reference and the
+    // velocity curves around it.
+    float steerRotationDegrees = 0.0f;
     int turnSign = 0;
     int side = 0;
 };
@@ -113,10 +117,6 @@ AirStrafeEvaluation evaluateAirStrafe(const MovementState& state,
         ev.rejection = AirStrafeRejection::NoInput;
         return ev;
     }
-    if (config.stationaryCameraInputMode == StationaryCameraInputMode::Strict &&
-        !config.requireActiveWishRotation) {
-        // strict still requires the wish to rotate; fall through to gates below
-    }
 
     ev.cameraYawDelta =
         shortestSignedAngleDegrees(state.previousYaw, command.lookYaw);
@@ -130,6 +130,7 @@ AirStrafeEvaluation evaluateAirStrafe(const MovementState& state,
                      : glm::vec2(0.0f);
     const glm::vec2 curWish = movementNormalizeDirectionOrZero(command.moveAxes);
     ev.wishAngleDelta = signedAngleDegrees(prevWish, curWish);
+    ev.steerRotationDegrees = hadPrevInput ? ev.wishAngleDelta : 0.0f;
     ev.wishIsRotating =
         hadPrevInput &&
         std::fabs(ev.wishAngleDelta) >= config.minimumWishRotationDegrees;
@@ -146,21 +147,13 @@ AirStrafeEvaluation evaluateAirStrafe(const MovementState& state,
     ev.inputMatchesTurn =
         ev.side != 0 && ev.turnSign != 0 && ev.side == ev.turnSign;
 
-    if (!ev.cameraIsTurning) {
+    // Speed-gain rule: any movement key + camera turn = eligible. Per-key,
+    // turn-direction, and angular-tolerance discrimination are kept as debug
+    // metrics only (inputMatchesTurn / withinTolerance / wishIsRotating).
+    if (!ev.cameraIsTurning)
         ev.rejection = AirStrafeRejection::CameraStationary;
-    } else if (config.requireActiveWishRotation && !ev.wishIsRotating) {
-        ev.rejection = AirStrafeRejection::WishStationary;
-    } else if (!ev.inputMatchesTurn) {
-        ev.rejection = AirStrafeRejection::WrongTurnRelationship;
-    } else if (!ev.withinTolerance) {
-        ev.rejection = AirStrafeRejection::BelowAngularTolerance;
-    }
 
-    ev.validSpeedGain =
-        ev.cameraIsTurning &&
-        (!config.requireActiveWishRotation || ev.wishIsRotating) &&
-        ev.inputMatchesTurn &&
-        ev.withinTolerance;
+    ev.validSpeedGain = ev.hasInput && ev.cameraIsTurning;
 
     if (config.stationaryCameraInputMode == StationaryCameraInputMode::Strict)
         ev.validSteering = ev.cameraIsTurning;
@@ -243,10 +236,19 @@ void applyAirSteering(MovementState& state,
     const float speed = glm::length(vel);
     if (speed <= 1e-4f)
         return; // never create velocity from zero
-    float maxRotate = glm::radians(config.airSteeringRateDegreesPerSecond) * dt;
+
+    // Pole-like steering: the movement key selects the camera-relative wish
+    // reference; the mouse rotates it. The velocity curves around that
+    // reference by a fraction of the wish-direction rotation this tick.
+    const float wishRot = std::fabs(ev.steerRotationDegrees);
+    if (wishRot <= 1e-3f)
+        return;
+    float maxRotate = glm::radians(config.airSteeringResponse * wishRot);
     if (config.maximumSteeringDegreesPerSecond > 0.0f)
         maxRotate = std::min(maxRotate,
             glm::radians(config.maximumSteeringDegreesPerSecond) * dt);
+    if (maxRotate <= 0.0f)
+        return;
     const glm::vec2 steered = rotateToward(vel / speed, wishDir, maxRotate);
     state.baseVelocity.x = steered.x * speed;
     state.baseVelocity.y = steered.y * speed;
@@ -1004,6 +1006,8 @@ void updateFreeze(MovementState& state,
         state.baseVelocity.x = 0.0f;
         state.baseVelocity.y = 0.0f;
         state.baseVelocity.z = 0.0f;
+        // Freeze stops everything, including external velocity.
+        state.externalImpulse = glm::vec3(0.0f);
         state.freeze.active = true;
         state.freeze.available = false;
         state.freeze.timerSeconds = 0.0f;
@@ -1041,18 +1045,28 @@ void applyBasicGravity(MovementState& state,
 void applyBasicExternalImpulseControl(MovementState& state,
                                       const MovementCommand& command)
 {
-    // External impulses (knockback, explosions, launch pads, dashes) are
-    // preserved through movement input. They decay independently; changing
-    // movement input must never erase them.
-    (void)state;
-    (void)command;
+    // Default (override) mode: movement input reclaims full control, killing
+    // all external velocity (knockback, recoil, launches). Accel (CS) mode
+    // never calls this and preserves external impulses through input.
+    if (!command.movementDirectionPressed &&
+        !command.dashPressed) {
+        return;
+    }
+    state.externalImpulse = glm::vec3(0.0f);
 }
 
 static void applySpecialExternalImpulseControl(MovementState& state,
                                                const MovementCommand& command)
 {
-    (void)state;
-    (void)command;
+    if (!command.movementDirectionPressed)
+        return;
+    if (command.dashPressed ||
+        command.downDashPressed ||
+        command.freezeHeld ||
+        state.dashMomentumProtection.active) {
+        return;
+    }
+    applyBasicExternalImpulseControl(state, command);
 }
 
 void applyBasicWalk(MovementState& state,
@@ -1284,11 +1298,18 @@ static MovementStepResult applyPostCollisionMovementInternal(
         state.dash.dashMovementTicks = 0;
     }
 
-    if (specialMovementEnabled) {
+    // Default (override) mode: WASD/dash input kills external velocity so the
+    // player regains full control. Accel (CS) mode preserves external impulses
+    // through input (its movement controllers own the player velocity).
+    if (config.walkMode == MovementWalkMode::Override) {
+        if (specialMovementEnabled) {
+            updateDashMomentumProtectionForWalk(state, command);
+            applySpecialExternalImpulseControl(state, command);
+        } else {
+            applyBasicExternalImpulseControl(state, command);
+        }
+    } else if (specialMovementEnabled) {
         updateDashMomentumProtectionForWalk(state, command);
-        applySpecialExternalImpulseControl(state, command);
-    } else {
-        applyBasicExternalImpulseControl(state, command);
     }
 
     const bool walkingMayOverwriteDash =

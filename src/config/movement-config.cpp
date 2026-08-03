@@ -147,7 +147,7 @@ MovementConfig defaultMovementConfig()
     config.debugDrawEnabled = false;
     config.requireActiveWishRotation = true;
     config.stationaryCameraInputMode = StationaryCameraInputMode::Strict;
-    config.airSteeringRateDegreesPerSecond = 0.0f;
+    config.airSteeringResponse = 1.0f;
     config.maximumSteeringDegreesPerSecond = 0.0f;
     config.minimumCameraYawDeltaDegrees = 0.25f;
     config.minimumWishRotationDegrees = 0.25f;
@@ -225,10 +225,8 @@ void applyPresetOverrides(const json& root, MovementConfig& config)
     config.landingSpeedRetention =
         std::clamp(config.landingSpeedRetention, 0.0f, 1.0f);
 
-    readFloat("air_steering_rate_degrees_per_second",
-              config.airSteeringRateDegreesPerSecond);
-    config.airSteeringRateDegreesPerSecond =
-        std::max(0.0f, config.airSteeringRateDegreesPerSecond);
+    readFloat("air_steering_response", config.airSteeringResponse);
+    config.airSteeringResponse = std::max(0.0f, config.airSteeringResponse);
     readFloat("maximum_steering_degrees_per_second",
               config.maximumSteeringDegreesPerSecond);
     config.maximumSteeringDegreesPerSecond =

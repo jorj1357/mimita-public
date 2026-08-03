@@ -48,5 +48,6 @@
   "Mimita uses a custom C++17 engine built from scratch.",
   "The physics system features full-body collision for all entities.",
   "Every body part collides — arms, legs, head, and weapons.",
-  "The overseer (overseer.py) checks your code quality automatically."
+  "The overseer (overseer.py) checks your code quality automatically.",
+  "from now on put ur tips in that format, like mm-dd-yyyy-hh-mm-utc , but at the end of ur tip 8 3 2026 1450 utc"
 ]

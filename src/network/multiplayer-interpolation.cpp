@@ -11,6 +11,7 @@
 #include "network/multiplayer-context.h"
 #include "network/net_common.h"
 #include "network/simulation-constants.h"
+#include "network/remote-entity-lifecycle.h"
 #include "config/networking-config.h"
 #include "avatar/avatar.h"
 #include "config/player-settings.h"
@@ -193,6 +194,10 @@ static void resetPresentationAfterRespawn(Player& player, const SnapshotTransfor
             }
         }
     }
+
+    // Re-seed presentation serial baselines so the new life never replays
+    // events that already occurred in the previous life.
+    baselinePresentationSerials(player, target);
 
     printf("[NET PRESENTATION RESPAWN] entityId=%u epoch=%u pos=(%.2f,%.2f,%.2f)\n",
            target.networkEntityId, (unsigned)target.transformEpoch,

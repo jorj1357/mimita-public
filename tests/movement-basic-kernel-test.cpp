@@ -211,9 +211,9 @@ void legacyBasicStep(Player& player,
     }
 
     if (command.movementDirectionPressed || command.dashPressed || command.freezeHeld) {
-        const float upZ = player.externalImpulse.z > 0.0f ? player.externalImpulse.z : 0.0f;
+        // Default-mode behavior: movement/dash/freeze input kills all external
+        // velocity (no upward-Z preservation) so the player regains control.
         player.externalImpulse = glm::vec3(0.0f);
-        player.externalImpulse.z = upZ;
     }
 
     if (command.movementDirectionPressed && player.dash.frictionOverride >= 1.0f)
@@ -586,14 +586,14 @@ void testExternalImpulse()
     directClear.externalImpulse = glm::vec3(10.0f, -20.0f, 5.0f);
     MovementCommand move = commandFor(glm::vec2(1.0f, 0.0f));
     applyBasicExternalImpulseControl(directClear, move);
-    checkVec3(directClear.externalImpulse, glm::vec3(0.0f, 0.0f, 5.0f),
-              "WASD clears horizontal external impulse and preserves positive Z before friction");
+    checkVec3(directClear.externalImpulse, glm::vec3(0.0f, 0.0f, 0.0f),
+              "WASD clears all external impulse (default mode)");
 
     MovementState wasd = defaultState(false);
     wasd.externalImpulse = glm::vec3(10.0f, -20.0f, 5.0f);
     simulateBasicMovementStep(wasd, move, config, collisionFor(false), kDt);
-    checkVec3(wasd.externalImpulse, glm::vec3(0.0f, 0.0f, 5.0f) * impulseDecay,
-              "WASD clear then friction decays preserved Z");
+    checkVec3(wasd.externalImpulse, glm::vec3(0.0f, 0.0f, 0.0f),
+              "WASD clear then friction keeps external impulse at zero");
 
     glm::vec3 clamped(300.0f, 0.0f, 0.0f);
     movementDecayAndClampExternalImpulse(clamped, config, 1.0f, kDt);

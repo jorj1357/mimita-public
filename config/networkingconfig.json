@@ -39,6 +39,13 @@
     "chunk_reassembly_timeout_ms": 1000
   },
 
+  "remote_entity_lifecycle": {
+    "comment": "A remote entity is only removed after being absent from this many complete, newer membership snapshots for at least this many ms. Brief packet gaps, jitter, reorder, and blackouts cannot destroy players.",
+    "missing_snapshot_confirmation_count": 3,
+    "missing_snapshot_grace_ms": 1000,
+    "require_newer_complete_snapshots": true
+  },
+
   "network_timeouts": {
     "client_timeout_ms": 10000,
     "server_timeout_ms": 10000,

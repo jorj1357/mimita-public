@@ -27,6 +27,14 @@
 #include "physics/movement/movement-types.h"
 #include "tinygltf/tiny_gltf.h"
 
+// Clears the shared immutable player-GLB parse cache. Immutable parsed model
+// data (skeleton, colliders, part meshes) is cached per resolved path so
+// creating many remote-player replicas reuses parsed assets instead of
+// re-reading and re-parsing the GLB. Call only when models may have changed
+// on disk (e.g. asset reload); never on normal replica create/destroy.
+void clearPlayerModelCache();
+
+
 
 struct ReplayBodyPartState;
 

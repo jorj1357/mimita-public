@@ -212,6 +212,23 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
             clampMin(readDouble(r, "chunk_reassembly_timeout_ms", c.chunkReassemblyTimeoutSeconds * 1000.0) / 1000.0, 0.05);
     }
 
+    // ── remote_entity_lifecycle ───────────────────────────────────────
+    if (root.contains("remote_entity_lifecycle") &&
+        root["remote_entity_lifecycle"].is_object())
+    {
+        const json& r = root["remote_entity_lifecycle"];
+        RemoteEntityLifecycleConfig& c = next.remoteEntityLifecycle;
+        c.missingSnapshotConfirmationCount = (uint32_t)clampMin(
+            readDouble(r, "missing_snapshot_confirmation_count",
+                       (double)c.missingSnapshotConfirmationCount),
+            1.0);
+        c.missingSnapshotGraceMs = clampMin(
+            readDouble(r, "missing_snapshot_grace_ms", c.missingSnapshotGraceMs),
+            0.0);
+        c.requireNewerCompleteSnapshots =
+            readBool(r, "require_newer_complete_snapshots", c.requireNewerCompleteSnapshots);
+    }
+
     // ── network_timeouts ──────────────────────────────────────────────
     if (root.contains("network_timeouts") && root["network_timeouts"].is_object())
     {

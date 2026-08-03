@@ -382,7 +382,21 @@ static std::vector<unsigned char> buildAtlasPixels(const AvatarDefinition& avata
 }
 
 bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
+    // Reuse the existing atlas texture when the avatar definition has not
+    // changed since it was built. Multiple remote-player replicas share the
+    // same avatar, so recreating one should not rebuild the whole atlas.
+    if (!reloadTextures && mAtlasTexture != 0 &&
+        mLastAtlasAvatarName == mAvatarName &&
+        mLastAtlasBuildGeneration == mAtlasGeneration)
+    {
+        printf("[AVATAR CACHE] atlas=%s generation=%d result=hit\n",
+               mAvatarName.c_str(), mAtlasGeneration);
+        return true;
+    }
+
     mAtlasGeneration++;
+    mLastAtlasAvatarName = mAvatarName;
+    mLastAtlasBuildGeneration = mAtlasGeneration;
     printf("[AVATAR ATLAS] buildAtlas: advancedMode=%d relayTextures=%d generation=%d\n",
            (int)mAvatar.advancedMode, (int)reloadTextures, mAtlasGeneration);
 

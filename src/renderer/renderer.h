@@ -25,4 +25,9 @@ struct Renderer {
     bool shouldClose();
     void shutdown();
     void applyVideoMode(int w, int h, bool fullscreen);
+    void setVSync(bool on);
+    bool vsync() const { return mVSync; }
+
+private:
+    bool mVSync = false;
 };

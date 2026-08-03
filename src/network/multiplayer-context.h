@@ -14,6 +14,7 @@
 #include "network/packets.h"
 #include "network/projectile-terminal-dedupe.h"
 #include "network/movement-validation.h"
+#include "network/remote-entity-lifecycle.h"
 #include "entities/player.h"
 
 #include <string>
@@ -183,6 +184,12 @@ struct EntityInterpolationState
     // same-tick snapshots replace, and the newest entry mirrors `target`.
     std::deque<SnapshotTransform> buffer;
 
+    // Missing-from-snapshot grace tracking. An entity absent from one
+    // (or a few) snapshots is retained; removal requires repeated absence
+    // across newer complete snapshots over a grace period. Counters reset
+    // whenever the entity is seen again.
+    MissingEntityTracker missingTracker;
+
     // Newest snapshot (== buffer.back() when buffer non-empty). Kept for the
     // legacy two-snapshot fallback path and for state/event VFX sourcing.
     SnapshotTransform previous;
@@ -339,6 +346,11 @@ struct MultiplayerContext
     // ── Snapshot lifecycle tracking for stale-state rejection ─────────
     uint32_t latestLocalSnapshotTick = 0;
     uint32_t latestAliveSnapshotTick = 0;
+    // Newest complete authoritative snapshot tick whose entity membership
+    // (creation/destruction/removal/player-list) was applied. A snapshot
+    // with tick < latestAppliedMembershipTick must never create, destroy,
+    // remove, or revive remote entities; it may only feed interpolation.
+    uint32_t latestAppliedMembershipTick = 0;
 
     // ── Pending projectile fire requests (retransmission) ────────────
     struct PendingFireRequest {

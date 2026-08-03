@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <algorithm>
 #include "devtools/terminal.h"
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
@@ -306,5 +307,25 @@ void registerDebugCommands()
             Terminal::instance().addLog(std::string("[GUI] highlight_dynamic=") + (highlight ? "1" : "0"));
         },
         "2026-07-12", CommandCategory::Debug
+    });
+    Terminal::instance().registerCommand({
+        "sim.catchup",
+        "Set the max fixed simulation ticks that can be caught up per frame after a stall (default 6)",
+        "sim.catchup <ticks>",
+        [](const std::vector<std::string>& args) {
+            extern int gSimMaxCatchupTicks;
+            if (args.empty()) {
+                Terminal::instance().addLog(
+                    std::string("[SIM] gSimMaxCatchupTicks=") + std::to_string(gSimMaxCatchupTicks));
+                return;
+            }
+            int value = 6;
+            try { value = std::stoi(args[0]); }
+            catch (...) { value = 6; }
+            gSimMaxCatchupTicks = std::clamp(value, 1, 120);
+            Terminal::instance().addLog(
+                std::string("[SIM] gSimMaxCatchupTicks=") + std::to_string(gSimMaxCatchupTicks));
+        },
+        "2026-08-03", CommandCategory::Debug
     });
 }
