@@ -5,6 +5,7 @@ import {
   BrowserRouter,
   Routes,
   Route,
+  Navigate,
 } from "react-router-dom"
 
 import "./App.css"
@@ -96,6 +97,11 @@ ReactDOM.createRoot(
         <Route
           path="/terms"
           element={<Terms />}
+        />
+
+        <Route
+          path="/privacy"
+          element={<Navigate to="/terms" replace />}
         />
 
         <Route
