@@ -129,7 +129,7 @@ async function makeActive(client, bannerId, durationDays) {
         `UPDATE site_banners
          SET status = 'active',
              starts_at = NOW(),
-             expires_at = NOW() + make_interval(days => $2::double precision),
+             expires_at = NOW() + ($2 * INTERVAL '1 day'),
              remaining_days = NULL,
              updated_at = NOW()
          WHERE id = $1
@@ -218,7 +218,7 @@ export async function advanceBannerQueue(client) {
         `UPDATE site_banners
          SET status = 'active',
              starts_at = NOW(),
-             expires_at = NOW() + make_interval(days => $2::double precision),
+             expires_at = NOW() + ($2 * INTERVAL '1 day'),
              remaining_days = NULL,
              updated_at = NOW()
          WHERE id = $1 AND status = 'queued'`,

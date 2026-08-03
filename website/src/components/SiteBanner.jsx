@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { Link, useLocation } from "react-router-dom"
 import { apiRequest } from "../lib/api.js"
-import { formatCountdown, isBannerDismissed, dismissBanner } from "../lib/bannerUtils.js"
+import { formatCountdown, isBannerCollapsed, setBannerCollapsed } from "../lib/bannerUtils.js"
 import "../styles/banner.css"
 
 const CACHE_TTL_MS = 30_000
@@ -29,13 +29,18 @@ export default function SiteBanner() {
     const location = useLocation()
     const [banner, setBanner] = useState(null)
     const [now, setNow] = useState(0)
-    const [hidden, setHidden] = useState(false)
+    const [collapsed, setCollapsed] = useState(false)
     const [reported, setReported] = useState(false)
     const [reportError, setReportError] = useState("")
 
     useEffect(() => {
         let active = true
-        fetchActiveBanner().then(b => { if (active) setBanner(b) })
+        fetchActiveBanner().then(b => {
+            if (active) {
+                setBanner(b)
+                if (b) setCollapsed(isBannerCollapsed(b.id))
+            }
+        })
         return () => { active = false }
     }, [location.pathname])
 
@@ -47,11 +52,12 @@ export default function SiteBanner() {
         return () => clearInterval(timer)
     }, [banner])
 
-    if (!banner || hidden || isBannerDismissed(banner.id)) return null
+    if (!banner) return null
 
-    function handleHide() {
-        dismissBanner(banner.id)
-        setHidden(true)
+    function toggleCollapse() {
+        const next = !collapsed
+        setCollapsed(next)
+        setBannerCollapsed(banner.id, next)
     }
 
     async function handleReport() {
@@ -66,6 +72,26 @@ export default function SiteBanner() {
         catch (e) {
             setReportError(e.status === 401 ? "sign in to report" : "report failed")
         }
+    }
+
+    if (collapsed) {
+        return (
+            <div
+                className="siteBanner siteBannerCollapsed"
+                style={{ backgroundColor: banner.background_color, color: banner.text_color }}
+            >
+                <span className="siteBannerCollapsedText">Banner hidden</span>
+                <button
+                    type="button"
+                    className="siteBannerCollapseArrow"
+                    onClick={toggleCollapse}
+                    aria-expanded="false"
+                    aria-label="expand banner"
+                >
+                    ▸
+                </button>
+            </div>
+        )
     }
 
     return (
@@ -106,16 +132,14 @@ export default function SiteBanner() {
                         report this banner
                     </button>
                 )}
-                <button type="button" className="siteBannerBtn" onClick={handleHide}>
-                    hide banner
-                </button>
                 <button
                     type="button"
-                    className="siteBannerClose"
-                    onClick={handleHide}
-                    aria-label="close banner"
+                    className="siteBannerCollapseArrow"
+                    onClick={toggleCollapse}
+                    aria-expanded="true"
+                    aria-label="collapse banner"
                 >
-                    &times;
+                    ▾
                 </button>
             </div>
             {reportError && <span className="siteBannerError">{reportError}</span>}

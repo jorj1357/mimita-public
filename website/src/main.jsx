@@ -47,7 +47,9 @@ import AdminArticleEditor from "./pages/AdminArticleEditor"
 import Jorj from "./pages/Socials-jorj"
 import BannerCreate from "./pages/BannerCreate"
 import BannerSuccess from "./pages/BannerSuccess"
+import BannerStatus from "./pages/BannerStatus"
 import AdminBanner from "./pages/AdminBanner"
+import AdminSupport from "./pages/AdminSupport"
 
 /* =========================
    APP
@@ -108,7 +110,9 @@ ReactDOM.createRoot(
         <Route path="/banner" element={<BannerCreate />} />
         <Route path="/banner/create" element={<BannerCreate />} />
         <Route path="/banner/success" element={<BannerSuccess />} />
+        <Route path="/banner/status" element={<BannerStatus />} />
         <Route path="/admin/banners" element={<AdminBanner />} />
+        <Route path="/admin/support" element={<AdminSupport />} />
 
         <Route path="*" element={<NotFound />} />
 

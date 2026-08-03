@@ -3,54 +3,91 @@ import "../App.css"
 import "../styles/support.css"
 import Layout from "../components/Layout"
 import PixelBox from "../components/PixelBox"
+import { apiRequest } from "../lib/api.js"
+
+const TOPICS = [
+    { value: "user_issue", label: "Issue with another user" },
+    { value: "game_issue", label: "Issue with the MiMITA game" },
+    { value: "payment_finance", label: "Issue with payment or finance" },
+    { value: "security", label: "Issue with security, hacks, or attempted hacks" },
+    { value: "other", label: "Other" }
+]
 
 export default function Support() {
-  const [email, setEmail] = useState("")
-  const [subject, setSubject] = useState("")
-  const [message, setMessage] = useState("")
-  const [sent, setSent] = useState(false)
+    const [email, setEmail] = useState("")
+    const [topic, setTopic] = useState("game_issue")
+    const [subject, setSubject] = useState("")
+    const [message, setMessage] = useState("")
+    const [url, setUrl] = useState("")
+    const [bannerOrderId, setBannerOrderId] = useState("")
+    const [sent, setSent] = useState(false)
+    const [error, setError] = useState("")
 
-  async function handleSubmit(e) {
-    e.preventDefault()
-    try {
-      const res = await fetch("/api/support", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, subject, message })
-      })
-      if (res.ok) {
-        setSent(true)
-        setEmail("")
-        setSubject("")
-        setMessage("")
-      }
-    } catch (_) {}
-  }
+    async function handleSubmit(e) {
+        e.preventDefault()
+        setError("")
+        try {
+            const data = await apiRequest("/api/support", {
+                method: "POST",
+                body: JSON.stringify({
+                    email, topic, subject, message, url,
+                    banner_order_id: bannerOrderId ? Number(bannerOrderId) : null
+                })
+            })
+            if (data?.success) {
+                setSent(true)
+                setEmail("")
+                setSubject("")
+                setMessage("")
+                setUrl("")
+                setBannerOrderId("")
+            }
+            else {
+                setError(data?.message || "failed to send")
+            }
+        }
+        catch (e2) {
+            setError(e2.message || "failed to send")
+        }
+    }
 
-  return (
-    <Layout>
-      <div className="supportPage">
-        <h1 className="supportTitle">SUPPORT</h1>
+    return (
+        <Layout>
+            <div className="supportPage">
+                <h1 className="supportTitle">SUPPORT</h1>
 
-        <PixelBox>
-          {sent ? (
-            <p className="supportSent">Your message has been sent. We will get back to you at {email}.</p>
-          ) : (
-            <form className="supportForm" onSubmit={handleSubmit}>
-              <label className="supportLabel">Your Email</label>
-              <input className="supportInput" type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="you@example.com" />
+                <PixelBox>
+                    {sent ? (
+                        <p className="supportSent">Your message has been sent. We will get back to you at {email}.</p>
+                    ) : (
+                        <form className="supportForm" onSubmit={handleSubmit}>
+                            <label className="supportLabel">Topic (required)</label>
+                            <select className="supportInput" value={topic} onChange={e => setTopic(e.target.value)}>
+                                {TOPICS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                            </select>
 
-              <label className="supportLabel">Subject</label>
-              <input className="supportInput" type="text" value={subject} onChange={e => setSubject(e.target.value)} required placeholder="What is this about?" />
+                            <label className="supportLabel">Your Email</label>
+                            <input className="supportInput" type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="you@example.com" />
 
-              <label className="supportLabel">Message</label>
-              <textarea className="supportTextarea" value={message} onChange={e => setMessage(e.target.value)} required rows={6} placeholder="Describe your issue in detail..." />
+                            <label className="supportLabel">Subject</label>
+                            <input className="supportInput" type="text" value={subject} onChange={e => setSubject(e.target.value)} required placeholder="What is this about?" />
 
-              <button type="submit" className="supportSubmit">Send</button>
-            </form>
-          )}
-        </PixelBox>
-      </div>
-    </Layout>
-  )
+                            <label className="supportLabel">Message</label>
+                            <textarea className="supportTextarea" value={message} onChange={e => setMessage(e.target.value)} required rows={6} placeholder="Describe your issue in detail..." />
+
+                            <label className="supportLabel">Relevant URL (optional)</label>
+                            <input className="supportInput" type="text" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://..." />
+
+                            <label className="supportLabel">Related banner order ID (optional)</label>
+                            <input className="supportInput" type="number" min="1" value={bannerOrderId} onChange={e => setBannerOrderId(e.target.value)} placeholder="for payment or finance issues" />
+
+                            {error && <p className="supportError">{error}</p>}
+
+                            <button type="submit" className="supportSubmit">Send</button>
+                        </form>
+                    )}
+                </PixelBox>
+            </div>
+        </Layout>
+    )
 }

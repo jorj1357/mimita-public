@@ -1,13 +1,14 @@
 // 08 02 2026, 23 30
 /* purpose
-* Pure helpers for the banner UI: countdown formatting and local-only dismissal.
+* Pure helpers for the banner UI: countdown formatting and local-only collapse.
 * Countdown is computed client-side from an absolute expires_at timestamp so the
-* page never polls the server every second.
+* page never polls the server every second. Collapse is reversible and never
+* deletes or disables a banner.
 * DOES NOT make network requests.
 * DOES NOT touch banner state on the server.
 */
 
-const SESSION_KEY_PREFIX = "banner_dismissed_"
+const SESSION_KEY_PREFIX = "banner_collapsed_"
 
 export function formatCountdown(expiresAt, now = Date.now()) {
     const expiry = new Date(expiresAt).getTime()
@@ -21,7 +22,7 @@ export function formatCountdown(expiresAt, now = Date.now()) {
     return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
 }
 
-export function isBannerDismissed(bannerId) {
+export function isBannerCollapsed(bannerId) {
     if (!bannerId) return false
     try {
         return window.sessionStorage.getItem(SESSION_KEY_PREFIX + bannerId) === "1"
@@ -31,12 +32,17 @@ export function isBannerDismissed(bannerId) {
     }
 }
 
-export function dismissBanner(bannerId) {
+export function setBannerCollapsed(bannerId, collapsed) {
     if (!bannerId) return
     try {
-        window.sessionStorage.setItem(SESSION_KEY_PREFIX + bannerId, "1")
+        if (collapsed) {
+            window.sessionStorage.setItem(SESSION_KEY_PREFIX + bannerId, "1")
+        }
+        else {
+            window.sessionStorage.removeItem(SESSION_KEY_PREFIX + bannerId)
+        }
     }
     catch {
-        // storage unavailable: dismissal simply won't persist
+        // storage unavailable: collapse simply will not persist
     }
 }

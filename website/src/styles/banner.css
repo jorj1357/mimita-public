@@ -88,6 +88,81 @@
   opacity: 0.9;
 }
 
+.siteBannerCollapsed {
+  padding: 0.25rem 0.75rem;
+  min-height: 1.4rem;
+}
+
+.siteBannerCollapsedText {
+  font-size: 0.7rem;
+  opacity: 0.8;
+}
+
+.siteBannerCollapseArrow {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.25rem 0.4rem;
+  opacity: 0.85;
+}
+
+.siteBannerCollapseArrow:hover {
+  opacity: 1;
+}
+
+.siteBannerCollapseArrow:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.bannerCreatorRules {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.82rem;
+  opacity: 0.85;
+  line-height: 1.6;
+}
+
+.bannerSuccessSpinner {
+  width: 2rem;
+  height: 2rem;
+  border: 3px solid rgba(255,255,255,0.2);
+  border-top-color: #40e0d0;
+  border-radius: 50%;
+  animation: bannerSpin 0.8s linear infinite;
+  margin: 1rem 0;
+}
+
+@keyframes bannerSpin {
+  to { transform: rotate(360deg); }
+}
+
+.bannerSuccessActions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+.bannerSuccessLink {
+  color: #000;
+  text-decoration: none;
+  background: #40e0d0;
+}
+
+.bannerStatusItem {
+  border: 1px solid rgba(255,255,255,0.12);
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.bannerSuccessSpinner[aria-hidden="true"] {
+  display: block;
+}
+
 /* =========================
    BANNER CREATOR
 ========================= */

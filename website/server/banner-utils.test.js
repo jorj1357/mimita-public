@@ -1,12 +1,12 @@
 // 08 03 2026, 01 10
 /* purpose
-* Tests for the banner UI helpers: countdown formatting and local-only dismissal.
+* Tests for the banner UI helpers: countdown formatting and local-only collapse.
 * DOES NOT touch the server or the database.
 */
 
 import test from "node:test"
 import assert from "node:assert/strict"
-import { formatCountdown, isBannerDismissed, dismissBanner } from "../src/lib/bannerUtils.js"
+import { formatCountdown, isBannerCollapsed, setBannerCollapsed } from "../src/lib/bannerUtils.js"
 
 test("formatCountdown renders hh:mm:ss from expires_at", () => {
     const base = 1_000_000_000_000
@@ -24,10 +24,10 @@ test("formatCountdown is safe for invalid dates", () => {
     assert.equal(formatCountdown(undefined, Date.now()), "")
 })
 
-test("dismissal helpers are local-only and safe without a browser window", () => {
+test("collapse helpers are local-only and safe without a browser window", () => {
     // In Node there is no window.sessionStorage; helpers must not throw.
-    assert.equal(isBannerDismissed(1), false)
-    dismissBanner(1)
-    dismissBanner(null)
-    assert.equal(isBannerDismissed(null), false)
+    assert.equal(isBannerCollapsed(1), false)
+    setBannerCollapsed(1, true)
+    setBannerCollapsed(null, true)
+    assert.equal(isBannerCollapsed(null), false)
 })

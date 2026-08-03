@@ -139,7 +139,7 @@ function createCheckoutSessionRouter(deps = {}) {
                     banner_order_id: String(orderId),
                     source: FLOW_SOURCE
                 },
-                success_url: frontendUrl(req, "/banner/success"),
+                success_url: frontendUrl(req, `/banner/success?order_id=${orderId}`),
                 cancel_url: frontendUrl(req, "/banner")
             })
 
