@@ -1,0 +1,312 @@
+/* =========================
+   SITE BANNER
+========================= */
+
+.siteBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 1rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  border-bottom: 1px solid rgba(255,255,255,0.15);
+  flex-wrap: wrap;
+}
+
+.siteBannerMain {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.siteBannerMessage {
+  font-weight: 700;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.siteBannerMessage:hover {
+  text-decoration: underline;
+}
+
+.siteBannerInfo {
+  opacity: 0.75;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.siteBannerAuthor {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.siteBannerActions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.siteBannerBtn {
+  background: none;
+  border: 1px solid currentColor;
+  color: inherit;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.7rem;
+  cursor: pointer;
+  text-decoration: none;
+  opacity: 0.85;
+  font-family: inherit;
+}
+
+.siteBannerBtn:hover {
+  opacity: 1;
+}
+
+.siteBannerClose {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.2rem;
+  opacity: 0.8;
+}
+
+.siteBannerClose:hover {
+  opacity: 1;
+}
+
+.siteBannerError {
+  flex-basis: 100%;
+  font-size: 0.7rem;
+  opacity: 0.9;
+}
+
+/* =========================
+   BANNER CREATOR
+========================= */
+
+.bannerCreator {
+  width: min(640px, 100%);
+  margin: 0 auto;
+  padding: 2rem 1.25rem;
+}
+
+.bannerCreatorTitle {
+  font-size: clamp(1.5rem, 4vmin, 2.2rem);
+  letter-spacing: 0.04em;
+  margin-bottom: 0.75rem;
+}
+
+.bannerCreatorBlurb {
+  opacity: 0.8;
+  font-size: 0.9rem;
+  border-left: 3px solid rgba(255,255,255,0.2);
+  padding-left: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.bannerCreatorForm {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.bannerCreatorField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.bannerCreatorField label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+}
+
+.bannerCreatorField textarea,
+.bannerCreatorField input[type="text"],
+.bannerCreatorSelect {
+  background: #0d0d0d;
+  border: 1px solid rgba(255,255,255,0.25);
+  color: #e8e0d0;
+  padding: 0.6rem 0.75rem;
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+.bannerCreatorField input[type="color"] {
+  width: 56px;
+  height: 38px;
+  border: 1px solid rgba(255,255,255,0.25);
+  background: #0d0d0d;
+  cursor: pointer;
+}
+
+.bannerCreatorCounter {
+  font-size: 0.72rem;
+  opacity: 0.5;
+  text-align: right;
+}
+
+.bannerCreatorModes {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.bannerCreatorMode {
+  flex: 1;
+  padding: 0.55rem;
+  background: #0d0d0d;
+  border: 1px solid rgba(255,255,255,0.25);
+  color: #ccc;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.bannerCreatorMode.active {
+  background: #1a1a2e;
+  border-color: #557;
+  color: #aabbdd;
+}
+
+.bannerCreatorSelect {
+  width: 100%;
+}
+
+.bannerCreatorPrice {
+  font-size: 1.05rem;
+}
+
+.bannerCreatorNote {
+  font-size: 0.8rem;
+  opacity: 0.75;
+  border: 1px solid rgba(255,255,255,0.15);
+  padding: 0.5rem 0.7rem;
+}
+
+.bannerCreatorAdminNote {
+  font-size: 0.85rem;
+  color: #aabbdd;
+}
+
+.bannerCreatorRow {
+  display: flex;
+  gap: 1rem;
+}
+
+.bannerCreatorRow .bannerCreatorField {
+  flex: 1;
+}
+
+.bannerCreatorError {
+  color: #f87171;
+}
+
+.bannerCreatorSubmit {
+  align-self: flex-start;
+  padding: 0.75rem 1.75rem;
+  background: #40e0d0;
+  color: #000;
+  border: none;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.bannerCreatorSubmit:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+/* =========================
+   ADMIN BANNER TABLE
+========================= */
+
+.bannerAdminTable {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(255,255,255,0.12);
+  overflow-x: auto;
+}
+
+.bannerAdminRow {
+  display: grid;
+  grid-template-columns: 40px 90px 60px 110px 1.6fr 50px 70px 60px 60px 110px 110px 110px 150px;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  font-size: 0.78rem;
+  min-width: 1100px;
+}
+
+.bannerAdminRowHead {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
+  font-size: 0.68rem;
+  position: sticky;
+  top: 0;
+  background: #0a0a0a;
+}
+
+.bannerAdminMsg {
+  overflow-wrap: anywhere;
+}
+
+.bannerAdminUrl {
+  color: #7799cc;
+  opacity: 0.8;
+}
+
+.bannerAdminEdit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.bannerAdminEdit input {
+  background: #0d0d0d;
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #e8e0d0;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.4rem;
+}
+
+.bannerAdminActions {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.bannerAdminBtn {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  color: #bbb;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-family: inherit;
+}
+
+.bannerAdminBtn:hover {
+  background: #222;
+  color: #eee;
+}
+
+@media (max-width: 640px) {
+  .bannerCreatorRow {
+    flex-direction: column;
+  }
+}
+

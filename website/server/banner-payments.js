@@ -13,10 +13,17 @@ import Stripe from "stripe"
 import { pool } from "./db.js"
 import { authenticate } from "./session.js"
 import { createRateLimit } from "./rateLimit.js"
+import {
+    BANNER_CONFIG,
+    PRICE_CENTS_PER_DAY,
+    PAID_KIND,
+    validateBannerContent,
+    placeBanner,
+    userOnCooldown
+} from "./site-banner.js"
 
-export const MIN_DAYS = 1
-export const MAX_DAYS = 7
-export const PRICE_CENTS_PER_DAY = 100
+export const MIN_DAYS = BANNER_CONFIG.paid_min_days
+export const MAX_DAYS = BANNER_CONFIG.paid_max_days
 export const ORDER_CURRENCY = "usd"
 export const FLOW_SOURCE = "mimita_banner"
 
@@ -76,8 +83,29 @@ function createCheckoutSessionRouter(deps = {}) {
                 })
             }
 
+            const validation = validateBannerContent(req.body)
+            if (!validation.ok) {
+                return res.status(400).json({ success: false, message: validation.error })
+            }
+            const v = validation.value
+
+            if (await userOnCooldown(query, req.user.id)) {
+                return res.status(429).json({
+                    success: false,
+                    message: `you can create a banner once every ${BANNER_CONFIG.cooldown_minutes} minutes`
+                })
+            }
+
             // Price is always derived server-side; a browser-supplied price is never trusted.
             const amountCents = amountCentsForDays(durationDays)
+
+            const bannerResult = await query(
+                `INSERT INTO site_banners (user_id, kind, days, message, target_url, background_color, text_color, status)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'draft')
+                 RETURNING id`,
+                [req.user.id, PAID_KIND, durationDays, v.message, v.target_url, v.background_color, v.text_color]
+            )
+            const bannerId = bannerResult.rows[0].id
 
             const orderResult = await query(
                 `INSERT INTO banner_payment_orders (user_id, duration_days, amount_cents, currency, status)
@@ -86,6 +114,13 @@ function createCheckoutSessionRouter(deps = {}) {
                 [req.user.id, durationDays, amountCents, ORDER_CURRENCY]
             )
             const orderId = orderResult.rows[0].id
+
+            await query(
+                `UPDATE site_banners
+                 SET payment_order_id = $1, status = 'pending_payment', updated_at = NOW()
+                 WHERE id = $2`,
+                [orderId, bannerId]
+            )
 
             const session = await stripe.checkout.sessions.create({
                 mode: "payment",
@@ -104,8 +139,8 @@ function createCheckoutSessionRouter(deps = {}) {
                     banner_order_id: String(orderId),
                     source: FLOW_SOURCE
                 },
-                success_url: frontendUrl(req, "/banner-pay-test?status=success"),
-                cancel_url: frontendUrl(req, "/banner-pay-test?status=cancelled")
+                success_url: frontendUrl(req, "/banner/success"),
+                cancel_url: frontendUrl(req, "/banner")
             })
 
             await query(
@@ -120,6 +155,7 @@ function createCheckoutSessionRouter(deps = {}) {
                 url: session.url,
                 session_id: session.id,
                 order_id: orderId,
+                banner_id: bannerId,
                 amount_cents: amountCents
             })
         }
@@ -135,7 +171,7 @@ function createWebhookRouter(deps = {}) {
     const {
         stripe = getStripe(),
         webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || null,
-        query = (text, params) => pool.query(text, params)
+        getClient = () => pool.connect()
     } = deps
 
     const router = Router()
@@ -182,48 +218,73 @@ function createWebhookRouter(deps = {}) {
                 return res.status(400).json({ success: false, message: "invalid amount" })
             }
 
-            const result = await query(
-                `UPDATE banner_payment_orders
-                 SET status = 'paid',
-                     paid_at = COALESCE(paid_at, NOW()),
-                     stripe_event_id = $1,
-                     stripe_checkout_session_id = COALESCE(NULLIF(stripe_checkout_session_id, ''), $2),
-                     updated_at = NOW()
-                 WHERE id = $3
-                   AND status = 'pending'
-                   AND amount_cents = $4
-                   AND currency = $5
-                 RETURNING id, status`,
-                [event.id, session.id, orderId, sessionAmountCents, sessionCurrency]
-            )
+            const client = await getClient()
+            try {
+                await client.query("BEGIN")
 
-            if (result.rowCount > 0) {
-                return res.json({ success: true, order_id: orderId, status: "paid" })
+                // Mark the order paid exactly once, guarded by status + amount/currency.
+                const result = await client.query(
+                    `UPDATE banner_payment_orders
+                     SET status = 'paid',
+                         paid_at = COALESCE(paid_at, NOW()),
+                         stripe_event_id = $1,
+                         stripe_checkout_session_id = COALESCE(NULLIF(stripe_checkout_session_id, ''), $2),
+                         updated_at = NOW()
+                     WHERE id = $3
+                       AND status = 'pending'
+                       AND amount_cents = $4
+                       AND currency = $5
+                     RETURNING id, duration_days, user_id`,
+                    [event.id, session.id, orderId, sessionAmountCents, sessionCurrency]
+                )
+
+                if (result.rowCount > 0) {
+                    // Order transitioned pending -> paid in this call. Activate its banner
+                    // in the same transaction. A duplicate delivery can never reach here.
+                    const bannerResult = await client.query(
+                        `SELECT id FROM site_banners
+                         WHERE payment_order_id = $1 AND status = 'pending_payment'`,
+                        [orderId]
+                    )
+                    if (bannerResult.rows.length) {
+                        await placeBanner(client, bannerResult.rows[0].id)
+                    }
+                    await client.query("COMMIT")
+                    return res.json({ success: true, order_id: orderId, status: "paid" })
+                }
+
+                // No pending order matched: duplicate, mismatch, or unknown.
+                const check = await client.query(
+                    `SELECT status, amount_cents, currency FROM banner_payment_orders WHERE id = $1`,
+                    [orderId]
+                )
+                if (check.rows.length === 0) {
+                    await client.query("ROLLBACK")
+                    return res.status(400).json({ success: false, message: "order not found" })
+                }
+
+                const row = check.rows[0]
+
+                if (row.status === "paid") {
+                    await client.query("ROLLBACK")
+                    return res.json({ success: true, duplicate: true })
+                }
+
+                if (Number(row.amount_cents) !== sessionAmountCents || String(row.currency).toLowerCase() !== sessionCurrency) {
+                    await client.query("ROLLBACK")
+                    return res.status(400).json({ success: false, message: "amount or currency mismatch" })
+                }
+
+                await client.query("ROLLBACK")
+                return res.status(400).json({ success: false, message: "order cannot be paid" })
             }
-
-            // No pending order matched. Determine whether this is a duplicate,
-            // a mismatch, or an unknown order.
-            const check = await query(
-                `SELECT status, amount_cents, currency FROM banner_payment_orders WHERE id = $1`,
-                [orderId]
-            )
-
-            if (check.rows.length === 0) {
-                return res.status(400).json({ success: false, message: "order not found" })
+            catch {
+                await client.query("ROLLBACK").catch(() => {})
+                res.status(500).json({ success: false, message: "webhook processing failed" })
             }
-
-            const row = check.rows[0]
-
-            if (row.status === "paid") {
-                // Duplicate delivery: already paid exactly once. Always 200.
-                return res.json({ success: true, duplicate: true })
+            finally {
+                client.release()
             }
-
-            if (Number(row.amount_cents) !== sessionAmountCents || String(row.currency).toLowerCase() !== sessionCurrency) {
-                return res.status(400).json({ success: false, message: "amount or currency mismatch" })
-            }
-
-            return res.status(400).json({ success: false, message: "order cannot be paid" })
         }
         catch {
             res.status(500).json({ success: false, message: "webhook processing failed" })
