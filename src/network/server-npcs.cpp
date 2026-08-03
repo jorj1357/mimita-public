@@ -26,6 +26,7 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <utility>
 
 namespace MimitaNet {
 
@@ -256,11 +257,15 @@ static void broadcastNpcFiring(SOCKET sock,
 }
 
 // Rebuild the snapshot/broadcast ServerNpc map from the simulated NPCs.
+// History is preserved across the rebuild so hit-rewind validation keeps the
+// per-tick poses the clients actually saw (the map is cleared and repopulated
+// every tick, which would otherwise discard all historical samples).
 static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
                                 const NpcSystem& npcSystem,
                                 std::unordered_set<uint32_t>& npcIdsAlive)
 {
-    npcs.clear();
+    std::unordered_map<uint32_t, ServerNpc> next;
+    next.reserve(npcs.size());
     npcIdsAlive.clear();
     for (const Npc& n : npcSystem.all())
     {
@@ -291,9 +296,57 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
                     sn.weaponState |= NET_WEAPON_STATE_EMPTY;
             }
         }
-        npcs[sn.entityId] = sn;
+        auto oldIt = npcs.find(sn.entityId);
+        if (oldIt != npcs.end())
+            sn.posHistory = std::move(oldIt->second.posHistory);
+        next[sn.entityId] = std::move(sn);
         npcIdsAlive.insert(sn.entityId);
     }
+    npcs = std::move(next);
+}
+
+// Record the position actually broadcast to clients this tick so hit-rewind
+// reads exactly what attackers saw (same contract as ServerPlayer::posHistory).
+void pushNpcPositionHistory(ServerNpc& npc, uint32_t tick)
+{
+    npc.posHistory.push_back({npc.pos, npc.vel, npc.yaw, tick});
+    while (npc.posHistory.size() > ServerNpc::MAX_POS_HISTORY)
+        npc.posHistory.pop_front();
+}
+
+// Interpolate the NPC's broadcast pose for a past server tick.
+bool getNpcPositionAtTick(const ServerNpc& npc, uint32_t targetTick, glm::vec3& outPos)
+{
+    if (npc.posHistory.empty())
+        return false;
+    if (targetTick >= npc.posHistory.back().tick)
+    {
+        outPos = npc.posHistory.back().pos;
+        return true;
+    }
+    if (targetTick <= npc.posHistory.front().tick)
+    {
+        outPos = npc.posHistory.front().pos;
+        return true;
+    }
+    for (int i = (int)npc.posHistory.size() - 1; i > 0; --i)
+    {
+        if (npc.posHistory[i].tick == targetTick)
+        {
+            outPos = npc.posHistory[i].pos;
+            return true;
+        }
+        if (npc.posHistory[i].tick < targetTick)
+        {
+            const auto& a = npc.posHistory[i];
+            const auto& b = npc.posHistory[i + 1];
+            const float frac = float(targetTick - a.tick) / float(b.tick - a.tick);
+            outPos = glm::mix(a.pos, b.pos, frac);
+            return true;
+        }
+    }
+    outPos = npc.posHistory.front().pos;
+    return true;
 }
 
 void simulateSharedNpcs(SOCKET sock,
@@ -397,6 +450,12 @@ void simulateSharedNpcs(SOCKET sock,
     }
 
     rebuildServerNpcMap(npcs, npcSystem, npcIdsAlive);
+
+    // Record each NPC's broadcast pose for hit-rewind validation. This runs
+    // after the map rebuild so the recorded pose is exactly what the snapshot
+    // built for this tick will contain (what clients see and shoot at).
+    for (auto& kv : npcs)
+        pushNpcPositionHistory(kv.second, tick);
 
     static uint64_t lastNpcPosLog = 0;
     const uint64_t now = nowMs();

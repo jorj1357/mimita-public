@@ -37,7 +37,8 @@ public:
         Player& player,
         NpcSystem& npcs,
         const World& world,
-        const std::unordered_map<uint32_t, Player>* remotePlayers = nullptr);
+        const std::unordered_map<uint32_t, Player>* remotePlayers = nullptr,
+        std::unordered_map<uint32_t, Player>* remoteNpcs = nullptr);
 
     RevolverShotResult fireAlt(
         Camera& camera,
@@ -108,7 +109,8 @@ private:
         Player& player,
         NpcSystem& npcs,
         const World& world,
-        const std::unordered_map<uint32_t, Player>* remotePlayers);
+        const std::unordered_map<uint32_t, Player>* remotePlayers,
+        std::unordered_map<uint32_t, Player>* remoteNpcs = nullptr);
     void fireGodball(Camera& camera, Player& player, NpcSystem& npcs, const World& world);
     RevolverShotResult fireSwordsword(
         Camera& camera,

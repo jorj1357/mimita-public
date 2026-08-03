@@ -1,11 +1,22 @@
+// 08 03 2026, 15 00
+/* purpose
+* Implements the tip content manager for the client.
+* Parses config/tips.json into a string list, picks random tips without
+* repeating the previous pick, and exposes the last index for numbering.
+* Logs via the centralized Debug system.
+* Does NOT schedule, render, or push notifications.
+*/
 #include "utils/tips.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <random>
 #include <nlohmann/json.hpp>
+
+#include "debug/debug-log.h"
 
 using json = nlohmann::json;
 
@@ -26,7 +37,7 @@ void load()
     std::ifstream file("config/tips.json");
     if (!file.is_open())
     {
-        printf("[TIPS] No tips file found at config/tips.json\n");
+        Debug::log(Debug::Category::Gui, "[TIPS] no tips file found at config/tips.json\n");
         return;
     }
 
@@ -35,7 +46,7 @@ void load()
         file >> j;
         if (!j.is_array())
         {
-            printf("[TIPS] tips.json is not an array\n");
+            Debug::log(Debug::Category::Gui, "[TIPS] tips.json is not an array\n");
             return;
         }
         gTips.clear();
@@ -44,11 +55,11 @@ void load()
             if (item.is_string())
                 gTips.push_back(item.get<std::string>());
         }
-        printf("[TIPS] loaded %zu tips from config/tips.json\n", gTips.size());
+        Debug::log(Debug::Category::Gui, "[TIPS] loaded %zu tips from config/tips.json\n", gTips.size());
     }
     catch (const std::exception& e)
     {
-        printf("[TIPS] failed to parse tips.json: %s\n", e.what());
+        Debug::log(Debug::Category::Gui, "[TIPS] failed to parse tips.json: %s\n", e.what());
     }
 }
 
@@ -70,6 +81,11 @@ std::string getRandomTip()
     }
     gLastIndex = idx;
     return gTips[idx];
+}
+
+int lastIndex()
+{
+    return gLastIndex;
 }
 
 int count()

@@ -155,6 +155,31 @@ void processRemotePlayerHit(
     }
 }
 
+void processRemoteNpcHit(
+    RevolverShotResult& result,
+    const WeaponDefinition& def,
+    const std::string& hitPart,
+    const glm::vec3& hitEnd,
+    float nearest,
+    Player& shooter,
+    uint32_t remoteNpcTargetId)
+{
+    // Server-authoritative hit feedback: the server broadcasts the validated
+    // NpcDamageEvent (hitmarker, blood, damage) for local-shooter NPC hits.
+    // This only records the local predicted tracer endpoint so the client's
+    // beam stops on the visible NPC instead of the wall behind it.
+    (void)def;
+    result.hitEntity = true;
+    result.bodyPart = hitPart;
+    result.end = hitEnd;
+    result.targetId = remoteNpcTargetId;
+    if (GetPlayerSettings().debugCombat)
+        Debug::log(Debug::Category::Weapons,
+            "[REMOTE NPC PREDICT] attacker=%s npcId=%u part=%s dist=%.1f "
+            "server-authoritative\n",
+            shooter.username.c_str(), remoteNpcTargetId, hitPart.c_str(), nearest);
+}
+
 void processPlayerHit(
     RevolverShotResult& result,
     const WeaponDefinition& def,

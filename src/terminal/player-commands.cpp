@@ -91,10 +91,6 @@ void requestSendChatMessage(const std::string& message)
 // Preferences for chat features
 namespace {
     bool gChatWindowEnabled = true;
-    bool gChatTipsEnabled = true;
-    bool gFloatingTipsEnabled = true;
-    bool gNotificationsEnabled = true;
-    uint64_t gNotificationMuteUntilTick = 0;
 }
 
 static bool parseTeleportPosition(
@@ -249,30 +245,6 @@ void registerPlayerCommands()
     });
 
     Terminal::instance().registerCommand({
-        "chattips", "Show or hide automated chat tips (0=hide, 1=show)", "chattips <0|1>",
-        [](const std::vector<std::string>& args) {
-            if (args.empty()) {
-                Terminal::instance().addLog(gChatTipsEnabled ? "[CHAT] chattips 1" : "[CHAT] chattips 0");
-                return;
-            }
-            gChatTipsEnabled = args[0] != "0";
-            Terminal::instance().addLog(gChatTipsEnabled ? "[CHAT] chat tips enabled" : "[CHAT] chat tips disabled");
-        }
-    });
-
-    Terminal::instance().registerCommand({
-        "tips", "Show or hide the floating tip box (0=hide, 1=show)", "tips <0|1>",
-        [](const std::vector<std::string>& args) {
-            if (args.empty()) {
-                Terminal::instance().addLog(gFloatingTipsEnabled ? "[CHAT] tips 1" : "[CHAT] tips 0");
-                return;
-            }
-            gFloatingTipsEnabled = args[0] != "0";
-            Terminal::instance().addLog(gFloatingTipsEnabled ? "[CHAT] floating tips enabled" : "[CHAT] floating tips disabled");
-        }
-    });
-
-    Terminal::instance().registerCommand({
         "listusers", "List all connected users with temporary numeric indices", "listusers",
         [](const std::vector<std::string>&) {
             Player& player = THE_PLAYER;
@@ -319,39 +291,6 @@ void registerPlayerCommands()
             }
             // TODO: Implement permission check and server message broadcast
             Terminal::instance().addLog("[CHAT] servermessage not yet fully implemented");
-        }
-    });
-
-    Terminal::instance().registerCommand({
-        "notifs", "Show or hide notifications (0=hide, 1=show)", "notifs <0|1>",
-        [](const std::vector<std::string>& args) {
-            if (args.empty()) {
-                Terminal::instance().addLog(gNotificationsEnabled ? "[CHAT] notifs 1" : "[CHAT] notifs 0");
-                return;
-            }
-            gNotificationsEnabled = args[0] != "0";
-            Terminal::instance().addLog(gNotificationsEnabled ? "[CHAT] notifications enabled" : "[CHAT] notifications disabled");
-        }
-    });
-
-    Terminal::instance().registerCommand({
-        "notifstempmute", "Temporarily mute notifications for N hours", "notifstempmute <hours>",
-        [](const std::vector<std::string>& args) {
-            if (args.empty()) {
-                Terminal::instance().addLog("[CHAT] usage: notifstempmute <hours>");
-                return;
-            }
-            double hours = std::atof(args[0].c_str());
-            if (hours <= 0.0) {
-                gNotificationMuteUntilTick = 0;
-                Terminal::instance().addLog("[CHAT] notification mute cleared");
-                return;
-            }
-            uint64_t muteTicks = static_cast<uint64_t>(hours * 3600.0 * 60.0);
-            gNotificationMuteUntilTick = 0 + muteTicks; // UI tick clock integration TBD
-            char buf[128];
-            std::snprintf(buf, sizeof(buf), "[CHAT] notifications muted for %.1f hours (%llu ticks)", hours, (unsigned long long)muteTicks);
-            Terminal::instance().addLog(buf);
         }
     });
 

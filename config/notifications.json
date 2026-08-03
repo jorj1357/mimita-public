@@ -3,9 +3,16 @@
   "default_duration_ticks": 300,
   "fade_in_ticks": 12,
   "fade_out_ticks": 30,
+  "anchor": "bottom_right",
   "offset_right": 20,
   "offset_bottom": 10,
+  "offset_top": 10,
+  "offset_left": 20,
   "spacing": 8,
+  "slide_in_px": 200,
+  "panel_alpha": 0.95,
+  "hover_brighten": 0.15,
   "enabled": true,
+  "show_in_game": true,
   "temp_mute_hours": 0
 }

@@ -1022,7 +1022,7 @@ void guiMain(GLFWwindow* win, GameState& state)
     drawAuthCodeDialog(win);
 
     MusicManager::instance().drawAllOverlay();
-    NotificationSystem::instance().render();
+    NotificationSystem::instance().render(false);
     InputCommandSystem::instance().drawInputDebug();
     AnalyticsManager::instance().drawFirstLaunchPopup(win);
     uiRenderFrameDebugOverlay(win, "MENU", false);

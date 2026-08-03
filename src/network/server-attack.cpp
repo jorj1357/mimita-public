@@ -443,20 +443,45 @@ void handleAttackRequest(
             targetDesc.dead = target.dead;
             targets.push_back(targetDesc);
         }
-        // Also include NPCs as trace targets
+        // Also include NPCs as trace targets, validated at the pose the
+        // attacker actually saw. The client fires at the NPC it renders
+        // (rewound to their fire-time snapshot tick), not at the NPC's
+        // current authoritative position, so rewind the NPC like players.
         for (const auto& npcEntry : npcs)
         {
             const ServerNpc& npc = npcEntry.second;
             if (npc.health <= 0)
                 continue;
+            glm::vec3 tracePos = npc.pos;
+            glm::vec3 rewoundPos;
+            if (getNpcPositionAtTick(npc, rewindTick, rewoundPos))
+                tracePos = rewoundPos;
             WeaponExecution::PlayerTarget targetDesc;
             targetDesc.playerId = npc.entityId; // use entityId as pseudo-playerId
             targetDesc.spawnGeneration = 0;
-            targetDesc.position = npc.pos;
+            targetDesc.position = tracePos;
             targetDesc.radius = PLAYER_RADIUS;
             targetDesc.height = PLAYER_HEIGHT;
             targetDesc.dead = false;
             targets.push_back(targetDesc);
+
+            // Debug: surface the visible-pose vs current-pose transform
+            // mismatch that caused moving-target misses. One aggregate line
+            // per second, never per-frame or per-shot spam.
+            static uint64_t lastNpcRewindLog = 0;
+            const uint64_t nowRewind = nowMs();
+            if (nowRewind - lastNpcRewindLog >= 1000)
+            {
+                lastNpcRewindLog = nowRewind;
+                const float drift = glm::length(tracePos - npc.pos);
+                if (drift > 0.05f)
+                    Debug::warn(Debug::Category::NpcCombat,
+                        "[NPC REWIND] npc=%u rewindTick=%u currentTick=%u "
+                        "rewound=(%.2f,%.2f,%.2f) current=(%.2f,%.2f,%.2f) drift=%.2f\n",
+                        npc.entityId, rewindTick, tick,
+                        tracePos.x, tracePos.y, tracePos.z,
+                        npc.pos.x, npc.pos.y, npc.pos.z, drift);
+            }
         }
 
         WeaponExecution::HitscanTraceConfig traceConfig;

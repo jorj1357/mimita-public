@@ -51,7 +51,8 @@ RevolverShotResult tryFireHitscan(
     const World& world,
     const glm::vec3& muzzlePos,
     const glm::vec3& muzzleDir,
-    const std::unordered_map<uint32_t, Player>* remotePlayers)
+    const std::unordered_map<uint32_t, Player>* remotePlayers,
+    std::unordered_map<uint32_t, Player>* remoteNpcs)
 {
     RevolverShotResult result;
 
@@ -59,7 +60,7 @@ RevolverShotResult tryFireHitscan(
     result.fired = true;
     result.start = muzzlePos;
 
-    AimSolution aim = computeAim(camera, world, npcs, muzzlePos, remotePlayers);
+    AimSolution aim = computeAim(camera, world, npcs, muzzlePos, remotePlayers, remoteNpcs);
     logAimDebug("hitscan", camera, aim);
     glm::vec3 shotDirection = aim.direction;
 
@@ -83,7 +84,7 @@ RevolverShotResult tryFireHitscan(
     BeamCollisionResult beam = collideBeam(
         rayOrigin, shotDirection, MAX_SHOT_DISTANCE, def.beamThickness,
         world, &npcs, remotePlayers, nullptr,
-        aim.usesCameraTarget);
+        aim.usesCameraTarget, remoteNpcs);
 
     float nearest = beam.nearest;
     bool hitWorld = beam.hitWorld;
@@ -94,15 +95,16 @@ RevolverShotResult tryFireHitscan(
     float localHeight = beam.localHeight;
     uint32_t remoteTargetId = beam.remoteTargetId;
     const Player* remoteVictim = beam.remoteVictim;
+    uint32_t remoteNpcTargetId = beam.remoteNpcTargetId;
 
     // Use exact surface contact for visuals, entity hits, and world effects.
     // For a miss, hitPosition is the default endpoint at maxDistance.
     result.end = beam.hitPosition;
-    result.hitNormal = victim || remoteVictim ? hitNormal : worldNormal;
+    result.hitNormal = victim || remoteVictim || remoteNpcTargetId ? hitNormal : worldNormal;
 
     // Crosshair aim skips world collision so the beam hits exactly the camera
     // aim point; stop the tracer at that surface instead of running through it.
-    if (aim.usesCameraTarget && !victim && !remoteVictim && !hitWorld)
+    if (aim.usesCameraTarget && !victim && !remoteVictim && !remoteNpcTargetId && !hitWorld)
         result.end = aim.aimPoint;
 
     if (gDebugWeapon)
@@ -111,7 +113,7 @@ RevolverShotResult tryFireHitscan(
                "origin=(%.2f,%.2f,%.2f) direction=(%.4f,%.4f,%.4f) "
                "distance=%.2f sweepCenter=(%.2f,%.2f,%.2f) "
                "surfacePoint=(%.2f,%.2f,%.2f) normal=(%.2f,%.2f,%.2f) "
-               "hitKind=%s\n",
+               "hitKind=%s remoteNpcId=%u\n",
                def.id.c_str(),
                (def.beamThickness > 0.0f) ? "sphere" : "ray",
                def.beamThickness,
@@ -121,7 +123,8 @@ RevolverShotResult tryFireHitscan(
                beam.sweepCenterPosition.x, beam.sweepCenterPosition.y, beam.sweepCenterPosition.z,
                beam.hitPosition.x, beam.hitPosition.y, beam.hitPosition.z,
                worldNormal.x, worldNormal.y, worldNormal.z,
-               victim ? "npc" : (remoteVictim ? "remote" : (hitWorld ? "world" : "none")));
+               victim ? "npc" : (remoteVictim ? "remote" : (remoteNpcTargetId ? "remote_npc" : (hitWorld ? "world" : "none"))),
+               remoteNpcTargetId);
         printf("[BEAM ENDPOINT] muzzle=(%.2f,%.2f,%.2f) rayOrigin=(%.2f,%.2f,%.2f) "
                "sweepCenter=(%.2f,%.2f,%.2f) surfacePoint=(%.2f,%.2f,%.2f) "
                "visualEnd=(%.2f,%.2f,%.2f) diffCenterToSurface=%.2f\n",
@@ -139,7 +142,7 @@ RevolverShotResult tryFireHitscan(
         "[BEAM] beamThickness=%.2f collisionType=%s\n",
         shotDirection.x, shotDirection.y, shotDirection.z,
         result.end.x, result.end.y, result.end.z,
-        victim || remoteVictim ? "entity" : (hitWorld ? "world" : "none"),
+        victim || remoteVictim || remoteNpcTargetId ? "entity" : (hitWorld ? "world" : "none"),
         nearest,
         def.beamThickness,
         (def.beamThickness > 0.0f) ? "SphereCast" : "Raycast");
@@ -159,6 +162,8 @@ RevolverShotResult tryFireHitscan(
         processNpcHit(result, def, *victim, hitPart, hitNormal, result.end, shotDirection, nearest, shooter, npcs, muzzlePos, shotDirection);
     } else if (remoteVictim) {
         processRemotePlayerHit(result, def, hitPart, hitNormal, result.end, shotDirection, nearest, shooter, remoteTargetId, remoteVictim);
+    } else if (remoteNpcTargetId) {
+        processRemoteNpcHit(result, def, hitPart, result.end, nearest, shooter, remoteNpcTargetId);
     } else if (hitWorld) {
         processWorldHit(result, def, result.end, worldNormal, shotDirection, shooter.username);
     } else if (aim.usesCameraTarget) {
@@ -245,7 +250,8 @@ void fireMultiPellet(
     const glm::vec3& muzzlePos,
     const glm::vec3& muzzleDir,
     const std::unordered_map<uint32_t, Player>* remotePlayers,
-    RevolverShotResult& outResult)
+    RevolverShotResult& outResult,
+    std::unordered_map<uint32_t, Player>* remoteNpcs)
 {
     Perf::ScopedTimer _shotgun("Shotgun");
 
@@ -269,7 +275,7 @@ void fireMultiPellet(
     glm::vec3 cameraAimNormal(0.0f, 0.0f, 1.0f);
     {
         auto ts = ShotProfiler::Scope(&shotProf.aimMs);
-        AimSolution aim = computeAim(camera, world, npcs, muzzlePos, remotePlayers);
+        AimSolution aim = computeAim(camera, world, npcs, muzzlePos, remotePlayers, remoteNpcs);
         logAimDebug("multi_pellet", camera, aim);
         baseDir = aim.direction;
         aimUsesCameraTarget = aim.usesCameraTarget;
@@ -315,6 +321,7 @@ void fireMultiPellet(
     glm::vec3 lastHitNormal(0.0f);
     bool anyHitEntity = false;
     bool anyHitWorld = false;
+    int remoteNpcPelletHits = 0;
     int remotePlayersHit = 0;
     float totalRemoteDamage = 0.0f;
     int worldPellets = 0;
@@ -341,7 +348,7 @@ void fireMultiPellet(
                 BeamCollisionResult pelletBeam = collideBeam(
                     pelletOrigin, pelletDir, MAX_SHOT_DISTANCE, def.beamThickness,
                     world, &npcs, remotePlayers, nullptr,
-                    false);
+                    false, remoteNpcs);
                 (void)tc;
 
                 float pelletNearest = pelletBeam.nearest;
@@ -352,6 +359,7 @@ void fireMultiPellet(
                 glm::vec3 pelletHitNml = pelletBeam.hitNormal;
                 uint32_t pelletRemoteTargetId = pelletBeam.remoteTargetId;
                 const Player* pelletRemoteVictim = pelletBeam.remoteVictim;
+                uint32_t pelletRemoteNpcTargetId = pelletBeam.remoteNpcTargetId;
 
                 // Use exact surface contact for pellet visual endpoint
                 glm::vec3 pelletEnd = pelletBeam.hitPosition;
@@ -376,6 +384,15 @@ void fireMultiPellet(
                     processMultiPelletRemoteHit(outResult, def, pelletPart, pelletHitNml, pelletEnd, pelletDir, pelletNearest, shooter, pelletRemoteTargetId, accumulatedDamage, anyHitEntity, lastTargetId, accumulatedKnockback, nearestPelletDist, lastPelletEnd, lastHitNormal, pelletRemoteVictim->username);
                     totalRemoteDamage += accumulatedDamage - damageBefore;
                     ++remotePlayersHit;
+                } else if (pelletRemoteNpcTargetId) {
+                    // Remote NPC hits are server-authoritative; only stop the
+                    // local tracer on the visible NPC so it matches the target.
+                    ++remoteNpcPelletHits;
+                    if (pelletNearest < nearestPelletDist) {
+                        nearestPelletDist = pelletNearest;
+                        lastPelletEnd = pelletEnd;
+                        lastHitNormal = pelletHitNml;
+                    }
                 } else if (hitW) {
                     shotProf.worldHits++;
                     ++worldPellets;
@@ -397,7 +414,8 @@ void fireMultiPellet(
                     }
                 }
 
-                if (!hitW && !pelletVictim && !pelletRemoteVictim && pelletNearest < nearestPelletDist) {
+                if (!hitW && !pelletVictim && !pelletRemoteVictim &&
+                    !pelletRemoteNpcTargetId && pelletNearest < nearestPelletDist) {
                     lastPelletEnd = pelletEnd;
                 }
             }
@@ -409,9 +427,11 @@ void fireMultiPellet(
     finalizeMultiPelletResult(outResult, muzzlePos, lastPelletEnd, lastHitNormal, accumulatedDamage, anyHitEntity, anyHitWorld, lastTargetId, accumulatedKnockback, totalPellets, def, shooter);
     outResult.direction = baseDir;
     printf("[SHOTGUN LOCAL RESULT] shotSerial=pending pelletCount=%d remotePlayersHit=%d "
+           "remoteNpcPelletHits=%d "
            "totalRemoteDamage=%.0f primaryTargetId=%u returnedTargetId=%u "
            "returnedDamage=%.0f worldPellets=%d missedPellets=%d\n",
-           totalPellets, remotePlayersHit, totalRemoteDamage,
+           totalPellets, remotePlayersHit, remoteNpcPelletHits,
+           totalRemoteDamage,
            outResult.targetIsRemotePlayer ? outResult.targetId : 0,
            outResult.targetId, outResult.damage,
            worldPellets, missedPellets);

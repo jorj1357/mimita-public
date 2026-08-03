@@ -122,6 +122,7 @@
 #include "camera/camera-commands.h"
 #include "audio/music-commands.h"
 #include "notifications/notifications.h"
+#include "utils/tips.h"
 #include <windows.h>
 #include <glad/glad.h>
 
@@ -242,6 +243,8 @@ void gameInit(int argc, char** argv, Engine& engine)
     gameInitSubsystems(engine);
 
     NotificationSystem::instance().loadConfig();
+    NotificationSystem::instance().loadTipsConfig();
+    Tips::load();
     NotificationSystem::instance().pushBuildNotice();
 }
 

@@ -45,7 +45,8 @@ extern RevolverShotResult tryFireHitscan(
     const World& world,
     const glm::vec3& muzzlePos,
     const glm::vec3& muzzleDir,
-    const std::unordered_map<uint32_t, Player>* remotePlayers);
+    const std::unordered_map<uint32_t, Player>* remotePlayers,
+    std::unordered_map<uint32_t, Player>* remoteNpcs);
 
 extern RevolverShotResult tryFireHitscanDir(
     const WeaponDefinition& def,
@@ -66,6 +67,7 @@ extern void fireMultiPellet(
     const glm::vec3& muzzlePos,
     const glm::vec3& muzzleDir,
     const std::unordered_map<uint32_t, Player>* remotePlayers,
-    RevolverShotResult& outResult);
+    RevolverShotResult& outResult,
+    std::unordered_map<uint32_t, Player>* remoteNpcs);
 
 } // namespace WeaponFire

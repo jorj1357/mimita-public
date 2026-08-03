@@ -657,7 +657,8 @@ RevolverShotResult WeaponSystem::fire(
     Player& player,
     NpcSystem& npcs,
     const World& world,
-    const std::unordered_map<uint32_t, Player>* remotePlayers) {
+    const std::unordered_map<uint32_t, Player>* remotePlayers,
+    std::unordered_map<uint32_t, Player>* remoteNpcs) {
     if (player.dead) {
         Terminal::instance().addLog("[WEAPON] cannot fire - player is dead");
         return {};
@@ -757,7 +758,7 @@ RevolverShotResult WeaponSystem::fire(
         return result;
     }
 
-    return fireHitscan(camera, player, npcs, world, remotePlayers);
+    return fireHitscan(camera, player, npcs, world, remotePlayers, remoteNpcs);
 }
 
 void WeaponSystem::tagLatestLocalRocket(uint32_t fireSerial)
@@ -785,7 +786,8 @@ RevolverShotResult WeaponSystem::fireHitscan(
     Player& player,
     NpcSystem& npcs,
     const World& world,
-    const std::unordered_map<uint32_t, Player>* remotePlayers) {
+    const std::unordered_map<uint32_t, Player>* remotePlayers,
+    std::unordered_map<uint32_t, Player>* remoteNpcs) {
     const WeaponDefinition* def = getCurrentDef(player);
     WeaponRuntime* rt = getCurrentRuntime(player);
     if (!def || !rt) return {};
@@ -806,11 +808,11 @@ RevolverShotResult WeaponSystem::fireHitscan(
     if (def->pelletCount > 1) {
         WeaponFire::fireMultiPellet(
             *def, *rt, camera, player, npcs, world, muzzlePos, muzzleDir,
-            remotePlayers, result);
+            remotePlayers, result, remoteNpcs);
     } else {
         result = WeaponFire::tryFireHitscan(
             *def, *rt, camera, player, npcs, world, muzzlePos, muzzleDir,
-            remotePlayers);
+            remotePlayers, remoteNpcs);
     }
 
     WeaponFire::applyRecoil(player, *def, result.end - muzzlePos, mRecoilValue, 1.0f / 60.0f);

@@ -19,6 +19,7 @@
 #include "gui/hud/chat-window.h"
 #include "gui/menus/online-menu.h"
 #include "notifications/notifications.h"
+#include "input/mouse-lock.h"
 #include "devtools/dev-overlay.h"
 #include "devtools/terminal.h"
 #include "debug/debug-diag.h"
@@ -68,6 +69,8 @@ void engineTick(Engine& engine)
     // Step UI tick clock (60 Hz fixed step, independent of render FPS)
     gChatUiTickClock.tick();
     NotificationSystem::instance().advanceTicks();
+    if (GAME_STATE == GAME_PLAYING)
+        NotificationSystem::instance().updateTips();
     auto tFrameStart = std::chrono::steady_clock::now();
     HEARTBEAT("FRAME START");
 
@@ -124,7 +127,8 @@ void engineTick(Engine& engine)
             Terminal::instance().toggle();
             bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd;
             glfwSetInputMode(engine.window(), GLFW_CURSOR,
-                GAME_STATE == GAME_PLAYING && !duelMatchOver ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+                GAME_STATE == GAME_PLAYING && !duelMatchOver && MouseLock::locked()
+                    ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
         } else if (REPLAY_PLAYER.isPlaying()) {
             printf("[MAINMENU] cleaning replay\n");
             REPLAY_PLAYER.stopPlayback();
@@ -158,6 +162,17 @@ void engineTick(Engine& engine)
         }
     }
     escapePrev = escapeDown;
+
+    // L key toggles gameplay mouse lock so the cursor can click notifications.
+    static bool mouseLockKeyPrev = false;
+    bool mouseLockKeyDown = glfwGetKey(engine.window(), GLFW_KEY_L) == GLFW_PRESS;
+    if (GAME_STATE == GAME_PLAYING && !Terminal::instance().isOpen() && !isChatOpen() &&
+        !REPLAY_PLAYER.isPlaying() && mouseLockKeyDown && !mouseLockKeyPrev) {
+        MouseLock::toggle(engine.window());
+        Debug::log(Debug::Category::Gui, "[MOUSELOCK] toggled via L: %s\n",
+                   MouseLock::locked() ? "locked" : "unlocked");
+    }
+    mouseLockKeyPrev = mouseLockKeyDown;
 
     static bool f10Prev = false;
     bool f10Down = glfwGetKey(engine.window(), GLFW_KEY_F10) == GLFW_PRESS;

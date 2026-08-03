@@ -1,7 +1,5 @@
 {
-  "enabledByDefault": true,
-  "minimumTicksBetweenTips": 900,
-  "maximumTicksBetweenTips": 1800,
-  "showStartupDisableMessage": true,
-  "startupMessage": "run chattips 0 in console to disable chat tips"
+  "enabled": true,
+  "minimum_ticks_between_tips": 60,
+  "maximum_ticks_between_tips": 1800
 }

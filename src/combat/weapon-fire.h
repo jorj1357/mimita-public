@@ -20,7 +20,8 @@ enum class AimHitKind {
     None,
     World,
     Npc,
-    RemotePlayer
+    RemotePlayer,
+    RemoteNpc
 };
 
 const char* aimHitKindName(AimHitKind kind);
@@ -47,7 +48,8 @@ AimTarget computeAimTarget(
     const Camera& camera,
     const World& world,
     NpcSystem& npcs,
-    const std::unordered_map<uint32_t, Player>* remotePlayers
+    const std::unordered_map<uint32_t, Player>* remotePlayers,
+    std::unordered_map<uint32_t, Player>* remoteNpcs = nullptr
 );
 
 AimSolution computeAim(
@@ -55,7 +57,8 @@ AimSolution computeAim(
     const World& world,
     NpcSystem& npcs,
     const glm::vec3& muzzlePos,
-    const std::unordered_map<uint32_t, Player>* remotePlayers
+    const std::unordered_map<uint32_t, Player>* remotePlayers,
+    std::unordered_map<uint32_t, Player>* remoteNpcs = nullptr
 );
 
 void logAimDebug(const char* label, const Camera& camera, const AimSolution& aim);
@@ -69,7 +72,8 @@ RevolverShotResult tryFireHitscan(
     const World& world,
     const glm::vec3& muzzlePos,
     const glm::vec3& muzzleDir,
-    const std::unordered_map<uint32_t, Player>* remotePlayers = nullptr
+    const std::unordered_map<uint32_t, Player>* remotePlayers = nullptr,
+    std::unordered_map<uint32_t, Player>* remoteNpcs = nullptr
 );
 
 // Direction-based fire: NPCs provide aim direction directly instead of using a camera.
@@ -95,7 +99,8 @@ void fireMultiPellet(
     const glm::vec3& muzzlePos,
     const glm::vec3& muzzleDir,
     const std::unordered_map<uint32_t, Player>* remotePlayers,
-    RevolverShotResult& outResult
+    RevolverShotResult& outResult,
+    std::unordered_map<uint32_t, Player>* remoteNpcs = nullptr
 );
 
 void applyRecoil(
@@ -132,6 +137,10 @@ struct BeamCollisionResult {
     float localHeight;
     uint32_t remoteTargetId;
     const Player* remoteVictim;
+    // Remote NPC replicas are hit-tested like remote players so the local
+    // predicted tracer stops on the visible NPC instead of the wall behind it.
+    uint32_t remoteNpcTargetId;
+    const Player* remoteNpcVictim;
 
     // Exact surface contact point (on the triangle/entity surface)
     glm::vec3 hitPosition{0.0f};
@@ -148,7 +157,8 @@ BeamCollisionResult collideBeam(
     NpcSystem* npcs,
     const std::unordered_map<uint32_t, Player>* remotePlayers,
     const Player* targetPlayer,
-    bool skipWorldCollision = false
+    bool skipWorldCollision = false,
+    std::unordered_map<uint32_t, Player>* remoteNpcs = nullptr
 );
 
 bool rayTriangle(const glm::vec3& origin, const glm::vec3& direction,
@@ -183,6 +193,19 @@ void processRemotePlayerHit(
     Player& shooter,
     uint32_t remoteTargetId,
     const Player* remoteVictim);
+
+// Remote NPC hit feedback is server-authoritative: the server broadcasts the
+// NpcDamageEvent (hitmarker, blood, damage) only for validated hits. This only
+// records the local predicted tracer endpoint so the client's beam stops on
+// the visible NPC. It does NOT apply damage or spawn local hit VFX.
+void processRemoteNpcHit(
+    RevolverShotResult& result,
+    const WeaponDefinition& def,
+    const std::string& hitPart,
+    const glm::vec3& hitEnd,
+    float nearest,
+    Player& shooter,
+    uint32_t remoteNpcTargetId);
 
 void processPlayerHit(
     RevolverShotResult& result,
