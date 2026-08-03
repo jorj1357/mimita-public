@@ -112,6 +112,8 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
 
     // Clear join token, room code, session identity
     ctx.joinToken.clear();
+    ctx.vipJoinTicket.clear();
+    ctx.vipJoinTicketRequested = false;
     ctx.roomCode.clear();
     ctx.serverAddress.clear();
     ctx.serverPort = 1357;
@@ -743,6 +745,8 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
         ctx.hasLocalServerPosition = false;
         ctx.localPlayerReconciled = false;
         ctx.connectionState = ConnectionState::Connecting;
+        ctx.vipJoinTicket.clear();
+        ctx.vipJoinTicketRequested = false;
         ctx.joinToken = beginJoin.joinToken;
         ctx.serverAddress = "ice:" + roomCode;
         ctx.connected = false;

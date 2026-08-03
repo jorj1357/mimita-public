@@ -6,6 +6,7 @@ import { hashToken, createSecretToken, verifyPassword, getClientIp,
          usernameKey, normalizeEmail } from "./authCore.js"
 import { sessionSecret, sessionDays } from "./session.js"
 import { createRateLimit } from "./rateLimit.js"
+import { getVipStateForUser } from "./vip-entitlements.js"
 
 const router = Router()
 const loginRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 10, name: "game_auth_login" })
@@ -124,6 +125,8 @@ router.post("/login", loginRateLimit, async (req, res, next) => {
 
         await resetFailedAttempts(identifier)
 
+        const vip = await getVipStateForUser(user, pool)
+
         console.log(`[GAME AUTH] login success user_id=${user.id} username=${user.username} rememberMe=${rememberMe}`)
 
         res.json({
@@ -132,7 +135,8 @@ router.post("/login", loginRateLimit, async (req, res, next) => {
                 id: user.id,
                 username: user.username,
                 permissions: [user.role || "player"],
-                supporter_tier: user.supporter_tier || "free"
+                supporter_tier: vip.active_tier,
+                vip
             },
             session: {
                 access_token: accessToken,
@@ -225,6 +229,8 @@ router.post("/refresh", async (req, res, next) => {
             [newAccessHash, session.session_id]
         )
 
+        const vip = await getVipStateForUser({ id: session.user_id, role: session.role || "user" }, pool)
+
         console.log(`[GAME AUTH] refresh success user_id=${session.user_id}`)
 
         res.json({
@@ -232,7 +238,14 @@ router.post("/refresh", async (req, res, next) => {
             access_token: newAccessToken,
             access_expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
             refresh_token: refreshToken,
-            refresh_expires_at: session.expires_at
+            refresh_expires_at: session.expires_at,
+            account: {
+                id: session.user_id,
+                username: session.username,
+                permissions: [session.role || "player"],
+                supporter_tier: vip.active_tier,
+                vip
+            }
         })
     } catch (error) {
         console.log(`[GAME AUTH] refresh error: ${error.message}`)

@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import { useEffect, useState } from "react"
 
 import Layout from "../components/Layout"
@@ -236,6 +236,7 @@ export default function Account() {
                         <Username user={user} size="lg" />
                     </p>
                     <p className="accountEmail">{user.email}</p>
+                    <Link className="accountVipLink" to="/vip">Manage VIP</Link>
 
                     <form onSubmit={saveProfile}>
                         <label htmlFor="bio">bio</label>

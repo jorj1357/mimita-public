@@ -1,3 +1,13 @@
+// 08 03 2026, 17 20
+/* purpose
+* Declares the short-lived on-screen killfeed model and manager.
+* Stores killer/victim labels with compact VIP appearance metadata.
+* Exposes simple killfeed entry points for live gameplay and replay playback.
+* DOES NOT own damage calculation, death authority, or replay file serialization.
+* DOES NOT verify VIP entitlements or trust client-provided account data.
+* DOES NOT render chat, nameplates, or menu UI.
+*/
+
 #pragma once
 
 #include <string>
@@ -5,12 +15,16 @@
 
 #include <glm/glm.hpp>
 
+#include "vip/vip-appearance.h"
+
 struct ReplayKillfeedEvent;
 
 struct KillfeedEntry {
     std::string killerName;
     std::string victimName;
     std::string weaponName;
+    MimitaVip::VipAppearance killerVipAppearance;
+    MimitaVip::VipAppearance victimVipAppearance;
     float age = 0.0f;
     float opacity = 0.0f;
 };
@@ -23,6 +37,12 @@ public:
                 const std::string& victimName,
                 const std::string& weaponName,
                 bool fromReplay = false);
+    void onKillStyled(const std::string& killerName,
+                      const MimitaVip::VipAppearance& killerVipAppearance,
+                      const std::string& victimName,
+                      const MimitaVip::VipAppearance& victimVipAppearance,
+                      const std::string& weaponName,
+                      bool fromReplay = false);
 
     void update(float dt);
     void render();

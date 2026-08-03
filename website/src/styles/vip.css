@@ -1,0 +1,234 @@
+/* 08 03 2026, 17 20
+purpose
+* Styles VIP username rendering, badge images, and the account VIP page.
+* Keeps paid customization controls readable inside Mimita's existing dark/chaotic website style.
+* Provides responsive layouts for checkout cards, previews, presets, and locked controls.
+* DOES NOT define entitlement logic or Stripe checkout behavior.
+* DOES NOT style game-engine HUD text.
+* DOES NOT replace global layout/header styles.
+*/
+
+.vipName {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  max-width: 100%;
+  vertical-align: baseline;
+}
+
+.vipNameText {
+  display: inline-block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 800;
+}
+
+.vipNameSm .vipNameText { font-size: 0.85rem; }
+.vipNameMd .vipNameText { font-size: 1rem; }
+.vipNameLg .vipNameText { font-size: 1.5rem; }
+
+.vipBadgeImg {
+  width: 1.25em;
+  height: 1.25em;
+  min-width: 1.25em;
+  object-fit: contain;
+  vertical-align: middle;
+  filter: drop-shadow(0 0 3px rgba(255,255,255,0.45));
+}
+
+.vipNameRainbow {
+  background-size: 220% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.vipNameAnimated {
+  animation-name: vipRainbowShift;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.vipNameReverse {
+  animation-direction: reverse;
+}
+
+.vipNamePerLetter {
+  white-space: normal;
+}
+
+@keyframes vipRainbowShift {
+  0% { background-position: 0% center; }
+  100% { background-position: 220% center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vipNameAnimated {
+    animation: none !important;
+  }
+}
+
+.vipPage {
+  width: min(1100px, 100%);
+  margin: 0 auto;
+  padding: 1.25rem;
+}
+
+.vipPage h1 {
+  color: #00ff66;
+  text-shadow: 2px 2px #a000ff;
+  margin-bottom: 0.75rem;
+}
+
+.vipNotice,
+.vipError {
+  border: 1px solid #ffff00;
+  background: #120022;
+  padding: 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.vipError {
+  border-color: #ff0033;
+  color: #ffb3c0;
+}
+
+.vipGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.vipTierBox,
+.vipPanel {
+  border: 1px solid rgba(255,255,255,0.28);
+  background: #050505;
+  padding: 1rem;
+  box-shadow: 4px 4px 0 #31004f;
+}
+
+.vipTierBox h2,
+.vipPanel h2 {
+  color: #00ccff;
+  margin-bottom: 0.5rem;
+}
+
+.vipTierPrice {
+  color: #ffff00;
+  font-size: 1.1rem;
+  font-weight: 800;
+  margin-bottom: 0.65rem;
+}
+
+.vipTierBox ul {
+  padding-left: 1.2rem;
+  line-height: 1.45;
+  margin: 0.75rem 0;
+}
+
+.vipCheckoutBtns,
+.vipStyleGrid,
+.vipPresetList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.vipCheckoutBtns button,
+.vipPanel button,
+.vipPanel input,
+.vipPanel select {
+  border: 1px solid #ffffff;
+  background: #111111;
+  color: #ffffff;
+  padding: 0.55rem 0.7rem;
+}
+
+.vipCheckoutBtns button:hover,
+.vipPanel button:hover {
+  background: #00ff66;
+  color: #000000;
+}
+
+.vipCheckoutBtns button:disabled,
+.vipPanel button:disabled,
+.vipLocked {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.vipPreview {
+  border: 1px dashed #00ffcc;
+  padding: 1rem;
+  margin: 0.75rem 0;
+  background: #000000;
+  font-size: 1.1rem;
+}
+
+.vipStyleGrid label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid rgba(255,255,255,0.22);
+  padding: 0.35rem 0.5rem;
+  background: #170018;
+}
+
+.vipColorList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.vipColorList input[type="color"],
+.vipPanel input[type="color"] {
+  width: 100%;
+  height: 2.25rem;
+  padding: 0.1rem;
+}
+
+.vipStatusRows {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.vipStatusRows span {
+  color: #00ffcc;
+}
+
+.vipPresetItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid #333333;
+  padding: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .vipPage {
+    padding: 0.75rem;
+  }
+
+  .vipNameLg .vipNameText {
+    font-size: 1.2rem;
+  }
+}
+
+
+.accountVipLink {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  margin: 0 auto 1rem;
+  color: #00ffcc;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.accountVipLink:hover {
+  color: #ffff00;
+}

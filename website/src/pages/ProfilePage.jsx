@@ -47,6 +47,8 @@ export default function ProfilePage() {
 
     if (!user) return null
 
+    const activeTier = user.vip?.active_tier || user.supporter_tier
+
     return (
         <Layout>
             <div className="profilePageContainer">
@@ -65,10 +67,10 @@ export default function ProfilePage() {
                             <span className="profilePageMetaLabel">Joined</span>
                             <span className="profilePageMetaValue">{formatDate(user.created_at)}</span>
                         </div>
-                        {user.supporter_tier && user.supporter_tier !== "free" && (
+                        {activeTier && activeTier !== "free" && (
                             <div className="profilePageMetaItem">
                                 <span className="profilePageMetaLabel">Tier</span>
-                                <span className="profilePageMetaValue">{user.supporter_tier.replace("_", " ")}</span>
+                                <span className="profilePageMetaValue">{activeTier.replace("_", " ")}</span>
                             </div>
                         )}
                         {user.email_visible && (

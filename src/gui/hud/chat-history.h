@@ -14,6 +14,7 @@
 #include <deque>
 #include <optional>
 #include <vector>
+#include "vip/vip-appearance.h"
 
 enum class ChatSenderType : uint8_t
 {
@@ -31,6 +32,7 @@ struct ChatHistoryEntry
     ChatSenderType senderType = ChatSenderType::Player;
     uint8_t channel = 0;
     std::string senderName;
+    MimitaVip::VipAppearance senderVipAppearance;
     std::string text;
     bool muted = false; // local mute flag, not networked
 };

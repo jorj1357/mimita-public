@@ -72,11 +72,18 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
     const bool isLocalShooter = event->shooterPlayerId == ctx.localPlayerId;
 
     std::string shooterName;
+    MimitaVip::VipAppearance shooterVipAppearance;
     {
         auto si = ctx.playerRegistry.find(event->shooterPlayerId);
-        shooterName = si != ctx.playerRegistry.end()
-            ? si->second.name
-            : "player_" + std::to_string(event->shooterPlayerId);
+        if (si != ctx.playerRegistry.end())
+        {
+            shooterName = si->second.name;
+            shooterVipAppearance = si->second.vipAppearance;
+        }
+        else
+        {
+            shooterName = "player_" + std::to_string(event->shooterPlayerId);
+        }
     }
 
     std::string npcName = "NPC " + std::to_string(event->npcEntityId);
@@ -145,7 +152,10 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
             std::string weaponDisplay = (wdef && !wdef->displayName.empty())
                 ? wdef->displayName
                 : ((weaponId && weaponId[0]) ? weaponId : "unknown");
-            KillfeedManager::instance().onKill(shooterName, npcName, weaponDisplay);
+            KillfeedManager::instance().onKillStyled(
+                shooterName, shooterVipAppearance,
+                npcName, MimitaVip::freeAppearance(),
+                weaponDisplay);
         }
         printf("[NET NPC KILL PRESENT] shooter=%u npc=%u name=\"%s\"\n",
                event->shooterPlayerId, event->npcEntityId, npcName.c_str());

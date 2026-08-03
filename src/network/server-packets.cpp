@@ -20,6 +20,7 @@
 #include "combat/weapon-types.h"
 #include "debug/debug-log.h"
 #include "void-death/void-death.h"
+#include "website/api-client.h"
 
 #include <algorithm>
 #include <atomic>
@@ -31,6 +32,14 @@
 
 namespace MimitaNet {
 namespace {
+
+std::string boundedPacketString(const char* value, size_t capacity)
+{
+    size_t len = 0;
+    while (len < capacity && value[len] != '\0')
+        ++len;
+    return std::string(value, len);
+}
 
 uint16_t validClientVisualStateFlags(uint16_t flags)
 {
@@ -942,7 +951,7 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     }
 
     // Validate join token — coordinator validation
-    const std::string joinTokenStr = join->joinToken;
+    const std::string joinTokenStr = boundedPacketString(join->joinToken, sizeof(join->joinToken));
     if (joinTokenStr.empty())
     {
         JoinRejectPacket reject{};
@@ -1012,11 +1021,42 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         return;
     }
 
+    const std::string vipTicket = boundedPacketString(
+        join->vipJoinTicket, sizeof(join->vipJoinTicket));
+    MimitaVip::VipAppearance verifiedVipAppearance = MimitaVip::freeAppearance();
+    int verifiedVipAccountId = 0;
+    std::string verifiedVipRole;
+    bool hasVerifiedVipTicket = false;
+    if (!vipTicket.empty())
+    {
+        const VipJoinTicketResult vipResult = verifyVipJoinTicket(
+            vipTicket, gServerCoordinatorCode, "");
+        if (vipResult.ok && vipResult.verified)
+        {
+            hasVerifiedVipTicket = true;
+            verifiedVipAppearance = vipResult.vipAppearance;
+            verifiedVipAccountId = vipResult.accountId;
+            verifiedVipRole = vipResult.role;
+            Debug::warn(Debug::Category::Networking,
+                "[VIP JOIN] verified accountId=%d tier=%s staff=%d\n",
+                verifiedVipAccountId,
+                MimitaVip::tierToString(verifiedVipAppearance.tier),
+                (int)verifiedVipAppearance.staffOverride());
+        }
+        else
+        {
+            Debug::warn(Debug::Category::Networking,
+                "[VIP JOIN] fallback=free reason=%s websiteOk=%d\n",
+                vipResult.reason.empty() ? "not_verified" : vipResult.reason.c_str(),
+                (int)vipResult.ok);
+        }
+    }
+
     // Check for existing reconnection
     uint32_t existingId = 0;
     for (auto& kv : players)
     {
-        if (kv.second.reconnectToken == join->joinToken && !kv.second.dead)
+        if (kv.second.reconnectToken == joinTokenStr && !kv.second.dead)
         {
             existingId = kv.first;
             break;
@@ -1032,10 +1072,22 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     p.lastProjectileFireSerial = 0;
     p.lastMeleeAttackSerial = 0;
     p.projectileFireCooldown = 0.0f;
-    p.joinToken = join->joinToken;
+    p.joinToken = joinTokenStr;
     p.joinTokenValidated = true;
     p.reconnectToken = generateReconnectToken();
-    p.name = uniquePlayerName(players, join->name, id);
+    p.name = uniquePlayerName(players, boundedPacketString(join->name, sizeof(join->name)), id);
+    if (hasVerifiedVipTicket)
+    {
+        p.vipAccountId = verifiedVipAccountId;
+        p.accountRole = verifiedVipRole;
+        p.vipAppearance = verifiedVipAppearance;
+    }
+    else if (!existingId)
+    {
+        p.vipAccountId = 0;
+        p.accountRole.clear();
+        p.vipAppearance = MimitaVip::freeAppearance();
+    }
 
     if (!existingId)
     {

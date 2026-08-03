@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { Link } from "react-router-dom"
 import Layout from "../components/Layout"
+import Username from "../components/Username"
 
 const STARTING_BPM = 120
 const BPM_INCREASE = 10
@@ -330,7 +331,7 @@ export default function RhythmTestV1() {
                   {leaderboard && leaderboard.length > 0 ? leaderboard.slice(0, 10).map((entry, i) => (
                     <div key={i} className={"gameLeaderboardRow" + (user && entry.id === user.id ? " gameLeaderboardRowHighlight" : "")}>
                       <span className="gameLbRank">#{entry.rank || (i + 1)}</span>
-                      <span className="gameLbName">{entry.username || "?"}</span>
+                      <span className="gameLbName"><Username user={entry} size="sm" /></span>
                       <span className="gameLbTime">{Number(entry.score_value).toLocaleString()}</span>
                     </div>
                   )) : (

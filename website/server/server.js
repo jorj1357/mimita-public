@@ -39,6 +39,9 @@ import gameAuthRouter from "./game-auth.js"
 import gameApiRouter from "./game-api.js"
 import emailCampaignsRouter from "./email-campaigns.js"
 import { createCheckoutSessionRouter, createWebhookRouter } from "./banner-payments.js"
+import { createVipCheckoutRouter, createVipWebhookRouter } from "./vip-payments.js"
+import { createVipRouter } from "./vip-routes.js"
+import { getVipStateForUser } from "./vip-entitlements.js"
 import {
     createSiteBannerPublicRouter,
     createSiteBannerUserRouter,
@@ -143,6 +146,7 @@ app.use((req, res, next) => {
     if (req.path === "/api/auth/signout") return next()
     if (req.path.startsWith("/api/client-login/")) return next()
     if (req.path === "/api/banner/payment/webhook") return next()
+    if (req.path === "/api/vip/payment/webhook") return next()
     if (req.headers["authorization"]?.startsWith("Bearer ")) return next()
     return csrfProtection(req, res, next)
 })
@@ -176,6 +180,19 @@ app.use((req, res, next) => {
     next()
 })
 
+async function withVipUser(user) {
+    if (!user) return user
+    const vip = await getVipStateForUser(user, pool)
+    return {
+        ...user,
+        supporter_tier: vip.active_tier,
+        vip
+    }
+}
+
+async function withVipUsers(users) {
+    return Promise.all(users.map(user => withVipUser(user)))
+}
 function detectImageType(buffer) {
     const sig = buffer.slice(0, 8).toString("hex")
     if (sig.startsWith("89504e470d0a1a0a")) return "png"
@@ -244,7 +261,7 @@ app.post("/api/auth/signup", authRateLimit, async (req, res, next) => {
                 email_verification_token
             )
             VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, username, email, bio, avatar_url, avatar_updated_at, supporter_tier, email_notifications_enabled
+            RETURNING id, username, email, bio, avatar_url, avatar_updated_at, supporter_tier, role, email_notifications_enabled
             `,
             [username, usernameKey(username), email, passwordHash, verificationTokenHash]
         )
@@ -267,7 +284,7 @@ app.post("/api/auth/signup", authRateLimit, async (req, res, next) => {
 
         return res.status(201).json({
             success: true,
-            user
+            user: await withVipUser(user)
         })
     }
     catch (error) {
@@ -309,6 +326,7 @@ app.post("/api/auth/signin", authRateLimit, async (req, res, next) => {
                 avatar_url,
                 avatar_updated_at,
                 supporter_tier,
+                role,
                 email_notifications_enabled
             FROM users
             WHERE deleted_at IS NULL
@@ -356,7 +374,7 @@ app.post("/api/auth/signin", authRateLimit, async (req, res, next) => {
 
         res.json({
             success: true,
-            user
+            user: await withVipUser(user)
         })
     }
     catch (error) {
@@ -443,11 +461,16 @@ app.post("/api/auth/resend-verification", authenticate, async (req, res, next) =
     }
 })
 
-app.get("/api/auth/me", authenticate, (req, res) => {
-    res.json({
-        success: true,
-        user: req.user
-    })
+app.get("/api/auth/me", authenticate, async (req, res, next) => {
+    try {
+        res.json({
+            success: true,
+            user: await withVipUser(req.user)
+        })
+    }
+    catch (error) {
+        next(error)
+    }
 })
 
 app.patch("/api/account/profile", authenticate, async (req, res, next) => {
@@ -709,19 +732,19 @@ app.get("/api/users", async (req, res, next) => {
 
         params.push(limit, offset)
         const result = await pool.query(
-            `SELECT username, bio, avatar_url, avatar_updated_at, supporter_tier, created_at
+            `SELECT id, username, bio, avatar_url, avatar_updated_at, supporter_tier, role, created_at
              FROM users ${whereClause} ${orderClause}
              LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
             params
         )
 
-        const users = result.rows.map(u => {
+        const users = await withVipUsers(result.rows.map(u => {
             if (!u.avatar_url) {
                 const encoded = encodeURIComponent(u.username || "?")
                 u.avatar_url = `/api/avatar/initials?name=${encoded}&size=128`
             }
             return u
-        })
+        }))
 
         res.json({
             success: true,
@@ -745,7 +768,7 @@ app.get("/api/users/id/:id", async (req, res, next) => {
         }
         const result = await pool.query(
             `
-            SELECT username, bio, avatar_url, avatar_updated_at, supporter_tier, created_at
+            SELECT id, username, bio, avatar_url, avatar_updated_at, supporter_tier, role, created_at
             FROM users
             WHERE id = $1
               AND deleted_at IS NULL
@@ -769,7 +792,7 @@ app.get("/api/users/id/:id", async (req, res, next) => {
 
         res.json({
             success: true,
-            user: u
+            user: await withVipUser(u)
         })
     }
     catch (error) {
@@ -781,7 +804,7 @@ app.get("/api/users/:username", async (req, res, next) => {
     try {
         const result = await pool.query(
             `
-            SELECT username, bio, avatar_url, avatar_updated_at, supporter_tier, created_at
+            SELECT id, username, bio, avatar_url, avatar_updated_at, supporter_tier, role, created_at
             FROM users
             WHERE username_key = $1
               AND deleted_at IS NULL
@@ -805,7 +828,7 @@ app.get("/api/users/:username", async (req, res, next) => {
 
         res.json({
             success: true,
-            user: u
+            user: await withVipUser(u)
         })
     }
     catch (error) {
@@ -1149,12 +1172,15 @@ app.use("/api/admin/email-campaigns", adminRateLimit, emailCampaignsRouter)
 app.use("/api/debug", debugRouter)
 app.use("/api/game/analytics", gameAnalyticsRateLimit, gameAnalyticsRouter)
 app.use("/api/banner/payment", createCheckoutSessionRouter())
+app.use("/api/vip/payment", createVipCheckoutRouter())
 app.use("/api/banner/payment/webhook", createWebhookRouter())
+app.use("/api/vip/payment/webhook", createVipWebhookRouter())
 app.use("/api/site", createSiteBannerPublicRouter())
 app.use("/api/banner", createSiteBannerUserRouter())
 app.use("/api/admin/banners", adminRateLimit, createSiteBannerAdminRouter())
 app.use("/api/support", createSupportRouter())
 app.use("/api/admin/support", adminRateLimit, createSupportAdminRouter())
+app.use("/api/vip", createVipRouter())
 app.use("/api", gameApiRouter)
 
 // Serve generated article/news JSON — the admin editor is the source of truth

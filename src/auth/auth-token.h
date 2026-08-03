@@ -11,6 +11,7 @@
 #pragma once
 
 #include <string>
+#include "vip/vip-appearance.h"
 
 // Session token (secure credential storage)
 bool storeSessionToken(const std::string& token);
@@ -33,6 +34,7 @@ struct CachedProfile {
     std::string displayName;
     std::string avatarUrl;
     std::string supporterTier;
+    MimitaVip::VipAppearance vipAppearance;
 };
 
 bool storeProfileCache(const CachedProfile& profile);

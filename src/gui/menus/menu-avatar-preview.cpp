@@ -1,3 +1,13 @@
+// 08 03 2026, 17 20
+/* purpose
+* Owns the animated avatar preview shown in game menus.
+* Loads preview layout config and renders the preview player camera pass.
+* Applies authenticated VIP appearance to the preview nameplate.
+* DOES NOT own account authentication, entitlement verification, or website routes.
+* DOES NOT mutate live gameplay players outside the preview instance.
+* DOES NOT replace the shared healthbar or player rendering systems.
+*/
+
 #include "menu-avatar-preview.h"
 #include "entities/player.h"
 #include "camera.h"
@@ -8,6 +18,7 @@
 #include "auth/auth-system.h"
 #include "config.h"
 #include "debug/debug-log.h"
+#include "vip/vip-name-render.h"
 
 #include <cstdio>
 #include <filesystem>
@@ -207,6 +218,7 @@ void MenuAvatarPreview::update(float dt, const glm::vec3& camForward)
     p->updateProceduralAnimation(speedDt, camForward, glm::vec3(0.0f), false);
 
     p->username = AuthSystem::instance().displayName();
+    p->vipAppearance = AuthSystem::instance().user().vipAppearance;
     Debug::logThrottled(Debug::Category::Gui, "avatar-username", 3.0f,
         "username=%s source=AuthSystem.displayName()\n", p->username.c_str());
     if (DebugConfig::DEBUG_MENU_PREVIEW)
@@ -233,9 +245,12 @@ static void drawNameplateUI(const Player& p, const Camera& cam, int vpX, int vpY
     if (screen.x < -5000.0f) return;
     float sx = screen.x + (float)vpX;
     float sy = screen.y + (float)vpY;
-    float nameWidth = uiMeasureText(p.username.c_str(), 0.28f);
-    uiDrawText(p.username.c_str(), sx - nameWidth * 0.5f, sy - 28.0f,
-               0.28f, {1.0f, 1.0f, 1.0f, 1.0f});
+    VipNameDrawOptions nameOptions;
+    nameOptions.scale = 0.28f;
+    nameOptions.alpha = 1.0f;
+    nameOptions.phase = 0.0f;
+    vipDrawStyledNameCentered(p.username, p.vipAppearance, sx, sy - 28.0f,
+                              nameOptions);
 }
 
 static void drawHealthbarUI(const Player& p, const Camera& cam, int vpX, int vpY, int vpW, int vpH)

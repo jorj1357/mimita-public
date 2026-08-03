@@ -1,3 +1,12 @@
+// 08 03 2026, 17 20
+/* purpose
+* Handles server-side chat packet validation, rate limiting, and broadcast events.
+* Copies verified server player identity metadata into accepted chat messages.
+* Keeps chat moderation and gameplay command handling close to packet dispatch.
+* DOES NOT render chat UI, verify website entitlements, or mutate account records.
+* DOES NOT trust client-provided account ids or VIP appearance data.
+* DOES NOT own NPC combat, projectile, or movement packet handling.
+*/
 #include "network/server.h"
 #include "network/multiplayer-context.h"
 #include "network/chat-rate-limiter.h"
@@ -122,7 +131,7 @@ void handleChatRequestV2(SOCKET sock, const char* buffer, int bytes,
     event.utcUnixMilliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
     event.senderEntityId = req->header.playerId;
-    event.senderAccountId = 0; // account lookup TBD
+    event.senderAccountId = (uint32_t)std::max(0, it->second.vipAccountId);
     event.senderType = 0; // Player
     event.channel = 0; // Global
     std::strncpy(event.senderName, it->second.name.c_str(), sizeof(event.senderName) - 1);

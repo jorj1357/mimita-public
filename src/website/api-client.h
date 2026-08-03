@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
+#include "vip/vip-appearance.h"
 
 using json = nlohmann::json;
 
@@ -27,6 +28,7 @@ struct GameUserInfo
     std::string avatarUrl;
     json avatarData;
     std::string supporterTier;
+    MimitaVip::VipAppearance vipAppearance;
     std::string role;
     std::vector<std::string> achievements;
     bool emailVerified = false;
@@ -79,6 +81,7 @@ struct LeaderboardEntry
     std::string username;
     std::string avatarUrl;
     std::string supporterTier;
+    MimitaVip::VipAppearance vipAppearance;
     GameStats stats;
 };
 
@@ -134,6 +137,26 @@ bool updateLoadout(const std::string& sessionToken, const json& loadout);
 json getTitles(const std::string& sessionToken);
 bool updateTitles(const std::string& sessionToken, const json& titles);
 
+
+struct VipJoinTicketResult
+{
+    bool ok = false;
+    bool verified = false;
+    int accountId = 0;
+    std::string username;
+    std::string displayName;
+    std::string role;
+    std::string supporterTier;
+    std::string reason;
+    MimitaVip::VipAppearance vipAppearance;
+};
+
+std::string requestVipJoinTicket(const std::string& sessionToken,
+                                 const std::string& roomCode,
+                                 const std::string& joinToken);
+VipJoinTicketResult verifyVipJoinTicket(const std::string& joinTicket,
+                                        const std::string& roomCode,
+                                        const std::string& joinToken);
 // Game Auth (direct username/email + password login)
 struct GameLoginResult
 {
@@ -142,6 +165,7 @@ struct GameLoginResult
     std::string username;
     std::vector<std::string> permissions;
     std::string supporterTier;
+    MimitaVip::VipAppearance vipAppearance;
     std::string accessToken;
     std::string accessExpiresAt;
     std::string refreshToken;
@@ -157,6 +181,7 @@ struct GameRefreshResult
     std::string accessExpiresAt;
     std::string refreshToken;
     std::string refreshExpiresAt;
+    MimitaVip::VipAppearance vipAppearance;
     std::string errorCode;
     std::string errorMessage;
 };
@@ -192,6 +217,7 @@ struct ClientCodePreview
     std::string avatarUrl;
     json avatarData;
     std::string supporterTier;
+    MimitaVip::VipAppearance vipAppearance;
 };
 
 struct ClientCodeConfirm
@@ -200,6 +226,9 @@ struct ClientCodeConfirm
     std::string sessionToken;
     int accountId = 0;
     std::string username;
+    std::string displayName;
+    std::string supporterTier;
+    MimitaVip::VipAppearance vipAppearance;
 };
 
 ClientCodePreview previewClientCode(const std::string& code);

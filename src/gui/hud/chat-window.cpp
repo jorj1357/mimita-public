@@ -23,6 +23,7 @@ bool isChatOpen()
 #include "gui/ui-system-internal.h"
 #include "debug/debug-log.h"
 #include "terminal/terminal-state.h"
+#include "vip/vip-name-render.h"
 
 #include <GLFW/glfw3.h>
 #include <algorithm>
@@ -239,15 +240,38 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
         }
         else
         {
-            // Player messages: "tick username: message"
-            std::snprintf(line, sizeof(line), "%llu %s: %s",
-                         (unsigned long long)entry.serverTick,
-                         entry.senderName.c_str(),
-                         entry.text.c_str());
-            glm::vec4 col = entry.muted ? mutedColor : playerColor;
-            uiDrawText(line, msgAreaX + uiScaleX(2),
-                       msgAreaY + (float)i * lineScreenH,
-                       textScale, col);
+            if (entry.muted)
+            {
+                std::snprintf(line, sizeof(line), "%llu %s: %s",
+                             (unsigned long long)entry.serverTick,
+                             entry.senderName.c_str(),
+                             entry.text.c_str());
+                uiDrawText(line, msgAreaX + uiScaleX(2),
+                           msgAreaY + (float)i * lineScreenH,
+                           textScale, mutedColor);
+                continue;
+            }
+
+            char tickBuf[48];
+            std::snprintf(tickBuf, sizeof(tickBuf), "%llu ",
+                         (unsigned long long)entry.serverTick);
+            const float lineY = msgAreaY + (float)i * lineScreenH;
+            float cursorX = msgAreaX + uiScaleX(2);
+            uiDrawText(tickBuf, cursorX, lineY, textScale, tickColor);
+            cursorX += uiMeasureText(tickBuf, textScale);
+
+            VipNameDrawOptions nameOptions;
+            nameOptions.scale = textScale;
+            nameOptions.alpha = alpha;
+            nameOptions.phase = (float)i;
+            vipDrawStyledName(entry.senderName, entry.senderVipAppearance,
+                              cursorX, lineY, nameOptions);
+            cursorX += vipMeasureStyledName(entry.senderName,
+                                            entry.senderVipAppearance,
+                                            nameOptions);
+            uiDrawText(": ", cursorX, lineY, textScale, playerColor);
+            cursorX += uiMeasureText(": ", textScale);
+            uiDrawText(entry.text.c_str(), cursorX, lineY, textScale, playerColor);
         }
     }
 

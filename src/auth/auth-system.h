@@ -43,6 +43,7 @@ struct AuthUser
     std::string avatarUrl;
     json avatarData;
     std::string supporterTier;
+    MimitaVip::VipAppearance vipAppearance;
     std::string role;
     std::vector<std::string> achievements;
     bool emailVerified = false;

@@ -26,6 +26,7 @@
 #include "combat/weapon-types.h"
 #include "physics/movement/movement-types.h"
 #include "tinygltf/tiny_gltf.h"
+#include "vip/vip-appearance.h"
 
 // Clears the shared immutable player-GLB parse cache. Immutable parsed model
 // data (skeleton, colliders, part meshes) is cached per resolved path so
@@ -360,6 +361,7 @@ struct GroundReturnState {
 class Player {
 public:
     std::string username = "admin";
+    MimitaVip::VipAppearance vipAppearance;
     int currentHp = 100;
     int maxHp = 100;
     bool inventoryOpen = false;

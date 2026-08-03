@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import Layout from "../components/Layout"
 import Avatar from "../components/Avatar"
+import Username from "../components/Username"
 
 const SORT_OPTIONS = [
     { value: "newest", label: "Newest Joined" },
@@ -103,7 +104,7 @@ export default function Users() {
                                     className="usersCard"
                                 >
                                     <Avatar user={u} size="lg" />
-                                    <strong className="usersCardName">{u.username}</strong>
+                                    <strong className="usersCardName"><Username user={u} size="md" /></strong>
                                     {u.achievement_count > 0 && (
                                         <span className="usersCardAchievements">
                                             {u.achievement_count} achievement{u.achievement_count !== 1 ? "s" : ""}
