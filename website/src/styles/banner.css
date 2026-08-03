@@ -88,6 +88,20 @@
   opacity: 0.9;
 }
 
+.siteBannerPlaceholder {
+  background: #0d0d0d;
+  color: #8a8a8a;
+  border-bottom: 1px dashed rgba(255,255,255,0.25);
+}
+
+.siteBannerPlaceholder .siteBannerMessage {
+  color: #aabbdd;
+}
+
+.siteBannerPlaceholder .siteBannerInfo {
+  opacity: 0.7;
+}
+
 .siteBannerCollapsed {
   padding: 0.25rem 0.75rem;
   min-height: 1.4rem;

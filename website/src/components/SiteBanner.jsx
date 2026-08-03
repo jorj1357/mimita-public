@@ -5,6 +5,7 @@ import { formatCountdown, isBannerCollapsed, setBannerCollapsed } from "../lib/b
 import "../styles/banner.css"
 
 const CACHE_TTL_MS = 30_000
+const EMPTY_SLOT_KEY = "placeholder"
 let bannerCache = { at: 0, banner: null }
 
 async function fetchActiveBanner() {
@@ -39,6 +40,7 @@ export default function SiteBanner() {
             if (active) {
                 setBanner(b)
                 if (b) setCollapsed(isBannerCollapsed(b.id))
+                else setCollapsed(isBannerCollapsed(EMPTY_SLOT_KEY))
             }
         })
         return () => { active = false }
@@ -52,12 +54,54 @@ export default function SiteBanner() {
         return () => clearInterval(timer)
     }, [banner])
 
-    if (!banner) return null
+    const collapseKey = banner ? banner.id : EMPTY_SLOT_KEY
 
     function toggleCollapse() {
         const next = !collapsed
         setCollapsed(next)
-        setBannerCollapsed(banner.id, next)
+        setBannerCollapsed(collapseKey, next)
+    }
+
+    if (!banner) {
+        if (collapsed) {
+            return (
+                <div className="siteBanner siteBannerCollapsed siteBannerPlaceholder">
+                    <span className="siteBannerCollapsedText">Banner hidden</span>
+                    <button
+                        type="button"
+                        className="siteBannerCollapseArrow"
+                        onClick={toggleCollapse}
+                        aria-expanded="false"
+                        aria-label="expand banner"
+                    >
+                        ▸
+                    </button>
+                </div>
+            )
+        }
+        return (
+            <div className="siteBanner siteBannerPlaceholder">
+                <div className="siteBannerMain">
+                    <Link className="siteBannerMessage" to="/banner/create">
+                        your banner here!
+                    </Link>
+                    <span className="siteBannerInfo">
+                        make a free 1-day banner — you just need an account
+                    </span>
+                </div>
+                <div className="siteBannerActions">
+                    <button
+                        type="button"
+                        className="siteBannerCollapseArrow"
+                        onClick={toggleCollapse}
+                        aria-expanded="true"
+                        aria-label="collapse banner"
+                    >
+                        ▾
+                    </button>
+                </div>
+            </div>
+        )
     }
 
     async function handleReport() {
