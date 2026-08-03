@@ -39,6 +39,11 @@ import gameAuthRouter from "./game-auth.js"
 import gameApiRouter from "./game-api.js"
 import emailCampaignsRouter from "./email-campaigns.js"
 import { createCheckoutSessionRouter, createWebhookRouter } from "./banner-payments.js"
+import {
+    createSiteBannerPublicRouter,
+    createSiteBannerUserRouter,
+    createSiteBannerAdminRouter
+} from "./site-banner.js"
 import { trackEvent } from "./analytics.js"
 import { pushError } from "./error-queue.js"
 import { createRateLimit } from "./rateLimit.js"
@@ -1144,6 +1149,9 @@ app.use("/api/debug", debugRouter)
 app.use("/api/game/analytics", gameAnalyticsRateLimit, gameAnalyticsRouter)
 app.use("/api/banner/payment", createCheckoutSessionRouter())
 app.use("/api/banner/payment/webhook", createWebhookRouter())
+app.use("/api/site", createSiteBannerPublicRouter())
+app.use("/api/banner", createSiteBannerUserRouter())
+app.use("/api/admin/banners", adminRateLimit, createSiteBannerAdminRouter())
 app.use("/api", gameApiRouter)
 
 // Serve generated article/news JSON — the admin editor is the source of truth

@@ -2,7 +2,7 @@ import { Link } from "react-router-dom"
 import { useState, useEffect, useRef } from "react"
 import Avatar from "./Avatar"
 import RainbowText from "./RainbowText"
-import { logAuthEvent, logRequestError } from "../lib/api-log"
+import { logAuthEvent } from "../lib/api-log"
 import { apiRequest } from "../lib/api"
 
 const DISCORD_URL = import.meta.env.VITE_DISCORD_URL || "https://discord.gg/sY8QHbfG9D"
@@ -11,6 +11,7 @@ const HAMBURGER_ITEMS = [
     { label: "Edit Account", path: "/account", auth: true },
     { label: "Admin", path: "/admin/dashboard" },
     { label: "Articles", path: "/articles" },
+    { label: "Banner", path: "/banner/create", rainbow: true },
     { label: "Contact", path: "/contact" },
     { label: "Download MiMITA", path: "/download" },
     { label: "FAQ", path: "/faq" },
@@ -83,7 +84,7 @@ export default function Header() {
     async function handleSignOut() {
         logAuthEvent("logout", { username: user?.username })
         try {
-            const data = await apiRequest("/api/auth/signout", { method: "POST" })
+            await apiRequest("/api/auth/signout", { method: "POST" })
             logAuthEvent("logout", `success user_id=${user?.id}`)
         } catch (e) {
             logAuthEvent("logout error", { error: e.message, status: e.status })

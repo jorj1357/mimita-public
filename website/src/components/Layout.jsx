@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { useLocation } from "react-router-dom"
 import Header from "./Header"
 import Footer from "./Footer"
+import SiteBanner from "./SiteBanner"
 
 export default function Layout({ children }) {
   const location = useLocation()
@@ -38,6 +39,7 @@ export default function Layout({ children }) {
 
   return (
     <div className="app">
+      <SiteBanner />
       <Header />
       {emailBanner && !emailBannerDismissed && (
         <div className="emailVerifyBanner">

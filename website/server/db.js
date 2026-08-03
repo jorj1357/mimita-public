@@ -406,6 +406,43 @@ const MIGRATION_STATEMENTS = [
     `ALTER TABLE banner_payment_orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP`,
     `CREATE INDEX IF NOT EXISTS banner_payment_orders_session_idx ON banner_payment_orders(stripe_checkout_session_id) WHERE stripe_checkout_session_id <> ''`,
     `CREATE INDEX IF NOT EXISTS banner_payment_orders_event_idx ON banner_payment_orders(stripe_event_id) WHERE stripe_event_id <> ''`,
+
+    // ── Site Banners (community banner system) ──────────────────────────
+
+    `CREATE TABLE IF NOT EXISTS site_banners (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        payment_order_id BIGINT UNIQUE REFERENCES banner_payment_orders(id),
+        kind TEXT NOT NULL DEFAULT 'free'
+            CHECK (kind IN ('free','paid','admin')),
+        days INT NOT NULL DEFAULT 1
+            CHECK (days BETWEEN 1 AND 365),
+        message TEXT NOT NULL DEFAULT '',
+        target_url TEXT NOT NULL DEFAULT '',
+        background_color TEXT NOT NULL DEFAULT '#000000',
+        text_color TEXT NOT NULL DEFAULT '#ffffff',
+        status TEXT NOT NULL DEFAULT 'draft'
+            CHECK (status IN ('draft','pending_payment','queued','active','expired','disabled','deleted','replaced')),
+        starts_at TIMESTAMPTZ,
+        expires_at TIMESTAMPTZ,
+        disabled_by_admin_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+        disabled_reason TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE INDEX IF NOT EXISTS site_banners_active_idx ON site_banners(status, starts_at)`,
+    `CREATE INDEX IF NOT EXISTS site_banners_queue_idx ON site_banners(status, kind, created_at)`,
+    `CREATE INDEX IF NOT EXISTS site_banners_order_idx ON site_banners(payment_order_id) WHERE payment_order_id IS NOT NULL`,
+
+    `CREATE TABLE IF NOT EXISTS banner_reports (
+        id BIGSERIAL PRIMARY KEY,
+        banner_id BIGINT NOT NULL REFERENCES site_banners(id) ON DELETE CASCADE,
+        reporter_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+        status TEXT NOT NULL DEFAULT 'new'
+            CHECK (status IN ('new','reviewed','resolved')),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE INDEX IF NOT EXISTS banner_reports_banner_idx ON banner_reports(banner_id, created_at DESC)`,
 ]
 
 export async function runMigrations() {
@@ -474,7 +511,9 @@ export function getDbConfig() {
     "email_templates",
     "email_campaigns",
     "email_campaign_recipients",
-    "banner_payment_orders"
+    "banner_payment_orders",
+    "site_banners",
+    "banner_reports"
 ]
     }
 }
