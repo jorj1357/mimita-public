@@ -421,7 +421,9 @@ struct MovementState {
     glm::vec3 baseVelocity{0.0f};
     glm::vec3 externalImpulse{0.0f};
     glm::vec2 lastInputMoveAxes{0.0f};
+    glm::vec2 previousMoveAxes{0.0f};
     float yaw = 0.0f;
+    float previousYaw = 0.0f;
     float sizeScale = 1.0f;
 
     MovementGroundState ground;
@@ -445,6 +447,11 @@ enum class MovementSpeedCapMode : uint8_t {
     Soft = 2
 };
 
+enum class StationaryCameraInputMode : uint8_t {
+    Strict = 0,
+    Steering = 1
+};
+
 struct MovementConfig {
     uint32_t simulationHz = 60;
     float fixedDeltaSeconds = 1.0f / 60.0f;
@@ -466,9 +473,21 @@ struct MovementConfig {
     float landingSpeedRetention = 0.0f;
     bool debugDrawEnabled = false;
 
+    bool requireActiveWishRotation = true;
+    StationaryCameraInputMode stationaryCameraInputMode =
+        StationaryCameraInputMode::Strict;
+    float airSteeringRateDegreesPerSecond = 0.0f;
+    float maximumSteeringDegreesPerSecond = 0.0f;
+    float minimumCameraYawDeltaDegrees = 0.25f;
+    float minimumWishRotationDegrees = 0.25f;
+    float strafeAngularToleranceDegrees = 60.0f;
+    float softCapStart = 0.0f;
+
     float groundSpeed = 0.0f;
     float airSpeed = 0.0f;
     float groundAcceleration = 0.0f;
+    float groundDeceleration = 0.0f;
+    float groundDirectionChangeResponse = 0.0f;
     float airAcceleration = 0.0f;
     float airMaxWishspeed = 0.0f;
     float airControl = 0.0f;
@@ -625,7 +644,9 @@ inline bool movementIsFinite(const MovementState& state)
            movementIsFinite(state.baseVelocity) &&
            movementIsFinite(state.externalImpulse) &&
            movementIsFinite(state.lastInputMoveAxes) &&
+           movementIsFinite(state.previousMoveAxes) &&
            movementIsFinite(state.yaw) &&
+           movementIsFinite(state.previousYaw) &&
            movementIsFinite(state.sizeScale) &&
            movementIsFinite(state.ground.groundNormal) &&
            movementIsFinite(state.ground.groundLostTimerSeconds) &&

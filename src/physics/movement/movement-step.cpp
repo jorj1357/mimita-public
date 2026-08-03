@@ -25,6 +25,275 @@ float expDecay(float amount, float dt)
     return std::exp(-amount * dt);
 }
 
+// Shortest signed angular difference in degrees, in [-180, 180).
+float wrapSignedDegrees(float value)
+{
+    value = std::fmod(value + 180.0f, 360.0f);
+    if (value < 0.0f)
+        value += 360.0f;
+    return value - 180.0f;
+}
+
+float shortestSignedAngleDegrees(float from, float to)
+{
+    return wrapSignedDegrees(to - from);
+}
+
+float signedAngleDegrees(glm::vec2 a, glm::vec2 b)
+{
+    a = movementNormalizeDirectionOrZero(a);
+    b = movementNormalizeDirectionOrZero(b);
+    const float dot = glm::clamp(glm::dot(a, b), -1.0f, 1.0f);
+    const float angle = std::acos(dot);
+    const float cross = a.x * b.y - a.y * b.x;
+    return (cross >= 0.0f ? 1.0f : -1.0f) * glm::degrees(angle);
+}
+
+float cross2D(glm::vec2 a, glm::vec2 b)
+{
+    return a.x * b.y - a.y * b.x;
+}
+
+// Returns vec capped to maxLength (direction preserved).
+glm::vec2 clampVecLength(glm::vec2 v, float maxLength)
+{
+    const float len = glm::length(v);
+    if (len <= maxLength || len <= 0.0001f)
+        return v;
+    return v * (maxLength / len);
+}
+
+// Rotates unit vector a toward unit vector b by at most maxAngleRadians.
+glm::vec2 rotateToward(glm::vec2 a, glm::vec2 b, float maxAngleRadians)
+{
+    a = glm::normalize(a);
+    b = glm::normalize(b);
+    const float dot = glm::clamp(glm::dot(a, b), -1.0f, 1.0f);
+    const float angle = std::acos(dot);
+    if (angle <= 1e-5f || angle <= maxAngleRadians)
+        return b;
+    const glm::vec2 perp = glm::normalize(b - a * dot);
+    return a * std::cos(maxAngleRadians) + perp * std::sin(maxAngleRadians);
+}
+
+enum class AirStrafeRejection : uint8_t {
+    None,
+    Grounded,
+    NoInput,
+    CameraStationary,
+    WishStationary,
+    WrongTurnRelationship,
+    BelowAngularTolerance,
+    AtSpeedCap,
+    FeatureDisabled
+};
+
+struct AirStrafeEvaluation {
+    bool hasInput = false;
+    bool cameraIsTurning = false;
+    bool wishIsRotating = false;
+    bool inputMatchesTurn = false;
+    bool withinTolerance = true;
+    bool validSteering = false;
+    bool validSpeedGain = false;
+    AirStrafeRejection rejection = AirStrafeRejection::None;
+    float cameraYawDelta = 0.0f;
+    float wishAngleDelta = 0.0f;
+    int turnSign = 0;
+    int side = 0;
+};
+
+AirStrafeEvaluation evaluateAirStrafe(const MovementState& state,
+                                      const MovementCommand& command,
+                                      const MovementConfig& config)
+{
+    AirStrafeEvaluation ev;
+    ev.hasInput = movementHasMoveInput(command.moveAxes);
+    if (!ev.hasInput) {
+        ev.rejection = AirStrafeRejection::NoInput;
+        return ev;
+    }
+    if (config.stationaryCameraInputMode == StationaryCameraInputMode::Strict &&
+        !config.requireActiveWishRotation) {
+        // strict still requires the wish to rotate; fall through to gates below
+    }
+
+    ev.cameraYawDelta =
+        shortestSignedAngleDegrees(state.previousYaw, command.lookYaw);
+    ev.cameraIsTurning =
+        std::fabs(ev.cameraYawDelta) >= config.minimumCameraYawDeltaDegrees;
+
+    // Wish rotation requires a previous wish: a fresh key press is not a turn.
+    const bool hadPrevInput = movementHasMoveInput(state.previousMoveAxes);
+    const glm::vec2 prevWish =
+        hadPrevInput ? movementNormalizeDirectionOrZero(state.previousMoveAxes)
+                     : glm::vec2(0.0f);
+    const glm::vec2 curWish = movementNormalizeDirectionOrZero(command.moveAxes);
+    ev.wishAngleDelta = signedAngleDegrees(prevWish, curWish);
+    ev.wishIsRotating =
+        hadPrevInput &&
+        std::fabs(ev.wishAngleDelta) >= config.minimumWishRotationDegrees;
+
+    const glm::vec2 vel(state.baseVelocity.x, state.baseVelocity.y);
+    const float speed = glm::length(vel);
+    if (speed > 1e-4f) {
+        const glm::vec2 velDir = vel / speed;
+        ev.side = cross2D(velDir, curWish) > 0.0f ? 1 : (cross2D(velDir, curWish) < 0.0f ? -1 : 0);
+        const float maxDot = std::sin(glm::radians(config.strafeAngularToleranceDegrees));
+        ev.withinTolerance = std::fabs(glm::dot(velDir, curWish)) <= maxDot;
+    }
+    ev.turnSign = ev.cameraYawDelta > 0.0f ? 1 : (ev.cameraYawDelta < 0.0f ? -1 : 0);
+    ev.inputMatchesTurn =
+        ev.side != 0 && ev.turnSign != 0 && ev.side == ev.turnSign;
+
+    if (!ev.cameraIsTurning) {
+        ev.rejection = AirStrafeRejection::CameraStationary;
+    } else if (config.requireActiveWishRotation && !ev.wishIsRotating) {
+        ev.rejection = AirStrafeRejection::WishStationary;
+    } else if (!ev.inputMatchesTurn) {
+        ev.rejection = AirStrafeRejection::WrongTurnRelationship;
+    } else if (!ev.withinTolerance) {
+        ev.rejection = AirStrafeRejection::BelowAngularTolerance;
+    }
+
+    ev.validSpeedGain =
+        ev.cameraIsTurning &&
+        (!config.requireActiveWishRotation || ev.wishIsRotating) &&
+        ev.inputMatchesTurn &&
+        ev.withinTolerance;
+
+    if (config.stationaryCameraInputMode == StationaryCameraInputMode::Strict)
+        ev.validSteering = ev.cameraIsTurning;
+    else
+        ev.validSteering = ev.hasInput;
+    return ev;
+}
+
+float airSoftCapMultiplier(float totalSpeed, const MovementConfig& config)
+{
+    if (!config.speedCapEnabled || config.bunnyHopSpeedCap <= 0.0f ||
+        config.maximumBhopSpeedMode != MovementSpeedCapMode::Soft)
+        return 1.0f;
+    const float start = config.softCapStart > 0.0f
+        ? config.softCapStart
+        : config.bunnyHopSpeedCap * 0.6f;
+    if (totalSpeed <= start)
+        return 1.0f;
+    if (totalSpeed >= config.bunnyHopSpeedCap)
+        return 0.0f;
+    const float t = (totalSpeed - start) / (config.bunnyHopSpeedCap - start);
+    return 1.0f - t;
+}
+
+// Grounded: converge the player-controlled horizontal velocity toward the
+// desired camera-relative velocity vector (no additive per-key forces).
+void applyGroundControl(MovementState& state,
+                        const glm::vec2& wish,
+                        const MovementConfig& config,
+                        float dt)
+{
+    glm::vec2 vel(state.baseVelocity.x, state.baseVelocity.y);
+    const bool hasInput = movementHasMoveInput(wish);
+    const glm::vec2 desired =
+        hasInput ? movementNormalizeDirectionOrZero(wish) *
+                       movementScaledGroundSpeed(config, state.sizeScale)
+                 : glm::vec2(0.0f);
+
+    // Preserve bhop momentum on the landing tick: if the player is about to
+    // auto-jump, the ground controller must not trim the airborne speed.
+    if (state.jump.jumpIntentTimerSeconds > 0.0f)
+        return;
+
+    const glm::vec2 delta = desired - vel;
+    const float speed = glm::length(vel);
+    const float desiredSpeed = glm::length(desired);
+
+    float rate;
+    const float angle = (speed > 1e-4f)
+        ? glm::degrees(std::acos(glm::clamp(glm::dot(vel / speed,
+              desiredSpeed > 1e-4f ? desired / desiredSpeed : glm::vec2(0.0f)),
+              -1.0f, 1.0f)))
+        : 0.0f;
+    if (!hasInput) {
+        rate = config.groundFrictionAmount;
+    } else if (angle > 60.0f) {
+        rate = config.groundDirectionChangeResponse;
+    } else if (desiredSpeed > speed) {
+        rate = config.groundAcceleration;
+    } else {
+        rate = config.groundDeceleration;
+    }
+
+    const float stepMax = std::max(rate * dt, 0.0f);
+    vel += clampVecLength(delta, stepMax);
+    state.baseVelocity.x = vel.x;
+    state.baseVelocity.y = vel.y;
+}
+
+// Airborne, speed-preserving steering toward the wish direction.
+void applyAirSteering(MovementState& state,
+                      const glm::vec2& wishDir,
+                      const MovementConfig& config,
+                      float dt,
+                      const AirStrafeEvaluation& ev)
+{
+    if (!ev.validSteering)
+        return;
+    glm::vec2 vel(state.baseVelocity.x, state.baseVelocity.y);
+    const float speed = glm::length(vel);
+    if (speed <= 1e-4f)
+        return; // never create velocity from zero
+    float maxRotate = glm::radians(config.airSteeringRateDegreesPerSecond) * dt;
+    if (config.maximumSteeringDegreesPerSecond > 0.0f)
+        maxRotate = std::min(maxRotate,
+            glm::radians(config.maximumSteeringDegreesPerSecond) * dt);
+    const glm::vec2 steered = rotateToward(vel / speed, wishDir, maxRotate);
+    state.baseVelocity.x = steered.x * speed;
+    state.baseVelocity.y = steered.y * speed;
+}
+
+// Airborne speed gain, only for a valid strafe.
+void applyAirSpeedGain(MovementState& state,
+                       const glm::vec2& wishDir,
+                       const MovementConfig& config,
+                       float dt,
+                       const AirStrafeEvaluation& ev,
+                       float inputMagnitude)
+{
+    if (!ev.validSpeedGain)
+        return;
+
+    glm::vec2 vel(state.baseVelocity.x, state.baseVelocity.y);
+    const float totalSpeed = glm::length(vel);
+
+    float wishSpeed = config.airMaxWishspeed > 0.0f
+        ? config.airMaxWishspeed
+        : movementScaledAirSpeed(config, state.sizeScale);
+    wishSpeed *= std::min(inputMagnitude, 1.0f);
+
+    const float currentSpeedAlongWish = glm::dot(vel, wishDir);
+    const float remaining = wishSpeed - currentSpeedAlongWish;
+    if (remaining > 0.0f) {
+        float gain = std::min(remaining, config.airAcceleration * wishSpeed * dt);
+        if (config.maximumAccelerationPerTick > 0.0f)
+            gain = std::min(gain, config.maximumAccelerationPerTick);
+        gain *= airSoftCapMultiplier(totalSpeed, config);
+        vel += wishDir * gain;
+    }
+
+    // Hard cap: clamp only the player-controlled bhop component.
+    if (config.speedCapEnabled &&
+        config.maximumBhopSpeedMode == MovementSpeedCapMode::Hard &&
+        config.bunnyHopSpeedCap > 0.0f) {
+        const float planar = glm::length(vel);
+        if (planar > config.bunnyHopSpeedCap && planar > 0.0f)
+            vel *= config.bunnyHopSpeedCap / planar;
+    }
+
+    state.baseVelocity.x = vel.x;
+    state.baseVelocity.y = vel.y;
+}
+
 void resetBasicOneTickState(MovementState& state)
 {
     state.jump.didGroundJump = false;
@@ -772,121 +1041,18 @@ void applyBasicGravity(MovementState& state,
 void applyBasicExternalImpulseControl(MovementState& state,
                                       const MovementCommand& command)
 {
-    if (!command.movementDirectionPressed &&
-        !command.dashPressed) {
-        return;
-    }
-
-    state.externalImpulse = glm::vec3(0.0f);
+    // External impulses (knockback, explosions, launch pads, dashes) are
+    // preserved through movement input. They decay independently; changing
+    // movement input must never erase them.
+    (void)state;
+    (void)command;
 }
 
 static void applySpecialExternalImpulseControl(MovementState& state,
                                                const MovementCommand& command)
 {
-    if (!command.movementDirectionPressed)
-        return;
-    if (command.dashPressed ||
-        command.downDashPressed ||
-        command.freezeHeld ||
-        state.dashMomentumProtection.active) {
-        return;
-    }
-
-    applyBasicExternalImpulseControl(state, command);
-}
-
-static void applyAccelWalk(MovementState& state,
-                           const glm::vec2& wish,
-                           const MovementConfig& config,
-                           float fixedDt)
-{
-    const float dt = std::max(movementClampStepDelta(fixedDt, config), 0.0001f);
-    const glm::vec2 wishDir = movementNormalizeDirectionOrZero(wish);
-    const bool onGround = state.ground.onGround;
-
-    float wishspeed = onGround
-        ? movementScaledGroundSpeed(config, state.sizeScale)
-        : movementScaledAirSpeed(config, state.sizeScale);
-    // Air wishspeed cap (Source sv_air_max_wishspeed): a low cap makes air accel
-    // weak unless the camera turns, which is what forces CS-style strafing.
-    if (!onGround && config.airMaxWishspeed > 0.0f)
-        wishspeed = std::min(wishspeed, config.airMaxWishspeed);
-
-    // Input magnitude scales the wishspeed target. The input pipeline
-    // normalizes diagonals, so this is 1.0 for any held key.
-    const float inputMagnitude = glm::length(wish);
-    wishspeed *= std::min(inputMagnitude, 1.0f);
-
-    const float accel = onGround
-        ? config.groundAcceleration
-        : config.airAcceleration;
-
-    glm::vec2 vel(state.baseVelocity.x, state.baseVelocity.y);
-    const float totalSpeed = glm::length(vel);
-
-    // Straight-line preservation: when airborne, if the current velocity is
-    // already aligned with the wish direction at or above the wish speed, do
-    // not accelerate. This guarantees holding W + Space while looking
-    // perfectly straight keeps horizontal speed exactly instead of creeping
-    // forward every jump.
-    if (!onGround && config.preserveStraightSpeed && totalSpeed > 0.0001f) {
-        const float alignment = std::fabs(glm::dot(vel / totalSpeed, wishDir));
-        const float minCos =
-            std::cos(glm::radians(config.minimumStrafeAngleDegrees));
-        if (alignment > minCos && totalSpeed >= wishspeed)
-            return;
-    }
-
-    const float currentSpeed = glm::dot(vel, wishDir);
-    float addSpeed = wishspeed - currentSpeed;
-    if (addSpeed > 0.0f) {
-        // Source Accelerate(): gain per frame is accel * wishspeed * dt.
-        addSpeed = std::min(addSpeed, accel * wishspeed * dt);
-        if (config.maximumAccelerationPerTick > 0.0f)
-            addSpeed = std::min(addSpeed, config.maximumAccelerationPerTick);
-
-        // Soft cap: fade acceleration as total speed approaches the cap.
-        if (!onGround && config.speedCapEnabled &&
-            config.maximumBhopSpeedMode == MovementSpeedCapMode::Soft &&
-            config.bunnyHopSpeedCap > 0.0f) {
-            if (totalSpeed >= config.bunnyHopSpeedCap) {
-                addSpeed = 0.0f;
-            } else if (config.accelerationFalloffNearCap > 0.0f) {
-                const float distanceToCap = config.bunnyHopSpeedCap - totalSpeed;
-                const float fade = std::clamp(
-                    distanceToCap /
-                        (config.bunnyHopSpeedCap * config.accelerationFalloffNearCap),
-                    0.0f, 1.0f);
-                addSpeed *= fade;
-            }
-        }
-
-        vel += wishDir * addSpeed;
-    }
-
-    // Surf-style air control (Source sv_aircontrol): actively steer the
-    // velocity toward the wish direction while airborne.
-    if (!onGround && config.airControl > 0.0f) {
-        const float velLen = glm::length(vel);
-        if (velLen > 0.0001f) {
-            const float velDot = glm::dot(vel / velLen, wishDir);
-            const float steer = config.airControl *
-                (1.0f - std::fabs(velDot)) * wishspeed * dt;
-            vel += wishDir * steer;
-        }
-    }
-
-    // Hard cap: clamp planar speed to the configured maximum.
-    if (!onGround && config.speedCapEnabled &&
-        config.maximumBhopSpeedMode == MovementSpeedCapMode::Hard &&
-        config.bunnyHopSpeedCap > 0.0f) {
-        const float planar = glm::length(vel);
-        if (planar > config.bunnyHopSpeedCap && planar > 0.0f)
-            vel *= config.bunnyHopSpeedCap / planar;
-    }
-
-    state.baseVelocity.x = vel.x;
-    state.baseVelocity.y = vel.y;
+    (void)state;
+    (void)command;
 }
 
 void applyBasicWalk(MovementState& state,
@@ -899,22 +1065,38 @@ void applyBasicWalk(MovementState& state,
         return;
 
     const glm::vec2 wish = movementClampUnitOrZero(command.moveAxes);
-    if (!movementHasMoveInput(wish))
-        return;
 
-    if (config.walkMode == MovementWalkMode::Accel) {
-        applyAccelWalk(state, wish, config, fixedDt);
+    // Override mode: instant velocity assignment (legacy behavior, unchanged).
+    if (config.walkMode != MovementWalkMode::Accel) {
+        if (!movementHasMoveInput(wish))
+            return;
+        const glm::vec2 next =
+            movementWalkVelocityXY(glm::vec2(state.baseVelocity),
+                                   wish,
+                                   state.ground.onGround,
+                                   state.sizeScale,
+                                   config);
+        state.baseVelocity.x = next.x;
+        state.baseVelocity.y = next.y;
         return;
     }
 
-    const glm::vec2 next =
-        movementWalkVelocityXY(glm::vec2(state.baseVelocity),
-                               wish,
-                               state.ground.onGround,
-                               state.sizeScale,
-                               config);
-    state.baseVelocity.x = next.x;
-    state.baseVelocity.y = next.y;
+    const float dt = std::max(movementClampStepDelta(fixedDt, config), 0.0001f);
+
+    // Grounded: converge toward the desired camera-relative velocity.
+    // Air acceleration must never run while grounded.
+    if (state.ground.onGround) {
+        applyGroundControl(state, wish, config, dt);
+        return;
+    }
+
+    // Airborne: steering (speed-preserving) + speed gain (valid strafe only).
+    if (!movementHasMoveInput(wish))
+        return;
+    const glm::vec2 wishDir = movementNormalizeDirectionOrZero(wish);
+    const AirStrafeEvaluation ev = evaluateAirStrafe(state, command, config);
+    applyAirSteering(state, wishDir, config, dt, ev);
+    applyAirSpeedGain(state, wishDir, config, dt, ev, glm::length(wish));
 }
 
 void applyBasicJump(MovementState& state,
@@ -982,44 +1164,6 @@ void applyBasicJump(MovementState& state,
     }
 }
 
-static void applySourceFriction(MovementState& state,
-                                const MovementConfig& config,
-                                float fixedDt)
-{
-    const float dt = movementClampStepDelta(fixedDt, config);
-    const float frictionMul = std::clamp(state.dash.frictionOverride, 0.0f, 1.0f);
-
-    if (state.ground.onGround) {
-        glm::vec2 vel(state.baseVelocity.x, state.baseVelocity.y);
-        const float speed = glm::length(vel);
-        if (speed > 0.1f) {
-            // Source Friction(): below stopspeed the control value stays at
-            // stopspeed, so the player actually comes to a stop.
-            const float control =
-                config.stopspeed > 0.0f ? std::max(speed, config.stopspeed) : speed;
-            // landing_speed_retention scales friction while moving: 1.0 keeps
-            // the speed gained from bhop/air-strafe on landing, 0.0 applies
-            // the normal friction. Releasing the keys always stops the player.
-            const bool hasMoveInput = movementHasMoveInput(state.lastInputMoveAxes);
-            const float retentionScale =
-                hasMoveInput ? (1.0f - config.landingSpeedRetention) : 1.0f;
-            const float drop = control * config.groundFrictionAmount *
-                retentionScale * frictionMul * dt;
-            const float newspeed = std::max(0.0f, speed - drop);
-            if (newspeed > 0.0f)
-                vel *= newspeed / speed;
-            state.baseVelocity.x = vel.x;
-            state.baseVelocity.y = vel.y;
-        }
-    } else if (config.airFrictionAmount > 0.0f) {
-        // Optional air drag. Source has none, so this defaults to 0.
-        glm::vec2 vel(state.baseVelocity.x, state.baseVelocity.y);
-        vel *= expDecay(config.airFrictionAmount * frictionMul, dt);
-        state.baseVelocity.x = vel.x;
-        state.baseVelocity.y = vel.y;
-    }
-}
-
 void applyBasicFriction(MovementState& state,
                         const MovementConfig& config,
                         float fixedDt)
@@ -1028,9 +1172,7 @@ void applyBasicFriction(MovementState& state,
     const bool hasMoveInput = movementHasMoveInput(state.lastInputMoveAxes);
     const float frictionOverride = std::clamp(state.dash.frictionOverride, 0.0f, 1.0f);
 
-    if (config.walkMode == MovementWalkMode::Accel) {
-        applySourceFriction(state, config, dt);
-    } else {
+    if (config.walkMode != MovementWalkMode::Accel) {
         const glm::vec2 frictioned = movementApplyBaseFrictionXY(
             glm::vec2(state.baseVelocity),
             state.ground.stableOnGround,
@@ -1041,6 +1183,13 @@ void applyBasicFriction(MovementState& state,
             dt);
         state.baseVelocity.x = frictioned.x;
         state.baseVelocity.y = frictioned.y;
+    } else if (!state.ground.onGround && config.airFrictionAmount > 0.0f) {
+        // Airborne: optional air drag. Ground stopping is owned by the ground
+        // control controller, so no player-controlled ground friction here.
+        glm::vec2 vel(state.baseVelocity.x, state.baseVelocity.y);
+        vel *= expDecay(config.airFrictionAmount * frictionOverride, dt);
+        state.baseVelocity.x = vel.x;
+        state.baseVelocity.y = vel.y;
     }
 
     movementDecayAndClampExternalImpulse(
@@ -1052,6 +1201,7 @@ void applyPreCollisionBasicMovement(MovementState& state,
                                     const MovementConfig& config,
                                     float fixedDt)
 {
+    state.previousMoveAxes = state.lastInputMoveAxes;
     state.lastInputMoveAxes = movementClampUnitOrZero(command.moveAxes);
     resetBasicOneTickState(state);
     applyBasicGravity(state, config, fixedDt);
@@ -1090,6 +1240,11 @@ static MovementStepResult applyPostCollisionMovementInternal(
     const bool previousOnGround = state.ground.onGround;
     const bool previousStableOnGround = state.ground.stableOnGround;
     const float previousAirborneSeconds = state.ground.airborneTimerSeconds;
+
+    // Track the previous camera yaw so the airborne strafe-eligibility layer
+    // can measure per-tick camera rotation deterministically on client+server.
+    state.previousYaw = state.yaw;
+    state.yaw = command.lookYaw;
 
     state.ground.onGround = collision.onGround;
     events.touchedGround = collision.onGround;

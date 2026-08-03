@@ -167,6 +167,10 @@ function createCheckoutSessionRouter(deps = {}) {
     return router
 }
 
+function webhookLog(fields) {
+    console.log("[BANNER WEBHOOK] " + JSON.stringify(fields))
+}
+
 function createWebhookRouter(deps = {}) {
     const {
         stripe = getStripe(),
@@ -179,6 +183,7 @@ function createWebhookRouter(deps = {}) {
     router.post("/", async (req, res) => {
         try {
             if (!stripe || !webhookSecret) {
+                webhookLog({ signature: "unconfigured", result: "503" })
                 return res.status(503).json({ success: false, message: "webhooks not configured" })
             }
 
@@ -188,26 +193,51 @@ function createWebhookRouter(deps = {}) {
             try {
                 event = stripe.webhooks.constructEvent(req.rawBody || req.body, signature, webhookSecret)
             }
-            catch {
+            catch (error) {
+                webhookLog({
+                    signature: "fail",
+                    reason: error?.message || "constructEvent threw",
+                    result: "400"
+                })
                 return res.status(400).json({ success: false, message: "invalid signature" })
             }
 
             if (event.type !== "checkout.session.completed") {
+                webhookLog({
+                    event_id: event.id,
+                    event_type: event.type,
+                    signature: "ok",
+                    result: "ignored_non_checkout"
+                })
                 return res.json({ success: true, received: event.type })
             }
 
             const session = event.data.object
+            const base = {
+                event_id: event.id,
+                event_type: event.type,
+                session_id: session.id,
+                amount_cents: Number(session.amount_total),
+                currency: session.currency,
+                payment_status: session.payment_status,
+                livemode: session.livemode,
+                signature: "ok"
+            }
 
             if (session.metadata?.source !== FLOW_SOURCE) {
+                webhookLog({ ...base, result: "400_unrecognized_event" })
                 return res.status(400).json({ success: false, message: "unrecognized event" })
             }
 
             const orderId = cleanOrderId(session.metadata?.banner_order_id)
             if (!orderId) {
+                webhookLog({ ...base, result: "400_invalid_order_id" })
                 return res.status(400).json({ success: false, message: "invalid order id" })
             }
+            base.order_id = orderId
 
             if (session.payment_status !== "paid") {
+                webhookLog({ ...base, result: "400_session_not_paid" })
                 return res.status(400).json({ success: false, message: "session not paid" })
             }
 
@@ -215,6 +245,7 @@ function createWebhookRouter(deps = {}) {
             const sessionCurrency = String(session.currency || ORDER_CURRENCY).toLowerCase()
 
             if (!Number.isInteger(sessionAmountCents) || sessionAmountCents <= 0) {
+                webhookLog({ ...base, result: "400_invalid_amount" })
                 return res.status(400).json({ success: false, message: "invalid amount" })
             }
 
@@ -229,13 +260,14 @@ function createWebhookRouter(deps = {}) {
                          paid_at = COALESCE(paid_at, NOW()),
                          stripe_event_id = $1,
                          stripe_checkout_session_id = COALESCE(NULLIF(stripe_checkout_session_id, ''), $2),
+                         payment_intent_id = COALESCE(NULLIF($6, ''), payment_intent_id),
                          updated_at = NOW()
                      WHERE id = $3
                        AND status = 'pending'
                        AND amount_cents = $4
                        AND currency = $5
                      RETURNING id, duration_days, user_id`,
-                    [event.id, session.id, orderId, sessionAmountCents, sessionCurrency]
+                    [event.id, session.id, orderId, sessionAmountCents, sessionCurrency, session.payment_intent || ""]
                 )
 
                 if (result.rowCount > 0) {
@@ -250,6 +282,7 @@ function createWebhookRouter(deps = {}) {
                         await placeBanner(client, bannerResult.rows[0].id)
                     }
                     await client.query("COMMIT")
+                    webhookLog({ ...base, result: "200_paid_activated" })
                     return res.json({ success: true, order_id: orderId, status: "paid" })
                 }
 
@@ -260,6 +293,7 @@ function createWebhookRouter(deps = {}) {
                 )
                 if (check.rows.length === 0) {
                     await client.query("ROLLBACK")
+                    webhookLog({ ...base, result: "400_order_not_found" })
                     return res.status(400).json({ success: false, message: "order not found" })
                 }
 
@@ -267,19 +301,23 @@ function createWebhookRouter(deps = {}) {
 
                 if (row.status === "paid") {
                     await client.query("ROLLBACK")
+                    webhookLog({ ...base, result: "200_duplicate" })
                     return res.json({ success: true, duplicate: true })
                 }
 
                 if (Number(row.amount_cents) !== sessionAmountCents || String(row.currency).toLowerCase() !== sessionCurrency) {
                     await client.query("ROLLBACK")
+                    webhookLog({ ...base, result: "400_amount_or_currency_mismatch" })
                     return res.status(400).json({ success: false, message: "amount or currency mismatch" })
                 }
 
                 await client.query("ROLLBACK")
+                webhookLog({ ...base, result: "400_cannot_be_paid" })
                 return res.status(400).json({ success: false, message: "order cannot be paid" })
             }
             catch {
                 await client.query("ROLLBACK").catch(() => {})
+                webhookLog({ ...base, result: "500_processing_failed" })
                 res.status(500).json({ success: false, message: "webhook processing failed" })
             }
             finally {

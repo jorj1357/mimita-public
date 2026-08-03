@@ -20,28 +20,41 @@ SOURCES = [
     ROOT / "src" / "physics" / "movement" / "movement-step.cpp",
 ]
 
+CSGO_SOURCES = [
+    ROOT / "tests" / "movement-csgo-test.cpp",
+    ROOT / "src" / "physics" / "movement" / "movement-step.cpp",
+]
 
-def main():
-    os.makedirs(BUILD, exist_ok=True)
-    out = BUILD / "movement-bhop-test.exe"
-    cmd = [COMPILER] + CXX_FLAGS + [str(s) for s in SOURCES] + ["-o", str(out)]
-    print("[TEST-BUILD] movement-bhop-test")
+
+def compile_and_run(name, sources, timeout=60):
+    out = BUILD / (name + ".exe")
+    cmd = [COMPILER] + CXX_FLAGS + [str(s) for s in sources] + ["-o", str(out)]
+    print("[TEST-BUILD] " + name)
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         print(result.stdout)
         print(result.stderr)
-        print("[TEST-BUILD] movement-bhop-test FAILED")
-        return 1
+        print("[TEST-BUILD] " + name + " FAILED")
+        return False
 
-    print("[TEST-RUN] movement-bhop-test.exe")
-    run = subprocess.run([str(out)], capture_output=True, text=True, timeout=60)
+    print("[TEST-RUN] " + out.name)
+    run = subprocess.run([str(out)], capture_output=True, text=True, timeout=timeout)
     print(run.stdout.strip())
     if run.stderr.strip():
         print(run.stderr.strip())
     if run.returncode != 0:
-        print("[TEST-RUN] movement-bhop-test FAILED (exit %d)" % run.returncode)
-        return 1
+        print("[TEST-RUN] " + name + " FAILED (exit %d)" % run.returncode)
+        return False
+    return True
 
+
+def main():
+    os.makedirs(BUILD, exist_ok=True)
+    ok = True
+    ok &= compile_and_run("movement-bhop-test", SOURCES)
+    ok &= compile_and_run("movement-csgo-test", CSGO_SOURCES)
+    if not ok:
+        return 1
     print("[run-movement-tests] ALL PASS")
     return 0
 

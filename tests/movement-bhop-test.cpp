@@ -57,6 +57,14 @@ MovementConfig csConfig()
     c.speedCapEnabled = true;
     c.maximumBhopSpeedMode = MovementSpeedCapMode::Soft;
     c.accelerationFalloffNearCap = 0.5f;
+    c.requireActiveWishRotation = true;
+    c.stationaryCameraInputMode = StationaryCameraInputMode::Strict;
+    c.airSteeringRateDegreesPerSecond = 300.0f;
+    c.maximumSteeringDegreesPerSecond = 720.0f;
+    c.minimumCameraYawDeltaDegrees = 0.25f;
+    c.minimumWishRotationDegrees = 0.25f;
+    c.strafeAngularToleranceDegrees = 60.0f;
+    c.softCapStart = 0.0f;
     c.landingSpeedRetention = 1.0f;
     c.groundSpeed = 20.0f;
     c.airSpeed = 20.0f;
@@ -87,6 +95,9 @@ MovementConfig gainConfig()
 {
     MovementConfig c = csConfig();
     c.airAcceleration = 60.0f;
+    // New eligibility + steering model: a higher wishspeed keeps the gain
+    // window open while the steering phase curves the velocity.
+    c.airMaxWishspeed = 8.0f;
     return c;
 }
 
@@ -99,6 +110,31 @@ glm::vec2 strafeWish(const MovementState& s)
     if (len < 1e-3f)
         return glm::vec2(1.0f, 0.0f);
     return glm::normalize(glm::vec2(-vel.y, vel.x));
+}
+
+// Valid strafe command: perpendicular wish + matching camera turn so the
+// strafe-eligibility layer qualifies it. direction=+1 turns left, -1 right.
+MovementCommand strafeCommand(const MovementState& s,
+                              float& lookYaw,
+                              float turnPerTick,
+                              int direction)
+{
+    glm::vec2 vel(s.baseVelocity.x, s.baseVelocity.y);
+    glm::vec2 velDir = glm::length(vel) > 1e-3f
+        ? glm::normalize(vel)
+        : glm::vec2(0.0f, 1.0f);
+    const float a = std::atan2(velDir.y, velDir.x) +
+        (float)direction * (3.14159265358979f / 2.0f);
+    lookYaw += turnPerTick;
+    const glm::vec2 wish(std::cos(a), std::sin(a));
+    MovementCommand c;
+    c.lifecycle = MovementLifecycleIdentity{10, 20};
+    c.moveAxes = movementClampUnitOrZero(wish);
+    c.horizontalCameraForward = glm::vec3(1.0f, 0.0f, 0.0f);
+    c.lookYaw = lookYaw;
+    c.jumpHeld = true;
+    c.movementDirectionPressed = true;
+    return c;
 }
 
 MovementState freshState(glm::vec2 velXY = glm::vec2(0.0f))
@@ -228,9 +264,9 @@ int main()
         MovementConfig noCap = gainConfig();
         noCap.speedCapEnabled = false;
         MovementState s = freshState(glm::vec2(0.0f, 20.0f));
-        for (int i = 0; i < 120; ++i) {
-            s = runTicks(s, cmdFor(strafeWish(s), true), noCap, airCollision(), 1);
-        }
+        float yaw = 0.0f;
+        for (int i = 0; i < 120; ++i)
+            s = runTicks(s, strafeCommand(s, yaw, 2.0f, +1), noCap, airCollision(), 1);
         check(hSpeed(s) > 20.0f + 2.0f,
               "perpendicular strafe gains speed with no cap");
     }
@@ -242,9 +278,9 @@ int main()
         hard.speedCapEnabled = true;
         hard.bunnyHopSpeedCap = 22.0f;
         MovementState s = freshState(glm::vec2(0.0f, 20.0f));
-        for (int i = 0; i < 120; ++i) {
-            s = runTicks(s, cmdFor(strafeWish(s), true), hard, airCollision(), 1);
-        }
+        float yaw = 0.0f;
+        for (int i = 0; i < 120; ++i)
+            s = runTicks(s, strafeCommand(s, yaw, 2.0f, +1), hard, airCollision(), 1);
         check(hSpeed(s) <= 22.0f + 1e-3f, "hard cap clamps speed");
         check(hSpeed(s) > 20.0f + 0.5f, "hard cap still allows bhop gain below cap");
     }
@@ -256,9 +292,9 @@ int main()
         soft.speedCapEnabled = true;
         soft.bunnyHopSpeedCap = 22.0f;
         MovementState s = freshState(glm::vec2(0.0f, 20.0f));
-        for (int i = 0; i < 240; ++i) {
-            s = runTicks(s, cmdFor(strafeWish(s), true), soft, airCollision(), 1);
-        }
+        float yaw = 0.0f;
+        for (int i = 0; i < 240; ++i)
+            s = runTicks(s, strafeCommand(s, yaw, 2.0f, +1), soft, airCollision(), 1);
         check(hSpeed(s) <= 22.0f + 1e-3f, "soft cap keeps speed under the cap");
         check(hSpeed(s) > 20.0f + 0.5f, "soft cap still allows gain below cap");
     }
@@ -278,9 +314,9 @@ int main()
         int gains = 0;
         for (const glm::vec2 base : directions) {
             MovementState s = freshState(base * 20.0f);
-            for (int i = 0; i < 120; ++i) {
-                s = runTicks(s, cmdFor(strafeWish(s), true), noCap, airCollision(), 1);
-            }
+            float yaw = 0.0f;
+            for (int i = 0; i < 120; ++i)
+                s = runTicks(s, strafeCommand(s, yaw, 2.0f, +1), noCap, airCollision(), 1);
             if (hSpeed(s) > 20.0f + 2.0f)
                 ++gains;
         }
