@@ -170,6 +170,11 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
         c.enabled = readBool(r, "enabled", c.enabled);
         c.directRender = readBool(r, "direct_render", c.directRender);
         c.serverSmoothing = readBool(r, "server_smoothing", c.serverSmoothing);
+        c.serverSmoothingDurationTicks = (uint32_t)std::max<uint32_t>(
+            1u, (uint32_t)clampMin(
+                    readDouble(r, "server_smoothing_duration_ticks",
+                               (double)c.serverSmoothingDurationTicks),
+                    1.0));
         c.interpolationDelaySeconds =
             clampMin(readDouble(r, "interpolation_delay_ms", c.interpolationDelaySeconds * 1000.0) / 1000.0, 0.0);
         c.maximumBufferedSnapshots = (std::size_t)clampMin(

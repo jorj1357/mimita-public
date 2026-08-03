@@ -671,22 +671,18 @@ void beginServerBroadcastInterp(ServerPlayer& player, uint32_t serverTick)
     else
         player.interpFromPos = player.lastAcceptedClientPosition;
 
-    // Segment duration = client-tick interval between the two reports (both
-    // domains tick at GAMEPLAY_SIMULATION_HZ), preserving real speed. Guard
-    // against lifecycle resets: lastAcceptedClientTick drops to 0 on
-    // respawn/teleport while the client's long-running tick stays huge, so an
-    // absurd or backward delta falls back to a small default duration.
-    uint32_t durationTicks = 2;
-    if (player.hasInterpSegment)
-    {
-        const uint32_t prevTick = player.interpToTick;
-        if (newTick >= prevTick && (newTick - prevTick) < 600)
-            durationTicks = std::max(1u, newTick - prevTick);
-    }
+    // Segment duration = FIXED smoothing window (server_smoothing_duration_ticks),
+    // NOT the client-tick gap between reports. Under jitter/loss/reorder the
+    // accepted reports arrive in bursts; spreading the lerp over the whole gap
+    // is what made remote bodies lag hundreds of ms behind their accepted
+    // positions. A fixed small window converges every report in ~33ms so the
+    // broadcast stream stays smooth and bounded regardless of report cadence.
+    player.interpDurationTicks = std::max(
+        1u, NetworkingConfig::instance().data().remotePlayers
+                .serverSmoothingDurationTicks);
 
     player.interpToPos = player.lastAcceptedClientPosition;
     player.interpToTick = newTick;
-    player.interpDurationTicks = durationTicks;
     player.interpSegmentStartTick = serverTick;
     player.hasInterpSegment = true;
     player.broadcastVelocity = player.lastAcceptedClientVelocity;

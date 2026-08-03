@@ -197,6 +197,11 @@ struct EntityInterpolationState
     bool hasPrevious = false;
     bool hasTarget = false;
     bool renderRegistered = false;
+    // Last render-time snapshot actually written to the rendered replica. Used
+    // to HOLD the body (never snap to the newest packet) when the receive-time
+    // buffer runs thin, so movement/animation can never desync mid-buffer.
+    bool hasRendered = false;
+    SnapshotTransform lastRender;
     uint32_t networkEntityId = 0;
     uint16_t lastTransformEpoch = 0;
     uint32_t lastServerTick = 0;

@@ -25,6 +25,12 @@ struct RemotePlayerInterpolationConfig
     // off (raw broadcast) so remote bodies are not held back by a smoothing
     // segment; kept for when jitter needs filling later.
     bool serverSmoothing = false;
+    // Fixed server-side lerp window (in server ticks) used to converge the
+    // broadcast position to each newly accepted movement report. A small fixed
+    // window keeps the broadcast stream smooth and bounded even when reports
+    // arrive in bursts under jitter/loss/reorder (a report-gap-derived window
+    // is what made remote bodies lag hundreds of ms behind their positions).
+    uint32_t serverSmoothingDurationTicks = 2;
     double interpolationDelaySeconds = 0.033;
     std::size_t maximumBufferedSnapshots = 64;
     std::size_t minimumSnapshotsBeforeRendering = 2;

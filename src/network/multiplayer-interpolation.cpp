@@ -70,6 +70,111 @@ float lerpAngle(float a, float b, float t)
     return a + delta * t;
 }
 
+// Builds the render-time snapshot for a remote actor using receive-time
+// interpolation. Renders at `nowMs() - interpolationDelayMs`, lerping between
+// the two buffered snapshots whose `receivedMs` bracket that instant. Because
+// the delay is in receive time (not server tick), jitter/loss/reorder can no
+// longer freeze-then-jump the body: we always lerp between whatever arrived
+// just before and just after the render instant. Fills `out`; the caller
+// decides how to use the result (thin-buffer handling lives in the caller).
+void buildReceiveTimeRender(const EntityInterpolationState& interpolation,
+                            const RemotePlayerInterpolationConfig& interpCfg,
+                            const double delaySeconds,
+                            SnapshotTransform& out)
+{
+    const uint64_t now = nowMs();
+    const double renderMs = (double)now - delaySeconds * 1000.0;
+
+    const SnapshotTransform* older = nullptr;
+    const SnapshotTransform* newer = nullptr;
+    uint64_t olderMs = 0;
+    uint64_t newerMs = 0;
+
+    // Buffer is ordered by serverTick, so scan by receivedMs to stay robust
+    // against reorder. Find the largest receivedMs <= renderMs (older) and the
+    // smallest receivedMs > renderMs (newer).
+    for (const SnapshotTransform& s : interpolation.buffer)
+    {
+        if (s.receivedMs <= (uint64_t)renderMs)
+        {
+            if (!older || s.receivedMs > olderMs)
+            {
+                older = &s;
+                olderMs = s.receivedMs;
+            }
+        }
+        else
+        {
+            if (!newer || s.receivedMs < newerMs)
+            {
+                newer = &s;
+                newerMs = s.receivedMs;
+            }
+        }
+    }
+
+    if (!newer)
+    {
+        // Buffer ran dry: renderTime is newer than everything buffered.
+        // Extrapolate along the newest velocity (time-limited) if allowed,
+        // otherwise hold the newest snapshot exactly.
+        const SnapshotTransform& newest = interpolation.buffer.back();
+        out = newest;
+        if (interpCfg.allowExtrapolation)
+        {
+            const double extraMs = renderMs - (double)newest.receivedMs;
+            const double extrapMs = std::min(
+                extraMs, interpCfg.maximumExtrapolationSeconds * 1000.0);
+            if (extrapMs > 0.0)
+            {
+                out.position = newest.position +
+                    newest.velocity * (float)(extrapMs / 1000.0);
+                if (gNetInterpDebug)
+                    printf("[NETINTERP EXTRAP] id=%u over=%.1fms\n",
+                           interpolation.networkEntityId, extrapMs);
+            }
+        }
+        return;
+    }
+
+    if (!older)
+    {
+        // renderTime is older than everything buffered (fresh spawn / very
+        // thin buffer): hold the oldest snapshot. No lerp yet.
+        out = *newer;
+        return;
+    }
+
+    double alpha = 1.0;
+    if (newerMs > olderMs)
+    {
+        alpha = (renderMs - (double)olderMs) / (double)(newerMs - olderMs);
+        alpha = std::clamp(alpha, 0.0, 1.0);
+    }
+
+    // Corruption protection: an absurd per-segment gap without a lifecycle
+    // change is treated as a teleport. Not a speed limit.
+    const float gapDist = glm::length(newer->position - older->position);
+    if (gapDist > interpCfg.teleportDistance)
+    {
+        out = *newer;
+        return;
+    }
+
+    out = *newer;
+    out.position = older->position +
+        (newer->position - older->position) * (float)alpha;
+    out.velocity = older->velocity +
+        (newer->velocity - older->velocity) * (float)alpha;
+    out.yaw = lerpAngle(older->yaw, newer->yaw, (float)alpha);
+    {
+        glm::vec3 aim = older->aimDirection * (1.0f - (float)alpha) +
+                        newer->aimDirection * (float)alpha;
+        if (glm::dot(aim, aim) > 0.000001f)
+            out.aimDirection = glm::normalize(aim);
+    }
+}
+
 } // anonymous namespace
 
 bool pushInterpolationTarget(
@@ -213,6 +318,7 @@ void updateRenderedReplica(
     if (!interpolation.hasTarget)
         return;
 
+    (void)renderTick;  // receive-time interpolation uses nowMs() internally
     player.dash.didDash = false;
 
     const auto& interpCfg = NetworkingConfig::instance().data().remotePlayers;
@@ -248,132 +354,59 @@ void updateRenderedReplica(
         interpolation.lastTransformEpoch = targetEpoch;
     }
 
-    // ── Render position/rotation ─────────────────────────────────────
-    // Direct mode (default): render the newest authoritative snapshot for
-    // position, velocity, and animation state together. Position and animation
-    // then come from the same snapshot, so they can never desync, and there is
-    // zero artificial delay. The time-based buffer path below is kept for when
-    // smoothing is re-enabled.
-    glm::vec3 renderPos = interpolation.target.position;
-    float renderYaw = interpolation.target.yaw;
-    glm::vec3 renderAim = interpolation.target.aimDirection;
+    // ── Render state at one consistent view time ─────────────────────
+    // One rule: position, velocity, yaw, aim, animation state, and weapon all
+    // come from the SAME render-time snapshot, so the body can never desync
+    // from its own animation or shots. The render snapshot is produced at
+    // `now - interpolationDelay` via receive-time interpolation (or is the
+    // newest snapshot in direct-render mode, which is internally consistent).
+    const double delaySeconds =
+        NetworkingConfig::instance().effectiveRemoteInterpolationDelaySeconds();
 
-    if (!interpCfg.directRender &&
-        interpCfg.enabled && interpolation.buffer.size() >= 2)
+    SnapshotTransform render = interpolation.target;
+
+    if (!interpCfg.directRender && interpCfg.enabled)
     {
-        const double tickSeconds = 1.0 / (double)GAMEPLAY_SIMULATION_HZ;
-        const double delayTicks = NetworkingConfig::instance()
-                                      .effectiveRemoteInterpolationDelaySeconds() / tickSeconds;
-        const uint32_t oldestTick = interpolation.buffer.front().serverTick;
-        const uint32_t newestTick = interpolation.buffer.back().serverTick;
-
-        double clampedTick = renderTick;
-        double maxTick = (double)newestTick - delayTicks;
-        if (maxTick < (double)oldestTick)
-            maxTick = (double)oldestTick;
-        clampedTick = std::clamp(clampedTick, (double)oldestTick, maxTick);
-
-        // Find the surrounding pair for the render tick.
-        const SnapshotTransform* older = &interpolation.buffer.front();
-        const SnapshotTransform* newer = &interpolation.buffer[1];
-        const uint32_t renderFloor = (uint32_t)std::floor(clampedTick);
-        for (size_t i = 0; i + 1 < interpolation.buffer.size(); ++i)
+        if (interpolation.buffer.size() >= 2)
         {
-            const SnapshotTransform& a = interpolation.buffer[i];
-            const SnapshotTransform& b = interpolation.buffer[i + 1];
-            if (a.serverTick <= renderFloor)
-            {
-                older = &a;
-                if (b.serverTick > renderFloor)
-                {
-                    newer = &b;
-                    break;
-                }
-            }
+            buildReceiveTimeRender(
+                interpolation, interpCfg, delaySeconds, render);
         }
-
-        // Short extrapolation while the buffer is stalled (no new snapshots
-        // for longer than the delay). Time-limited; never a speed clamp.
-        bool extrapolating = false;
-        if (interpCfg.allowExtrapolation && clampedTick >= maxTick - 0.001)
+        else if (interpolation.hasRendered)
         {
-            const uint64_t now = nowMs();
-            const double stallSeconds =
-                (double)(now - interpolation.buffer.back().receivedMs) / 1000.0;
-            if (stallSeconds > NetworkingConfig::instance()
-                                   .effectiveRemoteInterpolationDelaySeconds())
-            {
-                const double extrapSeconds = std::min(
-                    stallSeconds - NetworkingConfig::instance()
-                                       .effectiveRemoteInterpolationDelaySeconds(),
-                    interpCfg.maximumExtrapolationSeconds);
-                const SnapshotTransform& newest = interpolation.buffer.back();
-                renderPos = newest.position + newest.velocity * (float)extrapSeconds;
-                renderYaw = newest.yaw;
-                renderAim = newest.aimDirection;
-                extrapolating = true;
-                if (gNetInterpDebug)
-                    printf("[NETINTERP EXTRAP] id=%u stall=%.2fs over=%.2fs\n",
-                           entityId, stallSeconds, extrapSeconds);
-            }
+            // Buffer too thin to interpolate: HOLD the last rendered snapshot.
+            // Never snap the body to the newest packet just because it arrived.
+            render = interpolation.lastRender;
         }
-
-        if (!extrapolating)
+        else
         {
-            double alpha = 1.0;
-            if (newer->serverTick > older->serverTick)
-            {
-                alpha = (clampedTick - (double)older->serverTick) /
-                        (double)(newer->serverTick - older->serverTick);
-                alpha = std::clamp(alpha, 0.0, 1.0);
-            }
-
-            // Corruption protection only: an absurd per-segment gap without a
-            // lifecycle change is treated as a teleport. Not a speed limit.
-            const float gapDist = glm::length(newer->position - older->position);
-            if (gapDist > interpCfg.teleportDistance)
-            {
-                renderPos = interpolation.target.position;
-                renderYaw = interpolation.target.yaw;
-                renderAim = interpolation.target.aimDirection;
-            }
-            else
-            {
-                renderPos = older->position +
-                    (newer->position - older->position) * (float)alpha;
-                renderYaw = lerpAngle(older->yaw, newer->yaw, (float)alpha);
-                glm::vec3 aim = older->aimDirection * (1.0f - (float)alpha) +
-                                newer->aimDirection * (float)alpha;
-                if (glm::dot(aim, aim) > 0.000001f)
-                    renderAim = glm::normalize(aim);
-            }
+            // First render (fresh spawn / very thin buffer): seed from the
+            // newest snapshot; subsequent frames will hold/interpolate.
+            render = interpolation.target;
         }
     }
-    else if (!interpCfg.directRender &&
-             !interpCfg.enabled && interpolation.hasPrevious)
-    {
-        // Legacy two-snapshot lerp (rollback path when interpolation is disabled).
-        constexpr double LEGACY_DELAY_MS = 50.0;
-        float t = 1.0f;
-        const double span = double(interpolation.target.receivedMs -
-                                   interpolation.previous.receivedMs);
-        if (span > 1.0)
-        {
-            const double renderTime = double(nowMs()) - LEGACY_DELAY_MS;
-            t = std::clamp(float((renderTime - double(interpolation.previous.receivedMs)) / span),
-                           0.0f, 1.0f);
-        }
-        renderPos = interpolation.previous.position +
-            (interpolation.target.position - interpolation.previous.position) * t;
-    }
+
+    const glm::vec3 renderPos = render.position;
+    const float renderYaw = render.yaw;
+    const glm::vec3 renderAim = render.aimDirection;
 
     if (respawned)
+    {
         player.pos = interpolation.target.position;
+        // Hard-snap the remembered render state too, so a thin buffer on the
+        // next frame holds the respawn position rather than the old corpse.
+        interpolation.lastRender = interpolation.target;
+    }
     else
         player.pos = renderPos;
-    player.vel = interpolation.target.velocity;
-    player.currentHp = interpolation.target.health;
-    player.dead = interpolation.target.health <= 0;
+    player.vel = render.velocity;
+    player.currentHp = render.health;
+    player.dead = render.health <= 0;
+
+    // Remember what was actually rendered so a thin buffer holds it exactly.
+    if (!respawned)
+        interpolation.lastRender = render;
+    interpolation.hasRendered = true;
 
     // Body-facing yaw and aim use the interpolated render values.
     {
@@ -390,8 +423,8 @@ void updateRenderedReplica(
         }
     }
 
-    player.ground.onGround = interpolation.target.onGround;
-    player.equippedSlot = interpolation.target.equippedSlot;
+    player.ground.onGround = render.onGround;
+    player.equippedSlot = render.equippedSlot;
     {
         player.equippedWeaponId.clear();
         player.hasValidWeapon = false;
@@ -422,14 +455,14 @@ void updateRenderedReplica(
 
     player.networkShootEffectTimer =
         std::max(0.0f, player.networkShootEffectTimer - dt);
-    player.networkWeaponState = interpolation.target.weaponState;
+    player.networkWeaponState = render.weaponState;
     if (player.networkShootEffectTimer > 0.0f)
         player.networkWeaponState |= 1u;
-    player.sizeScale = interpolation.target.sizeScale;
+    player.sizeScale = render.sizeScale;
     player.spawnGeneration = interpolation.target.spawnGeneration;
     player.username = interpolation.displayName;
-    player.networkStateFlags = interpolation.target.stateFlags;
-    player.ground.onGround = interpolation.target.onGround;
+    player.networkStateFlags = render.stateFlags;
+    player.ground.onGround = render.onGround;
 
     // ── Freeze state ─────────────────────────────────────────────────
     // Set freezeActive for the freeze pose state machine in
@@ -438,7 +471,7 @@ void updateRenderedReplica(
     // the freeze pose code entirely. proceduralFrozen is reserved for
     // pause/replay/cinematic use.
     player.freeze.freezeActive =
-        (interpolation.target.stateFlags & NET_STATE_FREEZING) != 0;
+        (render.stateFlags & NET_STATE_FREEZING) != 0;
 
     // ── Event serial changes → one-shot VFX ─────────────────────────
     // entityId is already defined above from interpolation.networkEntityId
@@ -537,7 +570,7 @@ void updateRenderedReplica(
     // Walking animation driven by client stateFlags, not server grounded state,
     // so it works immediately after respawn and during brief airtime.
     const bool remoteWalking =
-        (interpolation.target.stateFlags & NET_STATE_WALKING) != 0;
+        (render.stateFlags & NET_STATE_WALKING) != 0;
     if (remoteWalking)
     {
         glm::vec2 planarVel(player.vel.x, player.vel.y);
