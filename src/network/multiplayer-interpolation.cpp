@@ -86,6 +86,7 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
                             const RemotePlayerInterpolationConfig& interpCfg,
                             const double delaySeconds,
                             const double globalRenderTick,
+                            bool allowExtrapolation,
                             SnapshotTransform& out)
 {
     const uint32_t oldestTick = interpolation.buffer.front().serverTick;
@@ -105,7 +106,7 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
         const SnapshotTransform& newest = interpolation.buffer.back();
         out = newest;
         interpolation.extrapolating = true;
-        if (interpCfg.allowExtrapolation)
+        if (allowExtrapolation)
         {
             const double extraTicks = renderTick - (double)newestTick;
             const double extraMs =
@@ -504,11 +505,16 @@ void updateRenderedReplica(
     // One rule: position, velocity, yaw, aim, animation state, and weapon all
     // come from the SAME render-time snapshot, so the body can never desync
     // from its own animation or shots. The render snapshot is produced at
-    // `estimatedServerNow - adaptiveDelay` on a continuous wall-clock clock,
-    // so the interpolation alpha is always fractional (smooth at any frame
-    // rate; no freeze/jump from a clamped catch-up clock).
+    // `estimatedServerNow - delay` on a continuous wall-clock clock, so the
+    // interpolation alpha is always fractional (smooth at any frame rate; no
+    // freeze/jump from a clamped catch-up clock).
     const NetworkingConfigData& netCfg = NetworkingConfig::instance().data();
-    const double delaySeconds = adaptiveDelaySeconds(interpolation, netCfg, dt);
+    const bool linearMode = (motion.renderFilter == "linear");
+    // linear mode uses a fixed whole-tick delay (the loss buffer); other modes
+    // use the adaptive per-entity delay that grows under jitter/loss.
+    const double delaySeconds = linearMode
+        ? (double)motion.linearDelayTicks / (double)GAMEPLAY_SIMULATION_HZ
+        : adaptiveDelaySeconds(interpolation, netCfg, dt);
 
     SnapshotTransform render = interpolation.target;
 
@@ -517,18 +523,29 @@ void updateRenderedReplica(
         if (interpolation.buffer.size() >= 2)
         {
             // `renderTick` is the estimated current server tick (ticks). The
-            // render time is that minus the per-entity adaptive delay; the
-            // interpolation alpha is always fractional, so the body moves
-            // smoothly at any frame rate.
+            // render time is that minus the delay; the interpolation alpha is
+            // always fractional, so the body moves smoothly at any frame rate.
+            // linear mode never extrapolates when holding on dry; other modes
+            // honor interpCfg.allowExtrapolation.
+            const bool allowExtrap = linearMode
+                ? !motion.linearHoldOnDry
+                : interpCfg.allowExtrapolation;
             buildReceiveTimeRender(
-                interpolation, interpCfg, delaySeconds, renderTick, render);
+                interpolation, interpCfg, delaySeconds, renderTick,
+                allowExtrap, render);
+        }
+        else if (linearMode && interpolation.hasRendered)
+        {
+            // linear mode: too few snapshots for a segment — HOLD the last
+            // rendered position (never snap to the newest packet directly).
+            render = interpolation.lastRender;
         }
         else
         {
-            // Too few snapshots to form an interpolation segment yet (fresh
-            // spawn / very thin buffer): show the newest authoritative state.
-            // No freeze-hold of a stale render: the wall-clock render clock
-            // recovers on its own as snapshots accumulate.
+            // First render / fresh spawn (or a non-linear mode's thin buffer):
+            // seed from the newest authoritative state. No freeze-hold of a
+            // stale render: the wall-clock render clock recovers on its own as
+            // snapshots accumulate.
             render = interpolation.target;
         }
     }
@@ -547,36 +564,75 @@ void updateRenderedReplica(
     //            adds a few ms of follow-lag on fast turns.
     if (interpolation.hasRendered && !respawned && !interpCfg.directRender)
     {
+        const float safeDt = std::min(dt, 0.05f);
         if (motion.renderFilter == "spring")
         {
-            const float safeDt = std::min(dt, 0.05f);
-            const glm::vec3 acceleration =
-                (renderPos - interpolation.renderSpring.value) *
-                    (float)motion.springStiffness -
-                interpolation.renderSpring.velocity * (float)motion.springDamping;
-            interpolation.renderSpring.velocity += acceleration * safeDt;
-            interpolation.renderSpring.value +=
-                interpolation.renderSpring.velocity * safeDt;
+            // Implicit-velocity critically-damped spring: unconditionally
+            // stable, so it never rings at high frequency (a semi-implicit
+            // Euler spring under-damps in discrete time and wobbles ±1).
+            const float k = (float)motion.springStiffness;
+            const float c = (float)motion.springDamping;
+            const float denom = 1.0f + c * safeDt;
+            glm::vec3 vel = interpolation.renderSpring.velocity;
+            const glm::vec3 accel =
+                (renderPos - interpolation.renderSpring.value) * k;
+            vel = (vel + accel * safeDt) / denom;
+            if (motion.hybridMaxSpeedUnitsPerSecond > 0.0f)
+            {
+                const float maxSpd = (float)motion.hybridMaxSpeedUnitsPerSecond;
+                const float velLen = glm::length(vel);
+                if (velLen > maxSpd)
+                    vel = vel * (maxSpd / velLen);
+            }
+            interpolation.renderSpring.velocity = vel;
+            interpolation.renderSpring.value += vel * safeDt;
             renderPos = interpolation.renderSpring.value;
         }
         else if (motion.renderFilter == "hybrid")
         {
-            // Velocity-feed-forward critically-damped spring. Feeding the
-            // interpolated velocity forward cancels the spring's steady-state
+            // Velocity-feed-forward spring with an implicit integrator. Feeding
+            // the interpolated velocity forward cancels the spring's steady-state
             // follow-lag (lag = V·damping/stiffness), so fast / up-down motion
-            // tracks crisply while position discontinuities still converge
-            // smoothly with zero snap.
+            // tracks crisply while discontinuities converge with zero snap. The
+            // implicit velocity update removes discrete-time ringing.
             const float omega = 2.0f * 3.14159265f * (float)motion.hybridFrequencyHz;
             const float k = omega * omega;
             const float c = 2.0f * omega * (float)motion.hybridDampingRatio;
-            const float safeDt = std::min(dt, 0.05f);
-            const glm::vec3 targetVel = render.velocity;
-            const glm::vec3 accel =
-                (renderPos - interpolation.renderSpring.value) * k +
-                (targetVel - interpolation.renderSpring.velocity) * c;
-            interpolation.renderSpring.velocity += accel * safeDt;
-            interpolation.renderSpring.value +=
-                interpolation.renderSpring.velocity * safeDt;
+            const float zMult = std::max(0.5f, (float)motion.hybridFrequencyZMultiplier);
+            const float omegaZ = omega * zMult;
+            const float kZ = omegaZ * omegaZ;
+            const float cZ = 2.0f * omegaZ * (float)motion.hybridDampingRatio;
+            const float denom = 1.0f + c * safeDt;
+            const float denomZ = 1.0f + cZ * safeDt;
+
+            // Low-pass the feed-forward velocity so snapshot-boundary slope
+            // changes are not amplified into jitter by the stiff spring.
+            const float ffSmooth = std::clamp(
+                (float)motion.hybridFeedForwardSmoothing, 0.0f, 1.0f);
+            const glm::vec3 rawTargetVel = render.velocity;
+            if (ffSmooth > 0.0f)
+                interpolation.renderSpringTargetVel +=
+                    (rawTargetVel - interpolation.renderSpringTargetVel) * ffSmooth;
+            else
+                interpolation.renderSpringTargetVel = rawTargetVel;
+            const glm::vec3 targetVel =
+                interpolation.renderSpringTargetVel *
+                (float)motion.hybridFeedForward;
+
+            glm::vec3 vel = interpolation.renderSpring.velocity;
+            const glm::vec3 err = renderPos - interpolation.renderSpring.value;
+            vel.x = (vel.x + (err.x * k + targetVel.x * c) * safeDt) / denom;
+            vel.y = (vel.y + (err.y * k + targetVel.y * c) * safeDt) / denom;
+            vel.z = (vel.z + (err.z * kZ + targetVel.z * cZ) * safeDt) / denomZ;
+            if (motion.hybridMaxSpeedUnitsPerSecond > 0.0f)
+            {
+                const float maxSpd = (float)motion.hybridMaxSpeedUnitsPerSecond;
+                const float velLen = glm::length(vel);
+                if (velLen > maxSpd)
+                    vel = vel * (maxSpd / velLen);
+            }
+            interpolation.renderSpring.velocity = vel;
+            interpolation.renderSpring.value += vel * safeDt;
             renderPos = interpolation.renderSpring.value;
         }
         else if (motion.renderFilter == "bounded")
@@ -586,6 +642,23 @@ void updateRenderedReplica(
             const glm::vec3 delta = renderPos - player.pos;
             const float len = glm::length(delta);
             if (len > (float)motion.correctionMinDeltaUnits && len > maxStep)
+                renderPos = player.pos + delta * (maxStep / len);
+        }
+
+        // Universal Z floor guard: never render below the interpolated
+        // authoritative body, so filter overshoot after a fast landing cannot
+        // push the body through the floor. Does not block legitimate falls.
+        if (motion.filterClampZBelowTarget)
+            renderPos.z = std::max(renderPos.z, render.position.z);
+
+        // Universal final hard cap: the absolute "never teleport" guarantee.
+        if (motion.filterMaxStepUnitsPerSecond > 0.0f)
+        {
+            const float maxStep = (float)(
+                motion.filterMaxStepUnitsPerSecond * (double)dt);
+            const glm::vec3 delta = renderPos - player.pos;
+            const float len = glm::length(delta);
+            if (len > maxStep)
                 renderPos = player.pos + delta * (maxStep / len);
         }
     }
@@ -599,6 +672,7 @@ void updateRenderedReplica(
         interpolation.lastRender = interpolation.target;
         // The new life must not inherit the old corpse's spring velocity.
         interpolation.renderSpring = SpringState{};
+        interpolation.renderSpringTargetVel = glm::vec3(0.0f);
     }
     else
         player.pos = renderPos;

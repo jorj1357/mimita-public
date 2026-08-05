@@ -10,6 +10,7 @@
 
 #include "website/api-client.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
@@ -216,6 +217,83 @@ MimitaVip::VipAppearance parseVipAppearanceJson(const json& owner,
 
     return out;
 }
+
+MimitaVip::VipStyleDetail parseVipStyleDetailJson(const json& owner,
+                                                  const std::string& fallbackTier,
+                                                  const std::string& role)
+{
+    std::string tier = fallbackTier.empty() ? "free" : fallbackTier;
+    json vip = json::object();
+    if (owner.contains("vip") && owner["vip"].is_object())
+    {
+        vip = owner["vip"];
+        tier = vip.value("active_tier", tier);
+    }
+
+    MimitaVip::VipStyleDetail out;
+    if (tier == "free")
+        return out;
+
+    // Staff color overrides are authoritative and handled by the compact
+    // solid appearance; never let a stored style bypass staff authority.
+    std::string staffHex;
+    if (vip.contains("display") && vip["display"].is_object())
+        staffHex = vip["display"].value("name_color_override", "");
+    if (staffHex.empty())
+        staffHex = staffColorForRole(role);
+    if (!staffHex.empty())
+        return out;
+
+    if (!vip.contains("name_style") || !vip["name_style"].is_object())
+        return out;
+
+    const json& style = vip["name_style"];
+    const uint8_t styleKind = MimitaVip::styleKindFromString(style.value("kind", ""));
+    if (styleKind == MimitaVip::VIP_STYLE_NONE)
+        return out;
+
+    out.styleKind = styleKind;
+
+    if (styleKind == MimitaVip::VIP_STYLE_SOLID ||
+        styleKind == MimitaVip::VIP_STYLE_TURQUOISE)
+    {
+        uint8_t r = 64, g = 224, b = 208;
+        if (style.contains("solid_color") && style["solid_color"].is_string())
+            parseHexColor(style["solid_color"].get<std::string>(), r, g, b);
+        out.colors.push_back(MimitaVip::colorFromBytes(r, g, b));
+        out.solidColor = out.colors[0];
+        return out;
+    }
+
+    if (style.contains("colors") && style["colors"].is_array())
+    {
+        for (const auto& item : style["colors"])
+        {
+            if (!item.is_string()) continue;
+            uint8_t r = 158, g = 158, b = 158;
+            if (!parseHexColor(item.get<std::string>(), r, g, b)) continue;
+            out.colors.push_back(MimitaVip::colorFromBytes(r, g, b));
+            if (out.colors.size() >= MimitaVip::VIP_STYLE_MAX_COLORS) break;
+        }
+    }
+    if (out.colors.empty())
+        return out;
+
+    out.solidColor = out.colors[0];
+    const double speed = style.value("rainbow_speed", 1.0);
+    out.rainbowSpeed = (float)std::clamp(speed, 0.25, 4.0);
+    out.direction = style.value("rainbow_direction", "ltr") == "rtl"
+        ? MimitaVip::VIP_DIRECTION_RTL : MimitaVip::VIP_DIRECTION_LTR;
+    const std::string animation = style.value("animation", "");
+    if (animation == "cycle")
+        out.animation = MimitaVip::VIP_ANIMATION_CYCLE;
+    else if (animation == "pulse")
+        out.animation = MimitaVip::VIP_ANIMATION_PULSE;
+    else
+        out.animation = MimitaVip::VIP_ANIMATION_NONE;
+
+    return out;
+}
 }
 
 static void parseUserInfo(GameUserInfo& info, const json& u)
@@ -240,6 +318,7 @@ static void parseUserInfo(GameUserInfo& info, const json& u)
     info.supporterTier = u.value("supporter_tier", "free");
     info.role = u.value("role", "user");
     info.vipAppearance = parseVipAppearanceJson(u, info.supporterTier, info.role);
+    info.vipStyleDetail = parseVipStyleDetailJson(u, info.supporterTier, info.role);
     info.supporterTier = MimitaVip::tierToString(info.vipAppearance.tier);
     info.emailVerified = u.value("email_verified", false);
     info.createdAt = u.value("created_at", "");
@@ -502,6 +581,7 @@ std::vector<LeaderboardEntry> getLeaderboard(const std::string& type, int limit)
             le.avatarUrl = entry.value("avatar_url", "");
             le.supporterTier = entry.value("supporter_tier", "free");
             le.vipAppearance = parseVipAppearanceJson(entry, le.supporterTier, entry.value("role", "user"));
+            le.vipStyleDetail = parseVipStyleDetailJson(entry, le.supporterTier, entry.value("role", "user"));
             le.supporterTier = MimitaVip::tierToString(le.vipAppearance.tier);
             auto& s = le.stats;
             s.wins = entry.value("wins", 0);
@@ -786,6 +866,7 @@ GameLoginResult gameLogin(const std::string& identifier, const std::string& pass
         result.username = acct.value("username", "");
         result.supporterTier = acct.value("supporter_tier", "free");
         result.vipAppearance = parseVipAppearanceJson(acct, result.supporterTier, acct.value("role", "user"));
+        result.vipStyleDetail = parseVipStyleDetailJson(acct, result.supporterTier, acct.value("role", "user"));
         result.supporterTier = MimitaVip::tierToString(result.vipAppearance.tier);
         for (const auto& p : acct.value("permissions", json::array()))
             result.permissions.push_back(p.get<std::string>());
@@ -844,6 +925,8 @@ GameRefreshResult gameRefresh(const std::string& refreshToken, const std::string
             const json& acct = j["account"];
             result.vipAppearance = parseVipAppearanceJson(
                 acct, acct.value("supporter_tier", "free"), acct.value("role", "user"));
+            result.vipStyleDetail = parseVipStyleDetailJson(
+                acct, acct.value("supporter_tier", "free"), acct.value("role", "user"));
         }
     } catch (...) {
         result.errorCode = "AUTH_INVALID_RESPONSE";
@@ -893,6 +976,7 @@ ClientCodePreview previewClientCode(const std::string& code)
                 result.avatarData = j["avatar_data"];
             result.supporterTier = j.value("supporter_tier", "free");
             result.vipAppearance = parseVipAppearanceJson(j, result.supporterTier, j.value("role", "user"));
+            result.vipStyleDetail = parseVipStyleDetailJson(j, result.supporterTier, j.value("role", "user"));
             result.supporterTier = MimitaVip::tierToString(result.vipAppearance.tier);
         }
     } catch (...) {}
@@ -923,6 +1007,7 @@ ClientCodeConfirm confirmClientCode(const std::string& code)
             result.displayName = account.value("display_name", result.username);
             result.supporterTier = account.value("supporter_tier", "free");
             result.vipAppearance = parseVipAppearanceJson(account, result.supporterTier, account.value("role", "user"));
+            result.vipStyleDetail = parseVipStyleDetailJson(account, result.supporterTier, account.value("role", "user"));
             result.supporterTier = MimitaVip::tierToString(result.vipAppearance.tier);
         }
     } catch (...) {}
@@ -1003,6 +1088,7 @@ VipJoinTicketResult verifyVipJoinTicket(const std::string& joinTicket,
             owner["role"] = result.role;
             owner["vip"] = j["vip"];
             result.vipAppearance = parseVipAppearanceJson(owner, result.supporterTier, result.role);
+            result.vipStyleDetail = parseVipStyleDetailJson(owner, result.supporterTier, result.role);
             result.supporterTier = MimitaVip::tierToString(result.vipAppearance.tier);
         }
     } catch (...) {

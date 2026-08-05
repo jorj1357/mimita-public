@@ -304,6 +304,22 @@ bool storeProfileCache(const CachedProfile& profile)
             {"color_b", profile.vipAppearance.colorB},
             {"flags", profile.vipAppearance.flags}
         };
+        {
+            json colors = json::array();
+            for (const auto& c : profile.vipStyleDetail.colors)
+                colors.push_back({
+                    {"r", (int)std::lround(c.r * 255.0f)},
+                    {"g", (int)std::lround(c.g * 255.0f)},
+                    {"b", (int)std::lround(c.b * 255.0f)}
+                });
+            j["vip_style"] = {
+                {"style_kind", profile.vipStyleDetail.styleKind},
+                {"animation", profile.vipStyleDetail.animation},
+                {"direction", profile.vipStyleDetail.direction},
+                {"rainbow_speed", profile.vipStyleDetail.rainbowSpeed},
+                {"colors", colors}
+            };
+        }
 
         std::ofstream out(profileCachePath(), std::ios::trunc);
         if (!out)
@@ -349,6 +365,26 @@ CachedProfile loadProfileCache()
             profile.vipAppearance.colorB = (uint8_t)vip.value("color_b", (int)profile.vipAppearance.colorB);
             profile.vipAppearance.flags = (uint8_t)vip.value("flags", (int)profile.vipAppearance.flags);
             profile.supporterTier = MimitaVip::tierToString(profile.vipAppearance.tier);
+        }
+        if (j.contains("vip_style") && j["vip_style"].is_object())
+        {
+            const json& vs = j["vip_style"];
+            profile.vipStyleDetail.styleKind = (uint8_t)vs.value("style_kind", 0);
+            profile.vipStyleDetail.animation = (uint8_t)vs.value("animation", 0);
+            profile.vipStyleDetail.direction = (uint8_t)vs.value("direction", 0);
+            profile.vipStyleDetail.rainbowSpeed = vs.value("rainbow_speed", 1.0f);
+            if (vs.contains("colors") && vs["colors"].is_array())
+            {
+                for (const auto& c : vs["colors"])
+                {
+                    profile.vipStyleDetail.colors.push_back(MimitaVip::colorFromBytes(
+                        (uint8_t)c.value("r", 158),
+                        (uint8_t)c.value("g", 158),
+                        (uint8_t)c.value("b", 158)));
+                }
+            }
+            if (!profile.vipStyleDetail.colors.empty())
+                profile.vipStyleDetail.solidColor = profile.vipStyleDetail.colors[0];
         }
 
         if (!profile.username.empty())

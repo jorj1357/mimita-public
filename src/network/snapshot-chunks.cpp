@@ -143,6 +143,7 @@ CompactEntityData compactEntityFromSnapshot(const SnapshotEntity& entity)
     out.vipColorG = entity.vipColorG;
     out.vipColorB = entity.vipColorB;
     out.vipFlags = entity.vipFlags;
+    out.vipStyleEpoch = entity.vipStyleEpoch;
     std::memset(out.displayName, 0, sizeof(out.displayName));
     std::strncpy(out.displayName, entity.displayName, sizeof(out.displayName) - 1);
     return out;
@@ -187,6 +188,7 @@ SnapshotEntity snapshotEntityFromCompact(const CompactEntityData& entity)
     out.vipColorG = entity.vipColorG;
     out.vipColorB = entity.vipColorB;
     out.vipFlags = entity.vipFlags;
+    out.vipStyleEpoch = entity.vipStyleEpoch;
     std::memset(out.displayName, 0, sizeof(out.displayName));
     std::strncpy(out.displayName, entity.displayName, sizeof(out.displayName) - 1);
     return out;

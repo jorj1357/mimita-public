@@ -35,6 +35,7 @@ struct CachedProfile {
     std::string avatarUrl;
     std::string supporterTier;
     MimitaVip::VipAppearance vipAppearance;
+    MimitaVip::VipStyleDetail vipStyleDetail;
 };
 
 bool storeProfileCache(const CachedProfile& profile);

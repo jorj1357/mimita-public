@@ -118,6 +118,13 @@ struct SnapshotBufferConfig
 //               forward so fast/up-down motion tracks with ~zero lag (no
 //               follow-lag) while discontinuities still spring-converge with
 //               zero snap. This is the best of spring + bounded.
+//   "linear"  — pure CS-style delayed packet interpolation. Renders
+//               linear_delay_ticks packets behind the newest and ALWAYS slides
+//               linearly between the two bracketing snapshots; never renders
+//               the newest directly. The delay is a loss buffer: up to
+//               linear_delay_ticks consecutive lost packets are hidden. When
+//               loss exceeds the buffer, linear_hold_on_dry decides between a
+//               CS-style hold (seamless resume) or extrapolation (never stop).
 struct RemoteMotionSmoothingConfig
 {
     std::string renderFilter = "hybrid";
@@ -133,6 +140,36 @@ struct RemoteMotionSmoothingConfig
     // overshoot), below 1.0 adds a little snap, above 1.0 is overdamped.
     double hybridFrequencyHz = 10.0;
     double hybridDampingRatio = 1.0;
+    // 0..1 blend between a pure spring (0, smooth but follows with lag) and
+    // full velocity feed-forward (1, crisp with ~zero lag). Tune smoothness
+    // vs snappiness continuously.
+    double hybridFeedForward = 1.0;
+    // Scales hybrid frequency on the Z axis only, so up/down (jumps, falls,
+    // dashes) can be made crisper without changing horizontal smoothness.
+    double hybridFrequencyZMultiplier = 1.0;
+    // Low-pass (0..1) applied to the velocity fed into the hybrid spring.
+    // Higher = smoother but a touch laggier; reduces jitter caused by the
+    // interpolated velocity's slope changes at snapshot boundaries.
+    double hybridFeedForwardSmoothing = 0.4;
+    // Caps the spring's velocity magnitude (units/sec) in hybrid/spring modes.
+    // 0 = unlimited. Bounds corrections so a big discontinuity glides instead
+    // of lurching.
+    double hybridMaxSpeedUnitsPerSecond = 0.0;
+    // Universal final hard cap on rendered per-frame movement (units/sec).
+    // 0 = unlimited. The absolute "never teleport" guarantee across every mode.
+    double filterMaxStepUnitsPerSecond = 0.0;
+    // Floor guard (all modes): the rendered body's Z never drops below the
+    // interpolated authoritative target's Z, so filter overshoot after a fast
+    // landing cannot push the body through the floor.
+    bool filterClampZBelowTarget = true;
+    // linear mode: render N packets behind the newest. This is the loss buffer —
+    // up to N consecutive lost packets are hidden because the body keeps
+    // interpolating on older packets. Higher = smoother under loss, more delay.
+    uint32_t linearDelayTicks = 6;
+    // linear mode: when loss exceeds the buffer, true = CS-style hold at the
+    // correct interpolated position (seamless resume, zero drift); false =
+    // extrapolate along the last velocity (never stops, small pop if wrong).
+    bool linearHoldOnDry = true;
 };
 
 struct NetworkDeathEffectsConfig

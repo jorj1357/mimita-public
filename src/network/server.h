@@ -181,6 +181,8 @@ struct ServerPlayer
     int vipAccountId = 0;
     std::string accountRole;
     MimitaVip::VipAppearance vipAppearance;
+    MimitaVip::VipStyleDetail vipStyleDetail;
+    uint32_t vipStyleEpoch = 0;
     sockaddr_in addr{};
     TransportConnectionId connectionId{};
     bool hasConnectionId = false;

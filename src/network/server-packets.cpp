@@ -1112,12 +1112,16 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         p.vipAccountId = verifiedVipAccountId;
         p.accountRole = verifiedVipRole;
         p.vipAppearance = verifiedVipAppearance;
+        p.vipStyleDetail = vipResult.vipStyleDetail;
+        p.vipStyleEpoch = 1;
     }
     else if (!existingId)
     {
         p.vipAccountId = 0;
         p.accountRole.clear();
         p.vipAppearance = MimitaVip::freeAppearance();
+        p.vipStyleDetail = MimitaVip::VipStyleDetail{};
+        p.vipStyleEpoch = 0;
     }
 
     if (!existingId)
@@ -1172,6 +1176,17 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     std::strncpy(accept.mapId, gServerMapId.c_str(), sizeof(accept.mapId) - 1);
     if (sendToSourceOrPlayer(sock, from, &p, nullptr, &accept, sizeof(accept)))
         ++totalPacketsOut;
+
+    // Broadcast the joining player's full VIP style so every client renders
+    // exact colors for both the newcomer and the existing roster.
+    if (p.vipStyleEpoch != 0)
+        broadcastVipStyleEvent(sock, p, players, tick, totalPacketsOut);
+    for (auto& kv : players)
+    {
+        if (kv.first == id || kv.second.vipStyleEpoch == 0)
+            continue;
+        broadcastVipStyleEvent(sock, kv.second, players, tick, totalPacketsOut);
+    }
 }
 
 void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
@@ -1628,6 +1643,61 @@ std::string generateReconnectToken()
     for (int i = 0; i < 24; ++i)
         token += chars[dist(rng)];
     return token;
+}
+
+// ── VIP style sync: broadcast a player's full style to all clients ──
+// Animation is never sent; clients render the shift locally from their own
+// tick. Style data is static and only travels once per join/change.
+void broadcastVipStyleEvent(SOCKET sock,
+                            const ServerPlayer& target,
+                            const std::unordered_map<uint32_t, ServerPlayer>& players,
+                            uint32_t tick,
+                            uint64_t& totalPacketsOut)
+{
+    VipStyleEventPacket packet{};
+    packet.header.type = PACKET_VIP_STYLE_EVENT;
+    packet.header.tick = tick;
+    packet.header.playerId = target.id;
+    packet.playerId = target.id;
+    packet.styleEpoch = target.vipStyleEpoch;
+
+    MimitaVip::VipStyleDetail detail = target.vipStyleDetail;
+    if (!detail.valid())
+    {
+        // Free / no style: broadcast an empty style so clients clear any stale
+        // style carried over from a previous appearance.
+        packet.styleKind = MimitaVip::VIP_STYLE_NONE;
+        packet.colorCount = 0;
+    }
+    else
+    {
+        packet.styleKind = detail.styleKind;
+        packet.animation = detail.animation;
+        packet.direction = detail.direction;
+        packet.rainbowSpeed = detail.rainbowSpeed;
+        uint8_t* colorBytes = reinterpret_cast<uint8_t*>(packet.colors);
+        packet.colorCount = MimitaVip::copyStyleDetailToWire(
+            detail, packet.styleKind, packet.animation, packet.direction,
+            packet.rainbowSpeed, colorBytes);
+    }
+
+    for (const auto& kv : players)
+    {
+        bool ok = false;
+        if (kv.second.transport)
+            ok = kv.second.transport->send(&packet, sizeof(packet));
+        else
+        {
+            int bytesSent = sendto(
+                sock, (const char*)&packet, sizeof(packet), 0,
+                (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+            ok = (bytesSent != SOCKET_ERROR);
+            if (!ok)
+                printf("%s [NET TX ERROR] broadcastVipStyleEvent failed id=%u error=%d\n",
+                       serverTimestamp(), kv.first, WSAGetLastError());
+        }
+        ++totalPacketsOut;
+    }
 }
 
 void buildAndSendSnapshot(SOCKET sock,

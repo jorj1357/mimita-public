@@ -321,7 +321,7 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
         {
             const std::string mode = readString(r, "render_filter", c.renderFilter);
             c.renderFilter = (mode == "direct" || mode == "spring" ||
-                              mode == "hybrid")
+                              mode == "hybrid" || mode == "linear")
                 ? mode : "bounded";
         }
         c.correctionMaxStepUnitsPerSecond = clampMin(
@@ -338,6 +338,25 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
             readDouble(r, "hybrid_frequency_hz", c.hybridFrequencyHz), 1.0, 60.0);
         c.hybridDampingRatio = clampRange(
             readDouble(r, "hybrid_damping_ratio", c.hybridDampingRatio), 0.0, 3.0);
+        c.hybridFeedForward = clampRange(
+            readDouble(r, "hybrid_feed_forward", c.hybridFeedForward), 0.0, 1.0);
+        c.hybridFrequencyZMultiplier = clampRange(
+            readDouble(r, "hybrid_frequency_z_multiplier", c.hybridFrequencyZMultiplier), 0.5, 3.0);
+        c.hybridFeedForwardSmoothing = clampRange(
+            readDouble(r, "hybrid_feed_forward_smoothing", c.hybridFeedForwardSmoothing), 0.0, 1.0);
+        c.hybridMaxSpeedUnitsPerSecond = clampMin(
+            readDouble(r, "hybrid_max_speed_units_per_second",
+                       c.hybridMaxSpeedUnitsPerSecond), 0.0);
+        c.filterMaxStepUnitsPerSecond = clampMin(
+            readDouble(r, "filter_max_step_units_per_second",
+                       c.filterMaxStepUnitsPerSecond), 0.0);
+        c.filterClampZBelowTarget = readBool(
+            r, "filter_clamp_z_below_target", c.filterClampZBelowTarget);
+        c.linearDelayTicks = (uint32_t)std::max<uint32_t>(
+            1u, (uint32_t)clampMin(
+                    readDouble(r, "linear_delay_ticks", (double)c.linearDelayTicks),
+                    1.0));
+        c.linearHoldOnDry = readBool(r, "linear_hold_on_dry", c.linearHoldOnDry);
     }
 
     // ── death_effects ────────────────────────────────────────────────

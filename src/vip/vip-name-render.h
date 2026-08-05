@@ -20,6 +20,11 @@ struct VipNameDrawOptions
     float alpha = 1.0f;
     float phase = 0.0f;
     bool drawBadge = true;
+    // Optional full style carried from the server. When present and valid it
+    // renders the exact user-chosen colors (solid/rainbow/per-letter). When
+    // null the compact appearance falls back to the fixed palette. Animation
+    // is always client-local and tick-driven via `phase`.
+    const MimitaVip::VipStyleDetail* detail = nullptr;
 };
 
 float vipMeasureStyledName(const std::string& name,

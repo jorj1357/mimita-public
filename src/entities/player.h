@@ -362,6 +362,7 @@ class Player {
 public:
     std::string username = "admin";
     MimitaVip::VipAppearance vipAppearance;
+    MimitaVip::VipStyleDetail vipStyleDetail;
     int currentHp = 100;
     int maxHp = 100;
     bool inventoryOpen = false;
