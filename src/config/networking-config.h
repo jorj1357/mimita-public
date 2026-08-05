@@ -67,6 +67,19 @@ struct RemotePlayerInterpolationConfig
     // line across seconds of missing motion. Short loss gaps (a few ticks)
     // still interpolate smoothly across the hole.
     uint32_t teleportGapTicks = 30;
+    // What position the server broadcasts for each player:
+    //   "server_sim"  — the server's own 60Hz input-driven simulation (p.pos).
+    //                   Always smooth, immune to that player's network quality.
+    //   "client_report" — the validated client-reported position (legacy).
+    std::string broadcastSource = "server_sim";
+    // When the interpolation buffer runs dry, keep extrapolating along the last
+    // velocity past maximumExtrapolationSeconds (with a slow glide decay) instead
+    // of stopping the body at the cap. Prevents "freeze for N ticks then snap".
+    bool extrapolationKeepMoving = true;
+    // When a hole wider than teleportGapTicks is crossed (e.g. a long blackout),
+    // snap to the newest snapshot (true) or feed it to the motion filter so the
+    // body converges smoothly instead of teleporting (false).
+    bool teleportGapSnap = true;
     bool snapOnSpawn = true;
     bool snapOnRespawn = true;
     bool snapOnMapChange = true;
@@ -93,15 +106,87 @@ struct SnapshotBufferConfig
     double chunkReassemblyTimeoutSeconds = 1.0;
 };
 
+// Post-interpolation motion filter applied to the rendered remote body.
+//   "direct"  — set the position directly each frame (zero smoothing; can snap).
+//   "bounded" — cap the per-frame movement toward the interpolated target so a
+//               discontinuity (loss hole, extrapolation resume, blackout)
+//               converges smoothly over a few frames instead of snapping.
+//               Normal smooth motion passes through untouched.
+//   "spring"  — always-on critically-damped spring on the rendered position.
+//               Literally cannot snap; adds a few ms of follow-lag on fast turns.
+//   "hybrid"  — velocity-feed-forward spring. Feeds the interpolated velocity
+//               forward so fast/up-down motion tracks with ~zero lag (no
+//               follow-lag) while discontinuities still spring-converge with
+//               zero snap. This is the best of spring + bounded.
+struct RemoteMotionSmoothingConfig
+{
+    std::string renderFilter = "hybrid";
+    // Max units/sec the rendered body may move toward the target in bounded mode.
+    double correctionMaxStepUnitsPerSecond = 100.0;
+    // Ignore sub-pixel deltas (units) so tiny noise never triggers the filter.
+    double correctionMinDeltaUnits = 0.05;
+    double springStiffness = 120.0;
+    double springDamping = 20.0;
+    // Hybrid (feed-forward spring): ω = 2π·frequency; stiffness = ω²,
+    // damping = 2ω·damping_ratio. Higher frequency = crisper tracking (and
+    // more sensitive to noise); damping_ratio 1.0 = critically damped (zero
+    // overshoot), below 1.0 adds a little snap, above 1.0 is overdamped.
+    double hybridFrequencyHz = 10.0;
+    double hybridDampingRatio = 1.0;
+};
+
+struct NetworkDeathEffectsConfig
+{
+    // Spawn the death ellipsoid on remote actor deaths (players + NPCs) detected
+    // from the snapshot health transition, so every client (attacker, victim,
+    // observers) sees it even under packet loss.
+    bool remotePlayerDeathEffect = true;
+    // Spawn the death ellipsoid on the local player's server-confirmed death.
+    bool localPlayerDeathEffect = true;
+};
+
 struct AdaptiveSnapshotBufferConfig
 {
     bool enabled = true;
-    double minimumDelaySeconds = 0.033;
-    double maximumDelaySeconds = 0.140;
+    double minimumDelaySeconds = 0.016;
+    double maximumDelaySeconds = 0.120;
     double jitterMultiplier = 2.0;
     double arrivalJitterSmoothing = 0.15;
-    double increaseRateMsPerSecond = 240.0;
-    double decreaseRateMsPerSecond = 60.0;
+    double increaseRateMsPerSecond = 200.0;
+    double decreaseRateMsPerSecond = 150.0;
+    // Loss-driven buffer growth: when snapshots arrive with a tick gap larger
+    // than `lossGapTicks`, the delay grows by up to `lossDelayBudgetSeconds`
+    // (scaled by a smoothed loss fraction), so the render stays deep inside
+    // the buffer and never extrapolates/holds under packet loss.
+    uint32_t lossGapTicks = 2;
+    double lossDelayBudgetSeconds = 0.080;
+    double lossSmoothing = 0.10;
+};
+
+struct NetworkSnapshotRedundancyConfig
+{
+    // Re-send the previous tick's chunk alongside the current one when the
+    // snapshot is a single datagram, so one lost packet rarely drops a whole
+    // snapshot tick on the receiving client.
+    bool enabled = true;
+};
+
+struct NetworkHitFeedbackConfig
+{
+    // Server-confirmed hit feedback. The client already shows an instant
+    // predicted hitmarker/number/sound on its local trace; these gate whether
+    // the server's DamageConfirmedEvent replays them (default: prediction-only,
+    // so a hit produces exactly one crisp feedback).
+    bool showConfirmedHitmarker = false;
+    bool showConfirmedDamageNumber = false;
+    bool showConfirmedHitSound = false;
+};
+
+struct NetworkDisagreementConfig
+{
+    // "Server disagree" visuals (correction indicators, HIT REJECTED effects).
+    // Disable when client prediction is trusted and disagreements are rare.
+    bool enabled = true;
 };
 
 struct NetworkEventTimelineConfig
@@ -178,7 +263,12 @@ struct NetworkingConfigData
     RemotePlayerInterpolationConfig remotePlayers;
     LocalReconciliationConfig localReconciliation;
     SnapshotBufferConfig snapshotBuffer;
+    RemoteMotionSmoothingConfig remoteMotionSmoothing;
+    NetworkDeathEffectsConfig deathEffects;
     AdaptiveSnapshotBufferConfig adaptiveSnapshotBuffer;
+    NetworkSnapshotRedundancyConfig snapshotRedundancy;
+    NetworkHitFeedbackConfig hitFeedback;
+    NetworkDisagreementConfig disagreement;
     NetworkEventTimelineConfig eventTimeline;
     NetworkRuntimeRateConfig runtimeRates;
     NetworkRetryConfig retries;

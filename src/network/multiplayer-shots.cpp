@@ -228,17 +228,9 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
             printf("[NET KILL HEAL] shooter=%u npc=%u health=%d\n",
                    event->shooterPlayerId, event->npcEntityId, gpPlayer->currentHp);
         }
-        // Death effect + sound (mirrors DeathSystem::kill for local NPCs).
+        // Death sound (the red-sphere ellipsoid spawns loss-proof for every
+        // client via the snapshot health transition in updateRenderedReplica).
         {
-            const glm::vec3 deathDir = glm::length(hitDir) > 0.001f
-                ? glm::normalize(hitDir) : glm::vec3(0.0f, 0.0f, -1.0f);
-            const auto& deCfg = HitEffects::config().deathEllipsoid;
-            if (deCfg.enabled)
-            {
-                EffectPartSystem::instance().spawnDeathEllipsoid(
-                    hitPos, deathDir, deCfg.length, deCfg.radius,
-                    deCfg.lifetime, 1.0f);
-            }
             AudioManager::instance().play(
                 {"npc_death", AudioCategory::NPC, true, hitPos, 1.0f, 0.9f, 45.0f, 0});
         }

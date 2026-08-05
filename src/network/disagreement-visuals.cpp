@@ -2,6 +2,7 @@
 #include "effects/effect-part.h"
 #include "audio/audio.h"
 #include "debug/debug-log.h"
+#include "config/networking-config.h"
 
 #include <algorithm>
 #include <chrono>
@@ -341,6 +342,8 @@ static const char* reasonLabel(DisagreementReason reason)
 
 void spawnDisagreementEffect(const DisagreementEvent& event)
 {
+    if (!NetworkingConfig::instance().data().disagreement.enabled)
+        return;
     const auto& cfg = gDisagreeConfig;
     // Uniform presentation: every disagreement uses the same small size,
     // lifetime, and dark-turquoise color. Only the text popup varies.
@@ -488,6 +491,8 @@ void logDisagreement(const DisagreementEvent& event)
 
 void spawnLocalDisagreementIndicator(const DisagreementEvent& event)
 {
+    if (!NetworkingConfig::instance().data().disagreement.enabled)
+        return;
     const auto& li = gDisagreeConfig.localIndicator;
 
     // Correction arrow from predicted to corrected

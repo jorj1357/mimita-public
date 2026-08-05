@@ -272,6 +272,12 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
             1u, (uint32_t)clampMin(
                     readDouble(r, "teleport_gap_ticks", (double)c.teleportGapTicks),
                     1.0));
+        {
+            const std::string src = readString(r, "broadcast_source", c.broadcastSource);
+            c.broadcastSource = (src == "client_report") ? "client_report" : "server_sim";
+        }
+        c.extrapolationKeepMoving = readBool(r, "extrapolation_keep_moving", c.extrapolationKeepMoving);
+        c.teleportGapSnap = readBool(r, "teleport_gap_snap", c.teleportGapSnap);
         c.snapOnSpawn = readBool(r, "snap_on_spawn", c.snapOnSpawn);
         c.snapOnRespawn = readBool(r, "snap_on_respawn", c.snapOnRespawn);
         c.snapOnMapChange = readBool(r, "snap_on_map_change", c.snapOnMapChange);
@@ -306,6 +312,43 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
             clampMin(readDouble(r, "chunk_reassembly_timeout_ms", c.chunkReassemblyTimeoutSeconds * 1000.0) / 1000.0, 0.05);
     }
 
+    // ── remote_motion_smoothing ──────────────────────────────────────
+    if (root.contains("remote_motion_smoothing") &&
+        root["remote_motion_smoothing"].is_object())
+    {
+        const json& r = root["remote_motion_smoothing"];
+        RemoteMotionSmoothingConfig& c = next.remoteMotionSmoothing;
+        {
+            const std::string mode = readString(r, "render_filter", c.renderFilter);
+            c.renderFilter = (mode == "direct" || mode == "spring" ||
+                              mode == "hybrid")
+                ? mode : "bounded";
+        }
+        c.correctionMaxStepUnitsPerSecond = clampMin(
+            readDouble(r, "correction_max_step_units_per_second",
+                       c.correctionMaxStepUnitsPerSecond), 0.0);
+        c.correctionMinDeltaUnits = clampMin(
+            readDouble(r, "correction_min_delta_units",
+                       c.correctionMinDeltaUnits), 0.0);
+        c.springStiffness = clampMin(
+            readDouble(r, "spring_stiffness", c.springStiffness), 1.0);
+        c.springDamping = clampMin(
+            readDouble(r, "spring_damping", c.springDamping), 1.0);
+        c.hybridFrequencyHz = clampRange(
+            readDouble(r, "hybrid_frequency_hz", c.hybridFrequencyHz), 1.0, 60.0);
+        c.hybridDampingRatio = clampRange(
+            readDouble(r, "hybrid_damping_ratio", c.hybridDampingRatio), 0.0, 3.0);
+    }
+
+    // ── death_effects ────────────────────────────────────────────────
+    if (root.contains("death_effects") && root["death_effects"].is_object())
+    {
+        const json& r = root["death_effects"];
+        NetworkDeathEffectsConfig& c = next.deathEffects;
+        c.remotePlayerDeathEffect = readBool(r, "remote_player_death_effect", c.remotePlayerDeathEffect);
+        c.localPlayerDeathEffect = readBool(r, "local_player_death_effect", c.localPlayerDeathEffect);
+    }
+
     // ── adaptive_snapshot_buffer ─────────────────────────────────────
     if (root.contains("adaptive_snapshot_buffer") &&
         root["adaptive_snapshot_buffer"].is_object())
@@ -328,6 +371,43 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
             r, "increase_rate_ms_per_second", c.increaseRateMsPerSecond, 1.0, 2000.0);
         c.decreaseRateMsPerSecond = readMsRange(
             r, "decrease_rate_ms_per_second", c.decreaseRateMsPerSecond, 1.0, 2000.0);
+        c.lossGapTicks = (uint32_t)std::max<uint32_t>(
+            1u, (uint32_t)clampMin(
+                    readDouble(r, "loss_gap_ticks", (double)c.lossGapTicks), 1.0));
+        c.lossDelayBudgetSeconds =
+            readMsRangeSeconds(r, "loss_delay_budget_ms", c.lossDelayBudgetSeconds,
+                               0.0, 500.0);
+        c.lossSmoothing = clampRange(
+            readDouble(r, "loss_smoothing", c.lossSmoothing), 0.01, 1.0);
+    }
+
+    // ── snapshot_redundancy ──────────────────────────────────────────
+    if (root.contains("snapshot_redundancy") &&
+        root["snapshot_redundancy"].is_object())
+    {
+        const json& r = root["snapshot_redundancy"];
+        NetworkSnapshotRedundancyConfig& c = next.snapshotRedundancy;
+        c.enabled = readBool(r, "enabled", c.enabled);
+    }
+
+    // ── confirmed_hit_feedback ───────────────────────────────────────
+    if (root.contains("confirmed_hit_feedback") &&
+        root["confirmed_hit_feedback"].is_object())
+    {
+        const json& r = root["confirmed_hit_feedback"];
+        NetworkHitFeedbackConfig& c = next.hitFeedback;
+        c.showConfirmedHitmarker = readBool(r, "show_hitmarker", c.showConfirmedHitmarker);
+        c.showConfirmedDamageNumber = readBool(r, "show_damage_number", c.showConfirmedDamageNumber);
+        c.showConfirmedHitSound = readBool(r, "show_hit_sound", c.showConfirmedHitSound);
+    }
+
+    // ── disagreement_visuals ─────────────────────────────────────────
+    if (root.contains("disagreement_visuals") &&
+        root["disagreement_visuals"].is_object())
+    {
+        const json& r = root["disagreement_visuals"];
+        NetworkDisagreementConfig& c = next.disagreement;
+        c.enabled = readBool(r, "enabled", c.enabled);
     }
 
     // ── event_timeline ───────────────────────────────────────────────

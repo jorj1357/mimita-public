@@ -188,6 +188,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.pendingFireRequests.clear();
     ctx.pendingAttackRequests.clear();
     ctx.pendingHitClaims.clear();
+    ctx.recentInputCommands.clear();
     ctx.pendingReloadRequests.clear();
     ctx.pendingKnockback = glm::vec3(0.0f);
     ctx.pendingKnockbackSource.clear();
@@ -461,6 +462,7 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     // attack, different target, or a miss) can spawn a "HIT REJECTED" effect.
     if (claimedTargetId != 0)
     {
+        ++ctx.predictedHits;
         MultiplayerContext::PendingHitClaim claim;
         claim.requestId = requestId;
         claim.claimedTargetId = claimedTargetId;

@@ -226,6 +226,25 @@ struct WelcomePacket
 
 static_assert(sizeof(WelcomePacket) == 160, "WelcomePacket wire size changed");
 
+struct InputCommandRedundancySlot
+{
+    uint32_t inputCommandSequence = 0;
+    uint64_t clientSimulationTick = 0;
+    float wishX = 0.0f;
+    float wishY = 0.0f;
+    float camForwardX = 1.0f;
+    float camForwardY = 0.0f;
+    float camForwardZ = 0.0f;
+    float yaw = 0.0f;
+    float lookPitch = 0.0f;
+    uint16_t stateFlags = 0;
+    uint32_t spawnGeneration = 0;
+    uint32_t transformEpoch = 0;
+};
+
+static_assert(sizeof(InputCommandRedundancySlot) == 50,
+              "InputCommandRedundancySlot wire size changed");
+
 struct InputPacket
 {
     PacketHeader header;
@@ -267,10 +286,14 @@ struct InputPacket
     float lookPitch = 0.0f;
     uint32_t movementFlags = 0;
     uint32_t inputCommandSequence = 0;
+    // Redundant recent movement commands (badconn loss resilience): the last
+    // two commands are resent so a lost input packet still delivers its
+    // movement command in the next packet. The server dedups by sequence.
+    InputCommandRedundancySlot redundancy[2];
 };
 
-static_assert(sizeof(InputPacket) == 144, "InputPacket wire size changed");
-static_assert(sizeof(InputPacket) <= 160,
+static_assert(sizeof(InputPacket) == 244, "InputPacket wire size changed");
+static_assert(sizeof(InputPacket) <= 260,
               "InputPacket must stay compact enough for one safe datagram");
 
 struct ProfilePacket
