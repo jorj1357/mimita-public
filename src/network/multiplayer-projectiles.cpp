@@ -9,6 +9,7 @@
 */
 
 #include "network/multiplayer-context.h"
+#include "config/networking-config.h"
 #include "network/confirmed-damage-presentation.h"
 #include "network/network-weapons.h"
 #include "network/weapon-runtime-reconciliation.h"
@@ -815,6 +816,9 @@ static void spawnHitClaimDisagreement(MultiplayerContext& ctx,
                                       const MultiplayerContext::PendingHitClaim& claim,
                                       const char* description)
 {
+    ++ctx.rejectedHits;
+    if (!NetworkingConfig::instance().data().disagreement.enabled)
+        return;
     DisagreementEvent event;
     event.timeMs = nowMs();
     event.reason = DISAGREEMENT_INVALID_STATE;

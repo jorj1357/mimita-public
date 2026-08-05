@@ -71,8 +71,15 @@ struct MultiplayerConnectInfo
 {
     bool shouldConnect = false;
     std::string roomCode;
+    // Direct UDP join target (e.g. "127.0.0.1:1357") used by the
+    // --connect launcher path. When set, the client joins directly
+    // instead of doing an ICE room-code connect.
+    std::string directAddress;
+    // Map to load on the connecting client so it matches the server.
+    std::string mapName;
 };
 MultiplayerConnectInfo getPendingMultiplayerConnect();
+void setPendingMultiplayerConnect(const MultiplayerConnectInfo& info);
 void clearPendingMultiplayerConnect();
 
 struct ExternalServerProcessStatus

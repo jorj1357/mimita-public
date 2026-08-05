@@ -96,30 +96,43 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
     interpolation.renderTick = renderTick;
 
     // Buffer ran dry: renderTick is newer than everything buffered. Extrapolate
-    // along the newest velocity (time-limited) if allowed, else hold newest.
+    // along the newest velocity. When extrapolation_keep_moving is set, keep
+    // gliding past the time cap with exponentially decaying velocity instead of
+    // freezing the body at a fixed spot (a hard hold read as "jitter in one
+    // spot, then skip"). Otherwise stop at the cap.
     if (renderTick > (double)newestTick)
     {
         const SnapshotTransform& newest = interpolation.buffer.back();
         out = newest;
+        interpolation.extrapolating = true;
         if (interpCfg.allowExtrapolation)
         {
             const double extraTicks = renderTick - (double)newestTick;
             const double extraMs =
                 extraTicks / (double)GAMEPLAY_SIMULATION_HZ * 1000.0;
-            const double extrapMs = std::min(
-                extraMs, interpCfg.maximumExtrapolationSeconds * 1000.0);
-            if (extrapMs > 0.0)
+            const double capMs =
+                interpCfg.maximumExtrapolationSeconds * 1000.0;
+            double moveMs = extraMs;
+            if (extraMs > capMs && interpCfg.extrapolationKeepMoving)
             {
-                out.position = newest.position +
-                    newest.velocity * (float)(extrapMs / 1000.0);
-                if (gNetInterpDebug)
-                    printf("[NETINTERP EXTRAP] id=%u over=%.1fms\n",
-                           interpolation.networkEntityId, extrapMs);
+                const double beyond = extraMs - capMs;
+                const double decayMs = std::max(1.0, capMs * 4.0);
+                moveMs = capMs + beyond * std::exp(-beyond / decayMs);
             }
+            else if (extraMs > capMs)
+            {
+                moveMs = capMs;
+            }
+            out.position = newest.position +
+                newest.velocity * (float)(moveMs / 1000.0);
+            if (gNetInterpDebug)
+                printf("[NETINTERP EXTRAP] id=%u over=%.1fms\n",
+                       interpolation.networkEntityId, moveMs);
         }
         out.serverTick = (uint32_t)std::floor(renderTick);
         return;
     }
+    interpolation.extrapolating = false;
 
     // Fresh spawn / very thin buffer: render time older than everything
     // buffered. Hold the oldest snapshot until enough history accumulates;
@@ -165,11 +178,13 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
     }
 
     // Time-gap protection: a hole wider than teleportGapTicks (e.g. a long
-    // blackout) is a discontinuity, not a velocity bridge. Snap to the newest
-    // snapshot rather than sliding a stale straight line across seconds of
-    // missing motion. Short loss gaps still interpolate smoothly.
+    // blackout) is a discontinuity, not a velocity bridge. With teleport_gap_snap
+    // snap to the newest snapshot rather than sliding a stale straight line
+    // across seconds of missing motion; otherwise fall through so the motion
+    // filter converges the body smoothly. Short loss gaps interpolate linearly.
     if ((uint32_t)(newer->serverTick - older->serverTick) >
-        interpCfg.teleportGapTicks)
+            interpCfg.teleportGapTicks &&
+        interpCfg.teleportGapSnap)
     {
         out = *newer;
         out.serverTick = newer->serverTick;
@@ -230,6 +245,12 @@ double adaptiveDelaySeconds(EntityInterpolationState& interpolation,
             desired,
             (interpolation.estimatedArrivalJitterMs *
              adaptive.jitterMultiplier) / 1000.0);
+        // Loss-driven growth: when snapshots arrive gappy, deepen the buffer so
+        // the render stays inside it and never falls into extrapolation.
+        desired = std::max(
+            desired,
+            adaptive.minimumDelaySeconds +
+            interpolation.recentLossFraction * adaptive.lossDelayBudgetSeconds);
         desired = std::min(desired, adaptive.maximumDelaySeconds);
     }
 
@@ -270,6 +291,17 @@ bool pushInterpolationTarget(
         return false;
     }
 
+    // allow_out_of_order_insertion=false: a reordered older snapshot must not
+    // be inserted mid-buffer (it can shift the bracketing pair and make a
+    // smooth-connection body appear to slide backward to a spot it just left).
+    if (interpolation.hasTarget &&
+        serverTick < interpolation.lastServerTick &&
+        !NetworkingConfig::instance().data().snapshotBuffer.allowOutOfOrderInsertion)
+    {
+        ++interpolation.outOfOrderSnapshotCount;
+        return false;
+    }
+
     SnapshotTransform next = transformFromEntity(entity);
     next.serverTick = serverTick;
     if (interpolation.hasTarget)
@@ -291,6 +323,19 @@ bool pushInterpolationTarget(
                 .data().adaptiveSnapshotBuffer.arrivalJitterSmoothing;
             interpolation.estimatedArrivalJitterMs +=
                 (sample - interpolation.estimatedArrivalJitterMs) * smoothing;
+
+            // Loss-fraction EMA: gap > 1 tick (a dropped snapshot) raises it,
+            // a normal 1-tick gap decays it. Drives loss-based buffer growth.
+            const auto& lossCfg = NetworkingConfig::instance()
+                .data().adaptiveSnapshotBuffer;
+            const double tickGap =
+                (double)(serverTick - interpolation.lastServerTick);
+            const double lossSample = lossCfg.lossGapTicks > 0.0
+                ? std::min(1.0, (tickGap - 1.0) / (double)lossCfg.lossGapTicks)
+                : 1.0;
+            interpolation.recentLossFraction +=
+                (lossSample - interpolation.recentLossFraction) *
+                lossCfg.lossSmoothing;
         }
     }
     interpolation.lastSnapshotArrivalMs = next.receivedMs;
@@ -413,7 +458,8 @@ void updateRenderedReplica(
     Player& player,
     EntityInterpolationState& interpolation,
     double renderTick,
-    float dt)
+    float dt,
+    bool spawnDeathEffects)
 {
     if (!interpolation.hasTarget)
         return;
@@ -421,6 +467,7 @@ void updateRenderedReplica(
     player.dash.didDash = false;
 
     const auto& interpCfg = NetworkingConfig::instance().data().remotePlayers;
+    const auto& motion = NetworkingConfig::instance().data().remoteMotionSmoothing;
 
     const uint32_t entityId = interpolation.networkEntityId;
     const uint16_t targetEpoch = interpolation.target.transformEpoch;
@@ -486,9 +533,63 @@ void updateRenderedReplica(
         }
     }
 
-    const glm::vec3 renderPos = render.position;
+    glm::vec3 renderPos = render.position;
     const float renderYaw = render.yaw;
     const glm::vec3 renderAim = render.aimDirection;
+
+    // ── Post-interpolation motion filter ─────────────────────────────
+    // "direct":  set the position directly (no smoothing).
+    // "bounded": move toward the interpolated target at a capped speed so a
+    //            discontinuity (loss hole, extrapolation resume, blackout)
+    //            converges over a few frames instead of snapping. Normal smooth
+    //            motion and dashes pass through (target tracks the body).
+    // "spring":  always-on critically-damped spring — literally cannot snap;
+    //            adds a few ms of follow-lag on fast turns.
+    if (interpolation.hasRendered && !respawned && !interpCfg.directRender)
+    {
+        if (motion.renderFilter == "spring")
+        {
+            const float safeDt = std::min(dt, 0.05f);
+            const glm::vec3 acceleration =
+                (renderPos - interpolation.renderSpring.value) *
+                    (float)motion.springStiffness -
+                interpolation.renderSpring.velocity * (float)motion.springDamping;
+            interpolation.renderSpring.velocity += acceleration * safeDt;
+            interpolation.renderSpring.value +=
+                interpolation.renderSpring.velocity * safeDt;
+            renderPos = interpolation.renderSpring.value;
+        }
+        else if (motion.renderFilter == "hybrid")
+        {
+            // Velocity-feed-forward critically-damped spring. Feeding the
+            // interpolated velocity forward cancels the spring's steady-state
+            // follow-lag (lag = V·damping/stiffness), so fast / up-down motion
+            // tracks crisply while position discontinuities still converge
+            // smoothly with zero snap.
+            const float omega = 2.0f * 3.14159265f * (float)motion.hybridFrequencyHz;
+            const float k = omega * omega;
+            const float c = 2.0f * omega * (float)motion.hybridDampingRatio;
+            const float safeDt = std::min(dt, 0.05f);
+            const glm::vec3 targetVel = render.velocity;
+            const glm::vec3 accel =
+                (renderPos - interpolation.renderSpring.value) * k +
+                (targetVel - interpolation.renderSpring.velocity) * c;
+            interpolation.renderSpring.velocity += accel * safeDt;
+            interpolation.renderSpring.value +=
+                interpolation.renderSpring.velocity * safeDt;
+            renderPos = interpolation.renderSpring.value;
+        }
+        else if (motion.renderFilter == "bounded")
+        {
+            const float maxStep = (float)(
+                motion.correctionMaxStepUnitsPerSecond * (double)dt);
+            const glm::vec3 delta = renderPos - player.pos;
+            const float len = glm::length(delta);
+            if (len > (float)motion.correctionMinDeltaUnits && len > maxStep)
+                renderPos = player.pos + delta * (maxStep / len);
+        }
+    }
+    interpolation.wasExtrapolating = interpolation.extrapolating;
 
     if (respawned)
     {
@@ -496,12 +597,46 @@ void updateRenderedReplica(
         // Hard-snap the remembered render state too, so a thin buffer on the
         // next frame holds the respawn position rather than the old corpse.
         interpolation.lastRender = interpolation.target;
+        // The new life must not inherit the old corpse's spring velocity.
+        interpolation.renderSpring = SpringState{};
     }
     else
         player.pos = renderPos;
     player.vel = render.velocity;
     player.currentHp = render.health;
     player.dead = render.health <= 0;
+
+    // ── Death effect (snapshot-driven, loss-proof) ───────────────────
+    // Detect the >0 → <=0 health transition in the render stream and spawn the
+    // death ellipsoid so every client (attacker, victim, observers) sees it,
+    // even when the reliable damage event is dropped under packet loss.
+    if (spawnDeathEffects && interpolation.hasRendered &&
+        NetworkingConfig::instance().data().deathEffects.remotePlayerDeathEffect)
+    {
+        const bool wasAlive = interpolation.lastRender.health > 0;
+        const bool nowDead = render.health <= 0;
+        if (wasAlive && nowDead)
+        {
+            // Elongate toward the pre-death planar velocity (the death frame
+            // itself carries zero velocity because dead players stop).
+            const glm::vec3& deathVel = interpolation.lastRender.velocity;
+            const glm::vec3 deathDir =
+                glm::length(deathVel) > 0.001f
+                    ? glm::normalize(glm::vec3(deathVel.x, deathVel.y, 0.0f))
+                    : glm::vec3(0.0f, 0.0f, 1.0f);
+            const auto& deCfg = HitEffects::config().deathEllipsoid;
+            if (deCfg.enabled)
+            {
+                EffectPartSystem::instance().spawnDeathEllipsoid(
+                    player.pos, deathDir,
+                    deCfg.length, deCfg.radius, deCfg.lifetime,
+                    player.sizeScale);
+            }
+            Debug::log(Debug::Category::Networking,
+                "[NET REMOTE DEATH FX] entityId=%u pos=(%.1f,%.1f,%.1f)",
+                entityId, player.pos.x, player.pos.y, player.pos.z);
+        }
+    }
 
     // Remember what was actually rendered so a thin buffer holds it exactly.
     if (!respawned)
@@ -774,13 +909,15 @@ void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)
     {
         auto interpolation = ctx.remotePlayerInterpolation.find(kv.first);
         if (interpolation != ctx.remotePlayerInterpolation.end())
-            updateRenderedReplica(kv.second, interpolation->second, ctx.interpolationRenderTick, dt);
+            updateRenderedReplica(kv.second, interpolation->second,
+                                  ctx.interpolationRenderTick, dt, true);
     }
     for (auto& kv : ctx.remoteNpcs)
     {
         auto interpolation = ctx.remoteNpcInterpolation.find(kv.first);
         if (interpolation != ctx.remoteNpcInterpolation.end())
-            updateRenderedReplica(kv.second, interpolation->second, ctx.interpolationRenderTick, dt);
+            updateRenderedReplica(kv.second, interpolation->second,
+                                  ctx.interpolationRenderTick, dt, true);
     }
 
     // ── Remote-NPC position alignment diagnostic (once per second, aggregate) ─

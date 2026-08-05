@@ -12,6 +12,10 @@
 #include "network/server.h"
 #include "network/disagreement-visuals.h"
 #include "combat/weapon-runtime.h"
+#include "effects/effect-part.h"
+#include "effects/hit-effects.h"
+#include "config/networking-config.h"
+#include "debug/debug-log.h"
 
 #include <algorithm>
 #include <cmath>
@@ -180,6 +184,23 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     else if (serverKilledPlayer)
     {
         player.currentHp = 0;
+
+        // Server-confirmed local death: spawn the death ellipsoid so the victim
+        // sees it even though the death was not locally predicted.
+        if (NetworkingConfig::instance().data().deathEffects.localPlayerDeathEffect)
+        {
+            const auto& deCfg = HitEffects::config().deathEllipsoid;
+            if (deCfg.enabled)
+            {
+                EffectPartSystem::instance().spawnDeathEllipsoid(
+                    player.pos, glm::vec3(0.0f, 0.0f, 1.0f),
+                    deCfg.length, deCfg.radius, deCfg.lifetime,
+                    player.sizeScale);
+            }
+            Debug::log(Debug::Category::Networking,
+                "[NET LOCAL DEATH FX] playerId=%u pos=(%.1f,%.1f,%.1f)",
+                ctx.localPlayerId, player.pos.x, player.pos.y, player.pos.z);
+        }
     }
     else if (ctx.localPlayerReconciled)
     {

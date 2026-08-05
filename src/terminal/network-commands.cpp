@@ -969,6 +969,26 @@ void registerNetworkCommands()
                 netCfg.remotePlayers.directRender ? "direct" : "interp");
             Terminal::instance().addLog(buf);
 
+            {
+                float agreePct = mp.predictedHits
+                    ? 100.0f * (float)mp.confirmedHits / (float)mp.predictedHits
+                    : 0.0f;
+                snprintf(buf, sizeof(buf),
+                    "[NETSTATS] HITS pred=%llu confirmed=%llu rejected=%llu agree=%.1f%%",
+                    (unsigned long long)mp.predictedHits,
+                    (unsigned long long)mp.confirmedHits,
+                    (unsigned long long)mp.rejectedHits, agreePct);
+                Terminal::instance().addLog(buf);
+            }
+
+            if (mp.hasLocalServerPosition && gpPlayer)
+            {
+                snprintf(buf, sizeof(buf),
+                    "[NETSTATS] simDivergence=%.2fm (predicted vs server_sim)",
+                    glm::length(gpPlayer->pos - mp.localServerPosition));
+                Terminal::instance().addLog(buf);
+            }
+
             for (const auto& kv : mp.remotePlayerInterpolation)
             {
                 const auto& s = kv.second;

@@ -13,19 +13,22 @@
     "server_smoothing": true,
     "server_smoothing_duration_ticks": 2,
     "server_broadcast_delay_ms": 1,
-    "server_broadcast_extrapolation_ms": 1,
-    "rewind_compensation_ms": 0,
+    "server_broadcast_extrapolation_ms": 1000,
+    "rewind_compensation_ms": 1,
     "rewind_hit_tolerance": 2.5,
     "server_broadcast_max_speed": 0,
-    "interpolation_delay_ms": 16,
+    "interpolation_delay_ms": 1,
     "maximum_buffered_snapshots": 64,
     "minimum_snapshots_before_rendering": 2,
     "position_mode": "linear",
     "rotation_mode": "slerp",
     "allow_extrapolation": true,
-    "maximum_extrapolation_ms": 100,
+    "maximum_extrapolation_ms": 1000,
     "teleport_distance": 1000.0,
     "teleport_gap_ticks": 30,
+    "broadcast_source": "server_sim",
+    "extrapolation_keep_moving": true,
+    "teleport_gap_snap": true,
     "snap_on_spawn": true,
     "snap_on_respawn": true,
     "snap_on_map_change": true
@@ -41,7 +44,7 @@
   "snapshot_buffer": {
     "use_server_tick": true,
     "discard_duplicate_snapshots": true,
-    "allow_out_of_order_insertion": true,
+    "allow_out_of_order_insertion": false,
     "maximum_snapshot_age_ms": 2000,
     "chunk_reassembly_timeout_ms": 1000
   },
@@ -53,7 +56,43 @@
     "jitter_multiplier": 2.0,
     "arrival_jitter_smoothing": 0.15,
     "increase_rate_ms_per_second": 200,
-    "decrease_rate_ms_per_second": 150
+    "decrease_rate_ms_per_second": 150,
+    "loss_gap_ticks": 2,
+    "loss_delay_budget_ms": 80,
+    "loss_smoothing": 0.1
+  },
+
+  "snapshot_redundancy": {
+    "enabled": true
+  },
+
+  "remote_motion_smoothing": {
+    "comment": "Post-interpolation motion filter on rendered remote bodies. render_filter: direct (no smoothing) | bounded (converge discontinuities over a few frames; normal motion passes through) | spring (always-on critically-damped, literally cannot snap, slight follow-lag) | hybrid (velocity-feed-forward spring: spring's zero-snap PLUS crisp tracking of fast/up-down motion with ~zero lag).",
+    "render_filter": "hybrid",
+    "correction_max_step_units_per_second": 100.0,
+    "correction_min_delta_units": 0.05,
+    "spring_stiffness": 120.0,
+    "spring_damping": 20.0,
+    "hybrid_frequency_hz": 10.0,
+    "hybrid_damping_ratio": 1.0
+  },
+
+  "death_effects": {
+    "comment": "Red sphere of death spawned from the snapshot health transition so every client (attacker, victim, observers) sees a death even under packet loss.",
+    "remote_player_death_effect": true,
+    "local_player_death_effect": true
+  },
+
+  "confirmed_hit_feedback": {
+    "comment": "The client already shows an instant predicted hitmarker/number/sound on its local trace. These gate whether the server's confirmed DamageConfirmedEvent replays them (default prediction-only = one crisp hit feedback).",
+    "show_hitmarker": false,
+    "show_damage_number": false,
+    "show_hit_sound": false
+  },
+
+  "disagreement_visuals": {
+    "comment": "Server-disagree effects (correction indicators, HIT REJECTED pops). Keep off when prediction is trusted; disagreements should be rare and shrinking.",
+    "enabled": true
   },
 
   "event_timeline": {

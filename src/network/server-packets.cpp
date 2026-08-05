@@ -14,6 +14,7 @@
 #include "network/snapshot-chunks.h"
 #include "network/network-weapons.h"
 #include "network/disagreement-visuals.h"
+#include "config/networking-config.h"
 #include "physics/movement/movement-conversion.h"
 #include "physics/movement/physics-collision.h"
 #include "combat/weapon-registry.h"
@@ -617,30 +618,60 @@ void handleInputPacket(const char* buffer, int bytes,
     if (ownsConnection)
         p.lastHeardMs = currentMs;
 
-    // Store input command for server-side movement simulation (spec: input-command authority)
-    if (ownsConnection && in->inputCommandSequence != 0 &&
-        in->inputCommandSequence > p.lastInputCommandSequence)
+    // Store input commands for server-side movement simulation (spec:
+    // input-command authority). Duplicates are rejected by sequence, so the
+    // client's redundant re-sends are free. Redundant slots are stored BEFORE
+    // the current command so the buffer stays ascending by sequence and
+    // simulatePlayer's newest-first scan finds the current command first.
+    const auto storeCommand = [&](uint32_t seq, uint64_t tick,
+                                  float wishX, float wishY,
+                                  float camX, float camY, float camZ,
+                                  float yaw, float lookPitch,
+                                  uint16_t flags,
+                                  uint32_t spawnGen, uint32_t epoch)
     {
-        p.lastInputCommandSequence = in->inputCommandSequence;
+        if (seq == 0 || seq <= p.lastInputCommandSequence)
+            return;
+        p.lastInputCommandSequence = seq;
         auto& slot = p.inputCommandBuffer[p.nextInputCommandSlot];
-        slot.command.sequence = in->inputCommandSequence;
-        slot.command.clientSimulationTick = in->clientSimulationTick;
-        slot.command.lifecycle.spawnGeneration = in->spawnGeneration;
+        slot.command.sequence = seq;
+        slot.command.clientSimulationTick = tick;
+        slot.command.lifecycle.spawnGeneration = spawnGen;
         slot.command.lifecycle.transformEpoch =
-            in->transformEpoch != 0 ? in->transformEpoch : in->header.transformEpoch;
-        slot.command.moveAxes = movementClampUnitOrZero({in->wishX, in->wishY});
-        slot.command.horizontalCameraForward = {
-            in->camForwardX, in->camForwardY, in->camForwardZ};
-        slot.command.lookYaw = in->yaw;
-        slot.command.lookPitch = in->lookPitch;
-        slot.command.jumpHeld = (in->stateFlags & NET_STATE_JUMPING) != 0;
-        slot.command.dashPressed = (in->stateFlags & NET_STATE_DASHING) != 0;
-        slot.command.downDashPressed = (in->stateFlags & NET_STATE_DOWN_DASHING) != 0;
-        slot.command.freezeHeld = (in->stateFlags & NET_STATE_FREEZING) != 0;
+            epoch != 0 ? epoch : in->header.transformEpoch;
+        slot.command.moveAxes = movementClampUnitOrZero({wishX, wishY});
+        slot.command.horizontalCameraForward = {camX, camY, camZ};
+        slot.command.lookYaw = yaw;
+        slot.command.lookPitch = lookPitch;
+        slot.command.jumpHeld = (flags & NET_STATE_JUMPING) != 0;
+        slot.command.dashPressed = (flags & NET_STATE_DASHING) != 0;
+        slot.command.downDashPressed = (flags & NET_STATE_DOWN_DASHING) != 0;
+        slot.command.freezeHeld = (flags & NET_STATE_FREEZING) != 0;
         slot.command.movementDirectionPressed =
-            std::abs(in->wishX) > 0.001f || std::abs(in->wishY) > 0.001f;
+            std::abs(wishX) > 0.001f || std::abs(wishY) > 0.001f;
         slot.valid = true;
-        p.nextInputCommandSlot = (p.nextInputCommandSlot + 1) % ServerPlayer::INPUT_COMMAND_BUFFER_SIZE;
+        p.nextInputCommandSlot =
+            (p.nextInputCommandSlot + 1) % ServerPlayer::INPUT_COMMAND_BUFFER_SIZE;
+    };
+
+    if (ownsConnection)
+    {
+        // Redundant command slots first (oldest -> newest).
+        for (int ri = 1; ri >= 0; --ri)
+        {
+            const InputCommandRedundancySlot& r = in->redundancy[ri];
+            storeCommand(r.inputCommandSequence, r.clientSimulationTick,
+                         r.wishX, r.wishY,
+                         r.camForwardX, r.camForwardY, r.camForwardZ,
+                         r.yaw, r.lookPitch, r.stateFlags,
+                         r.spawnGeneration, r.transformEpoch);
+        }
+        // Current command last (newest -> highest buffer index).
+        storeCommand(in->inputCommandSequence, in->clientSimulationTick,
+                     in->wishX, in->wishY,
+                     in->camForwardX, in->camForwardY, in->camForwardZ,
+                     in->yaw, in->lookPitch, in->stateFlags,
+                     in->spawnGeneration, in->transformEpoch);
     }
 
     const ClientMovementReport report = movementReportFromInputPacket(*in, p);
@@ -1659,30 +1690,63 @@ void buildAndSendSnapshot(SOCKET sock,
                chunks.empty() ? 0 : chunks[0].size());
     }
 
+    // ── Single-datagram snapshot redundancy ────────────────────────────
+    // Small lobbies send one chunk per tick; one lost datagram drops the whole
+    // tick. Re-send the previous tick's chunk so a single lost packet rarely
+    // becomes a lost snapshot tick on the receiving client. The client safely
+    // treats a re-sent older snapshot as interpolation-only (never membership).
+    static std::vector<uint8_t> gLastSingleChunk;
+    static uint32_t gLastSingleChunkTick = 0;
+    const bool redundancyEnabled =
+        NetworkingConfig::instance().data().snapshotRedundancy.enabled;
+    const bool isSingleChunk = chunks.size() == 1;
+    const std::vector<uint8_t>* redundantChunk = nullptr;
+    if (redundancyEnabled && isSingleChunk && gLastSingleChunkTick != 0 &&
+        !gLastSingleChunk.empty())
+    {
+        redundantChunk = &gLastSingleChunk;
+    }
+    if (isSingleChunk)
+    {
+        gLastSingleChunk = chunks[0];
+        gLastSingleChunkTick = tick;
+    }
+    else
+    {
+        gLastSingleChunk.clear();
+        gLastSingleChunkTick = 0;
+    }
+
+    const auto sendPayload = [&](const std::vector<uint8_t>& payload,
+                                 const ServerPlayer& sp) {
+        bool sent = false;
+        if (sp.transport)
+        {
+            sent = sp.transport->send(payload.data(), payload.size());
+        }
+        else
+        {
+            int bytesSent = sendto(
+                sock, (const char*)payload.data(), (int)payload.size(), 0,
+                (sockaddr*)&sp.addr, sizeof(sp.addr));
+            sent = (bytesSent != SOCKET_ERROR);
+            if (!sent)
+                printf("%s [NET TX ERROR] sendto failed id=%u error=%d\n",
+                       serverTimestamp(), sp.id, WSAGetLastError());
+        }
+        ++totalPacketsOut;
+    };
+
     for (const auto& kv : players)
     {
+        if (redundantChunk)
+            sendPayload(*redundantChunk, kv.second);
         for (const auto& chunk : chunks)
-        {
-            bool sent = false;
-            if (kv.second.transport)
-            {
-                sent = kv.second.transport->send(chunk.data(), chunk.size());
-            }
-            else
-            {
-                int bytesSent = sendto(
-                    sock, (const char*)chunk.data(), (int)chunk.size(), 0,
-                    (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
-                sent = (bytesSent != SOCKET_ERROR);
-                if (!sent)
-                    printf("%s [NET TX ERROR] sendto failed id=%u error=%d\n",
-                           serverTimestamp(), kv.first, WSAGetLastError());
-            }
-            ++totalPacketsOut;
-        }
+            sendPayload(chunk, kv.second);
         if (tick % 120 == 0)
-            printf("%s [SERVER SNAPSHOT SEND] toClientId=%u chunks=%zu\n",
-                   serverTimestamp(), kv.first, chunks.size());
+            printf("%s [SERVER SNAPSHOT SEND] toClientId=%u chunks=%zu%s\n",
+                   serverTimestamp(), kv.first, chunks.size(),
+                   redundantChunk ? " +redundant" : "");
     }
 }
 

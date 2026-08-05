@@ -12,10 +12,13 @@
 
 #include "audio/hitmarker-audio.h"
 #include "combat/death-system.h"
+#include "combat/weapon-registry.h"
 #include "config/weapon-hitfx-config.h"
+#include "config/networking-config.h"
 #include "network/multiplayer-context.h"
 #include "network/network-weapons.h"
 #include "effects/hit-effects.h"
+#include "killfeed/killfeed.h"
 #include "terminal/terminal-state.h"
 #include "ui/hitmarker.h"
 
@@ -96,6 +99,12 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
 
     rememberPresentedDamage(ctx, key);
 
+    // Server confirmed a hit the local attacker predicted.
+    ++ctx.confirmedHits;
+
+    const NetworkingConfigData& netCfg = NetworkingConfig::instance().data();
+    const auto& feedback = netCfg.hitFeedback;
+
     HitEvent hit;
     hit.position = {event.hitX, event.hitY, event.hitZ};
     hit.normal = {event.normalX, event.normalY, event.normalZ};
@@ -112,21 +121,21 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
     {
         if (sink && sink->showHitmarker)
             sink->showHitmarker(event.damage, sink->user);
-        else
+        else if (feedback.showConfirmedHitmarker)
             hitmarkerVisualOnly(event.damage);
     }
     if (presentation.hitSound)
     {
         if (sink && sink->playHitSound)
             sink->playHitSound(event.damage, sink->user);
-        else
+        else if (feedback.showConfirmedHitSound)
             playHitmarkerSound(event.damage);
     }
     if (presentation.damageNumber)
     {
         if (sink && sink->showDamageNumber)
             sink->showDamageNumber(hit, sink->user);
-        else
+        else if (feedback.showConfirmedDamageNumber)
             HitEffects::spawnHitEffects(hit.position, hit.direction, hit.normal,
                                         hit.damage, hit.attacker, hit.victim, true);
     }
@@ -136,6 +145,24 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
     {
         DeathSystem::instance().healKillerToFull(*gpPlayer, playerNameFor(ctx, event.attackerPlayerId));
         printf("[NET KILL HEAL] attacker=%u health=%d\n", event.attackerPlayerId, gpPlayer->currentHp);
+
+        // Killfeed entry (the legacy ShotEvent path already fed it; the generic
+        // path must too). Attacker-only presentation like the rest of this path.
+        const char* weaponId = networkWeaponTypeName(event.weapon);
+        std::string weaponDisplay = "unknown";
+        const WeaponDefinition* wdef = WeaponRegistry::instance().get(weaponId);
+        if (wdef && !wdef->displayName.empty())
+            weaponDisplay = wdef->displayName;
+        const auto attackerIt = ctx.playerRegistry.find(event.attackerPlayerId);
+        const auto victimIt = ctx.playerRegistry.find(event.targetPlayerId);
+        KillfeedManager::instance().onKillStyled(
+            playerNameFor(ctx, event.attackerPlayerId),
+            attackerIt != ctx.playerRegistry.end()
+                ? attackerIt->second.vipAppearance : MimitaVip::freeAppearance(),
+            playerNameFor(ctx, event.targetPlayerId),
+            victimIt != ctx.playerRegistry.end()
+                ? victimIt->second.vipAppearance : MimitaVip::freeAppearance(),
+            weaponDisplay, false);
     }
 
     printf("[NET DAMAGE PRESENT] eventId=%u attacker=%u target=%u damage=%d weapon=%u hitmarker=%d sound=%d damageNumber=%d killed=%d\n",

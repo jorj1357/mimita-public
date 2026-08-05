@@ -254,6 +254,7 @@ DuelConfigResult getPendingDuelConfig() { return gPendingDuelConfig; }
 void clearPendingDuelConfig() { gPendingDuelConfig = DuelConfigResult{}; }
 
 MultiplayerConnectInfo getPendingMultiplayerConnect() { return gPendingConnect; }
+void setPendingMultiplayerConnect(const MultiplayerConnectInfo& info) { gPendingConnect = info; }
 void clearPendingMultiplayerConnect() { gPendingConnect = {}; }
 SandboxMapSelection getPendingSandboxMapSelection() { return gPendingSandboxMap; }
 void clearPendingSandboxMapSelection() { gPendingSandboxMap = {}; }

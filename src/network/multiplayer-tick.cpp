@@ -317,7 +317,7 @@ static void processSnapshotEntities(
             // Seed serial baselines so creating a replica does not replay
             // already-occurred presentation events (dash, jumps, freeze).
             baselinePresentationSerials(p, interpolation.target);
-            updateRenderedReplica(p, interpolation, ctx.interpolationRenderTick, dt);
+            updateRenderedReplica(p, interpolation, ctx.interpolationRenderTick, dt, true);
         }
         if (membershipAllowed)
         {
@@ -1347,6 +1347,36 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         }
         in.attackPressed = input->attackPressed ? 1 : 0;
         in.sizeScale = input->sizeScale;
+
+        // ── Redundant movement commands (badconn loss resilience) ───────
+        // Re-send the last two commands so a lost input packet still delivers
+        // its movement command in the next packet. Server dedups by sequence.
+        if (ctx.recentInputCommands.size() >= 2)
+        {
+            in.redundancy[0] =
+                ctx.recentInputCommands[ctx.recentInputCommands.size() - 1];
+            in.redundancy[1] =
+                ctx.recentInputCommands[ctx.recentInputCommands.size() - 2];
+        }
+        {
+            InputCommandRedundancySlot cur;
+            cur.inputCommandSequence = in.inputCommandSequence;
+            cur.clientSimulationTick = in.clientSimulationTick;
+            cur.wishX = in.wishX;
+            cur.wishY = in.wishY;
+            cur.camForwardX = in.camForwardX;
+            cur.camForwardY = in.camForwardY;
+            cur.camForwardZ = in.camForwardZ;
+            cur.yaw = in.yaw;
+            cur.lookPitch = in.lookPitch;
+            cur.stateFlags = in.stateFlags;
+            cur.spawnGeneration = in.spawnGeneration;
+            cur.transformEpoch = in.transformEpoch;
+            ctx.recentInputCommands.push_back(cur);
+            while (ctx.recentInputCommands.size() > 3)
+                ctx.recentInputCommands.erase(ctx.recentInputCommands.begin());
+        }
+
         mpSendPacket(ctx, &in, sizeof(in));
         ctx.lastInputSentMs = currentMs;
 

@@ -264,6 +264,22 @@ int main(int argc, char** argv)
     Engine engine;
     gameInit(argc, argv, engine);
 
+    // --connect <ip:port> on a normal GUI launch: boot straight into
+    // gameplay and auto-join the given server via direct UDP. This is the
+    // launcher path (mimita-launcher.py) for fast local playtests.
+    if (launchOptions.connectExplicit)
+    {
+        Debug::log(Debug::Category::Networking,
+                   "[BOOT MODE] auto-connect full-client to %s\n",
+                   launchOptions.connect.c_str());
+        GAME_STATE = GAME_PLAYING;
+        MultiplayerConnectInfo info;
+        info.shouldConnect = true;
+        info.directAddress = launchOptions.connect;
+        info.mapName = launchOptions.mapName;
+        setPendingMultiplayerConnect(info);
+    }
+
     while (engine.running())
     {
         engineTick(engine);

@@ -212,6 +212,17 @@ struct EntityInterpolationState
     double renderTick = 0.0;
     double adaptiveDelaySeconds = 0.0;
     double estimatedArrivalJitterMs = 0.0;
+    // Smoothed fraction of recent snapshots that arrived with a tick gap wider
+    // than adaptiveSnapshotBuffer.lossGapTicks. Drives loss-based buffer growth.
+    double recentLossFraction = 0.0;
+    // Whether the current frame's render tick exceeded the newest buffered
+    // snapshot (extrapolating). `wasExtrapolating` is the previous frame's
+    // value, used to smoothly converge when data resumes (no snap-back).
+    bool extrapolating = false;
+    bool wasExtrapolating = false;
+    // Always-on spring for render_filter == "spring". Reset on respawn so the
+    // new life does not inherit the old corpse's filter state.
+    SpringState renderSpring;
     uint64_t lastSnapshotArrivalMs = 0;
     uint32_t lastRenderedServerTick = 0;
     uint32_t staleSnapshotCount = 0;
@@ -338,6 +349,19 @@ struct MultiplayerContext
     uint32_t nextMovementSequence = 1;
     uint32_t nextInputCommandSequence = 1;  // spec: increasing inputCommandSequence per sent input
     bool gameplayActive = false;  // true after SpawnActivated received (not just transport connected)
+
+    // ── Input redundancy (badconn loss resilience) ────────────────────
+    // Last 3 sent input commands (newest last). Each InputPacket re-sends the
+    // previous two so a lost input packet still delivers its movement command.
+    std::vector<InputCommandRedundancySlot> recentInputCommands;
+
+    // ── Prediction-accuracy counters (netstats) ───────────────────────
+    // predictedHits: local trace claimed a hit on a remote player (instant).
+    // confirmedHits: server's DamageConfirmedEvent for the local attacker.
+    // rejectedHits: server rejected / never confirmed a predicted hit.
+    uint64_t predictedHits = 0;
+    uint64_t confirmedHits = 0;
+    uint64_t rejectedHits = 0;
 
     // ── Ghost: show authoritative server position ─────────────────────
     bool showServerGhost = false;
@@ -699,7 +723,8 @@ void mpProcessChatPacket(MultiplayerContext& ctx, const ChatPacket* chat);
 
 // Interpolation helpers (defined in multiplayer-interpolation.cpp)
 bool pushInterpolationTarget(EntityInterpolationState& interpolation, const SnapshotEntity& entity, uint32_t serverTick);
-void updateRenderedReplica(Player& player, EntityInterpolationState& interpolation, double renderTick, float dt);
+void updateRenderedReplica(Player& player, EntityInterpolationState& interpolation,
+                           double renderTick, float dt, bool spawnDeathEffects);
 void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt);
 
 // Debug flags for damage/hit/net diagnostics (extern, set from terminal commands)

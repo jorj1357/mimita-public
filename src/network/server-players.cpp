@@ -514,20 +514,30 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
     // The server simulates movement using the SAME kernel as the client.
     // Input is taken from the most recent received input command.
     {
-        // Find the most recent valid input command
+        // Find the most recent valid input command. Scan for the highest
+        // sequence rather than newest index: redundant command slots can
+        // insert out of ring order, so the newest command is not guaranteed
+        // to sit at the highest buffer index.
         MovementCommand cmd;
         bool hasInput = false;
-        for (int i = ServerPlayer::INPUT_COMMAND_BUFFER_SIZE - 1; i >= 0; --i)
+        uint32_t bestSeq = 0;
+        int bestIndex = -1;
+        for (int i = 0; i < ServerPlayer::INPUT_COMMAND_BUFFER_SIZE; ++i)
         {
-            auto& entry = p.inputCommandBuffer[i];
-            if (entry.valid)
+            const auto& entry = p.inputCommandBuffer[i];
+            if (entry.valid && entry.command.sequence > bestSeq)
             {
-                cmd = entry.command;
-                hasInput = true;
-                p.lastProcessedInputCommandSequence = cmd.sequence;
-                entry.valid = false;
-                break;
+                bestSeq = entry.command.sequence;
+                bestIndex = i;
             }
+        }
+        if (bestIndex >= 0)
+        {
+            auto& entry = p.inputCommandBuffer[bestIndex];
+            cmd = entry.command;
+            hasInput = true;
+            p.lastProcessedInputCommandSequence = cmd.sequence;
+            entry.valid = false;
         }
         if (!hasInput)
         {
@@ -601,8 +611,14 @@ void pushPositionHistory(ServerPlayer& p, uint32_t tick)
 {
     // Record the position actually broadcast to clients (the smoothed
     // interpolated one), so hit rewind reads exactly what attackers saw.
-    const glm::vec3 histPos = p.hasBroadcastTransform ? p.broadcastPosition : p.pos;
-    const glm::vec3 histVel = p.hasBroadcastTransform ? p.broadcastVelocity : p.vel;
+    // In server_sim broadcast mode that is the authoritative simulation pos.
+    const bool serverSimBroadcast =
+        NetworkingConfig::instance().data().remotePlayers.broadcastSource ==
+        "server_sim";
+    const glm::vec3 histPos = serverSimBroadcast ? p.pos
+        : (p.hasBroadcastTransform ? p.broadcastPosition : p.pos);
+    const glm::vec3 histVel = serverSimBroadcast ? p.vel
+        : (p.hasBroadcastTransform ? p.broadcastVelocity : p.vel);
     p.posHistory.push_back({histPos, histVel, tick});
     const std::size_t historyLimit = NetworkingConfig::instance()
         .data().bufferLimits.serverPositionHistoryTicks;
@@ -874,7 +890,20 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     out.entityType = ENTITY_PLAYER;
     out.active = 1;
     out.ownerClientId = player.id;
-    if (player.hasBroadcastTransform)
+    // server_sim broadcast source: stream the server's own 60Hz input-driven
+    // simulation. Always smooth and uniform regardless of the player's network
+    // quality (client reports arrive gappy under loss/jitter/reorder).
+    if (NetworkingConfig::instance().data().remotePlayers.broadcastSource ==
+        "server_sim")
+    {
+        out.px = player.pos.x;
+        out.py = player.pos.y;
+        out.pz = player.pos.z;
+        out.vx = player.vel.x;
+        out.vy = player.vel.y;
+        out.vz = player.vel.z;
+    }
+    else if (player.hasBroadcastTransform)
     {
         out.px = player.broadcastPosition.x;
         out.py = player.broadcastPosition.y;

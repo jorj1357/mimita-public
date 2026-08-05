@@ -210,17 +210,23 @@ void engineTickState(Engine& engine, float dt)
                     // If no world at all, load a minimal default so the client can start.
                     if (!worldLoaded)
                     {
-                        if (loadWorldFromGLB(world, defaultMapPath.c_str()))
+                        std::string connectMap = defaultMapPath;
+                        if (!mci.directAddress.empty() && !mci.mapName.empty())
+                            connectMap = "assets/maps/" + mci.mapName + ".glb";
+                        if (loadWorldFromGLB(world, connectMap.c_str()))
                         {
-                            activeMapPath = defaultMapPath;
+                            activeMapPath = connectMap;
                             worldLoaded = true;
-                            printf("[MAIN NET] loaded default map for connecting\n");
+                            Debug::log(Debug::Category::Networking,
+                                       "[MAIN NET] loaded map for connecting path=%s\n",
+                                       connectMap.c_str());
                         }
                     }
                     else
                     {
-                        printf("[MAIN NET] keeping current world=%s for connecting\n",
-                               activeMapPath.c_str());
+                        Debug::log(Debug::Category::Networking,
+                                   "[MAIN NET] keeping current world=%s for connecting\n",
+                                   activeMapPath.c_str());
                     }
 
                     player.username = AuthSystem::instance().displayName();
@@ -229,7 +235,19 @@ void engineTickState(Engine& engine, float dt)
                     // no more local host 
                     bool connectionStarted = false;
 
-                    if (mci.roomCode.empty())
+                    if (!mci.directAddress.empty())
+                    {
+                        Debug::log(
+                            Debug::Category::Networking,
+                            "[DIRECT JOIN START] address=%s\n",
+                            mci.directAddress.c_str());
+
+                        connectionStarted = MimitaNet::mpInit(
+                            mpContext,
+                            mci.directAddress,
+                            player.username);
+                    }
+                    else if (mci.roomCode.empty())
                     {
                         Debug::warn(
                             Debug::Category::Networking,
@@ -254,24 +272,26 @@ void engineTickState(Engine& engine, float dt)
                     {
                         Debug::log(
                             Debug::Category::Networking,
-                            "[ROOM JOIN STARTED] room=%s\n",
+                            "[CONNECT STARTED] address=%s room=%s\n",
+                            mci.directAddress.c_str(),
                             mci.roomCode.c_str());
 
-                        // mpIceConnect started the connection process.
+                        // mpInit/mpIceConnect started the connection process.
                         // It does not necessarily mean the server handshake is complete yet.
                     }
                     else
                     {
                         Debug::warn(
                             Debug::Category::Networking,
-                            "[ROOM JOIN FAILED] room=%s reason=ice-start-failed\n",
+                            "[CONNECT FAILED] address=%s room=%s reason=start-failed\n",
+                            mci.directAddress.c_str(),
                             mci.roomCode.c_str());
 
                         // Keep roomCode visible in HUD so it can be shared even
                         // if this client's connection failed.
                     }
 
-                    clearPendingMultiplayerConnect();              
+                    clearPendingMultiplayerConnect();
                     }
             }
             if (gameState == GAME_PLAYING && worldLoaded &&
