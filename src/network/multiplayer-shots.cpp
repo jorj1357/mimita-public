@@ -9,6 +9,7 @@
 #include "network/net_common.h"
 #include "network/packets.h"
 #include "network/network-weapons.h"
+#include "network/disagreement-visuals.h"
 #include "combat/weapon-fire.h"
 #include "combat/death-system.h"
 #include "combat/weapon-registry.h"
@@ -20,6 +21,7 @@
 #include "killfeed/killfeed.h"
 #include "terminal/terminal-state.h"
 #include "config/networking-config.h"
+#include "debug/debug-log.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -41,6 +43,33 @@ const EntityInterpolationState* findRemoteInterpolation(
     if (npcIt != ctx.remoteNpcInterpolation.end())
         return &npcIt->second;
     return nullptr;
+}
+
+// Roll back a locally predicted death when the server says the target is alive.
+// Clears the replica's death state and surfaces a disagreement indicator.
+void revivePredictedDeath(Player& replica, const glm::vec3& at, const char* reason)
+{
+    replica.dead = false;
+    replica.netPredictedDead = false;
+    replica.proceduralFrozen = false;
+    replica.respawnTimer = 0.0f;
+    replica.deathAnim = Player::DeathAnimState{};
+    Debug::log(Debug::Category::Networking,
+               "[NET PREDICTED DEATH ROLLBACK] victim=%s reason=%s pos=(%.2f,%.2f,%.2f)",
+               replica.username.c_str(), reason, at.x, at.y, at.z);
+    if (NetworkingConfig::instance().data().disagreement.enabled)
+    {
+        DisagreementEvent ev;
+        ev.timeMs = nowMs();
+        ev.reason = DISAGREEMENT_INVALID_STATE;
+        ev.position = at;
+        ev.correction = glm::vec3(0.0f);
+        ev.sourcePlayerId = 0;
+        ev.targetPlayerId = 0;
+        ev.description = reason;
+        spawnDisagreementEffect(ev);
+        logDisagreement(ev);
+    }
 }
 
 bool visualTimelineReady(const MultiplayerContext& ctx,
@@ -160,14 +189,20 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
 {
     const bool isLocalShooter = event->shooterPlayerId == ctx.localPlayerId;
 
+    // How long a locally predicted NPC hit keeps suppressing the server-confirm
+    // duplicate hitmarker/killfeed. Covers one round trip plus rapid fire.
+    constexpr uint64_t NPC_PREDICT_WINDOW_MS = 500;
+
     std::string shooterName;
     MimitaVip::VipAppearance shooterVipAppearance;
+    MimitaVip::VipStyleDetail shooterVipStyleDetail;
     {
         auto si = ctx.playerRegistry.find(event->shooterPlayerId);
         if (si != ctx.playerRegistry.end())
         {
             shooterName = si->second.name;
             shooterVipAppearance = si->second.vipAppearance;
+            shooterVipStyleDetail = si->second.vipStyleDetail;
         }
         else
         {
@@ -176,13 +211,14 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
     }
 
     std::string npcName = "NPC " + std::to_string(event->npcEntityId);
+    Player* npcPtr = nullptr;
     auto npcIt = ctx.remoteNpcs.find(event->npcEntityId);
     if (npcIt != ctx.remoteNpcs.end())
     {
-        Player& npc = npcIt->second;
-        if (!npc.username.empty())
-            npcName = npc.username;
-        npc.currentHp = event->npcHealth;
+        npcPtr = &npcIt->second;
+        if (!npcPtr->username.empty())
+            npcName = npcPtr->username;
+        npcPtr->currentHp = event->npcHealth;
         printf("[NET NPC DAMAGE RECV] npcId=%u damage=%d health=%d killed=%d\n",
                event->npcEntityId, event->damage, event->npcHealth,
                (int)event->killed);
@@ -197,30 +233,57 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
     const glm::vec3 hitDir(event->dirX, event->dirY, event->dirZ);
     const char* weaponId = networkWeaponTypeName(event->weapon);
 
-    // Attacker-only presentation for the local shooter (observers see impact
-    // effects through the broadcast ShotEventPacket instead).
+    // ── Predicted local-shooter feedback ─────────────────────────────
+    // The instant hitmarker/blood were shown when the local ray connected.
+    // The server confirm is authoritative for health and reconciles the
+    // prediction: it suppresses the duplicate hitmarker and rolls back a
+    // predicted kill the server says did not happen.
+    const uint64_t now = nowMs();
+    auto predIt = ctx.predictedNpcHitMs.find(event->npcEntityId);
+    const bool predicted = predIt != ctx.predictedNpcHitMs.end() &&
+        now - predIt->second < NPC_PREDICT_WINDOW_MS;
+
     if (isLocalShooter && event->damage > 0)
     {
-        hitmarker(event->damage);
-        playHitmarkerSound(event->damage);
-        HitEvent ev;
-        ev.position = hitPos;
-        ev.normal = glm::length(hitNml) > 0.001f
-            ? glm::normalize(hitNml) : glm::vec3(0.0f, 0.0f, 1.0f);
-        ev.direction = glm::length(hitDir) > 0.001f
-            ? glm::normalize(hitDir) : -ev.normal;
-        ev.hitEntity = true;
-        ev.damage = event->damage;
-        ev.attacker = shooterName;
-        ev.victim = npcName;
-        ev.weaponSource = weaponId;
-        HitEffects::onHit(ev);
-        printf("[NET NPC HIT PRESENT] shooter=%u npc=%u damage=%d\n",
-               event->shooterPlayerId, event->npcEntityId, event->damage);
+        if (predicted)
+        {
+            // Server says the NPC survived a hit we predicted as lethal:
+            // revive the replica and show a disagreement indicator.
+            if (npcPtr && npcPtr->netPredictedDead && !event->killed)
+            {
+                revivePredictedDeath(*npcPtr, hitPos, "NPC SURVIVED SERVER DISAGREES");
+            }
+            Debug::log(Debug::Category::Networking,
+                       "[NET NPC HIT PRESENT] shooter=%u npc=%u damage=%d predicted=1 (suppressed duplicate)",
+                       event->shooterPlayerId, event->npcEntityId, event->damage);
+        }
+        else
+        {
+            // Non-predicted path (melee/godball/multi-pellet): show the
+            // server-confirmed feedback as before.
+            hitmarker(event->damage);
+            playHitmarkerSound(event->damage);
+            HitEvent ev;
+            ev.position = hitPos;
+            ev.normal = glm::length(hitNml) > 0.001f
+                ? glm::normalize(hitNml) : glm::vec3(0.0f, 0.0f, 1.0f);
+            ev.direction = glm::length(hitDir) > 0.001f
+                ? glm::normalize(hitDir) : -ev.normal;
+            ev.hitEntity = true;
+            ev.damage = event->damage;
+            ev.attacker = shooterName;
+            ev.victim = npcName;
+            ev.weaponSource = weaponId;
+            HitEffects::onHit(ev);
+            printf("[NET NPC HIT PRESENT] shooter=%u npc=%u damage=%d\n",
+                   event->shooterPlayerId, event->npcEntityId, event->damage);
+        }
     }
 
     if (event->killed)
     {
+        const bool localShooterPredictedKill =
+            isLocalShooter && npcPtr && npcPtr->netPredictedDead;
         // Killing an NPC heals the local killer to full health.
         if (isLocalShooter && gpPlayer)
         {
@@ -228,25 +291,32 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
             printf("[NET KILL HEAL] shooter=%u npc=%u health=%d\n",
                    event->shooterPlayerId, event->npcEntityId, gpPlayer->currentHp);
         }
-        // Death sound (the red-sphere ellipsoid spawns loss-proof for every
-        // client via the snapshot health transition in updateRenderedReplica).
+        if (!localShooterPredictedKill)
         {
+            // Death sound (the red-sphere ellipsoid spawns loss-proof for every
+            // client via the snapshot health transition in updateRenderedReplica).
             AudioManager::instance().play(
                 {"npc_death", AudioCategory::NPC, true, hitPos, 1.0f, 0.9f, 45.0f, 0});
-        }
-        // Killfeed entry: killer, NPC, weapon.
-        {
+            // Killfeed entry: killer, NPC, weapon.
             const WeaponDefinition* wdef = WeaponRegistry::instance().get(weaponId);
             std::string weaponDisplay = (wdef && !wdef->displayName.empty())
                 ? wdef->displayName
                 : ((weaponId && weaponId[0]) ? weaponId : "unknown");
             KillfeedManager::instance().onKillStyled(
-                shooterName, shooterVipAppearance,
-                npcName, MimitaVip::freeAppearance(),
+                shooterName, shooterVipAppearance, shooterVipStyleDetail,
+                npcName, MimitaVip::freeAppearance(), MimitaVip::VipStyleDetail{},
                 weaponDisplay);
+            printf("[NET NPC KILL PRESENT] shooter=%u npc=%u name=\"%s\"\n",
+                   event->shooterPlayerId, event->npcEntityId, npcName.c_str());
         }
-        printf("[NET NPC KILL PRESENT] shooter=%u npc=%u name=\"%s\"\n",
-               event->shooterPlayerId, event->npcEntityId, npcName.c_str());
+        else
+        {
+            Debug::log(Debug::Category::Networking,
+                       "[NET NPC KILL PRESENT] shooter=%u npc=%u name=\"%s\" predicted=1 (suppressed duplicate)",
+                       event->shooterPlayerId, event->npcEntityId, npcName.c_str());
+        }
+        if (npcPtr)
+            npcPtr->netPredictedDead = false;
         if (npcIt != ctx.remoteNpcs.end())
         {
             ctx.remoteNpcs.erase(npcIt);

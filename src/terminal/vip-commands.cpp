@@ -89,6 +89,40 @@ void registerVipCommands()
             const std::string tierArg = args[0] == "off" ? "free" : args[0];
             const uint8_t tier = MimitaVip::tierFromString(tierArg);
             gpPlayer->vipAppearance = MimitaVip::tierDefaultAppearance(tier);
+
+            MimitaVip::VipStyleDetail detail;
+            if (tier == MimitaVip::VIP_TIER_VIP)
+            {
+                detail.styleKind = MimitaVip::VIP_STYLE_TURQUOISE;
+                detail.colors.push_back(MimitaVip::colorFromBytes(64, 224, 208));
+                detail.solidColor = detail.colors[0];
+            }
+            else if (tier == MimitaVip::VIP_TIER_SUPER_VIP)
+            {
+                detail.styleKind = MimitaVip::VIP_STYLE_RAINBOW;
+                detail.colors = {
+                    MimitaVip::colorFromBytes(255, 0, 68),
+                    MimitaVip::colorFromBytes(255, 204, 0),
+                    MimitaVip::colorFromBytes(0, 255, 102),
+                    MimitaVip::colorFromBytes(0, 204, 255),
+                    MimitaVip::colorFromBytes(153, 68, 255)
+                };
+                detail.solidColor = detail.colors[0];
+            }
+            else if (tier == MimitaVip::VIP_TIER_ULTRA_VIP)
+            {
+                detail.styleKind = MimitaVip::VIP_STYLE_ANIMATED_RAINBOW;
+                detail.animation = MimitaVip::VIP_ANIMATION_CYCLE;
+                detail.colors = {
+                    MimitaVip::colorFromBytes(255, 0, 68),
+                    MimitaVip::colorFromBytes(255, 204, 0),
+                    MimitaVip::colorFromBytes(0, 255, 102),
+                    MimitaVip::colorFromBytes(0, 204, 255),
+                    MimitaVip::colorFromBytes(153, 68, 255)
+                };
+                detail.solidColor = detail.colors[0];
+            }
+            gpPlayer->vipStyleDetail = detail;
             Debug::warn(Debug::Category::Vip,
                 "[VIP TEST] local preview tier=%s\n",
                 MimitaVip::tierToString(gpPlayer->vipAppearance.tier));

@@ -128,9 +128,14 @@ void AuthSystem::applyUserInfo(const GameUserInfo& info)
 {
     applyInfo(mUser, info);
     if (gpPlayer)
+    {
         gpPlayer->username = displayName();
+        gpPlayer->vipAppearance = info.vipAppearance;
+        gpPlayer->vipStyleDetail = info.vipStyleDetail;
+    }
     storeProfileCache({
-        info.id, info.username, info.displayName, info.avatarUrl, info.supporterTier, info.vipAppearance
+        info.id, info.username, info.displayName, info.avatarUrl,
+        info.supporterTier, info.vipAppearance, info.vipStyleDetail
     });
 }
 
@@ -146,7 +151,11 @@ void AuthSystem::applyBootstrap(const std::string& token, const GameBootstrap& b
     mUser.loadout = bootstrap.loadout;
     mState = AuthState::Authenticated;
     if (gpPlayer)
+    {
         gpPlayer->username = displayName();
+        gpPlayer->vipAppearance = mUser.vipAppearance;
+        gpPlayer->vipStyleDetail = mUser.vipStyleDetail;
+    }
     cacheAndFinish(mUser);
     Debug::warn(Debug::Category::Auth,
         "account bootstrap loaded: username=%s userId=%d mmr=%d\n",
@@ -344,7 +353,11 @@ void AuthSystem::finishAuth(const std::string& token, const GameUserInfo* userIn
     if (loggedIn)
     {
         if (gpPlayer)
+        {
             gpPlayer->username = displayName();
+            gpPlayer->vipAppearance = mUser.vipAppearance;
+            gpPlayer->vipStyleDetail = mUser.vipStyleDetail;
+        }
         Debug::warn(Debug::Category::Auth, "current username=%s logged in=1\n",
                displayName().c_str());
         cacheAndFinish(mUser);

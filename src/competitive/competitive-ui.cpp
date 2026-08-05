@@ -5,6 +5,7 @@
 #include "../gui/gui-layout.h"
 #include "../gui/gui-element-render.h"
 #include "../gui/gui-coord.h"
+#include "../gui/gui-main.h"
 #include "../auth/auth-system.h"
 
 #include <cstdio>
@@ -92,7 +93,7 @@ CompetitiveMenuAction drawCompetitiveMenu(GLFWwindow* win)
             return CompetitiveMenuAction::FindMatch;
         } else if (id == "leaderboardButton") {
             printf("[COMP] Leaderboard requested\n");
-            // Will open leaderboard in browser
+            gGuiMenuState = GUI_MENU_LEADERBOARD;
         } else if (id == "backButton") {
             return CompetitiveMenuAction::GoBack;
         }

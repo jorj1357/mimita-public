@@ -69,6 +69,8 @@ void requestSendChatMessage(const std::string& message)
         entry.senderAccountId = 0;
         entry.senderType = ChatSenderType::Player;
         entry.senderName = player.username;
+        entry.senderVipAppearance = player.vipAppearance;
+        entry.senderVipStyleDetail = player.vipStyleDetail;
         entry.text = trimmed;
         gChatHistory.append(entry);
     }

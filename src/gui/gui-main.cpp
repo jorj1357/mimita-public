@@ -16,11 +16,13 @@
 #include "menus/sandbox-map-menu.h"
 #include "menus/help-menu.h"
 #include "game/bomb-tag-config.h"
+#include "map/map-catalog.h"
 #include "avatar/avatar-menu.h"
 #include "avatar/avatar.h"
 #include "competitive/competitive.h"
 #include "competitive/competitive-ui.h"
 #include "competitive/competitive-match.h"
+#include "leaderboard/leaderboard-ui.h"
 #include "ui-system.h"
 #include "gui-editor.h"
 #include "notifications/notifications.h"
@@ -44,6 +46,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cctype>
 #include <glad/glad.h>
 #include <shellapi.h>
 #include <windows.h>
@@ -118,11 +121,52 @@ static uint64_t gPendingServerRoomFileStartMs = 0;
 static uint64_t gLastServerRoomFilePollMs = 0;
 static bool gWaitingForServerRoomCode = false;
 
+// Resolve the online menu's map selection to the actual map file stem.
+// The dropdown stores display names (e.g. "Mimita Memorial"); the engine,
+// server process, and connecting clients all need the real file stem
+// (e.g. "mimita-memorial"). An empty/unmatched selection falls back to the
+// dropdown's displayed default (the first map in the catalog).
+static std::string resolveServerMapId(const std::string& selection)
+{
+    MapCatalogResult catalog = scanMapCatalog();
+
+    auto lower = [](std::string s) {
+        for (char& c : s)
+            c = (char)std::tolower((unsigned char)c);
+        return s;
+    };
+    auto stem = [](const std::string& path) {
+        std::string r = path;
+        size_t slash = r.find_last_of("/\\");
+        if (slash != std::string::npos)
+            r = r.substr(slash + 1);
+        if (r.size() > 4 && r.compare(r.size() - 4, 4, ".glb") == 0)
+            r = r.substr(0, r.size() - 4);
+        return r;
+    };
+
+    const std::string target = lower(selection);
+    if (!target.empty())
+    {
+        for (const MapCatalogEntry& m : catalog.maps)
+        {
+            const std::string s = stem(m.assetPath);
+            if (lower(m.displayName) == target || lower(s) == target ||
+                lower(m.assetPath) == target)
+                return s;
+        }
+    }
+
+    if (!catalog.maps.empty())
+        return stem(catalog.maps[0].assetPath);
+    return "funworld3";
+}
+
 static void readServerSettingsFromBindings()
 {
     GuiBindings& b = GuiBindings::instance();
     std::string name = b.get("server.name", "MiMITA Server");
-    std::string mapName = b.get("server.map", "funworld3");
+    std::string mapName = resolveServerMapId(b.get("server.map"));
     std::string playerLimitStr = b.get("server.player_limit", "999");
     std::string npcsStr = b.get("server.startup_npcs", "true");
     std::string npcCountStr = b.get("server.startup_npc_count", "3");
@@ -642,6 +686,15 @@ void guiMain(GLFWwindow* win, GameState& state)
                 if (gpGameState) *gpGameState = GAME_PLAYING;
             }
             else if (action == CompetitiveMenuAction::GoBack)
+            {
+                gGuiMenuState = GUI_MENU_PLAY;
+            }
+            break;
+        }
+
+        case GUI_MENU_LEADERBOARD:
+        {
+            if (drawLeaderboardMenu(win) == LeaderboardMenuAction::GoBack)
             {
                 gGuiMenuState = GUI_MENU_PLAY;
             }

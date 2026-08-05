@@ -350,21 +350,12 @@ void handleAttackRequest(
         shooter.equippedSlot = req->equippedSlot;
     }
 
+    // ── Ammo is client-authoritative ──────────────────────────────────
+    // The client owns its clip (decrement + local reload). The server no
+    // longer rejects shots for ammo — it only rate-limits via cooldown.
+    // The server-side magazine counter stays informational (never below 0).
     const bool consumesAmmo = def->executionType != WeaponExecutionType::PhysicalContact &&
         def->magazineSize > 0;
-
-    // ── Ammo check ────────────────────────────────────────────────────
-    if (consumesAmmo && rt.magazineAmmo <= 0)
-    {
-        Debug::log(Debug::Category::Weapons, "[ATTACK REJECT] playerId=%u requestId=%u out of ammo ammo=%d\n",
-                   shooter.id, req->requestId, rt.magazineAmmo);
-        emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
-                            shooter, req->requestId, "NO AMMO");
-        sendAttackResult(sock, shooter, req, tick, false, 3, 0,
-                         rt.magazineAmmo, rt.reserveAmmo,
-                         rt.nextAllowedFireTick, rt.stateRevision);
-        return;
-    }
 
     // ── Cooldown check (tick-based) ────────────────────────────────────
     constexpr uint64_t COOLDOWN_GRACE_TICKS = 2;
@@ -520,7 +511,8 @@ void handleAttackRequest(
         WeaponExecution::HitscanTraceResult trace =
             WeaponExecution::traceHitscan(*def, origin, direction, traceConfig, targets);
 
-        rt.magazineAmmo--;
+        if (rt.magazineAmmo > 0)
+            rt.magazineAmmo--;
         rt.nextAllowedFireTick = cooldownTickFor(*def, tick);
         rt.reloading = false;
         rt.stateRevision++;

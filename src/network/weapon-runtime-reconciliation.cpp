@@ -24,7 +24,8 @@ bool reconcileAuthoritativeWeaponRuntime(
     uint64_t reloadCompleteTick,
     uint32_t stateRevision,
     uint32_t spawnGeneration,
-    const char* source)
+    const char* source,
+    bool applyAmmo)
 {
     // ── 1. Validate weapon ID before any mutation ─────────────────────
     const std::string* weaponId = weaponIdForDefNetworkId(weaponDefNetworkId);
@@ -102,8 +103,14 @@ bool reconcileAuthoritativeWeaponRuntime(
     }
 
     // ── 6. Apply authoritative values ─────────────────────────────────
-    rt.currentAmmo = magazineAmmo;
-    rt.reserveAmmo = reserveAmmo;
+    // Ammo is client-authoritative: when applyAmmo is false the server's
+    // counter must not overwrite the client's predicted clip/reload. The
+    // cooldown and reload-timer sync below still applies either way.
+    if (applyAmmo)
+    {
+        rt.currentAmmo = magazineAmmo;
+        rt.reserveAmmo = reserveAmmo;
+    }
     rt.isReloading = reloading;
 
     // ── 7. Tick → seconds conversion (shared GAMEPLAY_SIMULATION_HZ) ──

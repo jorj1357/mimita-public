@@ -80,6 +80,8 @@ void AuthController::signIn()
         cache.displayName = bootstrap.user.displayName;
         cache.avatarUrl = bootstrap.user.avatarUrl;
         cache.supporterTier = bootstrap.user.supporterTier;
+        cache.vipAppearance = bootstrap.user.vipAppearance;
+        cache.vipStyleDetail = bootstrap.user.vipStyleDetail;
         storeProfileCache(cache);
 
         Debug::warn(Debug::Category::Auth, "LOGIN SUCCESS username=%s accountId=%d\n",

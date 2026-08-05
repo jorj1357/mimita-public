@@ -952,6 +952,13 @@ void handleExplodeRequest(const char* buffer, int bytes,
            serverTimestamp(), p.id);
 }
 
+// Forward declaration: defined below (used by handleJoinRequest and others).
+void broadcastVipStyleEvent(SOCKET sock,
+                            const ServerPlayer& target,
+                            const std::unordered_map<uint32_t, ServerPlayer>& players,
+                            uint32_t tick,
+                            uint64_t& totalPacketsOut);
+
 void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
                        uint32_t& nextPlayerId, uint32_t tick, uint64_t& totalPacketsOut,
@@ -1058,9 +1065,10 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     int verifiedVipAccountId = 0;
     std::string verifiedVipRole;
     bool hasVerifiedVipTicket = false;
+    VipJoinTicketResult vipResult;
     if (!vipTicket.empty())
     {
-        const VipJoinTicketResult vipResult = verifyVipJoinTicket(
+        vipResult = verifyVipJoinTicket(
             vipTicket, gServerCoordinatorCode, "");
         if (vipResult.ok && vipResult.verified)
         {
@@ -1817,6 +1825,17 @@ void buildAndSendSnapshot(SOCKET sock,
             printf("%s [SERVER SNAPSHOT SEND] toClientId=%u chunks=%zu%s\n",
                    serverTimestamp(), kv.first, chunks.size(),
                    redundantChunk ? " +redundant" : "");
+    }
+
+    // Best-effort reliability for VIP styles: re-broadcast every few seconds so
+    // a lost style event is recovered without an explicit request/ack cycle.
+    if (tick % 360 == 0)
+    {
+        for (const auto& kv : players)
+        {
+            if (kv.second.vipStyleEpoch != 0)
+                broadcastVipStyleEvent(sock, kv.second, players, tick, totalPacketsOut);
+        }
     }
 }
 

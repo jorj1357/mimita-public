@@ -25,6 +25,8 @@ struct KillfeedEntry {
     std::string weaponName;
     MimitaVip::VipAppearance killerVipAppearance;
     MimitaVip::VipAppearance victimVipAppearance;
+    MimitaVip::VipStyleDetail killerVipStyleDetail;
+    MimitaVip::VipStyleDetail victimVipStyleDetail;
     float age = 0.0f;
     float opacity = 0.0f;
 };
@@ -41,6 +43,14 @@ public:
                       const MimitaVip::VipAppearance& killerVipAppearance,
                       const std::string& victimName,
                       const MimitaVip::VipAppearance& victimVipAppearance,
+                      const std::string& weaponName,
+                      bool fromReplay = false);
+    void onKillStyled(const std::string& killerName,
+                      const MimitaVip::VipAppearance& killerVipAppearance,
+                      const MimitaVip::VipStyleDetail& killerVipStyleDetail,
+                      const std::string& victimName,
+                      const MimitaVip::VipAppearance& victimVipAppearance,
+                      const MimitaVip::VipStyleDetail& victimVipStyleDetail,
                       const std::string& weaponName,
                       bool fromReplay = false);
 

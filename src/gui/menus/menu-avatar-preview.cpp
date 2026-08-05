@@ -219,6 +219,7 @@ void MenuAvatarPreview::update(float dt, const glm::vec3& camForward)
 
     p->username = AuthSystem::instance().displayName();
     p->vipAppearance = AuthSystem::instance().user().vipAppearance;
+    p->vipStyleDetail = AuthSystem::instance().user().vipStyleDetail;
     Debug::logThrottled(Debug::Category::Gui, "avatar-username", 3.0f,
         "username=%s source=AuthSystem.displayName()\n", p->username.c_str());
     if (DebugConfig::DEBUG_MENU_PREVIEW)
@@ -249,6 +250,7 @@ static void drawNameplateUI(const Player& p, const Camera& cam, int vpX, int vpY
     nameOptions.scale = 0.28f;
     nameOptions.alpha = 1.0f;
     nameOptions.phase = 0.0f;
+    nameOptions.detail = &p.vipStyleDetail;
     vipDrawStyledNameCentered(p.username, p.vipAppearance, sx, sy - 28.0f,
                               nameOptions);
 }

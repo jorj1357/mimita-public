@@ -159,9 +159,13 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
             playerNameFor(ctx, event.attackerPlayerId),
             attackerIt != ctx.playerRegistry.end()
                 ? attackerIt->second.vipAppearance : MimitaVip::freeAppearance(),
+            attackerIt != ctx.playerRegistry.end()
+                ? attackerIt->second.vipStyleDetail : MimitaVip::VipStyleDetail{},
             playerNameFor(ctx, event.targetPlayerId),
             victimIt != ctx.playerRegistry.end()
                 ? victimIt->second.vipAppearance : MimitaVip::freeAppearance(),
+            victimIt != ctx.playerRegistry.end()
+                ? victimIt->second.vipStyleDetail : MimitaVip::VipStyleDetail{},
             weaponDisplay, false);
     }
 

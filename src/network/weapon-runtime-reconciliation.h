@@ -18,6 +18,7 @@ bool reconcileAuthoritativeWeaponRuntime(
     uint64_t reloadCompleteTick,
     uint32_t stateRevision,
     uint32_t spawnGeneration,
-    const char* source);
+    const char* source,
+    bool applyAmmo = true);
 
 } // namespace MimitaNet
