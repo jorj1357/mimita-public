@@ -667,8 +667,29 @@ uint32_t mpPredictProjectileAttack(
     const glm::vec3& direction);
 void mpCancelPredictedProjectileAttack(MultiplayerContext& ctx,
                                        uint32_t requestId);
-bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
-                  const std::string& playerName);
+// ── Async ICE connect (background thread; never blocks the main thread) ──
+// Status of an in-flight ICE connect job. On success, `transport` is the
+// finished ICE transport and must be installed into ctx via
+// mpInstallIceConnectSuccess. The worker never touches ctx directly.
+struct IceConnectStatus
+{
+    bool active = false;      // job still running
+    bool done = false;        // job finished (success or failure)
+    bool success = false;
+    bool cancelled = false;
+    ConnectionState state = ConnectionState::Disconnected;
+    std::string message;
+    std::string roomCode;
+    std::string serverAddress;
+    std::string joinToken;
+    std::unique_ptr<IGameTransport> transport;
+};
+bool mpIceConnectStart(MultiplayerContext& ctx, const std::string& roomCode,
+                       const std::string& playerName);
+IceConnectStatus mpIceConnectPoll();
+bool mpIceConnectActive();
+void mpIceConnectCancel();
+void mpInstallIceConnectSuccess(MultiplayerContext& ctx, IceConnectStatus& status);
 uint32_t mpSendMeleeHitRequest(
     MultiplayerContext& ctx,
     uint32_t targetPlayerId,
