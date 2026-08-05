@@ -2,6 +2,7 @@
 
 #include <string>
 #include <cstdint>
+#include <vector>
 
 namespace MimitaNet {
 
@@ -20,7 +21,35 @@ struct CoordinatorLookupResult
     bool isIce = false;
 };
 
+// ── Server browser: one visible server entry ─────────────────────────
+struct ServerListEntry
+{
+    std::string code;
+    std::string serverName;
+    std::string hostPlayerName;
+    std::string map;
+    std::string gamemode;
+    int players = 0;
+    int maxPlayers = 0;
+    bool passwordProtected = false;
+    uint64_t uptimeSeconds = 0;
+    std::string publicIp;
+    int port = 0;
+    bool isIce = false;
+};
+
 // ── ICE: host registration ───────────────────────────────────────────
+struct IceHostMetadata
+{
+    std::string serverName = "MiMITA Server";
+    std::string map = "funworldv3";
+    std::string gamemode = "sandbox";
+    int maxPlayers = 999;
+    bool passwordProtected = false;
+    std::string hostPlayerName;
+    int port = 1357;
+};
+
 struct IceHostResult {
     bool ok = false;
     std::string roomCode;
@@ -82,7 +111,8 @@ const std::string& getCoordinatorUrl();
 // ── ICE signaling (two-phase offer/answer) ───────────────────────────
 
 // Host: register an ICE room
-IceHostResult coordinatorIceHost(const std::string& hostSessionId, const std::string& iceDescription);
+IceHostResult coordinatorIceHost(const std::string& hostSessionId, const std::string& iceDescription,
+    const IceHostMetadata& metadata = IceHostMetadata{});
 IceHostResult coordinatorIceHostPeer(const std::string& roomCode, const std::string& hostSessionId, const std::string& iceDescription);
 
 // Legacy ICE API (deprecated, kept for test compatibility)
@@ -104,13 +134,16 @@ IcePollResult coordinatorIcePoll(const std::string& roomCode, const std::string&
 // Client: non-mutating lookup — checks if room exists AND is ICE type
 CoordinatorLookupResult coordinatorIceLookup(const std::string& roomCode);
 
+// Client: fetch the public server browser list
+std::vector<ServerListEntry> coordinatorServerList();
+
 // Client: begin join — sends real SDP, gets requestId + one-time token
 IceBeginJoinResult coordinatorIceBeginJoin(const std::string& roomCode,
     const std::string& clientSessionId, const std::string& iceDescription);
 
 // Host: poll for pending connection requests
 IceHostPendingRequest coordinatorIceHostPoll(const std::string& roomCode,
-    const std::string& hostSessionId);
+    const std::string& hostSessionId, int players = -1);
 
 // Host: post answer SDP for a specific request
 IceHostAnswerResult coordinatorIceHostAnswer(const std::string& roomCode,

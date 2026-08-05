@@ -123,6 +123,25 @@ function roomToLookup(room) {
     };
 }
 
+// Public server-browser entry: expands room metadata with live uptime.
+function roomToBrowserEntry(room) {
+    const now = Date.now();
+    return {
+        code: room.code,
+        server_name: room.server_name,
+        host_player_name: room.host_player_name || "",
+        map: room.map,
+        gamemode: room.gamemode,
+        players: room.players,
+        max_players: room.max_players,
+        password_protected: !!room.password_protected,
+        uptime_seconds: Math.floor((now - (room.started_at || room.last_heartbeat)) / 1000),
+        public_ip: room.public_ip,
+        port: room.port,
+        is_ice: room.room_type === "ice"
+    };
+}
+
 const routes = {
     // ── Standard room registration ──
     "/api/coordinator/register": async (req, res) => {
@@ -222,26 +241,41 @@ const routes = {
             room_type: "ice",
             host_session_id: hostSessionId,
             host_description: body.ice_description || "",
-            server_name: "MiMITA ICE Server",
+            server_name: body.server_name || "MiMITA Server",
+            host_player_name: body.host_player_name || "",
             public_ip: getClientIp(req),
-            port: 0,
-            map: "funworldv3",
-            gamemode: "sandbox",
-            players: 0,
-            max_players: 32,
-            password_protected: false,
+            port: body.port || 1357,
+            map: body.map || "funworldv3",
+            gamemode: body.gamemode || "sandbox",
+            players: body.players || 0,
+            max_players: body.max_players || 999,
+            password_protected: !!body.password_protected,
+            started_at: Date.now(),
             last_heartbeat: Date.now(),
             join_tokens: [joinToken],
             used_tokens: [],
             connections: new Map()    // requestId -> connection object
         });
-        console.log("[ICE ROOM REGISTER] code=" + code + " descBytes=" + (body.ice_description || "").length);
+        console.log("[ICE ROOM REGISTER] code=" + code + " name=\"" + (body.server_name || "") + "\" players=" + (body.players || 0) + " descBytes=" + (body.ice_description || "").length);
         json(res, 200, {
             ok: true,
             room_code: code,
             host_session_id: hostSessionId,
             join_token: joinToken
         });
+    },
+
+    // ── Server browser list ──
+    "/api/coordinator/list": async (req, res) => {
+        const now = Date.now();
+        const servers = [];
+        for (const [code, room] of rooms) {
+            if (now - room.last_heartbeat > ROOM_TIMEOUT_MS)
+                continue;
+            servers.push(roomToBrowserEntry(room));
+        }
+        console.log("[LIST] rooms=" + servers.length);
+        json(res, 200, { ok: true, servers });
     },
 
     // ── ICE Lookup (non-mutating) ──
@@ -297,6 +331,8 @@ const routes = {
         room.last_heartbeat = Date.now();
         if (body.host_session_id !== room.host_session_id)
             return json(res, 403, { error: "host-not-authorized" });
+        if (body.players !== undefined && Number.isFinite(body.players))
+            room.players = Math.max(0, Math.floor(body.players));
 
         // Find first pending request
         let found = null;

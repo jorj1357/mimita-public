@@ -901,6 +901,7 @@ struct ServerLaunchSettings
     bool externalProcessLaunched = false;
     bool startLocalServer = false;
     std::string turnPassword;
+    std::string hostPlayerName;
 
     // Resolved state (set during startup, not from UI)
     std::string resolvedMapPath;
@@ -932,6 +933,11 @@ struct ListenServerState
     std::string serverCode;
     std::string joinToken;
     std::string serverName = "MiMITA Server";
+    std::string hostPlayerName;
+    std::string mapName = "funworldv3";
+    std::string gameMode = "sandbox";
+    uint32_t maxPlayers = 999;
+    bool passwordProtected = false;
     // ── Background thread for 60 Hz independent server timing ──────
     std::atomic<bool> serverRunning{false};
     std::thread serverThread;
@@ -979,7 +985,7 @@ struct PendingIcePeer {
 extern std::vector<std::unique_ptr<PendingIcePeer>> gPendingIcePeers;
 
 bool initServerIceListener(ListenServerState& state);
-void tickIceCoordinator(ListenServerState& state);
+void tickIceCoordinator(ListenServerState& state, size_t playerCount);
 void tickIcePeers(const std::string& serverCode, const std::string& iceSessionId,
                   std::vector<PendingServerTransport>& pendingIceTransports);
 bool waitForAgentState(class IceAgent& agent, IceAgentState target, int timeoutMs);

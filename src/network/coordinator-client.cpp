@@ -221,11 +221,19 @@ const std::string& getCoordinatorUrl()
 
 // ── IceHost ──────────────────────────────────────────────────────────
 
-IceHostResult coordinatorIceHost(const std::string& hostSessionId, const std::string& iceDescription)
+IceHostResult coordinatorIceHost(const std::string& hostSessionId, const std::string& iceDescription,
+    const IceHostMetadata& metadata)
 {
     IceHostResult result;
     std::string body = "{\"host_session_id\":\"" + jsonEscape(hostSessionId)
-        + "\",\"ice_description\":\"" + jsonEscape(iceDescription) + "\"}";
+        + "\",\"ice_description\":\"" + jsonEscape(iceDescription)
+        + "\",\"server_name\":\"" + jsonEscape(metadata.serverName)
+        + "\",\"map\":\"" + jsonEscape(metadata.map)
+        + "\",\"gamemode\":\"" + jsonEscape(metadata.gamemode)
+        + "\",\"max_players\":" + std::to_string(metadata.maxPlayers)
+        + ",\"password_protected\":" + (metadata.passwordProtected ? "true" : "false")
+        + ",\"host_player_name\":\"" + jsonEscape(metadata.hostPlayerName)
+        + "\",\"port\":" + std::to_string(metadata.port) + "}";
     std::string response;
     long httpCode = 0;
     uint64_t t0 = nowMs();
@@ -241,8 +249,9 @@ IceHostResult coordinatorIceHost(const std::string& hostSessionId, const std::st
         result.roomCode = jsonStr(j, "room_code");
         result.hostSessionId = jsonStr(j, "host_session_id");
         result.joinToken = jsonStr(j, "join_token");
-        printf("[ICE ROOM REGISTER] code=%s session=%s sdp=%s status=%ld duration=%llums\n",
-               result.roomCode.c_str(), result.hostSessionId.substr(0, 12).c_str(),
+        printf("[ICE ROOM REGISTER] code=%s name=%s maxPlayers=%d host=%s sdp=%s status=%ld duration=%llums\n",
+               result.roomCode.c_str(), metadata.serverName.c_str(), metadata.maxPlayers,
+               metadata.hostPlayerName.c_str(),
                iceLogSdpSummary(iceDescription).c_str(), httpCode, dt);
     } catch (const std::exception& e) {
         printf("[ICE ROOM REGISTER] parse error: %s\n", e.what());
@@ -317,6 +326,51 @@ CoordinatorLookupResult coordinatorIceLookup(const std::string& roomCode)
     return result;
 }
 
+// ── ServerList (public server browser) ───────────────────────────────
+
+std::vector<ServerListEntry> coordinatorServerList()
+{
+    std::vector<ServerListEntry> result;
+    std::string response;
+    long httpCode = 0;
+    uint64_t t0 = nowMs();
+    if (!httpPostJsonInner(gCoordinatorUrl + "/api/coordinator/list", "{}", response, 5000, httpCode))
+    {
+        printf("[SERVER LIST] status=%ld duration=%llums FAILED\n", httpCode, nowMs() - t0);
+        return result;
+    }
+    try {
+        auto j = json::parse(response);
+        if (!j.contains("servers") || !j["servers"].is_array())
+        {
+            printf("[SERVER LIST] status=%ld malformed response (no servers array)\n", httpCode);
+            return result;
+        }
+        for (const auto& it : j["servers"])
+        {
+            ServerListEntry e;
+            e.code = jsonStr(it, "code");
+            e.serverName = jsonStr(it, "server_name");
+            e.hostPlayerName = jsonStr(it, "host_player_name");
+            e.map = jsonStr(it, "map");
+            e.gamemode = jsonStr(it, "gamemode");
+            e.players = jsonInt(it, "players");
+            e.maxPlayers = jsonInt(it, "max_players");
+            e.passwordProtected = jsonBool(it, "password_protected");
+            e.uptimeSeconds = (uint64_t)jsonInt(it, "uptime_seconds");
+            e.publicIp = jsonStr(it, "public_ip");
+            e.port = jsonInt(it, "port");
+            e.isIce = jsonBool(it, "is_ice");
+            result.push_back(std::move(e));
+        }
+        printf("[SERVER LIST] rooms=%zu duration=%llums status=%ld\n",
+               result.size(), nowMs() - t0, httpCode);
+    } catch (const std::exception& e) {
+        printf("[SERVER LIST] parse error: %s response=%.200s\n", e.what(), response.c_str());
+    }
+    return result;
+}
+
 // ── IceBeginJoin ─────────────────────────────────────────────────────
 
 IceBeginJoinResult coordinatorIceBeginJoin(const std::string& roomCode,
@@ -362,11 +416,14 @@ IceBeginJoinResult coordinatorIceBeginJoin(const std::string& roomCode,
 // ── IceHostPoll ──────────────────────────────────────────────────────
 
 IceHostPendingRequest coordinatorIceHostPoll(const std::string& roomCode,
-    const std::string& hostSessionId)
+    const std::string& hostSessionId, int players)
 {
     IceHostPendingRequest result;
     std::string body = "{\"room_code\":\"" + jsonEscape(roomCode)
-        + "\",\"host_session_id\":\"" + jsonEscape(hostSessionId) + "\"}";
+        + "\",\"host_session_id\":\"" + jsonEscape(hostSessionId) + "\"";
+    if (players >= 0)
+        body += ",\"players\":" + std::to_string(players);
+    body += "}";
     std::string response;
     long httpCode = 0;
     uint64_t t0 = nowMs();
@@ -384,8 +441,8 @@ IceHostPendingRequest coordinatorIceHostPoll(const std::string& roomCode,
             result.clientSessionId = jsonStr(j, "client_session_id");
             result.clientIceDescription = jsonStr(j, "client_ice_description");
         }
-        printf("[ICE HOST POLL] code=%s hasRequest=%d duration=%llums status=%ld\n",
-               roomCode.c_str(), (int)result.hasRequest, nowMs() - t0, httpCode);
+        printf("[ICE HOST POLL] code=%s players=%d hasRequest=%d duration=%llums status=%ld\n",
+               roomCode.c_str(), players, (int)result.hasRequest, nowMs() - t0, httpCode);
         if (result.hasRequest) {
             printf("[ICE HOST REQUEST] code=%s req=%s client=%s sdp=%s duration=%llums\n",
                    roomCode.c_str(), result.requestId.substr(0, 12).c_str(),

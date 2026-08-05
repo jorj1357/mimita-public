@@ -330,6 +330,13 @@ int runServer(const LaunchOptions& options)
 
     // ── Dedicated server ICE support ──
     ListenServerState dedicatedIceState;
+    dedicatedIceState.serverName = options.name.empty() ? "MiMITA Server" : options.name;
+    dedicatedIceState.mapName = mapName;
+    dedicatedIceState.gameMode = "sandbox";
+    dedicatedIceState.maxPlayers = options.maxPlayers;
+    dedicatedIceState.passwordProtected = options.passwordProtected;
+    dedicatedIceState.hostPlayerName = options.hostPlayerName;
+    dedicatedIceState.port = actualPort;
     std::vector<PendingServerTransport> pendingIceTransports;
 
     // Startup NPCs (controlled by --npcs and --no-npcs flags)
@@ -534,7 +541,7 @@ int runServer(const LaunchOptions& options)
 
         // Poll coordinator for incoming ICE requests every outer loop
         // (rate-limited to 500ms inside tickIceCoordinator).
-        tickIceCoordinator(dedicatedIceState);
+        tickIceCoordinator(dedicatedIceState, players.size());
         fflush(stdout);
 
         // ICE rooms stay alive via coordinatorIceHostPoll in tickIceCoordinator
@@ -719,7 +726,14 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     state.startTimeMs = nowMs();
     state.accumulator = 0.0f;
     if (settings)
+    {
         state.serverName = settings->serverName;
+        state.mapName = settings->mapName;
+        state.gameMode = settings->gameMode;
+        state.maxPlayers = settings->maxPlayers;
+        state.passwordProtected = settings->passwordProtected;
+        state.hostPlayerName = settings->hostPlayerName;
+    }
 
     // Startup NPCs
     bool npcsEnabled = !settings || settings->startupNpcsEnabled;
@@ -896,7 +910,7 @@ static void simulateOneServerTick(ListenServerState& state)
         // Skip ICE coordinator for local-only servers
         if (state.serverCode.find("LOCAL-") != 0)
         {
-            tickIceCoordinator(state);
+            tickIceCoordinator(state, state.players.size());
             tickIcePeers(state.serverCode, state.iceSessionId, state.pendingIceTransports);
         }
         tickServerIceTransports(state.sock, state.players, state.npcs,
@@ -1069,6 +1083,10 @@ int runServerWithSettings(const ServerLaunchSettings& settings)
     LaunchOptions opts;
     opts.server = true;
     opts.mapName = settings.mapName;
+    opts.name = settings.serverName;
+    opts.hostPlayerName = settings.hostPlayerName;
+    opts.maxPlayers = settings.maxPlayers;
+    opts.passwordProtected = settings.passwordProtected;
     opts.npcsEnabled = settings.startupNpcsEnabled;
     opts.npcCount = settings.startupNpcCount;
     opts.bind = "0.0.0.0:" + std::to_string(settings.port);

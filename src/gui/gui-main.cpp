@@ -38,6 +38,7 @@
 #include "devtools/terminal.h"
 #include "renderer/renderer.h"
 #include "network/server.h"
+#include "network/server-browser.h"
 #include "network/coordinator-client.h"
 #include "gui-bindings.h"
 #include <cstdio>
@@ -125,10 +126,15 @@ static void readServerSettingsFromBindings()
     std::string playerLimitStr = b.get("server.player_limit", "999");
     std::string npcsStr = b.get("server.startup_npcs", "true");
     std::string npcCountStr = b.get("server.startup_npc_count", "3");
+    std::string privacy = b.get("server.privacy", "Public (no password)");
 
     gServerLaunchSettings.serverName = name;
     gServerLaunchSettings.mapName = mapName;
     gServerLaunchSettings.maxPlayers = (uint32_t)std::max(1, std::atoi(playerLimitStr.c_str()));
+    gServerLaunchSettings.passwordProtected =
+        privacy.find("Private") != std::string::npos;
+    gServerLaunchSettings.password = b.get("server.password");
+    gServerLaunchSettings.hostPlayerName = AuthSystem::instance().displayName();
     gServerLaunchSettings.startupNpcsEnabled =
         npcsStr == "true" ||
         npcsStr == "1" ||
@@ -175,6 +181,9 @@ static bool launchServerProcess(const MimitaNet::ServerLaunchSettings& settings)
         + " --bind 0.0.0.0:" + std::to_string(settings.port)
         + " --name \"" + settings.serverName + "\""
         + " --map \"" + settings.mapName + "\""
+        + " --host-player \"" + settings.hostPlayerName + "\""
+        + " --max-players " + std::to_string(settings.maxPlayers)
+        + " --password-protected " + std::string(settings.passwordProtected ? "1" : "0")
         + " --room-file \"" + roomFilePath + "\""
         + (settings.startupNpcsEnabled
             ? " --npcs " + std::to_string(settings.startupNpcCount)
@@ -727,6 +736,16 @@ void guiMain(GLFWwindow* win, GameState& state)
                 onlineMenuSetServerCode(gListenServer.serverCode);
             else if (gServerProcessLaunched && !gServerLaunchSettings.serverCode.empty())
                 onlineMenuSetServerCode(gServerLaunchSettings.serverCode);
+
+            // Keep the browser aware of the locally hosted room so it pings
+            // the host's own server via 127.0.0.1 instead of the external IP.
+            {
+                const std::string ownCode = gListenServer.active
+                    ? gListenServer.serverCode
+                    : gServerLaunchSettings.serverCode;
+                MimitaNet::serverBrowserSetOwnRoomCode(
+                    serverActive && !ownCode.empty() ? ownCode : std::string());
+            }
 
             OnlineMenuResult r = drawOnlineMenu(win);
             if (r.startServer)
