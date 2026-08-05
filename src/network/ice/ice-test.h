@@ -12,6 +12,7 @@ struct IceTestOptions
     int deathRespawnCycles = 0;
     int clientIndex = 0;
     std::string reconnectToken;
+    std::string badconnPreset;
 };
 
 bool runIceHostOnly(const IceTestOptions& opts);

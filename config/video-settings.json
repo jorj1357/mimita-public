@@ -1,7 +1,7 @@
 {
   "fullscreen": false,
   "height": 768,
-  "maxFrames": 999,
+  "maxFrames": 200,
   "resolution_index": 2,
   "vsync": false,
   "width": 1024

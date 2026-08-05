@@ -132,7 +132,7 @@ export default function BannerStatus() {
                 <p className="bannerCreatorNote">
                     Banner purchases are fully refundable within 30 days of purchase.{" "}
                     <Link to="/support" style={{ color: "#40e0d0" }}>Go to /support</Link> and choose Payment or finance.
-                    Admin has final say.
+                    Lame ahhhhh admin has final say.
                 </p>
 
                 <button type="button" className="bannerCreatorSubmit" onClick={fetchMine}>refresh</button>

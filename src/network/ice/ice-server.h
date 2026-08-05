@@ -11,6 +11,7 @@ struct IceServerOptions {
     int deathRespawnCycles = 0;
     int clientIndex = 0;
     std::string reconnectToken;
+    std::string badconnPreset;
 };
 
 int runIceServer(const IceServerOptions& opts);

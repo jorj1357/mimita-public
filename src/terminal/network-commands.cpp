@@ -932,4 +932,61 @@ void registerNetworkCommands()
             }
         }
     });
+
+    Terminal::instance().registerCommand({
+        "netstats", "Per-connection + per-remote-entity network/interpolation stats",
+        "netstats",
+        [](const std::vector<std::string>&) {
+            MimitaNet::MultiplayerContext& mp = MP_CONTEXT;
+            const auto& netCfg = NetworkingConfig::instance().data();
+            const uint64_t now = MimitaNet::nowMs();
+            const uint64_t snapshotTotal =
+                mp.snapshotsReceived + mp.snapshotsMissed;
+            const float lossPct = snapshotTotal
+                ? 100.0f * (float)mp.snapshotsMissed / (float)snapshotTotal
+                : 0.0f;
+            const uint64_t snapshotAge = mp.lastSnapshotReceivedMs
+                ? (now >= mp.lastSnapshotReceivedMs
+                    ? now - mp.lastSnapshotReceivedMs : 0)
+                : 0;
+            char buf[320];
+            snprintf(buf, sizeof(buf),
+                "[NETSTATS] state=%s connected=%d ping=%dms clientTick=%u "
+                "serverTick=%llu snapRx=%llu snapMissed=%llu loss=%.1f%% age=%llums",
+                MimitaNet::connectionStateName(mp.connectionState),
+                (int)mp.connected, mp.localPingMs, mp.tick,
+                (unsigned long long)mp.latestServerTick,
+                (unsigned long long)mp.snapshotsReceived,
+                (unsigned long long)mp.snapshotsMissed, lossPct,
+                (unsigned long long)snapshotAge);
+            Terminal::instance().addLog(buf);
+
+            snprintf(buf, sizeof(buf),
+                "[NETSTATS] renderClock=%.2f ticks delay=%.1fms mode=%s",
+                mp.interpolationRenderTick,
+                NetworkingConfig::instance()
+                    .effectiveRemoteInterpolationDelaySeconds() * 1000.0,
+                netCfg.remotePlayers.directRender ? "direct" : "interp");
+            Terminal::instance().addLog(buf);
+
+            for (const auto& kv : mp.remotePlayerInterpolation)
+            {
+                const auto& s = kv.second;
+                if (!s.hasTarget)
+                    continue;
+                float dTarget = 0.0f;
+                auto replicaIt = mp.remotePlayers.find(kv.first);
+                if (replicaIt != mp.remotePlayers.end())
+                    dTarget = glm::length(replicaIt->second.pos - s.target.position);
+                snprintf(buf, sizeof(buf),
+                    "  id=%u buf=%zu newest=%u render=%.1f delay=%.1fms jit=%.1fms "
+                    "stale=%u dup=%u ooo=%u dRenderToTarget=%.2fm",
+                    kv.first, s.buffer.size(), s.target.serverTick, s.renderTick,
+                    s.adaptiveDelaySeconds * 1000.0, s.estimatedArrivalJitterMs,
+                    s.staleSnapshotCount, s.duplicateSnapshotCount,
+                    s.outOfOrderSnapshotCount, dTarget);
+                Terminal::instance().addLog(buf);
+            }
+        }
+    });
 }

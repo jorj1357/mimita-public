@@ -12,6 +12,7 @@
 #include "network/badconn/badconn.h"
 
 #include <chrono>
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -65,6 +66,73 @@ std::string readString(const json& j, const char* key, const std::string& def)
 double clampMin(double value, double min)
 {
     return value < min ? min : value;
+}
+
+double clampRange(double value, double min, double max)
+{
+    return std::clamp(value, min, max);
+}
+
+uint32_t readUintRange(const json& j, const char* key, uint32_t def,
+                       uint32_t min, uint32_t max)
+{
+    const double value = readDouble(j, key, (double)def);
+    return (uint32_t)clampRange(value, (double)min, (double)max);
+}
+
+std::size_t readSizeRange(const json& j, const char* key, std::size_t def,
+                          std::size_t min, std::size_t max)
+{
+    const double value = readDouble(j, key, (double)def);
+    return (std::size_t)clampRange(value, (double)min, (double)max);
+}
+
+double readMsRangeSeconds(const json& j, const char* key, double defSeconds,
+                          double minMs, double maxMs)
+{
+    const double valueMs = readDouble(j, key, defSeconds * 1000.0);
+    return clampRange(valueMs, minMs, maxMs) / 1000.0;
+}
+
+double readMsRange(const json& j, const char* key, double defMs,
+                   double minMs, double maxMs)
+{
+    return clampRange(readDouble(j, key, defMs), minMs, maxMs);
+}
+
+void logResolvedConfig(const NetworkingConfigData& c, const std::string& fileName)
+{
+    Debug::warn(Debug::Category::Networking,
+        "[NETWORK CONFIG] Resolved file=%s direct=%d interp=%d fixedDelayMs=%.0f "
+        "adaptive=%d adaptiveMinMaxMs=%.0f/%.0f minSnapshots=%zu "
+        "eventTimeline=%d eventHoldMs=%.0f inputHz=%.0f pingMs=%.0f "
+        "attackRetryMs=%.0f attackAttempts=%u attackTimeoutMs=%.0f "
+        "reconnectBackoffMs=%.0f reconnectAttempts=%u reconnectMaxMs=%.0f "
+        "reliablePending=%zu reliableRetryMs=%.0f reliableTtlMs=%.0f "
+        "historyTicks=%zu broadcastSamples=%zu\n",
+        fileName.c_str(),
+        (int)c.remotePlayers.directRender,
+        (int)c.remotePlayers.enabled,
+        c.remotePlayers.interpolationDelaySeconds * 1000.0,
+        (int)c.adaptiveSnapshotBuffer.enabled,
+        c.adaptiveSnapshotBuffer.minimumDelaySeconds * 1000.0,
+        c.adaptiveSnapshotBuffer.maximumDelaySeconds * 1000.0,
+        c.remotePlayers.minimumSnapshotsBeforeRendering,
+        (int)c.eventTimeline.enabled,
+        c.eventTimeline.remoteEffectMaximumHoldMs,
+        c.runtimeRates.inputSendRateHz,
+        c.runtimeRates.pingIntervalMs,
+        c.retries.attackRetryIntervalMs,
+        c.retries.attackRetryMaxAttempts,
+        c.retries.attackRequestTimeoutMs,
+        c.retries.reconnectInitialBackoffMs,
+        c.retries.reconnectMaxAttempts,
+        c.retries.reconnectMaxBackoffMs,
+        c.reliableEvents.maxPendingPerPlayer,
+        c.reliableEvents.retryMs,
+        c.reliableEvents.ttlMs,
+        c.bufferLimits.serverPositionHistoryTicks,
+        c.bufferLimits.serverBroadcastSampleLimit);
 }
 
 } // namespace
@@ -200,6 +268,10 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
         c.maximumExtrapolationSeconds =
             clampMin(readDouble(r, "maximum_extrapolation_ms", c.maximumExtrapolationSeconds * 1000.0) / 1000.0, 0.0);
         c.teleportDistance = (float)clampMin(readDouble(r, "teleport_distance", (double)c.teleportDistance), 0.1);
+        c.teleportGapTicks = (uint32_t)std::max<uint32_t>(
+            1u, (uint32_t)clampMin(
+                    readDouble(r, "teleport_gap_ticks", (double)c.teleportGapTicks),
+                    1.0));
         c.snapOnSpawn = readBool(r, "snap_on_spawn", c.snapOnSpawn);
         c.snapOnRespawn = readBool(r, "snap_on_respawn", c.snapOnRespawn);
         c.snapOnMapChange = readBool(r, "snap_on_map_change", c.snapOnMapChange);
@@ -232,6 +304,97 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
             clampMin(readDouble(r, "maximum_snapshot_age_ms", c.maximumSnapshotAgeSeconds * 1000.0) / 1000.0, 0.1);
         c.chunkReassemblyTimeoutSeconds =
             clampMin(readDouble(r, "chunk_reassembly_timeout_ms", c.chunkReassemblyTimeoutSeconds * 1000.0) / 1000.0, 0.05);
+    }
+
+    // ── adaptive_snapshot_buffer ─────────────────────────────────────
+    if (root.contains("adaptive_snapshot_buffer") &&
+        root["adaptive_snapshot_buffer"].is_object())
+    {
+        const json& r = root["adaptive_snapshot_buffer"];
+        AdaptiveSnapshotBufferConfig& c = next.adaptiveSnapshotBuffer;
+        c.enabled = readBool(r, "enabled", c.enabled);
+        c.minimumDelaySeconds = readMsRangeSeconds(
+            r, "minimum_delay_ms", c.minimumDelaySeconds, 0.0, 250.0);
+        c.maximumDelaySeconds = readMsRangeSeconds(
+            r, "maximum_delay_ms", c.maximumDelaySeconds, 0.0, 500.0);
+        if (c.maximumDelaySeconds < c.minimumDelaySeconds)
+            c.maximumDelaySeconds = c.minimumDelaySeconds;
+        c.jitterMultiplier = clampRange(
+            readDouble(r, "jitter_multiplier", c.jitterMultiplier), 0.0, 10.0);
+        c.arrivalJitterSmoothing = clampRange(
+            readDouble(r, "arrival_jitter_smoothing", c.arrivalJitterSmoothing),
+            0.01, 1.0);
+        c.increaseRateMsPerSecond = readMsRange(
+            r, "increase_rate_ms_per_second", c.increaseRateMsPerSecond, 1.0, 2000.0);
+        c.decreaseRateMsPerSecond = readMsRange(
+            r, "decrease_rate_ms_per_second", c.decreaseRateMsPerSecond, 1.0, 2000.0);
+    }
+
+    // ── event_timeline ───────────────────────────────────────────────
+    if (root.contains("event_timeline") && root["event_timeline"].is_object())
+    {
+        const json& r = root["event_timeline"];
+        NetworkEventTimelineConfig& c = next.eventTimeline;
+        c.enabled = readBool(r, "enabled", c.enabled);
+        c.remoteEffectMaximumHoldMs = readMsRange(
+            r, "remote_effect_maximum_hold_ms", c.remoteEffectMaximumHoldMs,
+            0.0, 1000.0);
+        c.logDelays = readBool(r, "log_delays", c.logDelays);
+    }
+
+    // ── runtime_rates ────────────────────────────────────────────────
+    if (root.contains("runtime_rates") && root["runtime_rates"].is_object())
+    {
+        const json& r = root["runtime_rates"];
+        NetworkRuntimeRateConfig& c = next.runtimeRates;
+        c.inputSendRateHz = clampRange(
+            readDouble(r, "input_send_rate_hz", c.inputSendRateHz), 1.0, 240.0);
+        c.pingIntervalMs = readMsRange(
+            r, "ping_interval_ms", c.pingIntervalMs, 100.0, 10000.0);
+    }
+
+    // ── retries ──────────────────────────────────────────────────────
+    if (root.contains("retries") && root["retries"].is_object())
+    {
+        const json& r = root["retries"];
+        NetworkRetryConfig& c = next.retries;
+        c.attackRetryIntervalMs = readMsRange(
+            r, "attack_retry_interval_ms", c.attackRetryIntervalMs, 10.0, 2000.0);
+        c.attackRetryMaxAttempts = readUintRange(
+            r, "attack_retry_max_attempts", c.attackRetryMaxAttempts, 1, 100);
+        c.attackRequestTimeoutMs = readMsRange(
+            r, "attack_request_timeout_ms", c.attackRequestTimeoutMs, 100.0, 30000.0);
+        c.reconnectInitialBackoffMs = readMsRange(
+            r, "reconnect_initial_backoff_ms", c.reconnectInitialBackoffMs, 100.0, 30000.0);
+        c.reconnectMaxAttempts = readUintRange(
+            r, "reconnect_max_attempts", c.reconnectMaxAttempts, 1, 100);
+        c.reconnectMaxBackoffMs = readMsRange(
+            r, "reconnect_max_backoff_ms", c.reconnectMaxBackoffMs,
+            c.reconnectInitialBackoffMs, 60000.0);
+    }
+
+    // ── reliable_gameplay_events ─────────────────────────────────────
+    if (root.contains("reliable_gameplay_events") &&
+        root["reliable_gameplay_events"].is_object())
+    {
+        const json& r = root["reliable_gameplay_events"];
+        ReliableGameplayEventConfig& c = next.reliableEvents;
+        c.maxPendingPerPlayer = readSizeRange(
+            r, "max_pending_per_player", c.maxPendingPerPlayer, 1, 1024);
+        c.retryMs = readMsRange(r, "retry_ms", c.retryMs, 10.0, 5000.0);
+        c.ttlMs = readMsRange(r, "ttl_ms", c.ttlMs, 100.0, 60000.0);
+        c.maxAttempts = readUintRange(r, "max_attempts", c.maxAttempts, 1, 255);
+    }
+
+    // ── buffer_limits ────────────────────────────────────────────────
+    if (root.contains("buffer_limits") && root["buffer_limits"].is_object())
+    {
+        const json& r = root["buffer_limits"];
+        NetworkBufferLimitConfig& c = next.bufferLimits;
+        c.serverPositionHistoryTicks = readSizeRange(
+            r, "server_position_history_ticks", c.serverPositionHistoryTicks, 2, 600);
+        c.serverBroadcastSampleLimit = readSizeRange(
+            r, "server_broadcast_sample_limit", c.serverBroadcastSampleLimit, 2, 1024);
     }
 
     // ── remote_entity_lifecycle ───────────────────────────────────────
@@ -327,12 +490,7 @@ bool NetworkingConfig::load(const std::string& path)
     // share one source of truth and hot-reload together.
     badconn::loadConfig(badconn::configPath());
 
-    Debug::warn(Debug::Category::Networking,
-                "[NETWORK CONFIG] Loaded: %s (delay=%.0fms buffer=%zu extrap=%d)\n",
-                fileName.c_str(),
-                mData.remotePlayers.interpolationDelaySeconds * 1000.0,
-                mData.remotePlayers.maximumBufferedSnapshots,
-                (int)mData.remotePlayers.allowExtrapolation);
+    logResolvedConfig(mData, fileName);
     if (mData.logChanges && changed)
     {
         Debug::warn(Debug::Category::Networking,

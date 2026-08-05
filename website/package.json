@@ -7,7 +7,7 @@
     "dev": "vite",
     "server": "node server/server.js",
     "migrate": "node server/migrate.js",
-    "test": "node --test server/*.test.js",
+    "test": "node --test server/*.test.js src/lib/*.test.js",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"

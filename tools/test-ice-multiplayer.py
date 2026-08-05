@@ -22,17 +22,19 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from network_smoke_build import ensure_network_protocol_smoke
+
 
 ROOT = Path(__file__).resolve().parents[1]
 EXE = None
 LOG_ROOT = ROOT / "build" / "ice-multiplayer-logs"
 EVENT_PREFIX = "[MIMITA_TEST_EVENT] "
-SMOKE = ROOT / "build" / "network-protocol-smoke.exe"
 ROOM_RE = re.compile(r"code=([A-Z0-9]+)")
 READY_RE = re.compile(r"\[SERVER TRANSPORT READY\].*actual=([0-9.]+:\d+)")
 STATUS_RE = re.compile(r"\[SERVER STATUS\]\s+(.*)")
 SMOKE_RE = re.compile(r"\[PROTOCOL SMOKE\]\s+(.*)")
-MOVEMENT_RE = re.compile(r"\[SERVER MOVEMENT RX\].*transport=ice.*decision=([a-z]+).*reason=([a-zA-Z0-9_-]+)")
+MOVEMENT_RE = re.compile(r"\[SERVER MOVEMENT (?:RX|DECISION)\].*decision=([a-z]+).*reason=([a-zA-Z0-9_-]+)")
+MOVEMENT_BASELINE_RE = re.compile(r"\[SERVER MOVEMENT BASELINE\].*playerId=([0-9]+).*seq=([0-9]+).*clientTick=([0-9]+)")
 
 
 def now_stamp():
@@ -516,6 +518,14 @@ def derive_server_evidence(server):
                 "reason": movement.group(2),
                 "line": line,
             })
+            continue
+        baseline = MOVEMENT_BASELINE_RE.search(line)
+        if baseline:
+            movement_decisions.append({
+                "decision": "accept",
+                "reason": "baseline",
+                "line": line,
+            })
     return {
         "server_started": any("[SERVER TRANSPORT READY]" in line for line in server.lines),
         "ice_gather_complete": any("[ICE HOST GATHER]" in line and "complete" in line for line in server.lines),
@@ -564,6 +574,7 @@ def main():
     parser.add_argument("--packet-loss", type=float, default=0.0)
     parser.add_argument("--latency-ms", type=int, default=0)
     parser.add_argument("--jitter-ms", type=int, default=0)
+    parser.add_argument("--badconn-preset", type=str, default="")
     parser.add_argument("--death-respawn-cycles", type=int, default=10)
     parser.add_argument("--reconnect-cycles", type=int, default=3)
     parser.add_argument("--mixed-udp-client", action="store_true")
@@ -577,9 +588,13 @@ def main():
     EXE = resolve_exe(args)
     if EXE is None:
         return 2
-    if args.mixed_udp_client and not SMOKE.exists():
-        print(f"FAIL: missing mixed UDP smoke executable {SMOKE}")
-        return 2
+    smoke_exe = None
+    if args.mixed_udp_client:
+        try:
+            smoke_exe = ensure_network_protocol_smoke(args.verbose)
+        except RuntimeError as exc:
+            print(f"FAIL: {exc}")
+            return 2
     exe_sha = sha256_file(EXE)
 
     log_dir = LOG_ROOT / now_stamp()
@@ -603,6 +618,8 @@ def main():
         mode_flags.append("--disable-relay")
     if args.force_relay:
         mode_flags.append("--force-relay")
+    if args.badconn_preset:
+        mode_flags.extend(["--badconn-preset", args.badconn_preset])
 
     processes = []
     initial_clients = []
@@ -652,7 +669,7 @@ def main():
             mixed_env["MIMITA_TEST_SERVER_ADDR"] = udp_endpoint
             mixed_process = start_command(
                 "mixed-udp-smoke",
-                [str(SMOKE)],
+                [str(smoke_exe)],
                 mixed_env,
                 log_dir,
             )

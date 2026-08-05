@@ -458,7 +458,7 @@ void sendJoinRequest(MultiplayerContext& ctx, const std::string& playerName)
         if (!authUser.sessionToken.empty())
         {
             ctx.vipJoinTicket = requestVipJoinTicket(authUser.sessionToken, roomCode, "");
-            Debug::warn(Debug::Category::Networking,
+            Debug::warn(Debug::Category::Vip,
                 "[VIP JOIN] ticket request result=%s room=%s\n",
                 ctx.vipJoinTicket.empty() ? "free-fallback" : "issued",
                 roomCode.empty() ? "empty" : "present");
@@ -585,7 +585,10 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
 
     badconn::tick(ctx.transport.get());
     mpSweepHitClaims(ctx);
-    if (!ctx.connected && !ctx.connectFailed && currentMs - ctx.connectStartMs > 6000)
+    const uint64_t connectTimeoutMs =
+        (uint64_t)NetworkingConfig::instance().data().timeouts.connectTimeoutMs;
+    if (!ctx.connected && !ctx.connectFailed &&
+        currentMs - ctx.connectStartMs > connectTimeoutMs)
     {
         ctx.connectionStatus = "Connection timed out";
         printf("[NET CONNECT] timeout server=%s\n", ctx.serverAddress.c_str());
@@ -1163,7 +1166,12 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         }
     }
 
-    if (ctx.connected && ctx.localPlayerId && input)
+    const double inputIntervalMs = 1000.0 /
+        NetworkingConfig::instance().data().runtimeRates.inputSendRateHz;
+    const bool inputDue =
+        ctx.lastInputSentMs == 0 ||
+        (double)(currentMs - ctx.lastInputSentMs) >= inputIntervalMs;
+    if (ctx.connected && ctx.localPlayerId && input && inputDue)
     {
         InputPacket in{};
         in.header.type = PACKET_INPUT;
@@ -1340,6 +1348,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         in.attackPressed = input->attackPressed ? 1 : 0;
         in.sizeScale = input->sizeScale;
         mpSendPacket(ctx, &in, sizeof(in));
+        ctx.lastInputSentMs = currentMs;
 
     }
 
@@ -1354,8 +1363,10 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 it = ctx.pendingAttackRequests.erase(it);
                 continue;
             }
-            // Retry every 100ms up to 10 attempts
-            if (now - p.lastSentMs >= 100 && p.attempts < 10)
+            const auto& retryCfg = NetworkingConfig::instance().data().retries;
+            if (now - p.lastSentMs >=
+                    (uint64_t)retryCfg.attackRetryIntervalMs &&
+                p.attempts < (int)retryCfg.attackRetryMaxAttempts)
             {
                 AttackRequestPacket retry{};
                 retry.header.type = PACKET_ATTACK_REQUEST;
@@ -1384,8 +1395,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 Debug::log(Debug::Category::Weapons, "[ATTACK RETRY] requestId=%u attempt=%d\n",
                            p.requestId, p.attempts);
             }
-            // Timeout after 3 seconds
-            if (now - p.firstSentMs > 3000)
+            if (now - p.firstSentMs >
+                (uint64_t)retryCfg.attackRequestTimeoutMs)
             {
                 Debug::log(Debug::Category::Weapons, "[ATTACK TIMEOUT] requestId=%u — removing\n",
                            p.requestId);
@@ -1400,10 +1411,14 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     }
 
     mpUpdateRemoteEntities(ctx, dt);
+    mpReleaseTimelineEvents(ctx);
     mpUpdateRemoteSwordStates(ctx, dt);
     mpUpdateNetworkProjectiles(ctx, dt, world);
 
-    if (ctx.connected && currentMs - ctx.lastPingSentMs >= 1000)
+    if (ctx.connected &&
+        currentMs - ctx.lastPingSentMs >=
+            (uint64_t)NetworkingConfig::instance().data()
+                .runtimeRates.pingIntervalMs)
     {
         PingPacket ping{};
         ping.header.type = PACKET_PING;
@@ -1418,5 +1433,3 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
 }
 
 } // namespace MimitaNet
-
-

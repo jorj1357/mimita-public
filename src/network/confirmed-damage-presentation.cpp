@@ -11,6 +11,7 @@
 #include "network/confirmed-damage-presentation.h"
 
 #include "audio/hitmarker-audio.h"
+#include "combat/death-system.h"
 #include "config/weapon-hitfx-config.h"
 #include "network/multiplayer-context.h"
 #include "network/network-weapons.h"
@@ -130,11 +131,11 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
                                         hit.damage, hit.attacker, hit.victim, true);
     }
 
-    // On kill, play health-gained effect at the attacker's position
+    // On kill, heal the local attacker to full health (matches server authority)
     if (event.killed && gpPlayer)
     {
-        HitEffects::spawnHealthGainedEffect(gpPlayer->pos);
-        printf("[NET KILL HEAL] attacker=%u health restored\n", event.attackerPlayerId);
+        DeathSystem::instance().healKillerToFull(*gpPlayer, playerNameFor(ctx, event.attackerPlayerId));
+        printf("[NET KILL HEAL] attacker=%u health=%d\n", event.attackerPlayerId, gpPlayer->currentHp);
     }
 
     printf("[NET DAMAGE PRESENT] eventId=%u attacker=%u target=%u damage=%d weapon=%u hitmarker=%d sound=%d damageNumber=%d killed=%d\n",

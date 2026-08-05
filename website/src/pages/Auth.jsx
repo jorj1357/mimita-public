@@ -4,6 +4,7 @@ import { useState } from "react"
 import Layout from "../components/Layout"
 import { apiRequest } from "../lib/api"
 import { logAuthEvent } from "../lib/api-log"
+import { redirectTarget } from "../lib/returnTo"
 
 export default function Auth({ mode }) {
     const signup = mode === "signup"
@@ -55,8 +56,10 @@ export default function Auth({ mode }) {
                 { method: "POST", body: JSON.stringify(body) }
             )
 
+            const returnTo = redirectTarget(location.search, "/profile")
             logAuthEvent(signup ? "signup" : "login", "success")
-            navigate("/profile")
+            logAuthEvent("redirect after auth", { returnTo })
+            navigate(returnTo)
         }
         catch (error) {
             setMessage(error.message)

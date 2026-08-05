@@ -122,6 +122,7 @@ void registerCursorCommands();
 #include "terminal/editor-commands.h"
 #include "terminal/network-commands.h"
 #include "terminal/badconn-commands.h"
+#include "terminal/vip-commands.h"
 #include "network/badconn/badconn.h"
 #include "terminal/auth-commands.h"
 #include "perf/perf.h"
@@ -344,6 +345,7 @@ void gameInitSubsystems(Engine& engine)
     registerPlayerCommands();
     registerMovementCommands();
     registerAuthCommands();
+    registerVipCommands();
     registerWeaponCommands();
     registerWeaponBenchCommands();
     registerWeaponDebugCommand();

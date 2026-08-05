@@ -1037,7 +1037,7 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
             verifiedVipAppearance = vipResult.vipAppearance;
             verifiedVipAccountId = vipResult.accountId;
             verifiedVipRole = vipResult.role;
-            Debug::warn(Debug::Category::Networking,
+            Debug::warn(Debug::Category::Vip,
                 "[VIP JOIN] verified accountId=%d tier=%s staff=%d\n",
                 verifiedVipAccountId,
                 MimitaVip::tierToString(verifiedVipAppearance.tier),
@@ -1045,7 +1045,7 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         }
         else
         {
-            Debug::warn(Debug::Category::Networking,
+            Debug::warn(Debug::Category::Vip,
                 "[VIP JOIN] fallback=free reason=%s websiteOk=%d\n",
                 vipResult.reason.empty() ? "not_verified" : vipResult.reason.c_str(),
                 (int)vipResult.ok);

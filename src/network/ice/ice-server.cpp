@@ -16,6 +16,7 @@
 #include "network/movement-validation.h"
 #include "network/snapshot-chunks.h"
 #include "network/test-events.h"
+#include "network/badconn/badconn.h"
 #include "debug/debug-log.h"
 
 #include <algorithm>
@@ -30,6 +31,89 @@
 #include <memory>
 #include <random>
 #include <ctime>
+
+namespace {
+
+class IceAgentBadconnTransport final : public IGameTransport
+{
+public:
+    explicit IceAgentBadconnTransport(IceAgent& agent)
+        : mAgent(agent)
+    {
+    }
+
+    bool send(const void* data, size_t size) override
+    {
+        return mAgent.send(data, size);
+    }
+
+    void poll(std::vector<ReceivedPacket>& out) override
+    {
+        (void)out;
+    }
+
+    bool connected() const override
+    {
+        return true;
+    }
+
+    void close() override
+    {
+    }
+
+private:
+    IceAgent& mAgent;
+};
+
+bool sendIcePacket(IceAgent& agent, const void* data, size_t size)
+{
+    if (badconn::active() && badconn::processOutgoing(data, size))
+        return true;
+    return agent.send(data, size);
+}
+
+void tickIceBadconn(IceAgent& agent)
+{
+    if (!badconn::active())
+        return;
+    IceAgentBadconnTransport transport(agent);
+    badconn::tick(&transport);
+}
+
+void processIceBadconnIncoming(std::vector<IceEvent>& events)
+{
+    if (!badconn::active())
+        return;
+
+    std::vector<IceEvent> kept;
+    std::vector<ReceivedPacket> packets;
+    kept.reserve(events.size());
+    packets.reserve(events.size());
+    for (IceEvent& event : events)
+    {
+        if (event.type != IceEventType::Recv)
+        {
+            kept.push_back(std::move(event));
+            continue;
+        }
+        ReceivedPacket packet;
+        packet.bytes.assign(event.data.begin(), event.data.end());
+        packet.receivedAtMs = GetTickCount64();
+        packets.push_back(std::move(packet));
+    }
+
+    badconn::processIncoming(packets);
+    for (ReceivedPacket& packet : packets)
+    {
+        IceEvent event{};
+        event.type = IceEventType::Recv;
+        event.data.assign(packet.bytes.begin(), packet.bytes.end());
+        kept.push_back(std::move(event));
+    }
+    events.swap(kept);
+}
+
+} // namespace
 
 // ── Client peer state ──────────────────────────────────────────────
 struct IceClientPeer {
@@ -276,7 +360,7 @@ int runIceServer(const IceServerOptions& opts)
                 processPeerPacket(peer, ev.data.data(), ev.data.size(), (uint32_t)tick,
                                   hostResult.roomCode, respType, respData);
                 if (!respData.empty())
-                    hostAgent.send(respData.data(), respData.size());
+                    sendIcePacket(hostAgent, respData.data(), respData.size());
             }
         }
 
@@ -314,7 +398,7 @@ int runIceServer(const IceServerOptions& opts)
 
             size_t snapSize = sizeof(MimitaNet::PacketHeader) + 12
                             + idx * sizeof(MimitaNet::CompactEntityData);
-            hostAgent.send(&snap, snapSize);
+            sendIcePacket(hostAgent, &snap, snapSize);
         }
 
         // Heartbeat coordinator every 15s
@@ -337,6 +421,19 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
 {
     printf("[ICE CLIENT] connecting to room %s...\n", roomCode.c_str());
     fflush(stdout);
+
+    if (!opts.badconnPreset.empty())
+    {
+        badconn::loadConfig(badconn::configPath());
+        if (opts.badconnPreset == "0")
+            badconn::disable();
+        else if (!badconn::activatePreset(opts.badconnPreset))
+        {
+            printf("[ICE CLIENT] badconn preset %s not found\n",
+                   opts.badconnPreset.c_str());
+            return 1;
+        }
+    }
 
     IceConfiguration iceConfig = loadIceConfig();
     if (opts.disableRelay) iceConfig.turn.password.clear();
@@ -396,6 +493,7 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
 
     printf("[ICE CLIENT] connected!\n");
     agent.logSelectedPath();
+    badconn::noteConnectionEstablished();
     MimitaNet::emitTestEvent("ice_connected",
         "\"role\":\"client\",\"clientIndex\":" + std::to_string(opts.clientIndex));
 
@@ -412,7 +510,7 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
         req.header.type = MimitaNet::PACKET_RECONNECT_REQUEST;
         std::strncpy(req.reconnectToken, opts.reconnectToken.c_str(),
                      sizeof(req.reconnectToken) - 1);
-        if (!agent.send(&req, sizeof(req))) {
+        if (!sendIcePacket(agent, &req, sizeof(req))) {
             printf("[ICE CLIENT] reconnect send failed\n"); return 1;
         }
         MimitaNet::emitTestEvent("reconnect_request_sent",
@@ -430,7 +528,7 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
             ? "IcePlayer" + std::to_string(opts.clientIndex)
             : "IcePlayer";
         std::strncpy(joinReq.name, pname.c_str(), sizeof(joinReq.name) - 1);
-        if (!agent.send(&joinReq, sizeof(joinReq))) {
+        if (!sendIcePacket(agent, &joinReq, sizeof(joinReq))) {
             printf("[ICE CLIENT] join send failed\n"); return 1;
         }
         MimitaNet::emitTestEvent("join_request_sent",
@@ -442,6 +540,8 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
     int timeoutMs = opts.timeoutSeconds * 1000, waited = 0;
     while (waited < timeoutMs) {
         std::vector<IceEvent> evs; agent.pollEvents(evs);
+        processIceBadconnIncoming(evs);
+        tickIceBadconn(agent);
         for (auto& ev : evs) {
             if (ev.type != IceEventType::Recv ||
                 ev.data.size() < (int)sizeof(MimitaNet::PacketHeader))
@@ -532,7 +632,7 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
         ready.header.transformEpoch = transformEpoch;
         ready.assignedPlayerId = myId;
         std::strncpy(ready.mapId, accept->mapId, sizeof(ready.mapId) - 1);
-        if (!agent.send(&ready, sizeof(ready))) {
+        if (!sendIcePacket(agent, &ready, sizeof(ready))) {
             printf("[ICE CLIENT] map-ready send failed\n"); return 1;
         }
         MimitaNet::emitTestEvent("map_ready_sent",
@@ -567,6 +667,8 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
         std::this_thread::sleep_for(std::chrono::milliseconds(16)); // ~60 Hz
 
         std::vector<IceEvent> evs; agent.pollEvents(evs);
+        processIceBadconnIncoming(evs);
+        tickIceBadconn(agent);
         for (auto& ev : evs) {
             if (ev.type != IceEventType::Recv ||
                 ev.data.size() < (int)sizeof(MimitaNet::PacketHeader))
@@ -604,7 +706,7 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
                 ack.header.transformEpoch = transformEpoch;
                 ack.spawnGeneration = spawnGeneration;
                 ack.transformEpoch = transformEpoch;
-                agent.send(&ack, sizeof(ack));
+                sendIcePacket(agent, &ack, sizeof(ack));
                 MimitaNet::emitTestEvent("spawn_ack",
                     "\"clientIndex\":" + std::to_string(opts.clientIndex) +
                     ",\"playerId\":" + std::to_string(myId) +
@@ -717,7 +819,7 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
             explode.header.playerId = myId;
             explode.header.tick = (uint32_t)step;
             explode.header.transformEpoch = transformEpoch;
-            if (agent.send(&explode, sizeof(explode)))
+            if (sendIcePacket(agent, &explode, sizeof(explode)))
             {
                 deathPending = true;
                 deathConfirmed = false;
@@ -777,7 +879,7 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
                 (dashPressed ? MimitaNet::MOVEMENT_REPORT_DASH_PRESSED : 0u) |
                 (downDashPressed ? MimitaNet::MOVEMENT_REPORT_DOWN_DASH_PRESSED : 0u) |
                 (freezeHeld ? MimitaNet::MOVEMENT_REPORT_FREEZE_HELD : 0u);
-            agent.send(&input, sizeof(input));
+            sendIcePacket(agent, &input, sizeof(input));
 
             if (!movementReported)
             {

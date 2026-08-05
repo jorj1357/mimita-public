@@ -42,6 +42,7 @@ export const VIP_PRICE_CONFIG = {
         one_month: {
             label: "VIP one month",
             amount_cents: 333,
+            amount_env: "VIP_PRICE_VIP_ONE_MONTH",
             currency: "usd",
             mode: "payment",
             calendar_months: 1,
@@ -50,6 +51,7 @@ export const VIP_PRICE_CONFIG = {
         monthly_subscription: {
             label: "VIP monthly",
             amount_cents: 333,
+            amount_env: "VIP_PRICE_VIP_MONTHLY",
             currency: "usd",
             mode: "subscription",
             price_env: "MIMITA_STRIPE_PRICE_VIP_MONTHLY"
@@ -57,6 +59,7 @@ export const VIP_PRICE_CONFIG = {
         twelve_month: {
             label: "VIP twelve months",
             amount_cents: 1999,
+            amount_env: "VIP_PRICE_VIP_TWELVE_MONTH",
             currency: "usd",
             mode: "payment",
             calendar_months: 12,
@@ -67,6 +70,7 @@ export const VIP_PRICE_CONFIG = {
         one_month: {
             label: "Super VIP one month",
             amount_cents: 888,
+            amount_env: "VIP_PRICE_SUPER_VIP_ONE_MONTH",
             currency: "usd",
             mode: "payment",
             calendar_months: 1,
@@ -75,6 +79,7 @@ export const VIP_PRICE_CONFIG = {
         monthly_subscription: {
             label: "Super VIP monthly",
             amount_cents: 888,
+            amount_env: "VIP_PRICE_SUPER_VIP_MONTHLY",
             currency: "usd",
             mode: "subscription",
             price_env: "MIMITA_STRIPE_PRICE_SUPER_VIP_MONTHLY"
@@ -82,6 +87,7 @@ export const VIP_PRICE_CONFIG = {
         twelve_month: {
             label: "Super VIP twelve months",
             amount_cents: 5333,
+            amount_env: "VIP_PRICE_SUPER_VIP_TWELVE_MONTH",
             currency: "usd",
             mode: "payment",
             calendar_months: 12,
@@ -92,6 +98,7 @@ export const VIP_PRICE_CONFIG = {
         one_month: {
             label: "Ultra VIP one month",
             amount_cents: 1777,
+            amount_env: "VIP_PRICE_ULTRA_VIP_ONE_MONTH",
             currency: "usd",
             mode: "payment",
             calendar_months: 1,
@@ -100,6 +107,7 @@ export const VIP_PRICE_CONFIG = {
         monthly_subscription: {
             label: "Ultra VIP monthly",
             amount_cents: 1777,
+            amount_env: "VIP_PRICE_ULTRA_VIP_MONTHLY",
             currency: "usd",
             mode: "subscription",
             price_env: "MIMITA_STRIPE_PRICE_ULTRA_VIP_MONTHLY"
@@ -107,6 +115,7 @@ export const VIP_PRICE_CONFIG = {
         twelve_month: {
             label: "Ultra VIP twelve months",
             amount_cents: 10666,
+            amount_env: "VIP_PRICE_ULTRA_VIP_TWELVE_MONTH",
             currency: "usd",
             mode: "payment",
             calendar_months: 12,
@@ -119,9 +128,9 @@ export const VIP_STYLE_LIMITS = {
     maxJsonBytes: 4096,
     maxPerLetterColors: 32,
     maxGradientColors: 8,
-    minRainbowSpeed: 0.15,
-    maxRainbowSpeed: 2.0,
-    maxPresetCount: 12,
+    minRainbowSpeed: 0.25,
+    maxRainbowSpeed: 4.0,
+    maxPresetCount: 10,
     maxPresetNameLength: 40
 }
 
@@ -173,10 +182,21 @@ export function badgeForTier(tier) {
     return VIP_BADGES[normalized] || ""
 }
 
-export function getPurchaseDefinition(tier, purchaseType) {
+function envPositiveInt(env, name, fallback) {
+    const value = Number(env?.[name])
+    if (!Number.isInteger(value) || value <= 0) return fallback
+    return value
+}
+
+export function getPurchaseDefinition(tier, purchaseType, env = process.env) {
     const normalizedTier = normalizeTier(tier)
     const normalizedType = String(purchaseType || "").trim()
-    return VIP_PRICE_CONFIG[normalizedTier]?.[normalizedType] || null
+    const def = VIP_PRICE_CONFIG[normalizedTier]?.[normalizedType]
+    if (!def) return null
+    return {
+        ...def,
+        amount_cents: envPositiveInt(env, def.amount_env, def.amount_cents)
+    }
 }
 
 export function getStripePriceId(tier, purchaseType, env = process.env) {
@@ -186,6 +206,7 @@ export function getStripePriceId(tier, purchaseType, env = process.env) {
 }
 
 export function publicVipConfig(env = process.env) {
+    const paymentsConfigured = Boolean(String(env.STRIPE_SECRET_KEY || "").trim())
     return {
         tiers: PAID_VIP_TIERS.map(tier => ({
             tier,
@@ -193,14 +214,14 @@ export function publicVipConfig(env = process.env) {
             badge_url: badgeForTier(tier),
             default_style: defaultStyleForTier(tier),
             purchases: VIP_PURCHASE_TYPES.map(type => {
-                const def = getPurchaseDefinition(tier, type)
+                const def = getPurchaseDefinition(tier, type, env)
                 return {
                     type,
                     label: def.label,
                     amount_cents: def.amount_cents,
                     currency: def.currency,
                     mode: def.mode,
-                    configured: Boolean(getStripePriceId(tier, type, env))
+                    configured: paymentsConfigured
                 }
             })
         })),

@@ -1047,5 +1047,6 @@ int runIceConnect(const std::string& roomCode, const IceTestOptions& opts)
     srv.deathRespawnCycles = opts.deathRespawnCycles;
     srv.clientIndex = opts.clientIndex;
     srv.reconnectToken = opts.reconnectToken;
+    srv.badconnPreset = opts.badconnPreset;
     return ::runIceClient(roomCode, srv);
 }

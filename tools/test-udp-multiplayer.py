@@ -20,10 +20,11 @@ import threading
 import time
 from pathlib import Path
 
+from network_smoke_build import ensure_network_protocol_smoke
+
 
 ROOT = Path(__file__).resolve().parents[1]
 EXE = Path(os.environ.get("MIMITA_TEST_EXE", ROOT / "mimita.exe"))
-SMOKE = ROOT / "build" / "network-protocol-smoke.exe"
 LOG_ROOT = ROOT / "build" / "udp-multiplayer-logs"
 READY_RE = re.compile(r"\[SERVER TRANSPORT READY\].*actual=([0-9.]+:\d+)")
 STATUS_RE = re.compile(r"\[SERVER STATUS\]\s+(.*)")
@@ -122,13 +123,16 @@ def main():
     if not EXE.exists():
         print(f"FAIL: missing executable {EXE}")
         return 2
-    if not SMOKE.exists():
-        print(f"FAIL: missing smoke test executable {SMOKE}")
+    try:
+        smoke_exe = ensure_network_protocol_smoke(args.verbose)
+    except RuntimeError as exc:
+        print(f"FAIL: {exc}")
         return 3
 
     log_dir = LOG_ROOT / stamp()
     log_dir.mkdir(parents=True, exist_ok=True)
     print(f"[UDP MULTIPLAYER HARNESS] logs={log_dir}")
+    print(f"[UDP MULTIPLAYER HARNESS] smoke={smoke_exe}")
 
     port = reserve_udp_port()
     endpoint = f"127.0.0.1:{port}"
@@ -165,7 +169,7 @@ def main():
         env = os.environ.copy()
         env["MIMITA_TEST_SERVER_ADDR"] = actual
         smoke = subprocess.run(
-            [str(SMOKE)],
+            [str(smoke_exe)],
             cwd=ROOT,
             env=env,
             capture_output=True,

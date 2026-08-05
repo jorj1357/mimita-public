@@ -105,6 +105,9 @@ struct NetworkShotEvent
 {
     uint32_t shotSerial = 0;
     uint64_t clientTimeMs = 0;
+    uint64_t receivedMs = 0;
+    uint32_t eventServerTick = 0;
+    uint32_t visualServerTick = 0;
     uint32_t shooterPlayerId = 0;
     uint32_t targetPlayerId = 0;
     int damage = 0;
@@ -199,15 +202,21 @@ struct EntityInterpolationState
     bool hasPrevious = false;
     bool hasTarget = false;
     bool renderRegistered = false;
-    // Last render-time snapshot actually written to the rendered replica. Used
-    // to HOLD the body (never snap to the newest packet) when the receive-time
-    // buffer runs thin, so movement/animation can never desync mid-buffer.
+    // Last render-time snapshot actually written to the rendered replica.
+    // Kept for the respawn hard-snap and for the shot/effect timeline gate.
     bool hasRendered = false;
     SnapshotTransform lastRender;
-    // Per-entity interpolation render clock (in server-tick units). Advances at
-    // most dt*60 per frame and is clamped to `newestBufferedTick - delayTicks`,
-    // so bursts of reordered snapshots catch up smoothly instead of flashing.
+    // Per-entity render clock in server-tick units, stored here for debug and
+    // `netstats`. It mirrors `estimatedServerNow - adaptiveDelay` computed by
+    // the continuous wall-clock clock in buildReceiveTimeRender (no clamping).
     double renderTick = 0.0;
+    double adaptiveDelaySeconds = 0.0;
+    double estimatedArrivalJitterMs = 0.0;
+    uint64_t lastSnapshotArrivalMs = 0;
+    uint32_t lastRenderedServerTick = 0;
+    uint32_t staleSnapshotCount = 0;
+    uint32_t duplicateSnapshotCount = 0;
+    uint32_t outOfOrderSnapshotCount = 0;
     uint32_t networkEntityId = 0;
     uint16_t lastTransformEpoch = 0;
     uint32_t lastServerTick = 0;
@@ -266,6 +275,12 @@ struct MultiplayerContext
     bool showPlayerList = false;
     bool showDebugOverlay = true;
     std::vector<NetworkShotEvent> shotEvents;
+    std::vector<NetworkShotEvent> pendingShotEvents;
+    struct PendingPelletBlastEvent {
+        PelletBlastEventPacket packet{};
+        uint64_t receivedMs = 0;
+    };
+    std::vector<PendingPelletBlastEvent> pendingPelletBlastEvents;
     std::unordered_map<uint32_t, NetworkProjectile> networkProjectiles;
     ProjectileTerminalDedupe projectileTerminals;
     struct IncomingChatMessage
@@ -280,6 +295,7 @@ struct MultiplayerContext
     uint32_t nextLocalMeleeAttackSerial = 1;
     uint32_t nextActionRequestId = 1;  // monotonic, shared across all action types
     uint32_t latestServerTick = 0;
+    uint64_t lastInputSentMs = 0;
     uint64_t lastPingSentMs = 0;
     int localPingMs = 0;
     uint64_t lastHeardServerMs = 0;
@@ -674,6 +690,7 @@ void mpSweepHitClaims(MultiplayerContext& ctx);
 void mpUpdateRemoteSwordStates(MultiplayerContext& ctx, float dt);
 void mpSendPelletBlastRequest(MultiplayerContext& ctx, uint8_t weapon, const glm::vec3& origin, const glm::vec3& baseDirection, uint32_t spreadSeed);
 void mpProcessPelletBlastEventPacket(MultiplayerContext& ctx, const PelletBlastEventPacket* event);
+void mpReleaseTimelineEvents(MultiplayerContext& ctx);
 void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const class World& world);
 void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& camera);
 

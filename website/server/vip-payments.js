@@ -112,6 +112,49 @@ async function getStripeSubscription(stripe, subscriptionId) {
     return stripe.subscriptions.retrieve(id)
 }
 
+function checkoutLineItem(def, priceId) {
+    if (priceId) return { price: priceId, quantity: 1 }
+    const priceData = {
+        currency: def.currency,
+        unit_amount: def.amount_cents,
+        product_data: {
+            name: `MiMITA ${def.label}`
+        }
+    }
+    if (def.mode === "subscription") {
+        priceData.recurring = {
+            interval: "month",
+            interval_count: 1
+        }
+    }
+    return { price_data: priceData, quantity: 1 }
+}
+
+async function storeStripeCustomerId(query, userId, customerId) {
+    const cleanCustomerId = cleanId(customerId)
+    if (!cleanCustomerId) return ""
+    await query(
+        `UPDATE users
+         SET stripe_customer_id = $1, updated_at = NOW()
+         WHERE id = $2
+           AND COALESCE(stripe_customer_id, '') <> $1`,
+        [cleanCustomerId, userId]
+    )
+    return cleanCustomerId
+}
+
+async function ensureStripeCustomer(query, stripe, user) {
+    const existing = cleanId(user?.stripe_customer_id)
+    if (existing) return existing
+    if (!stripe?.customers?.create) return ""
+
+    const customer = await stripe.customers.create({
+        email: user.email || undefined,
+        metadata: { user_id: String(user.id) }
+    })
+    return storeStripeCustomerId(query, user.id, customer?.id)
+}
+
 function subscriptionUserId(subscription, fallback = "") {
     return Number(subscription?.metadata?.user_id || fallback || 0)
 }
@@ -144,7 +187,7 @@ async function processCheckoutCompleted({ client, stripe, session, event }) {
     if (!def) throw new Error("VIP order has invalid tier or purchase type")
 
     const priceId = await getSessionPriceId(stripe, session)
-    if (!priceId || priceId !== order.stripe_price_id) {
+    if (order.stripe_price_id && (!priceId || priceId !== order.stripe_price_id)) {
         throw new Error("Stripe Price ID mismatch")
     }
     if (Number(session.amount_total) !== Number(order.amount_cents)) {
@@ -170,6 +213,7 @@ async function processCheckoutCompleted({ client, stripe, session, event }) {
         stripeSubscriptionId: cleanId(session.subscription),
         stripeCustomerId: cleanId(session.customer)
     })
+    await storeStripeCustomerId(client.query.bind(client), order.user_id, session.customer)
 
     if (def.mode === "subscription") {
         const sub = await getStripeSubscription(stripe, session.subscription)
@@ -293,18 +337,13 @@ export function createVipCheckoutRouter(deps = {}) {
 
             const tier = normalizeTier(req.body.tier)
             const purchaseType = String(req.body.purchase_type || "").trim()
-            const def = getPurchaseDefinition(tier, purchaseType)
+            const def = getPurchaseDefinition(tier, purchaseType, env)
             if (!def) {
                 return res.status(400).json({ success: false, message: "invalid VIP purchase option" })
             }
 
             const priceId = getStripePriceId(tier, purchaseType, env)
-            if (!priceId) {
-                return res.status(503).json({
-                    success: false,
-                    message: `${def.price_env} is not configured`
-                })
-            }
+            const customerId = await ensureStripeCustomer(query, stripe, req.user)
 
             const order = await query(
                 `INSERT INTO vip_orders (
@@ -325,13 +364,14 @@ export function createVipCheckoutRouter(deps = {}) {
             }
             const params = {
                 mode: def.mode,
-                line_items: [{ price: priceId, quantity: 1 }],
+                line_items: [checkoutLineItem(def, priceId)],
                 metadata,
                 client_reference_id: `vip_order:${orderId}`,
-                success_url: `${origin}/vip?checkout=success&order_id=${orderId}`,
+                success_url: `${origin}/vip/success?order_id=${orderId}`,
                 cancel_url: `${origin}/vip?checkout=cancelled&order_id=${orderId}`
             }
-            if (req.user.email) params.customer_email = req.user.email
+            if (customerId) params.customer = customerId
+            else if (req.user.email) params.customer_email = req.user.email
             if (def.mode === "subscription") params.subscription_data = { metadata }
             else params.payment_intent_data = { metadata }
 
@@ -372,7 +412,7 @@ export function createVipWebhookRouter(deps = {}) {
     const router = Router()
     const stripe = deps.stripe === undefined ? getStripe() : deps.stripe
     const webhookSecret = deps.webhookSecret === undefined
-        ? process.env.STRIPE_VIP_WEBHOOK_SECRET
+        ? process.env.STRIPE_VIP_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET
         : deps.webhookSecret
     const getClient = deps.getClient || (() => pool.connect())
 

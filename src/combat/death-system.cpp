@@ -61,6 +61,19 @@ DeathSystem& DeathSystem::instance()
     return system;
 }
 
+void DeathSystem::healKillerToFull(Player& player, const std::string& killerName)
+{
+    const int newHp = DevOverrides::healthOverrideEnabled
+        ? DevOverrides::healthOverrideValue
+        : player.maxHp;
+    const int healed = newHp - player.currentHp;
+    if (healed <= 0)
+        return;
+    player.currentHp = newHp;
+    HitEffects::spawnHealthGainedEffect(player.pos);
+    EffectPartSystem::instance().spawnDamage(player.pos, killerName, -healed);
+}
+
 bool DeathSystem::kill(
     Player& victim,
     const std::string& actorId,
@@ -129,16 +142,7 @@ bool DeathSystem::kill(
         {
             if (gpPlayer && killerName == gpPlayer->username)
             {
-                int newHp = DevOverrides::healthOverrideEnabled
-                    ? DevOverrides::healthOverrideValue
-                    : gpPlayer->maxHp;
-                int healed = newHp - gpPlayer->currentHp;
-                if (healed > 0)
-                {
-                    gpPlayer->currentHp = newHp;
-                    HitEffects::spawnHealthGainedEffect(gpPlayer->pos);
-                    EffectPartSystem::instance().spawnDamage(gpPlayer->pos, killerName, -healed);
-                }
+                healKillerToFull(*gpPlayer, killerName);
             }
             else if (gpNpcSystem)
             {

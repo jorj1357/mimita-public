@@ -118,6 +118,7 @@ export async function authenticate(req, res, next) {
                 u.avatar_url,
                 u.avatar_updated_at,
                 u.supporter_tier,
+                u.stripe_customer_id,
                 u.role,
                 u.email_notifications_enabled,
                 u.email_verified_at IS NOT NULL AS email_verified

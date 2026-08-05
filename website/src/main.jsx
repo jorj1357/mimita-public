@@ -32,6 +32,7 @@ import Account from "./pages/Account"
 import UserProfile from "./pages/UserProfile"
 import Users from "./pages/Users"
 import Vip from "./pages/Vip"
+import VipSuccess from "./pages/VipSuccess"
 import AdminLogin from "./pages/AdminLogin"
 import AdminDashboard from "./pages/AdminDashboard"
 import AdminNoPermission from "./pages/AdminNoPermission"
@@ -82,6 +83,7 @@ ReactDOM.createRoot(
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/account" element={<Account />} />
         <Route path="/vip" element={<Vip />} />
+        <Route path="/vip/success" element={<VipSuccess />} />
 
         <Route path="/users" element={<Users />} />
         <Route path="/users/id/:id" element={<UserProfile />} />

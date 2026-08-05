@@ -18,6 +18,8 @@
 #include "audio/hitmarker-audio.h"
 #include "ui/hitmarker.h"
 #include "killfeed/killfeed.h"
+#include "terminal/terminal-state.h"
+#include "config/networking-config.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -25,6 +27,87 @@
 #include <glm/glm.hpp>
 
 namespace MimitaNet {
+
+namespace {
+
+const EntityInterpolationState* findRemoteInterpolation(
+    const MultiplayerContext& ctx,
+    uint32_t shooterId)
+{
+    auto playerIt = ctx.remotePlayerInterpolation.find(shooterId);
+    if (playerIt != ctx.remotePlayerInterpolation.end())
+        return &playerIt->second;
+    auto npcIt = ctx.remoteNpcInterpolation.find(shooterId);
+    if (npcIt != ctx.remoteNpcInterpolation.end())
+        return &npcIt->second;
+    return nullptr;
+}
+
+bool visualTimelineReady(const MultiplayerContext& ctx,
+                         uint32_t shooterId,
+                         uint32_t visualServerTick,
+                         uint64_t receivedMs)
+{
+    const NetworkingConfigData& cfg = NetworkingConfig::instance().data();
+    if (!cfg.eventTimeline.enabled ||
+        cfg.remotePlayers.directRender ||
+        shooterId == 0 ||
+        shooterId == ctx.localPlayerId ||
+        visualServerTick == 0)
+    {
+        return true;
+    }
+
+    const EntityInterpolationState* interpolation =
+        findRemoteInterpolation(ctx, shooterId);
+    if (interpolation && interpolation->hasRendered &&
+        interpolation->lastRenderedServerTick >= visualServerTick)
+    {
+        return true;
+    }
+
+    const uint64_t now = nowMs();
+    if (receivedMs != 0 &&
+        now >= receivedMs &&
+        (double)(now - receivedMs) >= cfg.eventTimeline.remoteEffectMaximumHoldMs)
+    {
+        if (cfg.eventTimeline.logDelays)
+        {
+            printf("[NET EVENT TIMELINE RELEASE] shooter=%u visualTick=%u "
+                   "renderTick=%u reason=max-hold holdMs=%llu\n",
+                   shooterId, visualServerTick,
+                   interpolation ? interpolation->lastRenderedServerTick : 0,
+                   (unsigned long long)(now - receivedMs));
+        }
+        return true;
+    }
+
+    return false;
+}
+
+void releaseOrQueueShotEvent(MultiplayerContext& ctx, const NetworkShotEvent& event)
+{
+    if (visualTimelineReady(ctx, event.shooterPlayerId,
+                            event.visualServerTick, event.receivedMs))
+    {
+        ctx.shotEvents.push_back(event);
+        return;
+    }
+
+    ctx.pendingShotEvents.push_back(event);
+    if (NetworkingConfig::instance().data().eventTimeline.logDelays)
+    {
+        printf("[NET EVENT TIMELINE HOLD] type=shot shooter=%u serial=%u "
+               "visualTick=%u pending=%zu\n",
+               event.shooterPlayerId, event.shotSerial,
+               event.visualServerTick, ctx.pendingShotEvents.size());
+    }
+}
+
+} // namespace
+
+void applyPelletBlastEventPacket(MultiplayerContext& ctx,
+                                 const PelletBlastEventPacket* event);
 
 void mpProcessShotEventPacket(MultiplayerContext& ctx, const ShotEventPacket* event)
 {
@@ -41,6 +124,11 @@ void mpProcessShotEventPacket(MultiplayerContext& ctx, const ShotEventPacket* ev
     NetworkShotEvent out;
     out.shotSerial = event->shotSerial;
     out.clientTimeMs = event->clientTimeMs;
+    out.receivedMs = nowMs();
+    out.eventServerTick = event->header.tick;
+    out.visualServerTick = event->lastServerTick != 0
+        ? event->lastServerTick
+        : event->header.tick;
     out.shooterPlayerId = event->shooterPlayerId;
     out.targetPlayerId = event->targetPlayerId;
     out.damage = event->damage;
@@ -57,12 +145,13 @@ void mpProcessShotEventPacket(MultiplayerContext& ctx, const ShotEventPacket* ev
     out.direction = {event->dirX, event->dirY, event->dirZ};
     out.normal = {event->normalX, event->normalY, event->normalZ};
     out.knockback = {event->knockX, event->knockY, event->knockZ};
-    ctx.shotEvents.push_back(out);
+    releaseOrQueueShotEvent(ctx, out);
     printf("[NET SHOT RECV] shooter=%u serial=%u weapon=%u impact=%u "
-           "flags=0x%03x damageConfirmed=%d origin=(%.2f %.2f %.2f) "
+           "flags=0x%03x damageConfirmed=%d visualTick=%u origin=(%.2f %.2f %.2f) "
            "hit=(%.2f %.2f %.2f)\n",
            out.shooterPlayerId, out.shotSerial, out.weapon,
            out.impactType, out.effectFlags, (int)out.damageConfirmed,
+           out.visualServerTick,
            out.origin.x, out.origin.y, out.origin.z,
            out.hit.x, out.hit.y, out.hit.z);
 }
@@ -132,6 +221,13 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
 
     if (event->killed)
     {
+        // Killing an NPC heals the local killer to full health.
+        if (isLocalShooter && gpPlayer)
+        {
+            DeathSystem::instance().healKillerToFull(*gpPlayer, shooterName);
+            printf("[NET KILL HEAL] shooter=%u npc=%u health=%d\n",
+                   event->shooterPlayerId, event->npcEntityId, gpPlayer->currentHp);
+        }
         // Death effect + sound (mirrors DeathSystem::kill for local NPCs).
         {
             const glm::vec3 deathDir = glm::length(hitDir) > 0.001f
@@ -286,6 +382,33 @@ void mpProcessPelletBlastEventPacket(MultiplayerContext& ctx, const PelletBlastE
     if (ctx.processedPelletBlastSerials.size() > 256)
         ctx.processedPelletBlastSerials.clear();
 
+    const uint64_t receivedMs = nowMs();
+    const uint32_t visualServerTick = event->lastServerTick != 0
+        ? event->lastServerTick
+        : event->header.tick;
+    if (!visualTimelineReady(ctx, event->shooterPlayerId,
+                             visualServerTick, receivedMs))
+    {
+        MultiplayerContext::PendingPelletBlastEvent pending;
+        pending.packet = *event;
+        pending.receivedMs = receivedMs;
+        ctx.pendingPelletBlastEvents.push_back(pending);
+        if (NetworkingConfig::instance().data().eventTimeline.logDelays)
+        {
+            printf("[NET EVENT TIMELINE HOLD] type=pellet shooter=%u serial=%u "
+                   "visualTick=%u pending=%zu\n",
+                   event->shooterPlayerId, event->shotSerial,
+                   visualServerTick, ctx.pendingPelletBlastEvents.size());
+        }
+        return;
+    }
+
+    applyPelletBlastEventPacket(ctx, event);
+}
+
+void applyPelletBlastEventPacket(MultiplayerContext& ctx,
+                                 const PelletBlastEventPacket* event)
+{
     const bool isLocalShooter = event->shooterPlayerId == ctx.localPlayerId;
     const glm::vec3 origin(event->originX, event->originY, event->originZ);
     const glm::vec3 baseDir(event->baseDirX, event->baseDirY, event->baseDirZ);
@@ -407,6 +530,11 @@ void mpProcessPelletBlastEventPacket(MultiplayerContext& ctx, const PelletBlastE
         {
             NetworkShotEvent deathEvent;
             deathEvent.shotSerial = event->shotSerial;
+            deathEvent.receivedMs = nowMs();
+            deathEvent.eventServerTick = event->header.tick;
+            deathEvent.visualServerTick = event->lastServerTick != 0
+                ? event->lastServerTick
+                : event->header.tick;
             deathEvent.shooterPlayerId = event->shooterPlayerId;
             deathEvent.targetPlayerId = targetRes.targetPlayerId;
             deathEvent.damage = targetRes.totalDamage;
@@ -424,6 +552,53 @@ void mpProcessPelletBlastEventPacket(MultiplayerContext& ctx, const PelletBlastE
                    event->shooterPlayerId, targetRes.targetPlayerId, event->shotSerial);
         }
 
+    }
+}
+
+void mpReleaseTimelineEvents(MultiplayerContext& ctx)
+{
+    for (auto it = ctx.pendingShotEvents.begin(); it != ctx.pendingShotEvents.end(); )
+    {
+        if (!visualTimelineReady(ctx, it->shooterPlayerId,
+                                 it->visualServerTick, it->receivedMs))
+        {
+            ++it;
+            continue;
+        }
+
+        ctx.shotEvents.push_back(*it);
+        if (NetworkingConfig::instance().data().eventTimeline.logDelays)
+        {
+            printf("[NET EVENT TIMELINE RELEASE] type=shot shooter=%u serial=%u "
+                   "visualTick=%u\n",
+                   it->shooterPlayerId, it->shotSerial, it->visualServerTick);
+        }
+        it = ctx.pendingShotEvents.erase(it);
+    }
+
+    for (auto it = ctx.pendingPelletBlastEvents.begin();
+         it != ctx.pendingPelletBlastEvents.end(); )
+    {
+        const PelletBlastEventPacket& packet = it->packet;
+        const uint32_t visualServerTick = packet.lastServerTick != 0
+            ? packet.lastServerTick
+            : packet.header.tick;
+        if (!visualTimelineReady(ctx, packet.shooterPlayerId,
+                                 visualServerTick, it->receivedMs))
+        {
+            ++it;
+            continue;
+        }
+
+        applyPelletBlastEventPacket(ctx, &packet);
+        if (NetworkingConfig::instance().data().eventTimeline.logDelays)
+        {
+            printf("[NET EVENT TIMELINE RELEASE] type=pellet shooter=%u serial=%u "
+                   "visualTick=%u\n",
+                   packet.shooterPlayerId, packet.shotSerial,
+                   visualServerTick);
+        }
+        it = ctx.pendingPelletBlastEvents.erase(it);
     }
 }
 

@@ -23,6 +23,10 @@ public:
 
     void update(World& world, Player& player, NpcSystem& npcs,
                 bool instantRespawnPressed, float dt);
+
+    // Heals the given player to full health, spawning the health-gained
+    // visual and green +HP number. No-op when already at full health.
+    void healKillerToFull(Player& player, const std::string& killerName);
     void render(const Camera& camera) const;
     void appendReplayActors(std::vector<ReplayActorState>& actors) const;
 

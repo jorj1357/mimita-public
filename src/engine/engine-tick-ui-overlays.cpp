@@ -361,8 +361,20 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             const Player& rp = kv.second;
             auto nameIt = mpContext.playerRegistry.find(kv.first);
             const char* rname = (nameIt != mpContext.playerRegistry.end()) ? nameIt->second.name.c_str() : "?";
-            snprintf(buf, sizeof(buf), "  %s id=%u pos=(%.1f,%.1f,%.1f)",
-                     rname, kv.first, rp.pos.x, rp.pos.y, rp.pos.z);
+            const auto interpIt = mpContext.remotePlayerInterpolation.find(kv.first);
+            if (interpIt != mpContext.remotePlayerInterpolation.end())
+            {
+                const MimitaNet::EntityInterpolationState& s = interpIt->second;
+                snprintf(buf, sizeof(buf), "  %s id=%u buf=%zu delay=%.0fms jit=%.0fms d=%.2fm",
+                         rname, kv.first, s.buffer.size(),
+                         s.adaptiveDelaySeconds * 1000.0, s.estimatedArrivalJitterMs,
+                         s.hasTarget ? glm::length(rp.pos - s.target.position) : 0.0f);
+            }
+            else
+            {
+                snprintf(buf, sizeof(buf), "  %s id=%u pos=(%.1f,%.1f,%.1f)",
+                         rname, kv.first, rp.pos.x, rp.pos.y, rp.pos.z);
+            }
             uiDrawText(buf, dbgX + 8.0f, y, 0.26f, {0.6f, 0.85f, 1.0f, 1.0f});
             y += lineH;
         }

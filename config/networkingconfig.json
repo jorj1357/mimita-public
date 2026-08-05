@@ -12,19 +12,20 @@
     "direct_render": false,
     "server_smoothing": true,
     "server_smoothing_duration_ticks": 2,
-    "server_broadcast_delay_ms": 50,
-    "server_broadcast_extrapolation_ms": 100,
+    "server_broadcast_delay_ms": 1,
+    "server_broadcast_extrapolation_ms": 1,
     "rewind_compensation_ms": 0,
     "rewind_hit_tolerance": 2.5,
     "server_broadcast_max_speed": 0,
-    "interpolation_delay_ms": 100,
+    "interpolation_delay_ms": 16,
     "maximum_buffered_snapshots": 64,
-    "minimum_snapshots_before_rendering": 9,
+    "minimum_snapshots_before_rendering": 2,
     "position_mode": "linear",
     "rotation_mode": "slerp",
     "allow_extrapolation": true,
     "maximum_extrapolation_ms": 100,
     "teleport_distance": 1000.0,
+    "teleport_gap_ticks": 30,
     "snap_on_spawn": true,
     "snap_on_respawn": true,
     "snap_on_map_change": true
@@ -43,6 +44,48 @@
     "allow_out_of_order_insertion": true,
     "maximum_snapshot_age_ms": 2000,
     "chunk_reassembly_timeout_ms": 1000
+  },
+
+  "adaptive_snapshot_buffer": {
+    "enabled": true,
+    "minimum_delay_ms": 16,
+    "maximum_delay_ms": 120,
+    "jitter_multiplier": 2.0,
+    "arrival_jitter_smoothing": 0.15,
+    "increase_rate_ms_per_second": 200,
+    "decrease_rate_ms_per_second": 150
+  },
+
+  "event_timeline": {
+    "enabled": true,
+    "remote_effect_maximum_hold_ms": 60,
+    "log_delays": false
+  },
+
+  "runtime_rates": {
+    "input_send_rate_hz": 60,
+    "ping_interval_ms": 1000
+  },
+
+  "retries": {
+    "attack_retry_interval_ms": 100,
+    "attack_retry_max_attempts": 10,
+    "attack_request_timeout_ms": 3000,
+    "reconnect_initial_backoff_ms": 1000,
+    "reconnect_max_attempts": 10,
+    "reconnect_max_backoff_ms": 15000
+  },
+
+  "reliable_gameplay_events": {
+    "max_pending_per_player": 64,
+    "retry_ms": 100,
+    "ttl_ms": 10000,
+    "max_attempts": 80
+  },
+
+  "buffer_limits": {
+    "server_position_history_ticks": 30,
+    "server_broadcast_sample_limit": 128
   },
 
   "remote_entity_lifecycle": {

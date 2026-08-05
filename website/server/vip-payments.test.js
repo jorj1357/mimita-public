@@ -20,7 +20,13 @@ function makeStore() {
         entitlements: [],
         subscriptions: new Map(),
         events: new Map(),
-        users: new Map([[42, { id: 42, username: "tester", role: "user", supporter_tier: "free" }]]),
+        users: new Map([[42, {
+            id: 42,
+            username: "tester",
+            role: "user",
+            supporter_tier: "free",
+            stripe_customer_id: ""
+        }]]),
         nextOrderId: 1,
         nextEntitlementId: 1
     }
@@ -94,6 +100,14 @@ function makeDispatch(store) {
             if (params[3]) order.stripe_subscription_id = params[3]
             if (params[4]) order.stripe_customer_id = params[4]
             return rows([structuredClone(order)])
+        }
+
+        if (text.startsWith("UPDATE users SET stripe_customer_id")) {
+            const user = store.users.get(params[1])
+            if (user && user.stripe_customer_id !== params[0]) {
+                user.stripe_customer_id = params[0]
+            }
+            return rows([])
         }
 
         if (text.startsWith("SELECT MAX(expires_at)")) {
@@ -266,9 +280,9 @@ beforeEach(() => {
     store = makeStore()
     currentUser = { current: { id: 42, username: "tester", email: "tester@example.com", role: "user" } }
     env = {
-        MIMITA_STRIPE_PRICE_VIP_ONE_MONTH: "price_vip_1m",
-        MIMITA_STRIPE_PRICE_VIP_MONTHLY: "price_vip_monthly",
-        MIMITA_STRIPE_PRICE_VIP_TWELVE_MONTH: "price_vip_12m"
+        VIP_PRICE_VIP_ONE_MONTH: "333",
+        VIP_PRICE_VIP_MONTHLY: "333",
+        VIP_PRICE_VIP_TWELVE_MONTH: "1999"
     }
     fake = {
         state: {
@@ -295,6 +309,11 @@ beforeEach(() => {
                     async listLineItems() {
                         return { data: [{ price: { id: "price_vip_1m" } }] }
                     }
+                }
+            },
+            customers: {
+                async create() {
+                    return { id: "cus_created" }
                 }
             },
             subscriptions: {
@@ -335,22 +354,24 @@ test("checkout requires Stripe configuration", async () => {
     assert.equal(res.status, 503)
 })
 
-test("checkout requires the configured Price ID for the selected option", async () => {
-    const missing = makeApp({ stripe: fake.stripe, store, env: {}, currentUser })
-    const res = await request(missing)
+test("checkout uses inline price data and stores a Stripe customer id", async () => {
+    const res = await request(app)
         .post("/api/vip/payment/checkout")
         .send({ tier: "vip", purchase_type: "one_month" })
-    assert.equal(res.status, 503)
-    assert.match(res.body.message, /MIMITA_STRIPE_PRICE_VIP_ONE_MONTH/)
+    assert.equal(res.status, 200)
+    assert.equal(fake.state.sessionParams.customer, "cus_created")
+    assert.equal(fake.state.sessionParams.line_items[0].price_data.unit_amount, 333)
+    assert.equal(fake.state.sessionParams.line_items[0].price_data.currency, "usd")
+    assert.equal(store.users.get(42).stripe_customer_id, "cus_created")
 })
 
-test("checkout ignores browser price fields and uses server-selected Price ID", async () => {
+test("checkout ignores browser price fields and uses server-selected amount", async () => {
     const res = await createCheckout()
     assert.equal(res.status, 200)
-    assert.equal(fake.state.sessionParams.line_items[0].price, "price_vip_1m")
+    assert.equal(fake.state.sessionParams.line_items[0].price_data.unit_amount, 333)
     const order = store.orders.get(res.body.order_id)
     assert.equal(order.amount_cents, 333)
-    assert.equal(order.stripe_price_id, "price_vip_1m")
+    assert.equal(order.stripe_price_id, "")
 })
 
 test("webhook rejects invalid signatures", async () => {
@@ -386,11 +407,10 @@ test("duplicate Stripe event is idempotent", async () => {
     assert.equal(store.entitlements.length, 1)
 })
 
-test("wrong amount, currency, or Price ID does not grant entitlement", async () => {
+test("wrong amount or currency does not grant entitlement", async () => {
     for (const overrides of [
         { eventId: "evt_amount", amount_total: 1 },
-        { eventId: "evt_currency", currency: "eur" },
-        { eventId: "evt_price", priceId: "price_wrong" }
+        { eventId: "evt_currency", currency: "eur" }
     ]) {
         const checkout = await createCheckout()
         const res = await deliver(checkoutEvent(checkout.body.order_id, overrides))
@@ -403,10 +423,8 @@ test("subscription checkout records Stripe subscription period", async () => {
     const checkout = await createCheckout({ purchase_type: "monthly_subscription" })
     fake.state.event = checkoutEvent(checkout.body.order_id, {
         subscription: "sub_test",
-        priceId: "price_vip_monthly",
         metadata: { purchase_type: "monthly_subscription" }
     })
-    fake.stripe.checkout.sessions.listLineItems = async () => ({ data: [{ price: { id: "price_vip_monthly" } }] })
     const res = await deliver(fake.state.event)
     assert.equal(res.status, 200)
     assert.equal(store.subscriptions.get("sub_test").status, "active")

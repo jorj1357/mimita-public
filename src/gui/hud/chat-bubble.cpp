@@ -1,3 +1,13 @@
+// 08 05 2026, 00 00
+/* purpose
+* Renders short-lived 3D chat bubbles above speaking players.
+* Uses shared VIP name drawing so bubble sender labels match chat and nameplates.
+* Keeps bubble lifetime, scale, and distance fade bounded for HUD readability.
+* DOES NOT own chat history, packet parsing, or account entitlement verification.
+* DOES NOT mutate player state or send chat packets.
+* DOES NOT render the 2D chat window.
+*/
+
 #include "chat-bubble.h"
 
 #include <algorithm>
@@ -10,6 +20,7 @@
 #include "gui/ui-system.h"
 #include "gui/hud/player-nameplates.h"
 #include "audio/audio.h"
+#include "vip/vip-name-render.h"
 
 float computeChatDuration(int messageLength)
 {
@@ -88,7 +99,11 @@ void renderChatBubbles(const ActorChatState& state, const Player& player, const 
 
         std::string displayText = "\"" + msg.text + "\"";
         float textW = uiMeasureText(displayText.c_str(), bubbleScale);
-        float nameW = uiMeasureText(msg.senderName.c_str(), nameScale);
+        VipNameDrawOptions nameOptions;
+        nameOptions.scale = nameScale;
+        nameOptions.alpha = fade;
+        nameOptions.phase = (float)i;
+        float nameW = vipMeasureStyledName(msg.senderName, player.vipAppearance, nameOptions);
         float bubbleW = std::max(textW, nameW) + bubblePadding * 2.0f;
         float bubbleH = lineHeight * 2.0f + bubblePadding * 2.0f;
 
@@ -99,7 +114,8 @@ void renderChatBubbles(const ActorChatState& state, const Player& player, const 
         uiDrawRectOutline({bx, by, bubbleW, bubbleH}, {0.35f, 0.4f, 0.5f, 0.6f * fade}, "chat-bubble-border");
 
         float nameX = screenX - nameW * 0.5f;
-        uiDrawText(msg.senderName.c_str(), nameX, by + bubblePadding, nameScale, {0.7f, 0.8f, 1.0f, fade});
+        vipDrawStyledName(msg.senderName, player.vipAppearance, nameX,
+                          by + bubblePadding, nameOptions);
 
         float textX = screenX - textW * 0.5f;
         uiDrawText(displayText.c_str(), textX, by + bubblePadding + lineHeight, bubbleScale, {1.0f, 1.0f, 1.0f, fade});

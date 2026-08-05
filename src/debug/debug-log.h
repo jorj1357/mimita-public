@@ -25,7 +25,8 @@ namespace Debug
         Duel,
         Auth,
         Avatar,
-        Chat
+        Chat,
+        Vip
     };
 
     bool enabled(Category category);

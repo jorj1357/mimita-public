@@ -10,6 +10,7 @@
 
 #include "network/server.h"
 #include "debug/debug-log.h"
+#include "config/networking-config.h"
 
 #include <algorithm>
 #include <cstring>
@@ -17,10 +18,6 @@
 namespace MimitaNet {
 namespace {
 
-constexpr size_t RELIABLE_EVENT_MAX_PENDING_PER_PLAYER = 64;
-constexpr uint64_t RELIABLE_EVENT_RETRY_MS = 100;
-constexpr uint64_t RELIABLE_EVENT_TTL_MS = 10000;
-constexpr uint8_t RELIABLE_EVENT_MAX_ATTEMPTS = 80;
 constexpr size_t RELIABLE_EVENT_ID_OFFSET = sizeof(PacketHeader);
 constexpr size_t RELIABLE_EVENT_SESSION_OFFSET = sizeof(PacketHeader) + sizeof(uint32_t);
 
@@ -149,13 +146,14 @@ ReliableGameplayEventQueueResult queueReliableGameplayEventToAll(SOCKET sock,
     for (auto it = players.begin(); it != players.end(); )
     {
         ServerPlayer& player = it->second;
-        if (player.pendingReliableEvents.size() >= RELIABLE_EVENT_MAX_PENDING_PER_PLAYER)
+        const auto& cfg = NetworkingConfig::instance().data().reliableEvents;
+        if (player.pendingReliableEvents.size() >= cfg.maxPendingPerPlayer)
         {
             ++gFailureStats.saturated;
             Debug::logThrottled(Debug::Category::Networking, "reliable-gameplay-events-full", 1.0f,
                                 "[RELIABLE EVENT SATURATED] playerId=%u pending=%zu max=%zu packetType=%u eventId=%u action=disconnect\n",
                                 player.id, player.pendingReliableEvents.size(),
-                                RELIABLE_EVENT_MAX_PENDING_PER_PLAYER,
+                                cfg.maxPendingPerPlayer,
                                 (unsigned)header->type, eventId);
             result = worseResult(result, ReliableGameplayEventQueueResult::BacklogSaturated);
             markReliableConnectionUnhealthy(players, it, "backlog-saturated", header->type, eventId);
@@ -225,6 +223,7 @@ void tickReliableGameplayEvents(SOCKET sock,
                                 uint64_t& totalPacketsOut)
 {
     const uint64_t now = reliableNowMs();
+    const auto& cfg = NetworkingConfig::instance().data().reliableEvents;
     uint32_t pendingCount = 0;
     uint32_t resentCount = 0;
     uint32_t expiredCount = 0;
@@ -235,8 +234,8 @@ void tickReliableGameplayEvents(SOCKET sock,
         bool disconnected = false;
         for (auto it = player.pendingReliableEvents.begin(); it != player.pendingReliableEvents.end(); )
         {
-            const bool ttlExpired = now - it->createdMs > RELIABLE_EVENT_TTL_MS;
-            const bool attemptsExhausted = it->attempts >= RELIABLE_EVENT_MAX_ATTEMPTS;
+            const bool ttlExpired = now - it->createdMs > (uint64_t)cfg.ttlMs;
+            const bool attemptsExhausted = it->attempts >= cfg.maxAttempts;
             if (ttlExpired || attemptsExhausted)
             {
                 if (ttlExpired)
@@ -250,7 +249,7 @@ void tickReliableGameplayEvents(SOCKET sock,
                 disconnected = true;
                 break;
             }
-            if (now - it->lastSendMs >= RELIABLE_EVENT_RETRY_MS)
+            if (now - it->lastSendMs >= (uint64_t)cfg.retryMs)
             {
                 const bool sent = serverSendToPlayer(sock, player, it->bytes.data(), it->bytes.size());
                 if (!sent)
@@ -280,8 +279,8 @@ void tickReliableGameplayEvents(SOCKET sock,
         Debug::logThrottled(Debug::Category::Networking, "reliable-gameplay-events", 1.0f,
                             "[RELIABLE EVENT] pending=%u resent=%u expired=%u retryMs=%llu ttlMs=%llu\n",
                             pendingCount, resentCount, expiredCount,
-                            (unsigned long long)RELIABLE_EVENT_RETRY_MS,
-                            (unsigned long long)RELIABLE_EVENT_TTL_MS);
+                            (unsigned long long)cfg.retryMs,
+                            (unsigned long long)cfg.ttlMs);
         lastLogMs = now;
     }
 }
