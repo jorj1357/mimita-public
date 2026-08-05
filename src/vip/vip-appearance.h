@@ -43,6 +43,44 @@ enum VipAppearanceFlags : uint8_t
     VIP_APPEARANCE_STAFF_OVERRIDE = 1 << 1
 };
 
+enum VipStyleAnimationKind : uint8_t
+{
+    VIP_ANIMATION_NONE = 0,
+    VIP_ANIMATION_CYCLE = 1,
+    VIP_ANIMATION_PULSE = 2
+};
+
+enum VipStyleDirection : uint8_t
+{
+    VIP_DIRECTION_LTR = 0,
+    VIP_DIRECTION_RTL = 1
+};
+
+constexpr int VIP_STYLE_MAX_COLORS = 32;
+
+// Full client-rendered name style. The dedicated server relays this from the
+// verified website style. Rendering is always client-local and tick-driven;
+// no animation state crosses the network.
+struct VipStyleDetail
+{
+    uint8_t styleKind = VIP_STYLE_NONE;
+    uint8_t animation = VIP_ANIMATION_NONE;
+    uint8_t direction = VIP_DIRECTION_LTR;
+    float rainbowSpeed = 1.0f;
+    glm::vec4 solidColor{0.62f, 0.62f, 0.62f, 1.0f};
+    std::vector<glm::vec4> colors;
+    uint32_t styleEpoch = 0;
+
+    bool valid() const { return styleKind != VIP_STYLE_NONE; }
+    size_t colorCount() const { return colors.empty() ? 0 : colors.size(); }
+};
+
+inline bool animationAdvances(uint8_t styleKind)
+{
+    return styleKind == VIP_STYLE_ANIMATED_RAINBOW ||
+           styleKind == VIP_STYLE_COLOR_CYCLE;
+}
+
 struct VipAppearance
 {
     uint8_t tier = VIP_TIER_FREE;
@@ -201,6 +239,61 @@ inline const char* badgeLabel(uint8_t tier)
     case VIP_TIER_ULTRA_VIP: return "UVIP";
     default: return "";
     }
+}
+
+// Builds a full render style from the compact packet-safe wire fields.
+// colorRgb points to colorCount RGB triples; empty/zero colorCount means the
+// detail carries no per-player color data (free or no style).
+inline VipStyleDetail styleDetailFromWire(uint8_t styleKind,
+                                          uint8_t animation,
+                                          uint8_t direction,
+                                          float rainbowSpeed,
+                                          const uint8_t* colorRgb,
+                                          uint8_t colorCount,
+                                          uint32_t styleEpoch)
+{
+    VipStyleDetail out;
+    out.styleKind = sanitizeStyleKindByte(styleKind);
+    if (out.styleKind == VIP_STYLE_NONE)
+        return out;
+    out.animation = (animation <= VIP_ANIMATION_PULSE) ? animation : VIP_ANIMATION_NONE;
+    out.direction = (direction <= VIP_DIRECTION_RTL) ? direction : VIP_DIRECTION_LTR;
+    out.rainbowSpeed = std::clamp(rainbowSpeed, 0.25f, 4.0f);
+    out.styleEpoch = styleEpoch;
+    if (colorRgb && colorCount > 0)
+    {
+        const uint8_t count = std::min<uint8_t>(colorCount, (uint8_t)VIP_STYLE_MAX_COLORS);
+        out.colors.reserve(count);
+        for (uint8_t i = 0; i < count; ++i)
+            out.colors.push_back(colorFromBytes(colorRgb[i * 3], colorRgb[i * 3 + 1], colorRgb[i * 3 + 2]));
+    }
+    if (!out.colors.empty())
+        out.solidColor = out.colors[0];
+    return out;
+}
+
+// Copies the full style into the compact packet-safe wire fields.
+// colorRgb must point to at least VIP_STYLE_MAX_COLORS * 3 bytes.
+inline uint8_t copyStyleDetailToWire(const VipStyleDetail& detail,
+                                     uint8_t& styleKind,
+                                     uint8_t& animation,
+                                     uint8_t& direction,
+                                     float& rainbowSpeed,
+                                     uint8_t* colorRgb)
+{
+    styleKind = detail.styleKind;
+    animation = detail.animation;
+    direction = detail.direction;
+    rainbowSpeed = detail.rainbowSpeed;
+    const size_t count = std::min<size_t>(detail.colors.size(), VIP_STYLE_MAX_COLORS);
+    for (size_t i = 0; i < count; ++i)
+    {
+        const glm::vec4& c = detail.colors[i];
+        colorRgb[i * 3] = (uint8_t)std::clamp((int)std::lround(c.r * 255.0f), 0, 255);
+        colorRgb[i * 3 + 1] = (uint8_t)std::clamp((int)std::lround(c.g * 255.0f), 0, 255);
+        colorRgb[i * 3 + 2] = (uint8_t)std::clamp((int)std::lround(c.b * 255.0f), 0, 255);
+    }
+    return (uint8_t)count;
 }
 
 } // namespace MimitaVip

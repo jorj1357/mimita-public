@@ -1000,6 +1000,7 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     MimitaVip::copyAppearanceToBytes(
         player.vipAppearance, out.vipTier, out.vipStyleKind,
         out.vipColorR, out.vipColorG, out.vipColorB, out.vipFlags);
+    out.vipStyleEpoch = (uint8_t)std::min<uint32_t>(player.vipStyleEpoch, 255);
     return out;
 }
 

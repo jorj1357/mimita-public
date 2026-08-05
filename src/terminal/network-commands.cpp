@@ -970,6 +970,22 @@ void registerNetworkCommands()
             Terminal::instance().addLog(buf);
 
             {
+                const auto& m = netCfg.remoteMotionSmoothing;
+                snprintf(buf, sizeof(buf),
+                    "[NETSTATS] filter=%s freqHz=%.1f zeta=%.2f ff=%.2f "
+                    "ffSmooth=%.2f zMult=%.2f maxSpd=%.0f maxStep=%.0f clampZ=%d "
+                    "linTicks=%u linHold=%d",
+                    m.renderFilter.c_str(), m.hybridFrequencyHz,
+                    m.hybridDampingRatio, m.hybridFeedForward,
+                    m.hybridFeedForwardSmoothing, m.hybridFrequencyZMultiplier,
+                    m.hybridMaxSpeedUnitsPerSecond,
+                    m.filterMaxStepUnitsPerSecond,
+                    (int)m.filterClampZBelowTarget,
+                    (unsigned)m.linearDelayTicks, (int)m.linearHoldOnDry);
+                Terminal::instance().addLog(buf);
+            }
+
+            {
                 float agreePct = mp.predictedHits
                     ? 100.0f * (float)mp.confirmedHits / (float)mp.predictedHits
                     : 0.0f;

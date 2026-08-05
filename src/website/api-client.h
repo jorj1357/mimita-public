@@ -29,6 +29,7 @@ struct GameUserInfo
     json avatarData;
     std::string supporterTier;
     MimitaVip::VipAppearance vipAppearance;
+    MimitaVip::VipStyleDetail vipStyleDetail;
     std::string role;
     std::vector<std::string> achievements;
     bool emailVerified = false;
@@ -82,6 +83,7 @@ struct LeaderboardEntry
     std::string avatarUrl;
     std::string supporterTier;
     MimitaVip::VipAppearance vipAppearance;
+    MimitaVip::VipStyleDetail vipStyleDetail;
     GameStats stats;
 };
 
@@ -149,6 +151,7 @@ struct VipJoinTicketResult
     std::string supporterTier;
     std::string reason;
     MimitaVip::VipAppearance vipAppearance;
+    MimitaVip::VipStyleDetail vipStyleDetail;
 };
 
 std::string requestVipJoinTicket(const std::string& sessionToken,
@@ -166,6 +169,7 @@ struct GameLoginResult
     std::vector<std::string> permissions;
     std::string supporterTier;
     MimitaVip::VipAppearance vipAppearance;
+    MimitaVip::VipStyleDetail vipStyleDetail;
     std::string accessToken;
     std::string accessExpiresAt;
     std::string refreshToken;
@@ -182,6 +186,7 @@ struct GameRefreshResult
     std::string refreshToken;
     std::string refreshExpiresAt;
     MimitaVip::VipAppearance vipAppearance;
+    MimitaVip::VipStyleDetail vipStyleDetail;
     std::string errorCode;
     std::string errorMessage;
 };
@@ -218,6 +223,7 @@ struct ClientCodePreview
     json avatarData;
     std::string supporterTier;
     MimitaVip::VipAppearance vipAppearance;
+    MimitaVip::VipStyleDetail vipStyleDetail;
 };
 
 struct ClientCodeConfirm
@@ -229,6 +235,7 @@ struct ClientCodeConfirm
     std::string displayName;
     std::string supporterTier;
     MimitaVip::VipAppearance vipAppearance;
+    MimitaVip::VipStyleDetail vipStyleDetail;
 };
 
 ClientCodePreview previewClientCode(const std::string& code);

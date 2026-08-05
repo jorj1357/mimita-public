@@ -50,6 +50,39 @@ bool shouldDrawLetters(const MimitaVip::VipAppearance& appearance)
            appearance.styleKind == MimitaVip::VIP_STYLE_COLOR_CYCLE;
 }
 
+// Client-local, tick-driven color selection for full styles. The animation
+// phase is supplied by the caller (each client renders it for itself); the
+// server never sends animation state.
+glm::vec4 detailColorAt(const MimitaVip::VipStyleDetail& detail, int letterIndex, float phase)
+{
+    const size_t n = detail.colorCount();
+    if (n == 0)
+        return detail.solidColor;
+
+    int idx = letterIndex;
+    if (detail.direction == MimitaVip::VIP_DIRECTION_RTL)
+        idx = (int)n - 1 - idx;
+
+    if (MimitaVip::animationAdvances(detail.styleKind))
+    {
+        const int offset = (int)std::floor(phase * detail.rainbowSpeed);
+        idx += offset;
+    }
+    idx %= (int)n;
+    if (idx < 0)
+        idx += (int)n;
+    return detail.colors[(size_t)idx];
+}
+
+bool shouldDrawDetailLetters(const MimitaVip::VipStyleDetail& detail)
+{
+    const uint8_t kind = detail.styleKind;
+    return kind == MimitaVip::VIP_STYLE_RAINBOW ||
+           kind == MimitaVip::VIP_STYLE_ANIMATED_RAINBOW ||
+           kind == MimitaVip::VIP_STYLE_PER_LETTER ||
+           kind == MimitaVip::VIP_STYLE_COLOR_CYCLE;
+}
+
 float badgeWidth(const MimitaVip::VipAppearance& appearance,
                  const VipNameDrawOptions& options)
 {
@@ -121,6 +154,36 @@ void vipDrawStyledName(const std::string& name,
     {
         drawBadge(appearance, cursor, y, options);
         cursor += badgeW + 5.0f;
+    }
+
+    // Staff overrides are always the solid staff color from the compact
+    // appearance; never let a player's stored style bypass staff authority.
+    if (!appearance.staffOverride() && options.detail && options.detail->valid())
+    {
+        const MimitaVip::VipStyleDetail& detail = *options.detail;
+        if (detail.styleKind == MimitaVip::VIP_STYLE_SOLID ||
+            detail.styleKind == MimitaVip::VIP_STYLE_TURQUOISE)
+        {
+            const glm::vec4 color = detail.colorCount() > 0
+                ? detail.colors[0] : detail.solidColor;
+            uiDrawText(name.c_str(), cursor, y, options.scale,
+                       withAlpha(color, options.alpha));
+            return;
+        }
+        if (shouldDrawDetailLetters(detail))
+        {
+            char glyph[2] = {};
+            for (size_t i = 0; i < name.size(); ++i)
+            {
+                glyph[0] = name[i];
+                const glm::vec4 color =
+                    detailColorAt(detail, (int)i, options.phase);
+                uiDrawText(glyph, cursor, y, options.scale,
+                           withAlpha(color, options.alpha));
+                cursor += uiMeasureText(glyph, options.scale);
+            }
+            return;
+        }
     }
 
     if (!shouldDrawLetters(appearance))

@@ -71,6 +71,8 @@ struct PlayerInfo
     uint32_t id = 0;
     int pingMs = 0;
     MimitaVip::VipAppearance vipAppearance;
+    MimitaVip::VipStyleDetail vipStyleDetail;
+    uint32_t vipStyleEpoch = 0;
 };
 
 struct SnapshotTransform
@@ -223,6 +225,10 @@ struct EntityInterpolationState
     // Always-on spring for render_filter == "spring". Reset on respawn so the
     // new life does not inherit the old corpse's filter state.
     SpringState renderSpring;
+    // Low-passed feed-forward velocity for the hybrid spring (smoothed with
+    // hybrid_feed_forward_smoothing so snapshot-boundary velocity slope changes
+    // don't inject jitter). Reset on respawn.
+    glm::vec3 renderSpringTargetVel{0.0f};
     uint64_t lastSnapshotArrivalMs = 0;
     uint32_t lastRenderedServerTick = 0;
     uint32_t staleSnapshotCount = 0;

@@ -23,6 +23,7 @@
 #include "gui/hud/chat-history.h"
 #include "gui/hud/chat-bubble.h"
 #include "world/world.h"
+#include "entities/player.h"
 
 #include <algorithm>
 #include <cmath>
@@ -224,10 +225,13 @@ static void processSnapshotEntities(
             }
             if (ctx.awaitingExplodeDeath && entity.health <= 0)
                 ctx.awaitingExplodeDeath = false;
-            ctx.playerRegistry[entity.networkEntityId] = {
-                entity.displayName, entity.networkEntityId, entity.pingMs,
-                vipAppearanceFromEntity(entity)
-            };
+            PlayerInfo& localInfo = ctx.playerRegistry[entity.networkEntityId];
+            localInfo.name = entity.displayName;
+            localInfo.id = entity.networkEntityId;
+            localInfo.pingMs = entity.pingMs;
+            localInfo.vipAppearance = vipAppearanceFromEntity(entity);
+            if (entity.vipStyleEpoch != 0)
+                localInfo.vipStyleEpoch = entity.vipStyleEpoch;
             static uint64_t lastLocalSnapshotLogMs = 0;
             uint64_t nowLocalSnap = nowMs();
             if (nowLocalSnap - lastLocalSnapshotLogMs >= 250)
@@ -256,10 +260,13 @@ static void processSnapshotEntities(
             interpolationMap = &ctx.remotePlayerInterpolation;
             seen = &seenPlayers;
             typeName = "Player";
-            ctx.playerRegistry[entity.networkEntityId] = {
-                entity.displayName, entity.networkEntityId, entity.pingMs,
-                vipAppearanceFromEntity(entity)
-            };
+            PlayerInfo& remoteInfo = ctx.playerRegistry[entity.networkEntityId];
+            remoteInfo.name = entity.displayName;
+            remoteInfo.id = entity.networkEntityId;
+            remoteInfo.pingMs = entity.pingMs;
+            remoteInfo.vipAppearance = vipAppearanceFromEntity(entity);
+            if (entity.vipStyleEpoch != 0)
+                remoteInfo.vipStyleEpoch = entity.vipStyleEpoch;
         }
         else if (entity.entityType == ENTITY_NPC)
         {

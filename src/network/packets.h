@@ -15,7 +15,7 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 26;
+constexpr uint16_t PROTOCOL_VERSION = 27;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -97,7 +97,9 @@ enum PacketType : uint8_t
     PACKET_CHAT_REQUEST = 48,
     PACKET_CHAT_MESSAGE_EVENT = 49,
     PACKET_CHAT_TYPING_STATE_REQUEST = 50,
-    PACKET_CHAT_TYPING_STATE_EVENT = 51
+    PACKET_CHAT_TYPING_STATE_EVENT = 51,
+    // ── VIP name style sync ───────────────────────────────────────────
+    PACKET_VIP_STYLE_EVENT = 52
 };
 
 enum DamageConfirmedSource : uint8_t
@@ -341,7 +343,8 @@ struct SnapshotEntity
     uint8_t vipColorG = 158;
     uint8_t vipColorB = 158;
     uint8_t vipFlags = 0;
-    uint8_t vipReserved[2] = {};
+    uint8_t vipStyleEpoch = 0;
+    uint8_t vipReserved = 0;
 };
 
 struct SnapshotPacket
@@ -401,7 +404,8 @@ struct CompactEntityData
     uint8_t vipColorG = 158;
     uint8_t vipColorB = 158;
     uint8_t vipFlags = 0;
-    uint8_t vipReserved[2] = {};
+    uint8_t vipStyleEpoch = 0;
+    uint8_t vipReserved = 0;
 };
 #pragma pack(pop)
 
@@ -747,6 +751,33 @@ struct ChatTypingStateEventPacket
     bool isTyping = false;
     uint64_t serverTick = 0;
 };
+
+// ── VIP name style sync ──────────────────────────────────────────────
+// Server broadcasts the full user-chosen style once per join/change so every
+// client renders exact colors. Animation state is NEVER sent: each client
+// renders the shift locally from its own tick.
+constexpr int MAX_VIP_STYLE_COLORS = 32;
+
+struct VipStyleEventPacket
+{
+    PacketHeader header;
+    uint32_t playerId = 0;
+    uint32_t styleEpoch = 0;
+    uint8_t styleKind = 0;
+    uint8_t animation = 0;
+    uint8_t direction = 0;
+    uint8_t colorCount = 0;
+    float rainbowSpeed = 1.0f;
+    struct VipStyleColor
+    {
+        uint8_t r = 158;
+        uint8_t g = 158;
+        uint8_t b = 158;
+    };
+    VipStyleColor colors[MAX_VIP_STYLE_COLORS];
+};
+
+static_assert(sizeof(VipStyleEventPacket) <= 200, "VipStyleEventPacket is too large");
 
 struct NpcDamageRequestPacket
 {
