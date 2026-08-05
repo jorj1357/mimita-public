@@ -68,7 +68,7 @@
 
   "remote_motion_smoothing": {
     "comment": "Post-interpolation motion filter on rendered remote bodies. render_filter: direct (no smoothing) | bounded (converge discontinuities over a few frames; normal motion passes through) | spring (always-on critically-damped, literally cannot snap, slight follow-lag) | hybrid (velocity-feed-forward spring: spring's zero-snap PLUS crisp tracking of fast/up-down motion with ~zero lag) | linear (CS-style delayed interpolation: render linear_delay_ticks packets behind the newest and always slide linearly between the two bracketing snapshots; never renders the newest directly; the delay is a loss buffer that hides up to linear_delay_ticks lost packets).",
-    "render_filter": "hybrid",
+    "render_filter": "spring",
     "correction_max_step_units_per_second": 100.0,
     "correction_min_delta_units": 0.05,
     "spring_stiffness": 120.0,
@@ -82,7 +82,7 @@
     "filter_max_step_units_per_second": 0.0,
     "filter_clamp_z_below_target": true,
     "linear_delay_ticks": 6,
-    "linear_hold_on_dry": true
+    "linear_hold_on_dry": false
   },
 
   "death_effects": {
