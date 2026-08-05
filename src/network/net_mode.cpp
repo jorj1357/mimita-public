@@ -41,6 +41,12 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
             options.sessionToken = argv[++i];
         else if (std::strcmp(argv[i], "--map") == 0 && i + 1 < argc)
             options.mapName = argv[++i];
+        else if (std::strcmp(argv[i], "--host-player") == 0 && i + 1 < argc)
+            options.hostPlayerName = argv[++i];
+        else if (std::strcmp(argv[i], "--max-players") == 0 && i + 1 < argc)
+            options.maxPlayers = (uint32_t)std::max(1, std::atoi(argv[++i]));
+        else if (std::strcmp(argv[i], "--password-protected") == 0 && i + 1 < argc)
+            options.passwordProtected = std::strcmp(argv[++i], "1") == 0;
         else if (std::strcmp(argv[i], "--npcs") == 0 && i + 1 < argc)
             options.npcCount = (uint32_t)std::max(0, std::atoi(argv[++i]));
         else if (std::strcmp(argv[i], "--no-npcs") == 0)

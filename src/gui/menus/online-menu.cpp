@@ -9,10 +9,12 @@
 #include "../../avatar/avatar-editor-dropdown.h"
 #include "../../network/multiplayer-context.h"
 #include "../../network/coordinator-client.h"
+#include "../../network/server-browser.h"
 #include "../../network/server.h"
 #include "../../auth/auth-system.h"
 #include <cstdio>
 #include <cstring>
+#include <cctype>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -24,6 +26,214 @@ bool serverRunning = false;
 std::string serverCodeDisplay;
 bool mapListScanned = false;
 std::string mapItemsCache;
+bool browserWsaStarted = false;
+bool browserWasActive = false;
+UIScrollState gServerListScroll;
+
+// Human-readable uptime: "3h 02m", "12m 05s", "45s".
+static std::string formatUptime(uint64_t secs)
+{
+    uint64_t h = secs / 3600;
+    uint64_t m = (secs % 3600) / 60;
+    uint64_t s = secs % 60;
+    char buf[48];
+    if (h > 0) snprintf(buf, sizeof(buf), "%lluh %02llum", (unsigned long long)h, (unsigned long long)m);
+    else if (m > 0) snprintf(buf, sizeof(buf), "%llum %02llus", (unsigned long long)m, (unsigned long long)s);
+    else snprintf(buf, sizeof(buf), "%llus", (unsigned long long)s);
+    return std::string(buf);
+}
+
+// ── Server browser sort modes ────────────────────────────────────────
+enum class ServerSortMode
+{
+    NameAz,
+    NameZa,
+    PingLow,
+    PingHigh,
+    PlayersMost,
+    PlayersLeast,
+    UptimeLong,
+    UptimeShort
+};
+
+static ServerSortMode serverSortModeFromBinding(const std::string& s)
+{
+    if (s == "Name Z-A") return ServerSortMode::NameZa;
+    if (s == "Ping (low)") return ServerSortMode::PingLow;
+    if (s == "Ping (high)") return ServerSortMode::PingHigh;
+    if (s == "Players (most)") return ServerSortMode::PlayersMost;
+    if (s == "Players (least)") return ServerSortMode::PlayersLeast;
+    if (s == "Uptime (long)") return ServerSortMode::UptimeLong;
+    if (s == "Uptime (short)") return ServerSortMode::UptimeShort;
+    return ServerSortMode::NameAz;
+}
+
+static std::string lowercaseName(const std::string& s)
+{
+    std::string out = s;
+    for (char& c : out)
+        c = (char)std::tolower((unsigned char)c);
+    return out;
+}
+
+// Sort a copy of the browser list by the selected mode. Unreachable servers
+// (ping "-") always sink below reachable ones for ping-based sorts.
+static void sortServerEntries(std::vector<MimitaNet::ServerBrowserEntry>& entries,
+                              ServerSortMode mode)
+{
+    auto byName = [](const MimitaNet::ServerBrowserEntry& a,
+                     const MimitaNet::ServerBrowserEntry& b) {
+        int cmp = lowercaseName(a.serverName).compare(lowercaseName(b.serverName));
+        if (cmp != 0) return cmp < 0;
+        return a.code < b.code;
+    };
+    auto byPing = [](const MimitaNet::ServerBrowserEntry& a,
+                     const MimitaNet::ServerBrowserEntry& b) {
+        if (a.ping.reachable != b.ping.reachable)
+            return a.ping.reachable;
+        if (!a.ping.reachable) return false;
+        return a.ping.pingMs < b.ping.pingMs;
+    };
+
+    switch (mode)
+    {
+        case ServerSortMode::NameZa:
+            std::sort(entries.begin(), entries.end(),
+                [&](const MimitaNet::ServerBrowserEntry& a, const MimitaNet::ServerBrowserEntry& b) {
+                    return byName(b, a);
+                });
+            break;
+        case ServerSortMode::PingLow:
+            std::sort(entries.begin(), entries.end(), byPing);
+            break;
+        case ServerSortMode::PingHigh:
+            std::sort(entries.begin(), entries.end(),
+                [&](const MimitaNet::ServerBrowserEntry& a, const MimitaNet::ServerBrowserEntry& b) {
+                    return byPing(b, a);
+                });
+            break;
+        case ServerSortMode::PlayersMost:
+            std::sort(entries.begin(), entries.end(),
+                [](const MimitaNet::ServerBrowserEntry& a, const MimitaNet::ServerBrowserEntry& b) {
+                    return a.players > b.players;
+                });
+            break;
+        case ServerSortMode::PlayersLeast:
+            std::sort(entries.begin(), entries.end(),
+                [](const MimitaNet::ServerBrowserEntry& a, const MimitaNet::ServerBrowserEntry& b) {
+                    return a.players < b.players;
+                });
+            break;
+        case ServerSortMode::UptimeLong:
+            std::sort(entries.begin(), entries.end(),
+                [](const MimitaNet::ServerBrowserEntry& a, const MimitaNet::ServerBrowserEntry& b) {
+                    return a.uptimeSeconds > b.uptimeSeconds;
+                });
+            break;
+        case ServerSortMode::UptimeShort:
+            std::sort(entries.begin(), entries.end(),
+                [](const MimitaNet::ServerBrowserEntry& a, const MimitaNet::ServerBrowserEntry& b) {
+                    return a.uptimeSeconds < b.uptimeSeconds;
+                });
+            break;
+        case ServerSortMode::NameAz:
+        default:
+            std::sort(entries.begin(), entries.end(), byName);
+            break;
+    }
+}
+
+// Draw the PUBLIC SERVERS browser: fixed header + one scrollable row per server.
+static void drawServerBrowser(GLFWwindow* win, OnlineMenuResult& r, const GuiLayout& layout,
+                              const std::vector<MimitaNet::ServerBrowserEntry>& entries)
+{
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+
+    UIRect listRect = {40.0f, 720.0f, 1840.0f, 310.0f};
+    const GuiElement* listElem = layout.get("publicServersList");
+    if (listElem)
+        listRect = {listElem->x, listElem->y, listElem->w, listElem->h};
+    if (listRect.w <= 0.0f || listRect.h <= 0.0f)
+        return;
+
+    const glm::vec4 headerText = {0.7f, 0.8f, 0.95f, 1.0f};
+    const glm::vec4 dimText = {0.6f, 0.65f, 0.75f, 1.0f};
+    const glm::vec4 pingGood = {0.3f, 1.0f, 0.4f, 1.0f};
+    const glm::vec4 pingBad = {0.5f, 0.5f, 0.55f, 1.0f};
+    const float textScale = 0.28f;
+    const float rowH = 44.0f;
+
+    const float xName = listRect.x + 10.0f;
+    const float xCode = listRect.x + 400.0f;
+    const float xPing = listRect.x + 540.0f;
+    const float xHost = listRect.x + 640.0f;
+    const float xPlayers = listRect.x + 990.0f;
+    const float xUptime = listRect.x + 1110.0f;
+    const float joinW = 150.0f;
+    const float joinX = listRect.x + listRect.w - joinW - 10.0f;
+
+    // Fixed column header above the scroll area
+    {
+        float hy = listRect.y + 2.0f;
+        uiDrawText("SERVER", cs.designToScreenX(xName), cs.designToScreenY(hy), textScale, headerText);
+        uiDrawText("ID", cs.designToScreenX(xCode), cs.designToScreenY(hy), textScale, headerText);
+        uiDrawText("PING", cs.designToScreenX(xPing), cs.designToScreenY(hy), textScale, headerText);
+        uiDrawText("HOST", cs.designToScreenX(xHost), cs.designToScreenY(hy), textScale, headerText);
+        uiDrawText("PLAYERS", cs.designToScreenX(xPlayers), cs.designToScreenY(hy), textScale, headerText);
+        uiDrawText("UPTIME", cs.designToScreenX(xUptime), cs.designToScreenY(hy), textScale, headerText);
+    }
+
+    // Scrollable rows
+    UIRect scrollArea = {listRect.x, listRect.y + 26.0f, listRect.w, listRect.h - 26.0f};
+    float contentHeight = std::max(listRect.h - 26.0f, (float)entries.size() * rowH + 8.0f);
+    uiBeginScrollArea(win, scrollArea, contentHeight, gServerListScroll);
+
+    const float contentTop = listRect.y + 30.0f;
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        const MimitaNet::ServerBrowserEntry& e = entries[i];
+        float y = contentTop + (float)i * rowH;
+
+        glm::vec4 rowBg = (i % 2) == 0
+            ? glm::vec4(0.06f, 0.07f, 0.09f, 0.6f)
+            : glm::vec4(0.05f, 0.055f, 0.075f, 0.6f);
+        uiDrawRect(cs.designToScreen({listRect.x + 4.0f, y, listRect.w - 8.0f, rowH - 4.0f}),
+                   rowBg, "server-row");
+
+        float ty = y + 10.0f;
+        uiDrawText(e.serverName.c_str(), cs.designToScreenX(xName), cs.designToScreenY(ty), textScale, dimText);
+        uiDrawText(e.code.c_str(), cs.designToScreenX(xCode), cs.designToScreenY(ty), textScale, dimText);
+
+        char pingBuf[32];
+        if (e.ping.reachable) snprintf(pingBuf, sizeof(pingBuf), "%ums", e.ping.pingMs);
+        else snprintf(pingBuf, sizeof(pingBuf), "-");
+        uiDrawText(pingBuf, cs.designToScreenX(xPing), cs.designToScreenY(ty), textScale,
+                   e.ping.reachable ? pingGood : pingBad);
+
+        uiDrawText(e.hostPlayerName.empty() ? "-" : e.hostPlayerName.c_str(),
+                   cs.designToScreenX(xHost), cs.designToScreenY(ty), textScale, dimText);
+
+        char playersBuf[64];
+        snprintf(playersBuf, sizeof(playersBuf), "%d/%d", e.players, e.maxPlayers);
+        uiDrawText(playersBuf, cs.designToScreenX(xPlayers), cs.designToScreenY(ty), textScale, dimText);
+
+        uiDrawText(formatUptime(e.uptimeSeconds).c_str(), cs.designToScreenX(xUptime),
+                   cs.designToScreenY(ty), textScale, dimText);
+
+        std::string btnId = "serverbrowser_join_" + e.code;
+        UIButtonState bs = uiButton(win, "JOIN",
+            {joinX, y + 3.0f, joinW, rowH - 10.0f},
+            {0.15f, 0.55f, 0.25f, 1.0f}, btnId.c_str());
+        if (bs.clicked)
+        {
+            printf("[SERVER BROWSER] join code=%s\n", e.code.c_str());
+            r.roomCode = e.code;
+            r.connectToServer = true;
+        }
+    }
+
+    uiEndScrollArea(scrollArea, contentHeight, gServerListScroll);
+}
 
 void ensureMapListScanned()
 {
@@ -112,6 +322,17 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
     // Sync bindings with actual state
     GuiBindings& b = GuiBindings::instance();
 
+    // Server browser: start once, refresh when the menu opens, tick each frame.
+    if (!browserWsaStarted)
+    {
+        MimitaNet::serverBrowserInit();
+        browserWsaStarted = true;
+    }
+    if (menuActive && !browserWasActive)
+        MimitaNet::serverBrowserRequestRefresh();
+    browserWasActive = menuActive;
+    MimitaNet::serverBrowserTick();
+
     ensureMapListScanned();
 
     b.set("server.code", serverCodeDisplay);
@@ -143,6 +364,9 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
 
         if (b.get("join.code_placeholder").empty())
             b.set("join.code_placeholder", "______");
+
+        if (b.get("server.sort").empty())
+            b.set("server.sort", "Name A-Z");
 
         defaultsInitialized = true;
 
@@ -233,6 +457,15 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
         {
             r.goBack = true;
         }
+    }
+
+    // Populate the PUBLIC SERVERS panel: clear fallback text when rows exist,
+    // sort by the selected mode, then draw the server browser rows over the panel.
+    {
+        std::vector<MimitaNet::ServerBrowserEntry> entries = MimitaNet::serverBrowserEntries();
+        sortServerEntries(entries, serverSortModeFromBinding(b.get("server.sort")));
+        b.set("server.list", entries.empty() ? "No public servers found. Start one above!" : " ");
+        drawServerBrowser(win, r, layout, entries);
     }
 
     // Enter-on-submit check: if Enter was pressed in join code input, trigger join

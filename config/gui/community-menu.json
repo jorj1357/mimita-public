@@ -286,6 +286,23 @@
       "text": "PUBLIC SERVERS", "fontSize": 0.42,
       "textColor": [0.85, 0.9, 0.95, 1.0]
     },
+    "sortLabel": {
+      "type": "text", "layer": 1, "x": 1420, "y": 684, "width": 60, "height": 26,
+      "text": "Sort:", "fontSize": 0.28,
+      "textColor": [0.75, 0.8, 0.9, 1.0]
+    },
+    "sortDropdown": {
+      "type": "dropdown", "layer": 2,
+      "x": 1480, "y": 680, "width": 400, "height": 30,
+      "binding": "server.sort",
+      "fontSize": 0.28,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.12, 0.14, 0.18, 1.0],
+      "outlineColor": [0.3, 0.5, 0.8, 0.5],
+      "hoverColor": [0.18, 0.2, 0.28, 1.0],
+      "textAlign": "left",
+      "backgroundImage": "Name A-Z,Name Z-A,Ping (low),Ping (high),Players (most),Players (least),Uptime (long),Uptime (short)"
+    },
     "publicServersList": {
       "type": "server_list", "layer": 1,
       "x": 40, "y": 720, "width": 1840, "height": 310,

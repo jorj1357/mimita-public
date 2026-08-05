@@ -105,7 +105,16 @@ bool initServerIceListener(ListenServerState& state)
     state.iceSessionId = "host_" + std::to_string(GetCurrentProcessId())
         + "_" + std::to_string(nowMs());
 
-    auto hostResult = coordinatorIceHost(state.iceSessionId, agent->localSdp());
+    IceHostMetadata metadata;
+    metadata.serverName = state.serverName.empty() ? "MiMITA Server" : state.serverName;
+    metadata.map = state.mapName.empty() ? "funworldv3" : state.mapName;
+    metadata.gamemode = state.gameMode.empty() ? "sandbox" : state.gameMode;
+    metadata.maxPlayers = (int)state.maxPlayers;
+    metadata.passwordProtected = state.passwordProtected;
+    metadata.hostPlayerName = state.hostPlayerName;
+    metadata.port = state.port;
+
+    auto hostResult = coordinatorIceHost(state.iceSessionId, agent->localSdp(), metadata);
     if (!hostResult.ok)
     {
         printf("[SERVER ICE] FATAL: coordinatorIceHost failed\n");
@@ -133,7 +142,7 @@ bool initServerIceListener(ListenServerState& state)
 
 // ── Poll coordinator for new requests + advance existing peers ───────
 
-void tickIceCoordinator(ListenServerState& state)
+void tickIceCoordinator(ListenServerState& state, size_t playerCount)
 {
     static uint64_t s_lastDebugLog = 0;
     static uint64_t s_lastEntryLog = 0;
@@ -162,7 +171,7 @@ void tickIceCoordinator(ListenServerState& state)
     state.lastIceCoordinatorPollMs = nowDbg;
 
     // Non-blocking: poll coordinator for pending client requests
-    auto pending = coordinatorIceHostPoll(state.serverCode, state.iceSessionId);
+    auto pending = coordinatorIceHostPoll(state.serverCode, state.iceSessionId, (int)playerCount);
     if (pending.hasRequest)
     {
         // Validate SDP before creating agent

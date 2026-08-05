@@ -26,6 +26,9 @@ struct LaunchOptions
     std::string name;
     std::string sessionToken;
     std::string mapName;
+    std::string hostPlayerName;
+    uint32_t maxPlayers = 999;
+    bool passwordProtected = false;
     bool npcsEnabled = true;
     uint32_t npcCount = 3;
     uint32_t timeoutSecs = 0;
