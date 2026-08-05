@@ -143,8 +143,8 @@ bool require(bool condition, const char* message)
 
 int main()
 {
-    static_assert(PROTOCOL_VERSION == 26,
-                  "VIP join-ticket layout requires protocol 26");
+    static_assert(PROTOCOL_VERSION == 27,
+                  "VIP style event layout requires protocol 27");
     static_assert(sizeof(InputPacket) == 144,
                   "InputPacket layout changed unexpectedly");
     static_assert(sizeof(JoinRequestPacket) == 180,

@@ -42,12 +42,28 @@ void KillfeedManager::onKillStyled(const std::string& killerName,
                                    const std::string& weaponName,
                                    bool fromReplay)
 {
+    onKillStyled(killerName, killerVipAppearance, MimitaVip::VipStyleDetail{},
+                 victimName, victimVipAppearance, MimitaVip::VipStyleDetail{},
+                 weaponName, fromReplay);
+}
+
+void KillfeedManager::onKillStyled(const std::string& killerName,
+                                   const MimitaVip::VipAppearance& killerVipAppearance,
+                                   const MimitaVip::VipStyleDetail& killerVipStyleDetail,
+                                   const std::string& victimName,
+                                   const MimitaVip::VipAppearance& victimVipAppearance,
+                                   const MimitaVip::VipStyleDetail& victimVipStyleDetail,
+                                   const std::string& weaponName,
+                                   bool fromReplay)
+{
     KillfeedEntry entry;
     entry.killerName = killerName;
     entry.victimName = victimName;
     entry.weaponName = weaponName;
     entry.killerVipAppearance = killerVipAppearance;
     entry.victimVipAppearance = victimVipAppearance;
+    entry.killerVipStyleDetail = killerVipStyleDetail;
+    entry.victimVipStyleDetail = victimVipStyleDetail;
     entry.age = 0.0f;
     entry.opacity = STILL_OPACITY;
     mEntries.push_back(std::move(entry));
@@ -100,7 +116,8 @@ void KillfeedManager::render()
             VipNameDrawOptions nameOptions;
             nameOptions.scale = ENTRY_FONT_SCALE;
             nameOptions.alpha = textOpacity;
-            nameOptions.phase = (float)i;
+            nameOptions.phase = 0.0f;
+            nameOptions.detail = &entry.killerVipStyleDetail;
             const char* killedText = " killed ";
             const char* withText = " with ";
             const float totalW =
@@ -115,6 +132,7 @@ void KillfeedManager::render()
             x += vipMeasureStyledName(entry.killerName, entry.killerVipAppearance, nameOptions);
             uiDrawText(killedText, x, y, ENTRY_FONT_SCALE, color);
             x += uiMeasureText(killedText, ENTRY_FONT_SCALE);
+            nameOptions.detail = &entry.victimVipStyleDetail;
             vipDrawStyledName(entry.victimName, entry.victimVipAppearance, x, y, nameOptions);
             x += vipMeasureStyledName(entry.victimName, entry.victimVipAppearance, nameOptions);
             uiDrawText(withText, x, y, ENTRY_FONT_SCALE, color);

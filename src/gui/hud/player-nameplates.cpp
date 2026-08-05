@@ -261,6 +261,7 @@ HealthbarRenderResult drawPlayerHealthbar(
             nameOptions.scale = 0.28f;
             nameOptions.alpha = textColor.a;
             nameOptions.phase = (float)gFrameCounter / 8.0f;
+            nameOptions.detail = &player.vipStyleDetail;
             vipDrawStyledNameCentered(
                 player.username, player.vipAppearance, x, y - 31.0f,
                 nameOptions);

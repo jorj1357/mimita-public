@@ -33,6 +33,7 @@ struct ChatHistoryEntry
     uint8_t channel = 0;
     std::string senderName;
     MimitaVip::VipAppearance senderVipAppearance;
+    MimitaVip::VipStyleDetail senderVipStyleDetail;
     std::string text;
     bool muted = false; // local mute flag, not networked
 };

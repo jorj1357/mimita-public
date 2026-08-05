@@ -381,6 +381,7 @@ public:
     int revolverCylinder = 6;
     int revolverReserve = 1337;
     bool dead = false;
+    bool netPredictedDead = false;  // local client prediction; server confirm clears/rolls back
     bool proceduralFrozen = false;
     float respawnTimer = 0.0f;
     float spawnFlashTimer = 0.0f;

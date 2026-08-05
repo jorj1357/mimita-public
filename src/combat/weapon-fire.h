@@ -136,11 +136,11 @@ struct BeamCollisionResult {
     glm::vec3 hitNormal;
     float localHeight;
     uint32_t remoteTargetId;
-    const Player* remoteVictim;
+    Player* remoteVictim;
     // Remote NPC replicas are hit-tested like remote players so the local
     // predicted tracer stops on the visible NPC instead of the wall behind it.
     uint32_t remoteNpcTargetId;
-    const Player* remoteNpcVictim;
+    Player* remoteNpcVictim;
 
     // Exact surface contact point (on the triangle/entity surface)
     glm::vec3 hitPosition{0.0f};
@@ -193,12 +193,12 @@ void processRemotePlayerHit(
     float nearest,
     Player& shooter,
     uint32_t remoteTargetId,
-    const Player* remoteVictim);
+    Player* remoteVictim);
 
-// Remote NPC hit feedback is server-authoritative: the server broadcasts the
-// NpcDamageEvent (hitmarker, blood, damage) only for validated hits. This only
-// records the local predicted tracer endpoint so the client's beam stops on
-// the visible NPC. It does NOT apply damage or spawn local hit VFX.
+// Remote NPC hit feedback is locally predicted: the client shows the hitmarker,
+// blood, and (on a lethal predicted hit) the death immediately. The server's
+// NpcDamageEvent remains authoritative for real damage/kill and reconciles the
+// prediction (suppressing duplicates and rolling back if the server disagrees).
 void processRemoteNpcHit(
     RevolverShotResult& result,
     const WeaponDefinition& def,
@@ -206,7 +206,8 @@ void processRemoteNpcHit(
     const glm::vec3& hitEnd,
     float nearest,
     Player& shooter,
-    uint32_t remoteNpcTargetId);
+    uint32_t remoteNpcTargetId,
+    Player* remoteNpc);
 
 void processPlayerHit(
     RevolverShotResult& result,

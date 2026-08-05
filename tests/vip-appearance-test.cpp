@@ -2,6 +2,7 @@
 /* purpose
 * Tests compact VIP appearance defaults and byte sanitization.
 * Covers the packet-safe tier, style, color, and flag helpers used by client and server.
+* Also covers the full VipStyleDetail wire conversion used by the style event packet.
 * Keeps VIP rendering authority regressions catchable without launching the game.
 * DOES NOT contact the website, Stripe, database, or multiplayer server.
 * DOES NOT render UI or load badge image assets.
@@ -54,5 +55,46 @@ int main()
     assert(r == 25 && g == 25 && b == 25);
     assert((flags & MimitaVip::VIP_APPEARANCE_STAFF_OVERRIDE) != 0);
 
+    // ── Full style detail wire conversion ─────────────────────────────
+    {
+        MimitaVip::VipStyleDetail detail;
+        detail.styleKind = MimitaVip::VIP_STYLE_PER_LETTER;
+        detail.animation = MimitaVip::VIP_ANIMATION_NONE;
+        detail.direction = MimitaVip::VIP_DIRECTION_RTL;
+        detail.rainbowSpeed = 2.0f;
+        detail.colors.push_back({1.0f, 0.0f, 0.0f, 1.0f});
+        detail.colors.push_back({0.0f, 0.0f, 1.0f, 1.0f});
+        detail.colors.push_back({0.0f, 1.0f, 0.0f, 1.0f});
+
+        uint8_t colors[3 * MimitaVip::VIP_STYLE_MAX_COLORS] = {};
+        uint8_t kind = 0, anim = 0, dir = 0, count = 0;
+        float speed = 0.0f;
+        count = MimitaVip::copyStyleDetailToWire(
+            detail, kind, anim, dir, speed, colors);
+        assert(kind == MimitaVip::VIP_STYLE_PER_LETTER);
+        assert(anim == MimitaVip::VIP_ANIMATION_NONE);
+        assert(dir == MimitaVip::VIP_DIRECTION_RTL);
+        assert(speed == 2.0f);
+        assert(count == 3);
+        assert(colors[0] == 255 && colors[1] == 0 && colors[2] == 0);
+
+        const MimitaVip::VipStyleDetail roundtrip =
+            MimitaVip::styleDetailFromWire(kind, anim, dir, speed, colors, count, 7);
+        assert(roundtrip.valid());
+        assert(roundtrip.styleKind == MimitaVip::VIP_STYLE_PER_LETTER);
+        assert(roundtrip.animation == MimitaVip::VIP_ANIMATION_NONE);
+        assert(roundtrip.direction == MimitaVip::VIP_DIRECTION_RTL);
+        assert(roundtrip.rainbowSpeed == 2.0f);
+        assert(roundtrip.styleEpoch == 7);
+        assert(roundtrip.colorCount() == 3);
+        assert(roundtrip.colors[2].g > 0.99f);
+
+        // Out-of-range bytes sanitize back to free/none.
+        const MimitaVip::VipStyleDetail bad =
+            MimitaVip::styleDetailFromWire(99, 99, 99, 99.0f, colors, 0, 1);
+        assert(!bad.valid());
+    }
+
     return 0;
 }
+

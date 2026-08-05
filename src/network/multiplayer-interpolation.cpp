@@ -397,6 +397,7 @@ static void resetPresentationAfterRespawn(Player& player, const SnapshotTransfor
 {
     player.proceduralFrozen = false;
     player.dead = false;
+    player.netPredictedDead = false;
     player.deathAnim = Player::DeathAnimState{};
     player.currentHp = target.health;
 
@@ -679,6 +680,20 @@ void updateRenderedReplica(
     player.vel = render.velocity;
     player.currentHp = render.health;
     player.dead = render.health <= 0;
+
+    // Predicted-death rollback: a snapshot showing the replica alive revives it
+    // and clears the local prediction (the server is authoritative).
+    if (player.netPredictedDead && render.health > 0)
+    {
+        player.dead = false;
+        player.netPredictedDead = false;
+        player.proceduralFrozen = false;
+        player.respawnTimer = 0.0f;
+        player.deathAnim = Player::DeathAnimState{};
+        Debug::log(Debug::Category::Networking,
+                   "[NET PREDICTED DEATH ROLLBACK] entityId=%u health=%d snapshot-alive",
+                   entityId, render.health);
+    }
 
     // ── Death effect (snapshot-driven, loss-proof) ───────────────────
     // Detect the >0 → <=0 health transition in the render stream and spawn the

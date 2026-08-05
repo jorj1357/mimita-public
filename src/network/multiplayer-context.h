@@ -268,6 +268,9 @@ struct MultiplayerContext
     std::unordered_map<uint32_t, EntityInterpolationState> remotePlayerInterpolation;
     std::unordered_map<uint32_t, EntityInterpolationState> remoteNpcInterpolation;
     std::unordered_map<uint32_t, PlayerInfo> playerRegistry;
+    // Style events that arrived before the owning player's first snapshot.
+    // Applied when the registry entry is created/refreshed.
+    std::unordered_map<uint32_t, MimitaVip::VipStyleDetail> pendingVipStyles;
     glm::vec3 localServerPosition{0.0f};
     glm::vec3 localServerVelocity{0.0f};
     float localServerYaw = 0.0f;
@@ -473,6 +476,12 @@ struct MultiplayerContext
         bool resolved = false;
     };
     std::unordered_map<uint32_t, PendingHitClaim> pendingHitClaims;
+
+    // ── Predicted remote-NPC hit timestamps ─────────────────────────────
+    // npcEntityId -> nowMs() of the most recent locally-predicted hit. Used by
+    // mpProcessNpcDamageEventPacket to suppress the server-confirm hitmarker/
+    // killfeed that the local shooter already predicted (avoiding duplicates).
+    std::unordered_map<uint32_t, uint64_t> predictedNpcHitMs;
 
 
     // ── Pending authoritative spawn (queued outside mpTick for player-scoped weapon reconciliation) ──

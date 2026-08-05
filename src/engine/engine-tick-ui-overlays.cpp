@@ -67,8 +67,7 @@ extern DuelManager gDuelManager;
 extern BombTagManager gBombTagManager;
 extern FramePacer gFramePacer;
 extern bool gReplayExportRenderMode;
-extern bool gReplayCinematicMode;
-extern bool gRoomCodeShow;
+extern bool gReplayCinematicMode;extern bool gRoomCodeShow;
 
 void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
 {
@@ -215,6 +214,9 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
 
     if (mpContext.active && mpContext.showPlayerList)
     {
+        static int gPlayerListFrame = 0;
+        ++gPlayerListFrame;
+        const float listPhase = (float)gPlayerListFrame / 8.0f;
         float listX = uiScreenW() * 0.5f - 160.0f;
         float listY = uiScreenH() * 0.25f;
         float listW = 320.0f;
@@ -238,9 +240,13 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         {
             const char* localName = player.username.empty() ? "you" : player.username.c_str();
             MimitaVip::VipAppearance localVip = MimitaVip::freeAppearance();
+            MimitaVip::VipStyleDetail localVipDetail;
             auto localInfo = mpContext.playerRegistry.find(mpContext.localPlayerId);
             if (localInfo != mpContext.playerRegistry.end())
+            {
                 localVip = localInfo->second.vipAppearance;
+                localVipDetail = localInfo->second.vipStyleDetail;
+            }
             char localPrefix[32];
             snprintf(localPrefix, sizeof(localPrefix), "%u   ", mpContext.localPlayerId);
             float x = listX + 10.0f;
@@ -249,6 +255,8 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             VipNameDrawOptions nameOptions;
             nameOptions.scale = 0.32f;
             nameOptions.alpha = 1.0f;
+            nameOptions.phase = listPhase;
+            nameOptions.detail = &localVipDetail;
             vipDrawStyledName(localName, localVip, x, y, nameOptions);
             x += vipMeasureStyledName(localName, localVip, nameOptions);
             char localPing[48];
@@ -270,6 +278,8 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             VipNameDrawOptions nameOptions;
             nameOptions.scale = 0.32f;
             nameOptions.alpha = 1.0f;
+            nameOptions.phase = listPhase;
+            nameOptions.detail = &kv.second.vipStyleDetail;
             vipDrawStyledName(pname, kv.second.vipAppearance, x, y, nameOptions);
             x += vipMeasureStyledName(pname, kv.second.vipAppearance, nameOptions);
             char remotePing[32];

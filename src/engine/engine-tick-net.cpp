@@ -266,7 +266,8 @@ void engineTickNet(Engine& engine, float dt)
                 rr.reloadCompleteTick,
                 rr.stateRevision,
                 rr.spawnGeneration,
-                "reload-result");
+                "reload-result",
+                /*applyAmmo=*/false);
 
             auto pendingIt = mpContext.pendingReloadRequests.find(rr.requestId);
             if (pendingIt != mpContext.pendingReloadRequests.end())
@@ -296,7 +297,8 @@ void engineTickNet(Engine& engine, float dt)
                 0,
                 ar.stateRevision,
                 ar.spawnGeneration,
-                ar.accepted ? "attack-result-accepted" : "attack-result-rejected");
+                ar.accepted ? "attack-result-accepted" : "attack-result-rejected",
+                /*applyAmmo=*/false);
         }
         mpContext.pendingAttackResults.clear();
 
@@ -615,6 +617,7 @@ void engineTickNet(Engine& engine, float dt)
                     event.targetPlayerId);
                 if (remote != mpContext.remotePlayers.end())
                 {
+                    remote->second.netPredictedDead = false;
                     remote->second.dead = false;
                     DeathSystem::instance().kill(
                         remote->second,

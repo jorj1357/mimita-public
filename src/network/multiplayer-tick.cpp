@@ -232,6 +232,13 @@ static void processSnapshotEntities(
             localInfo.vipAppearance = vipAppearanceFromEntity(entity);
             if (entity.vipStyleEpoch != 0)
                 localInfo.vipStyleEpoch = entity.vipStyleEpoch;
+            auto pendingLocal = ctx.pendingVipStyles.find(entity.networkEntityId);
+            if (pendingLocal != ctx.pendingVipStyles.end())
+            {
+                localInfo.vipStyleDetail = pendingLocal->second;
+                localInfo.vipStyleEpoch = pendingLocal->second.styleEpoch;
+                ctx.pendingVipStyles.erase(pendingLocal);
+            }
             static uint64_t lastLocalSnapshotLogMs = 0;
             uint64_t nowLocalSnap = nowMs();
             if (nowLocalSnap - lastLocalSnapshotLogMs >= 250)
@@ -267,6 +274,13 @@ static void processSnapshotEntities(
             remoteInfo.vipAppearance = vipAppearanceFromEntity(entity);
             if (entity.vipStyleEpoch != 0)
                 remoteInfo.vipStyleEpoch = entity.vipStyleEpoch;
+            auto pendingRemote = ctx.pendingVipStyles.find(entity.networkEntityId);
+            if (pendingRemote != ctx.pendingVipStyles.end())
+            {
+                remoteInfo.vipStyleDetail = pendingRemote->second;
+                remoteInfo.vipStyleEpoch = pendingRemote->second.styleEpoch;
+                ctx.pendingVipStyles.erase(pendingRemote);
+            }
         }
         else if (entity.entityType == ENTITY_NPC)
         {
@@ -1076,7 +1090,10 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             entry.muted = false;
             auto vipIt = ctx.playerRegistry.find(ev->senderEntityId);
             if (vipIt != ctx.playerRegistry.end())
+            {
                 entry.senderVipAppearance = vipIt->second.vipAppearance;
+                entry.senderVipStyleDetail = vipIt->second.vipStyleDetail;
+            }
 
             if (gpChatHistory)
                 gChatHistory.append(entry);
@@ -1116,6 +1133,38 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             Debug::log(Debug::Category::Chat, "[CHAT V2 RECV] messageId=%llu sender=%s tick=%llu\n",
                        (unsigned long long)ev->messageId, ev->senderName,
                        (unsigned long long)ev->serverTick);
+        }
+        else if (header->type == PACKET_VIP_STYLE_EVENT &&
+                 bytes >= (int)sizeof(VipStyleEventPacket))
+        {
+            const VipStyleEventPacket* ev =
+                reinterpret_cast<const VipStyleEventPacket*>(buffer);
+            const MimitaVip::VipStyleDetail detail = MimitaVip::styleDetailFromWire(
+                ev->styleKind, ev->animation, ev->direction, ev->rainbowSpeed,
+                reinterpret_cast<const uint8_t*>(ev->colors), ev->colorCount,
+                ev->styleEpoch);
+
+            auto it = ctx.playerRegistry.find(ev->playerId);
+            if (it != ctx.playerRegistry.end() &&
+                ev->styleEpoch >= it->second.vipStyleEpoch)
+            {
+                it->second.vipStyleDetail = detail;
+                it->second.vipStyleEpoch = ev->styleEpoch;
+            }
+            else if (it == ctx.playerRegistry.end())
+            {
+                ctx.pendingVipStyles[ev->playerId] = detail;
+            }
+            auto rp = ctx.remotePlayers.find(ev->playerId);
+            if (rp != ctx.remotePlayers.end())
+                rp->second.vipStyleDetail = detail;
+            if (ev->playerId == ctx.localPlayerId && gpPlayer)
+                gpPlayer->vipStyleDetail = detail;
+
+            Debug::warn(Debug::Category::Vip,
+                "[VIP STYLE RX] player=%u epoch=%u kind=%u colors=%u anim=%u\n",
+                ev->playerId, ev->styleEpoch, (int)detail.styleKind,
+                (int)detail.colorCount(), (int)detail.animation);
         }
         else if (header->type == PACKET_GODBALL_STATE &&
                  bytes >= (int)sizeof(GodballStatePacket))

@@ -211,6 +211,8 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
                 VipNameDrawOptions nameOptions;
                 nameOptions.scale = nameSize;
                 nameOptions.alpha = 1.0f;
+                nameOptions.phase = 0.0f;
+                nameOptions.detail = &AuthSystem::instance().user().vipStyleDetail;
                 vipDrawStyledNameCentered(
                     display, AuthSystem::instance().user().vipAppearance,
                     cx, cy, nameOptions);

@@ -95,6 +95,7 @@
 #include "avatar/avatar.h"
 #include "avatar/avatar-commands.h"
 void registerCompetitiveCommands();
+void registerLeaderboardCommands();
 void registerCursorCommands();
 
 #include "avatar/avatar-menu.h"
@@ -466,6 +467,7 @@ void gameInitSubsystems(Engine& engine)
 
     registerDuelCommands();
     registerCompetitiveCommands();
+    registerLeaderboardCommands();
     registerCursorCommands();
 }
 

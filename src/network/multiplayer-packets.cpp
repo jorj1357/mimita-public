@@ -149,6 +149,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.processedReliableEventIds.clear();
     ctx.processedReliableEventOrder.clear();
     ctx.playerRegistry.clear();
+    ctx.pendingVipStyles.clear();
     ctx.predictedProjectileIds.clear();
     ctx.predictedExplosions.clear();
     ctx.remoteSwordStates.clear();
@@ -294,6 +295,7 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.projectileTerminals.clear();
     ctx.reliableEventSessionId = 0;
     ctx.playerRegistry.clear();
+    ctx.pendingVipStyles.clear();
     ctx.approvedLocalName.clear();
     ctx.hasLocalServerPosition = false;
     ctx.localPlayerReconciled = false;
@@ -952,6 +954,7 @@ void mpInstallIceConnectSuccess(MultiplayerContext& ctx, IceConnectStatus& statu
     ctx.interpolationClockStarted = false;
     ctx.networkProjectiles.clear();
     ctx.playerRegistry.clear();
+    ctx.pendingVipStyles.clear();
     ctx.approvedLocalName.clear();
     ctx.hasLocalServerPosition = false;
     ctx.localPlayerReconciled = false;

@@ -365,7 +365,10 @@ BeamCollisionResult collideBeam(
                 result.nearest = d;
                 result.hitWorld = false;
                 result.victim = nullptr;
-                result.remoteVictim = &remote;
+                // The replica is mutated after collideBeam returns (predicted
+                // death); the map owns mutable Player values despite the const
+                // trace facade.
+                result.remoteVictim = const_cast<Player*>(&remote);
                 result.remoteTargetId = entry.first;
                 result.remoteNpcVictim = nullptr;
                 result.remoteNpcTargetId = 0;

@@ -263,7 +263,8 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
             VipNameDrawOptions nameOptions;
             nameOptions.scale = textScale;
             nameOptions.alpha = alpha;
-            nameOptions.phase = (float)i;
+            nameOptions.phase = 0.0f;
+            nameOptions.detail = &entry.senderVipStyleDetail;
             vipDrawStyledName(entry.senderName, entry.senderVipAppearance,
                               cursorX, lineY, nameOptions);
             cursorX += vipMeasureStyledName(entry.senderName,

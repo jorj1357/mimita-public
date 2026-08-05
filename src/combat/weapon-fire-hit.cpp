@@ -94,7 +94,7 @@ RevolverShotResult tryFireHitscan(
     glm::vec3 hitNormal = beam.hitNormal;
     float localHeight = beam.localHeight;
     uint32_t remoteTargetId = beam.remoteTargetId;
-    const Player* remoteVictim = beam.remoteVictim;
+    Player* remoteVictim = beam.remoteVictim;
     uint32_t remoteNpcTargetId = beam.remoteNpcTargetId;
 
     // Use exact surface contact for visuals, entity hits, and world effects.
@@ -163,7 +163,8 @@ RevolverShotResult tryFireHitscan(
     } else if (remoteVictim) {
         processRemotePlayerHit(result, def, hitPart, hitNormal, result.end, shotDirection, nearest, shooter, remoteTargetId, remoteVictim);
     } else if (remoteNpcTargetId) {
-        processRemoteNpcHit(result, def, hitPart, result.end, nearest, shooter, remoteNpcTargetId);
+        processRemoteNpcHit(result, def, hitPart, result.end, nearest, shooter,
+                            remoteNpcTargetId, beam.remoteNpcVictim);
     } else if (hitWorld) {
         processWorldHit(result, def, result.end, worldNormal, shotDirection, shooter.username);
     } else if (aim.usesCameraTarget) {

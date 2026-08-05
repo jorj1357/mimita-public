@@ -769,16 +769,9 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
     }
 
     ServerPlayer::ServerWeaponRuntime& runtime = rtIt->second;
+    // Ammo is client-authoritative: the client owns its clip and never gets
+    // rejected for ammo. The server-side counter stays informational.
     const bool consumesAmmo = definition.magazineSize > 0;
-    if (consumesAmmo && runtime.magazineAmmo <= 0)
-    {
-        result.reason = 3;
-        result.magazineAmmo = runtime.magazineAmmo;
-        result.reserveAmmo = runtime.reserveAmmo;
-        result.nextAllowedFireTick = runtime.nextAllowedFireTick;
-        result.stateRevision = runtime.stateRevision;
-        return result;
-    }
 
     constexpr uint64_t COOLDOWN_GRACE_TICKS = 2;
     if (tick + COOLDOWN_GRACE_TICKS < runtime.nextAllowedFireTick)

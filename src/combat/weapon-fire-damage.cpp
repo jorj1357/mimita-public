@@ -13,14 +13,18 @@
 
 #include "audio/audio.h"
 #include "combat/weapon-audio.h"
+#include "config/ragdoll-death-config.h"
 #include "config/player-settings.h"
 #include "config/weapon-hitfx-config.h"
 #include "debug/debug-log.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "entities/player.h"
+#include "network/multiplayer-context.h"
 #include "npc/npc.h"
 #include "ui/hitmarker.h"
+
+extern MimitaNet::MultiplayerContext* gpMpContext;
 
 namespace WeaponFire {
 
@@ -35,6 +39,136 @@ static float limbMultiplier(const WeaponDefinition& def)
 {
     auto it = def.customParams.find("limbDamageMultiplier");
     return it != def.customParams.end() ? it->second : 0.75f;
+}
+
+// Predicted remote kill: show the death instantly on the local replica without
+// DeathSystem::kill's side effects (killfeed, heal, replay, duel tracking) —
+// those stay server-confirmed so they never double-fire. The server's
+// confirmed damage event remains authoritative and reconciles this (clear the
+// flag on agreement, or revive + disagreement on rollback).
+static void predictRemoteKill(Player& victim,
+                              const glm::vec3& direction,
+                              const std::string& actorType)
+{
+    if (victim.dead || victim.netPredictedDead)
+        return;
+    victim.netPredictedDead = true;
+
+    victim.vel = glm::vec3(0.0f);
+    victim.externalImpulse = glm::vec3(0.0f);
+    victim.inputWishMove = glm::vec2(0.0f);
+    victim.currentHp = 0;
+    victim.dead = true;
+    victim.proceduralFrozen = true;
+    victim.respawnTimer = 0.0f;
+
+    // Freeze aim/procedural pose (mirrors DeathSystem::kill prologue).
+    for (PhysicalBodyPart& part : victim.physicalBody.parts)
+    {
+        if (part.name == "leftArm" || part.name == "rightArm")
+        {
+            part.pose = ProceduralPose{};
+            part.perfectPose = ProceduralPose{};
+            part.translationSpring = SpringState{};
+            part.rotationSpring = SpringState{};
+        }
+    }
+    victim.syncLegacyStateToLayers();
+    victim.updateModelWorldTransforms();
+
+    const auto& cfg = RagdollDeathConfig::instance();
+    victim.deathAnim.active = true;
+    victim.deathAnim.tick = 0;
+    victim.deathAnim.totalTicks = cfg.totalTicks();
+    victim.deathAnim.startAlpha = cfg.startAlpha();
+    victim.deathAnim.endAlpha = cfg.endAlpha();
+    victim.deathAnim.startRotation = cfg.startRotation();
+    victim.deathAnim.endRotation = cfg.endRotation();
+    victim.deathAnim.frozenPosition = victim.pos;
+
+    glm::vec3 dir = glm::length(direction) > 0.001f
+        ? glm::normalize(direction) : glm::vec3(0.0f, 0.0f, -1.0f);
+    const auto& deCfg = HitEffects::config().deathEllipsoid;
+    if (deCfg.enabled)
+    {
+        EffectPartSystem::instance().spawnDeathEllipsoid(
+            victim.pos, dir, deCfg.length, deCfg.radius, deCfg.lifetime,
+            victim.sizeScale);
+    }
+    if (actorType == "npc")
+    {
+        AudioManager::instance().play(
+            {"npc_death", AudioCategory::NPC, true, victim.pos, 1.0f, 0.9f, 45.0f, 0});
+    }
+
+    Debug::log(Debug::Category::Networking,
+               "[NET PREDICTED KILL] victim=%s type=%s pos=(%.2f,%.2f,%.2f)",
+               victim.username.c_str(), actorType.c_str(),
+               victim.pos.x, victim.pos.y, victim.pos.z);
+}
+
+// Shared predicted hit presentation for remote targets: instant hitmarker,
+// blood/impact FX, and hit sound. Mirrors the server damage model so the
+// predicted damage number matches what the server will confirm.
+static void presentRemoteHit(const WeaponDefinition& def,
+                             const glm::vec3& hitEnd,
+                             const glm::vec3& hitNormal,
+                             const glm::vec3& shotDirection,
+                             float nearest,
+                             const std::string& hitPart,
+                             const std::string& shooterName,
+                             const std::string& victimName,
+                             int damage)
+{
+    hitmarker(damage);
+    if (GetPlayerSettings().debugCombat)
+        Debug::log(Debug::Category::Weapons,
+            "[HITMARKER] attacker=%s victim=%s show=1 reason=local_predicted_remote",
+            shooterName.c_str(), victimName.c_str());
+    {
+        HitEvent ev;
+        ev.position = hitEnd;
+        ev.normal = hitNormal;
+        ev.direction = shotDirection;
+        ev.hitEntity = true;
+        ev.damage = damage;
+        ev.attacker = shooterName;
+        ev.victim = victimName;
+        ev.weaponSource = def.id;
+        HitEffects::onHit(ev);
+    }
+    {
+        float dist = glm::length(hitEnd - audioListenerPosition());
+        float angleFactor = std::clamp(std::fabs(glm::dot(-shotDirection, hitNormal)), 0.15f, 1.0f);
+        float headMul = (hitPart == "head") ? 2.0f : 1.0f;
+        float severity = std::clamp(angleFactor * ((float)damage / 100.0f) * headMul, 0.0f, 1.0f);
+        float vol, pit;
+        const auto& sndCfg = WeaponHitFxConfig::instance().soundFor(def.id);
+        computeImpactAudio(sndCfg.baseVolume, dist, severity, vol, pit);
+        playWorldSound(def.soundHit, hitEnd, vol, pit, 60.0f);
+        Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=%s dist=%.1f damage=%d severity=%.2f pitch=%.2f volume=%.2f\n",
+                   def.soundHit.c_str(), dist, damage, severity, pit, vol);
+    }
+}
+
+// Shared predicted damage model (headshot/limb multipliers + range falloff)
+// so client prediction matches the server trace damage.
+static int predictedRemoteDamage(const WeaponDefinition& def,
+                                 const std::string& hitPart,
+                                 float nearest)
+{
+    float damage = def.damage;
+    if (hitPart == "head")
+        damage *= def.headshotMultiplier;
+    else if (hitPart == "leg")
+        damage *= limbMultiplier(def);
+
+    const float falloffStart = def.customParams.count("distanceFalloffStart")
+        ? def.customParams.at("distanceFalloffStart") : 110.0f;
+    const float minFraction = def.customParams.count("minDamageFraction")
+        ? def.customParams.at("minDamageFraction") : 0.1f;
+    damage *= std::clamp(1.0f - nearest / falloffStart, minFraction, 1.0f);
+    return std::max(1, (int)std::round(damage));
 }
 
 void processNpcHit(
@@ -106,21 +240,9 @@ void processRemotePlayerHit(
     float nearest,
     Player& shooter,
     uint32_t remoteTargetId,
-    const Player* remoteVictim)
+    Player* remoteVictim)
 {
-    float damage = def.damage;
-    if (hitPart == "head")
-        damage *= def.headshotMultiplier;
-    else if (hitPart == "leg")
-        damage *= limbMultiplier(def);
-
-    const float falloffStart = def.customParams.count("distanceFalloffStart")
-        ? def.customParams.at("distanceFalloffStart") : 110.0f;
-    const float minFraction = def.customParams.count("minDamageFraction")
-        ? def.customParams.at("minDamageFraction") : 0.1f;
-    damage *= std::clamp(
-        1.0f - nearest / falloffStart, minFraction, 1.0f);
-    const int totalDamage = std::max(1, (int)std::round(damage));
+    const int totalDamage = predictedRemoteDamage(def, hitPart, nearest);
 
     result.hitEntity = true;
     result.targetIsRemotePlayer = true;
@@ -128,38 +250,25 @@ void processRemotePlayerHit(
     result.damage = (float)totalDamage;
     result.targetId = remoteTargetId;
     {
+        const float falloffStart = def.customParams.count("distanceFalloffStart")
+            ? def.customParams.at("distanceFalloffStart") : 110.0f;
+        const float minFraction = def.customParams.count("minDamageFraction")
+            ? def.customParams.at("minDamageFraction") : 0.1f;
         float df = std::clamp(1.0f - nearest / falloffStart, minFraction, 1.0f);
         float kn = (float)totalDamage * df * 0.15f;
         result.knockbackImpulse = shotDirection * kn;
     }
-    hitmarker(totalDamage);
-    if (GetPlayerSettings().debugCombat)
-        Debug::log(Debug::Category::Weapons,
-            "[HITMARKER] attacker=%s victim=%s show=1 reason=local_player_hit_remote",
-            shooter.username.c_str(), remoteVictim->username.c_str());
+
+    presentRemoteHit(def, hitEnd, hitNormal, shotDirection, nearest, hitPart,
+                     shooter.username, remoteVictim->username, totalDamage);
+
+    // Predicted kill: if this hit would drop the victim to 0 hp, show the
+    // death immediately. The server's DamageConfirmedEvent reconciles it.
+    if (remoteVictim && totalDamage >= remoteVictim->currentHp)
     {
-        HitEvent ev;
-        ev.position = hitEnd;
-        ev.normal = hitNormal;
-        ev.direction = shotDirection;
-        ev.hitEntity = true;
-        ev.damage = totalDamage;
-        ev.attacker = shooter.username;
-        ev.victim = remoteVictim->username;
-        ev.weaponSource = def.id;
-        HitEffects::onHit(ev);
-    }
-    {
-        float dist = glm::length(hitEnd - audioListenerPosition());
-        float angleFactor = std::clamp(std::fabs(glm::dot(-shotDirection, hitNormal)), 0.15f, 1.0f);
-        float headMul = (hitPart == "head") ? 2.0f : 1.0f;
-        float severity = std::clamp(angleFactor * ((float)totalDamage / 100.0f) * headMul, 0.0f, 1.0f);
-        float vol, pit;
-        const auto& sndCfg = WeaponHitFxConfig::instance().soundFor(def.id);
-        computeImpactAudio(sndCfg.baseVolume, dist, severity, vol, pit);
-        playWorldSound(def.soundHit, hitEnd, vol, pit, 60.0f);
-        Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=%s dist=%.1f damage=%d severity=%.2f pitch=%.2f volume=%.2f\n",
-                   def.soundHit.c_str(), dist, totalDamage, severity, pit, vol);
+        remoteVictim->killedByWeapon = def.displayName;
+        remoteVictim->lastDamagedBy = shooter.username;
+        predictRemoteKill(*remoteVictim, shotDirection, "player");
     }
 }
 
@@ -170,22 +279,53 @@ void processRemoteNpcHit(
     const glm::vec3& hitEnd,
     float nearest,
     Player& shooter,
-    uint32_t remoteNpcTargetId)
+    uint32_t remoteNpcTargetId,
+    Player* remoteNpc)
 {
-    // Server-authoritative hit feedback: the server broadcasts the validated
-    // NpcDamageEvent (hitmarker, blood, damage) for local-shooter NPC hits.
-    // This only records the local predicted tracer endpoint so the client's
-    // beam stops on the visible NPC instead of the wall behind it.
-    (void)def;
-    result.hitEntity = true;
-    result.bodyPart = hitPart;
-    result.end = hitEnd;
-    result.targetId = remoteNpcTargetId;
-    if (GetPlayerSettings().debugCombat)
-        Debug::log(Debug::Category::Weapons,
-            "[REMOTE NPC PREDICT] attacker=%s npcId=%u part=%s dist=%.1f "
-            "server-authoritative\n",
-            shooter.username.c_str(), remoteNpcTargetId, hitPart.c_str(), nearest);
+    if (remoteNpc)
+    {
+        const int totalDamage = predictedRemoteDamage(def, hitPart, nearest);
+        result.hitEntity = true;
+        result.bodyPart = hitPart;
+        result.end = hitEnd;
+        result.targetId = remoteNpcTargetId;
+
+        // Record the prediction timestamp so the server-confirm path can
+        // suppress the duplicate hitmarker/killfeed for the local shooter.
+        if (gpMpContext && gpMpContext->active)
+        {
+            const uint64_t nowMsVal = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count());
+            gpMpContext->predictedNpcHitMs[remoteNpcTargetId] = nowMsVal;
+        }
+
+        const glm::vec3 normal = glm::vec3(0.0f, 0.0f, 1.0f);
+        presentRemoteHit(def, hitEnd, normal, -normal, nearest, hitPart,
+                         shooter.username, remoteNpc->username, totalDamage);
+
+        // Predicted kill: the server NpcDamageEvent remains authoritative and
+        // reconciles this (revive + disagreement if the server disagrees).
+        if (totalDamage >= remoteNpc->currentHp)
+        {
+            remoteNpc->killedByWeapon = def.displayName;
+            remoteNpc->lastDamagedBy = shooter.username;
+            predictRemoteKill(*remoteNpc, result.end - result.start, "npc");
+        }
+        if (GetPlayerSettings().debugCombat)
+            Debug::log(Debug::Category::Weapons,
+                "[REMOTE NPC PREDICT] attacker=%s npcId=%u part=%s dist=%.1f damage=%d hp=%d\n",
+                shooter.username.c_str(), remoteNpcTargetId, hitPart.c_str(), nearest,
+                totalDamage, remoteNpc->currentHp);
+    }
+    else
+    {
+        // No replica available: still stop the beam at the traced endpoint.
+        result.hitEntity = true;
+        result.bodyPart = hitPart;
+        result.end = hitEnd;
+        result.targetId = remoteNpcTargetId;
+    }
 }
 
 void processPlayerHit(

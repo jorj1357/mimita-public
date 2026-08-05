@@ -102,7 +102,8 @@ void renderChatBubbles(const ActorChatState& state, const Player& player, const 
         VipNameDrawOptions nameOptions;
         nameOptions.scale = nameScale;
         nameOptions.alpha = fade;
-        nameOptions.phase = (float)i;
+        nameOptions.phase = 0.0f;
+        nameOptions.detail = &player.vipStyleDetail;
         float nameW = vipMeasureStyledName(msg.senderName, player.vipAppearance, nameOptions);
         float bubbleW = std::max(textW, nameW) + bubblePadding * 2.0f;
         float bubbleH = lineHeight * 2.0f + bubblePadding * 2.0f;
