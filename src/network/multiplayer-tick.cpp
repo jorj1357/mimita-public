@@ -529,6 +529,34 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
 
 void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input, const World& world)
 {
+    // ── Async ICE connect job ───────────────────────────────────────────
+    // The ICE connect runs on a background thread; poll it every frame so the
+    // game never blocks. Progress messages surface on the HUD via
+    // ctx.connectionStatus. On success the finished transport is installed
+    // here (main thread) and the normal handshake continues below.
+    {
+        IceConnectStatus connect = mpIceConnectPoll();
+        if (connect.active)
+        {
+            ctx.connectionStatus = connect.message;
+        }
+        else if (connect.done)
+        {
+            if (connect.success)
+            {
+                printf("[ICE CONNECT] transport installed; starting handshake\n");
+                mpInstallIceConnectSuccess(ctx, connect);
+            }
+            else if (!connect.cancelled)
+            {
+                printf("[ICE CONNECT] failed: %s\n", connect.message.c_str());
+                ctx.connectionStatus = connect.message;
+                ctx.connectionState = ConnectionState::Disconnected;
+                ctx.connectFailed = true;
+            }
+        }
+    }
+
     if (!ctx.active)
         return;
     if (ctx.sock == INVALID_SOCKET && !ctx.transport)

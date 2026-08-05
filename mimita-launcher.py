@@ -91,6 +91,7 @@ def run_playtest(exe):
             "--name", "Playtest Server",
             "--map", map_name,
             "--host-player", "Host",
+            "--no-npcs",
             "--room-file", room_file,
         ]
         print("[LAUNCHER] starting headless server on %s (%s)"

@@ -233,7 +233,6 @@ void engineTickState(Engine& engine, float dt)
                     player.reset();
                     // 7 22 2026 1227 attempting fix 
                     // no more local host 
-                    bool connectionStarted = false;
 
                     if (!mci.directAddress.empty())
                     {
@@ -242,10 +241,26 @@ void engineTickState(Engine& engine, float dt)
                             "[DIRECT JOIN START] address=%s\n",
                             mci.directAddress.c_str());
 
-                        connectionStarted = MimitaNet::mpInit(
+                        const bool connectionStarted = MimitaNet::mpInit(
                             mpContext,
                             mci.directAddress,
                             player.username);
+                        if (connectionStarted)
+                        {
+                            Debug::log(
+                                Debug::Category::Networking,
+                                "[CONNECT STARTED] address=%s room=%s\n",
+                                mci.directAddress.c_str(),
+                                mci.roomCode.c_str());
+                        }
+                        else
+                        {
+                            Debug::warn(
+                                Debug::Category::Networking,
+                                "[CONNECT FAILED] address=%s room=%s reason=start-failed\n",
+                                mci.directAddress.c_str(),
+                                mci.roomCode.c_str());
+                        }
                     }
                     else if (mci.roomCode.empty())
                     {
@@ -262,33 +277,13 @@ void engineTickState(Engine& engine, float dt)
                             "[ROOM JOIN START] room=%s\n",
                             mci.roomCode.c_str());
 
-                        connectionStarted = MimitaNet::mpIceConnect(
+                        // Async ICE connect: returns immediately, runs on a
+                        // background thread, and is polled in mpTick. The game
+                        // never blocks during ICE negotiation.
+                        MimitaNet::mpIceConnectStart(
                             mpContext,
                             mci.roomCode,
                             player.username);
-                    }
-
-                    if (connectionStarted)
-                    {
-                        Debug::log(
-                            Debug::Category::Networking,
-                            "[CONNECT STARTED] address=%s room=%s\n",
-                            mci.directAddress.c_str(),
-                            mci.roomCode.c_str());
-
-                        // mpInit/mpIceConnect started the connection process.
-                        // It does not necessarily mean the server handshake is complete yet.
-                    }
-                    else
-                    {
-                        Debug::warn(
-                            Debug::Category::Networking,
-                            "[CONNECT FAILED] address=%s room=%s reason=start-failed\n",
-                            mci.directAddress.c_str(),
-                            mci.roomCode.c_str());
-
-                        // Keep roomCode visible in HUD so it can be shared even
-                        // if this client's connection failed.
                     }
 
                     clearPendingMultiplayerConnect();

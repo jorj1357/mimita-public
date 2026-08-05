@@ -22,9 +22,12 @@
 #include "debug/debug-log.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
+#include <thread>
 
 namespace MimitaNet {
 
@@ -326,6 +329,10 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
 
 void mpShutdown(MultiplayerContext& ctx)
 {
+    // Cancel any in-flight async ICE connect first so the worker thread is
+    // finished before this context is torn down (no concurrent ctx access).
+    mpIceConnectCancel();
+
     if (!ctx.active)
         return;
 
@@ -519,11 +526,14 @@ const char* connectionStateName(ConnectionState state)
 // The caller must still send Hello/JoinRequest through the normal flow.
 
 static bool waitForIceAgentState(IceAgent& agent, IceAgentState target,
-                                   int timeoutMs, std::string* earlyRecv = nullptr)
+                                   int timeoutMs, std::string* earlyRecv = nullptr,
+                                   const std::atomic<bool>* cancel = nullptr)
 {
     int waited = 0;
     while (waited < timeoutMs)
     {
+        if (cancel && cancel->load(std::memory_order_relaxed))
+            return false;
         agent.tick();
         std::vector<IceEvent> evs;
         agent.pollEvents(evs);
@@ -546,11 +556,73 @@ static bool waitForIceAgentState(IceAgent& agent, IceAgentState target,
     return false;
 }
 
-bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
-                  const std::string& playerName)
+// ── Async ICE connect (background thread) ─────────────────────────────
+// The ICE connect handshake (gather, SDP exchange, ICE negotiation) runs on
+// a worker thread so the game never blocks or freezes. The worker does NOT
+// touch the MultiplayerContext; on success it leaves a finished transport in
+// the job for the main thread to install via mpInstallIceConnectSuccess.
+
+namespace {
+
+struct IceConnectJob
 {
-    if (ctx.active)
-        mpShutdown(ctx);
+    std::mutex mutex;
+    IceConnectStatus status;
+    std::atomic<bool> cancel{false};
+    std::thread thread;
+};
+
+IceConnectJob* gIceConnectJob = nullptr;
+
+// Interruptible sleep: returns false early when cancel is requested.
+bool sleepInterruptible(uint64_t ms, const std::atomic<bool>& cancel)
+{
+    uint64_t waited = 0;
+    while (waited < ms)
+    {
+        if (cancel.load(std::memory_order_relaxed))
+            return false;
+        Sleep(25);
+        waited += 25;
+    }
+    return !cancel.load(std::memory_order_relaxed);
+}
+
+void iceConnectSetMessage(IceConnectJob* job, const std::string& msg)
+{
+    std::lock_guard<std::mutex> lock(job->mutex);
+    job->status.message = msg;
+}
+
+void iceConnectFinish(IceConnectJob* job, bool success, const char* msg)
+{
+    std::lock_guard<std::mutex> lock(job->mutex);
+    job->status.message = msg;
+    job->status.done = true;
+    job->status.success = success;
+}
+
+void iceConnectWorker(std::string roomCode, std::string playerName)
+{
+    IceConnectJob* job = gIceConnectJob;
+    if (!job)
+        return;
+
+    auto cancelled = [&]() { return job->cancel.load(std::memory_order_relaxed); };
+
+    // Fast-fail: if the room no longer exists on the coordinator, report it
+    // immediately instead of burning through the retry attempts.
+    iceConnectSetMessage(job, "Checking room...");
+    {
+        CoordinatorLookupResult lookup = coordinatorIceLookup(roomCode);
+        if (!lookup.exists)
+        {
+            printf("[ICE CONNECT] room=%s not found on coordinator\n", roomCode.c_str());
+            iceConnectFinish(job, false, "Room not found");
+            return;
+        }
+    }
+    if (cancelled()) { iceConnectFinish(job, false, "Cancelled"); return; }
 
     printf("[ICE CONNECT] starting ICE connection to room=%s as \"%s\"\n",
            roomCode.c_str(), playerName.c_str());
@@ -558,7 +630,8 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
     if (!netStartup())
     {
         printf("[ICE CONNECT] FATAL: WSAStartup failed\n");
-        return false;
+        iceConnectFinish(job, false, "Network init failed");
+        return;
     }
 
     IceConfiguration iceConfig = loadIceConfig();
@@ -581,6 +654,7 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
                    "direct connections may fail behind symmetric NAT\n");
         }
     }
+    if (cancelled()) { netShutdown(); iceConnectFinish(job, false, "Cancelled"); return; }
 
     // Retry ICE connection with backoff on transient coordinator/server failures
     constexpr int kMaxRetries = 5;
@@ -589,28 +663,34 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
 
     for (int attempt = 1; attempt <= kMaxRetries; ++attempt)
     {
+        if (cancelled()) break;
+
         printf("[ICE CONNECT] attempt %d/%d room=%s\n", attempt, kMaxRetries, roomCode.c_str());
 
         auto agentPtr = std::make_unique<IceAgent>();
         if (!agentPtr->initialize(iceConfig))
         {
             printf("[ICE CONNECT] agent initialization failed (attempt %d)\n", attempt);
-            if (attempt < kMaxRetries) { Sleep(backoffMs); backoffMs *= 2; }
+            if (attempt < kMaxRetries && !sleepInterruptible(backoffMs, job->cancel)) break;
+            backoffMs = std::min<uint64_t>(backoffMs * 2, 16000);
             continue;
         }
-        ctx.connectionState = ConnectionState::NatNegotiating;
-        ctx.connectionStatus = "ICE: gathering candidates...";
 
+        iceConnectSetMessage(job, "ICE: gathering candidates...");
         if (!agentPtr->gatherCandidates())
         {
             printf("[ICE CONNECT] candidate gathering failed (attempt %d)\n", attempt);
-            if (attempt < kMaxRetries) { Sleep(backoffMs); backoffMs *= 2; }
+            if (attempt < kMaxRetries && !sleepInterruptible(backoffMs, job->cancel)) break;
+            backoffMs = std::min<uint64_t>(backoffMs * 2, 16000);
             continue;
         }
-        if (!waitForIceAgentState(*agentPtr, IceAgentState::GatheringComplete, 15000))
+        if (!waitForIceAgentState(*agentPtr, IceAgentState::GatheringComplete, 15000,
+                                  nullptr, &job->cancel))
         {
+            if (cancelled()) break;
             printf("[ICE CONNECT] gather timeout (15s) (attempt %d)\n", attempt);
-            if (attempt < kMaxRetries) { Sleep(backoffMs); backoffMs *= 2; }
+            if (attempt < kMaxRetries && !sleepInterruptible(backoffMs, job->cancel)) break;
+            backoffMs = std::min<uint64_t>(backoffMs * 2, 16000);
             continue;
         }
         printf("[ICE CONNECT] candidates gathered (attempt %d)\n", attempt);
@@ -618,7 +698,7 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
         // Exchange SDP via coordinator (two-phase offer/answer)
         std::string sessionId = "client_" + std::to_string(GetCurrentProcessId())
             + "_" + std::to_string(nowMs()) + "_" + std::to_string(attempt);
-        ctx.connectionStatus = "ICE: contacting coordinator...";
+        iceConnectSetMessage(job, "ICE: contacting coordinator...");
 
         auto beginJoin = coordinatorIceBeginJoin(roomCode, sessionId, agentPtr->localSdp());
         if (!beginJoin.ok || beginJoin.requestId.empty())
@@ -627,7 +707,8 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
                    "room=%s error=%s (attempt %d)\n",
                    roomCode.c_str(),
                    beginJoin.errorCode.c_str(), attempt);
-            if (attempt < kMaxRetries) { Sleep(backoffMs); backoffMs *= 2; }
+            if (attempt < kMaxRetries && !sleepInterruptible(backoffMs, job->cancel)) break;
+            backoffMs = std::min<uint64_t>(backoffMs * 2, 16000);
             continue;
         }
 
@@ -636,7 +717,7 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
                beginJoin.requestId.substr(0, std::min<size_t>(12, beginJoin.requestId.size())).c_str(),
                attempt);
 
-        ctx.connectionStatus = "ICE: waiting for server answer...";
+        iceConnectSetMessage(job, "ICE: waiting for server answer...");
 
         std::string hostIceDescription = beginJoin.hostIceDescription;
         const uint64_t answerWaitStartedMs = nowMs();
@@ -646,6 +727,8 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
         while (hostIceDescription.empty() &&
                nowMs() - answerWaitStartedMs < kHostAnswerTimeoutMs)
         {
+            if (cancelled()) break;
+
             auto pollResult =
                 coordinatorIceClientPoll(roomCode, beginJoin.requestId);
 
@@ -693,8 +776,10 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
                 }
             }
 
-            Sleep(100);
+            if (!sleepInterruptible(100, job->cancel)) break;
         }
+
+        if (cancelled()) break;
 
         if (hostIceDescription.empty())
         {
@@ -703,7 +788,8 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
                    roomCode.c_str(),
                    beginJoin.requestId.substr(0, std::min<size_t>(12, beginJoin.requestId.size())).c_str(),
                    attempt);
-            if (attempt < kMaxRetries) { Sleep(backoffMs); backoffMs *= 2; }
+            if (attempt < kMaxRetries && !sleepInterruptible(backoffMs, job->cancel)) break;
+            backoffMs = std::min<uint64_t>(backoffMs * 2, 16000);
             continue;
         }
 
@@ -714,72 +800,47 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
         if (!agentPtr->setRemoteDescription(hostIceDescription))
         {
             printf("[ICE CONNECT] setRemoteDescription failed (attempt %d)\n", attempt);
-            if (attempt < kMaxRetries) { Sleep(backoffMs); backoffMs *= 2; }
+            if (attempt < kMaxRetries && !sleepInterruptible(backoffMs, job->cancel)) break;
+            backoffMs = std::min<uint64_t>(backoffMs * 2, 16000);
             continue;
         }
         printf("[ICE CONNECT] remote description applied (attempt %d)\n", attempt);
-        ctx.connectionStatus = "ICE: connecting...";
+        iceConnectSetMessage(job, "ICE: connecting...");
 
         std::string earlyRecv;
-        if (!waitForIceAgentState(*agentPtr, IceAgentState::Connected, 30000, &earlyRecv))
+        if (!waitForIceAgentState(*agentPtr, IceAgentState::Connected, 30000,
+                                  &earlyRecv, &job->cancel))
         {
+            if (cancelled()) break;
             printf("[ICE CONNECT] connection timeout (30s) (attempt %d)\n", attempt);
-            if (attempt < kMaxRetries) { Sleep(backoffMs); backoffMs *= 2; }
+            if (attempt < kMaxRetries && !sleepInterruptible(backoffMs, job->cancel)) break;
+            backoffMs = std::min<uint64_t>(backoffMs * 2, 16000);
             continue;
         }
         printf("[ICE CONNECT] ICE connection established (attempt %d)\n", attempt);
         agentPtr->logSelectedPath();
 
-        // Success — create transport and set up context
-        ctx.transport = std::make_unique<IceTransport>(std::move(agentPtr));
-        ctx.active = true;
-        ctx.localPlayerId = 0;
-        ctx.tick = 0;
-        ctx.lastHelloMs = 0;
-        ctx.lastSnapshotReceivedMs = 0;
-        ctx.connectStartMs = nowMs();
-        ctx.packetsSent = 0;
-        ctx.packetsReceived = 0;
-        ctx.snapshotsReceived = 0;
-        ctx.snapshotsMissed = 0;
-        ctx.remotePlayers.clear();
-        ctx.remoteNpcs.clear();
-        ctx.remotePlayerInterpolation.clear();
-        ctx.remoteNpcInterpolation.clear();
-        ctx.interpolationRenderTick = 0.0;
-        ctx.interpolationClockStarted = false;
-        ctx.networkProjectiles.clear();
-        ctx.playerRegistry.clear();
-        ctx.approvedLocalName.clear();
-        ctx.hasLocalServerPosition = false;
-        ctx.localPlayerReconciled = false;
-        ctx.connectionState = ConnectionState::Connecting;
-        ctx.vipJoinTicket.clear();
-        ctx.vipJoinTicketRequested = false;
-        ctx.joinToken = beginJoin.joinToken;
-        ctx.serverAddress = "ice:" + roomCode;
-        ctx.connected = false;
-        ctx.connectFailed = false;
-        ctx.connectionStatus = "Connected via ICE";
-        badconn::noteConnectionEstablished();
-        ctx.shotEvents.clear();
-        ctx.pendingShotEvents.clear();
-        ctx.pendingPelletBlastEvents.clear();
-        ctx.pendingHitClaims.clear();
-        ctx.lastReceivedShotSerial.clear();
-        ctx.nextLocalShotSerial = 1;
-        ctx.nextLocalProjectileFireSerial = 1;
-        ctx.nextLocalMeleeAttackSerial = 1;
-        ctx.lastPingSentMs = 0;
-        ctx.localPingMs = 0;
-        ctx.lastHeardServerMs = 0;
-        ctx.lastDisconnectLogMs = 0;
-        ctx.disagreementEvents.clear();
-        ctx.processedDisagreementIds.clear();
-        ctx.currentRoomCode = roomCode;
-
+        // Success — hand the finished transport to the main thread via the job.
+        {
+            std::lock_guard<std::mutex> lock(job->mutex);
+            job->status.transport = std::make_unique<IceTransport>(std::move(agentPtr));
+            job->status.joinToken = beginJoin.joinToken;
+            job->status.serverAddress = "ice:" + roomCode;
+            job->status.roomCode = roomCode;
+            job->status.state = ConnectionState::Connecting;
+            job->status.message = "Connected via ICE";
+            job->status.done = true;
+            job->status.success = true;
+        }
         printf("[ICE CONNECT] connected via ICE to room=%s\n", roomCode.c_str());
-        return true;
+        return;
+    }
+
+    netShutdown();
+    if (cancelled())
+    {
+        iceConnectFinish(job, false, "Cancelled");
+        return;
     }
 
     printf("[ICE CONNECT] FATAL: all %d attempts failed room=%s\n", kMaxRetries, roomCode.c_str());
@@ -788,17 +849,136 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
     CoordinatorLookupResult lookup = coordinatorIceLookup(roomCode);
     if (!lookup.exists)
     {
-        printf("[ICE CONNECT] room %s no longer exists on coordinator\n", roomCode.c_str());
+        iceConnectFinish(job, false, "Room not found");
     }
     else
     {
         printf("[ICE CONNECT] room %s still exists (%d/%d players) — "
-               "connection failed. Check NAT/firewall or set MIMITA_TURN_PASSWORD env var.\n",
+               "connection failed. Check NAT/firewall.\n",
                roomCode.c_str(), lookup.players, lookup.maxPlayers);
+        iceConnectFinish(job, false, "Connection failed (NAT/firewall?)");
+    }
+}
+
+} // anonymous namespace
+
+bool mpIceConnectStart(MultiplayerContext& ctx, const std::string& roomCode,
+                       const std::string& playerName)
+{
+    // Never allow two concurrent connect jobs — cancel and wait for any old one.
+    if (gIceConnectJob)
+        mpIceConnectCancel();
+
+    if (ctx.active)
+        mpShutdown(ctx);
+
+    ctx.connectFailed = false;
+    ctx.connectionStatus = "Connecting...";
+
+    gIceConnectJob = new IceConnectJob();
+    gIceConnectJob->status.roomCode = roomCode;
+    gIceConnectJob->status.state = ConnectionState::NatNegotiating;
+    gIceConnectJob->status.message = "Starting connection...";
+    gIceConnectJob->thread = std::thread(iceConnectWorker, roomCode, playerName);
+    return true;
+}
+
+IceConnectStatus mpIceConnectPoll()
+{
+    IceConnectJob* job = gIceConnectJob;
+    if (!job)
+        return IceConnectStatus{};
+
+    IceConnectStatus st;
+    {
+        std::lock_guard<std::mutex> lock(job->mutex);
+        if (!job->status.done)
+        {
+            st.active = true;
+            st.message = job->status.message;
+            st.state = job->status.state;
+            st.roomCode = job->status.roomCode;
+            return st;
+        }
+        st = std::move(job->status);
     }
 
-    netShutdown();
-    return false;
+    if (job->thread.joinable())
+        job->thread.join();
+    delete job;
+    gIceConnectJob = nullptr;
+    return st;
+}
+
+bool mpIceConnectActive()
+{
+    IceConnectJob* job = gIceConnectJob;
+    if (!job)
+        return false;
+    std::lock_guard<std::mutex> lock(job->mutex);
+    return !job->status.done;
+}
+
+void mpIceConnectCancel()
+{
+    IceConnectJob* job = gIceConnectJob;
+    if (!job)
+        return;
+    job->cancel.store(true, std::memory_order_relaxed);
+    if (job->thread.joinable())
+        job->thread.join();
+    delete job;
+    gIceConnectJob = nullptr;
+}
+
+void mpInstallIceConnectSuccess(MultiplayerContext& ctx, IceConnectStatus& status)
+{
+    ctx.transport = std::move(status.transport);
+    ctx.active = true;
+    ctx.localPlayerId = 0;
+    ctx.tick = 0;
+    ctx.lastHelloMs = 0;
+    ctx.lastSnapshotReceivedMs = 0;
+    ctx.connectStartMs = nowMs();
+    ctx.packetsSent = 0;
+    ctx.packetsReceived = 0;
+    ctx.snapshotsReceived = 0;
+    ctx.snapshotsMissed = 0;
+    ctx.remotePlayers.clear();
+    ctx.remoteNpcs.clear();
+    ctx.remotePlayerInterpolation.clear();
+    ctx.remoteNpcInterpolation.clear();
+    ctx.interpolationRenderTick = 0.0;
+    ctx.interpolationClockStarted = false;
+    ctx.networkProjectiles.clear();
+    ctx.playerRegistry.clear();
+    ctx.approvedLocalName.clear();
+    ctx.hasLocalServerPosition = false;
+    ctx.localPlayerReconciled = false;
+    ctx.connectionState = ConnectionState::Connecting;
+    ctx.vipJoinTicket.clear();
+    ctx.vipJoinTicketRequested = false;
+    ctx.joinToken = status.joinToken;
+    ctx.serverAddress = status.serverAddress;
+    ctx.connected = false;
+    ctx.connectFailed = false;
+    ctx.connectionStatus = "Connected via ICE";
+    badconn::noteConnectionEstablished();
+    ctx.shotEvents.clear();
+    ctx.pendingShotEvents.clear();
+    ctx.pendingPelletBlastEvents.clear();
+    ctx.pendingHitClaims.clear();
+    ctx.lastReceivedShotSerial.clear();
+    ctx.nextLocalShotSerial = 1;
+    ctx.nextLocalProjectileFireSerial = 1;
+    ctx.nextLocalMeleeAttackSerial = 1;
+    ctx.lastPingSentMs = 0;
+    ctx.localPingMs = 0;
+    ctx.lastHeardServerMs = 0;
+    ctx.lastDisconnectLogMs = 0;
+    ctx.disagreementEvents.clear();
+    ctx.processedDisagreementIds.clear();
+    ctx.currentRoomCode = status.roomCode;
 }
 
 // ── Migration: disagreement processing ────────────────────────────────

@@ -73,7 +73,8 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
     };
 
     drawHitmarker(dt);
-    if (mpContext.active && !mpContext.connected)
+    if (MimitaNet::mpIceConnectActive() || mpContext.connectFailed ||
+        (mpContext.active && !mpContext.connected))
     {
         const float boxW = 360.0f;
         const float boxX = (uiScreenW() - boxW) * 0.5f;

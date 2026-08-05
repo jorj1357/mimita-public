@@ -151,11 +151,11 @@ void engineTick(Engine& engine)
                 gDuelManager.stopDuel();
                 THE_NPC_SYSTEM.destroyAll();
             }
-            if (MP_CONTEXT.active) {
-                MimitaNet::mpShutdown(MP_CONTEXT);
-                onlineMenuSetServerCode("");
-                onlineMenuSetServerRunning(false);
-            }
+            // mpShutdown cancels any in-flight async ICE connect first, then
+            // tears down an active session. Safe to call even when not active.
+            MimitaNet::mpShutdown(MP_CONTEXT);
+            onlineMenuSetServerCode("");
+            onlineMenuSetServerRunning(false);
             Debug::log(Debug::Category::Duel, "[DUEL] escape: transitioning to main menu");
             GAME_STATE = GAME_MENU;
             glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
