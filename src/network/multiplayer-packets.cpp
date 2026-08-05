@@ -33,24 +33,25 @@ uint32_t mpFireRenderTick(const MultiplayerContext& ctx, uint32_t fallbackNewest
     const auto& interpCfg = NetworkingConfig::instance().data().remotePlayers;
     if (!interpCfg.directRender && interpCfg.enabled)
     {
-        // Remote bodies render at `now - interpolationDelay`. The rewind tick
-        // the server should validate against is the newest tick we've received
-        // minus that fixed delay — the exact tick the shooter was looking at.
-        // ctx.latestServerTick is updated on every snapshot/chunk arrival.
-        const double delayTicks =
-            NetworkingConfig::instance()
-                .effectiveRemoteInterpolationDelaySeconds() *
-            (double)GAMEPLAY_SIMULATION_HZ;
-        const uint32_t delay = (uint32_t)std::max(0.0, std::round(delayTicks));
+        // Remote bodies render at `estimatedServerNow - interpolationDelay`
+        // (the same continuous wall-clock clock the interpolation engine
+        // uses). The rewind tick the server should validate against is the
+        // exact tick the shooter was looking at, i.e. the current render time.
+        if (ctx.interpolationClockStarted && ctx.interpolationRenderTick > 0.0)
+        {
+            const double delayTicks =
+                NetworkingConfig::instance()
+                    .effectiveRemoteInterpolationDelaySeconds() *
+                (double)GAMEPLAY_SIMULATION_HZ;
+            const double viewTick = ctx.interpolationRenderTick - delayTicks;
+            if (viewTick > 1.0)
+                return (uint32_t)std::floor(viewTick);
+        }
         const uint32_t newest = ctx.latestServerTick != 0
             ? ctx.latestServerTick
             : ctx.latestLocalSnapshotTick;
         if (newest != 0)
-        {
-            const uint32_t view = newest > delay ? newest - delay : 0;
-            if (view != 0)
-                return view;
-        }
+            return newest;
     }
     return fallbackNewestTick;
 }
@@ -173,6 +174,8 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
 
     // Clear pending requests and events
     ctx.shotEvents.clear();
+    ctx.pendingShotEvents.clear();
+    ctx.pendingPelletBlastEvents.clear();
     ctx.disagreementEvents.clear();
     ctx.processedDisagreementIds.clear();
     ctx.reliableEventSessionId = 0;
@@ -193,7 +196,9 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
 
     // Reset reconnect timers
     ctx.reconnectAttempts = 0;
-    ctx.reconnectBackoffMs = 1000;
+    ctx.reconnectBackoffMs =
+        (uint64_t)NetworkingConfig::instance().data()
+            .retries.reconnectInitialBackoffMs;
     ctx.lastReconnectAttemptMs = 0;
 
     // Preserve monotonically increasing serials (NEVER reset):
@@ -301,6 +306,8 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.connectFailed = false;
     ctx.connectionStatus = "Connecting...";
     ctx.shotEvents.clear();
+    ctx.pendingShotEvents.clear();
+    ctx.pendingPelletBlastEvents.clear();
     ctx.pendingHitClaims.clear();
     ctx.lastReceivedShotSerial.clear();
     ctx.nextLocalShotSerial = 1;
@@ -754,6 +761,8 @@ bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
         ctx.connectionStatus = "Connected via ICE";
         badconn::noteConnectionEstablished();
         ctx.shotEvents.clear();
+        ctx.pendingShotEvents.clear();
+        ctx.pendingPelletBlastEvents.clear();
         ctx.pendingHitClaims.clear();
         ctx.lastReceivedShotSerial.clear();
         ctx.nextLocalShotSerial = 1;
@@ -868,7 +877,9 @@ void mpStartReconnect(MultiplayerContext& ctx)
 
     ctx.connectionState = ConnectionState::Reconnecting;
     ctx.reconnectAttempts = 0;
-    ctx.reconnectBackoffMs = 1000;
+    ctx.reconnectBackoffMs =
+        (uint64_t)NetworkingConfig::instance().data()
+            .retries.reconnectInitialBackoffMs;
     ctx.lastReconnectAttemptMs = nowMs();
     printf("[NET RECONNECT] starting reconnect for player=%u with token=%s\n",
            ctx.localPlayerId, ctx.reconnectToken.c_str());
@@ -878,7 +889,8 @@ void mpTickReconnect(MultiplayerContext& ctx)
 {
     if (ctx.connectionState != ConnectionState::Reconnecting)
         return;
-    if (ctx.reconnectAttempts >= 10)
+    const auto& retryCfg = NetworkingConfig::instance().data().retries;
+    if (ctx.reconnectAttempts >= (int)retryCfg.reconnectMaxAttempts)
     {
         printf("[NET RECONNECT] max attempts reached, giving up\n");
         ctx.connectionState = ConnectionState::Disconnected;
@@ -903,10 +915,13 @@ void mpTickReconnect(MultiplayerContext& ctx)
            (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
     ++ctx.packetsSent;
 
-    printf("[NET RECONNECT] attempt=%d/10 backoff=%llums\n",
-           ctx.reconnectAttempts, (unsigned long long)ctx.reconnectBackoffMs);
+    printf("[NET RECONNECT] attempt=%d/%u backoff=%llums\n",
+           ctx.reconnectAttempts, retryCfg.reconnectMaxAttempts,
+           (unsigned long long)ctx.reconnectBackoffMs);
 
-    ctx.reconnectBackoffMs = std::min<uint64_t>(ctx.reconnectBackoffMs * 2, 15000);
+    ctx.reconnectBackoffMs = std::min<uint64_t>(
+        ctx.reconnectBackoffMs * 2,
+        (uint64_t)retryCfg.reconnectMaxBackoffMs);
 }
 
 } // namespace MimitaNet

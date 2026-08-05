@@ -40,6 +40,7 @@
 #include "network/ice/ice-config.h"
 #include "network/ice/ice-test.h"
 #include "network/coordinator-client.h"
+#include "network/badconn/badconn.h"
 
 extern DuelManager gDuelManager;
 extern bool gMainmenuDebug;
@@ -170,6 +171,20 @@ bool handleGameCLI(int argc, char** argv)
                 opts.clientIndex = std::max(0, std::atoi(argv[++i]));
             else if (a == "--reconnect-token" && i + 1 < argc)
                 opts.reconnectToken = argv[++i];
+            else if (a == "--badconn-preset" && i + 1 < argc)
+                opts.badconnPreset = argv[++i];
+        }
+        if (!opts.badconnPreset.empty()) {
+            badconn::loadConfig(badconn::configPath());
+            if (opts.badconnPreset == "0")
+                badconn::disable();
+            else if (!badconn::activatePreset(opts.badconnPreset)) {
+                printf("[BADCONN CLI] preset %s not found\n", opts.badconnPreset.c_str());
+                std::exit(2);
+            }
+            printf("[BADCONN CLI] preset=%s active=%d name=%s\n",
+                   opts.badconnPreset.c_str(), (int)badconn::active(),
+                   badconn::activePresetName().c_str());
         }
         runIceConnect(argv[2], opts);
         return true;

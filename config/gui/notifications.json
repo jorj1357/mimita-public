@@ -13,8 +13,7 @@
     "padding_y": 8,
     "gap_title_text": 6,
     "gap_text_action": 8,
-    "max_text_height": 1320,
-    "min_font_scale": 0.7
+    "max_text_height": 1320
   },
   "elements": [
     {

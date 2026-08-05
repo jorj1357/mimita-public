@@ -41,7 +41,7 @@ import emailCampaignsRouter from "./email-campaigns.js"
 import { createCheckoutSessionRouter, createWebhookRouter } from "./banner-payments.js"
 import { createVipCheckoutRouter, createVipWebhookRouter } from "./vip-payments.js"
 import { createVipRouter } from "./vip-routes.js"
-import { getVipStateForUser } from "./vip-entitlements.js"
+import { getVipStateForUser, runVipReconcile } from "./vip-entitlements.js"
 import {
     createSiteBannerPublicRouter,
     createSiteBannerUserRouter,
@@ -1588,6 +1588,25 @@ async function start() {
             console.log(`[AUTH] startup cleanup error: ${e.message}`)
         }
     }, 5000)
+
+    const reconcileVip = async (label) => {
+        try {
+            const result = await runVipReconcile(pool)
+            if (result.expired || result.notifications) {
+                console.log(`[VIP ENTITLEMENT] ${label} expired=${result.expired} notifications=${result.notifications}`)
+            }
+        } catch (e) {
+            console.log(`[VIP ENTITLEMENT] ${label} reconcile error: ${e.message}`)
+        }
+    }
+
+    setInterval(() => {
+        reconcileVip("interval")
+    }, 60 * 1000)
+
+    setTimeout(() => {
+        reconcileVip("startup")
+    }, 7000)
 
     app.listen(port, () => {
         const elapsed = Date.now() - startTime

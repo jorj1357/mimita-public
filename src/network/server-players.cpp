@@ -604,7 +604,9 @@ void pushPositionHistory(ServerPlayer& p, uint32_t tick)
     const glm::vec3 histPos = p.hasBroadcastTransform ? p.broadcastPosition : p.pos;
     const glm::vec3 histVel = p.hasBroadcastTransform ? p.broadcastVelocity : p.vel;
     p.posHistory.push_back({histPos, histVel, tick});
-    while (p.posHistory.size() > 30)
+    const std::size_t historyLimit = NetworkingConfig::instance()
+        .data().bufferLimits.serverPositionHistoryTicks;
+    while (p.posHistory.size() > historyLimit)
         p.posHistory.pop_front();
 }
 
@@ -640,13 +642,6 @@ bool getPositionAtTick(const ServerPlayer& p, uint32_t targetTick, glm::vec3& ou
     }
     outPos = p.posHistory.front().pos;
     return true;
-}
-
-namespace {
-// Cap the per-player broadcast sample ring so a bad-connection client that
-// floods reports cannot grow it unboundedly. ~2s at 60Hz is far beyond the
-// receive-time delay and keeps rewind lookups cheap.
-constexpr size_t kMaxBroadcastSamples = 128;
 }
 
 void beginServerBroadcastInterp(ServerPlayer& player, uint32_t serverTick)
@@ -693,7 +688,9 @@ void beginServerBroadcastInterp(ServerPlayer& player, uint32_t serverTick)
     player.broadcastSamples.push_back({
         nowMs(), acceptedClientTick,
         player.lastAcceptedClientPosition, player.lastAcceptedClientVelocity});
-    while (player.broadcastSamples.size() > kMaxBroadcastSamples)
+    const std::size_t sampleLimit = NetworkingConfig::instance()
+        .data().bufferLimits.serverBroadcastSampleLimit;
+    while (player.broadcastSamples.size() > sampleLimit)
         player.broadcastSamples.pop_front();
 
     // Keep the fixed-window lerp fields fresh as the fallback path used when

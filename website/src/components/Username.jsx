@@ -8,6 +8,8 @@
 * DOES NOT render game-engine HUD text.
 */
 
+import VipBadge from "./VipBadge"
+
 const TIER_COLORS = {
     free: "#9e9e9e",
     vip: "#40e0d0",
@@ -107,11 +109,11 @@ function renderText(name, style, baseClass) {
     )
 }
 
-export default function Username({ user, size = "md", showBadge = true }) {
+export default function Username({ user, size = "md", showBadge = true, style: styleOverride = null }) {
     if (!user) return null
 
     const tier = normalizeTier(user)
-    const style = styleFor(user, tier)
+    const style = styleOverride || styleFor(user, tier)
     const badge = badgeUrl(user, tier)
     const label = TIER_LABELS[tier] || ""
     const sizeClass = size === "sm" ? "vipNameSm" : size === "lg" ? "vipNameLg" : "vipNameMd"
@@ -119,14 +121,7 @@ export default function Username({ user, size = "md", showBadge = true }) {
     return (
         <span className={`username vipName ${sizeClass}`} title={label || undefined}>
             {renderText(displayName(user), style, "vipNameText")}
-            {showBadge && badge && (
-                <img
-                    className="vipBadgeImg"
-                    src={badge}
-                    alt={label || "VIP"}
-                    loading="lazy"
-                />
-            )}
+            {showBadge && <VipBadge tier={tier} src={badge} size={size} />}
         </span>
     )
 }

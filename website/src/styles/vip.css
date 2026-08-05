@@ -36,6 +36,24 @@ purpose
   filter: drop-shadow(0 0 3px rgba(255,255,255,0.45));
 }
 
+.vipBadgeSm {
+  width: 1em;
+  height: 1em;
+  min-width: 1em;
+}
+
+.vipBadgeMd {
+  width: 1.25em;
+  height: 1.25em;
+  min-width: 1.25em;
+}
+
+.vipBadgeLg {
+  width: 1.6em;
+  height: 1.6em;
+  min-width: 1.6em;
+}
+
 .vipNameRainbow {
   background-size: 220% auto;
   -webkit-background-clip: text;

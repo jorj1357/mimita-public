@@ -9,6 +9,7 @@
 #pragma once
 
 #include <filesystem>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -60,6 +61,12 @@ struct RemotePlayerInterpolationConfig
     bool allowExtrapolation = true;
     double maximumExtrapolationSeconds = 0.100;
     float teleportDistance = 1000.0f;
+    // Time gap (in server ticks) between two buffered snapshots beyond which
+    // the hole is treated as a discontinuity (e.g. a long blackout), snapping
+    // the body to the newest snapshot instead of bridging a stale straight
+    // line across seconds of missing motion. Short loss gaps (a few ticks)
+    // still interpolate smoothly across the hole.
+    uint32_t teleportGapTicks = 30;
     bool snapOnSpawn = true;
     bool snapOnRespawn = true;
     bool snapOnMapChange = true;
@@ -84,6 +91,54 @@ struct SnapshotBufferConfig
     bool allowOutOfOrderInsertion = true;
     double maximumSnapshotAgeSeconds = 2.0;
     double chunkReassemblyTimeoutSeconds = 1.0;
+};
+
+struct AdaptiveSnapshotBufferConfig
+{
+    bool enabled = true;
+    double minimumDelaySeconds = 0.033;
+    double maximumDelaySeconds = 0.140;
+    double jitterMultiplier = 2.0;
+    double arrivalJitterSmoothing = 0.15;
+    double increaseRateMsPerSecond = 240.0;
+    double decreaseRateMsPerSecond = 60.0;
+};
+
+struct NetworkEventTimelineConfig
+{
+    bool enabled = true;
+    double remoteEffectMaximumHoldMs = 250.0;
+    bool logDelays = false;
+};
+
+struct NetworkRuntimeRateConfig
+{
+    double inputSendRateHz = 60.0;
+    double pingIntervalMs = 1000.0;
+};
+
+struct NetworkRetryConfig
+{
+    double attackRetryIntervalMs = 100.0;
+    uint32_t attackRetryMaxAttempts = 10;
+    double attackRequestTimeoutMs = 3000.0;
+    double reconnectInitialBackoffMs = 1000.0;
+    uint32_t reconnectMaxAttempts = 10;
+    double reconnectMaxBackoffMs = 15000.0;
+};
+
+struct ReliableGameplayEventConfig
+{
+    std::size_t maxPendingPerPlayer = 64;
+    double retryMs = 100.0;
+    double ttlMs = 10000.0;
+    uint32_t maxAttempts = 80;
+};
+
+struct NetworkBufferLimitConfig
+{
+    std::size_t serverPositionHistoryTicks = 30;
+    std::size_t serverBroadcastSampleLimit = 128;
 };
 
 struct RemoteEntityLifecycleConfig
@@ -123,6 +178,12 @@ struct NetworkingConfigData
     RemotePlayerInterpolationConfig remotePlayers;
     LocalReconciliationConfig localReconciliation;
     SnapshotBufferConfig snapshotBuffer;
+    AdaptiveSnapshotBufferConfig adaptiveSnapshotBuffer;
+    NetworkEventTimelineConfig eventTimeline;
+    NetworkRuntimeRateConfig runtimeRates;
+    NetworkRetryConfig retries;
+    ReliableGameplayEventConfig reliableEvents;
+    NetworkBufferLimitConfig bufferLimits;
     RemoteEntityLifecycleConfig remoteEntityLifecycle;
     NetworkingTimeoutConfig timeouts;
     NetworkingDebugConfig debug;

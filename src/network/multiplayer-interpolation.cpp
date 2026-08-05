@@ -73,56 +73,27 @@ float lerpAngle(float a, float b, float t)
     return a + delta * t;
 }
 
-// Builds the render-time snapshot for a remote actor using tick-based
-// interpolation with a clamped per-entity render clock. The clock advances at
-// most dt*60 per frame and is capped at `newestBufferedTick - delayTicks`, so
-// bursts of reordered snapshots (badconn) catch up smoothly over a few frames
-// instead of flashing the body forward. Interpolating by server tick (uniform
-// 60Hz) rather than arrival time keeps motion uniform under reordering.
+// Builds the render-time snapshot for a remote actor using a continuous
+// wall-clock-anchored render clock: `globalRenderTick` is the estimated
+// current server time (in 60Hz tick units) and the body is rendered at
+// `globalRenderTick - delayTicks`. Because the render time is derived from a
+// smooth clock instead of a per-entity accumulator clamped to a target, the
+// interpolation alpha is ALWAYS fractional between the two buffered snapshots
+// that bracket it — at any frame rate. Reordered bursts and lost-snapshot
+// holes pass through the buffer as real time advances; there is no artificial
+// "catch-up fast-forward" that made remote bodies freeze-then-jump.
 void buildReceiveTimeRender(EntityInterpolationState& interpolation,
                             const RemotePlayerInterpolationConfig& interpCfg,
                             const double delaySeconds,
-                            float dt,
+                            const double globalRenderTick,
                             SnapshotTransform& out)
 {
     const uint32_t oldestTick = interpolation.buffer.front().serverTick;
     const uint32_t newestTick = interpolation.buffer.back().serverTick;
 
     const double delayTicks = delaySeconds * (double)GAMEPLAY_SIMULATION_HZ;
-    const double targetTick = (double)newestTick - delayTicks;
-
-    // Advance the clamped render clock. Never exceed the target, so a burst of
-    // new snapshots cannot make it jump; it catches up smoothly instead.
-    if (interpolation.renderTick <= 0.0)
-        interpolation.renderTick = targetTick;
-    else
-        interpolation.renderTick += (double)dt * (double)GAMEPLAY_SIMULATION_HZ;
-    interpolation.renderTick = std::min(interpolation.renderTick, targetTick);
-    const double renderTick = std::max(interpolation.renderTick, (double)oldestTick);
-    const uint32_t renderFloor = (uint32_t)std::floor(renderTick);
-
-    const SnapshotTransform* older = &interpolation.buffer.front();
-    const SnapshotTransform* newer = &interpolation.buffer.back();
-    for (size_t i = 0; i + 1 < interpolation.buffer.size(); ++i)
-    {
-        const SnapshotTransform& a = interpolation.buffer[i];
-        const SnapshotTransform& b = interpolation.buffer[i + 1];
-        if (a.serverTick <= renderFloor)
-        {
-            older = &a;
-            if (b.serverTick > renderFloor)
-            {
-                newer = &b;
-                break;
-            }
-        }
-        else
-        {
-            older = &a;
-            newer = &b;
-            break;
-        }
-    }
+    const double renderTick = globalRenderTick - delayTicks;
+    interpolation.renderTick = renderTick;
 
     // Buffer ran dry: renderTick is newer than everything buffered. Extrapolate
     // along the newest velocity (time-limited) if allowed, else hold newest.
@@ -146,15 +117,43 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
                            interpolation.networkEntityId, extrapMs);
             }
         }
+        out.serverTick = (uint32_t)std::floor(renderTick);
         return;
     }
 
+    // Fresh spawn / very thin buffer: render time older than everything
+    // buffered. Hold the oldest snapshot until enough history accumulates;
+    // the clock is wall-clock anchored, so it recovers naturally as snapshots
+    // arrive (no manual catch-up needed).
     if (renderTick < (double)oldestTick)
     {
-        // renderTick older than everything buffered (fresh spawn / very thin
-        // buffer): hold the oldest snapshot. No lerp yet.
-        out = *older;
+        out = interpolation.buffer.front();
+        out.serverTick = oldestTick;
         return;
+    }
+
+    const uint32_t renderFloor = (uint32_t)std::floor(renderTick);
+    const SnapshotTransform* older = &interpolation.buffer.front();
+    const SnapshotTransform* newer = &interpolation.buffer.back();
+    for (size_t i = 0; i + 1 < interpolation.buffer.size(); ++i)
+    {
+        const SnapshotTransform& a = interpolation.buffer[i];
+        const SnapshotTransform& b = interpolation.buffer[i + 1];
+        if (a.serverTick <= renderFloor)
+        {
+            older = &a;
+            if (b.serverTick > renderFloor)
+            {
+                newer = &b;
+                break;
+            }
+        }
+        else
+        {
+            older = &a;
+            newer = &b;
+            break;
+        }
     }
 
     double alpha = 1.0;
@@ -165,8 +164,20 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
         alpha = std::clamp(alpha, 0.0, 1.0);
     }
 
-    // Corruption protection: an absurd per-segment gap without a lifecycle
-    // change is treated as a teleport. Not a speed limit.
+    // Time-gap protection: a hole wider than teleportGapTicks (e.g. a long
+    // blackout) is a discontinuity, not a velocity bridge. Snap to the newest
+    // snapshot rather than sliding a stale straight line across seconds of
+    // missing motion. Short loss gaps still interpolate smoothly.
+    if ((uint32_t)(newer->serverTick - older->serverTick) >
+        interpCfg.teleportGapTicks)
+    {
+        out = *newer;
+        out.serverTick = newer->serverTick;
+        return;
+    }
+
+    // Corruption protection: an absurd per-segment distance without a
+    // lifecycle change is treated as a teleport. Not a speed limit.
     const float gapDist = glm::length(newer->position - older->position);
     if (gapDist > interpCfg.teleportDistance)
     {
@@ -174,7 +185,7 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
         return;
     }
 
-    out = *newer;
+    out = (alpha >= 1.0) ? *newer : *older;
     // position_mode: "linear" (default) lerps a straight line between samples.
     if (interpCfg.positionMode == "linear")
         out.position = older->position +
@@ -194,6 +205,50 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
         if (glm::dot(aim, aim) > 0.000001f)
             out.aimDirection = glm::normalize(aim);
     }
+    out.serverTick = renderFloor;
+}
+
+double adaptiveDelaySeconds(EntityInterpolationState& interpolation,
+                            const NetworkingConfigData& cfg,
+                            float dt)
+{
+    double desired = NetworkingConfig::instance()
+        .effectiveRemoteInterpolationDelaySeconds();
+
+    const AdaptiveSnapshotBufferConfig& adaptive =
+        cfg.adaptiveSnapshotBuffer;
+    if (adaptive.enabled)
+    {
+        const double minSnapshotDelay =
+            cfg.remotePlayers.minimumSnapshotsBeforeRendering > 1
+                ? ((double)cfg.remotePlayers.minimumSnapshotsBeforeRendering - 1.0) /
+                    (double)GAMEPLAY_SIMULATION_HZ
+                : 0.0;
+        desired = std::max(desired, adaptive.minimumDelaySeconds);
+        desired = std::max(desired, minSnapshotDelay);
+        desired = std::max(
+            desired,
+            (interpolation.estimatedArrivalJitterMs *
+             adaptive.jitterMultiplier) / 1000.0);
+        desired = std::min(desired, adaptive.maximumDelaySeconds);
+    }
+
+    if (interpolation.adaptiveDelaySeconds <= 0.0)
+    {
+        interpolation.adaptiveDelaySeconds = desired;
+        return desired;
+    }
+
+    const double rateMs = desired > interpolation.adaptiveDelaySeconds
+        ? adaptive.increaseRateMsPerSecond
+        : adaptive.decreaseRateMsPerSecond;
+    const double maxStep = (rateMs / 1000.0) * (double)dt;
+    const double delta = desired - interpolation.adaptiveDelaySeconds;
+    if (std::abs(delta) <= maxStep)
+        interpolation.adaptiveDelaySeconds = desired;
+    else
+        interpolation.adaptiveDelaySeconds += delta > 0.0 ? maxStep : -maxStep;
+    return interpolation.adaptiveDelaySeconds;
 }
 
 } // anonymous namespace
@@ -211,11 +266,34 @@ bool pushInterpolationTarget(
                                  interpolation.lastSpawnGeneration,
                                  interpolation.lastSnapshotTransformEpoch))
     {
+        ++interpolation.staleSnapshotCount;
         return false;
     }
 
     SnapshotTransform next = transformFromEntity(entity);
     next.serverTick = serverTick;
+    if (interpolation.hasTarget)
+    {
+        if (serverTick < interpolation.lastServerTick)
+            ++interpolation.outOfOrderSnapshotCount;
+        else if (serverTick > interpolation.lastServerTick &&
+                 interpolation.lastSnapshotArrivalMs != 0)
+        {
+            const double expectedMs =
+                (double)(serverTick - interpolation.lastServerTick) *
+                (1000.0 / (double)GAMEPLAY_SIMULATION_HZ);
+            const double actualMs =
+                next.receivedMs >= interpolation.lastSnapshotArrivalMs
+                    ? (double)(next.receivedMs - interpolation.lastSnapshotArrivalMs)
+                    : 0.0;
+            const double sample = std::abs(actualMs - expectedMs);
+            const double smoothing = NetworkingConfig::instance()
+                .data().adaptiveSnapshotBuffer.arrivalJitterSmoothing;
+            interpolation.estimatedArrivalJitterMs +=
+                (sample - interpolation.estimatedArrivalJitterMs) * smoothing;
+        }
+    }
+    interpolation.lastSnapshotArrivalMs = next.receivedMs;
     const bool newLifecycle = interpolation.hasTarget &&
         ((entity.spawnGeneration != 0 &&
           entity.spawnGeneration != interpolation.lastSpawnGeneration) ||
@@ -252,6 +330,7 @@ bool pushInterpolationTarget(
         if (it->serverTick == serverTick)
         {
             *it = next;
+            ++interpolation.duplicateSnapshotCount;
             return true;
         }
     }
@@ -339,7 +418,6 @@ void updateRenderedReplica(
     if (!interpolation.hasTarget)
         return;
 
-    (void)renderTick;  // receive-time interpolation uses nowMs() internally
     player.dash.didDash = false;
 
     const auto& interpCfg = NetworkingConfig::instance().data().remotePlayers;
@@ -379,11 +457,11 @@ void updateRenderedReplica(
     // One rule: position, velocity, yaw, aim, animation state, and weapon all
     // come from the SAME render-time snapshot, so the body can never desync
     // from its own animation or shots. The render snapshot is produced at
-    // `newestBufferedTick - interpolationDelay` via tick-based interpolation
-    // with a clamped per-entity clock (or is the newest snapshot in
-    // direct-render mode, which is internally consistent).
-    const double delaySeconds =
-        NetworkingConfig::instance().effectiveRemoteInterpolationDelaySeconds();
+    // `estimatedServerNow - adaptiveDelay` on a continuous wall-clock clock,
+    // so the interpolation alpha is always fractional (smooth at any frame
+    // rate; no freeze/jump from a clamped catch-up clock).
+    const NetworkingConfigData& netCfg = NetworkingConfig::instance().data();
+    const double delaySeconds = adaptiveDelaySeconds(interpolation, netCfg, dt);
 
     SnapshotTransform render = interpolation.target;
 
@@ -391,19 +469,19 @@ void updateRenderedReplica(
     {
         if (interpolation.buffer.size() >= 2)
         {
+            // `renderTick` is the estimated current server tick (ticks). The
+            // render time is that minus the per-entity adaptive delay; the
+            // interpolation alpha is always fractional, so the body moves
+            // smoothly at any frame rate.
             buildReceiveTimeRender(
-                interpolation, interpCfg, delaySeconds, dt, render);
-        }
-        else if (interpolation.hasRendered)
-        {
-            // Buffer too thin to interpolate: HOLD the last rendered snapshot.
-            // Never snap the body to the newest packet just because it arrived.
-            render = interpolation.lastRender;
+                interpolation, interpCfg, delaySeconds, renderTick, render);
         }
         else
         {
-            // First render (fresh spawn / very thin buffer): seed from the
-            // newest snapshot; subsequent frames will hold/interpolate.
+            // Too few snapshots to form an interpolation segment yet (fresh
+            // spawn / very thin buffer): show the newest authoritative state.
+            // No freeze-hold of a stale render: the wall-clock render clock
+            // recovers on its own as snapshots accumulate.
             render = interpolation.target;
         }
     }
@@ -429,6 +507,7 @@ void updateRenderedReplica(
     if (!respawned)
         interpolation.lastRender = render;
     interpolation.hasRendered = true;
+    interpolation.lastRenderedServerTick = render.serverTick;
 
     // Body-facing yaw and aim use the interpolated render values.
     {
@@ -481,7 +560,7 @@ void updateRenderedReplica(
     if (player.networkShootEffectTimer > 0.0f)
         player.networkWeaponState |= 1u;
     player.sizeScale = render.sizeScale;
-    player.spawnGeneration = interpolation.target.spawnGeneration;
+    player.spawnGeneration = render.spawnGeneration;
     player.username = interpolation.displayName;
     player.vipAppearance = render.vipAppearance;
     player.networkStateFlags = render.stateFlags;
@@ -501,10 +580,10 @@ void updateRenderedReplica(
 
     // Dash
     bool dashTriggered = false;
-    if (interpolation.target.dashSerial != 0 &&
-        interpolation.target.dashSerial != player.networkLastDashSerial)
+    if (render.dashSerial != 0 &&
+        render.dashSerial != player.networkLastDashSerial)
     {
-        player.networkLastDashSerial = interpolation.target.dashSerial;
+        player.networkLastDashSerial = render.dashSerial;
         player.dash.didDash = true;
         dashTriggered = true;
         glm::vec3 dashDir = glm::length(player.vel) > 0.001f
@@ -513,60 +592,60 @@ void updateRenderedReplica(
         HitEffects::spawnMovementDashBurst(player.pos, dashDir, glm::length(player.vel));
         playWorldSound("entity/player/dash", player.pos, 1.0f, 1.0f, 36.0f);
         printf("[NET PRESENTATION RX] entityId=%u event=dash serial=%u triggered=1\n",
-               entityId, (unsigned)interpolation.target.dashSerial);
+               entityId, (unsigned)render.dashSerial);
     }
 
     // Ground jump
-    if (interpolation.target.groundJumpSerial != 0 &&
-        interpolation.target.groundJumpSerial != player.networkLastGroundJumpSerial)
+    if (render.groundJumpSerial != 0 &&
+        render.groundJumpSerial != player.networkLastGroundJumpSerial)
     {
-        player.networkLastGroundJumpSerial = interpolation.target.groundJumpSerial;
+        player.networkLastGroundJumpSerial = render.groundJumpSerial;
         glm::vec3 jumpDir = glm::vec3(0.0f);
         glm::vec3 jumpPos = player.pos;
         jumpPos.z -= 0.5f;
         HitEffects::spawnGroundJumpBurst(jumpPos, jumpDir);
         playWorldSound("entity/player/jump", player.pos, 1.0f, 1.0f, 28.0f);
         printf("[NET PRESENTATION RX] entityId=%u event=groundJump serial=%u triggered=1\n",
-               entityId, (unsigned)interpolation.target.groundJumpSerial);
+               entityId, (unsigned)render.groundJumpSerial);
     }
 
     // Air jump
-    if (interpolation.target.airJumpSerial != 0 &&
-        interpolation.target.airJumpSerial != player.networkLastAirJumpSerial)
+    if (render.airJumpSerial != 0 &&
+        render.airJumpSerial != player.networkLastAirJumpSerial)
     {
-        player.networkLastAirJumpSerial = interpolation.target.airJumpSerial;
+        player.networkLastAirJumpSerial = render.airJumpSerial;
         glm::vec3 jumpDir = glm::vec3(0.0f);
         glm::vec3 jumpPos = player.pos;
         jumpPos.z -= 1.0f;
         HitEffects::spawnAirJumpBurst(jumpPos, jumpDir);
         playWorldSound("entity/player/jump", player.pos, 1.0f, 1.0f, 28.0f);
         printf("[NET PRESENTATION RX] entityId=%u event=airJump serial=%u triggered=1\n",
-               entityId, (unsigned)interpolation.target.airJumpSerial);
+               entityId, (unsigned)render.airJumpSerial);
     }
 
     // Down dash
-    if (interpolation.target.downDashSerial != 0 &&
-        interpolation.target.downDashSerial != player.networkLastDownDashSerial)
+    if (render.downDashSerial != 0 &&
+        render.downDashSerial != player.networkLastDownDashSerial)
     {
-        player.networkLastDownDashSerial = interpolation.target.downDashSerial;
+        player.networkLastDownDashSerial = render.downDashSerial;
         glm::vec3 downDashPos = player.pos;
         downDashPos.z -= 0.3f;
         EffectPartSystem::instance().spawnDownDash(downDashPos);
         printf("[NET PRESENTATION RX] entityId=%u event=downDash serial=%u triggered=1\n",
-               entityId, (unsigned)interpolation.target.downDashSerial);
+               entityId, (unsigned)render.downDashSerial);
     }
 
     // Freeze one-shot (didFreeze)
-    if (interpolation.target.freezeSerial != 0 &&
-        interpolation.target.freezeSerial != player.networkLastFreezeSerial)
+    if (render.freezeSerial != 0 &&
+        render.freezeSerial != player.networkLastFreezeSerial)
     {
-        player.networkLastFreezeSerial = interpolation.target.freezeSerial;
+        player.networkLastFreezeSerial = render.freezeSerial;
         glm::vec3 freezePos = player.pos;
         freezePos.z -= 0.3f;
         EffectPartSystem::instance().spawnFreeze(freezePos, 2.0f);
         playWorldSound("entity/player/freezebegin", player.pos, 1.0f, 1.0f, 30.0f);
         printf("[NET PRESENTATION RX] entityId=%u event=freeze serial=%u triggered=1\n",
-               entityId, (unsigned)interpolation.target.freezeSerial);
+               entityId, (unsigned)render.freezeSerial);
     }
 
     // Freeze trail (sustained while freezeActive)
@@ -576,17 +655,17 @@ void updateRenderedReplica(
     }
 
     // Direction change one-shot directional walk burst
-    if (interpolation.target.directionChangeSerial != 0 &&
-        interpolation.target.directionChangeSerial != player.networkLastDirectionChangeSerial)
+    if (render.directionChangeSerial != 0 &&
+        render.directionChangeSerial != player.networkLastDirectionChangeSerial)
     {
-        player.networkLastDirectionChangeSerial = interpolation.target.directionChangeSerial;
+        player.networkLastDirectionChangeSerial = render.directionChangeSerial;
         glm::vec3 dirWalkVel = glm::length(player.vel) > 0.001f
             ? glm::normalize(glm::vec3(player.vel.x, player.vel.y, 0.0f))
             : glm::vec3(0.0f, 0.0f, 0.0f);
         float speed = glm::length(glm::vec2(player.vel.x, player.vel.y));
         HitEffects::spawnWalkBurst(player.pos, -dirWalkVel, speed);
         printf("[NET PRESENTATION RX] entityId=%u event=directionChange serial=%u triggered=1\n",
-               entityId, (unsigned)interpolation.target.directionChangeSerial);
+               entityId, (unsigned)render.directionChangeSerial);
     }
 
     // ── Walking VFX (sustained) ─────────────────────────────────────
@@ -672,26 +751,23 @@ glm::vec3 mpRemoteShooterRenderDelta(const MultiplayerContext& ctx, uint32_t sho
 
 void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)
 {
-    // Advance the interpolation render clock at the fixed 60 tick/s rate so
-    // rendering is time-based rather than tied to packet arrival.
-    if (!ctx.interpolationClockStarted)
+    // Continuous wall-clock-anchored render clock in server-tick units:
+    // estimatedServerNow = newest received server tick + elapsed real time
+    // since that snapshot was received. It advances smoothly between snapshot
+    // arrivals and is re-anchored on every snapshot, so interpolation runs on
+    // a smooth time base (no packet-arrival-driven accumulator). This is what
+    // makes the interpolation alpha fractional at any frame rate and lets
+    // reordered/lost-snapshot bursts pass through without an artificial
+    // catch-up fast-forward.
+    if (ctx.latestServerTick != 0 && ctx.lastSnapshotReceivedMs != 0)
     {
-        uint32_t newest = 0;
-        for (const auto& kv : ctx.remotePlayerInterpolation)
-            if (kv.second.hasTarget && kv.second.target.serverTick > newest)
-                newest = kv.second.target.serverTick;
-        for (const auto& kv : ctx.remoteNpcInterpolation)
-            if (kv.second.hasTarget && kv.second.target.serverTick > newest)
-                newest = kv.second.target.serverTick;
-        if (newest != 0)
-        {
-            ctx.interpolationRenderTick = (double)newest;
-            ctx.interpolationClockStarted = true;
-        }
-    }
-    else
-    {
-        ctx.interpolationRenderTick += (double)dt * (double)GAMEPLAY_SIMULATION_HZ;
+        const double tickMs = 1000.0 / (double)GAMEPLAY_SIMULATION_HZ;
+        const uint64_t now = nowMs();
+        const double ageTicks = now >= ctx.lastSnapshotReceivedMs
+            ? (double)(now - ctx.lastSnapshotReceivedMs) / tickMs
+            : 0.0;
+        ctx.interpolationRenderTick = (double)ctx.latestServerTick + ageTicks;
+        ctx.interpolationClockStarted = true;
     }
 
     for (auto& kv : ctx.remotePlayers)
@@ -757,4 +833,3 @@ void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)
 }
 
 } // namespace MimitaNet
-

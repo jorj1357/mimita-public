@@ -163,7 +163,6 @@ private:
     float mGapTitleText = 6.0f;
     float mGapTextAction = 8.0f;
     float mMaxTextHeight = 120.0f;
-    float mMinFontScale = 0.7f;
 
     bool mTipsEnabled = true;
     uint64_t mNextTipTick = 0;

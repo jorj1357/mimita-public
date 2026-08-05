@@ -630,6 +630,7 @@ void handleAttackRequest(
             shotEvent.clientTimeMs = req->clientSimulationTick;
             shotEvent.shooterPlayerId = shooter.id;
             shotEvent.targetPlayerId = hitTarget;
+            shotEvent.lastServerTick = req->clientSimulationTick;
             shotEvent.weapon = netWeapon;
             shotEvent.impactType = impactType;
             shotEvent.effectFlags = effectFlags;
@@ -677,6 +678,7 @@ void handleAttackRequest(
             blastEvent.shooterPlayerId = shooter.id;
             blastEvent.shotSerial = req->requestId;
             blastEvent.clientTimeMs = req->clientSimulationTick;
+            blastEvent.lastServerTick = req->clientSimulationTick;
             blastEvent.spreadSeed = req->deterministicSeed;
             blastEvent.originX = origin.x;
             blastEvent.originY = origin.y;

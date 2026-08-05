@@ -930,6 +930,7 @@ struct PelletBlastEventPacket
     uint64_t clientTimeMs = 0;
     uint32_t shooterPlayerId = 0;
     uint32_t spreadSeed = 0;
+    uint32_t lastServerTick = 0;
     float originX = 0.0f;
     float originY = 0.0f;
     float originZ = 0.0f;

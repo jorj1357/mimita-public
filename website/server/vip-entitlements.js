@@ -268,12 +268,60 @@ export async function recomputeAndStoreVipForUser(clientOrQuery, userId, now = n
 
 export async function expirePastEntitlements(clientOrQuery, now = new Date()) {
     const query = queryFrom(clientOrQuery)
-    await query(
+    const expired = await query(
         `UPDATE vip_entitlements
          SET status = 'expired', updated_at = NOW()
-         WHERE status = 'active' AND expires_at <= $1`,
+         WHERE status = 'active' AND expires_at <= $1
+         RETURNING id, user_id, expires_at`,
         [now]
     )
+    const userIds = new Set(expired.rows?.map(row => row.user_id).filter(Boolean) || [])
+    for (const row of expired.rows || []) {
+        await recordVipNotification(query, {
+            userId: row.user_id,
+            notificationType: "expired",
+            entitlementKey: `${row.id}:${iso(row.expires_at)}`,
+            channel: "website"
+        })
+    }
+    for (const userId of userIds) {
+        await recomputeAndStoreVipForUser(query, userId, now)
+    }
+    return expired.rowCount || 0
+}
+
+export async function recordDueVipNotifications(clientOrQuery, now = new Date()) {
+    const query = queryFrom(clientOrQuery)
+    const active = await query(
+        `SELECT id, user_id, expires_at
+         FROM vip_entitlements
+         WHERE status = 'active'
+           AND expires_at > $1
+           AND expires_at <= ($1::timestamptz + INTERVAL '7 days')`,
+        [now]
+    )
+    let recorded = 0
+    for (const row of active.rows || []) {
+        const key = `${row.id}:${iso(row.expires_at)}`
+        for (const warning of expirationWarnings(row.expires_at, toDate(now) || new Date())) {
+            if (warning === "expired") continue
+            await recordVipNotification(query, {
+                userId: row.user_id,
+                notificationType: warning,
+                entitlementKey: key,
+                channel: "website"
+            })
+            recorded++
+        }
+    }
+    return recorded
+}
+
+export async function runVipReconcile(clientOrQuery = pool, now = new Date()) {
+    const query = queryFrom(clientOrQuery)
+    const expired = await expirePastEntitlements(query, now)
+    const notifications = await recordDueVipNotifications(query, now)
+    return { expired, notifications }
 }
 
 export async function grantPrepaidEntitlement(clientOrQuery, {

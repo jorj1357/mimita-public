@@ -9,10 +9,13 @@
 */
 
 import { useEffect, useMemo, useState } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 import Layout from "../components/Layout"
 import Username from "../components/Username"
+import VipBadge from "../components/VipBadge"
 import { apiRequest } from "../lib/api"
+import { buildSigninPath } from "../lib/returnTo"
+import { logAuthEvent } from "../lib/api-log"
 
 const STYLE_LABELS = {
     vip_turquoise: "VIP turquoise",
@@ -48,6 +51,7 @@ function normalizeStyle(style) {
 
 export default function Vip() {
     const navigate = useNavigate()
+    const location = useLocation()
     const [user, setUser] = useState(null)
     const [config, setConfig] = useState(null)
     const [vip, setVip] = useState(null)
@@ -79,9 +83,17 @@ export default function Vip() {
                         .catch(() => {})
                 }
             })
-            .catch(() => navigate("/signin"))
+            .catch((error) => {
+                if (error?.status === 401) {
+                    logAuthEvent("redirect to signin", { returnTo: location.pathname })
+                    navigate(buildSigninPath(location.pathname))
+                }
+                else {
+                    setMessage(error?.message || "failed to load VIP")
+                }
+            })
         return () => { alive = false }
-    }, [navigate])
+    }, [navigate, location.pathname])
 
     const previewUser = useMemo(() => {
         if (!user || !vip) return user
@@ -223,7 +235,7 @@ export default function Vip() {
             <section className="vipPage">
                 <h1>MiMITA VIP</h1>
                 <p className="vipNotice">
-                    VIP belongs to your account. Checkout only starts when a Stripe test Price ID is configured on the server.
+                    VIP belongs to your account. Checkout prices are selected by the server and confirmed by Stripe webhooks.
                 </p>
                 {message && <p className={message.includes("failed") || message.includes("not") ? "vipError" : "vipNotice"}>{message}</p>}
 
@@ -231,7 +243,7 @@ export default function Vip() {
                     {config.tiers.map(tier => (
                         <article key={tier.tier} className="vipTierBox">
                             <h2>{tier.tier.replace("_", " ").toUpperCase()}</h2>
-                            <img className="vipBadgeImg" src={tier.badge_url} alt={`${tier.tier} badge`} />
+                            <VipBadge tier={tier.tier} src={tier.badge_url} size="lg" />
                             <p className="vipTierPrice">
                                 {dollars(tier.purchases.find(p => p.type === "monthly_subscription")?.amount_cents)} / month
                             </p>
@@ -247,7 +259,7 @@ export default function Vip() {
                                         type="button"
                                         disabled={!option.configured || busy === `${tier.tier}:${option.type}`}
                                         onClick={() => checkout(tier.tier, option.type)}
-                                        title={option.configured ? "" : "server Price ID missing"}
+                                        title={option.configured ? "" : "Stripe is not configured"}
                                     >
                                         {option.type === "one_month" && `1 month ${dollars(option.amount_cents)}`}
                                         {option.type === "monthly_subscription" && `subscribe ${dollars(option.amount_cents)}`}
@@ -312,8 +324,8 @@ export default function Vip() {
                                     speed
                                     <input
                                         type="range"
-                                        min="0.15"
-                                        max="2"
+                                        min={config.style_limits?.minRainbowSpeed || 0.25}
+                                        max={config.style_limits?.maxRainbowSpeed || 4}
                                         step="0.05"
                                         value={style.rainbow_speed || 1}
                                         disabled={!isUltra && style.kind !== "rainbow"}

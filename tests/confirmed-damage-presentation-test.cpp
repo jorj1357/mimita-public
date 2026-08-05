@@ -11,7 +11,9 @@
 #include "network/confirmed-damage-presentation.h"
 #include "network/multiplayer-context.h"
 #include "network/network-weapons.h"
+#include "combat/death-system.h"
 #include "config/weapon-hitfx-config.h"
+#include "terminal/terminal-state.h"
 #include "ui/hitmarker.h"
 #include "audio/hitmarker-audio.h"
 
@@ -107,6 +109,20 @@ void playHitmarkerSound(int) {}
 namespace HitEffects {
 void spawnHitEffects(glm::vec3, const glm::vec3&, const glm::vec3&, int,
                      const std::string&, const std::string&, bool) {}
+}
+
+Player* gpPlayer = nullptr;
+
+DeathSystem& DeathSystem::instance()
+{
+    static DeathSystem instance;
+    return instance;
+}
+
+void DeathSystem::healKillerToFull(Player& player, const std::string& killerName)
+{
+    (void)player;
+    (void)killerName;
 }
 
 namespace MimitaNet {

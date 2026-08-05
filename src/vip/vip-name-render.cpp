@@ -55,10 +55,18 @@ float badgeWidth(const MimitaVip::VipAppearance& appearance,
 {
     if (!options.drawBadge || appearance.tier == MimitaVip::VIP_TIER_FREE)
         return 0.0f;
-    const char* badge = MimitaVip::badgeLabel(appearance.tier);
-    if (!badge || !badge[0])
-        return 0.0f;
-    return uiMeasureText(badge, options.scale * 0.78f) + 10.0f;
+    return 18.0f * (options.scale / 0.28f);
+}
+
+const char* badgeImagePath(uint8_t tier)
+{
+    switch (tier)
+    {
+    case MimitaVip::VIP_TIER_VIP: return "assets/ui/vip-badge-vip.png";
+    case MimitaVip::VIP_TIER_SUPER_VIP: return "assets/ui/vip-badge-super-vip.png";
+    case MimitaVip::VIP_TIER_ULTRA_VIP: return "assets/ui/vip-badge-ultra-vip.png";
+    default: return "";
+    }
 }
 
 void drawBadge(const MimitaVip::VipAppearance& appearance,
@@ -72,11 +80,18 @@ void drawBadge(const MimitaVip::VipAppearance& appearance,
 
     const float scale = options.scale * 0.78f;
     const float w = badgeWidth(appearance, options);
-    const float h = 14.0f * (options.scale / 0.28f);
+    const char* imagePath = badgeImagePath(appearance.tier);
+    if (imagePath && imagePath[0])
+    {
+        uiDrawImageFit(imagePath, {x, y - 1.0f, w, w}, false,
+                       {1.0f, 1.0f, 1.0f, options.alpha});
+        return;
+    }
+
     glm::vec4 badgeColor = MimitaVip::nameColor(appearance, options.alpha);
     badgeColor.a = std::max(0.12f, badgeColor.a * 0.28f);
-    uiDrawRect({x, y + 2.0f, w, h}, badgeColor, "vip-badge-bg");
-    uiDrawRectOutline({x, y + 2.0f, w, h},
+    uiDrawRect({x, y + 2.0f, w + 18.0f, w}, badgeColor, "vip-badge-bg");
+    uiDrawRectOutline({x, y + 2.0f, w + 18.0f, w},
                       {1.0f, 1.0f, 1.0f, 0.42f * options.alpha},
                       "vip-badge-border");
     uiDrawText(badge, x + 5.0f, y + 2.0f, scale,

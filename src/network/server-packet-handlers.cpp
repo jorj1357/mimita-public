@@ -775,6 +775,7 @@ void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* 
     event.clientTimeMs = request->clientTimeMs;
     event.shooterPlayerId = shooter.id;
     event.spreadSeed = request->spreadSeed;
+    event.lastServerTick = request->lastServerTick;
     event.originX = origin.x; event.originY = origin.y; event.originZ = origin.z;
     event.baseDirX = dir.x; event.baseDirY = dir.y; event.baseDirZ = dir.z;
     event.weapon = request->weapon;

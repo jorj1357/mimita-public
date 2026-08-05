@@ -83,6 +83,10 @@ bool knownPacketType(uint8_t type)
     case PACKET_SPAWN_ACTIVATED:
     case PACKET_RELIABLE_EVENT_ACK:
     case PACKET_DAMAGE_CONFIRMED_EVENT:
+    case PACKET_CHAT_REQUEST:
+    case PACKET_CHAT_MESSAGE_EVENT:
+    case PACKET_CHAT_TYPING_STATE_REQUEST:
+    case PACKET_CHAT_TYPING_STATE_EVENT:
         return true;
     default:
         return false;
@@ -139,11 +143,11 @@ bool require(bool condition, const char* message)
 
 int main()
 {
-    static_assert(PROTOCOL_VERSION == 25,
-                  "Stage 4A generic AttackRequest layout requires protocol 25");
-    static_assert(sizeof(InputPacket) == 140,
+    static_assert(PROTOCOL_VERSION == 26,
+                  "VIP join-ticket layout requires protocol 26");
+    static_assert(sizeof(InputPacket) == 144,
                   "InputPacket layout changed unexpectedly");
-    static_assert(sizeof(JoinRequestPacket) == 116,
+    static_assert(sizeof(JoinRequestPacket) == 180,
                   "JoinRequestPacket layout changed unexpectedly");
     static_assert(sizeof(JoinAcceptPacket) == 160,
                   "JoinAcceptPacket layout changed unexpectedly");

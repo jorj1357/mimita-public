@@ -232,7 +232,7 @@ export default function BannerCreate() {
                     <p className="bannerCreatorNote">
                         Banner purchases are fully refundable within 30 days of purchase.{" "}
                         <Link to="/support" style={{ color: "#40e0d0" }}>Go to /support</Link> and choose Payment or finance.
-                        Admin has final say.
+                        Lame ahhhhh Admin has final say.
                     </p>
 
                     {error && <p className="bannerCreatorError">{error}</p>}

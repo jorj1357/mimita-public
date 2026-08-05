@@ -38,7 +38,9 @@ using json = nlohmann::json;
 namespace {
 
 // Word-wrap `text` to fit `maxWidthPx` at `fontScale`, preserving explicit
-// newlines. Greedy wrap: words that fit stay on the current line.
+// newlines. Greedy wrap: words that fit stay on the current line. A single
+// unbreakable word wider than the box hard-breaks across lines so callers can
+// keep a fixed font size without overflow or clipping.
 std::string wrapTipText(const std::string& text, float maxWidthPx, float fontScale)
 {
     std::string out;
@@ -52,7 +54,25 @@ std::string wrapTipText(const std::string& text, float maxWidthPx, float fontSca
         const bool forcedBreak = i < text.size() && text[i] == '\n';
         if (forcedBreak) ++i;
 
-        if (!line.empty() && uiMeasureText((line + word).c_str(), fontScale) > maxWidthPx) {
+        if (uiMeasureText(word.c_str(), fontScale) > maxWidthPx) {
+            if (!line.empty()) {
+                if (!out.empty()) out += '\n';
+                out += line;
+                line.clear();
+            }
+            std::string chunk;
+            for (char c : word) {
+                if (!chunk.empty() &&
+                    uiMeasureText((chunk + c).c_str(), fontScale) > maxWidthPx) {
+                    if (!out.empty()) out += '\n';
+                    out += chunk;
+                    chunk.clear();
+                }
+                chunk += c;
+            }
+            if (!chunk.empty()) line = chunk;
+        } else if (!line.empty() &&
+                   uiMeasureText((line + word).c_str(), fontScale) > maxWidthPx) {
             if (!out.empty()) out += '\n';
             out += line;
             line = word;
@@ -179,13 +199,12 @@ void NotificationSystem::loadGuiConfig()
         mGapTitleText = r.value("gap_title_text", 6.0f);
         mGapTextAction = r.value("gap_text_action", 8.0f);
         mMaxTextHeight = r.value("max_text_height", 120.0f);
-        mMinFontScale = r.value("min_font_scale", 0.7f);
         std::error_code ec;
         mGuiConfigLastWrite = std::filesystem::last_write_time(mGuiConfigPath, ec);
         Debug::log(Debug::Category::Gui,
-                   "[NOTIFS GUI] loaded anchor=%s offsets=(%g,%g,%g,%g) spacing=%g slide=%g maxTextH=%g minFontScale=%g\n",
+                   "[NOTIFS GUI] loaded anchor=%s offsets=(%g,%g,%g,%g) spacing=%g slide=%g maxTextH=%g\n",
                    mAnchor.c_str(), mOffsetRight, mOffsetBottom, mOffsetTop, mOffsetLeft,
-                   mSpacing, mSlideInPx, mMaxTextHeight, mMinFontScale);
+                   mSpacing, mSlideInPx, mMaxTextHeight);
     } catch (const std::exception& e) {
         Debug::log(Debug::Category::Gui, "[NOTIFS GUI] render config parse error: %s\n", e.what());
     }
@@ -463,23 +482,10 @@ NotificationSystem::computeLayout(size_t index, uint64_t elapsed)
     L.boxW = textEl && textEl->w > 0.0f ? textEl->w : (w - 56.0f);
     const float availWPx = cs.designToScreenX(L.boxW - L.padX * 2.0f);
 
-    // Wrap at the configured font size. The font only shrinks when a single
-    // unbreakable word is wider than the box, clamped to min_font_scale.
+    // Always render at the configured font size; over-wide words are broken
+    // across lines by wrapTipText so nothing shrinks or clips.
     L.fontSize = textEl && textEl->fontSize > 0.0f ? textEl->fontSize : 0.34f;
-    std::string wrapped = wrapTipText(revealed, availWPx, L.fontSize);
-    std::vector<std::string> lines = splitLines(wrapped);
-    float maxLineW = 0.0f;
-    for (const std::string& ln : lines)
-        maxLineW = std::max(maxLineW, uiMeasureText(ln.c_str(), L.fontSize));
-    if (maxLineW > availWPx && maxLineW > 0.0f) {
-        float shrink = std::max(mMinFontScale, availWPx / maxLineW);
-        if (shrink < 1.0f) {
-            L.fontSize *= shrink;
-            wrapped = wrapTipText(revealed, availWPx, L.fontSize);
-            lines = splitLines(wrapped);
-        }
-    }
-    L.lines = lines;
+    L.lines = splitLines(wrapTipText(revealed, availWPx, L.fontSize));
     L.lineHPx = (float)fontLineHeight * L.fontSize;
     L.contentHPx = (float)L.lines.size() * L.lineHPx;
 

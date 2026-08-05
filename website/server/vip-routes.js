@@ -243,14 +243,23 @@ export function createVipRouter(deps = {}) {
                 return res.status(503).json({ success: false, message: "subscription portal is not configured" })
             }
             const result = await query(
-                `SELECT stripe_customer_id
-                 FROM vip_subscriptions
-                 WHERE user_id = $1 AND stripe_customer_id <> ''
-                 ORDER BY updated_at DESC
+                `SELECT COALESCE(
+                    NULLIF(u.stripe_customer_id, ''),
+                    (
+                        SELECT NULLIF(s.stripe_customer_id, '')
+                        FROM vip_subscriptions s
+                        WHERE s.user_id = u.id
+                          AND s.stripe_customer_id <> ''
+                        ORDER BY s.updated_at DESC
+                        LIMIT 1
+                    )
+                 ) AS stripe_customer_id
+                 FROM users u
+                 WHERE u.id = $1
                  LIMIT 1`,
                 [req.user.id]
             )
-            if (!result.rowCount) {
+            if (!result.rowCount || !result.rows[0].stripe_customer_id) {
                 return res.status(404).json({ success: false, message: "no subscription customer found" })
             }
             const session = await stripe.billingPortal.sessions.create({
