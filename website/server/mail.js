@@ -184,6 +184,38 @@ export async function sendSupportNotificationEmail({ requestId, topic, username,
     })
 }
 
+export async function sendVipSubscriptionCanceledEmail({
+    email,
+    username = "",
+    tier = "vip"
+} = {}) {
+    const tierLabel = VIP_TIER_LABELS[tier] || tier
+    const origin = process.env.APP_ORIGIN || "https://mimita.fun"
+    const vipUrl = `${origin}/vip`
+
+    const text =
+        `Your ${tierLabel} subscription has been canceled.\n\n` +
+        `Hi ${username},\n` +
+        `Your ${tierLabel} MiMITA subscription has been canceled. ` +
+        `You will not be charged again. If you had prepaid VIP time, it stays active until it runs out.\n\n` +
+        `You can get VIP again anytime: ${vipUrl}\n` +
+        `Thanks for supporting MiMITA!`
+
+    await sendMail({
+        to: email,
+        subject: `Your ${tierLabel} subscription has been canceled`,
+        text,
+        html: `
+            <h1>Your ${escapeHtml(tierLabel)} subscription has been canceled</h1>
+            <p>Hi ${escapeHtml(username)},</p>
+            <p>Your <strong>${escapeHtml(tierLabel)}</strong> MiMITA subscription has been canceled. You will not be charged again.</p>
+            <p>If you had prepaid VIP time, it stays active until it runs out.</p>
+            <p><a href="${escapeHtml(vipUrl)}" style="display:inline-block;padding:12px 24px;background:#40e0d0;color:#000;text-decoration:none;border-radius:4px">Get VIP again</a></p>
+            <p>Thanks for supporting MiMITA!</p>
+        `
+    })
+}
+
 function escapeHtml(value) {
     return String(value)
         .replaceAll("&", "&amp;")

@@ -13,7 +13,7 @@ import Stripe from "stripe"
 import { pool } from "./db.js"
 import { authenticate } from "./session.js"
 import { createRateLimit } from "./rateLimit.js"
-import { sendVipPurchaseEmail } from "./mail.js"
+import { sendVipPurchaseEmail, sendVipSubscriptionCanceledEmail } from "./mail.js"
 import {
     getPurchaseDefinition,
     getStripePriceId,
@@ -25,7 +25,8 @@ import {
     grantPrepaidEntitlement,
     markVipOrderStatus,
     recomputeAndStoreVipForUser,
-    upsertSubscriptionState
+    upsertSubscriptionState,
+    ACTIVE_SUBSCRIPTION_STATUSES
 } from "./vip-entitlements.js"
 
 export const VIP_FLOW_SOURCE = "mimita_vip"
@@ -394,6 +395,94 @@ export async function reconcilePendingCheckoutOrders({
     return { orders: orderResult.rows.length, reconciled }
 }
 
+async function notifySubscriptionCanceled(query, userId, tier, stripeCustomerId, stripeSubscriptionId) {
+    try {
+        const userResult = await query(
+            `SELECT email, username FROM users WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
+            [userId]
+        )
+        const account = userResult.rows?.[0]
+        if (account?.email) {
+            sendVipSubscriptionCanceledEmail({
+                email: account.email,
+                username: account.username || "",
+                tier
+            })
+                .then(() => vipLog("subscription_cancel_email_sent", { user_id: userId, subscription_id: stripeSubscriptionId }))
+                .catch(error => vipLog("subscription_cancel_email_failed", { user_id: userId, subscription_id: stripeSubscriptionId, reason: error.message }))
+        }
+    }
+    catch (error) {
+        vipLog("subscription_cancel_email_skipped", { user_id: userId, subscription_id: stripeSubscriptionId, reason: error.message })
+    }
+}
+
+// Re-checks every locally-active subscription against Stripe and re-applies its
+// state. Creates missing entitlements (self-heal), picks up cancellations, and
+// sends one cancellation email per transition.
+export async function syncActiveSubscriptions({
+    stripe = getStripe(),
+    query = pool,
+    now = new Date()
+} = {}) {
+    if (!stripe?.subscriptions?.retrieve) return { checked: 0, created: 0, canceled: 0, emails: 0 }
+    const q = queryFrom(query)
+
+    const result = await q(
+        `SELECT id, user_id, tier, stripe_customer_id, stripe_subscription_id, status,
+                cancel_at_period_end, current_period_end
+         FROM vip_subscriptions
+         WHERE status = ANY($1)
+         ORDER BY id`,
+        [[...ACTIVE_SUBSCRIPTION_STATUSES]]
+    )
+
+    let canceled = 0
+    let emails = 0
+
+    for (const row of result.rows) {
+        const subId = cleanId(row.stripe_subscription_id)
+        if (!subId) continue
+
+        let sub
+        try {
+            sub = await stripe.subscriptions.retrieve(subId)
+        }
+        catch (error) {
+            vipLog("subscription_sync_retrieve_failed", { subscription_id: subId, reason: error.message })
+            continue
+        }
+
+        const subStatus = String(sub?.status || row.status || "active")
+        const subCancelAtPeriodEnd = sub?.cancel_at_period_end === true || Boolean(sub?.cancel_at)
+        const wasActiveBefore = ACTIVE_SUBSCRIPTION_STATUSES.has(String(row.status))
+        const isActiveNow = ACTIVE_SUBSCRIPTION_STATUSES.has(subStatus)
+
+        if (wasActiveBefore && !isActiveNow) {
+            canceled++
+            await notifySubscriptionCanceled(q, row.user_id, row.tier, row.stripe_customer_id, subId)
+            emails++
+        }
+
+        await upsertSubscriptionState(q, {
+            userId: row.user_id,
+            tier: row.tier,
+            stripeCustomerId: cleanId(sub?.customer || row.stripe_customer_id),
+            stripeSubscriptionId: subId,
+            status: subStatus,
+            currentPeriodStart: stripeUnixDate(sub?.current_period_start),
+            currentPeriodEnd: stripeUnixDate(sub?.current_period_end),
+            cancelAtPeriodEnd: subCancelAtPeriodEnd,
+            canceledAt: stripeUnixDate(sub?.canceled_at),
+            latestInvoiceId: "",
+            latestPaymentIntentId: "",
+            now
+        })
+    }
+
+    return { checked: result.rows.length, canceled, emails }
+}
+
 export async function getVipOrders({ query = pool, userId = 0, now = new Date() } = {}) {
     const q = queryFrom(query)
     const numericUserId = Number(userId)
@@ -439,38 +528,48 @@ async function processSubscriptionLikeEvent({ client, stripe, object }) {
         : await getStripeSubscription(stripe, object.subscription)
     if (!sub) return "ignored_missing_subscription"
 
-    const userId = subscriptionUserId(sub, object.metadata?.user_id)
-    const tier = subscriptionTier(sub, object.metadata?.tier)
+    let userId = subscriptionUserId(sub, object.metadata?.user_id)
+    let tier = subscriptionTier(sub, object.metadata?.tier)
     if (!userId || tier === "free") {
         const lookup = await client.query(
             `SELECT user_id, tier FROM vip_subscriptions WHERE stripe_subscription_id = $1 LIMIT 1`,
             [cleanId(sub.id || object.subscription)]
         )
         if (!lookup.rowCount) return "ignored_unknown_subscription"
-        return upsertSubscriptionState(client, {
-            userId: lookup.rows[0].user_id,
-            tier: lookup.rows[0].tier,
-            stripeCustomerId: cleanId(sub.customer),
-            stripeSubscriptionId: cleanId(sub.id || object.subscription),
-            status: sub.status || object.status || "active",
-            currentPeriodStart: stripeUnixDate(sub.current_period_start),
-            currentPeriodEnd: stripeUnixDate(sub.current_period_end),
-            cancelAtPeriodEnd: sub.cancel_at_period_end === true,
-            canceledAt: stripeUnixDate(sub.canceled_at),
-            latestInvoiceId: cleanId(object.id || sub.latest_invoice),
-            latestPaymentIntentId: cleanId(object.payment_intent)
-        }).then(() => "processed_subscription_lookup")
+        userId = lookup.rows[0].user_id
+        tier = lookup.rows[0].tier
+    }
+
+    const subId = cleanId(sub.id || object.subscription)
+    const subStatus = String(sub.status || object.status || "active")
+    const subCancelAtPeriodEnd = sub.cancel_at_period_end === true || Boolean(sub.cancel_at)
+
+    const existing = await client.query(
+        `SELECT status, cancel_at_period_end
+         FROM vip_subscriptions
+         WHERE stripe_subscription_id = $1 LIMIT 1`,
+        [subId]
+    )
+    const prevStatus = String(existing.rows?.[0]?.status || "")
+    const wasActive = ACTIVE_SUBSCRIPTION_STATUSES.has(prevStatus)
+    const isActive = ACTIVE_SUBSCRIPTION_STATUSES.has(subStatus)
+    const cancelFlipped = Boolean(existing.rows?.[0]) &&
+        subCancelAtPeriodEnd &&
+        existing.rows[0].cancel_at_period_end === false
+
+    if (wasActive && (!isActive || cancelFlipped)) {
+        await notifySubscriptionCanceled(client, userId, tier, cleanId(sub.customer), subId)
     }
 
     await upsertSubscriptionState(client, {
         userId,
         tier,
         stripeCustomerId: cleanId(sub.customer),
-        stripeSubscriptionId: cleanId(sub.id || object.subscription),
-        status: sub.status || object.status || "active",
+        stripeSubscriptionId: subId,
+        status: subStatus,
         currentPeriodStart: stripeUnixDate(sub.current_period_start),
         currentPeriodEnd: stripeUnixDate(sub.current_period_end),
-        cancelAtPeriodEnd: sub.cancel_at_period_end === true,
+        cancelAtPeriodEnd: subCancelAtPeriodEnd,
         canceledAt: stripeUnixDate(sub.canceled_at),
         latestInvoiceId: cleanId(object.id || sub.latest_invoice),
         latestPaymentIntentId: cleanId(object.payment_intent)

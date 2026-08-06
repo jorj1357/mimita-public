@@ -32,6 +32,7 @@ export default function Support() {
     const [url, setUrl] = useState("")
     const [bannerOrderId, setBannerOrderId] = useState("")
     const [sent, setSent] = useState(false)
+    const [sentEmail, setSentEmail] = useState("")
     const [error, setError] = useState("")
 
     const refundOrderId = Number(new URLSearchParams(location.search).get("refund_order") || 0)
@@ -80,6 +81,7 @@ export default function Support() {
                 })
             })
             if (data?.success) {
+                setSentEmail(email)
                 setSent(true)
                 setEmail("")
                 setSubject("")
@@ -103,7 +105,19 @@ export default function Support() {
 
                 <PixelBox>
                     {sent ? (
-                        <p className="supportSent">Your message has been sent. We will get back to you at {email}.</p>
+                        <div className="supportSent">
+                            <p>Your message has been sent. We will respond to you at {sentEmail || email}.</p>
+                            <button
+                                type="button"
+                                className="supportWrongEmail"
+                                onClick={() => {
+                                    setSent(false)
+                                    setSentEmail("")
+                                }}
+                            >
+                                Wrong email? Submit another one here
+                            </button>
+                        </div>
                     ) : (
                         <form className="supportForm" onSubmit={handleSubmit}>
                             <label className="supportLabel">Topic (required)</label>

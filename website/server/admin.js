@@ -15,6 +15,7 @@ import {
     tierRank,
     validateNameStyle
 } from "./vip-config.js"
+import { getStripe } from "./vip-payments.js"
 import {
     parseCookies,
     clearSessionCookie,
@@ -556,6 +557,35 @@ router.post("/vip/revoke", requireAdmin, async (req, res, next) => {
         if (!Number.isInteger(userId) || userId <= 0) {
             return res.status(400).json({ success: false, message: "valid user_id required" })
         }
+
+        const activeSubs = await pool.query(
+            `SELECT id, stripe_subscription_id FROM vip_subscriptions
+             WHERE user_id = $1 AND status = ANY($2)`,
+            [userId, [...ACTIVE_SUBSCRIPTION_STATUSES]]
+        )
+
+        const stripe = getStripe()
+        let canceledInStripe = 0
+        for (const sub of activeSubs.rows) {
+            const subId = String(sub.stripe_subscription_id || "").trim()
+            if (!subId) continue
+            if (stripe?.subscriptions?.cancel) {
+                try {
+                    await stripe.subscriptions.cancel(subId)
+                    canceledInStripe++
+                }
+                catch (error) {
+                    console.log(`[VIP REVOKE] stripe cancel failed user_id=${userId} sub=${subId} error=${error.message}`)
+                }
+            }
+        }
+
+        await pool.query(
+            `UPDATE vip_subscriptions
+             SET status = 'canceled', cancel_at_period_end = FALSE, updated_at = NOW()
+             WHERE user_id = $1 AND status = ANY($2)`,
+            [userId, [...ACTIVE_SUBSCRIPTION_STATUSES]]
+        )
         await pool.query(
             `UPDATE vip_entitlements
              SET status = 'expired', updated_at = NOW()
@@ -570,8 +600,8 @@ router.post("/vip/revoke", requireAdmin, async (req, res, next) => {
         const state = userResult.rowCount
             ? await getVipStateForUser(userResult.rows[0], pool)
             : null
-        console.log(`[VIP REVOKE] by=${req.user.username} user_id=${userId}`)
-        res.json({ success: true, vip: state })
+        console.log(`[VIP REVOKE] by=${req.user.username} user_id=${userId} subscriptions_canceled=${canceledInStripe}`)
+        res.json({ success: true, vip: state, subscriptions_canceled: canceledInStripe })
     } catch (error) {
         next(error)
     }

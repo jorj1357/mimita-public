@@ -11,7 +11,7 @@ import test, { beforeEach } from "node:test"
 import assert from "node:assert/strict"
 import express from "express"
 import request from "supertest"
-import { createVipCheckoutRouter, createVipWebhookRouter, reconcilePendingCheckoutOrders, getVipOrders, computeUpgradeDiscountCents, VIP_FLOW_SOURCE } from "./vip-payments.js"
+import { createVipCheckoutRouter, createVipWebhookRouter, reconcilePendingCheckoutOrders, getVipOrders, computeUpgradeDiscountCents, syncActiveSubscriptions, VIP_FLOW_SOURCE } from "./vip-payments.js"
 import { clearRateLimitStores } from "./rateLimit.js"
 
 function makeStore() {
@@ -130,6 +130,13 @@ function makeDispatch(store) {
             return rows([])
         }
 
+        if (text.startsWith("UPDATE vip_entitlements") && text.includes("WHERE stripe_subscription_id = $1")) {
+            for (const entitlement of store.entitlements) {
+                if (entitlement.stripe_subscription_id === params[0]) entitlement.status = "expired"
+            }
+            return rows([])
+        }
+
         if (text.startsWith("SELECT * FROM vip_orders")) {
             const order = store.orders.get(params[0])
             return rows(order ? [structuredClone(order)] : [])
@@ -164,7 +171,8 @@ function makeDispatch(store) {
         }
 
         if (text.startsWith("INSERT INTO vip_entitlements")) {
-            const isSubscription = text.includes("ON CONFLICT DO NOTHING")
+            const isSubscription = text.includes("ON CONFLICT DO NOTHING") ||
+                text.includes("stripe_subscription_id <> ''")
             const rec = {
                 id: store.nextEntitlementId++,
                 user_id: params[0],
@@ -222,6 +230,21 @@ function makeDispatch(store) {
         if (text.startsWith("SELECT user_id, tier FROM vip_subscriptions")) {
             const sub = store.subscriptions.get(params[0])
             return rows(sub ? [{ user_id: sub.user_id, tier: sub.tier }] : [])
+        }
+
+        if (text.startsWith("SELECT id, user_id, tier, stripe_customer_id, stripe_subscription_id")) {
+            const active = [...store.subscriptions.values()]
+                .filter(s => ["active", "trialing", "past_due"].includes(s.status))
+            return rows(active.map(s => ({
+                id: 0,
+                user_id: s.user_id,
+                tier: s.tier,
+                stripe_customer_id: s.stripe_customer_id || "",
+                stripe_subscription_id: s.stripe_subscription_id,
+                status: s.status,
+                cancel_at_period_end: s.cancel_at_period_end === true,
+                current_period_end: s.current_period_end
+            })))
         }
 
         if (text.startsWith("UPDATE vip_orders") && text.includes("WHERE stripe_payment_intent_id")) {
@@ -689,4 +712,64 @@ test("computeUpgradeDiscountCents returns 0 when nothing remains", () => {
         now: new Date()
     })
     assert.equal(discount, 0)
+})
+
+test("syncActiveSubscriptions creates a missing entitlement for an active subscription", async () => {
+    store.subscriptions.set("sub_selfheal", {
+        user_id: 42,
+        tier: "super_vip",
+        stripe_customer_id: "cus_x",
+        stripe_subscription_id: "sub_selfheal",
+        status: "active",
+        current_period_start: null,
+        current_period_end: null,
+        cancel_at_period_end: false
+    })
+    fake.state.subscription = {
+        id: "sub_selfheal",
+        status: "active",
+        current_period_start: 1786051745,
+        current_period_end: null,
+        cancel_at_period_end: false,
+        customer: "cus_x"
+    }
+
+    const result = await syncActiveSubscriptions({
+        stripe: fake.stripe,
+        query: makeDispatch(store)
+    })
+    assert.equal(result.checked, 1)
+    const subEntitlement = store.entitlements.find(e => e.stripe_subscription_id === "sub_selfheal")
+    assert.ok(subEntitlement, "expected a subscription entitlement to be created")
+    assert.equal(subEntitlement.tier, "super_vip")
+    assert.equal(subEntitlement.source, "subscription")
+    assert.ok(subEntitlement.expires_at > subEntitlement.starts_at)
+})
+
+test("syncActiveSubscriptions marks a canceled subscription and counts the transition", async () => {
+    store.subscriptions.set("sub_cancel", {
+        user_id: 42,
+        tier: "vip",
+        stripe_customer_id: "cus_c",
+        stripe_subscription_id: "sub_cancel",
+        status: "active",
+        current_period_start: new Date(Date.now() - 86400000),
+        current_period_end: new Date(Date.now() + 20 * 86400000),
+        cancel_at_period_end: false
+    })
+    fake.state.subscription = {
+        id: "sub_cancel",
+        status: "canceled",
+        current_period_start: 1786051745,
+        current_period_end: 1788730145,
+        cancel_at_period_end: false,
+        customer: "cus_c"
+    }
+
+    const result = await syncActiveSubscriptions({
+        stripe: fake.stripe,
+        query: makeDispatch(store)
+    })
+    assert.equal(result.canceled, 1)
+    assert.equal(store.subscriptions.get("sub_cancel").status, "canceled")
 })

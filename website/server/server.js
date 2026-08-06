@@ -42,6 +42,7 @@ import { createCheckoutSessionRouter, createWebhookRouter } from "./banner-payme
 import { createVipCheckoutRouter, createVipWebhookRouter } from "./vip-payments.js"
 import { createVipRouter } from "./vip-routes.js"
 import { getVipStateForUser, runVipReconcile } from "./vip-entitlements.js"
+import { syncActiveSubscriptions } from "./vip-payments.js"
 import {
     createSiteBannerPublicRouter,
     createSiteBannerUserRouter,
@@ -1598,6 +1599,14 @@ async function start() {
             }
         } catch (e) {
             console.log(`[VIP ENTITLEMENT] ${label} reconcile error: ${e.message}`)
+        }
+        try {
+            const sync = await syncActiveSubscriptions()
+            if (sync.canceled || sync.checked) {
+                console.log(`[VIP ENTITLEMENT] ${label} subscriptions checked=${sync.checked} canceled=${sync.canceled}`)
+            }
+        } catch (e) {
+            console.log(`[VIP ENTITLEMENT] ${label} subscription sync error: ${e.message}`)
         }
     }
 
