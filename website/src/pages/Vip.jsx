@@ -242,8 +242,10 @@ export default function Vip() {
                 <div className="vipGrid">
                     {config.tiers.map(tier => (
                         <article key={tier.tier} className="vipTierBox">
+                            <div className="vipTierIcon">
+                                <VipBadge tier={tier.tier} src={tier.badge_url} size="lg" />
+                            </div>
                             <h2>{tier.tier.replace("_", " ").toUpperCase()}</h2>
-                            <VipBadge tier={tier.tier} src={tier.badge_url} size="lg" />
                             <p className="vipTierPrice">
                                 {dollars(tier.purchases.find(p => p.type === "monthly_subscription")?.amount_cents)} / month
                             </p>
@@ -262,7 +264,7 @@ export default function Vip() {
                                         title={option.configured ? "" : "Stripe is not configured"}
                                     >
                                         {option.type === "one_month" && `1 month ${dollars(option.amount_cents)}`}
-                                        {option.type === "monthly_subscription" && `subscribe ${dollars(option.amount_cents)}`}
+                                        {option.type === "monthly_subscription" && `subscribe monthly ${dollars(option.amount_cents)}`}
                                         {option.type === "twelve_month" && `12 months ${dollars(option.amount_cents)}`}
                                     </button>
                                 ))}

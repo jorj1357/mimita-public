@@ -9,10 +9,10 @@
 */
 
 import { Router } from "express"
-import Stripe from "stripe"
 import { pool } from "./db.js"
 import { authenticate, sessionSecret } from "./session.js"
 import { hashToken, createSecretToken } from "./authCore.js"
+import { getStripe, reconcilePendingCheckoutOrders } from "./vip-payments.js"
 import {
     publicVipConfig,
     safeStyleForTier,
@@ -35,9 +35,7 @@ function vipApiLog(event, fields = {}) {
 }
 
 function getPortalStripe() {
-    const key = process.env.STRIPE_SECRET_KEY
-    if (!key) return null
-    return new Stripe(key, { apiVersion: "2025-12-17.clover" })
+    return getStripe()
 }
 
 function appOrigin(req) {
@@ -62,6 +60,7 @@ export function createVipRouter(deps = {}) {
     const authenticateMw = deps.authenticateMw || authenticate
     const env = deps.env || process.env
     const stripeFactory = deps.stripeFactory || getPortalStripe
+    const reconcileOrders = deps.reconcileOrders || reconcilePendingCheckoutOrders
 
     router.get("/config", (req, res) => {
         res.json({
@@ -72,6 +71,7 @@ export function createVipRouter(deps = {}) {
 
     router.get("/me", authenticateMw, async (req, res, next) => {
         try {
+            await reconcileOrders({ stripe: stripeFactory(), userId: req.user.id })
             await recomputeAndStoreVipForUser(query, req.user.id)
             const state = await getVipStateForUser(req.user, query)
             res.json({ success: true, vip: state })

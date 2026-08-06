@@ -11,7 +11,7 @@ import test, { beforeEach } from "node:test"
 import assert from "node:assert/strict"
 import express from "express"
 import request from "supertest"
-import { createVipCheckoutRouter, createVipWebhookRouter, VIP_FLOW_SOURCE } from "./vip-payments.js"
+import { createVipCheckoutRouter, createVipWebhookRouter, reconcilePendingCheckoutOrders, VIP_FLOW_SOURCE } from "./vip-payments.js"
 import { clearRateLimitStores } from "./rateLimit.js"
 
 function makeStore() {
@@ -84,6 +84,15 @@ function makeDispatch(store) {
                 event.error_message = params[1]
             }
             return rows([])
+        }
+
+        if (text.startsWith("SELECT * FROM vip_orders") && text.includes("status = 'pending'")) {
+            const userIdFilter = params.length > 1 ? params[1] : null
+            const orders = [...store.orders.values()]
+                .filter(order => order.status === "pending" && order.stripe_checkout_session_id)
+                .filter(order => userIdFilter == null || order.user_id === userIdFilter)
+                .sort((a, b) => a.id - b.id)
+            return rows(orders.map(order => structuredClone(order)))
         }
 
         if (text.startsWith("SELECT * FROM vip_orders")) {
@@ -293,6 +302,7 @@ beforeEach(() => {
             event: null,
             validSignature: true,
             sessionParams: null,
+            retrievedSession: null,
             subscription: {
                 id: "sub_test",
                 customer: "cus_test",
@@ -309,6 +319,9 @@ beforeEach(() => {
                     async create(params) {
                         fake.state.sessionParams = params
                         return { id: "cs_test_vip", url: "https://checkout.stripe.test/vip" }
+                    },
+                    async retrieve() {
+                        return fake.state.retrievedSession
                     },
                     async listLineItems() {
                         return { data: [{ price: { id: "price_vip_1m" } }] }
@@ -451,4 +464,83 @@ test("refund marks linked order and entitlement inactive", async () => {
     assert.equal(res.status, 200)
     assert.equal(store.orders.get(checkout.body.order_id).status, "refunded")
     assert.equal(store.entitlements[0].status, "refunded")
+})
+
+function retrievedSession(orderId, overrides = {}) {
+    return {
+        object: "checkout.session",
+        id: overrides.sessionId || "cs_test_vip",
+        payment_status: overrides.payment_status || "paid",
+        amount_total: overrides.amount_total ?? 333,
+        currency: overrides.currency || "usd",
+        payment_intent: overrides.payment_intent || "pi_recon",
+        customer: overrides.customer || "cus_recon",
+        subscription: overrides.subscription || null,
+        metadata: {
+            source: VIP_FLOW_SOURCE,
+            vip_order_id: String(orderId),
+            user_id: "42",
+            tier: "vip",
+            purchase_type: "one_month",
+            ...overrides.metadata
+        },
+        line_items: {
+            data: [
+                {
+                    price: {
+                        id: overrides.priceId || "price_vip_1m"
+                    }
+                }
+            ]
+        }
+    }
+}
+
+async function runReconcile() {
+    return reconcilePendingCheckoutOrders({
+        stripe: fake.stripe,
+        getClient: () => makeClient(makeDispatch(store)),
+        query: makeDispatch(store)
+    })
+}
+
+test("reconcile grants a paid pending order when the webhook never fired", async () => {
+    const checkout = await createCheckout()
+    const orderId = checkout.body.order_id
+    assert.equal(store.orders.get(orderId).status, "pending")
+    fake.state.retrievedSession = retrievedSession(orderId)
+
+    const result = await runReconcile()
+    assert.equal(result.orders, 1)
+    assert.equal(result.reconciled, 1)
+    assert.equal(store.orders.get(orderId).status, "paid")
+    assert.equal(store.entitlements.length, 1)
+    assert.equal(store.entitlements[0].tier, "vip")
+    assert.equal(store.users.get(42).supporter_tier, "vip")
+})
+
+test("reconcile skips unpaid sessions and leaves the order pending", async () => {
+    const checkout = await createCheckout()
+    const orderId = checkout.body.order_id
+    fake.state.retrievedSession = retrievedSession(orderId, { payment_status: "unpaid" })
+
+    const result = await runReconcile()
+    assert.equal(result.orders, 1)
+    assert.equal(result.reconciled, 0)
+    assert.equal(store.orders.get(orderId).status, "pending")
+    assert.equal(store.entitlements.length, 0)
+})
+
+test("reconcile does not regrant an order that the webhook already paid", async () => {
+    const checkout = await createCheckout()
+    const orderId = checkout.body.order_id
+    await deliver(checkoutEvent(orderId))
+    assert.equal(store.orders.get(orderId).status, "paid")
+    assert.equal(store.entitlements.length, 1)
+
+    fake.state.retrievedSession = retrievedSession(orderId)
+    const result = await runReconcile()
+    assert.equal(result.orders, 0)
+    assert.equal(result.reconciled, 0)
+    assert.equal(store.entitlements.length, 1)
 })
