@@ -9,7 +9,7 @@
 
 import test from "node:test"
 import assert from "node:assert/strict"
-import { addUtcCalendarMonths, computeVipState } from "./vip-entitlements.js"
+import { addUtcCalendarMonths, computeVipState, grantPrepaidEntitlement } from "./vip-entitlements.js"
 import {
     defaultStyleForTier,
     staffStyleForRole,
@@ -169,4 +169,55 @@ test("tier-locked and unsafe animated styles are rejected", () => {
         }, { activeTier: "ultra_vip" }).ok,
         false
     )
+})
+
+test("admin grant records the admin source on the entitlement row", async () => {
+    const inserted = []
+    const fakeQuery = async (rawText, params = []) => {
+        const text = String(rawText).replace(/\s+/g, " ").trim()
+        if (text.startsWith("SELECT MAX(expires_at)")) {
+            return { rows: [{ expires_at: null }], rowCount: 1 }
+        }
+        if (text.startsWith("INSERT INTO vip_entitlements")) {
+            inserted.push(params)
+            return {
+                rows: [{ id: 1, starts_at: params[4], expires_at: params[5] }],
+                rowCount: 1
+            }
+        }
+        if (text.startsWith("SELECT id, role FROM users")) {
+            return { rows: [{ id: 42, role: "user" }], rowCount: 1 }
+        }
+        if (text.startsWith("SELECT tier, source, status")) {
+            return { rows: [{ tier: "super_vip", source: "admin", status: "active", starts_at: "2026-08-03T12:00:00.000Z", expires_at: "2026-09-03T12:00:00.000Z", stripe_subscription_id: "", stripe_checkout_session_id: "" }], rowCount: 1 }
+        }
+        if (text.startsWith("SELECT tier, status, current_period_start")) {
+            return { rows: [], rowCount: 0 }
+        }
+        if (text.startsWith("SELECT style_json")) {
+            return { rows: [], rowCount: 0 }
+        }
+        if (text.startsWith("SELECT COUNT(*)::int")) {
+            return { rows: [{ count: 0 }], rowCount: 1 }
+        }
+        if (text.startsWith("UPDATE users SET supporter_tier")) {
+            return { rows: [], rowCount: 0 }
+        }
+        throw new Error(`unexpected query: ${text}`)
+    }
+
+    const result = await grantPrepaidEntitlement(fakeQuery, {
+        userId: 42,
+        tier: "super_vip",
+        purchaseType: "admin_grant",
+        months: 1,
+        source: "admin",
+        now: new Date("2026-08-03T12:00:00.000Z")
+    })
+
+    assert.equal(result.tier, "super_vip")
+    assert.equal(inserted.length, 1)
+    // params: [user_id, order_id(null), tier, source, starts_at, expires_at, ...]
+    assert.equal(inserted[0][3], "admin")
+    assert.equal(result.expires_at.toISOString(), "2026-09-03T12:00:00.000Z")
 })

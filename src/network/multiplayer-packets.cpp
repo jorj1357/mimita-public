@@ -36,16 +36,25 @@ uint32_t mpFireRenderTick(const MultiplayerContext& ctx, uint32_t fallbackNewest
     const auto& interpCfg = NetworkingConfig::instance().data().remotePlayers;
     if (!interpCfg.directRender && interpCfg.enabled)
     {
-        // Remote bodies render at `estimatedServerNow - interpolationDelay`
-        // (the same continuous wall-clock clock the interpolation engine
-        // uses). The rewind tick the server should validate against is the
-        // exact tick the shooter was looking at, i.e. the current render time.
+        // Remote bodies render at `estimatedServerNow - renderDelay`, where
+        // renderDelay is the per-entity adaptive buffer depth that grows under
+        // jitter/loss (up to adaptive_snapshot_buffer.maximum_delay_ms). The
+        // rewind tick the server validates against must be the exact tick the
+        // shooter was looking at, so subtract the deepest currently-rendered
+        // entity's adaptive delay (not just the base interpolation delay).
+        // Without this the server rewinds too shallow under jitter and the
+        // predicted hit lands on a newer pose than the shooter actually saw.
         if (ctx.interpolationClockStarted && ctx.interpolationRenderTick > 0.0)
         {
+            double renderDelay = NetworkingConfig::instance()
+                .effectiveRemoteInterpolationDelaySeconds();
+            for (const auto& kv : ctx.remotePlayerInterpolation)
+                renderDelay = std::max(renderDelay, kv.second.adaptiveDelaySeconds);
+            for (const auto& kv : ctx.remoteNpcInterpolation)
+                renderDelay = std::max(renderDelay, kv.second.adaptiveDelaySeconds);
+
             const double delayTicks =
-                NetworkingConfig::instance()
-                    .effectiveRemoteInterpolationDelaySeconds() *
-                (double)GAMEPLAY_SIMULATION_HZ;
+                renderDelay * (double)GAMEPLAY_SIMULATION_HZ;
             const double viewTick = ctx.interpolationRenderTick - delayTicks;
             if (viewTick > 1.0)
                 return (uint32_t)std::floor(viewTick);
@@ -876,6 +885,16 @@ bool mpIceConnectStart(MultiplayerContext& ctx, const std::string& roomCode,
 
     ctx.connectFailed = false;
     ctx.connectionStatus = "Connecting...";
+
+    // Mark the context active immediately so mpTick runs during the async
+    // ICE connect and can consume the finished transport. Without this,
+    // mpTick is gated behind ctx.active and the completed job is never
+    // installed (mpInstallIceConnectSuccess), leaving the client stuck
+    // pre-join on the fallback map.
+    ctx.active = true;
+    ctx.connectionState = ConnectionState::NatNegotiating;
+    ctx.connectStartMs = nowMs();
+    ctx.sock = INVALID_SOCKET;
 
     gIceConnectJob = new IceConnectJob();
     gIceConnectJob->status.roomCode = roomCode;

@@ -120,16 +120,20 @@ function makeDispatch(store) {
         }
 
         if (text.startsWith("INSERT INTO vip_entitlements")) {
+            const isSubscription = text.includes("ON CONFLICT DO NOTHING")
             const rec = {
                 id: store.nextEntitlementId++,
                 user_id: params[0],
-                order_id: params[1] || null,
-                tier: params[2],
-                source: text.includes("'subscription'") ? "subscription" : "stripe",
+                order_id: isSubscription ? null : (params[1] || null),
+                tier: isSubscription ? params[1] : params[2],
+                source: isSubscription ? "subscription" : (params[3] || "stripe"),
                 status: "active",
-                starts_at: params[3],
-                expires_at: params[4],
-                stripe_subscription_id: params[4] && typeof params[4] === "string" ? params[4] : params[6] || ""
+                starts_at: isSubscription ? params[2] : params[4],
+                expires_at: isSubscription ? params[3] : params[5],
+                stripe_checkout_session_id: isSubscription ? "" : params[6] || "",
+                stripe_subscription_id: isSubscription ? params[4] : "",
+                stripe_payment_intent_id: isSubscription ? params[6] : params[7] || "",
+                stripe_customer_id: isSubscription ? params[5] : params[8] || ""
             }
             store.entitlements.push(rec)
             return rows([{ id: rec.id, starts_at: rec.starts_at, expires_at: rec.expires_at }])
