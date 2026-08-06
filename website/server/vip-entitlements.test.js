@@ -141,7 +141,7 @@ test("staff role colors override VIP name color but preserve VIP badge state", (
     assert.equal(state.active_tier, "ultra_vip")
     assert.equal(state.badge_url, "/assets/images/mimita%20ultra%20vip.png")
     assert.deepEqual(state.staff_style, staffStyleForRole("admin"))
-    assert.equal(state.display.name_color_override, "#191919")
+    assert.equal(state.display.name_color_override, "#000000")
 })
 
 test("normal users cannot select exact reserved staff colors", () => {
@@ -169,6 +169,34 @@ test("tier-locked and unsafe animated styles are rejected", () => {
         }, { activeTier: "ultra_vip" }).ok,
         false
     )
+})
+
+test("pure black and pure red are reserved for staff", () => {
+    for (const color of ["#000000", "#ff0000"]) {
+        const result = validateNameStyle(
+            { kind: "solid", solid_color: color },
+            { activeTier: "ultra_vip", role: "user" }
+        )
+        assert.equal(result.ok, false, `expected ${color} to be rejected`)
+        assert.match(result.message, /reserved/)
+    }
+})
+
+test("staff roles can use their own reserved colors", () => {
+    const result = validateNameStyle(
+        { kind: "solid", solid_color: "#000000" },
+        { activeTier: "super_vip", role: "admin" }
+    )
+    assert.equal(result.ok, true)
+})
+
+test("color_cycle is no longer a supported style kind", () => {
+    const result = validateNameStyle(
+        { kind: "color_cycle", colors: ["#ff0000", "#00ff00"] },
+        { activeTier: "ultra_vip", role: "user" }
+    )
+    assert.equal(result.ok, false)
+    assert.match(result.message, /unsupported/)
 })
 
 test("admin grant records the admin source on the entitlement row", async () => {

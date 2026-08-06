@@ -16,7 +16,7 @@ const TIER_COLORS = {
     super_vip: "#40e0d0",
     ultra_vip: "#40e0d0",
     moderator: "#ff0000",
-    admin: "#191919",
+    admin: "#000000",
     owner: "#000000"
 }
 
@@ -83,7 +83,7 @@ function renderText(name, style, baseClass) {
         )
     }
 
-    if (["rainbow", "animated_rainbow", "color_cycle"].includes(style.kind)) {
+    if (["rainbow", "animated_rainbow"].includes(style.kind)) {
         const colors = Array.isArray(style.colors) && style.colors.length > 1
             ? style.colors
             : ["#ff0044", "#ffcc00", "#00ff66", "#00ccff", "#9944ff"]
@@ -94,7 +94,7 @@ function renderText(name, style, baseClass) {
                 className={`${baseClass} vipNameRainbow ${animatedClass} ${directionClass}`}
                 style={{
                     backgroundImage: `linear-gradient(90deg, ${colors.join(", ")}, ${colors[0]})`,
-                    animationDuration: animationDuration(style)
+                    "--vip-anim-duration": animationDuration(style)
                 }}
             >
                 {name}
