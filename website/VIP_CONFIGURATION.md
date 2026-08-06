@@ -66,14 +66,43 @@ one-time purchases once the session is older than 60 seconds.
 ## Refunds
 
 One-time VIP purchases (`one_month`, `twelve_month`) are refundable for 100% within
-30 days of `paid_at`. The website exposes:
+30 days of `paid_at`. Refunds are handled through a support ticket:
 
-- `GET /api/vip/orders` (authenticated) — the user's orders with `refund_until` and `refundable` flags.
-- `POST /api/vip/refund` (authenticated, body `{ order_id }`) — issues a Stripe refund and revokes the
-  matching entitlement immediately (server-verified via the Stripe API, independent of webhooks).
+- The VIP success screen links to `/support?refund_order=<id>`, which pre-fills a ticket with
+  the user's username, account id, tier, order id, payment intent id, amount, paid date, and the
+  refund window. The admin reviews it and refunds in the Stripe dashboard.
+- `GET /api/vip/orders` (authenticated) exposes the order list with `refund_until`, `refundable`,
+  and `stripe_payment_intent_id`.
 
-Monthly subscriptions are not refunded through this endpoint; they are cancelled in the
-Stripe billing portal (`POST /api/vip/manage-subscription`).
+There is no self-serve automatic refund endpoint anymore.
+
+## Purchase guard and rollover discount
+
+The checkout endpoint (`POST /api/vip/payment/checkout`) enforces:
+
+- **Lower tier blocked** — if you already have a higher tier, buying a lower tier is rejected
+  (`You already have <tier> VIP`).
+- **Same tier** — allowed; the prepaid entitlement extends.
+- **Upgrade with rollover discount** — if you upgrade to a higher prepaid tier while a lower tier
+  is still active, the checkout price is the upgrade's full price minus the remaining value of your
+  current tier's unpaid time (remaining days / total days of the current entitlement). The discounted
+  amount is stored on the order, so webhooks and recovery validate against it.
+- Subscription upgrades are not discounted (they are managed in the billing portal).
+
+## Switching from Stripe test mode to live
+
+Once VIP is verified, move to production Stripe (secrets only — never committed):
+
+1. In the Stripe Dashboard, open the account in **Live mode** and copy the `sk_live_...` key.
+2. Create the 9 live Price IDs matching `MIMITA_STRIPE_PRICE_*` (or reuse the same amounts).
+3. Create a live webhook endpoint: URL `https://mimita.fun/api/vip/payment/webhook`, the 8 events.
+4. Copy the live webhook signing secret (`whsec_...`).
+5. On the VPS, update `/root/mimita-site/website/.env`:
+   - `STRIPE_SECRET_KEY=sk_live_...`
+   - `STRIPE_VIP_WEBHOOK_SECRET=whsec_...`
+   - all `MIMITA_STRIPE_PRICE_*` set to the live price IDs
+6. `pm2 restart mimita-api`.
+7. Make a small live test purchase and confirm the webhook fires (Dashboard -> Webhooks -> deliveries).
 
 ## Manage Subscription
 
@@ -104,9 +133,11 @@ Entitlement rules:
 
 - Paid VIP starts only after a verified Stripe webhook.
 - The server verifies event signature, event idempotency, order ownership, Price ID, amount, currency, tier, and purchase type.
-- Upgrades do not prorate; the highest currently active tier is displayed immediately.
+- Upgrades apply a rollover discount (see above); the highest currently active tier is displayed immediately.
 - Lower-tier prepaid/subscription entitlement remains active until its own end date.
 - One-month and twelve-month prepaid purchases use UTC calendar month arithmetic.
 - Subscriptions use Stripe `current_period_start` and `current_period_end`.
-- Staff role colors override VIP name colors; staff can still display the highest active VIP badge.
+- Staff (owner/admin/moderator) can pick what color their name shows via `staff_display` in their
+  name style: `owner`, `admin`, `moderator`, or `vip` (their own VIP style). Staff can use any color.
+  The role badge still shows regardless.
 - Game clients may request short-lived, one-time-use, room-bound join tickets, but servers must treat missing or invalid tickets as free gray styling instead of trusting client-supplied VIP data. Coordinator join tokens are not sent to the website VIP API.

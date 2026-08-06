@@ -11,7 +11,7 @@ import test, { beforeEach } from "node:test"
 import assert from "node:assert/strict"
 import express from "express"
 import request from "supertest"
-import { createVipCheckoutRouter, createVipWebhookRouter, reconcilePendingCheckoutOrders, getVipOrders, refundOrder, VIP_FLOW_SOURCE } from "./vip-payments.js"
+import { createVipCheckoutRouter, createVipWebhookRouter, reconcilePendingCheckoutOrders, getVipOrders, computeUpgradeDiscountCents, VIP_FLOW_SOURCE } from "./vip-payments.js"
 import { clearRateLimitStores } from "./rateLimit.js"
 
 function makeStore() {
@@ -100,6 +100,21 @@ function makeDispatch(store) {
                 .filter(order => order.user_id === params[0])
                 .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
             return rows(orders.map(order => structuredClone(order)))
+        }
+
+        if (text.startsWith("SELECT e.tier, e.starts_at, e.expires_at")) {
+            const result = store.entitlements
+                .filter(e => e.user_id === params[0] && e.status === "active")
+                .map(e => {
+                    const order = e.order_id ? store.orders.get(e.order_id) : null
+                    return {
+                        tier: e.tier,
+                        starts_at: e.starts_at,
+                        expires_at: e.expires_at,
+                        amount_cents: order ? order.amount_cents : null
+                    }
+                })
+            return rows(result)
         }
 
         if (text.startsWith("UPDATE vip_orders SET status = 'refunded'")) {
@@ -323,7 +338,6 @@ beforeEach(() => {
             validSignature: true,
             sessionParams: null,
             retrievedSession: null,
-            refundParams: null,
             subscription: {
                 id: "sub_test",
                 customer: "cus_test",
@@ -352,12 +366,6 @@ beforeEach(() => {
             customers: {
                 async create() {
                     return { id: "cus_created" }
-                }
-            },
-            refunds: {
-                async create(params) {
-                    fake.state.refundParams = params
-                    return { id: "re_test" }
                 }
             },
             subscriptions: {
@@ -461,6 +469,62 @@ test("wrong amount or currency does not grant entitlement", async () => {
         assert.equal(res.status, 400)
     }
     assert.equal(store.entitlements.length, 0)
+})
+
+test("checkout blocks buying a lower tier than the user already has", async () => {
+    store.entitlements.push({
+        id: 99,
+        user_id: 42,
+        tier: "ultra_vip",
+        source: "stripe",
+        status: "active",
+        starts_at: new Date(Date.now() - 1000),
+        expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+    })
+    const res = await request(app)
+        .post("/api/vip/payment/checkout")
+        .send({ tier: "vip", purchase_type: "one_month" })
+    assert.equal(res.status, 400)
+    assert.match(res.body.message, /already have/)
+    assert.equal(store.orders.size, 0)
+})
+
+test("checkout applies a rollover discount when upgrading to a higher tier", async () => {
+    store.orders.set(500, {
+        id: 500,
+        user_id: 42,
+        tier: "vip",
+        purchase_type: "one_month",
+        amount_cents: 333,
+        currency: "usd",
+        status: "paid",
+        stripe_checkout_session_id: "",
+        stripe_payment_intent_id: "pi_x",
+        stripe_subscription_id: "",
+        stripe_customer_id: "",
+        stripe_event_id: ""
+    })
+    store.entitlements.push({
+        id: 501,
+        user_id: 42,
+        order_id: 500,
+        tier: "vip",
+        source: "stripe",
+        status: "active",
+        starts_at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+        expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+    })
+
+    const res = await request(app)
+        .post("/api/vip/payment/checkout")
+        .send({ tier: "ultra_vip", purchase_type: "one_month" })
+    assert.equal(res.status, 200)
+
+    const created = store.orders.get(res.body.order_id)
+    const expectedDiscount = Math.floor(333 * (30 / 60))
+    assert.equal(created.amount_cents, 1777 - expectedDiscount)
+    assert.equal(created.stripe_price_id, "")
+    assert.equal(fake.state.sessionParams.line_items[0].price_data.unit_amount, created.amount_cents)
 })
 
 test("subscription checkout records Stripe subscription period", async () => {
@@ -599,45 +663,29 @@ test("getVipOrders does not mark monthly subscriptions refundable", async () => 
     assert.equal(orders[0].refundable, false)
 })
 
-test("refundOrder refunds a paid order inside the window and revokes the entitlement", async () => {
-    const checkout = await createCheckout()
-    const orderId = checkout.body.order_id
-    await deliver(checkoutEvent(orderId))
-    const order = store.orders.get(orderId)
-    order.paid_at = new Date(Date.now() - 1000)
-    order.stripe_payment_intent_id = "pi_test"
-
-    const result = await refundOrder({
-        stripe: fake.stripe,
-        getClient: () => makeClient(makeDispatch(store)),
-        query: makeDispatch(store),
-        userId: 42,
-        orderId
+test("computeUpgradeDiscountCents returns remaining value of the current tier", () => {
+    const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    const end = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+    const discount = computeUpgradeDiscountCents({
+        requestedTier: "ultra_vip",
+        amountCents: 1000,
+        startsAt: start,
+        expiresAt: end,
+        now: new Date()
     })
-    assert.equal(result.success, true)
-    assert.equal(fake.state.refundParams.payment_intent, "pi_test")
-    assert.equal(store.orders.get(orderId).status, "refunded")
-    assert.equal(store.entitlements[0].status, "refunded")
-    assert.equal(store.users.get(42).supporter_tier, "free")
+    // Half of the 60-day entitlement remains, so half the amount is rolled over.
+    assert.equal(discount, 500)
 })
 
-test("refundOrder rejects an order outside the 30 day window", async () => {
-    const checkout = await createCheckout()
-    const orderId = checkout.body.order_id
-    await deliver(checkoutEvent(orderId))
-    const order = store.orders.get(orderId)
-    order.paid_at = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000)
-    order.stripe_payment_intent_id = "pi_test"
-
-    await assert.rejects(
-        () => refundOrder({
-            stripe: fake.stripe,
-            getClient: () => makeClient(makeDispatch(store)),
-            query: makeDispatch(store),
-            userId: 42,
-            orderId
-        }),
-        /refund window has passed/
-    )
-    assert.equal(store.orders.get(orderId).status, "paid")
+test("computeUpgradeDiscountCents returns 0 when nothing remains", () => {
+    const start = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000)
+    const end = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000)
+    const discount = computeUpgradeDiscountCents({
+        requestedTier: "ultra_vip",
+        amountCents: 1000,
+        startsAt: start,
+        expiresAt: end,
+        now: new Date()
+    })
+    assert.equal(discount, 0)
 })

@@ -251,6 +251,30 @@ export function staffStyleForRole(role) {
     }
 }
 
+export const STAFF_DISPLAY_OPTIONS = ["owner", "admin", "moderator", "vip"]
+
+export function isStaffRole(role) {
+    return Boolean(STAFF_ROLE_COLORS[String(role || "user").trim().toLowerCase()])
+}
+
+export function staffDisplayDefault(role) {
+    const normalized = String(role || "user").trim().toLowerCase()
+    if (normalized === "owner") return "owner"
+    if (normalized === "admin") return "admin"
+    if (normalized === "moderator") return "moderator"
+    return "vip"
+}
+
+export function staffDisplayColor(display) {
+    return STAFF_ROLE_COLORS[String(display || "").trim().toLowerCase()] || ""
+}
+
+export function normalizeStaffDisplay(input, role) {
+    const value = String(input || "").trim().toLowerCase()
+    if (!isStaffRole(role)) return "vip"
+    return STAFF_DISPLAY_OPTIONS.includes(value) ? value : staffDisplayDefault(role)
+}
+
 export function defaultStyleForTier(tier) {
     const normalized = normalizeTier(tier)
     if (normalized === "ultra_vip") {
@@ -372,6 +396,8 @@ export function validateNameStyle(input, options = {}) {
         result.rainbow_direction = direction
         result.animation = animation
     }
+
+    result.staff_display = normalizeStaffDisplay(style.staff_display, role)
 
     return { ok: true, style: result }
 }

@@ -42,8 +42,6 @@ export default function VipSuccess() {
     const [vip, setVip] = useState(null)
     const [user, setUser] = useState(null)
     const [orders, setOrders] = useState([])
-    const [refunding, setRefunding] = useState(false)
-    const [refundMessage, setRefundMessage] = useState("")
     const [message, setMessage] = useState("waiting for Stripe webhook...")
 
     const orderId = Number(new URLSearchParams(location.search).get("order_id") || 0)
@@ -86,25 +84,6 @@ export default function VipSuccess() {
         poll()
         return () => { alive = false }
     }, [navigate, location.pathname])
-
-    async function requestRefund(order) {
-        setRefunding(true)
-        setRefundMessage("")
-        try {
-            await apiRequest("/api/vip/refund", {
-                method: "POST",
-                body: JSON.stringify({ order_id: order.id })
-            })
-            setOrders(current => current.map(o => o.id === order.id ? { ...o, status: "refunded", refundable: false } : o))
-            setRefundMessage("Refund requested. The money will be returned to your original payment method.")
-        }
-        catch (error) {
-            setRefundMessage(error.message)
-        }
-        finally {
-            setRefunding(false)
-        }
-    }
 
     const previewUser = user && vip
         ? { ...user, supporter_tier: vip.active_tier, vip }
@@ -150,14 +129,9 @@ export default function VipSuccess() {
                                     <strong>{stampText(refundOrder.refund_until)}</strong> to get a{" "}
                                     <strong>100% refund</strong>!!!
                                 </p>
-                                <button
-                                    type="button"
-                                    onClick={() => requestRefund(refundOrder)}
-                                    disabled={refunding}
-                                >
-                                    Click here to refund
-                                </button>
-                                {refundMessage && <p className="vipNotice">{refundMessage}</p>}
+                                <p className="vipNotice">
+                                    <Link to={`/support?refund_order=${refundOrder.id}`}>Click here to request a refund</Link>
+                                </p>
                             </div>
                         )}
 

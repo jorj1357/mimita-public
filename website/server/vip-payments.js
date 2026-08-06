@@ -16,9 +16,11 @@ import { createRateLimit } from "./rateLimit.js"
 import {
     getPurchaseDefinition,
     getStripePriceId,
-    normalizeTier
+    normalizeTier,
+    tierRank
 } from "./vip-config.js"
 import {
+    getVipStateForUser,
     grantPrepaidEntitlement,
     markVipOrderStatus,
     recomputeAndStoreVipForUser,
@@ -125,11 +127,11 @@ async function getStripeSubscription(stripe, subscriptionId) {
     return stripe.subscriptions.retrieve(id)
 }
 
-function checkoutLineItem(def, priceId) {
-    if (priceId) return { price: priceId, quantity: 1 }
+function checkoutLineItem(def, priceId, amountCents = null) {
+    if (priceId && amountCents == null) return { price: priceId, quantity: 1 }
     const priceData = {
         currency: def.currency,
-        unit_amount: def.amount_cents,
+        unit_amount: amountCents ?? def.amount_cents,
         product_data: {
             name: `MiMITA ${def.label}`
         }
@@ -141,6 +143,28 @@ function checkoutLineItem(def, priceId) {
         }
     }
     return { price_data: priceData, quantity: 1 }
+}
+
+// Remaining value of a currently active lower-tier entitlement, used as a
+// rollover discount when upgrading to a higher tier. Returns 0 when there is
+// no current entitlement or no paid amount to roll over.
+export function computeUpgradeDiscountCents({
+    requestedTier = "",
+    amountCents = 0,
+    startsAt = null,
+    expiresAt = null,
+    now = new Date()
+} = {}) {
+    const start = toDate(startsAt)
+    const end = toDate(expiresAt)
+    const current = now instanceof Date ? now : new Date(now)
+    if (!start || !end || tierRank(requestedTier) <= 0) return 0
+    const totalMs = end.getTime() - start.getTime()
+    const remainingMs = end.getTime() - current.getTime()
+    if (totalMs <= 0 || remainingMs <= 0) return 0
+    const amount = Number(amountCents) || 0
+    if (amount <= 0) return 0
+    return Math.max(Math.floor(amount * remainingMs / totalMs), 0)
 }
 
 async function storeStripeCustomerId(query, userId, customerId) {
@@ -377,84 +401,10 @@ export async function getVipOrders({ query = pool, userId = 0, now = new Date() 
             paid_at: toIso(row.paid_at),
             created_at: toIso(row.created_at),
             refund_until: toIso(refundUntil),
-            refundable
+            refundable,
+            stripe_payment_intent_id: cleanId(row.stripe_payment_intent_id)
         }
     })
-}
-
-export async function refundOrder({
-    stripe = getStripe(),
-    getClient = () => pool.connect(),
-    query = pool,
-    userId = 0,
-    orderId = 0,
-    now = new Date()
-} = {}) {
-    if (!stripe?.refunds?.create) throw new Error("Stripe refunds are not configured")
-
-    const numericUserId = Number(userId)
-    const numericOrderId = Number(orderId)
-    if (!Number.isInteger(numericUserId) || !Number.isInteger(numericOrderId) || numericOrderId <= 0) {
-        throw new Error("invalid order")
-    }
-    const current = now instanceof Date ? now : new Date(now)
-
-    const orderResult = await queryFrom(query)(
-        `SELECT * FROM vip_orders WHERE id = $1 AND user_id = $2 LIMIT 1`,
-        [numericOrderId, numericUserId]
-    )
-    const order = orderResult.rows?.[0]
-    if (!order) throw new Error("order not found")
-    if (order.status !== "paid") throw new Error("order is not refundable")
-    if (String(order.purchase_type) === "monthly_subscription") throw new Error("subscriptions are cancelled in the billing portal, not refunded")
-
-    const paidAt = toDate(order.paid_at)
-    if (!paidAt) throw new Error("order has no payment date")
-    const refundUntil = new Date(paidAt.getTime() + VIP_REFUND_WINDOW_MS)
-    if (refundUntil <= current) throw new Error("the 30 day refund window has passed")
-
-    const paymentIntentId = cleanId(order.stripe_payment_intent_id)
-    if (!paymentIntentId) throw new Error("order has no payment intent to refund")
-
-    await stripe.refunds.create({
-        payment_intent: paymentIntentId,
-        metadata: {
-            source: VIP_FLOW_SOURCE,
-            user_id: String(numericUserId),
-            order_id: String(numericOrderId)
-        }
-    })
-
-    const client = await getClient()
-    try {
-        await client.query("BEGIN")
-        await client.query(
-            `UPDATE vip_orders SET status = 'refunded', updated_at = NOW() WHERE id = $1`,
-            [numericOrderId]
-        )
-        await client.query(
-            `UPDATE vip_entitlements SET status = 'refunded', updated_at = NOW() WHERE order_id = $1`,
-            [numericOrderId]
-        )
-        await recomputeAndStoreVipForUser(client, numericUserId, current)
-        await client.query("COMMIT")
-        vipLog("refund_processed", { user_id: numericUserId, order_id: numericOrderId })
-    }
-    catch (error) {
-        try {
-            await client.query("ROLLBACK")
-        }
-        catch {
-            // best effort after rollback
-        }
-        vipLog("refund_failed", { user_id: numericUserId, order_id: numericOrderId, reason: error.message })
-        throw error
-    }
-    finally {
-        client.release()
-    }
-
-    return { success: true, refunded_order_id: numericOrderId }
 }
 
 async function processSubscriptionLikeEvent({ client, stripe, object }) {
@@ -551,13 +501,54 @@ export function createVipCheckoutRouter(deps = {}) {
             const priceId = getStripePriceId(tier, purchaseType, env)
             const customerId = await ensureStripeCustomer(query, stripe, req.user)
 
+            const now = new Date()
+            const currentState = await getVipStateForUser(req.user, query, now)
+            const currentTier = currentState.active_tier
+
+            if (tierRank(tier) < tierRank(currentTier)) {
+                return res.status(400).json({
+                    success: false,
+                    message: `You already have ${currentTier} VIP. Buying a lower tier won't change your current tier.`
+                })
+            }
+
+            let amountCents = def.amount_cents
+            let effectivePriceId = priceId
+            let discountCents = 0
+            if (tierRank(tier) > tierRank(currentTier) && currentTier !== "free" && def.mode === "payment") {
+                const entitlements = await query(
+                    `SELECT e.tier, e.starts_at, e.expires_at, o.amount_cents
+                     FROM vip_entitlements e
+                     LEFT JOIN vip_orders o ON o.id = e.order_id
+                     WHERE e.user_id = $1 AND e.status = 'active'
+                       AND e.starts_at <= $2 AND e.expires_at > $2`,
+                    [req.user.id, now]
+                )
+                const lower = entitlements.rows
+                    .filter(row => tierRank(row.tier) < tierRank(tier))
+                    .sort((a, b) => tierRank(b.tier) - tierRank(a.tier))[0]
+                if (lower) {
+                    discountCents = computeUpgradeDiscountCents({
+                        requestedTier: tier,
+                        amountCents: lower.amount_cents,
+                        startsAt: lower.starts_at,
+                        expiresAt: lower.expires_at,
+                        now
+                    })
+                    if (discountCents > 0) {
+                        amountCents = Math.max(def.amount_cents - discountCents, 1)
+                        effectivePriceId = ""
+                    }
+                }
+            }
+
             const order = await query(
                 `INSERT INTO vip_orders (
                     user_id, tier, purchase_type, amount_cents, currency, stripe_price_id
                  )
                  VALUES ($1, $2, $3, $4, $5, $6)
                  RETURNING id`,
-                [req.user.id, tier, purchaseType, def.amount_cents, def.currency, priceId]
+                [req.user.id, tier, purchaseType, amountCents, def.currency, effectivePriceId]
             )
             const orderId = order.rows[0].id
             const origin = appOrigin(req)
@@ -570,7 +561,7 @@ export function createVipCheckoutRouter(deps = {}) {
             }
             const params = {
                 mode: def.mode,
-                line_items: [checkoutLineItem(def, priceId)],
+                line_items: [checkoutLineItem(def, effectivePriceId, effectivePriceId ? null : amountCents)],
                 metadata,
                 client_reference_id: `vip_order:${orderId}`,
                 success_url: `${origin}/vip/success?order_id=${orderId}`,
@@ -595,7 +586,9 @@ export function createVipCheckoutRouter(deps = {}) {
                 order_id: orderId,
                 tier,
                 purchase_type: purchaseType,
-                mode: def.mode
+                mode: def.mode,
+                amount_cents: amountCents,
+                discount_cents: discountCents
             })
 
             res.json({

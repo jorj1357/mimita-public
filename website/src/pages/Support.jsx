@@ -1,4 +1,5 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { useLocation } from "react-router-dom"
 import "../App.css"
 import "../styles/support.css"
 import Layout from "../components/Layout"
@@ -13,7 +14,16 @@ const TOPICS = [
     { value: "other", label: "Other" }
 ]
 
+function stampText(iso) {
+    if (!iso) return ""
+    const d = new Date(iso)
+    if (!Number.isFinite(d.getTime())) return ""
+    const pad = value => String(value).padStart(2, "0")
+    return `${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
 export default function Support() {
+    const location = useLocation()
     const [email, setEmail] = useState("")
     const [topic, setTopic] = useState("game_issue")
     const [subject, setSubject] = useState("")
@@ -22,6 +32,43 @@ export default function Support() {
     const [bannerOrderId, setBannerOrderId] = useState("")
     const [sent, setSent] = useState(false)
     const [error, setError] = useState("")
+
+    const refundOrderId = Number(new URLSearchParams(location.search).get("refund_order") || 0)
+
+    useEffect(() => {
+        if (!refundOrderId) return
+        let alive = true
+        Promise.all([
+            apiRequest("/api/auth/me"),
+            apiRequest("/api/vip/orders")
+        ])
+            .then(([me, ordersData]) => {
+                if (!alive) return
+                const order = (ordersData.orders || []).find(o => o.id === refundOrderId)
+                if (!order) return
+                const user = me.user
+                setTopic("payment_finance")
+                setSubject("Refund Request")
+                setEmail(user.email || "")
+                setUrl(`/vip/success?order_id=${order.id}`)
+                setMessage([
+                    "Refund request (VIP).",
+                    `Username: ${user.username}`,
+                    `Account ID: ${user.id}`,
+                    `Tier: ${order.tier}`,
+                    `Purchase: ${order.purchase_type}`,
+                    `Amount: $${(Number(order.amount_cents) / 100).toFixed(2)} ${order.currency}`,
+                    `Order ID: ${order.id}`,
+                    `Payment Intent: ${order.stripe_payment_intent_id || "unknown"}`,
+                    `Paid at: ${stampText(order.paid_at)}`,
+                    `Refund window ends: ${stampText(order.refund_until)}`,
+                    "",
+                    "Please verify the account and payment above, then refund if approved."
+                ].join("\n"))
+            })
+            .catch(() => {})
+        return () => { alive = false }
+    }, [refundOrderId])
 
     async function handleSubmit(e) {
         e.preventDefault()

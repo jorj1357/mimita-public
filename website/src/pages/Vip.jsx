@@ -29,6 +29,14 @@ function dateText(iso) {
 
 const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing", "past_due"])
 
+const TIER_RANK = { vip: 1, super_vip: 2, ultra_vip: 3 }
+
+const TIER_LABELS = {
+    vip: "VIP",
+    super_vip: "Super VIP",
+    ultra_vip: "Ultra VIP"
+}
+
 export default function Vip() {
     const navigate = useNavigate()
     const location = useLocation()
@@ -113,53 +121,57 @@ export default function Vip() {
         vip
     }
 
+    const currentRank = TIER_RANK[vip.active_tier] || 0
+
     return (
         <Layout>
             <section className="vipPage">
                 <h1>MiMITA VIP</h1>
-                <p className="vipDonationNotice">
-                    VIP is a supporter thing, not a paywall. You get a cool colorful name here on the website and in the game.
-                    More supporter features will be added over time, but VIP will never be the main focus and will never block
-                    access to anything. If you don't have VIP you can still play and do everything. It's strictly:
-                    "I appreciate this and I want to support it."
-                </p>
-                <p className="vipNotice">
-                    VIP belongs to your account. Checkout prices are selected by the server and confirmed by Stripe webhooks.
-                </p>
                 {message && <p className={message.includes("failed") || message.includes("not") ? "vipError" : "vipNotice"}>{message}</p>}
 
                 <div className="vipGrid">
-                    {config.tiers.map(tier => (
-                        <article key={tier.tier} className="vipTierBox">
-                            <div className="vipTierIcon">
-                                <VipBadge tier={tier.tier} src={tier.badge_url} size="lg" />
-                            </div>
-                            <h2>{tier.tier.replace("_", " ").toUpperCase()}</h2>
-                            <p className="vipTierPrice">
-                                {dollars(tier.purchases.find(p => p.type === "monthly_subscription")?.amount_cents)} / month
-                            </p>
-                            <ul>
-                                <li>{tier.tier === "vip" ? "turquoise name" : "includes lower tiers"}</li>
-                                {tier.tier !== "vip" && <li>custom color and rainbow styles</li>}
-                                {tier.tier === "ultra_vip" && <li>per-letter colors, speed, direction, presets</li>}
-                            </ul>
-                            <div className="vipCheckoutBtns">
-                                {tier.purchases.map(option => (
-                                    <button
-                                        key={option.type}
-                                        type="button"
-                                        disabled={!option.configured || busy === `${tier.tier}:${option.type}`}
-                                        onClick={() => checkout(tier.tier, option.type)}
-                                        title={option.configured ? "" : "Stripe is not configured"}
-                                    >
-                                        {option.type === "one_month" && `1 month ${dollars(option.amount_cents)}`}
-                                        {option.type === "monthly_subscription" && `subscribe monthly ${dollars(option.amount_cents)}`}
-                                        {option.type === "twelve_month" && `12 months ${dollars(option.amount_cents)}`}
-                                    </button>
-                                ))}
-                            </div>
-                        </article>
-                    ))}
+                    {config.tiers.map(tier => {
+                        const rank = TIER_RANK[tier.tier] || 0
+                        const isLower = vip.active_tier !== "free" && rank < currentRank
+                        const isUpgrade = vip.active_tier !== "free" && rank > currentRank
+                        return (
+                            <article key={tier.tier} className="vipTierBox">
+                                <div className="vipTierIcon">
+                                    <VipBadge tier={tier.tier} src={tier.badge_url} size="lg" />
+                                </div>
+                                <h2>{tier.tier.replace("_", " ").toUpperCase()}</h2>
+                                <p className="vipTierPrice">
+                                    {dollars(tier.purchases.find(p => p.type === "monthly_subscription")?.amount_cents)} / month
+                                </p>
+                                <ul>
+                                    <li>{tier.tier === "vip" ? "turquoise name" : "includes lower tiers"}</li>
+                                    {tier.tier !== "vip" && <li>custom color and rainbow styles</li>}
+                                    {tier.tier === "ultra_vip" && <li>per-letter colors, speed, direction, presets</li>}
+                                </ul>
+                                {isLower && (
+                                    <p className="vipNotice">You already have {TIER_LABELS[vip.active_tier]}. Buying this lower tier does nothing.</p>
+                                )}
+                                {isUpgrade && (
+                                    <p className="vipNotice">Upgrade - a rollover discount applies from your current {TIER_LABELS[vip.active_tier]} time.</p>
+                                )}
+                                <div className="vipCheckoutBtns">
+                                    {tier.purchases.map(option => (
+                                        <button
+                                            key={option.type}
+                                            type="button"
+                                            disabled={isLower || !option.configured || busy === `${tier.tier}:${option.type}`}
+                                            onClick={() => checkout(tier.tier, option.type)}
+                                            title={option.configured ? "" : "Stripe is not configured"}
+                                        >
+                                            {option.type === "one_month" && `1 month ${dollars(option.amount_cents)}`}
+                                            {option.type === "monthly_subscription" && `subscribe monthly ${dollars(option.amount_cents)}`}
+                                            {option.type === "twelve_month" && `12 months ${dollars(option.amount_cents)}`}
+                                        </button>
+                                    ))}
+                                </div>
+                            </article>
+                        )
+                    })}
                 </div>
 
                 <section className="vipCurrentStatus">
@@ -177,12 +189,29 @@ export default function Vip() {
                         <button type="button" onClick={manageSubscription} disabled={busy === "manage-subscription"}>
                             manage subscription
                         </button>
+                    ) : vip.active ? (
+                        <p className="vipNotice">
+                            You have {TIER_LABELS[vip.active_tier]} VIP (prepaid) until {dateText(vip.expires_at)}. No active subscription.
+                        </p>
                     ) : (
                         <p className="vipNotice">No active subscription detected!</p>
                     )}
                     <p>Want to change your name style? Edit it on your <Link to="/profile">profile</Link> or from the profile menu.</p>
                     <p><Link to="/account">back to account</Link></p>
                 </section>
+
+                <p className="vipDonationNotice">
+                    VIP is a supporter thing NOT a paywall. NOT required for anything. MiMITA is free 100%.
+                    You get a cool colorful name here on the website and in the game.
+                    More supporter features will be added over time, 
+                    but VIP will never!!!!!!!!!!!!!1 be the main focus 
+                    and will never!!!!!!!!!!!!!!!!! block access to anything. 
+                    If you don't have VIP you can still play and do everything. 
+                    If u dont spend a single dollar in any currency u still will have 
+                    1000% access to all fun things in MiMITA. 
+                    It's strictly:
+                    "I appreciate this and I want to support it."
+                </p>
             </section>
         </Layout>
     )

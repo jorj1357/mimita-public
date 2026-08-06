@@ -13,6 +13,21 @@ export const STYLE_LABELS = {
     per_letter: "Per-letter"
 }
 
+export const STAFF_DISPLAY_LABELS = {
+    owner: "Owner color",
+    admin: "Admin color",
+    moderator: "Moderator color",
+    vip: "My VIP style"
+}
+
+export const STAFF_COLORS = {
+    owner: "#000000",
+    admin: "#000000",
+    moderator: "#ff0000"
+}
+
+export const STAFF_ROLES = new Set(["owner", "admin", "moderator"])
+
 export function normalizeStyle(style) {
     return {
         version: 1,
@@ -23,6 +38,7 @@ export function normalizeStyle(style) {
             : ["#ff0044", "#ffcc00", "#00ff66", "#00ccff", "#9944ff"],
         rainbow_speed: Number(style?.rainbow_speed || 1),
         rainbow_direction: style?.rainbow_direction || "ltr",
-        animation: style?.animation || "cycle"
+        animation: style?.animation || "cycle",
+        staff_display: style?.staff_display || "vip"
     }
 }

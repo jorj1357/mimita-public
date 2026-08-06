@@ -12,7 +12,7 @@ import { Router } from "express"
 import { pool } from "./db.js"
 import { authenticate, sessionSecret } from "./session.js"
 import { hashToken, createSecretToken } from "./authCore.js"
-import { getStripe, reconcilePendingCheckoutOrders, getVipOrders, refundOrder } from "./vip-payments.js"
+import { getStripe, reconcilePendingCheckoutOrders, getVipOrders } from "./vip-payments.js"
 import {
     publicVipConfig,
     safeStyleForTier,
@@ -88,23 +88,6 @@ export function createVipRouter(deps = {}) {
         }
         catch (error) {
             next(error)
-        }
-    })
-
-    router.post("/refund", authenticateMw, async (req, res) => {
-        try {
-            const orderId = Number(req.body.order_id || 0)
-            const result = await refundOrder({
-                stripe: stripeFactory(),
-                getClient: () => pool.connect(),
-                query,
-                userId: req.user.id,
-                orderId
-            })
-            res.json({ success: true, ...result })
-        }
-        catch (error) {
-            res.status(400).json({ success: false, message: error.message })
         }
     })
 
