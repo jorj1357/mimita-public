@@ -1,8 +1,8 @@
 // 08 06 2026, 16 30
 /* purpose
 * Shows the post-Stripe VIP checkout confirmation screen with a live name preview.
-* Polls the authenticated VIP API until the webhook-granted tier appears, then shows
-* tier/expiry details, an edit-color link, and a 30-day self-serve refund action.
+* Polls the authenticated VIP API until the granted tier appears, showing a loading spinner
+* while checking and clear failure feedback (check again / refund / support) if it doesn't.
 * DOES NOT trust redirect query parameters as proof of payment.
 * DOES NOT create checkout sessions or process Stripe webhooks.
 * DOES NOT render game-engine nameplates or badges.
@@ -20,6 +20,9 @@ const TIER_LABELS = {
     super_vip: "Super VIP",
     ultra_vip: "Ultra VIP"
 }
+
+const MAX_TRIES = 20
+const POLL_INTERVAL = 1500
 
 function tierLabel(tier) {
     return TIER_LABELS[tier] || String(tier || "").replace("_", " ").toUpperCase() || "VIP"
@@ -42,7 +45,8 @@ export default function VipSuccess() {
     const [vip, setVip] = useState(null)
     const [user, setUser] = useState(null)
     const [orders, setOrders] = useState([])
-    const [message, setMessage] = useState("waiting for Stripe webhook...")
+    const [state, setState] = useState("checking")
+    const [pollKey, setPollKey] = useState(0)
 
     const orderId = Number(new URLSearchParams(location.search).get("order_id") || 0)
 
@@ -63,12 +67,14 @@ export default function VipSuccess() {
                 setVip(status.vip)
                 setOrders(ordersData.orders || [])
                 if (status.vip?.active_tier && status.vip.active_tier !== "free") {
-                    setMessage("")
+                    setState("success")
                     return
                 }
-                setMessage(tries >= 12
-                    ? "Stripe has not confirmed the payment yet."
-                    : "waiting for Stripe webhook...")
+                if (tries >= MAX_TRIES) {
+                    setState("failed")
+                    return
+                }
+                setState("checking")
             }
             catch (error) {
                 if (error?.status === 401) {
@@ -76,14 +82,12 @@ export default function VipSuccess() {
                 }
                 return
             }
-            if (alive && tries < 12) {
-                setTimeout(poll, 1500)
-            }
+            if (alive) setTimeout(poll, POLL_INTERVAL)
         }
 
         poll()
         return () => { alive = false }
-    }, [navigate, location.pathname])
+    }, [navigate, location.pathname, pollKey])
 
     const previewUser = user && vip
         ? { ...user, supporter_tier: vip.active_tier, vip }
@@ -96,14 +100,59 @@ export default function VipSuccess() {
     const refundOrder = paidOrder && paidOrder.refundable ? paidOrder : null
     const refundedOrder = paidOrder && paidOrder.status === "refunded" ? paidOrder : null
 
+    function checkAgain() {
+        setState("checking")
+        setPollKey(key => key + 1)
+    }
+
     return (
         <Layout>
             <section className="vipPage">
                 <h1>MiMITA VIP</h1>
 
-                {message && <p className="vipNotice">{message}</p>}
+                {state === "checking" && (
+                    <div className="vipCheckingBox">
+                        <span className="vipSpinner" aria-hidden="true" />
+                        <p className="vipNotice">Checking your payment...</p>
+                        <p className="vipNotice">
+                            VIP activates right after Stripe confirms the payment. This can take a few seconds.
+                        </p>
+                    </div>
+                )}
 
-                {vip?.active_tier && vip.active_tier !== "free" && (
+                {state === "failed" && (
+                    <div className="vipFailureBox">
+                        <p className="vipSuccessTitle" style={{ color: "#ffcc00" }}>Still waiting...</p>
+                        <p className="vipNotice">
+                            Stripe has not confirmed the payment yet. Your payment usually went through on
+                            Stripe, but VIP activation is delayed by a moment.
+                        </p>
+                        {paidOrder && paidOrder.status === "paid" && (
+                            <p className="vipNotice">
+                                Order #{paidOrder.id} is marked paid, VIP is just still activating. Wait about a
+                                minute and check again.
+                            </p>
+                        )}
+                        <div className="vipCheckoutBtns">
+                            <button type="button" onClick={checkAgain}>Check again</button>
+                            {paidOrder && (
+                                <button type="button">
+                                    <Link to={`/support?refund_order=${paidOrder.id}`} style={{ color: "inherit", textDecoration: "none" }}>
+                                        Request a refund
+                                    </Link>
+                                </button>
+                            )}
+                            <button type="button">
+                                <Link to="/support" style={{ color: "inherit", textDecoration: "none" }}>
+                                    Contact support
+                                </Link>
+                            </button>
+                        </div>
+                        <p className="vipNotice">Still stuck? Request a refund and we'll fix it and confirm your account.</p>
+                    </div>
+                )}
+
+                {state === "success" && vip?.active_tier && vip.active_tier !== "free" && (
                     <>
                         <p className="vipSuccessTitle">Success!!!</p>
                         <p className="vipNotice">
@@ -145,7 +194,7 @@ export default function VipSuccess() {
                     </>
                 )}
 
-                {!message && !(vip?.active_tier && vip.active_tier !== "free") && (
+                {state === "success" && !(vip?.active_tier && vip.active_tier !== "free") && (
                     <p><Link to="/vip">open VIP settings</Link></p>
                 )}
             </section>

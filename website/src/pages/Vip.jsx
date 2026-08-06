@@ -211,6 +211,10 @@ export default function Vip() {
                     1000% access to all fun things in MiMITA. 
                     It's strictly:
                     "I appreciate this and I want to support it."
+                    None of this enshittification none of this
+                    "Um actually it costs $29.99 to do the egg hunt and an additional $4.99 to get a sprint function"
+                    like that is so lame i NEVER am ever gonna do that. EVER!!!!!!!
+                    and if i ever DO something that even Remotly seems like that CALL ME OUT ON IT + SHOW ME THIS PAGE !!!!!!!!!!!
                 </p>
             </section>
         </Layout>

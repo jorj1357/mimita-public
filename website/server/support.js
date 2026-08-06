@@ -20,6 +20,7 @@ export const SUPPORT_TOPICS = [
     { value: "user_issue", label: "Issue with another user" },
     { value: "game_issue", label: "Issue with the MiMITA game" },
     { value: "payment_finance", label: "Issue with payment or finance" },
+    { value: "vip_purchase", label: "Issue with VIP purchase" },
     { value: "security", label: "Issue with security, hacks, or attempted hacks" },
     { value: "other", label: "Other" }
 ]

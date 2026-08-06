@@ -192,3 +192,71 @@ function escapeHtml(value) {
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;")
 }
+
+const VIP_TIER_LABELS = {
+    vip: "VIP",
+    super_vip: "Super VIP",
+    ultra_vip: "Ultra VIP"
+}
+
+const VIP_PURCHASE_LABELS = {
+    one_month: "1 month",
+    twelve_month: "12 months",
+    monthly_subscription: "monthly subscription"
+}
+
+export async function sendVipPurchaseEmail({
+    email,
+    username = "",
+    tier = "vip",
+    purchaseType = "one_month",
+    amountCents = 0,
+    currency = "usd",
+    orderId = "",
+    paidAt = new Date()
+} = {}) {
+    const tierLabel = VIP_TIER_LABELS[tier] || tier
+    const purchaseLabel = VIP_PURCHASE_LABELS[purchaseType] || purchaseType
+    const amount = `$${(Number(amountCents) / 100).toFixed(2)} ${String(currency).toUpperCase()}`
+    const time = new Date(paidAt).toLocaleString("en-US", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+    })
+    const origin = process.env.APP_ORIGIN || "https://mimita.fun"
+    const vipUrl = `${origin}/vip`
+
+    const text =
+        `Your MiMITA VIP is active!\n\n` +
+        `Hi ${username},\n` +
+        `You now have ${tierLabel} VIP.\n\n` +
+        `Tier: ${tierLabel}\n` +
+        `Purchase: ${purchaseLabel}\n` +
+        `Amount paid: ${amount}\n` +
+        `Date/time: ${time}\n` +
+        `Order id: ${orderId}\n\n` +
+        `Customize your name color here: ${vipUrl}\n` +
+        `Thanks for supporting MiMITA!`
+
+    await sendMail({
+        to: email,
+        subject: "Your MiMITA VIP is active!",
+        text,
+        html: `
+            <h1>Your MiMITA VIP is active!</h1>
+            <p>Hi ${escapeHtml(username)}, you now have <strong>${escapeHtml(tierLabel)}</strong> VIP.</p>
+            <table style="border-collapse:collapse">
+                <tr><td style="padding:4px 12px 4px 0"><strong>Tier</strong></td><td style="padding:4px 0">${escapeHtml(tierLabel)}</td></tr>
+                <tr><td style="padding:4px 12px 4px 0"><strong>Purchase</strong></td><td style="padding:4px 0">${escapeHtml(purchaseLabel)}</td></tr>
+                <tr><td style="padding:4px 12px 4px 0"><strong>Amount paid</strong></td><td style="padding:4px 0">${escapeHtml(amount)}</td></tr>
+                <tr><td style="padding:4px 12px 4px 0"><strong>Date/time</strong></td><td style="padding:4px 0">${escapeHtml(time)}</td></tr>
+                <tr><td style="padding:4px 12px 4px 0"><strong>Order id</strong></td><td style="padding:4px 0">${escapeHtml(String(orderId))}</td></tr>
+            </table>
+            <p><a href="${escapeHtml(vipUrl)}" style="display:inline-block;padding:12px 24px;background:#40e0d0;color:#000;text-decoration:none;border-radius:4px">Customize your name color</a></p>
+            <p>Thanks for supporting MiMITA!</p>
+        `
+    })
+}

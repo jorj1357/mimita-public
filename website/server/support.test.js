@@ -63,7 +63,9 @@ test("topic is required", async () => {
 
 test("all topics are accepted", async () => {
     for (const topic of SUPPORT_TOPICS.map(t => t.value)) {
-        const res = await request(app).post("/api/support").send({ ...VALID, topic })
+        clearRateLimitStores()
+        const freshApp = makeSupportApp({ store, currentAdminRef, mailCalls, mailError })
+        const res = await request(freshApp).post("/api/support").send({ ...VALID, topic })
         assert.equal(res.status, 201, topic)
     }
 })

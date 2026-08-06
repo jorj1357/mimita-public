@@ -13,6 +13,7 @@ import Stripe from "stripe"
 import { pool } from "./db.js"
 import { authenticate } from "./session.js"
 import { createRateLimit } from "./rateLimit.js"
+import { sendVipPurchaseEmail } from "./mail.js"
 import {
     getPurchaseDefinition,
     getStripePriceId,
@@ -285,6 +286,31 @@ async function processCheckoutCompleted({ client, stripe, session, event }) {
         })
     }
 
+    try {
+        const userResult = await client.query(
+            `SELECT email, username FROM users WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
+            [order.user_id]
+        )
+        const account = userResult.rows?.[0]
+        if (account?.email) {
+            sendVipPurchaseEmail({
+                email: account.email,
+                username: account.username || "",
+                tier: order.tier,
+                purchaseType: order.purchase_type,
+                amountCents: order.amount_cents,
+                currency: order.currency,
+                orderId: order.id,
+                paidAt: new Date()
+            })
+                .then(() => vipLog("purchase_email_sent", { user_id: order.user_id, order_id: order.id }))
+                .catch(error => vipLog("purchase_email_failed", { user_id: order.user_id, order_id: order.id, reason: error.message }))
+        }
+    }
+    catch (error) {
+        vipLog("purchase_email_skipped", { user_id: order.user_id, order_id: order.id, reason: error.message })
+    }
+
     return "processed_checkout"
 }
 
@@ -299,7 +325,7 @@ export async function reconcilePendingCheckoutOrders({
         return { orders: 0, reconciled: 0 }
     }
 
-    const gateTime = new Date((now instanceof Date ? now : new Date(now)).getTime() - 60_000)
+    const gateTime = new Date((now instanceof Date ? now : new Date(now)).getTime() - 20_000)
     const params = [gateTime]
     let userClause = ""
     const numericUserId = Number(userId)
