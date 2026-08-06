@@ -13,4 +13,8 @@ void walkGLBScene(
     int sceneIndex,
     Mesh* skyMesh = nullptr);
 
+// Resolves the shared default texture, lazily on first use. Must be called from
+// the main thread at least once before background GLB parse threads run.
+GLuint getGLBDefaultTexture();
+
 void generateTriangleNormals(std::vector<Vertex>& verts, size_t first, size_t count);

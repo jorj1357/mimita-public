@@ -100,27 +100,65 @@ void gatherHeadlessTrianglesForAABB(
     if (s_gen.size() != world.triangles.size())
         s_gen.assign(world.triangles.size(), 0);
 
+    // Expand by `expansion` for sub-cell selection so triangles in the overlap
+    // filter's expanded zone are never missed.
+    AABB subQuery = queryBounds;
+    subQuery.min -= glm::vec3(expansion);
+    subQuery.max += glm::vec3(expansion);
+
+    auto visitTri = [&](int triIdx) {
+        if (triIdx < 0 || triIdx >= (int)world.triangles.size())
+            return;
+        if (s_gen[triIdx] == s_curGen)
+            return;
+        s_gen[triIdx] = s_curGen;
+
+        AABB tb = makeTriangleAABB(world.triangles[triIdx]);
+        tb.min -= glm::vec3(expansion);
+        tb.max += glm::vec3(expansion);
+        if (overlaps(queryBounds, tb))
+            out.push_back(triIdx);
+    };
+
     for (int x = c0.x; x <= c1.x; ++x)
     for (int y = c0.y; y <= c1.y; ++y)
     for (int z = c0.z; z <= c1.z; ++z)
     {
-        auto it = world.collisionChunks.find(glm::ivec3(x, y, z));
+        glm::ivec3 chunkCoord(x, y, z);
+        auto it = world.collisionChunks.find(chunkCoord);
         if (it == world.collisionChunks.end())
             continue;
 
-        for (int triIdx : it->second)
+        auto subIt = world.collisionSubGrids.find(chunkCoord);
+        if (subIt != world.collisionSubGrids.end() && subIt->second.subSize > 0.001f)
         {
-            if (triIdx < 0 || triIdx >= (int)world.triangles.size())
-                continue;
-            if (s_gen[triIdx] == s_curGen)
-                continue;
-            s_gen[triIdx] = s_curGen;
-
-            AABB tb = makeTriangleAABB(world.triangles[triIdx]);
-            tb.min -= glm::vec3(expansion);
-            tb.max += glm::vec3(expansion);
-            if (overlaps(queryBounds, tb))
-                out.push_back(triIdx);
+            const float cs = world.collisionChunkSize;
+            const float subSize = subIt->second.subSize;
+            const int subdiv = std::max(1, (int)std::floor(cs / subSize + 0.5f));
+            const glm::vec3 chunkMin((float)chunkCoord.x * cs, (float)chunkCoord.y * cs, (float)chunkCoord.z * cs);
+            glm::ivec3 s0((int)std::floor((subQuery.min.x - chunkMin.x) / subSize),
+                          (int)std::floor((subQuery.min.y - chunkMin.y) / subSize),
+                          (int)std::floor((subQuery.min.z - chunkMin.z) / subSize));
+            glm::ivec3 s1((int)std::floor((subQuery.max.x - chunkMin.x) / subSize),
+                          (int)std::floor((subQuery.max.y - chunkMin.y) / subSize),
+                          (int)std::floor((subQuery.max.z - chunkMin.z) / subSize));
+            s0 = glm::clamp(s0, glm::ivec3(0), glm::ivec3(subdiv - 1));
+            s1 = glm::clamp(s1, glm::ivec3(0), glm::ivec3(subdiv - 1));
+            for (int sx = s0.x; sx <= s1.x; ++sx)
+            for (int sy = s0.y; sy <= s1.y; ++sy)
+            for (int sz = s0.z; sz <= s1.z; ++sz)
+            {
+                auto scIt = subIt->second.cells.find(glm::ivec3(sx, sy, sz));
+                if (scIt == subIt->second.cells.end())
+                    continue;
+                for (int triIdx : scIt->second)
+                    visitTri(triIdx);
+            }
+        }
+        else
+        {
+            for (int triIdx : it->second)
+                visitTri(triIdx);
         }
     }
 

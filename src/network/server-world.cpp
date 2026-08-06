@@ -253,6 +253,46 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
         }
         printf("%s [SERVER WORLD] built collision grid: chunks=%zu largeTris=%zu\n",
                serverTimestamp(), world.collisionChunks.size(), world.collisionLargeTriangles.size());
+
+        // Second-level sub-grid: divide each chunk into 4^3 sub-cells so projectile
+        // broadphase near dense geometry only tests touched sub-cells.
+        constexpr int SUBDIV = 4;
+        const float subSize = CS / (float)SUBDIV;
+        uint64_t totalSubRefs = 0;
+        for (const auto& kv : world.collisionChunks)
+        {
+            const glm::ivec3 chunkCoord = kv.first;
+            const glm::vec3 chunkMin = glm::vec3(chunkCoord) * CS;
+            HeadlessSubGrid sub;
+            sub.subSize = subSize;
+            for (int triIdx : kv.second)
+            {
+                if (triIdx < 0 || triIdx >= (int)world.triangles.size())
+                    continue;
+                const CollisionTriangle& tri = world.triangles[triIdx];
+                glm::vec3 mn = glm::min(glm::min(tri.a, tri.b), tri.c);
+                glm::vec3 mx = glm::max(glm::max(tri.a, tri.b), tri.c);
+                glm::ivec3 s0((int)std::floor((mn.x - chunkMin.x) / subSize),
+                              (int)std::floor((mn.y - chunkMin.y) / subSize),
+                              (int)std::floor((mn.z - chunkMin.z) / subSize));
+                glm::ivec3 s1((int)std::floor((mx.x - chunkMin.x) / subSize),
+                              (int)std::floor((mx.y - chunkMin.y) / subSize),
+                              (int)std::floor((mx.z - chunkMin.z) / subSize));
+                s0 = glm::clamp(s0, glm::ivec3(0), glm::ivec3(SUBDIV - 1));
+                s1 = glm::clamp(s1, glm::ivec3(0), glm::ivec3(SUBDIV - 1));
+                for (int x = s0.x; x <= s1.x; ++x)
+                for (int y = s0.y; y <= s1.y; ++y)
+                for (int z = s0.z; z <= s1.z; ++z)
+                {
+                    sub.cells[glm::ivec3(x, y, z)].push_back(triIdx);
+                    ++totalSubRefs;
+                }
+            }
+            world.collisionSubGrids[chunkCoord] = std::move(sub);
+        }
+        printf("%s [SERVER WORLD] built collision subgrids: %zu subSize=%.2f totalSubRefs=%llu\n",
+               serverTimestamp(), world.collisionSubGrids.size(), subSize,
+               (unsigned long long)totalSubRefs);
     }
 
     printf("%s [SERVER WORLD] loaded map collision triangles=%zu spawnpoints=%zu bounds=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n",

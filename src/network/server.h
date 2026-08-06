@@ -82,6 +82,13 @@ struct HeadlessIVec3Hash {
     }
 };
 
+// Second-level sub-grid inside each chunk (mirrors client CollisionSubGrid)
+struct HeadlessSubGrid
+{
+    float subSize = 0.0f;
+    std::unordered_map<glm::ivec3, std::vector<int>, HeadlessIVec3Hash> cells;
+};
+
 struct HeadlessWorld
 {
     std::vector<CollisionTriangle> triangles;
@@ -93,6 +100,9 @@ struct HeadlessWorld
     float collisionChunkSize = 6.0f;
     std::unordered_map<glm::ivec3, std::vector<int>, HeadlessIVec3Hash> collisionChunks;
     std::vector<int> collisionLargeTriangles;
+
+    // Second-level sub-grid inside each chunk (mirrors client collisionSubGrids)
+    std::unordered_map<glm::ivec3, HeadlessSubGrid, HeadlessIVec3Hash> collisionSubGrids;
 };
 
 struct ServerInput

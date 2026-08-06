@@ -51,6 +51,7 @@ std::string collisionLastTraceSummary();
 std::string collisionStateSummary(const class Player& p);
 std::string collisionStressRun(const std::string& caseName);
 bool collisionStressSelfTest(std::string* outSummary = nullptr);
+bool collisionSubGridSelfTest(std::string* outSummary = nullptr);
 
 // Resolve collision between two capsules (e.g., player vs NPC)
 // - Mutates positions of both capsules

@@ -10,6 +10,7 @@
 #include "analytics/analytics-manager.h"
 #include "map/map_loader.h"
 #include "map/map-loader-collision.h"
+#include "combat/weapon-model-cache.h"
 #include "debug/debug-log.h"
 #include "utils/path_utils.h"
 #include "game/spawn-utils.h"
@@ -93,6 +94,11 @@ bool loadWorldFromGLB(World& world, const char* path)
     const auto finished = std::chrono::steady_clock::now();
     timing.world_commit = std::chrono::duration<double, std::milli>(finished - unloadStarted).count();
     timing.total = std::chrono::duration<double, std::milli>(finished - loadStarted).count();
+
+    // A map has been loaded on the main thread, so the GLB walker's default
+    // texture is warm. Kick off background parses of every weapon model now so
+    // the first equip of each weapon never stalls the frame.
+    WeaponModelCache::instance().preloadAll();
 
     printf("[MAP LOAD PHASE] phase=read_glb time=%.1fms\n", timing.read_glb);
     printf("[MAP LOAD PHASE] phase=parse_glb time=%.1fms\n", timing.parse_glb);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <memory>
 #include <glm/glm.hpp>
 #include <glm/mat4x4.hpp>
 #include <vector>
@@ -10,6 +11,7 @@ class Camera;
 class Player;
 struct WeaponDefinition;
 struct WeaponViewModelConfig;
+struct PendingWeaponModel;
 
 struct WeaponViewModel {
     Mesh heldMesh;
@@ -27,6 +29,11 @@ struct WeaponViewModel {
     float recoil = 0.0f;
     float disturbance = 0.0f;
 
+    // Shared async-loaded model asset; all viewmodels of the same weapon path
+    // reference the same GPU buffers.
+    std::shared_ptr<PendingWeaponModel> mModelAsset;
+    unsigned int mSyncedVao = 0;
+
     glm::vec3 mTint{1.0f};  // current tint for rendering
     float mEmptyFlashTimer = 0.0f;  // accumulator for empty-magazine flash
 
@@ -37,6 +44,7 @@ struct WeaponViewModel {
     float mReloadBlendVelocity = 0.0f;
 
     void loadModel(const std::string& modelPath);
+    void syncFromAsset();
     void update(const Camera& camera, Player& player, float dt,
                 const WeaponDefinition* def, bool updatePlayerPose = true,
                 const class World* world = nullptr);

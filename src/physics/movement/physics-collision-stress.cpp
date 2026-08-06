@@ -2,10 +2,12 @@
 #include <cmath>
 #include <vector>
 #include <string>
+#include <algorithm>
 #include <glm/glm.hpp>
 #include "physics/config.h"
 #include "world/world.h"
 #include "entities/player.h"
+#include "map/map-loader-collision.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "debug/debug-log.h"
@@ -210,6 +212,94 @@ bool collisionStressSelfTest(std::string* outSummary)
         summary += caseOk ? "PASS " : "FAIL ";
         summary += result.summary;
         summary += "\n";
+    }
+
+    if (outSummary)
+        *outSummary = summary;
+    return ok;
+}
+
+// Verifies the collision sub-grid broadphase returns exactly the same triangle
+// set as the previous whole-chunk iteration (via brute-force overlap scan), and
+// that a small query near a dense cluster touches a small fraction of triangles.
+bool collisionSubGridSelfTest(std::string* outSummary)
+{
+    std::string summary;
+    bool ok = true;
+    auto check = [&](bool cond, const char* name) {
+        summary += cond ? "  PASS: " : "  FAIL: ";
+        summary += name;
+        summary += "\n";
+        if (!cond) ok = false;
+    };
+
+    // Dense cluster of tiny triangles packed into one 6-unit chunk (~9600 tris).
+    World world;
+    world.collisionChunkSize = 6.0f;
+    constexpr int GRID = 40;
+    for (int x = 0; x < GRID; ++x)
+    for (int y = 0; y < GRID; ++y)
+    for (int z = 0; z < 3; ++z)
+    {
+        glm::vec3 p0(x * 0.1f, y * 0.1f, z * 1.0f);
+        CollisionTriangle tri;
+        tri.a = p0;
+        tri.b = glm::vec3(p0.x + 0.1f, p0.y, p0.z);
+        tri.c = glm::vec3(p0.x, p0.y + 0.1f, p0.z);
+        tri.normal = glm::vec3(0.0f, 0.0f, 1.0f);
+        world.collisionMesh.triangles.push_back(tri);
+    }
+
+    buildCollisionChunks(world, nullptr);
+
+    check(!world.collisionChunks.empty(), "chunks built");
+    check(!world.collisionSubGrids.empty(), "subgrids built");
+    check(!world.collisionMesh.triangles.empty(), "dense triangles present");
+
+    // Brute-force reference using the same overlap filter as the broadphase.
+    auto bruteForce = [&](const AABB& q, float expansion) {
+        std::vector<int> out;
+        for (int i = 0; i < (int)world.collisionMesh.triangles.size(); ++i) {
+            AABB tb = makeTriangleAABB(world.collisionMesh.triangles[i]);
+            tb.min -= glm::vec3(expansion);
+            tb.max += glm::vec3(expansion);
+            if (overlaps(q, tb))
+                out.push_back(i);
+        }
+        return out;
+    };
+
+    const float expansion = 0.1f;
+    const AABB queries[] = {
+        AABB{{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+        AABB{{-0.5f, -0.5f, -0.5f}, {2.0f, 2.0f, 2.0f}},
+        AABB{{100.0f, 100.0f, 100.0f}, {101.0f, 101.0f, 101.0f}},
+        AABB{{-1.0f, -1.0f, -1.0f}, {5.0f, 5.0f, 4.0f}}
+    };
+
+    for (int i = 0; i < 4; ++i) {
+        std::vector<int> expected = bruteForce(queries[i], expansion);
+        std::vector<int> got;
+        appendChunkTrianglesForAABB(world, queries[i], expansion, got, "subgridSelftest");
+        std::sort(expected.begin(), expected.end());
+        std::sort(got.begin(), got.end());
+        bool sameSet = (expected == got);
+        char name[128];
+        std::snprintf(name, sizeof(name),
+            "query%d candidate set matches brute-force (%zu vs %zu)",
+            i + 1, got.size(), expected.size());
+        check(sameSet, name);
+    }
+
+    {
+        std::vector<int> small;
+        appendChunkTrianglesForAABB(world, queries[0], expansion, small, "subgridSelftestSmall");
+        const float ratio = (float)small.size() / (float)world.collisionMesh.triangles.size();
+        char name[128];
+        std::snprintf(name, sizeof(name),
+            "small query returns %zu/%zu tris (%.2f%% of world)",
+            small.size(), world.collisionMesh.triangles.size(), ratio * 100.0f);
+        check(!small.empty() && ratio < 0.5f, name);
     }
 
     if (outSummary)
