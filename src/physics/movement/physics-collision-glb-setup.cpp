@@ -276,9 +276,13 @@ std::vector<int> gatherGLBTriangles(
 
     AABB sweepBounds = makeSweptCapsuleAABB(cap, move);
 
-    constexpr float EXTRA_XY = 1.0f;
-    constexpr float EXTRA_Z_DOWN = 0.5f;
-    constexpr float EXTRA_Z_UP = 0.5f;
+    // Small safety pads beyond the swept capsule AABB (which already includes the
+    // capsule radius). A triangle farther than the capsule radius from the swept
+    // path can never contact the capsule, so a large margin only wastes swept
+    // tests near dense geometry.
+    constexpr float EXTRA_XY = 0.2f;
+    constexpr float EXTRA_Z_DOWN = 0.2f;
+    constexpr float EXTRA_Z_UP = 0.3f;
 
     sweepBounds.min.x -= EXTRA_XY;
     sweepBounds.min.y -= EXTRA_XY;
@@ -320,7 +324,7 @@ std::vector<int> gatherGLBTriangles(
     }
     recordQuery(sweepBounds, currentFrame, effectiveCaller);
 
-    appendChunkTrianglesForAABB(world, sweepBounds, cap.r + EXTRA_XY, out, "gatherGLBTriangles");
+    appendChunkTrianglesForAABB(world, sweepBounds, COLLISION_GATHER_EXPANSION, out, "gatherGLBTriangles");
 
     auto t1 = std::chrono::steady_clock::now();
     float elapsedMs = std::chrono::duration<float, std::milli>(t1 - t0).count();

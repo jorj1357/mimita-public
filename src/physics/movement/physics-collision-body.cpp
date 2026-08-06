@@ -141,19 +141,29 @@ std::vector<RecoveryContact> collectBodyWeaponContacts(
     auto t0 = std::chrono::steady_clock::now();
     std::vector<RecoveryContact> contacts;
     constexpr float SLIDE_SLOP = 0.002f;
+    (void)candidates;
 
     // Use per-weapon collision skin from config, fall back to default
     float skin = p.weaponCollisionDebug.valid
         ? p.weaponCollisionDebug.collisionSkin
         : DEFAULT_WEAPON_COLLISION_SKIN;
 
-    gBW.candidateCount = (int)candidates.size();
+    gBW.candidateCount = 0;
     int totalTests = 0;
     int sweepHits = 0;
 
     for (const BodyWeaponSphere& bs : spheres)
     {
-        for (int triIdx : candidates)
+        // Gather only the triangles near this sphere (sub-grid broadphase) instead
+        // of testing every body/weapon sphere against the whole shared candidate
+        // list. Near dense geometry this turns O(spheres × candidates) into
+        // O(sum of per-sphere local candidates) and also correctly covers limbs
+        // and the weapon that extend beyond the root capsule.
+        std::vector<int> localCandidates = gatherGLBTrianglesForSphere(
+            world, bs.center, bs.radius + skin, bs.sweepDelta, "bwSphereGather");
+        gBW.candidateCount += (int)localCandidates.size();
+
+        for (int triIdx : localCandidates)
         {
             ++totalTests;
             if (triIdx < 0 || triIdx >= (int)world.collisionMesh.triangles.size())

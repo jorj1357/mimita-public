@@ -13,6 +13,7 @@
 #include "physics/physics-mini.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
+#include "physics/movement/physics-collision-subgrid.h"
 #include "render/render-player.h"
 #include "world/world.h"
 #include "audio/audio.h"
@@ -592,6 +593,11 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             float chunkSize = world.collisionChunkSize;
             if (chunkSize > 0.001f && !world.collisionChunks.empty())
             {
+                AABB rayAABB{
+                    glm::min(fromPos, toPos),
+                    glm::max(fromPos, toPos)
+                };
+
                 glm::vec3 pos = fromPos;
                 glm::vec3 step;
                 step.x = losDir.x > 0.0f ? chunkSize : -chunkSize;
@@ -621,30 +627,39 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
                     auto it = world.collisionChunks.find(cell);
                     if (it != world.collisionChunks.end())
                     {
-                        for (int triIdx : it->second)
-                        {
-                            if (triIdx < 0 || triIdx >= (int)world.collisionMesh.triangles.size())
-                                continue;
-                            const CollisionTriangle& tri = world.collisionMesh.triangles[triIdx];
-                            glm::vec3 e1 = tri.b - tri.a;
-                            glm::vec3 e2 = tri.c - tri.a;
-                            glm::vec3 pVec = glm::cross(losDir, e2);
-                            float det = glm::dot(e1, pVec);
-                            if (std::fabs(det) < 0.0001f) continue;
-                            float invDet = 1.0f / det;
-                            glm::vec3 tVec = fromPos - tri.a;
-                            float u = glm::dot(tVec, pVec) * invDet;
-                            if (u < 0.0f || u > 1.0f) continue;
-                            glm::vec3 qVec = glm::cross(tVec, e1);
-                            float v = glm::dot(losDir, qVec) * invDet;
-                            if (v < 0.0f || u + v > 1.0f) continue;
-                            float t = glm::dot(e2, qVec) * invDet;
-                            if (t > 0.1f && t < losDist - 0.5f)
-                            {
-                                npc.cachedLoSBlocked = true;
-                                break;
-                            }
-                        }
+                        // Visit only sub-cells the ray sweeps through so dense
+                        // chunks don't cost a full per-chunk triangle scan.
+                        const glm::vec3 chunkMin((float)cell.x * chunkSize,
+                                                 (float)cell.y * chunkSize,
+                                                 (float)cell.z * chunkSize);
+                        AABB cellAABB{chunkMin, chunkMin + glm::vec3(chunkSize)};
+                        AABB overlap{glm::max(rayAABB.min, cellAABB.min),
+                                     glm::min(rayAABB.max, cellAABB.max)};
+                        collision_subgrid::forEachChunkTriOverlap(world, cell, it->second, overlap,
+                            [&](int triIdx) -> bool {
+                                if (triIdx < 0 || triIdx >= (int)world.collisionMesh.triangles.size())
+                                    return false;
+                                const CollisionTriangle& tri = world.collisionMesh.triangles[triIdx];
+                                glm::vec3 e1 = tri.b - tri.a;
+                                glm::vec3 e2 = tri.c - tri.a;
+                                glm::vec3 pVec = glm::cross(losDir, e2);
+                                float det = glm::dot(e1, pVec);
+                                if (std::fabs(det) < 0.0001f) return false;
+                                float invDet = 1.0f / det;
+                                glm::vec3 tVec = fromPos - tri.a;
+                                float u = glm::dot(tVec, pVec) * invDet;
+                                if (u < 0.0f || u > 1.0f) return false;
+                                glm::vec3 qVec = glm::cross(tVec, e1);
+                                float v = glm::dot(losDir, qVec) * invDet;
+                                if (v < 0.0f || u + v > 1.0f) return false;
+                                float t = glm::dot(e2, qVec) * invDet;
+                                if (t > 0.1f && t < losDist - 0.5f)
+                                {
+                                    npc.cachedLoSBlocked = true;
+                                    return true; // stop scanning this cell
+                                }
+                                return false;
+                            });
                         if (npc.cachedLoSBlocked) break;
                     }
 
