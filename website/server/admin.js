@@ -7,8 +7,14 @@ import { getErrors, getErrorCount } from "./error-queue.js"
 import {
     grantPrepaidEntitlement,
     getVipStateForUser,
-    recomputeAndStoreVipForUser
+    recomputeAndStoreVipForUser,
+    ACTIVE_SUBSCRIPTION_STATUSES
 } from "./vip-entitlements.js"
+import {
+    normalizeTier,
+    tierRank,
+    validateNameStyle
+} from "./vip-config.js"
 import {
     parseCookies,
     clearSessionCookie,
@@ -372,7 +378,11 @@ function regenerateJson() {
     const articles = getAllArticles()
         .filter(a => a.published)
         .sort((a, b) => b.date.localeCompare(a.date))
-        .map(({ published, ...rest }) => rest)
+        .map(a => {
+            const rest = { ...a }
+            delete rest.published
+            return rest
+        })
     const json = JSON.stringify(articles, null, 2)
 
     const dir = path.dirname(JSON_OUTPUT)
@@ -562,6 +572,175 @@ router.post("/vip/revoke", requireAdmin, async (req, res, next) => {
             : null
         console.log(`[VIP REVOKE] by=${req.user.username} user_id=${userId}`)
         res.json({ success: true, vip: state })
+    } catch (error) {
+        next(error)
+    }
+})
+
+export function computeVipAdminFlags({ subscriptions = [], activeTier = "free", now = new Date() } = {}) {
+    const current = now instanceof Date ? now : new Date(now)
+    const active = (subscriptions || []).filter(s =>
+        ACTIVE_SUBSCRIPTION_STATUSES.has(String(s.status)) &&
+        s.current_period_end &&
+        new Date(s.current_period_end) > current
+    )
+    let subscriptionTier = "free"
+    for (const s of active) {
+        const tier = normalizeTier(s.tier)
+        if (tierRank(tier) > tierRank(subscriptionTier)) subscriptionTier = tier
+    }
+    const hasActiveSubscription = active.length > 0
+    return {
+        has_active_subscription: hasActiveSubscription,
+        subscription_tier: subscriptionTier,
+        desync: hasActiveSubscription && tierRank(subscriptionTier) > tierRank(activeTier)
+    }
+}
+
+router.get("/vip/lookup", requireAdmin, async (req, res, next) => {
+    try {
+        const queryText = String(req.query.query || "").trim()
+        if (!queryText) {
+            return res.status(400).json({ success: false, message: "query required" })
+        }
+
+        const numericId = /^\d+$/.test(queryText) ? Number(queryText) : 0
+        let sql = `SELECT id, username, email, role, avatar_url, avatar_updated_at
+                   FROM users WHERE deleted_at IS NULL`
+        const params = []
+        if (numericId > 0) {
+            sql += ` AND id = $1`
+            params.push(numericId)
+        }
+        else {
+            sql += ` AND (LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1))`
+            params.push(queryText)
+        }
+        sql += ` LIMIT 1`
+
+        const userResult = await pool.query(sql, params)
+        if (!userResult.rowCount) {
+            return res.status(404).json({ success: false, message: "user not found" })
+        }
+        const row = userResult.rows[0]
+        const now = new Date()
+
+        const state = await getVipStateForUser(row, pool, now)
+        const [entitlements, subscriptions] = await Promise.all([
+            pool.query(
+                `SELECT id, tier, source, status, starts_at, expires_at
+                 FROM vip_entitlements
+                 WHERE user_id = $1 AND status = 'active'
+                 ORDER BY expires_at DESC`,
+                [row.id]
+            ),
+            pool.query(
+                `SELECT id, tier, status, current_period_start, current_period_end,
+                        cancel_at_period_end, stripe_subscription_id
+                 FROM vip_subscriptions
+                 WHERE user_id = $1
+                 ORDER BY current_period_end DESC NULLS LAST`,
+                [row.id]
+            )
+        ])
+
+        res.json({
+            success: true,
+            user: {
+                id: row.id,
+                username: row.username,
+                email: row.email,
+                role: row.role,
+                avatar_url: row.avatar_url
+            },
+            state,
+            entitlements: entitlements.rows,
+            subscriptions: subscriptions.rows,
+            ...computeVipAdminFlags({ subscriptions: subscriptions.rows, activeTier: state.active_tier, now })
+        })
+    } catch (error) {
+        next(error)
+    }
+})
+
+router.post("/vip/style", requireAdmin, async (req, res, next) => {
+    try {
+        const userId = Number(req.body.user_id || 0)
+        if (!Number.isInteger(userId) || userId <= 0) {
+            return res.status(400).json({ success: false, message: "valid user_id required" })
+        }
+        const userResult = await pool.query(
+            `SELECT id, role FROM users WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
+            [userId]
+        )
+        if (!userResult.rowCount) {
+            return res.status(404).json({ success: false, message: "user not found" })
+        }
+        const user = userResult.rows[0]
+        const state = await getVipStateForUser(user, pool)
+
+        const validation = validateNameStyle(req.body.style || {}, {
+            activeTier: state.active_tier,
+            role: user.role || "user"
+        })
+        if (!validation.ok) {
+            return res.status(400).json({ success: false, message: validation.message })
+        }
+
+        await pool.query(
+            `INSERT INTO vip_name_styles (user_id, style_json, updated_at)
+             VALUES ($1, $2, NOW())
+             ON CONFLICT (user_id) DO UPDATE SET style_json = $2, updated_at = NOW()`,
+            [userId, JSON.stringify(validation.style)]
+        )
+        await recomputeAndStoreVipForUser(pool, userId)
+        const nextState = await getVipStateForUser(user, pool)
+        console.log(`[VIP STYLE] by=${req.user.username} user_id=${userId} kind=${validation.style.kind}`)
+        res.json({ success: true, vip: nextState })
+    } catch (error) {
+        next(error)
+    }
+})
+
+router.post("/vip/resync", requireAdmin, async (req, res, next) => {
+    try {
+        const userId = Number(req.body.user_id || 0)
+        if (!Number.isInteger(userId) || userId <= 0) {
+            return res.status(400).json({ success: false, message: "valid user_id required" })
+        }
+
+        const inserted = await pool.query(
+            `INSERT INTO vip_entitlements (
+                user_id, tier, source, status, starts_at, expires_at,
+                stripe_subscription_id, stripe_customer_id, stripe_payment_intent_id
+             )
+             SELECT s.user_id, s.tier, 'subscription', 'active',
+                    s.current_period_start, s.current_period_end,
+                    s.stripe_subscription_id, s.stripe_customer_id, s.latest_payment_intent_id
+             FROM vip_subscriptions s
+             WHERE s.user_id = $1
+               AND s.status = ANY($2)
+               AND s.current_period_end > NOW()
+               AND NOT EXISTS (
+                   SELECT 1 FROM vip_entitlements e
+                   WHERE e.user_id = s.user_id
+                     AND e.status = 'active'
+                     AND e.stripe_subscription_id = s.stripe_subscription_id
+               )
+             RETURNING id`,
+            [userId, [...ACTIVE_SUBSCRIPTION_STATUSES]]
+        )
+
+        await recomputeAndStoreVipForUser(pool, userId)
+        const userResult = await pool.query(
+            `SELECT id, role FROM users WHERE id = $1 LIMIT 1`,
+            [userId]
+        )
+        const state = userResult.rowCount
+            ? await getVipStateForUser(userResult.rows[0], pool)
+            : null
+        console.log(`[VIP RESYNC] by=${req.user.username} user_id=${userId} created=${inserted.rowCount}`)
+        res.json({ success: true, vip: state, created: inserted.rowCount })
     } catch (error) {
         next(error)
     }

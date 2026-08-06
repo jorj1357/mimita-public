@@ -81,6 +81,25 @@ The "manage subscription" action opens the Stripe billing portal. It is only sho
 account has an active subscription (`active`, `trialing`, or `past_due`). Accounts that only
 bought one-time packages have no subscription to manage and see a note instead of the portal.
 
+## Admin VIP tools
+
+Admins can manage any player's VIP from the admin dashboard (all routes under `/api/admin/vip`,
+all `requireAdmin`):
+
+- `GET /api/admin/vip/lookup?query=` — find a user by id, username, or email. Returns their
+  VIP state, active entitlements, subscriptions, and flags:
+  - `has_active_subscription` / `subscription_tier`
+  - `desync` — true when they have an active subscription but are displaying a lower tier
+    ("they actually have it but aren't getting it").
+- `POST /api/admin/vip/grant` — grant a tier for N months (`admin` source).
+- `POST /api/admin/vip/revoke` — expire all active entitlements.
+- `POST /api/admin/vip/style` — set a player's name style (validated against their tier).
+- `POST /api/admin/vip/resync` — re-create entitlements for active subscriptions that are
+  missing them (fixes `desync`).
+
+The dashboard shows a large pulsing red flag when `desync` is detected and warns whenever a
+manual grant/revoke would override a real subscription.
+
 Entitlement rules:
 
 - Paid VIP starts only after a verified Stripe webhook.
