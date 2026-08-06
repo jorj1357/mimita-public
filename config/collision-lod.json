@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "cellSize": 0.5,
+  "_future": {
+    "perMeshOverrides": {},
+    "renderLod": { "enabled": false, "distance": 60.0 }
+  }
+}

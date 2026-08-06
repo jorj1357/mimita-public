@@ -12,6 +12,8 @@
 #include "config/movement-config.h"
 #include "config/networking-config.h"
 #include "config/size-scaling-config.h"
+#include "config/collision-lod-config.h"
+#include "map/map-loader-collision.h"
 #include "gui/hud/healthbar-config.h"
 #include "effects/hit-effects.h"
 #include "network/disagreement-visuals.h"
@@ -53,6 +55,8 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     NotificationSystem::instance().pollReload();
     GuiLayoutManager::instance().pollReload();
     NetworkingConfig::instance().pollReload();
+    if (CollisionLodConfig::instance().pollHotReload())
+        redecimateCollision(THE_WORLD);
     worldPassRan = false;
 
     {

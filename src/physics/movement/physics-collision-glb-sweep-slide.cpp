@@ -112,12 +112,43 @@ void doGLBSweepSlide(
             }
         }
 
+        // Clamp the union to the root capsule region. A player body can only span
+        // a few units; if body samples scatter (garbage transforms), the raw union
+        // would cover the whole map and make the gather scan tens of thousands of
+        // cells. Bound it to keep every frame fast.
         if (bodyUnionValid)
         {
-            std::vector<int> bodyUnionCandidates;
-            appendChunkTrianglesForAABB(world, bodyUnion, BODY_SAMPLE_RADIUS,
-                                        bodyUnionCandidates, "bodySampleUnion");
-            appendUniqueTriangleIndices(candidates, bodyUnionCandidates);
+            constexpr float MAX_BODY_EXTENT = 8.0f;
+            Capsule rootCapClamp = p.getCapsule();
+            AABB maxBounds{
+                glm::min(rootCapClamp.a, rootCapClamp.b) - glm::vec3(MAX_BODY_EXTENT),
+                glm::max(rootCapClamp.a, rootCapClamp.b) + glm::vec3(MAX_BODY_EXTENT)
+            };
+            AABB rawUnion = bodyUnion;
+            bodyUnion.min = glm::max(bodyUnion.min, maxBounds.min);
+            bodyUnion.max = glm::min(bodyUnion.max, maxBounds.max);
+            const bool stillValid =
+                bodyUnion.min.x <= bodyUnion.max.x &&
+                bodyUnion.min.y <= bodyUnion.max.y &&
+                bodyUnion.min.z <= bodyUnion.max.z;
+            if (stillValid)
+            {
+                std::vector<int> bodyUnionCandidates;
+                appendChunkTrianglesForAABB(world, bodyUnion, BODY_SAMPLE_RADIUS,
+                                            bodyUnionCandidates, "bodySampleUnion");
+                appendUniqueTriangleIndices(candidates, bodyUnionCandidates);
+            }
+            if (rawUnion.min.x < maxBounds.min.x || rawUnion.max.x > maxBounds.max.x ||
+                rawUnion.min.y < maxBounds.min.y || rawUnion.max.y > maxBounds.max.y ||
+                rawUnion.min.z < maxBounds.min.z || rawUnion.max.z > maxBounds.max.z)
+            {
+                Debug::logThrottled(Debug::Category::Collision, "body-sample-spread", 1.0f,
+                    "[BODY SAMPLE SPREAD] body samples exceeded %d units "
+                    "(rawUnion=(%.1f %.1f %.1f)-(%.1f %.1f %.1f)); clamped\n",
+                    (int)MAX_BODY_EXTENT,
+                    rawUnion.min.x, rawUnion.min.y, rawUnion.min.z,
+                    rawUnion.max.x, rawUnion.max.y, rawUnion.max.z);
+            }
         }
         auto t1 = std::chrono::steady_clock::now();
         diag.bodyExtraMs = std::chrono::duration<float, std::milli>(t1 - t0).count();

@@ -174,10 +174,20 @@ void Player::updateModelWorldTransforms()
     for (int i = 0; i < (int)perfectPoseSkeleton.nodes.size(); ++i)
     {
         TransformNode& poseNode = perfectPoseSkeleton.nodes[i];
-        if (poseNode.parent < 0)
-            poseNode.worldTransform = rootWorld * poseNode.localTransform;
-        else
-            poseNode.worldTransform = perfectPoseSkeleton.nodes[poseNode.parent].worldTransform * poseNode.localTransform;
+
+        // Walk the parent chain using local transforms so nodes are placed
+        // correctly even when a child appears BEFORE its parent in the array
+        // (Blender exports put the root "plrOrigin" empty after its body-part
+        // children). The old array-order loop read a stale parent worldTransform.
+        glm::mat4 localToRoot = poseNode.localTransform;
+        int p = poseNode.parent;
+        int guard = 0;
+        while (p >= 0 && p < (int)perfectPoseSkeleton.nodes.size() && guard++ < 64)
+        {
+            localToRoot = perfectPoseSkeleton.nodes[p].localTransform * localToRoot;
+            p = perfectPoseSkeleton.nodes[p].parent;
+        }
+        poseNode.worldTransform = rootWorld * localToRoot;
 
         if (i < (int)nodes.size())
         {

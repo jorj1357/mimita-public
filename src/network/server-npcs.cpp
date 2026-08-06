@@ -17,6 +17,7 @@
 #include "entities/player.h"
 #include "world/world.h"
 #include "map/map-loader-collision.h"
+#include "config/collision-lod-config.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
@@ -87,7 +88,11 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
 {
     // The client NpcSystem only reads collision data from the World, so mirror
     // the headless collision world (no GPU/GL work, safe on a headless server).
+    // Decimate with the live collision-LOD cell size so NPC collision near dense
+    // objects stays cheap, matching the client world.
     npcWorld.collisionMesh.triangles = hw.triangles;
+    decimateCollisionTriangleList(npcWorld.collisionMesh.triangles,
+                                  CollisionLodConfig::instance().cellSize());
     npcWorld.collisionChunkSize = hw.collisionChunkSize;
     npcWorld.collisionLargeTriangles.clear();
     npcWorld.collisionChunks.clear();
