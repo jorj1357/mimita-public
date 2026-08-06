@@ -30,6 +30,39 @@ Webhook events handled by `/api/vip/payment/webhook`:
 - `charge.refunded`
 - `charge.dispute.created`
 
+## Webhook endpoint setup
+
+Stripe delivers events only to webhook endpoints created in the Stripe Dashboard
+(Developers -> Webhooks). The VIP flow needs an endpoint:
+
+- **URL:** `https://mimita.fun/api/vip/payment/webhook` (or `http://localhost:3002/api/vip/payment/webhook` locally)
+- **Events:** the 8 events listed above.
+
+After creating the endpoint, copy its signing secret (`whsec_...`) into the server
+environment as `STRIPE_VIP_WEBHOOK_SECRET`, then restart the API. The webhook
+endpoint appears in the Dashboard and can be edited there at any time.
+
+## Paid checkout recovery (webhook fallback)
+
+`/api/vip/me` reconciles `pending` orders older than 60 seconds by checking the
+checkout session directly with the Stripe API. If the session is paid but the
+webhook never arrived (for example a misconfigured or missing webhook endpoint),
+the entitlement is granted the same way a webhook would grant it. This makes a
+paid one-time purchase appear even if Stripe webhooks are not configured.
+
+## Local testing
+
+1. Start the site server on port 3002 (`npm run server`).
+2. Forward Stripe test webhooks to it:
+   ```
+   stripe listen --forward-to localhost:3002/api/vip/payment/webhook
+   ```
+3. Use the `whsec_...` value printed by `stripe listen` as `STRIPE_VIP_WEBHOOK_SECRET` in `.env`.
+4. Create a checkout from the VIP page, pay with a Stripe test card (`4242 4242 4242 4242`), and confirm the entitlement appears.
+
+If you do not run `stripe listen`, the paid-checkout recovery above still grants
+one-time purchases once the session is older than 60 seconds.
+
 Entitlement rules:
 
 - Paid VIP starts only after a verified Stripe webhook.

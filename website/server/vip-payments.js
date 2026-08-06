@@ -251,6 +251,86 @@ async function processCheckoutCompleted({ client, stripe, session, event }) {
     return "processed_checkout"
 }
 
+export async function reconcilePendingCheckoutOrders({
+    stripe = getStripe(),
+    getClient = () => pool.connect(),
+    query = pool,
+    userId = 0,
+    now = new Date()
+} = {}) {
+    if (!stripe?.checkout?.sessions?.retrieve) {
+        return { orders: 0, reconciled: 0 }
+    }
+
+    const gateTime = new Date((now instanceof Date ? now : new Date(now)).getTime() - 60_000)
+    const params = [gateTime]
+    let userClause = ""
+    const numericUserId = Number(userId)
+    if (Number.isInteger(numericUserId) && numericUserId > 0) {
+        userClause = " AND user_id = $2"
+        params.push(numericUserId)
+    }
+
+    const orderResult = await queryFrom(query)(
+        `SELECT * FROM vip_orders
+         WHERE status = 'pending'
+           AND stripe_checkout_session_id <> ''
+           AND created_at <= $1
+           ${userClause}
+         ORDER BY id`,
+        params
+    )
+
+    let reconciled = 0
+    for (const order of orderResult.rows) {
+        const sessionId = cleanId(order.stripe_checkout_session_id)
+        if (!sessionId) continue
+
+        let session
+        try {
+            session = await stripe.checkout.sessions.retrieve(sessionId)
+        }
+        catch (error) {
+            vipLog("reconcile_retrieve_failed", { order_id: order.id, reason: error.message })
+            continue
+        }
+
+        const paid = session.payment_status === "paid" || session.payment_status === "no_payment_required"
+        if (!paid) {
+            vipLog("reconcile_not_paid", { order_id: order.id, status: session.payment_status || "unknown" })
+            continue
+        }
+
+        const client = await getClient()
+        try {
+            await client.query("BEGIN")
+            const event = {
+                id: `recon_${session.id}`,
+                type: "checkout.session.completed",
+                data: { object: session }
+            }
+            const result = await processCheckoutCompleted({ client, stripe, session, event })
+            await client.query("COMMIT")
+            vipLog("reconcile_processed", { order_id: order.id, result })
+            reconciled++
+        }
+        catch (error) {
+            try {
+                await client.query("ROLLBACK")
+            }
+            catch {
+                // best effort after rollback
+            }
+            vipLog("reconcile_failed", { order_id: order.id, reason: error.message })
+        }
+        finally {
+            client.release()
+        }
+    }
+
+    return { orders: orderResult.rows.length, reconciled }
+}
+
 async function processSubscriptionLikeEvent({ client, stripe, object }) {
     const sub = object.object === "subscription"
         ? object
