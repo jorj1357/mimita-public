@@ -282,6 +282,8 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
     player.interpToTick = 0;
     player.interpDurationTicks = 2;
     player.interpSegmentStartTick = 0;
+    player.hasSimBroadcastPos = false;
+    player.simBroadcastPos = player.pos;
 
     printf("[SERVER SPAWN RESET] playerId=%u spawnGeneration=%u ownedWeapons=%zu"
            " isInitialSpawn=%d\n",
@@ -512,22 +514,27 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
 
     // ── Server-side movement simulation from input commands (spec) ─────
     // The server simulates movement using the SAME kernel as the client.
-    // Input is taken from the most recent received input command.
+    // Input commands are replayed in CHRONOLOGICAL order (lowest sequence
+    // first), so the simulated path follows the client's exact intended
+    // trajectory. Consuming the newest command first instead would replay a
+    // burst of commands in reverse order, kinking the simulated position and
+    // making the broadcast stream jittery (visible as jitter to other clients).
     {
-        // Find the most recent valid input command. Scan for the highest
-        // sequence rather than newest index: redundant command slots can
-        // insert out of ring order, so the newest command is not guaranteed
-        // to sit at the highest buffer index.
+        // Find the oldest valid input command (FIFO replay). Redundant command
+        // slots can insert out of ring order, so scan all slots for the lowest
+        // sequence instead of relying on ring position.
         MovementCommand cmd;
         bool hasInput = false;
-        uint32_t bestSeq = 0;
+        uint32_t lowestSeq = 0;
         int bestIndex = -1;
         for (int i = 0; i < ServerPlayer::INPUT_COMMAND_BUFFER_SIZE; ++i)
         {
             const auto& entry = p.inputCommandBuffer[i];
-            if (entry.valid && entry.command.sequence > bestSeq)
+            if (!entry.valid)
+                continue;
+            if (bestIndex < 0 || entry.command.sequence < lowestSeq)
             {
-                bestSeq = entry.command.sequence;
+                lowestSeq = entry.command.sequence;
                 bestIndex = i;
             }
         }
@@ -609,13 +616,40 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
 
 void pushPositionHistory(ServerPlayer& p, uint32_t tick)
 {
+    const auto& netCfg = NetworkingConfig::instance().data();
     // Record the position actually broadcast to clients (the smoothed
     // interpolated one), so hit rewind reads exactly what attackers saw.
-    // In server_sim broadcast mode that is the authoritative simulation pos.
+    // In server_sim broadcast mode that is the authoritative simulation pos,
+    // optionally smoothed via server_sim_smooth_ticks.
     const bool serverSimBroadcast =
-        NetworkingConfig::instance().data().remotePlayers.broadcastSource ==
-        "server_sim";
-    const glm::vec3 histPos = serverSimBroadcast ? p.pos
+        netCfg.remotePlayers.broadcastSource == "server_sim";
+
+    // Server-sim broadcast smoothing: ease the broadcast position toward the
+    // authoritative sim position so the snapshot stream is clean (removes the
+    // tiny per-tick resting jitter from the collision solver). Real movement
+    // passes through with ~server_sim_smooth_ticks of easing (negligible lag).
+    const uint32_t smoothTicks = netCfg.remotePlayers.serverSimSmoothTicks;
+    glm::vec3 simBroadcast = p.pos;
+    if (serverSimBroadcast)
+    {
+        if (!p.hasSimBroadcastPos)
+        {
+            p.simBroadcastPos = p.pos;
+            p.hasSimBroadcastPos = true;
+        }
+        if (smoothTicks > 0)
+        {
+            const float k = 1.0f / (float)(smoothTicks + 1);
+            p.simBroadcastPos += (p.pos - p.simBroadcastPos) * k;
+        }
+        else
+        {
+            p.simBroadcastPos = p.pos;
+        }
+        simBroadcast = p.simBroadcastPos;
+    }
+
+    const glm::vec3 histPos = serverSimBroadcast ? simBroadcast
         : (p.hasBroadcastTransform ? p.broadcastPosition : p.pos);
     const glm::vec3 histVel = serverSimBroadcast ? p.vel
         : (p.hasBroadcastTransform ? p.broadcastVelocity : p.vel);
@@ -892,13 +926,17 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     out.ownerClientId = player.id;
     // server_sim broadcast source: stream the server's own 60Hz input-driven
     // simulation. Always smooth and uniform regardless of the player's network
-    // quality (client reports arrive gappy under loss/jitter/reorder).
+    // quality (client reports arrive gappy under loss/jitter/reorder). The
+    // broadcast position is the eased simBroadcastPos (see pushPositionHistory)
+    // so the snapshot stream is clean for other clients' linear interpolation.
     if (NetworkingConfig::instance().data().remotePlayers.broadcastSource ==
         "server_sim")
     {
-        out.px = player.pos.x;
-        out.py = player.pos.y;
-        out.pz = player.pos.z;
+        const glm::vec3 bp = player.hasSimBroadcastPos
+            ? player.simBroadcastPos : player.pos;
+        out.px = bp.x;
+        out.py = bp.y;
+        out.pz = bp.z;
         out.vx = player.vel.x;
         out.vy = player.vel.y;
         out.vz = player.vel.z;

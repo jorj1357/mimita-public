@@ -258,6 +258,10 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
         c.serverBroadcastMaxSpeed = clampMin(
             readDouble(r, "server_broadcast_max_speed",
                        c.serverBroadcastMaxSpeed), 0.0);
+        c.serverSimSmoothTicks = (uint32_t)std::max<uint32_t>(
+            0u, (uint32_t)clampMin(
+                    readDouble(r, "server_sim_smooth_ticks",
+                               (double)c.serverSimSmoothTicks), 0.0));
         c.interpolationDelaySeconds =
             clampMin(readDouble(r, "interpolation_delay_ms", c.interpolationDelaySeconds * 1000.0) / 1000.0, 0.0);
         c.maximumBufferedSnapshots = (std::size_t)clampMin(

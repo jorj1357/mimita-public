@@ -55,6 +55,11 @@ struct RemotePlayerInterpolationConfig
     // 0 = unlimited. Clamps residual catch-up spikes from bursty reports so
     // even a bad-connection client's bursts render as steady motion.
     double serverBroadcastMaxSpeed = 0.0;
+    // server_sim broadcast smoothing: how many ticks the broadcast position
+    // eases toward the authoritative sim position (0 = none). Removes the tiny
+    // per-tick resting jitter from the server collision solver so other
+    // clients' linear interpolation runs on a clean stream.
+    uint32_t serverSimSmoothTicks = 2;
     double interpolationDelaySeconds = 0.033;
     std::size_t maximumBufferedSnapshots = 64;
     std::size_t minimumSnapshotsBeforeRendering = 2;

@@ -14,6 +14,7 @@
     "interpolation_delay_ms": 33,
     "maximum_buffered_snapshots": 64,
     "minimum_snapshots_before_rendering": 2,
+    "server_sim_smooth_ticks": 2,
     "position_mode": "linear",
     "rotation_mode": "slerp",
     "allow_extrapolation": true,

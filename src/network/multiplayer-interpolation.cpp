@@ -390,6 +390,17 @@ bool pushInterpolationTarget(
 
     // ── Tick-ordered snapshot buffer (time-based interpolation) ─────
     const auto& interpCfg = NetworkingConfig::instance().data().remotePlayers;
+    const auto& motionCfg =
+        NetworkingConfig::instance().data().remoteMotionSmoothing;
+
+    // Auto-size the buffer so it always spans the configured render delay.
+    // linear_max_delay_ticks can far exceed maximum_buffered_snapshots (the
+    // old fixed 64), which made the render time fall below the buffer's oldest
+    // sample and step instead of glide at high delays. The buffer now holds at
+    // least max(maximum_buffered_snapshots, linear_max_delay_ticks + margin).
+    const std::size_t bufferCap = std::max<std::size_t>(
+        interpCfg.maximumBufferedSnapshots,
+        (std::size_t)motionCfg.linearMaxDelayTicks + 16);
 
     // Lifecycle change (respawn/teleport) resets the buffer so the render
     // snaps to the new life instead of smearing across it.
@@ -413,7 +424,7 @@ bool pushInterpolationTarget(
         ++insertIt;
     interpolation.buffer.insert(insertIt, next);
 
-    while (interpolation.buffer.size() > interpCfg.maximumBufferedSnapshots)
+    while (interpolation.buffer.size() > bufferCap)
         interpolation.buffer.pop_front();
 
     return true;
