@@ -2,6 +2,8 @@
 #include "utils/path_utils.h"
 #include "tinygltf/tiny_gltf.h"
 #include "physics/movement/physics-collision-shared.h"
+#include "map/map-loader-collision.h"
+#include "config/collision-lod-config.h"
 
 #include <algorithm>
 #include <cctype>
@@ -234,6 +236,9 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
         world.collisionChunkSize = CS;
         world.collisionChunks.clear();
         world.collisionLargeTriangles.clear();
+
+        decimateCollisionTriangleList(world.triangles,
+                                      CollisionLodConfig::instance().cellSize());
 
         for (int i = 0; i < (int)world.triangles.size(); ++i)
         {

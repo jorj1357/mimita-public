@@ -224,6 +224,13 @@ std::vector<glm::vec3> collectPlayerBodyCollisionSamples(Player& p)
 {
     std::vector<glm::vec3> samples;
 
+    // Defensive limits: a valid player body is only a few units across. If a body
+    // part's world transform is garbage (scattered over hundreds of units — see the
+    // node-order bug in updateModelWorldTransforms), reject it so broadphase queries
+    // never build a map-sized AABB.
+    constexpr float MAX_BODY_EXTENT = 8.0f;
+    constexpr float MAX_COLLIDER_AXIS = 4.0f;
+
     for (const Collider& collider : p.bodyColliders)
     {
         auto it = std::find_if(p.nodes.begin(), p.nodes.end(), [&](const TransformNode& node) {
@@ -243,8 +250,12 @@ std::vector<glm::vec3> collectPlayerBodyCollisionSamples(Player& p)
         glm::vec3 axisDir(0.0f, 0.0f, 1.0f);
         if (axisLen > 0.001f)
             axisDir = localExtents / axisLen;
+        axisLen = std::min(axisLen, MAX_COLLIDER_AXIS);
 
         glm::vec3 worldCenter = glm::vec3(xform * glm::vec4(localCenter, 1.0f));
+        if (glm::length(worldCenter - p.pos) > MAX_BODY_EXTENT)
+            continue; // garbage transform — ignore this body part
+
         float radius = std::min(localExtents.x, localExtents.y) * 1.5f;
         // Scale radius up slightly to fill gaps between old triangle vertices
         radius = std::max(radius, BODY_SAMPLE_RADIUS);

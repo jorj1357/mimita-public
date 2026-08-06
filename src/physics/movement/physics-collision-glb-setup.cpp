@@ -42,9 +42,12 @@ bool isCurrentEntityNpc()
 
 // ── Per-frame triangle cache ─────────────────────────────────
 // Caches gatherGLBTriangles results keyed by a hash of the AABB.
-// Persists across all calls within the same frame.
+// Persists across all calls within the same frame. Also supports returning a
+// superset for a query whose AABB is contained in a previously cached (larger)
+// AABB, so the ~15-20 movement phases reuse one gather instead of re-gathering.
 struct TriangleCacheEntry {
     uint64_t hash;
+    AABB aabb;
     std::vector<int> triangles;
     int frameNumber;
     const char* firstCaller;
@@ -95,6 +98,26 @@ static bool getCachedTriangles(const AABB& aabb, int currentFrame, std::vector<i
     return false;
 }
 
+// Returns a cached (larger) triangle set whose AABB contains `aabb`. Safe: a
+// superset contains every triangle the contained query needs. Reuses one gather
+// across the overlapping movement phases instead of re-gathering ~15-20x/frame.
+static bool getCachedSuperset(const AABB& aabb, int currentFrame, std::vector<int>& out)
+{
+    for (int i = 0; i < TRIANGLE_CACHE_SIZE; ++i) {
+        const auto& e = sTriCache[i];
+        if (e.frameNumber != currentFrame || e.triangles.empty())
+            continue;
+        if (e.aabb.min.x <= aabb.min.x && e.aabb.min.y <= aabb.min.y && e.aabb.min.z <= aabb.min.z &&
+            e.aabb.max.x >= aabb.max.x && e.aabb.max.y >= aabb.max.y && e.aabb.max.z >= aabb.max.z)
+        {
+            out = e.triangles;
+            sCacheHits++;
+            return true;
+        }
+    }
+    return false;
+}
+
 static void cacheTriangles(const AABB& aabb, int currentFrame, const std::vector<int>& triangles, const char* caller)
 {
     uint64_t h = hashAABB(aabb);
@@ -113,6 +136,7 @@ static void cacheTriangles(const AABB& aabb, int currentFrame, const std::vector
         }
     }
     sTriCache[evictIdx].hash = h;
+    sTriCache[evictIdx].aabb = aabb;
     sTriCache[evictIdx].triangles = triangles;
     sTriCache[evictIdx].frameNumber = currentFrame;
     sTriCache[evictIdx].firstCaller = caller;
@@ -313,6 +337,12 @@ std::vector<int> gatherGLBTriangles(
         float elapsedMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
         BROAD_LOG("[GATHER CACHE HIT] caller=%s candidates=%zu elapsedMs=%.3f\n",
                    effectiveCaller, out.size(), elapsedMs);
+        return out;
+    }
+
+    // Superset cache: if a larger region was already gathered this frame, reuse it.
+    if (getCachedSuperset(sweepBounds, currentFrame, out)) {
+        Perf::state().current.repeatedQueries++;
         return out;
     }
 
