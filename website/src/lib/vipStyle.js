@@ -10,8 +10,7 @@ export const STYLE_LABELS = {
     rainbow: "Rainbow",
     solid: "Solid color",
     animated_rainbow: "Animated rainbow",
-    per_letter: "Per-letter",
-    color_cycle: "Color cycle"
+    per_letter: "Per-letter"
 }
 
 export function normalizeStyle(style) {

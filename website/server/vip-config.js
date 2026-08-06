@@ -26,7 +26,7 @@ export const VIP_BADGES = {
 
 export const STAFF_ROLE_COLORS = {
     owner: "#000000",
-    admin: "#191919",
+    admin: "#000000",
     moderator: "#ff0000"
 }
 
@@ -140,8 +140,7 @@ export const VIP_STYLE_KINDS = {
     rainbow: { minTier: "super_vip" },
     solid: { minTier: "super_vip" },
     animated_rainbow: { minTier: "ultra_vip" },
-    per_letter: { minTier: "ultra_vip" },
-    color_cycle: { minTier: "ultra_vip" }
+    per_letter: { minTier: "ultra_vip" }
 }
 
 export const VIP_RAINBOW_DIRECTIONS = ["ltr", "rtl"]
@@ -338,7 +337,7 @@ export function validateNameStyle(input, options = {}) {
         result.solid_color = VIP_COLORS.vip
     }
 
-    if (["rainbow", "animated_rainbow", "color_cycle"].includes(kind)) {
+    if (["rainbow", "animated_rainbow"].includes(kind)) {
         const colors = normalizeColorList(style.colors || DEFAULT_RAINBOW, VIP_STYLE_LIMITS.maxGradientColors)
         if (!colors || colors.length < 2) {
             return { ok: false, message: "rainbow styles need 2 to 8 colors" }
@@ -354,7 +353,7 @@ export function validateNameStyle(input, options = {}) {
         result.colors = colors
     }
 
-    if (["rainbow", "animated_rainbow", "per_letter", "color_cycle"].includes(kind)) {
+    if (["rainbow", "animated_rainbow", "per_letter"].includes(kind)) {
         const speed = Number(style.rainbow_speed ?? defaultStyleForTier(activeTier).rainbow_speed ?? 1)
         if (!Number.isFinite(speed) ||
             speed < VIP_STYLE_LIMITS.minRainbowSpeed ||

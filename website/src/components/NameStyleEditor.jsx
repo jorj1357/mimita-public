@@ -1,15 +1,21 @@
 // 08 06 2026, 16 20
 /* purpose
 * Reusable VIP name-style editor with a live username preview.
-* Renders style kind, solid color, rainbow speed, direction, and color controls plus save/reset actions.
-* Used by the VIP page, the profile dropdown, the profile page, and the account page.
+* Renders style kind, solid color, rainbow speed/direction, and an interactive per-letter color editor.
+* Used by the profile dropdown, the profile page, the account page, and the admin dashboard.
 * DOES NOT grant entitlements, contact Stripe, or mutate account state.
 * DOES NOT render game-engine nameplates.
 */
 
-import { useId } from "react"
+import { useId, useState } from "react"
 import Username from "./Username"
 import { STYLE_LABELS } from "../lib/vipStyle"
+
+const RESERVED_COLORS = new Set(["#000000", "#ff0000"])
+
+function displayName(user) {
+    return user?.display_name || user?.username || ""
+}
 
 export default function NameStyleEditor({
     user,
@@ -24,6 +30,9 @@ export default function NameStyleEditor({
     admin = false
 }) {
     const kindName = `vip-style-kind-${useId()}`
+    const [selectedLetters, setSelectedLetters] = useState(() => new Set())
+    const [pickColor, setPickColor] = useState(() => style?.colors?.[0] || "#40e0d0")
+
     if (!user || !vip || !style) return null
 
     const allowed = admin
@@ -42,11 +51,49 @@ export default function NameStyleEditor({
 
     const minSpeed = Number(limits?.minRainbowSpeed || 0.25)
     const maxSpeed = Number(limits?.maxRainbowSpeed || 4)
+    const maxPerLetter = Number(limits?.maxPerLetterColors || 32)
+    const solidHex = String(style.solid_color || "").toLowerCase()
+    const name = displayName(user)
 
     function setColor(index, value) {
         const colors = [...(style.colors || [])]
         colors[index] = value
         onChange({ ...style, colors })
+    }
+
+    function letterColorAt(index) {
+        const colors = style.colors || []
+        if (colors.length === 0) return "#40e0d0"
+        return colors[index % colors.length]
+    }
+
+    function toggleLetter(index) {
+        setSelectedLetters(current => {
+            const next = new Set(current)
+            if (next.has(index)) next.delete(index)
+            else next.add(index)
+            return next
+        })
+    }
+
+    function applyPickToSelected(event) {
+        const hex = event.target.value
+        setPickColor(hex)
+        if (selectedLetters.size === 0) return
+        const colors = [...(style.colors || [])]
+        const maxIndex = Math.max(...selectedLetters)
+        while (colors.length <= maxIndex) colors.push("#40e0d0")
+        for (const index of selectedLetters) colors[index] = hex
+        onChange({ ...style, colors })
+    }
+
+    function selectAllLetters() {
+        const count = Math.min(name.length, maxPerLetter)
+        setSelectedLetters(new Set(Array.from({ length: count }, (_, index) => index)))
+    }
+
+    function resetAllLetters() {
+        onChange({ ...style, colors: [style.colors?.[0] || "#40e0d0"] })
     }
 
     return (
@@ -72,17 +119,22 @@ export default function NameStyleEditor({
             </div>
 
             {style.kind === "solid" && (
-                <label className="nameStyleField">
-                    solid color
-                    <input
-                        type="color"
-                        value={style.solid_color || "#40e0d0"}
-                        onChange={e => onChange({ ...style, solid_color: e.target.value })}
-                    />
-                </label>
+                <>
+                    <label className="nameStyleField">
+                        solid color
+                        <input
+                            type="color"
+                            value={style.solid_color || "#40e0d0"}
+                            onChange={e => onChange({ ...style, solid_color: e.target.value })}
+                        />
+                    </label>
+                    {RESERVED_COLORS.has(solidHex) && (
+                        <p className="vipError">that color is reserved for staff - pick another</p>
+                    )}
+                </>
             )}
 
-            {["rainbow", "animated_rainbow", "per_letter", "color_cycle"].includes(style.kind) && (
+            {["rainbow", "animated_rainbow"].includes(style.kind) && (
                 <>
                     <label className="nameStyleField">
                         speed
@@ -119,6 +171,42 @@ export default function NameStyleEditor({
                         ))}
                     </div>
                 </>
+            )}
+
+            {style.kind === "per_letter" && (
+                <div className="perLetterEditor">
+                    <p className="nameStyleField">click letters to highlight them, then pick a color for the highlighted letters</p>
+                    <div className="perLetterRow">
+                        {Array.from(name).slice(0, maxPerLetter).map((ch, index) => (
+                            <button
+                                key={index}
+                                type="button"
+                                className={`perLetterCell${selectedLetters.has(index) ? " selected" : ""}`}
+                                style={{ color: letterColorAt(index) }}
+                                onClick={() => toggleLetter(index)}
+                                aria-label={`select letter ${ch}`}
+                            >
+                                {ch}
+                            </button>
+                        ))}
+                    </div>
+                    {name.length > maxPerLetter && (
+                        <p className="vipNotice">names longer than {maxPerLetter} letters: only the first {maxPerLetter} are editable.</p>
+                    )}
+                    <label className="nameStyleField">
+                        highlighted letters color
+                        <input
+                            type="color"
+                            value={pickColor}
+                            onChange={applyPickToSelected}
+                        />
+                    </label>
+                    <div className="vipCheckoutBtns">
+                        <button type="button" onClick={selectAllLetters}>select all</button>
+                        <button type="button" onClick={() => setSelectedLetters(new Set())}>clear selection</button>
+                        <button type="button" onClick={resetAllLetters}>reset all letters</button>
+                    </div>
+                </div>
             )}
 
             <div className="vipCheckoutBtns">

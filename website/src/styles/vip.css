@@ -75,9 +75,9 @@ purpose
 }
 
 .vipNameAnimated {
-  animation-name: vipRainbowShift;
-  animation-timing-function: linear;
-  animation-iteration-count: infinite;
+  animation:
+    vipRainbowShift var(--vip-anim-duration, 3s) linear infinite,
+    vipHueShift calc(var(--vip-anim-duration, 3s) * 1.6) linear infinite;
 }
 
 .vipNameReverse {
@@ -93,10 +93,9 @@ purpose
   100% { background-position: 220% center; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .vipNameAnimated {
-    animation: none !important;
-  }
+@keyframes vipHueShift {
+  from { filter: hue-rotate(0deg); }
+  to { filter: hue-rotate(360deg); }
 }
 
 .vipPage {
@@ -220,6 +219,45 @@ purpose
 
 .nameStyleEditorCompact .vipPreview {
   margin: 0 0 0.75rem;
+}
+
+.perLetterEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.perLetterRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  justify-content: center;
+  border: 1px dashed #00ffcc;
+  padding: 0.6rem;
+  background: #000000;
+}
+
+.perLetterCell {
+  min-width: 1.6rem;
+  height: 2rem;
+  padding: 0 0.25rem;
+  font-size: 1.3rem;
+  font-weight: 800;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.15);
+  color: inherit;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.perLetterCell:hover {
+  border-color: #00ffcc;
+}
+
+.perLetterCell.selected {
+  outline: 2px solid #ff00cc;
+  outline-offset: 1px;
+  background: rgba(255,0,204,0.15);
 }
 
 .vipCheckoutBtns button,
