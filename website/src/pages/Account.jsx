@@ -5,6 +5,8 @@ import Layout from "../components/Layout"
 import Username from "../components/Username"
 import Avatar from "../components/Avatar"
 import AvatarCropModal from "../components/AvatarCropModal"
+import NameStyleEditor from "../components/NameStyleEditor"
+import { normalizeStyle } from "../lib/vipStyle"
 import { apiRequest } from "../lib/api"
 
 export default function Account() {
@@ -18,12 +20,15 @@ export default function Account() {
     const [dangerOpen, setDangerOpen] = useState(false)
     const [changePw, setChangePw] = useState({ current: "", newPass: "", confirm: "" })
     const [toast, setToast] = useState(null)
+    const [style, setStyle] = useState(normalizeStyle(null))
+    const [styleBusy, setStyleBusy] = useState("")
 
     useEffect(() => {
         apiRequest("/api/auth/me")
             .then((data) => {
                 setUser(data.user)
                 setBio(data.user.bio || "")
+                setStyle(normalizeStyle(data.user.vip?.name_style))
                 setMessage("")
             })
             .catch(() => navigate("/signin"))
@@ -40,6 +45,43 @@ export default function Account() {
         }
         catch (error) {
             setMessage(error.message)
+        }
+    }
+
+    async function saveStyle() {
+        setStyleBusy("save-style")
+        setMessage("")
+        try {
+            const data = await apiRequest("/api/vip/style", {
+                method: "PATCH",
+                body: JSON.stringify({ style })
+            })
+            setUser(current => ({ ...current, vip: data.vip }))
+            setStyle(normalizeStyle(data.vip?.name_style))
+            setMessage("style saved")
+        }
+        catch (error) {
+            setMessage(error.message)
+        }
+        finally {
+            setStyleBusy("")
+        }
+    }
+
+    async function resetStyle() {
+        setStyleBusy("reset-style")
+        setMessage("")
+        try {
+            const data = await apiRequest("/api/vip/style/reset", { method: "POST" })
+            setUser(current => ({ ...current, vip: data.vip }))
+            setStyle(normalizeStyle(data.vip?.name_style))
+            setMessage("style reset")
+        }
+        catch (error) {
+            setMessage(error.message)
+        }
+        finally {
+            setStyleBusy("")
         }
     }
 
@@ -236,7 +278,6 @@ export default function Account() {
                         <Username user={user} size="lg" />
                     </p>
                     <p className="accountEmail">{user.email}</p>
-                    <Link className="accountVipLink" to="/vip">Manage VIP</Link>
 
                     <form onSubmit={saveProfile}>
                         <label htmlFor="bio">bio</label>
@@ -248,6 +289,20 @@ export default function Account() {
                         />
                         <button type="submit">SAVE PROFILE</button>
                     </form>
+
+                    <div className="accountVipEditor">
+                        <h3 style={{ color: "#a020ff", margin: "1rem 0 0.5rem" }}>VIP NAME STYLE</h3>
+                        <NameStyleEditor
+                            user={user}
+                            vip={user.vip}
+                            style={style}
+                            onChange={setStyle}
+                            onSave={saveStyle}
+                            onReset={resetStyle}
+                            busy={styleBusy}
+                        />
+                        <p><Link className="accountVipLink" to="/vip">Manage VIP</Link></p>
+                    </div>
 
                     <label className="authToggle">
                         <input

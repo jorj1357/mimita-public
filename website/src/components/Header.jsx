@@ -3,10 +3,14 @@ import { useState, useEffect, useRef } from "react"
 import Avatar from "./Avatar"
 import Username from "./Username"
 import RainbowText from "./RainbowText"
+import NameStyleEditor from "./NameStyleEditor"
+import { normalizeStyle } from "../lib/vipStyle"
 import { logAuthEvent } from "../lib/api-log"
 import { apiRequest } from "../lib/api"
 
 const DISCORD_URL = import.meta.env.VITE_DISCORD_URL || "https://discord.gg/sY8QHbfG9D"
+
+const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing", "past_due"])
 
 const HAMBURGER_ITEMS = [
     { label: "Edit Account", path: "/account", auth: true },
@@ -34,6 +38,8 @@ export default function Header() {
     const [user, setUser] = useState(null)
     const [isAdmin, setIsAdmin] = useState(false)
     const [checkingAuth, setCheckingAuth] = useState(true)
+    const [style, setStyle] = useState(normalizeStyle(null))
+    const [styleBusy, setStyleBusy] = useState("")
     const menuRef = useRef()
     const hamburgerRef = useRef()
     const profileRef = useRef()
@@ -44,6 +50,7 @@ export default function Header() {
             .then((data) => {
                 if (data.success) {
                     setUser(data.user)
+                    setStyle(normalizeStyle(data.user.vip?.name_style))
                     logAuthEvent("auth state restored", { username: data.user.username, role: data.user.role })
                     const adminRoles = ["admin", "owner"]
                     setIsAdmin(adminRoles.includes(data.user.role))
@@ -81,6 +88,53 @@ export default function Header() {
 
     function closeMenu() {
         setOpen(false)
+    }
+
+    async function saveStyle() {
+        setStyleBusy("save-style")
+        try {
+            const data = await apiRequest("/api/vip/style", {
+                method: "PATCH",
+                body: JSON.stringify({ style })
+            })
+            setUser(current => ({ ...current, vip: data.vip }))
+            setStyle(normalizeStyle(data.vip?.name_style))
+        }
+        catch (error) {
+            logAuthEvent("vip style save error", { error: error.message })
+        }
+        finally {
+            setStyleBusy("")
+        }
+    }
+
+    async function resetStyle() {
+        setStyleBusy("reset-style")
+        try {
+            const data = await apiRequest("/api/vip/style/reset", { method: "POST" })
+            setUser(current => ({ ...current, vip: data.vip }))
+            setStyle(normalizeStyle(data.vip?.name_style))
+        }
+        catch (error) {
+            logAuthEvent("vip style reset error", { error: error.message })
+        }
+        finally {
+            setStyleBusy("")
+        }
+    }
+
+    async function manageSubscription() {
+        setStyleBusy("manage-subscription")
+        try {
+            const data = await apiRequest("/api/vip/manage-subscription", { method: "POST" })
+            if (data.url) window.location.assign(data.url)
+        }
+        catch (error) {
+            logAuthEvent("manage subscription error", { error: error.message })
+        }
+        finally {
+            setStyleBusy("")
+        }
     }
 
     async function handleSignOut() {
@@ -202,6 +256,31 @@ export default function Header() {
                                     <Link to="/account" onClick={() => setProfileOpen(false)}>
                                         Edit Account
                                     </Link>
+                                    {user.vip && (
+                                        <div className="profileDropdownVip">
+                                            <span className="profileDropdownVipTitle">VIP Name Style</span>
+                                            <NameStyleEditor
+                                                compact
+                                                user={user}
+                                                vip={user.vip}
+                                                style={style}
+                                                onChange={setStyle}
+                                                onSave={saveStyle}
+                                                onReset={resetStyle}
+                                                busy={styleBusy}
+                                            />
+                                            {ACTIVE_SUBSCRIPTION_STATUSES.has(user.vip?.subscription?.status) ? (
+                                                <button
+                                                    type="button"
+                                                    className="profileDropdownManageSub"
+                                                    onClick={manageSubscription}
+                                                    disabled={styleBusy === "manage-subscription"}
+                                                >
+                                                    Manage Subscription
+                                                </button>
+                                            ) : null}
+                                        </div>
+                                    )}
                                     <Link to="/vip" onClick={() => setProfileOpen(false)}>
                                         VIP
                                     </Link>

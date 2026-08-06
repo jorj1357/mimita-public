@@ -11,7 +11,7 @@ import test, { beforeEach } from "node:test"
 import assert from "node:assert/strict"
 import express from "express"
 import request from "supertest"
-import { createVipCheckoutRouter, createVipWebhookRouter, reconcilePendingCheckoutOrders, VIP_FLOW_SOURCE } from "./vip-payments.js"
+import { createVipCheckoutRouter, createVipWebhookRouter, reconcilePendingCheckoutOrders, getVipOrders, refundOrder, VIP_FLOW_SOURCE } from "./vip-payments.js"
 import { clearRateLimitStores } from "./rateLimit.js"
 
 function makeStore() {
@@ -93,6 +93,26 @@ function makeDispatch(store) {
                 .filter(order => userIdFilter == null || order.user_id === userIdFilter)
                 .sort((a, b) => a.id - b.id)
             return rows(orders.map(order => structuredClone(order)))
+        }
+
+        if (text.startsWith("SELECT id, tier, purchase_type")) {
+            const orders = [...store.orders.values()]
+                .filter(order => order.user_id === params[0])
+                .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
+            return rows(orders.map(order => structuredClone(order)))
+        }
+
+        if (text.startsWith("UPDATE vip_orders SET status = 'refunded'")) {
+            const order = store.orders.get(params[0])
+            if (order) order.status = "refunded"
+            return rows([])
+        }
+
+        if (text.startsWith("UPDATE vip_entitlements") && text.includes("WHERE order_id = $1")) {
+            for (const entitlement of store.entitlements) {
+                if (entitlement.order_id === params[0]) entitlement.status = "refunded"
+            }
+            return rows([])
         }
 
         if (text.startsWith("SELECT * FROM vip_orders")) {
@@ -303,6 +323,7 @@ beforeEach(() => {
             validSignature: true,
             sessionParams: null,
             retrievedSession: null,
+            refundParams: null,
             subscription: {
                 id: "sub_test",
                 customer: "cus_test",
@@ -331,6 +352,12 @@ beforeEach(() => {
             customers: {
                 async create() {
                     return { id: "cus_created" }
+                }
+            },
+            refunds: {
+                async create(params) {
+                    fake.state.refundParams = params
+                    return { id: "re_test" }
                 }
             },
             subscriptions: {
@@ -543,4 +570,74 @@ test("reconcile does not regrant an order that the webhook already paid", async 
     assert.equal(result.orders, 0)
     assert.equal(result.reconciled, 0)
     assert.equal(store.entitlements.length, 1)
+})
+
+test("getVipOrders reports a paid one-time order as refundable", async () => {
+    const checkout = await createCheckout()
+    const orderId = checkout.body.order_id
+    await deliver(checkoutEvent(orderId))
+    const order = store.orders.get(orderId)
+    order.paid_at = new Date(Date.now() - 1000)
+    order.stripe_payment_intent_id = "pi_test"
+
+    const orders = await getVipOrders({ query: makeDispatch(store), userId: 42 })
+    assert.equal(orders.length, 1)
+    assert.equal(orders[0].status, "paid")
+    assert.equal(orders[0].refundable, true)
+    assert.ok(orders[0].refund_until)
+})
+
+test("getVipOrders does not mark monthly subscriptions refundable", async () => {
+    const checkout = await createCheckout({ purchase_type: "monthly_subscription" })
+    const orderId = checkout.body.order_id
+    const order = store.orders.get(orderId)
+    order.status = "paid"
+    order.paid_at = new Date(Date.now() - 1000)
+    order.stripe_payment_intent_id = "pi_test"
+
+    const orders = await getVipOrders({ query: makeDispatch(store), userId: 42 })
+    assert.equal(orders[0].refundable, false)
+})
+
+test("refundOrder refunds a paid order inside the window and revokes the entitlement", async () => {
+    const checkout = await createCheckout()
+    const orderId = checkout.body.order_id
+    await deliver(checkoutEvent(orderId))
+    const order = store.orders.get(orderId)
+    order.paid_at = new Date(Date.now() - 1000)
+    order.stripe_payment_intent_id = "pi_test"
+
+    const result = await refundOrder({
+        stripe: fake.stripe,
+        getClient: () => makeClient(makeDispatch(store)),
+        query: makeDispatch(store),
+        userId: 42,
+        orderId
+    })
+    assert.equal(result.success, true)
+    assert.equal(fake.state.refundParams.payment_intent, "pi_test")
+    assert.equal(store.orders.get(orderId).status, "refunded")
+    assert.equal(store.entitlements[0].status, "refunded")
+    assert.equal(store.users.get(42).supporter_tier, "free")
+})
+
+test("refundOrder rejects an order outside the 30 day window", async () => {
+    const checkout = await createCheckout()
+    const orderId = checkout.body.order_id
+    await deliver(checkoutEvent(orderId))
+    const order = store.orders.get(orderId)
+    order.paid_at = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000)
+    order.stripe_payment_intent_id = "pi_test"
+
+    await assert.rejects(
+        () => refundOrder({
+            stripe: fake.stripe,
+            getClient: () => makeClient(makeDispatch(store)),
+            query: makeDispatch(store),
+            userId: 42,
+            orderId
+        }),
+        /refund window has passed/
+    )
+    assert.equal(store.orders.get(orderId).status, "paid")
 })

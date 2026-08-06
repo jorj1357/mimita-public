@@ -63,6 +63,24 @@ paid one-time purchase appear even if Stripe webhooks are not configured.
 If you do not run `stripe listen`, the paid-checkout recovery above still grants
 one-time purchases once the session is older than 60 seconds.
 
+## Refunds
+
+One-time VIP purchases (`one_month`, `twelve_month`) are refundable for 100% within
+30 days of `paid_at`. The website exposes:
+
+- `GET /api/vip/orders` (authenticated) — the user's orders with `refund_until` and `refundable` flags.
+- `POST /api/vip/refund` (authenticated, body `{ order_id }`) — issues a Stripe refund and revokes the
+  matching entitlement immediately (server-verified via the Stripe API, independent of webhooks).
+
+Monthly subscriptions are not refunded through this endpoint; they are cancelled in the
+Stripe billing portal (`POST /api/vip/manage-subscription`).
+
+## Manage Subscription
+
+The "manage subscription" action opens the Stripe billing portal. It is only shown when the
+account has an active subscription (`active`, `trialing`, or `past_due`). Accounts that only
+bought one-time packages have no subscription to manage and see a note instead of the portal.
+
 Entitlement rules:
 
 - Paid VIP starts only after a verified Stripe webhook.
