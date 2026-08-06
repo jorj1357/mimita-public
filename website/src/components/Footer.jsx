@@ -1,6 +1,14 @@
+import { useLocation } from "react-router-dom"
+import FeedbackBox from "./FeedbackBox"
+
 export default function Footer() {
+  const location = useLocation()
+
   return (
     <footer className="footer">
+      <div className="footerFeedback">
+        <FeedbackBox pageName={location.pathname} />
+      </div>
 
       <p>
         MiMITA Copyleft v5

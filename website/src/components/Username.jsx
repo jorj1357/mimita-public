@@ -31,6 +31,9 @@ const TIER_LABELS = {
 }
 
 const FALLBACK_BADGES = {
+    owner: "/assets/images/mimita%20owner%20icon%20v1.png",
+    admin: "/assets/images/mimita%20admin%20icon%20v1.png",
+    moderator: "/assets/images/mimita%20moderator%20icon%20v1.png",
     vip: "/assets/images/mimita%20vip%202.png",
     super_vip: "/assets/images/mimita%20super%20vip.png",
     ultra_vip: "/assets/images/mimita%20ultra%20vip.png"

@@ -20,13 +20,17 @@ export default function NameStyleEditor({
     onReset,
     busy = "",
     compact = false,
-    limits = null
+    limits = null,
+    admin = false
 }) {
     const kindName = `vip-style-kind-${useId()}`
     if (!user || !vip || !style) return null
 
-    const allowed = new Set(vip.allowed_styles || [])
-    const isUltra = vip.active_tier === "ultra_vip"
+    const allowed = admin
+        ? new Set(Object.keys(STYLE_LABELS))
+        : new Set(vip.allowed_styles || [])
+    const isUltra = admin || vip.active_tier === "ultra_vip"
+    const saveEnabled = admin || vip.controls_unlocked
     const previewUser = {
         ...user,
         supporter_tier: vip.active_tier,
@@ -48,7 +52,7 @@ export default function NameStyleEditor({
     return (
         <div className={`nameStyleEditor ${compact ? "nameStyleEditorCompact" : ""}`}>
             <div className="vipPreview">
-                <Username user={previewUser} size="lg" />
+                <Username user={previewUser} size="lg" style={style} />
             </div>
 
             <div className="vipStyleGrid">
@@ -118,7 +122,7 @@ export default function NameStyleEditor({
             )}
 
             <div className="vipCheckoutBtns">
-                <button type="button" onClick={onSave} disabled={!vip.controls_unlocked || busy === "save-style"}>
+                <button type="button" onClick={onSave} disabled={!saveEnabled || busy === "save-style"}>
                     save style
                 </button>
                 <button type="button" onClick={onReset} disabled={busy === "reset-style"}>

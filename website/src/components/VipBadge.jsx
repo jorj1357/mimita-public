@@ -11,12 +11,18 @@
 import { useNavigate } from "react-router-dom"
 
 const BADGE_IMAGES = {
-    vip: "/assets/images/mimita%20vip%202.png",
+    owner: "/assets/images/mimita%20owner%20icon%20v1.png",
+    admin: "/assets/images/mimita%20admin%20icon%20v1.png",
+    moderator: "/assets/images/mimita%20moderator%20icon%20v1.png",
+    ultra_vip: "/assets/images/mimita%20ultra%20vip.png",
     super_vip: "/assets/images/mimita%20super%20vip.png",
-    ultra_vip: "/assets/images/mimita%20ultra%20vip.png"
+    vip: "/assets/images/mimita%20vip%202.png"
 }
 
 const BADGE_LABELS = {
+    owner: "OWNER",
+    admin: "ADMIN",
+    moderator: "MODERATOR",
     vip: "VIP",
     super_vip: "SUPER VIP",
     ultra_vip: "ULTRA VIP"

@@ -886,3 +886,158 @@
 .adminLogBadge--crash  { color: #e879f9; border-color: #e879f944; background: #e879f911; }
 .adminLogBadge--auth   { color: #fbbf24; border-color: #fbbf2444; background: #fbbf2411; }
 .adminLogBadge--general { color: #94a3b8; border-color: #94a3b844; background: #94a3b811; }
+
+
+/* ── VIP Management ─────────────────────────────── */
+
+.adminVipSearch {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.adminVipSearch .adminSearchInput {
+  margin-bottom: 0;
+  flex: 1;
+}
+
+.adminVipCard {
+  border: 1px solid rgba(255,255,255,0.15);
+  padding: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  background: #0a0a0a;
+}
+
+.adminVipUserRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.adminVipUserInfo {
+  display: flex;
+  flex-direction: column;
+}
+
+.adminVipUsername {
+  color: #00ffcc;
+  font-size: 1.05rem;
+}
+
+.adminVipRole {
+  color: rgba(255,255,255,0.6);
+  font-size: 0.8rem;
+}
+
+.adminVipUserEmail {
+  color: rgba(255,255,255,0.55);
+  font-size: 0.85rem;
+  margin-left: auto;
+}
+
+.adminVipState {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  font-size: 0.9rem;
+  color: rgba(255,255,255,0.8);
+}
+
+.adminVipState strong {
+  color: #00ffcc;
+}
+
+.adminVipHugeFlag {
+  border: 3px solid #ff0033;
+  background: #2a0008;
+  color: #ffb3c0;
+  padding: 1rem;
+  text-align: center;
+  animation: adminVipPulse 1s infinite alternate;
+  box-shadow: 0 0 18px rgba(255,0,51,0.6);
+}
+
+.adminVipHugeFlag p {
+  margin: 0.25rem 0;
+}
+
+.adminVipHugeFlag button {
+  margin-top: 0.6rem;
+  padding: 0.6rem 1rem;
+  background: #ff0033;
+  color: white;
+  border: none;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.adminVipHugeFlag button:hover {
+  background: #ff3355;
+}
+
+@keyframes adminVipPulse {
+  from { box-shadow: 0 0 10px rgba(255,0,51,0.4); }
+  to { box-shadow: 0 0 26px rgba(255,0,51,0.95); }
+}
+
+.adminVipFlag {
+  border: 1px solid #fbbf24;
+  background: #1a1200;
+  color: #fde68a;
+  padding: 0.7rem;
+}
+
+.adminVipActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.adminVipGrantRow {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.adminVipGrantRow select,
+.adminVipGrantRow input[type="number"] {
+  background: black;
+  color: white;
+  border: 1px solid rgba(255,255,255,0.25);
+  padding: 0.45rem 0.6rem;
+}
+
+.adminVipGrantRow button {
+  padding: 0.5rem 0.9rem;
+  background: #00ff66;
+  color: black;
+  border: none;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.adminVipGrantRow button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.adminVipGrantRow .adminVipRevokeBtn {
+  background: #ff0033;
+  color: white;
+}
+
+.adminVipStyle {
+  border-top: 1px solid rgba(255,255,255,0.1);
+  padding-top: 0.75rem;
+}
+
+.adminVipStyle h3 {
+  color: #a020ff;
+  margin-bottom: 0.6rem;
+}

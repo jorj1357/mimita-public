@@ -4,6 +4,8 @@ import { apiRequest, apiRequestRaw } from "../lib/api.js"
 import DebugPanel from "../components/DebugPanel.jsx"
 import ErrorBoundary from "../components/ErrorBoundary.jsx"
 import Layout from "../components/Layout"
+import NameStyleEditor from "../components/NameStyleEditor"
+import { normalizeStyle } from "../lib/vipStyle"
 
 export default function AdminDashboard() {
     const navigate = useNavigate()
@@ -20,6 +22,13 @@ export default function AdminDashboard() {
     const [flagged, setFlagged] = useState([])
     const [errorLog, setErrorLog] = useState([])
     const [errorLogLoading, setErrorLogLoading] = useState(true)
+    const [vipSearch, setVipSearch] = useState("")
+    const [vipLookup, setVipLookup] = useState(null)
+    const [vipStyle, setVipStyle] = useState(normalizeStyle(null))
+    const [grantTier, setGrantTier] = useState("vip")
+    const [grantMonths, setGrantMonths] = useState("1")
+    const [vipBusy, setVipBusy] = useState("")
+    const [vipMsg, setVipMsg] = useState("")
     const fetchedRef = useRef(false)
 
     useEffect(() => {
@@ -113,6 +122,146 @@ export default function AdminDashboard() {
             if (data.success) setErrorLog(data.errors || [])
         } catch (e) { console.log("[ADMIN] error-log fetch:", e.message) }
         finally { setErrorLogLoading(false) }
+    }
+
+    async function lookupVipUser() {
+        const queryText = vipSearch.trim()
+        if (!queryText) {
+            setVipMsg("enter a username, email, or user id")
+            return
+        }
+        setVipBusy("lookup")
+        setVipMsg("")
+        try {
+            const data = await apiRequest(`/api/admin/vip/lookup?query=${encodeURIComponent(queryText)}`)
+            setVipLookup(data)
+            setVipStyle(normalizeStyle(data.state?.name_style))
+        }
+        catch (error) {
+            setVipLookup(null)
+            setVipMsg(error.message)
+        }
+        finally {
+            setVipBusy("")
+        }
+    }
+
+    async function refreshVipLookup() {
+        if (!vipLookup) return
+        try {
+            const data = await apiRequest(`/api/admin/vip/lookup?query=${encodeURIComponent(vipLookup.user.username)}`)
+            setVipLookup(data)
+            setVipStyle(normalizeStyle(data.state?.name_style))
+        }
+        catch (error) {
+            setVipMsg(error.message)
+        }
+    }
+
+    async function adminGrant() {
+        if (!vipLookup) return
+        setVipBusy("grant")
+        setVipMsg("")
+        try {
+            await apiRequest("/api/admin/vip/grant", {
+                method: "POST",
+                body: JSON.stringify({
+                    user_id: vipLookup.user.id,
+                    tier: grantTier,
+                    months: Number(grantMonths) || 1
+                })
+            })
+            setVipMsg(`granted ${grantTier} for ${grantMonths} month(s)`)
+            await refreshVipLookup()
+        }
+        catch (error) {
+            setVipMsg(error.message)
+        }
+        finally {
+            setVipBusy("")
+        }
+    }
+
+    async function adminRevoke() {
+        if (!vipLookup) return
+        if (!window.confirm(`Revoke ALL VIP from ${vipLookup.user.username}? This overrides any active subscription entitlement.`)) return
+        setVipBusy("revoke")
+        setVipMsg("")
+        try {
+            await apiRequest("/api/admin/vip/revoke", {
+                method: "POST",
+                body: JSON.stringify({ user_id: vipLookup.user.id })
+            })
+            setVipMsg("revoked")
+            await refreshVipLookup()
+        }
+        catch (error) {
+            setVipMsg(error.message)
+        }
+        finally {
+            setVipBusy("")
+        }
+    }
+
+    async function adminSaveStyle() {
+        if (!vipLookup) return
+        setVipBusy("save-style")
+        setVipMsg("")
+        try {
+            const data = await apiRequest("/api/admin/vip/style", {
+                method: "POST",
+                body: JSON.stringify({ user_id: vipLookup.user.id, style: vipStyle })
+            })
+            setVipMsg("style saved")
+            setVipLookup(current => current ? { ...current, state: data.vip } : current)
+        }
+        catch (error) {
+            setVipMsg(error.message)
+        }
+        finally {
+            setVipBusy("")
+        }
+    }
+
+    async function adminResetStyle() {
+        if (!vipLookup || !vipLookup.state?.default_style) return
+        setVipBusy("reset-style")
+        setVipMsg("")
+        try {
+            const data = await apiRequest("/api/admin/vip/style", {
+                method: "POST",
+                body: JSON.stringify({ user_id: vipLookup.user.id, style: vipLookup.state.default_style })
+            })
+            setVipStyle(normalizeStyle(data.vip?.name_style))
+            setVipMsg("style reset")
+            setVipLookup(current => current ? { ...current, state: data.vip } : current)
+        }
+        catch (error) {
+            setVipMsg(error.message)
+        }
+        finally {
+            setVipBusy("")
+        }
+    }
+
+    async function adminResync() {
+        if (!vipLookup) return
+        setVipBusy("resync")
+        setVipMsg("")
+        try {
+            const data = await apiRequest("/api/admin/vip/resync", {
+                method: "POST",
+                body: JSON.stringify({ user_id: vipLookup.user.id })
+            })
+            setVipMsg(`resync done (${data.created || 0} entitlement(s) created)`)
+            await refreshVipLookup()
+        }
+        catch (error) {
+            setVipMsg(error.message)
+        }
+        finally {
+            setVipBusy("")
+        }
     }
 
     async function handleRefresh() {
@@ -215,6 +364,123 @@ export default function AdminDashboard() {
             )}
 
             <div className="adminGrid">
+
+                {/* VIP Management */}
+                <div className="adminSection adminSectionWide">
+                    <h2>VIP Management</h2>
+                    <div className="adminVipSearch">
+                        <input
+                            className="adminSearchInput"
+                            type="text"
+                            placeholder="username, email, or user id..."
+                            value={vipSearch}
+                            onChange={e => setVipSearch(e.target.value)}
+                            onKeyDown={e => { if (e.key === "Enter") lookupVipUser() }}
+                        />
+                        <button className="adminButton" onClick={lookupVipUser} disabled={vipBusy === "lookup"}>
+                            search
+                        </button>
+                    </div>
+
+                    {vipMsg && <p className="adminError">{vipMsg}</p>}
+
+                    {vipLookup && (
+                        <div className="adminVipCard">
+                            <div className="adminVipUserRow">
+                                {vipLookup.user.avatar_url ? (
+                                    <img src={vipLookup.user.avatar_url} alt="" className="adminAdminsAvatarImg" />
+                                ) : (
+                                    <span className="adminAdminsAvatarPlaceholder">
+                                        {(vipLookup.user.username || "?")[0].toUpperCase()}
+                                    </span>
+                                )}
+                                <div className="adminVipUserInfo">
+                                    <strong className="adminVipUsername">{vipLookup.user.username}</strong>
+                                    <span className="adminVipRole">{vipLookup.user.role}</span>
+                                </div>
+                                <span className="adminVipUserEmail">{vipLookup.user.email}</span>
+                            </div>
+
+                            {vipLookup.desync && (
+                                <div className="adminVipHugeFlag">
+                                    <p>
+                                        ⚠️ THIS USER HAS AN ACTIVE SUBSCRIPTION BUT ISN'T GETTING VIP!
+                                    </p>
+                                    <p>
+                                        They're paying for <strong>{vipLookup.subscription_tier}</strong> but showing{" "}
+                                        <strong>{vipLookup.state.active_tier}</strong>. This is a desync.
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={adminResync}
+                                        disabled={vipBusy === "resync"}
+                                    >
+                                        RESYNC THEIR VIP NOW
+                                    </button>
+                                </div>
+                            )}
+
+                            {!vipLookup.desync && vipLookup.has_active_subscription && (
+                                <div className="adminVipFlag">
+                                    This user has an active subscription (
+                                    {vipLookup.subscription_tier}). Manual grant/revoke overrides it.
+                                </div>
+                            )}
+
+                            <div className="adminVipState">
+                                <span>tier: <strong>{vipLookup.state.active_tier}</strong></span>
+                                <span>expires: <strong>{vipLookup.state.expires_at ? new Date(vipLookup.state.expires_at).toLocaleString() : "none"}</strong></span>
+                                <span>subscription: <strong>{vipLookup.state.subscription?.status || "none"}</strong></span>
+                            </div>
+
+                            <div className="adminVipActions">
+                                <div className="adminVipGrantRow">
+                                    <select value={grantTier} onChange={e => setGrantTier(e.target.value)}>
+                                        <option value="vip">VIP</option>
+                                        <option value="super_vip">Super VIP</option>
+                                        <option value="ultra_vip">Ultra VIP</option>
+                                    </select>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max="24"
+                                        value={grantMonths}
+                                        onChange={e => setGrantMonths(e.target.value)}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={adminGrant}
+                                        disabled={vipBusy === "grant"}
+                                    >
+                                        grant VIP (months)
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="adminVipRevokeBtn"
+                                        onClick={adminRevoke}
+                                        disabled={vipBusy === "revoke"}
+                                    >
+                                        revoke VIP
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="adminVipStyle">
+                                <h3>set name style</h3>
+                                <NameStyleEditor
+                                    admin
+                                    user={{ id: vipLookup.user.id, username: vipLookup.user.username, role: vipLookup.user.role, vip: vipLookup.state }}
+                                    vip={vipLookup.state}
+                                    style={vipStyle}
+                                    onChange={setVipStyle}
+                                    onSave={adminSaveStyle}
+                                    onReset={adminResetStyle}
+                                    busy={vipBusy}
+                                />
+                            </div>
+                        </div>
+                    )}
+                </div>
 
                 {/* Tier S - Growth */}
                 <div className="adminSection">
