@@ -36,6 +36,18 @@ purpose
   filter: drop-shadow(0 0 3px rgba(255,255,255,0.45));
 }
 
+.vipBadgeBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  line-height: 0;
+}
+
 .vipBadgeSm {
   width: 1em;
   height: 1em;
@@ -105,6 +117,16 @@ purpose
   background: #120022;
   padding: 0.75rem;
   margin: 0.75rem 0;
+}
+
+.vipDonationNotice {
+  border: 2px solid #a020ff;
+  background: #0d0018;
+  padding: 0.9rem;
+  margin: 0.75rem 0;
+  color: #e8d5ff;
+  line-height: 1.5;
+  box-shadow: 3px 3px 0 #ff00cc;
 }
 
 .vipError {
@@ -182,6 +204,22 @@ purpose
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.nameStyleEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.nameStyleField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.nameStyleEditorCompact .vipPreview {
+  margin: 0 0 0.75rem;
 }
 
 .vipCheckoutBtns button,
@@ -272,6 +310,41 @@ purpose
   }
 }
 
+
+.vipSuccessTitle {
+  color: #00ff66;
+  font-size: 2rem;
+  font-weight: 900;
+  text-shadow: 2px 2px #a000ff, 4px 4px #ff00cc;
+  margin: 0.5rem 0;
+}
+
+.vipRefundBox {
+  border: 2px solid #00ffcc;
+  background: #001512;
+  padding: 0.9rem;
+  margin: 0.75rem 0;
+  line-height: 1.5;
+}
+
+.vipRefundBox button {
+  border: 1px solid #ffffff;
+  background: #111111;
+  color: #ffffff;
+  padding: 0.55rem 0.7rem;
+  margin-top: 0.5rem;
+  cursor: pointer;
+}
+
+.vipRefundBox button:hover {
+  background: #00ff66;
+  color: #000000;
+}
+
+.vipRefundBox button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 
 .accountVipLink {
   display: block;

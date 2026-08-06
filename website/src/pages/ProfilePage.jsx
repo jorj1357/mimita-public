@@ -3,23 +3,77 @@ import { Link, useNavigate } from "react-router-dom"
 import Layout from "../components/Layout"
 import Avatar from "../components/Avatar"
 import Username from "../components/Username"
+import NameStyleEditor from "../components/NameStyleEditor"
+import { normalizeStyle } from "../lib/vipStyle"
 import { apiRequest } from "../lib/api"
 
 export default function ProfilePage() {
     const navigate = useNavigate()
     const [user, setUser] = useState(null)
+    const [vip, setVip] = useState(null)
+    const [config, setConfig] = useState(null)
+    const [style, setStyle] = useState(normalizeStyle(null))
+    const [busy, setBusy] = useState("")
+    const [message, setMessage] = useState("")
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-        apiRequest("/api/auth/me")
-            .then((data) => {
-                setUser(data.user)
+        let alive = true
+        Promise.all([
+            apiRequest("/api/auth/me"),
+            apiRequest("/api/vip/me"),
+            apiRequest("/api/vip/config")
+        ])
+            .then(([me, vipMe, cfg]) => {
+                if (!alive) return
+                setUser(me.user)
+                setVip(vipMe.vip)
+                setConfig(cfg.config)
+                setStyle(normalizeStyle(vipMe.vip?.name_style))
                 setLoading(false)
             })
             .catch(() => {
-                navigate("/signin")
+                if (alive) navigate("/signin")
             })
+        return () => { alive = false }
     }, [navigate])
+
+    async function saveStyle() {
+        setBusy("save-style")
+        setMessage("")
+        try {
+            const data = await apiRequest("/api/vip/style", {
+                method: "PATCH",
+                body: JSON.stringify({ style })
+            })
+            setVip(data.vip)
+            setStyle(normalizeStyle(data.vip?.name_style))
+            setMessage("style saved")
+        }
+        catch (error) {
+            setMessage(error.message)
+        }
+        finally {
+            setBusy("")
+        }
+    }
+
+    async function resetStyle() {
+        setBusy("reset-style")
+        setMessage("")
+        try {
+            const data = await apiRequest("/api/vip/style/reset", { method: "POST" })
+            setVip(data.vip)
+            setStyle(normalizeStyle(data.vip?.name_style))
+            setMessage("style reset")
+        }
+        catch (error) {
+            setMessage(error.message)
+        }
+        finally {
+            setBusy("")
+        }
+    }
 
     function formatDate(dateStr) {
         if (!dateStr) return "Unknown"
@@ -47,7 +101,7 @@ export default function ProfilePage() {
 
     if (!user) return null
 
-    const activeTier = user.vip?.active_tier || user.supporter_tier
+    const activeTier = vip?.active_tier || user.supporter_tier
 
     return (
         <Layout>
@@ -56,7 +110,7 @@ export default function ProfilePage() {
                     <div className="profilePageHeader">
                         <Avatar user={user} size="lg" />
                         <div className="profilePageInfo">
-                            <Username user={user} size="lg" />
+                            <Username user={{ ...user, vip }} size="lg" />
                             <p className="profilePageRole">{formatRole(user.role)}</p>
                             {user.bio && <p className="profilePageBio">{user.bio}</p>}
                         </div>
@@ -84,6 +138,31 @@ export default function ProfilePage() {
                     <Link to="/account" className="profilePageEditBtn">
                         Edit Profile
                     </Link>
+                </div>
+
+                <div className="profilePageSection">
+                    <h2 className="profilePageSectionTitle">VIP Name Style</h2>
+                    <div className="profileVipEditor">
+                        {message && <p className="vipNotice">{message}</p>}
+                        {activeTier === "free" ? (
+                            <div className="profilePageEmpty">
+                                <p>You don't have VIP yet, but you can still preview the name styles below.</p>
+                                <p><Link to="/vip">get VIP to unlock custom name colors</Link></p>
+                            </div>
+                        ) : (
+                            <p className="vipNotice">This is how your name looks right now. Changes save live.</p>
+                        )}
+                        <NameStyleEditor
+                            user={user}
+                            vip={vip}
+                            style={style}
+                            onChange={setStyle}
+                            onSave={saveStyle}
+                            onReset={resetStyle}
+                            busy={busy}
+                            limits={config?.style_limits}
+                        />
+                    </div>
                 </div>
 
                 <div className="profilePageSection">

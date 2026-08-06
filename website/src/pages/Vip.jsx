@@ -13,18 +13,11 @@ import { Link, useLocation, useNavigate } from "react-router-dom"
 import Layout from "../components/Layout"
 import Username from "../components/Username"
 import VipBadge from "../components/VipBadge"
+import NameStyleEditor from "../components/NameStyleEditor"
+import { normalizeStyle } from "../lib/vipStyle"
 import { apiRequest } from "../lib/api"
 import { buildSigninPath } from "../lib/returnTo"
 import { logAuthEvent } from "../lib/api-log"
-
-const STYLE_LABELS = {
-    vip_turquoise: "VIP turquoise",
-    rainbow: "Rainbow",
-    solid: "Solid color",
-    animated_rainbow: "Animated rainbow",
-    per_letter: "Per-letter",
-    color_cycle: "Color cycle"
-}
 
 function dollars(cents) {
     return `$${(Number(cents || 0) / 100).toFixed(2)}`
@@ -35,19 +28,7 @@ function dateText(iso) {
     return new Date(iso).toLocaleString()
 }
 
-function normalizeStyle(style) {
-    return {
-        version: 1,
-        kind: style?.kind || "vip_turquoise",
-        solid_color: style?.solid_color || "#40e0d0",
-        colors: Array.isArray(style?.colors) && style.colors.length
-            ? style.colors
-            : ["#ff0044", "#ffcc00", "#00ff66", "#00ccff", "#9944ff"],
-        rainbow_speed: Number(style?.rainbow_speed || 1),
-        rainbow_direction: style?.rainbow_direction || "ltr",
-        animation: style?.animation || "cycle"
-    }
-}
+const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing", "past_due"])
 
 export default function Vip() {
     const navigate = useNavigate()
@@ -106,14 +87,6 @@ export default function Vip() {
             }
         }
     }, [user, vip, style])
-
-    function setColor(index, value) {
-        setStyle(current => {
-            const colors = [...(current.colors || [])]
-            colors[index] = value
-            return { ...current, colors }
-        })
-    }
 
     async function checkout(tier, purchaseType) {
         setBusy(`${tier}:${purchaseType}`)
@@ -227,13 +200,18 @@ export default function Vip() {
         )
     }
 
-    const allowed = new Set(vip.allowed_styles || [])
     const isUltra = vip.active_tier === "ultra_vip"
 
     return (
         <Layout>
             <section className="vipPage">
                 <h1>MiMITA VIP</h1>
+                <p className="vipDonationNotice">
+                    VIP is a supporter thing, not a paywall. You get a cool colorful name here on the website and in the game.
+                    More supporter features will be added over time, but VIP will never be the main focus and will never block
+                    access to anything. If you don't have VIP you can still play and do everything. It's strictly:
+                    "I appreciate this and I want to support it."
+                </p>
                 <p className="vipNotice">
                     VIP belongs to your account. Checkout prices are selected by the server and confirmed by Stripe webhooks.
                 </p>
@@ -285,88 +263,28 @@ export default function Vip() {
                             <p>subscription: <span>{vip.subscription?.status || "none"}</span></p>
                             <p>auto renew: <span>{vip.subscription && !vip.subscription.cancel_at_period_end ? "yes" : "no"}</span></p>
                         </div>
-                        <button type="button" onClick={manageSubscription} disabled={busy === "manage-subscription"}>
-                            manage subscription
-                        </button>
+                        {ACTIVE_SUBSCRIPTION_STATUSES.has(vip.subscription?.status) ? (
+                            <button type="button" onClick={manageSubscription} disabled={busy === "manage-subscription"}>
+                                manage subscription
+                            </button>
+                        ) : (
+                            <p className="vipNotice">You have no active subscription to manage.</p>
+                        )}
                         <p><Link to="/account">back to account</Link></p>
                     </section>
 
                     <section className="vipPanel">
                         <h2>Name Style</h2>
-                        <div className="vipStyleGrid">
-                            {Object.entries(STYLE_LABELS).map(([kind, label]) => (
-                                <label key={kind} className={!allowed.has(kind) ? "vipLocked" : ""}>
-                                    <input
-                                        type="radio"
-                                        name="vip-style-kind"
-                                        value={kind}
-                                        checked={style.kind === kind}
-                                        disabled={!allowed.has(kind)}
-                                        onChange={() => setStyle(current => ({ ...current, kind }))}
-                                    />
-                                    {label}
-                                </label>
-                            ))}
-                        </div>
-
-                        {style.kind === "solid" && (
-                            <label>
-                                solid color
-                                <input
-                                    type="color"
-                                    value={style.solid_color || "#40e0d0"}
-                                    onChange={e => setStyle(current => ({ ...current, solid_color: e.target.value }))}
-                                />
-                            </label>
-                        )}
-
-                        {["rainbow", "animated_rainbow", "per_letter", "color_cycle"].includes(style.kind) && (
-                            <>
-                                <label>
-                                    speed
-                                    <input
-                                        type="range"
-                                        min={config.style_limits?.minRainbowSpeed || 0.25}
-                                        max={config.style_limits?.maxRainbowSpeed || 4}
-                                        step="0.05"
-                                        value={style.rainbow_speed || 1}
-                                        disabled={!isUltra && style.kind !== "rainbow"}
-                                        onChange={e => setStyle(current => ({ ...current, rainbow_speed: Number(e.target.value) }))}
-                                    />
-                                </label>
-                                <label>
-                                    direction
-                                    <select
-                                        value={style.rainbow_direction || "ltr"}
-                                        disabled={!isUltra}
-                                        onChange={e => setStyle(current => ({ ...current, rainbow_direction: e.target.value }))}
-                                    >
-                                        <option value="ltr">left to right</option>
-                                        <option value="rtl">right to left</option>
-                                    </select>
-                                </label>
-                                <div className="vipColorList">
-                                    {(style.colors || []).slice(0, 8).map((color, index) => (
-                                        <input
-                                            key={index}
-                                            type="color"
-                                            value={color}
-                                            disabled={style.kind === "rainbow" && !isUltra}
-                                            onChange={e => setColor(index, e.target.value)}
-                                        />
-                                    ))}
-                                </div>
-                            </>
-                        )}
-
-                        <div className="vipCheckoutBtns">
-                            <button type="button" onClick={saveStyle} disabled={!vip.controls_unlocked || busy === "save-style"}>
-                                save style
-                            </button>
-                            <button type="button" onClick={resetStyle} disabled={busy === "reset-style"}>
-                                reset default
-                            </button>
-                        </div>
+                        <NameStyleEditor
+                            user={user}
+                            vip={vip}
+                            style={style}
+                            onChange={setStyle}
+                            onSave={saveStyle}
+                            onReset={resetStyle}
+                            busy={busy}
+                            limits={config.style_limits}
+                        />
                     </section>
 
                     <section className={`vipPanel ${!isUltra ? "vipLocked" : ""}`}>

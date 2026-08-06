@@ -8,6 +8,8 @@
 * DOES NOT render game-engine badge textures.
 */
 
+import { useNavigate } from "react-router-dom"
+
 const BADGE_IMAGES = {
     vip: "/assets/images/mimita%20vip%202.png",
     super_vip: "/assets/images/mimita%20super%20vip.png",
@@ -26,18 +28,40 @@ function normalizeTier(tier) {
 }
 
 export default function VipBadge({ tier, src = "", size = "md" }) {
+    const navigate = useNavigate()
     const normalized = normalizeTier(tier)
     const badgeSrc = src || BADGE_IMAGES[normalized]
     if (!normalized || !badgeSrc) return null
 
     const sizeClass = size === "sm" ? "vipBadgeSm" : size === "lg" ? "vipBadgeLg" : "vipBadgeMd"
+
+    function openVip(event) {
+        event.preventDefault()
+        event.stopPropagation()
+        navigate("/vip")
+    }
+
     return (
-        <img
-            className={`vipBadgeImg ${sizeClass}`}
-            src={badgeSrc}
-            alt={BADGE_LABELS[normalized]}
-            loading="lazy"
-        />
+        <span
+            role="button"
+            tabIndex={0}
+            className="vipBadgeBtn"
+            title={`${BADGE_LABELS[normalized]} - view VIP`}
+            onClick={openVip}
+            onKeyDown={event => {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault()
+                    openVip(event)
+                }
+            }}
+        >
+            <img
+                className={`vipBadgeImg ${sizeClass}`}
+                src={badgeSrc}
+                alt={BADGE_LABELS[normalized]}
+                loading="lazy"
+            />
+        </span>
     )
 }
 

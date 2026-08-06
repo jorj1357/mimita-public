@@ -12,7 +12,7 @@ import { Router } from "express"
 import { pool } from "./db.js"
 import { authenticate, sessionSecret } from "./session.js"
 import { hashToken, createSecretToken } from "./authCore.js"
-import { getStripe, reconcilePendingCheckoutOrders } from "./vip-payments.js"
+import { getStripe, reconcilePendingCheckoutOrders, getVipOrders, refundOrder } from "./vip-payments.js"
 import {
     publicVipConfig,
     safeStyleForTier,
@@ -78,6 +78,33 @@ export function createVipRouter(deps = {}) {
         }
         catch (error) {
             next(error)
+        }
+    })
+
+    router.get("/orders", authenticateMw, async (req, res, next) => {
+        try {
+            const orders = await getVipOrders({ query, userId: req.user.id })
+            res.json({ success: true, orders })
+        }
+        catch (error) {
+            next(error)
+        }
+    })
+
+    router.post("/refund", authenticateMw, async (req, res) => {
+        try {
+            const orderId = Number(req.body.order_id || 0)
+            const result = await refundOrder({
+                stripe: stripeFactory(),
+                getClient: () => pool.connect(),
+                query,
+                userId: req.user.id,
+                orderId
+            })
+            res.json({ success: true, ...result })
+        }
+        catch (error) {
+            res.status(400).json({ success: false, message: error.message })
         }
     })
 
@@ -260,7 +287,7 @@ export function createVipRouter(deps = {}) {
                 [req.user.id]
             )
             if (!result.rowCount || !result.rows[0].stripe_customer_id) {
-                return res.status(404).json({ success: false, message: "no subscription customer found" })
+                return res.status(404).json({ success: false, message: "you have no active subscription to manage" })
             }
             const session = await stripe.billingPortal.sessions.create({
                 customer: result.rows[0].stripe_customer_id,

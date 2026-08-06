@@ -63,6 +63,19 @@ function stripeUnixDate(value) {
     return new Date(seconds * 1000)
 }
 
+function toDate(value) {
+    if (!value) return null
+    const date = value instanceof Date ? value : new Date(value)
+    return Number.isFinite(date.getTime()) ? date : null
+}
+
+function toIso(value) {
+    const date = toDate(value)
+    return date ? date.toISOString() : null
+}
+
+export const VIP_REFUND_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
+
 async function recordStripeEvent(client, event) {
     const result = await client.query(
         `INSERT INTO vip_stripe_events (
@@ -329,6 +342,119 @@ export async function reconcilePendingCheckoutOrders({
     }
 
     return { orders: orderResult.rows.length, reconciled }
+}
+
+export async function getVipOrders({ query = pool, userId = 0, now = new Date() } = {}) {
+    const q = queryFrom(query)
+    const numericUserId = Number(userId)
+    if (!Number.isInteger(numericUserId) || numericUserId <= 0) return []
+
+    const result = await q(
+        `SELECT id, tier, purchase_type, amount_cents, currency, status,
+                paid_at, created_at, stripe_payment_intent_id
+         FROM vip_orders
+         WHERE user_id = $1
+         ORDER BY created_at DESC`,
+        [numericUserId]
+    )
+
+    const current = now instanceof Date ? now : new Date(now)
+    return result.rows.map(row => {
+        const paidAt = toDate(row.paid_at)
+        const refundUntil = paidAt ? new Date(paidAt.getTime() + VIP_REFUND_WINDOW_MS) : null
+        const refundable = row.status === "paid"
+            && String(row.purchase_type) !== "monthly_subscription"
+            && Boolean(cleanId(row.stripe_payment_intent_id))
+            && Boolean(refundUntil)
+            && refundUntil > current
+        return {
+            id: row.id,
+            tier: row.tier,
+            purchase_type: row.purchase_type,
+            amount_cents: Number(row.amount_cents) || 0,
+            currency: row.currency,
+            status: row.status,
+            paid_at: toIso(row.paid_at),
+            created_at: toIso(row.created_at),
+            refund_until: toIso(refundUntil),
+            refundable
+        }
+    })
+}
+
+export async function refundOrder({
+    stripe = getStripe(),
+    getClient = () => pool.connect(),
+    query = pool,
+    userId = 0,
+    orderId = 0,
+    now = new Date()
+} = {}) {
+    if (!stripe?.refunds?.create) throw new Error("Stripe refunds are not configured")
+
+    const numericUserId = Number(userId)
+    const numericOrderId = Number(orderId)
+    if (!Number.isInteger(numericUserId) || !Number.isInteger(numericOrderId) || numericOrderId <= 0) {
+        throw new Error("invalid order")
+    }
+    const current = now instanceof Date ? now : new Date(now)
+
+    const orderResult = await queryFrom(query)(
+        `SELECT * FROM vip_orders WHERE id = $1 AND user_id = $2 LIMIT 1`,
+        [numericOrderId, numericUserId]
+    )
+    const order = orderResult.rows?.[0]
+    if (!order) throw new Error("order not found")
+    if (order.status !== "paid") throw new Error("order is not refundable")
+    if (String(order.purchase_type) === "monthly_subscription") throw new Error("subscriptions are cancelled in the billing portal, not refunded")
+
+    const paidAt = toDate(order.paid_at)
+    if (!paidAt) throw new Error("order has no payment date")
+    const refundUntil = new Date(paidAt.getTime() + VIP_REFUND_WINDOW_MS)
+    if (refundUntil <= current) throw new Error("the 30 day refund window has passed")
+
+    const paymentIntentId = cleanId(order.stripe_payment_intent_id)
+    if (!paymentIntentId) throw new Error("order has no payment intent to refund")
+
+    await stripe.refunds.create({
+        payment_intent: paymentIntentId,
+        metadata: {
+            source: VIP_FLOW_SOURCE,
+            user_id: String(numericUserId),
+            order_id: String(numericOrderId)
+        }
+    })
+
+    const client = await getClient()
+    try {
+        await client.query("BEGIN")
+        await client.query(
+            `UPDATE vip_orders SET status = 'refunded', updated_at = NOW() WHERE id = $1`,
+            [numericOrderId]
+        )
+        await client.query(
+            `UPDATE vip_entitlements SET status = 'refunded', updated_at = NOW() WHERE order_id = $1`,
+            [numericOrderId]
+        )
+        await recomputeAndStoreVipForUser(client, numericUserId, current)
+        await client.query("COMMIT")
+        vipLog("refund_processed", { user_id: numericUserId, order_id: numericOrderId })
+    }
+    catch (error) {
+        try {
+            await client.query("ROLLBACK")
+        }
+        catch {
+            // best effort after rollback
+        }
+        vipLog("refund_failed", { user_id: numericUserId, order_id: numericOrderId, reason: error.message })
+        throw error
+    }
+    finally {
+        client.release()
+    }
+
+    return { success: true, refunded_order_id: numericOrderId }
 }
 
 async function processSubscriptionLikeEvent({ client, stripe, object }) {
