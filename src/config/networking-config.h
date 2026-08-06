@@ -210,6 +210,14 @@ struct RemoteMotionSmoothingConfig
     // gap the body just continues from where it held). >0 = allow a bounded
     // catch-up burst so the body re-syncs to live data faster.
     double linearCatchupRateTicksPerSecond = 0.0;
+    // linear mode: scales how much arrival jitter deepens the loss buffer
+    // (multiplied on top of adaptive_snapshot_buffer.jitter_multiplier).
+    // 1.0 = standard; raise to deepen faster on jittery connections.
+    double linearDelayJitterMultiplier = 1.0;
+    // linear mode: scales how much packet loss deepens the loss buffer toward
+    // linear_max_delay_ticks (weight on the smoothed loss fraction).
+    // 1.0 = standard; 0 = ignore loss when sizing the buffer.
+    double linearDelayLossWeight = 1.0;
     // linear mode: a gap wider than this many ticks between two buffered
     // snapshots is a discontinuity (blackout/teleport) and snaps to the newest
     // instead of bridging a stale straight line. 0 = use the global

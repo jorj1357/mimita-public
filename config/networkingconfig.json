@@ -94,7 +94,9 @@
     "linear_hold_on_dry": true,
     "linear_allow_extrapolation": false,
     "linear_catchup_rate_ticks_per_second": 0.0,
-    "linear_snap_after_gap_ticks": 1
+    "linear_delay_jitter_multiplier": 1.0,
+    "linear_delay_loss_weight": 1.0,
+    "linear_snap_after_gap_ticks": 30
   },
 
   "death_effects": {

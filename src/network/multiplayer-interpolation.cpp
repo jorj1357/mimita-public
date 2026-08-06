@@ -94,7 +94,12 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
     const uint32_t newestTick = interpolation.buffer.back().serverTick;
 
     const double delayTicks = delaySeconds * (double)GAMEPLAY_SIMULATION_HZ;
-    const double renderTick = globalRenderTick - delayTicks;
+    const double desiredRenderTick = globalRenderTick - delayTicks;
+    // Monotonic render time: never render earlier than the previous frame,
+    // even when the (adaptive) delay deepens. Prevents any backward slide.
+    const double prevRenderTick = interpolation.renderTick;
+    const double renderTick = (prevRenderTick > desiredRenderTick)
+        ? prevRenderTick : desiredRenderTick;
     interpolation.renderTick = renderTick;
 
     // Buffer ran dry: renderTick is newer than everything buffered. Extrapolate
@@ -532,25 +537,34 @@ void updateRenderedReplica(
     // freeze/jump from a clamped catch-up clock).
     const NetworkingConfigData& netCfg = NetworkingConfig::instance().data();
     const bool linearMode = (motion.renderFilter == "linear");
-    // linear mode uses an adaptive whole-tick loss buffer: the per-entity
-    // jitter/loss EMA from adaptiveDelaySeconds() is quantized up to a whole
-    // tick and clamped to [linear_min_delay_ticks, linear_max_delay_ticks],
-    // so the render stays deep enough inside the buffer to never run dry under
-    // jitter/loss. linear_max_delay_ticks == 0 → fixed at linear_delay_ticks
-    // (legacy). Other modes use the adaptive per-entity delay as-is.
+    // linear mode uses an adaptive loss buffer whose depth grows smoothly with
+    // jitter and loss (driven by the arrival-jitter / loss-fraction EMA from
+    // pushInterpolationTarget), clamped to [linear_min_delay_ticks,
+    // linear_max_delay_ticks] in ticks. A good connection stays at the base
+    // linear_delay_ticks; a lossy/jittery one deepens so the render never runs
+    // out of packets (no extrapolation/hold pops). Because the render time is
+    // monotonic (see buildReceiveTimeRender), delay changes never slide the
+    // body backward. linear_max_delay_ticks == 0 → fixed at linear_delay_ticks.
     const double delaySeconds = [&]() -> double {
         if (!linearMode)
             return adaptiveDelaySeconds(interpolation, netCfg, dt);
-        const double minTicks = (double)(motion.linearMinDelayTicks > 0
-            ? motion.linearMinDelayTicks : motion.linearDelayTicks);
         double delayTicks = (double)motion.linearDelayTicks;
         if (motion.linearMaxDelayTicks > 0)
         {
-            const double adaptTicks =
-                std::ceil(adaptiveDelaySeconds(interpolation, netCfg, dt) *
-                          (double)GAMEPLAY_SIMULATION_HZ);
-            const double maxTicks = (double)motion.linearMaxDelayTicks;
-            delayTicks = std::clamp(adaptTicks, minTicks, maxTicks);
+            const double minT = (double)(motion.linearMinDelayTicks > 0
+                ? motion.linearMinDelayTicks : motion.linearDelayTicks);
+            const double maxT = (double)motion.linearMaxDelayTicks;
+            const double jitterTicks =
+                interpolation.estimatedArrivalJitterMs *
+                (double)motion.linearDelayJitterMultiplier *
+                netCfg.adaptiveSnapshotBuffer.jitterMultiplier / 1000.0 *
+                (double)GAMEPLAY_SIMULATION_HZ;
+            const double lossFrac = interpolation.recentLossFraction *
+                (double)motion.linearDelayLossWeight;
+            const double lossTicks = lossFrac * (maxT - minT);
+            const double desiredTicks = (double)motion.linearDelayTicks +
+                jitterTicks + lossTicks;
+            delayTicks = std::clamp(desiredTicks, minT, maxT);
         }
         const double delay = delayTicks / (double)GAMEPLAY_SIMULATION_HZ;
         // Feed the effective delay back so the shot-rewind tick
@@ -1074,20 +1088,16 @@ glm::vec3 mpRemoteShooterRenderDelta(const MultiplayerContext& ctx, uint32_t sho
 
 void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)
 {
-    // Continuous wall-clock-anchored render clock in server-tick units:
-    // estimatedServerNow = newest received server tick + elapsed real time
-    // since that snapshot was received. It advances smoothly between snapshot
-    // arrivals and is re-anchored on every snapshot, so interpolation runs on
-    // a smooth time base (no packet-arrival-driven accumulator). This is what
-    // makes the interpolation alpha fractional at any frame rate and lets
-    // reordered/lost-snapshot bursts pass through without an artificial
-    // catch-up fast-forward.
-    // The clock is MONOTONIC: it never moves backward. Under network jitter a
-    // snapshot frequently arrives more than one tick after the previous one;
-    // re-anchoring `ageTicks` to zero on every such arrival used to step the
-    // clock backward, which made the interpolation alpha oscillate and remote
-    // bodies "double-set"/stutter. The clock now only ever advances forward,
-    // so alpha only ever increases: pure forward glide, no backward slides.
+    // Free-running render clock in server-tick units, advanced by real frame
+    // time. Interpolation runs on a smooth monotonic time base so the alpha is
+    // always fractional at any frame rate (no packet-arrival accumulator, no
+    // freeze/jump, no backward slides).
+    // MONOTONIC + FREE-RUNNING: the clock only ever moves forward, and it
+    // advances every frame regardless of when snapshots arrive. A late arrival
+    // cannot freeze it (a frozen clock made the render time hold-then-lurch,
+    // which showed up as vertical jitter on every filter) and cannot step it
+    // backward (the original bug that made alpha oscillate = "double set").
+    // It is re-anchored upward only if the newest data ever overtakes it.
     const auto& motionClock =
         NetworkingConfig::instance().data().remoteMotionSmoothing;
     const bool linearClock = (motionClock.renderFilter == "linear");
@@ -1106,32 +1116,22 @@ void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)
 
     if (ctx.latestServerTick != 0 && ctx.lastSnapshotReceivedMs != 0)
     {
-        const double tickMs = 1000.0 / (double)GAMEPLAY_SIMULATION_HZ;
-        const uint64_t now = nowMs();
-        const double ageTicks = now >= ctx.lastSnapshotReceivedMs
-            ? (double)(now - ctx.lastSnapshotReceivedMs) / tickMs
-            : 0.0;
-        const double rawNow = (double)ctx.latestServerTick + ageTicks;
         if (!ctx.interpolationClockStarted)
         {
-            ctx.interpolationRenderTick = rawNow;
+            ctx.interpolationRenderTick = (double)ctx.latestServerTick;
             ctx.interpolationClockStarted = true;
         }
-        else if (rawNow > ctx.interpolationRenderTick)
+        else
         {
-            // linear mode may cap how fast the clock may catch up after a gap
-            // (a bounded glide instead of a forward burst). 0 = no cap.
             const double dtTicks = (double)dt * (double)GAMEPLAY_SIMULATION_HZ;
             if (linearClock && linearCatchupTps > 0.0)
-            {
-                const double maxStep = dtTicks + linearCatchupTps * (double)dt;
-                ctx.interpolationRenderTick =
-                    std::min(rawNow, ctx.interpolationRenderTick + maxStep);
-            }
+                ctx.interpolationRenderTick +=
+                    dtTicks + linearCatchupTps * (double)dt;
             else
-            {
-                ctx.interpolationRenderTick = rawNow;
-            }
+                ctx.interpolationRenderTick += dtTicks;
+            // Monotonic re-anchor: never render behind the newest received data.
+            if (ctx.interpolationRenderTick < (double)ctx.latestServerTick)
+                ctx.interpolationRenderTick = (double)ctx.latestServerTick;
         }
     }
 

@@ -220,6 +220,8 @@ const std::vector<NetConfigKnob>& netConfigKnobs()
         {"linear_hold_on_dry", false, true, false, 0.0, 1.0, "remote_motion_smoothing"},
         {"linear_allow_extrapolation", false, true, false, 0.0, 1.0, "remote_motion_smoothing"},
         {"linear_catchup_rate_ticks_per_second", false, false, false, 0.0, 1000.0, "remote_motion_smoothing"},
+        {"linear_delay_jitter_multiplier", false, false, false, 0.0, 20.0, "remote_motion_smoothing"},
+        {"linear_delay_loss_weight", false, false, false, 0.0, 10.0, "remote_motion_smoothing"},
         {"linear_snap_after_gap_ticks", false, false, false, 0.0, 1000.0, "remote_motion_smoothing"},
     };
     return knobs;

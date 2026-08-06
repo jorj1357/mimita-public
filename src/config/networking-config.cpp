@@ -388,6 +388,12 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
         c.linearCatchupRateTicksPerSecond = clampMin(
             readDouble(r, "linear_catchup_rate_ticks_per_second",
                        c.linearCatchupRateTicksPerSecond), 0.0);
+        c.linearDelayJitterMultiplier = clampMin(
+            readDouble(r, "linear_delay_jitter_multiplier",
+                       c.linearDelayJitterMultiplier), 0.0);
+        c.linearDelayLossWeight = clampMin(
+            readDouble(r, "linear_delay_loss_weight",
+                       c.linearDelayLossWeight), 0.0);
         c.linearSnapAfterGapTicks = (uint32_t)std::max<uint32_t>(
             0u, (uint32_t)clampMin(
                     readDouble(r, "linear_snap_after_gap_ticks",
