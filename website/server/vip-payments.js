@@ -32,7 +32,7 @@ const checkoutRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 5, name: "
 export function getStripe() {
     const key = process.env.STRIPE_SECRET_KEY
     if (!key) return null
-    return new Stripe(key, { apiVersion: "2025-12-17.clover" })
+    return new Stripe(key)
 }
 
 function queryFrom(clientOrQuery = pool) {
