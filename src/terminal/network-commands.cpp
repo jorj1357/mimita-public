@@ -974,14 +974,16 @@ void registerNetworkCommands()
                 snprintf(buf, sizeof(buf),
                     "[NETSTATS] filter=%s freqHz=%.1f zeta=%.2f ff=%.2f "
                     "ffSmooth=%.2f zMult=%.2f maxSpd=%.0f maxStep=%.0f clampZ=%d "
-                    "linTicks=%u linHold=%d",
+                    "linTicks=%u linHold=%d sFreq=%.1f sFF=%.2f sDead=%.3f",
                     m.renderFilter.c_str(), m.hybridFrequencyHz,
                     m.hybridDampingRatio, m.hybridFeedForward,
                     m.hybridFeedForwardSmoothing, m.hybridFrequencyZMultiplier,
                     m.hybridMaxSpeedUnitsPerSecond,
                     m.filterMaxStepUnitsPerSecond,
                     (int)m.filterClampZBelowTarget,
-                    (unsigned)m.linearDelayTicks, (int)m.linearHoldOnDry);
+                    (unsigned)m.linearDelayTicks, (int)m.linearHoldOnDry,
+                    m.springFrequencyHz, m.springFeedForward,
+                    m.springLinearDeadzoneUnits);
                 Terminal::instance().addLog(buf);
             }
 

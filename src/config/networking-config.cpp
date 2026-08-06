@@ -334,6 +334,22 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
             readDouble(r, "spring_stiffness", c.springStiffness), 1.0);
         c.springDamping = clampMin(
             readDouble(r, "spring_damping", c.springDamping), 1.0);
+        c.springFrequencyHz = clampRange(
+            readDouble(r, "spring_frequency_hz", c.springFrequencyHz), 0.0, 60.0);
+        c.springDampingRatio = clampRange(
+            readDouble(r, "spring_damping_ratio", c.springDampingRatio), 0.0, 3.0);
+        c.springFeedForward = clampRange(
+            readDouble(r, "spring_feed_forward", c.springFeedForward), 0.0, 1.0);
+        c.springFeedForwardSmoothing = clampRange(
+            readDouble(r, "spring_feed_forward_smoothing", c.springFeedForwardSmoothing), 0.0, 1.0);
+        c.springFrequencyZMultiplier = clampRange(
+            readDouble(r, "spring_frequency_z_multiplier", c.springFrequencyZMultiplier), 0.5, 3.0);
+        c.springMaxSpeedUnitsPerSecond = clampMin(
+            readDouble(r, "spring_max_speed_units_per_second",
+                       c.springMaxSpeedUnitsPerSecond), 0.0);
+        c.springLinearDeadzoneUnits = clampMin(
+            readDouble(r, "spring_linear_deadzone_units",
+                       c.springLinearDeadzoneUnits), 0.0);
         c.hybridFrequencyHz = clampRange(
             readDouble(r, "hybrid_frequency_hz", c.hybridFrequencyHz), 1.0, 60.0);
         c.hybridDampingRatio = clampRange(
