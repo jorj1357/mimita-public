@@ -88,15 +88,15 @@
     "hybrid_max_speed_units_per_second": 0.0,
     "filter_max_step_units_per_second": 0.0,
     "filter_clamp_z_below_target": true,
-    "linear_delay_ticks": 1,
+    "linear_delay_ticks": 24,
     "linear_min_delay_ticks": 6,
-    "linear_max_delay_ticks": 24,
+    "linear_max_delay_ticks": 12,
     "linear_hold_on_dry": true,
     "linear_allow_extrapolation": false,
     "linear_catchup_rate_ticks_per_second": 0.0,
-    "linear_delay_jitter_multiplier": 1.0,
+    "linear_delay_jitter_multiplier": 0.0,
     "linear_delay_loss_weight": 1.0,
-    "linear_snap_after_gap_ticks": 30
+    "linear_snap_after_gap_ticks": 999
   },
 
   "death_effects": {
