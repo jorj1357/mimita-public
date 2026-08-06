@@ -84,7 +84,6 @@ void doGLBSweepSlide(
     }
     diag.initialCandidates = (int)candidates.size();
 
-    std::vector<int> bodyCandidateExtras;
     std::vector<glm::vec3> bodySamples = collectPlayerBodyCollisionSamples(p);
     diag.bodySampleCount = (int)bodySamples.size();
 
@@ -94,19 +93,32 @@ void doGLBSweepSlide(
         for (size_t si = 0; si < bodySamples.size() && si < p.previousBodySamplePositions.size(); ++si)
             bodyDeltas[si] = bodySamples[si] - p.previousBodySamplePositions[si];
 
+        // One gather from the union swept AABB of every body sample instead of
+        // one gather per sample. The samples overlap heavily, so this avoids ~60
+        // redundant sub-grid queries and the O(n²) per-sample dedup.
+        AABB bodyUnion;
+        bool bodyUnionValid = false;
         for (size_t si = 0; si < bodySamples.size(); ++si)
         {
             glm::vec3 sample = bodySamples[si];
             glm::vec3 sampleMove = totalMove + bodyDeltas[si];
-            char tag[64];
-            std::snprintf(tag, sizeof(tag), "body_sample_%zu", si);
-            std::vector<int> sampleCandidates = gatherGLBTrianglesForSphere(world, sample, BODY_SAMPLE_RADIUS, sampleMove);
-            Debug::logThrottled(Debug::Category::Collision, tag, 1.0f,
-                "[GATHER_SPHERE] caller=%s sample=%zu/%zu candidates=%zu\n",
-                tag, si + 1, bodySamples.size(), sampleCandidates.size());
-            appendUniqueTriangleIndices(bodyCandidateExtras, sampleCandidates);
+            AABB sb;
+            sb.min = glm::min(sample, sample + sampleMove) - glm::vec3(BODY_SAMPLE_RADIUS);
+            sb.max = glm::max(sample, sample + sampleMove) + glm::vec3(BODY_SAMPLE_RADIUS);
+            if (!bodyUnionValid) { bodyUnion = sb; bodyUnionValid = true; }
+            else {
+                bodyUnion.min = glm::min(bodyUnion.min, sb.min);
+                bodyUnion.max = glm::max(bodyUnion.max, sb.max);
+            }
         }
-        appendUniqueTriangleIndices(candidates, bodyCandidateExtras);
+
+        if (bodyUnionValid)
+        {
+            std::vector<int> bodyUnionCandidates;
+            appendChunkTrianglesForAABB(world, bodyUnion, BODY_SAMPLE_RADIUS,
+                                        bodyUnionCandidates, "bodySampleUnion");
+            appendUniqueTriangleIndices(candidates, bodyUnionCandidates);
+        }
         auto t1 = std::chrono::steady_clock::now();
         diag.bodyExtraMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
     }

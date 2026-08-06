@@ -61,6 +61,9 @@ inline float SLOPE_OVERLAP = 0.1f;
 inline float SLOPE_SKIN = 0.02f;
 inline float BODY_SAMPLE_RADIUS = 0.15f;
 inline float MAX_STEP_HEIGHT = 0.25f;
+// Safety margin for the broadphase triangle overlap filter. The gather query
+// AABB already includes the capsule radius, so this is only numerical padding.
+inline float COLLISION_GATHER_EXPANSION = 0.25f;
 inline float SLOPE_VELOCITY_PUSHUP_MULT = 1.01f;
 inline float SLOPE_SNAP_DIST = 0.15f;
 inline float SLOPE_WALL_CLEARANCE = 2.5f;

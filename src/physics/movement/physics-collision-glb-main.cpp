@@ -248,16 +248,21 @@ void doGLBTriangleCollisions(
             if (p.collision.stuckFrames >= 3)
             {
                 diag.emergencyTriggered = true;
-                const glm::vec3 searchDirs[] = {
-                    { 1, 0, 0}, {-1, 0, 0}, { 0, 1, 0}, { 0,-1, 0},
-                    { 0, 0, 1}, { 1, 1, 0}, { 1,-1, 0}, {-1, 1, 0}, {-1,-1, 0},
-                    { 1, 0, 1}, {-1, 0, 1}, { 0, 1, 1}, { 0,-1, 1}
-                };
 
                 glm::vec3 bestPos = p.pos;
                 float bestPen = worstPen;
                 bool foundFree = false;
                 int dirsSearched = 0;
+                // Bound the worst case: 13 dirs × ~128 steps each would be ~1664
+                // full collision gathers per frame for a stuck-embedded entity.
+                // Directions are ordered UP/DOWN first so a player embedded in a
+                // floor escapes within the first few dozen tests, well under the cap.
+                constexpr int MAX_EMERGENCY_TESTS = 512;
+                const glm::vec3 searchDirs[] = {
+                    { 0, 0, 1}, { 0, 0,-1}, { 1, 0, 0}, {-1, 0, 0},
+                    { 0, 1, 0}, { 0,-1, 0}, { 1, 1, 0}, { 1,-1, 0}, {-1, 1, 0}, {-1,-1, 0},
+                    { 1, 0, 1}, {-1, 0, 1}, { 0, 1, 1}, { 0,-1, 1}
+                };
 
                 for (glm::vec3 dir : searchDirs)
                 {
@@ -266,6 +271,7 @@ void doGLBTriangleCollisions(
 
                     for (float dist = 0.05f; dist <= EMERGENCY_SEARCH_RADIUS; dist += 0.05f)
                     {
+                        if (dirsSearched >= MAX_EMERGENCY_TESTS) break;
                         ++dirsSearched;
                         glm::vec3 testPos = p.pos + dir * dist;
                         Player testP = p;
@@ -300,7 +306,7 @@ void doGLBTriangleCollisions(
                             bestPen = testPen;
                         }
                     }
-                    if (foundFree) break;
+                    if (dirsSearched >= MAX_EMERGENCY_TESTS || foundFree) break;
                 }
                 diag.emergencyDirsSearched = dirsSearched;
 
