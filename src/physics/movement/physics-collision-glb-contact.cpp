@@ -235,7 +235,8 @@ bool capsuleTriangleContact(
 std::vector<RecoveryContact> collectCapsuleRecoveryContacts(
     const World& world,
     const Capsule& cap,
-    const std::vector<int>& candidates
+    const std::vector<int>& candidates,
+    const char* label
 ) {
     auto t0 = std::chrono::steady_clock::now();
     std::vector<RecoveryContact> contacts;
@@ -253,7 +254,7 @@ std::vector<RecoveryContact> collectCapsuleRecoveryContacts(
             rc.penetration = c.penetration;
             rc.triangleIndex = triIndex;
             rc.block = nullptr;
-            rc.label = "glb-recovery";
+            rc.label = label;
             contacts.push_back(rc);
         }
     }

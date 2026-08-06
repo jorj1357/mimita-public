@@ -1,222 +1,41 @@
 {
+  "_comment": "Weapon collision config. source \"capsule\" (default) = one smooth bounding capsule auto-derived from the weapon model's full width. Optional per-weapon capsule start/end/radius override the auto shape. Set source to \"json\" for the legacy multi-sphere config. Hot-reloaded every 250ms. See the hitbox live with: debug_weapon_hitbox 1",
+
   "revolver": {
     "enabled": true,
     "collision_skin": 0.05,
-    "source": "json",
-
-    "spheres": [
-      {
-        "name": "grip",
-        "enabled": true,
-        "offset": [0.0, 0.0, 0.0],
-        "radius": 0.5,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      },
-      {
-        "name": "mid",
-        "enabled": true,
-        "offset": [0.5, 0.0, 0.0],
-        "radius": 0.5,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      },
-      {
-        "name": "barrel",
-        "enabled": true,
-        "offset": [1.0, 0.0, 0.0],
-        "radius": 0.5,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      }
-    ]
+    "source": "capsule",
+    "capsule": {
+      "enabled": true,
+      "start": [-0.65, 0.0, 0.0],
+      "end": [0.95, 0.0, 0.0],
+      "radius": 0.22,
+      "scale": [1.0, 1.0, 1.0],
+      "rotation_degrees": [0.0, 0.0, 0.0]
+    }
   },
 
   "shotgun": {
     "enabled": true,
     "collision_skin": 0.15,
-    "source": "json",
-
-    "spheres": [
-      {
-        "name": "rear",
-        "enabled": true,
-        "offset": [0.0, 0.0, -2.4],
-        "radius": 0.2,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      },
-      {
-        "name": "rear_mid",
-        "enabled": true,
-        "offset": [0.0, 0.0, -1.6],
-        "radius": 0.2,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      },
-      {
-        "name": "middle",
-        "enabled": true,
-        "offset": [0.0, 0.0, -0.8],
-        "radius": 0.2,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      },
-       {
-        "name": "fore_mid",
-        "enabled": true,
-        "offset": [0.0, 0.0, 0.0],
-        "radius": 0.2,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      },
-      {
-        "name": "front",
-        "enabled": true,
-        "offset": [0.0, 0.0, 0.8],
-        "radius": 0.2,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      },
-       {
-        "name": "front2",
-        "enabled": true,
-        "offset": [0.0, 0.0, 1.6],
-        "radius": 0.2,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      },
-      {
-        "name": "muzzle",
-        "enabled": true,
-        "offset": [0.0, 0.0, 2.4],
-        "radius": 0.2,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      }
-    ]
+    "source": "capsule"
   },
 
   "rocket_launcher": {
     "enabled": true,
     "collision_skin": 0.05,
-    "source": "json",
-
-    "spheres": [
-      {
-        "name": "rear",
-        "enabled": true,
-        "offset": [0.0, 0.0, 0.0],
-        "radius": 0.22,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      },
-      {
-        "name": "mid",
-        "enabled": true,
-        "offset": [0.0, 0.0, 0.3],
-        "radius": 0.24,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      },
-      {
-        "name": "front",
-        "enabled": true,
-        "offset": [0.0, 0.0, 0.6],
-        "radius": 0.26,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      }
-    ]
+    "source": "capsule"
   },
 
   "grenade_launcher": {
     "enabled": true,
     "collision_skin": 0.05,
-    "source": "json",
-
-    "spheres": [
-      {
-        "name": "rear",
-        "enabled": true,
-        "offset": [0.0, 0.0, 0.0],
-        "radius": 0.22,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      },
-      {
-        "name": "mid",
-        "enabled": true,
-        "offset": [0.0, 0.0, 0.33],
-        "radius": 0.24,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      },
-      {
-        "name": "front",
-        "enabled": true,
-        "offset": [0.0, 0.0, 0.65],
-        "radius": 0.26,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      }
-    ]
+    "source": "capsule"
   },
 
   "swordsword": {
     "enabled": true,
     "collision_skin": 0.05,
-    "source": "json",
-
-    "spheres": [
-      {
-        "name": "tip",
-        "enabled": true,
-        "offset": [-10.0, 0.0, 0.0],
-        "radius": 2.0,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      },
-      {
-        "name": "blade_high",
-        "enabled": true,
-        "offset": [-8.0, 0.0, 0.0],
-        "radius": 2.0,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      },
-      {
-        "name": "blade_mid",
-        "enabled": true,
-        "offset": [-6.0, 0.0, 0.0],
-        "radius": 2.0,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      },
-      {
-        "name": "blade_low",
-        "enabled": true,
-        "offset": [-4.0, 0.0, 0.0],
-        "radius": 2.0,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      },
-      {
-        "name": "hilt",
-        "enabled": true,
-        "offset": [-2.0, 0.0, 0.0],
-        "radius": 2.0,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      },
-      {
-        "name": "base",
-        "enabled": true,
-        "offset": [0.0, 0.0, 0.0],
-        "radius": 2.0,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      }
-    ]
+    "source": "capsule"
   }
 }

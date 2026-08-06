@@ -188,6 +188,9 @@ struct NetConfigKnob
     bool isString;  // arbitrary string value (mode names, etc.)
     double minMs = 0.0;
     double maxMs = 60000.0;
+    // JSON block to write into ("remote_player_interpolation" or
+    // "remote_motion_smoothing"). Empty = legacy behavior = remote_player_interpolation.
+    const char* block = "remote_player_interpolation";
 };
 
 const std::vector<NetConfigKnob>& netConfigKnobs()
@@ -210,6 +213,14 @@ const std::vector<NetConfigKnob>& netConfigKnobs()
         {"enabled", false, true, false, 0.0, 1.0},
         {"position_mode", false, false, true, 0.0, 1.0},
         {"rotation_mode", false, false, true, 0.0, 1.0},
+        // linear-mode motion-smoothing knobs (written to remote_motion_smoothing)
+        {"linear_delay_ticks", false, false, false, 1.0, 128.0, "remote_motion_smoothing"},
+        {"linear_min_delay_ticks", false, false, false, 1.0, 128.0, "remote_motion_smoothing"},
+        {"linear_max_delay_ticks", false, false, false, 0.0, 128.0, "remote_motion_smoothing"},
+        {"linear_hold_on_dry", false, true, false, 0.0, 1.0, "remote_motion_smoothing"},
+        {"linear_allow_extrapolation", false, true, false, 0.0, 1.0, "remote_motion_smoothing"},
+        {"linear_catchup_rate_ticks_per_second", false, false, false, 0.0, 1000.0, "remote_motion_smoothing"},
+        {"linear_snap_after_gap_ticks", false, false, false, 0.0, 1000.0, "remote_motion_smoothing"},
     };
     return knobs;
 }
@@ -262,11 +273,11 @@ bool networkConfigSetKey(const std::string& key, const std::string& value)
 
         if (!root.is_object())
             root = nlohmann::json::object();
-        if (!root.contains("remote_player_interpolation") ||
-            !root["remote_player_interpolation"].is_object())
-            root["remote_player_interpolation"] = nlohmann::json::object();
+        if (!root.contains(knob->block) ||
+            !root[knob->block].is_object())
+            root[knob->block] = nlohmann::json::object();
 
-        nlohmann::json& block = root["remote_player_interpolation"];
+        nlohmann::json& block = root[knob->block];
         if (knob->isBool)
             block[key] = parsed != 0.0;
         else
@@ -294,11 +305,11 @@ bool networkConfigSetKey(const std::string& key, const std::string& value)
 
         if (!root.is_object())
             root = nlohmann::json::object();
-        if (!root.contains("remote_player_interpolation") ||
-            !root["remote_player_interpolation"].is_object())
-            root["remote_player_interpolation"] = nlohmann::json::object();
+        if (!root.contains(knob->block) ||
+            !root[knob->block].is_object())
+            root[knob->block] = nlohmann::json::object();
 
-        root["remote_player_interpolation"][key] = value;
+        root[knob->block][key] = value;
 
         std::ofstream out(path);
         if (!out.is_open())

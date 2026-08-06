@@ -52,6 +52,21 @@ static int runBodyWeaponPass(
     gBW.candidateCount = (int)sharedCandidates.size();
 
     std::vector<RecoveryContact> bwContacts = collectBodyWeaponContacts(p, world, sharedCandidates, bwSpheres);
+
+    // Weapon capsule: the weapon's solid bounding volume, tested exactly against
+    // nearby world triangles. The single smooth capsule has no discrete gaps, so
+    // it slides over edges/corners instead of catching, and the solver pushes the
+    // player so the weapon never sinks into a surface. JSON spheres are the
+    // opt-in legacy path (source "json").
+    if (p.weaponCollisionDebug.capsuleMode && p.collision.hasWeaponCollisionCapsule) {
+        std::vector<int> weaponCands = gatherGLBTriangles(
+            world, p.weaponCollisionCapsule, glm::vec3(0.0f), "weaponGather");
+        std::vector<RecoveryContact> weaponCapsuleContacts =
+            collectCapsuleRecoveryContacts(world, p.weaponCollisionCapsule, weaponCands, "weapon");
+        gBW.weaponCapsuleContactCount = (int)weaponCapsuleContacts.size();
+        bwContacts.insert(bwContacts.end(), weaponCapsuleContacts.begin(), weaponCapsuleContacts.end());
+    }
+
     for (const auto& c : bwContacts) {
         p.ground.realWorldContactThisFrame = true;
         p.ground.hasWorldContact = true;

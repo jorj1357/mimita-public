@@ -97,10 +97,15 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
     npcWorld.collisionLargeTriangles.clear();
     npcWorld.collisionChunks.clear();
 
+    // Build chunks from the DECIMATED list (npcWorld.collisionMesh.triangles),
+    // not hw.triangles: decimation above shrinks the list, so indices derived
+    // from hw.triangles would point at wrong/missing triangles and NPCs would
+    // fall through the floor.
+    std::vector<CollisionTriangle>& tris = npcWorld.collisionMesh.triangles;
     constexpr int MAX_CHUNKS_PER_TRIANGLE = 256;
-    for (int i = 0; i < (int)hw.triangles.size(); ++i)
+    for (int i = 0; i < (int)tris.size(); ++i)
     {
-        const AABB tb = makeTriangleAABB(hw.triangles[i]);
+        const AABB tb = makeTriangleAABB(tris[i]);
         const glm::ivec3 c0 = collisionChunkCoord(tb.min, hw.collisionChunkSize);
         const glm::ivec3 c1 = collisionChunkCoord(tb.max, hw.collisionChunkSize);
         const int chunkCount =

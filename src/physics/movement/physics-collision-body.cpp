@@ -52,15 +52,32 @@ void recomputeWeaponCapsule(Player& p)
     if (!foundArm) {
         p.weaponCollisionWorld = glm::mat4(1.0f);
         p.weaponCollisionDebug.fromJsonConfig = false;
+        p.weaponCollisionDebug.capsuleMode = false;
         p.weaponCollisionDebug.valid = false;
         p.weaponCollisionDebug.spheres.clear();
         p.weaponCollisionDebug.capsule.enabled = false;
+        p.collision.hasWeaponCollisionCapsule = false;
         return;
     }
 
     // Apply JSON config — this is the ONLY source of weapon collision data.
-    // Handles prev saving, populates debug spheres/capsule, sets fromJsonConfig.
     WeaponCollisionJsonConfig::instance().applyCollisionConfig(p);
+
+    // Capsule mode (default): rebuild the world-space weapon collision capsule
+    // from the local capsule shape (model-derived or config-overridden) via the
+    // weapon's world transform, so the collision matches the rendered weapon.
+    if (p.weaponCollisionDebug.capsuleMode) {
+        Capsule cap;
+        cap.a = glm::vec3(p.weaponCollisionWorld * glm::vec4(p.weaponGripLocal, 1.0f));
+        cap.b = glm::vec3(p.weaponCollisionWorld * glm::vec4(p.weaponMuzzleLocal, 1.0f));
+        cap.r = p.weaponRadiusLocal;
+        if (glm::length(cap.b - cap.a) > 0.001f && cap.r > 0.001f) {
+            p.weaponCollisionCapsule = cap;
+            p.collision.hasWeaponCollisionCapsule = true;
+            p.weaponCollisionDebug.valid = true;
+        }
+        return;
+    }
 
     if (!p.weaponCollisionDebug.fromJsonConfig) {
         // No JSON config for this weapon: no weapon collision.

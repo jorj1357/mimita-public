@@ -70,6 +70,7 @@ struct WeaponCollisionRuntimeDebug {
     std::string weaponId;
     bool valid = false;
     bool fromJsonConfig = false; // true when JSON config drives this data
+    bool capsuleMode = false;    // true = single smooth capsule collision (default), false = JSON spheres
     float collisionSkin = 0.04f; // per-weapon skin from config, defaults to 0.04
 };
 

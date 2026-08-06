@@ -152,6 +152,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.remoteNpcInterpolation.clear();
     ctx.interpolationRenderTick = 0.0;
     ctx.interpolationClockStarted = false;
+    ctx.lastClockAnchorServerTick = 0;
     ctx.networkProjectiles.clear();
     ctx.projectileTerminals.clear();
     ctx.reliableEventSessionId = 0;
@@ -300,6 +301,7 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.remoteNpcInterpolation.clear();
     ctx.interpolationRenderTick = 0.0;
     ctx.interpolationClockStarted = false;
+    ctx.lastClockAnchorServerTick = 0;
     ctx.networkProjectiles.clear();
     ctx.projectileTerminals.clear();
     ctx.reliableEventSessionId = 0;
@@ -971,6 +973,7 @@ void mpInstallIceConnectSuccess(MultiplayerContext& ctx, IceConnectStatus& statu
     ctx.remoteNpcInterpolation.clear();
     ctx.interpolationRenderTick = 0.0;
     ctx.interpolationClockStarted = false;
+    ctx.lastClockAnchorServerTick = 0;
     ctx.networkProjectiles.clear();
     ctx.playerRegistry.clear();
     ctx.pendingVipStyles.clear();

@@ -209,6 +209,15 @@ bool movementSnapshotIsFresh(uint32_t incomingServerTick,
                              uint32_t lastSpawnGeneration,
                              uint32_t lastTransformEpoch);
 
+// Lifecycle-only freshness: rejects a sample from an older spawn generation or
+// transform epoch (a previous life) but does NOT gate on the tick. Used by the
+// interpolation buffer so a reordered older sample can fill a hole in the tick
+// history without ever leaking data from a previous life.
+bool movementSnapshotLifecycleFresh(uint32_t incomingSpawnGeneration,
+                                    uint32_t incomingTransformEpoch,
+                                    uint32_t lastSpawnGeneration,
+                                    uint32_t lastTransformEpoch);
+
 MovementValidationResult validateClientMovementReport(
     const ServerPlayer& player,
     const ClientMovementReport& report,

@@ -193,6 +193,28 @@ struct RemoteMotionSmoothingConfig
     // correct interpolated position (seamless resume, zero drift); false =
     // extrapolate along the last velocity (never stops, small pop if wrong).
     bool linearHoldOnDry = true;
+    // linear mode adaptive buffer range (in whole ticks). When
+    // linear_max_delay_ticks > 0, the delay auto-deepens from
+    // linear_min_delay_ticks toward linear_max_delay_ticks under jitter/loss so
+    // the render never runs out of packets (no extrapolation/hold pops). When
+    // 0, the delay is fixed at linear_delay_ticks (legacy behavior).
+    uint32_t linearMinDelayTicks = 6;
+    uint32_t linearMaxDelayTicks = 16;
+    // linear mode: explicit extrapolation switch, independent of hold_on_dry.
+    // Extrapolation is used only when this is true AND linear_hold_on_dry is
+    // false; otherwise the body holds its last interpolated position when the
+    // buffer runs dry (seamless resume, no snap).
+    bool linearAllowExtrapolation = false;
+    // linear mode: max ticks/sec the render clock may catch up after a data
+    // gap. 0 = the clock only advances at real time (smoothest resume; after a
+    // gap the body just continues from where it held). >0 = allow a bounded
+    // catch-up burst so the body re-syncs to live data faster.
+    double linearCatchupRateTicksPerSecond = 0.0;
+    // linear mode: a gap wider than this many ticks between two buffered
+    // snapshots is a discontinuity (blackout/teleport) and snaps to the newest
+    // instead of bridging a stale straight line. 0 = use the global
+    // teleport_gap_ticks.
+    uint32_t linearSnapAfterGapTicks = 30;
 };
 
 struct NetworkDeathEffectsConfig

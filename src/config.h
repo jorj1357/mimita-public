@@ -71,6 +71,8 @@ namespace DebugConfig
     inline bool DEBUG_WEAPON_VIEWMODEL = false;
     inline bool DEBUG_MENU_PREVIEW = false;
     inline bool DEBUG_WEAPON_COLLISION = false;
+    // Draw the equipped weapon's collision capsule wireframe standalone.
+    inline bool DEBUG_WEAPON_HITBOX = false;
     // Was true before 7/1/2026 — caused debugBodyWeaponPhase to run every 0.25s
     // doing a full second BodyWeapon pass (sphere gen + broadphase + triangle tests).
     // Also had a printf inside the rate-limited path.
@@ -173,6 +175,7 @@ namespace DebugConfig
         DEBUG_COLLISION_BODY_PUSH = false;
         DEBUG_COLLISION_GRID = false;
         DEBUG_COLLISION_VALIDATE = false;
+        DEBUG_WEAPON_HITBOX = false;
         DEBUG_BOMBTAG = false;
         DEBUG_REPLAY = false;
         DEBUG_NETWORKING = false;

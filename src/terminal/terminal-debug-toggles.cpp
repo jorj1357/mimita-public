@@ -298,6 +298,18 @@ void registerDebugToggleCommands()
     });
 
     term.registerCommand({
+        "debug_weapon_hitbox",
+        "Draw the equipped weapon's collision capsule wireframe (0=off, 1=on)",
+        "debug_weapon_hitbox <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) DebugConfig::DEBUG_WEAPON_HITBOX = !DebugConfig::DEBUG_WEAPON_HITBOX;
+            else DebugConfig::DEBUG_WEAPON_HITBOX = args[0] != "0";
+            Terminal::instance().addLog(DebugConfig::DEBUG_WEAPON_HITBOX ? "[OK] weapon hitbox shown" : "[OK] weapon hitbox hidden");
+        },
+        "2026-08-06", CommandCategory::Debug
+    });
+
+    term.registerCommand({
         "chat_debug",
         "Toggle chat debug logging (0=off, 1=on)",
         "chat_debug <0|1>",

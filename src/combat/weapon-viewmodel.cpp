@@ -2,6 +2,7 @@
 #include "weapon-types.h"
 #include "weapon-config.h"
 #include "combat/weapon-model-cache.h"
+#include "combat/weapon-collision-config.h"
 
 #include <algorithm>
 #include <cmath>
@@ -145,8 +146,12 @@ void WeaponViewModel::syncFromAsset() {
     modelMuzzle[axis] = boundsMax[axis];
     int crossA = axis == 0 ? 1 : 0;
     int crossB = axis == 2 ? 1 : 2;
-    float smallerAxis = std::min(size[crossA], size[crossB]);
-    modelCollisionRadius = std::clamp(smallerAxis * 0.5f, 0.12f, 0.18f);
+    // Full weapon width: the capsule radius is half the WIDEST cross-section so
+    // the capsule fully encloses the weapon's 8 bounding corners and the weapon
+    // body can never sink into a surface. Per-weapon overrides live in
+    // config/weaponcollisions.json.
+    float widerAxis = std::max(size[crossA], size[crossB]);
+    modelCollisionRadius = std::max(widerAxis * 0.5f, 0.05f);
     hasModelBounds = true;
 
     Debug::log(Debug::Category::Weapons,
@@ -260,6 +265,33 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
     float collisionRadius = modelCollisionRadius;
     if (!hasModelBounds || glm::length(collisionMuzzle - collisionGrip) < 0.001f)
         fallbackWeaponShape(def, collisionGrip, collisionMuzzle, collisionRadius);
+
+    // Collision capsule local shape: model-derived by default, overridden by a
+    // hot-reloaded per-weapon capsule in config/weaponcollisions.json. Kept
+    // separate from collisionGrip/collisionMuzzle so weapon placement and the
+    // muzzle position never change — only the hitbox.
+    glm::vec3 colGrip = collisionGrip;
+    glm::vec3 colMuzzle = collisionMuzzle;
+    float colRadius = collisionRadius;
+    if (def) {
+        const WeaponCollisionEntry* wcEntry = WeaponCollisionJsonConfig::instance().get(def->id);
+        if (wcEntry && wcEntry->enabled && wcEntry->source != "json") {
+            const WeaponCollisionCapsuleConfig* override = nullptr;
+            if (wcEntry->capsule.enabled) override = &wcEntry->capsule;
+            else for (const auto& cc : wcEntry->capsules) if (cc.enabled) { override = &cc; break; }
+            if (override) {
+                glm::mat4 rot(1.0f);
+                rot = glm::rotate(rot, glm::radians(override->rotationDegrees.x), glm::vec3(1,0,0));
+                rot = glm::rotate(rot, glm::radians(override->rotationDegrees.y), glm::vec3(0,1,0));
+                rot = glm::rotate(rot, glm::radians(override->rotationDegrees.z), glm::vec3(0,0,1));
+                glm::mat4 scaleMat = glm::scale(glm::mat4(1.0f), override->scale);
+                colGrip = glm::vec3(rot * scaleMat * glm::vec4(override->start, 1.0f));
+                colMuzzle = glm::vec3(rot * scaleMat * glm::vec4(override->end, 1.0f));
+                float s = std::max({override->scale.x, override->scale.y, override->scale.z});
+                colRadius = override->radius * std::max(s, 0.001f);
+            }
+        }
+    }
 
     for (const PhysicalBodyPart& part : player.physicalBody.parts) {
         if (part.name != "rightArm")
@@ -380,7 +412,7 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
             muzzle = glm::vec3(weaponTransform * glm::vec4(collisionMuzzle, 1.0f));
             forward = glm::normalize(glm::vec3(weaponTransform * glm::vec4(modelDirection, 0.0f)));
             Capsule weaponCap = weaponCapsuleFromTransform(
-                weaponTransform, collisionGrip, collisionMuzzle, collisionRadius);
+                weaponTransform, colGrip, colMuzzle, colRadius);
             player.collision.hasWeaponCollisionCapsule = true;
             player.weaponCollisionCapsule = weaponCap;
 
@@ -425,9 +457,9 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
                 }
             }
             player.weaponLocalToArm = armToWeapon * extraTransform;
-            player.weaponGripLocal = collisionGrip;
-            player.weaponMuzzleLocal = collisionMuzzle;
-            player.weaponRadiusLocal = collisionRadius;
+            player.weaponGripLocal = colGrip;
+            player.weaponMuzzleLocal = colMuzzle;
+            player.weaponRadiusLocal = colRadius;
         }
         break;
     }
