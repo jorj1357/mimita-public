@@ -394,6 +394,7 @@ export async function upsertSubscriptionState(clientOrQuery, {
     status,
     currentPeriodStart,
     currentPeriodEnd,
+    billingCycleAnchor = null,
     cancelAtPeriodEnd = false,
     canceledAt = null,
     latestInvoiceId = "",
@@ -402,12 +403,13 @@ export async function upsertSubscriptionState(clientOrQuery, {
 }) {
     const query = queryFrom(clientOrQuery)
     const normalizedTier = normalizeTier(tier)
-    const start = toDate(currentPeriodStart)
+    const start = toDate(currentPeriodStart) || toDate(billingCycleAnchor)
     let end = toDate(currentPeriodEnd)
     if (!end && start) {
         // Stripe occasionally omits period fields (observed with test-mode
         // subscriptions). Fall back to a 1-month interval from the period start
-        // so an active monthly subscription always yields an entitlement.
+        // (or billing cycle anchor) so an active monthly subscription always
+        // yields an entitlement.
         end = addUtcCalendarMonths(start, 1)
     }
 

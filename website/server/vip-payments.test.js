@@ -728,7 +728,8 @@ test("syncActiveSubscriptions creates a missing entitlement for an active subscr
     fake.state.subscription = {
         id: "sub_selfheal",
         status: "active",
-        current_period_start: 1786051745,
+        billing_cycle_anchor: 1786051745,
+        current_period_start: null,
         current_period_end: null,
         cancel_at_period_end: false,
         customer: "cus_x"
