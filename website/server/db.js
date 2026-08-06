@@ -608,6 +608,9 @@ const MIGRATION_STATEMENTS = [
     )`,
     `CREATE INDEX IF NOT EXISTS support_requests_created_idx ON support_requests(created_at DESC)`,
     `CREATE INDEX IF NOT EXISTS support_requests_topic_idx ON support_requests(topic, created_at DESC)`,
+    `ALTER TABLE support_requests DROP CONSTRAINT IF EXISTS support_requests_topic_check`,
+    `ALTER TABLE support_requests ADD CONSTRAINT support_requests_topic_check
+        CHECK (topic IN ('user_issue','game_issue','payment_finance','vip_purchase','security','other'))`,
 
     `CREATE TABLE IF NOT EXISTS admin_actions (
         id BIGSERIAL PRIMARY KEY,

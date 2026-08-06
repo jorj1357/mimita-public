@@ -10,6 +10,7 @@ const TOPICS = [
     { value: "user_issue", label: "Issue with another user" },
     { value: "game_issue", label: "Issue with the MiMITA game" },
     { value: "payment_finance", label: "Issue with payment or finance" },
+    { value: "vip_purchase", label: "Issue with VIP purchase" },
     { value: "security", label: "Issue with security, hacks, or attempted hacks" },
     { value: "other", label: "Other" }
 ]
@@ -47,23 +48,20 @@ export default function Support() {
                 const order = (ordersData.orders || []).find(o => o.id === refundOrderId)
                 if (!order) return
                 const user = me.user
-                setTopic("payment_finance")
-                setSubject("Refund Request")
+                const price = `$${(Number(order.amount_cents) / 100).toFixed(2)} ${order.currency}`
+                setTopic("vip_purchase")
+                setSubject("VIP Payment Issue")
                 setEmail(user.email || "")
                 setUrl(`/vip/success?order_id=${order.id}`)
                 setMessage([
-                    "Refund request (VIP).",
+                    `Hi, I'd like to request a refund for the purchase I made on ${stampText(order.paid_at)}.`,
+                    `The purchase id is ${order.id} and the price I saw was ${price}.`,
+                    "",
+                    "Verification:",
                     `Username: ${user.username}`,
                     `Account ID: ${user.id}`,
                     `Tier: ${order.tier}`,
-                    `Purchase: ${order.purchase_type}`,
-                    `Amount: $${(Number(order.amount_cents) / 100).toFixed(2)} ${order.currency}`,
-                    `Order ID: ${order.id}`,
-                    `Payment Intent: ${order.stripe_payment_intent_id || "unknown"}`,
-                    `Paid at: ${stampText(order.paid_at)}`,
-                    `Refund window ends: ${stampText(order.refund_until)}`,
-                    "",
-                    "Please verify the account and payment above, then refund if approved."
+                    `Payment Intent: ${order.stripe_payment_intent_id || "unknown"}`
                 ].join("\n"))
             })
             .catch(() => {})

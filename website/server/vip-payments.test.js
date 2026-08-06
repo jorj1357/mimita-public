@@ -664,14 +664,15 @@ test("getVipOrders does not mark monthly subscriptions refundable", async () => 
 })
 
 test("computeUpgradeDiscountCents returns remaining value of the current tier", () => {
-    const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    const end = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+    const now = new Date("2026-08-06T12:00:00.000Z")
+    const start = new Date("2026-07-07T12:00:00.000Z")
+    const end = new Date("2026-09-05T12:00:00.000Z")
     const discount = computeUpgradeDiscountCents({
         requestedTier: "ultra_vip",
         amountCents: 1000,
         startsAt: start,
         expiresAt: end,
-        now: new Date()
+        now
     })
     // Half of the 60-day entitlement remains, so half the amount is rolled over.
     assert.equal(discount, 500)
