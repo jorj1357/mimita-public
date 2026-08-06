@@ -45,8 +45,8 @@
     font-size: 0.85rem;
   }
 
-  /* ── Hide top nav links on small screens ── */
-  .headerMainLink:nth-child(n+4) {
+  /* ── Hide top nav links on small screens (keep Home, Games, and VIP) ── */
+  .headerMainLink:nth-child(n+4):not(:last-child) {
     display: none;
   }
 

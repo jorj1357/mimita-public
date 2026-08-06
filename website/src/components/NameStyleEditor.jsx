@@ -9,7 +9,7 @@
 
 import { useId, useState } from "react"
 import Username from "./Username"
-import { STYLE_LABELS } from "../lib/vipStyle"
+import { STYLE_LABELS, STAFF_DISPLAY_LABELS, STAFF_COLORS, STAFF_ROLES } from "../lib/vipStyle"
 
 const RESERVED_COLORS = new Set(["#000000", "#ff0000"])
 
@@ -54,6 +54,11 @@ export default function NameStyleEditor({
     const maxPerLetter = Number(limits?.maxPerLetterColors || 32)
     const solidHex = String(style.solid_color || "").toLowerCase()
     const name = displayName(user)
+    const isStaff = STAFF_ROLES.has(String(user.role || "").toLowerCase())
+    const staffColor = STAFF_COLORS[style.staff_display] || ""
+    const previewStyle = isStaff && staffColor
+        ? { ...style, kind: "solid", solid_color: staffColor }
+        : style
 
     function setColor(index, value) {
         const colors = [...(style.colors || [])]
@@ -99,8 +104,22 @@ export default function NameStyleEditor({
     return (
         <div className={`nameStyleEditor ${compact ? "nameStyleEditorCompact" : ""}`}>
             <div className="vipPreview">
-                <Username user={previewUser} size="lg" style={style} />
+                <Username user={previewUser} size="lg" style={previewStyle} />
             </div>
+
+            {isStaff && (
+                <label className="nameStyleField">
+                    show color
+                    <select
+                        value={style.staff_display || "vip"}
+                        onChange={e => onChange({ ...style, staff_display: e.target.value })}
+                    >
+                        {Object.entries(STAFF_DISPLAY_LABELS).map(([key, label]) => (
+                            <option key={key} value={key}>{label}</option>
+                        ))}
+                    </select>
+                </label>
+            )}
 
             <div className="vipStyleGrid">
                 {Object.entries(STYLE_LABELS).map(([kind, label]) => (

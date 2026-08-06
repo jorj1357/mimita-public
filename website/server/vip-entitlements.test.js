@@ -117,7 +117,7 @@ test("expired entitlements fall back to free gray styling and lock controls", ()
 
     assert.equal(state.active_tier, "free")
     assert.equal(state.controls_unlocked, false)
-    assert.deepEqual(state.name_style, defaultStyleForTier("free"))
+    assert.deepEqual(state.name_style, { ...defaultStyleForTier("free"), staff_display: "vip" })
 })
 
 test("staff role colors override VIP name color but preserve VIP badge state", () => {
@@ -142,6 +142,58 @@ test("staff role colors override VIP name color but preserve VIP badge state", (
     assert.equal(state.badge_url, "/assets/images/mimita%20ultra%20vip.png")
     assert.deepEqual(state.staff_style, staffStyleForRole("admin"))
     assert.equal(state.display.name_color_override, "#000000")
+})
+
+test("staff can choose to show their VIP style instead of a staff color", () => {
+    const state = computeVipState({
+        user: { role: "admin" },
+        now: NOW,
+        entitlements: [
+            {
+                tier: "ultra_vip",
+                status: "active",
+                starts_at: "2026-08-01T00:00:00.000Z",
+                expires_at: "2026-09-01T00:00:00.000Z"
+            }
+        ],
+        style: {
+            kind: "solid",
+            solid_color: "#44aaff",
+            staff_display: "vip"
+        }
+    })
+    assert.equal(state.display.name_color_override, "")
+    assert.equal(state.display.staff_overrides_vip_name, false)
+    assert.equal(state.name_style.staff_display, "vip")
+})
+
+test("staff can pick any staff color regardless of their own role", () => {
+    const state = computeVipState({
+        user: { role: "admin" },
+        now: NOW,
+        entitlements: [],
+        style: {
+            kind: "none",
+            staff_display: "moderator"
+        }
+    })
+    assert.equal(state.display.name_color_override, "#ff0000")
+    assert.equal(state.display.staff_overrides_vip_name, true)
+})
+
+test("non-staff users cannot set a staff display", () => {
+    const state = computeVipState({
+        user: { role: "user" },
+        now: NOW,
+        entitlements: [],
+        style: {
+            kind: "none",
+            staff_display: "owner"
+        }
+    })
+    assert.equal(state.display.name_color_override, "")
+    assert.equal(state.display.staff_overrides_vip_name, false)
+    assert.equal(state.name_style.staff_display, "vip")
 })
 
 test("normal users cannot select exact reserved staff colors", () => {

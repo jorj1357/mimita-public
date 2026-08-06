@@ -12,8 +12,10 @@ import { pool } from "./db.js"
 import {
     badgeForTier,
     defaultStyleForTier,
+    normalizeStaffDisplay,
     normalizeTier,
     safeStyleForTier,
+    staffDisplayColor,
     staffStyleForRole,
     tierIncludes,
     tierRank,
@@ -167,6 +169,10 @@ export function computeVipState({
         activeTier,
         role: user.role || "user"
     })
+    const staffDisplay = normalizeStaffDisplay(storedStyle?.staff_display, user.role || "user")
+    const staffDisplayColorValue = staffDisplayColor(staffDisplay)
+    const useStaffColor = Boolean(staffDisplayColorValue)
+    nameStyle.staff_display = staffDisplay
 
     let subscription = null
     for (const row of subscriptions || []) {
@@ -197,8 +203,8 @@ export function computeVipState({
         default_style: defaultStyleForTier(activeTier),
         staff_style: staff,
         display: {
-            name_color_override: staff ? staff.color : "",
-            staff_overrides_vip_name: Boolean(staff)
+            name_color_override: useStaffColor ? staffDisplayColorValue : "",
+            staff_overrides_vip_name: useStaffColor
         },
         subscription,
         preset_count: Number(presetCount) || 0,
