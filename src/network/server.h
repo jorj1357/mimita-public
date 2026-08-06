@@ -343,6 +343,13 @@ struct ServerPlayer
     glm::vec3 broadcastVelocity{0.0f};
     bool hasBroadcastTransform = false;
 
+    // server_sim broadcast smoothing state: the broadcast position eases toward
+    // the authoritative sim position (p.pos) each tick so the snapshot stream
+    // is clean (removes per-tick collision resting jitter). Real movement
+    // passes through with ~server_sim_smooth_ticks of easing (negligible).
+    glm::vec3 simBroadcastPos{0.0f};
+    bool hasSimBroadcastPos = false;
+
     glm::vec3 interpFromPos{0.0f};
     glm::vec3 interpToPos{0.0f};
     uint32_t interpToTick = 0;
