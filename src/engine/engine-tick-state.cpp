@@ -132,7 +132,8 @@ void engineTickState(Engine& engine, float dt)
                     // Start a local-only server for sandbox mode
                     MimitaNet::ServerLaunchSettings s;
                     s.startLocalServer = true;
-                    s.mapName = activeMapPath;
+                    s.mapName = MimitaNet::normalizeMapId(activeMapPath);
+                    s.resolvedMapPath = activeMapPath;
                     s.startupNpcsEnabled = true;
                     s.startupNpcCount = 3;
                     MimitaNet::ListenServerState* ls = getListenServerState();

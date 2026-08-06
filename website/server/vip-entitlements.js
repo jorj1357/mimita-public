@@ -330,6 +330,7 @@ export async function grantPrepaidEntitlement(clientOrQuery, {
     tier,
     purchaseType,
     months,
+    source = "stripe",
     stripeCheckoutSessionId = "",
     stripePaymentIntentId = "",
     stripeCustomerId = "",
@@ -356,12 +357,13 @@ export async function grantPrepaidEntitlement(clientOrQuery, {
             user_id, order_id, tier, source, status, starts_at, expires_at,
             stripe_checkout_session_id, stripe_payment_intent_id, stripe_customer_id
          )
-         VALUES ($1, $2, $3, 'stripe', 'active', $4, $5, $6, $7, $8)
+         VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9)
          RETURNING id, starts_at, expires_at`,
         [
             userId,
             orderId,
             normalizedTier,
+            source,
             startsAt,
             expiresAt,
             stripeCheckoutSessionId,

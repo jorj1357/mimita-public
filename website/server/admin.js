@@ -5,6 +5,11 @@ import { getMetrics, refreshMetrics } from "./analytics.js"
 import { getFeedback, FEEDBACK_PRESETS } from "./feedback.js"
 import { getErrors, getErrorCount } from "./error-queue.js"
 import {
+    grantPrepaidEntitlement,
+    getVipStateForUser,
+    recomputeAndStoreVipForUser
+} from "./vip-entitlements.js"
+import {
     parseCookies,
     clearSessionCookie,
     createSession,
@@ -490,6 +495,75 @@ router.delete("/articles/:slug", requireAdmin, (req, res) => {
         res.json({ success: true, message: "article deleted" })
     } catch (err) {
         res.status(500).json({ success: false, message: err.message })
+    }
+})
+
+// ── VIP admin grants ─────────────────────────────────────────────────
+// Manual entitlement grants/revokes for support and for testing the full
+// signup -> tier -> styled-name journey without a live Stripe payment.
+router.post("/vip/grant", requireAdmin, async (req, res, next) => {
+    try {
+        const userId = Number(req.body.user_id || 0)
+        const tier = String(req.body.tier || "").trim().toLowerCase()
+        const months = Math.floor(Number(req.body.months || 1))
+        if (!Number.isInteger(userId) || userId <= 0) {
+            return res.status(400).json({ success: false, message: "valid user_id required" })
+        }
+        if (!["vip", "super_vip", "ultra_vip"].includes(tier)) {
+            return res.status(400).json({ success: false, message: "tier must be vip, super_vip, or ultra_vip" })
+        }
+        if (!Number.isInteger(months) || months < 1 || months > 24) {
+            return res.status(400).json({ success: false, message: "months must be 1-24" })
+        }
+
+        const userResult = await pool.query(
+            `SELECT id, role FROM users WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
+            [userId]
+        )
+        if (!userResult.rowCount) {
+            return res.status(404).json({ success: false, message: "user not found" })
+        }
+
+        await grantPrepaidEntitlement(pool, {
+            userId,
+            tier,
+            purchaseType: "admin_grant",
+            months,
+            source: "admin",
+            now: new Date()
+        })
+        const state = await getVipStateForUser(userResult.rows[0], pool)
+        console.log(`[VIP GRANT] by=${req.user.username} user_id=${userId} tier=${tier} months=${months}`)
+        res.json({ success: true, vip: state })
+    } catch (error) {
+        next(error)
+    }
+})
+
+router.post("/vip/revoke", requireAdmin, async (req, res, next) => {
+    try {
+        const userId = Number(req.body.user_id || 0)
+        if (!Number.isInteger(userId) || userId <= 0) {
+            return res.status(400).json({ success: false, message: "valid user_id required" })
+        }
+        await pool.query(
+            `UPDATE vip_entitlements
+             SET status = 'expired', updated_at = NOW()
+             WHERE user_id = $1 AND status = 'active'`,
+            [userId]
+        )
+        await recomputeAndStoreVipForUser(pool, userId)
+        const userResult = await pool.query(
+            `SELECT id, role FROM users WHERE id = $1 LIMIT 1`,
+            [userId]
+        )
+        const state = userResult.rowCount
+            ? await getVipStateForUser(userResult.rows[0], pool)
+            : null
+        console.log(`[VIP REVOKE] by=${req.user.username} user_id=${userId}`)
+        res.json({ success: true, vip: state })
+    } catch (error) {
+        next(error)
     }
 })
 
