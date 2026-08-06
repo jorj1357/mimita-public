@@ -156,9 +156,59 @@ void buildCollisionChunks(World& world, MapLoadMetrics* metrics)
            world.collisionChunks.size(), world.collisionChunkSize,
            (unsigned long long)totalRefs, (unsigned long long)maxChunks, maxBounds, largeTriCount);
 
+    buildCollisionSubGrids(world);
+
     if (metrics) {
         metrics->totalTriangleToChunkRefs = totalRefs;
         metrics->maxChunksTouchedByOneTriangle = maxChunks;
         metrics->maxTriangleBoundsSize = maxBounds;
     }
+}
+
+// Second-level sub-grid: divide each chunk into SUBDIV^3 sub-cells so broadphase
+// queries near dense geometry (spheres, text, houses) only test the sub-cells
+// their AABB touches instead of every triangle in the whole 6-unit chunk.
+void buildCollisionSubGrids(World& world)
+{
+    world.collisionSubGrids.clear();
+    constexpr int SUBDIV = 4;
+    if (world.collisionChunkSize <= 0.001f || world.collisionChunks.empty())
+        return;
+
+    const float subSize = world.collisionChunkSize / (float)SUBDIV;
+    uint64_t totalSubRefs = 0;
+    for (const auto& kv : world.collisionChunks)
+    {
+        const glm::ivec3 chunkCoord = kv.first;
+        const glm::vec3 chunkMin = glm::vec3(chunkCoord) * world.collisionChunkSize;
+        CollisionSubGrid sub;
+        sub.subSize = subSize;
+        for (int triIndex : kv.second)
+        {
+            if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
+                continue;
+            const CollisionTriangle& tri = world.collisionMesh.triangles[triIndex];
+            glm::vec3 mn = glm::min(glm::min(tri.a, tri.b), tri.c);
+            glm::vec3 mx = glm::max(glm::max(tri.a, tri.b), tri.c);
+            glm::ivec3 s0((int)std::floor((mn.x - chunkMin.x) / subSize),
+                          (int)std::floor((mn.y - chunkMin.y) / subSize),
+                          (int)std::floor((mn.z - chunkMin.z) / subSize));
+            glm::ivec3 s1((int)std::floor((mx.x - chunkMin.x) / subSize),
+                          (int)std::floor((mx.y - chunkMin.y) / subSize),
+                          (int)std::floor((mx.z - chunkMin.z) / subSize));
+            s0 = glm::clamp(s0, glm::ivec3(0), glm::ivec3(SUBDIV - 1));
+            s1 = glm::clamp(s1, glm::ivec3(0), glm::ivec3(SUBDIV - 1));
+            for (int x = s0.x; x <= s1.x; ++x)
+            for (int y = s0.y; y <= s1.y; ++y)
+            for (int z = s0.z; z <= s1.z; ++z)
+            {
+                sub.cells[glm::ivec3(x, y, z)].push_back(triIndex);
+                ++totalSubRefs;
+            }
+        }
+        world.collisionSubGrids[chunkCoord] = std::move(sub);
+    }
+    printf("[WORLD GLB COLLISION] subgrids=%zu subdiv=%d subSize=%.2f totalSubRefs=%llu\n",
+           world.collisionSubGrids.size(), SUBDIV, subSize,
+           (unsigned long long)totalSubRefs);
 }

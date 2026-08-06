@@ -16,6 +16,7 @@
 #include "npc/npc-combat.h"
 #include "entities/player.h"
 #include "world/world.h"
+#include "map/map-loader-collision.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
@@ -112,6 +113,8 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
     printf("[SERVER NPC WORLD] built CPU collision: triangles=%zu chunks=%zu largeTris=%zu\n",
            npcWorld.collisionMesh.triangles.size(), npcWorld.collisionChunks.size(),
            npcWorld.collisionLargeTriangles.size());
+
+    buildCollisionSubGrids(npcWorld);
 }
 
 // Adopt newly spawned ServerNpc entries (from npc_spawn requests or startup)

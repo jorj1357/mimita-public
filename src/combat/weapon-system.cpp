@@ -17,6 +17,7 @@
 #include "weapon-registry.h"
 #include "weapon-runtime.h"
 #include "weapon-collision-config.h"
+#include "combat/weapon-model-cache.h"
 #include "combat/projectile-render.h"
 #include "pobjects/persistent-physics.h"
 #include "network/packets.h"
@@ -90,6 +91,10 @@ WeaponRuntime* WeaponSystem::getCurrentRuntime(Player& player) {
 }
 
 void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const World& world, float dt) {
+    // Upload any finished background weapon model parses (must run on the main
+    // thread) before viewmodels try to adopt them this frame.
+    WeaponModelCache::instance().finalizeWeaponModelsIfReady();
+
     if (WeaponData::reloadBuiltinWeaponsIfChanged())
         Terminal::instance().addLog("[WEAPON] Reloaded config/weapons.json");
 

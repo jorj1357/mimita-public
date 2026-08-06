@@ -107,6 +107,15 @@ struct IVec3Hash {
     }
 };
 
+// Second-level uniform sub-grid built inside each collision chunk so broadphase
+// queries only touch sub-cells overlapping their AABB (dense Blender objects that
+// pack thousands of triangles into one 6-unit chunk no longer cost thousands of
+// triangle tests per query).
+struct CollisionSubGrid {
+    float subSize = 0.0f;
+    std::unordered_map<glm::ivec3, std::vector<int>, IVec3Hash> cells;
+};
+
 struct Plane {
     glm::vec3 point;
     glm::vec3 normal;
@@ -146,6 +155,7 @@ struct World {
     float collisionChunkSize = 6.0f;
     std::unordered_map<glm::ivec3, std::vector<int>, IVec3Hash> collisionChunks;
     std::vector<int> collisionLargeTriangles;
+    std::unordered_map<glm::ivec3, CollisionSubGrid, IVec3Hash> collisionSubGrids;
 
     std::vector<SpawnPoint> spawnPoints;
     int selectedSpawnIndex = -1;

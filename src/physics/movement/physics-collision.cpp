@@ -25,6 +25,83 @@
 #define CHUNK_LOG(...) Debug::logThrottled(Debug::Category::Collision, "chunk-query", 1.0f, __VA_ARGS__)
 #define CHUNK_WARN(...) Debug::warn(Debug::Category::Collision, __VA_ARGS__)
 
+namespace {
+
+struct SubCellRange {
+    glm::ivec3 s0{0};
+    glm::ivec3 s1{0};
+    bool valid = false;
+};
+
+// Maps an AABB (already clamped to the chunk's world bounds) to the range of
+// sub-cells it overlaps inside the chunk. Returns valid=false for an empty box.
+SubCellRange subCellRangeForAABB(const CollisionSubGrid& sub, int subdiv,
+                                 const glm::vec3& chunkMin, const AABB& aabb)
+{
+    SubCellRange r;
+    if (aabb.min.x > aabb.max.x || aabb.min.y > aabb.max.y || aabb.min.z > aabb.max.z)
+        return r;
+    glm::ivec3 s0((int)std::floor((aabb.min.x - chunkMin.x) / sub.subSize),
+                  (int)std::floor((aabb.min.y - chunkMin.y) / sub.subSize),
+                  (int)std::floor((aabb.min.z - chunkMin.z) / sub.subSize));
+    glm::ivec3 s1((int)std::floor((aabb.max.x - chunkMin.x) / sub.subSize),
+                  (int)std::floor((aabb.max.y - chunkMin.y) / sub.subSize),
+                  (int)std::floor((aabb.max.z - chunkMin.z) / sub.subSize));
+    r.s0 = glm::clamp(s0, glm::ivec3(0), glm::ivec3(subdiv - 1));
+    r.s1 = glm::clamp(s1, glm::ivec3(0), glm::ivec3(subdiv - 1));
+    r.valid = true;
+    return r;
+}
+
+const CollisionSubGrid* findSubGrid(const World& world, const glm::ivec3& chunkCoord)
+{
+    auto it = world.collisionSubGrids.find(chunkCoord);
+    if (it != world.collisionSubGrids.end() && it->second.subSize > 0.001f)
+        return &it->second;
+    return nullptr;
+}
+
+int subdivForChunk(const World& world, const CollisionSubGrid& sub)
+{
+    return std::max(1, (int)std::floor(world.collisionChunkSize / sub.subSize + 0.5f));
+}
+
+// Iterate the triangles of a chunk, visiting only sub-cells that overlap `aabb`
+// (or all triangles when no sub-grid exists). Caller is responsible for dedup.
+template <typename F>
+void forEachChunkTriOverlap(
+    const World& world,
+    const glm::ivec3& chunkCoord,
+    const std::vector<int>& chunkTris,
+    const AABB& aabb,
+    F&& visit)
+{
+    const CollisionSubGrid* sub = findSubGrid(world, chunkCoord);
+    if (!sub)
+    {
+        for (int triIndex : chunkTris)
+            visit(triIndex);
+        return;
+    }
+    const int subdiv = subdivForChunk(world, *sub);
+    const glm::vec3 chunkMin = glm::vec3(chunkCoord) * world.collisionChunkSize;
+    const SubCellRange sr = subCellRangeForAABB(*sub, subdiv, chunkMin, aabb);
+    if (!sr.valid)
+        return;
+    for (int sx = sr.s0.x; sx <= sr.s1.x; ++sx)
+    for (int sy = sr.s0.y; sy <= sr.s1.y; ++sy)
+    for (int sz = sr.s0.z; sz <= sr.s1.z; ++sz)
+    {
+        auto scIt = sub->cells.find(glm::ivec3(sx, sy, sz));
+        if (scIt == sub->cells.end())
+            continue;
+        for (int triIndex : scIt->second)
+            visit(triIndex);
+    }
+}
+
+} // anonymous namespace
+
 CollisionTraceSnapshot gLastCollisionTrace;
 
 void appendUniqueTriangleIndices(std::vector<int>& dst, const std::vector<int>& src)
@@ -141,28 +218,57 @@ void appendChunkTrianglesForAABB(
     if (s_triGen.size() != world.collisionMesh.triangles.size())
         s_triGen.assign(world.collisionMesh.triangles.size(), 0);
 
+    // Expand the query AABB by `expansion` for sub-cell selection so triangles in
+    // the overlap filter's expanded zone are never missed.
+    AABB subQuery = clamped;
+    subQuery.min -= glm::vec3(expansion);
+    subQuery.max += glm::vec3(expansion);
+
+    auto visitTriangle = [&](int triIndex) {
+        if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
+            return;
+        if (s_triGen[triIndex] == s_gen)
+            return;
+        s_triGen[triIndex] = s_gen;
+
+        AABB triBounds = makeTriangleAABB(world.collisionMesh.triangles[triIndex]);
+        triBounds.min -= glm::vec3(expansion);
+        triBounds.max += glm::vec3(expansion);
+        if (overlaps(clamped, triBounds))
+            out.push_back(triIndex);
+    };
+
     for (int x = c0.x; x <= c1.x; ++x)
     for (int y = c0.y; y <= c1.y; ++y)
     for (int z = c0.z; z <= c1.z; ++z)
     {
         ++cellCount;
-        auto it = world.collisionChunks.find(glm::ivec3(x, y, z));
+        glm::ivec3 chunkCoord(x, y, z);
+        auto it = world.collisionChunks.find(chunkCoord);
         if (it == world.collisionChunks.end())
             continue;
 
-        for (int triIndex : it->second)
+        const CollisionSubGrid* sub = findSubGrid(world, chunkCoord);
+        if (sub)
         {
-            if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
-                continue;
-            if (s_triGen[triIndex] == s_gen)
-                continue;
-            s_triGen[triIndex] = s_gen;
-
-            AABB triBounds = makeTriangleAABB(world.collisionMesh.triangles[triIndex]);
-            triBounds.min -= glm::vec3(expansion);
-            triBounds.max += glm::vec3(expansion);
-            if (overlaps(clamped, triBounds))
-                out.push_back(triIndex);
+            const int subdiv = subdivForChunk(world, *sub);
+            const glm::vec3 chunkMin = glm::vec3(chunkCoord) * world.collisionChunkSize;
+            const SubCellRange sr = subCellRangeForAABB(*sub, subdiv, chunkMin, subQuery);
+            for (int sx = sr.s0.x; sx <= sr.s1.x; ++sx)
+            for (int sy = sr.s0.y; sy <= sr.s1.y; ++sy)
+            for (int sz = sr.s0.z; sz <= sr.s1.z; ++sz)
+            {
+                auto scIt = sub->cells.find(glm::ivec3(sx, sy, sz));
+                if (scIt == sub->cells.end())
+                    continue;
+                for (int triIndex : scIt->second)
+                    visitTriangle(triIndex);
+            }
+        }
+        else
+        {
+            for (int triIndex : it->second)
+                visitTriangle(triIndex);
         }
     }
 
@@ -404,6 +510,11 @@ bool rayTraverseGridCells(
 
     const float cs = world.collisionChunkSize;
 
+    AABB rayAABB{
+        glm::min(rayOrigin, rayOrigin + rayDir * maxDist),
+        glm::max(rayOrigin, rayOrigin + rayDir * maxDist)
+    };
+
     glm::ivec3 cStart = collisionChunkCoord(rayOrigin, cs);
     glm::ivec3 cEnd = collisionChunkCoord(rayOrigin + rayDir * maxDist, cs);
 
@@ -461,11 +572,14 @@ bool rayTraverseGridCells(
         auto it = world.collisionChunks.find(cell);
         if (it != world.collisionChunks.end()) {
             ++cellCount;
-            for (int triIndex : it->second) {
+            const glm::vec3 chunkMin((float)cell.x * cs, (float)cell.y * cs, (float)cell.z * cs);
+            AABB cellAABB{chunkMin, chunkMin + glm::vec3(cs)};
+            AABB overlap{glm::max(rayAABB.min, cellAABB.min), glm::min(rayAABB.max, cellAABB.max)};
+            forEachChunkTriOverlap(world, cell, it->second, overlap, [&](int triIndex) {
                 if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
-                    continue;
+                    return;
                 if (s_triGen[triIndex] == s_gen)
-                    continue;
+                    return;
                 s_triGen[triIndex] = s_gen;
 
                 float d = 0.0f;
@@ -474,7 +588,7 @@ bool rayTraverseGridCells(
                     bestN = world.collisionMesh.triangles[triIndex].normal;
                     hit = true;
                 }
-            }
+            });
         }
 
         // Step to next cell — stop if next boundary is past closest hit
@@ -587,6 +701,12 @@ bool sweptSphereTraverseGridCells(
 
     const float cs = world.collisionChunkSize;
 
+    // Beam swept AABB (centerline plus radius) used for sub-cell selection.
+    AABB sweptAABB{
+        glm::min(origin, origin + direction * maxDistance) - glm::vec3(radius),
+        glm::max(origin, origin + direction * maxDistance) + glm::vec3(radius)
+    };
+
     // Determine how many neighbor cells the beam radius can reach
     int neighborCells = (int)std::ceil(radius / cs) + 1;
 
@@ -678,11 +798,14 @@ bool sweptSphereTraverseGridCells(
                 ++centerCellCount;
             ++neighborCellCount;
 
-            for (int triIndex : it->second) {
+            const glm::vec3 chunkMin((float)nc.x * cs, (float)nc.y * cs, (float)nc.z * cs);
+            AABB cellAABB{chunkMin, chunkMin + glm::vec3(cs)};
+            AABB overlap{glm::max(sweptAABB.min, cellAABB.min), glm::min(sweptAABB.max, cellAABB.max)};
+            forEachChunkTriOverlap(world, nc, it->second, overlap, [&](int triIndex) {
                 if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
-                    continue;
+                    return;
                 if (s_triGen[triIndex] == s_gen)
-                    continue;
+                    return;
                 s_triGen[triIndex] = s_gen;
 
                 float d = 0.0f;
@@ -697,7 +820,7 @@ bool sweptSphereTraverseGridCells(
                     // We found a hit, but continue checking remaining triangles
                     // in this cell's neighborhood — they could be closer.
                 }
-            }
+            });
         }
 
         // Step to next centerline cell — stop if next boundary is past closest hit

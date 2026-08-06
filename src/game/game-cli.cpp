@@ -206,6 +206,14 @@ bool handleGameCLI(int argc, char** argv)
         return true;
     }
 
+    if (std::string(argv[1]) == "--collision-subgrid-selftest") {
+        std::string summary;
+        const bool ok = collisionSubGridSelfTest(&summary);
+        printf("%s", summary.c_str());
+        printf("[COLLISION SUBGRID SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        return true;
+    }
+
     if (std::string(argv[1]) == "--collision-stress") {
         const std::string caseName = argc > 2 ? argv[2] : "wedge5";
         printf("%s\n", collisionStressRun(caseName).c_str());

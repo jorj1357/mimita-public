@@ -1,6 +1,7 @@
 #include "weapon-viewmodel.h"
 #include "weapon-types.h"
 #include "weapon-config.h"
+#include "combat/weapon-model-cache.h"
 
 #include <algorithm>
 #include <cmath>
@@ -89,30 +90,43 @@ extern TextureStore gTextures;
 
 void WeaponViewModel::loadModel(const std::string& modelPath) {
     if (modelPath.empty()) {
-        if (!loadedModelPath.empty() || vao || vbo || !heldMesh.verts.empty())
+        if (mModelAsset || modelLoadAttempted || !heldMesh.verts.empty())
             unload();
         modelLoadAttempted = true;
         return;
     }
 
-    if (modelLoadAttempted && modelPath == loadedModelPath)
+    if (modelLoadAttempted && modelPath == loadedModelPath && mModelAsset) {
+        syncFromAsset();
         return;
+    }
 
-    if (modelLoadAttempted || vao || vbo || !heldMesh.verts.empty())
+    if (modelLoadAttempted || mModelAsset || !heldMesh.verts.empty())
         unload();
 
     modelLoadAttempted = true;
     loadedModelPath = modelPath;
-    printf("[Weapon] Loading model: %s\n", modelPath.c_str());
-    heldMesh = loadGLB(modelPath);
-    if (heldMesh.verts.empty()) {
-        printf("[Weapon ERROR] Failed to load model:\n  %s\n", modelPath.c_str());
-        loadedModelPath.clear();
+    mModelAsset = WeaponModelCache::instance().request(modelPath);
+    printf("[Weapon] Loading model (async): %s\n", modelPath.c_str());
+    syncFromAsset();
+}
+
+void WeaponViewModel::syncFromAsset() {
+    if (!mModelAsset || !mModelAsset->loadOk || !mModelAsset->gpuUploaded) {
+        hasModelBounds = false;
+        vao = 0;
+        vbo = 0;
+        heldMesh = Mesh{};
         return;
     }
-    printf("[Weapon] Loaded successfully: %s (verts=%zu)\n", modelPath.c_str(), heldMesh.verts.size());
 
+    if (mSyncedVao == mModelAsset->vao && !heldMesh.verts.empty())
+        return;
 
+    heldMesh = mModelAsset->mesh;
+    vao = mModelAsset->vao;
+    vbo = mModelAsset->vbo;
+    mSyncedVao = vao;
 
     glm::vec3 boundsMin = heldMesh.verts.front().pos;
     glm::vec3 boundsMax = boundsMin;
@@ -145,31 +159,14 @@ void WeaponViewModel::loadModel(const std::string& modelPath) {
         modelGrip.x, modelGrip.y, modelGrip.z,
         modelMuzzle.x, modelMuzzle.y, modelMuzzle.z,
         modelCollisionRadius);
-
-    glGenVertexArrays(1, &vao);
-    glGenBuffers(1, &vbo);
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, heldMesh.verts.size() * sizeof(Vertex), heldMesh.verts.data(), GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
-    glBindVertexArray(0);
-    printf("[VIEWMODEL] model loaded verts=%zu vao=%u\n", heldMesh.verts.size(), vao);
 }
 
 void WeaponViewModel::unload() {
-    if (vbo) {
-        glDeleteBuffers(1, &vbo);
-        vbo = 0;
-    }
-    if (vao) {
-        glDeleteVertexArrays(1, &vao);
-        vao = 0;
-    }
+    // GPU buffers are owned by the shared PendingWeaponModel; never delete them here.
+    mModelAsset.reset();
+    vao = 0;
+    vbo = 0;
+    mSyncedVao = 0;
     heldMesh = Mesh{};
     modelGrip = glm::vec3(0.0f);
     modelMuzzle = glm::vec3(0.0f, 0.0f, 0.7f);

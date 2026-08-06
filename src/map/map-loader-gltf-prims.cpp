@@ -21,6 +21,17 @@ extern TextureStore gTextures;
 
 #define GLB_LOG(...) Debug::logAuto(Debug::Category::GLB, __VA_ARGS__)
 
+// Lazily resolves the default texture. Hoisted out of appendPrimitive so the
+// main thread can warm it before any background parse thread runs (GL calls and
+// the throttled log must never happen off the main thread).
+GLuint getGLBDefaultTexture()
+{
+    static GLuint defaultTexture = 0;
+    if (!defaultTexture)
+        defaultTexture = gTextures.get("default");
+    return defaultTexture;
+}
+
 void appendPrimitive(
     const tinygltf::Model& model,
     int meshIndex,
@@ -127,10 +138,7 @@ void appendPrimitive(
     batch.doubleSided = primitive.material >= 0 && primitive.material < (int)model.materials.size()
         ? model.materials[primitive.material].doubleSided
         : false;
-    static GLuint defaultTexture = 0;
-    if (!defaultTexture)
-        defaultTexture = gTextures.get("default");
-    batch.texture = defaultTexture;
+    batch.texture = getGLBDefaultTexture();
     if (primitive.material >= 0 && primitive.material < (int)materialTextures.size() && materialTextures[primitive.material])
         batch.texture = materialTextures[primitive.material];
     batch.first = mesh.verts.size();
