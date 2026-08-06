@@ -147,6 +147,7 @@ app.use((req, res, next) => {
     if (req.path.startsWith("/api/client-login/")) return next()
     if (req.path === "/api/banner/payment/webhook") return next()
     if (req.path === "/api/vip/payment/webhook") return next()
+    if (req.path === "/api/vip/verify-join-ticket") return next()
     if (req.headers["authorization"]?.startsWith("Bearer ")) return next()
     return csrfProtection(req, res, next)
 })
