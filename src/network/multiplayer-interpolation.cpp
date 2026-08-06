@@ -568,26 +568,81 @@ void updateRenderedReplica(
         const float safeDt = std::min(dt, 0.05f);
         if (motion.renderFilter == "spring")
         {
-            // Implicit-velocity critically-damped spring: unconditionally
-            // stable, so it never rings at high frequency (a semi-implicit
-            // Euler spring under-damps in discrete time and wobbles ±1).
-            const float k = (float)motion.springStiffness;
-            const float c = (float)motion.springDamping;
-            const float denom = 1.0f + c * safeDt;
-            glm::vec3 vel = interpolation.renderSpring.velocity;
-            const glm::vec3 accel =
-                (renderPos - interpolation.renderSpring.value) * k;
-            vel = (vel + accel * safeDt) / denom;
-            if (motion.hybridMaxSpeedUnitsPerSecond > 0.0f)
+            // Spring mode is fully tunable:
+            //  - spring_frequency_hz > 0  -> k=(2πf)², c=2ω·damping_ratio
+            //    (spring_frequency_hz == 0 -> legacy spring_stiffness/damping)
+            //  - spring_feed_forward      -> velocity matches the interpolated
+            //    velocity (1 = crisp linear-look, 0 = classic laggy spring)
+            //  - spring_linear_deadzone   -> render exactly at the linear target
+            //    once the spring has converged, so it LOOKS like linear mode
+            //    while real discontinuities are still glided (no snap).
+            // The velocity update is implicit (unconditionally stable, no ring).
+            const float zMult =
+                std::max(0.5f, (float)motion.springFrequencyZMultiplier);
+            float k, c;
+            if (motion.springFrequencyHz > 0.0f)
             {
-                const float maxSpd = (float)motion.hybridMaxSpeedUnitsPerSecond;
+                const float omega = 2.0f * 3.14159265f * (float)motion.springFrequencyHz;
+                k = omega * omega;
+                c = 2.0f * omega * (float)motion.springDampingRatio;
+            }
+            else
+            {
+                k = (float)motion.springStiffness;
+                c = (float)motion.springDamping;
+            }
+            const float kZ = k * zMult * zMult;
+            const float cZ = c * zMult;
+            const float denom = 1.0f + c * safeDt;
+            const float denomZ = 1.0f + cZ * safeDt;
+
+            const glm::vec3 targetPos = renderPos;
+
+            // Low-pass the feed-forward velocity (anti-jitter).
+            const float ffSmooth = std::clamp(
+                (float)motion.springFeedForwardSmoothing, 0.0f, 1.0f);
+            const glm::vec3 rawTargetVel = render.velocity;
+            if (ffSmooth > 0.0f)
+                interpolation.renderSpringTargetVel +=
+                    (rawTargetVel - interpolation.renderSpringTargetVel) * ffSmooth;
+            else
+                interpolation.renderSpringTargetVel = rawTargetVel;
+            const glm::vec3 targetVel =
+                interpolation.renderSpringTargetVel * (float)motion.springFeedForward;
+
+            glm::vec3 vel = interpolation.renderSpring.velocity;
+            const glm::vec3 err = targetPos - interpolation.renderSpring.value;
+            vel.x = (vel.x + (err.x * k + targetVel.x * c) * safeDt) / denom;
+            vel.y = (vel.y + (err.y * k + targetVel.y * c) * safeDt) / denom;
+            vel.z = (vel.z + (err.z * kZ + targetVel.z * cZ) * safeDt) / denomZ;
+            if (motion.springMaxSpeedUnitsPerSecond > 0.0f)
+            {
+                const float maxSpd = (float)motion.springMaxSpeedUnitsPerSecond;
                 const float velLen = glm::length(vel);
                 if (velLen > maxSpd)
                     vel = vel * (maxSpd / velLen);
             }
             interpolation.renderSpring.velocity = vel;
             interpolation.renderSpring.value += vel * safeDt;
-            renderPos = interpolation.renderSpring.value;
+
+            // Deadzone: once the spring has converged to within the deadzone of
+            // the linear target, render exactly the linear target (pixel-identical
+            // to linear mode). Past the deadzone, render the spring value so a real
+            // discontinuity is glided instead of snapped.
+            const float springErr = glm::length(
+                targetPos - interpolation.renderSpring.value);
+            if (motion.springLinearDeadzoneUnits > 0.0f)
+            {
+                const float deadzone = (float)motion.springLinearDeadzoneUnits;
+                const float blend = std::clamp(
+                    1.0f - springErr / deadzone, 0.0f, 1.0f);
+                renderPos = glm::mix(
+                    interpolation.renderSpring.value, targetPos, blend);
+            }
+            else
+            {
+                renderPos = interpolation.renderSpring.value;
+            }
         }
         else if (motion.renderFilter == "hybrid")
         {

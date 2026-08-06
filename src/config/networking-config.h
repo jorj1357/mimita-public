@@ -134,6 +134,29 @@ struct RemoteMotionSmoothingConfig
     double correctionMinDeltaUnits = 0.05;
     double springStiffness = 120.0;
     double springDamping = 20.0;
+    // spring mode (all `spring_*` knobs): 0 = classic spring driven by
+    // spring_stiffness/damping (unchanged legacy behavior). Set > 0 to switch
+    // to frequency control: k=(2π·freq)², c=2ω·damping_ratio. High frequency =
+    // tight, linear-looking tracking.
+    double springFrequencyHz = 0.0;
+    double springDampingRatio = 1.0;
+    // 0..1 blend between classic spring (0) and full velocity feed-forward (1,
+    // crisp linear-look with ~zero lag). Set 1 with a high frequency and the
+    // deadzone to make spring render exactly like linear interpolation.
+    double springFeedForward = 0.0;
+    // Low-pass (0..1) on the velocity fed into the spring (anti-jitter).
+    double springFeedForwardSmoothing = 0.4;
+    // Scales spring stiffness/damping on the Z axis only (jumps/falls/dashes
+    // crisper without changing horizontal smoothness).
+    double springFrequencyZMultiplier = 1.0;
+    // Caps the spring's velocity magnitude (units/sec). 0 = unlimited.
+    double springMaxSpeedUnitsPerSecond = 0.0;
+    // "Looks like linear" switch: when the spring has converged to within this
+    // distance (units) of the interpolated linear target, render EXACTLY at the
+    // linear target (pixel-identical to linear mode). When a real discontinuity
+    // pushes the error past the deadzone, render the spring value, which glides
+    // the correction (no snap). 0 = never snap to the linear target.
+    double springLinearDeadzoneUnits = 0.05;
     // Hybrid (feed-forward spring): ω = 2π·frequency; stiffness = ω²,
     // damping = 2ω·damping_ratio. Higher frequency = crisper tracking (and
     // more sensitive to noise); damping_ratio 1.0 = critically damped (zero

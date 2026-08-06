@@ -71,8 +71,15 @@
     "render_filter": "spring",
     "correction_max_step_units_per_second": 100.0,
     "correction_min_delta_units": 0.05,
-    "spring_stiffness": 120.0,
-    "spring_damping": 20.0,
+    "spring_stiffness": 300.0,
+    "spring_damping": 50.0,
+    "spring_frequency_hz": 0.0,
+    "spring_damping_ratio": 1.0,
+    "spring_feed_forward": 1.0,
+    "spring_feed_forward_smoothing": 10.0,
+    "spring_frequency_z_multiplier": 15.0,
+    "spring_max_speed_units_per_second": 0.0,
+    "spring_linear_deadzone_units": 1.01,
     "hybrid_frequency_hz": 10.0,
     "hybrid_damping_ratio": 1.0,
     "hybrid_feed_forward": 1.0,
@@ -81,8 +88,8 @@
     "hybrid_max_speed_units_per_second": 0.0,
     "filter_max_step_units_per_second": 0.0,
     "filter_clamp_z_below_target": true,
-    "linear_delay_ticks": 6,
-    "linear_hold_on_dry": false
+    "linear_delay_ticks": 10,
+    "linear_hold_on_dry": true
   },
 
   "death_effects": {
