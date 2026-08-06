@@ -447,6 +447,9 @@ const MIGRATION_STATEMENTS = [
     `CREATE INDEX IF NOT EXISTS vip_entitlements_subscription_idx
         ON vip_entitlements(stripe_subscription_id)
         WHERE stripe_subscription_id <> ''`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS vip_entitlements_subscription_uidx
+        ON vip_entitlements(stripe_subscription_id)
+        WHERE stripe_subscription_id <> ''`,
 
     `CREATE TABLE IF NOT EXISTS vip_subscriptions (
         id BIGSERIAL PRIMARY KEY,

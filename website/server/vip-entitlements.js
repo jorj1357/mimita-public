@@ -403,7 +403,13 @@ export async function upsertSubscriptionState(clientOrQuery, {
     const query = queryFrom(clientOrQuery)
     const normalizedTier = normalizeTier(tier)
     const start = toDate(currentPeriodStart)
-    const end = toDate(currentPeriodEnd)
+    let end = toDate(currentPeriodEnd)
+    if (!end && start) {
+        // Stripe occasionally omits period fields (observed with test-mode
+        // subscriptions). Fall back to a 1-month interval from the period start
+        // so an active monthly subscription always yields an entitlement.
+        end = addUtcCalendarMonths(start, 1)
+    }
 
     await query(
         `INSERT INTO vip_subscriptions (
@@ -446,7 +452,15 @@ export async function upsertSubscriptionState(clientOrQuery, {
                 stripe_subscription_id, stripe_customer_id, stripe_payment_intent_id
              )
              VALUES ($1, $2, 'subscription', 'active', $3, $4, $5, $6, $7)
-             ON CONFLICT DO NOTHING`,
+             ON CONFLICT (stripe_subscription_id) WHERE stripe_subscription_id <> ''
+             DO UPDATE SET
+                tier = EXCLUDED.tier,
+                status = EXCLUDED.status,
+                starts_at = EXCLUDED.starts_at,
+                expires_at = EXCLUDED.expires_at,
+                stripe_customer_id = EXCLUDED.stripe_customer_id,
+                stripe_payment_intent_id = EXCLUDED.stripe_payment_intent_id,
+                updated_at = NOW()`,
             [
                 userId,
                 normalizedTier,
