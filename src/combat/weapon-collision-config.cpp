@@ -66,7 +66,9 @@ static bool parseOneWeapon(const std::string& weaponId, const json& root, Weapon
     out.enabled = root.value("enabled", true);
     out.collidesWithWorld = root.value("collides_with_world", true);
     out.collisionSkin = root.value("collision_skin", 0.05f);
-    out.source = root.value("source", "json");
+    // "capsule" (default): single smooth bounding capsule derived from the model
+    // (or the capsule config override). "json": legacy multi-sphere config.
+    out.source = root.value("source", "capsule");
 
     if (out.collisionSkin < 0.0f) {
         Debug::warn(Debug::Category::Weapons,
@@ -200,7 +202,62 @@ void WeaponCollisionJsonConfig::applyCollisionConfig(Player& player) {
     if (weaponId.empty()) return;
 
     const WeaponCollisionEntry* entry = get(weaponId);
-    if (!entry || !entry->enabled) return;
+    WeaponCollisionRuntimeDebug& dbg = player.weaponCollisionDebug;
+
+    // No config entry: capsule mode with the auto (model-derived) capsule.
+    if (!entry) {
+        dbg.capsuleMode = true;
+        dbg.fromJsonConfig = false;
+        dbg.valid = true;
+        dbg.weaponId = weaponId;
+        dbg.spheres.clear();
+        dbg.capsule.enabled = false;
+        return;
+    }
+    if (!entry->enabled) return;
+
+    dbg.weaponId = weaponId;
+    dbg.collisionSkin = entry->collisionSkin;
+
+    // Build local-to-world rotation matrix from euler degrees
+    auto buildRotMat = [](const glm::vec3& rotDeg) -> glm::mat4 {
+        glm::mat4 m(1.0f);
+        m = glm::rotate(m, glm::radians(rotDeg.x), glm::vec3(1,0,0));
+        m = glm::rotate(m, glm::radians(rotDeg.y), glm::vec3(0,1,0));
+        m = glm::rotate(m, glm::radians(rotDeg.z), glm::vec3(0,0,1));
+        return m;
+    };
+
+    if (entry->source != "json") {
+        // Default: single smooth capsule. The local capsule shape is the weapon
+        // model's bounding capsule (set by the viewmodel) unless a config
+        // capsule override is present; the world-space capsule is rebuilt in
+        // recomputeWeaponCapsule. Spheres are never generated here.
+        dbg.capsuleMode = true;
+        dbg.fromJsonConfig = false;
+        dbg.valid = true;
+        dbg.spheres.clear();
+        dbg.capsule.enabled = false;
+
+        const WeaponCollisionCapsuleConfig* override = nullptr;
+        if (entry->capsule.enabled) override = &entry->capsule;
+        else for (const auto& cc : entry->capsules) if (cc.enabled) { override = &cc; break; }
+
+        if (override) {
+            glm::mat4 rot = buildRotMat(override->rotationDegrees);
+            glm::mat4 scaleMat = glm::scale(glm::mat4(1.0f), override->scale);
+            player.weaponGripLocal = glm::vec3(rot * scaleMat * glm::vec4(override->start, 1.0f));
+            player.weaponMuzzleLocal = glm::vec3(rot * scaleMat * glm::vec4(override->end, 1.0f));
+            float s = std::max({override->scale.x, override->scale.y, override->scale.z});
+            player.weaponRadiusLocal = override->radius * std::max(s, 0.001f);
+            player.collision.hasWeaponCollisionCapsule = true;
+            dbg.capsule.enabled = true;
+            dbg.capsule.radius = player.weaponRadiusLocal;
+        }
+        return;
+    }
+
+    // Legacy "json" source: explicit spheres / sampled capsule spheres.
 
     // Check if JSON has any valid enabled colliders
     bool hasEnabledSpheres = false;
@@ -213,21 +270,21 @@ void WeaponCollisionJsonConfig::applyCollisionConfig(Player& player) {
 
     bool hasAnyCollider = hasEnabledSpheres || hasEnabledCapsules || hasGenerated;
 
-    WeaponCollisionRuntimeDebug& dbg = player.weaponCollisionDebug;
-
-    if (!hasAnyCollider && entry->source == "json") {
+    if (!hasAnyCollider) {
         // JSON mode but no valid colliders: log fallback
         Debug::log(Debug::Category::Weapons,
             "[WEAPON COLLISION] %s using fallback C++ collider because JSON has no enabled colliders",
             weaponId.c_str());
+        dbg.capsuleMode = false;
         dbg.fromJsonConfig = false;
+        dbg.spheres.clear();
         return;
     }
 
     // Mark as JSON-driven
+    dbg.capsuleMode = false;
     dbg.fromJsonConfig = true;
     dbg.valid = true;
-    dbg.weaponId = weaponId;
     dbg.collisionSkin = entry->collisionSkin;
 
     // Save previous sphere data before overwriting
@@ -241,15 +298,6 @@ void WeaponCollisionJsonConfig::applyCollisionConfig(Player& player) {
     // Transform a local-space point to world space
     auto toWorld = [&](const glm::vec3& local) -> glm::vec3 {
         return glm::vec3(weaponXform * glm::vec4(local, 1.0f));
-    };
-
-    // Build local-to-world rotation matrix from euler degrees
-    auto buildRotMat = [](const glm::vec3& rotDeg) -> glm::mat4 {
-        glm::mat4 m(1.0f);
-        m = glm::rotate(m, glm::radians(rotDeg.x), glm::vec3(1,0,0));
-        m = glm::rotate(m, glm::radians(rotDeg.y), glm::vec3(0,1,0));
-        m = glm::rotate(m, glm::radians(rotDeg.z), glm::vec3(0,0,1));
-        return m;
     };
 
     // Compute collision radius from base radius * max scale axis

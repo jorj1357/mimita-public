@@ -196,6 +196,16 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
                            weaponColor);
         }
 
+        if (DebugConfig::DEBUG_WEAPON_HITBOX && player.collision.hasWeaponCollisionCapsule) {
+            const glm::vec4 hitboxColor{1.0f, 0.4f, 1.0f, 0.95f};
+            drawCapsuleWire(camera, player.weaponCollisionCapsule, hitboxColor);
+            char label[96];
+            const Capsule& cap = player.weaponCollisionCapsule;
+            std::snprintf(label, sizeof(label), "weapon hitbox r=%.2f", cap.r);
+            glm::vec3 center = (cap.a + cap.b) * 0.5f;
+            drawWorldLabel(center + glm::vec3(0.0f, 0.0f, cap.r + 0.35f), label, hitboxColor);
+        }
+
         if (DebugConfig::DEBUG_COLLISION_BODY_PUSH)
         {
             glm::vec3 bodyPush = player.debugBodyCollisionPush;

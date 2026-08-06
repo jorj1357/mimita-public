@@ -409,12 +409,10 @@ const char* movementCorrectionClassName(MovementCorrectionClass correctionClass)
     }
 }
 
-bool movementSnapshotIsFresh(uint32_t incomingServerTick,
-                             uint32_t incomingSpawnGeneration,
-                             uint32_t incomingTransformEpoch,
-                             uint32_t lastServerTick,
-                             uint32_t lastSpawnGeneration,
-                             uint32_t lastTransformEpoch)
+bool movementSnapshotLifecycleFresh(uint32_t incomingSpawnGeneration,
+                                    uint32_t incomingTransformEpoch,
+                                    uint32_t lastSpawnGeneration,
+                                    uint32_t lastTransformEpoch)
 {
     if (incomingSpawnGeneration != 0 && lastSpawnGeneration != 0)
     {
@@ -431,6 +429,22 @@ bool movementSnapshotIsFresh(uint32_t incomingServerTick,
         if (incomingTransformEpoch > lastTransformEpoch)
             return true;
     }
+
+    return true;
+}
+
+bool movementSnapshotIsFresh(uint32_t incomingServerTick,
+                             uint32_t incomingSpawnGeneration,
+                             uint32_t incomingTransformEpoch,
+                             uint32_t lastServerTick,
+                             uint32_t lastSpawnGeneration,
+                             uint32_t lastTransformEpoch)
+{
+    if (!movementSnapshotLifecycleFresh(incomingSpawnGeneration,
+                                        incomingTransformEpoch,
+                                        lastSpawnGeneration,
+                                        lastTransformEpoch))
+        return false;
 
     if (incomingServerTick <= lastServerTick)
         return false;

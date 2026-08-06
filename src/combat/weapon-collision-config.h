@@ -38,7 +38,7 @@ struct WeaponCollisionEntry {
     bool enabled = true;
     bool collidesWithWorld = true;
     float collisionSkin = 0.05f;
-    std::string source = "json";  // "json" or "auto" — controls whether C++ fallback is used
+    std::string source = "capsule";  // "capsule" (default, single smooth capsule) or "json" (legacy spheres)
 
     // Backward compat: singular capsule
     WeaponCollisionCapsuleConfig capsule;

@@ -87,6 +87,7 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
                             const double delaySeconds,
                             const double globalRenderTick,
                             bool allowExtrapolation,
+                            uint32_t linearSnapGapTicks,
                             SnapshotTransform& out)
 {
     const uint32_t oldestTick = interpolation.buffer.front().serverTick;
@@ -178,13 +179,15 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
         alpha = std::clamp(alpha, 0.0, 1.0);
     }
 
-    // Time-gap protection: a hole wider than teleportGapTicks (e.g. a long
+    // Time-gap protection: a hole wider than the gap threshold (e.g. a long
     // blackout) is a discontinuity, not a velocity bridge. With teleport_gap_snap
     // snap to the newest snapshot rather than sliding a stale straight line
     // across seconds of missing motion; otherwise fall through so the motion
     // filter converges the body smoothly. Short loss gaps interpolate linearly.
-    if ((uint32_t)(newer->serverTick - older->serverTick) >
-            interpCfg.teleportGapTicks &&
+    // linear mode may override the threshold via linear_snap_after_gap_ticks.
+    const uint32_t gapTicks = linearSnapGapTicks > 0
+        ? linearSnapGapTicks : interpCfg.teleportGapTicks;
+    if ((uint32_t)(newer->serverTick - older->serverTick) > gapTicks &&
         interpCfg.teleportGapSnap)
     {
         out = *newer;
@@ -280,27 +283,34 @@ bool pushInterpolationTarget(
     const SnapshotEntity& entity,
     uint32_t serverTick)
 {
-    if (interpolation.hasTarget &&
-        !movementSnapshotIsFresh(serverTick,
-                                 entity.spawnGeneration,
-                                 entity.transformEpoch,
-                                 interpolation.lastServerTick,
-                                 interpolation.lastSpawnGeneration,
-                                 interpolation.lastSnapshotTransformEpoch))
+    if (interpolation.hasTarget)
     {
-        ++interpolation.staleSnapshotCount;
-        return false;
-    }
-
-    // allow_out_of_order_insertion=false: a reordered older snapshot must not
-    // be inserted mid-buffer (it can shift the bracketing pair and make a
-    // smooth-connection body appear to slide backward to a spot it just left).
-    if (interpolation.hasTarget &&
-        serverTick < interpolation.lastServerTick &&
-        !NetworkingConfig::instance().data().snapshotBuffer.allowOutOfOrderInsertion)
-    {
-        ++interpolation.outOfOrderSnapshotCount;
-        return false;
+        // Lifecycle freshness always enforced: a sample from an older spawn
+        // generation or transform epoch is a previous life and must never feed
+        // this life's interpolation history.
+        if (!movementSnapshotLifecycleFresh(
+                entity.spawnGeneration, entity.transformEpoch,
+                interpolation.lastSpawnGeneration,
+                interpolation.lastSnapshotTransformEpoch))
+        {
+            ++interpolation.staleSnapshotCount;
+            return false;
+        }
+        // Tick ordering: a sample older than the newest seen is normally
+        // rejected. With allow_out_of_order_insertion it is still accepted if
+        // it lands inside the buffered tick window (it fills a hole left by a
+        // reordered/dropped packet) — safe because the render clock is
+        // monotonic and the buffer stays ascending by serverTick.
+        const bool allowOutOfOrder = NetworkingConfig::instance()
+            .data().snapshotBuffer.allowOutOfOrderInsertion;
+        const bool bufferHasFront = !interpolation.buffer.empty();
+        const bool fillsHole = allowOutOfOrder && bufferHasFront &&
+            serverTick >= interpolation.buffer.front().serverTick;
+        if (serverTick < interpolation.lastServerTick && !fillsHole)
+        {
+            ++interpolation.outOfOrderSnapshotCount;
+            return false;
+        }
     }
 
     SnapshotTransform next = transformFromEntity(entity);
@@ -346,21 +356,32 @@ bool pushInterpolationTarget(
          (entity.transformEpoch != 0 &&
           entity.transformEpoch != interpolation.lastTransformEpoch));
 
-    if (interpolation.hasTarget && !newLifecycle) {
-        interpolation.previous = interpolation.target;
-        interpolation.hasPrevious = true;
-    } else {
-        interpolation.previous = next;
-        interpolation.hasPrevious = true;
+    // `interpolation.target` is the newest authoritative sample (used for
+    // respawn snaps, thin-buffer seeding, and shooter re-base). An out-of-order
+    // older sample may fill the interpolation buffer below, but it must never
+    // regress the target. `previous` stays the target from one tick ago.
+    const bool advancesTarget =
+        !interpolation.hasTarget ||
+        serverTick >= interpolation.target.serverTick;
+    if (advancesTarget)
+    {
+        if (interpolation.hasTarget && !newLifecycle) {
+            interpolation.previous = interpolation.target;
+            interpolation.hasPrevious = true;
+        } else {
+            interpolation.previous = next;
+            interpolation.hasPrevious = true;
+        }
+        interpolation.target = next;
+        interpolation.hasTarget = true;
+        interpolation.networkEntityId = entity.networkEntityId;
+        interpolation.displayName = entity.displayName;
+        if (serverTick > interpolation.lastServerTick)
+            interpolation.lastServerTick = serverTick;
+        interpolation.lastSpawnGeneration = entity.spawnGeneration;
+        if (entity.transformEpoch != 0)
+            interpolation.lastSnapshotTransformEpoch = entity.transformEpoch;
     }
-    interpolation.target = next;
-    interpolation.hasTarget = true;
-    interpolation.networkEntityId = entity.networkEntityId;
-    interpolation.displayName = entity.displayName;
-    interpolation.lastServerTick = serverTick;
-    interpolation.lastSpawnGeneration = entity.spawnGeneration;
-    if (entity.transformEpoch != 0)
-        interpolation.lastSnapshotTransformEpoch = entity.transformEpoch;
 
     // ── Tick-ordered snapshot buffer (time-based interpolation) ─────
     const auto& interpCfg = NetworkingConfig::instance().data().remotePlayers;
@@ -511,11 +532,32 @@ void updateRenderedReplica(
     // freeze/jump from a clamped catch-up clock).
     const NetworkingConfigData& netCfg = NetworkingConfig::instance().data();
     const bool linearMode = (motion.renderFilter == "linear");
-    // linear mode uses a fixed whole-tick delay (the loss buffer); other modes
-    // use the adaptive per-entity delay that grows under jitter/loss.
-    const double delaySeconds = linearMode
-        ? (double)motion.linearDelayTicks / (double)GAMEPLAY_SIMULATION_HZ
-        : adaptiveDelaySeconds(interpolation, netCfg, dt);
+    // linear mode uses an adaptive whole-tick loss buffer: the per-entity
+    // jitter/loss EMA from adaptiveDelaySeconds() is quantized up to a whole
+    // tick and clamped to [linear_min_delay_ticks, linear_max_delay_ticks],
+    // so the render stays deep enough inside the buffer to never run dry under
+    // jitter/loss. linear_max_delay_ticks == 0 → fixed at linear_delay_ticks
+    // (legacy). Other modes use the adaptive per-entity delay as-is.
+    const double delaySeconds = [&]() -> double {
+        if (!linearMode)
+            return adaptiveDelaySeconds(interpolation, netCfg, dt);
+        const double minTicks = (double)(motion.linearMinDelayTicks > 0
+            ? motion.linearMinDelayTicks : motion.linearDelayTicks);
+        double delayTicks = (double)motion.linearDelayTicks;
+        if (motion.linearMaxDelayTicks > 0)
+        {
+            const double adaptTicks =
+                std::ceil(adaptiveDelaySeconds(interpolation, netCfg, dt) *
+                          (double)GAMEPLAY_SIMULATION_HZ);
+            const double maxTicks = (double)motion.linearMaxDelayTicks;
+            delayTicks = std::clamp(adaptTicks, minTicks, maxTicks);
+        }
+        const double delay = delayTicks / (double)GAMEPLAY_SIMULATION_HZ;
+        // Feed the effective delay back so the shot-rewind tick
+        // (mpFireRenderTick) validates against the exact pose linear rendered.
+        interpolation.adaptiveDelaySeconds = delay;
+        return delay;
+    }();
 
     SnapshotTransform render = interpolation.target;
 
@@ -529,11 +571,13 @@ void updateRenderedReplica(
             // linear mode never extrapolates when holding on dry; other modes
             // honor interpCfg.allowExtrapolation.
             const bool allowExtrap = linearMode
-                ? !motion.linearHoldOnDry
+                ? (motion.linearAllowExtrapolation && !motion.linearHoldOnDry)
                 : interpCfg.allowExtrapolation;
             buildReceiveTimeRender(
                 interpolation, interpCfg, delaySeconds, renderTick,
-                allowExtrap, render);
+                allowExtrap,
+                linearMode ? motion.linearSnapAfterGapTicks : 0u,
+                render);
         }
         else if (linearMode && interpolation.hasRendered)
         {
@@ -1038,6 +1082,28 @@ void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)
     // makes the interpolation alpha fractional at any frame rate and lets
     // reordered/lost-snapshot bursts pass through without an artificial
     // catch-up fast-forward.
+    // The clock is MONOTONIC: it never moves backward. Under network jitter a
+    // snapshot frequently arrives more than one tick after the previous one;
+    // re-anchoring `ageTicks` to zero on every such arrival used to step the
+    // clock backward, which made the interpolation alpha oscillate and remote
+    // bodies "double-set"/stutter. The clock now only ever advances forward,
+    // so alpha only ever increases: pure forward glide, no backward slides.
+    const auto& motionClock =
+        NetworkingConfig::instance().data().remoteMotionSmoothing;
+    const bool linearClock = (motionClock.renderFilter == "linear");
+    const double linearCatchupTps =
+        motionClock.linearCatchupRateTicksPerSecond;
+
+    // If the server regressed its tick domain (map change / server restart),
+    // the old clock is invalid — reset it so monotonicity can't pin it high.
+    if (ctx.lastClockAnchorServerTick != 0 &&
+        ctx.latestServerTick < ctx.lastClockAnchorServerTick)
+    {
+        ctx.interpolationRenderTick = 0.0;
+        ctx.interpolationClockStarted = false;
+    }
+    ctx.lastClockAnchorServerTick = ctx.latestServerTick;
+
     if (ctx.latestServerTick != 0 && ctx.lastSnapshotReceivedMs != 0)
     {
         const double tickMs = 1000.0 / (double)GAMEPLAY_SIMULATION_HZ;
@@ -1045,8 +1111,28 @@ void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)
         const double ageTicks = now >= ctx.lastSnapshotReceivedMs
             ? (double)(now - ctx.lastSnapshotReceivedMs) / tickMs
             : 0.0;
-        ctx.interpolationRenderTick = (double)ctx.latestServerTick + ageTicks;
-        ctx.interpolationClockStarted = true;
+        const double rawNow = (double)ctx.latestServerTick + ageTicks;
+        if (!ctx.interpolationClockStarted)
+        {
+            ctx.interpolationRenderTick = rawNow;
+            ctx.interpolationClockStarted = true;
+        }
+        else if (rawNow > ctx.interpolationRenderTick)
+        {
+            // linear mode may cap how fast the clock may catch up after a gap
+            // (a bounded glide instead of a forward burst). 0 = no cap.
+            const double dtTicks = (double)dt * (double)GAMEPLAY_SIMULATION_HZ;
+            if (linearClock && linearCatchupTps > 0.0)
+            {
+                const double maxStep = dtTicks + linearCatchupTps * (double)dt;
+                ctx.interpolationRenderTick =
+                    std::min(rawNow, ctx.interpolationRenderTick + maxStep);
+            }
+            else
+            {
+                ctx.interpolationRenderTick = rawNow;
+            }
+        }
     }
 
     for (auto& kv : ctx.remotePlayers)

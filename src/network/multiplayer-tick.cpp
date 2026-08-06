@@ -851,8 +851,11 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 return;
 
             // Buffer the chunk
-            if (chunk.header.tick > ctx.latestServerTick)
-                ctx.latestServerTick = chunk.header.tick;
+            // NOTE: ctx.latestServerTick is NOT advanced per chunk — a partial
+            // chunk set is not a usable snapshot, and advancing the newest tick
+            // would let the monotonic render clock over-run the buffer while
+            // the remaining chunks assemble. It advances only on full
+            // reassembly below.
             auto& bufMap = ctx.snapshotChunkBuffers[chunk.header.tick];
             bufMap.chunks[chunk.chunkIndex] = chunk;
             bufMap.lastReceiveMs = nowMs();
@@ -909,6 +912,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ++ctx.snapshotsReceived;
             if (chunk.header.tick > ctx.lastSnapshotTick)
                 ctx.lastSnapshotTick = chunk.header.tick;
+            if (chunk.header.tick > ctx.latestServerTick)
+                ctx.latestServerTick = chunk.header.tick;
             ctx.lastSnapshotReceivedMs = nowMs();
 
             // Convert compact entities to snapshot entities and process

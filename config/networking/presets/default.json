@@ -24,6 +24,20 @@
     "snap_on_map_change": true
   },
 
+  "remote_motion_smoothing": {
+    "comment": "Post-interpolation motion filter on rendered remote bodies. render_filter: direct | bounded | spring | hybrid | linear.",
+    "render_filter": "linear",
+    "filter_max_step_units_per_second": 0.0,
+    "filter_clamp_z_below_target": true,
+    "linear_delay_ticks": 6,
+    "linear_min_delay_ticks": 6,
+    "linear_max_delay_ticks": 16,
+    "linear_hold_on_dry": true,
+    "linear_allow_extrapolation": false,
+    "linear_catchup_rate_ticks_per_second": 0.0,
+    "linear_snap_after_gap_ticks": 30
+  },
+
   "local_player_reconciliation": {
     "enabled": true,
     "correction_mode": "hard",

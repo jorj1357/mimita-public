@@ -373,6 +373,25 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
                     readDouble(r, "linear_delay_ticks", (double)c.linearDelayTicks),
                     1.0));
         c.linearHoldOnDry = readBool(r, "linear_hold_on_dry", c.linearHoldOnDry);
+        c.linearMinDelayTicks = (uint32_t)std::max<uint32_t>(
+            1u, (uint32_t)clampMin(
+                    readDouble(r, "linear_min_delay_ticks", (double)c.linearMinDelayTicks),
+                    1.0));
+        c.linearMaxDelayTicks = (uint32_t)clampMin(
+            readDouble(r, "linear_max_delay_ticks", (double)c.linearMaxDelayTicks),
+            0.0);
+        if (c.linearMaxDelayTicks > 0 &&
+            c.linearMaxDelayTicks < c.linearMinDelayTicks)
+            c.linearMaxDelayTicks = c.linearMinDelayTicks;
+        c.linearAllowExtrapolation = readBool(
+            r, "linear_allow_extrapolation", c.linearAllowExtrapolation);
+        c.linearCatchupRateTicksPerSecond = clampMin(
+            readDouble(r, "linear_catchup_rate_ticks_per_second",
+                       c.linearCatchupRateTicksPerSecond), 0.0);
+        c.linearSnapAfterGapTicks = (uint32_t)std::max<uint32_t>(
+            0u, (uint32_t)clampMin(
+                    readDouble(r, "linear_snap_after_gap_ticks",
+                               (double)c.linearSnapAfterGapTicks), 0.0));
     }
 
     // ── death_effects ────────────────────────────────────────────────

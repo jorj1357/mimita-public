@@ -193,7 +193,8 @@ std::vector<int> gatherGLBTriangles(
 std::vector<RecoveryContact> collectCapsuleRecoveryContacts(
     const World& world,
     const Capsule& cap,
-    const std::vector<int>& candidates
+    const std::vector<int>& candidates,
+    const char* label = "glb-recovery"
 );
 
 // =====================================================
@@ -244,6 +245,7 @@ struct BWInvestigate {
     int sphereCount = 0;
     int bodyPartSphereCount = 0;
     int weaponCapsuleSphereCount = 0;
+    int weaponCapsuleContactCount = 0;
     int candidateCount = 0;
     int triangleTests = 0;
     int sweepTests = 0;

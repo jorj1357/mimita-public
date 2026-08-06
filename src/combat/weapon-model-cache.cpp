@@ -79,12 +79,13 @@ void weaponModelLoadThread(std::shared_ptr<PendingWeaponModel> d)
     d->images = std::move(model.images);
 
     // Material index -> image index so batch textures resolve on the main thread.
+    // Read d->images (not model.images): model.images was emptied by the move above.
     d->materialToImage.assign(model.materials.size(), -1);
     for (size_t m = 0; m < model.materials.size(); ++m) {
         int texIdx = model.materials[m].pbrMetallicRoughness.baseColorTexture.index;
         if (texIdx >= 0 && texIdx < (int)model.textures.size()) {
             int imgIdx = model.textures[texIdx].source;
-            if (imgIdx >= 0 && imgIdx < (int)model.images.size())
+            if (imgIdx >= 0 && imgIdx < (int)d->images.size())
                 d->materialToImage[m] = imgIdx;
         }
     }
