@@ -88,16 +88,20 @@
     "hybrid_feed_forward_smoothing": 1.0,
     "hybrid_max_speed_units_per_second": 0.0,
     "filter_max_step_units_per_second": 0.0,
-    "filter_clamp_z_below_target": true,
+    "filter_clamp_z_below_target": false,
     "linear_delay_ticks": 24,
     "linear_min_delay_ticks": 6,
-    "linear_max_delay_ticks": 12,
+    "linear_max_delay_ticks": 24,
     "linear_hold_on_dry": true,
     "linear_allow_extrapolation": false,
-    "linear_catchup_rate_ticks_per_second": 0.1,
+    "linear_catchup_rate_ticks_per_second": 0.0,
     "linear_delay_jitter_multiplier": 0.0,
     "linear_delay_loss_weight": 0.0,
-    "linear_snap_after_gap_ticks": 999
+    "linear_snap_after_gap_ticks": 999,
+    "linear_clock_source": "wall_time",
+    "linear_reanchor_enabled": true,
+    "linear_reanchor_only_if_error_ms": 250,
+    "max_render_time_jump_ms": 5
   },
 
   "death_effects": {
@@ -168,7 +172,11 @@
     "show_interpolated_position": false,
     "show_buffer_size": false,
     "log_snapshot_arrival": false,
-    "log_interpolation_state": false
+    "log_interpolation_state": false,
+    "interpolation_log_rate_hz": 10,
+    "detect_interpolation_jitter": true,
+    "max_allowed_alpha_jump": 0.35,
+    "max_allowed_visual_delta_multiplier": 2.5
   },
 
   "badconn": {

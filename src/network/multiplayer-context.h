@@ -212,6 +212,16 @@ struct EntityInterpolationState
     // `netstats`. It mirrors `estimatedServerNow - adaptiveDelay` computed by
     // the continuous wall-clock clock in buildReceiveTimeRender (no clamping).
     double renderTick = 0.0;
+    double previousRenderTick = 0.0;
+    double renderTickDelta = 0.0;
+    uint32_t sampleOlderTick = 0;
+    uint32_t sampleNewerTick = 0;
+    double sampleAlpha = 0.0;
+    double previousSampleAlpha = 0.0;
+    double sampleAlphaDelta = 0.0;
+    bool holding = false;
+    bool renderSampleJumped = false;
+    bool snappedOrCorrected = false;
     double adaptiveDelaySeconds = 0.0;
     double estimatedArrivalJitterMs = 0.0;
     // Smoothed fraction of recent snapshots that arrived with a tick gap wider
@@ -222,6 +232,22 @@ struct EntityInterpolationState
     // value, used to smoothly converge when data resumes (no snap-back).
     bool extrapolating = false;
     bool wasExtrapolating = false;
+    uint32_t hardSnapCount = 0;
+    uint32_t bufferUnderrunCount = 0;
+    uint32_t holdCount = 0;
+    uint32_t renderJumpCount = 0;
+    uint64_t lastInterpolationDebugLogMs = 0;
+    glm::vec3 lastFinalRenderPosition{0.0f};
+    glm::vec3 lastRawInterpolatedPosition{0.0f};
+    float lastFinalRenderDelta = 0.0f;
+    float lastFinalRenderVerticalDelta = 0.0f;
+    float lastFinalRenderVerticalVelocity = 0.0f;
+    bool hasFinalRenderPosition = false;
+    int pendingPredictedDamage = 0;
+    int predictedHealthCap = -1;
+    uint64_t predictedHealthUpdatedMs = 0;
+    uint32_t predictedHealthRollbackCount = 0;
+    uint32_t predictedHealthConfirmCount = 0;
     // Always-on spring for render_filter == "spring". Reset on respawn so the
     // new life does not inherit the old corpse's filter state.
     SpringState renderSpring;
@@ -263,6 +289,12 @@ struct MultiplayerContext
     // using wall-clock frame time, so rendering is time-based, not packet-based.
     double interpolationRenderTick = 0.0;
     bool interpolationClockStarted = false;
+    uint64_t interpolationClockLastUpdateMs = 0;
+    uint64_t interpolationFrameNumber = 0;
+    uint32_t interpolationReanchorCount = 0;
+    double lastInterpolationClockStepMs = 0.0;
+    double lastInterpolationReanchorMagnitudeMs = 0.0;
+    std::string lastInterpolationReanchorReason;
     std::unordered_map<uint32_t, Player> remotePlayers;
     std::unordered_map<uint32_t, Player> remoteNpcs;
     std::unordered_map<uint32_t, EntityInterpolationState> remotePlayerInterpolation;
@@ -766,6 +798,9 @@ bool pushInterpolationTarget(EntityInterpolationState& interpolation, const Snap
 void updateRenderedReplica(Player& player, EntityInterpolationState& interpolation,
                            double renderTick, float dt, bool spawnDeathEffects);
 void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt);
+void mpApplyPredictedDamage(MultiplayerContext& ctx, uint32_t entityId, int damage, bool npc);
+void mpConfirmPredictedDamage(MultiplayerContext& ctx, uint32_t entityId, int healthAfter, bool killed, bool npc);
+void mpRollbackPredictedDamage(MultiplayerContext& ctx, uint32_t entityId, bool npc, const char* reason);
 
 // Debug flags for damage/hit/net diagnostics (extern, set from terminal commands)
 extern bool gNetDamageDebug;

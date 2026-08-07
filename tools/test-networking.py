@@ -74,7 +74,7 @@ def run_snapshot_selftest(args, log_dir):
         return False
     ok, code = run_capture(
         "snapshot-chunk-selftest",
-        [str(EXE), "--snapshot-chunk-selftest"],
+        [str(EXE), "--snapshot-chunk-selftest", "--timeout", "30"],
         log_dir,
         timeout=30,
         verbose=args.verbose,

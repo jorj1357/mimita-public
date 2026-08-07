@@ -224,6 +224,15 @@ const std::vector<NetConfigKnob>& netConfigKnobs()
         {"linear_delay_jitter_multiplier", false, false, false, 0.0, 20.0, "remote_motion_smoothing"},
         {"linear_delay_loss_weight", false, false, false, 0.0, 10.0, "remote_motion_smoothing"},
         {"linear_snap_after_gap_ticks", false, false, false, 0.0, 1000.0, "remote_motion_smoothing"},
+        {"linear_clock_source", false, false, true, 0.0, 1.0, "remote_motion_smoothing"},
+        {"linear_reanchor_enabled", false, true, false, 0.0, 1.0, "remote_motion_smoothing"},
+        {"linear_reanchor_only_if_error_ms", true, false, false, 0.0, 5000.0, "remote_motion_smoothing"},
+        {"max_render_time_jump_ms", true, false, false, 0.0, 1000.0, "remote_motion_smoothing"},
+        {"log_interpolation_state", false, true, false, 0.0, 1.0, "debug"},
+        {"interpolation_log_rate_hz", false, false, false, 0.1, 60.0, "debug"},
+        {"detect_interpolation_jitter", false, true, false, 0.0, 1.0, "debug"},
+        {"max_allowed_alpha_jump", false, false, false, 0.0, 1.0, "debug"},
+        {"max_allowed_visual_delta_multiplier", false, false, false, 0.0, 100.0, "debug"},
     };
     return knobs;
 }
@@ -963,7 +972,7 @@ void registerNetworkCommands()
                 ? (now >= mp.lastSnapshotReceivedMs
                     ? now - mp.lastSnapshotReceivedMs : 0)
                 : 0;
-            char buf[320];
+            char buf[640];
             snprintf(buf, sizeof(buf),
                 "[NETSTATS] state=%s connected=%d ping=%dms clientTick=%u "
                 "serverTick=%llu snapRx=%llu snapMissed=%llu loss=%.1f%% age=%llums",
@@ -976,11 +985,18 @@ void registerNetworkCommands()
             Terminal::instance().addLog(buf);
 
             snprintf(buf, sizeof(buf),
-                "[NETSTATS] renderClock=%.2f ticks delay=%.1fms mode=%s",
+                "[NETSTATS] renderClock=%.2f ticks delay=%.1fms mode=%s "
+                "frame=%llu clockStepMs=%.1f reanchors=%u lastReanchorMs=%.1f reason=%s",
                 mp.interpolationRenderTick,
                 NetworkingConfig::instance()
                     .effectiveRemoteInterpolationDelaySeconds() * 1000.0,
-                netCfg.remotePlayers.directRender ? "direct" : "interp");
+                netCfg.remotePlayers.directRender ? "direct" : "interp",
+                (unsigned long long)mp.interpolationFrameNumber,
+                mp.lastInterpolationClockStepMs,
+                (unsigned)mp.interpolationReanchorCount,
+                mp.lastInterpolationReanchorMagnitudeMs,
+                mp.lastInterpolationReanchorReason.empty()
+                    ? "none" : mp.lastInterpolationReanchorReason.c_str());
             Terminal::instance().addLog(buf);
 
             {
@@ -988,14 +1004,22 @@ void registerNetworkCommands()
                 snprintf(buf, sizeof(buf),
                     "[NETSTATS] filter=%s freqHz=%.1f zeta=%.2f ff=%.2f "
                     "ffSmooth=%.2f zMult=%.2f maxSpd=%.0f maxStep=%.0f clampZ=%d "
-                    "linTicks=%u linHold=%d sFreq=%.1f sFF=%.2f sDead=%.3f",
+                    "linTicks=%u linMinMax=%u/%u linHold=%d catchup=%.2f "
+                    "clock=%s reanchorMs=%.0f maxJumpMs=%.1f sFreq=%.1f sFF=%.2f sDead=%.3f",
                     m.renderFilter.c_str(), m.hybridFrequencyHz,
                     m.hybridDampingRatio, m.hybridFeedForward,
                     m.hybridFeedForwardSmoothing, m.hybridFrequencyZMultiplier,
                     m.hybridMaxSpeedUnitsPerSecond,
                     m.filterMaxStepUnitsPerSecond,
                     (int)m.filterClampZBelowTarget,
-                    (unsigned)m.linearDelayTicks, (int)m.linearHoldOnDry,
+                    (unsigned)m.linearDelayTicks,
+                    (unsigned)m.linearMinDelayTicks,
+                    (unsigned)m.linearMaxDelayTicks,
+                    (int)m.linearHoldOnDry,
+                    m.linearCatchupRateTicksPerSecond,
+                    m.linearClockSource.c_str(),
+                    m.linearReanchorOnlyIfErrorSeconds * 1000.0,
+                    m.maxRenderTimeJumpSeconds * 1000.0,
                     m.springFrequencyHz, m.springFeedForward,
                     m.springLinearDeadzoneUnits);
                 Terminal::instance().addLog(buf);
@@ -1031,12 +1055,17 @@ void registerNetworkCommands()
                 if (replicaIt != mp.remotePlayers.end())
                     dTarget = glm::length(replicaIt->second.pos - s.target.position);
                 snprintf(buf, sizeof(buf),
-                    "  id=%u buf=%zu newest=%u render=%.1f delay=%.1fms jit=%.1fms "
-                    "stale=%u dup=%u ooo=%u dRenderToTarget=%.2fm",
+                    "  id=%u buf=%zu newest=%u render=%.2f dRender=%.2f older=%u newer=%u "
+                    "alpha=%.3f dAlpha=%.3f delay=%.1fms jit=%.1fms hold=%u underrun=%u "
+                    "jump=%u hardSnap=%u predDmg=%d hpCap=%d dRenderToTarget=%.2fm",
                     kv.first, s.buffer.size(), s.target.serverTick, s.renderTick,
+                    s.renderTickDelta, s.sampleOlderTick, s.sampleNewerTick,
+                    s.sampleAlpha, s.sampleAlphaDelta,
                     s.adaptiveDelaySeconds * 1000.0, s.estimatedArrivalJitterMs,
-                    s.staleSnapshotCount, s.duplicateSnapshotCount,
-                    s.outOfOrderSnapshotCount, dTarget);
+                    s.holdCount, s.bufferUnderrunCount,
+                    s.renderJumpCount, s.hardSnapCount,
+                    s.pendingPredictedDamage, s.predictedHealthCap,
+                    dTarget);
                 Terminal::instance().addLog(buf);
             }
         }

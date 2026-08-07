@@ -817,6 +817,7 @@ static void spawnHitClaimDisagreement(MultiplayerContext& ctx,
                                       const char* description)
 {
     ++ctx.rejectedHits;
+    mpRollbackPredictedDamage(ctx, claim.claimedTargetId, false, description);
     if (!NetworkingConfig::instance().data().disagreement.enabled)
         return;
     DisagreementEvent event;
@@ -878,6 +879,12 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
             if (!targetMatched)
                 spawnHitClaimDisagreement(ctx, claimIt->second, "HIT REJECTED");
             ctx.pendingHitClaims.erase(claimIt);
+        }
+        if (event->targetPlayerId != ctx.localPlayerId)
+        {
+            mpConfirmPredictedDamage(
+                ctx, event->targetPlayerId, event->healthAfter,
+                event->killed != 0, false);
         }
     }
 
