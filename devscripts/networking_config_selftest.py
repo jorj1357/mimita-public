@@ -99,6 +99,16 @@ def main():
         return fail("adaptive maximum_delay_ms is smaller than minimum_delay_ms")
     if not event_timeline["enabled"]:
         return fail("event_timeline.enabled must be true")
+    motion = data.get("remote_motion_smoothing", {})
+    linear_delay = int(motion.get("linear_delay_ticks", 0))
+    linear_max = int(motion.get("linear_max_delay_ticks", 0))
+    if linear_delay <= 0:
+        return fail("remote_motion_smoothing.linear_delay_ticks must be positive")
+    if linear_max > 0 and linear_max < linear_delay:
+        return fail("linear_max_delay_ticks silently clamps linear_delay_ticks")
+    if motion.get("render_filter") == "linear" and \
+            motion.get("linear_clock_source") != "wall_time":
+        return fail("linear mode must use wall_time clock source")
     if "1" not in data["badconn"]["presets"]:
         return fail("badconn preset 1 is missing")
     if (ROOT / "config" / "badconnconfig.json").exists():

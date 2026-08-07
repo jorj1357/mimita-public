@@ -105,6 +105,7 @@ void logResolvedConfig(const NetworkingConfigData& c, const std::string& fileNam
     Debug::warn(Debug::Category::Networking,
         "[NETWORK CONFIG] Resolved file=%s direct=%d interp=%d fixedDelayMs=%.0f "
         "adaptive=%d adaptiveMinMaxMs=%.0f/%.0f minSnapshots=%zu "
+        "linearDelayTicks=%u linearMinMaxTicks=%u/%u clock=%s reanchorMs=%.0f "
         "eventTimeline=%d eventHoldMs=%.0f inputHz=%.0f pingMs=%.0f "
         "attackRetryMs=%.0f attackAttempts=%u attackTimeoutMs=%.0f "
         "reconnectBackoffMs=%.0f reconnectAttempts=%u reconnectMaxMs=%.0f "
@@ -118,6 +119,11 @@ void logResolvedConfig(const NetworkingConfigData& c, const std::string& fileNam
         c.adaptiveSnapshotBuffer.minimumDelaySeconds * 1000.0,
         c.adaptiveSnapshotBuffer.maximumDelaySeconds * 1000.0,
         c.remotePlayers.minimumSnapshotsBeforeRendering,
+        (unsigned)c.remoteMotionSmoothing.linearDelayTicks,
+        (unsigned)c.remoteMotionSmoothing.linearMinDelayTicks,
+        (unsigned)c.remoteMotionSmoothing.linearMaxDelayTicks,
+        c.remoteMotionSmoothing.linearClockSource.c_str(),
+        c.remoteMotionSmoothing.linearReanchorOnlyIfErrorSeconds * 1000.0,
         (int)c.eventTimeline.enabled,
         c.eventTimeline.remoteEffectMaximumHoldMs,
         c.runtimeRates.inputSendRateHz,
@@ -387,6 +393,17 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
         if (c.linearMaxDelayTicks > 0 &&
             c.linearMaxDelayTicks < c.linearMinDelayTicks)
             c.linearMaxDelayTicks = c.linearMinDelayTicks;
+        if (c.linearMaxDelayTicks > 0 &&
+            c.linearMaxDelayTicks < c.linearDelayTicks)
+        {
+            Debug::warn(Debug::Category::Networking,
+                "[NETWORK CONFIG] linear_max_delay_ticks=%u was below "
+                "linear_delay_ticks=%u; raising max so the configured fixed "
+                "linear delay is not silently clamped down.\n",
+                (unsigned)c.linearMaxDelayTicks,
+                (unsigned)c.linearDelayTicks);
+            c.linearMaxDelayTicks = c.linearDelayTicks;
+        }
         c.linearAllowExtrapolation = readBool(
             r, "linear_allow_extrapolation", c.linearAllowExtrapolation);
         c.linearCatchupRateTicksPerSecond = clampMin(
@@ -402,6 +419,19 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
             0u, (uint32_t)clampMin(
                     readDouble(r, "linear_snap_after_gap_ticks",
                                (double)c.linearSnapAfterGapTicks), 0.0));
+        c.linearClockSource = readString(
+            r, "linear_clock_source", c.linearClockSource);
+        if (c.linearClockSource != "wall_time" &&
+            c.linearClockSource != "frame_dt")
+            c.linearClockSource = "wall_time";
+        c.linearReanchorEnabled = readBool(
+            r, "linear_reanchor_enabled", c.linearReanchorEnabled);
+        c.linearReanchorOnlyIfErrorSeconds = readMsRangeSeconds(
+            r, "linear_reanchor_only_if_error_ms",
+            c.linearReanchorOnlyIfErrorSeconds, 0.0, 5000.0);
+        c.maxRenderTimeJumpSeconds = readMsRangeSeconds(
+            r, "max_render_time_jump_ms",
+            c.maxRenderTimeJumpSeconds, 0.0, 1000.0);
     }
 
     // ── death_effects ────────────────────────────────────────────────
@@ -578,6 +608,18 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
         c.showBufferSize = readBool(r, "show_buffer_size", c.showBufferSize);
         c.logSnapshotArrival = readBool(r, "log_snapshot_arrival", c.logSnapshotArrival);
         c.logInterpolationState = readBool(r, "log_interpolation_state", c.logInterpolationState);
+        c.interpolationLogRateHz = clampRange(
+            readDouble(r, "interpolation_log_rate_hz", c.interpolationLogRateHz),
+            0.1, 60.0);
+        c.detectInterpolationJitter = readBool(
+            r, "detect_interpolation_jitter", c.detectInterpolationJitter);
+        c.maxAllowedAlphaJump = clampRange(
+            readDouble(r, "max_allowed_alpha_jump", c.maxAllowedAlphaJump),
+            0.0, 1.0);
+        c.maxAllowedVisualDeltaMultiplier = clampRange(
+            readDouble(r, "max_allowed_visual_delta_multiplier",
+                       c.maxAllowedVisualDeltaMultiplier),
+            0.0, 100.0);
     }
 
     out = next;

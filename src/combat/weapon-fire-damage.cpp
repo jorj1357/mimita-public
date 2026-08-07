@@ -262,9 +262,15 @@ void processRemotePlayerHit(
     presentRemoteHit(def, hitEnd, hitNormal, shotDirection, nearest, hitPart,
                      shooter.username, remoteVictim->username, totalDamage);
 
+    const int hpBeforePrediction = remoteVictim
+        ? remoteVictim->currentHp : totalDamage;
+    if (gpMpContext && gpMpContext->active && remoteVictim)
+        MimitaNet::mpApplyPredictedDamage(
+            *gpMpContext, remoteTargetId, totalDamage, false);
+
     // Predicted kill: if this hit would drop the victim to 0 hp, show the
     // death immediately. The server's DamageConfirmedEvent reconciles it.
-    if (remoteVictim && totalDamage >= remoteVictim->currentHp)
+    if (remoteVictim && totalDamage >= hpBeforePrediction)
     {
         remoteVictim->killedByWeapon = def.displayName;
         remoteVictim->lastDamagedBy = shooter.username;
@@ -304,9 +310,14 @@ void processRemoteNpcHit(
         presentRemoteHit(def, hitEnd, normal, -normal, nearest, hitPart,
                          shooter.username, remoteNpc->username, totalDamage);
 
+        const int hpBeforePrediction = remoteNpc->currentHp;
+        if (gpMpContext && gpMpContext->active)
+            MimitaNet::mpApplyPredictedDamage(
+                *gpMpContext, remoteNpcTargetId, totalDamage, true);
+
         // Predicted kill: the server NpcDamageEvent remains authoritative and
         // reconciles this (revive + disagreement if the server disagrees).
-        if (totalDamage >= remoteNpc->currentHp)
+        if (totalDamage >= hpBeforePrediction)
         {
             remoteNpc->killedByWeapon = def.displayName;
             remoteNpc->lastDamagedBy = shooter.username;

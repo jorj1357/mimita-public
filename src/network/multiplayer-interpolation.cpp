@@ -12,6 +12,7 @@
 #include "network/net_common.h"
 #include "network/simulation-constants.h"
 #include "network/remote-entity-lifecycle.h"
+#include "network/disagreement-visuals.h"
 #include "config/networking-config.h"
 #include "avatar/avatar.h"
 #include "config/player-settings.h"
@@ -32,6 +33,12 @@ namespace MimitaNet {
 bool gNetInterpDebug = false;
 
 namespace {
+
+uint64_t gInterpolationDebugFrame = 0;
+double gInterpolationClockStepMs = 0.0;
+uint32_t gInterpolationReanchorCount = 0;
+double gInterpolationReanchorMagnitudeMs = 0.0;
+std::string gInterpolationReanchorReason;
 
 SnapshotTransform transformFromEntity(const SnapshotEntity& entity)
 {
@@ -92,6 +99,7 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
 {
     const uint32_t oldestTick = interpolation.buffer.front().serverTick;
     const uint32_t newestTick = interpolation.buffer.back().serverTick;
+    const double previousAlpha = interpolation.sampleAlpha;
 
     const double delayTicks = delaySeconds * (double)GAMEPLAY_SIMULATION_HZ;
     const double desiredRenderTick = globalRenderTick - delayTicks;
@@ -100,7 +108,28 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
     const double prevRenderTick = interpolation.renderTick;
     const double renderTick = (prevRenderTick > desiredRenderTick)
         ? prevRenderTick : desiredRenderTick;
+    interpolation.previousRenderTick = prevRenderTick;
+    interpolation.renderTickDelta =
+        prevRenderTick > 0.0 ? renderTick - prevRenderTick : 0.0;
+    interpolation.holding = false;
+    interpolation.snappedOrCorrected = false;
+    interpolation.renderSampleJumped = false;
+    interpolation.sampleOlderTick = oldestTick;
+    interpolation.sampleNewerTick = newestTick;
+    interpolation.previousSampleAlpha = previousAlpha;
+    interpolation.sampleAlpha = 0.0;
+    interpolation.sampleAlphaDelta = 0.0;
     interpolation.renderTick = renderTick;
+    const double renderStepMs = interpolation.renderTickDelta /
+        (double)GAMEPLAY_SIMULATION_HZ * 1000.0;
+    const double maxJumpMs = NetworkingConfig::instance()
+        .data().remoteMotionSmoothing.maxRenderTimeJumpSeconds * 1000.0;
+    if (prevRenderTick > 0.0 && maxJumpMs > 0.0 &&
+        renderStepMs > gInterpolationClockStepMs + maxJumpMs)
+    {
+        interpolation.renderSampleJumped = true;
+        ++interpolation.renderJumpCount;
+    }
 
     // Buffer ran dry: renderTick is newer than everything buffered. Extrapolate
     // along the newest velocity. When extrapolation_keep_moving is set, keep
@@ -109,33 +138,44 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
     // spot, then skip"). Otherwise stop at the cap.
     if (renderTick > (double)newestTick)
     {
+        ++interpolation.bufferUnderrunCount;
         const SnapshotTransform& newest = interpolation.buffer.back();
+        interpolation.sampleOlderTick = newestTick;
+        interpolation.sampleNewerTick = newestTick;
+        interpolation.sampleAlpha = 1.0;
+        interpolation.sampleAlphaDelta = interpolation.sampleAlpha - previousAlpha;
+        if (!allowExtrapolation)
+        {
+            interpolation.extrapolating = false;
+            interpolation.holding = true;
+            ++interpolation.holdCount;
+            out = interpolation.hasRendered ? interpolation.lastRender : newest;
+            return;
+        }
         out = newest;
         interpolation.extrapolating = true;
-        if (allowExtrapolation)
+        const double extraTicks = renderTick - (double)newestTick;
+        const double extraMs =
+            extraTicks / (double)GAMEPLAY_SIMULATION_HZ * 1000.0;
+        const double capMs =
+            interpCfg.maximumExtrapolationSeconds * 1000.0;
+        double moveMs = extraMs;
+        if (extraMs > capMs && interpCfg.extrapolationKeepMoving)
         {
-            const double extraTicks = renderTick - (double)newestTick;
-            const double extraMs =
-                extraTicks / (double)GAMEPLAY_SIMULATION_HZ * 1000.0;
-            const double capMs =
-                interpCfg.maximumExtrapolationSeconds * 1000.0;
-            double moveMs = extraMs;
-            if (extraMs > capMs && interpCfg.extrapolationKeepMoving)
-            {
-                const double beyond = extraMs - capMs;
-                const double decayMs = std::max(1.0, capMs * 4.0);
-                moveMs = capMs + beyond * std::exp(-beyond / decayMs);
-            }
-            else if (extraMs > capMs)
-            {
-                moveMs = capMs;
-            }
-            out.position = newest.position +
-                newest.velocity * (float)(moveMs / 1000.0);
-            if (gNetInterpDebug)
-                printf("[NETINTERP EXTRAP] id=%u over=%.1fms\n",
-                       interpolation.networkEntityId, moveMs);
+            const double beyond = extraMs - capMs;
+            const double decayMs = std::max(1.0, capMs * 4.0);
+            moveMs = capMs + beyond * std::exp(-beyond / decayMs);
         }
+        else if (extraMs > capMs)
+        {
+            moveMs = capMs;
+        }
+        out.position = newest.position +
+            newest.velocity * (float)(moveMs / 1000.0);
+        if (gNetInterpDebug)
+            Debug::log(Debug::Category::Networking,
+                "[NETINTERP EXTRAP] id=%u over=%.1fms",
+                interpolation.networkEntityId, moveMs);
         out.serverTick = (uint32_t)std::floor(renderTick);
         return;
     }
@@ -147,8 +187,14 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
     // arrive (no manual catch-up needed).
     if (renderTick < (double)oldestTick)
     {
+        interpolation.holding = true;
+        ++interpolation.holdCount;
         out = interpolation.buffer.front();
         out.serverTick = oldestTick;
+        interpolation.sampleOlderTick = oldestTick;
+        interpolation.sampleNewerTick = oldestTick;
+        interpolation.sampleAlpha = 0.0;
+        interpolation.sampleAlphaDelta = -previousAlpha;
         return;
     }
 
@@ -183,6 +229,10 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
                 (double)(newer->serverTick - older->serverTick);
         alpha = std::clamp(alpha, 0.0, 1.0);
     }
+    interpolation.sampleOlderTick = older->serverTick;
+    interpolation.sampleNewerTick = newer->serverTick;
+    interpolation.sampleAlpha = alpha;
+    interpolation.sampleAlphaDelta = alpha - previousAlpha;
 
     // Time-gap protection: a hole wider than the gap threshold (e.g. a long
     // blackout) is a discontinuity, not a velocity bridge. With teleport_gap_snap
@@ -195,6 +245,8 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
     if ((uint32_t)(newer->serverTick - older->serverTick) > gapTicks &&
         interpCfg.teleportGapSnap)
     {
+        interpolation.snappedOrCorrected = true;
+        ++interpolation.hardSnapCount;
         out = *newer;
         out.serverTick = newer->serverTick;
         return;
@@ -205,6 +257,8 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
     const float gapDist = glm::length(newer->position - older->position);
     if (gapDist > interpCfg.teleportDistance)
     {
+        interpolation.snappedOrCorrected = true;
+        ++interpolation.hardSnapCount;
         out = *newer;
         return;
     }
@@ -279,6 +333,144 @@ double adaptiveDelaySeconds(EntityInterpolationState& interpolation,
     else
         interpolation.adaptiveDelaySeconds += delta > 0.0 ? maxStep : -maxStep;
     return interpolation.adaptiveDelaySeconds;
+}
+
+void clearPredictedDeath(Player& player, const glm::vec3& at,
+                         uint32_t entityId, const char* reason,
+                         bool showDisagreement)
+{
+    if (!player.netPredictedDead)
+        return;
+    player.dead = false;
+    player.netPredictedDead = false;
+    player.proceduralFrozen = false;
+    player.respawnTimer = 0.0f;
+    player.deathAnim = Player::DeathAnimState{};
+    Debug::warn(Debug::Category::Networking,
+        "[NET PREDICTED DEATH ROLLBACK] entityId=%u reason=%s pos=(%.2f,%.2f,%.2f)\n",
+        entityId, reason ? reason : "unknown", at.x, at.y, at.z);
+
+    if (showDisagreement &&
+        NetworkingConfig::instance().data().disagreement.enabled)
+    {
+        DisagreementEvent ev;
+        ev.timeMs = nowMs();
+        ev.reason = DISAGREEMENT_INVALID_STATE;
+        ev.position = at;
+        ev.correction = glm::vec3(0.0f);
+        ev.targetPlayerId = entityId;
+        ev.description = reason ? reason : "PREDICTED DEATH ROLLBACK";
+        spawnDisagreementEffect(ev);
+        logDisagreement(ev);
+    }
+}
+
+int applyPredictedHealthOverlay(Player& player,
+                                EntityInterpolationState& interpolation,
+                                int authoritativeHealth)
+{
+    const uint64_t now = nowMs();
+    const double timeoutMs = NetworkingConfig::instance()
+        .data().retries.attackRequestTimeoutMs;
+
+    if (interpolation.predictedHealthCap >= 0 &&
+        authoritativeHealth <= interpolation.predictedHealthCap)
+    {
+        interpolation.pendingPredictedDamage = 0;
+        interpolation.predictedHealthCap = -1;
+    }
+    else if (interpolation.predictedHealthCap >= 0 &&
+             interpolation.predictedHealthUpdatedMs != 0 &&
+             now >= interpolation.predictedHealthUpdatedMs &&
+             (double)(now - interpolation.predictedHealthUpdatedMs) > timeoutMs)
+    {
+        interpolation.pendingPredictedDamage = 0;
+        interpolation.predictedHealthCap = -1;
+        ++interpolation.predictedHealthRollbackCount;
+        if (authoritativeHealth > 0)
+            clearPredictedDeath(player, player.pos, interpolation.networkEntityId,
+                                "PREDICTED HIT TIMEOUT", false);
+    }
+
+    if (interpolation.predictedHealthCap >= 0)
+        return std::min(authoritativeHealth, interpolation.predictedHealthCap);
+    return authoritativeHealth;
+}
+
+void logInterpolationState(EntityInterpolationState& interpolation,
+                           uint32_t entityId,
+                           const glm::vec3& rawPos,
+                           const glm::vec3& finalPos)
+{
+    const NetworkingConfigData& cfg = NetworkingConfig::instance().data();
+    if (!gNetInterpDebug && !cfg.debug.logInterpolationState)
+        return;
+
+    const uint64_t now = nowMs();
+    const double rateHz = std::max(0.1, cfg.debug.interpolationLogRateHz);
+    const uint64_t intervalMs = (uint64_t)std::max(1.0, 1000.0 / rateHz);
+    const bool alphaJump =
+        cfg.debug.detectInterpolationJitter &&
+        std::abs(interpolation.sampleAlphaDelta) >
+            cfg.debug.maxAllowedAlphaJump;
+    const bool forced = interpolation.renderSampleJumped || alphaJump ||
+        interpolation.snappedOrCorrected;
+    if (!forced && interpolation.lastInterpolationDebugLogMs != 0 &&
+        now - interpolation.lastInterpolationDebugLogMs < intervalMs)
+        return;
+
+    interpolation.lastInterpolationDebugLogMs = now;
+
+    double spanMs = 0.0;
+    if (interpolation.buffer.size() >= 2)
+    {
+        spanMs = (double)(interpolation.buffer.back().serverTick -
+                          interpolation.buffer.front().serverTick) *
+                 (1000.0 / (double)GAMEPLAY_SIMULATION_HZ);
+    }
+    const double renderDtMs = interpolation.renderTickDelta /
+        (double)GAMEPLAY_SIMULATION_HZ * 1000.0;
+    const double delayTicks = interpolation.adaptiveDelaySeconds *
+        (double)GAMEPLAY_SIMULATION_HZ;
+
+    Debug::warn(Debug::Category::Networking,
+        "[NETINTERP STATE] frame=%llu nowMs=%llu id=%u latest=%u older=%u newer=%u "
+        "buf=%zu spanMs=%.1f delayMs=%.1f delayTicks=%.2f renderTick=%.3f "
+        "renderDtMs=%.2f jumped=%d alpha=%.3f alphaDt=%.3f extrap=%d hold=%d "
+        "snap=%d reanchors=%u reanchorReason=%s reanchorMs=%.1f raw=(%.2f,%.2f,%.2f) "
+        "final=(%.2f,%.2f,%.2f) dFinal=%.3f dz=%.3f vz=%.2f hardSnaps=%u "
+        "underruns=%u predDmg=%d hpCap=%d\n",
+        (unsigned long long)gInterpolationDebugFrame,
+        (unsigned long long)now,
+        entityId,
+        interpolation.target.serverTick,
+        interpolation.sampleOlderTick,
+        interpolation.sampleNewerTick,
+        interpolation.buffer.size(),
+        spanMs,
+        interpolation.adaptiveDelaySeconds * 1000.0,
+        delayTicks,
+        interpolation.renderTick,
+        renderDtMs,
+        (int)interpolation.renderSampleJumped,
+        interpolation.sampleAlpha,
+        interpolation.sampleAlphaDelta,
+        (int)interpolation.extrapolating,
+        (int)interpolation.holding,
+        (int)interpolation.snappedOrCorrected,
+        (unsigned)gInterpolationReanchorCount,
+        gInterpolationReanchorReason.empty()
+            ? "none" : gInterpolationReanchorReason.c_str(),
+        gInterpolationReanchorMagnitudeMs,
+        rawPos.x, rawPos.y, rawPos.z,
+        finalPos.x, finalPos.y, finalPos.z,
+        interpolation.lastFinalRenderDelta,
+        interpolation.lastFinalRenderVerticalDelta,
+        interpolation.lastFinalRenderVerticalVelocity,
+        (unsigned)interpolation.hardSnapCount,
+        (unsigned)interpolation.bufferUnderrunCount,
+        interpolation.pendingPredictedDamage,
+        interpolation.predictedHealthCap);
 }
 
 } // anonymous namespace
@@ -428,6 +620,99 @@ bool pushInterpolationTarget(
         interpolation.buffer.pop_front();
 
     return true;
+}
+
+void mpApplyPredictedDamage(MultiplayerContext& ctx, uint32_t entityId,
+                            int damage, bool npc)
+{
+    if (entityId == 0 || damage <= 0)
+        return;
+    auto& replicas = npc ? ctx.remoteNpcs : ctx.remotePlayers;
+    auto& states = npc ? ctx.remoteNpcInterpolation : ctx.remotePlayerInterpolation;
+    auto playerIt = replicas.find(entityId);
+    auto stateIt = states.find(entityId);
+    if (playerIt == replicas.end() || stateIt == states.end())
+        return;
+
+    EntityInterpolationState& interpolation = stateIt->second;
+    Player& replica = playerIt->second;
+    const int baseHealth = std::max(0, replica.currentHp);
+    const int predictedHealth = std::max(0, baseHealth - damage);
+    if (interpolation.predictedHealthCap < 0)
+        interpolation.predictedHealthCap = predictedHealth;
+    else
+        interpolation.predictedHealthCap =
+            std::min(interpolation.predictedHealthCap, predictedHealth);
+    interpolation.pendingPredictedDamage =
+        std::max(0, interpolation.pendingPredictedDamage + damage);
+    interpolation.predictedHealthUpdatedMs = nowMs();
+    replica.currentHp = interpolation.predictedHealthCap;
+
+    Debug::log(Debug::Category::Networking,
+        "[NET PREDICTED DAMAGE] entityId=%u npc=%d damage=%d displayHp=%d pending=%d",
+        entityId, (int)npc, damage, replica.currentHp,
+        interpolation.pendingPredictedDamage);
+}
+
+void mpConfirmPredictedDamage(MultiplayerContext& ctx, uint32_t entityId,
+                              int healthAfter, bool killed, bool npc)
+{
+    if (entityId == 0)
+        return;
+    auto& replicas = npc ? ctx.remoteNpcs : ctx.remotePlayers;
+    auto& states = npc ? ctx.remoteNpcInterpolation : ctx.remotePlayerInterpolation;
+    auto playerIt = replicas.find(entityId);
+    auto stateIt = states.find(entityId);
+    if (playerIt == replicas.end() || stateIt == states.end())
+        return;
+
+    EntityInterpolationState& interpolation = stateIt->second;
+    Player& replica = playerIt->second;
+    healthAfter = std::max(0, healthAfter);
+
+    const bool predictedDeathRollback = !killed && replica.netPredictedDead;
+    if (predictedDeathRollback)
+    {
+        clearPredictedDeath(replica, replica.pos, entityId,
+                            "PREDICTED KILL SERVER SURVIVED", true);
+    }
+
+    interpolation.pendingPredictedDamage = 0;
+    interpolation.predictedHealthCap = healthAfter;
+
+    interpolation.predictedHealthUpdatedMs = nowMs();
+    ++interpolation.predictedHealthConfirmCount;
+    replica.currentHp = killed ? 0 : healthAfter;
+
+    Debug::log(Debug::Category::Networking,
+        "[NET PREDICTED DAMAGE CONFIRM] entityId=%u npc=%d healthAfter=%d killed=%d cap=%d pending=%d",
+        entityId, (int)npc, healthAfter, (int)killed,
+        interpolation.predictedHealthCap,
+        interpolation.pendingPredictedDamage);
+}
+
+void mpRollbackPredictedDamage(MultiplayerContext& ctx, uint32_t entityId,
+                               bool npc, const char* reason)
+{
+    if (entityId == 0)
+        return;
+    auto& replicas = npc ? ctx.remoteNpcs : ctx.remotePlayers;
+    auto& states = npc ? ctx.remoteNpcInterpolation : ctx.remotePlayerInterpolation;
+    auto playerIt = replicas.find(entityId);
+    auto stateIt = states.find(entityId);
+    if (playerIt == replicas.end() || stateIt == states.end())
+        return;
+
+    EntityInterpolationState& interpolation = stateIt->second;
+    Player& replica = playerIt->second;
+    interpolation.pendingPredictedDamage = 0;
+    interpolation.predictedHealthCap = -1;
+    interpolation.predictedHealthUpdatedMs = 0;
+    ++interpolation.predictedHealthRollbackCount;
+    if (interpolation.hasTarget)
+        replica.currentHp = interpolation.target.health;
+    clearPredictedDeath(replica, replica.pos, entityId,
+                        reason ? reason : "PREDICTED HIT ROLLBACK", false);
 }
 
 static void resetPresentationAfterRespawn(Player& player, const SnapshotTransform& target)
@@ -623,6 +908,7 @@ void updateRenderedReplica(
     glm::vec3 renderPos = render.position;
     const float renderYaw = render.yaw;
     const glm::vec3 renderAim = render.aimDirection;
+    interpolation.lastRawInterpolatedPosition = render.position;
 
     // ── Post-interpolation motion filter ─────────────────────────────
     // "direct":  set the position directly (no smoothing).
@@ -632,7 +918,8 @@ void updateRenderedReplica(
     //            motion and dashes pass through (target tracks the body).
     // "spring":  always-on critically-damped spring — literally cannot snap;
     //            adds a few ms of follow-lag on fast turns.
-    if (interpolation.hasRendered && !respawned && !interpCfg.directRender)
+    if (interpolation.hasRendered && !respawned && !interpCfg.directRender &&
+        !linearMode)
     {
         const float safeDt = std::min(dt, 0.05f);
         if (motion.renderFilter == "spring")
@@ -798,26 +1085,17 @@ void updateRenderedReplica(
         // The new life must not inherit the old corpse's spring velocity.
         interpolation.renderSpring = SpringState{};
         interpolation.renderSpringTargetVel = glm::vec3(0.0f);
+        interpolation.pendingPredictedDamage = 0;
+        interpolation.predictedHealthCap = -1;
+        interpolation.predictedHealthUpdatedMs = 0;
     }
     else
         player.pos = renderPos;
     player.vel = render.velocity;
-    player.currentHp = render.health;
-    player.dead = render.health <= 0;
-
-    // Predicted-death rollback: a snapshot showing the replica alive revives it
-    // and clears the local prediction (the server is authoritative).
-    if (player.netPredictedDead && render.health > 0)
-    {
-        player.dead = false;
-        player.netPredictedDead = false;
-        player.proceduralFrozen = false;
-        player.respawnTimer = 0.0f;
-        player.deathAnim = Player::DeathAnimState{};
-        Debug::log(Debug::Category::Networking,
-                   "[NET PREDICTED DEATH ROLLBACK] entityId=%u health=%d snapshot-alive",
-                   entityId, render.health);
-    }
+    const int displayHealth =
+        applyPredictedHealthOverlay(player, interpolation, render.health);
+    player.currentHp = displayHealth;
+    player.dead = displayHealth <= 0 || player.netPredictedDead;
 
     // ── Death effect (snapshot-driven, loss-proof) ───────────────────
     // Detect the >0 → <=0 health transition in the render stream and spawn the
@@ -856,6 +1134,25 @@ void updateRenderedReplica(
         interpolation.lastRender = render;
     interpolation.hasRendered = true;
     interpolation.lastRenderedServerTick = render.serverTick;
+    if (interpolation.hasFinalRenderPosition)
+    {
+        const glm::vec3 delta = player.pos - interpolation.lastFinalRenderPosition;
+        interpolation.lastFinalRenderDelta = glm::length(delta);
+        interpolation.lastFinalRenderVerticalDelta = delta.z;
+        interpolation.lastFinalRenderVerticalVelocity =
+            dt > 0.0f ? delta.z / dt : 0.0f;
+    }
+    else
+    {
+        interpolation.lastFinalRenderDelta = 0.0f;
+        interpolation.lastFinalRenderVerticalDelta = 0.0f;
+        interpolation.lastFinalRenderVerticalVelocity = 0.0f;
+        interpolation.hasFinalRenderPosition = true;
+    }
+    interpolation.lastFinalRenderPosition = player.pos;
+    logInterpolationState(interpolation, entityId,
+                          interpolation.lastRawInterpolatedPosition,
+                          player.pos);
 
     // Body-facing yaw and aim use the interpolated render values.
     {
@@ -1114,6 +1411,7 @@ void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)
     const bool linearClock = (motionClock.renderFilter == "linear");
     const double linearCatchupTps =
         motionClock.linearCatchupRateTicksPerSecond;
+    ++ctx.interpolationFrameNumber;
 
     // If the server regressed its tick domain (map change / server restart),
     // the old clock is invalid — reset it so monotonicity can't pin it high.
@@ -1122,29 +1420,80 @@ void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)
     {
         ctx.interpolationRenderTick = 0.0;
         ctx.interpolationClockStarted = false;
+        ctx.interpolationClockLastUpdateMs = 0;
+        ctx.lastInterpolationReanchorReason = "server-tick-regressed";
     }
     ctx.lastClockAnchorServerTick = ctx.latestServerTick;
 
     if (ctx.latestServerTick != 0 && ctx.lastSnapshotReceivedMs != 0)
     {
+        const uint64_t nowClock = nowMs();
         if (!ctx.interpolationClockStarted)
         {
             ctx.interpolationRenderTick = (double)ctx.latestServerTick;
             ctx.interpolationClockStarted = true;
+            ctx.interpolationClockLastUpdateMs = nowClock;
+            ctx.lastInterpolationClockStepMs = 0.0;
         }
         else
         {
-            const double dtTicks = (double)dt * (double)GAMEPLAY_SIMULATION_HZ;
-            if (linearClock && linearCatchupTps > 0.0)
-                ctx.interpolationRenderTick +=
-                    dtTicks + linearCatchupTps * (double)dt;
+            double elapsedMs = 0.0;
+            if (linearClock && motionClock.linearClockSource == "wall_time")
+            {
+                elapsedMs = ctx.interpolationClockLastUpdateMs != 0 &&
+                            nowClock >= ctx.interpolationClockLastUpdateMs
+                    ? (double)(nowClock - ctx.interpolationClockLastUpdateMs)
+                    : 0.0;
+            }
             else
-                ctx.interpolationRenderTick += dtTicks;
-            // Monotonic re-anchor: never render behind the newest received data.
-            if (ctx.interpolationRenderTick < (double)ctx.latestServerTick)
+            {
+                elapsedMs = std::max(0.0, (double)dt * 1000.0);
+            }
+            ctx.interpolationClockLastUpdateMs = nowClock;
+            const double dtTicks =
+                elapsedMs / 1000.0 * (double)GAMEPLAY_SIMULATION_HZ;
+            double clockStepTicks = dtTicks;
+            if (linearClock && linearCatchupTps > 0.0)
+                clockStepTicks += linearCatchupTps * (elapsedMs / 1000.0);
+            ctx.interpolationRenderTick += clockStepTicks;
+            ctx.lastInterpolationClockStepMs =
+                clockStepTicks / (double)GAMEPLAY_SIMULATION_HZ * 1000.0;
+
+            // Rare safety re-anchor only. Snapshot bursts must fill the buffer;
+            // they must not drag the render clock forward every time the newest
+            // received server tick jumps.
+            const double errorTicks =
+                (double)ctx.latestServerTick - ctx.interpolationRenderTick;
+            const double reanchorTicks =
+                motionClock.linearReanchorOnlyIfErrorSeconds *
+                (double)GAMEPLAY_SIMULATION_HZ;
+            if (motionClock.linearReanchorEnabled &&
+                errorTicks > reanchorTicks)
+            {
+                const double before = ctx.interpolationRenderTick;
                 ctx.interpolationRenderTick = (double)ctx.latestServerTick;
+                ++ctx.interpolationReanchorCount;
+                ctx.lastInterpolationReanchorMagnitudeMs =
+                    (ctx.interpolationRenderTick - before) /
+                    (double)GAMEPLAY_SIMULATION_HZ * 1000.0;
+                ctx.lastInterpolationReanchorReason = "clock-lag-exceeded";
+                Debug::warn(Debug::Category::Networking,
+                    "[NETINTERP REANCHOR] reason=%s latest=%u before=%.2f after=%.2f "
+                    "magnitudeMs=%.1f thresholdMs=%.1f\n",
+                    ctx.lastInterpolationReanchorReason.c_str(),
+                    ctx.latestServerTick, before, ctx.interpolationRenderTick,
+                    ctx.lastInterpolationReanchorMagnitudeMs,
+                    motionClock.linearReanchorOnlyIfErrorSeconds * 1000.0);
+            }
         }
     }
+
+    gInterpolationDebugFrame = ctx.interpolationFrameNumber;
+    gInterpolationClockStepMs = ctx.lastInterpolationClockStepMs;
+    gInterpolationReanchorCount = ctx.interpolationReanchorCount;
+    gInterpolationReanchorMagnitudeMs =
+        ctx.lastInterpolationReanchorMagnitudeMs;
+    gInterpolationReanchorReason = ctx.lastInterpolationReanchorReason;
 
     for (auto& kv : ctx.remotePlayers)
     {

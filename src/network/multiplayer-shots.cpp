@@ -218,7 +218,6 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
         npcPtr = &npcIt->second;
         if (!npcPtr->username.empty())
             npcName = npcPtr->username;
-        npcPtr->currentHp = event->npcHealth;
         printf("[NET NPC DAMAGE RECV] npcId=%u damage=%d health=%d killed=%d\n",
                event->npcEntityId, event->damage, event->npcHealth,
                (int)event->killed);
@@ -278,6 +277,14 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
             printf("[NET NPC HIT PRESENT] shooter=%u npc=%u damage=%d\n",
                    event->shooterPlayerId, event->npcEntityId, event->damage);
         }
+    }
+    if (npcPtr)
+    {
+        if (isLocalShooter)
+            mpConfirmPredictedDamage(ctx, event->npcEntityId, event->npcHealth,
+                                     event->killed != 0, true);
+        else
+            npcPtr->currentHp = event->npcHealth;
     }
 
     if (event->killed)

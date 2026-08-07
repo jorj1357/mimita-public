@@ -228,6 +228,17 @@ struct RemoteMotionSmoothingConfig
     // instead of bridging a stale straight line. 0 = use the global
     // teleport_gap_ticks.
     uint32_t linearSnapAfterGapTicks = 30;
+    // linear mode clock source. "wall_time" advances from monotonic real time;
+    // any other value falls back to frame dt for debugging only.
+    std::string linearClockSource = "wall_time";
+    // linear mode safety re-anchor. Ordinary snapshot bursts must not move the
+    // render clock; this fires only when the estimated server clock falls far
+    // behind the newest received tick (usually after a long pause/blackout).
+    bool linearReanchorEnabled = true;
+    double linearReanchorOnlyIfErrorSeconds = 0.250;
+    // Diagnostic threshold only: logs when the delayed render sample advances
+    // by more than this many ms in one rendered frame.
+    double maxRenderTimeJumpSeconds = 0.005;
 };
 
 struct NetworkDeathEffectsConfig
@@ -347,6 +358,10 @@ struct NetworkingDebugConfig
     bool showBufferSize = false;
     bool logSnapshotArrival = false;
     bool logInterpolationState = false;
+    double interpolationLogRateHz = 10.0;
+    bool detectInterpolationJitter = true;
+    double maxAllowedAlphaJump = 0.35;
+    double maxAllowedVisualDeltaMultiplier = 2.5;
 };
 
 struct NetworkingConfigData
