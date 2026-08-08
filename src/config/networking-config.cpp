@@ -548,6 +548,10 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
         c.reconnectMaxBackoffMs = readMsRange(
             r, "reconnect_max_backoff_ms", c.reconnectMaxBackoffMs,
             c.reconnectInitialBackoffMs, 60000.0);
+        c.reconnectGraceMs = readMsRange(
+            r, "reconnect_grace_ms", c.reconnectGraceMs, 10000.0, 300000.0);
+        c.reconnectIntervalMs = readMsRange(
+            r, "reconnect_interval_ms", c.reconnectIntervalMs, 1000.0, 30000.0);
     }
 
     // ── reliable_gameplay_events ─────────────────────────────────────
@@ -599,6 +603,8 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
         c.clientTimeoutMs = clampMin(readDouble(r, "client_timeout_ms", c.clientTimeoutMs), 100.0);
         c.serverTimeoutMs = clampMin(readDouble(r, "server_timeout_ms", c.serverTimeoutMs), 100.0);
         c.connectTimeoutMs = clampMin(readDouble(r, "connect_timeout_ms", c.connectTimeoutMs), 100.0);
+        c.stalePacketThresholdMs = clampMin(
+            readDouble(r, "stale_packet_threshold_ms", c.stalePacketThresholdMs), 100.0);
     }
 
     // ── debug ─────────────────────────────────────────────────────────

@@ -460,6 +460,7 @@ void tickServerSwordCombat(SOCKET sock,
             event.attackType = isLunge ? 2 : 1;
             event.killed = dmgResult.killed ? 1 : 0;
             event.damageConfirmed = dmgResult.applied ? 1 : 0;
+            event.targetTransformEpoch = target.transformEpoch;
             event.hitX = hitPoint.x; event.hitY = hitPoint.y; event.hitZ = hitPoint.z;
             event.normalX = kbDir.x; event.normalY = kbDir.y; event.normalZ = kbDir.z;
             event.knockX = kbVec.x; event.knockY = kbVec.y; event.knockZ = kbVec.z;

@@ -617,16 +617,53 @@ void engineTickNet(Engine& engine, float dt)
                     event.targetPlayerId);
                 if (remote != mpContext.remotePlayers.end())
                 {
-                    remote->second.netPredictedDead = false;
-                    remote->second.dead = false;
-                    DeathSystem::instance().kill(
-                        remote->second,
-                        "net_player_" + std::to_string(event.targetPlayerId),
-                        "player",
-                        shooterName,
-                        event.direction,
-                        event.weapon == MimitaNet::NETWORK_WEAPON_GODBALL
-                            ? 18.0f : 12.0f);
+                    // The reliable kill can arrive after the victim already
+                    // respawned (instant respawn or delayed/lossy delivery).
+                    // Re-running the death animation on the new life would
+                    // freeze a corpse at the respawn position and hide the
+                    // live body. Skip the kill when the victim's replica has
+                    // advanced past the life this kill describes.
+                    bool victimRespawnedSinceKill = false;
+                    if (event.targetTransformEpoch != 0)
+                    {
+                        auto interpIt =
+                            mpContext.remotePlayerInterpolation.find(
+                                event.targetPlayerId);
+                        if (interpIt !=
+                                mpContext.remotePlayerInterpolation.end() &&
+                            interpIt->second.lastSnapshotTransformEpoch >
+                                (uint32_t)event.targetTransformEpoch)
+                            victimRespawnedSinceKill = true;
+                    }
+                    if (!victimRespawnedSinceKill)
+                    {
+                        remote->second.netPredictedDead = false;
+                        remote->second.dead = false;
+                        DeathSystem::instance().kill(
+                            remote->second,
+                            "net_player_" + std::to_string(event.targetPlayerId),
+                            "player",
+                            shooterName,
+                            event.direction,
+                            event.weapon == MimitaNet::NETWORK_WEAPON_GODBALL
+                                ? 18.0f : 12.0f);
+                    }
+                    else
+                    {
+                        uint32_t currentEpoch = 0;
+                        auto interpIt =
+                            mpContext.remotePlayerInterpolation.find(
+                                event.targetPlayerId);
+                        if (interpIt !=
+                                mpContext.remotePlayerInterpolation.end())
+                            currentEpoch =
+                                interpIt->second.lastSnapshotTransformEpoch;
+                        printf("[NET KILL SKIP] target=%u killEpoch=%u "
+                               "currentEpoch=%u reason=victim-already-respawned\n",
+                               event.targetPlayerId,
+                               (unsigned)event.targetTransformEpoch,
+                               currentEpoch);
+                    }
                 }
             }
         }

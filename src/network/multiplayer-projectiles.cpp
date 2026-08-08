@@ -898,9 +898,36 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
         }
         if (event->targetPlayerId != ctx.localPlayerId)
         {
-            mpConfirmPredictedDamage(
-                ctx, event->targetPlayerId, event->healthAfter,
-                event->killed != 0, false);
+            // A confirmed-damage event can arrive after the victim already
+            // respawned (instant respawn or delayed/lossy delivery). Applying
+            // the predicted health/death to the new life would render the
+            // respawned body as dead (hidden) for the hold window. Skip it
+            // when the victim has advanced past the life this event describes.
+            bool victimLifeFresh = true;
+            if (event->targetSpawnGeneration != 0)
+            {
+                auto victimIt = ctx.remotePlayers.find(event->targetPlayerId);
+                if (victimIt != ctx.remotePlayers.end())
+                    victimLifeFresh = victimIt->second.spawnGeneration ==
+                        event->targetSpawnGeneration;
+            }
+            if (victimLifeFresh)
+            {
+                mpConfirmPredictedDamage(
+                    ctx, event->targetPlayerId, event->healthAfter,
+                    event->killed != 0, false);
+            }
+            else
+            {
+                uint32_t currentGen = 0;
+                auto victimIt = ctx.remotePlayers.find(event->targetPlayerId);
+                if (victimIt != ctx.remotePlayers.end())
+                    currentGen = victimIt->second.spawnGeneration;
+                printf("[NET PREDICTED DAMAGE SKIP] target=%u eventGen=%u "
+                       "currentGen=%u reason=victim-already-respawned\n",
+                       event->targetPlayerId, (unsigned)event->targetSpawnGeneration,
+                       currentGen);
+            }
         }
     }
 
@@ -1104,6 +1131,7 @@ void mpProcessMeleeHitEventPacket(MultiplayerContext& ctx, const MeleeHitEventPa
         out.impactType = SHOT_IMPACT_ENTITY;
         out.killed = event->killed != 0;
         out.damageConfirmed = event->damageConfirmed != 0;
+        out.targetTransformEpoch = event->targetTransformEpoch;
         out.hit = {event->hitX, event->hitY, event->hitZ};
         out.normal = {event->normalX, event->normalY, event->normalZ};
         out.knockback = {event->knockX, event->knockY, event->knockZ};
