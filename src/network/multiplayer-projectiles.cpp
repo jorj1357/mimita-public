@@ -9,6 +9,7 @@
 */
 
 #include "network/multiplayer-context.h"
+#include "network/simulation-constants.h"
 #include "config/networking-config.h"
 #include "network/confirmed-damage-presentation.h"
 #include "network/network-weapons.h"
@@ -320,6 +321,11 @@ bool acceptReliableEventOnce(MultiplayerContext& ctx, uint32_t eventId, uint32_t
 }
 
 } // namespace
+
+bool mpAcceptReliableEventOnce(MultiplayerContext& ctx, uint32_t eventId, uint32_t eventSessionId)
+{
+    return acceptReliableEventOnce(ctx, eventId, eventSessionId);
+}
 
 uint32_t mpSendProjectileFireRequest(
     MultiplayerContext& ctx,
@@ -896,6 +902,18 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
         if (event->targetPlayerId == ctx.localPlayerId)
         {
             ctx.pendingKnockback += knockback;
+            // Health synced to the shot visual: queue a pending change applied
+            // after a short render-delay hold so the HP drops WITH the shot
+            // visual, not a frame before it. The reconcile never drops HP from
+            // snapshots while this is held.
+            const double delayMs = NetworkingConfig::instance().data()
+                .remoteMotionSmoothing.linearDelayTicks *
+                (1000.0 / (double)GAMEPLAY_SIMULATION_HZ);
+            MultiplayerContext::PendingVictimHealth ph;
+            ph.healthAfter = event->healthAfter;
+            ph.killed = event->killed != 0;
+            ph.applyAtMs = nowMs() + (uint64_t)delayMs;
+            ctx.pendingVictimHealth.push_back(ph);
         }
         else
         {

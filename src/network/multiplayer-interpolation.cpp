@@ -16,17 +16,24 @@
 #include "config/networking-config.h"
 #include "avatar/avatar.h"
 #include "config/player-settings.h"
+#include "combat/death-system.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "audio/audio.h"
 #include "debug/debug-log.h"
+#include "terminal/terminal-state.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <glm/glm.hpp>
+
+// Shared online-mode context pointer (defined in main.cpp), used by the
+// predicted kill-heal rollback inside clearPredictedDeath so the HP restore and
+// the disagreement effect land on the exact same tick.
+extern MimitaNet::MultiplayerContext* gpMpContext;
 
 namespace MimitaNet {
 
@@ -170,8 +177,14 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
         {
             moveMs = capMs;
         }
-        out.position = newest.position +
+        glm::vec3 extrapPos = newest.position +
             newest.velocity * (float)(moveMs / 1000.0);
+        // A grounded body must never be extrapolated below its last known floor
+        // height (a resting player's broadcast vz is ~0 now, but this is the
+        // hard guarantee against sinking into the ground during dry spells).
+        if (newest.onGround)
+            extrapPos.z = std::max(extrapPos.z, newest.position.z);
+        out.position = extrapPos;
         if (gNetInterpDebug)
             Debug::log(Debug::Category::Networking,
                 "[NETINTERP EXTRAP] id=%u over=%.1fms",
@@ -341,6 +354,19 @@ void clearPredictedDeath(Player& player, const glm::vec3& at,
 {
     if (!player.netPredictedDead)
         return;
+
+    // A predicted kill-heal must roll back in the exact same tick the server
+    // disagreement effect appears, so the HP restore is never a silent desync.
+    // Force the disagreement visual on whenever a pending predicted kill-heal
+    // for this entity is being rolled back.
+    if (gpMpContext && gpMpContext->active &&
+        gpMpContext->predictedKillHealPending &&
+        gpMpContext->predictedKillHealTargetEntityId == entityId)
+    {
+        showDisagreement = true;
+        mpRollbackPredictedKillHeal(*gpMpContext, entityId);
+    }
+
     player.dead = false;
     player.netPredictedDead = false;
     player.proceduralFrozen = false;
@@ -713,6 +739,50 @@ void mpRollbackPredictedDamage(MultiplayerContext& ctx, uint32_t entityId,
         replica.currentHp = interpolation.target.health;
     clearPredictedDeath(replica, replica.pos, entityId,
                         reason ? reason : "PREDICTED HIT ROLLBACK", false);
+}
+
+void mpApplyPredictedKillHeal(MultiplayerContext& ctx, uint32_t entityId, bool npc)
+{
+    // Only one pending predicted heal at a time; the first unresolved kill owns
+    // it until it is confirmed or rolled back.
+    if (!gpPlayer || entityId == 0 || ctx.predictedKillHealPending)
+        return;
+    ctx.predictedKillHealPending = true;
+    ctx.predictedKillHealTargetEntityId = entityId;
+    ctx.predictedKillHealTargetIsNpc = npc;
+    ctx.predictedKillHealBeforeHp = gpPlayer->currentHp;
+    DeathSystem::instance().healKillerToFull(*gpPlayer, gpPlayer->username);
+    Debug::log(Debug::Category::Networking,
+        "[NET PREDICTED KILL HEAL] target=%u npc=%d before=%d hp=%d\n",
+        entityId, (int)npc, ctx.predictedKillHealBeforeHp, gpPlayer->currentHp);
+}
+
+void mpConfirmPredictedKillHeal(MultiplayerContext& ctx, uint32_t entityId)
+{
+    if (!ctx.predictedKillHealPending)
+        return;
+    if (entityId != ctx.predictedKillHealTargetEntityId)
+        return;
+    ctx.predictedKillHealPending = false;
+    Debug::log(Debug::Category::Networking,
+        "[NET PREDICTED KILL HEAL CONFIRMED] target=%u hp=%d\n",
+        entityId, gpPlayer ? gpPlayer->currentHp : -1);
+}
+
+void mpRollbackPredictedKillHeal(MultiplayerContext& ctx, uint32_t entityId)
+{
+    if (!ctx.predictedKillHealPending)
+        return;
+    if (entityId != ctx.predictedKillHealTargetEntityId)
+        return;
+    ctx.predictedKillHealPending = false;
+    if (gpPlayer)
+    {
+        gpPlayer->currentHp = ctx.predictedKillHealBeforeHp;
+        Debug::log(Debug::Category::Networking,
+            "[NET PREDICTED KILL HEAL ROLLBACK] target=%u hp=%d\n",
+            entityId, gpPlayer->currentHp);
+    }
 }
 
 static void resetPresentationAfterRespawn(Player& player, const SnapshotTransform& target)
@@ -1090,7 +1160,18 @@ void updateRenderedReplica(
         interpolation.predictedHealthUpdatedMs = 0;
     }
     else
+    {
+        // linear mode deadzone: sub-threshold rendered deltas snap to the exact
+        // previous rendered position so standing-still bodies never micro-jitter
+        // from tiny broadcast noise. Real movement above the threshold passes.
+        if (motion.renderFilter == "linear" && motion.linearDeadzoneUnits > 0.0)
+        {
+            const float delta = glm::length(renderPos - player.pos);
+            if (delta < (float)motion.linearDeadzoneUnits)
+                renderPos = player.pos;
+        }
         player.pos = renderPos;
+    }
     player.vel = render.velocity;
     const int displayHealth =
         applyPredictedHealthOverlay(player, interpolation, render.health);

@@ -81,7 +81,7 @@ void HitEffects::onHit(const HitEvent& event)
     }
 
     // 6. Damage number - only for entity hits (not world geometry)
-    if (event.hitEntity) {
+    if (event.hitEntity && !event.suppressDamageNumber) {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->damageNumberMs : nullptr);
         EffectPartSystem::instance().spawnDamage(event.position, event.victim, event.damage);
     }

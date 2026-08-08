@@ -329,6 +329,7 @@ struct ServerPlayer
     // loss or rejection.
     glm::vec3 lastAcceptedClientPosition{0.0f};
     glm::vec3 lastAcceptedClientVelocity{0.0f};
+    bool lastAcceptedClientOnGround = false;
     uint64_t lastAcceptedClientTransformMs = 0;
     bool hasAcceptedClientTransform = false;
 

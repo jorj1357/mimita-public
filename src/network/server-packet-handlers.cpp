@@ -186,7 +186,10 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     event.knockX = shot->knockX;
     event.knockY = shot->knockY;
     event.knockZ = shot->knockZ;
-    event.lastServerTick = shot->lastServerTick;
+    // Stamp the true server shot tick (not the client's pose tick) so the
+    // observer event-timeline holds the visual until the body renders this
+    // tick — attacks and movement render in the same step.
+    event.lastServerTick = tick;
 
     auto targetIt = players.find(shot->targetPlayerId);
     bool damageConfirmed = false;
@@ -775,7 +778,7 @@ void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* 
     event.clientTimeMs = request->clientTimeMs;
     event.shooterPlayerId = shooter.id;
     event.spreadSeed = request->spreadSeed;
-    event.lastServerTick = request->lastServerTick;
+    event.lastServerTick = tick;
     event.originX = origin.x; event.originY = origin.y; event.originZ = origin.z;
     event.baseDirX = dir.x; event.baseDirY = dir.y; event.baseDirZ = dir.z;
     event.weapon = request->weapon;

@@ -388,6 +388,10 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         rt.currentAmmo = std::max(0, rt.currentAmmo - 1);
 
     bool fired = false;
+    // Actual fired direction and endpoint (the damage trace). The NPC body
+    // facing and the server broadcast read these so look == shoot == hit.
+    glm::vec3 firedDir = aimDir;
+    glm::vec3 shotEnd = npcPos + aimDir * 100.0f;
     switch (def->behaviorType) {
     case WeaponBehaviorType::Hitscan:
     {
@@ -399,6 +403,7 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
             shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player);
         }
         fired = shot.fired;
+        if (fired) { firedDir = shot.direction; shotEnd = shot.end; }
         Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s hitscan hit=%d damage=%.0f\n",
                    npc.id, def->id.c_str(), (int)shot.hitEntity, shot.damage);
         break;
@@ -408,6 +413,11 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     {
         WeaponRocketLauncher::fire(gNpcRocketState, *def, rt, npc.body, npcPos, aimDir);
         fired = true;
+        firedDir = aimDir;
+        {
+            float range = effectiveRange(*def);
+            shotEnd = npcPos + aimDir * (range > 0.0f ? range : 100.0f);
+        }
         Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s rocketLauncher dir=(%.2f %.2f %.2f)\n",
                    npc.id, def->id.c_str(), aimDir.x, aimDir.y, aimDir.z);
         break;
@@ -418,6 +428,7 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         // Melee: use hitscan at close range for now (future: full melee AI)
         RevolverShotResult shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player);
         fired = shot.fired;
+        if (fired) { firedDir = shot.direction; shotEnd = shot.end; }
         Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s melee(approx) hit=%d\n",
                    npc.id, def->id.c_str(), (int)shot.hitEntity);
         break;
@@ -428,10 +439,28 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         // Fallback: use hitscan (godball/grenade AI not yet implemented)
         RevolverShotResult shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player);
         fired = shot.fired;
+        if (fired) { firedDir = shot.direction; shotEnd = shot.end; }
         Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s fallback-hitscan (full AI pending)\n",
                    npc.id, def->id.c_str());
         break;
     }
+    }
+
+    // Snap the body to the actual fired direction and remember the shot so the
+    // server broadcast sends the true tracer (look == shoot == damage line).
+    if (fired)
+    {
+        glm::vec3 planarFired(firedDir.x, firedDir.y, 0.0f);
+        const float planarLen = glm::length(planarFired);
+        if (planarLen > 0.001f)
+        {
+            planarFired /= planarLen;
+            npc.currentFacing = planarFired;
+            npc.body.yaw = glm::degrees(std::atan2(planarFired.y, planarFired.x));
+        }
+        npc.lastShotOrigin = npcPos;
+        npc.lastShotEnd = shotEnd;
+        npc.hasLastShot = true;
     }
 
     // Variable fire delay: blend between min (fireDelay) and max (5s) based on aggression + rhythm

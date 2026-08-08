@@ -187,6 +187,15 @@ void mpProcessShotEventPacket(MultiplayerContext& ctx, const ShotEventPacket* ev
 
 void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEventPacket* event)
 {
+    // Reliable delivery: dedup + ACK so the kill-heal/killfeed can never be
+    // lost under packet loss (retransmitted until ACKed).
+    if (!mpAcceptReliableEventOnce(ctx, event->eventId, event->eventSessionId))
+    {
+        printf("[NET NPC DAMAGE RECV] eventId=%u npc=%u accepted=0 reason=duplicate-or-stale\n",
+               event->eventId, event->npcEntityId);
+        return;
+    }
+
     const bool isLocalShooter = event->shooterPlayerId == ctx.localPlayerId;
 
     // How long a locally predicted NPC hit keeps suppressing the server-confirm
@@ -251,6 +260,9 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
             if (npcPtr && npcPtr->netPredictedDead && !event->killed)
             {
                 revivePredictedDeath(*npcPtr, hitPos, "NPC SURVIVED SERVER DISAGREES");
+                // Roll back the predicted kill-heal in the same tick the
+                // disagreement effect above spawns.
+                mpRollbackPredictedKillHeal(ctx, event->npcEntityId);
             }
             Debug::log(Debug::Category::Networking,
                        "[NET NPC HIT PRESENT] shooter=%u npc=%u damage=%d predicted=1 (suppressed duplicate)",
@@ -289,6 +301,9 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
 
     if (event->killed)
     {
+        // Server confirmed a kill: any pending predicted kill-heal for this
+        // entity sticks (no rollback).
+        mpConfirmPredictedKillHeal(ctx, event->npcEntityId);
         const bool localShooterPredictedKill =
             isLocalShooter && npcPtr && npcPtr->netPredictedDead;
         // Killing an NPC heals the local killer to full health.

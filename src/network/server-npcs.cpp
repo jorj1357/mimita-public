@@ -14,6 +14,7 @@
 
 #include "npc/npc.h"
 #include "npc/npc-combat.h"
+#include "npc/npc-navigation.h"
 #include "entities/player.h"
 #include "world/world.h"
 #include "map/map-loader-collision.h"
@@ -56,6 +57,8 @@ void broadcastNpcDamageEvent(
     ev.header.type = PACKET_NPC_DAMAGE_EVENT;
     ev.header.tick = tick;
     ev.header.playerId = shooterPlayerId;
+    ev.eventId = nextReliableGameplayEventId();
+    ev.eventSessionId = serverReliableEventSessionId();
     ev.npcEntityId = npc.entityId;
     ev.shooterPlayerId = shooterPlayerId;
     ev.damage = damage;
@@ -68,16 +71,11 @@ void broadcastNpcDamageEvent(
     ev.weapon = weapon;
     ev.impactType = SHOT_IMPACT_ENTITY;
 
-    for (const auto& pe : players)
-    {
-        if (pe.second.transport)
-            pe.second.transport->send(&ev, sizeof(ev));
-        else
-            sendto(sock, (const char*)&ev, sizeof(ev), 0,
-                   (sockaddr*)&pe.second.addr,
-                   sizeof(pe.second.addr));
-        ++totalPacketsOut;
-    }
+    // NPC damage/kill is reliable: it carries the kill-heal and killfeed, so it
+    // must not be lost under packet loss. Retransmits until every client ACKs.
+    queueReliableGameplayEventToAll(
+        sock, players, &ev, sizeof(ev), ev.eventId, ev.eventSessionId,
+        totalPacketsOut);
 
     printf("%s [NPC DAMAGE BROADCAST] shooter=%u npc=%u damage=%d health=%d killed=%d weapon=%u\n",
            serverTimestamp(), shooterPlayerId, npc.entityId, damage, npc.health,
@@ -230,11 +228,24 @@ static void broadcastNpcFiring(SOCKET sock,
         const uint8_t netWeapon = networkWeaponTypeForDefinition(*wdef);
         if (netWeapon == NETWORK_WEAPON_NONE) continue;
 
-        const glm::vec3 origin = n.body.pos + NpcCombat::npcMuzzleOffset();
-        const glm::vec3 dir = glm::length(n.currentFacing) > 0.001f
-            ? glm::normalize(n.currentFacing)
-            : glm::vec3(1.0f, 0.0f, 0.0f);
-        const glm::vec3 hit = origin + dir * 100.0f;
+        glm::vec3 origin = n.body.pos + NpcCombat::npcMuzzleOffset();
+        glm::vec3 dir;
+        glm::vec3 hit;
+        if (n.hasLastShot && glm::length(n.lastShotEnd - n.lastShotOrigin) > 0.001f)
+        {
+            // Broadcast the real fired shot so the remote tracer goes exactly
+            // where the damage ray went (look == shoot == bullet endpoint).
+            origin = n.lastShotOrigin;
+            hit = n.lastShotEnd;
+            dir = glm::normalize(hit - origin);
+        }
+        else
+        {
+            dir = glm::length(n.currentFacing) > 0.001f
+                ? glm::normalize(n.currentFacing)
+                : glm::vec3(1.0f, 0.0f, 0.0f);
+            hit = origin + dir * 100.0f;
+        }
 
         ShotEventPacket ev{};
         ev.header.type = PACKET_SHOT_EVENT;
@@ -403,6 +414,31 @@ void simulateSharedNpcs(SOCKET sock,
         const int hpBefore = mirrorPlayer.currentHp;
 
         npcSystem.updateOneWithTarget(n.id, world, mirrorPlayer, SERVER_DT);
+
+        // Ground clamp: the decimated headless collision world can miss the
+        // floor, so a server NPC that ends up below the floor gets pinned back
+        // onto the nearest floor triangle and marked grounded — it never sinks
+        // through the ground forever. Legitimate airborne/jumping NPCs above the
+        // floor are untouched; the clamp only corrects downward violations.
+        {
+            constexpr float REST_HEIGHT = 1.8f; // capsule half-height (feet at pos.z - 1.8)
+            const float floorZ = NpcNavigation::groundHeightAt(
+                world, n.body.pos, 40.0f, 1.5f);
+            if (floorZ > -1e5f)
+            {
+                const float restZ = floorZ + REST_HEIGHT;
+                if (n.body.pos.z < restZ)
+                {
+                    n.body.pos.z = restZ;
+                    if (n.body.vel.z < 0.0f)
+                        n.body.vel.z = 0.0f;
+                    n.body.ground.hasWorldContact = true;
+                    n.body.ground.stableOnGround = true;
+                    n.body.ground.onGround = true;
+                    n.body.ground.realWorldContactThisFrame = true;
+                }
+            }
+        }
 
         if (hpBefore > mirrorPlayer.currentHp)
         {

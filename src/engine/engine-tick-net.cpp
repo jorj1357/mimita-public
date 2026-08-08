@@ -632,6 +632,9 @@ void engineTickNet(Engine& engine, float dt)
         }
         mpContext.shotEvents.clear();
 
+        // Apply server-confirmed victim health in step with the shot visual.
+        MimitaNet::mpDrainPendingVictimHealth(mpContext, player);
+
         for (const auto& chatMsg : mpContext.incomingChatMessages)
         {
             printf("[CHAT] %s: %s\n", chatMsg.senderName.c_str(), chatMsg.text.c_str());

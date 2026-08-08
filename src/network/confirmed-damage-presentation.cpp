@@ -143,6 +143,9 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
     // On kill, heal the local attacker to full health (matches server authority)
     if (event.killed && gpPlayer)
     {
+        // Server confirmed a kill: any pending predicted kill-heal for this
+        // entity sticks (no rollback).
+        mpConfirmPredictedKillHeal(ctx, event.targetPlayerId);
         DeathSystem::instance().healKillerToFull(*gpPlayer, playerNameFor(ctx, event.attackerPlayerId));
         printf("[NET KILL HEAL] attacker=%u health=%d\n", event.attackerPlayerId, gpPlayer->currentHp);
 

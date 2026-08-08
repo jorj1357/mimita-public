@@ -419,6 +419,9 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
             0u, (uint32_t)clampMin(
                     readDouble(r, "linear_snap_after_gap_ticks",
                                (double)c.linearSnapAfterGapTicks), 0.0));
+        c.linearDeadzoneUnits = clampMin(
+            readDouble(r, "linear_deadzone_units",
+                       c.linearDeadzoneUnits), 0.0);
         c.linearClockSource = readString(
             r, "linear_clock_source", c.linearClockSource);
         if (c.linearClockSource != "wall_time" &&
@@ -620,6 +623,15 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
             readDouble(r, "max_allowed_visual_delta_multiplier",
                        c.maxAllowedVisualDeltaMultiplier),
             0.0, 100.0);
+    }
+
+    // ── prediction ────────────────────────────────────────────────────
+    if (root.contains("prediction") && root["prediction"].is_object())
+    {
+        const json& r = root["prediction"];
+        NetworkPredictionConfig& c = next.prediction;
+        c.predictDamage = readBool(r, "predict_damage", c.predictDamage);
+        c.predictDeaths = readBool(r, "predict_deaths", c.predictDeaths);
     }
 
     out = next;
