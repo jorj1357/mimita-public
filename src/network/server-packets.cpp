@@ -829,6 +829,7 @@ void handleInputPacket(const char* buffer, int bytes,
     p.lastAcceptedClientPosition = result.acceptedState.position;
     p.lastAcceptedClientVelocity =
         result.acceptedState.baseVelocity + result.acceptedState.externalImpulse;
+    p.lastAcceptedClientOnGround = result.acceptedState.ground.onGround;
     p.lastAcceptedClientTransformMs = currentMs;
     p.hasAcceptedClientTransform = true;
     p.lastMovementSequence = report.movementSequence;

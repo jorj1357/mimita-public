@@ -319,6 +319,27 @@ struct MultiplayerContext
     bool teleportResync = false;
     int localServerHealth = 100;
     int lastSeenServerHealth = 100;
+
+    // Predicted kill-heal: killing restores the shooter to full HP. The heal is
+    // applied instantly on a predicted kill, then reconciled on the server
+    // confirm (confirmed -> heal sticks) or rolled back (disagreement -> restore
+    // the pre-heal HP in the same tick the disagreement effect spawns).
+    bool predictedKillHealPending = false;
+    uint32_t predictedKillHealTargetEntityId = 0;
+    bool predictedKillHealTargetIsNpc = false;
+    int predictedKillHealBeforeHp = 0;
+
+    // Victim health synced to the shot visual: the local player's HP is NOT
+    // dropped from snapshot health. Server-confirmed damage events queue a
+    // pending change that is applied after a short render-delay hold so the
+    // health bar drops in the same step the shot visual plays.
+    struct PendingVictimHealth
+    {
+        int healthAfter = 0;
+        bool killed = false;
+        uint64_t applyAtMs = 0;
+    };
+    std::vector<PendingVictimHealth> pendingVictimHealth;
     std::string approvedLocalName;
     std::string serverAddress;
     std::string connectionStatus;
@@ -801,6 +822,11 @@ void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt);
 void mpApplyPredictedDamage(MultiplayerContext& ctx, uint32_t entityId, int damage, bool npc);
 void mpConfirmPredictedDamage(MultiplayerContext& ctx, uint32_t entityId, int healthAfter, bool killed, bool npc);
 void mpRollbackPredictedDamage(MultiplayerContext& ctx, uint32_t entityId, bool npc, const char* reason);
+void mpApplyPredictedKillHeal(MultiplayerContext& ctx, uint32_t entityId, bool npc);
+void mpConfirmPredictedKillHeal(MultiplayerContext& ctx, uint32_t entityId);
+void mpRollbackPredictedKillHeal(MultiplayerContext& ctx, uint32_t entityId);
+bool mpAcceptReliableEventOnce(MultiplayerContext& ctx, uint32_t eventId, uint32_t eventSessionId);
+void mpDrainPendingVictimHealth(MultiplayerContext& ctx, Player& player);
 
 // Debug flags for damage/hit/net diagnostics (extern, set from terminal commands)
 extern bool gNetDamageDebug;

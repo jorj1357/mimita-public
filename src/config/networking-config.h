@@ -228,6 +228,11 @@ struct RemoteMotionSmoothingConfig
     // instead of bridging a stale straight line. 0 = use the global
     // teleport_gap_ticks.
     uint32_t linearSnapAfterGapTicks = 30;
+    // linear mode: rendered deltas below this many units from the previous
+    // rendered position snap to the previous position exactly (kills
+    // standing-still micro-jitter from tiny broadcast noise). 0 = disabled.
+    // Real movement above the threshold passes through untouched.
+    double linearDeadzoneUnits = 0.0;
     // linear mode clock source. "wall_time" advances from monotonic real time;
     // any other value falls back to frame dt for debugging only.
     std::string linearClockSource = "wall_time";
@@ -364,6 +369,16 @@ struct NetworkingDebugConfig
     double maxAllowedVisualDeltaMultiplier = 2.5;
 };
 
+struct NetworkPredictionConfig
+{
+    // Predict the target's damage numbers + health bar on the local trace.
+    // Hitmarker + hit sound are ALWAYS predicted regardless of this toggle.
+    bool predictDamage = true;
+    // Predict lethal deaths (instant death animation + kill heal) with rollback
+    // when the server disagrees. When false, deaths are server-confirmed only.
+    bool predictDeaths = false;
+};
+
 struct NetworkingConfigData
 {
     int version = 1;
@@ -387,6 +402,7 @@ struct NetworkingConfigData
     RemoteEntityLifecycleConfig remoteEntityLifecycle;
     NetworkingTimeoutConfig timeouts;
     NetworkingDebugConfig debug;
+    NetworkPredictionConfig prediction;
 };
 
 // Singleton config following the repo convention (WeaponHitFxConfig,

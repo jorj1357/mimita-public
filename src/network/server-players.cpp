@@ -651,7 +651,8 @@ void pushPositionHistory(ServerPlayer& p, uint32_t tick)
 
     const glm::vec3 histPos = serverSimBroadcast ? simBroadcast
         : (p.hasBroadcastTransform ? p.broadcastPosition : p.pos);
-    const glm::vec3 histVel = serverSimBroadcast ? p.vel
+    const glm::vec3 histVel = serverSimBroadcast
+        ? (p.hasAcceptedClientTransform ? p.lastAcceptedClientVelocity : p.vel)
         : (p.hasBroadcastTransform ? p.broadcastVelocity : p.vel);
     p.posHistory.push_back({histPos, histVel, tick});
     const std::size_t historyLimit = NetworkingConfig::instance()
@@ -929,17 +930,25 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     // quality (client reports arrive gappy under loss/jitter/reorder). The
     // broadcast position is the eased simBroadcastPos (see pushPositionHistory)
     // so the snapshot stream is clean for other clients' linear interpolation.
-    if (NetworkingConfig::instance().data().remotePlayers.broadcastSource ==
-        "server_sim")
+    // Velocity + grounded use the VALIDATED client report: the server's own
+    // re-sim cannot detect ground contact for a resting client (collision
+    // dimensions differ) so gravity accumulates a bogus negative vz each tick —
+    // broadcasting that makes observers extrapolate bodies into the floor.
+    const bool serverSimBroadcast =
+        NetworkingConfig::instance().data().remotePlayers.broadcastSource ==
+        "server_sim";
+    if (serverSimBroadcast)
     {
         const glm::vec3 bp = player.hasSimBroadcastPos
             ? player.simBroadcastPos : player.pos;
         out.px = bp.x;
         out.py = bp.y;
         out.pz = bp.z;
-        out.vx = player.vel.x;
-        out.vy = player.vel.y;
-        out.vz = player.vel.z;
+        const glm::vec3 bv = player.hasAcceptedClientTransform
+            ? player.lastAcceptedClientVelocity : player.vel;
+        out.vx = bv.x;
+        out.vy = bv.y;
+        out.vz = bv.z;
     }
     else if (player.hasBroadcastTransform)
     {
@@ -966,7 +975,7 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     }
     out.yaw = player.yaw;
     out.health = player.health;
-    out.onGround = player.onGround ? 1 : 0;
+    out.onGround = (serverSimBroadcast ? player.lastAcceptedClientOnGround : player.onGround) ? 1 : 0;
     out.equippedSlot = (int16_t)player.equippedSlot;
     out.weaponState = player.weaponState;
     out.transformEpoch = player.transformEpoch;
@@ -1002,8 +1011,12 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
 
         uint16_t flags = player.inputStateFlags & CLIENT_VISUAL_FLAGS;
 
-        // Server retains authority over ON_GROUND
-        if (player.onGround)
+        // Server retains authority over ON_GROUND (in server_sim broadcast the
+        // server's own ground detection is broken for resting clients, so fall
+        // back to the validated client-reported grounded flag).
+        const bool broadcastOnGround = serverSimBroadcast
+            ? player.lastAcceptedClientOnGround : player.onGround;
+        if (broadcastOnGround)
             flags |= NET_STATE_ON_GROUND;
         else
             flags &= ~NET_STATE_ON_GROUND;

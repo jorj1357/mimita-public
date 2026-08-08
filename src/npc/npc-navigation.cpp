@@ -62,6 +62,36 @@ static bool rayHitsAny(glm::vec3 origin, glm::vec3 dir, float maxDist,
 
 } // anonymous namespace
 
+float NpcNavigation::groundHeightAt(const World& world, const glm::vec3& pos, float searchDist, float radius)
+{
+    constexpr float NOT_FOUND = -1e6f;
+    if (searchDist <= 0.0f)
+        return NOT_FOUND;
+
+    std::vector<int> candidates;
+    AABB b;
+    b.min = pos - glm::vec3(radius, radius, searchDist);
+    b.max = pos + glm::vec3(radius, radius, 1.0f);
+    appendChunkTrianglesForAABB(world, b, 0.0f, candidates, "npcGroundHeight");
+
+    const glm::vec3 origin = pos + glm::vec3(0.0f, 0.0f, 1.0f);
+    const glm::vec3 down(0.0f, 0.0f, -1.0f);
+    float bestZ = NOT_FOUND;
+    for (int ti : candidates)
+    {
+        if (ti < 0 || ti >= (int)world.collisionMesh.triangles.size())
+            continue;
+        float t;
+        if (rayTriangleIntersect(origin, down, world.collisionMesh.triangles[ti], searchDist, t))
+        {
+            const float z = origin.z - t;
+            if (z > bestZ)
+                bestZ = z;
+        }
+    }
+    return bestZ;
+}
+
 glm::vec3 NpcNavigation::wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir, const World& world, const std::vector<int>& candidates)
 {
     if (glm::length(desiredDir) < 0.001f)

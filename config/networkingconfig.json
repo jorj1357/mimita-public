@@ -88,19 +88,22 @@
     "hybrid_feed_forward_smoothing": 1.0,
     "hybrid_max_speed_units_per_second": 0.0,
     "filter_max_step_units_per_second": 0.0,
-    "filter_clamp_z_below_target": false,
-    "linear_delay_ticks": 1,
-    "linear_min_delay_ticks": 1,
-    "linear_max_delay_ticks": 2,
-    "linear_hold_on_dry": true,
-    "linear_allow_extrapolation": false,
+    "filter_clamp_z_below_target": true,
+    "linear_delay_ticks comment": "8 7 2026 keep this low? i would like to only have it be min/max delay that handles the delay but idk how it works well enough ",
+    "linear_delay_ticks": 2,
+    "linear_min_delay_ticks": 2,
+    "linear_max_delay_ticks": 8,
+    "linear_hold_on_dry": false,
+    "linear_allow_extrapolation": true,
     "linear_catchup_rate_ticks_per_second": 0.0,
-    "linear_delay_jitter_multiplier": 0.0,
-    "linear_delay_loss_weight": 0.0,
+    "linear_delay_jitter_multiplier": 1.0,
+    "linear_delay_loss_weight": 1.0,
     "linear_snap_after_gap_ticks": 999,
     "linear_clock_source": "wall_time",
-    "linear_reanchor_enabled": false,
-    "linear_reanchor_only_if_error_ms": 250,
+    "linear_reanchor_enabled_comment": "i disable this 8 7 2026 bc it seems less snappy/jittery when its off? but it seems like, its a hack fix, and we should have constraints like must be linear, must have this snapping on, etc, so we force it to perform well while having ideal long term settings, no hack fixes",
+    "linear_reanchor_enabled": true,
+    "linear_reanchor_only_if_error_ms": 20,
+    "linear_deadzone_units": 0.005,
     "max_render_time_jump_ms": 1
   },
 
@@ -122,9 +125,15 @@
     "enabled": true
   },
 
+  "prediction": {
+    "comment": "Client-side prediction scope. Hitmarker + hit sound are ALWAYS predicted (instant). predict_damage controls instant damage numbers + target health bar; predict_deaths controls instant death + kill heal (rolls back with a disagree effect if the server disagrees).",
+    "predict_damage": true,
+    "predict_deaths": false
+  },
+
   "event_timeline": {
     "enabled": true,
-    "remote_effect_maximum_hold_ms": 35,
+    "remote_effect_maximum_hold_ms": 500,
     "log_delays": false
   },
 

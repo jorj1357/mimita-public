@@ -99,6 +99,13 @@ public:
     // Smoothed facing direction for turn speed limiting
     glm::vec3 currentFacing{1.0f, 0.0f, 0.0f};
 
+    // The actual fired shot from the last successful tryFire. The server
+    // broadcast reads these so the remote tracer goes exactly where the damage
+    // ray went (look direction == shoot direction == bullet endpoint).
+    glm::vec3 lastShotOrigin{0.0f};
+    glm::vec3 lastShotEnd{0.0f};
+    bool hasLastShot = false;
+
     Npc(std::uint32_t id, float difficulty, glm::vec3 spawn,
         const std::string& weaponId = "revolver");
 };

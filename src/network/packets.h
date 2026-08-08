@@ -15,7 +15,7 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 27;
+constexpr uint16_t PROTOCOL_VERSION = 28;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -807,6 +807,8 @@ struct NpcDamageRequestPacket
 struct NpcDamageEventPacket
 {
     PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
     uint32_t npcEntityId = 0;
     uint32_t shooterPlayerId = 0;
     int32_t damage = 0;

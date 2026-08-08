@@ -162,6 +162,7 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     // ── Lifecycle-aware health reconciliation ─────────────────────────
     if (authoritativeNewLife || serverRespawnedPlayer)
     {
+        ctx.pendingVictimHealth.clear();
         player.currentHp = ctx.localServerHealth;
         player.dead = false;
         player.proceduralFrozen = false;
@@ -181,8 +182,11 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         ctx.pendingRespawnSerial = 0;
         ctx.pendingRespawnStartEpoch = 0;
     }
-    else if (serverKilledPlayer)
+    else if (serverKilledPlayer && ctx.pendingVictimHealth.empty())
     {
+        // Death timed to the shot visual: when a server-confirmed damage event
+        // for this life is still held (pendingVictimHealth), the death applies
+        // when the pending is drained — not the frame the snapshot shows 0.
         player.currentHp = 0;
 
         // Server-confirmed local death: spawn the death ellipsoid so the victim
@@ -204,10 +208,13 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     }
     else if (ctx.localPlayerReconciled)
     {
-        // Within same life: apply health min (monotonic health across server updates)
-        // but ONLY if we already share the same epoch (prevent cross-life contamination)
-        if (ctx.lastAppliedEpoch == ctx.localServerEpoch)
-            player.currentHp = std::min(player.currentHp, ctx.localServerHealth);
+        // Within same life the local player's HP is event-driven and timed to
+        // the shot visual (see pendingVictimHealth / mpDrainPendingVictimHealth).
+        // Snapshots only feed server health RISES (kill-heal flows up so the
+        // 100% heal-back always sticks); they never drop HP here.
+        if (ctx.lastAppliedEpoch == ctx.localServerEpoch &&
+            ctx.localServerHealth > player.currentHp)
+            player.currentHp = ctx.localServerHealth;
     }
     else
     {
@@ -296,6 +303,34 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         ctx.lastLocalCorrectionLogMs = currentMs;
     }
     ctx.localPlayerReconciled = true;
+}
+
+// Apply server-confirmed victim health changes in step with the shot visual.
+// DamageConfirmedEvent packets queue a pending change with a short render-delay
+// hold; once the hold elapses the HP drops exactly when the corresponding shot
+// visual plays (both are delayed by the same render delay).
+void mpDrainPendingVictimHealth(MultiplayerContext& ctx, Player& player)
+{
+    if (ctx.pendingVictimHealth.empty())
+        return;
+    const uint64_t now = nowMs();
+    for (auto it = ctx.pendingVictimHealth.begin();
+         it != ctx.pendingVictimHealth.end(); )
+    {
+        if (now < it->applyAtMs)
+        {
+            ++it;
+            continue;
+        }
+        if (it->killed)
+            player.currentHp = 0;
+        else
+            player.currentHp = std::max(0, it->healthAfter);
+        Debug::log(Debug::Category::Networking,
+            "[NET VICTIM HEALTH APPLY] hp=%d killed=%d\n",
+            player.currentHp, (int)it->killed);
+        it = ctx.pendingVictimHealth.erase(it);
+    }
 }
 
 } // namespace MimitaNet

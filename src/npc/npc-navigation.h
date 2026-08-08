@@ -33,4 +33,11 @@ bool obstacleInDirection(const Npc& npc, glm::vec3 dir, float checkDist, const W
 // Returns zero vector if no nearby cover found.
 glm::vec3 findCoverDirection(const Npc& npc, glm::vec3 threatPos, const World& world);
 
+// Height of the highest solid floor triangle below `pos` (same x/y, casting
+// down up to searchDist, sampling within a horizontal radius). Returns the
+// floor's world z, or -1e6f if no floor is found within searchDist. Used by
+// the server to pin NPCs onto the ground when the headless collision world
+// lets them fall through the floor.
+float groundHeightAt(const World& world, const glm::vec3& pos, float searchDist, float radius);
+
 } // namespace NpcNavigation

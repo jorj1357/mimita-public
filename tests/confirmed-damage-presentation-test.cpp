@@ -12,7 +12,11 @@
 #include "network/multiplayer-context.h"
 #include "network/network-weapons.h"
 #include "combat/death-system.h"
+#include "entities/player.h"
 #include "config/weapon-hitfx-config.h"
+#include "config/networking-config.h"
+#include "combat/weapon-registry.h"
+#include "killfeed/killfeed.h"
 #include "terminal/terminal-state.h"
 #include "ui/hitmarker.h"
 #include "audio/hitmarker-audio.h"
@@ -113,6 +117,8 @@ void spawnHitEffects(glm::vec3, const glm::vec3&, const glm::vec3&, int,
 
 Player* gpPlayer = nullptr;
 
+Player::Player() {}
+
 DeathSystem& DeathSystem::instance()
 {
     static DeathSystem instance;
@@ -127,6 +133,12 @@ void DeathSystem::healKillerToFull(Player& player, const std::string& killerName
 
 namespace MimitaNet {
 const char* networkWeaponTypeName(uint8_t) { return "configured_weapon"; }
+void mpConfirmPredictedKillHeal(MultiplayerContext& ctx, uint32_t entityId)
+{
+    if (!ctx.predictedKillHealPending) return;
+    if (entityId != ctx.predictedKillHealTargetEntityId) return;
+    ctx.predictedKillHealPending = false;
+}
 }
 
 WeaponHitFxConfig& WeaponHitFxConfig::instance()
@@ -138,6 +150,37 @@ WeaponHitFxConfig& WeaponHitFxConfig::instance()
 const WeaponHitFxPresentationConfig& WeaponHitFxConfig::presentationFor(const std::string&) const
 {
     return gPresentation;
+}
+
+NetworkingConfig& NetworkingConfig::instance()
+{
+    static NetworkingConfig config;
+    return config;
+}
+
+WeaponRegistry& WeaponRegistry::instance()
+{
+    static WeaponRegistry registry;
+    return registry;
+}
+
+const WeaponDefinition* WeaponRegistry::get(const std::string& id) const
+{
+    (void)id;
+    return nullptr;
+}
+
+KillfeedManager& KillfeedManager::instance()
+{
+    static KillfeedManager manager;
+    return manager;
+}
+
+void KillfeedManager::onKillStyled(const std::string&, const MimitaVip::VipAppearance&,
+                                   const MimitaVip::VipStyleDetail&, const std::string&,
+                                   const MimitaVip::VipAppearance&, const MimitaVip::VipStyleDetail&,
+                                   const std::string&, bool)
+{
 }
 
 int main()
@@ -289,6 +332,33 @@ int main()
         e.weapon = MimitaNet::NETWORK_WEAPON_NONE;
         failed += !expect(MimitaNet::presentConfirmedDamage(ctx, e, &sink),
             "missing sound/effect configuration is safe");
+    }
+    {
+        auto ctx = makeContext();
+        ctx.predictedKillHealPending = true;
+        ctx.predictedKillHealTargetEntityId = 2;
+        ctx.predictedKillHealBeforeHp = 40;
+        Player p;
+        p.username = "attacker";
+        p.maxHp = 100;
+        p.currentHp = 100;
+        gpPlayer = &p;
+        auto e = eventBase(17);
+        e.killed = 1;
+        failed += !expect(MimitaNet::presentConfirmedDamage(ctx, e, nullptr) &&
+            !ctx.predictedKillHealPending,
+            "confirmed kill clears pending predicted kill-heal");
+        gpPlayer = nullptr;
+    }
+    {
+        auto ctx = makeContext();
+        ctx.predictedKillHealPending = true;
+        ctx.predictedKillHealTargetEntityId = 2;
+        auto e = eventBase(18);
+        e.killed = 0;
+        failed += !expect(MimitaNet::presentConfirmedDamage(ctx, e, nullptr) &&
+            ctx.predictedKillHealPending,
+            "non-kill confirm leaves pending predicted kill-heal untouched");
     }
     {
         std::ifstream file("src/network/confirmed-damage-presentation.cpp");
