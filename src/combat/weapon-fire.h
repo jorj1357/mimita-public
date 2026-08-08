@@ -209,6 +209,20 @@ void processRemoteNpcHit(
     uint32_t remoteNpcTargetId,
     Player* remoteNpc);
 
+// Instant predicted hit feedback for a remote target hit by a locally-predicted
+// explosion: hitmarker + hit sound + damage number + HP bar (+ predicted death
+// when predict_deaths is on). The server's reliable DamageConfirmedEvent
+// reconciles/rolls it back, exactly like a hitscan prediction.
+void processRemoteBlastHitFeedback(
+    const WeaponDefinition& def,
+    const glm::vec3& hitEnd,
+    const glm::vec3& blastDir,
+    const std::string& shooterName,
+    uint32_t targetId,
+    bool isNpc,
+    Player& target,
+    int damage);
+
 void processPlayerHit(
     RevolverShotResult& result,
     const WeaponDefinition& def,

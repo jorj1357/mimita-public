@@ -55,7 +55,20 @@ void renderPlayerInternal(
         return;
     }
 
-    if (player.dead) {
+    // Remote dead bodies are still drawn while their fall-over death animation
+    // plays (frozen in place, rotating over totalTicks); only once it completes
+    // (deathAnim.active false) is the body hidden instantly. The local player's
+    // own body is never drawn, dead or alive.
+    if (player.dead && isLocal) {
+        if (logDraw)
+            printf("[DRAW PLAYER] entityId=%u isLocal=%d submitted=0 reason=local-dead worldPos=(%.2f,%.2f,%.2f)\n",
+                   networkEntityId, (int)isLocal,
+                   player.pos.x, player.pos.y, player.pos.z);
+        if (logDraw)
+            lastLogMs[networkEntityId] = nowMs;
+        return;
+    }
+    if (player.dead && !player.deathAnim.active) {
         if (logDraw)
             printf("[DRAW PLAYER] entityId=%u isLocal=%d submitted=0 reason=dead worldPos=(%.2f,%.2f,%.2f)\n",
                    networkEntityId, (int)isLocal,

@@ -321,6 +321,11 @@ static void processSnapshotEntities(
             else
             {
                 p.username = entity.displayName;
+                // Server NPCs render + collide using the real default player
+                // body (populates physicalBody.parts), so what the client sees
+                // IS the hitbox the beam checks — instant predicted feedback
+                // on actual body parts (head/torso/arms/legs).
+                p.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
             }
             interpolation.renderRegistered = true;
             printf("[CLIENT ENTITY CREATE] entityId=%u type=%s ownerClientId=%u "
