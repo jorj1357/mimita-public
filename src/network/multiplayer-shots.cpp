@@ -13,6 +13,7 @@
 #include "combat/weapon-fire.h"
 #include "combat/death-system.h"
 #include "combat/weapon-registry.h"
+#include "config/ragdoll-death-config.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "audio/audio.h"
@@ -338,12 +339,25 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
                        event->shooterPlayerId, event->npcEntityId, npcName.c_str());
         }
         if (npcPtr)
-            npcPtr->netPredictedDead = false;
-        if (npcIt != ctx.remoteNpcs.end())
         {
-            ctx.remoteNpcs.erase(npcIt);
-            ctx.remoteNpcInterpolation.erase(event->npcEntityId);
-            printf("[NET NPC KILL RECV] npcId=%u removed\n", event->npcEntityId);
+            npcPtr->netPredictedDead = false;
+            // Keep the dead NPC replica: start its fall-over death animation
+            // now (frozen at the current spot), and the snapshot health
+            // transition reconciles it. The body is removed on respawn.
+            if (npcPtr->currentHp > 0)
+                npcPtr->currentHp = 0;
+            if (!npcPtr->deathAnim.active)
+            {
+                const auto& cfg = RagdollDeathConfig::instance();
+                npcPtr->deathAnim.active = true;
+                npcPtr->deathAnim.tick = 0;
+                npcPtr->deathAnim.totalTicks = cfg.totalTicks();
+                npcPtr->deathAnim.startAlpha = cfg.startAlpha();
+                npcPtr->deathAnim.endAlpha = cfg.endAlpha();
+                npcPtr->deathAnim.startRotation = cfg.startRotation();
+                npcPtr->deathAnim.endRotation = cfg.endRotation();
+                npcPtr->deathAnim.frozenPosition = npcPtr->pos;
+            }
         }
     }
 }

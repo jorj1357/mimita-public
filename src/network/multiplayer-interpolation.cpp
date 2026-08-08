@@ -14,6 +14,7 @@
 #include "network/remote-entity-lifecycle.h"
 #include "network/disagreement-visuals.h"
 #include "config/networking-config.h"
+#include "config/ragdoll-death-config.h"
 #include "avatar/avatar.h"
 #include "config/player-settings.h"
 #include "combat/death-system.h"
@@ -1178,6 +1179,25 @@ void updateRenderedReplica(
     player.currentHp = displayHealth;
     player.dead = displayHealth <= 0 || player.netPredictedDead;
 
+    // ── Remote death lifecycle (players + NPCs) ───────────────────────
+    // Respawn (dead → alive): clear any leftover death animation so the body
+    // snaps to its new life instead of staying frozen at the old death spot.
+    if (interpolation.hasRendered &&
+        interpolation.lastRender.health <= 0 && render.health > 0 &&
+        player.deathAnim.active)
+    {
+        player.deathAnim = Player::DeathAnimState{};
+        player.netPredictedDead = false;
+    }
+    // Advance the fall-over death animation every frame. Previously only local
+    // bodies were ticked, so remote players/NPCs never animated their deaths.
+    if (player.dead && player.deathAnim.active)
+    {
+        player.deathAnim.tick++;
+        if (player.deathAnim.tick >= player.deathAnim.totalTicks)
+            player.deathAnim.active = false;
+    }
+
     // ── Death effect (snapshot-driven, loss-proof) ───────────────────
     // Detect the >0 → <=0 health transition in the render stream and spawn the
     // death ellipsoid so every client (attacker, victim, observers) sees it,
@@ -1189,6 +1209,21 @@ void updateRenderedReplica(
         const bool nowDead = render.health <= 0;
         if (wasAlive && nowDead)
         {
+            // Start the fall-over death animation so the remote body freezes in
+            // place, rotates to horizontal over totalTicks, stays fully visible,
+            // then disappears the instant the animation completes.
+            if (!player.deathAnim.active)
+            {
+                const auto& cfg = RagdollDeathConfig::instance();
+                player.deathAnim.active = true;
+                player.deathAnim.tick = 0;
+                player.deathAnim.totalTicks = cfg.totalTicks();
+                player.deathAnim.startAlpha = cfg.startAlpha();
+                player.deathAnim.endAlpha = cfg.endAlpha();
+                player.deathAnim.startRotation = cfg.startRotation();
+                player.deathAnim.endRotation = cfg.endRotation();
+                player.deathAnim.frozenPosition = player.pos;
+            }
             // Elongate toward the pre-death planar velocity (the death frame
             // itself carries zero velocity because dead players stop).
             const glm::vec3& deathVel = interpolation.lastRender.velocity;

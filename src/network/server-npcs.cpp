@@ -34,9 +34,9 @@
 namespace MimitaNet {
 
 // How long a killed online NPC stays dead before respawning at its spawn
-// point. The shared npcRespawnDelaySeconds is ~0.01s (imperceptible); a real
-// delay lets the client show the death effect, sound, and killfeed entry.
-constexpr float SERVER_NPC_RESPAWN_SECONDS = 2.0f;
+// point. Kept above the 180-tick (3s) fall-over death animation so clients see
+// the body freeze, fall over, and disappear before the NPC respawns.
+constexpr float SERVER_NPC_RESPAWN_SECONDS = 3.5f;
 
 void broadcastNpcDamageEvent(
     SOCKET sock,
@@ -293,7 +293,9 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
     npcIdsAlive.clear();
     for (const Npc& n : npcSystem.all())
     {
-        if (n.body.dead || n.body.currentHp <= 0) continue;
+        // Dead NPCs stay in the broadcast (health 0) so clients render their
+        // full fall-over death animation before the NPC respawns. Alive NPCs
+        // and freshly-respawned ones are broadcast as before.
         ServerNpc sn;
         sn.entityId = n.id;
         sn.name = n.body.username.empty()

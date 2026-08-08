@@ -356,6 +356,41 @@ void processRemoteNpcHit(
     }
 }
 
+void processRemoteBlastHitFeedback(
+    const WeaponDefinition& def,
+    const glm::vec3& hitEnd,
+    const glm::vec3& blastDir,
+    const std::string& shooterName,
+    uint32_t targetId,
+    bool isNpc,
+    Player& target,
+    int damage)
+{
+    if (target.dead || target.currentHp <= 0)
+        return;
+
+    const glm::vec3 normal(0.0f, 0.0f, 1.0f);
+    const glm::vec3 dir = glm::length(blastDir) > 0.001f
+        ? glm::normalize(blastDir) : glm::vec3(0.0f, 0.0f, -1.0f);
+    const int hpBefore = target.currentHp;
+
+    presentRemoteHit(def, hitEnd, normal, -normal, 1.0f, "torso",
+                     shooterName, target.username, damage);
+
+    const auto& prediction = NetworkingConfig::instance().data().prediction;
+    if (gpMpContext && gpMpContext->active && prediction.predictDamage)
+        MimitaNet::mpApplyPredictedDamage(*gpMpContext, targetId, damage, isNpc);
+
+    if (prediction.predictDeaths && damage >= hpBefore)
+    {
+        target.killedByWeapon = def.displayName;
+        target.lastDamagedBy = shooterName;
+        predictRemoteKill(target, dir, isNpc ? "npc" : "player");
+        if (gpMpContext && gpMpContext->active)
+            MimitaNet::mpApplyPredictedKillHeal(*gpMpContext, targetId, isNpc);
+    }
+}
+
 void processPlayerHit(
     RevolverShotResult& result,
     const WeaponDefinition& def,

@@ -123,11 +123,12 @@ void Player::renderCurrentPose(unsigned int shader,
         // Set debug view (UV checker etc.) for player too
         glUniform1i(uDebugViewLoc, DebugVis::shaderDebugView());
 
-        // Compute death animation alpha override
+        // Compute death animation alpha override. The body stays FULLY visible
+        // while it falls over (the renderer hides it the instant the animation
+        // ends), so there is no gradual fade.
         float deathAlpha = 1.0f;
         if (dead && deathAnim.active) {
-            float t = std::min(1.0f, (float)deathAnim.tick / (float)std::max(deathAnim.totalTicks, 1));
-            deathAlpha = glm::mix(deathAnim.startAlpha, deathAnim.endAlpha, t);
+            deathAlpha = 1.0f;
         }
 
         // Set alpha cutoff from current avatar mode

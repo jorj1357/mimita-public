@@ -32,6 +32,7 @@
 #include "combat/projectile-render.h"
 #include "combat/projectile-simulation.h"
 #include "combat/weapon-system.h"
+#include "combat/weapon-fire.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
 #include "combat/weapon-types.h"
@@ -533,19 +534,28 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
     projectile.renderRotation = projectile.rotation;
     projectile.renderAngularVelocity = projectile.angularVelocity;
 
-    // Initialize interpolation state
-    projectile.prevStateTick = event->spawnTick;
-    projectile.prevStatePos = projectile.position;
-    projectile.prevStateVel = projectile.velocity;
-    projectile.prevStateRot = projectile.rotation;
-
-    projectile.targetStateTick = event->spawnTick;
-    projectile.targetStatePos = serverPosition;
-    projectile.targetStateVel = serverVelocity;
-    projectile.targetStateRot = glm::quat(event->rotW, event->rotX, event->rotY, event->rotZ);
-
-    projectile.latestAcceptedTick = event->spawnTick;
-    projectile.lastTargetReceivedMs = nowMs();
+    // Interpolation state. When adopting a client-predicted projectile, NEVER
+    // yank the visual back to the server's (RTT-old) spawn state — continue
+    // from the predicted current position so the grenade/rocket never
+    // rubber-bands backward. The server's state events reconcile forward.
+    if (adoptedPrediction)
+    {
+        projectile.prevStateTick = projectile.targetStateTick = ctx.latestServerTick;
+        projectile.prevStatePos = projectile.targetStatePos = projectile.position;
+        projectile.prevStateVel = projectile.targetStateVel = projectile.velocity;
+        projectile.prevStateRot = projectile.targetStateRot = projectile.rotation;
+    }
+    else
+    {
+        projectile.prevStateTick = event->spawnTick;
+        projectile.prevStatePos = projectile.position;
+        projectile.prevStateVel = projectile.velocity;
+        projectile.prevStateRot = projectile.rotation;
+        projectile.targetStateTick = event->spawnTick;
+        projectile.targetStatePos = serverPosition;
+        projectile.targetStateVel = serverVelocity;
+        projectile.targetStateRot = glm::quat(event->rotW, event->rotX, event->rotY, event->rotZ);
+    }
     projectile.hasTargetState = true;
 
     // Muzzle flash on fire for remote shooters (owner already has the
@@ -1344,6 +1354,34 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
                         attacker = pi->second.name;
                     spawnExplosionFx(explodePos, weaponId, attacker);
                     ctx.predictedExplosions[projectile.fireSerial] = explodePos;
+
+                    // ── Predicted blast hit feedback (instant) ──────────────
+                    // Replicates the server's splash damage formula so the local
+                    // shooter sees hitmarker + hit sound + damage number + HP bar
+                    // on every remote target in the blast immediately. The
+                    // server's reliable DamageConfirmedEvent reconciles it.
+                    const WeaponDefinition* def = projectileDefinition(projectile.weaponType);
+                    if (def)
+                    {
+                        const float radius = cp(def, "splashRadius", 8.0f);
+                        const float splashDamage = cp(def, "rocketDirectDamage", 150.0f);
+                        const float exponent = cp(def, "splashExponent", 2.0f);
+                        const auto applyBlast = [&](Player& t, uint32_t id, bool isNpc) {
+                            if (t.dead || t.currentHp <= 0) return;
+                            const float d = glm::length(t.pos - explodePos);
+                            if (d >= radius) return;
+                            float dv = splashDamage *
+                                std::exp(-std::pow(d / radius, 2.0f) * exponent);
+                            const int dmg = std::max(1, (int)std::round(dv));
+                            WeaponFire::processRemoteBlastHitFeedback(
+                                *def, t.pos, t.pos - explodePos, attacker,
+                                id, isNpc, t, dmg);
+                        };
+                        for (auto& kv : ctx.remoteNpcs)
+                            applyBlast(kv.second, kv.first, true);
+                        for (auto& kv : ctx.remotePlayers)
+                            applyBlast(kv.second, kv.first, false);
+                    }
                     printf("[PROJECTILE CLIENT PREDICTED EXPLOSION] fireSerial=%u weapon=%s "
                            "pos=(%.2f,%.2f,%.2f)\n",
                            projectile.fireSerial, weaponId,
