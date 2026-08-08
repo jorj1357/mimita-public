@@ -702,6 +702,8 @@ struct MeleeHitEventPacket
     float knockX = 0.0f;
     float knockY = 0.0f;
     float knockZ = 0.0f;
+    uint16_t targetTransformEpoch = 0;
+    uint16_t reserved = 0;
 };
 
 struct ChatPacket

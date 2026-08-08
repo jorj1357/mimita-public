@@ -10,6 +10,7 @@
 
 #include "network/multiplayer-context.h"
 #include "network/packets.h"
+#include "network/connection-health.h"
 #include "network/simulation-constants.h"
 #include "network/udp-transport.h"
 #include "network/ice-transport.h"
@@ -20,6 +21,7 @@
 #include "config/networking-config.h"
 #include "analytics/analytics-manager.h"
 #include "debug/debug-log.h"
+#include "notifications/notifications.h"
 
 #include <algorithm>
 #include <atomic>
@@ -539,6 +541,11 @@ const char* connectionStateName(ConnectionState state)
         case ConnectionState::Connected:        return "Connected";
         case ConnectionState::Reconnecting:     return "Reconnecting";
         case ConnectionState::DisconnectPending: return "DisconnectPending";
+        case ConnectionState::WeakConnection:   return "WeakConnection";
+        case ConnectionState::ReconnectFailed:  return "ReconnectFailed";
+        case ConnectionState::HostClosed:       return "HostClosed";
+        case ConnectionState::Kicked:           return "Kicked";
+        case ConnectionState::ServerCrashed:    return "ServerCrashed";
     }
     return "Unknown";
 }

@@ -35,6 +35,11 @@ namespace MimitaNet {
 extern bool gNetInterpDebug;
 
 // ── Connection state machine ──────────────────────────────────────────
+// Honest client-side connection health. `WeakConnection` means game packets
+// are stale but the session is still usable (input still flows). `Reconnecting`
+// means reconnect attempts are running inside the grace window. The terminal
+// states (ReconnectFailed / HostClosed / Kicked / ServerCrashed) describe why
+// the session ended. UI derives "what the player should believe" from these.
 enum class ConnectionState : uint8_t
 {
     Disconnected,
@@ -45,7 +50,20 @@ enum class ConnectionState : uint8_t
     Connecting,
     Connected,
     Reconnecting,
-    DisconnectPending
+    DisconnectPending,
+    // ── Connection-health states (honest UI) ──────────────────────────
+    WeakConnection,     // packets stale but session still alive; input still sent
+    ReconnectFailed,    // 60s grace expired, gave up (fully disconnected)
+    HostClosed,         // server/host explicitly closed the session
+    Kicked,             // server kicked this player
+    ServerCrashed       // server unreachable / process died
+};
+
+// ── Per-remote-player disconnect state (observers see red effects) ────
+struct RemoteConnectionState
+{
+    uint64_t disconnectedSinceMs = 0; // 0 = not disconnected
+    bool reconnectedNotified = false; // green effect already shown for this episode
 };
 
 const char* connectionStateName(ConnectionState state);
@@ -390,6 +408,21 @@ struct MultiplayerContext
     uint64_t lastReconnectAttemptMs = 0;
     uint64_t reconnectBackoffMs = 1000;
 
+    // ── Honest connection-health state (packet-freshness driven) ──────
+    // Wall-clock deadline (nowMs()) after which the 60s reconnect grace ends
+    // and the client gives up. 0 = not in a grace window.
+    uint64_t reconnectGraceDeadlineMs = 0;
+    // nowMs() when the connection was first judged lost (entered Reconnecting).
+    uint64_t disconnectStartedMs = 0;
+    // nowMs() when the last packet was SENT (for last-packet-tx-age debug).
+    uint64_t lastPacketSentMs = 0;
+    // Last ConnectionState we surfaced to the player (notification + UI),
+    // so a state change fires exactly one notification per transition.
+    ConnectionState lastNotifiedConnectionState = ConnectionState::Disconnected;
+    // Per-remote-player disconnect state so observers can show red effects
+    // and ticking "connection lost" labels. Cleared on teardown.
+    std::unordered_map<uint32_t, RemoteConnectionState> remoteConnectionStates;
+
     // ── Session identity (monotonically increasing, never reset) ──────
     uint32_t connectionAttemptId = 0;
     std::string sessionId; // server-session identifier for reconnect-token policy
@@ -697,6 +730,13 @@ void mpProcessDisagreementPacket(MultiplayerContext& ctx, const DisagreementPack
 // ── Migration: reconnect helpers ──────────────────────────────────────
 void mpStartReconnect(MultiplayerContext& ctx);
 void mpTickReconnect(MultiplayerContext& ctx);
+// Drives the honest connection-health state machine (packet-freshness based).
+// Called once per mpTick; applies state transitions, starts/stops reconnect,
+// tears down on give-up, and surfaces red notifications on state changes.
+void mpUpdateConnectionHealth(MultiplayerContext& ctx);
+// Current honest connection-status text derived from state + packet freshness
+// (replaces the transport-level "Connected via ICE" lie in persistent UI).
+std::string mpConnectionHealthText(const MultiplayerContext& ctx);
 void mpRequestNpcSpawn(MultiplayerContext& ctx, const glm::vec3& position, float difficulty = 1.0f);
 void mpRequestTeleport(MultiplayerContext& ctx, const glm::vec3& position);
 void mpRequestExplode(MultiplayerContext& ctx);

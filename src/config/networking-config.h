@@ -321,6 +321,12 @@ struct NetworkRetryConfig
     double reconnectInitialBackoffMs = 1000.0;
     uint32_t reconnectMaxAttempts = 10;
     double reconnectMaxBackoffMs = 15000.0;
+    // ── Reconnect grace window ─────────────────────────────────────────
+    // Total wall-clock window (ms) a disconnected client keeps trying before
+    // giving up. The server holds the player slot alive for the same window.
+    double reconnectGraceMs = 60000.0;
+    // Delay (ms) between reconnect attempts after the immediate first try.
+    double reconnectIntervalMs = 6000.0;
 };
 
 struct ReliableGameplayEventConfig
@@ -354,6 +360,10 @@ struct NetworkingTimeoutConfig
     double clientTimeoutMs = 10000.0;
     double serverTimeoutMs = 10000.0;
     double connectTimeoutMs = 6000.0;
+    // Last packet age (ms) after which the connection is surfaced as
+    // WeakConnection even though the session is still alive. Below this the
+    // UI reports a clean Connected.
+    double stalePacketThresholdMs = 2500.0;
 };
 
 struct NetworkingDebugConfig

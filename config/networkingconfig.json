@@ -69,7 +69,8 @@
 
   "remote_motion_smoothing": {
     "comment": "Post-interpolation motion filter on rendered remote bodies. render_filter: direct (no smoothing) | bounded (converge discontinuities over a few frames; normal motion passes through) | spring (always-on critically-damped, literally cannot snap, slight follow-lag) | hybrid (velocity-feed-forward spring: spring's zero-snap PLUS crisp tracking of fast/up-down motion with ~zero lag) | linear (CS-style delayed interpolation: render linear_delay_ticks packets behind the newest and always slide linearly between the two bracketing snapshots; never renders the newest directly; the delay is a loss buffer that hides up to linear_delay_ticks lost packets).",
-    "render_filter": "linear",
+    "comment2": " render_filter: direct (no smoothing) | bounded (converge discontinuities over a few frames; normal motion passes through) | spring (always-on critically-damped, literally cannot snap, slight follow-lag) | hybrid (velocity-feed-forward spring: spring's zero-snap PLUS crisp tracking of fast/up-down motion with ~zero lag) | linear (CS-style delayed interpolation: render linear_delay_ticks packets behind the newest and always slide linearly between the two bracketing snapshots; never renders the newest directly; the delay is a loss buffer that hides up to linear_delay_ticks lost packets).",
+    "render_filter": "spring",
     "correction_max_step_units_per_second": 100.0,
     "correction_min_delta_units": 0.05,
     "spring_stiffness": 300.0,
@@ -90,18 +91,18 @@
     "filter_max_step_units_per_second": 0.0,
     "filter_clamp_z_below_target": true,
     "linear_delay_ticks comment": "8 7 2026 keep this low? i would like to only have it be min/max delay that handles the delay but idk how it works well enough ",
-    "linear_delay_ticks": 2,
-    "linear_min_delay_ticks": 2,
-    "linear_max_delay_ticks": 8,
-    "linear_hold_on_dry": false,
-    "linear_allow_extrapolation": true,
-    "linear_catchup_rate_ticks_per_second": 0.0,
-    "linear_delay_jitter_multiplier": 1.0,
-    "linear_delay_loss_weight": 1.0,
+    "linear_delay_ticks": 1,
+    "linear_min_delay_ticks": 1,
+    "linear_max_delay_ticks": 2,
+    "linear_hold_on_dry": true,
+    "linear_allow_extrapolation": false,
+    "linear_catchup_rate_ticks_per_second": 0.01,
+    "linear_delay_jitter_multiplier": 0.0,
+    "linear_delay_loss_weight": 0.0,
     "linear_snap_after_gap_ticks": 999,
     "linear_clock_source": "wall_time",
     "linear_reanchor_enabled_comment": "i disable this 8 7 2026 bc it seems less snappy/jittery when its off? but it seems like, its a hack fix, and we should have constraints like must be linear, must have this snapping on, etc, so we force it to perform well while having ideal long term settings, no hack fixes",
-    "linear_reanchor_enabled": true,
+    "linear_reanchor_enabled": false,
     "linear_reanchor_only_if_error_ms": 20,
     "linear_deadzone_units": 0.005,
     "max_render_time_jump_ms": 1
@@ -148,7 +149,9 @@
     "attack_request_timeout_ms": 3000,
     "reconnect_initial_backoff_ms": 1000,
     "reconnect_max_attempts": 10,
-    "reconnect_max_backoff_ms": 15000
+    "reconnect_max_backoff_ms": 15000,
+    "reconnect_grace_ms": 60000,
+    "reconnect_interval_ms": 6000
   },
 
   "reliable_gameplay_events": {
@@ -173,7 +176,8 @@
   "network_timeouts": {
     "client_timeout_ms": 10000,
     "server_timeout_ms": 10000,
-    "connect_timeout_ms": 6000
+    "connect_timeout_ms": 6000,
+    "stale_packet_threshold_ms": 2500
   },
 
   "debug": {
