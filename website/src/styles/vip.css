@@ -128,6 +128,27 @@ purpose
   box-shadow: 3px 3px 0 #ff00cc;
 }
 
+.vipWhatIsThis {
+  border: 2px solid #00ff66;
+  background: #00140a;
+  padding: 0.9rem;
+  margin: 0.75rem 0;
+  color: #d6ffe6;
+  box-shadow: 3px 3px 0 #ff00cc;
+}
+
+.vipWhatIsThis h2 {
+  font-size: 1.6rem;
+  color: #00ff66;
+  margin: 0 0 0.4rem;
+  text-transform: lowercase;
+}
+
+.vipWhatIsThis p {
+  margin: 0;
+  line-height: 1.5;
+}
+
 .vipError {
   border-color: #ff0033;
   color: #ffb3c0;
