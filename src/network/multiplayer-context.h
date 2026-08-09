@@ -249,6 +249,10 @@ struct EntityInterpolationState
     // Always-on spring for render_filter == "spring". Reset on respawn so the
     // new life does not inherit the old corpse's filter state.
     SpringState renderSpring;
+    // True once the render filter state has been seeded to a real first render
+    // position (fresh entity or respawn), so spring/hybrid/ease never start
+    // from the origin. Reset on respawn alongside renderSpring.
+    bool renderFilterSeeded = false;
     // Low-passed feed-forward velocity for the hybrid spring (smoothed with
     // hybrid_feed_forward_smoothing so snapshot-boundary velocity slope changes
     // don't inject jitter). Reset on respawn.

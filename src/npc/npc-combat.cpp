@@ -21,6 +21,7 @@
 #include "world/world.h"
 #include "npc/npc-internal.h"
 #include "npc/npc-difficulty-config.h"
+#include "npc/npc-combat-log.h"
 
 // Shared NPC projectile state (rockets, grenades, etc.)
 static RocketLauncherState gNpcRocketState;
@@ -80,17 +81,19 @@ static void logAimDebug(const Npc& npc, const WeaponDefinition& def,
                          const glm::vec3& finalDir,
                          float maxErrorDeg, float actualErrorDeg)
 {
-    FILE* f = fopen("logs/npc_aim_debug.txt", "a");
-    if (!f) return;
     float angleDiff = glm::degrees(std::acos(std::clamp(glm::dot(idealDir, finalDir), -1.0f, 1.0f)));
-    fprintf(f, "NPC id=%u weapon=%s maxError=%.1fdeg actualError=%.1fdeg "
-               "targetDir=(%.3f %.3f %.3f) finalDir=(%.3f %.3f %.3f) angleDiff=%.1fdeg\n",
-            npc.id, def.id.c_str(),
-            maxErrorDeg, actualErrorDeg,
-            idealDir.x, idealDir.y, idealDir.z,
-            finalDir.x, finalDir.y, finalDir.z,
-            angleDiff);
-    fclose(f);
+    // Gun-vs-bullet mismatch: degrees between the model's planar facing and the
+    // shot's planar direction. Near 0 = the gun points where the bullet goes.
+    glm::vec3 planarFacing = glm::normalize(glm::vec3(npc.currentFacing.x, npc.currentFacing.y, 0.0f));
+    glm::vec3 planarShot = glm::normalize(glm::vec3(finalDir.x, finalDir.y, 0.0f));
+    float facingAimDeg = 0.0f;
+    if (glm::length(planarFacing) > 0.001f && glm::length(planarShot) > 0.001f)
+        facingAimDeg = glm::degrees(std::acos(std::clamp(glm::dot(planarFacing, planarShot), -1.0f, 1.0f)));
+    npcLog("npc-shot npc=%u weapon=%s maxError=%.1fdeg err=%.1fdeg facingAim=%.1fdeg "
+           "target=(%.3f %.3f %.3f) aim=(%.3f %.3f %.3f) angleDiff=%.1fdeg",
+           npc.id, def.id.c_str(), maxErrorDeg, actualErrorDeg, facingAimDeg,
+           idealDir.x, idealDir.y, idealDir.z,
+           finalDir.x, finalDir.y, finalDir.z, angleDiff);
 }
 
 } // anonymous namespace
@@ -176,15 +179,8 @@ bool NpcCombat::rayCapsule(const glm::vec3& origin, const glm::vec3& dir,
     return false;
 }
 
-glm::vec3 NpcCombat::aimAtTarget(const Npc& npc, glm::vec3 npcPos, glm::vec3 targetPos)
+glm::vec3 NpcCombat::applyAimError(const Npc& npc, glm::vec3 aimDir)
 {
-    glm::vec3 aimTarget = targetPos + glm::vec3(0.0f, 0.0f, 0.8f);
-    glm::vec3 aimDir = aimTarget - npcPos;
-    float aimLen = glm::length(aimDir);
-    if (aimLen < 0.001f)
-        return glm::vec3{1.0f, 0.0f, 0.0f};
-    aimDir /= aimLen;
-
     float errorDeg = aimErrorDegrees(npc.difficulty);
     float maxErrorRad = glm::radians(errorDeg);
     if (maxErrorRad > 0.0001f) {
@@ -199,7 +195,6 @@ glm::vec3 NpcCombat::aimAtTarget(const Npc& npc, glm::vec3 npcPos, glm::vec3 tar
         aimDir = glm::normalize(aimDir +
             (right * std::cos(theta) + fwd * std::sin(theta)) * radius);
     }
-
     return aimDir;
 }
 
@@ -216,6 +211,11 @@ static float computeFireAggression(const Npc& npc)
 
 bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
 {
+    // Never fire at a dead/unconscious target. Stops the post-death shot/sound
+    // spam where NPCs kept shooting the corpse every frame.
+    if (player.dead || player.currentHp <= 0)
+        return false;
+
     if (npc.attackCooldown > 0.0f)
     {
         Debug::logThrottled(Debug::Category::NpcCombat, "npc-cd",
@@ -226,7 +226,11 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
 
     float dist = npc.sensors.targetDistance;
 
-    const float dmgMul = NpcDifficultyConfig::instance().settings().damageMultiplier;
+    const auto& npcDiffSettings = NpcDifficultyConfig::instance().settings();
+    const float dmgMul = npcDiffSettings.damageMultiplier;
+    // NPC bullets are thin (npcHitRadius) so the aim error cone matters and
+    // shots can genuinely miss; the player's own weapon keeps its fat beam.
+    const float beamOverride = npcDiffSettings.npcHitRadius;
 
     const WeaponDefinition* def = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
     if (!def)
@@ -288,7 +292,12 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     }
 
     glm::vec3 aimDir;
-    glm::vec3 npcPos = npc.body.pos + npcMuzzleOffset();
+    // Gun-tip muzzle: project the shot origin forward along the model's facing
+    // so tracers come from the revolver barrel, not the body center.
+    glm::vec3 facingPlanar = glm::normalize(glm::vec3(npc.currentFacing.x, npc.currentFacing.y, 0.0f));
+    if (glm::length(facingPlanar) < 0.001f)
+        facingPlanar = glm::vec3(1.0f, 0.0f, 0.0f);
+    glm::vec3 npcPos = npc.body.pos + npcMuzzleOffset() + facingPlanar * 0.7f;
 
     // Use cached LOS from updateOneNpc (avoids redundant gather + triangle loop)
     if (npc.cachedLoSBlocked)
@@ -298,11 +307,20 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
             npc.id);
         return false;
     }
-    aimDir = aimAtTarget(npc, npcPos, npc.sensors.targetPos);
 
-    glm::vec3 planarAim = glm::normalize(glm::vec3(aimDir.x, aimDir.y, 0.0f));
-    if (glm::length(planarAim) > 0.001f)
-        npc.currentFacing = planarAim;
+    // The bullet fires where the gun points (the model's smooth facing), tilted
+    // up/down to the target's chest, plus a small arcade error cone. The NPC
+    // must actually aim its gun at the target to hit; while the gun is still
+    // turning, shots go where it points (wide). No snap: the model is not
+    // teleported to the shot direction.
+    glm::vec3 toChest = (npc.sensors.targetPos + glm::vec3(0.0f, 0.0f, 0.8f)) - npcPos;
+    float horizDist = glm::length(glm::vec2(toChest.x, toChest.y));
+    float pitch = horizDist > 0.001f ? std::atan2(toChest.z, horizDist) : 0.0f;
+    aimDir = glm::normalize(glm::vec3(
+        facingPlanar.x * std::cos(pitch),
+        facingPlanar.y * std::cos(pitch),
+        std::sin(pitch)));
+    aimDir = NpcCombat::applyAimError(npc, aimDir);
 
     glm::vec3 idealDir = glm::normalize(npc.sensors.targetPos + glm::vec3(0.0f, 0.0f, 0.8f) - npcPos);
     float errorDeg = aimErrorDegrees(npc.difficulty);
@@ -326,9 +344,8 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         rt.currentAmmo = std::max(0, rt.currentAmmo - 1);
 
     bool fired = false;
-    // Actual fired direction and endpoint (the damage trace). The NPC body
-    // facing and the server broadcast read these so look == shoot == hit.
-    glm::vec3 firedDir = aimDir;
+    // Actual endpoint (the damage trace). The server broadcast reads this so
+    // the remote tracer goes exactly where the damage ray went (look == shoot == hit).
     glm::vec3 shotEnd = npcPos + aimDir * 100.0f;
     switch (def->behaviorType) {
     case WeaponBehaviorType::Hitscan:
@@ -336,12 +353,12 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         RevolverShotResult shot;
         if (def->spread > 0.0f) {
             glm::vec3 spreadDir = WeaponFire::computeSpreadDirection(aimDir, def->spread, const_cast<Npc&>(npc).rngState);
-            shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, spreadDir, &player, dmgMul);
+            shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, spreadDir, &player, dmgMul, beamOverride);
         } else {
-            shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player, dmgMul);
+            shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player, dmgMul, beamOverride);
         }
         fired = shot.fired;
-        if (fired) { firedDir = shot.direction; shotEnd = shot.end; }
+        if (fired) { shotEnd = shot.end; }
         Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s hitscan hit=%d damage=%.0f\n",
                    npc.id, def->id.c_str(), (int)shot.hitEntity, shot.damage);
         break;
@@ -351,7 +368,6 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     {
         WeaponRocketLauncher::fire(gNpcRocketState, *def, rt, npc.body, npcPos, aimDir);
         fired = true;
-        firedDir = aimDir;
         {
             float range = effectiveRange(*def);
             shotEnd = npcPos + aimDir * (range > 0.0f ? range : 100.0f);
@@ -364,9 +380,9 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     case WeaponBehaviorType::Swordsword:
     {
         // Melee: use hitscan at close range for now (future: full melee AI)
-        RevolverShotResult shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player, dmgMul);
+        RevolverShotResult shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player, dmgMul, beamOverride);
         fired = shot.fired;
-        if (fired) { firedDir = shot.direction; shotEnd = shot.end; }
+        if (fired) { shotEnd = shot.end; }
         Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s melee(approx) hit=%d\n",
                    npc.id, def->id.c_str(), (int)shot.hitEntity);
         break;
@@ -375,27 +391,20 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     case WeaponBehaviorType::GrenadeLauncher:
     {
         // Fallback: use hitscan (godball/grenade AI not yet implemented)
-        RevolverShotResult shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player, dmgMul);
+        RevolverShotResult shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player, dmgMul, beamOverride);
         fired = shot.fired;
-        if (fired) { firedDir = shot.direction; shotEnd = shot.end; }
+        if (fired) { shotEnd = shot.end; }
         Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s fallback-hitscan (full AI pending)\n",
                    npc.id, def->id.c_str());
         break;
     }
     }
 
-    // Snap the body to the actual fired direction and remember the shot so the
-    // server broadcast sends the true tracer (look == shoot == damage line).
+    // Remember the shot so the server broadcast sends the true tracer
+    // (look == shoot == bullet endpoint). The model is NOT snapped to the shot
+    // direction here — body.yaw follows currentFacing smoothly in buildInputState.
     if (fired)
     {
-        glm::vec3 planarFired(firedDir.x, firedDir.y, 0.0f);
-        const float planarLen = glm::length(planarFired);
-        if (planarLen > 0.001f)
-        {
-            planarFired /= planarLen;
-            npc.currentFacing = planarFired;
-            npc.body.yaw = glm::degrees(std::atan2(planarFired.y, planarFired.x));
-        }
         npc.lastShotOrigin = npcPos;
         npc.lastShotEnd = shotEnd;
         npc.hasLastShot = true;

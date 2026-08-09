@@ -15,6 +15,7 @@
 #include "npc/npc.h"
 #include "npc/npc-combat.h"
 #include "npc/npc-navigation.h"
+#include "npc/npc-combat-log.h"
 #include "entities/player.h"
 #include "world/world.h"
 #include "map/map-loader-collision.h"
@@ -226,15 +227,17 @@ static void respawnServerNpc(Npc& npc)
 // shot (muzzle flash, tracer, sound, weapon trigger) shows up remotely.
 static void broadcastNpcFiring(SOCKET sock,
                                std::unordered_map<uint32_t, ServerPlayer>& players,
-                               const NpcSystem& npcSystem,
+                               NpcSystem& npcSystem,
                                uint32_t tick,
                                uint64_t& totalPacketsOut)
 {
-    for (const Npc& n : npcSystem.all())
+    for (Npc& n : npcSystem.all())
     {
         if (n.body.dead || n.body.currentHp <= 0) continue;
-        // timeSinceLastShot is reset to 0 on fire inside updateOneNpc.
-        if (n.timeSinceLastShot >= SERVER_DT * 0.5f) continue;
+        // Broadcast only on the tick the NPC actually fired so clients get
+        // exactly one shot/sound/tracer per bullet (no per-frame spam).
+        if (!n.justFired) continue;
+        n.justFired = false;
         const WeaponDefinition* wdef = WeaponRegistry::instance().get(n.body.equippedWeaponId);
         if (!wdef) continue;
         const uint8_t netWeapon = networkWeaponTypeForDefinition(*wdef);
@@ -493,7 +496,7 @@ void simulateSharedNpcs(SOCKET sock,
         for (auto& kv : players)
         {
             ServerPlayer& p = kv.second;
-            if (p.dead) continue;
+            if (p.dead || p.connectionStale) continue;
             const glm::vec3 d = p.pos - n.body.pos;
             const float d2 = glm::dot(d, d);
             if (d2 < bestD2) { bestD2 = d2; nearest = &p; }
@@ -506,6 +509,9 @@ void simulateSharedNpcs(SOCKET sock,
         mirrorPlayer.yaw = nearest->yaw;
         mirrorPlayer.currentHp = nearest->health;
         mirrorPlayer.dead = nearest->dead;
+        // Clear the mirror's impulse so it only carries the knockback applied
+        // THIS tick by processPlayerHit (same knockback a player's shot gives).
+        mirrorPlayer.externalImpulse = glm::vec3(0.0f);
         const int hpBefore = mirrorPlayer.currentHp;
 
         npcSystem.updateOneWithTarget(n.id, world, mirrorPlayer, SERVER_DT);
@@ -538,13 +544,22 @@ void simulateSharedNpcs(SOCKET sock,
         if (hpBefore > mirrorPlayer.currentHp)
         {
             const int damage = hpBefore - mirrorPlayer.currentHp;
+            // Forward the exact knockback processPlayerHit applied to the mirror
+            // so NPC shots push the victim like a player's shot (also fixes the
+            // client HP bar, which only applies confirmed HP when knockback exists).
+            const glm::vec3 knockback = mirrorPlayer.externalImpulse;
             ServerDamageResult result = applyServerDamage(
-                players, *nearest, 0, damage, glm::vec3(0.0f),
+                players, *nearest, 0, damage, knockback,
                 ServerDamageSource::Hitscan);
             queueServerDamageConfirmedEvent(
                 sock, players, tick, totalPacketsOut, 0, *nearest, damage, result,
-                mirrorPlayer.pos, glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f),
+                mirrorPlayer.pos, glm::vec3(0.0f, 0.0f, 1.0f), knockback,
                 ServerDamageSource::Hitscan, NETWORK_WEAPON_NONE);
+            npcLog("npc=%u weapon=%s damage=%d healthBefore=%d healthAfter=%d "
+                   "accepted=%d knockback=(%.2f %.2f %.2f)",
+                   n.id, n.body.equippedWeaponId.c_str(), damage, result.healthBefore,
+                   result.healthAfter, (int)result.applied,
+                   knockback.x, knockback.y, knockback.z);
         }
     }
 

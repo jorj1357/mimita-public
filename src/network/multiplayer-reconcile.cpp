@@ -15,6 +15,7 @@
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "config/networking-config.h"
+#include "npc/npc-combat-log.h"
 #include "debug/debug-log.h"
 
 #include <algorithm>
@@ -328,11 +329,14 @@ void mpDrainPendingVictimHealth(MultiplayerContext& ctx, Player& player)
         // Apply in the same frame the shot visual plays: the attacker's body
         // must have rendered past the shot's server tick (or the max-hold
         // wall-clock fallback must have elapsed) so the HP drop is never out
-        // of order relative to the bullet/attacker.
+        // of order relative to the bullet/attacker. NPC damage (shooterId==0)
+        // has no visual-timeline gate, so it applies immediately.
+        const bool npcDamage = (it->shooterId == 0);
         const bool timelineReady =
-            it->shooterId != 0 &&
-            mpVisualTimelineReady(ctx, it->shooterId, it->eventServerTick,
-                                  it->receivedMs);
+            npcDamage ||
+            (it->shooterId != 0 &&
+             mpVisualTimelineReady(ctx, it->shooterId, it->eventServerTick,
+                                   it->receivedMs));
         const bool maxHoldElapsed = now >= it->applyAtMs;
         if (!timelineReady && !maxHoldElapsed)
         {
@@ -347,6 +351,9 @@ void mpDrainPendingVictimHealth(MultiplayerContext& ctx, Player& player)
         // tied to the bullet visual via the same timeline gate).
         if (glm::length(it->knockback) > 0.001f)
             player.externalImpulse += it->knockback;
+        npcLog("npc-victim-hp-apply hp=%d healthAfter=%d killed=%d apply=1 knockback=(%.2f %.2f %.2f)",
+               player.currentHp, it->healthAfter, (int)it->killed,
+               it->knockback.x, it->knockback.y, it->knockback.z);
         Debug::log(Debug::Category::Networking,
             "[NET VICTIM HEALTH APPLY] hp=%d killed=%d timelineReady=%d\n",
             player.currentHp, (int)it->killed, (int)timelineReady);

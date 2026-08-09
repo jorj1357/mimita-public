@@ -18,6 +18,10 @@ public:
 
     void flush();
 
+    // Returns the managed log path for a section/type (e.g. "NPC") in the
+    // same dated-folder format the main logger uses: logs/<MM-DD-YYYY>/<Type>_log_<HHMMSS>.txt
+    static std::string managedFilePath(const std::string& logType);
+
     std::string path() const { return mPath; }
     int fileCount() const;
     int savedStdoutFd() const { return mSavedStdout; }

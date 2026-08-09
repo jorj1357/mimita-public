@@ -336,7 +336,8 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
         {
             const std::string mode = readString(r, "render_filter", c.renderFilter);
             c.renderFilter = (mode == "direct" || mode == "spring" ||
-                              mode == "hybrid" || mode == "linear")
+                              mode == "hybrid" || mode == "linear" ||
+                              mode == "ease")
                 ? mode : "bounded";
         }
         c.correctionMaxStepUnitsPerSecond = clampMin(
@@ -383,6 +384,10 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
                        c.filterMaxStepUnitsPerSecond), 0.0);
         c.filterClampZBelowTarget = readBool(
             r, "filter_clamp_z_below_target", c.filterClampZBelowTarget);
+        c.geometrySafeEnabled = readBool(
+            r, "geometry_safe_enabled", c.geometrySafeEnabled);
+        c.geometrySafeSlopUnits = clampMin(
+            readDouble(r, "geometry_safe_slop_units", c.geometrySafeSlopUnits), 0.0);
         c.linearDelayTicks = (uint32_t)std::max<uint32_t>(
             1u, (uint32_t)clampMin(
                     readDouble(r, "linear_delay_ticks", (double)c.linearDelayTicks),
@@ -447,6 +452,10 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
         c.maxRenderTimeJumpSeconds = readMsRangeSeconds(
             r, "max_render_time_jump_ms",
             c.maxRenderTimeJumpSeconds, 0.0, 1000.0);
+        c.easeCorrectionRate = clampMin(
+            readDouble(r, "ease_correction_rate", c.easeCorrectionRate), 0.0);
+        c.easeVelocitySmoothing = clampRange(
+            readDouble(r, "ease_velocity_smoothing", c.easeVelocitySmoothing), 0.0, 1.0);
     }
 
     // ── death_effects ────────────────────────────────────────────────

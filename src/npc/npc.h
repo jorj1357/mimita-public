@@ -106,6 +106,10 @@ public:
     glm::vec3 lastShotEnd{0.0f};
     bool hasLastShot = false;
 
+    // Set true on the tick this NPC actually fired, so the server broadcasts
+    // the shot exactly once (no per-frame shot/sound spam).
+    bool justFired = false;
+
     Npc(std::uint32_t id, float difficulty, glm::vec3 spawn,
         const std::string& weaponId = "revolver");
 };

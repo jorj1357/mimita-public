@@ -56,7 +56,8 @@ extern RevolverShotResult tryFireHitscanDir(
     const glm::vec3& muzzlePos,
     const glm::vec3& aimDir,
     const Player* targetPlayer,
-    float damageMultiplier);
+    float damageMultiplier,
+    float beamThicknessOverride);
 
 extern void fireMultiPellet(
     const WeaponDefinition& def,

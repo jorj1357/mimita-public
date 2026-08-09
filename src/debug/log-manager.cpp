@@ -52,6 +52,11 @@ LogManager& LogManager::instance()
     return mgr;
 }
 
+std::string LogManager::managedFilePath(const std::string& logType)
+{
+    return "logs/" + dateDirName() + "/" + timeFileName(logType);
+}
+
 bool LogManager::createDirectories()
 {
     std::error_code ec;

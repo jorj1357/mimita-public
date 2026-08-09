@@ -93,6 +93,7 @@
 #include "config/size-scaling-config.h"
 #include "config/movement-config.h"
 #include "npc/npc-difficulty-config.h"
+#include "npc/npc-combat-log.h"
 #include "avatar/avatar.h"
 #include "avatar/avatar-commands.h"
 void registerCompetitiveCommands();
@@ -210,6 +211,7 @@ void gameInitSubsystems(Engine& engine)
     ShadowConfig::instance().load("config/shadows.json");
     GameplayConfig::instance().load("config/gameplay.json");
     NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
+    npcLogSetProc("client");
     MovementJsonConfig::instance().load("config/movement.json");
     CrosshairConfig::instance().load();
     registerCrosshairCommands();
