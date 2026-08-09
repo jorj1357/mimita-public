@@ -98,7 +98,7 @@ const GAMES = [
     {
         id: "chili-race",
         title: "Chili Race",
-        subtitle: "Eat 50 chilis before the CPU. You won't. You can't win.",
+        subtitle: "Try and eat 50 chilis before the CPU does!!!",
         path: "/games/chili-race",
     },
 ]
