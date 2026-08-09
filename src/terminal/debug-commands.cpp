@@ -265,6 +265,12 @@ void registerDebugCommands()
                 DevOverrides::healthOverrideEnabled = !isReset;
                 DevOverrides::healthOverrideValue = value;
                 MimitaNet::serverGameOverrides().maxHpOverride = isReset ? 0 : value;
+                if (gpPlayer && !gpPlayer->dead)
+                {
+                    const int effectiveMax = (isReset || value <= 0) ? 100 : value;
+                    gpPlayer->maxHp = effectiveMax;
+                    gpPlayer->currentHp = effectiveMax;
+                }
                 Terminal::instance().addLog(isReset
                     ? "[HEALTHALL] Override disabled. Future spawns use normal HP (100)."
                     : std::string("[HEALTHALL] All-entities spawn HP set to ") + std::to_string(value));

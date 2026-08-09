@@ -146,7 +146,6 @@ extern std::string* gpActiveMapPath;
 extern bool* gpWorldLoaded;
 extern ReplayRingBuffer* gpReplayRecorder;
 extern ReplayPlayer* gpReplayPlayer;
-extern ReplayClipSaver* gpReplayClipSaver;
 extern ReplayFactory* gpReplayFactory;
 extern ReplayBrowser* gpReplayBrowser;
 extern ReplayTimeline* gpReplayTimeline;

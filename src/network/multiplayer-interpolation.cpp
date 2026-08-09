@@ -822,6 +822,7 @@ static void resetPresentationAfterRespawn(Player& player, const SnapshotTransfor
     player.networkDeathPresented = false;
     player.deathAnim = Player::DeathAnimState{};
     player.currentHp = target.health;
+    player.maxHp = target.health;
 
     // Walking/idle animation state
     player.footstepTimer = 0.0f;
@@ -1245,6 +1246,10 @@ void updateRenderedReplica(
     const int displayHealth =
         applyPredictedHealthOverlay(player, interpolation, render.health);
     player.currentHp = displayHealth;
+    // Server max HP (healthall override) isn't transmitted; derive it from the
+    // highest server health seen so nameplates/NPC bars show 999/999 not 999/100.
+    if (displayHealth > player.maxHp)
+        player.maxHp = displayHealth;
     player.dead = displayHealth <= 0 || player.netPredictedDead;
 
     // ── Remote death lifecycle (players + NPCs) ───────────────────────

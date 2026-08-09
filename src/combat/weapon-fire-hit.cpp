@@ -207,7 +207,8 @@ RevolverShotResult tryFireHitscanDir(
     const World& world,
     const glm::vec3& muzzlePos,
     const glm::vec3& aimDir,
-    const Player* targetPlayer)
+    const Player* targetPlayer,
+    float damageMultiplier)
 {
     RevolverShotResult result;
 
@@ -260,7 +261,7 @@ RevolverShotResult tryFireHitscanDir(
         shooter.username, shooter.sizeScale, def.id);
 
     if (hitPlayer && targetPlayer) {
-        processPlayerHit(result, def, hitPart, hitNormal, result.end, shotDirection, nearest, shooter, const_cast<Player*>(targetPlayer));
+        processPlayerHit(result, def, hitPart, hitNormal, result.end, shotDirection, nearest, shooter, const_cast<Player*>(targetPlayer), damageMultiplier);
     } else if (hitWorld) {
         processWorldHit(result, def, result.end, worldNormal, shotDirection, shooter.username);
     }

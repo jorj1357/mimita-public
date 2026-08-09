@@ -55,7 +55,6 @@ void engineTickNet(Engine& engine, float dt)
     GameState& gameState = GAME_STATE;
     auto& mpContext = MP_CONTEXT;
     auto& gReplayRecorder = REPLAY_RECORDER;
-    auto& gReplayClipSaver = REPLAY_CLIP_SAVER;
     auto& gReplayFactory = REPLAY_FACTORY;
 
     { Perf::ScopedTimer _net("Networking");

@@ -184,7 +184,6 @@ ReplayRingBuffer* gpReplayRecorder = nullptr;
 ReplayPlayer* gpReplayPlayer = nullptr;
 std::unordered_map<std::string, std::unique_ptr<Player>>* gpReplayActorModels = nullptr;
 std::unordered_map<std::string, WeaponViewModel>* gpReplayWeaponModels = nullptr;
-ReplayClipSaver* gpReplayClipSaver = nullptr;
 ReplayFactory* gpReplayFactory = nullptr;
 ReplayBrowser* gpReplayBrowser = nullptr;
 ReplayTimeline* gpReplayTimeline = nullptr;

@@ -202,9 +202,11 @@ void handleNpcDamageRequest(SOCKET sock, const char* buffer, int bytes,
         target, clamped, killed, origin, hit, dir, normal, req->weapon);
 }
 
-void handleServerCommand(const char* buffer, int bytes,
+void handleServerCommand(SOCKET sock, const sockaddr_in& from,
+                         const char* buffer, int bytes,
                          std::unordered_map<uint32_t, ServerPlayer>& players,
-                         std::unordered_map<uint32_t, ServerNpc>& npcs)
+                         std::unordered_map<uint32_t, ServerNpc>& npcs,
+                         uint32_t tick, uint64_t& totalPacketsOut)
 {
     if (bytes < (int)sizeof(ServerCommandPacket))
         return;
@@ -217,15 +219,33 @@ void handleServerCommand(const char* buffer, int bytes,
     cmd->commandText[239] = '\0';
     const std::string commandStr(cmd->commandText);
 
-    // Host-gate: only the first player to join (the host) may issue
-    // server-authoritative commands. This also stops any client from
-    // deleting all NPCs.
+    // Acknowledge the sender so the host gets terminal feedback.
+    const auto ack = [&](bool accepted, const char* status) {
+        ServerCommandResultPacket res{};
+        res.header.type = PACKET_SERVER_COMMAND_RESULT;
+        res.header.tick = tick;
+        res.header.playerId = it->second.id;
+        res.accepted = accepted ? 1 : 0;
+        std::memset(res.statusText, 0, sizeof(res.statusText));
+        std::strncpy(res.statusText, status, sizeof(res.statusText) - 1);
+        if (it->second.transport)
+            it->second.transport->send(&res, sizeof(res));
+        else
+            sendto(sock, (const char*)&res, sizeof(res), 0,
+                   (sockaddr*)&from, sizeof(from));
+        ++totalPacketsOut;
+    };
+
+    // Host-gate: only the player whose name matches the server host (or the
+    // first joiner when no host name is set) may issue server-authoritative
+    // commands. This also stops any client from deleting all NPCs.
     if (!it->second.isHost)
     {
         Debug::warn(Debug::Category::Networking,
             "%s [SERVER COMMAND REJECT] playerId=%u name=\"%s\" cmd=\"%s\" reason=not-host\n",
             serverTimestamp(), it->second.id, it->second.name.c_str(),
             commandStr.c_str());
+        ack(false, "rejected: not host");
         return;
     }
 
@@ -240,15 +260,19 @@ void handleServerCommand(const char* buffer, int bytes,
         printf("%s [SERVER COMMAND] npc_delete_all by playerId=%u count=%zu\n",
                serverTimestamp(), it->second.id, npcs.size());
         npcs.clear();
+        ack(true, "applied: npc_delete_all");
     }
     else if (commandStr.rfind("healthall ", 0) == 0)
     {
         const std::string arg = commandStr.substr(10);
+        bool applied = false;
         if (arg == "default" || arg == "reset")
         {
             ov.maxHpOverride = 0;
             Debug::warn(Debug::Category::Networking,
                 "%s [SERVER COMMAND] healthall default (max HP 100)\n", serverTimestamp());
+            ack(true, "applied: healthall default (max HP 100)");
+            applied = true;
         }
         else
         {
@@ -259,13 +283,28 @@ void handleServerCommand(const char* buffer, int bytes,
                 Debug::warn(Debug::Category::Networking,
                     "%s [SERVER COMMAND] healthall=%d (all future spawns + kill-heals)\n",
                     serverTimestamp(), ov.maxHpOverride);
+                ack(true, ("applied: healthall " + std::to_string(ov.maxHpOverride)).c_str());
+                applied = true;
             }
             catch (...)
             {
                 Debug::warn(Debug::Category::Networking,
                     "%s [SERVER COMMAND] healthall invalid value=\"%s\"\n",
                     serverTimestamp(), arg.c_str());
+                ack(false, "rejected: invalid healthall value");
             }
+        }
+        if (applied)
+        {
+            // Retroactively heal every alive entity to the new max so
+            // "healthall 999" immediately shows 999/999, not just future spawns.
+            const int effectiveMax = serverMaxHp();
+            for (auto& kv : players)
+                if (!kv.second.dead)
+                    kv.second.health = effectiveMax;
+            for (auto& kv : npcs)
+                if (kv.second.health > 0)
+                    kv.second.health = effectiveMax;
         }
     }
     else if (commandStr == "setspawn_set")
@@ -277,6 +316,7 @@ void handleServerCommand(const char* buffer, int bytes,
             "%s [SERVER COMMAND] setspawn_set pos=(%.2f,%.2f,%.2f) enabled=1\n",
             serverTimestamp(), ov.spawnOverridePosition.x,
             ov.spawnOverridePosition.y, ov.spawnOverridePosition.z);
+        ack(true, "applied: setspawn_set");
     }
     else if (commandStr.rfind("setspawn ", 0) == 0)
     {
@@ -284,11 +324,13 @@ void handleServerCommand(const char* buffer, int bytes,
         Debug::warn(Debug::Category::Networking,
             "%s [SERVER COMMAND] setspawn=%d\n",
             serverTimestamp(), (int)ov.spawnOverrideEnabled);
+        ack(true, ov.spawnOverrideEnabled ? "applied: setspawn 1" : "applied: setspawn 0");
     }
     else
     {
         printf("%s [SERVER COMMAND] unknown cmd=\"%s\" from playerId=%u\n",
                serverTimestamp(), commandStr.c_str(), it->second.id);
+        ack(false, "rejected: unknown command");
     }
 }
 

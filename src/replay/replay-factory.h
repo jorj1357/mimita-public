@@ -158,7 +158,7 @@ private:
 };
 
 // ----------------------------------------------------------------
-// ReplayClipSaver enhancement: auto-saves all kills with metadata
+// Auto-saves kill highlights with metadata (on the background worker)
 // ----------------------------------------------------------------
 class ReplayFactory {
 public:

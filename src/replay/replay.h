@@ -228,26 +228,6 @@ private:
     std::vector<ReplayAsset> mAssets;
 };
 
-class ReplayClipSaver {
-public:
-    explicit ReplayClipSaver(ReplayRingBuffer& ring) : mRing(ring) {}
-    void notifyKill(const std::string& killerId, const std::string& victimId, bool roundWinning);
-    void update();
-    bool saveLastKill(std::string* savedPath = nullptr);
-    bool hasLastKill() const { return mLastKill.has_value(); }
-private:
-    struct KillInfo {
-        uint32_t tick = 0;
-        std::string killerId;
-        std::string victimId;
-        bool autoSave = false;
-        bool saved = false;
-    };
-
-    ReplayRingBuffer& mRing;
-    std::optional<KillInfo> mLastKill;
-};
-
 std::string generateReplayExportPath();
 std::string generateReplayValidationPath(const std::string& replayPath);
 std::string generateReplayClipPath();
@@ -257,7 +237,6 @@ std::string saveInstantReplay(ReplayRingBuffer& ring, uint32_t durationSeconds =
 
 void setActiveReplayRecorder(ReplayRecorder* recorder);
 void setReplayCaptureEnabled(bool enabled);
-void setActiveReplayClipSaver(ReplayClipSaver* saver);
 void notifyReplayKill(const std::string& killerId,
                       const std::string& victimId,
                       bool roundWinning);
@@ -274,7 +253,6 @@ void setReplayFactoryNotifyFn(ReplayFactoryNotifyFn fn);
 // Global state (defined in replay.cpp, accessible across replay subsystem)
 extern ReplayRecorder* gActiveReplayRecorder;
 extern bool gReplayCaptureEnabled;
-extern ReplayClipSaver* gActiveReplayClipSaver;
 
 void captureReplayEffect(const ReplayEffectEvent& event);
 void captureReplaySound(const ReplaySoundEvent& event);

@@ -8,9 +8,6 @@ class Npc;
 class NpcSystem;
 class Camera;
 
-extern bool gNpcForceHit;
-extern float gNpcAimAccuracy;
-
 namespace NpcCombat {
 
 // Effective-unlimited firing range: NPCs never idle purely because a target is

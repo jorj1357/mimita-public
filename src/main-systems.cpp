@@ -92,6 +92,7 @@
 #include "config/player-settings.h"
 #include "config/size-scaling-config.h"
 #include "config/movement-config.h"
+#include "npc/npc-difficulty-config.h"
 #include "avatar/avatar.h"
 #include "avatar/avatar-commands.h"
 void registerCompetitiveCommands();
@@ -157,7 +158,6 @@ extern std::string* gpActiveMapPath;
 extern bool* gpWorldLoaded;
 extern ReplayRingBuffer* gpReplayRecorder;
 extern ReplayPlayer* gpReplayPlayer;
-extern ReplayClipSaver* gpReplayClipSaver;
 extern ReplayFactory* gpReplayFactory;
 extern ReplayBrowser* gpReplayBrowser;
 extern ReplayTimeline* gpReplayTimeline;
@@ -209,6 +209,7 @@ void gameInitSubsystems(Engine& engine)
     LightingConfig::instance().load("config/lighting.json");
     ShadowConfig::instance().load("config/shadows.json");
     GameplayConfig::instance().load("config/gameplay.json");
+    NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
     MovementJsonConfig::instance().load("config/movement.json");
     CrosshairConfig::instance().load();
     registerCrosshairCommands();
@@ -257,8 +258,6 @@ void gameInitSubsystems(Engine& engine)
 
     static ReplayRingBuffer gReplayRecorder;
     static ReplayPlayer gReplayPlayer;
-    static ReplayClipSaver gReplayClipSaver(gReplayRecorder);
-    setActiveReplayClipSaver(&gReplayClipSaver);
     static ReplaySaveWorker gReplayWorker;
     static ReplayFactory gReplayFactory(gReplayRecorder);
     gReplayFactory.setWorker(&gReplayWorker);
@@ -322,7 +321,6 @@ void gameInitSubsystems(Engine& engine)
     gpWeapons = &weapons;
     gpReplayRecorder = &gReplayRecorder;
     gpReplayPlayer = &gReplayPlayer;
-    gpReplayClipSaver = &gReplayClipSaver;
     gpReplayFactory = &gReplayFactory;
     gpReplayBrowser = &gReplayBrowser;
     gpReplayTimeline = &gReplayTimeline;

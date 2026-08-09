@@ -20,12 +20,10 @@
 #include "physics/physics-types.h"
 #include "world/world.h"
 #include "npc/npc-internal.h"
+#include "npc/npc-difficulty-config.h"
 
 // Shared NPC projectile state (rockets, grenades, etc.)
 static RocketLauncherState gNpcRocketState;
-
-bool gNpcForceHit = false;
-float gNpcAimAccuracy = 0.3f;
 
 namespace {
 
@@ -85,10 +83,10 @@ static void logAimDebug(const Npc& npc, const WeaponDefinition& def,
     FILE* f = fopen("logs/npc_aim_debug.txt", "a");
     if (!f) return;
     float angleDiff = glm::degrees(std::acos(std::clamp(glm::dot(idealDir, finalDir), -1.0f, 1.0f)));
-    fprintf(f, "NPC id=%u weapon=%s aimAcc=%.1f maxError=%.1fdeg actualError=%.1fdeg "
+    fprintf(f, "NPC id=%u weapon=%s maxError=%.1fdeg actualError=%.1fdeg "
                "targetDir=(%.3f %.3f %.3f) finalDir=(%.3f %.3f %.3f) angleDiff=%.1fdeg\n",
             npc.id, def.id.c_str(),
-            gNpcAimAccuracy, maxErrorDeg, actualErrorDeg,
+            maxErrorDeg, actualErrorDeg,
             idealDir.x, idealDir.y, idealDir.z,
             finalDir.x, finalDir.y, finalDir.z,
             angleDiff);
@@ -97,9 +95,13 @@ static void logAimDebug(const Npc& npc, const WeaponDefinition& def,
 
 } // anonymous namespace
 
-float NpcCombat::aimErrorDegrees(float)
+float NpcCombat::aimErrorDegrees(float difficulty)
 {
-    return maxAngularErrorForAccuracy(gNpcAimAccuracy);
+    const auto& cfg = NpcDifficultyConfig::instance().settings();
+    if (cfg.forceHit)
+        return 0.0f;
+    float d01 = difficulty01(difficulty);
+    return cfg.maxAngularErrorDegrees * (1.0f - d01 * cfg.difficultyErrorScale);
 }
 
 float NpcCombat::maxAngularErrorForAccuracy(float acc)
@@ -277,6 +279,8 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
 
     float dist = npc.sensors.targetDistance;
 
+    const float dmgMul = NpcDifficultyConfig::instance().settings().damageMultiplier;
+
     const WeaponDefinition* def = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
     if (!def)
     {
@@ -372,11 +376,11 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
 
     logAimDebug(npc, *def, idealDir, aimDir, errorDeg, angleDiff);
 
-    printf("[NPC SHOT] id=%u dist=%.1fm aimAcc=%.2f maxError=%.1fdeg "
+    printf("[NPC SHOT] id=%u dist=%.1fm maxError=%.1fdeg "
            "ideal=(%.3f,%.3f,%.3f) final=(%.3f,%.3f,%.3f) diff=%.1fdeg "
            "weapon=%s ready=%s\n",
            npc.id, dist,
-           gNpcAimAccuracy, errorDeg,
+           errorDeg,
            idealDir.x, idealDir.y, idealDir.z,
            aimDir.x, aimDir.y, aimDir.z,
            angleDiff,
@@ -398,9 +402,9 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         RevolverShotResult shot;
         if (def->spread > 0.0f) {
             glm::vec3 spreadDir = WeaponFire::computeSpreadDirection(aimDir, def->spread, const_cast<Npc&>(npc).rngState);
-            shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, spreadDir, &player);
+            shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, spreadDir, &player, dmgMul);
         } else {
-            shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player);
+            shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player, dmgMul);
         }
         fired = shot.fired;
         if (fired) { firedDir = shot.direction; shotEnd = shot.end; }
@@ -426,7 +430,7 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     case WeaponBehaviorType::Swordsword:
     {
         // Melee: use hitscan at close range for now (future: full melee AI)
-        RevolverShotResult shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player);
+        RevolverShotResult shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player, dmgMul);
         fired = shot.fired;
         if (fired) { firedDir = shot.direction; shotEnd = shot.end; }
         Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s melee(approx) hit=%d\n",
@@ -437,7 +441,7 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     case WeaponBehaviorType::GrenadeLauncher:
     {
         // Fallback: use hitscan (godball/grenade AI not yet implemented)
-        RevolverShotResult shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player);
+        RevolverShotResult shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player, dmgMul);
         fired = shot.fired;
         if (fired) { firedDir = shot.direction; shotEnd = shot.end; }
         Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s fallback-hitscan (full AI pending)\n",
@@ -463,11 +467,13 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         npc.hasLastShot = true;
     }
 
-    // Variable fire delay: blend between min (fireDelay) and max (5s) based on aggression + rhythm
-    float minDelay = def->fireDelay;
-    float maxDelay = Npc::MAX_FIRE_DELAY;
+    // Variable fire delay: blend between min and max based on aggression + rhythm.
+    // The difficulty config overrides the weapon's own fire_delay for NPCs.
+    const auto& npcCfg = NpcDifficultyConfig::instance().settings();
+    float minDelay = std::max(npcCfg.fireDelayMin, def->fireDelay);
+    float maxDelay = std::max(minDelay, npcCfg.fireDelayMax);
     float rawPos = random01(npc.rngState);
-    float aggression = computeFireAggression(npc);
+    float aggression = glm::clamp(computeFireAggression(npc) + npcCfg.aggressionBonus, 0.0f, 1.0f);
     npc.fireAggressionBias = aggression;
     float calm = 1.0f - aggression;
     float pos = rawPos - aggression * 0.35f + calm * 0.15f + npc.fireRhythmOffset * 0.2f;

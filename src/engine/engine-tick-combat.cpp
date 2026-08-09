@@ -86,7 +86,6 @@ void engineTickCombat(Engine& engine, float dt)
     auto& gReplayChatStates = REPLAY_CHAT_STATES;
     auto& gReplayRecorder = REPLAY_RECORDER;
     auto& gReplayPlayer = REPLAY_PLAYER;
-    auto& gReplayClipSaver = REPLAY_CLIP_SAVER;
 
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
 

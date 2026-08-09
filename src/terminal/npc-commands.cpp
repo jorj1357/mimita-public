@@ -5,6 +5,7 @@
 #include "terminal/terminal-state.h"
 #include "npc/npc.h"
 #include "npc/npc-combat.h"
+#include "npc/npc-difficulty-config.h"
 #include "devtools/dev-npc-selection.h"
 #include "physics/config.h"
 #include "network/net_mode.h"
@@ -40,11 +41,13 @@ void registerNpcCommands()
         }
     });
     Terminal::instance().registerCommand({
-        "npc_force_hit", "Force NPC raycast to always hit (debug)", "npc_force_hit <0|1>",
+        "npc_force_hit", "Force NPC raycast to always hit (saved to config/npc-difficulty.json)", "npc_force_hit <0|1>",
         [](const std::vector<std::string>& args) {
-            gNpcForceHit = args.empty() ? !gNpcForceHit : args[0] != "0";
-            Terminal::instance().addLog(std::string("[DEBUG] NPC force hit ") +
-                (gNpcForceHit ? "ENABLED" : "disabled"));
+            NpcDifficultyConfig& cfg = NpcDifficultyConfig::instance();
+            cfg.settings().forceHit = args.empty() ? !cfg.settings().forceHit : args[0] != "0";
+            cfg.save();
+            Terminal::instance().addLog(std::string("[NPC] force hit ") +
+                (cfg.settings().forceHit ? "ENABLED" : "disabled") + " (saved to config/npc-difficulty.json)");
         }
     });
     Terminal::instance().registerCommand({
@@ -67,18 +70,30 @@ void registerNpcCommands()
         }
     });
     Terminal::instance().registerCommand({
-        "npc_aim_acc", "Set NPC aim accuracy (0 = decent, 50 = very good, 100 = perfect, negative = terrible)", "npc_aim_acc <float>",
+        "npc_aim_acc", "Set NPC aim accuracy (0 = decent, 50 = very good, 100 = perfect, negative = terrible). Saved to config/npc-difficulty.json.", "npc_aim_acc <float>",
         [](const std::vector<std::string>& args) {
+            NpcDifficultyConfig& cfg = NpcDifficultyConfig::instance();
             if (args.empty()) {
-                float maxErr = NpcCombat::maxAngularErrorForAccuracy(gNpcAimAccuracy);
-                Terminal::instance().addLog("[NPC] npc_aim_acc = " + std::to_string(gNpcAimAccuracy)
-                    + " (max angular error = " + std::to_string(maxErr) + " deg)");
+                Terminal::instance().addLog("[NPC] maxAngularErrorDegrees = "
+                    + std::to_string(cfg.settings().maxAngularErrorDegrees) + " deg");
                 return;
             }
-            gNpcAimAccuracy = std::stof(args[0]);
-            float maxErr = NpcCombat::maxAngularErrorForAccuracy(gNpcAimAccuracy);
-            Terminal::instance().addLog("[NPC] npc_aim_acc set to " + std::to_string(gNpcAimAccuracy)
-                + " (max angular error = " + std::to_string(maxErr) + " deg)");
+            cfg.settings().maxAngularErrorDegrees = NpcCombat::maxAngularErrorForAccuracy(std::stof(args[0]));
+            cfg.save();
+            Terminal::instance().addLog("[NPC] maxAngularErrorDegrees set to "
+                + std::to_string(cfg.settings().maxAngularErrorDegrees) + " deg (saved to config/npc-difficulty.json)");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "npc_diff_status", "Show current NPC difficulty config", "npc_diff_status",
+        [](const std::vector<std::string>&) {
+            const auto& s = NpcDifficultyConfig::instance().settings();
+            char buf[512];
+            snprintf(buf, sizeof(buf),
+                "[NPC DIFFICULTY] maxErr=%.1fdeg diffScale=%.2f dmg=%.2fx fireDelay=[%.2f,%.2f] aggressionBonus=%.2f forceHit=%d",
+                s.maxAngularErrorDegrees, s.difficultyErrorScale, s.damageMultiplier,
+                s.fireDelayMin, s.fireDelayMax, s.aggressionBonus, (int)s.forceHit);
+            Terminal::instance().addLog(buf);
         }
     });
     Terminal::instance().registerCommand({

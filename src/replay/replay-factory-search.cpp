@@ -19,21 +19,33 @@ using json = nlohmann::json;
 std::vector<ReplayClipInfo> scanSavedClips()
 {
     std::vector<ReplayClipInfo> result;
-    std::error_code ec;
     const std::filesystem::path baseDir = std::filesystem::path("replays");
-    if (!std::filesystem::exists(baseDir, ec))
-        return result;
 
     std::vector<std::pair<std::filesystem::file_time_type, std::string>> found;
-    for (const auto& entry : std::filesystem::recursive_directory_iterator(baseDir, ec)) {
-        if (ec || !entry.is_regular_file())
-            continue;
-        const std::string name = entry.path().filename().string();
-        if (name.size() > 11 && name.rfind(".mclip.json") == name.size() - 11)
-            found.push_back({entry.last_write_time(ec), entry.path().string()});
-        else if (name.size() > 5 && name.rfind(".json") == name.size() - 5 &&
-                 name.find("-replay.json") != std::string::npos)
-            found.push_back({entry.last_write_time(ec), entry.path().string()});
+    try {
+        std::error_code ec;
+        if (!std::filesystem::exists(baseDir, ec))
+            return result;
+
+        auto it = std::filesystem::recursive_directory_iterator(baseDir, ec);
+        const auto endIt = std::filesystem::recursive_directory_iterator();
+        for (; !ec && it != endIt; it.increment(ec)) {
+            std::error_code fec;
+            if (!it->is_regular_file(fec) || fec)
+                continue;
+            const std::string name = it->path().filename().string();
+            std::error_code tec;
+            auto ft = it->last_write_time(tec);
+            if (tec)
+                continue;
+            if (name.size() > 11 && name.rfind(".mclip.json") == name.size() - 11)
+                found.push_back({ft, it->path().string()});
+            else if (name.size() > 5 && name.rfind(".json") == name.size() - 5 &&
+                     name.find("-replay.json") != std::string::npos)
+                found.push_back({ft, it->path().string()});
+        }
+    } catch (...) {
+        return result;
     }
 
     std::sort(found.begin(), found.end(),

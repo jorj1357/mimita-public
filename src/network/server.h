@@ -88,6 +88,10 @@ struct ServerGameOverrides
     glm::vec3 spawnOverridePosition{0.0f};
 };
 ServerGameOverrides& serverGameOverrides();
+// The player name that launched/owns this server (from --host-player or launch
+// settings). The first player joining with this name is treated as the host and
+// may issue host-only commands. Empty = first joiner is host.
+extern std::string gServerHostPlayerName;
 // True when this process is the server host: dedicated (--server) or running a
 // listen server. Terminal commands gate on this.
 bool isServerHost();
@@ -872,9 +876,11 @@ void handleNpcDamageRequest(SOCKET sock, const char* buffer, int bytes,
                             std::unordered_map<uint32_t, ServerPlayer>& players,
                             std::unordered_map<uint32_t, ServerNpc>& npcs,
                             uint32_t tick, uint64_t& totalPacketsOut);
-void handleServerCommand(const char* buffer, int bytes,
+void handleServerCommand(SOCKET sock, const sockaddr_in& from,
+                         const char* buffer, int bytes,
                          std::unordered_map<uint32_t, ServerPlayer>& players,
-                         std::unordered_map<uint32_t, ServerNpc>& npcs);
+                         std::unordered_map<uint32_t, ServerNpc>& npcs,
+                         uint32_t tick, uint64_t& totalPacketsOut);
 
 // ── Migration: join/reconnect packet handlers ────────────────────────
 void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
