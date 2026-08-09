@@ -10,6 +10,8 @@ const SPRINT_LEAD = 8
 const CATCH_SPEED = 8
 const BASE_RATE_MIN = 6
 const BASE_RATE_MAX = 8
+const MUSIC_VOLUME = 0.4
+const MUSIC_FADE_MS = 3000
 const BEST_KEY = "chilirace_best"
 const RESULTS_KEY = "chilirace_results"
 const LEADERBOARD_KEY = "chilirace_leaderboard"
@@ -120,6 +122,7 @@ export default function ChiliRace() {
   const countdownTimerRef = useRef(null)
   const finishTimerRef = useRef(null)
   const musicRef = useRef(null)
+  const musicFadeRef = useRef(null)
   const clickAudioRef = useRef(null)
   const loseAudioRef = useRef(null)
   const countAudioRef = useRef(null)
@@ -129,9 +132,24 @@ export default function ChiliRace() {
     if (!musicRef.current) {
       musicRef.current = new Audio(ASSET_PATHS.music)
       musicRef.current.loop = true
-      musicRef.current.volume = 0.4
+      musicRef.current.volume = MUSIC_VOLUME
     }
     return musicRef.current
+  }
+  function fadeMusicIn() {
+    const music = getMusic()
+    if (!music.paused) return
+    music.volume = 0
+    music.play().catch(() => {})
+    let start = null
+    const step = (now) => {
+      if (start === null) start = now
+      const t = Math.min(1, (now - start) / MUSIC_FADE_MS)
+      music.volume = MUSIC_VOLUME * t
+      if (t < 1) musicFadeRef.current = requestAnimationFrame(step)
+    }
+    cancelAnimationFrame(musicFadeRef.current)
+    musicFadeRef.current = requestAnimationFrame(step)
   }
   function getClickAudio() {
     if (!clickAudioRef.current) clickAudioRef.current = new Audio(ASSET_PATHS.clickSound)
@@ -182,8 +200,7 @@ export default function ChiliRace() {
 
   useEffect(() => {
     function startMusicOnce() {
-      const music = getMusic()
-      if (music.paused) music.play().catch(() => {})
+      fadeMusicIn()
       document.removeEventListener("pointerdown", startMusicOnce)
       document.removeEventListener("keydown", startMusicOnce)
     }
@@ -199,10 +216,12 @@ export default function ChiliRace() {
       document.removeEventListener("pointerdown", startMusicOnce)
       document.removeEventListener("keydown", startMusicOnce)
       cancelAnimationFrame(rafRef.current)
+      cancelAnimationFrame(musicFadeRef.current)
       clearInterval(countdownTimerRef.current)
       clearTimeout(finishTimerRef.current)
       if (musicRef.current) musicRef.current.pause()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function lose() {
@@ -259,8 +278,7 @@ export default function ChiliRace() {
     setNpcProgress(0)
     setCps(0)
 
-    const music = getMusic()
-    if (music.paused) music.play().catch(() => {})
+    fadeMusicIn()
 
     setPhase("countdown")
     setCountdown(3)
