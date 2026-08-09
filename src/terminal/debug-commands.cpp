@@ -13,6 +13,7 @@
 #include "terminal/terminal-state.h"
 #include "gui/hud/player-nameplates.h"
 #include "gui/gui-bindings.h"
+#include "network/server.h"
 
 void registerDebugCommands()
 {
@@ -233,7 +234,7 @@ void registerDebugCommands()
 
     Terminal::instance().registerCommand({
         "healthall",
-        "Set spawn HP for ALL entities (player, NPCs). Syntax: healthall <hp> | healthall default|reset",
+        "Set spawn HP for ALL entities (player, NPCs). Host only. Syntax: healthall <hp> | healthall default|reset",
         "healthall <value>",
         [](const std::vector<std::string>& args) {
             if (args.empty()) {
@@ -241,14 +242,15 @@ void registerDebugCommands()
                 return;
             }
 
+            if (!MimitaNet::isServerHost()) {
+                Terminal::instance().addLog("[HEALTHALL] HOST ONLY — run this on the server host.");
+                return;
+            }
+
             if (args[0] == "default" || args[0] == "reset") {
                 DevOverrides::healthOverrideEnabled = false;
-                Debug::warn(Debug::Category::General,
-                    "\n==================================\n"
-                    "All-Entities Health Override Disabled\n"
-                    "Using default spawn health.\n"
-                    "==================================\n");
-                Terminal::instance().addLog("[HEALTHALL] Override disabled. Future spawns will use normal HP.");
+                MimitaNet::serverGameOverrides().maxHpOverride = 0;
+                Terminal::instance().addLog("[HEALTHALL] Override disabled. Future spawns will use normal HP (100).");
                 return;
             }
 
@@ -266,13 +268,16 @@ void registerDebugCommands()
 
             DevOverrides::healthOverrideEnabled = true;
             DevOverrides::healthOverrideValue = value;
+            // Server-authoritative: all future player/NPC spawns get this max
+            // HP, and every kill heals the killer back to it.
+            MimitaNet::serverGameOverrides().maxHpOverride = value;
 
             char buf[256];
             snprintf(buf, sizeof(buf),
                 "\n==================================\n"
                 "All-Entities Health Override Enabled\n"
                 "HP: %d\n"
-                "Applies to all future spawns/respawns\n"
+                "Applies to all future spawns/respawns + kill-heals\n"
                 "==================================",
                 value);
             Debug::warn(Debug::Category::General, "%s\n", buf);

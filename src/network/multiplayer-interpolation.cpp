@@ -819,6 +819,7 @@ static void resetPresentationAfterRespawn(Player& player, const SnapshotTransfor
     player.proceduralFrozen = false;
     player.dead = false;
     player.netPredictedDead = false;
+    player.networkDeathPresented = false;
     player.deathAnim = Player::DeathAnimState{};
     player.currentHp = target.health;
 
@@ -1282,15 +1283,19 @@ void updateRenderedReplica(
 
     // ── Death effect (snapshot-driven, loss-proof) ───────────────────
     // Detect the >0 → <=0 health transition in the render stream and spawn the
-    // death ellipsoid so every client (attacker, victim, observers) sees it,
-    // even when the reliable damage event is dropped under packet loss.
+    // death ellipsoid. If a reliable kill event already presented this death
+    // (networkDeathPresented), skip so there is never a second death.
     if (spawnDeathEffects && interpolation.hasRendered &&
-        NetworkingConfig::instance().data().deathEffects.remotePlayerDeathEffect)
+        NetworkingConfig::instance().data().deathEffects.remotePlayerDeathEffect &&
+        !player.networkDeathPresented)
     {
         const bool wasAlive = interpolation.lastRender.health > 0;
         const bool nowDead = render.health <= 0;
         if (wasAlive && nowDead)
         {
+            // This snapshot transition presented the death — a later reliable
+            // kill event must not play a second one.
+            player.networkDeathPresented = true;
             // Start the fall-over death animation so the remote body freezes in
             // place, rotates to horizontal over totalTicks, stays fully visible,
             // then disappears the instant the animation completes.
@@ -1662,18 +1667,18 @@ void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)
         }
         else
         {
+            // Advance the render clock by REAL wall-clock elapsed time for EVERY
+            // render filter (not just linear). The render clock is the client's
+            // estimate of the current server tick — it MUST track the server's
+            // real 60 Hz tick, independent of frame rate / frame-dt semantics.
+            // Advancing it by the frame `dt` let it run slower than the server
+            // at low FPS (2 clients on one machine), so the fire tick drifted
+            // hundreds of ticks into the past and every hit rewind missed.
             double elapsedMs = 0.0;
-            if (linearClock && motionClock.linearClockSource == "wall_time")
-            {
-                elapsedMs = ctx.interpolationClockLastUpdateMs != 0 &&
-                            nowClock >= ctx.interpolationClockLastUpdateMs
-                    ? (double)(nowClock - ctx.interpolationClockLastUpdateMs)
-                    : 0.0;
-            }
-            else
-            {
-                elapsedMs = std::max(0.0, (double)dt * 1000.0);
-            }
+            elapsedMs = ctx.interpolationClockLastUpdateMs != 0 &&
+                        nowClock >= ctx.interpolationClockLastUpdateMs
+                ? (double)(nowClock - ctx.interpolationClockLastUpdateMs)
+                : 0.0;
             ctx.interpolationClockLastUpdateMs = nowClock;
             const double dtTicks =
                 elapsedMs / 1000.0 * (double)GAMEPLAY_SIMULATION_HZ;
@@ -1683,6 +1688,27 @@ void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)
             ctx.interpolationRenderTick += clockStepTicks;
             ctx.lastInterpolationClockStepMs =
                 clockStepTicks / (double)GAMEPLAY_SIMULATION_HZ * 1000.0;
+
+            // The render clock can NEVER be behind the newest received server
+            // tick (the client has that data). If it fell behind (drift), pull
+            // it up so the fire tick stays in the server's tick domain and the
+            // rewind lands on the pose the shooter actually saw.
+            if (ctx.latestServerTick != 0 &&
+                ctx.interpolationRenderTick < (double)ctx.latestServerTick)
+            {
+                const double before = ctx.interpolationRenderTick;
+                ctx.interpolationRenderTick = (double)ctx.latestServerTick;
+                ++ctx.interpolationReanchorCount;
+                ctx.lastInterpolationReanchorMagnitudeMs =
+                    (ctx.interpolationRenderTick - before) /
+                    (double)GAMEPLAY_SIMULATION_HZ * 1000.0;
+                ctx.lastInterpolationReanchorReason = "clock-fell-behind-newest";
+                Debug::warn(Debug::Category::Networking,
+                    "[NETINTERP CLOCK LIFT] latest=%u before=%.2f after=%.2f "
+                    "magnitudeMs=%.1f\n",
+                    ctx.latestServerTick, before, ctx.interpolationRenderTick,
+                    ctx.lastInterpolationReanchorMagnitudeMs);
+            }
 
             // Rare safety re-anchor only. Snapshot bursts must fill the buffer;
             // they must not drag the render clock forward every time the newest
@@ -1785,3 +1811,5 @@ void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)
 }
 
 } // namespace MimitaNet
+
+// build timing touch 2026-08-08T20:21:46.5042606-04:00

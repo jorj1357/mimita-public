@@ -35,6 +35,10 @@
 #include <thread>
 #include <windows.h>
 
+// Global-scope accessor into the client GUI's listen-server state (gui-main.cpp).
+namespace MimitaNet { struct ListenServerState; }
+MimitaNet::ListenServerState* getListenServerState();
+
 namespace MimitaNet {
 
 namespace {
@@ -187,6 +191,33 @@ void reportServerPerf(const char* label,
 
 // Forward declaration for background listen server thread
 static void listenServerThreadFunc(ListenServerState& state);
+
+namespace {
+
+ServerGameOverrides gServerOverrides;
+
+} // namespace
+
+ServerGameOverrides& serverGameOverrides()
+{
+    return gServerOverrides;
+}
+
+bool isServerHost()
+{
+    // Dedicated server process.
+    {
+        const char* cmd = GetCommandLineA();
+        if (cmd && (strstr(cmd, "--server") || strstr(cmd, "-server")))
+            return true;
+    }
+    // Listen server active in this process (hosting via the in-game menu).
+    if (hostedRoomSession().active)
+        return true;
+    if (ListenServerState* s = ::getListenServerState())
+        return s->active;
+    return false;
+}
 
 int runServer(const LaunchOptions& options)
 {
@@ -356,7 +387,7 @@ int runServer(const LaunchOptions& options)
             if (!world.spawnPoints.empty())
             {
                 size_t idx = i % world.spawnPoints.size();
-                npc.pos = world.spawnPoints[idx].position;
+                npc.pos = effectiveServerSpawn(world.spawnPoints[idx].position);
                 npc.yaw = world.spawnPoints[idx].yaw;
                 printf("%s [SERVER NPC SPAWN] reason=startup entityId=%u npcIndex=%u "
                        "spawnpoint=%zu position=(%.2f,%.2f,%.2f)\n",
@@ -760,7 +791,7 @@ bool startListenServer(ListenServerState& state, uint16_t port,
         if (!state.world.spawnPoints.empty())
         {
             size_t idx = i % state.world.spawnPoints.size();
-            npc.pos = state.world.spawnPoints[idx].position;
+            npc.pos = effectiveServerSpawn(state.world.spawnPoints[idx].position);
             npc.yaw = state.world.spawnPoints[idx].yaw;
             printf("[LISTEN SERVER NPC SPAWN] reason=startup entityId=%u npcIndex=%u "
                    "spawnpoint=%zu position=(%.2f,%.2f,%.2f)\n",

@@ -550,7 +550,7 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
         if (world && !world->spawnPoints.empty())
         {
             size_t idx = (id - 1) % world->spawnPoints.size();
-            spawnPos = world->spawnPoints[idx].position;
+            spawnPos = effectiveServerSpawn(world->spawnPoints[idx].position);
             spawnYaw = world->spawnPoints[idx].yaw;
             printf("%s [SERVER PLAYER SPAWN] reason=initial_join id=%u name=\"%s\" "
                    "spawnpoint=%zu position=(%.2f,%.2f,%.2f) yaw=%.1f\n",
@@ -1141,7 +1141,7 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         if (world && !world->spawnPoints.empty())
         {
             size_t idx = (id - 1) % world->spawnPoints.size();
-            spawnPos = world->spawnPoints[idx].position;
+            spawnPos = effectiveServerSpawn(world->spawnPoints[idx].position);
             spawnYaw = world->spawnPoints[idx].yaw;
             printf("%s [SERVER PLAYER SPAWN] reason=join_request id=%u name=\"%s\" "
                    "spawnpoint=%zu position=(%.2f,%.2f,%.2f) yaw=%.1f token=%s\n",

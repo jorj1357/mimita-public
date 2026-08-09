@@ -641,6 +641,79 @@ void processMultiPelletRemoteHit(
     }
 }
 
+void processMultiPelletRemoteNpcHit(
+    RevolverShotResult& result,
+    const WeaponDefinition& def,
+    const std::string& hitPart,
+    const glm::vec3& hitNormal,
+    const glm::vec3& hitEnd,
+    const glm::vec3& pelletDir,
+    float pelletNearest,
+    Player& shooter,
+    uint32_t pelletRemoteNpcTargetId,
+    float& accumulatedDamage,
+    bool& anyHitEntity,
+    uint32_t& lastTargetId,
+    glm::vec3& accumulatedKnockback,
+    float& nearestPelletDist,
+    glm::vec3& lastPelletEnd,
+    glm::vec3& lastHitNormal)
+{
+    float dmg = def.damage;
+    if (hitPart == "head") dmg *= def.headshotMultiplier;
+    else if (hitPart.find("leg") != std::string::npos)
+        dmg *= limbMultiplier(def);
+
+    float falloffStart = 110.0f;
+    auto fit = def.customParams.find("distanceFalloffStart");
+    if (fit != def.customParams.end()) falloffStart = fit->second;
+    float minFrac = 0.1f;
+    fit = def.customParams.find("minDamageFraction");
+    if (fit != def.customParams.end()) minFrac = fit->second;
+    dmg *= std::clamp(1.0f - pelletNearest / falloffStart, minFrac, 1.0f);
+    int totalDmg = std::max(1, (int)std::round(dmg));
+    result.targetIsRemoteNpc = true;
+    result.hitEntity = true;
+    result.targetId = pelletRemoteNpcTargetId;
+    accumulatedDamage += (float)totalDmg;
+    anyHitEntity = true;
+    lastTargetId = pelletRemoteNpcTargetId;
+
+    float df = std::clamp(1.0f - pelletNearest / falloffStart, minFrac, 1.0f);
+    accumulatedKnockback += pelletDir * (float)totalDmg * df * 0.15f;
+
+    // Predicted HP overlay for the remote NPC (instant feedback, corrected by
+    // the server confirm). Mirrors the single-shot remote NPC path.
+    if (gpMpContext && gpMpContext->active)
+    {
+        const uint64_t nowMsVal = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+        gpMpContext->predictedNpcHitMs[pelletRemoteNpcTargetId] = nowMsVal;
+        if (NetworkingConfig::instance().data().prediction.predictDamage)
+            MimitaNet::mpApplyPredictedDamage(
+                *gpMpContext, pelletRemoteNpcTargetId, totalDmg, true);
+    }
+
+    {
+        HitEvent ev;
+        ev.position = hitEnd;
+        ev.normal = hitNormal;
+        ev.direction = pelletDir;
+        ev.hitEntity = true;
+        ev.damage = totalDmg;
+        ev.attacker = shooter.username;
+        ev.weaponSource = def.id;
+        HitEffects::onHit(ev);
+    }
+
+    if (pelletNearest < nearestPelletDist) {
+        nearestPelletDist = pelletNearest;
+        lastPelletEnd = hitEnd;
+        lastHitNormal = hitNormal;
+    }
+}
+
 void processMultiPelletWorldHit(
     const WeaponDefinition& def,
     const glm::vec3& hitEnd,

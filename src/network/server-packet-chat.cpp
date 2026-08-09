@@ -190,7 +190,7 @@ void handleNpcDamageRequest(SOCKET sock, const char* buffer, int bytes,
         // Heal the shooter to full health
         auto shooterIt = players.find(req->header.playerId);
         if (shooterIt != players.end())
-            shooterIt->second.health = 100;
+            shooterIt->second.health = serverMaxHp();
     }
 
     const glm::vec3 origin(req->originX, req->originY, req->originZ);

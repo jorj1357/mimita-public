@@ -22,6 +22,7 @@
 #include "entities/player.h"
 #include "terminal/terminal-state.h"
 #include "game/spawn-override.h"
+#include "network/server.h"
 
 Terminal& Terminal::instance() {
     static Terminal t;
@@ -110,6 +111,49 @@ void Terminal::init(GLFWwindow* window) {
                 std::to_string(npcSpawnPoint.x) + ", " +
                 std::to_string(npcSpawnPoint.y) + ", " +
                 std::to_string(npcSpawnPoint.z) + ")");
+        }
+    });
+
+    registerCommand({
+        "setspawn_set",
+        "HOST ONLY — set the server-authoritative spawn position (for ALL players and NPCs) to where you're standing now",
+        "setspawn_set",
+        [](const std::vector<std::string>& args) {
+            (void)args;
+            if (!MimitaNet::isServerHost()) {
+                Terminal::instance().addLog("[SETSPAWN] HOST ONLY — run this on the server host.");
+                return;
+            }
+            auto& o = MimitaNet::serverGameOverrides();
+            o.spawnOverridePosition = THE_PLAYER.pos;
+            o.spawnOverrideEnabled = true;
+            Terminal::instance().addLog("[SETSPAWN] set to (" +
+                std::to_string(o.spawnOverridePosition.x) + " " +
+                std::to_string(o.spawnOverridePosition.y) + " " +
+                std::to_string(o.spawnOverridePosition.z) + ") — every player and NPC spawns here.");
+        }
+    });
+    registerCommand({
+        "setspawn",
+        "HOST ONLY — enable/disable the server spawn override. setspawn 1 = use the set position, setspawn 0 = default spawn points",
+        "setspawn <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (!MimitaNet::isServerHost()) {
+                Terminal::instance().addLog("[SETSPAWN] HOST ONLY — run this on the server host.");
+                return;
+            }
+            if (args.empty()) {
+                auto& o = MimitaNet::serverGameOverrides();
+                Terminal::instance().addLog("[SETSPAWN] enabled=" + std::to_string((int)o.spawnOverrideEnabled) +
+                    " position=(" + std::to_string(o.spawnOverridePosition.x) + " " +
+                    std::to_string(o.spawnOverridePosition.y) + " " +
+                    std::to_string(o.spawnOverridePosition.z) + ")");
+                return;
+            }
+            bool on = args[0] == "1";
+            MimitaNet::serverGameOverrides().spawnOverrideEnabled = on;
+            Terminal::instance().addLog(on ? "[SETSPAWN] enabled — all entities spawn at the set position"
+                                          : "[SETSPAWN] disabled — using default spawn points");
         }
     });
 

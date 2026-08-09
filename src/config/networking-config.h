@@ -51,6 +51,17 @@ struct RemotePlayerInterpolationConfig
     // How close a claimed hit must land to the rewound body (units) for the
     // pellet/shot validation path to accept it. Replaces the hardcoded 2.5f.
     float rewindHitTolerance = 2.5f;
+    // Extra units added to the claim validation tolerance so a shot that lands
+    // on the target's RENDERED body registers even when motion-filter /
+    // interpolation lag puts the server's rewind pose slightly ahead of where
+    // the shooter saw the target. Anti-cheat tolerance only — the client's
+    // precise body-part trace still decides the hitmarker.
+    float claimLagAllowance = 3.0f;
+    // Hard ceiling (in server ticks) on how far back the server rewinds for hit
+    // validation. A stale/ancient client fire tick can never rewind to a pose
+    // older than this — protects against clock drift sending the rewind
+    // seconds into the past (which made every hit miss). 0 = no clamp.
+    uint32_t maxRewindTicks = 60;
     // Max units/sec the server-smoothed broadcast position may move per tick.
     // 0 = unlimited. Clamps residual catch-up spikes from bursty reports so
     // even a bad-connection client's bursts render as steady motion.
@@ -405,10 +416,11 @@ struct NetworkPredictionConfig
     // Predict the target's damage numbers + health bar on the local trace.
     // Hitmarker + hit sound are ALWAYS predicted regardless of this toggle.
     bool predictDamage = true;
-    // Predict lethal deaths (instant death animation + kill heal). Rolled back
-    // the moment the AttackResult verdict disagrees, so with body-part hit
-    // agreement feedback stays instant AND accurate even on bad connections.
-    bool predictDeaths = true;
+    // Predict lethal deaths (instant death animation + kill heal). OFF by
+    // default so a death is presented exactly once by the reliable server
+    // event (no predicted-then-confirmed double death). When enabled it rolls
+    // back on server disagreement.
+    bool predictDeaths = false;
 };
 
 // Combat visual toggle: when true (default), hitscan/bullet tracers continue to
@@ -484,3 +496,5 @@ private:
     bool mWatchLogged = false;
     std::optional<double> mOverrideInterpolationDelayMs;
 };
+
+// build timing touch 2026-08-08T20:22:01.8045098-04:00

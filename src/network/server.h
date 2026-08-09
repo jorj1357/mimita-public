@@ -78,6 +78,33 @@ constexpr uint32_t REWIND_INTERP_DELAY_TICKS = 0;
 // still reject every stale-life report.
 constexpr uint32_t kAuthoritativeTransformAckTimeoutMs = 1500;
 
+// Host-only server-authoritative game overrides (set via terminal commands on
+// the host: healthall / setspawn_set / setspawn). The server applies them to
+// spawns and kill-heals. Non-host clients never see these commands.
+struct ServerGameOverrides
+{
+    int maxHpOverride = 0;            // 0 = default 100
+    bool spawnOverrideEnabled = false;
+    glm::vec3 spawnOverridePosition{0.0f};
+};
+ServerGameOverrides& serverGameOverrides();
+// True when this process is the server host: dedicated (--server) or running a
+// listen server. Terminal commands gate on this.
+bool isServerHost();
+// Returns the host-set spawn position when the override is enabled, else the
+// map's default fallback. Applied to every player/NPC spawn on the server.
+inline glm::vec3 effectiveServerSpawn(const glm::vec3& fallback)
+{
+    const ServerGameOverrides& o = serverGameOverrides();
+    return o.spawnOverrideEnabled ? o.spawnOverridePosition : fallback;
+}
+// Authoritative max HP for spawns + kill-heals (healthall override or 100).
+inline int serverMaxHp()
+{
+    const ServerGameOverrides& o = serverGameOverrides();
+    return o.maxHpOverride > 0 ? o.maxHpOverride : 100;
+}
+
 struct ServerSpawnPoint
 {
     glm::vec3 position{0.0f};

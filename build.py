@@ -86,11 +86,15 @@ else:
     MODE = "debug"
     LINK_FLAGS = []
 
-    # MUCH faster compile times
+    # MUCH faster compile times. -g1 keeps line numbers + function names so
+    # GDB backtraces/crash triage still work, but drops struct/var debug info.
+    # Objects are ~30x smaller than -g2, which makes the 500MB+ exe link in
+    # about a second instead of several. Switch to -g2 when you need to inspect
+    # variables in GDB (then delete build/obj-debug to force a rebuild).
     CXX_FLAGS = [
         "-std=c++17",
         "-Og",
-        "-g",
+        "-g1",
         "-pipe",
         "-MMD",
         "-MP",
@@ -580,9 +584,7 @@ cmd = ccache_cmd()
 cmd += object_files
 cmd += LIB_FLAGS
 cmd += LINK_LIBS
-
-if MODE == "release" and LINK_FLAGS:
-    cmd += LINK_FLAGS
+cmd += LINK_FLAGS
 
 cmd += [
     "-o",

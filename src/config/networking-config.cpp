@@ -261,6 +261,11 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
         c.rewindHitTolerance = (float)std::max(
             0.1, readDouble(r, "rewind_hit_tolerance",
                             (double)c.rewindHitTolerance));
+        c.claimLagAllowance = (float)std::max(
+            0.0, readDouble(r, "claim_lag_allowance",
+                            (double)c.claimLagAllowance));
+        c.maxRewindTicks = (uint32_t)std::max<uint32_t>(
+            0, readSizeRange(r, "max_rewind_ticks", c.maxRewindTicks, 0, 600));
         c.serverBroadcastMaxSpeed = clampMin(
             readDouble(r, "server_broadcast_max_speed",
                        c.serverBroadcastMaxSpeed), 0.0);
