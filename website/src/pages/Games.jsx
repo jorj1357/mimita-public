@@ -95,6 +95,12 @@ const GAMES = [
         subtitle: "Click in time with the beat. Starts at 120 BPM, gets faster!",
         path: "/games/rhythm-test-v1",
     },
+    {
+        id: "chili-race",
+        title: "Chili Race",
+        subtitle: "Eat 50 chilis before the CPU. You won't. You can't win.",
+        path: "/games/chili-race",
+    },
 ]
 
 export default function Games() {
@@ -120,7 +126,7 @@ export default function Games() {
                                 <GameCardDecorator gameId={game.id}>
                                     <div className="gameCardThumb">
                                         <div className="gameCardThumbPlaceholder">
-                                            <span className="gameCardThumbIcon">{game.id === "dream-toy" ? "✦" : game.id === "rhythm-test-v1" ? "🎵" : "🎯"}</span>
+                                            <span className="gameCardThumbIcon">{game.id === "dream-toy" ? "✦" : game.id === "rhythm-test-v1" ? "🎵" : game.id === "chili-race" ? "🌶️" : "🎯"}</span>
                                         </div>
                                     </div>
                                     <div className="gameCardBody">

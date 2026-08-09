@@ -48,31 +48,32 @@ export default function Vip() {
 
     useEffect(() => {
         let alive = true
-        Promise.all([
+        Promise.allSettled([
             apiRequest("/api/auth/me"),
             apiRequest("/api/vip/config"),
             apiRequest("/api/vip/me")
         ])
             .then(([me, cfg, vipMe]) => {
                 if (!alive) return
-                setUser(me.user)
-                setConfig(cfg.config)
-                setVip(vipMe.vip)
-                setMessage("")
+                setUser(me.status === "fulfilled" ? me.value.user : null)
+                setConfig(cfg.status === "fulfilled" ? cfg.value.config : null)
+                setVip(vipMe.status === "fulfilled" ? vipMe.value.vip : null)
+                if (me.status !== "fulfilled") {
+                    logAuthEvent("anonymous view", { returnTo: location.pathname })
+                }
+                setMessage(cfg.status === "fulfilled" ? "" : "failed to load VIP")
             })
-            .catch((error) => {
-                if (error?.status === 401) {
-                    logAuthEvent("redirect to signin", { returnTo: location.pathname })
-                    navigate(buildSigninPath(location.pathname))
-                }
-                else {
-                    setMessage(error?.message || "failed to load VIP")
-                }
+            .catch(() => {
+                setMessage("failed to load VIP")
             })
         return () => { alive = false }
     }, [navigate, location.pathname])
 
     async function checkout(tier, purchaseType) {
+        if (!user) {
+            navigate(buildSigninPath(location.pathname))
+            return
+        }
         setBusy(`${tier}:${purchaseType}`)
         setMessage("")
         try {
@@ -92,6 +93,10 @@ export default function Vip() {
     }
 
     async function manageSubscription() {
+        if (!user) {
+            navigate(buildSigninPath(location.pathname))
+            return
+        }
         setBusy("manage-subscription")
         try {
             const data = await apiRequest("/api/vip/manage-subscription", { method: "POST" })
@@ -105,23 +110,23 @@ export default function Vip() {
         }
     }
 
-    if (!user || !config || !vip) {
+    if (!config) {
         return (
             <Layout>
                 <section className="vipPage">
-                    <p>{message}</p>
+                    <p>{message || "loading VIP..."}</p>
                 </section>
             </Layout>
         )
     }
 
-    const previewUser = {
+    const vipState = vip || { active_tier: "free", active: false, expires_at: null, subscription: null }
+    const currentRank = TIER_RANK[vipState.active_tier] || 0
+    const previewUser = user && vip ? {
         ...user,
         supporter_tier: vip.active_tier,
         vip
-    }
-
-    const currentRank = TIER_RANK[vip.active_tier] || 0
+    } : null
 
     return (
         <Layout>
@@ -137,8 +142,8 @@ export default function Vip() {
                 <div className="vipGrid">
                     {config.tiers.map(tier => {
                         const rank = TIER_RANK[tier.tier] || 0
-                        const isLower = vip.active_tier !== "free" && rank < currentRank
-                        const isUpgrade = vip.active_tier !== "free" && rank > currentRank
+                        const isLower = vipState.active_tier !== "free" && rank < currentRank
+                        const isUpgrade = vipState.active_tier !== "free" && rank > currentRank
                         return (
                             <article key={tier.tier} className="vipTierBox">
                                 <div className="vipTierIcon">
@@ -154,10 +159,10 @@ export default function Vip() {
                                     {tier.tier === "ultra_vip" && <li>per-letter colors, speed, direction, presets</li>}
                                 </ul>
                                 {isLower && (
-                                    <p className="vipNotice">You already have {TIER_LABELS[vip.active_tier]}. Buying this lower tier does nothing.</p>
+                                    <p className="vipNotice">You already have {TIER_LABELS[vipState.active_tier]}. Buying this lower tier does nothing.</p>
                                 )}
                                 {isUpgrade && (
-                                    <p className="vipNotice">Upgrade - a rollover discount applies from your current {TIER_LABELS[vip.active_tier]} time.</p>
+                                    <p className="vipNotice">Upgrade - a rollover discount applies from your current {TIER_LABELS[vipState.active_tier]} time.</p>
                                 )}
                                 <div className="vipCheckoutBtns">
                                     {tier.purchases.map(option => (
@@ -181,25 +186,36 @@ export default function Vip() {
 
                 <section className="vipCurrentStatus">
                     <h2>Current Status</h2>
-                    <div className="vipPreview">
-                        <Username user={previewUser} size="lg" />
-                    </div>
-                    <div className="vipStatusRows">
-                        <p>tier: <span>{vip.active_tier}</span></p>
-                        <p>expires: <span>{dateText(vip.expires_at)}</span></p>
-                        <p>subscription: <span>{vip.subscription?.status || "none"}</span></p>
-                        <p>auto renew: <span>{vip.subscription && !vip.subscription.cancel_at_period_end ? "yes" : "no"}</span></p>
-                    </div>
-                    {ACTIVE_SUBSCRIPTION_STATUSES.has(vip.subscription?.status) ? (
-                        <button type="button" onClick={manageSubscription} disabled={busy === "manage-subscription"}>
-                            manage subscription
-                        </button>
-                    ) : vip.active ? (
-                        <p className="vipNotice">
-                            You have {TIER_LABELS[vip.active_tier]} VIP (prepaid) until {dateText(vip.expires_at)}. No active subscription.
-                        </p>
+                    {user && vip ? (
+                        <>
+                            <div className="vipPreview">
+                                <Username user={previewUser} size="lg" />
+                            </div>
+                            <div className="vipStatusRows">
+                                <p>tier: <span>{vip.active_tier}</span></p>
+                                <p>expires: <span>{dateText(vip.expires_at)}</span></p>
+                                <p>subscription: <span>{vip.subscription?.status || "none"}</span></p>
+                                <p>auto renew: <span>{vip.subscription && !vip.subscription.cancel_at_period_end ? "yes" : "no"}</span></p>
+                            </div>
+                            {ACTIVE_SUBSCRIPTION_STATUSES.has(vip.subscription?.status) ? (
+                                <button type="button" onClick={manageSubscription} disabled={busy === "manage-subscription"}>
+                                    manage subscription
+                                </button>
+                            ) : vip.active ? (
+                                <p className="vipNotice">
+                                    You have {TIER_LABELS[vip.active_tier]} VIP (prepaid) until {dateText(vip.expires_at)}. No active subscription.
+                                </p>
+                            ) : (
+                                <p className="vipNotice">No active subscription detected!</p>
+                            )}
+                        </>
                     ) : (
-                        <p className="vipNotice">No active subscription detected!</p>
+                        <>
+                            <p className="vipNotice">You're not signed in.</p>
+                            <p>
+                                <Link to={buildSigninPath(location.pathname)}>Sign in</Link> to see your VIP status and buy.
+                            </p>
+                        </>
                     )}
                     <p>Want to change your name style? Edit it on your <Link to="/profile">profile</Link> or from the profile menu.</p>
                     <p><Link to="/account">back to account</Link></p>

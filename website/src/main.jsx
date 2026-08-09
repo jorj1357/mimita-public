@@ -45,6 +45,7 @@ import Games from "./pages/Games"
 import AimTestV1 from "./pages/AimTestV1"
 import RhythmTestV1 from "./pages/RhythmTestV1"
 import DreamToy from "./pages/DreamToy"
+import ChiliRace from "./pages/ChiliRace"
 import AdminArticleEditor from "./pages/AdminArticleEditor"
 import Jorj from "./pages/Socials-jorj"
 import BannerCreate from "./pages/BannerCreate"
@@ -110,6 +111,7 @@ ReactDOM.createRoot(
         <Route path="/games/aim-test-v1" element={<AimTestV1 />} />
         <Route path="/games/rhythm-test-v1" element={<RhythmTestV1 />} />
         <Route path="/games/dream-toy" element={<DreamToy />} />
+        <Route path="/games/chili-race" element={<ChiliRace />} />
 
         <Route path="/banner" element={<BannerCreate />} />
         <Route path="/banner/create" element={<BannerCreate />} />
