@@ -129,6 +129,11 @@ export default function Vip() {
                 <h1>MiMITA VIP</h1>
                 {message && <p className={message.includes("failed") || message.includes("not") ? "vipError" : "vipNotice"}>{message}</p>}
 
+                <div className="vipWhatIsThis">
+                    <h2>what is this</h2>
+                    <p>VIP is a voluntary supporter thing that gives you a cool colorful name — it's NOT a paywall, MiMITA is 100% free, and VIP will never block access to anything.</p>
+                </div>
+
                 <div className="vipGrid">
                     {config.tiers.map(tier => {
                         const rank = TIER_RANK[tier.tier] || 0
