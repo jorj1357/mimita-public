@@ -176,69 +176,16 @@ bool NpcCombat::rayCapsule(const glm::vec3& origin, const glm::vec3& dir,
     return false;
 }
 
-glm::vec3 NpcCombat::aimAtTarget(const Npc& npc, glm::vec3 npcPos, glm::vec3 targetPos, glm::vec3 targetVel)
+glm::vec3 NpcCombat::aimAtTarget(const Npc& npc, glm::vec3 npcPos, glm::vec3 targetPos)
 {
     glm::vec3 aimTarget = targetPos + glm::vec3(0.0f, 0.0f, 0.8f);
-    glm::vec3 toTarget = aimTarget - npcPos;
-    float dist = glm::length(toTarget);
-    if (dist < 0.1f)
-        return glm::vec3{1.0f, 0.0f, 0.0f};
-
-    float predictionFactor = 0.05f + npc.tuning.prediction * 0.55f;
-    glm::vec3 predicted = aimTarget + targetVel * predictionFactor;
-    glm::vec3 aimDir = predicted - npcPos;
+    glm::vec3 aimDir = aimTarget - npcPos;
     float aimLen = glm::length(aimDir);
     if (aimLen < 0.001f)
-        aimDir = {1.0f, 0.0f, 0.0f};
-    else
-        aimDir /= aimLen;
+        return glm::vec3{1.0f, 0.0f, 0.0f};
+    aimDir /= aimLen;
 
     float errorDeg = aimErrorDegrees(npc.difficulty);
-    float maxErrorRad = glm::radians(errorDeg);
-    if (maxErrorRad > 0.0001f) {
-        float theta = random01(const_cast<Npc&>(npc).rngState) * glm::two_pi<float>();
-        float radius = random01(const_cast<Npc&>(npc).rngState);
-        radius = std::sqrt(radius) * std::tan(maxErrorRad);
-        glm::vec3 up = std::fabs(aimDir.z) < 0.99f
-            ? glm::vec3(0.0f, 0.0f, 1.0f)
-            : glm::vec3(1.0f, 0.0f, 0.0f);
-        glm::vec3 right = glm::normalize(glm::cross(aimDir, up));
-        glm::vec3 fwd = glm::normalize(glm::cross(right, aimDir));
-        aimDir = glm::normalize(aimDir +
-            (right * std::cos(theta) + fwd * std::sin(theta)) * radius);
-    }
-
-    return aimDir;
-}
-
-static glm::vec3 aimAtTargetProjectile(const Npc& npc, glm::vec3 npcPos, glm::vec3 targetPos, glm::vec3 targetVel, float projectileSpeed, float gravity)
-{
-    glm::vec3 aimTarget = targetPos + glm::vec3(0.0f, 0.0f, 0.8f);
-    glm::vec3 toTarget = aimTarget - npcPos;
-    float dist = glm::length(toTarget);
-    if (dist < 0.1f || projectileSpeed < 0.1f)
-        return glm::vec3{1.0f, 0.0f, 0.0f};
-
-    float travelTime = dist / projectileSpeed;
-    float d01 = difficulty01(npc.difficulty);
-    float predictionQuality = 0.3f + d01 * 0.6f;
-    travelTime *= predictionQuality;
-
-    glm::vec3 predicted = aimTarget + targetVel * travelTime;
-
-    if (gravity > 0.0f)
-    {
-        predicted.z += 0.5f * gravity * travelTime * travelTime;
-    }
-
-    glm::vec3 aimDir = predicted - npcPos;
-    float aimLen = glm::length(aimDir);
-    if (aimLen < 0.001f)
-        aimDir = {1.0f, 0.0f, 0.0f};
-    else
-        aimDir /= aimLen;
-
-    float errorDeg = NpcCombat::aimErrorDegrees(npc.difficulty) * 0.8f;
     float maxErrorRad = glm::radians(errorDeg);
     if (maxErrorRad > 0.0001f) {
         float theta = random01(const_cast<Npc&>(npc).rngState) * glm::two_pi<float>();
@@ -351,20 +298,7 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
             npc.id);
         return false;
     }
-    bool isProjectile = (def->behaviorType == WeaponBehaviorType::Projectile ||
-                         def->behaviorType == WeaponBehaviorType::RocketLauncher);
-
-    if (isProjectile && def->projectileSpeed > 0.0f)
-    {
-        float gravity = 0.0f;
-        auto git = def->customParams.find("projectileGravity");
-        if (git != def->customParams.end()) gravity = git->second;
-        aimDir = aimAtTargetProjectile(npc, npcPos, npc.sensors.targetPos, npc.sensors.targetVel, def->projectileSpeed, gravity);
-    }
-    else
-    {
-        aimDir = aimAtTarget(npc, npcPos, npc.sensors.targetPos, npc.sensors.targetVel);
-    }
+    aimDir = aimAtTarget(npc, npcPos, npc.sensors.targetPos);
 
     glm::vec3 planarAim = glm::normalize(glm::vec3(aimDir.x, aimDir.y, 0.0f));
     if (glm::length(planarAim) > 0.001f)

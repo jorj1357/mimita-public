@@ -168,7 +168,7 @@ void senseWorld(Npc& npc, const Player& player, float dt)
 
     {
         int i = npc.posRingHead;
-        npc.posRing[i] = {player.pos, player.vel + player.externalImpulse, npc.sensors.time + dt};
+        npc.posRing[i] = {player.pos, player.vel, npc.sensors.time + dt};
         npc.posRingHead = (i + 1) % Npc::MAX_HISTORY_SAMPLES;
         if (npc.posRingCount < Npc::MAX_HISTORY_SAMPLES)
             npc.posRingCount++;
@@ -176,7 +176,7 @@ void senseWorld(Npc& npc, const Player& player, float dt)
 
     // DEBUG MODE: no reaction delay, immediate target tracking (temporary)
     glm::vec3 rawPos = player.pos;
-    glm::vec3 rawVel = player.vel + player.externalImpulse;
+    glm::vec3 rawVel = player.vel;
     sensors.targetPos = rawPos;
     sensors.targetVel = rawVel;
     sensors.toTarget = sensors.targetPos - npc.body.pos;
@@ -262,7 +262,7 @@ InputState buildInputState(Npc& npc, glm::vec3 moveDir, bool jump, bool dash, bo
     else if (npc.sensors.hasTarget)
     {
         glm::vec3 npcEye = npc.body.pos + glm::vec3(0.0f, 0.0f, 0.8f);
-        glm::vec3 aimDir = NpcCombat::aimAtTarget(npc, npcEye, npc.sensors.targetPos, npc.sensors.targetVel);
+        glm::vec3 aimDir = NpcCombat::aimAtTarget(npc, npcEye, npc.sensors.targetPos);
         desiredFwd = safePlanarNormal(aimDir, {1.0f, 0.0f, 0.0f});
     }
     else

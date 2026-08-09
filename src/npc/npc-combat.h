@@ -29,7 +29,7 @@ inline glm::vec3 npcMuzzleOffset()
 
 bool tryFire(Npc& npc, const World& world, Player& player, float dt);
 
-glm::vec3 aimAtTarget(const Npc& npc, glm::vec3 npcPos, glm::vec3 targetPos, glm::vec3 targetVel);
+glm::vec3 aimAtTarget(const Npc& npc, glm::vec3 npcPos, glm::vec3 targetPos);
 
 float aimErrorDegrees(float difficulty);
 float maxAngularErrorForAccuracy(float acc);
