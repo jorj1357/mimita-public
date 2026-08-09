@@ -15,6 +15,7 @@
 #include "network/network-weapons.h"
 #include "network/weapon-runtime-reconciliation.h"
 #include "network/disagreement-visuals.h"
+#include "npc/npc-combat-log.h"
 #include "debug/structured-log.h"
 
 #include <algorithm>
@@ -937,32 +938,37 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
     presentConfirmedDamage(ctx, *event, sink);
 
     const glm::vec3 knockback(event->knockX, event->knockY, event->knockZ);
-    if (glm::length(knockback) > 0.001f)
+    const bool isLocalVictim = (event->targetPlayerId == ctx.localPlayerId);
+    npcLog("npc-damage-confirmed attacker=%u target=%u damage=%d "
+           "healthBefore=%d healthAfter=%d killed=%d localVictim=%d knockback=(%.2f %.2f %.2f)",
+           event->attackerPlayerId, event->targetPlayerId,
+           event->damage, event->healthBefore, event->healthAfter, (int)event->killed,
+           (int)isLocalVictim, knockback.x, knockback.y, knockback.z);
+
+    if (isLocalVictim)
     {
-        if (event->targetPlayerId == ctx.localPlayerId)
-        {
-            // Health AND knockback synced to the shot visual: queue a pending
-            // change applied in the SAME frame the attacker's body renders past
-            // this shot's server tick (the same gate the bullet tracer uses),
-            // so the victim never gets knocked back before seeing the bullet.
-            const double maxHoldMs = NetworkingConfig::instance().data()
-                .eventTimeline.remoteEffectMaximumHoldMs;
-            MultiplayerContext::PendingVictimHealth ph;
-            ph.healthAfter = event->healthAfter;
-            ph.killed = event->killed != 0;
-            ph.knockback = knockback;
-            ph.applyAtMs = nowMs() + (uint64_t)std::max(16.0, maxHoldMs);
-            ph.shooterId = event->attackerPlayerId;
-            ph.eventServerTick = event->header.tick;
-            ph.receivedMs = nowMs();
-            ctx.pendingVictimHealth.push_back(ph);
-        }
-        else
-        {
-            auto remote = ctx.remotePlayers.find(event->targetPlayerId);
-            if (remote != ctx.remotePlayers.end())
-                remote->second.externalImpulse += knockback;
-        }
+        // Health synced to the shot visual: queue a pending change applied in
+        // the SAME frame the attacker's body renders past this shot's server
+        // tick (the same gate the bullet tracer uses). Always queue the HP drop
+        // even when knockback is zero — otherwise confirmed damage with no
+        // knockback (e.g. NPC hits) would never update the victim's health bar.
+        const double maxHoldMs = NetworkingConfig::instance().data()
+            .eventTimeline.remoteEffectMaximumHoldMs;
+        MultiplayerContext::PendingVictimHealth ph;
+        ph.healthAfter = event->healthAfter;
+        ph.killed = event->killed != 0;
+        ph.knockback = knockback;
+        ph.applyAtMs = nowMs() + (uint64_t)std::max(16.0, maxHoldMs);
+        ph.shooterId = event->attackerPlayerId;
+        ph.eventServerTick = event->header.tick;
+        ph.receivedMs = nowMs();
+        ctx.pendingVictimHealth.push_back(ph);
+    }
+    else if (glm::length(knockback) > 0.001f)
+    {
+        auto remote = ctx.remotePlayers.find(event->targetPlayerId);
+        if (remote != ctx.remotePlayers.end())
+            remote->second.externalImpulse += knockback;
     }
 
     printf("[NET DAMAGE CONFIRMED] eventId=%u source=%u attacker=%u target=%u damage=%d healthBefore=%d healthAfter=%d killed=%d\n",

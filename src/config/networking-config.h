@@ -201,6 +201,12 @@ struct RemoteMotionSmoothingConfig
     // interpolated authoritative target's Z, so filter overshoot after a fast
     // landing cannot push the body through the floor.
     bool filterClampZBelowTarget = true;
+    // Geometry safety clamp (all modes, client-side): after every motion filter,
+    // rendered remote bodies are pushed out of world geometry so they can never
+    // appear inside the map. Reuses the same capsule-vs-triangle solver as the
+    // local player's collision.
+    bool geometrySafeEnabled = true;
+    double geometrySafeSlopUnits = 0.02;
     // linear mode: render N packets behind the newest. This is the loss buffer —
     // up to N consecutive lost packets are hidden because the body keeps
     // interpolating on older packets. Higher = smoother under loss, more delay.
@@ -273,6 +279,14 @@ struct RemoteMotionSmoothingConfig
     // glides from the last known position to the newest confirmed position.
     // 0 = disabled (compiled default).
     double linearGlideMaxUnitsPerSecond = 0.0;
+    // ease mode: how firmly the rendered body is pulled back to the exact
+    // interpolated target each second. 1 = loose (drifts), 12 = tight-but-smooth
+    // default, 99 = ~1:1 with the newest received position. ease reuses the
+    // linear-family knobs for delay/loss-buffer, deadzone, and glide cap.
+    double easeCorrectionRate = 12.0;
+    // ease mode: low-pass (0..1) applied to the velocity fed into the persistent
+    // inertia state. 0 = raw (crisper, more wobble), 0.5 = default, 1 = buttery.
+    double easeVelocitySmoothing = 0.5;
     // Diagnostic threshold only: logs when the delayed render sample advances
     // by more than this many ms in one rendered frame.
     double maxRenderTimeJumpSeconds = 0.005;

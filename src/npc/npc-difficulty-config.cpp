@@ -88,17 +88,19 @@ bool NpcDifficultyConfig::load(const std::string& path)
         next.fireDelayMin = std::max(0.0f, optFloat(root, "fireDelayMin", next.fireDelayMin));
         next.fireDelayMax = std::max(0.0f, optFloat(root, "fireDelayMax", next.fireDelayMax));
         next.aggressionBonus = optFloat(root, "aggressionBonus", next.aggressionBonus);
+        next.npcHitRadius = std::max(0.0f, optFloat(root, "npcHitRadius", next.npcHitRadius));
         next.forceHit = optBool(root, "forceHit", next.forceHit);
+        next.npcDebugVisuals = optBool(root, "npcDebugVisuals", next.npcDebugVisuals);
 
         mRoot = root;
         mData = next;
         mLastWrite = writeTime;
         Debug::warn(Debug::Category::NpcCombat,
-            "[NPC DIFFICULTY] Loaded %s: maxErr=%.1fdeg diffScale=%.2f dmg=%.2fx fireDelay=[%.2f,%.2f] aggressionBonus=%.2f forceHit=%d\n",
+            "[NPC DIFFICULTY] Loaded %s: maxErr=%.1fdeg diffScale=%.2f dmg=%.2fx fireDelay=[%.2f,%.2f] aggressionBonus=%.2f hitRadius=%.2f forceHit=%d\n",
             fileName.c_str(),
             mData.maxAngularErrorDegrees, mData.difficultyErrorScale,
             mData.damageMultiplier, mData.fireDelayMin, mData.fireDelayMax,
-            mData.aggressionBonus, (int)mData.forceHit);
+            mData.aggressionBonus, mData.npcHitRadius, (int)mData.forceHit);
         return true;
     } catch (const json::parse_error& e) {
         mLastWrite = writeTime;
@@ -134,7 +136,9 @@ bool NpcDifficultyConfig::save(const std::string& path)
     j["fireDelayMin"] = mData.fireDelayMin;
     j["fireDelayMax"] = mData.fireDelayMax;
     j["aggressionBonus"] = mData.aggressionBonus;
+    j["npcHitRadius"] = mData.npcHitRadius;
     j["forceHit"] = mData.forceHit;
+    j["npcDebugVisuals"] = mData.npcDebugVisuals;
 
     std::ofstream file(path);
     if (!file.is_open())

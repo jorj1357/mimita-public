@@ -1035,6 +1035,7 @@ void registerNetworkCommands()
                 snprintf(buf, sizeof(buf),
                     "[NETSTATS] filter=%s freqHz=%.1f zeta=%.2f ff=%.2f "
                     "ffSmooth=%.2f zMult=%.2f maxSpd=%.0f maxStep=%.0f clampZ=%d "
+                    "geoSafe=%d easeRate=%.1f easeSmooth=%.2f "
                     "linTicks=%u linMinMax=%u/%u linHold=%d catchup=%.2f "
                     "clock=%s reanchorMs=%.0f maxJumpMs=%.1f sFreq=%.1f sFF=%.2f sDead=%.3f "
                     "neverSkip=%d holdGap=%u glide=%.0f",
@@ -1044,6 +1045,8 @@ void registerNetworkCommands()
                     m.hybridMaxSpeedUnitsPerSecond,
                     m.filterMaxStepUnitsPerSecond,
                     (int)m.filterClampZBelowTarget,
+                    (int)m.geometrySafeEnabled,
+                    m.easeCorrectionRate, m.easeVelocitySmoothing,
                     (unsigned)m.linearDelayTicks,
                     (unsigned)m.linearMinDelayTicks,
                     (unsigned)m.linearMaxDelayTicks,

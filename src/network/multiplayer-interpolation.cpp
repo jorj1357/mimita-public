@@ -24,7 +24,12 @@
 #include "effects/hit-effects.h"
 #include "audio/audio.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "terminal/terminal-state.h"
+#include "network/movement-validation.h"
+#include "world/world.h"
+#include "physics/movement/physics-collision.h"
+#include "physics/movement/physics-collision-shared.h"
 
 #include <algorithm>
 #include <cmath>
@@ -35,6 +40,10 @@
 // predicted kill-heal rollback inside clearPredictedDeath so the HP restore and
 // the disagreement effect land on the exact same tick.
 extern MimitaNet::MultiplayerContext* gpMpContext;
+
+// Client render world (defined in main.cpp, set at map load). Used by the
+// remote-body geometry safety clamp in updateRenderedReplica.
+extern World* gpWorld;
 
 namespace MimitaNet {
 
@@ -116,7 +125,9 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
     const auto& motionCfg = NetworkingConfig::instance()
         .data().remoteMotionSmoothing;
     const bool linearMode = linearSnapGapTicks > 0;
-    const bool linearNeverSkip = linearMode && motionCfg.linearNeverSkip;
+    // ease is a linear-family mode but never hole-freezes (gaps bridge smoothly).
+    const bool easeMode = linearMode && motionCfg.renderFilter == "ease";
+    const bool linearNeverSkip = linearMode && !easeMode && motionCfg.linearNeverSkip;
 
     const double delayTicks = delaySeconds * (double)GAMEPLAY_SIMULATION_HZ;
     const double desiredRenderTick = globalRenderTick - delayTicks;
@@ -879,6 +890,56 @@ static void resetPresentationAfterRespawn(Player& player, const SnapshotTransfor
            target.position.x, target.position.y, target.position.z);
 }
 
+// Post-filter geometry safety clamp for rendered remote bodies. After all
+// interpolation + motion filters have produced the final render position, push
+// the body's capsule out of any world triangle it penetrates. Reuses the same
+// capsule-vs-triangle solver the local player's collision uses, so local and
+// remote bodies follow the same "never inside geometry" rule. Runs on the
+// client only; the server already simulates NPCs against its own collision
+// world, so authoritative targets are valid — this corrects the render side.
+void resolveRemoteBodyAgainstGeometry(
+    Player& player, EntityInterpolationState& interpolation, const World& world)
+{
+    if (world.collisionMesh.empty())
+        return;
+    const auto& motion = NetworkingConfig::instance().data().remoteMotionSmoothing;
+    if (!motion.geometrySafeEnabled)
+        return;
+
+    const Capsule cap = player.getCapsule();
+    std::vector<int> candidates;
+    appendChunkTrianglesForAABB(world,
+        makeSweptCapsuleAABB(cap, glm::vec3(0.0f)),
+        0.25f, candidates, "remote-geometry-safety");
+    if (candidates.empty())
+        return;
+
+    std::vector<RecoveryContact> contacts =
+        collectCapsuleRecoveryContacts(world, cap, candidates, "remote-geometry-safety");
+    if (contacts.empty())
+        return;
+
+    glm::vec3 correction = solveBatchedCorrection(
+        contacts, (float)motion.geometrySafeSlopUnits, nullptr, nullptr,
+        glm::vec3(0.0f), player.pos);
+    if (!std::isfinite(correction.x) || !std::isfinite(correction.y) ||
+        !std::isfinite(correction.z) ||
+        glm::dot(correction, correction) < 1e-10f)
+        return;
+
+    player.pos += correction;
+    // Keep filter state coherent so the spring/ease/linear state cannot re-pull
+    // the body into geometry on the next frame.
+    interpolation.renderSpring.value += correction;
+    interpolation.lastRender.position += correction;
+
+    Debug::logThrottled(Debug::Category::Networking,
+        "remote-geometry-safety", 0.25f,
+        "[REMOTE GEOMETRY SAFETY] id=%u corr=%.3f pos=(%.2f,%.2f,%.2f)\n",
+        interpolation.networkEntityId, glm::length(correction),
+        player.pos.x, player.pos.y, player.pos.z);
+}
+
 void updateRenderedReplica(
     Player& player,
     EntityInterpolationState& interpolation,
@@ -949,7 +1010,12 @@ void updateRenderedReplica(
     // interpolation alpha is always fractional (smooth at any frame rate; no
     // freeze/jump from a clamped catch-up clock).
     const NetworkingConfigData& netCfg = NetworkingConfig::instance().data();
-    const bool linearMode = (motion.renderFilter == "linear");
+    // "ease" is a linear-family mode (same lerp, delay, deadzone, glide gates)
+    // but always extrapolates and never hole-freezes; it also runs a persistent
+    // tight-inertia filter (see the ease branch below) instead of raw output.
+    const bool isRawLinear = (motion.renderFilter == "linear");
+    const bool isEase = (motion.renderFilter == "ease");
+    const bool linearMode = isRawLinear || isEase;
     // linear mode uses an adaptive loss buffer whose depth grows smoothly with
     // jitter and loss (driven by the arrival-jitter / loss-fraction EMA from
     // pushInterpolationTarget), clamped to [linear_min_delay_ticks,
@@ -996,9 +1062,10 @@ void updateRenderedReplica(
             // render time is that minus the delay; the interpolation alpha is
             // always fractional, so the body moves smoothly at any frame rate.
             // linear mode never extrapolates when holding on dry; other modes
-            // honor interpCfg.allowExtrapolation.
+            // honor interpCfg.allowExtrapolation. ease ALWAYS extrapolates so it
+            // never freezes on a dry buffer.
             const bool allowExtrap = linearMode
-                ? (motion.linearAllowExtrapolation && !motion.linearHoldOnDry)
+                ? (isEase || (motion.linearAllowExtrapolation && !motion.linearHoldOnDry))
                 : interpCfg.allowExtrapolation;
             buildReceiveTimeRender(
                 interpolation, interpCfg, delaySeconds, renderTick,
@@ -1035,10 +1102,25 @@ void updateRenderedReplica(
     //            motion and dashes pass through (target tracks the body).
     // "spring":  always-on critically-damped spring — literally cannot snap;
     //            adds a few ms of follow-lag on fast turns.
+    // "ease":    persistent tight-inertia integrator (see the ease branch):
+    //            direct-feeling velocity-following with a gentle capped pull to
+    //            the exact target, so it never freezes and never snaps.
     if (interpolation.hasRendered && !respawned && !interpCfg.directRender &&
-        !linearMode)
+        !isRawLinear)
     {
         const float safeDt = std::min(dt, 0.05f);
+
+        // Seed the persistent filter state on the first filtered frame (fresh
+        // entity or after a respawn reset) so spring/hybrid/ease start from the
+        // first real rendered position instead of the world origin.
+        if (!interpolation.renderFilterSeeded)
+        {
+            interpolation.renderSpring.value = renderPos;
+            interpolation.renderSpring.velocity = render.velocity;
+            interpolation.renderSpringTargetVel = render.velocity;
+            interpolation.renderFilterSeeded = true;
+        }
+
         if (motion.renderFilter == "spring")
         {
             // Spring mode is fully tunable:
@@ -1164,6 +1246,26 @@ void updateRenderedReplica(
             interpolation.renderSpring.value += vel * safeDt;
             renderPos = interpolation.renderSpring.value;
         }
+        else if (motion.renderFilter == "ease")
+        {
+            // Tight-inertia integrator: a persistent, low-passed velocity state
+            // (inertia) drives position, and a gentle capped pull pins it to the
+            // exact interpolated target. Because the velocity state persists and
+            // the pull is capped, the body can never stop abruptly or snap, while
+            // the velocity feed-forward keeps it reading direct (not floaty).
+            const glm::vec3 targetPos = renderPos;
+            const glm::vec3 targetVel = render.velocity;
+            const float smooth = std::clamp(
+                (float)motion.easeVelocitySmoothing, 0.0f, 1.0f);
+            interpolation.renderSpringTargetVel +=
+                (targetVel - interpolation.renderSpringTargetVel) * smooth;
+            interpolation.renderSpring.value +=
+                interpolation.renderSpringTargetVel * safeDt;
+            const glm::vec3 err = targetPos - interpolation.renderSpring.value;
+            const float rate = std::min(1.0f, (float)motion.easeCorrectionRate * safeDt);
+            interpolation.renderSpring.value += err * rate;
+            renderPos = interpolation.renderSpring.value;
+        }
         else if (motion.renderFilter == "bounded")
         {
             const float maxStep = (float)(
@@ -1202,6 +1304,7 @@ void updateRenderedReplica(
         // The new life must not inherit the old corpse's spring velocity.
         interpolation.renderSpring = SpringState{};
         interpolation.renderSpringTargetVel = glm::vec3(0.0f);
+        interpolation.renderFilterSeeded = false;
         interpolation.pendingPredictedDamage = 0;
         interpolation.predictedHealthCap = -1;
         interpolation.predictedHealthUpdatedMs = 0;
@@ -1211,13 +1314,14 @@ void updateRenderedReplica(
         // linear mode deadzone: sub-threshold rendered deltas snap to the exact
         // previous rendered position so standing-still bodies never micro-jitter
         // from tiny broadcast noise. Real movement above the threshold passes.
-        if (motion.renderFilter == "linear" && motion.linearDeadzoneUnits > 0.0)
+        if ((motion.renderFilter == "linear" || isEase) &&
+            motion.linearDeadzoneUnits > 0.0)
         {
             const float delta = glm::length(renderPos - player.pos);
             if (delta < (float)motion.linearDeadzoneUnits)
                 renderPos = player.pos;
         }
-        // linear mode anti-snap glide gate: the rendered body may only move
+        // linear/ease anti-snap glide gate: the rendered body may only move
         // toward the interpolated target at linear_glide_max_units_per_second
         // (units = meters). This is the single write point for every non-respawn
         // remote position, so NO code path (hole bridge, blackout resume, first
@@ -1226,7 +1330,7 @@ void updateRenderedReplica(
         // Normal motion (walk ~20, dash ~100, terminal fall ~400 u/s) is below
         // the cap and passes untouched. Skipped on the first render (hasRendered
         // false) so a new entity seeds directly at its authoritative position.
-        if (motion.renderFilter == "linear" &&
+        if ((motion.renderFilter == "linear" || isEase) &&
             interpolation.hasRendered &&
             motion.linearGlideMaxUnitsPerSecond > 0.0f)
         {
@@ -1242,6 +1346,13 @@ void updateRenderedReplica(
         }
         player.pos = renderPos;
     }
+
+    // Final render-safety clamp: the rendered remote body may never intersect
+    // world geometry, regardless of filter mode, loss pattern, or extrapolation
+    // drift. Runs after every path that writes player.pos above.
+    if (gpWorld)
+        resolveRemoteBodyAgainstGeometry(player, interpolation, *gpWorld);
+
     player.vel = render.velocity;
     const int displayHealth =
         applyPredictedHealthOverlay(player, interpolation, render.health);
@@ -1811,6 +1922,140 @@ void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)
             }
             Debug::warn(Debug::Category::NpcCombat,
                 "[CLIENT NPC ALIGN] %s\n", summary.c_str());
+        }
+    }
+
+    // ── Per-second client/server divergence report ───────────────────
+    // Always-on (configurable via debuglogger.json "network" level, default
+    // verbose). Writes the exact client-side numbers / true-false states into
+    // logs/<date>/Network_log_<runid>.txt so a test can compare what THIS
+    // client sees (local predicted pos/hp, rendered remote positions, shot
+    // verdicts) against what the server thinks.
+    {
+        static uint64_t lastNetDivergenceLog = 0;
+        const uint64_t nowDiv = nowMs();
+        if (nowDiv - lastNetDivergenceLog >= 1000 &&
+            ::StructuredLogger::instance().shouldLog(
+                ::StructuredCategory::Network, ::StructuredLevel::Verbose))
+        {
+            lastNetDivergenceLog = nowDiv;
+            std::string msg;
+
+            char buf[512];
+            snprintf(buf, sizeof(buf),
+                "clock tick=%.2f stepMs=%.1f reanchor=%u reason=%s mode=%s",
+                ctx.interpolationRenderTick, ctx.lastInterpolationClockStepMs,
+                (unsigned)ctx.interpolationReanchorCount,
+                ctx.lastInterpolationReanchorReason.empty()
+                    ? "none" : ctx.lastInterpolationReanchorReason.c_str(),
+                NetworkingConfig::instance().data().remoteMotionSmoothing.renderFilter.c_str());
+            msg += buf;
+
+            if (gpPlayer && ctx.hasLocalServerPosition)
+            {
+                const glm::vec3 corr = ctx.localServerPosition - gpPlayer->pos;
+                const float err = glm::length(corr);
+                const MovementValidationConfig mvCfg;
+                snprintf(buf, sizeof(buf),
+                    " | local me=(%.2f,%.2f,%.2f) srv=(%.2f,%.2f,%.2f) "
+                    "d=%.3fm class=%s hpMe=%d hpSrv=%d hpDelta=%d "
+                    "hasSrv=%d reconciled=%d teleportAck=%d resync=%d",
+                    gpPlayer->pos.x, gpPlayer->pos.y, gpPlayer->pos.z,
+                    ctx.localServerPosition.x, ctx.localServerPosition.y,
+                    ctx.localServerPosition.z, err,
+                    movementCorrectionClassName(
+                        classifyMovementCorrection(err, mvCfg)),
+                    gpPlayer->currentHp, ctx.localServerHealth,
+                    gpPlayer->currentHp - ctx.localServerHealth,
+                    (int)ctx.hasLocalServerPosition,
+                    (int)ctx.localPlayerReconciled,
+                    (int)ctx.awaitingTeleportAck,
+                    (int)ctx.teleportResync);
+                msg += buf;
+            }
+
+            uint64_t totHold = 0, totUnderrun = 0, totGlide = 0, totJump = 0,
+                     totHardSnap = 0;
+            auto accumulate = [&](const auto& map)
+            {
+                for (const auto& kv : map)
+                {
+                    totHold += kv.second.holdCount;
+                    totUnderrun += kv.second.bufferUnderrunCount;
+                    totGlide += kv.second.glideSnapCount;
+                    totJump += kv.second.renderJumpCount;
+                    totHardSnap += kv.second.hardSnapCount;
+                }
+            };
+            accumulate(ctx.remotePlayerInterpolation);
+            accumulate(ctx.remoteNpcInterpolation);
+
+            snprintf(buf, sizeof(buf),
+                " | remotes players=%zu npcs=%zu "
+                "holds=%llu underruns=%llu glides=%llu jumps=%llu snaps=%llu",
+                ctx.remotePlayers.size(), ctx.remoteNpcs.size(),
+                (unsigned long long)totHold,
+                (unsigned long long)totUnderrun,
+                (unsigned long long)totGlide,
+                (unsigned long long)totJump,
+                (unsigned long long)totHardSnap);
+            msg += buf;
+
+            snprintf(buf, sizeof(buf),
+                " | hits pred=%llu conf=%llu rej=%llu",
+                (unsigned long long)ctx.predictedHits,
+                (unsigned long long)ctx.confirmedHits,
+                (unsigned long long)ctx.rejectedHits);
+            msg += buf;
+
+            // Per-remote-entity one-liner: server target vs client rendered.
+            char entBuf[256];
+            for (const auto& kv : ctx.remoteNpcInterpolation)
+            {
+                const auto& s = kv.second;
+                if (!s.hasTarget) continue;
+                auto repIt = ctx.remoteNpcs.find(kv.first);
+                const glm::vec3 render =
+                    repIt != ctx.remoteNpcs.end() ? repIt->second.pos : s.target.position;
+                snprintf(entBuf, sizeof(entBuf),
+                    " | npc%u srv=(%.1f,%.1f,%.1f) ren=(%.1f,%.1f,%.1f) "
+                    "d=%.2f hold=%u glide=%u under=%u jump=%u",
+                    kv.first, s.target.position.x, s.target.position.y,
+                    s.target.position.z, render.x, render.y, render.z,
+                    glm::length(s.target.position - render),
+                    (unsigned)s.holdCount, (unsigned)s.glideSnapCount,
+                    (unsigned)s.bufferUnderrunCount, (unsigned)s.renderJumpCount);
+                msg += entBuf;
+            }
+            for (const auto& kv : ctx.remotePlayerInterpolation)
+            {
+                const auto& s = kv.second;
+                if (!s.hasTarget) continue;
+                auto repIt = ctx.remotePlayers.find(kv.first);
+                const glm::vec3 render =
+                    repIt != ctx.remotePlayers.end() ? repIt->second.pos : s.target.position;
+                snprintf(entBuf, sizeof(entBuf),
+                    " | p%u srv=(%.1f,%.1f,%.1f) ren=(%.1f,%.1f,%.1f) "
+                    "d=%.2f hold=%u glide=%u under=%u jump=%u",
+                    kv.first, s.target.position.x, s.target.position.y,
+                    s.target.position.z, render.x, render.y, render.z,
+                    glm::length(s.target.position - render),
+                    (unsigned)s.holdCount, (unsigned)s.glideSnapCount,
+                    (unsigned)s.bufferUnderrunCount, (unsigned)s.renderJumpCount);
+                msg += entBuf;
+            }
+
+            ::StructuredLogger::Entry e;
+            e.category = ::StructuredCategory::Network;
+            e.level = ::StructuredLevel::Verbose;
+            e.eventId = "client-divergence";
+            e.reason = "client vs server state summary";
+            e.sourceFile = __FILE__;
+            e.sourceLine = __LINE__;
+            e.functionName = __FUNCTION__;
+            if (msg.size() > 3000) msg.resize(3000);
+            e.message = msg;
+            ::StructuredLogger::instance().write(e);
         }
     }
 }

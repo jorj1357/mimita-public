@@ -1,5 +1,6 @@
 #include "npc.h"
 #include "npc/npc-internal.h"
+#include "npc/npc-difficulty-config.h"
 
 #include <algorithm>
 #include <cmath>
@@ -181,7 +182,7 @@ void senseWorld(Npc& npc, const Player& player, float dt)
     sensors.targetVel = rawVel;
     sensors.toTarget = sensors.targetPos - npc.body.pos;
     sensors.targetDistance = glm::length(sensors.toTarget);
-    sensors.hasTarget = true;
+    sensors.hasTarget = !player.dead && player.currentHp > 0;
     sensors.predictedTarget = sensors.targetPos;
 
     npc.previousPosition = npc.body.pos;
@@ -261,8 +262,12 @@ InputState buildInputState(Npc& npc, glm::vec3 moveDir, bool jump, bool dash, bo
     }
     else if (npc.sensors.hasTarget)
     {
+        // Ideal direction to the target (no random error here) so the model
+        // turns smoothly at the player; the arcade error is applied to the shot.
         glm::vec3 npcEye = npc.body.pos + glm::vec3(0.0f, 0.0f, 0.8f);
-        glm::vec3 aimDir = NpcCombat::aimAtTarget(npc, npcEye, npc.sensors.targetPos);
+        glm::vec3 toTarget = npc.sensors.targetPos + glm::vec3(0.0f, 0.0f, 0.8f) - npcEye;
+        glm::vec3 aimDir = glm::length(toTarget) > 0.001f ? glm::normalize(toTarget)
+                                                          : glm::vec3(1.0f, 0.0f, 0.0f);
         desiredFwd = safePlanarNormal(aimDir, {1.0f, 0.0f, 0.0f});
     }
     else
@@ -281,6 +286,9 @@ InputState buildInputState(Npc& npc, glm::vec3 moveDir, bool jump, bool dash, bo
     } else {
         npc.currentFacing = desiredFwd;
     }
+    // The rendered model yaw follows the smoothly-turned facing (this is the
+    // ONLY place body.yaw updates — no snapping on fire).
+    npc.body.yaw = glm::degrees(std::atan2(npc.currentFacing.y, npc.currentFacing.x));
     input.camForward = npc.currentFacing;
 
     return input;
@@ -868,6 +876,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             npc.id, npc.timeSinceLastShot);
         Perf::ScopedTimer _combatTimer("NpcCombat");
         bool fired = NpcCombat::tryFire(npc, world, player, safeDt);
+        npc.justFired = fired;
         if (fired)
         {
             npc.timeSinceLastShot = 0.0f;
@@ -888,7 +897,9 @@ void NpcSystem::drawDebug(const Camera& camera) const
 {
     DebugVis::drawNpcDebugStuff(debugInfo(), camera);
 
-    if (!DebugVis::masterEnabled() || !DebugConfig::DEBUG_NPC)
+    // Toggled from config/npc-difficulty.json (npcDebugVisuals), hot-reloaded.
+    if (!DebugVis::masterEnabled() ||
+        !NpcDifficultyConfig::instance().settings().npcDebugVisuals)
         return;
 
     for (const Npc& npc : npcs)
@@ -908,14 +919,27 @@ void NpcSystem::drawDebug(const Camera& camera) const
             DebugVis::drawLine(camera, eye, eye + idealDir * 10.0f, glm::vec4(1.0f, 1.0f, 0.0f, 0.6f));
         }
 
+        // Where the gun/model is actually pointing (white) — compare to the
+        // yellow aim line to see any "shoots to the side" mismatch.
+        glm::vec3 facingDir = glm::length(npc.currentFacing) > 0.001f
+            ? glm::normalize(npc.currentFacing) : glm::vec3(1.0f, 0.0f, 0.0f);
+        DebugVis::drawLine(camera, eye, eye + facingDir * 6.0f, glm::vec4(1.0f, 1.0f, 1.0f, 0.7f));
+
         // Target point (red sphere)
         DebugVis::drawWireSphere(camera, playerEye, 0.1f, glm::vec4(1.0f, 0.0f, 0.0f, 0.9f));
 
         // Accuracy info label
         float maxErr = NpcCombat::aimErrorDegrees(npc.difficulty);
-        char label[192];
-        int n = snprintf(label, sizeof(label), "NPC %u maxErr=%.1fdeg",
-            npc.id, maxErr);
+        float dist = glm::length(npc.sensors.toTarget);
+        glm::vec3 planarFacing = glm::normalize(glm::vec3(npc.currentFacing.x, npc.currentFacing.y, 0.0f));
+        glm::vec3 planarAim = tLen > 0.1f
+            ? glm::normalize(glm::vec3(toTarget.x, toTarget.y, 0.0f)) : glm::vec3(0.0f);
+        float facingAim = (glm::length(planarFacing) > 0.001f && glm::length(planarAim) > 0.001f)
+            ? glm::degrees(std::acos(std::clamp(glm::dot(planarFacing, planarAim), -1.0f, 1.0f)))
+            : 0.0f;
+        char label[256];
+        int n = snprintf(label, sizeof(label), "NPC %u maxErr=%.1fdeg dist=%.1fm facingAim=%.1fdeg",
+            npc.id, maxErr, dist, facingAim);
         const WeaponDefinition* wDef = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
         if (wDef)
         {

@@ -2,6 +2,7 @@
 #include "effects/effect-part.h"
 #include "audio/audio.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "config/networking-config.h"
 
 #include <algorithm>
@@ -486,6 +487,33 @@ void logDisagreement(const DisagreementEvent& event)
             event.position.x, event.position.y, event.position.z,
             event.correction.x, event.correction.y, event.correction.z,
             event.description.c_str());
+    }
+
+    // Always-on structured log entry: surfaces "where I was/shots I fired vs
+    // where the server thinks they were" with the exact numbers into the
+    // Network log file, gated by debuglogger.json "network" level.
+    if (::StructuredLogger::instance().shouldLog(
+            ::StructuredCategory::Network, ::StructuredLevel::Verbose))
+    {
+        char buf[512];
+        snprintf(buf, sizeof(buf),
+            "reason=%s source=%u target=%u pos=(%.1f,%.1f,%.1f) "
+            "correction=(%.1f,%.1f,%.1f) %s",
+            reasonName(event.reason), event.sourcePlayerId, event.targetPlayerId,
+            event.position.x, event.position.y, event.position.z,
+            event.correction.x, event.correction.y, event.correction.z,
+            event.description.c_str());
+        ::StructuredLogger::Entry e;
+        e.category = ::StructuredCategory::Network;
+        e.level = ::StructuredLevel::Verbose;
+        e.eventId = "disagreement";
+        e.correlationId = std::to_string(event.eventId);
+        e.reason = reasonName(event.reason);
+        e.sourceFile = __FILE__;
+        e.sourceLine = __LINE__;
+        e.functionName = __FUNCTION__;
+        e.message = buf;
+        ::StructuredLogger::instance().write(e);
     }
 }
 

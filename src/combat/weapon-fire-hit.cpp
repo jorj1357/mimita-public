@@ -208,7 +208,8 @@ RevolverShotResult tryFireHitscanDir(
     const glm::vec3& muzzlePos,
     const glm::vec3& aimDir,
     const Player* targetPlayer,
-    float damageMultiplier)
+    float damageMultiplier,
+    float beamThicknessOverride)
 {
     RevolverShotResult result;
 
@@ -225,13 +226,18 @@ RevolverShotResult tryFireHitscanDir(
     // Push ray origin forward to prevent starting inside geometry
     glm::vec3 rayOrigin = muzzlePos + shotDirection * 0.01f;
 
+    // NPCs can override the weapon's fat beam with a thin bullet so the aim
+    // error cone actually causes misses. -1 = use the weapon's own thickness.
+    const float beamThickness = beamThicknessOverride >= 0.0f
+        ? beamThicknessOverride : def.beamThickness;
+
     Debug::log(Debug::Category::Weapons,
         "[BEAM] weapon=%s hitscan=true beamThickness=%.2f collisionType=%s\n",
-        def.id.c_str(), def.beamThickness,
-        (def.beamThickness > 0.0f) ? "SphereCast" : "Raycast");
+        def.id.c_str(), beamThickness,
+        (beamThickness > 0.0f) ? "SphereCast" : "Raycast");
 
     BeamCollisionResult beam = collideBeam(
-        rayOrigin, shotDirection, MAX_SHOT_DISTANCE, def.beamThickness,
+        rayOrigin, shotDirection, MAX_SHOT_DISTANCE, beamThickness,
         world, nullptr, nullptr, targetPlayer, false, nullptr,
         def.beamWorldThickness);
 

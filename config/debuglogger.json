@@ -37,7 +37,7 @@
       "file_output": true
     },
     "network": {
-      "level": "important",
+      "level": "verbose",
       "file_output": true,
       "throttle": 0.0
     },

@@ -18,6 +18,8 @@
 #include "combat/weapon-data.h"
 #include "combat/weapon-registry.h"
 #include "npc/npc.h"
+#include "npc/npc-difficulty-config.h"
+#include "npc/npc-combat-log.h"
 #include "entities/player.h"
 #include "world/world.h"
 #include "config/networking-config.h"
@@ -235,6 +237,11 @@ int runServer(const LaunchOptions& options)
 
     WeaponData::registerBuiltinWeapons();
     printf("%s [SERVER] registered built-in weapons\n", serverTimestamp());
+
+    // Load NPC difficulty config so server-authoritative NPC damage/fire rate
+    // honors config/npc-difficulty.json (hot-reloaded in the server loop below).
+    NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
+    npcLogSetProc("server");
 
     // Validate grenade launcher config at startup
     {
@@ -478,6 +485,10 @@ int runServer(const LaunchOptions& options)
         // up server_smoothing (and the shared badconn block) live.
         NetworkingConfig::instance().pollReload();
 
+        // Hot-reload config/npc-difficulty.json so server NPC damage/fire rate
+        // edits apply live without a server restart.
+        NpcDifficultyConfig::instance().pollReload();
+
         // Hot-reload config/weapons.json (rate-limited to 250ms internally) so
         // live weapon damage/falloff edits apply without a server restart.
         WeaponData::reloadBuiltinWeaponsIfChanged();
@@ -638,6 +649,49 @@ int runServer(const LaunchOptions& options)
                    (unsigned long long)transportStats.reconnectPackets,
                    (unsigned long long)transportStats.inputPackets);
             lastLog = nowMs();
+        }
+
+        // Per-second structured divergence log: the server's authoritative view
+        // of every player (position/velocity/HP/ground state). Write to the
+        // Network log file so a test can compare this against each client's
+        // own per-second report. Gated by debuglogger.json "network" level.
+        {
+            static uint64_t s_lastServerDivergenceLog = 0;
+            const uint64_t nowDiv = nowMs();
+            if (nowDiv - s_lastServerDivergenceLog >= 1000 &&
+                ::StructuredLogger::instance().shouldLog(
+                    ::StructuredCategory::Network, ::StructuredLevel::Verbose))
+            {
+                s_lastServerDivergenceLog = nowDiv;
+                std::string msg;
+                char buf[256];
+                snprintf(buf, sizeof(buf), "tick=%u players=%zu npcs=%zu",
+                         tick, players.size(), npcs.size());
+                msg += buf;
+                for (const auto& kv : players)
+                {
+                    const ServerPlayer& p = kv.second;
+                    snprintf(buf, sizeof(buf),
+                        " | p%u pos=(%.1f,%.1f,%.1f) vel=(%.1f,%.1f,%.1f) "
+                        "hp=%d onGround=%d yaw=%.1f stale=%d",
+                        p.id, p.pos.x, p.pos.y, p.pos.z,
+                        p.vel.x, p.vel.y, p.vel.z,
+                        p.health, (int)p.onGround, p.yaw,
+                        (int)p.connectionStale);
+                    msg += buf;
+                }
+                ::StructuredLogger::Entry e;
+                e.category = ::StructuredCategory::Network;
+                e.level = ::StructuredLevel::Verbose;
+                e.eventId = "server-divergence";
+                e.reason = "server authoritative player state";
+                e.sourceFile = __FILE__;
+                e.sourceLine = __LINE__;
+                e.functionName = __FUNCTION__;
+                if (msg.size() > 3000) msg.resize(3000);
+                e.message = msg;
+                ::StructuredLogger::instance().write(e);
+            }
         }
 
         // Remeasure elapsed time for post-simulation work (heartbeat, logs)
@@ -891,6 +945,9 @@ static void simulateOneServerTick(ListenServerState& state)
 {
     // Hot-reload networkingconfig.json so hosted servers pick up changes live.
     NetworkingConfig::instance().pollReload();
+
+    // Hot-reload NPC difficulty so hosted-server NPCs honor the JSON live.
+    NpcDifficultyConfig::instance().pollReload();
 
     {
         char buffer[2048];
