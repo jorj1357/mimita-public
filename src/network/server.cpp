@@ -198,6 +198,8 @@ ServerGameOverrides gServerOverrides;
 
 } // namespace
 
+std::string gServerHostPlayerName;
+
 ServerGameOverrides& serverGameOverrides()
 {
     return gServerOverrides;
@@ -373,6 +375,9 @@ int runServer(const LaunchOptions& options)
     dedicatedIceState.maxPlayers = options.maxPlayers;
     dedicatedIceState.passwordProtected = options.passwordProtected;
     dedicatedIceState.hostPlayerName = options.hostPlayerName;
+    // The host is identified by name so the person who launched the server can
+    // run host commands (healthall / setspawn / npc_delete_all), no account.
+    gServerHostPlayerName = options.hostPlayerName;
     dedicatedIceState.port = actualPort;
     std::vector<PendingServerTransport> pendingIceTransports;
 
@@ -779,6 +784,7 @@ bool startListenServer(ListenServerState& state, uint16_t port,
         state.passwordProtected = settings->passwordProtected;
         state.hostPlayerName = settings->hostPlayerName;
     }
+    gServerHostPlayerName = settings ? settings->hostPlayerName : "";
 
     // Startup NPCs
     bool npcsEnabled = !settings || settings->startupNpcsEnabled;

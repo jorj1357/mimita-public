@@ -21,9 +21,6 @@ static void enforceClipStorageLimit()
     namespace fs = std::filesystem;
     constexpr uint64_t MAX_BYTES = 100ULL * 1024 * 1024;
     fs::path clipsDir = fs::path("replays") / "clips";
-    std::error_code ec;
-
-    if (!fs::exists(clipsDir, ec)) return;
 
     struct ClipEntry {
         fs::path path;
@@ -33,30 +30,47 @@ static void enforceClipStorageLimit()
     std::vector<ClipEntry> clips;
     uint64_t totalBytes = 0;
 
-    for (const auto& entry : fs::directory_iterator(clipsDir, ec)) {
-        if (!entry.is_regular_file(ec)) continue;
-        auto ext = entry.path().extension().string();
-        if (ext != ".json") continue;
-        uint64_t sz = entry.file_size(ec);
-        totalBytes += sz;
-        clips.push_back({entry.path(), entry.last_write_time(ec), sz});
+    try {
+        std::error_code ec;
+        if (!fs::exists(clipsDir, ec)) return;
+
+        fs::directory_iterator it(clipsDir, ec);
+        const fs::directory_iterator endIt;
+        for (; !ec && it != endIt; it.increment(ec)) {
+            std::error_code fec;
+            if (!it->is_regular_file(fec) || fec) continue;
+            auto ext = it->path().extension().string();
+            if (ext != ".json") continue;
+            std::error_code sec;
+            uint64_t sz = it->file_size(sec);
+            if (sec) continue;
+            std::error_code tec;
+            fs::file_time_type ft = it->last_write_time(tec);
+            if (tec) continue;
+            totalBytes += sz;
+            clips.push_back({it->path(), ft, sz});
+        }
+
+        if (totalBytes <= MAX_BYTES) return;
+
+        std::sort(clips.begin(), clips.end(),
+            [](const ClipEntry& a, const ClipEntry& b) { return a.time < b.time; });
+
+        printf("[REPLAY CLIP] clips directory = %llu bytes (limit %llu), pruning %zu files\n",
+               (unsigned long long)totalBytes, (unsigned long long)MAX_BYTES, clips.size());
+        for (const auto& clip : clips) {
+            if (totalBytes <= MAX_BYTES) break;
+            std::error_code rec;
+            if (fs::remove(clip.path, rec) && !rec) {
+                totalBytes -= clip.size;
+                printf("[REPLAY CLIP] deleted: %s\n", clip.path.filename().string().c_str());
+            }
+        }
+        printf("[REPLAY CLIP] pruning done, clips directory = %llu bytes\n",
+               (unsigned long long)totalBytes);
+    } catch (...) {
+        printf("[REPLAY CLIP] prune aborted after error\n");
     }
-
-    if (totalBytes <= MAX_BYTES) return;
-
-    std::sort(clips.begin(), clips.end(),
-        [](const ClipEntry& a, const ClipEntry& b) { return a.time < b.time; });
-
-    printf("[REPLAY CLIP] clips directory = %llu bytes (limit %llu), pruning %zu files\n",
-           (unsigned long long)totalBytes, (unsigned long long)MAX_BYTES, clips.size());
-    for (const auto& clip : clips) {
-        if (totalBytes <= MAX_BYTES) break;
-        fs::remove(clip.path, ec);
-        totalBytes -= clip.size;
-        printf("[REPLAY CLIP] deleted: %s\n", clip.path.filename().string().c_str());
-    }
-    printf("[REPLAY CLIP] pruning done, clips directory = %llu bytes\n",
-           (unsigned long long)totalBytes);
 }
 
 // ── Worker job: serialize + write + prune ─────────────────────────

@@ -164,6 +164,7 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     {
         ctx.pendingVictimHealth.clear();
         player.currentHp = ctx.localServerHealth;
+        player.maxHp = ctx.localServerHealth;
         player.dead = false;
         player.proceduralFrozen = false;
         player.deathAnim = Player::DeathAnimState{};
@@ -215,11 +216,18 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         if (ctx.lastAppliedEpoch == ctx.localServerEpoch &&
             ctx.localServerHealth > player.currentHp)
             player.currentHp = ctx.localServerHealth;
+        // The server's max HP (healthall override) can exceed the local max.
+        // Track the highest server health seen this life so the bar shows the
+        // real denominator (999/999, not 999/100).
+        if (ctx.localServerHealth > player.maxHp)
+            player.maxHp = ctx.localServerHealth;
     }
     else
     {
         // First reconciliation of this epoch — apply server health directly
         player.currentHp = ctx.localServerHealth;
+        if (ctx.localServerHealth > player.maxHp)
+            player.maxHp = ctx.localServerHealth;
     }
     ctx.lastSeenServerHealth = ctx.localServerHealth;
 

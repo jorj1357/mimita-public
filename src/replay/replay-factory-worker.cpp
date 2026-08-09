@@ -57,7 +57,14 @@ void ReplaySaveWorker::threadLoop()
         }
         // Notify drain waiters
         mCv.notify_all();
-        if (job)
-            job();
+        if (job) {
+            try {
+                job();
+            } catch (const std::exception& e) {
+                printf("[REPLAY WORKER] job threw exception: %s\n", e.what());
+            } catch (...) {
+                printf("[REPLAY WORKER] job threw unknown exception\n");
+            }
+        }
     }
 }

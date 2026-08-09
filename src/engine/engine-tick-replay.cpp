@@ -72,7 +72,6 @@ void engineTickReplay(Engine& engine, float dt)
     auto& gReplayChatStates = REPLAY_CHAT_STATES;
     auto& gReplayRecorder = REPLAY_RECORDER;
     auto& gReplayPlayer = REPLAY_PLAYER;
-    auto& gReplayClipSaver = REPLAY_CLIP_SAVER;
     auto& gReplayFactory = REPLAY_FACTORY;
     auto& gReplayBrowser = REPLAY_BROWSER;
     auto& gReplayTimeline = REPLAY_TIMELINE;
@@ -420,7 +419,6 @@ void engineTickReplay(Engine& engine, float dt)
             Perf::ScopedTimer _t("ReplayRecordScene");
             gReplayRecorder.recordSceneFrame(sceneFrame);
             }
-            gReplayClipSaver.update();
             gReplayFactory.update();
             GuiLayoutManager::instance().pollReload();
             LightingConfig::instance().pollReload();

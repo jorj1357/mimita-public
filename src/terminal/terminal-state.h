@@ -39,7 +39,6 @@ extern bool* gpWorldLoaded;
 
 extern ReplayRingBuffer* gpReplayRecorder;
 extern ReplayPlayer* gpReplayPlayer;
-extern ReplayClipSaver* gpReplayClipSaver;
 extern ReplayFactory* gpReplayFactory;
 extern ReplayBrowser* gpReplayBrowser;
 extern ReplayTimeline* gpReplayTimeline;
@@ -60,7 +59,6 @@ extern ChatHistory* gpChatHistory;
 // Convenience accessors (non-null after main() init)
 #define REPLAY_RECORDER (*gpReplayRecorder)
 #define REPLAY_PLAYER (*gpReplayPlayer)
-#define REPLAY_CLIP_SAVER (*gpReplayClipSaver)
 #define REPLAY_FACTORY (*gpReplayFactory)
 #define REPLAY_BROWSER (*gpReplayBrowser)
 #define REPLAY_TIMELINE (*gpReplayTimeline)

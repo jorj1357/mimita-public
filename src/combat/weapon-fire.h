@@ -86,7 +86,8 @@ RevolverShotResult tryFireHitscanDir(
     const World& world,
     const glm::vec3& muzzlePos,
     const glm::vec3& aimDir,
-    const Player* targetPlayer = nullptr
+    const Player* targetPlayer = nullptr,
+    float damageMultiplier = 1.0f
 );
 
 void fireMultiPellet(
@@ -232,7 +233,8 @@ void processPlayerHit(
     const glm::vec3& shotDirection,
     float nearest,
     Player& shooter,
-    Player* targetPlayer);
+    Player* targetPlayer,
+    float damageMultiplier = 1.0f);
 
 void processWorldHit(
     RevolverShotResult& result,

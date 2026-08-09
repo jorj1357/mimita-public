@@ -1196,6 +1196,29 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             Debug::log(Debug::Category::Weapons,
                        "[GODBALL LEGACY STATE RX] ignored after physical-contact migration\n");
         }
+        else if (header->type == PACKET_SERVER_COMMAND_RESULT &&
+                 bytes >= (int)sizeof(ServerCommandResultPacket))
+        {
+            // Host-command ack from the server (applied or rejected).
+            const ServerCommandResultPacket* res =
+                reinterpret_cast<const ServerCommandResultPacket*>(buffer);
+            const std::string status(res->statusText,
+                                     strnlen(res->statusText, sizeof(res->statusText)));
+            if (res->accepted)
+            {
+                Debug::warn(Debug::Category::Networking,
+                    "[HOST COMMAND APPLIED] %s\n", status.c_str());
+                NotificationSystem::instance().pushCritical(
+                    "Host command applied", status, 0);
+            }
+            else
+            {
+                Debug::warn(Debug::Category::Networking,
+                    "[HOST COMMAND REJECTED] %s\n", status.c_str());
+                NotificationSystem::instance().pushCritical(
+                    "Host command rejected", status, 0);
+            }
+        }
         else if (header->type == PACKET_PING &&
                  bytes >= (int)sizeof(PingPacket))
         {

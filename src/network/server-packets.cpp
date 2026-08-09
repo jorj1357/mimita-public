@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <chrono>
@@ -40,6 +41,27 @@ std::string boundedPacketString(const char* value, size_t capacity)
     while (len < capacity && value[len] != '\0')
         ++len;
     return std::string(value, len);
+}
+
+// True when the joining player is the server host: their name matches the
+// server's host player name (from --host-player / launch settings),
+// case-insensitively. Empty host name = the first joiner is host. Used by
+// both join paths (HelloPacket and join request) so hosts are recognized
+// regardless of how they connect.
+bool computeHostFlag(const char* rawName, size_t playerCount)
+{
+    const std::string hostName = gServerHostPlayerName;
+    if (hostName.empty())
+        return playerCount <= 1;
+    size_t a = 0, b = 0;
+    while (a < std::strlen(rawName) && b < hostName.size())
+    {
+        if (std::tolower((unsigned char)rawName[a]) !=
+            std::tolower((unsigned char)hostName[b]))
+            return false;
+        ++a; ++b;
+    }
+    return a == std::strlen(rawName) && b == hostName.size();
 }
 
 uint16_t validClientVisualStateFlags(uint16_t flags)
@@ -539,14 +561,16 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
     p.lastProjectileFireSerial = 0;
     p.lastMeleeAttackSerial = 0;
     p.projectileFireCooldown = 0.0f;
-    p.name = uniquePlayerName(
-        players, reinterpret_cast<const HelloPacket*>(buffer)->name, id);
+    const char* rawName = reinterpret_cast<const HelloPacket*>(buffer)->name;
+    p.name = uniquePlayerName(players, rawName, id);
+
+    // The host is the player whose name matches the server's host player name
+    // (whoever launched/owns the server). Set on every join AND reconnect so the
+    // host flag survives reconnects. Case-insensitive; works with no account.
+    p.isHost = computeHostFlag(rawName, players.size());
 
     if (!existingId)
     {
-        // The FIRST player to join is the server host — the only one allowed to
-        // issue server-authoritative commands (healthall / setspawn / etc.).
-        p.isHost = players.size() <= 1;
         // Use map spawnpoints if available
         glm::vec3 spawnPos;
         float spawnYaw = 0.0f;
@@ -1119,6 +1143,9 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     p.joinTokenValidated = true;
     p.reconnectToken = generateReconnectToken();
     p.name = uniquePlayerName(players, boundedPacketString(join->name, sizeof(join->name)), id);
+    // Host detection for the ICE/room-code join path (the host connects this
+    // way). Same rule as handleHello so host-only commands work for the host.
+    p.isHost = computeHostFlag(join->name, players.size());
     if (hasVerifiedVipTicket)
     {
         p.vipAccountId = verifiedVipAccountId;
@@ -1518,7 +1545,8 @@ ServerPacketProcessResult processServerPacket(
     }
     else if (header->type == PACKET_SERVER_COMMAND)
     {
-        handleServerCommand(buffer, bytes, players, npcs);
+        handleServerCommand(sock, from, buffer, bytes, players, npcs,
+                            tick, totalPacketsOut);
         result.handled = true;
     }
     else if (header->type == PACKET_SPAWN_ACK &&

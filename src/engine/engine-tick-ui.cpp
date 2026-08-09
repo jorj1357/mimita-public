@@ -72,7 +72,6 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
     auto& gReplayChatStates = REPLAY_CHAT_STATES;
     auto& gReplayRecorder = REPLAY_RECORDER;
     auto& gReplayPlayer = REPLAY_PLAYER;
-    auto& gReplayClipSaver = REPLAY_CLIP_SAVER;
     auto& gReplayFactory = REPLAY_FACTORY;
     auto& gReplayBrowser = REPLAY_BROWSER;
     auto& gReplayTimeline = REPLAY_TIMELINE;

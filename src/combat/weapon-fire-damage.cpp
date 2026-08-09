@@ -417,7 +417,8 @@ void processPlayerHit(
     const glm::vec3& shotDirection,
     float nearest,
     Player& shooter,
-    Player* targetPlayer)
+    Player* targetPlayer,
+    float damageMultiplier)
 {
     float damage = def.damage;
     if (hitPart == "head")
@@ -430,6 +431,7 @@ void processPlayerHit(
     const float minFraction = def.customParams.count("minDamageFraction")
         ? def.customParams.at("minDamageFraction") : 0.1f;
     damage *= std::clamp(1.0f - nearest / falloffStart, minFraction, 1.0f);
+    damage *= damageMultiplier;
     int totalDamage = std::max(1, (int)std::round(damage));
 
     float df = std::clamp(1.0f - nearest / falloffStart, minFraction, 1.0f);

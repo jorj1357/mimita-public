@@ -1,0 +1,17 @@
+{
+  "comment": "NPC difficulty tuning. This file hot-reloads while the game runs: edit it, save, and changes apply immediately (no restart). The keys with \"comment_\" prefixes are documentation only and are ignored by the game. See src/npc/npc-difficulty-config.cpp.",
+  "maxAngularErrorDegrees": 2.0,
+  "comment_maxAngularErrorDegrees": "Aim miss-cone in degrees. Lower = more accurate = deadlier. 2 = dangerous (most shots hit), 5 = stormtrooper-ish (frequent misses), 0 = perfect aim (same as forceHit).",
+  "difficultyErrorScale": 0.5,
+  "comment_difficultyErrorScale": "0 to 1. How much an NPC's difficulty (1-10) shrinks the miss-cone. 0 = all NPCs equally accurate. 1 = max-difficulty NPCs get the full reduction from maxAngularErrorDegrees.",
+  "damageMultiplier": 3.0,
+  "comment_damageMultiplier": "Multiplies weapon damage when an NPC hits the player. Revolver base is 12, so x3 = 36 per body shot; a 100 HP player dies in ~3 hits. Set 1.0 for normal damage, higher for brutal NPCs.",
+  "fireDelayMin": 0.05,
+  "comment_fireDelayMin": "Fastest allowed seconds between NPC shots. Values below the weapon's own fire_delay are clamped to the weapon value. 0 = always use the weapon's own fire_delay.",
+  "fireDelayMax": 0.35,
+  "comment_fireDelayMax": "Slowest allowed seconds between NPC shots (the old built-in cap was 0.5). Lower = NPCs shoot more often.",
+  "aggressionBonus": 0.4,
+  "comment_aggressionBonus": "Added to NPC aggression, which pushes shot timing toward fireDelayMin (faster fire) and makes them more willing to attack. 0 = neutral, 1 = nearly always maximum fire rate.",
+  "forceHit": true,
+  "comment_forceHit": "Debug switch. true = zero aim error, every NPC shot lands on its target (overrides maxAngularErrorDegrees). Useful to verify damage/fire-rate without worrying about aim."
+}

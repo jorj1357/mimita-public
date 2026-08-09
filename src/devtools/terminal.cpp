@@ -163,6 +163,11 @@ void Terminal::init(GLFWwindow* window) {
             }
             if (::gpMpContext && ::gpMpContext->active)
             {
+                if (args.empty())
+                {
+                    Terminal::instance().addLog("[SETSPAWN] Usage: setspawn <0|1>");
+                    return;
+                }
                 const std::string cmd = std::string("setspawn ") + (args[0] == "1" ? "1" : "0");
                 MimitaNet::mpSendServerCommand(*::gpMpContext, cmd);
                 Terminal::instance().addLog("[SETSPAWN] Sent to server (host only).");

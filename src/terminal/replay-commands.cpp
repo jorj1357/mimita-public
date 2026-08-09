@@ -193,21 +193,13 @@ void registerReplayCommands()
         "replay_save_last_kill", "Save five seconds before and three seconds after the last kill",
         "replay_save_last_kill",
         [](const std::vector<std::string>&) {
-            std::string factoryPath;
-            if (REPLAY_FACTORY.saveLastKill(&factoryPath)) {
-                Terminal::instance().addLog("[REPLAY] saved clip " + factoryPath);
-                return;
-            }
             std::string path;
-            if (!REPLAY_CLIP_SAVER.saveLastKill(&path)) {
+            if (!REPLAY_FACTORY.saveLastKill(&path)) {
                 Terminal::instance().addLog(
                     "[ERROR] no captured kill is available to save");
                 return;
             }
-            Terminal::instance().addLog(
-                path == "pending post-kill capture"
-                    ? "[REPLAY] clip queued; capturing three seconds after kill"
-                    : "[REPLAY] saved clip " + path);
+            Terminal::instance().addLog("[REPLAY] saved clip " + path);
         }
     });
 
@@ -330,9 +322,8 @@ void registerReplayCommands()
             printf("[REPLAY DEBUG] actorModels=%zu weaponModels=%zu chatStates=%zu\n",
                    REPLAY_ACTOR_MODELS.size(), REPLAY_WEAPON_MODELS.size(),
                    REPLAY_CHAT_STATES.size());
-            printf("[REPLAY DEBUG] recording=%d clipSaver.hasLastKill=%d\n",
-                   (int)REPLAY_RECORDER.isRecording(),
-                   (int)REPLAY_CLIP_SAVER.hasLastKill());
+            printf("[REPLAY DEBUG] recording=%d\n",
+                   (int)REPLAY_RECORDER.isRecording());
             printf("[REPLAY DEBUG] replayExportActive=%d\n",
                    (int)isReplayExportActive());
             Terminal::instance().addLog("[REPLAY] debug info printed to console");
