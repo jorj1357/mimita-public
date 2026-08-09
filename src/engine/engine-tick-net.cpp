@@ -345,6 +345,11 @@ void engineTickNet(Engine& engine, float dt)
                 ack.spawnGeneration = spawn.spawnGeneration;
                 ack.transformEpoch = spawn.transformEpoch;
                 MimitaNet::mpSendPacket(mpContext, &ack, sizeof(ack));
+                // Arm the reliable retry: keep re-sending this ack until the
+                // server's SpawnActivated confirms receipt (see mpTick).
+                mpContext.pendingSpawnAckGeneration = spawn.spawnGeneration;
+                mpContext.pendingSpawnAckEpoch = spawn.transformEpoch;
+                mpContext.pendingSpawnAckLastSendMs = MimitaNet::nowMs();
                 Debug::log(Debug::Category::Weapons, "[SPAWN ACK SEND] playerId=%u spawnGen=%u epoch=%u (after weapon reconciliation)\n",
                            mpContext.localPlayerId, ack.spawnGeneration, ack.transformEpoch);
             }

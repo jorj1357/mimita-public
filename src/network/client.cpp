@@ -219,6 +219,20 @@ int runClient(const LaunchOptions& options)
                 transformEpoch = spawn->transformEpoch;
                 movementSequence = 1;
 
+                // The spawn sync is delivered over the reliable-event transport;
+                // acknowledge it so the server stops retransmitting.
+                if (spawn->eventId != 0)
+                {
+                    ReliableEventAckPacket evAck{};
+                    evAck.header.type = PACKET_RELIABLE_EVENT_ACK;
+                    evAck.header.playerId = localPlayerId;
+                    evAck.eventId = spawn->eventId;
+                    evAck.eventSessionId = spawn->eventSessionId;
+                    sendto(sock, (const char*)&evAck, sizeof(evAck), 0,
+                           (sockaddr*)&serverAddr, sizeof(serverAddr));
+                    ++packetsSent;
+                }
+
                 SpawnAckPacket ack{};
                 ack.header.type = PACKET_SPAWN_ACK;
                 ack.header.playerId = localPlayerId;

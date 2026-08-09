@@ -572,6 +572,15 @@ struct MultiplayerContext
     // Cleared after processing or when the spawn handshake completes.
     std::optional<PlayerRespawnedPacket> pendingAuthoritativeSpawn;
 
+    // ── SpawnAck retry (reliable respawn handshake) ───────────────────
+    // The client re-sends its one-shot SpawnAck until the server's
+    // SpawnActivated confirms receipt, so a dropped ack under packet loss can
+    // never leave the server frozen in AwaitingSpawnAck (player stuck at the
+    // spawn point on other clients' screens). Cleared by SpawnActivated.
+    uint32_t pendingSpawnAckGeneration = 0;   // 0 = no ack in flight
+    uint32_t pendingSpawnAckEpoch = 0;
+    uint64_t pendingSpawnAckLastSendMs = 0;
+
     // ── Predicted projectile IDs (locally simulated, suppress server interpolation) ──
     std::unordered_set<uint32_t> predictedProjectileIds;
     // fireSerial -> predicted explosion position for client-side projectile

@@ -52,6 +52,10 @@ void syncServerMovementRuntime(ServerPlayer& player, bool movementEnabled)
     player.movement.dash.dashAvailable = player.dashAvailable;
 }
 
+// Packet-out counter for reliable spawn-sync delivery (stats only; the
+// reliable-event queue increments it while enqueueing/sending).
+uint64_t gSpawnSyncTotalPacketsOut = 0;
+
 } // namespace
 
 void copyName(char (&dst)[MAX_NAME_BYTES], const std::string& name)
@@ -307,6 +311,12 @@ void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitia
     spawnSync.header.type = PACKET_PLAYER_RESPAWNED;
     spawnSync.header.tick = 0;
     spawnSync.header.playerId = player.id;
+    // Reliable-event id/session stamped by the reliable transport so the
+    // client can dedup retransmitted copies; the packet itself is queued
+    // through the reliable-event system (same as attack/shot events), so a
+    // dropped spawn sync under packet loss is re-sent until acknowledged.
+    spawnSync.eventId = nextReliableGameplayEventId();
+    spawnSync.eventSessionId = 0;  // per-player session stamped by the queue
     spawnSync.spawnGeneration = player.spawnGeneration;
     spawnSync.transformEpoch = player.transformEpoch;
     spawnSync.health = player.health;
@@ -325,55 +335,17 @@ void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitia
         ws.reloading = wkv.second.reloading ? 1 : 0;
     }
 
-    // Send to this player only
-    if (player.transport)
-        player.transport->send(&spawnSync, sizeof(spawnSync));
-    else
-        sendto(sock, (const char*)&spawnSync, sizeof(spawnSync), 0,
-               (sockaddr*)&player.addr, sizeof(player.addr));
+    // Reliable delivery to this player only: retransmitted by the reliable
+    // event system until the client ACKs the event (or TTL/attempts expire).
+    ReliableGameplayEventQueueResult qr = queueReliableGameplayEventToPlayer(
+        sock, player, &spawnSync, sizeof(spawnSync),
+        spawnSync.eventId, reliableGameplayEventSessionForPlayer(player),
+        gSpawnSyncTotalPacketsOut);
+    (void)qr;
 
     printf("[SPAWN TX CREATE] id=%u spawnGen=%u epoch=%u reason=%s health=%d ownedWeapons=%zu\n",
            player.id, player.spawnGeneration, player.transformEpoch,
            isInitialSpawn ? "initial" : "respawn", player.health, player.ownedWeaponIds.size());
-}
-
-// ── Retransmit SpawnConfirmed while awaiting ack ─────────────────────
-void retrySpawnSync(SOCKET sock, ServerPlayer& player)
-{
-    if (player.spawnState != ServerPlayer::AwaitingSpawnAck)
-        return;
-
-    // Rebuild and resend the identical spawn transaction
-    PlayerRespawnedPacket spawnSync{};
-    spawnSync.header.type = PACKET_PLAYER_RESPAWNED;
-    spawnSync.header.tick = 0;
-    spawnSync.header.playerId = player.id;
-    spawnSync.spawnGeneration = player.spawnGeneration;
-    spawnSync.transformEpoch = player.transformEpoch;
-    spawnSync.health = player.health;
-    spawnSync.weaponCount = 0;
-    for (const auto& wkv : player.weaponRuntimes)
-    {
-        if (spawnSync.weaponCount >= 16) break;
-        uint16_t wid = weaponDefNetworkIdFor(wkv.first);
-        if (wid == 0) continue;
-        auto& ws = spawnSync.weapons[spawnSync.weaponCount++];
-        ws.weaponDefNetworkId = wid;
-        ws.magazineAmmo = wkv.second.magazineAmmo;
-        ws.reserveAmmo = wkv.second.reserveAmmo;
-        ws.nextAllowedFireTick = wkv.second.nextAllowedFireTick;
-        ws.stateRevision = wkv.second.stateRevision;
-        ws.reloading = wkv.second.reloading ? 1 : 0;
-    }
-
-    if (player.transport)
-        player.transport->send(&spawnSync, sizeof(spawnSync));
-    else
-        sendto(sock, (const char*)&spawnSync, sizeof(spawnSync), 0,
-               (sockaddr*)&player.addr, sizeof(player.addr));
-
-    Debug::log(Debug::Category::Weapons, "[SPAWN TX RETRY] id=%u spawnGen=%u epoch=%u\n",
-               player.id, player.spawnGeneration, player.transformEpoch);
 }
 
 // ── Advance all reload timers — called once per server tick ─────────
