@@ -106,7 +106,11 @@ enum PacketType : uint8_t
     // Tells every client when a peer player's connection was lost (so they can
     // show a red reconnect effect on the frozen body) or recovered (green
     // "reconnected" effect). `connected` is 0 on disconnect, 1 on reconnect.
-    PACKET_PLAYER_CONNECTION_STATE = 53
+    PACKET_PLAYER_CONNECTION_STATE = 53,
+    // ── Server command result (server → sender) ───────────────────────
+    // Confirms whether a host-only command (healthall / setspawn / etc.) was
+    // applied or rejected, so the host gets feedback in their terminal.
+    PACKET_SERVER_COMMAND_RESULT = 54
 };
 
 enum DamageConfirmedSource : uint8_t
@@ -868,6 +872,13 @@ struct ServerCommandPacket
 {
     PacketHeader header;
     char commandText[240];
+};
+
+struct ServerCommandResultPacket
+{
+    PacketHeader header;
+    int32_t accepted = 0;      // 1 = applied, 0 = rejected (not host)
+    char statusText[240];      // human-readable result for the terminal
 };
 
 struct DisconnectPacket
