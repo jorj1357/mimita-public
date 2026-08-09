@@ -13,6 +13,7 @@
 #include "network/snapshot-chunks.h"
 #include "network/remote-entity-lifecycle.h"
 #include "network/badconn/badconn.h"
+#include "network/reconnect-visuals.h"
 #include "avatar/avatar.h"
 #include "config/player-settings.h"
 #include "config/networking-config.h"
@@ -24,6 +25,7 @@
 #include "gui/hud/chat-bubble.h"
 #include "world/world.h"
 #include "entities/player.h"
+#include "notifications/notifications.h"
 
 #include <algorithm>
 #include <cmath>
@@ -399,6 +401,7 @@ static void processSnapshotEntities(
                 it = ctx.remotePlayers.erase(it);
                 ctx.remotePlayerInterpolation.erase(eid);
                 ctx.playerRegistry.erase(eid);
+                mpClearRemoteReconnectVisual(ctx, eid);
             }
             else
             {
@@ -579,6 +582,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 ctx.connectionStatus = connect.message;
                 ctx.connectionState = ConnectionState::Disconnected;
                 ctx.connectFailed = true;
+                NotificationSystem::instance().pushCritical(
+                    "Connection failed",
+                    "Server status: Connection failed — " + connect.message, 0);
             }
         }
     }
@@ -596,34 +602,17 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
 
     uint64_t currentMs = nowMs();
 
-    const uint64_t CLIENT_TIMEOUT_MS =
-        (uint64_t)NetworkingConfig::instance().data().timeouts.clientTimeoutMs;
-    if (ctx.connected && ctx.lastHeardServerMs > 0 &&
-        currentMs - ctx.lastHeardServerMs > CLIENT_TIMEOUT_MS)
-    {
-        if (currentMs - ctx.lastDisconnectLogMs >= 1000)
-        {
-            printf("[NET TIMEOUT] player=%u reason=server-silent lastPacket=%llums ago\n",
-                   ctx.localPlayerId,
-                   (unsigned long long)(currentMs - ctx.lastHeardServerMs));
-            ctx.lastDisconnectLogMs = currentMs;
-        }
-        printf("[NET DISCONNECT] player=%u reason=heartbeat_timeout duration=%llums\n",
-               ctx.localPlayerId,
-               (unsigned long long)(currentMs - ctx.lastHeardServerMs));
+    // ── Honest connection-health machine ───────────────────────────────
+    // Packet-freshness drives Connected → WeakConnection → Reconnecting →
+    // ReconnectFailed. The server slot stays alive for the grace window, and
+    // every transition surfaces a notification (see mpNotifyConnectionStateChange).
+    // This replaces the old "silently teardown at clientTimeoutMs" behavior.
+    mpUpdateConnectionHealth(ctx);
 
-        // Try reconnect if we have a reconnect token
-        if (!ctx.reconnectToken.empty())
-        {
-            ctx.connected = false;
-            ctx.connectionState = ConnectionState::Reconnecting;
-            mpStartReconnect(ctx);
-            return;
-        }
-
-        teardownPreviousSession(ctx, DisconnectPolicy::ConnectionFailure);
+    // The health machine may have torn the session down on give-up; nothing
+    // below is valid with a closed socket / released transport.
+    if (!ctx.active)
         return;
-    }
 
     // Decay old disagreement events
     {
@@ -646,6 +635,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     {
         ctx.connectionStatus = "Connection timed out";
         printf("[NET CONNECT] timeout server=%s\n", ctx.serverAddress.c_str());
+        NotificationSystem::instance().pushCritical(
+            "Connection timed out",
+            "Server status: Connection timed out — " + ctx.serverAddress, 0);
         teardownPreviousSession(ctx, DisconnectPolicy::ConnectionFailure);
     }
 
@@ -735,6 +727,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             printf("[NET CONNECT] player=%u serverTick=%u tickRate=%.0f mapId=%s\n",
                    ctx.localPlayerId, welcome->header.tick, welcome->tickRate,
                    welcome->mapId);
+            mpNotifyConnectionStateChange(ctx, ConnectionState::Connecting,
+                                          ConnectionState::Connected);
         }
         else if (header->type == PACKET_JOIN_ACCEPT && bytes >= (int)sizeof(JoinAcceptPacket))
         {
@@ -771,6 +765,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             eraseLocalReplica(ctx, ctx.localPlayerId, "join-accept");
             printf("[NET CONNECT] join accepted player=%u tickRate=%.0f mapId=%s\n",
                    ctx.localPlayerId, accept->tickRate, accept->mapId);
+            mpNotifyConnectionStateChange(ctx, ConnectionState::Connecting,
+                                          ConnectionState::Connected);
         }
         else if (header->type == PACKET_JOIN_REJECT && bytes >= (int)sizeof(JoinRejectPacket))
         {
@@ -807,6 +803,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                    ctx.localPlayerId, accept->restoredHealth,
                    accept->restoredKills, accept->restoredDeaths,
                    ctx.transformEpoch, ctx.lastKnownSpawnGeneration);
+            mpNotifyConnectionStateChange(ctx, ConnectionState::Reconnecting,
+                                          ConnectionState::Connected);
         }
         else if (header->type == PACKET_DISAGREEMENT && bytes >= (int)sizeof(DisagreementPacket))
         {
@@ -1176,6 +1174,22 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 ev->playerId, ev->styleEpoch, (int)detail.styleKind,
                 (int)detail.colorCount(), (int)detail.animation);
         }
+        else if (header->type == PACKET_PLAYER_CONNECTION_STATE &&
+                 bytes >= (int)sizeof(PlayerConnectionStatePacket))
+        {
+            // Peer connection-state notice: drive the red reconnect effect on
+            // a frozen body (disconnect) or the green effect on recovery.
+            const PlayerConnectionStatePacket* pc =
+                reinterpret_cast<const PlayerConnectionStatePacket*>(buffer);
+            if (pc->header.playerId != ctx.localPlayerId)
+            {
+                if (pc->connected)
+                    mpNoteRemotePlayerReconnected(ctx, pc->header.playerId);
+                else
+                    mpNoteRemotePlayerDisconnected(ctx, pc->header.playerId,
+                                                   pc->disconnectedAtMs);
+            }
+        }
         else if (header->type == PACKET_GODBALL_STATE &&
                  bytes >= (int)sizeof(GodballStatePacket))
         {
@@ -1513,6 +1527,11 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 retry.muzzlePosZ = p.predictedMuzzle.z;
                 retry.deterministicSeed = p.deterministicSeed;
                 retry.attackVariant = p.attackVariant;
+                retry.claimedTargetId = p.claimedTargetId;
+                retry.claimedHitX = p.claimedHit.x;
+                retry.claimedHitY = p.claimedHit.y;
+                retry.claimedHitZ = p.claimedHit.z;
+                retry.claimedBodyPart = p.claimedBodyPart;
                 mpSendPacket(ctx, &retry, sizeof(retry));
                 p.lastSentMs = now;
                 p.attempts++;

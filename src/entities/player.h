@@ -383,6 +383,10 @@ public:
     int revolverReserve = 1337;
     bool dead = false;
     bool netPredictedDead = false;  // local client prediction; server confirm clears/rolls back
+    // Set when a reliable kill event already presented the death (anim + red
+    // ellipsoid) for this life, so the snapshot health transition does not
+    // play a second death. Cleared on respawn.
+    bool networkDeathPresented = false;
     bool proceduralFrozen = false;
     float respawnTimer = 0.0f;
     float spawnFlashTimer = 0.0f;

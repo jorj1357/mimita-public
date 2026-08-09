@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "network/multiplayer-context.h"
+#include "network/connection-state.h"
 
 namespace MimitaNet {
 

@@ -43,6 +43,7 @@ public:
         uint64_t revealTicks = 0;   // ticks over which the message types out; 0 = instant
         Action action;
         UIScrollState scroll;       // vertical scroll state for the message box
+        bool critical = false;      // red accent (title + message) for urgent notices
     };
 
     // In-memory log of pushed notifications (title, message, tick).
@@ -67,6 +68,10 @@ public:
     // API
     void push(const std::string& title, const std::string& message,
               uint64_t durationTicks, const Action& action);
+    // Urgent (red) notification for connection state changes and other
+    // critical, time-sensitive events. Same tip UI, red accent.
+    void pushCritical(const std::string& title, const std::string& message,
+                      uint64_t durationTicks = 0);
     void pushBuildNotice();
     void pushTip(bool force = false);
     void clear() { mNotifications.clear(); }

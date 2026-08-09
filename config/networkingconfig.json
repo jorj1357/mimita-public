@@ -70,6 +70,7 @@
   "remote_motion_smoothing": {
     "comment": "Post-interpolation motion filter on rendered remote bodies. render_filter: direct (no smoothing) | bounded (converge discontinuities over a few frames; normal motion passes through) | spring (always-on critically-damped, literally cannot snap, slight follow-lag) | hybrid (velocity-feed-forward spring: spring's zero-snap PLUS crisp tracking of fast/up-down motion with ~zero lag) | linear (CS-style delayed interpolation: render linear_delay_ticks packets behind the newest and always slide linearly between the two bracketing snapshots; never renders the newest directly; the delay is a loss buffer that hides up to linear_delay_ticks lost packets).",
     "comment2": " render_filter: direct (no smoothing) | bounded (converge discontinuities over a few frames; normal motion passes through) | spring (always-on critically-damped, literally cannot snap, slight follow-lag) | hybrid (velocity-feed-forward spring: spring's zero-snap PLUS crisp tracking of fast/up-down motion with ~zero lag) | linear (CS-style delayed interpolation: render linear_delay_ticks packets behind the newest and always slide linearly between the two bracketing snapshots; never renders the newest directly; the delay is a loss buffer that hides up to linear_delay_ticks lost packets).",
+    "comment3": "so far 8 8 2026 it seems like spring is the best, like literally even after days of working on making linear best, so i feel like we can just continue with spring? base the networking around spring mode? ",
     "render_filter": "spring",
     "correction_max_step_units_per_second": 100.0,
     "correction_min_delta_units": 0.05,
@@ -78,7 +79,7 @@
     "spring_frequency_hz": 0.0,
     "spring_damping_ratio": 0.0,
     "spring_feed_forward": 1.0,
-    "spring_feed_forward_smoothing": 1.0,
+    "spring_feed_forward_smoothing": 0.0,
     "spring_frequency_z_multiplier": 10.0,
     "spring_max_speed_units_per_second": 0.0,
     "spring_linear_deadzone_units": 0.01,
@@ -91,9 +92,9 @@
     "filter_max_step_units_per_second": 0.0,
     "filter_clamp_z_below_target": true,
     "linear_delay_ticks comment": "8 7 2026 keep this low? i would like to only have it be min/max delay that handles the delay but idk how it works well enough ",
-    "linear_delay_ticks": 1,
-    "linear_min_delay_ticks": 1,
-    "linear_max_delay_ticks": 2,
+    "linear_delay_ticks": 6,
+    "linear_min_delay_ticks": 6,
+    "linear_max_delay_ticks": 12,
     "linear_hold_on_dry": true,
     "linear_allow_extrapolation": false,
     "linear_catchup_rate_ticks_per_second": 0.01,
@@ -105,6 +106,10 @@
     "linear_reanchor_enabled": false,
     "linear_reanchor_only_if_error_ms": 20,
     "linear_deadzone_units": 0.005,
+    "linear_never_skip_comment": "8 8 2026 linear can LITERALLY never render the newest snapshot directly: both emergency snaps (time-gap, teleport-distance) are disabled and any gap wider than linear_hold_gap_ticks freezes the body instead of bridging. Combined with the glide gate below, a position teleport is physically impossible.",
+    "linear_never_skip": true,
+    "linear_hold_gap_ticks": 2,
+    "linear_glide_max_units_per_second": 400.0,
     "max_render_time_jump_ms": 1
   },
 
@@ -127,9 +132,14 @@
   },
 
   "prediction": {
-    "comment": "Client-side prediction scope. Hitmarker + hit sound are ALWAYS predicted (instant). predict_damage controls instant damage numbers + target health bar; predict_deaths controls instant death + kill heal (rolls back with a disagree effect if the server disagrees).",
-    "predict_damage": true,
+    "comment": "Client-side prediction scope. Hitmarker + hit sound are ALWAYS predicted (instant). predict_damage controls instant damage numbers + target health bar; predict_deaths controls instant death + kill heal (rolls back with a disagree effect if the server disagrees). Rollback resolves the instant the AttackResult verdict returns, and with body-part hit agreement disagreements are rare.",
+    "predict_damage": false,
     "predict_deaths": false
+  },
+
+  "combat": {
+    "comment": "beam_continue_after_hit: when true the bullet/beam tracer keeps going to the weapon's max range past whatever it first hits (a hit effect still plays at the first contact). When false the tracer stops at the hit point.",
+    "beam_continue_after_hit": true
   },
 
   "event_timeline": {
@@ -155,14 +165,14 @@
   },
 
   "reliable_gameplay_events": {
-    "max_pending_per_player": 64,
+    "max_pending_per_player": 256,
     "retry_ms": 50,
     "ttl_ms": 10000,
     "max_attempts": 80
   },
 
   "buffer_limits": {
-    "server_position_history_ticks": 30,
+    "server_position_history_ticks": 600,
     "server_broadcast_sample_limit": 128
   },
 

@@ -73,12 +73,31 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
     };
 
     drawHitmarker(dt);
-    if (MimitaNet::mpIceConnectActive() || mpContext.connectFailed ||
-        (mpContext.active && !mpContext.connected))
+    // Persistent honest connection status. This NEVER lies: "Connected via ICE"
+    // is no longer shown as healthy — the text reflects actual game packet
+    // freshness via mpConnectionHealthText. Always drawn while a session is
+    // active (or attempting to connect) so a stale/weak state is visible.
+    if (mpContext.active || MimitaNet::mpIceConnectActive() || mpContext.connectFailed)
     {
         const float boxW = 360.0f;
         const float boxX = (uiScreenW() - boxW) * 0.5f;
-        hudText("connectionText", mpContext.connectionStatus);
+        hudText("connectionText", MimitaNet::mpConnectionHealthText(mpContext));
+
+        // Ticking reconnect line (attempt #, elapsed, give-up countdown).
+        if (mpContext.connectionState == MimitaNet::ConnectionState::Reconnecting)
+        {
+            const uint64_t now = MimitaNet::nowMs();
+            const double elapsed = mpContext.disconnectStartedMs
+                ? (double)(now - mpContext.disconnectStartedMs) / 1000.0 : 0.0;
+            const double bailIn = mpContext.reconnectGraceDeadlineMs
+                ? (double)(mpContext.reconnectGraceDeadlineMs - now) / 1000.0 : 0.0;
+            char tick[192];
+            const double bailClamped = bailIn < 0.0 ? 0.0 : bailIn;
+            snprintf(tick, sizeof(tick),
+                     "attempt #%d  %.2fs elapsed  /  bailing in %.0fs",
+                     mpContext.reconnectAttempts, elapsed, bailClamped);
+            hudText("connectionText", std::string(MimitaNet::mpConnectionHealthText(mpContext)) + "  " + tick);
+        }
     }
     if (gReplayRecorder.isRecording() && !gReplayExportRenderMode) {
         const float overlayX = uiScreenW() - 230.0f;

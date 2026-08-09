@@ -15,7 +15,9 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 28;
+// 30: ShotEvent/PelletBlastEvent become reliable (eventId+session+ACK) and
+// carry real damage/health; every bullet visual is guaranteed delivery.
+constexpr uint16_t PROTOCOL_VERSION = 30;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -99,7 +101,12 @@ enum PacketType : uint8_t
     PACKET_CHAT_TYPING_STATE_REQUEST = 50,
     PACKET_CHAT_TYPING_STATE_EVENT = 51,
     // ── VIP name style sync ───────────────────────────────────────────
-    PACKET_VIP_STYLE_EVENT = 52
+    PACKET_VIP_STYLE_EVENT = 52,
+    // ── Peer connection state (server → clients) ─────────────────────
+    // Tells every client when a peer player's connection was lost (so they can
+    // show a red reconnect effect on the frozen body) or recovered (green
+    // "reconnected" effect). `connected` is 0 on disconnect, 1 on reconnect.
+    PACKET_PLAYER_CONNECTION_STATE = 53
 };
 
 enum DamageConfirmedSource : uint8_t
@@ -109,6 +116,17 @@ enum DamageConfirmedSource : uint8_t
     DAMAGE_CONFIRMED_ROCKET_EXPLOSION = 3,
     DAMAGE_CONFIRMED_GRENADE_EXPLOSION = 4,
     DAMAGE_CONFIRMED_PHYSICAL_CONTACT = 5
+};
+
+// Verdict the server returns for every accepted attack so the client can
+// resolve its local hit prediction the moment the round trip completes
+// (instead of waiting for a damage event that may never arrive on a miss).
+enum HitVerdict : uint8_t
+{
+    HIT_VERDICT_NONE = 0,
+    HIT_VERDICT_HIT_CLAIMED_TARGET = 1, // server confirmed the claimed target
+    HIT_VERDICT_HIT_OTHER_TARGET = 2,   // server hit a different target
+    HIT_VERDICT_MISS = 3                // server traced no hit at all
 };
 
 enum EntityType : uint8_t
@@ -486,6 +504,11 @@ struct ShotRequestPacket
 struct ShotEventPacket
 {
     PacketHeader header;
+    // Reliable event dedup fields (must be the first two uint32s after the
+    // header — the reliable-queue overwrites them per player and the client
+    // ACKs them so every shot's bullet visual is delivered even under loss).
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
     uint32_t shotSerial = 0;
     uint64_t clientTimeMs = 0;
     uint32_t shooterPlayerId = 0;
@@ -515,6 +538,11 @@ struct ShotEventPacket
     float knockX = 0.0f;
     float knockY = 0.0f;
     float knockZ = 0.0f;
+    // Full-beam endpoint (origin + dir * weapon max range) so the tracer can
+    // continue past the first hit when beam_continue_after_hit is enabled.
+    float beamEndX = 0.0f;
+    float beamEndY = 0.0f;
+    float beamEndZ = 0.0f;
 };
 
 constexpr int MAX_PROJECTILE_DAMAGE_RESULTS = 8;
@@ -847,6 +875,20 @@ struct DisconnectPacket
     PacketHeader header;
 };
 
+// Server → all clients: a peer player's connection was lost or recovered.
+// Clients show a red "connection lost... reconnecting X.XXs" effect on the
+// frozen body while disconnected, and a green effect on reconnect.
+struct PlayerConnectionStatePacket
+{
+    PacketHeader header;
+    uint8_t connected = 0;      // 0 = disconnected, 1 = reconnected
+    uint8_t reserved[3] = {};
+    uint64_t disconnectedAtMs = 0; // server wall-clock when the loss began
+};
+
+static_assert(sizeof(PlayerConnectionStatePacket) == 32,
+              "PlayerConnectionStatePacket wire size changed");
+
 struct JoinRequestPacket
 {
     PacketHeader header;
@@ -984,6 +1026,9 @@ struct NetworkPelletResult
 struct PelletBlastEventPacket
 {
     PacketHeader header;
+    // Reliable event dedup fields (same contract as ShotEventPacket).
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
     uint32_t shotSerial = 0;
     uint64_t clientTimeMs = 0;
     uint32_t shooterPlayerId = 0;
@@ -995,6 +1040,10 @@ struct PelletBlastEventPacket
     float baseDirX = 0.0f;
     float baseDirY = 0.0f;
     float baseDirZ = 0.0f;
+    float beamEndX = 0.0f;
+    float beamEndY = 0.0f;
+    float beamEndZ = 0.0f;
+    float maxRange = 0.0f;
     uint8_t weapon = NETWORK_WEAPON_NONE;
     uint8_t pelletCount = 0;
     uint8_t targetCount = 0;
@@ -1057,7 +1106,18 @@ struct AttackRequestPacket
     float muzzlePosX = 0, muzzlePosY = 0, muzzlePosZ = 0;
     uint32_t deterministicSeed = 0;
     uint8_t attackVariant = 0;
-    uint8_t reservedAttack[3] = {};
+    // ── Client hit claim ("shoot what I saw") ──────────────────────────
+    // The client traces against the exact body it rendered (body-part
+    // hitboxes). The server re-traces authoritatively with lag compensation,
+    // but if its rewind re-trace misses, it accepts this claimed hit point
+    // when it is inside the target's rewound collision volume (within
+    // rewind_hit_tolerance) and not wall-occluded — so what the shooter saw
+    // is what takes damage. The target is looked up by id and validated
+    // against its current spawn generation; no generation is sent.
+    uint32_t claimedTargetId = 0;
+    float claimedHitX = 0, claimedHitY = 0, claimedHitZ = 0;
+    uint8_t claimedBodyPart = 0; // 0=none 1=head 2=torso 3=leg
+    uint8_t reservedAttack[2] = {};
 };
 
 struct AttackResultPacket
@@ -1074,6 +1134,7 @@ struct AttackResultPacket
     uint16_t weaponDefNetworkId = 0;
     uint8_t accepted = 0;
     uint8_t reason = 0;
+    uint8_t hitVerdict = 0; // HitVerdict
 };
 
 // ── Reload request/result ────────────────────────────────────────────
@@ -1147,7 +1208,7 @@ struct SpawnActivatedPacket
 
 static_assert(sizeof(SnapshotPacket) < 16000, "SnapshotPacket exceeds client receive buffer");
 static_assert(sizeof(ShotRequestPacket) <= 132, "ShotRequestPacket is too large");
-static_assert(sizeof(ShotEventPacket) <= 132, "ShotEventPacket is too large");
+static_assert(sizeof(ShotEventPacket) <= 160, "ShotEventPacket is too large");
 static_assert(sizeof(ProjectileFireRequestPacket) <= 80, "ProjectileFireRequestPacket is too large");
 static_assert(sizeof(ProjectileSpawnEventPacket) <= 128, "ProjectileSpawnEventPacket is too large");
 static_assert(sizeof(ProjectileStateEventPacket) <= 104, "ProjectileStateEventPacket is too large");
@@ -1161,8 +1222,8 @@ static_assert(sizeof(PelletBlastRequestPacket) <= 80, "PelletBlastRequestPacket 
 static_assert(sizeof(PelletBlastEventPacket) < MAX_GAME_DATAGRAM_BYTES,
               "PelletBlastEventPacket exceeds safe datagram limit");
 static_assert(sizeof(PelletBlastTargetResult) <= 24, "PelletBlastTargetResult is too large");
-static_assert(sizeof(AttackRequestPacket) <= 96, "AttackRequestPacket is too large");
-static_assert(sizeof(AttackResultPacket) <= 64, "AttackResultPacket is too large");
+static_assert(sizeof(AttackRequestPacket) <= 128, "AttackRequestPacket is too large");
+static_assert(sizeof(AttackResultPacket) <= 96, "AttackResultPacket is too large");
 static_assert(sizeof(ReloadRequestPacket) <= 32, "ReloadRequestPacket is too large");
 static_assert(sizeof(ReloadResultPacket) <= 72, "ReloadResultPacket is too large");
 static_assert(sizeof(RespawnRequestPacket) <= 32, "RespawnRequestPacket is too large");

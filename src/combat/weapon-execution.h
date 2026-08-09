@@ -30,6 +30,13 @@ enum class PhysicalShapeKind : uint8_t
     Capsule
 };
 
+enum class HitBodyPart : uint8_t
+{
+    Torso,
+    Head,
+    Leg
+};
+
 struct PlayerTarget
 {
     uint32_t playerId = 0;
@@ -38,13 +45,16 @@ struct PlayerTarget
     float radius = DEFAULT_BODY_RADIUS;
     float height = DEFAULT_BODY_HEIGHT;
     bool dead = false;
-};
-
-enum class HitBodyPart : uint8_t
-{
-    Torso,
-    Head,
-    Leg
+    // Optional per-part hitboxes (head/torso/arms/legs) reconstructed at the
+    // rewound pose. When populated the trace validates each part AABB exactly
+    // like the client's beam does — what the shooter rendered is what takes
+    // damage, no invisible capsule. Empty = capsule fallback.
+    struct BodyPartBox {
+        glm::vec3 center{0.0f};
+        glm::vec3 half{0.0f};
+        HitBodyPart bodyPart = HitBodyPart::Torso;
+    };
+    std::vector<BodyPartBox> bodyParts;
 };
 
 struct HitscanPelletHit

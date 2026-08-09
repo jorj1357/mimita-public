@@ -75,9 +75,15 @@ Behavior notes:
 - Presets reset on every launch — nothing is persisted.
 - The `~` console and `badconn` only exist in the graphical client, not in the
   headless `--client` debug path.
-- Preset 7 (`15 second blackout`) is silence on both directions. The server
-  removes a player that stops sending for ~10s (`SERVER_TIMEOUT_MS`), so a long
-  blackout can kick the player — that's expected timeout behavior, not a bug.
+- Preset 7 (`15 second blackout`) is silence on both directions. A player is now
+  NOT kicked after ~10s: the server marks them stale at `stale_packet_threshold_ms`
+  (~2.5s), freezes their body (invulnerable), keeps the slot alive for the
+  `reconnect_grace_ms` window (60s), and notifies other clients via
+  `PACKET_PLAYER_CONNECTION_STATE` so observers see the red reconnect effect.
+  A 15s blackout therefore reconnects automatically when packets resume.
   Use preset 6 (`5 second blackout`) to test choppy/frozen remote movement
   without a disconnect.
+- The client shows honest connection states in the F3 debug overlay and HUD
+  (`connstate <status|weak|reconnect|disconnect|recover>` forces states for
+  testing; `netstats` shows reconnect + packet-age info).
 - Press `F3` while a preset is active to see a `BADCONN` summary label.

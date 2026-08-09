@@ -24,6 +24,7 @@
 #include "combat/death-system.h"
 #include "combat/weapon-system.h"
 #include "combat/weapon-registry.h"
+#include "config/networking-config.h"
 #include "debug/structured-log.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
@@ -33,6 +34,7 @@
 #include "network/network-weapons.h"
 #include "network/weapon-runtime-reconciliation.h"
 #include "network/disagreement-visuals.h"
+#include "network/reconnect-visuals.h"
 #include "render/render-player.h"
 #include "perf/perf.h"
 #include "debug/debug-log.h"
@@ -477,12 +479,24 @@ void engineTickNet(Engine& engine, float dt)
 
             if (!localShooter)
             {
-                // Re-base the visual muzzle/tracer onto the shooter's rendered
-                // replica body so the shot visibly originates from where the
-                // body is drawn, not from the lagged authoritative snapshot.
+                // The bullet always comes out of the shooter's gun ON THE
+                // VIEWER'S SCREEN: compute the muzzle from the rendered body
+                // (never the lagged authoritative snapshot).
                 const glm::vec3 visualDelta =
                     MimitaNet::mpRemoteShooterRenderDelta(
                         mpContext, event.shooterPlayerId);
+                const glm::vec3 muzzle =
+                    MimitaNet::mpRemoteShooterMuzzle(
+                        mpContext, event.shooterPlayerId,
+                        event.origin + visualDelta);
+                const bool continueAfterHit = NetworkingConfig::instance().data()
+                    .combat.beamContinueAfterHit;
+                // Beam endpoint: keep the server's fired direction but re-anchor
+                // the start to the rendered muzzle; the beam extends to the
+                // weapon's max range past the first hit.
+                glm::vec3 beamEnd = event.hit;
+                if (continueAfterHit && glm::length(event.beamEnd) > 0.001f)
+                    beamEnd = muzzle + (event.beamEnd - event.origin);
 
                 if (event.effectFlags & MimitaNet::SHOT_EFFECT_WEAPON_TRIGGER)
                 {
@@ -510,21 +524,21 @@ void engineTickNet(Engine& engine, float dt)
                 {
                     ReplayEffectEvent gunshotEvent;
                     gunshotEvent.type = "gunshot";
-                    gunshotEvent.position = event.origin + visualDelta;
+                    gunshotEvent.position = muzzle;
                     gunshotEvent.direction = event.direction;
-                    gunshotEvent.from = event.origin + visualDelta;
-                    gunshotEvent.to = event.hit + visualDelta;
+                    gunshotEvent.from = muzzle;
+                    gunshotEvent.to = event.hit; // exact server-confirmed hit
                     gunshotEvent.normal = event.normal;
                     gunshotEvent.sourceActorId = shooterName;
                     captureReplayEffect(gunshotEvent);
                 }
 
                 if (event.effectFlags & MimitaNet::SHOT_EFFECT_MUZZLE)
-                    EffectPartSystem::instance().spawnMuzzleFlash(
-                        event.origin + visualDelta, shooterName);
+                    EffectPartSystem::instance().spawnMuzzleFlash(muzzle, shooterName);
                 if (event.effectFlags & MimitaNet::SHOT_EFFECT_TRACER)
                     EffectPartSystem::instance().spawnTracer(
-                        event.origin + visualDelta, event.hit + visualDelta, shooterName);
+                        muzzle, beamEnd, shooterName, 1.0f,
+                        MimitaNet::networkWeaponTypeName(event.weapon));
                 if (event.effectFlags &
                     MimitaNet::SHOT_EFFECT_SHOOT_SOUND)
                 {
@@ -735,6 +749,11 @@ void engineTickNet(Engine& engine, float dt)
             }
             mpContext.disagreementEvents.clear();
         }
+
+        // Observer-facing disconnect/reconnect effects for remote players:
+        // keeps red beams and the ticking "connection lost" label alive above
+        // any frozen body, and cleans up when the entity is removed.
+        MimitaNet::mpUpdateReconnectVisuals(mpContext, dt);
 
     }
     } // Perf::ScopedTimer Networking

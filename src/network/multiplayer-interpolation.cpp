@@ -109,6 +109,15 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
     const uint32_t newestTick = interpolation.buffer.back().serverTick;
     const double previousAlpha = interpolation.sampleAlpha;
 
+    // `linearSnapGapTicks` is 0 for every non-linear mode and nonzero for
+    // linear mode (the caller passes motion.linearSnapAfterGapTicks there).
+    // linear_never_skip: linear must never render the newest directly — both
+    // emergency snaps are bypassed and wide tick gaps freeze instead of bridge.
+    const auto& motionCfg = NetworkingConfig::instance()
+        .data().remoteMotionSmoothing;
+    const bool linearMode = linearSnapGapTicks > 0;
+    const bool linearNeverSkip = linearMode && motionCfg.linearNeverSkip;
+
     const double delayTicks = delaySeconds * (double)GAMEPLAY_SIMULATION_HZ;
     const double desiredRenderTick = globalRenderTick - delayTicks;
     // Monotonic render time: never render earlier than the previous frame,
@@ -130,8 +139,7 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
     interpolation.renderTick = renderTick;
     const double renderStepMs = interpolation.renderTickDelta /
         (double)GAMEPLAY_SIMULATION_HZ * 1000.0;
-    const double maxJumpMs = NetworkingConfig::instance()
-        .data().remoteMotionSmoothing.maxRenderTimeJumpSeconds * 1000.0;
+    const double maxJumpMs = motionCfg.maxRenderTimeJumpSeconds * 1000.0;
     if (prevRenderTick > 0.0 && maxJumpMs > 0.0 &&
         renderStepMs > gInterpolationClockStepMs + maxJumpMs)
     {
@@ -254,9 +262,11 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
     // across seconds of missing motion; otherwise fall through so the motion
     // filter converges the body smoothly. Short loss gaps interpolate linearly.
     // linear mode may override the threshold via linear_snap_after_gap_ticks.
+    // linear_never_skip disables this emergency snap entirely.
     const uint32_t gapTicks = linearSnapGapTicks > 0
         ? linearSnapGapTicks : interpCfg.teleportGapTicks;
-    if ((uint32_t)(newer->serverTick - older->serverTick) > gapTicks &&
+    if (!linearNeverSkip &&
+        (uint32_t)(newer->serverTick - older->serverTick) > gapTicks &&
         interpCfg.teleportGapSnap)
     {
         interpolation.snappedOrCorrected = true;
@@ -268,12 +278,30 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
 
     // Corruption protection: an absurd per-segment distance without a
     // lifecycle change is treated as a teleport. Not a speed limit.
+    // linear_never_skip disables this emergency snap entirely.
     const float gapDist = glm::length(newer->position - older->position);
-    if (gapDist > interpCfg.teleportDistance)
+    if (!linearNeverSkip && gapDist > interpCfg.teleportDistance)
     {
         interpolation.snappedOrCorrected = true;
         ++interpolation.hardSnapCount;
         out = *newer;
+        return;
+    }
+
+    // linear_never_skip hole freeze: a tick gap wider than
+    // linear_hold_gap_ticks is a loss hole / blackout, not a velocity bridge.
+    // Bridging it would lerp across the hole with a near-1 alpha in a single
+    // frame (the "snap" linear was famous for). Freeze at the last rendered
+    // position until the render clock reaches continuous data; the final glide
+    // gate then handles the resume smoothly.
+    if (linearNeverSkip && interpolation.hasRendered &&
+        (uint32_t)(newer->serverTick - older->serverTick) >
+            motionCfg.linearHoldGapTicks)
+    {
+        interpolation.holding = true;
+        ++interpolation.holdCount;
+        out = interpolation.lastRender;
+        out.serverTick = renderFloor;
         return;
     }
 
@@ -866,33 +894,49 @@ void updateRenderedReplica(
 
     const uint32_t entityId = interpolation.networkEntityId;
     const uint16_t targetEpoch = interpolation.target.transformEpoch;
+    const uint32_t targetSpawnGen = interpolation.target.spawnGeneration;
 
-    // ── Detect respawn via epoch change ──────────────────────────────
-    // Hard-snap interpolation position and run presentation reset.
-    // Do NOT replay existing event serials.
+    // ── Detect respawn via lifecycle change ──────────────────────────
+    // A new life is signalled by EITHER a transformEpoch change OR a
+    // spawnGeneration change (the server bumps both on respawn). Detect on
+    // both so a missed epoch (e.g. a dropped snapshot) still snaps the body to
+    // the new spawn instead of leaving it frozen/invisible. Hard-snap
+    // interpolation position and run the presentation reset. The very first
+    // render of a brand-new entity (both baselines still 0) is not a respawn.
     bool respawned = false;
-    if (targetEpoch != 0 && targetEpoch != interpolation.lastTransformEpoch)
+    const bool epochChanged =
+        targetEpoch != 0 && targetEpoch != interpolation.lastTransformEpoch;
+    const bool spawnGenChanged =
+        targetSpawnGen != 0 && interpolation.lastSpawnGeneration != 0 &&
+        targetSpawnGen != interpolation.lastSpawnGeneration;
+    if (epochChanged || spawnGenChanged)
     {
-        if (interpolation.lastTransformEpoch != 0)
+        if (interpolation.lastTransformEpoch != 0 ||
+            interpolation.lastSpawnGeneration != 0)
         {
-            // Epoch changed while entity was alive → respawn
+            // Lifecycle changed while entity was alive → respawn
             const bool wasDead = interpolation.previous.health <= 0;
             const bool nowAlive = interpolation.target.health > 0;
-            if (wasDead || nowAlive || interpolation.lastTransformEpoch != 0)
+            if (wasDead || nowAlive ||
+                interpolation.lastTransformEpoch != 0 ||
+                interpolation.lastSpawnGeneration != 0)
             {
                 // Hard-snap position: no lerp from corpse to spawn
                 resetPresentationAfterRespawn(player, interpolation.target);
                 respawned = true;
                 printf("[NET EPOCH RESPAWN] entityId=%u oldEpoch=%u newEpoch=%u "
-                       "wasDead=%d nowAlive=%d pos=(%.2f,%.2f,%.2f)\n",
+                       "oldGen=%u newGen=%u wasDead=%d nowAlive=%d pos=(%.2f,%.2f,%.2f)\n",
                        entityId, (unsigned)interpolation.lastTransformEpoch,
-                       (unsigned)targetEpoch, (int)wasDead, (int)nowAlive,
+                       (unsigned)targetEpoch,
+                       (unsigned)interpolation.lastSpawnGeneration,
+                       (unsigned)targetSpawnGen, (int)wasDead, (int)nowAlive,
                        interpolation.target.position.x,
                        interpolation.target.position.y,
                        interpolation.target.position.z);
             }
         }
         interpolation.lastTransformEpoch = targetEpoch;
+        interpolation.lastSpawnGeneration = targetSpawnGen;
     }
 
     // ── Render state at one consistent view time ─────────────────────
@@ -1171,6 +1215,29 @@ void updateRenderedReplica(
             if (delta < (float)motion.linearDeadzoneUnits)
                 renderPos = player.pos;
         }
+        // linear mode anti-snap glide gate: the rendered body may only move
+        // toward the interpolated target at linear_glide_max_units_per_second
+        // (units = meters). This is the single write point for every non-respawn
+        // remote position, so NO code path (hole bridge, blackout resume, first
+        // seed, unforeseen future path) can ever teleport the body — it always
+        // glides from the last known position to the newest confirmed position.
+        // Normal motion (walk ~20, dash ~100, terminal fall ~400 u/s) is below
+        // the cap and passes untouched. Skipped on the first render (hasRendered
+        // false) so a new entity seeds directly at its authoritative position.
+        if (motion.renderFilter == "linear" &&
+            interpolation.hasRendered &&
+            motion.linearGlideMaxUnitsPerSecond > 0.0f)
+        {
+            const float maxStep = (float)(
+                motion.linearGlideMaxUnitsPerSecond * (double)dt);
+            const glm::vec3 delta = renderPos - player.pos;
+            const float len = glm::length(delta);
+            if (len > maxStep && len > 0.0f)
+            {
+                renderPos = player.pos + delta * (maxStep / len);
+                ++interpolation.glideSnapCount;
+            }
+        }
         player.pos = renderPos;
     }
     player.vel = render.velocity;
@@ -1180,14 +1247,29 @@ void updateRenderedReplica(
     player.dead = displayHealth <= 0 || player.netPredictedDead;
 
     // ── Remote death lifecycle (players + NPCs) ───────────────────────
-    // Respawn (dead → alive): clear any leftover death animation so the body
-    // snaps to its new life instead of staying frozen at the old death spot.
+    // Respawn (dead → alive): fully recover the body into its new life.
+    // The epoch-change snap above is the primary respawn path; this is the
+    // belt-and-suspenders fallback for when the render health transitions
+    // 0 → positive (the epoch snap was missed, or a delayed kill confirmation
+    // for the previous life landed after the respawn). Without clearing EVERY
+    // piece of death state here, a respawned body stays `player.dead == true`
+    // — invisible but still hittable at its spawn point — until the
+    // predicted-health timeout clears. No deathAnim requirement: the body may
+    // have already finished its fall-over before the respawn rendered.
     if (interpolation.hasRendered &&
-        interpolation.lastRender.health <= 0 && render.health > 0 &&
-        player.deathAnim.active)
+        interpolation.lastRender.health <= 0 && render.health > 0)
     {
         player.deathAnim = Player::DeathAnimState{};
         player.netPredictedDead = false;
+        player.dead = false;
+        player.currentHp = render.health;
+        interpolation.pendingPredictedDamage = 0;
+        interpolation.predictedHealthCap = -1;
+        Debug::warn(Debug::Category::Networking,
+            "[NET REMOTE RESPAWN RECOVER] entityId=%u lastHp=%d renderHp=%d "
+            "netPredictedDead=%d — full death state cleared\n",
+            entityId, interpolation.lastRender.health, render.health,
+            (int)player.netPredictedDead);
     }
     // Advance the fall-over death animation every frame. Previously only local
     // bodies were ticked, so remote players/NPCs never animated their deaths.
@@ -1508,6 +1590,33 @@ glm::vec3 mpRemoteShooterRenderDelta(const MultiplayerContext& ctx, uint32_t sho
     }
 
     return glm::vec3(0.0f);
+}
+
+glm::vec3 mpRemoteShooterMuzzle(const MultiplayerContext& ctx, uint32_t shooterId,
+                                const glm::vec3& fallbackMuzzle)
+{
+    if (shooterId == 0 || shooterId == ctx.localPlayerId)
+        return fallbackMuzzle;
+    const Player* replica = nullptr;
+    {
+        auto it = ctx.remotePlayers.find(shooterId);
+        if (it != ctx.remotePlayers.end())
+            replica = &it->second;
+    }
+    if (!replica)
+    {
+        auto it = ctx.remoteNpcs.find(shooterId);
+        if (it != ctx.remoteNpcs.end())
+            replica = &it->second;
+    }
+    if (!replica)
+        return fallbackMuzzle;
+    // Weapon muzzle from the rendered body: forward along the rendered aim
+    // (fallback to yaw), slightly up — the gun on the body the viewer sees.
+    glm::vec3 fwd = glm::length(replica->aimDirection) > 0.001f
+        ? glm::normalize(replica->aimDirection)
+        : glm::vec3(std::cos(replica->yaw), std::sin(replica->yaw), 0.0f);
+    return replica->pos + fwd * 0.9f + glm::vec3(0.0f, 0.0f, 1.15f);
 }
 
 void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)

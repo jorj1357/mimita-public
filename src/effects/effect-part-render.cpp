@@ -170,7 +170,13 @@ void EffectPartSystem::render(const Camera& camera) const {
         glm::vec4 drawColor{effect.color.x, effect.color.y, effect.color.z, alpha};
         
         if (effect.beam) {
-            DebugVis::drawFilledBeam(camera, effect.position, effect.endPosition, drawScale, drawColor);
+            // Beam width from thickness (interpolated), falling back to scale so
+            // legacy spawners that only set scale still render.
+            float beamWidth = effect.thickness +
+                (effect.endThickness - effect.thickness) * t;
+            if (beamWidth <= 0.0f)
+                beamWidth = drawScale;
+            DebugVis::drawFilledBeam(camera, effect.position, effect.endPosition, beamWidth, drawColor);
         }
         else if (effect.box) {
             DebugVis::drawFilledBox(camera, effect.position, effect.halfSize, drawColor, effect.rotation);

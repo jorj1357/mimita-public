@@ -75,7 +75,10 @@ MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
 
 #include "effect-part.h"
 #include "combat/shot-profiler.h"
+#include "combat/weapon-registry.h"
+#include "combat/weapon-types.h"
 #include "config/size-scaling-config.h"
+#include "config/weapon-tracers-config.h"
 #include "debug/debug-log.h"
 #include "effects/hit-effects.h"
 #include "config.h"
@@ -174,24 +177,38 @@ EffectPart* EffectPartSystem::spawnImpactSphereTick(glm::vec3 position, glm::vec
     return spawn(e);
 }
 
-EffectPart* EffectPartSystem::spawnTracer(glm::vec3 start, glm::vec3 end, const std::string& sourceActorId, float sizeScale) {
+EffectPart* EffectPartSystem::spawnTracer(glm::vec3 start, glm::vec3 end, const std::string& sourceActorId, float sizeScale, const std::string& weaponId) {
     const auto& sc = SizeScalingConfig::instance().data();
     float ss = std::max(sizeScale, 0.001f);
     float sfx = sc.scale(1.0f, sc.hitfxRadiusExponent, ss);
+    const WeaponTracerConfig& tc = WeaponTracersConfig::instance().forWeapon(weaponId);
+    // Default the visible beam thickness to the weapon's beam_thickness
+    // (weapons.json) so the visual matches the hitbox; the tracer JSON can
+    // override it explicitly per weapon.
+    float beamThickness = tc.thickness;
+    if (!tc.thicknessSet)
+    {
+        const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
+        if (def && def->beamThickness > 0.0f)
+            beamThickness = def->beamThickness;
+    }
     EffectPart e;
     e.position = start;
     e.replayType = "tracer";
     e.endPosition = end;
-    e.color = {1.0f, 0.82f, 0.05f};
-    e.maxLifetime = 0.5f;
-    e.scale = 0.2f * sfx;
-    e.endScale = 0.0f;
-    e.thickness = 0.2f * sfx;
-    e.endThickness = 0.0f;
+    e.color = tc.color;
+    e.maxLifetime = std::max(0.01f, tc.lifetime);
+    e.scale = beamThickness * sfx;
+    e.endScale = tc.endScale * sfx;
+    e.thickness = beamThickness * sfx;
+    e.endThickness = tc.endThickness * sfx;
+    e.alpha = tc.startAlpha;
     e.billboardText = false;
     e.sticky = true;
     e.beam = true;
     e.sourceActorId = sourceActorId;
+    if (!tc.enabled)
+        return nullptr;
     return spawn(e);
 }
 

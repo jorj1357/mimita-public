@@ -80,6 +80,7 @@ bool isExemptType(uint8_t type)
     case MimitaNet::PACKET_PLAYER_LIST:
     case MimitaNet::PACKET_VIP_STYLE_EVENT:
     case MimitaNet::PACKET_DISAGREEMENT:
+    case MimitaNet::PACKET_PLAYER_CONNECTION_STATE:
         return true;
     default:
         return false;

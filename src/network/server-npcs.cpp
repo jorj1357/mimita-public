@@ -285,13 +285,13 @@ static void broadcastNpcFiring(SOCKET sock,
 // per-tick poses the clients actually saw (the map is cleared and repopulated
 // every tick, which would otherwise discard all historical samples).
 static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
-                                const NpcSystem& npcSystem,
+                                NpcSystem& npcSystem,
                                 std::unordered_set<uint32_t>& npcIdsAlive)
 {
     std::unordered_map<uint32_t, ServerNpc> next;
     next.reserve(npcs.size());
     npcIdsAlive.clear();
-    for (const Npc& n : npcSystem.all())
+    for (Npc& n : npcSystem.all())
     {
         // Dead NPCs stay in the broadcast (health 0) so clients render their
         // full fall-over death animation before the NPC respawns. Alive NPCs
@@ -335,9 +335,51 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
 // reads exactly what attackers saw (same contract as ServerPlayer::posHistory).
 void pushNpcPositionHistory(ServerNpc& npc, uint32_t tick)
 {
-    npc.posHistory.push_back({npc.pos, npc.vel, npc.yaw, tick});
+    ServerNpcPositionSample sample;
+    sample.pos = npc.pos;
+    sample.vel = npc.vel;
+    sample.yaw = npc.yaw;
+    sample.tick = tick;
+    sample.partCount = npc.bodyPartCount;
+    for (uint8_t i = 0; i < npc.bodyPartCount && i < sample.parts.size(); ++i)
+        sample.parts[i] = npc.bodyParts[i];
+    npc.posHistory.push_back(sample);
     while (npc.posHistory.size() > ServerNpc::MAX_POS_HISTORY)
         npc.posHistory.pop_front();
+}
+
+// Body-part AABBs the NPC rendered at a past broadcast tick, for the server's
+// authoritative re-trace to validate against what the attacker actually saw.
+bool getNpcBodyPartsAtTick(const ServerNpc& npc, uint32_t targetTick,
+                           const ServerNpcBodyPartSample** outParts,
+                           uint8_t* outPartCount)
+{
+    if (npc.posHistory.empty())
+        return false;
+    const ServerNpcPositionSample* sample = &npc.posHistory.back();
+    if (targetTick <= npc.posHistory.front().tick)
+        sample = &npc.posHistory.front();
+    else
+    {
+        for (auto it = npc.posHistory.rbegin(); it != npc.posHistory.rend(); ++it)
+        {
+            if (it->tick <= targetTick)
+            {
+                sample = &(*it);
+                break;
+            }
+        }
+    }
+    if (sample->partCount == 0)
+        return false;
+    *outParts = sample->parts.data();
+    *outPartCount = sample->partCount;
+    return true;
+}
+
+const std::vector<ServerPlayerBodyPartTemplate>* standardPlayerBodyTemplate()
+{
+    return gServerBodyTemplate.empty() ? nullptr : &gServerBodyTemplate;
 }
 
 // Interpolate the NPC's broadcast pose for a past server tick.
@@ -372,6 +414,44 @@ bool getNpcPositionAtTick(const ServerNpc& npc, uint32_t targetTick, glm::vec3& 
         }
     }
     outPos = npc.posHistory.front().pos;
+    return true;
+}
+
+// Like getNpcPositionAtTick but also returns the broadcast yaw at that tick so
+// NPC body-part hitboxes are reconstructed with the facing the attacker saw.
+bool getNpcPoseAtTick(const ServerNpc& npc, uint32_t targetTick,
+                      glm::vec3& outPos, float& outYaw)
+{
+    if (npc.posHistory.empty())
+        return false;
+    const auto& back = npc.posHistory.back();
+    if (targetTick >= back.tick)
+    {
+        outPos = back.pos;
+        outYaw = back.yaw;
+        return true;
+    }
+    const auto& front = npc.posHistory.front();
+    if (targetTick <= front.tick)
+    {
+        outPos = front.pos;
+        outYaw = front.yaw;
+        return true;
+    }
+    for (int i = (int)npc.posHistory.size() - 1; i > 0; --i)
+    {
+        if (npc.posHistory[i].tick <= targetTick)
+        {
+            const auto& a = npc.posHistory[i];
+            const auto& b = npc.posHistory[i + 1];
+            const float frac = float(targetTick - a.tick) / float(b.tick - a.tick);
+            outPos = glm::mix(a.pos, b.pos, frac);
+            outYaw = a.yaw + (b.yaw - a.yaw) * frac;
+            return true;
+        }
+    }
+    outPos = front.pos;
+    outYaw = front.yaw;
     return true;
 }
 
@@ -411,6 +491,7 @@ void simulateSharedNpcs(SOCKET sock,
 
         mirrorPlayer.pos = nearest->pos;
         mirrorPlayer.vel = nearest->vel;
+        mirrorPlayer.yaw = nearest->yaw;
         mirrorPlayer.currentHp = nearest->health;
         mirrorPlayer.dead = nearest->dead;
         const int hpBefore = mirrorPlayer.currentHp;

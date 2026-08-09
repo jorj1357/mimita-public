@@ -317,7 +317,16 @@ void mpDrainPendingVictimHealth(MultiplayerContext& ctx, Player& player)
     for (auto it = ctx.pendingVictimHealth.begin();
          it != ctx.pendingVictimHealth.end(); )
     {
-        if (now < it->applyAtMs)
+        // Apply in the same frame the shot visual plays: the attacker's body
+        // must have rendered past the shot's server tick (or the max-hold
+        // wall-clock fallback must have elapsed) so the HP drop is never out
+        // of order relative to the bullet/attacker.
+        const bool timelineReady =
+            it->shooterId != 0 &&
+            mpVisualTimelineReady(ctx, it->shooterId, it->eventServerTick,
+                                  it->receivedMs);
+        const bool maxHoldElapsed = now >= it->applyAtMs;
+        if (!timelineReady && !maxHoldElapsed)
         {
             ++it;
             continue;
@@ -326,9 +335,13 @@ void mpDrainPendingVictimHealth(MultiplayerContext& ctx, Player& player)
             player.currentHp = 0;
         else
             player.currentHp = std::max(0, it->healthAfter);
+        // Knockback applies in the exact same frame as the HP drop (both are
+        // tied to the bullet visual via the same timeline gate).
+        if (glm::length(it->knockback) > 0.001f)
+            player.externalImpulse += it->knockback;
         Debug::log(Debug::Category::Networking,
-            "[NET VICTIM HEALTH APPLY] hp=%d killed=%d\n",
-            player.currentHp, (int)it->killed);
+            "[NET VICTIM HEALTH APPLY] hp=%d killed=%d timelineReady=%d\n",
+            player.currentHp, (int)it->killed, (int)timelineReady);
         it = ctx.pendingVictimHealth.erase(it);
     }
 }

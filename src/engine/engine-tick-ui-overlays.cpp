@@ -295,18 +295,36 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         float dbgY = 20.0f;
         float lineH = 18.0f;
         float dbgW = 340.0f;
-        float dbgH = (13.0f + (float)mpContext.remotePlayers.size()) * lineH + 10.0f;
+        // 17 fixed lines (incl. conditional server-pos-error) + remote rows
+        float dbgH = (17.0f + (float)mpContext.remotePlayers.size()) * lineH + 10.0f;
 
         uiDrawRect({dbgX, dbgY, dbgW, dbgH}, {0.0f, 0.0f, 0.0f, 0.8f}, "net-debug-bg");
 
         float y = dbgY + 6.0f;
         char buf[256];
+        const uint64_t nowDbg = MimitaNet::nowMs();
 
-        snprintf(buf, sizeof(buf), "STATUS: %s", mpContext.connectionStatus.c_str());
-        uiDrawText(buf, dbgX + 8.0f, y, 0.28f,
-                   mpContext.connected ? glm::vec4(0.3f, 1.0f, 0.4f, 1.0f)
-                                       : glm::vec4(1.0f, 0.55f, 0.2f, 1.0f));
+        // STATUS reflects real packet freshness (never "Connected via ICE" lies).
+        const glm::vec4 statusColor =
+            mpContext.connected && mpContext.connectionState != MimitaNet::ConnectionState::WeakConnection
+                ? glm::vec4(0.3f, 1.0f, 0.4f, 1.0f)
+                : glm::vec4(1.0f, 0.30f, 0.25f, 1.0f);
+        snprintf(buf, sizeof(buf), "STATUS: %s",
+                 MimitaNet::mpConnectionHealthText(mpContext).c_str());
+        uiDrawText(buf, dbgX + 8.0f, y, 0.28f, statusColor);
         y += lineH;
+
+        snprintf(buf, sizeof(buf), "CONN STATE: %s",
+                 MimitaNet::connectionStateName(mpContext.connectionState));
+        uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.9f, 0.95f, 1.0f, 1.0f}); y += lineH;
+
+        {
+            std::string serverLabel = mpContext.serverAddress;
+            if (!mpContext.roomCode.empty())
+                serverLabel += " room=" + mpContext.roomCode;
+            snprintf(buf, sizeof(buf), "SERVER: %s", serverLabel.c_str());
+            uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.7f, 0.75f, 0.85f, 1.0f}); y += lineH;
+        }
 
         snprintf(buf, sizeof(buf), "LOCAL PLAYER ID: %u", mpContext.localPlayerId);
         uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.3f, 1.0f, 0.4f, 1.0f}); y += lineH;
@@ -315,16 +333,23 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         uiDrawText(buf, dbgX + 8.0f, y, 0.26f, {0.75f, 0.85f, 1.0f, 1.0f});
         y += lineH;
 
-        snprintf(buf, sizeof(buf), "ENTITIES: %zu (PLAYERS %zu / NPCS %zu)",
-                 mpContext.remotePlayers.size() + mpContext.remoteNpcs.size() +
-                     (mpContext.localPlayerId ? 1u : 0u),
-                 mpContext.remotePlayers.size() + (mpContext.localPlayerId ? 1u : 0u),
-                 mpContext.remoteNpcs.size());
-        uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.9f, 0.95f, 1.0f, 1.0f}); y += lineH;
+        {
+            const bool transportUp = mpContext.transport && mpContext.transport->connected();
+            const char* ice = MimitaNet::mpIceConnectActive() ? "busy" : (transportUp ? "up" : "down");
+            snprintf(buf, sizeof(buf), "TRANSPORT: %s ICE=%s",
+                     mpContext.transport ? "active" : "raw-udp", ice);
+            uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.75f, 0.85f, 1.0f, 1.0f}); y += lineH;
+        }
 
-        snprintf(buf, sizeof(buf), "TICK CLIENT %u / SERVER %llu",
-                 mpContext.tick, (unsigned long long)mpContext.lastSnapshotTick);
-        uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.9f, 0.95f, 1.0f, 1.0f}); y += lineH;
+        {
+            const uint64_t rxAge = mpContext.lastHeardServerMs && nowDbg >= mpContext.lastHeardServerMs
+                ? nowDbg - mpContext.lastHeardServerMs : 0;
+            const uint64_t txAge = mpContext.lastPacketSentMs && nowDbg >= mpContext.lastPacketSentMs
+                ? nowDbg - mpContext.lastPacketSentMs : 0;
+            snprintf(buf, sizeof(buf), "LAST PKT RX AGE: %llums  TX AGE: %llums",
+                     (unsigned long long)rxAge, (unsigned long long)txAge);
+            uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.7f, 0.8f, 1.0f, 1.0f}); y += lineH;
+        }
 
         const uint64_t snapshotAge = mpContext.lastSnapshotReceivedMs
             ? MimitaNet::nowMs() - mpContext.lastSnapshotReceivedMs
@@ -347,8 +372,35 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                  (unsigned long long)mpContext.packetsReceived);
         uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.7f, 0.8f, 1.0f, 1.0f}); y += lineH;
 
-        snprintf(buf, sizeof(buf), "SERVER: %s", mpContext.serverAddress.c_str());
-        uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.7f, 0.75f, 0.85f, 1.0f}); y += lineH;
+        snprintf(buf, sizeof(buf), "TICK CLIENT %u / SERVER %llu",
+                 mpContext.tick, (unsigned long long)mpContext.lastSnapshotTick);
+        uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.9f, 0.95f, 1.0f, 1.0f}); y += lineH;
+
+        if (mpContext.connectionState == MimitaNet::ConnectionState::Reconnecting)
+        {
+            const double elapsed = mpContext.disconnectStartedMs
+                ? (double)(nowDbg - mpContext.disconnectStartedMs) / 1000.0 : 0.0;
+            const double bailIn = mpContext.reconnectGraceDeadlineMs
+                ? (double)(mpContext.reconnectGraceDeadlineMs - nowDbg) / 1000.0 : 0.0;
+            snprintf(buf, sizeof(buf), "RECONNECT #%d  %.2fs elapsed  /  bail in %.0fs",
+                     mpContext.reconnectAttempts, elapsed,
+                     bailIn < 0.0 ? 0.0 : bailIn);
+            uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {1.0f, 0.5f, 0.4f, 1.0f});
+            y += lineH;
+        }
+        else
+        {
+            snprintf(buf, sizeof(buf), "RECONNECT: n/a");
+            uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.55f, 0.6f, 0.7f, 1.0f});
+            y += lineH;
+        }
+
+        snprintf(buf, sizeof(buf), "ENTITIES: %zu (PLAYERS %zu / NPCS %zu)",
+                 mpContext.remotePlayers.size() + mpContext.remoteNpcs.size() +
+                     (mpContext.localPlayerId ? 1u : 0u),
+                 mpContext.remotePlayers.size() + (mpContext.localPlayerId ? 1u : 0u),
+                 mpContext.remoteNpcs.size());
+        uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.9f, 0.95f, 1.0f, 1.0f}); y += lineH;
 
         snprintf(buf, sizeof(buf), "LOCAL POS: %.1f %.1f %.1f HP=%d",
                  player.pos.x, player.pos.y, player.pos.z,

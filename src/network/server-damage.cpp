@@ -63,6 +63,20 @@ ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>&
         return result;
     }
 
+    // Disconnected/reconnecting players take no damage: someone who crashed or
+    // froze should not die while offline. Their body is frozen and invulnerable
+    // for the reconnect grace window.
+    // TODO(anti-cheat): a client could drop packets to dodge damage. Honest-play
+    // assumption for now; revisit with server-side movement/DPS accounting.
+    if (target.connectionStale)
+    {
+        printf("%s [SERVER DAMAGE] target=%u attacker=%u source=%s accepted=0 "
+               "reason=target-reconnecting damage=%d health=%d\n",
+               serverTimestamp(), target.id, attackerPlayerId,
+               damageSourceName(source), damage, target.health);
+        return result;
+    }
+
     const int clampedDamage = std::clamp(damage, 1, 500);
     target.health = std::max(0, target.health - clampedDamage);
     target.vel += knockback;

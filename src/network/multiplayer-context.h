@@ -15,6 +15,7 @@
 #include "network/projectile-terminal-dedupe.h"
 #include "network/movement-validation.h"
 #include "network/remote-entity-lifecycle.h"
+#include "network/connection-state.h"
 #include "entities/player.h"
 
 #include <string>
@@ -40,33 +41,7 @@ extern bool gNetInterpDebug;
 // means reconnect attempts are running inside the grace window. The terminal
 // states (ReconnectFailed / HostClosed / Kicked / ServerCrashed) describe why
 // the session ended. UI derives "what the player should believe" from these.
-enum class ConnectionState : uint8_t
-{
-    Disconnected,
-    ResolvingCode,
-    RequestingJoin,
-    WaitJoinAccept,
-    NatNegotiating,
-    Connecting,
-    Connected,
-    Reconnecting,
-    DisconnectPending,
-    // ── Connection-health states (honest UI) ──────────────────────────
-    WeakConnection,     // packets stale but session still alive; input still sent
-    ReconnectFailed,    // 60s grace expired, gave up (fully disconnected)
-    HostClosed,         // server/host explicitly closed the session
-    Kicked,             // server kicked this player
-    ServerCrashed       // server unreachable / process died
-};
-
-// ── Per-remote-player disconnect state (observers see red effects) ────
-struct RemoteConnectionState
-{
-    uint64_t disconnectedSinceMs = 0; // 0 = not disconnected
-    bool reconnectedNotified = false; // green effect already shown for this episode
-};
-
-const char* connectionStateName(ConnectionState state);
+// (enum + connectionStateName live in connection-state.h)
 
 // ── Server disagreement event (for client-side visual effects) ────────
 struct DisagreementEvent
@@ -144,6 +119,7 @@ struct NetworkShotEvent
     glm::vec3 direction{0.0f};
     glm::vec3 normal{0.0f};
     glm::vec3 knockback{0.0f};
+    glm::vec3 beamEnd{0.0f}; // origin + dir * max range (tracer continue-through)
 };
 
 struct NetworkProjectile
@@ -251,6 +227,10 @@ struct EntityInterpolationState
     bool extrapolating = false;
     bool wasExtrapolating = false;
     uint32_t hardSnapCount = 0;
+    // Frames where the linear anti-snap glide gate clamped the rendered body's
+    // movement (linear_glide_max_units_per_second). 0 = never glided = no snap
+    // events at all. Diagnostic via netstats.
+    uint32_t glideSnapCount = 0;
     uint32_t bufferUnderrunCount = 0;
     uint32_t holdCount = 0;
     uint32_t renderJumpCount = 0;
@@ -349,13 +329,18 @@ struct MultiplayerContext
 
     // Victim health synced to the shot visual: the local player's HP is NOT
     // dropped from snapshot health. Server-confirmed damage events queue a
-    // pending change that is applied after a short render-delay hold so the
-    // health bar drops in the same step the shot visual plays.
+    // pending change that is applied in the same frame the corresponding shot
+    // visual plays (the attacker's body renders past the shot's server tick),
+    // so the health bar never drops before the bullet/attacker are visible.
     struct PendingVictimHealth
     {
         int healthAfter = 0;
         bool killed = false;
-        uint64_t applyAtMs = 0;
+        glm::vec3 knockback{0.0f};    // applied in the same frame as the HP drop
+        uint64_t applyAtMs = 0;       // max-hold wall-clock fallback
+        uint32_t shooterId = 0;       // attacker entity (for the visual gate)
+        uint32_t eventServerTick = 0; // shot's server tick (lastServerTick)
+        uint64_t receivedMs = 0;
     };
     std::vector<PendingVictimHealth> pendingVictimHealth;
     std::string approvedLocalName;
@@ -530,6 +515,9 @@ struct MultiplayerContext
         glm::vec3 predictedMuzzle{0.0f};
         uint32_t deterministicSeed = 0;
         uint8_t attackVariant = 0;
+        uint32_t claimedTargetId = 0;
+        glm::vec3 claimedHit{0.0f};
+        uint8_t claimedBodyPart = 0;
         uint64_t firstSentMs = 0;
         uint64_t lastSentMs = 0;
         int attempts = 0;
@@ -734,6 +722,11 @@ void mpTickReconnect(MultiplayerContext& ctx);
 // Called once per mpTick; applies state transitions, starts/stops reconnect,
 // tears down on give-up, and surfaces red notifications on state changes.
 void mpUpdateConnectionHealth(MultiplayerContext& ctx);
+// Surface a red notification + honest connectionStatus for a state transition
+// (used by the health machine and by the Welcome/JoinAccept/ReconnectAccept
+// packet handlers). No-op when the state did not actually change.
+void mpNotifyConnectionStateChange(MultiplayerContext& ctx,
+                                   ConnectionState before, ConnectionState next);
 // Current honest connection-status text derived from state + packet freshness
 // (replaces the transport-level "Connected via ICE" lie in persistent UI).
 std::string mpConnectionHealthText(const MultiplayerContext& ctx);
@@ -751,7 +744,8 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     const glm::vec3& predictedMuzzle,
     uint8_t attackVariant = 0,
     uint32_t claimedTargetId = 0,
-    const glm::vec3& claimedHit = glm::vec3(0.0f));
+    const glm::vec3& claimedHit = glm::vec3(0.0f),
+    uint8_t claimedBodyPart = 0);
 void mpSendServerCommand(MultiplayerContext& ctx, const std::string& command);
 uint32_t mpSendShotEvent(
     MultiplayerContext& ctx,
@@ -820,12 +814,16 @@ void mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes);
 // hit-rewind lands on the rendered body (see=hit). In direct-render mode the
 // rendered position IS the newest snapshot, so fallbackNewestTick is returned.
 uint32_t mpFireRenderTick(const MultiplayerContext& ctx, uint32_t fallbackNewestTick);
+uint32_t mpFireRenderTickForTarget(const MultiplayerContext& ctx, uint32_t targetId,
+                                   uint32_t fallbackNewestTick);
 
 // Returns the render-bias delta (rendered replica position minus newest
 // authoritative snapshot position) for a remote shooter, so muzzle/tracer shot
 // visuals can be re-based onto the body the client actually renders. Zero when
 // the shooter is local/unknown or interpolation is inactive (direct render).
 glm::vec3 mpRemoteShooterRenderDelta(const MultiplayerContext& ctx, uint32_t shooterId);
+glm::vec3 mpRemoteShooterMuzzle(const MultiplayerContext& ctx, uint32_t shooterId,
+                                const glm::vec3& fallbackMuzzle);
 
 // Called from mpTick (defined in multiplayer-shots.cpp)
 void mpProcessShotEventPacket(MultiplayerContext& ctx, const ShotEventPacket* event);
@@ -867,6 +865,10 @@ void mpConfirmPredictedKillHeal(MultiplayerContext& ctx, uint32_t entityId);
 void mpRollbackPredictedKillHeal(MultiplayerContext& ctx, uint32_t entityId);
 bool mpAcceptReliableEventOnce(MultiplayerContext& ctx, uint32_t eventId, uint32_t eventSessionId);
 void mpDrainPendingVictimHealth(MultiplayerContext& ctx, Player& player);
+// True when the shooter's rendered replica has passed the shot's server tick
+// (or the event-timeline max hold elapsed) — the gate shot visuals already use.
+bool mpVisualTimelineReady(const MultiplayerContext& ctx, uint32_t shooterId,
+                           uint32_t visualServerTick, uint64_t receivedMs);
 
 // Debug flags for damage/hit/net diagnostics (extern, set from terminal commands)
 extern bool gNetDamageDebug;

@@ -422,6 +422,13 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
         c.linearDeadzoneUnits = clampMin(
             readDouble(r, "linear_deadzone_units",
                        c.linearDeadzoneUnits), 0.0);
+        c.linearNeverSkip = readBool(r, "linear_never_skip", c.linearNeverSkip);
+        c.linearHoldGapTicks = (uint32_t)std::max<uint32_t>(
+            0u, (uint32_t)clampMin(
+                    readDouble(r, "linear_hold_gap_ticks", (double)c.linearHoldGapTicks), 0.0));
+        c.linearGlideMaxUnitsPerSecond = clampMin(
+            readDouble(r, "linear_glide_max_units_per_second",
+                       c.linearGlideMaxUnitsPerSecond), 0.0);
         c.linearClockSource = readString(
             r, "linear_clock_source", c.linearClockSource);
         if (c.linearClockSource != "wall_time" &&
@@ -638,6 +645,15 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
         NetworkPredictionConfig& c = next.prediction;
         c.predictDamage = readBool(r, "predict_damage", c.predictDamage);
         c.predictDeaths = readBool(r, "predict_deaths", c.predictDeaths);
+    }
+
+    // ── combat ────────────────────────────────────────────────────────
+    if (root.contains("combat") && root["combat"].is_object())
+    {
+        const json& r = root["combat"];
+        NetworkCombatConfig& c = next.combat;
+        c.beamContinueAfterHit = readBool(r, "beam_continue_after_hit",
+                                          c.beamContinueAfterHit);
     }
 
     out = next;

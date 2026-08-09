@@ -140,51 +140,54 @@ bool rayPlayerTarget(const glm::vec3& origin,
     if (target.dead || target.playerId == 0 || !finiteVec3(target.position))
         return false;
 
-    const float radius = std::max(target.radius, 0.01f);
-    const float halfHeight = std::max(target.height, radius * 2.0f) * 0.5f;
-    const glm::vec3 bmin = target.position + glm::vec3(-radius, -radius, -halfHeight);
-    const glm::vec3 bmax = target.position + glm::vec3(radius, radius, halfHeight);
     const glm::vec3 dir = safeNormalize(direction, glm::vec3(1.0f, 0.0f, 0.0f));
-
-    // Swept-sphere vs AABB == thin ray vs AABB grown by the beam radius. The
-    // sphere center at contact drives body-part classification; the stored hit
-    // position is projected back to the target surface for effect placement.
     const float grow = std::max(beamRadius, 0.0f);
-    const glm::vec3 ebmin = bmin - glm::vec3(grow);
-    const glm::vec3 ebmax = bmax + glm::vec3(grow);
-    float distance = 0.0f;
-    if (!rayAabb(origin, dir, ebmin, ebmax, maxDistance, distance))
-        return false;
 
-    outHit.hit = true;
-    outHit.targetPlayerId = target.playerId;
-    outHit.targetSpawnGeneration = target.spawnGeneration;
-    outHit.distance = distance;
-    outHit.direction = dir;
-    const glm::vec3 sweepCenter = origin + dir * distance;
-    const glm::vec3 fromCenter = sweepCenter - target.position;
-    outHit.hitNormal = safeNormalize(fromCenter, -dir);
-    outHit.hitPosition = grow > 0.0f
-        ? sweepCenter - outHit.hitNormal * grow
-        : sweepCenter;
-    // Body-part classification by sphere-center height over the original target
-    // box (matches the client's localHeight thresholds): top ~22% head, bottom
-    // ~32% limbs, middle torso. `headshot` stays the flag for effects/killfeed.
-    const float localHeight = (sweepCenter.z - bmin.z) / (bmax.z - bmin.z);
-    if (localHeight > 0.78f)
+    // ── Body-part trace (matches the client's rendered hitboxes) ───────
+    // The target MUST carry per-part AABBs (reconstructed at the rewound
+    // pose). A target without body parts is not hittable — no invisible
+    // capsule is ever used for damage. Each part is tested exactly like the
+    // client's beam, so a shot that hits an arm/head/leg on the shooter's
+    // screen registers the same part here. The damage model then applies the
+    // same multiplier the client predicted (head = headshot, leg = limb,
+    // torso/arm = 1x).
+    if (target.bodyParts.empty())
+        return false;
     {
-        outHit.bodyPart = HitBodyPart::Head;
-        outHit.headshot = true;
+        HitscanPelletHit best;
+        best.distance = std::numeric_limits<float>::max();
+        bool hitAny = false;
+        for (const PlayerTarget::BodyPartBox& part : target.bodyParts)
+        {
+            const glm::vec3 ebmin = part.center - part.half - glm::vec3(grow);
+            const glm::vec3 ebmax = part.center + part.half + glm::vec3(grow);
+            float distance = 0.0f;
+            if (!rayAabb(origin, dir, ebmin, ebmax, maxDistance, distance))
+                continue;
+            if (distance >= best.distance)
+                continue;
+            const glm::vec3 sweepCenter = origin + dir * distance;
+            const glm::vec3 fromCenter = sweepCenter - part.center;
+            HitscanPelletHit hit;
+            hit.hit = true;
+            hit.targetPlayerId = target.playerId;
+            hit.targetSpawnGeneration = target.spawnGeneration;
+            hit.distance = distance;
+            hit.direction = dir;
+            hit.hitNormal = safeNormalize(fromCenter, -dir);
+            hit.hitPosition = grow > 0.0f
+                ? sweepCenter - hit.hitNormal * grow
+                : sweepCenter;
+            hit.bodyPart = part.bodyPart;
+            hit.headshot = part.bodyPart == HitBodyPart::Head;
+            best = hit;
+            hitAny = true;
+        }
+        if (!hitAny)
+            return false;
+        outHit = best;
+        return true;
     }
-    else if (localHeight > 0.32f)
-    {
-        outHit.bodyPart = HitBodyPart::Torso;
-    }
-    else
-    {
-        outHit.bodyPart = HitBodyPart::Leg;
-    }
-    return true;
 }
 
 HitscanTraceResult traceHitscan(const WeaponDefinition& def,

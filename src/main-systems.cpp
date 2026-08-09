@@ -131,6 +131,7 @@ void registerCursorCommands();
 #include "effects/hitfx-commands.h"
 #include "effects/hit-effects.h"
 #include "config/weapon-hitfx-config.h"
+#include "config/weapon-tracers-config.h"
 #include "game/bomb-tag.h"
 #include "gui/gui-editor-commands.h"
 #include "camera/camera-commands.h"
@@ -352,6 +353,7 @@ void gameInitSubsystems(Engine& engine)
     registerWeaponDebugCommand();
     loadWorldCrosshairConfig();
     loadCoolShotLineConfig();
+    WeaponTracersConfig::instance().load();
     applyStartupDefaults();
     registerWorldXhReloadCommand();
     registerCoolShotLineCommands();

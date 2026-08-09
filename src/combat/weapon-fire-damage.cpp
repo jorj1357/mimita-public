@@ -165,7 +165,7 @@ static int predictedRemoteDamage(const WeaponDefinition& def,
     float damage = def.damage;
     if (hitPart == "head")
         damage *= def.headshotMultiplier;
-    else if (hitPart == "leg")
+    else if (hitPart.find("leg") != std::string::npos)
         damage *= limbMultiplier(def);
 
     const float falloffStart = def.customParams.count("distanceFalloffStart")
@@ -267,6 +267,11 @@ void processRemotePlayerHit(
     presentRemoteHit(def, hitEnd, hitNormal, shotDirection, nearest, hitPart,
                      shooter.username, remoteVictim->username, totalDamage);
 
+    // Predict the victim's knockback instantly so the shooter sees the push
+    // immediately (the server's authoritative knockback corrects it if needed).
+    if (remoteVictim)
+        remoteVictim->externalImpulse += result.knockbackImpulse;
+
     const int hpBeforePrediction = remoteVictim
         ? remoteVictim->currentHp : totalDamage;
     const auto& prediction = NetworkingConfig::instance().data().prediction;
@@ -308,6 +313,7 @@ void processRemoteNpcHit(
         result.bodyPart = hitPart;
         result.end = hitEnd;
         result.targetId = remoteNpcTargetId;
+        result.targetIsRemoteNpc = true;
 
         // Record the prediction timestamp so the server-confirm path can
         // suppress the duplicate hitmarker/killfeed for the local shooter.
@@ -322,6 +328,17 @@ void processRemoteNpcHit(
         const glm::vec3 normal = glm::vec3(0.0f, 0.0f, 1.0f);
         presentRemoteHit(def, hitEnd, normal, -normal, nearest, hitPart,
                          shooter.username, remoteNpc->username, totalDamage);
+
+        // Predict the NPC knockback instantly (corrected by the server confirm).
+        {
+            const glm::vec3 hitDir = result.end - result.start;
+            const float hitLen = glm::length(hitDir);
+            if (hitLen > 0.001f)
+            {
+                const float kn = (float)totalDamage * 0.08f;
+                remoteNpc->externalImpulse += hitDir / hitLen * kn;
+            }
+        }
 
         const int hpBeforePrediction = remoteNpc->currentHp;
         const auto& prediction = NetworkingConfig::instance().data().prediction;
@@ -405,7 +422,7 @@ void processPlayerHit(
     float damage = def.damage;
     if (hitPart == "head")
         damage *= def.headshotMultiplier;
-    else if (hitPart == "leg")
+    else if (hitPart.find("leg") != std::string::npos)
         damage *= limbMultiplier(def);
 
     const float falloffStart = def.customParams.count("distanceFalloffStart")
@@ -505,7 +522,7 @@ float computeFalloffDamage(
     float damage = def.damage;
     if (hitPart == "head")
         damage *= def.headshotMultiplier;
-    else if (hitPart == "leg")
+    else if (hitPart.find("leg") != std::string::npos)
         damage *= limbMultiplier(def);
 
     const float falloffStart = def.customParams.count("distanceFalloffStart")
@@ -583,7 +600,7 @@ void processMultiPelletRemoteHit(
 {
     float dmg = def.damage;
     if (hitPart == "head") dmg *= def.headshotMultiplier;
-    else if (hitPart == "leg")
+    else if (hitPart.find("leg") != std::string::npos)
         dmg *= limbMultiplier(def);
 
     float falloffStart = 110.0f;

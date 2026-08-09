@@ -600,7 +600,7 @@ void StructuredLogger::write(const Entry& e) {
     if (!shouldLog(e.category, e.level)) return;
 
     int idx = (int)e.category;
-    if (idx < 0 || idx >= 11) return;
+    if (idx < 0 || idx >= (int)StructuredCategory::Count) return;
 
     uint64_t& counter = mEventCounters[idx];
     counter++;
