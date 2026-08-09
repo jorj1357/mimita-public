@@ -833,7 +833,10 @@ static void spawnHitClaimDisagreement(MultiplayerContext& ctx,
                                       const char* description)
 {
     ++ctx.rejectedHits;
-    mpRollbackPredictedDamage(ctx, claim.claimedTargetId, false, description);
+    const bool npcClaim =
+        claim.claimedTargetId != 0 &&
+        ctx.remoteNpcs.find(claim.claimedTargetId) != ctx.remoteNpcs.end();
+    mpRollbackPredictedDamage(ctx, claim.claimedTargetId, npcClaim, description);
     if (!NetworkingConfig::instance().data().disagreement.enabled)
         return;
     DisagreementEvent event;
@@ -938,18 +941,20 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
     {
         if (event->targetPlayerId == ctx.localPlayerId)
         {
-            ctx.pendingKnockback += knockback;
-            // Health synced to the shot visual: queue a pending change applied
-            // after a short render-delay hold so the HP drops WITH the shot
-            // visual, not a frame before it. The reconcile never drops HP from
-            // snapshots while this is held.
-            const double delayMs = NetworkingConfig::instance().data()
-                .remoteMotionSmoothing.linearDelayTicks *
-                (1000.0 / (double)GAMEPLAY_SIMULATION_HZ);
+            // Health AND knockback synced to the shot visual: queue a pending
+            // change applied in the SAME frame the attacker's body renders past
+            // this shot's server tick (the same gate the bullet tracer uses),
+            // so the victim never gets knocked back before seeing the bullet.
+            const double maxHoldMs = NetworkingConfig::instance().data()
+                .eventTimeline.remoteEffectMaximumHoldMs;
             MultiplayerContext::PendingVictimHealth ph;
             ph.healthAfter = event->healthAfter;
             ph.killed = event->killed != 0;
-            ph.applyAtMs = nowMs() + (uint64_t)delayMs;
+            ph.knockback = knockback;
+            ph.applyAtMs = nowMs() + (uint64_t)std::max(16.0, maxHoldMs);
+            ph.shooterId = event->attackerPlayerId;
+            ph.eventServerTick = event->header.tick;
+            ph.receivedMs = nowMs();
             ctx.pendingVictimHealth.push_back(ph);
         }
         else
@@ -964,6 +969,18 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
            event->eventId, (unsigned)event->source, event->attackerPlayerId,
            event->targetPlayerId, event->damage, event->healthBefore,
            event->healthAfter, (int)event->killed);
+    {
+        char msg[512];
+        std::snprintf(msg, sizeof(msg),
+                      "attacker=%u target=%u damage=%d health=%d->%d killed=%d source=%u",
+                      event->attackerPlayerId, event->targetPlayerId, event->damage,
+                      event->healthBefore, event->healthAfter, (int)event->killed,
+                      (unsigned)event->source);
+        ::logStructured(::StructuredCategory::Network, ::StructuredLevel::Important,
+                        "DAMAGE_CONFIRMED",
+                        "ATTACK_" + std::to_string(event->causeSerial),
+                        "server-confirmed damage event", msg);
+    }
 }
 
 void mpProcessProjectileFireResultPacket(MultiplayerContext& ctx, const ProjectileFireResultPacket* event)
@@ -1056,13 +1073,38 @@ void mpProcessAttackResultPacket(MultiplayerContext& ctx, const AttackResultPack
         ctx.pendingAttackRequests.erase(pendingIt);
     }
 
-    // Hit-claim resolution: the server rejected the shot outright, so our local
-    // hit claim disagreed with what the server accepted.
+    // Hit-claim resolution: the server's AttackResult now carries a definitive
+    // hit verdict, so resolve the client's local hit prediction the moment the
+    // round trip completes instead of waiting (or timing out) on a damage event.
+    // This is what makes predicted damage correct ~instantly after a shot:
+    // agreement keeps the prediction, disagreement rolls it back once.
     auto claimIt = ctx.pendingHitClaims.find(event->requestId);
-    if (claimIt != ctx.pendingHitClaims.end() && !event->accepted)
+    if (claimIt != ctx.pendingHitClaims.end())
     {
-        spawnHitClaimDisagreement(ctx, claimIt->second, "HIT REJECTED");
-        ctx.pendingHitClaims.erase(claimIt);
+        if (!event->accepted)
+        {
+            // Shot rejected outright (spawn/cooldown/etc) — the hit never happened.
+            spawnHitClaimDisagreement(ctx, claimIt->second, "HIT REJECTED");
+            ctx.pendingHitClaims.erase(claimIt);
+        }
+        else if (event->hitVerdict == HIT_VERDICT_HIT_CLAIMED_TARGET)
+        {
+            // Server confirmed damage on the claimed target: keep the prediction;
+            // the DamageConfirmed/NpcDamage event applies the exact health.
+            claimIt->second.confirmed = true;
+            claimIt->second.resolved = true;
+            ctx.pendingHitClaims.erase(claimIt);
+        }
+        else if (event->hitVerdict == HIT_VERDICT_HIT_OTHER_TARGET ||
+                 event->hitVerdict == HIT_VERDICT_MISS)
+        {
+            // The server's rewind trace hit a different target (or nothing):
+            // roll back the claimed target's predicted damage/death immediately.
+            spawnHitClaimDisagreement(ctx, claimIt->second,
+                event->hitVerdict == HIT_VERDICT_HIT_OTHER_TARGET
+                    ? "HIT OTHER TARGET" : "HIT MISS");
+            ctx.pendingHitClaims.erase(claimIt);
+        }
     }
 
     if (!event->accepted && projectilePending)

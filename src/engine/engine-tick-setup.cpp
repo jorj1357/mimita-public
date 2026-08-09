@@ -19,6 +19,7 @@
 #include "network/disagreement-visuals.h"
 #include "config/camera-config.h"
 #include "config/weapon-hitfx-config.h"
+#include "config/weapon-tracers-config.h"
 #include "config/ragdoll-death-config.h"
 #include "hot-reload/hot-reload-system.h"
 #include "notifications/notifications.h"
@@ -43,6 +44,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     CrosshairConfig::instance().pollReload();
     pollWorldCrosshairConfig();
     pollCoolShotLineConfig();
+    WeaponTracersConfig::instance().pollReload();
     HealthbarConfig::instance().pollReload();
     HitEffects::pollReload();
     MimitaNet::pollDisagreementReload();

@@ -21,6 +21,7 @@
 #include "config/networking-config.h"
 #include "analytics/analytics-manager.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "notifications/notifications.h"
 
 #include <algorithm>
@@ -70,6 +71,38 @@ uint32_t mpFireRenderTick(const MultiplayerContext& ctx, uint32_t fallbackNewest
     return fallbackNewestTick;
 }
 
+// Fire tick for a SPECIFIC claimed target: uses that entity's own adaptive
+// render delay so the server rewinds to exactly the pose the shooter rendered
+// for that target (not the deepest-rendered entity across the whole scene).
+uint32_t mpFireRenderTickForTarget(const MultiplayerContext& ctx, uint32_t targetId,
+                                   uint32_t fallbackNewestTick)
+{
+    if (targetId != 0 && ctx.interpolationClockStarted &&
+        ctx.interpolationRenderTick > 0.0)
+    {
+        double delay = -1.0;
+        {
+            auto it = ctx.remotePlayerInterpolation.find(targetId);
+            if (it != ctx.remotePlayerInterpolation.end())
+                delay = it->second.adaptiveDelaySeconds;
+        }
+        if (delay < 0.0)
+        {
+            auto it = ctx.remoteNpcInterpolation.find(targetId);
+            if (it != ctx.remoteNpcInterpolation.end())
+                delay = it->second.adaptiveDelaySeconds;
+        }
+        if (delay > 0.0)
+        {
+            const double delayTicks = delay * (double)GAMEPLAY_SIMULATION_HZ;
+            const double viewTick = ctx.interpolationRenderTick - delayTicks;
+            if (viewTick > 1.0)
+                return (uint32_t)std::floor(viewTick);
+        }
+    }
+    return mpFireRenderTick(ctx, fallbackNewestTick);
+}
+
 void mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes)
 {
     if (!ctx.active || !data || bytes <= 0)
@@ -80,6 +113,8 @@ void mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes)
     // Per-client badconn simulator may delay, reorder, or drop this packet.
     if (badconn::processOutgoing(data, (size_t)bytes))
         return;
+
+    ctx.lastPacketSentMs = nowMs();
 
     // Use ICE transport if available
     if (ctx.transport)
@@ -121,8 +156,15 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
            disconnectPolicyName(policy),
            ctx.connectionStatus.c_str());
 
-    // Policy: keep reconnectToken only for timeout to same session
-    if (policy != DisconnectPolicy::Timeout)
+    // Policy: keep the reconnect token for recoverable failures (Timeout and
+    // ConnectionFailure) so the client keeps reconnecting to the SAME session
+    // for the full grace window instead of giving up instantly. Only clear it
+    // when the session is intentionally left/rejected/kicked/replaced.
+    if (policy == DisconnectPolicy::Leave ||
+        policy == DisconnectPolicy::NewConnection ||
+        policy == DisconnectPolicy::Rejected ||
+        policy == DisconnectPolicy::AuthFailure ||
+        policy == DisconnectPolicy::ServerStopped)
         ctx.reconnectToken.clear();
 
     // Clear join token, room code, session identity
@@ -223,6 +265,11 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
         (uint64_t)NetworkingConfig::instance().data()
             .retries.reconnectInitialBackoffMs;
     ctx.lastReconnectAttemptMs = 0;
+    ctx.reconnectGraceDeadlineMs = 0;
+    ctx.disconnectStartedMs = 0;
+    ctx.lastPacketSentMs = 0;
+    ctx.remoteConnectionStates.clear();
+    ctx.lastNotifiedConnectionState = ConnectionState::Disconnected;
 
     // Preserve monotonically increasing serials (NEVER reset):
     //   nextLocalProjectileFireSerial
@@ -440,7 +487,8 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     const glm::vec3& predictedMuzzle,
     uint8_t attackVariant,
     uint32_t claimedTargetId,
-    const glm::vec3& claimedHit)
+    const glm::vec3& claimedHit,
+    uint8_t claimedBodyPart)
 {
     if (!ctx.active || !ctx.localPlayerId)
         return 0;
@@ -455,7 +503,9 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     req.header.playerId = ctx.localPlayerId;
     req.requestId = requestId;
     req.spawnGeneration = ctx.lastKnownSpawnGeneration;
-    req.clientSimulationTick = mpFireRenderTick(ctx, ctx.latestLocalSnapshotTick);
+    req.clientSimulationTick = claimedTargetId != 0
+        ? mpFireRenderTickForTarget(ctx, claimedTargetId, ctx.latestLocalSnapshotTick)
+        : mpFireRenderTick(ctx, ctx.latestLocalSnapshotTick);
     req.basedOnInputSequence = (uint16_t)std::min<uint32_t>(ctx.nextMovementSequence, 0xffffu);
     req.equippedSlot = equippedSlot;
     req.weaponDefNetworkId = weaponDefNetworkId;
@@ -471,6 +521,11 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     req.muzzlePosZ = predictedMuzzle.z;
     req.deterministicSeed = (uint32_t)(requestId * 73856093);
     req.attackVariant = attackVariant;
+    req.claimedTargetId = claimedTargetId;
+    req.claimedHitX = claimedHit.x;
+    req.claimedHitY = claimedHit.y;
+    req.claimedHitZ = claimedHit.z;
+    req.claimedBodyPart = claimedBodyPart;
 
     mpSendPacket(ctx, &req, sizeof(req));
 
@@ -487,6 +542,9 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     pending.predictedMuzzle = predictedMuzzle;
     pending.deterministicSeed = req.deterministicSeed;
     pending.attackVariant = req.attackVariant;
+    pending.claimedTargetId = claimedTargetId;
+    pending.claimedHit = claimedHit;
+    pending.claimedBodyPart = claimedBodyPart;
     pending.firstSentMs = nowMs();
     pending.lastSentMs = nowMs();
     pending.attempts = 1;
@@ -1097,63 +1155,313 @@ void mpProcessDisagreementPacket(MultiplayerContext& ctx, const DisagreementPack
            (int)duplicate, packet->header.tick);
 }
 
-// ── Migration: reconnect ──────────────────────────────────────────────
+// ── Migration: reconnect + honest connection health ───────────────────
 
-void mpStartReconnect(MultiplayerContext& ctx)
+static std::string healthServerLabel(const MultiplayerContext& ctx)
 {
-    if (!ctx.active || ctx.reconnectToken.empty())
-    {
-        printf("[NET RECONNECT] cannot reconnect: no reconnect token\n");
-        return;
-    }
-
-    ctx.connectionState = ConnectionState::Reconnecting;
-    ctx.reconnectAttempts = 0;
-    ctx.reconnectBackoffMs =
-        (uint64_t)NetworkingConfig::instance().data()
-            .retries.reconnectInitialBackoffMs;
-    ctx.lastReconnectAttemptMs = nowMs();
-    printf("[NET RECONNECT] starting reconnect for player=%u with token=%s\n",
-           ctx.localPlayerId, ctx.reconnectToken.c_str());
+    if (!ctx.roomCode.empty()) return ctx.roomCode;
+    if (!ctx.currentRoomCode.empty()) return ctx.currentRoomCode;
+    if (!ctx.serverAddress.empty()) return ctx.serverAddress;
+    return "server";
 }
 
-void mpTickReconnect(MultiplayerContext& ctx)
+static void pushConnectionNotification(const MultiplayerContext& ctx, const char* title,
+                                       const char* message)
 {
-    if (ctx.connectionState != ConnectionState::Reconnecting)
-        return;
-    const auto& retryCfg = NetworkingConfig::instance().data().retries;
-    if (ctx.reconnectAttempts >= (int)retryCfg.reconnectMaxAttempts)
-    {
-        printf("[NET RECONNECT] max attempts reached, giving up\n");
-        ctx.connectionState = ConnectionState::Disconnected;
-        ctx.connectionStatus = "Reconnect failed";
-        return;
-    }
+    (void)ctx;
+    NotificationSystem::instance().pushCritical(title, message, 0);
+}
 
-    const uint64_t now = nowMs();
-    if (now - ctx.lastReconnectAttemptMs < ctx.reconnectBackoffMs)
-        return;
-
-    ctx.lastReconnectAttemptMs = now;
-    ++ctx.reconnectAttempts;
+static bool sendReconnectRequest(MultiplayerContext& ctx)
+{
+    if (ctx.localPlayerId == 0 || ctx.reconnectToken.empty())
+        return false;
 
     ReconnectRequestPacket packet{};
     packet.header.type = PACKET_RECONNECT_REQUEST;
     packet.header.tick = ctx.tick;
     packet.header.playerId = ctx.localPlayerId;
     std::memset(packet.reconnectToken, 0, sizeof(packet.reconnectToken));
-    std::strncpy(packet.reconnectToken, ctx.reconnectToken.c_str(), sizeof(packet.reconnectToken) - 1);
-    sendto(ctx.sock, (const char*)&packet, sizeof(packet), 0,
-           (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
+    std::strncpy(packet.reconnectToken, ctx.reconnectToken.c_str(),
+                 sizeof(packet.reconnectToken) - 1);
+
+    // Send through the active transport when available (fixes silent ICE loss
+    // where ctx.sock is INVALID_SOCKET); fall back to the raw UDP socket.
+    if (ctx.transport)
+    {
+        ctx.transport->send(&packet, sizeof(packet));
+    }
+    else if (ctx.sock != INVALID_SOCKET)
+    {
+        sendto(ctx.sock, (const char*)&packet, sizeof(packet), 0,
+               (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
+    }
+    else
+    {
+        return false;
+    }
     ++ctx.packetsSent;
+    ctx.lastPacketSentMs = nowMs();
+    return true;
+}
 
-    printf("[NET RECONNECT] attempt=%d/%u backoff=%llums\n",
-           ctx.reconnectAttempts, retryCfg.reconnectMaxAttempts,
-           (unsigned long long)ctx.reconnectBackoffMs);
+static void mpNotifyReconnectAttempt(const MultiplayerContext& ctx)
+{
+    char buf[256];
+    const double elapsed = ctx.disconnectStartedMs
+        ? (double)(nowMs() - ctx.disconnectStartedMs) / 1000.0 : 0.0;
+    snprintf(buf, sizeof(buf), "Attempting reconnect #%d... %.2fs",
+             ctx.reconnectAttempts, elapsed);
+    pushConnectionNotification(ctx, "Reconnecting", buf);
+}
 
-    ctx.reconnectBackoffMs = std::min<uint64_t>(
-        ctx.reconnectBackoffMs * 2,
-        (uint64_t)retryCfg.reconnectMaxBackoffMs);
+void mpNotifyConnectionStateChange(MultiplayerContext& ctx,
+                                   ConnectionState before, ConnectionState next)
+{
+    if (before == next || ctx.lastNotifiedConnectionState == next)
+        return;
+    ctx.lastNotifiedConnectionState = next;
+
+    char buf[256];
+    switch (next)
+    {
+    case ConnectionState::WeakConnection:
+    {
+        const double age = ctx.lastHeardServerMs
+            ? (double)(nowMs() - ctx.lastHeardServerMs) / 1000.0 : 0.0;
+        snprintf(buf, sizeof(buf),
+                 "Server status: Weak connection — last packet %.2fs ago", age);
+        pushConnectionNotification(ctx, "Weak connection", buf);
+        break;
+    }
+    case ConnectionState::Connected:
+    {
+        const bool recovered = before == ConnectionState::Reconnecting;
+        pushConnectionNotification(ctx,
+            recovered ? "Reconnected" : "Connected",
+            recovered ? "Server status: Reconnected"
+                      : "Server status: Connected");
+        break;
+    }
+    case ConnectionState::Reconnecting:
+        snprintf(buf, sizeof(buf),
+                 "Reconnecting to %s — attempt #%d (%.1fs elapsed)",
+                 healthServerLabel(ctx).c_str(),
+                 std::max(1, ctx.reconnectAttempts),
+                 ctx.disconnectStartedMs
+                     ? (double)(nowMs() - ctx.disconnectStartedMs) / 1000.0
+                     : 0.0);
+        pushConnectionNotification(ctx, "Reconnecting", buf);
+        break;    case ConnectionState::ReconnectFailed:
+        pushConnectionNotification(ctx, "Disconnected",
+            "Server status: Disconnected — reconnect failed");
+        break;
+    case ConnectionState::HostClosed:
+        pushConnectionNotification(ctx, "Host closed",
+            "Server status: Host closed the connection");
+        break;
+    case ConnectionState::Kicked:
+        pushConnectionNotification(ctx, "Kicked",
+            "Server status: Kicked from server");
+        break;
+    case ConnectionState::ServerCrashed:
+        pushConnectionNotification(ctx, "Server unreachable",
+            "Server status: Server unreachable — connection lost");
+        break;
+    default:
+        break;
+    }
+
+    // Keep the legacy connectionStatus string honest for existing HUD paths.
+    ctx.connectionStatus = mpConnectionHealthText(ctx);
+
+    {
+        char msg[128];
+        std::snprintf(msg, sizeof(msg), "from=%d to=%d player=%u",
+                      (int)before, (int)next, ctx.localPlayerId);
+        ::logStructured(::StructuredCategory::Network, ::StructuredLevel::Important,
+                        "CONNECTION_STATE",
+                        "CONNECTION_" + std::to_string(ctx.localPlayerId),
+                        "connection state transition", msg);
+    }
+}
+
+void mpStartReconnect(MultiplayerContext& ctx)
+{
+    if (!ctx.active || ctx.reconnectToken.empty())
+    {
+        Debug::warn(Debug::Category::Networking,
+                    "[NET RECONNECT] cannot reconnect: no reconnect token "
+                    "(state=%s)\n", connectionStateName(ctx.connectionState));
+        return;
+    }
+
+    const uint64_t now = nowMs();
+    ctx.connectionState = ConnectionState::Reconnecting;
+    ctx.connected = false;
+    ctx.reconnectAttempts = 0;
+    if (ctx.reconnectGraceDeadlineMs == 0)
+    {
+        ctx.reconnectGraceDeadlineMs = now + (uint64_t)
+            NetworkingConfig::instance().data().retries.reconnectGraceMs;
+    }
+    if (ctx.disconnectStartedMs == 0)
+        ctx.disconnectStartedMs = now;
+
+    // Attempt #1 immediately; later attempts run on reconnect_interval_ms.
+    ctx.reconnectBackoffMs = (uint64_t)
+        NetworkingConfig::instance().data().retries.reconnectIntervalMs;
+    ctx.lastReconnectAttemptMs = 0;
+    if (sendReconnectRequest(ctx))
+    {
+        ++ctx.reconnectAttempts;
+        ctx.lastReconnectAttemptMs = now;
+    }
+
+    Debug::warn(Debug::Category::Networking,
+                "[NET RECONNECT] starting player=%u graceDeadlineMs=%llu\n",
+                ctx.localPlayerId,
+                (unsigned long long)ctx.reconnectGraceDeadlineMs);
+}
+
+void mpTickReconnect(MultiplayerContext& ctx)
+{
+    if (ctx.connectionState != ConnectionState::Reconnecting)
+        return;
+
+    const auto& retryCfg = NetworkingConfig::instance().data().retries;
+    const uint64_t now = nowMs();
+
+    // The true give-up is owned by the grace deadline in
+    // mpUpdateConnectionHealth so the client always waits the full window;
+    // the attempt cap is only a secondary limit on how often we send.
+    if (ctx.reconnectAttempts >= (int)retryCfg.reconnectMaxAttempts)
+        return;
+
+    const uint64_t intervalMs = (uint64_t)retryCfg.reconnectIntervalMs;
+    if (ctx.reconnectBackoffMs == 0)
+        ctx.reconnectBackoffMs = intervalMs;
+    if (now - ctx.lastReconnectAttemptMs < ctx.reconnectBackoffMs)
+        return;
+
+    ctx.lastReconnectAttemptMs = now;
+    ++ctx.reconnectAttempts;
+
+    if (!sendReconnectRequest(ctx))
+    {
+        Debug::warn(Debug::Category::Networking,
+                    "[NET RECONNECT] attempt=%d/%u failed to send (no transport)\n",
+                    ctx.reconnectAttempts, (unsigned)retryCfg.reconnectMaxAttempts);
+        return;
+    }
+
+    mpNotifyReconnectAttempt(ctx);
+
+    Debug::warn(Debug::Category::Networking,
+                "[NET RECONNECT] attempt=%d/%u interval=%llums elapsed=%llums\n",
+                ctx.reconnectAttempts, (unsigned)retryCfg.reconnectMaxAttempts,
+                (unsigned long long)intervalMs,
+                (unsigned long long)(now - ctx.disconnectStartedMs));
+}
+
+std::string mpConnectionHealthText(const MultiplayerContext& ctx)
+{
+    if (!ctx.active)
+        return "Disconnected";
+
+    const uint64_t now = nowMs();
+    char buf[192];
+    switch (ctx.connectionState)
+    {
+    case ConnectionState::WeakConnection:
+    {
+        const double age = ctx.lastHeardServerMs
+            ? (double)(now - ctx.lastHeardServerMs) / 1000.0 : 0.0;
+        snprintf(buf, sizeof(buf), "Weak connection — last packet %.2fs ago", age);
+        return buf;
+    }
+    case ConnectionState::Reconnecting:
+    {
+        const double elapsed = ctx.disconnectStartedMs
+            ? (double)(now - ctx.disconnectStartedMs) / 1000.0 : 0.0;
+        snprintf(buf, sizeof(buf), "Reconnecting — attempt #%d ... %.2fs",
+                 ctx.reconnectAttempts, elapsed);
+        return buf;
+    }
+    case ConnectionState::ReconnectFailed:
+        return "Disconnected — reconnect failed";
+    case ConnectionState::HostClosed:
+        return "Host closed the connection";
+    case ConnectionState::Kicked:
+        return "Kicked from server";
+    case ConnectionState::ServerCrashed:
+        return "Server unreachable — connection lost";
+    case ConnectionState::Connected:
+        return "Connected";
+    default:
+        return ctx.connectionStatus.empty()
+            ? connectionStateName(ctx.connectionState)
+            : ctx.connectionStatus;
+    }
+}
+
+void mpUpdateConnectionHealth(MultiplayerContext& ctx)
+{
+    if (!ctx.active)
+        return;
+
+    const uint64_t now = nowMs();
+    const auto& cfg = NetworkingConfig::instance().data();
+    const uint64_t staleThreshold = (uint64_t)cfg.timeouts.stalePacketThresholdMs;
+    const uint64_t hardTimeout = (uint64_t)cfg.timeouts.clientTimeoutMs;
+    const uint64_t graceMs = (uint64_t)cfg.retries.reconnectGraceMs;
+    const uint64_t lastHeardAge = ctx.lastHeardServerMs > 0
+        ? now - ctx.lastHeardServerMs : 0;
+    const bool heardSinceDisconnect =
+        ctx.disconnectStartedMs > 0 && ctx.lastHeardServerMs > ctx.disconnectStartedMs;
+
+    const ConnectionState before = ctx.connectionState;
+    ConnectionState next = mpNextConnectionHealth(
+        before, now, lastHeardAge, heardSinceDisconnect,
+        staleThreshold, hardTimeout, ctx.reconnectGraceDeadlineMs, graceMs);
+
+    if (next == before)
+        return;
+
+    ctx.connectionState = next;
+    switch (next)
+    {
+    case ConnectionState::Reconnecting:
+        ctx.connected = false;
+        ctx.disconnectStartedMs = now;
+        ctx.reconnectGraceDeadlineMs = now + graceMs;
+        if (ctx.reconnectToken.empty())
+        {
+            // Nothing to reconnect with: give up immediately and honestly.
+            ctx.connectionState = ConnectionState::ReconnectFailed;
+            teardownPreviousSession(ctx, DisconnectPolicy::ConnectionFailure);
+            mpNotifyConnectionStateChange(ctx, before,
+                                          ConnectionState::ReconnectFailed);
+            return;
+        }
+        mpStartReconnect(ctx);
+        mpNotifyConnectionStateChange(ctx, before, ConnectionState::Reconnecting);
+        break;
+    case ConnectionState::Connected:
+        ctx.connected = true;
+        ctx.reconnectGraceDeadlineMs = 0;
+        ctx.disconnectStartedMs = 0;
+        ctx.reconnectAttempts = 0;
+        ctx.reconnectBackoffMs = 0;
+        mpNotifyConnectionStateChange(ctx, before, ConnectionState::Connected);
+        break;
+    case ConnectionState::ReconnectFailed:
+        teardownPreviousSession(ctx, DisconnectPolicy::ConnectionFailure);
+        mpNotifyConnectionStateChange(ctx, before, ConnectionState::ReconnectFailed);
+        break;
+    default:
+        break;
+    }
 }
 
 } // namespace MimitaNet

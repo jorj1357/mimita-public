@@ -11,6 +11,7 @@
 #include "network/multiplayer-context.h"
 #include "network/chat-rate-limiter.h"
 #include "void-death/void-death.h"
+#include "config/networking-config.h"
 #include "debug/debug-log.h"
 
 #include <algorithm>
@@ -233,23 +234,110 @@ void handleServerCommand(const char* buffer, int bytes,
     }
 }
 
-void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players)
+// Broadcast a peer's connection-state change (disconnected / reconnected) to
+// every other client so observers can show the red reconnect effect on the
+// frozen body and the green effect on recovery. The target player is skipped
+// (they cannot receive it while disconnected anyway).
+static void broadcastPlayerConnectionState(
+    SOCKET sock,
+    const std::unordered_map<uint32_t, ServerPlayer>& players,
+    uint32_t targetPlayerId,
+    bool connected,
+    uint64_t disconnectedAtMs,
+    uint64_t& totalPacketsOut)
 {
-    for (auto it = players.begin(); it != players.end(); )
+    PlayerConnectionStatePacket packet{};
+    packet.header.type = PACKET_PLAYER_CONNECTION_STATE;
+    packet.header.playerId = targetPlayerId;
+    packet.connected = connected ? 1 : 0;
+    packet.disconnectedAtMs = disconnectedAtMs;
+    for (const auto& kv : players)
     {
-        const uint64_t silentMs = nowMs() - it->second.lastHeardMs;
-        if (silentMs > CLIENT_TIMEOUT_MS)
-        {
-            printf("%s [NET DISCONNECT] reason=heartbeat_timeout id=%u name=\"%s\" lastHeard=%llums ago ping=%dms\n",
-                   serverTimestamp(), it->second.id, it->second.name.c_str(),
-                   (unsigned long long)silentMs, it->second.pingMs);
-            if (it->second.transport)
-                it->second.transport->close();
-            it = players.erase(it);
-        }
-        else
-            ++it;
+        if (kv.first == targetPlayerId)
+            continue;
+        if (serverSendToPlayer(sock, kv.second, &packet, sizeof(packet)))
+            ++totalPacketsOut;
     }
+}
+
+void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players,
+                         SOCKET sock, uint64_t& totalPacketsOut)
+{
+    const auto& cfg = NetworkingConfig::instance().data();
+    const uint64_t staleThreshold = (uint64_t)cfg.timeouts.stalePacketThresholdMs;
+    const uint64_t hardTimeout = (uint64_t)cfg.timeouts.clientTimeoutMs;
+    const uint64_t graceMs = (uint64_t)cfg.retries.reconnectGraceMs;
+    const uint64_t now = nowMs();
+
+    std::vector<uint32_t> toRemove;
+    for (auto& kv : players)
+    {
+        ServerPlayer& p = kv.second;
+        const uint64_t silentMs = now - p.lastHeardMs;
+
+        if (silentMs <= staleThreshold)
+        {
+            // Healthy. If this player had been marked stale, they recovered:
+            // unfreeze, clear grace, and broadcast "reconnected" exactly once.
+            if (p.connectionStale)
+            {
+                p.connectionStale = false;
+                p.disconnectedSinceMs = 0;
+                if (p.connectionStateNotified)
+                {
+                    p.connectionStateNotified = false;
+                    printf("%s [SERVER RECONNECTED] id=%u name=\"%s\" after %llums silent\n",
+                           serverTimestamp(), p.id, p.name.c_str(),
+                           (unsigned long long)(now - p.lastHeardMs));
+                    broadcastPlayerConnectionState(sock, players, p.id, true,
+                                                   0, totalPacketsOut);
+                }
+            }
+            continue;
+        }
+
+        // First crossing the stale threshold: freeze the body and start grace.
+        if (!p.connectionStale)
+        {
+            p.connectionStale = true;
+            p.disconnectedSinceMs = now;
+            printf("%s [SERVER STALE] id=%u name=\"%s\" lastHeard=%llums ago — body frozen, "
+                   "slot kept for reconnect\n",
+                   serverTimestamp(), p.id, p.name.c_str(),
+                   (unsigned long long)silentMs);
+        }
+
+        // Full give-up: slot dies clientTimeoutMs + graceMs after the last
+        // heard packet, matching the client's own 60s reconnect window so a
+        // client still trying inside its grace never finds its token revoked.
+        const uint64_t deadline = p.lastHeardMs + hardTimeout + graceMs;
+        if (now >= deadline)
+        {
+            printf("%s [NET DISCONNECT] reason=grace_expired id=%u name=\"%s\" "
+                   "silent=%llums slotReleased=1\n",
+                   serverTimestamp(), p.id, p.name.c_str(),
+                   (unsigned long long)silentMs);
+            if (p.transport)
+                p.transport->close();
+            toRemove.push_back(p.id);
+            continue;
+        }
+
+        // Once the connection is judged truly lost (past the hard timeout),
+        // notify every other client exactly once so they show the red effect.
+        if (!p.connectionStateNotified && silentMs > hardTimeout)
+        {
+            p.connectionStateNotified = true;
+            printf("%s [SERVER PEER LOST] id=%u name=\"%s\" silent=%llums — notifying peers\n",
+                   serverTimestamp(), p.id, p.name.c_str(),
+                   (unsigned long long)silentMs);
+            broadcastPlayerConnectionState(sock, players, p.id, false,
+                                           p.disconnectedSinceMs, totalPacketsOut);
+        }
+    }
+
+    for (uint32_t id : toRemove)
+        players.erase(id);
 }
 
 void checkVoidDeath(std::unordered_map<uint32_t, ServerPlayer>& players,
@@ -261,7 +349,8 @@ void checkVoidDeath(std::unordered_map<uint32_t, ServerPlayer>& players,
 
     for (auto& kv : players)
     {
-        if (!kv.second.dead && kv.second.pos.z < vdc.killZ)
+        if (!kv.second.dead && kv.second.pos.z < vdc.killZ &&
+            !kv.second.connectionStale)   // never kill a body while it is reconnecting
         {
             kv.second.health = 0;
             kv.second.dead = true;

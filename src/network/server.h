@@ -26,6 +26,7 @@
 #include <memory>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
@@ -47,6 +48,7 @@
 // Forward declarations so the server can hold a real client NpcSystem/World/
 // Player for authoritative NPC simulation without pulling those headers in.
 class NpcSystem;
+class Npc;
 struct World;
 struct Player;
 
@@ -68,6 +70,13 @@ constexpr float PLAYER_HEIGHT = 3.5f;
 // the server validates hits. In direct mode the attacker renders the newest
 // snapshot, so 0 is the exact "what you saw" tick — the mathematical minimum.
 constexpr uint32_t REWIND_INTERP_DELAY_TICKS = 0;
+
+// Backstop for the authoritative-transform-ack gate: after this long with no
+// matching-lifecycle movement report the ack is cleared so a respawned player
+// can never stay frozen at the spawn point under sustained packet loss. The
+// lifecycle (spawn generation + transform epoch) checks in movement validation
+// still reject every stale-life report.
+constexpr uint32_t kAuthoritativeTransformAckTimeoutMs = 1500;
 
 struct ServerSpawnPoint
 {
@@ -181,6 +190,7 @@ struct PositionHistoryEntry
 {
     glm::vec3 pos{0.0f};
     glm::vec3 vel{0.0f};
+    float yaw = 0.0f;
     uint32_t tick = 0;
 };
 
@@ -207,6 +217,18 @@ struct ServerPlayer
     float respawnSeconds = 0.0f;
     uint64_t lastHeardMs = 0;
     bool clientStateUpdated = false;
+
+    // ── Disconnect grace state (server keeps the slot alive) ──────────
+    // True once the player has been silent longer than the stale threshold.
+    // Their body freezes in place, they take no damage, and their slot stays
+    // in the players map until the full grace window elapses so reconnect can
+    // restore them. Cleared on any authenticated packet or reconnect.
+    bool connectionStale = false;
+    // Wall-clock ms when the player first became stale (for the grace window).
+    uint64_t disconnectedSinceMs = 0;
+    // Whether the server already broadcast the disconnect notice for this
+    // episode, so it is sent exactly once (not every tick).
+    bool connectionStateNotified = false;
     int equippedSlot = 0;
     uint8_t weaponState = 0;
     int pingMs = 0;
@@ -415,11 +437,35 @@ enum class ServerNpcState {
     Orbit
 };
 
+struct ServerNpcBodyPartSample {
+    float cx = 0.0f, cy = 0.0f, cz = 0.0f; // world AABB center
+    float hx = 0.0f, hy = 0.0f, hz = 0.0f; // half extents
+    uint8_t bodyPart = 0; // WeaponExecution::HitBodyPart (0=torso 1=head 2=leg)
+    uint8_t pad[3] = {};
+};
+
+// Standard player body-part template (world-space offset from the body root at
+// yaw 0, default pose) captured from the first loaded NPC body. The server uses
+// it to reconstruct PLAYER body-part hitboxes at the rewound pose — so player
+// hits are validated against real body parts, never an invisible capsule.
+struct ServerPlayerBodyPartTemplate {
+    glm::vec3 offset{0.0f};
+    glm::vec3 half{0.0f};
+    uint8_t bodyPart = 0; // WeaponExecution::HitBodyPart
+    uint8_t pad[3] = {};
+};
+
 struct ServerNpcPositionSample {
     glm::vec3 pos{0.0f};
     glm::vec3 vel{0.0f};
     float yaw = 0.0f;
     uint32_t tick = 0;
+    // The NPC's rendered body-part AABBs at this tick, matching the client's
+    // collideBeam hitboxes so the server re-trace (and hit rewind) validate
+    // against exactly what attackers saw — no invisible capsule.
+    std::array<ServerNpcBodyPartSample, 8> parts{};
+    uint8_t partCount = 0;
+    uint8_t pad3[3] = {};
 };
 
 struct ServerNpc
@@ -448,7 +494,13 @@ struct ServerNpc
     // so the server validates the trace against the matching historical pose
     // instead of the NPC's current position. Mirrors ServerPlayer::posHistory.
     std::deque<ServerNpcPositionSample> posHistory;
-    static constexpr size_t MAX_POS_HISTORY = 60;
+    // Current-tick body-part AABBs computed during rebuild so pushNpcPositionHistory
+    // can snapshot them into the history for hit rewind.
+    std::array<ServerNpcBodyPartSample, 8> bodyParts{};
+    uint8_t bodyPartCount = 0;
+    // 10 seconds of broadcast history at 60 Hz so hit rewind always has the
+    // exact pose the shooter rendered, even across long lag/blackout windows.
+    static constexpr size_t MAX_POS_HISTORY = 600;
 };
 
 enum class ServerDamageSource : uint8_t
@@ -580,6 +632,8 @@ void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
 void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world);
 void pushPositionHistory(ServerPlayer& p, uint32_t tick);
 bool getPositionAtTick(const ServerPlayer& p, uint32_t targetTick, glm::vec3& outPos);
+bool getPlayerPoseAtTick(const ServerPlayer& p, uint32_t targetTick,
+                         glm::vec3& outPos, float& outYaw);
 // Begin a new broadcast-smoothing segment toward the just-accepted report.
 void beginServerBroadcastInterp(ServerPlayer& player, uint32_t serverTick);
 // Advance the broadcast-smoothing segment by one server tick.
@@ -595,6 +649,20 @@ SnapshotEntity makeNpcEntity(const ServerNpc& npc);
 // Hit-rewind lag compensation for NPCs (mirrors the player posHistory path).
 void pushNpcPositionHistory(ServerNpc& npc, uint32_t tick);
 bool getNpcPositionAtTick(const ServerNpc& npc, uint32_t targetTick, glm::vec3& outPos);
+bool getNpcPoseAtTick(const ServerNpc& npc, uint32_t targetTick,
+                      glm::vec3& outPos, float& outYaw);
+// Returns the body-part AABBs the NPC rendered at a past broadcast tick, so the
+// authoritative re-trace validates exactly what the attacker saw (no capsule).
+bool getNpcBodyPartsAtTick(const ServerNpc& npc, uint32_t targetTick,
+                           const ServerNpcBodyPartSample** outParts,
+                           uint8_t* outPartCount);
+// Standard player body-part template (default pose, yaw 0 offsets) used to
+// reconstruct PLAYER and NPC hitboxes at the rewound pose. Loaded headlessly
+// from the default player GLB (server-body-template.cpp) — no invisible capsule.
+extern std::vector<ServerPlayerBodyPartTemplate> gServerBodyTemplate;
+bool loadServerBodyTemplateFromGlb(const char* path,
+                                   std::vector<ServerPlayerBodyPartTemplate>& out);
+const std::vector<ServerPlayerBodyPartTemplate>* standardPlayerBodyTemplate();
 
 // Build a CPU-only client World (collision only — no GPU upload) for the real
 // NpcSystem to simulate against, derived from the headless collision world.
@@ -828,7 +896,8 @@ void beginAuthoritativeTransform(ServerPlayer& player,
     const char* reason);
 
 // Post-tick helpers
-void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players);
+void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players,
+                         SOCKET sock, uint64_t& totalPacketsOut);
 void checkVoidDeath(std::unordered_map<uint32_t, ServerPlayer>& players,
                     std::unordered_map<uint32_t, ServerNpc>& npcs);
 void buildAndSendSnapshot(SOCKET sock,

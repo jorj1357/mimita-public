@@ -197,6 +197,27 @@ private:
     void flushThrottled(int catIdx);
 };
 
+// ── Convenience: structured log with formatted message ─────────────
+// Builds an Entry with the given event/correlation IDs and writes it only if
+// the category/level is enabled (avoids the variadic-macro pitfalls).
+inline void logStructured(StructuredCategory cat, StructuredLevel level,
+                          const std::string& eventId,
+                          const std::string& correlationId,
+                          const std::string& reason,
+                          const std::string& message)
+{
+    if (!StructuredLogger::instance().shouldLog(cat, level))
+        return;
+    StructuredLogger::Entry e;
+    e.category = cat;
+    e.level = level;
+    e.eventId = eventId;
+    e.correlationId = correlationId;
+    e.reason = reason;
+    e.message = message;
+    StructuredLogger::instance().write(e);
+}
+
 // ── Audio buffer analysis ───────────────────────────────────
 struct AudioBufferAnalysis {
     uint32_t sampleRate = 0;

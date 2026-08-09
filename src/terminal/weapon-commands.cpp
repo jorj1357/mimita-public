@@ -178,11 +178,22 @@ void registerWeaponCommands()
                             const uint8_t attackVariant =
                                 wdef2->behaviorType == WeaponBehaviorType::Swordsword ? 1 : 0;
                             const uint32_t claimedTargetId =
-                                shot.targetIsRemotePlayer ? shot.targetId : 0;
+                                (shot.targetIsRemotePlayer || shot.targetIsRemoteNpc)
+                                    ? shot.targetId : 0;
+                            // Map the body part the client's local trace hit so the
+                            // server can accept the claim at the rewound pose and
+                            // apply the matching damage multiplier.
+                            uint8_t claimedBodyPart = 0;
+                            if (shot.bodyPart == "head")
+                                claimedBodyPart = 1;
+                            else if (shot.bodyPart == "leg")
+                                claimedBodyPart = 3;
+                            else if (!shot.bodyPart.empty())
+                                claimedBodyPart = 2;
                             uint32_t requestId = MimitaNet::mpSendAttackRequest(
                                 mpContext, netId, wdef2->slot,
                                 shot.start, direction, shot.start, attackVariant,
-                                claimedTargetId, shot.end);
+                                claimedTargetId, shot.end, claimedBodyPart);
                             Debug::log(Debug::Category::Weapons,
                                        "[ATTACK] INPUT_FIRE playerId=%u weapon=%s slot=%d "
                                        "requestId=%u claimedTarget=%u gameplay=%d\n",

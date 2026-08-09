@@ -499,15 +499,37 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
     }
 
     // If the lifecycle/transform handshake is not complete, freeze movement.
-    if (p.spawnState != ServerPlayer::Active ||
-        p.awaitingAuthoritativeTransformAck)
+    // The transform-ack gate can only wedge when the client has NOT yet proven
+    // it knows the current life (see the implicit lifecycle resume in
+    // validateClientMovementReport); once a matching-lifecycle report is
+    // accepted the server takes its position directly and simulation resumes,
+    // even if the SpawnAck is still in flight under bad packet loss.
     {
-        p.vel = glm::vec3(0.0f);
-        p.movement.externalImpulse = glm::vec3(0.0f);
-        p.clientStateUpdated = false;
-        syncServerMovementRuntime(
-            p, p.spawnState == ServerPlayer::Active);
-        return;
+        // Backstop: never let the transform-ack gate wedge a player forever.
+        // The lifecycle checks already reject stale-life reports, so a
+        // timed-out ack is safe to clear.
+        if (p.awaitingAuthoritativeTransformAck &&
+            p.authoritativeTransformAssignedMs != 0 &&
+            nowMs() - p.authoritativeTransformAssignedMs >=
+                (uint64_t)kAuthoritativeTransformAckTimeoutMs)
+        {
+            p.awaitingAuthoritativeTransformAck = false;
+            Debug::warn(Debug::Category::Networking,
+                "[SERVER TRANSFORM ACK TIMEOUT] playerId=%u epoch=%u elapsedMs=%llu "
+                "— ack gate cleared, movement resumed\n",
+                p.id, (unsigned)p.transformEpoch,
+                (unsigned long long)(nowMs() - p.authoritativeTransformAssignedMs));
+        }
+        if (p.spawnState != ServerPlayer::Active ||
+            (p.awaitingAuthoritativeTransformAck && !p.hasAcceptedClientTransform))
+        {
+            p.vel = glm::vec3(0.0f);
+            p.movement.externalImpulse = glm::vec3(0.0f);
+            p.clientStateUpdated = false;
+            syncServerMovementRuntime(
+                p, p.spawnState == ServerPlayer::Active);
+            return;
+        }
     }
 
     p.projectileFireCooldown = std::max(0.0f, p.projectileFireCooldown - SERVER_DT);
@@ -654,7 +676,7 @@ void pushPositionHistory(ServerPlayer& p, uint32_t tick)
     const glm::vec3 histVel = serverSimBroadcast
         ? (p.hasAcceptedClientTransform ? p.lastAcceptedClientVelocity : p.vel)
         : (p.hasBroadcastTransform ? p.broadcastVelocity : p.vel);
-    p.posHistory.push_back({histPos, histVel, tick});
+    p.posHistory.push_back({histPos, histVel, p.yaw, tick});
     const std::size_t historyLimit = NetworkingConfig::instance()
         .data().bufferLimits.serverPositionHistoryTicks;
     while (p.posHistory.size() > historyLimit)
@@ -692,6 +714,45 @@ bool getPositionAtTick(const ServerPlayer& p, uint32_t targetTick, glm::vec3& ou
         }
     }
     outPos = p.posHistory.front().pos;
+    return true;
+}
+
+// Like getPositionAtTick but also returns the broadcast yaw at that tick so
+// body-part hitboxes can be reconstructed with the correct facing (the yaw the
+// attacker saw, not the target's current yaw).
+bool getPlayerPoseAtTick(const ServerPlayer& p, uint32_t targetTick,
+                         glm::vec3& outPos, float& outYaw)
+{
+    if (p.posHistory.empty())
+        return false;
+    const auto& back = p.posHistory.back();
+    if (targetTick >= back.tick)
+    {
+        outPos = back.pos;
+        outYaw = back.yaw;
+        return true;
+    }
+    const auto& front = p.posHistory.front();
+    if (targetTick <= front.tick)
+    {
+        outPos = front.pos;
+        outYaw = front.yaw;
+        return true;
+    }
+    for (int i = (int)p.posHistory.size() - 1; i > 0; --i)
+    {
+        if (p.posHistory[i].tick <= targetTick)
+        {
+            const auto& a = p.posHistory[i];
+            const auto& b = p.posHistory[i + 1];
+            const float frac = float(targetTick - a.tick) / float(b.tick - a.tick);
+            outPos = glm::mix(a.pos, b.pos, frac);
+            outYaw = a.yaw + (b.yaw - a.yaw) * frac;
+            return true;
+        }
+    }
+    outPos = front.pos;
+    outYaw = front.yaw;
     return true;
 }
 

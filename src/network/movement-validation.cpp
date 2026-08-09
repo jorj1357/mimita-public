@@ -466,7 +466,20 @@ MovementValidationResult validateClientMovementReport(
     if (!player.spawned)
         return reject(MovementValidationReason::NotSpawned);
     if (player.spawnState != ServerPlayer::Active)
-        return reject(MovementValidationReason::NotActive);
+    {
+        // Implicit lifecycle resume: a client report carrying the player's
+        // CURRENT spawn generation + transform epoch proves the client already
+        // received the authoritative spawn sync, so it must never stay wedged
+        // frozen at the spawn point waiting for a SpawnAck that packet loss,
+        // jitter, or reorder can delay indefinitely. The generation + epoch
+        // checks below still reject every stale-life report, so this cannot
+        // resurrect an old life's movement.
+        const bool knowsCurrentLife =
+            report.lifecycle.spawnGeneration == player.spawnGeneration &&
+            report.lifecycle.transformEpoch == player.transformEpoch;
+        if (!knowsCurrentLife)
+            return reject(MovementValidationReason::NotActive);
+    }
     if (player.dead)
         return reject(MovementValidationReason::Dead);
     if (!player.movement.movementEnabled)

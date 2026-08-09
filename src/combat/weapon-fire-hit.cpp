@@ -21,6 +21,7 @@
 #include "camera.h"
 #include "combat/weapon-audio.h"
 #include "combat/shot-profiler.h"
+#include "config/networking-config.h"
 #include "debug/debug-log.h"
 #include "devtools/terminal.h"
 #include "effects/effect-part.h"
@@ -37,6 +38,27 @@ namespace WeaponFire {
 
 namespace {
 bool gDebugWeapon = false;
+
+float hitscanMaxRange(const WeaponDefinition& def)
+{
+    auto it = def.customParams.find("range");
+    if (it != def.customParams.end()) return it->second;
+    it = def.customParams.find("maxRange");
+    if (it != def.customParams.end()) return it->second;
+    return 250.0f;
+}
+
+// Tracer endpoint: with beam_continue_after_hit the beam runs to the weapon's
+// max range past the first hit; otherwise it stops at the hit point.
+glm::vec3 hitscanTracerEnd(const WeaponDefinition& def, const glm::vec3& muzzle,
+                           const glm::vec3& dir, const glm::vec3& hitPoint)
+{
+    if (!NetworkingConfig::instance().data().combat.beamContinueAfterHit)
+        return hitPoint;
+    glm::vec3 d = glm::length(dir) > 0.001f ? glm::normalize(dir) : glm::vec3(1.0f, 0.0f, 0.0f);
+    return muzzle + d * hitscanMaxRange(def);
+}
+
 }
 
 void setWeaponDebug(bool enabled) { gDebugWeapon = enabled; }
@@ -157,7 +179,9 @@ RevolverShotResult tryFireHitscan(
     captureReplayEffect(gunshotEvent);
 
     EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, shooter.username, shooter.sizeScale);
-    EffectPartSystem::instance().spawnTracer(muzzlePos, result.end, shooter.username, shooter.sizeScale);
+    EffectPartSystem::instance().spawnTracer(
+        muzzlePos, hitscanTracerEnd(def, muzzlePos, shotDirection, result.end),
+        shooter.username, shooter.sizeScale, def.id);
     if (victim) {
         processNpcHit(result, def, *victim, hitPart, hitNormal, result.end, shotDirection, nearest, shooter, npcs, muzzlePos, shotDirection);
     } else if (remoteVictim) {
@@ -231,7 +255,9 @@ RevolverShotResult tryFireHitscanDir(
     captureReplayEffect(gunshotEvent);
 
     EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, shooter.username, shooter.sizeScale);
-    EffectPartSystem::instance().spawnTracer(muzzlePos, result.end, shooter.username, shooter.sizeScale);
+    EffectPartSystem::instance().spawnTracer(
+        muzzlePos, hitscanTracerEnd(def, muzzlePos, shotDirection, result.end),
+        shooter.username, shooter.sizeScale, def.id);
 
     if (hitPlayer && targetPlayer) {
         processPlayerHit(result, def, hitPart, hitNormal, result.end, shotDirection, nearest, shooter, const_cast<Player*>(targetPlayer));
@@ -371,7 +397,9 @@ void fireMultiPellet(
 
                 {
                     auto tt = ShotProfiler::Scope(&shotProf.tracerMs);
-                    EffectPartSystem::instance().spawnTracer(muzzlePos, pelletEnd, shooter.username, shooter.sizeScale);
+                    EffectPartSystem::instance().spawnTracer(
+                        muzzlePos, hitscanTracerEnd(def, muzzlePos, pelletDir, pelletEnd),
+                        shooter.username, shooter.sizeScale, def.id);
                     shotProf.tracersSpawned++;
                 }
 

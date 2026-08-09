@@ -17,7 +17,9 @@
 #include "combat/weapon-types.h"
 #include "combat/weapon-fire.h"
 #include "combat/weapon-runtime.h"
+#include "config/networking-config.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 
 #include <cmath>
 #include <vector>
@@ -72,6 +74,64 @@ static void startServerSwordAttack(ServerPlayer& attacker,
     attacker.hasLastPhysicalWeaponShape = false;
 }
 
+// Reconstruct body-part hitboxes from the standard player template at the
+// rewound pose (position + yaw). The template stores default-pose offsets from
+// the body root at yaw 0, so rotating by the target's yaw places each part
+// exactly where the model is. Same shape the client renders — no capsule.
+static void fillTargetBodyParts(WeaponExecution::PlayerTarget& targetDesc,
+                                const glm::vec3& pos, float yaw)
+{
+    if (const auto* tpl = standardPlayerBodyTemplate())
+    {
+        const float c = std::cos(yaw);
+        const float s = std::sin(yaw);
+        targetDesc.bodyParts.reserve(tpl->size());
+        for (const auto& t : *tpl)
+        {
+            const glm::vec3 off(t.offset.x * c - t.offset.y * s,
+                                t.offset.x * s + t.offset.y * c,
+                                t.offset.z);
+            WeaponExecution::PlayerTarget::BodyPartBox box;
+            box.center = pos + off;
+            box.half = t.half;
+            box.bodyPart = (WeaponExecution::HitBodyPart)t.bodyPart;
+            targetDesc.bodyParts.push_back(box);
+        }
+    }
+}
+
+// Does the claimed hit point land inside any reconstructed body-part box
+// (expanded by tolerance)? Fills claimPart from the actual part if the client
+// didn't specify one.
+static bool claimedHitInBodyParts(const glm::vec3& claimedHit,
+                                  const glm::vec3& pos, float yaw,
+                                  float tolerance, uint8_t& claimPart)
+{
+    if (const auto* tpl = standardPlayerBodyTemplate())
+    {
+        const float c = std::cos(yaw);
+        const float s = std::sin(yaw);
+        for (const auto& t : *tpl)
+        {
+            const glm::vec3 off(t.offset.x * c - t.offset.y * s,
+                                t.offset.x * s + t.offset.y * c,
+                                t.offset.z);
+            const glm::vec3 ctr = pos + off;
+            const glm::vec3 half = t.half + glm::vec3(tolerance);
+            if (claimedHit.x >= ctr.x - half.x && claimedHit.x <= ctr.x + half.x &&
+                claimedHit.y >= ctr.y - half.y && claimedHit.y <= ctr.y + half.y &&
+                claimedHit.z >= ctr.z - half.z && claimedHit.z <= ctr.z + half.z)
+            {
+                if (claimPart == 0 || claimPart == 2)
+                    claimPart = t.bodyPart == 0 ? 2
+                        : (t.bodyPart == 1 ? 1 : 3);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 // ── Idempotent attack result cache ────────────────────────────────────
@@ -89,6 +149,7 @@ struct CachedAttackResult {
     uint64_t nextAllowedFireTick = 0;
     uint32_t stateRevision = 0;
     uint16_t weaponDefNetworkId = 0;
+    uint8_t hitVerdict = 0;
     bool valid = false;
 };
 static CachedAttackResult s_attackCache[64];
@@ -97,7 +158,8 @@ static uint8_t s_attackCacheNext = 0;
 static void cacheAttackResult(const ServerPlayer& player, const AttackRequestPacket* req,
     bool accepted, uint8_t reason, uint32_t projectileId,
     int32_t magazineAmmo, int32_t reserveAmmo,
-    uint64_t nextAllowedFireTick, uint32_t stateRevision)
+    uint64_t nextAllowedFireTick, uint32_t stateRevision,
+    uint8_t hitVerdict)
 {
     auto& slot = s_attackCache[s_attackCacheNext];
     slot.playerId = player.id;
@@ -111,6 +173,7 @@ static void cacheAttackResult(const ServerPlayer& player, const AttackRequestPac
     slot.nextAllowedFireTick = nextAllowedFireTick;
     slot.stateRevision = stateRevision;
     slot.weaponDefNetworkId = req->weaponDefNetworkId;
+    slot.hitVerdict = hitVerdict;
     slot.valid = true;
     s_attackCacheNext = (s_attackCacheNext + 1) % 64;
 }
@@ -136,6 +199,7 @@ static bool lookupCachedAttackResult(const ServerPlayer& player, const AttackReq
             out.nextAllowedFireTick = c.nextAllowedFireTick;
             out.stateRevision = c.stateRevision;
             out.weaponDefNetworkId = c.weaponDefNetworkId;
+            out.hitVerdict = c.hitVerdict;
             return true;
         }
     }
@@ -147,7 +211,8 @@ static void sendAttackResult(SOCKET sock, const ServerPlayer& player,
     const AttackRequestPacket* req, uint32_t tick,
     bool accepted, uint8_t reason, uint32_t projectileId,
     int32_t magazineAmmo, int32_t reserveAmmo,
-    uint64_t nextAllowedFireTick, uint32_t stateRevision)
+    uint64_t nextAllowedFireTick, uint32_t stateRevision,
+    uint8_t hitVerdict = 0)
 {
     AttackResultPacket result{};
     result.header.type = PACKET_ATTACK_RESULT;
@@ -164,10 +229,11 @@ static void sendAttackResult(SOCKET sock, const ServerPlayer& player,
     result.stateRevision = stateRevision;
     result.serverTick = tick;
     result.weaponDefNetworkId = req->weaponDefNetworkId;
+    result.hitVerdict = hitVerdict;
 
     // Cache the result so retries are idempotent
     cacheAttackResult(player, req, accepted, reason, projectileId,
-        magazineAmmo, reserveAmmo, nextAllowedFireTick, stateRevision);
+        magazineAmmo, reserveAmmo, nextAllowedFireTick, stateRevision, hitVerdict);
 
     serverSendToPlayer(sock, player, &result, sizeof(result));
 }
@@ -444,13 +510,18 @@ void handleAttackRequest(
             targetDesc.playerId = target.id;
             targetDesc.spawnGeneration = target.spawnGeneration;
             glm::vec3 rewoundPos;
-            if (getPositionAtTick(target, rewindTick, rewoundPos))
+            float rewoundYaw = target.yaw;
+            if (getPlayerPoseAtTick(target, rewindTick, rewoundPos, rewoundYaw))
                 targetDesc.position = rewoundPos;
             else
                 targetDesc.position = target.pos;
             targetDesc.radius = PLAYER_RADIUS;
             targetDesc.height = PLAYER_HEIGHT;
             targetDesc.dead = target.dead;
+            // Reconstruct the victim's real body-part hitboxes (head/torso/
+            // arms/legs) at the rewound pose + rewound yaw from the standard
+            // body template — never an invisible capsule.
+            fillTargetBodyParts(targetDesc, targetDesc.position, rewoundYaw);
             targets.push_back(targetDesc);
         }
         // Also include NPCs as trace targets, validated at the pose the
@@ -464,7 +535,8 @@ void handleAttackRequest(
                 continue;
             glm::vec3 tracePos = npc.pos;
             glm::vec3 rewoundPos;
-            if (getNpcPositionAtTick(npc, rewindTick, rewoundPos))
+            float rewoundYaw = npc.yaw;
+            if (getNpcPoseAtTick(npc, rewindTick, rewoundPos, rewoundYaw))
                 tracePos = rewoundPos;
             WeaponExecution::PlayerTarget targetDesc;
             targetDesc.playerId = npc.entityId; // use entityId as pseudo-playerId
@@ -473,6 +545,9 @@ void handleAttackRequest(
             targetDesc.radius = PLAYER_RADIUS;
             targetDesc.height = PLAYER_HEIGHT;
             targetDesc.dead = false;
+            // Reconstruct the NPC's body-part hitboxes at the rewound pose +
+            // rewound yaw (the facing the attacker actually saw) — no capsule.
+            fillTargetBodyParts(targetDesc, targetDesc.position, rewoundYaw);
             targets.push_back(targetDesc);
 
             // Debug: surface the visible-pose vs current-pose transform
@@ -510,6 +585,153 @@ void handleAttackRequest(
         traceConfig.beamWorldThickness = beamWorldThickness;
         WeaponExecution::HitscanTraceResult trace =
             WeaponExecution::traceHitscan(*def, origin, direction, traceConfig, targets);
+
+        // ── Client hit-claim acceptance ("shoot what I saw") ─────────────
+        // The re-trace above is authoritative, but under jitter / rewind-pose
+        // mismatch a shot that visually connected on the shooter's rendered
+        // body can miss the rewound pose. When the client claimed a hit on a
+        // specific target, accept it if the claimed hit point lies inside that
+        // target's rewound collision volume (body parts for NPCs, capsule +
+        // tolerance for players) and is not wall-occluded — so what the shooter
+        // saw is what takes damage.
+        if (req->claimedTargetId != 0)
+        {
+            const glm::vec3 claimedHit(req->claimedHitX, req->claimedHitY, req->claimedHitZ);
+            const glm::vec3 claimedDir = claimedHit - origin;
+            const float claimedDist = glm::length(claimedDir);
+            bool alreadyConfirmed = false;
+            for (const auto& agg : trace.aggregates)
+            {
+                if (agg.targetPlayerId == req->claimedTargetId)
+                {
+                    alreadyConfirmed = true;
+                    break;
+                }
+            }
+            if (!alreadyConfirmed && claimedDist > 0.001f &&
+                claimedDist <= maxRange)
+            {
+                // World occlusion: a claimed hit must not pass through a wall
+                // relative to the shooter's fire-time origin.
+                bool occluded = false;
+                if (beamWorldThickness > 0.0f)
+                {
+                    float sweptDist = 0.0f;
+                    glm::vec3 wNml;
+                    if (serverSweptSphereWorld(origin, claimedDir / claimedDist,
+                                               claimedDist, beamWorldThickness,
+                                               world, sweptDist, wNml) &&
+                        sweptDist < claimedDist - 0.1f)
+                        occluded = true;
+                }
+                else
+                {
+                    glm::vec3 worldHit;
+                    glm::vec3 wNml;
+                    if (serverRaycastWorld(origin, claimedDir / claimedDist,
+                                           claimedDist, world, worldHit, wNml) &&
+                        glm::length(worldHit - origin) < claimedDist - 0.1f)
+                        occluded = true;
+                }
+
+                if (!occluded)
+                {
+                    const float tolerance =
+                        std::max(0.0f, NetworkingConfig::instance().data()
+                                           .remotePlayers.rewindHitTolerance);
+                    bool claimAccepted = false;
+                    uint8_t claimPart = req->claimedBodyPart;
+                    uint32_t claimedSpawnGen = 0;
+                    auto npcClaimIt = npcs.find(req->claimedTargetId);
+                    if (npcClaimIt != npcs.end())
+                    {
+                        const ServerNpc& npc = npcClaimIt->second;
+                        if (npc.health > 0)
+                        {
+                            // Validate the claimed hit against the NPC's real
+                            // body-part hitboxes reconstructed at the rewound
+                            // pose + rewound yaw — never a capsule.
+                            glm::vec3 rewoundPos = npc.pos;
+                            float rewoundYaw = npc.yaw;
+                            getNpcPoseAtTick(npc, rewindTick, rewoundPos, rewoundYaw);
+                            if (claimedHitInBodyParts(claimedHit, rewoundPos, rewoundYaw,
+                                                      tolerance, claimPart))
+                                claimAccepted = true;
+                        }
+                    }
+                    else
+                    {
+                        auto playerClaimIt = players.find(req->claimedTargetId);
+                        if (playerClaimIt != players.end() &&
+                            !playerClaimIt->second.dead &&
+                            playerClaimIt->second.spawnState == ServerPlayer::Active)
+                        {
+                            claimedSpawnGen = playerClaimIt->second.spawnGeneration;
+                            glm::vec3 rewoundPos = playerClaimIt->second.pos;
+                            float rewoundYaw = playerClaimIt->second.yaw;
+                            getPlayerPoseAtTick(playerClaimIt->second, rewindTick,
+                                                rewoundPos, rewoundYaw);
+                            // Validate the claimed hit against the victim's
+                            // reconstructed body-part hitboxes (same template as
+                            // the re-trace) — never a capsule.
+                            if (claimedHitInBodyParts(claimedHit, rewoundPos, rewoundYaw,
+                                                      tolerance, claimPart))
+                                claimAccepted = true;
+                        }
+                    }
+
+                    if (claimAccepted)
+                    {
+                        // Damage for the claimed hit using the claimed body
+                        // part + range falloff, mirroring the client model.
+                        float partMultiplier = 1.0f;
+                        if (claimPart == 1)
+                            partMultiplier = traceConfig.headshotMultiplier;
+                        else if (claimPart == 3)
+                            partMultiplier = traceConfig.limbDamageMultiplier;
+                        float falloff = 1.0f;
+                        if (traceConfig.distanceFalloffStart > 0.0f)
+                            falloff = std::clamp(
+                                1.0f - claimedDist / traceConfig.distanceFalloffStart,
+                                traceConfig.minDamageFraction, 1.0f);
+                        const float dmgF = traceConfig.damage * partMultiplier * falloff;
+                        WeaponExecution::HitscanDamageAggregate agg;
+                        agg.targetPlayerId = req->claimedTargetId;
+                        agg.targetSpawnGeneration = claimedSpawnGen;
+                        agg.damage = std::max(1, (int)std::round(dmgF));
+                        agg.pelletHits = 1;
+                        agg.hitPosition = claimedHit;
+                        agg.hitNormal = glm::vec3(0.0f, 0.0f, 1.0f);
+                        agg.knockback = claimedDir / claimedDist *
+                            (dmgF * traceConfig.knockbackPerDamage);
+                        agg.headshot = claimPart == 1;
+                        trace.aggregates.push_back(agg);
+                        Debug::log(Debug::Category::Weapons,
+                            "[ATTACK CLAIM ACCEPT] playerId=%u requestId=%u "
+                            "claimedTarget=%u part=%u dist=%.2f damage=%d\n",
+                            shooter.id, req->requestId, req->claimedTargetId,
+                            claimPart, claimedDist, agg.damage);
+                    }
+                    else
+                    {
+                        Debug::log(Debug::Category::Weapons,
+                            "[ATTACK CLAIM REJECT] playerId=%u requestId=%u "
+                            "claimedTarget=%u claimedHit=(%.2f,%.2f,%.2f) "
+                            "rewindTick=%u dist=%.2f reason=not-in-volume\n",
+                            shooter.id, req->requestId, req->claimedTargetId,
+                            claimedHit.x, claimedHit.y, claimedHit.z,
+                            rewindTick, claimedDist);
+                    }
+                }
+                else
+                {
+                    Debug::log(Debug::Category::Weapons,
+                        "[ATTACK CLAIM REJECT] playerId=%u requestId=%u "
+                        "claimedTarget=%u reason=world-occluded\n",
+                        shooter.id, req->requestId, req->claimedTargetId);
+                }
+            }
+        }
 
         if (rt.magazineAmmo > 0)
             rt.magazineAmmo--;
@@ -618,6 +840,7 @@ void handleAttackRequest(
             shotEvent.header.type = PACKET_SHOT_EVENT;
             shotEvent.header.tick = tick;
             shotEvent.header.playerId = shooter.id;
+            shotEvent.eventId = nextReliableGameplayEventId();
             shotEvent.shotSerial = req->requestId;
             shotEvent.clientTimeMs = req->clientSimulationTick;
             shotEvent.shooterPlayerId = shooter.id;
@@ -638,17 +861,35 @@ void handleAttackRequest(
             shotEvent.normalX = hitNml.x;
             shotEvent.normalY = hitNml.y;
             shotEvent.normalZ = hitNml.z;
-
-            for (const auto& pe : players)
+            // Full-beam endpoint so the tracer can continue past the first hit.
+            const glm::vec3 beamEnd = origin + direction * traceConfig.maxRange;
+            shotEvent.beamEndX = beamEnd.x;
+            shotEvent.beamEndY = beamEnd.y;
+            shotEvent.beamEndZ = beamEnd.z;
+            // Carry the real damage/health so the victim's damage number shows
+            // the actual amount (the reliable DamageConfirmed event is the
+            // source of truth for HP; this is presentation).
+            if (hitTarget != 0 && !trace.aggregates.empty())
             {
-                if (pe.second.transport)
-                    pe.second.transport->send(&shotEvent, sizeof(shotEvent));
-                else
-                    sendto(sock, (const char*)&shotEvent, sizeof(shotEvent), 0,
-                           (sockaddr*)&pe.second.addr,
-                           sizeof(pe.second.addr));
-                ++totalPacketsOut;
+                const auto& agg = trace.aggregates[0];
+                shotEvent.damage = agg.damage;
+                shotEvent.damageConfirmed = 1;
+                auto targetIt = players.find(agg.targetPlayerId);
+                if (targetIt != players.end())
+                {
+                    shotEvent.targetHealth = targetIt->second.health;
+                    shotEvent.killed = targetIt->second.health <= 0 ? 1 : 0;
+                }
             }
+
+            // Reliable broadcast: the bullet visual is re-sent until every
+            // client ACKs it, so a dropped shot event under badconn never
+            // loses the tracer.
+            queueReliableGameplayEventToAll(sock, players, &shotEvent,
+                                            sizeof(shotEvent),
+                                            shotEvent.eventId,
+                                            reliableGameplayEventSessionForPlayer(shooter),
+                                            totalPacketsOut);
 
             Debug::log(Debug::Category::Weapons,
                        "[WEAPON_EVENT_BROADCAST] shooter=%u requestId=%u weapon=%s "
@@ -667,6 +908,7 @@ void handleAttackRequest(
             PelletBlastEventPacket blastEvent{};
             blastEvent.header.type = PACKET_PELLET_BLAST_EVENT;
             blastEvent.header.tick = tick;
+            blastEvent.eventId = nextReliableGameplayEventId();
             blastEvent.shooterPlayerId = shooter.id;
             blastEvent.shotSerial = req->requestId;
             blastEvent.clientTimeMs = req->clientSimulationTick;
@@ -680,6 +922,13 @@ void handleAttackRequest(
             blastEvent.baseDirZ = direction.z;
             blastEvent.weapon = netWeapon;
             blastEvent.pelletCount = (uint8_t)std::min(pelletCount, (int)MAX_NETWORK_PELLETS);
+            blastEvent.maxRange = traceConfig.maxRange;
+            {
+                const glm::vec3 beamEnd = origin + direction * traceConfig.maxRange;
+                blastEvent.beamEndX = beamEnd.x;
+                blastEvent.beamEndY = beamEnd.y;
+                blastEvent.beamEndZ = beamEnd.z;
+            }
 
             for (int i = 0; i < pelletCount && i < MAX_NETWORK_PELLETS; ++i)
             {
@@ -729,21 +978,50 @@ void handleAttackRequest(
                 t.killed = 0;
             }
 
-            for (const auto& pe : players)
-            {
-                if (pe.second.transport)
-                    pe.second.transport->send(&blastEvent, sizeof(blastEvent));
-                else
-                    sendto(sock, (const char*)&blastEvent, sizeof(blastEvent), 0,
-                           (sockaddr*)&pe.second.addr,
-                           sizeof(pe.second.addr));
-                ++totalPacketsOut;
-            }
+            // Reliable broadcast: pellet visuals are re-sent until ACKed so a
+            // dropped event under badconn never loses the shotgun blast.
+            queueReliableGameplayEventToAll(sock, players, &blastEvent,
+                                            sizeof(blastEvent),
+                                            blastEvent.eventId,
+                                            reliableGameplayEventSessionForPlayer(shooter),
+                                            totalPacketsOut);
         }
 
+        uint8_t hitVerdict = HIT_VERDICT_MISS;
+        if (!trace.aggregates.empty())
+        {
+            bool hitClaimed = false;
+            for (const auto& agg : trace.aggregates)
+            {
+                if (req->claimedTargetId != 0 && agg.targetPlayerId == req->claimedTargetId)
+                {
+                    hitClaimed = true;
+                    break;
+                }
+            }
+            hitVerdict = hitClaimed ? HIT_VERDICT_HIT_CLAIMED_TARGET
+                                    : HIT_VERDICT_HIT_OTHER_TARGET;
+        }
+        {
+            int totalDmg = 0;
+            for (const auto& agg : trace.aggregates)
+                totalDmg += agg.damage;
+            char msg[512];
+            std::snprintf(msg, sizeof(msg),
+                          "player=%u weapon=%s claimed=%u pellets=%d damage=%d verdict=%u origin=(%.2f,%.2f,%.2f) dir=(%.3f,%.3f,%.3f)",
+                          shooter.id, def->id.c_str(), req->claimedTargetId,
+                          trace.pelletCount, totalDmg, (unsigned)hitVerdict,
+                          origin.x, origin.y, origin.z,
+                          direction.x, direction.y, direction.z);
+            ::logStructured(::StructuredCategory::Network, ::StructuredLevel::Important,
+                            "ATTACK_HITSCAN_ACCEPT",
+                            "ATTACK_" + std::to_string(req->requestId),
+                            "authoritative hitscan trace result", msg);
+        }
         sendAttackResult(sock, shooter, req, tick, true, 0, 0,
                          rt.magazineAmmo, rt.reserveAmmo,
-                         rt.nextAllowedFireTick, rt.stateRevision);
+                         rt.nextAllowedFireTick, rt.stateRevision,
+                         hitVerdict);
         return;
     }
 

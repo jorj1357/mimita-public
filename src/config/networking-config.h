@@ -241,6 +241,27 @@ struct RemoteMotionSmoothingConfig
     // behind the newest received tick (usually after a long pause/blackout).
     bool linearReanchorEnabled = true;
     double linearReanchorOnlyIfErrorSeconds = 0.250;
+    // linear mode: when true, linear can never render the newest snapshot
+    // directly. The time-gap emergency snap and the teleport-distance snap are
+    // both disabled, and any tick gap wider than linear_hold_gap_ticks freezes
+    // the body at its last rendered position instead of bridging a stale
+    // straight line. Combined with linear_glide_max_units_per_second this
+    // makes a position teleport physically impossible: the body can only be at
+    // a lerped position, a frozen position, or gliding toward the target.
+    bool linearNeverSkip = false;
+    // linear mode (linear_never_skip): if the tick gap between the two
+    // bracketing snapshots exceeds this, render the last position (freeze)
+    // until the render clock reaches continuous data. Prevents the one-frame
+    // high-alpha leap across a loss hole or blackout. 0 = only freeze when the
+    // buffer is fully dry.
+    uint32_t linearHoldGapTicks = 2;
+    // linear mode: final anti-snap glide gate on the rendered body. The
+    // rendered position may only move toward the interpolated target at this
+    // many units/sec (1 unit = 1 meter). Normal motion (walk ~20, dash ~100,
+    // terminal fall ~400) is below it and passes untouched; any discontinuity
+    // glides from the last known position to the newest confirmed position.
+    // 0 = disabled (compiled default).
+    double linearGlideMaxUnitsPerSecond = 0.0;
     // Diagnostic threshold only: logs when the delayed render sample advances
     // by more than this many ms in one rendered frame.
     double maxRenderTimeJumpSeconds = 0.005;
@@ -331,7 +352,7 @@ struct NetworkRetryConfig
 
 struct ReliableGameplayEventConfig
 {
-    std::size_t maxPendingPerPlayer = 64;
+    std::size_t maxPendingPerPlayer = 256;
     double retryMs = 100.0;
     double ttlMs = 10000.0;
     uint32_t maxAttempts = 80;
@@ -339,7 +360,7 @@ struct ReliableGameplayEventConfig
 
 struct NetworkBufferLimitConfig
 {
-    std::size_t serverPositionHistoryTicks = 30;
+    std::size_t serverPositionHistoryTicks = 600;
     std::size_t serverBroadcastSampleLimit = 128;
 };
 
@@ -384,9 +405,19 @@ struct NetworkPredictionConfig
     // Predict the target's damage numbers + health bar on the local trace.
     // Hitmarker + hit sound are ALWAYS predicted regardless of this toggle.
     bool predictDamage = true;
-    // Predict lethal deaths (instant death animation + kill heal) with rollback
-    // when the server disagrees. When false, deaths are server-confirmed only.
-    bool predictDeaths = false;
+    // Predict lethal deaths (instant death animation + kill heal). Rolled back
+    // the moment the AttackResult verdict disagrees, so with body-part hit
+    // agreement feedback stays instant AND accurate even on bad connections.
+    bool predictDeaths = true;
+};
+
+// Combat visual toggle: when true (default), hitscan/bullet tracers continue to
+// the weapon's max range past whatever they first hit — the beam visually
+// passes through walls/players while a hit effect still plays at the first
+// contact. Damage is still applied at the first hit only (no penetration yet).
+struct NetworkCombatConfig
+{
+    bool beamContinueAfterHit = true;
 };
 
 struct NetworkingConfigData
@@ -413,6 +444,7 @@ struct NetworkingConfigData
     NetworkingTimeoutConfig timeouts;
     NetworkingDebugConfig debug;
     NetworkPredictionConfig prediction;
+    NetworkCombatConfig combat;
 };
 
 // Singleton config following the repo convention (WeaponHitFxConfig,

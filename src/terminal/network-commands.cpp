@@ -226,6 +226,9 @@ const std::vector<NetConfigKnob>& netConfigKnobs()
         {"linear_delay_loss_weight", false, false, false, 0.0, 10.0, "remote_motion_smoothing"},
         {"linear_snap_after_gap_ticks", false, false, false, 0.0, 1000.0, "remote_motion_smoothing"},
         {"linear_deadzone_units", false, false, false, 0.0, 1.0, "remote_motion_smoothing"},
+        {"linear_never_skip", false, true, false, 0.0, 1.0, "remote_motion_smoothing"},
+        {"linear_hold_gap_ticks", false, false, false, 0.0, 128.0, "remote_motion_smoothing"},
+        {"linear_glide_max_units_per_second", false, false, false, 0.0, 10000.0, "remote_motion_smoothing"},
         {"linear_clock_source", false, false, true, 0.0, 1.0, "remote_motion_smoothing"},
         {"linear_reanchor_enabled", false, true, false, 0.0, 1.0, "remote_motion_smoothing"},
         {"linear_reanchor_only_if_error_ms", true, false, false, 0.0, 5000.0, "remote_motion_smoothing"},
@@ -989,6 +992,29 @@ void registerNetworkCommands()
                 (unsigned long long)snapshotAge);
             Terminal::instance().addLog(buf);
 
+            {
+                const uint64_t lastHeardAge = mp.lastHeardServerMs
+                    ? (now >= mp.lastHeardServerMs ? now - mp.lastHeardServerMs : 0)
+                    : 0;
+                const uint64_t lastSentAge = mp.lastPacketSentMs
+                    ? (now >= mp.lastPacketSentMs ? now - mp.lastPacketSentMs : 0)
+                    : 0;
+                snprintf(buf, sizeof(buf),
+                    "[NETSTATS] health=%s lastRxAge=%llums lastTxAge=%llums "
+                    "reconnectAttempts=%d elapsedMs=%llu bailInMs=%llu",
+                    MimitaNet::mpConnectionHealthText(mp).c_str(),
+                    (unsigned long long)lastHeardAge,
+                    (unsigned long long)lastSentAge,
+                    mp.reconnectAttempts,
+                    (unsigned long long)(mp.disconnectStartedMs
+                        ? (now >= mp.disconnectStartedMs ? now - mp.disconnectStartedMs : 0) : 0),
+                    (unsigned long long)(mp.reconnectGraceDeadlineMs
+                        ? (now < mp.reconnectGraceDeadlineMs
+                            ? mp.reconnectGraceDeadlineMs - now : 0) : 0));
+                Terminal::instance().addLog(buf);
+            }
+            Terminal::instance().addLog(buf);
+
             snprintf(buf, sizeof(buf),
                 "[NETSTATS] renderClock=%.2f ticks delay=%.1fms mode=%s "
                 "frame=%llu clockStepMs=%.1f reanchors=%u lastReanchorMs=%.1f reason=%s",
@@ -1010,7 +1036,8 @@ void registerNetworkCommands()
                     "[NETSTATS] filter=%s freqHz=%.1f zeta=%.2f ff=%.2f "
                     "ffSmooth=%.2f zMult=%.2f maxSpd=%.0f maxStep=%.0f clampZ=%d "
                     "linTicks=%u linMinMax=%u/%u linHold=%d catchup=%.2f "
-                    "clock=%s reanchorMs=%.0f maxJumpMs=%.1f sFreq=%.1f sFF=%.2f sDead=%.3f",
+                    "clock=%s reanchorMs=%.0f maxJumpMs=%.1f sFreq=%.1f sFF=%.2f sDead=%.3f "
+                    "neverSkip=%d holdGap=%u glide=%.0f",
                     m.renderFilter.c_str(), m.hybridFrequencyHz,
                     m.hybridDampingRatio, m.hybridFeedForward,
                     m.hybridFeedForwardSmoothing, m.hybridFrequencyZMultiplier,
@@ -1026,7 +1053,10 @@ void registerNetworkCommands()
                     m.linearReanchorOnlyIfErrorSeconds * 1000.0,
                     m.maxRenderTimeJumpSeconds * 1000.0,
                     m.springFrequencyHz, m.springFeedForward,
-                    m.springLinearDeadzoneUnits);
+                    m.springLinearDeadzoneUnits,
+                    (int)m.linearNeverSkip,
+                    (unsigned)m.linearHoldGapTicks,
+                    m.linearGlideMaxUnitsPerSecond);
                 Terminal::instance().addLog(buf);
             }
 
@@ -1062,16 +1092,86 @@ void registerNetworkCommands()
                 snprintf(buf, sizeof(buf),
                     "  id=%u buf=%zu newest=%u render=%.2f dRender=%.2f older=%u newer=%u "
                     "alpha=%.3f dAlpha=%.3f delay=%.1fms jit=%.1fms hold=%u underrun=%u "
-                    "jump=%u hardSnap=%u predDmg=%d hpCap=%d dRenderToTarget=%.2fm",
+                    "jump=%u hardSnap=%u glide=%u predDmg=%d hpCap=%d dRenderToTarget=%.2fm",
                     kv.first, s.buffer.size(), s.target.serverTick, s.renderTick,
                     s.renderTickDelta, s.sampleOlderTick, s.sampleNewerTick,
                     s.sampleAlpha, s.sampleAlphaDelta,
                     s.adaptiveDelaySeconds * 1000.0, s.estimatedArrivalJitterMs,
                     s.holdCount, s.bufferUnderrunCount,
                     s.renderJumpCount, s.hardSnapCount,
+                    (unsigned)s.glideSnapCount,
                     s.pendingPredictedDamage, s.predictedHealthCap,
                     dTarget);
                 Terminal::instance().addLog(buf);
+            }
+        }
+    });
+
+    // ── connstate: force the client connection-health state for testing ──
+    // Lets scenarios B–F run instantly without waiting on badconn blackouts or
+    // killing the server. Drives the same honest state machine / notifications
+    // the real network does, so UI and effects can be verified on demand.
+    Terminal::instance().registerCommand({
+        "connstate", "Force the client connection-health state for testing",
+        "connstate <status|weak|reconnect|disconnect|recover>",
+        [](const std::vector<std::string>& args) {
+            MimitaNet::MultiplayerContext& mp = MP_CONTEXT;
+            if (args.size() < 2)
+            {
+                Terminal::instance().addLog(
+                    "[CONNSTATE] usage: connstate <status|weak|reconnect|disconnect|recover>");
+                Terminal::instance().addLog(
+                    "[CONNSTATE] current: " + MimitaNet::mpConnectionHealthText(mp));
+                return;
+            }
+            const std::string& action = args[1];
+            if (action == "status")
+            {
+                Terminal::instance().addLog(
+                    "[CONNSTATE] state=" + std::string(
+                        MimitaNet::connectionStateName(mp.connectionState)) +
+                    " connected=" + (mp.connected ? "1" : "0") +
+                    " " + MimitaNet::mpConnectionHealthText(mp));
+                return;
+            }
+            if (!mp.active)
+            {
+                Terminal::instance().addLog("[CONNSTATE] no active session");
+                return;
+            }
+            if (action == "weak")
+            {
+                // Simulate stale packets: force last-heard back past the threshold.
+                mp.lastHeardServerMs = MimitaNet::nowMs() - 4000;
+                Terminal::instance().addLog("[CONNSTATE] forced weak/stale (lastHeard=4s ago)");
+            }
+            else if (action == "reconnect")
+            {
+                mp.lastHeardServerMs = MimitaNet::nowMs() - 12000;
+                mp.reconnectGraceDeadlineMs =
+                    MimitaNet::nowMs() + (uint64_t)
+                        NetworkingConfig::instance().data().retries.reconnectGraceMs;
+                Terminal::instance().addLog("[CONNSTATE] forced reconnecting (12s silent)");
+            }
+            else if (action == "disconnect")
+            {
+                // Give up immediately: grace deadline already passed.
+                mp.lastHeardServerMs = MimitaNet::nowMs() - 12000;
+                mp.reconnectGraceDeadlineMs = MimitaNet::nowMs() - 1;
+                Terminal::instance().addLog("[CONNSTATE] forced disconnect (grace expired)");
+            }
+            else if (action == "recover")
+            {
+                mp.lastHeardServerMs = MimitaNet::nowMs();
+                mp.disconnectStartedMs = 0;
+                mp.reconnectGraceDeadlineMs = 0;
+                Terminal::instance().addLog("[CONNSTATE] forced recovery (fresh packets)");
+            }
+            else
+            {
+                Terminal::instance().addLog(
+                    "[CONNSTATE] unknown action '" + action + "' — use weak|reconnect|disconnect|recover|status");
+                return;
             }
         }
     });

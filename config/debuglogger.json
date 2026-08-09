@@ -37,9 +37,9 @@
       "file_output": true
     },
     "network": {
-      "level": "off",
+      "level": "important",
       "file_output": true,
-      "throttle": 1.0
+      "throttle": 0.0
     },
     "rendering": {
       "level": "verbose",

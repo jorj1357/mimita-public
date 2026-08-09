@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "comment": "Per-weapon bullet tracer visuals (hot reloads ~250ms, no rebuild). Each weapon block overrides defaults. thickness/end_thickness in world units, alpha 0..1, color RGB 0..1. Edit while the game runs.",
+  "defaults": {
+    "enabled": true,
+    "thickness": 0.2,
+    "end_thickness": 0.0,
+    "lifetime": 0.5,
+    "scale": 0.2,
+    "end_scale": 0.0,
+    "start_alpha": 1.0,
+    "end_alpha": 0.0,
+    "color": [1.0, 0.82, 0.05]
+  },
+  "revolver": {
+    "thickness": 0.1,
+    "end_thickness": 0.0,
+    "lifetime": 0.5,
+    "color": [1.0, 0.82, 0.05]
+  },
+  "shotgun": {
+    "thickness": 0.15,
+    "end_thickness": 0.0,
+    "lifetime": 0.35,
+    "color": [1.0, 0.6, 0.1]
+  },
+  "aa12": {
+    "thickness": 0.15,
+    "end_thickness": 0.0,
+    "lifetime": 0.35,
+    "color": [1.0, 0.6, 0.1]
+  }
+}

@@ -194,6 +194,12 @@ int runServer(const LaunchOptions& options)
 
     ::StructuredLogger::instance().init();
 
+    // Load the standard player body shape headlessly so the authoritative
+    // server can reconstruct real body-part hitboxes (players + NPCs) for hit
+    // validation. This is the single source of truth for body shape.
+    if (gServerBodyTemplate.empty())
+        loadServerBodyTemplateFromGlb(nullptr, gServerBodyTemplate);
+
     WeaponData::registerBuiltinWeapons();
     printf("%s [SERVER] registered built-in weapons\n", serverTimestamp());
 
@@ -493,9 +499,13 @@ int runServer(const LaunchOptions& options)
         int steps = 0;
         while (accumulator >= (double)SERVER_DT && steps < MAX_STEPS)
         {
-            handleClientTimeout(players);
+            handleClientTimeout(players, sock, totalPacketsOut);
             for (auto& kv : players)
             {
+                // A disconnected/stale player's body freezes in place (slot kept
+                // alive for the reconnect grace window). No simulation, no death.
+                if (kv.second.connectionStale)
+                    continue;
                 simulatePlayer(kv.second, world);
                 updateServerBroadcastInterp(kv.second, tick);
                 pushPositionHistory(kv.second, tick);
@@ -702,6 +712,10 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     if (!loadHeadlessWorld(mapPath.c_str(), state.world))
         printf("[LISTEN SERVER] WARNING: headless world load failed; using floor fallback\n");
 
+    // Load the standard player body shape headlessly for hit validation.
+    if (gServerBodyTemplate.empty())
+        loadServerBodyTemplateFromGlb(nullptr, gServerBodyTemplate);
+
     // Real client World + NpcSystem so online NPCs run the exact local NPC AI.
     state.npcWorld = std::make_unique<World>();
     buildNpcWorldCollision(*state.npcWorld, state.world);
@@ -879,9 +893,13 @@ static void simulateOneServerTick(ListenServerState& state)
                                 &state.disagreementRetransmit);
         }
 
-        handleClientTimeout(state.players);
+        handleClientTimeout(state.players, state.sock, state.totalPacketsOut);
         for (auto& kv : state.players)
         {
+            // Disconnected players freeze in place; their slot survives the
+            // reconnect grace window so a returning client is restored.
+            if (kv.second.connectionStale)
+                continue;
             simulatePlayer(kv.second, state.world);
             updateServerBroadcastInterp(kv.second, state.tick);
             pushPositionHistory(kv.second, state.tick);

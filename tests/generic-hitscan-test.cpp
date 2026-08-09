@@ -51,6 +51,22 @@ static WeaponExecution::PlayerTarget target(uint32_t id, glm::vec3 pos, float ra
     t.position = pos;
     t.radius = radius;
     t.height = 3.5f;
+    // Server traces require real body-part hitboxes (no capsule fallback).
+    // A torso box + head box centered on the target.
+    {
+        WeaponExecution::PlayerTarget::BodyPartBox torso;
+        torso.center = pos + glm::vec3(0.0f, 0.0f, 1.0f);
+        torso.half = glm::vec3(radius, radius, 1.0f);
+        torso.bodyPart = WeaponExecution::HitBodyPart::Torso;
+        t.bodyParts.push_back(torso);
+    }
+    {
+        WeaponExecution::PlayerTarget::BodyPartBox head;
+        head.center = pos + glm::vec3(0.0f, 0.0f, 3.1f);
+        head.half = glm::vec3(0.3f, 0.3f, 0.3f);
+        head.bodyPart = WeaponExecution::HitBodyPart::Head;
+        t.bodyParts.push_back(head);
+    }
     return t;
 }
 
@@ -82,7 +98,7 @@ static void testHeadshotAndWorldBlock()
     cfg.pelletCount = 1;
     cfg.worldBlockDistance = cfg.maxRange;
     auto head = WeaponExecution::traceHitscan(
-        def, glm::vec3(0.0f, 0.0f, 1.2f), glm::vec3(1.0f, 0.0f, 0.0f), cfg,
+        def, glm::vec3(0.0f, 0.0f, 3.1f), glm::vec3(1.0f, 0.0f, 0.0f), cfg,
         {target(3, glm::vec3(10.0f, 0.0f, 0.0f))});
     check(head.aggregates.size() == 1, "headshot target hit");
     check(head.aggregates[0].headshot, "headshot flag set");

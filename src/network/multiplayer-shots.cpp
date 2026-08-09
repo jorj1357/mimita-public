@@ -23,6 +23,7 @@
 #include "terminal/terminal-state.h"
 #include "config/networking-config.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -136,11 +137,29 @@ void releaseOrQueueShotEvent(MultiplayerContext& ctx, const NetworkShotEvent& ev
 
 } // namespace
 
+bool mpVisualTimelineReady(const MultiplayerContext& ctx,
+                           uint32_t shooterId,
+                           uint32_t visualServerTick,
+                           uint64_t receivedMs)
+{
+    return visualTimelineReady(ctx, shooterId, visualServerTick, receivedMs);
+}
+
 void applyPelletBlastEventPacket(MultiplayerContext& ctx,
                                  const PelletBlastEventPacket* event);
 
 void mpProcessShotEventPacket(MultiplayerContext& ctx, const ShotEventPacket* event)
 {
+    // Reliable delivery dedup + ACK: retransmissions of the same shot event
+    // are dropped here and the server stops re-sending once we ACK.
+    if (!mpAcceptReliableEventOnce(ctx, event->eventId, event->eventSessionId))
+    {
+        Debug::log(Debug::Category::Networking,
+                   "[NET SHOT RECV] shooter=%u serial=%u skipped=duplicate-reliable eventId=%u\n",
+                   event->shooterPlayerId, event->shotSerial, event->eventId);
+        return;
+    }
+
     uint32_t& lastSerial = ctx.lastReceivedShotSerial[event->shooterPlayerId];
     if (lastSerial != 0 &&
         (int32_t)(event->shotSerial - lastSerial) <= 0)
@@ -173,9 +192,24 @@ void mpProcessShotEventPacket(MultiplayerContext& ctx, const ShotEventPacket* ev
     out.origin = {event->originX, event->originY, event->originZ};
     out.hit = {event->hitX, event->hitY, event->hitZ};
     out.direction = {event->dirX, event->dirY, event->dirZ};
+    out.beamEnd = {event->beamEndX, event->beamEndY, event->beamEndZ};
     out.normal = {event->normalX, event->normalY, event->normalZ};
     out.knockback = {event->knockX, event->knockY, event->knockZ};
     releaseOrQueueShotEvent(ctx, out);
+    {
+        char msg[512];
+        std::snprintf(msg, sizeof(msg),
+                      "shooter=%u serial=%u weapon=%u impact=%u origin=(%.2f,%.2f,%.2f) hit=(%.2f,%.2f,%.2f) damage=%d",
+                      event->shooterPlayerId, event->shotSerial,
+                      (unsigned)event->weapon, (unsigned)event->impactType,
+                      out.origin.x, out.origin.y, out.origin.z,
+                      out.hit.x, out.hit.y, out.hit.z, event->damage);
+        ::logStructured(::StructuredCategory::Network, ::StructuredLevel::Important,
+                        "SHOT_EVENT_RECV",
+                        "SHOT_" + std::to_string(event->shooterPlayerId) + "_" +
+                            std::to_string(event->shotSerial),
+                        "reliable shot event delivered", msg);
+    }
     printf("[NET SHOT RECV] shooter=%u serial=%u weapon=%u impact=%u "
            "flags=0x%03x damageConfirmed=%d visualTick=%u origin=(%.2f %.2f %.2f) "
            "hit=(%.2f %.2f %.2f)\n",
@@ -468,6 +502,15 @@ void mpSendPelletBlastRequest(MultiplayerContext& ctx, uint8_t weapon,
 
 void mpProcessPelletBlastEventPacket(MultiplayerContext& ctx, const PelletBlastEventPacket* event)
 {
+    // Reliable delivery dedup + ACK (retransmissions dropped here).
+    if (!mpAcceptReliableEventOnce(ctx, event->eventId, event->eventSessionId))
+    {
+        Debug::log(Debug::Category::Networking,
+                   "[PELLET BLAST CLIENT RECV] shooter=%u serial=%u duplicate-reliable=1 skipped=1\n",
+                   event->shooterPlayerId, event->shotSerial);
+        return;
+    }
+
     // Deduplicate by shooter + serial
     uint64_t dedupKey = ((uint64_t)event->shooterPlayerId << 32) | event->shotSerial;
     if (ctx.processedPelletBlastSerials.count(dedupKey))
@@ -517,6 +560,8 @@ void applyPelletBlastEventPacket(MultiplayerContext& ctx,
     const glm::vec3 visualDelta =
         mpRemoteShooterRenderDelta(ctx, event->shooterPlayerId);
     const glm::vec3 visualOrigin = origin + visualDelta;
+    const bool continueAfterHit = NetworkingConfig::instance().data()
+        .combat.beamContinueAfterHit;
 
     printf("[PELLET BLAST CLIENT RECV] shooter=%u serial=%u weapon=%s "
            "pelletCount=%u origin=(%.2f,%.2f,%.2f) localShooter=%d\n",
@@ -540,7 +585,18 @@ void applyPelletBlastEventPacket(MultiplayerContext& ctx,
         // Only render tracers for non-shooter (shooter already predicted)
         if (!isLocalShooter)
         {
-            EffectPartSystem::instance().spawnTracer(visualOrigin, hitPos + visualDelta, weaponName);
+            // Start at the shooter's rendered body. With beam_continue_after_hit
+            // each pellet's tracer continues to the weapon's max range past the
+            // first hit; otherwise it ends at the confirmed hit point.
+            glm::vec3 tracerEnd = hitPos;
+            if (continueAfterHit && event->maxRange > 0.0f)
+            {
+                const glm::vec3 d = glm::length(hitPos - origin) > 0.001f
+                    ? glm::normalize(hitPos - origin)
+                    : glm::normalize(baseDir);
+                tracerEnd = visualOrigin + d * event->maxRange;
+            }
+            EffectPartSystem::instance().spawnTracer(visualOrigin, tracerEnd, weaponName, 1.0f, weaponName);
         }
 
         if (pellet.impactType == PELLET_IMPACT_WORLD)

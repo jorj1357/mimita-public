@@ -40,8 +40,8 @@ static AttackRequestPacket requestFor(uint16_t defId, int16_t slot, uint8_t vari
 
 int main()
 {
-    check(PROTOCOL_VERSION == 27, "protocol version bumped for VIP style event layout");
-    check(sizeof(AttackRequestPacket) <= 96, "AttackRequest remains one compact safe datagram");
+    check(PROTOCOL_VERSION >= 29, "protocol version bumped for AttackRequest hit claim");
+    check(sizeof(AttackRequestPacket) <= 128, "AttackRequest remains one compact safe datagram");
     check(requestFor(1, 1, 0).weaponDefNetworkId == 1, "revolver uses generic request");
     check(requestFor(2, 3, 0).weaponDefNetworkId == 2, "shotgun uses generic request");
     check(requestFor(7, 7, 0).weaponDefNetworkId == 7, "rocket launcher uses generic request");
