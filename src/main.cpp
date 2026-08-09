@@ -44,7 +44,8 @@
 #include <vector>
 #include <random>
 #include <filesystem>
-#include <shellapi.h>
+// POV: no linux XDD
+// #include <shellapi.h>
 #include "engine/engine.h"
 #include "world/world.h"
 #include "world/world-loader.h"

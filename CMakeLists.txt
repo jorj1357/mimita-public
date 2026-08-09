@@ -23,3 +23,6 @@ set_target_properties(mimita-game PROPERTIES
     OUTPUT_NAME "mimita-game"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/build"
 )
+add_executable(mimita
+    src/main.cpp
+)
