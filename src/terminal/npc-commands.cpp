@@ -1,3 +1,11 @@
+// 08 09 2026, 14 30
+/* purpose
+* Registers terminal commands for NPC spawning, selection, deletion, difficulty
+* overrides, and NPC difficulty config inspection/saving.
+* Does NOT implement NPC AI, movement, combat, or config loading itself.
+* Does NOT modify NPC behavior at runtime beyond what the config supports.
+*/
+
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -90,9 +98,11 @@ void registerNpcCommands()
             const auto& s = NpcDifficultyConfig::instance().settings();
             char buf[512];
             snprintf(buf, sizeof(buf),
-                "[NPC DIFFICULTY] maxErr=%.1fdeg diffScale=%.2f dmg=%.2fx fireDelay=[%.2f,%.2f] aggressionBonus=%.2f forceHit=%d",
+                "[NPC DIFFICULTY] maxErr=%.1fdeg diffScale=%.2f dmg=%.2fx fireDelay=[%.2f,%.2f] aggressionBonus=%.2f forceHit=%d turnSpeed=%.0fdeg/s aim=[%.1f,%.1f]s move=[%.1f,%.1f]s",
                 s.maxAngularErrorDegrees, s.difficultyErrorScale, s.damageMultiplier,
-                s.fireDelayMin, s.fireDelayMax, s.aggressionBonus, (int)s.forceHit);
+                s.fireDelayMin, s.fireDelayMax, s.aggressionBonus, (int)s.forceHit,
+                s.turnSpeed, s.aimAtTargetMin, s.aimAtTargetMax,
+                s.faceMovementMin, s.faceMovementMax);
             Terminal::instance().addLog(buf);
         }
     });

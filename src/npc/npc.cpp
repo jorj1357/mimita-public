@@ -1,3 +1,12 @@
+// 08 09 2026, 14 30
+/* purpose
+* Main NPC system: per-frame update loop, sensing, and input-state building.
+* Builds the two facing modes (aim-at-target vs face-movement) with config-driven
+* turn speed, and drives NPC physics through the shared player movement code.
+* Does NOT own NPC state selection, per-state movement, combat/firing, or config parsing.
+* Does NOT render NPCs or manage NPC spawning.
+*/
+
 #include "npc.h"
 #include "npc/npc-internal.h"
 #include "npc/npc-difficulty-config.h"
@@ -254,16 +263,55 @@ InputState buildInputState(Npc& npc, glm::vec3 moveDir, bool jump, bool dash, bo
     input.freezeHeld = false;
 
     glm::vec3 desiredFwd;
-    if (!npc.sensors.touchFloor && input.movementPressed)
+
+    // Facing-mode timing: switch between "aim at target" (dominant, long
+    // stretches) and "face movement" (brief). Being airborne or grounded is
+    // irrelevant — a jumping/dashing NPC aims exactly like a standing one.
+    const auto& facingCfg = NpcDifficultyConfig::instance().settings();
+    if (facingCfg.aimAtTargetMax <= 0.0f)
     {
-        glm::vec3 airMoveDir{moveDir.x, moveDir.y, 0.0f};
-        float airLen = glm::length(airMoveDir);
-        desiredFwd = airLen > 0.001f ? (airMoveDir / airLen) : glm::vec3{1.0f, 0.0f, 0.0f};
+        npc.facingTargetMode = true;  // no move-mode configured; always aim
+    }
+    else if (npc.facingModeTimer <= 0.0f)
+    {
+        npc.facingTargetMode = !npc.facingTargetMode;
+        if (npc.facingTargetMode)
+        {
+            float minT = facingCfg.aimAtTargetMin;
+            float maxT = std::max(minT, facingCfg.aimAtTargetMax);
+            npc.facingModeTimer = minT + random01(npc.rngState) * (maxT - minT);
+        }
+        else
+        {
+            float minT = facingCfg.faceMovementMin;
+            float maxT = std::max(minT, facingCfg.faceMovementMax);
+            npc.facingModeTimer = minT + random01(npc.rngState) * (maxT - minT);
+        }
+    }
+    else
+    {
+        npc.facingModeTimer -= dt;
+    }
+
+    if (npc.facingTargetMode && npc.sensors.hasTarget)
+    {
+        // Aim mode: face the target so the model turns smoothly at the player
+        // no matter how it is moving. The arcade aim error is applied to the
+        // shot, not to the model facing.
+        glm::vec3 npcEye = npc.body.pos + glm::vec3(0.0f, 0.0f, 0.8f);
+        glm::vec3 toTarget = npc.sensors.targetPos + glm::vec3(0.0f, 0.0f, 0.8f) - npcEye;
+        glm::vec3 aimDir = glm::length(toTarget) > 0.001f ? glm::normalize(toTarget)
+                                                          : glm::vec3(1.0f, 0.0f, 0.0f);
+        desiredFwd = safePlanarNormal(aimDir, {1.0f, 0.0f, 0.0f});
+    }
+    else if (input.movementPressed)
+    {
+        // Move mode (or no target while moving): face travel direction.
+        desiredFwd = safePlanarNormal(moveDir, {1.0f, 0.0f, 0.0f});
     }
     else if (npc.sensors.hasTarget)
     {
-        // Ideal direction to the target (no random error here) so the model
-        // turns smoothly at the player; the arcade error is applied to the shot.
+        // Not moving: look at the target rather than snapping to +X.
         glm::vec3 npcEye = npc.body.pos + glm::vec3(0.0f, 0.0f, 0.8f);
         glm::vec3 toTarget = npc.sensors.targetPos + glm::vec3(0.0f, 0.0f, 0.8f) - npcEye;
         glm::vec3 aimDir = glm::length(toTarget) > 0.001f ? glm::normalize(toTarget)
@@ -272,11 +320,14 @@ InputState buildInputState(Npc& npc, glm::vec3 moveDir, bool jump, bool dash, bo
     }
     else
     {
-        desiredFwd = safePlanarNormal(moveDir, {1.0f, 0.0f, 0.0f});
+        // Idle with no target: hold the current facing instead of snapping.
+        desiredFwd = npc.currentFacing;
     }
 
     // Apply turn speed limiting: smoothly rotate currentFacing toward desiredFwd
-    float maxTurnAngle = npc.tuning.turnSpeed * dt;  // degrees this frame
+    // The config turnSpeed overrides the per-difficulty tuning value when > 0.
+    float turnSpeed = facingCfg.turnSpeed > 0.0f ? facingCfg.turnSpeed : npc.tuning.turnSpeed;
+    float maxTurnAngle = turnSpeed * dt;  // degrees this frame
     float angleDiff = glm::degrees(std::acos(
         std::clamp(glm::dot(npc.currentFacing, desiredFwd), -1.0f, 1.0f)));
     if (angleDiff > maxTurnAngle && maxTurnAngle > 0.0f) {
