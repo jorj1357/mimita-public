@@ -1,3 +1,12 @@
+// 08 09 2026, 14 30
+/* purpose
+* Declares the Npc type, its difficulty tuning, sensor context, and the
+* NpcSystem container that updates all NPCs. Holds per-NPC facing-mode state
+* (aim-at-target vs face-movement) and the smoothed gun facing used by combat.
+* Does NOT implement AI decisions, state machine, movement, or firing logic.
+* Does NOT own server-side NPC simulation (see src/network/server-npcs.cpp).
+*/
+
 #pragma once
 
 #include <cstdint>
@@ -98,6 +107,12 @@ public:
 
     // Smoothed facing direction for turn speed limiting
     glm::vec3 currentFacing{1.0f, 0.0f, 0.0f};
+
+    // Facing mode: which way the gun/model points. Aim mode (default, dominant)
+    // locks onto the target; move mode briefly faces travel direction. The mode
+    // timer decides when to switch, independent of grounded/airborne state.
+    bool facingTargetMode = true;
+    float facingModeTimer = 0.0f;
 
     // The actual fired shot from the last successful tryFire. The server
     // broadcast reads these so the remote tracer goes exactly where the damage

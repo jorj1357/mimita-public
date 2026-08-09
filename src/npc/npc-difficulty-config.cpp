@@ -91,6 +91,11 @@ bool NpcDifficultyConfig::load(const std::string& path)
         next.npcHitRadius = std::max(0.0f, optFloat(root, "npcHitRadius", next.npcHitRadius));
         next.forceHit = optBool(root, "forceHit", next.forceHit);
         next.npcDebugVisuals = optBool(root, "npcDebugVisuals", next.npcDebugVisuals);
+        next.turnSpeed = std::max(0.0f, optFloat(root, "turnSpeed", next.turnSpeed));
+        next.aimAtTargetMin = std::max(0.0f, optFloat(root, "aimAtTargetMin", next.aimAtTargetMin));
+        next.aimAtTargetMax = std::max(0.0f, optFloat(root, "aimAtTargetMax", next.aimAtTargetMax));
+        next.faceMovementMin = std::max(0.0f, optFloat(root, "faceMovementMin", next.faceMovementMin));
+        next.faceMovementMax = std::max(0.0f, optFloat(root, "faceMovementMax", next.faceMovementMax));
 
         mRoot = root;
         mData = next;
@@ -139,6 +144,11 @@ bool NpcDifficultyConfig::save(const std::string& path)
     j["npcHitRadius"] = mData.npcHitRadius;
     j["forceHit"] = mData.forceHit;
     j["npcDebugVisuals"] = mData.npcDebugVisuals;
+    j["turnSpeed"] = mData.turnSpeed;
+    j["aimAtTargetMin"] = mData.aimAtTargetMin;
+    j["aimAtTargetMax"] = mData.aimAtTargetMax;
+    j["faceMovementMin"] = mData.faceMovementMin;
+    j["faceMovementMax"] = mData.faceMovementMax;
 
     std::ofstream file(path);
     if (!file.is_open())

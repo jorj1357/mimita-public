@@ -25,6 +25,15 @@ struct NpcDifficultySettings {
     float npcHitRadius = 0.4f;            // NPC bullet radius; thin so aim error actually matters
     bool forceHit = false;                // debug: zero aim error, every shot connects
     bool npcDebugVisuals = false;         // draw NPC aim/LOS debug lines in-game
+
+    // Facing/turn tuning (hot-reloaded). The NPC switches between two facing
+    // modes: "aim at target" (dominant, long stretches) and "face movement"
+    // (brief). Turn speed no longer depends on being grounded or in the air.
+    float turnSpeed = 270.0f;             // degrees per second the gun/model can rotate
+    float aimAtTargetMin = 5.0f;          // min seconds spent facing the target per cycle
+    float aimAtTargetMax = 10.0f;         // max seconds spent facing the target per cycle
+    float faceMovementMin = 0.5f;         // min seconds spent facing movement per cycle
+    float faceMovementMax = 1.5f;         // max seconds spent facing movement per cycle
 };
 
 class NpcDifficultyConfig {

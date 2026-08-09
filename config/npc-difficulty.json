@@ -16,6 +16,14 @@
   "comment_npcHitRadius": "Radius of the NPC's bullet (thin). Low = misses when aim is off (the error cone matters). High = fatter bullet that hits even with sloppy aim. Player's own weapon is unaffected.",
   "forceHit": true,
   "comment_forceHit": "Debug switch. true = zero aim error, every NPC shot lands on its target (overrides maxAngularErrorDegrees). Set false for the arcade feel; true to verify damage/fire-rate without worrying about aim.",
-  "npcDebugVisuals": false,
-  "comment_npcDebugVisuals": "Draw the in-game NPC debug lines (LOS, aim direction, gun facing, labels). Set true to see what the NPC is aiming at, then flip back to false for normal play."
+  "npcDebugVisuals": true,
+  "comment_npcDebugVisuals": "Draw the in-game NPC debug lines (LOS, aim direction, gun facing, labels). Set true to see what the NPC is aiming at, then flip back to false for normal play.",
+  "turnSpeed": 270,
+  "comment_turnSpeed": "Degrees per second the NPC can rotate its gun/model toward its facing goal. Higher = snaps onto you faster. 270 = a full 180-degree turn takes ~0.7s. 0 = fall back to the per-difficulty value (180 at diff 1 up to 1080 at diff 10).",
+  "aimAtTargetMin": 5.0,
+  "aimAtTargetMax": 10.0,
+  "comment_aimAtTarget": "Seconds the NPC stays in AIM mode (gun locked on you) each cycle. It spends this long staring at you before briefly switching to move-facing. 5-10 keeps most of every cycle shooting at you. Set min==max for a fixed duration; set max to 0 to never leave aim mode.",
+  "faceMovementMin": 0.5,
+  "faceMovementMax": 1.5,
+  "comment_faceMovement": "Seconds the NPC stays in MOVE mode (gun points where it's running) each cycle. Keep short so it's only briefly 'shooting while running' before it re-locks onto you. 0.5-1.5 is a quick glance away, then back to aiming."
 }
