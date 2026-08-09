@@ -376,8 +376,9 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
         {
             npcPtr->netPredictedDead = false;
             // Keep the dead NPC replica: start its fall-over death animation
-            // now (frozen at the current spot), and the snapshot health
-            // transition reconciles it. The body is removed on respawn.
+            // now (frozen at the current spot). This reliable event is the
+            // single death presenter (anim + red ellipsoid); the snapshot
+            // health transition is skipped for this life to avoid a 2nd death.
             if (npcPtr->currentHp > 0)
                 npcPtr->currentHp = 0;
             if (!npcPtr->deathAnim.active)
@@ -391,6 +392,22 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
                 npcPtr->deathAnim.startRotation = cfg.startRotation();
                 npcPtr->deathAnim.endRotation = cfg.endRotation();
                 npcPtr->deathAnim.frozenPosition = npcPtr->pos;
+            }
+            // Red ellipsoid of death — exactly once, from the reliable event.
+            if (!npcPtr->networkDeathPresented)
+            {
+                npcPtr->networkDeathPresented = true;
+                const auto& deCfg = HitEffects::config().deathEllipsoid;
+                if (deCfg.enabled)
+                {
+                    EffectPartSystem::instance().spawnDeathEllipsoid(
+                        npcPtr->pos, glm::vec3(0.0f, 0.0f, 1.0f),
+                        deCfg.length, deCfg.radius, deCfg.lifetime,
+                        npcPtr->sizeScale);
+                }
+                Debug::log(Debug::Category::Networking,
+                    "[NET NPC DEATH FX] entityId=%u pos=(%.1f,%.1f,%.1f) source=reliable-event\n",
+                    event->npcEntityId, npcPtr->pos.x, npcPtr->pos.y, npcPtr->pos.z);
             }
         }
     }

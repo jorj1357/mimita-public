@@ -16,6 +16,8 @@
     "server_broadcast_extrapolation_ms": 1000,
     "rewind_compensation_ms": 1,
     "rewind_hit_tolerance": 2.5,
+    "claim_lag_allowance": 3.0,
+    "max_rewind_ticks": 60,
     "server_broadcast_max_speed": 0,
     "server_sim_smooth_ticks": 2,
     "interpolation_delay_ms": 1,
@@ -132,7 +134,7 @@
   },
 
   "prediction": {
-    "comment": "Client-side prediction scope. Hitmarker + hit sound are ALWAYS predicted (instant). predict_damage controls instant damage numbers + target health bar; predict_deaths controls instant death + kill heal (rolls back with a disagree effect if the server disagrees). Rollback resolves the instant the AttackResult verdict returns, and with body-part hit agreement disagreements are rare.",
+    "comment": "Client-side prediction scope. Hitmarker + hit sound are ALWAYS predicted (instant). predict_damage controls instant damage numbers + target health bar. predict_deaths is OFF by default so a death is presented exactly once by the reliable server event (no predicted-then-confirmed double death).",
     "predict_damage": false,
     "predict_deaths": false
   },

@@ -506,6 +506,14 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     req.clientSimulationTick = claimedTargetId != 0
         ? mpFireRenderTickForTarget(ctx, claimedTargetId, ctx.latestLocalSnapshotTick)
         : mpFireRenderTick(ctx, ctx.latestLocalSnapshotTick);
+    // Diagnostic: confirm the fire tick stays in the server's tick domain (close
+    // to latestServerTick, not seconds behind). Throttled to once per second.
+    Debug::logThrottled(Debug::Category::Networking, "fire-tick-health", 1.0,
+        "[FIRE TICK] playerId=%u renderClock=%.1f latestServerTick=%u "
+        "latestLocalSnapshot=%u fireTick=%u claimed=%u\n",
+        ctx.localPlayerId, ctx.interpolationRenderTick,
+        ctx.latestServerTick, ctx.latestLocalSnapshotTick,
+        req.clientSimulationTick, claimedTargetId);
     req.basedOnInputSequence = (uint16_t)std::min<uint32_t>(ctx.nextMovementSequence, 0xffffu);
     req.equippedSlot = equippedSlot;
     req.weaponDefNetworkId = weaponDefNetworkId;

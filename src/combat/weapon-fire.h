@@ -286,6 +286,23 @@ void processMultiPelletRemoteHit(
     glm::vec3& lastPelletEnd,
     glm::vec3& lastHitNormal,
     const std::string& victimName);
+void processMultiPelletRemoteNpcHit(
+    RevolverShotResult& result,
+    const WeaponDefinition& def,
+    const std::string& hitPart,
+    const glm::vec3& hitNormal,
+    const glm::vec3& hitEnd,
+    const glm::vec3& pelletDir,
+    float pelletNearest,
+    Player& shooter,
+    uint32_t pelletRemoteNpcTargetId,
+    float& accumulatedDamage,
+    bool& anyHitEntity,
+    uint32_t& lastTargetId,
+    glm::vec3& accumulatedKnockback,
+    float& nearestPelletDist,
+    glm::vec3& lastPelletEnd,
+    glm::vec3& lastHitNormal);
 
 void processMultiPelletWorldHit(
     const WeaponDefinition& def,

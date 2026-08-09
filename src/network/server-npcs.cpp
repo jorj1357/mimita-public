@@ -143,6 +143,15 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
         npcIdsAlive.insert(kv.first);
         if (alreadySimulated) continue;
         npcSystem.spawnNpc(kv.first, kv.second.difficulty, kv.second.pos);
+        // Apply the healthall override to the newly adopted real NPC body.
+        for (Npc& n : npcSystem.all())
+        {
+            if (n.id == kv.first && serverGameOverrides().maxHpOverride > 0)
+            {
+                n.body.maxHp = serverGameOverrides().maxHpOverride;
+                n.body.currentHp = n.body.maxHp;
+            }
+        }
     }
 }
 
@@ -192,11 +201,14 @@ static void syncServerNpcDamageToNpc(const std::unordered_map<uint32_t, ServerNp
 // snapshot pipeline re-admits it (rebuildServerNpcMap skips dead bodies).
 static void respawnServerNpc(Npc& npc)
 {
-    const glm::vec3 spawnPos = npc.body.respawnPosition;
+    const glm::vec3 spawnPos = effectiveServerSpawn(npc.body.respawnPosition);
     npc.body.pos = spawnPos;
     npc.body.respawnPosition = spawnPos;
     npc.body.vel = glm::vec3(0.0f);
     npc.body.externalImpulse = glm::vec3(0.0f);
+    // healthall override: new spawns get the override max HP.
+    if (serverGameOverrides().maxHpOverride > 0)
+        npc.body.maxHp = serverGameOverrides().maxHpOverride;
     npc.body.currentHp = npc.body.maxHp;
     npc.body.dead = false;
     npc.body.respawnTimer = 0.0f;

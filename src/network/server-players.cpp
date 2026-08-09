@@ -223,7 +223,9 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
 {
     // Health and death
     player.dead = false;
-    player.health = 100;
+    const int maxHp = serverGameOverrides().maxHpOverride > 0
+        ? serverGameOverrides().maxHpOverride : 100;
+    player.health = maxHp;
 
     // Increment spawn generation (never decremented, never reset)
     ++player.spawnGeneration;
@@ -474,7 +476,7 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
             if (!world.spawnPoints.empty())
             {
                 size_t idx = (p.id - 1) % world.spawnPoints.size();
-                respawnPos = world.spawnPoints[idx].position;
+                respawnPos = effectiveServerSpawn(world.spawnPoints[idx].position);
                 respawnYaw = world.spawnPoints[idx].yaw;
             }
             else
@@ -975,6 +977,26 @@ uint32_t estimateServerRewindTick(const ServerPlayer& attacker,
                  (int64_t)REWIND_INTERP_DELAY_TICKS - compTicks;
     else
         rewind = (int64_t)serverTick - (int64_t)REWIND_INTERP_DELAY_TICKS - compTicks;
+
+    // Hard ceiling: never rewind older than maxRewindTicks (the rewind history
+    // window / worst-case latency + interpolation). A stale client fire tick
+    // (clock drift, blackout) must not push the rewind seconds into the past,
+    // which made every hit miss by validating against an ancient target pose.
+    const uint32_t maxRewind = NetworkingConfig::instance().data()
+        .remotePlayers.maxRewindTicks;
+    if (maxRewind > 0)
+    {
+        const int64_t floor = (int64_t)serverTick - (int64_t)maxRewind;
+        if (rewind < floor)
+        {
+            Debug::logThrottled(Debug::Category::Weapons, "attack-rewind-clamp", 1.0,
+                "[ATTACK REWIND CLAMP] playerId=%u requestedRewind=%lld floor=%lld "
+                "serverTick=%u maxRewindTicks=%u\n",
+                attacker.id, (long long)rewind, (long long)floor,
+                serverTick, maxRewind);
+            rewind = floor;
+        }
+    }
     rewind = std::clamp<int64_t>(rewind, 0, (int64_t)serverTick);
     return (uint32_t)rewind;
 }

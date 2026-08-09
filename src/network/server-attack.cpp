@@ -559,13 +559,17 @@ void handleAttackRequest(
             {
                 lastNpcRewindLog = nowRewind;
                 const float drift = glm::length(tracePos - npc.pos);
-                if (drift > 0.05f)
+                const float yawDrift = glm::degrees(std::fabs(
+                    std::fmod(std::fabs(rewoundYaw - npc.yaw), 6.2831853f)));
+                if (drift > 0.05f || yawDrift > 5.0f)
                     Debug::warn(Debug::Category::NpcCombat,
                         "[NPC REWIND] npc=%u rewindTick=%u currentTick=%u "
-                        "rewound=(%.2f,%.2f,%.2f) current=(%.2f,%.2f,%.2f) drift=%.2f\n",
+                        "rewound=(%.2f,%.2f,%.2f) current=(%.2f,%.2f,%.2f) drift=%.2f "
+                        "rewoundYaw=%.1f currentYaw=%.1f yawDrift=%.1fdeg\n",
                         npc.entityId, rewindTick, tick,
                         tracePos.x, tracePos.y, tracePos.z,
-                        npc.pos.x, npc.pos.y, npc.pos.z, drift);
+                        npc.pos.x, npc.pos.y, npc.pos.z, drift,
+                        glm::degrees(rewoundYaw), glm::degrees(npc.yaw), yawDrift);
             }
         }
 
@@ -636,11 +640,19 @@ void handleAttackRequest(
 
                 if (!occluded)
                 {
+                    // Claim acceptance tolerance: base rewind tolerance plus a
+                    // lag allowance so a hit that connects on the target's
+                    // RENDERED body registers even when motion-filter lag puts
+                    // the server's rewind pose slightly ahead of what the
+                    // shooter saw ("shoot what I see").
+                    const NetworkingConfigData& netCfg =
+                        NetworkingConfig::instance().data();
                     const float tolerance =
-                        std::max(0.0f, NetworkingConfig::instance().data()
-                                           .remotePlayers.rewindHitTolerance);
+                        std::max(0.0f, netCfg.remotePlayers.rewindHitTolerance) +
+                        std::max(0.0f, netCfg.remotePlayers.claimLagAllowance);
                     bool claimAccepted = false;
                     uint8_t claimPart = req->claimedBodyPart;
+                    glm::vec3 rewoundTargetPos{0.0f}; // for the reject diagnostic
                     uint32_t claimedSpawnGen = 0;
                     auto npcClaimIt = npcs.find(req->claimedTargetId);
                     if (npcClaimIt != npcs.end())
@@ -654,6 +666,7 @@ void handleAttackRequest(
                             glm::vec3 rewoundPos = npc.pos;
                             float rewoundYaw = npc.yaw;
                             getNpcPoseAtTick(npc, rewindTick, rewoundPos, rewoundYaw);
+                            rewoundTargetPos = rewoundPos;
                             if (claimedHitInBodyParts(claimedHit, rewoundPos, rewoundYaw,
                                                       tolerance, claimPart))
                                 claimAccepted = true;
@@ -671,6 +684,7 @@ void handleAttackRequest(
                             float rewoundYaw = playerClaimIt->second.yaw;
                             getPlayerPoseAtTick(playerClaimIt->second, rewindTick,
                                                 rewoundPos, rewoundYaw);
+                            rewoundTargetPos = rewoundPos;
                             // Validate the claimed hit against the victim's
                             // reconstructed body-part hitboxes (same template as
                             // the re-trace) — never a capsule.
@@ -714,12 +728,17 @@ void handleAttackRequest(
                     }
                     else
                     {
+                        const float offsetFromRewound = glm::length(
+                            claimedHit - rewoundTargetPos);
                         Debug::log(Debug::Category::Weapons,
                             "[ATTACK CLAIM REJECT] playerId=%u requestId=%u "
                             "claimedTarget=%u claimedHit=(%.2f,%.2f,%.2f) "
+                            "rewoundTarget=(%.2f,%.2f,%.2f) offset=%.2f tolerance=%.2f "
                             "rewindTick=%u dist=%.2f reason=not-in-volume\n",
                             shooter.id, req->requestId, req->claimedTargetId,
                             claimedHit.x, claimedHit.y, claimedHit.z,
+                            rewoundTargetPos.x, rewoundTargetPos.y, rewoundTargetPos.z,
+                            offsetFromRewound, tolerance,
                             rewindTick, claimedDist);
                     }
                 }
@@ -764,7 +783,7 @@ void handleAttackRequest(
                     if (attacker != players.end())
                     {
                         attacker->second.kills += 1;
-                        attacker->second.health = 100;
+                        attacker->second.health = serverMaxHp();
                     }
                     // Do NOT erase: syncServerNpcDamageToNpc marks the real NPC
                     // dead and respawnServerNpc re-admits it after the delay.

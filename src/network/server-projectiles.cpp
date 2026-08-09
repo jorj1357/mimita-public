@@ -690,7 +690,7 @@ void explodeProjectile(SOCKET sock,
             npc.health = 0;
             auto attacker = players.find(projectile.ownerPlayerId);
             if (attacker != players.end())
-                attacker->second.health = 100;
+                attacker->second.health = serverMaxHp();
         }
 
         broadcastNpcDamageEvent(

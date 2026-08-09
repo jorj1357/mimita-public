@@ -387,7 +387,16 @@ BeamCollisionResult collideBeam(
             Player& remote = entry.second;
             if (remote.dead || remote.currentHp <= 0) continue;
             // No capsule fallback — only real body-part intersections count.
-            if (remote.physicalBody.parts.empty()) continue;
+            if (remote.physicalBody.parts.empty())
+            {
+                Debug::logThrottled(Debug::Category::NpcCombat,
+                    "remote-npc-no-parts", 1.0f,
+                    "[REMOTE NPC TRACE] entityId=%u SKIPPED parts=empty pos=(%.2f,%.2f,%.2f) "
+                    "hp=%d dead=%d\n",
+                    entry.first, remote.pos.x, remote.pos.y, remote.pos.z,
+                    remote.currentHp, (int)remote.dead);
+                continue;
+            }
             remote.updateModelWorldTransforms();
             for (const PhysicalBodyPart& part : remote.physicalBody.parts) {
                 glm::vec3 localCenter = (part.collider.localMin + part.collider.localMax) * 0.5f;

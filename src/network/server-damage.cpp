@@ -101,7 +101,7 @@ ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>&
             {
                 attacker->second.kills += 1;
                 // Heal the attacker to full health
-                attacker->second.health = 100;
+                attacker->second.health = serverMaxHp();
             }
         }
         result.killed = true;

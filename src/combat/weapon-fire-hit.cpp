@@ -415,14 +415,18 @@ void fireMultiPellet(
                     totalRemoteDamage += accumulatedDamage - damageBefore;
                     ++remotePlayersHit;
                 } else if (pelletRemoteNpcTargetId) {
-                    // Remote NPC hits are server-authoritative; only stop the
-                    // local tracer on the visible NPC so it matches the target.
+                    // Remote NPC pellet hit: instant predicted feedback (hitmarker
+                    // + damage number + HP overlay) like remote players; the
+                    // server confirm reconciles it.
+                    shotProf.npcHits++;
+                    auto td = ShotProfiler::Scope(&shotProf.damageMs);
+                    processMultiPelletRemoteNpcHit(
+                        outResult, def, pelletPart, pelletHitNml, pelletEnd, pelletDir,
+                        pelletNearest, shooter, pelletRemoteNpcTargetId,
+                        accumulatedDamage, anyHitEntity, lastTargetId,
+                        accumulatedKnockback, nearestPelletDist, lastPelletEnd,
+                        lastHitNormal);
                     ++remoteNpcPelletHits;
-                    if (pelletNearest < nearestPelletDist) {
-                        nearestPelletDist = pelletNearest;
-                        lastPelletEnd = pelletEnd;
-                        lastHitNormal = pelletHitNml;
-                    }
                 } else if (hitW) {
                     shotProf.worldHits++;
                     ++worldPellets;
