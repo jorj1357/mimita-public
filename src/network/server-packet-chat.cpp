@@ -217,15 +217,73 @@ void handleServerCommand(const char* buffer, int bytes,
     cmd->commandText[239] = '\0';
     const std::string commandStr(cmd->commandText);
 
+    // Host-gate: only the first player to join (the host) may issue
+    // server-authoritative commands. This also stops any client from
+    // deleting all NPCs.
+    if (!it->second.isHost)
+    {
+        Debug::warn(Debug::Category::Networking,
+            "%s [SERVER COMMAND REJECT] playerId=%u name=\"%s\" cmd=\"%s\" reason=not-host\n",
+            serverTimestamp(), it->second.id, it->second.name.c_str(),
+            commandStr.c_str());
+        return;
+    }
+
     printf("%s [SERVER COMMAND] playerId=%u name=\"%s\" cmd=\"%s\"\n",
            serverTimestamp(), it->second.id, it->second.name.c_str(),
            commandStr.c_str());
+
+    ServerGameOverrides& ov = serverGameOverrides();
 
     if (commandStr == "npc_delete_all")
     {
         printf("%s [SERVER COMMAND] npc_delete_all by playerId=%u count=%zu\n",
                serverTimestamp(), it->second.id, npcs.size());
         npcs.clear();
+    }
+    else if (commandStr.rfind("healthall ", 0) == 0)
+    {
+        const std::string arg = commandStr.substr(10);
+        if (arg == "default" || arg == "reset")
+        {
+            ov.maxHpOverride = 0;
+            Debug::warn(Debug::Category::Networking,
+                "%s [SERVER COMMAND] healthall default (max HP 100)\n", serverTimestamp());
+        }
+        else
+        {
+            try
+            {
+                int value = std::stoi(arg);
+                ov.maxHpOverride = value > 0 ? value : 0;
+                Debug::warn(Debug::Category::Networking,
+                    "%s [SERVER COMMAND] healthall=%d (all future spawns + kill-heals)\n",
+                    serverTimestamp(), ov.maxHpOverride);
+            }
+            catch (...)
+            {
+                Debug::warn(Debug::Category::Networking,
+                    "%s [SERVER COMMAND] healthall invalid value=\"%s\"\n",
+                    serverTimestamp(), arg.c_str());
+            }
+        }
+    }
+    else if (commandStr == "setspawn_set")
+    {
+        // The host's current position becomes the spawn for every entity.
+        ov.spawnOverridePosition = it->second.pos;
+        ov.spawnOverrideEnabled = true;
+        Debug::warn(Debug::Category::Networking,
+            "%s [SERVER COMMAND] setspawn_set pos=(%.2f,%.2f,%.2f) enabled=1\n",
+            serverTimestamp(), ov.spawnOverridePosition.x,
+            ov.spawnOverridePosition.y, ov.spawnOverridePosition.z);
+    }
+    else if (commandStr.rfind("setspawn ", 0) == 0)
+    {
+        ov.spawnOverrideEnabled = commandStr.substr(9) == "1";
+        Debug::warn(Debug::Category::Networking,
+            "%s [SERVER COMMAND] setspawn=%d\n",
+            serverTimestamp(), (int)ov.spawnOverrideEnabled);
     }
     else
     {

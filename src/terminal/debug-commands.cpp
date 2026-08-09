@@ -242,46 +242,45 @@ void registerDebugCommands()
                 return;
             }
 
-            if (!MimitaNet::isServerHost()) {
-                Terminal::instance().addLog("[HEALTHALL] HOST ONLY — run this on the server host.");
+            const bool isReset = (args[0] == "default" || args[0] == "reset");
+            int value = 0;
+            if (!isReset)
+            {
+                try { value = std::stoi(args[0]); }
+                catch (...) {
+                    Terminal::instance().addLog("[HEALTHALL] Invalid value. Use a positive integer or 'default'.");
+                    return;
+                }
+                if (value < 0) {
+                    Terminal::instance().addLog("[HEALTHALL] Negative values not allowed.");
+                    return;
+                }
+            }
+
+            // In-process server (dedicated --server or local listen server):
+            // apply the override directly. Otherwise send the command to the
+            // server, which applies it only if the sender is the host.
+            if (MimitaNet::isServerHost())
+            {
+                DevOverrides::healthOverrideEnabled = !isReset;
+                DevOverrides::healthOverrideValue = value;
+                MimitaNet::serverGameOverrides().maxHpOverride = isReset ? 0 : value;
+                Terminal::instance().addLog(isReset
+                    ? "[HEALTHALL] Override disabled. Future spawns use normal HP (100)."
+                    : std::string("[HEALTHALL] All-entities spawn HP set to ") + std::to_string(value));
                 return;
             }
 
-            if (args[0] == "default" || args[0] == "reset") {
-                DevOverrides::healthOverrideEnabled = false;
-                MimitaNet::serverGameOverrides().maxHpOverride = 0;
-                Terminal::instance().addLog("[HEALTHALL] Override disabled. Future spawns will use normal HP (100).");
+            if (::gpMpContext && ::gpMpContext->active)
+            {
+                MimitaNet::mpSendServerCommand(*::gpMpContext,
+                    isReset ? "healthall default"
+                            : "healthall " + std::to_string(value));
+                Terminal::instance().addLog("[HEALTHALL] Sent to server (host only).");
                 return;
             }
 
-            int value;
-            try { value = std::stoi(args[0]); }
-            catch (...) {
-                Terminal::instance().addLog("[HEALTHALL] Invalid value. Use a positive integer or 'default'.");
-                return;
-            }
-
-            if (value < 0) {
-                Terminal::instance().addLog("[HEALTHALL] Negative values not allowed.");
-                return;
-            }
-
-            DevOverrides::healthOverrideEnabled = true;
-            DevOverrides::healthOverrideValue = value;
-            // Server-authoritative: all future player/NPC spawns get this max
-            // HP, and every kill heals the killer back to it.
-            MimitaNet::serverGameOverrides().maxHpOverride = value;
-
-            char buf[256];
-            snprintf(buf, sizeof(buf),
-                "\n==================================\n"
-                "All-Entities Health Override Enabled\n"
-                "HP: %d\n"
-                "Applies to all future spawns/respawns + kill-heals\n"
-                "==================================",
-                value);
-            Debug::warn(Debug::Category::General, "%s\n", buf);
-            Terminal::instance().addLog(std::string("[HEALTHALL] All-entities spawn HP set to ") + std::to_string(value));
+            Terminal::instance().addLog("[HEALTHALL] HOST ONLY — run this on the server host (or while connected to your own server).");
         },
         "2026-07-30", CommandCategory::Debug
     });

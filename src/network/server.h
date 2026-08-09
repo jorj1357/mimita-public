@@ -233,6 +233,9 @@ struct ServerPlayer
     sockaddr_in addr{};
     TransportConnectionId connectionId{};
     bool hasConnectionId = false;
+    // True for the FIRST player to join — the server host. Only the host may
+    // issue server-authoritative commands (healthall / setspawn / npc_delete_all).
+    bool isHost = false;
     glm::vec3 pos{0.0f};
     glm::vec3 vel{0.0f};
     float yaw = 0.0f;

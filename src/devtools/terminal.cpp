@@ -120,17 +120,24 @@ void Terminal::init(GLFWwindow* window) {
         "setspawn_set",
         [](const std::vector<std::string>& args) {
             (void)args;
-            if (!MimitaNet::isServerHost()) {
-                Terminal::instance().addLog("[SETSPAWN] HOST ONLY — run this on the server host.");
+            if (MimitaNet::isServerHost())
+            {
+                auto& o = MimitaNet::serverGameOverrides();
+                o.spawnOverridePosition = THE_PLAYER.pos;
+                o.spawnOverrideEnabled = true;
+                Terminal::instance().addLog("[SETSPAWN] set to (" +
+                    std::to_string(o.spawnOverridePosition.x) + " " +
+                    std::to_string(o.spawnOverridePosition.y) + " " +
+                    std::to_string(o.spawnOverridePosition.z) + ") — every player and NPC spawns here.");
                 return;
             }
-            auto& o = MimitaNet::serverGameOverrides();
-            o.spawnOverridePosition = THE_PLAYER.pos;
-            o.spawnOverrideEnabled = true;
-            Terminal::instance().addLog("[SETSPAWN] set to (" +
-                std::to_string(o.spawnOverridePosition.x) + " " +
-                std::to_string(o.spawnOverridePosition.y) + " " +
-                std::to_string(o.spawnOverridePosition.z) + ") — every player and NPC spawns here.");
+            if (::gpMpContext && ::gpMpContext->active)
+            {
+                MimitaNet::mpSendServerCommand(*::gpMpContext, "setspawn_set");
+                Terminal::instance().addLog("[SETSPAWN] Sent to server (host only) — uses your current position.");
+                return;
+            }
+            Terminal::instance().addLog("[SETSPAWN] HOST ONLY — run this on the server host (or while connected to your own server).");
         }
     });
     registerCommand({
@@ -138,22 +145,30 @@ void Terminal::init(GLFWwindow* window) {
         "HOST ONLY — enable/disable the server spawn override. setspawn 1 = use the set position, setspawn 0 = default spawn points",
         "setspawn <0|1>",
         [](const std::vector<std::string>& args) {
-            if (!MimitaNet::isServerHost()) {
-                Terminal::instance().addLog("[SETSPAWN] HOST ONLY — run this on the server host.");
+            if (MimitaNet::isServerHost())
+            {
+                if (args.empty()) {
+                    auto& o = MimitaNet::serverGameOverrides();
+                    Terminal::instance().addLog("[SETSPAWN] enabled=" + std::to_string((int)o.spawnOverrideEnabled) +
+                        " position=(" + std::to_string(o.spawnOverridePosition.x) + " " +
+                        std::to_string(o.spawnOverridePosition.y) + " " +
+                        std::to_string(o.spawnOverridePosition.z) + ")");
+                    return;
+                }
+                bool on = args[0] == "1";
+                MimitaNet::serverGameOverrides().spawnOverrideEnabled = on;
+                Terminal::instance().addLog(on ? "[SETSPAWN] enabled — all entities spawn at the set position"
+                                              : "[SETSPAWN] disabled — using default spawn points");
                 return;
             }
-            if (args.empty()) {
-                auto& o = MimitaNet::serverGameOverrides();
-                Terminal::instance().addLog("[SETSPAWN] enabled=" + std::to_string((int)o.spawnOverrideEnabled) +
-                    " position=(" + std::to_string(o.spawnOverridePosition.x) + " " +
-                    std::to_string(o.spawnOverridePosition.y) + " " +
-                    std::to_string(o.spawnOverridePosition.z) + ")");
+            if (::gpMpContext && ::gpMpContext->active)
+            {
+                const std::string cmd = std::string("setspawn ") + (args[0] == "1" ? "1" : "0");
+                MimitaNet::mpSendServerCommand(*::gpMpContext, cmd);
+                Terminal::instance().addLog("[SETSPAWN] Sent to server (host only).");
                 return;
             }
-            bool on = args[0] == "1";
-            MimitaNet::serverGameOverrides().spawnOverrideEnabled = on;
-            Terminal::instance().addLog(on ? "[SETSPAWN] enabled — all entities spawn at the set position"
-                                          : "[SETSPAWN] disabled — using default spawn points");
+            Terminal::instance().addLog("[SETSPAWN] HOST ONLY — run this on the server host (or while connected to your own server).");
         }
     });
 

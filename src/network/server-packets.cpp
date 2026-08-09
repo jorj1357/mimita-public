@@ -544,6 +544,9 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
 
     if (!existingId)
     {
+        // The FIRST player to join is the server host — the only one allowed to
+        // issue server-authoritative commands (healthall / setspawn / etc.).
+        p.isHost = players.size() <= 1;
         // Use map spawnpoints if available
         glm::vec3 spawnPos;
         float spawnYaw = 0.0f;
