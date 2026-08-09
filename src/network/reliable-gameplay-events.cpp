@@ -129,6 +129,63 @@ uint32_t reliableGameplayEventSessionForPlayer(ServerPlayer& player)
     return player.reliableEventSessionId;
 }
 
+namespace {
+
+// Enqueue one reliable event for a single player and send it immediately.
+// Does NOT disconnect on failure; the broadcast path handles disconnects in
+// its own loop (it must erase from the player map safely).
+ReliableGameplayEventQueueResult queueForOnePlayer(
+    SOCKET sock,
+    ServerPlayer& player,
+    const void* data,
+    size_t size,
+    uint32_t eventId,
+    uint64_t& totalPacketsOut)
+{
+    const PacketHeader* header = reinterpret_cast<const PacketHeader*>(data);
+    const auto& cfg = NetworkingConfig::instance().data().reliableEvents;
+    if (player.pendingReliableEvents.size() >= cfg.maxPendingPerPlayer)
+    {
+        ++gFailureStats.saturated;
+        Debug::logThrottled(Debug::Category::Networking, "reliable-gameplay-events-full", 1.0f,
+                            "[RELIABLE EVENT SATURATED] playerId=%u pending=%zu max=%zu packetType=%u eventId=%u\n",
+                            player.id, player.pendingReliableEvents.size(),
+                            cfg.maxPendingPerPlayer,
+                            (unsigned)header->type, eventId);
+        return ReliableGameplayEventQueueResult::BacklogSaturated;
+    }
+
+    reliableGameplayEventSessionForPlayer(player);
+
+    std::vector<char> packetBytes((const char*)data, (const char*)data + size);
+    mutableEventId(packetBytes.data()) = eventId;
+    mutableEventSessionId(packetBytes.data()) = player.reliableEventSessionId;
+
+    ServerPlayer::PendingReliableEvent pending;
+    pending.eventId = eventId;
+    pending.eventSessionId = player.reliableEventSessionId;
+    pending.packetType = header->type;
+    pending.createdMs = reliableNowMs();
+    pending.lastSendMs = reliableNowMs();
+    pending.attempts = 1;
+    pending.bytes = std::move(packetBytes);
+    player.pendingReliableEvents.push_back(std::move(pending));
+
+    const bool sent = serverSendToPlayer(sock, player,
+                                        player.pendingReliableEvents.back().bytes.data(),
+                                        player.pendingReliableEvents.back().bytes.size());
+    if (!sent)
+    {
+        ++gFailureStats.sendFailed;
+        player.pendingReliableEvents.pop_back();
+        return ReliableGameplayEventQueueResult::ConnectionUnavailable;
+    }
+    ++totalPacketsOut;
+    return ReliableGameplayEventQueueResult::Queued;
+}
+
+} // namespace
+
 ReliableGameplayEventQueueResult queueReliableGameplayEventToAll(SOCKET sock,
                                                                  std::unordered_map<uint32_t, ServerPlayer>& players,
                                                                  const void* data,
@@ -140,58 +197,46 @@ ReliableGameplayEventQueueResult queueReliableGameplayEventToAll(SOCKET sock,
     if (!data || size < RELIABLE_EVENT_SESSION_OFFSET + sizeof(uint32_t) || eventId == 0)
         return ReliableGameplayEventQueueResult::ConnectionUnavailable;
 
-    const PacketHeader* header = reinterpret_cast<const PacketHeader*>(data);
-    const uint64_t now = reliableNowMs();
     ReliableGameplayEventQueueResult result = ReliableGameplayEventQueueResult::Queued;
     for (auto it = players.begin(); it != players.end(); )
     {
-        ServerPlayer& player = it->second;
-        const auto& cfg = NetworkingConfig::instance().data().reliableEvents;
-        if (player.pendingReliableEvents.size() >= cfg.maxPendingPerPlayer)
+        const PacketHeader* header = reinterpret_cast<const PacketHeader*>(data);
+        ReliableGameplayEventQueueResult one =
+            queueForOnePlayer(sock, it->second, data, size, eventId,
+                              totalPacketsOut);
+        if (one == ReliableGameplayEventQueueResult::ConnectionUnavailable ||
+            one == ReliableGameplayEventQueueResult::BacklogSaturated)
         {
-            ++gFailureStats.saturated;
-            Debug::logThrottled(Debug::Category::Networking, "reliable-gameplay-events-full", 1.0f,
-                                "[RELIABLE EVENT SATURATED] playerId=%u pending=%zu max=%zu packetType=%u eventId=%u action=disconnect\n",
-                                player.id, player.pendingReliableEvents.size(),
-                                cfg.maxPendingPerPlayer,
-                                (unsigned)header->type, eventId);
-            result = worseResult(result, ReliableGameplayEventQueueResult::BacklogSaturated);
-            markReliableConnectionUnhealthy(players, it, "backlog-saturated", header->type, eventId);
-            continue;
+            markReliableConnectionUnhealthy(players, it,
+                one == ReliableGameplayEventQueueResult::BacklogSaturated
+                    ? "backlog-saturated" : "initial-send-failed",
+                header->type, eventId);
+            result = worseResult(result, one);
+            continue;  // markReliableConnectionUnhealthy already advanced `it`
         }
-
-        reliableGameplayEventSessionForPlayer(player);
-
-        std::vector<char> packetBytes((const char*)data, (const char*)data + size);
-        mutableEventId(packetBytes.data()) = eventId;
-        mutableEventSessionId(packetBytes.data()) = player.reliableEventSessionId;
-
-        ServerPlayer::PendingReliableEvent pending;
-        pending.eventId = eventId;
-        pending.eventSessionId = player.reliableEventSessionId;
-        pending.packetType = header->type;
-        pending.createdMs = now;
-        pending.lastSendMs = now;
-        pending.attempts = 1;
-        pending.bytes = std::move(packetBytes);
-        player.pendingReliableEvents.push_back(std::move(pending));
-
-        const bool sent = serverSendToPlayer(sock, player,
-                                            player.pendingReliableEvents.back().bytes.data(),
-                                            player.pendingReliableEvents.back().bytes.size());
-        if (!sent)
-        {
-            ++gFailureStats.sendFailed;
-            result = worseResult(result, ReliableGameplayEventQueueResult::ConnectionUnavailable);
-            markReliableConnectionUnhealthy(players, it, "initial-send-failed", header->type, eventId);
-            continue;
-        }
-        ++totalPacketsOut;
+        result = worseResult(result, one);
         ++it;
     }
 
     (void)eventSessionId;
     return result;
+}
+
+ReliableGameplayEventQueueResult queueReliableGameplayEventToPlayer(
+    SOCKET sock,
+    ServerPlayer& player,
+    const void* data,
+    size_t size,
+    uint32_t eventId,
+    uint32_t eventSessionId,
+    uint64_t& totalPacketsOut)
+{
+    if (!data || size < RELIABLE_EVENT_SESSION_OFFSET + sizeof(uint32_t) || eventId == 0)
+        return ReliableGameplayEventQueueResult::ConnectionUnavailable;
+
+    (void)eventSessionId;
+    return queueForOnePlayer(sock, player, data, size, eventId,
+                             totalPacketsOut);
 }
 
 void handleReliableEventAck(const char* buffer, int bytes,

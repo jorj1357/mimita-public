@@ -465,6 +465,9 @@ MovementValidationResult validateClientMovementReport(
         return reject(MovementValidationReason::WrongOwner);
     if (!player.spawned)
         return reject(MovementValidationReason::NotSpawned);
+    const bool reportIsCurrentLife =
+        report.lifecycle.spawnGeneration == player.spawnGeneration &&
+        report.lifecycle.transformEpoch == player.transformEpoch;
     if (player.spawnState != ServerPlayer::Active)
     {
         // Implicit lifecycle resume: a client report carrying the player's
@@ -474,16 +477,21 @@ MovementValidationResult validateClientMovementReport(
         // jitter, or reorder can delay indefinitely. The generation + epoch
         // checks below still reject every stale-life report, so this cannot
         // resurrect an old life's movement.
-        const bool knowsCurrentLife =
-            report.lifecycle.spawnGeneration == player.spawnGeneration &&
-            report.lifecycle.transformEpoch == player.transformEpoch;
-        if (!knowsCurrentLife)
+        if (!reportIsCurrentLife)
             return reject(MovementValidationReason::NotActive);
     }
     if (player.dead)
         return reject(MovementValidationReason::Dead);
     if (!player.movement.movementEnabled)
-        return reject(MovementValidationReason::MovementDisabled);
+    {
+        // movementEnabled is only false because spawnState is still
+        // AwaitingSpawnAck; a current-life report IS the proof of life, so let
+        // it through (stateFromAcceptedReport re-enables movement on accept).
+        // Otherwise a respawned player would be frozen at the spawn point on
+        // the server until the one-shot SpawnAck round-trips.
+        if (!reportIsCurrentLife)
+            return reject(MovementValidationReason::MovementDisabled);
+    }
     if (report.lifecycle.spawnGeneration != player.spawnGeneration)
         return reject(MovementValidationReason::SpawnGenerationMismatch);
     if (report.lifecycle.transformEpoch != player.transformEpoch)

@@ -655,7 +655,6 @@ void resolvePlayerCollision(std::unordered_map<uint32_t, ServerPlayer>& players)
 // Player simulation
 void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn);
 void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitialSpawn);
-void retrySpawnSync(SOCKET sock, ServerPlayer& player);
 void tickWeaponRuntimes(std::unordered_map<uint32_t, ServerPlayer>& players, uint32_t currentTick);
 void handleSpawnAck(SOCKET sock, const char* buffer, int bytes,
                      std::unordered_map<uint32_t, ServerPlayer>& players,
@@ -1139,6 +1138,14 @@ ReliableGameplayEventQueueResult queueReliableGameplayEventToAll(SOCKET sock,
                                                                  uint32_t eventId,
                                                                  uint32_t eventSessionId,
                                                                  uint64_t& totalPacketsOut);
+ReliableGameplayEventQueueResult queueReliableGameplayEventToPlayer(
+    SOCKET sock,
+    ServerPlayer& player,
+    const void* data,
+    size_t size,
+    uint32_t eventId,
+    uint32_t eventSessionId,
+    uint64_t& totalPacketsOut);
 void handleReliableEventAck(const char* buffer, int bytes,
                             std::unordered_map<uint32_t, ServerPlayer>& players,
                             const sockaddr_in* from = nullptr,

@@ -1012,6 +1012,18 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         {
             const PlayerRespawnedPacket* pr = reinterpret_cast<const PlayerRespawnedPacket*>(buffer);
 
+            // Reliable-event dedup + auto-ack: the server now delivers the
+            // spawn sync through the reliable-event transport (like shot
+            // events), so a retransmitted copy is dropped here and ACKed.
+            if (!mpAcceptReliableEventOnce(ctx, pr->eventId, pr->eventSessionId))
+            {
+                Debug::log(Debug::Category::Weapons,
+                           "[SPAWN RESPAWN DUP EVENT] playerId=%u spawnGen=%u epoch=%u eventId=%u\n",
+                           ctx.localPlayerId, pr->spawnGeneration, pr->transformEpoch,
+                           pr->eventId);
+                return;
+            }
+
             // Reject older spawn generation
             if (pr->spawnGeneration < ctx.lastKnownSpawnGeneration)
             {
@@ -1020,12 +1032,10 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 return;
             }
 
-            // Duplicate spawn sync for the generation already applied (server
-            // retry while awaiting our ACK, or a snapshot already advanced the
-            // generation). Re-queue for weapon reconcile + ack so the server can
-            // still reach Active, but do NOT re-apply the spawn and do NOT
-            // re-disable gameplay: a retry arriving after SpawnActivated would
-            // otherwise leave gameplayActive permanently false.
+            // Duplicate spawn sync for the generation already applied (a
+            // snapshot already advanced the generation). Re-queue for weapon
+            // reconcile + ack so the server can still reach Active, but do NOT
+            // re-apply the spawn and do NOT re-disable gameplay.
             if (pr->spawnGeneration == ctx.lastKnownSpawnGeneration)
             {
                 if (ctx.active && ctx.localPlayerId)
@@ -1059,6 +1069,13 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             const SpawnActivatedPacket* act = reinterpret_cast<const SpawnActivatedPacket*>(buffer);
             if (act->spawnGeneration == ctx.lastKnownSpawnGeneration)
             {
+                // Server confirmed our SpawnAck — stop retrying it.
+                if (ctx.pendingSpawnAckGeneration == act->spawnGeneration)
+                {
+                    ctx.pendingSpawnAckGeneration = 0;
+                    ctx.pendingSpawnAckEpoch = 0;
+                    ctx.pendingSpawnAckLastSendMs = 0;
+                }
                 ctx.gameplayActive = true;
                 Debug::log(Debug::Category::Weapons, "[SPAWN ACTIVATED RX] playerId=%u spawnGen=%u epoch=%u — gameplay enabled\n",
                            ctx.localPlayerId, act->spawnGeneration, act->transformEpoch);
@@ -1294,6 +1311,33 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 continue;
             memcpy(buffer, rp.bytes.data(), rp.bytes.size());
             processPacket((int)rp.bytes.size());
+        }
+    }
+
+    // ── SpawnAck retry (reliable respawn handshake) ───────────────────
+    // The initial SpawnAck is sent from engineTickNet after weapon reconcile
+    // (it stamps pendingSpawnAckLastSendMs). If the server never confirms
+    // (dropped ack or dropped SpawnActivated), re-send the ack until the
+    // matching SpawnActivated arrives so the server cannot stay wedged in
+    // AwaitingSpawnAck with the player frozen at the spawn point.
+    if (ctx.connected && ctx.localPlayerId && ctx.pendingSpawnAckGeneration != 0)
+    {
+        const uint64_t nowSpawnAck = nowMs();
+        if (nowSpawnAck >= ctx.pendingSpawnAckLastSendMs &&
+            nowSpawnAck - ctx.pendingSpawnAckLastSendMs >= 100)
+        {
+            SpawnAckPacket retry{};
+            retry.header.type = PACKET_SPAWN_ACK;
+            retry.header.tick = ctx.tick;
+            retry.header.playerId = ctx.localPlayerId;
+            retry.spawnGeneration = ctx.pendingSpawnAckGeneration;
+            retry.transformEpoch = ctx.pendingSpawnAckEpoch;
+            mpSendPacket(ctx, &retry, sizeof(retry));
+            ctx.pendingSpawnAckLastSendMs = nowSpawnAck;
+            Debug::log(Debug::Category::Weapons,
+                       "[SPAWN ACK RETRY] playerId=%u spawnGen=%u epoch=%u\n",
+                       ctx.localPlayerId, ctx.pendingSpawnAckGeneration,
+                       ctx.pendingSpawnAckEpoch);
         }
     }
 

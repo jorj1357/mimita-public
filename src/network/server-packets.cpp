@@ -2115,29 +2115,43 @@ void handleSpawnAck(SOCKET sock, const char* buffer, int bytes,
 
     ServerPlayer& p = it->second;
 
-    // Log every ACK received, even if stale
-    if (ack->spawnGeneration != p.spawnGeneration || ack->transformEpoch != p.transformEpoch || p.spawnState != ServerPlayer::AwaitingSpawnAck)
+    // A matching ack (same generation + epoch) proves the client received the
+    // spawn sync. Whether we are still AwaitingSpawnAck or already Active, the
+    // server re-sends SpawnActivated so the client's reliable ack retry always
+    // terminates — a dropped SpawnActivated can never leave the player wedged.
+    const bool matchesLifecycle =
+        ack->spawnGeneration == p.spawnGeneration &&
+        ack->transformEpoch == p.transformEpoch;
+
+    if (!matchesLifecycle)
     {
         Debug::log(Debug::Category::Weapons, "[SPAWN ACK REJECT] playerId=%u recvGen=%u recvEpoch=%u expectGen=%u expectEpoch=%u state=%d\n",
                    p.id, ack->spawnGeneration, ack->transformEpoch, p.spawnGeneration, p.transformEpoch, (int)p.spawnState);
         return;
     }
 
-    // Duplicate matching ACK after already Active — harmless
-    if (p.spawnState == ServerPlayer::Active)
+    if (p.spawnState == ServerPlayer::AwaitingSpawnAck)
     {
-        Debug::log(Debug::Category::Weapons, "[SPAWN ACK] playerId=%u spawnGen=%u epoch=%u — already Active, idempotent\n",
+        p.spawnState = ServerPlayer::Active;
+        resetServerMovementForAuthoritativeLifecycle(
+            p, makeCurrentRuntimeMovementConfig());
+        Debug::log(Debug::Category::Weapons, "[SPAWN ACK ACCEPT] playerId=%u spawnGen=%u epoch=%u — now Active\n",
                    p.id, ack->spawnGeneration, ack->transformEpoch);
+    }
+    else if (p.spawnState == ServerPlayer::Active)
+    {
+        // Duplicate matching ACK after already Active — re-send the
+        // confirmation so the client's retry loop terminates.
+        Debug::log(Debug::Category::Weapons, "[SPAWN ACK] playerId=%u spawnGen=%u epoch=%u — already Active, re-confirming\n",
+                   p.id, ack->spawnGeneration, ack->transformEpoch);
+    }
+    else
+    {
+        // Not spawned yet (or in an unexpected state): nothing to confirm.
         return;
     }
 
-    p.spawnState = ServerPlayer::Active;
-    resetServerMovementForAuthoritativeLifecycle(
-        p, makeCurrentRuntimeMovementConfig());
-    Debug::log(Debug::Category::Weapons, "[SPAWN ACK ACCEPT] playerId=%u spawnGen=%u epoch=%u — now Active\n",
-               p.id, ack->spawnGeneration, ack->transformEpoch);
-
-    // Send SpawnActivated confirmation
+    // Send SpawnActivated confirmation (also serves as the retry reply).
     SpawnActivatedPacket act{};
     act.header.type = PACKET_SPAWN_ACTIVATED;
     act.header.tick = tick;

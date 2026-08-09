@@ -691,6 +691,21 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
                 currentHealth = spawn->health;
                 movementSequence = 1;
                 gameplayActive = false;
+
+                // The spawn sync is delivered over the reliable-event transport;
+                // acknowledge it so the server stops retransmitting.
+                if (spawn->eventId != 0)
+                {
+                    MimitaNet::ReliableEventAckPacket evAck{};
+                    evAck.header.magic = MimitaNet::PROTOCOL_MAGIC;
+                    evAck.header.version = MimitaNet::PROTOCOL_VERSION;
+                    evAck.header.type = MimitaNet::PACKET_RELIABLE_EVENT_ACK;
+                    evAck.header.playerId = myId;
+                    evAck.eventId = spawn->eventId;
+                    evAck.eventSessionId = spawn->eventSessionId;
+                    sendIcePacket(agent, &evAck, sizeof(evAck));
+                }
+
                 MimitaNet::emitTestEvent("spawn_sent",
                     "\"clientIndex\":" + std::to_string(opts.clientIndex) +
                     ",\"playerId\":" + std::to_string(myId) +

@@ -1184,6 +1184,8 @@ struct RespawnRequestPacket
 struct PlayerRespawnedPacket
 {
     PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
     uint32_t spawnGeneration = 0;
     uint32_t transformEpoch = 0;
     int32_t health = 100;
