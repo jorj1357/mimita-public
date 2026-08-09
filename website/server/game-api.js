@@ -658,7 +658,7 @@ router.post("/games/:gameId/scores", authenticateToken, async (req, res, next) =
 })
 
 // Public leaderboard for mini games
-const HIGH_SCORE_GAMES = new Set(["rhythm-test-v1"])
+const HIGH_SCORE_GAMES = new Set(["rhythm-test-v1", "chili-race"])
 router.get("/games/:gameId/leaderboard", async (req, res, next) => {
     try {
         const { gameId } = req.params
