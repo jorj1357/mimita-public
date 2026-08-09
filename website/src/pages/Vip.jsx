@@ -130,8 +130,8 @@ export default function Vip() {
                 {message && <p className={message.includes("failed") || message.includes("not") ? "vipError" : "vipNotice"}>{message}</p>}
 
                 <div className="vipWhatIsThis">
-                    <h2>what is this</h2>
-                    <p>VIP is a voluntary supporter thing that gives you a cool colorful name — it's NOT a paywall, MiMITA is 100% free, and VIP will never block access to anything.</p>
+                    <h2>what is this why u asking for money loser</h2>
+                    <p>VIP is a voluntary supporter thing that gives you a cool colorful name in game and on the site. It's NOT!!!!!!!! a paywall. MiMITA is 100% free, and VIP will never block access to anything. EVER!!!!!</p>
                 </div>
 
                 <div className="vipGrid">
