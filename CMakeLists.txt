@@ -49,4 +49,3 @@ target_include_directories(mimita PRIVATE
 target_link_libraries(mimita PRIVATE 
     mimita-game
 )
-
