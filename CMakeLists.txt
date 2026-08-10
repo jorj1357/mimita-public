@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 project(mimita_hot_reload LANGUAGES C CXX)
 
 
-#nix-shell -p cmake pkg-config wayland libxkbcommon libGL libglvnd libffi
+# nix-shell -p cmake pkg-config wayland libxkbcommon libGL libglvnd libffi libX11 libXcursor libXrandr libXi libXinerama libXext
 # this is for nixos or smthing '~`
 #
 find_package(OpenGL REQUIRED)
@@ -16,13 +16,10 @@ FetchContent_Declare(
 )
 
 set(GLFW_BUILD_WAYLAND ON CACHE BOOL "" FORCE)
-set(GLFW_BUILD_X11 OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_X11 ON CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(glfw) 
 # /\
-
-
-
 # exports to clang ;PP
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # \/ installing glad

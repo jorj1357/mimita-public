@@ -7,6 +7,7 @@
 // Renderer only exposes a “draw” API
 // Your basic.vert / basic.frag stay exactly how they are
 
+#include <iostream>
 #define GLFW_INCLUDE_NONE
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -138,26 +139,39 @@ static bool dimensionsAreValidForCursor(int width, int height)
 }
 
 Renderer::Renderer(int w, int h, const char* title) {
+    printf("[WINDOW DEBUG] window=%p\n", (void*)window);
+    fflush(stdout);
+
+    printf("[0]");
     width = w;
     height = h;
-
+    glfwSetErrorCallback([](int error, const char* description) {
+    std::cout << "GLFW error " << error << ": " << description << '\n';
+});
+    printf("[1]");
     if (!glfwInit()) {
         printf("GLFW init failed\n");
         return;
     }
 
+    printf("[2]");
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
+    printf("[3]");
     window = glfwCreateWindow(w, h, title, nullptr, nullptr);
+
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    printf("[4]");
     if (!window) {
         printf("Window creation failed\n");
         glfwTerminate();
         return;
     }
 
+    printf("[5]");
     glfwSetCursorPosCallback(window,
     [](GLFWwindow* win, double x, double y)
     {
@@ -175,8 +189,9 @@ Renderer::Renderer(int w, int h, const char* title) {
     }
 
     glfwMakeContextCurrent(window);
-
     // this might go here idk ? mar 6 2026
+    //
+    // MMM, this is quite funky one :>> ~noob<33 10-08-2026
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     // this just to test
