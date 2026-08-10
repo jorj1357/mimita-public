@@ -46,6 +46,12 @@
 #include <filesystem>
 // POV: no linux XDD
 // #include <shellapi.h>
+#ifdef _WIN32
+    #include <windows.h>
+    #include <shellapi.h>
+#else
+    #include <unistd.h>
+#endif
 #include "engine/engine.h"
 #include "world/world.h"
 #include "world/world-loader.h"
@@ -1895,7 +1901,15 @@ int main(int argc, char** argv)
         [](const std::vector<std::string>&) {
             std::string p = LogManager::instance().path();
             if (!p.empty()) {
-                ShellExecuteA(NULL, "open", p.c_str(), NULL, NULL, SW_SHOWNORMAL);
+                #ifdef _WIN32
+                    ShellExecuteA(NULL, "open", p.c_str(), NULL, NULL, SW_SHOWNORMAL);
+                #else
+                    pid_t pid = fork();
+                    if (pid == 0) {
+                        execlp("xdg-open", "xdg-open", p.c_str(), nullptr);
+                        _exit(1);
+                    }
+                #endif
             }
         }
     });
@@ -1903,7 +1917,15 @@ int main(int argc, char** argv)
     Terminal::instance().registerCommand({
         "log_folder", "Open logs folder in Explorer", "log_folder",
         [](const std::vector<std::string>&) {
-            ShellExecuteA(NULL, "open", "logs", NULL, NULL, SW_SHOWNORMAL);
+            #ifdef _WIN32
+                ShellExecuteA(NULL, "open", "logs", NULL, NULL, SW_SHOWNORMAL);
+            #else
+                pid_t pid = fork();
+                if (pid == 0) {
+                    execlp("xdg-open", "xdg-open", "logs",, nullptr);
+                    _exit(1);
+                }
+            #endif
         }
     });
 
@@ -5291,7 +5313,15 @@ int main(int argc, char** argv)
         static bool f10Prev = false;
         bool f10Down = glfwGetKey(engine.window(), GLFW_KEY_F10) == GLFW_PRESS;
         if (f10Down && !f10Prev) {
-            ShellExecuteA(NULL, "open", "replays", NULL, NULL, SW_SHOWNORMAL);
+            #ifdef _WIN32
+                ShellExecuteA(NULL, "open", "replays", NULL, NULL, SW_SHOWNORMAL);
+            #else
+                pid_t pid = fork();
+                if (pid == 0) {
+                    execlp("xdg-open", "xdg-open", "replays",, nullptr);
+                    _exit(1);
+                }
+            #endif
             Debug::log(Debug::Category::General, "[MAIN] opened replays folder");
         }
         f10Prev = f10Down;
