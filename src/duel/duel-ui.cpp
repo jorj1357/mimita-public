@@ -1,10 +1,12 @@
 // 08 10 2026, 14 34
 /* purpose
-* Implements the duels queue/match HUD rendering using the shared UI system.
-* Draws the queue timer + status, the match-found banner, in-duel scoreboard
-* and countdown, the win/lose + rematch screen, the recent-duels panel with
-* rematch buttons, and the enemy-spawn tracer (world-space beam + label).
-* Does NOT contain matchmaking, network, or queue-state logic.
+* Renders the duels queue and in-match HUD from hot-reloadable GUI layout JSON:
+* the wait timer, match-found banner, connect status (with ping), scoreboard
+* (player names), countdown, win/lose overlay, rematch hints, recent-duels panel,
+* and the enemy-spawn tracer.
+* Reads state from DuelQueue and DuelHistory; all positions/colors/fonts come
+* from config/gui/duel-queue-hud.json and config/gui/duel-match-hud.json.
+* Does NOT run matchmaking, connect to servers, or mutate queue state.
 */
 
 #include "duel/duel-ui.h"
@@ -19,6 +21,7 @@
 
 #include "terminal/terminal-state.h"
 #include "gui/ui-system.h"
+#include "gui/gui-layout.h"
 #include "input/mouse-lock.h"
 #include "network/net_common.h"
 #include "camera.h"
@@ -27,10 +30,27 @@
 
 namespace {
 
-void drawCenteredText(const char* text, float y, float scale, glm::vec4 color)
+// Draw one text element from a layout at its JSON position with its JSON
+// font/color (same pattern as engine-tick-ui-game-hud.cpp).
+void hudText(GuiLayout& layout, const std::string& id, const std::string& text)
 {
-    const float w = uiMeasureText(text, scale);
-    uiDrawText(text, uiScreenW() * 0.5f - w * 0.5f, y, scale, color);
+    const GuiElement* el = layout.get(id);
+    if (!el) return;
+    float scale = el->fontSize > 0.0f ? el->fontSize : 0.32f;
+    glm::vec4 color = el->getTextColorVec();
+    uiDrawText(text.c_str(), uiScaleX(el->x), uiScaleY(el->y), scale, color);
+}
+
+// Downtime stopwatch line: "wait X.XXs" while not fighting, "last wait X.XXs"
+// during an active fight (the gap you just waited).
+void drawDowntime(GuiLayout& layout, const DuelQueue& dq, bool fighting)
+{
+    char buf[64];
+    if (fighting)
+        snprintf(buf, sizeof(buf), "last wait %.2fs", dq.lastDowntime());
+    else
+        snprintf(buf, sizeof(buf), "wait %.2fs", dq.downtime());
+    hudText(layout, "downtimeText", buf);
 }
 
 std::string formatElapsed(float seconds)
@@ -53,39 +73,37 @@ std::string formatAgeAgo(uint64_t unixMs)
     return buf;
 }
 
-void drawRecentDuelsPanel(GLFWwindow* win, bool mouseUnlocked)
+void drawRecentDuelsPanel(GLFWwindow* win, GuiLayout& layout, bool mouseUnlocked)
 {
     const auto& entries = DuelHistory::instance().entries();
     if (entries.empty())
         return;
 
-    const float sw = uiScreenW();
-    const float sh = uiScreenH();
+    const GuiElement* panelEl = layout.get("recentPanel");
+    if (!panelEl) return;
+
+    const float panelW = panelEl->w > 0.0f ? panelEl->w : 300.0f;
+    const float panelX = uiScaleX(panelEl->x);
+    const float panelY = uiScaleY(panelEl->y);
 
     if (!mouseUnlocked)
     {
         // Slim collapsed strip so the HUD stays uncluttered while fighting.
-        UIRect strip = {sw - 34.0f, sh * 0.5f - 60.0f, 26.0f, 120.0f};
+        UIRect strip = {panelX + panelW - 26.0f, panelY, 26.0f, 120.0f};
         uiDrawRect(strip, {0.0f, 0.0f, 0.0f, 0.45f}, "duels-strip-bg");
-        uiDrawText("D", strip.x + 6.0f, strip.y + 16.0f, 0.4f, {0.4f, 0.9f, 0.5f, 1.0f});
-        uiDrawText("U", strip.x + 6.0f, strip.y + 48.0f, 0.4f, {0.4f, 0.9f, 0.5f, 1.0f});
-        uiDrawText("E", strip.x + 6.0f, strip.y + 80.0f, 0.4f, {0.4f, 0.9f, 0.5f, 1.0f});
-        uiDrawText("L", strip.x + 6.0f, strip.y + 100.0f, 0.4f, {0.4f, 0.9f, 0.5f, 1.0f});
+        uiDrawText("DUELS", strip.x + 3.0f, strip.y + 40.0f, 0.28f, {0.4f, 0.9f, 0.5f, 1.0f});
         return;
     }
 
-    const float panelW = 300.0f;
-    const float panelX = sw - panelW - 12.0f;
-    const float panelY = sh * 0.12f;
-    UIRect panel = {panelX, panelY, panelW, 0.0f};
     const float headerH = 30.0f;
     const float rowH = 62.0f;
     const int show = std::min((int)entries.size(), 6);
-    panel.h = headerH + rowH * (float)show;
+    UIRect panel = {panelX, panelY, panelW, headerH + rowH * (float)show};
 
-    uiDrawRect(panel, {0.03f, 0.03f, 0.04f, 0.82f}, "duels-recent-bg");
+    const glm::vec4 bg = panelEl->getBackgroundColorVec();
+    uiDrawRect(panel, bg, "duels-recent-bg");
     uiDrawRectOutline(panel, {0.25f, 0.7f, 0.45f, 0.6f}, "duels-recent-outline");
-    uiDrawText("RECENT DUELS", panelX + 12.0f, panelY + 6.0f, 0.34f, {0.5f, 0.95f, 0.6f, 1.0f});
+    hudText(layout, "recentHeader", "RECENT DUELS");
 
     for (int i = 0; i < show; ++i)
     {
@@ -98,7 +116,6 @@ void drawRecentDuelsPanel(GLFWwindow* win, bool mouseUnlocked)
         uiDrawText(e.opponentName.c_str(), panelX + 12.0f, rowY + 26.0f, 0.26f, {0.85f, 0.85f, 0.85f, 1.0f});
         uiDrawText(formatAgeAgo(e.unixMs).c_str(), panelX + 12.0f, rowY + 44.0f, 0.22f, {0.6f, 0.6f, 0.6f, 1.0f});
 
-        // Rematch button for this opponent.
         UIRect btn = {panelX + panelW - 96.0f, rowY + 12.0f, 80.0f, 30.0f};
         UIButtonState s = uiButton(win, "Rematch", btn, {0.15f, 0.55f, 0.25f, 1.0f}, "duels-rematch");
         if (s.clicked)
@@ -114,31 +131,47 @@ void renderDuelQueueHud(GLFWwindow* win, float dt)
     if (!dq.isActive())
         return;
 
-    const float sw = uiScreenW();
-    const float sh = uiScreenH();
     const bool mouseUnlocked = !MouseLock::locked();
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/duel-queue-hud.json");
 
     switch (dq.state())
     {
     case DuelQueueState::Queuing:
     {
-        drawCenteredText("QUEUED", sh * 0.14f, 0.4f, {0.45f, 0.9f, 0.55f, 1.0f});
-        drawCenteredText(formatElapsed(dq.queueElapsed()).c_str(), sh * 0.20f, 1.1f, {0.6f, 1.0f, 0.65f, 1.0f});
-        drawCenteredText(dq.statusText().c_str(), sh * 0.32f, 0.3f, {0.7f, 0.75f, 0.8f, 0.9f});
-        drawCenteredText("Esc = leave queue", sh * 0.92f, 0.26f, {0.5f, 0.5f, 0.5f, 0.8f});
-        drawRecentDuelsPanel(win, mouseUnlocked);
+        hudText(layout, "queueTitle", "QUEUED");
+        hudText(layout, "queueTimer", formatElapsed(dq.queueElapsed()));
+        hudText(layout, "queueStatus", dq.statusText());
+        std::string mapLabel = "Map: " + (dq.chosenMap().empty() ? "?" : dq.chosenMap());
+        hudText(layout, "queueMap", mapLabel);
+        hudText(layout, "queueEscHint", "Esc = leave queue");
+        drawRecentDuelsPanel(win, layout, mouseUnlocked);
         break;
     }
 
     case DuelQueueState::MatchFound:
-    case DuelQueueState::HostLaunching:
     case DuelQueueState::Connecting:
     {
         static float pulse = 0.0f;
         pulse += dt;
-        const float a = 0.75f + 0.25f * sinf(pulse * 6.0f);
-        drawCenteredText("match found!!!!!!!!", sh * 0.42f, 0.85f, {0.3f, 1.0f, 0.35f, a});
-        drawCenteredText(dq.statusText().c_str(), sh * 0.55f, 0.3f, {0.8f, 0.8f, 0.8f, 0.9f});
+        const GuiElement* banner = layout.get("matchFoundText");
+        if (banner)
+        {
+            float scale = banner->fontSize > 0.0f ? banner->fontSize : 0.85f;
+            glm::vec4 color = banner->getTextColorVec();
+            color.a = 0.75f + 0.25f * sinf(pulse * 6.0f);
+            uiDrawText("match found!!!!!!!!", uiScaleX(banner->x), uiScaleY(banner->y), scale, color);
+        }
+        hudText(layout, "matchFoundOpponent", dq.opponentName());
+
+        // Live connect status with ping once it's measured.
+        char status[160];
+        if (MP_CONTEXT.active)
+            snprintf(status, sizeof(status), "%s - ping: %ums", dq.statusText().c_str(),
+                     MP_CONTEXT.localPingMs);
+        else
+            snprintf(status, sizeof(status), "%s - ping: %ums", dq.statusText().c_str(),
+                     MP_CONTEXT.localPingMs);
+        hudText(layout, "connectStatus", status);
         break;
     }
 
@@ -153,54 +186,62 @@ void renderDuelMatchHud(GLFWwindow* win, float dt)
     if (!dq.inDuel())
         return;
 
-    const float sw = uiScreenW();
-    const float sh = uiScreenH();
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/duel-match-hud.json");
 
     if (dq.countdownActive())
     {
         char num[8];
         snprintf(num, sizeof(num), "%.0f", std::ceil(std::max(0.0f, dq.countdownLeft())));
-        drawCenteredText(num, sh * 0.35f, 1.6f, {1.0f, 1.0f, 1.0f, 1.0f});
+        hudText(layout, "countdownNum", num);
+        drawDowntime(layout, dq, false);
         return;
     }
 
     if (dq.matchOver())
     {
-        uiDrawRect({0, 0, sw, sh}, {0.0f, 0.0f, 0.0f, 0.55f}, "duel-end-dim");
+        const GuiElement* overlay = layout.get("endOverlay");
+        if (overlay)
+        {
+            UIRect full = {uiScaleX(overlay->x), uiScaleY(overlay->y),
+                           uiScaleX(overlay->w), uiScaleY(overlay->h)};
+            uiDrawRect(full, overlay->getBackgroundColorVec(), "duel-end-dim");
+        }
 
-        const char* text = dq.won() ? "YOU WIN" : "YOU LOSE";
-        const glm::vec4 color = dq.won()
-            ? glm::vec4(0.3f, 1.0f, 0.3f, 1.0f)
-            : glm::vec4(1.0f, 0.3f, 0.3f, 1.0f);
-        drawCenteredText(text, sh * 0.34f, 1.3f, color);
+        if (dq.won())
+            hudText(layout, "winText", "YOU WIN");
+        else
+            hudText(layout, "loseText", "YOU LOSE");
 
         char score[64];
         snprintf(score, sizeof(score), "%d - %d", dq.myScore(), dq.oppScore());
-        drawCenteredText(score, sh * 0.48f, 0.7f, {1.0f, 0.85f, 0.25f, 1.0f});
+        hudText(layout, "endScore", score);
 
         char rematch[80];
         snprintf(rematch, sizeof(rematch), "rematch in %.0f...", std::max(0.0f, dq.rematchLeft()));
-        drawCenteredText(rematch, sh * 0.58f, 0.42f, {0.7f, 0.9f, 0.75f, 1.0f});
+        hudText(layout, "rematchText", rematch);
 
-        drawCenteredText("keep fighting - scores locked", sh * 0.66f, 0.28f, {0.65f, 0.65f, 0.65f, 0.9f});
-        drawCenteredText("Esc = back to queue", sh * 0.74f, 0.28f, {0.55f, 0.55f, 0.55f, 0.9f});
+        hudText(layout, "endHintContinue", "keep fighting - scores locked");
+        hudText(layout, "endHintSpace", "press space to rematch now");
+        hudText(layout, "endHintEsc", "esc = back to the queue");
 
-        drawRecentDuelsPanel(win, true);
+        drawDowntime(layout, dq, false);
+        drawRecentDuelsPanel(win, layout, true);
         return;
     }
 
-    // Active fight: scoreboard with team names.
+    // Active fight: scoreboard with player names (me on the left, them on the right).
     char score[128];
-    snprintf(score, sizeof(score), "%s  %d - %d  %s",
-             dq.teamName(true).c_str(), dq.myScore(), dq.oppScore(),
-             dq.teamName(false).c_str());
-    drawCenteredText(score, sh * 0.06f, 0.55f, {1.0f, 0.9f, 0.35f, 1.0f});
+    snprintf(score, sizeof(score), "%s %d - %d %s",
+             dq.playerName().c_str(), dq.myScore(), dq.oppScore(),
+             dq.opponentName().c_str());
+    hudText(layout, "scoreText", score);
 
     char goal[64];
     snprintf(goal, sizeof(goal), "first to %d", dq.goal());
-    drawCenteredText(goal, sh * 0.11f, 0.24f, {0.7f, 0.75f, 0.8f, 0.8f});
+    hudText(layout, "goalText", goal);
 
-    drawRecentDuelsPanel(win, !MouseLock::locked());
+    drawDowntime(layout, dq, true);
+    drawRecentDuelsPanel(win, layout, !MouseLock::locked());
 }
 
 void renderDuelTracer(const Camera& camera)

@@ -620,7 +620,9 @@ IcePollResult coordinatorIcePoll(const std::string& roomCode, const std::string&
 QueueJoinResult coordinatorQueueJoin(const std::string& profileId,
                                      const std::string& name,
                                      const std::string& preferOpponentId,
-                                     const std::vector<std::string>& maps)
+                                     const std::vector<std::string>& maps,
+                                     const std::string& map,
+                                     const std::string& roomCode)
 {
     QueueJoinResult result;
     json j;
@@ -631,6 +633,8 @@ QueueJoinResult coordinatorQueueJoin(const std::string& profileId,
     j["maps"] = json::array();
     for (const auto& m : maps)
         j["maps"].push_back(m);
+    j["map"] = map;
+    j["room_code"] = roomCode;
 
     std::string response;
     long httpCode = 0;

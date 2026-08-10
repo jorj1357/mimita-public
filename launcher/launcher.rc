@@ -1,6 +1,17 @@
 // launcher.rc — Resource script for MimitaLauncher
-// Embeds the loading screen image directly into the EXE.
+// Embeds the launcher icon, loading screen image, and the GUI config into the
+// EXE. Resource IDs must be numeric: windres treats a bare token as a STRING
+// name, which the loader then can't find via MAKEINTRESOURCE (this broke the
+// background image before these #defines were added).
+#define IDB_LOADING_IMAGE 101
+#define GUI_CONFIG 102
+
+// Application icon: Windows shows it for the launcher in the taskbar, Explorer
+// and the system tray. Numeric ID 1 (coexists with the manifest, different type).
+1 ICON "..\\assets\\uitextures\\mimita launcher icon.ico"
+
 IDB_LOADING_IMAGE RCDATA "..\\assets\\uitextures\\mimita-loading-v1.png"
+GUI_CONFIG RCDATA "..\\launcher\\launcher-gui.json"
 
 // Common-Controls v6 manifest so TaskDialogIndirect resolves against comctl32
 // v6 (the v5.82 System32 copy does not export it). Resource type must be the

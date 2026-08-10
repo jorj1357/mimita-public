@@ -69,6 +69,46 @@ def main():
         print("FAIL: manifest resource not embedded as RT_MANIFEST type 24")
         ok = False
 
+    # 3b. Background image + GUI config must be numeric RCDATA resources. The
+    #     same windres quirk as the manifest: a bare token becomes a string
+    #     name, so FindResource(MAKEINTRESOURCE(101/102)) would fail and the
+    #     gradient would show instead of the PNG. The string "IDB_LOADING_IMAGE"
+    #     must NOT appear in the binary, and the embedded config must.
+    raw = LAUNCHER.read_bytes()
+    if b"IDB_LOADING_IMAGE" in raw:
+        print("FAIL: IDB_LOADING_IMAGE is a string resource name, not numeric 101")
+        ok = False
+    else:
+        print("PASS: IDB_LOADING_IMAGE is a numeric resource (no string name)")
+    if b'"window.title"' in raw:
+        print("PASS: launcher-gui.json embedded as GUI_CONFIG RCDATA")
+    else:
+        print("FAIL: launcher-gui.json not embedded (GUI_CONFIG resource missing)")
+        ok = False
+
+    # 3c. The launcher must embed an application icon (taskbar + system tray).
+    import ctypes
+    from ctypes import wintypes
+    shell32 = ctypes.WinDLL("shell32.dll")
+    shell32.ExtractIconExW.restype = ctypes.c_uint
+    shell32.ExtractIconExW.argtypes = [
+        wintypes.LPCWSTR, ctypes.c_int,
+        ctypes.POINTER(wintypes.HICON), ctypes.POINTER(wintypes.HICON),
+        ctypes.c_uint]
+    large = (wintypes.HICON * 1)()
+    small = (wintypes.HICON * 1)()
+    icon_count = shell32.ExtractIconExW(str(LAUNCHER), 0, large, small, 1)
+    user32 = ctypes.WinDLL("user32.dll")
+    user32.DestroyIcon.argtypes = [wintypes.HICON]
+    for ic in (large[0], small[0]):
+        if ic:
+            user32.DestroyIcon(ic)
+    if icon_count > 0:
+        print("PASS: launcher embeds an application icon (ExtractIconEx found it)")
+    else:
+        print("FAIL: launcher has no embedded application icon")
+        ok = False
+
     # 4. Launcher process must start and stay alive (no STATUS_ENTRYPOINT_NOT_FOUND).
     #    Run from an isolated temp dir: a dummy mimita-game.zip makes it dev-mode
     #    (no self-install/self-update), and a missing --release-json keeps the

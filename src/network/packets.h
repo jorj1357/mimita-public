@@ -117,7 +117,15 @@ enum PacketType : uint8_t
     PACKET_DUEL_STATE = 55,
     // Server → the surviving player: where their opponent just respawned so
     // they can draw a "look here" tracer.
-    PACKET_DUEL_ENEMY_SPAWN = 56
+    PACKET_DUEL_ENEMY_SPAWN = 56,
+    // ── Duel rematch now (client → server) ─────────────────────────────
+    // A player pressed Space on the win/lose screen to skip the rematch
+    // timer and start the next duel immediately.
+    PACKET_DUEL_REMATCH_REQUEST = 57,
+    // ── Live map change (server → clients) ─────────────────────────────
+    // The server swapped the map without restarting; clients must load the
+    // new map and re-complete the spawn handshake.
+    PACKET_MAP_CHANGE = 58
 };
 
 enum DamageConfirmedSource : uint8_t
@@ -949,6 +957,19 @@ struct DuelEnemySpawnPacket
 };
 
 static_assert(sizeof(DuelEnemySpawnPacket) == 36, "DuelEnemySpawnPacket wire size changed");
+
+// Client → server: skip the rematch timer and start the next duel now.
+struct DuelRematchRequestPacket
+{
+    PacketHeader header;
+};
+
+// Server → all clients: the map changed live; load the new one and re-ready.
+struct MapChangePacket
+{
+    PacketHeader header;
+    char mapId[MAX_NAME_BYTES];
+};
 
 struct JoinRequestPacket
 {

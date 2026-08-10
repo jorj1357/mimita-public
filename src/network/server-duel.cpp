@@ -13,9 +13,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <random>
 
 #include "network/packets.h"
 #include "network/server.h"
+#include "npc/npc.h"
 #include "debug/debug-log.h"
 
 namespace MimitaNet {
@@ -44,10 +46,15 @@ void serverDuelStart(const ServerDuelState& rules)
     d.winnerPlayerId = 0;
     d.spawnsAssigned = false;
     d.stateSent = false;
+    d.mapPool = rules.mapPool;
+    d.rotateMaps = rules.rotateMaps;
+    d.mapId = rules.mapId;
+    d.hasPendingManualMap = false;
+    d.pendingManualMap.clear();
     Debug::warn(Debug::Category::Duel,
-        "[DUEL SERVER] enabled goal=%d countdown=%.1fs rematch=%.1fs teams=%s/%s\n",
+        "[DUEL SERVER] enabled goal=%d countdown=%.1fs rematch=%.1fs teams=%s/%s rotate=%d pool=%zu\n",
         d.goalValue, d.countdownSeconds, d.rematchSeconds,
-        d.teamAName.c_str(), d.teamBName.c_str());
+        d.teamAName.c_str(), d.teamBName.c_str(), (int)d.rotateMaps, d.mapPool.size());
 }
 
 namespace {
@@ -173,17 +180,109 @@ void beginDuelCountdown(ServerDuelState& d,
         "[DUEL SERVER] countdown started players=%u/%u\n", d.playerAId, d.playerBId);
 }
 
+// loadHeadlessWorld appends, so clear everything it populates before a reload.
+void clearHeadlessWorld(HeadlessWorld& world)
+{
+    world.triangles.clear();
+    world.boundsMin = glm::vec3(0.0f);
+    world.boundsMax = glm::vec3(0.0f);
+    world.spawnPoints.clear();
+    world.collisionChunks.clear();
+    world.collisionLargeTriangles.clear();
+    world.collisionSubGrids.clear();
+}
+
+void broadcastMapChange(SOCKET sock,
+                        const std::string& mapId,
+                        const std::unordered_map<uint32_t, ServerPlayer>& players,
+                        uint64_t& totalPacketsOut)
+{
+    MapChangePacket pkt{};
+    pkt.header.type = PACKET_MAP_CHANGE;
+    pkt.header.tick = 0;
+    std::strncpy(pkt.mapId, mapId.c_str(), sizeof(pkt.mapId) - 1);
+    for (const auto& kv : players)
+    {
+        if (kv.second.spawnState != ServerPlayer::Active)
+            continue;
+        if (serverSendToPlayer(sock, kv.second, &pkt, sizeof(pkt)))
+            ++totalPacketsOut;
+    }
+}
+
+// Reload the headless world + NPC collision world for a new map, re-pick the
+// duel spawns, teleport both players, and broadcast the map change.
+void reloadDuelMap(SOCKET sock,
+                   ServerDuelState& d,
+                   std::unordered_map<uint32_t, ServerPlayer>& players,
+                   HeadlessWorld& world,
+                   World& npcWorld,
+                   const std::string& mapId,
+                   uint64_t& totalPacketsOut)
+{
+    const std::string path = "assets/maps/" + mapId + ".glb";
+    clearHeadlessWorld(world);
+    if (!loadHeadlessWorld(path.c_str(), world))
+    {
+        Debug::error(Debug::Category::Duel,
+            "[DUEL SERVER] map reload failed: %s\n", path.c_str());
+        return;
+    }
+    buildNpcWorldCollision(npcWorld, world);
+    setServerMapId(mapId);
+    d.mapId = mapId;
+    assignDuelSpawns(d, world);
+    broadcastMapChange(sock, mapId, players, totalPacketsOut);
+    teleportDuelistsToSpawns(d, players);
+    Debug::warn(Debug::Category::Duel,
+        "[DUEL SERVER] map changed live to %s (spawns=%zu)\n",
+        mapId.c_str(), world.spawnPoints.size());
+}
+
+std::string nextRandomMap(const ServerDuelState& d)
+{
+    if (d.mapPool.empty()) return d.mapId;
+    std::vector<std::string> candidates = d.mapPool;
+    if (d.mapPool.size() > 1)
+    {
+        candidates.erase(
+            std::remove_if(candidates.begin(), candidates.end(),
+                           [&](const std::string& m) { return m == d.mapId; }),
+            candidates.end());
+    }
+    std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<size_t> dist(0, candidates.size() - 1);
+    return candidates[dist(rng)];
+}
+
 } // namespace
 
 void serverDuelTick(SOCKET sock,
                     std::unordered_map<uint32_t, ServerPlayer>& players,
-                    const HeadlessWorld& world,
+                    HeadlessWorld& world,
+                    World& npcWorld,
+                    std::unordered_map<uint32_t, ServerNpc>& npcs,
+                    NpcSystem& npcSystem,
+                    std::unordered_set<uint32_t>& npcIdsAlive,
                     uint32_t tick,
                     uint64_t& totalPacketsOut)
 {
     ServerDuelState& d = serverDuelState();
     if (!d.enabled) return;
     (void)tick;
+
+    // Host-only changemap command: swap the map live on the next tick.
+    if (d.hasPendingManualMap)
+    {
+        const std::string mapId = d.pendingManualMap;
+        d.hasPendingManualMap = false;
+        d.pendingManualMap.clear();
+        if (!mapId.empty())
+        {
+            reloadDuelMap(sock, d, players, world, npcWorld, mapId, totalPacketsOut);
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+        }
+    }
 
     // Process any kill recorded by applyServerDamage last tick.
     if (d.hasPendingKill)
@@ -248,6 +347,10 @@ void serverDuelTick(SOCKET sock,
         {
             assignDuelists(d, players);
             assignDuelSpawns(d, world);
+            // Drop the practice NPC(s) once the real duel is about to start.
+            npcs.clear();
+            npcSystem.destroyAll();
+            npcIdsAlive.clear();
             beginDuelCountdown(d, players);
             broadcastDuelState(sock, d, players, totalPacketsOut);
         }
@@ -299,8 +402,13 @@ void serverDuelTick(SOCKET sock,
         d.rematchLeft -= SERVER_DT;
         if (d.rematchLeft <= 0.0f)
         {
+            // Auto-rotate to a fresh random map for the next duel.
+            if (d.rotateMaps && d.mapPool.size() > 1)
+                reloadDuelMap(sock, d, players, world, npcWorld,
+                              nextRandomMap(d), totalPacketsOut);
             Debug::log(Debug::Category::Duel, "[DUEL SERVER] rematch\n");
             beginDuelCountdown(d, players);
+            broadcastDuelState(sock, d, players, totalPacketsOut);
         }
         else if (tick - d.lastBroadcastTick >= 60)
         {
@@ -309,6 +417,22 @@ void serverDuelTick(SOCKET sock,
         }
         break;
     }
+}
+
+void serverDuelRematchNow()
+{
+    ServerDuelState& d = serverDuelState();
+    if (!d.enabled) return;
+    // The MATCH_END branch starts the next duel when rematchLeft hits 0.
+    d.rematchLeft = 0.0f;
+}
+
+void serverDuelRequestMapChange(const std::string& mapId)
+{
+    ServerDuelState& d = serverDuelState();
+    if (!d.enabled || mapId.empty()) return;
+    d.hasPendingManualMap = true;
+    d.pendingManualMap = mapId;
 }
 
 void serverDuelOnPlayerDeath(uint32_t killerPlayerId,

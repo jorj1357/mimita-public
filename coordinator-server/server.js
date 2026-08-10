@@ -45,7 +45,8 @@ function pickDuelMap(aMaps, bMaps) {
 function tryMatchQueue() {
     const waiting = [];
     for (const [ticketId, ticket] of queueTickets) {
-        if (!ticket.matched_match_id)
+        // Only matchable once the player's own duel server is up (has a code).
+        if (!ticket.matched_match_id && ticket.room_code)
             waiting.push(ticketId);
     }
     while (waiting.length >= 2) {
@@ -55,10 +56,10 @@ function tryMatchQueue() {
         for (const id of waiting) {
             const t = queueTickets.get(id);
             if (t.prefer_opponent) {
-                const target = queueTickets.get(t.prefer_opponent);
-                if (target && !target.matched_match_id &&
-                    (target.profile_id === t.prefer_opponent ||
-                     target.name === t.prefer_opponent)) {
+            const target = queueTickets.get(t.prefer_opponent);
+            if (target && !target.matched_match_id && target.room_code &&
+                (target.profile_id === t.prefer_opponent ||
+                 target.name === t.prefer_opponent)) {
                     aId = id;
                     bId = t.prefer_opponent;
                     break;
@@ -76,7 +77,8 @@ function tryMatchQueue() {
         waiting.splice(waiting.indexOf(bId), 1);
 
         const matchId = generateId();
-        const map = pickDuelMap(a.maps, b.maps);
+        // The first person to queue (host) decides the map both players use.
+        const map = (a.map || "").length > 0 ? a.map : pickDuelMap(a.maps, b.maps);
         a.matched_match_id = matchId;
         b.matched_match_id = matchId;
         matches.set(matchId, {
@@ -86,7 +88,7 @@ function tryMatchQueue() {
             host_name: a.name,
             client_name: b.name,
             map,
-            host_room_code: "",
+            host_room_code: a.room_code || "",
             state: "assigning",
             created_at: Date.now()
         });
@@ -669,12 +671,14 @@ const routes = {
         ticket.name = name;
         ticket.prefer_opponent = body.prefer_opponent ? String(body.prefer_opponent) : "";
         ticket.maps = Array.isArray(body.maps) ? body.maps.map(String) : [];
+        ticket.map = body.map ? String(body.map) : "";
+        ticket.room_code = body.room_code ? String(body.room_code) : "";
         ticket.joined_at = Date.now();
         ticket.last_poll = Date.now();
         ticket.matched_match_id = null;
 
         console.log("[DUEL QUEUE] join ticket=" + ticketId.substring(0, 8) +
-            " player=\"" + name + "\" prefer=\"" + (ticket.prefer_opponent || "-") + "\" maps=" + ticket.maps.length);
+            " player=\"" + name + "\" code=\"" + (ticket.room_code || "-") + "\" maps=" + ticket.maps.length);
         tryMatchQueue();
         json(res, 200, { ok: true, ticket_id: ticketId });
     },

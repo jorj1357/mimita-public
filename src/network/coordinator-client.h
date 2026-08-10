@@ -187,12 +187,15 @@ struct QueuePollResult {
     std::string errorCode;
 };
 
-// Join the duels queue. `maps` is the caller's duel map pool (game's source of
-// truth); the matchmaker picks one map per match. Guest-friendly: no auth.
+// Join the duels queue. `maps` is the caller's duel map pool; `map` is the
+// random map picked at queue time; `roomCode` is the player's own running duel
+// server's code (the match uses the host ticket's code). Guest-friendly.
 QueueJoinResult coordinatorQueueJoin(const std::string& profileId,
                                      const std::string& name,
                                      const std::string& preferOpponentId,
-                                     const std::vector<std::string>& maps);
+                                     const std::vector<std::string>& maps,
+                                     const std::string& map,
+                                     const std::string& roomCode);
 
 // Leave the queue (also cancels any assigned-but-unstarted match).
 bool coordinatorQueueLeave(const std::string& ticketId);

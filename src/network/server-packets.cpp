@@ -9,6 +9,7 @@
 */
 
 #include "network/server.h"
+#include "network/server-duel.h"
 #include "network/multiplayer-context.h"
 #include "network/coordinator-client.h"
 #include "network/snapshot-chunks.h"
@@ -442,7 +443,7 @@ static void bindPlayerConnection(ServerPlayer& player,
 
 static bool isKnownPacketType(uint8_t type)
 {
-    return type >= PACKET_HELLO && type <= PACKET_DAMAGE_CONFIRMED_EVENT;
+    return type >= PACKET_HELLO && type <= PACKET_MAP_CHANGE;
 }
 
 static void countPacketType(ServerPacketStats& stats, uint8_t type)
@@ -1545,6 +1546,12 @@ ServerPacketProcessResult processServerPacket(
     {
         handleServerCommand(sock, from, buffer, bytes, players, npcs,
                             tick, totalPacketsOut);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_DUEL_REMATCH_REQUEST)
+    {
+        // Space on the win/lose screen: start the next duel immediately.
+        serverDuelRematchNow();
         result.handled = true;
     }
     else if (header->type == PACKET_SPAWN_ACK &&

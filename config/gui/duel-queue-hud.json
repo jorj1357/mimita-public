@@ -1,0 +1,75 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 2,
+  "elements": [
+    {
+      "id": "queueTitle",
+      "type": "text",
+      "x": 910, "y": 96, "width": 160, "height": 30,
+      "fontSize": 0.42,
+      "textColor": [0.45, 0.9, 0.55, 1]
+    },
+    {
+      "id": "queueTimer",
+      "type": "text",
+      "x": 880, "y": 130, "width": 200, "height": 60,
+      "fontSize": 1.15,
+      "textColor": [0.6, 1.0, 0.65, 1]
+    },
+    {
+      "id": "queueStatus",
+      "type": "text",
+      "x": 840, "y": 210, "width": 300, "height": 24,
+      "fontSize": 0.3,
+      "textColor": [0.7, 0.75, 0.8, 0.9]
+    },
+    {
+      "id": "queueMap",
+      "type": "text",
+      "x": 840, "y": 242, "width": 300, "height": 24,
+      "fontSize": 0.28,
+      "textColor": [0.6, 0.7, 0.6, 0.9]
+    },
+    {
+      "id": "queueEscHint",
+      "type": "text",
+      "x": 880, "y": 986, "width": 240, "height": 24,
+      "fontSize": 0.26,
+      "textColor": [0.5, 0.5, 0.5, 0.8]
+    },
+    {
+      "id": "matchFoundText",
+      "type": "text",
+      "x": 760, "y": 430, "width": 420, "height": 50,
+      "fontSize": 0.85,
+      "textColor": [0.3, 1.0, 0.35, 1]
+    },
+    {
+      "id": "matchFoundOpponent",
+      "type": "text",
+      "x": 800, "y": 500, "width": 340, "height": 36,
+      "fontSize": 0.42,
+      "textColor": [0.9, 0.9, 0.9, 1]
+    },
+    {
+      "id": "connectStatus",
+      "type": "text",
+      "x": 810, "y": 556, "width": 320, "height": 24,
+      "fontSize": 0.3,
+      "textColor": [0.75, 0.85, 1.0, 0.95]
+    },
+    {
+      "id": "recentPanel",
+      "type": "panel",
+      "x": 1570, "y": 140, "width": 300, "height": 420,
+      "backgroundColor": [0.03, 0.03, 0.04, 0.82]
+    },
+    {
+      "id": "recentHeader",
+      "type": "text",
+      "x": 1582, "y": 146, "width": 260, "height": 24,
+      "fontSize": 0.34,
+      "textColor": [0.5, 0.95, 0.6, 1]
+    }
+  ]
+}

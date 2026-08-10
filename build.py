@@ -539,6 +539,46 @@ with ThreadPoolExecutor(max_workers=os.cpu_count()) as juice_executor:
             sys.exit(1)
 
 # ============================================================
+# RESOURCE (icon) — mimita.rc → build/mimita.res.o
+# ============================================================
+
+WINDRES = r"C:\important\winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4\mingw64\bin\windres.exe"
+RC_FILE = os.path.join(ROOT, "mimita.rc")
+RES_OBJ = os.path.join(BUILD_DIR, "mimita.res.o")
+res_compiled = False
+
+if os.path.isfile(RC_FILE):
+    os.makedirs(BUILD_DIR, exist_ok=True)
+    rc_mtime = os.path.getmtime(RC_FILE)
+    icon_path = None
+    try:
+        with open(RC_FILE, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if "ICON" in line and '"' in line:
+                    icon_path = line.split('"')[1]
+                    break
+    except OSError:
+        pass
+    need_res = not os.path.exists(RES_OBJ)
+    if not need_res and os.path.getmtime(RES_OBJ) < rc_mtime:
+        need_res = True
+    if not need_res and icon_path:
+        full_icon = os.path.join(ROOT, icon_path)
+        if os.path.isfile(full_icon) and os.path.getmtime(RES_OBJ) < os.path.getmtime(full_icon):
+            need_res = True
+    if need_res:
+        print("[RC  ]", os.path.relpath(RC_FILE, ROOT))
+        r = subprocess.run([WINDRES, RC_FILE, "-O", "coff", "-o", RES_OBJ])
+        if r.returncode != 0:
+            print()
+            print("==================================================")
+            print(" RESOURCE BUILD FAILED")
+            print("==================================================")
+            sys.exit(1)
+        res_compiled = True
+    object_files.append(RES_OBJ)
+
+# ============================================================
 # DETERMINE IF LINK NEEDED
 # ============================================================
 
@@ -546,6 +586,7 @@ exe_path = os.path.join(ROOT, EXE_NAME)
 
 needs_link = (
     compiled_count > 0 or
+    res_compiled or
     os.environ.get("MIMITA_FORCE_LINK") == "1" or
     not os.path.exists(exe_path)
 )  

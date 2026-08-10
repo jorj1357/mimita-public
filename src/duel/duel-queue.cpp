@@ -1,15 +1,17 @@
 // 08 10 2026, 14 34
 /* purpose
-* Implements the client-side duels queue flow: coordinator matchmaking poll,
-* sandbox practice wait, match found banner, host/client connect, and the
-* live duel HUD view driven by PACKET_DUEL_STATE / PACKET_DUEL_ENEMY_SPAWN.
-* Works for guests AND accounts - no auth required.
-* Does NOT run authoritative duel simulation (server-side).
-* Does NOT persist history (duel-history.h) or talk HTTP (coordinator-client.h).
+* Implements the client-side duels queue: launches your own duel server (online
+* mode from the start, mirroring the community browser), connects to it, polls
+* the coordinator every few seconds, and on a match either hosts (opponent
+* joins you) or abandons your server and joins the opponent's.
+* Tracks a downtime stopwatch (seconds not fighting) that resets each fight.
+* Does NOT run authoritative duel simulation or talk HTTP directly.
+* Does NOT persist history (duel-history.h) or own the coordinator protocol.
 */
 
 #include "duel/duel-queue.h"
 #include "duel/duel-history.h"
+#include "duel/duel-map-pool.h"
 
 #include <chrono>
 #include <thread>
@@ -29,15 +31,12 @@ using namespace MimitaNet;
 
 namespace {
 
-constexpr int kPollIntervalMs = 1000;
+constexpr int kPollIntervalMs = 5000;
+constexpr uint64_t kQueueServerStartTimeoutMs = 15000;
+constexpr uint64_t kServerConnectTimeoutMs = 20000;
 constexpr uint64_t kMatchConnectTimeoutMs = 60000;
-constexpr uint64_t kHostLaunchTimeoutMs = 25000;
+constexpr uint64_t kOpponentJoinTimeoutMs = 30000;
 constexpr uint64_t kStateStaleTimeoutMs = 3500;
-
-const char* practiceMapPath()
-{
-    return "assets/maps/mimita-aabb-only-interior-small-v4.glb";
-}
 
 } // namespace
 
@@ -76,14 +75,14 @@ void DuelQueue::pollThread()
     while (!mThreadStop.load())
     {
         std::string ticketId;
-        bool shouldPoll = false;
+        bool doPoll = false;
         {
             std::lock_guard<std::mutex> lock(mSharedMutex);
             ticketId = mTicketId;
-            shouldPoll = mPolling;
+            doPoll = mPolling;
         }
 
-        if (shouldPoll && !ticketId.empty())
+        if (doPoll && !ticketId.empty())
         {
             QueuePollResult poll = coordinatorQueuePoll(ticketId);
             std::lock_guard<std::mutex> lock(mSharedMutex);
@@ -110,12 +109,8 @@ void DuelQueue::pollThread()
                 mMapName = poll.map;
                 mOpponentName = poll.opponentName;
             }
-            else if (poll.status == "cancelled")
-            {
-                mCancelled = true;
-                mPolling = false;
-            }
-            else if (poll.status == "error" || poll.status == "ticket-not-found")
+            else if (poll.status == "cancelled" || poll.status == "error" ||
+                     poll.status == "ticket-not-found")
             {
                 mCancelled = true;
                 mPolling = false;
@@ -147,35 +142,44 @@ void DuelQueue::startQueue(const std::string& profileId, const std::string& name
         mPolling = true;
     }
 
-    QueueJoinResult join = coordinatorQueueJoin(profileId, name, preferOpponentId, maps);
-    if (!join.ok)
-    {
-        Debug::warn(Debug::Category::Duel, "[DUEL QUEUE] join failed: %s\n",
-                    join.errorCode.c_str());
-        mState = DuelQueueState::Failed;
-        mStatusText = "Could not reach matchmaking";
-        mFailedTimer = 3.0f;
-        return;
-    }
-    {
-        std::lock_guard<std::mutex> lock(mSharedMutex);
-        mTicketId = join.ticketId;
-    }
+    if (mMaps.empty())
+        mMaps = DuelMapPool::instance().list();
+    mChosenMap = DuelMapPool::instance().randomMap();
+
+    // Tear down any leftover session/server before launching a fresh one.
+    MimitaNet::mpShutdown(MP_CONTEXT);
+    stopExternalServerProcess();
+    THE_NPC_SYSTEM.destroyAll();
 
     mState = DuelQueueState::Queuing;
-    mQueueElapsed = 0.0f;
-    mStatusText = "In queue - waiting for a duel";
+    mDowntime = 0.0f;
+    mLastDowntime = 0.0f;
+    mWasFighting = false;
+    mDuelPhase = DUEL_PHASE_WAITING;
+    mStatusText = "Starting your duel server...";
     mMatchFoundBanner = false;
     mMatchFoundTimer = 0.0f;
     mPhaseStartMs = nowMs();
-    mWantsSandbox = true;
+    mQueueRoomCode.clear();
+    mServerConnectStarted = false;
+    mQueueServerConnected = false;
+    mJoinedCoordinator = false;
+    mJoinRetryTimer = 0.0f;
+    mServerConnectStartMs = 0;
+    mWantsChosenMap = true;
     mInDuel = false;
     mMatchOver = false;
     mHistoryRecorded = false;
     mLastStateMs = 0;
 
-    Debug::log(Debug::Category::Duel, "[DUEL QUEUE] queuing ticket=%s prefer=%s\n",
-               join.ticketId.substr(0, 8).c_str(), preferOpponentId.c_str());
+    // Online mode from the start: launch your own duel server on your map.
+    if (!launchDuelHostServer(mChosenMap))
+        mStatusText = "Could not start duel server - retrying";
+
+    NotificationSystem::instance().push(
+        "Duels queue", "Now queued - matchmaking...", 240, {});
+    Debug::log(Debug::Category::Duel, "[DUEL QUEUE] queuing map=%s prefer=%s\n",
+               mChosenMap.c_str(), preferOpponentId.c_str());
     beginPolling();
 }
 
@@ -194,8 +198,12 @@ void DuelQueue::stopQueue()
         coordinatorQueueLeave(ticketId);
     endPolling();
 
+    MimitaNet::mpShutdown(MP_CONTEXT);
+    stopExternalServerProcess();
+    THE_NPC_SYSTEM.destroyAll();
+
     mState = DuelQueueState::Idle;
-    mWantsSandbox = false;
+    mWantsChosenMap = false;
     mWantsMatchMap = false;
     mMatchFoundBanner = false;
     mInDuel = false;
@@ -230,52 +238,40 @@ void DuelQueue::returnToQueue()
         "Duel over", "Back in the queue - matchmaking...", 180, {});
 }
 
-void DuelQueue::onHostRoomCodeReady(const std::string& roomCode)
+void DuelQueue::rejoinQueue()
 {
-    std::string matchId;
+    std::string ticketId;
     {
         std::lock_guard<std::mutex> lock(mSharedMutex);
-        mRoomCode = roomCode;
-        matchId = mMatchId;
+        ticketId = mTicketId;
+        mTicketId.clear();
+        mPendingHost = false;
+        mPendingClient = false;
+        mCancelled = false;
+        mPolling = true;
     }
-    if (matchId.empty())
-        return;
-    if (coordinatorQueueHostReady(matchId, roomCode))
-        Debug::log(Debug::Category::Duel, "[DUEL HOST] posted host-ready code=%s\n",
-                   roomCode.c_str());
-    mStatusText = "Connecting to opponent...";
-    mWantsMatchMap = true;
+    if (!ticketId.empty())
+        coordinatorQueueLeave(ticketId);
+
+    mJoinedCoordinator = false;
+    mState = DuelQueueState::Queuing;
+    mStatusText = "Re-queuing...";
+    NotificationSystem::instance().push(
+        "Duels queue", "Re-queuing...", 180, {});
+    beginPolling();
 }
 
-void DuelQueue::handleHostMatch()
+void DuelQueue::loadChosenMap()
 {
-    Debug::log(Debug::Category::Duel, "[DUEL HOST] launching duel server map=%s\n",
-               mMapName.c_str());
-    if (!launchDuelHostServer(mMapName))
+    if (mChosenMap.empty()) return;
+    const std::string path = "assets/maps/" + mChosenMap + ".glb";
+    if (loadWorldFromGLB(THE_WORLD, path.c_str()))
     {
-        failToQueue("Could not start duel server");
-        return;
+        ACTIVE_MAP_PATH = path;
+        WORLD_LOADED = true;
+        THE_NPC_SYSTEM.destroyAll();
+        Debug::log(Debug::Category::Duel, "[DUEL QUEUE] loaded chosen map %s\n", path.c_str());
     }
-    mState = DuelQueueState::HostLaunching;
-    mPhaseStartMs = nowMs();
-    mStatusText = "Starting duel server...";
-    mWantsMatchMap = true;
-}
-
-void DuelQueue::handleClientMatch()
-{
-    Debug::log(Debug::Category::Duel, "[DUEL CLIENT] connecting to host room=%s\n",
-               mRoomCode.c_str());
-    mWantsMatchMap = true;
-    const bool started = mpIceConnectStart(MP_CONTEXT, mRoomCode, mName);
-    if (!started)
-    {
-        failToQueue("Could not start connection to opponent");
-        return;
-    }
-    mState = DuelQueueState::Connecting;
-    mPhaseStartMs = nowMs();
-    mStatusText = "Connecting to opponent...";
 }
 
 void DuelQueue::loadMatchMap()
@@ -291,28 +287,270 @@ void DuelQueue::loadMatchMap()
     }
     else
     {
-        Debug::warn(Debug::Category::Duel, "[DUEL] failed to load match map %s\n",
-                    path.c_str());
+        Debug::warn(Debug::Category::Duel, "[DUEL] failed to load match map %s\n", path.c_str());
     }
 }
 
-void DuelQueue::enterSandbox()
+void DuelQueue::handleHostMatch()
 {
-    if (loadWorldFromGLB(THE_WORLD, practiceMapPath()))
+    mHost = true;
+    mMatchFoundBanner = true;
+    mMatchFoundTimer = 0.0f;
+    mState = DuelQueueState::MatchFound;
+    mStatusText = "match found! opponent joining your room...";
+    mPhaseStartMs = nowMs();
+    NotificationSystem::instance().push(
+        "match found!", "vs " + mOpponentName, 300, {});
+    Debug::log(Debug::Category::Duel, "[DUEL HOST] matched - opponent joins my room\n");
+}
+
+void DuelQueue::handleClientMatch()
+{
+    mHost = false;
+    mLastOpponentId = mOpponentName;
+    mMatchFoundBanner = true;
+    mMatchFoundTimer = 0.0f;
+
+    // Leave our own queue server; join the host's room.
+    MimitaNet::mpShutdown(MP_CONTEXT);
+    stopExternalServerProcess();
+    THE_NPC_SYSTEM.destroyAll();
+    mQueueServerConnected = false;
+    mJoinedCoordinator = false;
+
+    mWantsMatchMap = true;
+    mState = DuelQueueState::Connecting;
+    mPhaseStartMs = nowMs();
+    mConnectedSinceMs = 0;
+    mStatusText = "Connecting to opponent...";
+    NotificationSystem::instance().push(
+        "match found!", "joining " + mOpponentName + "'s room", 300, {});
+    Debug::log(Debug::Category::Duel, "[DUEL CLIENT] matched - joining host room=%s\n",
+               mRoomCode.c_str());
+
+    if (!mpIceConnectStart(MP_CONTEXT, mRoomCode, mName))
+        failToQueue("Could not connect to opponent's room");
+}
+
+void DuelQueue::updateQueuing(float dt)
+{
+    mDowntime += dt;
+
+    if (mWantsChosenMap)
     {
-        ACTIVE_MAP_PATH = practiceMapPath();
-        WORLD_LOADED = true;
-        THE_NPC_SYSTEM.destroyAll();
-        THE_PLAYER.reset();
+        mWantsChosenMap = false;
+        loadChosenMap();
+    }
 
-        // A couple of practice NPCs to shoot while waiting.
-        for (int i = 0; i < 2; ++i)
-            spawnNpcAtSafePosition(THE_NPC_SYSTEM, THE_NPC_SYSTEM.nextNpcId(),
-                                   5.0f, THE_WORLD, i);
+    // 1) Start / connect to our own queue server (online mode from the start).
+    if (!mQueueServerConnected)
+    {
+        if (mQueueRoomCode.empty())
+        {
+            std::string code;
+            if (pollDuelServerRoomCode(code))
+            {
+                mQueueRoomCode = code;
+                mServerConnectStartMs = nowMs();
+                mServerConnectStarted = false;
+            }
+        }
+        if (!mQueueRoomCode.empty() && !mServerConnectStarted)
+        {
+            mServerConnectStarted = mpIceConnectStart(MP_CONTEXT, mQueueRoomCode, mName);
+            mServerConnectStartMs = nowMs();
+        }
+        if (!mQueueRoomCode.empty() && MP_CONTEXT.active)
+        {
+            mQueueServerConnected = true;
+            mStatusText = "In queue - waiting for a duel";
+            NotificationSystem::instance().push(
+                "Duels queue",
+                mChosenMap.empty() ? "In queue - practice while you wait"
+                                   : "In queue - map: " + mChosenMap,
+                240, {});
+            Debug::log(Debug::Category::Duel, "[DUEL QUEUE] connected to own server code=%s\n",
+                       mQueueRoomCode.c_str());
+        }
+        else if (!mQueueRoomCode.empty() && mServerConnectStartMs != 0 &&
+                 nowMs() - mServerConnectStartMs > kServerConnectTimeoutMs)
+        {
+            // ICE connect to own server stalled - retry the server launch.
+            mStatusText = "Starting server... (retrying)";
+            Debug::warn(Debug::Category::Duel, "[DUEL QUEUE] own server connect stalled; relaunching\n");
+            stopExternalServerProcess();
+            mQueueRoomCode.clear();
+            mServerConnectStartMs = 0;
+            mServerConnectStarted = false;
+            if (launchDuelHostServer(mChosenMap))
+                mStatusText = "Starting your duel server...";
+        }
+        else if (nowMs() - mPhaseStartMs > kQueueServerStartTimeoutMs &&
+                 mQueueRoomCode.empty())
+        {
+            mStatusText = "Starting server... (retrying)";
+            mPhaseStartMs = nowMs();
+            stopExternalServerProcess();
+            if (launchDuelHostServer(mChosenMap))
+                mStatusText = "Starting your duel server...";
+        }
+        return; // no matchmaking until connected + joined
+    }
 
+    // 2) Join the coordinator with our live room code.
+    if (!mJoinedCoordinator)
+    {
+        if (mJoinRetryTimer > 0.0f)
+        {
+            mJoinRetryTimer -= dt;
+            return;
+        }
+        QueueJoinResult join = coordinatorQueueJoin(
+            mProfileId, mName, mPreferOpponent, mMaps, mChosenMap, mQueueRoomCode);
+        if (join.ok)
+        {
+            {
+                std::lock_guard<std::mutex> lock(mSharedMutex);
+                mTicketId = join.ticketId;
+            }
+            mJoinedCoordinator = true;
+            mStatusText = "In queue - waiting for a duel";
+            Debug::log(Debug::Category::Duel, "[DUEL QUEUE] joined coordinator ticket=%s\n",
+                       join.ticketId.substr(0, 8).c_str());
+        }
+        else
+        {
+            mStatusText = "Can't reach matchmaking - retrying";
+            mJoinRetryTimer = 3.0f;
+        }
+        return;
+    }
+
+    // 3) Act on matchmaker results.
+    bool host = false, client = false, cancelled = false;
+    {
+        std::lock_guard<std::mutex> lock(mSharedMutex);
+        host = mPendingHost;
+        client = mPendingClient;
+        cancelled = mCancelled;
+    }
+    if (host)
+        handleHostMatch();
+    else if (client)
+        handleClientMatch();
+    else if (cancelled)
+    {
+        NotificationSystem::instance().pushCritical(
+            "Match cancelled", "Re-queuing...", 180);
+        rejoinQueue();
+    }
+}
+
+void DuelQueue::updateMatchFound(float dt)
+{
+    mDowntime += dt;
+    mMatchFoundTimer += dt;
+
+    // Host is waiting for the opponent to connect to our room.
+    if (mHost && nowMs() - mPhaseStartMs > kOpponentJoinTimeoutMs)
+    {
+        NotificationSystem::instance().pushCritical(
+            "Opponent left", "Re-queuing...", 180);
+        rejoinQueue();
+    }
+}
+
+void DuelQueue::updateConnecting(float dt)
+{
+    mDowntime += dt;
+
+    if (mWantsMatchMap)
+    {
+        mWantsMatchMap = false;
+        loadMatchMap();
+    }
+    if (MP_CONTEXT.active)
+    {
+        if (mConnectedSinceMs == 0)
+            mConnectedSinceMs = nowMs();
+        // Connected to the host's server; the countdown arrives via DuelState.
+        mStatusText = "Connected - waiting for countdown...";
         NotificationSystem::instance().push(
-            "Duels queue", "In queue - practice while you wait", 240, {});
-        Debug::log(Debug::Category::Duel, "[DUEL QUEUE] sandbox practice ready\n");
+            "Duels", "Connected to " + mOpponentName + "'s room", 240, {});
+        Debug::log(Debug::Category::Duel, "[DUEL QUEUE] connected to host - waiting countdown\n");
+        if (nowMs() - mConnectedSinceMs > 15000)
+        {
+            NotificationSystem::instance().pushCritical(
+                "Opponent left", "Returning to the queue...", 180);
+            returnToQueue();
+        }
+    }
+    else if (nowMs() - mPhaseStartMs > kMatchConnectTimeoutMs)
+    {
+        failToQueue("Timed out connecting to opponent");
+    }
+}
+
+void DuelQueue::updateInDuel(float dt)
+{
+    // Downtime stopwatch: counts while NOT actively fighting; resets on fight.
+    const bool fighting = (mDuelPhase == DUEL_PHASE_ACTIVE);
+    if (fighting && !mWasFighting)
+    {
+        mLastDowntime = mDowntime;
+        mDowntime = 0.0f;
+    }
+    mWasFighting = fighting;
+    if (!fighting)
+        mDowntime += dt;
+
+    // Spawn tracer timer.
+    if (mTracerActive)
+    {
+        mTracerTime += dt;
+        if (mTracerTime >= mTracerDuration)
+            mTracerActive = false;
+    }
+    // Detect a dead server / lost opponent via missing DuelState packets
+    // (the server broadcasts every ~1s during Active and MatchEnd).
+    if (mLastStateMs != 0 && nowMs() - mLastStateMs > kStateStaleTimeoutMs)
+    {
+        NotificationSystem::instance().pushCritical(
+            "Opponent left", "Returning to the queue...", 180);
+        returnToQueue();
+    }
+}
+
+void DuelQueue::updateFailed(float dt)
+{
+    mDowntime += dt;
+    mFailedTimer -= dt;
+    if (mFailedTimer <= 0.0f)
+        rejoinQueue();
+}
+
+void DuelQueue::update(float dt)
+{
+    switch (mState)
+    {
+    case DuelQueueState::Idle:
+        break;
+    case DuelQueueState::Queuing:
+        updateQueuing(dt);
+        break;
+    case DuelQueueState::MatchFound:
+        updateMatchFound(dt);
+        break;
+    case DuelQueueState::Connecting:
+        updateConnecting(dt);
+        break;
+    case DuelQueueState::InDuel:
+    case DuelQueueState::MatchEnd:
+        updateInDuel(dt);
+        break;
+    case DuelQueueState::Failed:
+        updateFailed(dt);
+        break;
     }
 }
 
@@ -324,164 +562,24 @@ void DuelQueue::failToQueue(const char* reason)
     mFailedTimer = 3.0f;
 }
 
-void DuelQueue::recordHistoryOnce()
-{
-    if (mHistoryRecorded || !mMatchOver)
-        return;
-    mHistoryRecorded = true;
-
-    DuelHistoryEntry entry;
-    entry.opponentName = mOpponentName;
-    entry.opponentProfileId = mLastOpponentId;
-    entry.won = mWon;
-    entry.myScore = mMyScore;
-    entry.oppScore = mOppScore;
-    entry.map = mMapName;
-    entry.unixMs = nowMs();
-    DuelHistory::instance().add(std::move(entry));
-}
-
-void DuelQueue::update(float dt)
-{
-    // Sandbox / match-map handoffs to engine-tick-state are flag-based.
-    switch (mState)
-    {
-    case DuelQueueState::Idle:
-        break;
-
-    case DuelQueueState::Queuing:
-        mQueueElapsed += dt;
-        if (mWantsSandbox)
-        {
-            mWantsSandbox = false;
-            enterSandbox();
-        }
-        {
-            bool host = false, client = false, cancelled = false;
-            {
-                std::lock_guard<std::mutex> lock(mSharedMutex);
-                host = mPendingHost;
-                client = mPendingClient;
-                cancelled = mCancelled;
-            }
-            if (host)
-            {
-                mHost = true;
-                mLastOpponentId = mOpponentName;
-                mMatchFoundBanner = true;
-                mMatchFoundTimer = 0.0f;
-                mState = DuelQueueState::MatchFound;
-                mStatusText = "match found!!!!!!!!";
-            }
-            else if (client)
-            {
-                mHost = false;
-                mLastOpponentId = mOpponentName;
-                mMatchFoundBanner = true;
-                mMatchFoundTimer = 0.0f;
-                mState = DuelQueueState::MatchFound;
-                mStatusText = "match found!!!!!!!!";
-            }
-            else if (cancelled)
-            {
-                // Match cancelled / ticket dropped - re-queue fresh.
-                std::string profileId = mProfileId;
-                std::string name = mName;
-                std::vector<std::string> maps = mMaps;
-                NotificationSystem::instance().pushCritical(
-                    "Match cancelled", "Re-queuing...", 180);
-                startQueue(profileId, name, mPreferOpponent, maps);
-            }
-        }
-        break;
-
-    case DuelQueueState::MatchFound:
-        mMatchFoundTimer += dt;
-        if (mHost && mMatchFoundTimer >= 2.0f)
-            handleHostMatch();
-        else if (!mHost && mMatchFoundTimer >= 2.0f)
-            handleClientMatch();
-        break;
-
-    case DuelQueueState::HostLaunching:
-    {
-        std::string code;
-        if (pollDuelServerRoomCode(code))
-        {
-            onHostRoomCodeReady(code);
-            mState = DuelQueueState::Connecting;
-            mPhaseStartMs = nowMs();
-            const bool started = mpIceConnectStart(MP_CONTEXT, code, mName);
-            if (!started)
-                failToQueue("Could not connect to own duel server");
-        }
-        else if (nowMs() - mPhaseStartMs > kHostLaunchTimeoutMs)
-        {
-            failToQueue("Duel server took too long to start");
-        }
-        break;
-    }
-
-    case DuelQueueState::Connecting:
-        if (mWantsMatchMap)
-        {
-            mWantsMatchMap = false;
-            loadMatchMap();
-        }
-        if (MP_CONTEXT.active)
-        {
-            mState = DuelQueueState::InDuel;
-            mStatusText = "";
-            mLastStateMs = nowMs();
-            Debug::log(Debug::Category::Duel, "[DUEL QUEUE] connected - in duel\n");
-        }
-        else if (nowMs() - mPhaseStartMs > kMatchConnectTimeoutMs)
-        {
-            failToQueue("Timed out connecting to opponent");
-        }
-        break;
-
-    case DuelQueueState::InDuel:
-    case DuelQueueState::MatchEnd:
-    {
-        // Spawn tracer timer.
-        if (mTracerActive)
-        {
-            mTracerTime += dt;
-            if (mTracerTime >= mTracerDuration)
-                mTracerActive = false;
-        }
-        // Detect a dead server / lost opponent via missing DuelState packets
-        // (the server broadcasts every ~1s during Active and MatchEnd).
-        if (mLastStateMs != 0 && nowMs() - mLastStateMs > kStateStaleTimeoutMs)
-        {
-            NotificationSystem::instance().pushCritical(
-                "Opponent left", "Returning to the queue...", 180);
-            returnToQueue();
-        }
-        break;
-    }
-
-    case DuelQueueState::Failed:
-        mFailedTimer -= dt;
-        if (mFailedTimer <= 0.0f)
-        {
-            std::string profileId = mProfileId;
-            std::string name = mName;
-            std::vector<std::string> maps = mMaps;
-            startQueue(profileId, name, mPreferOpponent, maps);
-        }
-        break;
-    }
-}
-
 void DuelQueue::onDuelState(const DuelStatePacket& pkt)
 {
     if (mState == DuelQueueState::Idle)
         return;
 
     mLastStateMs = nowMs();
+
+    // WAITING just means "your queue server is up but no opponent yet".
+    if (pkt.phase == DUEL_PHASE_WAITING)
+    {
+        mDuelPhase = DUEL_PHASE_WAITING;
+        mCountdownActive = false;
+        return;
+    }
+
+    mDuelPhase = pkt.phase;
     mInDuel = true;
+    mConnectedSinceMs = 0;
 
     // Determine which side is ours.
     const uint32_t myId = MP_CONTEXT.localPlayerId;
@@ -507,9 +605,10 @@ void DuelQueue::onDuelState(const DuelStatePacket& pkt)
             mMatchOver = false;
             mWon = false;
             mHistoryRecorded = false;
+            NotificationSystem::instance().push(
+                "Rematch", "vs " + mOpponentName, 240, {});
         }
-        if (mState != DuelQueueState::InDuel)
-            mState = DuelQueueState::InDuel;
+        mState = DuelQueueState::InDuel;
         break;
 
     case DUEL_PHASE_ACTIVE:
@@ -544,6 +643,23 @@ void DuelQueue::onDuelEnemySpawn(const DuelEnemySpawnPacket& pkt)
     mTracerTime = 0.0f;
 }
 
+void DuelQueue::recordHistoryOnce()
+{
+    if (mHistoryRecorded || !mMatchOver)
+        return;
+    mHistoryRecorded = true;
+
+    DuelHistoryEntry entry;
+    entry.opponentName = mOpponentName;
+    entry.opponentProfileId = mLastOpponentId;
+    entry.won = mWon;
+    entry.myScore = mMyScore;
+    entry.oppScore = mOppScore;
+    entry.map = mMapName;
+    entry.unixMs = nowMs();
+    DuelHistory::instance().add(std::move(entry));
+}
+
 void DuelQueue::requestRematch()
 {
     requestRematchWith(mLastOpponentId);
@@ -567,4 +683,23 @@ void DuelQueue::requestRematchWith(const std::string& opponentId)
     startQueue(mProfileId, mName, opponentId, mMaps);
     NotificationSystem::instance().push(
         "Rematch", "Looking for " + opponentId + " again...", 240, {});
+}
+
+void DuelQueue::requestRematchNow()
+{
+    if (mState != DuelQueueState::MatchEnd)
+        return;
+    DuelRematchRequestPacket pkt{};
+    pkt.header.type = PACKET_DUEL_REMATCH_REQUEST;
+    pkt.header.tick = 0;
+    pkt.header.playerId = MP_CONTEXT.localPlayerId;
+    mpSendPacket(MP_CONTEXT, &pkt, sizeof(pkt));
+    Debug::log(Debug::Category::Duel, "[DUEL] rematch now requested (space)\n");
+}
+
+void DuelQueue::onMapChange(const std::string& mapId)
+{
+    mMapName = mapId;
+    NotificationSystem::instance().push(
+        "Map changed", "Now fighting on " + mapId, 200, {});
 }

@@ -12,6 +12,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #define IDB_LOADING_IMAGE 101
+#define GUI_CONFIG 102
 
 #define LAUNCHER_VERSION "1.0.0"
 #define GITHUB_REPO "jorj1357/mimita-public"
@@ -22,6 +23,9 @@
 #define WM_APP_SHOW_HUB   (WM_APP + 2)
 #define WM_APP_STATUS     (WM_APP + 3)
 #define WM_APP_SILENT_DONE (WM_APP + 4)
+
+// GUI hot-reload timer id
+#define GUI_HOTRELOAD_TIMER 9001
 
 #include <windows.h>
 #include <windowsx.h>
@@ -81,6 +85,7 @@ bool g_noErrorDialogs = false;
 
 // ── Launcher home / lifecycle ─────────────────────────────────
 HANDLE g_hSingleton = nullptr;
+HINSTANCE g_hInst = nullptr;
 bool g_quit = false;
 bool g_altF4Pending = false;
 
@@ -490,6 +495,142 @@ void setAutoStartEnabled(bool enabled)
         RegDeleteValueA(k, "MimitaLauncher");
     }
     RegCloseKey(k);
+}
+
+// ── JSON-driven GUI config ───────────────────────────────────
+// All user-visible text, colors, background and layout come from a config.
+// In dev a launcher-gui.json next to the exe is used and hot-reloaded on
+// change; in release the config is embedded as a resource (locked).
+std::string g_guiJson;
+std::string g_guiDevPath;
+FILETIME g_guiFileTime = {};
+
+// Runtime-applied GUI state
+COLORREF g_colText = RGB(255, 255, 255);
+COLORREF g_colEditBg = RGB(30, 30, 30);
+COLORREF g_colStart = RGB(0, 160, 60);
+COLORREF g_colStop = RGB(205, 40, 40);
+COLORREF g_gradientTop = RGB(20, 20, 60);
+COLORREF g_gradientBottom = RGB(0, 0, 0);
+
+// Brushes recreated from config by applyGuiColors()
+HBRUSH g_blackBrush = nullptr;
+HBRUSH g_hubGreenBrush = nullptr;
+HBRUSH g_hubRedBrush = nullptr;
+
+std::string guiConfigDevPath()
+{
+    std::string a = appDir() + "\\launcher-gui.json";
+    if (pathExists(a)) return a;
+    std::string b = appDir() + "\\launcher\\launcher-gui.json";
+    if (pathExists(b)) return b;
+    return "";
+}
+
+std::string loadGuiConfigRaw()
+{
+    std::string dev = guiConfigDevPath();
+    if (!dev.empty()) {
+        g_guiDevPath = dev;
+        HANDLE h = CreateFileA(dev.c_str(), GENERIC_READ, FILE_SHARE_READ,
+                               nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h != INVALID_HANDLE_VALUE) { GetFileTime(h, nullptr, nullptr, &g_guiFileTime); CloseHandle(h); }
+        return readFile(dev);
+    }
+    g_guiDevPath.clear();
+    g_guiFileTime = {};
+    // Embedded copy (locked for release).
+    HRSRC hRes = FindResourceA(nullptr, MAKEINTRESOURCEA(GUI_CONFIG), RT_RCDATA);
+    if (!hRes) return "";
+    HGLOBAL hMem = LoadResource(nullptr, hRes);
+    if (!hMem) return "";
+    DWORD size = SizeofResource(nullptr, hRes);
+    const char* data = (const char*)LockResource(hMem);
+    if (!data || size == 0) return "";
+    return std::string(data, size);
+}
+
+// Returns true if the dev config changed on disk since the last load.
+bool guiCheckHotReload()
+{
+    std::string dev = g_guiDevPath;
+    if (dev.empty()) return false;
+    HANDLE h = CreateFileA(dev.c_str(), GENERIC_READ, FILE_SHARE_READ,
+                           nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    FILETIME ft;
+    GetFileTime(h, nullptr, nullptr, &ft);
+    CloseHandle(h);
+    if (g_guiFileTime.dwHighDateTime == ft.dwHighDateTime &&
+        g_guiFileTime.dwLowDateTime == ft.dwLowDateTime)
+        return false;
+    std::string raw = readFile(dev);
+    if (raw.empty() || raw == g_guiJson) {
+        g_guiFileTime = ft;
+        return false;
+    }
+    g_guiJson = raw;
+    g_guiFileTime = ft;
+    return true;
+}
+
+bool loadGuiConfig()
+{
+    g_guiJson = loadGuiConfigRaw();
+    return !g_guiJson.empty();
+}
+
+// Fetch a string value; returns the fallback when missing/empty.
+std::string guiStr(const char* key, const char* fallback)
+{
+    std::string v = extractJsonStr(g_guiJson, key);
+    if (v.empty()) return fallback;
+    // unescape the common JSON escapes we emit
+    std::string out;
+    out.reserve(v.size());
+    for (size_t i = 0; i < v.size(); ++i) {
+        if (v[i] == '\\' && i + 1 < v.size()) {
+            char c = v[i + 1];
+            if (c == 'n') { out += '\n'; ++i; continue; }
+            if (c == 'r') { ++i; continue; }
+            if (c == '"') { out += '"'; ++i; continue; }
+            if (c == '\\') { out += '\\'; ++i; continue; }
+        }
+        out += v[i];
+    }
+    return out;
+}
+
+int guiInt(const char* key, int fallback)
+{
+    std::string v = extractJsonStr(g_guiJson, key);
+    if (v.empty()) return fallback;
+    return atoi(v.c_str());
+}
+
+COLORREF guiColor(const char* key, COLORREF fallback)
+{
+    std::string v = extractJsonStr(g_guiJson, key);
+    if (v.empty()) return fallback;
+    int r = 0, g = 0, b = 0;
+    if (sscanf(v.c_str(), "%d,%d,%d", &r, &g, &b) == 3)
+        return RGB(r, g, b);
+    return fallback;
+}
+
+// Layout override: layout.<group>.<control>.<dim> (x|y|w|h).
+int guiL(const char* group, const char* ctrl, const char* dim, int fallback)
+{
+    std::string key = std::string("layout.") + group + "." + ctrl + "." + dim;
+    return guiInt(key.c_str(), fallback);
+}
+
+void guiReplace(std::string& s, const char* token, const std::string& val)
+{
+    std::string t = std::string("{") + token + "}";
+    size_t p;
+    while ((p = s.find(t)) != std::string::npos)
+        s.replace(p, t.size(), val);
 }
 
 // Forward declarations
@@ -959,6 +1100,32 @@ bool loadInstallConfig(std::string& outDir)
 
 // ── New: GDI+ background image loading ────────────────────────
 
+void freeBackgroundImage()
+{
+    delete g_bgImage;
+    g_bgImage = nullptr;
+}
+
+bool loadBackgroundImageFromResource();
+
+// Load the background: prefer the config's image file (dev hot-reload), fall
+// back to the embedded resource, else leave null for the gradient fallback.
+void loadBackgroundImage()
+{
+    freeBackgroundImage();
+    std::string img = guiStr("bg.image", "");
+    if (!img.empty()) {
+        std::wstring wpath = widen(appDir() + "\\" + img);
+        Image* imgFromFile = Image::FromFile(wpath.c_str());
+        if (imgFromFile && imgFromFile->GetLastStatus() == Ok) {
+            g_bgImage = imgFromFile;
+            return;
+        }
+        delete imgFromFile;
+    }
+    loadBackgroundImageFromResource();
+}
+
 bool loadBackgroundImageFromResource()
 {
     HRSRC hRes = FindResourceA(nullptr, MAKEINTRESOURCEA(IDB_LOADING_IMAGE), RT_RCDATA);
@@ -984,6 +1151,71 @@ bool loadBackgroundImageFromResource()
     g_bgImage = Image::FromStream(pStream);
     pStream->Release();
     return (g_bgImage && g_bgImage->GetLastStatus() == Ok);
+}
+
+// ── Username: most recently logged-in account ─────────────────
+
+std::string currentRoot();
+std::string guiUsername()
+{
+    // 1. Game's profile cache (written on every login — the most recent user).
+    std::string pc = getLocalAppData() + "\\Mimita\\profile-cache.json";
+    std::string json = readFile(pc);
+    if (json.empty()) {
+        // fallback: config/auth-cache.json in the shared data folder
+        std::string root = currentRoot();
+        json = readFile(root + "\\data\\config\\auth-cache.json");
+    }
+    if (!json.empty()) {
+        std::string dn = extractJsonStr(json, "display_name");
+        if (!dn.empty()) return dn;
+        std::string un = extractJsonStr(json, "username");
+        if (!un.empty()) return un;
+    }
+
+    // 2. current-profile.json
+    std::string cp = currentRoot() + "\\data\\config\\current-profile.json";
+    std::string un = extractJsonStr(readFile(cp), "username");
+    if (!un.empty()) return un;
+
+    // 3. last profile in config/profiles.json
+    std::string pf = currentRoot() + "\\data\\config\\profiles.json";
+    std::string pj = readFile(pf);
+    if (!pj.empty()) {
+        std::string probe = pj;
+        std::string last;
+        size_t pos = 0;
+        while ((pos = probe.find("\"username\":\"", pos)) != std::string::npos) {
+            size_t s = pos + 12;
+            size_t e = probe.find('"', s);
+            if (e != std::string::npos) { last = probe.substr(s, e - s); pos = e; }
+        }
+        if (!last.empty()) return last;
+    }
+
+    // 4. most recently modified config/accounts/*.json basename
+    std::string accounts = currentRoot() + "\\data\\config\\accounts";
+    std::string search = accounts + "\\*.json";
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(search.c_str(), &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        FILETIME best = {};
+        std::string bestName;
+        do {
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+            if (CompareFileTime(&fd.ftLastWriteTime, &best) > 0) {
+                best = fd.ftLastWriteTime;
+                bestName = fd.cFileName;
+            }
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+        if (!bestName.empty() && bestName.size() > 5) {
+            std::string base = bestName.substr(0, bestName.size() - 5);
+            if (base != "default") return base;
+        }
+    }
+
+    return "";
 }
 
 // ── New: Utility functions ────────────────────────────────────
@@ -1015,7 +1247,9 @@ std::string getStartMenuPath()
     return "";
 }
 
-bool createShellLink(const std::string& exePath, const std::string& linkPath, const std::string& args, const std::string& description)
+bool createShellLink(const std::string& exePath, const std::string& linkPath,
+                     const std::string& args, const std::string& description,
+                     const std::string& iconPath = "")
 {
     IShellLinkA* psl = nullptr;
     HRESULT hr = CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkA, (void**)&psl);
@@ -1024,6 +1258,7 @@ bool createShellLink(const std::string& exePath, const std::string& linkPath, co
     psl->SetPath(exePath.c_str());
     if (!args.empty()) psl->SetArguments(args.c_str());
     if (!description.empty()) psl->SetDescription(description.c_str());
+    if (!iconPath.empty()) psl->SetIconLocation(iconPath.c_str(), 0);
 
     IPersistFile* ppf = nullptr;
     hr = psl->QueryInterface(IID_IPersistFile, (void**)&ppf);
@@ -1136,49 +1371,75 @@ void setProgress(int percent)
     pumpMessages();
 }
 
-// ── New: Wizard pages (800x600 layout) ────────────────────────
+// ── New: Wizard pages (config-driven layout) ──────────────────
 
 void createPage1()
 {
     clearPageControls(0);
-    int cx = 800, cy = 600;
-    int px = (cx - 480) / 2;
 
-    g_pageControls[0][g_pageControlCount[0]++] = makeStatic(g_hWnd, "Mimita Setup", px, 60, 480, 36);
-    g_pageControls[0][g_pageControlCount[0]++] = makeStatic(g_hWnd, "Choose where to install Mimita", px, 100, 480, 22);
-    g_pageControls[0][g_pageControlCount[0]++] = makeStatic(g_hWnd, "Install directory:", px, 145, 480, 20);
-    g_pageControls[0][g_pageControlCount[0]++] = makeEdit(g_hWnd, g_installDir.c_str(), px, 170, 380, 26, IDC_PATH_EDIT);
-    g_pageControls[0][g_pageControlCount[0]++] = makeButton(g_hWnd, "Browse", px + 390, 170, 80, 26, IDC_BROWSE_BTN);
+    g_pageControls[0][g_pageControlCount[0]++] =
+        makeStatic(g_hWnd, guiStr("page1.heading", "Welcome to MiMITA").c_str(),
+            guiL("page1", "heading", "x", 160), guiL("page1", "heading", "y", 60),
+            guiL("page1", "heading", "w", 480), guiL("page1", "heading", "h", 36));
+    g_pageControls[0][g_pageControlCount[0]++] =
+        makeStatic(g_hWnd, guiStr("page1.subheading", "MiMITA installs and keeps itself updated automatically.").c_str(),
+            guiL("page1", "subheading", "x", 160), guiL("page1", "subheading", "y", 100),
+            guiL("page1", "subheading", "w", 480), guiL("page1", "subheading", "h", 22));
+    g_pageControls[0][g_pageControlCount[0]++] =
+        makeStatic(g_hWnd, guiStr("page1.installDir", "Install location:").c_str(),
+            guiL("page1", "label", "x", 160), guiL("page1", "label", "y", 145),
+            guiL("page1", "label", "w", 480), guiL("page1", "label", "h", 20));
+    g_pageControls[0][g_pageControlCount[0]++] =
+        makeEdit(g_hWnd, g_installDir.c_str(),
+            guiL("page1", "path", "x", 160), guiL("page1", "path", "y", 170),
+            guiL("page1", "path", "w", 380), guiL("page1", "path", "h", 26), IDC_PATH_EDIT);
+    g_pageControls[0][g_pageControlCount[0]++] =
+        makeButton(g_hWnd, guiStr("page1.browse", "Browse").c_str(),
+            guiL("page1", "browse", "x", 550), guiL("page1", "browse", "y", 170),
+            guiL("page1", "browse", "w", 80), guiL("page1", "browse", "h", 26), IDC_BROWSE_BTN);
 
-    HWND chk1 = makeCheckbox(g_hWnd, "Create Start Menu shortcut", px, 220, 400, 24, IDC_CHK_STARTMENU);
+    HWND chk1 = makeCheckbox(g_hWnd, guiStr("page1.startMenu", "Create Start Menu shortcut").c_str(),
+        guiL("page1", "startMenu", "x", 160), guiL("page1", "startMenu", "y", 220),
+        guiL("page1", "startMenu", "w", 400), guiL("page1", "startMenu", "h", 24), IDC_CHK_STARTMENU);
     Button_SetCheck(chk1, g_createStartMenu ? BST_CHECKED : BST_UNCHECKED);
     g_pageControls[0][g_pageControlCount[0]++] = chk1;
 
-    HWND chk2 = makeCheckbox(g_hWnd, "Create desktop shortcut", px, 248, 400, 24, IDC_CHK_DESKTOP);
+    HWND chk2 = makeCheckbox(g_hWnd, guiStr("page1.desktop", "Create desktop shortcut").c_str(),
+        guiL("page1", "desktop", "x", 160), guiL("page1", "desktop", "y", 248),
+        guiL("page1", "desktop", "w", 400), guiL("page1", "desktop", "h", 24), IDC_CHK_DESKTOP);
     Button_SetCheck(chk2, g_createDesktop ? BST_CHECKED : BST_UNCHECKED);
     g_pageControls[0][g_pageControlCount[0]++] = chk2;
 
-    HWND chk3 = makeCheckbox(g_hWnd, "Start MiMITA Launcher when my computer turns on",
-                             px, 276, 400, 24, IDC_CHK_AUTOSTART);
+    HWND chk3 = makeCheckbox(g_hWnd, guiStr("page1.autoStart", "Start MiMITA Launcher when my computer turns on").c_str(),
+        guiL("page1", "autoStart", "x", 160), guiL("page1", "autoStart", "y", 276),
+        guiL("page1", "autoStart", "w", 400), guiL("page1", "autoStart", "h", 24), IDC_CHK_AUTOSTART);
     Button_SetCheck(chk3, isAutoStartEnabled() ? BST_CHECKED : BST_UNCHECKED);
     g_pageControls[0][g_pageControlCount[0]++] = chk3;
 
-    g_pageControls[0][g_pageControlCount[0]++] = makeButton(g_hWnd, "Install", px + 170, 320, 140, 40, IDC_INSTALL_BTN);
+    g_pageControls[0][g_pageControlCount[0]++] =
+        makeButton(g_hWnd, guiStr("page1.install", "Install MiMITA").c_str(),
+            guiL("page1", "install", "x", 330), guiL("page1", "install", "y", 320),
+            guiL("page1", "install", "w", 140), guiL("page1", "install", "h", 40), IDC_INSTALL_BTN);
 }
 
 void createPage2()
 {
     clearPageControls(1);
-    int cx = 800, cy = 600;
-    int px = (cx - 480) / 2;
 
-    g_pageControls[1][g_pageControlCount[1]++] = makeStatic(g_hWnd, "Installing...", px, 110, 480, 32);
-    HWND hStatus = makeStatic(g_hWnd, "Starting...", px, 160, 480, 24);
+    g_pageControls[1][g_pageControlCount[1]++] =
+        makeStatic(g_hWnd, guiStr("page2.heading", "MiMITA Loading").c_str(),
+            guiL("page2", "heading", "x", 160), guiL("page2", "heading", "y", 110),
+            guiL("page2", "heading", "w", 480), guiL("page2", "heading", "h", 32));
+    HWND hStatus = makeStatic(g_hWnd, guiStr("page2.status.starting", "Starting...").c_str(),
+        guiL("page2", "status", "x", 160), guiL("page2", "status", "y", 160),
+        guiL("page2", "status", "w", 480), guiL("page2", "status", "h", 24));
     g_pageControls[1][g_pageControlCount[1]++] = hStatus;
 
     // Progress bar
     HWND hBar = CreateWindowA(PROGRESS_CLASS, nullptr, WS_CHILD | WS_VISIBLE,
-        px, 210, 480, 24, g_hWnd, (HMENU)(INT_PTR)IDC_PROGRESS, GetModuleHandleA(nullptr), nullptr);
+        guiL("page2", "bar", "x", 160), guiL("page2", "bar", "y", 210),
+        guiL("page2", "bar", "w", 480), guiL("page2", "bar", "h", 24),
+        g_hWnd, (HMENU)(INT_PTR)IDC_PROGRESS, GetModuleHandleA(nullptr), nullptr);
     SendMessageA(hBar, PBM_SETRANGE, 0, MAKELPARAM(0, 100));
     SendMessageA(hBar, PBM_SETSTEP, 1, 0);
     g_pageControls[1][g_pageControlCount[1]++] = hBar;
@@ -1319,23 +1580,30 @@ CrashRecoveryAction showCrashRecoveryDialog(const std::string& crashDir,
 
     if (taskDialogIndirect)
     {
+        std::wstring wsRestart = widen(guiStr("crash.restart", "Restart MiMITA"));
+        std::wstring wsFolder = widen(guiStr("crash.openFolder", "Open crash folder"));
+        std::wstring wsCopy = widen(guiStr("crash.copy", "Copy error details"));
+        std::wstring wsClose = widen(guiStr("crash.close", "Close"));
+        std::wstring wsRollback = widen(guiStr("crash.rollback", "Restore previous version"));
         TASKDIALOG_BUTTON buttons[5] = {
-            { CRASH_RECOVER_RESTART, L"Restart MiMITA" },
-            { CRASH_RECOVER_OPEN_FOLDER, L"Open crash folder" },
-            { CRASH_RECOVER_COPY, L"Copy error details" },
-            { CRASH_RECOVER_CLOSE, L"Close" },
+            { CRASH_RECOVER_RESTART, wsRestart.c_str() },
+            { CRASH_RECOVER_OPEN_FOLDER, wsFolder.c_str() },
+            { CRASH_RECOVER_COPY, wsCopy.c_str() },
+            { CRASH_RECOVER_CLOSE, wsClose.c_str() },
         };
         int buttonCount = 4;
         if (canRollback)
-            buttons[buttonCount++] = { CRASH_RECOVER_ROLLBACK, L"Restore previous version" };
+            buttons[buttonCount++] = { CRASH_RECOVER_ROLLBACK, wsRollback.c_str() };
 
         TASKDIALOGCONFIG cfg = {};
         cfg.cbSize = sizeof(cfg);
         cfg.hwndParent = nullptr;
         cfg.dwFlags = TDF_USE_COMMAND_LINKS | TDF_ALLOW_DIALOG_CANCELLATION;
         cfg.pszMainIcon = TD_ERROR_ICON;
-        cfg.pszWindowTitle = L"Mimita Launcher";
-        cfg.pszMainInstruction = L"Mimita closed unexpectedly";
+        std::wstring wsTitle = widen(guiStr("window.title", "MiMITA"));
+        std::wstring wsMain = widen(guiStr("crash.main", "MiMITA closed unexpectedly"));
+        cfg.pszWindowTitle = wsTitle.c_str();
+        cfg.pszMainInstruction = wsMain.c_str();
         std::wstring content;
         content += L"Exit code: " + widen(details.empty() ? "?" : details) + L"\n";
         content += txtOk ? L"Crash report: saved\n" : L"Crash report: not saved\n";
@@ -1354,7 +1622,7 @@ CrashRecoveryAction showCrashRecoveryDialog(const std::string& crashDir,
         // Fall through to the plain message box on TaskDialog failure.
     }
 
-    std::string msg = "Mimita closed unexpectedly.\n\n"
+    std::string msg = guiStr("crash.main", "MiMITA closed unexpectedly") + "\n\n"
         "Exit code: " + (details.empty() ? std::string("?") : details) + "\n"
         "Crash report: " + std::string(txtOk ? "saved" : "not saved") + "\n"
         "Minidump: " + std::string(dmpOk ? "saved" : "not saved") + "\n\n"
@@ -1362,7 +1630,7 @@ CrashRecoveryAction showCrashRecoveryDialog(const std::string& crashDir,
         "Choose Yes to restart, No to open the crash folder, Cancel to close.";
     if (canRollback)
         msg += "\n\nThere is a previous version you can restore.";
-    int choice = MessageBoxA(nullptr, msg.c_str(), "Mimita Launcher",
+    int choice = MessageBoxA(nullptr, msg.c_str(), guiStr("window.title", "MiMITA").c_str(),
                              MB_YESNOCANCEL | MB_ICONERROR | MB_DEFBUTTON1);
     if (hComctl) FreeLibrary(hComctl);
     if (choice == IDYES) return CRASH_RECOVER_RESTART;
@@ -1422,13 +1690,11 @@ void reportLaunchFailure(const std::string& workDir, const std::string& exePath,
     writeFile(logPath, msg + "\n");
 
     if (!g_noErrorDialogs)
-        MessageBoxA(nullptr, msg.c_str(), "Mimita Launcher", MB_OK | MB_ICONERROR);
+        MessageBoxA(nullptr, msg.c_str(), guiStr("window.title", "MiMITA").c_str(), MB_OK | MB_ICONERROR);
 }
 
 // ── Tray icon + hub window + game session ─────────────────────
 
-HBRUSH g_hubGreenBrush = nullptr;
-HBRUSH g_hubRedBrush = nullptr;
 HWND g_hubStartBtn = nullptr;
 HWND g_hubStopBtn = nullptr;
 HFONT g_hubBoldFont = nullptr;
@@ -1467,24 +1733,34 @@ void refreshHub()
 {
     if (!g_hubWnd) return;
     std::string root = currentRoot();
-    std::string user = "Guest";
-    std::string pf = root + "\\data\\config\\current-profile.json";
-    if (pathExists(pf)) {
-        std::string u = extractJsonStr(readFile(pf), "username");
-        if (!u.empty()) user = u;
-    }
+    std::string user = guiUsername();
+    if (user.empty()) user = guiStr("hub.guest", "Guest");
     HWND h;
+
+    std::string greeting = guiStr("hub.greeting", "Hey, {user}");
+    guiReplace(greeting, "user", user);
     if ((h = GetDlgItem(g_hubWnd, IDH_ACCOUNT)))
-        SetWindowTextA(h, ("Hey, " + user).c_str());
+        SetWindowTextA(h, greeting.c_str());
+
     std::string ver = installedVersion(root);
-    if (ver.empty()) ver = "not installed";
+    std::string buildTxt = guiStr("hub.build", "Build: v{version}");
+    if (ver.empty()) {
+        buildTxt = guiStr("hub.build", "Build: v{version}");
+        guiReplace(buildTxt, "version", guiStr("hub.notInstalled", "not installed"));
+    } else {
+        guiReplace(buildTxt, "version", ver);
+    }
     if ((h = GetDlgItem(g_hubWnd, IDH_BUILD)))
-        SetWindowTextA(h, ("Build: v" + ver).c_str());
+        SetWindowTextA(h, buildTxt.c_str());
+
     bool running = g_gameProc != nullptr;
     if ((h = GetDlgItem(g_hubWnd, IDH_STATUS)))
-        SetWindowTextA(h, running ? "Status: Running" : "Status: Not running");
-    std::string news = g_hubNote.empty() ? "Nothing new yet." : g_hubNote;
-    news += "\r\n\r\n\u2022 Messages from players (coming soon)";
+        SetWindowTextA(h, (running ? guiStr("hub.statusRunning", "Status: Running")
+                                   : guiStr("hub.statusNotRunning", "Status: Not running")).c_str());
+
+    std::string news = g_hubNote.empty() ? guiStr("hub.notificationsEmpty", "Nothing new yet.")
+                                         : g_hubNote;
+    news += "\r\n\r\n\u2022 " + guiStr("hub.messagesComingSoon", "Messages from players (coming soon)");
     if ((h = GetDlgItem(g_hubWnd, IDH_NEWS)))
         SetWindowTextA(h, news.c_str());
     if (g_hubStartBtn) ShowWindow(g_hubStartBtn, running ? SW_HIDE : SW_SHOW);
@@ -1560,7 +1836,8 @@ void showChangelogOnce(const std::string& version, const std::string& changelog)
     writeFile(seenFile, key);
     std::string text = changelog;
     if (text.size() > 120) text = text.substr(0, 120) + "...";
-    showTrayBalloon(("MiMITA " + version).c_str(), text.c_str());
+    std::string title = guiStr("window.title", "MiMITA") + " " + version;
+    showTrayBalloon(title, text);
 }
 
 bool isDevMode()
@@ -1586,14 +1863,14 @@ bool ensureLatest(const std::string& root, bool visible)
 
     if (isDevMode()) {
         if (!g_localZipPath.empty() && pathExists(g_localZipPath)) {
-            if (visible) setStatusText("Extracting local zip...");
+            if (visible) setStatusText(guiStr("page2.status.extracting", "Extracting files...").c_str());
             applyGameUpdate(root, localVer.empty() ? "dev" : localVer, g_localZipPath);
         }
         return isValidPeExecutable(gameExeForRoot(root));
     }
 
     if (!info.gameVersion.empty() && info.gameVersion != localVer && !info.zipUrl.empty()) {
-        if (visible) setStatusText("Downloading update...");
+        if (visible) setStatusText(guiStr("page2.status.downloading", "Downloading update...").c_str());
         char td[MAX_PATH]; GetTempPathA(MAX_PATH, td);
         std::string zip = std::string(td) + "mimita-game-" + info.gameVersion + ".zip";
         if (downloadFileTo(info.zipUrl, zip, 0)) {
@@ -1603,10 +1880,12 @@ bool ensureLatest(const std::string& root, bool visible)
                 ok = sha256File(zip, h) && h == info.zipSha256;
             }
             if (ok) {
-                if (visible) setStatusText("Installing update...");
+                if (visible) setStatusText(guiStr("page2.status.installing", "Installing update...").c_str());
                 if (applyGameUpdate(root, info.gameVersion, zip)) {
-                    g_hubNote = "MiMITA updated to v" + info.gameVersion;
-                    if (!info.changelog.empty()) g_hubNote += ": " + info.changelog;
+                    std::string note = guiStr("hub.noteUpdated", "MiMITA updated to v{version}");
+                    guiReplace(note, "version", info.gameVersion);
+                    if (!info.changelog.empty()) note += ": " + info.changelog;
+                    g_hubNote = note;
                     showChangelogOnce(info.gameVersion, info.changelog);
                 }
             }
@@ -1626,7 +1905,7 @@ bool ensureLatest(const std::string& root, bool visible)
     return isValidPeExecutable(gameExeForRoot(root));
 }
 
-// Visible launch flow: progress window, update check, then (optionally) play.
+// Visible launch flow: progress window, file + update check, then (optionally) play.
 bool runVisibleLaunchFlow(const std::string& root, bool launchAfter)
 {
     if (g_hWnd) {
@@ -1634,18 +1913,25 @@ bool runVisibleLaunchFlow(const std::string& root, bool launchAfter)
         createPage2();
         showPage(1);
         setProgress(0);
-        setStatusText("Checking for updates...");
+        setStatusText(guiStr("page2.status.checkingFiles", "Checking files...").c_str());
+        pumpMessages();
+        Sleep(300);
+        setStatusText(guiStr("page2.status.checkingUpdates", "Checking for updates...").c_str());
     }
     pumpMessages();
 
     bool usable = ensureLatest(root, true);
 
     if (g_hWnd) {
+        if (usable)
+            setStatusText(guiStr("page2.status.matching", "Everything looks good.").c_str());
         setProgress(100);
-        setStatusText("Complete!");
         pumpMessages();
         Sleep(400);
+        if (launchAfter && usable)
+            setStatusText(guiStr("page2.status.startingGame", "Starting MiMITA...").c_str());
         pumpMessages();
+        Sleep(250);
     }
 
     if (launchAfter && usable) {
@@ -1688,7 +1974,7 @@ void startGameInThread(const std::string& root)
     std::string verDir = versionDir(root, tag);
     if (exe.empty() || !isValidPeExecutable(exe)) {
         if (runVisibleLaunchFlow(root, true)) return;
-        reportLaunchFailure(root, exe, "game install is not usable", 0);
+        reportLaunchFailure(root, exe, guiStr("err.unusable", "install produced an unusable game"), 0);
         return;
     }
     if (g_hWnd) ShowWindow(g_hWnd, SW_HIDE);
@@ -1827,20 +2113,20 @@ void createTrayIcon(HINSTANCE hInst)
     g_nid.uID = 1;
     g_nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     g_nid.uCallbackMessage = WM_APP_TRAYICON;
-    g_nid.hIcon = LoadIconA(nullptr, IDI_APPLICATION);
-    lstrcpynA(g_nid.szTip, "MiMITA Launcher", sizeof(g_nid.szTip));
+    g_nid.hIcon = LoadIconA(g_hInst, MAKEINTRESOURCEA(1));
+    lstrcpynA(g_nid.szTip, guiStr("tray.tip", "MiMITA Launcher").c_str(), sizeof(g_nid.szTip));
     Shell_NotifyIconA(NIM_ADD, &g_nid);
 }
 
 void showTrayMenu()
 {
     HMENU m = CreatePopupMenu();
-    AppendMenuA(m, MF_STRING, 1, "Play MiMITA");
-    AppendMenuA(m, MF_STRING | (g_gameProc ? MF_ENABLED : MF_GRAYED), 2, "Stop MiMITA");
-    AppendMenuA(m, MF_STRING, 3, "Show MiMITA Launcher");
-    AppendMenuA(m, MF_STRING, 4, "Check for updates");
+    AppendMenuA(m, MF_STRING, 1, guiStr("tray.play", "Play MiMITA").c_str());
+    AppendMenuA(m, MF_STRING | (g_gameProc ? MF_ENABLED : MF_GRAYED), 2, guiStr("tray.stop", "Stop MiMITA").c_str());
+    AppendMenuA(m, MF_STRING, 3, guiStr("tray.show", "Show MiMITA Launcher").c_str());
+    AppendMenuA(m, MF_STRING, 4, guiStr("tray.check", "Check for updates").c_str());
     AppendMenuA(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuA(m, MF_STRING, 5, "Exit MiMITA Launcher");
+    AppendMenuA(m, MF_STRING, 5, guiStr("tray.exit", "Exit MiMITA Launcher").c_str());
     POINT pt;
     GetCursorPos(&pt);
     SetForegroundWindow(g_trayWnd);
@@ -1853,8 +2139,8 @@ void showTrayMenu()
     case 4: runVisibleLaunchFlow(currentRoot(), false); break;
     case 5:
         if (g_noErrorDialogs || MessageBoxA(nullptr,
-                "Are you sure you want to close MiMITA Launcher?",
-                "MiMITA Launcher", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) == IDYES) {
+                guiStr("hub.confirmClose", "Are you sure you want to close MiMITA Launcher?").c_str(),
+                guiStr("window.title", "MiMITA").c_str(), MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) == IDYES) {
             g_quit = true;
             PostQuitMessage(0);
         }
@@ -1898,7 +2184,7 @@ LRESULT CALLBACK HubWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         bool green = (di->CtlID == IDH_START);
         bool red = (di->CtlID == IDH_STOP);
         if (!green && !red) break;
-        COLORREF fill = green ? RGB(0, 160, 60) : RGB(205, 40, 40);
+        COLORREF fill = green ? g_colStart : g_colStop;
         HDC hdc = di->hDC;
         HBRUSH br = CreateSolidBrush(fill);
         HPEN pen = CreatePen(PS_SOLID, 1, RGB(0, 0, 0));
@@ -1926,12 +2212,12 @@ LRESULT CALLBACK HubWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         HDC hdc = (HDC)wParam;
         HWND ctrl = (HWND)lParam;
         if (ctrl == g_hubStartBtn) {
-            SetBkColor(hdc, RGB(0, 160, 60));
+            SetBkColor(hdc, g_colStart);
             SetTextColor(hdc, RGB(255, 255, 255));
             return (LRESULT)g_hubGreenBrush;
         }
         if (ctrl == g_hubStopBtn) {
-            SetBkColor(hdc, RGB(205, 40, 40));
+            SetBkColor(hdc, g_colStop);
             SetTextColor(hdc, RGB(255, 255, 255));
             return (LRESULT)g_hubRedBrush;
         }
@@ -1948,8 +2234,8 @@ LRESULT CALLBACK HubWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         }
         if (id == IDH_CLOSE) {
             if (g_noErrorDialogs || MessageBoxA(hwnd,
-                    "Are you sure you want to close MiMITA Launcher?",
-                    "MiMITA Launcher", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) == IDYES) {
+                    guiStr("hub.confirmClose", "Are you sure you want to close MiMITA Launcher?").c_str(),
+                    guiStr("window.title", "MiMITA").c_str(), MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) == IDYES) {
                 g_quit = true;
                 PostQuitMessage(0);
             }
@@ -1980,6 +2266,84 @@ LRESULT CALLBACK HubWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return DefWindowProcA(hwnd, msg, wParam, lParam);
 }
 
+void createHubControls()
+{
+    if (!g_hubWnd) return;
+
+    g_hubBoldFont = createArialFont(16);
+
+    HWND title = CreateWindowA("STATIC", guiStr("hub.title", "MiMITA").c_str(),
+        WS_CHILD | WS_VISIBLE,
+        guiL("hub", "title", "x", 20), guiL("hub", "title", "y", 12),
+        guiL("hub", "title", "w", 320), guiL("hub", "title", "h", 26),
+        g_hubWnd, nullptr, g_hInst, nullptr);
+    SendMessageA(title, WM_SETFONT, (WPARAM)g_hubBoldFont, TRUE);
+
+    HWND acc = CreateWindowA("STATIC", guiStr("hub.greeting", "Hey, Guest").c_str(),
+        WS_CHILD | WS_VISIBLE,
+        guiL("hub", "account", "x", 20), guiL("hub", "account", "y", 44),
+        guiL("hub", "account", "w", 320), guiL("hub", "account", "h", 20),
+        g_hubWnd, (HMENU)(INT_PTR)IDH_ACCOUNT, g_hInst, nullptr);
+    setControlFont(acc);
+
+    HWND newsLbl = CreateWindowA("STATIC", guiStr("hub.notifications", "Notifications").c_str(),
+        WS_CHILD | WS_VISIBLE,
+        guiL("hub", "newsLabel", "x", 20), guiL("hub", "newsLabel", "y", 72),
+        guiL("hub", "newsLabel", "w", 320), guiL("hub", "newsLabel", "h", 18),
+        g_hubWnd, nullptr, g_hInst, nullptr);
+    setControlFont(newsLbl);
+
+    HWND news = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "",
+        WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
+        guiL("hub", "news", "x", 20), guiL("hub", "news", "y", 94),
+        guiL("hub", "news", "w", 320), guiL("hub", "news", "h", 118),
+        g_hubWnd, (HMENU)(INT_PTR)IDH_NEWS, g_hInst, nullptr);
+    setControlFont(news);
+
+    HWND build = CreateWindowA("STATIC", "Build:", WS_CHILD | WS_VISIBLE,
+        guiL("hub", "build", "x", 20), guiL("hub", "build", "y", 220),
+        guiL("hub", "build", "w", 320), guiL("hub", "build", "h", 18),
+        g_hubWnd, (HMENU)(INT_PTR)IDH_BUILD, g_hInst, nullptr);
+    setControlFont(build);
+
+    HWND status = CreateWindowA("STATIC", guiStr("hub.statusNotRunning", "Status: Not running").c_str(),
+        WS_CHILD | WS_VISIBLE,
+        guiL("hub", "status", "x", 20), guiL("hub", "status", "y", 242),
+        guiL("hub", "status", "w", 320), guiL("hub", "status", "h", 18),
+        g_hubWnd, (HMENU)(INT_PTR)IDH_STATUS, g_hInst, nullptr);
+    setControlFont(status);
+
+    g_hubStartBtn = CreateWindowA("BUTTON", guiStr("hub.start", "START MiMITA").c_str(),
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+        guiL("hub", "startBtn", "x", 20), guiL("hub", "startBtn", "y", 270),
+        guiL("hub", "startBtn", "w", 320), guiL("hub", "startBtn", "h", 48),
+        g_hubWnd, (HMENU)(INT_PTR)IDH_START, g_hInst, nullptr);
+    SendMessageA(g_hubStartBtn, WM_SETFONT, (WPARAM)g_hubBoldFont, TRUE);
+
+    g_hubStopBtn = CreateWindowA("BUTTON", guiStr("hub.stop", "STOP MiMITA").c_str(),
+        WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
+        guiL("hub", "startBtn", "x", 20), guiL("hub", "startBtn", "y", 270),
+        guiL("hub", "startBtn", "w", 320), guiL("hub", "startBtn", "h", 48),
+        g_hubWnd, (HMENU)(INT_PTR)IDH_STOP, g_hInst, nullptr);
+    SendMessageA(g_hubStopBtn, WM_SETFONT, (WPARAM)g_hubBoldFont, TRUE);
+
+    HWND chk = CreateWindowA("BUTTON",
+        guiStr("hub.autoStart", "Start MiMITA Launcher when my computer turns on").c_str(),
+        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        guiL("hub", "autoStart", "x", 20), guiL("hub", "autoStart", "y", 332),
+        guiL("hub", "autoStart", "w", 320), guiL("hub", "autoStart", "h", 24),
+        g_hubWnd, (HMENU)(INT_PTR)IDH_AUTOSTART, g_hInst, nullptr);
+    setControlFont(chk);
+    Button_SetCheck(chk, isAutoStartEnabled() ? BST_CHECKED : BST_UNCHECKED);
+
+    HWND closeLink = CreateWindowA("BUTTON", guiStr("hub.close", "Close MiMITA Launcher").c_str(),
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_FLAT,
+        guiL("hub", "close", "x", 20), guiL("hub", "close", "y", 372),
+        guiL("hub", "close", "w", 200), guiL("hub", "close", "h", 26),
+        g_hubWnd, (HMENU)(INT_PTR)IDH_CLOSE, g_hInst, nullptr);
+    setControlFont(closeLink);
+}
+
 HWND createHubWindow(HINSTANCE hInst)
 {
     WNDCLASSA wc = {};
@@ -1990,62 +2354,16 @@ HWND createHubWindow(HINSTANCE hInst)
     wc.lpszClassName = "MimitaHubWindow";
     RegisterClassA(&wc);
 
-    int W = 360, H = 440;
+    int W = guiInt("layout.hub.width", 360);
+    int H = guiInt("layout.hub.height", 440);
     int x = (GetSystemMetrics(SM_CXSCREEN) - W) / 2;
     int y = (GetSystemMetrics(SM_CYSCREEN) - H) / 2;
-    HWND hwnd = CreateWindowExA(0, "MimitaHubWindow", "MiMITA",
+    HWND hwnd = CreateWindowExA(0, "MimitaHubWindow", guiStr("hub.title", "MiMITA").c_str(),
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
         x, y, W, H, nullptr, nullptr, hInst, nullptr);
     if (!hwnd) return nullptr;
 
-    g_hubBoldFont = createArialFont(16);
-    HWND title = CreateWindowA("STATIC", "MiMITA", WS_CHILD | WS_VISIBLE,
-        20, 12, 320, 26, hwnd, nullptr, hInst, nullptr);
-    SendMessageA(title, WM_SETFONT, (WPARAM)g_hubBoldFont, TRUE);
-
-    HWND acc = CreateWindowA("STATIC", "Hey, Guest", WS_CHILD | WS_VISIBLE,
-        20, 44, 320, 20, hwnd, (HMENU)(INT_PTR)IDH_ACCOUNT, hInst, nullptr);
-    setControlFont(acc);
-
-    HWND newsLbl = CreateWindowA("STATIC", "Notifications", WS_CHILD | WS_VISIBLE,
-        20, 72, 320, 18, hwnd, nullptr, hInst, nullptr);
-    setControlFont(newsLbl);
-
-    HWND news = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "",
-        WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
-        20, 94, 320, 118, hwnd, (HMENU)(INT_PTR)IDH_NEWS, hInst, nullptr);
-    setControlFont(news);
-
-    HWND build = CreateWindowA("STATIC", "Build:", WS_CHILD | WS_VISIBLE,
-        20, 220, 320, 18, hwnd, (HMENU)(INT_PTR)IDH_BUILD, hInst, nullptr);
-    setControlFont(build);
-
-    HWND status = CreateWindowA("STATIC", "Status: Not running", WS_CHILD | WS_VISIBLE,
-        20, 242, 320, 18, hwnd, (HMENU)(INT_PTR)IDH_STATUS, hInst, nullptr);
-    setControlFont(status);
-
-    g_hubStartBtn = CreateWindowA("BUTTON", "START MiMITA",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
-        20, 270, 320, 48, hwnd, (HMENU)(INT_PTR)IDH_START, hInst, nullptr);
-    SendMessageA(g_hubStartBtn, WM_SETFONT, (WPARAM)g_hubBoldFont, TRUE);
-
-    g_hubStopBtn = CreateWindowA("BUTTON", "STOP MiMITA",
-        WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
-        20, 270, 320, 48, hwnd, (HMENU)(INT_PTR)IDH_STOP, hInst, nullptr);
-    SendMessageA(g_hubStopBtn, WM_SETFONT, (WPARAM)g_hubBoldFont, TRUE);
-
-    HWND chk = CreateWindowA("BUTTON",
-        "Start MiMITA Launcher when my computer turns on",
-        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        20, 332, 320, 24, hwnd, (HMENU)(INT_PTR)IDH_AUTOSTART, hInst, nullptr);
-    setControlFont(chk);
-    Button_SetCheck(chk, isAutoStartEnabled() ? BST_CHECKED : BST_UNCHECKED);
-
-    HWND closeLink = CreateWindowA("BUTTON", "Close MiMITA Launcher",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_FLAT,
-        20, 372, 200, 26, hwnd, (HMENU)(INT_PTR)IDH_CLOSE, hInst, nullptr);
-    setControlFont(closeLink);
-
+    createHubControls();
     return hwnd;
 }
 
@@ -2087,7 +2405,7 @@ void launchGame(const std::string& exePath, const std::string& workDir)
 
     g_gameProc = pi.hProcess;
     g_gamePid = pi.dwProcessId;
-    g_hubNote = "MiMITA is running. Click Stop to close it.";
+    g_hubNote = guiStr("hub.noteRunning", "MiMITA is running. Click Stop to close it.");
     notifyStatus();
 
     DWORD start = GetTickCount();
@@ -2220,8 +2538,12 @@ void launchGame(const std::string& exePath, const std::string& workDir)
         if (action == CRASH_RECOVER_ROLLBACK && !prevTag.empty())
         {
             setActiveVersion(root, prevTag);
-            g_hubNote = "Restored MiMITA v" + prevTag + " (the new version had a problem).";
-            showTrayBalloon("MiMITA", "Restored v" + prevTag + " after a crash.");
+            std::string note = guiStr("hub.noteRestored", "Restored MiMITA v{version} (the new version had a problem).");
+            guiReplace(note, "version", prevTag);
+            g_hubNote = note;
+            std::string balloon = guiStr("crash.restoredBalloon", "Restored v{version} after a crash.");
+            guiReplace(balloon, "version", prevTag);
+            showTrayBalloon(guiStr("window.title", "MiMITA"), balloon);
             notifyStatus();
         }
         else if (action == CRASH_RECOVER_OPEN_FOLDER && !crashDir.empty())
@@ -2264,7 +2586,7 @@ void launchGame(const std::string& exePath, const std::string& workDir)
     CloseHandle(pi.hThread);
     g_gameProc = nullptr;
     g_gamePid = 0;
-    g_hubNote = "MiMITA closed. Click Start to play again.";
+    g_hubNote = guiStr("hub.noteClosed", "MiMITA closed. Click Start to play again.");
     notifyStatus();
 }
 
@@ -2277,18 +2599,30 @@ void createShortcuts()
     std::string launcher = pathExists(launcherHomePath()) ? launcherHomePath()
                                                           : currentExePath();
 
+    // Shortcut icon = the game icon, copied next to the launcher so it stays
+    // valid across version-folder updates.
+    std::string iconPath;
+    std::string gameIcon = "assets\\uitextures\\mimita desktop icon v1.ico";
+    std::string activeDir = versionDir(currentRoot(), getActiveVersion(currentRoot()));
+    if (pathExists(activeDir + "\\" + gameIcon)) {
+        CreateDirectoryA(launcherHomeDir().c_str(), nullptr);
+        std::string stable = launcherHomeDir() + "\\mimita-icon.ico";
+        CopyFileA((activeDir + "\\" + gameIcon).c_str(), stable.c_str(), FALSE);
+        if (pathExists(stable)) iconPath = stable;
+    }
+
     if (g_createStartMenu) {
         std::string smPath = getStartMenuPath();
         if (!smPath.empty()) {
             CreateDirectoryA(smPath.c_str(), nullptr);
-            createShellLink(launcher, smPath + "\\Mimita.lnk", "", "Mimita");
+            createShellLink(launcher, smPath + "\\Mimita.lnk", "", "Mimita", iconPath);
         }
     }
 
     if (g_createDesktop) {
         std::string deskPath = getDesktopPath();
         if (!deskPath.empty()) {
-            createShellLink(launcher, deskPath + "\\Mimita.lnk", "", "Mimita");
+            createShellLink(launcher, deskPath + "\\Mimita.lnk", "", "Mimita", iconPath);
         }
     }
 }
@@ -2299,7 +2633,7 @@ void runInstall(HWND hwnd)
 {
     g_installing = true;
 
-    setStatusText("Checking for updates...");
+    setStatusText(guiStr("page2.status.checkingUpdates", "Checking for updates...").c_str());
     CreateDirectoryA(g_installDir.c_str(), nullptr);
     CreateDirectoryA((g_installDir + "\\versions").c_str(), nullptr);
 
@@ -2323,23 +2657,23 @@ void runInstall(HWND hwnd)
     {
         if (!g_releaseFetched || info.zipUrl.empty()) {
             if (!g_noErrorDialogs)
-                MessageBoxA(hwnd, "Could not connect to GitHub to download Mimita.\nCheck your internet connection and try again.",
-                    "Download Error", MB_OK | MB_ICONERROR);
+                MessageBoxA(hwnd, guiStr("err.download", "Could not connect to GitHub to download MiMITA.\nCheck your internet connection and try again.").c_str(),
+                    guiStr("window.title", "MiMITA").c_str(), MB_OK | MB_ICONERROR);
             g_installing = false;
             return;
         }
         tag = info.gameVersion.empty() ? "latest" : info.gameVersion;
 
         setProgress(0);
-        setStatusText("Downloading...");
+        setStatusText(guiStr("page2.status.downloading", "Downloading update...").c_str());
 
         char td[MAX_PATH]; GetTempPathA(MAX_PATH, td);
         zipPath = std::string(td) + "mimita-game-" + tag + ".zip";
 
         if (!downloadFileTo(info.zipUrl, zipPath, 0)) {
             if (!g_noErrorDialogs)
-                MessageBoxA(hwnd, "Failed to download Mimita.\nCheck your internet connection and try again.",
-                    "Download Error", MB_OK | MB_ICONERROR);
+                MessageBoxA(hwnd, guiStr("err.downloadFailed", "Failed to download MiMITA.\nCheck your internet connection and try again.").c_str(),
+                    guiStr("window.title", "MiMITA").c_str(), MB_OK | MB_ICONERROR);
             g_installing = false;
             return;
         }
@@ -2348,8 +2682,8 @@ void runInstall(HWND hwnd)
             std::string dlHash;
             if (sha256File(zipPath, dlHash) && dlHash != info.zipSha256) {
                 if (!g_noErrorDialogs)
-                    MessageBoxA(hwnd, "Download verification failed.\nPlease try again.",
-                        "Verification Error", MB_OK | MB_ICONERROR);
+                    MessageBoxA(hwnd, guiStr("err.verify", "Download verification failed.\nPlease try again.").c_str(),
+                        guiStr("window.title", "MiMITA").c_str(), MB_OK | MB_ICONERROR);
                 DeleteFileA(zipPath.c_str());
                 g_installing = false;
                 return;
@@ -2358,12 +2692,12 @@ void runInstall(HWND hwnd)
     }
 
     setProgress(85);
-    setStatusText("Extracting...");
+    setStatusText(guiStr("page2.status.extracting", "Extracting files...").c_str());
 
     if (!applyGameUpdate(g_installDir, tag, zipPath)) {
         if (!g_noErrorDialogs)
-            MessageBoxA(hwnd, "Failed to extract files.\nThe download may be corrupted.",
-                "Extraction Error", MB_OK | MB_ICONERROR);
+            MessageBoxA(hwnd, guiStr("err.extract", "Failed to extract files.\nThe download may be corrupted.").c_str(),
+                guiStr("window.title", "MiMITA").c_str(), MB_OK | MB_ICONERROR);
         if (!g_useLocalZip) DeleteFileA(zipPath.c_str());
         g_installing = false;
         return;
@@ -2377,14 +2711,14 @@ void runInstall(HWND hwnd)
     g_gameExePath = gameExeForRoot(g_installDir);
 
     setProgress(98);
-    setStatusText("Creating shortcuts...");
+    setStatusText(guiStr("page2.status.shortcuts", "Creating shortcuts...").c_str());
     createShortcuts();
 
     if (Button_GetCheck(GetDlgItem(g_hWnd, IDC_CHK_AUTOSTART)) == BST_CHECKED)
         setAutoStartEnabled(true);
 
     setProgress(100);
-    setStatusText("Complete!");
+    setStatusText(guiStr("page2.status.complete", "Complete!").c_str());
     Sleep(600);
     pumpMessages();
     g_installing = false;
@@ -2394,13 +2728,13 @@ void runInstall(HWND hwnd)
         if (g_hWnd) ShowWindow(g_hWnd, SW_HIDE);
         startGameInThread(g_installDir);
     } else {
-        reportLaunchFailure(g_installDir, g_gameExePath, "install produced an unusable game", 0);
+        reportLaunchFailure(g_installDir, g_gameExePath, guiStr("err.unusable", "install produced an unusable game"), 0);
     }
 }
 
 // ── New: Window procedure ─────────────────────────────────────
 
-HBRUSH g_blackBrush = CreateSolidBrush(RGB(0, 0, 0));
+void applyGuiConfig();
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -2417,11 +2751,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             Graphics graphics(hdc);
             graphics.DrawImage(g_bgImage, 0, 0, rc.right, rc.bottom);
         } else {
-            // Gradient fallback: dark blue to black
+            // Gradient fallback (colors from config)
             for (int y = 0; y < rc.bottom; y++) {
-                int r = (int)(20 * (1.0f - (float)y / rc.bottom));
-                int g = (int)(20 * (1.0f - (float)y / rc.bottom));
-                int b = (int)(60 * (1.0f - (float)y / rc.bottom));
+                float t = (float)y / (rc.bottom > 0 ? rc.bottom : 1);
+                float inv = 1.0f - t;
+                int r = (int)(GetRValue(g_gradientTop) * inv + GetRValue(g_gradientBottom) * t);
+                int g = (int)(GetGValue(g_gradientTop) * inv + GetGValue(g_gradientBottom) * t);
+                int b = (int)(GetBValue(g_gradientTop) * inv + GetBValue(g_gradientBottom) * t);
                 HPEN pen = CreatePen(PS_SOLID, 1, RGB(r, g, b));
                 HGDIOBJ old = SelectObject(hdc, pen);
                 MoveToEx(hdc, rc.left, y, nullptr);
@@ -2438,17 +2774,21 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
         HDC hdc = (HDC)wParam;
         SetBkColor(hdc, RGB(0, 0, 0));
-        SetTextColor(hdc, RGB(255, 255, 255));
+        SetTextColor(hdc, g_colText);
         return (LRESULT)g_blackBrush;
     }
     case WM_CTLCOLOREDIT:
     {
         HDC hdc = (HDC)wParam;
-        SetBkColor(hdc, RGB(30, 30, 30));
-        SetTextColor(hdc, RGB(255, 255, 255));
+        SetBkColor(hdc, g_colEditBg);
+        SetTextColor(hdc, g_colText);
         static HBRUSH br = CreateSolidBrush(RGB(30, 30, 30));
         return (LRESULT)br;
     }
+    case WM_TIMER:
+        if (wParam == GUI_HOTRELOAD_TIMER && !g_installing && guiCheckHotReload())
+            applyGuiConfig();
+        return 0;
     case WM_COMMAND:
     {
         int id = LOWORD(wParam);
@@ -2462,7 +2802,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
         if (id == IDC_INSTALL_BTN) {
             if (g_installDir.empty()) {
-                MessageBoxA(hwnd, "Please select an install directory.", "Mimita Setup", MB_OK | MB_ICONINFORMATION);
+                MessageBoxA(hwnd, guiStr("err.noInstallDir", "Please select an install directory.").c_str(),
+                    guiStr("window.title", "MiMITA").c_str(), MB_OK | MB_ICONINFORMATION);
                 return 0;
             }
             EnableWindow(g_pageControls[0][8], FALSE);
@@ -2527,21 +2868,81 @@ HWND createWizardWindow(HINSTANCE hInst)
 
     int screenW = GetSystemMetrics(SM_CXSCREEN);
     int screenH = GetSystemMetrics(SM_CYSCREEN);
-    int x = (screenW - 800) / 2;
-    int y = (screenH - 600) / 2;
+    int winW = guiInt("window.width", 800);
+    int winH = guiInt("window.height", 600);
+    int x = (screenW - winW) / 2;
+    int y = (screenH - winH) / 2;
 
     HWND hwnd = CreateWindowExA(
-        0, CLASS_NAME, "Mimita Setup",
+        0, CLASS_NAME, guiStr("window.title", "MiMITA").c_str(),
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-        x, y, 800, 600,
+        x, y, winW, winH,
         nullptr, nullptr, hInst, nullptr
     );
 
     if (hwnd) {
-        SetWindowPos(hwnd, nullptr, x, y, 800, 600, SWP_NOZORDER);
+        SetWindowPos(hwnd, nullptr, x, y, winW, winH, SWP_NOZORDER);
     }
 
     return hwnd;
+}
+
+// ── Apply the GUI config (colors, background, strings, layout) ─
+
+void rebuildWizardPage()
+{
+    if (!g_hWnd || g_installing) return;
+    int page = g_currentPage;
+    if (page == 0) createPage1();
+    else if (page == 1) createPage2();
+    showPage(page);
+    InvalidateRect(g_hWnd, nullptr, TRUE);
+}
+
+void applyGuiColors()
+{
+    g_colText = guiColor("colors.text", RGB(255, 255, 255));
+    g_colEditBg = guiColor("colors.editBg", RGB(30, 30, 30));
+    g_colStart = guiColor("colors.startBtn", RGB(0, 160, 60));
+    g_colStop = guiColor("colors.stopBtn", RGB(205, 40, 40));
+    g_gradientTop = guiColor("bg.gradient.top", RGB(20, 20, 60));
+    g_gradientBottom = guiColor("bg.gradient.bottom", RGB(0, 0, 0));
+
+    if (g_blackBrush) DeleteObject(g_blackBrush);
+    g_blackBrush = CreateSolidBrush(RGB(0, 0, 0));
+
+    if (g_hubGreenBrush) DeleteObject(g_hubGreenBrush);
+    if (g_hubRedBrush) DeleteObject(g_hubRedBrush);
+    g_hubGreenBrush = CreateSolidBrush(g_colStart);
+    g_hubRedBrush = CreateSolidBrush(g_colStop);
+}
+
+void applyGuiConfig()
+{
+    std::string windowTitle = guiStr("window.title", "MiMITA");
+    if (g_hWnd) {
+        SetWindowTextA(g_hWnd, windowTitle.c_str());
+        int w = guiInt("window.width", 800);
+        int h = guiInt("window.height", 600);
+        SetWindowPos(g_hWnd, nullptr, 0, 0, w, h, SWP_NOMOVE | SWP_NOZORDER);
+    }
+    if (g_hubWnd)
+        SetWindowTextA(g_hubWnd, guiStr("hub.title", windowTitle.c_str()).c_str());
+
+    applyGuiColors();
+    loadBackgroundImage();
+
+    rebuildWizardPage();
+    if (g_hubWnd) {
+        for (HWND child = GetWindow(g_hubWnd, GW_CHILD); child;
+             child = GetWindow(child, GW_HWNDNEXT))
+            DestroyWindow(child);
+        g_hubStartBtn = nullptr;
+        g_hubStopBtn = nullptr;
+        createHubControls();
+        refreshHub();
+    }
+    if (g_hWnd) InvalidateRect(g_hWnd, nullptr, TRUE);
 }
 
 } // anonymous namespace
@@ -2683,6 +3084,10 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
     InitCommonControlsEx(&icc);
     createArialFonts();
 
+    // ── Load GUI config (dev file hot-reload, or embedded locked copy) ──
+    g_hInst = hInst;
+    loadGuiConfig();
+
     // ── Create windows ────────────────────────────────────────
     g_hWnd = createWizardWindow(hInst);
     if (!g_hWnd) {
@@ -2690,12 +3095,12 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         CoUninitialize();
         return 1;
     }
-    loadBackgroundImageFromResource();
-
-    g_hubGreenBrush = CreateSolidBrush(RGB(0, 160, 60));
-    g_hubRedBrush = CreateSolidBrush(RGB(205, 40, 40));
     createTrayIcon(hInst);
     g_hubWnd = createHubWindow(hInst);
+
+    // Apply colors + background from config (brushes, image, titles).
+    applyGuiConfig();
+    SetTimer(g_hWnd, GUI_HOTRELOAD_TIMER, 500, nullptr);
 
     // ── Determine install state ───────────────────────────────
     std::string root;

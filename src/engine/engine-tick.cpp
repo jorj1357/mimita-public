@@ -195,6 +195,17 @@ void engineTick(Engine& engine)
     }
     mouseLockKeyPrev = mouseLockKeyDown;
 
+    // Space on the duel win/lose screen → skip the rematch timer.
+    static bool spacePrev = false;
+    bool spaceDown = glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
+    if (GAME_STATE == GAME_PLAYING && spaceDown && !spacePrev &&
+        !Terminal::instance().isOpen() &&
+        DuelQueue::instance().state() == DuelQueueState::MatchEnd)
+    {
+        DuelQueue::instance().requestRematchNow();
+    }
+    spacePrev = spaceDown;
+
     static bool f10Prev = false;
     bool f10Down = glfwGetKey(engine.window(), GLFW_KEY_F10) == GLFW_PRESS;
     if (!Terminal::instance().isOpen() && f10Down && !f10Prev) {

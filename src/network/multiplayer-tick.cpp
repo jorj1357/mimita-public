@@ -1002,6 +1002,19 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             DuelQueue::instance().onDuelEnemySpawn(
                 *reinterpret_cast<const DuelEnemySpawnPacket*>(buffer));
         }
+        else if (header->type == PACKET_MAP_CHANGE &&
+                 bytes >= (int)sizeof(MapChangePacket))
+        {
+            const MapChangePacket* mc = reinterpret_cast<const MapChangePacket*>(buffer);
+            Debug::log(Debug::Category::Networking, "[NET MAP CHANGE] new=%s\n", mc->mapId);
+            // Re-arm the existing map-sync (engine-tick-net) so it loads the
+            // new map and re-sends CLIENT_MAP_READY with the fresh id.
+            ctx.requiredMapId = mc->mapId;
+            ctx.clientMapReadySent = false;
+            ctx.clientMapReadySentForMap.clear();
+            ctx.clientMapReadySentForPlayerId = 0;
+            DuelQueue::instance().onMapChange(mc->mapId);
+        }
         else if (header->type == PACKET_RELOAD_RESULT &&
                  bytes >= (int)sizeof(ReloadResultPacket))
         {

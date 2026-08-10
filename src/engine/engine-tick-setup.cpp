@@ -23,6 +23,7 @@
 #include "config/ragdoll-death-config.h"
 #include "npc/npc-difficulty-config.h"
 #include "gamemode/gamemode.h"
+#include "duel/duel-map-pool.h"
 #include "hot-reload/hot-reload-system.h"
 #include "notifications/notifications.h"
 #include "gui/gui-layout.h"
@@ -57,6 +58,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     RagdollDeathConfig::instance().pollReload();
     NpcDifficultyConfig::instance().pollReload();
     GamemodeRegistry::instance().pollReload();
+    DuelMapPool::instance().pollReload();
     WeaponHitFxConfig::instance().pollReload();
     NotificationSystem::instance().pollReload();
     GuiLayoutManager::instance().pollReload();
