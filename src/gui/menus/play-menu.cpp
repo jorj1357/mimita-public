@@ -59,6 +59,11 @@ PlayMenuResult drawPlayMenu(GLFWwindow* win)
             printf("[PLAY MENU] Duels\n");
             r.goDuels = true;
         }
+        else if (id == "queueDuelsButton")
+        {
+            printf("[PLAY MENU] Queue Duels\n");
+            r.goQueueDuels = true;
+        }
         else if (id == "bombTagButton")
         {
             printf("[PLAY MENU] Bomb Tag\n");

@@ -129,7 +129,7 @@ void DuelManager::start(const DuelConfig& cfg, Player& player, NpcSystem& npcs, 
     config.enabled = true;
 
     currentPhase = DuelPhase::Countdown;
-    countdown = 3.0f;
+    countdown = config.countdownSeconds;
     timer = 0.0f;
     currentRound = 1;
     currentMapIndex = 0;
@@ -436,7 +436,7 @@ void DuelManager::restartDuel(Player& player, NpcSystem& npcs, World& world)
     player.killedBy.clear();
 
     currentPhase = DuelPhase::Countdown;
-    countdown = 3.0f;
+    countdown = config.countdownSeconds;
     timer = 0.0f;
     currentRound = 1;
     playerRoundsWon_ = 0;

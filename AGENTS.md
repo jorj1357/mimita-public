@@ -1191,6 +1191,31 @@ MimitaLauncher.exe --local-zip mimita-game.zip --no-verify
 | `--local-zip <path>` | Use a local mimita-game.zip instead of downloading from GitHub |
 | `--no-verify` | Skip SHA-256 verification of the ZIP |
 
+## Releasing a New Game Version
+
+To ship a new build to players, run one script from the repo root:
+
+```
+python devscripts/publish-release.py
+```
+
+It: builds `MimitaLauncher.exe` (`launcher\build.bat`), bundles `mimita-game.zip` (`devscripts/bundle-game.py`), writes `launcher_info.json` (launcher version + game version + SHA-256s + GitHub URLs), and publishes/updates the GitHub release with all three assets. It prints the download link for the site button.
+
+Before running it:
+
+- Build a release (not debug) game: `python build_agent.py release` (the script refuses debug builds).
+- Set the game version in `version.txt` (also `config/version.json` + `python devscripts/generate-version.py` for version metadata).
+- Bump `#define LAUNCHER_VERSION` in `launcher/main.cpp` whenever the launcher itself changes — the self-update system uses it, and the publish script reads it into `launcher_info.json`.
+- `gh auth login` (or set `GH_TOKEN`) so the script can create the release.
+
+Optional: `--commit-push` commits the version files and pushes. `--notes "text"` sets the release notes.
+
+### How players get updates
+
+- The launcher self-installs to `%LOCALAPPDATA%\MiMITA\launcher\`, self-updates silently, and checks GitHub for new game versions (on manual launch and in the background when running in the tray).
+- Games install into `%LOCALAPPDATA%\MiMITA\versions\v<ver>\` with user data kept separately in `%LOCALAPPDATA%\MiMITA\data\` (junctioned `config`/`logs`/`replays`). Only the last two versions are kept; rollback switches `active-version.txt`.
+- The site download button points at `/api/download/latest`, which redirects to the GitHub `MimitaLauncher.exe` asset.
+
 ## VPS Deployment
 
 - The production VPS (107.191.48.226) is not edited directly.

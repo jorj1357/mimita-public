@@ -1502,7 +1502,9 @@ app.get("/api/download/latest", (req, res) => {
         res.download(filePath, filename)
     }
     else {
-        res.redirect("https://github.com/jorj1357/mimita-public/releases/latest")
+        // The launcher IS the download: it installs the game, self-updates,
+        // and updates the game automatically. Serve it directly from GitHub.
+        res.redirect("https://github.com/jorj1357/mimita-public/releases/latest/download/MimitaLauncher.exe")
     }
 })
 

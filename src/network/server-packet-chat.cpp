@@ -454,7 +454,7 @@ void checkVoidDeath(std::unordered_map<uint32_t, ServerPlayer>& players,
         {
             kv.second.health = 0;
             kv.second.dead = true;
-            kv.second.respawnSeconds = 2.0f;
+            kv.second.respawnSeconds = 0.01f;  // instant respawn (next server tick)
             kv.second.vel = glm::vec3(0.0f);
             printf("%s [SERVER VOID DEATH] playerId=%u name=%s z=%.1f killZ=%.1f\n",
                    serverTimestamp(), kv.second.id, kv.second.name.c_str(),

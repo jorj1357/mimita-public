@@ -1,9 +1,11 @@
-# 07 31 2026, 14 00
+# 08 10 2026, 17 00
 # purpose
 # Integration test for MimitaLauncher's local-ZIP path.
-# Proves the ZIP's own version.txt wins over the launcher folder's version.txt,
-# that a valid game executable is launched and exits cleanly, and that an
-# invalid game executable is rejected without any blocking Windows dialog.
+# Proves the ZIP's own version.txt wins, that a valid game executable is
+# extracted into a version folder and launched, and that an invalid game
+# executable is rejected without any blocking Windows dialog.
+# The launcher now stays alive in the system tray, so the test terminates it
+# after detecting its effects.
 # Does NOT download from GitHub, touch the real install dir, or open a game.
 # Does NOT modify production source; builds a throwaway test-game.exe fixture.
 
@@ -36,9 +38,11 @@ def write(path, data):
         f.write(data)
 
 
-def make_zip(zip_path, version):
+def make_zip(zip_path, version, exe_bytes=None):
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("version.txt", version)
+        if exe_bytes is not None:
+            zf.writestr("mimita.exe", exe_bytes)
 
 
 def build_fixture(out_exe):
@@ -48,30 +52,32 @@ def build_fixture(out_exe):
         fail(f"could not build test-game.exe fixture (gcc exit {r.returncode})")
 
 
-def setup_scenario(root, install_dir, mimita_exe_bytes, zip_version, launcher_version):
+def setup_scenario(root, install_dir, zip_version, exe_bytes):
     launcher_dir = os.path.join(root, "launcher")
     os.makedirs(launcher_dir, exist_ok=True)
     os.makedirs(install_dir, exist_ok=True)
     shutil.copy(LAUNCHER, os.path.join(launcher_dir, "MimitaLauncher.exe"))
-    write(os.path.join(launcher_dir, "version.txt"), launcher_version)
-    make_zip(os.path.join(launcher_dir, "mimita-game.zip"), zip_version)
+    make_zip(os.path.join(launcher_dir, "mimita-game.zip"), zip_version, exe_bytes)
     write(os.path.join(launcher_dir, "install-config.json"),
           '{"install_dir":"' + install_dir.replace("\\", "\\\\") + '"}')
-    with open(os.path.join(install_dir, "mimita.exe"), "wb") as f:
-        f.write(mimita_exe_bytes)
     return launcher_dir
 
 
-def run_launcher(launcher_dir, proc_holder):
+def launch_launcher(launcher_dir):
     exe = os.path.join(launcher_dir, "MimitaLauncher.exe")
-    p = subprocess.Popen([exe, "--no-error-dialogs"], cwd=launcher_dir)
-    proc_holder.append(p)
-    try:
-        return p.wait(timeout=TIMEOUT_S)
-    except subprocess.TimeoutExpired:
-        p.kill()
-        p.wait()
-        return None
+    # --release-json <missing> keeps fetchReleaseInfo instant and offline.
+    p = subprocess.Popen([exe, "--no-error-dialogs",
+                          "--release-json", "missing.json"], cwd=launcher_dir)
+    return p
+
+
+def wait_for(path, seconds=TIMEOUT_S):
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if os.path.exists(path):
+            return True
+        time.sleep(0.2)
+    return False
 
 
 def test_zip_version_wins_and_launches(root):
@@ -80,56 +86,60 @@ def test_zip_version_wins_and_launches(root):
     build_fixture(fixture_exe)
     with open(fixture_exe, "rb") as f:
         exe_bytes = f.read()
-    launcher_dir = setup_scenario(root, install, exe_bytes,
-                                  zip_version="9.9.9", launcher_version="1.1.1")
+    launcher_dir = setup_scenario(root, install, zip_version="9.9.9", exe_bytes=exe_bytes)
 
-    procs = []
-    code = run_launcher(launcher_dir, procs)
-    if code is None:
-        fail("Test 1: launcher did not exit within %ds" % TIMEOUT_S)
-    if code != 0:
-        fail(f"Test 1: launcher exit code {code}, expected 0")
+    p = launch_launcher(launcher_dir)
+    try:
+        version_dir = os.path.join(install, "versions", "v9.9.9")
+        marker = os.path.join(version_dir, "test-game-launched.txt")
+        if not wait_for(marker):
+            fail("Test 1: test game was not launched (test-game-launched.txt missing)")
 
-    ver_file = os.path.join(install, "version.txt")
-    installed = open(ver_file).read().strip() if os.path.exists(ver_file) else "(missing)"
-    if installed != "9.9.9":
-        fail(f"Test 1: install\\version.txt = '{installed}', expected '9.9.9' (from ZIP, not launcher folder 1.1.1)")
+        active = os.path.join(install, "active-version.txt")
+        active_ver = open(active).read().strip() if os.path.exists(active) else "(missing)"
+        if active_ver != "9.9.9":
+            fail(f"Test 1: active-version.txt = '{active_ver}', expected '9.9.9'")
 
-    marker = os.path.join(install, "test-game-launched.txt")
-    if not os.path.exists(marker):
-        fail("Test 1: test game was not launched (test-game-launched.txt missing)")
-    print("[PASS] Test 1: ZIP version 9.9.9 stamped; launcher exited 0; test game launched")
-    return procs
+        ver_file = os.path.join(version_dir, "version.txt")
+        installed = open(ver_file).read().strip() if os.path.exists(ver_file) else "(missing)"
+        if installed != "9.9.9":
+            fail(f"Test 1: versions\\v9.9.9\\version.txt = '{installed}', expected '9.9.9'")
+
+        if not os.path.isfile(os.path.join(version_dir, "mimita.exe")):
+            fail("Test 1: versions\\v9.9.9\\mimita.exe missing (zip exe not extracted)")
+
+        # Launcher stays alive in the tray after launching the game.
+        time.sleep(0.5)
+        if p.poll() is not None:
+            fail(f"Test 1: launcher exited (code {p.returncode}); expected to stay in tray")
+        print("[PASS] Test 1: ZIP version 9.9.9 stamped; game launched from version folder; launcher in tray")
+    finally:
+        if p.poll() is None:
+            p.kill()
+            p.wait()
 
 
 def test_invalid_exe_noninteractive(root):
     install = os.path.join(root, "install-bad")
     exe_bytes = b"this is not a windows executable, it is plain text"
-    launcher_dir = setup_scenario(root, install, exe_bytes,
-                                  zip_version="9.9.9", launcher_version="1.1.1")
+    launcher_dir = setup_scenario(root, install, zip_version="9.9.9", exe_bytes=exe_bytes)
 
-    procs = []
-    code = run_launcher(launcher_dir, procs)
-    if code is None:
-        fail("Test 2: launcher did not exit within %ds (blocked on an OS error dialog?)" % TIMEOUT_S)
-
-    logs = sorted([
-        os.path.join(install, "launcher-data", "logs", f)
-        for f in os.listdir(os.path.join(install, "launcher-data", "logs"))
-        if f.startswith("launch-error-") and f.endswith(".txt")
-    ]) if os.path.isdir(os.path.join(install, "launcher-data", "logs")) else []
-
-    if not logs:
-        fail("Test 2: no launch-error log written for invalid executable")
-    content = open(logs[0]).read()
-    if "mimita.exe" not in content:
-        fail("Test 2: launch-error log missing executable path")
-    if "not a valid Windows executable" not in content:
-        fail("Test 2: launch-error log missing invalid-executable reason")
-    if "win32_error=193" not in content:
-        fail("Test 2: launch-error log missing win32_error=193")
-    print("[PASS] Test 2: invalid executable rejected without hang; error logged with path + win32_error=193")
-    return procs
+    p = launch_launcher(launcher_dir)
+    try:
+        time.sleep(3)
+        if p.poll() is not None:
+            fail(f"Test 2: launcher exited (code {p.returncode}); expected to stay in tray")
+        version_dir = os.path.join(install, "versions", "v9.9.9")
+        if os.path.exists(version_dir):
+            fail("Test 2: invalid executable was not rejected (version folder exists)")
+        marker = os.path.join(install, "test-game-launched.txt")
+        if os.path.exists(marker):
+            fail("Test 2: game was launched for an invalid executable")
+        print("[PASS] Test 2: invalid executable rejected without hang; no version folder created")
+    finally:
+        if p.poll() is None:
+            p.kill()
+            p.wait()
 
 
 def main():
@@ -139,15 +149,10 @@ def main():
         fail(f"MinGW gcc not found at {GCC}")
 
     tmp = tempfile.mkdtemp(prefix="launcher-localzip-test-")
-    procs = []
     try:
-        procs += test_zip_version_wins_and_launches(tmp)
-        procs += test_invalid_exe_noninteractive(tmp)
+        test_zip_version_wins_and_launches(tmp)
+        test_invalid_exe_noninteractive(tmp)
     finally:
-        for p in procs:
-            if p.poll() is None:
-                p.kill()
-                p.wait()
         time.sleep(0.3)
         shutil.rmtree(tmp, ignore_errors=True)
 

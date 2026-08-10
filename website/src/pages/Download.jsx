@@ -77,7 +77,8 @@ export default function Download() {
         )}
 
         <p className="downloadInfo">
-          windows 64-bit
+          download MimitaLauncher.exe (about {fileSize} MB) — it installs the
+          game and updates it automatically
         </p>
 
         {version && (

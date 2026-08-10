@@ -53,6 +53,14 @@ struct DuelConfig {
     MapRotationMode mapRotationMode = MapRotationMode::PerRound;
     std::string mapPath = "assets/maps/mimita-aabb-only-interior-small-v4.glb";
     bool enabled = false;
+
+    std::string gamemodeId = "duel";
+    std::vector<std::string> teamNames = {"RED", "BLUE"};
+    bool killHeals = true;
+    float countdownSeconds = 3.0f;
+    float rematchSeconds = 5.0f;
+    float spawnTracerSeconds = 1.5f;
+    bool allowRematch = true;
 };
 
 struct DuelStats {

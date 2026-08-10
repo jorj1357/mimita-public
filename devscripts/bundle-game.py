@@ -1,9 +1,15 @@
 """Create mimita-game.zip of all runtime files.
 The launcher downloads this from GitHub on first run.
 Excludes MimitaLauncher.exe to avoid file-lock conflicts on extraction.
-Refuses to bundle a debug build (huge mimita.exe) unless --allow-debug is passed."""
+Refuses to bundle a debug build (huge mimita.exe) unless --allow-debug is passed.
+With --launcher-info, also writes launcher_info.json (file:// URLs) so the
+launcher's self-update + game-update flow can be tested offline with
+--release-json launcher_info.json.
+"""
 
+import json
 import os
+import re
 import sys
 import zipfile
 import hashlib
@@ -52,6 +58,59 @@ def collect_files():
                     files.append((rel, full, os.path.getsize(full)))
     return files
 
+def sha256_of(path):
+    sha = hashlib.sha256()
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(65536)
+            if not chunk:
+                break
+            sha.update(chunk)
+    return sha.hexdigest()
+
+
+def launcher_version():
+    src = os.path.join(ROOT, "launcher", "main.cpp")
+    try:
+        with open(src, "r", encoding="utf-8", errors="replace") as f:
+            m = re.search(r'#define\s+LAUNCHER_VERSION\s+"([^"]+)"', f.read())
+            if m:
+                return m.group(1)
+    except OSError:
+        pass
+    return "0.0.0"
+
+
+def file_url(path):
+    return "file:///" + os.path.abspath(path).replace("\\", "/")
+
+
+def write_launcher_info(zip_path, zip_sha):
+    launcher = os.path.join(ROOT, "MimitaLauncher.exe")
+    game_version = "0.0.0"
+    vt = os.path.join(ROOT, "version.txt")
+    if os.path.isfile(vt):
+        with open(vt, "r", encoding="utf-8", errors="replace") as f:
+            game_version = f.read().strip() or game_version
+    if not os.path.isfile(launcher):
+        print("[WARN] MimitaLauncher.exe not found; launcher_sha256 omitted.")
+    info = {
+        "launcher_version": launcher_version(),
+        "game_version": game_version,
+        "game_zip_url": file_url(zip_path),
+        "game_zip_sha256": zip_sha,
+        "launcher_url": file_url(launcher) if os.path.isfile(launcher) else "",
+        "launcher_sha256": sha256_of(launcher) if os.path.isfile(launcher) else "",
+        "changelog": "",
+    }
+    out = os.path.join(ROOT, "launcher_info.json")
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump(info, f, indent=2)
+    print(f"[OK]   {out}")
+    print(f"       launcher_version={info['launcher_version']} game_version={info['game_version']}")
+    return out
+
+
 def build_zip():
     files = collect_files()
     raw = sum(sz for _, _, sz in files)
@@ -70,14 +129,11 @@ def build_zip():
     print(f"     Raw: {raw / 1e6:.1f} MB")
     print(f"     ZIP: {compressed / 1e6:.1f} MB ({ratio:.0f}%)")
 
-    sha = hashlib.sha256()
-    with open(zip_path, "rb") as f:
-        while True:
-            chunk = f.read(65536)
-            if not chunk:
-                break
-            sha.update(chunk)
-    print(f"     SHA-256: {sha.hexdigest()}")
+    zip_sha = sha256_of(zip_path)
+    print(f"     SHA-256: {zip_sha}")
+
+    if "--launcher-info" in sys.argv:
+        write_launcher_info(zip_path, zip_sha)
 
 if __name__ == "__main__":
     check_release_build()

@@ -21,7 +21,7 @@ if %ERRORLEVEL% neq 0 (
 REM Compile launcher
 "%COMPILER%" -std=c++17 -Os -s -mwindows -static -static-libstdc++ -static-libgcc ^
     "%SRC%" "%RES%" -o "%OUT%" ^
-    -lwinhttp -lshell32 -lbcrypt -ldbghelp -lgdiplus -lole32 -luuid -lcomctl32
+    -lwinhttp -lshell32 -lbcrypt -ldbghelp -lgdiplus -lole32 -luuid -lcomctl32 -ladvapi32
 
 if %ERRORLEVEL% neq 0 (
     echo [FAIL] Launcher build failed

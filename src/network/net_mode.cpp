@@ -55,6 +55,10 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
             options.roomFilePath = argv[++i];
         else if (std::strcmp(argv[i], "--timeout") == 0 && i + 1 < argc)
             options.timeoutSecs = (uint32_t)std::max(0, std::atoi(argv[++i]));
+        else if (std::strcmp(argv[i], "--duel") == 0)
+            options.duel = true;
+        else if (std::strcmp(argv[i], "--gamemode") == 0 && i + 1 < argc)
+            options.gamemodeId = argv[++i];
         else if (std::strcmp(argv[i], "--udp-echo") == 0)
         {
             options.udpEcho = true;
@@ -73,8 +77,11 @@ void printLaunchUsage()
     printf("  mimita.exe --server --udp-echo --bind 127.0.0.1:0 --timeout <secs>\n");
     printf("  mimita.exe --client --name client1 --connect 127.0.0.1:1357\n");
     printf("  mimita.exe --session <token>\n");
+    printf("  mimita.exe --server --duel --gamemode duel --map <map>\n");
     printf("  --bind <addr:port> Server UDP bind address (IPv4; port 0 allowed for harnesses)\n");
     printf("  --timeout <secs>  Auto-exit server after N seconds (0=no timeout, default)\n");
+    printf("  --duel            Run a first-to-goal PvP duel match (2 players)\n");
+    printf("  --gamemode <id>   Gamemode JSON id used for duel rules (default: duel)\n");
     printf("  --ice             ICE NAT traversal is always enabled\n");
     printf("No args keeps the normal single-player/menu flow.\n");
 }

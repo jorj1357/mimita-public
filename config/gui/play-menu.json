@@ -72,6 +72,29 @@
       "textColor": [0.72, 0.78, 0.88, 1.0]
     },
     {
+      "id": "queueDuelsButton",
+      "type": "button",
+      "x": 1220,
+      "y": 430,
+      "width": 240,
+      "height": 58,
+      "text": "QUEUE DUELS",
+      "fontSize": 0.32,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.12, 0.75, 0.25, 1.0]
+    },
+    {
+      "id": "queueDuelsDesc",
+      "type": "text",
+      "x": 1220,
+      "y": 498,
+      "width": 250,
+      "height": 24,
+      "text": "Auto-match any map. No account needed.",
+      "fontSize": 0.28,
+      "textColor": [0.72, 0.78, 0.88, 1.0]
+    },
+    {
       "id": "bombTagButton",
       "type": "button",
       "x": 800,

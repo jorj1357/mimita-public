@@ -22,6 +22,111 @@ const TURN_SHARED_SECRET = process.env.MIMITA_TURN_SECRET || "";
 
 const rooms = new Map();
 
+// ── Duels queue / matchmaking state ──────────────────────────────────
+// queueTickets: ticket_id -> {profile_id, name, prefer_opponent, maps,
+//   joined_at, last_poll, matched_match_id}
+// matches: match_id -> {host_ticket_id, client_ticket_id, map,
+//   host_room_code, state, created_at}
+const queueTickets = new Map();
+const matches = new Map();
+const QUEUE_TICKET_TIMEOUT_MS = 60000;
+const MATCH_CONFIRM_TIMEOUT_MS = 60000;
+const DEFAULT_DUEL_MAPS = ["mimita-duels-map-v3", "atdm", "funworld"];
+
+function pickDuelMap(aMaps, bMaps) {
+    const a = Array.isArray(aMaps) ? aMaps : [];
+    const b = Array.isArray(bMaps) ? bMaps : [];
+    const pool = a.length > 0 && b.length > 0 ? a.filter(m => b.includes(m)) : [];
+    const source = pool.length > 0 ? pool : (a.length > 0 ? a : (b.length > 0 ? b : DEFAULT_DUEL_MAPS));
+    return source[Math.floor(Math.random() * source.length)];
+}
+
+// Pair waiting tickets into matches. Prefers prefer_opponent pairs, else FIFO.
+function tryMatchQueue() {
+    const waiting = [];
+    for (const [ticketId, ticket] of queueTickets) {
+        if (!ticket.matched_match_id)
+            waiting.push(ticketId);
+    }
+    while (waiting.length >= 2) {
+        let aId = null;
+        let bId = null;
+        // 1) preference pairs
+        for (const id of waiting) {
+            const t = queueTickets.get(id);
+            if (t.prefer_opponent) {
+                const target = queueTickets.get(t.prefer_opponent);
+                if (target && !target.matched_match_id &&
+                    (target.profile_id === t.prefer_opponent ||
+                     target.name === t.prefer_opponent)) {
+                    aId = id;
+                    bId = t.prefer_opponent;
+                    break;
+                }
+            }
+        }
+        // 2) FIFO
+        if (aId === null) {
+            aId = waiting[0];
+            bId = waiting[1];
+        }
+        const a = queueTickets.get(aId);
+        const b = queueTickets.get(bId);
+        waiting.splice(waiting.indexOf(aId), 1);
+        waiting.splice(waiting.indexOf(bId), 1);
+
+        const matchId = generateId();
+        const map = pickDuelMap(a.maps, b.maps);
+        a.matched_match_id = matchId;
+        b.matched_match_id = matchId;
+        matches.set(matchId, {
+            match_id: matchId,
+            host_ticket_id: aId,
+            client_ticket_id: bId,
+            host_name: a.name,
+            client_name: b.name,
+            map,
+            host_room_code: "",
+            state: "assigning",
+            created_at: Date.now()
+        });
+        console.log("[DUEL MATCH] match=" + matchId.substring(0, 8) +
+            " host=\"" + a.name + "\" client=\"" + b.name + "\" map=" + map);
+    }
+}
+
+function cancelMatch(matchId) {
+    const match = matches.get(matchId);
+    if (!match) return;
+    match.state = "cancelled";
+    for (const ticketId of [match.host_ticket_id, match.client_ticket_id]) {
+        const ticket = queueTickets.get(ticketId);
+        if (ticket && ticket.matched_match_id === matchId)
+            ticket.matched_match_id = null;
+    }
+    matches.delete(matchId);
+    console.log("[DUEL MATCH] cancelled match=" + matchId.substring(0, 8));
+}
+
+function cleanupQueue() {
+    const now = Date.now();
+    for (const [ticketId, ticket] of queueTickets) {
+        if (now - (ticket.last_poll || ticket.joined_at) > QUEUE_TICKET_TIMEOUT_MS) {
+            if (ticket.matched_match_id)
+                cancelMatch(ticket.matched_match_id);
+            queueTickets.delete(ticketId);
+            console.log("[DUEL QUEUE] dropped stale ticket=" + ticketId.substring(0, 8));
+        }
+    }
+    for (const [matchId, match] of matches) {
+        if (match.state !== "ready" &&
+            now - match.created_at > MATCH_CONFIRM_TIMEOUT_MS) {
+            cancelMatch(matchId);
+        }
+    }
+}
+setInterval(cleanupQueue, 10000);
+
 function generateCode() {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     let code;
@@ -537,6 +642,108 @@ const routes = {
                 expires_at: creds.expires_at
             });
         }
+    },
+
+    // ── Duels queue / matchmaking ──
+    "/api/duels/queue/join": async (req, res) => {
+        const body = await readBody(req);
+        const profileId = String(body.profile_id || "").substring(0, 64);
+        const name = String(body.name || "Player").substring(0, 32);
+        if (!profileId) return json(res, 200, { ok: false, error: "missing-profile" });
+
+        // Reuse an existing ticket for the same player (idempotent re-queue).
+        let ticketId = null;
+        for (const [id, ticket] of queueTickets) {
+            if (ticket.profile_id === profileId) {
+                ticketId = id;
+                break;
+            }
+        }
+        if (!ticketId) {
+            ticketId = generateId();
+            queueTickets.set(ticketId, {});
+        }
+        const ticket = queueTickets.get(ticketId);
+        ticket.ticket_id = ticketId;
+        ticket.profile_id = profileId;
+        ticket.name = name;
+        ticket.prefer_opponent = body.prefer_opponent ? String(body.prefer_opponent) : "";
+        ticket.maps = Array.isArray(body.maps) ? body.maps.map(String) : [];
+        ticket.joined_at = Date.now();
+        ticket.last_poll = Date.now();
+        ticket.matched_match_id = null;
+
+        console.log("[DUEL QUEUE] join ticket=" + ticketId.substring(0, 8) +
+            " player=\"" + name + "\" prefer=\"" + (ticket.prefer_opponent || "-") + "\" maps=" + ticket.maps.length);
+        tryMatchQueue();
+        json(res, 200, { ok: true, ticket_id: ticketId });
+    },
+
+    "/api/duels/queue/leave": async (req, res) => {
+        const body = await readBody(req);
+        const ticket = queueTickets.get(body.ticket_id);
+        if (ticket && ticket.matched_match_id)
+            cancelMatch(ticket.matched_match_id);
+        queueTickets.delete(body.ticket_id);
+        json(res, 200, { ok: true });
+    },
+
+    "/api/duels/queue/poll": async (req, res) => {
+        const body = await readBody(req);
+        const ticket = queueTickets.get(body.ticket_id);
+        if (!ticket)
+            return json(res, 200, { ok: false, status: "error", error: "ticket-not-found" });
+        ticket.last_poll = Date.now();
+
+        const matchId = ticket.matched_match_id;
+        if (!matchId)
+            return json(res, 200, { ok: true, status: "waiting", position: 1 });
+
+        const match = matches.get(matchId);
+        if (!match || match.state === "cancelled") {
+            ticket.matched_match_id = null;
+            return json(res, 200, { ok: true, status: "waiting", position: 1 });
+        }
+
+        if (match.host_ticket_id === body.ticket_id) {
+            return json(res, 200, {
+                ok: true,
+                status: "matched_host",
+                match_id: matchId,
+                map: match.map,
+                opponent_name: match.client_name
+            });
+        }
+
+        if (match.host_room_code) {
+            return json(res, 200, {
+                ok: true,
+                status: "match_ready",
+                match_id: matchId,
+                room_code: match.host_room_code,
+                map: match.map,
+                opponent_name: match.host_name
+            });
+        }
+
+        return json(res, 200, {
+            ok: true,
+            status: "waiting_for_host",
+            match_id: matchId,
+            map: match.map,
+            opponent_name: match.host_name
+        });
+    },
+
+    "/api/duels/queue/host-ready": async (req, res) => {
+        const body = await readBody(req);
+        const match = matches.get(body.match_id);
+        if (!match)
+            return json(res, 200, { ok: false, error: "match-not-found" });
+        match.host_room_code = String(body.room_code || "");
+        match.state = "ready";
+        console.log("[DUEL MATCH] ready match=" + body.match_id.substring(0, 8) + " code=" + match.host_room_code);
+        json(res, 200, { ok: true });
     }
 };
 

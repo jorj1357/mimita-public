@@ -110,7 +110,14 @@ enum PacketType : uint8_t
     // ── Server command result (server → sender) ───────────────────────
     // Confirms whether a host-only command (healthall / setspawn / etc.) was
     // applied or rejected, so the host gets feedback in their terminal.
-    PACKET_SERVER_COMMAND_RESULT = 54
+    PACKET_SERVER_COMMAND_RESULT = 54,
+    // ── Duel match state (server → clients) ────────────────────────────
+    // Drives the first-to-goal duel: countdown, live score, match end, and
+    // the post-match rematch window. One source of truth per match.
+    PACKET_DUEL_STATE = 55,
+    // Server → the surviving player: where their opponent just respawned so
+    // they can draw a "look here" tracer.
+    PACKET_DUEL_ENEMY_SPAWN = 56
 };
 
 enum DamageConfirmedSource : uint8_t
@@ -899,6 +906,49 @@ struct PlayerConnectionStatePacket
 
 static_assert(sizeof(PlayerConnectionStatePacket) == 32,
               "PlayerConnectionStatePacket wire size changed");
+
+// ── Duel match state ────────────────────────────────────────────────────
+// Broadcast by the server during a --duel match. Carries phase, per-team
+// score, the goal, the countdown/rematch timers, and team names. Clients
+// derive "my score" by comparing their assigned player id to playerAId.
+enum DuelStatePhase : uint8_t
+{
+    DUEL_PHASE_WAITING = 0,
+    DUEL_PHASE_COUNTDOWN = 1,
+    DUEL_PHASE_ACTIVE = 2,
+    DUEL_PHASE_MATCH_END = 3
+};
+
+struct DuelStatePacket
+{
+    PacketHeader header;
+    uint8_t phase = 0;          // DuelStatePhase
+    uint8_t matchOver = 0;      // 1 = scores locked; keep fighting, no points
+    uint8_t reserved[2] = {};
+    int32_t scoreA = 0;
+    int32_t scoreB = 0;
+    int32_t goalValue = 20;
+    float countdownLeft = 0.0f;
+    float rematchLeft = 0.0f;
+    uint32_t playerAId = 0;
+    uint32_t playerBId = 0;
+    uint32_t winnerPlayerId = 0;
+    char teamAName[32];
+    char teamBName[32];
+};
+
+// Server → a player: their opponent just respawned here. Used to draw a
+// short "look over here" tracer at the enemy's spawn.
+struct DuelEnemySpawnPacket
+{
+    PacketHeader header;
+    uint32_t enemyPlayerId = 0;
+    float posX = 0.0f;
+    float posY = 0.0f;
+    float posZ = 0.0f;
+};
+
+static_assert(sizeof(DuelEnemySpawnPacket) == 36, "DuelEnemySpawnPacket wire size changed");
 
 struct JoinRequestPacket
 {

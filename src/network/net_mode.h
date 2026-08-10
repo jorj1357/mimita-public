@@ -33,6 +33,8 @@ struct LaunchOptions
     uint32_t npcCount = 3;
     uint32_t timeoutSecs = 0;
     bool udpEcho = false;
+    bool duel = false;
+    std::string gamemodeId = "duel";
 };
 
 LaunchOptions parseLaunchOptions(int argc, char** argv);

@@ -33,6 +33,7 @@
 #include "replay/replay-export.h"
 #include "replay/replay-export-ui.h"
 #include "game/duel.h"
+#include "duel/duel-queue.h"
 #include "game/bomb-tag.h"
 #include "game/game-cli.h"
 #include "game/game-state.h"
@@ -142,6 +143,26 @@ void engineTick(Engine& engine)
         } else if (GAME_STATE == GAME_MENU && gGuiMenuState == GUI_MENU_REPLAY) {
             printf("[MAINMENU] switching to main menu\n");
             gGuiMenuState = GUI_MENU_MAIN;
+        } else if (DuelQueue::instance().isActive()) {
+            DuelQueueState qs = DuelQueue::instance().state();
+            if (qs == DuelQueueState::InDuel || qs == DuelQueueState::MatchEnd)
+            {
+                // Esc after a duel → back into the queue (sandbox practice).
+                DuelQueue::instance().returnToQueue();
+                NotificationSystem::instance().push(
+                    "Left the duel", "Back in the duels queue...", 180, {});
+                Debug::log(Debug::Category::Duel, "[DUEL QUEUE] escape from duel — returning to queue\n");
+            }
+            else
+            {
+                // Esc while queuing / connecting → leave to the main menu.
+                DuelQueue::instance().stopQueue();
+                NotificationSystem::instance().push(
+                    "Left the queue", "Back to the main menu", 180, {});
+                GAME_STATE = GAME_MENU;
+                glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                Debug::log(Debug::Category::Duel, "[DUEL QUEUE] escape from queue — to main menu\n");
+            }
         } else {
             if (gDuelManager.phase() != DuelPhase::Off) {
                 Debug::log(Debug::Category::Duel, "[DUEL] escape pressed during duel (phase=%d) — cleaning up", (int)gDuelManager.phase());

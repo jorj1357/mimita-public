@@ -28,6 +28,7 @@
 #include "debug/structured-log.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "entities/death-ghost.h"
 #include "replay/replay.h"
 #include "gui/hud/chat-bubble.h"
 #include "network/multiplayer-context.h"
@@ -382,6 +383,7 @@ void engineTickNet(Engine& engine, float dt)
                     printf("[CLIENT MAP SWITCH] old=%s new=%s\n",
                            ACTIVE_MAP_PATH.c_str(), requiredPath.c_str());
                     player.reset();
+                    DeathGhostSystem::instance().clear();  // old map positions invalid
                 }
                 else
                 {

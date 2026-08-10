@@ -249,6 +249,10 @@ struct ServerPlayer
     bool attackQueued = false;
     bool dead = false;
     float respawnSeconds = 0.0f;
+    // Duel mode: fixed team spawn this player returns to on every respawn.
+    // Empty/unset (hasDuelSpawnPos=false) = normal random safe spawn.
+    glm::vec3 duelSpawnPos{0.0f};
+    bool hasDuelSpawnPos = false;
     uint64_t lastHeardMs = 0;
     bool clientStateUpdated = false;
 
@@ -1031,6 +1035,8 @@ struct ServerLaunchSettings
     bool startLocalServer = false;
     std::string turnPassword;
     std::string hostPlayerName;
+    bool duelMode = false;
+    std::string gamemodeId = "duel";
 
     // Resolved state (set during startup, not from UI)
     std::string resolvedMapPath;

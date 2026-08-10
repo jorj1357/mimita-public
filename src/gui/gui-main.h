@@ -97,6 +97,17 @@ struct ExternalServerProcessStatus
 
 ExternalServerProcessStatus getExternalServerProcessStatus();
 
+// ── Duel host server helpers (used by the duels queue module) ───────
+// Launch a headless duel server process with the given map. Returns false if
+// a server is already running. The room code is written to a temp file that
+// pollDuelServerRoomCode reads once the process registers it.
+bool launchDuelHostServer(const std::string& mapName);
+// Non-blocking: returns true (and fills outCode) when the launched duel server
+// has written its room code file.
+bool pollDuelServerRoomCode(std::string& outCode);
+// Terminate a launched duel/community server process and clean up its files.
+void stopExternalServerProcess();
+
 namespace MimitaNet {
 struct ListenServerState;
 }
