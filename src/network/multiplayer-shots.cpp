@@ -16,6 +16,7 @@
 #include "config/ragdoll-death-config.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "entities/death-ghost.h"
 #include "audio/audio.h"
 #include "audio/hitmarker-audio.h"
 #include "ui/hitmarker.h"
@@ -375,36 +376,20 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
         if (npcPtr)
         {
             npcPtr->netPredictedDead = false;
-            // Keep the dead NPC replica: start its fall-over death animation
-            // now (frozen at the current spot). This reliable event is the
-            // single death presenter (anim + red ellipsoid); the snapshot
-            // health transition is skipped for this life to avoid a 2nd death.
+            // Keep the dead NPC replica, but spawn the fall-over death visual
+            // as a SEPARATE ghost so the NPC body itself is never pinned or
+            // frozen. This reliable event is the single death presenter (ghost
+            // + red ellipsoid); the snapshot health transition is skipped for
+            // this life to avoid a 2nd death.
             if (npcPtr->currentHp > 0)
                 npcPtr->currentHp = 0;
-            if (!npcPtr->deathAnim.active)
-            {
-                const auto& cfg = RagdollDeathConfig::instance();
-                npcPtr->deathAnim.active = true;
-                npcPtr->deathAnim.tick = 0;
-                npcPtr->deathAnim.totalTicks = cfg.totalTicks();
-                npcPtr->deathAnim.startAlpha = cfg.startAlpha();
-                npcPtr->deathAnim.endAlpha = cfg.endAlpha();
-                npcPtr->deathAnim.startRotation = cfg.startRotation();
-                npcPtr->deathAnim.endRotation = cfg.endRotation();
-                npcPtr->deathAnim.frozenPosition = npcPtr->pos;
-            }
-            // Red ellipsoid of death — exactly once, from the reliable event.
             if (!npcPtr->networkDeathPresented)
             {
                 npcPtr->networkDeathPresented = true;
-                const auto& deCfg = HitEffects::config().deathEllipsoid;
-                if (deCfg.enabled)
-                {
-                    EffectPartSystem::instance().spawnDeathEllipsoid(
-                        npcPtr->pos, glm::vec3(0.0f, 0.0f, 1.0f),
-                        deCfg.length, deCfg.radius, deCfg.lifetime,
-                        npcPtr->sizeScale);
-                }
+                DeathGhostSystem::instance().spawnFromPlayer(
+                    *npcPtr, glm::vec3(0.0f, 0.0f, 1.0f),
+                    "net_npc_" + std::to_string(event->npcEntityId),
+                    event->npcEntityId);
                 Debug::log(Debug::Category::Networking,
                     "[NET NPC DEATH FX] entityId=%u pos=(%.1f,%.1f,%.1f) source=reliable-event\n",
                     event->npcEntityId, npcPtr->pos.x, npcPtr->pos.y, npcPtr->pos.z);

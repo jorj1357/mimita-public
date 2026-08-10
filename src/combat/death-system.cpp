@@ -1,6 +1,7 @@
 #include "combat/death-system.h"
 #include "combat/weapon-runtime.h"
 #include "config/ragdoll-death-config.h"
+#include "entities/death-ghost.h"
 
 #include <algorithm>
 #include <chrono>
@@ -38,7 +39,7 @@ extern DuelManager gDuelManager;
 extern Renderer* gRenderer;
 
 namespace {
-constexpr float RESPAWN_SECONDS = 3.0f;
+constexpr float RESPAWN_SECONDS = 0.01f;  // instant respawn: next update tick
 
 void emitLifecycleEvent(const char* type,
                         const Player& actor,
@@ -102,27 +103,23 @@ bool DeathSystem::kill(
     glm::vec3 victimPos = victim.pos;
     glm::quat victimRotation = glm::angleAxis(glm::radians(victim.yaw), glm::vec3(0.0f, 0.0f, 1.0f));
 
-    // Step 2: freeze the victim
+    // Step 2: spawn a SEPARATE death visual (fall-over clone) so the real
+    // player body is never pinned, frozen, or hidden by the death anim.
+    // Only the first death presenter for a life spawns the ghost.
+    if (!victim.networkDeathPresented)
+    {
+        victim.networkDeathPresented = true;
+        DeathGhostSystem::instance().spawnFromPlayer(
+            victim, direction, actorId);
+    }
+
+    // Step 3: mark the victim dead for gameplay only (respawn logic, hit
+    // gating). The body itself is left untouched so it respawns cleanly.
     victim.vel = glm::vec3(0.0f);
     victim.externalImpulse = glm::vec3(0.0f);
     victim.inputWishMove = glm::vec2(0.0f);
     victim.currentHp = 0;
     victim.dead = true;
-    victim.proceduralFrozen = true;
-    victim.syncLegacyStateToLayers();
-
-    // Step 3: disable weapon/aim/procedural pose
-    for (PhysicalBodyPart& part : victim.physicalBody.parts) {
-        if (part.name == "leftArm" || part.name == "rightArm") {
-            part.pose = ProceduralPose{};
-            part.perfectPose = ProceduralPose{};
-            part.translationSpring = SpringState{};
-            part.rotationSpring = SpringState{};
-        }
-    }
-    victim.syncLegacyStateToLayers();
-
-    victim.updateModelWorldTransforms();
 
     if (DebugConfig::DEBUG_DEATH_TIMELINE)
         Debug::log(Debug::Category::Ragdoll, "[DEATH TIMELINE] t=%lldms freeze+pose complete\n",
@@ -162,19 +159,6 @@ bool DeathSystem::kill(
                 }
             }
         }
-    }
-
-    // Initialize death animation
-    {
-        const auto& cfg = RagdollDeathConfig::instance();
-        victim.deathAnim.active = true;
-        victim.deathAnim.tick = 0;
-        victim.deathAnim.totalTicks = cfg.totalTicks();
-        victim.deathAnim.startAlpha = cfg.startAlpha();
-        victim.deathAnim.endAlpha = cfg.endAlpha();
-        victim.deathAnim.startRotation = cfg.startRotation();
-        victim.deathAnim.endRotation = cfg.endRotation();
-        victim.deathAnim.frozenPosition = victimPos;
     }
 
     emitLifecycleEvent("death", victim, actorId, killer);
@@ -225,14 +209,6 @@ bool DeathSystem::kill(
     if (actorType == "npc")
         AudioManager::instance().play(
             {"npc_death", AudioCategory::NPC, true, victimPos, 1.0f, 0.9f, 45.0f, 0});
-
-    // Spawn death ellipsoid effect at the victim position, elongated along the kill direction
-    const auto& deCfg = HitEffects::config().deathEllipsoid;
-    if (deCfg.enabled) {
-        EffectPartSystem::instance().spawnDeathEllipsoid(
-            victimPos, direction,
-            deCfg.length, deCfg.radius, deCfg.lifetime, victim.sizeScale);
-    }
 
     if (DebugConfig::DEBUG_DEATH_TIMELINE || DebugConfig::DEBUG_DEATH_PERF)
         Debug::log(Debug::Category::Ragdoll, "[DEATH PERF] kill() total=%.3fms actor=%s\n",
@@ -285,6 +261,7 @@ void DeathSystem::respawn(Player& actor, const std::string& actorId, const World
     actor.dead = false;
     actor.deathAnim = Player::DeathAnimState{};
     actor.proceduralFrozen = false;
+    actor.networkDeathPresented = false;  // allow the next death to present
     actor.respawnTimer = 0.0f;
     actor.voidDeathTriggered = false;
     actor.spawnFlashTimer = 10.0f;

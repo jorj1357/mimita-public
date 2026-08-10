@@ -167,4 +167,41 @@ void coordinatorIceDone(const std::string& roomCode);
 // ── TURN credentials ─────────────────────────────────────────────────
 TurnCredentials coordinatorRequestTurnCredentials();
 
+// ── Duels queue / matchmaking ────────────────────────────────────────
+struct QueueJoinResult {
+    bool ok = false;
+    std::string ticketId;
+    std::string errorCode;
+};
+
+struct QueuePollResult {
+    bool ok = false;
+    // "waiting" | "matched_host" | "waiting_for_host" | "match_ready" |
+    // "cancelled" | "error"
+    std::string status;
+    std::string matchId;
+    std::string roomCode;
+    std::string opponentName;
+    std::string map;
+    int position = 0;
+    std::string errorCode;
+};
+
+// Join the duels queue. `maps` is the caller's duel map pool (game's source of
+// truth); the matchmaker picks one map per match. Guest-friendly: no auth.
+QueueJoinResult coordinatorQueueJoin(const std::string& profileId,
+                                     const std::string& name,
+                                     const std::string& preferOpponentId,
+                                     const std::vector<std::string>& maps);
+
+// Leave the queue (also cancels any assigned-but-unstarted match).
+bool coordinatorQueueLeave(const std::string& ticketId);
+
+// Poll queue status for a ticket (rate-limited to ~1/sec by the caller).
+QueuePollResult coordinatorQueuePoll(const std::string& ticketId);
+
+// Host reports its server room code so the matched client can join.
+bool coordinatorQueueHostReady(const std::string& matchId,
+                               const std::string& roomCode);
+
 } // namespace MimitaNet

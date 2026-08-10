@@ -22,6 +22,7 @@
 #include "analytics/analytics-manager.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "entities/death-ghost.h"
 #include "notifications/notifications.h"
 
 #include <algorithm>
@@ -194,6 +195,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.remoteNpcs.clear();
     ctx.remotePlayerInterpolation.clear();
     ctx.remoteNpcInterpolation.clear();
+    DeathGhostSystem::instance().clear();
     ctx.interpolationRenderTick = 0.0;
     ctx.interpolationClockStarted = false;
     ctx.interpolationClockLastUpdateMs = 0;

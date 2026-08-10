@@ -14,12 +14,12 @@
 #include "audio/audio.h"
 #include "combat/weapon-audio.h"
 #include "config/networking-config.h"
-#include "config/ragdoll-death-config.h"
 #include "config/player-settings.h"
 #include "config/weapon-hitfx-config.h"
 #include "debug/debug-log.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "entities/death-ghost.h"
 #include "entities/player.h"
 #include "network/multiplayer-context.h"
 #include "npc/npc.h"
@@ -49,53 +49,29 @@ static float limbMultiplier(const WeaponDefinition& def)
 // flag on agreement, or revive + disagreement on rollback).
 static void predictRemoteKill(Player& victim,
                               const glm::vec3& direction,
-                              const std::string& actorType)
+                              const std::string& actorType,
+                              uint32_t ownerId)
 {
     if (victim.dead || victim.netPredictedDead)
         return;
     victim.netPredictedDead = true;
+
+    // Spawn the fall-over death visual as a SEPARATE clone; the remote body
+    // itself is never pinned or frozen, so it can never stick at a spot.
+    if (!victim.networkDeathPresented)
+    {
+        victim.networkDeathPresented = true;
+        DeathGhostSystem::instance().spawnFromPlayer(
+            victim, direction, actorType, ownerId);
+    }
 
     victim.vel = glm::vec3(0.0f);
     victim.externalImpulse = glm::vec3(0.0f);
     victim.inputWishMove = glm::vec2(0.0f);
     victim.currentHp = 0;
     victim.dead = true;
-    victim.proceduralFrozen = true;
     victim.respawnTimer = 0.0f;
 
-    // Freeze aim/procedural pose (mirrors DeathSystem::kill prologue).
-    for (PhysicalBodyPart& part : victim.physicalBody.parts)
-    {
-        if (part.name == "leftArm" || part.name == "rightArm")
-        {
-            part.pose = ProceduralPose{};
-            part.perfectPose = ProceduralPose{};
-            part.translationSpring = SpringState{};
-            part.rotationSpring = SpringState{};
-        }
-    }
-    victim.syncLegacyStateToLayers();
-    victim.updateModelWorldTransforms();
-
-    const auto& cfg = RagdollDeathConfig::instance();
-    victim.deathAnim.active = true;
-    victim.deathAnim.tick = 0;
-    victim.deathAnim.totalTicks = cfg.totalTicks();
-    victim.deathAnim.startAlpha = cfg.startAlpha();
-    victim.deathAnim.endAlpha = cfg.endAlpha();
-    victim.deathAnim.startRotation = cfg.startRotation();
-    victim.deathAnim.endRotation = cfg.endRotation();
-    victim.deathAnim.frozenPosition = victim.pos;
-
-    glm::vec3 dir = glm::length(direction) > 0.001f
-        ? glm::normalize(direction) : glm::vec3(0.0f, 0.0f, -1.0f);
-    const auto& deCfg = HitEffects::config().deathEllipsoid;
-    if (deCfg.enabled)
-    {
-        EffectPartSystem::instance().spawnDeathEllipsoid(
-            victim.pos, dir, deCfg.length, deCfg.radius, deCfg.lifetime,
-            victim.sizeScale);
-    }
     if (actorType == "npc")
     {
         AudioManager::instance().play(
@@ -290,7 +266,7 @@ void processRemotePlayerHit(
     {
         remoteVictim->killedByWeapon = def.displayName;
         remoteVictim->lastDamagedBy = shooter.username;
-        predictRemoteKill(*remoteVictim, shotDirection, "player");
+        predictRemoteKill(*remoteVictim, shotDirection, "player", remoteTargetId);
         if (gpMpContext && gpMpContext->active)
             MimitaNet::mpApplyPredictedKillHeal(*gpMpContext, remoteTargetId, false);
     }
@@ -353,7 +329,7 @@ void processRemoteNpcHit(
         {
             remoteNpc->killedByWeapon = def.displayName;
             remoteNpc->lastDamagedBy = shooter.username;
-            predictRemoteKill(*remoteNpc, result.end - result.start, "npc");
+            predictRemoteKill(*remoteNpc, result.end - result.start, "npc", remoteNpcTargetId);
             if (gpMpContext && gpMpContext->active)
                 MimitaNet::mpApplyPredictedKillHeal(*gpMpContext, remoteNpcTargetId, true);
         }
@@ -402,7 +378,7 @@ void processRemoteBlastHitFeedback(
     {
         target.killedByWeapon = def.displayName;
         target.lastDamagedBy = shooterName;
-        predictRemoteKill(target, dir, isNpc ? "npc" : "player");
+        predictRemoteKill(target, dir, isNpc ? "npc" : "player", targetId);
         if (gpMpContext && gpMpContext->active)
             MimitaNet::mpApplyPredictedKillHeal(*gpMpContext, targetId, isNpc);
     }

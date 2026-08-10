@@ -23,6 +23,7 @@
 #include "ragdoll/ragdoll.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "entities/death-ghost.h"
 #include "pobjects/persistent-physics.h"
 #include "debug/debug-visuals.h"
 #include "debug/debug-diag.h"
@@ -464,6 +465,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     }
 
     { Perf::ScopedTimer _efx("EffectRender"); EffectPartSystem::instance().render(camera); }
+    { Perf::ScopedTimer _dgh("DeathGhostRender"); DeathGhostSystem::instance().render(camera); }
     { Perf::ScopedTimer _pfx("PhysicsObjectRender"); PersistentPhysicsSystem::instance().render(camera); }
     { Perf::ScopedTimer _hfx("EffectRender"); HitEffects::renderHitBursts(camera); }
     DebugVis::flushTris(camera);

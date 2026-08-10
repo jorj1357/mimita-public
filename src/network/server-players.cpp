@@ -546,7 +546,12 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         {
             glm::vec3 respawnPos;
             float respawnYaw = 0.0f;
-            if (!world.spawnPoints.empty())
+            if (p.hasDuelSpawnPos)
+            {
+                // Duel mode: fixed team spawn, full reset handled below.
+                respawnPos = p.duelSpawnPos;
+            }
+            else if (!world.spawnPoints.empty())
             {
                 serverPickSafeSpawn(&world, p.id, respawnPos, respawnYaw);
             }

@@ -10,6 +10,7 @@
 
 #include "network/multiplayer-context.h"
 #include "network/packets.h"
+#include "duel/duel-queue.h"
 #include "network/snapshot-chunks.h"
 #include "network/remote-entity-lifecycle.h"
 #include "network/badconn/badconn.h"
@@ -988,6 +989,18 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         {
             mpProcessDamageConfirmedEventPacket(
                 ctx, reinterpret_cast<const DamageConfirmedEventPacket*>(buffer));
+        }
+        else if (header->type == PACKET_DUEL_STATE &&
+                 bytes >= (int)sizeof(DuelStatePacket))
+        {
+            DuelQueue::instance().onDuelState(
+                *reinterpret_cast<const DuelStatePacket*>(buffer));
+        }
+        else if (header->type == PACKET_DUEL_ENEMY_SPAWN &&
+                 bytes >= (int)sizeof(DuelEnemySpawnPacket))
+        {
+            DuelQueue::instance().onDuelEnemySpawn(
+                *reinterpret_cast<const DuelEnemySpawnPacket*>(buffer));
         }
         else if (header->type == PACKET_RELOAD_RESULT &&
                  bytes >= (int)sizeof(ReloadResultPacket))

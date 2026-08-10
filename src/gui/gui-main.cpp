@@ -13,6 +13,8 @@
 #include "auth/auth-system.h"
 #include "auth/auth-controller.h"
 #include "auth/auth-popup.h"
+#include "duel/duel-queue.h"
+#include "gamemode/gamemode.h"
 #include "menus/sandbox-map-menu.h"
 #include "menus/help-menu.h"
 #include "game/bomb-tag-config.h"
@@ -231,7 +233,10 @@ static bool launchServerProcess(const MimitaNet::ServerLaunchSettings& settings)
         + " --room-file \"" + roomFilePath + "\""
         + (settings.startupNpcsEnabled
             ? " --npcs " + std::to_string(settings.startupNpcCount)
-            : " --no-npcs");
+            : " --no-npcs")
+        + (settings.duelMode
+            ? " --duel --gamemode \"" + settings.gamemodeId + "\""
+            : "");
 
     STARTUPINFOA si = { sizeof(si) };
     si.dwFlags = STARTF_USESHOWWINDOW;
@@ -292,6 +297,75 @@ static void stopServerProcess()
     gLastServerRoomFilePollMs = 0;
     gPendingServerRoomFileStartMs = 0;
     gServerLaunchSettings.serverCode.clear();
+}
+
+// ── Duel host server helpers (duels queue module) ─────────────────────
+
+bool launchDuelHostServer(const std::string& mapName)
+{
+    if (gServerProcessLaunched || gListenServer.active)
+    {
+        Debug::warn(Debug::Category::Duel,
+            "[DUEL HOST] already running a server; not launching a duel server\n");
+        return false;
+    }
+    if (gServerProcessInfo.hProcess != nullptr)
+    {
+        TerminateProcess(gServerProcessInfo.hProcess, 0);
+        CloseHandle(gServerProcessInfo.hProcess);
+        CloseHandle(gServerProcessInfo.hThread);
+        gServerProcessInfo = {};
+    }
+
+    MimitaNet::ServerLaunchSettings s;
+    s.serverName = "Duel";
+    s.mapName = mapName;
+    s.maxPlayers = 2;
+    s.startupNpcsEnabled = false;
+    s.startupNpcCount = 0;
+    s.hostPlayerName = AuthSystem::instance().displayName();
+    s.port = MimitaNet::DEFAULT_PORT;
+    s.duelMode = true;
+    s.gamemodeId = "duel";
+    gServerLaunchSettings = s;
+    return launchServerProcess(s);
+}
+
+bool pollDuelServerRoomCode(std::string& outCode)
+{
+    if (!gServerProcessLaunched || !gWaitingForServerRoomCode ||
+        gPendingServerRoomFilePath.empty())
+        return false;
+
+    FILE* f = fopen(gPendingServerRoomFilePath.c_str(), "r");
+    if (!f) return false;
+
+    char line[256] = {};
+    std::string content;
+    if (fgets(line, sizeof(line), f))
+    {
+        content = line;
+        while (!content.empty() &&
+               (content.back() == '\n' || content.back() == '\r'))
+            content.pop_back();
+    }
+    fclose(f);
+
+    if (content.empty()) return false;
+
+    Debug::log(Debug::Category::Duel, "[DUEL HOST] room code ready: %s\n", content.c_str());
+    gServerLaunchSettings.serverCode = content;
+    DeleteFileA(gPendingServerRoomFilePath.c_str());
+    gPendingServerRoomFilePath.clear();
+    gWaitingForServerRoomCode = false;
+    gLastServerRoomFilePollMs = 0;
+    outCode = content;
+    return true;
+}
+
+void stopExternalServerProcess()
+{
+    stopServerProcess();
 }
 
 DuelConfigResult getPendingDuelConfig() { return gPendingDuelConfig; }
@@ -637,6 +711,19 @@ void guiMain(GLFWwindow* win, GameState& state)
             else if (r.goDuels)
             {
                 gGuiMenuState = GUI_MENU_DUEL_CONFIG;
+            }
+            else if (r.goQueueDuels)
+            {
+                // Enter the duels queue: sandbox practice + matchmaking.
+                std::vector<std::string> maps;
+                if (GamemodeRegistry::instance().has("duel"))
+                    maps = GamemodeRegistry::instance().get("duel").maps;
+                DuelQueue::instance().startQueue(
+                    DuelQueue::defaultProfileId(),
+                    AuthSystem::instance().displayName(),
+                    "", maps);
+                extern GameState* gpGameState;
+                if (gpGameState) *gpGameState = GAME_PLAYING;
             }
             else if (r.goBombTag)
             {

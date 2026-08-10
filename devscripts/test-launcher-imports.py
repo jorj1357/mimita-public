@@ -70,20 +70,37 @@ def main():
         ok = False
 
     # 4. Launcher process must start and stay alive (no STATUS_ENTRYPOINT_NOT_FOUND).
-    proc = subprocess.Popen([str(LAUNCHER)])
-    time.sleep(3)
-    if proc.poll() is None:
-        print(f"PASS: launcher started and is running (pid={proc.pid})")
-        proc.terminate()
-        time.sleep(1)
+    #    Run from an isolated temp dir: a dummy mimita-game.zip makes it dev-mode
+    #    (no self-install/self-update), and a missing --release-json keeps the
+    #    version fetch instant and offline. Without an install-config.json the
+    #    launcher just shows the first-run wizard and stays in the tray.
+    import tempfile
+    import shutil
+    tmp = tempfile.mkdtemp(prefix="launcher-import-test-")
+    try:
+        isolated = os.path.join(tmp, "MimitaLauncher.exe")
+        shutil.copy(str(LAUNCHER), isolated)
+        dummy_zip = os.path.join(tmp, "mimita-game.zip")
+        open(dummy_zip, "wb").close()
+        proc = subprocess.Popen(
+            [isolated, "--no-error-dialogs", "--release-json", "missing.json"],
+            cwd=tmp)
+        time.sleep(3)
         if proc.poll() is None:
-            proc.kill()
-    else:
-        code = proc.returncode
-        print(f"FAIL: launcher exited immediately with code={code} (0x{code & 0xFFFFFFFF:08X})")
-        if code == -1073741511 or (code & 0xFFFFFFFF) == 0xC0000139:
-            print("      -> STATUS_ENTRYPOINT_NOT_FOUND (TaskDialogIndirect bug)")
-        ok = False
+            print(f"PASS: launcher started and is running (pid={proc.pid})")
+            proc.terminate()
+            time.sleep(1)
+            if proc.poll() is None:
+                proc.kill()
+        else:
+            code = proc.returncode
+            print(f"FAIL: launcher exited immediately with code={code} (0x{code & 0xFFFFFFFF:08X})")
+            if code == -1073741511 or (code & 0xFFFFFFFF) == 0xC0000139:
+                print("      -> STATUS_ENTRYPOINT_NOT_FOUND (TaskDialogIndirect bug)")
+            ok = False
+    finally:
+        time.sleep(0.2)
+        shutil.rmtree(tmp, ignore_errors=True)
 
     print()
     print("[LAUNCHER-IMPORT-TEST]", "PASS" if ok else "FAIL")

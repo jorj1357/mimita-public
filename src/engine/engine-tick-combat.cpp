@@ -33,6 +33,7 @@
 #include "replay/replay-editor.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "entities/death-ghost.h"
 #include "gui/hud/chat-bubble.h"
 #include "game/duel.h"
 #include "game/bomb-tag.h"
@@ -183,6 +184,7 @@ void engineTickCombat(Engine& engine, float dt)
 
     // Update effect parts
     EffectPartSystem::instance().update(dt);
+    DeathGhostSystem::instance().update(dt);
     HitEffects::updateHitBursts(dt);
 
     updateChatBubbles(player.chatState, dt);

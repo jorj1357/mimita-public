@@ -10,6 +10,8 @@
 
 #include "network/server.h"
 #include "network/net_mode.h"
+#include "network/server-duel.h"
+#include "gamemode/gamemode.h"
 #include "network/multiplayer-context.h"
 #include "network/coordinator-client.h"
 #include "network/network-weapons.h"
@@ -241,6 +243,7 @@ int runServer(const LaunchOptions& options)
     // Load NPC difficulty config so server-authoritative NPC damage/fire rate
     // honors config/npc-difficulty.json (hot-reloaded in the server loop below).
     NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
+    GamemodeRegistry::instance().loadDirectory("config/gamemodes");
     npcLogSetProc("server");
 
     // Validate grenade launcher config at startup
@@ -387,6 +390,22 @@ int runServer(const LaunchOptions& options)
     gServerHostPlayerName = options.hostPlayerName;
     dedicatedIceState.port = actualPort;
     std::vector<PendingServerTransport> pendingIceTransports;
+
+    // Duel mode: run a first-to-goal PvP match between the first two players.
+    if (options.duel)
+    {
+        const Gamemode& gm = GamemodeRegistry::instance().get(options.gamemodeId);
+        ServerDuelState duelRules;
+        duelRules.goalValue = gm.goalValue;
+        duelRules.countdownSeconds = gm.countdownSeconds;
+        duelRules.rematchSeconds = gm.rematchSeconds;
+        duelRules.teamAName = gm.teamNames.size() > 0 ? gm.teamNames[0] : "RED";
+        duelRules.teamBName = gm.teamNames.size() > 1 ? gm.teamNames[1] : "BLUE";
+        serverDuelStart(duelRules);
+        printf("%s [SERVER DUEL] enabled gamemode=%s goal=%d countdown=%.1fs rematch=%.1fs\n",
+               serverTimestamp(), options.gamemodeId.c_str(), gm.goalValue,
+               gm.countdownSeconds, gm.rematchSeconds);
+    }
 
     // Startup NPCs (controlled by --npcs and --no-npcs flags)
     {
@@ -586,6 +605,7 @@ int runServer(const LaunchOptions& options)
             buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
             tickDisagreementRetransmit(sock, players, disagreementRetransmit, totalPacketsOut);
             tickReliableGameplayEvents(sock, players, totalPacketsOut);
+            serverDuelTick(sock, players, world, tick, totalPacketsOut);
 
             accumulator -= (double)SERVER_DT;
             ++tick;
@@ -1198,6 +1218,8 @@ int runServerWithSettings(const ServerLaunchSettings& settings)
     opts.npcCount = settings.startupNpcCount;
     opts.bind = "0.0.0.0:" + std::to_string(settings.port);
     opts.bindExplicit = true;
+    opts.duel = settings.duelMode;
+    opts.gamemodeId = settings.gamemodeId;
 
     // Delegate to existing runServer
     return runServer(opts);

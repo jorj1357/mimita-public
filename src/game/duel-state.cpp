@@ -32,7 +32,7 @@ void DuelManager::beginFight(Player& player, NpcSystem& npcs, World& world)
 void DuelManager::startCountdown()
 {
     currentPhase = DuelPhase::Countdown;
-    countdown = 3.0f;
+    countdown = config.countdownSeconds;
     timer = 0.0f;
     playerKills = 0;
     npcKills.assign(config.numNpcs, 0);

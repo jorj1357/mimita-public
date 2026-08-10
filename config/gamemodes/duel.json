@@ -1,0 +1,15 @@
+{
+  "id": "duel",
+  "name": "Duel",
+  "description": "First to 20. Instant respawns. Max action, no downtime.",
+  "team_names": ["RED", "BLUE"],
+  "goal_value": 20,
+  "time_limit_seconds": 0,
+  "respawn_seconds": 0,
+  "kill_heals": true,
+  "countdown_seconds": 3,
+  "rematch_seconds": 5,
+  "spawn_tracer_seconds": 1.5,
+  "allow_rematch": true,
+  "maps": ["mimita-duels-map-v3", "atdm", "funworld"]
+}

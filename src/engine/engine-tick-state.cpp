@@ -13,6 +13,7 @@
 #include "game/bomb-tag.h"
 #include "game/spawn-utils.h"
 #include "game/spawn-override.h"
+#include "duel/duel-queue.h"
 #include "network/multiplayer-context.h"
 #include "network/net_mode.h"
 #include "network/server.h"
@@ -30,6 +31,9 @@ extern BombTagManager gBombTagManager;
 
 void engineTickState(Engine& engine, float dt)
 {
+    // Drive the duels queue (matchmaking poll, connect, sandbox practice).
+    DuelQueue::instance().update(dt);
+
     Player& player = THE_PLAYER;
     Camera& camera = THE_CAMERA;
     World& world = THE_WORLD;

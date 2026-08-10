@@ -22,6 +22,7 @@
 #include "config/weapon-tracers-config.h"
 #include "config/ragdoll-death-config.h"
 #include "npc/npc-difficulty-config.h"
+#include "gamemode/gamemode.h"
 #include "hot-reload/hot-reload-system.h"
 #include "notifications/notifications.h"
 #include "gui/gui-layout.h"
@@ -55,6 +56,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     RagdollConfig::instance().pollReload();
     RagdollDeathConfig::instance().pollReload();
     NpcDifficultyConfig::instance().pollReload();
+    GamemodeRegistry::instance().pollReload();
     WeaponHitFxConfig::instance().pollReload();
     NotificationSystem::instance().pollReload();
     GuiLayoutManager::instance().pollReload();

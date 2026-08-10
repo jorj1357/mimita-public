@@ -17,6 +17,7 @@
 #include "config/ragdoll-death-config.h"
 #include "avatar/avatar.h"
 #include "config/player-settings.h"
+#include "entities/death-ghost.h"
 #include "combat/death-system.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
@@ -412,6 +413,10 @@ void clearPredictedDeath(Player& player, const glm::vec3& at,
     player.proceduralFrozen = false;
     player.respawnTimer = 0.0f;
     player.deathAnim = Player::DeathAnimState{};
+    // This life never died: a predicted-death ghost must be removed and the
+    // next real death must be allowed to present again.
+    player.networkDeathPresented = false;
+    DeathGhostSystem::instance().removeForOwner(entityId);
     Debug::warn(Debug::Category::Networking,
         "[NET PREDICTED DEATH ROLLBACK] entityId=%u reason=%s pos=(%.2f,%.2f,%.2f)\n",
         entityId, reason ? reason : "unknown", at.x, at.y, at.z);
@@ -1388,20 +1393,17 @@ void updateRenderedReplica(
             entityId, interpolation.lastRender.health, render.health,
             (int)player.netPredictedDead);
     }
-    // Advance the fall-over death animation every frame. Previously only local
-    // bodies were ticked, so remote players/NPCs never animated their deaths.
-    if (player.dead && player.deathAnim.active)
-    {
-        player.deathAnim.tick++;
-        if (player.deathAnim.tick >= player.deathAnim.totalTicks)
-            player.deathAnim.active = false;
-    }
 
     // ── Death effect (snapshot-driven, loss-proof) ───────────────────
-    // Detect the >0 → <=0 health transition in the render stream and spawn the
-    // death ellipsoid. If a reliable kill event already presented this death
+    // Detect the >0 → <=0 health transition in the render stream and spawn a
+    // SEPARATE fall-over ghost so the remote body itself is never pinned or
+    // frozen. If a reliable kill event already presented this death
     // (networkDeathPresented), skip so there is never a second death.
-    if (spawnDeathEffects && interpolation.hasRendered &&
+    // `!respawned` guards the respawn-frame stale-render mismatch (the buffer
+    // was just cleared, so render still shows the old corpse while lastRender
+    // already holds the new life) — that mismatch would otherwise fire a false
+    // death at the new life's position.
+    if (spawnDeathEffects && interpolation.hasRendered && !respawned &&
         NetworkingConfig::instance().data().deathEffects.remotePlayerDeathEffect &&
         !player.networkDeathPresented)
     {
@@ -1412,21 +1414,6 @@ void updateRenderedReplica(
             // This snapshot transition presented the death — a later reliable
             // kill event must not play a second one.
             player.networkDeathPresented = true;
-            // Start the fall-over death animation so the remote body freezes in
-            // place, rotates to horizontal over totalTicks, stays fully visible,
-            // then disappears the instant the animation completes.
-            if (!player.deathAnim.active)
-            {
-                const auto& cfg = RagdollDeathConfig::instance();
-                player.deathAnim.active = true;
-                player.deathAnim.tick = 0;
-                player.deathAnim.totalTicks = cfg.totalTicks();
-                player.deathAnim.startAlpha = cfg.startAlpha();
-                player.deathAnim.endAlpha = cfg.endAlpha();
-                player.deathAnim.startRotation = cfg.startRotation();
-                player.deathAnim.endRotation = cfg.endRotation();
-                player.deathAnim.frozenPosition = player.pos;
-            }
             // Elongate toward the pre-death planar velocity (the death frame
             // itself carries zero velocity because dead players stop).
             const glm::vec3& deathVel = interpolation.lastRender.velocity;
@@ -1434,14 +1421,9 @@ void updateRenderedReplica(
                 glm::length(deathVel) > 0.001f
                     ? glm::normalize(glm::vec3(deathVel.x, deathVel.y, 0.0f))
                     : glm::vec3(0.0f, 0.0f, 1.0f);
-            const auto& deCfg = HitEffects::config().deathEllipsoid;
-            if (deCfg.enabled)
-            {
-                EffectPartSystem::instance().spawnDeathEllipsoid(
-                    player.pos, deathDir,
-                    deCfg.length, deCfg.radius, deCfg.lifetime,
-                    player.sizeScale);
-            }
+            DeathGhostSystem::instance().spawnFromPlayer(
+                player, deathDir,
+                "net_" + std::to_string(entityId), entityId);
             Debug::log(Debug::Category::Networking,
                 "[NET REMOTE DEATH FX] entityId=%u pos=(%.1f,%.1f,%.1f)",
                 entityId, player.pos.x, player.pos.y, player.pos.z);

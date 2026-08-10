@@ -55,6 +55,7 @@
 #include "game/duel.h"
 #include "game/bomb-tag.h"
 #include "game/game-state.h"
+#include "duel/duel-ui.h"
 #include "network/multiplayer-context.h"
 #include "gui/menus/online-menu.h"
 
@@ -577,5 +578,13 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             uiDrawText(line1, cx - line1W * 0.5f, instrY, instrScale, {0.75f, 0.85f, 1.0f, 1.0f});
             uiDrawText(line2, cx - line2W * 0.5f, instrY + lineGap, instrScale, {0.75f, 0.85f, 1.0f, 1.0f});
         }
+    }
+
+    // ── Duels queue + PvP match HUD ────────────────────────────────
+    if (!gReplayExportRenderMode && gameState == GAME_PLAYING)
+    {
+        renderDuelQueueHud(engine.window(), dt);
+        renderDuelMatchHud(engine.window(), dt);
+        renderDuelTracer(camera);
     }
 }

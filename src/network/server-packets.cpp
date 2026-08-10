@@ -973,9 +973,9 @@ void handleExplodeRequest(const char* buffer, int bytes,
     ServerPlayer& p = it->second;
     p.health = 0;
     p.dead = true;
-    p.respawnSeconds = 2.0f;
+    p.respawnSeconds = 0.01f;  // instant respawn (next server tick)
     p.vel = glm::vec3(0.0f);
-    printf("%s [SERVER DEATH] playerId=%u cause=explode respawn=2.0s\n",
+    printf("%s [SERVER DEATH] playerId=%u cause=explode respawn=instant\n",
            serverTimestamp(), p.id);
 }
 

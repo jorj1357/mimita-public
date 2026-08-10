@@ -4,6 +4,7 @@
 struct PlayMenuResult
 {
     bool goDuels = false;
+    bool goQueueDuels = false;
     bool goBombTag = false;
     bool goOnline = false;
     bool goPractice = false;

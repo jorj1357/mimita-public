@@ -615,4 +615,105 @@ IcePollResult coordinatorIcePoll(const std::string& roomCode, const std::string&
     return result;
 }
 
+// ── Duels queue / matchmaking ─────────────────────────────────────────
+
+QueueJoinResult coordinatorQueueJoin(const std::string& profileId,
+                                     const std::string& name,
+                                     const std::string& preferOpponentId,
+                                     const std::vector<std::string>& maps)
+{
+    QueueJoinResult result;
+    json j;
+    j["profile_id"] = profileId;
+    j["name"] = name;
+    if (!preferOpponentId.empty())
+        j["prefer_opponent"] = preferOpponentId;
+    j["maps"] = json::array();
+    for (const auto& m : maps)
+        j["maps"].push_back(m);
+
+    std::string response;
+    long httpCode = 0;
+    if (!httpPostJsonInner(gCoordinatorUrl + "/api/duels/queue/join", j.dump(), response, 4000, httpCode))
+    {
+        result.errorCode = "http-fail";
+        printf("[DUEL QUEUE] join HTTP fail code=%ld\n", httpCode);
+        return result;
+    }
+    try {
+        auto r = json::parse(response);
+        if (jsonBool(r, "ok"))
+        {
+            result.ok = true;
+            result.ticketId = jsonStr(r, "ticket_id");
+        }
+        else
+        {
+            result.errorCode = jsonStr(r, "error", "join-failed");
+        }
+    } catch (const std::exception& e) {
+        result.errorCode = "parse-error";
+        printf("[DUEL QUEUE] join parse error: %s\n", e.what());
+    }
+    return result;
+}
+
+bool coordinatorQueueLeave(const std::string& ticketId)
+{
+    if (ticketId.empty()) return true;
+    json j;
+    j["ticket_id"] = ticketId;
+    std::string response;
+    httpPostJson(gCoordinatorUrl + "/api/duels/queue/leave", j.dump(), response, 3000);
+    return true;
+}
+
+QueuePollResult coordinatorQueuePoll(const std::string& ticketId)
+{
+    QueuePollResult result;
+    json j;
+    j["ticket_id"] = ticketId;
+    std::string response;
+    long httpCode = 0;
+    if (!httpPostJsonInner(gCoordinatorUrl + "/api/duels/queue/poll", j.dump(), response, 4000, httpCode))
+    {
+        result.status = "error";
+        result.errorCode = "http-fail";
+        return result;
+    }
+    try {
+        auto r = json::parse(response);
+        result.status = jsonStr(r, "status", "error");
+        result.matchId = jsonStr(r, "match_id");
+        result.roomCode = jsonStr(r, "room_code");
+        result.opponentName = jsonStr(r, "opponent_name");
+        result.map = jsonStr(r, "map");
+        result.position = jsonInt(r, "position");
+        result.errorCode = jsonStr(r, "error");
+        result.ok = true;
+    } catch (const std::exception& e) {
+        result.status = "error";
+        result.errorCode = "parse-error";
+        printf("[DUEL QUEUE] poll parse error: %s\n", e.what());
+    }
+    return result;
+}
+
+bool coordinatorQueueHostReady(const std::string& matchId, const std::string& roomCode)
+{
+    if (matchId.empty() || roomCode.empty()) return false;
+    json j;
+    j["match_id"] = matchId;
+    j["room_code"] = roomCode;
+    std::string response;
+    long httpCode = 0;
+    if (!httpPostJsonInner(gCoordinatorUrl + "/api/duels/queue/host-ready", j.dump(), response, 3000, httpCode))
+        return false;
+    try {
+        return jsonBool(json::parse(response), "ok");
+    } catch (...) {
+        return false;
+    }
+}
+
 } // namespace MimitaNet
