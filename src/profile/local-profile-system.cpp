@@ -6,8 +6,11 @@
 
 #include <nlohmann/json.hpp>
 
+#ifdef _WIN32
 #include <windows.h>
-
+#else
+#include <unistd.h>
+#endif
 using json = nlohmann::json;
 
 namespace {
@@ -70,7 +73,7 @@ void LocalProfileSystem::ensureFiles()
 
 std::string LocalProfileSystem::makeFallbackUsername() const
 {
-    return "player" + std::to_string((unsigned long)GetCurrentProcessId());
+    return "player" + std::to_string((unsigned long)getpid());
 }
 
 const std::string& LocalProfileSystem::currentUsername() const

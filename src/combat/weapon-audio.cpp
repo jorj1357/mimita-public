@@ -3,7 +3,7 @@
 #include "audio/audio.h"
 #include <cstdlib>
 #include <cstdio>
-
+#include <algorithm>
 namespace WeaponAudio {
 
 void playShootSound(const WeaponDefinition& def, const glm::vec3& position) {

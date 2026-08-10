@@ -1,3 +1,7 @@
+// Including theseheaders as it want's to shoot itself in the foot when one is before the another XDDD
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
+
 #include "gui-main.h"
 #include "menus/main-menu.h"
 #include "menus/play-menu.h"

@@ -665,19 +665,27 @@ int runServer(const LaunchOptions& options)
         return 1;
     }
 
-    SOCKET sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (sock == INVALID_SOCKET)
+    Socket sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sock == INVALID_SOCKET_HANDLE)
     {
-        printf("%s [SERVER] FATAL: socket() failed error=%d\n", serverTimestamp(), WSAGetLastError());
+        printf("%s [SERVER] FATAL: socket() failed error=%d\n", serverTimestamp(), errno);
         netShutdown();
         return 1;
     }
 
     // Allow address reuse to avoid WSAEADDRINUSE (error 10048)
     int reuseAddr = 1;
-    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuseAddr, sizeof(reuseAddr)) == SOCKET_ERROR)
-        printf("%s [SERVER] WARNING: setsockopt SO_REUSEADDR failed error=%d (non-fatal)\n", serverTimestamp(), WSAGetLastError());
-
+#ifdef _WIN32
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
+        (const char*)&reuseAddr, sizeof(reuseAddr)) == SOCKET_ERROR)
+        printf("%s [SERVER] WARNING: setsockopt SO_REUSEADDR failed error=%d (non-fatal)\n",
+            serverTimestamp(), WSAGetLastError());
+#else
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
+        &reuseAddr, sizeof(reuseAddr)) < 0)
+        printf("%s [SERVER] WARNING: setsockopt SO_REUSEADDR failed error=%d (non-fatal)\n",
+            serverTimestamp(), errno);
+#endif    
     setNonBlocking(sock);
 
     sockaddr_in bindAddr{};
@@ -687,17 +695,28 @@ int runServer(const LaunchOptions& options)
         bindAddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         bindAddr.sin_port = htons(DEFAULT_PORT);
     }
-    if (bind(sock, (sockaddr*)&bindAddr, sizeof(bindAddr)) == SOCKET_ERROR)
-    {
-        int err = WSAGetLastError();
-        printf("%s [SERVER] FATAL: bind() failed error=%d\n", serverTimestamp(), err);
-        if (err == WSAEADDRINUSE)
-            printf("%s [SERVER] HINT: Address %s is already in use. Is another server already running?\n",
-                   serverTimestamp(), addressToString(bindAddr).c_str());
-        closesocket(sock);
-        netShutdown();
-        return 1;
-    }
+    if (bind(sock, (sockaddr*)&bindAddr, sizeof(bindAddr)) < 0)
+{
+#ifdef _WIN32
+    int err = WSAGetLastError();
+#else
+    int err = errno;
+#endif
+
+    printf("%s [SERVER] FATAL: bind() failed error=%d\n", serverTimestamp(), err);
+
+#ifdef _WIN32
+    if (err == WSAEADDRINUSE)
+#else
+    if (err == EADDRINUSE)
+#endif
+        printf("%s [SERVER] HINT: Address %s is already in use. Is another server already running?\n",
+               serverTimestamp(), addressToString(bindAddr).c_str());
+
+    close(sock);
+    netShutdown();
+    return 1;
+}
 
     printf("%s [SERVER] bound to %s\n", serverTimestamp(), addressToString(bindAddr).c_str());
     printf("%s [SERVER] waiting for connections...\n", serverTimestamp());
@@ -726,7 +745,11 @@ int runServer(const LaunchOptions& options)
         uint64_t frameStart = nowMs();
         char buffer[2048];
         sockaddr_in from{};
-        int fromLen = sizeof(from);
+        #ifdef _WIN32
+            int fromLen = sizeof(from);
+        #else
+            socklen_t fromLen = sizeof(from);
+        #endif
 
         // Drain all pending packets
         for (;;)

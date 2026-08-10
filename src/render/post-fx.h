@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <glad/glad.h>
 
 struct PostFXData
 {

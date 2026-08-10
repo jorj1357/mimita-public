@@ -7,7 +7,11 @@
 #include <ctime>
 #include <filesystem>
 #include <fcntl.h>
+#ifdef _WIND32
 #include <io.h>
+#else
+#include <unistd.h>
+#endif
 #include <unistd.h>
 #include <vector>
 
@@ -18,7 +22,11 @@ static std::string timestamp()
     auto now = std::chrono::system_clock::now();
     std::time_t t = std::chrono::system_clock::to_time_t(now);
     std::tm tm;
-    localtime_s(&tm, &t);
+    #ifdef _WIN32
+        localtime_s(&tm, &t);
+    #else
+        localtime_r(&t,&tm);
+    #endif
     char buf[64];
     std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
     return std::string(buf);
@@ -29,7 +37,11 @@ static std::string dateDirName()
     auto now = std::chrono::system_clock::now();
     std::time_t t = std::chrono::system_clock::to_time_t(now);
     std::tm tm;
-    localtime_s(&tm, &t);
+    #ifdef _WIN32
+        localtime_s(&tm, &t);
+    #else
+        localtime_r(&t,&tm);
+    #endif
     char buf[16];
     std::strftime(buf, sizeof(buf), "%d-%m-%Y", &tm);
     return std::string(buf);
@@ -40,7 +52,11 @@ static std::string timeFileName()
     auto now = std::chrono::system_clock::now();
     std::time_t t = std::chrono::system_clock::to_time_t(now);
     std::tm tm;
-    localtime_s(&tm, &t);
+    #ifdef _WIN32
+        localtime_s(&tm, &t);
+    #else
+        localtime_r(&t,&tm);
+    #endif
     char buf[16];
     std::strftime(buf, sizeof(buf), "%H-%M-%S", &tm);
     return std::string(buf) + "-log.txt";
@@ -171,13 +187,13 @@ static void captureThreadFunc(int readFd, LogManager* mgr, std::atomic<bool>& ru
     char buf[4096];
     int consoleFd = mgr->savedStdoutFd();
     while (running) {
-        int n = (int)_read(readFd, buf, sizeof(buf) - 1);
+        int n = (int)read(readFd, buf, sizeof(buf) - 1);
         if (n > 0) {
             buf[n] = '\0';
             mgr->write(buf, n);
             mgr->flush();
             if (consoleFd >= 0)
-                _write(consoleFd, buf, n);
+                write(consoleFd, buf, n);
         } else {
             break;
         }
@@ -205,14 +221,14 @@ bool LogManager::init()
     // All printf/Debug::log output goes through stdout; the pipe reader
     // thread writes everything to the log file AND to the original console.
     int pipeFds[2];
-    if (_pipe(pipeFds, 65536, _O_BINARY) == 0) {
+    if (pipe(pipeFds) == 0) {
         mPipeRead = pipeFds[0];
         int pipeWrite = pipeFds[1];
 
-        mSavedStdout = _dup(_fileno(stdout));
+        mSavedStdout = dup(fileno(stdout));
         if (mSavedStdout >= 0) {
-            _dup2(pipeWrite, _fileno(stdout));
-            _close(pipeWrite);
+            dup2(pipeWrite, fileno(stdout));
+            close(pipeWrite);
 
             // Unbuffered stdout so every printf appears in the pipe immediately
             setvbuf(stdout, nullptr, _IONBF, 0);
@@ -220,8 +236,8 @@ bool LogManager::init()
             mRunning = true;
             mCaptureThread = std::thread(captureThreadFunc, mPipeRead, this, std::ref(mRunning));
         } else {
-            _close(pipeWrite);
-            _close(mPipeRead);
+            close(pipeWrite);
+            close(mPipeRead);
             mPipeRead = -1;
         }
     }
@@ -238,14 +254,14 @@ void LogManager::shutdown()
     // pipe write end, which signals EOF to the reader thread.
     if (mSavedStdout >= 0) {
         fflush(stdout);
-        _dup2(mSavedStdout, _fileno(stdout));
-        _close(mSavedStdout);
+        dup2(mSavedStdout, fileno(stdout));
+        close(mSavedStdout);
         mSavedStdout = -1;
     }
 
     // Close the read end to unblock the reader thread
     if (mPipeRead >= 0) {
-        _close(mPipeRead);
+        close(mPipeRead);
         mPipeRead = -1;
     }
 

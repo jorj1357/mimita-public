@@ -5,6 +5,7 @@ project(mimita_hot_reload LANGUAGES C CXX)
 # nix-shell -p cmake pkg-config wayland libxkbcommon
 # this is for nixos or smthing '~`
 #
+find_package(OpenGL REQUIRED)
 # GLFW
 include(FetchContent)
 
@@ -64,6 +65,7 @@ set_target_properties(mimita-game PROPERTIES
 target_link_libraries(mimita-game PRIVATE 
     glad
     glfw
+    OpenGL::GL
 )
 add_executable(mimita
     src/main.cpp

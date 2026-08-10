@@ -3,9 +3,15 @@
 #include <cstdio>
 #include <cstdlib>
 #include <system_error>
-
+#ifdef _WIN32
 #include <windows.h>
-
+#else
+#include <unistd.h>
+#include <dlfcn.h>
+#endif
+#include <cstdint>
+#include <filesystem>
+#include <chrono>
 namespace {
 
 void MIMITA_GAME_CALL platformLog(const char* message)
@@ -16,14 +22,14 @@ void MIMITA_GAME_CALL platformLog(const char* message)
 
 std::uint64_t fileWriteTime(const std::filesystem::path& path)
 {
-    WIN32_FILE_ATTRIBUTE_DATA data{};
-    if (!GetFileAttributesExW(path.wstring().c_str(), GetFileExInfoStandard, &data))
+    try {
+        auto time = std::filesystem::last_write_time(path);
+        return static_cast<std::uint64_t>(
+            time.time_since_epoch().count()
+        );
+    } catch (...) {
         return 0;
-
-    ULARGE_INTEGER value{};
-    value.LowPart = data.ftLastWriteTime.dwLowDateTime;
-    value.HighPart = data.ftLastWriteTime.dwHighDateTime;
-    return value.QuadPart;
+    }
 }
 
 }
@@ -56,7 +62,6 @@ bool HotReloadSystem::loadGameDLL()
     }
     return loadCandidate(sourceDLL_);
 }
-
 bool HotReloadSystem::loadCandidate(const std::filesystem::path& sourceDLL)
 {
     const std::filesystem::path tempDLL = makeUniqueTempDLLPath();
@@ -69,15 +74,28 @@ bool HotReloadSystem::loadCandidate(const std::filesystem::path& sourceDLL)
     }
 
     std::printf("[HOT RELOAD] loading new DLL %s\n", tempDLL.string().c_str());
-    HMODULE candidateModule = LoadLibraryW(tempDLL.wstring().c_str());
+#ifdef _WIN32
+    void* candidateModule = static_cast<void*>(LoadLibraryW(tempDLL.wstring().c_str()));
+#else
+    void* candidateModule = dlopen(tempDLL.string().c_str(), RTLD_NOW | RTLD_LOCAL);
+#endif
     if (!candidateModule) {
+#ifdef _WIN32
         std::printf("[HOT RELOAD] reload failed: LoadLibrary error=%lu\n", GetLastError());
+#else
+        std::printf("[HOT RELOAD] reload failed: dlopen: %s\n", dlerror());
+#endif
         std::filesystem::remove(tempDLL, error);
         return false;
     }
 
+#ifdef _WIN32
     auto getGameAPI = reinterpret_cast<GetGameAPIFn>(
-        GetProcAddress(candidateModule, "GetGameAPI"));
+        GetProcAddress(static_cast<HMODULE>(candidateModule), "GetGameAPI"));
+#else
+    auto getGameAPI = reinterpret_cast<GetGameAPIFn>(
+        dlsym(candidateModule, "GetGameAPI"));
+#endif
     GameAPI candidateAPI{};
     if (!getGameAPI ||
         !getGameAPI(MIMITA_GAME_API_VERSION, &candidateAPI) ||
@@ -85,19 +103,27 @@ bool HotReloadSystem::loadCandidate(const std::filesystem::path& sourceDLL)
         candidateAPI.structSize != sizeof(GameAPI) ||
         !candidateAPI.updateEffects) {
         std::printf("[HOT RELOAD] reload failed: incompatible or incomplete GameAPI\n");
-        FreeLibrary(candidateModule);
+#ifdef _WIN32
+        FreeLibrary(static_cast<HMODULE>(candidateModule));
+#else
+        dlclose(candidateModule);
+#endif
         std::filesystem::remove(tempDLL, error);
         return false;
     }
 
     if (candidateAPI.onReload && !candidateAPI.onReload(&memory_)) {
         std::printf("[HOT RELOAD] reload failed: onReload rejected persistent memory\n");
-        FreeLibrary(candidateModule);
+#ifdef _WIN32
+        FreeLibrary(static_cast<HMODULE>(candidateModule));
+#else
+        dlclose(candidateModule);
+#endif
         std::filesystem::remove(tempDLL, error);
         return false;
     }
 
-    HMODULE previousModule = static_cast<HMODULE>(module_);
+    void* previousModule = module_;
     GameAPI previousAPI = api_;
     std::filesystem::path previousTempDLL = loadedTempDLL_;
 
@@ -111,24 +137,29 @@ bool HotReloadSystem::loadCandidate(const std::filesystem::path& sourceDLL)
         std::printf("[HOT RELOAD] unloading old DLL\n");
         if (previousAPI.beforeUnload)
             previousAPI.beforeUnload(&memory_);
-        FreeLibrary(previousModule);
+#ifdef _WIN32
+        FreeLibrary(static_cast<HMODULE>(previousModule));
+#else
+        dlclose(previousModule);
+#endif
         retiredTempDLLs_.push_back(previousTempDLL);
     }
 
     deleteRetiredTempDLLs();
     std::printf("[HOT RELOAD] reload success generation=%u\n", memory_.reloadCount);
     return true;
-}
-
-void HotReloadSystem::unloadGameDLL()
+}void HotReloadSystem::unloadGameDLL()
 {
     if (!module_)
         return;
-
     std::printf("[HOT RELOAD] unloading old DLL\n");
     if (api_.beforeUnload)
         api_.beforeUnload(&memory_);
+#ifdef _WIN32
     FreeLibrary(static_cast<HMODULE>(module_));
+#else
+    dlclose(module_);
+#endif
     retiredTempDLLs_.push_back(loadedTempDLL_);
     module_ = nullptr;
     api_ = {};
@@ -188,13 +219,23 @@ std::uint64_t HotReloadSystem::newestSourceWriteTime() const
     return newest;
 }
 
+
 std::filesystem::path HotReloadSystem::makeUniqueTempDLLPath()
 {
+#ifdef _WIN32
     const DWORD processId = GetCurrentProcessId();
+#else
+    const pid_t processId = getpid();
+#endif
     ++tempGeneration_;
+#ifdef _WIN32
+    const char* extension = ".dll";
+#else
+    const char* extension = ".so";
+#endif
     return sourceDLL_.parent_path() /
         ("mimita-game-live-" + std::to_string(processId) + "-" +
-         std::to_string(tempGeneration_) + ".dll");
+         std::to_string(tempGeneration_) + extension);
 }
 
 void HotReloadSystem::deleteRetiredTempDLLs()

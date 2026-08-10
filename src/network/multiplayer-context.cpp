@@ -1,4 +1,5 @@
 #include "network/multiplayer-context.h"
+#include "network/net_common.h"
 #include "network/packets.h"
 #include "render/outfit-atlas.h"
 #include "avatar/avatar.h"
@@ -145,7 +146,7 @@ void updateRenderedReplica(
 
 void mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes)
 {
-    if (!ctx.active || ctx.sock == INVALID_SOCKET || !data || bytes <= 0)
+    if (!ctx.active || ctx.sock == INVALID_SOCKET_HANDLE || !data || bytes <= 0)
         return;
 
     int delayMs = 0;
@@ -234,9 +235,9 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     }
 
     ctx.sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (ctx.sock == INVALID_SOCKET)
+    if (ctx.sock == INVALID_SOCKET_HANDLE)
     {
-        printf("[NET CONNECT] FATAL: socket() failed error=%d\n", WSAGetLastError());
+        printf("[NET CONNECT] FATAL: socket() failed error=%d\n", errno);
         netShutdown();
         return false;
     }
@@ -245,7 +246,7 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     if (!parseAddress(address, ctx.serverAddr))
     {
         printf("[NET CONNECT] FATAL: invalid address: %s\n", address.c_str());
-        closesocket(ctx.sock);
+        close(ctx.sock);
         netShutdown();
         return false;
     }
@@ -310,8 +311,8 @@ void mpShutdown(MultiplayerContext& ctx)
         printf("[NET DISCONNECT] sent disconnect for id=%u\n", ctx.localPlayerId);
     }
 
-    closesocket(ctx.sock);
-    ctx.sock = INVALID_SOCKET;
+    close(ctx.sock);
+    ctx.sock = INVALID_SOCKET_HANDLE;
     ctx.active = false;
     ctx.localPlayerId = 0;
     ctx.remotePlayers.clear();
@@ -341,7 +342,7 @@ static const char* disconnectReasonStr(MultiplayerContext& ctx)
     if (!ctx.active) return "inactive";
     if (ctx.connectFailed) return "connection-timeout";
     if (!ctx.connected) return "not-connected";
-    if (ctx.sock == INVALID_SOCKET) return "invalid-socket";
+    if (ctx.sock == INVALID_SOCKET_HANDLE) return "invalid-socket";
     return "unknown";
 }
 
@@ -404,7 +405,11 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     for (;;)
     {
         sockaddr_in from{};
-        int fromLen = sizeof(from);
+        #ifdef _WIN32
+            int fromLen = sizeof(from);
+        #else
+            socklen_t fromLen = sizeof(from);
+        #endif
         int bytes = recvfrom(ctx.sock, buffer, sizeof(buffer), 0,
                              (sockaddr*)&from, &fromLen);
         if (bytes <= 0)
