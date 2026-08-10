@@ -221,6 +221,7 @@ export default function Vip() {
                     <p><Link to="/account">back to account</Link></p>
                 </section>
 
+                {/*
                 <p className="vipDonationNotice">
                     VIP is a supporter thing NOT a paywall. NOT required for anything. MiMITA is free 100%.
                     You get a cool colorful name here on the website and in the game.
@@ -237,6 +238,7 @@ export default function Vip() {
                     like that is so lame i NEVER am ever gonna do that. EVER!!!!!!!
                     and if i ever DO something that even Remotly seems like that CALL ME OUT ON IT + SHOW ME THIS PAGE !!!!!!!!!!!
                 </p>
+                */}
             </section>
         </Layout>
     )
