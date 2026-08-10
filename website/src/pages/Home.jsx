@@ -86,7 +86,7 @@ export default function Home() {
                     className="previewVideo"
                   >
                     <source
-                      src="/mimita-preview-small.mp4"
+                      src="/mimita-preview-small-compressed.mp4"
                       type="video/mp4"
                     />
                   </video>
