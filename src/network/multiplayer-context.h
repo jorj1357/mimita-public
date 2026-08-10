@@ -74,7 +74,7 @@ struct EntityInterpolationState
 struct MultiplayerContext
 {
     bool active = false;
-    SOCKET sock = INVALID_SOCKET;
+    Socket sock = INVALID_SOCKET_HANDLE;
     sockaddr_in serverAddr{};
     uint32_t localPlayerId = 0;
     uint32_t tick = 0;

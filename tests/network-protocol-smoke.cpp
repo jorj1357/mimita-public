@@ -8,11 +8,18 @@
 #include <string>
 #include <thread>
 
+#ifdef _WIN32
+#include <winsock2.h>
+#else
+#include <unistd.h>
+#endif
+
 namespace {
 
 struct TestClient
 {
-    SOCKET socket = INVALID_SOCKET;
+    MimitaNet::Socket socket = MimitaNet::INVALID_SOCKET_HANDLE;
+    
     uint32_t id = 0;
     std::string approvedName;
     MimitaNet::SnapshotPacket snapshot{};
@@ -26,18 +33,18 @@ void copyName(char (&out)[MimitaNet::MAX_NAME_BYTES], const char* name)
 
 bool openClient(TestClient& client)
 {
-    client.socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    return client.socket != INVALID_SOCKET &&
+    client.socket = socket(AF_INET, MimitaNet::SOCK_DGRAM, MimitaNet::IPPROTO_UDP);
+    return client.socket != MimitaNet::INVALID_SOCKET_HANDLE &&
            MimitaNet::setNonBlocking(client.socket);
 }
 
-void sendHello(TestClient& client, const sockaddr_in& server)
+void sendHello(TestClient& client, const MimitaNet::sockaddr_in& server)
 {
     MimitaNet::HelloPacket hello{};
     hello.header.type = MimitaNet::PACKET_HELLO;
     copyName(hello.name, "admin");
     sendto(client.socket, (const char*)&hello, sizeof(hello), 0,
-           (const sockaddr*)&server, sizeof(server));
+           (const MimitaNet::sockaddr*)&server, sizeof(server));
 }
 
 bool pump(TestClient& client, uint64_t deadline)
@@ -45,11 +52,15 @@ bool pump(TestClient& client, uint64_t deadline)
     char buffer[16384];
     while (MimitaNet::nowMs() < deadline)
     {
-        sockaddr_in from{};
-        int fromLength = sizeof(from);
+        MimitaNet::sockaddr_in from{};
+        #ifdef _WIN32
+            int fromLength = sizeof(from);
+        #else
+            MimitaNet::socklen_t fromLength = sizeof(from);
+        #endif
         const int bytes = recvfrom(
             client.socket, buffer, sizeof(buffer), 0,
-            (sockaddr*)&from, &fromLength);
+            (MimitaNet::sockaddr*)&from, &fromLength);
         if (bytes <= 0)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -99,7 +110,7 @@ const MimitaNet::SnapshotEntity* findEntity(
 
 void sendPosition(
     TestClient& client,
-    const sockaddr_in& server,
+    const MimitaNet::sockaddr_in& server,
     float x,
     float y,
     float z)
@@ -112,13 +123,13 @@ void sendPosition(
     input.clientPy = y;
     input.clientPz = z;
     sendto(client.socket, (const char*)&input, sizeof(input), 0,
-           (const sockaddr*)&server, sizeof(server));
+           (const MimitaNet::sockaddr*)&server, sizeof(server));
 }
 
 void sendShot(
     TestClient& client,
     const TestClient& target,
-    const sockaddr_in& server,
+    const MimitaNet::sockaddr_in& server,
     uint32_t serial)
 {
     const MimitaNet::SnapshotEntity* shooterEntity =
@@ -171,7 +182,7 @@ void sendShot(
     shot.normalY = -dirY;
     shot.normalZ = -dirZ;
     sendto(client.socket, (const char*)&shot, sizeof(shot), 0,
-           (const sockaddr*)&server, sizeof(server));
+           (const MimitaNet::sockaddr*)&server, sizeof(server));
 }
 
 int entityHealth(const TestClient& client, uint32_t entityId)
@@ -187,7 +198,7 @@ int entityHealth(const TestClient& client, uint32_t entityId)
     return -1;
 }
 
-void disconnect(TestClient& client, const sockaddr_in& server)
+void disconnect(TestClient& client, const MimitaNet::sockaddr_in& server)
 {
     if (client.id)
     {
@@ -195,10 +206,14 @@ void disconnect(TestClient& client, const sockaddr_in& server)
         packet.header.type = MimitaNet::PACKET_DISCONNECT;
         packet.header.playerId = client.id;
         sendto(client.socket, (const char*)&packet, sizeof(packet), 0,
-               (const sockaddr*)&server, sizeof(server));
+               (const MimitaNet::sockaddr*)&server, sizeof(server));
     }
-    if (client.socket != INVALID_SOCKET)
-        closesocket(client.socket);
+    if (client.socket != MimitaNet::INVALID_SOCKET_HANDLE)
+        #ifdef _WIN32
+            closesocket(client.socket);
+        #else
+            close(client.socket);
+        #endif
 }
 
 }
@@ -208,7 +223,7 @@ int main()
     if (!MimitaNet::netStartup())
         return 1;
 
-    sockaddr_in server{};
+    MimitaNet::sockaddr_in server{};
     if (!MimitaNet::parseAddress("127.0.0.1:2357", server))
         return 2;
 
@@ -257,7 +272,7 @@ int main()
     spawn.py = 10.0f;
     spawn.pz = 30.0f;
     sendto(first.socket, (const char*)&spawn, sizeof(spawn), 0,
-           (const sockaddr*)&server, sizeof(server));
+           (const MimitaNet::sockaddr*)&server, sizeof(server));
 
     bool firstSawSpawn = false;
     bool secondSawSpawn = false;

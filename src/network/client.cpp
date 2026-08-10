@@ -42,10 +42,14 @@ int runClient(const LaunchOptions& options)
     if (!netStartup())
         return 1;
 
-    SOCKET sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (sock == INVALID_SOCKET)
+    Socket sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sock < INVALID_SOCKET_HANDLE)
     {
-        printf("[CLIENT] socket failed error=%d\n", WSAGetLastError());
+        #ifdef _WIN31
+            printf("[CLIENT] socket failed error=%d\n", WSAGetLastError());
+        #else
+            printf("[CLIENT] socket failed error=%d\n", errno);
+        #endif
         netShutdown();
         return 1;
     }
@@ -55,7 +59,11 @@ int runClient(const LaunchOptions& options)
     if (!parseAddress(options.connect, serverAddr))
     {
         printf("[CLIENT] invalid --connect address: %s\n", options.connect.c_str());
-        closesocket(sock);
+        #ifdef _WIN32
+            closesocket(sock);
+        #else
+            close(sock);
+        #endif
         netShutdown();
         return 1;
     }
@@ -64,7 +72,11 @@ int runClient(const LaunchOptions& options)
     engine.init(800, 600, ("mimita.exe multiplayer - " + options.name).c_str());
     if (!engine.window())
     {
-        closesocket(sock);
+        #ifdef _WIN32
+            closesocket(sock);
+        #else
+            close(sock);
+        #endif
         netShutdown();
         return 1;
     }
@@ -119,7 +131,11 @@ int runClient(const LaunchOptions& options)
         for (;;)
         {
             sockaddr_in from{};
-            int fromLen = sizeof(from);
+            #ifdef _WIN32
+                int fromLen = sizeof(from);
+            #else
+                socklen_t fromLen = sizeof(from);
+            #endif
             int bytes = recvfrom(sock, buffer, sizeof(buffer), 0, (sockaddr*)&from, &fromLen);
             if (bytes <= 0)
                 break;
@@ -304,7 +320,11 @@ int runClient(const LaunchOptions& options)
     }
 
     engine.shutdown();
-    closesocket(sock);
+    #ifdef _WIN32
+        closesocket(sock);
+    #else
+        close(sock);
+    #endif
     netShutdown();
     printf("[CLIENT] shutdown complete\n");
     return 0;

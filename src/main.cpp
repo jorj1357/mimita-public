@@ -35,6 +35,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <string>
@@ -141,7 +142,6 @@
 #include "effects/hit-effects.h"
 #include "game/bomb-tag.h"
 #include "debug/log-manager.h"
-#include <windows.h>
 
 // 6 9 2026 sort and be more aweosme
 // duelamanger should be  a game manager, with specific modes in it
@@ -719,12 +719,12 @@ int main(int argc, char** argv)
         // CHECK D: ffmpeg -version
         fprintf(report, "\n--- CHECK D: ffmpeg -version ---\n");
         std::string versionCmd = "\"" + ffmpeg + "\" -version 2>&1";
-        FILE* vp = _popen(versionCmd.c_str(), "r");
+        FILE* vp = popen(versionCmd.c_str(), "r");
         if (vp) {
             char vbuf[256];
             if (fgets(vbuf, sizeof(vbuf), vp))
                 fprintf(report, "PASS: %s", vbuf);
-            _pclose(vp);
+            pclose(vp);
         } else {
             fprintf(report, "FAIL: cannot run ffmpeg -version\n");
         }
@@ -1922,7 +1922,7 @@ int main(int argc, char** argv)
             #else
                 pid_t pid = fork();
                 if (pid == 0) {
-                    execlp("xdg-open", "xdg-open", "logs",, nullptr);
+                    execlp("xdg-open", "xdg-open", "logs", nullptr);
                     _exit(1);
                 }
             #endif
@@ -5318,7 +5318,7 @@ int main(int argc, char** argv)
             #else
                 pid_t pid = fork();
                 if (pid == 0) {
-                    execlp("xdg-open", "xdg-open", "replays",, nullptr);
+                    execlp("xdg-open", "xdg-open", "replays", nullptr);
                     _exit(1);
                 }
             #endif

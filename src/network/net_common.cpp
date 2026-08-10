@@ -2,33 +2,61 @@
 
 #include <chrono>
 #include <cstdio>
-
+#ifdef _WIN32
+#else
+#include <fcntl.h>
+#include <errno.h>
+#endif
 namespace MimitaNet {
 
 bool netStartup()
 {
-    WSADATA data{};
-    int result = WSAStartup(MAKEWORD(2, 2), &data);
-    if (result != 0)
-    {
-        printf("[NET] WSAStartup failed error=%d\n", result);
-        return false;
-    }
-    return true;
+    #ifdef _WIN32
+        WSADATA data{};
+        int result = WSAStartup(MAKEWORD(2, 2), &data);
+        if (result != 0)
+        {
+            printf("[NET] WSAStartup failed error=%d\n", result);
+            return false;
+        }
+        return true;
+    #else
+        return true;
+    #endif
 }
 
 void netShutdown()
 {
-    WSACleanup();
+    #ifdef _WIN32
+        WSACleanup();
+    #endif
 }
-
-bool setNonBlocking(SOCKET socketHandle)
+bool setNonBlocking(Socket socketHandle)
 {
+#ifdef _WIN32
     u_long mode = 1;
     int result = ioctlsocket(socketHandle, FIONBIO, &mode);
+
     if (result != 0)
         printf("[NET] ioctlsocket nonblocking failed error=%d\n", WSAGetLastError());
+
     return result == 0;
+#else
+    int flags = fcntl(socketHandle, F_GETFL, 0);
+
+    if (flags == -1)
+    {
+        printf("[NET] fcntl get flags failed error=%d\n", errno);
+        return false;
+    }
+
+    int result = fcntl(socketHandle, F_SETFL, flags | O_NONBLOCK);
+
+    if (result == -1)
+        printf("[NET] fcntl nonblocking failed error=%d\n", errno);
+
+    return result == 0;
+#endif
 }
 
 bool parseAddress(const std::string& text, sockaddr_in& out)
