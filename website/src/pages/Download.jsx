@@ -62,7 +62,7 @@ export default function Download() {
           preload="auto"
           className="downloadGif"
         >
-          <source src="/mimita-preview-small.mp4" type="video/mp4" />
+          <source src="/mimita-preview-small-compressed.mp4" type="video/mp4" />
         </video>
 
         <button className="downloadButton" onClick={doDownload}
