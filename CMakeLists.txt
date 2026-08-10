@@ -16,28 +16,30 @@ set_target_properties(glad PROPERTIES
 )
 # target_link_libraries(mimita PRIVATE glad)
 # /\
-
-add_library(mimita-game SHARED
-    src/debug/debug-diag.cpp
-    src/effects/effect-part.cpp
-    src/gui/gui-coord.cpp
-    src/replay/replay-factory.cpp
-    src/video/video-settings.cpp
+file(GLOB_RECURSE GAME_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/src/*.cpp"
 )
+
+add_library(mimita-game SHARED ${GAME_SOURCES})
+
 target_compile_features(mimita-game PRIVATE cxx_std_17)
+
 target_compile_definitions(mimita-game PRIVATE
     MIMITA_GAME_DLL
     GLM_ENABLE_EXPERIMENTAL
 )
+
 target_include_directories(mimita-game PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
 )
+
 set_target_properties(mimita-game PROPERTIES
     PREFIX ""
     OUTPUT_NAME "mimita-game"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/build"
 )
+
 target_link_libraries(mimita-game PRIVATE glad)
 add_executable(mimita
     src/main.cpp
