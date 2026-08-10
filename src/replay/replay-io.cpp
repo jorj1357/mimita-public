@@ -63,6 +63,8 @@ ReplayEffectEvent parseEffect(const json& value)
     effect.targetActorId = value.value("targetActorId", "");
     effect.texturePath = value.value("texturePath", "");
     effect.materialName = value.value("material", "");
+    effect.billboardText = value.value("billboardText", false);
+    effect.beam = value.value("beam", false);
     return effect;
 }
 
@@ -177,7 +179,9 @@ json effectJson(const ReplayEffectEvent& effect)
         {"sourceActorId", effect.sourceActorId},
         {"targetActorId", effect.targetActorId},
         {"texturePath", effect.texturePath},
-        {"material", effect.materialName}
+        {"material", effect.materialName},
+        {"billboardText", effect.billboardText},
+        {"beam", effect.beam}
     };
     return entry;
 }

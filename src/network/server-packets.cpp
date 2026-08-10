@@ -576,9 +576,8 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
         float spawnYaw = 0.0f;
         if (world && !world->spawnPoints.empty())
         {
-            size_t idx = (id - 1) % world->spawnPoints.size();
-            spawnPos = effectiveServerSpawn(world->spawnPoints[idx].position);
-            spawnYaw = world->spawnPoints[idx].yaw;
+            size_t idx = 0;
+            serverPickSafeSpawn(world, id, spawnPos, spawnYaw, &idx);
             printf("%s [SERVER PLAYER SPAWN] reason=initial_join id=%u name=\"%s\" "
                    "spawnpoint=%zu position=(%.2f,%.2f,%.2f) yaw=%.1f\n",
                    serverTimestamp(), id, p.name.c_str(), idx,
@@ -1170,9 +1169,8 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         float spawnYaw = 0.0f;
         if (world && !world->spawnPoints.empty())
         {
-            size_t idx = (id - 1) % world->spawnPoints.size();
-            spawnPos = effectiveServerSpawn(world->spawnPoints[idx].position);
-            spawnYaw = world->spawnPoints[idx].yaw;
+            size_t idx = 0;
+            serverPickSafeSpawn(world, id, spawnPos, spawnYaw, &idx);
             printf("%s [SERVER PLAYER SPAWN] reason=join_request id=%u name=\"%s\" "
                    "spawnpoint=%zu position=(%.2f,%.2f,%.2f) yaw=%.1f token=%s\n",
                    serverTimestamp(), id, p.name.c_str(), idx,

@@ -37,7 +37,9 @@ namespace MimitaNet {
 // How long a killed online NPC stays dead before respawning at its spawn
 // point. Kept above the 180-tick (3s) fall-over death animation so clients see
 // the body freeze, fall over, and disappear before the NPC respawns.
-constexpr float SERVER_NPC_RESPAWN_SECONDS = 3.5f;
+// constexpr float SERVER_NPC_RESPAWN_SECONDS = 3.5f;
+// what if 8 10 2026 we set to be instant so we dont need anim to play before respawn 
+constexpr float SERVER_NPC_RESPAWN_SECONDS = 0.01f;
 
 void broadcastNpcDamageEvent(
     SOCKET sock,

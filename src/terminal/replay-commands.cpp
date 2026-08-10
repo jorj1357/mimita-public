@@ -204,32 +204,21 @@ void registerReplayCommands()
     });
 
     Terminal::instance().registerCommand({
-        "replay_save_instant", "Save the last ~60 seconds as an instant replay file",
+        "replay_save_instant", "Save the last 15 seconds as an instant replay file",
         "replay_save_instant",
         [](const std::vector<std::string>&) {
             if (!REPLAY_RECORDER.isRecording()) {
                 Terminal::instance().addLog("[ERROR] No replay recording active");
                 return;
             }
-            std::string path = generateInstantReplayPath();
-            if (!REPLAY_RECORDER.exportToJSON(path)) {
+            std::string path = saveInstantReplay(REPLAY_RECORDER, 15);
+            if (path.empty()) {
                 Terminal::instance().addLog("[ERROR] Failed to save instant replay");
                 return;
             }
-            size_t frameCount = REPLAY_RECORDER.frames().size();
-            size_t sceneCount = REPLAY_RECORDER.sceneFrames().size();
-            float duration = (float)frameCount / 60.0f;
-            char buf[128];
-            Terminal::instance().addLog("[REPLAY] Saved instant replay");
-            snprintf(buf, sizeof(buf), "[REPLAY] Frames saved: %zu", frameCount);
-            Terminal::instance().addLog(buf);
-            snprintf(buf, sizeof(buf), "[REPLAY] Scene frames: %zu", sceneCount);
-            Terminal::instance().addLog(buf);
-            snprintf(buf, sizeof(buf), "[REPLAY] Duration: %.1f sec", duration);
-            Terminal::instance().addLog(buf);
+            Terminal::instance().addLog("[REPLAY] Saved instant replay (last 15 seconds)");
             Terminal::instance().addLog("[REPLAY] File: " + path);
-            printf("[REPLAY] Saved instant replay: %s  frames=%zu  duration=%.1fs\n",
-                   path.c_str(), frameCount, duration);
+            printf("[REPLAY] Saved instant replay: %s\n", path.c_str());
         },
         std::string(), CommandCategory::Uncategorized, {"rpls"}
     });

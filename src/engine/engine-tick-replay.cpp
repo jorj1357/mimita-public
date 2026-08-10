@@ -384,6 +384,92 @@ void engineTickReplay(Engine& engine, float dt)
                 sceneFrame.actors.push_back(npcActor);
             }
             } // ReplayCaptureNPCs
+            // ── Remote players (client-server replicas) ────────────────
+            {
+            Perf::ScopedTimer _t("ReplayCaptureRemotePlayers");
+            for (const auto& kv : mpContext.remotePlayers) {
+                const Player& p = kv.second;
+                ReplayActorState actor;
+                actor.id = "remote_" + std::to_string(kv.first);
+                actor.name = p.username;
+                actor.type = p.dead ? "corpse" : "remote_player";
+                actor.modelPath = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
+                actor.position = p.pos;
+                actor.rotation = glm::vec3(0.0f, 0.0f, p.yaw);
+                actor.velocity = p.vel;
+                actor.health = p.currentHp;
+                actor.maxHealth = p.maxHp;
+                actor.dead = p.dead;
+                actor.grounded = p.ground.onGround;
+                actor.collidable = !p.dead;
+                actor.fade = 0.0f;
+                actor.sizeScale = p.sizeScale;
+                actor.characterName = p.characterName();
+                {
+                    const WeaponDefinition* wdef = weapons.getCurrentDef(p);
+                    if (wdef) {
+                        actor.weaponName = wdef->id;
+                        actor.weaponModelPath = wdef->modelPath;
+                    } else {
+                        actor.weaponName = "none";
+                        actor.weaponModelPath = "";
+                    }
+                    auto wit = p.weaponRuntimes.find(p.equippedWeaponId);
+                    if (wit != p.weaponRuntimes.end()) {
+                        actor.currentAmmo = wit->second.currentAmmo;
+                        actor.reserveAmmo = wit->second.reserveAmmo;
+                    }
+                }
+                actor.animationState = p.ground.onGround
+                    ? (glm::length(glm::vec2(p.vel.x, p.vel.y)) > 0.5f ? "move" : "idle")
+                    : "air";
+                actor.bodyParts = captureReplayBodyParts(p);
+                sceneFrame.actors.push_back(actor);
+            }
+            } // ReplayCaptureRemotePlayers
+            // ── Remote NPCs (server-simulated replicas) ────────────────
+            {
+            Perf::ScopedTimer _t("ReplayCaptureRemoteNpcs");
+            for (const auto& kv : mpContext.remoteNpcs) {
+                const Player& p = kv.second;
+                ReplayActorState actor;
+                actor.id = "rnpc_" + std::to_string(kv.first);
+                actor.name = p.username;
+                actor.type = p.dead ? "corpse" : "remote_npc";
+                actor.modelPath = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
+                actor.position = p.pos;
+                actor.rotation = glm::vec3(0.0f, 0.0f, p.yaw);
+                actor.velocity = p.vel;
+                actor.health = p.currentHp;
+                actor.maxHealth = p.maxHp;
+                actor.dead = p.dead;
+                actor.grounded = p.ground.onGround;
+                actor.collidable = !p.dead;
+                actor.fade = 0.0f;
+                actor.sizeScale = p.sizeScale;
+                actor.characterName = p.characterName();
+                {
+                    const WeaponDefinition* wdef = weapons.getCurrentDef(p);
+                    if (wdef) {
+                        actor.weaponName = wdef->id;
+                        actor.weaponModelPath = wdef->modelPath;
+                    } else {
+                        actor.weaponName = "none";
+                        actor.weaponModelPath = "";
+                    }
+                    auto wit = p.weaponRuntimes.find(p.equippedWeaponId);
+                    if (wit != p.weaponRuntimes.end()) {
+                        actor.currentAmmo = wit->second.currentAmmo;
+                        actor.reserveAmmo = wit->second.reserveAmmo;
+                    }
+                }
+                actor.animationState = p.ground.onGround
+                    ? (glm::length(glm::vec2(p.vel.x, p.vel.y)) > 0.5f ? "move" : "idle")
+                    : "air";
+                actor.bodyParts = captureReplayBodyParts(p);
+                sceneFrame.actors.push_back(actor);
+            }
+            } // ReplayCaptureRemoteNpcs
             // ── Godball ────────────────────────────────────────────────
             if (weapons.godballPhysics().active) {
                 const auto& gb = weapons.godballPhysics();

@@ -198,6 +198,107 @@ void resolveWorldCollision(ServerPlayer& p, const HeadlessWorld& world)
     // void-death threshold.  Actual collision triangles handle platforms.
 }
 
+// Returns true when a player capsule centered at `pos` does not penetrate any
+// world triangle. Uses the same sample-based capsule check as
+// resolveWorldCollision, so a spawn spot passes iff the real collision solver
+// would leave the player standing there instead of wedging it.
+static bool serverCapsuleFits(const HeadlessWorld& world, const glm::vec3& pos)
+{
+    glm::vec3 samples[3] = {
+        pos + glm::vec3(0.0f, 0.0f, -PLAYER_HEIGHT * 0.5f + PLAYER_RADIUS),
+        pos,
+        pos + glm::vec3(0.0f, 0.0f, PLAYER_HEIGHT * 0.5f - PLAYER_RADIUS)
+    };
+    for (glm::vec3 sample : samples)
+    {
+        AABB queryBounds;
+        queryBounds.min = sample - glm::vec3(PLAYER_RADIUS + 0.1f);
+        queryBounds.max = sample + glm::vec3(PLAYER_RADIUS + 0.1f);
+        thread_local std::vector<int> s_candidates;
+        s_candidates.clear();
+        gatherHeadlessTrianglesForAABB(world, queryBounds, PLAYER_RADIUS * 0.1f, s_candidates);
+        for (int triIdx : s_candidates)
+        {
+            if (triIdx < 0 || triIdx >= (int)world.triangles.size())
+                continue;
+            const CollisionTriangle& tri = world.triangles[triIdx];
+            glm::vec3 cp = closestPointTriangle(sample, tri.a, tri.b, tri.c);
+            float dist = glm::length(sample - cp);
+            if (dist < PLAYER_RADIUS && dist >= 0.00001f)
+                return false;
+        }
+    }
+    return true;
+}
+
+void serverPickSafeSpawn(const HeadlessWorld* world, uint32_t playerId,
+                         glm::vec3& outPos, float& outYaw, size_t* outIndex)
+{
+    if (outIndex)
+        *outIndex = 0;
+
+    // Host spawn override: the host explicitly chose this spot — trust it.
+    const ServerGameOverrides& ov = serverGameOverrides();
+    if (ov.spawnOverrideEnabled)
+    {
+        outPos = ov.spawnOverridePosition;
+        if (world && !world->spawnPoints.empty())
+            outYaw = world->spawnPoints[(playerId - 1) % world->spawnPoints.size()].yaw;
+        else
+            outYaw = 0.0f;
+        return;
+    }
+
+    if (!world || world->spawnPoints.empty())
+    {
+        outPos = {1.0f + (float)(playerId - 1) * 1.5f, 5.0f, 30.0f};
+        outYaw = 0.0f;
+        return;
+    }
+
+    const std::vector<ServerSpawnPoint>& points = world->spawnPoints;
+    const size_t defaultIdx = (playerId - 1) % points.size();
+
+    for (size_t k = 0; k < points.size(); ++k)
+    {
+        const size_t idx = (defaultIdx + k) % points.size();
+        const glm::vec3 cand = points[idx].position;
+
+        // The capsule must fit at the spawn point itself (embedded spawns).
+        if (!serverCapsuleFits(*world, cand))
+            continue;
+
+        // The player must be able to STAND after spawning: raycast down to the
+        // nearest surface and verify the standing capsule fits. This rejects
+        // spawns that drop the player into a narrow shaft/spire where the
+        // capsule cannot move horizontally (the reported "stuck at spawn" bug).
+        glm::vec3 hit, nrm;
+        const glm::vec3 origin = cand + glm::vec3(0.0f, 0.0f, 0.5f);
+        if (!serverRaycastWorld(origin, glm::vec3(0.0f, 0.0f, -1.0f), 200.0f,
+                                *world, hit, nrm))
+            continue;  // no ground below (void)
+        const glm::vec3 standing(cand.x, cand.y, hit.z + PLAYER_HEIGHT * 0.5f);
+        if (!serverCapsuleFits(*world, standing))
+            continue;
+
+        outPos = cand;
+        outYaw = points[idx].yaw;
+        if (outIndex)
+            *outIndex = idx;
+        return;
+    }
+
+    // No safe spawn found — fall back to today's behavior so maps never break.
+    const ServerSpawnPoint& fb = points[defaultIdx];
+    outPos = fb.position;
+    outYaw = fb.yaw;
+    if (outIndex)
+        *outIndex = defaultIdx;
+    Debug::warn(Debug::Category::Networking,
+        "[SPAWN SAFETY] playerId=%u all %zu spawn points unsafe — using default idx=%zu\n",
+        playerId, points.size(), defaultIdx);
+}
+
 // ═══ Player‑to‑player de‑penetration ═══════════════════════════════
 // TEMPORARY: active client‑controlled players use validated client‑transform
 // authority.  Direct server positional pushes conflict with that model
@@ -447,9 +548,7 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
             float respawnYaw = 0.0f;
             if (!world.spawnPoints.empty())
             {
-                size_t idx = (p.id - 1) % world.spawnPoints.size();
-                respawnPos = effectiveServerSpawn(world.spawnPoints[idx].position);
-                respawnYaw = world.spawnPoints[idx].yaw;
+                serverPickSafeSpawn(&world, p.id, respawnPos, respawnYaw);
             }
             else
             {

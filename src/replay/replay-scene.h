@@ -138,6 +138,8 @@ struct ReplayEffectEvent {
     std::string targetActorId;
     std::string texturePath;
     std::string materialName;
+    bool billboardText = false;
+    bool beam = false;
 };
 
 struct ReplayKillfeedEvent {
