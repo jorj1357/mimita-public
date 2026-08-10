@@ -160,19 +160,35 @@ std::string makeCmdKArgs(const std::string& cmd)
     return "/k \"" + cmd + "\"";
 }
 
-static void debugLaunchFfmpegVisible(const std::string& cmd)
+static bool launchTerminal(const std::string& cmd)
 {
-    std::string args = makeCmdKArgs(cmd);
-    EXPORTTRACE("ShellExecuteA params EXACT=%s %s", "cmd.exe", args.c_str());
-    HINSTANCE h = ShellExecuteA(NULL, "open", "cmd.exe", args.c_str(), NULL, SW_SHOWNORMAL);
-    INT_PTR result = (INT_PTR)h;
-    if (result <= 32) {
-        DWORD err = GetLastError();
-        EXPORTTRACE_CRASH("ShellExecuteA FAILED result=%lld GetLastError=%lu",
-               (long long)result, (unsigned long)err);
-    } else {
-        EXPORTTRACE("Launched ffmpeg in visible cmd window. Close when done.");
+    const char* terminals[] = {
+        "x-terminal-emulator",
+        "gnome-terminal",
+        "konsole",
+        "xfce4-terminal",
+        "mate-terminal",
+        "alacritty",
+        "kitty",
+        "wezterm"
+    };
+
+    for (const char* terminal : terminals) {
+        if (std::system((std::string("command -v ") + terminal + " >/dev/null 2>&1").c_str()) == 0) {
+            std::string launch;
+
+            if (!std::strcmp(terminal, "gnome-terminal"))
+                launch = std::string(terminal) + " -- sh -c '" + cmd + "; read'";
+            else if (!std::strcmp(terminal, "konsole"))
+                launch = std::string(terminal) + " -e sh -c '" + cmd + "; read'";
+            else
+                launch = std::string(terminal) + " -e sh -c '" + cmd + "; read'";
+
+            return std::system(launch.c_str()) == 0;
+        }
     }
+
+    return false;
 }
 
 std::string defaultFfmpegPath()

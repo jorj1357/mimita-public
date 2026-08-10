@@ -13,6 +13,10 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <shellapi.h>
+#else
+#include <sys/wait.h>
+#include <cerrno>
+#include <unistd.h>
 #endif
 
 #include "nlohmann/json.hpp"
@@ -119,80 +123,62 @@ void pollOutroConfig()
     }
 }
 
-// Execute a Windows process with CreateProcessW and capture stdout.
-// Returns exit code. Sets stdoutBuf to captured output.
-// Does NOT use cmd.exe — no shell interpretation.
-static int runProcessCaptureStdout(const std::string& exePath, const std::string& args, std::string& stdoutBuf)
+// Execute a process with fork/exec and capture stdout.
+// Returns exit code (or -1 on failure to launch). Sets stdoutBuf to captured output.
+// Does NOT go through a shell — no shell interpretation, args passed directly.
+static int runProcessCaptureStdout(const std::string& exePath, const std::vector<std::string>& args, std::string& stdoutBuf)
 {
     stdoutBuf.clear();
 
-    // Build command line for CreateProcessW: executable + args
-    std::wstring cmdLine = L"\"" + std::wstring(exePath.begin(), exePath.end()) + L"\" " + std::wstring(args.begin(), args.end());
-
-    // Create pipes for stdout
-    HANDLE hReadPipe = NULL, hWritePipe = NULL;
-    SECURITY_ATTRIBUTES sa = { sizeof(SECURITY_ATTRIBUTES), NULL, TRUE };
-    if (!CreatePipe(&hReadPipe, &hWritePipe, &sa, 65536))
-    {
-        Debug::log(Debug::Category::Replay, "[OUTRO CMD] CreatePipe failed\n");
-        return -1;
-    }
-    SetHandleInformation(hReadPipe, HANDLE_FLAG_INHERIT, 0);
-
-    PROCESS_INFORMATION pi = { 0 };
-    STARTUPINFOW si = { 0 };
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESTDHANDLES;
-    si.hStdOutput = hWritePipe;
-    si.hStdError = GetStdHandle(STD_ERROR_HANDLE); // let stderr go to parent's stderr
-    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-
-    // Mutable copy for CreateProcessW
-    std::vector<wchar_t> mutableCmd(cmdLine.begin(), cmdLine.end());
-    mutableCmd.push_back(L'\0');
-
-    BOOL created = CreateProcessW(
-        NULL,                  // lpApplicationName (NULL = use cmdline)
-        mutableCmd.data(),     // lpCommandLine
-        NULL,                  // lpProcessAttributes
-        NULL,                  // lpThreadAttributes
-        TRUE,                  // bInheritHandles
-        0,                     // dwCreationFlags
-        NULL,                  // lpEnvironment
-        NULL,                  // lpCurrentDirectory
-        &si,                   // lpStartupInfo
-        &pi                    // lpProcessInformation
-    );
-
-    CloseHandle(hWritePipe);
-
-    if (!created)
-    {
-        DWORD err = GetLastError();
-        Debug::log(Debug::Category::Replay, "[OUTRO CMD] CreateProcessW failed (error=%lu)\n", (unsigned long)err);
-        CloseHandle(hReadPipe);
+    int pipefd[2];
+    if (pipe(pipefd) != 0) {
+        Debug::log(Debug::Category::Replay, "[OUTRO CMD] pipe() failed errno=%d\n", errno);
         return -1;
     }
 
-    // Read stdout
+    pid_t pid = fork();
+    if (pid < 0) {
+        Debug::log(Debug::Category::Replay, "[OUTRO CMD] fork() failed errno=%d\n", errno);
+        close(pipefd[0]);
+        close(pipefd[1]);
+        return -1;
+    }
+
+    if (pid == 0) {
+        // Child: stdout -> write end of pipe, stderr/stdin inherited from parent.
+        close(pipefd[0]);
+        dup2(pipefd[1], STDOUT_FILENO);
+        close(pipefd[1]);
+
+        std::vector<char*> argv;
+        argv.push_back(const_cast<char*>(exePath.c_str()));
+        for (const std::string& a : args)
+            argv.push_back(const_cast<char*>(a.c_str()));
+        argv.push_back(nullptr);
+
+        execv(exePath.c_str(), argv.data());
+        _exit(127); // execv only returns on failure
+    }
+
+    // Parent
+    close(pipefd[1]);
     char buf[4096];
-    DWORD bytesRead = 0;
-    while (ReadFile(hReadPipe, buf, sizeof(buf) - 1, &bytesRead, NULL) && bytesRead > 0)
-    {
+    ssize_t bytesRead;
+    while ((bytesRead = read(pipefd[0], buf, sizeof(buf) - 1)) > 0) {
         buf[bytesRead] = '\0';
-        stdoutBuf += buf;
+        stdoutBuf.append(buf, bytesRead);
     }
+    close(pipefd[0]);
 
-    CloseHandle(hReadPipe);
-
-    // Wait for process to finish
-    WaitForSingleObject(pi.hProcess, INFINITE);
-    DWORD exitCode = 0;
-    GetExitCodeProcess(pi.hProcess, &exitCode);
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-
-    return (int)exitCode;
+    int status = 0;
+    waitpid(pid, &status, 0);
+    if (WIFEXITED(status))
+        return WEXITSTATUS(status);
+    if (WIFSIGNALED(status)) {
+        Debug::log(Debug::Category::Replay, "[OUTRO CMD] process killed by signal %d\n", WTERMSIG(status));
+        return -1;
+    }
+    return -1;
 }
 
 static double probeDuration(const std::string& path)
@@ -200,17 +186,22 @@ static double probeDuration(const std::string& path)
     std::string absInput = absPath(path);
     std::string exePath = ffprobeExe();
 
-    std::string args;
-    {
-        char buf[2048];
-        std::snprintf(buf, sizeof(buf),
-                      "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"%s\"",
-                      absInput.c_str());
-        args = buf;
-    }
+    std::vector<std::string> args = {
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        absInput
+    };
 
     Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe exe=%s\n", exePath.c_str());
-    Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe args=%s\n", args.c_str());
+    std::string argsLog;
+    for (const auto& arg : args)
+        argsLog += arg + " ";
+
+    Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe args=%s\n", argsLog.c_str());
     Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe exe exists=%d\n", (int)std::filesystem::exists(exePath));
 
     std::string stdoutBuf;
@@ -231,7 +222,7 @@ static double probeDuration(const std::string& path)
     return dur;
 }
 
-static bool runFfmpeg(const std::string& args, int& outExitCode, std::string& outStdout)
+static bool runFfmpeg(const std::vector<std::string>& args, int& outExitCode, std::string& outStdout)
 {
     outExitCode = runProcessCaptureStdout(ffmpegExe(), args, outStdout);
     return outExitCode == 0;
@@ -239,11 +230,14 @@ static bool runFfmpeg(const std::string& args, int& outExitCode, std::string& ou
 
 static bool probeResolution(const std::string& path, int& outW, int& outH)
 {
-    char buf[2048];
-    std::snprintf(buf, sizeof(buf),
-                  "-v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=1 \"%s\"",
-                  path.c_str());
-    std::string args = buf;
+    std::vector<std::string> args = {
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height",
+        "-of", "csv=s=x:p=1",
+        path
+    };
+
     std::string stdoutBuf;
     int exitCode = runProcessCaptureStdout(ffprobeExe(), args, stdoutBuf);
     outW = 0; outH = 0;
@@ -332,20 +326,33 @@ void appendOutroToFinishedMp4(const char* replayMp4Path)
     // ---- STAGE 1: Normalize outro to match replay resolution/codec ----
     std::string normalizedOutro = tmpDir + "\\outro_normalized.mp4";
 
-    char stage1Args[4096];
-    std::snprintf(stage1Args, sizeof(stage1Args),
-        "-y -i \"%s\" -c:v libx264 -preset fast -pix_fmt yuv420p -crf 18 "
-        "-c:a aac -b:a 192k "
-        "-vf \"scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2\" "
-        "-loglevel error \"%s\"",
-        outroPath.c_str(), replayW, replayH, replayW, replayH, normalizedOutro.c_str());
+    
+    std::vector<std::string> stage1Args = {
+        "-y",
+        "-i", outroPath,
+        "-c:v", "libx264",
+        "-preset", "fast",
+        "-pix_fmt", "yuv420p",
+        "-crf", "18",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-vf", "scale=" + std::to_string(replayW) + ":" + std::to_string(replayH) +
+               ":force_original_aspect_ratio=decrease,pad=" +
+               std::to_string(replayW) + ":" + std::to_string(replayH) +
+               ":(ow-iw)/2:(oh-ih)/2",
+        "-loglevel", "error",
+        normalizedOutro
+    };
 
-    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] stage1 args=%s\n", stage1Args);
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] stage1 args:\n");
+    for (const auto& arg : stage1Args)
+        Debug::log(Debug::Category::Replay, "  %s\n", arg.c_str());
 
     int stage1Exit = 0;
     std::string stage1Out;
     bool stage1Ok = runFfmpeg(stage1Args, stage1Exit, stage1Out);
     Debug::log(Debug::Category::Replay, "[OUTRO APPEND] stage1 exit=%d\n", stage1Exit);
+
 
     if (!stage1Ok)
     {
@@ -372,19 +379,25 @@ void appendOutroToFinishedMp4(const char* replayMp4Path)
         list.close();
     }
 
-    char stage2Args[4096];
-    std::snprintf(stage2Args, sizeof(stage2Args),
-        "-y -f concat -safe 0 -i \"%s\" -c copy -bsf:v h264_mp4toannexb -loglevel error \"%s\"",
-        concatListPath.c_str(), outputPath.c_str());
+    std::vector<std::string> stage2Args = {
+        "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", concatListPath,
+        "-c", "copy",
+        "-bsf:v", "h264_mp4toannexb",
+        "-loglevel", "error",
+        outputPath
+    };
 
-    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] stage2 args=%s\n", stage2Args);
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] stage2 args:\n");
+    for (const auto& arg : stage2Args)
+        Debug::log(Debug::Category::Replay, "  %s\n", arg.c_str());
 
     int stage2Exit = 0;
     std::string stage2Out;
     bool stage2Ok = runFfmpeg(stage2Args, stage2Exit, stage2Out);
-    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] stage2 exit=%d\n", stage2Exit);
-
-    if (!stage2Ok)
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] stage2 exit=%d\n", stage2Exit);    if (!stage2Ok)
     {
         Debug::log(Debug::Category::Replay, "[OUTRO APPEND] stage2 failed (concat)\n");
         hardFail = true;

@@ -11,7 +11,7 @@
 #pragma once
 
 #include <glm/glm.hpp>
-
+#include <glad/glad.h>
 struct World;
 class Camera;
 class Terminal; // forward decl for dump functions

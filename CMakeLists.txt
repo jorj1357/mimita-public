@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 project(mimita_hot_reload LANGUAGES C CXX)
 
 
-# nix-shell -p cmake pkg-config wayland libxkbcommon
+#nix-shell -p cmake pkg-config wayland libxkbcommon libGL libglvnd libffi
 # this is for nixos or smthing '~`
 #
 find_package(OpenGL REQUIRED)
@@ -42,6 +42,8 @@ file(GLOB_RECURSE GAME_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_SOURCE_DIR}/src/*.cpp"
 )
 
+list(FILTER GAME_SOURCES EXCLUDE REGEX ".*/effects/effect-part\\.cpp$")
+
 add_library(mimita-game SHARED ${GAME_SOURCES})
 
 target_compile_features(mimita-game PRIVATE cxx_std_17)
@@ -66,14 +68,20 @@ target_link_libraries(mimita-game PRIVATE
     glad
     glfw
     OpenGL::GL
+    dl
 )
 add_executable(mimita
     src/main.cpp
+    src/effects/effect-part.cpp
 )
 target_include_directories(mimita PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
 )
-target_link_libraries(mimita PRIVATE 
+target_link_libraries(mimita PRIVATE
     mimita-game
+    glfw
+    glad
+    OpenGL::GL
+    dl
 )

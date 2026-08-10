@@ -2,10 +2,11 @@
 // jan 25 2026 small clean refactor
 
 #pragma once
-#ifndef GLFW_INCLUDE_NONE
+
+
 #define GLFW_INCLUDE_NONE
-#endif
-#include "glad/glad.h"
+#include <glad/glad.h>
+#define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
 struct Renderer {

@@ -3,12 +3,17 @@
 
 #include <cstdio>
 #include <cstring>
+#include <cstdarg>
+#include <ctime>
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #ifdef _WIN32
 #include <windows.h>
 #include <shellapi.h>
+#else
+#include <unistd.h>
+#include <cerrno>
 #endif
 
 #include "replay/replay-export.h"
@@ -57,6 +62,37 @@ static void playReplayByPath(const std::string& path) {
     printf("[REPLAY] playing %s\n", path.c_str());
     Terminal::instance().addLog("[REPLAY] playing " + path);
 }
+
+#ifndef _WIN32
+// Best-effort equivalent of "ShellExecuteA(cmd.exe, visible)" on Linux: tries a
+// handful of common terminal emulators and runs cmd inside one, keeping the
+// window open afterwards so output is visible.
+static bool launchInVisibleTerminal(const std::string& cmd)
+{
+    static const char* terminals[] = {
+        "x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal", "xterm"
+    };
+    std::string shellCmd = cmd + "; echo; read -p 'Press enter to close...'";
+    for (const char* term : terminals) {
+        std::string which = std::string("command -v ") + term + " >/dev/null 2>&1";
+        if (std::system(which.c_str()) != 0) {
+            CMDTRACE("terminal not found: %s", term);
+            continue;
+        }
+        pid_t pid = MimitaNet::fork();
+        if (pid == 0) {
+            MimitaNet::execlp(term, term, "-e", "bash", "-c", shellCmd.c_str(), (char*)nullptr);
+            MimitaNet::_exit(127); // execlp only returns on failure
+        } else if (pid > 0) {
+            CMDTRACE("launched terminal: %s (pid=%d)", term, (int)pid);
+            return true;
+        } else {
+            CMDTRACE("fork() failed for terminal: %s errno=%d", term, errno);
+        }
+    }
+    return false;
+}
+#endif
 
 void registerReplayCommands()
 {
@@ -507,6 +543,7 @@ void registerReplayCommands()
             CMDTRACE("ffmpeg exists OK");
             Terminal::instance().addLog("[FFMPEG TEST] launching in visible window: " + ffmpeg);
             std::string cmd = "\"" + ffmpeg + "\" -version";
+#ifdef _WIN32
             std::string launchArgs = makeCmdKArgs(cmd);
             CMDTRACE("ShellExecuteA params EXACT=%s %s", "cmd.exe", launchArgs.c_str());
             CMDTRACE("Calling ShellExecuteA...");
@@ -519,6 +556,14 @@ void registerReplayCommands()
             } else {
                 CMDTRACE("ShellExecuteA SUCCESS (cmd window should be open)");
             }
+#else
+            if (!launchInVisibleTerminal(cmd)) {
+                CMDTRACE("terminal launch FAILED");
+                Terminal::instance().addLog("[ERROR] could not find a terminal emulator to launch ffmpeg in");
+            } else {
+                CMDTRACE("terminal launch SUCCESS (window should be open)");
+            }
+#endif
         }
     });
 
@@ -541,6 +586,7 @@ void registerReplayCommands()
                 "-c:v libx264 -preset fast -pix_fmt yuv420p -crf 18"
                 " \"" + nativeOutput + "\"";
             CMDTRACE("command: %s", cmd.c_str());
+#ifdef _WIN32
             std::string launchArgs = makeCmdKArgs(cmd);
             CMDTRACE("ShellExecuteA params EXACT=%s %s", "cmd.exe", launchArgs.c_str());
             HINSTANCE h = ShellExecuteA(NULL, "open", "cmd.exe", launchArgs.c_str(), NULL, SW_SHOWNORMAL);
@@ -550,6 +596,13 @@ void registerReplayCommands()
             } else {
                 CMDTRACE("ShellExecuteA SUCCESS");
             }
+#else
+            if (!launchInVisibleTerminal(cmd)) {
+                CMDTRACE("terminal launch FAILED");
+            } else {
+                CMDTRACE("terminal launch SUCCESS");
+            }
+#endif
         }
     });
 
@@ -573,6 +626,7 @@ void registerReplayCommands()
                 "-crf 18 \"" + nativeOutput + "\"";
             CMDTRACE("EXACT EXPORT COMMAND: %s", cmd.c_str());
             CMDTRACE("output path: %s", nativeOutput.c_str());
+#ifdef _WIN32
             std::string launchArgs = makeCmdKArgs(cmd);
             CMDTRACE("ShellExecuteA params EXACT=%s %s", "cmd.exe", launchArgs.c_str());
             HINSTANCE h = ShellExecuteA(NULL, "open", "cmd.exe", launchArgs.c_str(), NULL, SW_SHOWNORMAL);
@@ -582,6 +636,13 @@ void registerReplayCommands()
             } else {
                 CMDTRACE("ShellExecuteA SUCCESS - cmd window shows ffmpeg waiting for stdin");
             }
+#else
+            if (!launchInVisibleTerminal(cmd)) {
+                CMDTRACE("terminal launch FAILED");
+            } else {
+                CMDTRACE("terminal launch SUCCESS - window shows ffmpeg waiting for stdin");
+            }
+#endif
         }
     });
 
@@ -613,6 +674,7 @@ void registerReplayCommands()
             CMDTRACE("ffmpeg command: %s", cmd.c_str());
             Terminal::instance().addLog("[FFMPEG TEST OUTPUT] command: " + cmd);
             Terminal::instance().addLog("[FFMPEG TEST OUTPUT] output: " + nativeOutput);
+#ifdef _WIN32
             std::string launchArgs = makeCmdKArgs(cmd);
             CMDTRACE("ShellExecuteA params EXACT=%s %s", "cmd.exe", launchArgs.c_str());
             HINSTANCE h = ShellExecuteA(NULL, "open", "cmd.exe", launchArgs.c_str(), NULL, SW_SHOWNORMAL);
@@ -624,6 +686,14 @@ void registerReplayCommands()
             } else {
                 CMDTRACE("ShellExecuteA SUCCESS (cmd window should be open)");
             }
+#else
+            if (!launchInVisibleTerminal(cmd)) {
+                CMDTRACE("terminal launch FAILED");
+                Terminal::instance().addLog("[ERROR] could not find a terminal emulator to launch ffmpeg in");
+            } else {
+                CMDTRACE("terminal launch SUCCESS (window should be open)");
+            }
+#endif
         }
     });
 

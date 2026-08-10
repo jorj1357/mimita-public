@@ -8,7 +8,7 @@
 // Your basic.vert / basic.frag stay exactly how they are
 
 #define GLFW_INCLUDE_NONE
-#include <glad/gl.h>
+#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <cstdio>
 #include <fstream>
