@@ -1,8 +1,9 @@
 // 08 10 2026, 14 34
 /* purpose
-* Owns the client-side duels queue: join/poll the coordinator matchmaker,
-* drive the sandbox-practice wait, connect to a matched opponent, and present
-* the live duel state to the HUD.
+* Owns the client-side duels queue: launches your own duel server (online mode
+* from the start), polls the coordinator matchmaker, connects to a matched
+* opponent, tracks the downtime stopwatch, and presents the duel state to the
+* HUD.
 * Works for guests AND accounts - no auth required to queue.
 * Does NOT run the authoritative duel simulation (that is server-side).
 * Does NOT persist match history (see duel-history.h).
@@ -25,13 +26,12 @@
 enum class DuelQueueState
 {
     Idle,
-    Queuing,        // sandbox practice while waiting for a match
-    MatchFound,     // "match found!!!!!!!!" banner; about to connect
-    HostLaunching,  // host: launching the duel server, waiting for its room code
-    Connecting,     // ICE connection to the opponent's server in progress
+    Queuing,        // in your own online duel server, waiting for a match
+    MatchFound,     // matched; host waits for the opponent to join
+    Connecting,     // client connecting to the host's server
     InDuel,         // actively fighting
     MatchEnd,       // win/lose screen + rematch window
-    Failed          // transient failure; auto re-queues
+    Failed          // transient issue; visible status + auto retry
 };
 
 class DuelQueue
@@ -44,9 +44,9 @@ public:
                     const std::vector<std::string>& maps);
     // Stable identity used for the queue + rematch, works for guests and accounts.
     static std::string defaultProfileId();
-    // Leave the queue entirely and return to the main menu.
+    // Leave the queue entirely (stops the queue server) and return to the menu.
     void stopQueue();
-    // Leave the current match and re-enter the queue (sandbox practice again).
+    // Leave the current match and re-enter the queue (fresh queue server).
     void returnToQueue();
 
     // Main-thread per-frame update.
@@ -56,23 +56,23 @@ public:
     void onDuelState(const MimitaNet::DuelStatePacket& pkt);
     void onDuelEnemySpawn(const MimitaNet::DuelEnemySpawnPacket& pkt);
 
-    // Host flow: room code read from the launched server's room file.
-    void onHostRoomCodeReady(const std::string& roomCode);
-
-    // World/NPC sandbox handoff flags consumed by engine-tick-state.
-    bool wantsSandbox() const { return mWantsSandbox; }
-    void clearSandboxFlag() { mWantsSandbox = false; }
+    // World/map handoff flags consumed by engine-tick-state.
+    bool wantsChosenMap() const { return mWantsChosenMap; }
+    void clearChosenMapFlag() { mWantsChosenMap = false; }
     bool wantsMatchMap() const { return mWantsMatchMap; }
     void clearMatchMapFlag() { mWantsMatchMap = false; }
     std::string matchMapName() const { return mMapName; }
 
     // ── HUD accessors ────────────────────────────────────────────────
     bool isActive() const { return mState != DuelQueueState::Idle; }
-    bool isHostLaunching() const { return mState == DuelQueueState::HostLaunching; }
     DuelQueueState state() const { return mState; }
-    float queueElapsed() const { return mQueueElapsed; }
+    // The downtime stopwatch: seconds NOT actively fighting. Resets each fight.
+    float queueElapsed() const { return mDowntime; }
+    float downtime() const { return mDowntime; }
+    float lastDowntime() const { return mLastDowntime; }
     std::string statusText() const { return mStatusText; }
     std::string opponentName() const { return mOpponentName; }
+    std::string playerName() const { return mName; }
     bool matchFoundBanner() const { return mMatchFoundBanner; }
     std::string profileId() const { return mProfileId; }
 
@@ -94,7 +94,13 @@ public:
 
     void requestRematch();
     void requestRematchWith(const std::string& opponentId);
+    // Send PACKET_DUEL_REMATCH_REQUEST to skip the rematch timer (Space key).
+    void requestRematchNow();
+    // Server broadcast the map changed live (PACKET_MAP_CHANGE).
+    void onMapChange(const std::string& mapId);
     std::string lastOpponentId() const { return mLastOpponentId; }
+    // The random map picked from the pool when this player queued.
+    std::string chosenMap() const { return mChosenMap; }
 
 private:
     DuelQueue() = default;
@@ -106,22 +112,31 @@ private:
     void endPolling();
     void handleHostMatch();
     void handleClientMatch();
+    void loadChosenMap();
     void loadMatchMap();
-    void enterSandbox();
     void recordHistoryOnce();
     void failToQueue(const char* reason);
+    // Re-join the coordinator with the still-running queue server (no relaunch).
+    void rejoinQueue();
+    // update() sub-steps (one per state) so each function stays small.
+    void updateQueuing(float dt);
+    void updateMatchFound(float dt);
+    void updateConnecting(float dt);
+    void updateInDuel(float dt);
+    void updateFailed(float dt);
 
     // Identity / queue
     std::string mProfileId;
     std::string mName;
     std::string mPreferOpponent;
     std::vector<std::string> mMaps;
+    std::string mChosenMap;
 
     // Shared with the poll thread (mutex guarded)
     std::mutex mSharedMutex;
     std::string mTicketId;
     std::string mMatchId;
-    std::string mRoomCode;
+    std::string mRoomCode;      // host's room code when matched as client
     bool mPendingHost = false;
     bool mPendingClient = false;
     bool mCancelled = false;
@@ -129,7 +144,10 @@ private:
 
     // Main-thread state
     DuelQueueState mState = DuelQueueState::Idle;
-    float mQueueElapsed = 0.0f;
+    float mDowntime = 0.0f;
+    float mLastDowntime = 0.0f;
+    bool mWasFighting = false;
+    uint8_t mDuelPhase = MimitaNet::DUEL_PHASE_WAITING;
     std::string mStatusText;
     std::string mOpponentName;
     std::string mMapName;
@@ -140,8 +158,18 @@ private:
     float mFailedTimer = 0.0f;
     bool mHost = false;
 
-    // Sandbox / map handoff
-    bool mWantsSandbox = false;
+    // Queue server lifecycle (started at queue time, online mode from the start)
+    std::string mQueueRoomCode;
+    bool mServerConnectStarted = false;
+    bool mQueueServerConnected = false;
+    bool mJoinedCoordinator = false;
+    float mJoinRetryTimer = 0.0f;
+    uint64_t mServerConnectStartMs = 0;
+    // When the client became connected to the host (waiting for the countdown).
+    uint64_t mConnectedSinceMs = 0;
+
+    // Map handoff
+    bool mWantsChosenMap = false;
     bool mWantsMatchMap = false;
 
     // Match view

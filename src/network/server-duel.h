@@ -13,6 +13,8 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 #include <glm/glm.hpp>
 
@@ -51,6 +53,13 @@ struct ServerDuelState
     uint32_t pendingVictimId = 0;
     // Periodic DuelState broadcast cadence so clients can detect a dead server.
     uint32_t lastBroadcastTick = 0;
+    // Live map rotation (auto on rematch) + manual changemap request.
+    std::vector<std::string> mapPool;
+    bool rotateMaps = false;
+    bool hasPendingManualMap = false;
+    std::string pendingManualMap;
+    // Server's current loaded map (name only, for HUD/logging).
+    std::string mapId;
 };
 
 // Singleton duel state for the current server process.
@@ -60,9 +69,15 @@ ServerDuelState& serverDuelState();
 void serverDuelStart(const ServerDuelState& rules);
 
 // Called every server tick while the server runs in duel mode.
+// `npcs`/`npcSystem`/`npcIdsAlive` let the engine drop the practice NPC(s)
+// the moment the real duel starts (both players active).
 void serverDuelTick(SOCKET sock,
                     std::unordered_map<uint32_t, ServerPlayer>& players,
-                    const HeadlessWorld& world,
+                    HeadlessWorld& world,
+                    World& npcWorld,
+                    std::unordered_map<uint32_t, ServerNpc>& npcs,
+                    NpcSystem& npcSystem,
+                    std::unordered_set<uint32_t>& npcIdsAlive,
                     uint32_t tick,
                     uint64_t& totalPacketsOut);
 
@@ -71,5 +86,12 @@ void serverDuelTick(SOCKET sock,
 // tracer broadcast to the next serverDuelTick.
 void serverDuelOnPlayerDeath(uint32_t killerPlayerId,
                              uint32_t victimPlayerId);
+
+// A player pressed Space on the win/lose screen: skip the rematch timer and
+// start the next duel immediately (next tick).
+void serverDuelRematchNow();
+
+// Host-only changemap command: reload the given map live on the next tick.
+void serverDuelRequestMapChange(const std::string& mapId);
 
 } // namespace MimitaNet

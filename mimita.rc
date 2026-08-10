@@ -1,0 +1,4 @@
+// mimita.rc — Resource script for mimita.exe
+// Embeds the game icon so the running game shows it in the taskbar (GLFW
+// windows inherit the exe's icon). Numeric ID 1 = the application icon.
+1 ICON "assets/uitextures/mimita desktop icon v1.ico"

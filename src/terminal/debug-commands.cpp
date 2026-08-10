@@ -14,6 +14,7 @@
 #include "gui/hud/player-nameplates.h"
 #include "gui/gui-bindings.h"
 #include "network/server.h"
+#include "network/server-duel.h"
 
 void registerDebugCommands()
 {
@@ -289,6 +290,36 @@ void registerDebugCommands()
             Terminal::instance().addLog("[HEALTHALL] HOST ONLY — run this on the server host (or while connected to your own server).");
         },
         "2026-07-30", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "changemap",
+        "Change the map live without restarting the server. Host only. Syntax: changemap <map>",
+        "changemap <map>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[CHANGEMAP] Usage: changemap <map>  (e.g. changemap funworld3)");
+                return;
+            }
+            const std::string mapId = args[0];
+
+            if (MimitaNet::isServerHost())
+            {
+                MimitaNet::serverDuelRequestMapChange(mapId);
+                Terminal::instance().addLog("[CHANGEMAP] Changing map to " + mapId);
+                return;
+            }
+
+            if (::gpMpContext && ::gpMpContext->active)
+            {
+                MimitaNet::mpSendServerCommand(*::gpMpContext, "changemap " + mapId);
+                Terminal::instance().addLog("[CHANGEMAP] Sent to server (host only).");
+                return;
+            }
+
+            Terminal::instance().addLog("[CHANGEMAP] HOST ONLY — run this on the server host.");
+        },
+        "2026-08-10", CommandCategory::Debug
     });
 
     // GUI binding debug commands

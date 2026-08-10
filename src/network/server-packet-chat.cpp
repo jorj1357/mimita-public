@@ -8,6 +8,7 @@
 * DOES NOT own NPC combat, projectile, or movement packet handling.
 */
 #include "network/server.h"
+#include "network/server-duel.h"
 #include "network/multiplayer-context.h"
 #include "network/chat-rate-limiter.h"
 #include "void-death/void-death.h"
@@ -325,6 +326,17 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
             "%s [SERVER COMMAND] setspawn=%d\n",
             serverTimestamp(), (int)ov.spawnOverrideEnabled);
         ack(true, ov.spawnOverrideEnabled ? "applied: setspawn 1" : "applied: setspawn 0");
+    }
+    else if (commandStr.rfind("changemap ", 0) == 0)
+    {
+        // Live map change without restarting (duel mode). Applied next tick by
+        // serverDuelTick, which owns the world + player teleports.
+        const std::string mapId = commandStr.substr(10);
+        serverDuelRequestMapChange(mapId);
+        Debug::warn(Debug::Category::Duel,
+            "%s [SERVER COMMAND] changemap -> %s by playerId=%u\n",
+            serverTimestamp(), mapId.c_str(), it->second.id);
+        ack(true, ("applied: changemap " + mapId).c_str());
     }
     else
     {

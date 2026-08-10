@@ -14,6 +14,7 @@
 #include "auth/auth-controller.h"
 #include "auth/auth-popup.h"
 #include "duel/duel-queue.h"
+#include "duel/duel-map-pool.h"
 #include "gamemode/gamemode.h"
 #include "menus/sandbox-map-menu.h"
 #include "menus/help-menu.h"
@@ -49,6 +50,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cctype>
+#include <random>
 #include <glad/glad.h>
 #include <shellapi.h>
 #include <windows.h>
@@ -321,10 +323,17 @@ bool launchDuelHostServer(const std::string& mapName)
     s.serverName = "Duel";
     s.mapName = mapName;
     s.maxPlayers = 2;
-    s.startupNpcsEnabled = false;
-    s.startupNpcCount = 0;
+    s.startupNpcsEnabled = true;
+    s.startupNpcCount = 1;
     s.hostPlayerName = AuthSystem::instance().displayName();
-    s.port = MimitaNet::DEFAULT_PORT;
+    // Random high port so multiple duel servers can run on one machine (you
+    // can test with several mimita.exe instances at once). Joining is via ICE
+    // room code, so the port is transport metadata only.
+    {
+        static std::mt19937 rng((unsigned)MimitaNet::nowMs());
+        std::uniform_int_distribution<int> portDist(20000, 60000);
+        s.port = (uint16_t)portDist(rng);
+    }
     s.duelMode = true;
     s.gamemodeId = "duel";
     gServerLaunchSettings = s;
@@ -715,13 +724,10 @@ void guiMain(GLFWwindow* win, GameState& state)
             else if (r.goQueueDuels)
             {
                 // Enter the duels queue: sandbox practice + matchmaking.
-                std::vector<std::string> maps;
-                if (GamemodeRegistry::instance().has("duel"))
-                    maps = GamemodeRegistry::instance().get("duel").maps;
                 DuelQueue::instance().startQueue(
                     DuelQueue::defaultProfileId(),
                     AuthSystem::instance().displayName(),
-                    "", maps);
+                    "", DuelMapPool::instance().list());
                 extern GameState* gpGameState;
                 if (gpGameState) *gpGameState = GAME_PLAYING;
             }

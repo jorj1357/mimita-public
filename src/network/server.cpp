@@ -12,6 +12,7 @@
 #include "network/net_mode.h"
 #include "network/server-duel.h"
 #include "gamemode/gamemode.h"
+#include "duel/duel-map-pool.h"
 #include "network/multiplayer-context.h"
 #include "network/coordinator-client.h"
 #include "network/network-weapons.h"
@@ -126,7 +127,7 @@ void countPacketType(ServerTransportStats& stats, uint8_t type)
 
 bool isKnownPacketType(uint8_t type)
 {
-    return type >= PACKET_HELLO && type <= PACKET_DAMAGE_CONFIRMED_EVENT;
+    return type >= PACKET_HELLO && type <= PACKET_MAP_CHANGE;
 }
 
 void recordServerLoopPerf(ServerLoopPerf& perf, uint64_t loopUs, bool cappedCatchup)
@@ -244,6 +245,7 @@ int runServer(const LaunchOptions& options)
     // honors config/npc-difficulty.json (hot-reloaded in the server loop below).
     NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
     GamemodeRegistry::instance().loadDirectory("config/gamemodes");
+    DuelMapPool::instance().load("config/duel-maps.json");
     npcLogSetProc("server");
 
     // Validate grenade launcher config at startup
@@ -401,6 +403,9 @@ int runServer(const LaunchOptions& options)
         duelRules.rematchSeconds = gm.rematchSeconds;
         duelRules.teamAName = gm.teamNames.size() > 0 ? gm.teamNames[0] : "RED";
         duelRules.teamBName = gm.teamNames.size() > 1 ? gm.teamNames[1] : "BLUE";
+        duelRules.mapPool = DuelMapPool::instance().list();
+        duelRules.rotateMaps = true;
+        duelRules.mapId = mapName;
         serverDuelStart(duelRules);
         printf("%s [SERVER DUEL] enabled gamemode=%s goal=%d countdown=%.1fs rematch=%.1fs\n",
                serverTimestamp(), options.gamemodeId.c_str(), gm.goalValue,
@@ -605,7 +610,8 @@ int runServer(const LaunchOptions& options)
             buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
             tickDisagreementRetransmit(sock, players, disagreementRetransmit, totalPacketsOut);
             tickReliableGameplayEvents(sock, players, totalPacketsOut);
-            serverDuelTick(sock, players, world, tick, totalPacketsOut);
+            serverDuelTick(sock, players, world, npcWorld, npcs, npcSystem,
+                           npcIdsAlive, tick, totalPacketsOut);
 
             accumulator -= (double)SERVER_DT;
             ++tick;

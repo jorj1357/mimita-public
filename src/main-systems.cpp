@@ -94,6 +94,7 @@
 #include "config/movement-config.h"
 #include "npc/npc-difficulty-config.h"
 #include "gamemode/gamemode.h"
+#include "duel/duel-map-pool.h"
 #include "npc/npc-combat-log.h"
 #include "avatar/avatar.h"
 #include "avatar/avatar-commands.h"
@@ -213,6 +214,7 @@ void gameInitSubsystems(Engine& engine)
     GameplayConfig::instance().load("config/gameplay.json");
     NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
     GamemodeRegistry::instance().loadDirectory("config/gamemodes");
+    DuelMapPool::instance().load("config/duel-maps.json");
     npcLogSetProc("client");
     MovementJsonConfig::instance().load("config/movement.json");
     CrosshairConfig::instance().load();
