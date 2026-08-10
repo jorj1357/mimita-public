@@ -326,6 +326,8 @@ EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
     event.targetActorId = effect.targetActorId;
     event.texturePath = effect.texturePath;
     event.materialName = effect.materialName;
+    event.billboardText = effect.billboardText;
+    event.beam = effect.beam;
     {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->replayRecordMs : nullptr);
         if (effect.replayType != "debris" && effect.replayType != "debris_block" && effect.replayType != "debris_batch")

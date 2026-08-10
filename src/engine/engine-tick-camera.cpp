@@ -1046,7 +1046,8 @@ void engineTickCamera(Engine& engine, float dt)
                 spawnParams.normal = effect.normal;
                 spawnParams.thickness = effect.thickness;
                 spawnParams.endThickness = effect.endThickness;
-                spawnParams.billboardText = false;
+                spawnParams.billboardText = effect.billboardText;
+                spawnParams.beam = effect.beam;
                 EffectPartSystem::instance().spawn(spawnParams);
             }
         }

@@ -165,6 +165,26 @@ void registerReplayEditorCommands() {
         }
     });
 
+    // ── rplff: replay factory (save 15s clip + open editor) ──
+    t.registerCommand({
+        "rplff",
+        "Save a 15-second instant replay and open it in the editor (rpls + rplelatest)",
+        "rplff",
+        [](const std::vector<std::string>&) {
+            if (!REPLAY_RECORDER.isRecording()) {
+                Terminal::instance().addLog("[ERROR] No replay recording active");
+                return;
+            }
+            std::string path = saveInstantReplay(REPLAY_RECORDER, 15);
+            if (path.empty()) {
+                Terminal::instance().addLog("[ERROR] Failed to save instant replay");
+                return;
+            }
+            Terminal::instance().addLog("[RPLE] Replay saved: " + path);
+            Terminal::instance().execute("rplelatest");
+        }
+    });
+
     // ── rpleclose: clear session state ───────────────────
     t.registerCommand({
         "rpleclose",
