@@ -1,6 +1,27 @@
 cmake_minimum_required(VERSION 3.20)
 project(mimita_hot_reload LANGUAGES C CXX)
 
+
+# nix-shell -p cmake pkg-config wayland libxkbcommon
+# this is for nixos or smthing '~`
+#
+# GLFW
+include(FetchContent)
+
+FetchContent_Declare(
+    glfw
+    GIT_REPOSITORY https://github.com/glfw/glfw.git
+    GIT_TAG 3.4
+)
+
+set(GLFW_BUILD_WAYLAND ON CACHE BOOL "" FORCE)
+set(GLFW_BUILD_X11 OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(glfw) 
+# /\
+
+
+
 # exports to clang ;PP
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # \/ installing glad
@@ -40,7 +61,10 @@ set_target_properties(mimita-game PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/build"
 )
 
-target_link_libraries(mimita-game PRIVATE glad)
+target_link_libraries(mimita-game PRIVATE 
+    glad
+    glfw
+)
 add_executable(mimita
     src/main.cpp
 )
