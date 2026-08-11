@@ -50,6 +50,8 @@ void serverDuelStart(const ServerDuelState& rules)
     d.mapPool = rules.mapPool;
     d.rotateMaps = rules.rotateMaps;
     d.mapId = rules.mapId;
+    d.usedMaps.clear();
+    d.usedMaps.insert(rules.mapId); // avoid immediately re-picking the launch map
     d.hasPendingManualMap = false;
     d.pendingManualMap.clear();
     Debug::warn(Debug::Category::Duel,
@@ -215,9 +217,35 @@ void broadcastMapChange(SOCKET sock,
     }
 }
 
-// Reload the headless world + NPC collision world for a new map, re-pick the
-// duel spawns, teleport both players, and broadcast the map change.
-void reloadDuelMap(SOCKET sock,
+// Load a map into a fresh temp world; true only if it loads AND has real
+// spawn points, so players always anchor at spawn points, never under the map.
+bool tryLoadDuelMap(const std::string& mapId, HeadlessWorld& out)
+{
+    const std::string path = "assets/maps/" + mapId + ".glb";
+    HeadlessWorld candidate;
+    if (!loadHeadlessWorld(path.c_str(), candidate))
+        return false;
+    if (candidate.spawnPoints.empty())
+        return false;
+    out = std::move(candidate);
+    return true;
+}
+
+// Move a loaded temp world into the live world + NPC collision world.
+void commitDuelMap(ServerDuelState& d, HeadlessWorld& world, World& npcWorld,
+                   HeadlessWorld& tmp, const std::string& mapId)
+{
+    clearHeadlessWorld(world);
+    world = std::move(tmp);
+    buildNpcWorldCollision(npcWorld, world);
+    setServerMapId(mapId);
+    d.mapId = mapId;
+}
+
+// Reload the world for a chosen map (changemap / rotation commit). Only ever
+// touches the live world after the new map is confirmed loaded, so a failed
+// swap never empties the world (players never fall under it).
+bool reloadDuelMap(SOCKET sock,
                    ServerDuelState& d,
                    std::unordered_map<uint32_t, ServerPlayer>& players,
                    HeadlessWorld& world,
@@ -225,39 +253,73 @@ void reloadDuelMap(SOCKET sock,
                    const std::string& mapId,
                    uint64_t& totalPacketsOut)
 {
-    const std::string path = "assets/maps/" + mapId + ".glb";
-    clearHeadlessWorld(world);
-    if (!loadHeadlessWorld(path.c_str(), world))
+    HeadlessWorld tmp;
+    if (!tryLoadDuelMap(mapId, tmp))
     {
         Debug::error(Debug::Category::Duel,
-            "[DUEL SERVER] map reload failed: %s\n", path.c_str());
-        return;
+            "[DUEL SERVER] map swap failed or has no spawn points: %s\n", mapId.c_str());
+        return false;
     }
-    buildNpcWorldCollision(npcWorld, world);
-    setServerMapId(mapId);
-    d.mapId = mapId;
+    commitDuelMap(d, world, npcWorld, tmp, mapId);
     assignDuelSpawns(d, world);
     broadcastMapChange(sock, mapId, players, totalPacketsOut);
     teleportDuelistsToSpawns(d, players);
     Debug::warn(Debug::Category::Duel,
         "[DUEL SERVER] map changed live to %s (spawns=%zu)\n",
         mapId.c_str(), world.spawnPoints.size());
+    return true;
 }
 
-std::string nextRandomMap(const ServerDuelState& d)
+// Round-robin rotation: pick a map not used this cycle (never the one just
+// played), skip maps that fail to load or have no spawn points, and cycle the
+// whole pool before repeating. Returns true if the map changed.
+bool rotateToNextDuelMap(SOCKET sock,
+                         ServerDuelState& d,
+                         std::unordered_map<uint32_t, ServerPlayer>& players,
+                         HeadlessWorld& world,
+                         World& npcWorld,
+                         uint64_t& totalPacketsOut)
 {
-    if (d.mapPool.empty()) return d.mapId;
-    std::vector<std::string> candidates = d.mapPool;
-    if (d.mapPool.size() > 1)
+    if (d.mapPool.size() <= 1)
+        return false;
+
+    auto unusedCandidates = [&]() {
+        std::vector<std::string> v;
+        for (const auto& m : d.mapPool)
+            if (!d.usedMaps.count(m) && m != d.mapId)
+                v.push_back(m);
+        return v;
+    };
+
+    std::vector<std::string> candidates = unusedCandidates();
+    if (candidates.empty())
     {
-        candidates.erase(
-            std::remove_if(candidates.begin(), candidates.end(),
-                           [&](const std::string& m) { return m == d.mapId; }),
-            candidates.end());
+        // Whole pool used this cycle — start fresh, still avoiding the current map.
+        d.usedMaps.clear();
+        d.usedMaps.insert(d.mapId);
+        candidates = unusedCandidates();
     }
+
     std::mt19937 rng(std::random_device{}());
-    std::uniform_int_distribution<size_t> dist(0, candidates.size() - 1);
-    return candidates[dist(rng)];
+    std::shuffle(candidates.begin(), candidates.end(), rng);
+
+    for (const std::string& cand : candidates)
+    {
+        HeadlessWorld tmp;
+        if (tryLoadDuelMap(cand, tmp))
+        {
+            d.usedMaps.insert(cand);
+            commitDuelMap(d, world, npcWorld, tmp, cand);
+            broadcastMapChange(sock, cand, players, totalPacketsOut);
+            Debug::warn(Debug::Category::Duel,
+                "[DUEL SERVER] rotated to map %s (spawns=%zu)\n",
+                cand.c_str(), world.spawnPoints.size());
+            return true;
+        }
+        // Failed to load or has no spawn points — skip it this cycle.
+        d.usedMaps.insert(cand);
+    }
+    return false; // nothing valid — keep the current map
 }
 
 } // namespace
@@ -355,11 +417,15 @@ void serverDuelTick(SOCKET sock,
         if (countActivePlayers(players) >= 2)
         {
             assignDuelists(d, players);
-            assignDuelSpawns(d, world);
+            // If the current map has no spawn points (e.g. the host picked a
+            // spawn-less map), rotate to a spawn-capable one before starting.
+            if (world.spawnPoints.empty())
+                rotateToNextDuelMap(sock, d, players, world, npcWorld, totalPacketsOut);
             // Drop the practice NPC(s) once the real duel is about to start.
             npcs.clear();
             npcSystem.destroyAll();
             npcIdsAlive.clear();
+            assignDuelSpawns(d, world);
             beginDuelCountdown(d, players);
             broadcastDuelState(sock, d, players, totalPacketsOut);
         }
@@ -411,10 +477,9 @@ void serverDuelTick(SOCKET sock,
         d.rematchLeft -= SERVER_DT;
         if (d.rematchLeft <= 0.0f)
         {
-            // Auto-rotate to a fresh random map for the next duel.
+            // Rotate to a fresh map we weren't just on (skips bad/spawn-less maps).
             if (d.rotateMaps && d.mapPool.size() > 1)
-                reloadDuelMap(sock, d, players, world, npcWorld,
-                              nextRandomMap(d), totalPacketsOut);
+                rotateToNextDuelMap(sock, d, players, world, npcWorld, totalPacketsOut);
             // Each new match picks a fresh random anchor (fights spread around).
             assignDuelSpawns(d, world);
             Debug::log(Debug::Category::Duel, "[DUEL SERVER] rematch\n");
