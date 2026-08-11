@@ -46,15 +46,17 @@ void serverDuelStart(const ServerDuelState& rules)
     d.winnerPlayerId = 0;
     d.spawnsAssigned = false;
     d.stateSent = false;
+    d.spawnOffsetRadius = rules.spawnOffsetRadius;
     d.mapPool = rules.mapPool;
     d.rotateMaps = rules.rotateMaps;
     d.mapId = rules.mapId;
     d.hasPendingManualMap = false;
     d.pendingManualMap.clear();
     Debug::warn(Debug::Category::Duel,
-        "[DUEL SERVER] enabled goal=%d countdown=%.1fs rematch=%.1fs teams=%s/%s rotate=%d pool=%zu\n",
+        "[DUEL SERVER] enabled goal=%d countdown=%.1fs rematch=%.1fs teams=%s/%s rotate=%d pool=%zu offset=%.1f\n",
         d.goalValue, d.countdownSeconds, d.rematchSeconds,
-        d.teamAName.c_str(), d.teamBName.c_str(), (int)d.rotateMaps, d.mapPool.size());
+        d.teamAName.c_str(), d.teamBName.c_str(), (int)d.rotateMaps, d.mapPool.size(),
+        d.spawnOffsetRadius);
 }
 
 namespace {
@@ -98,34 +100,36 @@ void broadcastDuelState(SOCKET sock,
     }
 }
 
-// Pick two far-apart spawn points for the two duelists.
+// Pick ONE random map spawn point as the match anchor. Both teams always
+// spawn near this single point (with a fresh random XY offset each spawn), so
+// respawns land right back in the fight — max action, no map editing needed.
 void assignDuelSpawns(ServerDuelState& d, const HeadlessWorld& world)
 {
     d.spawnsAssigned = true;
-    if (world.spawnPoints.size() >= 2)
+    if (!world.spawnPoints.empty())
     {
-        d.spawnA = world.spawnPoints[0].position;
-        float bestDist = -1.0f;
-        size_t bestIdx = 0;
-        for (size_t i = 0; i < world.spawnPoints.size(); ++i)
-        {
-            const float dist = glm::length(world.spawnPoints[i].position - d.spawnA);
-            if (dist > bestDist)
-            {
-                bestDist = dist;
-                bestIdx = i;
-            }
-        }
-        d.spawnB = world.spawnPoints[bestIdx].position;
+        std::mt19937 rng(std::random_device{}());
+        std::uniform_int_distribution<size_t> dist(0, world.spawnPoints.size() - 1);
+        const glm::vec3 anchor = world.spawnPoints[dist(rng)].position;
+        d.spawnA = anchor;
+        d.spawnB = anchor;
     }
     else
     {
         d.spawnA = glm::vec3(1.0f, 5.0f, 30.0f);
-        d.spawnB = glm::vec3(1.0f, 5.0f, 40.0f);
+        d.spawnB = d.spawnA;
     }
     Debug::log(Debug::Category::Duel,
-        "[DUEL SERVER] spawns A=(%.1f %.1f %.1f) B=(%.1f %.1f %.1f)\n",
-        d.spawnA.x, d.spawnA.y, d.spawnA.z, d.spawnB.x, d.spawnB.y, d.spawnB.z);
+        "[DUEL SERVER] anchor=(%.1f %.1f %.1f) spawns=%zu\n",
+        d.spawnA.x, d.spawnA.y, d.spawnA.z, world.spawnPoints.size());
+}
+
+// The anchor plus a random XY offset (so nobody can predict the exact spot).
+glm::vec3 duelSpawnPoint(const ServerDuelState& d)
+{
+    static std::mt19937 rng(std::random_device{}());
+    std::uniform_real_distribution<float> dist(-d.spawnOffsetRadius, d.spawnOffsetRadius);
+    return d.spawnA + glm::vec3(dist(rng), dist(rng), 0.0f);
 }
 
 void assignDuelists(ServerDuelState& d,
@@ -144,15 +148,16 @@ void assignDuelists(ServerDuelState& d,
     }
 }
 
-// Place both duelists at their team spawns with full HP and full ammo.
+// Place both duelists near the match anchor with full HP and full ammo.
 void teleportDuelistsToSpawns(ServerDuelState& d,
                               std::unordered_map<uint32_t, ServerPlayer>& players)
 {
-    auto place = [&](uint32_t playerId, const glm::vec3& spawn)
+    auto place = [&](uint32_t playerId)
     {
         auto it = players.find(playerId);
         if (it == players.end()) return;
         ServerPlayer& p = it->second;
+        const glm::vec3 spawn = duelSpawnPoint(d);
         p.duelSpawnPos = spawn;
         p.hasDuelSpawnPos = true;
         p.respawnSeconds = 0.0f;
@@ -162,8 +167,8 @@ void teleportDuelistsToSpawns(ServerDuelState& d,
             p.justRespawned = true;
         }
     };
-    place(d.playerAId, d.spawnA);
-    place(d.playerBId, d.spawnB);
+    place(d.playerAId);
+    place(d.playerBId);
 }
 
 void beginDuelCountdown(ServerDuelState& d,
@@ -291,10 +296,14 @@ void serverDuelTick(SOCKET sock,
         const uint32_t killerId = d.pendingKillerId;
         const uint32_t victimId = d.pendingVictimId;
 
-        // Instant respawn at the victim's team spawn with full HP/ammo.
+        // Instant respawn near the match anchor with full HP/ammo and a fresh
+        // random offset so the exact respawn spot is never predictable.
         auto victimIt = players.find(victimId);
         if (victimIt != players.end())
+        {
             victimIt->second.respawnSeconds = 0.0f;
+            victimIt->second.duelSpawnPos = duelSpawnPoint(d);
+        }
 
         // Tell the killer where the victim respawned (tracer).
         if (killerId != victimId)
@@ -406,6 +415,8 @@ void serverDuelTick(SOCKET sock,
             if (d.rotateMaps && d.mapPool.size() > 1)
                 reloadDuelMap(sock, d, players, world, npcWorld,
                               nextRandomMap(d), totalPacketsOut);
+            // Each new match picks a fresh random anchor (fights spread around).
+            assignDuelSpawns(d, world);
             Debug::log(Debug::Category::Duel, "[DUEL SERVER] rematch\n");
             beginDuelCountdown(d, players);
             broadcastDuelState(sock, d, players, totalPacketsOut);

@@ -28,6 +28,8 @@ struct Gamemode {
     float rematchSeconds = 5.0f;
     float spawnTracerSeconds = 1.5f;
     bool allowRematch = true;
+    // Random XY offset radius around the match anchor that both teams spawn near.
+    float spawnOffsetRadius = 5.0f;
     std::vector<std::string> maps;
 };
 
