@@ -46,12 +46,28 @@ def check_release_build():
 EXCLUDE_PREFIXES = ("assets/sound/music/ingame/donttrack/", "characters/_template/")
 EXCLUDE_SUFFIXES = (".kra",)
 
+# Font source / old-font leftovers that must never ship in the release zip.
+# The game only needs the bitmap atlas (noto-serif-cjk-tc-mimita-v1.fnt + pngs).
+# MingLiU files were replaced; the .otf is only used to regenerate the atlas.
+FONT_EXCLUDE_PREFIXES = (
+    "assets/font/mingliu.ttf",
+    "assets/font/mingliu-mimita-v3",
+    "assets/font/oldmingliu",
+    "assets/font/notoserifcjktc-regular.otf",
+)
+FONT_EXCLUDE_SUFFIXES = (".png~",)
+
 
 def is_excluded(rel):
     low = rel.lower()
     if low.startswith(EXCLUDE_PREFIXES):
         return True
     for s in EXCLUDE_SUFFIXES:
+        if low.endswith(s):
+            return True
+    if low.startswith(FONT_EXCLUDE_PREFIXES):
+        return True
+    for s in FONT_EXCLUDE_SUFFIXES:
         if low.endswith(s):
             return True
     # Dev note files (readme-*.txt / readmedonttrack.txt / readme.txt) are not

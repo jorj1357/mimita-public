@@ -58,6 +58,10 @@ assets/sound/music/
 *.png~
 *.autosave
 
+# ── Font sources (never shipped; used only to regenerate bitmap font atlases) ─
+tools/fonts/*.otf
+tools/fonts/*.ttf
+
 # ── Config / env ─────────────────────────────────────────────────────────────
 .env
 .env.local

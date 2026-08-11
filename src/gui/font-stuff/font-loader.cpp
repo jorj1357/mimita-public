@@ -127,7 +127,7 @@ void fontInit()
 {
     printf("[FONT] Loading bitmap font\n");
 
-    bool glyphsOk = loadFontGlyphs("assets/font/mingliu-mimita-v3.fnt");
+    bool glyphsOk = loadFontGlyphs("assets/font/noto-serif-cjk-tc-mimita-v1.fnt");
     bool atlasOk = gFontPageCount > 0 && gFontPages[0] != 0;
     if (!atlasOk || !glyphsOk)
         printf("[FONT WARNING] asset font failed; UI will use visible fallback text\n");
