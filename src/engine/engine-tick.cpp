@@ -148,9 +148,8 @@ void engineTick(Engine& engine)
             if (qs == DuelQueueState::InDuel || qs == DuelQueueState::MatchEnd)
             {
                 // Esc after a duel → back into the queue (sandbox practice).
+                // returnToQueue() shows the "left duel with <name> in room <code>" notif.
                 DuelQueue::instance().returnToQueue();
-                NotificationSystem::instance().push(
-                    "Left the duel", "Back in the duels queue...", 180, {});
                 Debug::log(Debug::Category::Duel, "[DUEL QUEUE] escape from duel — returning to queue\n");
             }
             else

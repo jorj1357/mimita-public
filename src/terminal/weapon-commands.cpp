@@ -27,9 +27,30 @@ using json = nlohmann::json;
 #include "combat/weapon-registry.h"
 #include "network/net_mode.h"
 #include "network/network-weapons.h"
+#include "network/weapon-runtime-reconciliation.h"
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
 #include "entities/player-animation-config.h"
+
+namespace {
+
+// Equip a weapon; if switching away started a background reload on the
+// holstered weapon, tell the server too (fire-and-forget, same packet as R).
+void equipSlotAndSync(Player& player, WeaponSystem& weapons, int slot)
+{
+    const std::string holsteredReloaded = weapons.equip(player, slot);
+    if (!holsteredReloaded.empty())
+        MimitaNet::sendReloadRequestForWeapon(MP_CONTEXT, holsteredReloaded);
+}
+
+void unequipAndSync(Player& player, WeaponSystem& weapons)
+{
+    const std::string holsteredReloaded = weapons.unequip(player);
+    if (!holsteredReloaded.empty())
+        MimitaNet::sendReloadRequestForWeapon(MP_CONTEXT, holsteredReloaded);
+}
+
+} // namespace
 
 void registerWeaponCommands()
 {
@@ -285,12 +306,12 @@ void registerWeaponCommands()
                 Player& player = THE_PLAYER;
                 WeaponSystem& weapons = THE_WEAPONS;
                 if (player.equippedSlot == slot && player.hasValidWeapon) {
-                    weapons.unequip(player);
+                    unequipAndSync(player, weapons);
                     GetPlayerSettings().equippedSlot = 0;
                     SavePlayerSettings();
                     Terminal::instance().addLog("[INVENTORY] unequipped slot " + std::to_string(slot));
                 } else {
-                    weapons.equip(player, slot);
+                    equipSlotAndSync(player, weapons, slot);
                     GetPlayerSettings().equippedSlot = slot;
                     SavePlayerSettings();
                     Terminal::instance().addLog("[INVENTORY] equipped slot " + std::to_string(slot));
@@ -313,7 +334,7 @@ void registerWeaponCommands()
             }
             Player& player = THE_PLAYER;
             WeaponSystem& weapons = THE_WEAPONS;
-            weapons.equip(player, slot);
+            equipSlotAndSync(player, weapons, slot);
             GetPlayerSettings().equippedSlot = slot;
             SavePlayerSettings();
             Terminal::instance().addLog("[INVENTORY] equipped slot " + std::to_string(slot));
@@ -329,12 +350,12 @@ void registerWeaponCommands()
                 Player& player = THE_PLAYER;
                 WeaponSystem& weapons = THE_WEAPONS;
                 if (player.equippedSlot == keySlot && player.hasValidWeapon) {
-                    weapons.unequip(player);
+                    unequipAndSync(player, weapons);
                     GetPlayerSettings().equippedSlot = 0;
                     SavePlayerSettings();
                     Terminal::instance().addLog("[INVENTORY] unequipped slot " + std::to_string(keySlot));
                 } else {
-                    weapons.equip(player, keySlot);
+                    equipSlotAndSync(player, weapons, keySlot);
                     GetPlayerSettings().equippedSlot = keySlot;
                     SavePlayerSettings();
                     Terminal::instance().addLog("[INVENTORY] equipped slot " + std::to_string(keySlot));
