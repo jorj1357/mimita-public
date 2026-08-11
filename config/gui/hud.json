@@ -66,10 +66,16 @@
     },
     "ammoText": {
       "type": "text",
-      "x": 24, "y": 232, "width": 300, "height": 24,
-      "fontSize": 0.42,
-      "textColor": [1.0, 0.82, 0.3, 1.0]
+      "x": 960, "y": 900, "width": 320, "height": 24,
+      "fontSize": 0.25,
+      "textAlign": "center",
+      "textColor": [1.0, 1.0, 1.0, 1.0]
     },
+    "ammoColorFull": { "type": "text", "x": 0, "y": 0, "text": "", "fontSize": 0.28, "textColor": [1, 1, 1, 1] },
+    "ammoColorLowA": { "type": "text", "x": 0, "y": 0, "text": "", "fontSize": 0.28, "textColor": [1, 1, 1, 1] },
+    "ammoColorLowB": { "type": "text", "x": 0, "y": 0, "text": "", "fontSize": 0.28, "textColor": [1, 0.15, 0.15, 1] },
+    "ammoColorEmpty": { "type": "text", "x": 0, "y": 0, "text": "", "fontSize": 0.28, "textColor": [1, 0.15, 0.15, 1] },
+    "ammoColorReload": { "type": "text", "x": 0, "y": 0, "text": "", "fontSize": 0.28, "textColor": [0.3, 0.6, 1, 1] },
     "reloadText": {
       "type": "text",
       "x": 24, "y": 248, "width": 300, "height": 24,

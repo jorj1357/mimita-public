@@ -92,6 +92,45 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         uiDrawText(text.c_str(), uiScaleX(el->x), uiScaleY(el->y), scale, color);
     };
 
+    auto ammoStateColor = [&](const char* id, glm::vec4 fallback) -> glm::vec4 {
+        const GuiElement* el = hudLayout.get(id);
+        return el ? el->getTextColorVec() : fallback;
+    };
+
+    // Ammo indicator centered below the crosshair. Color + blink state come
+    // from JSON elements in hud.json: full=white, 1 bullet=blink white/red
+    // every 30 ticks, 0=red, reloading=blue with a fast-ticking countdown.
+    auto drawAmmoIndicator = [&](const std::string& weaponName, int ammo, int reserve,
+                                 int maxAmmo, bool reloading, float reloadTimer) {
+        const GuiElement* el = hudLayout.get("ammoText");
+        if (!el || !el->visible) return;
+        if (!reloading && maxAmmo <= 0) return;  // melee / no ammo concept
+        float scale = el->fontSize > 0.0f ? el->fontSize : 0.5f;
+        glm::vec4 color;
+        char text[128];
+        if (reloading) {
+            color = ammoStateColor("ammoColorReload", {0.3f, 0.6f, 1.0f, 1.0f});
+            if (reloadTimer > 0.0f)
+                snprintf(text, sizeof(text), "reloading %.2f", std::max(0.0f, reloadTimer));
+            else
+                snprintf(text, sizeof(text), "reloading...");
+        } else if (ammo == 1) {
+            const bool blinkOn = (gChatUiTickClock.getTick() / 30u) % 2u == 0u;
+            color = ammoStateColor(blinkOn ? "ammoColorLowA" : "ammoColorLowB",
+                                   blinkOn ? glm::vec4(1.0f)
+                                           : glm::vec4(1.0f, 0.15f, 0.15f, 1.0f));
+            snprintf(text, sizeof(text), "%s: %d / %d", weaponName.c_str(), ammo, reserve);
+        } else if (ammo <= 0) {
+            color = ammoStateColor("ammoColorEmpty", {1.0f, 0.15f, 0.15f, 1.0f});
+            snprintf(text, sizeof(text), "%s: %d / %d", weaponName.c_str(), ammo, reserve);
+        } else {
+            color = ammoStateColor("ammoColorFull", {1.0f, 1.0f, 1.0f, 1.0f});
+            snprintf(text, sizeof(text), "%s: %d / %d", weaponName.c_str(), ammo, reserve);
+        }
+        float textW = uiMeasureText(text, scale);
+        uiDrawText(text, uiScaleX(el->x) - textW * 0.5f, uiScaleY(el->y), scale, color);
+    };
+
     {
         glm::vec3 vel = replayViewedActor ? replayViewedActor->velocity : player.vel;
         bool grounded = replayViewedActor ? replayViewedActor->grounded : player.ground.onGround;
@@ -187,14 +226,12 @@ void engineTickUIGameHUD(Engine& engine, float dt)
             uiDrawText(mpText, 24, 232, 0.32f, {0.7f, 0.9f, 1.0f, 1.0f});
         }
         if (replayViewedActor) {
-            char ammoText[96];
             const char* weaponName = replayViewedActor->weaponName.empty() ? "?" : replayViewedActor->weaponName.c_str();
-            snprintf(ammoText, sizeof(ammoText), "%s: %d / %d",
-                     weaponName, replayViewedActor->currentAmmo, replayViewedActor->reserveAmmo);
-            hudText("ammoText", ammoText);
-            if (replayViewedActor->reloading) {
-                hudText("reloadText", "reloading...");
-            }
+            const WeaponDefinition* replayDef = WeaponRegistry::instance().get(weaponName);
+            drawAmmoIndicator(weaponName, replayViewedActor->currentAmmo,
+                              replayViewedActor->reserveAmmo,
+                              replayDef ? replayDef->magazineSize : 0,
+                              replayViewedActor->reloading, 0.0f);
         } else {
             const WeaponDefinition* curDef = nullptr;
             for (const auto& pair : WeaponRegistry::instance().all()) {
@@ -207,20 +244,9 @@ void engineTickUIGameHUD(Engine& engine, float dt)
                 auto it = player.weaponRuntimes.find(curDef->id);
                 if (it != player.weaponRuntimes.end()) {
                     const WeaponRuntime& rt = it->second;
-                    char ammoText[96];
-                    int displayReserve = std::max(0, rt.reserveAmmo);
-                    snprintf(ammoText, sizeof(ammoText), "%s: %d / %d",
-                             curDef->displayName.c_str(),
-                             rt.currentAmmo, displayReserve);
-                    hudText("ammoText", ammoText);
-
-                    if (rt.isReloading) {
-                        char reloadText[96];
-                        snprintf(reloadText, sizeof(reloadText),
-                                 "no bullets! reloading... %.2f",
-                                 std::max(0.0f, rt.reloadTimer));
-                        hudText("reloadText", reloadText);
-                    }
+                    drawAmmoIndicator(curDef->displayName, rt.currentAmmo,
+                                      std::max(0, rt.reserveAmmo), curDef->magazineSize,
+                                      rt.isReloading, rt.reloadTimer);
                 }
             }
         }

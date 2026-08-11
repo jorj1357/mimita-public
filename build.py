@@ -76,6 +76,11 @@ if MODE == "release":
         "-O2",
         "-march=x86-64-v2",
         "-s",
+        # NDEBUG removes assert()/debug-only code and strings from the shipped
+        # binary. -fmacro-prefix-map rewrites __FILE__ paths so no local dev
+        # path (e.g. C:\mimita-priv-v8\...) leaks into the release exe.
+        "-DNDEBUG",
+        "-fmacro-prefix-map=" + ROOT.replace("\\", "/") + "=.",
         "-pipe",
         "-MMD",
         "-MP",
@@ -490,6 +495,8 @@ def compile_juice_file(src_name):
         cmd += [
             "-std=c11",
             "-O2",
+            "-DNDEBUG",
+            "-fmacro-prefix-map=" + ROOT.replace("\\", "/") + "=.",
             "-pipe",
         ]
     else:

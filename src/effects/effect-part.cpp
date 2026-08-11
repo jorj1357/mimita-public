@@ -81,6 +81,7 @@ MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
 #include "config/weapon-tracers-config.h"
 #include "debug/debug-log.h"
 #include "effects/hit-effects.h"
+#include "effects/muzzle-flash-config.h"
 #include "config.h"
 #include "replay/replay.h"
 #include "hot-reload/hot-reload-system.h"
@@ -146,16 +147,19 @@ EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 nor
 }
 
 EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId, float sizeScale) {
+    const MuzzleFlashSettings& cfg = MuzzleFlashConfig::instance().data();
+    if (!cfg.enabled) return nullptr;
     const auto& sc = SizeScalingConfig::instance().data();
     float ss = std::max(sizeScale, 0.001f);
     float sfx = sc.scale(1.0f, sc.hitfxRadiusExponent, ss);
     EffectPart e;
     e.position = position;
     e.replayType = "muzzle_flash";
-    e.color = {1.0f, 1.0f, 1.0f};
-    e.maxLifetime = 0.1f;
-    e.scale = 0.5f * sfx;
-    e.endScale = 0.35f * sfx;
+    e.color = cfg.color;
+    e.maxLifetime = std::max(0.001f, cfg.lifetime);
+    e.scale = cfg.scale * sfx;
+    e.endScale = cfg.endScale * sfx;
+    e.alpha = cfg.alpha;
     e.billboardText = false;
     e.sticky = true;
     e.sourceActorId = sourceActorId;

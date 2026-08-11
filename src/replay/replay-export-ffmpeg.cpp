@@ -555,6 +555,7 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
 
 static void debugLaunchFfmpegVisible(const std::string& cmd)
 {
+#ifndef NDEBUG
     std::string args = "/k \"" + cmd + "\"";
     EXPORTTRACE("ShellExecuteA params EXACT=%s %s", "cmd.exe", args.c_str());
     HINSTANCE h = ShellExecuteA(NULL, "open", "cmd.exe", args.c_str(), NULL, SW_SHOWNORMAL);
@@ -566,6 +567,9 @@ static void debugLaunchFfmpegVisible(const std::string& cmd)
     } else {
         EXPORTTRACE("Launched ffmpeg in visible cmd window. Close when done.");
     }
+#else
+    (void)cmd;
+#endif
 }
 
 // Run ffmpeg via batch file and capture its exit code + stderr output.

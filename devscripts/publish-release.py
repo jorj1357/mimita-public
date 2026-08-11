@@ -88,6 +88,15 @@ def bundle_zip():
         fail("bundle-game.py failed")
     if not os.path.isfile(ZIP):
         fail("mimita-game.zip not produced")
+    # Sanity: the release zip must not carry dev-only content.
+    import zipfile
+    with zipfile.ZipFile(ZIP) as zf:
+        bad = [n for n in zf.namelist()
+               if n.lower().startswith("assets/sound/music/ingame/donttrack/")
+               or n.lower().startswith("characters/_template/")
+               or n.lower().endswith(".kra")]
+    if bad:
+        fail(f"mimita-game.zip contains excluded files: {bad[:5]}")
 
 
 def write_launcher_info(ver):

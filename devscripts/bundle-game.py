@@ -39,8 +39,32 @@ def check_release_build():
         return
     print(f"[OK]   mimita.exe is {mb:.1f} MB — release build.")
 
+# Files players do not need, kept out of the release zip:
+# - production music work files (AGENTS.md: never committed/shipped)
+# - the dev character template
+# - Krita autosave files (e.g. textureshq/.gross3.png-autosave.kra)
+EXCLUDE_PREFIXES = ("assets/sound/music/ingame/donttrack/", "characters/_template/")
+EXCLUDE_SUFFIXES = (".kra",)
+
+
+def is_excluded(rel):
+    low = rel.lower()
+    if low.startswith(EXCLUDE_PREFIXES):
+        return True
+    for s in EXCLUDE_SUFFIXES:
+        if low.endswith(s):
+            return True
+    # Dev note files (readme-*.txt / readmedonttrack.txt / readme.txt) are not
+    # runtime content.
+    base = low.rsplit("/", 1)[-1]
+    if base.startswith("readme"):
+        return True
+    return False
+
+
 def collect_files():
     files = []
+    skipped = 0
     for name in ["mimita.exe", "version.txt",
                   "glfw3.dll", "libgcc_s_seh-1.dll", "libstdc++-6.dll",
                   "libwinpthread-1.dll"]:
@@ -55,7 +79,12 @@ def collect_files():
                 for fn in sorted(filenames):
                     full = os.path.join(dirpath, fn)
                     rel = os.path.relpath(full, ROOT).replace("\\", "/")
+                    if is_excluded(rel):
+                        skipped += 1
+                        continue
                     files.append((rel, full, os.path.getsize(full)))
+    if skipped:
+        print(f"[SKIP] excluded {skipped} files (donttrack, _template, .kra)")
     return files
 
 def sha256_of(path):

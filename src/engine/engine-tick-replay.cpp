@@ -528,6 +528,8 @@ void engineTickReplay(Engine& engine, float dt)
                         Terminal::instance().addLog(
                             "[REPLAY TEST] Replay export failed");
                     } else {
+#ifndef NDEBUG
+                        // Dev-only replay validation (spawns a python helper).
                         const std::string absolutePath =
                             std::filesystem::absolute(path).string();
                         const std::string command =
@@ -546,6 +548,10 @@ void engineTickReplay(Engine& engine, float dt)
                         Terminal::instance().addLog(
                             "[REPLAY TEST] Replay exported; "
                             "headless validation started");
+#else
+                        Terminal::instance().addLog(
+                            "[REPLAY TEST] Replay exported");
+#endif
                     }
                     Terminal::instance().execute("replay.record");
                 }

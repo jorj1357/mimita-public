@@ -75,6 +75,7 @@
     "comment3": "so far 8 8 2026 it seems like spring is the best, like literally even after days of working on making linear best, so i feel like we can just continue with spring? base the networking around spring mode? ",
     "comment4": "8 8 2026 i think we r gonna use spring until it becomes a bottleneck, its smooth enough already? and i think its ok to not use linear for now, bc i want to get play testing to balance around irl behavior",
     "comment5": "8 9 2026 ttrolled we are gonna use the mode called ease ",
+    "comment6": "8 11 2026 ease seems good just npcs clip into the map but its smooth on badconn 1  ",
     "render_filter": "ease",
     "correction_max_step_units_per_second": 100.0,
     "correction_min_delta_units": 0.05,

@@ -109,6 +109,23 @@ def main():
         print("FAIL: launcher has no embedded application icon")
         ok = False
 
+    # 3d. Version metadata must be embedded (RT_VERSION resource). AV/ML
+    #     classifiers treat missing version info on a fresh exe as suspicious.
+    #     The fixed-fileinfo signature (0xFEEF04BD) is always present.
+    if b"\xBD\x04\xEF\xFE" in raw and "MiMITA".encode("utf-16-le") in raw:
+        print("PASS: launcher embeds VS_VERSION_INFO (version metadata)")
+    else:
+        print("FAIL: launcher has no VS_VERSION_INFO resource")
+        ok = False
+
+    # 3e. No PowerShell/cmd extraction machinery may remain.
+    for bad in (b"mimita-extract", b"powershell", b"mklink", b"-ExecutionPolicy"):
+        if bad in raw:
+            print(f"FAIL: binary still contains AV-suspicious string {bad.decode()}")
+            ok = False
+    if all(b not in raw for b in (b"mimita-extract", b"powershell", b"mklink", b"-ExecutionPolicy")):
+        print("PASS: no PowerShell/cmd/mklink extraction strings in binary")
+
     # 4. Launcher process must start and stay alive (no STATUS_ENTRYPOINT_NOT_FOUND).
     #    Run from an isolated temp dir: a dummy mimita-game.zip makes it dev-mode
     #    (no self-install/self-update), and a missing --release-json keeps the

@@ -43,6 +43,8 @@
 #include <vector>
 #include <fstream>
 
+#include "miniz.h"
+
 #pragma comment(lib, "bcrypt.lib")
 #pragma comment(lib, "dbghelp.lib")
 #pragma comment(lib, "gdiplus.lib")
@@ -333,16 +335,35 @@ std::string launcherDataDir()
 
 // ── Filesystem helpers ────────────────────────────────────────
 
+// Recursive delete that removes junctions/symlinks as links (never following
+// them). More reliable than SHFileOperation, which can choke on reparse points.
 bool deleteDirectory(const std::string& path)
 {
-    std::vector<char> buf(path.begin(), path.end());
-    buf.push_back('\0');
-    buf.push_back('\0');
-    SHFILEOPSTRUCTA fo = {};
-    fo.wFunc = FO_DELETE;
-    fo.pFrom = buf.data();
-    fo.fFlags = FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
-    return SHFileOperationA(&fo) == 0;
+    std::string search = path + "\\*";
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(search.c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) {
+        RemoveDirectoryA(path.c_str());
+        return !pathExists(path);
+    }
+    bool ok = true;
+    do {
+        std::string name = fd.cFileName;
+        if (name == "." || name == "..") continue;
+        std::string full = path + "\\" + name;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+                if (!RemoveDirectoryA(full.c_str())) ok = false; // link only
+            } else {
+                if (!deleteDirectory(full)) ok = false;
+            }
+        } else {
+            if (!DeleteFileA(full.c_str())) ok = false;
+        }
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+    if (!RemoveDirectoryA(path.c_str())) ok = false;
+    return ok;
 }
 
 void copyTree(const std::string& src, const std::string& dst)
@@ -363,39 +384,58 @@ void copyTree(const std::string& src, const std::string& dst)
     FindClose(h);
 }
 
-// Directory junction (works without admin, unlike symlinks).
-bool makeJunction(const std::string& link, const std::string& target)
+// User-owned directories kept inside each version folder. The game reads them
+// via cwd-relative paths, so they live directly in the active version folder
+// (no junctions — copying them forward on update is the AV-clean approach).
+const char* const kUserDirs[] = { "config", "logs", "replays", "saves", "screenshots", "mods" };
+
+// Make sure the user dirs exist in a version folder.
+void ensureUserDirs(const std::string& verDir)
 {
-    std::string cmd = "cmd /c mklink /J \"" + link + "\" \"" + target + "\"";
-    return system(cmd.c_str()) == 0;
+    for (const char* d : kUserDirs)
+        CreateDirectoryA((verDir + "\\" + d).c_str(), nullptr);
 }
 
-// Seed shared user data from a freshly extracted version folder and junction
-// config/logs/replays back so the game keeps its cwd-relative data paths.
-void linkUserDirs(const std::string& root, const std::string& verFolder)
+// Convert an old junction layout (versions\vX\config -> root\data\config) into
+// real folders. Deletes the junction link and copies the shared data back in.
+void deJunction(const std::string& root, const std::string& verDir)
 {
     std::string dataRoot = root + "\\data";
-    CreateDirectoryA(dataRoot.c_str(), nullptr);
-    const char* dirs[] = { "config", "logs", "replays" };
-    std::string base = root + "\\versions\\" + verFolder;
-    for (const char* d : dirs) {
-        std::string src = base + "\\" + d;
-        std::string dst = dataRoot + "\\" + d;
-        if (!pathExists(dst)) {
-            if (pathExists(src))
-                MoveFileExA(src.c_str(), dst.c_str(),
-                            MOVEFILE_COPY_ALLOWED | MOVEFILE_WRITE_THROUGH);
-            else
-                CreateDirectoryA(dst.c_str(), nullptr);
-        } else if (pathExists(src)) {
-            deleteDirectory(src);
+    for (const char* d : kUserDirs) {
+        std::string link = verDir + "\\" + d;
+        DWORD attrs = GetFileAttributesA(link.c_str());
+        if (attrs == INVALID_FILE_ATTRIBUTES) continue;
+        if (attrs & FILE_ATTRIBUTE_REPARSE_POINT) {
+            std::string srcData = dataRoot + "\\" + d;
+            deleteDirectory(link);                    // removes the link, not the target
+            if (pathExists(srcData)) copyTree(srcData, link);
+            else CreateDirectoryA(link.c_str(), nullptr);
         }
-        if (pathExists(src)) {
-            // Junction failed or move failed; give the game a working copy.
-            copyTree(dst, src);
-        } else {
-            makeJunction(src, dst);
-        }
+    }
+}
+
+// Merge user dirs from the previous active version into the newly activated one.
+void copyUserDataForward(const std::string& fromVerDir, const std::string& toVerDir)
+{
+    if (fromVerDir.empty() || fromVerDir == toVerDir) return;
+    for (const char* d : kUserDirs) {
+        std::string src = fromVerDir + "\\" + d;
+        if (!pathExists(src)) continue;
+        std::string dst = toVerDir + "\\" + d;
+        CreateDirectoryA(dst.c_str(), nullptr);
+        std::string search = src + "\\*";
+        WIN32_FIND_DATAA fd;
+        HANDLE h = FindFirstFileA(search.c_str(), &fd);
+        if (h == INVALID_HANDLE_VALUE) continue;
+        do {
+            std::string nm = fd.cFileName;
+            if (nm == "." || nm == "..") continue;
+            std::string s = src + "\\" + nm;
+            std::string d2 = dst + "\\" + nm;
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) copyTree(s, d2);
+            else CopyFileA(s.c_str(), d2.c_str(), FALSE);
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
     }
 }
 
@@ -458,7 +498,8 @@ void migrateLegacyInstall(const std::string& root)
         FindClose(h);
     }
     setActiveVersion(root, tag);
-    linkUserDirs(root, "v" + tag);
+    deJunction(root, verDir);
+    ensureUserDirs(verDir);
 }
 
 // ── Windows auto-start toggle ─────────────────────────────────
@@ -832,87 +873,87 @@ bool sha256File(const std::string& path, std::string& hex)
     return true;
 }
 
+// Native extraction using miniz (public-domain inflate). No PowerShell, no
+// cmd.exe — plain file I/O that antivirus treats as ordinary behavior.
 bool extractZipFileWithProgress(const std::string& zipPath, const std::string& destDir)
 {
     CreateDirectoryA(destDir.c_str(), nullptr);
 
-    // Write PowerShell extraction script to temp file
-    char tempDir[MAX_PATH];
-    GetTempPathA(MAX_PATH, tempDir);
-    std::string psPath = std::string(tempDir) + "mimita-extract.ps1";
+    mz_zip_archive zip;
+    memset(&zip, 0, sizeof(zip));
+    if (!mz_zip_reader_init_file(&zip, zipPath.c_str(), 0))
+        return false;
 
-    std::string ps =
-        "param($zip,$dest)\n"
-        "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8\n"
-        "Add-Type -AssemblyName System.IO.Compression.FileSystem\n"
-        "$z=[System.IO.Compression.ZipFile]::OpenRead($zip)\n"
-        "$e=$z.Entries;$t=$e.Count;$i=0\n"
-        "foreach($f in $e){\n"
-        "  $p=[int](++$i*100/$t)\n"
-        "  Write-Output \"$p|$($f.FullName)\"\n"
-        "  $d=Join-Path $dest $f.FullName\n"
-        "  $dn=[IO.Path]::GetDirectoryName($d)\n"
-        "  if(!(Test-Path $dn)){New-Item -ItemType Directory -Path $dn -Force|Out-Null}\n"
-        "  if(!$f.FullName.EndsWith('/')){$s=$f.Open();$ds=[IO.File]::Create($d);$s.CopyTo($ds);$ds.Close();$s.Close()}\n"
-        "}\n"
-        "$z.Dispose()\n";
-
-    writeFile(psPath, ps);
-
-    std::string cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File \""
-        + psPath + "\" \"" + zipPath + "\" \"" + destDir + "\"";
-
-    // Create pipe to capture stdout
-    HANDLE hRead, hWrite;
-    SECURITY_ATTRIBUTES sa = { sizeof(sa), nullptr, TRUE };
-    if (!CreatePipe(&hRead, &hWrite, &sa, 0)) { DeleteFileA(psPath.c_str()); return false; }
-    SetHandleInformation(hRead, HANDLE_FLAG_INHERIT, 0);
-
-    STARTUPINFOA si = {};
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESTDHANDLES;
-    si.hStdOutput = hWrite;
-    si.hStdError = hWrite;
-    PROCESS_INFORMATION pi = {};
-
-    BOOL ok = CreateProcessA(nullptr, &cmd[0], nullptr, nullptr, TRUE,
-        CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
-    CloseHandle(hWrite);
-
-    if (!ok) { CloseHandle(hRead); DeleteFileA(psPath.c_str()); return false; }
-
-    // Read output lines: "pct|filepath"
-    char buf[4096];
-    DWORD rd = 0;
-    std::string leftover;
-    while (ReadFile(hRead, buf, sizeof(buf) - 1, &rd, nullptr) && rd > 0) {
-        buf[rd] = '\0';
-        leftover += buf;
-        size_t nl;
-        while ((nl = leftover.find('\n')) != std::string::npos) {
-            std::string ln = leftover.substr(0, nl);
-            if (!ln.empty() && ln.back() == '\r') ln.pop_back();
-            leftover.erase(0, nl + 1);
-            auto sep = ln.find('|');
-            if (sep != std::string::npos) {
-                int pct = atoi(ln.substr(0, sep).c_str());
-                std::string fname = ln.substr(sep + 1);
-                if (fname.size() > 65) fname = "..." + fname.substr(fname.size() - 62);
-                setProgress(pct);
-                setStatusText(("Extracting: " + fname).c_str());
-            }
-            pumpMessages();
+    mz_uint fileCount = mz_zip_reader_get_num_files(&zip);
+    for (mz_uint i = 0; i < fileCount; ++i)
+    {
+        mz_zip_archive_file_stat st;
+        if (!mz_zip_reader_file_stat(&zip, i, &st)) {
+            mz_zip_reader_end(&zip);
+            return false;
         }
+
+        // Sanitize the entry path: never allow absolute or parent paths.
+        std::string name = st.m_filename;
+        std::string rel;
+        rel.reserve(name.size());
+        bool skip = false;
+        for (size_t k = 0; k < name.size(); ++k)
+        {
+            char c = name[k];
+            if (c == '/') c = '\\';
+            if (c == '\\') {
+                if (!rel.empty() && rel.back() == '\\') continue;
+                if (rel.size() >= 2 && rel[rel.size()-1] == '.' && rel[rel.size()-2] == '.') {
+                    skip = true;
+                    break;
+                }
+            }
+            rel += c;
+        }
+        while (!rel.empty() && (rel[0] == '\\' || rel[0] == ' '))
+            rel = rel.substr(1);
+        if (skip || rel.empty() || rel.find("..\\") != std::string::npos)
+            continue;
+
+        std::string full = destDir + "\\" + rel;
+        bool isDir = mz_zip_reader_is_file_a_directory(&zip, i) != 0;
+        if (isDir) {
+            CreateDirectoryA(full.c_str(), nullptr);
+        } else {
+            // Create parent directories.
+            std::string parent = full;
+            auto slash = parent.find_last_of('\\');
+            if (slash != std::string::npos) {
+                parent = parent.substr(0, slash);
+                std::string accum;
+                size_t start = 0;
+                while (start < parent.size()) {
+                    auto ns = parent.find('\\', start);
+                    if (ns == std::string::npos) ns = parent.size();
+                    accum = accum.empty() ? parent.substr(start, ns - start)
+                                          : accum + "\\" + parent.substr(start, ns - start);
+                    CreateDirectoryA(accum.c_str(), nullptr);
+                    start = ns + 1;
+                }
+            }
+            if (!mz_zip_reader_extract_to_file(&zip, i, full.c_str(), 0)) {
+                mz_zip_reader_end(&zip);
+                return false;
+            }
+        }
+
+        int pct = (int)((i + 1) * 100 / fileCount);
+        if (pct > 100) pct = 100;
+        std::string fname = name;
+        if (fname.size() > 65) fname = "..." + fname.substr(fname.size() - 62);
+        setProgress(pct);
+        setStatusText(("Extracting: " + fname).c_str());
+        pumpMessages();
     }
 
-    WaitForSingleObject(pi.hProcess, INFINITE);
-    DWORD psExit = 0;
-    GetExitCodeProcess(pi.hProcess, &psExit);
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-    CloseHandle(hRead);
-    DeleteFileA(psPath.c_str());
-    return psExit == 0;
+    mz_zip_reader_end(&zip);
+    return true;
 }
 
 std::string getAssetDownloadUrl(const std::string& json, const std::string& assetName)
@@ -1037,18 +1078,23 @@ void writeMinidump(DWORD pid, const std::string& path)
     CloseHandle(p);
 }
 
+// Config directory of the currently active version (the game reads
+// config/*.json from its working directory = the active version folder).
+std::string activeConfigDir(const std::string& root)
+{
+    std::string tag = getActiveVersion(root);
+    if (!tag.empty() && pathExists(versionDir(root, tag) + "\\config"))
+        return versionDir(root, tag) + "\\config";
+    return root + "\\config";
+}
+
 void storeSessionToken(const std::string& dir, const std::string& token)
 {
-    // The game reads config/auth-token.json from its working directory, which
-    // is junctioned to <root>\data\config for every version. Store there so
-    // the token survives version switches and installs.
+    // The game reads config/auth-token.json from its working directory (the
+    // active version folder). Store there; fall back to <root>\config when the
+    // game isn't installed yet (runInstall copies it into the new version).
     std::string root = dir;
-    std::string cfg;
-    if (pathExists(root + "\\data") || pathExists(root + "\\versions")) {
-        cfg = root + "\\data\\config";
-    } else {
-        cfg = root + "\\config";
-    }
+    std::string cfg = activeConfigDir(root);
     CreateDirectoryA(cfg.c_str(), nullptr);
     writeFile(cfg + "\\auth-token.json", "{\"session_token\":\"" + token + "\"}\n");
 }
@@ -1158,14 +1204,14 @@ bool loadBackgroundImageFromResource()
 std::string currentRoot();
 std::string guiUsername()
 {
+    std::string root = currentRoot();
+    std::string cfgDir = activeConfigDir(root);
+
     // 1. Game's profile cache (written on every login — the most recent user).
     std::string pc = getLocalAppData() + "\\Mimita\\profile-cache.json";
     std::string json = readFile(pc);
-    if (json.empty()) {
-        // fallback: config/auth-cache.json in the shared data folder
-        std::string root = currentRoot();
-        json = readFile(root + "\\data\\config\\auth-cache.json");
-    }
+    if (json.empty())
+        json = readFile(cfgDir + "\\auth-cache.json");
     if (!json.empty()) {
         std::string dn = extractJsonStr(json, "display_name");
         if (!dn.empty()) return dn;
@@ -1174,12 +1220,12 @@ std::string guiUsername()
     }
 
     // 2. current-profile.json
-    std::string cp = currentRoot() + "\\data\\config\\current-profile.json";
+    std::string cp = cfgDir + "\\current-profile.json";
     std::string un = extractJsonStr(readFile(cp), "username");
     if (!un.empty()) return un;
 
     // 3. last profile in config/profiles.json
-    std::string pf = currentRoot() + "\\data\\config\\profiles.json";
+    std::string pf = cfgDir + "\\profiles.json";
     std::string pj = readFile(pf);
     if (!pj.empty()) {
         std::string probe = pj;
@@ -1194,7 +1240,7 @@ std::string guiUsername()
     }
 
     // 4. most recently modified config/accounts/*.json basename
-    std::string accounts = currentRoot() + "\\data\\config\\accounts";
+    std::string accounts = cfgDir + "\\accounts";
     std::string search = accounts + "\\*.json";
     WIN32_FIND_DATAA fd;
     HANDLE h = FindFirstFileA(search.c_str(), &fd);
@@ -1784,7 +1830,7 @@ bool applyGameUpdate(const std::string& root, std::string tag,
 {
     // Sweep any stale staging folders left by interrupted updates.
     std::string versionsRoot = root + "\\versions";
-    std::string sweepSearch = versionsRoot + "\\.staging-*";
+    std::string sweepSearch = versionsRoot + "\\staging-*";
     WIN32_FIND_DATAA fd;
     HANDLE hFind = FindFirstFileA(sweepSearch.c_str(), &fd);
     if (hFind != INVALID_HANDLE_VALUE) {
@@ -1795,10 +1841,16 @@ bool applyGameUpdate(const std::string& root, std::string tag,
         FindClose(hFind);
     }
 
+    // Remember the current active version so user data can be carried forward.
+    std::string prevDir;
+    std::string prevTag = getActiveVersion(root);
+    if (!prevTag.empty() && pathExists(versionDir(root, prevTag)))
+        prevDir = versionDir(root, prevTag);
+
     // Stage the new version in a fresh folder, verify it, then atomically move
     // it into place. The currently active version is never touched until the
     // replacement is verified, so an interrupted update can't break the game.
-    std::string stage = versionsRoot + "\\.staging-" + tag;
+    std::string stage = versionsRoot + "\\staging-" + tag;
     deleteDirectory(stage);
     if (!extractZipFileWithProgress(zipPath, stage)) {
         deleteDirectory(stage);
@@ -1815,12 +1867,25 @@ bool applyGameUpdate(const std::string& root, std::string tag,
     std::string finalTag = vt.empty() ? tag : vt;
     std::string finalDir = versionDir(root, finalTag);
 
-    deleteDirectory(finalDir);
+    // Carry user data into the staged copy BEFORE the swap so it survives even
+    // when the same version is re-applied (dev mode) — the old folder (with its
+    // user data) is about to be deleted. Reading through old junctions pulls the
+    // shared data back into real folders, migrating the old layout.
+    if (!prevDir.empty())
+        copyUserDataForward(prevDir, stage);
+
+    if (!deleteDirectory(finalDir)) {
+        deleteDirectory(stage);
+        return false;
+    }
     if (!MoveFileExA(stage.c_str(), finalDir.c_str(), MOVEFILE_WRITE_THROUGH)) {
         deleteDirectory(stage);
         return false;
     }
-    linkUserDirs(root, "v" + finalTag);
+    deJunction(root, finalDir);
+    ensureUserDirs(finalDir);
+    if (!prevDir.empty() && pathExists(prevDir) && prevDir != finalDir)
+        deJunction(root, prevDir); // de-junction the kept rollback copy too
     setActiveVersion(root, finalTag);
     cleanupOldVersions(root, finalTag);
     return isValidPeExecutable(finalDir + "\\mimita.exe");
@@ -2710,6 +2775,15 @@ void runInstall(HWND hwnd)
     saveInstallConfig(g_installDir);
     g_gameExePath = gameExeForRoot(g_installDir);
 
+    // Carry over a pending session token stored before the game was installed
+    // (e.g. from a mimita:// link clicked before first run).
+    std::string pendingToken = readFile(g_installDir + "\\config\\auth-token.json");
+    if (!pendingToken.empty()) {
+        std::string cfg = activeConfigDir(g_installDir);
+        CreateDirectoryA(cfg.c_str(), nullptr);
+        writeFile(cfg + "\\auth-token.json", pendingToken + "\n");
+    }
+
     setProgress(98);
     setStatusText(guiStr("page2.status.shortcuts", "Creating shortcuts...").c_str());
     createShortcuts();
@@ -2984,19 +3058,10 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         g_releaseJsonPath = getFlagValue(cmdLine, "--release-json");
     }
 
-    // Internal: clean up the swapped-out launcher after a self-update. Wait for
-    // the old instance to fully exit (it spawned us), then delete old.exe.
+    // Internal: clean up the swapped-out launcher after a self-update. The old
+    // instance exits on its own right after spawning us; just wait out the file
+    // lock and remove .old.exe. No process killing — that only invites AV flags.
     if (hasFlag(cmdLine, "--post-upgrade")) {
-        std::string oldPid = getFlagValue(cmdLine, "--post-upgrade");
-        if (!oldPid.empty()) {
-            DWORD pid = (DWORD)atoi(oldPid.c_str());
-            HANDLE h = OpenProcess(SYNCHRONIZE | PROCESS_TERMINATE, FALSE, pid);
-            if (h) {
-                WaitForSingleObject(h, 5000);
-                TerminateProcess(h, 0);
-                CloseHandle(h);
-            }
-        }
         std::string oldPath = appDir() + "\\MimitaLauncher.old.exe";
         for (int attempt = 0; attempt < 25; ++attempt) {
             if (DeleteFileA(oldPath.c_str()) || GetFileAttributesA(oldPath.c_str()) == INVALID_FILE_ATTRIBUTES)

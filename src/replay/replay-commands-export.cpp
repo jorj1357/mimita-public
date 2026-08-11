@@ -61,6 +61,7 @@ void registerReplayExportCommands()
         }
     });
 
+#ifndef NDEBUG
     Terminal::instance().registerCommand({
         "export_test_ffmpeg", "Test ffmpeg by running 'ffmpeg -version' in a visible cmd window", "export_test_ffmpeg",
         [](const std::vector<std::string>&) {
@@ -152,7 +153,9 @@ void registerReplayExportCommands()
             }
         }
     });
+#endif
 
+#ifndef NDEBUG
     Terminal::instance().registerCommand({
         "export_test_output", "Test ffmpeg by generating a test MP4 in the export directory", "export_test_output",
         [](const std::vector<std::string>&) {
@@ -194,6 +197,7 @@ void registerReplayExportCommands()
             }
         }
     });
+#endif
 
     Terminal::instance().registerCommand({
         "export_diagnose", "Run replay export diagnostics, write report to replays/exports/",

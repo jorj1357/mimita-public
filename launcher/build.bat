@@ -8,20 +8,21 @@ set SRC=%~dp0main.cpp
 set RC=%~dp0launcher.rc
 set RES=%~dp0launcher.res.o
 set OUT=%~dp0..\MimitaLauncher.exe
+set MINIZ=%~dp0..\external\miniz
 
 echo Building MimitaLauncher...
 
-REM Compile resource file (embeds loading screen image)
+REM Compile resource file (embeds icon, loading screen, GUI config, version info)
 "%WINDRES%" "%RC%" -O coff -o "%RES%"
 if %ERRORLEVEL% neq 0 (
     echo [FAIL] Resource compilation failed
     exit /b 1
 )
 
-REM Compile launcher
+REM Compile launcher (native miniz unzip — no PowerShell, no cmd.exe)
 "%COMPILER%" -std=c++17 -Os -s -mwindows -static -static-libstdc++ -static-libgcc ^
-    "%SRC%" "%RES%" -o "%OUT%" ^
-    -lwinhttp -lshell32 -lbcrypt -ldbghelp -lgdiplus -lole32 -luuid -lcomctl32 -ladvapi32
+    "%SRC%" "%MINIZ%\miniz.c" "%MINIZ%\miniz_tdef.c" "%MINIZ%\miniz_tinfl.c" "%MINIZ%\miniz_zip.c" "%RES%" -o "%OUT%" ^
+    -I"%MINIZ%" -lwinhttp -lshell32 -lbcrypt -ldbghelp -lgdiplus -lole32 -luuid -lcomctl32 -ladvapi32
 
 if %ERRORLEVEL% neq 0 (
     echo [FAIL] Launcher build failed
