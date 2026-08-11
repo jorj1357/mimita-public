@@ -50,8 +50,11 @@ public:
         const std::unordered_map<uint32_t, Player>& remotePlayers,
         float dt);
     bool reload(Player& player);
-    void equip(Player& player, int slot);
-    void unequip(Player& player);
+    // Returns the holstered weapon id that auto-started a background reload
+    // (the weapon switched away from / unequipped), or "" if none. Callers use
+    // this to also tell the server to reload that weapon.
+    std::string equip(Player& player, int slot);
+    std::string unequip(Player& player);
     void inspect() const;
 
     WeaponCrosshairState crosshairState(const Player& player) const;

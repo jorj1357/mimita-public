@@ -15,15 +15,17 @@
 #include "audio/audio.h"
 #include "entities/player.h"
 
-static void tryAutoReloadOffhand(Player& player, const std::string& weaponId)
+// Start a background reload for a holstered weapon. Returns true if a reload
+// actually started (so the caller can tell the server too).
+static bool tryAutoReloadOffhand(Player& player, const std::string& weaponId)
 {
-    if (weaponId.empty()) return;
+    if (weaponId.empty()) return false;
     auto it = player.weaponRuntimes.find(weaponId);
-    if (it == player.weaponRuntimes.end()) return;
+    if (it == player.weaponRuntimes.end()) return false;
     WeaponRuntime& rt = it->second;
-    if (rt.isReloading) return;
+    if (rt.isReloading) return false;
     const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
-    if (!def) return;
+    if (!def) return false;
     WeaponRuntimeHelper::startReload(rt, *def);
     if (rt.isReloading) {
         if (!def->soundReload.empty())
@@ -31,7 +33,9 @@ static void tryAutoReloadOffhand(Player& player, const std::string& weaponId)
         if (DebugConfig::DEBUG_RELOAD)
             Debug::log(Debug::Category::General, "[RELOAD] auto-reload started for holstered '%s'\n",
                        weaponId.c_str());
+        return true;
     }
+    return false;
 }
 
 bool WeaponSystem::reload(Player& player) {
@@ -66,12 +70,14 @@ bool WeaponSystem::reload(Player& player) {
     return true;
 }
 
-void WeaponSystem::equip(Player& player, int slot) {
+std::string WeaponSystem::equip(Player& player, int slot) {
     std::string oldWeaponId = player.equippedWeaponId;
     const WeaponDefinition* def = getDefForSlot(slot);
     if (def) {
-        if (def->id != oldWeaponId)
-            tryAutoReloadOffhand(player, oldWeaponId);
+        // Switching away from a weapon starts its background reload (every time).
+        std::string offhandReloaded;
+        if (def->id != oldWeaponId && tryAutoReloadOffhand(player, oldWeaponId))
+            offhandReloaded = oldWeaponId;
         player.equippedSlot = slot;
         player.hasValidWeapon = true;
         player.equippedWeaponId = def->id;
@@ -99,14 +105,18 @@ void WeaponSystem::equip(Player& player, int slot) {
                 "  Reserve: %d\n",
                 def->fireDelay, def->spread, def->magazineSize, reserve);
         }
+        return offhandReloaded;
     } else {
         unequip(player);
+        return "";
     }
 }
 
-void WeaponSystem::unequip(Player& player) {
+std::string WeaponSystem::unequip(Player& player) {
     std::string oldWeaponId = player.equippedWeaponId;
-    tryAutoReloadOffhand(player, oldWeaponId);
+    std::string offhandReloaded;
+    if (tryAutoReloadOffhand(player, oldWeaponId))
+        offhandReloaded = oldWeaponId;
     player.equippedSlot = 0;
     player.hasValidWeapon = false;
     player.equippedWeaponId.clear();
@@ -128,4 +138,5 @@ void WeaponSystem::unequip(Player& player) {
     mSwordswordState = SwordswordState{};
     WeaponRocketLauncher::clear(mRocketState);
     PersistentPhysicsSystem::instance().clear();
+    return offhandReloaded;
 }

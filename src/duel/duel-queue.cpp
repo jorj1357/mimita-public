@@ -245,10 +245,16 @@ void DuelQueue::returnToQueue()
     stopExternalServerProcess();
     THE_NPC_SYSTEM.destroyAll();
 
+    // Capture the duel context BEFORE startQueue resets it.
+    const std::string opponent = mOpponentName;
+    const std::string roomCode = mRoomCode.empty() ? mQueueRoomCode : mRoomCode;
+    std::string msg = "Joining duels queue - left duel with " +
+        (opponent.empty() ? std::string("opponent") : opponent) +
+        " in room " + (roomCode.empty() ? std::string("?") : roomCode);
+
     // Re-queue, preferring the last opponent so an immediate rematch wins.
     startQueue(mProfileId, mName, mLastOpponentId, mMaps);
-    NotificationSystem::instance().push(
-        "Duel over", "Back in the queue - matchmaking...", 180, {});
+    NotificationSystem::instance().push("Duels queue", msg, 240, {});
 }
 
 void DuelQueue::rejoinQueue()

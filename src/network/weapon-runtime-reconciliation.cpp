@@ -8,8 +8,10 @@
 #include "combat/weapon-types.h"
 #include "entities/player.h"
 #include "network/multiplayer-context.h"
+#include "network/net_common.h"
 #include "network/network-weapons.h"
 #include "network/simulation-constants.h"
+#include "debug/debug-log.h"
 
 namespace MimitaNet {
 
@@ -151,6 +153,33 @@ bool reconcileAuthoritativeWeaponRuntime(
            stateRevision, rt.authoritativeSpawnGeneration, source);
 
     return true;
+}
+
+void sendReloadRequestForWeapon(MultiplayerContext& ctx,
+                                const std::string& weaponId)
+{
+    if (!ctx.active || ctx.localPlayerId == 0)
+        return;
+    const uint16_t netId = weaponDefNetworkIdFor(weaponId);
+    if (netId == 0)
+        return;
+
+    ReloadRequestPacket req{};
+    req.header.type = PACKET_RELOAD_REQUEST;
+    req.header.tick = ctx.tick;
+    req.header.playerId = ctx.localPlayerId;
+    req.requestId = ctx.nextActionRequestId++;
+    if (ctx.nextActionRequestId == 0) ctx.nextActionRequestId = 1;
+    req.spawnGeneration = ctx.lastKnownSpawnGeneration;
+    req.weaponDefNetworkId = netId;
+    mpSendPacket(ctx, &req, sizeof(req));
+    ctx.pendingReloadRequests[req.requestId] = {
+        req.requestId, req.spawnGeneration, netId, nowMs()
+    };
+    Debug::log(Debug::Category::Weapons,
+               "[RELOAD REQUEST SEND] playerId=%u requestId=%u weapon=%s pending=%zu\n",
+               ctx.localPlayerId, req.requestId, weaponId.c_str(),
+               ctx.pendingReloadRequests.size());
 }
 
 } // namespace MimitaNet
