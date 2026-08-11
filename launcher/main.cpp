@@ -1745,11 +1745,13 @@ HWND g_hubStartBtn = nullptr;
 HWND g_hubStopBtn = nullptr;
 HFONT g_hubBoldFont = nullptr;
 
-struct GameSession { std::string exe, workDir; };
+struct GameSession { std::string exe, workDir, root; };
 
 LRESULT CALLBACK TrayWndProc(HWND, UINT, WPARAM, LPARAM);
 void startGameInThread(const std::string& root);
 void launchGame(const std::string& exePath, const std::string& workDir);
+void instantPlay(const std::string& root);
+struct SilentCtx;
 
 void showTrayBalloon(const std::string& title, const std::string& text)
 {
@@ -2018,7 +2020,45 @@ void playFromTray()
         SetForegroundWindow(g_hWnd);
         return;
     }
-    runVisibleLaunchFlow(root, true);
+    instantPlay(root);
+}
+
+// Background thread: check for a newer game version without ever blocking play.
+// If one exists, surface it in the tray/hub as a placeholder; the update is
+// applied silently by gameThreadProc after the game closes.
+struct SilentCtx { std::string root; };
+
+DWORD WINAPI checkUpdateThreadProc(LPVOID p)
+{
+    SilentCtx* c = (SilentCtx*)p;
+    ReleaseInfo info;
+    if (fetchReleaseInfo(info)) {
+        std::string local = installedVersion(c->root);
+        if (!info.gameVersion.empty() && info.gameVersion != local) {
+            g_hubNote = guiStr("hub.updateAvailable",
+                "Update available — click to download after you close MiMITA");
+            if (g_hubWnd) PostMessageA(g_hubWnd, WM_APP_STATUS, 0, 0);
+        }
+    }
+    delete c;
+    return 0;
+}
+
+// Fast path: game already installed and usable -> start it immediately with no
+// visible launcher window and no network, then check for updates in the
+// background. If the install is missing or broken, fall back to the visible
+// install/repair flow.
+void instantPlay(const std::string& root)
+{
+    if (!isValidPeExecutable(gameExeForRoot(root))) {
+        runVisibleLaunchFlow(root, true);
+        return;
+    }
+    if (g_hWnd) ShowWindow(g_hWnd, SW_HIDE);
+    startGameInThread(root);
+    SilentCtx* c = new SilentCtx{ root };
+    HANDLE h = CreateThread(nullptr, 0, checkUpdateThreadProc, c, 0, nullptr);
+    if (h) CloseHandle(h);
 }
 
 // ── Game process control ──────────────────────────────────────
@@ -2027,6 +2067,14 @@ DWORD WINAPI gameThreadProc(LPVOID p)
 {
     GameSession* s = (GameSession*)p;
     launchGame(s->exe, s->workDir);
+    // Game has closed. Silently apply any update that became available — this
+    // never interrupts the running game and keeps the next launch current.
+    // In dev mode the local zip is the update source and gets re-applied on the
+    // next launch anyway, so skip it here.
+    if (!isDevMode()) {
+        ensureLatest(s->root, false);
+        if (g_hubWnd) PostMessageA(g_hubWnd, WM_APP_STATUS, 0, 0);
+    }
     delete s;
     return 0;
 }
@@ -2043,7 +2091,7 @@ void startGameInThread(const std::string& root)
         return;
     }
     if (g_hWnd) ShowWindow(g_hWnd, SW_HIDE);
-    GameSession* s = new GameSession{ exe, verDir };
+    GameSession* s = new GameSession{ exe, verDir, root };
     HANDLE h = CreateThread(nullptr, 0, gameThreadProc, s, 0, nullptr);
     if (h) CloseHandle(h);
 }
@@ -2073,8 +2121,6 @@ void stopGame()
         WaitForSingleObject(h, 3000);
     }
 }
-
-struct SilentCtx { std::string root; };
 
 DWORD WINAPI silentUpdateThreadProc(LPVOID p)
 {
@@ -2190,8 +2236,10 @@ void showTrayMenu()
     AppendMenuA(m, MF_STRING | (g_gameProc ? MF_ENABLED : MF_GRAYED), 2, guiStr("tray.stop", "Stop MiMITA").c_str());
     AppendMenuA(m, MF_STRING, 3, guiStr("tray.show", "Show MiMITA Launcher").c_str());
     AppendMenuA(m, MF_STRING, 4, guiStr("tray.check", "Check for updates").c_str());
+    AppendMenuA(m, MF_STRING | (isAutoStartEnabled() ? MF_CHECKED : MF_UNCHECKED), 5,
+                guiStr("tray.autoStart", "Start MiMITA Launcher on boot").c_str());
     AppendMenuA(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuA(m, MF_STRING, 5, guiStr("tray.exit", "Exit MiMITA Launcher").c_str());
+    AppendMenuA(m, MF_STRING, 6, guiStr("tray.exit", "Exit MiMITA Launcher").c_str());
     POINT pt;
     GetCursorPos(&pt);
     SetForegroundWindow(g_trayWnd);
@@ -2202,7 +2250,8 @@ void showTrayMenu()
     case 2: stopGame(); break;
     case 3: showHub(); break;
     case 4: runVisibleLaunchFlow(currentRoot(), false); break;
-    case 5:
+    case 5: setAutoStartEnabled(!isAutoStartEnabled()); break;
+    case 6:
         if (g_noErrorDialogs || MessageBoxA(nullptr,
                 guiStr("hub.confirmClose", "Are you sure you want to close MiMITA Launcher?").c_str(),
                 guiStr("window.title", "MiMITA").c_str(), MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) == IDYES) {
@@ -2238,9 +2287,12 @@ LRESULT CALLBACK HubWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg) {
     case WM_APP_SHOW_HUB:
+        refreshHub();
+        if (g_gameProc) showHub();   // game running -> show status window
+        else playFromTray();         // game not running -> start it
+        return 0;
     case WM_APP_STATUS:
         refreshHub();
-        if (msg == WM_APP_SHOW_HUB) showHub();
         return 0;
     case WM_DRAWITEM:
     {
@@ -3085,14 +3137,11 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
     // ── Single-instance guard ─────────────────────────────────
     g_hSingleton = CreateMutexA(nullptr, FALSE, "MimitaLauncherSingleton");
     if (g_hSingleton && GetLastError() == ERROR_ALREADY_EXISTS) {
-        // Another launcher is running. Surface its hub window and exit so
-        // launchers never stack up.
+        // Another launcher is running. Ask it to decide: start the game if it
+        // isn't running, otherwise surface its hub window. Exit so launchers
+        // never stack up.
         HWND hub = FindWindowA("MimitaHubWindow", nullptr);
-        if (hub) {
-            PostMessageA(hub, WM_APP_SHOW_HUB, 0, 0);
-            ShowWindow(hub, SW_SHOW);
-            SetForegroundWindow(hub);
-        }
+        if (hub) PostMessageA(hub, WM_APP_SHOW_HUB, 0, 0);
         CloseHandle(g_hSingleton);
         return 0;
     }
@@ -3193,8 +3242,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
     }
     else
     {
-        // ── Manual launch: visible update flow, then play ─────
-        runVisibleLaunchFlow(root, true);
+        // ── Manual launch: play instantly, check for updates in background ──
+        instantPlay(root);
     }
 
     // ── Main message loop (tray keeps the process alive) ──────

@@ -23,6 +23,8 @@ import Leaderboard from "./pages/Leaderboard"
 import Support from "./pages/Support"
 import Contribute from "./pages/Contribute"
 import Terms from "./pages/Terms"
+import Privacy from "./pages/Privacy"
+import Uninstall from "./pages/Uninstall"
 import NotFound from "./pages/NotFound"
 import Auth from "./pages/Auth"
 import ForgotPassword from "./pages/ForgotPassword"
@@ -78,6 +80,8 @@ ReactDOM.createRoot(
         <Route path="/support" element={<Support />} />
         <Route path="/contribute" element={<Contribute />} />
         <Route path="/terms" element={<Terms />} />
+        <Route path="/privacy" element={<Privacy />} />
+        <Route path="/uninstall" element={<Uninstall />} />
 
         <Route path="/signup" element={<Auth mode="signup" />} />
         <Route path="/signin" element={<Auth mode="signin" />} />

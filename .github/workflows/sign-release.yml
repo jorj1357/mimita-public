@@ -1,0 +1,168 @@
+# 08 11 2026, 15 58
+# purpose
+# Builds MiMITA and MimitaLauncher from source on a GitHub-hosted Windows
+# runner, then submits the EXEs to SignPath.io for code signing via the
+# SignPath Foundation free OSS program.
+# Runs on tag pushes (v*), requires SIGNPATH_* secrets to be configured.
+# Does NOT run the game, touch the VPS, or bypass antivirus/Defender.
+# Does NOT sign anything without an Approver manually approving in SignPath.io.
+
+name: sign-release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build-and-sign:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Download pinned MinGW-w64 (winlibs 15.2.0, ucr, posix, seh)
+        shell: pwsh
+        run: |
+          $base = 'https://github.com/brechtsanders/winlibs_mingw/releases/download/15.2.0posix-13.0.0-ucrt-r4'
+          Invoke-WebRequest -Uri "$base/winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4.zip" -OutFile winlibs.zip
+          $expected = ((Invoke-WebRequest -Uri "$base/winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4.zip.sha256" -UseBasicParsing).Content.Split()[0]).ToLower()
+          $actual = (Get-FileHash -Path winlibs.zip -Algorithm SHA256).Hash.ToLower()
+          if ($actual -ne $expected) { throw "winlibs SHA-256 mismatch: $actual" }
+          Expand-Archive -Path winlibs.zip -DestinationPath toolchain
+
+      - name: Download pinned GLFW 3.4
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri 'https://github.com/glfw/glfw/releases/download/3.4/glfw-3.4.bin.WIN64.zip' -OutFile glfw.zip
+          Expand-Archive -Path glfw.zip -DestinationPath glfw
+
+      - name: Set toolchain environment
+        shell: pwsh
+        run: |
+          $mingwBin = Join-Path $env:GITHUB_WORKSPACE 'toolchain\mingw64\bin'
+          $glfwRoot = Join-Path $env:GITHUB_WORKSPACE 'glfw\glfw-3.4.bin.WIN64'
+          "MIMITA_COMPILER=$mingwBin\g++.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "MIMITA_WINDRES=$mingwBin\windres.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "MIMITA_GLFW_INCLUDE=$glfwRoot\include" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "MIMITA_GLFW_LIB=$glfwRoot\lib-mingw-w64" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build release game (never launches the exe)
+        shell: pwsh
+        run: python build.py release build-only
+
+      - name: Verify release build
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'mimita.exe')) { throw 'mimita.exe not produced' }
+          $size = (Get-Item 'mimita.exe').Length
+          Write-Output "mimita.exe size: $($size / 1MB) MB"
+          if ($size -gt (60 * 1024 * 1024)) { throw 'mimita.exe is a debug build (too large)' }
+
+      - name: Build MimitaLauncher.exe
+        shell: cmd
+        run: launcher\build.bat
+
+      - name: Bundle mimita-game.zip
+        shell: pwsh
+        run: python devscripts/bundle-game.py
+
+      - name: Upload unsigned game artifact
+        id: upload-game
+        uses: actions/upload-artifact@v4
+        with:
+          name: mimita.exe
+          path: mimita.exe
+          if-no-files-found: error
+          archive: false
+
+      - name: Upload unsigned launcher artifact
+        id: upload-launcher
+        uses: actions/upload-artifact@v4
+        with:
+          name: MimitaLauncher.exe
+          path: MimitaLauncher.exe
+          if-no-files-found: error
+          archive: false
+
+      - name: Submit mimita.exe for signing
+        id: sign-game
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORG_ID }}
+          project-slug: ${{ secrets.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ secrets.SIGNPATH_GAME_ARTIFACT_CONFIG_SLUG }}
+          github-artifact-id: ${{ steps.upload-game.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: ${{ github.workspace }}/signed-game
+
+      - name: Submit MimitaLauncher.exe for signing
+        id: sign-launcher
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORG_ID }}
+          project-slug: ${{ secrets.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ secrets.SIGNPATH_LAUNCHER_ARTIFACT_CONFIG_SLUG }}
+          github-artifact-id: ${{ steps.upload-launcher.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: ${{ github.workspace }}/signed-launcher
+
+      - name: Verify signatures
+        shell: pwsh
+        run: |
+          $signedGame = Get-ChildItem "$env:GITHUB_WORKSPACE\signed-game" -Recurse -Filter *.exe | Select-Object -First 1
+          $signedLau  = Get-ChildItem "$env:GITHUB_WORKSPACE\signed-launcher" -Recurse -Filter *.exe | Select-Object -First 1
+          if (-not $signedGame) { throw 'signed mimita.exe not found' }
+          if (-not $signedLau) { throw 'signed MimitaLauncher.exe not found' }
+          Get-AuthenticodeSignature -FilePath $signedGame.FullName | Format-List Status,StatusMessage,SignerCertificate
+          Get-AuthenticodeSignature -FilePath $signedLau.FullName | Format-List Status,StatusMessage,SignerCertificate
+
+      - name: Write launcher_info.json with signed hashes
+        shell: pwsh
+        run: |
+          $gameVer = (Get-Content version.txt -Raw).Trim()
+          $lVer = Select-String -Path launcher\main.cpp -Pattern '#define\s+LAUNCHER_VERSION\s+"([^"]+)"' | ForEach-Object { $_.Matches[0].Groups[1].Value }
+          $signedGame = (Get-ChildItem "$env:GITHUB_WORKSPACE\signed-game" -Recurse -Filter *.exe | Select-Object -First 1).FullName
+          $signedLau  = (Get-ChildItem "$env:GITHUB_WORKSPACE\signed-launcher" -Recurse -Filter *.exe | Select-Object -First 1).FullName
+          Copy-Item $signedGame "$env:GITHUB_WORKSPACE\mimita.exe" -Force
+          Copy-Item $signedLau  "$env:GITHUB_WORKSPACE\MimitaLauncher.exe" -Force
+          $sha = { param($p) (Get-FileHash -Path $p -Algorithm SHA256).Hash.ToLower() }
+          $base = "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}"
+          $info = @{
+            launcher_version = $lVer
+            game_version = $gameVer
+            game_zip_url = "$base/mimita-game.zip"
+            game_zip_sha256 = & $sha mimita-game.zip
+            launcher_url = "$base/MimitaLauncher.exe"
+            launcher_sha256 = & $sha MimitaLauncher.exe
+            changelog = ""
+          } | ConvertTo-Json
+          Set-Content -Path launcher_info.json -Value $info -Encoding utf8
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ver = (Get-Content version.txt -Raw).Trim()
+          $tag = "v$ver"
+          $title = "MiMITA v$ver"
+          $assets = @('mimita-game.zip', 'mimita.exe', 'MimitaLauncher.exe', 'launcher_info.json')
+          gh release create $tag $assets --repo ${{ github.repository }} --title $title --notes "MiMITA v$ver — signed with a SignPath Foundation certificate."
+          if ($LASTEXITCODE -ne 0) {
+            Write-Output "Release already exists — uploading assets with --clobber"
+            gh release upload $tag $assets --repo ${{ github.repository }} --clobber
+            if ($LASTEXITCODE -ne 0) { throw 'gh release upload failed' }
+          }

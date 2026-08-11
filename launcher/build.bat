@@ -1,8 +1,13 @@
 @echo off
 REM Build MimitaLauncher.exe — standalone Win32 app with GUI wizard
 
-set COMPILER=C:\important\winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4\mingw64\bin\g++.exe
-set WINDRES=C:\important\winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4\mingw64\bin\windres.exe
+REM Toolchain paths are overridable via env vars (MIMITA_COMPILER / MIMITA_WINDRES)
+REM so CI runners can use their own MinGW install; defaults match local dev.
+if "%MIMITA_COMPILER%"=="" set "MIMITA_COMPILER=C:\important\winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4\mingw64\bin\g++.exe"
+if "%MIMITA_WINDRES%"=="" set "MIMITA_WINDRES=C:\important\winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4\mingw64\bin\windres.exe"
+
+set COMPILER=%MIMITA_COMPILER%
+set WINDRES=%MIMITA_WINDRES%
 
 set SRC=%~dp0main.cpp
 set RC=%~dp0launcher.rc

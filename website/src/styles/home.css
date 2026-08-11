@@ -147,3 +147,14 @@
     font-size: 0.8rem;
   }
 }
+
+.signPathLine {
+  margin-top: 2rem;
+  font-size: clamp(0.7rem, 1vmin, 0.95rem);
+  opacity: 0.55;
+}
+
+.signPathLine a {
+  color: #5cf0ff;
+  text-decoration: underline;
+}

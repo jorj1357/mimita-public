@@ -43,8 +43,15 @@ def check_release_build():
 # - production music work files (AGENTS.md: never committed/shipped)
 # - the dev character template
 # - Krita autosave files (e.g. textureshq/.gross3.png-autosave.kra)
-EXCLUDE_PREFIXES = ("assets/sound/music/ingame/donttrack/", "characters/_template/")
+# - dev/local account + profile data (never ship the maintainer's own
+#   profiles.json / accounts / current-profile to players)
+EXCLUDE_PREFIXES = (
+    "assets/sound/music/ingame/donttrack/",
+    "characters/_template/",
+    "config/accounts/",
+)
 EXCLUDE_SUFFIXES = (".kra",)
+EXCLUDE_PATHS = ("config/profiles.json", "config/current-profile.json")
 
 # Font source / old-font leftovers that must never ship in the release zip.
 # The game only needs the bitmap atlas (noto-serif-cjk-tc-mimita-v1.fnt + pngs).
@@ -65,6 +72,8 @@ def is_excluded(rel):
     for s in EXCLUDE_SUFFIXES:
         if low.endswith(s):
             return True
+    if low in EXCLUDE_PATHS:
+        return True
     if low.startswith(FONT_EXCLUDE_PREFIXES):
         return True
     for s in FONT_EXCLUDE_SUFFIXES:
