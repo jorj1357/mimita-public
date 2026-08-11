@@ -53,10 +53,9 @@ int validateAllAssets()
 
     AssetCheck checks[] = {
         // Fonts
-        {"font", "assets/font/mingliu-mimita-v3.fnt", "", 0, true},
-        {"font", "assets/font/mingliu-mimita-v3_0.png", "\x89PNG", 4, true},
-        {"font", "assets/font/mingliu-mimita-v3_1.png", "\x89PNG", 4, true},
-        {"font", "assets/font/mingliu.ttf", "\x00\x01\x00\x00", 4, false},
+        {"font", "assets/font/noto-serif-cjk-tc-mimita-v1.fnt", "", 0, true},
+        {"font", "assets/font/noto-serif-cjk-tc-mimita-v1_0.png", "\x89PNG", 4, true},
+        {"font", "assets/font/noto-serif-cjk-tc-mimita-v1_1.png", "\x89PNG", 4, true},
 
         // Textures
         {"texture", "assets/textures/default.png", "\x89PNG", 4, true},

@@ -6,7 +6,7 @@
   "borderColor": [0.35, 0.4, 0.5, 0.8],
   "textColor": [1.0, 1.0, 1.0, 1.0],
   "labelColor": [0.6, 0.6, 0.7, 1.0],
-  "font": "MingLiU",
+  "font": "Noto Serif CJK TC",
   "showAvatar": true,
   "showUsername": true,
   "showRole": true,
