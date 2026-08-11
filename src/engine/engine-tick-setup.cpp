@@ -16,6 +16,7 @@
 #include "map/map-loader-collision.h"
 #include "gui/hud/healthbar-config.h"
 #include "effects/hit-effects.h"
+#include "effects/muzzle-flash-config.h"
 #include "network/disagreement-visuals.h"
 #include "config/camera-config.h"
 #include "config/weapon-hitfx-config.h"
@@ -50,6 +51,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     WeaponTracersConfig::instance().pollReload();
     HealthbarConfig::instance().pollReload();
     HitEffects::pollReload();
+    MuzzleFlashConfig::instance().pollReload();
     MimitaNet::pollDisagreementReload();
     CamConfig::instance().pollReload();
     SizeScalingConfig::instance().pollReload();
