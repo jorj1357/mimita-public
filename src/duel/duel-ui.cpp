@@ -250,17 +250,17 @@ void renderDuelTracer(const Camera& camera)
     if (!dq.tracerActive() || !dq.inDuel())
         return;
 
-    const glm::vec3 base = dq.tracerPos();
+    // Beam from the player's CURRENT position to the enemy's spawn, so it
+    // always points "over there" wherever you're standing.
+    const glm::vec3 from = THE_PLAYER.pos;
+    const glm::vec3 to = dq.tracerPos();
     const glm::vec4 color = {0.3f, 1.0f, 0.35f, 0.9f};
 
-    // Tall bright beam above the enemy's spawn.
+    DebugVis::drawFilledBeam(camera, from, to, 0.18f, color);
+    // Bright marker at the enemy's spawn so the end of the beam is easy to spot.
     DebugVis::drawFilledBeam(camera,
-        glm::vec3(base.x, base.y + 12.0f, base.z),
-        glm::vec3(base.x, base.y - 1.0f, base.z),
+        glm::vec3(to.x, to.y + 8.0f, to.z),
+        glm::vec3(to.x, to.y - 1.0f, to.z),
         0.25f, color);
-    DebugVis::drawFilledBeam(camera,
-        glm::vec3(base.x, base.y + 9.0f, base.z),
-        glm::vec3(base.x, base.y + 11.0f, base.z),
-        1.2f, color);
-    DebugVis::drawWorldLabel(base + glm::vec3(0.0f, 13.0f, 0.0f), "ENEMY", color);
+    DebugVis::drawWorldLabel(to + glm::vec3(0.0f, 9.0f, 0.0f), "ENEMY", color);
 }

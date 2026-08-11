@@ -62,6 +62,9 @@ struct ServerDuelState
     bool rotateMaps = false;
     bool hasPendingManualMap = false;
     std::string pendingManualMap;
+    // Maps already used this rotation cycle (so each new duel picks a map we
+    // weren't just on, and never repeats until the whole pool is used).
+    std::unordered_set<std::string> usedMaps;
     // Server's current loaded map (name only, for HUD/logging).
     std::string mapId;
 };
