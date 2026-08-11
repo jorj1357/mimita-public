@@ -14,6 +14,7 @@
 #include "duel/duel-map-pool.h"
 
 #include <chrono>
+#include <random>
 #include <thread>
 
 #include "terminal/terminal-state.h"
@@ -37,6 +38,15 @@ constexpr uint64_t kServerConnectTimeoutMs = 20000;
 constexpr uint64_t kMatchConnectTimeoutMs = 60000;
 constexpr uint64_t kOpponentJoinTimeoutMs = 30000;
 constexpr uint64_t kStateStaleTimeoutMs = 3500;
+
+// Unique per game instance: two exes on one PC get different session ids, so
+// the coordinator treats them as two players even with the same account/name.
+std::string makeSessionId()
+{
+    static std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<uint64_t> dist;
+    return std::to_string(MimitaNet::nowMs()) + "_" + std::to_string(dist(rng));
+}
 
 } // namespace
 
@@ -145,6 +155,9 @@ void DuelQueue::startQueue(const std::string& profileId, const std::string& name
     if (mMaps.empty())
         mMaps = DuelMapPool::instance().list();
     mChosenMap = DuelMapPool::instance().randomMap();
+    // One stable session id per game instance (used as the queue ticket key).
+    if (mSessionId.empty())
+        mSessionId = makeSessionId();
 
     // Tear down any leftover session/server before launching a fresh one.
     MimitaNet::mpShutdown(MP_CONTEXT);
@@ -297,7 +310,7 @@ void DuelQueue::handleHostMatch()
     mMatchFoundBanner = true;
     mMatchFoundTimer = 0.0f;
     mState = DuelQueueState::MatchFound;
-    mStatusText = "match found! opponent joining your room...";
+    mStatusText = "opponent joining your room...";
     mPhaseStartMs = nowMs();
     NotificationSystem::instance().push(
         "match found!", "vs " + mOpponentName, 300, {});
@@ -322,7 +335,7 @@ void DuelQueue::handleClientMatch()
     mState = DuelQueueState::Connecting;
     mPhaseStartMs = nowMs();
     mConnectedSinceMs = 0;
-    mStatusText = "Connecting to opponent...";
+    mStatusText = "Joining...";
     NotificationSystem::instance().push(
         "match found!", "joining " + mOpponentName + "'s room", 300, {});
     Debug::log(Debug::Category::Duel, "[DUEL CLIENT] matched - joining host room=%s\n",
@@ -406,7 +419,7 @@ void DuelQueue::updateQueuing(float dt)
             return;
         }
         QueueJoinResult join = coordinatorQueueJoin(
-            mProfileId, mName, mPreferOpponent, mMaps, mChosenMap, mQueueRoomCode);
+            mProfileId, mName, mPreferOpponent, mMaps, mChosenMap, mQueueRoomCode, mSessionId);
         if (join.ok)
         {
             {

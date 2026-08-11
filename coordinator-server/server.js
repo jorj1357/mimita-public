@@ -653,18 +653,15 @@ const routes = {
         const name = String(body.name || "Player").substring(0, 32);
         if (!profileId) return json(res, 200, { ok: false, error: "missing-profile" });
 
-        // Reuse an existing ticket for the same player (idempotent re-queue).
-        let ticketId = null;
-        for (const [id, ticket] of queueTickets) {
-            if (ticket.profile_id === profileId) {
-                ticketId = id;
-                break;
-            }
-        }
-        if (!ticketId) {
-            ticketId = generateId();
+        // Each game instance has a unique session_id; use it as the ticket key
+        // so two instances (even the same account / guest name) become two
+        // separate tickets and can match each other. Re-joining with the same
+        // session_id (same instance re-queueing) reuses its ticket.
+        const sessionId = body.session_id ? String(body.session_id).substring(0, 80) : "";
+        const ticketId = sessionId || generateId();
+        if (!queueTickets.has(ticketId))
             queueTickets.set(ticketId, {});
-        }
+
         const ticket = queueTickets.get(ticketId);
         ticket.ticket_id = ticketId;
         ticket.profile_id = profileId;

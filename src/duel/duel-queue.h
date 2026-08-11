@@ -131,6 +131,9 @@ private:
     std::string mPreferOpponent;
     std::vector<std::string> mMaps;
     std::string mChosenMap;
+    // Unique per game instance so two exes (same account/guest name) are two
+    // separate queue tickets on the coordinator.
+    std::string mSessionId;
 
     // Shared with the poll thread (mutex guarded)
     std::mutex mSharedMutex;

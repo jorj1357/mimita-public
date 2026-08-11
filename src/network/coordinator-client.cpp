@@ -18,6 +18,7 @@
 #include <vector>
 #include <winhttp.h>
 #include <nlohmann/json.hpp>
+#include "debug/debug-log.h"
 
 #pragma comment(lib, "winhttp.lib")
 
@@ -622,7 +623,8 @@ QueueJoinResult coordinatorQueueJoin(const std::string& profileId,
                                      const std::string& preferOpponentId,
                                      const std::vector<std::string>& maps,
                                      const std::string& map,
-                                     const std::string& roomCode)
+                                     const std::string& roomCode,
+                                     const std::string& sessionId)
 {
     QueueJoinResult result;
     json j;
@@ -635,13 +637,14 @@ QueueJoinResult coordinatorQueueJoin(const std::string& profileId,
         j["maps"].push_back(m);
     j["map"] = map;
     j["room_code"] = roomCode;
+    j["session_id"] = sessionId;
 
     std::string response;
     long httpCode = 0;
     if (!httpPostJsonInner(gCoordinatorUrl + "/api/duels/queue/join", j.dump(), response, 4000, httpCode))
     {
         result.errorCode = "http-fail";
-        printf("[DUEL QUEUE] join HTTP fail code=%ld\n", httpCode);
+        Debug::log(Debug::Category::Duel, "[DUEL QUEUE] join HTTP fail code=%ld\n", httpCode);
         return result;
     }
     try {
@@ -657,7 +660,7 @@ QueueJoinResult coordinatorQueueJoin(const std::string& profileId,
         }
     } catch (const std::exception& e) {
         result.errorCode = "parse-error";
-        printf("[DUEL QUEUE] join parse error: %s\n", e.what());
+        Debug::warn(Debug::Category::Duel, "[DUEL QUEUE] join parse error: %s\n", e.what());
     }
     return result;
 }
@@ -698,7 +701,7 @@ QueuePollResult coordinatorQueuePoll(const std::string& ticketId)
     } catch (const std::exception& e) {
         result.status = "error";
         result.errorCode = "parse-error";
-        printf("[DUEL QUEUE] poll parse error: %s\n", e.what());
+        Debug::warn(Debug::Category::Duel, "[DUEL QUEUE] poll parse error: %s\n", e.what());
     }
     return result;
 }
@@ -715,7 +718,7 @@ bool coordinatorQueueHostReady(const std::string& matchId, const std::string& ro
         return false;
     try {
         return jsonBool(json::parse(response), "ok");
-    } catch (...) {
+    } catch (const std::exception&) {
         return false;
     }
 }
