@@ -2,6 +2,24 @@
 
 https://mimita.fun
 
+# Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io),
+certificate by [SignPath Foundation](https://signpath.org).
+
+- [Full code signing policy](docs/code-signing-policy.md)
+- [Privacy policy](docs/privacy-policy.md)
+- [Uninstall instructions](docs/uninstall.md)
+- [Third-party licenses](docs/third-party-licenses.md)
+
+Team roles: Authors and Reviewers: [jorj1357](https://github.com/jorj1357).
+Approvers: [jorj1357](https://github.com/jorj1357) (all releases require
+manual approval before signing).
+
+# License
+
+MiMITA is licensed under the [MIT License](LICENSE).
+
 # descriptison
 um
 

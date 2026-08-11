@@ -1,0 +1,35 @@
+# 08 11 2026, 15 58
+# purpose
+# SignPath source-code/build policy for MiMITA's release signing policy.
+# Requires branch rulesets (pull-request review, no force-push) and
+# GitHub-hosted runners, matching the SignPath Foundation OSS requirements.
+# Does NOT define SignPath artifact configuration or signing policy contents.
+# Does NOT grant bypass to any user.
+
+# IMPORTANT: rename/place this file at
+#   .signpath/policies/<signpath-project-slug>/<signpath-signing-policy-slug>.yml
+# on the default branch once the SignPath Foundation application is approved
+# and the slugs are known. Restrict writes to this path with CODEOWNERS.
+
+github-policies:
+  runners:
+    require_github_hosted: true
+  build:
+    disallow_reruns: true
+  branch_rulesets:
+    - condition:
+        rules:
+          - block_force_pushes:
+          - require_pull_request:
+              min_required_approvals: 1
+              require_code_owner_review: true
+      allow_bypass_actors: false
+      enforced_from: EARLIEST
+    - condition:
+        rules:
+          - require_code_scanning:
+              tools:
+                - tool: CodeQL
+                  min_alerts_threshold: errors
+                  min_security_alerts_threshold: medium
+      allow_bypass_actors: true

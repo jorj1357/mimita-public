@@ -94,6 +94,8 @@ def bundle_zip():
         bad = [n for n in zf.namelist()
                if n.lower().startswith("assets/sound/music/ingame/donttrack/")
                or n.lower().startswith("characters/_template/")
+               or n.lower().startswith("config/accounts/")
+               or n.lower() in ("config/profiles.json", "config/current-profile.json")
                or n.lower().endswith(".kra")]
     if bad:
         fail(f"mimita-game.zip contains excluded files: {bad[:5]}")

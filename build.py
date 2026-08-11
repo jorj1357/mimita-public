@@ -31,14 +31,23 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
-COMPILER = r"C:\important\winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4\mingw64\bin\g++.exe"
-CCACHE = os.path.join(os.path.dirname(COMPILER), "ccache.exe")
+# Toolchain paths are overridable via environment variables so the same scripts
+# run locally (defaults below) and on CI runners (e.g. GitHub Actions).
+DEFAULT_COMPILER = r"C:\important\winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4\mingw64\bin\g++.exe"
+COMPILER = os.environ.get("MIMITA_COMPILER", DEFAULT_COMPILER)
+CCACHE = os.environ.get("MIMITA_CCACHE", os.path.join(os.path.dirname(COMPILER), "ccache.exe"))
 
 def ccache_cmd():
-    return [CCACHE, COMPILER]
+    # Fall back to the plain compiler when ccache.exe is not installed (e.g.
+    # CI runners), so the build works without ccache.
+    if os.path.isfile(CCACHE):
+        return [CCACHE, COMPILER]
+    return [COMPILER]
 
-GLFW_INCLUDE = r"C:\important\glfw-3.4.bin.WIN64\include"
-GLFW_LIB = r"C:\important\glfw-3.4.bin.WIN64\lib-mingw-w64"
+DEFAULT_GLFW_INCLUDE = r"C:\important\glfw-3.4.bin.WIN64\include"
+DEFAULT_GLFW_LIB = r"C:\important\glfw-3.4.bin.WIN64\lib-mingw-w64"
+GLFW_INCLUDE = os.environ.get("MIMITA_GLFW_INCLUDE", DEFAULT_GLFW_INCLUDE)
+GLFW_LIB = os.environ.get("MIMITA_GLFW_LIB", DEFAULT_GLFW_LIB)
 
 SRC_DIR = os.path.join(ROOT, "src")
 BUILD_DIR = os.path.join(ROOT, "build")
@@ -549,7 +558,8 @@ with ThreadPoolExecutor(max_workers=os.cpu_count()) as juice_executor:
 # RESOURCE (icon) — mimita.rc → build/mimita.res.o
 # ============================================================
 
-WINDRES = r"C:\important\winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4\mingw64\bin\windres.exe"
+DEFAULT_WINDRES = r"C:\important\winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4\mingw64\bin\windres.exe"
+WINDRES = os.environ.get("MIMITA_WINDRES", DEFAULT_WINDRES)
 RC_FILE = os.path.join(ROOT, "mimita.rc")
 RES_OBJ = os.path.join(BUILD_DIR, "mimita.res.o")
 res_compiled = False

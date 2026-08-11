@@ -11,9 +11,13 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-COMPILER = r"C:\important\winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4\mingw64\bin\g++.exe"
-CCACHE = os.path.join(os.path.dirname(COMPILER), "ccache.exe")
-GLFW_INCLUDE = r"C:\important\glfw-3.4.bin.WIN64\include"
+
+# Toolchain paths are overridable via environment variables so the same scripts
+# run locally (defaults below) and on CI runners (e.g. GitHub Actions).
+DEFAULT_COMPILER = r"C:\important\winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4\mingw64\bin\g++.exe"
+COMPILER = os.environ.get("MIMITA_COMPILER", DEFAULT_COMPILER)
+CCACHE = os.environ.get("MIMITA_CCACHE", os.path.join(os.path.dirname(COMPILER), "ccache.exe"))
+GLFW_INCLUDE = os.environ.get("MIMITA_GLFW_INCLUDE", r"C:\important\glfw-3.4.bin.WIN64\include")
 BUILD_DIR = os.path.join(ROOT, "build")
 SOURCE = os.path.join(ROOT, "src", "effects", "effect-part.cpp")
 STAGING_DLL = os.path.join(BUILD_DIR, "mimita-game.build.dll")
@@ -29,8 +33,12 @@ if os.path.exists(OUTPUT_DLL) and os.path.getmtime(SOURCE) < os.path.getmtime(OU
     print("[HOT RELOAD] DLL up to date, skipping")
     sys.exit(0)
 
-command = [
-    CCACHE,
+command = []
+# Fall back to the plain compiler when ccache.exe is not installed (e.g. CI
+# runners), so the hot-reload DLL still builds without ccache.
+if os.path.isfile(CCACHE):
+    command.append(CCACHE)
+command += [
     COMPILER,
     "-std=c++17",
     "-Og",

@@ -54,3 +54,32 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.downloadWhat {
+  max-width: 720px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  padding: 1.2rem 1.5rem;
+  text-align: left;
+}
+
+.downloadWhatTitle {
+  font-size: clamp(0.9rem, 1.5vmin, 1.4rem);
+  letter-spacing: 0.08em;
+  margin-bottom: 0.6rem;
+  color: #a020ff;
+}
+
+.downloadWhat p {
+  margin: 0.4rem 0;
+  opacity: 0.85;
+}
+
+.downloadLegal {
+  font-size: clamp(0.7rem, 1vmin, 0.95rem);
+  opacity: 0.6;
+}
+
+.downloadLegal a {
+  color: #5cf0ff;
+  text-decoration: underline;
+}

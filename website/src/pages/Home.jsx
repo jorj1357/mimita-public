@@ -107,12 +107,10 @@ export default function Home() {
 
           <div className="ctaButtons">
             <a
-              href="https://github.com/jorj1357/mimita-public"
-              target="_blank"
-              rel="noopener noreferrer"
+              href="/download"
               className="downloadButton"
             >
-              DOWNLOAD v1
+              DOWNLOAD MIMITA
             </a>
 
             <span className="platformLabel">
@@ -153,6 +151,23 @@ export default function Home() {
               className="secondaryButton"
             >
               Documentation
+            </a>
+          </div>
+
+          <div className="signPathLine">
+            Free code signing provided by{" "}
+            <a href="https://about.signpath.io" target="_blank" rel="noopener noreferrer">SignPath.io</a>,
+            certificate by{" "}
+            <a href="https://signpath.org" target="_blank" rel="noopener noreferrer">SignPath Foundation</a>.
+            {" "}·{" "}
+            <a href="/privacy">Privacy</a> ·{" "}
+            <a href="/uninstall">Uninstall</a> ·{" "}
+            <a
+              href="https://github.com/jorj1357/mimita-public/blob/main/docs/code-signing-policy.md"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Code signing policy
             </a>
           </div>
 
