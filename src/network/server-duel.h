@@ -40,9 +40,13 @@ struct ServerDuelState
     uint32_t playerAId = 0;
     uint32_t playerBId = 0;
     uint32_t winnerPlayerId = 0;
-    // Team spawn positions (picked from world spawn points when the duel starts)
+    // The single match anchor: both teams always spawn near this one point
+    // (picked from the map's spawn points, fixed for the whole match), with a
+    // fresh random XY offset on every spawn/respawn. Floating on purpose.
     glm::vec3 spawnA{0.0f};
     glm::vec3 spawnB{0.0f};
+    // Random XY offset radius around the anchor (meters).
+    float spawnOffsetRadius = 5.0f;
     bool spawnsAssigned = false;
     // The last DuelStatePacket sent, to avoid re-broadcasting identical state.
     bool stateSent = false;

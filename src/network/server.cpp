@@ -403,6 +403,7 @@ int runServer(const LaunchOptions& options)
         duelRules.rematchSeconds = gm.rematchSeconds;
         duelRules.teamAName = gm.teamNames.size() > 0 ? gm.teamNames[0] : "RED";
         duelRules.teamBName = gm.teamNames.size() > 1 ? gm.teamNames[1] : "BLUE";
+        duelRules.spawnOffsetRadius = gm.spawnOffsetRadius;
         duelRules.mapPool = DuelMapPool::instance().list();
         duelRules.rotateMaps = true;
         duelRules.mapId = mapName;

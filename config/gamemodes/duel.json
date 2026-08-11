@@ -11,5 +11,6 @@
   "rematch_seconds": 5,
   "spawn_tracer_seconds": 1.5,
   "allow_rematch": true,
+  "spawn_offset_radius": 5,
   "maps": ["mimita-duels-map-v3", "atdm", "funworld"]
 }
