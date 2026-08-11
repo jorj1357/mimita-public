@@ -189,13 +189,16 @@ struct QueuePollResult {
 
 // Join the duels queue. `maps` is the caller's duel map pool; `map` is the
 // random map picked at queue time; `roomCode` is the player's own running duel
-// server's code (the match uses the host ticket's code). Guest-friendly.
+// server's code (the match uses the host ticket's code). `sessionId` is a
+// unique id per game instance so two instances (even same account/guest name)
+// become two separate queue tickets. Guest-friendly.
 QueueJoinResult coordinatorQueueJoin(const std::string& profileId,
                                      const std::string& name,
                                      const std::string& preferOpponentId,
                                      const std::vector<std::string>& maps,
                                      const std::string& map,
-                                     const std::string& roomCode);
+                                     const std::string& roomCode,
+                                     const std::string& sessionId);
 
 // Leave the queue (also cancels any assigned-but-unstarted match).
 bool coordinatorQueueLeave(const std::string& ticketId);
