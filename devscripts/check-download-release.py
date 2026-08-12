@@ -15,7 +15,7 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = "2.0.1"
+VERSION = "2.0.2"
 RDIR = os.path.join(ROOT, "release", VERSION)
 GITHUB_REPO = "jorj1357/mimita-public"
 ASSETS = ("mimita.exe", "MimitaLauncher.exe", "mimita-game.zip", "launcher_info.json")
