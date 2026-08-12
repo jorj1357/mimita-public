@@ -14,7 +14,7 @@
 #define IDB_LOADING_IMAGE 101
 #define GUI_CONFIG 102
 
-#define LAUNCHER_VERSION "1.0.0"
+#define LAUNCHER_VERSION "1.0.1"
 #define GITHUB_REPO "jorj1357/mimita-public"
 #define RELEASE_API_URL "https://api.github.com/repos/jorj1357/mimita-public/releases/latest"
 
@@ -704,8 +704,12 @@ bool parseUrl(const std::string& url, UrlParts& u)
     return true;
 }
 
+// Connect directly. WINHTTP_ACCESS_TYPE_DEFAULT_PROXY triggers WPAD
+// auto-proxy detection (WinHttpDetectAutoProxyConfigUrl), which hangs on
+// machines with "automatically detect proxy settings" enabled and blocks all
+// HTTPS (release JSON fetch, game zip download). Direct access avoids that.
 HINTERNET hOpen() { return WinHttpOpen(L"MimitaLauncher/3.0",
-    WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME,
+    WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME,
     WINHTTP_NO_PROXY_BYPASS, 0); }
 HINTERNET hConnect(HINTERNET s, const UrlParts& u) { return WinHttpConnect(s, u.host.c_str(), u.port, 0); }
 HINTERNET hRequest(HINTERNET c, const UrlParts& u, LPCWSTR method, LPCWSTR hdrs = nullptr) {
