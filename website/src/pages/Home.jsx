@@ -107,12 +107,10 @@ export default function Home() {
 
           <div className="ctaButtons">
             <a
-              href="/download"
+              href="https://github.com/jorj1357/mimita-public/releases/latest/download/MimitaLauncher.exe"
               className="downloadButton"
-              onClick={(e) => {
-                e.preventDefault()
+              onClick={() => {
                 sessionStorage.setItem("mimita_dl_auto", "1")
-                window.location.href = "/api/download/latest"
                 setTimeout(() => {
                   window.location.href = "/download"
                 }, 1500)
