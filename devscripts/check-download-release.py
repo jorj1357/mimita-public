@@ -2,11 +2,11 @@
 # purpose
 # Dry-run checker for the MiMITA download/release path. Explains, without
 # deploying anything, what mimita.fun/download resolves to, what GitHub
-# release/tag/assets the launcher expects, whether release/2.0.1 filenames and
+# release/tag/assets the launcher expects, whether release/2.0.2 filenames and
 # launcher_info.json match that expectation, and what exact command would
 # publish — without running it.
 # Does NOT contact the network, upload, publish, deploy, push, tag, or sign.
-# Requires: staged release/2.0.1/ artifacts.
+# Requires: staged release/2.0.2/ artifacts.
 
 import importlib.util
 import json
@@ -103,7 +103,7 @@ def staged_hashes():
 
 
 def check_release_contents():
-    print_sep("3. release/2.0.1 contents + hashes")
+    print_sep("3. release/2.0.2 contents + hashes")
     for name in ASSETS:
         check(f"release/{VERSION}/{name} present",
               os.path.isfile(os.path.join(RDIR, name)))

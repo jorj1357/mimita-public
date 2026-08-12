@@ -14,7 +14,7 @@
 #define IDB_LOADING_IMAGE 101
 #define GUI_CONFIG 102
 
-#define LAUNCHER_VERSION "1.0.1"
+#define LAUNCHER_VERSION "1.0.2"
 #define GITHUB_REPO "jorj1357/mimita-public"
 #define RELEASE_API_URL "https://api.github.com/repos/jorj1357/mimita-public/releases/latest"
 
@@ -124,6 +124,7 @@ enum {
     IDH_START,
     IDH_STOP,
     IDH_AUTOSTART,
+    IDH_UPDATE,
     IDH_CLOSE,
 };
 
@@ -678,6 +679,9 @@ void guiReplace(std::string& s, const char* token, const std::string& val)
 void pumpMessages();
 void setProgress(int percent);
 void setStatusText(const char* text);
+bool applyGameUpdate(const std::string& root, std::string tag, const std::string& zipPath);
+void createShortcuts();
+void showChangelogOnce(const std::string& version, const std::string& changelog);
 
 struct UrlParts {
     std::wstring host, path;
@@ -1800,14 +1804,11 @@ void refreshHub()
     if ((h = GetDlgItem(g_hubWnd, IDH_ACCOUNT)))
         SetWindowTextA(h, greeting.c_str());
 
-    std::string ver = installedVersion(root);
     std::string buildTxt = guiStr("hub.build", "Build: v{version}");
-    if (ver.empty()) {
-        buildTxt = guiStr("hub.build", "Build: v{version}");
-        guiReplace(buildTxt, "version", guiStr("hub.notInstalled", "not installed"));
-    } else {
-        guiReplace(buildTxt, "version", ver);
-    }
+    guiReplace(buildTxt, "version", LAUNCHER_VERSION);
+    std::string gameVer = installedVersion(root);
+    buildTxt += "   \u2022   game v"
+        + (gameVer.empty() ? guiStr("hub.notInstalled", "not installed") : gameVer);
     if ((h = GetDlgItem(g_hubWnd, IDH_BUILD)))
         SetWindowTextA(h, buildTxt.c_str());
 
@@ -1833,6 +1834,77 @@ void showHub()
     refreshHub();
     ShowWindow(g_hubWnd, SW_SHOW);
     SetForegroundWindow(g_hubWnd);
+}
+
+// Manual "Check for updates" (hub button / tray menu): fetch the latest release
+// and apply it now if it is newer than the installed game, then report the
+// result in a tray balloon + hub note so the user sees what happened.
+void checkForUpdates()
+{
+    if (g_gameProc) {
+        if (!g_noErrorDialogs)
+            MessageBoxA(g_hubWnd,
+                guiStr("hub.updateGameRunning", "Close MiMITA first, then check for updates.").c_str(),
+                guiStr("window.title", "MiMITA").c_str(), MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+
+    std::string root = currentRoot();
+    std::string oldVer = installedVersion(root);
+
+    ReleaseInfo info = g_releaseInfo;
+    if (!g_releaseFetched) {
+        g_releaseFetched = fetchReleaseInfo(info);
+        g_releaseInfo = info;
+    }
+    if (info.gameVersion.empty() || info.zipUrl.empty()) {
+        if (!g_noErrorDialogs)
+            MessageBoxA(g_hubWnd,
+                guiStr("hub.updateFailed", "Could not reach the update server. Check your internet connection and try again.").c_str(),
+                guiStr("window.title", "MiMITA").c_str(), MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    if (!oldVer.empty() && versionCompare(oldVer, info.gameVersion) >= 0) {
+        std::string msg = guiStr("hub.upToDate", "You're up to date (v{version}).");
+        guiReplace(msg, "version", oldVer);
+        g_hubNote = msg;
+        refreshHub();
+        showTrayBalloon(guiStr("window.title", "MiMITA"), msg);
+        return;
+    }
+
+    char td[MAX_PATH]; GetTempPathA(MAX_PATH, td);
+    std::string zip = std::string(td) + "mimita-game-" + info.gameVersion + ".zip";
+    bool applied = false;
+    if (downloadFileTo(info.zipUrl, zip, 0)) {
+        bool ok = true;
+        if (!info.zipSha256.empty() && !g_noVerify) {
+            std::string h;
+            ok = sha256File(zip, h) && h == info.zipSha256;
+        }
+        if (ok) {
+            applied = applyGameUpdate(root, info.gameVersion, zip);
+            if (applied) createShortcuts();
+        }
+        DeleteFileA(zip.c_str());
+    }
+
+    if (applied) {
+        std::string note = guiStr("hub.noteUpdated", "MiMITA updated to v{version}");
+        guiReplace(note, "version", info.gameVersion);
+        if (!info.changelog.empty()) note += ": " + info.changelog;
+        g_hubNote = note;
+        showChangelogOnce(info.gameVersion, info.changelog);
+        refreshHub();
+        showTrayBalloon(guiStr("window.title", "MiMITA"), note);
+    } else {
+        g_hubNote = guiStr("hub.updateFailed", "Could not reach the update server. Check your internet connection and try again.");
+        refreshHub();
+        if (!g_noErrorDialogs)
+            MessageBoxA(g_hubWnd, g_hubNote.c_str(),
+                guiStr("window.title", "MiMITA").c_str(), MB_OK | MB_ICONERROR);
+    }
 }
 
 // ── Update application (version-folder installs) ──────────────
@@ -2359,6 +2431,7 @@ LRESULT CALLBACK HubWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             setAutoStartEnabled(Button_GetCheck((HWND)lParam) == BST_CHECKED);
             return 0;
         }
+        if (id == IDH_UPDATE) { checkForUpdates(); return 0; }
         if (id == IDH_CLOSE) {
             if (g_noErrorDialogs || MessageBoxA(hwnd,
                     guiStr("hub.confirmClose", "Are you sure you want to close MiMITA Launcher?").c_str(),
@@ -2463,9 +2536,16 @@ void createHubControls()
     setControlFont(chk);
     Button_SetCheck(chk, isAutoStartEnabled() ? BST_CHECKED : BST_UNCHECKED);
 
+    HWND updateBtn = CreateWindowA("BUTTON", guiStr("hub.checkUpdate", "Check for updates").c_str(),
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_FLAT,
+        guiL("hub", "updateBtn", "x", 20), guiL("hub", "updateBtn", "y", 360),
+        guiL("hub", "updateBtn", "w", 200), guiL("hub", "updateBtn", "h", 28),
+        g_hubWnd, (HMENU)(INT_PTR)IDH_UPDATE, g_hInst, nullptr);
+    setControlFont(updateBtn);
+
     HWND closeLink = CreateWindowA("BUTTON", guiStr("hub.close", "Close MiMITA Launcher").c_str(),
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_FLAT,
-        guiL("hub", "close", "x", 20), guiL("hub", "close", "y", 372),
+        guiL("hub", "close", "x", 20), guiL("hub", "close", "y", 400),
         guiL("hub", "close", "w", 200), guiL("hub", "close", "h", 26),
         g_hubWnd, (HMENU)(INT_PTR)IDH_CLOSE, g_hInst, nullptr);
     setControlFont(closeLink);
@@ -3234,6 +3314,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
     bool configured = loadInstallConfig(root);
     if (configured) {
         migrateLegacyInstall(root);
+        // Keep the desktop/start-menu launcher shortcut present on every run.
+        createShortcuts();
     } else {
         root = getDefaultInstallDir();
     }

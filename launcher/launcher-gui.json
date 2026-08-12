@@ -60,6 +60,10 @@
   "hub.noteUpdated": "MiMITA updated to v{version}",
   "hub.noteRestored": "Restored MiMITA v{version} (the new version had a problem).",
   "hub.updateAvailable": "Update available — click to download after you close MiMITA",
+  "hub.checkUpdate": "Check for updates",
+  "hub.upToDate": "You're up to date (v{version}).",
+  "hub.updateFailed": "Could not reach the update server. Check your internet connection and try again.",
+  "hub.updateGameRunning": "Close MiMITA first, then check for updates.",
 
   "tray.tip": "MiMITA Launcher",
   "tray.play": "Play MiMITA",
@@ -170,8 +174,12 @@
   "layout.hub.autoStart.y": "332",
   "layout.hub.autoStart.w": "320",
   "layout.hub.autoStart.h": "24",
+  "layout.hub.updateBtn.x": "20",
+  "layout.hub.updateBtn.y": "360",
+  "layout.hub.updateBtn.w": "200",
+  "layout.hub.updateBtn.h": "28",
   "layout.hub.close.x": "20",
-  "layout.hub.close.y": "372",
+  "layout.hub.close.y": "400",
   "layout.hub.close.w": "200",
   "layout.hub.close.h": "26"
 }
