@@ -3,7 +3,7 @@
 ; Ships only the launcher — game files are downloaded from GitHub on first run.
 
 #define MyAppName "Mimita"
-#define MyAppVersion "2.0.1"
+#define MyAppVersion "2.0.2"
 #define MyAppPublisher "Mimita"
 #define MyAppURL "https://mimita.fun"
 #define MyAppLauncherName "MimitaLauncher.exe"
