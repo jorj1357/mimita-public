@@ -103,6 +103,9 @@ Desktop.ini
 mimita-game.zip
 *.pak
 
+# ── Staged release output (devscripts/mimita-build-menu.py) ───────────────────
+release/
+
 # ── Aider ────────────────────────────────────────────────────────────────────
 .aider*
 

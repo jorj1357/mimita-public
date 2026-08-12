@@ -1612,6 +1612,12 @@ CrashRecoveryAction showCrashRecoveryDialog(const std::string& crashDir,
                                             bool txtOk, bool dmpOk,
                                             bool canRollback)
 {
+    // Test mode (--no-error-dialogs): never block a worker thread on a modal
+    // dialog. Automated launcher tests kill the game on purpose; the caller
+    // treats the result as "close and continue" so the post-crash update
+    // (ensureLatest) still runs.
+    if (g_noErrorDialogs) return CRASH_RECOVER_CLOSE;
+
     std::wstring dirW = widen(crashDir);
     std::wstring detailsW = widen(details);
 
@@ -2563,8 +2569,11 @@ void launchGame(const std::string& exePath, const std::string& workDir)
         }
         if (!logOk) DeleteFileA(logPath.c_str());
 
-        // Send lightweight analytics event (tiny JSON, ~200 bytes)
-        sendCrashReport(version, exitCode, elapsed);
+        // Send lightweight analytics event (tiny JSON, ~200 bytes). Skipped in
+        // test mode (--no-error-dialogs): the fixture taskkill that the launcher
+        // tests use must not phone home to mimita.fun.
+        if (!g_noErrorDialogs)
+            sendCrashReport(version, exitCode, elapsed);
 
         // Brief console output + notification
         printf("[LAUNCHER] Game crashed. Exit code=0x%08lx uptime=%lums\n",
