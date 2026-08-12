@@ -1496,16 +1496,10 @@ app.get(/^\/api\/download\/file\/(.+)/, (req, res) => {
 })
 
 app.get("/api/download/latest", (req, res) => {
-    const filename = "MimitaSetup-" + gameVersion.version + ".exe"
-    const filePath = path.resolve("server/downloads", filename)
-    if (fs.existsSync(filePath)) {
-        res.download(filePath, filename)
-    }
-    else {
-        // The launcher IS the download: it installs the game, self-updates,
-        // and updates the game automatically. Serve it directly from GitHub.
-        res.redirect("https://github.com/jorj1357/mimita-public/releases/latest/download/MimitaLauncher.exe")
-    }
+    // The launcher IS the download: it installs the game, self-updates, and
+    // updates the game automatically. Always serve it from the latest GitHub
+    // release so the button can never hand out a stale local installer.
+    res.redirect("https://github.com/jorj1357/mimita-public/releases/latest/download/MimitaLauncher.exe")
 })
 
 app.use((error, req, res, next) => {

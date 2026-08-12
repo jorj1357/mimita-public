@@ -69,10 +69,8 @@ def check_sources():
             print("  /api/download/latest redirects to: " + redirect.group(1))
             check("Redirect targets the launcher asset",
                   "MimitaLauncher.exe" in redirect.group(1))
-        setup = re.search(r'filename = "MimitaSetup-([^"]+\.exe)"', server)
-        if setup:
-            print("  Serves local installer when present: server/downloads/MimitaSetup-"
-                  + setup.group(1))
+        check("Route never serves a local installer (MimitaSetup)",
+              "MimitaSetup" not in server)
     except OSError as e:
         check("server.js readable", False, str(e))
     print("  GitHub repo: " + GITHUB_REPO + "  tag: v" + VERSION)
