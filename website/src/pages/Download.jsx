@@ -34,6 +34,15 @@ export default function Download() {
   }, [])
 
   useEffect(() => {
+    // Arrived here from the home-page button: the download may or may not have
+    // started, so auto-trigger it again as a reliable fallback.
+    if (sessionStorage.getItem("mimita_dl_auto") === "1") {
+      sessionStorage.removeItem("mimita_dl_auto")
+      doDownload()
+    }
+  }, [doDownload])
+
+  useEffect(() => {
     fetch("/api/game/version")
       .then((res) => res.json())
       .then((data) => setVersion(data))

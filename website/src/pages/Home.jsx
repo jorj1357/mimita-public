@@ -109,6 +109,14 @@ export default function Home() {
             <a
               href="/download"
               className="downloadButton"
+              onClick={(e) => {
+                e.preventDefault()
+                sessionStorage.setItem("mimita_dl_auto", "1")
+                window.location.href = "/api/download/latest"
+                setTimeout(() => {
+                  window.location.href = "/download"
+                }, 1500)
+              }}
             >
               DOWNLOAD MIMITA
             </a>
