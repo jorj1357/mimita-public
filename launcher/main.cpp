@@ -14,7 +14,7 @@
 #define IDB_LOADING_IMAGE 101
 #define GUI_CONFIG 102
 
-#define LAUNCHER_VERSION "1.0.2"
+#define LAUNCHER_VERSION "1.0.3"
 #define GITHUB_REPO "jorj1357/mimita-public"
 #define RELEASE_API_URL "https://api.github.com/repos/jorj1357/mimita-public/releases/latest"
 
