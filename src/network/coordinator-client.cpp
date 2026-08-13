@@ -31,7 +31,7 @@ namespace {
 std::string defaultCoordinatorUrl()
 {
     const char* envUrl = std::getenv("MIMITA_COORDINATOR_URL");
-    return envUrl && *envUrl ? std::string(envUrl) : "http://107.191.48.226:3001";
+    return envUrl && *envUrl ? std::string(envUrl) : "https://mimita.fun";
 }
 
 std::string gCoordinatorUrl = defaultCoordinatorUrl();
@@ -579,7 +579,7 @@ TurnCredentials coordinatorRequestTurnCredentials()
     try {
         auto j = json::parse(response);
         result.ok = true;
-        result.host = jsonStr(j, "host", "107.191.48.226");
+        result.host = jsonStr(j, "host", "mimita.fun");
         result.port = (uint16_t)jsonInt(j, "port", 3478);
         result.username = jsonStr(j, "username");
         result.credential = jsonStr(j, "credential");

@@ -207,7 +207,7 @@ def run_launcher_dev(launcher_dir, zip_path):
                             cwd=launcher_dir)
 
 
-def version_dir(install_dir, ver="2.0.2"):
+def version_dir(install_dir, ver="2.0.3"):
     return os.path.join(install_dir, "versions", "v" + ver)
 
 
@@ -222,8 +222,8 @@ def tier1_cycle(launcher_dir, install_dir, zip_path, name):
         check(f"{name}: mimita.exe installed", ok_install, "version folder not created in 240s")
         active = os.path.join(install_dir, "active-version.txt")
         if os.path.isfile(active):
-            check(f"{name}: active-version.txt == 2.0.2",
-                  open(active).read().strip() == "2.0.2", open(active).read().strip())
+            check(f"{name}: active-version.txt == 2.0.3",
+                  open(active).read().strip() == "2.0.3", open(active).read().strip())
         else:
             failed(f"{name}: active-version.txt missing")
 
@@ -253,7 +253,7 @@ def tier1_repair_cycle(launcher_dir, install_dir, zip_path):
     ver = os.path.join(version_dir(install_dir), "mimita.exe")
     if os.path.isfile(ver):
         os.remove(ver)
-    report("  deleted versions\\v2.0.2\\mimita.exe")
+    report("  deleted versions\\v2.0.3\\mimita.exe")
     p = run_launcher_dev(launcher_dir, zip_path)
     try:
         ok = wait_for_file(ver, 240)
@@ -284,7 +284,7 @@ def tier1(zip_path):
     for i in range(1, 4):
         tier1_cycle(ldir, idir, zip_path, f"repeat launch {i}/3")
 
-    staged_exe = os.path.join(RELEASE, "2.0.2", "mimita.exe")
+    staged_exe = os.path.join(RELEASE, "2.0.3", "mimita.exe")
     if os.path.isfile(staged_exe):
         string_leak_scan(staged_exe)
     check("tier1: final install intact",
@@ -386,8 +386,8 @@ def _tier2_setup(zip_path):
     shutil.copy(LAUNCHER_ROOT, os.path.join(tmp_launch, "MimitaLauncher.exe"))
 
     real_sha = sha256_of(zip_path)
-    steady = make_release_json(os.path.join(t2, "release-2.0.2.json"),
-                               "2.0.2", zip_path, real_sha, "1.0.0")
+    steady = make_release_json(os.path.join(t2, "release-2.0.3.json"),
+                               "2.0.3", zip_path, real_sha, "1.0.0")
     upd_zip = make_update_zip("9.9.9", zip_path)
     upd_sha = sha256_of(upd_zip)
     upd_json = make_release_json(os.path.join(t2, "release-9.9.9.json"),
@@ -592,14 +592,14 @@ def tier2(zip_path):
 def preflight():
     sep("PREFLIGHT")
     ok = True
-    rdir = os.path.join(RELEASE, "2.0.2")
+    rdir = os.path.join(RELEASE, "2.0.3")
     for name in RELEASE_FILES:
         full = os.path.join(rdir, name)
         if not os.path.isfile(full):
-            failed(f"release/2.0.2/{name} missing", "run a release option first")
+            failed(f"release/2.0.3/{name} missing", "run a release option first")
             ok = False
         else:
-            passed(f"release/2.0.2/{name} present")
+            passed(f"release/2.0.3/{name} present")
     if not os.path.isfile(LAUNCHER_ROOT):
         failed("MimitaLauncher.exe at repo root missing", "run launcher\\build.bat")
         ok = False
@@ -633,7 +633,7 @@ def main():
     report("Time: " + time.strftime("%Y-%m-%d %H:%M:%S"))
     report("Artifacts: " + RELEASE)
     sep("HASHES")
-    rdir = os.path.join(RELEASE, "2.0.2")
+    rdir = os.path.join(RELEASE, "2.0.3")
     for name in ("mimita.exe", "MimitaLauncher.exe", "mimita-game.zip"):
         full = os.path.join(rdir, name)
         if os.path.isfile(full):

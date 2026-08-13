@@ -321,14 +321,14 @@ void registerDiagnosticCommands()
         cmdPostFXInfo
     });
     t.registerCommand({
-        "postfx_bypass", "Render the world directly to the backbuffer",
-        "postfx_bypass <0|1>",
+        "postfx_direct", "Render the world directly to the backbuffer",
+        "postfx_direct <0|1>",
         [](const std::vector<std::string>& args) {
             PostFX& pf = PostFX::instance();
-            const bool bypass = args.empty() ? !pf.bypass() : args[0] != "0";
-            pf.setBypass(bypass);
-            Terminal::instance().addLog(std::string("[POSTFX] bypass=") +
-                (bypass ? "1 (direct backbuffer)" : "0 (FBO + PostFX)"));
+            const bool direct = args.empty() ? !pf.bypass() : args[0] != "0";
+            pf.setBypass(direct);
+            Terminal::instance().addLog(std::string("[POSTFX] direct=") +
+                (direct ? "1 (direct backbuffer)" : "0 (FBO + PostFX)"));
         }
     });
     t.registerCommand({
@@ -342,7 +342,7 @@ void registerDiagnosticCommands()
         cmdPostFXTestChecker
     });
     t.registerCommand({
-        "world_solid_red", "Bypass world texture and lighting with solid red",
+        "world_solid_red", "Render the world with solid red instead of textures",
         "world_solid_red <0|1>",
         [](const std::vector<std::string>& args) {
             const bool enabled = args.empty() ? !worldSolidRedDebug() : args[0] != "0";
