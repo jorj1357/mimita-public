@@ -22,8 +22,8 @@ export default function Privacy() {
 
           <p>
             MiMITA collects anonymous gameplay analytics
-            only after you answer the first-launch popup.
-            Analytics can be disabled permanently
+            only AFTER you answer the first-launch popup.
+            Analytics can be disabled permanently(!!!!!)
             from that popup,
             the in-game settings menu,
             or the terminal command
@@ -31,7 +31,7 @@ export default function Privacy() {
           </p>
 
           <p>
-            When enabled, we record aggregate, non-identifying information such as
+            When enabled, mimita.exe records aggregate, non-identifying(!!!!!) information such as
             session length,
             onboarding,
             maps,
@@ -42,6 +42,10 @@ export default function Privacy() {
             disconnects,
             and retention.
             Events are uploaded in batches over HTTPS to mimita.fun.
+            the reason i even do this is bc it helps figure out 
+            what bugs are ruining ur guys' experience, 
+            like asynchronously. So u dont have to 
+            seek me out + send bug reports + time zone mismatch and stuff. I can just fix it. Better yet YOU can fix it bc its open source heh.
           </p>
 
           <p>
@@ -51,6 +55,11 @@ export default function Privacy() {
             names,
             or sensitive free-form information
             through gameplay analytics.
+            CUZ LIKE WHO Cares like we dont 
+            need that
+            the only thing i can think of  being an exception is 
+            like if something genuine illegal happened and need chat or other logs 
+            but even that we cant provide BC WE DONT TRACK it. Ugh...
           </p>
 
           <p>
@@ -59,6 +68,24 @@ export default function Privacy() {
             ("Request Data Deletion")
             or with the terminal command
             <code> analytics_request_delete </code>.
+            
+            8 12 2026 i don't like how this says request i rather it just say u can straight up delete it
+            i really dont like surveillance and 99999 page privacy policies that say Um actually we r gonna 
+            loko thru ur entire phone
+
+            LIKE DO YALL Rmember when 
+            tiktok
+            it would say "TikTok accessed your clipboard."
+            for no reason
+            like waht do u need clipboard for bro
+            i do NOT wanna do that Hellllllllll naw
+            idc about data or Muh Advertising or Muh Profit  But but but data is so helpful for advertising!!!!
+            advertising purpose = more revenue ?
+            mimita purpose = more fun 
+            if smth is making it less fun, i.e. 
+            im getting my entire everything snooped and tracked 
+            and sold so i can get profited off of 
+            then no i dont wanna do that 
           </p>
 
           <h2 style={{ color: "#a020ff", marginTop: "2rem" }}>THE LAUNCHER</h2>
@@ -79,6 +106,11 @@ export default function Privacy() {
             newsletters,
             payments,
             and optional analytics tools.
+
+            google analytics i use , bc actual analytics tracking we have isnt super good yet
+            prob remind me at hello@mimita.fun like 
+            1. put a How To de-google your life guide here 
+            and 2. if there ever is a open source analytics provider, use that one instead 
           </p>
 
           <h2 style={{ color: "#a020ff", marginTop: "2rem" }}>NETWORK TRANSFERS</h2>
@@ -98,14 +130,15 @@ export default function Privacy() {
             Using MiMITA may involve third parties
             including GitHub,
             SignPath.io / SignPath Foundation,
-            and the MiMITA website API and ICE coordinator,
+            and the MiMITA website API and ICE coordinator (virtual private server!!!! thank u VPS),
             each with their own privacy policies.
           </p>
 
-          <p>
+          {/* <p>
             The source version of this policy is maintained in the repository:
             docs/privacy-policy.md
-          </p>
+            8 12 2026 it 
+          </p> */}
 
         </div>
 

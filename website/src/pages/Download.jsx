@@ -92,15 +92,19 @@ export default function Download() {
         <div className="downloadWhat">
           <h2 className="downloadWhatTitle">WHAT IS MIMITA?</h2>
           <p>
-            MiMITA ("Movement is More Important Than Aim") is a free,
+            MiMITA ("Movement is More Important Than Aim") is a FREE, awesome,
             open-source, movement-based PvP shooter for Windows 64-bit.
-            Dash, double jump, and climb walls as atomic actions —
-            combining them creates emergent movement tech
-            in the spirit of CS:GO surfing/kz/bhop,
+            <br/>
+            u can dash, double jump, climb walls (by holding space and walking into it) 
+            combining simple movement actions creates emergent movement tech. <br/>
+            This is in the spirit of CS:GO surfing/kz/bhop,
             TF2 rocket jumping,
+            rocket league freestyling,
+            osu! constant movement,
             and Super Smash Bros. Melee-style jank.
-            It is also a hangout platform:
-            chat, casual party games, synchronized music,
+            <br/>
+            Over time, MiMITA should also become a hangout/creative platform:
+            chat, create your own worlds/software/art, play casual/less competitive/more party games, synchronized worldwide music events,
             and weird worlds to explore.
           </p>
           <p>
@@ -111,7 +115,7 @@ export default function Download() {
 
         <div className="downloadLegal">
           <p>
-            Free code signing provided by{" "}
+            Free code signing (hopefully ) provided by{" "}
             <a href="https://about.signpath.io" target="_blank" rel="noopener noreferrer">SignPath.io</a>,
             certificate by{" "}
             <a href="https://signpath.org" target="_blank" rel="noopener noreferrer">SignPath Foundation</a>.
@@ -119,8 +123,8 @@ export default function Download() {
           <p>
             <a href="/privacy">Privacy Policy</a> ·{" "}
             <a href="/uninstall">Uninstall</a> ·{" "}
-            <a href="https://github.com/jorj1357/mimita-public/blob/main/docs/code-signing-policy.md" target="_blank" rel="noopener noreferrer">Code signing policy</a> ·{" "}
-            <a href="https://github.com/jorj1357/mimita-public/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a>
+            {/* <a href="https://github.com/jorj1357/mimita-public/blob/main/docs/code-signing-policy.md" target="_blank" rel="noopener noreferrer">Code signing policy</a> ·{" "}
+            <a href="https://github.com/jorj1357/mimita-public/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a> */}
           </p>
         </div>
       </div>
