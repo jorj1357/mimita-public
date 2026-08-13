@@ -574,6 +574,35 @@ MovementValidationResult validateClientMovementReport(
         ? player.lastAcceptedClientPosition
         : player.pos;
 
+    // ── Post-blackout drift correction ────────────────────────────────
+    // A client that skipped many simulation ticks (inputs/snapshots lost during
+    // a blackout or reconnect) can have locally predicted its way far from the
+    // server's authoritative simulation. Blindly accepting the drifted position
+    // makes the wrong spot stick for BOTH clients until a death forces an epoch
+    // snap. Correct it back to the server's position so the two re-converge as
+    // soon as traffic resumes (the client snaps back via its post-gap resync).
+    // Normal latency leads the accepted tick by ~ping worth of ticks (well below
+    // postGapCorrectionMinTicks), so healthy play is untouched.
+    const uint64_t clientGapTicks =
+        (player.movementValidation.lastAcceptedClientTick != 0 &&
+         report.clientSimulationTick > player.movementValidation.lastAcceptedClientTick)
+            ? report.clientSimulationTick - player.movementValidation.lastAcceptedClientTick
+            : 0u;
+    if (clientGapTicks > config.postGapCorrectionMinTicks)
+    {
+        const float drift = glm::length(report.position - player.pos);
+        if (drift > config.postGapCorrectionDistance)
+        {
+            result.decision = MovementValidationDecision::Correct;
+            result.reason = MovementValidationReason::TooFarFromAuthoritative;
+            result.acceptedState.position = player.pos;
+            result.acceptedState.baseVelocity = glm::vec3(0.0f);
+            result.acceptedState.externalImpulse = glm::vec3(0.0f);
+            result.metrics.positionError = drift;
+            return result;
+        }
+    }
+
     if (!insideBounds(report.position, config))
     {
         result.decision = MovementValidationDecision::Correct;

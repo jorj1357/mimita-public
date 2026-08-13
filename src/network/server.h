@@ -512,6 +512,7 @@ struct ServerNpc
     std::string name;
     glm::vec3 pos{0.0f};
     glm::vec3 vel{0.0f};
+    glm::vec3 aim{1.0f, 0.0f, 0.0f};  // planar facing (n.currentFacing) replicated so clients orient the NPC muzzle like players
     float yaw = 0.0f;
     int health = 100;
     bool onGround = false;
@@ -594,6 +595,7 @@ struct ServerProjectile
     bool explodeOnPlayerImpact = true;
     bool explodeOnWorldImpact = false;
     bool explodeOnLifetime = true;
+    bool splashLineOfSight = true;
     uint32_t spawnTick = 0;
 };
 

@@ -20,13 +20,16 @@ bool reconcileAuthoritativeWeaponRuntime(
     uint32_t stateRevision,
     uint32_t spawnGeneration,
     const char* source,
-    bool applyAmmo = true);
+    bool applyAmmo = true,
+    bool allowReloadStateOverride = true);
 
 // Fire-and-forget reload request for a SPECIFIC weapon (holstered or not).
 // Used when a weapon starts its background reload on unequip/switch-away so
 // the server reloads it too. Same packet as pressing R; the client keeps its
 // own predicted ammo (applyAmmo=false on results), so nothing snaps.
+// The client's current mag/reserve are sent so the server adopts them.
 void sendReloadRequestForWeapon(MultiplayerContext& ctx,
+                                const Player& player,
                                 const std::string& weaponId);
 
 } // namespace MimitaNet

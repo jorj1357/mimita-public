@@ -37,7 +37,6 @@ constexpr uint64_t kQueueServerStartTimeoutMs = 15000;
 constexpr uint64_t kServerConnectTimeoutMs = 20000;
 constexpr uint64_t kMatchConnectTimeoutMs = 60000;
 constexpr uint64_t kOpponentJoinTimeoutMs = 30000;
-constexpr uint64_t kStateStaleTimeoutMs = 3500;
 
 // Unique per game instance: two exes on one PC get different session ids, so
 // the coordinator treats them as two players even with the same account/name.
@@ -183,7 +182,6 @@ void DuelQueue::startQueue(const std::string& profileId, const std::string& name
     mInDuel = false;
     mMatchOver = false;
     mHistoryRecorded = false;
-    mLastStateMs = 0;
 
     // Online mode from the start: launch your own duel server on your map.
     if (!launchDuelHostServer(mChosenMap))
@@ -340,7 +338,6 @@ void DuelQueue::handleClientMatch()
     mWantsMatchMap = true;
     mState = DuelQueueState::Connecting;
     mPhaseStartMs = nowMs();
-    mConnectedSinceMs = 0;
     mStatusText = "Joining...";
     NotificationSystem::instance().push(
         "match found!", "joining " + mOpponentName + "'s room", 300, {});
@@ -490,19 +487,13 @@ void DuelQueue::updateConnecting(float dt)
     }
     if (MP_CONTEXT.active)
     {
-        if (mConnectedSinceMs == 0)
-            mConnectedSinceMs = nowMs();
         // Connected to the host's server; the countdown arrives via DuelState.
+        // No kickout timer here: session health is owned by the standard
+        // connection-health system, exactly like a community server join.
         mStatusText = "Connected - waiting for countdown...";
         NotificationSystem::instance().push(
             "Duels", "Connected to " + mOpponentName + "'s room", 240, {});
         Debug::log(Debug::Category::Duel, "[DUEL QUEUE] connected to host - waiting countdown\n");
-        if (nowMs() - mConnectedSinceMs > 15000)
-        {
-            NotificationSystem::instance().pushCritical(
-                "Opponent left", "Returning to the queue...", 180);
-            returnToQueue();
-        }
     }
     else if (nowMs() - mPhaseStartMs > kMatchConnectTimeoutMs)
     {
@@ -530,9 +521,11 @@ void DuelQueue::updateInDuel(float dt)
         if (mTracerTime >= mTracerDuration)
             mTracerActive = false;
     }
-    // Detect a dead server / lost opponent via missing DuelState packets
-    // (the server broadcasts every ~1s during Active and MatchEnd).
-    if (mLastStateMs != 0 && nowMs() - mLastStateMs > kStateStaleTimeoutMs)
+    // No DuelState kickout. The session is supervised by the standard
+    // connection-health system (the same one community server joins use):
+    // it reconnects on lag and only ends after the 60s grace window.
+    // Return to the queue only when the underlying session is truly gone.
+    if (!MP_CONTEXT.active)
     {
         NotificationSystem::instance().pushCritical(
             "Opponent left", "Returning to the queue...", 180);
@@ -586,8 +579,6 @@ void DuelQueue::onDuelState(const DuelStatePacket& pkt)
     if (mState == DuelQueueState::Idle)
         return;
 
-    mLastStateMs = nowMs();
-
     // WAITING just means "your queue server is up but no opponent yet".
     if (pkt.phase == DUEL_PHASE_WAITING)
     {
@@ -598,7 +589,6 @@ void DuelQueue::onDuelState(const DuelStatePacket& pkt)
 
     mDuelPhase = pkt.phase;
     mInDuel = true;
-    mConnectedSinceMs = 0;
 
     // Determine which side is ours.
     const uint32_t myId = MP_CONTEXT.localPlayerId;

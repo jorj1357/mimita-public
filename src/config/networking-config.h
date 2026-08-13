@@ -201,6 +201,27 @@ struct RemoteMotionSmoothingConfig
     // interpolated authoritative target's Z, so filter overshoot after a fast
     // landing cannot push the body through the floor.
     bool filterClampZBelowTarget = true;
+    // Vertical ceiling (all filtered modes): the rendered body's Z is never
+    // allowed to drift more than this many units above the authoritative
+    // target's Z. Prevents the "jumped ~10x then floats" artifact caused by
+    // stale upward vz during packet-loss extrapolation. Relative to the
+    // authoritative height, so real jumps/climbs (which raise the target) pass
+    // untouched; only the filter's own overshoot is pulled back. 0 = disabled.
+    double filterMaxZAboveTargetUnits = 0.75;
+    // Rate limit (units/sec) for the vertical ceiling and the ease grounded
+    // settle: Z converges toward the target at this speed like a fast fall,
+    // never a hard snap. 0 = unlimited (instant).
+    double filterMaxZSettleSpeed = 250.0;
+    // Horizontal leash (ease mode): while real snapshots are flowing, never let
+    // the rendered body sit more than this many units from the authoritative XY
+    // target. A loss-gap extrapolation guess is glided back at
+    // filter_max_xy_settle_speed the moment data resumes, so an extrapolation
+    // offset can never become permanent. 0 = disabled.
+    double filterMaxXYErrorUnits = 1.5;
+    // Rate limit (units/sec) for the horizontal leash above: the body converges
+    // toward the authoritative XY target at this speed like a fast glide,
+    // never a hard snap. 0 = disabled.
+    double filterMaxXYSettleSpeed = 250.0;
     // Geometry safety clamp (all modes, client-side): after every motion filter,
     // rendered remote bodies are pushed out of world geometry so they can never
     // appear inside the map. Reuses the same capsule-vs-triangle solver as the

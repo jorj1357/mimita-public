@@ -98,37 +98,21 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
     decimateCollisionTriangleList(npcWorld.collisionMesh.triangles,
                                   CollisionLodConfig::instance().cellSize());
     npcWorld.collisionChunkSize = hw.collisionChunkSize;
-    npcWorld.collisionLargeTriangles.clear();
-    npcWorld.collisionChunks.clear();
 
-    // Build chunks from the DECIMATED list (npcWorld.collisionMesh.triangles),
-    // not hw.triangles: decimation above shrinks the list, so indices derived
-    // from hw.triangles would point at wrong/missing triangles and NPCs would
-    // fall through the floor.
-    std::vector<CollisionTriangle>& tris = npcWorld.collisionMesh.triangles;
-    constexpr int MAX_CHUNKS_PER_TRIANGLE = 256;
-    for (int i = 0; i < (int)tris.size(); ++i)
-    {
-        const AABB tb = makeTriangleAABB(tris[i]);
-        const glm::ivec3 c0 = collisionChunkCoord(tb.min, hw.collisionChunkSize);
-        const glm::ivec3 c1 = collisionChunkCoord(tb.max, hw.collisionChunkSize);
-        const int chunkCount =
-            (c1.x - c0.x + 1) * (c1.y - c0.y + 1) * (c1.z - c0.z + 1);
-        if (chunkCount > MAX_CHUNKS_PER_TRIANGLE)
-        {
-            npcWorld.collisionLargeTriangles.push_back(i);
-            continue;
-        }
-        for (int x = c0.x; x <= c1.x; ++x)
-        for (int y = c0.y; y <= c1.y; ++y)
-        for (int z = c0.z; z <= c1.z; ++z)
-            npcWorld.collisionChunks[glm::ivec3(x, y, z)].push_back(i);
-    }
-    printf("[SERVER NPC WORLD] built CPU collision: triangles=%zu chunks=%zu largeTris=%zu\n",
+    // Build the same acceleration grids the client builds: chunk cells PLUS
+    // the coarse large-triangle grid + sub-grids. Reusing the client builder
+    // guarantees server NPC collision can never drift apart from the client's.
+    // Without the coarse grid, big map pieces (floors/walls spanning > 256
+    // chunks, e.g. chainofjudgement's arena floor and walls) were silently
+    // dropped by appendChunkTrianglesForAABB, so server NPCs fell through the
+    // floor and shot through walls.
+    buildCollisionChunks(npcWorld, nullptr);
+
+    printf("[SERVER NPC WORLD] built CPU collision: triangles=%zu chunks=%zu "
+           "largeTris=%zu largeChunks=%zu alwaysLarge=%zu\n",
            npcWorld.collisionMesh.triangles.size(), npcWorld.collisionChunks.size(),
-           npcWorld.collisionLargeTriangles.size());
-
-    buildCollisionSubGrids(npcWorld);
+           npcWorld.collisionLargeTriangles.size(), npcWorld.collisionLargeChunks.size(),
+           npcWorld.collisionAlwaysLargeTriangles.size());
 }
 
 // Adopt newly spawned ServerNpc entries (from npc_spawn requests or startup)
@@ -323,6 +307,9 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
             : n.body.username;
         sn.pos = n.body.pos;
         sn.vel = n.body.vel;
+        sn.aim = (glm::length(n.currentFacing) > 0.001f)
+            ? glm::normalize(n.currentFacing)
+            : glm::vec3(1.0f, 0.0f, 0.0f);
         sn.yaw = n.body.yaw;
         sn.health = n.body.currentHp;
         sn.onGround = n.body.ground.hasWorldContact;
@@ -506,14 +493,27 @@ void simulateSharedNpcs(SOCKET sock,
             const float d2 = glm::dot(d, d);
             if (d2 < bestD2) { bestD2 = d2; nearest = &p; }
         }
-        if (!nearest)
-            continue;
 
-        mirrorPlayer.pos = nearest->pos;
-        mirrorPlayer.vel = nearest->vel;
-        mirrorPlayer.yaw = nearest->yaw;
-        mirrorPlayer.currentHp = nearest->health;
-        mirrorPlayer.dead = nearest->dead;
+        if (nearest)
+        {
+            mirrorPlayer.pos = nearest->pos;
+            mirrorPlayer.vel = nearest->vel;
+            mirrorPlayer.yaw = nearest->yaw;
+            mirrorPlayer.currentHp = nearest->health;
+            mirrorPlayer.dead = nearest->dead;
+        }
+        else
+        {
+            // No live player to target: still advance the NPC's physics so it
+            // falls from its spawn and stands on the floor instead of hovering
+            // frozen in the air. A dead mirror means no targeting, no combat,
+            // and no damage.
+            mirrorPlayer.pos = n.body.pos;
+            mirrorPlayer.vel = glm::vec3(0.0f);
+            mirrorPlayer.yaw = n.body.yaw;
+            mirrorPlayer.currentHp = 0;
+            mirrorPlayer.dead = true;
+        }
         // Clear the mirror's impulse so it only carries the knockback applied
         // THIS tick by processPlayerHit (same knockback a player's shot gives).
         mirrorPlayer.externalImpulse = glm::vec3(0.0f);
@@ -546,7 +546,7 @@ void simulateSharedNpcs(SOCKET sock,
             }
         }
 
-        if (hpBefore > mirrorPlayer.currentHp)
+        if (nearest && hpBefore > mirrorPlayer.currentHp)
         {
             const int damage = hpBefore - mirrorPlayer.currentHp;
             // Forward the exact knockback processPlayerHit applied to the mirror
@@ -642,6 +642,7 @@ SnapshotEntity makeNpcEntity(const ServerNpc& npc)
     out.ownerClientId = 0;
     out.px = npc.pos.x; out.py = npc.pos.y; out.pz = npc.pos.z;
     out.vx = npc.vel.x; out.vy = npc.vel.y; out.vz = npc.vel.z;
+    out.aimX = npc.aim.x; out.aimY = npc.aim.y; out.aimZ = npc.aim.z;
     out.yaw = npc.yaw;
     out.health = npc.health;
     out.onGround = npc.onGround ? 1 : 0;

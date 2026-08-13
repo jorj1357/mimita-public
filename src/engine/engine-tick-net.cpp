@@ -269,7 +269,8 @@ void engineTickNet(Engine& engine, float dt)
                 rr.stateRevision,
                 rr.spawnGeneration,
                 "reload-result",
-                /*applyAmmo=*/false);
+                /*applyAmmo=*/false,
+                /*allowReloadStateOverride=*/false);
 
             auto pendingIt = mpContext.pendingReloadRequests.find(rr.requestId);
             if (pendingIt != mpContext.pendingReloadRequests.end())

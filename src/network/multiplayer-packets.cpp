@@ -214,6 +214,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.pendingVipStyles.clear();
     ctx.predictedProjectileIds.clear();
     ctx.predictedExplosions.clear();
+    ctx.predictedSelfKnockbacks.clear();
     ctx.remoteSwordStates.clear();
 
     // Clear reconciliation state

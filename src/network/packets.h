@@ -623,6 +623,8 @@ struct ProjectileStateEventPacket
 {
     PacketHeader header;
     uint32_t projectileId = 0;
+    uint32_t ownerPlayerId = 0;
+    uint32_t fireSerial = 0;
     uint8_t weapon = NETWORK_WEAPON_NONE;
     uint8_t reserved[3] = {};
     float posX = 0.0f;
@@ -1226,6 +1228,10 @@ struct ReloadRequestPacket
     uint32_t requestId = 0;
     uint32_t spawnGeneration = 0;
     uint16_t weaponDefNetworkId = 0;
+    // Client-authoritative ammo at the moment the reload starts. The server
+    // adopts these numbers (when >= 0) so it never rejects on a drifted copy.
+    int32_t magazineAmmo = -1;
+    int32_t reserveAmmo = -1;
 };
 
 struct ReloadResultPacket
@@ -1295,7 +1301,7 @@ static_assert(sizeof(ShotRequestPacket) <= 132, "ShotRequestPacket is too large"
 static_assert(sizeof(ShotEventPacket) <= 160, "ShotEventPacket is too large");
 static_assert(sizeof(ProjectileFireRequestPacket) <= 80, "ProjectileFireRequestPacket is too large");
 static_assert(sizeof(ProjectileSpawnEventPacket) <= 128, "ProjectileSpawnEventPacket is too large");
-static_assert(sizeof(ProjectileStateEventPacket) <= 104, "ProjectileStateEventPacket is too large");
+static_assert(sizeof(ProjectileStateEventPacket) <= 112, "ProjectileStateEventPacket is too large");
 static_assert(sizeof(ProjectileExplodeEventPacket) < MAX_GAME_DATAGRAM_BYTES,
               "ProjectileExplodeEventPacket exceeds safe datagram limit");
 static_assert(sizeof(MeleeHitRequestPacket) <= 96, "MeleeHitRequestPacket is too large");
@@ -1308,7 +1314,7 @@ static_assert(sizeof(PelletBlastEventPacket) < MAX_GAME_DATAGRAM_BYTES,
 static_assert(sizeof(PelletBlastTargetResult) <= 24, "PelletBlastTargetResult is too large");
 static_assert(sizeof(AttackRequestPacket) <= 128, "AttackRequestPacket is too large");
 static_assert(sizeof(AttackResultPacket) <= 96, "AttackResultPacket is too large");
-static_assert(sizeof(ReloadRequestPacket) <= 32, "ReloadRequestPacket is too large");
+static_assert(sizeof(ReloadRequestPacket) <= 48, "ReloadRequestPacket is too large");
 static_assert(sizeof(ReloadResultPacket) <= 72, "ReloadResultPacket is too large");
 static_assert(sizeof(RespawnRequestPacket) <= 32, "RespawnRequestPacket is too large");
 static_assert(sizeof(PlayerRespawnedPacket) <= 576, "PlayerRespawnedPacket is too large");

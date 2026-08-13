@@ -481,8 +481,11 @@ void checkVoidDeath(std::unordered_map<uint32_t, ServerPlayer>& players,
                    serverTimestamp(), kv.second.entityId,
                    kv.second.pos.z, vdc.killZ);
             kv.second.health = 0;
-            kv.second.pos = {1.0f + (float)(kv.second.entityId - 1) * 1.5f, 5.0f, 30.0f};
             kv.second.vel = glm::vec3(0.0f);
+            // No position overwrite here: simulateSharedNpcs respawns the real
+            // body at its actual map spawn point (respawnServerNpc). The old
+            // hardcoded (1+(id-1)*1.5, 5, 30) sent NPCs to a placeholder pos
+            // that had nothing to do with the map.
         }
     }
 }

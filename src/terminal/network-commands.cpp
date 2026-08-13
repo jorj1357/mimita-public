@@ -233,6 +233,8 @@ const std::vector<NetConfigKnob>& netConfigKnobs()
         {"linear_reanchor_enabled", false, true, false, 0.0, 1.0, "remote_motion_smoothing"},
         {"linear_reanchor_only_if_error_ms", true, false, false, 0.0, 5000.0, "remote_motion_smoothing"},
         {"max_render_time_jump_ms", true, false, false, 0.0, 1000.0, "remote_motion_smoothing"},
+        {"filter_max_z_above_target_units", false, false, false, 0.0, 100.0, "remote_motion_smoothing"},
+        {"filter_max_z_settle_speed", false, false, false, 0.0, 10000.0, "remote_motion_smoothing"},
         {"remote_effect_maximum_hold_ms", true, false, false, 0.0, 5000.0, "event_timeline"},
         {"predict_damage", false, true, false, 0.0, 1.0, "prediction"},
         {"predict_deaths", false, true, false, 0.0, 1.0, "prediction"},
@@ -1038,7 +1040,7 @@ void registerNetworkCommands()
                     "geoSafe=%d easeRate=%.1f easeSmooth=%.2f "
                     "linTicks=%u linMinMax=%u/%u linHold=%d catchup=%.2f "
                     "clock=%s reanchorMs=%.0f maxJumpMs=%.1f sFreq=%.1f sFF=%.2f sDead=%.3f "
-                    "neverSkip=%d holdGap=%u glide=%.0f",
+                    "neverSkip=%d holdGap=%u glide=%.0f zCeil=%.2f zSettle=%.0f",
                     m.renderFilter.c_str(), m.hybridFrequencyHz,
                     m.hybridDampingRatio, m.hybridFeedForward,
                     m.hybridFeedForwardSmoothing, m.hybridFrequencyZMultiplier,
@@ -1059,7 +1061,9 @@ void registerNetworkCommands()
                     m.springLinearDeadzoneUnits,
                     (int)m.linearNeverSkip,
                     (unsigned)m.linearHoldGapTicks,
-                    m.linearGlideMaxUnitsPerSecond);
+                    m.linearGlideMaxUnitsPerSecond,
+                    m.filterMaxZAboveTargetUnits,
+                    m.filterMaxZSettleSpeed);
                 Terminal::instance().addLog(buf);
             }
 

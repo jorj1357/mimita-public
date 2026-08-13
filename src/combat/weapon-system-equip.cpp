@@ -44,10 +44,19 @@ bool WeaponSystem::reload(Player& player) {
     if (!def || !rt) return false;
 
     if (rt->isReloading) {
-        rt->reloadBufferTimer = 0.4f;
-        if (DebugConfig::DEBUG_RELOAD)
-            Debug::log(Debug::Category::General, "[RELOAD] buffered (already reloading)\n");
-        return false;
+        if (rt->reloadTimer <= 0.0f) {
+            // Stale "reloading" state with no timer (e.g. a delayed network
+            // result re-stuck the weapon). Clear it and start a fresh reload
+            // so pressing R always recovers.
+            rt->isReloading = false;
+            if (DebugConfig::DEBUG_RELOAD)
+                Debug::log(Debug::Category::General, "[RELOAD] stale stuck reload cleared; restarting\n");
+        } else {
+            rt->reloadBufferTimer = 0.4f;
+            if (DebugConfig::DEBUG_RELOAD)
+                Debug::log(Debug::Category::General, "[RELOAD] buffered (already reloading)\n");
+            return false;
+        }
     }
     if (def->behaviorType == WeaponBehaviorType::Godball ||
         def->behaviorType == WeaponBehaviorType::Swordsword) return false;
@@ -72,6 +81,13 @@ bool WeaponSystem::reload(Player& player) {
 
 std::string WeaponSystem::equip(Player& player, int slot) {
     std::string oldWeaponId = player.equippedWeaponId;
+    // The slot is the source of truth. After a spawn/boot/reset the id is
+    // empty while equippedSlot still says we hold a weapon, so derive the id
+    // from the slot to make the off-hand auto-reload work on every switch.
+    if (oldWeaponId.empty() && player.equippedSlot > 0) {
+        const WeaponDefinition* oldDef = getDefForSlot(player.equippedSlot);
+        if (oldDef) oldWeaponId = oldDef->id;
+    }
     const WeaponDefinition* def = getDefForSlot(slot);
     if (def) {
         // Switching away from a weapon starts its background reload (every time).
@@ -114,6 +130,10 @@ std::string WeaponSystem::equip(Player& player, int slot) {
 
 std::string WeaponSystem::unequip(Player& player) {
     std::string oldWeaponId = player.equippedWeaponId;
+    if (oldWeaponId.empty() && player.equippedSlot > 0) {
+        const WeaponDefinition* oldDef = getDefForSlot(player.equippedSlot);
+        if (oldDef) oldWeaponId = oldDef->id;
+    }
     std::string offhandReloaded;
     if (tryAutoReloadOffhand(player, oldWeaponId))
         offhandReloaded = oldWeaponId;

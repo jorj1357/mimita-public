@@ -40,6 +40,7 @@
 #include "effects/effect-part.h"
 #include "terminal/terminal-state.h"
 #include "world/world.h"
+#include "physics/movement/physics-collision.h"
 
 namespace MimitaNet {
 namespace {
@@ -247,12 +248,107 @@ void removePredictedProjectileForRequest(MultiplayerContext& ctx,
                                          uint32_t requestId)
 {
     ctx.predictedExplosions.erase(requestId);
+    ctx.predictedSelfKnockbacks.erase(requestId);
     const uint32_t provisionalId = provisionalProjectileId(requestId);
     if (provisionalId != 0)
     {
         ctx.predictedProjectileIds.erase(provisionalId);
         ctx.networkProjectiles.erase(provisionalId);
     }
+}
+
+// ── Predicted projectile adoption ─────────────────────────────────────
+// Renames the client-predicted projectile (provisional ID) to the authoritative
+// server projectile ID, keeping its predicted=true flag and current sim pose so
+// the visual never rubber-bands. Returns true when a prediction was adopted.
+// Safe to call from any signal (AttackResult, spawn, or state recovery) and at
+// any ordering: if the authoritative ID already exists, the predicted duplicate
+// is simply dropped. This is what makes the local owner's rocket/grenade a
+// single entity even when the unreliable spawn broadcast is lost (badconn).
+bool adoptPredictedProjectile(MultiplayerContext& ctx,
+                              uint32_t requestId,
+                              uint32_t authoritativeId)
+{
+    const uint32_t provisionalId = provisionalProjectileId(requestId);
+    if (provisionalId == 0 || authoritativeId == 0 || provisionalId == authoritativeId)
+        return false;
+    auto it = ctx.networkProjectiles.find(provisionalId);
+    if (it == ctx.networkProjectiles.end())
+        return false;
+    if (ctx.networkProjectiles.count(authoritativeId) != 0)
+    {
+        // Recovery/spawn already created the authoritative projectile — drop the
+        // predicted duplicate rather than ever showing two.
+        ctx.networkProjectiles.erase(it);
+        ctx.predictedProjectileIds.erase(provisionalId);
+        return false;
+    }
+    NetworkProjectile projectile = it->second; // keeps predicted=true + sim pose
+    ctx.networkProjectiles.erase(it);
+    ctx.predictedProjectileIds.erase(provisionalId);
+    projectile.projectileId = authoritativeId;
+    ctx.networkProjectiles[authoritativeId] = projectile;
+    ctx.predictedProjectileIds.insert(authoritativeId);
+    printf("[PROJECTILE ADOPT] requestId=%u provisionalId=%u authoritativeId=%u weapon=%s\n",
+           requestId, provisionalId, authoritativeId,
+           networkWeaponTypeName(projectile.weaponType));
+    return true;
+}
+
+// ── Client splash line-of-sight (mirrors the server's splashHasLineOfSight) ──
+// Same wall-only blocking rule via the shared kernel helper, so predicted blast
+// feedback and self-knockback match the server's authoritative splash verdict.
+bool clientSplashHasLineOfSight(const World& world,
+                                const glm::vec3& explosionPos,
+                                const glm::vec3& victimPoint)
+{
+    const glm::vec3 delta = victimPoint - explosionPos;
+    const float maxDist = glm::length(delta);
+    if (maxDist < 0.75f)
+        return true;
+    const glm::vec3 dir = delta / maxDist;
+
+    AABB rayBounds;
+    rayBounds.min = glm::min(explosionPos, victimPoint);
+    rayBounds.max = glm::max(explosionPos, victimPoint);
+    std::vector<int> candidates;
+    appendChunkTrianglesForAABB(world, rayBounds, 0.05f, candidates, "splashLineOfSight");
+
+    return !splashRayBlockedByWall(explosionPos, dir, maxDist,
+                                   candidates, world.collisionMesh.triangles);
+}
+
+// Nearest world-space body-part point (head/arms/legs/torso) on a rendered
+// Player to the blast — same representation the beam/aim uses, never a capsule.
+// Falls back to the torso center when the body parts aren't loaded.
+bool playerSplashBodyPoint(const Player& p, const glm::vec3& blast, glm::vec3& outPoint)
+{
+    SplashBodyPartBox boxes[16];
+    int count = 0;
+    if (!p.physicalBody.parts.empty())
+    {
+        const_cast<Player&>(p).updateModelWorldTransforms();
+        for (const PhysicalBodyPart& part : p.physicalBody.parts)
+        {
+            if (count >= 16)
+                break;
+            const glm::vec3 localCenter =
+                (part.collider.localMin + part.collider.localMax) * 0.5f;
+            boxes[count].center =
+                glm::vec3(part.worldTransform * glm::vec4(localCenter, 1.0f));
+            boxes[count].half = glm::max(
+                (part.collider.localMax - part.collider.localMin) * 0.5f,
+                glm::vec3(0.12f));
+            ++count;
+        }
+    }
+    if (count == 0)
+    {
+        const Capsule cap = p.getCapsule();
+        outPoint = p.pos + glm::vec3(0.0f, 0.0f, (cap.a.z + cap.b.z) * 0.5f);
+        return true;
+    }
+    return splashNearestBodyPartPoint(blast, boxes, count, outPoint);
 }
 
 void spawnProjectileTrail(NetworkProjectile& projectile, float dt)
@@ -488,22 +584,21 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
             ctx.pendingAttackRequests.erase(pendingAttack);
     }
 
-    const uint32_t provisionalId = provisionalProjectileId(event->fireSerial);
     const bool localOwner = event->ownerPlayerId == ctx.localPlayerId;
-    auto predictedIt = localOwner && provisionalId != 0
-        ? ctx.networkProjectiles.find(provisionalId)
-        : ctx.networkProjectiles.end();
-    const bool adoptedPrediction = predictedIt != ctx.networkProjectiles.end();
-    NetworkProjectile adopted;
-    if (adoptedPrediction)
+    bool adoptedPrediction = adoptPredictedProjectile(ctx, event->fireSerial, event->projectileId);
+    // If the authoritative projectile already exists for the local owner with a
+    // matching fireSerial (adopted earlier via the reliable AttackResult), don't
+    // reset its pose — the spawn broadcast just arrived late.
+    bool ownAlreadyExists = localOwner && !adoptedPrediction;
+    if (ownAlreadyExists)
     {
-        adopted = predictedIt->second;
-        ctx.networkProjectiles.erase(predictedIt);
-        ctx.predictedProjectileIds.erase(provisionalId);
+        auto ex = ctx.networkProjectiles.find(event->projectileId);
+        ownAlreadyExists = ex != ctx.networkProjectiles.end() &&
+            ex->second.ownerPlayerId == ctx.localPlayerId &&
+            ex->second.fireSerial == event->fireSerial;
     }
+    const bool preserveSim = adoptedPrediction || ownAlreadyExists;
     NetworkProjectile& projectile = ctx.networkProjectiles[event->projectileId];
-    if (adoptedPrediction)
-        projectile = adopted;
 
     projectile.projectileId = event->projectileId;
     projectile.ownerPlayerId = event->ownerPlayerId;
@@ -511,19 +606,19 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
     projectile.weaponType = event->weapon;
     const glm::vec3 serverPosition(event->posX, event->posY, event->posZ);
     const glm::vec3 serverVelocity(event->velX, event->velY, event->velZ);
-    if (!adoptedPrediction)
+    if (!preserveSim)
         projectile.position = serverPosition;
     projectile.previousPosition = projectile.position;
-    if (!adoptedPrediction)
+    if (!preserveSim)
     {
         projectile.velocity = serverVelocity;
         projectile.rotation = glm::quat(event->rotW, event->rotX, event->rotY, event->rotZ);
         projectile.angularVelocity = {event->angVelX, event->angVelY, event->angVelZ};
     }
-    projectile.age = adoptedPrediction ? projectile.age : 0.0f;
+    projectile.age = preserveSim ? projectile.age : 0.0f;
     projectile.lifetime = event->lifetime;
     projectile.radius = event->radius;
-    projectile.predicted = adoptedPrediction;
+    projectile.predicted = localOwner && preserveSim;
     projectile.exploded = false;
     configureNetworkProjectile(projectile, projectileDefinition(event->weapon));
     if (projectile.predicted)
@@ -539,7 +634,7 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
     // yank the visual back to the server's (RTT-old) spawn state — continue
     // from the predicted current position so the grenade/rocket never
     // rubber-bands backward. The server's state events reconcile forward.
-    if (adoptedPrediction)
+    if (preserveSim)
     {
         projectile.prevStateTick = projectile.targetStateTick = ctx.latestServerTick;
         projectile.prevStatePos = projectile.targetStatePos = projectile.position;
@@ -625,7 +720,29 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
     auto it = ctx.networkProjectiles.find(event->projectileId);
     if (it == ctx.networkProjectiles.end())
     {
-        // Lost spawn event — recover from state update
+        // Lost spawn event — recover from state update. For the local owner's
+        // own projectile this state event can beat both the AttackResult and the
+        // spawn broadcast: adopt the predicted projectile (rename provisional →
+        // authoritative) so we NEVER render a second one. Remote projectiles (or
+        // an owner with no prediction) fall through to a fresh create.
+        if (event->ownerPlayerId == ctx.localPlayerId &&
+            adoptPredictedProjectile(ctx, event->fireSerial, event->projectileId))
+        {
+            it = ctx.networkProjectiles.find(event->projectileId);
+            if (it != ctx.networkProjectiles.end())
+            {
+                NetworkProjectile& adopted = it->second;
+                adopted.prevStateTick = adopted.targetStateTick = event->header.tick;
+                adopted.prevStatePos = adopted.targetStatePos = adopted.position;
+                adopted.prevStateVel = adopted.targetStateVel = adopted.velocity;
+                adopted.prevStateRot = adopted.targetStateRot = adopted.rotation;
+                adopted.latestAcceptedTick = 0; // accept this first server tick below
+                adopted.lastTargetReceivedMs = nowMs();
+            }
+        }
+    }
+    if (it == ctx.networkProjectiles.end())
+    {
         NetworkProjectile& projectile = ctx.networkProjectiles[event->projectileId];
         projectile.projectileId = event->projectileId;
         projectile.ownerPlayerId = 0;
@@ -794,14 +911,30 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
         const ProjectileDamageResultPacket& victim = event->victims[i];
         if (victim.victimPlayerId == ctx.localPlayerId)
         {
-            ctx.pendingKnockback += glm::vec3(
-                victim.knockX, victim.knockY, victim.knockZ);
-            ctx.pendingKnockbackSource = weaponName;
-            printf("[NET KNOCKBACK APPLY] projectileId=%u victim=local "
-                   "impulse=(%.2f,%.2f,%.2f) source=%s\n",
-                   event->projectileId,
-                   victim.knockX, victim.knockY, victim.knockZ,
-                   weaponName);
+            // The local owner already applied this self-knockback via client
+            // explosion prediction — the authoritative event supersedes it, so
+            // skip the pendingKnockback add rather than pushing the shooter twice.
+            const auto selfKb = ctx.predictedSelfKnockbacks.find(event->fireSerial);
+            if (selfKb != ctx.predictedSelfKnockbacks.end())
+            {
+                ctx.predictedSelfKnockbacks.erase(selfKb);
+                printf("[NET KNOCKBACK APPLY] projectileId=%u victim=local "
+                       "impulse=(%.2f,%.2f,%.2f) source=%s accepted=predicted-supersede\n",
+                       event->projectileId,
+                       victim.knockX, victim.knockY, victim.knockZ,
+                       weaponName);
+            }
+            else
+            {
+                ctx.pendingKnockback += glm::vec3(
+                    victim.knockX, victim.knockY, victim.knockZ);
+                ctx.pendingKnockbackSource = weaponName;
+                printf("[NET KNOCKBACK APPLY] projectileId=%u victim=local "
+                       "impulse=(%.2f,%.2f,%.2f) source=%s\n",
+                       event->projectileId,
+                       victim.knockX, victim.knockY, victim.knockZ,
+                       weaponName);
+            }
         }
         else
         {
@@ -817,6 +950,10 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
                event->projectileId, victim.victimPlayerId,
                victim.damage, victim.healthAfter, (int)victim.killed);
     }
+
+    // Server did not knock the local player back for this fireSerial — drop any
+    // phantom predicted self-knockback so it never lingers.
+    ctx.predictedSelfKnockbacks.erase(event->fireSerial);
 
     printf("[PROJECTILE CLIENT EXPLODE] projectileId=%u weapon=%s "
            "position=(%.2f,%.2f,%.2f) serverTick=%u removedVisual=%d removedLegacy=%d predicted=%d\n",
@@ -1115,6 +1252,12 @@ void mpProcessAttackResultPacket(MultiplayerContext& ctx, const AttackResultPack
 
     if (!event->accepted && projectilePending)
         removePredictedProjectileForRequest(ctx, event->requestId);
+    else if (event->accepted && event->projectileId != 0 && projectilePending)
+        // Reliable adoption: the AttackResult carries the authoritative projectile
+        // ID and is retried until it arrives, so the local owner's predicted
+        // rocket/grenade never depends on the lossy spawn broadcast to become one
+        // entity. If the spawn arrives later, it is treated as already-adopted.
+        adoptPredictedProjectile(ctx, event->requestId, event->projectileId);
 
     if (event->weaponDefNetworkId != 0 &&
         event->magazineAmmo >= 0 && event->reserveAmmo >= 0)
@@ -1435,17 +1578,28 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
                     // Replicates the server's splash damage formula so the local
                     // shooter sees hitmarker + hit sound + damage number + HP bar
                     // on every remote target in the blast immediately. The
-                    // server's reliable DamageConfirmedEvent reconciles it.
+                    // server's reliable DamageConfirmedEvent reconciles it. The
+                    // splash line-of-sight check mirrors the server so predicted
+                    // feedback aligns with the authoritative verdict (a target
+                    // behind a wall is skipped, not rolled back later).
                     const WeaponDefinition* def = projectileDefinition(projectile.weaponType);
                     if (def)
                     {
                         const float radius = cp(def, "splashRadius", 8.0f);
                         const float splashDamage = cp(def, "rocketDirectDamage", 150.0f);
                         const float exponent = cp(def, "splashExponent", 2.0f);
+                        const bool losOn = cp(def, "splashLineOfSight", 1.0f) > 0.0f;
                         const auto applyBlast = [&](Player& t, uint32_t id, bool isNpc) {
                             if (t.dead || t.currentHp <= 0) return;
                             const float d = glm::length(t.pos - explodePos);
                             if (d >= radius) return;
+                            if (losOn)
+                            {
+                                glm::vec3 target;
+                                playerSplashBodyPoint(t, explodePos, target);
+                                if (!clientSplashHasLineOfSight(world, explodePos, target))
+                                    return; // wall/cover → server will also skip
+                            }
                             float dv = splashDamage *
                                 std::exp(-std::pow(d / radius, 2.0f) * exponent);
                             const int dmg = std::max(1, (int)std::round(dv));
@@ -1457,6 +1611,40 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
                             applyBlast(kv.second, kv.first, true);
                         for (auto& kv : ctx.remotePlayers)
                             applyBlast(kv.second, kv.first, false);
+
+                        // ── Predicted self-knockback (instant, TF2-style) ──
+                        // The shooter feels their own blast immediately using the
+                        // server's exact formula; the authoritative explode event
+                        // supersedes it (no double push).
+                        const float kbStrength = cp(def, "knockbackStrength", 160.0f);
+                        const float selfMul = cp(def, "selfKnockbackMultiplier", 1.0f);
+                        if (gpPlayer && !gpPlayer->dead)
+                        {
+                            const Capsule cap = gpPlayer->getCapsule();
+                            const float selfH = cap.b.z - cap.a.z + 2.0f * cap.r;
+                            const glm::vec3 center =
+                                gpPlayer->pos + glm::vec3(0.0f, 0.0f, selfH * 0.25f);
+                            const glm::vec3 toSelf = center - explodePos;
+                            const float selfDist = glm::length(toSelf);
+                            if (selfDist < radius)
+                            {
+                                glm::vec3 selfTarget;
+                                playerSplashBodyPoint(*gpPlayer, explodePos, selfTarget);
+                                if (!losOn || clientSplashHasLineOfSight(world, explodePos, selfTarget))
+                                {
+                                    const glm::vec3 dir = selfDist > 0.001f
+                                        ? toSelf / selfDist : glm::vec3(0.0f, 1.0f, 0.0f);
+                                    const float t = selfDist / radius;
+                                    const float knockScale = (1.0f - t * t) * 0.85f + 0.15f;
+                                    const glm::vec3 kb =
+                                        dir * kbStrength * knockScale * selfMul;
+                                    gpPlayer->externalImpulse += kb;
+                                    ctx.predictedSelfKnockbacks[projectile.fireSerial] = kb;
+                                    printf("[PROJECTILE CLIENT PREDICTED SELF-KNOCKBACK] fireSerial=%u impulse=(%.2f,%.2f,%.2f)\n",
+                                           projectile.fireSerial, kb.x, kb.y, kb.z);
+                                }
+                            }
+                        }
                     }
                     printf("[PROJECTILE CLIENT PREDICTED EXPLOSION] fireSerial=%u weapon=%s "
                            "pos=(%.2f,%.2f,%.2f)\n",

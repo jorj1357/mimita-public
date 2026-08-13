@@ -718,13 +718,13 @@ int runServer(const LaunchOptions& options)
             }
         }
 
-        // Remeasure elapsed time for post-simulation work (heartbeat, logs)
-        auto postSimNow = std::chrono::steady_clock::now();
-        double postElapsed = std::chrono::duration<double>(postSimNow - currentTime).count();
-        currentTime = postSimNow;
-        if (postElapsed > 0.001) // only add if more than negligible
-            accumulator += postElapsed;
-
+        // NOTE: no extra `accumulator += postElapsed` here. The loop-top
+        // `elapsed` measurement already covers the full previous iteration
+        // (body work + sleep). Adding the current iteration's body time a
+        // second time made the accumulator grow faster than real time and the
+        // server run at ~80Hz instead of the locked 60Hz (SERVER_DT). That
+        // clock mismatch is what made clients think snapshots were missing and
+        // extrapolate remote bodies ahead of their real position.
         const uint64_t loopUs = (uint64_t)std::chrono::duration<double, std::micro>(
             std::chrono::steady_clock::now() - loopStart).count();
         recordServerLoopPerf(loopPerf, loopUs, cappedCatchup);
