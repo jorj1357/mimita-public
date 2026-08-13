@@ -14,7 +14,7 @@
 #define IDB_LOADING_IMAGE 101
 #define GUI_CONFIG 102
 
-#define LAUNCHER_VERSION "1.0.3"
+#define LAUNCHER_VERSION "1.0.4"
 #define GITHUB_REPO "jorj1357/mimita-public"
 #define RELEASE_API_URL "https://api.github.com/repos/jorj1357/mimita-public/releases/latest"
 
@@ -1909,6 +1909,24 @@ void checkForUpdates()
 
 // ── Update application (version-folder installs) ──────────────
 
+// A freshly extracted game file that antivirus deleted is missing entirely.
+// Surface the exact path so the user knows what happened instead of seeing a
+// silent stall (Defender commonly quarantines unsigned executables).
+bool warnIfAntivirusRemoved(const std::string& path)
+{
+    if (pathExists(path)) return false;
+    if (!g_noErrorDialogs) {
+        std::string msg = guiStr("av.deletedFile",
+            "Antivirus deleted a MiMITA file while it was being installed:\n\n{path}\n\n"
+            "Windows Defender or another antivirus may have quarantined it. "
+            "Restore the file from quarantine (or allow MiMITA) and then try again.");
+        guiReplace(msg, "path", path);
+        MessageBoxA(nullptr, msg.c_str(),
+            guiStr("window.title", "MiMITA").c_str(), MB_OK | MB_ICONWARNING);
+    }
+    return true;
+}
+
 bool applyGameUpdate(const std::string& root, std::string tag,
                      const std::string& zipPath)
 {
@@ -1937,10 +1955,13 @@ bool applyGameUpdate(const std::string& root, std::string tag,
     std::string stage = versionsRoot + "\\staging-" + tag;
     deleteDirectory(stage);
     if (!extractZipFileWithProgress(zipPath, stage)) {
+        warnIfAntivirusRemoved(stage + "\\mimita.exe");
         deleteDirectory(stage);
         return false;
     }
     if (!isValidPeExecutable(stage + "\\mimita.exe")) {
+        // Distinguish "antivirus deleted it" (file missing) from "corrupt".
+        warnIfAntivirusRemoved(stage + "\\mimita.exe");
         deleteDirectory(stage);
         return false;
     }
