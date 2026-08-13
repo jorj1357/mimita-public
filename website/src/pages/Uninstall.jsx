@@ -26,12 +26,15 @@ export default function Uninstall() {
 
           <p>
             Close the game window,
-            and right-click the MiMITA tray icon and choose Exit.
+            and right-click the MiMITA Launcher tray icon and choose Exit.
             Make sure no
             <code> mimita.exe </code>
             or
             <code> MimitaLauncher.exe </code>
             process is running in Task Manager.
+            u can open task manager by pressing ctrl + shift + esc, 
+            or pressing windows key, searching "Task Manager", itll be 
+            a blue window icon 
           </p>
 
           <h2 style={{ color: "#a020ff", marginTop: "1.5rem" }}>2. REMOVE SHORTCUTS (OPTIONAL)</h2>
@@ -41,6 +44,13 @@ export default function Uninstall() {
             from the Start Menu
             and your desktop
             if you created them during installation.
+
+            me personally i use everything by voidtools bc my friend mira showed me it 
+            it searches ur entire PC 
+            so u can type "mimita" and 
+            ctrl + a everything 
+            and then delete it all 
+            its cool 
           </p>
 
           <h2 style={{ color: "#a020ff", marginTop: "1.5rem" }}>3. DELETE THE MIMITA FOLDER</h2>
@@ -65,16 +75,18 @@ export default function Uninstall() {
           </p>
 
           <p>
-            Deleting the folder does not delete your MiMITA website account —
+            Deleting the folder does not delete your MiMITA website account;
             manage that at mimita.fun.
+            u can delete ur account by, as of 8 12 2026, clicking ur profile picture, going to "danger zone",
+            putting ur password in, and clicking "delete account" 
             Analytics deletion can be requested separately
             from the in-game settings menu.
           </p>
 
-          <p>
+          {/* <p>
             The source version of this guide is maintained in the repository:
             docs/uninstall.md
-          </p>
+          </p> */}
 
         </div>
 
