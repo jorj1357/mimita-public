@@ -1496,10 +1496,10 @@ app.get(/^\/api\/download\/file\/(.+)/, (req, res) => {
 })
 
 app.get("/api/download/latest", (req, res) => {
-    // The launcher IS the download: it installs the game, self-updates, and
-    // updates the game automatically. Always serve it from the latest GitHub
-    // release so the button can never hand out a stale local installer.
-    res.redirect("https://github.com/jorj1357/mimita-public/releases/latest/download/MimitaLauncher.exe")
+    // The zip IS the download: no installer, no launcher. Always serve it from
+    // the versioned v2.0.5 GitHub release artifact so the button can never
+    // hand out a stale local file.
+    res.redirect("https://github.com/jorj1357/mimita-public/releases/download/v2.0.5/mimita-game-v2.0.5.zip")
 })
 
 app.use((error, req, res, next) => {

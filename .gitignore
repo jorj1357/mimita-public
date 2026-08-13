@@ -101,6 +101,7 @@ Desktop.ini
 
 # ── Game distribution archives ────────────────────────────────────────────────
 mimita-game.zip
+mimita-game-v2.0.5.zip
 *.pak
 
 # ── Staged release output (devscripts/mimita-build-menu.py) ───────────────────

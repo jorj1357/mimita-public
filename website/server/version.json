@@ -1,7 +1,7 @@
 {
-  "version": "2.0.4",
-  "release_date": "2026-08-12",
-  "file_size_mb": 107,
+  "version": "2.0.5",
+  "release_date": "2026-08-13",
+  "file_size_mb": 54,
   "platform": "windows-64",
   "installer_sha256": ""
 }

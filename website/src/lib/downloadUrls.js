@@ -1,14 +1,14 @@
-// 08 12 2026, 21 12
+// 08 13 2026, 17 59
 /* purpose
-* Single source of truth for public game download URLs.
-* Owns the launcher EXE URL and the portable ZIP URL, both pointed at the
-* latest GitHub release so the site can never hand out stale artifacts.
-* Uses the same stable latest-release pattern as the server's /api/download/latest.
+* Single source of truth for the public game download URL.
+* Owns the single zip download URL pointed at the v2.0.5 release artifact
+* (mimita-game-v2.0.5.zip) so the site hands out the exact requested build.
+* Uses a versioned release URL so the link stays stable even after newer
+* releases appear on GitHub.
 * DOES NOT track downloads, run analytics, or serve files.
-* DOES NOT know release versions, dates, or hashes.
+* DOES NOT know release dates or hashes.
 */
 
-const RELEASE_BASE = "https://github.com/jorj1357/mimita-public/releases/latest/download"
+const RELEASE_BASE = "https://github.com/jorj1357/mimita-public/releases/download/v2.0.5"
 
-export const LAUNCHER_DOWNLOAD_URL = `${RELEASE_BASE}/MimitaLauncher.exe`
-export const PORTABLE_ZIP_DOWNLOAD_URL = `${RELEASE_BASE}/mimita-game.zip`
+export const GAME_ZIP_DOWNLOAD_URL = `${RELEASE_BASE}/mimita-game-v2.0.5.zip`
