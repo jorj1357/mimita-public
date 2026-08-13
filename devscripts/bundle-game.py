@@ -69,6 +69,9 @@ def is_excluded(rel):
     low = rel.lower()
     if low.startswith(EXCLUDE_PREFIXES):
         return True
+    # Any donttrack path anywhere (e.g. a stray assets/sound/sound/music/.../donttrack/).
+    if "/donttrack/" in low:
+        return True
     for s in EXCLUDE_SUFFIXES:
         if low.endswith(s):
             return True
