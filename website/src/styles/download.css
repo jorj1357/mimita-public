@@ -55,6 +55,48 @@
   cursor: not-allowed;
 }
 
+.portableZipSection {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.portableZipButton {
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.08);
+  text-decoration: none;
+  padding: 0.6rem 1.4rem;
+  font-size: 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transition: opacity 0.2s ease, background 0.2s ease;
+}
+
+.portableZipButton:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.portableZipInfo {
+  opacity: 0.5;
+  font-size: clamp(0.8rem, 1.2vmin, 1.1rem);
+  max-width: 480px;
+  margin: 0;
+}
+
+.portableZipSteps {
+  text-align: left;
+  opacity: 0.6;
+  font-size: clamp(0.8rem, 1.2vmin, 1.1rem);
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.portableZipSteps code {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.05rem 0.35rem;
+}
+
 .downloadWhat {
   max-width: 720px;
   border: 1px solid rgba(255, 255, 255, 0.25);

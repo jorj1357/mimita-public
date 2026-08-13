@@ -14,6 +14,7 @@ import ChaosSway from "../components/ChaosSway"
 import RainbowTrail from "../components/RainbowTrail"
 import BounceBall from "../components/BounceBall"
 import DelayedRender from "../components/DelayedRender"
+import { PORTABLE_ZIP_DOWNLOAD_URL } from "../lib/downloadUrls"
 
 export default function Home() {
   return (
@@ -121,6 +122,16 @@ export default function Home() {
 
             <span className="platformLabel">
               windows 64-bit
+            </span>
+
+            <a
+              href={PORTABLE_ZIP_DOWNLOAD_URL}
+              className="secondaryButton portableZipButton"
+            >
+              Portable ZIP
+            </a>
+            <span className="portableZipHint">
+              Antivirus trouble? Download the ZIP, extract it, then run mimita.exe.
             </span>
           </div>
 
