@@ -11,6 +11,7 @@
 #pragma once
 
 #include "network/net_common.h"
+#include "network/simulation-constants.h"
 #include "network/packets.h"
 #include "network/projectile-terminal-dedupe.h"
 #include "network/movement-validation.h"
@@ -287,11 +288,19 @@ struct MultiplayerContext
     uint64_t snapshotsReceived = 0;
     uint64_t snapshotsMissed = 0;
 
-    // Remote-player interpolation clock: advances at the fixed 60 tick/s rate
-    // using wall-clock frame time, so rendering is time-based, not packet-based.
+    // Remote-player interpolation clock: advances at the measured server tick
+    // rate using wall-clock frame time, so rendering is time-based, not
+    // packet-based. The rate is sampled from snapshot tick progression instead
+    // of assuming a hardcoded 60Hz — a server that ticks at any real rate
+    // (60Hz after the accumulator fix, or a remote host with its own loop)
+    // never makes the interpolation buffer run dry and never extrapolates
+    // remote bodies ahead of their true position.
     double interpolationRenderTick = 0.0;
     bool interpolationClockStarted = false;
     uint64_t interpolationClockLastUpdateMs = 0;
+    double measuredServerTickRateHz = (double)GAMEPLAY_SIMULATION_HZ;
+    uint64_t tickRateSampleStartMs = 0;
+    uint32_t tickRateSampleStartTick = 0;
     uint64_t interpolationFrameNumber = 0;
     uint32_t interpolationReanchorCount = 0;
     double lastInterpolationClockStepMs = 0.0;
@@ -319,6 +328,12 @@ struct MultiplayerContext
     bool awaitingTeleportAck = false;
     bool awaitingExplodeDeath = false;
     bool teleportResync = false;
+    // Set when a snapshot tick gap indicates a blackout/reconnect. The local
+    // player reconcile uses it to snap back to the server's authoritative
+    // position even for a Medium correction, so a drifted local prediction
+    // self-corrects instead of sticking until the next death.
+    bool postGapResync = false;
+    uint64_t postGapResyncDeadlineMs = 0;
     int localServerHealth = 100;
     int lastSeenServerHealth = 100;
 
@@ -530,12 +545,16 @@ struct MultiplayerContext
     };
     std::unordered_map<uint32_t, PendingAttackRequest> pendingAttackRequests;
 
-    // ── Pending reload requests ────────────────────────────────────────
+    // ── Pending reload requests (retransmission like attacks) ─────────
     struct PendingReloadRequest {
         uint32_t requestId = 0;
         uint32_t spawnGeneration = 0;
         uint16_t weaponDefNetworkId = 0;
-        uint64_t sentAtMs = 0;
+        int32_t magazineAmmo = -1;
+        int32_t reserveAmmo = -1;
+        uint64_t firstSentMs = 0;
+        uint64_t lastSentMs = 0;
+        int attempts = 0;
     };
     std::unordered_map<uint32_t, PendingReloadRequest> pendingReloadRequests;
 
@@ -586,6 +605,13 @@ struct MultiplayerContext
     // fireSerial -> predicted explosion position for client-side projectile
     // explosion prediction. Used to reconcile against the server's explode event.
     std::unordered_map<uint32_t, glm::vec3> predictedExplosions;
+
+    // ── Predicted self-knockback (fireSerial -> impulse) ────────────────
+    // The local owner's client applies its own knockback instantly when its
+    // predicted rocket/grenade explodes. The authoritative explode event
+    // supersedes it (skip the pendingKnockback add for that fireSerial) so the
+    // shooter never gets knocked twice by their own blast.
+    std::unordered_map<uint32_t, glm::vec3> predictedSelfKnockbacks;
 
     // ── Snapshot chunk reassembly buffers ─────────────────────────────
     struct SnapshotChunkBuffer {

@@ -1986,7 +1986,79 @@ void tickDisagreementRetransmit(SOCKET sock,
     }
 }
 
-// ── Reload request (with idempotent caching) ─────────────────────────
+// ── Reload result cache (idempotent retries) ─────────────────────────
+// The client retries reload requests like attacks; on a duplicate the server
+// re-sends the original result instead of silently dropping it.
+struct CachedReloadResult {
+    uint32_t playerId = 0;
+    uint32_t spawnGeneration = 0;
+    uint32_t requestId = 0;
+    uint8_t accepted = 0;
+    uint8_t reason = 0;
+    int32_t magazineAmmo = 0;
+    int32_t reserveAmmo = 0;
+    uint64_t reloadCompleteTick = 0;
+    uint64_t nextAllowedFireTick = 0;
+    uint8_t reloading = 0;
+    uint32_t stateRevision = 0;
+    uint16_t weaponDefNetworkId = 0;
+    bool valid = false;
+};
+static CachedReloadResult s_reloadCache[64];
+static uint8_t s_reloadCacheNext = 0;
+
+static void cacheReloadResult(const ServerPlayer& player, const ReloadRequestPacket* req,
+    uint8_t accepted, uint8_t reason, int32_t mag, int32_t reserve,
+    uint64_t reloadCompleteTick, uint64_t nextAllowedFireTick,
+    uint8_t reloading, uint32_t stateRevision)
+{
+    auto& slot = s_reloadCache[s_reloadCacheNext];
+    slot.playerId = player.id;
+    slot.spawnGeneration = req->spawnGeneration;
+    slot.requestId = req->requestId;
+    slot.accepted = accepted;
+    slot.reason = reason;
+    slot.magazineAmmo = mag;
+    slot.reserveAmmo = reserve;
+    slot.reloadCompleteTick = reloadCompleteTick;
+    slot.nextAllowedFireTick = nextAllowedFireTick;
+    slot.reloading = reloading;
+    slot.stateRevision = stateRevision;
+    slot.weaponDefNetworkId = req->weaponDefNetworkId;
+    slot.valid = true;
+    s_reloadCacheNext = (s_reloadCacheNext + 1) % 64;
+}
+
+static bool lookupCachedReloadResult(const ServerPlayer& player, const ReloadRequestPacket* req,
+    ReloadResultPacket& out)
+{
+    for (int i = 0; i < 64; ++i)
+    {
+        const auto& c = s_reloadCache[i];
+        if (!c.valid) continue;
+        if (c.playerId == player.id && c.spawnGeneration == req->spawnGeneration &&
+            c.requestId == req->requestId)
+        {
+            out.header.type = PACKET_RELOAD_RESULT;
+            out.header.playerId = player.id;
+            out.requestId = req->requestId;
+            out.spawnGeneration = req->spawnGeneration;
+            out.accepted = c.accepted;
+            out.reason = c.reason;
+            out.magazineAmmo = c.magazineAmmo;
+            out.reserveAmmo = c.reserveAmmo;
+            out.reloadCompleteTick = c.reloadCompleteTick;
+            out.nextAllowedFireTick = c.nextAllowedFireTick;
+            out.reloading = c.reloading;
+            out.stateRevision = c.stateRevision;
+            out.weaponDefNetworkId = c.weaponDefNetworkId;
+            return true;
+        }
+    }
+    return false;
+}
+
+// ── Reload request (client ammo adopted, idempotent retries) ─────────
 void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                           std::unordered_map<uint32_t, ServerPlayer>& players,
                           uint32_t tick, uint64_t& totalPacketsOut)
@@ -2006,8 +2078,21 @@ void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
     if (!wepId)
         return;
 
-    Debug::log(Debug::Category::Weapons, "[RELOAD REQUEST RX] playerId=%u requestId=%u spawnGen=%u weapon=%s tick=%u\n",
-               p.id, req->requestId, req->spawnGeneration, wepId->c_str(), tick);
+    // ── Idempotent cache hit: retry re-sends the original result ──
+    {
+        ReloadResultPacket cached;
+        if (lookupCachedReloadResult(p, req, cached))
+        {
+            Debug::log(Debug::Category::Weapons, "[RELOAD CACHE HIT] playerId=%u requestId=%u accepted=%d reason=%d\n",
+                       p.id, req->requestId, (int)cached.accepted, (int)cached.reason);
+            serverSendToPlayer(sock, p, &cached, sizeof(cached));
+            return;
+        }
+    }
+
+    Debug::log(Debug::Category::Weapons, "[RELOAD REQUEST RX] playerId=%u requestId=%u spawnGen=%u weapon=%s tick=%u mag=%d res=%d\n",
+               p.id, req->requestId, req->spawnGeneration, wepId->c_str(), tick,
+               req->magazineAmmo, req->reserveAmmo);
 
     // Validate spawn generation
     if (req->spawnGeneration != p.spawnGeneration)
@@ -2024,28 +2109,20 @@ void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
         return;
     }
 
-    // ── Idempotent cache lookup ────────────────────────────────────
-    // Cache reload results by (playerId, spawnGeneration, requestId)
-    // Similar to projectile fire result caching.
-    // For the initial implementation, just deduplicate with a simple set.
-    static std::unordered_set<uint64_t> s_processedReloads;
-    uint64_t cacheKey = ((uint64_t)p.id << 32) | ((uint64_t)req->spawnGeneration << 16) | req->requestId;
-    if (s_processedReloads.count(cacheKey))
-    {
-        Debug::log(Debug::Category::Weapons, "[RELOAD] playerId=%u duplicate requestId=%u (already processed)\n",
-                   p.id, req->requestId);
-        return;
-    }
-    s_processedReloads.insert(cacheKey);
-    if (s_processedReloads.size() > 256)
-        s_processedReloads.clear();
-
     auto rtIt = p.weaponRuntimes.find(*wepId);
     if (rtIt == p.weaponRuntimes.end() || !rtIt->second.initialized)
         return;
 
     ServerPlayer::ServerWeaponRuntime& rt = rtIt->second;
     const WeaponDefinition* def = WeaponRegistry::instance().get(*wepId);
+
+    // ── Adopt client-authoritative ammo ────────────────────────────
+    // The client owns its clip; take its numbers so the "mag full"/"no
+    // reserve" checks below can never fire on a drifted informational copy.
+    if (req->magazineAmmo >= 0)
+        rt.magazineAmmo = req->magazineAmmo;
+    if (req->reserveAmmo >= 0)
+        rt.reserveAmmo = req->reserveAmmo;
 
     ReloadResultPacket result{};
     result.header.type = PACKET_RELOAD_RESULT;
@@ -2102,7 +2179,11 @@ void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
     result.reloading = rt.reloading ? 1 : 0;
     result.stateRevision = rt.stateRevision;
 
-    // Send result back to the requesting player only
+    // Cache so a retry re-sends this exact result, then send to this player only
+    cacheReloadResult(p, req, result.accepted, result.reason,
+                      result.magazineAmmo, result.reserveAmmo,
+                      result.reloadCompleteTick, result.nextAllowedFireTick,
+                      result.reloading, result.stateRevision);
     serverSendToPlayer(sock, p, &result, sizeof(result));
 }
 

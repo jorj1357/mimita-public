@@ -201,6 +201,7 @@ struct ProjectileConfig
     float minBounceSpeed = 0.0f;
     float angularDrag = 0.0f;
     float angularSpeed = 6.0f;
+    bool splashLineOfSight = true;
 };
 
 std::optional<ProjectileConfig> projectileConfigFromDefinition(
@@ -234,6 +235,7 @@ std::optional<ProjectileConfig> projectileConfigFromDefinition(
     cfg.minBounceSpeed = cp("minBounceSpeed", 0.1f);
     cfg.angularDrag = cp("angularDrag", 0.3f);
     cfg.angularSpeed = cp("angSpeed", 6.0f);
+    cfg.splashLineOfSight = cp("splashLineOfSight", 1.0f) > 0.0f;
 
     bool valid = true;
     if (cfg.speed <= 0.0f || !std::isfinite(cfg.speed))
@@ -369,6 +371,8 @@ void broadcastProjectileState(SOCKET sock,
     packet.angVelY = projectile.angularVelocity.y;
     packet.angVelZ = projectile.angularVelocity.z;
     packet.age = projectile.age;
+    packet.ownerPlayerId = projectile.ownerPlayerId;
+    packet.fireSerial = projectile.fireSerial;
     gProjectilePerf.correctionPackets += players.size();
     gProjectilePerf.correctionBytes += players.size() * sizeof(packet);
     broadcastPacket(sock, players, packet, totalPacketsOut);
@@ -534,7 +538,87 @@ void applyPhysicsState(ServerProjectile& projectile,
     projectile.bounceCount = state.bounceCount;
 }
 
+// Splash line-of-sight: the blast reaches the victim unless a non-floor surface
+// (wall/column/cover) lies between the explosion center and the victim's nearest
+// body part. Floors/ceilings (|normal.z| > 0.7) never block, so a grenade on the
+// ground still splashes someone standing next to it. Uses the shared kernel
+// helpers from projectile-simulation.h (identical rule on the client).
+bool splashHasLineOfSight(const HeadlessWorld& world,
+                          const glm::vec3& explosionPos,
+                          const glm::vec3& victimPoint)
+{
+    const glm::vec3 delta = victimPoint - explosionPos;
+    const float maxDist = glm::length(delta);
+    if (maxDist < 0.75f)
+        return true;
+    const glm::vec3 dir = delta / maxDist;
+
+    AABB rayBounds;
+    rayBounds.min = glm::min(explosionPos, victimPoint);
+    rayBounds.max = glm::max(explosionPos, victimPoint);
+    std::vector<int> candidates;
+    gatherHeadlessTrianglesForAABB(world, rayBounds, 0.05f, candidates);
+
+    return !splashRayBlockedByWall(explosionPos, dir, maxDist, candidates, world.triangles);
+}
+
+// Reconstruct the victim's REAL body-part boxes (head/arms/legs/torso) at their
+// current pose — same template + yaw math the server's hit-rewind uses, never a
+// capsule. Writes the nearest body-part point to the blast into outPoint.
+// Falls back to the torso center when no template is available.
+bool splashNearestPlayerBodyPoint(const ServerPlayer& victim,
+                                  const glm::vec3& blast,
+                                  glm::vec3& outPoint)
+{
+    SplashBodyPartBox boxes[8];
+    int count = 0;
+    if (const auto* tpl = standardPlayerBodyTemplate())
+    {
+        const float c = std::cos(victim.yaw);
+        const float s = std::sin(victim.yaw);
+        for (const auto& t : *tpl)
+        {
+            if (count >= 8)
+                break;
+            const glm::vec3 off(t.offset.x * c - t.offset.y * s,
+                                t.offset.x * s + t.offset.y * c,
+                                t.offset.z);
+            boxes[count].center = victim.pos + off;
+            boxes[count].half = t.half;
+            ++count;
+        }
+    }
+    if (count == 0)
+    {
+        outPoint = victim.pos + glm::vec3(0.0f, 0.0f, PLAYER_HEIGHT * 0.25f);
+        return true;
+    }
+    return splashNearestBodyPartPoint(blast, boxes, count, outPoint);
+}
+
+bool splashNearestNpcBodyPoint(const ServerNpc& npc,
+                               const glm::vec3& blast,
+                               glm::vec3& outPoint)
+{
+    SplashBodyPartBox boxes[8];
+    int count = 0;
+    for (uint8_t i = 0; i < npc.bodyPartCount && i < npc.bodyParts.size(); ++i)
+    {
+        const ServerNpcBodyPartSample& s = npc.bodyParts[i];
+        boxes[count].center = {s.cx, s.cy, s.cz};
+        boxes[count].half = {s.hx, s.hy, s.hz};
+        ++count;
+    }
+    if (count == 0)
+    {
+        outPoint = npc.pos + glm::vec3(0.0f, 0.0f, PLAYER_HEIGHT * 0.25f);
+        return true;
+    }
+    return splashNearestBodyPartPoint(blast, boxes, count, outPoint);
+}
+
 void explodeProjectile(SOCKET sock,
+                       const HeadlessWorld& world,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
                        std::unordered_map<uint32_t, ServerNpc>& npcs,
                        ServerProjectile& projectile,
@@ -598,6 +682,14 @@ void explodeProjectile(SOCKET sock,
         const float dist = glm::length(toVictim);
         if (dist >= projectile.splashRadius)
             continue;
+
+        if (projectile.splashLineOfSight)
+        {
+            glm::vec3 target;
+            splashNearestPlayerBodyPoint(victim, position, target);
+            if (!splashHasLineOfSight(world, position, target))
+                continue; // wall/cover between blast and the victim's nearest body part → no hit
+        }
 
         const glm::vec3 dir = dist > 0.001f
             ? toVictim / dist
@@ -668,6 +760,14 @@ void explodeProjectile(SOCKET sock,
         const float dist = glm::length(toNpc);
         if (dist >= projectile.splashRadius)
             continue;
+
+        if (projectile.splashLineOfSight)
+        {
+            glm::vec3 target;
+            splashNearestNpcBodyPoint(npc, position, target);
+            if (!splashHasLineOfSight(world, position, target))
+                continue; // wall/cover between blast and the NPC's nearest body part → no hit
+        }
 
         const glm::vec3 dir = dist > 0.001f
             ? toNpc / dist
@@ -878,6 +978,7 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
     projectile.explodeOnPlayerImpact = cp("explodeOnPlayerImpact", 1.0f) > 0.0f;
     projectile.explodeOnWorldImpact = cp("explodeOnWorldImpact", 0.0f) > 0.0f;
     projectile.explodeOnLifetime = cp("explodeOnLifetime", 1.0f) > 0.0f;
+    projectile.splashLineOfSight = cfg.splashLineOfSight;
     projectile.spawnTick = tick;
 
     if (consumesAmmo && runtime.magazineAmmo > 0)
@@ -1424,18 +1525,18 @@ void tickServerProjectiles(SOCKET sock,
 
             if (step.type == ProjectileCollisionType::LifetimeExpired && projectile.explodeOnLifetime)
             {
-                explodeProjectile(sock, players, npcs, projectile, projectile.position,
+                explodeProjectile(sock, world, players, npcs, projectile, projectile.position,
                                   "lifetime", 0, tick, totalPacketsOut);
             }
             else if (step.type == ProjectileCollisionType::PlayerImpact && projectile.explodeOnPlayerImpact)
             {
-                explodeProjectile(sock, players, npcs, projectile, step.hitPosition,
+                explodeProjectile(sock, world, players, npcs, projectile, step.hitPosition,
                                   "player", step.hitPlayerId, tick,
                                   totalPacketsOut);
             }
             else if (step.type == ProjectileCollisionType::WorldImpact && projectile.explodeOnWorldImpact)
             {
-                explodeProjectile(sock, players, npcs, projectile, step.hitPosition,
+                explodeProjectile(sock, world, players, npcs, projectile, step.hitPosition,
                                   "world", 0, tick, totalPacketsOut);
             }
 
@@ -1453,7 +1554,7 @@ void tickServerProjectiles(SOCKET sock,
             projectile.age += dt;
             if (projectile.age >= projectile.lifetime)
             {
-                explodeProjectile(sock, players, npcs, projectile, projectile.position,
+                explodeProjectile(sock, world, players, npcs, projectile, projectile.position,
                                   "lifetime", 0, tick, totalPacketsOut);
             }
         }

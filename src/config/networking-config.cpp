@@ -384,6 +384,18 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
                        c.filterMaxStepUnitsPerSecond), 0.0);
         c.filterClampZBelowTarget = readBool(
             r, "filter_clamp_z_below_target", c.filterClampZBelowTarget);
+        c.filterMaxZAboveTargetUnits = clampMin(
+            readDouble(r, "filter_max_z_above_target_units",
+                       c.filterMaxZAboveTargetUnits), 0.0);
+        c.filterMaxZSettleSpeed = clampMin(
+            readDouble(r, "filter_max_z_settle_speed",
+                       c.filterMaxZSettleSpeed), 0.0);
+        c.filterMaxXYErrorUnits = clampMin(
+            readDouble(r, "filter_max_xy_error_units",
+                       c.filterMaxXYErrorUnits), 0.0);
+        c.filterMaxXYSettleSpeed = clampMin(
+            readDouble(r, "filter_max_xy_settle_speed",
+                       c.filterMaxXYSettleSpeed), 0.0);
         c.geometrySafeEnabled = readBool(
             r, "geometry_safe_enabled", c.geometrySafeEnabled);
         c.geometrySafeSlopUnits = clampMin(

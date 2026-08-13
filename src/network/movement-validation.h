@@ -91,6 +91,12 @@ struct MovementValidationConfig
     float mediumCorrectionDistance = 5.0f;
     float majorCorrectionDistance = 100.0f;
     int maximumAirJumps = 1;
+    // Post-blackout drift correction: when a client skips this many simulation
+    // ticks (inputs lost during a blackout/reconnect) AND reports a position
+    // farther than this from the server's authoritative simulation, correct it
+    // back instead of accepting the drift (which otherwise sticks until death).
+    uint32_t postGapCorrectionMinTicks = 30;
+    float postGapCorrectionDistance = 8.0f;
 };
 
 struct MovementValidationContext

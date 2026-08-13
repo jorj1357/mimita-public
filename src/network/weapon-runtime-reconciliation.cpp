@@ -27,7 +27,8 @@ bool reconcileAuthoritativeWeaponRuntime(
     uint32_t stateRevision,
     uint32_t spawnGeneration,
     const char* source,
-    bool applyAmmo)
+    bool applyAmmo,
+    bool allowReloadStateOverride)
 {
     // ── 1. Validate weapon ID before any mutation ─────────────────────
     const std::string* weaponId = weaponIdForDefNetworkId(weaponDefNetworkId);
@@ -113,6 +114,22 @@ bool reconcileAuthoritativeWeaponRuntime(
         rt.currentAmmo = magazineAmmo;
         rt.reserveAmmo = reserveAmmo;
     }
+
+    // ── 6b. Reload state override gate ─────────────────────────────────
+    // When allowReloadStateOverride is false the caller is applying a reload
+    // result that the server REJECTED. The client's predicted reload is the
+    // truth there (the server may have rejected on its own drifted ammo copy),
+    // so never cancel it. Cooldown/ammo handling above still applies either way.
+    if (!allowReloadStateOverride)
+    {
+        printf("[RECONCILE] reload state preserved (server rejected reload for weapon=%s)\n",
+               weaponId->c_str());
+        rt.authoritativeStateRevision = stateRevision;
+        if (spawnGeneration != 0)
+            rt.authoritativeSpawnGeneration = spawnGeneration;
+        return true;
+    }
+
     rt.isReloading = reloading;
 
     // ── 7. Tick → seconds conversion (shared GAMEPLAY_SIMULATION_HZ) ──
@@ -134,7 +151,19 @@ bool reconcileAuthoritativeWeaponRuntime(
         {
             uint64_t rem = reloadCompleteTick > estimatedServerTick
                 ? reloadCompleteTick - estimatedServerTick : 0;
-            rt.reloadTimer = std::max(0.0f, (float)rem / static_cast<float>(GAMEPLAY_SIMULATION_HZ));
+            if (rem > 0)
+            {
+                rt.isReloading = true;
+                rt.reloadTimer = std::max(0.0f, (float)rem / static_cast<float>(GAMEPLAY_SIMULATION_HZ));
+            }
+            else
+            {
+                // The server's reload already finished (stale/delayed result on
+                // a bad connection). Never wedge the weapon in "reloading" with
+                // a zero timer — the reload is done, so cancel the state.
+                rt.isReloading = false;
+                rt.reloadTimer = 0.0f;
+            }
         }
     }
     else if (!reloading)
@@ -156,6 +185,7 @@ bool reconcileAuthoritativeWeaponRuntime(
 }
 
 void sendReloadRequestForWeapon(MultiplayerContext& ctx,
+                                const Player& player,
                                 const std::string& weaponId)
 {
     if (!ctx.active || ctx.localPlayerId == 0)
@@ -163,6 +193,15 @@ void sendReloadRequestForWeapon(MultiplayerContext& ctx,
     const uint16_t netId = weaponDefNetworkIdFor(weaponId);
     if (netId == 0)
         return;
+
+    int32_t mag = -1;
+    int32_t reserve = -1;
+    auto rtIt = player.weaponRuntimes.find(weaponId);
+    if (rtIt != player.weaponRuntimes.end())
+    {
+        mag = rtIt->second.currentAmmo;
+        reserve = rtIt->second.reserveAmmo;
+    }
 
     ReloadRequestPacket req{};
     req.header.type = PACKET_RELOAD_REQUEST;
@@ -172,10 +211,19 @@ void sendReloadRequestForWeapon(MultiplayerContext& ctx,
     if (ctx.nextActionRequestId == 0) ctx.nextActionRequestId = 1;
     req.spawnGeneration = ctx.lastKnownSpawnGeneration;
     req.weaponDefNetworkId = netId;
+    req.magazineAmmo = mag;
+    req.reserveAmmo = reserve;
     mpSendPacket(ctx, &req, sizeof(req));
-    ctx.pendingReloadRequests[req.requestId] = {
-        req.requestId, req.spawnGeneration, netId, nowMs()
-    };
+    MultiplayerContext::PendingReloadRequest pending{};
+    pending.requestId = req.requestId;
+    pending.spawnGeneration = req.spawnGeneration;
+    pending.weaponDefNetworkId = netId;
+    pending.magazineAmmo = mag;
+    pending.reserveAmmo = reserve;
+    pending.firstSentMs = nowMs();
+    pending.lastSentMs = pending.firstSentMs;
+    pending.attempts = 1;
+    ctx.pendingReloadRequests[req.requestId] = pending;
     Debug::log(Debug::Category::Weapons,
                "[RELOAD REQUEST SEND] playerId=%u requestId=%u weapon=%s pending=%zu\n",
                ctx.localPlayerId, req.requestId, weaponId.c_str(),

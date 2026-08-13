@@ -46,6 +46,7 @@ int main()
     const std::string packetsSchema = readFile("src/network/packets.h");
     const std::string clientProjectiles = readFile("src/network/multiplayer-projectiles.cpp");
     const std::string engineNet = readFile("src/engine/engine-tick-net.cpp");
+    const std::string reconcile = readFile("src/network/weapon-runtime-reconciliation.cpp");
 
     check(server.find("tickServerPhysicalContactWeapons") != std::string::npos,
           "server loops tick generic physical-contact weapons");
@@ -74,8 +75,10 @@ int main()
           "server spawn reset uses canonical reserve helper, not fallback 0");
     check(weaponSystem.find("result.autoReloadTriggered = true") != std::string::npos &&
           terminal.find("shot.autoReloadTriggered") != std::string::npos &&
-          terminal.find("PACKET_RELOAD_REQUEST") != std::string::npos,
-          "rocket and grenade auto-reload use generic reload request gate");
+          terminal.find("sendReloadRequestForWeapon") != std::string::npos &&
+          reconcile.find("PACKET_RELOAD_REQUEST") != std::string::npos &&
+          reconcile.find("req.magazineAmmo") != std::string::npos,
+          "auto-reload (dry fire, R, unequip) sends reload request with client ammo");
     check(packetsSchema.find("uint16_t weaponDefNetworkId = 0;") != std::string::npos &&
           attack.find("result.weaponDefNetworkId = req->weaponDefNetworkId") != std::string::npos,
           "AttackResult carries weapon definition id from request");

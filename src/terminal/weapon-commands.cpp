@@ -40,14 +40,14 @@ void equipSlotAndSync(Player& player, WeaponSystem& weapons, int slot)
 {
     const std::string holsteredReloaded = weapons.equip(player, slot);
     if (!holsteredReloaded.empty())
-        MimitaNet::sendReloadRequestForWeapon(MP_CONTEXT, holsteredReloaded);
+        MimitaNet::sendReloadRequestForWeapon(MP_CONTEXT, player, holsteredReloaded);
 }
 
 void unequipAndSync(Player& player, WeaponSystem& weapons)
 {
     const std::string holsteredReloaded = weapons.unequip(player);
     if (!holsteredReloaded.empty())
-        MimitaNet::sendReloadRequestForWeapon(MP_CONTEXT, holsteredReloaded);
+        MimitaNet::sendReloadRequestForWeapon(MP_CONTEXT, player, holsteredReloaded);
 }
 
 } // namespace
@@ -73,33 +73,13 @@ void registerWeaponCommands()
             RevolverShotResult shot = weapons.fire(
                 camera, player, npcSystem, world, remotePlayers, remoteNpcs);
 
-            // Auto-reload on empty trigger: send ReloadRequest before returning
+            // Auto-reload on empty trigger: send ReloadRequest (with the
+            // client's ammo) so the server adopts it and starts reloading too.
             if (shot.autoReloadTriggered && mpContext.active && mpContext.localPlayerId)
             {
                 const WeaponDefinition* wdef = weapons.getCurrentDef(player);
                 if (wdef)
-                {
-                    uint16_t netId = MimitaNet::weaponDefNetworkIdFor(wdef->id);
-                    if (netId != 0)
-                    {
-                        MimitaNet::ReloadRequestPacket req{};
-                        req.header.type = MimitaNet::PACKET_RELOAD_REQUEST;
-                        req.header.tick = mpContext.tick;
-                        req.header.playerId = mpContext.localPlayerId;
-                        req.requestId = mpContext.nextActionRequestId++;
-                        if (mpContext.nextActionRequestId == 0) mpContext.nextActionRequestId = 1;
-                        req.spawnGeneration = mpContext.lastKnownSpawnGeneration;
-                        req.weaponDefNetworkId = netId;
-                        MimitaNet::mpSendPacket(mpContext, &req, sizeof(req));
-                        mpContext.pendingReloadRequests[req.requestId] = {
-                            req.requestId, req.spawnGeneration, netId, MimitaNet::nowMs()
-                        };
-                        Debug::log(Debug::Category::Weapons,
-                                   "[RELOAD AUTO SEND] playerId=%u requestId=%u weapon=%s pending=%zu\n",
-                                   mpContext.localPlayerId, req.requestId, wdef->id.c_str(),
-                                   mpContext.pendingReloadRequests.size());
-                    }
-                }
+                    MimitaNet::sendReloadRequestForWeapon(mpContext, player, wdef->id);
             }
 
             if (!shot.fired) {
@@ -255,32 +235,13 @@ void registerWeaponCommands()
                 Debug::log(Debug::Category::General, "[INPUT] action=reload command=reload weapon=%s\n",
                            loaded ? "executed" : "ignored");
 
-            // In multiplayer, send authoritative reload request to server
+            // In multiplayer, send the reload request with the client's ammo
+            // so the server adopts it (never rejects on its own drifted copy).
             if (mpContext.active && mpContext.localPlayerId)
             {
                 const WeaponDefinition* def = weapons.getCurrentDef(player);
                 if (def)
-                {
-                    uint16_t netId = MimitaNet::weaponDefNetworkIdFor(def->id);
-                    if (netId != 0)
-                    {
-                        MimitaNet::ReloadRequestPacket req{};
-                        req.header.type = MimitaNet::PACKET_RELOAD_REQUEST;
-                        req.header.tick = mpContext.tick;
-                        req.header.playerId = mpContext.localPlayerId;
-                        req.requestId = mpContext.nextActionRequestId++;
-                        if (mpContext.nextActionRequestId == 0) mpContext.nextActionRequestId = 1;
-                        req.spawnGeneration = mpContext.lastKnownSpawnGeneration;
-                        req.weaponDefNetworkId = netId;
-                        MimitaNet::mpSendPacket(mpContext, &req, sizeof(req));
-                        mpContext.pendingReloadRequests[req.requestId] = {
-                            req.requestId, req.spawnGeneration, netId, MimitaNet::nowMs()
-                        };
-                        Debug::log(Debug::Category::Weapons, "[RELOAD REQUEST SEND] playerId=%u requestId=%u weapon=%s pending=%zu\n",
-                                   mpContext.localPlayerId, req.requestId, def->id.c_str(),
-                                   mpContext.pendingReloadRequests.size());
-                    }
-                }
+                    MimitaNet::sendReloadRequestForWeapon(mpContext, player, def->id);
             }
 
             Terminal::instance().addLog(loaded ? "[WEAPON] reload complete" : "[WEAPON] reload unavailable");

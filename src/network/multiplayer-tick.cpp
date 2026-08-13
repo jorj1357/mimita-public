@@ -38,6 +38,13 @@ namespace MimitaNet {
 
 namespace {
 
+// A snapshot tick gap larger than this (~500ms of missed snapshots) means a
+// blackout/reconnect, not ordinary packet loss. It arms the client's post-gap
+// resync so the local player snaps back to the server's authoritative position.
+constexpr uint32_t POST_GAP_RESYNC_TICKS = 30;
+// How long the post-gap resync stays armed after the gap is detected.
+constexpr uint64_t POST_GAP_RESYNC_WINDOW_MS = 1000;
+
 MimitaVip::VipAppearance vipAppearanceFromEntity(const SnapshotEntity& entity)
 {
     return MimitaVip::appearanceFromBytes(
@@ -548,6 +555,7 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
     ctx.networkProjectiles.clear();
     ctx.predictedProjectileIds.clear();
     ctx.predictedExplosions.clear();
+    ctx.predictedSelfKnockbacks.clear();
     ctx.pendingFireRequests.clear();
     ctx.pendingReloadRequests.clear();
     ctx.fireRejections.clear();
@@ -819,6 +827,11 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             {
                 ctx.snapshotsMissed +=
                     snapshot->header.tick - ctx.lastSnapshotTick - 1;
+                if (snapshot->header.tick - ctx.lastSnapshotTick > POST_GAP_RESYNC_TICKS)
+                {
+                    ctx.postGapResync = true;
+                    ctx.postGapResyncDeadlineMs = nowMs() + POST_GAP_RESYNC_WINDOW_MS;
+                }
             }
             if (ctx.connectionState == ConnectionState::WaitJoinAccept ||
                 ctx.connectionState == ConnectionState::Connecting)
@@ -910,6 +923,11 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 chunk.header.tick > ctx.lastSnapshotTick + 1)
             {
                 ctx.snapshotsMissed += chunk.header.tick - ctx.lastSnapshotTick - 1;
+                if (chunk.header.tick - ctx.lastSnapshotTick > POST_GAP_RESYNC_TICKS)
+                {
+                    ctx.postGapResync = true;
+                    ctx.postGapResyncDeadlineMs = nowMs() + POST_GAP_RESYNC_WINDOW_MS;
+                }
             }
 
             // Update stats exactly once per complete snapshot
@@ -1067,7 +1085,12 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 if (ctx.active && ctx.localPlayerId)
                 {
                     ctx.pendingAuthoritativeSpawn = *pr;
-                    ctx.transformEpoch = pr->transformEpoch;
+                    // Note: do NOT advance ctx.transformEpoch here. The snapshot
+                    // processing advances it when the new-epoch snapshot actually
+                    // arrives (right before the local player snaps to it). Advancing
+                    // it early made the input gate send the stale pre-teleport
+                    // position stamped with the new epoch, which the server accepted
+                    // and overwrote the duel spawn anchor.
                     Debug::log(Debug::Category::Weapons,
                                "[SPAWN RESPAWN DUPLICATE] playerId=%u spawnGen=%u epoch=%u — re-queued, gameplay kept %d\n",
                                ctx.localPlayerId, pr->spawnGeneration, pr->transformEpoch,
@@ -1083,7 +1106,6 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 // Store for weapon reconciliation outside mpTick where Player is in scope.
                 // SpawnAck is sent after weapon runtime reconciliation in engineTickNet.
                 ctx.pendingAuthoritativeSpawn = *pr;
-                ctx.transformEpoch = pr->transformEpoch;
                 ctx.gameplayActive = false;  // waiting for SpawnActivated
                 Debug::log(Debug::Category::Weapons, "[SPAWN RESPAWN QUEUE] playerId=%u spawnGen=%u epoch=%u weapons=%u\n",
                            ctx.localPlayerId, pr->spawnGeneration, pr->transformEpoch, pr->weaponCount);
@@ -1638,6 +1660,50 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                            p.requestId);
                 mpCancelPredictedProjectileAttack(ctx, p.requestId);
                 it = ctx.pendingAttackRequests.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+    }
+
+    // ── Retry unacknowledged reload requests (lost-packet resilience) ──
+    // Same timing as attack retries. The server dedups by requestId and
+    // re-sends its cached result, so a retry can never double-start a reload.
+    {
+        const uint64_t now = nowMs();
+        const auto& retryCfg = NetworkingConfig::instance().data().retries;
+        for (auto it = ctx.pendingReloadRequests.begin();
+             it != ctx.pendingReloadRequests.end(); )
+        {
+            MultiplayerContext::PendingReloadRequest& p = it->second;
+            if (now - p.lastSentMs >= (uint64_t)retryCfg.attackRetryIntervalMs &&
+                p.attempts < (int)retryCfg.attackRetryMaxAttempts)
+            {
+                ReloadRequestPacket retry{};
+                retry.header.type = PACKET_RELOAD_REQUEST;
+                retry.header.tick = ctx.tick;
+                retry.header.playerId = ctx.localPlayerId;
+                retry.requestId = p.requestId;
+                retry.spawnGeneration = p.spawnGeneration;
+                retry.weaponDefNetworkId = p.weaponDefNetworkId;
+                retry.magazineAmmo = p.magazineAmmo;
+                retry.reserveAmmo = p.reserveAmmo;
+                mpSendPacket(ctx, &retry, sizeof(retry));
+                p.lastSentMs = now;
+                p.attempts++;
+                Debug::log(Debug::Category::Weapons,
+                           "[RELOAD RETRY] requestId=%u weaponNetId=%u attempt=%d pending=%zu\n",
+                           p.requestId, p.weaponDefNetworkId, p.attempts,
+                           ctx.pendingReloadRequests.size());
+            }
+            if (now - p.firstSentMs >
+                (uint64_t)retryCfg.attackRequestTimeoutMs)
+            {
+                Debug::log(Debug::Category::Weapons,
+                           "[RELOAD TIMEOUT] requestId=%u — removing\n", p.requestId);
+                it = ctx.pendingReloadRequests.erase(it);
             }
             else
             {

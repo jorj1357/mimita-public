@@ -646,120 +646,15 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         {
             losDir /= losDist;
 
-            // Ray-based chunk traversal: walk through chunk cells the ray passes
-            // instead of querying all cells in the bounding box.
+            // Reuse the shared ray vs grid-cells trace (the same one weapon
+            // fire uses). It walks chunk cells AND the coarse large-triangle
+            // grid, so big floors/walls (chainofjudgement's arena floor and
+            // 150m walls) block NPC LOS exactly like they block players.
+            // Preserves the old inlined DDA's blocking window (0.1, losDist-0.5).
             npc.cachedLoSBlocked = false;
-            float chunkSize = world.collisionChunkSize;
-            if (chunkSize > 0.001f && !world.collisionChunks.empty())
-            {
-                AABB rayAABB{
-                    glm::min(fromPos, toPos),
-                    glm::max(fromPos, toPos)
-                };
-
-                glm::vec3 pos = fromPos;
-                glm::vec3 step;
-                step.x = losDir.x > 0.0f ? chunkSize : -chunkSize;
-                step.y = losDir.y > 0.0f ? chunkSize : -chunkSize;
-                step.z = losDir.z > 0.0f ? chunkSize : -chunkSize;
-
-                glm::ivec3 cell(
-                    (int)std::floor(pos.x / chunkSize),
-                    (int)std::floor(pos.y / chunkSize),
-                    (int)std::floor(pos.z / chunkSize));
-
-                glm::vec3 tMax(
-                    ((cell.x + (losDir.x > 0.0f ? 1 : 0)) * chunkSize - pos.x) / losDir.x,
-                    ((cell.y + (losDir.y > 0.0f ? 1 : 0)) * chunkSize - pos.y) / losDir.y,
-                    ((cell.z + (losDir.z > 0.0f ? 1 : 0)) * chunkSize - pos.z) / losDir.z);
-                glm::vec3 tDelta(chunkSize / std::fabs(losDir.x + 0.0001f),
-                                 chunkSize / std::fabs(losDir.y + 0.0001f),
-                                 chunkSize / std::fabs(losDir.z + 0.0001f));
-                glm::ivec3 stepDir(losDir.x > 0 ? 1 : -1,
-                                   losDir.y > 0 ? 1 : -1,
-                                   losDir.z > 0 ? 1 : -1);
-
-                float remaining = losDist;
-                int maxSteps = 200;
-                while (remaining > 0.5f && maxSteps-- > 0)
-                {
-                    auto it = world.collisionChunks.find(cell);
-                    if (it != world.collisionChunks.end())
-                    {
-                        // Visit only sub-cells the ray sweeps through so dense
-                        // chunks don't cost a full per-chunk triangle scan.
-                        const glm::vec3 chunkMin((float)cell.x * chunkSize,
-                                                 (float)cell.y * chunkSize,
-                                                 (float)cell.z * chunkSize);
-                        AABB cellAABB{chunkMin, chunkMin + glm::vec3(chunkSize)};
-                        AABB overlap{glm::max(rayAABB.min, cellAABB.min),
-                                     glm::min(rayAABB.max, cellAABB.max)};
-                        collision_subgrid::forEachChunkTriOverlap(world, cell, it->second, overlap,
-                            [&](int triIdx) -> bool {
-                                if (triIdx < 0 || triIdx >= (int)world.collisionMesh.triangles.size())
-                                    return false;
-                                const CollisionTriangle& tri = world.collisionMesh.triangles[triIdx];
-                                glm::vec3 e1 = tri.b - tri.a;
-                                glm::vec3 e2 = tri.c - tri.a;
-                                glm::vec3 pVec = glm::cross(losDir, e2);
-                                float det = glm::dot(e1, pVec);
-                                if (std::fabs(det) < 0.0001f) return false;
-                                float invDet = 1.0f / det;
-                                glm::vec3 tVec = fromPos - tri.a;
-                                float u = glm::dot(tVec, pVec) * invDet;
-                                if (u < 0.0f || u > 1.0f) return false;
-                                glm::vec3 qVec = glm::cross(tVec, e1);
-                                float v = glm::dot(losDir, qVec) * invDet;
-                                if (v < 0.0f || u + v > 1.0f) return false;
-                                float t = glm::dot(e2, qVec) * invDet;
-                                if (t > 0.1f && t < losDist - 0.5f)
-                                {
-                                    npc.cachedLoSBlocked = true;
-                                    return true; // stop scanning this cell
-                                }
-                                return false;
-                            });
-                        if (npc.cachedLoSBlocked) break;
-                    }
-
-                    // Advance DDA to next cell
-                    if (tMax.x < tMax.y)
-                    {
-                        if (tMax.x < tMax.z) { remaining -= tMax.x - (tMax.x - tDelta.x); tMax.x += tDelta.x; cell.x += stepDir.x; }
-                        else { remaining -= tMax.z - (tMax.z - tDelta.z); tMax.z += tDelta.z; cell.z += stepDir.z; }
-                    }
-                    else
-                    {
-                        if (tMax.y < tMax.z) { remaining -= tMax.y - (tMax.y - tDelta.y); tMax.y += tDelta.y; cell.y += stepDir.y; }
-                        else { remaining -= tMax.z - (tMax.z - tDelta.z); tMax.z += tDelta.z; cell.z += stepDir.z; }
-                    }
-                }
-            }
-            else
-            {
-                // Fallback: iterate all triangles
-                for (const auto& tri : world.collisionMesh.triangles)
-                {
-                    glm::vec3 e1 = tri.b - tri.a;
-                    glm::vec3 e2 = tri.c - tri.a;
-                    glm::vec3 pVec = glm::cross(losDir, e2);
-                    float det = glm::dot(e1, pVec);
-                    if (std::fabs(det) < 0.0001f) continue;
-                    float invDet = 1.0f / det;
-                    glm::vec3 tVec = fromPos - tri.a;
-                    float u = glm::dot(tVec, pVec) * invDet;
-                    if (u < 0.0f || u > 1.0f) continue;
-                    glm::vec3 qVec = glm::cross(tVec, e1);
-                    float v = glm::dot(losDir, qVec) * invDet;
-                    if (v < 0.0f || u + v > 1.0f) continue;
-                    float t = glm::dot(e2, qVec) * invDet;
-                    if (t > 0.1f && t < losDist - 0.5f)
-                    {
-                        npc.cachedLoSBlocked = true;
-                        break;
-                    }
-                }
-            }
+            float hitDist = losDist;
+            if (rayTraverseGridCells(world, fromPos, losDir, losDist, hitDist, nullptr))
+                npc.cachedLoSBlocked = hitDist > 0.1f && hitDist < losDist - 0.5f;
         }
         // If LOS was not checked this tick, cachedLoSBlocked retains its previous value.
         // This means stale LOS results persist for up to LOS_INTERVAL ticks, which is fine

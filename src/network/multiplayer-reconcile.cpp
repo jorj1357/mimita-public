@@ -120,6 +120,21 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         !ctx.awaitingTeleportAck &&
         !player.dead;
 
+    // Post-blackout resync: after a snapshot gap (blackout/reconnect) the local
+    // prediction may have drifted Medium-far from the server's authoritative
+    // position. Snap it back so it self-corrects instead of sticking until the
+    // next death. Only fires when the divergence is real (> 1.5 units) and the
+    // authoritative epoch has been applied.
+    constexpr float POST_GAP_MIN_ERROR = 1.5f;
+    const bool postGapResyncActive =
+        ctx.postGapResync &&
+        currentMs < ctx.postGapResyncDeadlineMs &&
+        ctx.localPlayerReconciled &&
+        authoritativeEpochReady &&
+        !ctx.awaitingTeleportAck &&
+        !player.dead &&
+        error > POST_GAP_MIN_ERROR;
+
     const bool teleportCompletionResync =
         ctx.teleportResync && !ctx.awaitingTeleportAck;
     const bool epochChanged =
@@ -128,10 +143,13 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         ctx.localServerEpoch != 0;
     const bool applyPosition =
         initialSpawn || serverRespawnedPlayer || catastrophicDivergence ||
-        teleportCompletionResync || epochChanged;
+        postGapResyncActive || teleportCompletionResync || epochChanged;
 
     if (applyPosition)
+    {
         ctx.teleportResync = false;
+        ctx.postGapResync = false;
+    }
 
     if (applyPosition)
     {

@@ -963,6 +963,204 @@ void testAttackReconcilesValidEquipRace(const WeaponDefinition& grenade)
     checkEq(fixture.projectiles.size(), static_cast<size_t>(1), "equip-race spawns projectile");
 }
 
+// ── Reliable predicted-projectile adoption ───────────────────────────
+// The local owner's predicted rocket/grenade must be renamed provisional →
+// authoritative the moment the (reliable, retried) AttackResult arrives, so the
+// client never depends on the lossy spawn broadcast to collapse the duplicate.
+
+static uint32_t provisionalIdFor(uint32_t requestId)
+{
+    return 0x80000000u | (requestId & 0x7fffffffu);
+}
+
+void testAttackResultAdoptsPredictedProjectile(const ProjectileWeaponRefs& refs)
+{
+    MultiplayerContext ctx;
+    ctx.localPlayerId = 9;
+
+    const uint32_t provisionalId = provisionalIdFor(501);
+    NetworkProjectile pred;
+    pred.projectileId = provisionalId;
+    pred.ownerPlayerId = ctx.localPlayerId;
+    pred.fireSerial = 501;
+    pred.weaponType = NETWORK_WEAPON_ROCKET_LAUNCHER;
+    pred.predicted = true;
+    pred.position = glm::vec3(10.0f, 0.0f, 1.0f);
+    pred.velocity = glm::vec3(20.0f, 0.0f, 0.0f);
+    ctx.networkProjectiles[provisionalId] = pred;
+    ctx.predictedProjectileIds.insert(provisionalId);
+
+    MultiplayerContext::PendingAttackRequest pending;
+    pending.requestId = 501;
+    pending.weaponDefNetworkId = refs.rocketNetId;
+    ctx.pendingAttackRequests[501] = pending;
+
+    AttackResultPacket result{};
+    result.header.type = PACKET_ATTACK_RESULT;
+    result.header.playerId = ctx.localPlayerId;
+    result.requestId = 501;
+    result.accepted = 1;
+    result.projectileId = 2222;
+    result.weaponDefNetworkId = refs.rocketNetId;
+    result.magazineAmmo = 4;
+    result.reserveAmmo = 20;
+    mpProcessAttackResultPacket(ctx, &result);
+
+    checkEq(ctx.networkProjectiles.count(2222), static_cast<size_t>(1), "attack result adopts predicted under authoritative id");
+    checkEq(ctx.networkProjectiles.count(provisionalId), static_cast<size_t>(0), "attack result removes provisional projectile");
+    checkEq(ctx.networkProjectiles.size(), static_cast<size_t>(1), "attack result leaves exactly one projectile");
+    check(ctx.networkProjectiles[2222].predicted, "adopted projectile stays predicted");
+    checkEq(ctx.networkProjectiles[2222].fireSerial, 501u, "adopted projectile keeps fireSerial");
+    checkEq(ctx.networkProjectiles[2222].position.x, 10.0f, "adopted projectile keeps predicted pose");
+    checkEq(ctx.predictedProjectileIds.count(2222), static_cast<size_t>(1), "adopted id tracked as predicted");
+}
+
+// Lost-spawn state recovery must adopt the predicted projectile instead of
+// creating a second one (the badconn double-rocket bug).
+void testStateRecoveryAdoptsPredictedProjectile()
+{
+    MultiplayerContext ctx;
+    ctx.localPlayerId = 9;
+
+    const uint32_t provisionalId = provisionalIdFor(601);
+    NetworkProjectile pred;
+    pred.projectileId = provisionalId;
+    pred.ownerPlayerId = ctx.localPlayerId;
+    pred.fireSerial = 601;
+    pred.weaponType = NETWORK_WEAPON_GRENADE_LAUNCHER;
+    pred.predicted = true;
+    pred.position = glm::vec3(3.0f, 0.0f, 2.0f);
+    ctx.networkProjectiles[provisionalId] = pred;
+    ctx.predictedProjectileIds.insert(provisionalId);
+
+    ProjectileStateEventPacket state{};
+    state.header.type = PACKET_PROJECTILE_STATE_EVENT;
+    state.header.tick = 500;
+    state.projectileId = 3333;
+    state.ownerPlayerId = ctx.localPlayerId;
+    state.fireSerial = 601;
+    state.weapon = NETWORK_WEAPON_GRENADE_LAUNCHER;
+    state.posX = 3.1f; state.posY = 0.0f; state.posZ = 2.1f;
+    state.velX = 0.0f; state.velY = 0.0f; state.velZ = 0.0f;
+    state.rotW = 1.0f;
+    state.age = 0.25f;
+    mpProcessProjectileStateEventPacket(ctx, &state);
+
+    checkEq(ctx.networkProjectiles.count(3333), static_cast<size_t>(1), "state recovery adopts predicted under authoritative id");
+    checkEq(ctx.networkProjectiles.count(provisionalId), static_cast<size_t>(0), "state recovery removes provisional id");
+    checkEq(ctx.networkProjectiles.size(), static_cast<size_t>(1), "state recovery leaves exactly one projectile");
+    check(ctx.networkProjectiles[3333].predicted, "recovery-adopted projectile stays predicted");
+    checkEq(ctx.networkProjectiles[3333].fireSerial, 601u, "recovery-adopted keeps fireSerial");
+    checkEq(ctx.networkProjectiles[3333].latestAcceptedTick, 500u, "recovery-adopted accepts server tick");
+    check(ctx.networkProjectiles[3333].hasTargetState, "recovery-adopted has target state");
+}
+
+// Ordering: state event adopts first, then the AttackResult arrives — no
+// duplicate may be created by the late reliable result.
+void testLateAttackResultDoesNotDuplicate(const ProjectileWeaponRefs& refs)
+{
+    MultiplayerContext ctx;
+    ctx.localPlayerId = 9;
+
+    const uint32_t provisionalId = provisionalIdFor(701);
+    NetworkProjectile pred;
+    pred.projectileId = provisionalId;
+    pred.ownerPlayerId = ctx.localPlayerId;
+    pred.fireSerial = 701;
+    pred.weaponType = NETWORK_WEAPON_ROCKET_LAUNCHER;
+    pred.predicted = true;
+    pred.position = glm::vec3(5.0f, 0.0f, 1.0f);
+    ctx.networkProjectiles[provisionalId] = pred;
+    ctx.predictedProjectileIds.insert(provisionalId);
+
+    ProjectileStateEventPacket state{};
+    state.header.type = PACKET_PROJECTILE_STATE_EVENT;
+    state.header.tick = 600;
+    state.projectileId = 4444;
+    state.ownerPlayerId = ctx.localPlayerId;
+    state.fireSerial = 701;
+    state.weapon = NETWORK_WEAPON_ROCKET_LAUNCHER;
+    state.posX = 5.1f; state.posY = 0.0f; state.posZ = 1.1f;
+    state.velX = 20.0f; state.velY = 0.0f; state.velZ = 0.0f;
+    state.rotW = 1.0f;
+    mpProcessProjectileStateEventPacket(ctx, &state);
+    checkEq(ctx.networkProjectiles.size(), static_cast<size_t>(1), "state-first: one projectile after adoption");
+
+    MultiplayerContext::PendingAttackRequest pending;
+    pending.requestId = 701;
+    pending.weaponDefNetworkId = refs.rocketNetId;
+    ctx.pendingAttackRequests[701] = pending;
+
+    AttackResultPacket result{};
+    result.header.type = PACKET_ATTACK_RESULT;
+    result.requestId = 701;
+    result.accepted = 1;
+    result.projectileId = 4444;
+    result.weaponDefNetworkId = refs.rocketNetId;
+    result.magazineAmmo = 4;
+    result.reserveAmmo = 20;
+    mpProcessAttackResultPacket(ctx, &result);
+
+    checkEq(ctx.networkProjectiles.size(), static_cast<size_t>(1), "late attack result does not duplicate");
+    checkEq(ctx.networkProjectiles.count(4444), static_cast<size_t>(1), "authoritative id survives late attack result");
+    check(ctx.networkProjectiles[4444].predicted, "still predicted after late attack result");
+}
+
+// ── Splash line-of-sight helpers (shared kernel) ─────────────────────
+// Walls/cover block splash; floors/ceilings never do; nearest-capsule-point
+// targets the victim's nearest body part.
+void testSplashLineOfSight()
+{
+    CollisionTriangle floor;
+    floor.a = {-10.0f, -10.0f, 0.0f};
+    floor.b = { 10.0f, -10.0f, 0.0f};
+    floor.c = {-10.0f,  10.0f, 0.0f};
+    floor.normal = {0.0f, 0.0f, 1.0f};
+
+    CollisionTriangle wall;
+    wall.a = {0.0f, -10.0f, 0.0f};
+    wall.b = {0.0f,  10.0f, 0.0f};
+    wall.c = {0.0f, -10.0f, 10.0f};
+    wall.normal = {1.0f, 0.0f, 0.0f};
+
+    std::vector<CollisionTriangle> tris = {floor, wall};
+    std::vector<int> candidates = {0, 1};
+
+    // Open line of sight: ray parallel to the wall, off to the side.
+    check(!splashRayBlockedByWall({1.0f, -5.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, 10.0f,
+                                  candidates, tris),
+          "open splash ray is not blocked");
+    // Wall between blast and target: blocked.
+    check(splashRayBlockedByWall({-5.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, 10.0f,
+                                 candidates, tris),
+          "wall blocks splash");
+    // Floor-only path (ray stays above the floor): not blocked.
+    check(!splashRayBlockedByWall({0.0f, 0.0f, 2.0f}, {1.0f, 0.0f, 0.0f}, 1.0f,
+                                  candidates, tris),
+          "floor never blocks splash");
+    // Nearest body part: pick the box closest to the blast and target its
+    // nearest point (head/arms/legs/torso, never a capsule).
+    SplashBodyPartBox head;
+    head.center = {0.0f, 0.0f, 2.8f}; head.half = {0.3f, 0.3f, 0.3f};
+    SplashBodyPartBox torso;
+    torso.center = {0.0f, 0.0f, 1.6f}; torso.half = {0.4f, 0.4f, 0.7f};
+    SplashBodyPartBox legL;
+    legL.center = {-0.3f, 0.0f, 0.5f}; legL.half = {0.25f, 0.25f, 0.6f};
+    SplashBodyPartBox boxes[3] = {head, torso, legL};
+
+    glm::vec3 pt;
+    check(splashNearestBodyPartPoint({0.0f, 0.0f, 0.0f}, boxes, 3, pt),
+          "nearest body part found");
+    check(glm::length(pt - glm::vec3(-0.05f, 0.0f, 0.0f)) < 0.01f,
+          "nearest body part targets the leg (lowest box)");
+    check(splashNearestBodyPartPoint({0.0f, 0.0f, 5.0f}, boxes, 3, pt),
+          "nearest body part from above found");
+    check(glm::length(pt - glm::vec3(0.0f, 0.0f, 3.1f)) < 0.01f,
+          "nearest body part from above targets the head");
+    check(!splashNearestBodyPartPoint({0.0f, 0.0f, 0.0f}, boxes, 0, pt),
+          "no body parts returns false");
+}
+
 } // namespace
 
 int main()
@@ -985,6 +1183,10 @@ int main()
     }
     testRocketPredictionIdentityHelpers();
     testClientProjectileFireResultPendingState();
+    testAttackResultAdoptsPredictedProjectile(refs);
+    testStateRecoveryAdoptsPredictedProjectile();
+    testLateAttackResultDoesNotDuplicate(refs);
+    testSplashLineOfSight();
 
     if (gFailures != 0)
     {

@@ -29,6 +29,7 @@
 #include "terminal/terminal-state.h"
 #include "network/movement-validation.h"
 #include "world/world.h"
+#include "physics/config.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
 
@@ -198,13 +199,23 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
         {
             moveMs = capMs;
         }
-        glm::vec3 extrapPos = newest.position +
-            newest.velocity * (float)(moveMs / 1000.0);
-        // A grounded body must never be extrapolated below its last known floor
-        // height (a resting player's broadcast vz is ~0 now, but this is the
-        // hard guarantee against sinking into the ground during dry spells).
-        if (newest.onGround)
-            extrapPos.z = std::max(extrapPos.z, newest.position.z);
+        const float extrapSec = (float)(moveMs / 1000.0);
+        glm::vec3 extrapPos = newest.position + newest.velocity * extrapSec;
+        // Z: gravity-aware ballistic extrapolation instead of a straight line.
+        // A jump's vz (+19) is only valid for the first instant of the arc;
+        // holding it straight through the whole dry spell is what made remote
+        // jumps overshoot ~10x (the real apex is only ~3 units). Integrating
+        // gravity bends the guess into the same parabola the snapshots would
+        // have shown, so a guessed jump peaks at ~jump height and returns to
+        // takeoff height — nothing to snap back from, even through a blackout.
+        extrapPos.z = newest.position.z +
+            newest.velocity.z * extrapSec +
+            0.5f * (float)PHYS.gravity * extrapSec * extrapSec;
+        // Never extrapolate below the last known authoritative height: a jump
+        // returns to its takeoff point instead of sinking through the floor,
+        // a grounded body stays pinned to its floor, and a genuine fall hovers
+        // until data resumes rather than plowing into geometry.
+        extrapPos.z = std::max(extrapPos.z, newest.position.z);
         out.position = extrapPos;
         if (gNetInterpDebug)
             Debug::log(Debug::Category::Networking,
@@ -1258,17 +1269,80 @@ void updateRenderedReplica(
             // exact interpolated target. Because the velocity state persists and
             // the pull is capped, the body can never stop abruptly or snap, while
             // the velocity feed-forward keeps it reading direct (not floaty).
-            const glm::vec3 targetPos = renderPos;
-            const glm::vec3 targetVel = render.velocity;
+            const glm::vec3 authoritativePos = interpolation.target.position;
+            // While the buffer is dry the interpolated position is an
+            // EXTRAPOLATED GUESS, not real data. The spring must never chase a
+            // guess or it locks the body ~10m ahead of where the player really
+            // is (the "walking offset"). During extrapolation the spring is
+            // pulled toward the newest authoritative position instead — a
+            // smooth return to the actual confirmed position.
+            const glm::vec3 pullTarget =
+                interpolation.extrapolating ? authoritativePos : renderPos;
+            // Never feed a stale extrapolated velocity forward. Integrating the
+            // last-known velocity across a dry buffer is what flew remote bodies
+            // far past their real position; zero it while extrapolating so the
+            // body holds near the confirmed position instead.
+            const glm::vec3 feedVel =
+                interpolation.extrapolating ? glm::vec3(0.0f) : render.velocity;
             const float smooth = std::clamp(
                 (float)motion.easeVelocitySmoothing, 0.0f, 1.0f);
             interpolation.renderSpringTargetVel +=
-                (targetVel - interpolation.renderSpringTargetVel) * smooth;
+                (feedVel - interpolation.renderSpringTargetVel) * smooth;
+            // A grounded body cannot be rising: the server already tells us.
+            // Stop feeding any vertical velocity so the inertia state cannot
+            // hold a stale upward vz after a landing.
+            if (render.onGround)
+                interpolation.renderSpringTargetVel.z = 0.0f;
             interpolation.renderSpring.value +=
                 interpolation.renderSpringTargetVel * safeDt;
-            const glm::vec3 err = targetPos - interpolation.renderSpring.value;
-            const float rate = std::min(1.0f, (float)motion.easeCorrectionRate * safeDt);
+            // Frame-rate-independent correction toward the exact target.
+            const float rate = 1.0f - std::exp(
+                -(float)std::max(0.0, motion.easeCorrectionRate) * safeDt);
+            const glm::vec3 err = pullTarget - interpolation.renderSpring.value;
             interpolation.renderSpring.value += err * rate;
+            // Vertical settle: the persistent inertia can drift above the
+            // authoritative height (extrapolation overshoot / stale vz during
+            // packet loss). Pull Z toward the authoritative target at a capped
+            // speed and never let it exceed a small ceiling above that height.
+            // The cap makes this converge like a fast fall, never a hard snap.
+            if (motion.filterMaxZSettleSpeed > 0.0f)
+            {
+                const float maxZStep = (float)motion.filterMaxZSettleSpeed * safeDt;
+                const float springZ = interpolation.renderSpring.value.z;
+                const float ceilingZ =
+                    render.position.z + (float)motion.filterMaxZAboveTargetUnits;
+                if (springZ > ceilingZ)
+                {
+                    interpolation.renderSpring.value.z =
+                        std::max(ceilingZ, springZ - maxZStep);
+                }
+                else if (render.onGround && springZ > pullTarget.z)
+                {
+                    interpolation.renderSpring.value.z =
+                        std::max(pullTarget.z, springZ - maxZStep);
+                }
+            }
+            // Horizontal leash: glide the body to the authoritative XY target at
+            // a capped speed. A stale extrapolation guess is erased within a few
+            // frames instead of becoming a permanent offset (ease_correction_rate
+            // is deliberately near zero). Runs even while extrapolating — toward
+            // the newest authoritative position — so a dry-buffer guess can never
+            // settle into a persistent offset in the walking direction.
+            if (motion.filterMaxXYSettleSpeed > 0.0f)
+            {
+                const glm::vec2 err2(
+                    pullTarget.x - interpolation.renderSpring.value.x,
+                    pullTarget.y - interpolation.renderSpring.value.y);
+                const float errLen = glm::length(err2);
+                if (errLen > (float)motion.filterMaxXYErrorUnits && errLen > 0.0f)
+                {
+                    const float maxStep =
+                        (float)motion.filterMaxXYSettleSpeed * safeDt;
+                    const float step = std::min(maxStep, errLen);
+                    interpolation.renderSpring.value.x += err2.x * (step / errLen);
+                    interpolation.renderSpring.value.y += err2.y * (step / errLen);
+                }
+            }
             renderPos = interpolation.renderSpring.value;
         }
         else if (motion.renderFilter == "bounded")
@@ -1286,6 +1360,24 @@ void updateRenderedReplica(
         // push the body through the floor. Does not block legitimate falls.
         if (motion.filterClampZBelowTarget)
             renderPos.z = std::max(renderPos.z, render.position.z);
+
+        // Universal Z ceiling: never render far above the authoritative body
+        // (the extrapolation / stale-vz "floating while grounded" guard). The
+        // ceiling is relative to the authoritative height, so real jumps and
+        // climbs (which raise the target) pass untouched; only the filter's own
+        // vertical overshoot is pulled back, rate-limited so it never hard-snaps.
+        if (motion.filterMaxZAboveTargetUnits > 0.0f &&
+            motion.filterMaxZSettleSpeed > 0.0f)
+        {
+            const float ceilingZ =
+                render.position.z + (float)motion.filterMaxZAboveTargetUnits;
+            if (renderPos.z > ceilingZ)
+            {
+                const float maxZStep =
+                    (float)motion.filterMaxZSettleSpeed * safeDt;
+                renderPos.z = std::max(ceilingZ, player.pos.z - maxZStep);
+            }
+        }
 
         // Universal final hard cap: the absolute "never teleport" guarantee.
         if (motion.filterMaxStepUnitsPerSecond > 0.0f)
@@ -1778,14 +1870,55 @@ void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)
                 ? (double)(nowClock - ctx.interpolationClockLastUpdateMs)
                 : 0.0;
             ctx.interpolationClockLastUpdateMs = nowClock;
+
+            // Measure the server's REAL tick rate from snapshot-tick
+            // progression over wall-clock time. The render clock must advance
+            // at whatever rate the server actually ticks (exactly 60Hz after
+            // the accumulator fix, or a remote host's own loop) — assuming a
+            // hardcoded 60Hz when the server ticks faster made the clock fall
+            // behind, the buffer run dry every frame, and remote bodies
+            // extrapolate ~10m ahead of where the player really is.
+            {
+                const double sampleSpanSec =
+                    (double)(nowClock - ctx.tickRateSampleStartMs) / 1000.0;
+                if (ctx.tickRateSampleStartMs == 0 ||
+                    ctx.tickRateSampleStartTick == 0)
+                {
+                    ctx.tickRateSampleStartMs = nowClock;
+                    ctx.tickRateSampleStartTick = ctx.latestServerTick;
+                }
+                else if (sampleSpanSec >= 1.0 &&
+                         ctx.latestServerTick > ctx.tickRateSampleStartTick)
+                {
+                    const double measuredHz =
+                        (double)(ctx.latestServerTick -
+                                 ctx.tickRateSampleStartTick) / sampleSpanSec;
+                    if (measuredHz > 1.0 && measuredHz < 500.0)
+                    {
+                        // EMA so a single jittery window can't yank the clock.
+                        ctx.measuredServerTickRateHz +=
+                            (measuredHz - ctx.measuredServerTickRateHz) * 0.5;
+                        Debug::log(Debug::Category::Networking,
+                            "[NETINTERP TICK RATE] measured=%.1fHz "
+                            "ema=%.1fHz latest=%u spanSec=%.2f\n",
+                            measuredHz, ctx.measuredServerTickRateHz,
+                            ctx.latestServerTick, sampleSpanSec);
+                    }
+                    ctx.tickRateSampleStartMs = nowClock;
+                    ctx.tickRateSampleStartTick = ctx.latestServerTick;
+                }
+            }
+
+            const double serverRateHz = std::max(
+                1.0, ctx.measuredServerTickRateHz);
             const double dtTicks =
-                elapsedMs / 1000.0 * (double)GAMEPLAY_SIMULATION_HZ;
+                elapsedMs / 1000.0 * serverRateHz;
             double clockStepTicks = dtTicks;
             if (linearClock && linearCatchupTps > 0.0)
                 clockStepTicks += linearCatchupTps * (elapsedMs / 1000.0);
             ctx.interpolationRenderTick += clockStepTicks;
             ctx.lastInterpolationClockStepMs =
-                clockStepTicks / (double)GAMEPLAY_SIMULATION_HZ * 1000.0;
+                clockStepTicks / serverRateHz * 1000.0;
 
             // The render clock can NEVER be behind the newest received server
             // tick (the client has that data). If it fell behind (drift), pull

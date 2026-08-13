@@ -104,7 +104,17 @@ static bool reconcile(
         {
             uint64_t rem = reloadCompleteTick > estimatedServerTick
                 ? reloadCompleteTick - estimatedServerTick : 0;
-            rt.reloadTimer = (float)rem / SIM_HZ;
+            if (rem > 0)
+            {
+                rt.isReloading = true;
+                rt.reloadTimer = (float)rem / SIM_HZ;
+            }
+            else
+            {
+                // Server reload already finished — never wedge the weapon.
+                rt.isReloading = false;
+                rt.reloadTimer = 0.0f;
+            }
         }
     }
     else if (!reloading)
@@ -345,7 +355,30 @@ static void testNoWeaponBranch()
     PASS();
 }
 
-// ── Test 15: Rejected attack result restores predicted ammo ──────────
+// ── Test 15: Stale reload result (server already done) does not wedge ─
+
+static void testStaleReloadDoesNotWedge()
+{
+    TEST("stale reload result cannot wedge the weapon");
+    std::unordered_map<std::string, WeaponRuntime> runtimes;
+    // Client finished its predicted reload (isReloading false, timer 0).
+    runtimes["revolver"].currentAmmo = 6;
+    runtimes["revolver"].reserveAmmo = 100;
+    runtimes["revolver"].reloadTimer = 0.0f;
+    runtimes["revolver"].isReloading = false;
+    runtimes["revolver"].authoritativeStateRevision = 1;
+
+    // A delayed reload result says "still reloading" but its completion tick
+    // has already passed the client's latest server tick. This must NOT flip
+    // the weapon back into an uncompletable reload with a zero timer.
+    bool ok = reconcile(runtimes, "revolver", 6, 100, 0, true, EST_SERVER_TICK, 2, 1, EST_SERVER_TICK);
+    CHECK(ok, "stale reload result should apply");
+    CHECK(runtimes["revolver"].isReloading == false, "weapon wedged: isReloading=%d", (int)runtimes["revolver"].isReloading);
+    CHECK(runtimes["revolver"].reloadTimer == 0.0f, "reloadTimer=%.4f expected 0", runtimes["revolver"].reloadTimer);
+    PASS();
+}
+
+// ── Test 16: Rejected attack result restores predicted ammo ──────────
 
 static void testRejectedAttackRestoresAmmo()
 {
@@ -361,7 +394,7 @@ static void testRejectedAttackRestoresAmmo()
     PASS();
 }
 
-// ── Test 16: Newer reload result blocks older attack rollback ────────
+// ── Test 17: Newer reload result blocks older attack rollback ────────
 
 static void testAttackAfterReloadNoRollback()
 {
@@ -375,7 +408,7 @@ static void testAttackAfterReloadNoRollback()
     PASS();
 }
 
-// ── Test 17: Full-mag hitscan preserves reserve from authority ───────
+// ── Test 18: Full-mag hitscan preserves reserve from authority ───────
 
 static void testHitscanReserveAfterFullMag()
 {
@@ -409,6 +442,7 @@ int main()
     testNoServerTickPolicy();
     testReloadFalseCancelsTimer();
     testNoWeaponBranch();
+    testStaleReloadDoesNotWedge();
     testRejectedAttackRestoresAmmo();
     testAttackAfterReloadNoRollback();
     testHitscanReserveAfterFullMag();

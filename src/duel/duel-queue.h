@@ -157,7 +157,6 @@ private:
     bool mMatchFoundBanner = false;
     float mMatchFoundTimer = 0.0f;
     uint64_t mPhaseStartMs = 0;
-    uint64_t mLastStateMs = 0;
     float mFailedTimer = 0.0f;
     bool mHost = false;
 
@@ -168,8 +167,6 @@ private:
     bool mJoinedCoordinator = false;
     float mJoinRetryTimer = 0.0f;
     uint64_t mServerConnectStartMs = 0;
-    // When the client became connected to the host (waiting for the countdown).
-    uint64_t mConnectedSinceMs = 0;
 
     // Map handoff
     bool mWantsChosenMap = false;
