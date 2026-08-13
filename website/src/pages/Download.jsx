@@ -4,7 +4,7 @@ import "../App.css"
 
 import Layout from "../components/Layout"
 import FeedbackBox from "../components/FeedbackBox"
-import { PORTABLE_ZIP_DOWNLOAD_URL } from "../lib/downloadUrls"
+import { GAME_ZIP_DOWNLOAD_URL } from "../lib/downloadUrls"
 
 export default function Download() {
   const [version, setVersion] = useState(null)
@@ -24,7 +24,7 @@ export default function Download() {
       body: JSON.stringify({ source: "website", platform: "windows" })
     }).catch(() => {})
 
-    window.location.href = "/api/download/latest"
+    window.location.href = GAME_ZIP_DOWNLOAD_URL
     setTimeout(() => {
       if (!document.hidden) {
         setError("Download didn't start automatically. Click the button below.")
@@ -78,8 +78,8 @@ export default function Download() {
         )}
 
         <p className="downloadInfo">
-          download MimitaLauncher.exe (about {fileSize} MB) — it installs the
-          game and updates it automatically
+          download mimita-game-v2.0.5.zip (about {fileSize} MB) — no installer.
+          Right-click the ZIP, choose Extract All, then run mimita.exe.
         </p>
 
         {version && (
@@ -89,25 +89,6 @@ export default function Download() {
             <span>Size: {fileSize} MB</span>
           </div>
         )}
-
-        <div className="portableZipSection">
-          <a
-            href={PORTABLE_ZIP_DOWNLOAD_URL}
-            className="portableZipButton"
-          >
-            Download Portable ZIP
-          </a>
-          <p className="portableZipInfo">
-            No installer. Right-click the ZIP, choose Extract All, then open the
-            folder and run mimita.exe.
-          </p>
-          <ol className="portableZipSteps">
-            <li>Download the ZIP</li>
-            <li>Right-click &rarr; Extract All</li>
-            <li>Open the extracted folder</li>
-            <li>Run <code>mimita.exe</code></li>
-          </ol>
-        </div>
 
         <div className="downloadWhat">
           <h2 className="downloadWhatTitle">WHAT IS MIMITA?</h2>
@@ -128,7 +109,7 @@ export default function Download() {
             and weird worlds to explore.
           </p>
           <p>
-            The game and launcher are built entirely from source in the public
+            The game is built entirely from source in the public
             GitHub repository and released under the MIT License.
           </p>
         </div>
@@ -142,9 +123,7 @@ export default function Download() {
           </p>
           <p>
             <a href="/privacy">Privacy Policy</a> ·{" "}
-            <a href="/uninstall">Uninstall</a> ·{" "}
-            {/* <a href="https://github.com/jorj1357/mimita-public/blob/main/docs/code-signing-policy.md" target="_blank" rel="noopener noreferrer">Code signing policy</a> ·{" "}
-            <a href="https://github.com/jorj1357/mimita-public/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a> */}
+            <a href="/uninstall">Uninstall</a>
           </p>
         </div>
       </div>
