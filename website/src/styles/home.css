@@ -112,6 +112,18 @@
   opacity: 0.45;
 }
 
+.portableZipButton {
+  display: inline-block;
+  margin-top: 14px;
+}
+
+.portableZipHint {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.75rem;
+  opacity: 0.4;
+}
+
 .secondaryButtons {
   display: flex;
   flex-wrap: wrap;

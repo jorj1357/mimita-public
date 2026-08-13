@@ -4,6 +4,7 @@ import "../App.css"
 
 import Layout from "../components/Layout"
 import FeedbackBox from "../components/FeedbackBox"
+import { PORTABLE_ZIP_DOWNLOAD_URL } from "../lib/downloadUrls"
 
 export default function Download() {
   const [version, setVersion] = useState(null)
@@ -88,6 +89,25 @@ export default function Download() {
             <span>Size: {fileSize} MB</span>
           </div>
         )}
+
+        <div className="portableZipSection">
+          <a
+            href={PORTABLE_ZIP_DOWNLOAD_URL}
+            className="portableZipButton"
+          >
+            Download Portable ZIP
+          </a>
+          <p className="portableZipInfo">
+            No installer. Right-click the ZIP, choose Extract All, then open the
+            folder and run mimita.exe.
+          </p>
+          <ol className="portableZipSteps">
+            <li>Download the ZIP</li>
+            <li>Right-click &rarr; Extract All</li>
+            <li>Open the extracted folder</li>
+            <li>Run <code>mimita.exe</code></li>
+          </ol>
+        </div>
 
         <div className="downloadWhat">
           <h2 className="downloadWhatTitle">WHAT IS MIMITA?</h2>
