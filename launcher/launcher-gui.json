@@ -64,6 +64,7 @@
   "hub.upToDate": "You're up to date (v{version}).",
   "hub.updateFailed": "Could not reach the update server. Check your internet connection and try again.",
   "hub.updateGameRunning": "Close MiMITA first, then check for updates.",
+  "av.deletedFile": "Antivirus deleted a MiMITA file while it was being installed:\n\n{path}\n\nWindows Defender or another antivirus may have quarantined it. Restore the file from quarantine (or allow MiMITA) and then try again.",
 
   "tray.tip": "MiMITA Launcher",
   "tray.play": "Play MiMITA",
