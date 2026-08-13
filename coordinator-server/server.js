@@ -194,7 +194,12 @@ function sdpHasUfragPwd(sdp) {
 // username = <unix-timestamp>:<username>
 // credential = base64(HMAC-SHA1(shared_secret, username))
 function generateTurnCredentials() {
-    const host = "mimita.fun";
+    // The TURN relay is coTURN on the VPS (UDP/TCP 3478). The coordinator API is
+    // proxied through nginx at mimita.fun, but Cloudflare/nginx only front HTTP —
+    // they do NOT route UDP 3478. The relay must advertise its raw reachable IP
+    // so ICE candidate gathering can actually reach it. Returning mimita.fun here
+    // made every server/client hang on "gather timeout" and fail to connect.
+    const host = "107.191.48.226";
     const port = 3478;
     if (!TURN_SHARED_SECRET) {
         return { ok: false };
