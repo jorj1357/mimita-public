@@ -194,7 +194,7 @@ function sdpHasUfragPwd(sdp) {
 // username = <unix-timestamp>:<username>
 // credential = base64(HMAC-SHA1(shared_secret, username))
 function generateTurnCredentials() {
-    const host = "107.191.48.226";
+    const host = "mimita.fun";
     const port = 3478;
     if (!TURN_SHARED_SECRET) {
         return { ok: false };

@@ -20,13 +20,13 @@ using json = nlohmann::json;
 
 struct IceStunConfig
 {
-    std::string host = "107.191.48.226";
+    std::string host = "mimita.fun";
     uint16_t port = 3478;
 };
 
 struct IceTurnConfig
 {
-    std::string host = "107.191.48.226";
+    std::string host = "mimita.fun";
     uint16_t port = 3478;
     std::string username = "mimita-dev";
     std::string password;
