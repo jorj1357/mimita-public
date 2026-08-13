@@ -45,6 +45,8 @@ def check_release_build():
 # - Krita autosave files (e.g. textureshq/.gross3.png-autosave.kra)
 # - dev/local account + profile data (never ship the maintainer's own
 #   profiles.json / accounts / current-profile to players)
+#   EXCEPTION: config/accounts/default.json is kept — it is required at boot
+#   to load the avatar/character + player settings (see is_excluded).
 EXCLUDE_PREFIXES = (
     "assets/sound/music/ingame/donttrack/",
     "characters/_template/",
@@ -67,6 +69,11 @@ FONT_EXCLUDE_SUFFIXES = (".png~",)
 
 def is_excluded(rel):
     low = rel.lower()
+    # The default account config MUST ship: the game reads it at boot to load
+    # the avatar/character + player settings. Without it every player renders
+    # as the green-wire fallback capsule (model load is gated on hasAvatar()).
+    if low == "config/accounts/default.json":
+        return False
     if low.startswith(EXCLUDE_PREFIXES):
         return True
     # Any donttrack path anywhere (e.g. a stray assets/sound/sound/music/.../donttrack/).
