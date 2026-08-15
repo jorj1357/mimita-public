@@ -304,10 +304,13 @@ template <typename Packet>
 void broadcastPacket(SOCKET sock,
                      const std::unordered_map<uint32_t, ServerPlayer>& players,
                      const Packet& packet,
-                     uint64_t& totalPacketsOut)
+                     uint64_t& totalPacketsOut,
+                     uint32_t exceptPlayerId = 0)
 {
     for (const auto& playerEntry : players)
     {
+        if (exceptPlayerId != 0 && playerEntry.first == exceptPlayerId)
+            continue; // skip the shooter so it never sees the server's copy of its own projectile
         if (playerEntry.second.transport)
         {
             playerEntry.second.transport->send(&packet, sizeof(packet));
@@ -375,7 +378,10 @@ void broadcastProjectileState(SOCKET sock,
     packet.fireSerial = projectile.fireSerial;
     gProjectilePerf.correctionPackets += players.size();
     gProjectilePerf.correctionBytes += players.size() * sizeof(packet);
-    broadcastPacket(sock, players, packet, totalPacketsOut);
+    // Never send the server's state of a projectile back to its OWNER — the
+    // shooter's client simulates its own rocket/grenade, so receiving the
+    // server copy here is what caused the "two rockets" duplicate on badconn.
+    broadcastPacket(sock, players, packet, totalPacketsOut, projectile.ownerPlayerId);
 }
 
 glm::vec3 playerDamageCenter(const ServerPlayer& player)
@@ -998,7 +1004,10 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
     spawn.header.tick = tick;
     fillProjectilePose(spawn, projectile);
     projectiles[projectile.id] = projectile;
-    broadcastPacket(sock, players, spawn, totalPacketsOut);
+    // Broadcast the spawn to everyone EXCEPT the shooter — the shooter's client
+    // already has its own instant predicted projectile and adopting a server copy
+    // back is what caused the "two rockets" duplicate on badconn.
+    broadcastPacket(sock, players, spawn, totalPacketsOut, projectile.ownerPlayerId);
 
     printf("%s [PROJECTILE GENERIC ACCEPT] playerId=%u requestId=%u "
            "projectileId=%u weapon=%s ammo=%d/%d nextAllowedTick=%llu "

@@ -15,6 +15,7 @@
 
 #include "config/movement-config.h"
 #include "devtools/terminal.h"
+#include "terminal/terminal-state.h"
 
 void registerMovementCommands()
 {
@@ -101,7 +102,8 @@ void registerMovementCommands()
             std::snprintf(buf, sizeof(buf),
                 "[MOVEMENT] preset=%s mode=%s air_strafing=%d bhop=%d auto_bhop=%d",
                 MovementJsonConfig::instance().activePresetName().c_str(),
-                cfg.walkMode == MovementWalkMode::Accel ? "accel" : "override",
+                cfg.walkMode == MovementWalkMode::Accel ? "accel" :
+                cfg.walkMode == MovementWalkMode::Source ? "source" : "override",
                 (int)cfg.airControlEnabled, (int)cfg.bunnyHopEnabled,
                 (int)cfg.autoBhopEnabled);
             Terminal::instance().addLog(buf);
@@ -110,6 +112,24 @@ void registerMovementCommands()
                 cfg.groundSpeed, cfg.airSpeed,
                 cfg.groundAcceleration, cfg.airAcceleration);
             Terminal::instance().addLog(buf);
+            if (cfg.walkMode == MovementWalkMode::Source) {
+                std::snprintf(buf, sizeof(buf),
+                    "[MOVEMENT][source] max_speed=%.1f friction=%.2f stop_speed=%.2f "
+                    "air_accel=%.1f air_control=%.2f air_gain=%.2f surface_friction=%.2f",
+                    cfg.sourceMaxSpeed, cfg.sourceFriction, cfg.stopspeed,
+                    cfg.airAcceleration, cfg.airControl,
+                    cfg.airSpeedGainMultiplier, cfg.surfaceFriction);
+                Terminal::instance().addLog(buf);
+                std::snprintf(buf, sizeof(buf),
+                    "[MOVEMENT][source] landing_bleed=%.2f dash_grace=%.2f dash_friction=%.2f "
+                    "impulse_mode=%s impulse_carry=%.2f impulse_max=%.1f",
+                    cfg.landingOverspeedBleed, cfg.dashGraceSeconds,
+                    cfg.dashFrictionMultiplier,
+                    cfg.impulseFrictionMode == MovementImpulseFrictionMode::Source
+                        ? "source" : "exponential",
+                    cfg.impulseCarrySeconds, cfg.maximumExternalImpulseSpeed);
+                Terminal::instance().addLog(buf);
+            }
             std::snprintf(buf, sizeof(buf),
                 "[MOVEMENT] air_max_wishspeed=%.1f air_control=%.1f stopspeed=%.1f bhop_cap=%.1f",
                 cfg.airMaxWishspeed, cfg.airControl,
@@ -152,6 +172,73 @@ void registerMovementCommands()
                 cfg.groundFrictionAmount, cfg.airFrictionAmount,
                 cfg.groundDashImpulse, cfg.airDashImpulse,
                 cfg.downDashVerticalSpeed);
+            Terminal::instance().addLog(buf);
+        }
+    }, CommandCategory::Physics);
+
+    Terminal::instance().registerCommand({
+        "movement_velocity",
+        "Print current velocity, grounded state, wish direction/speed, and impulse state",
+        "movement_velocity",
+        [](const std::vector<std::string>&) {
+            Player& player = THE_PLAYER;
+            const auto& cfg = MovementJsonConfig::instance().config();
+            char buf[384];
+
+            const float hSpeed =
+                glm::length(glm::vec2(player.vel.x, player.vel.y));
+            std::snprintf(buf, sizeof(buf),
+                "[VEL] pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) hspeed=%.2f vspeed=%.2f",
+                player.pos.x, player.pos.y, player.pos.z,
+                player.vel.x, player.vel.y, player.vel.z, hSpeed, player.vel.z);
+            Terminal::instance().addLog(buf);
+
+            std::snprintf(buf, sizeof(buf),
+                "[VEL] ground=onGround:%d stable:%d worldContact:%d "
+                "coyote=%.3f jumpBuf=%.3f airJumps=%d",
+                (int)player.ground.onGround, (int)player.ground.stableOnGround,
+                (int)player.ground.hasWorldContact,
+                player.jump.coyoteTimer, player.jump.jumpIntentTimer,
+                player.jump.airJumpsLeft);
+            Terminal::instance().addLog(buf);
+
+            const glm::vec2 wish = player.inputWishMove;
+            std::snprintf(buf, sizeof(buf),
+                "[VEL] wish=(%.2f %.2f) len=%.3f dashGrace=%.2f",
+                wish.x, wish.y, glm::length(wish), player.dash.dashGraceTimer);
+            Terminal::instance().addLog(buf);
+
+            const glm::vec3& ext = player.externalImpulse;
+            std::snprintf(buf, sizeof(buf),
+                "[VEL] extImpulse=(%.2f %.2f %.2f) mag=%.1f carry=%.2f "
+                "max=%.1f decay=%.2f mode=%s",
+                ext.x, ext.y, ext.z,
+                player.externalImpulseMagnitude,
+                player.externalImpulseCarryTimer,
+                cfg.maximumExternalImpulseSpeed, cfg.externalImpulseDecay,
+                cfg.impulseFrictionMode == MovementImpulseFrictionMode::Source
+                    ? "source" : "exponential");
+            Terminal::instance().addLog(buf);
+        }
+    }, CommandCategory::Physics);
+
+    Terminal::instance().registerCommand({
+        "movement_air",
+        "Print the per-tick air-strafe projection (Source PM_AirAccelerate): speed, "
+        "wishDir, currentSpeed, addSpeed, accelSpeed, and whether gain applied",
+        "movement_air",
+        [](const std::vector<std::string>&) {
+            Player& player = THE_PLAYER;
+            const MovementAirDebug& a = player.airDebug;
+            char buf[256];
+            std::snprintf(buf, sizeof(buf),
+                "[AIR] hspeed=%.2f hvel=(%.2f,%.2f) wish=(%.2f,%.2f) currentSpeed=%.2f "
+                "addSpeed=%.2f accelSpeed=%.2f applied=%d input=%d",
+                a.horizontalSpeed,
+                a.horizontalVelocity.x, a.horizontalVelocity.y,
+                a.wishDir.x, a.wishDir.y,
+                a.currentSpeed, a.addSpeed, a.accelSpeed,
+                (int)a.applied, (int)a.hasInput);
             Terminal::instance().addLog(buf);
         }
     }, CommandCategory::Physics);

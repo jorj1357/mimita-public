@@ -1,3 +1,8 @@
+// 08 15 2026, 15 30
+/* purpose
+* Wraps uiBeginScrollArea/uiEndScrollArea with a simpler ScrollState API.
+* DOES NOT own scroll state; callers pass their own ScrollState in.
+*/
 #include "avatar-editor-scroll.h"
 
 #include <algorithm>

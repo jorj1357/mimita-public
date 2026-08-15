@@ -193,6 +193,26 @@ void applyWeaponStatsJson(WeaponDefinition& def, const json& root)
     weaponJsonString(root, "pose_id", def.poseId);
 }
 
+void applyWeaponKnockbackJson(WeaponDefinition& def, const json& root)
+{
+    // Top-level keys win; custom_params act as the legacy fallback.
+    const auto readKb = [&root](const char* key, float& out) {
+        if (root.contains(key) && root[key].is_number())
+            out = root[key].get<float>();
+        else if (root.contains("custom_params") && root["custom_params"].is_object() &&
+                 root["custom_params"].contains(key) &&
+                 root["custom_params"][key].is_number())
+            out = root["custom_params"][key].get<float>();
+    };
+    readKb("shooter_knockback", def.shooterKnockback);
+    readKb("shooter_knockback_vertical", def.shooterKnockbackVertical);
+    readKb("self_impulse_multiplier", def.selfImpulseMultiplier);
+    readKb("victim_knockback", def.victimKnockback);
+    readKb("victim_knockback_per_damage", def.victimKnockbackPerDamage);
+    readKb("victim_knockback_vertical_fraction", def.victimKnockbackVerticalFraction);
+    readKb("enemy_impulse_multiplier", def.enemyImpulseMultiplier);
+}
+
 void applyWeaponSoundJson(WeaponDefinition& def, const json& root)
 {
     if (root.contains("sound") && root["sound"].is_object()) {
@@ -234,6 +254,7 @@ void applyWeaponJson(WeaponDefinition& def, const json& root)
     applyWeaponExecutionType(def);
     applyWeaponSoundJson(def, root);
     applyWeaponCustomParamsJson(def, root);
+    applyWeaponKnockbackJson(def, root);
     applyWeaponRenderJson(def, root);
 
 }

@@ -14,6 +14,7 @@
 #include "camera.h"
 #include "renderer/renderer.h"
 #include "terminal/terminal-state.h"
+#include "avatar/cosmetic-system.h"
 #include <chrono>
 #include <cstdio>
 #include <unordered_map>
@@ -119,6 +120,9 @@ void renderPlayerInternal(
         proj,
         hideHead
     );
+
+    // Render attached cosmetic meshes (hats etc.) on top of the body.
+    CosmeticSystem::instance().renderCosmetics(player);
 
     // Reset ghost color
     if (player.renderGhost)

@@ -58,6 +58,7 @@ AimSolution computeAim(
         result.cameraDistance = target.cameraDistance;
         result.modeName = "crosshair";
         result.cameraHitKind = target.hitKind;
+        result.cameraWorldNormal = target.worldNormal;
         result.usesCameraTarget = true;
     } else if (mode == GameplayAimMode::Farpoint) {
         float farDist = cfg.farpointDistance();

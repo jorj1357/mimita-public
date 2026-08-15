@@ -324,6 +324,7 @@ struct DashState {
     bool didDownDash = false;
     float frictionOverride = 1.0f;
     bool tickPerfectDash = false;
+    float dashGraceTimer = 0.0f;
     bool momentumProtectionActive = false;
     bool momentumProtectionUsedCameraForwardFallback = false;
     glm::vec2 momentumProtectedMoveAxes{0.0f};
@@ -404,6 +405,11 @@ public:
     glm::vec3 pos{0.0f};
     glm::vec3 vel{0.0f};
     glm::vec3 externalImpulse{0.0f};
+    // Source-mode impulse shaping (synced with MovementState).
+    float externalImpulseCarryTimer = 0.0f;
+    float externalImpulseMagnitude = 0.0f;
+    // Per-tick air-strafe projection debug (synced from the movement kernel).
+    MovementAirDebug airDebug;
     glm::vec2 inputWishMove{0.0f};
 
     float yaw = 0.0f;

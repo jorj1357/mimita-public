@@ -79,6 +79,7 @@ MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
 #include "combat/weapon-types.h"
 #include "config/size-scaling-config.h"
 #include "config/weapon-tracers-config.h"
+#include "config/impact-decals-config.h"
 #include "debug/debug-log.h"
 #include "effects/hit-effects.h"
 #include "effects/muzzle-flash-config.h"
@@ -91,6 +92,7 @@ MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
 #include <cstdio>
 #include <cstring>
 #include <cmath>
+#include <cstdlib>
 
 EffectPart* EffectPartSystem::spawnEntityImpact(
     glm::vec3 position,
@@ -242,25 +244,87 @@ EffectPart* EffectPartSystem::spawnDeathEllipsoid(glm::vec3 position, glm::vec3 
     return spawn(e);
 }
 
-EffectPart* EffectPartSystem::spawnBulletImpact(glm::vec3 position, float sizeScale) {
+EffectPart* EffectPartSystem::spawnBulletImpact(glm::vec3 position, glm::vec3 normal, float sizeScale) {
+    (void)sizeScale;
+    const auto& cfg = ImpactDecalsConfig::instance().data();
     if (!HitEffects::config().core.bulletImpact) return nullptr;
-    if (gHitFxTraceEnabled) {
-        Debug::log(Debug::Category::NpcCombat, "[HITFX TRACE] Source=effect-part.cpp Type=impact_sphere pos=(%.1f,%.1f,%.1f)\n",
-                   position.x, position.y, position.z);
+    if (!cfg.enabled || !cfg.bulletHoles.enabled) return nullptr;
+    const auto& b = cfg.bulletHoles;
+    glm::vec3 n = glm::length(normal) > 0.001f ? glm::normalize(normal) : glm::vec3(0.0f, 0.0f, 1.0f);
+    SurfaceDecal decal;
+    decal.position = position + n * 0.01f;
+    decal.normal = n;
+    decal.color = b.color;
+    decal.kind = SurfaceDecalKind::BulletHole;
+    decal.radius = b.radius;
+    decal.height = b.height;
+    decal.lifetime = b.lifetime;
+    decal.fadeTime = b.fadeTime;
+    decal.alpha = b.alpha;
+    decal.baseAlpha = b.alpha;
+    pushSurfaceDecal(decal, b.maxCount);
+    return nullptr;
+}
+
+void EffectPartSystem::spawnWorldCracks(glm::vec3 position, glm::vec3 normal,
+                                        const glm::vec3& direction, float sizeScale) {
+    (void)sizeScale;
+    const auto& cfg = ImpactDecalsConfig::instance().data();
+    if (!cfg.enabled || !cfg.worldCracks.enabled) return;
+    const auto& c = cfg.worldCracks;
+    glm::vec3 n = glm::length(normal) > 0.001f ? glm::normalize(normal) : glm::vec3(0.0f, 0.0f, 1.0f);
+    glm::vec3 tangent = glm::normalize(
+        std::fabs(n.z) < 0.9f
+            ? glm::cross(n, glm::vec3(0.0f, 0.0f, 1.0f))
+            : glm::cross(n, glm::vec3(0.0f, 1.0f, 0.0f)));
+    glm::vec3 bitangent = glm::normalize(glm::cross(n, tangent));
+    // Preferred axis: shot direction projected onto the surface plane so cracks
+    // lie flat along the surface on any surface. Falls back to a random tangent
+    // when the shot hits the surface head-on (projection is degenerate).
+    glm::vec3 preferred(0.0f);
+    if (glm::length(direction) > 0.001f) {
+        const glm::vec3 d = glm::normalize(direction);
+        preferred = d - n * glm::dot(d, n);
+        if (glm::length(preferred) < 0.1f)
+            preferred = glm::vec3(0.0f);
+        else
+            preferred = glm::normalize(preferred);
     }
-    const auto& sc = SizeScalingConfig::instance().data();
-    float ss = std::max(sizeScale, 0.001f);
-    float sfx = sc.scale(1.0f, sc.hitfxRadiusExponent, ss);
-    EffectPart e;
-    e.position = position;
-    e.replayType = "impact_sphere";
-    e.color = {0.55f, 0.55f, 0.58f};
-    e.maxLifetime = 0.25f;
-    e.scale = 0.1f * sfx;
-    e.endScale = 1.0f * sfx;
-    e.billboardText = false;
-    e.sticky = true;
-    return spawn(e);
+    for (int i = 0; i < c.count; ++i) {
+        const float angle = (float)(rand() % 6284) / 1000.0f;
+        const float offset = ((float)(rand() % 1001) / 1000.0f) * 0.3f;
+        glm::vec3 axis;
+        if (glm::length(preferred) > 0.001f) {
+            // Mostly along the projected shot, with a small random spread.
+            const float spread = 0.3f;
+            const glm::vec3 jitter = glm::normalize(
+                tangent * std::cos(angle) + bitangent * std::sin(angle));
+            axis = glm::normalize(preferred + jitter * spread);
+        } else {
+            axis = glm::normalize(tangent * std::cos(angle) + bitangent * std::sin(angle));
+        }
+        SurfaceDecal decal;
+        decal.position = position + n * 0.005f + axis * offset;
+        decal.normal = n;
+        decal.axis = axis;
+        decal.color = c.color;
+        decal.kind = SurfaceDecalKind::Crack;
+        decal.radius = c.thickness;
+        decal.height = c.length;
+        decal.lifetime = c.lifetime;
+        decal.fadeTime = c.fadeTime;
+        decal.alpha = c.alpha;
+        decal.baseAlpha = c.alpha;
+        pushSurfaceDecal(decal, c.maxCount);
+    }
+}
+
+void EffectPartSystem::pushSurfaceDecal(const SurfaceDecal& decal, int maxCount) {
+    if (maxCount <= 0)
+        maxCount = 256;
+    while ((int)mSurfaceDecals.size() >= maxCount)
+        mSurfaceDecals.erase(mSurfaceDecals.begin());
+    mSurfaceDecals.push_back(decal);
 }
 
 EffectPart* EffectPartSystem::spawnDamageImpactSphere(glm::vec3 position, glm::vec3 direction, const std::string& victim)
@@ -550,7 +614,7 @@ void EffectPartSystem::clear() {
     for (unsigned int i = 0; i < POOL_SIZE; ++i)
         mFreeSlots.push_back(i);
     mBloodParticles.clear();
-    mBloodDecals.clear();
+    mSurfaceDecals.clear();
     mBloodDebugSegmentCount = 0;
     mPendingHead = 0;
     mPendingTail = 0;

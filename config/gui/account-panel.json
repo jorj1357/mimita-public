@@ -45,18 +45,18 @@
     "mmrText": {
       "type": "text",
       "x": 0, "y": 0, "width": 700, "height": 24,
-      "fontSize": 0.28,
+      "fontSize": 0.44,
       "textColor": [0.4, 0.7, 0.9, 0.8]
     },
     "statsText": {
       "type": "text",
-      "x": 0, "y": 0, "width": 700, "height": 20,
-      "fontSize": 0.24,
+      "x": 0, "y": 10, "width": 700, "height": 20,
+      "fontSize": 0.44,
       "textColor": [0.6, 0.65, 0.75, 0.7]
     },
     "accountSwitchButton": {
       "type": "button",
-      "x": 0, "y": 0, "width": 260, "height": 36,
+      "x": 11110, "y": 0, "width": 260, "height": 36,
       "text": "Switch Account",
       "fontSize": 0.32,
       "textColor": [1, 1, 1, 1],
@@ -64,11 +64,11 @@
     },
     "accountLogoutButton": {
       "type": "button",
-      "x": 0, "y": 0, "width": 260, "height": 36,
+      "x": 10, "y": 0, "width": 260, "height": 66,
       "text": "Logout",
       "fontSize": 0.32,
       "textColor": [1, 1, 1, 1],
-      "backgroundColor": [0.4, 0.15, 0.15, 1.0]
+      "backgroundColor": [0.3, 0.15, 0.15, 1.0]
     }
   }
 }

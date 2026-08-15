@@ -121,7 +121,6 @@
 #include "config/player-settings.h"
 #include "avatar/avatar.h"
 #include "avatar/avatar-commands.h"
-#include "avatar/avatar-menu.h"
 #include "render/lighting-config.h"
 #include "hot-reload/hot-reload-system.h"
 #include "profile/local-profile-system.h"

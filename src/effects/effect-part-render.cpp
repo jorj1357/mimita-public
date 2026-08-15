@@ -263,10 +263,26 @@ void EffectPartSystem::render(const Camera& camera) const {
             particle.size,
             particle.rotation,
             particle.stretch,
-            {0.92f, 0.015f, 0.025f, particle.alpha * distFade});
+            {particle.color.x, particle.color.y, particle.color.z, particle.alpha * distFade});
     }
 
-    // [BLOOD DECALS REMOVED] — rendering also removed
+    for (const SurfaceDecal& decal : mSurfaceDecals) {
+        const float dist = glm::length(decal.position - camera.pos);
+        if (dist > 60.0f)
+            continue;
+        const float distFade = dist > 40.0f ? (60.0f - dist) / 20.0f : 1.0f;
+        const float alpha = std::max(0.0f, decal.alpha * distFade);
+        if (alpha <= 0.001f)
+            continue;
+        const glm::vec4 color{decal.color.x, decal.color.y, decal.color.z, alpha};
+        if (decal.kind == SurfaceDecalKind::Crack) {
+            DebugVis::drawFilledCylinder(camera, decal.position, decal.axis,
+                std::max(0.001f, decal.radius), std::max(0.001f, decal.height), color);
+        } else {
+            DebugVis::drawFilledCylinder(camera, decal.position, decal.normal,
+                std::max(0.001f, decal.radius), std::max(0.001f, decal.height), color);
+        }
+    }
 
     // Particle debug logging
     if (DebugConfig::DEBUG_BLOOD_HITS || DebugConfig::DEBUG_BLOOD_RAYS) {
@@ -280,7 +296,7 @@ void EffectPartSystem::render(const Camera& camera) const {
                 if (e.replayType == "debris_block") ++debrisCount;
             }
             printf("[PARTICLE] debris=%d blood=%d decals=%zu transparentPass=1 depthWrite=0\n",
-                   debrisCount, (int)mBloodParticles.size(), mBloodDecals.size());
+                   debrisCount, (int)mBloodParticles.size(), mSurfaceDecals.size());
         }
     }
 
@@ -291,7 +307,7 @@ void EffectPartSystem::render(const Camera& camera) const {
         if (bloodPerfTimer <= 0.0f) {
             bloodPerfTimer = 2.0f;
             printf("[BLOOD PERF] particles=%zu decals=%zu collisionUpdates=0\n",
-                   mBloodParticles.size(), mBloodDecals.size());
+                   mBloodParticles.size(), mSurfaceDecals.size());
         }
     }
 

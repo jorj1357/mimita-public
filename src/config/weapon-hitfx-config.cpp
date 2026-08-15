@@ -1,3 +1,12 @@
+// 08 14 2026, 00 10
+/* purpose
+* Implements WeaponHitFxConfig: loads and hot-reloads config/weapon_hitfx.json into per-weapon hit-FX structs.
+* Parses force, debris, blood, sound, presentation, and explosion burst (muzzleFlash, debris, impactTick, hitBurst, sphere, smoke) settings.
+* Used by combat hit effects and explosion FX to fetch weapon-specific behavior.
+* Does NOT spawn effects or apply damage.
+* Does NOT write configuration files.
+*/
+
 #include "config/weapon-hitfx-config.h"
 
 #include <filesystem>
@@ -164,6 +173,10 @@ static void readExplosion(const json& j, WeaponHitFxExplosionBurstConfig& cfg)
     if (!j.contains("explosion")) return;
     const auto& ex = j["explosion"];
     cfg.enabled = readJsonBool(ex, "enabled", cfg.enabled);
+    cfg.muzzleFlash = readJsonBool(ex, "muzzleFlash", cfg.muzzleFlash);
+    cfg.debris = readJsonBool(ex, "debris", cfg.debris);
+    cfg.impactTick = readJsonBool(ex, "impactTick", cfg.impactTick);
+    cfg.hitBurst = readJsonBool(ex, "hitBurst", cfg.hitBurst);
     readExplosionBurstSphere(ex, cfg.sphere);
     readExplosionBurstSmoke(ex, cfg.smoke);
 }

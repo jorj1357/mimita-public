@@ -581,7 +581,7 @@ void handleAttackRequest(
         traceConfig.spreadDegrees = def->spread;
         traceConfig.deterministicSeed = req->deterministicSeed;
         traceConfig.worldBlockDistance = worldBlockDistance;
-        traceConfig.knockbackPerDamage = WeaponExecution::paramOr(*def, "knockbackPerDamage", 0.08f);
+        traceConfig.knockbackPerDamage = def->victimKnockbackPerDamage;
         traceConfig.distanceFalloffStart = WeaponExecution::paramOr(*def, "distanceFalloffStart", 0.0f);
         traceConfig.minDamageFraction = WeaponExecution::paramOr(*def, "minDamageFraction", 0.05f);
         traceConfig.limbDamageMultiplier = WeaponExecution::paramOr(*def, "limbDamageMultiplier", 0.75f);

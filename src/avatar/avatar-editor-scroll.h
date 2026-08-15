@@ -1,3 +1,9 @@
+// 08 15 2026, 15 30
+/* purpose
+* Declares the ScrollState struct and beginScroll/endScroll helpers.
+* These clip drawing to an area and draw a scrollbar.
+* DOES NOT own scroll state; callers keep their own ScrollState.
+*/
 #pragma once
 
 #include <GLFW/glfw3.h>

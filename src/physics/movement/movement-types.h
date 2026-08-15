@@ -139,6 +139,9 @@ struct MovementDashState {
     bool didDash = false;
     float frictionOverride = 1.0f;
     bool tickPerfectDash = false;
+    // Source mode: while > 0 the dash boost is protected from the ground
+    // controller's maxspeed clamp and from friction (scaled by dashFrictionMultiplier).
+    float dashGraceTimerSeconds = 0.0f;
 };
 
 struct MovementDownDashState {
@@ -158,6 +161,20 @@ struct MovementGroundReturnState {
     bool available = true;
     int charges = 0;
     float rechargeTimerSeconds = 0.0f;
+};
+
+// Per-tick air-strafe projection values for the debug overlay / console.
+// Filled by applySourceAir in Source mode so the player can SEE why speed was
+// gained or not, instead of guessing.
+struct MovementAirDebug {
+    bool hasInput = false;
+    bool applied = false;
+    float horizontalSpeed = 0.0f;
+    float currentSpeed = 0.0f;   // dot(velocity, wishDir)
+    float addSpeed = 0.0f;
+    float accelSpeed = 0.0f;
+    glm::vec2 wishDir{0.0f};
+    glm::vec2 horizontalVelocity{0.0f};
 };
 
 struct MovementDashMomentumProtectionState {
@@ -420,6 +437,9 @@ struct MovementState {
     glm::vec3 position{0.0f};
     glm::vec3 baseVelocity{0.0f};
     glm::vec3 externalImpulse{0.0f};
+    // Source-mode impulse shaping (persisted through Player conversion).
+    float externalImpulseCarryTimerSeconds = 0.0f;
+    float externalImpulseMagnitude = 0.0f;
     glm::vec2 lastInputMoveAxes{0.0f};
     glm::vec2 previousMoveAxes{0.0f};
     float yaw = 0.0f;
@@ -434,11 +454,13 @@ struct MovementState {
     MovementGroundReturnState groundReturn;
     MovementDashMomentumProtectionState dashMomentumProtection;
     MovementContactHistory contactHistory;
+    MovementAirDebug airDebug;
 };
 
 enum class MovementWalkMode : uint8_t {
     Override = 0,
-    Accel = 1
+    Accel = 1,
+    Source = 2
 };
 
 enum class MovementSpeedCapMode : uint8_t {
@@ -450,6 +472,15 @@ enum class MovementSpeedCapMode : uint8_t {
 enum class StationaryCameraInputMode : uint8_t {
     Strict = 0,
     Steering = 1
+};
+
+enum class MovementImpulseFrictionMode : uint8_t {
+    // Legacy: external impulse decays exponentially every tick via
+    // external_impulse_decay and is independent of the movement controllers.
+    Exponential = 0,
+    // Source style: no exponential decay; the impulse carries through input and
+    // is only bled by ground friction (stopspeed-based), like a real knockback.
+    Source = 1
 };
 
 struct MovementConfig {
@@ -494,11 +525,33 @@ struct MovementConfig {
     float airAcceleration = 0.0f;
     float airMaxWishspeed = 0.0f;
     float airControl = 0.0f;
+    // Scale on the residual air speed-gain term in Source mode. 0 = WASD in
+    // the air only steers and never adds speed (pure strafing).
+    float airSpeedGainMultiplier = 0.0f;
     float stopspeed = 0.0f;
     float bunnyHopSpeedCap = 0.0f;
     float movementSpeedSizeExponent = 0.5f;
     float gravityZ = 0.0f;
     float maximumFallSpeed = 0.0f;
+
+    // ── Source (CS/Quake PM_) movement model ─────────────────────────────
+    // Single speed cap used for ground and air (Source sv_maxspeed). 0 = fall
+    // back to groundSpeed. Scaled by sizeScale like groundSpeed.
+    float sourceMaxSpeed = 0.0f;
+    // Linear friction drop (Source sv_friction): drop = max(speed, stopspeed) * friction * dt.
+    float sourceFriction = 0.0f;
+    // Global surface-friction scalar multiplied into the friction drop (1.0 = normal).
+    float surfaceFriction = 1.0f;
+    // Landing snap: if downward velocity magnitude is within this epsilon, snap to 0.
+    float velocityClipEpsilon = 0.01f;
+    bool groundSnap = true;
+    // 0..1 fraction of Source friction applied on the landing/autobhop tick.
+    // 1.0 = full Source overspeed bleed, 0.0 = preserve overspeed through landings.
+    float landingOverspeedBleed = 1.0f;
+    // Dash boost protection window in Source mode (seconds).
+    float dashGraceSeconds = 0.0f;
+    // Friction scale applied to the dash boost while dashGraceTimer is active.
+    float dashFrictionMultiplier = 1.0f;
 
     float jumpVerticalSpeed = 0.0f;
     float jumpHeightSizeExponent = 0.5f;
@@ -520,6 +573,11 @@ struct MovementConfig {
     float externalImpulseDecay = 0.0f;
     float externalImpulseSteerRate = 0.0f;
     float externalImpulseBrakeRate = 0.0f;
+    // Source-style impulse shaping.
+    MovementImpulseFrictionMode impulseFrictionMode =
+        MovementImpulseFrictionMode::Exponential;
+    // How long a fresh knockback is untouched before friction starts bleeding it.
+    float impulseCarrySeconds = 0.0f;
     float groundFrictionAmount = 0.0f;
     float airFrictionAmount = 0.0f;
     float frictionSizeExponent = -0.5f;

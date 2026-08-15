@@ -514,6 +514,10 @@ struct ServerNpc
     glm::vec3 vel{0.0f};
     glm::vec3 aim{1.0f, 0.0f, 0.0f};  // planar facing (n.currentFacing) replicated so clients orient the NPC muzzle like players
     float yaw = 0.0f;
+    // Lifecycle counter mirrored from the simulated Npc body so the snapshot
+    // can carry it to clients (they hard-snap the body + reset death state on
+    // a change). Starts at 1, bumped once per respawn, never 0.
+    uint16_t transformEpoch = 1;
     int health = 100;
     bool onGround = false;
     float phase = 0.0f;

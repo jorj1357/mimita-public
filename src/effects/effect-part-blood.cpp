@@ -2,6 +2,7 @@
 #include "world/world.h"
 #include "audio/audio.h"
 #include "effects/hit-effects.h"
+#include "config/impact-decals-config.h"
 #include "debug/debug-log.h"
 #include "config.h"
 #include "replay/replay.h"
@@ -10,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <glm/glm.hpp>
 
 namespace {
@@ -191,11 +193,32 @@ void EffectPartSystem::spawnBloodEffect(
     glm::vec3 sprayDirection,
     float damage,
     const std::string& sourceActorId,
-    const std::string& targetActorId)
+    const std::string& targetActorId,
+    float directness,
+    float hitDistance)
 {
     MIMITA_PERF_SCOPE("EffectPart::SpawnBloodEffect");
-    if (!isBloodFXEnabled()) return;
+    const auto& cfg = ImpactDecalsConfig::instance().data();
+    const auto& bloodCfg = cfg.blood;
+    if (!cfg.enabled || !bloodCfg.enabled) return;
     damage = std::max(0.0f, damage);
+    directness = std::clamp(directness, 0.0f, 1.0f);
+
+    // Impact force (0..1): close + straight + damaging hits land hardest.
+    // Distant or glancing shots fall to a minimum force.
+    float force = directness;
+    if (hitDistance >= 0.0f) {
+        const float falloffSpan = std::max(0.01f,
+            bloodCfg.force.minDistance - bloodCfg.force.maxDistance);
+        const float distFactor = std::clamp(
+            (bloodCfg.force.minDistance - hitDistance) / falloffSpan,
+            0.0f, 1.0f);
+        force *= 0.35f + 0.65f * distFactor;
+    }
+    const float damageFactor = std::clamp(damage / 100.0f, 0.0f, 1.0f);
+    force *= 0.45f + 0.55f * damageFactor;
+    force = std::clamp(force, bloodCfg.force.minForce, 1.0f);
+
     const glm::vec3 forward = glm::length(sprayDirection) > 0.001f
         ? glm::normalize(sprayDirection)
         : glm::vec3(0.0f, 1.0f, 0.0f);
@@ -206,22 +229,21 @@ void EffectPartSystem::spawnBloodEffect(
     const glm::vec3 bitangent = glm::normalize(glm::cross(forward, tangent));
     const float damageScale = std::clamp(damage / 100.0f, 0.0f, 2.0f);
 
-    int particleCount = 12;
-    if (damage < 20.0f) particleCount = 12 + (int)(damage * 0.8f);
-    else if (damage < 50.0f) particleCount = 28 + (int)((damage - 20.0f) * 1.2f);
-    else particleCount = 64 + (int)((damage - 50.0f) * 0.7f);
-    particleCount = std::clamp(particleCount, 12, 110);
+    const auto& spray = bloodCfg.spray;
+    int particleCount = spray.enabled
+        ? (int)std::round(spray.minCount + (spray.maxCount - spray.minCount) * force)
+        : 0;
+    particleCount = std::clamp(particleCount, 0, 200);
 
-    const float bloodConeDegrees = 15.0f + damageScale * 5.0f;
-    const float bloodConeRadius = std::tan(glm::radians(bloodConeDegrees));
+    const float coneDegrees = spray.coneDegreesMin +
+        (spray.coneDegreesMax - spray.coneDegreesMin) * force;
+    const float bloodConeRadius = std::tan(glm::radians(coneDegrees));
 
-    const float debrisConeDegrees = 35.0f + damageScale * 25.0f;
-    const float debrisConeRadius = std::tan(glm::radians(debrisConeDegrees));
-
-    const float baseSpeed = 6.0f + damageScale * 10.0f;
+    const float baseSpeed = spray.speedMin + (spray.speedMax - spray.speedMin) * force;
     const float speedVariation = 4.0f;
 
-    const float baseLifetime = 2.5f + damageScale * 1.0f;
+    const float baseLifetime = spray.lifetimeMin +
+        (spray.lifetimeMax - spray.lifetimeMin) * force;
 
     if (mBloodParticles.size() + (size_t)particleCount > MAX_BLOOD_PARTICLES) {
         const size_t removeCount =
@@ -233,6 +255,8 @@ void EffectPartSystem::spawnBloodEffect(
 
     const int bloodCount = (particleCount * 2) / 3;
     const int debrisCount = particleCount - bloodCount;
+
+    const float colorJitter = bloodCfg.colorVariation;
 
     for (int i = 0; i < bloodCount; ++i) {
         const float angle = (float)(rand() % 6284) / 1000.0f;
@@ -246,14 +270,33 @@ void EffectPartSystem::spawnBloodEffect(
         const float speed = (baseSpeed * (0.4f + centerBias * 0.6f)) +
             (float)(rand() % (int)(speedVariation * 1000.0f + 1.0f)) / 1000.0f;
 
+        // Size mix: at high force, bigFraction of the drops are big, the rest
+        // range medium -> small. Weak hits shrink everything toward sizeMin.
+        float sizeT;
+        const float roll = (float)(rand() % 1001) / 1000.0f;
+        if (roll < spray.bigFraction) {
+            sizeT = 0.6f + 0.4f * ((float)(rand() % 1001) / 1000.0f);
+        } else {
+            sizeT = ((float)(rand() % 1001) / 1000.0f) * 0.6f;
+        }
+        const float size = spray.sizeMin +
+            (spray.sizeMax - spray.sizeMin) * (0.2f + 0.8f * sizeT) * force;
+
+        const float jr = 1.0f + colorJitter * ((float)(rand() % 2001) / 1000.0f - 1.0f);
+        const float jg = 1.0f + colorJitter * ((float)(rand() % 2001) / 1000.0f - 1.0f);
+        const float jb = 1.0f + colorJitter * ((float)(rand() % 2001) / 1000.0f - 1.0f);
+
         BloodParticle particle;
         particle.position = hitPoint + direction * 0.05f;
         particle.velocity = direction * speed;
-        particle.size = 0.02f +
-            (float)(rand() % 601) / 20000.0f +
-            damageScale * 0.015f;
+        particle.color = glm::vec3(
+            std::clamp(bloodCfg.color.x * jr, 0.0f, 1.0f),
+            std::clamp(bloodCfg.color.y * jg, 0.0f, 1.0f),
+            std::clamp(bloodCfg.color.z * jb, 0.0f, 1.0f));
+        particle.size = std::max(0.01f, size);
         particle.lifetime = baseLifetime + (float)(rand() % 1001) / 1000.0f;
-        particle.alpha = 0.85f;
+        particle.alpha = spray.alphaMin +
+            (spray.alphaMax - spray.alphaMin) * force;
         particle.rotation = (float)(rand() % 6284) / 1000.0f;
         particle.stretch = 0.7f + (float)(rand() % 601) / 1000.0f;
         mBloodParticles.push_back(particle);
@@ -261,7 +304,7 @@ void EffectPartSystem::spawnBloodEffect(
 
     for (int i = 0; i < debrisCount; ++i) {
         const float angle = (float)(rand() % 6284) / 1000.0f;
-        const float radial = std::sqrt((float)(rand() % 1001) / 1000.0f) * debrisConeRadius;
+        const float radial = std::sqrt((float)(rand() % 1001) / 1000.0f) * bloodConeRadius;
         const glm::vec3 direction = glm::normalize(
             forward +
             tangent * std::cos(angle) * radial +
@@ -294,8 +337,8 @@ void EffectPartSystem::spawnBloodEffect(
     }
 
     if (DebugConfig::DEBUG_BLOOD_HITS) {
-        printf("[BLOOD] blood=%d debris=%d speed=%.2f bloodCone=%.0f debrisCone=%.0f\n",
-               bloodCount, debrisCount, baseSpeed, bloodConeDegrees, debrisConeDegrees);
+        printf("[BLOOD] force=%.2f blood=%d debris=%d speed=%.2f cone=%.0f\n",
+               force, bloodCount, debrisCount, baseSpeed, coneDegrees);
     }
 
     ReplayEffectEvent emitter;
@@ -308,6 +351,120 @@ void EffectPartSystem::spawnBloodEffect(
     emitter.targetActorId = targetActorId;
     captureReplayEffect(emitter);
 
-    // [BLOOD DECALS REMOVED] - world raycasting per decal was expensive
-    // Blood particles kept (lightweight).
+    spawnBloodSurfaceDecals(hitPoint, forward, tangent, bitangent, damageScale, force,
+                            sourceActorId, targetActorId);
+}
+
+void EffectPartSystem::spawnBloodSurfaceDecals(
+    const glm::vec3& hitPoint,
+    const glm::vec3& forward,
+    const glm::vec3& tangent,
+    const glm::vec3& bitangent,
+    float damageScale,
+    float force,
+    const std::string& sourceActorId,
+    const std::string& targetActorId)
+{
+    // Blood surface splats: small red cylinders stuck to surfaces in a spray
+    // cone behind the hit. Restored 08 14 2026 (was removed for perf).
+    const auto& cfg = ImpactDecalsConfig::instance().data();
+    const auto& bloodCfg = cfg.blood;
+    if (!cfg.enabled || !bloodCfg.enabled || !mWorld)
+        return;
+
+    const int decalCount = std::max(1, (int)std::round(
+        bloodCfg.minCount + (bloodCfg.count - bloodCfg.minCount) * force));
+    const float decalRadius = bloodCfg.minRadius +
+        (bloodCfg.radius - bloodCfg.minRadius) * force;
+    const float coneDist = std::max(0.5f, bloodCfg.coneDistance);
+    const float decalConeRadius = std::tan(glm::radians(std::max(1.0f, bloodCfg.coneDegrees)));
+    mBloodDebugSegmentCount = 0;
+
+    for (int dec = 0; dec < decalCount; ++dec) {
+        const float angle = (float)(rand() % 6284) / 1000.0f;
+        const float radial = std::sqrt((float)(rand() % 1001) / 1000.0f) * decalConeRadius;
+        const float dist = 0.5f + ((float)(rand() % 1001) / 1000.0f) * (coneDist - 0.5f);
+        const glm::vec3 coneDir = glm::normalize(
+            forward +
+            tangent * std::cos(angle) * radial +
+            bitangent * std::sin(angle) * radial);
+
+        const glm::vec3 conePoint = hitPoint + coneDir * dist;
+
+        BloodWorldHit surfaceHit;
+        bool foundSurface = false;
+
+        BloodWorldHit downHit;
+        const float downLen = 2.0f + damageScale * 1.0f;
+        if (traceBloodSegment(*mWorld, conePoint, conePoint + glm::vec3(0, 0, -downLen), downHit)) {
+            downHit.position += downHit.normal * 0.01f;
+            surfaceHit = downHit;
+            foundSurface = true;
+        }
+
+        if (!foundSurface) {
+            BloodWorldHit fwdHit;
+            if (traceBloodSegment(*mWorld, conePoint, conePoint + coneDir * 2.0f, fwdHit)) {
+                fwdHit.position += fwdHit.normal * 0.01f;
+                surfaceHit = fwdHit;
+                foundSurface = true;
+            }
+        }
+
+        if (!foundSurface) {
+            const glm::vec3 sideDir = glm::normalize(glm::cross(coneDir, glm::vec3(0, 0, 1)));
+            BloodWorldHit sideHit;
+            if (traceBloodSegment(*mWorld, conePoint, conePoint + sideDir * 2.0f, sideHit)) {
+                sideHit.position += sideHit.normal * 0.01f;
+                surfaceHit = sideHit;
+                foundSurface = true;
+            }
+        }
+
+        if (mBloodDebugSegmentCount < MAX_BLOOD_DEBUG_SEGMENTS) {
+            BloodDebugSegment& debug = mBloodDebugSegments[mBloodDebugSegmentCount++];
+            debug.from = conePoint;
+            debug.to = foundSurface ? surfaceHit.position : conePoint;
+            debug.normal = foundSurface ? surfaceHit.normal : glm::vec3(0, 0, 1);
+            debug.hit = foundSurface;
+        }
+
+        if (!foundSurface)
+            continue;
+
+        SurfaceDecal decal;
+        decal.position = surfaceHit.position;
+        decal.normal = surfaceHit.normal;
+        const float jr = 1.0f + bloodCfg.colorVariation * ((float)(rand() % 2001) / 1000.0f - 1.0f);
+        const float jg = 1.0f + bloodCfg.colorVariation * ((float)(rand() % 2001) / 1000.0f - 1.0f);
+        const float jb = 1.0f + bloodCfg.colorVariation * ((float)(rand() % 2001) / 1000.0f - 1.0f);
+        decal.color = glm::vec3(
+            std::clamp(bloodCfg.color.x * jr, 0.0f, 1.0f),
+            std::clamp(bloodCfg.color.y * jg, 0.0f, 1.0f),
+            std::clamp(bloodCfg.color.z * jb, 0.0f, 1.0f));
+        decal.kind = SurfaceDecalKind::Blood;
+        decal.radius = std::max(0.005f, decalRadius);
+        decal.height = std::max(0.005f, bloodCfg.height);
+        decal.lifetime = bloodCfg.lifetime;
+        decal.fadeTime = bloodCfg.fadeTime;
+        decal.alpha = bloodCfg.alpha;
+        decal.baseAlpha = bloodCfg.alpha;
+        pushSurfaceDecal(decal, bloodCfg.maxCount);
+
+        ReplayEffectEvent decalEvent;
+        decalEvent.type = "blood_splatter";
+        decalEvent.position = decal.position;
+        decalEvent.normal = decal.normal;
+        decalEvent.scale = glm::vec3(decal.radius, decal.radius, decal.height);
+        decalEvent.color = glm::vec4(decal.color, decal.alpha);
+        decalEvent.lifetime = decal.lifetime;
+        decalEvent.sourceActorId = sourceActorId;
+        decalEvent.targetActorId = targetActorId;
+        captureReplayEffect(decalEvent);
+    }
+
+    if (DebugConfig::DEBUG_BLOOD_HITS) {
+        Debug::log(Debug::Category::NpcCombat,
+            "[BLOOD DECAL] spawned=%d active=%zu\n", decalCount, mSurfaceDecals.size());
+    }
 }

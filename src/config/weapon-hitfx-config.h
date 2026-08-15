@@ -1,3 +1,11 @@
+// 08 14 2026, 00 10
+/* purpose
+* Declares the WeaponHitFxConfig singleton and per-weapon hit-FX config structs.
+* Provides JSON-driven, hot-reloadable settings loaded from config/weapon_hitfx.json for force, debris, blood, sound, presentation, and explosion bursts.
+* Used by combat hit effects and explosion FX to fetch weapon-specific behavior.
+* Does NOT spawn or render effects.
+* Does NOT apply damage or knockback.
+*/
 #pragma once
 
 #include <filesystem>
@@ -102,6 +110,10 @@ struct WeaponHitFxExplosionBurstSmoke {
 
 struct WeaponHitFxExplosionBurstConfig {
     bool enabled = true;
+    bool muzzleFlash = true;
+    bool debris = true;
+    bool impactTick = true;
+    bool hitBurst = true;
     WeaponHitFxExplosionBurstSphere sphere;
     WeaponHitFxExplosionBurstSmoke smoke;
 };

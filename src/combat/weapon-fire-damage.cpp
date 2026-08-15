@@ -42,6 +42,18 @@ static float limbMultiplier(const WeaponDefinition& def)
     return it != def.customParams.end() ? it->second : 0.75f;
 }
 
+// Config-driven victim knockback. baseImpulse is the damage-scaled impulse
+// magnitude; direction comes from the shot. Vertical fraction and enemy
+// multiplier come from the weapon config so knockback tuning is hot-reloadable.
+static glm::vec3 victimKnockbackImpulse(const WeaponDefinition& def,
+                                        const glm::vec3& shotDirection,
+                                        float baseImpulse)
+{
+    glm::vec3 kb = shotDirection * baseImpulse * def.enemyImpulseMultiplier;
+    kb.z += baseImpulse * def.victimKnockbackVerticalFraction;
+    return kb;
+}
+
 // Predicted remote kill: show the death instantly on the local replica without
 // DeathSystem::kill's side effects (killfeed, heal, replay, duel tracking) —
 // those stay server-confirmed so they never double-fire. The server's
@@ -109,13 +121,10 @@ static void presentRemoteHit(const WeaponDefinition& def,
         ev.direction = shotDirection;
         ev.hitEntity = true;
         ev.damage = damage;
+        ev.hitDistance = nearest;
         ev.attacker = shooterName;
         ev.victim = victimName;
         ev.weaponSource = def.id;
-        // predict_damage off: still hitmarker + blood + sound, but no floating
-        // damage number (that comes server-confirmed only).
-        ev.suppressDamageNumber =
-            !NetworkingConfig::instance().data().prediction.predictDamage;
         HitEffects::onHit(ev);
     }
     {
@@ -188,8 +197,11 @@ void processNpcHit(
     result.targetId = victim.id;
     {
         float df = std::clamp(1.0f - nearest / 110.0f, 0.10f, 1.0f);
-        float kn = (float)totalDamage * df * (0.08f + ctx.angleFactor * 0.12f);
-        result.knockbackImpulse = shotDirection * kn + glm::vec3(0, 0, kn * 0.12f);
+        const float kbScale = def.victimKnockbackPerDamage / 0.15f;
+        const float kn =
+            (def.victimKnockback +
+             (float)totalDamage * (0.08f + ctx.angleFactor * 0.12f) * kbScale) * df;
+        result.knockbackImpulse = victimKnockbackImpulse(def, shotDirection, kn);
     }
     hitmarker(totalDamage);
     if (GetPlayerSettings().debugCombat)
@@ -236,8 +248,9 @@ void processRemotePlayerHit(
         const float minFraction = def.customParams.count("minDamageFraction")
             ? def.customParams.at("minDamageFraction") : 0.1f;
         float df = std::clamp(1.0f - nearest / falloffStart, minFraction, 1.0f);
-        float kn = (float)totalDamage * df * 0.15f;
-        result.knockbackImpulse = shotDirection * kn;
+        const float kn =
+            (def.victimKnockback + (float)totalDamage * def.victimKnockbackPerDamage) * df;
+        result.knockbackImpulse = victimKnockbackImpulse(def, shotDirection, kn);
     }
 
     presentRemoteHit(def, hitEnd, hitNormal, shotDirection, nearest, hitPart,
@@ -311,8 +324,11 @@ void processRemoteNpcHit(
             const float hitLen = glm::length(hitDir);
             if (hitLen > 0.001f)
             {
-                const float kn = (float)totalDamage * 0.08f;
-                remoteNpc->externalImpulse += hitDir / hitLen * kn;
+                const float kn =
+                    def.victimKnockback +
+                    (float)totalDamage * 0.08f * (def.victimKnockbackPerDamage / 0.15f);
+                remoteNpc->externalImpulse +=
+                    victimKnockbackImpulse(def, hitDir / hitLen, kn);
             }
         }
 
@@ -411,10 +427,11 @@ void processPlayerHit(
     int totalDamage = std::max(1, (int)std::round(damage));
 
     float df = std::clamp(1.0f - nearest / falloffStart, minFraction, 1.0f);
-    float kn = (float)totalDamage * df * 0.15f;
-    glm::vec3 knockback = shotDirection * kn;
+    const float kn =
+        (def.victimKnockback + (float)totalDamage * def.victimKnockbackPerDamage) * df;
+    const glm::vec3 knockback = victimKnockbackImpulse(def, shotDirection, kn);
 
-    const_cast<Player*>(targetPlayer)->takeDamage(totalDamage, knockback, 8.0f);
+    const_cast<Player*>(targetPlayer)->takeDamage(totalDamage, knockback, glm::length(knockback));
     const_cast<Player*>(targetPlayer)->killedByWeapon = def.displayName;
     const_cast<Player*>(targetPlayer)->lastDamagedBy = shooter.username;
 
@@ -432,6 +449,7 @@ void processPlayerHit(
         ev.direction = shotDirection;
         ev.hitEntity = true;
         ev.damage = totalDamage;
+        ev.hitDistance = nearest;
         ev.attacker = shooter.username;
         ev.victim = targetPlayer->username;
         ev.weaponSource = def.id;
@@ -548,7 +566,12 @@ void processMultiPelletNpcHit(
     anyHitEntity = true;
     lastTargetId = victim.id;
     float df = std::clamp(1.0f - pelletNearest / 110.0f, 0.10f, 1.0f);
-    accumulatedKnockback += pelletDir * (float)dmg * df * (0.08f + ctx.angleFactor * 0.12f);
+    {
+        const float kbScale = def.victimKnockbackPerDamage / 0.15f;
+        accumulatedKnockback += victimKnockbackImpulse(def, pelletDir,
+            (def.victimKnockback +
+             (float)dmg * (0.08f + ctx.angleFactor * 0.12f) * kbScale) * df);
+    }
 
     if (pelletNearest < nearestPelletDist) {
         nearestPelletDist = pelletNearest;
@@ -597,7 +620,8 @@ void processMultiPelletRemoteHit(
     lastTargetId = pelletRemoteTargetId;
 
     float df = std::clamp(1.0f - pelletNearest / falloffStart, minFrac, 1.0f);
-    accumulatedKnockback += pelletDir * (float)totalDmg * df * 0.15f;
+    accumulatedKnockback += victimKnockbackImpulse(def, pelletDir,
+        (def.victimKnockback + (float)totalDmg * def.victimKnockbackPerDamage) * df);
 
     {
         HitEvent ev;
@@ -606,6 +630,7 @@ void processMultiPelletRemoteHit(
         ev.direction = pelletDir;
         ev.hitEntity = true;
         ev.damage = totalDmg;
+        ev.hitDistance = pelletNearest;
         ev.attacker = shooter.username;
         ev.victim = victimName;
         ev.weaponSource = def.id;
@@ -658,7 +683,8 @@ void processMultiPelletRemoteNpcHit(
     lastTargetId = pelletRemoteNpcTargetId;
 
     float df = std::clamp(1.0f - pelletNearest / falloffStart, minFrac, 1.0f);
-    accumulatedKnockback += pelletDir * (float)totalDmg * df * 0.15f;
+    accumulatedKnockback += victimKnockbackImpulse(def, pelletDir,
+        (def.victimKnockback + (float)totalDmg * def.victimKnockbackPerDamage) * df);
 
     // Predicted HP overlay for the remote NPC (instant feedback, corrected by
     // the server confirm). Mirrors the single-shot remote NPC path.
@@ -680,6 +706,7 @@ void processMultiPelletRemoteNpcHit(
         ev.direction = pelletDir;
         ev.hitEntity = true;
         ev.damage = totalDmg;
+        ev.hitDistance = pelletNearest;
         ev.attacker = shooter.username;
         ev.weaponSource = def.id;
         HitEffects::onHit(ev);

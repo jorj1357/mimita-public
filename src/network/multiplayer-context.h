@@ -11,7 +11,6 @@
 #pragma once
 
 #include "network/net_common.h"
-#include "network/simulation-constants.h"
 #include "network/packets.h"
 #include "network/projectile-terminal-dedupe.h"
 #include "network/movement-validation.h"
@@ -288,19 +287,11 @@ struct MultiplayerContext
     uint64_t snapshotsReceived = 0;
     uint64_t snapshotsMissed = 0;
 
-    // Remote-player interpolation clock: advances at the measured server tick
-    // rate using wall-clock frame time, so rendering is time-based, not
-    // packet-based. The rate is sampled from snapshot tick progression instead
-    // of assuming a hardcoded 60Hz — a server that ticks at any real rate
-    // (60Hz after the accumulator fix, or a remote host with its own loop)
-    // never makes the interpolation buffer run dry and never extrapolates
-    // remote bodies ahead of their true position.
+    // Remote-player interpolation clock: advances at the fixed 60 tick/s rate
+    // using wall-clock frame time, so rendering is time-based, not packet-based.
     double interpolationRenderTick = 0.0;
     bool interpolationClockStarted = false;
     uint64_t interpolationClockLastUpdateMs = 0;
-    double measuredServerTickRateHz = (double)GAMEPLAY_SIMULATION_HZ;
-    uint64_t tickRateSampleStartMs = 0;
-    uint32_t tickRateSampleStartTick = 0;
     uint64_t interpolationFrameNumber = 0;
     uint32_t interpolationReanchorCount = 0;
     double lastInterpolationClockStepMs = 0.0;

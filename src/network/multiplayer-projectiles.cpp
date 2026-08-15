@@ -849,8 +849,17 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
 
     const glm::vec3 position(event->posX, event->posY, event->posZ);
     const char* weaponName = networkWeaponTypeName(event->weapon);
-    const bool wasPredicted = ctx.predictedProjectileIds.erase(event->projectileId) > 0;
     bool removedVisual = ctx.networkProjectiles.erase(event->projectileId) > 0;
+    const bool wasPredicted = ctx.predictedProjectileIds.erase(event->projectileId) > 0;
+    // Safety net for the shooter's own projectile when it was never adopted (e.g.
+    // the AttackResult was lost under a blackout): it still sits under the
+    // provisional ID, so remove it here too — no ghost rocket after the terminal.
+    const uint32_t provisionalId = provisionalProjectileId(event->fireSerial);
+    if (provisionalId != 0 && provisionalId != event->projectileId)
+    {
+        removedVisual |= ctx.networkProjectiles.erase(provisionalId) > 0;
+        ctx.predictedProjectileIds.erase(provisionalId);
+    }
     bool removedLegacy = false;
     if (gpWeapons)
     {
