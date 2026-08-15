@@ -39,9 +39,10 @@ void drawAvatarOutfitsPanel(GLFWwindow* win, float px, float py, float pw, float
     // "+ New Outfit"
     const GuiElement* newBtn = layout.get("outfitsNewButton");
     if (newBtn && newBtn->visible) {
-        if (uiButton(win, newBtn->text.c_str(),
-                     {px + 8.0f, py, pw - 16.0f, 28.0f},
-                     newBtn->getBackgroundColorVec()).clicked) {
+        if (editorButton(win, newBtn->text.c_str(),
+                         {px + 8.0f, py, pw - 16.0f, 28.0f},
+                         newBtn->getBackgroundColorVec(),
+                         editorFontSize(newBtn, avatarEditorButtonFontSize)).clicked) {
             avatarEditorLoadOutfit(uniqueOutfitName(av, "New Outfit"));
         }
     }
@@ -73,21 +74,23 @@ void drawAvatarOutfitsPanel(GLFWwindow* win, float px, float py, float pw, float
         if (isCurrent)
             uiDrawRectOutline(screenEntry, {0.3f, 0.8f, 0.5f, 1.0f}, "outfit-sel");
 
-        uiDrawText(o.c_str(), screenEntry.x + 6.0f, screenEntry.y + 4.0f, 0.28f, {1, 1, 1, 1});
+        uiDrawText(o.c_str(), screenEntry.x + 6.0f, screenEntry.y + 4.0f,
+                   avatarEditorFont(avatarEditorOutfitListFontSize), {1, 1, 1, 1});
 
         if (uiButton(win, "", entryRect, {0, 0, 0, 0}).clicked && !isCurrent)
             avatarEditorLoadOutfit(o);
 
         if (isCurrent) {
             float bY = y + entryH + 2.0f;
-            if (uiButton(win, "Rename", {listX, bY, btnW, btnH}, rnCol).clicked) {
+            float bFont = editorFontSize(layout.get("outfitRenameBtn"), avatarEditorSmallButtonFontSize);
+            if (editorButton(win, "Rename", {listX, bY, btnW, btnH}, rnCol, bFont).clicked) {
                 gRenamePopupOpen = true;
                 memset(gRenameBuf, 0, sizeof(gRenameBuf));
                 strncpy(gRenameBuf, av.currentName().c_str(), sizeof(gRenameBuf) - 1);
             }
-            if (uiButton(win, "Copy", {listX + btnW + 4.0f, bY, btnW, btnH}, cpCol).clicked)
+            if (editorButton(win, "Copy", {listX + btnW + 4.0f, bY, btnW, btnH}, cpCol, bFont).clicked)
                 av.duplicateOutfit(av.currentName(), uniqueOutfitName(av, av.currentName() + " Copy"));
-            if (uiButton(win, "Delete", {listX + 2 * (btnW + 4.0f), bY, btnW, btnH}, dlCol).clicked)
+            if (editorButton(win, "Delete", {listX + 2 * (btnW + 4.0f), bY, btnW, btnH}, dlCol, bFont).clicked)
                 gDeleteConfirmOpen = true;
             y += btnH + 6.0f;
         }
@@ -95,6 +98,6 @@ void drawAvatarOutfitsPanel(GLFWwindow* win, float px, float py, float pw, float
     }
 
     if (outfits.empty())
-        uiDrawText("No outfits yet. Create one!", uiScaleX(px + 8.0f), uiScaleY(py), 0.30f,
-                   {0.4f, 0.5f, 0.6f, 1.0f});
+        uiDrawText("No outfits yet. Create one!", uiScaleX(px + 8.0f), uiScaleY(py),
+                   avatarEditorFont(avatarEditorHintFontSize), {0.4f, 0.5f, 0.6f, 1.0f});
 }

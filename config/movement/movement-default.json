@@ -1,7 +1,16 @@
+// 08 15 2026, 16 12
+/* purpose
+* Defines the default MiMITA movement preset and its hot-reloadable tuning.
+* Preserves the legacy instant horizontal control used by existing gameplay.
+* Keeps Source-only tuning inert unless movement_mode explicitly selects source.
+* Does NOT implement movement formulas, poll input, or select itself globally.
+* Does NOT modify collision, networking, rendering, or player persistence.
+* Does NOT opt players into Source movement.
+*/
 {
     "name": "default",
-    "comment": "Current Mimita behavior. WASD overrides horizontal velocity instantly (override mode, no acceleration). Dash recharges on world touch. The CS:GO ground/air knobs below are inert in override mode and only matter in 'accel' mode.",
-    "movement_mode": "override",
+    "comment": "Current MiMITA behavior. WASD overrides horizontal velocity instantly. Source-only tuning below remains inert in mimita mode.",
+    "movement_mode": "mimita",
     "air_strafing": true,
     "bunny_hop": false,
     "auto_bhop_enabled": true,

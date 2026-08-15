@@ -27,8 +27,8 @@ void drawAvatarPresetsTab(GLFWwindow* win, float px, float py, float pw, float p
 
     float y = py;
 
-    uiDrawText("Save current look as:", uiScaleX(px + 4.0f), uiScaleY(y), 0.32f,
-               {0.5f, 0.6f, 0.7f, 1.0f});
+    uiDrawText("Save current look as:", uiScaleX(px + 4.0f), uiScaleY(y),
+               avatarEditorFont(avatarEditorHintFontSize), {0.5f, 0.6f, 0.7f, 1.0f});
     y += 28.0f;
 
     // Name input (simple char buffer; text entered via avatarEditorHandleChar
@@ -36,13 +36,15 @@ void drawAvatarPresetsTab(GLFWwindow* win, float px, float py, float pw, float p
     UIRect inputRect = {uiScaleX(px + 4.0f), uiScaleY(y), uiScaleX(220.0f), uiScaleY(28.0f)};
     uiDrawRect(inputRect, {0.08f, 0.09f, 0.13f, 1.0f}, "preset-input");
     uiDrawText(gPresetNameBuf[0] ? gPresetNameBuf : "preset name...",
-               inputRect.x + 6.0f, inputRect.y + 4.0f, 0.30f,
+               inputRect.x + 6.0f, inputRect.y + 4.0f,
+               avatarEditorFont(avatarEditorButtonFontSize),
                gPresetNameBuf[0] ? glm::vec4{1,1,1,1} : glm::vec4{0.4f,0.4f,0.5f,1.0f});
 
     extern bool gPresetInputActive;
     if (uiButton(win, "", {px + 4.0f, y, 220.0f, 28.0f}, {0,0,0,0}).clicked)
         gPresetInputActive = true;
-    if (uiButton(win, "SAVE", {px + 232.0f, y, 90.0f, 28.0f}, {0.2f, 0.5f, 0.3f, 1.0f}).clicked) {
+    if (editorButton(win, "SAVE", {px + 232.0f, y, 90.0f, 28.0f}, {0.2f, 0.5f, 0.3f, 1.0f},
+                     avatarEditorFont(avatarEditorButtonFontSize)).clicked) {
         if (gPresetNameBuf[0]) {
             av.savePreset(gPresetNameBuf);
             memset(gPresetNameBuf, 0, sizeof(gPresetNameBuf));
@@ -61,7 +63,8 @@ void drawAvatarPresetsTab(GLFWwindow* win, float px, float py, float pw, float p
         uiDrawRect(screenRow, col, "preset-entry");
         if (active)
             uiDrawRectOutline(screenRow, {0.3f, 0.8f, 0.5f, 1.0f}, "preset-active");
-        uiDrawText(p.c_str(), screenRow.x + 8.0f, screenRow.y + 4.0f, 0.30f, {1,1,1,1});
+        uiDrawText(p.c_str(), screenRow.x + 8.0f, screenRow.y + 4.0f,
+                   avatarEditorFont(avatarEditorOutfitListFontSize), {1,1,1,1});
         if (uiButton(win, "", row, col).clicked) {
             av.loadPreset(p);
             avatarEditorRefreshPreview();
@@ -71,8 +74,8 @@ void drawAvatarPresetsTab(GLFWwindow* win, float px, float py, float pw, float p
     }
 
     if (presets.empty())
-        uiDrawText("No presets saved yet.", uiScaleX(px + 4.0f), uiScaleY(y), 0.30f,
-                   {0.4f, 0.5f, 0.6f, 1.0f});
+        uiDrawText("No presets saved yet.", uiScaleX(px + 4.0f), uiScaleY(y),
+                   avatarEditorFont(avatarEditorHintFontSize), {0.4f, 0.5f, 0.6f, 1.0f});
 
     endScroll({px, py, pw, ph}, contentH, ss);
 }

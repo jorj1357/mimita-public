@@ -1,7 +1,7 @@
-// 08 15 2026, 14 00
+// 08 15 2026, 16 12
 /* purpose
 * Source (CS/Quake) movement preset: ground is PM_Friction + PM_Accelerate,
-* air is PURE STRAFING (WASD rotates your flight direction but never adds speed),
+* air is projection-limited PM_AirAccelerate with Valve bug compatibility,
 * and dash is a one-time impulse that input never erases. Every value below is
 * hot-reloadable live via movement_reload. Units are MiMITA units unless noted.
 * This file is parsed with JSON comments enabled.
@@ -40,10 +40,16 @@
     // from the dot product between your flight direction and the key direction,
     // NOT from A/D rules: the key only defines the wish direction; the mouse
     // rotates the camera, which naturally rotates the wish. Holding A alone
-    // drifts you left slowly — that is real Source "circle strafe", not a steer.
+    // can only fill the small projection cap; it cannot steer velocity directly.
     "air_speed_gain_multiplier": 1.0,
     // Strength of the air acceleration (Source sv_airaccelerate equivalent).
     "air_acceleration": 12.0,
+    // Source's 30-unit air cap divided by its 320-unit max speed, scaled to
+    // MiMITA max_speed 20: 20 * 30 / 320 = 1.875.
+    "air_max_wishspeed": 1.875,
+    // Historical Source bug compatibility: use uncapped wishspeed in the
+    // acceleration term while capped wishspd limits projection/addSpeed.
+    "source_airaccelerate_bug_compatible": true,
 
     // ── Gravity and jump ─────────────────────────────────────────────────
     // Vertical acceleration while airborne, MiMITA units/sec^2 (negative = down).
@@ -62,7 +68,7 @@
     // 0 = no mercy (pure CS behavior).
     "coyote_time": 0.0,
     // Extra mid-air jumps allowed (Source/CS has none = 0).
-    "max_air_jumps": 1,
+    "max_air_jumps": 0,
 
     // ── Ground snap ──────────────────────────────────────────────────────
     // Snap small downward velocity to 0 when grounded (prevents jitter).
@@ -111,6 +117,6 @@
     "debug_draw_enabled": false,
 
     "tuning_notes": {
-        "comment": "air_control = air strafe turn rate (rad/sec). air_speed_gain_multiplier 0 = WASD never adds speed in the air. landing_overspeed_bleed 1.0 = bhop speed bleeds on landings, 0 = keeps speed. dash_grace_seconds = window where the dash boost ignores friction. impulse_carry_seconds = untouched window after a fresh knockback. All fields hot-reload via movement_reload."
+        "comment": "air_speed_gain_multiplier scales Source projection acceleration. air_max_wishspeed limits projection. landing_overspeed_bleed controls non-jump landing friction. All fields hot-reload via movement_reload."
     }
 }

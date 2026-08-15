@@ -106,7 +106,9 @@ static void drawEditorTabs(GLFWwindow* win)
         glm::vec4 bg = (ti == gEditorTab)
             ? (te->hasPressedColor() ? te->getPressedColorVec() : glm::vec4{0.2f, 0.45f, 0.3f, 1.0f})
             : te->getBackgroundColorVec();
-        if (uiButton(win, te->text.c_str(), {te->x, te->y, te->w, te->h}, bg, te->id.c_str()).clicked)
+        if (uiButton(win, te->text.c_str(), {te->x, te->y, te->w, te->h}, bg, te->id.c_str(),
+                     nullptr, nullptr, nullptr, nullptr,
+                     editorFontSize(te, avatarEditorTabFontSize)).clicked)
             gEditorTab = ti;
     }
 }
@@ -153,8 +155,8 @@ static void drawBottomBar(GLFWwindow* win, AvatarEditorResult& r)
             default: text = "";
         }
         if (!text.empty())
-            uiDrawText(text.c_str(), uiScaleX(status->x), uiScaleY(status->y), 0.28f,
-                       status->getTextColorVec());
+            uiDrawText(text.c_str(), uiScaleX(status->x), uiScaleY(status->y),
+                       avatarEditorFont(avatarEditorHintFontSize), status->getTextColorVec());
     }
 
     const char* btnIds[] = {"saveButton", "applyButton", "backButton"};
@@ -163,7 +165,9 @@ static void drawBottomBar(GLFWwindow* win, AvatarEditorResult& r)
         if (!elem || !elem->visible)
             continue;
         if (!uiButton(win, elem->text.c_str(), {elem->x, elem->y, elem->w, elem->h},
-                      elem->getBackgroundColorVec(), elem->id.c_str()).clicked)
+                      elem->getBackgroundColorVec(), elem->id.c_str(),
+                      nullptr, nullptr, nullptr, nullptr,
+                      editorFontSize(elem, avatarEditorButtonFontSize)).clicked)
             continue;
         if (elem->id == "saveButton") {
             if (av.hasAvatar()) {
@@ -240,7 +244,8 @@ AvatarEditorResult drawAvatarEditor(GLFWwindow* win)
 
     if (!av.hasAvatar()) {
         uiDrawText("No outfit loaded. Create or pick one from the right panel.",
-                   uiScaleX(600.0f), uiScaleY(480.0f), 0.4f, {0.8f, 0.85f, 0.9f, 1.0f});
+                   uiScaleX(600.0f), uiScaleY(480.0f),
+                   avatarEditorFont(avatarEditorHintFontSize), {0.8f, 0.85f, 0.9f, 1.0f});
     } else {
         drawEditorContent(win);
     }
@@ -251,9 +256,9 @@ AvatarEditorResult drawAvatarEditor(GLFWwindow* win)
     drawAvatarCosmeticsOverlay(win);
 
     // Apply any finished async atlas rebuild to the live preview player.
-    extern Player* gpPlayer;
-    if (gpPlayer)
-        av.finalizeAtlasIfReady(*gpPlayer);
+    Player* previewPlayer = avatarEditorPreviewPlayer();
+    if (previewPlayer)
+        av.finalizeAtlasIfReady(*previewPlayer);
 
     // Drag & drop hover banner.
     if (isDropHoverActive()) {

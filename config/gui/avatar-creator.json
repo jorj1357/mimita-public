@@ -67,7 +67,7 @@
 
     "tabFaces": {
       "type": "button", "x": 328, "y": 86, "width": 145, "height": 30,
-      "text": "Faces", "fontSize": 0.32,
+      "text": "Faces", "fontSize": 0.30,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.08, 0.09, 0.14, 1.0],
       "hoverColor": [0.12, 0.14, 0.2, 1.0],
@@ -75,7 +75,7 @@
     },
     "tabColors": {
       "type": "button", "x": 477, "y": 86, "width": 145, "height": 30,
-      "text": "Colors", "fontSize": 0.32,
+      "text": "Colors", "fontSize": 0.30,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.08, 0.09, 0.14, 1.0],
       "hoverColor": [0.12, 0.14, 0.2, 1.0],
@@ -83,7 +83,7 @@
     },
     "tabCosmetics": {
       "type": "button", "x": 626, "y": 86, "width": 145, "height": 30,
-      "text": "Cosmetics", "fontSize": 0.32,
+      "text": "Cosmetics", "fontSize": 0.30,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.08, 0.09, 0.14, 1.0],
       "hoverColor": [0.12, 0.14, 0.2, 1.0],
@@ -91,89 +91,89 @@
     },
     "tabPresets": {
       "type": "button", "x": 775, "y": 86, "width": 145, "height": 30,
-      "text": "Presets", "fontSize": 0.32,
+      "text": "Presets", "fontSize": 0.30,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.08, 0.09, 0.14, 1.0],
       "hoverColor": [0.12, 0.14, 0.2, 1.0],
       "pressedColor": [0.2, 0.45, 0.3, 1.0]
     },
 
-    "partHead":   { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "Head", "fontSize": 0.28, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
-    "partTorso":  { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "Torso", "fontSize": 0.28, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
-    "partLArm":   { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "L Arm", "fontSize": 0.28, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
-    "partRArm":   { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "R Arm", "fontSize": 0.28, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
-    "partLLeg":   { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "L Leg", "fontSize": 0.28, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
-    "partRLeg":   { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "R Leg", "fontSize": 0.28, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
+    "partHead":   { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "Head", "fontSize": 0.26, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
+    "partTorso":  { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "Torso", "fontSize": 0.26, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
+    "partLArm":   { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "L Arm", "fontSize": 0.26, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
+    "partRArm":   { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "R Arm", "fontSize": 0.26, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
+    "partLLeg":   { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "L Leg", "fontSize": 0.26, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
+    "partRLeg":   { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "R Leg", "fontSize": 0.26, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
 
-    "faceFront":  { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "Front", "fontSize": 0.28, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
-    "faceBack":   { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "Back", "fontSize": 0.28, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
-    "faceLeft":   { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "Left", "fontSize": 0.28, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
-    "faceRight":  { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "Right", "fontSize": 0.28, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
-    "faceTop":    { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "Top", "fontSize": 0.28, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
-    "faceBottom": { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "Bottom", "fontSize": 0.28, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
+    "faceFront":  { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "Front", "fontSize": 0.26, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
+    "faceBack":   { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "Back", "fontSize": 0.26, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
+    "faceLeft":   { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "Left", "fontSize": 0.26, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
+    "faceRight":  { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "Right", "fontSize": 0.26, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
+    "faceTop":    { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "Top", "fontSize": 0.26, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
+    "faceBottom": { "type": "button", "x": 0, "y": 0, "width": 96, "height": 28, "text": "Bottom", "fontSize": 0.26, "textColor": [1,1,1,1], "backgroundColor": [0.12, 0.18, 0.3, 1.0], "pressedColor": [0.2, 0.5, 0.3, 1.0] },
 
     "assignBtn": {
       "type": "button", "x": 0, "y": 0, "width": 180, "height": 30,
-      "text": "Use Selected PNG", "fontSize": 0.3,
+      "text": "Use Selected PNG", "fontSize": 0.26,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.18, 0.42, 0.28, 1.0],
       "hoverColor": [0.24, 0.55, 0.36, 1.0]
     },
     "clearFaceBtn": {
       "type": "button", "x": 0, "y": 0, "width": 110, "height": 30,
-      "text": "Clear Face", "fontSize": 0.3,
+      "text": "Clear Face", "fontSize": 0.26,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.35, 0.15, 0.15, 1.0],
       "hoverColor": [0.45, 0.2, 0.2, 1.0]
     },
     "copyFaceBtn": {
       "type": "button", "x": 0, "y": 0, "width": 90, "height": 26,
-      "text": "Copy Face", "fontSize": 0.28,
+      "text": "Copy Face", "fontSize": 0.24,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.15, 0.25, 0.4, 1.0]
     },
     "pasteFaceBtn": {
       "type": "button", "x": 0, "y": 0, "width": 90, "height": 26,
-      "text": "Paste Face", "fontSize": 0.28,
+      "text": "Paste Face", "fontSize": 0.24,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.15, 0.25, 0.4, 1.0]
     },
     "copyPartBtn": {
       "type": "button", "x": 0, "y": 0, "width": 88, "height": 26,
-      "text": "Copy Part", "fontSize": 0.28,
+      "text": "Copy Part", "fontSize": 0.24,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.12, 0.18, 0.3, 1.0]
     },
     "pastePartBtn": {
       "type": "button", "x": 0, "y": 0, "width": 88, "height": 26,
-      "text": "Paste Part", "fontSize": 0.28,
+      "text": "Paste Part", "fontSize": 0.24,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.12, 0.18, 0.3, 1.0]
     },
     "stretchBtn": {
       "type": "button", "x": 0, "y": 0, "width": 80, "height": 26,
-      "text": "Stretch", "fontSize": 0.28,
+      "text": "Stretch", "fontSize": 0.24,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.15, 0.25, 0.4, 1.0],
       "pressedColor": [0.2, 0.5, 0.3, 1.0]
     },
     "cropBtn": {
       "type": "button", "x": 0, "y": 0, "width": 80, "height": 26,
-      "text": "Crop", "fontSize": 0.28,
+      "text": "Crop", "fontSize": 0.24,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.15, 0.25, 0.4, 1.0],
       "pressedColor": [0.2, 0.5, 0.3, 1.0]
     },
     "applyPartBtn": {
       "type": "button", "x": 0, "y": 0, "width": 288, "height": 30,
-      "text": "Apply to all sides of this part", "fontSize": 0.3,
+      "text": "Apply to all sides of this part", "fontSize": 0.24,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.2, 0.45, 0.3, 1.0],
       "hoverColor": [0.26, 0.58, 0.38, 1.0]
     },
     "applyAllBtn": {
       "type": "button", "x": 0, "y": 0, "width": 288, "height": 30,
-      "text": "Apply to every face", "fontSize": 0.3,
+      "text": "Apply to every face", "fontSize": 0.24,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.2, 0.45, 0.3, 1.0],
       "hoverColor": [0.26, 0.58, 0.38, 1.0]
@@ -187,30 +187,30 @@
     "outfitEntrySelected": { "type": "text", "x": 0, "y": 0, "text": "", "fontSize": 0.3, "backgroundColor": [0.2, 0.48, 0.28, 1.0] },
     "outfitsNewButton": {
       "type": "button", "x": 1588, "y": 88, "width": 304, "height": 28,
-      "text": "+ New Outfit", "fontSize": 0.3,
+      "text": "+ New Outfit", "fontSize": 0.26,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.15, 0.35, 0.25, 1.0],
       "hoverColor": [0.2, 0.45, 0.32, 1.0]
     },
-    "outfitRenameBtn": { "type": "button", "x": 0, "y": 0, "width": 60, "height": 22, "text": "Rename", "fontSize": 0.26, "textColor": [1,1,1,1], "backgroundColor": [0.15, 0.25, 0.4, 1.0] },
-    "outfitCopyBtn": { "type": "button", "x": 0, "y": 0, "width": 60, "height": 22, "text": "Copy", "fontSize": 0.26, "textColor": [1,1,1,1], "backgroundColor": [0.2, 0.35, 0.25, 1.0] },
-    "outfitDeleteBtn": { "type": "button", "x": 0, "y": 0, "width": 60, "height": 22, "text": "Delete", "fontSize": 0.26, "textColor": [1,1,1,1], "backgroundColor": [0.4, 0.12, 0.12, 1.0] },
+    "outfitRenameBtn": { "type": "button", "x": 0, "y": 0, "width": 60, "height": 22, "text": "Rename", "fontSize": 0.24, "textColor": [1,1,1,1], "backgroundColor": [0.15, 0.25, 0.4, 1.0] },
+    "outfitCopyBtn": { "type": "button", "x": 0, "y": 0, "width": 60, "height": 22, "text": "Copy", "fontSize": 0.24, "textColor": [1,1,1,1], "backgroundColor": [0.2, 0.35, 0.25, 1.0] },
+    "outfitDeleteBtn": { "type": "button", "x": 0, "y": 0, "width": 60, "height": 22, "text": "Delete", "fontSize": 0.24, "textColor": [1,1,1,1], "backgroundColor": [0.4, 0.12, 0.12, 1.0] },
 
     "saveButton": {
       "type": "button", "x": 1540, "y": 966, "width": 110, "height": 28,
-      "text": "SAVE", "fontSize": 0.32,
+      "text": "SAVE", "fontSize": 0.26,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.18, 0.5, 0.26, 1.0]
     },
     "applyButton": {
       "type": "button", "x": 1660, "y": 966, "width": 110, "height": 28,
-      "text": "APPLY", "fontSize": 0.32,
+      "text": "APPLY", "fontSize": 0.26,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.22, 0.38, 0.55, 1.0]
     },
     "backButton": {
       "type": "button", "x": 1780, "y": 966, "width": 110, "height": 28,
-      "text": "BACK", "fontSize": 0.32,
+      "text": "BACK", "fontSize": 0.26,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.5, 0.18, 0.18, 1.0]
     },
@@ -232,7 +232,7 @@
     },
     "savePopupLabel": {
       "type": "text", "x": 780, "y": 490, "width": 360, "height": 24,
-      "text": "Outfit Name:", "fontSize": 0.32,
+      "text": "Outfit Name:", "fontSize": 0.26,
       "textColor": [0.5, 0.6, 0.7, 1.0]
     },
     "savePopupInput": {
@@ -242,13 +242,13 @@
     },
     "savePopupSaveBtn": {
       "type": "button", "x": 800, "y": 580, "width": 150, "height": 36,
-      "text": "Save", "fontSize": 0.34,
+      "text": "Save", "fontSize": 0.26,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.2, 0.55, 0.3, 1.0]
     },
     "savePopupCancelBtn": {
       "type": "button", "x": 970, "y": 580, "width": 150, "height": 36,
-      "text": "Cancel", "fontSize": 0.34,
+      "text": "Cancel", "fontSize": 0.26,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.5, 0.18, 0.18, 1.0]
     },
@@ -270,13 +270,13 @@
     },
     "renamePopupConfirmBtn": {
       "type": "button", "x": 800, "y": 580, "width": 130, "height": 34,
-      "text": "Rename", "fontSize": 0.34,
+      "text": "Rename", "fontSize": 0.26,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.2, 0.5, 0.3, 1.0]
     },
     "renamePopupCancelBtn": {
       "type": "button", "x": 960, "y": 580, "width": 130, "height": 34,
-      "text": "Cancel", "fontSize": 0.34,
+      "text": "Cancel", "fontSize": 0.26,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.5, 0.18, 0.18, 1.0]
     },
@@ -293,13 +293,13 @@
     },
     "deletePopupYesBtn": {
       "type": "button", "x": 810, "y": 560, "width": 130, "height": 34,
-      "text": "Yes", "fontSize": 0.34,
+      "text": "Yes", "fontSize": 0.26,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.5, 0.12, 0.12, 1.0]
     },
     "deletePopupNoBtn": {
       "type": "button", "x": 960, "y": 560, "width": 130, "height": 34,
-      "text": "No", "fontSize": 0.34,
+      "text": "No", "fontSize": 0.26,
       "textColor": [1,1,1,1],
       "backgroundColor": [0.2, 0.5, 0.3, 1.0]
     }

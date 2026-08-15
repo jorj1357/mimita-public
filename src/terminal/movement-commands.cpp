@@ -1,4 +1,4 @@
-// 08 02 2026, 00 00
+// 08 15 2026, 16 12
 /* purpose
 * Registers terminal commands for the movement tuning presets.
 * Lets users switch presets, list presets, reload, and print active tuning values.
@@ -103,7 +103,7 @@ void registerMovementCommands()
                 "[MOVEMENT] preset=%s mode=%s air_strafing=%d bhop=%d auto_bhop=%d",
                 MovementJsonConfig::instance().activePresetName().c_str(),
                 cfg.walkMode == MovementWalkMode::Accel ? "accel" :
-                cfg.walkMode == MovementWalkMode::Source ? "source" : "override",
+                cfg.walkMode == MovementWalkMode::Source ? "source" : "mimita",
                 (int)cfg.airControlEnabled, (int)cfg.bunnyHopEnabled,
                 (int)cfg.autoBhopEnabled);
             Terminal::instance().addLog(buf);
@@ -115,9 +115,10 @@ void registerMovementCommands()
             if (cfg.walkMode == MovementWalkMode::Source) {
                 std::snprintf(buf, sizeof(buf),
                     "[MOVEMENT][source] max_speed=%.1f friction=%.2f stop_speed=%.2f "
-                    "air_accel=%.1f air_control=%.2f air_gain=%.2f surface_friction=%.2f",
+                    "air_accel=%.1f air_cap=%.3f bug_compat=%d air_gain=%.2f surface_friction=%.2f",
                     cfg.sourceMaxSpeed, cfg.sourceFriction, cfg.stopspeed,
-                    cfg.airAcceleration, cfg.airControl,
+                    cfg.airAcceleration, cfg.airMaxWishspeed,
+                    (int)cfg.sourceAirAccelerateBugCompatible,
                     cfg.airSpeedGainMultiplier, cfg.surfaceFriction);
                 Terminal::instance().addLog(buf);
                 std::snprintf(buf, sizeof(buf),
@@ -230,15 +231,24 @@ void registerMovementCommands()
         [](const std::vector<std::string>&) {
             Player& player = THE_PLAYER;
             const MovementAirDebug& a = player.airDebug;
-            char buf[256];
+            const auto& cfg = MovementJsonConfig::instance().config();
+            char buf[384];
             std::snprintf(buf, sizeof(buf),
-                "[AIR] hspeed=%.2f hvel=(%.2f,%.2f) wish=(%.2f,%.2f) currentSpeed=%.2f "
-                "addSpeed=%.2f accelSpeed=%.2f applied=%d input=%d",
-                a.horizontalSpeed,
+                "[AIR] mode=%s grounded=%d input=(forward=%.2f side=%.2f) "
+                "wishvel=(%.2f,%.2f) wishdir=(%.2f,%.2f) wishspeed=%.2f capped=%.2f",
+                cfg.walkMode == MovementWalkMode::Source ? "source" : "mimita",
+                (int)a.grounded, a.forwardMove, a.sideMove,
+                a.wishVelocity.x, a.wishVelocity.y,
+                a.wishDir.x, a.wishDir.y, a.wishSpeed, a.cappedWishSpeed);
+            Terminal::instance().addLog(buf);
+            std::snprintf(buf, sizeof(buf),
+                "[AIR] hvel=(%.2f,%.2f) hspeed=%.2f currentSpeed=%.2f addSpeed=%.2f "
+                "accelSpeed=%.2f applied=%d finalSpeed=%.2f bug_compat=%d",
                 a.horizontalVelocity.x, a.horizontalVelocity.y,
-                a.wishDir.x, a.wishDir.y,
+                a.horizontalSpeed,
                 a.currentSpeed, a.addSpeed, a.accelSpeed,
-                (int)a.applied, (int)a.hasInput);
+                (int)a.applied, a.finalHorizontalSpeed,
+                (int)a.sourceBugCompatible);
             Terminal::instance().addLog(buf);
         }
     }, CommandCategory::Physics);
