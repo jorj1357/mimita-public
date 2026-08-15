@@ -1,39 +1,39 @@
+// 08 15 2026, 16 12
+/* purpose
+* Defines the Counter-Strike-style Source movement preset.
+* Uses view-relative wish velocity and projection-limited Source AirAccelerate.
+* Keeps all Source constants hot-reloadable through movement_reload.
+* Does NOT use MiMITA air steering, camera-turn gates, or matching-strafe rules.
+* Does NOT implement movement formulas or change the default selected preset.
+* Does NOT add air friction or direct lateral air walking.
+*/
 {
     "name": "counterstrike",
-    "comment": "CS:GO-inspired movement. Grounded: WASD converges toward a single camera-relative desired velocity (releasing a key removes stale drift). Airborne: momentum persists; speed only grows from a valid strafe (movement input + matching camera rotation). Holding Space auto-jumps. Strict mode = stationary-camera A/D does nothing. All values are in Mimita's scale (ground_speed 20, dt 1/60).",
-    "movement_mode": "accel",
+    "comment": "Counter-Strike-style movement. Ground uses Source friction and acceleration. Air uses only Source AirAccelerate projection with the 30/320 air wish-speed ratio scaled to MiMITA units.",
+    "movement_mode": "source",
 
     "ground_speed": 20.0,
-    "ground_acceleration": 400.0,
-    "ground_deceleration": 500.0,
-    "ground_direction_change_response": 650.0,
-    "ground_friction": 80.0,
+    "max_speed": 20.0,
+    "ground_acceleration": 5.5,
+    "friction": 5.2,
+    "stop_speed": 3.75,
+    "surface_friction": 1.0,
     "normalize_diagonal_input": true,
 
     "bunny_hop": true,
     "auto_bhop_enabled": true,
     "air_strafing": true,
-    "require_active_wish_rotation": true,
-    "stationary_camera_input_mode": "strict",
-    "air_steering_response": 100.0,
-    "maximum_steering_degrees_per_second": 720.0,
-    "air_speed_gain_acceleration": 20.0,
-    "air_wish_speed": 400.0,
-    "minimum_camera_yaw_delta_degrees": 0.25,
-    "minimum_wish_rotation_degrees": 0.25,
-    "strafe_angular_tolerance_degrees": 620.0,
-    "speed_cap_mode": "soft",
-    "speed_cap": 420.0,
-    "soft_cap_start": 330.0,
-    "maximum_speed_gain_per_tick": 1.0,
-    "preserve_speed_when_not_strafing": true,
+    "air_acceleration": 12.0,
+    "air_max_wishspeed": 1.875,
+    "source_airaccelerate_bug_compatible": true,
+    "air_speed_gain_multiplier": 1.0,
 
     "gravity": -58.0,
     "jump_strength": 19.0,
     "max_fall_speed": 400.0,
     "jump_buffer_time": 0.12,
     "coyote_time": 0.001,
-    "max_air_jumps": 1,
+    "max_air_jumps": 0,
 
     "air_friction": 0.0,
     "external_impulse_decay": 0.6,
@@ -46,6 +46,6 @@
     "debug_draw_enabled": false,
 
     "tuning_notes": {
-        "comment": "air_steering_rate_degrees_per_second = steering responsiveness (independent of speed gain). air_speed_gain_acceleration = how much a valid strafe adds. strafe_angular_tolerance_degrees = how far the wish may be from perpendicular to velocity. ground_direction_change_response = how fast stale lateral velocity is removed after releasing a key. speed_cap_mode none/hard/soft; hard caps only player-controlled bhop speed. All fields hot-reload."
+        "comment": "air_max_wishspeed 1.875 is Source's 30/320 cap scaled to max_speed 20. source_airaccelerate_bug_compatible=true uses uncapped wishspeed only in the acceleration term, matching Valve's historical implementation."
     }
 }

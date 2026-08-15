@@ -9,6 +9,7 @@
 #include "cosmetic-system.h"
 #include "entities/player.h"
 #include "config/player-settings.h"
+#include "gui/menus/menu-avatar-preview.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -60,6 +61,30 @@ glm::vec4 layoutBg(const GuiElement* e, glm::vec4 def)
     return e ? e->getBackgroundColorVec() : def;
 }
 
+// ── Editor font helpers ─────────────────────────────────────────────
+float avatarEditorFontScale()
+{
+    const GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+    return std::min(1.0f, std::min(cs.scaleX(), cs.scaleY()));
+}
+
+float avatarEditorFont(float baseSize)
+{
+    return baseSize * avatarEditorFontScale();
+}
+
+float editorFontSize(const GuiElement* e, float defBase)
+{
+    const float base = (e && e->fontSize > 0.0f) ? e->fontSize : defBase;
+    return avatarEditorFont(base);
+}
+
+UIButtonState editorButton(GLFWwindow* win, const char* text, UIRect r,
+                           glm::vec4 color, float fontSize)
+{
+    return uiButton(win, text, r, color, nullptr, nullptr, nullptr, nullptr, nullptr, fontSize);
+}
+
 // ── Slider ──────────────────────────────────────────────────────────
 bool drawEditorSlider(GLFWwindow* win, const char* label, float x, float y,
                       float w, float& value, float minVal, float maxVal)
@@ -70,7 +95,8 @@ bool drawEditorSlider(GLFWwindow* win, const char* label, float x, float y,
     const float trackW = w - labelW - valueW;
     const float trackH = 22.0f;
 
-    uiDrawText(label, uiScaleX(x), uiScaleY(y + 3.0f), 0.30f, {0.7f, 0.8f, 0.9f, 1.0f});
+    uiDrawText(label, uiScaleX(x), uiScaleY(y + 3.0f), avatarEditorFont(avatarEditorSliderLabelFontSize),
+               {0.7f, 0.8f, 0.9f, 1.0f});
 
     UIRect s = GuiCoordinateSystem::instance().designToScreen({trackX, y, trackW, trackH});
 
@@ -84,7 +110,8 @@ bool drawEditorSlider(GLFWwindow* win, const char* label, float x, float y,
 
     char buf[32];
     snprintf(buf, sizeof(buf), "%.2f", value);
-    uiDrawText(buf, uiScaleX(trackX + trackW + 6.0f), uiScaleY(y + 3.0f), 0.28f, {1, 1, 1, 1});
+    uiDrawText(buf, uiScaleX(trackX + trackW + 6.0f), uiScaleY(y + 3.0f),
+               avatarEditorFont(avatarEditorSliderValueFontSize), {1, 1, 1, 1});
 
     if (maxVal <= minVal)
         return false;
@@ -107,21 +134,28 @@ bool drawEditorSlider(GLFWwindow* win, const char* label, float x, float y,
 }
 
 // ── Live preview ────────────────────────────────────────────────────
+// The editor's live preview uses the MenuAvatarPreview player so the
+// character is always centered and animated, independent of gameplay state.
+Player* avatarEditorPreviewPlayer()
+{
+    return MenuAvatarPreview::instance().ensurePlayer();
+}
+
 void avatarEditorRefreshPreview()
 {
-    extern Player* gpPlayer;
-    if (gpPlayer && AvatarSystem::instance().hasAvatar())
-        AvatarSystem::instance().requestAtlasBuild(*gpPlayer);
+    Player* p = avatarEditorPreviewPlayer();
+    if (p && AvatarSystem::instance().hasAvatar())
+        AvatarSystem::instance().requestAtlasBuild(*p);
 }
 
 void avatarEditorApplyCosmeticsToPlayer()
 {
-    extern Player* gpPlayer;
+    Player* p = avatarEditorPreviewPlayer();
     AvatarSystem& av = AvatarSystem::instance();
-    if (!gpPlayer || !av.hasAvatar())
+    if (!p || !av.hasAvatar())
         return;
     CosmeticSystem::instance().loadCosmetics(av.current().cosmetics);
-    gpPlayer->setCosmetics(av.current().cosmetics);
+    p->setCosmetics(av.current().cosmetics);
 }
 
 void avatarEditorLoadOutfit(const std::string& name)
@@ -129,9 +163,9 @@ void avatarEditorLoadOutfit(const std::string& name)
     AvatarSystem& av = AvatarSystem::instance();
     if (!av.loadAvatar(name))
         return;
-    extern Player* gpPlayer;
-    if (gpPlayer)
-        av.applyToPlayer(*gpPlayer, true);
+    Player* p = avatarEditorPreviewPlayer();
+    if (p)
+        av.applyToPlayer(*p, true);
     avatarEditorApplyCosmeticsToPlayer();
     GetPlayerSettings().avatarName = name;
     SavePlayerSettings();

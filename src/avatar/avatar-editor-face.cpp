@@ -32,15 +32,17 @@ float drawPartRow(GLFWwindow* win, float px, float y, float pw)
     if (layout.get("partHead") && layout.get("partHead")->hasPressedColor())
         active = layout.get("partHead")->getPressedColorVec();
 
-    uiDrawText("PART", uiScaleX(px), uiScaleY(y), 0.30f, {0.4f, 0.6f, 0.5f, 1.0f});
+    uiDrawText("PART", uiScaleX(px), uiScaleY(y), avatarEditorFont(avatarEditorSectionFontSize),
+               {0.4f, 0.6f, 0.5f, 1.0f});
     y += 22.0f;
 
     float bw = rowButtonW(pw);
     for (int i = 0; i < kPartCount; ++i) {
         glm::vec4 col = (i == gSelectedPart) ? active : base;
         const GuiElement* e = layout.get(ids[i]);
-        if (uiButton(win, e ? e->text.c_str() : partLabel(i),
-                     {px + i * (bw + kRowGap), y, bw, kRowH}, col).clicked)
+        if (editorButton(win, e ? e->text.c_str() : partLabel(i),
+                         {px + i * (bw + kRowGap), y, bw, kRowH}, col,
+                         editorFontSize(e, avatarEditorSmallTabFontSize)).clicked)
             gSelectedPart = i;
     }
     return y + 38.0f;
@@ -55,15 +57,17 @@ float drawFaceRow(GLFWwindow* win, float px, float y, float pw)
     if (layout.get("faceFront") && layout.get("faceFront")->hasPressedColor())
         active = layout.get("faceFront")->getPressedColorVec();
 
-    uiDrawText("SIDE", uiScaleX(px), uiScaleY(y), 0.30f, {0.4f, 0.6f, 0.5f, 1.0f});
+    uiDrawText("SIDE", uiScaleX(px), uiScaleY(y), avatarEditorFont(avatarEditorSectionFontSize),
+               {0.4f, 0.6f, 0.5f, 1.0f});
     y += 22.0f;
 
     float bw = rowButtonW(pw);
     for (int i = 0; i < kFaceCount; ++i) {
         glm::vec4 col = (i == gSelectedFace) ? active : base;
         const GuiElement* e = layout.get(ids[i]);
-        if (uiButton(win, e ? e->text.c_str() : faceLabel(i),
-                     {px + i * (bw + kRowGap), y, bw, kRowH}, col).clicked)
+        if (editorButton(win, e ? e->text.c_str() : faceLabel(i),
+                         {px + i * (bw + kRowGap), y, bw, kRowH}, col,
+                         editorFontSize(e, avatarEditorSmallTabFontSize)).clicked)
             gSelectedFace = i;
     }
     return y + 42.0f;
@@ -77,19 +81,21 @@ float drawFaceSummary(GLFWwindow* win, AvatarSystem& av, const std::string& part
 
     char summary[128];
     snprintf(summary, sizeof(summary), "%s / %s", partLabel(gSelectedPart), faceLabel(gSelectedFace));
-    uiDrawText(summary, uiScaleX(px), uiScaleY(y), 0.40f, {0.9f, 0.95f, 1.0f, 1.0f});
+    uiDrawText(summary, uiScaleX(px), uiScaleY(y), avatarEditorFont(avatarEditorSummaryFontSize),
+               {0.9f, 0.95f, 1.0f, 1.0f});
     y += 26.0f;
 
     if (fs.texture.empty()) {
-        uiDrawText("No PNG assigned.", uiScaleX(px), uiScaleY(y), 0.30f, {0.5f, 0.55f, 0.6f, 1.0f});
+        uiDrawText("No PNG assigned.", uiScaleX(px), uiScaleY(y),
+                   avatarEditorFont(avatarEditorHintFontSize), {0.5f, 0.55f, 0.6f, 1.0f});
     } else {
         std::string fullPath = av.avatarPath(av.currentName()) + "/" + fs.texture;
         uiDrawImageFit(fullPath.c_str(), {uiScaleX(px), uiScaleY(y), uiScaleX(48), uiScaleY(48)}, true);
         std::string texLabel = fs.texture;
         if (texLabel.size() > 26)
             texLabel = texLabel.substr(0, 24) + "...";
-        uiDrawText(texLabel.c_str(), uiScaleX(px + 56.0f), uiScaleY(y + 6.0f), 0.30f,
-                   {0.6f, 0.8f, 0.6f, 1.0f});
+        uiDrawText(texLabel.c_str(), uiScaleX(px + 56.0f), uiScaleY(y + 6.0f),
+                   avatarEditorFont(avatarEditorHintFontSize), {0.6f, 0.8f, 0.6f, 1.0f});
     }
     return y + 56.0f;
 }
@@ -103,14 +109,16 @@ float drawAssignRow(GLFWwindow* win, AvatarSystem& av, const std::string& part,
     glm::vec4 clearCol = layoutBg(layout.get("clearFaceBtn"), {0.35f, 0.15f, 0.15f, 1.0f});
     const float gap = 8.0f;
 
-    if (uiButton(win, "Use Selected PNG", {px, y, 180.0f, 30.0f}, assignCol).clicked) {
+    if (editorButton(win, "Use Selected PNG", {px, y, 180.0f, 30.0f}, assignCol,
+                     editorFontSize(layout.get("assignBtn"), avatarEditorButtonFontSize)).clicked) {
         if (!gSelectedTexture.empty()) {
             av.setPartFace(part, face, gSelectedTexture);
             avatarEditorRefreshPreview();
             av.triggerSave();
         }
     }
-    if (uiButton(win, "Clear Face", {px + 180.0f + gap, y, 110.0f, 30.0f}, clearCol).clicked) {
+    if (editorButton(win, "Clear Face", {px + 180.0f + gap, y, 110.0f, 30.0f}, clearCol,
+                     editorFontSize(layout.get("clearFaceBtn"), avatarEditorButtonFontSize)).clicked) {
         av.setPartFace(part, face, "");
         av.setPartFaceTransform(part, face, FaceTransform{});
         avatarEditorRefreshPreview();
@@ -127,11 +135,13 @@ float drawCopyPasteRow(GLFWwindow* win, AvatarSystem& av, const std::string& par
     glm::vec4 cpCol = layoutBg(layout.get("copyFaceBtn"), {0.15f, 0.25f, 0.4f, 1.0f});
     glm::vec4 ptCol = layoutBg(layout.get("copyPartBtn"), {0.12f, 0.18f, 0.3f, 1.0f});
 
-    if (uiButton(win, "Copy Face", {px, y, 90.0f, 26.0f}, cpCol).clicked) {
+    if (editorButton(win, "Copy Face", {px, y, 90.0f, 26.0f}, cpCol,
+                     editorFontSize(layout.get("copyFaceBtn"), avatarEditorSmallButtonFontSize)).clicked) {
         av.clipboardFace = fs;
         av.hasClipboardFace = true;
     }
-    if (uiButton(win, "Paste Face", {px + 98.0f, y, 90.0f, 26.0f}, cpCol).clicked) {
+    if (editorButton(win, "Paste Face", {px + 98.0f, y, 90.0f, 26.0f}, cpCol,
+                     editorFontSize(layout.get("pasteFaceBtn"), avatarEditorSmallButtonFontSize)).clicked) {
         if (av.hasClipboardFace) {
             av.setPartFace(part, faceKey(gSelectedFace), av.clipboardFace.texture);
             av.setPartFaceTransform(part, faceKey(gSelectedFace), av.clipboardFace.transform);
@@ -139,7 +149,8 @@ float drawCopyPasteRow(GLFWwindow* win, AvatarSystem& av, const std::string& par
             av.triggerSave();
         }
     }
-    if (uiButton(win, "Copy Part", {px + 196.0f, y, 88.0f, 26.0f}, ptCol).clicked) {
+    if (editorButton(win, "Copy Part", {px + 196.0f, y, 88.0f, 26.0f}, ptCol,
+                     editorFontSize(layout.get("copyPartBtn"), avatarEditorSmallButtonFontSize)).clicked) {
         AvatarDefinition def = av.current();
         if (gSelectedPart == 0) av.clipboardPart = def.head;
         else if (gSelectedPart == 1) av.clipboardPart = def.torso;
@@ -149,7 +160,8 @@ float drawCopyPasteRow(GLFWwindow* win, AvatarSystem& av, const std::string& par
         else av.clipboardPart = def.rightLeg;
         av.hasClipboardPart = true;
     }
-    if (uiButton(win, "Paste Part", {px + 292.0f, y, 88.0f, 26.0f}, ptCol).clicked) {
+    if (editorButton(win, "Paste Part", {px + 292.0f, y, 88.0f, 26.0f}, ptCol,
+                     editorFontSize(layout.get("pastePartBtn"), avatarEditorSmallButtonFontSize)).clicked) {
         if (av.hasClipboardPart) {
             for (int fi = 0; fi < kFaceCount; ++fi) {
                 const FaceSettings& src = av.clipboardPart.byName(faceKey(fi));
@@ -173,18 +185,21 @@ float drawFitModeRow(GLFWwindow* win, AvatarSystem& av, const std::string& part,
     if (layout.get("stretchBtn") && layout.get("stretchBtn")->hasPressedColor())
         toggleOn = layout.get("stretchBtn")->getPressedColorVec();
 
-    uiDrawText("FIT MODE", uiScaleX(px), uiScaleY(y), 0.30f, {0.4f, 0.6f, 0.5f, 1.0f});
+    uiDrawText("FIT MODE", uiScaleX(px), uiScaleY(y), avatarEditorFont(avatarEditorSectionFontSize),
+               {0.4f, 0.6f, 0.5f, 1.0f});
     y += 22.0f;
 
     bool isCrop = (tf.stretchMode == 1);
-    if (uiButton(win, "Stretch", {px, y, 80.0f, 26.0f}, isCrop ? toggle : toggleOn).clicked && isCrop) {
+    if (editorButton(win, "Stretch", {px, y, 80.0f, 26.0f}, isCrop ? toggle : toggleOn,
+                     editorFontSize(layout.get("stretchBtn"), avatarEditorSmallButtonFontSize)).clicked && isCrop) {
         FaceTransform next = tf;
         next.stretchMode = 0;
         av.setPartFaceTransform(part, face, next);
         avatarEditorRefreshPreview();
         av.triggerSave();
     }
-    if (uiButton(win, "Crop", {px + 88.0f, y, 80.0f, 26.0f}, isCrop ? toggleOn : toggle).clicked && !isCrop) {
+    if (editorButton(win, "Crop", {px + 88.0f, y, 80.0f, 26.0f}, isCrop ? toggleOn : toggle,
+                     editorFontSize(layout.get("cropBtn"), avatarEditorSmallButtonFontSize)).clicked && !isCrop) {
         FaceTransform next = tf;
         next.stretchMode = 1;
         av.setPartFaceTransform(part, face, next);
@@ -198,7 +213,8 @@ float drawFitModeRow(GLFWwindow* win, AvatarSystem& av, const std::string& part,
 float drawTransformSliders(GLFWwindow* win, AvatarSystem& av, const std::string& part,
                            const std::string& face, const FaceTransform& tf, float px, float y, float pw)
 {
-    uiDrawText("FACE STYLE", uiScaleX(px), uiScaleY(y), 0.30f, {0.4f, 0.6f, 0.5f, 1.0f});
+    uiDrawText("FACE STYLE", uiScaleX(px), uiScaleY(y), avatarEditorFont(avatarEditorSectionFontSize),
+               {0.4f, 0.6f, 0.5f, 1.0f});
     y += 24.0f;
 
     FaceTransform next = tf;
@@ -232,9 +248,13 @@ float drawBulkApplyRow(GLFWwindow* win, AvatarSystem& av, const std::string& par
 {
     const GuiLayout& layout = avatarEditorLayout();
     glm::vec4 bulkCol = layoutBg(layout.get("applyPartBtn"), {0.2f, 0.45f, 0.3f, 1.0f});
+    const GuiElement* partBtn = layout.get("applyPartBtn");
+    const GuiElement* allBtn = layout.get("applyAllBtn");
+    const char* partLabelText = partBtn && !partBtn->text.empty() ? partBtn->text.c_str() : "Apply to all sides of this part";
+    const char* allLabelText = allBtn && !allBtn->text.empty() ? allBtn->text.c_str() : "Apply to every face";
+    float bulkFont = editorFontSize(partBtn, avatarEditorBulkButtonFontSize);
 
-    std::string partBtnLabel = "Apply this look to all sides of " + std::string(partLabel(gSelectedPart));
-    if (uiButton(win, partBtnLabel.c_str(), {px, y, 288.0f, 30.0f}, bulkCol).clicked) {
+    if (editorButton(win, partLabelText, {px, y, 288.0f, 30.0f}, bulkCol, bulkFont).clicked) {
         for (int fi = 0; fi < kFaceCount; ++fi) {
             av.setPartFace(part, faceKey(fi), fs.texture);
             av.setPartFaceTransform(part, faceKey(fi), fs.transform);
@@ -242,7 +262,7 @@ float drawBulkApplyRow(GLFWwindow* win, AvatarSystem& av, const std::string& par
         avatarEditorRefreshPreview();
         av.triggerSave();
     }
-    if (uiButton(win, "Apply this look to every face", {px + 296.0f, y, 288.0f, 30.0f}, bulkCol).clicked) {
+    if (editorButton(win, allLabelText, {px + 296.0f, y, 288.0f, 30.0f}, bulkCol, bulkFont).clicked) {
         for (int pi = 0; pi < kPartCount; ++pi)
             for (int fi = 0; fi < kFaceCount; ++fi) {
                 av.setPartFace(partKey(pi), faceKey(fi), fs.texture);
@@ -281,7 +301,8 @@ void drawAvatarFacesTab(GLFWwindow* win, float px, float py, float pw, float ph)
     y = drawBulkApplyRow(win, av, part, fs, px, y);
 
     uiDrawText("Hint: pick a PNG in the left panel, then hit \"Use Selected PNG\".",
-               uiScaleX(px), uiScaleY(y), 0.26f, {0.4f, 0.5f, 0.6f, 1.0f});
+               uiScaleX(px), uiScaleY(y), avatarEditorFont(avatarEditorHintFontSize),
+               {0.4f, 0.5f, 0.6f, 1.0f});
 
     endScroll({px, py, pw, ph}, contentH, ss);
 }

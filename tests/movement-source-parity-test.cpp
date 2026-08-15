@@ -1,8 +1,8 @@
-// 08 15 2026, 12 00
+// 08 15 2026, 16 12
 /* purpose
 * Verifies the Source (CS/Quake PM_) movement kernel in the shared movement step.
-* Covers ground accel to maxspeed, stopspeed friction, air key-only strafing,
-* bhop landing bleed (and the preserve-through-landing knob), dash impulse
+* Covers ground accel to maxspeed, stopspeed friction, Source air projection,
+* jump velocity preservation, bug-compatible acceleration, dash impulse
 * persistence through input, and source-style external impulse carry + bleed.
 * Uses only the shared movement kernel; no Player, network, render, or audio.
 * Does NOT launch mimita.exe, poll input, send packets, or require networking.
@@ -56,9 +56,10 @@ MovementConfig sourceConfig()
     c.sourceFriction = 5.2f;
     c.stopspeed = 3.75f;
     c.airAcceleration = 12.0f;
-    c.airMaxWishspeed = 0.0f;
+    c.airMaxWishspeed = 1.875f; // Source 30/320 ratio scaled to maxspeed 20.
+    c.sourceAirAccelerateBugCompatible = true;
     c.airControl = 1.5f;
-    c.airSpeedGainMultiplier = 0.0f;
+    c.airSpeedGainMultiplier = 1.0f;
     c.gravityZ = -40.0f;
     c.jumpVerticalSpeed = 15.1f;
     c.maximumFallSpeed = 175.0f;
@@ -201,119 +202,122 @@ int main()
                   "ground friction stops the player after key release");
     }
 
-    // ── 3. Air: A alone (still mouse) — pure Source circle strafe ────────
+    // ── 3. Air: A alone fills only Source's small projection cap ─────────
     {
-        MovementConfig g = cfg;
-        g.airSpeedGainMultiplier = 1.0f;
-        // Holding A with a fixed camera: the wish is perpendicular to the
-        // velocity, so AirAccelerate adds a small leftward component each tick.
-        // That is the emergent Source "circle strafe" — a slow drift left, NOT a
-        // hard directional steer.
         MovementState s = freshState(glm::vec2(0.0f, 20.0f));
         const MovementState end =
-            runTicks(s, cmdFor(glm::vec2(-1.0f, 0.0f)), g, airCollision(), 60);
+            runTicks(s, cmdFor(glm::vec2(-1.0f, 0.0f)), cfg, airCollision(), 60);
         std::printf("[AIR] A-alone(60t) hspeed=%.2f vx=%.2f\n",
                     hSpeed(end), end.baseVelocity.x);
-        check(end.baseVelocity.x < -5.0f,
-              "air: A alone drifts left (emergent Source circle strafe)");
-        check(hSpeed(end) < 40.0f,
-              "air: A-alone gain is gradual, not an instant hard commit");
+        checkNear(end.baseVelocity.x, -1.875f, 0.01f,
+                  "air: A alone fills only the 1.875 projection cap");
+        check(hSpeed(end) < 20.1f,
+              "air: A alone does not become direct lateral air-walk");
     }
 
-    // ── 3b. Air: standstill jump + WASD = nothing (no free speed) ────────
+    // ── 3b. Standstill jump + A/W = no horizontal launch ─────────────────
     {
-        MovementState s = freshState(); // no horizontal speed yet
-        const MovementState end =
-            runStrafeKeyTicks(s, cfg, -1, 2.0f, 60);
-        checkNear(hSpeed(end), 0.0f, 0.01f,
-                  "air: standstill + WASD adds no movement (no free speed)");
+        MovementState s = freshState();
+        s.ground.onGround = true;
+        const MovementState withA = runTicks(
+            s, cmdFor(glm::vec2(-1.0f, 0.0f), true), cfg, groundCollision(), 1);
+        const MovementState withW = runTicks(
+            s, cmdFor(glm::vec2(0.0f, 1.0f), true), cfg, groundCollision(), 1);
+        check(withA.baseVelocity.z > 0.0f && withW.baseVelocity.z > 0.0f,
+              "jump: A and W cases both leave the ground");
+        checkNear(hSpeed(withA), 0.0f, 0.01f,
+                  "jump: zero velocity + hold A adds no horizontal speed");
+        checkNear(hSpeed(withW), 0.0f, 0.01f,
+                  "jump: zero velocity + hold W adds no horizontal speed");
     }
 
-    // ── 3c. Air: gain multiplier 0 => air input does literally nothing ───
+    // ── 3c. Source bug compatibility chooses acceleration wishspeed ───────
     {
-        // With air_speed_gain_multiplier = 0 there is no steering and no gain:
-        // holding A + turning the camera changes nothing at all.
-        MovementState s = freshState(glm::vec2(0.0f, 20.0f));
-        const MovementState end =
-            runStrafeKeyTicks(s, cfg, -1, 2.0f, 120); // cfg has multiplier 0
-        checkNear(hSpeed(end), 20.0f, 0.05f,
-                  "air: gain 0 => speed unchanged");
-        checkNear(end.baseVelocity.x, 0.0f, 0.05f,
-                  "air: gain 0 => no direction change (no steering)");
+        MovementConfig fixed = cfg;
+        fixed.sourceAirAccelerateBugCompatible = false;
+        const MovementState bug = runTicks(
+            freshState(glm::vec2(0.0f, 20.0f)),
+            cmdFor(glm::vec2(-1.0f, 0.0f)), cfg, airCollision(), 1);
+        const MovementState noBug = runTicks(
+            freshState(glm::vec2(0.0f, 20.0f)),
+            cmdFor(glm::vec2(-1.0f, 0.0f)), fixed, airCollision(), 1);
+        checkNear(bug.airDebug.accelSpeed, 1.875f, 0.01f,
+                  "air: Valve bug-compatible accel uses uncapped wishspeed");
+        checkNear(noBug.airDebug.accelSpeed, 0.375f, 0.01f,
+                  "air: fixed accel option uses capped wishspd");
     }
 
     // ── 3d. Air: Source projection gain — the CS matching cases ──────────
     {
-        MovementConfig g = cfg;
-        g.airSpeedGainMultiplier = 1.0f;
         const int n = 120;
 
         // 1. forward + A + turn left = matching strafe -> clear gain.
         const MovementState fwdLeft =
-            runStrafeKeyTicks(freshState(glm::vec2(0.0f, 20.0f)), g, -1, +2.0f, n);
+            runStrafeKeyTicks(freshState(glm::vec2(0.0f, 20.0f)), cfg, -1, +2.0f, n);
         // 2. forward + A + turn right = counter-strafe -> little/no gain.
         const MovementState fwdRight =
-            runStrafeKeyTicks(freshState(glm::vec2(0.0f, 20.0f)), g, -1, -2.0f, n);
+            runStrafeKeyTicks(freshState(glm::vec2(0.0f, 20.0f)), cfg, -1, -2.0f, n);
         // 3. backward + A + turn right = matching (basis flipped) -> gain.
         const MovementState backRight =
-            runStrafeKeyTicks(freshState(glm::vec2(0.0f, -20.0f)), g, -1, -2.0f, n);
+            runStrafeKeyTicks(freshState(glm::vec2(0.0f, -20.0f)), cfg, -1, -2.0f, n);
         // 4. backward + A + turn left = counter -> little/no gain.
         const MovementState backLeft =
-            runStrafeKeyTicks(freshState(glm::vec2(0.0f, -20.0f)), g, -1, +2.0f, n);
+            runStrafeKeyTicks(freshState(glm::vec2(0.0f, -20.0f)), cfg, -1, +2.0f, n);
         // 5. zero horizontal velocity + A + mouse turn = no free speed.
         const MovementState zero =
-            runStrafeKeyTicks(freshState(), g, -1, +2.0f, n);
+            runStrafeKeyTicks(freshState(), cfg, -1, +2.0f, n);
 
         std::printf("[AIR GAIN] fwd+A+left=%.2f  fwd+A+right=%.2f  "
                     "back+A+right=%.2f  back+A+left=%.2f  zero=%.3f\n",
                     hSpeed(fwdLeft), hSpeed(fwdRight),
                     hSpeed(backRight), hSpeed(backLeft), hSpeed(zero));
 
-        check(hSpeed(fwdLeft) > 24.0f,
+        check(hSpeed(fwdLeft) > 20.5f,
               "air 1: forward + A + left turn gains speed (matching strafe)");
-        check(hSpeed(fwdRight) < hSpeed(fwdLeft) * 0.75f + 1.0f,
+        check(hSpeed(fwdRight) < hSpeed(fwdLeft) - 3.0f,
               "air 2: forward + A + right turn gains far less (counter-strafe)");
-        check(hSpeed(backRight) > 24.0f,
+        check(hSpeed(backRight) > 20.5f,
               "air 3: backward + A + right turn gains speed (basis flipped)");
-        check(hSpeed(backLeft) < hSpeed(backRight) * 0.75f + 1.0f,
+        check(hSpeed(backLeft) < hSpeed(backRight) - 3.0f,
               "air 4: backward + A + left turn gains far less (counter-strafe)");
         checkNear(hSpeed(zero), 0.0f, 0.01f,
                   "air 5: zero horizontal velocity + A + turn gains no speed");
     }
 
-    // ── 4. Air: no friction, straight W preserves speed ──────────────────
+    // ── 4. Air: no input preserves horizontal speed and direction ────────
     {
         MovementState s = freshState(glm::vec2(0.0f, 20.0f));
         const MovementState end =
-            runTicks(s, cmdFor(glm::vec2(0.0f, 1.0f)), cfg, airCollision(), 180);
+            runTicks(s, cmdFor(glm::vec2(0.0f)), cfg, airCollision(), 180);
         checkNear(hSpeed(end), 20.0f, kEps,
-                  "air: no friction, straight W preserves speed");
+                  "air: no input preserves speed");
+        checkNear(end.baseVelocity.x, 0.0f, kEps,
+                  "air: no input preserves direction");
     }
 
-    // ── 5. Bhop landing bleed: overspeed bleeds on the landing tick ──────
+    // ── 5. Source jump ordering preserves horizontal velocity ────────────
     {
         MovementState s = freshState(glm::vec2(0.0f, 30.0f)); // overspeed
         s.ground.onGround = false;
         s.jump.jumpIntentTimerSeconds = 0.2f; // autobhop buffered from air
         const MovementState end =
             runTicks(s, cmdFor(glm::vec2(0.0f, 1.0f), true), cfg, groundCollision(), 1);
-        // Friction drop on the landing tick: 30 * 5.2/60 = 2.6 -> 27.4.
-        checkNear(end.baseVelocity.y, 27.4f, 0.6f,
-                  "landing bleed: overspeed 30 -> ~27.4 on landing tick");
+        checkNear(end.baseVelocity.y, 30.0f, 0.01f,
+                  "jump: CheckJump-style ordering preserves horizontal speed");
         check(end.baseVelocity.z > 10.0f,
-              "landing bleed: autobhop still jumps on the landing tick");
+              "jump: autobhop still jumps on the landing tick");
     }
 
-    // ── 5b. landing_overspeed_bleed = 0 preserves overspeed ──────────────
+    // ── 5b. Default MiMITA mode retains direct legacy air movement ───────
     {
-        MovementConfig noBleed = cfg;
-        noBleed.landingOverspeedBleed = 0.0f;
-        MovementState s = freshState(glm::vec2(0.0f, 30.0f));
-        s.jump.jumpIntentTimerSeconds = 0.2f; // autobhop buffered from air
-        const MovementState end =
-            runTicks(s, cmdFor(glm::vec2(0.0f, 1.0f), true), noBleed, groundCollision(), 1);
-        checkNear(end.baseVelocity.y, 30.0f, 0.3f,
-                  "landing_overspeed_bleed=0 preserves overspeed through landing");
+        MovementConfig mimita = cfg;
+        mimita.walkMode = MovementWalkMode::Override;
+        mimita.airSpeed = 20.0f;
+        MovementState s = freshState(glm::vec2(0.0f, 20.0f));
+        const MovementState end = runTicks(
+            s, cmdFor(glm::vec2(-1.0f, 0.0f)), mimita, airCollision(), 1);
+        checkNear(end.baseVelocity.x, -20.0f, 0.01f,
+                  "mimita mode preserves legacy direct air direction");
     }
 
     // ── 6. Dash impulse persists through input during dash grace ─────────

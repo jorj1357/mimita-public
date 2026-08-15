@@ -22,6 +22,7 @@
 #include "map/map-catalog.h"
 #include "avatar/avatar-editor.h"
 #include "avatar/avatar.h"
+#include "entities/player.h"
 #include "competitive/competitive.h"
 #include "competitive/competitive-ui.h"
 #include "competitive/competitive-match.h"
@@ -1098,26 +1099,29 @@ void guiMain(GLFWwindow* win, GameState& state)
 
         case GUI_MENU_AVATAR_CREATOR:
         {
-            // ── 3D Avatar Preview (right panel viewport) ──────────
+            // ── 3D Avatar Preview (center panel viewport) ──────────
+            // Uses the MenuAvatarPreview player so the character is always
+            // centered, animated and fully visible regardless of gameplay.
             MenuAvatarPreview& av = MenuAvatarPreview::instance();
             av.pollHotReload();
+            av.update(1.0f / 60.0f, glm::vec3(0.0f, 1.0f, 0.0f));
 
-            extern Player* gpPlayer;
-            if (gpPlayer)
+            Player* previewPlayer = av.ensurePlayer();
+            if (previewPlayer)
             {
                 setupPlayerPreviewLighting();
 
                 GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/avatar-creator.json");
-                const GuiElement* rightPanel = layout.get("panelPreview");
+                const GuiElement* prevPanel = layout.get("panelPreview");
                 int fbW = 0, fbH = 0;
                 glfwGetFramebufferSize(win, &fbW, &fbH);
                 float scaleX = (float)fbW / 1920.0f;
                 float scaleY = (float)fbH / 1080.0f;
 
-                float vpX = rightPanel ? rightPanel->x * scaleX : 900.0f * scaleX;
-                float vpY = rightPanel ? (1080.0f - rightPanel->y - rightPanel->h) * scaleY : 50.0f * scaleY;
-                float vpW = rightPanel ? rightPanel->w * scaleX : 1000.0f * scaleX;
-                float vpH = rightPanel ? rightPanel->h * scaleY : 950.0f * scaleY;
+                float vpX = prevPanel ? prevPanel->x * scaleX : 900.0f * scaleX;
+                float vpY = prevPanel ? (1080.0f - prevPanel->y - prevPanel->h) * scaleY : 50.0f * scaleY;
+                float vpW = prevPanel ? prevPanel->w * scaleX : 600.0f * scaleX;
+                float vpH = prevPanel ? prevPanel->h * scaleY : 900.0f * scaleY;
 
                 GLint prevViewport[4];
                 glGetIntegerv(GL_VIEWPORT, prevViewport);
@@ -1135,11 +1139,28 @@ void guiMain(GLFWwindow* win, GameState& state)
                 glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
                 const auto& cfg = av.config();
+
+                // Position + rotate the preview character (idle animation runs
+                // in av.update above).
+                glm::vec3 basePos = cfg.characterPosition + cfg.modelOffset;
+                float yaw = cfg.characterRotationDeg.z + av.rotationAngle();
+                if (cfg.lookAtCamera) yaw = 180.0f + av.rotationAngle();
+                previewPlayer->pos = basePos;
+                previewPlayer->yaw = yaw;
+                previewPlayer->meshScale = cfg.characterScale;
+
+                // Orbit camera (matches MenuAvatarPreview::setupCamera).
                 Camera previewCam;
                 previewCam.fov = cfg.cameraFOV;
-
-                float yawRad = glm::radians(av.rotationAngle());
-                glm::vec3 offset = cfg.cameraPosition;
+                float yawRad = glm::radians(av.rotationAngle() + cfg.orbitYaw);
+                float pitchRad = glm::radians(cfg.orbitPitch);
+                float dist = cfg.orbitDistance * cfg.zoom;
+                glm::vec3 orbitOffset(
+                    std::sin(yawRad) * std::cos(pitchRad) * dist,
+                    std::cos(yawRad) * std::cos(pitchRad) * dist,
+                    std::sin(pitchRad) * dist + cfg.orbitHeight
+                );
+                glm::vec3 offset = cfg.cameraPosition + orbitOffset;
                 float cosA = std::cos(yawRad);
                 float sinA = std::sin(yawRad);
                 glm::vec3 rotated(
@@ -1148,12 +1169,11 @@ void guiMain(GLFWwindow* win, GameState& state)
                     offset.z
                 );
                 previewCam.pos = cfg.cameraTarget + rotated;
-                glm::vec3 lookTarget = cfg.cameraTarget;
-                previewCam.front = glm::normalize(lookTarget - previewCam.pos);
+                previewCam.front = glm::normalize(cfg.cameraTarget - previewCam.pos);
                 previewCam.right = glm::normalize(glm::cross(previewCam.front, glm::vec3(0.0f, 0.0f, 1.0f)));
                 previewCam.up = glm::normalize(glm::cross(previewCam.right, previewCam.front));
 
-                renderPlayer(*gpPlayer, previewCam);
+                renderPlayer(*previewPlayer, previewCam);
 
                 gRenderer->width = prevRW;
                 gRenderer->height = prevRH;

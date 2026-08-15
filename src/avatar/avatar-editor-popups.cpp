@@ -30,7 +30,8 @@ void drawInputText(const GuiLayout& layout, const char* elemId, const char* buf,
     uiDrawRect(s, el->getBackgroundColorVec(), elemId);
     if (el->hasOutlineColor())
         uiDrawRectOutline(s, el->getOutlineColorVec(), elemId);
-    uiDrawText(buf[0] ? buf : placeholder, s.x + 6.0f, s.y + 4.0f, 0.32f,
+    uiDrawText(buf[0] ? buf : placeholder, s.x + 6.0f, s.y + 4.0f,
+               avatarEditorFont(avatarEditorButtonFontSize),
                buf[0] ? glm::vec4{1,1,1,1} : glm::vec4{0.4f,0.4f,0.5f,1.0f});
 }
 
@@ -63,8 +64,9 @@ void drawAvatarEditorPopups(GLFWwindow* win, AvatarEditorResult& r)
         drawInputText(layout, "savePopupInput", gSaveNameBuf, "name...");
 
         const GuiElement* sv = layout.get("savePopupSaveBtn");
-        if (sv && sv->visible && uiButton(win, sv->text.c_str(),
-            {sv->x, sv->y, sv->w, sv->h}, sv->getBackgroundColorVec()).clicked) {
+        if (sv && sv->visible && editorButton(win, sv->text.c_str(),
+            {sv->x, sv->y, sv->w, sv->h}, sv->getBackgroundColorVec(),
+            editorFontSize(sv, avatarEditorButtonFontSize)).clicked) {
             std::string name(gSaveNameBuf);
             name.erase(0, name.find_first_not_of(" \t\r\n"));
             name.erase(name.find_last_not_of(" \t\r\n") + 1);
@@ -75,8 +77,9 @@ void drawAvatarEditorPopups(GLFWwindow* win, AvatarEditorResult& r)
             }
         }
         const GuiElement* cn = layout.get("savePopupCancelBtn");
-        if (cn && cn->visible && uiButton(win, cn->text.c_str(),
-            {cn->x, cn->y, cn->w, cn->h}, cn->getBackgroundColorVec()).clicked)
+        if (cn && cn->visible && editorButton(win, cn->text.c_str(),
+            {cn->x, cn->y, cn->w, cn->h}, cn->getBackgroundColorVec(),
+            editorFontSize(cn, avatarEditorButtonFontSize)).clicked)
             gSavePopupOpen = false;
     }
 
@@ -86,8 +89,9 @@ void drawAvatarEditorPopups(GLFWwindow* win, AvatarEditorResult& r)
         drawInputText(layout, "renamePopupInput", gRenameBuf, "name...");
 
         const GuiElement* cf = layout.get("renamePopupConfirmBtn");
-        if (cf && cf->visible && uiButton(win, cf->text.c_str(),
-            {cf->x, cf->y, cf->w, cf->h}, cf->getBackgroundColorVec()).clicked) {
+        if (cf && cf->visible && editorButton(win, cf->text.c_str(),
+            {cf->x, cf->y, cf->w, cf->h}, cf->getBackgroundColorVec(),
+            editorFontSize(cf, avatarEditorButtonFontSize)).clicked) {
             std::string newName(gRenameBuf);
             newName.erase(0, newName.find_first_not_of(" \t\r\n"));
             newName.erase(newName.find_last_not_of(" \t\r\n") + 1);
@@ -100,8 +104,9 @@ void drawAvatarEditorPopups(GLFWwindow* win, AvatarEditorResult& r)
             }
         }
         const GuiElement* cn2 = layout.get("renamePopupCancelBtn");
-        if (cn2 && cn2->visible && uiButton(win, cn2->text.c_str(),
-            {cn2->x, cn2->y, cn2->w, cn2->h}, cn2->getBackgroundColorVec()).clicked)
+        if (cn2 && cn2->visible && editorButton(win, cn2->text.c_str(),
+            {cn2->x, cn2->y, cn2->w, cn2->h}, cn2->getBackgroundColorVec(),
+            editorFontSize(cn2, avatarEditorButtonFontSize)).clicked)
             gRenamePopupOpen = false;
     }
 
@@ -113,12 +118,13 @@ void drawAvatarEditorPopups(GLFWwindow* win, AvatarEditorResult& r)
         if (bg) {
             uiDrawText((std::string("\"") + av.currentName() + "\"").c_str(),
                        cs.designToScreenX(bg->x + 20.0f), cs.designToScreenY(bg->y + 54.0f),
-                       0.32f, {0.6f, 0.7f, 0.8f, 1.0f});
+                       avatarEditorFont(avatarEditorButtonFontSize), {0.6f, 0.7f, 0.8f, 1.0f});
         }
 
         const GuiElement* yes = layout.get("deletePopupYesBtn");
-        if (yes && yes->visible && uiButton(win, yes->text.c_str(),
-            {yes->x, yes->y, yes->w, yes->h}, yes->getBackgroundColorVec()).clicked) {
+        if (yes && yes->visible && editorButton(win, yes->text.c_str(),
+            {yes->x, yes->y, yes->w, yes->h}, yes->getBackgroundColorVec(),
+            editorFontSize(yes, avatarEditorButtonFontSize)).clicked) {
             std::string deleted = av.currentName();
             av.deleteOutfit(deleted);
             auto remaining = av.listAvatars();
@@ -127,8 +133,9 @@ void drawAvatarEditorPopups(GLFWwindow* win, AvatarEditorResult& r)
             gDeleteConfirmOpen = false;
         }
         const GuiElement* no = layout.get("deletePopupNoBtn");
-        if (no && no->visible && uiButton(win, no->text.c_str(),
-            {no->x, no->y, no->w, no->h}, no->getBackgroundColorVec()).clicked)
+        if (no && no->visible && editorButton(win, no->text.c_str(),
+            {no->x, no->y, no->w, no->h}, no->getBackgroundColorVec(),
+            editorFontSize(no, avatarEditorButtonFontSize)).clicked)
             gDeleteConfirmOpen = false;
     }
 }

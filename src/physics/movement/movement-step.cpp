@@ -1,4 +1,4 @@
-// 07 21 2026, 17 25
+// 08 15 2026, 16 12
 /* purpose
 * Implements the shared movement kernel, pure formula helpers, and contact reset consumer.
 * Preserves local collision boundaries by splitting pre and post collision phases.
@@ -1196,7 +1196,7 @@ void applySourceGround(MovementState& state,
         state.baseVelocity.z = 0.0f;
 }
 
-// Airborne Source step: PURE Source PM_AirAccelerate projection. WASD only
+// Airborne Source step: Source PM_AirAccelerate projection. WASD only
 // defines wishdir (camera-relative, rebuilt by the input layer as the camera
 // turns). There is NO steering toward the wish, NO air_control, NO camera-turn
 // gating, and NO A/D matching rules. The mouse works only through wishdir:
@@ -1207,7 +1207,7 @@ void applySourceGround(MovementState& state,
 //   currentSpeed = dot(vel, wishDir)
 //   addSpeed     = wishspd - currentSpeed
 //   if addSpeed <= 0: apply nothing
-//   accelSpeed   = min(air_accel * wishspd * dt, addSpeed) * air_speed_gain_multiplier
+//   accelSpeed   = min(air_accel * wishspeed * dt * surfaceFriction, addSpeed)
 //   vel += wishDir * accelSpeed
 void applySourceAir(MovementState& state,
                     const MovementCommand& command,
@@ -1216,36 +1216,54 @@ void applySourceAir(MovementState& state,
 {
     const glm::vec2 wish = movementClampUnitOrZero(command.moveAxes);
     const bool hasInput = movementHasMoveInput(wish);
+    state.airDebug = MovementAirDebug{};
     state.airDebug.hasInput = hasInput;
-    state.airDebug.applied = false;
+    state.airDebug.grounded = state.ground.onGround;
+    state.airDebug.sourceBugCompatible =
+        config.sourceAirAccelerateBugCompatible;
+    glm::vec2 cameraForward = movementNormalizeDirectionOrZero(
+        glm::vec2(command.horizontalCameraForward.x,
+                  command.horizontalCameraForward.y));
+    if (!movementHasMoveInput(cameraForward))
+        cameraForward = movementHorizontalForwardFromYaw(command.lookYaw);
+    const glm::vec2 cameraRight(cameraForward.y, -cameraForward.x);
+    state.airDebug.forwardMove = glm::dot(wish, cameraForward);
+    state.airDebug.sideMove = glm::dot(wish, cameraRight);
+    glm::vec2 vel(state.baseVelocity.x, state.baseVelocity.y);
+    state.airDebug.horizontalVelocity = vel;
+    state.airDebug.horizontalSpeed = glm::length(vel);
+    state.airDebug.finalHorizontalSpeed = state.airDebug.horizontalSpeed;
     if (!hasInput)
         return;
 
-    glm::vec2 vel(state.baseVelocity.x, state.baseVelocity.y);
-    state.airDebug.horizontalVelocity = vel;
-    const float speed = glm::length(vel);
-    state.airDebug.horizontalSpeed = speed;
-    if (speed <= 0.1f)
-        return; // standstill: WASD cannot create horizontal speed from nothing
-
-    const glm::vec2 wishDir = movementNormalizeDirectionOrZero(wish);
+    const float maxSpeed = sourceMaxSpeedValue(config, state.sizeScale);
+    const glm::vec2 wishVelocity = wish * maxSpeed;
+    const float wishSpeed = glm::length(wishVelocity);
+    const glm::vec2 wishDir = movementNormalizeDirectionOrZero(wishVelocity);
+    state.airDebug.wishVelocity = wishVelocity;
+    state.airDebug.wishSpeed = wishSpeed;
     state.airDebug.wishDir = wishDir;
 
-    // Source AirAccelerate projection.
-    const float maxSpeed = sourceMaxSpeedValue(config, state.sizeScale);
+    // Source caps wishspd for projection. The original code still uses the
+    // uncapped wishspeed in accelspeed; expose that historical quirk explicitly.
     float wishspd = config.airMaxWishspeed > 0.0f
         ? config.airMaxWishspeed *
               movementSizeScaleFactor(state.sizeScale, config.movementSpeedSizeExponent)
         : maxSpeed;
-    wishspd = std::min(wishspd, maxSpeed);
+    wishspd = std::min(wishspd, wishSpeed);
+    state.airDebug.cappedWishSpeed = wishspd;
 
     state.airDebug.currentSpeed = glm::dot(vel, wishDir);
     state.airDebug.addSpeed = wishspd - state.airDebug.currentSpeed;
-    state.airDebug.accelSpeed = 0.0f;
+    if (state.airDebug.horizontalSpeed <= 0.1f)
+        return; // MiMITA Source contract: air input cannot launch from rest.
+
     if (state.airDebug.addSpeed > 0.0f) {
-        float accelSpeed = config.airAcceleration * wishspd * dt;
+        const float accelerationWishSpeed =
+            config.sourceAirAccelerateBugCompatible ? wishSpeed : wishspd;
+        float accelSpeed = config.airAcceleration * accelerationWishSpeed * dt *
+                           config.surfaceFriction * config.airSpeedGainMultiplier;
         accelSpeed = std::min(accelSpeed, state.airDebug.addSpeed);
-        accelSpeed *= config.airSpeedGainMultiplier;
         if (accelSpeed > 0.0f) {
             state.airDebug.accelSpeed = accelSpeed;
             state.airDebug.applied = true;
@@ -1255,6 +1273,7 @@ void applySourceAir(MovementState& state,
 
     state.baseVelocity.x = vel.x;
     state.baseVelocity.y = vel.y;
+    state.airDebug.finalHorizontalSpeed = glm::length(vel);
 }
 
 // Dispatcher: runs the Source step every tick (friction even with no input).
@@ -1263,11 +1282,23 @@ void applySourceMovement(MovementState& state,
                          const MovementConfig& config,
                          float dt)
 {
+    state.airDebug = MovementAirDebug{};
+    state.airDebug.grounded = state.ground.onGround;
+    state.airDebug.sourceBugCompatible =
+        config.sourceAirAccelerateBugCompatible;
     if (state.dash.dashGraceTimerSeconds > 0.0f)
         state.dash.dashGraceTimerSeconds =
             std::max(0.0f, state.dash.dashGraceTimerSeconds - dt);
 
-    if (state.ground.onGround) {
+    const bool jumpingNow = state.ground.onGround &&
+        (command.jumpPressed || (config.autoBhopEnabled && command.jumpHeld));
+    if (state.ground.onGround && !jumpingNow) {
+        state.airDebug.hasInput = movementHasMoveInput(command.moveAxes);
+        state.airDebug.horizontalVelocity =
+            glm::vec2(state.baseVelocity.x, state.baseVelocity.y);
+        state.airDebug.horizontalSpeed =
+            glm::length(state.airDebug.horizontalVelocity);
+        state.airDebug.finalHorizontalSpeed = state.airDebug.horizontalSpeed;
         applySourceGround(state, command, config, dt);
     } else if (config.airControlEnabled) {
         applySourceAir(state, command, config, dt);

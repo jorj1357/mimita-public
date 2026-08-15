@@ -28,7 +28,8 @@ void drawAvatarColorsTab(GLFWwindow* win, float px, float py, float pw, float ph
 
         uiDrawRect({uiScaleX(px), uiScaleY(y), uiScaleX(28), uiScaleY(28)},
                    {color.r, color.g, color.b, 1.0f}, "part-swatch");
-        uiDrawText(partLabel(pi), uiScaleX(px + 36.0f), uiScaleY(y), 0.34f, {0.8f, 0.85f, 0.95f, 1.0f});
+        uiDrawText(partLabel(pi), uiScaleX(px + 36.0f), uiScaleY(y),
+                   avatarEditorFont(avatarEditorSectionFontSize), {0.8f, 0.85f, 0.95f, 1.0f});
         y += 34.0f;
 
         bool changed = false;

@@ -1,4 +1,4 @@
-// 08 02 2026, 00 00
+// 08 15 2026, 16 12
 /* purpose
 * Implements the movement tuning preset loader and hot-reload watcher.
 * Reads config/movement.json for the preset name, then loads that preset from config/movement/.
@@ -42,12 +42,8 @@ bool parseWalkMode(const json& value, MovementWalkMode& out)
         return false;
 
     const std::string mode = value.get<std::string>();
-    if (mode == "override") {
+    if (mode == "mimita") {
         out = MovementWalkMode::Override;
-        return true;
-    }
-    if (mode == "accel") {
-        out = MovementWalkMode::Accel;
         return true;
     }
     if (mode == "source") {
@@ -189,6 +185,7 @@ MovementConfig defaultMovementConfig()
     config.groundDirectionChangeResponse = 0.0f;
     config.airAcceleration = 22.0f;
     config.airMaxWishspeed = 0.0f;
+    config.sourceAirAccelerateBugCompatible = true;
     config.airControl = 0.0f;
     config.airSpeedGainMultiplier = 0.0f;
     config.stopspeed = 0.0f;
@@ -201,7 +198,7 @@ void applyPresetOverrides(const json& root, MovementConfig& config)
     if (root.contains("movement_mode") &&
         !parseWalkMode(root["movement_mode"], config.walkMode)) {
         Debug::error(Debug::Category::Physics,
-            "[MOVEMENT CONFIG] Invalid movement_mode; expected \"override\" or \"accel\".\n");
+            "[MOVEMENT CONFIG] Invalid movement_mode; expected \"mimita\" or \"source\".\n");
     }
 
     if (root.contains("air_strafing") && root["air_strafing"].is_boolean())
@@ -244,6 +241,9 @@ void applyPresetOverrides(const json& root, MovementConfig& config)
 
     readBool("require_active_wish_rotation", config.requireActiveWishRotation);
     readBool("preserve_speed_when_not_strafing", config.preserveStraightSpeed);
+    readBool("source_airaccelerate_bug_compatible",
+             config.sourceAirAccelerateBugCompatible);
+    readBool("normalize_diagonal_input", config.diagonalInputNormalization);
 
     readFloat("minimum_strafe_angle", config.minimumStrafeAngleDegrees);
     config.minimumStrafeAngleDegrees =
@@ -430,7 +430,7 @@ bool MovementJsonConfig::loadPresetFile(const std::string& path,
         "[MOVEMENT CONFIG] Active preset: %s (%s) mode=%s air_strafing=%d bhop=%d\n",
         mActivePreset.c_str(), fileNameOf(path).c_str(),
         mConfig.walkMode == MovementWalkMode::Accel ? "accel" :
-        mConfig.walkMode == MovementWalkMode::Source ? "source" : "override",
+        mConfig.walkMode == MovementWalkMode::Source ? "source" : "mimita",
         (int)mConfig.airControlEnabled, (int)mConfig.bunnyHopEnabled);
     Debug::warn(Debug::Category::Physics,
         "[MOVEMENT CONFIG] ground_speed=%.1f air_speed=%.1f ground_accel=%.1f air_accel=%.1f "

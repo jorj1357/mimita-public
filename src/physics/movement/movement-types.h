@@ -1,4 +1,4 @@
-// 07 21 2026, 15 45
+// 08 15 2026, 16 12
 /* purpose
 * Defines neutral movement command, state, config, contact, and event data.
 * Provides deterministic helpers needed by shared client/server movement.
@@ -169,10 +169,18 @@ struct MovementGroundReturnState {
 struct MovementAirDebug {
     bool hasInput = false;
     bool applied = false;
+    bool grounded = false;
+    bool sourceBugCompatible = true;
     float horizontalSpeed = 0.0f;
+    float finalHorizontalSpeed = 0.0f;
+    float forwardMove = 0.0f;
+    float sideMove = 0.0f;
+    float wishSpeed = 0.0f;
+    float cappedWishSpeed = 0.0f;
     float currentSpeed = 0.0f;   // dot(velocity, wishDir)
     float addSpeed = 0.0f;
     float accelSpeed = 0.0f;
+    glm::vec2 wishVelocity{0.0f};
     glm::vec2 wishDir{0.0f};
     glm::vec2 horizontalVelocity{0.0f};
 };
@@ -524,6 +532,9 @@ struct MovementConfig {
     float groundDirectionChangeResponse = 0.0f;
     float airAcceleration = 0.0f;
     float airMaxWishspeed = 0.0f;
+    // Valve compatibility: cap wishspd for projection but use uncapped
+    // wishspeed in the acceleration term (the historical Source behavior).
+    bool sourceAirAccelerateBugCompatible = true;
     float airControl = 0.0f;
     // Scale on the residual air speed-gain term in Source mode. 0 = WASD in
     // the air only steers and never adds speed (pure strafing).

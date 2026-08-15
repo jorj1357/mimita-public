@@ -110,7 +110,8 @@ void drawAvatarCosmeticsTab(GLFWwindow* win, float px, float py, float pw, float
             gSlotStates[si].selectedIndex = curIdx;
         }
 
-        uiDrawText(kSlotLabels[si], uiScaleX(px + 4.0f), uiScaleY(y), 0.34f, {0.7f, 0.8f, 0.9f, 1.0f});
+        uiDrawText(kSlotLabels[si], uiScaleX(px + 4.0f), uiScaleY(y),
+                   avatarEditorFont(avatarEditorSectionFontSize), {0.7f, 0.8f, 0.9f, 1.0f});
         y += 26.0f;
 
         gSlotRects[si] = {px + 8.0f, y, ddW, gSlotItemH};

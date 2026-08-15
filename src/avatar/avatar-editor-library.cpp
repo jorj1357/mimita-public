@@ -34,10 +34,10 @@ void drawAvatarLibrary(GLFWwindow* win, float px, float py, float pw, float ph)
     const std::string avatarName = av.currentName();
     auto pngs = av.listPngs(avatarName);
     if (pngs.empty()) {
-        uiDrawText("No PNGs yet.", uiScaleX(px), uiScaleY(py + 20.0f), 0.34f,
-                   {0.5f, 0.6f, 0.7f, 1.0f});
+        uiDrawText("No PNGs yet.", uiScaleX(px), uiScaleY(py + 20.0f),
+                   avatarEditorFont(avatarEditorHintFontSize), {0.5f, 0.6f, 0.7f, 1.0f});
         uiDrawText("Drag PNGs here to import.", uiScaleX(px), uiScaleY(py + 48.0f),
-                   0.28f, {0.4f, 0.5f, 0.6f, 1.0f});
+                   avatarEditorFont(avatarEditorHintFontSize), {0.4f, 0.5f, 0.6f, 1.0f});
         return;
     }
 
@@ -108,8 +108,8 @@ void drawAvatarLibrary(GLFWwindow* win, float px, float py, float pw, float ph)
         std::string label = pngs[i];
         if (label.size() > 14)
             label = label.substr(0, 12) + "...";
-        uiDrawText(label.c_str(), uiScaleX(ix), uiScaleY(iy + thumbSize + 4.0f), 0.24f,
-                   {0.6f, 0.7f, 0.8f, 1.0f});
+        uiDrawText(label.c_str(), uiScaleX(ix), uiScaleY(iy + thumbSize + 4.0f),
+                   avatarEditorFont(avatarEditorHintFontSize), {0.6f, 0.7f, 0.8f, 1.0f});
     }
 
     if (gHoverAnims.size() > pngs.size() * 2) {
