@@ -16,6 +16,7 @@
 #include "world/texture-store.h"
 #include "devtools/terminal.h"
 #include "config/player-settings.h"
+#include "cosmetic-system.h"
 #include "stb_image.h"
 
 // Set by applyToPlayer before loadModel for per-avatar body part overrides
@@ -783,7 +784,14 @@ bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
     if (!buildAtlas(player, reloadTextures))
         return false;
     printf("[AVATAR] Applying avatar texture atlas after model load\n");
-    return applyAtlasToPlayer(player);
+    bool applied = applyAtlasToPlayer(player);
+
+    // ── Cosmetics (in-game GLB attachments) ─────────────────────
+    if (applied && !mAvatar.cosmetics.empty()) {
+        CosmeticSystem::instance().loadCosmetics(mAvatar.cosmetics);
+        player.setCosmetics(mAvatar.cosmetics);
+    }
+    return applied;
 }
 
 void AvatarSystem::autosaveUpdate(float dt) {

@@ -6,7 +6,7 @@
         "lifetimeTicks": 60,
         "spawnAtHitLocation": false,
         "directional": true,
-        "useBlood": false,
+        "useBlood": true,
         "damageNumbers": true,
         "entityImpact": false,
         "worldImpact": true,

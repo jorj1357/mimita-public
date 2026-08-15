@@ -8,7 +8,6 @@
 
 #include "combat/explosion-fx.h"
 
-#include <algorithm>
 #include <cstdlib>
 
 #include "audio/audio.h"
@@ -19,19 +18,23 @@
 void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
                       const std::string& attacker, float sizeScale)
 {
+    const auto& expCfg = WeaponHitFxConfig::instance().explosionBurstFor(weaponId);
+
     // Explosion sound
     const char* sound = weaponId == "grenade_launcher"
         ? "grenadelauncher/grenadelauncherexplode"
         : "rocketlauncher/rocketlauncherexplode";
     playWorldSound(sound, position, 1.0f, 1.0f, 50.0f);
 
-    // Explosion flash, debris, and red 1-tick impact sphere
-    EffectPartSystem::instance().spawnMuzzleFlash(position, weaponId + "_explosion", sizeScale);
-    EffectPartSystem::instance().spawnWorldDebris(position, glm::vec3(0.0f, 0.0f, 1.0f), 3.0f, sizeScale);
-    EffectPartSystem::instance().spawnImpactSphereTick(position, {1.0f, 0.15f, 0.05f}, 0.5f);
+    // Explosion flash, debris, and red 1-tick impact sphere — each config-gated
+    if (expCfg.muzzleFlash)
+        EffectPartSystem::instance().spawnMuzzleFlash(position, weaponId + "_explosion", sizeScale);
+    if (expCfg.debris)
+        EffectPartSystem::instance().spawnWorldDebris(position, glm::vec3(0.0f, 0.0f, 1.0f), 3.0f, sizeScale);
+    if (expCfg.impactTick)
+        EffectPartSystem::instance().spawnImpactSphereTick(position, {1.0f, 0.15f, 0.05f}, 0.5f);
 
     // Smoke burst — config-driven for rockets and grenades
-    const auto& expCfg = WeaponHitFxConfig::instance().explosionBurstFor(weaponId);
     if (expCfg.smoke.enabled)
     {
         for (int i = 0; i < expCfg.smoke.count; ++i)
@@ -74,15 +77,18 @@ void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
         EffectPartSystem::instance().spawn(sphere);
     }
 
-    // World impact burst
-    HitEvent ev;
-    ev.position = position;
-    ev.normal = glm::vec3(0.0f, 0.0f, 1.0f);
-    ev.direction = glm::vec3(0.0f);
-    ev.hitWorld = true;
-    ev.hitEntity = false;
-    ev.damage = 0;
-    ev.attacker = attacker;
-    ev.weaponSource = weaponId;
-    HitEffects::onHit(ev);
+    // World impact burst — config-gated
+    if (expCfg.hitBurst)
+    {
+        HitEvent ev;
+        ev.position = position;
+        ev.normal = glm::vec3(0.0f, 0.0f, 1.0f);
+        ev.direction = glm::vec3(0.0f);
+        ev.hitWorld = true;
+        ev.hitEntity = false;
+        ev.damage = 0;
+        ev.attacker = attacker;
+        ev.weaponSource = weaponId;
+        HitEffects::onHit(ev);
+    }
 }

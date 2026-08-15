@@ -109,6 +109,9 @@ MovementState movementStateFromPlayer(const Player& player,
     state.position = player.pos;
     state.baseVelocity = player.vel;
     state.externalImpulse = player.externalImpulse;
+    state.externalImpulseCarryTimerSeconds = player.externalImpulseCarryTimer;
+    state.externalImpulseMagnitude = player.externalImpulseMagnitude;
+    state.airDebug = player.airDebug;
     state.lastInputMoveAxes = movementClampUnitOrZero(player.inputWishMove);
     state.yaw = player.yaw;
     state.sizeScale = player.sizeScale;
@@ -141,6 +144,7 @@ MovementState movementStateFromPlayer(const Player& player,
     state.dash.didDash = player.dash.didDash;
     state.dash.frictionOverride = player.dash.frictionOverride;
     state.dash.tickPerfectDash = player.dash.tickPerfectDash;
+    state.dash.dashGraceTimerSeconds = player.dash.dashGraceTimer;
     state.dashMomentumProtection.active = player.dash.momentumProtectionActive;
     state.dashMomentumProtection.protectedMoveAxes =
         movementClampUnitOrZero(player.dash.momentumProtectedMoveAxes);
@@ -171,6 +175,9 @@ void applyMovementStateToPlayer(const MovementState& state, Player& player)
     player.pos = state.position;
     player.vel = state.baseVelocity;
     player.externalImpulse = state.externalImpulse;
+    player.externalImpulseCarryTimer = state.externalImpulseCarryTimerSeconds;
+    player.externalImpulseMagnitude = state.externalImpulseMagnitude;
+    player.airDebug = state.airDebug;
     player.inputWishMove = movementClampUnitOrZero(state.lastInputMoveAxes);
     player.yaw = state.yaw;
     player.sizeScale = state.sizeScale;
@@ -203,6 +210,7 @@ void applyMovementStateToPlayer(const MovementState& state, Player& player)
     player.dash.didDash = state.dash.didDash;
     player.dash.frictionOverride = state.dash.frictionOverride;
     player.dash.tickPerfectDash = state.dash.tickPerfectDash;
+    player.dash.dashGraceTimer = state.dash.dashGraceTimerSeconds;
     player.dash.momentumProtectionActive = state.dashMomentumProtection.active;
     player.dash.momentumProtectedMoveAxes =
         movementClampUnitOrZero(state.dashMomentumProtection.protectedMoveAxes);

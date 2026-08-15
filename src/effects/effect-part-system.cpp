@@ -27,8 +27,8 @@ void EffectPartSystem::init() {
         mFreeSlots.push_back(i);
     mBloodParticles.clear();
     mBloodParticles.reserve(MAX_BLOOD_PARTICLES);
-    mBloodDecals.clear();
-    mBloodDecals.reserve(MAX_BLOOD_DECALS);
+    mSurfaceDecals.clear();
+    mSurfaceDecals.reserve(256);
     printf("[EFFECT PART] Initialized pool size=%u\n", POOL_SIZE);
 }
 
@@ -114,5 +114,5 @@ void EffectPartSystem::update(float dt) {
     drainPendingWorldHits(6);
 
     updateBloodParticles(dt);
-    // updateBloodDecals(dt); — removed, blood decal spawning removed
+    updateSurfaceDecals(dt);
 }

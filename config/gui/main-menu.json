@@ -42,7 +42,7 @@
     },
     "enterSignInCodeButton": {
       "type": "button",
-      "x": 480, "y": 837, "width": 354, "height": 60,
+      "x": 5480, "y": 837, "width": 354, "height": 60,
       "text": "ENTER SIGN-IN CODE",
       "fontSize": 0.30,
       "textColor": [1, 1, 1, 1],
@@ -51,7 +51,7 @@
     "exitButton": {
       "type": "button",
       "x": 480, "y": 907, "width": 354, "height": 60,
-      "text": "EXIT",
+      "text": "EXIT....",
       "fontSize": 0.44,
       "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.65, 0.2, 0.2, 1.0]
@@ -85,7 +85,7 @@
     },
     "accountPlayButton": {
       "type": "button",
-      "x": 1140, "y": 230, "width": 660, "height": 40,
+      "x": 11140, "y": 230, "width": 660, "height": 40,
       "text": "Play",
       "fontSize": 0.38,
       "textColor": [1, 1, 1, 1],
@@ -93,7 +93,7 @@
     },
     "accountSwitchButton": {
       "type": "button",
-      "x": 1140, "y": 280, "width": 660, "height": 34,
+      "x": 81140, "y": 280, "width": 660, "height": 34,
       "text": "Switch Account",
       "fontSize": 0.34,
       "textColor": [1, 1, 1, 1],
@@ -101,7 +101,7 @@
     },
     "accountLogoutButton": {
       "type": "button",
-      "x": 1140, "y": 322, "width": 660, "height": 34,
+      "x": 11140, "y": 322, "width": 660, "height": 34,
       "text": "Logout",
       "fontSize": 0.34,
       "textColor": [1, 1, 1, 1],

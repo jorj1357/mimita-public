@@ -26,6 +26,7 @@
 #include "entities/player.h"
 #include "world/world.h"
 #include "config/networking-config.h"
+#include "config/movement-config.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 
@@ -513,6 +514,10 @@ int runServer(const LaunchOptions& options)
         // Hot-reload config/npc-difficulty.json so server NPC damage/fire rate
         // edits apply live without a server restart.
         NpcDifficultyConfig::instance().pollReload();
+
+        // Hot-reload the movement preset (config/movement.json + preset) so the
+        // server's movement-validation tolerances match the client's live tuning.
+        MovementJsonConfig::instance().pollReload();
 
         // Hot-reload config/weapons.json (rate-limited to 250ms internally) so
         // live weapon damage/falloff edits apply without a server restart.

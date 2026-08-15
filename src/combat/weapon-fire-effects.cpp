@@ -27,7 +27,12 @@ void applyRecoil(Player& shooter, const WeaponDefinition& def,
     const PlayerSettings& cfg = GetPlayerSettings();
     const auto& sc = SizeScalingConfig::instance().data();
     float ss = std::max(shooter.sizeScale, 0.001f);
-    float recoilStrength = cfg.weaponRecoilStrength * sc.scale(1.0f, sc.recoilExponent, ss);
+    // Per-weapon shooter_knockback (hot reloadable) wins over the global player
+    // setting, so recoil / self-push can be tuned per weapon (TF2-style).
+    float recoilStrength = def.shooterKnockback > 0.0f
+        ? def.shooterKnockback * def.selfImpulseMultiplier *
+              sc.scale(1.0f, sc.recoilExponent, ss)
+        : cfg.weaponRecoilStrength * sc.scale(1.0f, sc.recoilExponent, ss);
     glm::vec3 recoilDir(
         -shotDirection.x,
         -shotDirection.y,
@@ -36,7 +41,9 @@ void applyRecoil(Player& shooter, const WeaponDefinition& def,
     if (glm::length(recoilDir) > 0.001f)
         recoilDir = glm::normalize(recoilDir);
     shooter.externalImpulse += recoilDir * recoilStrength;
-    shooter.externalImpulse.z += recoilStrength * cfg.weaponRecoilUpKick * 0.01f;
+    shooter.externalImpulse.z += recoilStrength * (def.shooterKnockbackVertical > 0.0f
+        ? def.shooterKnockbackVertical
+        : cfg.weaponRecoilUpKick * 0.01f);
     inOutRecoil = std::min(inOutRecoil + def.recoil * 0.25f * sc.scale(1.0f, sc.recoilExponent, ss), 8.0f * sc.scale(1.0f, sc.recoilExponent, ss));
 
     if (DebugConfig::DEBUG_RECOIL)
@@ -108,6 +115,7 @@ int applyDamageToEntity(const DamageContext& ctx, Npc& victim,
         ev.direction = -shotDirection;
         ev.hitEntity = true;
         ev.damage = rounded;
+        ev.hitDistance = ctx.distance;
         ev.attacker = shooter.username;
         ev.victim = victim.body.username;
         ev.weaponSource = "weaponfire";

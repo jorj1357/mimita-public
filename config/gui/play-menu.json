@@ -16,7 +16,7 @@
     {
       "id": "competitiveButton",
       "type": "button",
-      "x": 800,
+      "x": 8300,
       "y": 315,
       "width": 320,
       "height": 58,
@@ -28,7 +28,7 @@
     {
       "id": "competitiveDesc",
       "type": "text",
-      "x": 825,
+      "x": 8300,
       "y": 383,
       "width": 300,
       "height": 24,
@@ -39,7 +39,7 @@
     {
       "id": "competitiveGate",
       "type": "text",
-      "x": 825,
+      "x": 8300,
       "y": 383,
       "width": 300,
       "height": 24,
@@ -51,7 +51,7 @@
     {
       "id": "duelsButton",
       "type": "button",
-      "x": 800,
+      "x": 8300,
       "y": 430,
       "width": 320,
       "height": 58,
@@ -63,7 +63,7 @@
     {
       "id": "duelsDesc",
       "type": "text",
-      "x": 825,
+      "x": 8300,
       "y": 498,
       "width": 300,
       "height": 24,
@@ -74,30 +74,30 @@
     {
       "id": "queueDuelsButton",
       "type": "button",
-      "x": 1220,
+      "x": 800,
       "y": 430,
-      "width": 240,
+      "width": 320,
       "height": 58,
       "text": "QUEUE DUELS",
-      "fontSize": 0.32,
+      "fontSize": 0.45,
       "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.12, 0.75, 0.25, 1.0]
     },
     {
       "id": "queueDuelsDesc",
       "type": "text",
-      "x": 1220,
+      "x": 610,
       "y": 498,
       "width": 250,
       "height": 24,
-      "text": "Auto-match any map. No account needed.",
-      "fontSize": 0.28,
+      "text": "Auto-match any map. No account needed!!!!!!!!!",
+      "fontSize": 0.38,
       "textColor": [0.72, 0.78, 0.88, 1.0]
     },
     {
       "id": "bombTagButton",
       "type": "button",
-      "x": 800,
+      "x": 8300,
       "y": 545,
       "width": 320,
       "height": 58,
@@ -109,7 +109,7 @@
     {
       "id": "bombTagDesc",
       "type": "text",
-      "x": 825,
+      "x": 8300,
       "y": 613,
       "width": 300,
       "height": 24,
@@ -120,11 +120,11 @@
     {
       "id": "onlineButton",
       "type": "button",
-      "x": 800,
+      "x": 770,
       "y": 660,
-      "width": 320,
+      "width": 400,
       "height": 58,
-      "text": "ONLINE / COMMUNITY SERVERS",
+      "text": "COMMUNITY SERVERS",
       "fontSize": 0.36,
       "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.22, 0.5, 0.78, 1.0]
@@ -132,18 +132,18 @@
     {
       "id": "onlineDesc",
       "type": "text",
-      "x": 825,
+      "x": 615,
       "y": 728,
       "width": 300,
       "height": 24,
-      "text": "Play with other people.",
+      "text": "Play with other people. Or by urself. Its up to you!",
       "fontSize": 0.32,
       "textColor": [0.72, 0.78, 0.88, 1.0]
     },
     {
       "id": "practiceButton",
       "type": "button",
-      "x": 800,
+      "x": 8300,
       "y": 768,
       "width": 320,
       "height": 58,
@@ -155,7 +155,7 @@
     {
       "id": "practiceDesc",
       "type": "text",
-      "x": 825,
+      "x": 8300,
       "y": 836,
       "width": 300,
       "height": 24,

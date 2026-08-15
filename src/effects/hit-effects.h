@@ -219,9 +219,7 @@ struct HitEvent {
     std::string victim;
     std::string weaponSource = "unknown";
     float knockbackForce = 0.0f;
-    // When true, onHit skips the floating damage number (blood/impact effects
-    // still spawn). Used when predicted damage numbers are disabled.
-    bool suppressDamageNumber = false;
+    float hitDistance = -1.0f;
 };
 
 enum class BurstType {

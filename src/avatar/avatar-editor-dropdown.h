@@ -1,3 +1,9 @@
+// 08 15 2026, 15 30
+/* purpose
+* Declares the reusable dropdown widget (header + overlay draw functions).
+* State is kept by the caller through DropdownState.
+* DOES NOT own avatar data or any dropdown's state.
+*/
 #pragma once
 
 #include <string>

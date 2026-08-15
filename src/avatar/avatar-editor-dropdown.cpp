@@ -1,3 +1,9 @@
+// 08 15 2026, 15 30
+/* purpose
+* Draws a reusable dropdown header and its item-list overlay.
+* The overlay must be called after all normal elements for z-ordering.
+* DOES NOT own avatar data or dropdown state beyond what callers pass in.
+*/
 #include "avatar-editor-dropdown.h"
 #include "avatar-editor-scroll.h"
 

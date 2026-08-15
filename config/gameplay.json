@@ -1,6 +1,7 @@
 {
     "comment 7 20 2026": "this is the .json file at C:/important/mimita-priv-v8/config/gameplay.json defining some gameplay behaviors such as aim mode, movement mode, etc in mimita",
     "comment 8 8 2026": "crosshair i feel lowk is the most fun cuz cam forward makes it feel like CSGO and dont want that, want more arcade-y ",
+    "comment 8 15 2026": "camforward si other mode, i think its smth to do with the camera that is making crosshair not fun ",
     "aim_mode": "crosshair",
     "dash_mode": "tf2",
     "farpoint_distance": 999999.0

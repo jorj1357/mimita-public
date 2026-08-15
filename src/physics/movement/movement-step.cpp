@@ -950,13 +950,18 @@ bool tryActivateDash(MovementState& state,
     if (!movementHasMoveInput(direction, MOVEMENT_INPUT_EPSILON))
         return false;
 
-    const float impulse = movementDashImpulse(config);
+    // Ground dash uses ground_dash_impulse, air dash uses air_dash_impulse,
+    // so the boost strength can differ between ground and air.
+    const float impulse = state.ground.onGround
+        ? positiveOrDefault(config.groundDashImpulse, movementDashImpulse(config))
+        : positiveOrDefault(config.airDashImpulse, movementDashImpulse(config));
     state.baseVelocity.x += direction.x * impulse;
     state.baseVelocity.y += direction.y * impulse;
     state.dash.dashAvailable = false;
     state.dash.didDash = true;
     state.dash.frictionOverride = 1.0f;
     state.dash.tickPerfectDash = false;
+    state.dash.dashGraceTimerSeconds = std::max(config.dashGraceSeconds, 0.0f);
     state.jump.airJumpsLeft = 0;
 
     const bool usedMoveInput = movementHasMoveInput(command.moveAxes, MOVEMENT_INPUT_EPSILON);
@@ -1069,11 +1074,217 @@ static void applySpecialExternalImpulseControl(MovementState& state,
     applyBasicExternalImpulseControl(state, command);
 }
 
+// ── Source (CS/Quake PM_) movement model ──────────────────────────────
+// Mirrors pm_shared.c: PM_Friction + PM_Accelerate (ground) and
+// PM_AirAccelerate (air), with optional sv_aircontrol-style redirect and
+// MiMITA-specific dash-grace + landing-bleed tuning knobs.
+
+float sourceMaxSpeedValue(const MovementConfig& config, float sizeScale)
+{
+    const float base = config.sourceMaxSpeed > 0.0f
+        ? config.sourceMaxSpeed
+        : config.groundSpeed;
+    return base * movementSizeScaleFactor(sizeScale, config.movementSpeedSizeExponent);
+}
+
+// Source-style external impulse: no exponential decay. The impulse carries
+// through any input and is only bled by ground friction (stopspeed-based),
+// plus a carry window where friction does not touch a fresh knockback.
+void applySourceExternalImpulse(MovementState& state,
+                                const MovementConfig& config,
+                                float dt)
+{
+    glm::vec3& ext = state.externalImpulse;
+    const float len = glm::length(ext);
+
+    // A fresh impulse (magnitude grows) reopens the carry window.
+    if (config.impulseCarrySeconds > 0.0f &&
+        len > state.externalImpulseMagnitude + 0.01f)
+        state.externalImpulseCarryTimerSeconds = config.impulseCarrySeconds;
+    if (state.externalImpulseCarryTimerSeconds > 0.0f)
+        state.externalImpulseCarryTimerSeconds =
+            std::max(0.0f, state.externalImpulseCarryTimerSeconds - dt);
+    state.externalImpulseMagnitude = len;
+
+    if (len <= 0.0001f)
+        return;
+
+    if (state.ground.stableOnGround &&
+        state.externalImpulseCarryTimerSeconds <= 0.0f) {
+        glm::vec2 extXY(ext.x, ext.y);
+        const float speed = glm::length(extXY);
+        if (speed > 0.1f) {
+            const float control = std::max(speed, config.stopspeed);
+            const float drop = control * config.sourceFriction *
+                               config.surfaceFriction * dt;
+            const float newSpeed = std::max(0.0f, speed - drop);
+            if (newSpeed != speed) {
+                extXY *= newSpeed / speed;
+                ext.x = extXY.x;
+                ext.y = extXY.y;
+            }
+        } else {
+            ext.x = 0.0f;
+            ext.y = 0.0f;
+        }
+    }
+
+    glm::vec2 extXY(ext.x, ext.y);
+    const float impulseSpeed = glm::length(extXY);
+    if (impulseSpeed > config.maximumExternalImpulseSpeed && impulseSpeed > 0.0f) {
+        extXY *= config.maximumExternalImpulseSpeed / impulseSpeed;
+        ext.x = extXY.x;
+        ext.y = extXY.y;
+    }
+}
+
+// Grounded Source step: friction every tick, accelerate along wishdir. No hard
+// clamp to maxspeed (overspeed carries and bleeds via friction, like Source).
+void applySourceGround(MovementState& state,
+                       const MovementCommand& command,
+                       const MovementConfig& config,
+                       float dt)
+{
+    glm::vec2 vel(state.baseVelocity.x, state.baseVelocity.y);
+    const float maxSpeed = sourceMaxSpeedValue(config, state.sizeScale);
+    const bool dashGrace = state.dash.dashGraceTimerSeconds > 0.0f;
+
+    float frictionAmount = config.sourceFriction * config.surfaceFriction;
+    if (dashGrace)
+        frictionAmount *= config.dashFrictionMultiplier;
+    // Landing/autobhop tick: scale friction so bhop overspeed bleed is tunable
+    // (1.0 = Source bleed, 0.0 = MiMITA preserve-through-landing).
+    if (state.jump.jumpIntentTimerSeconds > 0.0f)
+        frictionAmount *= config.landingOverspeedBleed;
+
+    // PM_Friction (horizontal only, every grounded tick).
+    float speed = glm::length(vel);
+    if (speed > 0.1f) {
+        const float control = std::max(speed, config.stopspeed);
+        const float drop = control * frictionAmount * dt;
+        const float newSpeed = std::max(0.0f, speed - drop);
+        if (newSpeed != speed)
+            vel *= newSpeed / speed;
+    } else {
+        vel = glm::vec2(0.0f);
+    }
+
+    // PM_Accelerate along wishdir (wishspeed capped to maxspeed).
+    const glm::vec2 wish = movementClampUnitOrZero(command.moveAxes);
+    if (movementHasMoveInput(wish)) {
+        const glm::vec2 wishDir = movementNormalizeDirectionOrZero(wish);
+        const float wishSpeed = maxSpeed;
+        const float currentSpeed = glm::dot(vel, wishDir);
+        const float addSpeed = wishSpeed - currentSpeed;
+        if (addSpeed > 0.0f) {
+            float accelSpeed = config.groundAcceleration * wishSpeed * dt;
+            accelSpeed = std::min(accelSpeed, addSpeed);
+            vel += wishDir * accelSpeed;
+        }
+    }
+
+    // No hard clamp to maxspeed: overspeed (bhop/dash/knockback) carries and is
+    // bled by friction, exactly like Source. The accel term above only adds up
+    // to maxspeed along the wish, so grounded walk speed still converges there.
+
+    state.baseVelocity.x = vel.x;
+    state.baseVelocity.y = vel.y;
+
+    // Landing vertical snap.
+    if (config.groundSnap &&
+        std::fabs(state.baseVelocity.z) <= config.velocityClipEpsilon)
+        state.baseVelocity.z = 0.0f;
+}
+
+// Airborne Source step: PURE Source PM_AirAccelerate projection. WASD only
+// defines wishdir (camera-relative, rebuilt by the input layer as the camera
+// turns). There is NO steering toward the wish, NO air_control, NO camera-turn
+// gating, and NO A/D matching rules. The mouse works only through wishdir:
+// turning the camera rotates the wish, and the projection does the rest.
+// Any leftward drift while holding A is the emergent Source "circle strafe",
+// not a hard directional steer.
+//
+//   currentSpeed = dot(vel, wishDir)
+//   addSpeed     = wishspd - currentSpeed
+//   if addSpeed <= 0: apply nothing
+//   accelSpeed   = min(air_accel * wishspd * dt, addSpeed) * air_speed_gain_multiplier
+//   vel += wishDir * accelSpeed
+void applySourceAir(MovementState& state,
+                    const MovementCommand& command,
+                    const MovementConfig& config,
+                    float dt)
+{
+    const glm::vec2 wish = movementClampUnitOrZero(command.moveAxes);
+    const bool hasInput = movementHasMoveInput(wish);
+    state.airDebug.hasInput = hasInput;
+    state.airDebug.applied = false;
+    if (!hasInput)
+        return;
+
+    glm::vec2 vel(state.baseVelocity.x, state.baseVelocity.y);
+    state.airDebug.horizontalVelocity = vel;
+    const float speed = glm::length(vel);
+    state.airDebug.horizontalSpeed = speed;
+    if (speed <= 0.1f)
+        return; // standstill: WASD cannot create horizontal speed from nothing
+
+    const glm::vec2 wishDir = movementNormalizeDirectionOrZero(wish);
+    state.airDebug.wishDir = wishDir;
+
+    // Source AirAccelerate projection.
+    const float maxSpeed = sourceMaxSpeedValue(config, state.sizeScale);
+    float wishspd = config.airMaxWishspeed > 0.0f
+        ? config.airMaxWishspeed *
+              movementSizeScaleFactor(state.sizeScale, config.movementSpeedSizeExponent)
+        : maxSpeed;
+    wishspd = std::min(wishspd, maxSpeed);
+
+    state.airDebug.currentSpeed = glm::dot(vel, wishDir);
+    state.airDebug.addSpeed = wishspd - state.airDebug.currentSpeed;
+    state.airDebug.accelSpeed = 0.0f;
+    if (state.airDebug.addSpeed > 0.0f) {
+        float accelSpeed = config.airAcceleration * wishspd * dt;
+        accelSpeed = std::min(accelSpeed, state.airDebug.addSpeed);
+        accelSpeed *= config.airSpeedGainMultiplier;
+        if (accelSpeed > 0.0f) {
+            state.airDebug.accelSpeed = accelSpeed;
+            state.airDebug.applied = true;
+            vel += wishDir * accelSpeed;
+        }
+    }
+
+    state.baseVelocity.x = vel.x;
+    state.baseVelocity.y = vel.y;
+}
+
+// Dispatcher: runs the Source step every tick (friction even with no input).
+void applySourceMovement(MovementState& state,
+                         const MovementCommand& command,
+                         const MovementConfig& config,
+                         float dt)
+{
+    if (state.dash.dashGraceTimerSeconds > 0.0f)
+        state.dash.dashGraceTimerSeconds =
+            std::max(0.0f, state.dash.dashGraceTimerSeconds - dt);
+
+    if (state.ground.onGround) {
+        applySourceGround(state, command, config, dt);
+    } else if (config.airControlEnabled) {
+        applySourceAir(state, command, config, dt);
+    }
+}
+
 void applyBasicWalk(MovementState& state,
                     const MovementCommand& command,
                     const MovementConfig& config,
                     float fixedDt)
 {
+    if (config.walkMode == MovementWalkMode::Source) {
+        const float dt = std::max(movementClampStepDelta(fixedDt, config), 0.0001f);
+        applySourceMovement(state, command, config, dt);
+        return;
+    }
+
     // Air strafing toggle: while airborne, WASD does not steer when disabled.
     if (!config.airControlEnabled && !state.ground.onGround)
         return;
@@ -1183,6 +1394,20 @@ void applyBasicFriction(MovementState& state,
                         float fixedDt)
 {
     const float dt = movementClampStepDelta(fixedDt, config);
+
+    if (config.walkMode == MovementWalkMode::Source) {
+        // Ground friction is owned by the Source ground step; here we only
+        // shape the external impulse.
+        const float frictionOverride =
+            std::clamp(state.dash.frictionOverride, 0.0f, 1.0f);
+        if (config.impulseFrictionMode == MovementImpulseFrictionMode::Source)
+            applySourceExternalImpulse(state, config, dt);
+        else
+            movementDecayAndClampExternalImpulse(
+                state.externalImpulse, config, frictionOverride, dt);
+        return;
+    }
+
     const bool hasMoveInput = movementHasMoveInput(state.lastInputMoveAxes);
     const float frictionOverride = std::clamp(state.dash.frictionOverride, 0.0f, 1.0f);
 
@@ -1301,6 +1526,8 @@ static MovementStepResult applyPostCollisionMovementInternal(
     // Default (override) mode: WASD/dash input kills external velocity so the
     // player regains full control. Accel (CS) mode preserves external impulses
     // through input (its movement controllers own the player velocity).
+    // Source mode also preserves impulses and runs every tick.
+    const bool sourceMode = config.walkMode == MovementWalkMode::Source;
     if (config.walkMode == MovementWalkMode::Override) {
         if (specialMovementEnabled) {
             updateDashMomentumProtectionForWalk(state, command);
@@ -1308,23 +1535,30 @@ static MovementStepResult applyPostCollisionMovementInternal(
         } else {
             applyBasicExternalImpulseControl(state, command);
         }
-    } else if (specialMovementEnabled) {
+    } else if (specialMovementEnabled && !sourceMode) {
         updateDashMomentumProtectionForWalk(state, command);
     }
 
-    const bool walkingMayOverwriteDash =
-        !specialMovementEnabled ||
-        shouldWalkingOverwriteDashMomentum(state, command);
-    if (command.movementDirectionPressed &&
-        state.dash.frictionOverride >= 1.0f &&
-        walkingMayOverwriteDash) {
+    if (sourceMode) {
+        // Source step runs every tick (friction always applies on the ground,
+        // input never overwrites velocity).
         applyBasicWalk(state, command, config, dt);
+    } else {
+        const bool walkingMayOverwriteDash =
+            !specialMovementEnabled ||
+            shouldWalkingOverwriteDashMomentum(state, command);
+        if (command.movementDirectionPressed &&
+            state.dash.frictionOverride >= 1.0f &&
+            walkingMayOverwriteDash) {
+            applyBasicWalk(state, command, config, dt);
+        }
     }
 
     if (specialMovementEnabled)
         applySpecialMovementPostCollision(state, command, config, dt, events);
     applyBasicJump(state, command, config, dt, &events);
-    applyBasicFrictionOverrideRecovery(state, command);
+    if (!sourceMode)
+        applyBasicFrictionOverrideRecovery(state, command);
     applyBasicFriction(state, config, dt);
     applyBasicLandingTimers(
         state, config, previousStableOnGround, previousAirborneSeconds, dt, events);

@@ -13,6 +13,7 @@
 
 #include "combat/shot-profiler.h"
 #include "effects/effect-part.h"
+#include "config/impact-decals-config.h"
 #include "debug/debug-visuals.h"
 #include "debug/debug-log.h"
 #include "gui/ui-system.h"
@@ -67,21 +68,31 @@ void HitEffects::onHit(const HitEvent& event)
         EffectPartSystem::instance().spawnWorldImpact(event.position, event.normal);
     }
 
-    // 4. Bullet impact hole
-    if (event.hitWorld && gConfig.core.bulletImpact) {
-        EffectPartSystem::instance().spawnBulletImpact(event.position);
+    // 3b. World cracks along the surface at the hit point
+    if (event.hitWorld && gConfig.core.worldImpact) {
+        EffectPartSystem::instance().spawnWorldCracks(event.position, event.normal, event.direction);
     }
 
-    // 5. Blood effect
-    if (event.hitEntity && gConfig.core.entityImpact) {
+    // 4. Bullet impact hole
+    if (event.hitWorld && gConfig.core.bulletImpact) {
+        EffectPartSystem::instance().spawnBulletImpact(event.position, event.normal);
+    }
+
+    // 5. Blood effect (gate: impact_decals.json blood.enabled is the single switch)
+    if (event.hitEntity && ImpactDecalsConfig::instance().data().blood.enabled) {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->bloodMs : nullptr);
+        const float directness = glm::length(event.direction) > 0.001f &&
+                                 glm::length(event.normal) > 0.001f
+            ? std::clamp(std::fabs(glm::dot(glm::normalize(-event.direction),
+                                            glm::normalize(event.normal))), 0.0f, 1.0f)
+            : 1.0f;
         EffectPartSystem::instance().spawnBloodEffect(
             event.position, event.direction, (float)event.damage,
-            event.attacker, event.victim);
+            event.attacker, event.victim, directness, event.hitDistance);
     }
 
     // 6. Damage number - only for entity hits (not world geometry)
-    if (event.hitEntity && !event.suppressDamageNumber) {
+    if (event.hitEntity) {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->damageNumberMs : nullptr);
         EffectPartSystem::instance().spawnDamage(event.position, event.victim, event.damage);
     }

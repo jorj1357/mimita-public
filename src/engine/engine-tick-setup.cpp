@@ -20,6 +20,7 @@
 #include "network/disagreement-visuals.h"
 #include "config/camera-config.h"
 #include "config/weapon-hitfx-config.h"
+#include "config/impact-decals-config.h"
 #include "config/weapon-tracers-config.h"
 #include "config/ragdoll-death-config.h"
 #include "npc/npc-difficulty-config.h"
@@ -62,6 +63,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     GamemodeRegistry::instance().pollReload();
     DuelMapPool::instance().pollReload();
     WeaponHitFxConfig::instance().pollReload();
+    ImpactDecalsConfig::instance().pollReload();
     NotificationSystem::instance().pollReload();
     GuiLayoutManager::instance().pollReload();
     NetworkingConfig::instance().pollReload();

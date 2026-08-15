@@ -49,6 +49,11 @@ struct NpcSensorContext {
 class Npc {
 public:
     std::uint32_t id = 0;
+    // Lifecycle counter: increments once per respawn so clients can detect a
+    // new life (same pattern as player transformEpoch). Starts at 1 so the
+    // first snapshot is a nonzero epoch; wrapped in respawnServerNpc so it
+    // never hits 0 (clients ignore epoch 0).
+    uint16_t transformEpoch = 1;
     float difficulty = 1.0f;
     NpcDifficultyTuning tuning;
     Player body;

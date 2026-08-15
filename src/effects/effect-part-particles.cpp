@@ -69,16 +69,19 @@ void EffectPartSystem::updateBloodParticles(float dt) {
         mBloodParticles.end());
 }
 
-void EffectPartSystem::updateBloodDecals(float dt) {
-    for (BloodDecal& decal : mBloodDecals) {
+void EffectPartSystem::updateSurfaceDecals(float dt) {
+    for (SurfaceDecal& decal : mSurfaceDecals) {
         decal.age += dt;
-        const float fade = std::clamp((decal.age - 25.0f) / 5.0f, 0.0f, 1.0f);
-        decal.alpha = 1.0f - fade;
+        const float holdTime = std::max(0.0f, decal.lifetime - decal.fadeTime);
+        if (decal.age > holdTime && decal.fadeTime > 0.0f) {
+            const float fadeT = std::clamp((decal.age - holdTime) / decal.fadeTime, 0.0f, 1.0f);
+            decal.alpha = decal.baseAlpha * (1.0f - fadeT);
+        }
     }
-    mBloodDecals.erase(
+    mSurfaceDecals.erase(
         std::remove_if(
-            mBloodDecals.begin(),
-            mBloodDecals.end(),
-            [](const BloodDecal& decal) { return decal.age >= decal.lifetime; }),
-        mBloodDecals.end());
+            mSurfaceDecals.begin(),
+            mSurfaceDecals.end(),
+            [](const SurfaceDecal& decal) { return decal.age >= decal.lifetime; }),
+        mSurfaceDecals.end());
 }

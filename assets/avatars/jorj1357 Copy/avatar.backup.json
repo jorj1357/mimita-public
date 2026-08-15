@@ -1,0 +1,262 @@
+{
+  "advanced": {
+    "head_back": {
+      "color": [
+        0.10000000149011612,
+        0.10000000149011612,
+        0.10000000149011612
+      ],
+      "offset_y": 44,
+      "rotation": 180.0,
+      "texture": "hair2.png"
+    },
+    "head_bottom": {
+      "color": [
+        0.10000000149011612,
+        0.10000000149011612,
+        0.10000000149011612
+      ],
+      "texture": "hair2.png"
+    },
+    "head_front": {
+      "offset_y": 100,
+      "rotation": 180.0,
+      "scale_y": 1.7999999523162842,
+      "texture": "girlface4.png"
+    },
+    "head_left": {
+      "color": [
+        0.10000000149011612,
+        0.10000000149011612,
+        0.10000000149011612
+      ],
+      "texture": "hair2.png"
+    },
+    "head_right": {
+      "color": [
+        0.10000000149011612,
+        0.10000000149011612,
+        0.10000000149011612
+      ],
+      "texture": "hair2.png"
+    },
+    "head_top": {
+      "color": [
+        0.10000000149011612,
+        0.10000000149011612,
+        0.10000000149011612
+      ],
+      "texture": "hair2.png"
+    },
+    "leftArm_back": "croptoparmsides.png",
+    "leftArm_bottom": "croptoparmsides.png",
+    "leftArm_front": "croptopleftarmfront.png",
+    "leftArm_left": "croptoparmsides.png",
+    "leftArm_right": "croptoparmsides.png",
+    "leftArm_top": "croptoparmsides.png",
+    "leftLeg_back": {
+      "rotation": 180.0,
+      "texture": "fishnetsidelegs.png"
+    },
+    "leftLeg_bottom": "fishnetbottomfoot.png",
+    "leftLeg_front": {
+      "rotation": 180.0,
+      "texture": "fishnetfrontleg.png"
+    },
+    "leftLeg_left": {
+      "rotation": 180.0,
+      "texture": "fishnetsidelegs.png"
+    },
+    "leftLeg_right": {
+      "rotation": 180.0,
+      "texture": "fishnetsidelegs.png"
+    },
+    "leftLeg_top": {
+      "scale_y": 12.0,
+      "texture": "fishnetsidelegs.png"
+    },
+    "rightArm_back": "croptoparmsides.png",
+    "rightArm_bottom": "croptoparmsides.png",
+    "rightArm_front": "croptoprightarmfront.png",
+    "rightArm_left": "croptoparmsides.png",
+    "rightArm_right": "croptoparmsides.png",
+    "rightArm_top": "croptoparmsides.png",
+    "rightLeg_back": {
+      "rotation": 180.0,
+      "texture": "fishnetsidelegs.png"
+    },
+    "rightLeg_bottom": "fishnetbottomfoot.png",
+    "rightLeg_front": {
+      "rotation": 180.0,
+      "texture": "fishnetfrontleg.png"
+    },
+    "rightLeg_left": {
+      "rotation": 180.0,
+      "texture": "fishnetsidelegs.png"
+    },
+    "rightLeg_right": {
+      "rotation": 180.0,
+      "texture": "fishnetsidelegs.png"
+    },
+    "rightLeg_top": {
+      "scale_y": 12.0,
+      "texture": "fishnetsidelegs.png"
+    },
+    "torso_back": "croptopback.png",
+    "torso_bottom": "croptopback.png",
+    "torso_front": "croptopfront.png",
+    "torso_left": "croptoptorsoleft.png",
+    "torso_right": "croptoptorsoright.png",
+    "torso_top": "croptoptorsotop.png"
+  },
+  "advanced_mode": true,
+  "avatar_id": "local_cb3b330533cf64d6",
+  "bodyparts": {
+    "head": {
+      "offset": [
+        0,
+        1.15,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "leftArm": {
+      "offset": [
+        0,
+        1.0,
+        -0.4
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "leftLeg": {
+      "offset": [
+        0,
+        -0.1,
+        0.25
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "rightArm": {
+      "offset": [
+        0,
+        1.0,
+        0.4
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "rightLeg": {
+      "offset": [
+        0,
+        -0.1,
+        -0.25
+      ],
+      "rotation": [
+        0,
+        180,
+        0
+      ],
+      "scale": [
+        -1,
+        1,
+        1
+      ]
+    },
+    "torso": {
+      "offset": [
+        0,
+        0.4,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    }
+  },
+  "colors": {
+    "head": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "torso": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "cosmetics": [],
+  "created_at": "2026-07-10T18:44:15Z",
+  "format_version": 1,
+  "name": "jorj1357 Copy",
+  "player_model": "assets/entity/player/girl/mimita-girl-v7.glb",
+  "simple": {
+    "face": "",
+    "pants": "",
+    "shirt": "",
+    "skin": ""
+  },
+  "updated_at": "2026-08-15T15:40:10Z"
+}

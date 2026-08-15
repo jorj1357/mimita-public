@@ -50,6 +50,27 @@ bool parseWalkMode(const json& value, MovementWalkMode& out)
         out = MovementWalkMode::Accel;
         return true;
     }
+    if (mode == "source") {
+        out = MovementWalkMode::Source;
+        return true;
+    }
+    return false;
+}
+
+bool parseImpulseFrictionMode(const json& value, MovementImpulseFrictionMode& out)
+{
+    if (!value.is_string())
+        return false;
+
+    const std::string mode = value.get<std::string>();
+    if (mode == "exponential") {
+        out = MovementImpulseFrictionMode::Exponential;
+        return true;
+    }
+    if (mode == "source") {
+        out = MovementImpulseFrictionMode::Source;
+        return true;
+    }
     return false;
 }
 
@@ -102,6 +123,14 @@ MovementConfig defaultMovementConfig()
     config.groundSpeed = PHYS.moveSpeed;
     config.airSpeed = AIR_SPEED;
     config.movementSpeedSizeExponent = 0.5f;
+    config.sourceMaxSpeed = 0.0f;
+    config.sourceFriction = 0.0f;
+    config.surfaceFriction = 1.0f;
+    config.velocityClipEpsilon = 0.01f;
+    config.groundSnap = true;
+    config.landingOverspeedBleed = 1.0f;
+    config.dashGraceSeconds = 0.0f;
+    config.dashFrictionMultiplier = 1.0f;
     config.gravityZ = PHYS.gravity;
     config.maximumFallSpeed = MAX_FALL_SPEED;
     config.jumpVerticalSpeed = PHYS.jumpStrength;
@@ -121,6 +150,8 @@ MovementConfig defaultMovementConfig()
     config.externalImpulseDecay = EXTERNAL_IMPULSE_DECAY;
     config.externalImpulseSteerRate = EXTERNAL_IMPULSE_STEER_RATE;
     config.externalImpulseBrakeRate = EXTERNAL_IMPULSE_BRAKE_RATE;
+    config.impulseFrictionMode = MovementImpulseFrictionMode::Exponential;
+    config.impulseCarrySeconds = 0.0f;
     config.groundFrictionAmount = GROUND_FRICTION_AMOUNT;
     config.airFrictionAmount = AIR_FRICTION_AMOUNT;
     config.frictionSizeExponent = -0.5f;
@@ -159,6 +190,7 @@ MovementConfig defaultMovementConfig()
     config.airAcceleration = 22.0f;
     config.airMaxWishspeed = 0.0f;
     config.airControl = 0.0f;
+    config.airSpeedGainMultiplier = 0.0f;
     config.stopspeed = 0.0f;
     config.bunnyHopSpeedCap = 0.0f;
     return config;
@@ -256,21 +288,51 @@ void applyPresetOverrides(const json& root, MovementConfig& config)
     readFloat("air_max_wishspeed", config.airMaxWishspeed);
     readFloat("air_wish_speed", config.airMaxWishspeed);
     readFloat("air_control", config.airControl);
+    readFloat("air_speed_gain_multiplier", config.airSpeedGainMultiplier);
+    config.airSpeedGainMultiplier = std::max(0.0f, config.airSpeedGainMultiplier);
     readFloat("stopspeed", config.stopspeed);
+    readFloat("stop_speed", config.stopspeed);
     readFloat("bhop_speed_cap", config.bunnyHopSpeedCap);
     readFloat("speed_cap", config.bunnyHopSpeedCap);
     readFloat("gravity", config.gravityZ);
     readFloat("max_fall_speed", config.maximumFallSpeed);
     readFloat("jump_strength", config.jumpVerticalSpeed);
+    readFloat("jump_velocity", config.jumpVerticalSpeed);
     readFloat("jump_buffer_time", config.jumpBufferSeconds);
     readFloat("coyote_time", config.coyoteSeconds);
     readFloat("ground_friction", config.groundFrictionAmount);
     readFloat("air_friction", config.airFrictionAmount);
     readFloat("external_impulse_decay", config.externalImpulseDecay);
     readFloat("max_external_impulse_speed", config.maximumExternalImpulseSpeed);
+    readFloat("external_impulse_max_speed", config.maximumExternalImpulseSpeed);
     readFloat("ground_dash_impulse", config.groundDashImpulse);
     readFloat("air_dash_impulse", config.airDashImpulse);
     readFloat("down_dash_speed", config.downDashVerticalSpeed);
+
+    // ── Source (CS/Quake PM_) model ──────────────────────────────────────
+    readFloat("max_speed", config.sourceMaxSpeed);
+    readFloat("friction", config.sourceFriction);
+    readFloat("surface_friction", config.surfaceFriction);
+    config.surfaceFriction = std::max(0.0f, config.surfaceFriction);
+    readFloat("velocity_clip_epsilon", config.velocityClipEpsilon);
+    config.velocityClipEpsilon = std::max(0.0f, config.velocityClipEpsilon);
+    readBool("ground_snap", config.groundSnap);
+    readFloat("landing_overspeed_bleed", config.landingOverspeedBleed);
+    config.landingOverspeedBleed =
+        std::clamp(config.landingOverspeedBleed, 0.0f, 1.0f);
+    readFloat("dash_grace_seconds", config.dashGraceSeconds);
+    config.dashGraceSeconds = std::max(0.0f, config.dashGraceSeconds);
+    readFloat("dash_friction_multiplier", config.dashFrictionMultiplier);
+    config.dashFrictionMultiplier = std::max(0.0f, config.dashFrictionMultiplier);
+    readFloat("impulse_carry_seconds", config.impulseCarrySeconds);
+    config.impulseCarrySeconds = std::max(0.0f, config.impulseCarrySeconds);
+    if (root.contains("impulse_friction_mode") &&
+        !parseImpulseFrictionMode(root["impulse_friction_mode"],
+                                  config.impulseFrictionMode)) {
+        Debug::error(Debug::Category::Physics,
+            "[MOVEMENT CONFIG] Invalid impulse_friction_mode; "
+            "expected \"exponential\" or \"source\".\n");
+    }
 
     if (root.contains("max_air_jumps") && root["max_air_jumps"].is_number())
         config.maximumAirJumps = std::max(0, root["max_air_jumps"].get<int>());
@@ -304,7 +366,7 @@ std::string MovementJsonConfig::resolvePresetPath(const std::string& preset) con
             if (!file.is_open())
                 continue;
             try {
-                file >> root;
+                root = json::parse(file, nullptr, true, true);
             } catch (const json::parse_error&) {
                 continue;
             }
@@ -336,7 +398,7 @@ bool MovementJsonConfig::loadPresetFile(const std::string& path,
 
     json root;
     try {
-        file >> root;
+        root = json::parse(file, nullptr, true, true);
     } catch (const json::parse_error& e) {
         Debug::error(Debug::Category::Physics,
             "[MOVEMENT CONFIG] Parse error in %s: %s. Keeping previous settings.\n",
@@ -367,7 +429,8 @@ bool MovementJsonConfig::loadPresetFile(const std::string& path,
     Debug::warn(Debug::Category::Physics,
         "[MOVEMENT CONFIG] Active preset: %s (%s) mode=%s air_strafing=%d bhop=%d\n",
         mActivePreset.c_str(), fileNameOf(path).c_str(),
-        mConfig.walkMode == MovementWalkMode::Accel ? "accel" : "override",
+        mConfig.walkMode == MovementWalkMode::Accel ? "accel" :
+        mConfig.walkMode == MovementWalkMode::Source ? "source" : "override",
         (int)mConfig.airControlEnabled, (int)mConfig.bunnyHopEnabled);
     Debug::warn(Debug::Category::Physics,
         "[MOVEMENT CONFIG] ground_speed=%.1f air_speed=%.1f ground_accel=%.1f air_accel=%.1f "
@@ -419,7 +482,7 @@ bool MovementJsonConfig::load(const std::string& path)
         std::ifstream file(mSelectorPath);
         if (file.is_open()) {
             try {
-                file >> selector;
+                selector = json::parse(file, nullptr, true, true);
             } catch (const json::parse_error& e) {
                 Debug::error(Debug::Category::Physics,
                     "[MOVEMENT CONFIG] Parse error in %s: %s. Using built-in defaults.\n",
@@ -491,7 +554,7 @@ std::vector<std::string> MovementJsonConfig::availablePresets() const
         if (!file.is_open())
             continue;
         try {
-            file >> root;
+            root = json::parse(file, nullptr, true, true);
         } catch (const json::parse_error&) {
             continue;
         }

@@ -102,7 +102,6 @@ void registerCompetitiveCommands();
 void registerLeaderboardCommands();
 void registerCursorCommands();
 
-#include "avatar/avatar-menu.h"
 #include "avatar/character-registry.h"
 #include "render/lighting-config.h"
 #include "render/lighting-commands.h"
@@ -135,6 +134,7 @@ void registerCursorCommands();
 #include "effects/hitfx-commands.h"
 #include "effects/hit-effects.h"
 #include "config/weapon-hitfx-config.h"
+#include "config/impact-decals-config.h"
 #include "config/weapon-tracers-config.h"
 #include "game/bomb-tag.h"
 #include "gui/gui-editor-commands.h"
@@ -403,6 +403,7 @@ void gameInitSubsystems(Engine& engine)
     registerRagdollCommands();
     HitEffects::loadConfig("config/hitfx.json");
     WeaponHitFxConfig::instance().load("config/weapon_hitfx.json");
+    ImpactDecalsConfig::instance().load("config/impact_decals.json");
 
     Terminal::instance().registerCommand({
         "net_debug_entities", "Toggle entity replication debug overlay", "net_debug_entities [0|1]",

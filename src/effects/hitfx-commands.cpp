@@ -1,6 +1,7 @@
 #include "effects/hitfx-commands.h"
 #include "effects/hit-effects.h"
 #include "effects/effect-part.h"
+#include "config/impact-decals-config.h"
 #include "devtools/terminal.h"
 #include "debug/debug-log.h"
 #include "config/player-settings.h"
@@ -92,6 +93,48 @@ void registerHitFxCommands()
         [](const std::vector<std::string>&) {
             HitEffects::loadConfig("config/hitfx.json");
             Terminal::instance().addLog("[HITFX] config reloaded");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "impact_decals_reload", "Force reload impact_decals.json config (blood/bullet holes/world cracks)",
+        "impact_decals_reload",
+        [](const std::vector<std::string>&) {
+            const bool ok = ImpactDecalsConfig::instance().load("config/impact_decals.json");
+            Terminal::instance().addLog(ok
+                ? "[IMPACT DECALS] config reloaded"
+                : "[IMPACT DECALS] reload FAILED (missing or bad json)");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "impact_decals_info", "Print current impact decals config values",
+        "impact_decals_info",
+        [](const std::vector<std::string>&) {
+            const auto& cfg = ImpactDecalsConfig::instance().data();
+            char buf[1024];
+            std::snprintf(buf, sizeof(buf),
+                "[IMPACT DECALS] enabled=%d\n"
+                "  blood: enabled=%d count=%d(min=%d) r=%.3f(min=%.3f) h=%.3f life=%.1f fade=%.1f\n"
+                "  blood.spray: min=%d max=%d size=%.3f..%.3f big=%.0f%% speed=%.1f..%.1f\n"
+                "  blood.force: maxDist=%.1f minDist=%.1f minForce=%.2f\n"
+                "  bulletHoles: enabled=%d r=%.3f h=%.3f life=%.1f fade=%.1f\n"
+                "  worldCracks: enabled=%d count=%d len=%.2f thick=%.3f life=%.1f fade=%.1f",
+                (int)cfg.enabled,
+                (int)cfg.blood.enabled, cfg.blood.count, cfg.blood.minCount,
+                cfg.blood.radius, cfg.blood.minRadius, cfg.blood.height,
+                cfg.blood.lifetime, cfg.blood.fadeTime,
+                cfg.blood.spray.minCount, cfg.blood.spray.maxCount,
+                cfg.blood.spray.sizeMin, cfg.blood.spray.sizeMax,
+                cfg.blood.spray.bigFraction * 100.0f,
+                cfg.blood.spray.speedMin, cfg.blood.spray.speedMax,
+                cfg.blood.force.maxDistance, cfg.blood.force.minDistance,
+                cfg.blood.force.minForce,
+                (int)cfg.bulletHoles.enabled, cfg.bulletHoles.radius, cfg.bulletHoles.height,
+                cfg.bulletHoles.lifetime, cfg.bulletHoles.fadeTime,
+                (int)cfg.worldCracks.enabled, cfg.worldCracks.count, cfg.worldCracks.length,
+                cfg.worldCracks.thickness, cfg.worldCracks.lifetime, cfg.worldCracks.fadeTime);
+            Terminal::instance().addLog(buf);
         }
     });
 

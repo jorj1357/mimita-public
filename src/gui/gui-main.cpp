@@ -20,7 +20,7 @@
 #include "menus/help-menu.h"
 #include "game/bomb-tag-config.h"
 #include "map/map-catalog.h"
-#include "avatar/avatar-menu.h"
+#include "avatar/avatar-editor.h"
 #include "avatar/avatar.h"
 #include "competitive/competitive.h"
 #include "competitive/competitive-ui.h"
@@ -1108,7 +1108,7 @@ void guiMain(GLFWwindow* win, GameState& state)
                 setupPlayerPreviewLighting();
 
                 GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/avatar-creator.json");
-                const GuiElement* rightPanel = layout.get("panelPreview3D");
+                const GuiElement* rightPanel = layout.get("panelPreview");
                 int fbW = 0, fbH = 0;
                 glfwGetFramebufferSize(win, &fbW, &fbH);
                 float scaleX = (float)fbW / 1920.0f;
@@ -1162,7 +1162,7 @@ void guiMain(GLFWwindow* win, GameState& state)
             }
 
             AvatarSystem::instance().autosaveUpdate(1.0f / 60.0f);  // ~60fps dt approximation
-            AvatarMenuResult r = drawAvatarMenu(win);
+            AvatarEditorResult r = drawAvatarEditor(win);
             if (r.goBack) {
                 gGuiMenuState = GUI_MENU_MAIN;
             }

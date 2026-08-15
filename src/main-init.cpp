@@ -90,9 +90,8 @@
 #include "config/player-settings.h"
 #include "avatar/avatar.h"
 #include "avatar/avatar-commands.h"
-#include "avatar/avatar-menu.h"
+#include "avatar/avatar-editor.h"
 #include "avatar/avatar-drop-target.h"
-#include "avatar/avatar-menu.h"
 #include "render/lighting-config.h"
 #include "render/lighting-commands.h"
 #include "render/postfx-commands.h"
@@ -190,7 +189,7 @@ void gameInit(int argc, char** argv, Engine& engine)
     glfwSetCharCallback(engine.window(), [](GLFWwindow*, unsigned int codepoint) {
         authPopupHandleChar(codepoint);
         signInMenuHandleChar(codepoint);
-        avatarMenuHandleChar(codepoint);
+        avatarEditorHandleChar(codepoint);
         serverInfoMenuHandleChar(codepoint);
         onlineMenuHandleChar(codepoint);
         handleChatWindowChar(gChatWindowState, codepoint);
@@ -206,7 +205,7 @@ void gameInit(int argc, char** argv, Engine& engine)
         if (action == GLFW_PRESS || action == GLFW_REPEAT) {
             authPopupHandleKey(key, action);
             signInMenuHandleKey(key, action);
-            avatarMenuHandleKey(key, action);
+            avatarEditorHandleKey(key, action);
             serverInfoMenuHandleKey(key, action, mods);
             onlineMenuHandleKey(key, action);
             std::string chatMsg;
@@ -224,7 +223,7 @@ void gameInit(int argc, char** argv, Engine& engine)
         UISys::gScrollYOffset = yOffset;
     });
     glfwSetDropCallback(engine.window(), [](GLFWwindow*, int count, const char** paths) {
-        avatarMenuHandleDrop(count, paths);
+        avatarEditorHandleDrop(count, paths);
     });
 
     printf("[MAIN] after glfwSetInputMode\n");

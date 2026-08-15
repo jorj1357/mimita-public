@@ -25,6 +25,11 @@ CSGO_SOURCES = [
     ROOT / "src" / "physics" / "movement" / "movement-step.cpp",
 ]
 
+SOURCE_SOURCES = [
+    ROOT / "tests" / "movement-source-parity-test.cpp",
+    ROOT / "src" / "physics" / "movement" / "movement-step.cpp",
+]
+
 
 def compile_and_run(name, sources, timeout=60):
     out = BUILD / (name + ".exe")
@@ -53,6 +58,7 @@ def main():
     ok = True
     ok &= compile_and_run("movement-bhop-test", SOURCES)
     ok &= compile_and_run("movement-csgo-test", CSGO_SOURCES)
+    ok &= compile_and_run("movement-source-parity-test", SOURCE_SOURCES)
     if not ok:
         return 1
     print("[run-movement-tests] ALL PASS")

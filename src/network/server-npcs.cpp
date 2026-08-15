@@ -196,6 +196,10 @@ static void respawnServerNpc(Npc& npc)
     npc.body.respawnPosition = spawnPos;
     npc.body.vel = glm::vec3(0.0f);
     npc.body.externalImpulse = glm::vec3(0.0f);
+    // New life: bump the lifecycle counter so clients detect the respawn,
+    // hard-snap the body to the spawn, and reset their death-presentation
+    // state for the next death. Wrap to [1,65535] — 0 is ignored by clients.
+    npc.transformEpoch = static_cast<uint16_t>((npc.transformEpoch % 65535) + 1);
     // healthall override: new spawns get the override max HP.
     if (serverGameOverrides().maxHpOverride > 0)
         npc.body.maxHp = serverGameOverrides().maxHpOverride;
@@ -302,6 +306,7 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
         // and freshly-respawned ones are broadcast as before.
         ServerNpc sn;
         sn.entityId = n.id;
+        sn.transformEpoch = n.transformEpoch;
         sn.name = n.body.username.empty()
             ? "NPC " + std::to_string(n.id)
             : n.body.username;
@@ -640,6 +645,7 @@ SnapshotEntity makeNpcEntity(const ServerNpc& npc)
     out.entityType = ENTITY_NPC;
     out.active = 1;
     out.ownerClientId = 0;
+    out.transformEpoch = npc.transformEpoch;
     out.px = npc.pos.x; out.py = npc.pos.y; out.pz = npc.pos.z;
     out.vx = npc.vel.x; out.vy = npc.vel.y; out.vz = npc.vel.z;
     out.aimX = npc.aim.x; out.aimY = npc.aim.y; out.aimZ = npc.aim.z;

@@ -1,0 +1,61 @@
+{
+  "enabled": false,
+  "blood": {
+    "enabled": true,
+    "count": 12,
+    "minCount": 3,
+    "coneDegrees": 35.0,
+    "coneDistance": 12.0,
+    "radius": 2.4,
+    "minRadius": 0.12,
+    "height": 0.05,
+    "color": [1.0, 0.01, 0.02],
+    "colorVariation": 0.15,
+    "alpha": 0.9,
+    "lifetime": 30.0,
+    "fadeTime": 5.0,
+    "maxCount": 512,
+    "spray": {
+      "enabled": false,
+      "minCount": 4,
+      "maxCount": 40,
+      "sizeMin": 0.05,
+      "sizeMax": 0.18,
+      "bigFraction": 0.7,
+      "speedMin": 3.0,
+      "speedMax": 99.0,
+      "coneDegreesMin": 8.0,
+      "coneDegreesMax": 30.0,
+      "lifetimeMin": 1.0,
+      "lifetimeMax": 3.0,
+      "alphaMin": 0.6,
+      "alphaMax": 0.95
+    },
+    "force": {
+      "maxDistance": 1.0,
+      "minDistance": 30.0,
+      "minForce": 0.08
+    }
+  },
+  "bulletHoles": {
+    "enabled": true,
+    "radius": 0.25,
+    "height": 0.06,
+    "color": [0.03, 0.03, 0.03],
+    "alpha": 1.0,
+    "lifetime": 30.0,
+    "fadeTime": 5.0,
+    "maxCount": 256
+  },
+  "worldCracks": {
+    "enabled": true,
+    "count": 5,
+    "length": 1.0,
+    "thickness": 0.115,
+    "color": [0.1, 0.1, 0.1],
+    "alpha": 0.85,
+    "lifetime": 8.0,
+    "fadeTime": 2.0,
+    "maxCount": 128
+  }
+}

@@ -87,6 +87,22 @@ struct WeaponDefinition {
     float projectileRadius = 0.0f;
     float projectileLifetime = 5.0f;
 
+    // ── Impulse / knockback (Source/TF2-style, hot reloadable) ───────────
+    // Self-push (recoil impulse) on fire. 0 = fall back to the player setting.
+    float shooterKnockback = 0.0f;
+    // Vertical fraction of the self-push.
+    float shooterKnockbackVertical = 0.0f;
+    // Global scale on self-side impulses.
+    float selfImpulseMultiplier = 1.0f;
+    // Flat victim impulse per hit (added to the per-damage term).
+    float victimKnockback = 0.0f;
+    // Victim impulse per 1 damage dealt (higher damage => more knockback).
+    float victimKnockbackPerDamage = 0.15f;
+    // Vertical fraction of the victim impulse.
+    float victimKnockbackVerticalFraction = 0.12f;
+    // Scales victim impulse when the target is an enemy.
+    float enemyImpulseMultiplier = 1.0f;
+
     WeaponFireMode fireMode = WeaponFireMode::SemiAuto;
     WeaponBehaviorType behaviorType = WeaponBehaviorType::Hitscan;
     WeaponExecutionType executionType = WeaponExecutionType::Hitscan;

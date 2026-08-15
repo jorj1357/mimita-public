@@ -72,13 +72,38 @@ static void drawBhopDebug(const Player& player, const Camera& camera)
     const float airWish = cfg.airMaxWishspeed > 0.0f
         ? std::min(cfg.airSpeed, cfg.airMaxWishspeed)
         : cfg.airSpeed;
-    char buf[192];
-    std::snprintf(buf, sizeof(buf),
-        "BHOP speed=%.1f ground=%d airWish=%.1f cap=%.1f mode=%s strafeTol=%.0f",
-        hSpeed, (int)player.ground.onGround, airWish, cfg.bunnyHopSpeedCap,
-        cfg.maximumBhopSpeedMode == MovementSpeedCapMode::Hard ? "hard" :
-        cfg.maximumBhopSpeedMode == MovementSpeedCapMode::Soft ? "soft" : "none",
-        cfg.strafeAngularToleranceDegrees);
+    char buf[256];
+    if (cfg.walkMode == MovementWalkMode::Source) {
+        std::snprintf(buf, sizeof(buf),
+            "SOURCE speed=%.1f ground=%d maxSpeed=%.1f stop=%.2f friction=%.2f "
+            "dashGrace=%.2f bleed=%.2f imp=%.1f",
+            hSpeed, (int)player.ground.onGround,
+            cfg.sourceMaxSpeed > 0.0f ? cfg.sourceMaxSpeed : cfg.groundSpeed,
+            cfg.stopspeed, cfg.sourceFriction,
+            player.dash.dashGraceTimer, cfg.landingOverspeedBleed,
+            player.externalImpulseMagnitude);
+        // Air-strafe projection (Source PM_AirAccelerate) values while airborne:
+        // horizontalVelocity, wishDir, currentSpeed = dot(vel, wishDir),
+        // addSpeed, accelSpeed applied.
+        if (!player.ground.onGround) {
+            const MovementAirDebug& a = player.airDebug;
+            std::snprintf(buf, sizeof(buf),
+                "AIR hvel=(%.2f,%.2f) wish=(%.2f,%.2f) cur=%.2f add=%.2f "
+                "accel=%.2f applied=%d",
+                a.horizontalVelocity.x, a.horizontalVelocity.y,
+                a.wishDir.x, a.wishDir.y, a.currentSpeed, a.addSpeed,
+                a.accelSpeed, (int)a.applied);
+            drawWorldLabel(player.pos + glm::vec3(0.0f, 0.0f, 1.7f), buf,
+                           {1.0f, 1.0f, 0.4f, 1.0f});
+        }
+    } else {
+        std::snprintf(buf, sizeof(buf),
+            "BHOP speed=%.1f ground=%d airWish=%.1f cap=%.1f mode=%s strafeTol=%.0f",
+            hSpeed, (int)player.ground.onGround, airWish, cfg.bunnyHopSpeedCap,
+            cfg.maximumBhopSpeedMode == MovementSpeedCapMode::Hard ? "hard" :
+            cfg.maximumBhopSpeedMode == MovementSpeedCapMode::Soft ? "soft" : "none",
+            cfg.strafeAngularToleranceDegrees);
+    }
     drawWorldLabel(player.pos + glm::vec3(0.0f, 0.0f, 1.2f), buf,
                    {0.0f, 1.0f, 1.0f, 1.0f});
 }

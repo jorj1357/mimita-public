@@ -1,4 +1,4 @@
-#include "avatar-menu.h"
+#include "avatar-editor.h"
 #include "avatar.h"
 #include "avatar-drop-target.h"
 
@@ -138,7 +138,7 @@ public:
 
         // Route to the game's drop handler
         if (!paths.empty())
-            avatarMenuHandleDrop((int)paths.size(), paths.data());
+            avatarEditorHandleDrop((int)paths.size(), paths.data());
 
         *pdwEffect = DROPEFFECT_COPY;
         return S_OK;

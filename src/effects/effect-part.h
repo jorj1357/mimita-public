@@ -60,6 +60,7 @@ struct BloodParticle
 {
     glm::vec3 position{0.0f};
     glm::vec3 velocity{0.0f};
+    glm::vec3 color{0.92f, 0.015f, 0.025f};
     float size = 0.05f;
     float age = 0.0f;
     float lifetime = 0.5f;
@@ -68,16 +69,22 @@ struct BloodParticle
     float stretch = 1.0f;
 };
 
-struct BloodDecal
+enum class SurfaceDecalKind { Blood, BulletHole, Crack };
+
+struct SurfaceDecal
 {
     glm::vec3 position{0.0f};
     glm::vec3 normal{0.0f, 0.0f, 1.0f};
-    float radius = 0.25f;
+    glm::vec3 axis{0.0f, 0.0f, 1.0f};
+    glm::vec3 color{0.75f, 0.01f, 0.02f};
+    SurfaceDecalKind kind = SurfaceDecalKind::Blood;
+    float radius = 0.025f;
+    float height = 0.05f;
     float age = 0.0f;
     float lifetime = 30.0f;
-    float rotation = 0.0f;
-    float stretch = 1.0f;
+    float fadeTime = 5.0f;
     float alpha = 1.0f;
+    float baseAlpha = 1.0f;
 };
 
 class EffectPartSystem
@@ -98,14 +105,18 @@ public:
     EffectPart* spawnDamage(glm::vec3 position, const std::string& victim, int damage);
     EffectPart* spawnDamageImpactSphere(glm::vec3 position, glm::vec3 direction, const std::string& victim);
     void spawnBloodEffect(glm::vec3 hitPoint, glm::vec3 sprayDirection, float damage,
-                          const std::string& sourceActorId, const std::string& targetActorId);
+                          const std::string& sourceActorId, const std::string& targetActorId,
+                          float directness = 1.0f, float hitDistance = -1.0f);
     EffectPart* spawnEntityImpact(glm::vec3 position, glm::vec3 normal,
                                   const std::string& sourceActorId, const std::string& targetActorId,
                                   float sizeScale = 1.0f);
     EffectPart* spawnWorldImpact(glm::vec3 position, glm::vec3 normal, float sizeScale = 1.0f);
     EffectPart* spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId = {}, float sizeScale = 1.0f);
     EffectPart* spawnTracer(glm::vec3 start, glm::vec3 end, const std::string& sourceActorId = {}, float sizeScale = 1.0f, const std::string& weaponId = {});
-    EffectPart* spawnBulletImpact(glm::vec3 position, float sizeScale = 1.0f);
+    EffectPart* spawnBulletImpact(glm::vec3 position, glm::vec3 normal, float sizeScale = 1.0f);
+    void spawnWorldCracks(glm::vec3 position, glm::vec3 normal,
+                          const glm::vec3& direction = glm::vec3(0.0f),
+                          float sizeScale = 1.0f);
     EffectPart* spawnImpactSphereTick(glm::vec3 position, glm::vec3 color, float radius = 0.15f);
     EffectPart* spawnDeathEllipsoid(glm::vec3 position, glm::vec3 direction, float length = 8.0f,
                                     float radius = 1.5f, float lifetime = 3.0f, float sizeScale = 1.0f);
@@ -138,11 +149,19 @@ private:
     EffectPartSystem() = default;
 
     void updateBloodParticles(float dt);
-    void updateBloodDecals(float dt);
+    void updateSurfaceDecals(float dt);
+    void pushSurfaceDecal(const SurfaceDecal& decal, int maxCount);
+    void spawnBloodSurfaceDecals(const glm::vec3& hitPoint,
+                                 const glm::vec3& forward,
+                                 const glm::vec3& tangent,
+                                 const glm::vec3& bitangent,
+                                 float damageScale,
+                                 float force,
+                                 const std::string& sourceActorId,
+                                 const std::string& targetActorId);
 
     static constexpr unsigned int POOL_SIZE = 4096;
     static constexpr unsigned int MAX_BLOOD_PARTICLES = 512;
-    static constexpr unsigned int MAX_BLOOD_DECALS = 256;
     static constexpr unsigned int MAX_BLOOD_DEBUG_SEGMENTS = 256;
 
     struct BloodDebugSegment {
@@ -169,7 +188,7 @@ private:
     std::array<EffectPart, POOL_SIZE> mPool{};
     std::vector<int> mFreeSlots;
     std::vector<BloodParticle> mBloodParticles;
-    std::vector<BloodDecal> mBloodDecals;
+    std::vector<SurfaceDecal> mSurfaceDecals;
     std::array<BloodDebugSegment, MAX_BLOOD_DEBUG_SEGMENTS> mBloodDebugSegments{};
     unsigned int mActiveCount = 0;
     unsigned int mBloodDebugSegmentCount = 0;
