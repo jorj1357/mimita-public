@@ -64,6 +64,13 @@ public:
 
     const std::vector<std::string>& killfeed() const { return mKillfeed; }
 
+    // Physical-aim laser sight: the world point the equipped gun's barrel
+    // currently points at (recomputed every frame). Used by the HUD to draw
+    // the crosshair on the laser impact. Valid only while a gun is equipped
+    // and aim_mode is "physical".
+    glm::vec3 mPhysicalAimPoint{0.0f};
+    bool mPhysicalAimValid = false;
+
     // Render the equipped weapon on a remote player's hand.
     // Uses the same viewmodel mesh and attachment logic as the local player,
     // but does not modify the remote player's arm poses.

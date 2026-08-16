@@ -282,15 +282,19 @@ void applyMovementStateToServerPlayer(const MovementState& state,
     player.input.wish = movementClampUnitOrZero(state.lastInputMoveAxes);
 }
 
-MovementConfig makeCurrentRuntimeMovementConfig()
+MovementConfig applyRuntimeMovementTuning(MovementConfig config)
 {
-    MovementConfig config = MovementJsonConfig::instance().config();
     config.simulationHz = MimitaNet::GAMEPLAY_SIMULATION_HZ;
     config.fixedDeltaSeconds = MimitaNet::GAMEPLAY_FIXED_DT;
     const auto& sizeScaling = SizeScalingConfig::instance().data();
     config.movementSpeedSizeExponent = sizeScaling.movementSpeedExponent;
     config.jumpHeightSizeExponent = sizeScaling.jumpHeightExponent;
     return config;
+}
+
+MovementConfig makeCurrentRuntimeMovementConfig()
+{
+    return applyRuntimeMovementTuning(MovementJsonConfig::instance().config());
 }
 
 MovementServerConversionSupport currentServerMovementConversionSupport()

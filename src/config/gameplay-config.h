@@ -7,7 +7,8 @@ enum class GameplayAimMode {
     Crosshair,
     WorldHit,
     Farpoint,
-    CamForward
+    CamForward,
+    Physical
 };
 
 const char* gameplayAimModeName(GameplayAimMode mode);

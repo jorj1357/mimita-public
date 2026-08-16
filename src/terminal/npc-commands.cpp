@@ -96,13 +96,13 @@ void registerNpcCommands()
         "npc_diff_status", "Show current NPC difficulty config", "npc_diff_status",
         [](const std::vector<std::string>&) {
             const auto& s = NpcDifficultyConfig::instance().settings();
-            char buf[512];
+            char buf[640];
             snprintf(buf, sizeof(buf),
-                "[NPC DIFFICULTY] maxErr=%.1fdeg diffScale=%.2f dmg=%.2fx fireDelay=[%.2f,%.2f] aggressionBonus=%.2f forceHit=%d turnSpeed=%.0fdeg/s aim=[%.1f,%.1f]s move=[%.1f,%.1f]s",
+                "[NPC DIFFICULTY] maxErr=%.1fdeg diffScale=%.2f dmg=%.2fx fireDelay=[%.2f,%.2f] aggressionBonus=%.2f forceHit=%d turnSpeed=%.0fdeg/s aim=[%.1f,%.1f]s move=[%.1f,%.1f]s movementPreset=%s",
                 s.maxAngularErrorDegrees, s.difficultyErrorScale, s.damageMultiplier,
                 s.fireDelayMin, s.fireDelayMax, s.aggressionBonus, (int)s.forceHit,
                 s.turnSpeed, s.aimAtTargetMin, s.aimAtTargetMax,
-                s.faceMovementMin, s.faceMovementMax);
+                s.faceMovementMin, s.faceMovementMax, s.movementPreset.c_str());
             Terminal::instance().addLog(buf);
         }
     });
@@ -117,6 +117,21 @@ void registerNpcCommands()
             float d = std::clamp(std::stof(args[0]), 1.0f, 10.0f);
             npcSystem.setGlobalDifficulty(d);
             Terminal::instance().addLog("[NPC COMMAND] npc_difficulty_all set to " + std::to_string((int)d));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "npc_move_preset", "Set NPC movement preset (follow/default/source/counterstrike). Saved to config/npc-difficulty.json.", "npc_move_preset <name>",
+        [](const std::vector<std::string>& args) {
+            NpcDifficultyConfig& cfg = NpcDifficultyConfig::instance();
+            if (args.empty()) {
+                Terminal::instance().addLog("[NPC] movementPreset = " + cfg.settings().movementPreset
+                    + " (follow/default/source/counterstrike)");
+                return;
+            }
+            cfg.settings().movementPreset = args[0];
+            cfg.save();
+            cfg.load();
+            Terminal::instance().addLog("[NPC] movementPreset set to " + args[0] + " (saved to config/npc-difficulty.json)");
         }
     });
 }

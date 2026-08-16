@@ -179,10 +179,13 @@ static void physicsMainUpdate_Internal(
     bool freezeHeld,
     bool freezePressed,
     int subSteps,
-    float inputMovementHeldDuration = 0.0f
+    float inputMovementHeldDuration = 0.0f,
+    const MovementConfig* overrideConfig = nullptr
 ){
     Perf::ScopedTimer _t("Physics");
-    const MovementConfig movementConfig = makeCurrentRuntimeMovementConfig();
+    const MovementConfig movementConfig = overrideConfig
+        ? applyRuntimeMovementTuning(*overrideConfig)
+        : makeCurrentRuntimeMovementConfig();
     dt = movementClampStepDelta(dt, movementConfig);
     if (dt <= 0.0f)
         return;
@@ -330,7 +333,8 @@ void physicsMainUpdate(
     const World& world,
     const InputState& input,
     float dt,
-    int subSteps
+    int subSteps,
+    const MovementConfig* overrideConfig
 ){
     // Use buffered actions so quick presses survive frame drops.
     // consumeBuffered* returns true if a press happened within the buffer window,
@@ -359,6 +363,7 @@ void physicsMainUpdate(
         input.freezeHeld,
         input.freezePressed,
         subSteps,
-        input.movementHeldDuration
+        input.movementHeldDuration,
+        overrideConfig
     );
 }

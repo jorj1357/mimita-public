@@ -1,0 +1,12 @@
+{
+  "comment": "Body-aim animation. Hot-reloads live. For each limb, gains scale the camera look-pitch (up/down) into a rotation about that character axis: pitch = tilt up/down (about left-right axis), yaw = turn (about up axis), roll = tilt sideways (about forward axis). All angles are in degrees of rotation per degree of look pitch. Set a gain to 0 to leave that limb/axis untouched.",
+  "enabled": true,
+  "limbs": {
+    "head":     { "pitch": 0.0, "yaw": 0.0, "roll": -1.0 },
+    "torso":    { "pitch": 0.0, "yaw": 0.0, "roll": -0.2 },
+    "leftArm":  { "pitch": 0.0, "yaw": 0.0, "roll": -1.0 },
+    "rightArm": { "pitch": 0.0, "yaw": 0.0, "roll": -1.0 },
+    "leftLeg":  { "pitch": 0.0, "yaw": 0.0, "roll": -0.2 },
+    "rightLeg": { "pitch": 0.0, "yaw": 0.0, "roll": -0.2 }
+  }
+}

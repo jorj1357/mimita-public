@@ -1,4 +1,4 @@
-// 08 15 2026, 16 12
+// 08 15 2026, 20 52
 /* purpose
 * Implements the shared movement kernel, pure formula helpers, and contact reset consumer.
 * Preserves local collision boundaries by splitting pre and post collision phases.
@@ -937,6 +937,8 @@ bool tryActivateDash(MovementState& state,
 {
     if (!command.dashPressed)
         return false;
+    if (!config.dashEnabled)
+        return false;
     if (!state.dash.dashAvailable)
         return false;
 
@@ -983,6 +985,8 @@ bool tryActivateDownDash(MovementState& state,
 {
     if (!command.downDashPressed)
         return false;
+    if (!config.downDashEnabled)
+        return false;
     if (!state.downDash.available)
         return false;
 
@@ -1000,6 +1004,17 @@ void updateFreeze(MovementState& state,
                   MovementStepEvents& events)
 {
     const float dt = movementClampStepDelta(fixedDt, config);
+
+    if (!config.freezeEnabled) {
+        // Toggle off mid-freeze: release the freeze so the player is not stuck.
+        if (state.freeze.active) {
+            state.freeze.active = false;
+            events.freezeEnded = true;
+        }
+        state.freeze.heldPreviously = command.freezeHeld;
+        return;
+    }
+
     const bool freezePressed =
         command.freezePressed ||
         (command.freezeHeld && !state.freeze.heldPreviously);

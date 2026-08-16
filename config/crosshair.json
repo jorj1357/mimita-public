@@ -6,6 +6,7 @@
   "enabled": true,
   "gap": 4.0,
   "green": 255,
+  "laserSight": false,
   "outline": true,
   "outlineThickness": 1.0,
   "red": 255,
