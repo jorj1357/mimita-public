@@ -42,6 +42,7 @@
 
 #include "debug/debug-log.h"
 #include "config/player-settings.h"
+#include "config/gameplay-config.h"
 #include "npc/npc-combat.h"
 #include "network/server.h"
 #include "debug/debug-visuals.h"
@@ -138,7 +139,13 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         bool didDash = replayViewedActor ? false : player.dash.didDash;
         if (replayViewedActor || weapons.getCurrentDef(player)) {
             updateCrosshairDynamic(dt, glm::length(glm::vec2(vel)), grounded, didDash, shooting);
-            drawCrosshair(uiScreenW() * 0.5f, uiScreenH() * 0.5f);
+            float cx = uiScreenW() * 0.5f, cy = uiScreenH() * 0.5f;
+            if (GameplayConfig::instance().aimMode() == GameplayAimMode::Physical &&
+                weapons.mPhysicalAimValid &&
+                DebugVis::projectToScreen(camera, weapons.mPhysicalAimPoint, cx, cy)) {
+                // Crosshair sits on the laser impact instead of screen center.
+            }
+            drawCrosshair(cx, cy);
         }
     }
     if (player.spawnFlashTimer > 0.0f)

@@ -98,6 +98,8 @@
 #include "npc/npc-combat-log.h"
 #include "avatar/avatar.h"
 #include "avatar/avatar-commands.h"
+#include "entities/aim-commands.h"
+#include "entities/aimbody-config.h"
 void registerCompetitiveCommands();
 void registerLeaderboardCommands();
 void registerCursorCommands();
@@ -218,6 +220,7 @@ void gameInitSubsystems(Engine& engine)
     npcLogSetProc("client");
     MovementJsonConfig::instance().load("config/movement.json");
     CrosshairConfig::instance().load();
+    AimBodyConfig::instance().load("config/aimbody.json");
     registerCrosshairCommands();
     HealthbarConfig::instance().load();
 
@@ -350,6 +353,7 @@ void gameInitSubsystems(Engine& engine)
 
     registerPlayerCommands();
     registerMovementCommands();
+    registerAimCommands();
     registerAuthCommands();
     registerVipCommands();
     registerWeaponCommands();

@@ -10,10 +10,12 @@
 #include "npc/npc-difficulty-config.h"
 
 #include <algorithm>
+#include <cctype>
 #include <fstream>
 
 #include <nlohmann/json.hpp>
 
+#include "config/movement-config.h"
 #include "debug/debug-log.h"
 
 using json = nlohmann::json;
@@ -44,6 +46,13 @@ bool optBool(const json& root, const char* key, bool fallback)
     if (root.contains(key) && root[key].is_boolean())
         return root[key].get<bool>();
     return fallback;
+}
+
+std::string lowercaseCopy(std::string s)
+{
+    std::transform(s.begin(), s.end(), s.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
 }
 
 } // namespace
@@ -97,6 +106,39 @@ bool NpcDifficultyConfig::load(const std::string& path)
         next.faceMovementMin = std::max(0.0f, optFloat(root, "faceMovementMin", next.faceMovementMin));
         next.faceMovementMax = std::max(0.0f, optFloat(root, "faceMovementMax", next.faceMovementMax));
 
+        // NPC movement preset: "follow" uses the player's global movement config;
+        // any other value resolves a preset from config/movement/*.json.
+        next.movementPreset = "follow";
+        mHasNpcMovement = false;
+        mNpcPresetPath.clear();
+        mNpcPresetWrite = {};
+        if (root.contains("movementPreset") && root["movementPreset"].is_string())
+        {
+            const std::string preset = lowercaseCopy(root["movementPreset"].get<std::string>());
+            if (!preset.empty() && preset != "follow")
+            {
+                MovementConfig npcCfg;
+                std::string npcPath;
+                if (MovementJsonConfig::instance().loadPresetInto(preset, npcCfg, &npcPath))
+                {
+                    next.movementPreset = preset;
+                    mNpcMovement = npcCfg;
+                    mHasNpcMovement = true;
+                    mNpcPresetPath = npcPath;
+                    mNpcPresetWrite = getLastWrite(npcPath);
+                    Debug::warn(Debug::Category::NpcCombat,
+                        "[NPC DIFFICULTY] NPC movement preset: %s (%s)\n",
+                        preset.c_str(), npcPath.c_str());
+                }
+                else
+                {
+                    Debug::warn(Debug::Category::NpcCombat,
+                        "[NPC DIFFICULTY] Unknown movementPreset '%s'; falling back to 'follow'.\n",
+                        preset.c_str());
+                }
+            }
+        }
+
         mRoot = root;
         mData = next;
         mLastWrite = writeTime;
@@ -123,6 +165,18 @@ bool NpcDifficultyConfig::load(const std::string& path)
 
 bool NpcDifficultyConfig::pollReload()
 {
+    if (mHasNpcMovement && !mNpcPresetPath.empty())
+    {
+        const auto npcWrite = getLastWrite(mNpcPresetPath);
+        if (npcWrite != mNpcPresetWrite)
+        {
+            Debug::warn(Debug::Category::NpcCombat,
+                "[NPC DIFFICULTY] NPC movement preset changed on disk: %s\n",
+                fileNameOf(mNpcPresetPath).c_str());
+            return load(mPath);
+        }
+    }
+
     const auto writeTime = getLastWrite(mPath);
     if (writeTime == std::filesystem::file_time_type{} || writeTime == mLastWrite)
         return false;
@@ -149,6 +203,7 @@ bool NpcDifficultyConfig::save(const std::string& path)
     j["aimAtTargetMax"] = mData.aimAtTargetMax;
     j["faceMovementMin"] = mData.faceMovementMin;
     j["faceMovementMax"] = mData.faceMovementMax;
+    j["movementPreset"] = mData.movementPreset;
 
     std::ofstream file(path);
     if (!file.is_open())

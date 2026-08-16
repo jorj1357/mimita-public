@@ -41,12 +41,12 @@
     // NOT from A/D rules: the key only defines the wish direction; the mouse
     // rotates the camera, which naturally rotates the wish. Holding A alone
     // can only fill the small projection cap; it cannot steer velocity directly.
-    "air_speed_gain_multiplier": 2.0,
+    "air_speed_gain_multiplier": 12.0,
     // Strength of the air acceleration (Source sv_airaccelerate equivalent).
     "air_acceleration": 12.0,
     // Source's 30-unit air cap divided by its 320-unit max speed, scaled to
     // MiMITA max_speed 20: 20 * 30 / 320 = 1.875.
-    "air_max_wishspeed": 1.875,
+    "air_max_wishspeed": 2.875,
     // Historical Source bug compatibility: use uncapped wishspeed in the
     // acceleration term while capped wishspd limits projection/addSpeed.
     "source_airaccelerate_bug_compatible": true,
@@ -68,7 +68,7 @@
     // 0 = no mercy (pure CS behavior).
     "coyote_time": 0.0,
     // Extra mid-air jumps allowed (Source/CS has none = 0).
-    "max_air_jumps": 0,
+    "max_air_jumps": 1,
 
     // ── Ground snap ──────────────────────────────────────────────────────
     // Snap small downward velocity to 0 when grounded (prevents jitter).
@@ -83,13 +83,6 @@
     "landing_overspeed_bleed": 1.0,
 
     // ── Dash ─────────────────────────────────────────────────────────────
-    // Master toggle for ground/air dash (shift). false = dash is unavailable.
-    "dash_enabled": false,
-    // Master toggle for down dash (Q). false = down dash is unavailable.
-    "down_dash_enabled": false,
-    // Master toggle for freeze. false = freeze is unavailable; a freeze in
-    // progress is released immediately.
-    "freeze_enabled": false,
     // How long the dash boost ignores ground friction and stays at full
     // strength, in seconds. While this is active, friction does NOT slow you.
     "dash_grace_seconds": 0.25,
@@ -106,12 +99,12 @@
     // ── External impulse / knockback ─────────────────────────────────────
     // Exponential decay of knockback per second. In "source" impulse mode this
     // is ignored (0 here) — knockback carries and only bleeds via friction.
-    "external_impulse_decay": 99.0,
+    "external_impulse_decay": 0.0,
     // Cap on the horizontal speed of a knockback impulse, MiMITA units/sec.
-    "max_external_impulse_speed": 999999.0,
+    "max_external_impulse_speed": 1.0,
     // How knockback behaves: "source" = carries through input, bled by ground
     // friction (stopspeed-based); "exponential" = old independent decay.
-    "impulse_friction_mode": "exponential",
+    "impulse_friction_mode": "source",
     // Seconds a fresh knockback is completely untouched before friction starts
     // bleeding it. Gives hits a short "pop" before physics takes over.
     "impulse_carry_seconds": 0.1,

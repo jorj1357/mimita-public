@@ -15,6 +15,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "physics/movement/movement-types.h"
+
 struct NpcDifficultySettings {
     float maxAngularErrorDegrees = 4.0f;  // aim miss-cone in degrees; lower = deadlier
     float difficultyErrorScale = 0.5f;    // 0-1: how much NPC difficulty shrinks the cone
@@ -34,6 +36,11 @@ struct NpcDifficultySettings {
     float aimAtTargetMax = 10.0f;         // max seconds spent facing the target per cycle
     float faceMovementMin = 0.5f;         // min seconds spent facing movement per cycle
     float faceMovementMax = 1.5f;         // max seconds spent facing movement per cycle
+
+    // Which config/movement/*.json preset NPCs use for their physics.
+    // "follow" (default) = same global config as the player. Any preset name
+    // (e.g. "default", "source", "counterstrike") overrides NPC physics.
+    std::string movementPreset = "follow";
 };
 
 class NpcDifficultyConfig {
@@ -47,6 +54,15 @@ public:
     const NpcDifficultySettings& settings() const { return mData; }
     NpcDifficultySettings& settings() { return mData; }
 
+    // Returns the MovementConfig NPCs should use for physics, or nullptr when
+    // movementPreset is "follow" (NPCs use the player's global config).
+    const MovementConfig* npcMovementConfig() const
+    {
+        return mHasNpcMovement ? &mNpcMovement : nullptr;
+    }
+
+    const std::string& npcMovementPresetName() const { return mData.movementPreset; }
+
 private:
     NpcDifficultyConfig() = default;
 
@@ -55,4 +71,10 @@ private:
     std::string mPath = "config/npc-difficulty.json";
     std::filesystem::file_time_type mLastWrite{};
     bool mWatchLogged = false;
+
+    // Cached NPC movement preset (only used when movementPreset != "follow").
+    MovementConfig mNpcMovement;
+    bool mHasNpcMovement = false;
+    std::string mNpcPresetPath;
+    std::filesystem::file_time_type mNpcPresetWrite{};
 };

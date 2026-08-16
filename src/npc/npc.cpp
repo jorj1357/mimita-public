@@ -771,7 +771,8 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         glm::vec3 velocityBefore = npc.body.vel;
         float planarSpeedBefore = glm::length(glm::vec2(velocityBefore.x, velocityBefore.y));
 
-        physicsMainUpdate(npc.body, world, input, safeDt, 2);
+        physicsMainUpdate(npc.body, world, input, safeDt, 2,
+            NpcDifficultyConfig::instance().npcMovementConfig());
 
         clearCollisionEntityContext();
 

@@ -1,4 +1,4 @@
-// 08 15 2026, 16 12
+// 08 15 2026, 20 52
 /* purpose
 * Defines neutral movement command, state, config, contact, and event data.
 * Provides deterministic helpers needed by shared client/server movement.
@@ -569,6 +569,12 @@ struct MovementConfig {
     float jumpBufferSeconds = 0.0f;
     float coyoteSeconds = 0.0f;
     int maximumAirJumps = 0;
+
+    // Master toggles for dash, down-dash, and freeze. When false the ability
+    // is unavailable and presses are ignored (no event, no velocity change).
+    bool dashEnabled = true;
+    bool downDashEnabled = true;
+    bool freezeEnabled = true;
 
     float groundDashImpulse = 0.0f;
     float airDashImpulse = 0.0f;

@@ -57,6 +57,7 @@ AimSolution computeAim(
     const World& world,
     NpcSystem& npcs,
     const glm::vec3& muzzlePos,
+    const glm::vec3& weaponForward,
     const std::unordered_map<uint32_t, Player>* remotePlayers,
     std::unordered_map<uint32_t, Player>* remoteNpcs = nullptr
 );

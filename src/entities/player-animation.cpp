@@ -6,6 +6,7 @@
 
 #include "combat/weapon-registry.h"
 #include "config.h"
+#include "entities/aimbody-config.h"
 #include "physics/config.h"
 #include "debug/debug-log.h"
 #include "network/net_common.h"
@@ -112,6 +113,7 @@ static void applyAxisLocks(ProceduralPose& pose, const std::string& partName)
 void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, const glm::vec3& camPos, bool movementPressed)
 {
     updatePlayerProceduralHotReload(dt);
+    AimBodyConfig::instance().pollReload();
 
     if (perfectPoseSkeleton.nodes.empty() ||
         perfectPoseSkeleton.restLocalTransforms.size() != perfectPoseSkeleton.nodes.size())
@@ -485,6 +487,10 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             }
         }
 
+        // (Look-pitch is applied at the skeleton assignment below, after the
+        // pose, so the rotation axis stays fixed regardless of the current
+        // stance/animation rotation.)
+
         // Axis locks: clamp unwanted axes to 0
         applyAxisLocks(target, part.name);
 
@@ -517,9 +523,31 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             springVec3(part.rotationSpring, target.rotationEuler, 80.0f, 14.0f, dt);
 
         // Apply to skeleton for rendering
-        perfectPoseSkeleton.nodes[part.nodeIndex].localTransform =
-            perfectPoseSkeleton.restLocalTransforms[part.nodeIndex] *
-            poseMatrix(part.pose);
+        glm::mat4 restM = perfectPoseSkeleton.restLocalTransforms[part.nodeIndex];
+        glm::mat4 poseM = poseMatrix(part.pose);
+        {
+            // Body-aim: limbs follow the camera look pitch (up/down). Per limb
+            // and per axis (pitch/yaw/roll) the gain in config/aimbody.json says
+            // how many degrees the limb rotates per degree of look pitch, around
+            // that character axis. Applied AFTER the pose so the axes stay fixed
+            // in the character frame regardless of stance/animation rotation —
+            // pitching through the pose euler skews into roll for the
+            // weapon-posed arms (~80deg rolls) and looks like tilting sideways.
+            const AimBodyConfig& ab = AimBodyConfig::instance();
+            const LimbAim* limb = ab.limb(part.name);
+            if (ab.enabled() && limb &&
+                (limb->pitch != 0.0f || limb->yaw != 0.0f || limb->roll != 0.0f)) {
+                const float lookPitch = glm::degrees(std::asin(
+                    glm::clamp(camForward.z, -1.0f, 1.0f)));
+                glm::mat4 q(1.0f);
+                q = glm::rotate(q, glm::radians(lookPitch * limb->pitch), glm::vec3(1, 0, 0));
+                q = glm::rotate(q, glm::radians(lookPitch * limb->yaw),   glm::vec3(0, 1, 0));
+                q = glm::rotate(q, glm::radians(lookPitch * limb->roll),  glm::vec3(0, 0, -1));
+                restM = restM * q;
+                AimBodyConfig::instance().setApplied(lookPitch);
+            }
+        }
+        perfectPoseSkeleton.nodes[part.nodeIndex].localTransform = restM * poseM;
 
         for (BodyPart& legacyPart : bodyParts)
         {

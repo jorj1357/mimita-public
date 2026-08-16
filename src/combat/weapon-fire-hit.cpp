@@ -82,7 +82,7 @@ RevolverShotResult tryFireHitscan(
     result.fired = true;
     result.start = muzzlePos;
 
-    AimSolution aim = computeAim(camera, world, npcs, muzzlePos, remotePlayers, remoteNpcs);
+    AimSolution aim = computeAim(camera, world, npcs, muzzlePos, muzzleDir, remotePlayers, remoteNpcs);
     logAimDebug("hitscan", camera, aim);
     glm::vec3 shotDirection = aim.direction;
 
@@ -310,7 +310,7 @@ void fireMultiPellet(
     glm::vec3 cameraAimNormal(0.0f, 0.0f, 1.0f);
     {
         auto ts = ShotProfiler::Scope(&shotProf.aimMs);
-        AimSolution aim = computeAim(camera, world, npcs, muzzlePos, remotePlayers, remoteNpcs);
+        AimSolution aim = computeAim(camera, world, npcs, muzzlePos, muzzleDir, remotePlayers, remoteNpcs);
         logAimDebug("multi_pellet", camera, aim);
         baseDir = aim.direction;
         aimUsesCameraTarget = aim.usesCameraTarget;

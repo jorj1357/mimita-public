@@ -49,6 +49,7 @@ void registerCrosshairCommands()
     number("crosshair_gap", "crosshair_gap <0-64>", 0.0f, 64.0f, &CrosshairSettings::gap);
     number("crosshair_thickness", "crosshair_thickness <1-16>", 1.0f, 16.0f, &CrosshairSettings::thickness);
     toggle("crosshair_dot", "crosshair_dot <0|1>", &CrosshairSettings::dot);
+    toggle("crosshair_laser", "crosshair_laser <0|1>", &CrosshairSettings::laserSight);
     toggle("crosshair_outline", "crosshair_outline <0|1>", &CrosshairSettings::outline);
     toggle("crosshair_dynamic", "crosshair_dynamic <0|1>", &CrosshairSettings::dynamic);
 

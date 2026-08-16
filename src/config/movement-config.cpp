@@ -1,4 +1,4 @@
-// 08 15 2026, 16 12
+// 08 15 2026, 20 52
 /* purpose
 * Implements the movement tuning preset loader and hot-reload watcher.
 * Reads config/movement.json for the preset name, then loads that preset from config/movement/.
@@ -139,6 +139,9 @@ MovementConfig defaultMovementConfig()
     config.dashHorizontalImpulse = AIR_DASH_IMPULSE;
     config.downDashVerticalSpeed = DOWN_DASH_SPEED;
     config.groundReturnVerticalSpeed = GROUND_RETURN_SPEED;
+    config.dashEnabled = true;
+    config.downDashEnabled = true;
+    config.freezeEnabled = true;
     config.freezeDurationSeconds = FREEZE_MAX_TIME;
     config.freezeCurveExponent = 4.0f;
     config.freezeDashMinimumPassThrough = 0.001f;
@@ -308,6 +311,9 @@ void applyPresetOverrides(const json& root, MovementConfig& config)
     readFloat("ground_dash_impulse", config.groundDashImpulse);
     readFloat("air_dash_impulse", config.airDashImpulse);
     readFloat("down_dash_speed", config.downDashVerticalSpeed);
+    readBool("dash_enabled", config.dashEnabled);
+    readBool("down_dash_enabled", config.downDashEnabled);
+    readBool("freeze_enabled", config.freezeEnabled);
 
     // ── Source (CS/Quake PM_) model ──────────────────────────────────────
     readFloat("max_speed", config.sourceMaxSpeed);
@@ -336,6 +342,45 @@ void applyPresetOverrides(const json& root, MovementConfig& config)
 
     if (root.contains("max_air_jumps") && root["max_air_jumps"].is_number())
         config.maximumAirJumps = std::max(0, root["max_air_jumps"].get<int>());
+}
+
+// Parses a preset file into `out` without touching any global state.
+// Returns false (and leaves `out` untouched) on any failure.
+bool parsePresetFileInto(const std::string& path, MovementConfig& out)
+{
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        Debug::warn(Debug::Category::Physics,
+            "[MOVEMENT CONFIG] Could not open preset file %s\n", path.c_str());
+        return false;
+    }
+
+    json root;
+    try {
+        root = json::parse(file, nullptr, true, true);
+    } catch (const json::parse_error& e) {
+        Debug::error(Debug::Category::Physics,
+            "[MOVEMENT CONFIG] Parse error in %s: %s. Keeping previous settings.\n",
+            path.c_str(), e.what());
+        return false;
+    } catch (const std::exception& e) {
+        Debug::error(Debug::Category::Physics,
+            "[MOVEMENT CONFIG] Error loading %s: %s. Keeping previous settings.\n",
+            path.c_str(), e.what());
+        return false;
+    }
+
+    if (!root.is_object()) {
+        Debug::error(Debug::Category::Physics,
+            "[MOVEMENT CONFIG] Preset file %s is not a JSON object. Keeping previous settings.\n",
+            path.c_str());
+        return false;
+    }
+
+    MovementConfig next = defaultMovementConfig();
+    applyPresetOverrides(root, next);
+    out = next;
+    return true;
 }
 
 } // namespace
@@ -389,37 +434,9 @@ std::string MovementJsonConfig::resolvePresetPath(const std::string& preset) con
 bool MovementJsonConfig::loadPresetFile(const std::string& path,
                                         const std::string& preset)
 {
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        Debug::warn(Debug::Category::Physics,
-            "[MOVEMENT CONFIG] Could not open preset file %s\n", path.c_str());
+    MovementConfig next;
+    if (!parsePresetFileInto(path, next))
         return false;
-    }
-
-    json root;
-    try {
-        root = json::parse(file, nullptr, true, true);
-    } catch (const json::parse_error& e) {
-        Debug::error(Debug::Category::Physics,
-            "[MOVEMENT CONFIG] Parse error in %s: %s. Keeping previous settings.\n",
-            path.c_str(), e.what());
-        return false;
-    } catch (const std::exception& e) {
-        Debug::error(Debug::Category::Physics,
-            "[MOVEMENT CONFIG] Error loading %s: %s. Keeping previous settings.\n",
-            path.c_str(), e.what());
-        return false;
-    }
-
-    if (!root.is_object()) {
-        Debug::error(Debug::Category::Physics,
-            "[MOVEMENT CONFIG] Preset file %s is not a JSON object. Keeping previous settings.\n",
-            path.c_str());
-        return false;
-    }
-
-    MovementConfig next = defaultMovementConfig();
-    applyPresetOverrides(root, next);
 
     mConfig = next;
     mActivePreset = preset;
@@ -438,6 +455,28 @@ bool MovementJsonConfig::loadPresetFile(const std::string& path,
         mConfig.groundSpeed, mConfig.airSpeed,
         mConfig.groundAcceleration, mConfig.airAcceleration,
         mConfig.gravityZ, mConfig.jumpVerticalSpeed);
+    return true;
+}
+
+bool MovementJsonConfig::loadPresetInto(const std::string& preset,
+                                        MovementConfig& out,
+                                        std::string* outPath)
+{
+    const std::string resolved = resolvePresetPath(preset);
+    if (resolved.empty()) {
+        Debug::warn(Debug::Category::Physics,
+            "[MOVEMENT CONFIG] Unknown preset '%s' for secondary use; not changing it.\n",
+            preset.c_str());
+        return false;
+    }
+
+    MovementConfig next;
+    if (!parsePresetFileInto(resolved, next))
+        return false;
+
+    out = next;
+    if (outPath)
+        *outPath = resolved;
     return true;
 }
 

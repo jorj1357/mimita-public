@@ -1,9 +1,9 @@
 {
   "torsoAimYawStrength": 0.1,
-  "torsoAimPitchStrength": 0.05,
+  "torsoAimPitchStrength": 0.3,
 
   "armAimYawStrength": 0.25,
-  "armAimPitchStrength": 0.45,
+  "armAimPitchStrength": 0.8,
 
   "armSwingAmount": 25.0,
   "legSwingAmount": 75.0,

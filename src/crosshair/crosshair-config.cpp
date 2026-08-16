@@ -71,6 +71,7 @@ bool CrosshairConfig::load(const std::string& path)
         file >> j;
         CrosshairSettings d;
         d.enabled = j.value("enabled", d.enabled);
+        d.laserSight = j.value("laserSight", d.laserSight);
         d.red = j.value("red", d.red);
         d.green = j.value("green", d.green);
         d.blue = j.value("blue", d.blue);
@@ -104,6 +105,7 @@ bool CrosshairConfig::save()
     const auto& d = mData;
     json j = {
         {"enabled", d.enabled},
+        {"laserSight", d.laserSight},
         {"red", d.red}, {"green", d.green}, {"blue", d.blue}, {"alpha", d.alpha},
         {"size", d.size}, {"thickness", d.thickness}, {"gap", d.gap},
         {"dot", d.dot}, {"outline", d.outline},

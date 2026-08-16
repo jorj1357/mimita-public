@@ -37,8 +37,8 @@
         1.0
       ]
     },
-    "damage": 25.0,
-    "headshot_multiplier": 10.0,
+    "damage": 12.0,
+    "headshot_multiplier": 2.0,
     "fire_delay": 0.008,
     "reload_time": 1.0,
     "magazine_size": 6,
@@ -204,8 +204,8 @@
         1.0
       ]
     },
-    "damage": 16.0,
-    "headshot_multiplier": 5.0,
+    "damage": 6.0,
+    "headshot_multiplier": 2.0,
     "fire_delay": 0.025,
     "reload_time": 1.5,
     "magazine_size": 2,

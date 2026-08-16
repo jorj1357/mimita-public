@@ -24,6 +24,12 @@ public:
     bool load(const std::string& path = "config/movement.json");
     // Loads a preset by name without touching the selector file.
     bool loadPresetByName(const std::string& preset);
+    // Parses a preset by name into `out` without changing the global active
+    // config or the selector file. On success, `outPath` (optional) receives the
+    // resolved preset file path so callers can hot-reload it. Returns false and
+    // leaves `out` untouched when the preset is unknown or unparseable.
+    bool loadPresetInto(const std::string& preset, MovementConfig& out,
+                        std::string* outPath = nullptr);
     // Writes the selector file to select a preset, then loads it. Returns false on failure.
     bool savePresetSelection(const std::string& preset);
     // Hot-reloads when the selector file or the active preset file changes on disk.

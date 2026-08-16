@@ -5,6 +5,7 @@
 
 struct CrosshairSettings {
     bool enabled = true;
+    bool laserSight = true;   // physical-aim red laser beam (always on when aim_mode=physical)
     int red = 0;
     int green = 255;
     int blue = 255;

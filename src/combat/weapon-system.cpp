@@ -34,6 +34,7 @@
 #include "config.h"
 #include "config/player-settings.h"
 #include "config/gameplay-config.h"
+#include "crosshair/crosshair-config.h"
 #include "debug/debug-log.h"
 
 // Overlay triangle buffer for always-on-top rendering (shared with debug visuals)
@@ -166,6 +167,7 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
     } else {
         player.collision.hasWeaponCollisionCapsule = false;
         player.weaponCollisionName.clear();
+        mPhysicalAimValid = false;
         if (mGodballPhys.active) {
             WeaponGodball::despawnBall(mGodballPhys);
         }
@@ -181,14 +183,16 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
         WeaponRuntimeHelper::tickReload(wepRt, *wepDef, dt);
     }
 
-    // ── World-space aim crosshair (permanent) ──────────────
-    if (DebugConfig::WORLD_XH_ENABLED && def && rt) {
+    // ── World-space aim crosshair (permanent) + physical laser sight ──
+    const bool physicalAim =
+        GameplayConfig::instance().aimMode() == GameplayAimMode::Physical;
+    if (def && rt && (DebugConfig::WORLD_XH_ENABLED || physicalAim)) {
         int idx = slotIndex(def->slot);
         const WeaponViewModel& vm = mViewModels[idx];
         glm::vec3 muzzlePos = vm.muzzle;
 
         WeaponFire::AimSolution aim = WeaponFire::computeAim(
-            camera, world, npcs, muzzlePos, nullptr);
+            camera, world, npcs, muzzlePos, vm.forward, nullptr);
         glm::vec3 shotDir = aim.direction;
 
         constexpr float MAX_DIST = 100.0f;
@@ -225,6 +229,17 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
         // mode it keeps the old predicted muzzle-impact behavior.
         glm::vec3 crossPos = aim.usesCameraTarget ? aim.aimPoint : hitPoint;
         float crossDistance = aim.usesCameraTarget ? aim.cameraDistance : nearest;
+
+        // Physical laser sight: store the barrel's hit point for the HUD and
+        // draw an always-on thin red beam from the muzzle to the impact.
+        if (physicalAim) {
+            mPhysicalAimPoint = crossPos;
+            mPhysicalAimValid = true;
+            if (CrosshairConfig::instance().data().laserSight) {
+                DebugVis::drawFilledBeam(camera, muzzlePos, hitPoint, 0.025f,
+                    glm::vec4(1.0f, 0.06f, 0.06f, 0.9f));
+            }
+        }
 
         // ── World-space aim trail ───────────────────────────────
         int trailInterval = DebugConfig::WORLD_XH_TRAIL_SPAWN_INTERVAL;
@@ -741,7 +756,7 @@ RevolverShotResult WeaponSystem::fire(
         glm::vec3 muzzlePos = vm.muzzle;
         glm::vec3 muzzleDir = vm.forward;
         WeaponFire::AimSolution aim = WeaponFire::computeAim(
-            camera, world, npcs, muzzlePos, nullptr);
+            camera, world, npcs, muzzlePos, muzzleDir, nullptr);
         glm::vec3 dir = aim.direction;
         float recoilStrength = def->customParams.count("firingRecoilStrength")
             ? def->customParams.at("firingRecoilStrength") : 20.0f;
@@ -942,9 +957,10 @@ RevolverShotResult WeaponSystem::fireRocketLauncher(Camera& camera, Player& play
     int idx = slotIndex(def->slot);
     const WeaponViewModel& vm = mViewModels[idx];
     glm::vec3 muzzlePos = vm.muzzle;
+    glm::vec3 muzzleDir = vm.forward;
 
     WeaponFire::AimSolution aim = WeaponFire::computeAim(
-        camera, world, npcs, muzzlePos, remotePlayers);
+        camera, world, npcs, muzzlePos, muzzleDir, remotePlayers);
     WeaponFire::logAimDebug("rocket_launcher", camera, aim);
     glm::vec3 dir = aim.direction;
     Debug::warn(Debug::Category::Weapons,

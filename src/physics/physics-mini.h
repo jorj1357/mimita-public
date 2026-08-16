@@ -10,14 +10,20 @@
 
 #pragma once
 
+#include "physics/movement/movement-types.h"
+
 struct Player;
 struct World;
 struct InputState;
 
+// `overrideConfig` (optional) supplies a MovementConfig that replaces the
+// global player movement preset for this update. Used by NPCs so they can run
+// a different movement preset than the player. nullptr = global config.
 void physicsMainUpdate(
     Player& player,
     const World& world,
     const InputState& input,
     float dt,
-    int subSteps = 6
+    int subSteps = 6,
+    const MovementConfig* overrideConfig = nullptr
 );

@@ -63,4 +63,9 @@ void applyMovementStateToServerPlayer(const MovementState& state,
 
 MovementConfig makeCurrentRuntimeMovementConfig();
 
+// Applies the shared runtime tuning (simulation rate and size scaling) on top
+// of any base MovementConfig. Used by makeCurrentRuntimeMovementConfig() and
+// by callers that drive movement with a non-global config (e.g. NPC presets).
+MovementConfig applyRuntimeMovementTuning(MovementConfig config);
+
 MovementServerConversionSupport currentServerMovementConversionSupport();

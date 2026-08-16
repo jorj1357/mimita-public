@@ -43,6 +43,7 @@ AimSolution computeAim(
     const World& world,
     NpcSystem& npcs,
     const glm::vec3& muzzlePos,
+    const glm::vec3& weaponForward,
     const std::unordered_map<uint32_t, Player>* remotePlayers,
     std::unordered_map<uint32_t, Player>* remoteNpcs)
 {
@@ -76,6 +77,17 @@ AimSolution computeAim(
         result.modeName = "camforward";
         result.cameraHitKind = AimHitKind::None;
         result.usesCameraTarget = false;
+    } else if (mode == GameplayAimMode::Physical) {
+        // The weapon is a physical object: it always shoots along its own barrel
+        // forward (the gun's real transform direction), never at the crosshair or
+        // along the camera line. World and entity collision run normally.
+        result.direction = glm::length(weaponForward) > 0.001f
+            ? glm::normalize(weaponForward) : camera.front;
+        result.aimPoint = muzzlePos + result.direction * kMaxShotDistance;
+        result.cameraDistance = kMaxShotDistance;
+        result.modeName = "physical";
+        result.cameraHitKind = AimHitKind::None;
+        result.usesCameraTarget = false;
     } else {
         result.aimPoint = camera.pos + camera.front * kMaxShotDistance;
         result.modeName = "world_hit";
@@ -83,9 +95,10 @@ AimSolution computeAim(
         result.usesCameraTarget = false;
     }
 
-    if (mode == GameplayAimMode::CamForward) {
-        // 1:1 parallel to the camera look direction, full 3D, never aimed at a point.
-        result.direction = camera.front;
+    if (mode == GameplayAimMode::CamForward || mode == GameplayAimMode::Physical) {
+        // 1:1 along the weapon/camera look direction, full 3D, never aimed at a point.
+        if (glm::length(result.direction) <= 0.001f)
+            result.direction = camera.front;
     } else {
         glm::vec3 direction = result.aimPoint - muzzlePos;
         if (glm::length(direction) <= 0.001f)
