@@ -27,7 +27,7 @@ export default function Download() {
     window.location.href = GAME_ZIP_DOWNLOAD_URL
     setTimeout(() => {
       if (!document.hidden) {
-        setError("Download didn't start automatically. Click the button below.")
+        setError("Download didn't start automatically. Click the button above!.")
       }
       setDownloading(false)
       downloadingRef.current = false

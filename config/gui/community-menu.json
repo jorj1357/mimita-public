@@ -84,7 +84,7 @@
     },
 
     "startupNpcsLabel": {
-      "type": "text", "layer": 1, "x": 510, "y": 438, "width": 300, "height": 26,
+      "type": "text", "layer": 1, "x": 510, "y": 338, "width": 300, "height": 26,
       "text": "Startup NPCs (practice bots):", "fontSize": 0.28,
       "textColor": [0.75, 0.8, 0.9, 1.0]
     },
@@ -92,20 +92,38 @@
 
     "startupNpcsCheckbox": {
       "type": "checkbox", "layer": 2,
-      "x": 510, "y": 526, "width": 24, "height": 24,
+      "x": 890, "y": 330, "width": 40, "height": 40,
       "binding": "server.startup_npcs",
-      "fontSize": 0.28,
+      "fontSize": 0.36,
       "textColor": [0.75, 0.8, 0.9, 1.0],
       "backgroundColor": [0.12, 0.14, 0.18, 1.0]
     },
     "startupNpcsEnabledLabel": {
       "type": "dynamic_text", "layer": 1,
-      "x": 510, "y": 468, "width": 330, "height": 24,
+      "x": 5210, "y": 468, "width": 330, "height": 24,
       "binding": "server.startup_npcs",
-      "bindingFallback": "Enabled - 3 NPCs at start",
+      "bindingFallback": "Enabled - 1 NPC at start",
       "fontSize": 0.26,
       "textColor": [0.55, 0.8, 0.55, 1.0],
       "textAlign": "left"
+    },
+
+    "npcCountLabel": {
+      "type": "text", "layer": 1, "x": 550, "y": 403, "width": 200, "height": 24,
+      "text": "NPC Count:", "fontSize": 0.30,
+      "textColor": [0.75, 0.8, 0.9, 1.0]
+    },
+    "npcCountInput": {
+      "type": "number_input", "layer": 2,
+      "x": 720, "y": 398, "width": 120, "height": 36,
+      "binding": "server.startup_npc_count",
+      "maxLength": 3,
+      "fontSize": 0.34,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.12, 0.14, 0.18, 1.0],
+      "outlineColor": [0.3, 0.5, 0.8, 0.5],
+      "bindingFallback": "1",
+      "textAlign": "center"
     },
 
     "privacyLabel": {
@@ -184,13 +202,13 @@
     },
     "serverCodeDisplay": {
       "type": "dynamic_text", "layer": 1,
-      "x": 60, "y": 506, "width": 400, "height": 50,
+      "x": 2260, "y": 506, "width": 400, "height": 50,
       "visibleWhenBinding": "server.running",
       "visibleWhenOp": "equals",
       "visibleWhenValue": "true",
       "binding": "server.code",
       "bindingFallback": "ZMRJKLW",
-      "fontSize": 0.55,
+      "fontSize": 1.0,
       "textColor": [0.6, 0.8, 1.0, 1.0],
       "textAlign": "center"
     },
@@ -266,14 +284,14 @@
       "submitOnEnter": true
     },
     "joinCodeHint": {
-      "type": "text", "layer": 1, "x": 1000, "y": 217, "width": 400, "height": 22,
-      "text": "e.g. ZMRJKLW", "fontSize": 0.42,
+      "type": "text", "layer": 1, "x": 1000, "y": 205, "width": 400, "height": 22,
+      "text": "e.g. ZMRJKLW", "fontSize": 0.46,
       "textColor": [0.35, 0.4, 0.55, 1.0],
       "textAlign": "center"
     },
     "joinServerButton": {
       "type": "button", "layer": 3,
-      "x": 1000, "y": 230, "width": 400, "height": 48,
+      "x": 1000, "y": 250, "width": 400, "height": 48,
       "text": "JOIN SERVER",
       "fontSize": 0.36,
       "textColor": [1, 1, 1, 1],
@@ -308,7 +326,7 @@
       "x": 40, "y": 720, "width": 1840, "height": 310,
       "binding": "server.list",
       "bindingFallback": "No public servers found. Start one above!",
-      "fontSize": 0.28,
+      "fontSize": 0.38,
       "textColor": [0.6, 0.65, 0.75, 1.0],
       "backgroundColor": [0.045, 0.05, 0.07, 1.0],
       "outlineColor": [0.12, 0.15, 0.2, 0.5]

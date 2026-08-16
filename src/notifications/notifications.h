@@ -1,4 +1,4 @@
-// 08 03 2026, 12 00
+// 08 16 2026, 01 35
 /* purpose
 * Provides the general-purpose in-game notification popup system: up to N
 * notifications stacked at an anchored screen edge with tick-based durations,
@@ -44,6 +44,7 @@ public:
         Action action;
         UIScrollState scroll;       // vertical scroll state for the message box
         bool critical = false;      // red accent (title + message) for urgent notices
+        bool important = false;     // yellow accent for successful, time-sensitive notices
     };
 
     // In-memory log of pushed notifications (title, message, tick).
@@ -72,6 +73,8 @@ public:
     // critical, time-sensitive events. Same tip UI, red accent.
     void pushCritical(const std::string& title, const std::string& message,
                       uint64_t durationTicks = 0);
+    void pushImportant(const std::string& title, const std::string& message,
+                       uint64_t durationTicks = 0);
     void pushBuildNotice();
     void pushTip(bool force = false);
     void clear() { mNotifications.clear(); }

@@ -1,4 +1,6 @@
 {
+    "encoder": "windows",
+    "encoderMode": "auto",
     "audioVolumeMultiplier": 0.8,
     "exportWidth": 1920,
     "exportHeight": 1080,

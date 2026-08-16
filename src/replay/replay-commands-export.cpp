@@ -1,3 +1,12 @@
+// 08 16 2026, 01 35
+/* purpose
+* Registers replay export diagnostics, backend settings, and clip commands.
+* Connects the instant replay recorder to background MP4 export and Explorer.
+* Keeps the existing replay editor factory command independent from clip export.
+* Does NOT capture frames, encode video, or own replay playback state.
+* Does NOT hardcode encoder installation paths or bundle FFmpeg.
+* Does NOT register global key bindings directly.
+*/
 #include "terminal/replay-commands.h"
 #include "terminal/terminal-state.h"
 
@@ -23,6 +32,7 @@
 #include "devtools/terminal.h"
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
+#include "notifications/notifications.h"
 
 #define CMDTRACE(fmt, ...) Debug::log(Debug::Category::Replay, "[EXPORTTRACE] " fmt, ##__VA_ARGS__)
 
@@ -57,7 +67,7 @@ void registerReplayExportCommands()
                 setFfmpegDebugMode(args[0] == "on" || args[0] == "1");
             }
             Terminal::instance().addLog(
-                std::string("[FFMPEG DEBUG] ") + (isFfmpegDebugMode() ? "ON (visible cmd window)" : "OFF (_popen)"));
+                std::string("[FFMPEG DEBUG] ") + (isFfmpegDebugMode() ? "ON (visible cmd window)" : "OFF (background process)"));
         }
     });
 
@@ -422,14 +432,104 @@ void registerReplayExportCommands()
 
     // ── Export config commands ──────────────────────────────
     Terminal::instance().registerCommand({
+        "rplfx", "Export the latest 15 seconds to MP4 without opening the editor", "rplfx",
+        [](const std::vector<std::string>&) {
+            if (isReplayExportActive()) {
+                Terminal::instance().addLog("Clip is already exporting...");
+                NotificationSystem::instance().push(
+                    "CLIP EXPORT", "Clip is already exporting...", 180, {});
+                return;
+            }
+            if (!REPLAY_RECORDER.isRecording()) {
+                Terminal::instance().addLog("No replay recording active");
+                return;
+            }
+            std::string path = saveInstantReplay(REPLAY_RECORDER, 15);
+            if (path.empty()) {
+                NotificationSystem::instance().pushCritical(
+                    "CLIP EXPORT FAILED", "Clip export failed. Check logs.", 600);
+                return;
+            }
+            if (!startReplayExport(path, 1280, 720, true)) {
+                NotificationSystem::instance().pushCritical(
+                    "CLIP EXPORT FAILED", "Clip export failed. Check logs.", 600);
+                return;
+            }
+            NotificationSystem::instance().pushImportant(
+                "EXPORTING CLIP", "Exporting the latest 15 seconds...", 180);
+            Debug::warn(Debug::Category::Replay,
+                        "[CLIP EXPORT] source=%s windowTicks=%u output=%s",
+                        path.c_str(), 15u * ReplayRingBuffer::TickRate,
+                        getReplayExportResultPath().c_str());
+        },
+        std::string(), CommandCategory::Replay
+    });
+
+    Terminal::instance().registerCommand({
+        "replay_open_last_export", "Select the newest exported clip in Explorer",
+        "replay_open_last_export",
+        [](const std::vector<std::string>&) { openLastReplayExport(); },
+        std::string(), CommandCategory::Replay
+    });
+
+    Terminal::instance().registerCommand({
+        "replay_export_verbose", "Toggle per-frame export debug logs (0=off, 1=on)", "replay_export_verbose <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(std::string("[EXPORT VERBOSE] ") +
+                    (gReplayExportVerbose ? "ON" : "OFF"));
+                return;
+            }
+            gReplayExportVerbose = args[0] != "0";
+            Terminal::instance().addLog(std::string("[EXPORT VERBOSE] ") +
+                (gReplayExportVerbose ? "ON" : "OFF"));
+        },
+        std::string(), CommandCategory::Replay
+    });
+
+    Terminal::instance().registerCommand({
+        "replay_export_timing", "Print export timing buckets from the last export", "replay_export_timing",
+        [](const std::vector<std::string>&) {
+            if (gExportTimingFrames == 0) {
+                Terminal::instance().addLog("[EXPORT TIMING] no export timing data yet");
+                return;
+            }
+            char buf[512];
+            std::snprintf(buf, sizeof(buf),
+                "[EXPORT TIMING] frames=%u avg(total=%.1f seek=%.1f update=%.1f weapon=%.1f "
+                "audio=%.1f render=%.1f read=%.1f copy=%.1f enc=%.1f wait=%.1f)ms",
+                gExportTimingFrames,
+                gExportTimingTotals.totalMs / gExportTimingFrames,
+                gExportTimingTotals.seekMs / gExportTimingFrames,
+                gExportTimingTotals.updateMs / gExportTimingFrames,
+                gExportTimingTotals.weaponEventsMs / gExportTimingFrames,
+                gExportTimingTotals.audioEventsMs / gExportTimingFrames,
+                gExportTimingTotals.renderMs / gExportTimingFrames,
+                gExportTimingTotals.readPixelsMs / gExportTimingFrames,
+                gExportTimingTotals.copyMs / gExportTimingFrames,
+                gExportTimingTotals.encoderMs / gExportTimingFrames,
+                gExportTimingTotals.waitMs / gExportTimingFrames);
+            Terminal::instance().addLog(buf);
+        },
+        std::string(), CommandCategory::Replay
+    });
+
+    Terminal::instance().registerCommand({
+        "export_mf_diag", "List installed H.264 encoders and current encoder mode", "export_mf_diag",
+        [](const std::vector<std::string>&) { exportMfDiag(); },
+        std::string(), CommandCategory::Replay
+    });
+
+    Terminal::instance().registerCommand({
         "export_config",
-        "Show or set export config (resolution, CRF, bitrate). Use: export_config <key> <value>",
-        "export_config [width|height|crf|bitrate|volume] <value>",
+        "Show or set export config (resolution, CRF, bitrate, encoderMode). Use: export_config <key> <value>",
+        "export_config [width|height|crf|bitrate|volume|encoderMode|encoder] <value>",
         [](const std::vector<std::string>& args) {
             if (args.empty()) {
                 char buf[256];
                 std::snprintf(buf, sizeof(buf),
-                    "[EXPORT CONFIG] %dx%d CRF=%d bitrate=%dK volume=%.2f",
+                    "[EXPORT CONFIG] encoder=%s encoderMode=%s %dx%d CRF=%d bitrate=%dK volume=%.2f",
+                    gExportConfig.encoder.c_str(), gExportConfig.encoderMode.c_str(),
                     gExportConfig.exportWidth, gExportConfig.exportHeight,
                     gExportConfig.exportCrf, gExportConfig.exportBitrate,
                     gExportConfig.audioVolumeMultiplier);
@@ -441,24 +541,32 @@ void registerReplayExportCommands()
                 return;
             }
             const std::string& key = args[0];
-            int val = std::stoi(args[1]);
-            if (key == "width") {
-                gExportConfig.exportWidth = std::max(320, std::min(val, 7680));
-                Terminal::instance().addLog("[EXPORT CONFIG] width=" + std::to_string(gExportConfig.exportWidth));
-            } else if (key == "height") {
-                gExportConfig.exportHeight = std::max(240, std::min(val, 4320));
-                Terminal::instance().addLog("[EXPORT CONFIG] height=" + std::to_string(gExportConfig.exportHeight));
-            } else if (key == "crf") {
-                gExportConfig.exportCrf = std::max(0, std::min(val, 51));
-                Terminal::instance().addLog("[EXPORT CONFIG] crf=" + std::to_string(gExportConfig.exportCrf));
-            } else if (key == "bitrate") {
-                gExportConfig.exportBitrate = std::max(0, val);
-                Terminal::instance().addLog("[EXPORT CONFIG] bitrate=" + std::to_string(gExportConfig.exportBitrate) + "K");
-            } else if (key == "volume") {
-                gExportConfig.audioVolumeMultiplier = std::max(0.0f, std::min((float)val / 100.0f, 5.0f));
-                Terminal::instance().addLog("[EXPORT CONFIG] volume=" + std::to_string(gExportConfig.audioVolumeMultiplier));
+            if (key == "encoderMode") {
+                gExportConfig.encoderMode = args[1];
+                if (gExportConfig.encoderMode != "auto" && gExportConfig.encoderMode != "discrete" &&
+                    gExportConfig.encoderMode != "software")
+                    gExportConfig.encoderMode = "auto";
+                Terminal::instance().addLog("[EXPORT CONFIG] encoderMode=" + gExportConfig.encoderMode);
             } else {
-                Terminal::instance().addLog("[ERROR] Unknown key: " + key + " (use width, height, crf, bitrate, volume)");
+                int val = std::stoi(args[1]);
+                if (key == "width") {
+                    gExportConfig.exportWidth = std::max(320, std::min(val, 7680));
+                    Terminal::instance().addLog("[EXPORT CONFIG] width=" + std::to_string(gExportConfig.exportWidth));
+                } else if (key == "height") {
+                    gExportConfig.exportHeight = std::max(240, std::min(val, 4320));
+                    Terminal::instance().addLog("[EXPORT CONFIG] height=" + std::to_string(gExportConfig.exportHeight));
+                } else if (key == "crf") {
+                    gExportConfig.exportCrf = std::max(0, std::min(val, 51));
+                    Terminal::instance().addLog("[EXPORT CONFIG] crf=" + std::to_string(gExportConfig.exportCrf));
+                } else if (key == "bitrate") {
+                    gExportConfig.exportBitrate = std::max(0, val);
+                    Terminal::instance().addLog("[EXPORT CONFIG] bitrate=" + std::to_string(gExportConfig.exportBitrate) + "K");
+                } else if (key == "volume") {
+                    gExportConfig.audioVolumeMultiplier = std::max(0.0f, std::min((float)val / 100.0f, 5.0f));
+                    Terminal::instance().addLog("[EXPORT CONFIG] volume=" + std::to_string(gExportConfig.audioVolumeMultiplier));
+                } else {
+                    Terminal::instance().addLog("[ERROR] Unknown key: " + key + " (use width, height, crf, bitrate, volume, encoderMode)");
+                }
             }
             // Write config to disk
             nlohmann::json j;
@@ -467,6 +575,8 @@ void registerReplayExportCommands()
             j["exportCrf"] = gExportConfig.exportCrf;
             j["exportBitrate"] = gExportConfig.exportBitrate;
             j["audioVolumeMultiplier"] = gExportConfig.audioVolumeMultiplier;
+            j["encoder"] = gExportConfig.encoder;
+            j["encoderMode"] = gExportConfig.encoderMode;
             std::ofstream f("config/replay/replay-export.json");
             if (f.is_open()) {
                 f << j.dump(2);

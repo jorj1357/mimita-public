@@ -4,13 +4,13 @@
   "comment_maxAngularErrorDegrees": "Aim miss-cone in degrees. Lower = more accurate = deadlier. 4 = arcade (most shots hit but some visibly miss), 8 = stormtrooper-ish, 0 = perfect aim (same as forceHit).",
   "difficultyErrorScale": 0.5,
   "comment_difficultyErrorScale": "0 to 1. How much an NPC's difficulty (1-10) shrinks the miss-cone. 0 = all NPCs equally accurate. 1 = max-difficulty NPCs get the full reduction from maxAngularErrorDegrees.",
-  "damageMultiplier": 1.0,
+  "damageMultiplier": 2.0,
   "comment_damageMultiplier": "Multiplies weapon damage when an NPC hits the player. Revolver base is 12, so 1.0 = 12 per body shot / 24 headshot (natural attrition). Higher = more brutal. A 100 HP player takes ~8 body shots to die at 1.0.",
   "fireDelayMin": 0.01,
   "comment_fireDelayMin": "Fastest allowed seconds between NPC shots. Values below the weapon's own fire_delay are clamped to the weapon value. 0 = always use the weapon's own fire_delay.",
   "fireDelayMax": 1.0,
   "comment_fireDelayMax": "Slowest allowed seconds between NPC shots. Lower = NPCs shoot more often. ~0.3-0.7 keeps individual hits visible so you see -12 / -24 numbers tick down instead of a melt.",
-  "aggressionBonus": 0.05,
+  "aggressionBonus": 0.5,
   "comment_aggressionBonus": "Added to NPC aggression, which pushes shot timing toward fireDelayMin (faster fire). 0 = neutral, 1 = nearly always maximum fire rate. Keep low for a fair fight.",
   "npcHitRadius": 0.01,
   "comment_npcHitRadius": "Radius of the NPC's bullet (thin). Low = misses when aim is off (the error cone matters). High = fatter bullet that hits even with sloppy aim. Player's own weapon is unaffected.",
@@ -26,6 +26,6 @@
   "faceMovementMin": 0.5,
   "faceMovementMax": 1.5,
   "comment_faceMovement": "Seconds the NPC stays in MOVE mode (gun points where it's running) each cycle. Keep short so it's only briefly 'shooting while running' before it re-locks onto you. 0.5-1.5 is a quick glance away, then back to aiming.",
-  "movementPreset": "follow",
+  "movementPreset": "default",
   "comment_movementPreset": "Which config/movement/*.json preset NPCs use for their physics: \"follow\" = same as the player (current behavior), \"default\" = movement-default.json (mimita), \"source\" = movement-source.json (CS/Quake), \"counterstrike\" = movement-cs.json. Change it, save, and NPCs switch instantly (no restart)."
 }

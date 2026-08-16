@@ -1,6 +1,16 @@
+// 08 16 2026, 01 35
+/* purpose
+* Loads hot-reloadable replay export settings and prepares export jobs.
+* Resolves optional FFmpeg installations without machine-specific paths.
+* Owns output naming, clipboard support, cancellation, and editor restoration.
+* Does NOT capture framebuffer pixels or encode Media Foundation samples.
+* Does NOT mix replay audio or append video outros.
+* Does NOT register replay commands or gameplay key bindings.
+*/
 #include "replay/replay-export.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <fstream>
 #include <cstring>
@@ -60,6 +70,16 @@ static void reloadReplayExportConfig()
         file >> j;
 
         ReplayExportConfig loaded;
+        if (j.contains("encoder"))
+            loaded.encoder = j["encoder"].get<std::string>();
+        if (loaded.encoder != "windows" && loaded.encoder != "ffmpeg")
+            loaded.encoder = "windows";
+        if (j.contains("encoderMode")) {
+            loaded.encoderMode = j["encoderMode"].get<std::string>();
+            if (loaded.encoderMode != "auto" && loaded.encoderMode != "discrete" &&
+                loaded.encoderMode != "software")
+                loaded.encoderMode = "auto";
+        }
         if (j.contains("audioVolumeMultiplier"))
             loaded.audioVolumeMultiplier = j["audioVolumeMultiplier"].get<float>();
         if (j.contains("exportWidth"))
@@ -72,7 +92,9 @@ static void reloadReplayExportConfig()
             loaded.exportCrf = j["exportCrf"].get<int>();
 
         gExportConfig = loaded;
-        Debug::log(Debug::Category::Replay, "[REPLAY EXPORT] config reloaded: volume=%.2f res=%dx%d crf=%d bitrate=%d",
+        Debug::log(Debug::Category::Replay, "[REPLAY EXPORT] config reloaded: encoder=%s encoderMode=%s volume=%.2f res=%dx%d crf=%d bitrate=%d",
+                   gExportConfig.encoder.c_str(),
+                   gExportConfig.encoderMode.c_str(),
                    gExportConfig.audioVolumeMultiplier,
                    gExportConfig.exportWidth, gExportConfig.exportHeight,
                    gExportConfig.exportCrf, gExportConfig.exportBitrate);
@@ -112,7 +134,52 @@ std::string makeCmdKArgs(const std::string& cmd)
 
 std::string defaultFfmpegPath()
 {
-    return "C:\\important\\ffmpeg-2025-11-17-git-e94439e49b-full_build\\bin\\ffmpeg.exe";
+    if (const char* env = std::getenv("MIMITA_FFMPEG")) {
+        if (*env && std::filesystem::exists(env))
+            return std::filesystem::absolute(env).make_preferred().string();
+    }
+    {
+        std::ifstream file("config/replay/ffmpeg-path.json");
+        nlohmann::json j;
+        try {
+            if (file.is_open() && (file >> j) && j.contains("path")) {
+                std::string configured = j["path"].get<std::string>();
+                if (std::filesystem::exists(configured))
+                    return std::filesystem::absolute(configured).make_preferred().string();
+            }
+        } catch (...) {}
+    }
+#ifdef _WIN32
+    char module[MAX_PATH] = {};
+    if (GetModuleFileNameA(nullptr, module, MAX_PATH) > 0) {
+        std::filesystem::path beside = std::filesystem::path(module).parent_path() / "ffmpeg" / "ffmpeg.exe";
+        if (std::filesystem::exists(beside)) return beside.string();
+    }
+    char found[MAX_PATH] = {};
+    if (SearchPathA(nullptr, "ffmpeg.exe", nullptr, MAX_PATH, found, nullptr) > 0)
+        return found;
+#endif
+    return {};
+}
+
+void copyTextToClipboard(const std::string& text)
+{
+#ifdef _WIN32
+    if (!OpenClipboard(nullptr)) return;
+    EmptyClipboard();
+    HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, text.size() + 1);
+    if (memory) {
+        void* target = GlobalLock(memory);
+        if (target) {
+            std::memcpy(target, text.c_str(), text.size() + 1);
+            GlobalUnlock(memory);
+            if (!SetClipboardData(CF_TEXT, memory)) GlobalFree(memory);
+        } else GlobalFree(memory);
+    }
+    CloseClipboard();
+#else
+    (void)text;
+#endif
 }
 
 static std::string sanitizeFilenameWindows(const std::string& name)
@@ -169,13 +236,19 @@ std::string generateExportOutputPath()
     return result;
 }
 
-bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderHeight)
+bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderHeight,
+                       bool restoreLiveOnFinish)
 {
     if (gJob.state == ReplayExportJob::Capturing || gJob.state == ReplayExportJob::Encoding)
     {
         return false;
     }
     gJob = ReplayExportJob{};
+    gJob.restoreLiveOnFinish = restoreLiveOnFinish;
+    gJob.clipExport = restoreLiveOnFinish;
+    gJob.startTimeSec = std::chrono::duration<double>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    replayExportTimingReset();
 
     if (!std::filesystem::exists(jsonPath))
     {
@@ -275,13 +348,12 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
         }
     }
 
-    std::string ffmpeg = defaultFfmpegPath();
-    printf("[RPLX] ffmpeg path: %s\n", ffmpeg.c_str());
-    printf("[RPLX] ffmpeg exists: %s\n", std::filesystem::exists(ffmpeg) ? "yes" : "no");
-    if (!std::filesystem::exists(ffmpeg))
+    const bool useFfmpeg = gExportConfig.encoder == "ffmpeg";
+    std::string ffmpeg = useFfmpeg ? defaultFfmpegPath() : std::string();
+    if (useFfmpeg && ffmpeg.empty())
     {
         gJob.state = ReplayExportJob::Failed;
-        gJob.errorMsg = "FFmpeg not found:\n" + ffmpeg;
+        gJob.errorMsg = "FFmpeg not found. Set MIMITA_FFMPEG, config/replay/ffmpeg-path.json, place ffmpeg beside the game, or add it to PATH.";
         return false;
     }
 
@@ -323,8 +395,8 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
     }
     std::string rawTempPath = (fs::path("replays") / "exports" / "_tmp" / "export_raw.rgb").string();
 
-    FILE* rawFile = fopen(rawTempPath.c_str(), "wb");
-    if (!rawFile) {
+    FILE* rawFile = useFfmpeg ? fopen(rawTempPath.c_str(), "wb") : nullptr;
+    if (useFfmpeg && !rawFile) {
         gJob.state = ReplayExportJob::Failed;
         gJob.errorMsg = "Cannot create temp raw file:\n" + rawTempPath;
         return false;
@@ -355,6 +427,17 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
     gJob.frameWriteCount = 0;
     gJob.rawFileBytes = 0;
     gJob.mp4FileBytes = 0;
+
+    if (!useFfmpeg) {
+        std::string mfError;
+        if (!startMfReplayExport(gJob.mfWriter, outputPath, captureW, captureH,
+                                 gExportConfig.exportBitrate, mfError)) {
+            gJob.state = ReplayExportJob::Failed;
+            gJob.errorMsg = mfError;
+            restoreReplayExportEditorState();
+            return false;
+        }
+    }
 
     {
         StructuredLogger::Entry e;
@@ -417,6 +500,8 @@ void cancelReplayExport()
         std::error_code ec;
         std::filesystem::remove(gJob.rawTempPath, ec);
     }
+    cancelMfReplayExport(gJob.mfWriter);
+    cancelReplayFfmpegEncode();
     restoreReplayExportEditorState();
     gJob = ReplayExportJob{};
 }

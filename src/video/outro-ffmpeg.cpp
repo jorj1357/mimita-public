@@ -1,3 +1,12 @@
+// 08 16 2026, 01 35
+/* purpose
+* Probes and remuxes the optional replay outro through a resolved FFmpeg install.
+* Uses the replay exporter encoder resolver so developer paths stay portable.
+* Captures child-process output for actionable replay diagnostics.
+* Does NOT bundle, download, or install FFmpeg for players.
+* Does NOT own replay capture, clip commands, or Media Foundation export.
+* Does NOT modify source replay JSON or gameplay state.
+*/
 #include "video/outro.h"
 
 #include <cstdio>
@@ -15,22 +24,20 @@
 
 #include "video/outro.h"
 #include "debug/debug-log.h"
+#include "replay/replay-export.h"
 
 extern OutroConfig gOutroConfig;
 
-static std::string ffmpegDir()
-{
-    return "C:\\important\\ffmpeg-2025-11-17-git-e94439e49b-full_build\\bin";
-}
-
 static std::string ffmpegExe()
 {
-    return ffmpegDir() + "\\ffmpeg.exe";
+    return defaultFfmpegPath();
 }
 
 static std::string ffprobeExe()
 {
-    return ffmpegDir() + "\\ffprobe.exe";
+    std::filesystem::path ffmpeg = defaultFfmpegPath();
+    if (ffmpeg.empty()) return {};
+    return (ffmpeg.parent_path() / "ffprobe.exe").string();
 }
 
 static std::string absPath(const std::string& path)

@@ -879,12 +879,14 @@ void engineTickCamera(Engine& engine, float dt)
     setAudioListener(camera.pos, camera.front);
     EffectPartSystem::instance().setWorld(world);
     if (replayPlaybackActive) {
+        const double tFx0 = replayExportNowSec();
         for (const ReplayEffectEvent& effect :
              gReplayPlayer.takeTriggeredEffects()) {
-            printf("[REPLAY EFFECT] type=%s pos=(%.1f %.1f %.1f) label=%s\n",
-                   effect.type.c_str(),
-                   effect.position.x, effect.position.y, effect.position.z,
-                   effect.label.c_str());
+            if (gReplayExportVerbose)
+                printf("[REPLAY EFFECT] type=%s pos=(%.1f %.1f %.1f) label=%s\n",
+                       effect.type.c_str(),
+                       effect.position.x, effect.position.y, effect.position.z,
+                       effect.label.c_str());
             // Track effect duplicates for world hit effects
             std::string effectKey = effect.type + ":" + std::to_string((int)effect.position.x) + "," + std::to_string((int)effect.position.y) + "," + std::to_string((int)effect.position.z);
             if (effectKey == gRplxLastEffectKey)
@@ -903,7 +905,8 @@ void engineTickCamera(Engine& engine, float dt)
             if (effect.type == "chat") {
                 ActorChatState& chatState = gReplayChatStates[effect.sourceActorId];
                 addChatMessage(chatState, effect.assetId, effect.sourceActorId);
-                playChatSound((int)effect.assetId.size());
+                if (!isReplayExportActive())
+                    playChatSound((int)effect.assetId.size());
             } else if (effect.type == "gunshot") {
                 Debug::log(Debug::Category::Replay,
                     "[REPLAY EFFECT] spawned type=gunshot tick=%d from=(%.2f %.2f %.2f) to=(%.2f %.2f %.2f) source=%s\n",
@@ -922,7 +925,8 @@ void engineTickCamera(Engine& engine, float dt)
                 EffectPartSystem::instance().spawnBloodEffect(
                     effect.position, effect.direction, 50.0f,
                     effect.sourceActorId, effect.targetActorId);
-                if (effect.sourceActorId == gReplayPlayer.killerId())
+                if (effect.sourceActorId == gReplayPlayer.killerId() &&
+                    !isReplayExportActive())
                     hitmarker();
             } else if (effect.type == "dash") {
                 Debug::log(Debug::Category::Replay,
@@ -1051,7 +1055,10 @@ void engineTickCamera(Engine& engine, float dt)
                 EffectPartSystem::instance().spawn(spawnParams);
             }
         }
+        gExportFrameTimings.weaponEventsMs +=
+            (replayExportNowSec() - tFx0) * 1000.0;
         {
+            const double tAud0 = replayExportNowSec();
             const ReplayCameraMode camMode =
                 gReplayPlayer.cameraController().mode();
             std::string viewedEntity;
@@ -1079,12 +1086,13 @@ void engineTickCamera(Engine& engine, float dt)
                 {
                     glm::vec3 toSound = sound.position - camera.pos;
                     float dist = glm::length(toSound);
-                    Debug::warn(Debug::Category::Replay, "[REPLAY AUDIO] triggered tick=%d name=%s world=%d listenerValid=%d pos=(%.2f %.2f %.2f) camera=(%.2f %.2f %.2f) dist=%.2f vol=%.2f maxDist=%.2f\n",
-                                sound.tick,
-                                sound.soundPath.c_str(), (int)sound.world, (int)sound.listenerValid,
-                                sound.position.x, sound.position.y, sound.position.z,
-                                camera.pos.x, camera.pos.y, camera.pos.z,
-                                dist, sound.volume, sound.maxDistance);
+                    if (gReplayExportVerbose)
+                        Debug::warn(Debug::Category::Replay, "[REPLAY AUDIO] triggered tick=%d name=%s world=%d listenerValid=%d pos=(%.2f %.2f %.2f) camera=(%.2f %.2f %.2f) dist=%.2f vol=%.2f maxDist=%.2f\n",
+                                    sound.tick,
+                                    sound.soundPath.c_str(), (int)sound.world, (int)sound.listenerValid,
+                                    sound.position.x, sound.position.y, sound.position.z,
+                                    camera.pos.x, camera.pos.y, camera.pos.z,
+                                    dist, sound.volume, sound.maxDistance);
                     // Structured log: replay sound trigger
                     if (StructuredLogger::instance().shouldLog(
                             StructuredCategory::Audio, StructuredLevel::Important)) {
@@ -1107,11 +1115,16 @@ void engineTickCamera(Engine& engine, float dt)
                 float pbspeedMul = 1.0f;
                 if (gReplayEditor.isLoaded())
                     pbspeedMul = gReplayEditor.playbackSpeedAtTick((int)gReplayPlayer.currentTick());
-                playWorldSound(
-                    sound.soundPath, sound.position,
-                    sound.volume, sound.pitch * pbspeedMul,
-                    sound.maxDistance > 0.0f ? sound.maxDistance : 40.0f);
+                // During export the clip audio is mixed into the MP4 separately;
+                // do not also play the sounds live.
+                if (!isReplayExportActive())
+                    playWorldSound(
+                        sound.soundPath, sound.position,
+                        sound.volume, sound.pitch * pbspeedMul,
+                        sound.maxDistance > 0.0f ? sound.maxDistance : 40.0f);
             }
+            gExportFrameTimings.audioEventsMs +=
+                (replayExportNowSec() - tAud0) * 1000.0;
         }
     }
     // Coupling diagnostic: orientation change per unit of position movement

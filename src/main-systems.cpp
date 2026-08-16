@@ -1,3 +1,12 @@
+// 08 16 2026, 01 35
+/* purpose
+* Initializes MiMITA runtime subsystems, command registration, and default binds.
+* Connects engine-owned services to the shared gameplay and UI orchestration loop.
+* Establishes replay clip export shortcuts while preserving editor commands.
+* Does NOT implement subsystem feature logic or encoder backends.
+* Does NOT own production deployment, launcher updates, or website behavior.
+* Does NOT replace feature-owned configuration or terminal command handlers.
+*/
 #include "main-systems.h"
 #include <cstdio>
 #include <cstdlib>
@@ -391,6 +400,8 @@ void gameInitSubsystems(Engine& engine)
     {
         auto& binds = G_COMMAND_BINDS;
         binds[GLFW_KEY_F3] = "replay.save";
+        binds[GLFW_KEY_P] = "rplfx";
+        binds[GLFW_KEY_J] = "replay_open_last_export";
     }
     registerAvatarCommands(player);
     registerVoidDeathCommands();
