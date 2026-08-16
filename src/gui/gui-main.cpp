@@ -174,7 +174,7 @@ static void readServerSettingsFromBindings()
     std::string mapName = resolveServerMapId(b.get("server.map"));
     std::string playerLimitStr = b.get("server.player_limit", "999");
     std::string npcsStr = b.get("server.startup_npcs", "true");
-    std::string npcCountStr = b.get("server.startup_npc_count", "3");
+    std::string npcCountStr = b.get("server.startup_npc_count", "1");
     std::string privacy = b.get("server.privacy", "Public (no password)");
 
     gServerLaunchSettings.serverName = name;
@@ -189,7 +189,10 @@ static void readServerSettingsFromBindings()
         npcsStr == "1" ||
         npcsStr == "yes" ||
         npcsStr == "on";
-    gServerLaunchSettings.startupNpcCount = (uint32_t)std::max(0, std::atoi(npcCountStr.c_str()));
+    int npcCount = std::atoi(npcCountStr.c_str());
+    if (npcCount < 1) npcCount = 1;
+    if (npcCount > 999) npcCount = 999;
+    gServerLaunchSettings.startupNpcCount = (uint32_t)npcCount;
     gServerLaunchSettings.port = MimitaNet::DEFAULT_PORT;
     gServerLaunchSettings.resolvedMapPath = "assets/maps/" + mapName + ".glb";
 

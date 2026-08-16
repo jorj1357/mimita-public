@@ -1,4 +1,4 @@
-// 08 03 2026, 12 00
+// 08 16 2026, 01 35
 /* purpose
 * Implements the in-game notification popup system. Rendering is driven by JSON:
 * config/gui/notifications.json controls GUI (anchor/offsets/spacing/slide plus
@@ -375,6 +375,29 @@ void NotificationSystem::pushCritical(const std::string& title,
         mNotifications.erase(mNotifications.begin());
 }
 
+void NotificationSystem::pushImportant(const std::string& title,
+                                       const std::string& message,
+                                       uint64_t durationTicks)
+{
+    if (!mEnabled || tempMuted()) return;
+    pruneExpired();
+    Notification n;
+    n.title = title;
+    n.message = message;
+    n.startTick = nowTick();
+    n.durationTicks = durationTicks > 0 ? durationTicks : mDefaultDurationTicks;
+    n.important = true;
+    if (mTypewriterEnabled && !n.message.empty()) {
+        n.revealTicks = (uint64_t)((n.message.size() + mCharsPerTick - 1) / mCharsPerTick) +
+                        mTypewriterDelayTicks;
+        n.durationTicks += n.revealTicks;
+    }
+    mNotifications.push_back(n);
+    recordHistory(n);
+    if ((int)mNotifications.size() > mMaxCount)
+        mNotifications.erase(mNotifications.begin());
+}
+
 void NotificationSystem::pushBuildNotice()
 {
     char exePath[MAX_PATH];
@@ -598,6 +621,12 @@ void NotificationSystem::drawMessage(size_t index, const UIRect& box,
         color.g = 0.30f;
         color.b = 0.25f;
     }
+    else if (notif.important)
+    {
+        color.r = 1.0f;
+        color.g = 0.86f;
+        color.b = 0.15f;
+    }
     float yPx = sy + vShift - sc.scrollY;
     for (const std::string& ln : L.lines) {
         float lx = sx;
@@ -732,6 +761,10 @@ void NotificationSystem::render(bool inGameplay)
                     tmp.textColor[0] = 1.0f;
                     tmp.textColor[1] = 0.30f;
                     tmp.textColor[2] = 0.25f;
+                } else if (notif.important) {
+                    tmp.textColor[0] = 1.0f;
+                    tmp.textColor[1] = 0.86f;
+                    tmp.textColor[2] = 0.15f;
                 }
             }
             UIRect r = {box.x + padX, box.y + padY,

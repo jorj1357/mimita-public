@@ -129,7 +129,8 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     diagRenderStage(2);
     {
         static uint64_t renderLogFrame = 0;
-        if (renderLogFrame++ % 60 == 0 || getReplayExportJob().state == ReplayExportJob::Capturing) {
+        if (gReplayExportVerbose &&
+            (renderLogFrame++ % 60 == 0 || getReplayExportJob().state == ReplayExportJob::Capturing)) {
             Debug::log(Debug::Category::Replay, "[EXPORTTRACE] RENDER: replayRenderActive=%d hasSceneFrame=%d exportState=%d",
                    (int)replayRenderActive,
                    gReplayPlayer.currentSceneFrame() ? 1 : 0,
@@ -138,10 +139,12 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     }
     gReplayExportRenderMode = isReplayExportActive();
 
-    if (getReplayExportJob().state == ReplayExportJob::Capturing) {
+    if (gReplayExportVerbose &&
+        getReplayExportJob().state == ReplayExportJob::Capturing) {
         Debug::log(Debug::Category::Replay, "[EXPORT DEBUG] render order: 1.replay update, 2.replay render, 3.glReadPixels");
     }
     if (replayRenderActive) {
+        const double tRender0 = replayExportNowSec();
         if (const ReplaySceneFrame* replayFrame =
                 gReplayPlayer.currentSceneFrame()) {
             const glm::mat4 replayView = camera.getView();
@@ -277,6 +280,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                 glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
             }
         }
+        gExportFrameTimings.renderMs += (replayExportNowSec() - tRender0) * 1000.0;
     } else {
         if (player.spawnFlashTimer > 0.0f) {
             static GLuint spawnFlashVao = 0, spawnFlashVbo = 0;

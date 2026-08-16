@@ -1,11 +1,28 @@
+// 08 16 2026, 01 35
+/* purpose
+* Captures rendered replay frames and advances the selected MP4 export backend.
+* Owns common completion state, live-view restoration, and user notifications.
+* Exposes status and progress shared by commands and gameplay overlays.
+* Does NOT record replay clips or resolve encoder installations.
+* Does NOT own replay editor commands or gameplay key bindings.
+* Does NOT append branded outros for the Windows backend.
+*/
 #include "replay/replay-export.h"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <string>
+#include <thread>
 #include <vector>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <shellapi.h>
+#endif
 
 #include <glad/glad.h>
 
@@ -18,10 +35,90 @@
 #include "devtools/terminal.h"
 #include "render/post-fx.h"
 #include "audio/audio-codec.h"
+#include "notifications/notifications.h"
+#include "gui/hud/chat-bubble.h"
 
 void encodeReplayToMp4();
 
 ReplayExportJob gJob;
+static std::string gLastSuccessfulExportPath;
+static std::atomic<bool> gExplorerLaunchFailed{false};
+
+bool gReplayExportVerbose = false;
+
+ReplayExportFrameTimings gExportFrameTimings;
+ReplayExportFrameTimings gExportTimingTotals;
+uint32_t gExportTimingFrames = 0;
+static double gExportFrameStartSec = 0.0;
+
+double replayExportNowSec()
+{
+    return std::chrono::duration<double>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+void replayExportTimingFrameBegin()
+{
+    gExportFrameTimings = ReplayExportFrameTimings{};
+    gExportFrameStartSec = replayExportNowSec();
+}
+
+void replayExportTimingFrameEnd()
+{
+    const double now = replayExportNowSec();
+    gExportFrameTimings.totalMs = (now - gExportFrameStartSec) * 1000.0;
+    const double accounted = gExportFrameTimings.seekMs + gExportFrameTimings.updateMs +
+        gExportFrameTimings.weaponEventsMs + gExportFrameTimings.audioEventsMs +
+        gExportFrameTimings.renderMs + gExportFrameTimings.readPixelsMs +
+        gExportFrameTimings.copyMs + gExportFrameTimings.encoderMs;
+    gExportFrameTimings.waitMs = std::max(0.0, gExportFrameTimings.totalMs - accounted);
+
+    gExportTimingTotals.seekMs += gExportFrameTimings.seekMs;
+    gExportTimingTotals.updateMs += gExportFrameTimings.updateMs;
+    gExportTimingTotals.weaponEventsMs += gExportFrameTimings.weaponEventsMs;
+    gExportTimingTotals.audioEventsMs += gExportFrameTimings.audioEventsMs;
+    gExportTimingTotals.renderMs += gExportFrameTimings.renderMs;
+    gExportTimingTotals.readPixelsMs += gExportFrameTimings.readPixelsMs;
+    gExportTimingTotals.copyMs += gExportFrameTimings.copyMs;
+    gExportTimingTotals.encoderMs += gExportFrameTimings.encoderMs;
+    gExportTimingTotals.waitMs += gExportFrameTimings.waitMs;
+    gExportTimingTotals.totalMs += gExportFrameTimings.totalMs;
+    gExportTimingFrames++;
+
+    if (gReplayExportVerbose) {
+        Debug::log(Debug::Category::Replay,
+            "[EXPORT TIMING] frame total=%.1f seek=%.1f update=%.1f weapon=%.1f audio=%.1f "
+            "render=%.1f read=%.1f copy=%.1f enc=%.1f wait=%.1f",
+            gExportFrameTimings.totalMs, gExportFrameTimings.seekMs,
+            gExportFrameTimings.updateMs, gExportFrameTimings.weaponEventsMs,
+            gExportFrameTimings.audioEventsMs, gExportFrameTimings.renderMs,
+            gExportFrameTimings.readPixelsMs, gExportFrameTimings.copyMs,
+            gExportFrameTimings.encoderMs, gExportFrameTimings.waitMs);
+    }
+}
+
+void replayExportTimingReset()
+{
+    gExportFrameTimings = ReplayExportFrameTimings{};
+    gExportTimingTotals = ReplayExportFrameTimings{};
+    gExportTimingFrames = 0;
+    gExportFrameStartSec = 0.0;
+}
+
+void replayExportTimingLogSummary()
+{
+    if (gExportTimingFrames == 0) return;
+    const double n = (double)gExportTimingFrames;
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT TIMING] frames=%u avg(total=%.1f seek=%.1f update=%.1f weapon=%.1f audio=%.1f "
+        "render=%.1f read=%.1f copy=%.1f enc=%.1f wait=%.1f)ms",
+        gExportTimingFrames,
+        gExportTimingTotals.totalMs / n, gExportTimingTotals.seekMs / n,
+        gExportTimingTotals.updateMs / n, gExportTimingTotals.weaponEventsMs / n,
+        gExportTimingTotals.audioEventsMs / n, gExportTimingTotals.renderMs / n,
+        gExportTimingTotals.readPixelsMs / n, gExportTimingTotals.copyMs / n,
+        gExportTimingTotals.encoderMs / n, gExportTimingTotals.waitMs / n);
+}
 
 static bool gFfmpegDebugMode = false;
 
@@ -34,7 +131,7 @@ static constexpr const char* REPLAY_EXPORT_CONFIG_PATH = "config/replay/replay-e
 void setFfmpegDebugMode(bool enabled)
 {
     gFfmpegDebugMode = enabled;
-    EXPORTTRACE("ffmpeg debug mode = %s", enabled ? "ON (visible cmd window)" : "OFF (_popen)");
+    EXPORTTRACE("ffmpeg debug mode = %s", enabled ? "ON (visible cmd window)" : "OFF (background process)");
 }
 
 bool isFfmpegDebugMode()
@@ -62,6 +159,30 @@ static void captureReplayAndEncode()
 
 void updateReplayExport()
 {
+    if (gExplorerLaunchFailed.exchange(false, std::memory_order_acq_rel)) {
+        const std::string message = "Could not open Explorer. Clip path copied to clipboard.";
+        Terminal::instance().addLog(message);
+        NotificationSystem::instance().pushImportant("CLIP PATH COPIED", message, 300);
+    }
+    if (gJob.state == ReplayExportJob::Encoding) {
+        if (gJob.mfWriter) {
+            bool ok = false;
+            bool outroMissing = false;
+            std::string error;
+            if (pollMfReplayExport(gJob.mfWriter, ok, outroMissing, error)) {
+                if (!gJob.ffmpegWavPath.empty()) {
+                    std::error_code ec;
+                    std::filesystem::remove(gJob.ffmpegWavPath, ec);
+                    gJob.ffmpegWavPath.clear();
+                }
+                gJob.mfOutroMissing = outroMissing;
+                finishReplayExport(ok, error);
+            }
+            return;
+        }
+        pollReplayFfmpegEncode();
+        return;
+    }
     if (gJob.state != ReplayExportJob::Capturing)
     {
         return;
@@ -104,12 +225,17 @@ void updateReplayExport()
         RPLXDEBUG("====================\n\n");
     }
 
-    EXPORTTRACE("Frame %u/%u: allocating pixels buffer (%dx%d*3=%d bytes)",
-                frameNum, gJob.totalTicks, w, h, w * h * 3);
-    std::vector<uint8_t> pixels(w * h * 3);
+    if (gReplayExportVerbose)
+        EXPORTTRACE("Frame %u/%u: capturing pixels (%dx%d*3=%d bytes)",
+                    frameNum, gJob.totalTicks, w, h, w * h * 3);
 
-    // [F] Framebuffer state: log read/draw FBO binding and viewport
-    {
+    const size_t pixelBytes = (size_t)w * (size_t)h * 3;
+    if (gJob.pixelBuffer.size() != pixelBytes)
+        gJob.pixelBuffer.resize(pixelBytes);
+    uint8_t* pixels = gJob.pixelBuffer.data();
+
+    if (gReplayExportVerbose) {
+        // [F] Framebuffer state: log read/draw FBO binding and viewport
         GLint readFb = 0, drawFb = 0, viewport[4] = {};
         glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readFb);
         glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFb);
@@ -123,14 +249,17 @@ void updateReplayExport()
     // Explicitly bind default framebuffer for read to prevent reading from stale FBO
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 
-    EXPORTTRACE("Frame %u: calling glReadPixels...", frameNum);
-    glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+    if (gReplayExportVerbose)
+        EXPORTTRACE("Frame %u: calling glReadPixels...", frameNum);
+    const double tRead0 = replayExportNowSec();
+    glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, pixels);
+    gExportFrameTimings.readPixelsMs += (replayExportNowSec() - tRead0) * 1000.0;
 
     GLenum glErr = glGetError();
     if (glErr != GL_NO_ERROR) {
         EXPORTTRACE("Frame %u: glReadPixels GL ERROR=0x%x", frameNum, glErr);
         printf("[RPLX ERROR] glReadPixels failed at frame %u: 0x%x\n", frameNum, glErr);
-    } else {
+    } else if (gReplayExportVerbose) {
         EXPORTTRACE("Frame %u: glReadPixels OK", frameNum);
     }
 
@@ -138,93 +267,74 @@ void updateReplayExport()
     if (frameNum < 3 || frameNum >= gJob.totalTicks - 1)
         printf("[RPLX] rendered frame %u/%u\n", frameNum + 1, gJob.totalTicks);
 
-    // Sample first pixel and compute rolling hash
-    {
+    // Sample first pixel and compute rolling hash (diagnostics; logs gated)
+    if (gReplayExportVerbose) {
         uint8_t r = pixels[0], g = pixels[1], b = pixels[2];
         uint8_t r2 = pixels[w*3], g2 = pixels[w*3+1], b2 = pixels[w*3+2];
         EXPORTTRACE_CRASH("Frame %u: pixel(0,0)=RGB(%u,%u,%u) pixel(0,1)=RGB(%u,%u,%u)",
                frameNum, r, g, b, r2, g2, b2);
         if (r == 255 && g == 0 && b == 255)
             EXPORTTRACE_CRASH("*** MAGENTA PIXEL DETECTED - PostFX FBO not rendered to default framebuffer ***");
-
-        // Rolling hash to detect static frames
-        static uint64_t firstFrameHash = 0;
-        uint64_t thisHash = 0;
-        const uint8_t* cp = pixels.data() + (w * (h/2) * 3);
-        for (int i = 0; i < 64 && i < w; i++)
-            thisHash = (thisHash << 1) ^ cp[i * 3];
-        if (frameNum == 0) {
-            firstFrameHash = thisHash;
-            EXPORTLOG("frame 0 hash=%llu", (unsigned long long)thisHash);
-        } else if (frameNum % 60 == 0) {
-            bool identical = (thisHash == firstFrameHash);
-            EXPORTLOG("frame %u hash=%llu sameAsFrame0=%s", frameNum, (unsigned long long)thisHash, identical ? "YES (STATIC)" : "NO (advancing)");
-        }
-
-        // [A] [B] Debug log every 60 frames
-        if (frameNum % 60 == 0) {
-            const ReplaySceneFrame* sf = REPLAY_PLAYER.currentSceneFrame();
-            uint32_t ac = sf ? (uint32_t)sf->actors.size() : 0;
-            float replayTime = REPLAY_PLAYER.totalTicks() > 0
-                ? (float)REPLAY_PLAYER.currentTick() / 60.0f : 0.0f;
-            EXPORTLOG("[EXPORT DEBUG] frame=%u tick=%u time=%.2f playing=%d actors=%u",
-                      frameNum, REPLAY_PLAYER.currentTick(), replayTime,
-                      (int)REPLAY_PLAYER.isPlaying(), ac);
-            if (sf && !sf->actors.empty()) {
-                auto& p = sf->actors[0].position;
-                EXPORTLOG("[EXPORT DEBUG] actor0=(%.2f,%.2f,%.2f)", (double)p.x, (double)p.y, (double)p.z);
-            }
-        }
-        if (frameNum % 30 == 0)
-        {
-            const ReplaySceneFrame* sf = REPLAY_PLAYER.currentSceneFrame();
-            if (sf) {
-                RPLXDEBUG("[LISTENER] frame=%u cam pos=(%.2f %.2f %.2f) rot=(%.2f %.2f %.2f)\n",
-                          frameNum,
-                          (double)sf->camera.position.x, (double)sf->camera.position.y, (double)sf->camera.position.z,
-                          (double)sf->camera.rotation.x, (double)sf->camera.rotation.y, (double)sf->camera.rotation.z);
-            }
-        }
+    }
+    if (gReplayExportVerbose && frameNum % 60 == 0) {
+        const ReplaySceneFrame* sf = REPLAY_PLAYER.currentSceneFrame();
+        uint32_t ac = sf ? (uint32_t)sf->actors.size() : 0;
+        float replayTime = REPLAY_PLAYER.totalTicks() > 0
+            ? (float)REPLAY_PLAYER.currentTick() / 60.0f : 0.0f;
+        EXPORTLOG("[EXPORT DEBUG] frame=%u tick=%u time=%.2f playing=%d actors=%u",
+                  frameNum, REPLAY_PLAYER.currentTick(), replayTime,
+                  (int)REPLAY_PLAYER.isPlaying(), ac);
     }
 
-    // Flip vertically
-    std::vector<uint8_t> flipped(w * h * 3);
-    for (int y = 0; y < h; ++y)
-    {
-        std::memcpy(
-            &flipped[y * w * 3],
-            &pixels[(h - 1 - y) * w * 3],
-            w * 3);
+    if (gJob.mfWriter) {
+        bool accepted = false;
+        std::string error;
+        const double tEnc0 = replayExportNowSec();
+        if (!writeMfReplayVideoFrame(gJob.mfWriter, pixels, w, h, frameNum, &accepted, error)) {
+            cancelMfReplayExport(gJob.mfWriter);
+            finishReplayExport(false, error);
+            return;
+        }
+        gExportFrameTimings.encoderMs += (replayExportNowSec() - tEnc0) * 1000.0;
+        if (!accepted) {
+            // Encoder queue is full: keep the game running, do not advance this frame.
+            replayExportTimingFrameEnd();
+            return;
+        }
+        gJob.capturedTicks++;
+        gJob.frameWriteCount = gJob.capturedTicks;
+    } else if (gJob.rawFile) {
+        const double tCopy0 = replayExportNowSec();
+        if (gJob.flipBuffer.size() != pixelBytes)
+            gJob.flipBuffer.resize(pixelBytes);
+        uint8_t* flipped = gJob.flipBuffer.data();
+        for (int y = 0; y < h; ++y)
+            std::memcpy(&flipped[y * w * 3], &pixels[(h - 1 - y) * w * 3], w * 3);
+        const size_t expectedBytes = pixelBytes;
+        size_t written = fwrite(flipped, 1, expectedBytes, gJob.rawFile);
+        gExportFrameTimings.copyMs += (replayExportNowSec() - tCopy0) * 1000.0;
+        if (written != expectedBytes) {
+            int fwErr = ferror(gJob.rawFile);
+            EXPORTTRACE_CRASH("Frame %u: fwrite FAILED (wrote %zu/%zu) ferror=%d",
+                              frameNum, written, expectedBytes, fwErr);
+            fclose(gJob.rawFile);
+            gJob.rawFile = nullptr;
+            finishReplayExport(false, "Raw file write failed during frame capture.");
+            return;
+        }
+
+        gJob.capturedTicks++;
+        gJob.frameWriteCount = gJob.capturedTicks;
     }
-    EXPORTTRACE("Frame %u: flip done", frameNum);
-
-    size_t expectedBytes = flipped.size();
-    EXPORTTRACE("Frame %u: calling fwrite (%zu bytes to pipe)...", frameNum, expectedBytes);
-    size_t written = fwrite(flipped.data(), 1, expectedBytes, gJob.rawFile);
-    EXPORTTRACE("Frame %u: fwrite returned %zu (expected %zu)", frameNum, written, expectedBytes);
-
-    if (written != expectedBytes)
-    {
-        int fwErr = ferror(gJob.rawFile);
-        EXPORTTRACE_CRASH("Frame %u: fwrite FAILED (wrote %zu/%zu) ferror=%d",
-                    frameNum, written, expectedBytes, fwErr);
-        gJob.state = ReplayExportJob::Failed;
-        gJob.errorMsg = "Raw file write failed during frame capture.";
-        fclose(gJob.rawFile);
-        gJob.rawFile = nullptr;
-        return;
-    }
-
-    gJob.capturedTicks++;
-    gJob.frameWriteCount = gJob.capturedTicks;
 
     // Advance export tick by current playback speed (speed-aware export)
     float captureSpeed = 1.0f;
     if (gReplayEditor.isLoaded()) {
         captureSpeed = gReplayEditor.playbackSpeedAtTick((int)gJob.exportTick);
     }
-    Debug::log(Debug::Category::Replay, "[ReplayExport] tick=%d speed=%.2f\n",
-        (int)gJob.exportTick, captureSpeed);
+    if (gReplayExportVerbose)
+        Debug::log(Debug::Category::Replay, "[ReplayExport] tick=%d speed=%.2f\n",
+            (int)gJob.exportTick, captureSpeed);
     gJob.exportTick += captureSpeed;
 
     uint32_t doneTick = (uint32_t)gJob.exportTick;
@@ -256,6 +366,21 @@ void updateReplayExport()
         printf("[RPLX] actual frames rendered: %u\n", gJob.capturedTicks);
         EXPORTTRACE("=== ALL FRAMES WRITTEN (%u) ===", gJob.capturedTicks);
 
+        if (gJob.mfWriter) {
+            namespace fs = std::filesystem;
+            std::error_code ec;
+            fs::create_directories(fs::path("replays") / "exports" / "_tmp", ec);
+            std::string wavPath = (fs::path("replays") / "exports" / "_tmp" / "export_audio.wav").string();
+            bool audioOk = buildReplayExportAudio(wavPath, gJob.totalTicks);
+            gJob.ffmpegWavPath = audioOk ? wavPath : std::string();
+            finishMfReplayExport(gJob.mfWriter,
+                                 gJob.ffmpegWavPath,
+                                 "assets/video/mimitaoutrov1.mp4");
+            gJob.state = ReplayExportJob::Encoding;
+            replayExportTimingFrameEnd();
+            return;
+        }
+
         // [G] Verify raw file size on disk before closing
         {
             std::error_code ec;
@@ -282,6 +407,7 @@ void updateReplayExport()
         gJob.state = ReplayExportJob::Encoding;
         encodeReplayToMp4();
     }
+    replayExportTimingFrameEnd();
 }
 
 bool isReplayExportActive()
@@ -334,4 +460,84 @@ std::string getReplayExportStatusText()
 const ReplayExportJob& getReplayExportJob()
 {
     return gJob;
+}
+
+void finishReplayExport(bool success, const std::string& error)
+{
+    restoreReplayExportEditorState();
+    if (gJob.restoreLiveOnFinish) {
+        REPLAY_PLAYER.stopPlayback();
+        REPLAY_ACTOR_MODELS.clear();
+        REPLAY_WEAPON_MODELS.clear();
+        REPLAY_CHAT_STATES.clear();
+    }
+    const bool outroMissing = gJob.mfOutroMissing;
+    gJob.mfOutroMissing = false;
+
+    if (!success) {
+        gJob.state = ReplayExportJob::Failed;
+        gJob.errorMsg = error.empty() ? "MP4 export failed." : error;
+        if (gJob.clipExport)
+            NotificationSystem::instance().pushCritical("CLIP EXPORT FAILED", "Clip export failed. Check logs.", 600);
+        replayExportTimingLogSummary();
+        return;
+    }
+
+    std::error_code ec;
+    gJob.mp4FileBytes = std::filesystem::file_size(gJob.outputPath, ec);
+    if (ec || gJob.mp4FileBytes == 0) {
+        gJob.state = ReplayExportJob::Failed;
+        gJob.errorMsg = "Encoder completed without a readable MP4.";
+        if (gJob.clipExport)
+            NotificationSystem::instance().pushCritical("CLIP EXPORT FAILED", "Clip export failed. Check logs.", 600);
+        replayExportTimingLogSummary();
+        return;
+    }
+    gLastSuccessfulExportPath = std::filesystem::absolute(gJob.outputPath).make_preferred().string();
+    gJob.state = ReplayExportJob::Done;
+    if (gJob.clipExport) {
+        NotificationSystem::instance().pushImportant(
+            "CLIP EXPORTED",
+            "Clip exported! Press J to open it in Explorer.\n" + gLastSuccessfulExportPath,
+            600);
+        if (outroMissing)
+            NotificationSystem::instance().push(
+                "NO OUTRO",
+                "Outro missing; exported clip without outro.",
+                300, {});
+    }
+    double now = std::chrono::duration<double>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    Debug::warn(Debug::Category::Replay,
+                "[REPLAY EXPORT] completed backend=%s encoderMode=%s durationSec=%.2f frames=%u bytes=%llu output=%s outro=%s",
+                gExportConfig.encoder.c_str(), gExportConfig.encoderMode.c_str(),
+                now - gJob.startTimeSec,
+                gJob.capturedTicks,
+                (unsigned long long)gJob.mp4FileBytes, gLastSuccessfulExportPath.c_str(),
+                outroMissing ? "missing" : "ok");
+    replayExportTimingLogSummary();
+}
+
+void openLastReplayExport()
+{
+    if (gLastSuccessfulExportPath.empty()) {
+        Terminal::instance().addLog("No exported clip yet. Press P after a cool moment.");
+        return;
+    }
+    if (!std::filesystem::exists(gLastSuccessfulExportPath)) {
+        copyTextToClipboard(gLastSuccessfulExportPath);
+        Terminal::instance().addLog("Latest clip file not found. Path copied to clipboard.");
+        return;
+    }
+#ifdef _WIN32
+    std::string args = "/select,\"" + gLastSuccessfulExportPath + "\"";
+    std::string path = gLastSuccessfulExportPath;
+    std::thread([args, path]() {
+        HINSTANCE result = ShellExecuteA(nullptr, "open", "explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
+        if ((INT_PTR)result <= 32) {
+            copyTextToClipboard(path);
+            gExplorerLaunchFailed.store(true, std::memory_order_release);
+        }
+    }).detach();
+#endif
 }

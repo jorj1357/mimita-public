@@ -360,7 +360,7 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
             b.set("server.startup_npcs", "true");
 
         if (b.get("server.startup_npc_count").empty())
-            b.set("server.startup_npc_count", "3");
+            b.set("server.startup_npc_count", "1");
 
         if (b.get("join.code_placeholder").empty())
             b.set("join.code_placeholder", "______");

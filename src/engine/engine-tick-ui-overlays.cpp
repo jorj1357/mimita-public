@@ -1,4 +1,4 @@
-// 08 03 2026, 17 20
+// 08 16 2026, 01 35
 /* purpose
 * Renders gameplay UI overlays such as pause state, player list, and network debug panels.
 * Uses active engine, multiplayer, and replay state to draw lightweight HUD overlays.
@@ -468,7 +468,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         {
             static bool exportPopupShown = false;
             const ReplayExportJob& job = getReplayExportJob();
-            if (job.state == ReplayExportJob::Done && !exportPopupShown) {
+            if (job.state == ReplayExportJob::Done && !job.clipExport && !exportPopupShown) {
                 exportPopupShown = true;
                 std::string result = getReplayExportStatusText();
                 DevOverlay::instance().showNotification(result, 8.0f);

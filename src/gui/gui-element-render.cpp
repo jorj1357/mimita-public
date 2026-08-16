@@ -148,7 +148,7 @@ UIButtonState drawGuiElement(GLFWwindow* win, const GuiElement& elem,
         UIRect designRect = {rx, ry, rw, rh};
         UIRect screenRect = cs.designToScreen(designRect);
         // Use full height as box size, capped at reasonable value
-        float boxSize = std::max(16.0f, std::min(rh, 32.0f));
+        float boxSize = std::max(16.0f, std::min(rh, 48.0f));
         UIRect boxRect = {rx, ry, boxSize, boxSize};
         UIRect boxScreen = cs.designToScreen(boxRect);
 

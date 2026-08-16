@@ -1,4 +1,4 @@
-# 08 03 2026, 13 15
+# 08 16 2026, 01 35
 # purpose
 # MiMITA incremental build system normally invoked through build_agent.py.
 # Compiles only changed cpp files in parallel, uses a ccache wrapper and a
@@ -54,6 +54,10 @@ BUILD_DIR = os.path.join(ROOT, "build")
 # OBJ_DIR and PCH_OUTPUT are set per build mode after MODE is resolved below.
 
 EXE_NAME = os.environ.get("MIMITA_EXE_NAME", "mimita.exe")
+try:
+    BUILD_JOBS = max(1, int(os.environ.get("MIMITA_BUILD_JOBS", os.cpu_count() or 1)))
+except ValueError:
+    BUILD_JOBS = os.cpu_count() or 1
 
 PCH_HEADER = os.path.join(SRC_DIR, "pch.h")
 
@@ -156,6 +160,12 @@ LINK_LIBS = [
     "-lole32",
     "-luuid",
     "-loleaut32",
+    "-lmfplat",
+    "-lmfreadwrite",
+    "-lmfuuid",
+    "-lmf",
+    "-ld3d11",
+    "-ldxgi",
     "-lbcrypt",
     "-lpthread",
 ]
@@ -388,7 +398,7 @@ def compile_cpp_file(src):
 # PARALLEL COMPILE CPP FILES
 # ============================================================
 
-with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
+with ThreadPoolExecutor(max_workers=BUILD_JOBS) as executor:
 
     futures = []
 
@@ -529,7 +539,7 @@ def compile_juice_file(src_name):
 for src_name in juice_sources:
     object_files.append(os.path.join(OBJ_DIR, "juice_" + src_name.replace(".c", ".o")))
 
-with ThreadPoolExecutor(max_workers=os.cpu_count()) as juice_executor:
+with ThreadPoolExecutor(max_workers=BUILD_JOBS) as juice_executor:
 
     juice_futures = [
         juice_executor.submit(compile_juice_file, src_name)

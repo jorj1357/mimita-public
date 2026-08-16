@@ -164,16 +164,23 @@ void engineTickReplay(Engine& engine, float dt)
     {
         const ReplayExportJob& job = getReplayExportJob();
         if (job.state == ReplayExportJob::Capturing) {
+            replayExportTimingFrameBegin();
             uint32_t seekTick = (uint32_t)job.exportTick;
             uint32_t beforeTick = gReplayPlayer.currentTick();
             if (seekTick < gReplayPlayer.totalTicks()) {
-                Debug::log(Debug::Category::Replay, "[EXPORTTRACE] seek tick %u / total %u", seekTick, gReplayPlayer.totalTicks());
+                const double tSeek0 = replayExportNowSec();
+                if (gReplayExportVerbose)
+                    Debug::log(Debug::Category::Replay, "[EXPORTTRACE] seek tick %u / total %u", seekTick, gReplayPlayer.totalTicks());
                 gReplayPlayer.seekToTick(seekTick);
+                gExportFrameTimings.seekMs += (replayExportNowSec() - tSeek0) * 1000.0;
+                const double tUpd0 = replayExportNowSec();
                 gReplayPlayer.update(0.0f);
+                gExportFrameTimings.updateMs += (replayExportNowSec() - tUpd0) * 1000.0;
                 uint32_t afterTick = gReplayPlayer.currentTick();
-                Debug::log(Debug::Category::Replay, "[EXPORT DEBUG] REPLAY_PLAYER.update: beforeTick=%u afterTick=%u (seekTick=%u)",
-                           beforeTick, afterTick, seekTick);
-            } else {
+                if (gReplayExportVerbose)
+                    Debug::log(Debug::Category::Replay, "[EXPORT DEBUG] REPLAY_PLAYER.update: beforeTick=%u afterTick=%u (seekTick=%u)",
+                               beforeTick, afterTick, seekTick);
+            } else if (gReplayExportVerbose) {
                 Debug::log(Debug::Category::Replay, "[EXPORTTRACE] seek tick %u >= total %u (skip)", seekTick, gReplayPlayer.totalTicks());
             }
         }

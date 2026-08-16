@@ -1,4 +1,4 @@
-// 07 21 2026, 17 20
+// 08 16 2026, 01 35
 /* purpose
 * Owns lightweight command-line self-tests and diagnostic launch paths.
 * Runs requested checks before normal graphics or gameplay startup.
@@ -660,11 +660,109 @@ bool handleGameCLI(int argc, char** argv)
 
         check(player.currentTick() > 0, "currentTick > 0 (replay advances)");
 
-        // 3. Verify ffmpeg exists
+        // 3. Verify the player-default Windows encoder without launching the game.
+#ifdef _WIN32
+        printf("\n--- Verifying Media Foundation MP4 writer ---\n");
+        std::filesystem::path mfPath = selftestDir / "selftest_mf.mp4";
+        MfMp4Writer* mfWriter = nullptr;
+        std::string mfError;
+        bool mfStarted = startMfReplayExport(mfWriter, mfPath.string(), 320, 240, 1000, mfError);
+        check(mfStarted, "Media Foundation writer starts");
+        for (int i = 0; mfWriter && !mfReplayInitReady(mfWriter) && i < 200; ++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        bool mfInitOk = mfStarted && mfWriter && mfReplayInitSucceeded(mfWriter);
+        check(mfInitOk, "Media Foundation encoder initializes");
+        if (mfWriter) printf("    Media Foundation encoder path: %s\n",
+                             mfReplayEncoderMode(mfWriter).c_str());
+        bool mfFramesOk = mfInitOk;
+        std::vector<uint8_t> mfFrame(320 * 240 * 3);
+        for (uint32_t frame = 0; frame < 30 && mfFramesOk && mfWriter; ++frame) {
+            for (size_t i = 0; i < mfFrame.size(); i += 3) {
+                mfFrame[i] = frame == 0 ? 255 : 0;
+                mfFrame[i + 1] = frame == 1 ? 255 : 0;
+                mfFrame[i + 2] = frame == 2 ? 255 : 0;
+            }
+            bool accepted = false;
+            bool okCall = false;
+            for (int tries = 0; tries < 2000 && mfWriter; ++tries) {
+                okCall = writeMfReplayVideoFrame(
+                    mfWriter, mfFrame.data(), 320, 240, frame, &accepted, mfError);
+                if (okCall && accepted) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            if (!(okCall && accepted)) { mfFramesOk = false; break; }
+        }
+        check(mfFramesOk, "Media Foundation accepts synthetic NV12 frames");
+        std::filesystem::path mfWav = selftestDir / "selftest_mf.wav";
+        std::vector<int16_t> mfSilence(24000 * 2, 0);
+        bool mfWavOk = writeReplayExportWav(
+            mfWav.string(), mfSilence.data(), mfSilence.size(), 48000, 2);
+        check(mfWavOk, "create Media Foundation PCM input");
+        bool mfFinished = false;
+        if (mfStarted && mfInitOk && mfFramesOk && mfWavOk && mfWriter) {
+            finishMfReplayExport(mfWriter, mfWav.string(),
+                                 std::filesystem::exists("assets/video/mimitaoutrov1.mp4")
+                                     ? "assets/video/mimitaoutrov1.mp4" : std::string());
+            bool ok = false;
+            bool outroMissing = false;
+            std::string err;
+            int waits = 0;
+            while (mfWriter && !pollMfReplayExport(mfWriter, ok, outroMissing, err)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                if (++waits > 600) break;
+            }
+            mfFinished = ok;
+            if (!err.empty()) mfError = err;
+        }
+        if (mfWriter) cancelMfReplayExport(mfWriter);
+        check(mfFinished, "Media Foundation finalizes MP4");
+        bool mfOutput = std::filesystem::exists(mfPath, ec) &&
+            std::filesystem::file_size(mfPath, ec) > 0;
+        check(mfOutput, "Media Foundation MP4 exists and is non-empty");
+        if (!mfError.empty()) printf("    Media Foundation detail: %s\n", mfError.c_str());
+
+        // 3b. Cancel mid-encode must not corrupt memory or hang.
+        {
+            MfMp4Writer* cw = nullptr;
+            std::string cerr;
+            bool cwStarted = startMfReplayExport(cw, (selftestDir / "cancel_mf.mp4").string(),
+                                                 320, 240, 1000, cerr);
+            for (int i = 0; cw && !mfReplayInitReady(cw) && i < 200; ++i)
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            for (uint32_t frame = 0; frame < 8 && cw; ++frame) {
+                bool acc = false;
+                std::string e;
+                writeMfReplayVideoFrame(cw, mfFrame.data(), 320, 240, frame, &acc, e);
+            }
+            if (cw) cancelMfReplayExport(cw);
+            check(cwStarted && cw == nullptr, "Media Foundation cancels cleanly");
+        }
+        std::string probe = (std::filesystem::path(defaultFfmpegPath()).parent_path() /
+                             "ffprobe.exe").string();
+        if (std::filesystem::exists(probe)) {
+            std::string probeCmd = probe + " -v error -show_entries "
+                "stream=codec_type,codec_name -of csv=p=0 \"" +
+                std::filesystem::absolute(mfPath).string() + "\"";
+            FILE* pipe = _popen(probeCmd.c_str(), "r");
+            std::string streams;
+            char probeLine[256];
+            while (pipe && fgets(probeLine, sizeof(probeLine), pipe)) streams += probeLine;
+            int probeExit = pipe ? _pclose(pipe) : -1;
+            check(probeExit == 0 && streams.find("h264") != std::string::npos &&
+                      streams.find("video") != std::string::npos,
+                  "ffprobe verifies H.264 video stream");
+            check(probeExit == 0 && streams.find("aac") != std::string::npos &&
+                      streams.find("audio") != std::string::npos,
+                  "ffprobe verifies AAC audio stream");
+        }
+#endif
+
+        // 4. Verify optional developer FFmpeg when it is installed.
         printf("\n--- Verifying ffmpeg ---\n");
         std::string ffmpegPath = defaultFfmpegPath();
         bool ffmpegExists = std::filesystem::exists(ffmpegPath);
-        check(ffmpegExists, "ffmpeg exists at default path");
+        if (gExportConfig.encoder == "ffmpeg")
+            check(ffmpegExists, "ffmpeg exists through dynamic resolution");
         if (!ffmpegExists) {
             printf("[REPLAY EXPORT SELFTEST] ffmpeg not found, skipping ffmpeg tests\n");
         } else {
