@@ -5,7 +5,7 @@
       "y": -3.5,
       "z": 1.0
     },
-    "fov": 100,
+    "fov": 130,
     "positionStiffness": 9.0,
     "rotationStiffness": 9.0,
     "stiffnessEnabled": false,

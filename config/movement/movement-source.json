@@ -41,12 +41,12 @@
     // NOT from A/D rules: the key only defines the wish direction; the mouse
     // rotates the camera, which naturally rotates the wish. Holding A alone
     // can only fill the small projection cap; it cannot steer velocity directly.
-    "air_speed_gain_multiplier": 1.0,
+    "air_speed_gain_multiplier": 12.0,
     // Strength of the air acceleration (Source sv_airaccelerate equivalent).
     "air_acceleration": 12.0,
     // Source's 30-unit air cap divided by its 320-unit max speed, scaled to
     // MiMITA max_speed 20: 20 * 30 / 320 = 1.875.
-    "air_max_wishspeed": 1.875,
+    "air_max_wishspeed": 2.875,
     // Historical Source bug compatibility: use uncapped wishspeed in the
     // acceleration term while capped wishspd limits projection/addSpeed.
     "source_airaccelerate_bug_compatible": true,
@@ -68,7 +68,7 @@
     // 0 = no mercy (pure CS behavior).
     "coyote_time": 0.0,
     // Extra mid-air jumps allowed (Source/CS has none = 0).
-    "max_air_jumps": 0,
+    "max_air_jumps": 1,
 
     // ── Ground snap ──────────────────────────────────────────────────────
     // Snap small downward velocity to 0 when grounded (prevents jitter).
@@ -101,7 +101,7 @@
     // is ignored (0 here) — knockback carries and only bleeds via friction.
     "external_impulse_decay": 0.0,
     // Cap on the horizontal speed of a knockback impulse, MiMITA units/sec.
-    "max_external_impulse_speed": 175.0,
+    "max_external_impulse_speed": 1.0,
     // How knockback behaves: "source" = carries through input, bled by ground
     // friction (stopspeed-based); "exponential" = old independent decay.
     "impulse_friction_mode": "source",

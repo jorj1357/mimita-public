@@ -158,8 +158,7 @@ void applyCollisionContact(
             appendPlayerMovementContact(
                 p, MovementContactKind::Ground, normal, point, penetration, triangleIndex);
 
-            if (p.vel.z < 0.0f)
-                p.vel.z = 0.0f;
+            respondVelocityAgainstNormal(p, normal);
 
             if (p.externalImpulse.z > 0.0f)
                 p.externalImpulse.z = 0.0f;
@@ -183,7 +182,7 @@ void applyCollisionContact(
                       label ? label : "?", normal.x, normal.y, normal.z, penetration);
         appendPlayerMovementContact(
             p, MovementContactKind::Slope, normal, point, penetration, triangleIndex);
-        projectVelocityAgainstNormal(p, normal);
+        respondVelocityAgainstNormal(p, normal);
     }
     else if (normal.z < -MAX_WALKABLE_SLOPE_DOT)
     {
@@ -191,14 +190,13 @@ void applyCollisionContact(
                       label ? label : "?", normal.x, normal.y, normal.z, p.vel.z);
         appendPlayerMovementContact(
             p, MovementContactKind::Ceiling, normal, point, penetration, triangleIndex);
-        if (p.vel.z > 0.0f)
-            p.vel.z = 0.0f;
+        respondVelocityAgainstNormal(p, normal);
     }
     else
     {
         LOG_COLLISION("contact_wall", "[CONTACT] WALL label=%s normal=(%.3f,%.3f,%.3f) velZ=%.3f",
                       label ? label : "?", normal.x, normal.y, normal.z, p.vel.z);
-        projectVelocityAgainstNormal(p, normal);
+        respondVelocityAgainstNormal(p, normal);
         appendPlayerMovementContact(
             p, MovementContactKind::Wall, normal, point, penetration, triangleIndex);
     }

@@ -1,5 +1,13 @@
 {
     "walkableSlopeDot": 0.80,
     "bodySampleRadius": 0.25,
-    "maxStepHeight": 0.25
+    "maxStepHeight": 0.25,
+    "bounce": {
+        "enabled": true,
+        "strength": 0.35,
+        "friction": 0.5,
+        "minSpeed": 7.0,
+        "maxSpeed": 45.0,
+        "cooldown": 0.05
+    }
 }

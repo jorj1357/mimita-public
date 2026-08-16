@@ -19,10 +19,12 @@
       "texture": "hair2.png"
     },
     "head_front": {
-      "offset_y": 100,
+      "offset_x": -25,
+      "offset_y": -20,
       "rotation": 180.0,
-      "scale_y": 1.7999999523162842,
-      "texture": "girlface4.png"
+      "scale_x": 3.8057565689086914,
+      "scale_y": 2.656972885131836,
+      "texture": "clown1.png"
     },
     "head_left": {
       "color": [
@@ -258,5 +260,5 @@
     "shirt": "",
     "skin": ""
   },
-  "updated_at": "2026-08-15T16:19:15Z"
+  "updated_at": "2026-08-15T19:33:46Z"
 }

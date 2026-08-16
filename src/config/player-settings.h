@@ -15,10 +15,6 @@ struct PlayerSettings {
 
     float collisionSeamTolerance = 0.035f;
     float collisionMovementBias = 0.75f;
-    // float collisionBounceStrength = 0.16f;
-    float collisionBounceStrength = 0.0f;
-    float collisionBounceMinSpeed = 7.0f;
-    float collisionBounceMaxSpeed = 45.0f;
 
     float weaponSwayStrength = 0.12f;
     float weaponAimFollowSpeed = 12.0f;
