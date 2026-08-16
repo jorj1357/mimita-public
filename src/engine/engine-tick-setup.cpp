@@ -13,6 +13,7 @@
 #include "config/networking-config.h"
 #include "config/size-scaling-config.h"
 #include "config/collision-lod-config.h"
+#include "config/collision-config.h"
 #include "map/map-loader-collision.h"
 #include "gui/hud/healthbar-config.h"
 #include "effects/hit-effects.h"
@@ -69,6 +70,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     NetworkingConfig::instance().pollReload();
     if (CollisionLodConfig::instance().pollHotReload())
         redecimateCollision(THE_WORLD);
+    CollisionConfig::instance().pollHotReload();
     worldPassRan = false;
 
     {

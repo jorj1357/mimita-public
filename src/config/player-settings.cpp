@@ -54,9 +54,6 @@ bool LoadPlayerSettings(const std::string& account)
         readValue(j, "character_name", gSettings.characterName);
         readValue(j, "collision_seam_tolerance", gSettings.collisionSeamTolerance);
         readValue(j, "collision_movement_bias", gSettings.collisionMovementBias);
-        readValue(j, "collision_bounce_strength", gSettings.collisionBounceStrength);
-        readValue(j, "collision_bounce_min_speed", gSettings.collisionBounceMinSpeed);
-        readValue(j, "collision_bounce_max_speed", gSettings.collisionBounceMaxSpeed);
         readValue(j, "weapon_sway_strength", gSettings.weaponSwayStrength);
         readValue(j, "weapon_aim_follow_speed", gSettings.weaponAimFollowSpeed);
         readValue(j, "weapon_recoil_strength", gSettings.weaponRecoilStrength);
@@ -107,9 +104,6 @@ bool SavePlayerSettings(const std::string& account)
     j["character_name"] = gSettings.characterName;
     j["collision_seam_tolerance"] = gSettings.collisionSeamTolerance;
     j["collision_movement_bias"] = gSettings.collisionMovementBias;
-    j["collision_bounce_strength"] = gSettings.collisionBounceStrength;
-    j["collision_bounce_min_speed"] = gSettings.collisionBounceMinSpeed;
-    j["collision_bounce_max_speed"] = gSettings.collisionBounceMaxSpeed;
     j["weapon_sway_strength"] = gSettings.weaponSwayStrength;
     j["weapon_aim_follow_speed"] = gSettings.weaponAimFollowSpeed;
     j["weapon_recoil_strength"] = gSettings.weaponRecoilStrength;

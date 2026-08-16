@@ -13,11 +13,13 @@
 #include <vector>
 #include <cstring>
 #include <cstdlib>
+#include <algorithm>
 #include <glm/glm.hpp>
 
 #include "physics/physics-types.h"
 #include "physics/config.h"
 #include "entities/player.h"
+#include "config/collision-config.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/movement-types.h"
 
@@ -62,6 +64,44 @@ inline void projectVelocityAgainstNormal(Player& p, const glm::vec3& normal)
 inline void clampVelocityAgainstNormal(Player& p, const glm::vec3& normal)
 {
     projectVelocityAgainstNormal(p, normal);
+}
+
+inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal)
+{
+    const CollisionConfig& cfg = CollisionConfig::instance();
+    glm::vec3* velocities[] =
+    {
+        &p.vel,
+        &p.externalImpulse
+    };
+
+    if (!cfg.bounceEnabled() || p.collision.bounceCooldown > 0.0f || cfg.bounceStrength() <= 0.0f)
+    {
+        projectVelocityAgainstNormal(p, normal);
+        return;
+    }
+
+    float totalInto = 0.0f;
+    for (glm::vec3* v : velocities)
+        totalInto += std::max(0.0f, -glm::dot(*v, normal));
+    if (totalInto < cfg.bounceMinSpeed())
+    {
+        projectVelocityAgainstNormal(p, normal);
+        return;
+    }
+
+    const float maxInto = cfg.bounceMaxSpeed();
+    const float retention = 1.0f - cfg.bounceFriction();
+    for (glm::vec3* v : velocities)
+    {
+        float into = -glm::dot(*v, normal);
+        if (into <= 0.0f)
+            continue;
+        glm::vec3 tangent = *v - normal * glm::dot(*v, normal);
+        *v = tangent * retention + normal * (std::min(into, maxInto) * cfg.bounceStrength());
+    }
+
+    p.collision.bounceCooldown = cfg.bounceCooldown();
 }
 
 void applyCollisionContact(

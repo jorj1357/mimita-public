@@ -23,7 +23,7 @@
       "offset_y": -20,
       "rotation": 180.0,
       "scale_x": 3.8057565689086914,
-      "scale_y": 2.656972885131836,
+      "scale_y": 2.932681083679199,
       "texture": "clown1.png"
     },
     "head_left": {
@@ -260,5 +260,5 @@
     "shirt": "",
     "skin": ""
   },
-  "updated_at": "2026-08-15T19:33:53Z"
+  "updated_at": "2026-08-15T19:31:48Z"
 }
