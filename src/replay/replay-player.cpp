@@ -12,6 +12,7 @@
 #include "entities/player.h"
 #include "camera.h"
 #include "debug/debug-log.h"
+#include "replay/replay-export.h"
 
 using json = nlohmann::json;
 
@@ -165,6 +166,7 @@ void ReplayPlayer::beginPlayback() {
     mTriggeredEffects.clear();
     mTriggeredSounds.clear();
     mTriggeredKillfeedEvents.clear();
+    rebuildInterpolatedFrameAtTick();
     printf("[REPLAY] Playback started ticks=%u currentTick=%u isPlaying=%d\n",
            mHeader.tickCount, mCurrentTick, (int)mPlaying);
 }
@@ -199,9 +201,10 @@ void ReplayPlayer::seekToTick(uint32_t tick) {
     mLastEventTick = (int)tick - 1;
     mPlaying = true;
     mPaused = false;
-    printf("[REPLAY] seekToTick(%u) -> mCurrentTick=%u max=%zu frames=%zu scene=%zu playing=1\n",
-           tick, mCurrentTick, maxTicks, mFrames.size(), mClip.sceneFrames.size());
-}
+    rebuildInterpolatedFrameAtTick();
+    if (!isReplayExportActive() || gReplayExportVerbose)
+        printf("[REPLAY] seekToTick(%u) -> mCurrentTick=%u max=%zu frames=%zu scene=%zu playing=1\n",
+               tick, mCurrentTick, maxTicks, mFrames.size(), mClip.sceneFrames.size());}
 
 // ============================================================
 // ReplayCameraController
@@ -252,13 +255,14 @@ const char* ReplayCameraController::modeName() const
 
 void ReplayCameraController::update(
     Camera& camera, const ReplaySceneFrame& frame,
-    const std::string& killerId, const std::string& victimId, float dt)
+    const std::string& killerId, const std::string& victimId, float dt,
+    uint32_t tick)
 {
     // Debug log camera mode once per second
     Debug::logThrottled(Debug::Category::Replay, "replay-cam-mode", 1.0f,
         "[ReplayCamera] Current mode: %s  pos=(%.1f %.1f %.1f)  yaw=%.1f  pitch=%.1f  fov=%.0f  tick=%u\n",
         modeName(), camera.pos.x, camera.pos.y, camera.pos.z,
-        camera.yaw, camera.pitch, camera.fov, 0U);
+        camera.yaw, camera.pitch, camera.fov, tick);
 
     camera.fov = mFov > 0.0f ? mFov : frame.camera.fov;
     if (mMode == ReplayCameraMode::Freecam) {
@@ -273,8 +277,8 @@ void ReplayCameraController::update(
         camera.yaw = frame.camera.rotation.z;
         camera.updateVectors();
         Debug::logThrottled(Debug::Category::Replay, "replay-recorded", 1.0f,
-            "[ReplayCam] tick=%d mode=recorded pos=(%.1f %.1f %.1f) pitch=%.1f yaw=%.1f fov=%.0f\n",
-            (int)0, camera.pos.x, camera.pos.y, camera.pos.z, camera.pitch, camera.yaw, camera.fov);
+            "[ReplayCam] tick=%u mode=recorded pos=(%.1f %.1f %.1f) pitch=%.1f yaw=%.1f fov=%.0f\n",
+            tick, camera.pos.x, camera.pos.y, camera.pos.z, camera.pitch, camera.yaw, camera.fov);
         return;
     }
     if (mMode == ReplayCameraMode::FirstPerson) {

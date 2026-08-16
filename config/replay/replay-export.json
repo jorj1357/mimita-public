@@ -1,5 +1,5 @@
 {
-    "encoder": "windows",
+    "encoder": "ffmpeg",
     "encoderMode": "auto",
     "audioVolumeMultiplier": 0.8,
     "exportWidth": 1920,

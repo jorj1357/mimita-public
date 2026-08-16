@@ -107,6 +107,15 @@ def collect_files():
         if os.path.isfile(full):
             files.append((name, full, os.path.getsize(full)))
 
+    # Shipped FFmpeg backend (used by the default replay-export encoder).
+    # ffprobe is required by the outro append path (duration/resolution probe).
+    for name in ["tools/ffmpeg.exe", "tools/ffprobe.exe"]:
+        full = os.path.join(ROOT, *name.split("/"))
+        if os.path.isfile(full):
+            files.append((name, full, os.path.getsize(full)))
+        else:
+            print(f"[WARN] {name} missing — release will export without FFmpeg.")
+
     for subdir in ["assets", "config", "shaders", "Characters"]:
         d = os.path.join(ROOT, subdir)
         if os.path.isdir(d):

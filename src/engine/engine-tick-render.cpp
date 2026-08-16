@@ -144,6 +144,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         Debug::log(Debug::Category::Replay, "[EXPORT DEBUG] render order: 1.replay update, 2.replay render, 3.glReadPixels");
     }
     if (replayRenderActive) {
+        gReplayPlayer.pollPoseInvariant();
         const double tRender0 = replayExportNowSec();
         if (const ReplaySceneFrame* replayFrame =
                 gReplayPlayer.currentSceneFrame()) {

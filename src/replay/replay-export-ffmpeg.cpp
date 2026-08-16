@@ -1,11 +1,11 @@
 // 08 16 2026, 01 35
 /* purpose
-* Mixes replay audio and runs the optional developer FFmpeg MP4 backend.
+* Mixes replay audio and runs the FFmpeg MP4 backend (default release backend).
 * Preserves replay camera timing, spatial audio, scaling, and outro behavior.
 * Reports encoder output and validates that the requested MP4 was produced.
 * Does NOT select the active export backend or resolve FFmpeg installations.
 * Does NOT capture OpenGL frames or register terminal commands.
-* Does NOT bundle FFmpeg with player releases.
+* Ships FFmpeg visibly as tools/ffmpeg.exe (never embedded in mimita.exe).
 */
 #include "replay/replay-export.h"
 
@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -617,7 +618,7 @@ static bool launchEncodeVideo(bool withAudio)
     if (gExportConfig.exportBitrate > 0) {
         bitrateStr = "-b:v " + std::to_string(gExportConfig.exportBitrate) + "k ";
     }
-    std::string batContent = "@echo off\r\n"
+    std::string ffmpegCmd =
         "\"" + fs::absolute(gJob.ffmpegPath).make_preferred().string() + "\" -y -f rawvideo -pixel_format rgb24 "
         "-video_size " + std::to_string(gJob.capWidth) + "x" + std::to_string(gJob.capHeight) + " "
         "-framerate 60 -i \"" + fs::absolute(nativeRaw).make_preferred().string() + "\" "
@@ -629,8 +630,12 @@ static bool launchEncodeVideo(bool withAudio)
         + framesV
         + audioCodec + " "
         + (withAudio ? "-shortest " : "") +
-        "\"" + nativeOutput + "\" "
-        "2>&1\r\n"
+        "\"" + nativeOutput + "\"";
+    gJob.ffmpegCommand = ffmpegCmd;
+
+    std::string batContent = "@echo off\r\n"
+        + ffmpegCmd +
+        " 2>&1\r\n"
         "exit /b %ERRORLEVEL%\r\n";
 
     gJob.ffmpegBatchPath = fs::absolute(fs::path("replays") / "exports" / "_tmp" / (withAudio ? "encode_video.bat" : "encode_video_only.bat")).make_preferred().string();
@@ -717,6 +722,26 @@ void encodeReplayToMp4()
         finishReplayExport(false, "Could not start FFmpeg.");
 }
 
+// Read the tail of the FFmpeg stderr log for actionable failure messages.
+static std::string readFfmpegErrorTail()
+{
+    std::error_code ec;
+    if (!std::filesystem::exists(gJob.ffmpegLogPath, ec))
+        return {};
+    std::ifstream f(gJob.ffmpegLogPath, std::ios::binary);
+    if (!f.is_open())
+        return {};
+    f.seekg(0, std::ios::end);
+    std::streamoff size = f.tellg();
+    const std::streamoff kMax = 4096;
+    std::streamoff off = size > kMax ? size - kMax : 0;
+    f.seekg(off, std::ios::beg);
+    std::string data((size_t)(size - off), '\0');
+    f.read(&data[0], size - off);
+    data.resize((size_t)f.gcount());
+    return data;
+}
+
 void pollReplayFfmpegEncode()
 {
 #ifdef _WIN32
@@ -738,19 +763,47 @@ void pollReplayFfmpegEncode()
     gJob.ffmpegExitCode = (int)code;
     namespace fs = std::filesystem;
     std::error_code ec;
-    bool outputOk = code == 0 && fs::exists(gJob.outputPath, ec) && fs::file_size(gJob.outputPath, ec) > 0;
-    fs::remove(gJob.ffmpegBatchPath, ec);
+
+    // Capture this attempt's stderr tail for diagnostics before any fallback
+    // overwrites the log file.
+    std::string tail = readFfmpegErrorTail();
+    if (!tail.empty()) {
+        if (!gJob.ffmpegStderrTail.empty())
+            gJob.ffmpegStderrTail += "\n--- next attempt ---\n";
+        gJob.ffmpegStderrTail += tail;
+    }
+
+    bool outputOk = code == 0 && fs::exists(gJob.outputPath, ec) &&
+        fs::file_size(gJob.outputPath, ec) > 0;
+
     if (!outputOk && gJob.ffmpegWithAudio) {
+        // Audio muxing failed (often a bad WAV/audio codec): retry video-only.
+        Debug::warn(Debug::Category::Replay,
+            "[FFMPEG] audio attempt failed exit=%d stderrTail=%s\n",
+            (int)code, tail.empty() ? "(none)" : tail.c_str());
         if (!launchEncodeVideo(false))
             finishReplayExport(false, "Could not start FFmpeg video-only fallback.");
         return;
     }
-    fs::remove(gJob.rawTempPath, ec);
-    fs::remove(gJob.ffmpegWavPath, ec);
+
     if (!outputOk) {
-        finishReplayExport(false, "FFmpeg encoding failed. Exit code=" + std::to_string(code));
+        // Keep temp files (raw, wav, batch, log) for debugging.
+        std::string msg = "FFmpeg encoding failed. Exit code=" + std::to_string(code);
+        msg += "\nFFmpeg: " + gJob.ffmpegPath;
+        msg += "\nCommand: " + gJob.ffmpegCommand;
+        if (!gJob.ffmpegStderrTail.empty())
+            msg += "\nFFmpeg stderr tail:\n" + gJob.ffmpegStderrTail;
+        msg += "\nTemp files kept at: replays/exports/_tmp/";
+        Debug::warn(Debug::Category::Replay, "[FFMPEG] %s\n", msg.c_str());
+        finishReplayExport(false, msg);
         return;
     }
+
+    // Success: clean up temp files.
+    fs::remove(gJob.ffmpegBatchPath, ec);
+    fs::remove(gJob.rawTempPath, ec);
+    fs::remove(gJob.ffmpegWavPath, ec);
+
     std::string output = fs::absolute(gJob.outputPath).make_preferred().string();
     gOutroDone.store(false, std::memory_order_release);
     gOutroActive = true;

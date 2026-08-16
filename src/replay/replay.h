@@ -164,7 +164,7 @@ public:
     const char* modeName() const;
     void update(Camera& camera, const ReplaySceneFrame& frame,
                 const std::string& killerId,
-                const std::string& victimId, float dt);
+                const std::string& victimId, float dt, uint32_t tick);
 
 private:
     ReplayCameraMode mMode = ReplayCameraMode::Recorded;
@@ -183,6 +183,7 @@ public:
     void pause();
     void resume();
     void update(float dt);
+    void pollPoseInvariant();
     void setTimescale(float value);
     float timescale() const { return mTimescale; }
     ReplayCameraController& cameraController() { return mCameraController; }
@@ -226,6 +227,17 @@ private:
     ReplayCameraController mCameraController;
     std::string mOutfitPath;
     std::vector<ReplayAsset> mAssets;
+
+    void rebuildInterpolatedFrameAtTick();
+
+    // Presentation invariant: the authoritative tick may only advance when the
+    // presented interpolated frame/pose advances with it. Tracks consecutive
+    // stalls so a skipped rebuild (stale mInterpolatedFrame) is reported.
+    int mInvariantLastTick = -1;
+    int mInvariantLastFrameTick = -1;
+    glm::vec3 mInvariantLastPose{0.0f, 0.0f, 0.0f};
+    bool mInvariantHadPose = false;
+    int mInvariantStallFrames = 0;
 };
 
 std::string generateReplayExportPath();

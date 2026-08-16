@@ -27,6 +27,7 @@
 
 #include <windows.h>
 #include <d3d11.h>
+#include <dxgi.h>
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mftransform.h>
@@ -42,6 +43,11 @@ namespace {
 
 constexpr LONGLONG kFrameDuration = 10000000LL / 60LL; // 100 ns units
 constexpr size_t kMaxQueuedFrames = 8;
+
+// mingw's mftransform.h omits this documented constant.
+#ifndef MFT_MESSAGE_SET_EVENT_HANDLE
+#define MFT_MESSAGE_SET_EVENT_HANDLE ((MFT_MESSAGE_TYPE)0x20000001)
+#endif
 
 template <typename T> void releaseCom(T*& value)
 {
@@ -235,6 +241,8 @@ struct MfMp4Writer {
     IMFSinkWriter* sink = nullptr;
     IMFTransform* encoder = nullptr; // null => software sink-writer path
     IMFDXGIDeviceManager* deviceManager = nullptr;
+    bool encoderIsAsync = false;     // async MFT (Intel QSV) needs event-driven pump
+    HANDLE encoderEvent = nullptr;
     DWORD videoStream = 0;
     DWORD audioStream = 0;
     int width = 0;
@@ -286,6 +294,7 @@ static IMFTransform* createH264Encoder(int width, int height, int bitrate,
                                        const std::string& mode,
                                        int& outStride,
                                        IMFDXGIDeviceManager*& outDeviceManager,
+                                       bool& outIsAsync, HANDLE& outEvent,
                                        std::string& modeUsed, EncoderVendor& chosen)
 {
     MFT_REGISTER_TYPE_INFO inputType = { MFMediaType_Video, MFVideoFormat_NV12 };
@@ -334,25 +343,71 @@ static IMFTransform* createH264Encoder(int width, int height, int bitrate,
         return nullptr;
     }
 
-    // Hardware encoders generally need a D3D11 device manager (Intel QSV in
-    // particular rejects media types without one). Best effort: if it fails we
-    // continue and rely on the software fallback.
+    // Hardware encoders generally need a D3D11 device manager on the matching GPU
+    // adapter. Intel QSV in particular needs a device on the INTEL adapter, so we
+    // try that first, then fall back to the default hardware device. Best effort:
+    // if all of this fails we continue and rely on the software fallback.
     {
         ID3D11Device* d3dDevice = nullptr;
         UINT resetToken = 0;
-        if (SUCCEEDED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
-                D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
-                nullptr, 0, D3D11_SDK_VERSION, &d3dDevice, nullptr, nullptr))) {
+        auto setDeviceManager = [&]() {
             if (SUCCEEDED(MFCreateDXGIDeviceManager(&resetToken, &outDeviceManager))) {
                 if (SUCCEEDED(outDeviceManager->ResetDevice(d3dDevice, resetToken)))
                     enc->ProcessMessage(MFT_MESSAGE_SET_D3D_MANAGER, (ULONG_PTR)outDeviceManager);
                 else
                     releaseCom(outDeviceManager);
             }
-            releaseCom(d3dDevice);
+        };
+        // 1) Intel adapter first.
+        IDXGIFactory1* factory = nullptr;
+        if (SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
+            IDXGIAdapter1* adapter = nullptr;
+            for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i) {
+                DXGI_ADAPTER_DESC1 desc{};
+                bool isIntel = adapter && SUCCEEDED(adapter->GetDesc1(&desc)) &&
+                               desc.VendorId == 0x8086;
+                if (isIntel) {
+                    if (SUCCEEDED(D3D11CreateDevice(adapter, D3D_DRIVER_TYPE_UNKNOWN, nullptr,
+                            D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+                            nullptr, 0, D3D11_SDK_VERSION, &d3dDevice, nullptr, nullptr)))
+                        setDeviceManager();
+                    if (adapter) adapter->Release();
+                    break;
+                }
+                if (adapter) adapter->Release();
+            }
+            factory->Release();
         }
+        // 2) Fallback: default hardware device.
+        if (!outDeviceManager) {
+            if (SUCCEEDED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
+                    D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+                    nullptr, 0, D3D11_SDK_VERSION, &d3dDevice, nullptr, nullptr))) {
+                setDeviceManager();
+            }
+        }
+        releaseCom(d3dDevice);
         if (!outDeviceManager)
             Debug::log(Debug::Category::Replay, "[EXPORT MF] no DXGI device manager; hardware encoder may fall back");
+    }
+
+    // Async MFTs (Intel QSV is one): register the output event AFTER types and
+    // streaming notifications are set up; the event is only needed once frames
+    // start flowing.
+    {
+        IMFAttributes* attrs = nullptr;
+        UINT32 asyncFlag = 0;
+        if (SUCCEEDED(enc->GetAttributes(&attrs))) {
+            if (SUCCEEDED(attrs->GetUINT32(MF_TRANSFORM_ASYNC, &asyncFlag)) && asyncFlag)
+                outIsAsync = true;
+            releaseCom(attrs);
+        }
+        if (outIsAsync)
+            outEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (outIsAsync && !outEvent) {
+            Debug::log(Debug::Category::Replay, "[EXPORT MF] CreateEvent failed; treating encoder as sync");
+            outIsAsync = false;
+        }
     }
 
     IMFMediaType* inType = nullptr;
@@ -388,6 +443,14 @@ static IMFTransform* createH264Encoder(int width, int height, int bitrate,
         Debug::log(Debug::Category::Replay, "[EXPORT MF] encoder %s: SetOutputType failed 0x%08lx",
                    modeUsed.c_str(), (unsigned long)hr);
     releaseCom(outType);
+
+    // Types negotiated; now start streaming and register the async output event.
+    if (SUCCEEDED(hr) && outIsAsync) {
+        enc->ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, 0);
+        enc->ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, 0);
+        enc->ProcessMessage(MFT_MESSAGE_SET_EVENT_HANDLE, (ULONG_PTR)outEvent);
+        Debug::log(Debug::Category::Replay, "[EXPORT MF] encoder %s is async (event-driven)", modeUsed.c_str());
+    }
 
     if (FAILED(hr)) {
         releaseCom(enc);
@@ -473,6 +536,44 @@ static bool drainEncoder(MfMp4Writer* w)
     }
 }
 
+// Event-driven drain for async MFTs (Intel QSV): waits briefly for the encoder's
+// output event, then pulls every available compressed sample into the sink.
+static bool drainEncoderAsync(MfMp4Writer* w)
+{
+    for (;;) {
+        MFT_OUTPUT_DATA_BUFFER outBuf = {};
+        outBuf.dwStreamID = 0;
+        DWORD status = 0;
+        HRESULT hr = w->encoder->ProcessOutput(0, 1, &outBuf, &status);
+        if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT) {
+            if (outBuf.pSample) outBuf.pSample->Release();
+            return true;
+        }
+        if (hr == MF_E_TRANSFORM_STREAM_CHANGE) {
+            if (outBuf.pSample) outBuf.pSample->Release();
+            IMFMediaType* newType = nullptr;
+            if (SUCCEEDED(w->encoder->GetOutputAvailableType(0, 0, &newType))) {
+                w->encoder->SetOutputType(0, newType, 0);
+                releaseCom(newType);
+            }
+            continue;
+        }
+        if (FAILED(hr)) {
+            if (outBuf.pSample) outBuf.pSample->Release();
+            w->error = hrText("async H.264 ProcessOutput", hr);
+            return false;
+        }
+        if (outBuf.pSample) {
+            HRESULT whr = w->sink->WriteSample(w->videoStream, outBuf.pSample);
+            outBuf.pSample->Release();
+            if (FAILED(whr)) {
+                w->error = hrText("async encoder WriteSample", whr);
+                return false;
+            }
+        }
+    }
+}
+
 // Submit one NV12 frame through whichever video path is active.
 static bool submitVideoSample(MfMp4Writer* w, const BYTE* nv12, size_t bytes,
                               LONGLONG time, LONGLONG duration)
@@ -494,19 +595,39 @@ static bool submitVideoSample(MfMp4Writer* w, const BYTE* nv12, size_t bytes,
 
     if (SUCCEEDED(hr)) {
         if (w->encoder) {
-            hr = w->encoder->ProcessInput(0, sample, 0);
-            if (hr == MF_E_NOTACCEPTING) {
-                if (!drainEncoder(w)) {
+            if (w->encoderIsAsync) {
+                hr = w->encoder->ProcessInput(0, sample, 0);
+                if (hr == MF_E_NOTACCEPTING) {
+                    if (!drainEncoderAsync(w)) {
+                        releaseCom(sample);
+                        releaseCom(buffer);
+                        return false;
+                    }
+                    hr = w->encoder->ProcessInput(0, sample, 0);
+                }
+                // Wait for the encoder to signal output (bounded so cancel works).
+                DWORD wr = WaitForSingleObject(w->encoderEvent, 250);
+                if (wr == WAIT_OBJECT_0) ResetEvent(w->encoderEvent);
+                if (!drainEncoderAsync(w)) {
                     releaseCom(sample);
                     releaseCom(buffer);
                     return false;
                 }
+            } else {
                 hr = w->encoder->ProcessInput(0, sample, 0);
-            }
-            if (SUCCEEDED(hr) && !drainEncoder(w)) {
-                releaseCom(sample);
-                releaseCom(buffer);
-                return false;
+                if (hr == MF_E_NOTACCEPTING) {
+                    if (!drainEncoder(w)) {
+                        releaseCom(sample);
+                        releaseCom(buffer);
+                        return false;
+                    }
+                    hr = w->encoder->ProcessInput(0, sample, 0);
+                }
+                if (SUCCEEDED(hr) && !drainEncoder(w)) {
+                    releaseCom(sample);
+                    releaseCom(buffer);
+                    return false;
+                }
             }
         } else {
             hr = w->sink->WriteSample(w->videoStream, sample);
@@ -789,6 +910,7 @@ static void workerLoop(MfMp4Writer* w)
     if (mode != "software") {
         w->encoder = createH264Encoder(w->width, w->height, w->bitrate,
                                        mode, stride, w->deviceManager,
+                                       w->encoderIsAsync, w->encoderEvent,
                                        w->encoderModeUsed, chosen);
     }
     w->nv12Stride = w->encoder ? stride : w->width;
@@ -800,6 +922,7 @@ static void workerLoop(MfMp4Writer* w)
                    hrText("sink", hr).c_str());
         releaseCom(w->encoder);
         releaseCom(w->deviceManager);
+        if (w->encoderEvent) { CloseHandle(w->encoderEvent); w->encoderEvent = nullptr; }
         releaseCom(w->sink);
         w->encoder = nullptr;
         w->encoderModeUsed = "software";
@@ -808,6 +931,7 @@ static void workerLoop(MfMp4Writer* w)
     if (FAILED(hr)) {
         releaseCom(w->encoder);
         releaseCom(w->deviceManager);
+        if (w->encoderEvent) { CloseHandle(w->encoderEvent); w->encoderEvent = nullptr; }
         releaseCom(w->sink);
         w->initError = hrText(w->encoderModeUsed.empty() ? "software sink" : w->encoderModeUsed.c_str(), hr);
         w->initOk = false;
@@ -868,6 +992,7 @@ static void workerLoop(MfMp4Writer* w)
         releaseCom(w->sink);
         releaseCom(w->encoder);
         releaseCom(w->deviceManager);
+        if (w->encoderEvent) { CloseHandle(w->encoderEvent); w->encoderEvent = nullptr; }
         w->ok = false;
         w->done = true;
         MFShutdown();
@@ -880,7 +1005,17 @@ static void workerLoop(MfMp4Writer* w)
     if (w->encoder) {
         w->encoder->ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0);
         w->encoder->ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0);
-        drainEncoder(w);
+        if (w->encoderIsAsync) {
+            // Keep draining until the encoder stops signaling output.
+            for (int i = 0; i < 200; ++i) {
+                DWORD wr = WaitForSingleObject(w->encoderEvent, 250);
+                if (wr == WAIT_OBJECT_0) ResetEvent(w->encoderEvent);
+                if (!drainEncoderAsync(w)) break;
+                if (wr != WAIT_OBJECT_0) break;
+            }
+        } else {
+            drainEncoder(w);
+        }
     }
 
     std::string wavPath;
@@ -901,6 +1036,7 @@ static void workerLoop(MfMp4Writer* w)
 
     releaseCom(w->encoder);
         releaseCom(w->deviceManager);
+        if (w->encoderEvent) { CloseHandle(w->encoderEvent); w->encoderEvent = nullptr; }
     releaseCom(w->sink);
     w->ok = w->error.empty() && SUCCEEDED(finalHr);
     w->done = true;
@@ -945,6 +1081,21 @@ bool mfReplayInitSucceeded(MfMp4Writer* writer)
 std::string mfReplayEncoderMode(MfMp4Writer* writer)
 {
     return writer ? writer->encoderModeUsed : std::string();
+}
+
+bool mfReplayQueueHasRoom(MfMp4Writer* writer)
+{
+    if (!writer) return false;
+    if (!writer->initReady.load()) return true; // init in progress; capture can proceed
+    std::lock_guard<std::mutex> lock(writer->mtx);
+    return writer->queue.size() < kMaxQueuedFrames;
+}
+
+size_t mfReplayQueueSize(MfMp4Writer* writer)
+{
+    if (!writer) return 0;
+    std::lock_guard<std::mutex> lock(writer->mtx);
+    return writer->queue.size();
 }
 
 bool writeMfReplayVideoFrame(MfMp4Writer* writer, const uint8_t* rgbBottomUp,
@@ -1012,6 +1163,7 @@ void cancelMfReplayExport(MfMp4Writer*& writer)
     releaseCom(writer->sink);
     releaseCom(writer->encoder);
     releaseCom(writer->deviceManager);
+    if (writer->encoderEvent) { CloseHandle(writer->encoderEvent); writer->encoderEvent = nullptr; }
     delete writer;
     writer = nullptr;
 }
@@ -1059,6 +1211,8 @@ bool startMfReplayExport(MfMp4Writer*&, const std::string&, int, int, int, std::
 bool mfReplayInitReady(MfMp4Writer*) { return true; }
 bool mfReplayInitSucceeded(MfMp4Writer*) { return false; }
 std::string mfReplayEncoderMode(MfMp4Writer*) { return "unavailable"; }
+bool mfReplayQueueHasRoom(MfMp4Writer*) { return false; }
+size_t mfReplayQueueSize(MfMp4Writer*) { return 0; }
 bool writeMfReplayVideoFrame(MfMp4Writer*, const uint8_t*, int, int, uint32_t, bool*, std::string& error)
 { error = "Windows exporter unavailable"; return false; }
 void finishMfReplayExport(MfMp4Writer*&, const std::string&, const std::string&) {}

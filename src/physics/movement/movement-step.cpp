@@ -1486,6 +1486,33 @@ void applyPreCollisionBasicMovement(MovementState& state,
                                     const MovementConfig& config,
                                     float fixedDt)
 {
+    // 08 16 2026 — KNOCKBACK CONSUMPTION: COMBINED SINGLE-TICK IMPULSE
+    // WAS: external impulse lived in a separate tank, was re-added to the move
+    // every tick, and decayed/bled off over many ticks (lingering "sticky" push).
+    // NOW: it is combined into the real velocity ONCE per tick, then cleared, so
+    // gravity, friction, air control, and input own the momentum from the next
+    // tick on (Source-style momentum you can bhop-carry).
+    // TO REVERT: delete this block and external impulse goes back to the old
+    // separate-tank decay behavior (impulse_friction_mode / external_impulse_decay
+    // / impulse_carry_seconds in the movement preset), restoring the old tests.
+    const glm::vec3 pendingImpulse = state.externalImpulse;
+    if (glm::length(pendingImpulse) > 0.0001f)
+    {
+        glm::vec2 impulseXY(pendingImpulse.x, pendingImpulse.y);
+        if (config.maximumExternalImpulseSpeed > 0.0f)
+        {
+            const float impulseSpeed = glm::length(impulseXY);
+            if (impulseSpeed > config.maximumExternalImpulseSpeed && impulseSpeed > 0.0f)
+                impulseXY *= config.maximumExternalImpulseSpeed / impulseSpeed;
+        }
+        state.baseVelocity.x += impulseXY.x;
+        state.baseVelocity.y += impulseXY.y;
+        state.baseVelocity.z += pendingImpulse.z;
+    }
+    state.externalImpulse = glm::vec3(0.0f);
+    state.externalImpulseCarryTimerSeconds = 0.0f;
+    state.externalImpulseMagnitude = 0.0f;
+
     state.previousMoveAxes = state.lastInputMoveAxes;
     state.lastInputMoveAxes = movementClampUnitOrZero(command.moveAxes);
     resetBasicOneTickState(state);

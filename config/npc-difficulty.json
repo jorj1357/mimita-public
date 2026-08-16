@@ -4,7 +4,7 @@
   "comment_maxAngularErrorDegrees": "Aim miss-cone in degrees. Lower = more accurate = deadlier. 4 = arcade (most shots hit but some visibly miss), 8 = stormtrooper-ish, 0 = perfect aim (same as forceHit).",
   "difficultyErrorScale": 0.5,
   "comment_difficultyErrorScale": "0 to 1. How much an NPC's difficulty (1-10) shrinks the miss-cone. 0 = all NPCs equally accurate. 1 = max-difficulty NPCs get the full reduction from maxAngularErrorDegrees.",
-  "damageMultiplier": 2.0,
+  "damageMultiplier": 1.0,
   "comment_damageMultiplier": "Multiplies weapon damage when an NPC hits the player. Revolver base is 12, so 1.0 = 12 per body shot / 24 headshot (natural attrition). Higher = more brutal. A 100 HP player takes ~8 body shots to die at 1.0.",
   "fireDelayMin": 0.01,
   "comment_fireDelayMin": "Fastest allowed seconds between NPC shots. Values below the weapon's own fire_delay are clamped to the weapon value. 0 = always use the weapon's own fire_delay.",

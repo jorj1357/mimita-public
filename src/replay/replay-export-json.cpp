@@ -1,7 +1,7 @@
 // 08 16 2026, 01 35
 /* purpose
 * Loads hot-reloadable replay export settings and prepares export jobs.
-* Resolves optional FFmpeg installations without machine-specific paths.
+* Resolves shipped (tools/ffmpeg.exe) or configured FFmpeg installations.
 * Owns output naming, clipboard support, cancellation, and editor restoration.
 * Does NOT capture framebuffer pixels or encode Media Foundation samples.
 * Does NOT mix replay audio or append video outros.
@@ -150,10 +150,22 @@ std::string defaultFfmpegPath()
         } catch (...) {}
     }
 #ifdef _WIN32
+    // Shipped location: tools/ffmpeg.exe beside the game executable (release
+    // layout) or beside the working directory (source checkout).
     char module[MAX_PATH] = {};
     if (GetModuleFileNameA(nullptr, module, MAX_PATH) > 0) {
-        std::filesystem::path beside = std::filesystem::path(module).parent_path() / "ffmpeg" / "ffmpeg.exe";
-        if (std::filesystem::exists(beside)) return beside.string();
+        std::filesystem::path exeDir = std::filesystem::path(module).parent_path();
+        std::filesystem::path beside = exeDir / "tools" / "ffmpeg.exe";
+        if (std::filesystem::exists(beside))
+            return std::filesystem::absolute(beside).make_preferred().string();
+        std::filesystem::path besideLegacy = exeDir / "ffmpeg" / "ffmpeg.exe";
+        if (std::filesystem::exists(besideLegacy))
+            return std::filesystem::absolute(besideLegacy).make_preferred().string();
+    }
+    {
+        std::filesystem::path cwdTools = std::filesystem::path("tools") / "ffmpeg.exe";
+        if (std::filesystem::exists(cwdTools))
+            return std::filesystem::absolute(cwdTools).make_preferred().string();
     }
     char found[MAX_PATH] = {};
     if (SearchPathA(nullptr, "ffmpeg.exe", nullptr, MAX_PATH, found, nullptr) > 0)

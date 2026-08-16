@@ -1,11 +1,12 @@
 // 08 16 2026, 01 35
 /* purpose
 * Declares replay MP4 export configuration, job state, and backend APIs.
-* Supports Windows Media Foundation by default and optional FFmpeg exports.
+* FFmpeg is the default release backend (ships at tools/ffmpeg.exe);
+* Windows Media Foundation is the fallback/future backend.
 * Exposes clip completion, Explorer selection, and export lifecycle helpers.
 * Does NOT capture gameplay state or render replay frames itself.
 * Does NOT own replay recording or editor command registration.
-* Does NOT bundle or download an external encoder.
+* Does NOT embed FFmpeg into mimita.exe.
 */
 #pragma once
 
@@ -17,7 +18,14 @@
 // ── Replay export configuration (hot-reloaded from config/replay/replay-export.json)
 
 struct ReplayExportConfig {
-    std::string encoder = "windows";
+    // FFmpeg is the default release backend: it is the only path that reliably
+    // produces an MP4 + outro today. "windows" (Media Foundation) stays as a
+    // fallback/future backend and is not the release blocker.
+    // TODO(release): build a minimal FFmpeg (~15-40 MB) so the shipped
+    // tools/ffmpeg.exe shrinks from the full build.
+    // TODO(release): finish the Windows Media Foundation 0MB backend so players
+    // without FFmpeg can still export.
+    std::string encoder = "ffmpeg";
     // encoderMode: "auto" (default; integrated GPU encoder first, software
     // fallback, never the discrete GPU) | "discrete" | "software"
     std::string encoderMode = "auto";
@@ -91,6 +99,10 @@ struct ReplayExportJob {
     std::vector<uint8_t> pixelBuffer;
     std::vector<uint8_t> flipBuffer;
 
+    // Stuck-tick tracking (one export at a time).
+    uint32_t lastSeekTick = 0;
+    uint32_t seekRepeatCount = 0;
+
     // Editor state before export (restored after to prevent corruption)
     bool editorWasFreecam = false;
     float savedFreecamPos[3];
@@ -101,6 +113,10 @@ struct ReplayExportJob {
 
     // Output
     std::string outputPath;
+    // Last FFmpeg command line (for actionable failure messages).
+    std::string ffmpegCommand;
+    // Accumulated FFmpeg stderr tail across encode attempts (for debugging).
+    std::string ffmpegStderrTail;
 
     // Result
     std::string errorMsg;
@@ -150,6 +166,8 @@ bool startMfReplayExport(MfMp4Writer*& writer, const std::string& outputPath,
 bool mfReplayInitReady(MfMp4Writer* writer);
 bool mfReplayInitSucceeded(MfMp4Writer* writer);
 std::string mfReplayEncoderMode(MfMp4Writer* writer);
+bool mfReplayQueueHasRoom(MfMp4Writer* writer);
+size_t mfReplayQueueSize(MfMp4Writer* writer);
 bool writeMfReplayVideoFrame(MfMp4Writer* writer, const uint8_t* rgbBottomUp,
                              int sourceWidth, int sourceHeight, uint32_t frameIndex,
                              bool* accepted, std::string& error);

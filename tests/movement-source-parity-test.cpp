@@ -3,7 +3,7 @@
 * Verifies the Source (CS/Quake PM_) movement kernel in the shared movement step.
 * Covers ground accel to maxspeed, stopspeed friction, Source air projection,
 * jump velocity preservation, bug-compatible acceleration, dash impulse
-* persistence through input, and source-style external impulse carry + bleed.
+* persistence through input, and single-tick combined external impulse.
 * Uses only the shared movement kernel; no Player, network, render, or audio.
 * Does NOT launch mimita.exe, poll input, send packets, or require networking.
 */
@@ -353,26 +353,30 @@ int main()
               "dash boost slowly bleeds via friction after the grace window");
     }
 
-    // ── 7. Source external impulse: carries, then bleeds via ground friction ──
+    // ── 7. Single-tick combined knockback (8 16 2026): the external impulse is
+    // folded into the real velocity ONCE, then cleared; normal physics owns it ──
     {
         MovementState s = freshState();
         s.ground.onGround = true;
         s.externalImpulse = glm::vec3(30.0f, 0.0f, 0.0f);
-        const glm::vec3 before = s.externalImpulse;
 
-        // Carry window (0.1s = 6 ticks): impulse is untouched.
-        const MovementState carrying =
-            runTicks(s, cmdFor(glm::vec2(0.0f, 1.0f)), cfg, groundCollision(), 6);
-        checkNear(carrying.externalImpulse.x, before.x, 0.01f,
-                  "impulse carries untouched through the carry window");
+        // Tick 1: impulse combines into baseVelocity, externalImpulse clears.
+        const MovementState hit =
+            runTicks(s, cmdFor(glm::vec2(0.0f, 1.0f)), cfg, groundCollision(), 1);
+        checkNear(hit.externalImpulse.x, 0.0f, 0.001f,
+                  "external impulse is consumed in a single tick");
+        check(hit.baseVelocity.x > 25.0f && hit.baseVelocity.x <= 30.0f,
+              "impulse is combined into real velocity on the hit tick");
 
-        // After carry: ground friction bleeds it (30 * 5.2/60 = 2.6/tick).
+        // After: normal ground friction bleeds the combined momentum.
         const MovementState bleeding =
-            runTicks(carrying, cmdFor(glm::vec2(0.0f, 1.0f)), cfg, groundCollision(), 12);
-        check(bleeding.externalImpulse.x < before.x * 0.5f,
-              "impulse bleeds via ground friction after the carry window");
-        check(bleeding.externalImpulse.x > 0.0f,
-              "impulse is not erased by holding W (input never clears it)");
+            runTicks(hit, cmdFor(glm::vec2(0.0f, 1.0f)), cfg, groundCollision(), 12);
+        check(bleeding.externalImpulse.x == 0.0f,
+              "no lingering external impulse after combine");
+        check(bleeding.baseVelocity.x < hit.baseVelocity.x,
+              "combined knockback bleeds via normal ground friction");
+        check(bleeding.baseVelocity.x > 0.0f,
+              "combined knockback is not erased by holding W");
     }
 
     std::printf("\n[movement-source-parity-test] passed=%d failed=%d\n", gPassed, gFailed);

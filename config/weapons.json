@@ -214,7 +214,7 @@
     "recoil": 130.0,
     "shooter_knockback": 0.0,
     "victim_knockback": 0.0,
-    "victim_knockback_per_damage": 0.15,
+    "victim_knockback_per_damage": 1.15,
     "victim_knockback_vertical_fraction": 0.12,
     "enemy_impulse_multiplier": 1.0,
     "projectile_speed": 0.0,

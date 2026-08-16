@@ -3,7 +3,7 @@
 * Verifies the CS:GO-inspired ground controller, air steering/gain split, and
 * strafe-eligibility layer in the shared movement kernel.
 * Covers stale-lateral cleanup, stationary-camera strictness, straight W+Space
-* preservation, valid/invalid strafes, caps, and external-impulse preservation.
+* preservation, valid/invalid strafes, caps, and single-tick combined external impulse.
 * Uses only the shared movement kernel; no Player, network, render, or audio.
 * Does NOT launch mimita.exe, poll input, send packets, or require networking.
 */
@@ -286,20 +286,19 @@ int main()
         check(hSpeed(s) > 20.0f + 2.0f, "backward strafe gains speed");
     }
 
-    // ── 10. Hard cap clamps, external impulse untouched ────────────────
+    // ── 10. Hard cap clamps speed; knockback combines into velocity ─────
     {
         MovementConfig hard = cfg;
         hard.maximumBhopSpeedMode = MovementSpeedCapMode::Hard;
         hard.bunnyHopSpeedCap = 30.0f;
         MovementState s = freshState(glm::vec2(0.0f, 20.0f));
         s.externalImpulse = glm::vec3(6.0f, 0.0f, 0.0f);
-        const glm::vec3 extBefore = s.externalImpulse;
         float yaw = 0.0f;
         for (int i = 0; i < 60; ++i)
             s = runTicks(s, strafeCmd(s, yaw, 2.0f, +1), hard, airCollision(), 1);
-        check(hSpeed(s) <= 30.0f + 1e-3f, "hard cap clamps player-controlled speed");
-        check(s.externalImpulse.x > extBefore.x * 0.5f && s.externalImpulse.x > 0.0f,
-              "external impulse is preserved (decayed, not erased)");
+        check(hSpeed(s) <= 30.0f + 1e-3f, "hard cap clamps combined speed");
+        check(s.externalImpulse.x == 0.0f,
+              "external impulse is combined into velocity on the first tick");
     }
 
     // ── 11. Soft cap fades new gain, stays under the cap ───────────────

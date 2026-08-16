@@ -623,7 +623,8 @@ void engineTickCamera(Engine& engine, float dt)
                     gReplayPlayer.cameraController().update(
                         camera, *replayFrame,
                         gReplayPlayer.killerId(),
-                        gReplayPlayer.victimId(), dt);
+                        gReplayPlayer.victimId(), dt,
+                        gReplayPlayer.currentTick());
                 }
             }
             // Structured log: camera state after Step 1 (camera controller)
@@ -637,11 +638,12 @@ void engineTickCamera(Engine& engine, float dt)
                 0.0f));
         }
 
-        Debug::log(Debug::Category::Replay,
-            "[RPLE CAM BEFORE] tick=%d pos=(%.2f %.2f %.2f) look=(%.4f %.4f %.4f)\n",
-            gReplayPlayer.currentTick(),
-            camera.pos.x, camera.pos.y, camera.pos.z,
-            camera.front.x, camera.front.y, camera.front.z);
+        if (!isReplayExportActive() || gReplayExportVerbose)
+            Debug::log(Debug::Category::Replay,
+                "[RPLE CAM BEFORE] tick=%d pos=(%.2f %.2f %.2f) look=(%.4f %.4f %.4f)\n",
+                gReplayPlayer.currentTick(),
+                camera.pos.x, camera.pos.y, camera.pos.z,
+                camera.front.x, camera.front.y, camera.front.z);
 
         // Step 2: Editor keyframe interpolation.
         // Position keyframes only drive the camera when in Freecam mode.
@@ -689,7 +691,7 @@ void engineTickCamera(Engine& engine, float dt)
                 // 7 11 2026 testing stopping this
                 camera.updateVectors();
 
-                if (isReplayExportActive()) {
+                if (isReplayExportActive() && gReplayExportVerbose) {
                     printf("[RPLX CAM] tick=%.0f mode=FREECAM segment=KF%d->KF%d alpha=%.3f"
                            " pos=(%.1f %.1f %.1f) look=(%.3f %.3f %.3f) fov=%.0f roll=%.1f\n",
                            currentTick, prevKf, nextKf, st,
@@ -698,6 +700,7 @@ void engineTickCamera(Engine& engine, float dt)
                            camera.fov, camera.roll);
                 }
 
+                if (!isReplayExportActive() || gReplayExportVerbose)
                 Debug::log(Debug::Category::Replay,
                     "[RPLE KF APPLY] tick=%.0f interp=%s KF%d->KF%d alpha=%.3f"
                     " pos=(%.1f %.1f %.1f) look=(%.3f %.3f %.3f) fov=%.0f roll=%.1f\n",
@@ -720,7 +723,7 @@ void engineTickCamera(Engine& engine, float dt)
                 // 7 11 2026 test comment 
                 camera.updateVectors();
 
-                if (isReplayExportActive()) {
+                if (isReplayExportActive() && gReplayExportVerbose) {
                     printf("[RPLX CAM] tick=%.0f mode=FREECAM after-last-KF"
                            " pos=(%.1f %.1f %.1f) look=(%.3f %.3f %.3f) fov=%.0f roll=%.1f\n",
                            currentTick,
@@ -729,6 +732,7 @@ void engineTickCamera(Engine& engine, float dt)
                            camera.fov, camera.roll);
                 }
 
+                if (!isReplayExportActive() || gReplayExportVerbose)
                 Debug::log(Debug::Category::Replay,
                     "[RPLE KF APPLY] tick=%.0f HOLD KF%d"
                     " pos=(%.1f %.1f %.1f) look=(%.3f %.3f %.3f) fov=%.0f roll=%.1f\n",
@@ -750,7 +754,7 @@ void engineTickCamera(Engine& engine, float dt)
                 // 7 11 2026 155311 uncommenting all of them
                 camera.updateVectors();
 
-                if (isReplayExportActive()) {
+                if (isReplayExportActive() && gReplayExportVerbose) {
                     printf("[RPLX CAM] tick=%.0f mode=FREECAM before-first-KF"
                            " pos=(%.1f %.1f %.1f) look=(%.3f %.3f %.3f) fov=%.0f roll=%.1f\n",
                            currentTick,
@@ -759,12 +763,13 @@ void engineTickCamera(Engine& engine, float dt)
                            camera.fov, camera.roll);
                 }
 
+                if (!isReplayExportActive() || gReplayExportVerbose)
                 Debug::log(Debug::Category::Replay,
                     "[RPLE KF APPLY] tick=%.0f BEFORE first KF (tick=%d) — holding first KF\n",
                     currentTick, kf.tick);
             }
         } else if (gReplayEditor.isLoaded()) {
-            if (isReplayExportActive()) {
+            if (isReplayExportActive() && gReplayExportVerbose) {
                 printf("[RPLX CAM] tick=%u usingDefaultThirdPersonCamera=1"
                        " reason=no_editor_keyframes"
                        " pos=(%.1f %.1f %.1f) look=(%.3f %.3f %.3f) fov=%.0f\n",
@@ -773,30 +778,34 @@ void engineTickCamera(Engine& engine, float dt)
                        camera.front.x, camera.front.y, camera.front.z,
                        camera.fov);
             }
-            Debug::log(Debug::Category::Replay,
-                "[RPLE CAM FINAL] tick=%u pos=(%.1f %.1f %.1f) look=(%.3f %.3f %.3f)"
-                " fov=%.0f roll=%.1f source=%s\n",
-                gReplayPlayer.currentTick(),
-                camera.pos.x, camera.pos.y, camera.pos.z,
-                camera.front.x, camera.front.y, camera.front.z,
-                camera.fov, camera.roll,
-                gReplayEditor.freecam ? "freecam(no-kf)" : "cameraController");
+            if (!isReplayExportActive() || gReplayExportVerbose)
+                Debug::log(Debug::Category::Replay,
+                    "[RPLE CAM FINAL] tick=%u pos=(%.1f %.1f %.1f) look=(%.3f %.3f %.3f)"
+                    " fov=%.0f roll=%.1f source=%s\n",
+                    gReplayPlayer.currentTick(),
+                    camera.pos.x, camera.pos.y, camera.pos.z,
+                    camera.front.x, camera.front.y, camera.front.z,
+                    camera.fov, camera.roll,
+                    gReplayEditor.freecam ? "freecam(no-kf)" : "cameraController");
 
             // Structured log: camera state after keyframe interpolation
-            if (isReplayExportActive() && StructuredLogger::instance().shouldLog(
-                    StructuredCategory::Camera, StructuredLevel::Trace)) {
+            if (isReplayExportActive() && gReplayExportVerbose &&
+                    StructuredLogger::instance().shouldLog(
+                        StructuredCategory::Camera, StructuredLevel::Trace)) {
                 logCameraState(camera, gReplayPlayer.currentTick(), "CAM_KF_STATE",
                     "Camera state after keyframe interpolation");
             }
         }
-        Debug::log(Debug::Category::Replay,
-            "[RPLE CAM AFTER KF] tick=%d pos=(%.2f %.2f %.2f) look=(%.4f %.4f %.4f)\n",
-            gReplayPlayer.currentTick(),
-            camera.pos.x, camera.pos.y, camera.pos.z,
-            camera.front.x, camera.front.y, camera.front.z);
+        if (!isReplayExportActive() || gReplayExportVerbose)
+            Debug::log(Debug::Category::Replay,
+                "[RPLE CAM AFTER KF] tick=%d pos=(%.2f %.2f %.2f) look=(%.4f %.4f %.4f)\n",
+                gReplayPlayer.currentTick(),
+                camera.pos.x, camera.pos.y, camera.pos.z,
+                camera.front.x, camera.front.y, camera.front.z);
         // Structured log: final camera state after ALL processing
-        logCameraState(camera, gReplayPlayer.currentTick(),
-            "CAM_FINAL_STATE", "Final camera state after keyframe evaluation");
+        if (!isReplayExportActive() || gReplayExportVerbose)
+            logCameraState(camera, gReplayPlayer.currentTick(),
+                "CAM_FINAL_STATE", "Final camera state after keyframe evaluation");
     }
 
     if (anyFreecam && !Terminal::instance().isOpen()) {
@@ -866,7 +875,8 @@ void engineTickCamera(Engine& engine, float dt)
     }
 
     // Debug: final camera state after all evaluation
-    if (gReplayEditor.isLoaded() || replayPlaybackActive) {
+    if ((gReplayEditor.isLoaded() || replayPlaybackActive) &&
+        (!isReplayExportActive() || gReplayExportVerbose)) {
         Debug::log(Debug::Category::Replay,
             "[RPLE CAM FINAL] tick=%u pos=(%.2f %.2f %.2f) look=(%.4f %.4f %.4f)"
             " fov=%.0f roll=%.1f\n",
@@ -1128,12 +1138,13 @@ void engineTickCamera(Engine& engine, float dt)
         }
     }
     // Coupling diagnostic: orientation change per unit of position movement
-    if (replayPlaybackActive)
+    if (replayPlaybackActive && (!isReplayExportActive() || gReplayExportVerbose))
         logCouplingDiagnostic(camera, gReplayPlayer.currentTick());
 
     // Log view matrix for debug verification during export
-    if (isReplayExportActive() && StructuredLogger::instance().shouldLog(
-            StructuredCategory::Camera, StructuredLevel::Trace)) {
+    if (isReplayExportActive() && gReplayExportVerbose &&
+            StructuredLogger::instance().shouldLog(
+                StructuredCategory::Camera, StructuredLevel::Trace)) {
         glm::mat4 view = camera.getView();
         StructuredLogger::Entry ve;
         ve.category = StructuredCategory::Camera;
@@ -1159,3 +1170,5 @@ void engineTickCamera(Engine& engine, float dt)
         StructuredLogger::instance().write(ve);
     }
 }
+
+

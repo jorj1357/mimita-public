@@ -125,6 +125,14 @@ void ReplayPlayer::update(float dt)
     if (currentEventTick >= previousTick)
         mLastEventTick = currentEventTick;
 
+    rebuildInterpolatedFrameAtTick();
+}
+
+void ReplayPlayer::rebuildInterpolatedFrameAtTick()
+{
+    if (mClip.sceneFrames.empty())
+        return;
+
     auto upper = std::lower_bound(
         mClip.sceneFrames.begin(), mClip.sceneFrames.end(), mPlaybackTick,
         [](const ReplaySceneFrame& frame, float tick) {
@@ -165,6 +173,58 @@ const ReplaySceneFrame* ReplayPlayer::currentSceneFrame() const
     if (mPlaybackTick <= 0.0f)
         return &mClip.sceneFrames.front();
     return &mInterpolatedFrame;
+}
+
+void ReplayPlayer::pollPoseInvariant()
+{
+    // Detects the H1 stall: the authoritative tick advances while the presented
+    // interpolated frame/pose stays frozen (a skipped rebuild). Called once per
+    // render frame while playing/exporting.
+    constexpr int kStallThreshold = 30;
+
+    if (!mPlaying || mClip.sceneFrames.empty()) {
+        mInvariantStallFrames = 0;
+        mInvariantLastTick = -1;
+        mInvariantLastFrameTick = -1;
+        mInvariantHadPose = false;
+        return;
+    }
+
+    const ReplaySceneFrame* f = currentSceneFrame();
+    const int frameTick = f ? f->tick : -1;
+    glm::vec3 pose(0.0f);
+    bool hasPose = false;
+    if (f && !f->actors.empty()) {
+        pose = f->actors[0].position;
+        if (!f->actors[0].bodyParts.empty())
+            pose = f->actors[0].bodyParts[0].position;
+        hasPose = true;
+    }
+
+    if ((int)mCurrentTick != mInvariantLastTick) {
+        const bool frameStale = (frameTick == mInvariantLastFrameTick);
+        const bool poseStale = hasPose && mInvariantHadPose &&
+            (pose == mInvariantLastPose);
+        if (frameStale || poseStale) {
+            ++mInvariantStallFrames;
+            if (mInvariantStallFrames >= kStallThreshold) {
+                Debug::warn(Debug::Category::Replay,
+                    "[REPLAY INVARIANT] tick advanced (currentTick=%u) but presented "
+                    "frame/pose is stale (frameTick=%d lastFrameTick=%d stallFrames=%d)\n",
+                    mCurrentTick, frameTick, mInvariantLastFrameTick, mInvariantStallFrames);
+                mInvariantStallFrames = 0;
+            }
+        } else {
+            mInvariantStallFrames = 0;
+        }
+    }
+
+    mInvariantLastTick = (int)mCurrentTick;
+    mInvariantLastFrameTick = frameTick;
+    if (hasPose) {
+        mInvariantLastPose = pose;
+        mInvariantHadPose = true;
+    }
 }
 
 std::vector<ReplayEffectEvent> ReplayPlayer::takeTriggeredEffects()

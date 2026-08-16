@@ -188,6 +188,65 @@ void updateReplayExport()
         return;
     }
 
+    // Encoder inbox full: skip capture work this frame. Each replay tick is
+    // rendered and enqueued exactly once, so the export never re-renders the
+    // same tick while waiting for the encoder. The game keeps running.
+    if (gJob.mfWriter && !mfReplayQueueHasRoom(gJob.mfWriter)) {
+        if (gReplayExportVerbose)
+            Debug::logThrottled(Debug::Category::Replay, "export-wait", 1.0f,
+                "[EXPORT WAIT] encoder busy, inbox full\n");
+        return;
+    }
+
+    // Deterministic offline frame index: captureSpeed drives exportTick.
+    float captureSpeed = 1.0f;
+    if (gReplayEditor.isLoaded()) {
+        captureSpeed = gReplayEditor.playbackSpeedAtTick((int)gJob.exportTick);
+        if (captureSpeed <= 0.001f) {
+            Debug::warn(Debug::Category::Replay,
+                "[EXPORT ERROR] speed keyframe <= 0 at tick=%d (forcing 1.0)\n",
+                (int)gJob.exportTick);
+            captureSpeed = 1.0f;
+        }
+    }
+
+    // Stuck-tick guard: count consecutive frames at the same seek tick.
+    const uint32_t seekTickNow = (uint32_t)gJob.exportTick;
+    if (seekTickNow == gJob.lastSeekTick) {
+        gJob.seekRepeatCount++;
+    } else {
+        gJob.lastSeekTick = seekTickNow;
+        gJob.seekRepeatCount = 0;
+    }
+    if (gJob.seekRepeatCount == 1) {
+        // One-time dump of what is at the first-repeated tick.
+        const ReplaySceneFrame* sf = REPLAY_PLAYER.currentSceneFrame();
+        if (sf) {
+            std::string weapons;
+            for (const auto& a : sf->actors) {
+                if (!weapons.empty()) weapons += ",";
+                weapons += a.weaponName.empty() ? "none" : a.weaponName;
+            }
+            Debug::log(Debug::Category::Replay,
+                "[EXPORT STEP] first repeat at tick=%u actors=%zu effects=%zu weapons=%s\n",
+                seekTickNow, sf->actors.size(), sf->effects.size(), weapons.c_str());
+        }
+    }
+    if (gJob.seekRepeatCount > 3) {
+        if (gJob.mfWriter && !mfReplayInitReady(gJob.mfWriter)) {
+            Debug::logThrottled(Debug::Category::Replay, "export-init-wait", 1.0f,
+                "[EXPORT WAIT] waiting for encoder init (tick=%u)\n", seekTickNow);
+        } else {
+            Debug::warn(Debug::Category::Replay,
+                "[EXPORT ERROR] seekTick stuck tick=%u repeatCount=%u frameIndex=%u "
+                "state=Capturing reason=unknown; aborting export\n",
+                seekTickNow, gJob.seekRepeatCount, gJob.capturedTicks);
+            if (gJob.mfWriter) cancelMfReplayExport(gJob.mfWriter);
+            finishReplayExport(false, "Export stalled (seekTick not advancing).");
+            return;
+        }
+    }
+
     int w = gJob.capWidth;
     int h = gJob.capHeight;
     uint32_t frameNum = gJob.capturedTicks;
@@ -303,6 +362,11 @@ void updateReplayExport()
         }
         gJob.capturedTicks++;
         gJob.frameWriteCount = gJob.capturedTicks;
+        if (gReplayExportVerbose)
+            Debug::log(Debug::Category::Replay,
+                "[EXPORT STEP] frameIndex=%u seekTick=%u lastSeekTick=%u advanced=1 state=Capturing encoderQueue=%zu\n",
+                gJob.capturedTicks, (uint32_t)gJob.exportTick, gJob.lastSeekTick,
+                mfReplayQueueSize(gJob.mfWriter));
     } else if (gJob.rawFile) {
         const double tCopy0 = replayExportNowSec();
         if (gJob.flipBuffer.size() != pixelBytes)
@@ -327,15 +391,12 @@ void updateReplayExport()
         gJob.frameWriteCount = gJob.capturedTicks;
     }
 
-    // Advance export tick by current playback speed (speed-aware export)
-    float captureSpeed = 1.0f;
-    if (gReplayEditor.isLoaded()) {
-        captureSpeed = gReplayEditor.playbackSpeedAtTick((int)gJob.exportTick);
-    }
+    // Advance export tick (captureSpeed computed above, clamped to never be 0).
     if (gReplayExportVerbose)
         Debug::log(Debug::Category::Replay, "[ReplayExport] tick=%d speed=%.2f\n",
             (int)gJob.exportTick, captureSpeed);
     gJob.exportTick += captureSpeed;
+    gJob.seekRepeatCount = 0; // progress made this frame
 
     uint32_t doneTick = (uint32_t)gJob.exportTick;
     if (doneTick > gJob.totalTicks) doneTick = gJob.totalTicks;
@@ -477,8 +538,9 @@ void finishReplayExport(bool success, const std::string& error)
     if (!success) {
         gJob.state = ReplayExportJob::Failed;
         gJob.errorMsg = error.empty() ? "MP4 export failed." : error;
+        Debug::warn(Debug::Category::Replay, "[REPLAY EXPORT] FAILED: %s\n", gJob.errorMsg.c_str());
         if (gJob.clipExport)
-            NotificationSystem::instance().pushCritical("CLIP EXPORT FAILED", "Clip export failed. Check logs.", 600);
+            NotificationSystem::instance().pushCritical("CLIP EXPORT FAILED", gJob.errorMsg, 800);
         replayExportTimingLogSummary();
         return;
     }

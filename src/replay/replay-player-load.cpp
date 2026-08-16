@@ -25,6 +25,7 @@ bool ReplayPlayer::loadFromJSON(const std::string& path) {
         mPlaybackTick = 0.0f;
         mLastEventTick = -1;
         mOutfitPath.clear();
+        rebuildInterpolatedFrameAtTick();
         printf("[REPLAY] clip loaded path=%s sceneFrames=%zu frames=%zu header.tickCount=%u\n",
                path.c_str(), mClip.sceneFrames.size(), mFrames.size(), mHeader.tickCount);
         return true;
@@ -210,6 +211,7 @@ bool ReplayPlayer::loadFromJSON(const std::string& path) {
         }
 
         printf("[REPLAY] Loaded %zu frames from %s\n", mFrames.size(), path.c_str());
+        rebuildInterpolatedFrameAtTick();
         return true;
 
     } catch (const std::exception& e) {

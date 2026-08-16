@@ -26,7 +26,7 @@
     "ground_speed": 20.0,
     // How quickly the ground accelerates you toward max_speed while moving
     // (Source sv_accelerate). Higher = snappier start/stop.
-    "ground_acceleration": 25.5,
+    "ground_acceleration": 5.5,
     // Ground friction (Source sv_friction). Higher = you slow down faster when
     // you let go of movement keys.
     "friction": 5.2,
@@ -61,14 +61,14 @@
 
     // ── Auto-jump ────────────────────────────────────────────────────────
     // Holding jump in the air keeps re-jumping the instant you land (bhop).
-    "auto_bhop_enabled": true,
+    "auto_bhop_enabled": false,
     // How long a jump press is remembered before landing, in seconds.
     "jump_buffer_time": 0.2,
     // How long after walking off a ledge you can still jump, in seconds.
     // 0 = no mercy (pure CS behavior).
     "coyote_time": 0.0,
     // Extra mid-air jumps allowed (Source/CS has none = 0).
-    "max_air_jumps": 1,
+    "max_air_jumps": 0,
 
     // ── Ground snap ──────────────────────────────────────────────────────
     // Snap small downward velocity to 0 when grounded (prevents jitter).
@@ -84,12 +84,12 @@
 
     // ── Dash ─────────────────────────────────────────────────────────────
     // Master toggle for ground/air dash (shift). false = dash is unavailable.
-    "dash_enabled": true,
+    "dash_enabled": false,
     // Master toggle for down dash (Q). false = down dash is unavailable.
-    "down_dash_enabled": true,
+    "down_dash_enabled": false,
     // Master toggle for freeze. false = freeze is unavailable; a freeze in
     // progress is released immediately.
-    "freeze_enabled": true,
+    "freeze_enabled": false,
     // How long the dash boost ignores ground friction and stays at full
     // strength, in seconds. While this is active, friction does NOT slow you.
     "dash_grace_seconds": 0.25,

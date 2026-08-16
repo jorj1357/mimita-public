@@ -23,6 +23,10 @@ dist/
 *.a
 *.exp
 
+# ── Shipped FFmpeg backend (default replay-export encoder; NOT embedded) ──────
+!tools/ffmpeg.exe
+!tools/ffprobe.exe
+
 # ── Asset pack ───────────────────────────────────────────────────────────────
 *.pak
 .pak-extracted

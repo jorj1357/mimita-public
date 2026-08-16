@@ -164,6 +164,15 @@ void engineTickReplay(Engine& engine, float dt)
     {
         const ReplayExportJob& job = getReplayExportJob();
         if (job.state == ReplayExportJob::Capturing) {
+            if (job.mfWriter && !mfReplayQueueHasRoom(job.mfWriter)) {
+                // Encoder inbox full: skip the seek entirely so the same tick is
+                // never re-rendered while waiting. The export resumes when the
+                // encoder drains a frame.
+                if (gReplayExportVerbose)
+                    Debug::log(Debug::Category::Replay,
+                        "[EXPORT WAIT] encoder busy, skipping seek (tick=%u)\n",
+                        (uint32_t)job.exportTick);
+            } else {
             replayExportTimingFrameBegin();
             uint32_t seekTick = (uint32_t)job.exportTick;
             uint32_t beforeTick = gReplayPlayer.currentTick();
@@ -182,6 +191,7 @@ void engineTickReplay(Engine& engine, float dt)
                                beforeTick, afterTick, seekTick);
             } else if (gReplayExportVerbose) {
                 Debug::log(Debug::Category::Replay, "[EXPORTTRACE] seek tick %u >= total %u (skip)", seekTick, gReplayPlayer.totalTicks());
+            }
             }
         }
     }
