@@ -14,7 +14,6 @@ import ChaosSway from "../components/ChaosSway"
 import RainbowTrail from "../components/RainbowTrail"
 import BounceBall from "../components/BounceBall"
 import DelayedRender from "../components/DelayedRender"
-import { GAME_ZIP_DOWNLOAD_URL } from "../lib/downloadUrls"
 
 export default function Home() {
   return (
@@ -108,14 +107,8 @@ export default function Home() {
 
           <div className="ctaButtons">
             <a
-              href={GAME_ZIP_DOWNLOAD_URL}
+              href="/download"
               className="downloadButton"
-              onClick={() => {
-                sessionStorage.setItem("mimita_dl_auto", "1")
-                setTimeout(() => {
-                  window.location.href = "/download"
-                }, 1500)
-              }}
             >
               DOWNLOAD MIMITA
             </a>
