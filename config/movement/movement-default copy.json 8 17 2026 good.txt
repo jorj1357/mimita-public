@@ -54,8 +54,8 @@
     "coyote_time": 0.001,
     "max_air_jumps": 1,
 
-    "ground_friction": 5.0,
-    "air_friction": 0.0,
+    "ground_friction": 10.0,
+    "air_friction": 2.0,
     "external_impulse_decay": 0.6,
     "max_external_impulse_speed": 120.0,
 

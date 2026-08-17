@@ -25,7 +25,7 @@
       "color": [0.42, 0.40, 0.38]
     },
     "blood": {
-      "enabled": true,
+      "enabled": false,
       "particleCount": 12,
       "particleCountForceScale": 100.0,
       "bloodConeDegrees": 15.0,

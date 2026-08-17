@@ -37,7 +37,7 @@
         1.0
       ]
     },
-    "damage": 50.0,
+    "damage": 15.0,
     "headshot_multiplier": 3.0,
     "fire_delay": 0.008,
     "reload_time": 1.0,
