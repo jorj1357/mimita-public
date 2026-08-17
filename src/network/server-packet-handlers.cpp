@@ -18,6 +18,7 @@
 #include "combat/pellet-pattern.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-fire.h"
+#include "combat/weapon-execution.h"
 #include "physics/movement/physics-collision.h"
 
 #include <algorithm>
@@ -692,20 +693,11 @@ void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* 
             r.impactType = PELLET_IMPACT_PLAYER;
 
             // Per-pellet damage with body-part multiplier
-            float baseDmg = def->damage > 0.0f ? def->damage : 12.0f;
-
-            float bodyMul = 1.0f;
-            if (r.bodyPart == 0) { bodyMul = def->headshotMultiplier; }
-            else if (r.bodyPart == 1) { bodyMul = 1.0f; }
-            else if (r.bodyPart == 2) { bodyMul = 0.5f; }
-            else if (r.bodyPart == 3) { bodyMul = 0.75f; }
-
-            float distanceFalloffStart = 110.0f;
-            auto foIt = def->customParams.find("distanceFalloffStart");
-            if (foIt != def->customParams.end()) distanceFalloffStart = foIt->second;
-            float distanceFactor = std::clamp(1.0f - nearest / distanceFalloffStart, 0.05f, 1.0f);
-
-            int pelletDamage = std::max(1, (int)std::round(baseDmg * bodyMul * distanceFactor));
+            const std::string bodyPart =
+                r.bodyPart == 0 ? "head" : (r.bodyPart == 2 || r.bodyPart == 3 ? "leg" : "torso");
+            const float dmgF = (float)WeaponExecution::computeHitscanDamage(
+                *def, bodyPart, nearest, 1.0f);
+            int pelletDamage = std::max(1, (int)std::round(dmgF));
 
             // Accumulate per target
             bool found = false;

@@ -805,10 +805,13 @@ void pollReplayFfmpegEncode()
     fs::remove(gJob.ffmpegWavPath, ec);
 
     std::string output = fs::absolute(gJob.outputPath).make_preferred().string();
+    const int outroW = gJob.outputWidth > 0 ? gJob.outputWidth : gJob.capWidth;
+    const int outroH = gJob.outputHeight > 0 ? gJob.outputHeight : gJob.capHeight;
+    const bool outroAudio = gJob.ffmpegWithAudio;
     gOutroDone.store(false, std::memory_order_release);
     gOutroActive = true;
-    gOutroThread = std::thread([output]() {
-        appendOutroToFinishedMp4(output.c_str());
+    gOutroThread = std::thread([output, outroW, outroH, outroAudio]() {
+        appendOutroToFinishedMp4(output.c_str(), outroW, outroH, outroAudio);
         gOutroDone.store(true, std::memory_order_release);
     });
 #endif

@@ -6,6 +6,7 @@
 #include "config/player-settings.h"
 #include "config/size-scaling-config.h"
 #include "config/weapon-hitfx-config.h"
+#include "combat/weapon-execution.h"
 #include "debug/debug-log.h"
 #include "effects/hit-effects.h"
 #include "combat/death-system.h"
@@ -14,13 +15,6 @@
 #include "npc/npc.h"
 
 namespace WeaponFire {
-
-static float partBaseDamage(const std::string& part, float baseDmg, float headshotMul, float limbMul) {
-    if (part == "head") return baseDmg * headshotMul;
-    if (part == "torso") return baseDmg;
-    // Any limb (arm/leg) uses the config limb multiplier (0.75 default).
-    return baseDmg * limbMul;
-}
 
 void applyRecoil(Player& shooter, const WeaponDefinition& def,
                  const glm::vec3& shotDirection, float& inOutRecoil, float dt) {
@@ -59,29 +53,16 @@ int applyDamageToEntity(const DamageContext& ctx, Npc& victim,
                          const WeaponDefinition& def, Player& shooter,
                          NpcSystem& npcs, const glm::vec3& muzzlePos,
                          const glm::vec3& shotDirection) {
-    float limbMul = 0.75f;
-    auto limbIt = def.customParams.find("limbDamageMultiplier");
-    if (limbIt != def.customParams.end()) limbMul = limbIt->second;
-    float base = partBaseDamage(ctx.bodyPart, ctx.baseDamage, def.headshotMultiplier, limbMul);
-    float distanceFalloffStart = 110.0f;
-    auto it = def.customParams.find("distanceFalloffStart");
-    if (it != def.customParams.end()) distanceFalloffStart = it->second;
-
-    float minDamageFrac = 0.10f;
-    it = def.customParams.find("minDamageFraction");
-    if (it != def.customParams.end()) minDamageFrac = it->second;
-
     float minAngleFrac = 0.15f;
-    it = def.customParams.find("minAngleFactor");
+    auto it = def.customParams.find("minAngleFactor");
     if (it != def.customParams.end()) minAngleFrac = it->second;
 
-    float distanceFactor = std::clamp(1.0f - ctx.distance / distanceFalloffStart, minDamageFrac, 1.0f);
     float angleFactor = std::clamp(std::fabs(glm::dot(-shotDirection, ctx.hitNormal)), minAngleFrac, 1.0f);
+    int rounded = WeaponExecution::computeHitscanDamage(def, ctx.bodyPart, ctx.distance, angleFactor);
+
     const auto& sc = SizeScalingConfig::instance().data();
     float ss = std::max(shooter.sizeScale, 0.001f);
-    float damage = std::min(base, std::max(base * distanceFactor * angleFactor, ctx.distance >= 100.0f ? 10.0f : 1.0f));
-    damage *= sc.scale(1.0f, sc.damageExponent, ss);
-    int rounded = std::max(1, (int)std::round(damage));
+    rounded = std::max(1, (int)std::round((float)rounded * sc.scale(1.0f, sc.damageExponent, ss)));
 
     // Unified hitForce: drives debris, blood, sound, knockback
     float hitForce = (float)rounded / 100.0f;

@@ -14,9 +14,10 @@ struct HitmarkerAudioConfig {
     bool enabled = true;
     float volumeMin = 0.40f;
     float volumeMax = 1.00f;
-    float pitchMin = 0.70f;
+    float pitchMin = 0.30f;
     float pitchMax = 1.30f;
-    float damageForMaxImpact = 100.0f;
+    float damageForMaxImpact = 150.0f;
+    float curveExponent = 0.5f;
 };
 
 static HitmarkerAudioConfig gConfig;
@@ -57,6 +58,8 @@ static void reloadConfig()
             loaded.pitchMax = j["pitchMax"].get<float>();
         if (j.contains("damageForMaxImpact"))
             loaded.damageForMaxImpact = j["damageForMaxImpact"].get<float>();
+        if (j.contains("curveExponent"))
+            loaded.curveExponent = j["curveExponent"].get<float>();
 
         gConfig = loaded;
         Debug::log(Debug::Category::Audio,
@@ -78,6 +81,7 @@ static void saveConfig()
     j["pitchMin"] = gConfig.pitchMin;
     j["pitchMax"] = gConfig.pitchMax;
     j["damageForMaxImpact"] = gConfig.damageForMaxImpact;
+    j["curveExponent"] = gConfig.curveExponent;
 
     std::ofstream file(CONFIG_PATH);
     if (file.is_open())
@@ -120,7 +124,8 @@ void playHitmarkerSound(int damage)
     gLastSoundTime = now;
 
     float t = std::clamp((float)damage / gConfig.damageForMaxImpact, 0.0f, 1.0f);
-    float curve = std::sqrt(t);
+    float exp = std::max(0.01f, gConfig.curveExponent);
+    float curve = std::pow(t, exp);
     float pitch = gConfig.pitchMax - (gConfig.pitchMax - gConfig.pitchMin) * curve;
     float volume = gConfig.volumeMin + (gConfig.volumeMax - gConfig.volumeMin) * curve;
 

@@ -106,6 +106,8 @@ struct LegacyContactSphereConfig {
 
 struct DamageNumberConfig {
     bool enabled = true;
+    // false = always-on-top (depth test off), true = occluded by world geometry.
+    bool occluded = false;
     float fontSize = 0.96f;
     float lifetime = 1.0f;
     float startOpacity = 1.0f;

@@ -737,23 +737,27 @@ bool handleGameCLI(int argc, char** argv)
             if (cw) cancelMfReplayExport(cw);
             check(cwStarted && cw == nullptr, "Media Foundation cancels cleanly");
         }
-        std::string probe = (std::filesystem::path(defaultFfmpegPath()).parent_path() /
-                             "ffprobe.exe").string();
-        if (std::filesystem::exists(probe)) {
-            std::string probeCmd = probe + " -v error -show_entries "
-                "stream=codec_type,codec_name -of csv=p=0 \"" +
-                std::filesystem::absolute(mfPath).string() + "\"";
+        std::string ffmpegProbe = defaultFfmpegPath();
+        if (!ffmpegProbe.empty() && std::filesystem::exists(ffmpegProbe)) {
+            // ffprobe is not shipped; verify streams by parsing `ffmpeg -i` output.
+            // Wrap the whole command in an extra pair of quotes: `_popen` runs it
+            // via `cmd.exe /c`, which otherwise mangles `"quoted exe" ... 2>&1`.
+            std::string probeCmd = "\"\"" + ffmpegProbe + "\" -hide_banner -i \"" +
+                std::filesystem::absolute(mfPath).string() + "\" 2>&1\"";
             FILE* pipe = _popen(probeCmd.c_str(), "r");
-            std::string streams;
+            std::string info;
             char probeLine[256];
-            while (pipe && fgets(probeLine, sizeof(probeLine), pipe)) streams += probeLine;
-            int probeExit = pipe ? _pclose(pipe) : -1;
-            check(probeExit == 0 && streams.find("h264") != std::string::npos &&
-                      streams.find("video") != std::string::npos,
-                  "ffprobe verifies H.264 video stream");
-            check(probeExit == 0 && streams.find("aac") != std::string::npos &&
-                      streams.find("audio") != std::string::npos,
-                  "ffprobe verifies AAC audio stream");
+            while (pipe && fgets(probeLine, sizeof(probeLine), pipe)) info += probeLine;
+            if (pipe) _pclose(pipe);
+            const bool videoOk = info.find("h264") != std::string::npos &&
+                info.find("Video") != std::string::npos;
+            const bool audioOk = info.find("aac") != std::string::npos &&
+                info.find("Audio") != std::string::npos;
+            if (!videoOk || !audioOk) {
+                printf("    ffmpeg -i output:\n%s\n", info.c_str());
+            }
+            check(videoOk, "ffmpeg -i verifies H.264 video stream");
+            check(audioOk, "ffmpeg -i verifies AAC audio stream");
         }
 #endif
 

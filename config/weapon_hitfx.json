@@ -4,7 +4,7 @@
     "hitForce": {
       "enabled": true,
       "minForce": 0.1,
-      "maxForce": 5.0,
+      "maxForce": 15.0,
       "weaponMultiplier": 1.0,
       "angleEnabled": true,
       "momentumEnabled": true
@@ -53,7 +53,7 @@
       "volumeSeverityScale": 0.6,
       "volumeNearFactor": 1.0,
       "pitchBase": 1.15,
-      "pitchSeverityScale": -0.3,
+      "pitchSeverityScale": -0.5,
       "pitchMin": 0.25,
       "pitchMax": 3.0,
       "nearDistance": 5.0

@@ -108,8 +108,8 @@ def collect_files():
             files.append((name, full, os.path.getsize(full)))
 
     # Shipped FFmpeg backend (used by the default replay-export encoder).
-    # ffprobe is required by the outro append path (duration/resolution probe).
-    for name in ["tools/ffmpeg.exe", "tools/ffprobe.exe"]:
+    # Single binary: the outro now uses one ffmpeg command (no ffprobe needed).
+    for name in ["tools/ffmpeg.exe"]:
         full = os.path.join(ROOT, *name.split("/"))
         if os.path.isfile(full):
             files.append((name, full, os.path.getsize(full)))

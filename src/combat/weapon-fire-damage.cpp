@@ -13,6 +13,7 @@
 
 #include "audio/audio.h"
 #include "combat/weapon-audio.h"
+#include "combat/weapon-execution.h"
 #include "config/networking-config.h"
 #include "config/player-settings.h"
 #include "config/weapon-hitfx-config.h"
@@ -32,14 +33,6 @@ namespace WeaponFire {
 static void fireSound(const WeaponDefinition& def, const glm::vec3& muzzlePos)
 {
     WeaponAudio::playShootSound(def, muzzlePos);
-}
-
-// Config-driven limb damage multiplier (0.75 default) so client prediction
-// matches the server damage model.
-static float limbMultiplier(const WeaponDefinition& def)
-{
-    auto it = def.customParams.find("limbDamageMultiplier");
-    return it != def.customParams.end() ? it->second : 0.75f;
 }
 
 // Config-driven victim knockback. baseImpulse is the damage-scaled impulse
@@ -147,18 +140,7 @@ static int predictedRemoteDamage(const WeaponDefinition& def,
                                  const std::string& hitPart,
                                  float nearest)
 {
-    float damage = def.damage;
-    if (hitPart == "head")
-        damage *= def.headshotMultiplier;
-    else if (hitPart.find("leg") != std::string::npos)
-        damage *= limbMultiplier(def);
-
-    const float falloffStart = def.customParams.count("distanceFalloffStart")
-        ? def.customParams.at("distanceFalloffStart") : 110.0f;
-    const float minFraction = def.customParams.count("minDamageFraction")
-        ? def.customParams.at("minDamageFraction") : 0.1f;
-    damage *= std::clamp(1.0f - nearest / falloffStart, minFraction, 1.0f);
-    return std::max(1, (int)std::round(damage));
+    return WeaponExecution::computeHitscanDamage(def, hitPart, nearest, 1.0f);
 }
 
 void processNpcHit(
@@ -196,7 +178,7 @@ void processNpcHit(
     result.damage = (float)totalDamage;
     result.targetId = victim.id;
     {
-        float df = std::clamp(1.0f - nearest / 110.0f, 0.10f, 1.0f);
+        float df = WeaponExecution::hitscanFalloffFactor(def, nearest);
         const float kbScale = def.victimKnockbackPerDamage / 0.15f;
         const float kn =
             (def.victimKnockback +
@@ -243,11 +225,7 @@ void processRemotePlayerHit(
     result.damage = (float)totalDamage;
     result.targetId = remoteTargetId;
     {
-        const float falloffStart = def.customParams.count("distanceFalloffStart")
-            ? def.customParams.at("distanceFalloffStart") : 110.0f;
-        const float minFraction = def.customParams.count("minDamageFraction")
-            ? def.customParams.at("minDamageFraction") : 0.1f;
-        float df = std::clamp(1.0f - nearest / falloffStart, minFraction, 1.0f);
+        const float df = WeaponExecution::hitscanFalloffFactor(def, nearest);
         const float kn =
             (def.victimKnockback + (float)totalDamage * def.victimKnockbackPerDamage) * df;
         result.knockbackImpulse = victimKnockbackImpulse(def, shotDirection, kn);
@@ -412,21 +390,12 @@ void processPlayerHit(
     Player* targetPlayer,
     float damageMultiplier)
 {
-    float damage = def.damage;
-    if (hitPart == "head")
-        damage *= def.headshotMultiplier;
-    else if (hitPart.find("leg") != std::string::npos)
-        damage *= limbMultiplier(def);
+    const float minAngle = WeaponExecution::paramOr(def, "minAngleFactor", 0.15f);
+    const float angleFactor = std::clamp(std::fabs(glm::dot(-shotDirection, hitNormal)), minAngle, 1.0f);
+    int totalDamage = WeaponExecution::computeHitscanDamage(def, hitPart, nearest, angleFactor);
+    totalDamage = std::max(1, (int)std::round((float)totalDamage * damageMultiplier));
 
-    const float falloffStart = def.customParams.count("distanceFalloffStart")
-        ? def.customParams.at("distanceFalloffStart") : 110.0f;
-    const float minFraction = def.customParams.count("minDamageFraction")
-        ? def.customParams.at("minDamageFraction") : 0.1f;
-    damage *= std::clamp(1.0f - nearest / falloffStart, minFraction, 1.0f);
-    damage *= damageMultiplier;
-    int totalDamage = std::max(1, (int)std::round(damage));
-
-    float df = std::clamp(1.0f - nearest / falloffStart, minFraction, 1.0f);
+    float df = WeaponExecution::hitscanFalloffFactor(def, nearest);
     const float kn =
         (def.victimKnockback + (float)totalDamage * def.victimKnockbackPerDamage) * df;
     const glm::vec3 knockback = victimKnockbackImpulse(def, shotDirection, kn);
@@ -515,19 +484,8 @@ float computeFalloffDamage(
     float nearest,
     int& outDamage)
 {
-    float damage = def.damage;
-    if (hitPart == "head")
-        damage *= def.headshotMultiplier;
-    else if (hitPart.find("leg") != std::string::npos)
-        damage *= limbMultiplier(def);
-
-    const float falloffStart = def.customParams.count("distanceFalloffStart")
-        ? def.customParams.at("distanceFalloffStart") : 110.0f;
-    const float minFraction = def.customParams.count("minDamageFraction")
-        ? def.customParams.at("minDamageFraction") : 0.1f;
-    damage *= std::clamp(1.0f - nearest / falloffStart, minFraction, 1.0f);
-    outDamage = std::max(1, (int)std::round(damage));
-    return falloffStart;
+    outDamage = WeaponExecution::computeHitscanDamage(def, hitPart, nearest, 1.0f);
+    return WeaponExecution::paramOr(def, "distanceFalloffStart", 110.0f);
 }
 
 void processMultiPelletNpcHit(
@@ -565,7 +523,7 @@ void processMultiPelletNpcHit(
     accumulatedDamage += (float)dmg;
     anyHitEntity = true;
     lastTargetId = victim.id;
-    float df = std::clamp(1.0f - pelletNearest / 110.0f, 0.10f, 1.0f);
+    float df = WeaponExecution::hitscanFalloffFactor(def, pelletNearest);
     {
         const float kbScale = def.victimKnockbackPerDamage / 0.15f;
         accumulatedKnockback += victimKnockbackImpulse(def, pelletDir,
@@ -599,19 +557,7 @@ void processMultiPelletRemoteHit(
     glm::vec3& lastHitNormal,
     const std::string& victimName)
 {
-    float dmg = def.damage;
-    if (hitPart == "head") dmg *= def.headshotMultiplier;
-    else if (hitPart.find("leg") != std::string::npos)
-        dmg *= limbMultiplier(def);
-
-    float falloffStart = 110.0f;
-    auto fit = def.customParams.find("distanceFalloffStart");
-    if (fit != def.customParams.end()) falloffStart = fit->second;
-    float minFrac = 0.1f;
-    fit = def.customParams.find("minDamageFraction");
-    if (fit != def.customParams.end()) minFrac = fit->second;
-    dmg *= std::clamp(1.0f - pelletNearest / falloffStart, minFrac, 1.0f);
-    int totalDmg = std::max(1, (int)std::round(dmg));
+int totalDmg = WeaponExecution::computeHitscanDamage(def, hitPart, pelletNearest, 1.0f);
     result.targetIsRemotePlayer = true;
     result.hitEntity = true;
     result.targetId = pelletRemoteTargetId;
@@ -619,7 +565,7 @@ void processMultiPelletRemoteHit(
     anyHitEntity = true;
     lastTargetId = pelletRemoteTargetId;
 
-    float df = std::clamp(1.0f - pelletNearest / falloffStart, minFrac, 1.0f);
+    float df = WeaponExecution::hitscanFalloffFactor(def, pelletNearest);
     accumulatedKnockback += victimKnockbackImpulse(def, pelletDir,
         (def.victimKnockback + (float)totalDmg * def.victimKnockbackPerDamage) * df);
 
@@ -662,19 +608,7 @@ void processMultiPelletRemoteNpcHit(
     glm::vec3& lastPelletEnd,
     glm::vec3& lastHitNormal)
 {
-    float dmg = def.damage;
-    if (hitPart == "head") dmg *= def.headshotMultiplier;
-    else if (hitPart.find("leg") != std::string::npos)
-        dmg *= limbMultiplier(def);
-
-    float falloffStart = 110.0f;
-    auto fit = def.customParams.find("distanceFalloffStart");
-    if (fit != def.customParams.end()) falloffStart = fit->second;
-    float minFrac = 0.1f;
-    fit = def.customParams.find("minDamageFraction");
-    if (fit != def.customParams.end()) minFrac = fit->second;
-    dmg *= std::clamp(1.0f - pelletNearest / falloffStart, minFrac, 1.0f);
-    int totalDmg = std::max(1, (int)std::round(dmg));
+    int totalDmg = WeaponExecution::computeHitscanDamage(def, hitPart, pelletNearest, 1.0f);
     result.targetIsRemoteNpc = true;
     result.hitEntity = true;
     result.targetId = pelletRemoteNpcTargetId;
@@ -682,7 +616,7 @@ void processMultiPelletRemoteNpcHit(
     anyHitEntity = true;
     lastTargetId = pelletRemoteNpcTargetId;
 
-    float df = std::clamp(1.0f - pelletNearest / falloffStart, minFrac, 1.0f);
+    float df = WeaponExecution::hitscanFalloffFactor(def, pelletNearest);
     accumulatedKnockback += victimKnockbackImpulse(def, pelletDir,
         (def.victimKnockback + (float)totalDmg * def.victimKnockbackPerDamage) * df);
 

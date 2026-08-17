@@ -199,6 +199,19 @@ void EffectPartSystem::render(const Camera& camera) const {
         }
         
         if (effect.billboardText && !effect.label.empty()) {
+            // Damage numbers must never write depth (that creates invisible
+            // occluding rectangles over the world) and optionally skip depth
+            // testing entirely so they float on top of geometry.
+            GLboolean depthWasEnabled = glIsEnabled(GL_DEPTH_TEST);
+            GLboolean depthMaskWasOn;
+            glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMaskWasOn);
+            const bool occluded = damageNumber && HitEffects::config().damageNumber.occluded;
+            glDepthMask(GL_FALSE);
+            if (occluded)
+                glEnable(GL_DEPTH_TEST);
+            else
+                glDisable(GL_DEPTH_TEST);
+
             float x = 0.0f, y = 0.0f;
             const glm::vec3 projectPos = damageNumber
                 ? effect.position
@@ -249,6 +262,15 @@ void EffectPartSystem::render(const Camera& camera) const {
                     effect.lifetime, effect.maxLifetime, driftPx,
                     effect.color.x, effect.color.y, effect.color.z);
             }
+
+            if (depthMaskWasOn)
+                glDepthMask(GL_TRUE);
+            else
+                glDepthMask(GL_FALSE);
+            if (depthWasEnabled)
+                glEnable(GL_DEPTH_TEST);
+            else
+                glDisable(GL_DEPTH_TEST);
         }
     }
 

@@ -1,13 +1,13 @@
 {
   "alpha": 200,
-  "blue": 255,
+  "blue": 1,
   "dot": false,
   "dynamic": false,
   "enabled": true,
   "gap": 4.0,
-  "green": 255,
+  "green": 1,
   "laserSight": true,
-  "outline": true,
+  "outline": false,
   "outlineThickness": 1.0,
   "red": 255,
   "showBottom": true,
@@ -15,5 +15,5 @@
   "showRight": true,
   "showTop": true,
   "size": 5.0,
-  "thickness": 2.0
+  "thickness": 1.0
 }

@@ -97,6 +97,8 @@ struct HitscanTraceConfig
     // 0 means no falloff (backward compatible with weapons that don't set it).
     float distanceFalloffStart = 0.0f;
     float minDamageFraction = 0.05f;
+    // Power applied on top of the linear factor (1 = linear, 2 = square law).
+    float falloffExponent = 1.0f;
     // Body-part multiplier for limb hits (torso = 1x, head = headshotMultiplier).
     float limbDamageMultiplier = 0.75f;
     // Swept-sphere radius for the hit beam (0 = infinitely thin ray). The same
@@ -156,6 +158,19 @@ struct PhysicalContactEpisode
 
 float paramOr(const WeaponDefinition& def, const char* key, float fallback);
 WeaponExecutionType executionTypeForBehavior(WeaponBehaviorType behavior);
+
+// ── Shared hitscan damage model (single source of truth) ──────────────
+// falloff = pow(clamp(1 - distance/falloffStart, minFraction, 1), falloffExponent)
+//   - distanceFalloffStart (default 0 = no falloff), minDamageFraction
+//     (default 0.1), falloffExponent (default 1.0) are read from def.customParams.
+//   - angleFactor is caller-computed (dot of -shotDir with hit normal); pass
+//     1.0 when no surface normal is available.
+float hitscanFalloffFactor(const WeaponDefinition& def, float distance);
+// "head" -> headshotMultiplier, limb -> limbDamageMultiplier (0.75), else 1.0.
+float hitscanPartMultiplier(const WeaponDefinition& def, const std::string& bodyPart);
+// round(def.damage * partMultiplier * falloff * angleFactor), floor 1.
+int computeHitscanDamage(const WeaponDefinition& def, const std::string& bodyPart,
+                         float distance, float angleFactor);
 int buildPelletDirections(const WeaponDefinition& def, const glm::vec3& aimDirection,
                           uint32_t seed, glm::vec3* outDirections, int capacity);
 bool rayPlayerTarget(const glm::vec3& origin, const glm::vec3& direction,

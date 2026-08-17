@@ -8,7 +8,7 @@
         "directional": true,
         "useBlood": true,
         "damageNumbers": true,
-        "entityImpact": false,
+        "entityImpact": true,
         "worldImpact": true,
         "bulletImpact": true
     },
@@ -79,7 +79,7 @@
 
     "directionalShapes": {
         "elongatedSphere": {
-            "enabled": false,
+            "enabled": true,
             "alignToHitDirection": true,
             "startTick": 0,
             "endTick": 122,
@@ -135,6 +135,7 @@
 
     "damageNumbers": {
         "enabled": true,
+        "occluded": false,
         "fontSize": 0.96,
         "lifetime": 1.0,
         "startOpacity": 1.0,
@@ -164,7 +165,7 @@
     },
     "deathEllipsoid": {
         "enabled": true,
-        "lifetime": 3.0,
+        "lifetime": 1.0,
         "length": 8.0,
         "radius": 1.5,
         "baseAlpha": 0.35,

@@ -158,7 +158,9 @@ void registerOutroCommands()
                 gOutroConfig.enabled = true;
             }
 
-            appendOutroToFinishedMp4(mp4Path.c_str());
+            int w = 0, h = 0;
+            if (!probeVideoSizeViaFfmpeg(mp4Path, w, h)) { w = 1920; h = 1080; }
+            appendOutroToFinishedMp4(mp4Path.c_str(), w, h, true);
 
             Terminal::instance().addLog("[OUTRO] outro_test complete");
         }
@@ -269,7 +271,9 @@ void registerOutroCommands()
                 });
             std::string mp4Path = candidates[0].string();
             Terminal::instance().addLog("[OUTRO] appending outro to: " + mp4Path);
-            appendOutroToFinishedMp4(mp4Path.c_str());
+            int w = 0, h = 0;
+            if (!probeVideoSizeViaFfmpeg(mp4Path, w, h)) { w = 1920; h = 1080; }
+            appendOutroToFinishedMp4(mp4Path.c_str(), w, h, true);
             Terminal::instance().addLog("[OUTRO] append complete");
         }
     });
@@ -291,7 +295,9 @@ void registerOutroCommands()
                 return;
             }
 
-            appendOutroToFinishedMp4(mp4Path.c_str());
+            int w = 0, h = 0;
+            if (!probeVideoSizeViaFfmpeg(mp4Path, w, h)) { w = 1920; h = 1080; }
+            appendOutroToFinishedMp4(mp4Path.c_str(), w, h, true);
             Terminal::instance().addLog("[OUTRO] manual append complete");
         }
     });

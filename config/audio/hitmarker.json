@@ -2,7 +2,8 @@
     "enabled": true,
     "volumeMin": 0.40,
     "volumeMax": 1.00,
-    "pitchMin": 0.70,
+    "pitchMin": 0.30,
     "pitchMax": 1.30,
-    "damageForMaxImpact": 100
+    "damageForMaxImpact": 150,
+    "curveExponent": 0.5
 }

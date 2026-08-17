@@ -235,6 +235,10 @@ bool HitEffects::loadConfig(const std::string& path)
                 cfg.damageNumber.enabled = d["enabled"];
                 markHitFxApplied("hitfx_damage_numbers_enabled");
             }
+            if (d.contains("occluded")) {
+                cfg.damageNumber.occluded = d["occluded"];
+                markHitFxApplied("hitfx_damage_numbers_occluded");
+            }
             if (d.contains("fontSize")) {
                 cfg.damageNumber.fontSize = d["fontSize"];
                 markHitFxApplied("hitfx_text_size");

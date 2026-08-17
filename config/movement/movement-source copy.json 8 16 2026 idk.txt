@@ -15,7 +15,7 @@
 
     // Scale factor only used to explain values (1 MiMITA unit = 20 Source
     // units). Speeds below are MiMITA units; acceleration/friction RATES are
-    // 1/time and are NOT scaled by t5his.
+    // 1/time and are NOT scaled by this.
     "source_units_per_mimita_unit": 20.0,
 
     // ── Ground speed and accel ───────────────────────────────────────────
@@ -26,13 +26,13 @@
     "ground_speed": 20.0,
     // How quickly the ground accelerates you toward max_speed while moving
     // (Source sv_accelerate). Higher = snappier start/stop.
-    "ground_acceleration": 999.5,
+    "ground_acceleration": 25.5,
     // Ground friction (Source sv_friction). Higher = you slow down faster when
     // you let go of movement keys.
-    "friction": 5.25,
+    "friction": 5.2,
     // Below this speed, friction is constant instead of proportional, so slow
     // players actually come to a full stop (Source sv_stopspeed).
-    "stop_speed": 0.01,
+    "stop_speed": 3.75,
 
     // ── Air (pure Source AirAccelerate) ──────────────────────────────────
     // Scales the air speed gain (Source PM_AirAccelerate projection). 0 = air
@@ -46,7 +46,7 @@
     "air_acceleration": 12.0,
     // Source's 30-unit air cap divided by its 320-unit max speed, scaled to
     // MiMITA max_speed 20: 20 * 30 / 320 = 1.875.
-    "air_max_wishspeed": 1.1,
+    "air_max_wishspeed": 1.875,
     // Historical Source bug compatibility: use uncapped wishspeed in the
     // acceleration term while capped wishspd limits projection/addSpeed.
     "source_airaccelerate_bug_compatible": true,
@@ -113,7 +113,7 @@
     // is ignored (0 here) — knockback carries and only bleeds via friction.
     "external_impulse_decay": 99.0,
     // Cap on the horizontal speed of a knockback impulse, MiMITA units/sec.
-    "max_external_impulse_speed": 9999.0,
+    "max_external_impulse_speed": 1.0,
     // How knockback behaves: "source" = carries through input, bled by ground
     // friction (stopspeed-based); "exponential" = old independent decay.
     "impulse_friction_mode": "exponential",

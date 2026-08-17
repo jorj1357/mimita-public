@@ -584,6 +584,7 @@ void handleAttackRequest(
         traceConfig.knockbackPerDamage = def->victimKnockbackPerDamage;
         traceConfig.distanceFalloffStart = WeaponExecution::paramOr(*def, "distanceFalloffStart", 0.0f);
         traceConfig.minDamageFraction = WeaponExecution::paramOr(*def, "minDamageFraction", 0.05f);
+        traceConfig.falloffExponent = WeaponExecution::paramOr(*def, "falloffExponent", 1.0f);
         traceConfig.limbDamageMultiplier = WeaponExecution::paramOr(*def, "limbDamageMultiplier", 0.75f);
         traceConfig.beamThickness = beamThickness;
         traceConfig.beamWorldThickness = beamWorldThickness;
@@ -698,17 +699,10 @@ void handleAttackRequest(
                     {
                         // Damage for the claimed hit using the claimed body
                         // part + range falloff, mirroring the client model.
-                        float partMultiplier = 1.0f;
-                        if (claimPart == 1)
-                            partMultiplier = traceConfig.headshotMultiplier;
-                        else if (claimPart == 3)
-                            partMultiplier = traceConfig.limbDamageMultiplier;
-                        float falloff = 1.0f;
-                        if (traceConfig.distanceFalloffStart > 0.0f)
-                            falloff = std::clamp(
-                                1.0f - claimedDist / traceConfig.distanceFalloffStart,
-                                traceConfig.minDamageFraction, 1.0f);
-                        const float dmgF = traceConfig.damage * partMultiplier * falloff;
+                        const std::string claimBodyPart =
+                            claimPart == 1 ? "head" : (claimPart == 3 ? "leg" : "torso");
+                        const float dmgF = (float)WeaponExecution::computeHitscanDamage(
+                            *def, claimBodyPart, claimedDist, 1.0f);
                         WeaponExecution::HitscanDamageAggregate agg;
                         agg.targetPlayerId = req->claimedTargetId;
                         agg.targetSpawnGeneration = claimedSpawnGen;

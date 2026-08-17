@@ -107,6 +107,37 @@ float paramOr(const WeaponDefinition& def, const char* key, float fallback)
     return it != def.customParams.end() ? it->second : fallback;
 }
 
+float hitscanFalloffFactor(const WeaponDefinition& def, float distance)
+{
+    const float falloffStart = paramOr(def, "distanceFalloffStart", 0.0f);
+    if (falloffStart <= 0.0f)
+        return 1.0f;
+    const float minFraction = paramOr(def, "minDamageFraction", 0.1f);
+    const float exponent = std::max(0.01f, paramOr(def, "falloffExponent", 1.0f));
+    float factor = std::clamp(1.0f - distance / falloffStart, minFraction, 1.0f);
+    factor = std::pow(factor, exponent);
+    return factor;
+}
+
+float hitscanPartMultiplier(const WeaponDefinition& def, const std::string& bodyPart)
+{
+    if (bodyPart == "head")
+        return std::max(1.0f, def.headshotMultiplier);
+    if (bodyPart.find("leg") != std::string::npos)
+        return paramOr(def, "limbDamageMultiplier", 0.75f);
+    return 1.0f;
+}
+
+int computeHitscanDamage(const WeaponDefinition& def, const std::string& bodyPart,
+                         float distance, float angleFactor)
+{
+    const float damage = def.damage
+        * hitscanPartMultiplier(def, bodyPart)
+        * hitscanFalloffFactor(def, distance)
+        * std::clamp(angleFactor, 0.0f, 1.0f);
+    return std::max(1, (int)std::round(damage));
+}
+
 WeaponExecutionType executionTypeForBehavior(WeaponBehaviorType behavior)
 {
     return weaponExecutionTypeForBehavior(behavior);
@@ -227,17 +258,16 @@ HitscanTraceResult traceHitscan(const WeaponDefinition& def,
 
         // Damage model: base x body-part multiplier x range falloff.
         // head = headshotMultiplier, torso = 1x, limbs = limbDamageMultiplier.
-        // falloff = clamp(1 - distance/falloffStart, minFraction, 1); 0 disables.
-        float partMultiplier = 1.0f;
+        // falloff = pow(clamp(1 - distance/falloffStart, minFraction, 1), exponent).
+        // The angle factor is NOT applied here: the server re-trace's AABB
+        // normal is center-derived (not a surface normal), and client remote
+        // prediction passes angleFactor = 1.0 too, so damage stays consistent.
+        std::string bodyPart = "torso";
         if (closest.bodyPart == HitBodyPart::Head)
-            partMultiplier = config.headshotMultiplier;
+            bodyPart = "head";
         else if (closest.bodyPart == HitBodyPart::Leg)
-            partMultiplier = config.limbDamageMultiplier;
-        float falloff = 1.0f;
-        if (config.distanceFalloffStart > 0.0f)
-            falloff = std::clamp(1.0f - closest.distance / config.distanceFalloffStart,
-                                 config.minDamageFraction, 1.0f);
-        closest.damage = config.damage * partMultiplier * falloff;
+            bodyPart = "leg";
+        closest.damage = (float)computeHitscanDamage(def, bodyPart, closest.distance, 1.0f);
         result.pellets[i] = closest;
 
         auto aggregateIt = std::find_if(result.aggregates.begin(), result.aggregates.end(),
