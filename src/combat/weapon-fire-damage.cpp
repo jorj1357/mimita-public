@@ -466,7 +466,7 @@ void processWorldHit(
         HitEffects::onHit(ev);
     }
     EffectPartSystem::instance().spawnWorldDebris(hitEnd, worldNormal, std::clamp(def.damage / 100.0f, 0.1f, 5.0f));
-    EffectPartSystem::instance().spawnImpactSphereTick(hitEnd, {0.1f, 0.5f, 1.0f});
+    EffectPartSystem::instance().spawnImpactSphereTickCfg(hitEnd);
     float dist = glm::length(hitEnd - audioListenerPosition());
     float directness = std::abs(glm::dot(-shotDirection, worldNormal));
     float severity = std::clamp(directness, 0.0f, 1.0f);
@@ -670,7 +670,7 @@ void processMultiPelletWorldHit(
     EffectPartSystem::instance().queueWorldHit(
         hitEnd, worldNml, pelletDir, debrisForce,
         shooter.username, def.id);
-    EffectPartSystem::instance().spawnImpactSphereTick(hitEnd, {0.1f, 0.5f, 1.0f});
+    EffectPartSystem::instance().spawnImpactSphereTickCfg(hitEnd);
 
     if (pelletNearest < nearestPelletDist) {
         nearestPelletDist = pelletNearest;

@@ -106,7 +106,12 @@ struct LegacyContactSphereConfig {
 
 struct DamageNumberConfig {
     bool enabled = true;
-    // false = always-on-top (depth test off), true = occluded by world geometry.
+    // Depth-test mode for damage-number text:
+    //   "always_on_top" -> depth test OFF, depth write OFF (floats over everything)
+    //   "occluded"      -> depth test ON,  depth write OFF (hidden by walls/bodies)
+    //   "normal"        -> depth test ON,  depth write ON
+    std::string depthMode = "always_on_top";
+    // Legacy alias for depthMode == "occluded" (kept for backward compat).
     bool occluded = false;
     float fontSize = 0.96f;
     float lifetime = 1.0f;
@@ -192,7 +197,106 @@ struct HitFxConfig {
         bool entityImpact = true;
         bool worldImpact = true;
         bool bulletImpact = true;
+        // When the local player is hit by a server NPC/player, show damage
+        // numbers + body hit effects + elongated sphere at the real hit point.
+        bool victimHitEffects = true;
     } core;
+
+    struct DamageImpactSphereConfig {
+        bool enabled = true;
+        float length = 2.67f;
+        float radius = 0.5f;
+        glm::vec3 color{1.0f, 0.3f, 0.3f};
+        float alpha = 0.5f;
+        float lifetime = 0.5f;
+    } damageImpactSphere;
+
+    struct EntityImpactConfig {
+        bool enabled = true;
+        glm::vec3 color{0.9f, 0.02f, 0.02f};
+        float lifetime = 0.18f;
+        float startRadius = 0.12f;
+        float endRadius = 0.4f;
+    } entityImpact;
+
+    struct WorldImpactConfig {
+        bool enabled = true;
+        glm::vec3 color{0.55f, 0.55f, 0.55f};
+        float lifetime = 0.5f;
+        float startRadius = 0.1f;
+        float endRadius = 5.0f;
+        float alpha = 0.5f;
+    } worldImpact;
+
+    struct WorldDebrisConfig {
+        bool enabled = true;
+        int count = 12;
+        glm::vec3 color{0.42f, 0.40f, 0.38f};
+        float surfaceOffset = 0.12f;
+        float lifetimeBase = 0.5f;
+        float lifetimeForce = 0.15f;
+        float startScale = 0.8f;
+        float scaleForce = 1.0f;
+        float endScale = 4.0f;
+        float endScaleForce = 12.0f;
+        float speed = 1.0f;
+        float gravity = 15.0f;
+    } worldDebris;
+
+    struct ImpactTickConfig {
+        glm::vec3 color{0.1f, 0.5f, 1.0f};
+        float radius = 0.15f;
+        float lifetime = 0.016f;
+    } impactTick;
+
+    struct FootstepConfig {
+        glm::vec3 color{1.0f, 1.0f, 1.0f};
+        float lifetime = 0.5f;
+        float startRadius = 0.18f;
+        float endRadius = 0.06f;
+    } footstep;
+
+    struct DashConfig {
+        glm::vec3 color{0.2f, 0.6f, 1.0f};
+        float lifetime = 0.8f;
+        float startRadius = 0.35f;
+        float endRadius = 0.1f;
+    } dash;
+
+    struct PerfectDashConfig {
+        glm::vec3 color{1.0f, 0.8f, 0.1f};
+        float lifetime = 1.2f;
+        float startRadius = 0.7f;
+        float endRadius = 0.05f;
+    } perfectDash;
+
+    struct FreezeConfig {
+        glm::vec3 color{0.2f, 1.0f, 0.3f};
+        float lifetime = 0.1f;
+        float scale = 0.2f;
+    } freeze;
+
+    struct FreezeTrailConfig {
+        glm::vec3 color{0.1f, 0.1f, 0.4f};
+        float lifetime = 0.05f;
+        float length = 2.0f;
+        float radius = 0.4f;
+        float alpha = 0.4f;
+    } freezeTrail;
+
+    struct DownDashConfig {
+        glm::vec3 color{0.1f, 0.8f, 0.8f};
+        float lifetime = 0.2f;
+        float length = 3.0f;
+        float radius = 0.5f;
+        float alpha = 0.35f;
+    } downDash;
+
+    struct HitmarkerVisualConfig {
+        bool enabled = true;
+        float duration = 0.5f;
+        float size = 28.0f;
+    } hitmarkerVisual;
 
     std::vector<HitFxKeyframe> sphereTimeline;
     HitFxParticleConfig particles;

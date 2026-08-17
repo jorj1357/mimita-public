@@ -101,7 +101,8 @@ EffectPart* EffectPartSystem::spawnEntityImpact(
     const std::string& targetActorId,
     float sizeScale)
 {
-    if (!HitEffects::config().core.entityImpact) return nullptr;
+    const auto& ecfg = HitEffects::config().entityImpact;
+    if (!ecfg.enabled || !HitEffects::config().core.entityImpact) return nullptr;
     if (gHitFxTraceEnabled) {
         Debug::log(Debug::Category::NpcCombat, "[HITFX TRACE] Source=effect-part.cpp Type=impact_entity pos=(%.1f,%.1f,%.1f)\n",
                    position.x, position.y, position.z);
@@ -113,10 +114,10 @@ EffectPart* EffectPartSystem::spawnEntityImpact(
     effect.position = position;
     effect.normal = normal;
     effect.replayType = "impact_entity";
-    effect.color = {0.9f, 0.02f, 0.02f};
-    effect.maxLifetime = 0.18f;
-    effect.scale = 0.12f * sfx;
-    effect.endScale = 0.4f * sfx;
+    effect.color = ecfg.color;
+    effect.maxLifetime = ecfg.lifetime;
+    effect.scale = ecfg.startRadius * sfx;
+    effect.endScale = ecfg.endRadius * sfx;
     effect.billboardText = false;
     effect.sticky = true;
     effect.sourceActorId = sourceActorId;
@@ -125,7 +126,8 @@ EffectPart* EffectPartSystem::spawnEntityImpact(
 }
 
 EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 normal, float sizeScale) {
-    if (!HitEffects::config().core.worldImpact) return nullptr;
+    const auto& wcfg = HitEffects::config().worldImpact;
+    if (!wcfg.enabled || !HitEffects::config().core.worldImpact) return nullptr;
     if (gHitFxTraceEnabled) {
         Debug::log(Debug::Category::NpcCombat, "[HITFX TRACE] Source=effect-part.cpp Type=impact_world pos=(%.1f,%.1f,%.1f)\n",
                    position.x, position.y, position.z);
@@ -137,11 +139,11 @@ EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 nor
     e.position = position;
     e.normal = normal;
     e.replayType = "impact_world";
-    e.color = {0.55f, 0.55f, 0.55f};
-    e.maxLifetime = 0.5f;
-    e.scale = 0.1f * sfx;
-    e.endScale = 5.0f * sfx;
-    e.alpha = 0.5f;
+    e.color = wcfg.color;
+    e.maxLifetime = wcfg.lifetime;
+    e.scale = wcfg.startRadius * sfx;
+    e.endScale = wcfg.endRadius * sfx;
+    e.alpha = wcfg.alpha;
     e.billboardText = false;
     e.sticky = true;
     EffectPart* spawned = spawn(e);
@@ -169,11 +171,12 @@ EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position, const std::st
 }
 
 EffectPart* EffectPartSystem::spawnImpactSphereTick(glm::vec3 position, glm::vec3 color, float radius) {
+    const auto& tcfg = HitEffects::config().impactTick;
     EffectPart e;
     e.position = position;
     e.replayType = "impact_tick";
     e.color = color;
-    e.maxLifetime = 1.0f / 60.0f;
+    e.maxLifetime = tcfg.lifetime > 0.0f ? tcfg.lifetime : 1.0f / 60.0f;
     e.lifetime = 0.0f;
     e.scale = radius;
     e.endScale = radius;
@@ -181,6 +184,11 @@ EffectPart* EffectPartSystem::spawnImpactSphereTick(glm::vec3 position, glm::vec
     e.billboardText = false;
     e.sticky = true;
     return spawn(e);
+}
+
+EffectPart* EffectPartSystem::spawnImpactSphereTickCfg(glm::vec3 position) {
+    const auto& tcfg = HitEffects::config().impactTick;
+    return spawnImpactSphereTick(position, tcfg.color, tcfg.radius);
 }
 
 EffectPart* EffectPartSystem::spawnTracer(glm::vec3 start, glm::vec3 end, const std::string& sourceActorId, float sizeScale, const std::string& weaponId) {
@@ -329,16 +337,18 @@ void EffectPartSystem::pushSurfaceDecal(const SurfaceDecal& decal, int maxCount)
 
 EffectPart* EffectPartSystem::spawnDamageImpactSphere(glm::vec3 position, glm::vec3 direction, const std::string& victim)
 {
+    const auto& cfg = HitEffects::config().damageImpactSphere;
+    if (!cfg.enabled) return nullptr;
     glm::vec3 dir = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(0.0f, 0.0f, 1.0f);
-    float length = 2.67f;
-    float radius = 0.5f;
+    float length = cfg.length;
+    float radius = cfg.radius;
     EffectPart e;
     e.position = position;
     e.endPosition = position + dir * length;
     e.replayType = "damage_impact_sphere";
-    e.color = {1.0f, 0.3f, 0.3f};
-    e.alpha = 0.5f;
-    e.maxLifetime = 0.5f;
+    e.color = cfg.color;
+    e.alpha = cfg.alpha;
+    e.maxLifetime = cfg.lifetime;
     e.scale = radius;
     e.endScale = radius;
     e.sticky = true;
@@ -436,16 +446,17 @@ EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
 }
 
 EffectPart* EffectPartSystem::spawnFootstep(glm::vec3 position, float sizeScale) {
+    const auto& cfg = HitEffects::config().footstep;
     const auto& sc = SizeScalingConfig::instance().data();
     float ss = std::max(sizeScale, 0.001f);
     float sfx = sc.scale(1.0f, sc.hitfxRadiusExponent, ss);
     EffectPart e;
     e.position = position;
     e.replayType = "footstep";
-    e.color = {1.0f, 1.0f, 1.0f};
-    e.maxLifetime = 0.5f;
-    e.scale = 0.18f * sfx;
-    e.endScale = 0.06f * sfx;
+    e.color = cfg.color;
+    e.maxLifetime = cfg.lifetime;
+    e.scale = cfg.startRadius * sfx;
+    e.endScale = cfg.endRadius * sfx;
     e.billboardText = false;
     e.flatDecal = false;
     e.sticky = true;
@@ -453,16 +464,17 @@ EffectPart* EffectPartSystem::spawnFootstep(glm::vec3 position, float sizeScale)
 }
 
 EffectPart* EffectPartSystem::spawnDash(glm::vec3 position, float sizeScale) {
+    const auto& cfg = HitEffects::config().dash;
     const auto& sc = SizeScalingConfig::instance().data();
     float ss = std::max(sizeScale, 0.001f);
     float sfx = sc.scale(1.0f, sc.hitfxRadiusExponent, ss);
     EffectPart e;
     e.position = position;
     e.replayType = "dash";
-    e.color = {0.2f, 0.6f, 1.0f};
-    e.maxLifetime = 0.8f;
-    e.scale = 0.35f * sfx;
-    e.endScale = 0.1f * sfx;
+    e.color = cfg.color;
+    e.maxLifetime = cfg.lifetime;
+    e.scale = cfg.startRadius * sfx;
+    e.endScale = cfg.endRadius * sfx;
     e.billboardText = false;
     e.flatDecal = false;
     e.sticky = true;
@@ -470,16 +482,17 @@ EffectPart* EffectPartSystem::spawnDash(glm::vec3 position, float sizeScale) {
 }
 
 EffectPart* EffectPartSystem::spawnPerfectDash(glm::vec3 position, float sizeScale) {
+    const auto& cfg = HitEffects::config().perfectDash;
     const auto& sc = SizeScalingConfig::instance().data();
     float ss = std::max(sizeScale, 0.001f);
     float sfx = sc.scale(1.0f, sc.hitfxRadiusExponent, ss);
     EffectPart e;
     e.position = position;
     e.replayType = "dash";
-    e.color = {1.0f, 0.8f, 0.1f};
-    e.maxLifetime = 1.2f;
-    e.scale = 0.7f * sfx;
-    e.endScale = 0.05f * sfx;
+    e.color = cfg.color;
+    e.maxLifetime = cfg.lifetime;
+    e.scale = cfg.startRadius * sfx;
+    e.endScale = cfg.endRadius * sfx;
     e.billboardText = false;
     e.flatDecal = false;
     e.sticky = true;
@@ -487,30 +500,32 @@ EffectPart* EffectPartSystem::spawnPerfectDash(glm::vec3 position, float sizeSca
 }
 
 EffectPart* EffectPartSystem::spawnFreeze(glm::vec3 position, float freezeDuration) {
+    const auto& cfg = HitEffects::config().freeze;
     EffectPart e;
     e.position = position;
     e.replayType = "freeze";
-    e.color = {0.2f, 1.0f, 0.3f};
-    e.maxLifetime = 0.1f;
+    e.color = cfg.color;
+    e.maxLifetime = cfg.lifetime;
     char buf[64];
     snprintf(buf, sizeof(buf), "freeze(%.2f)", freezeDuration);
     e.label = buf;
-    e.scale = 0.2f;
+    e.scale = cfg.scale;
     e.billboardText = true;
     return spawn(e);
 }
 
 EffectPart* EffectPartSystem::spawnFreezeTrail(glm::vec3 position) {
+    const auto& cfg = HitEffects::config().freezeTrail;
     EffectPart e;
     e.position = position;
-    e.endPosition = position + glm::vec3(0.0f, 0.0f, 2.0f);
+    e.endPosition = position + glm::vec3(0.0f, 0.0f, cfg.length);
     e.replayType = "freeze_trail";
-    e.color = {0.1f, 0.1f, 0.4f};
-    e.maxLifetime = 0.05f;
+    e.color = cfg.color;
+    e.maxLifetime = cfg.lifetime;
     e.lifetime = 0.0f;
-    e.scale = 0.4f;
-    e.endScale = 0.4f;
-    e.alpha = 0.4f;
+    e.scale = cfg.radius;
+    e.endScale = cfg.radius;
+    e.alpha = cfg.alpha;
     e.sticky = true;
     e.billboardText = false;
     e.flatDecal = false;
@@ -520,16 +535,17 @@ EffectPart* EffectPartSystem::spawnFreezeTrail(glm::vec3 position) {
 }
 
 EffectPart* EffectPartSystem::spawnDownDash(glm::vec3 position) {
+    const auto& cfg = HitEffects::config().downDash;
     EffectPart e;
     e.position = position;
-    e.endPosition = position + glm::vec3(0.0f, 0.0f, 3.0f);
+    e.endPosition = position + glm::vec3(0.0f, 0.0f, cfg.length);
     e.replayType = "down_dash";
-    e.color = {0.1f, 0.8f, 0.8f};
-    e.maxLifetime = 0.2f;
+    e.color = cfg.color;
+    e.maxLifetime = cfg.lifetime;
     e.lifetime = 0.0f;
-    e.scale = 0.5f;
-    e.endScale = 0.5f;
-    e.alpha = 0.35f;
+    e.scale = cfg.radius;
+    e.endScale = cfg.radius;
+    e.alpha = cfg.alpha;
     e.sticky = true;
     e.billboardText = false;
     e.flatDecal = false;

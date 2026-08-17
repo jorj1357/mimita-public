@@ -144,6 +144,115 @@ bool HitEffects::loadConfig(const std::string& path)
             if (c.contains("entityImpact")) cfg.core.entityImpact = c["entityImpact"];
             if (c.contains("worldImpact")) cfg.core.worldImpact = c["worldImpact"];
             if (c.contains("bulletImpact")) cfg.core.bulletImpact = c["bulletImpact"];
+            if (c.contains("victimHitEffects")) cfg.core.victimHitEffects = c["victimHitEffects"];
+        }
+
+        if (j.contains("damageImpactSphere")) {
+            const json& s = j["damageImpactSphere"];
+            if (s.contains("enabled")) cfg.damageImpactSphere.enabled = s["enabled"];
+            if (s.contains("length")) cfg.damageImpactSphere.length = s["length"];
+            if (s.contains("radius")) cfg.damageImpactSphere.radius = s["radius"];
+            if (s.contains("color")) cfg.damageImpactSphere.color = readVec3Json(s["color"]);
+            if (s.contains("alpha")) cfg.damageImpactSphere.alpha = s["alpha"];
+            if (s.contains("lifetime")) cfg.damageImpactSphere.lifetime = s["lifetime"];
+        }
+
+        if (j.contains("entityImpact")) {
+            const json& s = j["entityImpact"];
+            if (s.contains("enabled")) cfg.entityImpact.enabled = s["enabled"];
+            if (s.contains("color")) cfg.entityImpact.color = readVec3Json(s["color"]);
+            if (s.contains("lifetime")) cfg.entityImpact.lifetime = s["lifetime"];
+            if (s.contains("startRadius")) cfg.entityImpact.startRadius = s["startRadius"];
+            if (s.contains("endRadius")) cfg.entityImpact.endRadius = s["endRadius"];
+        }
+
+        if (j.contains("worldImpact")) {
+            const json& s = j["worldImpact"];
+            if (s.contains("enabled")) cfg.worldImpact.enabled = s["enabled"];
+            if (s.contains("color")) cfg.worldImpact.color = readVec3Json(s["color"]);
+            if (s.contains("lifetime")) cfg.worldImpact.lifetime = s["lifetime"];
+            if (s.contains("startRadius")) cfg.worldImpact.startRadius = s["startRadius"];
+            if (s.contains("endRadius")) cfg.worldImpact.endRadius = s["endRadius"];
+            if (s.contains("alpha")) cfg.worldImpact.alpha = s["alpha"];
+        }
+
+        if (j.contains("worldDebris")) {
+            const json& s = j["worldDebris"];
+            if (s.contains("enabled")) cfg.worldDebris.enabled = s["enabled"];
+            if (s.contains("count")) cfg.worldDebris.count = s["count"];
+            if (s.contains("color")) cfg.worldDebris.color = readVec3Json(s["color"]);
+            if (s.contains("surfaceOffset")) cfg.worldDebris.surfaceOffset = s["surfaceOffset"];
+            if (s.contains("lifetimeBase")) cfg.worldDebris.lifetimeBase = s["lifetimeBase"];
+            if (s.contains("lifetimeForce")) cfg.worldDebris.lifetimeForce = s["lifetimeForce"];
+            if (s.contains("startScale")) cfg.worldDebris.startScale = s["startScale"];
+            if (s.contains("scaleForce")) cfg.worldDebris.scaleForce = s["scaleForce"];
+            if (s.contains("endScale")) cfg.worldDebris.endScale = s["endScale"];
+            if (s.contains("endScaleForce")) cfg.worldDebris.endScaleForce = s["endScaleForce"];
+            if (s.contains("speed")) cfg.worldDebris.speed = s["speed"];
+            if (s.contains("gravity")) cfg.worldDebris.gravity = s["gravity"];
+        }
+
+        if (j.contains("impactTick")) {
+            const json& s = j["impactTick"];
+            if (s.contains("color")) cfg.impactTick.color = readVec3Json(s["color"]);
+            if (s.contains("radius")) cfg.impactTick.radius = s["radius"];
+            if (s.contains("lifetime")) cfg.impactTick.lifetime = s["lifetime"];
+        }
+
+        if (j.contains("footstep")) {
+            const json& s = j["footstep"];
+            if (s.contains("color")) cfg.footstep.color = readVec3Json(s["color"]);
+            if (s.contains("lifetime")) cfg.footstep.lifetime = s["lifetime"];
+            if (s.contains("startRadius")) cfg.footstep.startRadius = s["startRadius"];
+            if (s.contains("endRadius")) cfg.footstep.endRadius = s["endRadius"];
+        }
+
+        if (j.contains("dash")) {
+            const json& s = j["dash"];
+            if (s.contains("color")) cfg.dash.color = readVec3Json(s["color"]);
+            if (s.contains("lifetime")) cfg.dash.lifetime = s["lifetime"];
+            if (s.contains("startRadius")) cfg.dash.startRadius = s["startRadius"];
+            if (s.contains("endRadius")) cfg.dash.endRadius = s["endRadius"];
+        }
+
+        if (j.contains("perfectDash")) {
+            const json& s = j["perfectDash"];
+            if (s.contains("color")) cfg.perfectDash.color = readVec3Json(s["color"]);
+            if (s.contains("lifetime")) cfg.perfectDash.lifetime = s["lifetime"];
+            if (s.contains("startRadius")) cfg.perfectDash.startRadius = s["startRadius"];
+            if (s.contains("endRadius")) cfg.perfectDash.endRadius = s["endRadius"];
+        }
+
+        if (j.contains("freeze")) {
+            const json& s = j["freeze"];
+            if (s.contains("color")) cfg.freeze.color = readVec3Json(s["color"]);
+            if (s.contains("lifetime")) cfg.freeze.lifetime = s["lifetime"];
+            if (s.contains("scale")) cfg.freeze.scale = s["scale"];
+        }
+
+        if (j.contains("freezeTrail")) {
+            const json& s = j["freezeTrail"];
+            if (s.contains("color")) cfg.freezeTrail.color = readVec3Json(s["color"]);
+            if (s.contains("lifetime")) cfg.freezeTrail.lifetime = s["lifetime"];
+            if (s.contains("length")) cfg.freezeTrail.length = s["length"];
+            if (s.contains("radius")) cfg.freezeTrail.radius = s["radius"];
+            if (s.contains("alpha")) cfg.freezeTrail.alpha = s["alpha"];
+        }
+
+        if (j.contains("downDash")) {
+            const json& s = j["downDash"];
+            if (s.contains("color")) cfg.downDash.color = readVec3Json(s["color"]);
+            if (s.contains("lifetime")) cfg.downDash.lifetime = s["lifetime"];
+            if (s.contains("length")) cfg.downDash.length = s["length"];
+            if (s.contains("radius")) cfg.downDash.radius = s["radius"];
+            if (s.contains("alpha")) cfg.downDash.alpha = s["alpha"];
+        }
+
+        if (j.contains("hitmarkerVisual")) {
+            const json& s = j["hitmarkerVisual"];
+            if (s.contains("enabled")) cfg.hitmarkerVisual.enabled = s["enabled"];
+            if (s.contains("duration")) cfg.hitmarkerVisual.duration = s["duration"];
+            if (s.contains("size")) cfg.hitmarkerVisual.size = s["size"];
         }
 
         if (j.contains("sphereTimeline") && j["sphereTimeline"].is_array()) {

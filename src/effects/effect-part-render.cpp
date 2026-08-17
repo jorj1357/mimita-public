@@ -77,7 +77,9 @@ static void drawDebrisBatch(const Camera& camera, const EffectPart& effect, floa
             : glm::cross(n, glm::vec3(0, 1, 0)));
     glm::vec3 bitangent = glm::normalize(glm::cross(n, tangent));
 
-    int count = 8 + (seed & 7);
+    int count = effect.debrisCount > 0
+        ? effect.debrisCount
+        : (8 + (seed & 7));
     glm::vec4 color{effect.color.x, effect.color.y, effect.color.z, alpha};
     float gt = t * t * 3.0f;
 
@@ -205,12 +207,21 @@ void EffectPartSystem::render(const Camera& camera) const {
             GLboolean depthWasEnabled = glIsEnabled(GL_DEPTH_TEST);
             GLboolean depthMaskWasOn;
             glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMaskWasOn);
-            const bool occluded = damageNumber && HitEffects::config().damageNumber.occluded;
-            glDepthMask(GL_FALSE);
-            if (occluded)
+            const auto& dnCfg = HitEffects::config().damageNumber;
+            const std::string depthMode = damageNumber
+                ? (dnCfg.occluded && dnCfg.depthMode == "always_on_top"
+                       ? "occluded" : dnCfg.depthMode)
+                : "always_on_top";
+            const bool depthTestOn = depthMode != "always_on_top";
+            const bool depthWriteOn = depthMode == "normal";
+            if (depthTestOn)
                 glEnable(GL_DEPTH_TEST);
             else
                 glDisable(GL_DEPTH_TEST);
+            if (depthWriteOn)
+                glDepthMask(GL_TRUE);
+            else
+                glDepthMask(GL_FALSE);
 
             float x = 0.0f, y = 0.0f;
             const glm::vec3 projectPos = damageNumber

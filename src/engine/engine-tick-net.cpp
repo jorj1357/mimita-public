@@ -570,7 +570,7 @@ void engineTickNet(Engine& engine, float dt)
                     ev.attacker = shooterName;
                     ev.weaponSource = "net_shot";
                     HitEffects::onHit(ev);
-                    EffectPartSystem::instance().spawnImpactSphereTick(event.hit, {0.1f, 0.5f, 1.0f});
+                    EffectPartSystem::instance().spawnImpactSphereTickCfg(event.hit);
                 }
                 if (event.effectFlags & MimitaNet::SHOT_EFFECT_DEBRIS) {
                     float debrisForce = std::clamp(event.power / 40.0f, 0.1f, 5.0f);

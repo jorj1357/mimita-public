@@ -614,7 +614,7 @@ void applyPelletBlastEventPacket(MultiplayerContext& ctx,
                 ev.attacker = weaponName;
                 ev.weaponSource = "pellet_blast";
                 HitEffects::onHit(ev);
-                EffectPartSystem::instance().spawnImpactSphereTick(hitPos, {0.1f, 0.5f, 1.0f});
+                EffectPartSystem::instance().spawnImpactSphereTickCfg(hitPos);
             }
         }
         else if (pellet.impactType == PELLET_IMPACT_PLAYER && !isLocalShooter)

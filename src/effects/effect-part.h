@@ -45,6 +45,8 @@ struct EffectPart
     bool alive = false;
     bool beam = false;
     bool box = false;
+    // Config-driven debris chunk count for debris_batch effects (0 = use default).
+    int debrisCount = 0;
 
     void resetStrings() {
         label.clear();
@@ -118,6 +120,8 @@ public:
                           const glm::vec3& direction = glm::vec3(0.0f),
                           float sizeScale = 1.0f);
     EffectPart* spawnImpactSphereTick(glm::vec3 position, glm::vec3 color, float radius = 0.15f);
+    // Spawn an impact tick using the configured color/radius from hitfx.json.
+    EffectPart* spawnImpactSphereTickCfg(glm::vec3 position);
     EffectPart* spawnDeathEllipsoid(glm::vec3 position, glm::vec3 direction, float length = 8.0f,
                                     float radius = 1.5f, float lifetime = 3.0f, float sizeScale = 1.0f);
     EffectPart* spawnFreezeTrail(glm::vec3 position);

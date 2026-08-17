@@ -12,13 +12,19 @@
 
 #include "gui/ui-system.h"
 #include "audio/hitmarker-audio.h"
-
-namespace
-{
-constexpr float HITMARKER_DURATION = 0.5f;
-}
+#include "effects/hit-effects.h"
 
 float gHitmarkerTimer = 0.0f;
+
+static float hitmarkerDuration()
+{
+    return std::max(0.01f, HitEffects::config().hitmarkerVisual.duration);
+}
+
+static float hitmarkerSize()
+{
+    return std::max(1.0f, HitEffects::config().hitmarkerVisual.size);
+}
 
 void hitmarker(int damage)
 {
@@ -29,11 +35,15 @@ void hitmarker(int damage)
 void hitmarkerVisualOnly(int damage)
 {
     (void)damage;
-    gHitmarkerTimer = HITMARKER_DURATION;
+    if (!HitEffects::config().hitmarkerVisual.enabled)
+        return;
+    gHitmarkerTimer = hitmarkerDuration();
 }
 
 void drawHitmarker(float dt)
 {
+    const float duration = hitmarkerDuration();
+
     gHitmarkerTimer =
         std::max(
             0.0f,
@@ -44,7 +54,7 @@ void drawHitmarker(float dt)
 
     float hmT =
         std::clamp(
-            gHitmarkerTimer / HITMARKER_DURATION,
+            gHitmarkerTimer / duration,
             0.0f,
             1.0f);
 
@@ -59,5 +69,5 @@ void drawHitmarker(float dt)
         hmT
     };
 
-    uiDrawImageRotated("assets/crosshair/crosshairhit.png", cx, cy, 28.0f, 0.0f, color);
+    uiDrawImageRotated("assets/crosshair/crosshairhit.png", cx, cy, hitmarkerSize(), 0.0f, color);
 }
