@@ -150,6 +150,14 @@ bool HitEffects::loadConfig(const std::string& path)
         if (j.contains("damageImpactSphere")) {
             const json& s = j["damageImpactSphere"];
             if (s.contains("enabled")) cfg.damageImpactSphere.enabled = s["enabled"];
+            if (s.contains("shape")) cfg.damageImpactSphere.shape = s["shape"];
+            if (s.contains("position_source")) cfg.damageImpactSphere.positionSource = s["position_source"];
+            if (s.contains("direction_source")) cfg.damageImpactSphere.directionSource = s["direction_source"];
+            if (s.contains("fallback_direction_source")) cfg.damageImpactSphere.fallbackDirectionSource = s["fallback_direction_source"];
+            if (s.contains("local_axis")) cfg.damageImpactSphere.localAxis = s["local_axis"];
+            if (s.contains("local_dimensions")) cfg.damageImpactSphere.localDimensions = readVec3Json(s["local_dimensions"]);
+            if (s.contains("surface_offset")) cfg.damageImpactSphere.surfaceOffset = s["surface_offset"];
+            if (s.contains("rotation_offset_degrees")) cfg.damageImpactSphere.rotationOffsetDegrees = readVec3Json(s["rotation_offset_degrees"]);
             if (s.contains("length")) cfg.damageImpactSphere.length = s["length"];
             if (s.contains("radius")) cfg.damageImpactSphere.radius = s["radius"];
             if (s.contains("color")) cfg.damageImpactSphere.color = readVec3Json(s["color"]);

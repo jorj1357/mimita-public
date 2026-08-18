@@ -1,3 +1,9 @@
+// 08 17 2026, 14 20
+/* purpose
+* Advances pooled effects, blood decals, pending queues, and optional game-DLL simulation.
+* Owns fixed-step lifetime cleanup and world-hit queue draining.
+* Does NOT spawn weapon hits, render effects, or validate server damage.
+*/
 #include "effect-part.h"
 #include "debug/debug-log.h"
 #include "effects/hit-effects.h"
@@ -28,6 +34,7 @@ void EffectPartSystem::init() {
     mBloodParticles.clear();
     mBloodParticles.reserve(MAX_BLOOD_PARTICLES);
     mSurfaceDecals.clear();
+    mPendingBloodDecals.clear();
     mSurfaceDecals.reserve(256);
     printf("[EFFECT PART] Initialized pool size=%u\n", POOL_SIZE);
 }
@@ -115,4 +122,5 @@ void EffectPartSystem::update(float dt) {
 
     updateBloodParticles(dt);
     updateSurfaceDecals(dt);
+    updatePendingBloodDecals(dt);
 }

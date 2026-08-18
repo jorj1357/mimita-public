@@ -9,10 +9,12 @@
 #include "audio/audio.h"
 #include "camera.h"
 #include "combat/weapon-fire.h"
+#include "combat/pellet-pattern.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
 #include "combat/weapon-audio.h"
 #include "combat/weapon-rocket-launcher.h"
+#include "combat/weapon-grenade-launcher.h"
 #include "config.h"
 #include "debug/debug-log.h"
 #include "effects/effect-part.h"
@@ -240,6 +242,11 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         return false;
     }
 
+    Debug::log(Debug::Category::NpcCombat,
+        "[NPC FIRE] id=%u equippedWeaponId=%s defId=%s behaviorType=%d pellets=%d damage=%.0f\n",
+        npc.id, npc.body.equippedWeaponId.c_str(), def->id.c_str(),
+        (int)def->behaviorType, def->pelletCount, def->damage);
+
     // Range gate is effectively unlimited so an NPC never idles purely because
     // a target is far away. The hitscan/projectile itself still has its own
     // weapon range, so damage only lands within reach; the NPC always fires.
@@ -344,23 +351,57 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         rt.currentAmmo = std::max(0, rt.currentAmmo - 1);
 
     bool fired = false;
+    bool shotHitWorld = false;
     // Actual endpoint (the damage trace). The server broadcast reads this so
     // the remote tracer goes exactly where the damage ray went (look == shoot == hit).
     glm::vec3 shotEnd = npcPos + aimDir * 100.0f;
+    glm::vec3 shotNormal = glm::vec3(0.0f, 0.0f, 1.0f);
     switch (def->behaviorType) {
     case WeaponBehaviorType::Hitscan:
     {
-        RevolverShotResult shot;
-        if (def->spread > 0.0f) {
-            glm::vec3 spreadDir = WeaponFire::computeSpreadDirection(aimDir, def->spread, const_cast<Npc&>(npc).rngState);
-            shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, spreadDir, &player, dmgMul, beamOverride);
+        if (def->pelletCount > 1) {
+            // Multi-pellet weapon (shotgun): fire all pellets in a spread pattern
+            PelletPatternConfig ppc;
+            ppc.pelletCount = def->pelletCount;
+            ppc.spreadDegrees = def->spread;
+            ppc.spreadSeed = const_cast<Npc&>(npc).rngState;
+            glm::vec3 pelletDirs[MAX_PELLETS_PER_BLAST];
+            int pelletCount = generatePelletDirections(aimDir, ppc, pelletDirs, MAX_PELLETS_PER_BLAST);
+
+            float totalDamage = 0.0f;
+            bool anyHit = false;
+            bool anyHitWorld = false;
+            glm::vec3 lastEnd = npcPos + aimDir * 100.0f;
+            for (int p = 0; p < pelletCount; ++p) {
+                RevolverShotResult shot = WeaponFire::tryFireHitscanDir(
+                    *def, rt, npc.body, world, npcPos, pelletDirs[p], &player, dmgMul, beamOverride);
+                totalDamage += shot.damage;
+                if (shot.hitEntity) {
+                    anyHit = true;
+                    lastEnd = shot.end;
+                    shotNormal = shot.hitNormal;
+                } else if (shot.hitWorld) {
+                    anyHitWorld = true;
+                    lastEnd = shot.end;
+                    shotNormal = shot.hitNormal;
+                }
+            }
+            fired = true;
+            shotEnd = lastEnd;
+            shotHitWorld = anyHitWorld && !anyHit;
+            Debug::log(Debug::Category::NpcCombat,
+                "[NPC SHOT] id=%u weapon=%s pellets=%d totalDamage=%.0f hit=%d\n",
+                npc.id, def->id.c_str(), pelletCount, totalDamage, (int)anyHit);
         } else {
-            shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player, dmgMul, beamOverride);
+            // Single-pellet weapon (revolver): tryFireHitscanDir applies
+            // its own spread internally — do NOT pre-spread here.
+            RevolverShotResult shot = WeaponFire::tryFireHitscanDir(
+                *def, rt, npc.body, world, npcPos, aimDir, &player, dmgMul, beamOverride);
+            fired = shot.fired;
+            if (fired) { shotEnd = shot.end; shotNormal = shot.hitNormal; shotHitWorld = shot.hitWorld; }
+            Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s hitscan hit=%d damage=%.0f\n",
+                       npc.id, def->id.c_str(), (int)shot.hitEntity, shot.damage);
         }
-        fired = shot.fired;
-        if (fired) { shotEnd = shot.end; }
-        Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s hitscan hit=%d damage=%.0f\n",
-                   npc.id, def->id.c_str(), (int)shot.hitEntity, shot.damage);
         break;
     }
     case WeaponBehaviorType::Projectile:
@@ -382,7 +423,7 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         // Melee: use hitscan at close range for now (future: full melee AI)
         RevolverShotResult shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player, dmgMul, beamOverride);
         fired = shot.fired;
-        if (fired) { shotEnd = shot.end; }
+        if (fired) { shotEnd = shot.end; shotNormal = shot.hitNormal; }
         Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s melee(approx) hit=%d\n",
                    npc.id, def->id.c_str(), (int)shot.hitEntity);
         break;
@@ -390,12 +431,14 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     case WeaponBehaviorType::Godball:
     case WeaponBehaviorType::GrenadeLauncher:
     {
-        // Fallback: use hitscan (godball/grenade AI not yet implemented)
-        RevolverShotResult shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player, dmgMul, beamOverride);
-        fired = shot.fired;
-        if (fired) { shotEnd = shot.end; }
-        Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s fallback-hitscan (full AI pending)\n",
-                   npc.id, def->id.c_str());
+        WeaponGrenadeLauncher::fire(*def, rt, npc.body, npcPos, aimDir);
+        fired = true;
+        {
+            float range = effectiveRange(*def);
+            shotEnd = npcPos + aimDir * (range > 0.0f ? range : 100.0f);
+        }
+        Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s grenadeLauncher dir=(%.2f %.2f %.2f)\n",
+                   npc.id, def->id.c_str(), aimDir.x, aimDir.y, aimDir.z);
         break;
     }
     }
@@ -407,7 +450,9 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     {
         npc.lastShotOrigin = npcPos;
         npc.lastShotEnd = shotEnd;
+        npc.lastShotNormal = shotNormal;
         npc.hasLastShot = true;
+        npc.lastShotHitWorld = shotHitWorld;
     }
 
     // Variable fire delay: blend between min and max based on aggression + rhythm.
@@ -431,16 +476,23 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
 }
 
 void NpcCombat::updateNpcProjectiles(const World& world, NpcSystem& npcSystem,
-                                     const Camera& camera, float dt) {
-    // Update NPC rocket launcher projectiles
+                                     Camera& camera, Player& player, float dt) {
+    // Update NPC rocket launcher projectiles using the same logic as the player.
+    // WeaponRocketLauncher::update handles movement, world collision, player/NPC
+    // collision, and explosion damage — exactly the same path the player's rockets use.
     if (!gNpcRocketState.activeRockets.empty()) {
-        // Need a weapon definition for rockets — find it from any NPC with rocket launcher
-        static const RocketLauncherState* lastState = &gNpcRocketState;
-        (void)lastState;
-        // For now, the rockets will be inert and timeout after their lifetime.
-        // Full update requires a WeaponDefinition which is accessed from the NPC.
-        // This is a placeholder for the full implementation.
-        Debug::log(Debug::Category::NpcCombat, "[NPC ROCKET] %zu active rockets (lifetime expiry only)\n",
-                   gNpcRocketState.activeRockets.size());
+        // Find a rocket launcher definition from any NPC with one equipped
+        for (Npc& npc : npcSystem.all()) {
+            if (npc.body.dead || npc.body.currentHp <= 0.0f) continue;
+            const WeaponDefinition* def = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
+            if (def && def->behaviorType == WeaponBehaviorType::RocketLauncher) {
+                auto& rt = npc.body.weaponRuntimes[def->id];
+                WeaponRocketLauncher::update(gNpcRocketState, *def, rt, npc.body, npcSystem, world, camera, dt, &player);
+                break;
+            }
+        }
+        // If no NPC has a rocket launcher equipped, still tick the game time
+        // so rockets don't freeze if the NPC switched weapons mid-flight.
+        gNpcRocketState.gameTime += dt;
     }
 }

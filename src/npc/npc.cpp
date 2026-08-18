@@ -90,21 +90,23 @@ bool shouldJump(Npc& npc, float d01, const World& world)
 
 bool shouldDash(Npc& npc, float d01, float distance, const WeaponDefinition* def, bool targetCanSeeMe)
 {
+    const auto& cfg = NpcDifficultyConfig::instance().settings();
     if (npc.dashCooldown > 0.0f)
         return false;
 
     float healthFraction = (float)npc.body.currentHp / (float)npc.body.maxHp;
+    float chanceScale = cfg.dashChance;
 
     if (distance > 10.0f && d01 > 0.3f)
-        return random01(npc.rngState) < 0.6f;
+        return random01(npc.rngState) < (0.6f * chanceScale);
 
     if (healthFraction < 0.35f && distance < 8.0f)
-        return random01(npc.rngState) < 0.7f;
+        return random01(npc.rngState) < (0.7f * chanceScale);
 
     if (targetCanSeeMe && d01 > 0.2f)
-        return random01(npc.rngState) < (0.15f + d01 * 0.25f);
+        return random01(npc.rngState) < ((0.15f + d01 * 0.25f) * chanceScale);
 
-    return random01(npc.rngState) < (0.05f + d01 * 0.15f);
+    return random01(npc.rngState) < ((0.05f + d01 * 0.15f) * chanceScale);
 }
 
 namespace {
@@ -466,6 +468,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     npc.dashCooldown = std::max(0.0f, npc.dashCooldown - safeDt);
     npc.downDashCooldown = std::max(0.0f, npc.downDashCooldown - safeDt);
     npc.attackCooldown = std::max(0.0f, npc.attackCooldown - safeDt);
+    npc.weaponSwitchCooldown = std::max(0.0f, npc.weaponSwitchCooldown - safeDt);
     npc.hitReactionTimer = std::max(0.0f, npc.hitReactionTimer - safeDt);
     npc.aimTimer = std::max(0.0f, npc.aimTimer);
     npc.stateMachine.stateTimer += safeDt;
@@ -482,23 +485,28 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     // Cache weapon definition once per frame (avoids 3+ string-keyed map lookups)
     const WeaponDefinition* cachedWeaponDef = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
 
-    // Process reload in main update (not inside tryFire) so it ticks during movement states
-    if (cachedWeaponDef)
+    // Background reload for ALL loadout weapons (not just the equipped one).
+    // This enables the revolver→shotgun→revolver combo: when the NPC switches
+    // away from a weapon, it starts reloading in the background.
     {
-        auto& rt = npc.body.weaponRuntimes[cachedWeaponDef->id];
-        if (rt.isReloading)
-        {
+        const auto& cfg = NpcDifficultyConfig::instance().settings();
+        for (const auto& wid : cfg.weaponLoadout) {
+            auto it = npc.body.weaponRuntimes.find(wid);
+            if (it == npc.body.weaponRuntimes.end()) continue;
+            auto& rt = it->second;
+            if (!rt.isReloading) continue;
+            const WeaponDefinition* wdef = WeaponRegistry::instance().get(wid);
+            if (!wdef) continue;
             rt.reloadTimer -= safeDt;
-            if (rt.reloadTimer <= 0.0f)
-            {
-                int toLoad = cachedWeaponDef->magazineSize - rt.currentAmmo;
+            if (rt.reloadTimer <= 0.0f) {
+                int toLoad = wdef->magazineSize - rt.currentAmmo;
                 int available = std::min(toLoad, rt.reserveAmmo);
                 rt.currentAmmo += available;
                 rt.reserveAmmo -= available;
                 rt.isReloading = false;
                 Debug::log(Debug::Category::NpcCombat,
                     "[NPC RELOAD] npc=%u weapon=%s complete ammo=%d reserve=%d",
-                    npc.id, cachedWeaponDef->id.c_str(), rt.currentAmmo, rt.reserveAmmo);
+                    npc.id, wid.c_str(), rt.currentAmmo, rt.reserveAmmo);
             }
         }
     }
@@ -517,19 +525,86 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         }
     }
 
+    // Weapon switching: pick best weapon for current distance
+    if (npc.sensors.hasTarget && npc.weaponSwitchCooldown <= 0.0f)
+    {
+        const auto& cfg = NpcDifficultyConfig::instance().settings();
+        float dist = npc.sensors.targetDistance;
+        std::string bestWeapon = npc.body.equippedWeaponId;
+
+        // Force weapon mode: always use the specified weapon
+        if (!cfg.forceWeapon.empty()) {
+            bestWeapon = cfg.forceWeapon;
+        } else {
+            // Check ammo: if current weapon is empty, force a switch
+            auto curIt = npc.body.weaponRuntimes.find(npc.body.equippedWeaponId);
+            bool currentEmpty = curIt != npc.body.weaponRuntimes.end()
+                && curIt->second.currentAmmo <= 0 && !curIt->second.isReloading;
+
+            if (currentEmpty) {
+                for (const auto& wid : cfg.weaponLoadout) {
+                    auto wit = npc.body.weaponRuntimes.find(wid);
+                    if (wit != npc.body.weaponRuntimes.end() && wit->second.currentAmmo > 0) {
+                        bestWeapon = wid;
+                        break;
+                    }
+                }
+            } else if (dist < cfg.closeSwitchDist) {
+                for (const auto& wid : cfg.weaponLoadout) {
+                    if (wid == "shotgun") {
+                        auto it = npc.body.weaponRuntimes.find(wid);
+                        if (it != npc.body.weaponRuntimes.end() && it->second.currentAmmo > 0)
+                            bestWeapon = wid;
+                        break;
+                    }
+                }
+            } else if (dist > cfg.farSwitchDist) {
+                for (const auto& wid : cfg.weaponLoadout) {
+                    if (wid == "rocket_launcher" || wid == "grenade_launcher") {
+                        auto it = npc.body.weaponRuntimes.find(wid);
+                        if (it != npc.body.weaponRuntimes.end() && it->second.currentAmmo > 0) {
+                            bestWeapon = wid;
+                            break;
+                        }
+                    }
+                }
+            } else {
+                for (const auto& wid : cfg.weaponLoadout) {
+                    if (wid == "revolver") {
+                        auto it = npc.body.weaponRuntimes.find(wid);
+                        if (it != npc.body.weaponRuntimes.end() && it->second.currentAmmo > 0)
+                            bestWeapon = wid;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (bestWeapon != npc.body.equippedWeaponId) {
+            npcSwitchWeapon(npc, bestWeapon);
+            npc.weaponSwitchCooldown = cfg.switchCooldown;
+        }
+    }
+
     bool wantDownDash = false;
     if (npc.sensors.hasTarget && !npc.sensors.touchFloor && npc.downDashCooldown <= 0.0f)
     {
+        const auto& cfg = NpcDifficultyConfig::instance().settings();
         float heightAbove = npc.body.pos.z - npc.sensors.targetPos.z;
-        if (heightAbove > 3.0f)
+        if (heightAbove > 3.0f && random01(npc.rngState) < (0.8f * cfg.downDashChance))
             wantDownDash = true;
     }
 
+    // Panic/freeze on hit: gated by hitReactionEnabled config
     if (npc.hitReactionTimer > 0.0f)
     {
-        npc.stateMachine.currentState = NpcState::Recover;
-        npc.stateMachine.recoverTimer = npc.hitReactionTimer;
-        npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime, npc.hitReactionTimer + 0.1f);
+        const auto& cfg = NpcDifficultyConfig::instance().settings();
+        if (cfg.hitReactionEnabled) {
+            npc.stateMachine.currentState = NpcState::Recover;
+            npc.stateMachine.recoverTimer = npc.hitReactionTimer * cfg.hitReactionDurationScale;
+            npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime,
+                npc.hitReactionTimer * cfg.hitReactionDurationScale + 0.1f);
+        }
     }
 
     if (npc.trainingMode != 2) {
@@ -752,7 +827,8 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     if (npc.sensors.hasTarget && npc.sensors.touchFloor && npc.dashCooldown <= 0.0f
         && npc.body.freeze.freezeAvailable && npc.body.freeze.freezeTimer <= 0.0f)
     {
-        freeze = random01(npc.rngState) < 0.003f;
+        const auto& cfg = NpcDifficultyConfig::instance().settings();
+        freeze = random01(npc.rngState) < (0.003f * cfg.freezeChance);
     }
 
     InputState input = buildInputState(npc, moveDir, jump, dash, attack, wantDownDash, safeDt);

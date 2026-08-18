@@ -36,6 +36,7 @@
 #include "perf/perf.h"
 #include "replay/replay.h"
 #include "replay/replay-export.h"
+#include "replay/replay-export-target.h"
 #include "replay/replay-factory.h"
 #include "world/texture-store.h"
 #include "gui/gui-element-render.h"
@@ -59,6 +60,146 @@ struct KillImpactFrame {
 };
 static KillImpactFrame gKillImpactFrame;
 static std::unordered_map<std::string, bool> gActorPrevDead;
+
+// Renders the replay scene's actors (and cinematic kill-impact overlay) into the
+// currently bound framebuffer. Shared by the visible window path and the
+// offscreen export FBO so the captured clip always matches what is displayed.
+static void renderReplayActors(
+    const ReplaySceneFrame& replayFrame,
+    const Camera& cam,
+    const glm::mat4& view,
+    const glm::mat4& proj,
+    Engine& engine,
+    float dt,
+    std::unordered_map<std::string, std::unique_ptr<Player>>& replayActorModels,
+    std::unordered_map<std::string, WeaponViewModel>& replayWeaponModels)
+{
+    for (const ReplayActorState& actorState : replayFrame.actors) {
+        std::unique_ptr<Player>& actor = replayActorModels[actorState.id];
+        if (!actor) {
+            // Create player without loading current account's character
+            actor = std::make_unique<Player>(false);
+            // Load the recorded character (not the current account's)
+            if (!actorState.characterName.empty())
+                actor->loadCharacter(actorState.characterName);
+            else if (!actorState.modelPath.empty())
+                actor->loadModel(actorState.modelPath.c_str());
+
+            printf("[RPLX AVATAR] Replay player created\n");
+            printf("[RPLX AVATAR] Loading avatar via AvatarSystem::applyToPlayer\n");
+            printf("[RPLX AVATAR] Current avatar in system: %s\n",
+                   AvatarSystem::instance().hasAvatar()
+                       ? AvatarSystem::instance().currentName().c_str()
+                       : "(none)");
+
+            // Reuse the game's avatar pipeline instead of manual texture loading.
+            bool avatarApplied = AvatarSystem::instance().applyToPlayer(*actor);
+            if (avatarApplied) {
+                printf("[RPLX AVATAR] Avatar applied via gameplay avatar pipeline\n");
+                printf("[RPLX AVATAR] Avatar initialization complete\n");
+            } else {
+                printf("[RPLX AVATAR] No avatar loaded in system, applying outfit texture directly\n");
+                const std::string& outfitToUse =
+                    !actorState.outfitPath.empty()
+                        ? actorState.outfitPath
+                        : REPLAY_PLAYER.outfitPath();
+                if (!outfitToUse.empty()) {
+                    GLuint tex = gTextures.getPath(outfitToUse);
+                    if (tex) {
+                        for (auto& mesh : actor->physicalBody.partMeshes)
+                            for (auto& batch : mesh.batches)
+                                batch.texture = tex;
+                        actor->bodyPartMeshes = actor->physicalBody.partMeshes;
+                    }
+                }
+            }
+            printf("[REPLAY] loaded actor '%s' character=%s model=%s\n",
+                   actorState.id.c_str(),
+                   actorState.characterName.c_str(),
+                   actorState.modelPath.c_str());
+        }
+        actor->username = actorState.name;
+        actor->currentHp = actorState.health;
+        actor->maxHp = actorState.maxHealth;
+        actor->dead = actorState.dead;
+        actor->sizeScale = actorState.sizeScale;
+        actor->vel = actorState.velocity;
+        actor->ground.onGround = actorState.grounded;
+        actor->equippedWeaponId = actorState.weaponName;
+        actor->applyReplayPose(
+            actorState.position,
+            actorState.rotation.z,
+            actorState.bodyParts);
+
+        const bool hideFirstPersonActor =
+            REPLAY_PLAYER.cameraController().mode() ==
+                ReplayCameraMode::FirstPerson &&
+            actorState.id == REPLAY_PLAYER.killerId();
+        if (!hideFirstPersonActor) {
+            const bool isImpactVictim = gKillImpactFrame.active &&
+                actorState.id == gKillImpactFrame.victimId;
+            if (isImpactVictim) {
+                GLuint shader = engine.renderer->shaderProgram;
+                glUniform1i(glGetUniformLocation(shader, "uUseColor"), 1);
+                glUniform4f(glGetUniformLocation(shader, "uColor"), 1.0f, 1.0f, 1.0f, 1.0f);
+                actor->renderCurrentPose(shader, view, proj);
+                glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
+            } else {
+                actor->renderCurrentPose(
+                    engine.renderer->shaderProgram,
+                    view, proj);
+            }
+        }
+
+        const WeaponDefinition* definition =
+            WeaponRegistry::instance().get(
+                actorState.weaponName);
+        if (definition && !definition->modelPath.empty()) {
+            actor->equippedSlot = definition->slot;
+            const std::string weaponKey =
+                actorState.id + ":" + definition->id;
+            WeaponViewModel& viewModel =
+                replayWeaponModels[weaponKey];
+            viewModel.update(
+                cam, *actor, dt, definition, false);
+            viewModel.render(
+                cam, *actor, definition->slot);
+        }
+    }
+    if (gKillImpactFrame.active) {
+        // Red sphere at death position
+        const auto& deCfg = HitEffects::config().deathEllipsoid;
+        EffectPartSystem::instance().spawnDeathEllipsoid(
+            gKillImpactFrame.victimPosition,
+            glm::vec3(0.0f, 0.0f, 1.0f),
+            deCfg.length, deCfg.radius, deCfg.lifetime);
+        // Full-screen black overlay (impact frame)
+        static GLuint impactVao = 0, impactVbo = 0;
+        if (!impactVao) {
+            float verts[] = { -1,-1,0, 3,-1,0, -1,3,0 };
+            glGenVertexArrays(1, &impactVao);
+            glGenBuffers(1, &impactVbo);
+            glBindVertexArray(impactVao);
+            glBindBuffer(GL_ARRAY_BUFFER, impactVbo);
+            glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+            glEnableVertexAttribArray(0);
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+        }
+        GLuint shader = engine.renderer->shaderProgram;
+        glDisable(GL_DEPTH_TEST);
+        glUseProgram(shader);
+        glm::mat4 id(1.0f);
+        glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, 0, &id[0][0]);
+        glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, 0, &id[0][0]);
+        glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, 0, &id[0][0]);
+        glUniform1i(glGetUniformLocation(shader, "uUseColor"), 1);
+        glUniform4f(glGetUniformLocation(shader, "uColor"), 0.0f, 0.0f, 0.0f, 0.6f);
+        glBindVertexArray(impactVao);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glEnable(GL_DEPTH_TEST);
+        glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
+    }
+}
 
 void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
 {
@@ -152,134 +293,9 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             const glm::mat4 replayProj = camera.getProj(
                 (float)engine.renderer->width,
                 (float)engine.renderer->height);
-            for (const ReplayActorState& actorState :
-                 replayFrame->actors) {
-                std::unique_ptr<Player>& actor =
-                    replayActorModels[actorState.id];
-                if (!actor) {
-                    // Create player without loading current account's character
-                    actor = std::make_unique<Player>(false);
-                    // Load the recorded character (not the current account's)
-                    if (!actorState.characterName.empty())
-                        actor->loadCharacter(actorState.characterName);
-                    else if (!actorState.modelPath.empty())
-                        actor->loadModel(actorState.modelPath.c_str());
-
-                    printf("[RPLX AVATAR] Replay player created\n");
-                    printf("[RPLX AVATAR] Loading avatar via AvatarSystem::applyToPlayer\n");
-                    printf("[RPLX AVATAR] Current avatar in system: %s\n",
-                           AvatarSystem::instance().hasAvatar()
-                               ? AvatarSystem::instance().currentName().c_str()
-                               : "(none)");
-
-                    // Reuse the game's avatar pipeline instead of manual texture loading.
-                    // AvatarSystem::applyToPlayer handles atlas building, UV mapping,
-                    // per-part coloring, cosmetics — exactly like normal gameplay.
-                    bool avatarApplied = AvatarSystem::instance().applyToPlayer(*actor);
-                    if (avatarApplied) {
-                        printf("[RPLX AVATAR] Avatar applied via gameplay avatar pipeline\n");
-                        printf("[RPLX AVATAR] Avatar initialization complete\n");
-                    } else {
-                        printf("[RPLX AVATAR] No avatar loaded in system, applying outfit texture directly\n");
-                        // Fallback: apply the recorded outfit texture
-                        const std::string& outfitToUse =
-                            !actorState.outfitPath.empty()
-                                ? actorState.outfitPath
-                                : gReplayPlayer.outfitPath();
-                        if (!outfitToUse.empty()) {
-                            GLuint tex = gTextures.getPath(outfitToUse);
-                            if (tex) {
-                                for (auto& mesh : actor->physicalBody.partMeshes)
-                                    for (auto& batch : mesh.batches)
-                                        batch.texture = tex;
-                                actor->bodyPartMeshes = actor->physicalBody.partMeshes;
-                            }
-                        }
-                    }
-                    printf("[REPLAY] loaded actor '%s' character=%s model=%s\n",
-                           actorState.id.c_str(),
-                           actorState.characterName.c_str(),
-                           actorState.modelPath.c_str());
-                }
-                actor->username = actorState.name;
-                actor->currentHp = actorState.health;
-                actor->maxHp = actorState.maxHealth;
-                actor->dead = actorState.dead;
-                actor->sizeScale = actorState.sizeScale;
-                actor->vel = actorState.velocity;
-                actor->ground.onGround = actorState.grounded;
-                actor->equippedWeaponId = actorState.weaponName;
-                actor->applyReplayPose(
-                    actorState.position,
-                    actorState.rotation.z,
-                    actorState.bodyParts);
-
-                const bool hideFirstPersonActor =
-                    gReplayPlayer.cameraController().mode() ==
-                        ReplayCameraMode::FirstPerson &&
-                    actorState.id == gReplayPlayer.killerId();
-                if (!hideFirstPersonActor) {
-                    const bool isImpactVictim = gKillImpactFrame.active &&
-                        actorState.id == gKillImpactFrame.victimId;
-                    if (isImpactVictim) {
-                        GLuint shader = engine.renderer->shaderProgram;
-                        glUniform1i(glGetUniformLocation(shader, "uUseColor"), 1);
-                        glUniform4f(glGetUniformLocation(shader, "uColor"), 1.0f, 1.0f, 1.0f, 1.0f);
-                        actor->renderCurrentPose(shader, replayView, replayProj);
-                        glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
-                    } else {
-                        actor->renderCurrentPose(
-                            engine.renderer->shaderProgram,
-                            replayView, replayProj);
-                    }
-                }
-
-                const WeaponDefinition* definition =
-                    WeaponRegistry::instance().get(
-                        actorState.weaponName);
-                if (definition && !definition->modelPath.empty()) {
-                    actor->equippedSlot = definition->slot;
-                    const std::string weaponKey =
-                        actorState.id + ":" + definition->id;
-                    WeaponViewModel& viewModel =
-                        replayWeaponModels[weaponKey];
-                    viewModel.update(
-                        camera, *actor, dt, definition, false);
-                    viewModel.render(
-                        camera, *actor, definition->slot);
-                }
-            }
-            if (gKillImpactFrame.active) {
-                // Red sphere at death position
-                EffectPartSystem::instance().spawnDeathEllipsoid(
-                    gKillImpactFrame.victimPosition,
-                    glm::vec3(0.0f, 0.0f, 1.0f), 0.5f, 2.0f, 0.3f);
-                // Full-screen black overlay (impact frame)
-                static GLuint impactVao = 0, impactVbo = 0;
-                if (!impactVao) {
-                    float verts[] = { -1,-1,0, 3,-1,0, -1,3,0 };
-                    glGenVertexArrays(1, &impactVao);
-                    glGenBuffers(1, &impactVbo);
-                    glBindVertexArray(impactVao);
-                    glBindBuffer(GL_ARRAY_BUFFER, impactVbo);
-                    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
-                    glEnableVertexAttribArray(0);
-                    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
-                }
-                GLuint shader = engine.renderer->shaderProgram;
-                glDisable(GL_DEPTH_TEST);
-                glUseProgram(shader);
-                glm::mat4 id(1.0f);
-                glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, 0, &id[0][0]);
-                glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, 0, &id[0][0]);
-                glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, 0, &id[0][0]);
-                glUniform1i(glGetUniformLocation(shader, "uUseColor"), 1);
-                glUniform4f(glGetUniformLocation(shader, "uColor"), 0.0f, 0.0f, 0.0f, 0.6f);
-                glBindVertexArray(impactVao);
-                glDrawArrays(GL_TRIANGLES, 0, 3);
-                glEnable(GL_DEPTH_TEST);
-                glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
-            }
+            renderReplayActors(
+                *replayFrame, camera, replayView, replayProj,
+                engine, dt, replayActorModels, replayWeaponModels);
         }
         gExportFrameTimings.renderMs += (replayExportNowSec() - tRender0) * 1000.0;
     } else {
@@ -485,6 +501,28 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     { Perf::ScopedTimer _pfx("PostFX"); PostFX::instance().render(); }
     renderShadowMapOverlay(engine.renderer->width, engine.renderer->height);
     diagRenderStage(7);
+
+    // ── Offscreen export capture ─────────────────────────────────────────
+    // Copy the window content (PostFX + effects + scene) to the hidden
+    // export FBO at capture resolution. This captures the exact same image
+    // the player sees: correct brightness/contrast, all effects, all actors.
+    if (getReplayExportJob().state == ReplayExportJob::Capturing &&
+        replayExportTarget().ready())
+    {
+        auto& tgt = replayExportTarget();
+        GLint prevVp[4];
+        glGetIntegerv(GL_VIEWPORT, prevVp);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);       // window framebuffer
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, tgt.fbo);  // export FBO
+        glBlitFramebuffer(
+            0, 0, engine.renderer->width, engine.renderer->height,
+            0, 0, tgt.width, tgt.height,
+            GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT,
+            GL_LINEAR);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glViewport(prevVp[0], prevVp[1], prevVp[2], prevVp[3]);
+    }
 
     worldPassRan = true;
 

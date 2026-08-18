@@ -1,3 +1,9 @@
+// 08 17 2026, 14 20
+/* purpose
+* Spawns blood particles and surface decals from confirmed entity impacts.
+* Owns blood spray sampling, cheap surface projection, staggering, and aging data.
+* Does NOT own hit detection, damage authority, or decal rendering.
+*/
 #include "effect-part.h"
 #include "world/world.h"
 #include "audio/audio.h"
@@ -449,7 +455,18 @@ void EffectPartSystem::spawnBloodSurfaceDecals(
         decal.fadeTime = bloodCfg.fadeTime;
         decal.alpha = bloodCfg.alpha;
         decal.baseAlpha = bloodCfg.alpha;
-        pushSurfaceDecal(decal, bloodCfg.maxCount);
+        decal.darkenOverLifetime = bloodCfg.colorOverLifetime.enabled;
+        decal.colorStart = bloodCfg.colorOverLifetime.startColor;
+        decal.colorEnd = bloodCfg.colorOverLifetime.endColor;
+        decal.darkenStartSeconds = bloodCfg.colorOverLifetime.darkenStartSeconds;
+        decal.darkenEndSeconds = bloodCfg.colorOverLifetime.darkenEndSeconds;
+        if (bloodCfg.stagger.enabled) {
+            while ((int)mPendingBloodDecals.size() >= bloodCfg.maxCount)
+                mPendingBloodDecals.erase(mPendingBloodDecals.begin());
+            mPendingBloodDecals.push_back({decal, 0});
+        } else {
+            pushSurfaceDecal(decal, bloodCfg.maxCount);
+        }
 
         ReplayEffectEvent decalEvent;
         decalEvent.type = "blood_splatter";

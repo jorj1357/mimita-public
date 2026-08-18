@@ -22,6 +22,7 @@
 #include <thread>
 #include <windows.h>
 #include <GLFW/glfw3.h>
+#include <glad/glad.h>
 #include "engine/engine.h"
 #include "world/world.h"
 #include "entities/player.h"
@@ -31,6 +32,7 @@
 #include "gui/menus/online-menu.h"
 #include "replay/replay.h"
 #include "replay/replay-export.h"
+#include "replay/replay-export-target.h"
 #include "replay/replay-factory.h"
 #include "game/duel.h"
 #include "game/game-state.h"
@@ -584,6 +586,62 @@ bool handleGameCLI(int argc, char** argv)
         std::filesystem::remove(path, removeError);
         printf("[REPLAY SELFTEST] save=%d load=%d interpolation=%d cameras=%d\n",
                (int)saved, (int)loaded, (int)interpolationOk, (int)camerasOk);
+        return true;
+    }
+
+    if (std::string(argv[1]) == "--replay-export-fbo-test") {
+        printf("[REPLAY EXPORT FBO TEST] Starting...\n");
+        // Verifies the offscreen capture FBO (create/render/read) used by Step 1
+        // export. Creates a hidden GL context so it runs headlessly.
+        int failures = 0, total = 0;
+        auto check = [&](bool cond, const char* name) {
+            total++;
+            if (!cond) { printf("  FAIL: %s\n", name); failures++; }
+            else { printf("  PASS: %s\n", name); }
+        };
+        if (!glfwInit()) {
+            printf("[REPLAY EXPORT FBO TEST] glfwInit failed (no display) — SKIP\n");
+            return true;
+        }
+        glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+        GLFWwindow* win = glfwCreateWindow(64, 64, "mimita-fbo-test", nullptr, nullptr);
+        if (!win) {
+            printf("[REPLAY EXPORT FBO TEST] cannot create hidden context — SKIP\n");
+            glfwTerminate();
+            return true;
+        }
+        glfwMakeContextCurrent(win);
+        bool glOk = gladLoadGLLoader((GLADloadproc)glfwGetProcAddress) != 0;
+        check(glOk, "load OpenGL (glad)");
+        if (glOk) {
+            check(replayExportTargetInit(32, 32), "create offscreen export FBO (32x32)");
+            if (replayExportTarget().ready()) {
+                auto& tgt = replayExportTarget();
+                glBindFramebuffer(GL_FRAMEBUFFER, tgt.fbo);
+                glViewport(0, 0, tgt.width, tgt.height);
+                glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+                glClear(GL_COLOR_BUFFER_BIT);
+                std::vector<uint8_t> px(tgt.width * tgt.height * 3, 0);
+                glBindFramebuffer(GL_READ_FRAMEBUFFER, tgt.fbo);
+                glReadPixels(0, 0, tgt.width, tgt.height, GL_RGB, GL_UNSIGNED_BYTE, px.data());
+                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                // Pixel (0,0) should be red (255,0,0).
+                bool red = px[0] > 200 && px[1] < 60 && px[2] < 60;
+                check(red, "read red pixel back from offscreen FBO");
+                printf("    sample pixel(0,0) = (%u,%u,%u)\n", px[0], px[1], px[2]);
+            } else {
+                check(false, "offscreen FBO ready");
+            }
+            replayExportTargetDestroy();
+            check(!replayExportTarget().ready(), "offscreen FBO destroyed");
+        }
+        glfwDestroyWindow(win);
+        glfwTerminate();
+        printf("\n[REPLAY EXPORT FBO TEST] Results: %d/%d passed, %d failed\n",
+               total - failures, total, failures);
         return true;
     }
 

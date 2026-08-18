@@ -40,6 +40,6 @@ bool rayCapsule(const glm::vec3& origin, const glm::vec3& dir,
 
 // Update NPC-launched projectiles (rockets, grenades, etc.)
 void updateNpcProjectiles(const World& world, NpcSystem& npcSystem,
-                          const Camera& camera, float dt);
+                          Camera& camera, Player& player, float dt);
 
 } // namespace NpcCombat

@@ -191,6 +191,18 @@ void processNpcHit(
             "[HITMARKER] attacker=%s victim=npc_%u show=1 reason=local_player_hit_npc",
             shooter.username.c_str(), victim.id);
 
+    HitEvent hitFx;
+    hitFx.position = hitEnd;
+    hitFx.normal = hitNormal;
+    hitFx.direction = shotDirection;
+    hitFx.hitEntity = true;
+    hitFx.damage = totalDamage;
+    hitFx.hitDistance = nearest;
+    hitFx.attacker = shooter.username;
+    hitFx.victim = "npc_" + std::to_string(victim.id);
+    hitFx.weaponSource = def.id;
+    HitEffects::onHit(hitFx);
+
     printf("[SOUND] weapon=%s event=hit_entity body=%s damage=%.0f\n",
            def.id.c_str(), hitPart.c_str(), result.damage);
     {
@@ -267,7 +279,9 @@ void processRemoteNpcHit(
     RevolverShotResult& result,
     const WeaponDefinition& def,
     const std::string& hitPart,
+    const glm::vec3& hitNormal,
     const glm::vec3& hitEnd,
+    const glm::vec3& shotDirection,
     float nearest,
     Player& shooter,
     uint32_t remoteNpcTargetId,
@@ -292,8 +306,9 @@ void processRemoteNpcHit(
             gpMpContext->predictedNpcHitMs[remoteNpcTargetId] = nowMsVal;
         }
 
-        const glm::vec3 normal = glm::vec3(0.0f, 0.0f, 1.0f);
-        presentRemoteHit(def, hitEnd, normal, -normal, nearest, hitPart,
+        const glm::vec3 normal = glm::length(hitNormal) > 0.001f
+            ? glm::normalize(hitNormal) : -shotDirection;
+        presentRemoteHit(def, hitEnd, normal, shotDirection, nearest, hitPart,
                          shooter.username, remoteNpc->username, totalDamage);
 
         // Predict the NPC knockback instantly (corrected by the server confirm).

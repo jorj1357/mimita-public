@@ -59,7 +59,8 @@ void update(
     NpcSystem& npcs,
     const World& world,
     Camera& camera,
-    float dt);
+    float dt,
+    Player* victimPlayer = nullptr);
 
 void clear(RocketLauncherState& state);
 

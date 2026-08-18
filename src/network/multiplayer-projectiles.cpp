@@ -38,6 +38,7 @@
 #include "combat/weapon-runtime.h"
 #include "combat/weapon-types.h"
 #include "effects/effect-part.h"
+#include "effects/hit-effects.h"
 #include "terminal/terminal-state.h"
 #include "world/world.h"
 #include "physics/movement/physics-collision.h"
@@ -1093,6 +1094,37 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
 
     if (isLocalVictim)
     {
+        // Show local-victim hit feedback at the real hit point: damage number,
+        // body blood/effects, and elongated sphere. Server NPC/player shots send
+        // the true surface contact point + normal.
+        if (event->damage > 0 && HitEffects::config().core.victimHitEffects)
+        {
+            HitEvent ev;
+            ev.position = {event->hitX, event->hitY, event->hitZ};
+            ev.normal = glm::length(glm::vec3(event->normalX, event->normalY, event->normalZ)) > 0.001f
+                ? glm::normalize(glm::vec3(event->normalX, event->normalY, event->normalZ))
+                : glm::vec3(0.0f, 0.0f, 1.0f);
+            ev.direction = glm::length(knockback) > 0.001f
+                ? glm::normalize(knockback)
+                : -ev.normal;
+            ev.hitEntity = true;
+            ev.damage = event->damage;
+            {
+                std::string attackerName = "player_" + std::to_string(event->attackerPlayerId);
+                auto ai = ctx.playerRegistry.find(event->attackerPlayerId);
+                if (ai != ctx.playerRegistry.end())
+                    attackerName = ai->second.name;
+                std::string victimName = "player_" + std::to_string(ctx.localPlayerId);
+                auto vi = ctx.playerRegistry.find(ctx.localPlayerId);
+                if (vi != ctx.playerRegistry.end())
+                    victimName = vi->second.name;
+                ev.attacker = attackerName;
+                ev.victim = victimName;
+            }
+            ev.weaponSource = networkWeaponTypeName(event->weapon);
+            HitEffects::onHit(ev);
+        }
+
         // Health synced to the shot visual: queue a pending change applied in
         // the SAME frame the attacker's body renders past this shot's server
         // tick (the same gate the bullet tracer uses). Always queue the HP drop

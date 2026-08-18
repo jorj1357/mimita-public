@@ -251,6 +251,7 @@ void applyWeaponJson(WeaponDefinition& def, const json& root)
         return;
     applyWeaponIdentityJson(def, root);
     applyWeaponStatsJson(def, root);
+    weaponJsonBehaviorType(root, def);
     applyWeaponExecutionType(def);
     applyWeaponSoundJson(def, root);
     applyWeaponCustomParamsJson(def, root);

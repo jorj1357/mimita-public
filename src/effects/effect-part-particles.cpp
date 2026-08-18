@@ -1,7 +1,14 @@
+// 08 17 2026, 14 20
+/* purpose
+* Updates pooled blood particles, surface decals, and queued blood spawns.
+* Applies fade and optional color darkening without changing decal geometry.
+* Does NOT own hit detection, config file parsing, or world rendering.
+*/
 #include "effect-part.h"
 #include "entities/player.h"
 #include "world/world.h"
 #include "effects/hit-effects.h"
+#include "config/impact-decals-config.h"
 #include "debug/debug-log.h"
 #include "config.h"
 #include <algorithm>
@@ -77,6 +84,11 @@ void EffectPartSystem::updateSurfaceDecals(float dt) {
             const float fadeT = std::clamp((decal.age - holdTime) / decal.fadeTime, 0.0f, 1.0f);
             decal.alpha = decal.baseAlpha * (1.0f - fadeT);
         }
+        if (decal.darkenOverLifetime) {
+            const float span = std::max(0.001f, decal.darkenEndSeconds - decal.darkenStartSeconds);
+            const float darkenT = std::clamp((decal.age - decal.darkenStartSeconds) / span, 0.0f, 1.0f);
+            decal.color = glm::mix(decal.colorStart, decal.colorEnd, darkenT);
+        }
     }
     mSurfaceDecals.erase(
         std::remove_if(
@@ -84,4 +96,21 @@ void EffectPartSystem::updateSurfaceDecals(float dt) {
             mSurfaceDecals.end(),
             [](const SurfaceDecal& decal) { return decal.age >= decal.lifetime; }),
         mSurfaceDecals.end());
+}
+
+void EffectPartSystem::updatePendingBloodDecals(float dt) {
+    (void)dt;
+    const auto& cfg = ImpactDecalsConfig::instance().data().blood.stagger;
+    if (!cfg.enabled) { mPendingBloodDecals.clear(); return; }
+    const int budget = std::max(1, cfg.decalsPerTick);
+    int spawned = 0;
+    for (auto it = mPendingBloodDecals.begin(); it != mPendingBloodDecals.end() && spawned < budget;) {
+        ++it->ageTicks;
+        if (it->ageTicks <= cfg.startDelayTicks) { ++it; continue; }
+        if (it->ageTicks > cfg.maxTicks) { it = mPendingBloodDecals.erase(it); continue; }
+        const auto& blood = ImpactDecalsConfig::instance().data().blood;
+        pushSurfaceDecal(it->decal, blood.maxCount);
+        it = mPendingBloodDecals.erase(it);
+        ++spawned;
+    }
 }

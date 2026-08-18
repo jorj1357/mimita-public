@@ -1,5 +1,14 @@
+// 08 16 2026, 18 00
+/* purpose
+* NPC spawn, loadout initialization, weapon switching, and tuning setup.
+* Gives NPCs their full weapon loadout at spawn and handles hot-reloadable weapon switching.
+* Does NOT own NPC AI decisions, state machines, or firing logic.
+* Does NOT own server NPC simulation (see src/network/server-npcs.cpp).
+*/
+
 #include "npc.h"
 #include "npc/npc-internal.h"
+#include "npc/npc-difficulty-config.h"
 #include "combat/weapon-runtime.h"
 
 #include <algorithm>
@@ -77,6 +86,80 @@ static bool equipNpcWeapon(Npc& npc, const std::string& weaponId, int slot = 1)
     return true;
 }
 
+void npcInitLoadout(Npc& npc)
+{
+    const auto& cfg = NpcDifficultyConfig::instance().settings();
+    const auto& loadout = cfg.weaponLoadout;
+    if (loadout.empty()) return;
+
+    // Pre-initialize runtimes for ALL loadout weapons so switching is instant.
+    for (const auto& wid : loadout) {
+        const WeaponDefinition* def = WeaponRegistry::instance().get(wid);
+        if (!def) {
+            Debug::log(Debug::Category::NpcCombat,
+                "[NPC LOADOUT] npc=%u weapon '%s' not found in registry, skipping\n",
+                npc.id, wid.c_str());
+            continue;
+        }
+        if (npc.body.weaponRuntimes.find(wid) == npc.body.weaponRuntimes.end()) {
+            npc.body.weaponRuntimes[wid] = WeaponRuntime{};
+            WeaponRuntimeHelper::initRuntime(npc.body.weaponRuntimes[wid], *def);
+            Debug::log(Debug::Category::NpcCombat,
+                "[NPC LOADOUT] npc=%u pre-loaded weapon=%s ammo=%d reserve=%d\n",
+                npc.id, wid.c_str(),
+                npc.body.weaponRuntimes[wid].currentAmmo,
+                npc.body.weaponRuntimes[wid].reserveAmmo);
+        }
+    }
+
+    // Equip the starting weapon (forceWeapon overrides startingWeapon)
+    const std::string& equipWpn = cfg.forceWeapon.empty() ? cfg.startingWeapon : cfg.forceWeapon;
+    bool found = false;
+    for (const auto& wid : loadout) {
+        if (wid == equipWpn) { found = true; break; }
+    }
+    const std::string& finalWpn = found ? equipWpn : loadout[0];
+
+    const WeaponDefinition* def = WeaponRegistry::instance().get(finalWpn);
+    if (def) {
+        npc.body.equippedWeaponId = finalWpn;
+        npc.body.equippedSlot = def->slot;
+        npc.body.hasValidWeapon = true;
+    }
+    Debug::log(Debug::Category::NpcCombat,
+        "[NPC LOADOUT] npc=%u loadout=%zu starting=%s forceWeapon=%s\n",
+        npc.id, loadout.size(), finalWpn.c_str(), cfg.forceWeapon.c_str());
+}
+
+bool npcSwitchWeapon(Npc& npc, const std::string& weaponId)
+{
+    if (npc.body.equippedWeaponId == weaponId) return false;
+
+    const WeaponDefinition* newDef = WeaponRegistry::instance().get(weaponId);
+    if (!newDef) return false;
+
+    const WeaponDefinition* oldDef = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
+    if (oldDef) {
+        // Start background reload on the weapon we're switching away from
+        auto it = npc.body.weaponRuntimes.find(npc.body.equippedWeaponId);
+        if (it != npc.body.weaponRuntimes.end() && !it->second.isReloading) {
+            WeaponRuntimeHelper::startReload(it->second, *oldDef);
+            Debug::log(Debug::Category::NpcCombat,
+                "[NPC SWITCH] npc=%u background reload started for %s\n",
+                npc.id, npc.body.equippedWeaponId.c_str());
+        }
+    }
+
+    npc.body.equippedWeaponId = weaponId;
+    npc.body.equippedSlot = newDef->slot;
+    npc.body.hasValidWeapon = true;
+
+    Debug::log(Debug::Category::NpcCombat,
+        "[NPC SWITCH] npc=%u switched to %s\n",
+        npc.id, weaponId.c_str());
+    return true;
+}
+
 Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn,
          const std::string& weaponId)
     : id(npcId), difficulty(std::clamp(npcDifficulty, 0.0f, 10.0f))
@@ -112,10 +195,8 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn,
     // resets to 0 only on an actual fire) never fires during the wakeup window.
     timeSinceLastShot = 1.0f;
 
-    // Equip weapon (default revolver, or specified via parameter)
-    if (!equipNpcWeapon(*this, weaponId.empty() ? "revolver" : weaponId, 1)) {
-        equipNpcWeapon(*this, "revolver", 1);  // fallback to revolver
-    }
+    // Initialize full weapon loadout from config and equip starting weapon
+    npcInitLoadout(*this);
 
     // Spawn wakeup visual sphere (30 ticks @ 60 Hz = 0.5s)
     {

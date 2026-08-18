@@ -1,6 +1,7 @@
 #include "engine/engine-tick-replay.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
+#include "gui/hud/chat-window.h"
 #include <cstdio>
 #include <random>
 #include <thread>
@@ -221,7 +222,8 @@ void engineTickReplay(Engine& engine, float dt)
         InputFrame tickFrame;
 
         if (!replayPlaybackActive) {
-            InputCommandSystem::instance().setKeyboardEnabled(!Terminal::instance().isOpen());
+            InputCommandSystem::instance().setKeyboardEnabled(
+                !Terminal::instance().isOpen() && !isChatOpen());
             tickFrame = buildInputFrame(engine.window(), camera);
 
             if (gDuelManager.phase() == DuelPhase::Countdown ||

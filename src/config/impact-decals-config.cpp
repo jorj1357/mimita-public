@@ -102,6 +102,39 @@ static void readGroup(const json& j, ImpactDecalGroupConfig& cfg)
     cfg.lifetime = readJsonFloat(j, "lifetime", cfg.lifetime);
     cfg.fadeTime = readJsonFloat(j, "fadeTime", cfg.fadeTime);
     cfg.maxCount = readJsonInt(j, "maxCount", cfg.maxCount);
+    if (j.contains("stagger")) {
+        const auto& s = j["stagger"];
+        cfg.stagger.enabled = readJsonBool(s, "enabled", cfg.stagger.enabled);
+        cfg.stagger.decalsPerTick = readJsonInt(s, "decals_per_tick", cfg.stagger.decalsPerTick);
+        cfg.stagger.startDelayTicks = readJsonInt(s, "start_delay_ticks", cfg.stagger.startDelayTicks);
+        cfg.stagger.maxTicks = readJsonInt(s, "max_ticks", cfg.stagger.maxTicks);
+    }
+    if (j.contains("color_over_lifetime")) {
+        const auto& c = j["color_over_lifetime"];
+        cfg.colorOverLifetime.enabled = readJsonBool(c, "enabled", cfg.colorOverLifetime.enabled);
+        cfg.colorOverLifetime.startColor = readJsonVec3(c, "start_color", cfg.colorOverLifetime.startColor);
+        cfg.colorOverLifetime.endColor = readJsonVec3(c, "end_color", cfg.colorOverLifetime.endColor);
+        cfg.colorOverLifetime.darkenStartSeconds = readJsonFloat(c, "darken_start_seconds", cfg.colorOverLifetime.darkenStartSeconds);
+        cfg.colorOverLifetime.darkenEndSeconds = readJsonFloat(c, "darken_end_seconds", cfg.colorOverLifetime.darkenEndSeconds);
+    }
+    if (j.contains("arms")) {
+        const auto& a = j["arms"];
+        cfg.crackArms.baseCount = readJsonInt(a, "base_count", cfg.crackArms.baseCount);
+        cfg.crackArms.weaponForceMultiplier = readJsonFloat(a, "weapon_force_multiplier", cfg.crackArms.weaponForceMultiplier);
+        cfg.crackArms.maxCount = readJsonInt(a, "max_count", cfg.crackArms.maxCount);
+    }
+    if (j.contains("chain")) {
+        const auto& c = j["chain"];
+        cfg.crackChain.minSegments = readJsonInt(c, "min_segments", cfg.crackChain.minSegments);
+        cfg.crackChain.maxSegments = readJsonInt(c, "max_segments", cfg.crackChain.maxSegments);
+        cfg.crackChain.segmentLengthMin = readJsonFloat(c, "segment_length_min", cfg.crackChain.segmentLengthMin);
+        cfg.crackChain.segmentLengthMax = readJsonFloat(c, "segment_length_max", cfg.crackChain.segmentLengthMax);
+        cfg.crackChain.turnDegreesMin = readJsonFloat(c, "turn_degrees_min", cfg.crackChain.turnDegreesMin);
+        cfg.crackChain.turnDegreesMax = readJsonFloat(c, "turn_degrees_max", cfg.crackChain.turnDegreesMax);
+        cfg.crackChain.jaggedness = readJsonFloat(c, "jaggedness", cfg.crackChain.jaggedness);
+    }
+    cfg.crackCenterThickness = readJsonFloat(j, "center_thickness", cfg.crackCenterThickness);
+    cfg.crackOuterThickness = readJsonFloat(j, "outer_thickness", cfg.crackOuterThickness);
     readSpray(j, cfg.spray);
     readForce(j, cfg.force);
 }

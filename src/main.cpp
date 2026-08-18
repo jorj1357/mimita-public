@@ -156,6 +156,7 @@
 #include "video/video-commands.h"
 #include "audio/music-commands.h"
 #include "main-init.h"
+#include "replay/replay-export-subprocess.h"
 #include <windows.h>
 
 // 6 9 2026 sort and be more aweosme
@@ -207,6 +208,14 @@ ChatHistory* gpChatHistory = nullptr;
 bool gMainmenuDebug = false;
 // replay cinematic mode (toggle with L key during playback)
 bool gReplayCinematicMode = false;
+
+// --export-replay subprocess mode globals
+static bool gExportSubprocessMode = false;
+static bool gExportVisible = true;
+static std::string gExportClipPath;
+static std::string gExportOutputPath;
+static int gExportWidth = 1920;
+static int gExportHeight = 1080;
 // network debug flags (toggled by net_debug_* commands)
 bool gNetPresentationDebug = false;
 bool gNetDebugEntities = false;
@@ -215,6 +224,32 @@ bool gRoomCodeShow = true;
 
 int main(int argc, char** argv)
 {
+    // ── Parse --export-replay subprocess flags BEFORE other CLI handling ─
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--export-replay") == 0 && i + 1 < argc) {
+            gExportSubprocessMode = true;
+            gExportClipPath = argv[++i];
+        } else if (strcmp(argv[i], "--output") == 0 && i + 1 < argc) {
+            gExportOutputPath = argv[++i];
+        } else if (strcmp(argv[i], "--width") == 0 && i + 1 < argc) {
+            gExportWidth = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--height") == 0 && i + 1 < argc) {
+            gExportHeight = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--visible") == 0) {
+            gExportVisible = true;
+        }
+    }
+
+    // In subprocess mode, hide the window unless --visible is specified (debug).
+    // glfwInit is idempotent; Renderer::init also calls it but the hint persists.
+    if (gExportSubprocessMode) {
+        glfwInit();
+        glfwWindowHint(GLFW_VISIBLE, gExportVisible ? GLFW_TRUE : GLFW_FALSE);
+        printf("[MAIN] export subprocess mode: clip=%s output=%s %dx%d visible=%d\n",
+               gExportClipPath.c_str(), gExportOutputPath.c_str(),
+               gExportWidth, gExportHeight, gExportVisible);
+    }
+
     if (handleGameCLI(argc, argv)) return 0;
 
     printf("[BUILD] compiled on %s at %s\n", __DATE__, __TIME__);
@@ -261,6 +296,18 @@ int main(int argc, char** argv)
 
     Engine engine;
     gameInit(argc, argv, engine);
+
+    // ── Export subprocess mode: run the export and exit ────────────────
+    if (gExportSubprocessMode) {
+        if (gExportClipPath.empty()) {
+            printf("[MAIN] --export-replay requires a clip path\n");
+            return 1;
+        }
+        runExportSubprocess(engine, gExportClipPath.c_str(),
+                            gExportOutputPath.c_str(),
+                            gExportWidth, gExportHeight);
+        return 0;
+    }
 
     // --connect <ip:port> on a normal GUI launch: boot straight into
     // gameplay and auto-join the given server via direct UDP. This is the

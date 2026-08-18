@@ -69,7 +69,7 @@ static void drawDebrisBatch(const Camera& camera, const EffectPart& effect, floa
     seed ^= (unsigned int)(effect.normal.x * 52711);
     float spread = effect.scale;
     float baseSpeed = effect.endScale;
-    float force = effect.velocity.x;
+    float force = glm::length(effect.velocity);
     glm::vec3 n = effect.normal;
     glm::vec3 tangent = glm::normalize(
         std::abs(n.z) < 0.9f
@@ -81,7 +81,6 @@ static void drawDebrisBatch(const Camera& camera, const EffectPart& effect, floa
         ? effect.debrisCount
         : (8 + (seed & 7));
     glm::vec4 color{effect.color.x, effect.color.y, effect.color.z, alpha};
-    float gt = t * t * 3.0f;
 
     for (int i = 0; i < count; ++i) {
         unsigned int si = seed + (unsigned int)i * 769u;
@@ -95,7 +94,6 @@ static void drawDebrisBatch(const Camera& camera, const EffectPart& effect, floa
         float speed = baseSpeed + ((si * 503u) % 5001) / 1000.0f;
         glm::vec3 pos = effect.position + n * 0.03f + dir * (((si * 211u) % 51) / 1000.0f);
         pos += dir * speed * t;
-        pos.z -= gt;
         float sx = 0.04f + force * 0.04f + ((si * 313u) % 501) / 3000.0f;
         float sy = 0.04f + force * 0.04f + ((si * 317u) % 501) / 3000.0f;
         float sz = 0.04f + force * 0.04f + ((si * 331u) % 501) / 3000.0f;
@@ -186,7 +184,7 @@ void EffectPartSystem::render(const Camera& camera) const {
         else if (effect.flatDecal) {
             DebugVis::drawFilledDecal(camera, effect.position, effect.normal, drawScale, drawColor);
         }
-        else if (effect.replayType == "death_ellipsoid" || effect.replayType == "damage_impact_sphere"
+        else if (effect.replayType == "death_ellipsoid"
                  || effect.replayType == "freeze_trail" || effect.replayType == "down_dash") {
             glm::vec3 dir = glm::length(effect.endPosition - effect.position) > 0.001f
                 ? glm::normalize(effect.endPosition - effect.position)
@@ -195,6 +193,16 @@ void EffectPartSystem::render(const Camera& camera) const {
             float rad = drawScale;
             glm::vec3 scaleVec = dir * (len / std::max(rad, 0.001f)) + glm::vec3(1.0f) - dir;
             DebugVis::drawFilledSphere(camera, effect.position, rad, drawColor, scaleVec);
+        }
+        else if (effect.replayType == "damage_impact_sphere") {
+            const auto& impact = HitEffects::config().damageImpactSphere;
+            const glm::vec3 axis = glm::length(effect.endPosition - effect.position) > 0.001f
+                ? glm::normalize(effect.endPosition - effect.position)
+                : glm::vec3(0.0f, 0.0f, 1.0f);
+            const glm::vec3 center = (effect.position + effect.endPosition) * 0.5f;
+            const glm::vec3 dimensions = glm::max(impact.localDimensions, glm::vec3(0.001f));
+            DebugVis::drawFilledSphereOriented(camera, center, axis, 1.0f, drawColor,
+                                               dimensions * 0.5f, impact.localAxis.c_str());
         }
         else if (!effect.billboardText) {
             DebugVis::drawFilledSphere(camera, effect.position, drawScale, drawColor);

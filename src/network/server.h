@@ -567,6 +567,7 @@ struct ServerProjectile
 {
     uint32_t id = 0;
     uint32_t ownerPlayerId = 0;
+    uint32_t ownerNpcId = 0;       // NPC that fired this projectile (0 = player-fired)
     uint32_t fireSerial = 0;
     uint8_t weaponType = NETWORK_WEAPON_NONE;
     glm::vec3 position{0.0f};
@@ -727,6 +728,8 @@ void simulateSharedNpcs(SOCKET sock,
                         World& world,
                         Player& mirrorPlayer,
                         std::unordered_set<uint32_t>& npcIdsAlive,
+                        std::unordered_map<uint32_t, ServerProjectile>& projectiles,
+                        uint32_t& nextProjectileId,
                         uint32_t tick,
                         uint64_t& totalPacketsOut);
 

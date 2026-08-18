@@ -1,0 +1,134 @@
+// 08 15 2026, 16 12
+/* purpose
+* Source (CS/Quake) movement preset: ground is PM_Friction + PM_Accelerate,
+* air is projection-limited PM_AirAccelerate with Valve bug compatibility,
+* and dash is a one-time impulse that input never erases. Every value below is
+* hot-reloadable live via movement_reload. Units are MiMITA units unless noted.
+* This file is parsed with JSON comments enabled.
+*/
+{
+    "name": "source",
+
+    // Which movement kernel to run. "source" = the Source/CS formulas in
+    // movement-step.cpp. Do not change unless you know what you are doing.
+    "movement_mode": "source",
+
+    // Scale factor only used to explain values (1 MiMITA unit = 20 Source
+    // units). Speeds below are MiMITA units; acceleration/friction RATES are
+    // 1/time and are NOT scaled by this.
+    "source_units_per_mimita_unit": 20.0,
+
+    // ── Ground speed and accel ───────────────────────────────────────────
+    // How fast you can walk on the ground, in MiMITA units/sec. 20 = MiMITA
+    // normal. Also caps the air wish speed when you have input.
+    "max_speed": 20.0,
+    // Same as max_speed; kept so server validation uses the same number.
+    "ground_speed": 20.0,
+    // How quickly the ground accelerates you toward max_speed while moving
+    // (Source sv_accelerate). Higher = snappier start/stop.
+    "ground_acceleration": 10.5,
+    // Ground friction (Source sv_friction). Higher = you slow down faster when
+    // you let go of movement keys.
+    "friction": 5.2,
+    // Below this speed, friction is constant instead of proportional, so slow
+    // players actually come to a full stop (Source sv_stopspeed).
+    "stop_speed": 3.75,
+
+    // ── Air (pure Source AirAccelerate) ──────────────────────────────────
+    // Scales the air speed gain (Source PM_AirAccelerate projection). 0 = air
+    // input adds no speed. 1.0 = full Source gain. Whether a strafe gains comes
+    // from the dot product between your flight direction and the key direction,
+    // NOT from A/D rules: the key only defines the wish direction; the mouse
+    // rotates the camera, which naturally rotates the wish. Holding A alone
+    // can only fill the small projection cap; it cannot steer velocity directly.
+    "air_speed_gain_multiplier": 2.0,
+    // Strength of the air acceleration (Source sv_airaccelerate equivalent).
+    "air_acceleration": 24.0,
+    // Source's 30-unit air cap divided by its 320-unit max speed, scaled to
+    // MiMITA max_speed 20: 20 * 30 / 320 = 1.875.
+    "air_max_wishspeed": 1.875,
+    // Historical Source bug compatibility: use uncapped wishspeed in the
+    // acceleration term while capped wishspd limits projection/addSpeed.
+    "source_airaccelerate_bug_compatible": true,
+
+    // ── Gravity and jump ─────────────────────────────────────────────────
+    // Vertical acceleration while airborne, MiMITA units/sec^2 (negative = down).
+    "gravity": -40.0,
+    // Vertical speed applied on a jump, MiMITA units/sec (positive = up).
+    "jump_velocity": 15.1,
+    // Fastest downward speed while falling, MiMITA units/sec.
+    "max_fall_speed": 175.0,
+
+    // ── Auto-jump ────────────────────────────────────────────────────────
+    // Holding jump in the air keeps re-jumping the instant you land (bhop).
+    "auto_bhop_enabled": true,
+    // How long a jump press is remembered before landing, in seconds.
+    "jump_buffer_time": 0.2,
+    // How long after walking off a ledge you can still jump, in seconds.
+    // 0 = no mercy (pure CS behavior).
+    "coyote_time": 0.0,
+    // Extra mid-air jumps allowed (Source/CS has none = 0).
+    "max_air_jumps": 1,
+
+    // ── Ground snap ──────────────────────────────────────────────────────
+    // Snap small downward velocity to 0 when grounded (prevents jitter).
+    "ground_snap": true,
+    // Downward velocity magnitude below which ground_snap zeroes it.
+    "velocity_clip_epsilon": 0.01,
+    // Global friction multiplier. 1.0 = normal ground. Lower = ice-like.
+    "surface_friction": 1.0,
+    // How much friction bleeds bhop overspeed on the landing/autojump tick.
+    // 1.0 = full Source bleed (speed drops each landing). 0 = keep your speed
+    // through landings. Tune this to control how much speed bhops retain.
+    "landing_overspeed_bleed": 1.0,
+
+    // ── Dash ─────────────────────────────────────────────────────────────
+    // Master toggle for ground/air dash (shift). false = dash is unavailable.
+    "dash_enabled": false,
+    // Master toggle for down dash (Q). false = down dash is unavailable.
+    "down_dash_enabled": false,
+    // Master toggle for freeze. false = freeze is unavailable; a freeze in
+    // progress is released immediately.
+    "freeze_enabled": false,
+    // How long the dash boost ignores ground friction and stays at full
+    // strength, in seconds. While this is active, friction does NOT slow you.
+    "dash_grace_seconds": 0.25,
+    // Friction scale during dash grace. 0 = the dash boost feels no friction
+    // at all during the grace window. 1 = full friction even while dashing.
+    "dash_friction_multiplier": 0.0,
+    // One-time horizontal speed added by a GROUND dash (shift), MiMITA units/sec.
+    "ground_dash_impulse": 100.0,
+    // One-time horizontal speed added by an AIR dash, MiMITA units/sec.
+    "air_dash_impulse": 50.0,
+    // Down-dash slam vertical speed (negative = straight down).
+    "down_dash_speed": -100.0,
+
+    // ── External impulse / knockback ─────────────────────────────────────
+    // 08 16 2026: knockback is now COMBINED into the player's real velocity
+    // once per tick (single-tick impulse), so these knobs are the OLD separate-
+    // tank behavior controls only. TO REVERT to lingering external knockback:
+    // delete the fold block in applyPreCollisionBasicMovement (movement-step.cpp)
+    // and restore the old movement-source-parity / movement-csgo test sections.
+    // Exponential decay of knockback per second. In "source" impulse mode this
+    // is ignored (0 here) — knockback carries and only bleeds via friction.
+    "external_impulse_decay": 99.0,
+    // Cap on the horizontal speed of a knockback impulse, MiMITA units/sec.
+    "max_external_impulse_speed": 1.0,
+    // How knockback behaves: "source" = carries through input, bled by ground
+    // friction (stopspeed-based); "exponential" = old independent decay.
+    "impulse_friction_mode": "exponential",
+    // Seconds a fresh knockback is completely untouched before friction starts
+    // bleeding it. Gives hits a short "pop" before physics takes over.
+    "impulse_carry_seconds": 0.1,
+
+    // ── Misc ─────────────────────────────────────────────────────────────
+    // Master switch for WASD doing anything in the air (steering included).
+    "air_strafing": true,
+    // Debug overlay showing speed/ground/dash/impulse state. Toggle live with
+    // movement_debug 1.
+    "debug_draw_enabled": false,
+
+    "tuning_notes": {
+        "comment": "air_speed_gain_multiplier scales Source projection acceleration. air_max_wishspeed limits projection. landing_overspeed_bleed controls non-jump landing friction. All fields hot-reload via movement_reload."
+    }
+}

@@ -117,6 +117,8 @@ struct ReplayExportJob {
     std::string ffmpegCommand;
     // Accumulated FFmpeg stderr tail across encode attempts (for debugging).
     std::string ffmpegStderrTail;
+    // Subprocess handle (when export runs as a separate mimita.exe process).
+    void* hSubprocess = nullptr;
 
     // Result
     std::string errorMsg;
@@ -160,6 +162,8 @@ bool writeReplayExportWav(const std::string& path, const int16_t* samples,
                           uint16_t channels = 2);
 void pollReplayFfmpegEncode();
 void cancelReplayFfmpegEncode();
+// Spawn a subprocess mimita.exe to run the export in the background.
+bool spawnExportSubprocess(const std::string& clipPath, int width, int height);
 
 bool startMfReplayExport(MfMp4Writer*& writer, const std::string& outputPath,
                          int width, int height, int bitrate, std::string& error);

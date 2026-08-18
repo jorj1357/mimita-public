@@ -1,20 +1,33 @@
 {
-  "enabled": false,
+  "enabled": true,
   "blood": {
     "enabled": true,
-    "count": 12,
+    "count": 24,
     "minCount": 3,
     "coneDegrees": 35.0,
-    "coneDistance": 12.0,
-    "radius": 2.4,
-    "minRadius": 0.12,
+    "coneDistance": 24.0,
+    "radius": 1.4,
+    "minRadius": 0.02,
     "height": 0.05,
-    "color": [1.0, 0.01, 0.02],
-    "colorVariation": 0.15,
+    "color": [0.7, 0.01, 0.01],
+    "colorVariation": 0.55,
     "alpha": 0.9,
     "lifetime": 30.0,
     "fadeTime": 5.0,
-    "maxCount": 512,
+    "maxCount": 5122,
+    "stagger": {
+      "enabled": true,
+      "decals_per_tick": 2,
+      "start_delay_ticks": 0,
+      "max_ticks": 60
+    },
+    "color_over_lifetime": {
+      "enabled": true,
+      "start_color": [0.7, 0.0, 0.0],
+      "end_color": [0.1, 0.0, 0.0],
+      "darken_start_seconds": 0.01,
+      "darken_end_seconds": 25.0
+    },
     "spray": {
       "enabled": false,
       "minCount": 4,
@@ -28,18 +41,18 @@
       "coneDegreesMax": 30.0,
       "lifetimeMin": 1.0,
       "lifetimeMax": 3.0,
-      "alphaMin": 0.6,
+      "alphaMin": 0.1,
       "alphaMax": 0.95
     },
     "force": {
       "maxDistance": 1.0,
-      "minDistance": 30.0,
-      "minForce": 0.08
+      "minDistance": 100.0,
+      "minForce": 0.001
     }
   },
   "bulletHoles": {
     "enabled": true,
-    "radius": 0.25,
+    "radius": 0.2,
     "height": 0.06,
     "color": [0.03, 0.03, 0.03],
     "alpha": 1.0,
@@ -50,12 +63,28 @@
   "worldCracks": {
     "enabled": true,
     "count": 5,
-    "length": 1.0,
-    "thickness": 0.115,
+    "length": 10.0,
+    "thickness": 0.215,
     "color": [0.1, 0.1, 0.1],
     "alpha": 0.85,
     "lifetime": 8.0,
     "fadeTime": 2.0,
-    "maxCount": 128
+    "maxCount": 4096,
+    "arms": {
+      "base_count": 3,
+      "weapon_force_multiplier": 1.0,
+      "max_count": 12
+    },
+    "chain": {
+      "min_segments": 1,
+      "max_segments": 5,
+      "segment_length_min": 1.05,
+      "segment_length_max": 3.22,
+      "turn_degrees_min": -175.0,
+      "turn_degrees_max": 175.0,
+      "jaggedness": 0.5
+    },
+    "center_thickness": 0.235,
+    "outer_thickness": 0.230
   }
 }

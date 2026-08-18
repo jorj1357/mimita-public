@@ -177,7 +177,9 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                 int rw = engine.renderer ? engine.renderer->width : 1280;
                 int rh = engine.renderer ? engine.renderer->height : 720;
                 if (startReplayExport(jsonPath, rw, rh)) {
-                    DevOverlay::instance().showNotification("Exporting replay...", 2.0f);
+                    DevOverlay::instance().showNotification("Exporting replay in background...", 3.0f);
+                } else {
+                    DevOverlay::instance().showNotification("Failed to start export.", 5.0f);
                 }
             } else {
                 DevOverlay::instance().showNotification("Replay not ready yet. Wait for replay to load.", 5.0f);

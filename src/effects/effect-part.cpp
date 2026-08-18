@@ -298,9 +298,10 @@ void EffectPartSystem::spawnWorldCracks(glm::vec3 position, glm::vec3 normal,
         else
             preferred = glm::normalize(preferred);
     }
-    for (int i = 0; i < c.count; ++i) {
+    const int armCount = std::clamp(c.crackArms.baseCount, 1, c.crackArms.maxCount);
+    for (int i = 0; i < armCount; ++i) {
         const float angle = (float)(rand() % 6284) / 1000.0f;
-        const float offset = ((float)(rand() % 1001) / 1000.0f) * 0.3f;
+        const float offset = ((float)(rand() % 1001) / 1000.0f) * 0.03f;
         glm::vec3 axis;
         if (glm::length(preferred) > 0.001f) {
             // Mostly along the projected shot, with a small random spread.
@@ -311,19 +312,36 @@ void EffectPartSystem::spawnWorldCracks(glm::vec3 position, glm::vec3 normal,
         } else {
             axis = glm::normalize(tangent * std::cos(angle) + bitangent * std::sin(angle));
         }
-        SurfaceDecal decal;
-        decal.position = position + n * 0.005f + axis * offset;
-        decal.normal = n;
-        decal.axis = axis;
-        decal.color = c.color;
-        decal.kind = SurfaceDecalKind::Crack;
-        decal.radius = c.thickness;
-        decal.height = c.length;
-        decal.lifetime = c.lifetime;
-        decal.fadeTime = c.fadeTime;
-        decal.alpha = c.alpha;
-        decal.baseAlpha = c.alpha;
-        pushSurfaceDecal(decal, c.maxCount);
+        const int minSegments = std::max(1, c.crackChain.minSegments);
+        const int maxSegments = std::max(minSegments, c.crackChain.maxSegments);
+        const int segmentCount = minSegments + (rand() % (maxSegments - minSegments + 1));
+        glm::vec3 cursor = position + n * 0.005f + axis * offset;
+        for (int segment = 0; segment < segmentCount; ++segment) {
+            const float u = segmentCount > 1 ? (float)segment / (float)(segmentCount - 1) : 0.0f;
+            const float minLength = std::max(0.001f, c.crackChain.segmentLengthMin);
+            const float maxLength = std::max(minLength, c.crackChain.segmentLengthMax);
+            const float length = minLength + (maxLength - minLength) * ((float)(rand() % 1001) / 1000.0f);
+            SurfaceDecal decal;
+            decal.position = cursor + axis * (length * 0.5f);
+            decal.normal = n;
+            decal.axis = axis;
+            decal.color = c.color;
+            decal.kind = SurfaceDecalKind::Crack;
+            decal.radius = glm::mix(c.crackCenterThickness, c.crackOuterThickness, u);
+            decal.height = length;
+            decal.lifetime = c.lifetime;
+            decal.fadeTime = c.fadeTime;
+            decal.alpha = c.alpha;
+            decal.baseAlpha = c.alpha;
+            pushSurfaceDecal(decal, c.maxCount);
+            cursor += axis * length;
+
+            const float turnRange = c.crackChain.turnDegreesMax - c.crackChain.turnDegreesMin;
+            const float turn = c.crackChain.turnDegreesMin + turnRange * ((float)(rand() % 1001) / 1000.0f);
+            const glm::vec3 perpendicular = glm::normalize(glm::cross(n, axis));
+            axis = glm::normalize(axis * std::cos(glm::radians(turn)) +
+                                  perpendicular * std::sin(glm::radians(turn)));
+        }
     }
 }
 
@@ -343,8 +361,9 @@ EffectPart* EffectPartSystem::spawnDamageImpactSphere(glm::vec3 position, glm::v
     float length = cfg.length;
     float radius = cfg.radius;
     EffectPart e;
-    e.position = position;
-    e.endPosition = position + dir * length;
+    const float halfLength = std::max(0.001f, length * 0.5f);
+    e.position = position - dir * halfLength;
+    e.endPosition = position + dir * halfLength;
     e.replayType = "damage_impact_sphere";
     e.color = cfg.color;
     e.alpha = cfg.alpha;

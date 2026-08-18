@@ -396,11 +396,13 @@ public:
                               const std::unordered_map<uint32_t, ServerPlayer>& players,
                               const std::unordered_map<uint32_t, ServerNpc>& npcs,
                               uint32_t ownerPlayerId,
+                              uint32_t ownerNpcId,
                               bool skipOwner)
         : mWorld(world),
           mPlayers(players),
           mNpcs(npcs),
           mOwnerPlayerId(ownerPlayerId),
+          mOwnerNpcId(ownerNpcId),
           mSkipOwner(skipOwner)
     {
     }
@@ -468,6 +470,8 @@ public:
             const ServerNpc& npc = entry.second;
             if (npc.health <= 0)
                 continue;
+            if (mSkipOwner && npc.entityId == mOwnerNpcId)
+                continue;
 
             SweptPlayerCapsule cap;
             cap.playerId = npc.entityId;
@@ -498,6 +502,7 @@ private:
     const std::unordered_map<uint32_t, ServerPlayer>& mPlayers;
     const std::unordered_map<uint32_t, ServerNpc>& mNpcs;
     uint32_t mOwnerPlayerId = 0;
+    uint32_t mOwnerNpcId = 0;
     bool mSkipOwner = false;
 };
 
@@ -759,6 +764,9 @@ void explodeProjectile(SOCKET sock,
     {
         ServerNpc& npc = npcEntry.second;
         if (npc.health <= 0)
+            continue;
+        // Skip the NPC that fired this projectile (no self-damage)
+        if (projectile.ownerNpcId != 0 && npc.entityId == projectile.ownerNpcId)
             continue;
 
         const glm::vec3 npcCenter = npc.pos + glm::vec3(0.0f, 0.0f, PLAYER_HEIGHT * 0.25f);
@@ -1484,6 +1492,7 @@ void tickServerProjectiles(SOCKET sock,
             ProjectilePhysicsConfig config = makePhysicsConfig(projectile);
             ServerProjectileWorldView physicsWorld(
                 world, players, npcs, projectile.ownerPlayerId,
+                projectile.ownerNpcId,
                 projectile.distanceTraveled < projectile.armingDistance);
 
             auto simStart = std::chrono::steady_clock::now();

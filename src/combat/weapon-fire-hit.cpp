@@ -187,7 +187,7 @@ RevolverShotResult tryFireHitscan(
     } else if (remoteVictim) {
         processRemotePlayerHit(result, def, hitPart, hitNormal, result.end, shotDirection, nearest, shooter, remoteTargetId, remoteVictim);
     } else if (remoteNpcTargetId) {
-        processRemoteNpcHit(result, def, hitPart, result.end, nearest, shooter,
+        processRemoteNpcHit(result, def, hitPart, hitNormal, result.end, shotDirection, nearest, shooter,
                             remoteNpcTargetId, beam.remoteNpcVictim);
     } else if (hitWorld) {
         processWorldHit(result, def, result.end, worldNormal, shotDirection, shooter.username);

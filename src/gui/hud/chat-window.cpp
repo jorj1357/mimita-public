@@ -1,8 +1,9 @@
 // 07 30 2026, 13 26
 /* purpose
-* Implements the 2D chat window renderer at bottom-left of the screen.
+* Implements the 2D chat window renderer at top-left of the screen.
 * Uses the existing UI system for scrolling, text input, and text rendering.
 * Fade timing uses UiTickClock ticks to stay consistent across frame rates.
+* Layout is driven by config/gui/hud.json (chatBg element).
 * Does NOT own ChatHistory, network state, or 3D bubble rendering.
 * Does NOT handle the "/" key or mouse lock — those are wired externally.
 */
@@ -24,6 +25,8 @@ bool isChatOpen()
 #include "debug/debug-log.h"
 #include "terminal/terminal-state.h"
 #include "vip/vip-name-render.h"
+#include "input/input-commands.h"
+#include "input/mouse-lock.h"
 
 #include <GLFW/glfw3.h>
 #include <algorithm>
@@ -57,14 +60,16 @@ void initChatWindowState(ChatWindowState& state)
 void openChatWindow(ChatWindowState& state)
 {
     state.open = true;
-    state.backgroundOpacity = 0.5f;
+    state.backgroundOpacity = 1.0f;
     state.textInput.focused = true;
     state.textInput.selectAllOnFocus = true;
     state.textInput.lastActivityMs = 0;
     state.scrolledUp = false;
     state.newMessageCount = 0;
-    state.scroll.scrollY = 0.0f; // scroll to bottom when opening
-    // Unlock cursor (if currently locked) so player can interact with chat
+    state.scroll.scrollY = 0.0f;
+    state.textInput.value.clear();
+    state.textInput.cursorPos = 0;
+    InputCommandSystem::instance().setKeyboardEnabled(false);
     GLFWwindow* win = glfwGetCurrentContext();
     if (win && glfwGetInputMode(win, GLFW_CURSOR) == GLFW_CURSOR_DISABLED)
         glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
@@ -74,12 +79,13 @@ void closeChatWindow(ChatWindowState& state)
 {
     state.open = false;
     state.textInput.focused = false;
-    if (!state.textInput.value.empty())
-    {
-        state.textInput.value.clear();
-        state.textInput.cursorPos = 0;
-    }
+    state.textInput.value.clear();
+    state.textInput.cursorPos = 0;
     state.hovered = false;
+    InputCommandSystem::instance().setKeyboardEnabled(true);
+    GLFWwindow* win = glfwGetCurrentContext();
+    if (win)
+        MouseLock::set(win, true);
 }
 
 void setChatMouseUnlocked(ChatWindowState& state, bool unlocked)
@@ -132,6 +138,9 @@ bool handleChatWindowKey(ChatWindowState& state, int key, int action, int mods,
         action == GLFW_PRESS && consumed)
     {
         outMessage = state.textInput.value;
+        // Strip leading / (char callback inserts it when / opens chat)
+        if (!outMessage.empty() && outMessage[0] == '/')
+            outMessage.erase(0, 1);
         state.textInput.value.clear();
         state.textInput.cursorPos = 0;
         closeChatWindow(state);
@@ -153,18 +162,18 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
     {
         uint64_t elapsed = clock.getElapsedTicks(state.lastMessageUiTick);
         if (elapsed < CHAT_FADE_HOLD_TICKS)
-            state.backgroundOpacity = 0.5f;
+            state.backgroundOpacity = 1.0f;
         else if (elapsed < CHAT_FADE_HOLD_TICKS + CHAT_FADE_DURATION_TICKS)
         {
             uint64_t fadeElapsed = elapsed - CHAT_FADE_HOLD_TICKS;
             float t = (float)fadeElapsed / (float)CHAT_FADE_DURATION_TICKS;
-            state.backgroundOpacity = 0.5f * (1.0f - t);
+            state.backgroundOpacity = 1.0f * (1.0f - t);
         }
         else
             state.backgroundOpacity = 0.0f;
     }
     else
-        state.backgroundOpacity = 0.5f;
+        state.backgroundOpacity = 1.0f;
 
     if (state.backgroundOpacity < 0.005f)
         return;
@@ -172,11 +181,21 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
     float alpha = state.backgroundOpacity;
 
     // ── Layout ────────────────────────────────────────────────────────
-    // Design-space: window is ~480w x 270h in 1920x1080 (25% of screen)
+    // Read from config/gui/hud.json if available, otherwise use defaults
     float winW_d = 480.0f;
     float winH_d = 270.0f;
     float winX_d = 12.0f;
-    float winY_d = 1080.0f - winH_d - 12.0f;
+    float winY_d = 12.0f;
+
+    GuiLayout& hudLayout = GuiLayoutManager::instance().getLayout("config/gui/hud.json");
+    const GuiElement* chatBg = hudLayout.get("chatBg");
+    if (chatBg)
+    {
+        winX_d = chatBg->x;
+        winY_d = chatBg->y;
+        if (chatBg->w > 0.0f) winW_d = chatBg->w;
+        if (chatBg->h > 0.0f) winH_d = chatBg->h;
+    }
 
     float winX = uiScaleX(winX_d);
     float winY = uiScaleY(winY_d);
@@ -185,9 +204,9 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
 
     // ── Background ────────────────────────────────────────────────────
     uiDrawRect({winX, winY, winW, winH},
-               {0.02f, 0.025f, 0.035f, alpha}, "chat-window-bg");
+               {0.15f, 0.15f, 0.17f, alpha}, "chat-window-bg");
     uiDrawRectOutline({winX, winY, winW, winH},
-                      {0.35f, 0.4f, 0.5f, alpha * 0.5f}, "chat-window-border");
+                      {0.35f, 0.35f, 0.35f, alpha * 0.6f}, "chat-window-border");
 
     // ── Message area (above input field) ──────────────────────────────
     float inputH_d = 30.0f;
@@ -217,10 +236,10 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
     // Draw each message (oldest to newest, scroll handles positioning)
     float lineScreenH = uiScaleY(lineH_d);
     float textScale = 0.28f;
-    glm::vec4 serverColor = {1.0f, 0.6f, 0.2f, alpha}; // orange for [server]
-    glm::vec4 playerColor = {0.8f, 0.85f, 0.95f, alpha}; // light blue-grey for players
-    glm::vec4 tickColor = {0.5f, 0.55f, 0.65f, alpha}; // dim grey for tick numbers
-    glm::vec4 mutedColor = {0.4f, 0.4f, 0.4f, alpha}; // grey for muted
+    glm::vec4 serverColor = {1.0f, 0.8f, 0.3f, alpha};
+    glm::vec4 playerColor = {1.0f, 1.0f, 1.0f, alpha};
+    glm::vec4 tickColor = {0.5f, 0.5f, 0.5f, alpha};
+    glm::vec4 mutedColor = {0.4f, 0.4f, 0.4f, alpha};
 
     size_t n = history.size();
     for (size_t i = 0; i < n; ++i)
@@ -287,9 +306,9 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
         float inputH = uiScaleY(inputH_d);
 
         uiDrawRect({inputX, inputY, inputW, inputH},
-                   {0.05f, 0.06f, 0.08f, alpha}, "chat-input-bg");
+                   {0.0f, 0.0f, 0.0f, alpha}, "chat-input-bg");
         uiDrawRectOutline({inputX, inputY, inputW, inputH},
-                          {0.3f, 0.35f, 0.45f, alpha * 0.6f}, "chat-input-border");
+                          {0.4f, 0.4f, 0.4f, alpha * 0.6f}, "chat-input-border");
 
         UITextInputOptions opts;
         opts.maxLength = 256;

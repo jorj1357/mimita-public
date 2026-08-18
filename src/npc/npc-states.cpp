@@ -5,6 +5,7 @@
 #include <glm/gtc/constants.hpp>
 
 #include "npc/npc-internal.h"
+#include "npc/npc-difficulty-config.h"
 
 void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& outDash, bool& outAttack, float dt)
 {
@@ -29,8 +30,9 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
     npc.moveNoiseTimer -= dt;
     if (npc.moveNoiseTimer <= 0.0f)
     {
+        const auto& cfg = NpcDifficultyConfig::instance().settings();
         npc.moveNoiseTimer = 0.1f + random01(npc.rngState) * 0.4f;
-        float noiseScale = 0.3f * (1.0f - d01 * 0.5f);
+        float noiseScale = 0.3f * (1.0f - d01 * 0.5f) * cfg.movementNoiseScale;
         npc.moveOffset.x = (random01(npc.rngState) * 2.0f - 1.0f) * noiseScale;
         npc.moveOffset.y = (random01(npc.rngState) * 2.0f - 1.0f) * noiseScale;
     }
@@ -225,14 +227,15 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
 
         case NpcState::ZigZag:
         {
+            const auto& cfg = NpcDifficultyConfig::instance().settings();
             sm.zigTimer -= dt;
             if (sm.zigTimer <= 0.0f)
             {
                 sm.zigPhase = random01(npc.rngState) * glm::two_pi<float>();
-                sm.zigTimer = 0.3f + random01(npc.rngState) * 0.8f;
+                sm.zigTimer = (0.3f + random01(npc.rngState) * 0.8f) / std::max(cfg.jukeFrequency, 0.1f);
             }
 
-            float zigFreq = 3.0f + d01 * 4.0f;
+            float zigFreq = (3.0f + d01 * 4.0f) * cfg.jukeFrequency;
             float zigAmp = 1.0f + (1.0f - d01) * 2.0f;
             sm.zigPhase += zigFreq * dt;
 

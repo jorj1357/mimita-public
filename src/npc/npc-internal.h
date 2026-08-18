@@ -22,3 +22,11 @@ float targetCanSeeNpc(const Npc& npc, const World& world);
 
 // Get effective range of the NPC's equipped weapon (from WeaponDefinition or default 150)
 float weaponEffectiveRange(const Npc& npc);
+
+// Initialize all weapons in the NPC's loadout (from config) and equip the starting weapon.
+// Each loadout weapon gets a WeaponRuntime with full ammo.
+void npcInitLoadout(Npc& npc);
+
+// Switch the NPC's equipped weapon. Starts background reload on the old weapon.
+// Returns true if the switch succeeded.
+bool npcSwitchWeapon(Npc& npc, const std::string& weaponId);

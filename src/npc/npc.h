@@ -64,6 +64,7 @@ public:
     float downDashCooldown = 0.0f;
     bool dashCommandConsumed = false;
     float attackCooldown = 0.0f;
+    float weaponSwitchCooldown = 0.0f;
     float lastTargetLogDistance = -1.0f;
     glm::vec3 previousPosition{0.0f};
     glm::vec2 lastMoveInput{0.0f};
@@ -124,7 +125,9 @@ public:
     // ray went (look direction == shoot direction == bullet endpoint).
     glm::vec3 lastShotOrigin{0.0f};
     glm::vec3 lastShotEnd{0.0f};
+    glm::vec3 lastShotNormal{0.0f, 0.0f, 1.0f};
     bool hasLastShot = false;
+    bool lastShotHitWorld = false;
 
     // Set true on the tick this NPC actually fired, so the server broadcasts
     // the shot exactly once (no per-frame shot/sound spam).

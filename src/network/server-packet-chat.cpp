@@ -142,16 +142,13 @@ void handleChatRequestV2(SOCKET sock, const char* buffer, int bytes,
     Debug::log(Debug::Category::Chat, "[CHAT V2 ACCEPT] messageId=%llu player=%s tick=%u\n",
                (unsigned long long)event.messageId, it->second.name.c_str(), tick);
 
-    // Broadcast to all players (including sender for confirmation)
-    for (const auto& playerEntry : players)
+    // Broadcast to all players (including sender for confirmation) via reliable queue
+    uint32_t eventId = nextReliableGameplayEventId();
+    for (auto& playerEntry : players)
     {
-        if (playerEntry.second.transport)
-            playerEntry.second.transport->send(&event, sizeof(event));
-        else
-            sendto(sock, (const char*)&event, sizeof(event), 0,
-                   (sockaddr*)&playerEntry.second.addr,
-                   sizeof(playerEntry.second.addr));
-        ++totalPacketsOut;
+        uint32_t session = reliableGameplayEventSessionForPlayer(playerEntry.second);
+        queueReliableGameplayEventToPlayer(sock, playerEntry.second, &event, sizeof(event),
+                                            eventId, session, totalPacketsOut);
     }
 }
 

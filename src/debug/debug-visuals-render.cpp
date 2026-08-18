@@ -164,6 +164,50 @@ void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm:
     }
 }
 
+static void impactBasis(const glm::vec3& direction, const char* localAxis,
+                        glm::vec3& x, glm::vec3& y, glm::vec3& z)
+{
+    const glm::vec3 forward = glm::normalize(direction);
+    const glm::vec3 guide = std::fabs(forward.z) < 0.9f
+        ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+    const glm::vec3 side = glm::normalize(glm::cross(guide, forward));
+    const glm::vec3 up = glm::normalize(glm::cross(forward, side));
+    if (localAxis && localAxis[0] == '+' && localAxis[1] == 'X') { x = forward; y = up; z = side; }
+    else if (localAxis && localAxis[0] == '-' && localAxis[1] == 'X') { x = -forward; y = up; z = -side; }
+    else if (localAxis && localAxis[0] == '+' && localAxis[1] == 'Y') { x = side; y = forward; z = up; }
+    else if (localAxis && localAxis[0] == '-' && localAxis[1] == 'Y') { x = side; y = -forward; z = -up; }
+    else if (localAxis && localAxis[0] == '-' && localAxis[1] == 'Z') { x = side; y = up; z = -forward; }
+    else { x = side; y = up; z = forward; }
+}
+
+void drawFilledSphereOriented(const Camera& camera, glm::vec3 center, glm::vec3 direction,
+                              float radius, glm::vec4 color, glm::vec3 scale,
+                              const char* localAxis)
+{
+    if (glm::length(direction) <= 0.001f) { drawFilledSphere(camera, center, radius, color, scale); return; }
+    glm::vec3 x, y, z;
+    impactBasis(direction, localAxis, x, y, z);
+    constexpr int LAT = 8;
+    constexpr int LON = 12;
+    auto world = [&](const glm::vec3& p) { return center + x * p.x + y * p.y + z * p.z; };
+    for (int lat = 0; lat < LAT; ++lat) {
+        const float a0 = 3.14159265f * lat / LAT;
+        const float a1 = 3.14159265f * (lat + 1) / LAT;
+        const float y0 = std::cos(a0), y1 = std::cos(a1);
+        const float r0 = std::sin(a0), r1 = std::sin(a1);
+        for (int lon = 0; lon < LON; ++lon) {
+            const float b0 = 6.2831853f * lon / LON;
+            const float b1 = 6.2831853f * ((lon + 1) % LON) / LON;
+            const glm::vec3 p00 = world(scale * glm::vec3(radius*r0*std::sin(b0), radius*r0*std::cos(b0), radius*y0));
+            const glm::vec3 p10 = world(scale * glm::vec3(radius*r1*std::sin(b0), radius*r1*std::cos(b0), radius*y1));
+            const glm::vec3 p01 = world(scale * glm::vec3(radius*r0*std::sin(b1), radius*r0*std::cos(b1), radius*y0));
+            const glm::vec3 p11 = world(scale * glm::vec3(radius*r1*std::sin(b1), radius*r1*std::cos(b1), radius*y1));
+            if (lat > 0) { gTriVerts.push_back({p00,color}); gTriVerts.push_back({p10,color}); gTriVerts.push_back({p01,color}); }
+            if (lat < LAT - 1) { gTriVerts.push_back({p01,color}); gTriVerts.push_back({p10,color}); gTriVerts.push_back({p11,color}); }
+        }
+    }
+}
+
 void drawFilledCylinder(const Camera& camera, glm::vec3 center, glm::vec3 axis, float radius, float height, glm::vec4 color)
 {
     (void)camera;
@@ -259,6 +303,12 @@ void drawFilledBillboard(const Camera& camera, glm::vec3 position, float size,
 
 void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color, glm::vec3 scale) {
     ::drawFilledSphere(camera, center, radius, color, scale);
+}
+
+void drawFilledSphereOriented(const Camera& camera, glm::vec3 center, glm::vec3 direction,
+                              float radius, glm::vec4 color, glm::vec3 scale,
+                              const char* localAxis) {
+    ::drawFilledSphereOriented(camera, center, direction, radius, color, scale, localAxis);
 }
 
 void drawFilledCylinder(const Camera& camera, glm::vec3 center, glm::vec3 axis, float radius, float height, glm::vec4 color) {

@@ -29,6 +29,7 @@
 #include "replay/replay.h"
 #include "replay/replay-editor.h"
 #include "replay/replay-export.h"
+#include "replay/replay-export-target.h"
 #include "video/outro.h"
 #include "debug/debug-log.h"
 #include "terminal/terminal-state.h"
@@ -43,6 +44,8 @@ void encodeReplayToMp4();
 ReplayExportJob gJob;
 static std::string gLastSuccessfulExportPath;
 static std::atomic<bool> gExplorerLaunchFailed{false};
+// Subprocess handle (separate from gJob so isReplayExportActive stays false).
+void* sExportSubprocess = nullptr;
 
 bool gReplayExportVerbose = false;
 
@@ -164,6 +167,29 @@ void updateReplayExport()
         Terminal::instance().addLog(message);
         NotificationSystem::instance().pushImportant("CLIP PATH COPIED", message, 300);
     }
+
+    // ── Subprocess export: poll the background mimita.exe process ─────
+    if (sExportSubprocess) {
+        DWORD exitCode = 0;
+        BOOL done = GetExitCodeProcess((HANDLE)sExportSubprocess, &exitCode);
+        if (done && exitCode != STILL_ACTIVE) {
+            CloseHandle((HANDLE)sExportSubprocess);
+            sExportSubprocess = nullptr;
+
+            bool success = (exitCode == 0) &&
+                std::filesystem::exists(gJob.outputPath) &&
+                std::filesystem::file_size(gJob.outputPath) > 0;
+
+            if (success) {
+                finishReplayExport(true);
+            } else {
+                finishReplayExport(false,
+                    "Export subprocess failed (exit code " + std::to_string(exitCode) + ")");
+            }
+        }
+        return;
+    }
+
     if (gJob.state == ReplayExportJob::Encoding) {
         if (gJob.mfWriter) {
             bool ok = false;
@@ -304,14 +330,17 @@ void updateReplayExport()
                   readFb, drawFb, postfxFbo, viewport[2], viewport[3], w, h);
     }
 
-    // [E] Ensure we read from the default framebuffer (PostFX should have resolved by now)
-    // Explicitly bind default framebuffer for read to prevent reading from stale FBO
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-
-    if (gReplayExportVerbose)
-        EXPORTTRACE("Frame %u: calling glReadPixels...", frameNum);
+    // Read from the offscreen export FBO when available (films the replay
+    // without reading the visible window). Falls back to the window framebuffer.
     const double tRead0 = replayExportNowSec();
-    glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, pixels);
+    if (replayExportTarget().ready()) {
+        auto& tgt = replayExportTarget();
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, tgt.fbo);
+        glReadPixels(0, 0, tgt.width, tgt.height, GL_RGB, GL_UNSIGNED_BYTE, pixels);
+    } else {
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+        glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, pixels);
+    }
     gExportFrameTimings.readPixelsMs += (replayExportNowSec() - tRead0) * 1000.0;
 
     GLenum glErr = glGetError();
@@ -525,6 +554,7 @@ const ReplayExportJob& getReplayExportJob()
 
 void finishReplayExport(bool success, const std::string& error)
 {
+    replayExportTargetDestroy();
     restoreReplayExportEditorState();
     if (gJob.restoreLiveOnFinish) {
         REPLAY_PLAYER.stopPlayback();

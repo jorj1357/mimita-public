@@ -24,6 +24,7 @@
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
 #include "network/network-weapons.h"
+#include "network/packets.h"
 #include "debug/debug-log.h"
 
 #include <algorithm>
@@ -221,6 +222,8 @@ static void respawnServerNpc(Npc& npc)
 static void broadcastNpcFiring(SOCKET sock,
                                std::unordered_map<uint32_t, ServerPlayer>& players,
                                NpcSystem& npcSystem,
+                               std::unordered_map<uint32_t, ServerProjectile>& projectiles,
+                               uint32_t& nextProjectileId,
                                uint32_t tick,
                                uint64_t& totalPacketsOut)
 {
@@ -255,6 +258,111 @@ static void broadcastNpcFiring(SOCKET sock,
             hit = origin + dir * 100.0f;
         }
 
+        // For projectile weapons (rocket, grenade), create a ServerProjectile
+        // and broadcast a ProjectileSpawnEventPacket — same as player rockets.
+        // This is what makes the projectile visible on all clients.
+        if (networkWeaponTypeIsProjectile(netWeapon))
+        {
+            auto cp = [&](const char* key, float fallback) -> float {
+                auto it = wdef->customParams.find(key);
+                return it != wdef->customParams.end() ? it->second : fallback;
+            };
+
+            ServerProjectile projectile;
+            projectile.id = nextProjectileId++;
+            if (nextProjectileId == 0) nextProjectileId = 1;
+            projectile.ownerPlayerId = 0; // NPC (not a player)
+            projectile.ownerNpcId = n.id; // the NPC that fired this
+            projectile.fireSerial = 0;
+            projectile.weaponType = netWeapon;
+            projectile.position = origin;
+            projectile.previousPosition = origin;
+
+            float speed = wdef->projectileSpeed > 0.0f ? wdef->projectileSpeed : 40.0f;
+            float upBias = cp("upBias", 0.0f);
+            projectile.velocity = dir * speed + glm::vec3(0.0f, 0.0f, upBias);
+
+            projectile.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+            if (netWeapon == NETWORK_WEAPON_GRENADE_LAUNCHER)
+            {
+                glm::vec3 forward = glm::length(dir) > 0.0001f ? dir : glm::vec3(1.0f, 0.0f, 0.0f);
+                glm::vec3 refUp = std::fabs(forward.z) < 0.99f
+                    ? glm::vec3(0.0f, 0.0f, 1.0f)
+                    : glm::vec3(1.0f, 0.0f, 0.0f);
+                glm::vec3 right = glm::normalize(glm::cross(forward, refUp));
+                projectile.angularVelocity = right * cp("angSpeed", 6.0f);
+            }
+
+            projectile.lifetime = wdef->projectileLifetime > 0.0f ? wdef->projectileLifetime : 5.0f;
+            projectile.radius = wdef->projectileRadius > 0.0f ? wdef->projectileRadius : 0.3f;
+            projectile.splashRadius = cp("splashRadius", 8.0f);
+            projectile.splashDamage = cp("rocketDirectDamage", 150.0f);
+            projectile.splashExponent = cp("splashExponent", 2.0f);
+            projectile.knockbackStrength = cp("knockbackStrength", 160.0f);
+            projectile.selfKnockbackMultiplier = cp("selfKnockbackMultiplier", 1.0f);
+            projectile.gravity = cp("gravity", 20.0f);
+            projectile.drag = cp("drag", 0.15f);
+            projectile.restitution = cp("bounceRestitution", 0.35f);
+            projectile.friction = cp("bounceFriction", 0.5f);
+            projectile.armingDistance = cp("armingDistance", 2.0f);
+            projectile.armingTime = cp("armingTime", 0.0f);
+            projectile.minBounceSpeed = cp("minBounceSpeed", 0.1f);
+            projectile.angularDrag = cp("angularDrag", 0.3f);
+            projectile.maxBounceCount = (int)cp("maxBounceCount", 10.0f);
+            projectile.explodeOnPlayerImpact = cp("explodeOnPlayerImpact", 1.0f) > 0.0f;
+            projectile.explodeOnWorldImpact = cp("explodeOnWorldImpact", 0.0f) > 0.0f;
+            projectile.explodeOnLifetime = cp("explodeOnLifetime", 1.0f) > 0.0f;
+            projectile.splashLineOfSight = true;
+            projectile.spawnTick = tick;
+
+            ProjectileSpawnEventPacket spawn{};
+            spawn.header.type = PACKET_PROJECTILE_SPAWN_EVENT;
+            spawn.header.tick = tick;
+            spawn.projectileId = projectile.id;
+            spawn.ownerPlayerId = 0;
+            spawn.fireSerial = 0;
+            spawn.weapon = netWeapon;
+            spawn.posX = projectile.position.x;
+            spawn.posY = projectile.position.y;
+            spawn.posZ = projectile.position.z;
+            spawn.velX = projectile.velocity.x;
+            spawn.velY = projectile.velocity.y;
+            spawn.velZ = projectile.velocity.z;
+            spawn.rotX = projectile.rotation.x;
+            spawn.rotY = projectile.rotation.y;
+            spawn.rotZ = projectile.rotation.z;
+            spawn.rotW = projectile.rotation.w;
+            spawn.angVelX = projectile.angularVelocity.x;
+            spawn.angVelY = projectile.angularVelocity.y;
+            spawn.angVelZ = projectile.angularVelocity.z;
+            spawn.spawnTick = tick;
+            spawn.lifetime = projectile.lifetime;
+            spawn.radius = projectile.radius;
+
+            projectiles[projectile.id] = projectile;
+
+            // Broadcast to ALL players (NPC has no "shooter client" to skip)
+            for (const auto& pe : players)
+            {
+                if (pe.second.transport)
+                    pe.second.transport->send(&spawn, sizeof(spawn));
+                else
+                    sendto(sock, (const char*)&spawn, sizeof(spawn), 0,
+                           (sockaddr*)&pe.second.addr,
+                           sizeof(pe.second.addr));
+                ++totalPacketsOut;
+            }
+
+            printf("%s [NPC PROJECTILE] npc=%u weapon=%s projectileId=%u "
+                   "position=(%.2f,%.2f,%.2f) velocity=(%.2f,%.2f,%.2f)\n",
+                   serverTimestamp(), n.id, wdef->id.c_str(), projectile.id,
+                   projectile.position.x, projectile.position.y, projectile.position.z,
+                   projectile.velocity.x, projectile.velocity.y, projectile.velocity.z);
+        }
+
+        // Broadcast the ShotEventPacket (sound + muzzle flash on clients).
+        // For projectile weapons (rocket, grenade), skip the tracer — the
+        // ProjectileSpawnEventPacket renders the actual projectile instead.
         ShotEventPacket ev{};
         ev.header.type = PACKET_SHOT_EVENT;
         ev.header.tick = tick;
@@ -264,13 +372,22 @@ static void broadcastNpcFiring(SOCKET sock,
         ev.shooterPlayerId = n.id;
         ev.targetPlayerId = 0;
         ev.weapon = netWeapon;
-        ev.impactType = SHOT_IMPACT_NONE;
-        ev.effectFlags = SHOT_EFFECT_MUZZLE | SHOT_EFFECT_TRACER |
+        uint16_t effectFlags = SHOT_EFFECT_MUZZLE |
             SHOT_EFFECT_SHOOT_SOUND | SHOT_EFFECT_WEAPON_TRIGGER;
+        if (!networkWeaponTypeIsProjectile(netWeapon))
+            effectFlags |= SHOT_EFFECT_TRACER;
+        ev.impactType = SHOT_IMPACT_NONE;
+        if (n.lastShotHitWorld) {
+            ev.impactType = SHOT_IMPACT_WORLD;
+            effectFlags |= SHOT_EFFECT_WORLD_IMPACT | SHOT_EFFECT_DEBRIS | SHOT_EFFECT_HIT_SOUND;
+        }
+        ev.effectFlags = effectFlags;
         ev.originX = origin.x; ev.originY = origin.y; ev.originZ = origin.z;
         ev.hitX = hit.x; ev.hitY = hit.y; ev.hitZ = hit.z;
         ev.dirX = dir.x; ev.dirY = dir.y; ev.dirZ = dir.z;
-        ev.normalX = -dir.x; ev.normalY = -dir.y; ev.normalZ = -dir.z;
+        ev.normalX = n.lastShotNormal.x;
+        ev.normalY = n.lastShotNormal.y;
+        ev.normalZ = n.lastShotNormal.z;
 
         for (const auto& pe : players)
         {
@@ -474,6 +591,8 @@ void simulateSharedNpcs(SOCKET sock,
                         World& world,
                         Player& mirrorPlayer,
                         std::unordered_set<uint32_t>& npcIdsAlive,
+                        std::unordered_map<uint32_t, ServerProjectile>& projectiles,
+                        uint32_t& nextProjectileId,
                         uint32_t tick,
                         uint64_t& totalPacketsOut)
 {
@@ -534,7 +653,7 @@ void simulateSharedNpcs(SOCKET sock,
         {
             constexpr float REST_HEIGHT = 1.8f; // capsule half-height (feet at pos.z - 1.8)
             const float floorZ = NpcNavigation::groundHeightAt(
-                world, n.body.pos, 40.0f, 1.5f);
+                world, n.body.pos, 100.0f, 5.0f);
             if (floorZ > -1e5f)
             {
                 const float restZ = floorZ + REST_HEIGHT;
@@ -561,10 +680,16 @@ void simulateSharedNpcs(SOCKET sock,
             ServerDamageResult result = applyServerDamage(
                 players, *nearest, 0, damage, knockback,
                 ServerDamageSource::Hitscan);
+            const glm::vec3 realHit = n.lastShotEnd;
+            const glm::vec3 realNormal = glm::length(n.lastShotNormal) > 0.001f
+                ? glm::normalize(n.lastShotNormal) : glm::vec3(0.0f, 0.0f, 1.0f);
+            uint8_t hitWeapon = NETWORK_WEAPON_NONE;
+            if (const WeaponDefinition* nwdef = WeaponRegistry::instance().get(n.body.equippedWeaponId))
+                hitWeapon = networkWeaponTypeForDefinition(*nwdef);
             queueServerDamageConfirmedEvent(
                 sock, players, tick, totalPacketsOut, 0, *nearest, damage, result,
-                mirrorPlayer.pos, glm::vec3(0.0f, 0.0f, 1.0f), knockback,
-                ServerDamageSource::Hitscan, NETWORK_WEAPON_NONE);
+                realHit, realNormal, knockback,
+                ServerDamageSource::Hitscan, hitWeapon);
             npcLog("npc=%u weapon=%s damage=%d healthBefore=%d healthAfter=%d "
                    "accepted=%d knockback=(%.2f %.2f %.2f)",
                    n.id, n.body.equippedWeaponId.c_str(), damage, result.healthBefore,
@@ -584,7 +709,9 @@ void simulateSharedNpcs(SOCKET sock,
     }
 
     // Broadcast NPC weapon fire so clients see/hear the shot.
-    broadcastNpcFiring(sock, players, npcSystem, tick, totalPacketsOut);
+    // For projectile weapons (rocket, grenade), also creates ServerProjectile
+    // and broadcasts ProjectileSpawnEventPacket — same path as player rockets.
+    broadcastNpcFiring(sock, players, npcSystem, projectiles, nextProjectileId, tick, totalPacketsOut);
 
     // Once-per-second per-NPC fire-state summary: which gate would block firing
     // (state, ammo, reload, cooldown, distance, LOS). One aggregate line, never

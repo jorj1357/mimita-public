@@ -17,7 +17,7 @@ namespace MimitaNet {
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // 30: ShotEvent/PelletBlastEvent become reliable (eventId+session+ACK) and
 // carry real damage/health; every bullet visual is guaranteed delivery.
-constexpr uint16_t PROTOCOL_VERSION = 30;
+constexpr uint16_t PROTOCOL_VERSION = 31;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -775,6 +775,11 @@ struct ChatRequestPacket
 struct ChatMessageEventPacket
 {
     PacketHeader header;
+    // Reliable event dedup fields (must be the first two uint32s after the
+    // header — the reliable-queue overwrites them per player and the client
+    // ACKs them so every chat message is delivered even under loss).
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
     uint64_t messageId = 0;
     uint64_t serverTick = 0;
     int64_t utcUnixMilliseconds = 0;

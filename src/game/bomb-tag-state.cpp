@@ -19,6 +19,7 @@
 #include "combat/weapon-godball.h"
 #include "debug/debug-visuals.h"
 #include "effects/effect-part.h"
+#include "effects/hit-effects.h"
 #include "audio/audio.h"
 #include "physics/physics-types.h"
 #include "config.h"
@@ -177,7 +178,9 @@ void BombTagManager::update(float dt, Player& player, NpcSystem& npcs, World& wo
             // Bomb explosion
             if (mBombTimer <= 0.0f) {
                 auto& fx = EffectPartSystem::instance();
-                fx.spawnDeathEllipsoid(mBombWorldPos, glm::vec3(0,0,1), 6.0f, 3.0f, 2.5f);
+                const auto& deCfg = HitEffects::config().deathEllipsoid;
+                fx.spawnDeathEllipsoid(mBombWorldPos, glm::vec3(0,0,1),
+                                       deCfg.length, deCfg.radius, deCfg.lifetime);
                 for (int i = 0; i < 10; ++i)
                     fx.spawnWorldDebris(mBombWorldPos,
                         glm::vec3((rand()%200-100)*0.01f,(rand()%200-100)*0.01f,(rand()%200)*0.01f), 10.0f);

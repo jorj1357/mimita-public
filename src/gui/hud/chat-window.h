@@ -19,16 +19,16 @@
 struct ChatHistory;
 class GLFWwindow;
 
-// How many ui-ticks the background holds at 50% opacity after a new message
-constexpr uint64_t CHAT_FADE_HOLD_TICKS = 600;
-// How many ui-ticks the fade from 50% to 0% takes
+// How many ui-ticks the background holds at full opacity after a new message
+constexpr uint64_t CHAT_FADE_HOLD_TICKS = 900;
+// How many ui-ticks the fade from full to 0% takes
 constexpr uint64_t CHAT_FADE_DURATION_TICKS = 300;
 
 struct ChatWindowState {
     bool open = false;               // chat input is actively open
     bool mouseUnlocked = false;      // mouse was unlocked for interaction
     uint64_t lastMessageUiTick = 0;   // ui tick when last message arrived (for fade)
-    float backgroundOpacity = 0.5f;   // current bg opacity (0..0.5)
+    float backgroundOpacity = 1.0f;   // current bg opacity (0..1)
     bool hovered = false;             // mouse is hovering the chat window
     bool scrolledUp = false;          // player manually scrolled up
     uint64_t newMessageCount = 0;     // messages received while scrolled up

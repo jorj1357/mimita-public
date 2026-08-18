@@ -5,6 +5,13 @@
  * header for debug visals file 
  */
 
+// 08 17 2026, 13 30
+/* purpose
+* Declares debug geometry helpers used by gameplay and diagnostics.
+* Provides oriented primitives so local shape dimensions can be rotated safely.
+* Keeps rendering details behind the DebugVis API.
+* Does NOT own gameplay effects, hit detection, or effect configuration.
+*/
 #pragma once
 #include <glm/glm.hpp>
 #include <string>
@@ -122,6 +129,9 @@ namespace DebugVis {
     
     // Solid filled sphere (for production particles — footsteps, dash)
     void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color, glm::vec3 scale = glm::vec3(1.0f));
+    void drawFilledSphereOriented(const Camera& camera, glm::vec3 center, glm::vec3 direction,
+                                  float radius, glm::vec4 color, glm::vec3 scale,
+                                  const char* localAxis = "+Z");
 
     // World-space billboard crosshair (four arms + dot, camera-facing)
     void drawCrosshairBillboard(const Camera& camera, glm::vec3 position,

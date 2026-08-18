@@ -3,6 +3,7 @@
 #include "gui/gui-coord.h"
 #include "gui/gui-layout.h"
 #include "gui/gui-bindings.h"
+#include "gui/hud/chat-window.h"
 #include "devtools/terminal.h"
 #include "gui/menus/sign-in-menu.h"
 #include "auth/auth-popup.h"
@@ -17,6 +18,9 @@
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
+
+// Defined in terminal/player-commands.cpp
+void requestSendChatMessage(const std::string& message);
 
 InputCommandSystem& InputCommandSystem::instance() {
     static InputCommandSystem sInstance;
@@ -72,13 +76,21 @@ void InputCommandSystem::keyCallback(GLFWwindow* window, int key, int scancode, 
 
     // Forward to terminal and menu handlers (these were previously called from
     // the main.cpp key callback before it was overwritten).
-    // Priority: Terminal → GUI text input → auth → sign-in → server-info → online menu
+    // Priority: Terminal → Chat → GUI text input → auth → sign-in → server-info → online menu
     if (action == GLFW_PRESS || action == GLFW_REPEAT) {
         // If terminal is open, it owns keyboard input exclusively
         if (Terminal::instance().isOpen()) {
             Terminal::instance().handleKey(key, mods);
             return;
         }
+
+        // Chat window key handling (open on /, send on Enter, cancel on Escape)
+        std::string chatMsg;
+        bool chatConsumed = handleChatWindowKey(gChatWindowState, key, action, mods,
+            glfwGetCurrentContext(), gChatUiTickClock, chatMsg);
+        if (!chatMsg.empty())
+            requestSendChatMessage(chatMsg);
+        if (chatConsumed) return;
 
         // If a GUI text input field is focused, route to the binding system
         if (!GuiBindings::instance().focusedId().empty()) {

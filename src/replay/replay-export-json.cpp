@@ -31,6 +31,7 @@
 #include "replay/replay.h"
 #include "replay/replay-editor.h"
 #include "video/outro.h"
+#include "replay/replay-export-target.h"
 #include <nlohmann/json.hpp>
 #include "debug/debug-log.h"
 #include "terminal/terminal-state.h"
@@ -43,6 +44,7 @@
 void encodeReplayToMp4();
 
 extern ReplayExportJob gJob;
+extern void* sExportSubprocess;
 
 // ---- Replay Export Config (hot-reload) ----
 ReplayExportConfig gExportConfig;
@@ -255,12 +257,6 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
     {
         return false;
     }
-    gJob = ReplayExportJob{};
-    gJob.restoreLiveOnFinish = restoreLiveOnFinish;
-    gJob.clipExport = restoreLiveOnFinish;
-    gJob.startTimeSec = std::chrono::duration<double>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
-    replayExportTimingReset();
 
     if (!std::filesystem::exists(jsonPath))
     {
@@ -269,205 +265,10 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
         return false;
     }
 
-    ReplayClip clip;
-    if (!clip.load(jsonPath))
-    {
-        gJob.state = ReplayExportJob::Failed;
-        gJob.errorMsg = "Failed to load replay clip:\n" + jsonPath;
-        return false;
-    }
-
-    uint32_t totalTicks = clip.header.tickCount;
-    if (totalTicks == 0)
-    {
-        gJob.state = ReplayExportJob::Failed;
-        gJob.errorMsg = "Replay has no frames.";
-        return false;
-    }
-
-    replayExportDebugOpen();
-    resetHealthbarCounters();
-    gRplxImpactWorldCount = 0;
-    gRplxHitBurstCount = 0;
-    gRplxDebrisBlockCount = 0;
-    gRplxEffectDuplicateCount = 0;
-
-    printf("[RPLX] loading replay JSON...\n");
-    ReplayClip loadCheck;
-    bool parseOk = loadCheck.load(jsonPath);
-    printf("[RPLX] json parse: %s\n", parseOk ? "success" : "FAIL");
-    printf("[RPLX] replay tick count: %u\n", loadCheck.header.tickCount);
-    if (!loadCheck.frames.empty()) {
-        printf("[RPLX] first tick: %u\n", loadCheck.frames.front().tick);
-        printf("[RPLX] last tick: %u\n", loadCheck.frames.back().tick);
-    }
-    printf("[RPLX] sound event count: %zu\n", loadCheck.soundEvents.size());
-    if (!loadCheck.sceneFrames.empty()) {
-        size_t maxActors = 0;
-        for (auto& sf : loadCheck.sceneFrames)
-            if (sf.actors.size() > maxActors) maxActors = sf.actors.size();
-        printf("[RPLX] player/npc count (max in any frame): %zu\n", maxActors);
-    }
-
-    if (!REPLAY_PLAYER.loadFromJSON(jsonPath)) {
-        gJob.state = ReplayExportJob::Failed;
-        gJob.errorMsg = "Failed to load replay into player:\n" + jsonPath;
-        printf("[RPLX ERROR] loadFromJSON failed for: %s\n", jsonPath.c_str());
-        return false;
-    }
-    REPLAY_PLAYER.beginPlayback();
-    REPLAY_PLAYER.seekToTick(0);
-
-    // Auto-load editor with keyframes if .rple.json exists
-    {
-        bool editorLoaded = gReplayEditor.load(jsonPath);
-        printf("[RPLX] currentReplayPath=%s\n", jsonPath.c_str());
-        if (editorLoaded) {
-            auto& ed = gReplayEditor;
-            printf("[RPLX] editorProjectPath=%s\n", ed.editPath().c_str());
-            printf("[RPLX] hasActiveReplayEditor=1\n");
-            printf("[RPLX] loadedKeyframes campos=%d cammode=%d pbspeed=%d\n",
-                   ed.cameraKeyframeCount(), ed.cameraModeKeyframeCount(),
-                   ed.timeKeyframeCount());
-
-            // Save full editor state before forcing freecam for export
-            gJob.editorWasFreecam = ed.freecam;
-            gJob.savedFreecamPos[0] = ed.freecamPos.x;
-            gJob.savedFreecamPos[1] = ed.freecamPos.y;
-            gJob.savedFreecamPos[2] = ed.freecamPos.z;
-            gJob.savedFreecamRot[0] = ed.freecamRot.x;
-            gJob.savedFreecamRot[1] = ed.freecamRot.y;
-            gJob.savedFreecamRot[2] = ed.freecamRot.z;
-            gJob.savedFreecamRot[3] = ed.freecamRot.w;
-            gJob.savedFreecamRoll = ed.freecamRoll;
-            gJob.savedFreecamFov = ed.freecamFov;
-            std::strncpy(gJob.savedCameraMode,
-                REPLAY_PLAYER.cameraController().modeName(),
-                sizeof(gJob.savedCameraMode) - 1);
-            gJob.savedCameraMode[sizeof(gJob.savedCameraMode) - 1] = '\0';
-
-            // Force freecam mode if camera keyframes exist so export uses editor camera path
-            if (ed.cameraKeyframeCount() > 0) {
-                ed.freecam = true;
-                REPLAY_PLAYER.cameraController().setMode("freecam");
-                printf("[RPLX] exportUsesReplayEditorCamera=1\n");
-            } else {
-                printf("[RPLX] exportUsesReplayEditorCamera=0 reason=no_camera_keyframes\n");
-            }
-        } else {
-            printf("[RPLX] hasActiveReplayEditor=0\n");
-            printf("[RPLX] exportUsesReplayEditorCamera=0 reason=no_editor_project\n");
-        }
-    }
-
-    const bool useFfmpeg = gExportConfig.encoder == "ffmpeg";
-    std::string ffmpeg = useFfmpeg ? defaultFfmpegPath() : std::string();
-    if (useFfmpeg && ffmpeg.empty())
-    {
-        gJob.state = ReplayExportJob::Failed;
-        gJob.errorMsg = "FFmpeg not found. Set MIMITA_FFMPEG, config/replay/ffmpeg-path.json, place ffmpeg beside the game, or add it to PATH.";
-        return false;
-    }
-
-    std::string outputPath = generateExportOutputPath();
-
-    std::filesystem::path outDir = std::filesystem::path(outputPath).parent_path();
-    if (!std::filesystem::exists(outDir))
-    {
-        std::error_code ec;
-        std::filesystem::create_directories(outDir, ec);
-        if (ec) {
-            gJob.state = ReplayExportJob::Failed;
-            gJob.errorMsg = "Cannot create output directory:\n" + outDir.string();
-            return false;
-        }
-    }
-
-    // Use configured export resolution if caller passed 0
-    if (renderWidth <= 0 || renderHeight <= 0) {
-        renderWidth = gExportConfig.exportWidth;
-        renderHeight = gExportConfig.exportHeight;
-    }
-    int captureW = renderWidth;
-    int captureH = renderHeight;
-    {
-        GLint vp[4] = {};
-        glGetIntegerv(GL_VIEWPORT, vp);
-        if (vp[2] > 0 && vp[3] > 0) {
-            captureW = std::min(vp[2], renderWidth);
-            captureH = std::min(vp[3], renderHeight);
-        }
-    }
-
-    namespace fs = std::filesystem;
-    std::string rawTempDir = (fs::path("replays") / "exports" / "_tmp").string();
-    {
-        std::error_code ec;
-        fs::create_directories(rawTempDir, ec);
-    }
-    std::string rawTempPath = (fs::path("replays") / "exports" / "_tmp" / "export_raw.rgb").string();
-
-    FILE* rawFile = useFfmpeg ? fopen(rawTempPath.c_str(), "wb") : nullptr;
-    if (useFfmpeg && !rawFile) {
-        gJob.state = ReplayExportJob::Failed;
-        gJob.errorMsg = "Cannot create temp raw file:\n" + rawTempPath;
-        return false;
-    }
-
-    printf("[RPLX] output path: %s\n", outputPath.c_str());
-    printf("[RPLX] capture resolution: %dx%d\n", captureW, captureH);
-    printf("[RPLX] config resolution: %dx%d CRF=%d bitrate=%d\n",
-           gExportConfig.exportWidth, gExportConfig.exportHeight,
-           gExportConfig.exportCrf, gExportConfig.exportBitrate);
-    printf("[RPLX] total ticks to render: %u\n", totalTicks);
-
-    gJob.state = ReplayExportJob::Capturing;
-    gJob.jsonPath = jsonPath;
-    gJob.totalTicks = totalTicks;
-    gJob.capturedTicks = 0;
-    gJob.exportTick = 0.0f;
-    gJob.capWidth = captureW;
-    gJob.capHeight = captureH;
-    gJob.outputWidth = renderWidth;
-    gJob.outputHeight = renderHeight;
-    gJob.ffmpegPath = ffmpeg;
-    gJob.rawTempPath = rawTempPath;
-    gJob.rawFile = rawFile;
-    gJob.outputPath = outputPath;
-    gJob.ffmpegExitCode = -1;
-    gJob.errorMsg.clear();
-    gJob.frameWriteCount = 0;
-    gJob.rawFileBytes = 0;
-    gJob.mp4FileBytes = 0;
-
-    if (!useFfmpeg) {
-        std::string mfError;
-        if (!startMfReplayExport(gJob.mfWriter, outputPath, captureW, captureH,
-                                 gExportConfig.exportBitrate, mfError)) {
-            gJob.state = ReplayExportJob::Failed;
-            gJob.errorMsg = mfError;
-            restoreReplayExportEditorState();
-            return false;
-        }
-    }
-
-    {
-        StructuredLogger::Entry e;
-        e.category = StructuredCategory::Replay;
-        e.level = StructuredLevel::Important;
-        e.eventId = "REPLAY_EXPORT_STARTED";
-        e.correlationId = "REPLAY_EXPORT";
-        e.reason = "Replay export started";
-        e.sourceFile = __FILE__;
-        e.sourceLine = __LINE__;
-        e.functionName = __FUNCTION__;
-        e.numericKeys = {"totalTicks", "videoWidth", "videoHeight"};
-        e.numericExpected = {(double)totalTicks, (double)captureW, (double)captureH};
-        e.numericActual = e.numericExpected;
-        StructuredLogger::instance().write(e);
-    }
-
-    return true;
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-PRESS] startReplayExport: clip=%s %dx%d\n",
+        jsonPath.c_str(), renderWidth, renderHeight);
+    return spawnExportSubprocess(jsonPath, renderWidth, renderHeight);
 }
 
 void restoreReplayExportEditorState()
@@ -503,6 +304,13 @@ void restoreReplayExportEditorState()
 
 void cancelReplayExport()
 {
+    replayExportTargetDestroy();
+    // Kill the subprocess if it's still running
+    if (sExportSubprocess) {
+        TerminateProcess((HANDLE)sExportSubprocess, 1);
+        CloseHandle((HANDLE)sExportSubprocess);
+        sExportSubprocess = nullptr;
+    }
     if (gJob.state == ReplayExportJob::Capturing && gJob.rawFile)
     {
         fclose(gJob.rawFile);
@@ -526,4 +334,72 @@ void openReplayFolder()
         std::system(cmd.c_str());
     }).detach();
     Debug::log(Debug::Category::Replay, "[REPLAY] Opened replays folder");
+}
+
+// ── Subprocess export ─────────────────────────────────────────────────
+// Spawns a separate mimita.exe process to run the replay export in the
+// background. The main game keeps playing; the subprocess handles
+// rendering + encoding + outro independently.
+
+bool spawnExportSubprocess(const std::string& clipPath, int width, int height)
+{
+    if (sExportSubprocess) {
+        Debug::log(Debug::Category::Replay,
+            "[REPLAY] spawnExportSubprocess: already running\n");
+        return false;
+    }
+
+    if (!std::filesystem::exists(clipPath)) {
+        Debug::log(Debug::Category::Replay,
+            "[REPLAY] spawnExportSubprocess: clip not found: %s\n", clipPath.c_str());
+        return false;
+    }
+
+    // Resolve the exe path
+    char exePathBuf[MAX_PATH] = {};
+    if (!GetModuleFileNameA(nullptr, exePathBuf, MAX_PATH)) {
+        Debug::log(Debug::Category::Replay,
+            "[REPLAY] spawnExportSubprocess: GetModuleFileName failed\n");
+        return false;
+    }
+
+    // Generate output path
+    std::string outputPath = generateExportOutputPath();
+
+    // Build command line
+    std::string cmd = std::string(exePathBuf) +
+        " --export-replay \"" + clipPath +
+        "\" --output \"" + outputPath +
+        "\" --width " + std::to_string(width) +
+        " --height " + std::to_string(height);
+
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SPAWN-REQUEST] clip=%s output=%s %dx%d\n",
+        clipPath.c_str(), outputPath.c_str(), width, height);
+
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {};
+
+    if (!CreateProcessA(nullptr, const_cast<char*>(cmd.c_str()),
+                        nullptr, nullptr, FALSE, 0,
+                        nullptr, nullptr, &si, &pi))
+    {
+        DWORD err = GetLastError();
+        Debug::error(Debug::Category::Replay,
+            "[EXPORT-SPAWN-FAILED] CreateProcess error=%lu\n",
+            (unsigned long)err);
+        return false;
+    }
+
+    sExportSubprocess = pi.hProcess;
+    gJob.outputPath = outputPath;
+    gJob.startTimeSec = replayExportNowSec();
+
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SPAWN-SUCCESS] pid=%lu exe=%s\n",
+        pi.dwProcessId, exePathBuf);
+
+    CloseHandle(pi.hThread); // We only need the process handle
+    return true;
 }

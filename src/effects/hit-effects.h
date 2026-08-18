@@ -1,3 +1,10 @@
+// 08 17 2026, 13 30
+/* purpose
+* Declares hit and impact effect configuration and event interfaces.
+* Owns JSON-driven hit marker tuning, including local impact shape dimensions.
+* Keeps effect spawning and rendering in EffectPartSystem and DebugVis.
+* Does NOT own weapon authority, collision detection, or network validation.
+*/
 #pragma once
 
 #include <cstdint>
@@ -204,6 +211,14 @@ struct HitFxConfig {
 
     struct DamageImpactSphereConfig {
         bool enabled = true;
+        std::string shape = "sphere";
+        std::string positionSource = "hit_point";
+        std::string directionSource = "bullet_direction";
+        std::string fallbackDirectionSource = "camera_forward";
+        std::string localAxis = "+Z";
+        glm::vec3 localDimensions{1.0f, 1.0f, 2.67f};
+        float surfaceOffset = 0.0f;
+        glm::vec3 rotationOffsetDegrees{0.0f};
         float length = 2.67f;
         float radius = 0.5f;
         glm::vec3 color{1.0f, 0.3f, 0.3f};

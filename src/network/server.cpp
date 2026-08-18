@@ -601,7 +601,8 @@ int runServer(const LaunchOptions& options)
             // the entire NpcSystem; looping over npcs here would advance every
             // NPC once per NPC and make them move N× faster.
             simulateSharedNpcs(sock, players, npcs, npcSystem, npcWorld,
-                               mirrorPlayer, npcIdsAlive, tick, totalPacketsOut);
+                               mirrorPlayer, npcIdsAlive, projectiles,
+                               nextProjectileId, tick, totalPacketsOut);
             tickServerProjectiles(sock, players, npcs, projectiles, world, SERVER_DT, tick, totalPacketsOut);
             tickServerPhysicalContactWeapons(sock, players, world, SERVER_DT, tick, totalPacketsOut);
 
@@ -1037,7 +1038,8 @@ static void simulateOneServerTick(ListenServerState& state)
         checkVoidDeath(state.players, state.npcs);
         simulateSharedNpcs(state.sock, state.players, state.npcs,
                            *state.npcSystem, *state.npcWorld, *state.mirrorPlayer,
-                           state.npcIdsAlive, state.tick, state.totalPacketsOut);
+                           state.npcIdsAlive, state.projectiles, state.nextProjectileId,
+                           state.tick, state.totalPacketsOut);
         tickServerProjectiles(state.sock, state.players, state.npcs, state.projectiles,
                               state.world, SERVER_DT, state.tick,
                               state.totalPacketsOut);

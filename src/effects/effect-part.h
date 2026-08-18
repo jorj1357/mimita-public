@@ -87,6 +87,11 @@ struct SurfaceDecal
     float fadeTime = 5.0f;
     float alpha = 1.0f;
     float baseAlpha = 1.0f;
+    glm::vec3 colorStart{0.75f, 0.01f, 0.02f};
+    glm::vec3 colorEnd{0.18f, 0.0f, 0.0f};
+    float darkenStartSeconds = 1.0f;
+    float darkenEndSeconds = 12.0f;
+    bool darkenOverLifetime = false;
 };
 
 class EffectPartSystem
@@ -154,6 +159,7 @@ private:
 
     void updateBloodParticles(float dt);
     void updateSurfaceDecals(float dt);
+    void updatePendingBloodDecals(float dt);
     void pushSurfaceDecal(const SurfaceDecal& decal, int maxCount);
     void spawnBloodSurfaceDecals(const glm::vec3& hitPoint,
                                  const glm::vec3& forward,
@@ -193,6 +199,8 @@ private:
     std::vector<int> mFreeSlots;
     std::vector<BloodParticle> mBloodParticles;
     std::vector<SurfaceDecal> mSurfaceDecals;
+    struct PendingBloodDecal { SurfaceDecal decal; int ageTicks = 0; };
+    std::vector<PendingBloodDecal> mPendingBloodDecals;
     std::array<BloodDebugSegment, MAX_BLOOD_DEBUG_SEGMENTS> mBloodDebugSegments{};
     unsigned int mActiveCount = 0;
     unsigned int mBloodDebugSegmentCount = 0;

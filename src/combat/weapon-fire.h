@@ -1,3 +1,9 @@
+// 08 17 2026, 14 20
+/* purpose
+* Declares local weapon-fire routing and hit-processing interfaces.
+* Carries exact shot direction and surface normal into hit FX presentation.
+* Does NOT implement collision, damage authority, or effect rendering.
+*/
 #pragma once
 
 #include <unordered_map>
@@ -206,7 +212,9 @@ void processRemoteNpcHit(
     RevolverShotResult& result,
     const WeaponDefinition& def,
     const std::string& hitPart,
+    const glm::vec3& hitNormal,
     const glm::vec3& hitEnd,
+    const glm::vec3& shotDirection,
     float nearest,
     Player& shooter,
     uint32_t remoteNpcTargetId,

@@ -1,9 +1,10 @@
-// 08 08 2026, 22 19
+// 08 16 2026, 18 00
 /* purpose
 * Hot-reloadable JSON source of truth for NPC difficulty (config/npc-difficulty.json).
-* Exposes accuracy, damage, fire rate, and force-hit toggles for NPC combat.
+* Exposes accuracy, damage, fire rate, force-hit toggles, weapon loadout, panic,
+* and movement expressiveness for NPC combat.
 * Follows the GameplayConfig pollReload pattern: re-reads the file when it changes on disk.
-* Does NOT own NPC state machines, movement, or weapon switching logic.
+* Does NOT own NPC state machines or weapon switching logic.
 * Does NOT write config files unless save() is explicitly called by a terminal command.
 * Does NOT touch the hot-reload DLL system.
 */
@@ -12,6 +13,7 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -41,6 +43,31 @@ struct NpcDifficultySettings {
     // "follow" (default) = same global config as the player. Any preset name
     // (e.g. "default", "source", "counterstrike") overrides NPC physics.
     std::string movementPreset = "follow";
+
+    // Weapon loadout: which weapons an NPC can hold and switch between.
+    // The NPC spawns with startingWeapon and switches based on distance.
+    std::vector<std::string> weaponLoadout = {"revolver", "shotgun", "rocket_launcher", "grenade_launcher"};
+    std::string startingWeapon = "revolver";
+    float switchCooldown = 2.0f;          // min seconds between weapon switches
+    float closeSwitchDist = 8.0f;         // below this: prefer shotgun
+    float farSwitchDist = 20.0f;          // above this: prefer rocket/grenade
+
+    // Panic toggle: when enabled, getting hit forces the NPC into Recover state
+    // (freezes movement). Disable for harder-to-hit NPCs.
+    bool hitReactionEnabled = false;
+    float hitReactionDurationScale = 1.0f;
+
+    // Movement expressiveness (multipliers on existing behavior frequencies).
+    // 1.0 = current default, higher = more frequent, lower = less frequent.
+    float dashChance = 1.0f;
+    float downDashChance = 1.0f;
+    float freezeChance = 1.0f;
+    float movementNoiseScale = 1.0f;
+    float jukeFrequency = 1.0f;
+
+    // Force a specific weapon. When non-empty, NPCs always use this weapon
+    // and ignore distance-based switching. Set to a weapon id to test it.
+    std::string forceWeapon = "";
 };
 
 class NpcDifficultyConfig {

@@ -55,7 +55,8 @@ static void doExplosion(
     Camera& camera,
     const glm::vec3& position,
     uint32_t directHitEntityId,
-    bool directHitIsNpc)
+    bool directHitIsNpc,
+    Player* victimPlayer = nullptr)
 {
     const auto& sc = SizeScalingConfig::instance().data();
     float ss = std::max(owner.sizeScale, 0.001f);
@@ -143,6 +144,33 @@ static void doExplosion(
             }
         }
     }
+
+    // Victim player splash damage (for NPC-fired rockets hitting the player)
+    if (victimPlayer && victimPlayer->currentHp > 0 && !victimPlayer->dead) {
+        glm::vec3 toVictim = victimPlayer->pos - position;
+        float dist = glm::length(toVictim);
+        if (dist < splashRadius) {
+            glm::vec3 dir = dist > 0.001f ? toVictim / dist : glm::vec3(0.0f, 1.0f, 0.0f);
+            float dmg;
+            if (directHitIsNpc && dist < 1.5f && directHitEntityId == 0) {
+                dmg = baseDamage;
+            } else {
+                dmg = baseDamage * std::exp(-std::pow(dist / splashRadius, 2.0f) * splashExponent);
+            }
+            int finalDmg = std::max(1, (int)std::round(dmg));
+            float t = dist / splashRadius;
+            float knockScale = 1.0f - t * t;
+            knockScale = knockScale * 0.85f + 0.15f;
+            float kb = knockbackStrength * knockScale;
+            glm::vec3 kbDir(dir.x * knockbackHorizontalMul,
+                            dir.y * knockbackHorizontalMul,
+                            dir.z * knockbackVerticalMul);
+            float kbLen = glm::length(kbDir);
+            if (kbLen < 0.0001f) kbDir = glm::vec3(0.0f, 1.0f, 0.0f);
+            else kbDir /= kbLen;
+            victimPlayer->takeDamage(finalDmg, kbDir, kb);
+        }
+    }
 }
 
 void fire(
@@ -220,7 +248,8 @@ void update(
     NpcSystem& npcs,
     const World& world,
     Camera& camera,
-    float dt)
+    float dt,
+    Player* victimPlayer)
 {
     if (dt <= 0.0f) return;
     state.gameTime += dt;
@@ -268,7 +297,7 @@ void update(
 
         rocket.lifetime -= dt;
         if (rocket.lifetime <= 0.0f) {
-            doExplosion(state, def, runtime, owner, npcs, camera, rocket.position, 0, false);
+            doExplosion(state, def, runtime, owner, npcs, camera, rocket.position, 0, false, victimPlayer);
             rocket.exploded = true;
             it = state.activeRockets.erase(it);
             continue;
@@ -299,7 +328,7 @@ void update(
                     }
                 }
                 if (hitWorld) {
-                    doExplosion(state, def, runtime, owner, npcs, camera, worldHitPos, 0, false);
+                    doExplosion(state, def, runtime, owner, npcs, camera, worldHitPos, 0, false, victimPlayer);
                     rocket.exploded = true;
                     it = state.activeRockets.erase(it);
                     continue;
@@ -309,7 +338,7 @@ void update(
 
         // ── Player collision ──
         {
-            bool hitPlayer = false;
+            bool hitOwner = false;
             glm::vec3 checkPos = newPos;
             Capsule ownerCapsule = owner.getCapsule();
             glm::vec3 mn(owner.pos.x - ownerCapsule.r,
@@ -321,9 +350,9 @@ void update(
             glm::vec3 closest = glm::clamp(checkPos, mn, mx);
             float dist = glm::length(checkPos - closest);
             if (dist < 0.5f && rocket.distanceTraveled >= IGNORE_OWNER_DIST) {
-                hitPlayer = true;
+                hitOwner = true;
             }
-            if (!hitPlayer) {
+            if (!hitOwner) {
                 // ── NPC collision ──
                 bool hitNpc = false;
                 uint32_t hitNpcId = 0;
@@ -346,16 +375,28 @@ void update(
                     if (hitNpc) break;
                 }
                 if (hitNpc) {
-                    doExplosion(state, def, runtime, owner, npcs, camera, checkPos, hitNpcId, true);
+                    doExplosion(state, def, runtime, owner, npcs, camera, checkPos, hitNpcId, true, victimPlayer);
                     rocket.exploded = true;
                     it = state.activeRockets.erase(it);
                     continue;
                 }
-                if (hitPlayer) {
-                    doExplosion(state, def, runtime, owner, npcs, camera, checkPos, 0, false);
-                    rocket.exploded = true;
-                    it = state.activeRockets.erase(it);
-                    continue;
+                // ── Victim player collision (NPC-fired rockets) ──
+                if (victimPlayer && victimPlayer->currentHp > 0 && !victimPlayer->dead) {
+                    Capsule victimCapsule = victimPlayer->getCapsule();
+                    glm::vec3 vmn(victimPlayer->pos.x - victimCapsule.r,
+                                  victimPlayer->pos.y - victimCapsule.r,
+                                  victimCapsule.a.z - victimCapsule.r);
+                    glm::vec3 vmx(victimPlayer->pos.x + victimCapsule.r,
+                                  victimPlayer->pos.y + victimCapsule.r,
+                                  victimCapsule.b.z + victimCapsule.r);
+                    glm::vec3 vclosest = glm::clamp(checkPos, vmn, vmx);
+                    float vdist = glm::length(checkPos - vclosest);
+                    if (vdist < 0.5f && rocket.distanceTraveled >= IGNORE_OWNER_DIST) {
+                        doExplosion(state, def, runtime, owner, npcs, camera, checkPos, 0, false, victimPlayer);
+                        rocket.exploded = true;
+                        it = state.activeRockets.erase(it);
+                        continue;
+                    }
                 }
             }
         }

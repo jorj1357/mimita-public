@@ -1150,6 +1150,10 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             const ChatMessageEventPacket* ev =
                 reinterpret_cast<const ChatMessageEventPacket*>(buffer);
 
+            // Reliable dedup: skip if already processed, ACK to server
+            if (!mpAcceptReliableEventOnce(ctx, ev->eventId, ev->eventSessionId))
+                return;
+
             ChatHistoryEntry entry;
             entry.messageId = ev->messageId;
             entry.serverTick = ev->serverTick;

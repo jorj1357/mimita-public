@@ -2,5 +2,5 @@
     "comment": "Selects the active movement preset from config/movement/. Set preset to a preset name (matches each preset file's 'name' field, e.g. 'default' or 'source'). Hot-reloads while the game runs.",
     "comment 8 15 2026": "default = default, source = tf2 air strafe, counterstrike = sucks dont use it",
     "comment 8 16 2026": "default, source",
-    "preset": "default"
+"preset": "default"
 }

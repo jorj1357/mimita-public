@@ -11,6 +11,7 @@
 #include "engine/engine-tick-combat.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
+#include "gui/hud/chat-window.h"
 #include <cstdio>
 #include <unordered_map>
 #include <GLFW/glfw3.h>
@@ -95,7 +96,7 @@ void engineTickCombat(Engine& engine, float dt)
         weapons.update(camera, player, npcSystem, world, dt);
     }
     if (!replayPlaybackActive) {
-        NpcCombat::updateNpcProjectiles(world, npcSystem, camera, dt);
+        NpcCombat::updateNpcProjectiles(world, npcSystem, camera, player, dt);
     }
     if (!replayPlaybackActive) {
         PersistentPhysicsSystem::instance().update(dt, world, player, npcSystem, &camera);
@@ -205,7 +206,7 @@ void engineTickCombat(Engine& engine, float dt)
     }
     if (!replayPlaybackActive && !duelEndVisible && !duelCountdown &&
         !bombTagEndVisible && !bombTagCountdown &&
-        !Terminal::instance().isOpen() && mouseDown &&
+        !Terminal::instance().isOpen() && !isChatOpen() && mouseDown &&
         glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
         const WeaponDefinition* curDef = weapons.getCurrentDef(player);
         bool isAuto = curDef && curDef->fireMode == WeaponFireMode::Automatic;
