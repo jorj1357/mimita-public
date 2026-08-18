@@ -360,6 +360,64 @@ static void broadcastNpcFiring(SOCKET sock,
                    projectile.velocity.x, projectile.velocity.y, projectile.velocity.z);
         }
 
+        // For multi-pellet weapons (shotgun), broadcast a PelletBlastEventPacket
+        // so remote clients see all 15 pellet tracers + hear the sound once.
+        // Skip the ShotEventPacket for these — the PelletBlastEventPacket handles
+        // sound, muzzle flash, and per-pellet rendering.
+        if (n.pelletResultCount > 1)
+        {
+            PelletBlastEventPacket blast{};
+            blast.header.type = PACKET_PELLET_BLAST_EVENT;
+            blast.header.tick = tick;
+            blast.header.playerId = n.id;
+            blast.shooterPlayerId = n.id;
+            blast.weapon = netWeapon;
+            blast.pelletCount = (uint8_t)n.pelletResultCount;
+            blast.spreadSeed = n.pelletSpreadSeed;
+            blast.shotSerial = n.shotSerialCounter++;
+            blast.lastServerTick = tick;
+            blast.originX = origin.x;
+            blast.originY = origin.y;
+            blast.originZ = origin.z;
+            blast.baseDirX = dir.x;
+            blast.baseDirY = dir.y;
+            blast.baseDirZ = dir.z;
+            blast.maxRange = 100.0f;
+            blast.targetCount = 0;
+
+            int pelletsToSend = std::min(n.pelletResultCount, (int)MAX_NETWORK_PELLETS);
+            for (int p = 0; p < pelletsToSend; ++p)
+            {
+                NetworkPelletResult& pr = blast.pellets[p];
+                pr.hitX = n.pelletResults[p].hitPos.x;
+                pr.hitY = n.pelletResults[p].hitPos.y;
+                pr.hitZ = n.pelletResults[p].hitPos.z;
+                pr.normalX = n.pelletResults[p].hitNormal.x;
+                pr.normalY = n.pelletResults[p].hitNormal.y;
+                pr.normalZ = n.pelletResults[p].hitNormal.z;
+                pr.impactType = n.pelletResults[p].hitEntity ? PELLET_IMPACT_PLAYER :
+                    (n.pelletResults[p].hitWorld ? PELLET_IMPACT_WORLD : PELLET_IMPACT_NONE);
+                pr.pelletIndex = (uint8_t)p;
+            }
+
+            for (const auto& pe : players)
+            {
+                if (pe.second.transport)
+                    pe.second.transport->send(&blast, sizeof(blast));
+                else
+                    sendto(sock, (const char*)&blast, sizeof(blast), 0,
+                           (sockaddr*)&pe.second.addr,
+                           sizeof(pe.second.addr));
+                ++totalPacketsOut;
+            }
+
+            n.pelletResultCount = 0; // consumed
+
+            printf("%s [NPC PELLET BLAST] npc=%u weapon=%s pellets=%d\n",
+                   serverTimestamp(), n.id, wdef->id.c_str(), pelletsToSend);
+        }
+        else
+        {
         // Broadcast the ShotEventPacket (sound + muzzle flash on clients).
         // For projectile weapons (rocket, grenade), skip the tracer — the
         // ProjectileSpawnEventPacket renders the actual projectile instead.
@@ -402,6 +460,7 @@ static void broadcastNpcFiring(SOCKET sock,
 
         printf("%s [NPC FIRED] npc=%u weapon=%s dir=(%.2f %.2f %.2f)\n",
                serverTimestamp(), n.id, wdef->id.c_str(), dir.x, dir.y, dir.z);
+        } // end else (single-shot weapons)
     }
 }
 

@@ -399,6 +399,10 @@ bool spawnExportSubprocess(const std::string& clipPath, int width, int height)
     Debug::warn(Debug::Category::Replay,
         "[EXPORT-SPAWN-SUCCESS] pid=%lu exe=%s\n",
         pi.dwProcessId, exePathBuf);
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SPAWN-SUCCESS] cmdline=%s\n", cmd.c_str());
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS-LOG] child log will appear in logs/ as ReplayExport_log_*.txt\n");
 
     CloseHandle(pi.hThread); // We only need the process handle
     return true;

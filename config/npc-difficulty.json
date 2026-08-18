@@ -55,7 +55,9 @@
   "jukeFrequency": 1.0,
   "comment_jukeFrequency": "Multiplier on ZigZag/juke frequency. Higher = more frequent direction changes during movement.",
   // "forceWeapon": "grenade_launcher",
-  "forceWeapon": "rocket_launcher",
+  // "forceWeapon": "rocket_launcher",
+  "forceWeapon": "shotgun",
+  // "forceWeapon": "revolver",
   // "forceWeapon": "",
   "comment_forceWeapon": "Force all NPCs to use a specific weapon. When non-empty (e.g. \"shotgun\", \"rocket_launcher\", \"grenade_launcher\"), NPCs ignore weapon switching and only use this weapon. Set to empty string to disable."
 }

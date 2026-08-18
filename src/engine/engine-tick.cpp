@@ -228,6 +228,24 @@ void engineTick(Engine& engine)
         forceMainMenu();
     }
 
+    // ── Subprocess export polling (runs every frame regardless of gJob.state) ──
+    // sExportSubprocess holds the handle to a background export process.
+    // Polling must happen outside isReplayExportActive() because gJob.state
+    // stays Idle during subprocess exports. Without this, the handle is never
+    // cleaned up and subsequent exports are blocked.
+    extern void* sExportSubprocess;
+    if (sExportSubprocess) {
+        DWORD exitCode = 0;
+        BOOL done = GetExitCodeProcess((HANDLE)sExportSubprocess, &exitCode);
+        if (done && exitCode != STILL_ACTIVE) {
+            CloseHandle((HANDLE)sExportSubprocess);
+            sExportSubprocess = nullptr;
+            Debug::warn(Debug::Category::Replay,
+                "[EXPORT-SUBPROCESS-POLLED] subprocess exited code=%lu\n",
+                (unsigned long)exitCode);
+        }
+    }
+
     if (isReplayExportActive()) {
         updateReplayExport();
     } else if (isReplayBatchExportActive()) {

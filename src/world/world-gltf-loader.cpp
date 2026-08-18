@@ -59,7 +59,7 @@ bool loadWorldFromGLB(World& world, const char* path)
     Debug::log(Debug::Category::GLB, "[WORLD GLB] before loadGLB\n");
 
     auto tStart = std::chrono::steady_clock::now();
-    candidate.mesh = loadGLB(path, true, &candidate.skyMesh, &timing, &metrics);
+    candidate.mesh = loadGLB(resolvedPath.c_str(), true, &candidate.skyMesh, &timing, &metrics);
     timing.parse_glb = msSince(tStart);
 
     Debug::log(Debug::Category::GLB, "[WORLD GLB] after loadGLB\n");

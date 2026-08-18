@@ -209,11 +209,13 @@ RevolverShotResult tryFireHitscanDir(
     const glm::vec3& aimDir,
     const Player* targetPlayer,
     float damageMultiplier,
-    float beamThicknessOverride)
+    float beamThicknessOverride,
+    bool playSound)
 {
     RevolverShotResult result;
 
-    WeaponAudio::playShootSound(def, muzzlePos);
+    if (playSound)
+        WeaponAudio::playShootSound(def, muzzlePos);
     result.fired = true;
     result.start = muzzlePos;
 

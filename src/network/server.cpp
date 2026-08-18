@@ -28,6 +28,7 @@
 #include "config/networking-config.h"
 #include "config/movement-config.h"
 #include "debug/debug-log.h"
+#include "audio/audio.h"
 #include "debug/structured-log.h"
 
 #include <algorithm>
@@ -230,6 +231,9 @@ bool isServerHost()
 int runServer(const LaunchOptions& options)
 {
     setvbuf(stdout, nullptr, _IONBF, 0);
+
+    // Disable audio on dedicated server — it only wastes resources
+    setServerAudioMode(true);
 
     ::StructuredLogger::instance().init();
 

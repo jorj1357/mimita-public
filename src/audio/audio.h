@@ -83,3 +83,6 @@ float getReplayMusicPreviewDuration();
 void setReplayMusicPreviewSpeed(float speed);
 void setReplayMusicPreviewVolume(float volume);
 float getAudioFileDuration(const std::string& path);
+
+// Server mode: when enabled, audio is completely disabled (no miniaudio init).
+void setServerAudioMode(bool enabled);

@@ -26,7 +26,7 @@ uint64_t gSkyBuiltRevision = 0;
 
 } // anonymous namespace
 
-void setUniforms(GLuint shader);
+void setUniforms(GLuint shader, const glm::vec3& cameraPos);
 
 void uploadSkyIfNeeded(const World& world)
 {

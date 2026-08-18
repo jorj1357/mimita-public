@@ -18,6 +18,8 @@
 #include "gui/hud/healthbar-config.h"
 #include "effects/hit-effects.h"
 #include "effects/muzzle-flash-config.h"
+#include "render/dynamic-light-config.h"
+#include "render/dynamic-light.h"
 #include "network/disagreement-visuals.h"
 #include "config/camera-config.h"
 #include "config/weapon-hitfx-config.h"
@@ -54,6 +56,8 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     HealthbarConfig::instance().pollReload();
     HitEffects::pollReload();
     MuzzleFlashConfig::instance().pollReload();
+    DynamicLightConfig::instance().pollReload();
+    DynamicLightManager::instance().update(dt);
     MimitaNet::pollDisagreementReload();
     CamConfig::instance().pollReload();
     SizeScalingConfig::instance().pollReload();

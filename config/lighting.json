@@ -40,5 +40,78 @@
     "sky": {},
     "sun": {},
     "bloom": {},
-    "volumetrics": {}
+    "volumetrics": {},
+    "dynamicLights": {
+        "maxActive": 32,
+        "maxPerFrame": 8,
+        "minIntensityCull": 0.01,
+        "minRadiusCull": 0.1,
+        "quality": "smooth"
+    },
+    "weaponLights": {
+        "revolver": {
+            "muzzleFlash": {
+                "enabled": true,
+                "color": [1.0, 0.72, 0.35],
+                "intensity": 1.8,
+                "radius": 8.0,
+                "lifetime": 1.055,
+                "fadeIn": 1.0,
+                "fadeOut": 0.055,
+                "positionOffset": [0.0, 0.0, 0.0],
+                "randomIntensityMin": 0.8,
+                "randomIntensityMax": 1.15,
+                "randomRadiusMin": 0.85,
+                "randomRadiusMax": 1.10
+            }
+        },
+        "shotgun": {
+            "muzzleFlash": {
+                "enabled": true,
+                "color": [1.0, 0.85, 0.5],
+                "intensity": 1.4,
+                "radius": 6.0,
+                "lifetime": 0.06,
+                "fadeIn": 0.0,
+                "fadeOut": 0.06,
+                "positionOffset": [0.0, 0.0, 0.0],
+                "randomIntensityMin": 0.85,
+                "randomIntensityMax": 1.1,
+                "randomRadiusMin": 0.9,
+                "randomRadiusMax": 1.05
+            }
+        },
+        "rocketlauncher": {
+            "muzzleFlash": {
+                "enabled": true,
+                "color": [1.0, 0.6, 0.2],
+                "intensity": 2.5,
+                "radius": 10.0,
+                "lifetime": 0.08,
+                "fadeIn": 0.0,
+                "fadeOut": 0.08,
+                "positionOffset": [0.0, 0.0, 0.0],
+                "randomIntensityMin": 0.9,
+                "randomIntensityMax": 1.1,
+                "randomRadiusMin": 0.9,
+                "randomRadiusMax": 1.1
+            }
+        },
+        "grenadelauncher": {
+            "muzzleFlash": {
+                "enabled": true,
+                "color": [1.0, 0.8, 0.4],
+                "intensity": 1.5,
+                "radius": 7.0,
+                "lifetime": 0.07,
+                "fadeIn": 0.0,
+                "fadeOut": 0.07,
+                "positionOffset": [0.0, 0.0, 0.0],
+                "randomIntensityMin": 0.85,
+                "randomIntensityMax": 1.1,
+                "randomRadiusMin": 0.9,
+                "randomRadiusMax": 1.05
+            }
+        }
+    }
 }

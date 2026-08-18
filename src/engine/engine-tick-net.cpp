@@ -553,6 +553,10 @@ void engineTickNet(Engine& engine, float dt)
                     if (event.weapon == MimitaNet::NETWORK_WEAPON_SHOTGUN ||
                         event.weapon == MimitaNet::NETWORK_WEAPON_AA12)
                         shootSound = "shotgunshoot";
+                    else if (event.weapon == MimitaNet::NETWORK_WEAPON_ROCKET_LAUNCHER)
+                        shootSound = "rocketlauncher/rocketshoot";
+                    else if (event.weapon == MimitaNet::NETWORK_WEAPON_GRENADE_LAUNCHER)
+                        shootSound = "grenadelauncher/grenadelaunchershoot";
                     playWorldSound(
                         shootSound, event.origin + visualDelta,
                         1.0f, 1.0f, 80.0f);

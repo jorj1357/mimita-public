@@ -15,6 +15,7 @@
 #include "map/map_common.h"
 #include "world/world.h"
 #include "render/lighting-config.h"
+#include "render/dynamic-light.h"
 #include "shadow/shadow-config.h"
 #include "shadow/shadow-render.h"
 #include "debug/debug-diag.h"
@@ -123,7 +124,7 @@ void setTexBreatheEnabled(bool enabled)
 
 bool texBreatheEnabled() { return gTexBreatheEnabled || gTexBreatheRestoring; }
 
-void setUniforms(GLuint shader)
+void setUniforms(GLuint shader, const glm::vec3& cameraPos)
 {
     const auto& cfg = LightingConfig::instance();
     const auto& scfg = ShadowConfig::instance();
@@ -161,6 +162,22 @@ void setUniforms(GLuint shader)
     setFloat(shader, "uAOContrast", cfg.aoContrast());
     setFloat(shader, "uTextureContrast", cfg.textureContrast());
     setFloat(shader, "uTextureBrightness", cfg.textureBrightness());
+
+    // Dynamic point lights
+    const auto& dlmgr = DynamicLightManager::instance();
+    DynamicLightManager::SubmitResult dlights = dlmgr.submitToShader(cameraPos, DynamicLightManager::MAX_SUBMIT);
+    setInt(shader, "uDynamicLightCount", dlights.count);
+    for (int i = 0; i < dlights.count; ++i) {
+        char posName[32], colName[32], radName[32], intName[32];
+        snprintf(posName, sizeof(posName), "uDynamicLightPos[%d]", i);
+        snprintf(colName, sizeof(colName), "uDynamicLightColor[%d]", i);
+        snprintf(radName, sizeof(radName), "uDynamicLightRadius[%d]", i);
+        snprintf(intName, sizeof(intName), "uDynamicLightIntensity[%d]", i);
+        setVec3(shader, posName, dlights.lights[i].position);
+        setVec3(shader, colName, dlights.lights[i].color);
+        setFloat(shader, radName, dlights.lights[i].radius);
+        setFloat(shader, intName, dlights.lights[i].intensity);
+    }
 
     bool shadowsEnabled = scfg.enabled() && shadowDepthTex() != 0;
     setInt(shader, "uShadowsEnabled", shadowsEnabled ? 1 : 0);
@@ -205,7 +222,7 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
     setMat4(shader, "view", view);
     setMat4(shader, "projection", proj);
 
-    setUniforms(shader);
+    setUniforms(shader, cam.pos);
 
     glBindVertexArray(gVao);
 

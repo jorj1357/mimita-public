@@ -291,8 +291,26 @@ int main(int argc, char** argv)
     }
 
     printf("[BOOT MODE] mode=full-client graphicsInitialized=1 uiInitialized=1\n");
-    LogManager::instance().setLogType("Gameterminal");
+    if (gExportSubprocessMode) {
+        LogManager::instance().setLogType("ReplayExport");
+    } else {
+        LogManager::instance().setLogType("Gameterminal");
+    }
     LogManager::instance().init();
+
+    // In subprocess mode, log where the export log file was written
+    if (gExportSubprocessMode) {
+        Debug::warn(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS-START] pid=%lu cwd=%s argv=",
+            (unsigned long)GetCurrentProcessId(),
+            std::filesystem::current_path().string().c_str());
+        for (int i = 0; i < 20 && i < __argc; i++)
+            Debug::warn(Debug::Category::Replay, " %s", __argv[i]);
+        Debug::warn(Debug::Category::Replay, "\n");
+        Debug::warn(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS-LOG] path=%s\n",
+            LogManager::instance().path().c_str());
+    }
 
     Engine engine;
     gameInit(argc, argv, engine);

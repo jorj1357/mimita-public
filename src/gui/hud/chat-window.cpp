@@ -17,6 +17,12 @@ bool isChatOpen()
 {
     return gChatWindowState.open;
 }
+
+void noteChatActivity()
+{
+    gChatWindowState.lastMessageUiTick = gChatUiTickClock.getTick();
+    gChatWindowState.backgroundOpacity = CHAT_MAX_OPACITY;
+}
 #include "chat-history.h"
 #include "gui/gui-coord.h"
 #include "gui/gui-layout.h"
@@ -60,7 +66,7 @@ void initChatWindowState(ChatWindowState& state)
 void openChatWindow(ChatWindowState& state)
 {
     state.open = true;
-    state.backgroundOpacity = 1.0f;
+    state.backgroundOpacity = CHAT_MAX_OPACITY;
     state.textInput.focused = true;
     state.textInput.selectAllOnFocus = true;
     state.textInput.lastActivityMs = 0;
@@ -73,6 +79,7 @@ void openChatWindow(ChatWindowState& state)
     GLFWwindow* win = glfwGetCurrentContext();
     if (win && glfwGetInputMode(win, GLFW_CURSOR) == GLFW_CURSOR_DISABLED)
         glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    Debug::log(Debug::Category::Chat, "[CHAT INPUT OPEN] key=/\n");
 }
 
 void closeChatWindow(ChatWindowState& state)
@@ -101,6 +108,8 @@ void handleChatWindowChar(ChatWindowState& state, unsigned int codepoint)
     opts.maxLength = 256;
     opts.submitOnEnter = true;
     uiTextInputHandleChar(state.textInput, codepoint, opts);
+    Debug::log(Debug::Category::Chat, "[CHAT INPUT TEXT] len=%zu\n",
+               state.textInput.value.size());
 }
 
 bool handleChatWindowKey(ChatWindowState& state, int key, int action, int mods,
@@ -141,6 +150,8 @@ bool handleChatWindowKey(ChatWindowState& state, int key, int action, int mods,
         // Strip leading / (char callback inserts it when / opens chat)
         if (!outMessage.empty() && outMessage[0] == '/')
             outMessage.erase(0, 1);
+        Debug::log(Debug::Category::Chat, "[CHAT INPUT SUBMIT] len=%zu\n",
+                   outMessage.size());
         state.textInput.value.clear();
         state.textInput.cursorPos = 0;
         closeChatWindow(state);
@@ -162,18 +173,18 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
     {
         uint64_t elapsed = clock.getElapsedTicks(state.lastMessageUiTick);
         if (elapsed < CHAT_FADE_HOLD_TICKS)
-            state.backgroundOpacity = 1.0f;
+            state.backgroundOpacity = CHAT_MAX_OPACITY;
         else if (elapsed < CHAT_FADE_HOLD_TICKS + CHAT_FADE_DURATION_TICKS)
         {
             uint64_t fadeElapsed = elapsed - CHAT_FADE_HOLD_TICKS;
             float t = (float)fadeElapsed / (float)CHAT_FADE_DURATION_TICKS;
-            state.backgroundOpacity = 1.0f * (1.0f - t);
+            state.backgroundOpacity = CHAT_MAX_OPACITY * (1.0f - t);
         }
         else
             state.backgroundOpacity = 0.0f;
     }
     else
-        state.backgroundOpacity = 1.0f;
+        state.backgroundOpacity = CHAT_MAX_OPACITY;
 
     if (state.backgroundOpacity < 0.005f)
         return;
@@ -197,6 +208,45 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
         if (chatBg->h > 0.0f) winH_d = chatBg->h;
     }
 
+    // Chat messages area — read from JSON or compute from chatBg
+    float msgAreaX_d, msgAreaY_d, msgAreaW_d, msgAreaH_d;
+    const GuiElement* chatMsgs = hudLayout.get("chatMessages");
+    if (chatMsgs)
+    {
+        msgAreaX_d = chatMsgs->x;
+        msgAreaY_d = chatMsgs->y;
+        msgAreaW_d = chatMsgs->w > 0.0f ? chatMsgs->w : winW_d - 8.0f;
+        msgAreaH_d = chatMsgs->h > 0.0f ? chatMsgs->h : winH_d - 40.0f;
+    }
+    else
+    {
+        float pad_d = 4.0f;
+        float inputH_d = 30.0f;
+        msgAreaX_d = winX_d + pad_d;
+        msgAreaY_d = winY_d + inputH_d + pad_d * 2;
+        msgAreaW_d = winW_d - pad_d * 2;
+        msgAreaH_d = winH_d - inputH_d - pad_d * 3;
+    }
+
+    // Chat input bar — read from JSON or compute from chatBg
+    float inputX_d, inputY_d, inputW_d, inputH_d;
+    const GuiElement* chatBar = hudLayout.get("chatBar");
+    if (chatBar)
+    {
+        inputX_d = chatBar->x;
+        inputY_d = chatBar->y;
+        inputW_d = chatBar->w > 0.0f ? chatBar->w : winW_d - 8.0f;
+        inputH_d = chatBar->h > 0.0f ? chatBar->h : 28.0f;
+    }
+    else
+    {
+        float pad_d = 4.0f;
+        inputX_d = winX_d + pad_d;
+        inputY_d = winY_d + pad_d;
+        inputW_d = winW_d - pad_d * 2;
+        inputH_d = 30.0f;
+    }
+
     float winX = uiScaleX(winX_d);
     float winY = uiScaleY(winY_d);
     float winW = uiScaleX(winW_d);
@@ -208,14 +258,7 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
     uiDrawRectOutline({winX, winY, winW, winH},
                       {0.35f, 0.35f, 0.35f, alpha * 0.6f}, "chat-window-border");
 
-    // ── Message area (above input field) ──────────────────────────────
-    float inputH_d = 30.0f;
-    float pad_d = 4.0f;
-    float msgAreaX_d = winX_d + pad_d;
-    float msgAreaY_d = winY_d + inputH_d + pad_d * 2;
-    float msgAreaW_d = winW_d - pad_d * 2;
-    float msgAreaH_d = winH_d - inputH_d - pad_d * 3;
-
+    // ── Message area ──────────────────────────────────────────────────
     float msgAreaX = uiScaleX(msgAreaX_d);
     float msgAreaY = uiScaleY(msgAreaY_d);
     float msgAreaW = uiScaleX(msgAreaW_d);
@@ -224,32 +267,36 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
     // Estimate content height per message (~18 design-pixels per line)
     float lineH_d = 20.0f;
     float contentH_d = (float)history.size() * lineH_d;
-    float contentH = uiScaleY(contentH_d);
+
+    // Keep the newest line at the bottom until the player scrolls upward.
+    float maxScroll = std::max(0.0f, contentH_d - msgAreaH_d);
+    if (!state.scrolledUp)
+        state.scroll.scrollY = maxScroll;
 
     // Scroll area for messages
-    uiBeginScrollArea(win, {msgAreaX, msgAreaY, msgAreaW, msgAreaH}, contentH, state.scroll);
+    // Scroll widgets take design-space rectangles/heights and perform their
+    // own conversion. Passing screen-space values here double-scaled the
+    // scissor rectangle and hid the message glyphs.
+    uiBeginScrollArea(win, {msgAreaX_d, msgAreaY_d, msgAreaW_d, msgAreaH_d},
+                      contentH_d, state.scroll);
 
     // Check if user is scrolled up
-    float maxScroll = std::max(0.0f, contentH - msgAreaH);
     state.scrolledUp = state.scroll.scrollY < maxScroll - 1.0f;
 
-    // Draw each message (oldest to newest, scroll handles positioning)
+    // Draw each message (newest at bottom — draw from bottom up)
     float lineScreenH = uiScaleY(lineH_d);
     float textScale = 0.28f;
     glm::vec4 serverColor = {1.0f, 0.8f, 0.3f, alpha};
     glm::vec4 playerColor = {1.0f, 1.0f, 1.0f, alpha};
-    glm::vec4 tickColor = {0.5f, 0.5f, 0.5f, alpha};
     glm::vec4 mutedColor = {0.4f, 0.4f, 0.4f, alpha};
 
     size_t n = history.size();
     for (size_t i = 0; i < n; ++i)
     {
         const auto& entry = history.get(i);
-        // Format: "tick senderName: message"
         char line[512];
         if (entry.senderType == ChatSenderType::Server)
         {
-            // Server/system messages: "[system] message"
             std::snprintf(line, sizeof(line), "[system] %s", entry.text.c_str());
             glm::vec4 col = serverColor;
             if (entry.muted) col = mutedColor;
@@ -261,8 +308,7 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
         {
             if (entry.muted)
             {
-                std::snprintf(line, sizeof(line), "%llu %s: %s",
-                             (unsigned long long)entry.serverTick,
+                std::snprintf(line, sizeof(line), "%s: %s",
                              entry.senderName.c_str(),
                              entry.text.c_str());
                 uiDrawText(line, msgAreaX + uiScaleX(2),
@@ -271,38 +317,28 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
                 continue;
             }
 
-            char tickBuf[48];
-            std::snprintf(tickBuf, sizeof(tickBuf), "%llu ",
-                         (unsigned long long)entry.serverTick);
+            // Format: (username): (message)
+            std::snprintf(line, sizeof(line), "%s: %s",
+                         entry.senderName.c_str(),
+                         entry.text.c_str());
+
             const float lineY = msgAreaY + (float)i * lineScreenH;
             float cursorX = msgAreaX + uiScaleX(2);
-            uiDrawText(tickBuf, cursorX, lineY, textScale, tickColor);
-            cursorX += uiMeasureText(tickBuf, textScale);
 
-            VipNameDrawOptions nameOptions;
-            nameOptions.scale = textScale;
-            nameOptions.alpha = alpha;
-            nameOptions.phase = 0.0f;
-            nameOptions.detail = &entry.senderVipStyleDetail;
-            vipDrawStyledName(entry.senderName, entry.senderVipAppearance,
-                              cursorX, lineY, nameOptions);
-            cursorX += vipMeasureStyledName(entry.senderName,
-                                            entry.senderVipAppearance,
-                                            nameOptions);
-            uiDrawText(": ", cursorX, lineY, textScale, playerColor);
-            cursorX += uiMeasureText(": ", textScale);
-            uiDrawText(entry.text.c_str(), cursorX, lineY, textScale, playerColor);
+            // Draw sender name in white, message in white
+            uiDrawText(line, cursorX, lineY, textScale, playerColor);
         }
     }
 
-    uiEndScrollArea({msgAreaX, msgAreaY, msgAreaW, msgAreaH}, contentH, state.scroll);
+    uiEndScrollArea({msgAreaX_d, msgAreaY_d, msgAreaW_d, msgAreaH_d},
+                    contentH_d, state.scroll);
 
     // ── Input field (only when chat is open) ──────────────────────────
     if (state.open)
     {
-        float inputX = uiScaleX(winX_d + pad_d);
-        float inputY = uiScaleY(winY_d + pad_d);
-        float inputW = uiScaleX(winW_d - pad_d * 2);
+        float inputX = uiScaleX(inputX_d);
+        float inputY = uiScaleY(inputY_d);
+        float inputW = uiScaleX(inputW_d);
         float inputH = uiScaleY(inputH_d);
 
         uiDrawRect({inputX, inputY, inputW, inputH},
@@ -314,10 +350,16 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
         opts.maxLength = 256;
         opts.selectAllOnFocus = true;
         opts.submitOnEnter = true;
+        // uiTextInputRender converts design coordinates to screen coordinates.
+        // Passing already-scaled values double-scaled the input bar.
         uiTextInputRender(win, "chat_input",
-                         {inputX, inputY, inputW, inputH},
+                         {inputX_d, inputY_d, inputW_d, inputH_d},
                          state.textInput, opts);
     }
+
+    Debug::logThrottled(Debug::Category::Chat, "chat-hud-render", 1.0f,
+                        "[CHAT HUD] rendered=%zu opacity=%.2f open=%d\n",
+                        history.size(), alpha, (int)state.open);
 
     // ── "N new messages" indicator when scrolled up ───────────────────
     if (state.scrolledUp && state.newMessageCount > 0 && !state.open)

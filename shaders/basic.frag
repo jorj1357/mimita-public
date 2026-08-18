@@ -82,6 +82,13 @@ uniform float uShadowSoftness;
 uniform vec3 uShadowTint;
 uniform bool uShadowsEnabled;
 
+// Dynamic point lights (PS2 / Silent Hill style)
+uniform int uDynamicLightCount;
+uniform vec3 uDynamicLightPos[8];
+uniform vec3 uDynamicLightColor[8];
+uniform float uDynamicLightRadius[8];
+uniform float uDynamicLightIntensity[8];
+
 in vec4 vShadowCoord;
 
 float breatheHash(vec2 p)
@@ -208,7 +215,21 @@ void main()
     float aoShade = 1.0 - fakeAO;
 
     float light = uAmbientStrength + diffuse;
-    vec3 lit = texColor * light * edgeShade * aoShade;
+
+    // Dynamic point lights — PS2 / Silent Hill style
+    vec3 dynamicContrib = vec3(0.0);
+    for (int i = 0; i < uDynamicLightCount; i++) {
+        vec3 toLight = uDynamicLightPos[i] - vWorldPos;
+        float dist = length(toLight);
+        if (dist >= uDynamicLightRadius[i]) continue;
+        float atten = clamp(1.0 - dist / uDynamicLightRadius[i], 0.0, 1.0);
+        atten = atten * atten;
+        vec3 Lp = normalize(toLight);
+        float nl = max(dot(N, Lp), 0.0);
+        dynamicContrib += uDynamicLightColor[i] * uDynamicLightIntensity[i] * atten * (nl + 0.15);
+    }
+
+    vec3 lit = texColor * light * edgeShade * aoShade + dynamicContrib * texColor;
 
     // Shadow
     float shadow = 0.0;
@@ -229,7 +250,7 @@ void main()
         float c = checker(vUV);
         FragColor = vec4(mix(vec3(0.05, 0.15, 0.25), vec3(1.0, 0.8, 0.15), c), 1.0);
     } else if (uDebugView == 2) {
-        FragColor = vec4(vec3(light * edgeShade), 1.0);
+        FragColor = vec4(vec3(light * edgeShade) + dynamicContrib, 1.0);
     } else if (uDebugView == 3) {
         FragColor = vec4(texColor, 1.0);
     } else if (uDebugView == 4) {

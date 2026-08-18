@@ -23,6 +23,7 @@ class GLFWwindow;
 constexpr uint64_t CHAT_FADE_HOLD_TICKS = 900;
 // How many ui-ticks the fade from full to 0% takes
 constexpr uint64_t CHAT_FADE_DURATION_TICKS = 300;
+constexpr float CHAT_MAX_OPACITY = 0.5f;
 
 struct ChatWindowState {
     bool open = false;               // chat input is actively open
@@ -48,6 +49,7 @@ void handleChatWindowChar(ChatWindowState& state, unsigned int codepoint);
 void openChatWindow(ChatWindowState& state);
 void closeChatWindow(ChatWindowState& state);
 void setChatMouseUnlocked(ChatWindowState& state, bool unlocked);
+void noteChatActivity();
 
 // Accessible from preferences toggle
 extern bool gChatWindowVisible;

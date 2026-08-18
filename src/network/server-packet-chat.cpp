@@ -122,6 +122,10 @@ void handleChatRequestV2(SOCKET sock, const char* buffer, int bytes,
 
     gChatRateLimiter.recordSend(req->header.playerId, tick);
 
+    Debug::log(Debug::Category::Chat,
+               "[CHAT SERVER RECEIVED] player=%u len=%zu tick=%u\n",
+               req->header.playerId, std::strlen(msg), tick);
+
     // Build accepted message event
     static uint64_t nextMessageId = 1;
     ChatMessageEventPacket event{};
@@ -148,8 +152,11 @@ void handleChatRequestV2(SOCKET sock, const char* buffer, int bytes,
     {
         uint32_t session = reliableGameplayEventSessionForPlayer(playerEntry.second);
         queueReliableGameplayEventToPlayer(sock, playerEntry.second, &event, sizeof(event),
-                                            eventId, session, totalPacketsOut);
+                                           eventId, session, totalPacketsOut);
     }
+    Debug::log(Debug::Category::Chat,
+               "[CHAT SERVER BROADCAST] messageId=%llu recipients=%zu\n",
+               (unsigned long long)event.messageId, players.size());
 }
 
 void handleNpcDamageRequest(SOCKET sock, const char* buffer, int bytes,

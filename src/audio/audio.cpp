@@ -41,6 +41,7 @@
 
 static ma_engine gEngine;
 static bool gAudioInit = false;
+static bool gServerMode = false;  // when true, audio is completely disabled
 
 static glm::vec3 gLastListenerPosition{0.0f};
 static glm::vec3 gLastListenerForward{0.0f, 1.0f, 0.0f};
@@ -185,6 +186,7 @@ static void startSound(const std::string& name, float volume, float pitch,
 static void initAudioOnce()
 {
     if (gAudioInit) return;
+    if (gServerMode) return;  // no audio on dedicated server
 
     if (ma_engine_init(NULL, &gEngine) != MA_SUCCESS)
     {
@@ -564,4 +566,21 @@ float getAudioFileDuration(const std::string& path)
     ma_decoder_get_length_in_pcm_frames(&decoder, &totalFrames);
     ma_decoder_uninit(&decoder);
     return (float)totalFrames / 48000.0f;
+}
+
+void setServerAudioMode(bool enabled)
+{
+    gServerMode = enabled;
+    if (enabled && gAudioInit) {
+        for (auto& s : gActiveSounds) {
+            if (s->initialized) {
+                ma_sound_uninit(&s->sound);
+                ma_decoder_uninit(&s->decoder);
+            }
+        }
+        gActiveSounds.clear();
+        ma_engine_uninit(&gEngine);
+        gAudioInit = false;
+        printf("[AUDIO] Server mode: audio disabled\n");
+    }
 }

@@ -83,6 +83,8 @@ MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
 #include "debug/debug-log.h"
 #include "effects/hit-effects.h"
 #include "effects/muzzle-flash-config.h"
+#include "render/dynamic-light.h"
+#include "render/dynamic-light-config.h"
 #include "config.h"
 #include "replay/replay.h"
 #include "hot-reload/hot-reload-system.h"
@@ -167,6 +169,25 @@ EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position, const std::st
     e.billboardText = false;
     e.sticky = true;
     e.sourceActorId = sourceActorId;
+
+    // Spawn dynamic point light from weapon config
+    const auto& dlcfg = DynamicLightConfig::instance();
+    const WeaponLightSettings& wcfg = dlcfg.weaponLight(sourceActorId, "muzzleFlash");
+    if (wcfg.enabled) {
+        float randIntensity = wcfg.randomIntensityMin +
+            (wcfg.randomIntensityMax - wcfg.randomIntensityMin) * ((float)rand() / (float)RAND_MAX);
+        float randRadius = wcfg.randomRadiusMin +
+            (wcfg.randomRadiusMax - wcfg.randomRadiusMin) * ((float)rand() / (float)RAND_MAX);
+        DynamicLightManager::instance().spawn(
+            position + wcfg.positionOffset,
+            wcfg.color,
+            wcfg.intensity * randIntensity,
+            wcfg.radius * randRadius,
+            wcfg.lifetime,
+            wcfg.fadeIn,
+            wcfg.fadeOut);
+    }
+
     return spawn(e);
 }
 

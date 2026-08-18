@@ -47,6 +47,7 @@
 #include "gui/gui-element-render.h"
 #include "gui/hud/player-nameplates.h"
 #include "gui/hud/chat-history.h"
+#include "gui/hud/chat-window.h"
 #include "gui/font-stuff/font-loader.h"
 #include "game/game-state.h"
 #include "game/game-cli.h"
@@ -116,6 +117,8 @@ void registerCursorCommands();
 #include "avatar/character-registry.h"
 #include "render/lighting-config.h"
 #include "render/lighting-commands.h"
+#include "render/dynamic-light-commands.h"
+#include "render/dynamic-light-config.h"
 #include "render/postfx-commands.h"
 #include "hot-reload/hot-reload-system.h"
 #include "auth/auth-system.h"
@@ -216,11 +219,13 @@ void gameInitSubsystems(Engine& engine)
 
     InputCommandSystem::instance().init(engine.window());
     InputCommandSystem::instance().loadBinds("config/accounts/default.json");
+    initChatWindowState(gChatWindowState);
     RegisterTeleportCommands();
     Terminal::instance().init(engine.window());
     AnalyticsManager::instance().registerCommands();
 
     LightingConfig::instance().load("config/lighting.json");
+    DynamicLightConfig::instance().load("config/lighting.json");
     ShadowConfig::instance().load("config/shadows.json");
     GameplayConfig::instance().load("config/gameplay.json");
     NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
@@ -378,6 +383,7 @@ void gameInitSubsystems(Engine& engine)
     registerGuiEditorCommands();
     registerPostFxCommands();
     registerLightingCommands();
+    registerDynamicLightCommands();
     registerVideoCommands();
     registerMusicCommands();
     registerNotificationCommands();

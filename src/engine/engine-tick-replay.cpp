@@ -102,6 +102,14 @@ void engineTickReplay(Engine& engine, float dt)
         gReplayRecorder.isRecording() &&
         !gDuelManager.isReplayReady())
     {
+        // Ensure the recorder has the correct map path for the clip.
+        // beginRecording() zeroes mWorld, so we re-populate it here.
+        {
+            ReplayWorldMetadata rw;
+            rw.mapPath = ACTIVE_MAP_PATH;
+            REPLAY_RECORDER.setWorldMetadata(rw);
+        }
+
         uint32_t killTick = gDuelManager.matchEndTick;
         uint32_t nowTick = gReplayRecorder.currentTick();
         uint32_t start = killTick > 480 ? killTick - 480 : 0;

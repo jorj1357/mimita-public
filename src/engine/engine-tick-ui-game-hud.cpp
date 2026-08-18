@@ -85,6 +85,16 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     }
 
     GuiLayout& hudLayout = GuiLayoutManager::instance().getLayout("config/gui/hud.json");
+
+    // Draw all panel elements from hud.json (backgrounds, containers, etc.)
+    // This makes JSON-edited panels visible, matching the server browser pattern.
+    for (const auto& id : hudLayout.elementIds())
+    {
+        const GuiElement* el = hudLayout.get(id);
+        if (el && el->type == "panel" && el->visible)
+            drawGuiElement(engine.window(), *el);
+    }
+
     auto hudText = [&](const std::string& id, const std::string& text) {
         const GuiElement* el = hudLayout.get(id);
         if (!el) return;

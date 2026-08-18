@@ -95,7 +95,8 @@ RevolverShotResult tryFireHitscanDir(
     const glm::vec3& aimDir,
     const Player* targetPlayer = nullptr,
     float damageMultiplier = 1.0f,
-    float beamThicknessOverride = -1.0f
+    float beamThicknessOverride = -1.0f,
+    bool playSound = true
 );
 
 void fireMultiPellet(

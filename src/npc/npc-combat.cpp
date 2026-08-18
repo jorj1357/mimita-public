@@ -360,7 +360,8 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     case WeaponBehaviorType::Hitscan:
     {
         if (def->pelletCount > 1) {
-            // Multi-pellet weapon (shotgun): fire all pellets in a spread pattern
+            // Multi-pellet weapon (shotgun): fire all pellets in a spread pattern.
+            // Play sound ONCE before the loop (not per-pellet).
             PelletPatternConfig ppc;
             ppc.pelletCount = def->pelletCount;
             ppc.spreadDegrees = def->spread;
@@ -368,14 +369,23 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
             glm::vec3 pelletDirs[MAX_PELLETS_PER_BLAST];
             int pelletCount = generatePelletDirections(aimDir, ppc, pelletDirs, MAX_PELLETS_PER_BLAST);
 
+            WeaponAudio::playShootSound(*def, npcPos);
+
             float totalDamage = 0.0f;
             bool anyHit = false;
             bool anyHitWorld = false;
             glm::vec3 lastEnd = npcPos + aimDir * 100.0f;
-            for (int p = 0; p < pelletCount; ++p) {
+            npc.pelletResultCount = 0;
+            npc.pelletSpreadSeed = ppc.spreadSeed;
+            for (int p = 0; p < pelletCount && p < Npc::MAX_NPC_PELLETS; ++p) {
                 RevolverShotResult shot = WeaponFire::tryFireHitscanDir(
-                    *def, rt, npc.body, world, npcPos, pelletDirs[p], &player, dmgMul, beamOverride);
+                    *def, rt, npc.body, world, npcPos, pelletDirs[p], &player, dmgMul, beamOverride, false);
                 totalDamage += shot.damage;
+                npc.pelletResults[p].hitPos = shot.end;
+                npc.pelletResults[p].hitNormal = shot.hitNormal;
+                npc.pelletResults[p].hitEntity = shot.hitEntity;
+                npc.pelletResults[p].hitWorld = shot.hitWorld;
+                npc.pelletResultCount = p + 1;
                 if (shot.hitEntity) {
                     anyHit = true;
                     lastEnd = shot.end;

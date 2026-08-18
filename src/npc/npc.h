@@ -133,6 +133,20 @@ public:
     // the shot exactly once (no per-frame shot/sound spam).
     bool justFired = false;
 
+    // Per-pellet data for multi-pellet weapons (shotgun).
+    // Stored after tryFire so broadcastNpcFiring can send PelletBlastEventPacket.
+    struct PelletData {
+        glm::vec3 hitPos{0.0f};
+        glm::vec3 hitNormal{0.0f, 0.0f, 1.0f};
+        bool hitEntity = false;
+        bool hitWorld = false;
+    };
+    static constexpr int MAX_NPC_PELLETS = 16;
+    PelletData pelletResults[MAX_NPC_PELLETS]{};
+    int pelletResultCount = 0;
+    uint32_t pelletSpreadSeed = 0;
+    uint32_t shotSerialCounter = 1;  // unique per-shot serial for pellet blast dedup
+
     Npc(std::uint32_t id, float difficulty, glm::vec3 spawn,
         const std::string& weaponId = "revolver");
 };

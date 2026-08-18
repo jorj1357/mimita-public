@@ -16,6 +16,7 @@
 #include "network/multiplayer-context.h"
 #include "gui/hud/chat-bubble.h"
 #include "gui/hud/chat-history.h"
+#include "gui/hud/chat-window.h"
 #include "replay/replay-scene.h"
 #include "avatar/avatar.h"
 
@@ -43,41 +44,10 @@ void requestSendChatMessage(const std::string& message)
     if (trimmed.size() > 256)
         trimmed.resize(256);
 
-    Debug::log(Debug::Category::Chat, "[CHAT SEND] player=%s len=%zu\n",
-               player.username.c_str(), trimmed.size());
-
-    addChatMessage(player.chatState, trimmed, player.username);
-    playChatSound((int)trimmed.size());
-
-    {
-        ReplayEffectEvent chatEvent;
-        chatEvent.type = "chat";
-        chatEvent.sourceActorId = player.username;
-        chatEvent.assetId = trimmed;
-        chatEvent.lifetime = computeChatDuration((int)trimmed.size());
-        captureReplayEffect(chatEvent);
-    }
-
-    // Add to local chat history (chat history is not available in every mode)
-    if (gpChatHistory)
-    {
-        ChatHistoryEntry entry;
-        entry.messageId = 0; // assigned by server when online
-        entry.serverTick = 0;
-        entry.utcUnixMilliseconds = 0;
-        entry.senderEntityId = 0;
-        entry.senderAccountId = 0;
-        entry.senderType = ChatSenderType::Player;
-        entry.senderName = player.username;
-        entry.senderVipAppearance = player.vipAppearance;
-        entry.senderVipStyleDetail = player.vipStyleDetail;
-        entry.text = trimmed;
-        gChatHistory.append(entry);
-    }
-
     MimitaNet::MultiplayerContext& mpContext = MP_CONTEXT;
     if (mpContext.active && mpContext.localPlayerId != 0)
     {
+        noteChatActivity();
         // Use new v2 chat request packet
         MimitaNet::ChatRequestPacket req{};
         req.header.type = MimitaNet::PACKET_CHAT_REQUEST;
@@ -87,7 +57,37 @@ void requestSendChatMessage(const std::string& message)
         req.clientSimulationTick = mpContext.tick;
         std::strncpy(req.utf8Message, trimmed.c_str(), sizeof(req.utf8Message) - 1);
         MimitaNet::mpSendPacket(mpContext, &req, sizeof(req));
+        Debug::log(Debug::Category::Chat,
+                   "[CHAT PACKET SENT] player=%s requestId=%u len=%zu\n",
+                   player.username.c_str(), req.requestId, trimmed.size());
+        // The server broadcasts the accepted event back to every client,
+        // including the sender. That authoritative event is the local echo.
+        return;
     }
+
+    // Offline/local chat has no server echo, so append it directly.
+    addChatMessage(player.chatState, trimmed, player.username);
+    playChatSound((int)trimmed.size());
+    noteChatActivity();
+    Debug::log(Debug::Category::Chat, "[CHAT LOCAL] player=%s len=%zu\n",
+               player.username.c_str(), trimmed.size());
+    if (gpChatHistory)
+    {
+        ChatHistoryEntry entry;
+        entry.senderType = ChatSenderType::Player;
+        entry.senderName = player.username;
+        entry.senderVipAppearance = player.vipAppearance;
+        entry.senderVipStyleDetail = player.vipStyleDetail;
+        entry.text = trimmed;
+        gChatHistory.append(entry);
+    }
+
+    ReplayEffectEvent chatEvent;
+    chatEvent.type = "chat";
+    chatEvent.sourceActorId = player.username;
+    chatEvent.assetId = trimmed;
+    chatEvent.lifetime = computeChatDuration((int)trimmed.size());
+    captureReplayEffect(chatEvent);
 }
 
 // Preferences for chat features

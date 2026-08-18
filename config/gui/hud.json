@@ -4,41 +4,45 @@
   "elements": {
     "hudBg": {
       "type": "panel",
-      "x": 830, "y": 976, "width": 260, "height": 92,
+      "x": 830, "y": 9976, "width": 260, "height": 92,
       "backgroundColor": [0, 0, 0, 0.56]
     },
     "playerName": {
       "type": "text",
-      "x": 840, "y": 888, "width": 240, "height": 24,
+      "x": 840, "y": 986, "width": 240, "height": 24,
       "fontSize": 0.42,
       "textColor": [0.95, 0.98, 1.0, 1.0]
     },
     "hpText": {
       "type": "text",
-      "x": 840, "y": 12014, "width": 200, "height": 24,
+      "x": 840, "y": 1014, "width": 200, "height": 24,
       "fontSize": 0.38,
       "textColor": [0.35, 1.0, 0.45, 1.0]
     },
     "speedText": {
       "type": "text",
-      "x": 840, "y": 920, "width": 200, "height": 24,
+      "x": 840, "y": 1042, "width": 200, "height": 24,
       "fontSize": 0.38,
       "textColor": [0.75, 0.9, 1.0, 1.0]
     },
     "chatBg": {
       "type": "panel",
-      "x": 122, "y": 122, "width": 480, "height": 270,
-      "backgroundColor": [0.02, 0.025, 0.035, 0.5]
+      "x": 12, "y": 12, "width": 480, "height": 270,
+      "backgroundColor": [0.15, 0.15, 0.17, 0.8]
     },
-    "chatInputBorder": {
-      "type": "text",
-      "x": 110, "y": 0, "width": 0, "height": 0,
-      "fontSize": 0.28,
-      "outlineColor": [0.35, 0.4, 0.5, 0.3]
+    "chatMessages": {
+      "type": "panel",
+      "x": 16, "y": 46, "width": 472, "height": 218,
+      "backgroundColor": [0.0, 0.0, 0.0, 0.0]
+    },
+    "chatBar": {
+      "type": "panel",
+      "x": 16, "y": 16, "width": 472, "height": 28,
+      "backgroundColor": [0.0, 0.0, 0.0, 0.9]
     },
     "deathOverlay": {
       "type": "panel",
-      "x": 690, "y": 460, "width": 540, "height": 160,
+      "x": 690, "y": 99460, "width": 540, "height": 160,
       "backgroundColor": [0, 0, 0, 0.75]
     },
     "deathText": {
@@ -71,7 +75,7 @@
     },
     "modeText": {
       "type": "text",
-      "x": 24, "y": 208, "width": 400, "height": 24,
+      "x": 24, "y": 9908, "width": 400, "height": 24,
       "fontSize": 0.32,
       "textColor": [0.8, 0.85, 1.0, 1.0]
     },

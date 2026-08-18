@@ -23,6 +23,7 @@
 #include "debug/debug-log.h"
 #include "terminal/terminal-state.h"
 #include "gui/hud/chat-history.h"
+#include "gui/hud/chat-window.h"
 #include "gui/hud/chat-bubble.h"
 #include "world/world.h"
 #include "entities/player.h"
@@ -1154,6 +1155,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             if (!mpAcceptReliableEventOnce(ctx, ev->eventId, ev->eventSessionId))
                 return;
 
+            noteChatActivity();
+
             ChatHistoryEntry entry;
             entry.messageId = ev->messageId;
             entry.serverTick = ev->serverTick;
@@ -1173,29 +1176,50 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             }
 
             if (gpChatHistory)
+            {
                 gChatHistory.append(entry);
+                Debug::log(Debug::Category::Chat,
+                           "[CHAT HUD HISTORY ADD] messageId=%llu count=%zu\n",
+                           (unsigned long long)ev->messageId, gChatHistory.size());
+            }
+
+            Debug::log(Debug::Category::Chat,
+                       "[CHAT CLIENT RECEIVED] messageId=%llu sender=%s len=%zu\n",
+                       (unsigned long long)ev->messageId, ev->senderName,
+                       std::strlen(ev->utf8Message));
 
             // Also add to 3D chat bubble for the sender
             if (ev->senderType == (uint8_t)ChatSenderType::Player)
             {
                 bool found = false;
+                if (ev->senderEntityId == ctx.localPlayerId)
+                {
+                    addChatMessage(THE_PLAYER.chatState, ev->utf8Message,
+                                   ev->senderName);
+                    found = true;
+                    Debug::log(Debug::Category::Chat,
+                               "[CHAT BUBBLE ASSIGNED] playerId=%u name=%s target=local\n",
+                               ev->senderEntityId, ev->senderName);
+                }
+                if (!found)
                 for (auto& kv : ctx.remotePlayers)
                 {
-                    if (kv.second.username == ev->senderName)
+                    if (kv.first == ev->senderEntityId ||
+                        kv.second.username == ev->senderName)
                     {
                         addChatMessage(kv.second.chatState, ev->utf8Message, ev->senderName);
                         found = true;
+                        Debug::log(Debug::Category::Chat,
+                                   "[CHAT BUBBLE ASSIGNED] playerId=%u name=%s target=remote\n",
+                                   ev->senderEntityId, ev->senderName);
                         break;
                     }
                 }
                 if (!found)
                 {
-                    // Could be our own message or a new player
-                    // Check if it matches local player
-                    if (ev->header.playerId == ctx.localPlayerId)
-                    {
-                        // Already handled locally via requestSendChatMessage
-                    }
+                    Debug::log(Debug::Category::Chat,
+                               "[CHAT BUBBLE LOOKUP FAILED] playerId=%u name=%s\n",
+                               ev->senderEntityId, ev->senderName);
                 }
                 playChatSound((int)std::strlen(ev->utf8Message));
 

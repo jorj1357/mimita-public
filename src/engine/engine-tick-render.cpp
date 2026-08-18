@@ -39,6 +39,8 @@
 #include "replay/replay-export-target.h"
 #include "replay/replay-factory.h"
 #include "world/texture-store.h"
+#include "stb_image_write.h"
+#include <filesystem>
 #include "gui/gui-element-render.h"
 #include "gui/hud/player-nameplates.h"
 #include "devtools/dev-npc-selection.h"
@@ -517,11 +519,68 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         glBlitFramebuffer(
             0, 0, engine.renderer->width, engine.renderer->height,
             0, 0, tgt.width, tgt.height,
-            GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT,
+            GL_COLOR_BUFFER_BIT,
             GL_LINEAR);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         glViewport(prevVp[0], prevVp[1], prevVp[2], prevVp[3]);
+
+        // ── Export FBO diagnostics ──────────────────────────────────────
+        {
+            GLenum err = glGetError();
+            if (err != GL_NO_ERROR)
+                Debug::warn(Debug::Category::Replay,
+                    "[EXPORT_FBO_STATE] glBlitFramebuffer GL error=0x%x\n", err);
+            else
+                Debug::logThrottled(Debug::Category::Replay, "fbo-state", 1.0f,
+                    "[EXPORT_FBO_STATE] window=%dx%d export=%dx%d "
+                    "fboStatus=%d glErr=OK\n",
+                    engine.renderer->width, engine.renderer->height,
+                    tgt.width, tgt.height,
+                    (int)glCheckFramebufferStatus(GL_FRAMEBUFFER));
+        }
+
+        // ── Pixel verification (frames 0, 60, 300) ──────────────────────
+        const uint32_t frameIdx = getReplayExportJob().capturedTicks;
+        const bool checkFrame = (frameIdx == 0 || frameIdx == 60 || frameIdx == 300);
+        if (checkFrame) {
+            // Read pixels from export FBO for stats
+            std::vector<uint8_t> px(tgt.width * tgt.height * 3);
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, tgt.fbo);
+            glReadPixels(0, 0, tgt.width, tgt.height, GL_RGB, GL_UNSIGNED_BYTE, px.data());
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+            const size_t totalPx = (size_t)tgt.width * (size_t)tgt.height;
+            uint64_t sumR = 0, sumG = 0, sumB = 0;
+            uint8_t maxR = 0, maxG = 0, maxB = 0;
+            for (size_t i = 0; i < totalPx * 3; i += 3) {
+                sumR += px[i]; sumG += px[i+1]; sumB += px[i+2];
+                if (px[i] > maxR) maxR = px[i];
+                if (px[i+1] > maxG) maxG = px[i+1];
+                if (px[i+2] > maxB) maxB = px[i+2];
+            }
+            const bool nonBlack = (maxR > 5 || maxG > 5 || maxB > 5);
+            Debug::warn(Debug::Category::Replay,
+                "[EXPORT_PIXEL_TEST] frame=%u avgRGB=(%llu,%llu,%llu) "
+                "maxRGB=(%u,%u,%u) nonBlack=%d\n",
+                frameIdx,
+                sumR / totalPx, sumG / totalPx, sumB / totalPx,
+                maxR, maxG, maxB, (int)nonBlack);
+            if (!nonBlack) {
+                Debug::warn(Debug::Category::Replay,
+                    "[EXPORT_PIXEL_INVARIANT] frame=%u BLACK FRAME DETECTED\n", frameIdx);
+            }
+
+            // Dump debug PNG
+            namespace fs = std::filesystem;
+            std::error_code ec;
+            fs::create_directories("replays/exports/_debug", ec);
+            char pngPath[128];
+            snprintf(pngPath, sizeof(pngPath), "replays/exports/_debug/export_frame_%03u.png", frameIdx);
+            stbi_write_png(pngPath, tgt.width, tgt.height, 3, px.data(),
+                           tgt.width * 3);
+            Debug::warn(Debug::Category::Replay,
+                "[EXPORT_DEBUG_PNG] frame=%u path=%s\n", frameIdx, pngPath);
+        }
     }
 
     worldPassRan = true;

@@ -51,24 +51,39 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
 
     // ── 2. Load the world from the clip's map path ────────────────────
     // The clip stores its map path; we must load it so the scene renders.
+    // We explicitly own the map state: set WORLD_LOADED and activeMapPath
+    // BEFORE the tick loop to prevent engine-tick-state.cpp from loading
+    // the default map as fallback (which would show the wrong scene).
     ReplayClip tempClip;
+    bool worldLoadOk = false;
     if (tempClip.load(clipPath) && !tempClip.mapPath.empty()) {
         Debug::warn(Debug::Category::Replay,
             "[EXPORT-SUBPROCESS] loading world: %s\n", tempClip.mapPath.c_str());
-        if (!loadWorldFromGLB(THE_WORLD, tempClip.mapPath.c_str())) {
-            Debug::warn(Debug::Category::Replay,
-                "[EXPORT-SUBPROCESS] WARNING: failed to load world %s — rendering may be empty\n",
-                tempClip.mapPath.c_str());
-        } else {
-            WORLD_LOADED = true;
+        worldLoadOk = loadWorldFromGLB(THE_WORLD, tempClip.mapPath.c_str());
+        if (worldLoadOk) {
             Debug::warn(Debug::Category::Replay,
                 "[EXPORT-SUBPROCESS] world loaded OK\n");
+        } else {
+            Debug::error(Debug::Category::Replay,
+                "[EXPORT-SUBPROCESS] FAILED to load world: %s\n", tempClip.mapPath.c_str());
         }
+    } else {
+        Debug::warn(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS] clip has no mapPath (empty or missing metadata)\n");
     }
 
-    // Set GAME_PLAYING so the render pipeline runs.
-    // Without this, engineTickRender is gated by GAME_STATE == GAME_PLAYING
-    // and the scene is never rendered to the window → black export.
+    // Always own the world state to block the default-map fallback
+    // in engine-tick-state.cpp:160 (GAME_PLAYING && !WORLD_LOADED triggers it).
+    WORLD_LOADED = true;
+    if (gpActiveMapPath) {
+        *gpActiveMapPath = tempClip.mapPath;
+        Debug::warn(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS] activeMapPath=%s worldLoaded=%d\n",
+            tempClip.mapPath.c_str(), worldLoadOk);
+    }
+
+    // Set GAME_PLAYING AFTER map state is fully resolved so the render
+    // pipeline does not start until the world is ready.
     if (gpGameState) *gpGameState = GAME_PLAYING;
 
     // ── 3. Setup editor (camera keyframes if present) ─────────────────
