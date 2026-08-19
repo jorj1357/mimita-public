@@ -313,7 +313,9 @@ void gameInitSubsystems(Engine& engine)
     static std::unordered_map<int, bool> G_BIND_PREV;
     static std::mt19937 rng(std::random_device{}());
 
-    static ChatHistory gChatHistory;
+    // Keep the owning object distinct from the gChatHistory convenience macro
+    // in terminal-state.h so initialization targets the real storage object.
+    static ChatHistory sChatHistory;
 
     static DuelConfig gDuelConfig;
 
@@ -356,10 +358,10 @@ void gameInitSubsystems(Engine& engine)
     Debug::log(Debug::Category::Chat,
                "[CHAT TRACE 1 BEFORE INIT] gpChatHistory=%p\n",
                (void*)gpChatHistory);
-    gpChatHistory = &gChatHistory;
+    gpChatHistory = &sChatHistory;
     Debug::log(Debug::Category::Chat,
                "[CHAT TRACE 1 AFTER INIT] gpChatHistory=%p historyAddress=%p\n",
-               (void*)gpChatHistory, (void*)&gChatHistory);
+               (void*)gpChatHistory, (void*)&sChatHistory);
     gpWorld = &world;
     gpActiveMapPath = &activeMapPath;
     gpNpcSystem = &npcSystem;

@@ -32,12 +32,12 @@
     },
     "chatMessages": {
       "type": "panel",
-      "x": 26, "y": 256, "width": 460, "height": 218,
+      "x": 26, "y": 26, "width": 460, "height": 218,
       "backgroundColor": [0.0, 0.0, 0.0, 0.5]
     },
     "chatBar": {
       "type": "panel",
-      "x": 16, "y": 276, "width": 472, "height": 28,
+      "x": 16, "y": 276, "width": 472, "height": 38,
       "backgroundColor": [0.0, 0.0, 0.0, 0.9]
     },
     "deathOverlay": {
