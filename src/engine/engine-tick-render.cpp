@@ -162,16 +162,34 @@ static void renderReplayActors(
         const WeaponDefinition* definition =
             WeaponRegistry::instance().get(
                 actorState.weaponName);
-        if (definition && !definition->modelPath.empty()) {
-            actor->equippedSlot = definition->slot;
+        if (definition && !actorState.weaponModelPath.empty()) {
+            WeaponDefinition replayDefinition = *definition;
+            replayDefinition.modelPath = actorState.weaponModelPath;
+            actor->equippedSlot = replayDefinition.slot;
             const std::string weaponKey =
-                actorState.id + ":" + definition->id;
+                actorState.id + ":" + replayDefinition.id;
             WeaponViewModel& viewModel =
                 replayWeaponModels[weaponKey];
             viewModel.update(
-                cam, *actor, dt, definition, false);
+                cam, *actor, dt, &replayDefinition, false,
+                nullptr, true);
+
+            if (gReplayExportVerbose &&
+                (!viewModel.vao || viewModel.heldMesh.verts.empty())) {
+                Debug::warn(Debug::Category::Replay,
+                    "[REPLAY WEAPON] not drawable actor=%s weapon=%s path=%s vao=%u verts=%zu slot=%d\n",
+                    actorState.id.c_str(), actorState.weaponName.c_str(),
+                    actorState.weaponModelPath.c_str(), viewModel.vao,
+                    viewModel.heldMesh.verts.size(), actor->equippedSlot);
+            }
             viewModel.render(
-                cam, *actor, definition->slot);
+                cam, *actor, replayDefinition.slot);
+        } else if (gReplayExportVerbose && !actorState.weaponName.empty() &&
+                   actorState.weaponName != "none") {
+            Debug::warn(Debug::Category::Replay,
+                "[REPLAY WEAPON] skipped actor=%s weapon=%s registry=%d recordedPath=%s\n",
+                actorState.id.c_str(), actorState.weaponName.c_str(),
+                definition ? 1 : 0, actorState.weaponModelPath.c_str());
         }
     }
     if (gKillImpactFrame.active) {

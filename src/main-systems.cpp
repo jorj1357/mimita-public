@@ -353,7 +353,13 @@ void gameInitSubsystems(Engine& engine)
     gpCommandBinds = &G_COMMAND_BINDS;
     gpBindPrev = &G_BIND_PREV;
     gpGameState = &gameState;
+    Debug::log(Debug::Category::Chat,
+               "[CHAT TRACE 1 BEFORE INIT] gpChatHistory=%p\n",
+               (void*)gpChatHistory);
     gpChatHistory = &gChatHistory;
+    Debug::log(Debug::Category::Chat,
+               "[CHAT TRACE 1 AFTER INIT] gpChatHistory=%p historyAddress=%p\n",
+               (void*)gpChatHistory, (void*)&gChatHistory);
     gpWorld = &world;
     gpActiveMapPath = &activeMapPath;
     gpNpcSystem = &npcSystem;

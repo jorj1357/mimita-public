@@ -20,6 +20,23 @@
 #include "replay/replay-scene.h"
 #include "avatar/avatar.h"
 
+#include <chrono>
+#include <ctime>
+
+namespace
+{
+std::string chatUtcNow()
+{
+    const std::time_t now = std::chrono::system_clock::to_time_t(
+        std::chrono::system_clock::now());
+    std::tm utc{};
+    gmtime_s(&utc, &now);
+    char buf[32]{};
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &utc);
+    return buf;
+}
+}
+
 // TODO(main-cleanup): move to devtools/dev-teleport.cpp
 // Shared function: both the console "chat" command and GUI text input call this.
 void requestSendChatMessage(const std::string& message)
@@ -48,6 +65,11 @@ void requestSendChatMessage(const std::string& message)
     if (mpContext.active && mpContext.localPlayerId != 0)
     {
         noteChatActivity();
+        Debug::log(Debug::Category::Chat,
+                   "[CHAT DEBUG SEND] utc=%s text=\"%s\" sender=%s localPlayerId=%u server=%s room=%s session=%s\n",
+                   chatUtcNow().c_str(), trimmed.c_str(), player.username.c_str(),
+                   mpContext.localPlayerId, mpContext.serverAddress.c_str(),
+                   mpContext.roomCode.c_str(), mpContext.sessionId.c_str());
         // Use new v2 chat request packet
         MimitaNet::ChatRequestPacket req{};
         req.header.type = MimitaNet::PACKET_CHAT_REQUEST;

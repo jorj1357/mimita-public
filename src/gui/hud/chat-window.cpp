@@ -9,6 +9,23 @@
 */
 #include "chat-window.h"
 
+#include <chrono>
+#include <ctime>
+
+namespace
+{
+std::string chatUtcNow()
+{
+    const std::time_t now = std::chrono::system_clock::to_time_t(
+        std::chrono::system_clock::now());
+    std::tm utc{};
+    gmtime_s(&utc, &now);
+    char buf[32]{};
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &utc);
+    return buf;
+}
+}
+
 // Global state
 ChatWindowState gChatWindowState;
 UiTickClock gChatUiTickClock;
@@ -252,6 +269,14 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
     float winW = uiScaleX(winW_d);
     float winH = uiScaleY(winH_d);
 
+    Debug::logThrottled(Debug::Category::Chat, "chat-debug-layout", 0.25f,
+                        "[CHAT DEBUG GUI] utc-layout=%s framebuffer=%dx%d windowDesign=(%.1f,%.1f,%.1f,%.1f) windowPixels=(%.1f,%.1f,%.1f,%.1f) messageDesign=(%.1f,%.1f,%.1f,%.1f) inputDesign=(%.1f,%.1f,%.1f,%.1f) history=%zu open=%d opacity=%.3f\n",
+                        chatUtcNow().c_str(), UISys::gFbW, UISys::gFbH,
+                        winX_d, winY_d, winW_d, winH_d, winX, winY, winW, winH,
+                        msgAreaX_d, msgAreaY_d, msgAreaW_d, msgAreaH_d,
+                        inputX_d, inputY_d, inputW_d, inputH_d,
+                        history.size(), (int)state.open, alpha);
+
     // ── Background ────────────────────────────────────────────────────
     uiDrawRect({winX, winY, winW, winH},
                {0.15f, 0.15f, 0.17f, alpha}, "chat-window-bg");
@@ -327,6 +352,19 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
 
             // Draw sender name in white, message in white
             uiDrawText(line, cursorX, lineY, textScale, playerColor);
+
+            std::string renderKey = "chat-debug-message-" +
+                                    std::to_string(entry.messageId);
+            Debug::logThrottled(Debug::Category::Chat, renderKey.c_str(), 1.0f,
+                                "[CHAT DEBUG GUI MESSAGE] utc=%s index=%zu messageId=%llu text=\"%s\" sender=%s senderEntityId=%u serverTick=%llu line=\"%s\" textPixels=(x=%.1f,y=%.1f,w=%.1f,h=%.1f) messageAreaPixels=(x=%.1f,y=%.1f,w=%.1f,h=%.1f) scrollY=%.1f alpha=%.3f\n",
+                                chatUtcNow().c_str(), i,
+                                (unsigned long long)entry.messageId, entry.text.c_str(),
+                                entry.senderName.c_str(), entry.senderEntityId,
+                                (unsigned long long)entry.serverTick, line,
+                                cursorX, lineY, uiMeasureText(line, textScale),
+                                lineScreenH,
+                                msgAreaX, msgAreaY, msgAreaW, msgAreaH,
+                                state.scroll.scrollY, alpha);
         }
     }
 

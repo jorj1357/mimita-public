@@ -3,13 +3,30 @@
 #include "gui/ui-system-internal.h"
 #include "gui/gui-coord.h"
 #include "gui/font-stuff/font-loader.h"
+#include "debug/debug-log.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <GLFW/glfw3.h>
 #include <glad/glad.h>
+
+namespace
+{
+std::string chatUtcNow()
+{
+    const std::time_t now = std::chrono::system_clock::to_time_t(
+        std::chrono::system_clock::now());
+    std::tm utc{};
+    gmtime_s(&utc, &now);
+    char buf[32]{};
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &utc);
+    return buf;
+}
+}
 
 // ── Internal: clamp cursor and selection after every mutation ─────────
 
@@ -374,6 +391,15 @@ bool uiTextInputRender(GLFWwindow* window, const char* id, UIRect designRect,
     int fbW = (int)clipW;
     int fbH = (int)clipH;
     glScissor(fbX, fbY, std::max(0, fbW), std::max(0, fbH));
+
+    Debug::logThrottled(Debug::Category::Chat, "chat-debug-input-render", 0.25f,
+                        "[CHAT DEBUG GUI INPUT] utc=%s id=%s value=\"%s\" focused=%d designRect=(%.1f,%.1f,%.1f,%.1f) screenRect=(%.1f,%.1f,%.1f,%.1f) textPixels=(x=%.1f,y=%.1f,w=%.1f,h=%.1f) clipPixels=(x=%.1f,y=%.1f,w=%.1f,h=%.1f) glScissor=(x=%d,y=%d,w=%d,h=%d) framebuffer=%dx%d\n",
+                        chatUtcNow().c_str(), id ? id : "", displayText.c_str(), (int)state.focused,
+                        designRect.x, designRect.y, designRect.w, designRect.h,
+                        screenRect.x, screenRect.y, screenRect.w, screenRect.h,
+                        textX, textY, uiMeasureText(displayText.c_str(), textScale), textH,
+                        clipX, clipY, clipW, clipH, fbX, fbY, fbW, fbH,
+                        UISys::gFbW, UISys::gFbH);
 
     if (!displayText.empty())
     {

@@ -2,8 +2,8 @@
     "encoder": "ffmpeg",
     "encoderMode": "auto",
     "audioVolumeMultiplier": 0.8,
-    "exportWidth": 1920,
-    "exportHeight": 1080,
+    "exportWidth": 1024,
+    "exportHeight": 768,
     "exportCrf": 18,
     "exportBitrate": 0
 }

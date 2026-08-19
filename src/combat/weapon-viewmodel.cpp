@@ -183,7 +183,8 @@ void WeaponViewModel::unload() {
 
 void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
                              const WeaponDefinition* def, bool updatePlayerPose,
-                             const World* world) {
+                             const World* world,
+                             bool useDefinitionModelPath) {
     // Attempt to load weapon config for this weapon (supports hot reload)
     WeaponConfig& wc = WeaponConfig::instance();
     wc.pollHotReload();
@@ -196,7 +197,7 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
 
     // Use config modelPath if available, otherwise fall back to definition
     std::string modelPath;
-    if (hasConfig && vmcfg && !vmcfg->modelPath.empty())
+    if (!useDefinitionModelPath && hasConfig && vmcfg && !vmcfg->modelPath.empty())
         modelPath = vmcfg->modelPath;
     else if (def)
         modelPath = def->modelPath;

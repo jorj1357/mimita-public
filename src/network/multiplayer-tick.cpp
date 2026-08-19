@@ -30,14 +30,27 @@
 #include "notifications/notifications.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <cstring>
 
 namespace MimitaNet {
 
 namespace {
+
+std::string chatUtcNow()
+{
+    const std::time_t now = std::chrono::system_clock::to_time_t(
+        std::chrono::system_clock::now());
+    std::tm utc{};
+    gmtime_s(&utc, &now);
+    char buf[32]{};
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &utc);
+    return buf;
+}
 
 // A snapshot tick gap larger than this (~500ms of missed snapshots) means a
 // blackout/reconnect, not ordinary packet loss. It arms the client's post-gap
@@ -1175,18 +1188,42 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 entry.senderVipStyleDetail = vipIt->second.vipStyleDetail;
             }
 
+            Debug::log(Debug::Category::Chat,
+                       "[CHAT TRACE 2 BEFORE HISTORY GATE] gpChatHistory=%p messageId=%llu text=\"%s\"\n",
+                       (void*)gpChatHistory, (unsigned long long)ev->messageId,
+                       ev->utf8Message);
             if (gpChatHistory)
             {
                 gChatHistory.append(entry);
                 Debug::log(Debug::Category::Chat,
-                           "[CHAT HUD HISTORY ADD] messageId=%llu count=%zu\n",
-                           (unsigned long long)ev->messageId, gChatHistory.size());
+                           "[CHAT DEBUG HISTORY ADD] utc=%s messageId=%llu text=\"%s\" sender=%s senderEntityId=%u senderAccountId=%u serverTick=%llu eventUtcMs=%lld count=%zu server=%s room=%s session=%s\n",
+                           chatUtcNow().c_str(), (unsigned long long)ev->messageId,
+                           ev->utf8Message, ev->senderName, ev->senderEntityId,
+                           ev->senderAccountId, (unsigned long long)ev->serverTick,
+                           (long long)ev->utcUnixMilliseconds, gChatHistory.size(),
+                           ctx.serverAddress.c_str(), ctx.roomCode.c_str(),
+                           ctx.sessionId.c_str());
             }
+            else
+            {
+                Debug::warn(Debug::Category::Chat,
+                            "[CHAT TRACE 2 PROBLEM] gpChatHistory is NULL; received message was NOT added to 2D history messageId=%llu\n",
+                            (unsigned long long)ev->messageId);
+            }
+            Debug::log(Debug::Category::Chat,
+                       "[CHAT TRACE 2 AFTER HISTORY GATE] gpChatHistory=%p messageId=%llu\n",
+                       (void*)gpChatHistory,
+                       (unsigned long long)ev->messageId);
 
             Debug::log(Debug::Category::Chat,
-                       "[CHAT CLIENT RECEIVED] messageId=%llu sender=%s len=%zu\n",
+                       "[CHAT DEBUG RECEIVED] utc=%s text=\"%s\" messageId=%llu sender=%s senderType=%u senderEntityId=%u senderAccountId=%u serverTick=%llu eventUtcMs=%lld bytes=%zu server=%s room=%s session=%s\n",
+                       chatUtcNow().c_str(), ev->utf8Message,
                        (unsigned long long)ev->messageId, ev->senderName,
-                       std::strlen(ev->utf8Message));
+                       (unsigned)ev->senderType, ev->senderEntityId,
+                       ev->senderAccountId, (unsigned long long)ev->serverTick,
+                       (long long)ev->utcUnixMilliseconds,
+                       std::strlen(ev->utf8Message), ctx.serverAddress.c_str(),
+                       ctx.roomCode.c_str(), ctx.sessionId.c_str());
 
             // Also add to 3D chat bubble for the sender
             if (ev->senderType == (uint8_t)ChatSenderType::Player)

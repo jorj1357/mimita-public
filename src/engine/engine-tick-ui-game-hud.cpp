@@ -446,9 +446,22 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     }
 
     // ── Chat Window ─────────────────────────────────────
+    Debug::logThrottled(Debug::Category::Chat, "chat-trace-render-before", 1.0f,
+                        "[CHAT TRACE 3 BEFORE HUD GATE] gpChatHistory=%p chatOpen=%d\n",
+                        (void*)gpChatHistory,
+                        (int)gChatWindowState.open);
     if (gpChatHistory)
     {
         renderChatWindow(gChatWindowState, engine.window(), gChatHistory,
                          gChatUiTickClock, uiScreenW(), uiScreenH());
+        Debug::logThrottled(Debug::Category::Chat, "chat-trace-render-after", 1.0f,
+                            "[CHAT TRACE 3 AFTER HUD RENDER] gpChatHistory=%p chatOpen=%d\n",
+                            (void*)gpChatHistory,
+                            (int)gChatWindowState.open);
+    }
+    else
+    {
+        Debug::warn(Debug::Category::Chat,
+                    "[CHAT TRACE 3 PROBLEM] gpChatHistory is NULL; renderChatWindow was skipped\n");
     }
 }

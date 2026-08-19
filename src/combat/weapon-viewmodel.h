@@ -47,7 +47,8 @@ struct WeaponViewModel {
     void syncFromAsset();
     void update(const Camera& camera, Player& player, float dt,
                 const WeaponDefinition* def, bool updatePlayerPose = true,
-                const class World* world = nullptr);
+                const class World* world = nullptr,
+                bool useDefinitionModelPath = false);
     void render(const Camera& camera, const Player& player, int equippedSlot) const;
     void unload();
 };
