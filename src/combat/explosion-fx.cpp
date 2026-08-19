@@ -28,7 +28,7 @@ void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
 
     // Explosion flash, debris, and red 1-tick impact sphere — each config-gated
     if (expCfg.muzzleFlash)
-        EffectPartSystem::instance().spawnMuzzleFlash(position, weaponId + "_explosion", sizeScale);
+        EffectPartSystem::instance().spawnMuzzleFlash(position, weaponId + "_explosion", sizeScale, weaponId);
     if (expCfg.debris)
         EffectPartSystem::instance().spawnWorldDebris(position, glm::vec3(0.0f, 0.0f, 1.0f), 3.0f, sizeScale);
     if (expCfg.impactTick)

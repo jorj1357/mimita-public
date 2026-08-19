@@ -658,7 +658,7 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
     // Muzzle flash on fire for remote shooters (owner already has the
     // instant client-side muzzle flash from local prediction).
     if (!localOwner)
-        EffectPartSystem::instance().spawnMuzzleFlash(serverPosition, networkWeaponTypeName(event->weapon));
+        EffectPartSystem::instance().spawnMuzzleFlash(serverPosition, "", 1.0f, networkWeaponTypeName(event->weapon));
 
     // ── Correlation promotion: provisional fireSerial now has authoritative projectileId ──
     {

@@ -541,7 +541,7 @@ void engineTickNet(Engine& engine, float dt)
                 }
 
                 if (event.effectFlags & MimitaNet::SHOT_EFFECT_MUZZLE)
-                    EffectPartSystem::instance().spawnMuzzleFlash(muzzle, shooterName);
+                    EffectPartSystem::instance().spawnMuzzleFlash(muzzle, shooterName, 1.0f, MimitaNet::networkWeaponTypeName(event.weapon));
                 if (event.effectFlags & MimitaNet::SHOT_EFFECT_TRACER)
                     EffectPartSystem::instance().spawnTracer(
                         muzzle, beamEnd, shooterName, 1.0f,

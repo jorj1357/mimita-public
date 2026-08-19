@@ -574,7 +574,7 @@ void applyPelletBlastEventPacket(MultiplayerContext& ctx,
     if (!isLocalShooter)
     {
         playWorldSound("shotgunshoot", visualOrigin, 1.0f, 1.0f, 80.0f);
-        EffectPartSystem::instance().spawnMuzzleFlash(visualOrigin, weaponName);
+        EffectPartSystem::instance().spawnMuzzleFlash(visualOrigin, "", 1.0f, weaponName);
     }
 
     // Render each pellet tracer + impact

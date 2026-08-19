@@ -167,6 +167,10 @@ void setUniforms(GLuint shader, const glm::vec3& cameraPos)
     const auto& dlmgr = DynamicLightManager::instance();
     DynamicLightManager::SubmitResult dlights = dlmgr.submitToShader(cameraPos, DynamicLightManager::MAX_SUBMIT);
     setInt(shader, "uDynamicLightCount", dlights.count);
+    if (dlights.count > 0) {
+        Debug::logThrottled(Debug::Category::Render, "dlight-upload", 1.0f,
+            "[DYNAMIC LIGHT] upload count=%d\n", dlights.count);
+    }
     for (int i = 0; i < dlights.count; ++i) {
         char posName[32], colName[32], radName[32], intName[32];
         snprintf(posName, sizeof(posName), "uDynamicLightPos[%d]", i);

@@ -152,7 +152,7 @@ EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 nor
     return spawned;
 }
 
-EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId, float sizeScale) {
+EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId, float sizeScale, const std::string& weaponId) {
     const MuzzleFlashSettings& cfg = MuzzleFlashConfig::instance().data();
     if (!cfg.enabled) return nullptr;
     const auto& sc = SizeScalingConfig::instance().data();
@@ -171,21 +171,38 @@ EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position, const std::st
     e.sourceActorId = sourceActorId;
 
     // Spawn dynamic point light from weapon config
-    const auto& dlcfg = DynamicLightConfig::instance();
-    const WeaponLightSettings& wcfg = dlcfg.weaponLight(sourceActorId, "muzzleFlash");
-    if (wcfg.enabled) {
-        float randIntensity = wcfg.randomIntensityMin +
-            (wcfg.randomIntensityMax - wcfg.randomIntensityMin) * ((float)rand() / (float)RAND_MAX);
-        float randRadius = wcfg.randomRadiusMin +
-            (wcfg.randomRadiusMax - wcfg.randomRadiusMin) * ((float)rand() / (float)RAND_MAX);
-        DynamicLightManager::instance().spawn(
-            position + wcfg.positionOffset,
-            wcfg.color,
-            wcfg.intensity * randIntensity,
-            wcfg.radius * randRadius,
-            wcfg.lifetime,
-            wcfg.fadeIn,
-            wcfg.fadeOut);
+    if (!weaponId.empty()) {
+        const auto& dlcfg = DynamicLightConfig::instance();
+        const WeaponLightSettings& wcfg = dlcfg.weaponLight(weaponId, "muzzleFlash");
+        Debug::log(Debug::Category::Render,
+            "[DYNAMIC LIGHT] spawnMuzzleFlash weaponId='%s' configEnabled=%d "
+            "pos=(%.2f,%.2f,%.2f) color=(%.2f,%.2f,%.2f) intensity=%.2f radius=%.2f lifetime=%.3f\n",
+            weaponId.c_str(), (int)wcfg.enabled,
+            position.x, position.y, position.z,
+            wcfg.color.r, wcfg.color.g, wcfg.color.b,
+            wcfg.intensity, wcfg.radius, wcfg.lifetime);
+        if (wcfg.enabled) {
+            float randIntensity = wcfg.randomIntensityMin +
+                (wcfg.randomIntensityMax - wcfg.randomIntensityMin) * ((float)rand() / (float)RAND_MAX);
+            float randRadius = wcfg.randomRadiusMin +
+                (wcfg.randomRadiusMax - wcfg.randomRadiusMin) * ((float)rand() / (float)RAND_MAX);
+            DynamicLight* light = DynamicLightManager::instance().spawn(
+                position + wcfg.positionOffset,
+                wcfg.color,
+                wcfg.intensity * randIntensity,
+                wcfg.radius * randRadius,
+                wcfg.lifetime,
+                wcfg.fadeIn,
+                wcfg.fadeOut);
+            if (light) {
+                Debug::log(Debug::Category::Render,
+                    "[DYNAMIC LIGHT] SPAWNED id=%u pos=(%.2f,%.2f,%.2f) "
+                    "color=(%.2f,%.2f,%.2f) intensity=%.2f radius=%.2f lifetime=%.3f\n",
+                    light->id, light->position.x, light->position.y, light->position.z,
+                    light->color.r, light->color.g, light->color.b,
+                    light->intensity, light->radius, light->lifetime);
+            }
+        }
     }
 
     return spawn(e);

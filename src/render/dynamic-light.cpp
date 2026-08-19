@@ -52,6 +52,10 @@ void DynamicLightManager::update(float dt)
         if (!light.active) continue;
         light.age += dt;
         if (light.age >= light.lifetime) {
+            Debug::log(Debug::Category::Render,
+                "[DYNAMIC LIGHT] expired id=%u age=%.3f lifetime=%.3f pos=(%.2f,%.2f,%.2f)\n",
+                light.id, light.age, light.lifetime,
+                light.position.x, light.position.y, light.position.z);
             light.active = false;
         }
     }
@@ -98,6 +102,11 @@ DynamicLightManager::SubmitResult DynamicLightManager::submitToShader(
 
     int submitCount = std::min(candidateCount, maxCount);
     mSubmittedCount = submitCount;
+
+    Debug::logThrottled(Debug::Category::Render, "dlight-submit", 1.0f,
+        "[DYNAMIC LIGHT] submit active=%d candidates=%d submitted=%d camPos=(%.1f,%.1f,%.1f)\n",
+        activeCount(), candidateCount, submitCount,
+        cameraPos.x, cameraPos.y, cameraPos.z);
 
     for (int i = 0; i < submitCount; ++i) {
         const DynamicLight& light = mLights[candidates[i].index];

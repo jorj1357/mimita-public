@@ -178,7 +178,7 @@ RevolverShotResult tryFireHitscan(
     gunshotEvent.sourceActorId = shooter.username;
     captureReplayEffect(gunshotEvent);
 
-    EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, shooter.username, shooter.sizeScale);
+    EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, shooter.username, shooter.sizeScale, def.id);
     EffectPartSystem::instance().spawnTracer(
         muzzlePos, hitscanTracerEnd(def, muzzlePos, shotDirection, result.end),
         shooter.username, shooter.sizeScale, def.id);
@@ -263,7 +263,7 @@ RevolverShotResult tryFireHitscanDir(
     gunshotEvent.sourceActorId = shooter.username;
     captureReplayEffect(gunshotEvent);
 
-    EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, shooter.username, shooter.sizeScale);
+    EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, shooter.username, shooter.sizeScale, def.id);
     EffectPartSystem::instance().spawnTracer(
         muzzlePos, hitscanTracerEnd(def, muzzlePos, shotDirection, result.end),
         shooter.username, shooter.sizeScale, def.id);
@@ -302,7 +302,7 @@ void fireMultiPellet(
         auto ts = ShotProfiler::Scope(&shotProf.audioMs);
         WeaponAudio::playShootSound(def, muzzlePos);
     }
-    EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, shooter.username, shooter.sizeScale);
+    EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, shooter.username, shooter.sizeScale, def.id);
 
     float spreadDeg = std::max(0.1f, def.spread);
 

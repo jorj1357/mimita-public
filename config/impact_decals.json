@@ -3,10 +3,10 @@
   "blood": {
     "enabled": true,
     "count": 24,
-    "minCount": 3,
+    "minCount": 12,
     "coneDegrees": 35.0,
     "coneDistance": 24.0,
-    "radius": 1.4,
+    "radius": 1.0,
     "minRadius": 0.02,
     "height": 0.05,
     "color": [0.7, 0.01, 0.01],
@@ -45,8 +45,8 @@
       "alphaMax": 0.95
     },
     "force": {
-      "maxDistance": 1.0,
-      "minDistance": 100.0,
+      "maxDistance": 10.0,
+      "minDistance": 200.0,
       "minForce": 0.001
     }
   },
@@ -58,13 +58,13 @@
     "alpha": 1.0,
     "lifetime": 30.0,
     "fadeTime": 5.0,
-    "maxCount": 256
+    "maxCount": 25655
   },
   "worldCracks": {
     "enabled": true,
     "count": 5,
     "length": 10.0,
-    "thickness": 0.215,
+    "thickness": 0.015,
     "color": [0.1, 0.1, 0.1],
     "alpha": 0.85,
     "lifetime": 8.0,
@@ -72,19 +72,19 @@
     "maxCount": 4096,
     "arms": {
       "base_count": 3,
-      "weapon_force_multiplier": 1.0,
+      "weapon_force_multiplier": 0.0,
       "max_count": 12
     },
     "chain": {
       "min_segments": 1,
       "max_segments": 5,
-      "segment_length_min": 1.05,
-      "segment_length_max": 3.22,
-      "turn_degrees_min": -175.0,
-      "turn_degrees_max": 175.0,
-      "jaggedness": 0.5
+      "segment_length_min": 0.2,
+      "segment_length_max": 0.5,
+      "turn_degrees_min": 0.0,
+      "turn_degrees_max": 180.0,
+      "jaggedness": 1.0
     },
-    "center_thickness": 0.235,
-    "outer_thickness": 0.230
+    "center_thickness": 0.165,
+    "outer_thickness": 0.10
   }
 }

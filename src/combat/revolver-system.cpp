@@ -302,7 +302,7 @@ RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, N
     gunshotEvent.sourceActorId = shooter.username;
     captureReplayEffect(gunshotEvent);
 
-    EffectPartSystem::instance().spawnMuzzleFlash(mMuzzle, shooter.username, shooter.sizeScale);
+    EffectPartSystem::instance().spawnMuzzleFlash(mMuzzle, shooter.username, shooter.sizeScale, "revolver");
     EffectPartSystem::instance().spawnTracer(mMuzzle, result.end, shooter.username, shooter.sizeScale);
     if (victim) {
         float base = pointBlankDamage(hitPart, localHeight);

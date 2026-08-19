@@ -444,6 +444,13 @@ void registerReplayExportCommands()
                 Terminal::instance().addLog("No replay recording active");
                 return;
             }
+            // Ensure the clip records the CURRENT map, not whatever map was
+            // active when replay.record was last called.
+            {
+                ReplayWorldMetadata wm;
+                wm.mapPath = ACTIVE_MAP_PATH;
+                REPLAY_RECORDER.setWorldMetadata(wm);
+            }
             std::string path = saveInstantReplay(REPLAY_RECORDER, 15);
             if (path.empty()) {
                 NotificationSystem::instance().pushCritical(

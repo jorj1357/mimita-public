@@ -118,7 +118,7 @@ public:
                                   const std::string& sourceActorId, const std::string& targetActorId,
                                   float sizeScale = 1.0f);
     EffectPart* spawnWorldImpact(glm::vec3 position, glm::vec3 normal, float sizeScale = 1.0f);
-    EffectPart* spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId = {}, float sizeScale = 1.0f);
+    EffectPart* spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId = {}, float sizeScale = 1.0f, const std::string& weaponId = {});
     EffectPart* spawnTracer(glm::vec3 start, glm::vec3 end, const std::string& sourceActorId = {}, float sizeScale = 1.0f, const std::string& weaponId = {});
     EffectPart* spawnBulletImpact(glm::vec3 position, glm::vec3 normal, float sizeScale = 1.0f);
     void spawnWorldCracks(glm::vec3 position, glm::vec3 normal,

@@ -72,7 +72,7 @@ void fire(const WeaponDefinition& def, WeaponRuntime& runtime,
 
     PersistentPhysicsSystem::instance().spawn(cfg, muzzlePos, vel, angVel,
                                               0, owner.username, def.id, owner.pos);
-    EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, owner.username, owner.sizeScale);
+    EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, owner.username, owner.sizeScale, def.id);
 
     Debug::log(Debug::Category::Weapons, "[GRENADE LAUNCHER] fired pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) "
                "projectileSpeed=%.1f radius=%.2f armingDist=%.1f bounceRest=%.2f bounceFric=%.2f\n",

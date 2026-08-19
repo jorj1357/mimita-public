@@ -234,7 +234,7 @@ void fire(
     runtime.currentAmmo--;
     runtime.fireCooldown = def.fireDelay;
 
-    EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, owner.username, owner.sizeScale);
+    EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, owner.username, owner.sizeScale, def.id);
 
     if (!def.soundShoot.empty())
         WeaponAudio::playShootSound(def, owner.pos);

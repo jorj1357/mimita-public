@@ -101,7 +101,17 @@ bool DynamicLightConfig::load(const std::string& path)
         mData = d;
         mLastModified = modifiedTime(path);
         Debug::log(Debug::Category::Render,
-            "[DYNAMIC LIGHT CONFIG] Loaded config from %s\n", path.c_str());
+            "[DYNAMIC LIGHT CONFIG] Loaded config from %s maxActive=%d maxPerFrame=%d quality='%s'\n",
+            path.c_str(), d.maxActive, d.maxPerFrame, d.quality.c_str());
+        for (auto& [wid, effects] : d.weaponLights) {
+            for (auto& [eid, s] : effects) {
+                Debug::log(Debug::Category::Render,
+                    "[DYNAMIC LIGHT CONFIG] weapon='%s' effect='%s' enabled=%d "
+                    "color=(%.2f,%.2f,%.2f) intensity=%.2f radius=%.2f lifetime=%.3f\n",
+                    wid.c_str(), eid.c_str(), (int)s.enabled,
+                    s.color.r, s.color.g, s.color.b, s.intensity, s.radius, s.lifetime);
+            }
+        }
         return true;
 
     } catch (const std::exception& e) {
@@ -126,8 +136,22 @@ const WeaponLightSettings& DynamicLightConfig::weaponLight(
     const std::string& weaponId, const std::string& effectName) const
 {
     auto wIt = mData.weaponLights.find(weaponId);
-    if (wIt == mData.weaponLights.end()) return sEmptyWeaponLight;
+    if (wIt == mData.weaponLights.end()) {
+        Debug::logThrottled(Debug::Category::Render, "dlight-cfg-miss", 2.0f,
+            "[DYNAMIC LIGHT CONFIG] weaponLight lookup MISS weaponId='%s' effect='%s' (no config entry)\n",
+            weaponId.c_str(), effectName.c_str());
+        return sEmptyWeaponLight;
+    }
     auto eIt = wIt->second.find(effectName);
-    if (eIt == wIt->second.end()) return sEmptyWeaponLight;
+    if (eIt == wIt->second.end()) {
+        Debug::logThrottled(Debug::Category::Render, "dlight-cfg-miss", 2.0f,
+            "[DYNAMIC LIGHT CONFIG] weaponLight lookup MISS weaponId='%s' effect='%s' (no effect entry)\n",
+            weaponId.c_str(), effectName.c_str());
+        return sEmptyWeaponLight;
+    }
+    Debug::logThrottled(Debug::Category::Render, "dlight-cfg-hit", 2.0f,
+        "[DYNAMIC LIGHT CONFIG] weaponLight lookup HIT weaponId='%s' effect='%s' enabled=%d intensity=%.2f radius=%.2f\n",
+        weaponId.c_str(), effectName.c_str(), (int)eIt->second.enabled,
+        eIt->second.intensity, eIt->second.radius);
     return eIt->second;
 }
