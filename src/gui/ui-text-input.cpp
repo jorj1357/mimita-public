@@ -337,9 +337,9 @@ bool uiTextInputRender(GLFWwindow* window, const char* id, UIRect designRect,
 
     // Clipping for text area
     float clipX = screenRect.x + cs.designToScreenX(padX);
-    float clipY = screenRect.y + padY;
+    float clipY = screenRect.y + cs.designToScreenY(padY);
     float clipW = screenRect.w - cs.designToScreenX(padX * 2.0f);
-    float clipH = screenRect.h - padY * 2.0f;
+    float clipH = screenRect.h - cs.designToScreenY(padY * 2.0f);
 
     // Compute display text (mask password)
     std::string displayText = state.value;

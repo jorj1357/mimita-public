@@ -32,8 +32,8 @@
     },
     "chatMessages": {
       "type": "panel",
-      "x": 516, "y": 776, "width": 472, "height": 218,
-      "backgroundColor": [0.0, 0.0, 0.0, 0.0]
+      "x": 26, "y": 256, "width": 460, "height": 218,
+      "backgroundColor": [0.0, 0.0, 0.0, 0.5]
     },
     "chatBar": {
       "type": "panel",

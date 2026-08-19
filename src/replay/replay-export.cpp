@@ -330,10 +330,50 @@ void updateReplayExport()
                   readFb, drawFb, postfxFbo, viewport[2], viewport[3], w, h);
     }
 
-    // Read from the offscreen export FBO when available (films the replay
-    // without reading the visible window). Falls back to the window framebuffer.
-    const double tRead0 = replayExportNowSec();
+    // engineTickUI has completed before updateReplayExport is called. Copy the
+    // completed default framebuffer now so the export target contains the world,
+    // weapon models, HUD, chat, killfeed, replay panels, and overlays together.
+    // The export subprocess creates its framebuffer at capWidth/capHeight, so UI
+    // projection and capture resolution match instead of stretching 1024x768.
+    bool capturedPostUiTarget = false;
     if (replayExportTarget().ready()) {
+        auto& tgt = replayExportTarget();
+        GLint viewport[4] = {};
+        glGetIntegerv(GL_VIEWPORT, viewport);
+        const bool sourceMatchesCapture = viewport[2] >= 64 && viewport[3] >= 64;
+        if (!sourceMatchesCapture) {
+            Debug::warn(Debug::Category::Replay,
+                "[replay-export-ui] frame=%u invalid post-ui source viewport=%dx%d; reading default framebuffer directly\n",
+                frameNum, viewport[2], viewport[3]);
+        } else {
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, tgt.fbo);
+            glBlitFramebuffer(
+                viewport[0], viewport[1], viewport[0] + viewport[2], viewport[1] + viewport[3],
+                0, 0, tgt.width, tgt.height,
+                GL_COLOR_BUFFER_BIT, GL_LINEAR);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+
+            const GLenum blitError = glGetError();
+            if (blitError != GL_NO_ERROR) {
+                Debug::warn(Debug::Category::Replay,
+                    "[replay-export-ui] frame=%u post-ui blit failed glError=0x%x; reading default framebuffer directly\n",
+                    frameNum, blitError);
+            } else if (gReplayExportVerbose) {
+                Debug::logThrottled(Debug::Category::Replay, "replay-export-ui-capture", 1.0f,
+                    "[replay-export-ui] frame=%u capture after ui source=%dx%d export=%dx%d renderMode=1\n",
+                    frameNum, viewport[2], viewport[3], tgt.width, tgt.height);
+                capturedPostUiTarget = true;
+            } else {
+                capturedPostUiTarget = true;
+            }
+        }
+    }
+
+    // Read from the post-UI offscreen export FBO when available. Falls back to
+    // the completed default framebuffer if the export target could not initialize.
+    const double tRead0 = replayExportNowSec();
+    if (capturedPostUiTarget) {
         auto& tgt = replayExportTarget();
         glBindFramebuffer(GL_READ_FRAMEBUFFER, tgt.fbo);
         glReadPixels(0, 0, tgt.width, tgt.height, GL_RGB, GL_UNSIGNED_BYTE, pixels);

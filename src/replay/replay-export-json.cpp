@@ -372,6 +372,8 @@ bool spawnExportSubprocess(const std::string& clipPath, int width, int height)
         "\" --output \"" + outputPath +
         "\" --width " + std::to_string(width) +
         " --height " + std::to_string(height);
+    if (gReplayExportVerbose)
+        cmd += " --replay-export-verbose";
 
     Debug::warn(Debug::Category::Replay,
         "[EXPORT-SPAWN-REQUEST] clip=%s output=%s %dx%d\n",

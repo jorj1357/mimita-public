@@ -1,3 +1,12 @@
+// 08 19 2026, 09 50
+/* purpose
+* Draws gameplay HUD elements shared by live play and replay playback.
+* Renders crosshair, player status, ammo, healthbars, chat, and mode text.
+* Uses replay actor state when replay playback or export is active.
+* Does NOT render the 3D world, replay camera, or encode video frames.
+* Does NOT own replay export framebuffer capture or encoder state.
+* Does NOT implement replay controls, timeline, or info panels.
+*/
 #include "engine/engine-tick-ui.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
@@ -329,14 +338,13 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     }
 
     // ── Self-healthbar (world-space, reuses NPC healthbar style) ──
-    if (!gReplayExportRenderMode && !dead && !replayPlaybackActive) {
+    if (!dead && !replayPlaybackActive) {
         Debug::log(Debug::Category::Gui,
             "[HEALTHBAR SELF] calling drawPlayerHealthbar hp=%d/%d pos=(%.2f %.2f %.2f)\n",
             player.currentHp, player.maxHp,
             player.pos.x, player.pos.y, player.pos.z);
         drawPlayerHealthbar(player, camera, "self-hp", "live_world");
     }
-    if (!gReplayExportRenderMode)
     for (const Npc& npc : npcSystem.all()) {
         if (npc.body.dead) {
             continue;
@@ -360,7 +368,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         }
     }
 
-    if (!gReplayExportRenderMode && mpContext.active)
+    if (mpContext.active)
     {
         static uint64_t lastHealthbarLogMs = 0;
         const uint64_t healthbarNowMs = MimitaNet::nowMs();

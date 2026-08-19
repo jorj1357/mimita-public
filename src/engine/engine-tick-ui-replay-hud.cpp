@@ -1,3 +1,12 @@
+// 08 19 2026, 09 50
+/* purpose
+* Draws replay-specific information, controls, timeline, and actor healthbars.
+* Uses the current replay frame and camera mode for visible playback status.
+* Shares the centralized UI pass used by replay export capture.
+* Does NOT render replay actors, world geometry, or weapon models.
+* Does NOT capture framebuffer pixels or advance encoder state.
+* Does NOT own general gameplay chat, ammo, or crosshair rendering.
+*/
 #include "engine/engine-tick-ui.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
@@ -118,7 +127,6 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
         const uint32_t totalTicks = gReplayPlayer.totalTicks();
         const float currentTime = gReplayPlayer.currentTick() / 60.0f;
 
-        if (!gReplayExportRenderMode) {
         const float totalTime = (float)totalTicks / 60.0f;
         const char* camMode = gReplayPlayer.cameraController().modeName();
         const bool paused = gReplayPlayer.isPaused();
@@ -199,10 +207,8 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
                 for (int ki = 0; ki < gReplayEditor.timeKeyframeCount(); ++ki) {
                     float kfX = barX + (float)gReplayEditor.timeKeyframe(ki).tick / (float)totalTicks * barW;
                     uiDrawRect({kfX - 1.0f, markerY, 3.0f, markerH}, {1.0f, 0.8f, 0.2f, 0.9f}, "kf-marker-time");
-                }
-            }
         }
-        }
+    }
 
         // Game HUD (engineTickUIGameHUD) handles crosshair, ammo, health,
         // and other gameplay UI during replay. This replay HUD only adds
@@ -218,7 +224,6 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
             }
         }
 
-        if (!gReplayExportRenderMode) {
         const bool editorActive = gReplayEditor.isLoaded();
         const float helpX = uiScreenW() - 230.0f;
         const float helpW = 210.0f;

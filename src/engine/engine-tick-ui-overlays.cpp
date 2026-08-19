@@ -445,28 +445,32 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         }
     }
 
-    if (!gReplayExportRenderMode) {
+    if (!gReplayExportRenderMode || ReplayExportUI::showReplayBrowser)
         gReplayBrowser.draw();
 
-        if (replayPlaybackActive) {
-            if (const ReplaySceneFrame* rFrame = gReplayPlayer.currentSceneFrame()) {
-                gReplayTimeline.draw(gReplayPlayer.currentTick(), gReplayPlayer.totalTicks());
-            }
+    if (replayPlaybackActive &&
+        (!gReplayExportRenderMode || ReplayExportUI::showReplayTimeline)) {
+        if (const ReplaySceneFrame* rFrame = gReplayPlayer.currentSceneFrame()) {
+            gReplayTimeline.draw(gReplayPlayer.currentTick(), gReplayPlayer.totalTicks());
         }
+    }
 
-        if (isReplayExportActive())
-        {
-            float ex = uiScreenW() * 0.5f - 200.0f;
-            float ey = uiScreenH() * 0.7f;
-            float ew = 400.0f;
-            float eh = 80.0f;
-            uiDrawRect({ex, ey, ew, eh}, {0.0f, 0.0f, 0.0f, 0.8f}, "export-bg");
-            std::string status = getReplayExportStatusText();
-            uiDrawText(status.c_str(), ex + 10.0f, ey + 8.0f, 0.32f, {0.3f, 1.0f, 0.5f, 1.0f});
-            float p = getReplayExportProgress();
-            uiDrawRect({ex + 10.0f, ey + eh - 16.0f, (ew - 20.0f) * p, 10.0f},
-                       {0.3f, 1.0f, 0.3f, 1.0f}, "export-progress");
-        }
+    if (isReplayExportActive() &&
+        (!gReplayExportRenderMode || ReplayExportUI::showExportProgress))
+    {
+        float ex = uiScreenW() * 0.5f - 200.0f;
+        float ey = uiScreenH() * 0.7f;
+        float ew = 400.0f;
+        float eh = 80.0f;
+        uiDrawRect({ex, ey, ew, eh}, {0.0f, 0.0f, 0.0f, 0.8f}, "export-bg");
+        std::string status = getReplayExportStatusText();
+        uiDrawText(status.c_str(), ex + 10.0f, ey + 8.0f, 0.32f, {0.3f, 1.0f, 0.5f, 1.0f});
+        float p = getReplayExportProgress();
+        uiDrawRect({ex + 10.0f, ey + eh - 16.0f, (ew - 20.0f) * p, 10.0f},
+                   {0.3f, 1.0f, 0.3f, 1.0f}, "export-progress");
+    }
+
+    if (!gReplayExportRenderMode) {
         {
             static bool exportPopupShown = false;
             const ReplayExportJob& job = getReplayExportJob();
@@ -550,7 +554,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         drawHealthbarDebugOverlay(camera);
 
     // ── Room code HUD ───────────────────────────────────────────
-    if (gRoomCodeShow && !gReplayExportRenderMode && !gReplayCinematicMode)
+    if (gRoomCodeShow && !gReplayCinematicMode)
     {
         const std::string& code = mpContext.currentRoomCode;
         if (!code.empty())

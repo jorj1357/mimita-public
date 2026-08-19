@@ -1,27 +1,12 @@
-// C:\important\quiet\n\mimita-priv-v7\src\main.cpp
-// feb 10 2026 ultra minimal edit
-// purpose:
-// main.cpp should only do orchestration.
-// No logic. No GLFW. No OpenGL. No physics math. No world iteration.
-// Just:
-// init
-    // loop:
-    //   poll input
-    //   update audio
-    //   update physics
-    //   render
-// shutdown
-// Everything else lives behind headers.
-// 6 4 2026
-/**
- * like this is my fav idea
- * main.cpp calls renderWorld
- * renderWorld calls renderTextures renderLight renderBlackHoleVisuals etc
- * and THOSE files call like drawLine, visualRelativity, drawLightSpeed etc
- * AND THOOOOOSE files call like super basic boring stuff that is fine to call 1 bilion times per frame
- * and if anything fails, it prints the exact file and place and line etc 
- * with the debug log function BC WE NOT USING PRINTF DONT USE PRINTF JUTS MAKE UR OWN DEBUG LOG ok 
- */
+// 08 19 2026, 09 41
+/* purpose
+* Selects the process mode, initializes the matching runtime, and owns shutdown.
+* Parses full-client and replay-export subprocess launch options.
+* Runs the top-level client loop through subsystem entry points.
+* Does NOT implement gameplay, rendering passes, or video encoding.
+* Does NOT own network packet formats or server simulation.
+* Does NOT contain feature-specific HUD drawing.
+*/
 
 // 6 12 2026 todo plz make main like literal 100 lines
 // every file ideally is 100 lines or less, and just exposes 1 function 
@@ -237,6 +222,8 @@ int main(int argc, char** argv)
             gExportHeight = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--visible") == 0) {
             gExportVisible = true;
+        } else if (strcmp(argv[i], "--replay-export-verbose") == 0) {
+            gReplayExportVerbose = true;
         }
     }
 

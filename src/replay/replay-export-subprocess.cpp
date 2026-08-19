@@ -1,10 +1,11 @@
-// 08 17 2026
+// 08 19 2026, 09 50
 /* purpose
 * Runs a replay export as a standalone subprocess: loads a clip and map,
 * renders each frame offscreen, encodes to MP4, appends the outro, and exits.
 * This runs in a SEPARATE mimita.exe process so the main game keeps playing.
 * Does NOT own the main game loop, networking, or live gameplay.
 * Does NOT own replay recording or editor command registration.
+* Does NOT choose which HUD elements the centralized UI pass renders.
 */
 #include "replay/replay-export-subprocess.h"
 
@@ -34,9 +35,33 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
                          int width, int height)
 {
     namespace fs = std::filesystem;
+    if (width <= 0 || height <= 0) {
+        Debug::error(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS] FAILED: invalid render size %dx%d\n", width, height);
+        return;
+    }
+
+    // Normal client initialization applies the user's video settings. Export
+    // owns a separate process, so restore its window and render targets to the
+    // requested capture aspect before any replay frame is rendered.
+    // Hidden GLFW windows can report a stale/zero framebuffer size until they
+    // have been shown and processed once.  The 3D renderer already uses the
+    // requested dimensions explicitly, so make the window's UI viewport
+    // converge to the same drawable size before the first engine tick.
+    glfwShowWindow(engine.window());
+    glfwSetWindowSize(engine.window(), width, height);
+    glfwPollEvents();
+    int framebufferWidth = width;
+    int framebufferHeight = height;
+    glfwGetFramebufferSize(engine.window(), &framebufferWidth, &framebufferHeight);
+    engine.renderer->width = std::max(framebufferWidth, 1);
+    engine.renderer->height = std::max(framebufferHeight, 1);
+    PostFX::instance().initFBO(engine.renderer->width, engine.renderer->height);
+
     Debug::warn(Debug::Category::Replay,
-        "[EXPORT-SUBPROCESS] clip=%s output=%s %dx%d\n",
-        clipPath, outputPath, width, height);
+        "[EXPORT-SUBPROCESS] clip=%s output=%s requested=%dx%d framebuffer=%dx%d\n",
+        clipPath, outputPath, width, height,
+        engine.renderer->width, engine.renderer->height);
 
     // ── 1. Load the clip ──────────────────────────────────────────────
     if (!REPLAY_PLAYER.loadFromJSON(clipPath)) {
