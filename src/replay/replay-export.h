@@ -15,7 +15,37 @@
 #include <string>
 #include <vector>
 
-// ── Replay export configuration (hot-reloaded from config/replay/replay-export.json)
+// ── Replay export configuration (hot-reloaded from config/replayexport.json)
+
+struct ReplayExportUiConfig {
+    bool chat = true;
+    bool chatBubbles = true;
+    bool replayInfo = false;
+    bool replayControls = false;
+    bool replayTimeline = false;
+    bool replayBrowser = false;
+    bool exportProgress = false;
+    bool deathScreen = true;
+    bool speedDisplay = true;
+    bool modeText = true;
+    bool playerList = true;
+    bool fps = true;
+    bool postFxDebug = false;
+    bool shadowDebug = false;
+    bool performanceOverlay = false;
+    bool devOverlay = false;
+    bool debugVisuals = false;
+    bool duelDebug = false;
+    bool npcDebug = false;
+};
+
+struct ReplayExportEffectsConfig {
+    bool worldDebris = true;
+    bool bulletHoles = true;
+    bool worldCracks = true;
+    bool muzzleFlash = true;
+    bool muzzleLighting = true;
+};
 
 struct ReplayExportConfig {
     // FFmpeg is the default release backend: it is the only path that reliably
@@ -30,10 +60,12 @@ struct ReplayExportConfig {
     // fallback, never the discrete GPU) | "discrete" | "software"
     std::string encoderMode = "auto";
     float audioVolumeMultiplier = 0.8f;
-    int exportWidth = 1920;
-    int exportHeight = 1080;
+    int exportWidth = 1024;
+    int exportHeight = 768;
     int exportBitrate = 0;
     int exportCrf = 18;
+    ReplayExportUiConfig ui;
+    ReplayExportEffectsConfig effects;
 };
 
 // Per-export-frame timing buckets (ms). Accumulated by the export capture path
@@ -155,6 +187,7 @@ bool isFfmpegDebugMode();
 std::string generateExportOutputPath();
 std::string makeCmdKArgs(const std::string& cmd);
 void pollReplayExportConfig();
+bool saveReplayExportConfig();
 float getReplayExportAudioVolume();
 bool buildReplayExportAudio(const std::string& wavPath, uint32_t totalTicks);
 bool writeReplayExportWav(const std::string& path, const int16_t* samples,

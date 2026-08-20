@@ -2,6 +2,7 @@
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include <cmath>
+#include <functional>
 #include <GLFW/glfw3.h>
 #include "camera.h"
 #include "world/world.h"
@@ -17,6 +18,8 @@
 #include "replay/replay-editor.h"
 #include "replay/replay-export.h"
 #include "gui/hud/chat-bubble.h"
+#include "gui/hud/chat-history.h"
+#include "gui/hud/chat-window.h"
 #include "ui/hitmarker.h"
 #include "config/player-settings.h"
 #include "config/camera-config.h"
@@ -915,6 +918,16 @@ void engineTickCamera(Engine& engine, float dt)
             if (effect.type == "chat") {
                 ActorChatState& chatState = gReplayChatStates[effect.sourceActorId];
                 addChatMessage(chatState, effect.assetId, effect.sourceActorId);
+                if (gpChatHistory) {
+                    ChatHistoryEntry entry;
+                    entry.messageId = ((uint64_t)(uint32_t)effect.spawnTick << 32) |
+                        (uint64_t)std::hash<std::string>{}(effect.sourceActorId + effect.assetId);
+                    entry.serverTick = (uint64_t)std::max(effect.spawnTick, 0);
+                    entry.senderName = effect.sourceActorId;
+                    entry.text = effect.assetId;
+                    gChatHistory.append(entry);
+                    gChatWindowVisible = true;
+                }
                 if (!isReplayExportActive())
                     playChatSound((int)effect.assetId.size());
             } else if (effect.type == "gunshot") {
@@ -922,8 +935,10 @@ void engineTickCamera(Engine& engine, float dt)
                     "[REPLAY EFFECT] spawned type=gunshot tick=%d from=(%.2f %.2f %.2f) to=(%.2f %.2f %.2f) source=%s\n",
                     effect.spawnTick, effect.from.x, effect.from.y, effect.from.z,
                     effect.to.x, effect.to.y, effect.to.z, effect.sourceActorId.c_str());
+                const bool muzzleLighting = !isReplayExportActive() || gExportConfig.effects.muzzleLighting;
                 EffectPartSystem::instance().spawnMuzzleFlash(
-                    effect.from, effect.sourceActorId);
+                    effect.from, effect.sourceActorId, 1.0f, effect.assetId,
+                    false, muzzleLighting);
                 EffectPartSystem::instance().spawnTracer(
                     effect.from, effect.to, effect.sourceActorId);
             } else if (effect.type == "blood_spurt_emitter") {
@@ -949,11 +964,17 @@ void engineTickCamera(Engine& engine, float dt)
                     effect.spawnTick, effect.position.x, effect.position.y, effect.position.z);
                 EffectPartSystem::instance().spawnFootstep(effect.position);
             } else if (effect.type == "impact_world") {
-                // Visual effects (debris, bullet impact) are separate events.
-                // Only spawn world debris here; HitEffects::onHit is NOT called
-                // because damage numbers and hit burst are separate events.
-                EffectPartSystem::instance().spawnWorldDebris(
-                    effect.position, effect.normal, 1.0f);
+                // Recreate the surface effects here; HitEffects::onHit is not
+                // called during playback because it also owns live hit feedback.
+                if (!isReplayExportActive() || gExportConfig.effects.worldDebris)
+                    EffectPartSystem::instance().spawnWorldDebris(
+                        effect.position, effect.normal, 1.0f);
+                if (!isReplayExportActive() || gExportConfig.effects.bulletHoles)
+                    EffectPartSystem::instance().spawnBulletImpact(
+                        effect.position, effect.normal, 1.0f);
+                if (!isReplayExportActive() || gExportConfig.effects.worldCracks)
+                    EffectPartSystem::instance().spawnWorldCracks(
+                        effect.position, effect.normal, effect.direction, 1.0f);
             } else if (effect.type == "debris_block") {
                 // No-op: impact_world already spawns the full debris burst.
                 // Per-particle debris_block events recorded during gameplay
@@ -967,8 +988,11 @@ void engineTickCamera(Engine& engine, float dt)
                     "[REPLAY EFFECT] spawned type=muzzle_flash tick=%d pos=(%.2f %.2f %.2f) source=%s\n",
                     effect.spawnTick, effect.position.x, effect.position.y, effect.position.z,
                     effect.sourceActorId.c_str());
+                const bool muzzleFlash = !isReplayExportActive() || gExportConfig.effects.muzzleFlash;
+                const bool muzzleLighting = !isReplayExportActive() || gExportConfig.effects.muzzleLighting;
                 EffectPartSystem::instance().spawnMuzzleFlash(
-                    effect.position, effect.sourceActorId);
+                    effect.position, effect.sourceActorId, 1.0f, effect.assetId,
+                    muzzleFlash, muzzleLighting);
             } else if (effect.type == "tracer") {
                 Debug::log(Debug::Category::Replay,
                     "[REPLAY EFFECT] spawned type=tracer tick=%d from=(%.2f %.2f %.2f) to=(%.2f %.2f %.2f) source=%s\n",

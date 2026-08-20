@@ -1,6 +1,6 @@
 // 08 19 2026, 09 50
 /* purpose
-* Defines the compile-time visibility policy for replay export UI categories.
+* Defines the JSON-driven visibility policy for replay export UI categories.
 * Keeps cinematic/debug exclusions separate from normal gameplay HUD elements.
 * Lets existing HUD owners decide whether optional overlays appear in exports.
 * Does NOT render UI, bind framebuffers, or capture video pixels.
@@ -9,41 +9,48 @@
 */
 #pragma once
 
+#include "replay/replay-export.h"
+
 // ============================================================
 // REPLAY EXPORT UI FILTER
 //
-// Exported videos should look like normal gameplay footage.
-// Set any of these to true to include them in exported videos.
+// Exported videos should look like normal gameplay footage. Values are loaded
+// from config/replayexport.json and affect export renders only.
 // ============================================================
 
 namespace ReplayExportUI {
 
 // Death/respawn UI
-static constexpr bool showDeathScreen   = true;
-static constexpr bool showRespawnUI     = true;
+inline bool showDeathScreen() { return gExportConfig.ui.deathScreen; }
+inline bool showRespawnUI() { return gExportConfig.ui.deathScreen; }
+
+// Chat is split because the 2D history and world-space bubbles are separate.
+inline bool showChat() { return gExportConfig.ui.chat; }
+inline bool showChatBubbles() { return gExportConfig.ui.chatBubbles; }
 
 // Replay-specific UI
-static constexpr bool showReplayControls = true;
-static constexpr bool showReplayTimeline = true;
-static constexpr bool showReplayBrowser  = true;
+inline bool showReplayInfo() { return gExportConfig.ui.replayInfo; }
+inline bool showReplayControls() { return gExportConfig.ui.replayControls; }
+inline bool showReplayTimeline() { return gExportConfig.ui.replayTimeline; }
+inline bool showReplayBrowser() { return gExportConfig.ui.replayBrowser; }
 
 // Export UI
-static constexpr bool showExportProgress = true;
+inline bool showExportProgress() { return gExportConfig.ui.exportProgress; }
 
 // Debug overlays
-static constexpr bool showFps           = true;
-static constexpr bool showPostFxDebug   = false;
-static constexpr bool showShadowDebug   = false;
-static constexpr bool showPerfOverlay   = false;
-static constexpr bool showDevOverlay    = false;
-static constexpr bool showDebugVis      = false;
-static constexpr bool showDuelDebug     = false;
-static constexpr bool showNpcDebug      = false;
+inline bool showFps() { return gExportConfig.ui.fps; }
+inline bool showPostFxDebug() { return gExportConfig.ui.postFxDebug; }
+inline bool showShadowDebug() { return gExportConfig.ui.shadowDebug; }
+inline bool showPerfOverlay() { return gExportConfig.ui.performanceOverlay; }
+inline bool showDevOverlay() { return gExportConfig.ui.devOverlay; }
+inline bool showDebugVis() { return gExportConfig.ui.debugVisuals; }
+inline bool showDuelDebug() { return gExportConfig.ui.duelDebug; }
+inline bool showNpcDebug() { return gExportConfig.ui.npcDebug; }
 
 // Development/informational HUD
-static constexpr bool showSpeedDisplay  = true;
-static constexpr bool showModeText      = true;
-static constexpr bool showPlayerList    = true;
-static constexpr bool showNetDebug      = false;
+inline bool showSpeedDisplay() { return gExportConfig.ui.speedDisplay; }
+inline bool showModeText() { return gExportConfig.ui.modeText; }
+inline bool showPlayerList() { return gExportConfig.ui.playerList; }
+inline bool showNetDebug() { return false; }
 
 }

@@ -103,7 +103,7 @@ void engineTick(Engine& engine)
             { MIMITA_PERF_SCOPE("UI"); engineTickUI(engine, dt, worldPassRan); } HEARTBEAT("after ui");
         }
         { MIMITA_PERF_SCOPE("DevOverlay");
-        if (!gReplayExportRenderMode || ReplayExportUI::showDevOverlay)
+        if (!gReplayExportRenderMode || ReplayExportUI::showDevOverlay())
             DevOverlay::instance().render();
         }
     }

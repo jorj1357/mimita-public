@@ -121,6 +121,7 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
                    {1.0f, 0.12f, 0.12f, 1.0f});
     }
     if (replayPlaybackActive && !gReplayCinematicMode) {
+        if (!gReplayExportRenderMode || ReplayExportUI::showReplayInfo()) {
         const float rOverlayX = uiScreenW() - 280.0f;
         const float rOverlayY = 20.0f;
         const auto* rFrame = gReplayPlayer.currentSceneFrame();
@@ -209,6 +210,9 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
                     uiDrawRect({kfX - 1.0f, markerY, 3.0f, markerH}, {1.0f, 0.8f, 0.2f, 0.9f}, "kf-marker-time");
         }
     }
+        }
+
+        }
 
         // Game HUD (engineTickUIGameHUD) handles crosshair, ammo, health,
         // and other gameplay UI during replay. This replay HUD only adds
@@ -224,6 +228,7 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
             }
         }
 
+        if (!gReplayExportRenderMode || ReplayExportUI::showReplayControls()) {
         const bool editorActive = gReplayEditor.isLoaded();
         const float helpX = uiScreenW() - 230.0f;
         const float helpW = 210.0f;

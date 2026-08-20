@@ -50,7 +50,7 @@ extern void* sExportSubprocess;
 ReplayExportConfig gExportConfig;
 static uint64_t gExportConfigLastWrite = 0;
 
-static const char* REPLAY_EXPORT_CONFIG_PATH = "config/replay/replay-export.json";
+static const char* REPLAY_EXPORT_CONFIG_PATH = "config/replayexport.json";
 
 static uint64_t cfgFileWriteTime(const char* path)
 {
@@ -84,14 +84,41 @@ static void reloadReplayExportConfig()
         }
         if (j.contains("audioVolumeMultiplier"))
             loaded.audioVolumeMultiplier = j["audioVolumeMultiplier"].get<float>();
-        if (j.contains("exportWidth"))
-            loaded.exportWidth = j["exportWidth"].get<int>();
-        if (j.contains("exportHeight"))
-            loaded.exportHeight = j["exportHeight"].get<int>();
+        const nlohmann::json& resolution = j.value("resolution", nlohmann::json::object());
+        loaded.exportWidth = resolution.value("width", j.value("exportWidth", loaded.exportWidth));
+        loaded.exportHeight = resolution.value("height", j.value("exportHeight", loaded.exportHeight));
         if (j.contains("exportBitrate"))
             loaded.exportBitrate = j["exportBitrate"].get<int>();
         if (j.contains("exportCrf"))
             loaded.exportCrf = j["exportCrf"].get<int>();
+
+        const nlohmann::json& ui = j.value("ui", nlohmann::json::object());
+        loaded.ui.chat = ui.value("chat", loaded.ui.chat);
+        loaded.ui.chatBubbles = ui.value("chatBubbles", loaded.ui.chatBubbles);
+        loaded.ui.replayInfo = ui.value("replayInfo", loaded.ui.replayInfo);
+        loaded.ui.replayControls = ui.value("replayControls", loaded.ui.replayControls);
+        loaded.ui.replayTimeline = ui.value("replayTimeline", loaded.ui.replayTimeline);
+        loaded.ui.replayBrowser = ui.value("replayBrowser", loaded.ui.replayBrowser);
+        loaded.ui.exportProgress = ui.value("exportProgress", loaded.ui.exportProgress);
+        loaded.ui.deathScreen = ui.value("deathScreen", loaded.ui.deathScreen);
+        loaded.ui.speedDisplay = ui.value("speedDisplay", loaded.ui.speedDisplay);
+        loaded.ui.modeText = ui.value("modeText", loaded.ui.modeText);
+        loaded.ui.playerList = ui.value("playerList", loaded.ui.playerList);
+        loaded.ui.fps = ui.value("fps", loaded.ui.fps);
+        loaded.ui.postFxDebug = ui.value("postFxDebug", loaded.ui.postFxDebug);
+        loaded.ui.shadowDebug = ui.value("shadowDebug", loaded.ui.shadowDebug);
+        loaded.ui.performanceOverlay = ui.value("performanceOverlay", loaded.ui.performanceOverlay);
+        loaded.ui.devOverlay = ui.value("devOverlay", loaded.ui.devOverlay);
+        loaded.ui.debugVisuals = ui.value("debugVisuals", loaded.ui.debugVisuals);
+        loaded.ui.duelDebug = ui.value("duelDebug", loaded.ui.duelDebug);
+        loaded.ui.npcDebug = ui.value("npcDebug", loaded.ui.npcDebug);
+
+        const nlohmann::json& effects = j.value("effects", nlohmann::json::object());
+        loaded.effects.worldDebris = effects.value("worldDebris", loaded.effects.worldDebris);
+        loaded.effects.bulletHoles = effects.value("bulletHoles", loaded.effects.bulletHoles);
+        loaded.effects.worldCracks = effects.value("worldCracks", loaded.effects.worldCracks);
+        loaded.effects.muzzleFlash = effects.value("muzzleFlash", loaded.effects.muzzleFlash);
+        loaded.effects.muzzleLighting = effects.value("muzzleLighting", loaded.effects.muzzleLighting);
 
         gExportConfig = loaded;
         Debug::log(Debug::Category::Replay, "[REPLAY EXPORT] config reloaded: encoder=%s encoderMode=%s volume=%.2f res=%dx%d crf=%d bitrate=%d",
@@ -128,6 +155,35 @@ void pollReplayExportConfig()
 
 // Rename accessors to match new struct
 float getReplayExportAudioVolume() { return gExportConfig.audioVolumeMultiplier; }
+
+bool saveReplayExportConfig()
+{
+    nlohmann::json j = {
+        {"encoder", gExportConfig.encoder},
+        {"encoderMode", gExportConfig.encoderMode},
+        {"audioVolumeMultiplier", gExportConfig.audioVolumeMultiplier},
+        {"resolution", {{"width", gExportConfig.exportWidth}, {"height", gExportConfig.exportHeight}}},
+        {"exportCrf", gExportConfig.exportCrf},
+        {"exportBitrate", gExportConfig.exportBitrate},
+        {"ui", {
+            {"chat", gExportConfig.ui.chat}, {"chatBubbles", gExportConfig.ui.chatBubbles},
+            {"replayInfo", gExportConfig.ui.replayInfo}, {"replayControls", gExportConfig.ui.replayControls},
+            {"replayTimeline", gExportConfig.ui.replayTimeline}, {"replayBrowser", gExportConfig.ui.replayBrowser},
+            {"exportProgress", gExportConfig.ui.exportProgress}, {"deathScreen", gExportConfig.ui.deathScreen},
+            {"speedDisplay", gExportConfig.ui.speedDisplay}, {"modeText", gExportConfig.ui.modeText},
+            {"playerList", gExportConfig.ui.playerList}, {"fps", gExportConfig.ui.fps},
+            {"postFxDebug", gExportConfig.ui.postFxDebug}, {"shadowDebug", gExportConfig.ui.shadowDebug},
+            {"performanceOverlay", gExportConfig.ui.performanceOverlay}, {"devOverlay", gExportConfig.ui.devOverlay},
+            {"debugVisuals", gExportConfig.ui.debugVisuals}, {"duelDebug", gExportConfig.ui.duelDebug}, {"npcDebug", gExportConfig.ui.npcDebug}}},
+        {"effects", {{"worldDebris", gExportConfig.effects.worldDebris}, {"bulletHoles", gExportConfig.effects.bulletHoles},
+            {"worldCracks", gExportConfig.effects.worldCracks}, {"muzzleFlash", gExportConfig.effects.muzzleFlash},
+            {"muzzleLighting", gExportConfig.effects.muzzleLighting}}}
+    };
+    std::ofstream file(REPLAY_EXPORT_CONFIG_PATH);
+    if (!file.is_open()) return false;
+    file << j.dump(2) << '\n';
+    return (bool)file;
+}
 
 std::string makeCmdKArgs(const std::string& cmd)
 {

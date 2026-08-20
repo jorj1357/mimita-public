@@ -28,6 +28,7 @@ struct EffectPart
     std::string replayType = "effect";
     std::string texturePath;
     std::string materialName;
+    std::string assetId;
     bool billboardText = true;
     float scale = 1.0f;
     float endScale = 1.0f;
@@ -53,6 +54,7 @@ struct EffectPart
         replayType = "effect";
         texturePath.clear();
         materialName.clear();
+        assetId.clear();
         sourceActorId.clear();
         targetActorId.clear();
     }
@@ -117,8 +119,8 @@ public:
     EffectPart* spawnEntityImpact(glm::vec3 position, glm::vec3 normal,
                                   const std::string& sourceActorId, const std::string& targetActorId,
                                   float sizeScale = 1.0f);
-    EffectPart* spawnWorldImpact(glm::vec3 position, glm::vec3 normal, float sizeScale = 1.0f);
-    EffectPart* spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId = {}, float sizeScale = 1.0f, const std::string& weaponId = {});
+    EffectPart* spawnWorldImpact(glm::vec3 position, glm::vec3 normal, float sizeScale = 1.0f, glm::vec3 direction = {});
+    EffectPart* spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId = {}, float sizeScale = 1.0f, const std::string& weaponId = {}, bool spawnVisual = true, bool spawnLighting = true);
     EffectPart* spawnTracer(glm::vec3 start, glm::vec3 end, const std::string& sourceActorId = {}, float sizeScale = 1.0f, const std::string& weaponId = {});
     EffectPart* spawnBulletImpact(glm::vec3 position, glm::vec3 normal, float sizeScale = 1.0f);
     void spawnWorldCracks(glm::vec3 position, glm::vec3 normal,

@@ -262,6 +262,21 @@
           "direction": "both",
           "release_queued": false
         }
+      },
+      "8": {
+        "name": "Antipodal bad internet 2x worse",
+        "latency": { "direction": "both", "base_ms": 400, "jitter_ms": 100 },
+        "loss": { "direction": "both", "min_percent": 4, "max_percent": 12, "burst_percent": 60, "burst_probability": 0.30 },
+        "reorder": { "direction": "both", "min_percent": 4, "max_percent": 6, "window": 16 },
+        "blackout": {
+          "enabled": true,
+          "start_probability_per_second": 0.01,
+          "min_ms": 1600,
+          "max_ms": 4000,
+          "cooldown_ms": 60000,
+          "direction": "both",
+          "release_queued": false
+        }
       }
     }
   }

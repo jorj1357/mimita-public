@@ -319,15 +319,20 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
     for (size_t i = 0; i < n; ++i)
     {
         const auto& entry = history.get(i);
+        // History is stored oldest-first. Anchor the newest entry to the
+        // bottom of the content, then place older entries above it.
+        const float contentY_d = contentH_d - lineH_d -
+                                 (float)(n - 1 - i) * lineH_d;
+        const float lineY = msgAreaY + uiScaleY(contentY_d) -
+                            uiScaleY(state.scroll.scrollY);
+        const float cursorX = msgAreaX + uiScaleX(2.0f);
         char line[512];
         if (entry.senderType == ChatSenderType::Server)
         {
             std::snprintf(line, sizeof(line), "[system] %s", entry.text.c_str());
             glm::vec4 col = serverColor;
             if (entry.muted) col = mutedColor;
-            uiDrawText(line, msgAreaX + uiScaleX(2),
-                       msgAreaY + (float)i * lineScreenH,
-                       textScale, col);
+            uiDrawText(line, cursorX, lineY, textScale, col);
         }
         else
         {
@@ -336,9 +341,7 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
                 std::snprintf(line, sizeof(line), "%s: %s",
                              entry.senderName.c_str(),
                              entry.text.c_str());
-                uiDrawText(line, msgAreaX + uiScaleX(2),
-                           msgAreaY + (float)i * lineScreenH,
-                           textScale, mutedColor);
+                uiDrawText(line, cursorX, lineY, textScale, mutedColor);
                 continue;
             }
 
@@ -346,9 +349,6 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
             std::snprintf(line, sizeof(line), "%s: %s",
                          entry.senderName.c_str(),
                          entry.text.c_str());
-
-            const float lineY = msgAreaY + (float)i * lineScreenH;
-            float cursorX = msgAreaX + uiScaleX(2);
 
             // Draw sender name in white, message in white
             uiDrawText(line, cursorX, lineY, textScale, playerColor);

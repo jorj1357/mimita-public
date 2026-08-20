@@ -182,7 +182,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     snprintf(hpText, sizeof(hpText), "HP: %d/%d", hp, maxHp);
     hudText("hpText", hpText);
     if (dead && gDuelManager.phase() != DuelPhase::MatchEnd) {
-        if (!gReplayExportRenderMode || ReplayExportUI::showDeathScreen)
+        if (!gReplayExportRenderMode || ReplayExportUI::showDeathScreen())
         {
         // Draw death overlay from layout JSON
         const GuiElement* doEl = hudLayout.get("deathOverlay");
@@ -200,7 +200,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         hudText("respawnHint", duelBlocksRespawn ? "" : "press space to respawn instantly");
         }
     }
-    if (!gReplayExportRenderMode || ReplayExportUI::showSpeedDisplay)
+    if (!gReplayExportRenderMode || ReplayExportUI::showSpeedDisplay())
     {
         glm::vec3 totalVel = replayViewedActor ? replayViewedActor->velocity : player.vel;
         float speed = glm::length(totalVel);
@@ -208,7 +208,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         snprintf(spBuf, sizeof(spBuf), "Speed: %.2f m/s", speed);
         hudText("speedText", spBuf);
     }
-    if (DebugConfig::DEBUG_PHYSICS && (!gReplayExportRenderMode || ReplayExportUI::showSpeedDisplay))
+    if (DebugConfig::DEBUG_PHYSICS && (!gReplayExportRenderMode || ReplayExportUI::showSpeedDisplay()))
     {
         char dbg[512];
         int y = 200;
@@ -237,7 +237,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
             (int)player.ground.stableOnGround, player.ground.groundLostTimer, player.ground.airborneTimer);
         uiDrawText(dbg, 24.0f, (float)y, 0.28f, {0.3f, 1.0f, 0.6f, 1.0f});
     }
-    if (!gReplayExportRenderMode || ReplayExportUI::showModeText)
+    if (!gReplayExportRenderMode || ReplayExportUI::showModeText())
     {
         char modeText[128];
         snprintf(modeText, sizeof(modeText), "%s | %s | slot %d",
@@ -352,19 +352,21 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         drawPlayerHealthbar(npc.body, camera, "npc-hp", "live_world");
     }
 
-    renderChatBubbles(player.chatState, player, camera);
-    if (!replayPlaybackActive)
-    {
-        for (auto& kv : mpContext.remotePlayers)
-            renderChatBubbles(kv.second.chatState, kv.second, camera);
-    }
-    else
-    {
-        for (const auto& kv : gReplayChatStates)
+    if (!gReplayExportRenderMode || ReplayExportUI::showChatBubbles()) {
+        renderChatBubbles(player.chatState, player, camera);
+        if (!replayPlaybackActive)
         {
-            auto actorIt = replayActorModels.find(kv.first);
-            if (actorIt != replayActorModels.end() && actorIt->second)
-                renderChatBubbles(kv.second, *actorIt->second, camera);
+            for (auto& kv : mpContext.remotePlayers)
+                renderChatBubbles(kv.second.chatState, kv.second, camera);
+        }
+        else
+        {
+            for (const auto& kv : gReplayChatStates)
+            {
+                auto actorIt = replayActorModels.find(kv.first);
+                if (actorIt != replayActorModels.end() && actorIt->second)
+                    renderChatBubbles(kv.second, *actorIt->second, camera);
+            }
         }
     }
 
@@ -418,7 +420,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
                    player.pos.x, player.pos.y, player.pos.z);
         }
     }
-    if (!gReplayExportRenderMode || ReplayExportUI::showNpcDebug)
+    if (!gReplayExportRenderMode || ReplayExportUI::showNpcDebug())
     {
         char npcText[96];
         snprintf(npcText, sizeof(npcText), "NPCs: %zu", npcSystem.all().size());
@@ -435,7 +437,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
             uiDrawText(tuneText, 24, 184, 0.28f, {0.8f, 0.9f, 1.0f, 1.0f});
         }
     }
-    if (DebugVis::render() && (!gReplayExportRenderMode || ReplayExportUI::showDebugVis))
+    if (DebugVis::render() && (!gReplayExportRenderMode || ReplayExportUI::showDebugVis()))
     {
         char dbg[256];
         snprintf(dbg, sizeof(dbg), "dt %.3f grounded %d vel %.2f %.2f %.2f cam %.1f %.1f %.1f",
@@ -450,7 +452,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
                         "[CHAT TRACE 3 BEFORE HUD GATE] gpChatHistory=%p chatOpen=%d\n",
                         (void*)gpChatHistory,
                         (int)gChatWindowState.open);
-    if (gpChatHistory)
+    if (gpChatHistory && (!gReplayExportRenderMode || ReplayExportUI::showChat()))
     {
         renderChatWindow(gChatWindowState, engine.window(), gChatHistory,
                          gChatUiTickClock, uiScreenW(), uiScreenH());

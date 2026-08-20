@@ -94,7 +94,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
     GuiLayout& hudLayout = GuiLayoutManager::instance().getLayout("config/gui/hud.json");
 
     if (gDuelManager.phase() == DuelPhase::MatchEnd &&
-        (!gReplayExportRenderMode || ReplayExportUI::showDuelDebug))
+        (!gReplayExportRenderMode || ReplayExportUI::showDuelDebug()))
     {
         const char* stateName = "None";
         switch (gDuelManager.endState()) {
@@ -215,7 +215,8 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             gBombTagManager.renderHud();
     }
 
-    if (mpContext.active && mpContext.showPlayerList)
+    if (mpContext.active && mpContext.showPlayerList &&
+        (!gReplayExportRenderMode || ReplayExportUI::showPlayerList()))
     {
         static int gPlayerListFrame = 0;
         ++gPlayerListFrame;
@@ -445,18 +446,18 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         }
     }
 
-    if (!gReplayExportRenderMode || ReplayExportUI::showReplayBrowser)
+    if (!gReplayExportRenderMode || ReplayExportUI::showReplayBrowser())
         gReplayBrowser.draw();
 
     if (replayPlaybackActive &&
-        (!gReplayExportRenderMode || ReplayExportUI::showReplayTimeline)) {
+        (!gReplayExportRenderMode || ReplayExportUI::showReplayTimeline())) {
         if (const ReplaySceneFrame* rFrame = gReplayPlayer.currentSceneFrame()) {
             gReplayTimeline.draw(gReplayPlayer.currentTick(), gReplayPlayer.totalTicks());
         }
     }
 
     if (isReplayExportActive() &&
-        (!gReplayExportRenderMode || ReplayExportUI::showExportProgress))
+        (!gReplayExportRenderMode || ReplayExportUI::showExportProgress()))
     {
         float ex = uiScreenW() * 0.5f - 200.0f;
         float ey = uiScreenH() * 0.7f;
@@ -491,7 +492,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
     MusicManager::instance().drawAllOverlay();
     NotificationSystem::instance().render(true);
     // Gameplay mouse-lock indicator (right side). Red = locked, green = unlocked.
-    if ((!gReplayExportRenderMode || ReplayExportUI::showDevOverlay) && GAME_STATE == GAME_PLAYING)
+    if ((!gReplayExportRenderMode || ReplayExportUI::showDevOverlay()) && GAME_STATE == GAME_PLAYING)
     {
         const bool lockOn = MouseLock::locked();
         const char* lockText = lockOn
@@ -503,7 +504,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                    lockOn ? glm::vec4(1.0f, 0.30f, 0.30f, 0.95f)
                           : glm::vec4(0.30f, 1.0f, 0.40f, 0.95f));
     }
-    if (gFramePacer.showFPS() && (!gReplayExportRenderMode || ReplayExportUI::showFps))
+    if (gFramePacer.showFPS() && (!gReplayExportRenderMode || ReplayExportUI::showFps()))
     {
         const GuiElement* fpsEl = hudLayout.get("fpsText");
         float fx = fpsEl ? fpsEl->x : 12.0f;
@@ -520,14 +521,14 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             uiDrawText(gFramePacer.debugText(), uiScaleX(fx), uiScaleY(dy), dScale, dCol);
         }
     }
-    if (PostFX::instance().debugEnabled && (!gReplayExportRenderMode || ReplayExportUI::showPostFxDebug))
+    if (PostFX::instance().debugEnabled && (!gReplayExportRenderMode || ReplayExportUI::showPostFxDebug()))
     {
         const char* txt = PostFX::instance().debugText();
         if (txt && txt[0])
             uiDrawText(txt, uiScreenW() - 380.0f, 12.0f, 0.28f,
                        {1.0f, 0.8f, 0.2f, 1.0f});
     }
-    if (ShadowConfig::instance().data().debugDrawShadowFrustum && (!gReplayExportRenderMode || ReplayExportUI::showShadowDebug))
+    if (ShadowConfig::instance().data().debugDrawShadowFrustum && (!gReplayExportRenderMode || ReplayExportUI::showShadowDebug()))
     {
         const auto& sd = ShadowConfig::instance().data();
         char buf[512];
@@ -545,9 +546,9 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                    {1.0f, 0.9f, 0.4f, 1.0f});
     }
 
-    if (!gReplayExportRenderMode || ReplayExportUI::showPerfOverlay)
+    if (!gReplayExportRenderMode || ReplayExportUI::showPerfOverlay())
         Perf::renderOverlay();
-    if (!gReplayExportRenderMode || ReplayExportUI::showPerfOverlay)
+    if (!gReplayExportRenderMode || ReplayExportUI::showPerfOverlay())
         uiRenderFrameDebugOverlay(engine.window(), "PLAYING", worldPassRan);
 
     if (isHealthbarDebugEnabled())

@@ -1,0 +1,39 @@
+{
+  "encoder": "ffmpeg",
+  "encoderMode": "auto",
+  "audioVolumeMultiplier": 0.8,
+  "resolution": {
+    "width": 1024,
+    "height": 768
+  },
+  "exportCrf": 18,
+  "exportBitrate": 0,
+  "ui": {
+    "chat": true,
+    "chatBubbles": true,
+    "replayInfo": false,
+    "replayControls": false,
+    "replayTimeline": false,
+    "replayBrowser": false,
+    "exportProgress": false,
+    "deathScreen": true,
+    "speedDisplay": true,
+    "modeText": true,
+    "playerList": true,
+    "fps": true,
+    "postFxDebug": false,
+    "shadowDebug": false,
+    "performanceOverlay": false,
+    "devOverlay": false,
+    "debugVisuals": false,
+    "duelDebug": false,
+    "npcDebug": false
+  },
+  "effects": {
+    "worldDebris": true,
+    "bulletHoles": true,
+    "worldCracks": true,
+    "muzzleFlash": true,
+    "muzzleLighting": true
+  }
+}

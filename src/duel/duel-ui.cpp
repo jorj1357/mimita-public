@@ -208,9 +208,9 @@ void renderDuelMatchHud(GLFWwindow* win, float dt)
         }
 
         if (dq.won())
-            hudText(layout, "winText", "YOU WIN");
+            hudText(layout, "winText", "W SPEED");
         else
-            hudText(layout, "loseText", "YOU LOSE");
+            hudText(layout, "loseText", "L SPEED........");
 
         char score[64];
         snprintf(score, sizeof(score), "%d - %d", dq.myScore(), dq.oppScore());
@@ -220,8 +220,8 @@ void renderDuelMatchHud(GLFWwindow* win, float dt)
         snprintf(rematch, sizeof(rematch), "rematch in %.0f...", std::max(0.0f, dq.rematchLeft()));
         hudText(layout, "rematchText", rematch);
 
-        hudText(layout, "endHintContinue", "keep fighting - scores locked");
-        hudText(layout, "endHintSpace", "press space to rematch now");
+        hudText(layout, "endHintContinue", "do nothing to rematch in 5 sec");
+        hudText(layout, "endHintSpace", "press space to rematch NOW....");
         hudText(layout, "endHintEsc", "esc = back to the queue");
 
         drawDowntime(layout, dq, false);

@@ -529,7 +529,7 @@ void registerReplayExportCommands()
 
     Terminal::instance().registerCommand({
         "export_config",
-        "Show or set export config (resolution, CRF, bitrate, encoderMode). Use: export_config <key> <value>",
+        "Show or set export config in config/replayexport.json. Use: export_config <key> <value>",
         "export_config [width|height|crf|bitrate|volume|encoderMode|encoder] <value>",
         [](const std::vector<std::string>& args) {
             if (args.empty()) {
@@ -575,21 +575,10 @@ void registerReplayExportCommands()
                     Terminal::instance().addLog("[ERROR] Unknown key: " + key + " (use width, height, crf, bitrate, volume, encoderMode)");
                 }
             }
-            // Write config to disk
-            nlohmann::json j;
-            j["exportWidth"] = gExportConfig.exportWidth;
-            j["exportHeight"] = gExportConfig.exportHeight;
-            j["exportCrf"] = gExportConfig.exportCrf;
-            j["exportBitrate"] = gExportConfig.exportBitrate;
-            j["audioVolumeMultiplier"] = gExportConfig.audioVolumeMultiplier;
-            j["encoder"] = gExportConfig.encoder;
-            j["encoderMode"] = gExportConfig.encoderMode;
-            std::ofstream f("config/replay/replay-export.json");
-            if (f.is_open()) {
-                f << j.dump(2);
-                f.close();
-                Terminal::instance().addLog("[EXPORT CONFIG] saved to config/replay/replay-export.json");
-            }
+            if (saveReplayExportConfig())
+                Terminal::instance().addLog("[EXPORT CONFIG] saved to config/replayexport.json");
+            else
+                Terminal::instance().addLog("[ERROR] Could not save config/replayexport.json");
         }
     });
 }

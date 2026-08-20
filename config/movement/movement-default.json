@@ -46,7 +46,7 @@
     "air_max_wishspeed": 0.0,
     "air_wish_speed": 0.0,
     "air_control": 0.0,
-    "stopspeed": 0.0,
+    "stopspeed": 1.0,
     "gravity": -58.0,
     "jump_strength": 19.0,
     "max_fall_speed": 400.0,

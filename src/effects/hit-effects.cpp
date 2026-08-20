@@ -65,7 +65,7 @@ void HitEffects::onHit(const HitEvent& event)
     // 3. World impact sphere (gray)
     if (event.hitWorld && gConfig.core.worldImpact) {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->impactSphereMs : nullptr);
-        EffectPartSystem::instance().spawnWorldImpact(event.position, event.normal);
+        EffectPartSystem::instance().spawnWorldImpact(event.position, event.normal, 1.0f, event.direction);
     }
 
     // 3b. World cracks along the surface at the hit point

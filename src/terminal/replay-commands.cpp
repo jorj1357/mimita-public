@@ -364,7 +364,7 @@ void registerReplayCommands()
             snprintf(buf, sizeof(buf),
                      "audioVolumeMultiplier=%.2f\n"
                      "configLoaded=1\n"
-                     "configPath=config/replay/replay-export.json",
+                     "configPath=config/replayexport.json",
                      getReplayExportAudioVolume());
             Terminal::instance().addLog(buf);
         }

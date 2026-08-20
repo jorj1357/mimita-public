@@ -526,8 +526,6 @@ void engineTickNet(Engine& engine, float dt)
                     }
                 }
 
-                if (event.weapon ==
-                    MimitaNet::NETWORK_WEAPON_REVOLVER)
                 {
                     ReplayEffectEvent gunshotEvent;
                     gunshotEvent.type = "gunshot";
@@ -537,6 +535,7 @@ void engineTickNet(Engine& engine, float dt)
                     gunshotEvent.to = event.hit; // exact server-confirmed hit
                     gunshotEvent.normal = event.normal;
                     gunshotEvent.sourceActorId = shooterName;
+                    gunshotEvent.assetId = MimitaNet::networkWeaponTypeName(event.weapon);
                     captureReplayEffect(gunshotEvent);
                 }
 

@@ -127,7 +127,7 @@ EffectPart* EffectPartSystem::spawnEntityImpact(
     return spawn(effect);
 }
 
-EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 normal, float sizeScale) {
+EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 normal, float sizeScale, glm::vec3 direction) {
     const auto& wcfg = HitEffects::config().worldImpact;
     if (!wcfg.enabled || !HitEffects::config().core.worldImpact) return nullptr;
     if (gHitFxTraceEnabled) {
@@ -140,6 +140,7 @@ EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 nor
     EffectPart e;
     e.position = position;
     e.normal = normal;
+    e.endPosition = position + direction;
     e.replayType = "impact_world";
     e.color = wcfg.color;
     e.maxLifetime = wcfg.lifetime;
@@ -152,26 +153,29 @@ EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 nor
     return spawned;
 }
 
-EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId, float sizeScale, const std::string& weaponId) {
+EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId, float sizeScale, const std::string& weaponId, bool spawnVisual, bool spawnLighting) {
     const MuzzleFlashSettings& cfg = MuzzleFlashConfig::instance().data();
-    if (!cfg.enabled) return nullptr;
+    if (!spawnVisual && !spawnLighting) return nullptr;
     const auto& sc = SizeScalingConfig::instance().data();
     float ss = std::max(sizeScale, 0.001f);
     float sfx = sc.scale(1.0f, sc.hitfxRadiusExponent, ss);
     EffectPart e;
-    e.position = position;
-    e.replayType = "muzzle_flash";
-    e.color = cfg.color;
-    e.maxLifetime = std::max(0.001f, cfg.lifetime);
-    e.scale = cfg.scale * sfx;
-    e.endScale = cfg.endScale * sfx;
-    e.alpha = cfg.alpha;
-    e.billboardText = false;
-    e.sticky = true;
-    e.sourceActorId = sourceActorId;
+    if (spawnVisual && cfg.enabled) {
+        e.position = position;
+        e.replayType = "muzzle_flash";
+        e.color = cfg.color;
+        e.maxLifetime = std::max(0.001f, cfg.lifetime);
+        e.scale = cfg.scale * sfx;
+        e.endScale = cfg.endScale * sfx;
+        e.alpha = cfg.alpha;
+        e.billboardText = false;
+        e.sticky = true;
+        e.sourceActorId = sourceActorId;
+        e.assetId = weaponId;
+    }
 
     // Spawn dynamic point light from weapon config
-    if (!weaponId.empty()) {
+    if (spawnLighting && !weaponId.empty()) {
         const auto& dlcfg = DynamicLightConfig::instance();
         const WeaponLightSettings& wcfg = dlcfg.weaponLight(weaponId, "muzzleFlash");
         Debug::log(Debug::Category::Render,
@@ -205,7 +209,7 @@ EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position, const std::st
         }
     }
 
-    return spawn(e);
+    return (spawnVisual && cfg.enabled) ? spawn(e) : nullptr;
 }
 
 EffectPart* EffectPartSystem::spawnImpactSphereTick(glm::vec3 position, glm::vec3 color, float radius) {
@@ -461,6 +465,7 @@ EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
     event.targetActorId = effect.targetActorId;
     event.texturePath = effect.texturePath;
     event.materialName = effect.materialName;
+    event.assetId = effect.assetId;
     event.billboardText = effect.billboardText;
     event.beam = effect.beam;
     {

@@ -125,8 +125,6 @@ void replayExportTimingLogSummary()
 
 static bool gFfmpegDebugMode = false;
 
-static constexpr const char* REPLAY_EXPORT_CONFIG_PATH = "config/replay/replay-export.json";
-
 #define EXPORTTRACE(fmt, ...) Debug::log(Debug::Category::Replay, "[EXPORTTRACE] " fmt, ##__VA_ARGS__)
 #define EXPORTLOG(fmt, ...) Debug::log(Debug::Category::Replay, "[EXPORT] " fmt, ##__VA_ARGS__)
 #define EXPORTTRACE_CRASH(fmt, ...) do { printf("[EXPORT] " fmt "\n", ##__VA_ARGS__); fflush(stdout); } while(0)
