@@ -79,6 +79,9 @@ void requestSendChatMessage(const std::string& message)
         req.clientSimulationTick = mpContext.tick;
         std::strncpy(req.utf8Message, trimmed.c_str(), sizeof(req.utf8Message) - 1);
         MimitaNet::mpSendPacket(mpContext, &req, sizeof(req));
+        const uint64_t sentMs = nowMs();
+        mpContext.pendingChatRequests[req.requestId] = {
+            req.requestId, sentMs, sentMs, 1, trimmed};
         Debug::log(Debug::Category::Chat,
                    "[CHAT PACKET SENT] player=%s requestId=%u len=%zu\n",
                    player.username.c_str(), req.requestId, trimmed.size());

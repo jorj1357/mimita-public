@@ -272,6 +272,9 @@ struct ServerPlayer
     int pingMs = 0;
     uint32_t lastShotSerial = 0;
     uint32_t lastProjectileFireSerial = 0;
+    uint32_t lastChatRequestId = 0;
+    ChatMessageEventPacket cachedChatEvent{};
+    bool hasCachedChatEvent = false;
 
     // ── Idempotent projectile fire result cache ───────────────────────
     // When the client retries a fire request, the server must respond with

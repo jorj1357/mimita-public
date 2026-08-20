@@ -66,6 +66,20 @@ void handleChatRequestV2(SOCKET sock, const char* buffer, int bytes,
     if (it == players.end())
         return;
 
+    // Retries of a request already accepted must not create a second message.
+    // Re-send the cached event to the requesting player so its retry loop can
+    // terminate even if the first reliable event copy was lost.
+    if (req->requestId != 0 && it->second.hasCachedChatEvent &&
+        it->second.lastChatRequestId == req->requestId)
+    {
+        ChatMessageEventPacket retry = it->second.cachedChatEvent;
+        retry.eventId = nextReliableGameplayEventId();
+        uint32_t session = reliableGameplayEventSessionForPlayer(it->second);
+        queueReliableGameplayEventToPlayer(sock, it->second, &retry, sizeof(retry),
+                                           retry.eventId, session, totalPacketsOut);
+        return;
+    }
+
     // Validate message is not empty
     const char* msg = req->utf8Message;
     // Skip leading whitespace
@@ -132,6 +146,7 @@ void handleChatRequestV2(SOCKET sock, const char* buffer, int bytes,
     event.header.type = PACKET_CHAT_MESSAGE_EVENT;
     event.header.tick = tick;
     event.header.playerId = req->header.playerId;
+    event.requestId = req->requestId;
     event.messageId = nextMessageId++;
     event.serverTick = tick;
     event.utcUnixMilliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -142,6 +157,9 @@ void handleChatRequestV2(SOCKET sock, const char* buffer, int bytes,
     event.channel = 0; // Global
     std::strncpy(event.senderName, it->second.name.c_str(), sizeof(event.senderName) - 1);
     std::strncpy(event.utf8Message, msg, sizeof(event.utf8Message) - 1);
+    it->second.lastChatRequestId = req->requestId;
+    it->second.cachedChatEvent = event;
+    it->second.hasCachedChatEvent = true;
 
     Debug::log(Debug::Category::Chat, "[CHAT V2 ACCEPT] messageId=%llu player=%s tick=%u\n",
                (unsigned long long)event.messageId, it->second.name.c_str(), tick);

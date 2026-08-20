@@ -375,6 +375,15 @@ struct MultiplayerContext
         std::string text;
     };
     std::vector<IncomingChatMessage> incomingChatMessages;
+    struct PendingChatRequest
+    {
+        uint32_t requestId = 0;
+        uint64_t firstSentMs = 0;
+        uint64_t lastSentMs = 0;
+        int attempts = 0;
+        std::string message;
+    };
+    std::unordered_map<uint32_t, PendingChatRequest> pendingChatRequests;
     std::unordered_map<uint32_t, uint32_t> lastReceivedShotSerial;
     uint32_t nextLocalShotSerial = 1;
     uint32_t nextLocalProjectileFireSerial = 1;
@@ -484,9 +493,14 @@ struct MultiplayerContext
     uint64_t pendingRespawnStartedMs = 0;
     uint64_t pendingRespawnLastSendLogMs = 0;
 
-    // Pending projectile knockback impulse (consumed in engineTickNet)
-    glm::vec3 pendingKnockback{0.0f};
-    std::string pendingKnockbackSource;
+    struct PendingKnockback
+    {
+        glm::vec3 impulse{0.0f};
+        uint32_t targetSpawnGeneration = 0;
+        uint16_t targetTransformEpoch = 0;
+        std::string source;
+    };
+    std::vector<PendingKnockback> pendingKnockbacks;
     std::string clientMapReadySentForMap;
     uint32_t clientMapReadySentForPlayerId = 0;
 

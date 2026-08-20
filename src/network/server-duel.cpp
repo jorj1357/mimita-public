@@ -50,6 +50,12 @@ void serverDuelStart(const ServerDuelState& rules)
     d.mapPool = rules.mapPool;
     d.rotateMaps = rules.rotateMaps;
     d.mapId = rules.mapId;
+    d.duelId = 0;
+    d.mapVersion = 0;
+    d.spawnAnchorVersion = 0;
+    d.respawnSequence = 0;
+    d.stateVersion = 0;
+    d.spawnAnchorIndex = 0;
     d.usedMaps.clear();
     d.usedMaps.insert(rules.mapId); // avoid immediately re-picking the launch map
     d.hasPendingManualMap = false;
@@ -82,6 +88,30 @@ void broadcastDuelState(SOCKET sock,
     pkt.header.type = PACKET_DUEL_STATE;
     pkt.header.tick = 0;
     pkt.phase = d.phase;
+    pkt.duelId = d.duelId;
+    pkt.mapVersion = d.mapVersion;
+    pkt.spawnAnchorVersion = d.spawnAnchorVersion;
+    pkt.respawnSequence = d.respawnSequence;
+    pkt.stateVersion = d.stateVersion;
+    std::strncpy(pkt.mapId, d.mapId.c_str(), sizeof(pkt.mapId) - 1);
+    pkt.spawnAnchorIndex = d.spawnAnchorIndex;
+    pkt.anchorX = d.spawnA.x;
+    pkt.anchorY = d.spawnA.y;
+    pkt.anchorZ = d.spawnA.z;
+    auto a = players.find(d.playerAId);
+    auto b = players.find(d.playerBId);
+    if (a != players.end()) {
+        pkt.playerASpawnGeneration = a->second.spawnGeneration;
+        pkt.playerASpawnX = a->second.duelSpawnPos.x;
+        pkt.playerASpawnY = a->second.duelSpawnPos.y;
+        pkt.playerASpawnZ = a->second.duelSpawnPos.z;
+    }
+    if (b != players.end()) {
+        pkt.playerBSpawnGeneration = b->second.spawnGeneration;
+        pkt.playerBSpawnX = b->second.duelSpawnPos.x;
+        pkt.playerBSpawnY = b->second.duelSpawnPos.y;
+        pkt.playerBSpawnZ = b->second.duelSpawnPos.z;
+    }
     pkt.matchOver = d.matchOver ? 1 : 0;
     pkt.scoreA = d.scoreA;
     pkt.scoreB = d.scoreB;
@@ -97,8 +127,15 @@ void broadcastDuelState(SOCKET sock,
     for (const auto& kv : players) {
         if (kv.second.spawnState != ServerPlayer::Active)
             continue;
-        if (serverSendToPlayer(sock, kv.second, &pkt, sizeof(pkt)))
-            ++totalPacketsOut;
+        const uint32_t eventId = nextReliableGameplayEventId();
+        const ReliableGameplayEventQueueResult result = queueReliableGameplayEventToPlayer(
+            sock, const_cast<ServerPlayer&>(kv.second), &pkt, sizeof(pkt), eventId,
+            reliableGameplayEventSessionForPlayer(const_cast<ServerPlayer&>(kv.second)), totalPacketsOut);
+        const bool sent = result == ReliableGameplayEventQueueResult::Queued;
+        Debug::log(Debug::Category::Duel,
+            "[DuelPacketSend] type=DuelStatePacket reliable=1 player=%u sent=%d map=%s duel=%u state=%u phase=%u score=%d-%d\n",
+            kv.second.id, (int)sent, d.mapId.c_str(), d.duelId, d.stateVersion,
+            (unsigned)d.phase, d.scoreA, d.scoreB);
     }
 }
 
@@ -112,14 +149,23 @@ void assignDuelSpawns(ServerDuelState& d, const HeadlessWorld& world)
     {
         std::mt19937 rng(std::random_device{}());
         std::uniform_int_distribution<size_t> dist(0, world.spawnPoints.size() - 1);
-        const glm::vec3 anchor = world.spawnPoints[dist(rng)].position;
+        const size_t anchorIndex = dist(rng);
+        d.spawnAnchorIndex = (uint32_t)anchorIndex;
+        ++d.spawnAnchorVersion;
+        const glm::vec3 anchor = world.spawnPoints[anchorIndex].position;
         d.spawnA = anchor;
         d.spawnB = anchor;
+        Debug::log(Debug::Category::Duel,
+            "[DuelAnchor] map=%s anchorIndex=%zu anchor=(%.3f,%.3f,%.3f)\n",
+            d.mapId.c_str(), anchorIndex, anchor.x, anchor.y, anchor.z);
     }
     else
     {
         d.spawnA = glm::vec3(1.0f, 5.0f, 30.0f);
         d.spawnB = d.spawnA;
+        Debug::warn(Debug::Category::Duel,
+            "[DuelFallback] map=%s reason=no_spawn_points final=(%.3f,%.3f,%.3f)\n",
+            d.mapId.c_str(), d.spawnA.x, d.spawnA.y, d.spawnA.z);
     }
     Debug::log(Debug::Category::Duel,
         "[DUEL SERVER] anchor=(%.1f %.1f %.1f) spawns=%zu\n",
@@ -162,6 +208,11 @@ void teleportDuelistsToSpawns(ServerDuelState& d,
         const glm::vec3 spawn = duelSpawnPoint(d);
         p.duelSpawnPos = spawn;
         p.hasDuelSpawnPos = true;
+        const glm::vec3 offset = spawn - d.spawnA;
+        Debug::log(Debug::Category::Duel,
+            "[DuelSpawn] player=%u map=%s anchor=(%.3f,%.3f,%.3f) offset=(%.3f,%.3f,%.3f) final=(%.3f,%.3f,%.3f)\n",
+            playerId, d.mapId.c_str(), d.spawnA.x, d.spawnA.y, d.spawnA.z,
+            offset.x, offset.y, offset.z, spawn.x, spawn.y, spawn.z);
         p.respawnSeconds = 0.0f;
         if (!p.dead)
         {
@@ -176,6 +227,9 @@ void teleportDuelistsToSpawns(ServerDuelState& d,
 void beginDuelCountdown(ServerDuelState& d,
                         std::unordered_map<uint32_t, ServerPlayer>& players)
 {
+    ++d.duelId;
+    ++d.respawnSequence;
+    ++d.stateVersion;
     d.matchOver = false;
     d.scoreA = 0;
     d.scoreB = 0;
@@ -200,6 +254,7 @@ void clearHeadlessWorld(HeadlessWorld& world)
 }
 
 void broadcastMapChange(SOCKET sock,
+                        const ServerDuelState& d,
                         const std::string& mapId,
                         const std::unordered_map<uint32_t, ServerPlayer>& players,
                         uint64_t& totalPacketsOut)
@@ -208,11 +263,24 @@ void broadcastMapChange(SOCKET sock,
     pkt.header.type = PACKET_MAP_CHANGE;
     pkt.header.tick = 0;
     std::strncpy(pkt.mapId, mapId.c_str(), sizeof(pkt.mapId) - 1);
+    pkt.duelId = d.duelId;
+    pkt.mapVersion = d.mapVersion;
     for (const auto& kv : players)
     {
         if (kv.second.spawnState != ServerPlayer::Active)
             continue;
-        if (serverSendToPlayer(sock, kv.second, &pkt, sizeof(pkt)))
+        const uint32_t eventId = nextReliableGameplayEventId();
+        const ReliableGameplayEventQueueResult result = queueReliableGameplayEventToPlayer(
+            sock, const_cast<ServerPlayer&>(kv.second), &pkt, sizeof(pkt), eventId,
+            reliableGameplayEventSessionForPlayer(const_cast<ServerPlayer&>(kv.second)), totalPacketsOut);
+        const bool sent = result == ReliableGameplayEventQueueResult::Queued;
+        Debug::log(Debug::Category::Duel,
+            "[DuelMap] send map=%s player=%u reliable=1 sent=%d version=%u\n",
+            mapId.c_str(), kv.second.id, (int)sent, d.mapVersion);
+        Debug::log(Debug::Category::Duel,
+            "[DuelPacketSend] type=MapChangePacket reliable=1 player=%u sent=%d map=%s\n",
+            kv.second.id, (int)sent, mapId.c_str());
+        if (sent)
             ++totalPacketsOut;
     }
 }
@@ -240,6 +308,8 @@ void commitDuelMap(ServerDuelState& d, HeadlessWorld& world, World& npcWorld,
     buildNpcWorldCollision(npcWorld, world);
     setServerMapId(mapId);
     d.mapId = mapId;
+    ++d.mapVersion;
+    ++d.stateVersion;
 }
 
 // Reload the world for a chosen map (changemap / rotation commit). Only ever
@@ -262,7 +332,7 @@ bool reloadDuelMap(SOCKET sock,
     }
     commitDuelMap(d, world, npcWorld, tmp, mapId);
     assignDuelSpawns(d, world);
-    broadcastMapChange(sock, mapId, players, totalPacketsOut);
+    broadcastMapChange(sock, d, mapId, players, totalPacketsOut);
     teleportDuelistsToSpawns(d, players);
     Debug::warn(Debug::Category::Duel,
         "[DUEL SERVER] map changed live to %s (spawns=%zu)\n",
@@ -310,7 +380,7 @@ bool rotateToNextDuelMap(SOCKET sock,
         {
             d.usedMaps.insert(cand);
             commitDuelMap(d, world, npcWorld, tmp, cand);
-            broadcastMapChange(sock, cand, players, totalPacketsOut);
+            broadcastMapChange(sock, d, cand, players, totalPacketsOut);
             Debug::warn(Debug::Category::Duel,
                 "[DUEL SERVER] rotated to map %s (spawns=%zu)\n",
                 cand.c_str(), world.spawnPoints.size());
@@ -379,11 +449,24 @@ void serverDuelTick(SOCKET sock,
             tracer.posX = spawnPos.x;
             tracer.posY = spawnPos.y;
             tracer.posZ = spawnPos.z;
+            tracer.duelId = d.duelId;
+            tracer.mapVersion = d.mapVersion;
+            tracer.spawnAnchorVersion = d.spawnAnchorVersion;
+            tracer.respawnSequence = ++d.respawnSequence;
+            ++d.stateVersion;
 
             auto killerIt = players.find(killerId);
             if (killerIt != players.end() && killerIt->second.spawnState == ServerPlayer::Active)
             {
-                if (serverSendToPlayer(sock, killerIt->second, &tracer, sizeof(tracer)))
+                const uint32_t eventId = nextReliableGameplayEventId();
+                const ReliableGameplayEventQueueResult result = queueReliableGameplayEventToPlayer(
+                    sock, killerIt->second, &tracer, sizeof(tracer), eventId,
+                    reliableGameplayEventSessionForPlayer(killerIt->second), totalPacketsOut);
+                const bool sent = result == ReliableGameplayEventQueueResult::Queued;
+                Debug::log(Debug::Category::Duel,
+                    "[DuelPacketSend] type=DuelEnemySpawnPacket reliable=1 player=%u enemy=%u sent=%d pos=(%.3f,%.3f,%.3f)\n",
+                    killerIt->second.id, victimId, (int)sent, tracer.posX, tracer.posY, tracer.posZ);
+                if (sent)
                     ++totalPacketsOut;
             }
         }

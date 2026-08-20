@@ -936,9 +936,9 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
             }
             else
             {
-                ctx.pendingKnockback += glm::vec3(
-                    victim.knockX, victim.knockY, victim.knockZ);
-                ctx.pendingKnockbackSource = weaponName;
+                ctx.pendingKnockbacks.push_back({
+                    glm::vec3(victim.knockX, victim.knockY, victim.knockZ),
+                    victim.targetSpawnGeneration, 0, weaponName});
                 printf("[NET KNOCKBACK APPLY] projectileId=%u victim=local "
                        "impulse=(%.2f,%.2f,%.2f) source=%s\n",
                        event->projectileId,

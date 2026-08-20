@@ -579,6 +579,30 @@ void DuelQueue::onDuelState(const DuelStatePacket& pkt)
     if (mState == DuelQueueState::Idle)
         return;
 
+    if ((pkt.duelId < mDuelId) ||
+        (pkt.duelId == mDuelId && pkt.stateVersion < mStateVersion) ||
+        (pkt.duelId == mDuelId && pkt.spawnAnchorVersion < mSpawnAnchorVersion))
+    {
+        Debug::warn(Debug::Category::Duel,
+            "[DuelStale] type=DuelStatePacket duel=%u mapVersion=%u anchorVersion=%u state=%u current=%u/%u/%u action=ignored\n",
+            pkt.duelId, pkt.mapVersion, pkt.spawnAnchorVersion, pkt.stateVersion,
+            mDuelId, mSpawnAnchorVersion, mStateVersion);
+        return;
+    }
+    mDuelId = pkt.duelId;
+    mMapVersion = std::max(mMapVersion, pkt.mapVersion);
+    mSpawnAnchorVersion = std::max(mSpawnAnchorVersion, pkt.spawnAnchorVersion);
+    mRespawnSequence = std::max(mRespawnSequence, pkt.respawnSequence);
+    mStateVersion = std::max(mStateVersion, pkt.stateVersion);
+
+    if (pkt.phase == DUEL_PHASE_WAITING && mInDuel)
+        Debug::warn(Debug::Category::Duel,
+            "[DuelStale] type=DuelStatePacket phase=WAITING currentPhase=%u action=accepted_due_to_missing_version\n",
+            (unsigned)mDuelPhase);
+    Debug::log(Debug::Category::Duel,
+        "[DuelState] received phase=%u currentPhase=%u map=%s note=packet_has_no_duel_or_map_version\n",
+        (unsigned)pkt.phase, (unsigned)mDuelPhase, mMapName.c_str());
+
     // WAITING just means "your queue server is up but no opponent yet".
     if (pkt.phase == DUEL_PHASE_WAITING)
     {
@@ -645,6 +669,21 @@ void DuelQueue::onDuelState(const DuelStatePacket& pkt)
 
 void DuelQueue::onDuelEnemySpawn(const DuelEnemySpawnPacket& pkt)
 {
+    if (pkt.duelId < mDuelId ||
+        (pkt.duelId == mDuelId && pkt.mapVersion < mMapVersion) ||
+        (pkt.duelId == mDuelId && pkt.spawnAnchorVersion < mSpawnAnchorVersion) ||
+        (pkt.duelId == mDuelId && pkt.respawnSequence < mRespawnSequence))
+    {
+        Debug::warn(Debug::Category::Duel,
+            "[DuelStale] type=DuelEnemySpawnPacket duel=%u mapVersion=%u anchorVersion=%u respawn=%u current=%u/%u/%u/%u action=ignored\n",
+            pkt.duelId, pkt.mapVersion, pkt.spawnAnchorVersion, pkt.respawnSequence,
+            mDuelId, mMapVersion, mSpawnAnchorVersion, mRespawnSequence);
+        return;
+    }
+    mDuelId = std::max(mDuelId, pkt.duelId);
+    mMapVersion = std::max(mMapVersion, pkt.mapVersion);
+    mSpawnAnchorVersion = std::max(mSpawnAnchorVersion, pkt.spawnAnchorVersion);
+    mRespawnSequence = std::max(mRespawnSequence, pkt.respawnSequence);
     if (pkt.enemyPlayerId == 0 || pkt.enemyPlayerId == mMyPlayerId)
         return;
     mTracerActive = true;
@@ -706,8 +745,23 @@ void DuelQueue::requestRematchNow()
     Debug::log(Debug::Category::Duel, "[DUEL] rematch now requested (space)\n");
 }
 
-void DuelQueue::onMapChange(const std::string& mapId)
+void DuelQueue::onMapChange(const std::string& mapId, uint32_t duelId, uint32_t mapVersion)
 {
+    if (duelId < mDuelId || (duelId == mDuelId && mapVersion < mMapVersion))
+    {
+        Debug::warn(Debug::Category::Duel,
+            "[DuelStale] type=MapChangePacket duel=%u mapVersion=%u current=%u/%u action=ignored\n",
+            duelId, mapVersion, mDuelId, mMapVersion);
+        return;
+    }
+    mDuelId = std::max(mDuelId, duelId);
+    mMapVersion = std::max(mMapVersion, mapVersion);
+    if (mapId == mMapName)
+        Debug::warn(Debug::Category::Duel,
+            "[DuelStale] type=MapChangePacket map=%s current=%s action=accepted_duplicate_due_to_missing_version\n",
+            mapId.c_str(), mMapName.c_str());
+    Debug::log(Debug::Category::Duel,
+        "[DuelMap] received map=%s previous=%s\n", mapId.c_str(), mMapName.c_str());
     mMapName = mapId;
     NotificationSystem::instance().push(
         "Map changed", "Now fighting on " + mapId, 200, {});

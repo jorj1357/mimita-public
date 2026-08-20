@@ -404,7 +404,7 @@ struct EntityDespawnPacket
     PacketHeader header;
     uint32_t networkEntityId = 0;
     uint8_t entityType = ENTITY_NONE;
-    uint8_t reserved[3] = {};
+    uint32_t targetSpawnGeneration = 0;
 };
 
 #pragma pack(push, 1)
@@ -575,7 +575,7 @@ struct ProjectileDamageResultPacket
     float knockY = 0.0f;
     float knockZ = 0.0f;
     uint8_t killed = 0;
-    uint8_t reserved[3] = {};
+    uint32_t targetSpawnGeneration = 0;
 };
 
 struct ProjectileFireRequestPacket
@@ -752,7 +752,7 @@ struct MeleeHitEventPacket
     float knockY = 0.0f;
     float knockZ = 0.0f;
     uint16_t targetTransformEpoch = 0;
-    uint16_t reserved = 0;
+    uint32_t targetSpawnGeneration = 0;
 };
 
 struct ChatPacket
@@ -780,6 +780,7 @@ struct ChatMessageEventPacket
     // ACKs them so every chat message is delivered even under loss).
     uint32_t eventId = 0;
     uint32_t eventSessionId = 0;
+    uint32_t requestId = 0;
     uint64_t messageId = 0;
     uint64_t serverTick = 0;
     int64_t utcUnixMilliseconds = 0;
@@ -937,6 +938,13 @@ enum DuelStatePhase : uint8_t
 struct DuelStatePacket
 {
     PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
+    uint32_t duelId = 0;
+    uint32_t mapVersion = 0;
+    uint32_t spawnAnchorVersion = 0;
+    uint32_t respawnSequence = 0;
+    uint32_t stateVersion = 0;
     uint8_t phase = 0;          // DuelStatePhase
     uint8_t matchOver = 0;      // 1 = scores locked; keep fighting, no points
     uint8_t reserved[2] = {};
@@ -950,6 +958,19 @@ struct DuelStatePacket
     uint32_t winnerPlayerId = 0;
     char teamAName[32];
     char teamBName[32];
+    char mapId[MAX_NAME_BYTES];
+    uint32_t spawnAnchorIndex = 0;
+    float anchorX = 0.0f;
+    float anchorY = 0.0f;
+    float anchorZ = 0.0f;
+    uint32_t playerASpawnGeneration = 0;
+    uint32_t playerBSpawnGeneration = 0;
+    float playerASpawnX = 0.0f;
+    float playerASpawnY = 0.0f;
+    float playerASpawnZ = 0.0f;
+    float playerBSpawnX = 0.0f;
+    float playerBSpawnY = 0.0f;
+    float playerBSpawnZ = 0.0f;
 };
 
 // Server → a player: their opponent just respawned here. Used to draw a
@@ -957,13 +978,18 @@ struct DuelStatePacket
 struct DuelEnemySpawnPacket
 {
     PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
+    uint32_t duelId = 0;
+    uint32_t mapVersion = 0;
+    uint32_t spawnAnchorVersion = 0;
+    uint32_t respawnSequence = 0;
     uint32_t enemyPlayerId = 0;
     float posX = 0.0f;
     float posY = 0.0f;
     float posZ = 0.0f;
 };
 
-static_assert(sizeof(DuelEnemySpawnPacket) == 36, "DuelEnemySpawnPacket wire size changed");
 
 // Client → server: skip the rematch timer and start the next duel now.
 struct DuelRematchRequestPacket
@@ -975,6 +1001,10 @@ struct DuelRematchRequestPacket
 struct MapChangePacket
 {
     PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
+    uint32_t duelId = 0;
+    uint32_t mapVersion = 0;
     char mapId[MAX_NAME_BYTES];
 };
 
@@ -1094,7 +1124,7 @@ struct PelletBlastTargetResult
     int16_t knockX = 0, knockY = 0, knockZ = 0;
     uint8_t pelletsHit = 0;
     uint8_t killed = 0;
-    uint16_t reserved = 0;
+    uint32_t targetSpawnGeneration = 0;
 };
 
 struct NetworkPelletResult
@@ -1270,6 +1300,9 @@ struct PlayerRespawnedPacket
     uint32_t eventSessionId = 0;
     uint32_t spawnGeneration = 0;
     uint32_t transformEpoch = 0;
+    float posX = 0.0f;
+    float posY = 0.0f;
+    float posZ = 0.0f;
     int32_t health = 100;
     // Weapon inventory follows (compact format, up to 16 weapons)
     struct WeaponSlot {

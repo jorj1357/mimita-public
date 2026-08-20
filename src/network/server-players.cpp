@@ -420,7 +420,14 @@ void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitia
     spawnSync.eventSessionId = 0;  // per-player session stamped by the queue
     spawnSync.spawnGeneration = player.spawnGeneration;
     spawnSync.transformEpoch = player.transformEpoch;
+    spawnSync.posX = player.pos.x;
+    spawnSync.posY = player.pos.y;
+    spawnSync.posZ = player.pos.z;
     spawnSync.health = player.health;
+    Debug::log(Debug::Category::Duel,
+        "[DuelPacketSend] type=PlayerRespawnedPacket reliable=1 player=%u spawnGeneration=%u epoch=%u pos=(%.3f,%.3f,%.3f)\n",
+        player.id, spawnSync.spawnGeneration, spawnSync.transformEpoch,
+        player.pos.x, player.pos.y, player.pos.z);
     spawnSync.weaponCount = 0;
     for (const auto& wkv : player.weaponRuntimes)
     {

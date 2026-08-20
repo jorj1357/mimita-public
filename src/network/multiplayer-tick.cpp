@@ -1025,19 +1025,39 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         else if (header->type == PACKET_DUEL_STATE &&
                  bytes >= (int)sizeof(DuelStatePacket))
         {
+            const DuelStatePacket* duel = reinterpret_cast<const DuelStatePacket*>(buffer);
+            Debug::log(Debug::Category::Duel,
+                "[DuelPacketRecv] type=DuelStatePacket reliable=1 duel=%u mapVersion=%u anchorVersion=%u state=%u phase=%u score=%d-%d players=%u/%u\n",
+                duel->duelId, duel->mapVersion, duel->spawnAnchorVersion, duel->stateVersion,
+                (unsigned)duel->phase, duel->scoreA, duel->scoreB,
+                duel->playerAId, duel->playerBId);
+            if (!mpAcceptReliableEventOnce(ctx, duel->eventId, duel->eventSessionId))
+                return;
             DuelQueue::instance().onDuelState(
-                *reinterpret_cast<const DuelStatePacket*>(buffer));
+                *duel);
         }
         else if (header->type == PACKET_DUEL_ENEMY_SPAWN &&
                  bytes >= (int)sizeof(DuelEnemySpawnPacket))
         {
+            const DuelEnemySpawnPacket* enemy = reinterpret_cast<const DuelEnemySpawnPacket*>(buffer);
+            Debug::log(Debug::Category::Duel,
+                "[DuelPacketRecv] type=DuelEnemySpawnPacket reliable=1 duel=%u mapVersion=%u anchorVersion=%u respawn=%u enemy=%u pos=(%.3f,%.3f,%.3f)\n",
+                enemy->duelId, enemy->mapVersion, enemy->spawnAnchorVersion, enemy->respawnSequence,
+                enemy->enemyPlayerId, enemy->posX, enemy->posY, enemy->posZ);
+            if (!mpAcceptReliableEventOnce(ctx, enemy->eventId, enemy->eventSessionId))
+                return;
             DuelQueue::instance().onDuelEnemySpawn(
-                *reinterpret_cast<const DuelEnemySpawnPacket*>(buffer));
+                *enemy);
         }
         else if (header->type == PACKET_MAP_CHANGE &&
                  bytes >= (int)sizeof(MapChangePacket))
         {
             const MapChangePacket* mc = reinterpret_cast<const MapChangePacket*>(buffer);
+            Debug::log(Debug::Category::Duel,
+                "[DuelPacketRecv] type=MapChangePacket reliable=1 duel=%u mapVersion=%u map=%s\n",
+                mc->duelId, mc->mapVersion, mc->mapId);
+            if (!mpAcceptReliableEventOnce(ctx, mc->eventId, mc->eventSessionId))
+                return;
             Debug::log(Debug::Category::Networking, "[NET MAP CHANGE] new=%s\n", mc->mapId);
             // Re-arm the existing map-sync (engine-tick-net) so it loads the
             // new map and re-sends CLIENT_MAP_READY with the fresh id.
@@ -1045,7 +1065,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.clientMapReadySent = false;
             ctx.clientMapReadySentForMap.clear();
             ctx.clientMapReadySentForPlayerId = 0;
-            DuelQueue::instance().onMapChange(mc->mapId);
+            DuelQueue::instance().onMapChange(mc->mapId, mc->duelId, mc->mapVersion);
         }
         else if (header->type == PACKET_RELOAD_RESULT &&
                  bytes >= (int)sizeof(ReloadResultPacket))
@@ -1069,6 +1089,10 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                  bytes >= (int)sizeof(PlayerRespawnedPacket))
         {
             const PlayerRespawnedPacket* pr = reinterpret_cast<const PlayerRespawnedPacket*>(buffer);
+            Debug::log(Debug::Category::Duel,
+                "[DuelPacketRecv] type=PlayerRespawnedPacket reliable=1 player=%u event=%u session=%u spawnGeneration=%u epoch=%u pos=(%.3f,%.3f,%.3f)\n",
+                ctx.localPlayerId, pr->eventId, pr->eventSessionId,
+                pr->spawnGeneration, pr->transformEpoch, pr->posX, pr->posY, pr->posZ);
 
             // Reliable-event dedup + auto-ack: the server now delivers the
             // spawn sync through the reliable-event transport (like shot
@@ -1085,6 +1109,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             // Reject older spawn generation
             if (pr->spawnGeneration < ctx.lastKnownSpawnGeneration)
             {
+                Debug::warn(Debug::Category::Duel,
+                    "[DuelStale] type=PlayerRespawnedPacket spawnGeneration=%u current=%u action=ignored\n",
+                    pr->spawnGeneration, ctx.lastKnownSpawnGeneration);
                 Debug::log(Debug::Category::Weapons, "[SPAWN RESPAWN REJECT] old spawnGen=%u < %u\n",
                            pr->spawnGeneration, ctx.lastKnownSpawnGeneration);
                 return;
@@ -1163,6 +1190,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         {
             const ChatMessageEventPacket* ev =
                 reinterpret_cast<const ChatMessageEventPacket*>(buffer);
+
+            if (ev->requestId != 0)
+                ctx.pendingChatRequests.erase(ev->requestId);
 
             // Reliable dedup: skip if already processed, ACK to server
             if (!mpAcceptReliableEventOnce(ctx, ev->eventId, ev->eventSessionId))
@@ -1374,6 +1404,40 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             memcpy(buffer, rp.bytes.data(), rp.bytes.size());
             int packetBytes = (int)rp.bytes.size();
             processPacket(packetBytes);
+        }
+    }
+
+    // Retry chat requests until the server's reliable event confirms them.
+    {
+        const uint64_t now = nowMs();
+        const uint64_t retryMs = (uint64_t)NetworkingConfig::instance().data().reliableEvents.retryMs;
+        const uint64_t timeoutMs = (uint64_t)NetworkingConfig::instance().data().reliableEvents.ttlMs;
+        for (auto it = ctx.pendingChatRequests.begin(); it != ctx.pendingChatRequests.end(); )
+        {
+            auto& pending = it->second;
+            if (now - pending.firstSentMs > timeoutMs)
+            {
+                Debug::warn(Debug::Category::Chat,
+                            "[CHAT REQUEST TIMEOUT] requestId=%u attempts=%d\n",
+                            pending.requestId, pending.attempts);
+                it = ctx.pendingChatRequests.erase(it);
+                continue;
+            }
+            if (now - pending.lastSentMs >= retryMs)
+            {
+                ChatRequestPacket retry{};
+                retry.header.type = PACKET_CHAT_REQUEST;
+                retry.header.tick = ctx.tick;
+                retry.header.playerId = ctx.localPlayerId;
+                retry.requestId = pending.requestId;
+                retry.clientSimulationTick = ctx.tick;
+                std::strncpy(retry.utf8Message, pending.message.c_str(),
+                             sizeof(retry.utf8Message) - 1);
+                mpSendPacket(ctx, &retry, sizeof(retry));
+                pending.lastSentMs = now;
+                ++pending.attempts;
+            }
+            ++it;
         }
     }
     else

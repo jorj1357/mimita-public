@@ -787,6 +787,9 @@ void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* 
         event.targets[t].knockZ = (int16_t)std::clamp((int)targets[t].totalKnockback.z, -32768, 32767);
         event.targets[t].pelletsHit = (uint8_t)targets[t].pelletsHit;
         event.targets[t].killed = targets[t].killed ? 1 : 0;
+        auto victimIt = players.find(targets[t].id);
+        event.targets[t].targetSpawnGeneration =
+            victimIt != players.end() ? victimIt->second.spawnGeneration : 0;
     }
 
     for (const auto& kv : players)

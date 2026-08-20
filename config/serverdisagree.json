@@ -22,7 +22,7 @@
 
     "beam": {
         "enabled": true,
-        "heightMultiplier": 1.3,
+        "heightMultiplier": 111.3,
         "lifetimeMultiplier": 0.6,
         "startScale": 1.08,
         "endScale": 0.02,
@@ -45,7 +45,7 @@
         "enabled": true,
         "zOffset": 0.5,
         "lifetimeExtra": 2.0,
-        "scale": 1.0,
+        "scale": 0.6,
         "prefix": "server disagree: "
     },
 

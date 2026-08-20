@@ -170,6 +170,9 @@ ReliableGameplayEventQueueResult queueForOnePlayer(
     pending.attempts = 1;
     pending.bytes = std::move(packetBytes);
     player.pendingReliableEvents.push_back(std::move(pending));
+    Debug::log(Debug::Category::Networking,
+        "[DuelPacketSend] type=%u reliable=1 player=%u event=%u session=%u attempt=initial\n",
+        (unsigned)header->type, player.id, eventId, player.reliableEventSessionId);
 
     const bool sent = serverSendToPlayer(sock, player,
                                         player.pendingReliableEvents.back().bytes.data(),
@@ -309,6 +312,9 @@ void tickReliableGameplayEvents(SOCKET sock,
                 it->lastSendMs = now;
                 ++it->attempts;
                 ++totalPacketsOut;
+                Debug::log(Debug::Category::Networking,
+                    "[DuelPacketSend] type=%u reliable=1 player=%u event=%u session=%u attempt=retry\n",
+                    (unsigned)it->packetType, player.id, it->eventId, it->eventSessionId);
                 ++resentCount;
             }
             ++pendingCount;

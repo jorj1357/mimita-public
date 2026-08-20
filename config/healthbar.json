@@ -1,6 +1,6 @@
 {
   "aim_mode_enabled": true,
-  "aim_cone_degrees": 15.0,
+  "aim_cone_degrees": 0.01,
   "triangle_size": 14.0,
   "triangle_offset": 8.0,
   "triangle_alpha": 0.95,

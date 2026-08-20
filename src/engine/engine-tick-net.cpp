@@ -315,6 +315,15 @@ void engineTickNet(Engine& engine, float dt)
 
             // Reset temporary local weapon-runtime state before applying authoritative entries
             player.weaponRuntimes.clear();
+            if (glm::length(player.vel) > 0.001f || glm::length(player.externalImpulse) > 0.001f ||
+                !mpContext.pendingKnockbacks.empty())
+                Debug::warn(Debug::Category::Networking,
+                    "[SpawnVelocityReset] player=%u spawnGen=%u epoch=%u pending=%zu -> zero\n",
+                    mpContext.localPlayerId, spawn.spawnGeneration, spawn.transformEpoch,
+                    mpContext.pendingKnockbacks.size());
+            player.vel = glm::vec3(0.0f);
+            player.externalImpulse = glm::vec3(0.0f);
+            mpContext.pendingKnockbacks.clear();
 
             // Process every valid authoritative weapon entry via the canonical reconciler
             for (uint8_t i = 0; i < spawn.weaponCount; ++i)
@@ -471,7 +480,21 @@ void engineTickNet(Engine& engine, float dt)
                    event.impactType, (int)event.damageConfirmed,
                    event.targetTransformEpoch, (int)staleDamage);
 
-            if (!localShooter && glm::length(event.knockback) > 0.001f)
+            bool staleKnockback = staleDamage;
+            if (!localTarget && event.targetTransformEpoch != 0)
+            {
+                auto remoteIt = mpContext.remotePlayerInterpolation.find(event.targetPlayerId);
+                if (remoteIt != mpContext.remotePlayerInterpolation.end() &&
+                    remoteIt->second.lastSnapshotTransformEpoch != 0)
+                    staleKnockback = event.targetTransformEpoch !=
+                        remoteIt->second.lastSnapshotTransformEpoch;
+            }
+            if (staleKnockback)
+                Debug::warn(Debug::Category::Networking,
+                    "[Knockback] ignored old-life shot target=%u eventEpoch=%u\n",
+                    event.targetPlayerId, event.targetTransformEpoch);
+
+            if (!localShooter && !staleKnockback && glm::length(event.knockback) > 0.001f)
             {
                 if (localTarget)
                     player.externalImpulse += event.knockback;
@@ -719,19 +742,24 @@ void engineTickNet(Engine& engine, float dt)
         mpContext.incomingChatMessages.clear();
 
         // Consume pending projectile knockback for local player
-        if (glm::length(mpContext.pendingKnockback) > 0.001f)
+        for (const auto& pending : mpContext.pendingKnockbacks)
         {
-            player.externalImpulse += mpContext.pendingKnockback;
-            printf("[NET KNOCKBACK APPLY] player=%u impulse=(%.2f,%.2f,%.2f) "
-                   "source=%s pos=(%.2f,%.2f,%.2f)\n",
-                   mpContext.localPlayerId,
-                   mpContext.pendingKnockback.x, mpContext.pendingKnockback.y,
-                   mpContext.pendingKnockback.z,
-                   mpContext.pendingKnockbackSource.c_str(),
-                   player.pos.x, player.pos.y, player.pos.z);
-            mpContext.pendingKnockback = glm::vec3(0.0f);
-            mpContext.pendingKnockbackSource.clear();
+            if (pending.targetSpawnGeneration != 0 &&
+                pending.targetSpawnGeneration != mpContext.lastKnownSpawnGeneration)
+            {
+                Debug::warn(Debug::Category::Networking,
+                    "[Knockback] ignored old-life queued target=%u eventGen=%u currentGen=%u source=%s\n",
+                    mpContext.localPlayerId, pending.targetSpawnGeneration,
+                    mpContext.lastKnownSpawnGeneration, pending.source.c_str());
+                continue;
+            }
+            player.externalImpulse += pending.impulse;
+            Debug::log(Debug::Category::Networking,
+                "[NET KNOCKBACK APPLY] player=%u impulse=(%.2f,%.2f,%.2f) source=%s\n",
+                mpContext.localPlayerId, pending.impulse.x, pending.impulse.y,
+                pending.impulse.z, pending.source.c_str());
         }
+        mpContext.pendingKnockbacks.clear();
 
         // Input is sent inside mpTick() above — do NOT send a second packet here.
         // The engine-tick-net.cpp duplicate InputPacket has been removed.

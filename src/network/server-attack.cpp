@@ -989,6 +989,7 @@ void handleAttackRequest(
                 auto vit = players.find(agg.targetPlayerId);
                 t.healthAfter = vit != players.end() ? (int16_t)vit->second.health : 0;
                 t.killed = 0;
+                t.targetSpawnGeneration = vit != players.end() ? vit->second.spawnGeneration : 0;
             }
 
             // Reliable broadcast: pellet visuals are re-sent until ACKed so a

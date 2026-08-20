@@ -1,7 +1,7 @@
 {
   "id": "duel",
   "name": "Duel",
-  "description": "First to 20. Instant respawns. Max action, no downtime.",
+  "description": "First to 20... max action... no downtime... like MGE",
   "team_names": ["RED", "BLUE"],
   "goal_value": 20,
   "time_limit_seconds": 0,

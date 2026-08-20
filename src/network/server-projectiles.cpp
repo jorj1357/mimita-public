@@ -748,6 +748,7 @@ void explodeProjectile(SOCKET sock,
             out.knockY = knockback.y;
             out.knockZ = knockback.z;
             out.killed = damage.killed ? 1 : 0;
+            out.targetSpawnGeneration = victim.spawnGeneration;
         }
 
         ++victimsLogged;

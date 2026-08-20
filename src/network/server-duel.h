@@ -67,6 +67,12 @@ struct ServerDuelState
     std::unordered_set<std::string> usedMaps;
     // Server's current loaded map (name only, for HUD/logging).
     std::string mapId;
+    uint32_t duelId = 0;
+    uint32_t mapVersion = 0;
+    uint32_t spawnAnchorVersion = 0;
+    uint32_t respawnSequence = 0;
+    uint32_t stateVersion = 0;
+    uint32_t spawnAnchorIndex = 0;
 };
 
 // Singleton duel state for the current server process.

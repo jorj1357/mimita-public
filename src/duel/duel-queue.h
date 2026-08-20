@@ -97,7 +97,7 @@ public:
     // Send PACKET_DUEL_REMATCH_REQUEST to skip the rematch timer (Space key).
     void requestRematchNow();
     // Server broadcast the map changed live (PACKET_MAP_CHANGE).
-    void onMapChange(const std::string& mapId);
+    void onMapChange(const std::string& mapId, uint32_t duelId = 0, uint32_t mapVersion = 0);
     std::string lastOpponentId() const { return mLastOpponentId; }
     // The random map picked from the pool when this player queued.
     std::string chosenMap() const { return mChosenMap; }
@@ -182,6 +182,11 @@ private:
     uint32_t mMyPlayerId = 0;
     uint32_t mEnemyPlayerId = 0;
     uint32_t mWinnerId = 0;
+    uint32_t mDuelId = 0;
+    uint32_t mMapVersion = 0;
+    uint32_t mSpawnAnchorVersion = 0;
+    uint32_t mRespawnSequence = 0;
+    uint32_t mStateVersion = 0;
     bool mCountdownActive = false;
     float mCountdownLeft = 0.0f;
     float mRematchLeft = 0.0f;

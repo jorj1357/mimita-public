@@ -257,8 +257,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.pendingHitClaims.clear();
     ctx.recentInputCommands.clear();
     ctx.pendingReloadRequests.clear();
-    ctx.pendingKnockback = glm::vec3(0.0f);
-    ctx.pendingKnockbackSource.clear();
+    ctx.pendingKnockbacks.clear();
     ctx.incomingChatMessages.clear();
     badconn::noteConnectionTeardown();
 

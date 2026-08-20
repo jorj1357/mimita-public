@@ -661,8 +661,8 @@ void applyPelletBlastEventPacket(MultiplayerContext& ctx,
         {
             if (isLocalTarget)
             {
-                ctx.pendingKnockback += knockback;
-                ctx.pendingKnockbackSource = weaponName;
+                ctx.pendingKnockbacks.push_back({
+                    knockback, targetRes.targetSpawnGeneration, 0, weaponName});
                 printf("[PELLET KNOCKBACK APPLY] victim=local "
                        "impulse=(%.2f,%.2f,%.2f) source=%s\n",
                        knockback.x, knockback.y, knockback.z, weaponName);
