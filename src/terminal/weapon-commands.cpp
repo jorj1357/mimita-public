@@ -31,6 +31,9 @@ using json = nlohmann::json;
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
 #include "entities/player-animation-config.h"
+#include "duel/duel-weapon-pool.h"
+#include "game/duel.h"
+extern DuelManager gDuelManager;
 
 namespace {
 
@@ -266,14 +269,20 @@ void registerWeaponCommands()
             [slot](const std::vector<std::string>&) {
                 Player& player = THE_PLAYER;
                 WeaponSystem& weapons = THE_WEAPONS;
-                if (player.equippedSlot == slot && player.hasValidWeapon) {
+                const int nativeSlot = gDuelManager.enabled()
+                    ? DuelWeaponPool::instance().nativeSlotForDuelSlot(slot) : slot;
+                if (nativeSlot <= 0) {
+                    Terminal::instance().addLog("[INVENTORY] weapon not available in duels");
+                    return;
+                }
+                if (player.equippedSlot == nativeSlot && player.hasValidWeapon) {
                     unequipAndSync(player, weapons);
                     GetPlayerSettings().equippedSlot = 0;
                     SavePlayerSettings();
                     Terminal::instance().addLog("[INVENTORY] unequipped slot " + std::to_string(slot));
                 } else {
-                    equipSlotAndSync(player, weapons, slot);
-                    GetPlayerSettings().equippedSlot = slot;
+                    equipSlotAndSync(player, weapons, nativeSlot);
+                    GetPlayerSettings().equippedSlot = nativeSlot;
                     SavePlayerSettings();
                     Terminal::instance().addLog("[INVENTORY] equipped slot " + std::to_string(slot));
                 }
@@ -310,14 +319,20 @@ void registerWeaponCommands()
             [keySlot](const std::vector<std::string>&) {
                 Player& player = THE_PLAYER;
                 WeaponSystem& weapons = THE_WEAPONS;
-                if (player.equippedSlot == keySlot && player.hasValidWeapon) {
+                const int nativeSlot = gDuelManager.enabled()
+                    ? DuelWeaponPool::instance().nativeSlotForDuelSlot(keySlot) : keySlot;
+                if (nativeSlot <= 0) {
+                    Terminal::instance().addLog("[INVENTORY] weapon not available in duels");
+                    return;
+                }
+                if (player.equippedSlot == nativeSlot && player.hasValidWeapon) {
                     unequipAndSync(player, weapons);
                     GetPlayerSettings().equippedSlot = 0;
                     SavePlayerSettings();
                     Terminal::instance().addLog("[INVENTORY] unequipped slot " + std::to_string(keySlot));
                 } else {
-                    equipSlotAndSync(player, weapons, keySlot);
-                    GetPlayerSettings().equippedSlot = keySlot;
+                    equipSlotAndSync(player, weapons, nativeSlot);
+                    GetPlayerSettings().equippedSlot = nativeSlot;
                     SavePlayerSettings();
                     Terminal::instance().addLog("[INVENTORY] equipped slot " + std::to_string(keySlot));
                 }

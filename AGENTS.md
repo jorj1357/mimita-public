@@ -104,6 +104,26 @@ Do not narrate internal reasoning.
 
 When building or testing the EXE, use build_agent.py instead of build.py, because build.py opens the EXE on the computer and may falsely appear to error when it has not.
 
+## Single EXE Output
+
+All development builds must use the single canonical output:
+
+```
+C:\mimita-priv-v8\mimita.exe
+```
+
+Run:
+
+```
+python build_agent.py
+```
+
+Do not set `MIMITA_EXE_NAME` and do not create alternate development
+executables such as `mimita-chat-test.exe`, `mimita-duel-handshake-test.exe`,
+or feature-specific test executables. Focused tests must use the canonical
+`mimita.exe` or a non-EXE test harness. Before building, close any running
+`mimita.exe`; never kill a possibly user-owned process to release the file.
+
 After any build_agent.py invocation, check the build result status printed in the output:
 
 ```

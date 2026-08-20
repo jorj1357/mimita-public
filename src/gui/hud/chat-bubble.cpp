@@ -12,7 +12,9 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <sstream>
 #include <string>
+#include <vector>
 
 #include "camera.h"
 #include "debug/debug-visuals.h"
@@ -21,6 +23,34 @@
 #include "gui/hud/player-nameplates.h"
 #include "audio/audio.h"
 #include "vip/vip-name-render.h"
+
+namespace
+{
+std::vector<std::string> wrapBubbleText(const std::string& text,
+                                        float maxWidth, float scale)
+{
+    std::vector<std::string> lines;
+    std::istringstream words(text);
+    std::string word;
+    std::string current;
+    while (words >> word)
+    {
+        const std::string candidate = current.empty() ? word : current + " " + word;
+        if (!current.empty() && uiMeasureText(candidate.c_str(), scale) > maxWidth)
+        {
+            lines.push_back(current);
+            current = word;
+        }
+        else
+            current = candidate;
+    }
+    if (!current.empty())
+        lines.push_back(current);
+    if (lines.empty())
+        lines.push_back("");
+    return lines;
+}
+}
 
 float computeChatDuration(int messageLength)
 {
@@ -98,7 +128,11 @@ void renderChatBubbles(const ActorChatState& state, const Player& player, const 
         fade = std::clamp(fade, 0.0f, 1.0f);
 
         std::string displayText = "\"" + msg.text + "\"";
-        float textW = uiMeasureText(displayText.c_str(), bubbleScale);
+        const float maxTextW = 260.0f * scale;
+        const auto lines = wrapBubbleText(displayText, maxTextW, bubbleScale);
+        float textW = 0.0f;
+        for (const auto& line : lines)
+            textW = std::max(textW, uiMeasureText(line.c_str(), bubbleScale));
         VipNameDrawOptions nameOptions;
         nameOptions.scale = nameScale;
         nameOptions.alpha = fade;
@@ -106,7 +140,7 @@ void renderChatBubbles(const ActorChatState& state, const Player& player, const 
         nameOptions.detail = &player.vipStyleDetail;
         float nameW = vipMeasureStyledName(msg.senderName, player.vipAppearance, nameOptions);
         float bubbleW = std::max(textW, nameW) + bubblePadding * 2.0f;
-        float bubbleH = lineHeight * 2.0f + bubblePadding * 2.0f;
+        float bubbleH = lineHeight * ((float)lines.size() + 1.0f) + bubblePadding * 2.0f;
 
         float bx = screenX - bubbleW * 0.5f;
         float by = baseY - bubbleH;
@@ -118,8 +152,14 @@ void renderChatBubbles(const ActorChatState& state, const Player& player, const 
         vipDrawStyledName(msg.senderName, player.vipAppearance, nameX,
                           by + bubblePadding, nameOptions);
 
-        float textX = screenX - textW * 0.5f;
-        uiDrawText(displayText.c_str(), textX, by + bubblePadding + lineHeight, bubbleScale, {1.0f, 1.0f, 1.0f, fade});
+        for (size_t lineIndex = 0; lineIndex < lines.size(); ++lineIndex)
+        {
+            const float textLineW = uiMeasureText(lines[lineIndex].c_str(), bubbleScale);
+            const float textX = screenX - textLineW * 0.5f;
+            uiDrawText(lines[lineIndex].c_str(), textX,
+                       by + bubblePadding + lineHeight * ((float)lineIndex + 1.0f),
+                       bubbleScale, {1.0f, 1.0f, 1.0f, fade});
+        }
 
         baseY = by - 4.0f * scale;
     }

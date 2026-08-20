@@ -318,6 +318,7 @@ struct MultiplayerContext
     uint64_t pendingTeleportSentMs = 0;
     bool awaitingTeleportAck = false;
     bool awaitingExplodeDeath = false;
+    uint64_t explodeRequestLastSendMs = 0;
     bool teleportResync = false;
     // Set when a snapshot tick gap indicates a blackout/reconnect. The local
     // player reconcile uses it to snap back to the server's authoritative
@@ -385,6 +386,7 @@ struct MultiplayerContext
     };
     std::unordered_map<uint32_t, PendingChatRequest> pendingChatRequests;
     std::unordered_map<uint32_t, uint32_t> lastReceivedShotSerial;
+    std::unordered_set<uint64_t> processedChatMessageIds;
     uint32_t nextLocalShotSerial = 1;
     uint32_t nextLocalProjectileFireSerial = 1;
     uint32_t nextLocalMeleeAttackSerial = 1;

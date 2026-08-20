@@ -1,0 +1,14 @@
+{
+  "weapons": [
+    { "id": "revolver", "equippable": true, "duelSlot": 1 },
+    { "id": "shotgun", "equippable": true, "duelSlot": 2 },
+    { "id": "rocket_launcher", "equippable": true, "duelSlot": 3 },
+    { "id": "grenade_launcher", "equippable": true, "duelSlot": 4 },
+    { "id": "godball", "equippable": false },
+    { "id": "swordsword", "equippable": false },
+    { "id": "op_revolver", "equippable": false },
+    { "id": "aa12", "equippable": false },
+    { "id": "admin_revolver", "equippable": false },
+    { "id": "hafs", "equippable": false }
+  ]
+}

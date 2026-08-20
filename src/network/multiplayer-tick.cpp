@@ -248,7 +248,10 @@ static void processSnapshotEntities(
                        ctx.localServerPosition.z);
             }
             if (ctx.awaitingExplodeDeath && entity.health <= 0)
+            {
                 ctx.awaitingExplodeDeath = false;
+                ctx.explodeRequestLastSendMs = 0;
+            }
             PlayerInfo& localInfo = ctx.playerRegistry[entity.networkEntityId];
             localInfo.name = entity.displayName;
             localInfo.id = entity.networkEntityId;
@@ -545,6 +548,20 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
 {
     uint32_t oldGen = ctx.lastKnownSpawnGeneration;
     ctx.lastKnownSpawnGeneration = spawn->spawnGeneration;
+    // A duel teleport can reuse the same spawn generation while advancing the
+    // transform epoch. Seed the complete authoritative transform here so the
+    // very next input cannot report the pre-duel local position.
+    ctx.localServerPosition = {spawn->posX, spawn->posY, spawn->posZ};
+    ctx.localServerVelocity = glm::vec3(0.0f);
+    ctx.localServerEpoch = spawn->transformEpoch;
+    ctx.transformEpoch = spawn->transformEpoch;
+    ctx.lastAppliedEpoch = 0;
+    ctx.hasLocalServerPosition = true;
+    ctx.localPlayerReconciled = false;
+    Debug::log(Debug::Category::Duel,
+        "[DuelSpawnApply] player=%u generation=%u epoch=%u position=(%.3f,%.3f,%.3f) transformGate=reset\n",
+        ctx.localPlayerId, spawn->spawnGeneration, spawn->transformEpoch,
+        spawn->posX, spawn->posY, spawn->posZ);
     ctx.nextMovementSequence = 1;
     Debug::log(Debug::Category::Weapons,
                "[SPAWN_GENERATION_CHANGED] playerId=%u oldGen=%u newGen=%u epoch=%u\n",
@@ -623,6 +640,26 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         return;
     }
 
+    // Explode is a client request, but it must survive badconn loss. The
+    // server operation is idempotent: retries are ignored once already dead.
+    if (ctx.awaitingExplodeDeath && ctx.localPlayerId)
+    {
+        const uint64_t now = nowMs();
+        if (ctx.explodeRequestLastSendMs == 0 || now - ctx.explodeRequestLastSendMs >= 200)
+        {
+            ExplodeRequestPacket request{};
+            request.header.type = PACKET_EXPLODE_REQUEST;
+            request.header.tick = ctx.tick;
+            request.header.playerId = ctx.localPlayerId;
+            request.header.transformEpoch = ctx.transformEpoch;
+            mpSendPacket(ctx, &request, sizeof(request));
+            ctx.explodeRequestLastSendMs = now;
+            Debug::log(Debug::Category::Networking,
+                "[EXPLODE REQUEST RETRY] player=%u epoch=%u\n",
+                ctx.localPlayerId, ctx.transformEpoch);
+        }
+    }
+
     uint64_t currentMs = nowMs();
 
     // ── Honest connection-health machine ───────────────────────────────
@@ -653,7 +690,13 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     mpSweepHitClaims(ctx);
     const uint64_t connectTimeoutMs =
         (uint64_t)NetworkingConfig::instance().data().timeouts.connectTimeoutMs;
-    if (!ctx.connected && !ctx.connectFailed &&
+    // connectStartMs belongs to the initial handshake. Once an established
+    // session enters Reconnecting, connected is intentionally false, but the
+    // initial-connect timeout must not tear down that session immediately.
+    const bool waitingForInitialConnection =
+        ctx.connectionState == ConnectionState::Connecting ||
+        ctx.connectionState == ConnectionState::WaitJoinAccept;
+    if (waitingForInitialConnection && !ctx.connected && !ctx.connectFailed &&
         currentMs - ctx.connectStartMs > connectTimeoutMs)
     {
         ctx.connectionStatus = "Connection timed out";
@@ -1194,6 +1237,10 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             if (ev->requestId != 0)
                 ctx.pendingChatRequests.erase(ev->requestId);
 
+            if (ev->messageId != 0 &&
+                !ctx.processedChatMessageIds.insert(ev->messageId).second)
+                return;
+
             // Reliable dedup: skip if already processed, ACK to server
             if (!mpAcceptReliableEventOnce(ctx, ev->eventId, ev->eventSessionId))
                 return;
@@ -1407,39 +1454,6 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         }
     }
 
-    // Retry chat requests until the server's reliable event confirms them.
-    {
-        const uint64_t now = nowMs();
-        const uint64_t retryMs = (uint64_t)NetworkingConfig::instance().data().reliableEvents.retryMs;
-        const uint64_t timeoutMs = (uint64_t)NetworkingConfig::instance().data().reliableEvents.ttlMs;
-        for (auto it = ctx.pendingChatRequests.begin(); it != ctx.pendingChatRequests.end(); )
-        {
-            auto& pending = it->second;
-            if (now - pending.firstSentMs > timeoutMs)
-            {
-                Debug::warn(Debug::Category::Chat,
-                            "[CHAT REQUEST TIMEOUT] requestId=%u attempts=%d\n",
-                            pending.requestId, pending.attempts);
-                it = ctx.pendingChatRequests.erase(it);
-                continue;
-            }
-            if (now - pending.lastSentMs >= retryMs)
-            {
-                ChatRequestPacket retry{};
-                retry.header.type = PACKET_CHAT_REQUEST;
-                retry.header.tick = ctx.tick;
-                retry.header.playerId = ctx.localPlayerId;
-                retry.requestId = pending.requestId;
-                retry.clientSimulationTick = ctx.tick;
-                std::strncpy(retry.utf8Message, pending.message.c_str(),
-                             sizeof(retry.utf8Message) - 1);
-                mpSendPacket(ctx, &retry, sizeof(retry));
-                pending.lastSentMs = now;
-                ++pending.attempts;
-            }
-            ++it;
-        }
-    }
     else
     {
         // ── Raw UDP recv loop ──
@@ -1488,6 +1502,40 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 continue;
             memcpy(buffer, rp.bytes.data(), rp.bytes.size());
             processPacket((int)rp.bytes.size());
+        }
+    }
+
+    // Retry chat requests until the server's reliable event confirms them.
+    {
+        const uint64_t now = nowMs();
+        const uint64_t retryMs = (uint64_t)NetworkingConfig::instance().data().reliableEvents.retryMs;
+        const uint64_t timeoutMs = (uint64_t)NetworkingConfig::instance().data().reliableEvents.ttlMs;
+        for (auto it = ctx.pendingChatRequests.begin(); it != ctx.pendingChatRequests.end(); )
+        {
+            auto& pending = it->second;
+            if (now - pending.firstSentMs > timeoutMs)
+            {
+                Debug::warn(Debug::Category::Chat,
+                            "[CHAT REQUEST TIMEOUT] requestId=%u attempts=%d\n",
+                            pending.requestId, pending.attempts);
+                it = ctx.pendingChatRequests.erase(it);
+                continue;
+            }
+            if (now - pending.lastSentMs >= retryMs)
+            {
+                ChatRequestPacket retry{};
+                retry.header.type = PACKET_CHAT_REQUEST;
+                retry.header.tick = ctx.tick;
+                retry.header.playerId = ctx.localPlayerId;
+                retry.requestId = pending.requestId;
+                retry.clientSimulationTick = ctx.tick;
+                std::strncpy(retry.utf8Message, pending.message.c_str(),
+                             sizeof(retry.utf8Message) - 1);
+                mpSendPacket(ctx, &retry, sizeof(retry));
+                pending.lastSentMs = now;
+                ++pending.attempts;
+            }
+            ++it;
         }
     }
 

@@ -35,6 +35,12 @@ std::string chatUtcNow()
     std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &utc);
     return buf;
 }
+
+uint64_t chatNowMs()
+{
+    return (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 }
 
 // TODO(main-cleanup): move to devtools/dev-teleport.cpp
@@ -79,7 +85,7 @@ void requestSendChatMessage(const std::string& message)
         req.clientSimulationTick = mpContext.tick;
         std::strncpy(req.utf8Message, trimmed.c_str(), sizeof(req.utf8Message) - 1);
         MimitaNet::mpSendPacket(mpContext, &req, sizeof(req));
-        const uint64_t sentMs = nowMs();
+        const uint64_t sentMs = chatNowMs();
         mpContext.pendingChatRequests[req.requestId] = {
             req.requestId, sentMs, sentMs, 1, trimmed};
         Debug::log(Debug::Category::Chat,

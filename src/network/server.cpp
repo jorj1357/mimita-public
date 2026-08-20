@@ -13,6 +13,7 @@
 #include "network/server-duel.h"
 #include "gamemode/gamemode.h"
 #include "duel/duel-map-pool.h"
+#include "duel/duel-weapon-pool.h"
 #include "network/multiplayer-context.h"
 #include "network/coordinator-client.h"
 #include "network/network-weapons.h"
@@ -251,6 +252,7 @@ int runServer(const LaunchOptions& options)
     NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
     GamemodeRegistry::instance().loadDirectory("config/gamemodes");
     DuelMapPool::instance().load("config/duel-maps.json");
+    DuelWeaponPool::instance().load("config/duel-weapons.json");
     npcLogSetProc("server");
 
     // Validate grenade launcher config at startup
@@ -518,6 +520,7 @@ int runServer(const LaunchOptions& options)
         // Hot-reload config/npc-difficulty.json so server NPC damage/fire rate
         // edits apply live without a server restart.
         NpcDifficultyConfig::instance().pollReload();
+        DuelWeaponPool::instance().pollReload();
 
         // Hot-reload the movement preset (config/movement.json + preset) so the
         // server's movement-validation tolerances match the client's live tuning.

@@ -11,6 +11,8 @@
 
 #include <chrono>
 #include <ctime>
+#include <sstream>
+#include <vector>
 
 namespace
 {
@@ -23,6 +25,31 @@ std::string chatUtcNow()
     char buf[32]{};
     std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &utc);
     return buf;
+}
+
+std::vector<std::string> wrapChatText(const std::string& text,
+                                      float maxWidth, float scale)
+{
+    std::vector<std::string> lines;
+    std::istringstream words(text);
+    std::string word;
+    std::string current;
+    while (words >> word)
+    {
+        const std::string candidate = current.empty() ? word : current + " " + word;
+        if (!current.empty() && uiMeasureText(candidate.c_str(), scale) > maxWidth)
+        {
+            lines.push_back(current);
+            current = word;
+        }
+        else
+            current = candidate;
+    }
+    if (!current.empty())
+        lines.push_back(current);
+    if (lines.empty())
+        lines.push_back("");
+    return lines;
 }
 }
 
@@ -289,9 +316,21 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
     float msgAreaW = uiScaleX(msgAreaW_d);
     float msgAreaH = uiScaleY(msgAreaH_d);
 
-    // Estimate content height per message (~18 design-pixels per line)
+    const float textScale = 0.28f;
     float lineH_d = 20.0f;
-    float contentH_d = (float)history.size() * lineH_d;
+    const float wrapWidth = uiScaleX(std::max(1.0f, msgAreaW_d - 4.0f));
+    std::vector<std::vector<std::string>> wrappedLines;
+    wrappedLines.reserve(history.size());
+    float contentH_d = 0.0f;
+    for (size_t i = 0; i < history.size(); ++i)
+    {
+        const auto& entry = history.get(i);
+        const std::string text = entry.senderType == ChatSenderType::Server
+            ? "[system] " + entry.text
+            : entry.senderName + ": " + entry.text;
+        wrappedLines.push_back(wrapChatText(text, wrapWidth, textScale));
+        contentH_d += (float)wrappedLines.back().size() * lineH_d;
+    }
 
     // Keep the newest line at the bottom until the player scrolls upward.
     float maxScroll = std::max(0.0f, contentH_d - msgAreaH_d);
@@ -310,48 +349,29 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
 
     // Draw each message (newest at bottom — draw from bottom up)
     float lineScreenH = uiScaleY(lineH_d);
-    float textScale = 0.28f;
     glm::vec4 serverColor = {1.0f, 0.8f, 0.3f, alpha};
     glm::vec4 playerColor = {1.0f, 1.0f, 1.0f, alpha};
     glm::vec4 mutedColor = {0.4f, 0.4f, 0.4f, alpha};
 
     size_t n = history.size();
+    size_t totalLines = 0;
+    for (const auto& lines : wrappedLines)
+        totalLines += lines.size();
+    size_t linesBefore = 0;
     for (size_t i = 0; i < n; ++i)
     {
         const auto& entry = history.get(i);
-        // History is stored oldest-first. Anchor the newest entry to the
-        // bottom of the content, then place older entries above it.
-        const float contentY_d = contentH_d - lineH_d -
-                                 (float)(n - 1 - i) * lineH_d;
-        const float lineY = msgAreaY + uiScaleY(contentY_d) -
-                            uiScaleY(state.scroll.scrollY);
         const float cursorX = msgAreaX + uiScaleX(2.0f);
-        char line[512];
-        if (entry.senderType == ChatSenderType::Server)
+        for (size_t lineIndex = 0; lineIndex < wrappedLines[i].size(); ++lineIndex)
         {
-            std::snprintf(line, sizeof(line), "[system] %s", entry.text.c_str());
-            glm::vec4 col = serverColor;
-            if (entry.muted) col = mutedColor;
-            uiDrawText(line, cursorX, lineY, textScale, col);
-        }
-        else
-        {
-            if (entry.muted)
-            {
-                std::snprintf(line, sizeof(line), "%s: %s",
-                             entry.senderName.c_str(),
-                             entry.text.c_str());
-                uiDrawText(line, cursorX, lineY, textScale, mutedColor);
-                continue;
-            }
-
-            // Format: (username): (message)
-            std::snprintf(line, sizeof(line), "%s: %s",
-                         entry.senderName.c_str(),
-                         entry.text.c_str());
-
-            // Draw sender name in white, message in white
-            uiDrawText(line, cursorX, lineY, textScale, playerColor);
+            const size_t flatLine = linesBefore + lineIndex;
+            const float contentY_d = contentH_d - lineH_d -
+                (float)(totalLines - 1 - flatLine) * lineH_d;
+            const float lineY = msgAreaY + uiScaleY(contentY_d) -
+                                uiScaleY(state.scroll.scrollY);
+            const glm::vec4 col = entry.muted ? mutedColor :
+                (entry.senderType == ChatSenderType::Server ? serverColor : playerColor);
+            uiDrawText(wrappedLines[i][lineIndex].c_str(), cursorX, lineY, textScale, col);
 
             std::string renderKey = "chat-debug-message-" +
                                     std::to_string(entry.messageId);
@@ -360,12 +380,15 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
                                 chatUtcNow().c_str(), i,
                                 (unsigned long long)entry.messageId, entry.text.c_str(),
                                 entry.senderName.c_str(), entry.senderEntityId,
-                                (unsigned long long)entry.serverTick, line,
-                                cursorX, lineY, uiMeasureText(line, textScale),
+                                (unsigned long long)entry.serverTick,
+                                wrappedLines[i][lineIndex].c_str(),
+                                cursorX, lineY,
+                                uiMeasureText(wrappedLines[i][lineIndex].c_str(), textScale),
                                 lineScreenH,
                                 msgAreaX, msgAreaY, msgAreaW, msgAreaH,
                                 state.scroll.scrollY, alpha);
         }
+        linesBefore += wrappedLines[i].size();
     }
 
     uiEndScrollArea({msgAreaX_d, msgAreaY_d, msgAreaW_d, msgAreaH_d},

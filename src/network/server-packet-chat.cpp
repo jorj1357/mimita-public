@@ -73,7 +73,6 @@ void handleChatRequestV2(SOCKET sock, const char* buffer, int bytes,
         it->second.lastChatRequestId == req->requestId)
     {
         ChatMessageEventPacket retry = it->second.cachedChatEvent;
-        retry.eventId = nextReliableGameplayEventId();
         uint32_t session = reliableGameplayEventSessionForPlayer(it->second);
         queueReliableGameplayEventToPlayer(sock, it->second, &retry, sizeof(retry),
                                            retry.eventId, session, totalPacketsOut);
@@ -92,6 +91,7 @@ void handleChatRequestV2(SOCKET sock, const char* buffer, int bytes,
         reject.header.type = PACKET_CHAT_MESSAGE_EVENT;
         reject.header.tick = tick;
         reject.header.playerId = req->header.playerId;
+        reject.requestId = req->requestId;
         reject.messageId = 0;
         reject.serverTick = tick;
         reject.senderType = 1; // Server
@@ -116,6 +116,7 @@ void handleChatRequestV2(SOCKET sock, const char* buffer, int bytes,
         reject.header.type = PACKET_CHAT_MESSAGE_EVENT;
         reject.header.tick = tick;
         reject.header.playerId = req->header.playerId;
+        reject.requestId = req->requestId;
         reject.messageId = 0;
         reject.serverTick = tick;
         reject.senderType = 1; // Server
@@ -157,15 +158,15 @@ void handleChatRequestV2(SOCKET sock, const char* buffer, int bytes,
     event.channel = 0; // Global
     std::strncpy(event.senderName, it->second.name.c_str(), sizeof(event.senderName) - 1);
     std::strncpy(event.utf8Message, msg, sizeof(event.utf8Message) - 1);
-    it->second.lastChatRequestId = req->requestId;
-    it->second.cachedChatEvent = event;
-    it->second.hasCachedChatEvent = true;
-
     Debug::log(Debug::Category::Chat, "[CHAT V2 ACCEPT] messageId=%llu player=%s tick=%u\n",
                (unsigned long long)event.messageId, it->second.name.c_str(), tick);
 
     // Broadcast to all players (including sender for confirmation) via reliable queue
     uint32_t eventId = nextReliableGameplayEventId();
+    event.eventId = eventId;
+    it->second.lastChatRequestId = req->requestId;
+    it->second.cachedChatEvent = event;
+    it->second.hasCachedChatEvent = true;
     for (auto& playerEntry : players)
     {
         uint32_t session = reliableGameplayEventSessionForPlayer(playerEntry.second);

@@ -236,6 +236,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.pendingTeleportSentMs = 0;
     ctx.awaitingTeleportAck = false;
     ctx.awaitingExplodeDeath = false;
+    ctx.explodeRequestLastSendMs = 0;
     ctx.teleportResync = false;
     ctx.transformEpoch = 0;
 
@@ -259,6 +260,8 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.pendingReloadRequests.clear();
     ctx.pendingKnockbacks.clear();
     ctx.incomingChatMessages.clear();
+    ctx.processedChatMessageIds.clear();
+    ctx.pendingChatRequests.clear();
     badconn::noteConnectionTeardown();
 
     // Reset reconnect timers
@@ -477,7 +480,9 @@ void mpRequestExplode(MultiplayerContext& ctx)
     request.header.tick = ctx.tick;
     request.header.playerId = ctx.localPlayerId;
     ctx.awaitingExplodeDeath = true;
+    ctx.explodeRequestLastSendMs = 0;
     mpSendPacket(ctx, &request, sizeof(request));
+    ctx.explodeRequestLastSendMs = nowMs();
 }
 
 // ── Generic AttackRequest with pending tracking and retry ──────────────

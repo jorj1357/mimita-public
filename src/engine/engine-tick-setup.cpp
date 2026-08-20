@@ -29,6 +29,7 @@
 #include "npc/npc-difficulty-config.h"
 #include "gamemode/gamemode.h"
 #include "duel/duel-map-pool.h"
+#include "duel/duel-weapon-pool.h"
 #include "hot-reload/hot-reload-system.h"
 #include "notifications/notifications.h"
 #include "gui/gui-layout.h"
@@ -67,6 +68,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     NpcDifficultyConfig::instance().pollReload();
     GamemodeRegistry::instance().pollReload();
     DuelMapPool::instance().pollReload();
+    DuelWeaponPool::instance().pollReload();
     WeaponHitFxConfig::instance().pollReload();
     ImpactDecalsConfig::instance().pollReload();
     NotificationSystem::instance().pollReload();
