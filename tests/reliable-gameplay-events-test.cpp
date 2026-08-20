@@ -9,6 +9,7 @@
 */
 
 #include "network/server.h"
+#include "config/networking-config.h"
 
 #include <cstdio>
 #include <cstring>
@@ -72,6 +73,15 @@ static MimitaNet::ProjectileExplodeEventPacket explodePacket(uint32_t id)
     packet.eventId = id;
     packet.projectileId = 1000 + id;
     packet.weapon = MimitaNet::NETWORK_WEAPON_ROCKET_LAUNCHER;
+    return packet;
+}
+
+static MimitaNet::ChatMessageEventPacket chatPacket(uint32_t id)
+{
+    MimitaNet::ChatMessageEventPacket packet{};
+    packet.header.type = MimitaNet::PACKET_CHAT_MESSAGE_EVENT;
+    packet.eventId = id;
+    packet.messageId = id;
     return packet;
 }
 
@@ -214,24 +224,25 @@ int main()
     std::unordered_map<uint32_t, ServerPlayer> capacityPlayers;
     capacityPlayers[10].id = 10;
     capacityPlayers[10].addr = testAddr(21010);
-    for (uint32_t i = 0; i < 63; ++i)
+    const uint32_t reliableCapacity = (uint32_t)NetworkingConfig::instance().data().reliableEvents.maxPendingPerPlayer;
+    for (uint32_t i = 0; i + 1 < reliableCapacity; ++i)
         queueDespawn(capacityPlayers, nextReliableGameplayEventId(), totalOut);
-    ok &= expect(capacityPlayers[10].pendingReliableEvents.size() == 63,
+    ok &= expect(capacityPlayers[10].pendingReliableEvents.size() == reliableCapacity - 1,
                  "entries at capacity minus one are queued");
     ReliableGameplayEventQueueResult capResult = queueDespawn(capacityPlayers, nextReliableGameplayEventId(), totalOut);
     ok &= expect(capResult == ReliableGameplayEventQueueResult::Queued &&
-                 capacityPlayers[10].pendingReliableEvents.size() == 64,
+                 capacityPlayers[10].pendingReliableEvents.size() == reliableCapacity,
                  "final capacity slot can still be queued");
     ReliableEventAckPacket capAck = ackPacket(10,
         capacityPlayers[10].pendingReliableEvents.front().eventId,
         capacityPlayers[10].reliableEventSessionId);
     sockaddr_in addr10 = capacityPlayers[10].addr;
     handleReliableEventAck(reinterpret_cast<const char*>(&capAck), sizeof(capAck), capacityPlayers, &addr10);
-    ok &= expect(capacityPlayers[10].pendingReliableEvents.size() == 63,
+    ok &= expect(capacityPlayers[10].pendingReliableEvents.size() == reliableCapacity - 1,
                  "ACK frees reliable queue capacity");
     capResult = queueDespawn(capacityPlayers, nextReliableGameplayEventId(), totalOut);
     ok &= expect(capResult == ReliableGameplayEventQueueResult::Queued &&
-                 capacityPlayers[10].pendingReliableEvents.size() == 64,
+                 capacityPlayers[10].pendingReliableEvents.size() == reliableCapacity,
                  "freed capacity accepts a new event");
 
     std::unordered_map<uint32_t, ServerPlayer> saturatedPlayers;
@@ -239,7 +250,7 @@ int main()
     saturatedPlayers[20].addr = testAddr(21020);
     saturatedPlayers[21].id = 21;
     saturatedPlayers[21].addr = testAddr(21021);
-    for (uint32_t i = 0; i < 64; ++i)
+    for (uint32_t i = 0; i < reliableCapacity; ++i)
         queueDespawn(saturatedPlayers, nextReliableGameplayEventId(), totalOut);
     const uint32_t healthyBefore = (uint32_t)saturatedPlayers[21].pendingReliableEvents.size();
     ReliableGameplayEventQueueResult satResult = queueDespawn(saturatedPlayers, nextReliableGameplayEventId(), totalOut);
@@ -248,7 +259,7 @@ int main()
     ok &= expect(saturatedPlayers.find(20) == saturatedPlayers.end() &&
                  saturatedPlayers.find(21) == saturatedPlayers.end(),
                  "saturated connections enter disconnect flow");
-    ok &= expect(healthyBefore == 64,
+    ok &= expect(healthyBefore == reliableCapacity,
                  "saturation never grows past the fixed queue bound");
 
     std::unordered_map<uint32_t, ServerPlayer> isolatedPlayers;
@@ -256,7 +267,7 @@ int main()
     isolatedPlayers[30].addr = testAddr(21030);
     isolatedPlayers[31].id = 31;
     isolatedPlayers[31].addr = testAddr(21031);
-    for (uint32_t i = 0; i < 64; ++i)
+    for (uint32_t i = 0; i < reliableCapacity; ++i)
     {
         ProjectileDespawnEventPacket onlyFull{};
         onlyFull.header.type = PACKET_PROJECTILE_DESPAWN_EVENT;
@@ -283,6 +294,27 @@ int main()
     handleReliableEventAck(reinterpret_cast<const char*>(&survivorAck), sizeof(survivorAck), isolatedPlayers, &survivorAddr);
     ok &= expect(queueDespawn(isolatedPlayers, nextReliableGameplayEventId(), totalOut) == ReliableGameplayEventQueueResult::Queued,
                  "server simulation can continue queuing for healthy clients");
+
+    std::unordered_map<uint32_t, ServerPlayer> chatPlayers;
+    chatPlayers[35].id = 35;
+    chatPlayers[35].addr = testAddr(21035);
+    setReliableGameplayEventTestNowMs(3000);
+    const uint32_t chatEventId = nextReliableGameplayEventId();
+    ChatMessageEventPacket chat = chatPacket(chatEventId);
+    queueReliableGameplayEventToPlayer(INVALID_SOCKET, chatPlayers[35],
+        &chat, sizeof(chat), chatEventId, chat.eventSessionId, totalOut);
+    const size_t chatSendsBeforeRetry = gSentPackets.size();
+    queueReliableGameplayEventToPlayer(INVALID_SOCKET, chatPlayers[35],
+        &chat, sizeof(chat), chatEventId, chat.eventSessionId, totalOut);
+    ok &= expect(chatPlayers[35].pendingReliableEvents.size() == 1 &&
+                 gSentPackets.size() == chatSendsBeforeRetry + 1,
+                 "duplicate chat event reuses one pending queue entry");
+    chatPlayers[35].pendingReliableEvents.front().attempts = 80;
+    setReliableGameplayEventTestNowMs(4400);
+    tickReliableGameplayEvents(INVALID_SOCKET, chatPlayers, totalOut);
+    ok &= expect(chatPlayers.find(35) != chatPlayers.end() &&
+                 chatPlayers[35].pendingReliableEvents.empty(),
+                 "expired chat event does not disconnect the client");
 
     std::unordered_map<uint32_t, ServerPlayer> attemptPlayers;
     attemptPlayers[40].id = 40;

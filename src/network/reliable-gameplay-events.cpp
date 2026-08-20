@@ -144,6 +144,33 @@ ReliableGameplayEventQueueResult queueForOnePlayer(
 {
     const PacketHeader* header = reinterpret_cast<const PacketHeader*>(data);
     const auto& cfg = NetworkingConfig::instance().data().reliableEvents;
+
+    // Chat request retries reuse the server's cached event. Do not append a
+    // second queue entry for the same event while the first copy is still
+    // awaiting its ACK; that would multiply retries and consume the backlog.
+    if (eventId != 0)
+    {
+        for (auto& pending : player.pendingReliableEvents)
+        {
+            if (pending.eventId != eventId)
+                continue;
+
+            const uint64_t now = reliableNowMs();
+            pending.lastSendMs = now;
+            ++pending.attempts;
+            const bool sent = serverSendToPlayer(sock, player,
+                                                 pending.bytes.data(),
+                                                 pending.bytes.size());
+            if (!sent)
+            {
+                ++gFailureStats.sendFailed;
+                return ReliableGameplayEventQueueResult::ConnectionUnavailable;
+            }
+            ++totalPacketsOut;
+            return ReliableGameplayEventQueueResult::Queued;
+        }
+    }
+
     if (player.pendingReliableEvents.size() >= cfg.maxPendingPerPlayer)
     {
         ++gFailureStats.saturated;
@@ -291,6 +318,23 @@ void tickReliableGameplayEvents(SOCKET sock,
                 if (attemptsExhausted)
                     ++gFailureStats.attemptsExhausted;
                 ++expiredCount;
+
+                // Chat delivery is best-effort at the event-queue layer. The
+                // client continues retrying its idempotent request, and the
+                // normal server connection-health timer owns disconnects.
+                // Erasing the player here made badconn 8 look disconnected
+                // after 80 * 50 ms, long before the configured 60 s grace.
+                if (it->packetType == PACKET_CHAT_MESSAGE_EVENT)
+                {
+                    Debug::logThrottled(Debug::Category::Networking,
+                        "reliable-chat-event-expired", 1.0f,
+                        "[RELIABLE CHAT EVENT EXPIRED] playerId=%u eventId=%u reason=%s action=keep-connection\n",
+                        player.id, it->eventId,
+                        ttlExpired ? "ttl-expired" : "attempts-exhausted");
+                    it = player.pendingReliableEvents.erase(it);
+                    continue;
+                }
+
                 markReliableConnectionUnhealthy(players, playerIt,
                     ttlExpired ? "ttl-expired" : "attempts-exhausted",
                     it->packetType, it->eventId);

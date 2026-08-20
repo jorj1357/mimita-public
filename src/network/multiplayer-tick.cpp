@@ -1237,12 +1237,14 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             if (ev->requestId != 0)
                 ctx.pendingChatRequests.erase(ev->requestId);
 
-            if (ev->messageId != 0 &&
-                !ctx.processedChatMessageIds.insert(ev->messageId).second)
+            // ACK before message-id deduplication. A duplicate reliable event
+            // can arrive after the first ACK was lost; it must be ACKed again
+            // even though its chat text must not be rendered twice.
+            if (!mpAcceptReliableEventOnce(ctx, ev->eventId, ev->eventSessionId))
                 return;
 
-            // Reliable dedup: skip if already processed, ACK to server
-            if (!mpAcceptReliableEventOnce(ctx, ev->eventId, ev->eventSessionId))
+            if (ev->messageId != 0 &&
+                !ctx.processedChatMessageIds.insert(ev->messageId).second)
                 return;
 
             noteChatActivity();
