@@ -1126,6 +1126,11 @@ void guiMain(GLFWwindow* win, GameState& state)
                 float vpW = prevPanel ? prevPanel->w * scaleX : 600.0f * scaleX;
                 float vpH = prevPanel ? prevPanel->h * scaleY : 900.0f * scaleY;
 
+                // A transient zero-sized framebuffer can occur while the window
+                // is being resized. Keep projection and OpenGL viewport inputs valid.
+                vpW = std::max(1.0f, vpW);
+                vpH = std::max(1.0f, vpH);
+
                 GLint prevViewport[4];
                 glGetIntegerv(GL_VIEWPORT, prevViewport);
                 GLboolean depthWasEnabled = glIsEnabled(GL_DEPTH_TEST);

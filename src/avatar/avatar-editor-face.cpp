@@ -8,8 +8,10 @@
 #include "avatar-editor-helpers.h"
 #include "avatar.h"
 #include "avatar-editor-scroll.h"
+#include "entities/player.h"
 
 #include <cstdio>
+#include <glm/gtc/matrix_transform.hpp>
 #include <string>
 
 namespace {
@@ -274,6 +276,60 @@ float drawBulkApplyRow(GLFWwindow* win, AvatarSystem& av, const std::string& par
     return y + 40.0f;
 }
 
+float bodyValue(const nlohmann::json& overrides, const std::string& part,
+                const char* key, int index, float fallback)
+{
+    if (!overrides.is_object() || !overrides.contains(part))
+        return fallback;
+    const auto& value = overrides[part][key];
+    if (!value.is_array() || value.size() <= index)
+        return fallback;
+    return value[index].get<float>();
+}
+
+float drawBodyTransformSection(GLFWwindow* win, AvatarSystem& av,
+                               const std::string& part, float px, float y, float pw)
+{
+    uiDrawText("BODY PART TRANSFORM", uiScaleX(px), uiScaleY(y),
+               avatarEditorFont(avatarEditorSectionFontSize),
+               {0.4f, 0.6f, 0.5f, 1.0f});
+    y += 24.0f;
+
+    const auto& overrides = av.current().bodypartOverrides;
+    glm::vec3 offset{
+        bodyValue(overrides, part, "offset", 0, 0.0f),
+        bodyValue(overrides, part, "offset", 1, 0.0f),
+        bodyValue(overrides, part, "offset", 2, 0.0f)};
+    glm::vec3 rotation{
+        bodyValue(overrides, part, "rotation", 0, 0.0f),
+        bodyValue(overrides, part, "rotation", 1, 0.0f),
+        bodyValue(overrides, part, "rotation", 2, 0.0f)};
+    glm::vec3 scale{
+        bodyValue(overrides, part, "scale", 0, 1.0f),
+        bodyValue(overrides, part, "scale", 1, 1.0f),
+        bodyValue(overrides, part, "scale", 2, 1.0f)};
+
+    const float sliderW = pw - 8.0f;
+    bool changed = false;
+    changed |= drawEditorSlider(win, "Body X", px, y, sliderW, offset.x, -5.0f, 5.0f); y += 28.0f;
+    changed |= drawEditorSlider(win, "Body Y", px, y, sliderW, offset.y, -5.0f, 5.0f); y += 28.0f;
+    changed |= drawEditorSlider(win, "Body Z", px, y, sliderW, offset.z, -5.0f, 5.0f); y += 28.0f;
+    changed |= drawEditorSlider(win, "Body pitch", px, y, sliderW, rotation.x, -180.0f, 180.0f); y += 28.0f;
+    changed |= drawEditorSlider(win, "Body yaw", px, y, sliderW, rotation.y, -180.0f, 180.0f); y += 28.0f;
+    changed |= drawEditorSlider(win, "Body roll", px, y, sliderW, rotation.z, -180.0f, 180.0f); y += 28.0f;
+    changed |= drawEditorSlider(win, "Body scale X", px, y, sliderW, scale.x, -3.0f, 3.0f); y += 28.0f;
+    changed |= drawEditorSlider(win, "Body scale Y", px, y, sliderW, scale.y, -3.0f, 3.0f); y += 28.0f;
+    changed |= drawEditorSlider(win, "Body scale Z", px, y, sliderW, scale.z, -3.0f, 3.0f); y += 34.0f;
+
+    if (changed) {
+        Player* preview = avatarEditorPreviewPlayer();
+        if (preview)
+            av.setBodypartOverride(*preview, part, offset, rotation, scale);
+        av.triggerSave();
+    }
+    return y;
+}
+
 } // anonymous namespace
 
 void drawAvatarFacesTab(GLFWwindow* win, float px, float py, float pw, float ph)
@@ -286,7 +342,7 @@ void drawAvatarFacesTab(GLFWwindow* win, float px, float py, float pw, float ph)
     const std::string face = faceKey(gSelectedFace);
     const FaceSettings fs = av.current().resolve(part, face);
 
-    const float contentH = 940.0f;
+    const float contentH = 1250.0f;
     ScrollState ss;
     beginScroll(win, {px, py, pw, ph}, contentH, ss);
 
@@ -303,6 +359,8 @@ void drawAvatarFacesTab(GLFWwindow* win, float px, float py, float pw, float ph)
     uiDrawText("Hint: pick a PNG in the left panel, then hit \"Use Selected PNG\".",
                uiScaleX(px), uiScaleY(y), avatarEditorFont(avatarEditorHintFontSize),
                {0.4f, 0.5f, 0.6f, 1.0f});
+    y += 28.0f;
+    y = drawBodyTransformSection(win, av, part, px, y, pw);
 
     endScroll({px, py, pw, ph}, contentH, ss);
 }

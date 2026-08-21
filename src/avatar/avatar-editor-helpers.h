@@ -13,14 +13,23 @@
 #include "gui/gui-coord.h"
 
 // ── Shared editor state ─────────────────────────────────────────────
-extern int gEditorTab;              // 0=Faces 1=Colors 2=Cosmetics 3=Presets
+constexpr int kPartCount = 6;
+constexpr int kFaceCount = 6;
+extern int gEditorTab;              // 0=PNG 1=Parts 2=Image 3=Cosmetics 4=SaveLoad
 extern int gSelectedPart;           // 0-5 body part index
 extern int gSelectedFace;           // 0-5 face side index
 extern std::string gSelectedTexture;// PNG filename selected in the library
+extern bool gSelectedFaces[kPartCount][kFaceCount];
+extern int gSelectedCosmetic;
+extern bool gEditingCosmeticImage;
+
+void ensureAvatarEditorSelection();
+void setSelectedPartFaces(int part, bool selected);
+void setAllSelectedFaces(bool selected);
+bool anySelectedFace();
+int selectedFaceCount();
 
 // ── String tables ───────────────────────────────────────────────────
-constexpr int kPartCount = 6;
-constexpr int kFaceCount = 6;
 const char* partLabel(int idx);
 const char* partKey(int idx);
 const char* faceLabel(int idx);
@@ -30,23 +39,23 @@ const char* faceKey(int idx);
 GuiLayout& avatarEditorLayout();
 float layoutVal(const GuiElement* e, float def);
 glm::vec4 layoutBg(const GuiElement* e, glm::vec4 def);
+std::string editorLabelText(const char* id, const char* fallback);
+float editorLabelFontSize(const char* id, float fallback);
 
-// ── Font size constants (Avatar Editor only) ────────────────────────
-// All sizes are design-space (1920x1080). They are multiplied by
-// avatarEditorFontScale() at draw time so text shrinks together with the
-// panels on low resolutions (e.g. 1024x768) instead of overflowing the
-// controls. Tweak these to fine-tune the editor's text sizes.
-constexpr float avatarEditorTabFontSize          = 0.30f;  // top tabs: Faces/Colors/Cosmetics/Presets
-constexpr float avatarEditorSmallTabFontSize     = 0.26f;  // part + side rows (Head/.../Front/...)
-constexpr float avatarEditorButtonFontSize       = 0.26f;  // regular buttons (assign/save/apply)
-constexpr float avatarEditorSmallButtonFontSize  = 0.24f;  // tiny buttons (copy/paste/stretch/crop)
-constexpr float avatarEditorSliderLabelFontSize  = 0.26f;  // slider row labels
-constexpr float avatarEditorSliderValueFontSize  = 0.24f;  // slider value text
-constexpr float avatarEditorSectionFontSize      = 0.26f;  // section labels (PART/SIDE/FIT MODE/...)
-constexpr float avatarEditorSummaryFontSize      = 0.32f;  // "Head / Front" selected-face summary
-constexpr float avatarEditorHintFontSize         = 0.24f;  // dim hint / empty-state text
-constexpr float avatarEditorOutfitListFontSize   = 0.24f;  // outfit names in the right panel
-constexpr float avatarEditorBulkButtonFontSize   = 0.24f;  // long "Apply to ..." buttons
+// ── Font sizes (Avatar Editor JSON style owner) ────────────────────
+// Compatibility names resolve through avatar-creator.json on every draw.
+float editorStyleFontSize(const char* styleId, float fallback);
+#define avatarEditorTabFontSize         editorStyleFontSize("editorStyleTab", 0.30f)
+#define avatarEditorSmallTabFontSize    editorStyleFontSize("editorStyleSmallTab", 0.30f)
+#define avatarEditorButtonFontSize      editorStyleFontSize("editorStyleButton", 0.30f)
+#define avatarEditorSmallButtonFontSize editorStyleFontSize("editorStyleSmallButton", 0.30f)
+#define avatarEditorSliderLabelFontSize editorStyleFontSize("editorStyleSliderLabel", 0.30f)
+#define avatarEditorSliderValueFontSize editorStyleFontSize("editorStyleSliderValue", 0.30f)
+#define avatarEditorSectionFontSize     editorStyleFontSize("editorStyleSection", 0.32f)
+#define avatarEditorSummaryFontSize     editorStyleFontSize("editorStyleSummary", 0.34f)
+#define avatarEditorHintFontSize        editorStyleFontSize("editorStyleHint", 0.30f)
+#define avatarEditorOutfitListFontSize  editorStyleFontSize("editorStyleOutfitList", 0.30f)
+#define avatarEditorBulkButtonFontSize  editorStyleFontSize("editorStyleBulkButton", 0.30f)
 
 // Resolution shrink factor for editor text (1.0 at 1080p and above).
 float avatarEditorFontScale();
@@ -71,6 +80,8 @@ void avatarEditorRefreshPreview();
 // The player used for the editor's live 3D preview.
 class Player;
 Player* avatarEditorPreviewPlayer();
+struct CosmeticSlot;
+CosmeticSlot* avatarEditorSelectedCosmetic();
 
 // Push the current avatar's cosmetics onto the preview player (loads GLBs).
 void avatarEditorApplyCosmeticsToPlayer();

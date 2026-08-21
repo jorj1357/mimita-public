@@ -704,6 +704,8 @@ bool pushInterpolationTarget(
 void mpApplyPredictedDamage(MultiplayerContext& ctx, uint32_t entityId,
                             int damage, bool npc)
 {
+    if (!NetworkingConfig::instance().data().prediction.predictDamage)
+        return;
     if (entityId == 0 || damage <= 0)
         return;
     auto& replicas = npc ? ctx.remoteNpcs : ctx.remotePlayers;
@@ -1330,6 +1332,8 @@ void updateRenderedReplica(
         interpolation.pendingPredictedDamage = 0;
         interpolation.predictedHealthCap = -1;
         interpolation.predictedHealthUpdatedMs = 0;
+        interpolation.authoritativeHealthTick = interpolation.target.serverTick;
+        interpolation.authoritativeHealth = interpolation.target.health;
     }
     else
     {
@@ -1376,8 +1380,17 @@ void updateRenderedReplica(
         resolveRemoteBodyAgainstGeometry(player, interpolation, *gpWorld);
 
     player.vel = render.velocity;
+    int authoritativeRenderHealth = render.health;
+    if (interpolation.authoritativeHealthTick > render.serverTick &&
+        interpolation.authoritativeHealth >= 0)
+        authoritativeRenderHealth = interpolation.authoritativeHealth;
+    else if (render.serverTick >= interpolation.authoritativeHealthTick)
+    {
+        interpolation.authoritativeHealthTick = render.serverTick;
+        interpolation.authoritativeHealth = render.health;
+    }
     const int displayHealth =
-        applyPredictedHealthOverlay(player, interpolation, render.health);
+        applyPredictedHealthOverlay(player, interpolation, authoritativeRenderHealth);
     player.currentHp = displayHealth;
     // Server max HP (healthall override) isn't transmitted; derive it from the
     // highest server health seen so nameplates/NPC bars show 999/999 not 999/100.
@@ -1404,6 +1417,8 @@ void updateRenderedReplica(
         player.currentHp = render.health;
         interpolation.pendingPredictedDamage = 0;
         interpolation.predictedHealthCap = -1;
+        interpolation.authoritativeHealthTick = render.serverTick;
+        interpolation.authoritativeHealth = render.health;
         Debug::warn(Debug::Category::Networking,
             "[NET REMOTE RESPAWN RECOVER] entityId=%u lastHp=%d renderHp=%d "
             "netPredictedDead=%d — full death state cleared\n",

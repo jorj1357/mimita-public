@@ -5,12 +5,38 @@
 #include "map/map_common.h"
 #include "renderer/renderer.h"
 #include "gui/ui-system.h"
+#include "world/texture-store.h"
 
 #include <cstdio>
+#include <algorithm>
 #include <filesystem>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
+
+namespace {
+
+const std::string& cosmeticGlb(const CosmeticSlot& slot)
+{
+    return slot.glb.empty() ? slot.choice : slot.glb;
+}
+
+const std::string& cosmeticAnchor(const CosmeticSlot& slot)
+{
+    return slot.anchorPart.empty() ? slot.attachTo : slot.anchorPart;
+}
+
+std::string cosmeticTexturePath(const CosmeticSlot& slot)
+{
+    if (slot.texture.image.empty())
+        return {};
+    if (slot.texture.image.find('/') != std::string::npos ||
+        slot.texture.image.find('\\') != std::string::npos)
+        return slot.texture.image;
+    return "assets/avatars/" + AvatarSystem::instance().currentName() + "/" + slot.texture.image;
+}
+
+} // namespace
 
 
 
@@ -36,7 +62,10 @@ bool CosmeticSystem::loadCosmeticGLB(const std::string& choice)
     CosmeticInstance inst;
     inst.choice = choice;
 
-    std::string path = "assets/objects/things/cosmetics/" + choice;
+    std::string path = (choice.find('/') != std::string::npos ||
+                        choice.find('\\') != std::string::npos)
+        ? choice
+        : "assets/objects/things/cosmetics/" + choice;
     if (path.rfind(".glb") == std::string::npos)
         path += ".glb";
 
@@ -61,9 +90,10 @@ void CosmeticSystem::loadCosmetics(const std::vector<CosmeticSlot>& slots)
 {
     for (const auto& slot : slots)
     {
-        if (slot.choice.empty() || slot.choice == "none")
+        const std::string& choice = cosmeticGlb(slot);
+        if (!slot.enabled || choice.empty() || choice == "none")
             continue;
-        loadCosmeticGLB(slot.choice);
+        loadCosmeticGLB(choice);
     }
 }
 
@@ -120,12 +150,19 @@ void CosmeticSystem::renderCosmetics(const Player& player) const
     glm::quat rootRot(glm::vec3(0, glm::radians(player.yaw), 0));
     glm::mat4 rootTransform = transformMatrix(player.pos, rootRot);
 
+    const GLboolean blendWas = glIsEnabled(GL_BLEND);
+    GLint blendSrcWas = GL_SRC_ALPHA;
+    GLint blendDstWas = GL_ONE_MINUS_SRC_ALPHA;
+    glGetIntegerv(GL_BLEND_SRC_ALPHA, &blendSrcWas);
+    glGetIntegerv(GL_BLEND_DST_ALPHA, &blendDstWas);
+
     for (const auto& slot : cosmetics)
     {
-        if (slot.choice.empty() || slot.choice == "none")
+        const std::string& choice = cosmeticGlb(slot);
+        if (!slot.enabled || choice.empty() || choice == "none")
             continue;
 
-        const CosmeticInstance* inst = find(slot.choice);
+        const CosmeticInstance* inst = find(choice);
         if (!inst)
             continue;
 
@@ -135,7 +172,9 @@ void CosmeticSystem::renderCosmetics(const Player& player) const
 
         // Determine attachment transform
         glm::mat4 attachTransform;
-        std::string attachTarget = slot.attachTo.empty() ? "head" : slot.attachTo;
+        std::string attachTarget = cosmeticAnchor(slot);
+        if (attachTarget.empty())
+            attachTarget = "head";
         if (attachTarget == "root")
             attachTransform = rootTransform;
         else
@@ -150,11 +189,46 @@ void CosmeticSystem::renderCosmetics(const Player& player) const
         model = glm::scale(model, slot.scale);
 
         GLint modelLoc = glGetUniformLocation(currentShader, "model");
-        GLint colorLoc = glGetUniformLocation(currentShader, "color");
+        GLint tintLoc = glGetUniformLocation(currentShader, "uTint");
+        GLint textureLoc = glGetUniformLocation(currentShader, "uTex");
+        GLint textureEnabledLoc = glGetUniformLocation(currentShader, "uCosmeticTextureEnabled");
+        GLint offsetLoc = glGetUniformLocation(currentShader, "uCosmeticUvOffset");
+        GLint scaleLoc = glGetUniformLocation(currentShader, "uCosmeticUvScale");
+        GLint rotationLoc = glGetUniformLocation(currentShader, "uCosmeticUvRotation");
+        GLint brightnessLoc = glGetUniformLocation(currentShader, "uCosmeticBrightness");
+        GLint opacityLoc = glGetUniformLocation(currentShader, "uCosmeticOpacity");
+        GLint useColorLoc = glGetUniformLocation(currentShader, "uUseColor");
         if (modelLoc >= 0)
             glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-        if (colorLoc >= 0)
-            glUniform3f(colorLoc, slot.color.x, slot.color.y, slot.color.z);
+        if (tintLoc >= 0) {
+            const glm::vec3 tint = slot.texture.color == glm::vec3(1.0f)
+                ? slot.color : slot.texture.color;
+            glUniform3f(tintLoc, tint.x, tint.y, tint.z);
+        }
+        if (textureLoc >= 0)
+            glUniform1i(textureLoc, 0);
+        if (useColorLoc >= 0)
+            glUniform1i(useColorLoc, 0);
+        if (textureEnabledLoc >= 0)
+            glUniform1i(textureEnabledLoc, slot.texture.image.empty() ? 0 : 1);
+        if (offsetLoc >= 0)
+            glUniform2f(offsetLoc, slot.texture.offsetX / 1000.0f,
+                        slot.texture.offsetY / 1000.0f);
+        if (scaleLoc >= 0)
+            glUniform2f(scaleLoc, std::max(slot.texture.scaleX, 0.0001f),
+                        std::max(slot.texture.scaleY, 0.0001f));
+        if (rotationLoc >= 0)
+            glUniform1f(rotationLoc, slot.texture.rotation);
+        if (brightnessLoc >= 0)
+            glUniform1f(brightnessLoc, slot.texture.brightness);
+        if (opacityLoc >= 0)
+            glUniform1f(opacityLoc, slot.texture.opacity);
+
+        const std::string texturePath = cosmeticTexturePath(slot);
+        const GLuint overrideTexture = texturePath.empty()
+            ? 0 : gTextures.getPath(texturePath);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
         // Upload and render each batch
         static GLuint cosmeticVAO = 0;
@@ -188,10 +262,16 @@ void CosmeticSystem::renderCosmetics(const Player& player) const
         for (const auto& batch : mesh.batches)
         {
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, batch.texture);
+            glBindTexture(GL_TEXTURE_2D, overrideTexture ? overrideTexture : batch.texture);
             glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
         }
 
         glBindVertexArray(0);
     }
+
+    if (blendWas)
+        glEnable(GL_BLEND);
+    else
+        glDisable(GL_BLEND);
+    glBlendFunc(blendSrcWas, blendDstWas);
 }

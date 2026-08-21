@@ -1,0 +1,488 @@
+{
+  "advanced": {
+    "head_back": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "head_bottom": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "head_front": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "head_left": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "head_right": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "head_top": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftArm_back": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftArm_bottom": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftArm_front": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftArm_left": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftArm_right": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftArm_top": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftLeg_back": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftLeg_bottom": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftLeg_front": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftLeg_left": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftLeg_right": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftLeg_top": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "rightArm_back": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "rightArm_bottom": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "rightArm_front": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "rightArm_left": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "rightArm_right": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "rightArm_top": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "rightLeg_back": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "rightLeg_bottom": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "rightLeg_front": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "rightLeg_left": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "rightLeg_right": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "rightLeg_top": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "torso_back": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "torso_bottom": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "torso_front": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "torso_left": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "torso_right": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "torso_top": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    }
+  },
+  "advanced_mode": true,
+  "avatar_id": "local_cb3b330533cf64d6",
+  "bodyparts": {
+    "head": {
+      "offset": [
+        0,
+        1.15,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "leftArm": {
+      "offset": [
+        0,
+        1.0,
+        -0.4
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "leftLeg": {
+      "offset": [
+        0,
+        -0.1,
+        0.25
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "rightArm": {
+      "offset": [
+        0,
+        1.0,
+        0.4
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "rightLeg": {
+      "offset": [
+        0,
+        -0.1,
+        -0.25
+      ],
+      "rotation": [
+        0,
+        180,
+        0
+      ],
+      "scale": [
+        -1,
+        1,
+        1
+      ]
+    },
+    "torso": {
+      "offset": [
+        0,
+        0.4,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    }
+  },
+  "colors": {
+    "head": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "torso": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "cosmetics": [
+    {
+      "anchor_part": "head",
+      "attachTo": "head",
+      "choice": "horns1.glb",
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "enabled": true,
+      "glb": "horns1.glb",
+      "id": "horns1.glb",
+      "offset": [
+        0.28610706329345703,
+        0.6762542724609375,
+        0.010709285736083984
+      ],
+      "rotation": [
+        87.13583374023438,
+        61.52384948730469,
+        7.8212738037109375
+      ],
+      "scale": [
+        1.4510860443115234,
+        0.7467563152313232,
+        1.0
+      ],
+      "slot": "",
+      "texture": {
+        "brightness": 2.1649322509765625,
+        "color": [
+          0.7420438528060913,
+          0.007649821229279041,
+          0.007649821229279041
+        ],
+        "image": "clown1.png",
+        "offset_x": -48.34771728515625,
+        "offset_y": 121.48095703125,
+        "opacity": 0.9990819096565247,
+        "rotation": 129.9877471923828,
+        "scale_x": 6.337254524230957,
+        "scale_y": 4.008078098297119
+      },
+      "type": ""
+    }
+  ],
+  "created_at": "2026-07-10T18:44:15Z",
+  "format_version": 1,
+  "name": "redredredfsafasw11 w 1w d3aaaaaad31a`avloa avliavlo redredred`a",
+  "player_model": "assets/entity/player/girl/mimita-girl-v7.glb",
+  "simple": {
+    "face": "",
+    "pants": "",
+    "shirt": "",
+    "skin": ""
+  },
+  "updated_at": "2026-08-20T18:29:38Z"
+}

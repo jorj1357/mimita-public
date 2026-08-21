@@ -41,7 +41,9 @@ public:
     void pruneAutosaves();
     void clearAutosaves();
 
-    static constexpr double AUTOSAVE_INTERVAL = 10.0;
+    // Match AvatarSystem's hot-reload polling cadence so edits are persisted
+    // quickly without writing once per rendered frame.
+    static constexpr double AUTOSAVE_INTERVAL = 0.25;
     static constexpr int MAX_AUTOSAVES = 5;
 
 private:

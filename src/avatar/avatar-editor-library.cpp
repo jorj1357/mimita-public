@@ -1,10 +1,10 @@
 // 08 15 2026, 15 30
 /* purpose
-* Draws the PNG library thumbnail grid with scroll + hover.
+* Draws the PNG library as large one-per-row tiles with scroll + hover.
 * Clicking a thumbnail selects it for the face editor.
 * DOES NOT import files and does not own avatar data.
 */
-// Draws the PNG library panel: a scrollable grid of the current outfit's
+// Draws the PNG library panel: a scrollable one-column list of the current outfit's
 // PNGs. Clicking a PNG selects it (drives the face editor's "Use Selected
 // PNG" action). Import happens through drag & drop (avatarEditorHandleDrop).
 #include "avatar-editor.h"
@@ -15,13 +15,10 @@
 #include <algorithm>
 #include <filesystem>
 #include <string>
-#include <unordered_map>
 
 namespace {
 
-struct HoverAnim {
-    float progress = 0.0f;
-};
+ScrollState gPngLibraryScroll;
 
 } // anonymous namespace
 
@@ -34,10 +31,12 @@ void drawAvatarLibrary(GLFWwindow* win, float px, float py, float pw, float ph)
     const std::string avatarName = av.currentName();
     auto pngs = av.listPngs(avatarName);
     if (pngs.empty()) {
-        uiDrawText("No PNGs yet.", uiScaleX(px), uiScaleY(py + 20.0f),
-                   avatarEditorFont(avatarEditorHintFontSize), {0.5f, 0.6f, 0.7f, 1.0f});
-        uiDrawText("Drag PNGs here to import.", uiScaleX(px), uiScaleY(py + 48.0f),
-                   avatarEditorFont(avatarEditorHintFontSize), {0.4f, 0.5f, 0.6f, 1.0f});
+        const std::string emptyText = editorLabelText("pngLibraryEmpty", "No PNGs yet.");
+        const std::string importText = editorLabelText("pngLibraryImportHint", "Drag PNGs here to import.");
+        uiDrawText(emptyText.c_str(), uiScaleX(px), uiScaleY(py + 20.0f),
+                   editorLabelFontSize("pngLibraryEmpty", avatarEditorHintFontSize), {0.5f, 0.6f, 0.7f, 1.0f});
+        uiDrawText(importText.c_str(), uiScaleX(px), uiScaleY(py + 48.0f),
+                   editorLabelFontSize("pngLibraryImportHint", avatarEditorHintFontSize), {0.4f, 0.5f, 0.6f, 1.0f});
         return;
     }
 
@@ -48,50 +47,39 @@ void drawAvatarLibrary(GLFWwindow* win, float px, float py, float pw, float ph)
         ? layout.get("thumbOutlineSelected")->getTextColorVec()
         : glm::vec4{0.3f, 0.8f, 0.5f, 1.0f};
 
-    const int cols = 3;
     const float gap = 6.0f;
-    const float labelH = 22.0f;
+    const float labelH = 28.0f;
     const float padding = 4.0f;
 
-    float thumbSize = (pw - padding * 2.0f - (cols - 1) * gap) / cols;
-    float itemH = thumbSize + labelH;
-    float contentH = ((int)pngs.size() + cols - 1) / cols * itemH;
+    const float tileH = std::max(150.0f, std::min(220.0f, pw * 0.42f));
+    const float imageSize = tileH - labelH;
+    const float itemH = tileH + gap;
+    const float contentH = (float)pngs.size() * itemH + padding * 2.0f;
 
-    ScrollState ss;
-    beginScroll(win, {px, py, pw, ph}, contentH, ss);
-
-    static std::unordered_map<std::string, HoverAnim> gHoverAnims;
-    float tx = px + padding;
+    beginScroll(win, {px, py, pw, ph}, contentH, gPngLibraryScroll);
 
     for (int i = 0; i < (int)pngs.size(); ++i) {
-        int col = i % cols;
-        int row = i / cols;
-        float ix = tx + col * (thumbSize + gap);
-        float iy = py + row * itemH;
+        float ix = px + padding;
+        float iy = py + padding + i * itemH;
+        float tileW = pw - padding * 2.0f;
 
         std::string fullPath = av.avatarPath(avatarName) + "/" + pngs[i];
         bool isSelected = (pngs[i] == gSelectedTexture);
 
-        auto btn = uiButton(win, "", {ix, iy, thumbSize, thumbSize}, bgNormal);
-
-        HoverAnim& anim = gHoverAnims[pngs[i]];
-        float target = btn.hovered ? 1.0f : 0.0f;
-        anim.progress += (target - anim.progress) * 0.15f;
-
-        float hoverScale = 1.0f + anim.progress * 0.05f;
-        float expand = (hoverScale - 1.0f) * thumbSize * 0.5f;
+        auto btn = uiButton(win, "", {ix, iy, tileW, tileH}, bgNormal);
 
         glm::vec4 bgCol = isSelected ? bgSelected : bgNormal;
         if (btn.hovered && !isSelected)
             bgCol += glm::vec4(0.05f, 0.05f, 0.05f, 0.0f);
 
-        float sx = uiScaleX(ix), sy = uiScaleY(iy), sSize = uiScaleX(thumbSize);
-        UIRect bgScreen = {sx - expand, sy - expand, sSize * hoverScale, sSize * hoverScale};
+        float sx = uiScaleX(ix), sy = uiScaleY(iy), sw = uiScaleX(tileW), sh = uiScaleY(tileH);
+        UIRect bgScreen = {sx, sy, sw, sh};
         uiDrawRect(bgScreen, bgCol, "lib-thumb-bg");
 
-        float hoverExpand = (hoverScale - 1.0f) * sSize * 0.5f;
         uiDrawImageFit(fullPath.c_str(),
-                       {sx - hoverExpand, sy - hoverExpand, sSize * hoverScale, sSize * hoverScale},
+                       {sx + uiScaleX((tileW - imageSize) * 0.5f),
+                        sy + uiScaleY(4.0f),
+                        uiScaleX(imageSize), uiScaleY(imageSize - 8.0f)},
                        true);
 
         if (isSelected) {
@@ -100,7 +88,7 @@ void drawAvatarLibrary(GLFWwindow* win, float px, float py, float pw, float ph)
                               outlineSel + glm::vec4(0.2f, 0.0f, 0.0f, 0.0f), "lib-thumb-sel");
         }
         if (btn.hovered && !isSelected)
-            uiDrawRectOutline(bgScreen, {0.5f, 0.7f, 1.0f, 0.4f + anim.progress * 0.3f}, "lib-thumb-hover");
+            uiDrawRectOutline(bgScreen, {0.5f, 0.7f, 1.0f, 0.7f}, "lib-thumb-hover");
 
         if (btn.clicked)
             gSelectedTexture = pngs[i];
@@ -108,21 +96,9 @@ void drawAvatarLibrary(GLFWwindow* win, float px, float py, float pw, float ph)
         std::string label = pngs[i];
         if (label.size() > 14)
             label = label.substr(0, 12) + "...";
-        uiDrawText(label.c_str(), uiScaleX(ix), uiScaleY(iy + thumbSize + 4.0f),
+        uiDrawText(label.c_str(), uiScaleX(ix + 8.0f), uiScaleY(iy + imageSize + 4.0f),
                    avatarEditorFont(avatarEditorHintFontSize), {0.6f, 0.7f, 0.8f, 1.0f});
     }
 
-    if (gHoverAnims.size() > pngs.size() * 2) {
-        for (auto it = gHoverAnims.begin(); it != gHoverAnims.end(); ) {
-            bool found = false;
-            for (const auto& p : pngs)
-                if (it->first == p) { found = true; break; }
-            if (!found && it->second.progress < 0.01f)
-                it = gHoverAnims.erase(it);
-            else
-                ++it;
-        }
-    }
-
-    endScroll({px, py, pw, ph}, contentH, ss);
+    endScroll({px, py, pw, ph}, contentH, gPngLibraryScroll);
 }

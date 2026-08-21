@@ -14,6 +14,8 @@ Favor deleting code over adding code when both solutions achieve the same result
 
 Never launch `mimita.exe` without `--server` or `--timeout <secs>`. Without these flags the game opens a full graphics window and stays open indefinitely (it won't automatically exit). If you need to test server behavior, always use `--server --timeout 30 --no-coordinator` or similar so the process self-terminates.
 
+For build purposes, human or AI agents are authorized to terminate existing `mimita.exe` processes at any time, until this instruction is changed. This authorization applies only to releasing the executable lock so the updated build can be produced and tested.
+
 # Mandatory Overseer Check
 
 Before marking ANY task as complete, ALWAYS run `python overseer.py` from the workspace root.

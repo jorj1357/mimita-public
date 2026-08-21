@@ -96,7 +96,12 @@ glm::mat4 Camera::getProj(float width, float height) const {
         logTimer = 0.0f;
         printf("[CAMERA] nearPlane=0.01 farPlane=5000.0 fov=%.0f\n", fov);
     }
-    return glm::perspective(glm::radians(fov), width / height, 0.01f, 5000.0f);
+    if (!std::isfinite(width) || !std::isfinite(height) || width <= 0.0f || height <= 0.0f)
+        return glm::mat4(1.0f);
+    const float aspect = width / height;
+    if (!std::isfinite(aspect) || aspect <= 0.0f)
+        return glm::mat4(1.0f);
+    return glm::perspective(glm::radians(fov), aspect, 0.01f, 5000.0f);
 }
 
 void Camera::smoothCollision(

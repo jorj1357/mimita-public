@@ -96,6 +96,10 @@ void Player::renderCurrentPose(unsigned int shader,
         static GLint uViewLoc = -1, uProjLoc = -1, uModelLoc = -1;
         static GLint uUseColorLoc = -1, uColorLoc = -1, uTexLoc = -1, uTintLoc = -1;
         static GLint uAlphaCutoffLoc = -1, uDebugViewLoc = -1;
+        static GLint uCosmeticTextureEnabledLoc = -1;
+        static GLint uCosmeticUvOffsetLoc = -1, uCosmeticUvScaleLoc = -1;
+        static GLint uCosmeticUvRotationLoc = -1, uCosmeticBrightnessLoc = -1;
+        static GLint uCosmeticOpacityLoc = -1;
         if (uViewLoc < 0) uViewLoc = glGetUniformLocation(shader, "view");
         if (uProjLoc < 0) uProjLoc = glGetUniformLocation(shader, "projection");
         if (uModelLoc < 0) uModelLoc = glGetUniformLocation(shader, "model");
@@ -105,6 +109,18 @@ void Player::renderCurrentPose(unsigned int shader,
         if (uTintLoc < 0) uTintLoc = glGetUniformLocation(shader, "uTint");
         if (uAlphaCutoffLoc < 0) uAlphaCutoffLoc = glGetUniformLocation(shader, "uAlphaCutoff");
         if (uDebugViewLoc < 0) uDebugViewLoc = glGetUniformLocation(shader, "uDebugView");
+        if (uCosmeticTextureEnabledLoc < 0)
+            uCosmeticTextureEnabledLoc = glGetUniformLocation(shader, "uCosmeticTextureEnabled");
+        if (uCosmeticUvOffsetLoc < 0)
+            uCosmeticUvOffsetLoc = glGetUniformLocation(shader, "uCosmeticUvOffset");
+        if (uCosmeticUvScaleLoc < 0)
+            uCosmeticUvScaleLoc = glGetUniformLocation(shader, "uCosmeticUvScale");
+        if (uCosmeticUvRotationLoc < 0)
+            uCosmeticUvRotationLoc = glGetUniformLocation(shader, "uCosmeticUvRotation");
+        if (uCosmeticBrightnessLoc < 0)
+            uCosmeticBrightnessLoc = glGetUniformLocation(shader, "uCosmeticBrightness");
+        if (uCosmeticOpacityLoc < 0)
+            uCosmeticOpacityLoc = glGetUniformLocation(shader, "uCosmeticOpacity");
 
         MIMITA_GL_CLEAR_STAGE("Player::render body parts");
         MIMITA_GL_CALL(glUseProgram(shader));
@@ -114,6 +130,18 @@ void Player::renderCurrentPose(unsigned int shader,
         glUniform1i(uTexLoc, 0);
         if (uTintLoc >= 0)
             glUniform3f(uTintLoc, 1.0f, 1.0f, 1.0f);
+        if (uCosmeticTextureEnabledLoc >= 0)
+            glUniform1i(uCosmeticTextureEnabledLoc, 0);
+        if (uCosmeticUvOffsetLoc >= 0)
+            glUniform2f(uCosmeticUvOffsetLoc, 0.0f, 0.0f);
+        if (uCosmeticUvScaleLoc >= 0)
+            glUniform2f(uCosmeticUvScaleLoc, 1.0f, 1.0f);
+        if (uCosmeticUvRotationLoc >= 0)
+            glUniform1f(uCosmeticUvRotationLoc, 0.0f);
+        if (uCosmeticBrightnessLoc >= 0)
+            glUniform1f(uCosmeticBrightnessLoc, 1.0f);
+        if (uCosmeticOpacityLoc >= 0)
+            glUniform1f(uCosmeticOpacityLoc, 1.0f);
         if (DebugConfig::DEBUG_WEAPON_VIEWMODEL) {
             printf("[PLAYER SHADER RESET] entityId=%s bodyColor=(1.00,1.00,1.00) "
                    "useTexture=1 useColor=%d\n",

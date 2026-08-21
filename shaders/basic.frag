@@ -19,6 +19,15 @@ in vec4 vDebugColor;
 
 uniform sampler2D uTex;
 
+// Optional cosmetic material override. Normal player/world draws leave this
+// disabled and keep the original uTex/vUV path.
+uniform int   uCosmeticTextureEnabled;
+uniform vec2  uCosmeticUvOffset;
+uniform vec2  uCosmeticUvScale;
+uniform float uCosmeticUvRotation;
+uniform float uCosmeticBrightness;
+uniform float uCosmeticOpacity;
+
 // Debug color path used by world debug line overlays.
 uniform int  uUseColor;
 uniform vec4 uColor;
@@ -186,10 +195,25 @@ void main()
     // UVs address a 2D image. Mipmaps selected by OpenGL reduce shimmer at distance.
     // The C++ texture loader controls filtering/wrapping; this shader just samples.
     vec2 sampleUV = vUV;
+    if (uCosmeticTextureEnabled != 0) {
+        vec2 centered = (vUV - vec2(0.5)) /
+                        max(uCosmeticUvScale, vec2(0.0001));
+        float angle = radians(uCosmeticUvRotation);
+        float c = cos(angle);
+        float s = sin(angle);
+        centered = vec2(
+            centered.x * c - centered.y * s,
+            centered.x * s + centered.y * c);
+        sampleUV = centered + vec2(0.5) + uCosmeticUvOffset;
+    }
     vec2 breatheSeed = vWorldPos.xy * 0.1;
     if (uTexBreatheEnabled != 0)
         sampleUV = applyTexbreatheUV(vUV, breatheSeed, uTexBreatheTime);
     vec4 texel = texture(uTex, sampleUV);
+    if (uCosmeticTextureEnabled != 0) {
+        texel.rgb *= uCosmeticBrightness;
+        texel.a *= uCosmeticOpacity;
+    }
     vec3 texColor = applyTextureTuning(texel.rgb) * uTint;
     if (uTexBreatheEnabled != 0)
         texColor = applyTexbreatheColor(texColor, breatheSeed, uTexBreatheTime);

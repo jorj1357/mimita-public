@@ -23,6 +23,7 @@ struct FaceTransform {
     float hueShift = 0.0f;       // 0-360 hue rotation
     float saturation = 0.0f;     // -10 to 10, 0 = unchanged
     float brightness = 0.0f;     // -10 to 10, 0 = unchanged
+    float contrast = 1.0f;        // 0=flat, 1=unchanged
     int stretchMode = 0;         // 0=stretch, 1=crop
     glm::vec3 color = glm::vec3(1.0f); // Per-face color multiplier (RGB multiply)
     float transparency = 0.0f;   // 0=opaque, 1=invisible
@@ -61,7 +62,20 @@ struct SimpleAvatar {
     std::string skin;
 };
 
+struct CosmeticTexture {
+    std::string image;
+    float offsetX = 0.0f;
+    float offsetY = 0.0f;
+    float scaleX = 1.0f;
+    float scaleY = 1.0f;
+    float rotation = 0.0f;
+    glm::vec3 color{1.0f};
+    float brightness = 1.0f;
+    float opacity = 1.0f;
+};
+
 struct CosmeticSlot {
+    // Legacy fields remain readable so existing avatar.json files keep working.
     std::string slot;        // e.g. "head", "torso", "arms", "legs" (UI category)
     std::string choice;      // e.g. "halo", "horns", "none" (GLB filename)
     std::string attachTo;    // body part to attach to: "root", "head", "torso", "leftArm", "rightArm", "leftLeg", "rightLeg"
@@ -69,6 +83,14 @@ struct CosmeticSlot {
     glm::vec3 rotation{0.0f}; // euler angles in degrees
     glm::vec3 scale{1.0f};   // scale multiplier
     glm::vec3 color{1.0f};   // RGB tint
+
+    // V3 instance fields: one avatar may contain any number of cosmetics.
+    std::string id;
+    std::string type;
+    std::string glb;
+    bool enabled = true;
+    std::string anchorPart;
+    CosmeticTexture texture;
 };
 
 struct AvatarPreset {
@@ -147,6 +169,10 @@ public:
     void setSimple(const SimpleAvatar& simple) { mAvatar.simple = simple; mAvatar.expandSimple(); markAtlasDirty(); }
     void setPartFace(const std::string& part, const std::string& face, const std::string& texturePath);
     void setPartFaceTransform(const std::string& part, const std::string& face, const FaceTransform& transform);
+    void setBodypartOverride(Player& player, const std::string& part,
+                             const glm::vec3& offset,
+                             const glm::vec3& rotation,
+                             const glm::vec3& scale);
     void setAdvancedMode(bool v) { mAvatar.advancedMode = v; markAtlasDirty(); }
 
     void setPartColor(const std::string& part, const glm::vec3& color);
@@ -172,6 +198,8 @@ public:
     void autosaveUpdate(float dt);          // call every frame
     bool saveProject();                      // save current project
     void triggerSave();                       // request immediate save on next update
+    bool undoEditorChange();
+    AvatarAutosave& autosave() { return mAutosave; }
     const AvatarAutosave& autosave() const { return mAutosave; }
 
     // ── UV atlas texture access (for glbuvinfo etc.) ─────────
@@ -223,6 +251,9 @@ private:
     // ── Autosave ───────────────────────────────────────────
     AvatarAutosave mAutosave;
     bool mSaveRequested = false;
+    AvatarDefinition mLastSavedAvatar;
+    std::vector<AvatarDefinition> mEditorUndoHistory;
+    bool mEditorChangeCaptured = false;
 
     // ── UV atlas runtime state ──────────────────────────────
     GLuint mUvAtlasTexture = 0;

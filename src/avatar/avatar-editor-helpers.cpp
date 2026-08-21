@@ -20,6 +20,48 @@ int gEditorTab = 0;
 int gSelectedPart = 0;
 int gSelectedFace = 0;
 std::string gSelectedTexture;
+bool gSelectedFaces[kPartCount][kFaceCount] = {};
+
+void ensureAvatarEditorSelection()
+{
+    for (int pi = 0; pi < kPartCount; ++pi)
+        for (int fi = 0; fi < kFaceCount; ++fi)
+            if (gSelectedFaces[pi][fi])
+                return;
+    gSelectedFaces[0][0] = true;
+}
+
+void setSelectedPartFaces(int part, bool selected)
+{
+    if (part < 0 || part >= kPartCount) return;
+    for (int fi = 0; fi < kFaceCount; ++fi)
+        gSelectedFaces[part][fi] = selected;
+    gSelectedPart = part;
+}
+
+void setAllSelectedFaces(bool selected)
+{
+    for (int pi = 0; pi < kPartCount; ++pi)
+        for (int fi = 0; fi < kFaceCount; ++fi)
+            gSelectedFaces[pi][fi] = selected;
+}
+
+bool anySelectedFace()
+{
+    for (int pi = 0; pi < kPartCount; ++pi)
+        for (int fi = 0; fi < kFaceCount; ++fi)
+            if (gSelectedFaces[pi][fi]) return true;
+    return false;
+}
+
+int selectedFaceCount()
+{
+    int count = 0;
+    for (int pi = 0; pi < kPartCount; ++pi)
+        for (int fi = 0; fi < kFaceCount; ++fi)
+            if (gSelectedFaces[pi][fi]) ++count;
+    return count;
+}
 
 const char* partLabel(int idx)
 {
@@ -61,6 +103,27 @@ glm::vec4 layoutBg(const GuiElement* e, glm::vec4 def)
     return e ? e->getBackgroundColorVec() : def;
 }
 
+std::string editorLabelText(const char* id, const char* fallback)
+{
+    const GuiElement* element = avatarEditorLayout().get(id);
+    if (element && !element->text.empty())
+        return element->text;
+    return fallback ? fallback : "";
+}
+
+float editorLabelFontSize(const char* id, float fallback)
+{
+    return editorFontSize(avatarEditorLayout().get(id), fallback);
+}
+
+float editorStyleFontSize(const char* styleId, float fallback)
+{
+    const GuiElement* element = avatarEditorLayout().get(styleId);
+    if (element && element->fontSize > 0.0f)
+        return element->fontSize;
+    return fallback;
+}
+
 // ── Editor font helpers ─────────────────────────────────────────────
 float avatarEditorFontScale()
 {
@@ -95,7 +158,13 @@ bool drawEditorSlider(GLFWwindow* win, const char* label, float x, float y,
     const float trackW = w - labelW - valueW;
     const float trackH = 22.0f;
 
-    uiDrawText(label, uiScaleX(x), uiScaleY(y + 3.0f), avatarEditorFont(avatarEditorSliderLabelFontSize),
+    std::string labelId = "slider";
+    for (const char* p = label; *p; ++p)
+        if (*p != ' ') labelId += *p;
+    const GuiElement* labelElement = avatarEditorLayout().get(labelId);
+    const std::string displayLabel = editorLabelText(labelId.c_str(), label);
+    uiDrawText(displayLabel.c_str(), uiScaleX(x), uiScaleY(y + 3.0f),
+               editorFontSize(labelElement, avatarEditorSliderLabelFontSize),
                {0.7f, 0.8f, 0.9f, 1.0f});
 
     UIRect s = GuiCoordinateSystem::instance().designToScreen({trackX, y, trackW, trackH});

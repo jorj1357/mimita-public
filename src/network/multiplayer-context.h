@@ -244,6 +244,10 @@ struct EntityInterpolationState
     int pendingPredictedDamage = 0;
     int predictedHealthCap = -1;
     uint64_t predictedHealthUpdatedMs = 0;
+    // Newest server-authoritative health state. Health is not prediction data;
+    // it may not regress when an older interpolated snapshot is rendered.
+    uint32_t authoritativeHealthTick = 0;
+    int authoritativeHealth = -1;
     uint32_t predictedHealthRollbackCount = 0;
     uint32_t predictedHealthConfirmCount = 0;
     // Always-on spring for render_filter == "spring". Reset on respawn so the

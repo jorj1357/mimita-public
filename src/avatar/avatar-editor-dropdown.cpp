@@ -84,11 +84,8 @@ int drawDropdownOverlay(GLFWwindow* win, DropdownState& state,
     drawListBackground(lx, ly, w, listH);
 
     float contentH = (float)items.size() * itemH;
-    ScrollState scrollState;
-    scrollState.offset = state.scrollOffset;
-
-    beginScroll(win, {lx, ly, w, listH}, contentH, scrollState);
-    state.scrollOffset = scrollState.offset;
+    beginScroll(win, {lx, ly, w, listH}, contentH, state.scroll);
+    state.scrollOffset = state.scroll.offset;
 
     float iy = ly;
     for (int i = 0; i < (int)items.size(); ++i)
@@ -107,7 +104,7 @@ int drawDropdownOverlay(GLFWwindow* win, DropdownState& state,
         iy += itemH;
     }
 
-    endScroll({lx, ly, w, listH}, contentH, scrollState);
+    endScroll({lx, ly, w, listH}, contentH, state.scroll);
 
     return result;
 }

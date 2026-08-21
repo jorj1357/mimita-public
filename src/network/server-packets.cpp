@@ -837,7 +837,19 @@ void handleInputPacket(const char* buffer, int bytes,
         }
     }
 
+    const bool hadSimBroadcastPosition = p.hasSimBroadcastPos;
     applyMovementStateToServerPlayer(result.acceptedState, p);
+    // The first accepted current-life report after a duel teleport must become
+    // visible to remote clients immediately. Otherwise server_sim broadcasting
+    // can continue publishing the pre-duel spawn while local prediction moves.
+    if (!hadSimBroadcastPosition || result.clearsAuthoritativeTransformAck)
+    {
+        p.simBroadcastPos = p.pos;
+        p.hasSimBroadcastPos = true;
+        Debug::log(Debug::Category::Duel,
+            "[DuelMovementResume] player=%u epoch=%u accepted=(%.3f,%.3f,%.3f) broadcast-reset=1\n",
+            p.id, p.transformEpoch, p.pos.x, p.pos.y, p.pos.z);
+    }
     applyAcceptedInputPresentation(p, *in, report);
 
     if (!p.hasAcceptedClientTransform)

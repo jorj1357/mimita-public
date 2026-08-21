@@ -169,6 +169,15 @@ static void applyHSB(unsigned char* pixel, float hueShift, float saturation, flo
     pixel[2] = (unsigned char)std::clamp(b * 255.0f, 0.0f, 255.0f);
 }
 
+static void applyContrast(unsigned char* pixel, float contrast) {
+    if (std::abs(contrast - 1.0f) < 0.0001f) return;
+    for (int channel = 0; channel < 3; ++channel) {
+        const float normalized = pixel[channel] / 255.0f;
+        const float adjusted = (normalized - 0.5f) * contrast + 0.5f;
+        pixel[channel] = (unsigned char)std::clamp(adjusted * 255.0f, 0.0f, 255.0f);
+    }
+}
+
 static void rotateImage(std::vector<unsigned char>& pixels, int size, float rotationDeg) {
     float rot = fmod(rotationDeg, 360.0f);
     if (rot < 0.0f) rot += 360.0f;
@@ -360,11 +369,15 @@ static std::vector<unsigned char> buildAtlasPixels(const AvatarDefinition& avata
                     }
             }
 
-            if (fs.transform.hueShift != 0.0f || fs.transform.saturation != 0.0f || fs.transform.brightness != 0.0f) {
+            if (fs.transform.hueShift != 0.0f || fs.transform.saturation != 0.0f || fs.transform.brightness != 0.0f ||
+                fs.transform.contrast != 1.0f) {
                 for (int py = 0; py < USABLE; ++py)
                     for (int px = 0; px < USABLE; ++px)
-                        applyHSB(&cellPixels[(py * USABLE + px) * 4],
-                                 fs.transform.hueShift, fs.transform.saturation, fs.transform.brightness);
+                    {
+                        unsigned char* pixel = &cellPixels[(py * USABLE + px) * 4];
+                        applyHSB(pixel, fs.transform.hueShift, fs.transform.saturation, fs.transform.brightness);
+                        applyContrast(pixel, fs.transform.contrast);
+                    }
             }
 
             int cellX = PADDING + fi * (CELL_SIZE + GAP) + INSET;

@@ -1001,7 +1001,11 @@ static void spawnHitClaimDisagreement(MultiplayerContext& ctx,
 
 void mpSweepHitClaims(MultiplayerContext& ctx)
 {
-    constexpr uint64_t HIT_CLAIM_TIMEOUT_MS = 800;
+    // A missing verdict is not proof of a rejected hit. Badconn can delay a
+    // reliable AttackResult/DamageConfirmed event beyond a normal round trip.
+    // Expire silently only as bounded cleanup; disagreement effects are emitted
+    // exclusively by an authoritative rejected/miss verdict.
+    constexpr uint64_t HIT_CLAIM_EXPIRY_MS = 10000;
     const uint64_t now = nowMs();
     for (auto it = ctx.pendingHitClaims.begin(); it != ctx.pendingHitClaims.end(); )
     {
@@ -1010,9 +1014,18 @@ void mpSweepHitClaims(MultiplayerContext& ctx)
             it = ctx.pendingHitClaims.erase(it);
             continue;
         }
-        if (now - it->second.sentMs >= HIT_CLAIM_TIMEOUT_MS)
+        if (now - it->second.sentMs >= HIT_CLAIM_EXPIRY_MS)
         {
-            spawnHitClaimDisagreement(ctx, it->second, "HIT REJECTED");
+            char msg[192];
+            std::snprintf(msg, sizeof(msg),
+                          "requestId=%u target=%u; no disagreement visual",
+                          it->second.requestId, it->second.claimedTargetId);
+            ::logStructured(::StructuredCategory::Network,
+                            ::StructuredLevel::Important,
+                            "HIT_CLAIM_EXPIRED_WITHOUT_VERDICT",
+                            "ATTACK_" + std::to_string(it->second.requestId),
+                            "bounded claim cleanup without authoritative rejection",
+                            msg);
             it = ctx.pendingHitClaims.erase(it);
             continue;
         }
@@ -1078,6 +1091,44 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
                        "currentGen=%u reason=victim-already-respawned\n",
                        event->targetPlayerId, (unsigned)event->targetSpawnGeneration,
                        currentGen);
+            }
+        }
+    }
+
+    // Every client receives the same reliable health verdict. Apply it to the
+    // target as authoritative state, not as a local prediction, so attacker,
+    // victim, and observers converge even while movement snapshots are delayed.
+    if (event->targetPlayerId == ctx.localPlayerId)
+    {
+        if (event->targetSpawnGeneration == 0 ||
+            event->targetSpawnGeneration == ctx.lastKnownSpawnGeneration)
+        {
+            if (gpPlayer)
+            {
+                gpPlayer->currentHp = std::max(0, event->healthAfter);
+                gpPlayer->maxHp = std::max(gpPlayer->maxHp, gpPlayer->currentHp);
+                gpPlayer->dead = event->killed != 0 || gpPlayer->currentHp <= 0;
+            }
+        }
+    }
+    else
+    {
+        auto targetIt = ctx.remotePlayers.find(event->targetPlayerId);
+        auto stateIt = ctx.remotePlayerInterpolation.find(event->targetPlayerId);
+        if (targetIt != ctx.remotePlayers.end() && stateIt != ctx.remotePlayerInterpolation.end() &&
+            (event->targetSpawnGeneration == 0 ||
+             targetIt->second.spawnGeneration == event->targetSpawnGeneration))
+        {
+            EntityInterpolationState& state = stateIt->second;
+            if (event->header.tick >= state.authoritativeHealthTick)
+            {
+                state.authoritativeHealthTick = event->header.tick;
+                state.authoritativeHealth = std::max(0, event->healthAfter);
+                state.pendingPredictedDamage = 0;
+                state.predictedHealthCap = -1;
+                state.predictedHealthUpdatedMs = 0;
+                targetIt->second.currentHp = state.authoritativeHealth;
+                targetIt->second.dead = event->killed != 0 || state.authoritativeHealth <= 0;
             }
         }
     }

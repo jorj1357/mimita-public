@@ -60,7 +60,7 @@
     "hitscan": true,
     "beam_thickness": 2.0,
     "beam_world_thickness": 0.0,
-    "uses_physics_projectile": true,
+    "uses_physics_projectile": false,
     "sound": {
       "shoot": "revolvershoot",
       "reload": "revolverreload",

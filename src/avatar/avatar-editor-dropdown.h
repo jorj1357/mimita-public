@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 #include <GLFW/glfw3.h>
+#include "avatar-editor-scroll.h"
 
 // Reusable dropdown widget.
 // State maintained by caller via DropdownState.
@@ -17,6 +18,7 @@ struct DropdownState {
     int selectedIndex = -1;
     float scrollOffset = 0.0f;
     bool openThisFrame = false; // true on the frame the dropdown was just opened
+    ScrollState scroll;
 };
 
 // Draw a dropdown at the given position.

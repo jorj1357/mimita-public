@@ -220,8 +220,21 @@ bool AvatarSystem::saveCurrentOutfit(const std::string& outfitName)
         }
     }
 
-    // Save avatar.json
-    bool saved = saveAdvanced(clean, mAvatar);
+    // Save the complete current definition, including cosmetics, body-part
+    // overrides, and custom model settings, into the new avatar folder.
+    AvatarDefinition copy = mAvatar;
+    copy.name = clean;
+    copy.basePath = dstPath;
+    json root;
+    avatarToJson(copy, root);
+    const std::string tmpPath = dstPath + "/avatar.json.tmp";
+    std::ofstream out(tmpPath);
+    if (!out.is_open()) return false;
+    out << root.dump(2);
+    out.close();
+    std::error_code saveEc;
+    std::filesystem::rename(tmpPath, dstPath + "/avatar.json", saveEc);
+    bool saved = !saveEc;
     if (saved) {
         // Copy presets
         std::string srcPresets = srcPath + "/presets";

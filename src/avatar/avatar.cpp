@@ -10,6 +10,7 @@
 #include <random>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <nlohmann/json.hpp>
 
 #include "entities/player.h"
@@ -98,6 +99,7 @@ void AvatarDefinition::clear() {
     rightLeg = {};
     colors = {};
     cosmetics.clear();
+    bodypartOverrides = nullptr;
     activePreset.clear();
     playerModel.clear();
     textureMode = "legacy_faces";
@@ -137,9 +139,10 @@ static json serializeTransform(const FaceTransform& t) {
     if (t.hueShift != 0.0f) obj["hue_shift"] = t.hueShift;
     if (t.saturation != 0.0f) obj["saturation"] = t.saturation;
     if (t.brightness != 0.0f) obj["brightness"] = t.brightness;
+    if (t.contrast != 1.0f) obj["contrast"] = t.contrast;
     if (t.stretchMode != 0) obj["stretch_mode"] = t.stretchMode == 1 ? "crop" : "stretch";
     if (t.color != glm::vec3(1.0f)) obj["color"] = {t.color.r, t.color.g, t.color.b};
-    if (t.transparency != 0.0f) obj["transparency"] = t.transparency;
+    if (t.transparency != 0.0f) obj["opacity"] = 1.0f - t.transparency;
     return obj;
 }
 
@@ -153,11 +156,15 @@ static FaceTransform parseTransform(const json& j) {
     t.hueShift = j.value("hue_shift", 0.0f);
     t.saturation = j.value("saturation", 0.0f);
     t.brightness = j.value("brightness", 0.0f);
+    t.contrast = j.value("contrast", 1.0f);
     std::string sm = j.value("stretch_mode", "stretch");
     t.stretchMode = (sm == "crop") ? 1 : 0;
     if (j.contains("color") && j["color"].is_array() && j["color"].size() >= 3)
         t.color = glm::vec3(j["color"][0], j["color"][1], j["color"][2]);
-    t.transparency = j.value("transparency", 0.0f);
+    if (j.contains("opacity"))
+        t.transparency = 1.0f - j.value("opacity", 1.0f);
+    else
+        t.transparency = j.value("transparency", 0.0f);
     return t;
 }
 
@@ -209,18 +216,113 @@ static PartColors parsePartColors(const json& j) {
     return c;
 }
 
+static json vec3Json(const glm::vec3& value) {
+    return {value.x, value.y, value.z};
+}
+
+static glm::vec3 parseVec3(const json& value, const glm::vec3& fallback) {
+    if (!value.is_array() || value.size() < 3)
+        return fallback;
+    return {
+        value[0].get<float>(),
+        value[1].get<float>(),
+        value[2].get<float>()
+    };
+}
+
+static json serializeCosmeticTexture(const CosmeticTexture& texture) {
+    return {
+        {"image", texture.image},
+        {"offset_x", texture.offsetX},
+        {"offset_y", texture.offsetY},
+        {"scale_x", texture.scaleX},
+        {"scale_y", texture.scaleY},
+        {"rotation", texture.rotation},
+        {"color", vec3Json(texture.color)},
+        {"brightness", texture.brightness},
+        {"opacity", texture.opacity}
+    };
+}
+
+static CosmeticTexture parseCosmeticTexture(const json& value) {
+    CosmeticTexture result;
+    if (!value.is_object())
+        return result;
+
+    result.image = value.value("image", "");
+    result.offsetX = value.value("offset_x", 0.0f);
+    result.offsetY = value.value("offset_y", 0.0f);
+    result.scaleX = value.value("scale_x", 1.0f);
+    result.scaleY = value.value("scale_y", 1.0f);
+    result.rotation = value.value("rotation", 0.0f);
+    result.color = parseVec3(value.value("color", json()), glm::vec3(1.0f));
+    result.brightness = value.value("brightness", 1.0f);
+    result.opacity = value.value("opacity", 1.0f);
+    return result;
+}
+
 static json serializeCosmetics(const std::vector<CosmeticSlot>& cosmetics) {
     json arr = json::array();
-    for (auto& c : cosmetics)
-        arr.push_back({{"slot", c.slot}, {"choice", c.choice}});
+    for (const auto& c : cosmetics) {
+        const std::string id = c.id.empty() ? c.choice : c.id;
+        const std::string glb = c.glb.empty() ? c.choice : c.glb;
+        const std::string anchor = c.anchorPart.empty() ? c.attachTo : c.anchorPart;
+        arr.push_back({
+            {"id", id},
+            {"type", c.type},
+            {"glb", glb},
+            {"enabled", c.enabled},
+            {"anchor_part", anchor},
+            {"offset", vec3Json(c.offset)},
+            {"rotation", vec3Json(c.rotation)},
+            {"scale", vec3Json(c.scale)},
+            {"texture", serializeCosmeticTexture(c.texture)},
+            // Keep legacy keys for older readers and old tooling.
+            {"slot", c.slot},
+            {"choice", c.choice.empty() ? glb : c.choice},
+            {"attachTo", c.attachTo.empty() ? anchor : c.attachTo},
+            {"color", vec3Json(c.color)}
+        });
+    }
     return arr;
 }
 
 static std::vector<CosmeticSlot> parseCosmetics(const json& arr) {
     std::vector<CosmeticSlot> result;
     if (!arr.is_array()) return result;
-    for (auto& j : arr)
-        result.push_back({j.value("slot", ""), j.value("choice", "")});
+    for (const auto& j : arr) {
+        if (!j.is_object())
+            continue;
+
+        CosmeticSlot cosmetic;
+        cosmetic.slot = j.value("slot", "");
+        cosmetic.choice = j.value("choice", "");
+        cosmetic.attachTo = j.value("attachTo", "");
+        cosmetic.offset = parseVec3(j.value("offset", json()), glm::vec3(0.0f));
+        cosmetic.rotation = parseVec3(j.value("rotation", json()), glm::vec3(0.0f));
+        cosmetic.scale = parseVec3(j.value("scale", json()), glm::vec3(1.0f));
+        cosmetic.color = parseVec3(j.value("color", json()), glm::vec3(1.0f));
+
+        cosmetic.id = j.value("id", cosmetic.choice);
+        cosmetic.type = j.value("type", "");
+        cosmetic.glb = j.value("glb", cosmetic.choice);
+        cosmetic.enabled = j.value("enabled", true);
+        cosmetic.anchorPart = j.value("anchor_part", cosmetic.attachTo);
+        cosmetic.texture = parseCosmeticTexture(j.value("texture", json()));
+
+        if (cosmetic.choice.empty())
+            cosmetic.choice = cosmetic.glb;
+        if (cosmetic.glb.empty())
+            cosmetic.glb = cosmetic.choice;
+        if (cosmetic.attachTo.empty())
+            cosmetic.attachTo = cosmetic.anchorPart;
+        if (cosmetic.anchorPart.empty())
+            cosmetic.anchorPart = cosmetic.attachTo.empty() ? "torso" : cosmetic.attachTo;
+        if (cosmetic.texture.color == glm::vec3(1.0f) && cosmetic.color != glm::vec3(1.0f))
+            cosmetic.texture.color = cosmetic.color;
+
+        result.push_back(std::move(cosmetic));
+    }
     return result;
 }
 
@@ -473,6 +575,10 @@ bool AvatarSystem::loadAvatar(const std::string& avatarName) {
         }
 
         mHasAvatar = true;
+        mSaveRequested = false;
+        mLastSavedAvatar = mAvatar;
+        mEditorUndoHistory.clear();
+        mEditorChangeCaptured = false;
         if (std::filesystem::exists(jsonPath))
             mLastWriteTime = std::filesystem::last_write_time(jsonPath);
         mLastCheckTime = std::chrono::steady_clock::now();
@@ -604,6 +710,33 @@ void AvatarSystem::setPartFaceTransform(const std::string& part, const std::stri
     markAtlasDirty();
 }
 
+void AvatarSystem::setBodypartOverride(Player& player, const std::string& part,
+                                       const glm::vec3& offset,
+                                       const glm::vec3& rotation,
+                                       const glm::vec3& scale) {
+    if (mAvatar.bodypartOverrides.is_null() || !mAvatar.bodypartOverrides.is_object())
+        mAvatar.bodypartOverrides = json::object();
+
+    mAvatar.bodypartOverrides[part] = {
+        {"offset", {offset.x, offset.y, offset.z}},
+        {"rotation", {rotation.x, rotation.y, rotation.z}},
+        {"scale", {scale.x, scale.y, scale.z}}
+    };
+    gAvatarBodypartOverrides = mAvatar.bodypartOverrides;
+
+    glm::mat4 local = glm::translate(glm::mat4(1.0f), offset);
+    local = glm::rotate(local, glm::radians(rotation.z), glm::vec3(0, 0, 1));
+    local = glm::rotate(local, glm::radians(rotation.y), glm::vec3(0, 1, 0));
+    local = glm::rotate(local, glm::radians(rotation.x), glm::vec3(1, 0, 0));
+    local = glm::scale(local, scale);
+
+    for (auto& node : player.perfectPoseSkeleton.nodes) {
+        if (node.name == part)
+            node.localTransform = local;
+    }
+    player.updateModelWorldTransforms();
+}
+
 void AvatarSystem::setPartColor(const std::string& part, const glm::vec3& color) {
     if (part == "head") mAvatar.colors.head = color;
     else if (part == "torso") mAvatar.colors.torso = color;
@@ -710,8 +843,20 @@ std::vector<std::string> AvatarSystem::listAvatars() const {
     if (!std::filesystem::exists(dir))
         return result;
     for (const auto& entry : std::filesystem::directory_iterator(dir)) {
-        if (entry.is_directory())
-            result.push_back(entry.path().filename().string());
+        if (!entry.is_directory()) continue;
+        std::ifstream file(entry.path() / "avatar.json");
+        if (!file.is_open()) continue;
+        try {
+            json root;
+            file >> root;
+            const bool hasAvatarData = root.is_object() &&
+                ((root.contains("advanced") && root["advanced"].is_object()) ||
+                 (root.contains("simple") && root["simple"].is_object()));
+            if (hasAvatarData)
+                result.push_back(entry.path().filename().string());
+        } catch (...) {
+            // Invalid avatar folders are intentionally omitted from the editor.
+        }
     }
     std::sort(result.begin(), result.end());
     return result;
@@ -796,16 +941,9 @@ bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
 
 void AvatarSystem::autosaveUpdate(float dt) {
     if (!mHasAvatar || mAvatarName.empty()) return;
+    if (!mSaveRequested) return;
 
-    // If a save was requested, save immediately (debounce skipped)
-    if (mSaveRequested) {
-        mSaveRequested = false;
-        saveProject();
-        mAutosave.snapshot();
-        return;
-    }
-
-    // Periodic autosave
+    // Save dirty editor data at the same cadence as hot-reload polling.
     mAutosave.update(dt, [this]() -> bool {
         return saveProject();
     });
@@ -827,11 +965,41 @@ bool AvatarSystem::saveProject() {
     if (mAvatar.created_at.empty())
         mAvatar.created_at = ts;
 
-    return mAutosave.saveNow(mAvatar);
+    const bool ok = mAutosave.saveNow(mAvatar);
+    if (ok) {
+        mSaveRequested = false;
+        mLastSavedAvatar = mAvatar;
+        mEditorChangeCaptured = false;
+        const std::string jsonPath = mBasePath + "/avatar.json";
+        std::error_code ec;
+        if (std::filesystem::exists(jsonPath, ec))
+            mLastWriteTime = std::filesystem::last_write_time(jsonPath, ec);
+        mLastCheckTime = std::chrono::steady_clock::now();
+    }
+    return ok;
 }
 
 void AvatarSystem::triggerSave() {
+    if (mHasAvatar && !mEditorChangeCaptured) {
+        mEditorUndoHistory.push_back(mLastSavedAvatar);
+        constexpr size_t kMaxUndoSteps = 30;
+        if (mEditorUndoHistory.size() > kMaxUndoSteps)
+            mEditorUndoHistory.erase(mEditorUndoHistory.begin());
+        mEditorChangeCaptured = true;
+    }
     mSaveRequested = true;
+}
+
+bool AvatarSystem::undoEditorChange()
+{
+    if (!mHasAvatar || mEditorUndoHistory.empty())
+        return false;
+    mAvatar = mEditorUndoHistory.back();
+    mEditorUndoHistory.pop_back();
+    mEditorChangeCaptured = true;
+    markAtlasDirty();
+    mSaveRequested = true;
+    return true;
 }
 
 void AvatarSystem::pollHotReload() {
