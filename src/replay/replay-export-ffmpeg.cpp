@@ -46,6 +46,7 @@
 
 extern ReplayExportJob gJob;
 static std::atomic<bool> gOutroDone{false};
+static std::atomic<bool> gOutroSucceeded{false};
 static bool gOutroActive = false;
 static std::thread gOutroThread;
 
@@ -749,7 +750,8 @@ void pollReplayFfmpegEncode()
         if (!gOutroDone.load(std::memory_order_acquire)) return;
         if (gOutroThread.joinable()) gOutroThread.join();
         gOutroActive = false;
-        finishReplayExport(true);
+        finishReplayExport(gOutroSucceeded.load(std::memory_order_acquire),
+            "Could not append the required replay outro.");
         return;
     }
     if (!gJob.ffmpegProcess) return;
@@ -809,9 +811,15 @@ void pollReplayFfmpegEncode()
     const int outroH = gJob.outputHeight > 0 ? gJob.outputHeight : gJob.capHeight;
     const bool outroAudio = gJob.ffmpegWithAudio;
     gOutroDone.store(false, std::memory_order_release);
+    gOutroSucceeded.store(false, std::memory_order_release);
     gOutroActive = true;
     gOutroThread = std::thread([output, outroW, outroH, outroAudio]() {
-        appendOutroToFinishedMp4(output.c_str(), outroW, outroH, outroAudio);
+        const bool appended = appendOutroToFinishedMp4(output.c_str(), outroW, outroH, outroAudio);
+        if (!appended) {
+            std::error_code cleanupError;
+            std::filesystem::remove(output, cleanupError);
+        }
+        gOutroSucceeded.store(appended, std::memory_order_release);
         gOutroDone.store(true, std::memory_order_release);
     });
 #endif

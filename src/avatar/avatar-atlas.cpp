@@ -560,13 +560,17 @@ void AvatarSystem::requestModelLoad(Player& player) {
     if (player.modelLoaded) return;
     if (player.mPendingModel) return; // thread already started
 
+    // The startup renderer reaches this lazy path directly, without first
+    // calling applyToPlayer(). Preserve the avatar's body-part transforms for
+    // both default and custom model loads.
+    if (!mAvatar.bodypartOverrides.is_null())
+        gAvatarBodypartOverrides = mAvatar.bodypartOverrides;
+
     // Use avatar's custom model path, or fall back to default character GLB
     std::string modelPath;
     if (!mAvatar.playerModel.empty()) {
         modelPath = mAvatar.playerModel;
         printf("[AVATAR] Requesting async model load: %s\n", modelPath.c_str());
-        if (!mAvatar.bodypartOverrides.is_null())
-            gAvatarBodypartOverrides = mAvatar.bodypartOverrides;
     } else {
         // Resolve default character's GLB path for async loading
         std::string charName = player.mCharacterName;

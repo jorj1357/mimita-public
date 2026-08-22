@@ -1,0 +1,5 @@
+{
+  "comment": "NPC avatar selection. forceAvatarPath is relative to the game root and must point to an avatar.json file.",
+  "forceAvatar": false,
+  "forceAvatarPath": "assets/avatars/jason/avatar.json"
+}

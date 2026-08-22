@@ -1,3 +1,10 @@
+# 08 22 2026, 13 12
+# purpose
+# Validates repository-owned JSON configuration and avatar folder contracts.
+# Verifies the NPC avatar selection file references a valid relative avatar.json.
+# Does NOT launch the game, render OpenGL, or modify any configuration.
+# Does NOT validate live hot reload behavior or exported MP4 pixels.
+# Does NOT change user-selected account or game settings.
 #!/usr/bin/env python3
 import json
 from pathlib import Path
@@ -196,12 +203,32 @@ def validate_avatars(errors):
     return count
 
 
+def validate_npc_avatar(errors):
+    path = ROOT / "config/npc-avatar.json"
+    root = load_json(path, errors)
+    if not isinstance(root, dict):
+        errors.append("config/npc-avatar.json: root must be an object")
+        return
+    if not isinstance(root.get("forceAvatar"), bool):
+        errors.append("config/npc-avatar.json: forceAvatar must be a boolean")
+    forced_path = root.get("forceAvatarPath")
+    if not isinstance(forced_path, str):
+        errors.append("config/npc-avatar.json: forceAvatarPath must be a string")
+        return
+    normalized = forced_path.replace("\\\\", "/")
+    if not normalized.startswith("assets/avatars/") or not normalized.endswith("/avatar.json"):
+        errors.append("config/npc-avatar.json: forceAvatarPath must be a relative assets/avatars/*/avatar.json path")
+        return
+    expect_file(normalized, "config/npc-avatar.json forceAvatarPath", errors)
+
+
 def main():
     errors = []
     validate_procedural(errors)
     weapon_count = validate_weapons(errors)
     clip_count, weapon_anim_count = validate_animations(errors)
     avatar_count = validate_avatars(errors)
+    validate_npc_avatar(errors)
 
     print("[CONFIG SELFTEST] weapons:", weapon_count)
     print("[CONFIG SELFTEST] animation clips:", clip_count)

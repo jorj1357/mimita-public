@@ -37,12 +37,14 @@
 #include "entities/death-ghost.h"
 #include "gui/hud/chat-bubble.h"
 #include "game/duel.h"
+#include "duel/duel-queue.h"
 #include "game/bomb-tag.h"
 #include "game/game-state.h"
 #include "world/world.h"
 #include "render/post-fx.h"
 #include "physics/ray-utils.h"
 #include "pobjects/persistent-physics.h"
+#include "gui/menus/pause-menu.h"
 
 extern DuelManager gDuelManager;
 extern BombTagManager gBombTagManager;
@@ -102,6 +104,7 @@ void engineTickCombat(Engine& engine, float dt)
         PersistentPhysicsSystem::instance().update(dt, world, player, npcSystem, &camera);
     }
     if (!replayPlaybackActive) {
+        // Local/offline duel only. Network duels are controlled by DuelQueue + server DuelStatePacket.
         if (gDuelManager.enabled()) {
             gDuelManager.update(dt, player, npcSystem, world, camera);
         }
@@ -195,9 +198,13 @@ void engineTickCombat(Engine& engine, float dt)
         updateChatBubbles(kv.second, dt);
 
     static bool mousePrev = false;
+    const bool gameplayInputAllowed = !PauseMenu::isOpen();
     bool mouseDown = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
-    bool duelEndVisible = gDuelManager.phase() == DuelPhase::MatchEnd;
-    bool duelCountdown = gDuelManager.isCountdownActive();
+    // Local/offline duel only for DuelManager checks; also check DuelQueue for network duels.
+    bool duelEndVisible = gDuelManager.phase() == DuelPhase::MatchEnd ||
+        DuelQueue::instance().matchOver();
+    bool duelCountdown = gDuelManager.isCountdownActive() ||
+        DuelQueue::instance().countdownActive();
     bool bombTagEndVisible = gBombTagManager.phase() == BombTagPhase::MatchEnd;
     bool bombTagCountdown = gBombTagManager.isCountdownActive();
     if ((duelEndVisible || bombTagEndVisible) && mouseDown && !mousePrev) {
@@ -206,7 +213,7 @@ void engineTickCombat(Engine& engine, float dt)
     }
     if (!replayPlaybackActive && !duelEndVisible && !duelCountdown &&
         !bombTagEndVisible && !bombTagCountdown &&
-        !Terminal::instance().isOpen() && !isChatOpen() && mouseDown &&
+        gameplayInputAllowed && !Terminal::instance().isOpen() && !isChatOpen() && mouseDown &&
         glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
         const WeaponDefinition* curDef = weapons.getCurrentDef(player);
         bool isAuto = curDef && curDef->fireMode == WeaponFireMode::Automatic;
@@ -227,7 +234,7 @@ void engineTickCombat(Engine& engine, float dt)
     static bool rightMousePrev = false;
     bool rightMouseDown = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
     if (!replayPlaybackActive && !duelCountdown &&
-        !Terminal::instance().isOpen() && rightMouseDown && !rightMousePrev &&
+        gameplayInputAllowed && !Terminal::instance().isOpen() && rightMouseDown && !rightMousePrev &&
         glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
         if (!editorMode) {
             RevolverShotResult altResult = weapons.fireAlt(camera, player, npcSystem, world);
@@ -251,7 +258,7 @@ void engineTickCombat(Engine& engine, float dt)
         int key = keySlot == 0 ? GLFW_KEY_0 : GLFW_KEY_0 + keySlot;
         bool down = glfwGetKey(engine.window(), key) == GLFW_PRESS;
         if (!replayPlaybackActive && !duelCountdown &&
-            !Terminal::instance().isOpen() && down && !slotPrev[keySlot])
+            gameplayInputAllowed && !Terminal::instance().isOpen() && down && !slotPrev[keySlot])
             Terminal::instance().execute("equipslot" + std::to_string(keySlot));
         slotPrev[keySlot] = down;
     }
@@ -260,7 +267,7 @@ void engineTickCombat(Engine& engine, float dt)
         static std::unordered_map<int, bool> bindPrev;
         for (const auto& pair : G_COMMAND_BINDS) {
             bool down = glfwGetKey(engine.window(), pair.first) == GLFW_PRESS;
-            if (down && !bindPrev[pair.first] && !Terminal::instance().isOpen())
+            if (down && !bindPrev[pair.first] && gameplayInputAllowed && !Terminal::instance().isOpen())
                 Terminal::instance().execute(pair.second);
             bindPrev[pair.first] = down;
         }

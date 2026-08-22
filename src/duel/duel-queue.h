@@ -101,6 +101,7 @@ public:
     std::string lastOpponentId() const { return mLastOpponentId; }
     // The random map picked from the pool when this player queued.
     std::string chosenMap() const { return mChosenMap; }
+    std::string currentRoomCode() const { return mRoomCode.empty() ? mQueueRoomCode : mRoomCode; }
 
 private:
     DuelQueue() = default;
@@ -167,6 +168,7 @@ private:
     bool mJoinedCoordinator = false;
     float mJoinRetryTimer = 0.0f;
     uint64_t mServerConnectStartMs = 0;
+    bool mHostReadyPublished = false;
 
     // Map handoff
     bool mWantsChosenMap = false;

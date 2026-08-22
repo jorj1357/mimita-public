@@ -27,6 +27,7 @@
 #include "replay/replay.h"
 #include "world/world.h"
 #include "game/duel.h"
+#include "duel/duel-queue.h"
 #include "game/spawn-utils.h"
 #include "game/spawn-override.h"
 #include "effects/effect-part.h"
@@ -164,14 +165,15 @@ bool DeathSystem::kill(
     emitLifecycleEvent("death", victim, actorId, killer);
 
     // Step 3 (continued from above): duel tracking and respawn timer
-    const DuelPhase duelPhaseBeforeDeath = gDuelManager.phase();
-    if (actorType == "player")
+    // Local/offline duel only. Network duels are controlled by DuelQueue + server DuelStatePacket.
+    const DuelPhase duelPhaseBeforeDeath = gDuelManager.enabled()
+        ? gDuelManager.phase() : DuelPhase::Off;
+    if (gDuelManager.enabled())
     {
-        gDuelManager.onEntityDeath(DuelTeam::Player);
-    }
-    else if (actorType == "npc")
-    {
-        gDuelManager.onEntityDeath(DuelTeam::NPC);
+        if (actorType == "player")
+            gDuelManager.onEntityDeath(DuelTeam::Player);
+        else if (actorType == "npc")
+            gDuelManager.onEntityDeath(DuelTeam::NPC);
     }
     const bool roundWinningKill =
         duelPhaseBeforeDeath == DuelPhase::Active &&
@@ -328,11 +330,13 @@ void DeathSystem::update(
         player.respawnTimer =
             std::max(0.0f, player.respawnTimer - dt);
 
+        // Local/offline duel only. Network duels use server-controlled respawn.
         bool duelModeActive =
-            gDuelManager.phase() != DuelPhase::Off;
+            gDuelManager.enabled() && gDuelManager.phase() != DuelPhase::Off;
+        bool networkDuelActive = DuelQueue::instance().inDuel();
 
         bool shouldRespawn =
-            !duelModeActive;
+            !duelModeActive && !networkDuelActive;
 
         if (shouldRespawn)
         {
@@ -356,11 +360,13 @@ void DeathSystem::update(
             std::max(0.0f,
             npc.body.respawnTimer - dt);
 
+        // Local/offline duel only. Network duels use server-controlled respawn.
         bool duelModeActive =
-            gDuelManager.phase() != DuelPhase::Off;
+            gDuelManager.enabled() && gDuelManager.phase() != DuelPhase::Off;
+        bool networkDuelActive = DuelQueue::instance().inDuel();
 
         bool shouldRespawn =
-            !duelModeActive;
+            !duelModeActive && !networkDuelActive;
 
         if (shouldRespawn)
         {

@@ -44,8 +44,8 @@
     "text": {
         "enabled": true,
         "zOffset": 0.5,
-        "lifetimeExtra": 2.0,
-        "scale": 0.6,
+        "lifetimeExtra": 0.01,
+        "scale": 0.25,
         "prefix": "server disagree: "
     },
 

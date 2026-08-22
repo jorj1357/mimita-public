@@ -21,6 +21,7 @@ struct DuelHistoryEntry
     int myScore = 0;
     int oppScore = 0;
     std::string map;
+    std::string roomCode;
     uint64_t unixMs = 0;
 };
 

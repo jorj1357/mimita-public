@@ -45,6 +45,7 @@
 #include "render/lighting-config.h"
 #include "audio/music-manager.h"
 #include "game/duel.h"
+#include "duel/duel-queue.h"
 #include "game/bomb-tag.h"
 #include "game/game-state.h"
 #include "network/multiplayer-context.h"
@@ -181,7 +182,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     char hpText[64];
     snprintf(hpText, sizeof(hpText), "HP: %d/%d", hp, maxHp);
     hudText("hpText", hpText);
-    if (dead && gDuelManager.phase() != DuelPhase::MatchEnd) {
+    if (dead && gDuelManager.phase() != DuelPhase::MatchEnd && !DuelQueue::instance().matchOver()) {
         if (!gReplayExportRenderMode || ReplayExportUI::showDeathScreen())
         {
         // Draw death overlay from layout JSON
@@ -195,8 +196,9 @@ void engineTickUIGameHUD(Engine& engine, float dt)
                  "respawning automatically in %.3f...", player.respawnTimer);
         hudText("deathText", deathText);
         hudText("respawnText", respawnBuf);
-        // Show Space hint only when instant respawn would actually work
-        const bool duelBlocksRespawn = gDuelManager.phase() != DuelPhase::Off;
+        // Show Space hint only when instant respawn would actually work.
+        // Local/offline duel only. Network duels are controlled by DuelQueue + server DuelStatePacket.
+        const bool duelBlocksRespawn = gDuelManager.enabled() && gDuelManager.phase() != DuelPhase::Off;
         hudText("respawnHint", duelBlocksRespawn ? "" : "press space to respawn instantly");
         }
     }

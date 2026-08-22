@@ -28,6 +28,7 @@ void registerDuelCommands()
 
             DUEL_CONFIG = cfg;
 
+            // Local/offline duel only. Network duels are controlled by DuelQueue + server DuelStatePacket.
             gDuelManager.start(
                 DUEL_CONFIG,
                 THE_PLAYER,

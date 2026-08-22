@@ -26,6 +26,7 @@
 #include "replay/replay.h"
 #include "replay/replay-editor.h"
 #include "replay/replay-export.h"
+#include "npc/npc-avatar.h"
 #include "replay/replay-factory.h"
 #include "gui/gui-layout.h"
 #include "render/lighting-config.h"
@@ -389,6 +390,7 @@ void engineTickReplay(Engine& engine, float dt)
                 npcActor.fade = 0.0f;
                 npcActor.sizeScale = npc.body.sizeScale;
                 npcActor.outfitPath = "";
+                npcActor.avatarName = npc.avatarName;
                 {
                     const WeaponDefinition* wdef = weapons.getDefForSlot(npc.body.equippedSlot);
                     if (wdef) {
@@ -475,6 +477,7 @@ void engineTickReplay(Engine& engine, float dt)
                 actor.fade = 0.0f;
                 actor.sizeScale = p.sizeScale;
                 actor.characterName = p.characterName();
+                actor.avatarName = npcAvatarNameForLife(kv.first, p.networkTransformEpoch);
                 {
                     const WeaponDefinition* wdef = weapons.getCurrentDef(p);
                     if (wdef) {

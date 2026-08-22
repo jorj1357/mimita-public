@@ -166,12 +166,12 @@
         "italic": true
     },
     "deathEllipsoid": {
-        "enabled": false,
+        "enabled": true,
         "lifetime": 1.0,
         "length": 32.0,
         "radius": 1.5,
-        "baseAlpha": 0.9,
-        "color": [0.0, 0.0, 0.0, 0.9],
+        "baseAlpha": 0.5,
+        "color": [1.0, 0.0, 0.0, 0.9],
         "fade": true
     },
 

@@ -982,6 +982,7 @@ void updateRenderedReplica(
     const uint32_t entityId = interpolation.networkEntityId;
     const uint16_t targetEpoch = interpolation.target.transformEpoch;
     const uint32_t targetSpawnGen = interpolation.target.spawnGeneration;
+    player.networkTransformEpoch = targetEpoch;
 
     // ── Detect respawn via lifecycle change ──────────────────────────
     // A new life is signalled by EITHER a transformEpoch change OR a

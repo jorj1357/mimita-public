@@ -42,6 +42,7 @@
 #include "network/server.h"
 #include "gui/gui-main.h"
 #include "terminal/terminal-state.h"
+#include "gui/menus/pause-menu.h"
 
 extern DuelManager gDuelManager;
 extern BombTagManager gBombTagManager;
@@ -122,7 +123,9 @@ void engineTick(Engine& engine)
     if (escapeDown && !escapePrev)
     {
         // If keyframe prompt is active, let the camera handler cancel it
-        if (gReplayEditor.keyframePromptStage > 0) {
+        if (PauseMenu::isOpen()) {
+            PauseMenu::handleKey(engine.window(), GLFW_KEY_ESCAPE, GLFW_PRESS);
+        } else if (gReplayEditor.keyframePromptStage > 0) {
             // handled in engine-tick-camera.cpp
         } else if (Terminal::instance().isOpen()) {
             Terminal::instance().toggle();
@@ -143,6 +146,8 @@ void engineTick(Engine& engine)
         } else if (GAME_STATE == GAME_MENU && gGuiMenuState == GUI_MENU_REPLAY) {
             printf("[MAINMENU] switching to main menu\n");
             gGuiMenuState = GUI_MENU_MAIN;
+        } else if (GAME_STATE == GAME_PLAYING && !isChatOpen()) {
+            PauseMenu::toggle(engine.window());
         } else if (DuelQueue::instance().isActive()) {
             DuelQueueState qs = DuelQueue::instance().state();
             if (qs == DuelQueueState::InDuel || qs == DuelQueueState::MatchEnd)
@@ -186,7 +191,7 @@ void engineTick(Engine& engine)
     // L key toggles gameplay mouse lock so the cursor can click notifications.
     static bool mouseLockKeyPrev = false;
     bool mouseLockKeyDown = glfwGetKey(engine.window(), GLFW_KEY_L) == GLFW_PRESS;
-    if (GAME_STATE == GAME_PLAYING && !Terminal::instance().isOpen() && !isChatOpen() &&
+    if (GAME_STATE == GAME_PLAYING && !PauseMenu::isOpen() && !Terminal::instance().isOpen() && !isChatOpen() &&
         !REPLAY_PLAYER.isPlaying() && mouseLockKeyDown && !mouseLockKeyPrev) {
         MouseLock::toggle(engine.window());
         Debug::log(Debug::Category::Gui, "[MOUSELOCK] toggled via L: %s\n",
@@ -197,7 +202,7 @@ void engineTick(Engine& engine)
     // Space on the duel win/lose screen → skip the rematch timer.
     static bool spacePrev = false;
     bool spaceDown = glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
-    if (GAME_STATE == GAME_PLAYING && spaceDown && !spacePrev &&
+    if (GAME_STATE == GAME_PLAYING && !PauseMenu::isOpen() && spaceDown && !spacePrev &&
         !Terminal::instance().isOpen() &&
         DuelQueue::instance().state() == DuelQueueState::MatchEnd)
     {
@@ -207,7 +212,7 @@ void engineTick(Engine& engine)
 
     static bool f10Prev = false;
     bool f10Down = glfwGetKey(engine.window(), GLFW_KEY_F10) == GLFW_PRESS;
-    if (!Terminal::instance().isOpen() && f10Down && !f10Prev) {
+    if (!PauseMenu::isOpen() && !Terminal::instance().isOpen() && f10Down && !f10Prev) {
         ShellExecuteA(NULL, "open", "replays", NULL, NULL, SW_SHOWNORMAL);
         Debug::log(Debug::Category::General, "[MAIN] opened replays folder");
     }
@@ -215,7 +220,7 @@ void engineTick(Engine& engine)
 
     static bool f12Prev = false;
     bool f12Down = glfwGetKey(engine.window(), GLFW_KEY_F12) == GLFW_PRESS;
-    if (f12Down && !f12Prev && !Terminal::instance().isOpen()) {
+    if (!PauseMenu::isOpen() && f12Down && !f12Prev && !Terminal::instance().isOpen()) {
         Debug::log(Debug::Category::General, "[MAINMENU] F12 pressed — forcing main menu");
         forceMainMenu();
         DevOverlay::instance().showNotification("Returned to Main Menu (F12)", 3.0f);
@@ -228,25 +233,8 @@ void engineTick(Engine& engine)
         forceMainMenu();
     }
 
-    // ── Subprocess export polling (runs every frame regardless of gJob.state) ──
-    // sExportSubprocess holds the handle to a background export process.
-    // Polling must happen outside isReplayExportActive() because gJob.state
-    // stays Idle during subprocess exports. Without this, the handle is never
-    // cleaned up and subsequent exports are blocked.
     extern void* sExportSubprocess;
-    if (sExportSubprocess) {
-        DWORD exitCode = 0;
-        BOOL done = GetExitCodeProcess((HANDLE)sExportSubprocess, &exitCode);
-        if (done && exitCode != STILL_ACTIVE) {
-            CloseHandle((HANDLE)sExportSubprocess);
-            sExportSubprocess = nullptr;
-            Debug::warn(Debug::Category::Replay,
-                "[EXPORT-SUBPROCESS-POLLED] subprocess exited code=%lu\n",
-                (unsigned long)exitCode);
-        }
-    }
-
-    if (isReplayExportActive()) {
+    if (isReplayExportActive() || sExportSubprocess) {
         updateReplayExport();
     } else if (isReplayBatchExportActive()) {
         updateReplayBatchExport();

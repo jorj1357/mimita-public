@@ -178,6 +178,7 @@ void DuelQueue::startQueue(const std::string& profileId, const std::string& name
     mJoinedCoordinator = false;
     mJoinRetryTimer = 0.0f;
     mServerConnectStartMs = 0;
+    mHostReadyPublished = false;
     mWantsChosenMap = true;
     mInDuel = false;
     mMatchOver = false;
@@ -221,6 +222,7 @@ void DuelQueue::stopQueue()
     mMatchOver = false;
     mCountdownActive = false;
     mTracerActive = false;
+    mHostReadyPublished = false;
 }
 
 void DuelQueue::returnToQueue()
@@ -314,11 +316,14 @@ void DuelQueue::handleHostMatch()
     mMatchFoundBanner = true;
     mMatchFoundTimer = 0.0f;
     mState = DuelQueueState::MatchFound;
-    mStatusText = "opponent joining your room...";
+    mStatusText = "publishing room to coordinator...";
     mPhaseStartMs = nowMs();
+    mHostReadyPublished = false;
     NotificationSystem::instance().push(
         "match found!", "vs " + mOpponentName, 300, {});
-    Debug::log(Debug::Category::Duel, "[DUEL HOST] matched - opponent joins my room\n");
+    Debug::log(Debug::Category::Duel,
+        "[DuelQueue] matched_host matchId=%s opponent=%s\n",
+        mMatchId.c_str(), mOpponentName.c_str());
 }
 
 void DuelQueue::handleClientMatch()
@@ -335,14 +340,17 @@ void DuelQueue::handleClientMatch()
     mQueueServerConnected = false;
     mJoinedCoordinator = false;
 
-    mWantsMatchMap = true;
+    // Do NOT load match map locally here. The server's DuelStatePacket.mapId
+    // is the single source of truth for the duel map. Both host and joiner
+    // wait for the server to send the authoritative map before loading.
     mState = DuelQueueState::Connecting;
     mPhaseStartMs = nowMs();
     mStatusText = "Joining...";
     NotificationSystem::instance().push(
         "match found!", "joining " + mOpponentName + "'s room", 300, {});
-    Debug::log(Debug::Category::Duel, "[DUEL CLIENT] matched - joining host room=%s\n",
-               mRoomCode.c_str());
+    Debug::log(Debug::Category::Duel,
+        "[DuelQueue] waiting_for_host matchId=%s room=%s opponent=%s\n",
+        mMatchId.c_str(), mRoomCode.c_str(), mOpponentName.c_str());
 
     if (!mpIceConnectStart(MP_CONTEXT, mRoomCode, mName))
         failToQueue("Could not connect to opponent's room");
@@ -352,6 +360,9 @@ void DuelQueue::updateQueuing(float dt)
 {
     mDowntime += dt;
 
+    // Load the chosen map for queue practice rendering. The actual duel map
+    // is decided by the server and delivered via DuelStatePacket.mapId.
+    // This map is only for the host's practice mode while waiting.
     if (mWantsChosenMap)
     {
         mWantsChosenMap = false;
@@ -467,6 +478,37 @@ void DuelQueue::updateMatchFound(float dt)
     mDowntime += dt;
     mMatchFoundTimer += dt;
 
+    // Host: publish room ready to coordinator so the joiner gets match_ready.
+    if (mHost && !mHostReadyPublished)
+    {
+        std::string roomCode = mQueueRoomCode;
+        if (roomCode.empty())
+        {
+            Debug::logThrottled(Debug::Category::Duel, "host-wait-room", 2.0f,
+                "[DuelQueue] waiting for host room code matchId=%s\n",
+                mMatchId.c_str());
+        }
+        else
+        {
+            if (MimitaNet::coordinatorQueueHostReady(mMatchId, roomCode))
+            {
+                mHostReadyPublished = true;
+                mStatusText = "opponent joining your room...";
+                Debug::log(Debug::Category::Duel,
+                    "[DuelQueue] published host ready matchId=%s room=%s\n",
+                    mMatchId.c_str(), roomCode.c_str());
+            }
+            else
+            {
+                Debug::warn(Debug::Category::Duel,
+                    "[DuelQueue] failed to publish host ready matchId=%s room=%s\n",
+                    mMatchId.c_str(), roomCode.c_str());
+                failToQueue("Could not publish duel room");
+                return;
+            }
+        }
+    }
+
     // Host is waiting for the opponent to connect to our room.
     if (mHost && nowMs() - mPhaseStartMs > kOpponentJoinTimeoutMs)
     {
@@ -480,20 +522,18 @@ void DuelQueue::updateConnecting(float dt)
 {
     mDowntime += dt;
 
-    if (mWantsMatchMap)
-    {
-        mWantsMatchMap = false;
-        loadMatchMap();
-    }
+    // Do NOT load match map locally. The server's DuelStatePacket.mapId
+    // drives map loading for both host and joiner.
+
     if (MP_CONTEXT.active)
     {
         // Connected to the host's server; the countdown arrives via DuelState.
         // No kickout timer here: session health is owned by the standard
         // connection-health system, exactly like a community server join.
-        mStatusText = "Connected - waiting for countdown...";
-        NotificationSystem::instance().push(
-            "Duels", "Connected to " + mOpponentName + "'s room", 240, {});
-        Debug::log(Debug::Category::Duel, "[DUEL QUEUE] connected to host - waiting countdown\n");
+        mStatusText = "Connected - waiting for server state...";
+        Debug::log(Debug::Category::Duel,
+            "[DuelQueue] match_ready room=%s map=%s joining duel room room=%s\n",
+            mRoomCode.c_str(), mMapName.c_str(), mRoomCode.c_str());
     }
     else if (nowMs() - mPhaseStartMs > kMatchConnectTimeoutMs)
     {
@@ -579,14 +619,15 @@ void DuelQueue::onDuelState(const DuelStatePacket& pkt)
     if (mState == DuelQueueState::Idle)
         return;
 
-    if ((pkt.duelId < mDuelId) ||
-        (pkt.duelId == mDuelId && pkt.stateVersion < mStateVersion) ||
-        (pkt.duelId == mDuelId && pkt.spawnAnchorVersion < mSpawnAnchorVersion))
+    // Stale packet check: only duelId + stateVersion ordering matters.
+    // spawnAnchorVersion / mapVersion / respawnSequence are informational
+    // and must not block acceptance of a newer stateVersion.
+    if (pkt.duelId < mDuelId ||
+        (pkt.duelId == mDuelId && pkt.stateVersion < mStateVersion))
     {
-        Debug::warn(Debug::Category::Duel,
-            "[DuelStale] type=DuelStatePacket duel=%u mapVersion=%u anchorVersion=%u state=%u current=%u/%u/%u action=ignored\n",
-            pkt.duelId, pkt.mapVersion, pkt.spawnAnchorVersion, pkt.stateVersion,
-            mDuelId, mSpawnAnchorVersion, mStateVersion);
+        Debug::log(Debug::Category::Duel,
+            "[DuelState] ignored stale packet pktDuel=%u localDuel=%u pktVersion=%u localVersion=%u\n",
+            pkt.duelId, mDuelId, pkt.stateVersion, mStateVersion);
         return;
     }
     mDuelId = pkt.duelId;
@@ -595,13 +636,31 @@ void DuelQueue::onDuelState(const DuelStatePacket& pkt)
     mRespawnSequence = std::max(mRespawnSequence, pkt.respawnSequence);
     mStateVersion = std::max(mStateVersion, pkt.stateVersion);
 
-    if (pkt.phase == DUEL_PHASE_WAITING && mInDuel)
-        Debug::warn(Debug::Category::Duel,
-            "[DuelStale] type=DuelStatePacket phase=WAITING currentPhase=%u action=accepted_due_to_missing_version\n",
-            (unsigned)mDuelPhase);
+    // Server authoritative map: both host and joiner obey pkt.mapId.
+    const std::string serverMap = pkt.mapId;
+    if (!serverMap.empty() && serverMap != mMapName)
+    {
+        Debug::log(Debug::Category::Duel,
+            "[DuelState] authoritative map local=%s server=%s\n",
+            mMapName.c_str(), serverMap.c_str());
+
+        mMapName = serverMap;
+
+        // Route through existing map-load synchronization so both clients
+        // load the same map and report CLIENT_MAP_READY.
+        MP_CONTEXT.requiredMapId = serverMap;
+        MP_CONTEXT.clientMapReadySent = false;
+        MP_CONTEXT.clientMapReadySentForMap.clear();
+        MP_CONTEXT.clientMapReadySentForPlayerId = 0;
+
+        Debug::log(Debug::Category::Duel,
+            "[DuelState] map ready reset for server map=%s\n",
+            serverMap.c_str());
+    }
+
     Debug::log(Debug::Category::Duel,
-        "[DuelState] received phase=%u currentPhase=%u map=%s note=packet_has_no_duel_or_map_version\n",
-        (unsigned)pkt.phase, (unsigned)mDuelPhase, mMapName.c_str());
+        "[DuelState] accepted duelId=%u version=%u phase=%u serverMap=%s\n",
+        pkt.duelId, pkt.stateVersion, (unsigned)pkt.phase, serverMap.c_str());
 
     // WAITING just means "your queue server is up but no opponent yet".
     if (pkt.phase == DUEL_PHASE_WAITING)
@@ -704,6 +763,7 @@ void DuelQueue::recordHistoryOnce()
     entry.myScore = mMyScore;
     entry.oppScore = mOppScore;
     entry.map = mMapName;
+    entry.roomCode = currentRoomCode();
     entry.unixMs = nowMs();
     DuelHistory::instance().add(std::move(entry));
 }

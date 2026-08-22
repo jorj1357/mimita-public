@@ -155,7 +155,7 @@ bool probeVideoSizeViaFfmpeg(const std::string& path, int& outW, int& outH)
     return false;
 }
 
-void appendOutroToFinishedMp4(const char* replayMp4Path, int replayW, int replayH, bool hasAudio)
+bool appendOutroToFinishedMp4(const char* replayMp4Path, int replayW, int replayH, bool hasAudio)
 {
     std::string replayPath = absPath(replayMp4Path);
     std::string outroPath = absPath(gOutroConfig.outroPath);
@@ -164,17 +164,17 @@ void appendOutroToFinishedMp4(const char* replayMp4Path, int replayW, int replay
     if (replayPath.find("-with-outro") != std::string::npos)
     {
         Debug::log(Debug::Category::Replay, "[OUTRO] already appended, skipping\n");
-        return;
+        return true;
     }
 
     bool replayExists = std::filesystem::exists(replayPath);
     Debug::log(Debug::Category::Replay, "[OUTRO APPEND] input path=%s\n", replayPath.c_str());
     Debug::log(Debug::Category::Replay, "[OUTRO APPEND] input exists=%d\n", (int)replayExists);
-    if (!replayExists) { Debug::log(Debug::Category::Replay, "[OUTRO APPEND] input not found\n"); return; }
+    if (!replayExists) { Debug::log(Debug::Category::Replay, "[OUTRO APPEND] input not found\n"); return false; }
 
     uint64_t replaySize = std::filesystem::file_size(replayPath, ec);
     Debug::log(Debug::Category::Replay, "[OUTRO APPEND] input size=%llu\n", (unsigned long long)replaySize);
-    if (replaySize == 0) { Debug::log(Debug::Category::Replay, "[OUTRO APPEND] input empty\n"); return; }
+    if (replaySize == 0) { Debug::log(Debug::Category::Replay, "[OUTRO APPEND] input empty\n"); return false; }
 
     if (replayW <= 0 || replayH <= 0)
     {
@@ -183,7 +183,7 @@ void appendOutroToFinishedMp4(const char* replayMp4Path, int replayW, int replay
         if (!probeVideoSizeViaFfmpeg(replayPath, replayW, replayH))
         {
             Debug::log(Debug::Category::Replay, "[OUTRO APPEND] cannot determine replay resolution\n");
-            return;
+            return false;
         }
     }
     Debug::log(Debug::Category::Replay, "[OUTRO APPEND] input resolution=%dx%d audio=%d\n",
@@ -192,7 +192,7 @@ void appendOutroToFinishedMp4(const char* replayMp4Path, int replayW, int replay
     bool outroExists = std::filesystem::exists(outroPath);
     Debug::log(Debug::Category::Replay, "[OUTRO APPEND] outro path=%s\n", outroPath.c_str());
     Debug::log(Debug::Category::Replay, "[OUTRO APPEND] outro exists=%d\n", (int)outroExists);
-    if (!outroExists) { Debug::log(Debug::Category::Replay, "[OUTRO APPEND] outro not found\n"); return; }
+    if (!outroExists) { Debug::log(Debug::Category::Replay, "[OUTRO APPEND] outro not found\n"); return false; }
 
     std::string outputPath;
     {
@@ -250,7 +250,7 @@ void appendOutroToFinishedMp4(const char* replayMp4Path, int replayW, int replay
     {
         Debug::log(Debug::Category::Replay, "[OUTRO APPEND] FAILED (exit=%d output_exists=%d)\n",
                    exitCode, (int)std::filesystem::exists(outputPath, ec));
-        return;
+        return false;
     }
 
     uint64_t outputSize = std::filesystem::file_size(outputPath, ec);
@@ -260,16 +260,22 @@ void appendOutroToFinishedMp4(const char* replayMp4Path, int replayW, int replay
     {
         Debug::log(Debug::Category::Replay, "[OUTRO APPEND] FAILED size did not increase (%llu <= %llu)\n",
                    (unsigned long long)outputSize, (unsigned long long)replaySize);
-        return;
+        return false;
     }
 
     Debug::log(Debug::Category::Replay, "[OUTRO APPEND] replacing original\n");
+    std::filesystem::remove(replayPath, ec);
+    if (ec) {
+        Debug::log(Debug::Category::Replay, "[OUTRO APPEND] could not remove intermediate: %s\n", ec.message().c_str());
+        return false;
+    }
     std::filesystem::rename(outputPath, replayPath, ec);
     if (ec)
     {
         Debug::log(Debug::Category::Replay, "[OUTRO APPEND] rename failed: %s\n", ec.message().c_str());
-        return;
+        return false;
     }
 
     Debug::log(Debug::Category::Replay, "[OUTRO] PASS (outro appended, final=%s)\n", replayPath.c_str());
+    return true;
 }

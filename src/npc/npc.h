@@ -54,6 +54,7 @@ public:
     // first snapshot is a nonzero epoch; wrapped in respawnServerNpc so it
     // never hits 0 (clients ignore epoch 0).
     uint16_t transformEpoch = 1;
+    std::string avatarName;
     float difficulty = 1.0f;
     NpcDifficultyTuning tuning;
     Player body;

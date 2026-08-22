@@ -174,9 +174,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         } else if (action == DuelMenuAction::SaveReplay) {
             if (!gDuelManager.finalKillReplayPath.empty()) {
                 std::string jsonPath = gDuelManager.finalKillReplayPath;
-                int rw = engine.renderer ? engine.renderer->width : 1280;
-                int rh = engine.renderer ? engine.renderer->height : 720;
-                if (startReplayExport(jsonPath, rw, rh)) {
+                if (startReplayExport(jsonPath, gExportConfig.exportWidth, gExportConfig.exportHeight)) {
                     DevOverlay::instance().showNotification("Exporting replay in background...", 3.0f);
                 } else {
                     DevOverlay::instance().showNotification("Failed to start export.", 5.0f);
@@ -209,6 +207,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             gameState = GAME_MENU;
         }
     } else {
+        // Local/offline duel only. Network duels use DuelQueue HUD (renderDuelMatchHud).
         if (gDuelManager.enabled())
             gDuelManager.renderHud();
         if (gBombTagManager.enabled())

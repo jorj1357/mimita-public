@@ -53,6 +53,7 @@
 #include "config/player-settings.h"
 #include "npc/npc-combat.h"
 #include "network/server.h"
+#include "gui/menus/pause-menu.h"
 
 extern DuelManager gDuelManager;
 extern BombTagManager gBombTagManager;
@@ -133,6 +134,9 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
             "crosshair=1 healthbars=1 replayInfo=1 renderMode=%d\n",
             getReplayExportJob().capturedTicks, (int)gReplayExportRenderMode);
     }
+    // The pause modal is deliberately last in the gameplay UI pass: it must
+    // cover the HUD and world without relying on depth ordering.
+    PauseMenu::render(engine.window());
     uiEndFrame();
 
     if (GuiEditor::instance().isEnabled()) {

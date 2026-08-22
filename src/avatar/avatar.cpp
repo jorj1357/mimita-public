@@ -964,7 +964,14 @@ bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
     // ── Cosmetics (in-game GLB attachments) ─────────────────────
     if (applied && !mAvatar.cosmetics.empty()) {
         CosmeticSystem::instance().loadCosmetics(mAvatar.cosmetics);
-        player.setCosmetics(mAvatar.cosmetics);
+        std::vector<CosmeticSlot> playerCosmetics = mAvatar.cosmetics;
+        for (CosmeticSlot& slot : playerCosmetics) {
+            if (!slot.texture.image.empty() &&
+                slot.texture.image.find('/') == std::string::npos &&
+                slot.texture.image.find('\\') == std::string::npos)
+                slot.texture.image = mBasePath + "/" + slot.texture.image;
+        }
+        player.setCosmetics(playerCosmetics);
     }
     return applied;
 }

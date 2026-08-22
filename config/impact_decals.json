@@ -26,7 +26,7 @@
       "start_color": [0.7, 0.0, 0.0],
       "end_color": [0.1, 0.0, 0.0],
       "darken_start_seconds": 0.01,
-      "darken_end_seconds": 4.0
+      "darken_end_seconds": 29.0
     },
     "spray": {
       "enabled": false,

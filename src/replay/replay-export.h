@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-// ── Replay export configuration (hot-reloaded from config/replayexport.json)
+// ── Replay export configuration (hot-reloaded from config/replay/replay-export.json)
 
 struct ReplayExportUiConfig {
     bool chat = true;

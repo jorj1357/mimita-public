@@ -1,0 +1,26 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 3,
+  "elements": {
+    "overlay": { "type": "panel", "x": 0, "y": 0, "width": 1920, "height": 1080, "backgroundColor": [0, 0, 0, 0.5] },
+    "menuPanel": { "type": "panel", "x": 700, "y": 220, "width": 520, "height": 610, "backgroundColor": [0.025, 0.03, 0.04, 0.96], "outlineColor": [0.55, 0.65, 0.8, 0.85] },
+    "menuTitle": { "type": "text", "x": 700, "y": 255, "width": 520, "height": 48, "text": "PAUSED", "textAlign": "center", "fontSize": 0.70, "textColor": [0.9, 0.95, 1, 1] },
+    "resumeButton": { "type": "button", "x": 770, "y": 335, "width": 380, "height": 62, "text": "RESUME", "fontSize": 0.42, "textAlign": "center", "verticalAlign": "middle", "backgroundColor": [0.1, 0.22, 0.14, 1], "hoverColor": [0.16, 0.38, 0.2, 1] },
+    "settingsButton": { "type": "button", "x": 770, "y": 420, "width": 380, "height": 62, "text": "SETTINGS", "fontSize": 0.42, "textAlign": "center", "verticalAlign": "middle", "backgroundColor": [0.10, 0.14, 0.22, 1], "hoverColor": [0.16, 0.25, 0.38, 1] },
+    "inviteButton": { "type": "button", "x": 770, "y": 505, "width": 380, "height": 62, "text": "INVITE A FRIEND", "fontSize": 0.42, "textAlign": "center", "verticalAlign": "middle", "backgroundColor": [0.18, 0.12, 0.26, 1], "hoverColor": [0.32, 0.18, 0.42, 1] },
+    "leaveButton": { "type": "button", "x": 770, "y": 705, "width": 380, "height": 62, "text": "LEAVE ROOM", "fontSize": 0.42, "textAlign": "center", "verticalAlign": "middle", "backgroundColor": [0.34, 0.08, 0.08, 1], "hoverColor": [0.55, 0.12, 0.12, 1] },
+    "inviteUrl": { "type": "text", "visible": false, "text": "https://www.mimita.fun/download" },
+    "confirmPanel": { "type": "panel", "x": 700, "y": 350, "width": 520, "height": 340, "backgroundColor": [0.025, 0.03, 0.04, 0.98], "outlineColor": [0.8, 0.8, 0.8, 0.8] },
+    "confirmText": { "type": "text", "x": 740, "y": 415, "width": 440, "height": 60, "text": "ARE U SURE?", "textAlign": "center", "fontSize": 0.60, "textColor": [1, 1, 1, 1] },
+    "confirmYes": { "type": "button", "x": 750, "y": 545, "width": 190, "height": 60, "text": "YES", "textAlign": "center", "verticalAlign": "middle", "fontSize": 0.42, "backgroundColor": [0.05, 0.42, 0.12, 1], "hoverColor": [0.08, 0.65, 0.18, 1] },
+    "confirmNo": { "type": "button", "x": 980, "y": 545, "width": 190, "height": 60, "text": "NO", "textAlign": "center", "verticalAlign": "middle", "fontSize": 0.42, "backgroundColor": [0.45, 0.06, 0.06, 1], "hoverColor": [0.7, 0.1, 0.1, 1] },
+    "recentPanel": { "type": "panel", "x": 1270, "y": 220, "width": 510, "height": 610, "backgroundColor": [0.025, 0.03, 0.04, 0.96], "outlineColor": [0.25, 0.7, 0.45, 0.7] },
+    "recentHeader": { "type": "text", "x": 1300, "y": 250, "width": 450, "height": 40, "text": "RECENT DUELS", "fontSize": 0.48, "textColor": [0.45, 0.95, 0.55, 1] },
+    "recentEmpty": { "type": "text", "x": 1300, "y": 350, "width": 420, "height": 40, "text": "NO RECENT DUELS", "fontSize": 0.36, "textColor": [0.65, 0.65, 0.7, 1] },
+    "recentUsername": { "type": "text", "x": 1300, "y": 325, "width": 220, "height": 150, "fontSize": 0.34, "textColor": [0.92, 0.92, 0.96, 1] },
+    "recentRoom": { "type": "text", "x": 1300, "y": 355, "width": 220, "height": 150, "fontSize": 0.25, "textColor": [0.62, 0.78, 0.92, 1] },
+    "recentLastSeen": { "type": "text", "x": 1300, "y": 380, "width": 220, "height": 150, "fontSize": 0.23, "textColor": [0.62, 0.62, 0.68, 1] },
+    "recentRematch": { "type": "button", "x": 1545, "y": 325, "width": 100, "height": 42, "text": "REMATCH", "fontSize": 0.25, "textAlign": "center", "verticalAlign": "middle", "backgroundColor": [0.1, 0.42, 0.18, 1], "hoverColor": [0.14, 0.62, 0.26, 1] },
+    "recentInvite": { "type": "button", "x": 1660, "y": 325, "width": 90, "height": 42, "text": "COPY", "fontSize": 0.25, "textAlign": "center", "verticalAlign": "middle", "backgroundColor": [0.18, 0.2, 0.42, 1], "hoverColor": [0.28, 0.32, 0.65, 1] }
+  }
+}

@@ -15,7 +15,7 @@
 // REPLAY EXPORT UI FILTER
 //
 // Exported videos should look like normal gameplay footage. Values are loaded
-// from config/replayexport.json and affect export renders only.
+// from config/replay/replay-export.json and affect export renders only.
 // ============================================================
 
 namespace ReplayExportUI {

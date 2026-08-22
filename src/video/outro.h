@@ -12,7 +12,7 @@ extern OutroConfig gOutroConfig;
 // Appends the outro to the finished replay MP4 in a single ffmpeg pass.
 // replayW/replayH come from the export job; when 0 (manual/test commands) the
 // resolution is probed via `ffmpeg -i` output (no ffprobe is shipped).
-void appendOutroToFinishedMp4(const char* replayMp4Path, int replayW, int replayH, bool hasAudio);
+bool appendOutroToFinishedMp4(const char* replayMp4Path, int replayW, int replayH, bool hasAudio);
 
 // ffprobe-free video size probe used by manual outro commands.
 bool probeVideoSizeViaFfmpeg(const std::string& path, int& outW, int& outH);

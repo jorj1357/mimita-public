@@ -52,6 +52,7 @@ void DuelHistory::load(const std::string& profileId)
             entry.myScore = item.value("my_score", 0);
             entry.oppScore = item.value("opp_score", 0);
             entry.map = item.value("map", std::string());
+            entry.roomCode = item.value("room_code", std::string());
             entry.unixMs = item.value("unix_ms", (uint64_t)0);
             mEntries.push_back(std::move(entry));
         }
@@ -79,6 +80,7 @@ void DuelHistory::save()
         item["my_score"] = e.myScore;
         item["opp_score"] = e.oppScore;
         item["map"] = e.map;
+        item["room_code"] = e.roomCode;
         item["unix_ms"] = e.unixMs;
         arr.push_back(std::move(item));
     }

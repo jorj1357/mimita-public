@@ -281,7 +281,7 @@ void registerReplayExportCommands()
 
             CMDTRACE("Starting actual export...");
             logLine("Calling startReplayExport...");
-            if (!startReplayExport(path, 1280, 720)) {
+            if (!startReplayExport(path, gExportConfig.exportWidth, gExportConfig.exportHeight)) {
                 logLine("FAIL: startReplayExport returned false");
                 CMDTRACE("FAIL: startReplayExport returned false");
                 fclose(log);
@@ -319,7 +319,7 @@ void registerReplayExportCommands()
                 Terminal::instance().addLog("[ERROR] File not found: " + path);
                 return;
             }
-            if (startReplayExport(path, 1280, 720)) {
+            if (startReplayExport(path, gExportConfig.exportWidth, gExportConfig.exportHeight)) {
                 Terminal::instance().addLog("[REPLAY EXPORT] started: " + path);
             } else {
                 Terminal::instance().addLog("[ERROR] Failed to start export");
@@ -371,8 +371,8 @@ void registerReplayExportCommands()
                 printf("[RPLX] using newest replay clip: %s\n", path.c_str());
             }
 
-            printf("[RPLX] calling startReplayExport(\"%s\", 1280, 720)\n", path.c_str());
-            bool result = startReplayExport(path, 1280, 720);
+            printf("[RPLX] calling startReplayExport(\"%s\", config resolution)\n", path.c_str());
+            bool result = startReplayExport(path, gExportConfig.exportWidth, gExportConfig.exportHeight);
             CMDTRACE("startReplayExport returned %d", (int)result);
             printf("[RPLX] startReplayExport returned %d\n", (int)result);
             if (result) {
@@ -404,7 +404,7 @@ void registerReplayExportCommands()
             if (!found) found = &clips.front();
             std::string path = *found;
             Terminal::instance().addLog("[REPLAY EXPORT] exporting last duel: " + path);
-            if (startReplayExport(path, 1280, 720)) {
+            if (startReplayExport(path, gExportConfig.exportWidth, gExportConfig.exportHeight)) {
                 Terminal::instance().addLog("[REPLAY EXPORT] started: " + path);
             } else {
                 Terminal::instance().addLog("[ERROR] Failed to start export");
@@ -422,7 +422,7 @@ void registerReplayExportCommands()
             }
             std::string path = clips.front().path;
             Terminal::instance().addLog("[REPLAY EXPORT] exporting final kill: " + path);
-            if (startReplayExport(path, 1280, 720)) {
+            if (startReplayExport(path, gExportConfig.exportWidth, gExportConfig.exportHeight)) {
                 Terminal::instance().addLog("[REPLAY EXPORT] started: " + path);
             } else {
                 Terminal::instance().addLog("[ERROR] Failed to start export");
@@ -457,7 +457,7 @@ void registerReplayExportCommands()
                     "CLIP EXPORT FAILED", "Clip export failed. Check logs.", 600);
                 return;
             }
-            if (!startReplayExport(path, 1280, 720, true)) {
+            if (!startReplayExport(path, gExportConfig.exportWidth, gExportConfig.exportHeight, true)) {
                 NotificationSystem::instance().pushCritical(
                     "CLIP EXPORT FAILED", "Clip export failed. Check logs.", 600);
                 return;
@@ -529,7 +529,7 @@ void registerReplayExportCommands()
 
     Terminal::instance().registerCommand({
         "export_config",
-        "Show or set export config in config/replayexport.json. Use: export_config <key> <value>",
+        "Show or set export config in config/replay/replay-export.json. Use: export_config <key> <value>",
         "export_config [width|height|crf|bitrate|volume|encoderMode|encoder] <value>",
         [](const std::vector<std::string>& args) {
             if (args.empty()) {
@@ -576,9 +576,9 @@ void registerReplayExportCommands()
                 }
             }
             if (saveReplayExportConfig())
-                Terminal::instance().addLog("[EXPORT CONFIG] saved to config/replayexport.json");
+                Terminal::instance().addLog("[EXPORT CONFIG] saved to config/replay/replay-export.json");
             else
-                Terminal::instance().addLog("[ERROR] Could not save config/replayexport.json");
+                Terminal::instance().addLog("[ERROR] Could not save config/replay/replay-export.json");
         }
     });
 }

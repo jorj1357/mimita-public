@@ -216,7 +216,7 @@ static void startNextBatchExport()
     std::snprintf(buf, sizeof(buf), "[REPLAY] Exporting %d/%d", gBatchExportCurrent + 1, gBatchExportTotal);
     Terminal::instance().addLog(buf);
 
-    if (!startReplayExport(path, 1280, 720)) {
+    if (!startReplayExport(path, gExportConfig.exportWidth, gExportConfig.exportHeight)) {
         Debug::log(Debug::Category::Replay, "[REPLAY] Batch export failed for: %s", path.c_str());
         gBatchExportCurrent++;
         startNextBatchExport();

@@ -311,7 +311,7 @@ int main(int argc, char** argv)
         runExportSubprocess(engine, gExportClipPath.c_str(),
                             gExportOutputPath.c_str(),
                             gExportWidth, gExportHeight);
-        return 0;
+        return getReplayExportJob().state == ReplayExportJob::Done ? 0 : 1;
     }
 
     // --connect <ip:port> on a normal GUI launch: boot straight into

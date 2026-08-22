@@ -16,6 +16,7 @@
 #include "npc/npc-combat.h"
 #include "npc/npc-navigation.h"
 #include "npc/npc-combat-log.h"
+#include "npc/npc-avatar.h"
 #include "entities/player.h"
 #include "world/world.h"
 #include "map/map-loader-collision.h"
@@ -201,6 +202,7 @@ static void respawnServerNpc(Npc& npc)
     // hard-snap the body to the spawn, and reset their death-presentation
     // state for the next death. Wrap to [1,65535] — 0 is ignored by clients.
     npc.transformEpoch = static_cast<uint16_t>((npc.transformEpoch % 65535) + 1);
+    assignNpcAvatar(npc);
     // healthall override: new spawns get the override max HP.
     if (serverGameOverrides().maxHpOverride > 0)
         npc.body.maxHp = serverGameOverrides().maxHpOverride;

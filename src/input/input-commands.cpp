@@ -9,6 +9,7 @@
 #include "auth/auth-popup.h"
 #include "gui/menus/server-info-menu.h"
 #include "gui/menus/online-menu.h"
+#include "gui/menus/pause-menu.h"
 #include <GLFW/glfw3.h>
 #include <fstream>
 #include <sstream>
@@ -78,6 +79,13 @@ void InputCommandSystem::keyCallback(GLFWwindow* window, int key, int scancode, 
     // the main.cpp key callback before it was overwritten).
     // Priority: Terminal → Chat → GUI text input → auth → sign-in → server-info → online menu
     if (action == GLFW_PRESS || action == GLFW_REPEAT) {
+        // The in-game pause menu is a terminal-style modal: no chat, menus,
+        // bindings, or gameplay handler may see its keyboard input.
+        // Escape itself is consumed by the frame-level edge handler so it can
+        // reliably close the modal after all current input edges are flushed.
+        if (PauseMenu::isOpen())
+            return;
+
         // If terminal is open, it owns keyboard input exclusively
         if (Terminal::instance().isOpen()) {
             Terminal::instance().handleKey(key, mods);

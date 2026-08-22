@@ -68,6 +68,7 @@ struct KillImpactFrame {
 };
 static KillImpactFrame gKillImpactFrame;
 static std::unordered_map<std::string, bool> gActorPrevDead;
+static std::unordered_map<std::string, std::string> gReplayActorAvatarNames;
 
 // Renders the replay scene's actors (and cinematic kill-impact overlay) into the
 // currently bound framebuffer. Shared by the visible window path and the
@@ -84,6 +85,7 @@ static void renderReplayActors(
 {
     for (const ReplayActorState& actorState : replayFrame.actors) {
         std::unique_ptr<Player>& actor = replayActorModels[actorState.id];
+        const bool avatarChanged = gReplayActorAvatarNames[actorState.id] != actorState.avatarName;
         if (!actor) {
             // Create player without loading current account's character
             actor = std::make_unique<Player>(false);
@@ -100,8 +102,13 @@ static void renderReplayActors(
                        ? AvatarSystem::instance().currentName().c_str()
                        : "(none)");
 
-            // Reuse the game's avatar pipeline instead of manual texture loading.
-            bool avatarApplied = AvatarSystem::instance().applyToPlayer(*actor);
+            // Recorded avatar identity wins over the exporting account's avatar.
+            bool avatarApplied = false;
+            if (!actorState.avatarName.empty())
+                avatarApplied = AvatarSystem::instance().loadAvatar(actorState.avatarName) &&
+                    AvatarSystem::instance().applyToPlayer(*actor, true);
+            else
+                avatarApplied = AvatarSystem::instance().applyToPlayer(*actor);
             if (avatarApplied) {
                 printf("[RPLX AVATAR] Avatar applied via gameplay avatar pipeline\n");
                 printf("[RPLX AVATAR] Avatar initialization complete\n");
@@ -125,6 +132,11 @@ static void renderReplayActors(
                    actorState.id.c_str(),
                    actorState.characterName.c_str(),
                    actorState.modelPath.c_str());
+        }
+        if (actor && avatarChanged && !actorState.avatarName.empty()) {
+            if (AvatarSystem::instance().loadAvatar(actorState.avatarName))
+                AvatarSystem::instance().applyToPlayer(*actor, true);
+            gReplayActorAvatarNames[actorState.id] = actorState.avatarName;
         }
         actor->username = actorState.name;
         actor->currentHp = actorState.health;

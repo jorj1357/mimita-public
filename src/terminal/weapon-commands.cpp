@@ -269,6 +269,7 @@ void registerWeaponCommands()
             [slot](const std::vector<std::string>&) {
                 Player& player = THE_PLAYER;
                 WeaponSystem& weapons = THE_WEAPONS;
+                // Local/offline duel only — network duels have no DuelWeaponPool.
                 const int nativeSlot = gDuelManager.enabled()
                     ? DuelWeaponPool::instance().nativeSlotForDuelSlot(slot) : slot;
                 if (nativeSlot <= 0) {
@@ -319,6 +320,7 @@ void registerWeaponCommands()
             [keySlot](const std::vector<std::string>&) {
                 Player& player = THE_PLAYER;
                 WeaponSystem& weapons = THE_WEAPONS;
+                // Local/offline duel only — network duels have no DuelWeaponPool.
                 const int nativeSlot = gDuelManager.enabled()
                     ? DuelWeaponPool::instance().nativeSlotForDuelSlot(keySlot) : keySlot;
                 if (nativeSlot <= 0) {

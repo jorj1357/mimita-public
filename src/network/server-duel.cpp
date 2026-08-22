@@ -133,9 +133,9 @@ void broadcastDuelState(SOCKET sock,
             reliableGameplayEventSessionForPlayer(const_cast<ServerPlayer&>(kv.second)), totalPacketsOut);
         const bool sent = result == ReliableGameplayEventQueueResult::Queued;
         Debug::log(Debug::Category::Duel,
-            "[DuelPacketSend] type=DuelStatePacket reliable=1 player=%u sent=%d map=%s duel=%u state=%u phase=%u score=%d-%d\n",
-            kv.second.id, (int)sent, d.mapId.c_str(), d.duelId, d.stateVersion,
-            (unsigned)d.phase, d.scoreA, d.scoreB);
+            "[ServerDuel] sent duel state duelId=%u version=%u phase=%u map=%s player=%u sent=%d score=%d-%d\n",
+            d.duelId, d.stateVersion, (unsigned)d.phase, d.mapId.c_str(),
+            kv.second.id, (int)sent, d.scoreA, d.scoreB);
     }
 }
 
@@ -236,6 +236,9 @@ void beginDuelCountdown(ServerDuelState& d,
     d.winnerPlayerId = 0;
     d.phase = DUEL_PHASE_COUNTDOWN;
     d.countdown = d.countdownSeconds;
+    Debug::log(Debug::Category::Duel,
+        "[ServerDuel] selected authoritative map=%s duelId=%u stateVersion=%u\n",
+        d.mapId.c_str(), d.duelId, d.stateVersion);
     teleportDuelistsToSpawns(d, players);
     Debug::log(Debug::Category::Duel,
         "[DUEL SERVER] countdown started players=%u/%u\n", d.playerAId, d.playerBId);
@@ -528,9 +531,17 @@ void serverDuelTick(SOCKET sock,
         {
             d.phase = DUEL_PHASE_ACTIVE;
             d.stateSent = false;
-            Debug::log(Debug::Category::Duel, "[DUEL SERVER] fight started\n");
+            ++d.stateVersion;
+            Debug::log(Debug::Category::Duel,
+                "[ServerDuel] countdown complete duelId=%u stateVersion=%u phase=ACTIVE\n",
+                d.duelId, d.stateVersion);
+            broadcastDuelState(sock, d, players, totalPacketsOut);
         }
-        broadcastDuelState(sock, d, players, totalPacketsOut);
+        // During countdown, do NOT broadcast every tick. Reliable delivery of
+        // every countdown snapshot creates a huge backlog that blocks the
+        // ACTIVE transition from being delivered promptly. The initial
+        // countdown start is broadcast by beginDuelCountdown(); the ACTIVE
+        // transition is broadcast above. Clients interpolate countdown locally.
         break;
 
     case DUEL_PHASE_ACTIVE:

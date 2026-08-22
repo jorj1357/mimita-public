@@ -1,6 +1,7 @@
 #include "engine/engine-tick-state.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
+#include "gui/menus/pause-menu.h"
 #include <cstdio>
 #include <random>
 #include <GLFW/glfw3.h>
@@ -182,6 +183,7 @@ void engineTickState(Engine& engine, float dt)
                     cfg.duelLengthSeconds = dcr.duelLengthSeconds;
                     cfg.npcDifficulty = dcr.npcDifficulty;
                     cfg.enabled = true;
+                    // Local/offline duel only. Network duels are controlled by DuelQueue + server DuelStatePacket.
                     gDuelManager.start(cfg, player, npcSystem, world);
                     activeMapPath = cfg.mapPath;
                     worldLoaded = !world.mesh.verts.empty();
@@ -299,7 +301,9 @@ void engineTickState(Engine& engine, float dt)
                 Terminal::instance().addLog(
                     "[REPLAY] 60 second ring buffer active");
             }
-            bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd;
+            // Local/offline duel only for DuelManager; also check DuelQueue for network duels.
+            bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd ||
+                DuelQueue::instance().matchOver();
             glfwSetInputMode(engine.window(), GLFW_CURSOR,
                 gameState == GAME_PLAYING && !Terminal::instance().isOpen() && !isChatOpen() && !duelMatchOver && MouseLock::locked()
                     ? GLFW_CURSOR_DISABLED
@@ -328,7 +332,9 @@ void engineTickState(Engine& engine, float dt)
                 Debug::log(Debug::Category::Duel, "[FINAL KILL] recording aftermath for 5s (endTick=%u)", gDuelManager.matchEndTick);
             }
             prevDuelPhase = gDuelManager.phase();
-            bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd;
+            // Local/offline duel only for DuelManager; also check DuelQueue for network duels.
+            bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd ||
+                DuelQueue::instance().matchOver();
             glfwSetInputMode(engine.window(), GLFW_CURSOR,
                 gameState == GAME_PLAYING && !Terminal::instance().isOpen() && !isChatOpen() && !duelMatchOver && MouseLock::locked()
                     ? GLFW_CURSOR_DISABLED
@@ -341,9 +347,11 @@ void engineTickState(Engine& engine, float dt)
 
     static bool gravePrev = false;
     bool graveDown = glfwGetKey(engine.window(), GLFW_KEY_GRAVE_ACCENT) == GLFW_PRESS;
-    if (graveDown && !gravePrev) {
+    if (!PauseMenu::isOpen() && graveDown && !gravePrev) {
         Terminal::instance().toggle();
-        bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd;
+        // Local/offline duel only for DuelManager; also check DuelQueue for network duels.
+        bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd ||
+            DuelQueue::instance().matchOver();
         glfwSetInputMode(engine.window(), GLFW_CURSOR,
             Terminal::instance().isOpen() || isChatOpen() ? GLFW_CURSOR_NORMAL :
             (gameState == GAME_PLAYING && !duelMatchOver && MouseLock::locked() ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL));

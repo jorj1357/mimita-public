@@ -9,6 +9,7 @@
 #include "npc.h"
 #include "npc/npc-internal.h"
 #include "npc/npc-difficulty-config.h"
+#include "npc/npc-avatar.h"
 #include "combat/weapon-runtime.h"
 
 #include <algorithm>
@@ -197,6 +198,7 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn,
 
     // Initialize full weapon loadout from config and equip starting weapon
     npcInitLoadout(*this);
+    assignNpcAvatar(*this);
 
     // Spawn wakeup visual sphere (30 ticks @ 60 Hz = 0.5s)
     {

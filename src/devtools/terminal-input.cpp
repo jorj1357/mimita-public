@@ -130,7 +130,7 @@ void Terminal::handleKey(int key, int mods) {
                     addLog("[ERROR] File not found: " + path);
                     return;
                 }
-                if (startReplayExport(path, 1280, 720))
+                if (startReplayExport(path, gExportConfig.exportWidth, gExportConfig.exportHeight))
                     addLog("[REPLAY EXPORT] started: " + path);
                 else
                     addLog("[ERROR] Failed to start export");

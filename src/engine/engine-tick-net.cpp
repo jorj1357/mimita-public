@@ -169,7 +169,8 @@ void engineTickNet(Engine& engine, float dt)
                 (MimitaNet::nowMs() - lastSpacePressMs < RESPAWN_INPUT_BUFFER_MS) &&
                 justBecameOnlineDead;
 
-            const bool duelBlocksRespawn = false; // simplified; can check gDuelManager
+            // Network duels use server-controlled respawn; local DuelManager is irrelevant here.
+            const bool duelBlocksRespawn = false;
 
             const bool shouldRequestRespawn = onlineDead && !duelBlocksRespawn &&
                 (spacePressed || (justBecameOnlineDead && spaceHeld) || spaceBuffered);

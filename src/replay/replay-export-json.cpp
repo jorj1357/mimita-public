@@ -50,7 +50,7 @@ extern void* sExportSubprocess;
 ReplayExportConfig gExportConfig;
 static uint64_t gExportConfigLastWrite = 0;
 
-static const char* REPLAY_EXPORT_CONFIG_PATH = "config/replayexport.json";
+static const char* REPLAY_EXPORT_CONFIG_PATH = "config/replay/replay-export.json";
 
 static uint64_t cfgFileWriteTime(const char* path)
 {
@@ -321,10 +321,14 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
         return false;
     }
 
+    const int width = gExportConfig.exportWidth;
+    const int height = gExportConfig.exportHeight;
     Debug::warn(Debug::Category::Replay,
-        "[EXPORT-PRESS] startReplayExport: clip=%s %dx%d\n",
-        jsonPath.c_str(), renderWidth, renderHeight);
-    return spawnExportSubprocess(jsonPath, renderWidth, renderHeight);
+        "[EXPORT-PRESS] startReplayExport: clip=%s requested=%dx%d config=%dx%d\n",
+        jsonPath.c_str(), renderWidth, renderHeight, width, height);
+    gJob.clipExport = restoreLiveOnFinish;
+    gJob.restoreLiveOnFinish = restoreLiveOnFinish;
+    return spawnExportSubprocess(jsonPath, width, height);
 }
 
 void restoreReplayExportEditorState()

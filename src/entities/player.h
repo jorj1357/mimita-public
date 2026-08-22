@@ -398,6 +398,7 @@ public:
     bool voidDeathTriggered = false;
     float sizeScale = 1.0f;  // player size multiplier
     uint32_t spawnGeneration = 0;
+    uint16_t networkTransformEpoch = 0;
     uint64_t movementSimulationTick = 0;
     MovementContactSet movementContacts;
     MovementContactHistory movementContactHistory;
