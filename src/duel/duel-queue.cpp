@@ -178,7 +178,6 @@ void DuelQueue::startQueue(const std::string& profileId, const std::string& name
     mJoinedCoordinator = false;
     mJoinRetryTimer = 0.0f;
     mServerConnectStartMs = 0;
-    mHostReadyPublished = false;
     mWantsChosenMap = true;
     mInDuel = false;
     mMatchOver = false;
@@ -222,7 +221,6 @@ void DuelQueue::stopQueue()
     mMatchOver = false;
     mCountdownActive = false;
     mTracerActive = false;
-    mHostReadyPublished = false;
 }
 
 void DuelQueue::returnToQueue()
@@ -316,9 +314,8 @@ void DuelQueue::handleHostMatch()
     mMatchFoundBanner = true;
     mMatchFoundTimer = 0.0f;
     mState = DuelQueueState::MatchFound;
-    mStatusText = "publishing room to coordinator...";
+    mStatusText = "opponent joining your room...";
     mPhaseStartMs = nowMs();
-    mHostReadyPublished = false;
     NotificationSystem::instance().push(
         "match found!", "vs " + mOpponentName, 300, {});
     Debug::log(Debug::Category::Duel,
@@ -477,37 +474,6 @@ void DuelQueue::updateMatchFound(float dt)
 {
     mDowntime += dt;
     mMatchFoundTimer += dt;
-
-    // Host: publish room ready to coordinator so the joiner gets match_ready.
-    if (mHost && !mHostReadyPublished)
-    {
-        std::string roomCode = mQueueRoomCode;
-        if (roomCode.empty())
-        {
-            Debug::logThrottled(Debug::Category::Duel, "host-wait-room", 2.0f,
-                "[DuelQueue] waiting for host room code matchId=%s\n",
-                mMatchId.c_str());
-        }
-        else
-        {
-            if (MimitaNet::coordinatorQueueHostReady(mMatchId, roomCode))
-            {
-                mHostReadyPublished = true;
-                mStatusText = "opponent joining your room...";
-                Debug::log(Debug::Category::Duel,
-                    "[DuelQueue] published host ready matchId=%s room=%s\n",
-                    mMatchId.c_str(), roomCode.c_str());
-            }
-            else
-            {
-                Debug::warn(Debug::Category::Duel,
-                    "[DuelQueue] failed to publish host ready matchId=%s room=%s\n",
-                    mMatchId.c_str(), roomCode.c_str());
-                failToQueue("Could not publish duel room");
-                return;
-            }
-        }
-    }
 
     // Host is waiting for the opponent to connect to our room.
     if (mHost && nowMs() - mPhaseStartMs > kOpponentJoinTimeoutMs)

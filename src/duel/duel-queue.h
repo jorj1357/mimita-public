@@ -168,7 +168,6 @@ private:
     bool mJoinedCoordinator = false;
     float mJoinRetryTimer = 0.0f;
     uint64_t mServerConnectStartMs = 0;
-    bool mHostReadyPublished = false;
 
     // Map handoff
     bool mWantsChosenMap = false;

@@ -16,6 +16,7 @@ extern nlohmann::json gAvatarBodypartOverrides;
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glad/glad.h>
+#include <GLFW/glfw3.h>
 
 #include "entities/player.h"
 #include "world/texture-store.h"
@@ -414,6 +415,12 @@ bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
            (int)mAvatar.advancedMode, (int)reloadTextures, mAtlasGeneration);
 
     std::vector<unsigned char> atlasPixels = buildAtlasPixels(mAvatar, mBasePath);
+
+    // Dedicated servers have no OpenGL context — skip GPU texture upload.
+    if (!glfwGetCurrentContext()) {
+        printf("[AVATAR ATLAS] headless server, skipping GL texture upload for %s\n", mAvatarName.c_str());
+        return true;
+    }
 
     if (mAtlasTexture) {
         glDeleteTextures(1, &mAtlasTexture);

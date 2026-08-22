@@ -20,6 +20,8 @@
 #include "debug/debug-log.h"
 #include "npc/npc.h"
 
+#include <GLFW/glfw3.h>
+
 namespace {
 constexpr const char* kConfigPath = "config/npc-avatar.json";
 struct NpcAvatarConfig { bool forceAvatar = false; std::string forceAvatarPath; };
@@ -104,10 +106,21 @@ bool assignNpcAvatar(Npc& npc)
         return false;
     }
     AvatarSystem& avatars = AvatarSystem::instance();
-    if (!avatars.loadAvatar(name) || !avatars.applyToPlayer(npc.body, true)) {
+    if (!avatars.loadAvatar(name)) {
         npc.avatarName.clear();
-        Debug::warn(Debug::Category::Avatar, "[NPC AVATAR] failed to apply avatar=%s npc=%u\n", name.c_str(), npc.id);
+        Debug::warn(Debug::Category::Avatar, "[NPC AVATAR] failed to load avatar=%s npc=%u\n", name.c_str(), npc.id);
         return false;
+    }
+    // Headless servers have no GL context — skip GPU loading, just store the name.
+    // Clients will load the avatar visuals themselves from the name in snapshots.
+    if (glfwGetCurrentContext()) {
+        if (!avatars.applyToPlayer(npc.body, true)) {
+            npc.avatarName.clear();
+            Debug::warn(Debug::Category::Avatar, "[NPC AVATAR] failed to apply avatar=%s npc=%u\n", name.c_str(), npc.id);
+            return false;
+        }
+    } else {
+        Debug::warn(Debug::Category::Avatar, "[NPC AVATAR] headless server, skipping GL apply for avatar=%s npc=%u\n", name.c_str(), npc.id);
     }
     npc.avatarName = name;
     Debug::warn(Debug::Category::Avatar, "[NPC AVATAR] assigned npc=%u avatar=%s epoch=%u\n", npc.id, npc.avatarName.c_str(), (unsigned)npc.transformEpoch);
