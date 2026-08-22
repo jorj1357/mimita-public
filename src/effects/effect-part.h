@@ -34,6 +34,7 @@ struct EffectPart
     float endScale = 1.0f;
     float alpha = 1.0f;
     float gravity = 0.0f;
+    float drag = 0.0f;
     float thickness = 0.0f;
     float endThickness = 0.0f;
     std::string sourceActorId;

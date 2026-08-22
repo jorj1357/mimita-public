@@ -10,6 +10,7 @@
 #include "hot-reload/game-api.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace {
 
@@ -48,6 +49,12 @@ void MIMITA_GAME_CALL gameUpdateEffects(
         }
         if (effect.affectedByGravity)
             effect.velocity[2] -= (effect.gravity > 0.0f ? effect.gravity : 9.81f) * dt;
+        if (effect.drag > 0.0f) {
+            const float dragFactor = std::pow(std::max(0.0f, 1.0f - effect.drag), dt * 60.0f);
+            effect.velocity[0] *= dragFactor;
+            effect.velocity[1] *= dragFactor;
+            effect.velocity[2] *= dragFactor;
+        }
         if (effect.lifetime >= effect.maxLifetime)
             effect.alive = 0;
     }

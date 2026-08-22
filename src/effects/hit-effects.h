@@ -382,6 +382,7 @@ void spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitDirection,
                      const std::string& sourceId = "",
                      const std::string& targetId = "",
                      bool spawnDamageNumber = true);
+void spawnHitParticles(const HitBurstEffect& burst);
 
 void spawnMovementDashBurst(const glm::vec3& position, const glm::vec3& direction, float speed = 0.0f);
 void spawnGroundJumpBurst(const glm::vec3& position, const glm::vec3& direction);

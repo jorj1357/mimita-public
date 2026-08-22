@@ -13,10 +13,105 @@
 #include "effects/hit-effects.h"
 #include "debug/debug-log.h"
 #include "config.h"
+#include "world/texture-store.h"
 #include <algorithm>
 #include <cstdio>
 #include <glm/glm.hpp>
 #include <cstring>
+#include <vector>
+
+extern Renderer* gRenderer;
+
+namespace {
+
+struct TexturedParticleVertex {
+    glm::vec3 pos;
+    glm::vec2 uv;
+    glm::vec3 normal;
+    glm::vec4 color;
+};
+
+void drawTexturedHitParticles(const Camera& camera,
+                              const std::vector<TexturedParticleVertex>& vertices,
+                              const std::string& texturePath)
+{
+    if (vertices.empty() || texturePath.empty() || !gRenderer || !gRenderer->shaderProgram)
+        return;
+
+    static GLuint vao = 0;
+    static GLuint vbo = 0;
+    if (!vao) {
+        glGenVertexArrays(1, &vao);
+        glGenBuffers(1, &vbo);
+    }
+
+    const GLuint texture = gTextures.getPath(texturePath);
+    if (!texture)
+        return;
+
+    const GLuint shader = gRenderer->shaderProgram;
+    const glm::mat4 model(1.0f);
+    const glm::mat4 view = camera.getView();
+    const glm::mat4 projection = camera.getProj((float)gRenderer->width, (float)gRenderer->height);
+    const GLboolean cullWasEnabled = glIsEnabled(GL_CULL_FACE);
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_CULL_FACE);
+    glUseProgram(shader);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE, &model[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE, &view[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, GL_FALSE, &projection[0][0]);
+    glUniform1i(glGetUniformLocation(shader, "uUseColor"), 3);
+    glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture);
+
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(TexturedParticleVertex), vertices.data(), GL_DYNAMIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(TexturedParticleVertex), (void*)offsetof(TexturedParticleVertex, pos));
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(TexturedParticleVertex), (void*)offsetof(TexturedParticleVertex, uv));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(TexturedParticleVertex), (void*)offsetof(TexturedParticleVertex, normal));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(TexturedParticleVertex), (void*)offsetof(TexturedParticleVertex, color));
+    glEnableVertexAttribArray(3);
+    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)vertices.size());
+
+    glDepthMask(GL_TRUE);
+    if (cullWasEnabled)
+        glEnable(GL_CULL_FACE);
+}
+
+void appendTexturedHitParticle(std::vector<TexturedParticleVertex>& vertices,
+                               const Camera& camera, const EffectPart& effect,
+                               float size, float alpha)
+{
+    const float rotation = effect.rotation.z;
+    const float c = std::cos(rotation);
+    const float s = std::sin(rotation);
+    const glm::vec3 right = (camera.right * c + camera.up * s) * size;
+    const glm::vec3 up = (-camera.right * s + camera.up * c) * size;
+    const glm::vec3 normal = -camera.front;
+    const glm::vec4 color{effect.color.x, effect.color.y, effect.color.z, alpha};
+    const glm::vec3 bl = effect.position - right - up;
+    const glm::vec3 br = effect.position + right - up;
+    const glm::vec3 tr = effect.position + right + up;
+    const glm::vec3 tl = effect.position - right + up;
+
+    vertices.push_back({bl, {0.0f, 0.0f}, normal, color});
+    vertices.push_back({br, {1.0f, 0.0f}, normal, color});
+    vertices.push_back({tr, {1.0f, 1.0f}, normal, color});
+    vertices.push_back({bl, {0.0f, 0.0f}, normal, color});
+    vertices.push_back({tr, {1.0f, 1.0f}, normal, color});
+    vertices.push_back({tl, {0.0f, 1.0f}, normal, color});
+}
+
+} // namespace
 
 static float damageNumberOpacity(const DamageNumberConfig& cfg, float t, float distFade)
 {
@@ -108,6 +203,9 @@ static void drawDebrisBatch(const Camera& camera, const EffectPart& effect, floa
 }
 
 void EffectPartSystem::render(const Camera& camera) const {
+    std::vector<TexturedParticleVertex> texturedHitParticles;
+    texturedHitParticles.reserve(600);
+    std::string texturedHitParticlePath;
     for (const auto& effect : mPool) {
         if (!effect.alive) continue;
         if (effect.lifetime < 0.0f) continue;
@@ -168,6 +266,16 @@ void EffectPartSystem::render(const Camera& camera) const {
         float drawScale = effect.scale + (effect.endScale - effect.scale) * t;
         
         glm::vec4 drawColor{effect.color.x, effect.color.y, effect.color.z, alpha};
+
+        if (effect.replayType == "hitfx_particle" && !effect.texturePath.empty()) {
+            if (!texturedHitParticlePath.empty() && texturedHitParticlePath != effect.texturePath) {
+                drawTexturedHitParticles(camera, texturedHitParticles, texturedHitParticlePath);
+                texturedHitParticles.clear();
+            }
+            texturedHitParticlePath = effect.texturePath;
+            appendTexturedHitParticle(texturedHitParticles, camera, effect, drawScale, alpha);
+            continue;
+        }
         
         if (effect.beam) {
             // Beam width from thickness (interpolated), falling back to scale so
@@ -292,6 +400,8 @@ void EffectPartSystem::render(const Camera& camera) const {
                 glDisable(GL_DEPTH_TEST);
         }
     }
+
+    drawTexturedHitParticles(camera, texturedHitParticles, texturedHitParticlePath);
 
     for (const BloodParticle& particle : mBloodParticles) {
         const float dist = glm::length(particle.position - camera.pos);

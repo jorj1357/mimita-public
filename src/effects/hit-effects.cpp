@@ -165,6 +165,8 @@ void HitEffects::spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitDirecti
     ev.lifetime = (float)b.totalTicks / 60.0f;
     captureReplayEffect(ev);
 
+    spawnHitParticles(b);
+
     if (gConfig.legacyContactSphere.enabled) {
         EffectPart e;
         e.position = hitPoint;

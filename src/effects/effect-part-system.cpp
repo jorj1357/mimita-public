@@ -57,6 +57,7 @@ void EffectPartSystem::update(float dt) {
             state.lifetime = effect.lifetime;
             state.maxLifetime = effect.maxLifetime;
             state.gravity = effect.gravity;
+            state.drag = effect.drag;
             state.alive = effect.alive;
             state.sticky = effect.sticky;
             state.affectedByGravity = effect.affectedByGravity;
@@ -97,6 +98,8 @@ void EffectPartSystem::update(float dt) {
                 fx.position += fx.velocity * dt;
                 if (fx.affectedByGravity)
                     fx.velocity.z -= (fx.gravity > 0.0f ? fx.gravity : 9.81f) * dt;
+                if (fx.drag > 0.0f)
+                    fx.velocity *= std::pow(std::max(0.0f, 1.0f - fx.drag), dt * 60.0f);
             }
             if (glm::length(fx.angularVelocity) > 0.0f)
                 fx.rotation += fx.angularVelocity * dt;

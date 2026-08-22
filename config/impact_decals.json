@@ -6,7 +6,7 @@
     "minCount": 12,
     "coneDegrees": 35.0,
     "coneDistance": 24.0,
-    "radius": 1.0,
+    "radius": 3.0,
     "minRadius": 0.02,
     "height": 0.05,
     "color": [0.7, 0.01, 0.01],
@@ -29,7 +29,7 @@
       "darken_end_seconds": 25.0
     },
     "spray": {
-      "enabled": false,
+      "enabled": true,
       "minCount": 4,
       "maxCount": 40,
       "sizeMin": 0.15,

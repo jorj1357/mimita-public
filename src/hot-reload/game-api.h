@@ -15,7 +15,7 @@
 #define MIMITA_GAME_EXPORT extern "C"
 #endif
 
-static constexpr std::uint32_t MIMITA_GAME_API_VERSION = 1;
+static constexpr std::uint32_t MIMITA_GAME_API_VERSION = 2;
 
 struct GameEffectPartState {
     float position[3];
@@ -23,6 +23,7 @@ struct GameEffectPartState {
     float lifetime;
     float maxLifetime;
     float gravity;
+    float drag;
     std::uint8_t alive;
     std::uint8_t sticky;
     std::uint8_t affectedByGravity;

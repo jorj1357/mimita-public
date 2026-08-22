@@ -210,6 +210,10 @@ void main()
     if (uTexBreatheEnabled != 0)
         sampleUV = applyTexbreatheUV(vUV, breatheSeed, uTexBreatheTime);
     vec4 texel = texture(uTex, sampleUV);
+    if (uUseColor == 3) {
+        FragColor = vec4(texel.rgb * vDebugColor.rgb, texel.a * vDebugColor.a);
+        return;
+    }
     if (uCosmeticTextureEnabled != 0) {
         texel.rgb *= uCosmeticBrightness;
         texel.a *= uCosmeticOpacity;

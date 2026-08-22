@@ -18,11 +18,10 @@ extern HitFxConfig gConfig;
 extern bool gDashFXEnabled;
 extern bool gHitFxTraceEnabled;
 
-static void spawnParticles(const HitBurstEffect& b, int age)
+void HitEffects::spawnHitParticles(const HitBurstEffect& b)
 {
     const auto& cfg = gConfig.particles;
     if (!cfg.enabled) return;
-    if (age != 0) return;
 
     float coneRad = glm::radians(cfg.coneAngleDegrees);
     glm::vec3 baseDir = b.direction;
@@ -50,11 +49,13 @@ static void spawnParticles(const HitBurstEffect& b, int age)
         e.position = b.position;
         e.velocity = vel;
         e.color = glm::vec4(cfg.tintColor.x * cfg.brightness, cfg.tintColor.y * cfg.brightness, cfg.tintColor.z * cfg.brightness, cfg.alpha);
+        e.texturePath = cfg.texturePath;
         e.maxLifetime = (float)cfg.lifetimeTicks / 60.0f;
         e.scale = startSz;
         e.endScale = endSz;
         e.gravity = cfg.gravity;
-        e.thickness = cfg.drag;
+        e.drag = cfg.drag;
+        e.affectedByGravity = cfg.gravity > 0.0f;
         e.replayType = "hitfx_particle";
         EffectPartSystem::instance().spawn(e);
     }
