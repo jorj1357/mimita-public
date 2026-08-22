@@ -55,6 +55,13 @@ bool loadRotationSection(const json& j, MenuCharacterPreviewConfig& cfg)
     if (!j.contains("rotation") || !j["rotation"].is_object()) return false;
     const auto& r = j["rotation"];
     if (r.contains("enabled")) cfg.rotationEnabled = r["enabled"].get<bool>();
+    if (r.contains("axis") && r["axis"].is_string())
+    {
+        cfg.rotationAxis = r["axis"].get<std::string>();
+        for (char& c : cfg.rotationAxis) c = (char)std::tolower((unsigned char)c);
+        if (cfg.rotationAxis != "x" && cfg.rotationAxis != "y" && cfg.rotationAxis != "z")
+            cfg.rotationAxis = "z";
+    }
     if (r.contains("clockwise")) cfg.rotationClockwise = r["clockwise"].get<bool>();
     if (r.contains("pause_when_hovered")) cfg.rotationPauseWhenHovered = r["pause_when_hovered"].get<bool>();
     if (r.contains("reverse")) cfg.rotationReverse = r["reverse"].get<bool>();
@@ -172,6 +179,7 @@ static void printChanges(const MenuCharacterPreviewConfig& c, const MenuCharacte
     printSec("character", "initial_pitch", c.initialPitch, p.initialPitch);
     printSec("character", "initial_roll", c.initialRoll, p.initialRoll);
     printSec("rotation", "enabled", c.rotationEnabled, p.rotationEnabled);
+    printSec("rotation", "axis", c.rotationAxis, p.rotationAxis);
     printSec("rotation", "degrees_per_second", c.rotationDegreesPerSecond, p.rotationDegreesPerSecond);
     printSec("rotation", "clockwise", c.rotationClockwise, p.rotationClockwise);
     printSec("rotation", "start_angle", c.rotationStartAngle, p.rotationStartAngle);

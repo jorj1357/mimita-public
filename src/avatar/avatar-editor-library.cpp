@@ -76,15 +76,17 @@ void drawAvatarLibrary(GLFWwindow* win, float px, float py, float pw, float ph)
         UIRect bgScreen = {sx, sy, sw, sh};
         uiDrawRect(bgScreen, bgCol, "lib-thumb-bg");
 
-        uiDrawImageFit(fullPath.c_str(),
-                       {sx + uiScaleX((tileW - imageSize) * 0.5f),
-                        sy + uiScaleY(4.0f),
-                        uiScaleX(imageSize), uiScaleY(imageSize - 8.0f)},
-                       true);
+        UIRect imageRect = GuiCoordinateSystem::instance().designToScreen({
+            ix + (tileW - imageSize) * 0.5f,
+            iy + 4.0f,
+            imageSize,
+            imageSize - 8.0f
+        });
+        uiDrawImageFit(fullPath.c_str(), imageRect, true);
 
         if (isSelected) {
-            uiDrawRectOutline({bgScreen.x - 3.0f, bgScreen.y - 3.0f,
-                               bgScreen.w + 6.0f, bgScreen.h + 6.0f},
+            uiDrawRectOutline({bgScreen.x + 1.0f, bgScreen.y + 1.0f,
+                               bgScreen.w - 2.0f, bgScreen.h - 2.0f},
                               outlineSel + glm::vec4(0.2f, 0.0f, 0.0f, 0.0f), "lib-thumb-sel");
         }
         if (btn.hovered && !isSelected)

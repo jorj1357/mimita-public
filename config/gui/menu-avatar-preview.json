@@ -19,7 +19,7 @@
 
     "character": {
         "position": [0.0, 0.0, 0.0],
-        "rotation_degrees": [0.0, 0.0, -30.0],
+        "rotation_degrees": [0.0, 0.0, -0.0],
         "scale": [1.0, 1.0, 1.0],
         "initial_yaw": 0.0,
         "initial_pitch": 0.0,
@@ -28,11 +28,12 @@
 
     "rotation": {
         "enabled": true,
-        "degrees_per_second": 20.0,
-        "clockwise": true,
+        "axis": "z",
+        "degrees_per_second": 5.0,
+        "clockwise": false,
         "start_angle": 0.0,
         "pause_when_hovered": false,
-        "reverse": false,
+        "reverse": true,
         "acceleration": 0.0
     },
 

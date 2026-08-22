@@ -1,3 +1,13 @@
+// 08 21 2026, 12 00
+/* purpose
+* Orchestrates menu rendering, menu transitions, and menu-specific 3D previews.
+* Draws the avatar creator preview through the shared preview camera owner.
+* Preserves menu UI behavior while the avatar preview uses free look.
+* DOES NOT own avatar data, preview camera configuration, or terminal commands.
+* DOES NOT update gameplay camera movement.
+* DOES NOT persist avatar-creator free-look state.
+*/
+
 #include "gui-main.h"
 #include "menus/main-menu.h"
 #include "menus/menu-avatar-preview.h"
@@ -1108,6 +1118,8 @@ void guiMain(GLFWwindow* win, GameState& state)
             MenuAvatarPreview& av = MenuAvatarPreview::instance();
             av.pollHotReload();
             av.update(1.0f / 60.0f, glm::vec3(0.0f, 1.0f, 0.0f));
+            av.updateAvatarFreecamInput(win, 1.0f / 60.0f,
+                                        !Terminal::instance().isOpen());
 
             Player* previewPlayer = av.ensurePlayer();
             if (previewPlayer)
@@ -1151,35 +1163,15 @@ void guiMain(GLFWwindow* win, GameState& state)
                 // Position + rotate the preview character (idle animation runs
                 // in av.update above).
                 glm::vec3 basePos = cfg.characterPosition + cfg.modelOffset;
-                float yaw = cfg.characterRotationDeg.z + av.rotationAngle();
-                if (cfg.lookAtCamera) yaw = 180.0f + av.rotationAngle();
+                float yaw = cfg.characterRotationDeg.z;
+                if (cfg.rotationAxis == "z") yaw += av.rotationAngle();
+                if (cfg.lookAtCamera) yaw = 180.0f + (cfg.rotationAxis == "z" ? av.rotationAngle() : 0.0f);
                 previewPlayer->pos = basePos;
                 previewPlayer->yaw = yaw;
                 previewPlayer->meshScale = cfg.characterScale;
 
-                // Orbit camera (matches MenuAvatarPreview::setupCamera).
                 Camera previewCam;
-                previewCam.fov = cfg.cameraFOV;
-                float yawRad = glm::radians(av.rotationAngle() + cfg.orbitYaw);
-                float pitchRad = glm::radians(cfg.orbitPitch);
-                float dist = cfg.orbitDistance * cfg.zoom;
-                glm::vec3 orbitOffset(
-                    std::sin(yawRad) * std::cos(pitchRad) * dist,
-                    std::cos(yawRad) * std::cos(pitchRad) * dist,
-                    std::sin(pitchRad) * dist + cfg.orbitHeight
-                );
-                glm::vec3 offset = cfg.cameraPosition + orbitOffset;
-                float cosA = std::cos(yawRad);
-                float sinA = std::sin(yawRad);
-                glm::vec3 rotated(
-                    offset.x * cosA - offset.y * sinA,
-                    offset.x * sinA + offset.y * cosA,
-                    offset.z
-                );
-                previewCam.pos = cfg.cameraTarget + rotated;
-                previewCam.front = glm::normalize(cfg.cameraTarget - previewCam.pos);
-                previewCam.right = glm::normalize(glm::cross(previewCam.front, glm::vec3(0.0f, 0.0f, 1.0f)));
-                previewCam.up = glm::normalize(glm::cross(previewCam.right, previewCam.front));
+                av.setupCamera(previewCam, previewPlayer->pos, (int)vpW, (int)vpH, true);
 
                 renderPlayer(*previewPlayer, previewCam);
 

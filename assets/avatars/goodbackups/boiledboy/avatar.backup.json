@@ -1,0 +1,337 @@
+{
+  "advanced": {
+    "head_back": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "head_bottom": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "head_front": {
+      "offset_x": -24,
+      "offset_y": -49,
+      "rotation": -176.41983032226563,
+      "scale_x": 4.1450886726379395,
+      "scale_y": 2.911994457244873,
+      "texture": "boiledone.png"
+    },
+    "head_left": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "head_right": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "head_top": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "leftArm_back": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "leftArm_bottom": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "leftArm_front": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "leftArm_left": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "leftArm_right": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "leftArm_top": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "leftLeg_back": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "leftLeg_bottom": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "leftLeg_front": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "leftLeg_left": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "leftLeg_right": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "leftLeg_top": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "rightArm_back": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "rightArm_bottom": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "rightArm_front": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "rightArm_left": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "rightArm_right": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "rightArm_top": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "rightLeg_back": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "rightLeg_bottom": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "rightLeg_front": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "rightLeg_left": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "rightLeg_right": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "rightLeg_top": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "torso_back": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "torso_bottom": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "torso_front": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "torso_left": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "torso_right": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    },
+    "torso_top": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "boiledone (1).png"
+    }
+  },
+  "advanced_mode": true,
+  "avatar_id": "local_dec812ee1ac269ec",
+  "colors": {
+    "head": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "torso": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "cosmetics": [],
+  "created_at": "2026-08-21T18:22:19Z",
+  "format_version": 1,
+  "name": "boildedboy",
+  "simple": {
+    "face": "",
+    "pants": "",
+    "shirt": "",
+    "skin": ""
+  },
+  "updated_at": "2026-08-21T19:04:52Z"
+}

@@ -45,6 +45,9 @@ float gTabScrollX = 0.0f;
 DropdownState gAvatarLoadDropdown;
 std::vector<std::string> gAvatarLoadItems;
 UIRect gAvatarLoadRect{};
+DropdownState gPlayerModelDropdown;
+std::vector<std::string> gPlayerModelItems;
+UIRect gPlayerModelRect{};
 bool gSaveLoadInputActive = false;
 
 void appendAscii(char* buffer, size_t capacity, unsigned int codepoint)
@@ -64,6 +67,26 @@ void trimName(std::string& name)
     if (first == std::string::npos) { name.clear(); return; }
     const size_t last = name.find_last_not_of(" \t\r\n");
     name = name.substr(first, last - first + 1);
+}
+
+std::vector<std::string> scanPlayerModels()
+{
+    std::vector<std::string> result{"Default body model"};
+    const std::filesystem::path root("assets/entity/player");
+    std::error_code ec;
+    if (!std::filesystem::exists(root, ec))
+        return result;
+
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(root, ec)) {
+        if (ec) break;
+        if (!entry.is_regular_file(ec)) continue;
+        std::string ext = entry.path().extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (ext == ".glb")
+            result.push_back(entry.path().generic_string());
+    }
+    std::sort(result.begin() + 1, result.end());
+    return result;
 }
 
 bool cursorInDesignRect(GLFWwindow* win, UIRect designRect)
@@ -196,6 +219,37 @@ void drawSaveLoadTab(GLFWwindow* win, float px, float py, float pw, float ph)
                          {px, py + 350, buttonW, 34},
                          {0.35f,0.25f,0.45f,1}, avatarEditorButtonFontSize).clicked)
             av.undoEditorChange();
+
+        uiDrawText(editorLabelText("saveLoadBodyModelLabel", "Player body model").c_str(),
+                   uiScaleX(px), uiScaleY(py + 400),
+                   editorLabelFontSize("saveLoadBodyModelLabel", avatarEditorSectionFontSize),
+                   {0.4f,0.75f,0.55f,1});
+        gPlayerModelItems = scanPlayerModels();
+        int modelIndex = 0;
+        for (int i = 1; i < (int)gPlayerModelItems.size(); ++i)
+            if (gPlayerModelItems[i] == av.current().getPlayerModel()) modelIndex = i;
+        gPlayerModelDropdown.selectedIndex = modelIndex;
+        gPlayerModelRect = {px, py + 432, pw, 32};
+        drawDropdown(win, gPlayerModelDropdown, gPlayerModelRect.x, gPlayerModelRect.y,
+                     gPlayerModelRect.w, gPlayerModelRect.h, "", gPlayerModelItems);
+        uiDrawText(editorLabelText("saveLoadBodyModelHint", "Choose a GLB, then apply it to the preview.").c_str(),
+                   uiScaleX(px), uiScaleY(py + 470),
+                   editorLabelFontSize("saveLoadBodyModelHint", avatarEditorHintFontSize),
+                   {0.7f,0.75f,0.8f,1});
+        const GuiElement* applyModel = layout.get("applyBodyModelButton");
+        if (editorButton(win, editorLabelText("applyBodyModelButton", "Apply body model").c_str(),
+                         {px, py + 500, buttonW, 38}, layoutBg(applyModel, {0.25f,0.3f,0.5f,1}),
+                         editorFontSize(applyModel, avatarEditorButtonFontSize)).clicked) {
+            const int selected = gPlayerModelDropdown.selectedIndex;
+            if (selected == 0 || (selected > 0 && selected < (int)gPlayerModelItems.size())) {
+                const std::string path = selected == 0 ? "" : gPlayerModelItems[selected];
+                if (av.setPlayerModel(path)) {
+                    if (Player* previewPlayer = avatarEditorPreviewPlayer())
+                        av.applyToPlayer(*previewPlayer, true);
+                    avatarEditorApplyCosmeticsToPlayer();
+                }
+            }
+        }
     } else {
         uiDrawText(editorLabelText("saveLoadEmpty", "No valid avatar folders found.").c_str(), uiScaleX(px), uiScaleY(py + 260),
                    editorLabelFontSize("saveLoadEmpty", avatarEditorHintFontSize), {0.8f,0.6f,0.4f,1});
@@ -282,10 +336,10 @@ void avatarEditorHandleDrop(int count, const char** paths)
     for (int i = 0; i < count; ++i) {
         std::string ext = std::filesystem::path(paths[i]).extension().string();
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-        if (ext == ".png" && av.importPng(paths[i])) ++imported;
+        if ((ext == ".png" || ext == ".jpg" || ext == ".jpeg") && av.importPng(paths[i])) ++imported;
     }
     if (imported > 0) {
-        Terminal::instance().addLog("[AVATAR] Imported " + std::to_string(imported) + " PNG(s)");
+        Terminal::instance().addLog("[AVATAR] Imported " + std::to_string(imported) + " image(s)");
         av.triggerSave();
     }
 }
@@ -331,6 +385,10 @@ AvatarEditorResult drawAvatarEditor(GLFWwindow* win)
         if (selectedAvatar != av.currentName())
             avatarEditorLoadOutfit(selectedAvatar);
     }
+    drawDropdownOverlay(win, gPlayerModelDropdown,
+                        gPlayerModelRect.x, gPlayerModelRect.y,
+                        gPlayerModelRect.w, gPlayerModelRect.h,
+                        gPlayerModelItems);
 
     if (Player* previewPlayer = avatarEditorPreviewPlayer())
         av.finalizeAtlasIfReady(*previewPlayer);

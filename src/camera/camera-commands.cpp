@@ -1,3 +1,13 @@
+// 08 21 2026, 12 00
+/* purpose
+* Registers terminal commands that control camera behavior.
+* Exposes gameplay freecam and avatar-creator preview free-look controls.
+* Reports command outcomes through the shared terminal.
+* DOES NOT update camera transforms each frame or render preview cameras.
+* DOES NOT persist avatar free-look state to GUI JSON.
+* DOES NOT change gameplay camera state when freecamav is used.
+*/
+
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -6,11 +16,29 @@
 #include "config/player-settings.h"
 #include "config/camera-config.h"
 #include "replay/replay.h"
+#include "gui/menus/menu-avatar-preview.h"
 
 #include "physics/config.h"
 
 void registerCameraCommands()
 {
+    Terminal::instance().registerCommand({
+        "freecamav", "Enable or disable avatar-creator preview free look", "freecamav [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.size() > 1 || (!args.empty() && args[0] != "0" && args[0] != "1")) {
+                Terminal::instance().addLog("[AVATAR FREECAM] Usage: freecamav [0|1]");
+                return;
+            }
+            MenuAvatarPreview& preview = MenuAvatarPreview::instance();
+            bool enabled = args.empty() ? !preview.avatarFreecamEnabled() : args[0] == "1";
+            preview.setAvatarFreecam(enabled);
+            Terminal::instance().addLog(std::string("[AVATAR FREECAM] ") +
+                (enabled ? "enabled: WASD move, Q down, E up, mouse look"
+                         : "disabled: JSON orbit camera restored"));
+        },
+        "2026-08-21", CommandCategory::UI
+    });
+
     Terminal::instance().registerCommand({
         "freecam", "Detach or attach the gameplay camera", "freecam <0|1>",
         [](const std::vector<std::string>& args) {

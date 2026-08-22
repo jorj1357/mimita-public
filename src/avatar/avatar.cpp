@@ -710,6 +710,36 @@ void AvatarSystem::setPartFaceTransform(const std::string& part, const std::stri
     markAtlasDirty();
 }
 
+bool AvatarSystem::setPlayerModel(const std::string& path)
+{
+    if (path.empty()) {
+        mAvatar.playerModel.clear();
+        triggerSave();
+        return true;
+    }
+
+    std::filesystem::path modelPath(path);
+    std::error_code ec;
+    const std::filesystem::path playerRoot = std::filesystem::weakly_canonical("assets/entity/player", ec);
+    const std::filesystem::path requested = std::filesystem::weakly_canonical(modelPath, ec);
+    if (ec || !std::filesystem::is_regular_file(requested, ec) ||
+        requested.extension() != ".glb")
+        return false;
+
+    const auto relative = std::filesystem::relative(requested, playerRoot, ec);
+    const std::string relativeText = relative.generic_string();
+    if (ec || relative.empty() || relativeText == ".." ||
+        relativeText.rfind("../", 0) == 0)
+        return false;
+
+    const auto assetPath = std::filesystem::relative(requested, std::filesystem::current_path(), ec);
+    if (ec || assetPath.empty())
+        return false;
+    mAvatar.playerModel = assetPath.generic_string();
+    triggerSave();
+    return true;
+}
+
 void AvatarSystem::setBodypartOverride(Player& player, const std::string& part,
                                        const glm::vec3& offset,
                                        const glm::vec3& rotation,
@@ -871,7 +901,7 @@ std::vector<std::string> AvatarSystem::listPngs(const std::string& avatarName) c
         if (entry.is_regular_file()) {
             std::string ext = entry.path().extension().string();
             std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-            if (ext == ".png")
+            if (ext == ".png" || ext == ".jpg" || ext == ".jpeg")
                 result.push_back(entry.path().filename().string());
         }
     }

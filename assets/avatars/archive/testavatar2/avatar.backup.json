@@ -1,0 +1,92 @@
+{
+  "advanced": {
+    "head_back": "maxresdefault-2848529509.jpg",
+    "head_bottom": "maxresdefault-2848529509.jpg",
+    "head_front": {
+      "offset_x": 51,
+      "offset_y": -276,
+      "rotation": 178.84329223632813,
+      "scale_x": 4.9443159103393555,
+      "scale_y": 4.967150688171387,
+      "texture": "maxresdefault-2848529509.jpg"
+    },
+    "head_left": "maxresdefault-2848529509.jpg",
+    "head_right": "maxresdefault-2848529509.jpg",
+    "head_top": "maxresdefault-2848529509.jpg",
+    "leftArm_back": "maxresdefault-2848529509.jpg",
+    "leftArm_bottom": "maxresdefault-2848529509.jpg",
+    "leftArm_front": "maxresdefault-2848529509.jpg",
+    "leftArm_left": "maxresdefault-2848529509.jpg",
+    "leftArm_right": "maxresdefault-2848529509.jpg",
+    "leftArm_top": "maxresdefault-2848529509.jpg",
+    "leftLeg_back": "maxresdefault-2848529509.jpg",
+    "leftLeg_bottom": "maxresdefault-2848529509.jpg",
+    "leftLeg_front": "maxresdefault-2848529509.jpg",
+    "leftLeg_left": "maxresdefault-2848529509.jpg",
+    "leftLeg_right": "maxresdefault-2848529509.jpg",
+    "leftLeg_top": "maxresdefault-2848529509.jpg",
+    "rightArm_back": "maxresdefault-2848529509.jpg",
+    "rightArm_bottom": "maxresdefault-2848529509.jpg",
+    "rightArm_front": "maxresdefault-2848529509.jpg",
+    "rightArm_left": "maxresdefault-2848529509.jpg",
+    "rightArm_right": "maxresdefault-2848529509.jpg",
+    "rightArm_top": "maxresdefault-2848529509.jpg",
+    "rightLeg_back": "maxresdefault-2848529509.jpg",
+    "rightLeg_bottom": "maxresdefault-2848529509.jpg",
+    "rightLeg_front": "maxresdefault-2848529509.jpg",
+    "rightLeg_left": "maxresdefault-2848529509.jpg",
+    "rightLeg_right": "maxresdefault-2848529509.jpg",
+    "rightLeg_top": "maxresdefault-2848529509.jpg",
+    "torso_back": "maxresdefault-2848529509.jpg",
+    "torso_bottom": "maxresdefault-2848529509.jpg",
+    "torso_front": "maxresdefault-2848529509.jpg",
+    "torso_left": "maxresdefault-2848529509.jpg",
+    "torso_right": "maxresdefault-2848529509.jpg",
+    "torso_top": "maxresdefault-2848529509.jpg"
+  },
+  "advanced_mode": true,
+  "avatar_id": "local_dec812ee1ac269ec",
+  "colors": {
+    "head": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "torso": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "cosmetics": [],
+  "created_at": "2026-08-21T18:22:19Z",
+  "format_version": 1,
+  "name": "testavatar2",
+  "simple": {
+    "face": "",
+    "pants": "",
+    "shirt": "",
+    "skin": ""
+  },
+  "updated_at": "2026-08-21T18:30:13Z"
+}

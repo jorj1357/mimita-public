@@ -174,6 +174,7 @@ public:
                              const glm::vec3& rotation,
                              const glm::vec3& scale);
     void setAdvancedMode(bool v) { mAvatar.advancedMode = v; markAtlasDirty(); }
+    bool setPlayerModel(const std::string& path);
 
     void setPartColor(const std::string& part, const glm::vec3& color);
     glm::vec3 partColor(const std::string& part) const;

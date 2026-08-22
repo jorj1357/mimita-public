@@ -1,293 +1,41 @@
 {
   "advanced": {
-    "head_back": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "head_bottom": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "head_front": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "head_left": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "head_right": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "head_top": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "leftArm_back": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "leftArm_bottom": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "leftArm_front": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "leftArm_left": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "leftArm_right": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "leftArm_top": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "leftLeg_back": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "leftLeg_bottom": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "leftLeg_front": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "leftLeg_left": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "leftLeg_right": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "leftLeg_top": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "rightArm_back": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "rightArm_bottom": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "rightArm_front": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "rightArm_left": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "rightArm_right": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "rightArm_top": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "rightLeg_back": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "rightLeg_bottom": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "rightLeg_front": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "rightLeg_left": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "rightLeg_right": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "rightLeg_top": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "torso_back": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "torso_bottom": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "torso_front": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "torso_left": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "torso_right": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    },
-    "torso_top": {
-      "offset_x": 60,
-      "offset_y": 124,
-      "opacity": 0.9992350339889526,
-      "scale_x": 9.990864753723145,
-      "scale_y": 9.990864753723145,
-      "texture": "clown1.png"
-    }
+    "head_back": "",
+    "head_bottom": "",
+    "head_front": "",
+    "head_left": "",
+    "head_right": "",
+    "head_top": "",
+    "leftArm_back": "",
+    "leftArm_bottom": "",
+    "leftArm_front": "",
+    "leftArm_left": "",
+    "leftArm_right": "",
+    "leftArm_top": "",
+    "leftLeg_back": "",
+    "leftLeg_bottom": "",
+    "leftLeg_front": "",
+    "leftLeg_left": "",
+    "leftLeg_right": "",
+    "leftLeg_top": "",
+    "rightArm_back": "",
+    "rightArm_bottom": "",
+    "rightArm_front": "",
+    "rightArm_left": "",
+    "rightArm_right": "",
+    "rightArm_top": "",
+    "rightLeg_back": "",
+    "rightLeg_bottom": "",
+    "rightLeg_front": "",
+    "rightLeg_left": "",
+    "rightLeg_right": "",
+    "rightLeg_top": "",
+    "torso_back": "",
+    "torso_bottom": "",
+    "torso_front": "",
+    "torso_left": "",
+    "torso_right": "",
+    "torso_top": ""
   },
   "advanced_mode": true,
   "avatar_id": "local_cb3b330533cf64d6",
@@ -427,7 +175,53 @@
       1.0
     ]
   },
-  "cosmetics": [],
+  "cosmetics": [
+    {
+      "anchor_part": "torso",
+      "attachTo": "torso",
+      "choice": "clown1.glb",
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "enabled": true,
+      "glb": "clown1.glb",
+      "id": "clown1.glb",
+      "offset": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "",
+      "texture": {
+        "brightness": 1.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "image": "",
+        "offset_x": 0.0,
+        "offset_y": 0.0,
+        "opacity": 1.0,
+        "rotation": 0.0,
+        "scale_x": 1.0,
+        "scale_y": 1.0
+      },
+      "type": ""
+    }
+  ],
   "created_at": "2026-07-10T18:44:15Z",
   "format_version": 1,
   "name": "jorj1357",
@@ -438,5 +232,5 @@
     "shirt": "",
     "skin": ""
   },
-  "updated_at": "2026-08-20T18:14:34Z"
+  "updated_at": "2026-08-21T18:20:43Z"
 }

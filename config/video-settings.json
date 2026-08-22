@@ -1,5 +1,5 @@
 {
-  "fullscreen": true,
+  "fullscreen": false,
   "height": 768,
   "maxFrames": 999,
   "resolution_index": 2,

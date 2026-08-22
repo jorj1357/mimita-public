@@ -65,11 +65,12 @@ std::string uniquePath(const std::string& basePath, const std::string& filename)
 
 bool AvatarSystem::importPng(const std::string& sourcePath)
 {
+    // TODO: rename this legacy function to importImage over time; it now accepts PNG and JPEG files.
     if (mAvatarName.empty() || !mHasAvatar) return false;
     if (!std::filesystem::exists(sourcePath)) return false;
     std::string ext = std::filesystem::path(sourcePath).extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-    if (ext != ".png") return false;
+    if (ext != ".png" && ext != ".jpg" && ext != ".jpeg") return false;
 
     std::string destDir = avatarPath(mAvatarName);
     std::filesystem::create_directories(destDir);

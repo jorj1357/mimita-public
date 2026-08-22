@@ -1,10 +1,21 @@
+// 08 21 2026, 12 00
+/* purpose
+* Owns configuration and transient camera state for menu avatar previews.
+* Provides the avatar-creator-specific free-look camera without affecting gameplay.
+* Shares the preview player between the main menu and avatar editor.
+* DOES NOT own gameplay camera state, terminal command registration, or avatar data.
+* DOES NOT persist free-look camera transforms to GUI JSON.
+* DOES NOT render the avatar editor user interface.
+*/
+
 #pragma once
 
 #include <string>
 #include <glm/glm.hpp>
+#include "camera.h"
 
 struct Player;
-class Camera;
+struct GLFWwindow;
 
 struct MenuCharacterPreviewConfig
 {
@@ -36,6 +47,7 @@ struct MenuCharacterPreviewConfig
 
     // Auto-rotation
     bool rotationEnabled = true;
+    std::string rotationAxis = "z";
     float rotationDegreesPerSecond = 120.0f;
     bool rotationClockwise = true;
     float rotationStartAngle = 0.0f;
@@ -94,6 +106,11 @@ public:
 
     const MenuCharacterPreviewConfig& config() const { return mConfig; }
     float rotationAngle() const { return mRotationAngle; }
+    void setAvatarFreecam(bool enabled);
+    bool avatarFreecamEnabled() const { return mAvatarFreecamEnabled; }
+    void updateAvatarFreecamInput(GLFWwindow* window, float dt, bool acceptsInput);
+    void setupCamera(Camera& cam, const glm::vec3& target, int vpW, int vpH,
+                     bool allowAvatarFreecam = false) const;
 
 public:
     static void printMenuPreviewConfig(const MenuCharacterPreviewConfig& c, const MenuCharacterPreviewConfig& p, bool first);
@@ -102,7 +119,7 @@ private:
     MenuAvatarPreview() = default;
 
     void computeViewport(int fbW, int fbH, int& vpX, int& vpY, int& vpW, int& vpH) const;
-    void setupCamera(Camera& cam, const glm::vec3& target, int vpW, int vpH);
+    void setupOrbitCamera(Camera& cam) const;
     void printChangedConfig(const MenuCharacterPreviewConfig& prev);
 
     Player* mPlayer = nullptr;
@@ -113,4 +130,6 @@ private:
     float mRotationAngle = 0.0f;
     int mHotReloadCount = 0;
     bool mFirstLoad = true;
+    bool mAvatarFreecamEnabled = false;
+    Camera mAvatarFreecamCamera;
 };

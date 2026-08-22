@@ -17,14 +17,17 @@
 #include "gui/hud/player-nameplates.h"
 #include "auth/auth-system.h"
 #include "config.h"
+#include "config/player-settings.h"
 #include "debug/debug-log.h"
 #include "vip/vip-name-render.h"
 
 #include <cstdio>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <chrono>
 #include <nlohmann/json.hpp>
+#include <GLFW/glfw3.h>
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -161,9 +164,8 @@ void MenuAvatarPreview::computeViewport(int fbW, int fbH, int& vpX, int& vpY, in
     vpX += (int)(mConfig.offsetX * scaleX);
     vpY = (fbH - vpH) / 2 + (int)(mConfig.offsetY * scaleY);
 }
-void MenuAvatarPreview::setupCamera(Camera& cam, const glm::vec3& target, int vpW, int vpH)
+void MenuAvatarPreview::setupOrbitCamera(Camera& cam) const
 {
-    (void)target; (void)vpW; (void)vpH;
     cam.fov = mConfig.cameraFOV;
 
     float yawRad = glm::radians(mRotationAngle + mConfig.orbitYaw);
@@ -176,19 +178,83 @@ void MenuAvatarPreview::setupCamera(Camera& cam, const glm::vec3& target, int vp
     );
 
     glm::vec3 offset = mConfig.cameraPosition + orbitOffset;
-    float cosA = std::cos(yawRad);
-    float sinA = std::sin(yawRad);
-    glm::vec3 rotated(
-        offset.x * cosA - offset.y * sinA,
-        offset.x * sinA + offset.y * cosA,
-        offset.z
-    );
+    glm::vec3 rotationAxis(0.0f, 0.0f, 1.0f);
+    if (mConfig.rotationAxis == "x") rotationAxis = glm::vec3(1.0f, 0.0f, 0.0f);
+    if (mConfig.rotationAxis == "y") rotationAxis = glm::vec3(0.0f, 1.0f, 0.0f);
+    glm::vec3 rotated = glm::rotate(glm::mat4(1.0f), glm::radians(mRotationAngle), rotationAxis)
+        * glm::vec4(offset, 1.0f);
 
     cam.pos = mConfig.cameraTarget + rotated;
     glm::vec3 lookTarget = mConfig.cameraTarget;
     cam.front = glm::normalize(lookTarget - cam.pos);
     cam.right = glm::normalize(glm::cross(cam.front, glm::vec3(0.0f, 0.0f, 1.0f)));
     cam.up = glm::normalize(glm::cross(cam.right, cam.front));
+}
+
+void MenuAvatarPreview::setupCamera(Camera& cam, const glm::vec3& target, int vpW, int vpH,
+                                    bool allowAvatarFreecam) const
+{
+    (void)target;
+    (void)vpW;
+    (void)vpH;
+    if (allowAvatarFreecam && mAvatarFreecamEnabled) {
+        cam = mAvatarFreecamCamera;
+        return;
+    }
+    setupOrbitCamera(cam);
+}
+
+void MenuAvatarPreview::setAvatarFreecam(bool enabled)
+{
+    if (enabled && !mAvatarFreecamEnabled) {
+        setupOrbitCamera(mAvatarFreecamCamera);
+        mAvatarFreecamCamera.yaw = glm::degrees(std::atan2(
+            mAvatarFreecamCamera.front.y, mAvatarFreecamCamera.front.x));
+        mAvatarFreecamCamera.pitch = glm::degrees(std::asin(
+            glm::clamp(mAvatarFreecamCamera.front.z, -1.0f, 1.0f)));
+        mAvatarFreecamCamera.firstMouse = true;
+    }
+    mAvatarFreecamEnabled = enabled;
+}
+
+void MenuAvatarPreview::updateAvatarFreecamInput(GLFWwindow* window, float dt, bool acceptsInput)
+{
+    if (!window || !mAvatarFreecamEnabled) return;
+    if (!acceptsInput) {
+        if (glfwGetInputMode(window, GLFW_CURSOR) != GLFW_CURSOR_NORMAL)
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        mAvatarFreecamCamera.firstMouse = true;
+        return;
+    }
+
+    if (glfwGetInputMode(window, GLFW_CURSOR) != GLFW_CURSOR_DISABLED) {
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        mAvatarFreecamCamera.firstMouse = true;
+    }
+
+    double mouseX = 0.0, mouseY = 0.0;
+    glfwGetCursorPos(window, &mouseX, &mouseY);
+    mAvatarFreecamCamera.updateMouse(mouseX, mouseY);
+
+    glm::vec3 flatForward = mAvatarFreecamCamera.front;
+    flatForward.z = 0.0f;
+    if (glm::length(flatForward) > 0.001f)
+        flatForward = glm::normalize(flatForward);
+    glm::vec3 flatRight = glm::normalize(glm::cross(flatForward, glm::vec3(0.0f, 0.0f, 1.0f)));
+    glm::vec3 move(0.0f);
+    float speed = GetPlayerSettings().freecamSpeed;
+    if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
+        glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS) speed *= 3.0f;
+    if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+        glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS) speed *= 0.3f;
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) move += flatForward;
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) move -= flatForward;
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) move += flatRight;
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) move -= flatRight;
+    if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) move.z += 1.0f;
+    if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) move.z -= 1.0f;
+    if (glm::length(move) > 0.001f)
+        mAvatarFreecamCamera.pos += glm::normalize(move) * speed * dt;
 }
 void MenuAvatarPreview::update(float dt, const glm::vec3& camForward)
 {
@@ -282,7 +348,8 @@ void MenuAvatarPreview::draw(int fbW, int fbH)
     if (!p) return;
 
     glm::vec3 basePos = mConfig.characterPosition + mConfig.modelOffset;
-    float yaw = mConfig.characterRotationDeg.z + mRotationAngle;
+    float yaw = mConfig.characterRotationDeg.z;
+    if (mConfig.rotationAxis == "z") yaw += mRotationAngle;
     if (mConfig.lookAtCamera) yaw = 180.0f + mRotationAngle;
 
     p->pos = basePos;

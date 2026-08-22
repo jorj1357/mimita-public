@@ -463,6 +463,12 @@ void AvatarSystem::finalizeAtlasIfReady(Player& player) {
     // Discard stale pending atlas if a synchronous build happened since build was requested
     if (mPendingAtlasGeneration != mAtlasGeneration) {
         mPendingAtlas.reset();
+        // The edit that made this result stale may have happened while the
+        // worker was running.  Start a replacement immediately from the
+        // newest in-memory avatar instead of leaving the preview on the old
+        // atlas or blocking future requests behind the completed result.
+        mAtlasThreadRunning = false;
+        requestAtlasBuild(player);
         return;
     }
 

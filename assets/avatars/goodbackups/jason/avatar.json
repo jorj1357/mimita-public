@@ -1,0 +1,449 @@
+{
+  "advanced": {
+    "head_back": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 1.9300868511199951,
+      "scale_y": 0.6513233184814453,
+      "texture": "Screenshot 2026-08-21 203108.png"
+    },
+    "head_bottom": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 1.9300868511199951,
+      "scale_y": 0.6513233184814453,
+      "texture": "Screenshot 2026-08-21 203108.png"
+    },
+    "head_front": {
+      "offset_x": 14,
+      "offset_y": 24,
+      "rotation": 161.49322509765625,
+      "scale_x": 1.22219979763031,
+      "scale_y": 1.9757568836212158,
+      "texture": "Screenshot 2026-08-21 202934.png"
+    },
+    "head_left": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 1.9300868511199951,
+      "scale_y": 0.6513233184814453,
+      "texture": "Screenshot 2026-08-21 203108.png"
+    },
+    "head_right": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 1.9300868511199951,
+      "scale_y": 0.6513233184814453,
+      "texture": "Screenshot 2026-08-21 203108.png"
+    },
+    "head_top": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 1.9300868511199951,
+      "scale_y": 0.6513233184814453,
+      "texture": "Screenshot 2026-08-21 203108.png"
+    },
+    "leftArm_back": {
+      "brightness": 9.981637954711914,
+      "contrast": 1.0212666988372803,
+      "offset_x": -8,
+      "offset_y": -3,
+      "opacity": 0.9923501014709473,
+      "rotation": -74.79805755615234,
+      "saturation": -0.024480819702148438,
+      "scale_x": 1.9300868511199951,
+      "scale_y": 2.341118097305298,
+      "texture": "Screenshot 2026-08-21 203251.png"
+    },
+    "leftArm_bottom": {
+      "brightness": 9.981637954711914,
+      "contrast": 1.0212666988372803,
+      "offset_x": -8,
+      "offset_y": -3,
+      "opacity": 0.9923501014709473,
+      "rotation": -74.79805755615234,
+      "saturation": -0.024480819702148438,
+      "scale_x": 1.9300868511199951,
+      "scale_y": 2.341118097305298,
+      "texture": "Screenshot 2026-08-21 203251.png"
+    },
+    "leftArm_front": {
+      "brightness": 9.981637954711914,
+      "contrast": 1.0212666988372803,
+      "offset_x": -8,
+      "offset_y": -3,
+      "opacity": 0.9923501014709473,
+      "rotation": -74.79805755615234,
+      "saturation": -0.024480819702148438,
+      "scale_x": 1.9300868511199951,
+      "scale_y": 2.341118097305298,
+      "texture": "Screenshot 2026-08-21 203251.png"
+    },
+    "leftArm_left": {
+      "brightness": 9.981637954711914,
+      "contrast": 1.0212666988372803,
+      "offset_x": -8,
+      "offset_y": -3,
+      "opacity": 0.9923501014709473,
+      "rotation": -74.79805755615234,
+      "saturation": -0.024480819702148438,
+      "scale_x": 1.9300868511199951,
+      "scale_y": 2.341118097305298,
+      "texture": "Screenshot 2026-08-21 203251.png"
+    },
+    "leftArm_right": {
+      "brightness": 9.981637954711914,
+      "contrast": 1.0212666988372803,
+      "offset_x": -8,
+      "offset_y": -3,
+      "opacity": 0.9923501014709473,
+      "rotation": -74.79805755615234,
+      "saturation": -0.024480819702148438,
+      "scale_x": 1.9300868511199951,
+      "scale_y": 2.341118097305298,
+      "texture": "Screenshot 2026-08-21 203251.png"
+    },
+    "leftArm_top": {
+      "brightness": 9.981637954711914,
+      "contrast": 1.0212666988372803,
+      "offset_x": -8,
+      "offset_y": -3,
+      "opacity": 0.9923501014709473,
+      "rotation": -74.79805755615234,
+      "saturation": -0.024480819702148438,
+      "scale_x": 1.9300868511199951,
+      "scale_y": 2.341118097305298,
+      "texture": "Screenshot 2026-08-21 203251.png"
+    },
+    "leftLeg_back": {
+      "brightness": 3.922886848449707,
+      "offset_x": -464,
+      "offset_y": -278,
+      "rotation": 43.34759521484375,
+      "scale_x": 0.08044663816690445,
+      "scale_y": 1.9757568836212158,
+      "texture": "Screenshot 2026-08-21 203613.png"
+    },
+    "leftLeg_bottom": {
+      "brightness": 3.922886848449707,
+      "offset_x": -464,
+      "offset_y": -278,
+      "rotation": 43.34759521484375,
+      "scale_x": 0.08044663816690445,
+      "scale_y": 1.9757568836212158,
+      "texture": "Screenshot 2026-08-21 203613.png"
+    },
+    "leftLeg_front": {
+      "brightness": 3.922886848449707,
+      "offset_x": -464,
+      "offset_y": -278,
+      "rotation": 43.34759521484375,
+      "scale_x": 0.08044663816690445,
+      "scale_y": 1.9757568836212158,
+      "texture": "Screenshot 2026-08-21 203613.png"
+    },
+    "leftLeg_left": {
+      "brightness": 3.922886848449707,
+      "offset_x": -464,
+      "offset_y": -278,
+      "rotation": 43.34759521484375,
+      "scale_x": 0.08044663816690445,
+      "scale_y": 1.9757568836212158,
+      "texture": "Screenshot 2026-08-21 203613.png"
+    },
+    "leftLeg_right": {
+      "brightness": 3.922886848449707,
+      "offset_x": -464,
+      "offset_y": -278,
+      "rotation": 43.34759521484375,
+      "scale_x": 0.08044663816690445,
+      "scale_y": 1.9757568836212158,
+      "texture": "Screenshot 2026-08-21 203613.png"
+    },
+    "leftLeg_top": {
+      "brightness": 3.922886848449707,
+      "offset_x": -464,
+      "offset_y": -278,
+      "rotation": 43.34759521484375,
+      "scale_x": 0.08044663816690445,
+      "scale_y": 1.9757568836212158,
+      "texture": "Screenshot 2026-08-21 203613.png"
+    },
+    "rightArm_back": {
+      "brightness": 6.126070022583008,
+      "contrast": 1.0212666988372803,
+      "offset_x": 131,
+      "offset_y": 1,
+      "opacity": 0.9923501014709473,
+      "rotation": -73.14566040039063,
+      "saturation": -0.024480819702148438,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 2.158437490463257,
+      "stretch_mode": "crop",
+      "texture": "Screenshot 2026-08-21 203251.png"
+    },
+    "rightArm_bottom": {
+      "brightness": 6.126070022583008,
+      "contrast": 1.0212666988372803,
+      "offset_x": 131,
+      "offset_y": 1,
+      "opacity": 0.9923501014709473,
+      "rotation": -73.14566040039063,
+      "saturation": -0.024480819702148438,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 2.158437490463257,
+      "stretch_mode": "crop",
+      "texture": "Screenshot 2026-08-21 203251.png"
+    },
+    "rightArm_front": {
+      "brightness": 6.126070022583008,
+      "contrast": 1.0212666988372803,
+      "offset_x": 131,
+      "offset_y": 1,
+      "opacity": 0.9923501014709473,
+      "rotation": -73.14566040039063,
+      "saturation": -0.024480819702148438,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 2.158437490463257,
+      "stretch_mode": "crop",
+      "texture": "Screenshot 2026-08-21 203251.png"
+    },
+    "rightArm_left": {
+      "brightness": 6.126070022583008,
+      "contrast": 1.0212666988372803,
+      "offset_x": 131,
+      "offset_y": 1,
+      "opacity": 0.9923501014709473,
+      "rotation": -73.14566040039063,
+      "saturation": -0.024480819702148438,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 2.158437490463257,
+      "stretch_mode": "crop",
+      "texture": "Screenshot 2026-08-21 203251.png"
+    },
+    "rightArm_right": {
+      "brightness": 6.126070022583008,
+      "contrast": 1.0212666988372803,
+      "offset_x": 131,
+      "offset_y": 1,
+      "opacity": 0.9923501014709473,
+      "rotation": -73.14566040039063,
+      "saturation": -0.024480819702148438,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 2.158437490463257,
+      "stretch_mode": "crop",
+      "texture": "Screenshot 2026-08-21 203251.png"
+    },
+    "rightArm_top": {
+      "brightness": 6.126070022583008,
+      "contrast": 1.0212666988372803,
+      "offset_x": 131,
+      "offset_y": 1,
+      "opacity": 0.9923501014709473,
+      "rotation": -73.14566040039063,
+      "saturation": -0.024480819702148438,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 2.158437490463257,
+      "stretch_mode": "crop",
+      "texture": "Screenshot 2026-08-21 203251.png"
+    },
+    "rightLeg_back": {
+      "brightness": 5.621173858642578,
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 0.08044663816690445,
+      "scale_y": 2.843489408493042,
+      "texture": "Screenshot 2026-08-21 203613.png"
+    },
+    "rightLeg_bottom": {
+      "brightness": 5.621173858642578,
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 0.08044663816690445,
+      "scale_y": 2.843489408493042,
+      "texture": "Screenshot 2026-08-21 203613.png"
+    },
+    "rightLeg_front": {
+      "brightness": 5.621173858642578,
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 0.08044663816690445,
+      "scale_y": 2.843489408493042,
+      "texture": "Screenshot 2026-08-21 203613.png"
+    },
+    "rightLeg_left": {
+      "brightness": 5.621173858642578,
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 0.08044663816690445,
+      "scale_y": 2.843489408493042,
+      "texture": "Screenshot 2026-08-21 203613.png"
+    },
+    "rightLeg_right": {
+      "brightness": 5.621173858642578,
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 0.08044663816690445,
+      "scale_y": 2.843489408493042,
+      "texture": "Screenshot 2026-08-21 203613.png"
+    },
+    "rightLeg_top": {
+      "brightness": 5.621173858642578,
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 0.08044663816690445,
+      "scale_y": 2.843489408493042,
+      "texture": "Screenshot 2026-08-21 203613.png"
+    },
+    "torso_back": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.10328170657157898,
+      "texture": "Screenshot 2026-08-21 203251.png"
+    },
+    "torso_bottom": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.10328170657157898,
+      "texture": "Screenshot 2026-08-21 203251.png"
+    },
+    "torso_front": {
+      "offset_x": -28,
+      "offset_y": -31,
+      "rotation": 178.84329223632813,
+      "scale_x": 0.08044663816690445,
+      "scale_y": 0.08044663816690445,
+      "texture": "Screenshot 2026-08-21 203159.png"
+    },
+    "torso_left": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.10328170657157898,
+      "texture": "Screenshot 2026-08-21 203251.png"
+    },
+    "torso_right": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.10328170657157898,
+      "texture": "Screenshot 2026-08-21 203251.png"
+    },
+    "torso_top": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.10328170657157898,
+      "texture": "Screenshot 2026-08-21 203251.png"
+    }
+  },
+  "advanced_mode": true,
+  "avatar_id": "local_dec812ee1ac269ec",
+  "colors": {
+    "head": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "torso": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "cosmetics": [
+    {
+      "anchor_part": "head",
+      "attachTo": "head",
+      "choice": "jason1.glb",
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "enabled": true,
+      "glb": "jason1.glb",
+      "id": "jason1.glb",
+      "offset": [
+        0.33200693130493164,
+        0.26315736770629883,
+        0.03365945816040039
+      ],
+      "rotation": [
+        87.9620361328125,
+        166.45040893554688,
+        91.26678466796875
+      ],
+      "scale": [
+        1.0307602882385254,
+        0.9966797828674316,
+        0.9625992774963379
+      ],
+      "slot": "",
+      "texture": {
+        "brightness": 4.827110767364502,
+        "color": [
+          2.555079221725464,
+          2.578029155731201,
+          2.0501832962036133
+        ],
+        "image": "hairsides.png",
+        "offset_x": -998.4700317382813,
+        "offset_y": -998.4700317382813,
+        "opacity": 1.0,
+        "rotation": 51.4993782043457,
+        "scale_x": 1.3820452690124512,
+        "scale_y": 0.9253441095352173
+      },
+      "type": ""
+    }
+  ],
+  "created_at": "2026-08-21T18:22:19Z",
+  "format_version": 1,
+  "name": "jason",
+  "simple": {
+    "face": "",
+    "pants": "",
+    "shirt": "",
+    "skin": ""
+  },
+  "updated_at": "2026-08-21T20:39:34Z"
+}
