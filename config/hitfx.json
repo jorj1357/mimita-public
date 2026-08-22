@@ -19,8 +19,8 @@
             "name": "white_initial",
             "startTick": 1,
             "endTick": 2,
-            "startRadius": 2.5,
-            "endRadius": 2.5,
+            "startRadius": 1.0,
+            "endRadius": 1.0,
             "colorStart": [1.0, 1.0, 1.0],
             "colorEnd": [1.0, 1.0, 1.0],
             "alphaStart": 1.0,
@@ -32,8 +32,8 @@
             "name": "bright_blue_pop",
             "startTick": 2,
             "endTick": 3,
-            "startRadius": 2.4,
-            "endRadius": 2.4,
+            "startRadius": 0.9,
+            "endRadius": 0.9,
             "colorStart": [0.45, 0.85, 1.0],
             "colorEnd": [0.25, 0.65, 1.0],
             "alphaStart": 0.95,
@@ -45,8 +45,8 @@
             "name": "dark_blue_expand",
             "startTick": 3,
             "endTick": 10,
-            "startRadius": 2.3,
-            "endRadius": 2.3,
+            "startRadius": 0.8,
+            "endRadius": 0.8,
             "colorStart": [0.05, 0.25, 1.0],
             "colorEnd": [0.0, 0.04, 0.35],
             "alphaStart": 0.75,
@@ -57,10 +57,10 @@
     ],
 
     "particles": {
-        "enabled": false,
-        "texturePath": "assets/textures/blood v1.png",
+        "enabled": true,
+        "texturePath": "assets/textures/bloodv1.png",
         "tintColor": [1.0, 1.0, 1.0],
-        "alpha": 0.85,
+        "alpha": 1.05,
         "brightness": 2.0,
 
         "count": 100,
@@ -69,25 +69,25 @@
         "coneAngleDegrees": 35.0,
         "speed": 5.0,
         "speedRandomness": 1.5,
-        "sizeStart": 0.04,
+        "sizeStart": 1.04,
         "sizeEnd": 0.12,
 
         "drag": 0.05,
-        "gravity": 0.0,
+        "gravity": 10.0,
 
         "spawnDirection": "hit_direction"
     },
 
     "directionalShapes": {
         "elongatedSphere": {
-            "enabled": true,
+            "enabled": false,
             "alignToHitDirection": true,
             "startTick": 1,
-            "endTick": 122,
+            "endTick": 222,
             "lengthStart": 0.15,
-            "lengthEnd": 1.0,
+            "lengthEnd": 10.0,
             "radiusStart": 0.08,
-            "radiusEnd": 0.25,
+            "radiusEnd": 0.08,
             "colorStart": [1.0, 1.0, 1.0],
             "colorEnd": [0.1, 0.35, 1.0],
             "alphaStart": 0.9,
@@ -271,13 +271,13 @@
         "rotation_offset_degrees": [0.0, 0.0, 90.0],
         "length": 0.2,
         "radius": 0.5,
-        "color": [1.0, 0.3, 0.3],
+        "color": [1.0, 0.01, 0.01],
         "alpha": 0.5,
         "lifetime": 0.5
     },
 
     "entityImpact": {
-        "enabled": false,
+        "enabled": true,
         "color": [0.9, 0.02, 0.02],
         "lifetime": 0.01,
         "startRadius": 2.0,
@@ -294,7 +294,7 @@
     },
 
     "worldDebris": {
-        "enabled": true,
+        "enabled": false,
         "count": 24,
         "color": [0.42, 0.40, 0.38],
         "surfaceOffset": 0.02,
