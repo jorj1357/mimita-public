@@ -2,12 +2,12 @@
   "enabled": true,
   "blood": {
     "enabled": true,
-    "count": 24,
-    "minCount": 12,
+    "count": 12,
+    "minCount": 6,
     "coneDegrees": 35.0,
     "coneDistance": 24.0,
-    "radius": 3.0,
-    "minRadius": 0.02,
+    "radius": 2.0,
+    "minRadius": 0.01,
     "height": 0.05,
     "color": [0.7, 0.01, 0.01],
     "colorVariation": 0.55,
@@ -26,10 +26,10 @@
       "start_color": [0.7, 0.0, 0.0],
       "end_color": [0.1, 0.0, 0.0],
       "darken_start_seconds": 0.01,
-      "darken_end_seconds": 25.0
+      "darken_end_seconds": 4.0
     },
     "spray": {
-      "enabled": true,
+      "enabled": false,
       "minCount": 4,
       "maxCount": 40,
       "sizeMin": 0.15,

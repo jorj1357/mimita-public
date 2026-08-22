@@ -14,15 +14,15 @@
   },
   "revolver": {
     "thickness": 0.1,
-    "end_thickness": 0.0,
-    "lifetime": 0.5,
+    "end_thickness": 0.1,
+    "lifetime": 0.1,
     "color": [1.0, 0.82, 0.05]
   },
   "shotgun": {
     "thickness": 0.1,
-    "end_thickness": 0.0,
-    "lifetime": 0.5,
-    "color": [1.0, 0.6, 0.1]
+    "end_thickness": 0.1,
+    "lifetime": 0.1,
+    "color": [1.0, 0.4, 0.1]
   },
   "aa12": {
     "thickness": 0.15,

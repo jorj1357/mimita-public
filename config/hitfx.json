@@ -57,7 +57,7 @@
     ],
 
     "particles": {
-        "enabled": true,
+        "enabled": false,
         "texturePath": "assets/textures/bloodv1.png",
         "tintColor": [1.0, 1.0, 1.0],
         "alpha": 0.7,
@@ -166,12 +166,12 @@
         "italic": true
     },
     "deathEllipsoid": {
-        "enabled": true,
+        "enabled": false,
         "lifetime": 1.0,
         "length": 32.0,
         "radius": 1.5,
-        "baseAlpha": 0.35,
-        "color": [1.0, 0.0, 0.0, 0.75],
+        "baseAlpha": 0.9,
+        "color": [0.0, 0.0, 0.0, 0.9],
         "fade": true
     },
 

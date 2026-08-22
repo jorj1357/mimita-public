@@ -58,7 +58,7 @@
     "fire_mode": "semi_auto",
     "behavior_type": "hitscan",
     "hitscan": true,
-    "beam_thickness": 2.0,
+    "beam_thickness": 1.5,
     "beam_world_thickness": 0.0,
     "uses_physics_projectile": false,
     "sound": {
@@ -224,7 +224,7 @@
     "fire_mode": "semi_auto",
     "behavior_type": "hitscan",
     "hitscan": true,
-    "beam_thickness": 2.0,
+    "beam_thickness": 1.5,
     "beam_world_thickness": 0.0,
     "uses_physics_projectile": false,
     "sound": {

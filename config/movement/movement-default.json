@@ -30,7 +30,7 @@
     "stationary_camera_input_mode": "strict",
     "air_steering_response": 1.0,
     "maximum_steering_degrees_per_second": 0.0,
-    "minimum_camera_yaw_delta_degrees": 0.25,
+    "minimum_camera_yaw_delta_degrees": 1110.25,
     "minimum_wish_rotation_degrees": 0.25,
     "strafe_angular_tolerance_degrees": 60.0,
     "soft_cap_start": 0.0,
