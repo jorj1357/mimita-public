@@ -677,13 +677,17 @@ void Perf::writeProfileToFile()
     f.close();
 }
 
-void Perf::endFrame()
+void Perf::endFrame(float currentFrameMs)
 {
     PerfState& s = gState;
     s.frameNumber++;
     s.gameTime += gFramePacer.dt();
 
-    float currentMs = gFramePacer.frameTimeMs();
+    // Use the caller-provided wall-clock time for the current frame instead of
+    // gFramePacer.frameTimeMs() which returns the PREVIOUS frame's total cycle
+    // time (including the previous frame's sleep).  A zero or negative value
+    // falls back to the pacer for backward compatibility.
+    float currentMs = (currentFrameMs > 0.0f) ? currentFrameMs : gFramePacer.frameTimeMs();
     s.avgFrameCount += 1.0;
     s.avgFrameTimeMs += (currentMs - s.avgFrameTimeMs) / std::min(s.avgFrameCount, 100.0);
 

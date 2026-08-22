@@ -341,7 +341,7 @@ namespace Perf {
 PerfState& state();
 
 void beginFrame();
-void endFrame();
+void endFrame(float currentFrameMs = 0.0f);
 
 void renderOverlay();
 

@@ -67,6 +67,13 @@ extern bool gReplayExportRenderMode;
 
 void engineTick(Engine& engine)
 {
+    // Begin frame pacing and perf tracking BEFORE any scopes so the scope
+    // stack is empty when perfResetScopes() runs.  This fixes the profiler
+    // bug where Perf::beginFrame() was called inside two existing scopes,
+    // corrupting the parent-child relationships.
+    gFramePacer.beginFrame();
+    Perf::beginFrame();
+
     MIMITA_PERF_SCOPE("EngineTick");
     // Step UI tick clock (60 Hz fixed step, independent of render FPS)
     gChatUiTickClock.tick();
@@ -248,9 +255,16 @@ void engineTick(Engine& engine)
     { MIMITA_PERF_SCOPE("Swap"); engine.endFrame(); }
     { Perf::ScopedTimer _t("Diag"); diagRenderStage(9); }
     { Perf::ScopedTimer _t("Diag"); diagRenderFrameEnd(); }
-    Perf::endFrame();
 
+    // Sleep BEFORE Perf::endFrame() so the Sleep scope is measured and the
+    // spike report sees the full frame time (work + sleep).
     { MIMITA_PERF_SCOPE("Sleep"); gFramePacer.endFrame(); }
+
+    // Pass the current frame's actual wall-clock time so the profiler doesn't
+    // use the stale "previous frame" time from gFramePacer.frameTimeMs().
+    auto tNow = std::chrono::steady_clock::now();
+    float frameMs = std::chrono::duration<float, std::milli>(tNow - tFrameStart).count();
+    Perf::endFrame(frameMs);
 
     // ── Structured logger config hot-reload + tick ────
     StructuredLogger::instance().pollConfig();
@@ -258,8 +272,6 @@ void engineTick(Engine& engine)
 
     // ── Frame timing breakdown ───────────────────────
     {
-        auto tNow = std::chrono::steady_clock::now();
-        float frameMs = std::chrono::duration<float, std::milli>(tNow - tFrameStart).count();
         CHECK_SPIKE("FRAME TOTAL", frameMs, 20);
 
         static auto sLastReport = std::chrono::steady_clock::now();

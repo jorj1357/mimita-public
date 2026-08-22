@@ -11,6 +11,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -74,9 +75,11 @@ std::string chooseAvatar(std::uint32_t npcId, std::uint16_t transformEpoch)
     if (!forced.empty()) return forced;
     const std::vector<std::string> avatars = AvatarSystem::instance().listAvatars();
     if (avatars.empty()) return {};
-    uint32_t random = npcId ^ (static_cast<uint32_t>(transformEpoch) * 747796405u);
-    random = random * 1664525u + 1013904223u;
-    return avatars[random % avatars.size()];
+    // Use a proper random number generator instead of the old deterministic hash
+    // which always produced the same avatar for the same NPC ID + epoch.
+    static std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<size_t> dist(0, avatars.size() - 1);
+    return avatars[dist(rng)];
 }
 }
 

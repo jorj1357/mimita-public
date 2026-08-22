@@ -43,8 +43,9 @@ extern FramePacer gFramePacer;
 void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
 {
     HotReloadSystem::instance().reloadGameDLLIfChanged();
-    gFramePacer.beginFrame();
-    Perf::beginFrame();
+    // gFramePacer.beginFrame() and Perf::beginFrame() are now called in
+    // engineTick() BEFORE the first MIMITA_PERF_SCOPE so the scope stack
+    // is empty when perfResetScopes() runs.
     dt = engine.beginFrame();
     AnalyticsManager::instance().update(dt);
     updatePlayerProceduralHotReload(dt);
