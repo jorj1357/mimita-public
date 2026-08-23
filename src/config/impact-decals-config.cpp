@@ -108,6 +108,7 @@ static void readGroup(const json& j, ImpactDecalGroupConfig& cfg)
         cfg.stagger.decalsPerTick = readJsonInt(s, "decals_per_tick", cfg.stagger.decalsPerTick);
         cfg.stagger.startDelayTicks = readJsonInt(s, "start_delay_ticks", cfg.stagger.startDelayTicks);
         cfg.stagger.maxTicks = readJsonInt(s, "max_ticks", cfg.stagger.maxTicks);
+        cfg.stagger.rayBudgetPerFrame = readJsonInt(s, "ray_budget_per_frame", cfg.stagger.rayBudgetPerFrame);
     }
     if (j.contains("color_over_lifetime")) {
         const auto& c = j["color_over_lifetime"];

@@ -533,7 +533,7 @@ void engineTickReplay(Engine& engine, float dt)
 
             {
             Perf::ScopedTimer _t("ReplayRecordScene");
-            gReplayRecorder.recordSceneFrame(sceneFrame);
+            gReplayRecorder.recordSceneFrame(std::move(sceneFrame));
             }
             gReplayFactory.update();
             GuiLayoutManager::instance().pollReload();

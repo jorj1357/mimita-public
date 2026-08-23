@@ -35,6 +35,7 @@ void EffectPartSystem::init() {
     mBloodParticles.reserve(MAX_BLOOD_PARTICLES);
     mSurfaceDecals.clear();
     mPendingBloodDecals.clear();
+    mBloodDecalRequests.clear();
     mSurfaceDecals.reserve(256);
     printf("[EFFECT PART] Initialized pool size=%u\n", POOL_SIZE);
 }
@@ -126,4 +127,5 @@ void EffectPartSystem::update(float dt) {
     updateBloodParticles(dt);
     updateSurfaceDecals(dt);
     updatePendingBloodDecals(dt);
+    processDeferredBloodDecals();
 }

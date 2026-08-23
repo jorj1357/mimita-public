@@ -392,8 +392,9 @@ void EffectPartSystem::spawnBloodSurfaceDecals(
     const std::string& sourceActorId,
     const std::string& targetActorId)
 {
-    // Blood surface splats: small red cylinders stuck to surfaces in a spray
-    // cone behind the hit. Restored 08 14 2026 (was removed for perf).
+    // Blood surface splats: deferred ray-tracing approach.
+    // Instead of ray-tracing ALL decals immediately (which causes frame spikes),
+    // we queue the requests and process them 2 per frame in updatePendingBloodDecals().
     const auto& cfg = ImpactDecalsConfig::instance().data();
     const auto& bloodCfg = cfg.blood;
     if (!cfg.enabled || !bloodCfg.enabled || !mWorld)
@@ -407,6 +408,7 @@ void EffectPartSystem::spawnBloodSurfaceDecals(
     const float decalConeRadius = std::tan(glm::radians(std::max(1.0f, bloodCfg.coneDegrees)));
     mBloodDebugSegmentCount = 0;
 
+    // Queue all decal requests for deferred processing
     for (int dec = 0; dec < decalCount; ++dec) {
         const float angle = (float)(rand() % 6284) / 1000.0f;
         const float radial = std::sqrt((float)(rand() % 1001) / 1000.0f) * decalConeRadius;
@@ -416,14 +418,52 @@ void EffectPartSystem::spawnBloodSurfaceDecals(
             tangent * std::cos(angle) * radial +
             bitangent * std::sin(angle) * radial);
 
-        const glm::vec3 conePoint = hitPoint + coneDir * dist;
+        BloodDecalRequest req;
+        req.hitPoint = hitPoint + coneDir * dist;
+        req.forward = coneDir;
+        req.tangent = tangent;
+        req.bitangent = bitangent;
+        req.damageScale = damageScale;
+        req.force = force;
+        req.sourceActorId = sourceActorId;
+        req.targetActorId = targetActorId;
 
+        // Cap pending requests to avoid unbounded growth
+        if ((int)mBloodDecalRequests.size() < bloodCfg.maxCount)
+            mBloodDecalRequests.push_back(std::move(req));
+    }
+
+    if (DebugConfig::DEBUG_BLOOD_HITS) {
+        Debug::log(Debug::Category::NpcCombat,
+            "[BLOOD DECAL] queued=%d pending=%zu\n", decalCount, mBloodDecalRequests.size());
+    }
+}
+
+// Process deferred blood decal requests: ray-trace at most rayBudgetPerFrame per frame.
+// Called from update() to spread the expensive ray-trace cost across multiple frames.
+void EffectPartSystem::processDeferredBloodDecals()
+{
+    const auto& cfg = ImpactDecalsConfig::instance().data();
+    const auto& bloodCfg = cfg.blood;
+    if (!cfg.enabled || !bloodCfg.enabled || !mWorld) {
+        mBloodDecalRequests.clear();
+        return;
+    }
+
+    const int rayBudget = std::max(1, bloodCfg.stagger.rayBudgetPerFrame);
+    int raysCast = 0;
+
+    auto it = mBloodDecalRequests.begin();
+    while (it != mBloodDecalRequests.end() && raysCast < rayBudget) {
+        const auto& req = *it;
+
+        // Do the ray-trace (the expensive part) - only rayBudgetPerFrame per frame
         BloodWorldHit surfaceHit;
         bool foundSurface = false;
 
         BloodWorldHit downHit;
-        const float downLen = 2.0f + damageScale * 1.0f;
-        if (traceBloodSegment(*mWorld, conePoint, conePoint + glm::vec3(0, 0, -downLen), downHit)) {
+        const float downLen = 2.0f + req.damageScale * 1.0f;
+        if (traceBloodSegment(*mWorld, req.hitPoint, req.hitPoint + glm::vec3(0, 0, -downLen), downHit)) {
             downHit.position += downHit.normal * 0.01f;
             surfaceHit = downHit;
             foundSurface = true;
@@ -431,7 +471,7 @@ void EffectPartSystem::spawnBloodSurfaceDecals(
 
         if (!foundSurface) {
             BloodWorldHit fwdHit;
-            if (traceBloodSegment(*mWorld, conePoint, conePoint + coneDir * 2.0f, fwdHit)) {
+            if (traceBloodSegment(*mWorld, req.hitPoint, req.hitPoint + req.forward * 2.0f, fwdHit)) {
                 fwdHit.position += fwdHit.normal * 0.01f;
                 surfaceHit = fwdHit;
                 foundSurface = true;
@@ -439,25 +479,25 @@ void EffectPartSystem::spawnBloodSurfaceDecals(
         }
 
         if (!foundSurface) {
-            const glm::vec3 sideDir = glm::normalize(glm::cross(coneDir, glm::vec3(0, 0, 1)));
+            const glm::vec3 sideDir = glm::normalize(glm::cross(req.forward, glm::vec3(0, 0, 1)));
             BloodWorldHit sideHit;
-            if (traceBloodSegment(*mWorld, conePoint, conePoint + sideDir * 2.0f, sideHit)) {
+            if (traceBloodSegment(*mWorld, req.hitPoint, req.hitPoint + sideDir * 2.0f, sideHit)) {
                 sideHit.position += sideHit.normal * 0.01f;
                 surfaceHit = sideHit;
                 foundSurface = true;
             }
         }
 
-        if (mBloodDebugSegmentCount < MAX_BLOOD_DEBUG_SEGMENTS) {
-            BloodDebugSegment& debug = mBloodDebugSegments[mBloodDebugSegmentCount++];
-            debug.from = conePoint;
-            debug.to = foundSurface ? surfaceHit.position : conePoint;
-            debug.normal = foundSurface ? surfaceHit.normal : glm::vec3(0, 0, 1);
-            debug.hit = foundSurface;
+        raysCast++;
+
+        if (!foundSurface) {
+            it = mBloodDecalRequests.erase(it);
+            continue;
         }
 
-        if (!foundSurface)
-            continue;
+        // Create the SurfaceDecal from the ray-trace result
+        const float decalRadius = bloodCfg.minRadius +
+            (bloodCfg.radius - bloodCfg.minRadius) * req.force;
 
         SurfaceDecal decal;
         decal.position = surfaceHit.position;
@@ -481,14 +521,9 @@ void EffectPartSystem::spawnBloodSurfaceDecals(
         decal.colorEnd = bloodCfg.colorOverLifetime.endColor;
         decal.darkenStartSeconds = bloodCfg.colorOverLifetime.darkenStartSeconds;
         decal.darkenEndSeconds = bloodCfg.colorOverLifetime.darkenEndSeconds;
-        if (bloodCfg.stagger.enabled) {
-            while ((int)mPendingBloodDecals.size() >= bloodCfg.maxCount)
-                mPendingBloodDecals.erase(mPendingBloodDecals.begin());
-            mPendingBloodDecals.push_back({decal, 0});
-        } else {
-            pushSurfaceDecal(decal, bloodCfg.maxCount);
-        }
+        pushSurfaceDecal(decal, bloodCfg.maxCount);
 
+        // Record replay event
         ReplayEffectEvent decalEvent;
         decalEvent.type = "blood_splatter";
         decalEvent.position = decal.position;
@@ -496,13 +531,15 @@ void EffectPartSystem::spawnBloodSurfaceDecals(
         decalEvent.scale = glm::vec3(decal.radius, decal.radius, decal.height);
         decalEvent.color = glm::vec4(decal.color, decal.alpha);
         decalEvent.lifetime = decal.lifetime;
-        decalEvent.sourceActorId = sourceActorId;
-        decalEvent.targetActorId = targetActorId;
+        decalEvent.sourceActorId = req.sourceActorId;
+        decalEvent.targetActorId = req.targetActorId;
         captureReplayEffect(decalEvent);
+
+        it = mBloodDecalRequests.erase(it);
     }
 
-    if (DebugConfig::DEBUG_BLOOD_HITS) {
-        Debug::log(Debug::Category::NpcCombat,
-            "[BLOOD DECAL] spawned=%d active=%zu\n", decalCount, mSurfaceDecals.size());
-    }
+    // Cap queue size to prevent unbounded growth
+    const int maxQueueSize = bloodCfg.maxCount * 2;
+    while ((int)mBloodDecalRequests.size() > maxQueueSize)
+        mBloodDecalRequests.erase(mBloodDecalRequests.begin());
 }

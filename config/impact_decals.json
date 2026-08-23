@@ -19,7 +19,8 @@
       "enabled": true,
       "decals_per_tick": 2,
       "start_delay_ticks": 0,
-      "max_ticks": 60
+      "max_ticks": 60,
+      "ray_budget_per_frame": 2
     },
     "color_over_lifetime": {
       "enabled": true,

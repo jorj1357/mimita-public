@@ -65,7 +65,8 @@ void FramePacer::endFrame()
                 std::this_thread::sleep_for(
                     std::chrono::microseconds(sleepUs));
             }
-            while (nowUs() - mFrameStartUs < targetUs) {}
+            // Removed spin-wait: the sleep above is sufficient for frame pacing.
+            // The spin-wait burned CPU and caused GPU timing interference.
         }
     }
 

@@ -101,16 +101,9 @@ void EffectPartSystem::updateSurfaceDecals(float dt) {
 void EffectPartSystem::updatePendingBloodDecals(float dt) {
     (void)dt;
     const auto& cfg = ImpactDecalsConfig::instance().data().blood.stagger;
-    if (!cfg.enabled) { mPendingBloodDecals.clear(); return; }
-    const int budget = std::max(1, cfg.decalsPerTick);
-    int spawned = 0;
-    for (auto it = mPendingBloodDecals.begin(); it != mPendingBloodDecals.end() && spawned < budget;) {
-        ++it->ageTicks;
-        if (it->ageTicks <= cfg.startDelayTicks) { ++it; continue; }
-        if (it->ageTicks > cfg.maxTicks) { it = mPendingBloodDecals.erase(it); continue; }
-        const auto& blood = ImpactDecalsConfig::instance().data().blood;
-        pushSurfaceDecal(it->decal, blood.maxCount);
-        it = mPendingBloodDecals.erase(it);
-        ++spawned;
-    }
+    if (!cfg.enabled) { mBloodDecalRequests.clear(); return; }
+    // Deferred ray-trace processing is handled in effect-part-blood.cpp
+    // because traceBloodSegment and BloodWorldHit are defined there.
+    // This function is kept for compatibility but the real work is in
+    // processDeferredBloodDecals() called from the blood file.
 }

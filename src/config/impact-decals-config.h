@@ -56,6 +56,7 @@ struct ImpactDecalGroupConfig {
         int decalsPerTick = 1;
         int startDelayTicks = 0;
         int maxTicks = 60;
+        int rayBudgetPerFrame = 2;  // max ray-traces per frame for deferred blood decals
     } stagger;
     struct ColorOverLifetimeConfig {
         bool enabled = false;

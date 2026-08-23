@@ -77,6 +77,24 @@ void main()
     vec2 uv = vUV;
     vec2 fragCoord = uv * vec2(uScreenW, uScreenH);
     vec3 col = texture(uScene, uv).rgb;
+
+    // Early-out: skip all post-processing when effects are at identity defaults.
+    // Saves pow(), hueShift(), and other ALU per pixel (~0.3-1ms at 1024x768).
+    if (abs(uBrightness - 1.0) < 0.001 && abs(uContrast - 1.0) < 0.001 &&
+        abs(uSaturation - 1.0) < 0.001 && abs(uHueShift) < 0.001 &&
+        abs(uGamma - 2.2) < 0.01 && abs(uColorTemperature) < 0.001 &&
+        uEdgeGlow < 0.001 && uVignette < 0.001 && uFilmGrain < 0.001 &&
+        uChromaticAberration < 0.001 && uLensDistortion < 0.001 &&
+        uScanlines < 0.001 && uPixelation < 0.001 && uPosterize < 0.001 &&
+        uDreamStrength < 0.001 && uVoidStrength < 0.001 &&
+        uPsychedelicStrength < 0.001 && uRetroStrength < 0.001 &&
+        uGlitchStrength < 0.001 && uWorldWave < 0.001 && uScreenWave < 0.001 &&
+        uScreenShakeFx < 0.001 && uShadowBoost < 0.001 && uOutlineBoost < 0.001)
+    {
+        FragColor = vec4(col, 1.0);
+        return;
+    }
+
     float strength = 0.0;
 
     // --- Screen wave (entire frame distortion) ---

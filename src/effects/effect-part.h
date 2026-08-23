@@ -163,6 +163,7 @@ private:
     void updateBloodParticles(float dt);
     void updateSurfaceDecals(float dt);
     void updatePendingBloodDecals(float dt);
+    void processDeferredBloodDecals();
     void pushSurfaceDecal(const SurfaceDecal& decal, int maxCount);
     void spawnBloodSurfaceDecals(const glm::vec3& hitPoint,
                                  const glm::vec3& forward,
@@ -204,6 +205,19 @@ private:
     std::vector<SurfaceDecal> mSurfaceDecals;
     struct PendingBloodDecal { SurfaceDecal decal; int ageTicks = 0; };
     std::vector<PendingBloodDecal> mPendingBloodDecals;
+
+    // Ray-budget deferred decal requests: stores raw trace data, ray-traced 2 per frame
+    struct BloodDecalRequest {
+        glm::vec3 hitPoint{0.0f};
+        glm::vec3 forward{0.0f};
+        glm::vec3 tangent{0.0f};
+        glm::vec3 bitangent{0.0f};
+        float damageScale = 1.0f;
+        float force = 1.0f;
+        std::string sourceActorId;
+        std::string targetActorId;
+    };
+    std::vector<BloodDecalRequest> mBloodDecalRequests;
     std::array<BloodDebugSegment, MAX_BLOOD_DEBUG_SEGMENTS> mBloodDebugSegments{};
     unsigned int mActiveCount = 0;
     unsigned int mBloodDebugSegmentCount = 0;
