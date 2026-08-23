@@ -59,6 +59,9 @@ public:
     void render();
     void setBypass(bool bypass) { mBypass = bypass; }
     bool bypass() const { return mBypass; }
+    // Returns true when any PostFX parameter differs from identity.
+    // When false, the FBO + fullscreen pass can be skipped entirely.
+    bool isActive() const;
     void requestMagentaTest() { mMagentaTestPending = true; }
     bool consumeMagentaTest();
 

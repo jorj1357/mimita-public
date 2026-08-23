@@ -74,7 +74,9 @@ void engineTick(Engine& engine)
     gFramePacer.beginFrame();
     Perf::beginFrame();
 
-    MIMITA_PERF_SCOPE("EngineTick");
+    // Note: No MIMITA_PERF_SCOPE("EngineTick") wrapper here.
+    // The sub-scopes (Setup, Audio, etc.) are the roots. The EngineTick scope
+    // was never recorded because its destructor ran AFTER Perf::endFrame().
     // Step UI tick clock (60 Hz fixed step, independent of render FPS)
     gChatUiTickClock.tick();
     NotificationSystem::instance().advanceTicks();

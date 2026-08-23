@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include <array>
 #include <string>
 #include <vector>
 
@@ -103,7 +104,11 @@ struct ReplayActorState {
 
     std::string weaponName;
     std::string animationState;
-    std::vector<ReplayBodyPartState> bodyParts;
+    // Fixed-size array: always exactly 6 body parts (head, torso, leftArm, rightArm, leftLeg, rightLeg).
+    // Eliminates heap allocation per actor per frame.
+    static constexpr int MAX_BODY_PARTS = 6;
+    std::array<ReplayBodyPartState, MAX_BODY_PARTS> bodyParts{};
+    uint8_t bodyPartCount = 0;
 };
 
 struct ReplayEffectEvent {

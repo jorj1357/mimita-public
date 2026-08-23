@@ -38,11 +38,10 @@ void captureReplayKillfeed(const ReplayKillfeedEvent& event)
         gActiveReplayRecorder->recordKillfeedEvent(event);
 }
 
-std::vector<ReplayBodyPartState> captureReplayBodyParts(const Player& player)
+BodyPartArray captureReplayBodyParts(const Player& player)
 {
     Perf::ScopedTimer _t("ReplayCaptureBodyParts");
-    std::vector<ReplayBodyPartState> states;
-    states.reserve(player.physicalBody.parts.size());
+    BodyPartArray result;
 
     glm::mat4 rootWorld = glm::translate(glm::mat4(1.0f), player.pos)
         * glm::mat4_cast(glm::angleAxis(glm::radians(player.yaw), glm::vec3(0.0f, 0.0f, 1.0f)));
@@ -54,6 +53,9 @@ std::vector<ReplayBodyPartState> captureReplayBodyParts(const Player& player)
             part.name != "leftLeg" && part.name != "rightLeg")
             continue;
 
+        if (result.count >= ReplayActorState::MAX_BODY_PARTS)
+            break;
+
         glm::mat4 localTransform = invRootWorld * part.worldTransform;
 
         glm::vec3 scale(1.0f);
@@ -64,15 +66,15 @@ std::vector<ReplayBodyPartState> captureReplayBodyParts(const Player& player)
         glm::decompose(localTransform,
                        scale, orientation, translation, skew, perspective);
 
-        ReplayBodyPartState state;
+        ReplayBodyPartState& state = result.parts[result.count];
         state.name = part.name;
         state.position = translation;
         state.rotation = glm::normalize(orientation);
         state.scale = scale;
-        states.push_back(state);
+        result.count++;
     }
 
-    return states;
+    return result;
 }
 
 // ============================================================
@@ -87,12 +89,8 @@ void ReplayRecorder::beginRecording(float randomSeed, const char* mapName) {
     mSoundEvents.clear();
     mKillfeedEvents.clear();
     mPendingEffects.clear();
-    // Pre-allocate to avoid reallocation spikes during recording
-    mFrames.reserve(4096);
-    mSceneFrames.reserve(4096);
-    mSoundEvents.reserve(256);
-    mKillfeedEvents.reserve(256);
-    mPendingEffects.reserve(64);
+    mFrames.clear();
+    mSceneFrames.clear();
     mWorld = {};
     mLighting = {};
     mTick = 0;
@@ -124,22 +122,23 @@ void ReplayRecorder::recordFrame(const InputFrame& frame) {
     mEventTick = rf.tick;
     rf.inputs = frame;
     if (mMaxTicks > 0 && mFrames.size() >= mMaxTicks)
-        mFrames.erase(mFrames.begin());
+        mFrames.pop_front();
     mFrames.push_back(rf);
     mHeader.tickCount = (uint32_t)mFrames.size();
 }
 
-void ReplayRecorder::recordSceneFrame(const ReplaySceneFrame& inputFrame)
+void ReplayRecorder::recordSceneFrame(ReplaySceneFrame inputFrame)
 {
     if (!mRecording) return;
     std::lock_guard<std::mutex> lock(mRingMutex);
 
-    ReplaySceneFrame frame = inputFrame;
-    frame.effects.insert(frame.effects.end(), mPendingEffects.begin(), mPendingEffects.end());
+    // Merge pending effects directly into the frame (no extra copy)
+    inputFrame.effects.insert(inputFrame.effects.end(), mPendingEffects.begin(), mPendingEffects.end());
     mPendingEffects.clear();
     if (mMaxTicks > 0 && mSceneFrames.size() >= mMaxTicks)
-        mSceneFrames.erase(mSceneFrames.begin());
-    mSceneFrames.push_back(frame);
+        mSceneFrames.pop_front();
+    // Move the frame directly into the deque — no deep copy
+    mSceneFrames.push_back(std::move(inputFrame));
     mEventTick = mTick;
 }
 
@@ -383,7 +382,8 @@ bool ReplayRecorder::exportToJSON(const std::string& path) const {
             a["blackness"] = actor.blackness;
             a["animationState"] = actor.animationState;
             a["bodyParts"] = json::object();
-            for (const ReplayBodyPartState& part : actor.bodyParts) {
+            for (int i = 0; i < actor.bodyPartCount; ++i) {
+                const ReplayBodyPartState& part = actor.bodyParts[i];
                 a["bodyParts"][part.name] = {
                     {"position", vec3Json(part.position)},
                     {"rotation", {part.rotation.w, part.rotation.x, part.rotation.y, part.rotation.z}},

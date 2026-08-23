@@ -1,5 +1,6 @@
 #pragma once
 
+#include <deque>
 #include <string>
 #include <vector>
 #include <glm/glm.hpp>
@@ -22,4 +23,4 @@ nlohmann::json effectJson(const ReplayEffectEvent& effect);
 nlohmann::json buildValidationJson(
     const std::string& replayPath,
     const ReplayHeader& header,
-    const std::vector<ReplaySceneFrame>& sceneFrames);
+    const std::deque<ReplaySceneFrame>& sceneFrames);

@@ -367,7 +367,7 @@ void engineTickReplay(Engine& engine, float dt)
             playerActor.animationState = player.ground.onGround
                 ? (glm::length(glm::vec2(player.vel.x, player.vel.y)) > 0.5f ? "move" : "idle")
                 : "air";
-            playerActor.bodyParts = captureReplayBodyParts(player);
+            { auto bp = captureReplayBodyParts(player); playerActor.bodyParts = bp.parts; playerActor.bodyPartCount = bp.count; }
             sceneFrame.actors.push_back(playerActor);
 
             // NPCs
@@ -409,7 +409,7 @@ void engineTickReplay(Engine& engine, float dt)
                     }
                 }
                 npcActor.animationState = npcStateName(npc.stateMachine.currentState);
-                npcActor.bodyParts = captureReplayBodyParts(npc.body);
+                { auto bp = captureReplayBodyParts(npc.body); npcActor.bodyParts = bp.parts; npcActor.bodyPartCount = bp.count; }
                 sceneFrame.actors.push_back(npcActor);
             }
             } // ReplayCaptureNPCs
@@ -452,7 +452,7 @@ void engineTickReplay(Engine& engine, float dt)
                 actor.animationState = p.ground.onGround
                     ? (glm::length(glm::vec2(p.vel.x, p.vel.y)) > 0.5f ? "move" : "idle")
                     : "air";
-                actor.bodyParts = captureReplayBodyParts(p);
+                { auto bp = captureReplayBodyParts(p); actor.bodyParts = bp.parts; actor.bodyPartCount = bp.count; }
                 sceneFrame.actors.push_back(actor);
             }
             } // ReplayCaptureRemotePlayers
@@ -496,7 +496,7 @@ void engineTickReplay(Engine& engine, float dt)
                 actor.animationState = p.ground.onGround
                     ? (glm::length(glm::vec2(p.vel.x, p.vel.y)) > 0.5f ? "move" : "idle")
                     : "air";
-                actor.bodyParts = captureReplayBodyParts(p);
+                { auto bp = captureReplayBodyParts(p); actor.bodyParts = bp.parts; actor.bodyPartCount = bp.count; }
                 sceneFrame.actors.push_back(actor);
             }
             } // ReplayCaptureRemoteNpcs

@@ -481,7 +481,8 @@ public:
     void applyReplayPose(
         const glm::vec3& rootPosition,
         float rootYaw,
-        const std::vector<ReplayBodyPartState>& parts);
+        const ReplayBodyPartState* parts,
+        uint8_t partCount);
     void renderCurrentPose(unsigned int shader,
                            const glm::mat4& view,
                            const glm::mat4& proj,

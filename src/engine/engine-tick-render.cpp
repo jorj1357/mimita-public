@@ -149,7 +149,8 @@ static void renderReplayActors(
         actor->applyReplayPose(
             actorState.position,
             actorState.rotation.z,
-            actorState.bodyParts);
+            actorState.bodyParts.data(),
+            actorState.bodyPartCount);
 
         const bool hideFirstPersonActor =
             REPLAY_PLAYER.cameraController().mode() ==
@@ -536,7 +537,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     PostFX::instance().unbindFBO();
     diagRenderStage(6);
     PostFX::instance().advanceTime(dt);
-    PostFX::instance().pollReload();
+    // PostFX hot-reload gated by master hot-reload config
     { Perf::ScopedTimer _pfx("PostFX"); PostFX::instance().render(); }
     renderShadowMapOverlay(engine.renderer->width, engine.renderer->height);
     diagRenderStage(7);

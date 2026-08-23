@@ -230,6 +230,15 @@ std::vector<int> gatherGLBTriangles(
     const char* caller = nullptr
 );
 
+// Scratch-buffer version: writes into `out` instead of allocating a new vector.
+void gatherGLBTriangles(
+    std::vector<int>& out,
+    const World& world,
+    const Capsule& cap,
+    const glm::vec3& move,
+    const char* caller = nullptr
+);
+
 std::vector<RecoveryContact> collectCapsuleRecoveryContacts(
     const World& world,
     const Capsule& cap,

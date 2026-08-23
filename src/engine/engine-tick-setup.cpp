@@ -37,8 +37,38 @@
 #include "gui/ui-system.h"
 #include "devtools/terminal.h"
 #include "terminal/weapon-commands.h"
+#include "render/post-fx.h"
+
+#include <chrono>
+#include <fstream>
+#include <nlohmann/json.hpp>
 
 extern FramePacer gFramePacer;
+
+// ── Hot-reload master gate ─────────────────────────────────
+// Reads config/hotreload.json once at startup. When enabled=false,
+// zero config files are polled for changes (no filesystem overhead).
+// When enabled=true, polling is throttled to every N frames.
+static bool sHotReloadEnabled = true;
+static int sHotReloadFrameCounter = 0;
+static constexpr int HOT_RELOAD_THROTTLE_FRAMES = 10; // check every 10 frames (~6x/sec at 60fps)
+
+static void loadHotReloadConfig()
+{
+    std::ifstream f("config/hotreload.json");
+    if (!f.is_open()) {
+        sHotReloadEnabled = true; // default to enabled if file missing
+        return;
+    }
+    try {
+        nlohmann::json root;
+        f >> root;
+        sHotReloadEnabled = root.value("enabled", true);
+        printf("[HOTRELOAD] Master gate: %s\n", sHotReloadEnabled ? "ENABLED" : "DISABLED");
+    } catch (...) {
+        sHotReloadEnabled = true;
+    }
+}
 
 void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
 {
@@ -49,35 +79,51 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     dt = engine.beginFrame();
     AnalyticsManager::instance().update(dt);
     updatePlayerProceduralHotReload(dt);
-    GameplayConfig::instance().pollReload();
-    MovementJsonConfig::instance().pollReload();
-    CrosshairConfig::instance().pollReload();
-    pollWorldCrosshairConfig();
-    pollCoolShotLineConfig();
-    WeaponTracersConfig::instance().pollReload();
-    HealthbarConfig::instance().pollReload();
-    HitEffects::pollReload();
-    MuzzleFlashConfig::instance().pollReload();
-    DynamicLightConfig::instance().pollReload();
+
+    // Load hot-reload config once at startup
+    static bool sFirstFrame = true;
+    if (sFirstFrame) {
+        loadHotReloadConfig();
+        sFirstFrame = false;
+    }
+
+    // When hot-reload is disabled, skip all config polling (zero overhead).
+    // When enabled, throttle to every N frames.
+    const bool shouldPoll = sHotReloadEnabled && (++sHotReloadFrameCounter % HOT_RELOAD_THROTTLE_FRAMES == 0);
+
+    if (shouldPoll) {
+        GameplayConfig::instance().pollReload();
+        MovementJsonConfig::instance().pollReload();
+        CrosshairConfig::instance().pollReload();
+        pollWorldCrosshairConfig();
+        pollCoolShotLineConfig();
+        WeaponTracersConfig::instance().pollReload();
+        HealthbarConfig::instance().pollReload();
+        HitEffects::pollReload();
+        MuzzleFlashConfig::instance().pollReload();
+        DynamicLightConfig::instance().pollReload();
+        MimitaNet::pollDisagreementReload();
+        CamConfig::instance().pollReload();
+        SizeScalingConfig::instance().pollReload();
+        AvatarSystem::instance().pollHotReload();
+        RagdollConfig::instance().pollReload();
+        RagdollDeathConfig::instance().pollReload();
+        NpcDifficultyConfig::instance().pollReload();
+        GamemodeRegistry::instance().pollReload();
+        DuelMapPool::instance().pollReload();
+        DuelWeaponPool::instance().pollReload();
+        WeaponHitFxConfig::instance().pollReload();
+        ImpactDecalsConfig::instance().pollReload();
+        NotificationSystem::instance().pollReload();
+        GuiLayoutManager::instance().pollReload();
+        NetworkingConfig::instance().pollReload();
+        PostFX::instance().pollReload();
+        if (CollisionLodConfig::instance().pollHotReload())
+            redecimateCollision(THE_WORLD);
+        CollisionConfig::instance().pollHotReload();
+    }
+
     DynamicLightManager::instance().update(dt);
-    MimitaNet::pollDisagreementReload();
-    CamConfig::instance().pollReload();
-    SizeScalingConfig::instance().pollReload();
-    AvatarSystem::instance().pollHotReload();
-    RagdollConfig::instance().pollReload();
-    RagdollDeathConfig::instance().pollReload();
-    NpcDifficultyConfig::instance().pollReload();
-    GamemodeRegistry::instance().pollReload();
-    DuelMapPool::instance().pollReload();
-    DuelWeaponPool::instance().pollReload();
-    WeaponHitFxConfig::instance().pollReload();
-    ImpactDecalsConfig::instance().pollReload();
-    NotificationSystem::instance().pollReload();
-    GuiLayoutManager::instance().pollReload();
-    NetworkingConfig::instance().pollReload();
-    if (CollisionLodConfig::instance().pollHotReload())
-        redecimateCollision(THE_WORLD);
-    CollisionConfig::instance().pollHotReload();
     worldPassRan = false;
 
     {

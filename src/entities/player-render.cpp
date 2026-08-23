@@ -38,7 +38,8 @@ void Player::render(unsigned int shader,
 void Player::applyReplayPose(
     const glm::vec3& rootPosition,
     float rootYaw,
-    const std::vector<ReplayBodyPartState>& parts)
+    const ReplayBodyPartState* parts,
+    uint8_t partCount)
 {
     pos = rootPosition;
     yaw = rootYaw;
@@ -49,17 +50,18 @@ void Player::applyReplayPose(
         glm::translate(glm::mat4(1.0f), rootPosition) *
         glm::rotate(glm::mat4(1.0f), glm::radians(rootYaw), glm::vec3(0, 0, 1));
     for (PhysicalBodyPart& bodyPart : physicalBody.parts) {
-        auto it = std::find_if(
-            parts.begin(), parts.end(),
-            [&bodyPart](const ReplayBodyPartState& part) {
-                return part.name == bodyPart.name;
-            });
-        if (it == parts.end())
-            continue;
+        const ReplayBodyPartState* found = nullptr;
+        for (uint8_t i = 0; i < partCount; ++i) {
+            if (parts[i].name == bodyPart.name) {
+                found = &parts[i];
+                break;
+            }
+        }
+        if (!found) continue;
 
-        glm::mat4 local = glm::translate(glm::mat4(1.0f), it->position)
-            * glm::mat4_cast(it->rotation)
-            * glm::scale(glm::mat4(1.0f), it->scale);
+        glm::mat4 local = glm::translate(glm::mat4(1.0f), found->position)
+            * glm::mat4_cast(found->rotation)
+            * glm::scale(glm::mat4(1.0f), found->scale);
         bodyPart.worldTransform = root * local;
     }
 }

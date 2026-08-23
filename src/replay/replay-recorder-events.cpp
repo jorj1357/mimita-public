@@ -52,7 +52,7 @@ void ReplayRecorder::recordSoundEvent(const ReplaySoundEvent& inputEvent)
     if (mMaxTicks > 0) {
         const int oldestTick = (int)mTick - (int)mMaxTicks;
         while (!mSoundEvents.empty() && mSoundEvents.front().tick < oldestTick)
-            mSoundEvents.erase(mSoundEvents.begin());
+            mSoundEvents.pop_front();
     }
     registerAsset("sound:" + event.soundPath, "sound", event.soundPath, {}, {}, "audio");
 }
@@ -67,6 +67,6 @@ void ReplayRecorder::recordKillfeedEvent(const ReplayKillfeedEvent& inputEvent)
     if (mMaxTicks > 0) {
         const int oldestTick = (int)mTick - (int)mMaxTicks;
         while (!mKillfeedEvents.empty() && mKillfeedEvents.front().tick < oldestTick)
-            mKillfeedEvents.erase(mKillfeedEvents.begin());
+            mKillfeedEvents.pop_front();
     }
 }

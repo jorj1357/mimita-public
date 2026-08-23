@@ -147,8 +147,10 @@ bool ReplayPlayer::loadFromJSON(const std::string& path) {
                         actor.grounded = a.value("grounded", true);
                         actor.sizeScale = a.value("sizeScale", 1.0f);
                         if (a.contains("bodyParts")) {
+                            actor.bodyPartCount = 0;
                             for (auto& bp : a["bodyParts"].items()) {
-                                ReplayBodyPartState part;
+                                if (actor.bodyPartCount >= ReplayActorState::MAX_BODY_PARTS) break;
+                                ReplayBodyPartState& part = actor.bodyParts[actor.bodyPartCount];
                                 part.name = bp.key();
                                 if (bp.value().contains("position")) {
                                     auto& p = bp.value()["position"];
@@ -163,7 +165,8 @@ bool ReplayPlayer::loadFromJSON(const std::string& path) {
                                     auto& s = bp.value()["scale"];
                                     part.scale = {s[0].get<float>(), s[1].get<float>(), s[2].get<float>()};
                                 }
-                                actor.bodyParts.push_back(part);
+                                actor.bodyParts[actor.bodyPartCount] = part;
+                                actor.bodyPartCount++;
                             }
                         }
                         frame.actors.push_back(actor);

@@ -65,7 +65,7 @@ class ReplayRecorder {
 public:
     void beginRecording(float randomSeed, const char* mapName);
     void recordFrame(const InputFrame& frame);
-    void recordSceneFrame(const ReplaySceneFrame& frame);
+    void recordSceneFrame(ReplaySceneFrame frame);
     void stopRecording();
 
     void registerAsset(
@@ -99,11 +99,11 @@ public:
         return mHeader;
     }
 
-    const std::vector<ReplayFrame>& frames() const {
+    const std::deque<ReplayFrame>& frames() const {
         return mFrames;
     }
 
-    const std::vector<ReplaySceneFrame>& sceneFrames() const {
+    const std::deque<ReplaySceneFrame>& sceneFrames() const {
         return mSceneFrames;
     }
 
@@ -111,11 +111,11 @@ public:
         return mAssets;
     }
 
-    const std::vector<ReplaySoundEvent>& soundEvents() const {
+    const std::deque<ReplaySoundEvent>& soundEvents() const {
         return mSoundEvents;
     }
 
-    const std::vector<ReplayKillfeedEvent>& killfeedEvents() const {
+    const std::deque<ReplayKillfeedEvent>& killfeedEvents() const {
         return mKillfeedEvents;
     }
 
@@ -125,13 +125,13 @@ private:
     uint32_t mTick = 0;
     uint32_t mEventTick = 0;
     ReplayHeader mHeader{};
-    std::vector<ReplayFrame> mFrames;
-    std::vector<ReplaySceneFrame> mSceneFrames;
+    std::deque<ReplayFrame> mFrames;
+    std::deque<ReplaySceneFrame> mSceneFrames;
     std::vector<ReplayAsset> mAssets;
     ReplayWorldMetadata mWorld;
     ReplayLightingState mLighting;
-    std::vector<ReplaySoundEvent> mSoundEvents;
-    std::vector<ReplayKillfeedEvent> mKillfeedEvents;
+    std::deque<ReplaySoundEvent> mSoundEvents;
+    std::deque<ReplayKillfeedEvent> mKillfeedEvents;
     std::vector<ReplayEffectEvent> mPendingEffects;
     uint32_t mMaxTicks = 0;
 };
@@ -280,4 +280,9 @@ void pollReplayHitmarkerConfig();
 // Replay actor/weapon model maps (owned by main.cpp, accessible globally for cleanup)
 extern std::unordered_map<std::string, std::unique_ptr<Player>>* gpReplayActorModels;
 extern std::unordered_map<std::string, WeaponViewModel>* gpReplayWeaponModels;
-std::vector<ReplayBodyPartState> captureReplayBodyParts(const Player& player);
+
+struct BodyPartArray {
+    std::array<ReplayBodyPartState, ReplayActorState::MAX_BODY_PARTS> parts{};
+    uint8_t count = 0;
+};
+BodyPartArray captureReplayBodyParts(const Player& player);

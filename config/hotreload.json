@@ -1,0 +1,4 @@
+{
+  "enabled": true,
+  "comment": "Master hot-reload gate. When false, no config files are polled for changes (zero filesystem overhead). The game loads all configs once at startup. Set to true during development for live editing."
+}

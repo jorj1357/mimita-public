@@ -47,14 +47,16 @@ ReplayActorState mixActor(
     result.reserveAmmo = t < 0.5f ? a.reserveAmmo : b.reserveAmmo;
     result.dead = t < 0.5f ? a.dead : b.dead;
     result.sizeScale = a.sizeScale;
-    for (ReplayBodyPartState& part : result.bodyParts) {
-        auto it = std::find_if(
-            b.bodyParts.begin(), b.bodyParts.end(),
-            [&part](const ReplayBodyPartState& other) {
-                return other.name == part.name;
-            });
-        if (it != b.bodyParts.end())
-            part = mixPart(part, *it, t);
+    result.bodyPartCount = a.bodyPartCount;
+    for (int i = 0; i < result.bodyPartCount; ++i) {
+        ReplayBodyPartState& part = result.bodyParts[i];
+        // Find matching part in b by name
+        for (int j = 0; j < b.bodyPartCount; ++j) {
+            if (b.bodyParts[j].name == part.name) {
+                part = mixPart(part, b.bodyParts[j], t);
+                break;
+            }
+        }
     }
     return result;
 }
@@ -196,7 +198,7 @@ void ReplayPlayer::pollPoseInvariant()
     bool hasPose = false;
     if (f && !f->actors.empty()) {
         pose = f->actors[0].position;
-        if (!f->actors[0].bodyParts.empty())
+        if (f->actors[0].bodyPartCount > 0)
             pose = f->actors[0].bodyParts[0].position;
         hasPose = true;
     }

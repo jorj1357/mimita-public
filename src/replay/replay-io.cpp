@@ -97,8 +97,10 @@ ReplayActorState parseActor(const json& value)
     actor.weaponName = value.value("weaponName", "");
     actor.animationState = value.value("animationState", "");
     if (value.contains("bodyParts") && value["bodyParts"].is_object()) {
+        actor.bodyPartCount = 0;
         for (auto it = value["bodyParts"].begin(); it != value["bodyParts"].end(); ++it) {
-            ReplayBodyPartState part;
+            if (actor.bodyPartCount >= ReplayActorState::MAX_BODY_PARTS) break;
+            ReplayBodyPartState& part = actor.bodyParts[actor.bodyPartCount];
             part.name = it.key();
             part.position = jsonVec3(it->value("position", json::array()));
             if (it->contains("rotation") && (*it)["rotation"].is_array() && (*it)["rotation"].size() >= 4) {
@@ -106,7 +108,7 @@ ReplayActorState parseActor(const json& value)
                 part.rotation = glm::quat(r[0].get<float>(), r[1].get<float>(), r[2].get<float>(), r[3].get<float>());
             }
             part.scale = jsonVec3(it->value("scale", json::array()), glm::vec3(1.0f));
-            actor.bodyParts.push_back(std::move(part));
+            actor.bodyPartCount++;
         }
     }
     return actor;
@@ -130,7 +132,8 @@ json actorJson(const ReplayActorState& actor)
         {"animationState", actor.animationState}
     };
     value["bodyParts"] = json::object();
-    for (const ReplayBodyPartState& part : actor.bodyParts) {
+    for (int i = 0; i < actor.bodyPartCount; ++i) {
+        const ReplayBodyPartState& part = actor.bodyParts[i];
         value["bodyParts"][part.name] = {
             {"position", vec3Json(part.position)},
             {"rotation", {part.rotation.w, part.rotation.x, part.rotation.y, part.rotation.z}},
@@ -201,7 +204,7 @@ json transformJson(
 json buildValidationJson(
     const std::string& replayPath,
     const ReplayHeader& header,
-    const std::vector<ReplaySceneFrame>& sceneFrames)
+    const std::deque<ReplaySceneFrame>& sceneFrames)
 {
     json validation;
     validation["schemaVersion"] = 1;
@@ -236,7 +239,8 @@ json buildValidationJson(
             actorJson["root"] = transformJson(
                 actor.position, actor.rotation);
             actorJson["bodyParts"] = json::object();
-            for (const ReplayBodyPartState& part : actor.bodyParts) {
+            for (int i = 0; i < actor.bodyPartCount; ++i) {
+                const ReplayBodyPartState& part = actor.bodyParts[i];
                 glm::vec3 euler = glm::degrees(glm::eulerAngles(part.rotation));
                 actorJson["bodyParts"][part.name] = transformJson(
                     part.position, euler, part.scale);

@@ -279,8 +279,20 @@ std::vector<int> gatherGLBTriangles(
     const glm::vec3& move,
     const char* caller
 ) {
-    auto t0 = std::chrono::steady_clock::now();
     std::vector<int> out;
+    gatherGLBTriangles(out, world, cap, move, caller);
+    return out;
+}
+
+void gatherGLBTriangles(
+    std::vector<int>& out,
+    const World& world,
+    const Capsule& cap,
+    const glm::vec3& move,
+    const char* caller
+) {
+    out.clear();
+    auto t0 = std::chrono::steady_clock::now();
 
     int currentFrame = Perf::state().frameNumber;
     clearTriangleCache();  // clears once per frame
@@ -337,13 +349,13 @@ std::vector<int> gatherGLBTriangles(
         float elapsedMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
         BROAD_LOG("[GATHER CACHE HIT] caller=%s candidates=%zu elapsedMs=%.3f\n",
                    effectiveCaller, out.size(), elapsedMs);
-        return out;
+        return;
     }
 
     // Superset cache: if a larger region was already gathered this frame, reuse it.
     if (getCachedSuperset(sweepBounds, currentFrame, out)) {
         Perf::state().current.repeatedQueries++;
-        return out;
+        return;
     }
 
     // Cache detection for duplicate queries
@@ -418,6 +430,4 @@ std::vector<int> gatherGLBTriangles(
 
     // Cache result for this frame
     cacheTriangles(sweepBounds, currentFrame, out, effectiveCaller);
-
-    return out;
 }

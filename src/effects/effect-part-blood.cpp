@@ -140,6 +140,11 @@ bool traceBloodSegment(
     AABB segBounds;
     segBounds.min = glm::min(from, to);
     segBounds.max = glm::max(from, to);
+    // Expand by the maximum possible block/sphere half-size to avoid false negatives
+    constexpr float PAD = 2.0f;
+    segBounds.min -= glm::vec3(PAD);
+    segBounds.max += glm::vec3(PAD);
+
     static std::vector<int> sCandidates;
     sCandidates.clear();
     appendChunkTrianglesForAABB(world, segBounds, 0.1f, sCandidates, "bloodTrace");
@@ -155,13 +160,22 @@ bool traceBloodSegment(
         found = true;
     }
 
+    // Spatial culling: only test blocks whose AABB overlaps the trace segment bounds.
+    // This avoids iterating blocks that are nowhere near the blood trace.
     for (const Block& block : world.blocks) {
+        const glm::vec3 halfSize = block.size * 0.5f;
+        const glm::vec3 bmin = block.pos - halfSize;
+        const glm::vec3 bmax = block.pos + halfSize;
+        // AABB overlap test between block and trace segment bounds
+        if (bmax.x < segBounds.min.x || bmin.x > segBounds.max.x ||
+            bmax.y < segBounds.min.y || bmin.y > segBounds.max.y ||
+            bmax.z < segBounds.min.z || bmin.z > segBounds.max.z)
+            continue;
         float distance = 0.0f;
         glm::vec3 normal(0.0f);
-        const glm::vec3 halfSize = block.size * 0.5f;
         if (!rayAabbSegment(
                 from, direction, nearest,
-                block.pos - halfSize, block.pos + halfSize,
+                bmin, bmax,
                 distance, normal))
             continue;
         nearest = distance;
@@ -170,7 +184,14 @@ bool traceBloodSegment(
         found = true;
     }
 
+    // Spatial culling: only test spheres whose bounding box overlaps the trace segment bounds.
     for (const Sphere& sphere : world.spheres) {
+        const glm::vec3 smin = sphere.pos - glm::vec3(sphere.radius);
+        const glm::vec3 smax = sphere.pos + glm::vec3(sphere.radius);
+        if (smax.x < segBounds.min.x || smin.x > segBounds.max.x ||
+            smax.y < segBounds.min.y || smin.y > segBounds.max.y ||
+            smax.z < segBounds.min.z || smin.z > segBounds.max.z)
+            continue;
         float distance = 0.0f;
         glm::vec3 normal(0.0f);
         if (!raySphereSegment(from, direction, nearest, sphere, distance, normal))

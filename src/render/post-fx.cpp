@@ -360,6 +360,38 @@ void PostFX::renderQuad(GLuint vao)
     glBindVertexArray(0);
 }
 
+bool PostFX::isActive() const
+{
+    // Identity values: brightness=1.0, contrast=1.0, saturation=1.0, gamma=2.2,
+    // hueShift=0.0, colorTemperature=0.0, and all artistic effects at 0.0.
+    // When all match identity, the shader is a no-op and the FBO pass can be skipped.
+    if (mData.brightness != 1.0f) return true;
+    if (mData.contrast != 1.0f) return true;
+    if (mData.saturation != 1.0f) return true;
+    if (mData.gamma != 2.2f) return true;
+    if (mData.hueShift != 0.0f) return true;
+    if (mData.colorTemperature != 0.0f) return true;
+    if (mData.vignette != 0.0f) return true;
+    if (mData.filmGrain != 0.0f) return true;
+    if (mData.chromaticAberration != 0.0f) return true;
+    if (mData.lensDistortion != 0.0f) return true;
+    if (mData.scanlines != 0.0f) return true;
+    if (mData.pixelation != 0.0f) return true;
+    if (mData.posterize != 0.0f) return true;
+    if (mData.dreamStrength != 0.0f) return true;
+    if (mData.voidStrength != 0.0f) return true;
+    if (mData.psychedelicStrength != 0.0f) return true;
+    if (mData.retroStrength != 0.0f) return true;
+    if (mData.glitchStrength != 0.0f) return true;
+    if (mData.worldWave != 0.0f) return true;
+    if (mData.screenWave != 0.0f) return true;
+    if (mData.screenShakeFx != 0.0f) return true;
+    if (mData.edgeGlow != 0.0f) return true;
+    if (mData.outlineBoost != 0.0f) return true;
+    if (mData.shadowBoost != 0.0f) return true;
+    return false;
+}
+
 void PostFX::render()
 {
     if (mBypass) return;
