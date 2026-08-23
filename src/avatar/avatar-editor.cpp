@@ -309,26 +309,36 @@ void drawBottomBar(GLFWwindow* win, AvatarEditorResult& r)
 
 } // namespace
 
-void avatarEditorHandleChar(unsigned int codepoint)
+bool avatarEditorHandleChar(unsigned int codepoint)
 {
     if (gSaveNameState.focused) {
         uiTextInputHandleChar(gSaveNameState, codepoint, {.maxLength = 63});
-        return;
+        return true;
     }
-    if (gPresetInputActive)
+    if (gPresetInputActive) {
         appendAscii(gPresetNameBuf, sizeof(gPresetNameBuf), codepoint);
-    else if (gSavePopupOpen)
+        return true;
+    }
+    if (gSavePopupOpen) {
         appendAscii(gSaveNameBuf, sizeof(gSaveNameBuf), codepoint);
-    else if (gRenamePopupOpen)
+        return true;
+    }
+    if (gRenamePopupOpen) {
         appendAscii(gRenameBuf, sizeof(gRenameBuf), codepoint);
+        return true;
+    }
+    return false;
 }
 
-void avatarEditorHandleKey(int key, int action, int mods)
+bool avatarEditorHandleKey(int key, int action, int mods)
 {
-    if (action != GLFW_PRESS && action != GLFW_REPEAT) return;
-    if (gSaveNameState.focused)
+    if (action != GLFW_PRESS && action != GLFW_REPEAT) return false;
+    if (gSaveNameState.focused) {
         uiTextInputHandleKey(glfwGetCurrentContext(), gSaveNameState, key, action, mods,
                              {.maxLength = 63});
+        return true;
+    }
+    return false;
 }
 
 void avatarEditorHandleDrop(int count, const char** paths)

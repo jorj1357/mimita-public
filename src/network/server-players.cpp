@@ -1051,15 +1051,21 @@ uint32_t estimateServerRewindTick(const ServerPlayer& attacker,
     const int64_t compTicks = (int64_t)std::llround(
         NetworkingConfig::instance().data().remotePlayers
             .rewindCompensationSeconds * (double)GAMEPLAY_SIMULATION_HZ);
+    // Under high-latency connections the client's render tick is far behind the
+    // server tick.  Add a ping-based extra rewind so the server validates the
+    // shot against the NPC position the client actually saw, not a more recent
+    // one the client's lag means it could never have aimed at.
+    const int64_t pingTicks = (int64_t)std::llround(
+        (double)attacker.pingMs / 1000.0 * (double)GAMEPLAY_SIMULATION_HZ);
     int64_t rewind;
     if (clientSimulationTick != 0)
-        rewind = (int64_t)clientSimulationTick - (int64_t)REWIND_INTERP_DELAY_TICKS - compTicks;
+        rewind = (int64_t)clientSimulationTick - (int64_t)REWIND_INTERP_DELAY_TICKS - compTicks - pingTicks;
     else if (attacker.movementValidation.lastAcceptedClientTick != 0 &&
              attacker.lastAcceptedServerTick != 0)
         rewind = (int64_t)attacker.lastAcceptedServerTick -
-                 (int64_t)REWIND_INTERP_DELAY_TICKS - compTicks;
+                 (int64_t)REWIND_INTERP_DELAY_TICKS - compTicks - pingTicks;
     else
-        rewind = (int64_t)serverTick - (int64_t)REWIND_INTERP_DELAY_TICKS - compTicks;
+        rewind = (int64_t)serverTick - (int64_t)REWIND_INTERP_DELAY_TICKS - compTicks - pingTicks;
 
     // Hard ceiling: never rewind older than maxRewindTicks (the rewind history
     // window / worst-case latency + interpolation). A stale client fire tick

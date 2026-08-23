@@ -133,7 +133,10 @@ void Terminal::init(GLFWwindow* window) {
             }
             if (::gpMpContext && ::gpMpContext->active)
             {
-                MimitaNet::mpSendServerCommand(*::gpMpContext, "setspawn_set");
+                // Send multiple times — idempotent command, safe to duplicate.
+                // Under packet loss (badconn), one copy out of many survives.
+                for (int i = 0; i < 5; ++i)
+                    MimitaNet::mpSendServerCommand(*::gpMpContext, "setspawn_set");
                 Terminal::instance().addLog("[SETSPAWN] Sent to server (host only) — uses your current position.");
                 return;
             }
@@ -169,7 +172,10 @@ void Terminal::init(GLFWwindow* window) {
                     return;
                 }
                 const std::string cmd = std::string("setspawn ") + (args[0] == "1" ? "1" : "0");
-                MimitaNet::mpSendServerCommand(*::gpMpContext, cmd);
+                // Send multiple times — idempotent command, safe to duplicate.
+                // Under packet loss (badconn), one copy out of many survives.
+                for (int i = 0; i < 3; ++i)
+                    MimitaNet::mpSendServerCommand(*::gpMpContext, cmd);
                 Terminal::instance().addLog("[SETSPAWN] Sent to server (host only).");
                 return;
             }

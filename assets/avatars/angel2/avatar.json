@@ -257,106 +257,16 @@
         "scale_y": 1.0
       },
       "type": ""
-    },
-    {
-      "anchor_part": "torso",
-      "attachTo": "torso",
-      "choice": "wings1.glb",
-      "color": [
-        1.0,
-        1.0,
-        1.0
-      ],
-      "enabled": true,
-      "glb": "wings1.glb",
-      "id": "wings1.glb_copy",
-      "offset": [
-        -0.5400857925415039,
-        0.03365945816040039,
-        0.010709285736083984
-      ],
-      "rotation": [
-        -90.4957275390625,
-        10.299850463867188,
-        2.8641204833984375
-      ],
-      "scale": [
-        1.0989210605621338,
-        1.1443618535995483,
-        1.314764142036438
-      ],
-      "slot": "",
-      "texture": {
-        "brightness": 0.7420438528060913,
-        "color": [
-          1.705936074256897,
-          1.7288858890533447,
-          2.1419825553894043
-        ],
-        "image": "angel.kra.png",
-        "offset_x": 25.0916748046875,
-        "offset_y": 0.0,
-        "opacity": 1.0,
-        "rotation": 0.0,
-        "scale_x": 1.0166842937469482,
-        "scale_y": 1.0
-      },
-      "type": ""
-    },
-    {
-      "anchor_part": "head",
-      "attachTo": "head",
-      "choice": "bandana1.glb",
-      "color": [
-        1.0,
-        1.0,
-        1.0
-      ],
-      "enabled": true,
-      "glb": "bandana1.glb",
-      "id": "bandana1.glb",
-      "offset": [
-        0.35495662689208984,
-        0.6303544044494629,
-        0.0
-      ],
-      "rotation": [
-        89.61444091796875,
-        4.5164947509765625,
-        0.385528564453125
-      ],
-      "scale": [
-        1.7350900173187256,
-        1.6442086696624756,
-        0.2809898257255554
-      ],
-      "slot": "",
-      "texture": {
-        "brightness": 9.990818977355957,
-        "color": [
-          9.990818977355957,
-          9.94491958618164,
-          9.967869758605957
-        ],
-        "image": "angel.kra.png",
-        "offset_x": 658.506591796875,
-        "offset_y": 0.0,
-        "opacity": 0.6318848729133606,
-        "rotation": 0.0,
-        "scale_x": 1.0,
-        "scale_y": 1.0
-      },
-      "type": ""
     }
   ],
   "created_at": "2026-08-21T18:22:19Z",
   "format_version": 1,
-  "name": "angel",
+  "name": "angel2",
   "simple": {
     "face": "",
     "pants": "",
     "shirt": "",
     "skin": ""
   },
-  "updated_at": "2026-08-23T19:20:22Z"
+  "updated_at": "2026-08-23T19:15:05Z"
 }

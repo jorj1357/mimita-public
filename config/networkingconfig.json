@@ -177,7 +177,7 @@
     "max_pending_per_player": 256,
     "retry_ms": 50,
     "ttl_ms": 60000,
-    "max_attempts": 80
+    "max_attempts": 200
   },
 
   "buffer_limits": {

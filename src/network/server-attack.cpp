@@ -451,8 +451,15 @@ void handleAttackRequest(
         glm::vec3 origin = finiteVec3(reqOrigin) ? reqOrigin : fallbackOrigin;
         glm::vec3 direction = normalizedOrZero(
             glm::vec3(req->aimDirX, req->aimDirY, req->aimDirZ));
+        // Allow the muzzle position to be ahead of the server's record of the
+        // shooter by the distance the player could have traveled during their
+        // round-trip latency.  Without this, shots are falsely rejected on
+        // high-latency connections (e.g. badconn 8) because the client fires
+        // from a position the server has not accepted yet.
+        const float pingAllowance = (float)shooter.pingMs / 1000.0f * 200.0f;
+        const float originTolerance = 12.0f + pingAllowance;
         if (!finiteVec3(origin) || glm::length(direction) <= 0.0001f ||
-            glm::length(origin - shooter.pos) > 12.0f)
+            glm::length(origin - shooter.pos) > originTolerance)
         {
             Debug::log(Debug::Category::Weapons,
                 "[ATTACK REJECT] playerId=%u requestId=%u invalid hitscan geometry\n",

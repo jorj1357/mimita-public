@@ -109,8 +109,7 @@ std::string cosmeticName(const CosmeticSlot& cosmetic, int index)
 
 int selectedAvailableIndex()
 {
-    return gAvailableState.selectedIndex > 0
-        ? gAvailableState.selectedIndex - 1 : -1;
+    return gAvailableState.selectedIndex;
 }
 
 CosmeticSlot* selectedCosmetic(AvatarSystem& avatar)
@@ -131,7 +130,7 @@ void addSelectedCosmetic()
 {
     AvatarSystem& avatar = AvatarSystem::instance();
     const int available = selectedAvailableIndex();
-    if (available < 0 || available >= (int)gAvailableItems.size())
+    if (available <= 0 || available >= (int)gAvailableItems.size())
         return;
 
     CosmeticSlot cosmetic;

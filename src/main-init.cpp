@@ -189,7 +189,7 @@ void gameInit(int argc, char** argv, Engine& engine)
     glfwSetCharCallback(engine.window(), [](GLFWwindow*, unsigned int codepoint) {
         authPopupHandleChar(codepoint);
         signInMenuHandleChar(codepoint);
-        avatarEditorHandleChar(codepoint);
+        if (avatarEditorHandleChar(codepoint)) return;
         serverInfoMenuHandleChar(codepoint);
         onlineMenuHandleChar(codepoint);
         handleChatWindowChar(gChatWindowState, codepoint);
@@ -205,7 +205,7 @@ void gameInit(int argc, char** argv, Engine& engine)
         if (action == GLFW_PRESS || action == GLFW_REPEAT) {
             authPopupHandleKey(key, action);
             signInMenuHandleKey(key, action);
-            avatarEditorHandleKey(key, action, mods);
+            if (avatarEditorHandleKey(key, action, mods)) return;
             serverInfoMenuHandleKey(key, action, mods);
             onlineMenuHandleKey(key, action);
             std::string chatMsg;
