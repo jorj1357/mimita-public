@@ -940,10 +940,9 @@ static bool validatePlayerBodyParts(const Player& player) {
 bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
     if (!mHasAvatar || mAvatarName.empty()) return false;
 
-    // If avatar specifies a custom player model, load it first
+    // Load player model — custom if specified, otherwise reset to default
     if (!mAvatar.playerModel.empty()) {
         printf("[AVATAR] Loading GLB: %s\n", mAvatar.playerModel.c_str());
-        // Pass per-avatar bodypart overrides to the model loader
         if (!mAvatar.bodypartOverrides.is_null())
             gAvatarBodypartOverrides = mAvatar.bodypartOverrides;
         bool modelOk = player.loadModel(mAvatar.playerModel.c_str());
@@ -953,6 +952,9 @@ bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
             printf("[AVATAR ERROR] Failed to load player model: %s\n", mAvatar.playerModel.c_str());
             Terminal::instance().addLog("[AVATAR] Failed to load model: " + mAvatar.playerModel);
         }
+    } else {
+        gAvatarBodypartOverrides = nullptr;
+        player.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
     }
 
     // ── Legacy faces mode (existing working behavior) ─────────

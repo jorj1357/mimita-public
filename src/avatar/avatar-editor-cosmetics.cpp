@@ -321,15 +321,16 @@ void drawAvatarCosmeticsTab(GLFWwindow* win, float px, float py, float pw, float
 void drawAvatarCosmeticsOverlay(GLFWwindow* win)
 {
     AvatarSystem& avatar = AvatarSystem::instance();
+    const float scrollY = gCosmeticsScroll.offset;
     const int available = drawDropdownOverlay(win, gAvailableState,
-                                              gAvailableRect.x, gAvailableRect.y,
-                                              gAvailableRect.w, gAvailableRect.h,
-                                              gAvailableItems);
+                                               gAvailableRect.x, gAvailableRect.y - scrollY,
+                                               gAvailableRect.w, gAvailableRect.h,
+                                               gAvailableItems);
     if (available >= 0)
         gAvailableState.selectedIndex = available;
 
     const int instance = drawDropdownOverlay(win, gInstanceState,
-                                             gInstanceRect.x, gInstanceRect.y,
+                                             gInstanceRect.x, gInstanceRect.y - scrollY,
                                              gInstanceRect.w, gInstanceRect.h,
                                              gInstanceItems);
     if (instance >= 0) {
@@ -339,9 +340,9 @@ void drawAvatarCosmeticsOverlay(GLFWwindow* win)
     }
 
     const int anchor = drawDropdownOverlay(win, gAnchorState,
-                                           gAnchorRect.x, gAnchorRect.y,
-                                           gAnchorRect.w, gAnchorRect.h,
-                                           gAnchorItems);
+                                            gAnchorRect.x, gAnchorRect.y - scrollY,
+                                            gAnchorRect.w, gAnchorRect.h,
+                                            gAnchorItems);
     if (anchor >= 0) {
         if (CosmeticSlot* cosmetic = selectedCosmetic(avatar)) {
             cosmetic->anchorPart = gAnchorItems[anchor];
@@ -351,9 +352,9 @@ void drawAvatarCosmeticsOverlay(GLFWwindow* win)
     }
 
     const int texture = drawDropdownOverlay(win, gTextureState,
-                                            gTextureRect.x, gTextureRect.y,
-                                            gTextureRect.w, gTextureRect.h,
-                                            gTextureItems);
+                                             gTextureRect.x, gTextureRect.y - scrollY,
+                                             gTextureRect.w, gTextureRect.h,
+                                             gTextureItems);
     if (texture >= 0) {
         if (CosmeticSlot* cosmetic = selectedCosmetic(avatar)) {
             cosmetic->texture.image = texture == 0 ? "" : gTextureItems[texture];

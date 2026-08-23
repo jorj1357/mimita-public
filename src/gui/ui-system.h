@@ -31,6 +31,7 @@ struct UITrackedWidget {
 void uiInit(GLFWwindow* win);
 void uiBeginFrame(GLFWwindow* win, const char* passName);
 void uiEndFrame();
+void uiFlushBatch();
 
 void uiSetDebug(bool enabled);
 void uiSetEditMode(bool enabled);

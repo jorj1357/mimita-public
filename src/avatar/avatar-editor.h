@@ -9,6 +9,8 @@
 #include <GLFW/glfw3.h>
 #include <string>
 
+struct UITextInputState;
+
 // Result flags returned by drawAvatarEditor each frame.
 struct AvatarEditorResult {
     bool goBack = false;
@@ -39,3 +41,4 @@ extern char gRenameBuf[64];
 extern bool gDeleteConfirmOpen;
 extern bool gPresetInputActive;
 extern char gPresetNameBuf[64];
+extern UITextInputState gSaveNameState;

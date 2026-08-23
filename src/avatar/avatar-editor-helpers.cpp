@@ -5,11 +5,13 @@
 * DOES NOT draw any editor panel or own avatar data.
 */
 #include "avatar-editor-helpers.h"
+#include "avatar-editor.h"
 #include "avatar.h"
 #include "cosmetic-system.h"
 #include "entities/player.h"
 #include "config/player-settings.h"
 #include "gui/menus/menu-avatar-preview.h"
+#include "gui/ui-text-input.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -238,4 +240,8 @@ void avatarEditorLoadOutfit(const std::string& name)
     avatarEditorApplyCosmeticsToPlayer();
     GetPlayerSettings().avatarName = name;
     SavePlayerSettings();
+    gSaveNameState.value.clear();
+    gSaveNameState.cursorPos = 0;
+    gSaveNameState.selectionStart = -1;
+    gSaveNameState.focused = false;
 }

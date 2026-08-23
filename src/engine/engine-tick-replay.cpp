@@ -319,6 +319,8 @@ void engineTickReplay(Engine& engine, float dt)
             deathPosition = glm::vec3(0.0f);
 
         if (recordingReplayTick) {
+            // Interned constant: avoids 55-char heap alloc per actor per frame
+            static const std::string kDefaultModelPath = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
             ReplaySceneFrame sceneFrame;
             sceneFrame.tick = (int)replayTick;
             sceneFrame.time = (float)sceneFrame.tick / 60.0f;
@@ -333,7 +335,7 @@ void engineTickReplay(Engine& engine, float dt)
             playerActor.id = player.username.empty() ? "admin" : player.username;
             playerActor.name = player.username;
             playerActor.type = "player";
-            playerActor.modelPath = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
+            playerActor.modelPath = kDefaultModelPath;
             playerActor.position = player.pos;
             playerActor.rotation = glm::vec3(0.0f, 0.0f, player.yaw);
             playerActor.velocity = player.vel;
@@ -368,7 +370,7 @@ void engineTickReplay(Engine& engine, float dt)
                 ? (glm::length(glm::vec2(player.vel.x, player.vel.y)) > 0.5f ? "move" : "idle")
                 : "air";
             { auto bp = captureReplayBodyParts(player); playerActor.bodyParts = bp.parts; playerActor.bodyPartCount = bp.count; }
-            sceneFrame.actors.push_back(playerActor);
+            sceneFrame.actors.push_back(std::move(playerActor));
 
             // NPCs
             {
@@ -378,7 +380,7 @@ void engineTickReplay(Engine& engine, float dt)
                 npcActor.id = "npc_" + std::to_string(npc.id);
                 npcActor.name = npc.body.username;
                 npcActor.type = npc.body.dead ? "corpse" : "npc";
-                npcActor.modelPath = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
+                npcActor.modelPath = kDefaultModelPath;
                 npcActor.position = npc.body.pos;
                 npcActor.rotation = glm::vec3(0.0f, 0.0f, npc.body.yaw);
                 npcActor.velocity = npc.body.vel;
@@ -410,7 +412,7 @@ void engineTickReplay(Engine& engine, float dt)
                 }
                 npcActor.animationState = npcStateName(npc.stateMachine.currentState);
                 { auto bp = captureReplayBodyParts(npc.body); npcActor.bodyParts = bp.parts; npcActor.bodyPartCount = bp.count; }
-                sceneFrame.actors.push_back(npcActor);
+                sceneFrame.actors.push_back(std::move(npcActor));
             }
             } // ReplayCaptureNPCs
             // ── Remote players (client-server replicas) ────────────────
@@ -422,7 +424,7 @@ void engineTickReplay(Engine& engine, float dt)
                 actor.id = "remote_" + std::to_string(kv.first);
                 actor.name = p.username;
                 actor.type = p.dead ? "corpse" : "remote_player";
-                actor.modelPath = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
+                actor.modelPath = kDefaultModelPath;
                 actor.position = p.pos;
                 actor.rotation = glm::vec3(0.0f, 0.0f, p.yaw);
                 actor.velocity = p.vel;
@@ -453,7 +455,7 @@ void engineTickReplay(Engine& engine, float dt)
                     ? (glm::length(glm::vec2(p.vel.x, p.vel.y)) > 0.5f ? "move" : "idle")
                     : "air";
                 { auto bp = captureReplayBodyParts(p); actor.bodyParts = bp.parts; actor.bodyPartCount = bp.count; }
-                sceneFrame.actors.push_back(actor);
+                sceneFrame.actors.push_back(std::move(actor));
             }
             } // ReplayCaptureRemotePlayers
             // ── Remote NPCs (server-simulated replicas) ────────────────
@@ -465,7 +467,7 @@ void engineTickReplay(Engine& engine, float dt)
                 actor.id = "rnpc_" + std::to_string(kv.first);
                 actor.name = p.username;
                 actor.type = p.dead ? "corpse" : "remote_npc";
-                actor.modelPath = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
+                actor.modelPath = kDefaultModelPath;
                 actor.position = p.pos;
                 actor.rotation = glm::vec3(0.0f, 0.0f, p.yaw);
                 actor.velocity = p.vel;
@@ -497,7 +499,7 @@ void engineTickReplay(Engine& engine, float dt)
                     ? (glm::length(glm::vec2(p.vel.x, p.vel.y)) > 0.5f ? "move" : "idle")
                     : "air";
                 { auto bp = captureReplayBodyParts(p); actor.bodyParts = bp.parts; actor.bodyPartCount = bp.count; }
-                sceneFrame.actors.push_back(actor);
+                sceneFrame.actors.push_back(std::move(actor));
             }
             } // ReplayCaptureRemoteNpcs
             // ── Godball ────────────────────────────────────────────────

@@ -25,6 +25,7 @@
 #include "gui/gui-element-render.h"
 #include "gui/gui-coord.h"
 #include "gui/ui-system-internal.h"
+#include "gui/ui-text-input.h"
 #include "devtools/terminal.h"
 
 bool gSavePopupOpen = false;
@@ -33,6 +34,7 @@ bool gRenamePopupOpen = false;
 char gRenameBuf[64] = "";
 bool gDeleteConfirmOpen = false;
 bool gPresetInputActive = false;
+UITextInputState gSaveNameState;
 
 namespace {
 
@@ -48,7 +50,6 @@ UIRect gAvatarLoadRect{};
 DropdownState gPlayerModelDropdown;
 std::vector<std::string> gPlayerModelItems;
 UIRect gPlayerModelRect{};
-bool gSaveLoadInputActive = false;
 
 void appendAscii(char* buffer, size_t capacity, unsigned int codepoint)
 {
@@ -139,24 +140,21 @@ void drawEditorTabs(GLFWwindow* win)
     glDisable(GL_SCISSOR_TEST);
 }
 
-void drawSaveLoadInput(const GuiLayout& layout)
+void drawSaveLoadInput(GLFWwindow* win, const GuiLayout& layout)
 {
     const GuiElement* input = layout.get("saveLoadNameInput");
     if (!input) return;
-    UIRect rect = GuiCoordinateSystem::instance().designToScreen({input->x, input->y, input->w, input->h});
-    uiDrawRect(rect, input->getBackgroundColorVec(), "save-load-name-input");
-    uiDrawRectOutline(rect, input->getOutlineColorVec(), "save-load-name-border");
-    const char* text = gSaveNameBuf[0] ? gSaveNameBuf : "type a new avatar name";
-    uiDrawText(text, rect.x + 8.0f, rect.y + 5.0f,
-               avatarEditorFont(avatarEditorButtonFontSize),
-               gSaveNameBuf[0] ? glm::vec4{1,1,1,1} : glm::vec4{0.45f,0.5f,0.6f,1});
+    UIRect rect = {input->x, input->y, input->w, input->h};
+    UITextInputOptions opts;
+    opts.maxLength = 63;
+    opts.selectAllOnFocus = true;
+    uiTextInputRender(win, "saveLoadNameInput", rect, gSaveNameState, opts);
 }
 
 void drawSaveLoadTab(GLFWwindow* win, float px, float py, float pw, float ph)
 {
     AvatarSystem& av = AvatarSystem::instance();
     const GuiLayout& layout = avatarEditorLayout();
-    gSaveLoadInputActive = true;
 
     const std::string saveLoadTitle = editorLabelText("saveLoadTitle", "SAVELOAD");
     uiDrawText(saveLoadTitle.c_str(), uiScaleX(px), uiScaleY(py),
@@ -178,17 +176,18 @@ void drawSaveLoadTab(GLFWwindow* win, float px, float py, float pw, float ph)
     const std::string saveAsLabel = editorLabelText("saveLoadSaveAsLabel", "Save as");
     uiDrawText(saveAsLabel.c_str(), uiScaleX(px), uiScaleY(py + 116),
                editorLabelFontSize("saveLoadSaveAsLabel", avatarEditorSectionFontSize), {0.4f,0.75f,0.55f,1});
-    drawSaveLoadInput(layout);
+    drawSaveLoadInput(win, layout);
     const GuiElement* saveAs = layout.get("saveAsButton");
     if (editorButton(win, editorLabelText("saveAsButton", "Save as new avatar").c_str(),
                      {px, py + 164, buttonW, 38}, layoutBg(saveAs, {0.18f,0.38f,0.5f,1}),
                      editorFontSize(saveAs, avatarEditorButtonFontSize)).clicked && av.hasAvatar()) {
-        std::string name(gSaveNameBuf);
+        std::string name(gSaveNameState.value);
         trimName(name);
         if (!name.empty() && av.saveCurrentOutfit(name)) {
             avatarEditorLoadOutfit(name);
-            std::strncpy(gSaveNameBuf, name.c_str(), sizeof(gSaveNameBuf) - 1);
-            gSaveNameBuf[sizeof(gSaveNameBuf) - 1] = '\0';
+            gSaveNameState.value.clear();
+            gSaveNameState.cursorPos = 0;
+            gSaveNameState.selectionStart = -1;
         }
     }
 
@@ -228,7 +227,9 @@ void drawSaveLoadTab(GLFWwindow* win, float px, float py, float pw, float ph)
         int modelIndex = 0;
         for (int i = 1; i < (int)gPlayerModelItems.size(); ++i)
             if (gPlayerModelItems[i] == av.current().getPlayerModel()) modelIndex = i;
-        gPlayerModelDropdown.selectedIndex = modelIndex;
+        if (gPlayerModelDropdown.selectedIndex < 0 ||
+            gPlayerModelDropdown.selectedIndex >= (int)gPlayerModelItems.size())
+            gPlayerModelDropdown.selectedIndex = modelIndex;
         gPlayerModelRect = {px, py + 432, pw, 32};
         drawDropdown(win, gPlayerModelDropdown, gPlayerModelRect.x, gPlayerModelRect.y,
                      gPlayerModelRect.w, gPlayerModelRect.h, "", gPlayerModelItems);
@@ -310,8 +311,8 @@ void drawBottomBar(GLFWwindow* win, AvatarEditorResult& r)
 
 void avatarEditorHandleChar(unsigned int codepoint)
 {
-    if (gSaveLoadInputActive) {
-        appendAscii(gSaveNameBuf, sizeof(gSaveNameBuf), codepoint);
+    if (gSaveNameState.focused) {
+        uiTextInputHandleChar(gSaveNameState, codepoint, {.maxLength = 63});
         return;
     }
     if (gPresetInputActive)
@@ -324,8 +325,18 @@ void avatarEditorHandleChar(unsigned int codepoint)
 
 void avatarEditorHandleKey(int key, int action)
 {
-    (void)key;
-    (void)action;
+    if (action != GLFW_PRESS && action != GLFW_REPEAT) return;
+    if (gSaveNameState.focused) {
+        int mods = 0;
+        if (glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
+            glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS)
+            mods |= GLFW_MOD_SHIFT;
+        if (glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+            glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS)
+            mods |= GLFW_MOD_CONTROL;
+        uiTextInputHandleKey(glfwGetCurrentContext(), gSaveNameState, key, action, mods,
+                             {.maxLength = 63});
+    }
 }
 
 void avatarEditorHandleDrop(int count, const char** paths)
@@ -349,7 +360,6 @@ AvatarEditorResult drawAvatarEditor(GLFWwindow* win)
     AvatarEditorResult r{};
     AvatarSystem& av = AvatarSystem::instance();
     const GuiLayout& layout = avatarEditorLayout();
-    gSaveLoadInputActive = false;
 
     const char* staticIds[] = {"panelEditor", "editorTitle", "tabStrip", "previewTitle", "bottomBar"};
     for (const char* id : staticIds) {

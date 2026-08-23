@@ -209,6 +209,9 @@ void uiEndFrame()
 
     uiDrawTooltip();
 
+    // Flush all batched UI geometry in one or two draw calls
+    uiFlushBatch();
+
     if (gFrame % 120 == 1)
         Debug::logThrottled(Debug::Category::Render, "ui-frame-complete", DebugConfig::PRINT_INTERVAL, "[UI] Render pass complete drawCalls=%d widgets=%d warnings=%zu\n", gDrawCalls, gWidgets, gWarnings.size());
     gMousePrev = gMouseDown;

@@ -6,6 +6,7 @@
 #include <cstring>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include <glad/glad.h>
 #include "gui/gui-media.h"
@@ -20,6 +21,68 @@ extern TextureStore gTextures;
 using namespace UISys;
 
 namespace {
+
+// ── Batch rendering system ─────────────────────────────────
+// Accumulates all UI draw calls into buffers, then flushes once per frame.
+// Reduces ~120+ draw calls per frame to ~2-5.
+
+struct BatchVert {
+    float x, y, u, v;
+};
+
+struct TexturedBatch {
+    GLuint texture = 0;
+    glm::vec4 color{0.0f};
+    std::vector<BatchVert> verts;
+};
+
+static std::vector<BatchVert> gSolidVerts;           // solid-color rects/triangles
+static std::vector<TexturedBatch> gTexturedBatches;  // textured quads grouped by texture
+static bool gBatchFlushed = true;
+
+static void batchSolidQuad(float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1)
+{
+    gSolidVerts.push_back({x0, y0, u0, v0});
+    gSolidVerts.push_back({x1, y0, u1, v0});
+    gSolidVerts.push_back({x1, y1, u1, v1});
+    gSolidVerts.push_back({x0, y0, u0, v0});
+    gSolidVerts.push_back({x1, y1, u1, v1});
+    gSolidVerts.push_back({x0, y1, u0, v1});
+    gBatchFlushed = false;
+}
+
+static void batchTexturedQuad(float x0, float y0, float x1, float y1,
+                               float u0, float v0, float u1, float v1,
+                               GLuint tex, glm::vec4 color)
+{
+    // Find or create batch for this texture
+    for (auto& b : gTexturedBatches) {
+        if (b.texture == tex && b.color == color) {
+            b.verts.push_back({x0, y0, u0, v0});
+            b.verts.push_back({x1, y0, u1, v0});
+            b.verts.push_back({x1, y1, u1, v1});
+            b.verts.push_back({x0, y0, u0, v0});
+            b.verts.push_back({x1, y1, u1, v1});
+            b.verts.push_back({x0, y1, u0, v1});
+            gBatchFlushed = false;
+            return;
+        }
+    }
+    // New texture batch
+    TexturedBatch batch;
+    batch.texture = tex;
+    batch.color = color;
+    batch.verts.push_back({x0, y0, u0, v0});
+    batch.verts.push_back({x1, y0, u1, v0});
+    batch.verts.push_back({x1, y1, u1, v1});
+    batch.verts.push_back({x0, y0, u0, v0});
+    batch.verts.push_back({x1, y1, u1, v1});
+    batch.verts.push_back({x0, y1, u0, v1});
+    gTexturedBatches.push_back(std::move(batch));
+    gBatchFlushed = false;
+}
+
+// ── Legacy non-batched draw (for outlines and special cases) ──
 
 const unsigned char FONT5X7[44][7] = {
     {0,0,0,0,0,0,0},       // space
@@ -104,6 +167,50 @@ GLuint compile(GLenum type, const char* src, const char* name)
 
 } // anonymous namespace
 
+void uiFlushBatch()
+{
+    if (gBatchFlushed) return;
+    gBatchFlushed = true;
+
+    ensureProgram();
+    if (!gProgram || !gVao || !gVbo) return;
+
+    // Set GL state once for entire batch
+    MIMITA_GL_CALL(glUseProgram(gProgram));
+    MIMITA_GL_CALL(glUniform2f(gScreenLoc, (float)gFbW, (float)gFbH));
+    MIMITA_GL_CALL(glUniform1i(gUseTexLoc, 0));
+    MIMITA_GL_CALL(glBindVertexArray(gVao));
+    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gVbo));
+    MIMITA_GL_CALL(glEnable(GL_BLEND));
+    MIMITA_GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+
+    // Flush solid-color geometry in one draw call
+    if (!gSolidVerts.empty()) {
+        MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER,
+            gSolidVerts.size() * sizeof(BatchVert),
+            gSolidVerts.data(), GL_DYNAMIC_DRAW));
+        MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, (GLsizei)gSolidVerts.size()));
+        ++gDrawCalls;
+        gSolidVerts.clear();
+    }
+
+    // Flush textured batches (one draw call per unique texture)
+    MIMITA_GL_CALL(glUniform1i(gUseTexLoc, 1));
+    MIMITA_GL_CALL(glUniform1i(gTexLoc, 0));
+    MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
+    for (auto& batch : gTexturedBatches) {
+        if (batch.verts.empty()) continue;
+        MIMITA_GL_CALL(glUniform4fv(gColorLoc, 1, &batch.color.x));
+        MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, batch.texture));
+        MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER,
+            batch.verts.size() * sizeof(BatchVert),
+            batch.verts.data(), GL_DYNAMIC_DRAW));
+        MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, (GLsizei)batch.verts.size()));
+        ++gDrawCalls;
+    }
+    gTexturedBatches.clear();
+}
+
 void ensureProgram()
 {
     if (gProgram) return;
@@ -182,15 +289,31 @@ void drawTriVerts(const float* verts, int vertCount, glm::vec4 color, GLenum mod
     ensureProgram();
     if (!gProgram || !gVao || !gVbo || !verts || vertCount <= 0)
         return;
-    MIMITA_GL_CALL(glUseProgram(gProgram));
-    MIMITA_GL_CALL(glUniform2f(gScreenLoc, (float)gFbW, (float)gFbH));
-    MIMITA_GL_CALL(glUniform4fv(gColorLoc, 1, &color.x));
-    MIMITA_GL_CALL(glUniform1i(gUseTexLoc, 0));
-    MIMITA_GL_CALL(glBindVertexArray(gVao));
-    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gVbo));
-    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 4 * vertCount, verts, GL_DYNAMIC_DRAW));
-    MIMITA_GL_CALL(glDrawArrays(mode, 0, vertCount));
-    ++gDrawCalls;
+    // Batch: accumulate vertices for later flush instead of drawing immediately
+    // GL_LINES mode cannot be batched with GL_TRIANGLES, so draw immediately for lines
+    if (mode != GL_TRIANGLES) {
+        MIMITA_GL_CALL(glUseProgram(gProgram));
+        MIMITA_GL_CALL(glUniform2f(gScreenLoc, (float)gFbW, (float)gFbH));
+        MIMITA_GL_CALL(glUniform4fv(gColorLoc, 1, &color.x));
+        MIMITA_GL_CALL(glUniform1i(gUseTexLoc, 0));
+        MIMITA_GL_CALL(glBindVertexArray(gVao));
+        MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gVbo));
+        MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 4 * vertCount, verts, GL_DYNAMIC_DRAW));
+        MIMITA_GL_CALL(glDrawArrays(mode, 0, vertCount));
+        ++gDrawCalls;
+        return;
+    }
+    // For triangles, batch into solid-color buffer
+    for (int i = 0; i + 2 < vertCount; i += 3) {
+        const float* v = &verts[i * 4];
+        batchSolidQuad(v[0], v[1], v[4], v[5], v[2], v[3], v[6], v[7]);
+        // For triangles beyond the first 3 verts, we need to handle the fan
+        if (i + 5 < vertCount) {
+            const float* v2 = &verts[(i+3) * 4];
+            batchSolidQuad(v2[0], v2[1], v2[4], v2[5], v2[2], v2[3], v2[6], v2[7]);
+        }
+        i += 3; // skip the extra verts we consumed
+    }
 }
 
 void drawTexturedQuad(const float* verts, int vertCount, GLuint tex, glm::vec4 color)
@@ -198,20 +321,28 @@ void drawTexturedQuad(const float* verts, int vertCount, GLuint tex, glm::vec4 c
     ensureProgram();
     if (!gProgram || !gVao || !gVbo || !verts || !tex || vertCount <= 0)
         return;
-    MIMITA_GL_CALL(glUseProgram(gProgram));
-    MIMITA_GL_CALL(glEnable(GL_BLEND));
-    MIMITA_GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
-    MIMITA_GL_CALL(glUniform2f(gScreenLoc, (float)gFbW, (float)gFbH));
-    MIMITA_GL_CALL(glUniform4fv(gColorLoc, 1, &color.x));
-    MIMITA_GL_CALL(glUniform1i(gUseTexLoc, 1));
-    MIMITA_GL_CALL(glUniform1i(gTexLoc, 0));
-    MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
-    MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
-    MIMITA_GL_CALL(glBindVertexArray(gVao));
-    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gVbo));
-    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 4 * vertCount, verts, GL_DYNAMIC_DRAW));
-    MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, vertCount));
-    ++gDrawCalls;
+    // Batch textured quads by texture for later flush
+    if (vertCount == 6) {
+        batchTexturedQuad(verts[0], verts[1], verts[4], verts[5],
+                          verts[2], verts[3], verts[6], verts[7],
+                          tex, color);
+    } else {
+        // Fallback for non-quad geometry: draw immediately
+        MIMITA_GL_CALL(glUseProgram(gProgram));
+        MIMITA_GL_CALL(glEnable(GL_BLEND));
+        MIMITA_GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+        MIMITA_GL_CALL(glUniform2f(gScreenLoc, (float)gFbW, (float)gFbH));
+        MIMITA_GL_CALL(glUniform4fv(gColorLoc, 1, &color.x));
+        MIMITA_GL_CALL(glUniform1i(gUseTexLoc, 1));
+        MIMITA_GL_CALL(glUniform1i(gTexLoc, 0));
+        MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
+        MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
+        MIMITA_GL_CALL(glBindVertexArray(gVao));
+        MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gVbo));
+        MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 4 * vertCount, verts, GL_DYNAMIC_DRAW));
+        MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, vertCount));
+        ++gDrawCalls;
+    }
 }
 
 void debugWidget(const char* type, const char* name, UIRect r, bool hovered, bool pressed)
