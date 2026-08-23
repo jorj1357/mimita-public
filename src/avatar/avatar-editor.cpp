@@ -323,20 +323,12 @@ void avatarEditorHandleChar(unsigned int codepoint)
         appendAscii(gRenameBuf, sizeof(gRenameBuf), codepoint);
 }
 
-void avatarEditorHandleKey(int key, int action)
+void avatarEditorHandleKey(int key, int action, int mods)
 {
     if (action != GLFW_PRESS && action != GLFW_REPEAT) return;
-    if (gSaveNameState.focused) {
-        int mods = 0;
-        if (glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
-            glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS)
-            mods |= GLFW_MOD_SHIFT;
-        if (glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
-            glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS)
-            mods |= GLFW_MOD_CONTROL;
+    if (gSaveNameState.focused)
         uiTextInputHandleKey(glfwGetCurrentContext(), gSaveNameState, key, action, mods,
                              {.maxLength = 63});
-    }
 }
 
 void avatarEditorHandleDrop(int count, const char** paths)

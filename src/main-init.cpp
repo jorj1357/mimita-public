@@ -205,7 +205,7 @@ void gameInit(int argc, char** argv, Engine& engine)
         if (action == GLFW_PRESS || action == GLFW_REPEAT) {
             authPopupHandleKey(key, action);
             signInMenuHandleKey(key, action);
-            avatarEditorHandleKey(key, action);
+            avatarEditorHandleKey(key, action, mods);
             serverInfoMenuHandleKey(key, action, mods);
             onlineMenuHandleKey(key, action);
             std::string chatMsg;

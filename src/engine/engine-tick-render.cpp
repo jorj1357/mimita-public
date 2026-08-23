@@ -69,6 +69,7 @@ struct KillImpactFrame {
 static KillImpactFrame gKillImpactFrame;
 static std::unordered_map<std::string, bool> gActorPrevDead;
 static std::unordered_map<std::string, std::string> gReplayActorAvatarNames;
+static std::unordered_map<std::string, bool> gReplayActorPrevDead;
 
 // Renders the replay scene's actors (and cinematic kill-impact overlay) into the
 // currently bound framebuffer. Shared by the visible window path and the
@@ -85,8 +86,14 @@ static void renderReplayActors(
 {
     for (const ReplayActorState& actorState : replayFrame.actors) {
         std::unique_ptr<Player>& actor = replayActorModels[actorState.id];
-        const bool avatarChanged = gReplayActorAvatarNames[actorState.id] != actorState.avatarName;
-        if (!actor) {
+
+        // Detect life transition: was dead last tick, alive this tick = new life
+        bool& wasDead = gReplayActorPrevDead[actorState.id];
+        const bool isNewLife = wasDead && !actorState.dead;
+        const bool firstCreation = !actor;
+        wasDead = actorState.dead;
+
+        if (firstCreation) {
             // Create player without loading current account's character
             actor = std::make_unique<Player>(false);
             // Load the recorded character (not the current account's)
@@ -133,7 +140,7 @@ static void renderReplayActors(
                    actorState.characterName.c_str(),
                    actorState.modelPath.c_str());
         }
-        if (actor && avatarChanged && !actorState.avatarName.empty()) {
+        if (actor && isNewLife && !actorState.avatarName.empty()) {
             if (AvatarSystem::instance().loadAvatar(actorState.avatarName))
                 AvatarSystem::instance().applyToPlayer(*actor, true);
             gReplayActorAvatarNames[actorState.id] = actorState.avatarName;
@@ -286,6 +293,8 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         gKillImpactFrame.remainingTicks = 0;
         gKillImpactFrame.victimId.clear();
         gActorPrevDead.clear();
+        gReplayActorPrevDead.clear();
+        gReplayActorAvatarNames.clear();
     }
 
     // Update skybox animations and check for hot-reload

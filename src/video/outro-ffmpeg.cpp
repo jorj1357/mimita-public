@@ -7,6 +7,7 @@
 * Does NOT bundle, download, or install FFmpeg for players.
 * Does NOT own replay capture, clip commands, or Media Foundation export.
 * Does NOT modify source replay JSON or gameplay state.
+* Does NOT produce files with "-with-outro" in the name.
 */
 #include "video/outro.h"
 
@@ -196,11 +197,11 @@ bool appendOutroToFinishedMp4(const char* replayMp4Path, int replayW, int replay
 
     std::string outputPath;
     {
-        size_t dot = replayPath.rfind('.');
-        if (dot != std::string::npos)
-            outputPath = replayPath.substr(0, dot) + "-with-outro.mp4";
-        else
-            outputPath = replayPath + "-with-outro.mp4";
+        std::error_code tempEc;
+        std::filesystem::path tempDir = std::filesystem::temp_directory_path(tempEc);
+        if (tempEc || !std::filesystem::is_directory(tempDir, tempEc))
+            tempDir = std::filesystem::path(replayPath).parent_path();
+        outputPath = (tempDir / "mimita-outro-concat.mp4").string();
     }
 
     // Single-pass append: normalize the outro to the replay's geometry/format,

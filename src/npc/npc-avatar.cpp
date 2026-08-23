@@ -1,7 +1,7 @@
 // 08 22 2026, 12 35
 /* purpose
 * Loads NPC avatar selection settings and applies a chosen avatar to an NPC.
-* Resolves forced avatar.json paths or randomly selects valid avatar folders.
+* Resolves forced avatar.json paths or deterministically selects avatar folders per life.
 * Uses the existing AvatarSystem so body textures and cosmetics share game behavior.
 * Does NOT save avatar data or change the local player's configured avatar.
 * Does NOT own NPC spawn timing or respawn rules.
@@ -75,9 +75,10 @@ std::string chooseAvatar(std::uint32_t npcId, std::uint16_t transformEpoch)
     if (!forced.empty()) return forced;
     const std::vector<std::string> avatars = AvatarSystem::instance().listAvatars();
     if (avatars.empty()) return {};
-    // Use a proper random number generator instead of the old deterministic hash
-    // which always produced the same avatar for the same NPC ID + epoch.
-    static std::mt19937 rng(std::random_device{}());
+    // Deterministic: same NPC + same life (epoch) = same avatar.
+    // New life (new epoch) produces a different but stable avatar.
+    const std::uint64_t seed = static_cast<std::uint64_t>(npcId) * 65537ULL + transformEpoch;
+    std::mt19937 rng(static_cast<std::mt19937::result_type>(seed));
     std::uniform_int_distribution<size_t> dist(0, avatars.size() - 1);
     return avatars[dist(rng)];
 }

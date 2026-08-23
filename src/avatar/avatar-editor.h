@@ -27,8 +27,9 @@ struct AvatarEditorResult {
 AvatarEditorResult drawAvatarEditor(GLFWwindow* win);
 
 // Input hooks (text input buffers for popups).
-void avatarEditorHandleChar(unsigned int codepoint);
-void avatarEditorHandleKey(int key, int action);
+// Returns true if the event was consumed by the avatar editor.
+bool avatarEditorHandleChar(unsigned int codepoint);
+bool avatarEditorHandleKey(int key, int action, int mods);
 
 // Drag & drop PNG import.
 void avatarEditorHandleDrop(int count, const char** paths);

@@ -2,7 +2,7 @@
 /* purpose
 * Declares JSON-driven avatar assignment for NPC lives.
 * Keeps an NPC's chosen avatar stable until it respawns.
-* Supports one forced avatar or random valid avatar folders.
+* Supports one forced avatar or deterministic avatar selection per life.
 * Does NOT own player account avatars or replay serialization.
 * Does NOT create or modify avatar files.
 * Does NOT select network player cosmetics.

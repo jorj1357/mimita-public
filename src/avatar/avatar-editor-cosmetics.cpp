@@ -18,6 +18,9 @@
 #include <string>
 #include <vector>
 
+#include "../gui/gui-coord.h"
+#include "../gui/ui-system-internal.h"
+
 int gSelectedCosmetic = -1;
 bool gEditingCosmeticImage = false;
 
@@ -40,6 +43,42 @@ std::vector<std::string> gTextureItems;
 const char* kAnchors[] = {
     "head", "torso", "leftArm", "rightArm", "leftLeg", "rightLeg"
 };
+
+// When a dropdown overlay is open and the cursor is over its list area,
+// feed the scroll event to the dropdown's own scroll state and zero
+// gScrollYOffset so the tab-level scroll area doesn't steal it.
+static void suppressTabScrollForOpenDropdowns(GLFWwindow* win)
+{
+    if (UISys::gScrollYOffset == 0.0) return;
+
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+
+    struct OverlayInfo { bool open; const UIRect& rect; ScrollState& scroll; float contentH; };
+    OverlayInfo overlays[] = {
+        { gAvailableState.open, gAvailableRect, gAvailableState.scroll, (float)gAvailableItems.size() * 28.0f },
+        { gInstanceState.open, gInstanceRect, gInstanceState.scroll, (float)gInstanceItems.size() * 28.0f },
+    };
+
+    double mx = 0, my = 0;
+    glfwGetCursorPos(win, &mx, &my);
+    double fbx = mx, fby = my;
+    cs.cursorWindowToScreen(mx, my, fbx, fby);
+
+    for (auto& o : overlays) {
+        if (!o.open) continue;
+        float listY = o.rect.y + o.rect.h + 2.0f;
+        float listH = std::min(o.contentH, 200.0f);
+        UIRect screenList = cs.designToScreen({ o.rect.x, listY, o.rect.w, listH });
+        if (fbx >= screenList.x && fbx <= screenList.x + screenList.w &&
+            fby >= screenList.y && fby <= screenList.y + screenList.h) {
+            o.scroll.offset -= (float)(UISys::gScrollYOffset * 40.0f);
+            float maxS = std::max(0.0f, o.contentH - listH);
+            o.scroll.offset = std::clamp(o.scroll.offset, 0.0f, maxS);
+            UISys::gScrollYOffset = 0.0;
+            return;
+        }
+    }
+}
 
 std::vector<std::string> scanGlbs()
 {
@@ -283,6 +322,7 @@ void drawAvatarCosmeticsTab(GLFWwindow* win, float px, float py, float pw, float
                                                std::max(0, (int)gAvailableItems.size() - 1));
 
     const float contentH = 1150.0f;
+    suppressTabScrollForOpenDropdowns(win);
     beginScroll(win, {px, py, pw, ph}, contentH, gCosmeticsScroll);
     float y = py;
 
