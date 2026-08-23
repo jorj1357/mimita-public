@@ -496,7 +496,7 @@
     "headshot_multiplier": 1.0,
     "fire_delay": 0.65,
     "reload_time": 0.65,
-    "magazine_size": 400,
+    "magazine_size": 4,
     "pellet_count": 1,
     "spread": 0.0,
     "recoil": 50.0,
