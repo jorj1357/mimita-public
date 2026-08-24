@@ -146,6 +146,18 @@ struct AvatarDefinition {
 // Serialize AvatarDefinition to JSON (used by AvatarAutosave)
 void avatarToJson(const AvatarDefinition& avatar, nlohmann::json& j);
 
+// Per-avatar cached instance: owns its atlas GPU texture and definition.
+// Keyed by avatar name in AvatarSystem::mCache.
+// Multiple Players can share the same AvatarInstance (same atlas texture).
+struct AvatarInstance {
+    std::string name;
+    AvatarDefinition definition;
+    std::string basePath;
+    GLuint atlasTexture = 0;
+    int atlasGeneration = -1;
+    ~AvatarInstance();
+};
+
 class AvatarSystem {
 public:
     static AvatarSystem& instance();
@@ -156,6 +168,12 @@ public:
     void requestAtlasBuild(Player& player);
     void finalizeAtlasIfReady(Player& player);
     void requestModelLoad(Player& player);
+
+    // Per-instance API: loads avatar into cache, applies to player without mutating singleton.
+    // reloadTextures=false (default): reuse cached atlas when possible.
+    // reloadTextures=true: force atlas rebuild (only for avatar.reload / editor hot-reload).
+    AvatarInstance* getOrLoadAvatar(const std::string& name);
+    bool applyAvatarToPlayer(Player& player, const std::string& avatarName, bool reloadTextures = false);
 
     const AvatarDefinition& current() const { return mAvatar; }
     bool hasAvatar() const { return mHasAvatar; }
@@ -217,6 +235,9 @@ private:
 
     bool buildAtlas(Player& player, bool reloadTextures);
     bool applyAtlasToPlayer(Player& player);
+    bool buildAtlasForInstance(AvatarInstance& inst, bool reloadTextures);
+    bool applyAtlasFromInstance(AvatarInstance& inst, Player& player);
+    static bool parseAvatarJson(const std::string& jsonPath, const std::string& basePath, AvatarDefinition& out);
     std::string resolvePath(const std::string& relativePath) const;
 
     // Bumps the atlas generation so the atlas-reuse cache is invalidated
@@ -244,6 +265,9 @@ private:
     AvatarDefinition mAvatar;
     bool mHasAvatar = false;
     GLuint mAtlasTexture = 0;
+
+    // Per-avatar instance cache: name -> loaded definition + atlas texture
+    std::unordered_map<std::string, std::unique_ptr<AvatarInstance>> mCache;
 
     std::filesystem::file_time_type mLastWriteTime;
     std::chrono::steady_clock::time_point mLastCheckTime;

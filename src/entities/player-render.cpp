@@ -161,13 +161,13 @@ void Player::renderCurrentPose(unsigned int shader,
             deathAlpha = 1.0f;
         }
 
-        // Set alpha cutoff from current avatar mode
+        // Set alpha cutoff from current avatar instance (NOT from singleton)
         float alphaCutoff = 0.0f;
         int alphaBlendMode = 2; // 0=opaque, 1=cutout, 2=blend
         if (deathAlpha < 1.0f) {
             alphaBlendMode = 2; // force alpha blend during death fade
-        } else if (AvatarSystem::instance().hasAvatar()) {
-            const auto& av = AvatarSystem::instance().current();
+        } else if (avatarInstance) {
+            const auto& av = avatarInstance->definition;
             if (av.textureMode == "uv_atlas") {
                 if (av.alphaMode == "cutout") {
                     alphaCutoff = av.alphaCutoff;
@@ -292,6 +292,12 @@ void Player::renderCurrentPose(unsigned int shader,
             glEnable(GL_BLEND);
         else
             glDisable(GL_BLEND);
+
+        // Reset avatar-only shader uniforms to prevent leaking into world/subsequent renders
+        if (uAlphaCutoffLoc >= 0) glUniform1f(uAlphaCutoffLoc, 0.0f);
+        if (uCosmeticTextureEnabledLoc >= 0) glUniform1i(uCosmeticTextureEnabledLoc, 0);
+        if (uCosmeticBrightnessLoc >= 0) glUniform1f(uCosmeticBrightnessLoc, 1.0f);
+        if (uCosmeticOpacityLoc >= 0) glUniform1f(uCosmeticOpacityLoc, 1.0f);
 
         return;
     }

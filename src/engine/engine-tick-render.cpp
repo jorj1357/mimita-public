@@ -104,25 +104,24 @@ static void renderReplayActors(
             else if (!actorState.modelPath.empty())
                 actor->loadModel(actorState.modelPath.c_str());
 
-            printf("[RPLX AVATAR] Replay player created\n");
-            printf("[RPLX AVATAR] Loading avatar via AvatarSystem::applyToPlayer\n");
-            printf("[RPLX AVATAR] Current avatar in system: %s\n",
-                   AvatarSystem::instance().hasAvatar()
-                       ? AvatarSystem::instance().currentName().c_str()
-                       : "(none)");
-
-            // Recorded avatar identity wins over the exporting account's avatar.
-            bool avatarApplied = false;
-            if (!actorState.avatarName.empty())
-                avatarApplied = AvatarSystem::instance().loadAvatar(actorState.avatarName) &&
-                    AvatarSystem::instance().applyToPlayer(*actor, true);
-            else
-                avatarApplied = AvatarSystem::instance().applyToPlayer(*actor);
-            if (avatarApplied) {
-                printf("[RPLX AVATAR] Avatar applied via gameplay avatar pipeline\n");
-                printf("[RPLX AVATAR] Avatar initialization complete\n");
+            // Per-instance avatar path: does NOT mutate singleton
+            if (!actorState.avatarName.empty()) {
+                AvatarSystem::instance().applyAvatarToPlayer(*actor, actorState.avatarName);
+                Debug::warn(Debug::Category::Replay,
+                    "[REPLAY AVATAR] first creation actorId='%s' type='%s' avatar='%s' atlas=%u model=%s\n",
+                    actorState.id.c_str(), actorState.type.c_str(), actorState.avatarName.c_str(),
+                    actor->avatarInstance ? actor->avatarInstance->atlasTexture : 0,
+                    actor->avatarInstance ? actor->avatarInstance->definition.playerModel.c_str() : "?");
             } else {
-                printf("[RPLX AVATAR] No avatar loaded in system, applying outfit texture directly\n");
+                AvatarSystem::instance().applyToPlayer(*actor);
+                Debug::warn(Debug::Category::Replay,
+                    "[REPLAY AVATAR] first creation actorId='%s' type='%s' fallback to local avatar\n",
+                    actorState.id.c_str(), actorState.type.c_str());
+            }
+            gReplayActorAvatarNames[actorState.id] = actorState.avatarName;
+
+            // Outfit texture fallback if avatar pipeline failed
+            if (!actor->avatarInstance) {
                 const std::string& outfitToUse =
                     !actorState.outfitPath.empty()
                         ? actorState.outfitPath
@@ -142,10 +141,32 @@ static void renderReplayActors(
                    actorState.characterName.c_str(),
                    actorState.modelPath.c_str());
         }
-        if (actor && isNewLife && !actorState.avatarName.empty()) {
-            if (AvatarSystem::instance().loadAvatar(actorState.avatarName))
-                AvatarSystem::instance().applyToPlayer(*actor, true);
-            gReplayActorAvatarNames[actorState.id] = actorState.avatarName;
+        // Life transition (respawn)
+        if (actor && isNewLife) {
+            // Rule: real player actors keep the same avatar for the whole replay
+            if (actorState.type == "player") {
+                Debug::warn(Debug::Category::Replay,
+                    "[REPLAY AVATAR] respawn LOCKED actorId='%s' type='player' keeping existing avatar atlas=%u\n",
+                    actorState.id.c_str(),
+                    actor->avatarInstance ? actor->avatarInstance->atlasTexture : 0);
+            } else {
+                // NPC/remote actors: apply the recorded avatar for this life
+                std::string avName = actorState.avatarName;
+                // If frame has no avatarName, reuse previous (don't overwrite map with empty)
+                if (avName.empty()) {
+                    auto prevIt = gReplayActorAvatarNames.find(actorState.id);
+                    if (prevIt != gReplayActorAvatarNames.end() && !prevIt->second.empty())
+                        avName = prevIt->second;
+                }
+                if (!avName.empty()) {
+                    AvatarSystem::instance().applyAvatarToPlayer(*actor, avName);
+                    Debug::warn(Debug::Category::Replay,
+                        "[REPLAY AVATAR] respawn actorId='%s' type='%s' avatar='%s' atlas=%u\n",
+                        actorState.id.c_str(), actorState.type.c_str(), avName.c_str(),
+                        actor->avatarInstance ? actor->avatarInstance->atlasTexture : 0);
+                    gReplayActorAvatarNames[actorState.id] = avName;
+                }
+            }
         }
         actor->username = actorState.name;
         actor->currentHp = actorState.health;

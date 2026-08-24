@@ -21,9 +21,18 @@ extern nlohmann::json gAvatarBodypartOverrides;
 #include "entities/player.h"
 #include "world/texture-store.h"
 #include "devtools/terminal.h"
+#include "debug/debug-log.h"
 #include "map/map_common.h"
+#include "cosmetic-system.h"
 #include "stb_image.h"
 #include "stb_image_resize2.h"
+
+AvatarInstance::~AvatarInstance() {
+    if (atlasTexture && glfwGetCurrentContext()) {
+        glDeleteTextures(1, &atlasTexture);
+    }
+    atlasTexture = 0;
+}
 
 namespace {
 
@@ -593,4 +602,147 @@ void AvatarSystem::requestModelLoad(Player& player) {
 
     if (!modelPath.empty())
         player.requestModelLoad(modelPath);
+}
+
+// ── Per-instance avatar system ────────────────────────────────────────
+
+AvatarInstance* AvatarSystem::getOrLoadAvatar(const std::string& name) {
+    if (name.empty()) return nullptr;
+    auto it = mCache.find(name);
+    if (it != mCache.end()) {
+        Debug::log(Debug::Category::Avatar, "[AVATAR CACHE] hit: %s atlas=%u\n",
+                   name.c_str(), it->second->atlasTexture);
+        return it->second.get();
+    }
+    Debug::warn(Debug::Category::Avatar, "[AVATAR CACHE] miss: %s (loading)\n", name.c_str());
+    auto inst = std::make_unique<AvatarInstance>();
+    inst->name = name;
+    inst->basePath = AvatarSystem::avatarPath(name);
+    inst->definition.clear();
+    inst->definition.name = name;
+    inst->definition.basePath = inst->basePath;
+    const std::string jsonPath = inst->basePath + "/avatar.json";
+    if (!parseAvatarJson(jsonPath, inst->basePath, inst->definition)) {
+        Debug::warn(Debug::Category::Avatar, "[AVATAR CACHE] failed to parse: %s\n", jsonPath.c_str());
+        return nullptr;
+    }
+    AvatarInstance* result = inst.get();
+    mCache[name] = std::move(inst);
+    Debug::warn(Debug::Category::Avatar, "[AVATAR CACHE] loaded: %s model=%s\n",
+                name.c_str(), result->definition.playerModel.c_str());
+    return result;
+}
+
+bool AvatarSystem::buildAtlasForInstance(AvatarInstance& inst, bool reloadTextures) {
+    if (!reloadTextures && inst.atlasTexture != 0 && inst.atlasGeneration >= 0) {
+        Debug::log(Debug::Category::Avatar, "[AVATAR ATLAS] instance cache hit: %s atlas=%u gen=%d\n",
+                   inst.name.c_str(), inst.atlasTexture, inst.atlasGeneration);
+        return true;
+    }
+
+    inst.atlasGeneration++;
+    Debug::warn(Debug::Category::Avatar, "[AVATAR ATLAS] buildAtlasForInstance: %s gen=%d reload=%d\n",
+                inst.name.c_str(), inst.atlasGeneration, (int)reloadTextures);
+
+    std::vector<unsigned char> atlasPixels = buildAtlasPixels(inst.definition, inst.basePath);
+
+    if (!glfwGetCurrentContext()) return true;
+
+    if (inst.atlasTexture) {
+        glDeleteTextures(1, &inst.atlasTexture);
+        inst.atlasTexture = 0;
+    }
+
+    glGenTextures(1, &inst.atlasTexture);
+    glBindTexture(GL_TEXTURE_2D, inst.atlasTexture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ATLAS_SIZE, ATLAS_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, atlasPixels.data());
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+
+    Debug::warn(Debug::Category::Avatar, "[AVATAR ATLAS] built atlas=%u for '%s'\n", inst.atlasTexture, inst.name.c_str());
+    return true;
+}
+
+bool AvatarSystem::applyAtlasFromInstance(AvatarInstance& inst, Player& player) {
+    if (!inst.atlasTexture) return false;
+
+    for (size_t partIndex = 0; partIndex < player.physicalBody.parts.size(); ++partIndex) {
+        if (partIndex >= player.physicalBody.partMeshes.size()) break;
+        const std::string& name = player.physicalBody.parts[partIndex].name;
+        const int row = partRow(name);
+        if (row < 0) continue;
+
+        Mesh& mesh = player.physicalBody.partMeshes[partIndex];
+        if (mesh.verts.empty()) continue;
+
+        glm::vec3 mn = mesh.verts[0].pos;
+        glm::vec3 mx = mesh.verts[0].pos;
+        for (const Vertex& v : mesh.verts) {
+            mn = glm::min(mn, v.pos);
+            mx = glm::max(mx, v.pos);
+        }
+
+        for (size_t i = 0; i + 2 < mesh.verts.size(); i += 3) {
+            glm::vec3 normal = mesh.verts[i].normal + mesh.verts[i + 1].normal + mesh.verts[i + 2].normal;
+            if (glm::dot(normal, normal) < 0.000001f)
+                normal = glm::cross(mesh.verts[i + 1].pos - mesh.verts[i].pos,
+                                    mesh.verts[i + 2].pos - mesh.verts[i].pos);
+            const int meshFace = faceColumn(normal);
+            const int atlasCol = faceToAtlasColumn(meshFace);
+            for (size_t v = i; v < i + 3; ++v)
+                mesh.verts[v].uv = atlasUV(row, atlasCol, projectedUV(mesh.verts[v], meshFace, mn, mx));
+        }
+
+        for (Mesh::Batch& batch : mesh.batches)
+            batch.texture = inst.atlasTexture;
+    }
+
+    player.bodyPartMeshes = player.physicalBody.partMeshes;
+    return true;
+}
+
+bool AvatarSystem::applyAvatarToPlayer(Player& player, const std::string& avatarName, bool reloadTextures) {
+    AvatarInstance* inst = getOrLoadAvatar(avatarName);
+    if (!inst) return false;
+
+    player.setAvatarName(avatarName);
+    player.avatarInstance = inst;
+
+    // Load model from THIS avatar's definition, NOT from the singleton
+    if (!inst->definition.playerModel.empty()) {
+        if (!inst->definition.bodypartOverrides.is_null())
+            gAvatarBodypartOverrides = inst->definition.bodypartOverrides;
+        player.loadModel(inst->definition.playerModel.c_str());
+    } else {
+        gAvatarBodypartOverrides = nullptr;
+        player.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
+    }
+
+    if (!buildAtlasForInstance(*inst, reloadTextures)) return false;
+    bool applied = applyAtlasFromInstance(*inst, player);
+
+    if (applied && !inst->definition.cosmetics.empty()) {
+        CosmeticSystem::instance().loadCosmetics(inst->definition.cosmetics);
+        std::vector<CosmeticSlot> playerCosmetics = inst->definition.cosmetics;
+        for (CosmeticSlot& slot : playerCosmetics) {
+            if (!slot.texture.image.empty() &&
+                slot.texture.image.find('/') == std::string::npos &&
+                slot.texture.image.find('\\') == std::string::npos)
+                slot.texture.image = inst->basePath + "/" + slot.texture.image;
+        }
+        player.setCosmetics(playerCosmetics);
+    } else if (applied) {
+        player.setCosmetics({});
+    }
+
+    Debug::warn(Debug::Category::Avatar,
+        "[AVATAR] applyAvatarToPlayer: '%s' -> '%s' atlas=%u model=%s reload=%d\n",
+        avatarName.c_str(), player.username.c_str(), inst->atlasTexture,
+        inst->definition.playerModel.c_str(), (int)reloadTextures);
+    return applied;
 }

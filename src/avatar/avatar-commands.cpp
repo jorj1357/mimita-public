@@ -161,13 +161,15 @@ void registerAvatarCommands(Player& player) {
         "avatar.reload",
         [&player](const std::vector<std::string>&) {
             auto& av = AvatarSystem::instance();
-            if (!av.hasAvatar()) {
-                Terminal::instance().addLog("[AVATAR] No avatar loaded. Use avatar.load <name>");
+            // Read from settings, NOT from singleton currentName()
+            // This ensures avatar.reload always reloads the local user's saved avatar
+            const std::string name = GetPlayerSettings().avatarName;
+            if (name.empty()) {
+                Terminal::instance().addLog("[AVATAR] No avatar saved. Use avatar.load <name>");
                 return;
             }
-            const std::string name = av.currentName();
             if (av.loadAvatar(name)) {
-                av.applyToPlayer(player, true);
+                av.applyToPlayer(player, true);  // reloadTextures=true for explicit reload
                 Terminal::instance().addLog("[AVATAR] Reloaded: " + name);
             }
         },

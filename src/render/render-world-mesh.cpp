@@ -163,6 +163,17 @@ void setUniforms(GLuint shader, const glm::vec3& cameraPos)
     setFloat(shader, "uTextureContrast", cfg.textureContrast());
     setFloat(shader, "uTextureBrightness", cfg.textureBrightness());
 
+    // Reset avatar-only uniforms leaked from previous frame's player/cosmetic rendering.
+    // These are neutral defaults that have no effect on world appearance.
+    if (uniformLoc(shader, "uAlphaCutoff") >= 0)
+        setFloat(shader, "uAlphaCutoff", 0.0f);
+    if (uniformLoc(shader, "uCosmeticTextureEnabled") >= 0)
+        setInt(shader, "uCosmeticTextureEnabled", 0);
+    if (uniformLoc(shader, "uCosmeticBrightness") >= 0)
+        setFloat(shader, "uCosmeticBrightness", 1.0f);
+    if (uniformLoc(shader, "uCosmeticOpacity") >= 0)
+        setFloat(shader, "uCosmeticOpacity", 1.0f);
+
     // Dynamic point lights
     const auto& dlmgr = DynamicLightManager::instance();
     DynamicLightManager::SubmitResult dlights = dlmgr.submitToShader(cameraPos, DynamicLightManager::MAX_SUBMIT);
@@ -232,6 +243,9 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
 
     const Mesh& mesh = world.mesh;
     size_t drawCalls = 0;
+
+    // Ensure texture unit 0 is active before binding world textures
+    glActiveTexture(GL_TEXTURE0);
 
     for (const auto& batch : mesh.batches)
     {

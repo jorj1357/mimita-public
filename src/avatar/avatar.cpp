@@ -393,6 +393,106 @@ void avatarToJson(const AvatarDefinition& avatar, json& j) {
     }
 }
 
+// ── Per-instance avatar JSON parsing ────────────────────────────────
+bool AvatarSystem::parseAvatarJson(const std::string& jsonPath, const std::string& basePath, AvatarDefinition& out) {
+    std::ifstream file(jsonPath);
+    if (!file.is_open()) return false;
+
+    try {
+        json root;
+        file >> root;
+
+        std::unordered_map<std::string, std::string> textureAliases;
+        if (root.contains("textures") && root["textures"].is_object()) {
+            for (auto& [alias, val] : root["textures"].items()) {
+                textureAliases[alias] = val.get<std::string>();
+            }
+        }
+        auto resolveAlias = [&](const std::string& val) -> std::string {
+            auto it = textureAliases.find(val);
+            return (it != textureAliases.end()) ? it->second : val;
+        };
+
+        bool hasAdvanced = root.contains("advanced") && root["advanced"].is_object();
+        bool hasSimple = root.contains("simple") && root["simple"].is_object();
+
+        if (hasAdvanced) {
+            out.advancedMode = true;
+            auto& adv = root["advanced"];
+            const char* partKeys[] = {"head", "torso", "leftArm", "rightArm", "leftLeg", "rightLeg"};
+            FaceVector AvatarDefinition::*partPtrs[] = {
+                &AvatarDefinition::head, &AvatarDefinition::torso,
+                &AvatarDefinition::leftArm, &AvatarDefinition::rightArm,
+                &AvatarDefinition::leftLeg, &AvatarDefinition::rightLeg
+            };
+            for (int pi = 0; pi < 6; ++pi) {
+                FaceVector& part = out.*partPtrs[pi];
+                parsePartFacesFromAdvanced(adv, partKeys[pi], part, "");
+                const char* faceNames[] = {"front", "back", "left", "right", "top", "bottom"};
+                for (const char* fn : faceNames)
+                    part.byName(fn).texture = resolveAlias(part.byName(fn).texture);
+            }
+        } else if (hasSimple) {
+            out.advancedMode = false;
+            auto& s = root["simple"];
+            out.simple.face  = resolveAlias(s.value("face", ""));
+            out.simple.shirt = resolveAlias(s.value("shirt", ""));
+            out.simple.pants = resolveAlias(s.value("pants", ""));
+            out.simple.skin  = resolveAlias(s.value("skin", ""));
+            out.expandSimple();
+        } else {
+            return false;
+        }
+
+        out.format_version = root.value("format_version", 1);
+        out.avatar_id = root.value("avatar_id", "");
+        out.created_at = root.value("created_at", "");
+        out.updated_at = root.value("updated_at", "");
+
+        if (out.avatar_id.empty()) {
+            std::random_device rd;
+            std::mt19937_64 rng(rd());
+            char buf[24];
+            std::snprintf(buf, sizeof(buf), "local_%016llx", (unsigned long long)rng());
+            out.avatar_id = buf;
+        }
+
+        if (root.contains("colors"))
+            out.colors = parsePartColors(root["colors"]);
+        if (root.contains("cosmetics"))
+            out.cosmetics = parseCosmetics(root["cosmetics"]);
+        out.activePreset = root.value("active_preset", "");
+
+        std::string pm;
+        if (root.contains("character_model") && root["character_model"].is_string())
+            pm = root["character_model"].get<std::string>();
+        else if (root.contains("player_model") && root["player_model"].is_string())
+            pm = root["player_model"].get<std::string>();
+        if (!pm.empty() && std::filesystem::exists(pm))
+            out.playerModel = pm;
+
+        if (root.contains("bodyparts") && root["bodyparts"].is_object())
+            out.bodypartOverrides = root["bodyparts"];
+
+        out.textureMode = root.value("texture_mode", "legacy_faces");
+        if (out.textureMode == "uv_atlas") {
+            if (root.contains("atlas") && root["atlas"].is_string()) {
+                std::string atPath = root["atlas"].get<std::string>();
+                if (!std::filesystem::path(atPath).is_absolute())
+                    atPath = basePath + "/" + atPath;
+                out.atlasPath = atPath;
+            }
+            out.alphaMode = root.value("alpha_mode", "blend");
+            out.alphaCutoff = (float)root.value("alpha_cutoff", 0.5);
+            out.unlit = root.value("unlit", false);
+        }
+
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
 // ── Load / Save ─────────────────────────────────────────────────────
 bool AvatarSystem::loadAvatar(const std::string& avatarName) {
     markAtlasDirty();
@@ -583,6 +683,18 @@ bool AvatarSystem::loadAvatar(const std::string& avatarName) {
             mLastWriteTime = std::filesystem::last_write_time(jsonPath);
         mLastCheckTime = std::chrono::steady_clock::now();
         Terminal::instance().addLog("[AVATAR] Loaded avatar: " + avatarName);
+        // Populate per-avatar instance cache
+        auto cacheIt = mCache.find(avatarName);
+        if (cacheIt == mCache.end()) {
+            auto inst = std::make_unique<AvatarInstance>();
+            inst->name = avatarName;
+            inst->definition = mAvatar;
+            inst->basePath = mBasePath;
+            mCache[avatarName] = std::move(inst);
+        } else {
+            cacheIt->second->definition = mAvatar;
+            cacheIt->second->basePath = mBasePath;
+        }
         return true;
     } catch (const std::exception& e) {
         Terminal::instance().addLog("[AVATAR] Failed to parse avatar.json: " + std::string(e.what()));
@@ -979,6 +1091,10 @@ bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
     } else if (applied) {
         player.setCosmetics({});
     }
+    // Set avatar instance from cache
+    auto cacheIt = mCache.find(mAvatarName);
+    if (cacheIt != mCache.end())
+        player.avatarInstance = cacheIt->second.get();
     return applied;
 }
 

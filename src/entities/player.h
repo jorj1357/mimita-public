@@ -532,6 +532,7 @@ public:
     std::string equippedWeaponId;
     std::string mCharacterName = "DefaultGuy";
     std::string mAvatarName;
+    struct AvatarInstance* avatarInstance = nullptr;
     std::unordered_map<std::string, WeaponRuntime> weaponRuntimes;
 
     // Previous frame body sample positions for limb sweep collisions

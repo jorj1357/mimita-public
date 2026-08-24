@@ -109,24 +109,22 @@ bool assignNpcAvatar(Npc& npc)
         Debug::warn(Debug::Category::Avatar, "[NPC AVATAR] no valid avatar folders; npc=%u retains default appearance\n", npc.id);
         return false;
     }
-    AvatarSystem& avatars = AvatarSystem::instance();
-    if (!avatars.loadAvatar(name)) {
-        npc.avatarName.clear();
-        Debug::warn(Debug::Category::Avatar, "[NPC AVATAR] failed to load avatar=%s npc=%u\n", name.c_str(), npc.id);
-        return false;
-    }
     // Headless servers have no GL context — skip GPU loading, just store the name.
     // Clients will load the avatar visuals themselves from the name in snapshots.
     if (glfwGetCurrentContext()) {
-        if (!avatars.applyToPlayer(npc.body, true)) {
+        if (!AvatarSystem::instance().applyAvatarToPlayer(npc.body, name)) {
             npc.avatarName.clear();
             Debug::warn(Debug::Category::Avatar, "[NPC AVATAR] failed to apply avatar=%s npc=%u\n", name.c_str(), npc.id);
             return false;
         }
+        Debug::warn(Debug::Category::Avatar,
+            "[NPC AVATAR SERVER] npc=%u avatar='%s' epoch=%u atlas=%u model=%s\n",
+            npc.id, name.c_str(), (unsigned)npc.transformEpoch,
+            npc.body.avatarInstance ? npc.body.avatarInstance->atlasTexture : 0,
+            npc.body.avatarInstance ? npc.body.avatarInstance->definition.playerModel.c_str() : "?");
     } else {
         Debug::warn(Debug::Category::Avatar, "[NPC AVATAR] headless server, skipping GL apply for avatar=%s npc=%u\n", name.c_str(), npc.id);
     }
     npc.avatarName = name;
-    Debug::warn(Debug::Category::Avatar, "[NPC AVATAR] assigned npc=%u avatar=%s epoch=%u\n", npc.id, npc.avatarName.c_str(), (unsigned)npc.transformEpoch);
     return true;
 }

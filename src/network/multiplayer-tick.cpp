@@ -341,12 +341,14 @@ static void processSnapshotEntities(
                 std::string remoteAvatar(entity.avatarName);
                 if (remoteAvatar.empty()) {
                     AvatarSystem::applySingleTexture(p, GetPlayerSettings().outfitPath);
-                } else if (AvatarSystem::instance().loadAvatar(remoteAvatar)) {
-                    AvatarSystem::instance().applyToPlayer(p, true);
-                } else {
+                } else if (!AvatarSystem::instance().applyAvatarToPlayer(p, remoteAvatar)) {
                     AvatarSystem::applySingleTexture(p, GetPlayerSettings().outfitPath);
                 }
                 p.setAvatarName(remoteAvatar);
+                Debug::warn(Debug::Category::Avatar,
+                    "[REMOTE AVATAR] entityId=%u name='%s' avatar='%s' atlas=%u\n",
+                    entity.networkEntityId, entity.displayName, remoteAvatar.c_str(),
+                    p.avatarInstance ? p.avatarInstance->atlasTexture : 0);
             }
             else
             {
@@ -354,12 +356,18 @@ static void processSnapshotEntities(
                 std::string npcAvatar = entity.avatarName[0] != '\0'
                     ? std::string(entity.avatarName)
                     : npcAvatarNameForLife(entity.networkEntityId, entity.transformEpoch);
-                if (!npcAvatar.empty() && AvatarSystem::instance().loadAvatar(npcAvatar)) {
-                    AvatarSystem::instance().applyToPlayer(p, true);
+                if (!npcAvatar.empty()) {
+                    if (!AvatarSystem::instance().applyAvatarToPlayer(p, npcAvatar)) {
+                        p.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
+                    }
                 } else {
                     p.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
                 }
                 p.setAvatarName(npcAvatar);
+                Debug::warn(Debug::Category::Avatar,
+                    "[NPC AVATAR CLIENT] entityId=%u avatar='%s' atlas=%u\n",
+                    entity.networkEntityId, npcAvatar.c_str(),
+                    p.avatarInstance ? p.avatarInstance->atlasTexture : 0);
             }
             interpolation.renderRegistered = true;
             printf("[CLIENT ENTITY CREATE] entityId=%u type=%s ownerClientId=%u "
