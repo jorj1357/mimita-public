@@ -10,6 +10,7 @@
 #include "gui/menus/server-info-menu.h"
 #include "gui/menus/online-menu.h"
 #include "gui/menus/pause-menu.h"
+#include "avatar/avatar-editor.h"
 #include <GLFW/glfw3.h>
 #include <fstream>
 #include <sstream>
@@ -99,6 +100,9 @@ void InputCommandSystem::keyCallback(GLFWwindow* window, int key, int scancode, 
         if (!chatMsg.empty())
             requestSendChatMessage(chatMsg);
         if (chatConsumed) return;
+
+        // Avatar editor text input (save/load name field)
+        if (avatarEditorHandleKey(key, action, mods)) return;
 
         // If a GUI text input field is focused, route to the binding system
         if (!GuiBindings::instance().focusedId().empty()) {

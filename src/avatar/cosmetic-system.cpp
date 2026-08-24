@@ -233,12 +233,12 @@ void CosmeticSystem::renderCosmetics(const Player& player) const
         // Upload and render each batch
         static GLuint cosmeticVAO = 0;
         static GLuint cosmeticVBO = 0;
-        static size_t lastVerts = 0;
+        static const Mesh* lastMesh = nullptr;
 
         if (!cosmeticVAO)
             glGenVertexArrays(1, &cosmeticVAO);
 
-        if (mesh.verts.size() != lastVerts)
+        if (&mesh != lastMesh)
         {
             if (!cosmeticVBO)
                 glGenBuffers(1, &cosmeticVBO);
@@ -254,7 +254,7 @@ void CosmeticSystem::renderCosmetics(const Player& player) const
             glEnableVertexAttribArray(2);
             glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
 
-            lastVerts = mesh.verts.size();
+            lastMesh = &mesh;
         }
 
         glBindVertexArray(cosmeticVAO);

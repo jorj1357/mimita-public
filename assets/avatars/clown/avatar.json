@@ -1,0 +1,351 @@
+{
+  "advanced": {
+    "head_back": {
+      "brightness": 9.843938827514648,
+      "contrast": 1.8474600315093994,
+      "offset_x": -97,
+      "offset_y": 40,
+      "opacity": 0.996940016746521,
+      "saturation": -9.892901420593262,
+      "scale_x": 9.945195198059082,
+      "scale_y": 9.922359466552734,
+      "texture": "clownshirt.png"
+    },
+    "head_bottom": {
+      "brightness": 9.843938827514648,
+      "contrast": 1.8474600315093994,
+      "offset_x": -97,
+      "offset_y": 40,
+      "opacity": 0.996940016746521,
+      "saturation": -9.892901420593262,
+      "scale_x": 9.945195198059082,
+      "scale_y": 9.922359466552734,
+      "texture": "clownshirt.png"
+    },
+    "head_front": {
+      "brightness": 0.8935117721557617,
+      "contrast": 1.7028762102127075,
+      "rotation": 179.66949462890625,
+      "saturation": -3.3751535415649414,
+      "scale_y": 1.4277154207229614,
+      "texture": "a426301dfc9045b75c0860e497661a84.jpg"
+    },
+    "head_left": {
+      "brightness": 9.843938827514648,
+      "contrast": 1.8474600315093994,
+      "offset_x": -97,
+      "offset_y": 40,
+      "opacity": 0.996940016746521,
+      "saturation": -9.892901420593262,
+      "scale_x": 9.945195198059082,
+      "scale_y": 9.922359466552734,
+      "texture": "clownshirt.png"
+    },
+    "head_right": {
+      "brightness": 9.843938827514648,
+      "contrast": 1.8474600315093994,
+      "offset_x": -97,
+      "offset_y": 40,
+      "opacity": 0.996940016746521,
+      "saturation": -9.892901420593262,
+      "scale_x": 9.945195198059082,
+      "scale_y": 9.922359466552734,
+      "texture": "clownshirt.png"
+    },
+    "head_top": {
+      "brightness": 9.843938827514648,
+      "contrast": 1.8474600315093994,
+      "offset_x": -97,
+      "offset_y": 40,
+      "opacity": 0.996940016746521,
+      "saturation": -9.892901420593262,
+      "scale_x": 9.945195198059082,
+      "scale_y": 9.922359466552734,
+      "texture": "clownshirt.png"
+    },
+    "leftArm_back": {
+      "offset_x": -216,
+      "offset_y": -329,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.05761157348752022,
+      "texture": "clownarms.png"
+    },
+    "leftArm_bottom": {
+      "offset_x": -216,
+      "offset_y": -329,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.05761157348752022,
+      "texture": "clownarms.png"
+    },
+    "leftArm_front": {
+      "offset_x": -216,
+      "offset_y": -329,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.05761157348752022,
+      "texture": "clownarms.png"
+    },
+    "leftArm_left": {
+      "offset_x": -216,
+      "offset_y": -329,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.05761157348752022,
+      "texture": "clownarms.png"
+    },
+    "leftArm_right": {
+      "offset_x": -216,
+      "offset_y": -329,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.05761157348752022,
+      "texture": "clownarms.png"
+    },
+    "leftArm_top": {
+      "offset_x": -216,
+      "offset_y": -329,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.05761157348752022,
+      "texture": "clownarms.png"
+    },
+    "leftLeg_back": {
+      "scale_x": 0.6284881830215454,
+      "scale_y": 9.990864753723145,
+      "texture": "clownpants.png"
+    },
+    "leftLeg_bottom": {
+      "scale_x": 0.6284881830215454,
+      "scale_y": 9.990864753723145,
+      "texture": "clownpants.png"
+    },
+    "leftLeg_front": {
+      "scale_x": 0.6284881830215454,
+      "scale_y": 9.990864753723145,
+      "texture": "clownpants.png"
+    },
+    "leftLeg_left": {
+      "scale_x": 0.6284881830215454,
+      "scale_y": 9.990864753723145,
+      "texture": "clownpants.png"
+    },
+    "leftLeg_right": {
+      "scale_x": 0.6284881830215454,
+      "scale_y": 9.990864753723145,
+      "texture": "clownpants.png"
+    },
+    "leftLeg_top": {
+      "scale_x": 0.6284881830215454,
+      "scale_y": 9.990864753723145,
+      "texture": "clownpants.png"
+    },
+    "rightArm_back": {
+      "offset_x": -216,
+      "offset_y": -329,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.05761157348752022,
+      "texture": "clownarms.png"
+    },
+    "rightArm_bottom": {
+      "offset_x": -216,
+      "offset_y": -329,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.05761157348752022,
+      "texture": "clownarms.png"
+    },
+    "rightArm_front": {
+      "offset_x": -216,
+      "offset_y": -329,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.05761157348752022,
+      "texture": "clownarms.png"
+    },
+    "rightArm_left": {
+      "offset_x": -216,
+      "offset_y": -329,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.05761157348752022,
+      "texture": "clownarms.png"
+    },
+    "rightArm_right": {
+      "offset_x": -216,
+      "offset_y": -329,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.05761157348752022,
+      "texture": "clownarms.png"
+    },
+    "rightArm_top": {
+      "offset_x": -216,
+      "offset_y": -329,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.05761157348752022,
+      "texture": "clownarms.png"
+    },
+    "rightLeg_back": {
+      "scale_x": 0.6284881830215454,
+      "scale_y": 9.990864753723145,
+      "texture": "clownpants.png"
+    },
+    "rightLeg_bottom": {
+      "scale_x": 0.6284881830215454,
+      "scale_y": 9.990864753723145,
+      "texture": "clownpants.png"
+    },
+    "rightLeg_front": {
+      "scale_x": 0.6284881830215454,
+      "scale_y": 9.990864753723145,
+      "texture": "clownpants.png"
+    },
+    "rightLeg_left": {
+      "scale_x": 0.6284881830215454,
+      "scale_y": 9.990864753723145,
+      "texture": "clownpants.png"
+    },
+    "rightLeg_right": {
+      "scale_x": 0.6284881830215454,
+      "scale_y": 9.990864753723145,
+      "texture": "clownpants.png"
+    },
+    "rightLeg_top": {
+      "scale_x": 0.6284881830215454,
+      "scale_y": 9.990864753723145,
+      "texture": "clownpants.png"
+    },
+    "torso_back": {
+      "offset_x": -216,
+      "offset_y": -329,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.05761157348752022,
+      "texture": "clownarms.png"
+    },
+    "torso_bottom": {
+      "offset_x": -216,
+      "offset_y": -329,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.05761157348752022,
+      "texture": "clownarms.png"
+    },
+    "torso_front": {
+      "color": [
+        1.2316399812698364,
+        0.9883719682693481,
+        1.2913095951080322
+      ],
+      "contrast": 0.759638786315918,
+      "offset_y": -17,
+      "opacity": 0.9992350339889526,
+      "rotation": 179.66949462890625,
+      "scale_x": 0.10328170657157898,
+      "scale_y": 0.08044663816690445,
+      "texture": "clownshirt.png"
+    },
+    "torso_left": {
+      "offset_x": -216,
+      "offset_y": -329,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.05761157348752022,
+      "texture": "clownarms.png"
+    },
+    "torso_right": {
+      "offset_x": -216,
+      "offset_y": -329,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.05761157348752022,
+      "texture": "clownarms.png"
+    },
+    "torso_top": {
+      "offset_x": -216,
+      "offset_y": -329,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 0.05761157348752022,
+      "texture": "clownarms.png"
+    }
+  },
+  "advanced_mode": true,
+  "avatar_id": "local_dec812ee1ac269ec",
+  "colors": {
+    "head": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "torso": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "cosmetics": [
+    {
+      "anchor_part": "head",
+      "attachTo": "head",
+      "choice": "clown1.glb",
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "enabled": true,
+      "glb": "clown1.glb",
+      "id": "clown1.glb",
+      "offset": [
+        -0.08108997344970703,
+        -0.03519010543823242,
+        -0.05814027786254883
+      ],
+      "rotation": [
+        92.093017578125,
+        178.84329223632813,
+        -80.58141326904297
+      ],
+      "scale": [
+        0.7921969294548035,
+        1.1670820713043213,
+        1.2920438051223755
+      ],
+      "slot": "",
+      "texture": {
+        "brightness": 0.1912483423948288,
+        "color": [
+          9.990818977355957,
+          0.03059963695704937,
+          0.26009777188301086
+        ],
+        "image": "clownshirt.png",
+        "offset_x": 0.0,
+        "offset_y": -443.08453369140625,
+        "opacity": 0.9990819096565247,
+        "rotation": 125.03058624267578,
+        "scale_x": 9.831019401550293,
+        "scale_y": 9.990864753723145
+      },
+      "type": ""
+    }
+  ],
+  "created_at": "2026-08-21T18:22:19Z",
+  "format_version": 1,
+  "name": "clown",
+  "simple": {
+    "face": "",
+    "pants": "",
+    "shirt": "",
+    "skin": ""
+  },
+  "updated_at": "2026-08-23T21:36:34Z"
+}

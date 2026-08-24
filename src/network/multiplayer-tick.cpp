@@ -344,6 +344,7 @@ static void processSnapshotEntities(
                 } else {
                     AvatarSystem::instance().applyToPlayer(p);
                 }
+                p.setAvatarName(GetPlayerSettings().avatarName);
             }
             else
             {

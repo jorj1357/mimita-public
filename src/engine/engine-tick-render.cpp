@@ -17,6 +17,7 @@
 #include "camera.h"
 #include "entities/player.h"
 #include "avatar/avatar.h"
+#include "avatar/cosmetic-system.h"
 #include "world/world.h"
 #include "npc/npc.h"
 #include "render/render-world.h"
@@ -171,11 +172,13 @@ static void renderReplayActors(
                 glUniform1i(glGetUniformLocation(shader, "uUseColor"), 1);
                 glUniform4f(glGetUniformLocation(shader, "uColor"), 1.0f, 1.0f, 1.0f, 1.0f);
                 actor->renderCurrentPose(shader, view, proj);
+                CosmeticSystem::instance().renderCosmetics(*actor);
                 glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
             } else {
                 actor->renderCurrentPose(
                     engine.renderer->shaderProgram,
                     view, proj);
+                CosmeticSystem::instance().renderCosmetics(*actor);
             }
         }
 

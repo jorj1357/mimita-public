@@ -1,0 +1,383 @@
+{
+  "advanced": {
+    "head_back": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "hairsides.png"
+    },
+    "head_bottom": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "hairsides.png"
+    },
+    "head_front": {
+      "offset_x": 3,
+      "offset_y": 21,
+      "rotation": 178.84329223632813,
+      "scale_x": 1.1993647813796997,
+      "scale_y": 1.9072518348693848,
+      "texture": "hey.png"
+    },
+    "head_left": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "hairsides.png"
+    },
+    "head_right": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "hairsides.png"
+    },
+    "head_top": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "hairsides.png"
+    },
+    "leftArm_back": {
+      "offset_x": 129,
+      "offset_y": 214,
+      "rotation": 101.18112182617188,
+      "scale_x": 0.4001375436782837,
+      "scale_y": 3.323025941848755,
+      "texture": "suitarm.png"
+    },
+    "leftArm_bottom": {
+      "offset_x": 129,
+      "offset_y": 214,
+      "rotation": 101.18112182617188,
+      "scale_x": 0.4001375436782837,
+      "scale_y": 3.323025941848755,
+      "texture": "suitarm.png"
+    },
+    "leftArm_front": {
+      "offset_x": 129,
+      "offset_y": 214,
+      "rotation": 101.18112182617188,
+      "scale_x": 0.4001375436782837,
+      "scale_y": 3.323025941848755,
+      "texture": "suitarm.png"
+    },
+    "leftArm_left": {
+      "offset_x": 129,
+      "offset_y": 214,
+      "rotation": 101.18112182617188,
+      "scale_x": 0.4001375436782837,
+      "scale_y": 3.323025941848755,
+      "texture": "suitarm.png"
+    },
+    "leftArm_right": {
+      "offset_x": 129,
+      "offset_y": 214,
+      "rotation": 101.18112182617188,
+      "scale_x": 0.4001375436782837,
+      "scale_y": 3.323025941848755,
+      "texture": "suitarm.png"
+    },
+    "leftArm_top": {
+      "offset_x": 129,
+      "offset_y": 214,
+      "rotation": 101.18112182617188,
+      "scale_x": 0.4001375436782837,
+      "scale_y": 3.323025941848755,
+      "texture": "suitarm.png"
+    },
+    "leftLeg_back": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "jeansmisc.png"
+    },
+    "leftLeg_bottom": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "jeansmisc.png"
+    },
+    "leftLeg_front": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 1.1308594942092896,
+      "scale_y": 1.0623544454574585,
+      "texture": "jeansfrontright.png"
+    },
+    "leftLeg_left": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "jeansmisc.png"
+    },
+    "leftLeg_right": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "jeansmisc.png"
+    },
+    "leftLeg_top": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "jeansmisc.png"
+    },
+    "rightArm_back": {
+      "offset_x": 129,
+      "offset_y": 214,
+      "rotation": 101.18112182617188,
+      "scale_x": 0.4001375436782837,
+      "scale_y": 3.323025941848755,
+      "texture": "suitarm.png"
+    },
+    "rightArm_bottom": {
+      "offset_x": 129,
+      "offset_y": 214,
+      "rotation": 101.18112182617188,
+      "scale_x": 0.4001375436782837,
+      "scale_y": 3.323025941848755,
+      "texture": "suitarm.png"
+    },
+    "rightArm_front": {
+      "offset_x": 129,
+      "offset_y": 214,
+      "rotation": 101.18112182617188,
+      "scale_x": 0.4001375436782837,
+      "scale_y": 3.323025941848755,
+      "texture": "suitarm.png"
+    },
+    "rightArm_left": {
+      "offset_x": 129,
+      "offset_y": 214,
+      "rotation": 101.18112182617188,
+      "scale_x": 0.4001375436782837,
+      "scale_y": 3.323025941848755,
+      "texture": "suitarm.png"
+    },
+    "rightArm_right": {
+      "offset_x": 129,
+      "offset_y": 214,
+      "rotation": 101.18112182617188,
+      "scale_x": 0.4001375436782837,
+      "scale_y": 3.323025941848755,
+      "texture": "suitarm.png"
+    },
+    "rightArm_top": {
+      "offset_x": 129,
+      "offset_y": 214,
+      "rotation": 101.18112182617188,
+      "scale_x": 0.4001375436782837,
+      "scale_y": 3.323025941848755,
+      "texture": "suitarm.png"
+    },
+    "rightLeg_back": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "jeansmisc.png"
+    },
+    "rightLeg_bottom": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "jeansmisc.png"
+    },
+    "rightLeg_front": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 1.1308594942092896,
+      "scale_y": 1.0623544454574585,
+      "texture": "jeansfrontright.png"
+    },
+    "rightLeg_left": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "jeansmisc.png"
+    },
+    "rightLeg_right": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "jeansmisc.png"
+    },
+    "rightLeg_top": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "jeansmisc.png"
+    },
+    "torso_back": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "suitarm.png"
+    },
+    "torso_bottom": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "suitarm.png"
+    },
+    "torso_front": {
+      "offset_x": -28,
+      "offset_y": -31,
+      "rotation": 178.84329223632813,
+      "scale_x": 0.10328170657157898,
+      "scale_y": 1.0166842937469482,
+      "texture": "suitfront.png"
+    },
+    "torso_left": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "suitarm.png"
+    },
+    "torso_right": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "suitarm.png"
+    },
+    "torso_top": {
+      "offset_x": -28,
+      "offset_y": -24,
+      "rotation": -92.97430419921875,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "suitarm.png"
+    }
+  },
+  "advanced_mode": true,
+  "avatar_id": "local_dec812ee1ac269ec",
+  "colors": {
+    "head": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "torso": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "cosmetics": [
+    {
+      "anchor_part": "head",
+      "attachTo": "head",
+      "choice": "spikehair3.glb",
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "enabled": true,
+      "glb": "spikehair3.glb",
+      "id": "spikehair3.glb",
+      "offset": [
+        -0.055190104991197586,
+        0.3006931245326996,
+        0.010709285736083984
+      ],
+      "rotation": [
+        88.7882080078125,
+        185.724609375,
+        90.74539184570313
+      ],
+      "scale": [
+        1.3579634428024292,
+        1.3125227689743042,
+        1.3806836605072021
+      ],
+      "slot": "",
+      "texture": {
+        "brightness": 1.109241008758545,
+        "color": [
+          0.007649821229279041,
+          0.26009777188301086,
+          0.3289472460746765
+        ],
+        "image": "jeansbackleft.png",
+        "offset_x": -365.05511474609375,
+        "offset_y": -443.08453369140625,
+        "opacity": 0.9990819096565247,
+        "rotation": 37.45409393310547,
+        "scale_x": 5.7435431480407715,
+        "scale_y": 0.9253441095352173
+      },
+      "type": ""
+    }
+  ],
+  "created_at": "2026-08-21T18:22:19Z",
+  "format_version": 1,
+  "name": "abusivegirl",
+  "simple": {
+    "face": "",
+    "pants": "",
+    "shirt": "",
+    "skin": ""
+  },
+  "updated_at": "2026-08-24T09:36:25Z"
+}

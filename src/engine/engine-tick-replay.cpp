@@ -436,6 +436,7 @@ void engineTickReplay(Engine& engine, float dt)
                 actor.fade = 0.0f;
                 actor.sizeScale = p.sizeScale;
                 actor.characterName = p.characterName();
+                actor.avatarName = p.avatarName();
                 {
                     const WeaponDefinition* wdef = weapons.getCurrentDef(p);
                     if (wdef) {

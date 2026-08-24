@@ -500,6 +500,8 @@ public:
     // -------- Character Loading --------
     bool loadCharacter(const std::string& characterName);
     const std::string& characterName() const { return mCharacterName; }
+    const std::string& avatarName() const { return mAvatarName; }
+    void setAvatarName(const std::string& name) { mAvatarName = name; }
     void ensureCharacterLoaded();
     bool mLazyLoadRequested = false;
     void requestModelLoad(const std::string& filepath);
@@ -529,6 +531,7 @@ public:
     // -------- Weapon system --------
     std::string equippedWeaponId;
     std::string mCharacterName = "DefaultGuy";
+    std::string mAvatarName;
     std::unordered_map<std::string, WeaponRuntime> weaponRuntimes;
 
     // Previous frame body sample positions for limb sweep collisions

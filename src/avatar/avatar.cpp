@@ -940,6 +940,8 @@ static bool validatePlayerBodyParts(const Player& player) {
 bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
     if (!mHasAvatar || mAvatarName.empty()) return false;
 
+    player.setAvatarName(mAvatarName);
+
     // Load player model — custom if specified, otherwise reset to default
     if (!mAvatar.playerModel.empty()) {
         printf("[AVATAR] Loading GLB: %s\n", mAvatar.playerModel.c_str());
@@ -974,6 +976,8 @@ bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
                 slot.texture.image = mBasePath + "/" + slot.texture.image;
         }
         player.setCosmetics(playerCosmetics);
+    } else if (applied) {
+        player.setCosmetics({});
     }
     return applied;
 }
