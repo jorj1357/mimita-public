@@ -2,6 +2,10 @@
 
 #include "devtools/terminal.h"
 #include "video/frame-pacer.h"
+#include "replay/replay.h"
+#include "effects/effect-part.h"
+#include "shadow/shadow-config.h"
+#include "debug/debug-visuals.h"
 
 extern FramePacer gFramePacer;
 
@@ -329,6 +333,92 @@ void registerPerfCommands()
             if (!args.empty()) path = args[0].c_str();
             Perf::exportReport(path);
             Terminal::instance().addLog(std::string("[PERF] Report exported to ") + path);
+        }
+    });
+
+    // ── Gameplay effect toggles ──────────────────────────
+    t.registerCommand({
+        "replay_record",
+        "Toggle replay recording on/off",
+        "replay_record [0|1]",
+        [](const std::vector<std::string>& args) {
+            extern bool gReplayCaptureEnabled;
+            bool on = args.empty() ? !gReplayCaptureEnabled : args[0] == "1";
+            setReplayCaptureEnabled(on);
+            Terminal::instance().addLog(std::string("[REPLAY] recording=") + (on ? "ON" : "OFF"));
+        }
+    });
+
+    t.registerCommand({
+        "decals",
+        "Toggle surface decal creation and rendering",
+        "decals [0|1]",
+        [](const std::vector<std::string>& args) {
+            auto& fx = EffectPartSystem::instance();
+            bool on = args.empty() ? !fx.decalsEnabled() : args[0] == "1";
+            fx.setDecalsEnabled(on);
+            Terminal::instance().addLog(std::string("[FX] decals=") + (on ? "ON" : "OFF"));
+        }
+    });
+
+    t.registerCommand({
+        "effects",
+        "Toggle effect particle creation and rendering",
+        "effects [0|1]",
+        [](const std::vector<std::string>& args) {
+            auto& fx = EffectPartSystem::instance();
+            bool on = args.empty() ? !fx.effectsEnabled() : args[0] == "1";
+            fx.setEffectsEnabled(on);
+            Terminal::instance().addLog(std::string("[FX] effects=") + (on ? "ON" : "OFF"));
+        }
+    });
+
+    t.registerCommand({
+        "debugvis",
+        "Toggle debug visualization rendering (collision, wireframes, labels)",
+        "debugvis [0|1]",
+        [](const std::vector<std::string>& args) {
+            bool on = args.empty() ? !gDebugVisEnabled : args[0] == "1";
+            gDebugVisEnabled = on;
+            Terminal::instance().addLog(std::string("[DEBUG] debugvis=") + (on ? "ON" : "OFF"));
+        }
+    });
+
+    t.registerCommand({
+        "shadows",
+        "Toggle shadow map rendering",
+        "shadows [0|1]",
+        [](const std::vector<std::string>& args) {
+            auto& cfg = ShadowConfig::instance();
+            bool on = args.empty() ? !cfg.enabled() : args[0] == "1";
+            cfg.setEnabled(on);
+            Terminal::instance().addLog(std::string("[SHADOW] shadows=") + (on ? "ON" : "OFF"));
+        }
+    });
+
+    t.registerCommand({
+        "effect_spawn_cap",
+        "Set max effect spawns per frame (default 64)",
+        "effect_spawn_cap <N>",
+        [](const std::vector<std::string>& args) {
+            int cap = args.empty() ? 64 : std::atoi(args[0].c_str());
+            if (cap < 0) cap = 0;
+            if (cap > 4096) cap = 4096;
+            EffectPartSystem::instance().setSpawnCap(cap);
+            Terminal::instance().addLog("[FX] effect_spawn_cap=" + std::to_string(cap));
+        }
+    });
+
+    t.registerCommand({
+        "decal_cap",
+        "Set max active surface decals (default 128)",
+        "decal_cap <N>",
+        [](const std::vector<std::string>& args) {
+            int cap = args.empty() ? 128 : std::atoi(args[0].c_str());
+            if (cap < 0) cap = 0;
+            if (cap > 1024) cap = 1024;
+            EffectPartSystem::instance().setDecalCap(cap);
+            Terminal::instance().addLog("[FX] decal_cap=" + std::to_string(cap));
         }
     });
 }

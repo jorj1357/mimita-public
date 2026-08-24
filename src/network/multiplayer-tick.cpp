@@ -1,4 +1,4 @@
-// 07 21 2026, 17 10
+// 08 24 2026, 10 50
 /* purpose
 * Owns client multiplayer tick IO, packet receive dispatch, snapshot processing, and input sends.
 * Converts local shared movement state into Stage 3A client movement reports.
@@ -28,6 +28,7 @@
 #include "world/world.h"
 #include "entities/player.h"
 #include "notifications/notifications.h"
+#include "npc/npc-avatar.h"
 
 #include <algorithm>
 #include <chrono>
@@ -335,25 +336,30 @@ static void processSnapshotEntities(
         EntityInterpolationState& interpolation = (*interpolationMap)[entity.networkEntityId];
         if (isNew)
         {
-            // Server NPCs use the default body so they don't clone the local
-            // player's avatar; only real player replicas inherit the avatar.
             if (entity.entityType != ENTITY_NPC)
             {
-                if (GetPlayerSettings().avatarName.empty()) {
+                std::string remoteAvatar(entity.avatarName);
+                if (remoteAvatar.empty()) {
                     AvatarSystem::applySingleTexture(p, GetPlayerSettings().outfitPath);
+                } else if (AvatarSystem::instance().loadAvatar(remoteAvatar)) {
+                    AvatarSystem::instance().applyToPlayer(p, true);
                 } else {
-                    AvatarSystem::instance().applyToPlayer(p);
+                    AvatarSystem::applySingleTexture(p, GetPlayerSettings().outfitPath);
                 }
-                p.setAvatarName(GetPlayerSettings().avatarName);
+                p.setAvatarName(remoteAvatar);
             }
             else
             {
                 p.username = entity.displayName;
-                // Server NPCs render + collide using the real default player
-                // body (populates physicalBody.parts), so what the client sees
-                // IS the hitbox the beam checks — instant predicted feedback
-                // on actual body parts (head/torso/arms/legs).
-                p.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
+                std::string npcAvatar = entity.avatarName[0] != '\0'
+                    ? std::string(entity.avatarName)
+                    : npcAvatarNameForLife(entity.networkEntityId, entity.transformEpoch);
+                if (!npcAvatar.empty() && AvatarSystem::instance().loadAvatar(npcAvatar)) {
+                    AvatarSystem::instance().applyToPlayer(p, true);
+                } else {
+                    p.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
+                }
+                p.setAvatarName(npcAvatar);
             }
             interpolation.renderRegistered = true;
             printf("[CLIENT ENTITY CREATE] entityId=%u type=%s ownerClientId=%u "
@@ -529,6 +535,8 @@ void sendJoinRequest(MultiplayerContext& ctx, const std::string& playerName)
     std::strncpy(join.vipJoinTicket, ctx.vipJoinTicket.c_str(), sizeof(join.vipJoinTicket) - 1);
     std::memset(join.name, 0, sizeof(join.name));
     std::strncpy(join.name, playerName.c_str(), sizeof(join.name) - 1);
+    std::memset(join.avatarName, 0, sizeof(join.avatarName));
+    std::strncpy(join.avatarName, GetPlayerSettings().avatarName.c_str(), sizeof(join.avatarName) - 1);
     mpSendPacket(ctx, &join, sizeof(join));
     printf("[NET CONNECT] join request sent token=%s\n", ctx.joinToken.c_str());
 }
@@ -725,6 +733,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 hello.header.type = PACKET_HELLO;
                 hello.header.tick = ctx.tick;
                 copyName(hello.name, playerName);
+                std::memset(hello.avatarName, 0, sizeof(hello.avatarName));
+                std::strncpy(hello.avatarName, GetPlayerSettings().avatarName.c_str(), sizeof(hello.avatarName) - 1);
                 mpSendPacket(ctx, &hello, sizeof(hello));
             }
             ctx.lastHelloMs = currentMs;

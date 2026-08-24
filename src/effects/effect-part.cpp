@@ -395,11 +395,15 @@ void EffectPartSystem::spawnWorldCracks(glm::vec3 position, glm::vec3 normal,
 }
 
 void EffectPartSystem::pushSurfaceDecal(const SurfaceDecal& decal, int maxCount) {
+    if (!mDecalsEnabled) return;
     if (maxCount <= 0)
-        maxCount = 256;
-    while ((int)mSurfaceDecals.size() >= maxCount)
-        mSurfaceDecals.erase(mSurfaceDecals.begin());
-    mSurfaceDecals.push_back(decal);
+        maxCount = mDecalCap;
+    if ((int)mSurfaceDecals.size() < maxCount) {
+        mSurfaceDecals.push_back(decal);
+    } else {
+        mSurfaceDecals[mDecalWriteIdx % maxCount] = decal;
+    }
+    mDecalWriteIdx++;
 }
 
 EffectPart* EffectPartSystem::spawnDamageImpactSphere(glm::vec3 position, glm::vec3 direction, const std::string& victim)
@@ -442,6 +446,8 @@ void EffectPartSystem::destroyOwner(unsigned int ownerId) {
 
 EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
     MIMITA_PERF_SCOPE("EffectPart::Spawn");
+    if (mSpawnFrameCount >= mSpawnCap) return nullptr;
+    mSpawnFrameCount++;
     if (gShotProfiler) {
         gShotProfiler->effectsSpawned++;
         gShotProfiler->poolLinearScans++;
@@ -671,16 +677,18 @@ void EffectPartSystem::drainPendingWorldHits(int maxCount)
     for (int i = 0; i < toDrain; ++i) {
         int idx = mPendingHead % MAX_PENDING_HITS;
         const auto& h = mPendingHits[idx];
-        HitEvent ev;
-        ev.position = h.position;
-        ev.normal = h.normal;
-        ev.direction = h.direction;
-        ev.hitWorld = true;
-        ev.damage = 0;
-        ev.attacker = h.attacker;
-        ev.weaponSource = h.weaponSource;
-        HitEffects::onHit(ev);
-        spawnWorldDebris(h.position, h.normal, h.debrisForce);
+        if (mEffectsEnabled) {
+            HitEvent ev;
+            ev.position = h.position;
+            ev.normal = h.normal;
+            ev.direction = h.direction;
+            ev.hitWorld = true;
+            ev.damage = 0;
+            ev.attacker = h.attacker;
+            ev.weaponSource = h.weaponSource;
+            HitEffects::onHit(ev);
+            spawnWorldDebris(h.position, h.normal, h.debrisForce);
+        }
         ++mPendingHead;
     }
 }

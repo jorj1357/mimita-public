@@ -146,6 +146,8 @@ CompactEntityData compactEntityFromSnapshot(const SnapshotEntity& entity)
     out.vipStyleEpoch = entity.vipStyleEpoch;
     std::memset(out.displayName, 0, sizeof(out.displayName));
     std::strncpy(out.displayName, entity.displayName, sizeof(out.displayName) - 1);
+    std::memset(out.avatarName, 0, sizeof(out.avatarName));
+    std::strncpy(out.avatarName, entity.avatarName, sizeof(out.avatarName) - 1);
     return out;
 }
 
@@ -191,6 +193,8 @@ SnapshotEntity snapshotEntityFromCompact(const CompactEntityData& entity)
     out.vipStyleEpoch = entity.vipStyleEpoch;
     std::memset(out.displayName, 0, sizeof(out.displayName));
     std::strncpy(out.displayName, entity.displayName, sizeof(out.displayName) - 1);
+    std::memset(out.avatarName, 0, sizeof(out.avatarName));
+    std::strncpy(out.avatarName, entity.avatarName, sizeof(out.avatarName) - 1);
     return out;
 }
 

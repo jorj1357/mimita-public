@@ -158,6 +158,7 @@ int runClient(const LaunchOptions& options)
             hello.header.type = PACKET_HELLO;
             hello.header.tick = clientTick;
             copyName(hello.name, options.name);
+            std::memset(hello.avatarName, 0, sizeof(hello.avatarName));
             sendto(sock, (const char*)&hello, sizeof(hello), 0, (sockaddr*)&serverAddr, sizeof(serverAddr));
             ++packetsSent;
             lastHelloMs = currentMs;

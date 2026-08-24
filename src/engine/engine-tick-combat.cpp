@@ -22,6 +22,7 @@
 #include "world/world.h"
 #include "input/input-commands.h"
 #include "perf/perf.h"
+#include "perf/perf-spike.h"
 #include "combat/weapon-system.h"
 #include "combat/weapon-types.h"
 #include "combat/weapon-rocket-launcher.h"
@@ -93,11 +94,12 @@ void engineTickCombat(Engine& engine, float dt)
 
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
 
-    { Perf::ScopedTimer _wp("Weapons");
+    { MIMITA_PERF_SCOPE("Combat::HitResolve");
     if (!replayPlaybackActive)
         weapons.update(camera, player, npcSystem, world, dt);
     }
     if (!replayPlaybackActive) {
+        MIMITA_PERF_SCOPE("Combat::EffectSpawn");
         NpcCombat::updateNpcProjectiles(world, npcSystem, camera, player, dt);
     }
     if (!replayPlaybackActive) {
@@ -187,9 +189,13 @@ void engineTickCombat(Engine& engine, float dt)
     }
 
     // Update effect parts
+    { MIMITA_PERF_SCOPE("Combat::EffectSpawn");
     EffectPartSystem::instance().update(dt);
+    }
     DeathGhostSystem::instance().update(dt);
+    { MIMITA_PERF_SCOPE("Combat::DecalTrace");
     HitEffects::updateHitBursts(dt);
+    }
 
     updateChatBubbles(player.chatState, dt);
     for (auto& kv : mpContext.remotePlayers)

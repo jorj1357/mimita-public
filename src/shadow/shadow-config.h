@@ -44,6 +44,7 @@ public:
     const std::string& path() const { return mPath; }
 
     bool enabled() const { return mData.enabled; }
+    void setEnabled(bool v) { mData.enabled = v; }
     int shadowMapSize() const { return mData.shadowMapSize; }
     float shadowDistance() const { return mData.shadowDistance; }
     float shadowBias() const { return mData.shadowBias; }

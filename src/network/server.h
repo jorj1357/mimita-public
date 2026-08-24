@@ -229,6 +229,7 @@ struct ServerPlayer
 {
     uint32_t id = 0;
     std::string name;
+    std::string avatarName;
     int vipAccountId = 0;
     std::string accountRole;
     MimitaVip::VipAppearance vipAppearance;
@@ -513,6 +514,7 @@ struct ServerNpc
 {
     uint32_t entityId = 0;
     std::string name;
+    std::string avatarName;
     glm::vec3 pos{0.0f};
     glm::vec3 vel{0.0f};
     glm::vec3 aim{1.0f, 0.0f, 0.0f};  // planar facing (n.currentFacing) replicated so clients orient the NPC muzzle like players

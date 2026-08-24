@@ -28,6 +28,8 @@ class Player;
 class Camera;
 class World;   // forward declare
 
+extern bool gDebugVisEnabled;
+
 struct DebugColors {
     glm::vec3 playerCapsule   = {1.0f, 0.0f, 0.0f}; // red
     glm::vec3 collisionBox    = {1.0f, 1.0f, 0.0f}; // yellow

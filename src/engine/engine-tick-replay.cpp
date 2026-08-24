@@ -40,6 +40,7 @@
 #include "npc/npc-state-machine.h"
 #include "config.h"
 #include "perf/perf.h"
+#include "perf/perf-spike.h"
 
 extern DuelManager gDuelManager;
 extern BombTagManager gBombTagManager;
@@ -303,9 +304,10 @@ void engineTickReplay(Engine& engine, float dt)
             gReplayRecorder.isRecording() && !replayPlaybackActive;
         uint32_t replayTick = 0;
         if (recordingReplayTick) {
-            Perf::ScopedTimer _t("ReplayRecordFrame");
             replayTick = gReplayRecorder.currentTick();
-            gReplayRecorder.recordFrame(tickFrame);
+            { MIMITA_PERF_SCOPE("Replay::RecordFrame");
+              gReplayRecorder.recordFrame(tickFrame);
+            }
         }
 
         // Run simulation for this tick
@@ -374,7 +376,7 @@ void engineTickReplay(Engine& engine, float dt)
 
             // NPCs
             {
-            Perf::ScopedTimer _t("ReplayCaptureNPCs");
+            MIMITA_PERF_SCOPE("Replay::ActorSnapshot");
             for (const Npc& npc : npcSystem.all()) {
                 ReplayActorState npcActor;
                 npcActor.id = "npc_" + std::to_string(npc.id);
@@ -411,13 +413,17 @@ void engineTickReplay(Engine& engine, float dt)
                     }
                 }
                 npcActor.animationState = npcStateName(npc.stateMachine.currentState);
-                { auto bp = captureReplayBodyParts(npc.body); npcActor.bodyParts = bp.parts; npcActor.bodyPartCount = bp.count; }
+                { MIMITA_PERF_SCOPE("Replay::BodyParts");
+                  auto bp = captureReplayBodyParts(npc.body);
+                  npcActor.bodyParts = bp.parts;
+                  npcActor.bodyPartCount = bp.count;
+                }
                 sceneFrame.actors.push_back(std::move(npcActor));
             }
             } // ReplayCaptureNPCs
             // ── Remote players (client-server replicas) ────────────────
             {
-            Perf::ScopedTimer _t("ReplayCaptureRemotePlayers");
+            MIMITA_PERF_SCOPE("Replay::ActorSnapshot");
             for (const auto& kv : mpContext.remotePlayers) {
                 const Player& p = kv.second;
                 ReplayActorState actor;
@@ -455,13 +461,17 @@ void engineTickReplay(Engine& engine, float dt)
                 actor.animationState = p.ground.onGround
                     ? (glm::length(glm::vec2(p.vel.x, p.vel.y)) > 0.5f ? "move" : "idle")
                     : "air";
-                { auto bp = captureReplayBodyParts(p); actor.bodyParts = bp.parts; actor.bodyPartCount = bp.count; }
+                { MIMITA_PERF_SCOPE("Replay::BodyParts");
+                  auto bp = captureReplayBodyParts(p);
+                  actor.bodyParts = bp.parts;
+                  actor.bodyPartCount = bp.count;
+                }
                 sceneFrame.actors.push_back(std::move(actor));
             }
             } // ReplayCaptureRemotePlayers
             // ── Remote NPCs (server-simulated replicas) ────────────────
             {
-            Perf::ScopedTimer _t("ReplayCaptureRemoteNpcs");
+            MIMITA_PERF_SCOPE("Replay::ActorSnapshot");
             for (const auto& kv : mpContext.remoteNpcs) {
                 const Player& p = kv.second;
                 ReplayActorState actor;
@@ -499,12 +509,17 @@ void engineTickReplay(Engine& engine, float dt)
                 actor.animationState = p.ground.onGround
                     ? (glm::length(glm::vec2(p.vel.x, p.vel.y)) > 0.5f ? "move" : "idle")
                     : "air";
-                { auto bp = captureReplayBodyParts(p); actor.bodyParts = bp.parts; actor.bodyPartCount = bp.count; }
+                { MIMITA_PERF_SCOPE("Replay::BodyParts");
+                  auto bp = captureReplayBodyParts(p);
+                  actor.bodyParts = bp.parts;
+                  actor.bodyPartCount = bp.count;
+                }
                 sceneFrame.actors.push_back(std::move(actor));
             }
             } // ReplayCaptureRemoteNpcs
             // ── Godball ────────────────────────────────────────────────
             if (weapons.godballPhysics().active) {
+                MIMITA_PERF_SCOPE("Replay::Effects");
                 const auto& gb = weapons.godballPhysics();
                 glm::vec3 handPos = WeaponGodball::getHandPosition(player);
 
@@ -535,7 +550,7 @@ void engineTickReplay(Engine& engine, float dt)
             DeathSystem::instance().appendReplayActors(sceneFrame.actors);
 
             {
-            Perf::ScopedTimer _t("ReplayRecordScene");
+            MIMITA_PERF_SCOPE("Replay::StoreFrame");
             gReplayRecorder.recordSceneFrame(std::move(sceneFrame));
             }
             gReplayFactory.update();

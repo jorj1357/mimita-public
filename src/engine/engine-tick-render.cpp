@@ -44,6 +44,7 @@
 #include "config/networking-config.h"
 #include "engine/engine-tick-net.h"
 #include "perf/perf.h"
+#include "perf/perf-spike.h"
 #include "replay/replay.h"
 #include "replay/replay-export.h"
 #include "replay/replay-factory.h"
@@ -304,19 +305,21 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     gSkybox.pollReload();
     gSkybox.update(dt);
 
-    { Perf::ScopedTimer _ren("Rendering");
+    { MIMITA_PERF_SCOPE("Rendering");
     diagRenderFrameBegin(dt);
-    { Perf::ScopedTimer _shad("ShadowRender"); renderShadowMap(world, camera.pos); }
+    { MIMITA_PERF_SCOPE("Rendering::Shadows"); renderShadowMap(world, camera.pos); }
     glViewport(0, 0, engine.renderer->width, engine.renderer->height);
     PostFX::instance().bindFBO();
     diagRenderStage(1);
     // Skybox renders first (if loaded), otherwise fall back to mesh-based sky
+    { MIMITA_PERF_SCOPE("Rendering::World");
     if (gSkybox.isEnabled()) {
-        { Perf::ScopedTimer _sky("SkyboxRender"); gSkybox.render(camera); }
+        gSkybox.render(camera);
     } else {
-        { Perf::ScopedTimer _sky("WorldRender"); renderSky(world, camera); }
+        renderSky(world, camera);
     }
-    { Perf::ScopedTimer _wrld("WorldRender"); renderWorld(world, camera); }
+    renderWorld(world, camera);
+    }
     PostFX::instance().consumeMagentaTest();
     diagRenderStage(2);
     {
@@ -351,6 +354,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         }
         gExportFrameTimings.renderMs += (replayExportNowSec() - tRender0) * 1000.0;
     } else {
+        { MIMITA_PERF_SCOPE("Rendering::Actors");
         if (player.spawnFlashTimer > 0.0f) {
             static GLuint spawnFlashVao = 0, spawnFlashVbo = 0;
             if (!spawnFlashVao) {
@@ -404,6 +408,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                 weapons.renderRemoteWeapon(npc.id, npc.body, camera, dt);
             }
         }
+        } // Rendering::Actors
     }
     diagRenderStage(3);
     {   static float rlogTimer = 0.0f; rlogTimer -= dt;
@@ -537,14 +542,16 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                 kv.second.dead ? glm::vec4(1,0.3f,0,1) : glm::vec4(0.2f,0.8f,1,1));
     }
 
-    { Perf::ScopedTimer _efx("EffectRender"); EffectPartSystem::instance().render(camera); }
-    { Perf::ScopedTimer _dgh("DeathGhostRender"); DeathGhostSystem::instance().render(camera); }
-    { Perf::ScopedTimer _pfx("PhysicsObjectRender"); PersistentPhysicsSystem::instance().render(camera); }
-    { Perf::ScopedTimer _hfx("EffectRender"); HitEffects::renderHitBursts(camera); }
+    { MIMITA_PERF_SCOPE("Rendering::Particles"); EffectPartSystem::instance().render(camera); }
+    { MIMITA_PERF_SCOPE("Rendering::Particles"); DeathGhostSystem::instance().render(camera); }
+    { MIMITA_PERF_SCOPE("Rendering::Particles"); PersistentPhysicsSystem::instance().render(camera); }
+    { MIMITA_PERF_SCOPE("Rendering::Decals"); HitEffects::renderHitBursts(camera); }
+    { MIMITA_PERF_SCOPE("Rendering::DebugVis");
     DebugVis::flushTris(camera);
     DebugVis::flushWeaponLines(camera);
+    }
     diagRenderStage(5);
-    } // Perf::ScopedTimer Rendering
+    } // MIMITA_PERF_SCOPE Rendering
 
     PostFX::instance().unbindFBO();
     diagRenderStage(6);
@@ -561,8 +568,10 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
 
     worldPassRan = true;
 
-    npcSystem.drawDebug(camera);
-    drawDebugStuff(player, camera, world);
+    if (gDebugVisEnabled) {
+        npcSystem.drawDebug(camera);
+        drawDebugStuff(player, camera, world);
+    }
 
     if (mpContext.active && mpContext.showDebugOverlay)
     {

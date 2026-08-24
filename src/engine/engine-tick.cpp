@@ -43,6 +43,7 @@
 #include "gui/gui-main.h"
 #include "terminal/terminal-state.h"
 #include "gui/menus/pause-menu.h"
+#include "effects/effect-part.h"
 
 extern DuelManager gDuelManager;
 extern BombTagManager gBombTagManager;
@@ -73,6 +74,7 @@ void engineTick(Engine& engine)
     // corrupting the parent-child relationships.
     gFramePacer.beginFrame();
     Perf::beginFrame();
+    EffectPartSystem::instance().beginFrame();
 
     // Note: No MIMITA_PERF_SCOPE("EngineTick") wrapper here.
     // The sub-scopes (Setup, Audio, etc.) are the roots. The EngineTick scope

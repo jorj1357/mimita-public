@@ -34,10 +34,16 @@ void EffectPartSystem::init() {
     mBloodParticles.clear();
     mBloodParticles.reserve(MAX_BLOOD_PARTICLES);
     mSurfaceDecals.clear();
+    mSurfaceDecals.reserve(DEFAULT_DECAL_CAP);
+    mDecalWriteIdx = 0;
     mPendingBloodDecals.clear();
     mBloodDecalRequests.clear();
-    mSurfaceDecals.reserve(256);
+    mSpawnFrameCount = 0;
     printf("[EFFECT PART] Initialized pool size=%u\n", POOL_SIZE);
+}
+
+void EffectPartSystem::beginFrame() {
+    mSpawnFrameCount = 0;
 }
 
 void EffectPartSystem::update(float dt) {

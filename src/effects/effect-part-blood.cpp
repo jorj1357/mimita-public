@@ -225,6 +225,7 @@ void EffectPartSystem::spawnBloodEffect(
     float hitDistance)
 {
     MIMITA_PERF_SCOPE("EffectPart::SpawnBloodEffect");
+    if (!mEffectsEnabled) return;
     const auto& cfg = ImpactDecalsConfig::instance().data();
     const auto& bloodCfg = cfg.blood;
     if (!cfg.enabled || !bloodCfg.enabled) return;
@@ -392,6 +393,7 @@ void EffectPartSystem::spawnBloodSurfaceDecals(
     const std::string& sourceActorId,
     const std::string& targetActorId)
 {
+    if (!mDecalsEnabled) return;
     // Blood surface splats: deferred ray-tracing approach.
     // Instead of ray-tracing ALL decals immediately (which causes frame spikes),
     // we queue the requests and process them 2 per frame in updatePendingBloodDecals().
@@ -443,6 +445,10 @@ void EffectPartSystem::spawnBloodSurfaceDecals(
 // Called from update() to spread the expensive ray-trace cost across multiple frames.
 void EffectPartSystem::processDeferredBloodDecals()
 {
+    if (!mDecalsEnabled) {
+        mBloodDecalRequests.clear();
+        return;
+    }
     const auto& cfg = ImpactDecalsConfig::instance().data();
     const auto& bloodCfg = cfg.blood;
     if (!cfg.enabled || !bloodCfg.enabled || !mWorld) {

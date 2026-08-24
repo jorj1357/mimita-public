@@ -564,6 +564,8 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
     p.projectileFireCooldown = 0.0f;
     const char* rawName = reinterpret_cast<const HelloPacket*>(buffer)->name;
     p.name = uniquePlayerName(players, rawName, id);
+    p.avatarName = boundedPacketString(
+        reinterpret_cast<const HelloPacket*>(buffer)->avatarName, 16);
 
     // The host is the player whose name matches the server's host player name
     // (whoever launched/owns the server). Set on every join AND reconnect so the
@@ -1155,6 +1157,7 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     p.joinTokenValidated = true;
     p.reconnectToken = generateReconnectToken();
     p.name = uniquePlayerName(players, boundedPacketString(join->name, sizeof(join->name)), id);
+    p.avatarName = boundedPacketString(join->avatarName, sizeof(join->avatarName));
     // Host detection for the ICE/room-code join path (the host connects this
     // way). Same rule as handleHello so host-only commands work for the host.
     p.isHost = computeHostFlag(join->name, players.size());

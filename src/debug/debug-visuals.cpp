@@ -21,6 +21,8 @@
 
 extern Renderer* gRenderer;
 
+bool gDebugVisEnabled = true;
+
 struct DebugLineVertex
 {
     glm::vec3 pos;

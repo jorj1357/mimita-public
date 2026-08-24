@@ -1220,6 +1220,8 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     out.equipSerial = player.lastEquipSerial;
     out.freezeSerial = player.lastPresentationFreezeSerial;
     copyName(out.displayName, player.name);
+    std::memset(out.avatarName, 0, sizeof(out.avatarName));
+    std::strncpy(out.avatarName, player.avatarName.c_str(), sizeof(out.avatarName) - 1);
     MimitaVip::copyAppearanceToBytes(
         player.vipAppearance, out.vipTier, out.vipStyleKind,
         out.vipColorR, out.vipColorG, out.vipColorB, out.vipFlags);

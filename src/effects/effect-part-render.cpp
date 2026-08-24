@@ -203,6 +203,7 @@ static void drawDebrisBatch(const Camera& camera, const EffectPart& effect, floa
 }
 
 void EffectPartSystem::render(const Camera& camera) const {
+    if (!mEffectsEnabled) return;
     std::vector<TexturedParticleVertex> texturedHitParticles;
     texturedHitParticles.reserve(600);
     std::string texturedHitParticlePath;

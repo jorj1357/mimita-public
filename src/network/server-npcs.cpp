@@ -488,6 +488,7 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
         sn.name = n.body.username.empty()
             ? "NPC " + std::to_string(n.id)
             : n.body.username;
+        sn.avatarName = n.avatarName;
         sn.pos = n.body.pos;
         sn.vel = n.body.vel;
         sn.aim = (glm::length(n.currentFacing) > 0.001f)
@@ -849,6 +850,8 @@ SnapshotEntity makeNpcEntity(const ServerNpc& npc)
     if (glm::length(npc.vel) > 0.5f)
         out.stateFlags |= NET_STATE_WALKING;
     copyName(out.displayName, npc.name);
+    std::memset(out.avatarName, 0, sizeof(out.avatarName));
+    std::strncpy(out.avatarName, npc.avatarName.c_str(), sizeof(out.avatarName) - 1);
     return out;
 }
 

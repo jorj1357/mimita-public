@@ -144,7 +144,20 @@ public:
     
     void setWorld(const class World& world) { mWorld = &world; }
     void clear();
-    
+
+    // ── Per-frame caps and toggles ───────────────────────
+    void beginFrame();  // call at start of engineTick to reset per-frame counters
+    void setDecalsEnabled(bool v) { mDecalsEnabled = v; }
+    void setEffectsEnabled(bool v) { mEffectsEnabled = v; }
+    void setSpawnCap(int v) { mSpawnCap = v; }
+    void setDecalCap(int v) { mDecalCap = v; }
+    void setParticleCap(int v) { mParticleCap = v; }
+    bool decalsEnabled() const { return mDecalsEnabled; }
+    bool effectsEnabled() const { return mEffectsEnabled; }
+    int spawnCap() const { return mSpawnCap; }
+    int decalCap() const { return mDecalCap; }
+    int spawnFrameCount() const { return mSpawnFrameCount; }
+
     unsigned int activeCount() const { return mActiveCount; }
 
     // Legacy API for code that still uses getEffects()
@@ -177,6 +190,10 @@ private:
     static constexpr unsigned int POOL_SIZE = 4096;
     static constexpr unsigned int MAX_BLOOD_PARTICLES = 512;
     static constexpr unsigned int MAX_BLOOD_DEBUG_SEGMENTS = 256;
+    static constexpr int DEFAULT_SPAWN_CAP = 64;
+    static constexpr int DEFAULT_SOUND_CAP = 8;
+    static constexpr int DEFAULT_DECAL_CAP = 128;
+    static constexpr int DEFAULT_PARTICLE_CAP = 256;
 
     struct BloodDebugSegment {
         glm::vec3 from{0.0f};
@@ -222,4 +239,13 @@ private:
     unsigned int mActiveCount = 0;
     unsigned int mBloodDebugSegmentCount = 0;
     unsigned int mSpawnCursor = 0;
+
+    // ── Per-frame caps and toggles ───────────────────────
+    int mSpawnFrameCount = 0;
+    bool mDecalsEnabled = true;
+    bool mEffectsEnabled = true;
+    int mSpawnCap = DEFAULT_SPAWN_CAP;
+    int mDecalCap = DEFAULT_DECAL_CAP;
+    int mParticleCap = DEFAULT_PARTICLE_CAP;
+    int mDecalWriteIdx = 0;
 };

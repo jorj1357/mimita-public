@@ -1,4 +1,4 @@
-// 07 21 2026, 16 45
+// 08 24 2026, 10 50
 /* purpose
 * Defines MiMITA network packet IDs, fixed wire structs, flags, and datagram limits.
 * Carries compact gameplay state for join, input, snapshots, weapons, projectiles, and lifecycle.
@@ -17,7 +17,7 @@ namespace MimitaNet {
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // 30: ShotEvent/PelletBlastEvent become reliable (eventId+session+ACK) and
 // carry real damage/health; every bullet visual is guaranteed delivery.
-constexpr uint16_t PROTOCOL_VERSION = 31;
+constexpr uint16_t PROTOCOL_VERSION = 32;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -248,9 +248,10 @@ struct HelloPacket
 {
     PacketHeader header;
     char name[MAX_NAME_BYTES];
+    char avatarName[16];
 };
 
-static_assert(sizeof(HelloPacket) == 52, "HelloPacket wire size changed");
+static_assert(sizeof(HelloPacket) == 68, "HelloPacket wire size changed");
 
 struct WelcomePacket
 {
@@ -374,6 +375,7 @@ struct SnapshotEntity
     uint16_t freezeSerial = 0;
     uint32_t spawnGeneration = 0;
     char displayName[MAX_NAME_BYTES];
+    char avatarName[16];
     uint8_t vipTier = 0;
     uint8_t vipStyleKind = 0;
     uint8_t vipColorR = 158;
@@ -435,6 +437,7 @@ struct CompactEntityData
     uint16_t freezeSerial = 0;
     uint32_t spawnGeneration = 0;
     char displayName[32]; // MAX_NAME_BYTES
+    char avatarName[16];
     uint8_t vipTier = 0;
     uint8_t vipStyleKind = 0;
     uint8_t vipColorR = 158;
@@ -446,7 +449,7 @@ struct CompactEntityData
 };
 #pragma pack(pop)
 
-static_assert(sizeof(CompactEntityData) == 128, "CompactEntityData unexpected size");
+static_assert(sizeof(CompactEntityData) == 144, "CompactEntityData unexpected size");
 
 struct SnapshotChunkPacket
 {
@@ -456,7 +459,7 @@ struct SnapshotChunkPacket
     uint16_t chunkCount = 1;
     uint16_t entityCount = 0;
     uint16_t payloadBytes = 0;
-    CompactEntityData entities[9]; // 9 * 128 + header(32) = 1184 < 1200
+    CompactEntityData entities[8]; // 8 * 144 + header(32) = 1184 < 1200
 };
 
 static_assert(sizeof(SnapshotChunkPacket) < MAX_GAME_DATAGRAM_BYTES,
@@ -1014,9 +1017,10 @@ struct JoinRequestPacket
     char joinToken[MAX_JOIN_TOKEN_BYTES];
     char vipJoinTicket[MAX_VIP_JOIN_TICKET_BYTES];
     char name[MAX_NAME_BYTES];
+    char avatarName[16];
 };
 
-static_assert(sizeof(JoinRequestPacket) == 180, "JoinRequestPacket wire size changed");
+static_assert(sizeof(JoinRequestPacket) == 196, "JoinRequestPacket wire size changed");
 
 struct JoinAcceptPacket
 {
