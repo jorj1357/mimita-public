@@ -92,7 +92,7 @@ void HitEffects::onHit(const HitEvent& event)
     }
 
     // 6. Damage number - only for entity hits (not world geometry)
-    if (event.hitEntity) {
+    if (event.hitEntity && event.spawnDamageNumber) {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->damageNumberMs : nullptr);
         EffectPartSystem::instance().spawnDamage(event.position, event.victim, event.damage);
     }
@@ -150,6 +150,7 @@ void HitEffects::spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitDirecti
         gBurstCount--;
     }
     HitBurstEffect& b = gBursts[gBurstCount++];
+    b = HitBurstEffect{};
     b.position = hitPoint;
     b.direction = glm::length(hitDirection) > 0.001f ? glm::normalize(hitDirection) : hitNormal;
     b.normal = glm::length(hitNormal) > 0.001f ? glm::normalize(hitNormal) : -b.direction;

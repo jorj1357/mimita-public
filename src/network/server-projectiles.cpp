@@ -189,6 +189,7 @@ struct ProjectileConfig
     float splashExponent = 2.0f;
     float knockbackStrength = 160.0f;
     float selfKnockbackMultiplier = 1.0f;
+    float selfDamageMultiplier = 1.0f;
     float fireDelay = 1.0f;
     float gravity = 0.0f;
     float drag = 0.0f;
@@ -224,6 +225,7 @@ std::optional<ProjectileConfig> projectileConfigFromDefinition(
     cfg.splashExponent = cp("splashExponent", 2.0f);
     cfg.knockbackStrength = cp("knockbackStrength", 160.0f);
     cfg.selfKnockbackMultiplier = cp("selfKnockbackMultiplier", 1.0f);
+    cfg.selfDamageMultiplier = std::max(0.0f, cp("selfDamageMultiplier", 1.0f));
     cfg.gravity = cp("gravity", 20.0f);
     cfg.drag = cp("drag", 0.15f);
     cfg.restitution = cp("bounceRestitution", 0.35f);
@@ -710,15 +712,25 @@ void explodeProjectile(SOCKET sock,
                      projectile.splashExponent);
         if (victim.id == directTargetId && dist < 1.5f)
             damageValue = std::max(damageValue, projectile.splashDamage);
+        const bool isSelfDamage = (victim.id == projectile.ownerPlayerId);
+        if (isSelfDamage)
+            damageValue *= std::max(0.0f, projectile.selfDamageMultiplier);
         const int finalDamage = std::max(1, (int)std::round(damageValue));
 
         const float t = dist / projectile.splashRadius;
         const float knockScale = (1.0f - t * t) * 0.85f + 0.15f;
-        const float ownerMul = victim.id == projectile.ownerPlayerId
+        const float ownerMul = isSelfDamage
             ? projectile.selfKnockbackMultiplier
             : 1.0f;
         const glm::vec3 knockback =
             dir * projectile.knockbackStrength * knockScale * ownerMul;
+
+        printf("%s [SELF_DAMAGE] ownerId=%u victimId=%u isSelf=%d "
+               "baseDmg=%.1f mul=%.2f finalDmg=%d\n",
+               serverTimestamp(), projectile.ownerPlayerId, victim.id,
+               (int)isSelfDamage, projectile.splashDamage,
+               isSelfDamage ? projectile.selfDamageMultiplier : 1.0f,
+               finalDamage);
 
         ServerDamageResult damage = applyServerDamage(
             players, victim, projectile.ownerPlayerId, finalDamage,
@@ -977,6 +989,7 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
     projectile.splashExponent = cfg.splashExponent;
     projectile.knockbackStrength = cfg.knockbackStrength;
     projectile.selfKnockbackMultiplier = cfg.selfKnockbackMultiplier;
+    projectile.selfDamageMultiplier = cfg.selfDamageMultiplier;
     projectile.gravity = cfg.gravity;
     projectile.drag = cfg.drag;
     projectile.restitution = cfg.restitution;
@@ -1319,6 +1332,7 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
     projectile.splashExponent = cfg.splashExponent;
     projectile.knockbackStrength = cfg.knockbackStrength;
     projectile.selfKnockbackMultiplier = cfg.selfKnockbackMultiplier;
+    projectile.selfDamageMultiplier = cfg.selfDamageMultiplier;
     projectile.gravity = cfg.gravity;
     projectile.drag = cfg.drag;
     projectile.restitution = cfg.restitution;

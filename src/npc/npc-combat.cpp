@@ -379,7 +379,7 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
             npc.pelletSpreadSeed = ppc.spreadSeed;
             for (int p = 0; p < pelletCount && p < Npc::MAX_NPC_PELLETS; ++p) {
                 RevolverShotResult shot = WeaponFire::tryFireHitscanDir(
-                    *def, rt, npc.body, world, npcPos, pelletDirs[p], &player, dmgMul, beamOverride, false);
+                    *def, rt, npc.body, world, npcPos, pelletDirs[p], &player, dmgMul, beamOverride, false, true);
                 totalDamage += shot.damage;
                 npc.pelletResults[p].hitPos = shot.end;
                 npc.pelletResults[p].hitNormal = shot.hitNormal;

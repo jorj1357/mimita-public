@@ -210,7 +210,8 @@ RevolverShotResult tryFireHitscanDir(
     const Player* targetPlayer,
     float damageMultiplier,
     float beamThicknessOverride,
-    bool playSound)
+    bool playSound,
+    bool skipSpread)
 {
     RevolverShotResult result;
 
@@ -221,7 +222,8 @@ RevolverShotResult tryFireHitscanDir(
 
     glm::vec3 shotDirection = glm::normalize(aimDir);
     static unsigned int spreadRng = 1;
-    shotDirection = computeSpreadDirection(shotDirection, def.spread, spreadRng);
+    if (!skipSpread)
+        shotDirection = computeSpreadDirection(shotDirection, def.spread, spreadRng);
 
     constexpr float MAX_SHOT_DISTANCE = 100.0f;
 

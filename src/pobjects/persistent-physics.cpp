@@ -407,7 +407,10 @@ void PersistentPhysicsSystem::doExplosion(
         if (dist < radius) {
             glm::vec3 dir = dist > 0.001f ? toPlayer / dist : glm::vec3(0.0f, 1.0f, 0.0f);
             float dmgScaled = baseDamage * std::exp(-std::pow(dist / radius, 2.0f) * splashExp);
-            int finalDmg = std::max(1, (int)std::round(dmgScaled));
+            int finalDmg = std::max(1, (int)std::round(dmgScaled * obj.cfg.explosionSelfDamageMul));
+            Debug::log(Debug::Category::Weapons,
+                "[SELF_DAMAGE] owner=%s isSelf=1 baseDmg=%.1f mul=%.2f finalDmg=%d dist=%.1f\n",
+                obj.ownerName.c_str(), baseDamage, obj.cfg.explosionSelfDamageMul, finalDmg, dist);
             float t = dist / radius;
             float knockScale = (1.0f - t * t) * 0.85f + 0.15f;
             glm::vec3 knockback = dir * knockbackStrength * knockScale * obj.cfg.explosionSelfKnockbackMul;

@@ -65,6 +65,7 @@ static void doExplosion(
     const float baseDamage = cp(def, "rocketDirectDamage", 150.0f) * sc.scale(1.0f, sc.projectileDamageExponent, ss);
     const float knockbackStrength = cp(def, "knockbackStrength", 40.0f) * sc.scale(1.0f, sc.knockbackExponent, ss);
     const float selfKnockbackMul = cp(def, "selfKnockbackMultiplier", 0.8f);
+    const float selfDamageMul = std::max(0.0f, cp(def, "selfDamageMultiplier", 1.0f));
     const float knockbackHorizontalMul = cp(def, "knockbackHorizontalMultiplier", 1.0f);
     const float knockbackVerticalMul = cp(def, "knockbackVerticalMultiplier", 1.0f);
 
@@ -128,7 +129,10 @@ static void doExplosion(
             } else {
                 dmg = baseDamage * std::exp(-std::pow(dist / splashRadius, 2.0f) * splashExponent);
             }
-            int finalDmg = std::max(1, (int)std::round(dmg));
+            int finalDmg = std::max(1, (int)std::round(dmg * selfDamageMul));
+            Debug::log(Debug::Category::Weapons,
+                "[SELF_DAMAGE] owner=%s isSelf=1 baseDmg=%.1f mul=%.2f finalDmg=%d dist=%.1f\n",
+                owner.username.c_str(), dmg, selfDamageMul, finalDmg, dist);
             float t = dist / splashRadius;
             float knockScale = 1.0f - t * t;
             knockScale = knockScale * 0.85f + 0.15f;

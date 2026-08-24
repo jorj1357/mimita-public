@@ -46,6 +46,7 @@ struct PersistentPhysicsConfig {
     float explosionDamage = 150.0f;
     float explosionKnockback = 160.0f;
     float explosionSelfKnockbackMul = 0.0f;
+    float explosionSelfDamageMul = 1.0f;
     float splashExponent = 2.0f;
     float armingDistance = 0.0f;
     float armingTime = 0.0f;

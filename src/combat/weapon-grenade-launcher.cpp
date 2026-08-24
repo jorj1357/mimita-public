@@ -52,6 +52,7 @@ void fire(const WeaponDefinition& def, WeaponRuntime& runtime,
     cfg.explosionDamage = cp(def, "rocketDirectDamage", 150.0f) * sc.scale(1.0f, sc.projectileDamageExponent, s);
     cfg.explosionKnockback = cp(def, "knockbackStrength", 160.0f) * sc.scale(1.0f, sc.knockbackExponent, s);
     cfg.explosionSelfKnockbackMul = cp(def, "selfKnockbackMultiplier", 0.8f);
+    cfg.explosionSelfDamageMul = std::max(0.0f, cp(def, "selfDamageMultiplier", 1.0f));
     cfg.splashExponent = cp(def, "splashExponent", 2.0f);
     cfg.armingDistance = cp(def, "armingDistance", 2.0f);
     cfg.armingTime = cp(def, "armingTime", 0.0f);

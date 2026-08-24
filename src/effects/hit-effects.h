@@ -341,6 +341,7 @@ struct HitEvent {
     std::string weaponSource = "unknown";
     float knockbackForce = 0.0f;
     float hitDistance = -1.0f;
+    bool spawnDamageNumber = true;
 };
 
 enum class BurstType {

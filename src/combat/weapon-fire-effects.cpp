@@ -52,7 +52,7 @@ void applyRecoil(Player& shooter, const WeaponDefinition& def,
 int applyDamageToEntity(const DamageContext& ctx, Npc& victim,
                          const WeaponDefinition& def, Player& shooter,
                          NpcSystem& npcs, const glm::vec3& muzzlePos,
-                         const glm::vec3& shotDirection) {
+                         const glm::vec3& shotDirection, bool spawnDamageNumber) {
     float minAngleFrac = 0.15f;
     auto it = def.customParams.find("minAngleFactor");
     if (it != def.customParams.end()) minAngleFrac = it->second;
@@ -100,6 +100,7 @@ int applyDamageToEntity(const DamageContext& ctx, Npc& victim,
         ev.attacker = shooter.username;
         ev.victim = victim.body.username;
         ev.weaponSource = "weaponfire";
+        ev.spawnDamageNumber = spawnDamageNumber;
         HitEffects::onHit(ev);
     }
 

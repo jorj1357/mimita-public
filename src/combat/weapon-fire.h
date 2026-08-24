@@ -96,7 +96,8 @@ RevolverShotResult tryFireHitscanDir(
     const Player* targetPlayer = nullptr,
     float damageMultiplier = 1.0f,
     float beamThicknessOverride = -1.0f,
-    bool playSound = true
+    bool playSound = true,
+    bool skipSpread = false
 );
 
 void fireMultiPellet(
@@ -134,7 +135,8 @@ int applyDamageToEntity(
     Player& shooter,
     NpcSystem& npcs,
     const glm::vec3& muzzlePos,
-    const glm::vec3& shotDirection
+    const glm::vec3& shotDirection,
+    bool spawnDamageNumber = true
 );
 
 struct BeamCollisionResult {

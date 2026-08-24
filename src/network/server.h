@@ -588,6 +588,7 @@ struct ServerProjectile
     float splashExponent = 2.0f;
     float knockbackStrength = 0.0f;
     float selfKnockbackMultiplier = 1.0f;
+    float selfDamageMultiplier = 1.0f;
     float gravity = 0.0f;
     float drag = 0.0f;
     float restitution = 0.0f;

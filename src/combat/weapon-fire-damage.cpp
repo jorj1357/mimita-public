@@ -534,7 +534,7 @@ void processMultiPelletNpcHit(
     ctx.shooterId = 0;
     ctx.shooterName = shooter.username;
 
-    int dmg = applyDamageToEntity(ctx, victim, def, shooter, npcs, muzzlePos, pelletDir);
+    int dmg = applyDamageToEntity(ctx, victim, def, shooter, npcs, muzzlePos, pelletDir, false);
     accumulatedDamage += (float)dmg;
     anyHitEntity = true;
     lastTargetId = victim.id;
@@ -595,6 +595,7 @@ int totalDmg = WeaponExecution::computeHitscanDamage(def, hitPart, pelletNearest
         ev.attacker = shooter.username;
         ev.victim = victimName;
         ev.weaponSource = def.id;
+        ev.spawnDamageNumber = false;
         HitEffects::onHit(ev);
     }
 
@@ -658,6 +659,7 @@ void processMultiPelletRemoteNpcHit(
         ev.hitDistance = pelletNearest;
         ev.attacker = shooter.username;
         ev.weaponSource = def.id;
+        ev.spawnDamageNumber = false;
         HitEffects::onHit(ev);
     }
 
@@ -730,6 +732,7 @@ void finalizeMultiPelletResult(
         Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=%s dist=%.1f damage=%.0f severity=%.2f pitch=%.2f volume=%.2f\n",
                    def.soundHit.c_str(), dist, accumulatedDamage, severity, pit, vol);
         hitmarker((int)accumulatedDamage);
+        EffectPartSystem::instance().spawnDamage(lastPelletEnd, shooter.username, (int)accumulatedDamage);
         if (GetPlayerSettings().debugCombat)
             Debug::log(Debug::Category::Weapons,
                 "[HITMARKER] attacker=%s pellet_hit=1 show=1 reason=shotgun_hit_entity",
