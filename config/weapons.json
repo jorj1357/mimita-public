@@ -45,11 +45,11 @@
     "pellet_count": 1,
     "spread": 0.0,
     "recoil": 9.0,
-    "shooter_knockback": 25.0,
+    "shooter_knockback": 5.0,
     "shooter_knockback_vertical": 0.0,
     "self_impulse_multiplier": 1.0,
-    "victim_knockback": 1.0,
-    "victim_knockback_per_damage": 1.0,
+    "victim_knockback": 2.0,
+    "victim_knockback_per_damage": 4.0,
     "victim_knockback_vertical_fraction": 0.002,
     "enemy_impulse_multiplier": 1.0,
     "projectile_speed": 0.0,
@@ -521,7 +521,7 @@
       "splashRadius": 12.0,
       "splashExponent": 2.0,
       "rocketDirectDamage": 150.0,
-      "knockbackStrength": 40.0,
+      "knockbackStrength": 10.0,
       "selfKnockbackMultiplier": 1.0,
       "selfDamageMultiplier": 0.5,
       "knockbackHorizontalMultiplier": 1.0,
@@ -968,6 +968,53 @@
       "knockbackSoundMinForce": 40.0,
       "knockbackSoundCooldown": 0.08,
       "debug": true
+    }
+  },
+  "quick_hit": {
+    "id": "quick_hit",
+    "display_name": "Quick Hit",
+    "slot": 11,
+    "model": {
+      "path": ""
+    },
+    "viewmodel": {
+      "enabled": false
+    },
+    "damage": 0.0,
+    "headshot_multiplier": 1.0,
+    "fire_delay": 0.0,
+    "reload_time": 0.0,
+    "magazine_size": 0,
+    "pellet_count": 1,
+    "spread": 0.0,
+    "recoil": 0.0,
+    "projectile_speed": 0.0,
+    "projectile_radius": 0.0,
+    "projectile_lifetime": 0.0,
+    "fire_mode": "semi_auto",
+    "behavior_type": "quickhit",
+    "hitscan": false,
+    "uses_physics_projectile": false,
+    "sound": {
+      "shoot": "entity/falcon/falconhitquick",
+      "reload": "",
+      "hit": "player_hurt",
+      "dry_fire": "",
+      "equip": ""
+    },
+    "custom_params": {
+      "activeHitboxTicks": 30.0,
+      "visualReturnTicks": 60.0,
+      "hitboxRadius": 0.22,
+      "hitboxLength": 0.85,
+      "forceDamageScale": 1.0,
+      "forceDamageExponent": 1.35,
+      "maxDamage": 100.0,
+      "minDamage": 1.0,
+      "maxKnockback": 100.0,
+      "minKnockback": 0.0,
+      "forceKnockbackScale": 1.0,
+      "damageTickInterval": 0.05
     }
   }
 }

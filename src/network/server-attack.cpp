@@ -1060,6 +1060,25 @@ void handleAttackRequest(
             shooter.lastMeleeAttackSerial = req->requestId;
             startServerSwordAttack(shooter, *def, req->attackVariant);
         }
+        else if (def->behaviorType == WeaponBehaviorType::QuickHit)
+        {
+            // Start server-side quick hit attack
+            shooter.quickHitState.active = true;
+            shooter.quickHitState.activeTicksRemaining =
+                (uint32_t)WeaponExecution::paramOr(*def, "activeHitboxTicks", 30.0f);
+            shooter.quickHitState.attackSequenceId++;
+            if (shooter.quickHitState.attackSequenceId == 0)
+                shooter.quickHitState.attackSequenceId = 1;
+            shooter.quickHitState.hasPreviousCapsule = false;
+            shooter.quickHitState.hitCooldowns.clear();
+            shooter.hasLastPhysicalWeaponShape = false;
+
+            Debug::log(Debug::Category::Weapons,
+                "[QUICK HIT SERVER] playerId=%u requestId=%u ticks=%u seq=%u\n",
+                shooter.id, req->requestId,
+                shooter.quickHitState.activeTicksRemaining,
+                shooter.quickHitState.attackSequenceId);
+        }
         rt.stateRevision++;
         Debug::log(Debug::Category::Weapons,
             "[ATTACK PHYSICAL ACCEPT] playerId=%u requestId=%u weapon=%s variant=%u stateRev=%u\n",

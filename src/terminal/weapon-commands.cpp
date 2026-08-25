@@ -290,6 +290,63 @@ void registerWeaponCommands()
             }
     });
 
+    // Register equipslot with arbitrary slot number (toggle behavior)
+    Terminal::instance().registerCommand({
+        "equipslot", "Equip or toggle inventory slot by number", "equipslot <slot>",
+        [](const std::vector<std::string>& args) {
+            if (args.size() < 2) {
+                Terminal::instance().addLog("[INVENTORY] usage: equipslot <slot>");
+                return;
+            }
+            int slot;
+            try {
+                size_t pos = 0;
+                slot = std::stoi(args[1], &pos);
+                if (pos != args[1].size()) {
+                    Terminal::instance().addLog("[INVENTORY] invalid slot: " + args[1]);
+                    return;
+                }
+            } catch (const std::exception&) {
+                Terminal::instance().addLog("[INVENTORY] invalid slot: " + args[1]);
+                return;
+            }
+            if (slot < 0) {
+                Terminal::instance().addLog("[INVENTORY] invalid slot: " + args[1]);
+                return;
+            }
+            Player& player = THE_PLAYER;
+            WeaponSystem& weapons = THE_WEAPONS;
+            if (slot == 0) {
+                if (player.hasValidWeapon) {
+                    unequipAndSync(player, weapons);
+                    GetPlayerSettings().equippedSlot = 0;
+                    SavePlayerSettings();
+                    Terminal::instance().addLog("[INVENTORY] unequipped");
+                } else {
+                    Terminal::instance().addLog("[INVENTORY] nothing equipped");
+                }
+                return;
+            }
+            const int nativeSlot = gDuelManager.enabled()
+                ? DuelWeaponPool::instance().nativeSlotForDuelSlot(slot) : slot;
+            if (nativeSlot <= 0) {
+                Terminal::instance().addLog("[INVENTORY] weapon not available in duels");
+                return;
+            }
+            if (player.equippedSlot == nativeSlot && player.hasValidWeapon) {
+                unequipAndSync(player, weapons);
+                GetPlayerSettings().equippedSlot = 0;
+                SavePlayerSettings();
+                Terminal::instance().addLog("[INVENTORY] unequipped slot " + std::to_string(slot));
+            } else {
+                equipSlotAndSync(player, weapons, nativeSlot);
+                GetPlayerSettings().equippedSlot = nativeSlot;
+                SavePlayerSettings();
+                Terminal::instance().addLog("[INVENTORY] equipped slot " + std::to_string(slot));
+            }
+        }
+    });
+
     // Register equip command with arbitrary slot number
     Terminal::instance().registerCommand({
         "equip", "Equip weapon at slot number", "equip <slot>",

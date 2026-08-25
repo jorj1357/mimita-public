@@ -679,6 +679,33 @@ WeaponDefinition createHafsDefinition() {
     return def;
 }
 
+WeaponDefinition createQuickHitDefinition() {
+    WeaponDefinition def;
+    def.id = "quick_hit";
+    def.displayName = "Quick Hit";
+    def.slot = 11;
+    def.damage = 0.0f;
+    def.fireDelay = 0.0f;
+    def.magazineSize = 0;
+    def.behaviorType = WeaponBehaviorType::QuickHit;
+    def.hitscan = false;
+    def.usesPhysicsProjectile = false;
+    def.soundShoot = "entity/falcon/falconhitquick";
+    def.customParams["activeHitboxTicks"] = 30.0f;
+    def.customParams["visualReturnTicks"] = 60.0f;
+    def.customParams["hitboxRadius"] = 0.22f;
+    def.customParams["hitboxLength"] = 0.85f;
+    def.customParams["forceDamageScale"] = 1.0f;
+    def.customParams["forceDamageExponent"] = 1.35f;
+    def.customParams["maxDamage"] = 100.0f;
+    def.customParams["minDamage"] = 1.0f;
+    def.customParams["maxKnockback"] = 100.0f;
+    def.customParams["minKnockback"] = 0.0f;
+    def.customParams["forceKnockbackScale"] = 1.0f;
+    def.customParams["damageTickInterval"] = 0.05f;
+    return def;
+}
+
 void registerBuiltinWeapons() {
     loadWeaponJsonConfig();
     registerWeaponFromJson(createRevolverDefinition());
@@ -691,7 +718,8 @@ void registerBuiltinWeapons() {
     registerWeaponFromJson(createGrenadeLauncherDefinition());
     registerWeaponFromJson(createAdminRevolverDefinition());
     registerWeaponFromJson(createHafsDefinition());
-    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver, hafs");
+    registerWeaponFromJson(createQuickHitDefinition());
+    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver, hafs, quick_hit");
 
     // Diagnostics: print the actually-loaded weapon stats so config edits are
     // verifiable in logs (reveals builtin-default fallback when the JSON file

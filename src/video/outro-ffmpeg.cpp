@@ -108,8 +108,15 @@ static int runProcessCaptureStdout(const std::string& exePath, const std::string
 
     CloseHandle(hReadPipe);
 
-    // Wait for process to finish
-    WaitForSingleObject(pi.hProcess, INFINITE);
+    // Wait for process to finish (120 second timeout to prevent indefinite hangs).
+    DWORD waitResult = WaitForSingleObject(pi.hProcess, 120000);
+    if (waitResult == WAIT_TIMEOUT) {
+        Debug::warn(Debug::Category::Replay, "[OUTRO CMD] ffmpeg timed out after 120s, terminating\n");
+        TerminateProcess(pi.hProcess, 1);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        return -1;
+    }
     DWORD exitCode = 0;
     GetExitCodeProcess(pi.hProcess, &exitCode);
     CloseHandle(pi.hProcess);
@@ -162,6 +169,26 @@ bool appendOutroToFinishedMp4(const char* replayMp4Path, int replayW, int replay
     std::string outroPath = absPath(gOutroConfig.outroPath);
     std::error_code ec;
 
+    // Convert .webm outro path to .mp4 (matching MF backend behavior).
+    // The shipped outro exists as both formats; FFmpeg concat needs .mp4.
+    if (outroPath.find(".webm") != std::string::npos ||
+        outroPath.find(".WebM") != std::string::npos) {
+        std::string mp4Path = outroPath;
+        size_t pos = mp4Path.rfind(".webm");
+        if (pos == std::string::npos) pos = mp4Path.rfind(".WebM");
+        if (pos != std::string::npos) {
+            mp4Path.replace(pos, 5, ".mp4");
+            if (std::filesystem::exists(mp4Path, ec)) {
+                Debug::log(Debug::Category::Replay,
+                    "[OUTRO APPEND] converted outro path .webm->.mp4: %s\n", mp4Path.c_str());
+                outroPath = mp4Path;
+            } else {
+                Debug::warn(Debug::Category::Replay,
+                    "[OUTRO APPEND] .mp4 version not found at %s, trying .webm\n", mp4Path.c_str());
+            }
+        }
+    }
+
     if (replayPath.find("-with-outro") != std::string::npos)
     {
         Debug::log(Debug::Category::Replay, "[OUTRO] already appended, skipping\n");
@@ -193,7 +220,11 @@ bool appendOutroToFinishedMp4(const char* replayMp4Path, int replayW, int replay
     bool outroExists = std::filesystem::exists(outroPath);
     Debug::log(Debug::Category::Replay, "[OUTRO APPEND] outro path=%s\n", outroPath.c_str());
     Debug::log(Debug::Category::Replay, "[OUTRO APPEND] outro exists=%d\n", (int)outroExists);
-    if (!outroExists) { Debug::log(Debug::Category::Replay, "[OUTRO APPEND] outro not found\n"); return false; }
+    if (!outroExists) {
+        Debug::warn(Debug::Category::Replay,
+            "[OUTRO APPEND] outro file not found at %s; skipping outro append\n", outroPath.c_str());
+        return false;
+    }
 
     std::string outputPath;
     {
@@ -249,8 +280,13 @@ bool appendOutroToFinishedMp4(const char* replayMp4Path, int replayW, int replay
 
     if (!ok || !std::filesystem::exists(outputPath, ec))
     {
-        Debug::log(Debug::Category::Replay, "[OUTRO APPEND] FAILED (exit=%d output_exists=%d)\n",
-                   exitCode, (int)std::filesystem::exists(outputPath, ec));
+        Debug::warn(Debug::Category::Replay,
+            "[OUTRO APPEND] FAILED exit=%d output_exists=%d replay=%s outro=%s\n",
+            exitCode, (int)std::filesystem::exists(outputPath, ec),
+            replayPath.c_str(), outroPath.c_str());
+        if (!cmdOut.empty())
+            Debug::warn(Debug::Category::Replay,
+                "[OUTRO APPEND] ffmpeg stderr: %s\n", cmdOut.c_str());
         return false;
     }
 
@@ -259,8 +295,10 @@ bool appendOutroToFinishedMp4(const char* replayMp4Path, int replayW, int replay
                (unsigned long long)outputSize, (unsigned long long)replaySize);
     if (outputSize <= replaySize)
     {
-        Debug::log(Debug::Category::Replay, "[OUTRO APPEND] FAILED size did not increase (%llu <= %llu)\n",
-                   (unsigned long long)outputSize, (unsigned long long)replaySize);
+        Debug::warn(Debug::Category::Replay,
+            "[OUTRO APPEND] FAILED output size did not increase (%llu <= %llu) replay=%s outro=%s\n",
+            (unsigned long long)outputSize, (unsigned long long)replaySize,
+            replayPath.c_str(), outroPath.c_str());
         return false;
     }
 

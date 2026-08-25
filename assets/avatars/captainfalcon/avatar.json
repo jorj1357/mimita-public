@@ -1,0 +1,239 @@
+{
+  "advanced": {
+    "head_back": "Screenshot 2026-08-25 164450.png",
+    "head_bottom": "Screenshot 2026-08-25 164450.png",
+    "head_front": {
+      "rotation": 178.84329223632813,
+      "texture": "Screenshot 2026-08-25 164428.png"
+    },
+    "head_left": "Screenshot 2026-08-25 164450.png",
+    "head_right": "Screenshot 2026-08-25 164450.png",
+    "head_top": "Screenshot 2026-08-25 164450.png",
+    "leftArm_back": {
+      "rotation": 89.61444091796875,
+      "scale_x": 1.0166842937469482,
+      "scale_y": 1.770241379737854,
+      "texture": "Screenshot 2026-08-25 163448.png"
+    },
+    "leftArm_bottom": {
+      "brightness": -4.798042297363281,
+      "offset_y": 225,
+      "texture": "Screenshot 2026-08-25 163807.png"
+    },
+    "leftArm_front": {
+      "rotation": 89.61444091796875,
+      "scale_x": 1.0166842937469482,
+      "scale_y": 1.770241379737854,
+      "texture": "Screenshot 2026-08-25 163448.png"
+    },
+    "leftArm_left": {
+      "rotation": 89.61444091796875,
+      "scale_x": 1.0166842937469482,
+      "scale_y": 1.770241379737854,
+      "texture": "Screenshot 2026-08-25 163448.png"
+    },
+    "leftArm_right": {
+      "rotation": 89.61444091796875,
+      "scale_x": 1.0166842937469482,
+      "scale_y": 1.770241379737854,
+      "texture": "Screenshot 2026-08-25 163448.png"
+    },
+    "leftArm_top": {
+      "brightness": -3.2833547592163086,
+      "contrast": 0.3603120446205139,
+      "offset_x": 3,
+      "rotation": 89.61444091796875,
+      "saturation": 1.7656049728393555,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 1.3135401010513306,
+      "texture": "Screenshot 2026-08-25 163252.png"
+    },
+    "leftLeg_back": {
+      "offset_y": -290,
+      "rotation": 179.66949462890625,
+      "scale_y": 1.4733855724334717,
+      "texture": "Screenshot 2026-08-25 163807.png"
+    },
+    "leftLeg_bottom": {
+      "brightness": -4.798042297363281,
+      "offset_y": 225,
+      "texture": "Screenshot 2026-08-25 163807.png"
+    },
+    "leftLeg_front": {
+      "offset_y": -290,
+      "rotation": 179.66949462890625,
+      "scale_y": 1.4733855724334717,
+      "texture": "Screenshot 2026-08-25 163807.png"
+    },
+    "leftLeg_left": {
+      "offset_y": -290,
+      "rotation": 179.66949462890625,
+      "scale_y": 1.4733855724334717,
+      "texture": "Screenshot 2026-08-25 163807.png"
+    },
+    "leftLeg_right": {
+      "offset_y": -290,
+      "rotation": 179.66949462890625,
+      "scale_y": 1.4733855724334717,
+      "texture": "Screenshot 2026-08-25 163807.png"
+    },
+    "leftLeg_top": {
+      "offset_y": -290,
+      "rotation": 179.66949462890625,
+      "scale_y": 1.4733855724334717,
+      "texture": "Screenshot 2026-08-25 163334.png"
+    },
+    "rightArm_back": {
+      "rotation": 89.61444091796875,
+      "scale_x": 1.0166842937469482,
+      "scale_y": 1.770241379737854,
+      "texture": "Screenshot 2026-08-25 163448.png"
+    },
+    "rightArm_bottom": {
+      "brightness": -4.798042297363281,
+      "offset_y": 225,
+      "texture": "Screenshot 2026-08-25 163807.png"
+    },
+    "rightArm_front": {
+      "rotation": 89.61444091796875,
+      "scale_x": 1.0166842937469482,
+      "scale_y": 1.770241379737854,
+      "texture": "Screenshot 2026-08-25 163448.png"
+    },
+    "rightArm_left": {
+      "rotation": 89.61444091796875,
+      "scale_x": 1.0166842937469482,
+      "scale_y": 1.770241379737854,
+      "texture": "Screenshot 2026-08-25 163448.png"
+    },
+    "rightArm_right": {
+      "rotation": 89.61444091796875,
+      "scale_x": 1.0166842937469482,
+      "scale_y": 1.770241379737854,
+      "texture": "Screenshot 2026-08-25 163448.png"
+    },
+    "rightArm_top": {
+      "offset_x": -258,
+      "offset_y": -54,
+      "rotation": -94.62669372558594,
+      "scale_x": 1.5190556049346924,
+      "scale_y": 0.4914778172969818,
+      "texture": "Screenshot 2026-08-25 163252.png"
+    },
+    "rightLeg_back": {
+      "offset_y": -58,
+      "rotation": 179.66949462890625,
+      "scale_y": 1.770241379737854,
+      "texture": "Screenshot 2026-08-25 163807.png"
+    },
+    "rightLeg_bottom": {
+      "brightness": -4.798042297363281,
+      "offset_y": 225,
+      "texture": "Screenshot 2026-08-25 163807.png"
+    },
+    "rightLeg_front": {
+      "offset_y": -58,
+      "rotation": 179.66949462890625,
+      "scale_y": 1.770241379737854,
+      "texture": "Screenshot 2026-08-25 163807.png"
+    },
+    "rightLeg_left": {
+      "offset_y": -58,
+      "rotation": 179.66949462890625,
+      "scale_y": 1.770241379737854,
+      "texture": "Screenshot 2026-08-25 163807.png"
+    },
+    "rightLeg_right": {
+      "offset_y": -58,
+      "rotation": 179.66949462890625,
+      "scale_y": 1.770241379737854,
+      "texture": "Screenshot 2026-08-25 163807.png"
+    },
+    "rightLeg_top": {
+      "offset_y": -58,
+      "rotation": 179.66949462890625,
+      "scale_y": 1.770241379737854,
+      "texture": "Screenshot 2026-08-25 163807.png"
+    },
+    "torso_back": {
+      "offset_y": -51,
+      "rotation": 179.66949462890625,
+      "texture": "Screenshot 2026-08-25 163334 (1).png"
+    },
+    "torso_bottom": {
+      "offset_y": -8,
+      "scale_x": 7.7758636474609375,
+      "scale_y": 6.839626312255859,
+      "texture": "Screenshot 2026-08-25 163334 (1).png"
+    },
+    "torso_front": {
+      "rotation": 179.66949462890625,
+      "scale_x": 0.3316323757171631,
+      "scale_y": 1.4048802852630615,
+      "texture": "Screenshot 2026-08-25 163252.png"
+    },
+    "torso_left": {
+      "offset_y": -8,
+      "scale_x": 7.7758636474609375,
+      "scale_y": 6.839626312255859,
+      "texture": "Screenshot 2026-08-25 163334 (1).png"
+    },
+    "torso_right": {
+      "offset_y": -8,
+      "scale_x": 7.7758636474609375,
+      "scale_y": 6.839626312255859,
+      "texture": "Screenshot 2026-08-25 163334 (1).png"
+    },
+    "torso_top": {
+      "offset_y": -8,
+      "scale_x": 7.7758636474609375,
+      "scale_y": 6.839626312255859,
+      "texture": "Screenshot 2026-08-25 163334 (1).png"
+    }
+  },
+  "advanced_mode": true,
+  "avatar_id": "local_dec812ee1ac269ec",
+  "colors": {
+    "head": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "torso": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "cosmetics": [],
+  "created_at": "2026-08-21T18:22:19Z",
+  "format_version": 1,
+  "name": "captainfalcon",
+  "simple": {
+    "face": "",
+    "pants": "",
+    "shirt": "",
+    "skin": ""
+  },
+  "updated_at": "2026-08-25T16:45:06Z"
+}

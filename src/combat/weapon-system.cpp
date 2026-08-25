@@ -155,6 +155,8 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
             WeaponSwordsword::update(mSwordswordState, *def, *rt, player, npcs, camera, world, dt);
         } else if (def->behaviorType == WeaponBehaviorType::Hafs) {
             WeaponHafs::update(mHafsState, *def, *rt, player, npcs, camera, world, dt);
+        } else if (def->behaviorType == WeaponBehaviorType::QuickHit) {
+            WeaponQuickHit::update(mQuickHitState, *def, *rt, player, npcs, camera, world, dt);
         } else if (def->behaviorType == WeaponBehaviorType::RocketLauncher) {
             WeaponRocketLauncher::update(mRocketState, *def, *rt, player, npcs, world, camera, dt);
         } else if (def->behaviorType == WeaponBehaviorType::GrenadeLauncher) {
@@ -561,6 +563,15 @@ void WeaponSystem::render(const Camera& camera, const Player& player) const {
         WeaponSwordsword::render(camera, mSwordswordState, *def, dummyPos);
     }
 
+    // QuickHit: render glowing capsule during active ticks
+    if (def->behaviorType == WeaponBehaviorType::QuickHit && mQuickHitState.active) {
+        Capsule cap = mQuickHitState.currentArmCapsule;
+        if (glm::length(cap.b - cap.a) > 0.001f && cap.r > 0.001f) {
+            // White glowing capsule, full alpha
+            DebugVis::drawWeaponCapsuleWire(camera, cap, {1.0f, 1.0f, 1.0f, 0.9f});
+        }
+    }
+
     // ── Helper to build ProjectileVisualConfig from weapon definition ──
     auto buildProjCfg = [&](const WeaponDefinition& wdef, bool isRocket) -> ProjectileVisualConfig {
         auto cp = [&](const char* key, float fallback) {
@@ -704,6 +715,11 @@ RevolverShotResult WeaponSystem::fire(
 
     if (def->behaviorType == WeaponBehaviorType::Hafs) {
         WeaponHafs::startSlash(mHafsState, *def, player);
+        return {};
+    }
+
+    if (def->behaviorType == WeaponBehaviorType::QuickHit) {
+        WeaponQuickHit::startAttack(mQuickHitState, *def, player, camera);
         return {};
     }
 
@@ -1170,5 +1186,35 @@ void WeaponSystem::renderRemoteWeapon(uint32_t entityId, const Player& player, c
                                     {0.2f, 0.4f, 0.8f, 0.6f});
         DebugVis::drawWireSphere(camera, player.godballPosition, radius,
                                  {0.4f, 0.6f, 1.0f, 0.8f});
+    }
+
+    // QuickHit: render glowing capsule for remote players during active ticks
+    if (def->behaviorType == WeaponBehaviorType::QuickHit) {
+        auto rtIt = player.weaponRuntimes.find(def->id);
+        if (rtIt != player.weaponRuntimes.end() && rtIt->second.shootEffectTimer > 0.0f) {
+            // Compute approximate capsule from remote player position + aim direction
+            glm::vec3 forward = player.aimDirection;
+            if (glm::length(forward) < 0.001f) forward = glm::vec3(0.0f, 1.0f, 0.0f);
+            forward.z = 0.0f;
+            if (glm::length(forward) > 0.001f) forward = glm::normalize(forward);
+            else forward = glm::vec3(0.0f, 1.0f, 0.0f);
+
+            float capsuleRadius = 0.22f;
+            float capsuleLength = 0.85f;
+            auto rIt = def->customParams.find("hitboxRadius");
+            if (rIt != def->customParams.end()) capsuleRadius = rIt->second;
+            auto lIt = def->customParams.find("hitboxLength");
+            if (lIt != def->customParams.end()) capsuleLength = lIt->second;
+
+            glm::vec3 shoulderOffset(0.0f, 0.0f, 1.2f);
+            glm::vec3 armCenter = player.pos + shoulderOffset + forward * 0.6f;
+            glm::vec3 armTip = armCenter + forward * capsuleLength;
+
+            Capsule cap;
+            cap.a = armCenter;
+            cap.b = armTip;
+            cap.r = capsuleRadius;
+            DebugVis::drawWeaponCapsuleWire(camera, cap, {1.0f, 1.0f, 1.0f, 0.9f});
+        }
     }
 }

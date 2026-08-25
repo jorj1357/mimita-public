@@ -630,11 +630,13 @@ void finishReplayExport(bool success, const std::string& error)
             "CLIP EXPORTED",
             "Clip exported! Press J to open it in Explorer.\n" + gLastSuccessfulExportPath,
             600);
-        if (outroMissing)
+        if (outroMissing || (!error.empty() && error.find("outro") != std::string::npos)) {
             NotificationSystem::instance().push(
                 "NO OUTRO",
-                "Outro missing; exported clip without outro.",
+                "Outro could not be appended; exported clip without outro.",
                 300, {});
+            Terminal::instance().addLog("[CLIP EXPORT] Clip exported WITHOUT outro. Check logs for details.");
+        }
     }
     double now = std::chrono::duration<double>(
         std::chrono::steady_clock::now().time_since_epoch()).count();

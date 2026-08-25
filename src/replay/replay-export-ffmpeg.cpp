@@ -750,8 +750,13 @@ void pollReplayFfmpegEncode()
         if (!gOutroDone.load(std::memory_order_acquire)) return;
         if (gOutroThread.joinable()) gOutroThread.join();
         gOutroActive = false;
-        finishReplayExport(gOutroSucceeded.load(std::memory_order_acquire),
-            "Could not append the required replay outro.");
+        const bool outroOk = gOutroSucceeded.load(std::memory_order_acquire);
+        if (!outroOk) {
+            Debug::warn(Debug::Category::Replay,
+                "[FFMPEG] outro append failed but MP4 clip is valid; finishing as success\n");
+        }
+        finishReplayExport(true,
+            outroOk ? "" : "Outro could not be appended; clip saved without outro.");
         return;
     }
     if (!gJob.ffmpegProcess) return;
@@ -816,8 +821,8 @@ void pollReplayFfmpegEncode()
     gOutroThread = std::thread([output, outroW, outroH, outroAudio]() {
         const bool appended = appendOutroToFinishedMp4(output.c_str(), outroW, outroH, outroAudio);
         if (!appended) {
-            std::error_code cleanupError;
-            std::filesystem::remove(output, cleanupError);
+            Debug::warn(Debug::Category::Replay,
+                "[OUTRO] append failed; keeping clip without outro. path=%s\n", output.c_str());
         }
         gOutroSucceeded.store(appended, std::memory_order_release);
         gOutroDone.store(true, std::memory_order_release);

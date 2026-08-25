@@ -21,6 +21,7 @@
 #include "physics/config.h"
 #include "combat/weapon-execution.h"
 #include "combat/weapon-swordsword.h"
+#include "combat/weapon-quick-hit.h"
 #include "vip/vip-appearance.h"
 
 #include <memory>
@@ -343,6 +344,7 @@ struct ServerPlayer
     std::unique_ptr<IGameTransport> transport;
     std::string iceSessionId;
     SwordswordState swordswordState;
+    QuickHitState quickHitState;
     float meleeCooldownTimer = 0.0f;
     std::deque<PositionHistoryEntry> posHistory;
     // ── Migration: auth + reconnect ───────────────────────────────────

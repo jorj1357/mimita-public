@@ -28,7 +28,8 @@ enum class WeaponBehaviorType {
     Swordsword,
     RocketLauncher,
     GrenadeLauncher,
-    Hafs
+    Hafs,
+    QuickHit
 };
 
 enum class WeaponExecutionType {
@@ -51,6 +52,7 @@ inline WeaponExecutionType weaponExecutionTypeForBehavior(WeaponBehaviorType beh
     case WeaponBehaviorType::Swordsword:
     case WeaponBehaviorType::Melee:
     case WeaponBehaviorType::Hafs:
+    case WeaponBehaviorType::QuickHit:
         return WeaponExecutionType::PhysicalContact;
     }
     return WeaponExecutionType::Hitscan;

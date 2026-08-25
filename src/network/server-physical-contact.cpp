@@ -199,6 +199,29 @@ static bool buildPhysicalShape(ServerPlayer& attacker,
         outShape.radius = bladeRadius;
         outSwordLunge = isSwordLunge(attacker.swordswordState);
     }
+    else if (def.behaviorType == WeaponBehaviorType::QuickHit)
+    {
+        QuickHitState& qh = attacker.quickHitState;
+        if (!qh.active || qh.activeTicksRemaining == 0)
+            return false;
+
+        qh.activeTicksRemaining--;
+
+        const float capsuleRadius = std::max(0.05f,
+            WeaponExecution::paramOr(def, "hitboxRadius", 0.22f));
+        const float capsuleLength = std::max(0.1f,
+            WeaponExecution::paramOr(def, "hitboxLength", 0.85f));
+
+        // Approximate right arm position: shoulder height + forward extension
+        const glm::vec3 shoulderOffset(0.0f, 0.0f, 1.2f);
+        const glm::vec3 armCenter = attacker.pos + shoulderOffset + forward * 0.6f;
+        const glm::vec3 armTip = armCenter + forward * capsuleLength;
+
+        outShape.kind = WeaponExecution::PhysicalShapeKind::Capsule;
+        outShape.currentA = armCenter;
+        outShape.currentB = armTip;
+        outShape.radius = capsuleRadius;
+    }
     else
     {
         return false;
@@ -287,6 +310,34 @@ static int physicalContactDamage(const WeaponDefinition& def,
             1, (int)std::max(1.0f, maxDamage));
     }
 
+    if (def.behaviorType == WeaponBehaviorType::QuickHit)
+    {
+        // Force-based damage from capsule velocity
+        const float travelDist = WeaponExecution::physicalShapeTravelDistance(shape);
+        const float speed = travelDist / std::max(dt, 0.0001f);
+
+        // Directness: how aligned capsule velocity is with the contact normal
+        // Use shape direction as velocity proxy (previous->current)
+        glm::vec3 shapeDir = shape.currentB - shape.currentA;
+        float shapeLen = glm::length(shapeDir);
+        float directness = 1.0f;
+        if (shapeLen > 0.001f) {
+            shapeDir /= shapeLen;
+            // Use the hit normal if available, otherwise assume head-on
+            directness = 0.8f;
+        }
+
+        float rawForce = speed * directness;
+        float forceScale = WeaponExecution::paramOr(def, "forceDamageScale", 1.0f);
+        float forceExp = WeaponExecution::paramOr(def, "forceDamageExponent", 1.35f);
+        float minDmg = WeaponExecution::paramOr(def, "minDamage", 1.0f);
+        float maxDmg = WeaponExecution::paramOr(def, "maxDamage", 100.0f);
+
+        float damage = minDmg + std::pow(rawForce * forceScale, forceExp);
+        return std::clamp((int)std::round(damage),
+            (int)std::max(1.0f, minDmg), (int)std::max(1.0f, maxDmg));
+    }
+
     const char* baseKey = swordLunge ? "lungeBaseDamage" : "slashBaseDamage";
     const char* compatKey = swordLunge ? "lungeDamage" : "slashDamage";
     const float fallback = swordLunge ? 18.0f : 10.0f;
@@ -305,6 +356,15 @@ static glm::vec3 physicalContactKnockback(const WeaponDefinition& def,
         normal = glm::vec3(0.0f, 0.0f, 1.0f);
     normal.z = std::max(normal.z, 0.15f);
     normal = glm::normalize(normal);
+
+    if (def.behaviorType == WeaponBehaviorType::QuickHit)
+    {
+        float forceKbScale = WeaponExecution::paramOr(def, "forceKnockbackScale", 1.0f);
+        float maxKb = WeaponExecution::paramOr(def, "maxKnockback", 100.0f);
+        float minKb = WeaponExecution::paramOr(def, "minKnockback", 0.0f);
+        float strength = std::clamp((float)damage * forceKbScale, minKb, maxKb);
+        return normal * strength;
+    }
 
     float strength = std::max(1.0f, damage * 0.75f);
     if (def.behaviorType != WeaponBehaviorType::Godball)

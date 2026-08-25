@@ -12,6 +12,7 @@ extern bool gWeaponCollisionVisualsProbes;
 #include "weapon-godball.h"
 #include "weapon-swordsword.h"
 #include "weapon-hafs.h"
+#include "weapon-quick-hit.h"
 #include "weapon-rocket-launcher.h"
 #include "weapon-grenade-launcher.h"
 
@@ -93,6 +94,7 @@ private:
     GodballPhysics mGodballPhys;
     SwordswordState mSwordswordState;
     HafsState mHafsState;
+    QuickHitState mQuickHitState;
     RocketLauncherState mRocketState;
     float mShotCooldown = 0.0f;
     float mShootingTimer = 0.0f;
