@@ -1497,9 +1497,9 @@ app.get(/^\/api\/download\/file\/(.+)/, (req, res) => {
 
 app.get("/api/download/latest", (req, res) => {
     // The zip IS the download: no installer, no launcher. Always serve it from
-    // the versioned v2.0.5 GitHub release artifact so the button can never
+    // the versioned v2.0.6 GitHub release artifact so the button can never
     // hand out a stale local file.
-    res.redirect("https://github.com/jorj1357/mimita-public/releases/download/v2.0.5/mimita-game-v2.0.5.zip")
+    res.redirect("https://github.com/jorj1357/mimita-public/releases/download/v2.0.6/mimita-game-v2.0.6.zip")
 })
 
 app.use((error, req, res, next) => {
