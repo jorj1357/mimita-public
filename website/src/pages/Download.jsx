@@ -69,7 +69,7 @@ export default function Download() {
         )}
 
         <p className="downloadInfo">
-          download mimita-game-v2.0.5.zip (about {fileSize} MB) — no installer.
+          download mimita-game-v2.0.6.zip (about {fileSize} MB) — no installer.
           Right-click the ZIP, choose Extract All, then run mimita.exe.
         </p>
 
