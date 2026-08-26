@@ -19,7 +19,7 @@
 
     "character": {
         "position": [0.0, 0.0, 0.0],
-        "rotation_degrees": [0.0, 0.0, -0.0],
+        "rotation_degrees": [0.0, 0.0, 180.0],
         "scale": [1.0, 1.0, 1.0],
         "initial_yaw": 0.0,
         "initial_pitch": 0.0,

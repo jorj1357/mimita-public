@@ -1,0 +1,449 @@
+{
+  "advanced": {
+    "head_back": {
+      "offset_x": 499,
+      "offset_y": 499,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "head_bottom": {
+      "offset_x": 499,
+      "offset_y": 499,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "head_front": {
+      "offset_x": 499,
+      "offset_y": 499,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "head_left": {
+      "offset_x": 499,
+      "offset_y": 499,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "head_right": {
+      "offset_x": 499,
+      "offset_y": 499,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "head_top": {
+      "offset_x": 499,
+      "offset_y": 499,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftArm_back": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftArm_bottom": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftArm_front": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "6b5c8476c4e74c416d2570acd9020aa1.jpg"
+    },
+    "leftArm_left": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftArm_right": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftArm_top": {
+      "offset_x": 60,
+      "offset_y": 124,
+      "opacity": 0.9992350339889526,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftLeg_back": {
+      "offset_x": 499,
+      "offset_y": 499,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftLeg_bottom": {
+      "offset_x": 499,
+      "offset_y": 499,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftLeg_front": {
+      "offset_x": 499,
+      "offset_y": 499,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "6b5c8476c4e74c416d2570acd9020aa1.jpg"
+    },
+    "leftLeg_left": {
+      "offset_x": 499,
+      "offset_y": 499,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftLeg_right": {
+      "offset_x": 499,
+      "offset_y": 499,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "leftLeg_top": {
+      "offset_x": 499,
+      "offset_y": 499,
+      "scale_x": 9.990864753723145,
+      "scale_y": 9.990864753723145,
+      "texture": "clown1.png"
+    },
+    "rightArm_back": {
+      "offset_x": -90,
+      "offset_y": 147,
+      "opacity": 0.9992350339889526,
+      "rotation": 179.66949462890625,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 3.3686957359313965,
+      "texture": "6b5c8476c4e74c416d2570acd9020aa1.jpg"
+    },
+    "rightArm_bottom": {
+      "offset_x": -90,
+      "offset_y": 147,
+      "opacity": 0.9992350339889526,
+      "rotation": 179.66949462890625,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 3.3686957359313965,
+      "texture": "6b5c8476c4e74c416d2570acd9020aa1.jpg"
+    },
+    "rightArm_front": {
+      "offset_x": -90,
+      "offset_y": 147,
+      "opacity": 0.9992350339889526,
+      "rotation": 179.66949462890625,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 3.3686957359313965,
+      "texture": "6b5c8476c4e74c416d2570acd9020aa1.jpg"
+    },
+    "rightArm_left": {
+      "offset_x": -90,
+      "offset_y": 147,
+      "opacity": 0.9992350339889526,
+      "rotation": 179.66949462890625,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 3.3686957359313965,
+      "texture": "6b5c8476c4e74c416d2570acd9020aa1.jpg"
+    },
+    "rightArm_right": {
+      "offset_x": -90,
+      "offset_y": 147,
+      "opacity": 0.9992350339889526,
+      "rotation": 179.66949462890625,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 3.3686957359313965,
+      "texture": "6b5c8476c4e74c416d2570acd9020aa1.jpg"
+    },
+    "rightArm_top": {
+      "offset_x": -90,
+      "offset_y": 147,
+      "opacity": 0.9992350339889526,
+      "rotation": 179.66949462890625,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 3.3686957359313965,
+      "texture": "6b5c8476c4e74c416d2570acd9020aa1.jpg"
+    },
+    "rightLeg_back": {
+      "offset_x": 150,
+      "offset_y": 320,
+      "opacity": 0.9992350339889526,
+      "scale_x": 0.5828180909156799,
+      "scale_y": 0.9253441095352173,
+      "texture": "282e48288793546cdcea0a7336e87ff0.jpg"
+    },
+    "rightLeg_bottom": {
+      "offset_x": 150,
+      "offset_y": 320,
+      "opacity": 0.9992350339889526,
+      "scale_x": 0.5828180909156799,
+      "scale_y": 0.9253441095352173,
+      "texture": "282e48288793546cdcea0a7336e87ff0.jpg"
+    },
+    "rightLeg_front": {
+      "offset_x": 150,
+      "offset_y": 283,
+      "opacity": 0.9992350339889526,
+      "rotation": -97.10527038574219,
+      "scale_x": 4.852975368499756,
+      "scale_y": 4.784470081329346,
+      "texture": "6b5c8476c4e74c416d2570acd9020aa1.jpg"
+    },
+    "rightLeg_left": {
+      "offset_x": 150,
+      "offset_y": 320,
+      "opacity": 0.9992350339889526,
+      "scale_x": 0.5828180909156799,
+      "scale_y": 0.9253441095352173,
+      "texture": "282e48288793546cdcea0a7336e87ff0.jpg"
+    },
+    "rightLeg_right": {
+      "offset_x": 150,
+      "offset_y": 320,
+      "opacity": 0.9992350339889526,
+      "scale_x": 0.5828180909156799,
+      "scale_y": 0.9253441095352173,
+      "texture": "282e48288793546cdcea0a7336e87ff0.jpg"
+    },
+    "rightLeg_top": {
+      "offset_x": 150,
+      "offset_y": 320,
+      "opacity": 0.9992350339889526,
+      "scale_x": 0.5828180909156799,
+      "scale_y": 0.9253441095352173,
+      "texture": "282e48288793546cdcea0a7336e87ff0.jpg"
+    },
+    "torso_back": {
+      "offset_x": -258,
+      "offset_y": -294,
+      "opacity": 0.9992350339889526,
+      "rotation": -178.89840698242188,
+      "scale_x": 2.843489408493042,
+      "scale_y": 9.922359466552734,
+      "texture": "anime-red-moon-vampire-l6h83r9d6l4rp6sl-3616994905.jpg"
+    },
+    "torso_bottom": {
+      "offset_x": 230,
+      "offset_y": 58,
+      "opacity": 0.9992350339889526,
+      "rotation": -178.89840698242188,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "anime-red-moon-vampire-l6h83r9d6l4rp6sl-3616994905.jpg"
+    },
+    "torso_front": {
+      "offset_x": -258,
+      "offset_y": -499,
+      "opacity": 0.9992350339889526,
+      "rotation": -178.89840698242188,
+      "scale_x": 1.5875608921051025,
+      "scale_y": 0.08044663816690445,
+      "texture": "anime-red-moon-vampire-l6h83r9d6l4rp6sl-3616994905.jpg"
+    },
+    "torso_left": {
+      "offset_x": -258,
+      "offset_y": -294,
+      "opacity": 0.9992350339889526,
+      "rotation": -178.89840698242188,
+      "scale_x": 2.843489408493042,
+      "scale_y": 9.922359466552734,
+      "texture": "anime-red-moon-vampire-l6h83r9d6l4rp6sl-3616994905.jpg"
+    },
+    "torso_right": {
+      "offset_x": -258,
+      "offset_y": -294,
+      "opacity": 0.9992350339889526,
+      "rotation": -178.89840698242188,
+      "scale_x": 2.843489408493042,
+      "scale_y": 9.922359466552734,
+      "texture": "anime-red-moon-vampire-l6h83r9d6l4rp6sl-3616994905.jpg"
+    },
+    "torso_top": {
+      "offset_x": 230,
+      "offset_y": 58,
+      "opacity": 0.9992350339889526,
+      "rotation": -178.89840698242188,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "anime-red-moon-vampire-l6h83r9d6l4rp6sl-3616994905.jpg"
+    }
+  },
+  "advanced_mode": true,
+  "avatar_id": "local_cb3b330533cf64d6",
+  "bodyparts": {
+    "head": {
+      "offset": [
+        0,
+        1.15,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "leftArm": {
+      "offset": [
+        0,
+        1.0,
+        -0.4
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "leftLeg": {
+      "offset": [
+        0,
+        -0.1,
+        0.25
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "rightArm": {
+      "offset": [
+        0,
+        1.0,
+        0.4
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "rightLeg": {
+      "offset": [
+        0,
+        -0.1,
+        -0.25
+      ],
+      "rotation": [
+        0,
+        180,
+        0
+      ],
+      "scale": [
+        -1,
+        1,
+        1
+      ]
+    },
+    "torso": {
+      "offset": [
+        0,
+        0.4,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    }
+  },
+  "colors": {
+    "head": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "torso": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "cosmetics": [],
+  "created_at": "2026-07-10T18:44:15Z",
+  "format_version": 1,
+  "name": "headlessgirl2",
+  "player_model": "assets/entity/player/girl/mimita-girl-v7.glb",
+  "simple": {
+    "face": "",
+    "pants": "",
+    "shirt": "",
+    "skin": ""
+  },
+  "updated_at": "2026-08-25T20:03:08Z"
+}
