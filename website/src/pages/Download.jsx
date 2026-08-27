@@ -4,7 +4,8 @@ import "../App.css"
 
 import Layout from "../components/Layout"
 import FeedbackBox from "../components/FeedbackBox"
-import { GAME_ZIP_DOWNLOAD_URL } from "../lib/downloadUrls"
+
+const GITHUB_REPO = "jorj1357/mimita-public"
 
 export default function Download() {
   const [version, setVersion] = useState(null)
@@ -12,8 +13,21 @@ export default function Download() {
   const [downloading, setDownloading] = useState(false)
   const downloadingRef = useRef(false)
 
+  useEffect(() => {
+    fetch("/api/game/version")
+      .then((res) => res.json())
+      .then((data) => setVersion(data))
+      .catch(() => {})
+  }, [])
+
+  const gameVersion = version?.version || ""
+  const downloadUrl = gameVersion
+    ? `https://github.com/${GITHUB_REPO}/releases/download/v${gameVersion}/mimita-game-v${gameVersion}.zip`
+    : ""
+  const fileSize = version ? (version.file_size_mb || "~1") : "~1"
+
   const doDownload = useCallback(() => {
-    if (downloadingRef.current) return
+    if (downloadingRef.current || !downloadUrl) return
     downloadingRef.current = true
     setDownloading(true)
     setError(null)
@@ -24,7 +38,7 @@ export default function Download() {
       body: JSON.stringify({ source: "website", platform: "windows" })
     }).catch(() => {})
 
-    window.location.href = GAME_ZIP_DOWNLOAD_URL
+    window.location.href = downloadUrl
     setTimeout(() => {
       if (!document.hidden) {
         setError("Download didn't start automatically. Click the button above!.")
@@ -32,16 +46,7 @@ export default function Download() {
       setDownloading(false)
       downloadingRef.current = false
     }, 3000)
-  }, [])
-
-  useEffect(() => {
-    fetch("/api/game/version")
-      .then((res) => res.json())
-      .then((data) => setVersion(data))
-      .catch(() => {})
-  }, [])
-
-  const fileSize = version ? (version.file_size_mb || "~1") : "~1"
+  }, [downloadUrl])
 
   return (
     <Layout>
@@ -58,8 +63,8 @@ export default function Download() {
         </video>
 
         <button className="downloadButton" onClick={doDownload}
-                disabled={downloading}>
-          {downloading ? "DOWNLOADING..." : "DOWNLOAD MIMITA"}
+                disabled={downloading || !downloadUrl}>
+          {downloading ? "DOWNLOADING..." : gameVersion ? `DOWNLOAD v${gameVersion}` : "LOADING..."}
         </button>
 
         {error && (
@@ -69,7 +74,7 @@ export default function Download() {
         )}
 
         <p className="downloadInfo">
-          download mimita-game-v2.0.6.zip (about {fileSize} MB) — no installer.
+          download mimita-game-v{gameVersion}.zip (about {fileSize} MB) — no installer.
           Right-click the ZIP, choose Extract All, then run mimita.exe.
         </p>
 
