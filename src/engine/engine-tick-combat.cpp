@@ -219,7 +219,7 @@ void engineTickCombat(Engine& engine, float dt)
     }
     if (!replayPlaybackActive && !duelEndVisible && !duelCountdown &&
         !bombTagEndVisible && !bombTagCountdown &&
-        gameplayInputAllowed && !Terminal::instance().isOpen() && !isChatOpen() && mouseDown &&
+        gameplayInputAllowed && InputCommandSystem::instance().isKeyboardEnabled() && mouseDown &&
         glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
         const WeaponDefinition* curDef = weapons.getCurrentDef(player);
         bool isAuto = curDef && curDef->fireMode == WeaponFireMode::Automatic;
@@ -240,7 +240,7 @@ void engineTickCombat(Engine& engine, float dt)
     static bool rightMousePrev = false;
     bool rightMouseDown = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
     if (!replayPlaybackActive && !duelCountdown &&
-        gameplayInputAllowed && !Terminal::instance().isOpen() && rightMouseDown && !rightMousePrev &&
+        gameplayInputAllowed && InputCommandSystem::instance().isKeyboardEnabled() && rightMouseDown && !rightMousePrev &&
         glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
         if (!editorMode) {
             RevolverShotResult altResult = weapons.fireAlt(camera, player, npcSystem, world);
@@ -264,7 +264,7 @@ void engineTickCombat(Engine& engine, float dt)
         int key = keySlot == 0 ? GLFW_KEY_0 : GLFW_KEY_0 + keySlot;
         bool down = glfwGetKey(engine.window(), key) == GLFW_PRESS;
         if (!replayPlaybackActive && !duelCountdown &&
-            gameplayInputAllowed && !Terminal::instance().isOpen() && down && !slotPrev[keySlot])
+            gameplayInputAllowed && InputCommandSystem::instance().isKeyboardEnabled() && down && !slotPrev[keySlot])
             Terminal::instance().execute("equipslot" + std::to_string(keySlot));
         slotPrev[keySlot] = down;
     }
@@ -273,14 +273,14 @@ void engineTickCombat(Engine& engine, float dt)
         static std::unordered_map<int, bool> bindPrev;
         for (const auto& pair : G_COMMAND_BINDS) {
             bool down = glfwGetKey(engine.window(), pair.first) == GLFW_PRESS;
-            if (down && !bindPrev[pair.first] && gameplayInputAllowed && !Terminal::instance().isOpen())
+            if (down && !bindPrev[pair.first] && gameplayInputAllowed && InputCommandSystem::instance().isKeyboardEnabled())
                 Terminal::instance().execute(pair.second);
             bindPrev[pair.first] = down;
         }
     }
 
     // Replay playback keyboard shortcuts (only while replay is active)
-    if (replayPlaybackActive && !Terminal::instance().isOpen()) {
+    if (replayPlaybackActive && InputCommandSystem::instance().isKeyboardEnabled()) {
         static bool spacePrev = false;
         bool spaceDown = glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
         if (spaceDown && !spacePrev) {

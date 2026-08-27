@@ -372,6 +372,16 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         }
     }
 
+    // Typing indicators above players
+    if (!gReplayExportRenderMode) {
+        renderTypingIndicator(player, camera);
+        if (!replayPlaybackActive)
+        {
+            for (const auto& kv : mpContext.remotePlayers)
+                renderTypingIndicator(kv.second, camera);
+        }
+    }
+
     if (mpContext.active)
     {
         static uint64_t lastHealthbarLogMs = 0;

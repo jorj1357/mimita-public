@@ -96,14 +96,10 @@ struct ReplayActorState {
     bool shooting = false;
     bool reloading = false;
     bool grounded = false;
-    bool collidable = true;
 
-    float fade = 0.0f;
-    float blackness = 0.0f;
     float sizeScale = 1.0f;
 
     std::string weaponName;
-    std::string animationState;
     // Fixed-size array: always exactly 6 body parts (head, torso, leftArm, rightArm, leftLeg, rightLeg).
     // Eliminates heap allocation per actor per frame.
     static constexpr int MAX_BODY_PARTS = 6;

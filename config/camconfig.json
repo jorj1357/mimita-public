@@ -1,9 +1,9 @@
 {
   "thirdPerson": {
     "offset": {
-      "x": 2.0,
+      "x": 2.5,
       "y": -4.0,
-      "z": 1.5
+      "z": 1.8
     },
     "fov": 100,
     "positionStiffness": 9.0,

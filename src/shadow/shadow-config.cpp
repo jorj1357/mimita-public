@@ -94,6 +94,11 @@ bool ShadowConfig::checkFileChanged() const
 
 bool ShadowConfig::pollReload()
 {
+    static auto sLastPoll = std::chrono::steady_clock::now();
+    auto now = std::chrono::steady_clock::now();
+    if (std::chrono::duration<double>(now - sLastPoll).count() < 1.0)
+        return false;
+    sLastPoll = now;
     if (!checkFileChanged()) return false;
     printf("[SHADOWS] File changed\n");
     printf("[SHADOWS] Reloaded %s\n", mPath.c_str());

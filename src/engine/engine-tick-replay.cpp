@@ -345,8 +345,6 @@ void engineTickReplay(Engine& engine, float dt)
             playerActor.maxHealth = player.maxHp;
             playerActor.dead = player.dead;
             playerActor.grounded = player.ground.onGround;
-            playerActor.collidable = !player.dead;
-            playerActor.fade = 0.0f;
             playerActor.sizeScale = player.sizeScale;
             playerActor.outfitPath = GetPlayerSettings().outfitPath;
             playerActor.characterName = GetPlayerSettings().characterName;
@@ -368,9 +366,6 @@ void engineTickReplay(Engine& engine, float dt)
             }
             playerActor.reloading = weapons.isReloading(player);
             playerActor.shooting = weapons.isShooting();
-            playerActor.animationState = player.ground.onGround
-                ? (glm::length(glm::vec2(player.vel.x, player.vel.y)) > 0.5f ? "move" : "idle")
-                : "air";
             { auto bp = captureReplayBodyParts(player); playerActor.bodyParts = bp.parts; playerActor.bodyPartCount = bp.count; }
             sceneFrame.actors.push_back(std::move(playerActor));
 
@@ -390,8 +385,6 @@ void engineTickReplay(Engine& engine, float dt)
                 npcActor.maxHealth = npc.body.maxHp;
                 npcActor.dead = npc.body.dead;
                 npcActor.grounded = npc.body.ground.onGround;
-                npcActor.collidable = !npc.body.dead;
-                npcActor.fade = 0.0f;
                 npcActor.sizeScale = npc.body.sizeScale;
                 npcActor.outfitPath = "";
                 npcActor.avatarName = npc.avatarName;
@@ -412,7 +405,6 @@ void engineTickReplay(Engine& engine, float dt)
                         npcActor.reserveAmmo = wit->second.reserveAmmo;
                     }
                 }
-                npcActor.animationState = npcStateName(npc.stateMachine.currentState);
                 { MIMITA_PERF_SCOPE("Replay::BodyParts");
                   auto bp = captureReplayBodyParts(npc.body);
                   npcActor.bodyParts = bp.parts;
@@ -438,8 +430,6 @@ void engineTickReplay(Engine& engine, float dt)
                 actor.maxHealth = p.maxHp;
                 actor.dead = p.dead;
                 actor.grounded = p.ground.onGround;
-                actor.collidable = !p.dead;
-                actor.fade = 0.0f;
                 actor.sizeScale = p.sizeScale;
                 actor.characterName = p.characterName();
                 actor.avatarName = p.avatarName();
@@ -458,9 +448,6 @@ void engineTickReplay(Engine& engine, float dt)
                         actor.reserveAmmo = wit->second.reserveAmmo;
                     }
                 }
-                actor.animationState = p.ground.onGround
-                    ? (glm::length(glm::vec2(p.vel.x, p.vel.y)) > 0.5f ? "move" : "idle")
-                    : "air";
                 { MIMITA_PERF_SCOPE("Replay::BodyParts");
                   auto bp = captureReplayBodyParts(p);
                   actor.bodyParts = bp.parts;
@@ -486,8 +473,6 @@ void engineTickReplay(Engine& engine, float dt)
                 actor.maxHealth = p.maxHp;
                 actor.dead = p.dead;
                 actor.grounded = p.ground.onGround;
-                actor.collidable = !p.dead;
-                actor.fade = 0.0f;
                 actor.sizeScale = p.sizeScale;
                 actor.characterName = p.characterName();
                 actor.avatarName = npcAvatarNameForLife(kv.first, p.networkTransformEpoch);
@@ -506,9 +491,6 @@ void engineTickReplay(Engine& engine, float dt)
                         actor.reserveAmmo = wit->second.reserveAmmo;
                     }
                 }
-                actor.animationState = p.ground.onGround
-                    ? (glm::length(glm::vec2(p.vel.x, p.vel.y)) > 0.5f ? "move" : "idle")
-                    : "air";
                 { MIMITA_PERF_SCOPE("Replay::BodyParts");
                   auto bp = captureReplayBodyParts(p);
                   actor.bodyParts = bp.parts;
@@ -530,10 +512,6 @@ void engineTickReplay(Engine& engine, float dt)
                 gbSphere.color = glm::vec4(0.2f, 0.4f, 0.8f, 0.7f);
                 gbSphere.lifetime = 0.1f;
                 captureReplayEffect(gbSphere);
-                Debug::log(Debug::Category::Replay,
-                    "[REPLAY EFFECT] recorded type=godball tick=%d pos=(%.2f %.2f %.2f) radius=%.2f color=(%.2f %.2f %.2f %.2f)\n",
-                    replayTick, gb.position.x, gb.position.y, gb.position.z,
-                    gb.radius, 0.2f, 0.4f, 0.8f, 0.7f);
 
                 ReplayEffectEvent gbRope;
                 gbRope.type = "godball_rope";
@@ -541,27 +519,13 @@ void engineTickReplay(Engine& engine, float dt)
                 gbRope.to = gb.position;
                 gbRope.lifetime = 0.1f;
                 captureReplayEffect(gbRope);
-                Debug::log(Debug::Category::Replay,
-                    "[REPLAY EFFECT] recorded type=godball_rope tick=%d from=(%.2f %.2f %.2f) to=(%.2f %.2f %.2f)\n",
-                    replayTick, handPos.x, handPos.y, handPos.z,
-                    gb.position.x, gb.position.y, gb.position.z);
             }
-
-            DeathSystem::instance().appendReplayActors(sceneFrame.actors);
 
             {
             MIMITA_PERF_SCOPE("Replay::StoreFrame");
             gReplayRecorder.recordSceneFrame(std::move(sceneFrame));
             }
             gReplayFactory.update();
-            GuiLayoutManager::instance().pollReload();
-            LightingConfig::instance().pollReload();
-            ShadowConfig::instance().pollReload();
-            pollVoidDeathConfig();
-            pollHitmarkerAudioConfig();
-            pollReplayExportConfig();
-            pollOutroConfig();
-            pollReplayHitmarkerConfig();
 
             if (replayTest.active) {
                 ++replayTest.tick;
@@ -610,6 +574,18 @@ void engineTickReplay(Engine& engine, float dt)
         simTicksRun++;
     }
     } // Perf::ScopedTimer Simulation
+
+    // Config polling — once per rendered frame, not per simulation tick.
+    // These do filesystem stat() calls; running them inside the catch-up loop
+    // would multiply their cost by the number of catch-up ticks.
+    GuiLayoutManager::instance().pollReload();
+    LightingConfig::instance().pollReload();
+    ShadowConfig::instance().pollReload();
+    pollVoidDeathConfig();
+    pollHitmarkerAudioConfig();
+    pollReplayExportConfig();
+    pollOutroConfig();
+    pollReplayHitmarkerConfig();
 
     ProcessNpcSpawnCommands(npcSystem, camera, world, player);
     ProcessNpcTrainingSpawnCommands(npcSystem, camera, world, player);

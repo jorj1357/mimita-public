@@ -26,6 +26,41 @@ static ChatRateLimiter gChatRateLimiter;
 
 namespace MimitaNet {
 
+void broadcastServerChatMessage(
+    SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    uint32_t tick,
+    uint64_t& totalPacketsOut,
+    const char* message)
+{
+    static uint64_t nextServerMessageId = 1000000;
+
+    ChatMessageEventPacket event{};
+    event.header.type = PACKET_CHAT_MESSAGE_EVENT;
+    event.header.tick = tick;
+    event.header.playerId = 0;
+    event.requestId = 0;
+    event.messageId = nextServerMessageId++;
+    event.serverTick = tick;
+    event.utcUnixMilliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    event.senderEntityId = 0;
+    event.senderAccountId = 0;
+    event.senderType = 1; // Server
+    event.channel = 0;
+    std::strncpy(event.senderName, "server", sizeof(event.senderName) - 1);
+    std::strncpy(event.utf8Message, message, sizeof(event.utf8Message) - 1);
+
+    uint32_t eventId = nextReliableGameplayEventId();
+    event.eventId = eventId;
+    for (auto& kv : players)
+    {
+        uint32_t session = reliableGameplayEventSessionForPlayer(kv.second);
+        queueReliableGameplayEventToPlayer(sock, kv.second, &event, sizeof(event),
+                                           eventId, session, totalPacketsOut);
+    }
+}
+
 void handleChatMessage(SOCKET sock, const char* buffer, int bytes,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
                        uint32_t tick, uint64_t& totalPacketsOut)
@@ -176,6 +211,39 @@ void handleChatRequestV2(SOCKET sock, const char* buffer, int bytes,
     Debug::log(Debug::Category::Chat,
                "[CHAT SERVER BROADCAST] messageId=%llu recipients=%zu\n",
                (unsigned long long)event.messageId, players.size());
+}
+
+void handleChatTypingStateRequest(SOCKET sock, const char* buffer, int bytes,
+                                   std::unordered_map<uint32_t, ServerPlayer>& players,
+                                   uint32_t tick, uint64_t& totalPacketsOut)
+{
+    if (bytes < (int)sizeof(ChatTypingStateRequestPacket))
+        return;
+    const ChatTypingStateRequestPacket* req =
+        reinterpret_cast<const ChatTypingStateRequestPacket*>(buffer);
+    auto it = players.find(req->header.playerId);
+    if (it == players.end())
+        return;
+
+    ChatTypingStateEventPacket event{};
+    event.header.type = PACKET_CHAT_TYPING_STATE_EVENT;
+    event.header.tick = tick;
+    event.header.playerId = req->header.playerId;
+    event.playerId = req->header.playerId;
+    event.isTyping = req->isTyping;
+    event.serverTick = tick;
+
+    for (auto& kv : players)
+    {
+        if (kv.first == req->header.playerId)
+            continue;
+        if (kv.second.transport)
+            kv.second.transport->send(&event, sizeof(event));
+        else
+            sendto(sock, (const char*)&event, sizeof(event), 0,
+                   (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+        ++totalPacketsOut;
+    }
 }
 
 void handleNpcDamageRequest(SOCKET sock, const char* buffer, int bytes,
@@ -396,7 +464,7 @@ static void broadcastPlayerConnectionState(
 }
 
 void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players,
-                         SOCKET sock, uint64_t& totalPacketsOut)
+                         SOCKET sock, uint32_t tick, uint64_t& totalPacketsOut)
 {
     const auto& cfg = NetworkingConfig::instance().data();
     const uint64_t staleThreshold = (uint64_t)cfg.timeouts.stalePacketThresholdMs;
@@ -452,6 +520,11 @@ void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players,
                    "silent=%llums slotReleased=1\n",
                    serverTimestamp(), p.id, p.name.c_str(),
                    (unsigned long long)silentMs);
+            // Broadcast leave message to all remaining players
+            {
+                std::string leaveMsg = std::string(p.name) + " left the game";
+                broadcastServerChatMessage(sock, players, 0, totalPacketsOut, leaveMsg.c_str());
+            }
             if (p.transport)
                 p.transport->close();
             toRemove.push_back(p.id);

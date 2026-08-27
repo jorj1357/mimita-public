@@ -28,6 +28,7 @@
 #include "debug/debug-visuals.h"
 #include "game/duel.h"
 #include "devtools/terminal.h"
+#include "input/input-commands.h"
 #include "game/game-state.h"
 #include "physics/config.h"
 
@@ -202,7 +203,7 @@ void engineTickCamera(Engine& engine, float dt)
     auto& gReplayChatStates = REPLAY_CHAT_STATES;
     auto& mpContext = MP_CONTEXT;
 
-    if (!Terminal::instance().isOpen())
+    if (InputCommandSystem::instance().isKeyboardEnabled())
         applyDebugMovement(player, engine.window(), camera, dt);
 
     camera.decayPunch(dt);
@@ -226,7 +227,7 @@ void engineTickCamera(Engine& engine, float dt)
             ReplayCameraMode::Freecam ||
          gReplayCameraMgr.mode() == "freecam");
     const bool anyFreecam = (freecamEnabled || replayFreecam) &&
-                            !Terminal::instance().isOpen();
+                            InputCommandSystem::instance().isKeyboardEnabled();
 
     // Camera is the source of truth: player root yaw = camera yaw, no smoothing.
     // Skip during freecam to preserve the player's original facing direction.
@@ -244,7 +245,7 @@ void engineTickCamera(Engine& engine, float dt)
         // Process keyframe prompt
         // Keyboard 1/2/3 handled here; visual popup drawn in engine-tick-ui-replay-hud.cpp.
         // Popup handles mouse clicks; Escape cancels.
-        if (!Terminal::instance().isOpen() && gReplayEditor.keyframePromptStage > 0) {
+        if (InputCommandSystem::instance().isKeyboardEnabled() && gReplayEditor.keyframePromptStage > 0) {
             // Escape cancels prompt
             static bool escWasDown = false;
             bool escDown = glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS;
@@ -811,7 +812,7 @@ void engineTickCamera(Engine& engine, float dt)
                 "CAM_FINAL_STATE", "Final camera state after keyframe evaluation");
     }
 
-    if (anyFreecam && !Terminal::instance().isOpen()) {
+    if (anyFreecam) {
         // Mouse look: rely on existing camera.updateMouse() callback
         if (glfwGetInputMode(engine.window(), GLFW_CURSOR) != GLFW_CURSOR_DISABLED) {
             glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);

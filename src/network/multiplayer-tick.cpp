@@ -1370,6 +1370,20 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                        (unsigned long long)ev->messageId, ev->senderName,
                        (unsigned long long)ev->serverTick);
         }
+        else if (header->type == PACKET_CHAT_TYPING_STATE_EVENT &&
+                 bytes >= (int)sizeof(ChatTypingStateEventPacket))
+        {
+            const ChatTypingStateEventPacket* ev =
+                reinterpret_cast<const ChatTypingStateEventPacket*>(buffer);
+
+            auto it = ctx.remotePlayers.find(ev->playerId);
+            if (it != ctx.remotePlayers.end())
+            {
+                it->second.isTyping = ev->isTyping;
+                if (ev->isTyping)
+                    it->second.typingStartedMs = MimitaNet::nowMs();
+            }
+        }
         else if (header->type == PACKET_VIP_STYLE_EVENT &&
                  bytes >= (int)sizeof(VipStyleEventPacket))
         {

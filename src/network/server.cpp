@@ -583,7 +583,7 @@ int runServer(const LaunchOptions& options)
         int steps = 0;
         while (accumulator >= (double)SERVER_DT && steps < MAX_STEPS)
         {
-            handleClientTimeout(players, sock, totalPacketsOut);
+            handleClientTimeout(players, sock, tick, totalPacketsOut);
             for (auto& kv : players)
             {
                 // A disconnected/stale player's body freezes in place (slot kept
@@ -1024,7 +1024,7 @@ static void simulateOneServerTick(ListenServerState& state)
                                 &state.disagreementRetransmit);
         }
 
-        handleClientTimeout(state.players, state.sock, state.totalPacketsOut);
+        handleClientTimeout(state.players, state.sock, state.tick, state.totalPacketsOut);
         for (auto& kv : state.players)
         {
             // Disconnected players freeze in place; their slot survives the

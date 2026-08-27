@@ -40,7 +40,6 @@ ReplayActorState mixActor(
     result.shooting = t < 0.5f ? a.shooting : b.shooting;
     result.reloading = t < 0.5f ? a.reloading : b.reloading;
     result.grounded = t < 0.5f ? a.grounded : b.grounded;
-    result.collidable = t < 0.5f ? a.collidable : b.collidable;
     result.weaponName = t < 0.5f ? a.weaponName : b.weaponName;
     result.weaponModelPath = t < 0.5f ? a.weaponModelPath : b.weaponModelPath;
     result.currentAmmo = t < 0.5f ? a.currentAmmo : b.currentAmmo;

@@ -550,6 +550,10 @@ public:
     // -------- Chat Bubble State --------
     ActorChatState chatState;
 
+    // -------- Typing Indicator State --------
+    bool isTyping = false;
+    uint64_t typingStartedMs = 0;
+
     // -------- Pose overlay state (dash, freeze, etc.) --------
     float dashPoseTimer = -1.0f;
     bool forceDashPose = false;

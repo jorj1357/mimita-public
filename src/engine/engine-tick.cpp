@@ -20,6 +20,7 @@
 #include "gui/menus/online-menu.h"
 #include "notifications/notifications.h"
 #include "input/mouse-lock.h"
+#include "input/input-commands.h"
 #include "devtools/dev-overlay.h"
 #include "devtools/terminal.h"
 #include "debug/debug-diag.h"
@@ -202,7 +203,7 @@ void engineTick(Engine& engine)
     // L key toggles gameplay mouse lock so the cursor can click notifications.
     static bool mouseLockKeyPrev = false;
     bool mouseLockKeyDown = glfwGetKey(engine.window(), GLFW_KEY_L) == GLFW_PRESS;
-    if (GAME_STATE == GAME_PLAYING && !PauseMenu::isOpen() && !Terminal::instance().isOpen() && !isChatOpen() &&
+    if (GAME_STATE == GAME_PLAYING && !PauseMenu::isOpen() && InputCommandSystem::instance().isKeyboardEnabled() &&
         !REPLAY_PLAYER.isPlaying() && mouseLockKeyDown && !mouseLockKeyPrev) {
         MouseLock::toggle(engine.window());
         Debug::log(Debug::Category::Gui, "[MOUSELOCK] toggled via L: %s\n",
@@ -214,7 +215,7 @@ void engineTick(Engine& engine)
     static bool spacePrev = false;
     bool spaceDown = glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
     if (GAME_STATE == GAME_PLAYING && !PauseMenu::isOpen() && spaceDown && !spacePrev &&
-        !Terminal::instance().isOpen() &&
+        InputCommandSystem::instance().isKeyboardEnabled() &&
         DuelQueue::instance().state() == DuelQueueState::MatchEnd)
     {
         DuelQueue::instance().requestRematchNow();
@@ -223,7 +224,7 @@ void engineTick(Engine& engine)
 
     static bool f10Prev = false;
     bool f10Down = glfwGetKey(engine.window(), GLFW_KEY_F10) == GLFW_PRESS;
-    if (!PauseMenu::isOpen() && !Terminal::instance().isOpen() && f10Down && !f10Prev) {
+    if (!PauseMenu::isOpen() && InputCommandSystem::instance().isKeyboardEnabled() && f10Down && !f10Prev) {
         ShellExecuteA(NULL, "open", "replays", NULL, NULL, SW_SHOWNORMAL);
         Debug::log(Debug::Category::General, "[MAIN] opened replays folder");
     }
@@ -231,7 +232,7 @@ void engineTick(Engine& engine)
 
     static bool f12Prev = false;
     bool f12Down = glfwGetKey(engine.window(), GLFW_KEY_F12) == GLFW_PRESS;
-    if (!PauseMenu::isOpen() && f12Down && !f12Prev && !Terminal::instance().isOpen()) {
+    if (!PauseMenu::isOpen() && f12Down && !f12Prev && InputCommandSystem::instance().isKeyboardEnabled()) {
         Debug::log(Debug::Category::General, "[MAINMENU] F12 pressed — forcing main menu");
         forceMainMenu();
         DevOverlay::instance().showNotification("Returned to Main Menu (F12)", 3.0f);

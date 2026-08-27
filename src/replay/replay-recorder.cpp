@@ -377,10 +377,6 @@ bool ReplayRecorder::exportToJSON(const std::string& path) const {
             a["shooting"] = actor.shooting;
             a["reloading"] = actor.reloading;
             a["grounded"] = actor.grounded;
-            a["collidable"] = actor.collidable;
-            a["fade"] = actor.fade;
-            a["blackness"] = actor.blackness;
-            a["animationState"] = actor.animationState;
             a["bodyParts"] = json::object();
             for (int i = 0; i < actor.bodyPartCount; ++i) {
                 const ReplayBodyPartState& part = actor.bodyParts[i];

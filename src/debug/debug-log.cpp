@@ -153,12 +153,35 @@ void Debug::logThrottled(Category category, const char* key, float intervalSecon
         return;
 
     static std::unordered_map<std::string, double> lastPrint;
-    std::string fullKey = std::string(categoryName(category)) + ":" + key;
+    // Use stack buffer to avoid heap allocation for throttle key
+    char keyBuf[128];
+    const char* catName = categoryName(category);
+    int catLen = (int)std::strlen(catName);
+    int keyLen = (int)std::strlen(key);
+    if (catLen + 1 + keyLen < (int)sizeof(keyBuf)) {
+        std::memcpy(keyBuf, catName, catLen);
+        keyBuf[catLen] = ':';
+        std::memcpy(keyBuf + catLen + 1, key, keyLen);
+        keyBuf[catLen + 1 + keyLen] = '\0';
+    } else {
+        // Fallback to heap for very long keys (rare)
+        std::string fullKey = std::string(catName) + ":" + key;
+        double now = secondsNow();
+        auto it = lastPrint.find(fullKey);
+        if (it != lastPrint.end() && now - it->second < intervalSeconds)
+            return;
+        lastPrint[fullKey] = now;
+        va_list args;
+        va_start(args, fmt);
+        printv("INFO", category, fmt, args);
+        va_end(args);
+        return;
+    }
     double now = secondsNow();
-    auto it = lastPrint.find(fullKey);
+    auto it = lastPrint.find(keyBuf);
     if (it != lastPrint.end() && now - it->second < intervalSeconds)
         return;
-    lastPrint[fullKey] = now;
+    lastPrint[std::string(keyBuf)] = now;
 
     va_list args;
     va_start(args, fmt);
@@ -168,6 +191,8 @@ void Debug::logThrottled(Category category, const char* key, float intervalSecon
 
 void Debug::warn(Category category, const char* fmt, ...)
 {
+    if (!enabled(category))
+        return;
     va_list args;
     va_start(args, fmt);
     printv("WARN", category, fmt, args);

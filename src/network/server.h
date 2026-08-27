@@ -798,8 +798,10 @@ void handleInputPacket(const char* buffer, int bytes,
                        SOCKET sock = INVALID_SOCKET,
                        uint64_t* totalPacketsOut = nullptr,
                        DisagreementRetransmitState* retransmitState = nullptr);
-void handleDisconnect(std::unordered_map<uint32_t, ServerPlayer>& players,
-                      const char* buffer);
+void handleDisconnect(SOCKET sock, std::unordered_map<uint32_t, ServerPlayer>& players,
+                      const char* buffer, uint32_t tick,
+                      uint64_t& totalPacketsOut,
+                      std::vector<uint32_t>* pendingRemovals = nullptr);
 void handleSpawnNpcRequest(const char* buffer, int bytes,
                            std::unordered_map<uint32_t, ServerPlayer>& players,
                            uint32_t& nextEntityId,
@@ -894,6 +896,13 @@ void handleChatMessage(SOCKET sock, const char* buffer, int bytes,
 void handleChatRequestV2(SOCKET sock, const char* buffer, int bytes,
                           std::unordered_map<uint32_t, ServerPlayer>& players,
                           uint32_t tick, uint64_t& totalPacketsOut);
+void handleChatTypingStateRequest(SOCKET sock, const char* buffer, int bytes,
+                                   std::unordered_map<uint32_t, ServerPlayer>& players,
+                                   uint32_t tick, uint64_t& totalPacketsOut);
+void broadcastServerChatMessage(SOCKET sock,
+                                 std::unordered_map<uint32_t, ServerPlayer>& players,
+                                 uint32_t tick, uint64_t& totalPacketsOut,
+                                 const char* message);
 void handlePing(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                 uint32_t tick, const ServerPlayer* authenticatedPlayer = nullptr);
 void handleNpcDamageRequest(SOCKET sock, const char* buffer, int bytes,
@@ -958,7 +967,7 @@ void beginAuthoritativeTransform(ServerPlayer& player,
 
 // Post-tick helpers
 void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players,
-                         SOCKET sock, uint64_t& totalPacketsOut);
+                         SOCKET sock, uint32_t tick, uint64_t& totalPacketsOut);
 void checkVoidDeath(std::unordered_map<uint32_t, ServerPlayer>& players,
                     std::unordered_map<uint32_t, ServerNpc>& npcs);
 void buildAndSendSnapshot(SOCKET sock,

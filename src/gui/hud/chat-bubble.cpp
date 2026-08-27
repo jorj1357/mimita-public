@@ -23,6 +23,8 @@
 #include "gui/hud/player-nameplates.h"
 #include "audio/audio.h"
 #include "vip/vip-name-render.h"
+#include "network/net_common.h"
+#include <GLFW/glfw3.h>
 
 namespace
 {
@@ -169,4 +171,35 @@ void playChatSound(int messageLength)
 {
     float pitch = computeChatPitch(messageLength);
     AudioManager::instance().play({"ui/chat/chat1", AudioCategory::UI, false, {}, 1.0f, pitch});
+}
+
+void renderTypingIndicator(const Player& player, const Camera& camera)
+{
+    if (!player.isTyping)
+        return;
+
+    const uint64_t elapsedMs = MimitaNet::nowMs() - player.typingStartedMs;
+    if (elapsedMs > 5000)
+        return;
+
+    const glm::vec3 worldPos = playerHealthbarAnchor(player) + glm::vec3(0.0f, 0.0f, 0.5f);
+
+    float screenX = 0.0f, screenY = 0.0f;
+    if (!DebugVis::projectToScreen(camera, worldPos, screenX, screenY))
+        return;
+
+    const float distance = glm::length(camera.pos - worldPos);
+    if (distance > 60.0f)
+        return;
+
+    const float scale = std::clamp(1.0f - distance / 60.0f, 0.35f, 1.0f);
+    const float textScale = scale * 0.28f;
+
+    const float time = (float)glfwGetTime();
+    const int dotCount = ((int)(time * 2.0f) % 3) + 1;
+    const std::string dots(dotCount, '.');
+
+    const float textW = uiMeasureText(dots.c_str(), textScale);
+    uiDrawText(dots.c_str(), screenX - textW * 0.5f, screenY, textScale,
+               {1.0f, 1.0f, 1.0f, 0.8f});
 }

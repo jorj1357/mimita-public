@@ -98,7 +98,7 @@ void engineTickNet(Engine& engine, float dt)
         mpInput.dashPressed = cmd.isDashPressed();
         mpInput.downDashPressed = cmd.isDownDashPressed();
         mpInput.freezeHeld = cmd.isFreezeHeld();
-        mpInput.attackPressed = !Terminal::instance().isOpen() &&
+        mpInput.attackPressed = InputCommandSystem::instance().isKeyboardEnabled() &&
             glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED &&
             glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
         mpInput.equippedSlot = player.equippedSlot;
@@ -766,7 +766,7 @@ void engineTickNet(Engine& engine, float dt)
         // The engine-tick-net.cpp duplicate InputPacket has been removed.
         // Position, velocity, yaw, look, and wish are all captured together inside mpTick's MpInput.
 
-        if (Terminal::instance().isOpen()) {
+        if (!InputCommandSystem::instance().isKeyboardEnabled()) {
             mpContext.showPlayerList = false;
         } else {
             mpContext.showPlayerList = glfwGetKey(engine.window(), GLFW_KEY_TAB) == GLFW_PRESS;

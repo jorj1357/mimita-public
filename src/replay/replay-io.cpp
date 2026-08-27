@@ -90,12 +90,8 @@ ReplayActorState parseActor(const json& value)
     actor.shooting = value.value("shooting", false);
     actor.reloading = value.value("reloading", false);
     actor.grounded = value.value("grounded", false);
-    actor.collidable = value.value("collidable", true);
-    actor.fade = value.value("fade", 0.0f);
-    actor.blackness = value.value("blackness", 0.0f);
     actor.sizeScale = value.value("sizeScale", 1.0f);
     actor.weaponName = value.value("weaponName", "");
-    actor.animationState = value.value("animationState", "");
     if (value.contains("bodyParts") && value["bodyParts"].is_object()) {
         actor.bodyPartCount = 0;
         for (auto it = value["bodyParts"].begin(); it != value["bodyParts"].end(); ++it) {
@@ -127,9 +123,7 @@ json actorJson(const ReplayActorState& actor)
         {"reserveAmmo", actor.reserveAmmo}, {"dead", actor.dead},
         {"shooting", actor.shooting},
         {"reloading", actor.reloading}, {"grounded", actor.grounded},
-        {"collidable", actor.collidable}, {"fade", actor.fade},
-        {"blackness", actor.blackness}, {"sizeScale", actor.sizeScale}, {"weaponName", actor.weaponName},
-        {"animationState", actor.animationState}
+        {"sizeScale", actor.sizeScale}, {"weaponName", actor.weaponName}
     };
     value["bodyParts"] = json::object();
     for (int i = 0; i < actor.bodyPartCount; ++i) {

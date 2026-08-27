@@ -74,6 +74,8 @@ void noteChatActivity()
 #include "gui/ui-system-internal.h"
 #include "debug/debug-log.h"
 #include "terminal/terminal-state.h"
+#include "network/packets.h"
+#include "network/multiplayer-context.h"
 #include "vip/vip-name-render.h"
 #include "input/input-commands.h"
 #include "input/mouse-lock.h"
@@ -124,10 +126,45 @@ void openChatWindow(ChatWindowState& state)
     if (win && glfwGetInputMode(win, GLFW_CURSOR) == GLFW_CURSOR_DISABLED)
         glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     Debug::log(Debug::Category::Chat, "[CHAT INPUT OPEN] key=/\n");
+
+    // Set local typing state for above-head indicator
+    THE_PLAYER.isTyping = true;
+    THE_PLAYER.typingStartedMs = MimitaNet::nowMs();
+
+    // Send typing indicator to network
+    {
+        MimitaNet::MultiplayerContext& mpCtx = MP_CONTEXT;
+        if (mpCtx.active && mpCtx.localPlayerId != 0)
+        {
+            MimitaNet::ChatTypingStateRequestPacket pkt{};
+            pkt.header.type = MimitaNet::PACKET_CHAT_TYPING_STATE_REQUEST;
+            pkt.header.playerId = mpCtx.localPlayerId;
+            pkt.isTyping = true;
+            MimitaNet::mpSendPacket(mpCtx, &pkt, sizeof(pkt));
+            Debug::log(Debug::Category::Chat, "[TYPING] sent isTyping=1\n");
+        }
+    }
 }
 
 void closeChatWindow(ChatWindowState& state)
 {
+    // Clear local typing state for above-head indicator
+    THE_PLAYER.isTyping = false;
+
+    // Send typing indicator stopped to network (before setting open=false)
+    {
+        MimitaNet::MultiplayerContext& mpCtx = MP_CONTEXT;
+        if (mpCtx.active && mpCtx.localPlayerId != 0)
+        {
+            MimitaNet::ChatTypingStateRequestPacket pkt{};
+            pkt.header.type = MimitaNet::PACKET_CHAT_TYPING_STATE_REQUEST;
+            pkt.header.playerId = mpCtx.localPlayerId;
+            pkt.isTyping = false;
+            MimitaNet::mpSendPacket(mpCtx, &pkt, sizeof(pkt));
+            Debug::log(Debug::Category::Chat, "[TYPING] sent isTyping=0\n");
+        }
+    }
+
     state.open = false;
     state.textInput.focused = false;
     state.textInput.value.clear();
@@ -393,6 +430,38 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
 
     uiEndScrollArea({msgAreaX_d, msgAreaY_d, msgAreaW_d, msgAreaH_d},
                     contentH_d, state.scroll);
+
+    // ── Typing indicator lines ──────────────────────────────────────
+    {
+        const MimitaNet::MultiplayerContext& mpCtx = MP_CONTEXT;
+        if (mpCtx.active)
+        {
+            std::string typingNames;
+            for (const auto& kv : mpCtx.remotePlayers)
+            {
+                if (kv.second.isTyping)
+                {
+                    const uint64_t elapsedMs = MimitaNet::nowMs() - kv.second.typingStartedMs;
+                    if (elapsedMs <= 5000)
+                    {
+                        if (!typingNames.empty())
+                            typingNames += ", ";
+                        typingNames += kv.second.username;
+                    }
+                }
+            }
+            if (!typingNames.empty())
+            {
+                std::string indicator = typingNames + (typingNames.find(',') != std::string::npos
+                    ? " are typing..." : " is typing...");
+                float indX = msgAreaX + uiScaleX(2.0f);
+                float indY = msgAreaY + uiScaleY(contentH_d) - uiScaleY(state.scroll.scrollY)
+                             + uiScaleY(lineH_d);
+                uiDrawText(indicator.c_str(), indX, indY, textScale,
+                           {0.6f, 0.6f, 0.6f, alpha * 0.7f});
+            }
+        }
+    }
 
     // ── Input field (only when chat is open) ──────────────────────────
     if (state.open)

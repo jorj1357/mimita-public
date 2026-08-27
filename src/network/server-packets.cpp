@@ -618,6 +618,13 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
     std::strncpy(welcome.mapId, gServerMapId.c_str(), sizeof(welcome.mapId) - 1);
     if (sendToSourceOrPlayer(sock, from, &p, nullptr, &welcome, sizeof(welcome)))
         ++totalPacketsOut;
+
+    // Broadcast join message for new players
+    if (!existingId)
+    {
+        std::string joinMsg = std::string(p.name) + " joined the game";
+        broadcastServerChatMessage(sock, players, tick, totalPacketsOut, joinMsg.c_str());
+    }
 }
 
 void handleInputPacket(const char* buffer, int bytes,
@@ -890,8 +897,9 @@ void handleInputPacket(const char* buffer, int bytes,
     }
 }
 
-void handleDisconnect(std::unordered_map<uint32_t, ServerPlayer>& players,
-                      const char* buffer,
+void handleDisconnect(SOCKET sock, std::unordered_map<uint32_t, ServerPlayer>& players,
+                      const char* buffer, uint32_t tick,
+                      uint64_t& totalPacketsOut,
                       std::vector<uint32_t>* pendingRemovals)
 {
     const PacketHeader* header = reinterpret_cast<const PacketHeader*>(buffer);
@@ -900,6 +908,12 @@ void handleDisconnect(std::unordered_map<uint32_t, ServerPlayer>& players,
     {
         printf("%s [SERVER LEAVE] id=%u name=\"%s\"\n",
                serverTimestamp(), it->second.id, it->second.name.c_str());
+
+        // Broadcast leave message to all remaining players
+        {
+            std::string leaveMsg = std::string(it->second.name) + " left the game";
+            broadcastServerChatMessage(sock, players, tick, totalPacketsOut, leaveMsg.c_str());
+        }
 
         if (it->second.transport)
             it->second.transport->close();
@@ -1240,6 +1254,12 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
             continue;
         broadcastVipStyleEvent(sock, kv.second, players, tick, totalPacketsOut);
     }
+
+    // Broadcast join message to all players
+    {
+        std::string joinMsg = std::string(p.name) + " joined the game";
+        broadcastServerChatMessage(sock, players, tick, totalPacketsOut, joinMsg.c_str());
+    }
 }
 
 void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
@@ -1475,7 +1495,7 @@ ServerPacketProcessResult processServerPacket(
     }
     else if (header->type == PACKET_DISCONNECT)
     {
-        handleDisconnect(players, buffer, pendingRemovals);
+        handleDisconnect(sock, players, buffer, tick, totalPacketsOut);
         result.handled = true;
     }
     else if (header->type == PACKET_SPAWN_NPC_REQUEST)
@@ -1533,6 +1553,11 @@ ServerPacketProcessResult processServerPacket(
     else if (header->type == PACKET_CHAT_REQUEST)
     {
         handleChatRequestV2(sock, buffer, bytes, players, tick, totalPacketsOut);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_CHAT_TYPING_STATE_REQUEST)
+    {
+        handleChatTypingStateRequest(sock, buffer, bytes, players, tick, totalPacketsOut);
         result.handled = true;
     }
     else if (header->type == PACKET_PING)

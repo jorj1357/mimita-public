@@ -47,28 +47,28 @@
     // Actual CS 1.6 player speed is commonly lower because weapons provide
     // their own max-speed caps. For example, 250 GoldSrc units/sec would be
     // 12.5 MiMITA units/sec.
-    "max_speed": 20.0,
+    "max_speed": 16.0,
 
     // Same ceiling for server-side movement validation.
-    "ground_speed": 20.0,
+    "ground_speed": 16.0,
 
     // CS 1.6 sv_accelerate = 5.
     //
     // This is a rate and is therefore NOT divided by 20.
-    "ground_acceleration": 20.0,
+    "ground_acceleration": 5.0,
 
     // CS 1.6 sv_friction = 4.
-    "friction": 10.0,
+    "friction": 4.0,
 
     // CS 1.6 sv_stopspeed = 75 GoldSrc units/sec.
     //
     // 75 / 20 = 3.75 MiMITA units/sec.
-    "stop_speed": 6.0,
+    "stop_speed": 3.75,
 
     // ── Air — GoldSrc / CS 1.6 PM_AirAccelerate ───────────────────────────
 
     // Full GoldSrc air acceleration behavior.
-    "air_speed_gain_multiplier": 2.0,
+    "air_speed_gain_multiplier": 1.0,
 
     // CS 1.6 sv_airaccelerate = 10.
     "air_acceleration": 10.0,
@@ -127,16 +127,16 @@
     // mouse wheel for repeated bhops.
     //
     // false = closer to actual CS 1.6 input behavior.
-    "auto_bhop_enabled": true,
+    "auto_bhop_enabled": false,
 
     // Vanilla GoldSrc does not have MiMITA-style jump buffering.
-    "jump_buffer_time": 0.01,
+    "jump_buffer_time": 0.9,
 
     // No modern coyote-time system in vanilla CS 1.6.
     "coyote_time": 0.0,
 
     // Vanilla CS 1.6 has no air jump.
-    "max_air_jumps": 1,
+    "max_air_jumps": 0,
 
     // ── Ground snap ───────────────────────────────────────────────────────
 
@@ -147,7 +147,7 @@
     "ground_snap": true,
 
     // Numerical cleanup threshold, MiMITA-specific.
-    "velocity_clip_epsilon": 0.1,
+    "velocity_clip_epsilon": 0.01,
 
     // Normal surface friction.
     "surface_friction": 1.0,
@@ -170,11 +170,11 @@
     // If you want "CS 1.6 movement + MiMITA abilities", turn these back on
     // without changing the actual CS movement constants above.
 
-    "dash_enabled": true,
+    "dash_enabled": false,
 
-    "down_dash_enabled": true,
+    "down_dash_enabled": false,
 
-    "freeze_enabled": true,
+    "freeze_enabled": false,
 
     // Unused while dash is disabled.
     "dash_grace_seconds": 0.0,
@@ -183,13 +183,13 @@
     "dash_friction_multiplier": 1.0,
 
     // Vanilla CS 1.6 has no dash impulse.
-    "ground_dash_impulse": 25.0,
+    "ground_dash_impulse": 0.0,
 
     // Vanilla CS 1.6 has no air dash.
-    "air_dash_impulse": 25.0,
+    "air_dash_impulse": 0.0,
 
     // Vanilla CS 1.6 has no down dash.
-    "down_dash_speed": -50.0,
+    "down_dash_speed": 0.0,
 
     // ── External impulse / knockback ─────────────────────────────────────
     //
