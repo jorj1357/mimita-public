@@ -1,20 +1,19 @@
-// C:\important\mimita-priv-v8\src\replay\replay-scene.h
-// 6 7 2026
-/**
- * purpose
- * record ALL of it, gun model, all playerrs, all effect parts, all lighting changes, 
- * all text, all UI, all in game GUI, all names, all healthbars
- * all parts have their textures on them, lighting works, its all to scale,
- * so that i can export to a json or another format
- * and make frag movies in blender using mimita replay, and i can move camera
- * around a lot in belnder 
- */
+// 08 27 2026, 14 00
+/* purpose
+* Replay scene data structures for recording and playback.
+* Records actor state for Blender export and in-engine playback.
+* fill in 3rd line
+* fill in what this file DOES NOT do
+* fill in 2nd line
+* fill in 3rd line
+*/
 
 #pragma once
 
 #include <array>
 #include <string>
 #include <vector>
+#include <cstdint>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -100,8 +99,6 @@ struct ReplayActorState {
     float sizeScale = 1.0f;
 
     std::string weaponName;
-    // Fixed-size array: always exactly 6 body parts (head, torso, leftArm, rightArm, leftLeg, rightLeg).
-    // Eliminates heap allocation per actor per frame.
     static constexpr int MAX_BODY_PARTS = 6;
     std::array<ReplayBodyPartState, MAX_BODY_PARTS> bodyParts{};
     uint8_t bodyPartCount = 0;
@@ -167,4 +164,99 @@ struct ReplaySceneFrame {
 
     std::vector<ReplayActorState> actors;
     std::vector<ReplayEffectEvent> effects;
+};
+
+// ── Actor identity table: stores constant strings once per lifetime ──
+// Identity changes only on spawn, respawn, avatar change, weapon change, etc.
+// Per-tick recording references identity by stable uint32_t ID.
+enum class ReplayActorType : uint8_t {
+    Player = 0,
+    Npc,
+    RemotePlayer,
+    RemoteNpc,
+    Corpse,
+    Count
+};
+
+static const char* kReplayActorTypeNames[] = {
+    "player", "npc", "remote_player", "remote_npc", "corpse"
+};
+
+struct ReplayActorIdentity {
+    uint32_t id = 0;                     // stable actor ID (e.g., npc.id, remote entity id)
+    ReplayActorType type = ReplayActorType::Player;
+    std::string idString;                 // "player", "npc_5", "remote_3"
+    std::string name;
+    std::string modelPath;
+    std::string outfitPath;
+    std::string characterName;
+    std::string avatarName;
+    std::string weaponName;
+    std::string weaponModelPath;
+    uint32_t generation = 0;              // increments on respawn/identity change
+};
+
+// ── Compact body part pose (no strings) ──
+enum class ReplayBodyPartId : uint8_t {
+    Head = 0,
+    Torso,
+    LeftArm,
+    RightArm,
+    LeftLeg,
+    RightLeg,
+    Count
+};
+
+static const char* kReplayBodyPartNames[] = {
+    "head", "torso", "leftArm", "rightArm", "leftLeg", "rightLeg"
+};
+
+struct ReplayBodyPartPose {
+    glm::vec3 position{};
+    glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec3 scale{1.0f};
+};
+
+static constexpr int REPLAY_MAX_BODY_PARTS = 6;
+
+// ── Per-tick compact actor state (no strings, no identity) ──
+struct ReplayActorTickState {
+    uint32_t actorId = 0;                 // references identity table
+    glm::vec3 position{};
+    glm::vec3 rotation{};
+    glm::vec3 velocity{};
+    int16_t health = 100;
+    int16_t maxHealth = 100;
+    uint16_t currentAmmo = 0;
+    uint16_t reserveAmmo = 0;
+    bool dead = false;
+    bool shooting = false;
+    bool reloading = false;
+    bool grounded = false;
+    float sizeScale = 1.0f;
+    std::array<ReplayBodyPartPose, REPLAY_MAX_BODY_PARTS> bodyParts{};
+    uint8_t bodyPartCount = 0;
+};
+
+// ── Delta detection: dirty mask for field-level change tracking ──
+enum ReplayDirtyBits : uint32_t {
+    ReplayDirtyNone     = 0,
+    ReplayDirtyPosition = 1 << 0,
+    ReplayDirtyRotation = 1 << 1,
+    ReplayDirtyVelocity = 1 << 2,
+    ReplayDirtyHealth   = 1 << 3,
+    ReplayDirtyWeapon   = 1 << 4,
+    ReplayDirtyPose     = 1 << 5,
+    ReplayDirtyFlags    = 1 << 6,
+    ReplayDirtyAll      = 0xFFFFFFFF
+};
+
+struct ReplaySceneFrameCompact {
+    int tick = 0;
+    float time = 0.0f;
+    ReplayCameraState camera;
+    std::vector<ReplayActorTickState> actors;       // only dirty actors
+    std::vector<ReplayEffectEvent> effects;
+    // Identity changes that occurred this tick (actor spawned, respawned, etc.)
+    std::vector<uint32_t> identityChangeIds;
 };

@@ -23,4 +23,4 @@ nlohmann::json effectJson(const ReplayEffectEvent& effect);
 nlohmann::json buildValidationJson(
     const std::string& replayPath,
     const ReplayHeader& header,
-    const std::deque<ReplaySceneFrame>& sceneFrames);
+    const std::vector<ReplaySceneFrame>& sceneFrames);

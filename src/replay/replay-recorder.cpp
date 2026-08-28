@@ -43,34 +43,51 @@ BodyPartArray captureReplayBodyParts(const Player& player)
     Perf::ScopedTimer _t("ReplayCaptureBodyParts");
     BodyPartArray result;
 
-    glm::mat4 rootWorld = glm::translate(glm::mat4(1.0f), player.pos)
-        * glm::mat4_cast(glm::angleAxis(glm::radians(player.yaw), glm::vec3(0.0f, 0.0f, 1.0f)));
-    glm::mat4 invRootWorld = glm::inverse(rootWorld);
+    const glm::vec3& rootPos = player.pos;
+    const float rootYaw = player.yaw;
 
     for (const PhysicalBodyPart& part : player.physicalBody.parts) {
-        if (part.name != "head" && part.name != "torso" &&
-            part.name != "leftArm" && part.name != "rightArm" &&
-            part.name != "leftLeg" && part.name != "rightLeg")
-            continue;
-
         if (result.count >= ReplayActorState::MAX_BODY_PARTS)
             break;
 
-        glm::mat4 localTransform = invRootWorld * part.worldTransform;
+        // Skip body parts that aren't in our fixed set
+        const char* name = part.name.c_str();
+        bool match = (name[0] == 'h' && name[1] == 'e') ||  // head
+                     (name[0] == 't' && name[1] == 'o') ||  // torso
+                     (name[0] == 'l' && name[1] == 'e') ||  // leftArm/leftLeg
+                     (name[0] == 'r' && name[1] == 'i');    // rightArm/rightLeg
+        if (!match) continue;
 
-        glm::vec3 scale(1.0f);
-        glm::quat orientation;
-        glm::vec3 translation(0.0f);
-        glm::vec3 skew(0.0f);
-        glm::vec4 perspective(0.0f);
-        glm::decompose(localTransform,
-                       scale, orientation, translation, skew, perspective);
+        // Direct extraction from world transform — no glm::decompose needed.
+        const glm::mat4& wt = part.worldTransform;
+
+        // Compute local translation relative to root
+        glm::vec3 worldPos(wt[3][0], wt[3][1], wt[3][2]);
+        glm::vec3 localPos = worldPos - rootPos;
+
+        // Rotate local position back by -rootYaw to get body-local coords
+        float negYaw = -glm::radians(rootYaw);
+        float cosA = glm::cos(negYaw);
+        float sinA = glm::sin(negYaw);
+        glm::vec3 bodyLocal(
+            localPos.x * cosA - localPos.y * sinA,
+            localPos.x * sinA + localPos.y * cosA,
+            localPos.z
+        );
+
+        // Extract rotation quaternion from world transform's upper-left 3x3
+        glm::mat3 rotMat(wt);
+        glm::quat worldRot = glm::quat_cast(rotMat);
+
+        // Convert to body-local rotation by removing root yaw
+        glm::quat rootRot = glm::angleAxis(glm::radians(rootYaw), glm::vec3(0, 0, 1));
+        glm::quat localRot = glm::inverse(rootRot) * worldRot;
 
         ReplayBodyPartState& state = result.parts[result.count];
-        state.name = part.name;
-        state.position = translation;
-        state.rotation = glm::normalize(orientation);
-        state.scale = scale;
+        state.name = part.name;  // kept for JSON export compatibility
+        state.position = bodyLocal;
+        state.rotation = glm::normalize(localRot);
+        state.scale = glm::vec3(1.0f);
         result.count++;
     }
 
@@ -84,13 +101,24 @@ BodyPartArray captureReplayBodyParts(const Player& player)
 void ReplayRecorder::beginRecording(float randomSeed, const char* mapName) {
     std::lock_guard<std::mutex> lock(mRingMutex);
     mFrames.clear();
-    mSceneFrames.clear();
     mAssets.clear();
     mSoundEvents.clear();
     mKillfeedEvents.clear();
     mPendingEffects.clear();
-    mFrames.clear();
-    mSceneFrames.clear();
+    mSceneFrameWriteIndex = 0;
+    mSceneFrameCount = 0;
+    // Clear all frame slots (preserves vector capacity for reuse)
+    for (uint32_t i = 0; i < REPLAY_RING_CAPACITY; ++i) {
+        mSceneFrames[i].actors.clear();
+        mSceneFrames[i].effects.clear();
+        mSceneFrames[i].tick = 0;
+        mSceneFrames[i].time = 0.0f;
+    }
+    mIdentityCache.clear();
+    mPreviousTickState.clear();
+    mIdentityTable.clear();
+    mPreviousCompactState.clear();
+    mNpcAvatarCache.clear();
     mWorld = {};
     mLighting = {};
     mTick = 0;
@@ -113,6 +141,76 @@ void ReplayRecorder::beginRecording(float randomSeed, const char* mapName) {
            mHeader.mapName, mHeader.randomSeed);
 }
 
+// ── Delta detection ──
+uint32_t ReplayRecorder::computeDirtyMask(uint32_t actorId, const ReplayActorTickState& current) const
+{
+    auto it = mPreviousCompactState.find(actorId);
+    if (it == mPreviousCompactState.end())
+        return ReplayDirtyAll; // first time seen, everything is new
+
+    const ReplayActorTickState& prev = it->second;
+    uint32_t dirty = ReplayDirtyNone;
+
+    // Position: use squared distance epsilon (0.001mm threshold)
+    float posDist2 = glm::length2(current.position - prev.position);
+    if (posDist2 > 1e-10f) dirty |= ReplayDirtyPosition;
+
+    // Rotation: compare as quaternions (exact match for determinism)
+    if (current.rotation.x != prev.rotation.x || current.rotation.y != prev.rotation.y ||
+        current.rotation.z != prev.rotation.z) dirty |= ReplayDirtyRotation;
+
+    // Velocity
+    float velDist2 = glm::length2(current.velocity - prev.velocity);
+    if (velDist2 > 1e-10f) dirty |= ReplayDirtyVelocity;
+
+    // Health/ammo (integer comparison)
+    if (current.health != prev.health || current.maxHealth != prev.maxHealth)
+        dirty |= ReplayDirtyHealth;
+
+    // Weapon state
+    if (current.currentAmmo != prev.currentAmmo || current.reserveAmmo != prev.reserveAmmo)
+        dirty |= ReplayDirtyWeapon;
+
+    // Body pose: compare each part's position and rotation
+    if (current.bodyPartCount != prev.bodyPartCount) {
+        dirty |= ReplayDirtyPose;
+    } else {
+        for (uint8_t i = 0; i < current.bodyPartCount; ++i) {
+            if (glm::length2(current.bodyParts[i].position - prev.bodyParts[i].position) > 1e-10f ||
+                current.bodyParts[i].rotation.x != prev.bodyParts[i].rotation.x ||
+                current.bodyParts[i].rotation.y != prev.bodyParts[i].rotation.y ||
+                current.bodyParts[i].rotation.z != prev.bodyParts[i].rotation.z ||
+                current.bodyParts[i].rotation.w != prev.bodyParts[i].rotation.w) {
+                dirty |= ReplayDirtyPose;
+                break;
+            }
+        }
+    }
+
+    // Flags
+    if (current.dead != prev.dead || current.grounded != prev.grounded ||
+        current.shooting != prev.shooting || current.reloading != prev.reloading ||
+        current.sizeScale != prev.sizeScale)
+        dirty |= ReplayDirtyFlags;
+
+    return dirty;
+}
+
+// ── NPC avatar cache ──
+const std::string& ReplayRecorder::getCachedNpcAvatar(uint32_t npcId, uint16_t epoch) const
+{
+    static const std::string kEmpty;
+    uint64_t key = (uint64_t(npcId) << 16) | uint64_t(epoch);
+    auto it = mNpcAvatarCache.find(key);
+    return it != mNpcAvatarCache.end() ? it->second : kEmpty;
+}
+
+void ReplayRecorder::cacheNpcAvatar(uint32_t npcId, uint16_t epoch, const std::string& name)
+{
+    uint64_t key = (uint64_t(npcId) << 16) | uint64_t(epoch);
+    mNpcAvatarCache[key] = name;
+}
+
 void ReplayRecorder::recordFrame(const InputFrame& frame) {
     if (!mRecording) return;
     std::lock_guard<std::mutex> lock(mRingMutex);
@@ -122,7 +220,7 @@ void ReplayRecorder::recordFrame(const InputFrame& frame) {
     mEventTick = rf.tick;
     rf.inputs = frame;
     if (mMaxTicks > 0 && mFrames.size() >= mMaxTicks)
-        mFrames.pop_front();
+        mFrames.erase(mFrames.begin());
     mFrames.push_back(rf);
     mHeader.tickCount = (uint32_t)mFrames.size();
 }
@@ -135,10 +233,13 @@ void ReplayRecorder::recordSceneFrame(ReplaySceneFrame inputFrame)
     // Merge pending effects directly into the frame (no extra copy)
     inputFrame.effects.insert(inputFrame.effects.end(), mPendingEffects.begin(), mPendingEffects.end());
     mPendingEffects.clear();
-    if (mMaxTicks > 0 && mSceneFrames.size() >= mMaxTicks)
-        mSceneFrames.pop_front();
-    // Move the frame directly into the deque — no deep copy
-    mSceneFrames.push_back(std::move(inputFrame));
+
+    // Move into circular buffer slot (reuses existing vector capacity)
+    ReplaySceneFrame& slot = mSceneFrames[mSceneFrameWriteIndex];
+    slot = std::move(inputFrame);
+    mSceneFrameWriteIndex = (mSceneFrameWriteIndex + 1) % REPLAY_RING_CAPACITY;
+    if (mSceneFrameCount < REPLAY_RING_CAPACITY)
+        mSceneFrameCount++;
     mEventTick = mTick;
 }
 
@@ -195,7 +296,7 @@ bool ReplayRecorder::exportToJSON(const std::string& path) const {
     j["header"]["mapName"] = std::string(mHeader.mapName);
     j["header"]["timestamp"] = mHeader.timestamp;
     j["header"]["playerName"] = std::string(mHeader.playerName);
-    j["header"]["sceneFrameCount"] = mSceneFrames.size();
+    j["header"]["sceneFrameCount"] = mSceneFrameCount;
     j["metadata"]["format"] = "mimita-cinematic-replay";
     j["metadata"]["sceneCaptureVersion"] = 2;
     j["metadata"]["coordinateSystem"] = "Z_UP";
@@ -278,7 +379,8 @@ bool ReplayRecorder::exportToJSON(const std::string& path) const {
         j["events"].push_back(kfJson);
         eventCounts["killfeed"] = eventCounts.value("killfeed", 0) + 1;
     }
-    for (const ReplaySceneFrame& sceneFrame : mSceneFrames) {
+    for (uint32_t si = 0; si < mSceneFrameCount; ++si) {
+        const ReplaySceneFrame& sceneFrame = sceneFrameAt(si);
         for (const ReplayEffectEvent& effect : sceneFrame.effects) {
             json event = effectJson(effect);
             event["tick"] = effect.spawnTick;
@@ -319,7 +421,8 @@ bool ReplayRecorder::exportToJSON(const std::string& path) const {
 
     json sceneFramesJson = json::array();
 
-    for (const auto& sf : mSceneFrames) {
+    for (uint32_t si = 0; si < mSceneFrameCount; ++si) {
+        const auto& sf = sceneFrameAt(si);
         json f;
         f["tick"] = sf.tick;
         f["time"] = sf.time;
@@ -421,8 +524,12 @@ bool ReplayRecorder::exportToJSON(const std::string& path) const {
         return false;
     }
 
+    // Build temporary vector for validation (ring buffer → vector)
+    std::vector<ReplaySceneFrame> tempSceneFrames(mSceneFrameCount);
+    for (uint32_t i = 0; i < mSceneFrameCount; ++i)
+        tempSceneFrames[i] = sceneFrameAt(i);
     const json validation =
-        buildValidationJson(path, mHeader, mSceneFrames);
+        buildValidationJson(path, mHeader, tempSceneFrames);
     std::ofstream validationFile(validationPath);
     if (!validationFile.is_open()) {
         printf("[REPLAY VALIDATION] Failed to write %s\n",
@@ -437,10 +544,10 @@ bool ReplayRecorder::exportToJSON(const std::string& path) const {
         return false;
     }
 
-    printf("[REPLAY] Exported %u input frames and %zu scene frames to %s\n",
-           mHeader.tickCount, mSceneFrames.size(), path.c_str());
-    printf("[REPLAY VALIDATION] Exported %zu authoritative frames to %s\n",
-           mSceneFrames.size(), validationPath.c_str());
+    printf("[REPLAY] Exported %u input frames and %u scene frames to %s\n",
+           mHeader.tickCount, mSceneFrameCount, path.c_str());
+    printf("[REPLAY VALIDATION] Exported %u authoritative frames to %s\n",
+           mSceneFrameCount, validationPath.c_str());
     return true;
 }
 

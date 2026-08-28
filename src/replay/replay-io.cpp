@@ -198,7 +198,7 @@ json transformJson(
 json buildValidationJson(
     const std::string& replayPath,
     const ReplayHeader& header,
-    const std::deque<ReplaySceneFrame>& sceneFrames)
+    const std::vector<ReplaySceneFrame>& sceneFrames)
 {
     json validation;
     validation["schemaVersion"] = 1;

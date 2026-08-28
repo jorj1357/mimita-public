@@ -321,182 +321,255 @@ void engineTickReplay(Engine& engine, float dt)
             deathPosition = glm::vec3(0.0f);
 
         if (recordingReplayTick) {
-            // Interned constant: avoids 55-char heap alloc per actor per frame
             static const std::string kDefaultModelPath = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
-            ReplaySceneFrame sceneFrame;
+
+            ReplaySceneFrame& sceneFrame = gReplayRecorder.getWritableFrame();
             sceneFrame.tick = (int)replayTick;
             sceneFrame.time = (float)sceneFrame.tick / 60.0f;
+            sceneFrame.actors.clear();
+            sceneFrame.effects.clear();
 
             // Camera
             sceneFrame.camera.position = camera.pos;
-            sceneFrame.camera.rotation = glm::vec3(camera.pitch, 0.0f, camera.yaw);
+            sceneFrame.camera.rotation = glm::vec3(camera.pitch, 0.0f, player.yaw);
             sceneFrame.camera.fov = camera.fov;
 
-            // Player
-            ReplayActorState playerActor;
-            playerActor.id = player.username.empty() ? "admin" : player.username;
-            playerActor.name = player.username;
-            playerActor.type = "player";
-            playerActor.modelPath = kDefaultModelPath;
-            playerActor.position = player.pos;
-            playerActor.rotation = glm::vec3(0.0f, 0.0f, player.yaw);
-            playerActor.velocity = player.vel;
-            playerActor.health = player.currentHp;
-            playerActor.maxHealth = player.maxHp;
-            playerActor.dead = player.dead;
-            playerActor.grounded = player.ground.onGround;
-            playerActor.sizeScale = player.sizeScale;
-            playerActor.outfitPath = GetPlayerSettings().outfitPath;
-            playerActor.characterName = GetPlayerSettings().characterName;
-            playerActor.avatarName = GetPlayerSettings().avatarName;
+            // ── Identity table update helper ──
+            auto updateIdentity = [&](uint32_t actorId, ReplayActorType actorType,
+                const std::string& idStr, const std::string& nameStr,
+                const std::string& modelPath, const std::string& outfit,
+                const std::string& charName, const std::string& avatar,
+                const std::string& weapName, const std::string& weapModel)
             {
-                const WeaponDefinition* wdef = weapons.getCurrentDef(player);
-                if (wdef) {
-                    playerActor.weaponName = wdef->id;
-                    playerActor.weaponModelPath = wdef->modelPath;
-                } else {
-                    playerActor.weaponName = "none";
-                    playerActor.weaponModelPath = "";
+                auto& ident = gReplayRecorder.getOrCreateIdentity(actorId);
+                bool changed = (ident.idString != idStr) || (ident.name != nameStr) ||
+                               (ident.modelPath != modelPath) || (ident.outfitPath != outfit) ||
+                               (ident.characterName != charName) || (ident.avatarName != avatar) ||
+                               (ident.weaponName != weapName) || (ident.weaponModelPath != weapModel) ||
+                               (ident.type != actorType);
+                if (changed) {
+                    ident.id = actorId;
+                    ident.type = actorType;
+                    ident.idString = idStr;
+                    ident.name = nameStr;
+                    ident.modelPath = modelPath;
+                    ident.outfitPath = outfit;
+                    ident.characterName = charName;
+                    ident.avatarName = avatar;
+                    ident.weaponName = weapName;
+                    ident.weaponModelPath = weapModel;
+                    ident.generation++;
                 }
-                auto wit = player.weaponRuntimes.find(player.equippedWeaponId);
-                if (wit != player.weaponRuntimes.end()) {
-                    playerActor.currentAmmo = wit->second.currentAmmo;
-                    playerActor.reserveAmmo = wit->second.reserveAmmo;
-                }
-            }
-            playerActor.reloading = weapons.isReloading(player);
-            playerActor.shooting = weapons.isShooting();
-            { auto bp = captureReplayBodyParts(player); playerActor.bodyParts = bp.parts; playerActor.bodyPartCount = bp.count; }
-            sceneFrame.actors.push_back(std::move(playerActor));
+            };
 
-            // NPCs
+            // ── Build actor from identity table (avoids string copies from game objects) ──
+            auto buildActor = [&](ReplayActorState& out, uint32_t actorId)
+            {
+                const auto* ident = gReplayRecorder.getIdentity(actorId);
+                if (ident) {
+                    out.id = ident->idString;
+                    out.name = ident->name;
+                    out.type = kReplayActorTypeNames[(int)ident->type];
+                    out.modelPath = ident->modelPath;
+                    out.outfitPath = ident->outfitPath;
+                    out.characterName = ident->characterName;
+                    out.avatarName = ident->avatarName;
+                    out.weaponName = ident->weaponName;
+                    out.weaponModelPath = ident->weaponModelPath;
+                }
+            };
+
+            // ── Delta detection: compare with previous state, skip if unchanged ──
+            auto tickStateChanged = [&](uint32_t actorId, const ReplayActorState& current) -> bool
+            {
+                const auto* prev = gReplayRecorder.getPreviousState(actorId);
+                if (!prev) return true;
+                return (current.position != prev->position) || (current.rotation != prev->rotation) ||
+                       (current.velocity != prev->velocity) || (current.health != prev->health) ||
+                       (current.maxHealth != prev->maxHealth) || (current.currentAmmo != prev->currentAmmo) ||
+                       (current.reserveAmmo != prev->reserveAmmo) || (current.dead != prev->dead) ||
+                       (current.shooting != prev->shooting) || (current.reloading != prev->reloading) ||
+                       (current.grounded != prev->grounded) || (current.sizeScale != prev->sizeScale);
+            };
+
+            auto storeIfDirty = [&](uint32_t actorId, ReplayActorState& actor)
+            {
+                if (tickStateChanged(actorId, actor)) {
+                    sceneFrame.actors.push_back(std::move(actor));
+                    // Store compact previous state for next tick comparison
+                    ReplayActorTickState compact;
+                    compact.actorId = actorId;
+                    compact.position = actor.position;
+                    compact.rotation = actor.rotation;
+                    compact.velocity = actor.velocity;
+                    compact.health = (int16_t)actor.health;
+                    compact.maxHealth = (int16_t)actor.maxHealth;
+                    compact.currentAmmo = (uint16_t)actor.currentAmmo;
+                    compact.reserveAmmo = (uint16_t)actor.reserveAmmo;
+                    compact.dead = actor.dead;
+                    compact.shooting = actor.shooting;
+                    compact.reloading = actor.reloading;
+                    compact.grounded = actor.grounded;
+                    compact.sizeScale = actor.sizeScale;
+                    gReplayRecorder.storePreviousState(actorId, compact);
+                }
+            };
+
+            // ── Player ──
+            {
+                const uint32_t actorId = 0;
+                const std::string& idStr = player.username.empty() ? std::string("admin") : player.username;
+                const WeaponDefinition* wdef = weapons.getCurrentDef(player);
+                const std::string weapName = wdef ? wdef->id : "none";
+                const std::string weapModel = wdef ? wdef->modelPath : "";
+                auto wit = player.weaponRuntimes.find(player.equippedWeaponId);
+                uint16_t curAmmo = (wit != player.weaponRuntimes.end()) ? wit->second.currentAmmo : 0;
+                uint16_t resAmmo = (wit != player.weaponRuntimes.end()) ? wit->second.reserveAmmo : 0;
+
+                updateIdentity(actorId, ReplayActorType::Player, idStr,
+                    player.username, kDefaultModelPath, GetPlayerSettings().outfitPath,
+                    GetPlayerSettings().characterName, GetPlayerSettings().avatarName,
+                    weapName, weapModel);
+
+                ReplayActorState actor;
+                buildActor(actor, actorId);
+                actor.position = player.pos;
+                actor.rotation = glm::vec3(0.0f, 0.0f, player.yaw);
+                actor.velocity = player.vel;
+                actor.health = player.currentHp;
+                actor.maxHealth = player.maxHp;
+                actor.currentAmmo = curAmmo;
+                actor.reserveAmmo = resAmmo;
+                actor.dead = player.dead;
+                actor.shooting = weapons.isShooting();
+                actor.reloading = weapons.isReloading(player);
+                actor.grounded = player.ground.onGround;
+                actor.sizeScale = player.sizeScale;
+                { auto bp = captureReplayBodyParts(player); actor.bodyParts = bp.parts; actor.bodyPartCount = bp.count; }
+                storeIfDirty(actorId, actor);
+            }
+
+            // ── NPCs ──
             {
             MIMITA_PERF_SCOPE("Replay::ActorSnapshot");
             for (const Npc& npc : npcSystem.all()) {
-                ReplayActorState npcActor;
-                npcActor.id = "npc_" + std::to_string(npc.id);
-                npcActor.name = npc.body.username;
-                npcActor.type = npc.body.dead ? "corpse" : "npc";
-                npcActor.modelPath = kDefaultModelPath;
-                npcActor.position = npc.body.pos;
-                npcActor.rotation = glm::vec3(0.0f, 0.0f, npc.body.yaw);
-                npcActor.velocity = npc.body.vel;
-                npcActor.health = npc.body.currentHp;
-                npcActor.maxHealth = npc.body.maxHp;
-                npcActor.dead = npc.body.dead;
-                npcActor.grounded = npc.body.ground.onGround;
-                npcActor.sizeScale = npc.body.sizeScale;
-                npcActor.outfitPath = "";
-                npcActor.avatarName = npc.avatarName;
-                {
-                    const WeaponDefinition* wdef = weapons.getDefForSlot(npc.body.equippedSlot);
-                    if (wdef) {
-                        npcActor.weaponName = wdef->id;
-                        npcActor.weaponModelPath = wdef->modelPath;
-                    } else {
-                        npcActor.weaponName = "none";
-                        npcActor.weaponModelPath = "";
-                    }
-                }
-                {
-                    auto wit = npc.body.weaponRuntimes.find(npc.body.equippedWeaponId);
-                    if (wit != npc.body.weaponRuntimes.end()) {
-                        npcActor.currentAmmo = wit->second.currentAmmo;
-                        npcActor.reserveAmmo = wit->second.reserveAmmo;
-                    }
-                }
+                const uint32_t actorId = 1000u + npc.id;
+                const std::string idStr = "npc_" + std::to_string(npc.id);
+                const WeaponDefinition* wdef = weapons.getDefForSlot(npc.body.equippedSlot);
+                const std::string weapName = wdef ? wdef->id : "none";
+                const std::string weapModel = wdef ? wdef->modelPath : "";
+                auto wit = npc.body.weaponRuntimes.find(npc.body.equippedWeaponId);
+                uint16_t curAmmo = (wit != npc.body.weaponRuntimes.end()) ? wit->second.currentAmmo : 0;
+                uint16_t resAmmo = (wit != npc.body.weaponRuntimes.end()) ? wit->second.reserveAmmo : 0;
+
+                updateIdentity(actorId,
+                    npc.body.dead ? ReplayActorType::Corpse : ReplayActorType::Npc,
+                    idStr, npc.body.username, kDefaultModelPath, "",
+                    "", npc.avatarName, weapName, weapModel);
+
+                ReplayActorState actor;
+                buildActor(actor, actorId);
+                actor.position = npc.body.pos;
+                actor.rotation = glm::vec3(0.0f, 0.0f, npc.body.yaw);
+                actor.velocity = npc.body.vel;
+                actor.health = npc.body.currentHp;
+                actor.maxHealth = npc.body.maxHp;
+                actor.currentAmmo = curAmmo;
+                actor.reserveAmmo = resAmmo;
+                actor.dead = npc.body.dead;
+                actor.grounded = npc.body.ground.onGround;
+                actor.sizeScale = npc.body.sizeScale;
                 { MIMITA_PERF_SCOPE("Replay::BodyParts");
                   auto bp = captureReplayBodyParts(npc.body);
-                  npcActor.bodyParts = bp.parts;
-                  npcActor.bodyPartCount = bp.count;
-                }
-                sceneFrame.actors.push_back(std::move(npcActor));
+                  actor.bodyParts = bp.parts; actor.bodyPartCount = bp.count; }
+                storeIfDirty(actorId, actor);
             }
             } // ReplayCaptureNPCs
-            // ── Remote players (client-server replicas) ────────────────
+
+            // ── Remote players ──
             {
             MIMITA_PERF_SCOPE("Replay::ActorSnapshot");
             for (const auto& kv : mpContext.remotePlayers) {
                 const Player& p = kv.second;
+                const uint32_t actorId = 20000u + kv.first;
+                const std::string idStr = "remote_" + std::to_string(kv.first);
+                const WeaponDefinition* wdef = weapons.getCurrentDef(p);
+                const std::string weapName = wdef ? wdef->id : "none";
+                const std::string weapModel = wdef ? wdef->modelPath : "";
+                auto wit = p.weaponRuntimes.find(p.equippedWeaponId);
+                uint16_t curAmmo = (wit != p.weaponRuntimes.end()) ? wit->second.currentAmmo : 0;
+                uint16_t resAmmo = (wit != p.weaponRuntimes.end()) ? wit->second.reserveAmmo : 0;
+
+                updateIdentity(actorId,
+                    p.dead ? ReplayActorType::Corpse : ReplayActorType::RemotePlayer,
+                    idStr, p.username, kDefaultModelPath, "",
+                    p.characterName(), p.avatarName(), weapName, weapModel);
+
                 ReplayActorState actor;
-                actor.id = "remote_" + std::to_string(kv.first);
-                actor.name = p.username;
-                actor.type = p.dead ? "corpse" : "remote_player";
-                actor.modelPath = kDefaultModelPath;
+                buildActor(actor, actorId);
                 actor.position = p.pos;
                 actor.rotation = glm::vec3(0.0f, 0.0f, p.yaw);
                 actor.velocity = p.vel;
                 actor.health = p.currentHp;
                 actor.maxHealth = p.maxHp;
+                actor.currentAmmo = curAmmo;
+                actor.reserveAmmo = resAmmo;
                 actor.dead = p.dead;
                 actor.grounded = p.ground.onGround;
                 actor.sizeScale = p.sizeScale;
-                actor.characterName = p.characterName();
-                actor.avatarName = p.avatarName();
-                {
-                    const WeaponDefinition* wdef = weapons.getCurrentDef(p);
-                    if (wdef) {
-                        actor.weaponName = wdef->id;
-                        actor.weaponModelPath = wdef->modelPath;
-                    } else {
-                        actor.weaponName = "none";
-                        actor.weaponModelPath = "";
-                    }
-                    auto wit = p.weaponRuntimes.find(p.equippedWeaponId);
-                    if (wit != p.weaponRuntimes.end()) {
-                        actor.currentAmmo = wit->second.currentAmmo;
-                        actor.reserveAmmo = wit->second.reserveAmmo;
-                    }
-                }
                 { MIMITA_PERF_SCOPE("Replay::BodyParts");
                   auto bp = captureReplayBodyParts(p);
-                  actor.bodyParts = bp.parts;
-                  actor.bodyPartCount = bp.count;
-                }
-                sceneFrame.actors.push_back(std::move(actor));
+                  actor.bodyParts = bp.parts; actor.bodyPartCount = bp.count; }
+                storeIfDirty(actorId, actor);
             }
             } // ReplayCaptureRemotePlayers
-            // ── Remote NPCs (server-simulated replicas) ────────────────
+
+            // ── Remote NPCs ──
             {
             MIMITA_PERF_SCOPE("Replay::ActorSnapshot");
             for (const auto& kv : mpContext.remoteNpcs) {
                 const Player& p = kv.second;
+                const uint32_t actorId = 30000u + kv.first;
+                const std::string idStr = "rnpc_" + std::to_string(kv.first);
+
+                // Use cached avatar instead of filesystem call
+                const std::string& avatarName = [&]() -> const std::string& {
+                    const std::string& cached = gReplayRecorder.getCachedNpcAvatar(kv.first, p.networkTransformEpoch);
+                    if (!cached.empty()) return cached;
+                    static std::string resolved;
+                    resolved = npcAvatarNameForLife(kv.first, p.networkTransformEpoch);
+                    gReplayRecorder.cacheNpcAvatar(kv.first, p.networkTransformEpoch, resolved);
+                    return resolved;
+                }();
+
+                const WeaponDefinition* wdef = weapons.getCurrentDef(p);
+                const std::string weapName = wdef ? wdef->id : "none";
+                const std::string weapModel = wdef ? wdef->modelPath : "";
+                auto wit = p.weaponRuntimes.find(p.equippedWeaponId);
+                uint16_t curAmmo = (wit != p.weaponRuntimes.end()) ? wit->second.currentAmmo : 0;
+                uint16_t resAmmo = (wit != p.weaponRuntimes.end()) ? wit->second.reserveAmmo : 0;
+
+                updateIdentity(actorId,
+                    p.dead ? ReplayActorType::Corpse : ReplayActorType::RemoteNpc,
+                    idStr, p.username, kDefaultModelPath, "",
+                    p.characterName(), avatarName, weapName, weapModel);
+
                 ReplayActorState actor;
-                actor.id = "rnpc_" + std::to_string(kv.first);
-                actor.name = p.username;
-                actor.type = p.dead ? "corpse" : "remote_npc";
-                actor.modelPath = kDefaultModelPath;
+                buildActor(actor, actorId);
                 actor.position = p.pos;
                 actor.rotation = glm::vec3(0.0f, 0.0f, p.yaw);
                 actor.velocity = p.vel;
                 actor.health = p.currentHp;
                 actor.maxHealth = p.maxHp;
+                actor.currentAmmo = curAmmo;
+                actor.reserveAmmo = resAmmo;
                 actor.dead = p.dead;
                 actor.grounded = p.ground.onGround;
                 actor.sizeScale = p.sizeScale;
-                actor.characterName = p.characterName();
-                actor.avatarName = npcAvatarNameForLife(kv.first, p.networkTransformEpoch);
-                {
-                    const WeaponDefinition* wdef = weapons.getCurrentDef(p);
-                    if (wdef) {
-                        actor.weaponName = wdef->id;
-                        actor.weaponModelPath = wdef->modelPath;
-                    } else {
-                        actor.weaponName = "none";
-                        actor.weaponModelPath = "";
-                    }
-                    auto wit = p.weaponRuntimes.find(p.equippedWeaponId);
-                    if (wit != p.weaponRuntimes.end()) {
-                        actor.currentAmmo = wit->second.currentAmmo;
-                        actor.reserveAmmo = wit->second.reserveAmmo;
-                    }
-                }
                 { MIMITA_PERF_SCOPE("Replay::BodyParts");
                   auto bp = captureReplayBodyParts(p);
-                  actor.bodyParts = bp.parts;
-                  actor.bodyPartCount = bp.count;
-                }
-                sceneFrame.actors.push_back(std::move(actor));
+                  actor.bodyParts = bp.parts; actor.bodyPartCount = bp.count; }
+                storeIfDirty(actorId, actor);
             }
             } // ReplayCaptureRemoteNpcs
             // ── Godball ────────────────────────────────────────────────
@@ -523,7 +596,7 @@ void engineTickReplay(Engine& engine, float dt)
 
             {
             MIMITA_PERF_SCOPE("Replay::StoreFrame");
-            gReplayRecorder.recordSceneFrame(std::move(sceneFrame));
+            gReplayRecorder.commitFrame();
             }
             gReplayFactory.update();
 

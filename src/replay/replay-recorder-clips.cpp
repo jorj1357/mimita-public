@@ -21,7 +21,8 @@ ReplayClip ReplayRecorder::makeClip(
     clip.victimId = victimId;
     clip.killTick = killTick >= startTick ? killTick - startTick : 0;
 
-    for (const ReplaySceneFrame& frame : mSceneFrames) {
+    for (uint32_t i = 0; i < mSceneFrameCount; ++i) {
+        const ReplaySceneFrame& frame = sceneFrameAt(i);
         if ((uint32_t)frame.tick != killTick && (uint32_t)frame.tick < killTick + 2)
             continue;
         if ((uint32_t)frame.tick > killTick + 5) break;
@@ -36,7 +37,8 @@ ReplayClip ReplayRecorder::makeClip(
 
     glm::vec3 killerPos, victimPos;
     bool foundKiller = false, foundVictim = false;
-    for (const ReplaySceneFrame& frame : mSceneFrames) {
+    for (uint32_t i = 0; i < mSceneFrameCount; ++i) {
+        const ReplaySceneFrame& frame = sceneFrameAt(i);
         if ((uint32_t)frame.tick < killTick || (uint32_t)frame.tick > killTick + 5)
             continue;
         for (const ReplayActorState& actor : frame.actors) {
@@ -55,7 +57,8 @@ ReplayClip ReplayRecorder::makeClip(
         frame.tick -= startTick;
         clip.frames.push_back(std::move(frame));
     }
-    for (const ReplaySceneFrame& source : mSceneFrames) {
+    for (uint32_t i = 0; i < mSceneFrameCount; ++i) {
+        const ReplaySceneFrame& source = sceneFrameAt(i);
         if ((uint32_t)source.tick < startTick || (uint32_t)source.tick > endTick)
             continue;
         ReplaySceneFrame frame = source;
@@ -90,11 +93,13 @@ void ReplayRecorder::stopRecording() {
     if (!mRecording) return;
     std::lock_guard<std::mutex> lock(mRingMutex);
     if (!mPendingEffects.empty()) {
-        ReplaySceneFrame finalFrame;
-        finalFrame.tick = (int)mTick;
-        finalFrame.time = (float)mTick / (float)std::max(mHeader.tickRate, 1u);
-        finalFrame.effects = std::move(mPendingEffects);
-        mSceneFrames.push_back(std::move(finalFrame));
+        ReplaySceneFrame& slot = mSceneFrames[mSceneFrameWriteIndex];
+        slot.tick = (int)mTick;
+        slot.time = (float)mTick / (float)std::max(mHeader.tickRate, 1u);
+        slot.effects = std::move(mPendingEffects);
+        mSceneFrameWriteIndex = (mSceneFrameWriteIndex + 1) % REPLAY_RING_CAPACITY;
+        if (mSceneFrameCount < REPLAY_RING_CAPACITY)
+            mSceneFrameCount++;
         mPendingEffects.clear();
     }
     mRecording = false;

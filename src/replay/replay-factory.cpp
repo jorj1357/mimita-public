@@ -119,7 +119,8 @@ void ReplayFactory::notifyKill(const std::string& killerId,
     float distance = 0.0f;
     glm::vec3 killerPos, victimPos;
     bool foundKiller = false, foundVictim = false;
-    for (const ReplaySceneFrame& frame : mRing.sceneFrames()) {
+    for (uint32_t i = 0; i < mRing.sceneFrameCount(); ++i) {
+        const ReplaySceneFrame& frame = mRing.sceneFrameAt(i);
         if ((uint32_t)frame.tick != mRing.currentTick() &&
             (uint32_t)frame.tick < mRing.currentTick() + 2u)
             continue;

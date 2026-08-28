@@ -1,7 +1,17 @@
+// 08 27 2026, 14 00
+/* purpose
+* Replay recording, playback, and export system.
+* Records actor state for Blender export and in-engine playback.
+* fill in 3rd line
+* fill in what this file DOES NOT do
+* fill in 2nd line
+* fill in 3rd line
+*/
+
 #pragma once
 
 #include <cstdint>
-#include <deque>
+#include <array>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -61,6 +71,11 @@ struct ReplayClip {
     bool load(const std::string& path);
 };
 
+// ── Fixed-capacity circular buffer for replay frames ─────────
+// Reuses frame slots to eliminate per-tick heap allocation.
+// After warmup, zero allocations for ordinary recording.
+static constexpr uint32_t REPLAY_RING_CAPACITY = 3600; // 60 sec * 60 Hz
+
 class ReplayRecorder {
 public:
     void beginRecording(float randomSeed, const char* mapName);
@@ -95,29 +110,82 @@ public:
     bool exportToJSON(const std::string& path) const;
     bool exportToBinary(const std::string& path) const;
 
+    // Circular buffer access: get writable frame slot, then commit
+    ReplaySceneFrame& getWritableFrame() {
+        return mSceneFrames[mSceneFrameWriteIndex];
+    }
+    void commitFrame() {
+        mSceneFrameWriteIndex = (mSceneFrameWriteIndex + 1) % REPLAY_RING_CAPACITY;
+        if (mSceneFrameCount < REPLAY_RING_CAPACITY)
+            mSceneFrameCount++;
+    }
+
     const ReplayHeader& header() const {
         return mHeader;
     }
 
-    const std::deque<ReplayFrame>& frames() const {
+    const std::vector<ReplayFrame>& frames() const {
         return mFrames;
     }
 
-    const std::deque<ReplaySceneFrame>& sceneFrames() const {
-        return mSceneFrames;
+    // Ring buffer accessors
+    uint32_t sceneFrameCount() const { return mSceneFrameCount; }
+    const ReplaySceneFrame& sceneFrameAt(uint32_t i) const {
+        uint32_t idx = (mSceneFrameWriteIndex + i) % REPLAY_RING_CAPACITY;
+        return mSceneFrames[idx];
     }
 
     const std::vector<ReplayAsset>& assets() const {
         return mAssets;
     }
 
-    const std::deque<ReplaySoundEvent>& soundEvents() const {
+    const std::vector<ReplaySoundEvent>& soundEvents() const {
         return mSoundEvents;
     }
 
-    const std::deque<ReplayKillfeedEvent>& killfeedEvents() const {
+    const std::vector<ReplayKillfeedEvent>& killfeedEvents() const {
         return mKillfeedEvents;
     }
+
+    // Identity cache access
+    const ReplayActorState* getCachedIdentity(uint32_t actorId) const {
+        auto it = mIdentityCache.find(actorId);
+        return it != mIdentityCache.end() ? &it->second : nullptr;
+    }
+
+    // Identity table access
+    const ReplayActorIdentity* getIdentity(uint32_t actorId) const {
+        auto it = mIdentityTable.find(actorId);
+        return it != mIdentityTable.end() ? &it->second : nullptr;
+    }
+    ReplayActorIdentity& getOrCreateIdentity(uint32_t actorId) {
+        return mIdentityTable[actorId];
+    }
+    void removeIdentity(uint32_t actorId) {
+        mIdentityTable.erase(actorId);
+        mPreviousTickState.erase(actorId);
+    }
+    void clearIdentities() {
+        mIdentityTable.clear();
+        mPreviousTickState.clear();
+    }
+
+    // Delta detection: compare current state with previous, return dirty mask
+    uint32_t computeDirtyMask(uint32_t actorId, const ReplayActorTickState& current) const;
+    bool hasPreviousState(uint32_t actorId) const {
+        return mPreviousCompactState.find(actorId) != mPreviousCompactState.end();
+    }
+    const ReplayActorTickState* getPreviousState(uint32_t actorId) const {
+        auto it = mPreviousCompactState.find(actorId);
+        return it != mPreviousCompactState.end() ? &it->second : nullptr;
+    }
+    void storePreviousState(uint32_t actorId, const ReplayActorTickState& state) {
+        mPreviousCompactState[actorId] = state;
+    }
+
+    // NPC avatar cache
+    const std::string& getCachedNpcAvatar(uint32_t npcId, uint16_t epoch) const;
+    void cacheNpcAvatar(uint32_t npcId, uint16_t epoch, const std::string& name);
 
 private:
     mutable std::mutex mRingMutex;
@@ -125,15 +193,34 @@ private:
     uint32_t mTick = 0;
     uint32_t mEventTick = 0;
     ReplayHeader mHeader{};
-    std::deque<ReplayFrame> mFrames;
-    std::deque<ReplaySceneFrame> mSceneFrames;
+    std::vector<ReplayFrame> mFrames;
+
+    // Circular buffer for scene frames — reuses frame slots
+    std::array<ReplaySceneFrame, REPLAY_RING_CAPACITY> mSceneFrames{};
+    uint32_t mSceneFrameWriteIndex = 0;
+    uint32_t mSceneFrameCount = 0;
+
     std::vector<ReplayAsset> mAssets;
     ReplayWorldMetadata mWorld;
     ReplayLightingState mLighting;
-    std::deque<ReplaySoundEvent> mSoundEvents;
-    std::deque<ReplayKillfeedEvent> mKillfeedEvents;
+    std::vector<ReplaySoundEvent> mSoundEvents;
+    std::vector<ReplayKillfeedEvent> mKillfeedEvents;
     std::vector<ReplayEffectEvent> mPendingEffects;
     uint32_t mMaxTicks = 0;
+
+    // Identity cache — stores last-known identity per actor to avoid
+    // re-copying constant strings every tick. Keys are stable actor IDs.
+    std::unordered_map<uint32_t, ReplayActorState> mIdentityCache;
+
+    // Previous tick state for delta detection
+    std::unordered_map<uint32_t, ReplayActorState> mPreviousTickState;
+
+    // ── New identity table for compact recording ──
+    std::unordered_map<uint32_t, ReplayActorIdentity> mIdentityTable;
+    std::unordered_map<uint32_t, ReplayActorTickState> mPreviousCompactState;
+
+    // NPC avatar cache: key = (npcId << 16) | epoch
+    std::unordered_map<uint64_t, std::string> mNpcAvatarCache;
 };
 
 class ReplayRingBuffer : public ReplayRecorder {

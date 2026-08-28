@@ -1,234 +1,134 @@
-// 08 27 2026
+// 08 15 2026, 16 12
 /* purpose
-* Counter-Strike 1.6 / GoldSrc movement preset.
-*
-* Ground:
-*   CS 1.6 PM_Friction + PM_Accelerate behavior.
-*
-* Air:
-*   GoldSrc PM_AirAccelerate:
-*   - sv_airaccelerate 10
-*   - wishspeed projection capped to 30 GoldSrc units/sec
-*   - historical GoldSrc behavior where uncapped wishspeed is used in the
-*     acceleration term while the capped wishspd is used for projection.
-*
-* Conversion:
-*   1 MiMITA unit = 20 GoldSrc units.
-*
-* Rates such as acceleration/friction are NOT divided by 20.
-* Distances and velocities ARE divided by 20.
-*
-* IMPORTANT:
-* Real CS 1.6 also applies weapon-specific player maxspeed values.
-* sv_maxspeed 320 is the global server ceiling, not necessarily the player's
-* actual running speed with every weapon.
-*
+* Source (CS/Quake) movement preset: ground is PM_Friction + PM_Accelerate,
+* air is projection-limited PM_AirAccelerate with Valve bug compatibility,
+* and dash is a one-time impulse that input never erases. Every value below is
+* hot-reloadable live via movement_reload. Units are MiMITA units unless noted.
 * This file is parsed with JSON comments enabled.
 */
 {
-    "name": "cs16",
+    "name": "source",
 
-    // Uses MiMITA's Source/GoldSrc-style movement kernel.
-    // The underlying air/ground equations are compatible with the family of
-    // PM_Accelerate / PM_AirAccelerate movement used by GoldSrc.
+    // Which movement kernel to run. "source" = the Source/CS formulas in
+    // movement-step.cpp. Do not change unless you know what you are doing.
     "movement_mode": "source",
 
-    // 1 MiMITA unit = 20 GoldSrc / CS 1.6 units.
+    // Scale factor only used to explain values (1 MiMITA unit = 20 Source
+    // units). Speeds below are MiMITA units; acceleration/friction RATES are
+    // 1/time and are NOT scaled by t5his.
     "source_units_per_mimita_unit": 20.0,
 
-    // ── Ground speed and acceleration ─────────────────────────────────────
-
-    // CS 1.6:
-    // sv_maxspeed 320
-    //
-    // 320 / 20 = 16 MiMITA units/sec.
-    //
-    // NOTE:
-    // Actual CS 1.6 player speed is commonly lower because weapons provide
-    // their own max-speed caps. For example, 250 GoldSrc units/sec would be
-    // 12.5 MiMITA units/sec.
+    // ── Ground speed and accel ───────────────────────────────────────────
+    // How fast you can walk on the ground, in MiMITA units/sec. 20 = MiMITA
+    // normal. Also caps the air wish speed when you have input.
     "max_speed": 20.0,
-
-    // Same ceiling for server-side movement validation.
+    // Same as max_speed; kept so server validation uses the same number.
     "ground_speed": 20.0,
+    // How quickly the ground accelerates you toward max_speed while moving
+    // (Source sv_accelerate). Higher = snappier start/stop.
+    "ground_acceleration": 999.5,
+    // Ground friction (Source sv_friction). Higher = you slow down faster when
+    // you let go of movement keys.
+    "friction": 5.25,
+    // Below this speed, friction is constant instead of proportional, so slow
+    // players actually come to a full stop (Source sv_stopspeed).
+    "stop_speed": 0.01,
 
-    // CS 1.6 sv_accelerate = 5.
-    //
-    // This is a rate and is therefore NOT divided by 20.
-    "ground_acceleration": 20.0,
-
-    // CS 1.6 sv_friction = 4.
-    "friction": 10.0,
-
-    // CS 1.6 sv_stopspeed = 75 GoldSrc units/sec.
-    //
-    // 75 / 20 = 3.75 MiMITA units/sec.
-    "stop_speed": 6.0,
-
-    // ── Air — GoldSrc / CS 1.6 PM_AirAccelerate ───────────────────────────
-
-    // Full GoldSrc air acceleration behavior.
+    // ── Air (pure Source AirAccelerate) ──────────────────────────────────
+    // Scales the air speed gain (Source PM_AirAccelerate projection). 0 = air
+    // input adds no speed. 1.0 = full Source gain. Whether a strafe gains comes
+    // from the dot product between your flight direction and the key direction,
+    // NOT from A/D rules: the key only defines the wish direction; the mouse
+    // rotates the camera, which naturally rotates the wish. Holding A alone
+    // can only fill the small projection cap; it cannot steer velocity directly.
     "air_speed_gain_multiplier": 2.0,
-
-    // CS 1.6 sv_airaccelerate = 10.
-    "air_acceleration": 10.0,
-
-    // GoldSrc PM_AirAccelerate projection cap:
-    //
-    // wishspd = min(wishspeed, 30)
-    //
-    // 30 / 20 = 1.5 MiMITA units/sec.
-    //
-    // IMPORTANT:
-    // This does NOT mean total air velocity is capped at 1.5.
-    // It caps velocity projected onto the current wish direction, which is
-    // what permits GoldSrc-style strafing/bunnyhop acceleration.
-    "air_max_wishspeed": 1.5,
-
-    // GoldSrc behavior:
-    //
-    // wishspd is capped to 30 for projection/addspeed,
-    // but uncapped wishspeed is used here:
-    //
-    // accelspeed = accel * wishspeed * frametime
-    //
-    // Keep this true for CS 1.6-style acceleration.
+    // Strength of the air acceleration (Source sv_airaccelerate equivalent).
+    "air_acceleration": 12.0,
+    // Source's 30-unit air cap divided by its 320-unit max speed, scaled to
+    // MiMITA max_speed 20: 20 * 30 / 320 = 1.875.
+    "air_max_wishspeed": 1.1,
+    // Historical Source bug compatibility: use uncapped wishspeed in the
+    // acceleration term while capped wishspd limits projection/addSpeed.
     "source_airaccelerate_bug_compatible": true,
 
-    // ── Gravity and jump ──────────────────────────────────────────────────
-
-    // CS 1.6 sv_gravity = 800 GoldSrc units/sec^2 downward.
-    //
-    // -800 / 20 = -40 MiMITA units/sec^2.
+    // ── Gravity and jump ─────────────────────────────────────────────────
+    // Vertical acceleration while airborne, MiMITA units/sec^2 (negative = down).
     "gravity": -40.0,
+    // Vertical speed applied on a jump, MiMITA units/sec (positive = up).
+    "jump_velocity": 15.1,
+    // Fastest downward speed while falling, MiMITA units/sec.
+    "max_fall_speed": 175.0,
 
-    // GoldSrc / CS 1.6 normal jump:
-    //
-    // sqrt(2 * 800 * 45)
-    // = 268.328157...
-    //
-    // 268.328157 / 20
-    // = 13.41640785 MiMITA units/sec.
-    "jump_velocity": 15.0,
-
-    // GoldSrc sv_maxvelocity defaults to 2000.
-    //
-    // 2000 / 20 = 100 MiMITA units/sec.
-    //
-    // MiMITA exposes this specifically as downward fall speed rather than
-    // GoldSrc's general maximum velocity, so this is the closest direct
-    // conversion.
-    "max_fall_speed": 100.0,
-
-    // ── Jump behavior ─────────────────────────────────────────────────────
-
-    // Vanilla CS 1.6 does NOT automatically issue another jump simply because
-    // jump is held. Players normally release/repress jump or bind jump to the
-    // mouse wheel for repeated bhops.
-    //
-    // false = closer to actual CS 1.6 input behavior.
+    // ── Auto-jump ────────────────────────────────────────────────────────
+    // Holding jump in the air keeps re-jumping the instant you land (bhop).
     "auto_bhop_enabled": true,
-
-    // Vanilla GoldSrc does not have MiMITA-style jump buffering.
-    "jump_buffer_time": 0.01,
-
-    // No modern coyote-time system in vanilla CS 1.6.
+    // How long a jump press is remembered before landing, in seconds.
+    "jump_buffer_time": 0.2,
+    // How long after walking off a ledge you can still jump, in seconds.
+    // 0 = no mercy (pure CS behavior).
     "coyote_time": 0.0,
-
-    // Vanilla CS 1.6 has no air jump.
+    // Extra mid-air jumps allowed (Source/CS has none = 0).
     "max_air_jumps": 1,
 
-    // ── Ground snap ───────────────────────────────────────────────────────
-
-    // MiMITA implementation detail.
-    //
-    // Keep enabled to prevent tiny downward numerical velocity from creating
-    // visible ground jitter. This is not a CS 1.6 cvar.
+    // ── Ground snap ──────────────────────────────────────────────────────
+    // Snap small downward velocity to 0 when grounded (prevents jitter).
     "ground_snap": true,
-
-    // Numerical cleanup threshold, MiMITA-specific.
-    "velocity_clip_epsilon": 0.1,
-
-    // Normal surface friction.
+    // Downward velocity magnitude below which ground_snap zeroes it.
+    "velocity_clip_epsilon": 0.01,
+    // Global friction multiplier. 1.0 = normal ground. Lower = ice-like.
     "surface_friction": 1.0,
-
-    // IMPORTANT:
-    //
-    // CS 1.6 applies ground friction on landing. Bunnyhopping preserves speed
-    // by jumping with extremely little time spent grounded rather than by
-    // globally disabling landing friction.
-    //
-    // 1.0 therefore keeps the normal ground-friction behavior.
+    // How much friction bleeds bhop overspeed on the landing/autojump tick.
+    // 1.0 = full Source bleed (speed drops each landing). 0 = keep your speed
+    // through landings. Tune this to control how much speed bhops retain.
     "landing_overspeed_bleed": 1.0,
 
-    // ── MiMITA dash extensions ────────────────────────────────────────────
-    //
-    // Vanilla Counter-Strike 1.6 has NONE of these abilities.
-    //
-    // They are disabled in this strict CS 1.6 preset.
-    //
-    // If you want "CS 1.6 movement + MiMITA abilities", turn these back on
-    // without changing the actual CS movement constants above.
-
+    // ── Dash ─────────────────────────────────────────────────────────────
+    // Master toggle for ground/air dash (shift). false = dash is unavailable.
     "dash_enabled": true,
-
+    // Master toggle for down dash (Q). false = down dash is unavailable.
     "down_dash_enabled": true,
-
+    // Master toggle for freeze. false = freeze is unavailable; a freeze in
+    // progress is released immediately.
     "freeze_enabled": true,
-
-    // Unused while dash is disabled.
-    "dash_grace_seconds": 0.0,
-
-    // Unused while dash is disabled.
-    "dash_friction_multiplier": 1.0,
-
-    // Vanilla CS 1.6 has no dash impulse.
-    "ground_dash_impulse": 25.0,
-
-    // Vanilla CS 1.6 has no air dash.
-    "air_dash_impulse": 25.0,
-
-    // Vanilla CS 1.6 has no down dash.
-    "down_dash_speed": -50.0,
+    // How long the dash boost ignores ground friction and stays at full
+    // strength, in seconds. While this is active, friction does NOT slow you.
+    "dash_grace_seconds": 0.25,
+    // Friction scale during dash grace. 0 = the dash boost feels no friction
+    // at all during the grace window. 1 = full friction even while dashing.
+    "dash_friction_multiplier": 0.0,
+    // One-time horizontal speed added by a GROUND dash (shift), MiMITA units/sec.
+    "ground_dash_impulse": 100.0,
+    // One-time horizontal speed added by an AIR dash, MiMITA units/sec.
+    "air_dash_impulse": 50.0,
+    // Down-dash slam vertical speed (negative = straight down).
+    "down_dash_speed": -100.0,
 
     // ── External impulse / knockback ─────────────────────────────────────
-    //
-    // These are MiMITA-specific controls rather than direct CS 1.6 cvars.
-    //
-    // GoldSrc applies impulses directly to player velocity, after which
-    // ordinary movement/friction/clip physics operate on that velocity.
-    //
-    // Keep the "source" single-velocity behavior rather than maintaining a
-    // separate exponentially-decaying external velocity tank.
+    // 08 16 2026: knockback is now COMBINED into the player's real velocity
+    // once per tick (single-tick impulse), so these knobs are the OLD separate-
+    // tank behavior controls only. TO REVERT to lingering external knockback:
+    // delete the fold block in applyPreCollisionBasicMovement (movement-step.cpp)
+    // and restore the old movement-source-parity / movement-csgo test sections.
+    // Exponential decay of knockback per second. In "source" impulse mode this
+    // is ignored (0 here) — knockback carries and only bleeds via friction.
+    "external_impulse_decay": 99.0,
+    // Cap on the horizontal speed of a knockback impulse, MiMITA units/sec.
+    "max_external_impulse_speed": 9999.0,
+    // How knockback behaves: "source" = carries through input, bled by ground
+    // friction (stopspeed-based); "exponential" = old independent decay.
+    "impulse_friction_mode": "exponential",
+    // Seconds a fresh knockback is completely untouched before friction starts
+    // bleeding it. Gives hits a short "pop" before physics takes over.
+    "impulse_carry_seconds": 0.1,
 
-    // Ignored by source impulse mode.
-    "external_impulse_decay": 0.0,
-
-    // GoldSrc's sv_maxvelocity is 2000 units/sec.
-    //
-    // 2000 / 20 = 100 MiMITA units/sec.
-    //
-    // Using that here gives a CS-like global-scale safety cap rather than
-    // MiMITA's previous effectively-unlimited 9999 value.
-    "max_external_impulse_speed": 100.0,
-
-    // Fold impulses into actual player velocity and let normal movement
-    // physics act on the resulting velocity.
-    "impulse_friction_mode": "source",
-
-    // CS 1.6 does not have MiMITA's special period where knockback is immune
-    // to friction.
-    "impulse_carry_seconds": 0.0,
-
-    // ── Misc ──────────────────────────────────────────────────────────────
-
-    // CS 1.6 supports air movement / strafing.
+    // ── Misc ─────────────────────────────────────────────────────────────
+    // Master switch for WASD doing anything in the air (steering included).
     "air_strafing": true,
-
-    // Debug visualization is MiMITA-only.
+    // Debug overlay showing speed/ground/dash/impulse state. Toggle live with
+    // movement_debug 1.
     "debug_draw_enabled": false,
 
     "tuning_notes": {
-        "comment": "CS 1.6 / GoldSrc baseline. Core values: sv_accelerate=5, sv_airaccelerate=10, sv_friction=4, sv_stopspeed=75, sv_gravity=800, sv_maxspeed=320, air wish projection cap=30, normal jump velocity=sqrt(2*800*45)=268.328. Converted using 20 GoldSrc units per MiMITA unit. Vanilla CS 1.6 dash/down-dash/freeze/air-jump/autobhop are disabled."
+        "comment": "air_speed_gain_multiplier scales Source projection acceleration. air_max_wishspeed limits projection. landing_overspeed_bleed controls non-jump landing friction. All fields hot-reload via movement_reload."
     }
 }
