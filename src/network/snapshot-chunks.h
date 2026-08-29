@@ -10,7 +10,7 @@
 namespace MimitaNet {
 
 constexpr uint16_t MAX_SNAPSHOT_CHUNKS = 256;
-constexpr uint32_t SNAPSHOT_CHUNK_MAX_ENTITIES = 8;
+constexpr uint32_t SNAPSHOT_CHUNK_MAX_ENTITIES = 7;
 
 size_t snapshotChunkHeaderBytes();
 size_t snapshotChunkWireSize(uint16_t entityCount);

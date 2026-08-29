@@ -167,16 +167,11 @@ static bool buildPhysicalShape(ServerPlayer& attacker,
 
     if (def.behaviorType == WeaponBehaviorType::Godball)
     {
-        const float radius = std::max(0.05f,
-            WeaponExecution::paramOr(def, "ballRadius", std::max(0.1f, def.projectileRadius)));
-        const float ropeLength = std::max(0.5f,
-            WeaponExecution::paramOr(def, "ropeLength", 2.5f));
-        const glm::vec3 center = attacker.pos + glm::vec3(0.0f, 0.0f, 0.9f) +
-            forward * ropeLength;
-        outShape.kind = WeaponExecution::PhysicalShapeKind::Sphere;
-        outShape.currentA = center;
-        outShape.currentB = center;
-        outShape.radius = radius;
+        // Godball position is now replicated from the owning client via
+        // GodballStatePacket. The server does not independently simulate
+        // godball physics for damage — the owner's overlap detection is
+        // authoritative. Return false so no server-side shape is built.
+        return false;
     }
     else if (def.behaviorType == WeaponBehaviorType::Swordsword ||
              def.behaviorType == WeaponBehaviorType::Melee ||
@@ -300,14 +295,10 @@ static int physicalContactDamage(const WeaponDefinition& def,
 {
     if (def.behaviorType == WeaponBehaviorType::Godball)
     {
-        const float base = WeaponExecution::paramOr(def, "baseDamagePerTick",
-            std::max(1.0f, def.damage));
-        const float speedFactor = WeaponExecution::paramOr(def, "speedDamageFactor", 0.5f);
-        const float maxDamage = WeaponExecution::paramOr(def, "maxDamageCap", 200.0f);
-        const float speed = WeaponExecution::physicalShapeTravelDistance(shape) /
-            std::max(dt, 0.0001f);
-        return std::clamp((int)std::round(base + speed * speedFactor),
-            1, (int)std::max(1.0f, maxDamage));
+        // Godball damage is now owner-authoritative via GodballHitClaimPacket.
+        // This path should never be reached (buildPhysicalShape returns false for godball).
+        const float base = WeaponExecution::paramOr(def, "minDamage", 5.0f);
+        return std::clamp((int)std::round(base), 1, 100);
     }
 
     if (def.behaviorType == WeaponBehaviorType::QuickHit)

@@ -1435,8 +1435,18 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         else if (header->type == PACKET_GODBALL_STATE &&
                  bytes >= (int)sizeof(GodballStatePacket))
         {
-            Debug::log(Debug::Category::Weapons,
-                       "[GODBALL LEGACY STATE RX] ignored after physical-contact migration\n");
+            const GodballStatePacket* gb =
+                reinterpret_cast<const GodballStatePacket*>(buffer);
+            if (gb->ownerPlayerId != ctx.localPlayerId)
+            {
+                auto it = ctx.remotePlayers.find(gb->ownerPlayerId);
+                if (it != ctx.remotePlayers.end())
+                {
+                    it->second.godballActive = gb->active != 0;
+                    it->second.godballPosition = {gb->posX, gb->posY, gb->posZ};
+                    it->second.godballVelocity = {gb->velX, gb->velY, gb->velZ};
+                }
+            }
         }
         else if (header->type == PACKET_SERVER_COMMAND_RESULT &&
                  bytes >= (int)sizeof(ServerCommandResultPacket))
@@ -1814,6 +1824,24 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
 
         mpSendPacket(ctx, &in, sizeof(in));
         ctx.lastInputSentMs = currentMs;
+
+        // Send godball state snapshot every input tick when active
+        if (input->godballActive)
+        {
+            GodballStatePacket gb{};
+            gb.header.type = PACKET_GODBALL_STATE;
+            gb.header.tick = ctx.tick;
+            gb.header.playerId = ctx.localPlayerId;
+            gb.ownerPlayerId = ctx.localPlayerId;
+            gb.posX = input->godballPosition.x;
+            gb.posY = input->godballPosition.y;
+            gb.posZ = input->godballPosition.z;
+            gb.velX = input->godballVelocity.x;
+            gb.velY = input->godballVelocity.y;
+            gb.velZ = input->godballVelocity.z;
+            gb.active = 1;
+            mpSendPacket(ctx, &gb, sizeof(gb));
+        }
 
     }
 

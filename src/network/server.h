@@ -332,6 +332,7 @@ struct ServerPlayer
     float dashCooldownTimer = 0.0f;
     float sizeScale = 1.0f;
     float godballX = 0.0f, godballY = 0.0f, godballZ = 0.0f;
+    float godballVx = 0.0f, godballVy = 0.0f, godballVz = 0.0f;
     bool godballActive = false;
     // Presentation serials (replicated from client, pass through unchanged)
     uint16_t lastPresentationDashSerial = 0;
@@ -890,6 +891,11 @@ void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* 
 void handleGodballState(SOCKET sock,
                         std::unordered_map<uint32_t, ServerPlayer>& players,
                         char* buffer, int bytes);
+void handleGodballHitClaim(SOCKET sock,
+                           std::unordered_map<uint32_t, ServerPlayer>& players,
+                           const HeadlessWorld& world,
+                           char* buffer, int bytes,
+                           uint32_t tick, uint64_t& totalPacketsOut);
 void handleChatMessage(SOCKET sock, const char* buffer, int bytes,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
                        uint32_t tick, uint64_t& totalPacketsOut);

@@ -153,10 +153,10 @@ void updatePhysics(GodballPhysics& phys, const WeaponDefinition& def,
     }
 }
 
-static bool sweptSphereOverlap(const glm::vec3& prevPos, const glm::vec3& currPos,
+bool sweptSphereOverlap(const glm::vec3& prevPos, const glm::vec3& currPos,
                                  float radius, const glm::vec3& targetPos, float targetRadius,
                                  glm::vec3& hitPoint, glm::vec3& hitNormal,
-                                 glm::vec3* outClosest = nullptr) {
+                                 glm::vec3* outClosest) {
     glm::vec3 seg = currPos - prevPos;
     float segLen = glm::length(seg);
 

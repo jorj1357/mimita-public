@@ -28,7 +28,8 @@ enum NetworkPlayerStateFlags : uint16_t
     NET_STATE_DOWN_DASHING = 1 << 3,
     NET_STATE_FREEZING     = 1 << 4,
     NET_STATE_ON_GROUND    = 1 << 5,
-    NET_STATE_ATTACKING    = 1 << 6
+    NET_STATE_ATTACKING    = 1 << 6,
+    NET_STATE_GODBALL_ACTIVE = 1 << 7
 };
 constexpr int MAX_RECONNECT_TOKEN_BYTES = 64;
 constexpr int MAX_JOIN_TOKEN_BYTES = 64;
@@ -125,7 +126,10 @@ enum PacketType : uint8_t
     // ── Live map change (server → clients) ─────────────────────────────
     // The server swapped the map without restarting; clients must load the
     // new map and re-complete the spawn handshake.
-    PACKET_MAP_CHANGE = 58
+    PACKET_MAP_CHANGE = 58,
+    // ── Godball hit claim (client → server, reliable) ─────────────────
+    // Owner client claims a godball overlap hit against a player or NPC.
+    PACKET_GODBALL_HIT_CLAIM = 59
 };
 
 enum DamageConfirmedSource : uint8_t
@@ -384,6 +388,13 @@ struct SnapshotEntity
     uint8_t vipFlags = 0;
     uint8_t vipStyleEpoch = 0;
     uint8_t vipReserved = 0;
+    // Godball replication (active flag carried in stateFlags NET_STATE_GODBALL_ACTIVE)
+    float godballX = 0.0f;
+    float godballY = 0.0f;
+    float godballZ = 0.0f;
+    float godballVx = 0.0f;
+    float godballVy = 0.0f;
+    float godballVz = 0.0f;
 };
 
 struct SnapshotPacket
@@ -446,10 +457,18 @@ struct CompactEntityData
     uint8_t vipFlags = 0;
     uint8_t vipStyleEpoch = 0;
     uint8_t vipReserved = 0;
+    // Godball replication (active flag in stateFlags NET_STATE_GODBALL_ACTIVE)
+    // Quantized: position 0.01m resolution ±327.67m, velocity 0.1 m/s ±3276.7 m/s
+    uint16_t godballPosX = 0;
+    uint16_t godballPosY = 0;
+    uint16_t godballPosZ = 0;
+    int16_t godballVelX = 0;
+    int16_t godballVelY = 0;
+    int16_t godballVelZ = 0;
 };
 #pragma pack(pop)
 
-static_assert(sizeof(CompactEntityData) == 144, "CompactEntityData unexpected size");
+static_assert(sizeof(CompactEntityData) == 156, "CompactEntityData unexpected size");
 
 struct SnapshotChunkPacket
 {
@@ -459,12 +478,12 @@ struct SnapshotChunkPacket
     uint16_t chunkCount = 1;
     uint16_t entityCount = 0;
     uint16_t payloadBytes = 0;
-    CompactEntityData entities[8]; // 8 * 144 + header(32) = 1184 < 1200
+    CompactEntityData entities[7]; // 7 * 156 + header(32) = 1124 < 1200
 };
 
 static_assert(sizeof(SnapshotChunkPacket) < MAX_GAME_DATAGRAM_BYTES,
               "SnapshotChunkPacket exceeds safe datagram limit");
-static_assert(sizeof(SnapshotChunkPacket) == 1184, "SnapshotChunkPacket wire size changed");
+static_assert(sizeof(SnapshotChunkPacket) == 1124, "SnapshotChunkPacket wire size changed");
 
 struct SpawnNpcRequestPacket
 {
@@ -1175,13 +1194,30 @@ struct PelletBlastEventPacket
     PelletBlastTargetResult targets[MAX_PELLET_BLAST_TARGETS];
 };
 
-// ── Godball state (position for remote visual replication) ────────────
+// ── Godball state (position + velocity for remote visual replication) ──
 struct GodballStatePacket
 {
     PacketHeader header;
     uint32_t ownerPlayerId = 0;
     float posX = 0.0f, posY = 0.0f, posZ = 0.0f;
+    float velX = 0.0f, velY = 0.0f, velZ = 0.0f;
     uint8_t active = 0;
+};
+
+// ── Godball hit claim (owner → server, reliable) ──────────────────────
+struct GodballHitClaimPacket
+{
+    PacketHeader header;
+    uint32_t attackerId = 0;
+    uint32_t targetId = 0;       // player ID (0 for NPC)
+    uint32_t npcId = 0;          // NPC ID (0 for player)
+    uint32_t contactSerial = 0;  // unique per continuous contact episode
+    uint32_t simulationTick = 0; // owner's simulation tick at hit time
+    float damage = 0.0f;
+    float ballSpeed = 0.0f;
+    float hitX = 0.0f, hitY = 0.0f, hitZ = 0.0f;
+    float normalX = 0.0f, normalY = 0.0f, normalZ = 0.0f;
+    uint32_t spawnGeneration = 0;
 };
 
 // ── Projectile fire result ────────────────────────────────────────────
@@ -1338,7 +1374,7 @@ struct SpawnActivatedPacket
     uint32_t serverTick = 0;
 };
 
-static_assert(sizeof(SnapshotPacket) < 16000, "SnapshotPacket exceeds client receive buffer");
+static_assert(sizeof(SnapshotPacket) < 16384, "SnapshotPacket exceeds client receive buffer");
 static_assert(sizeof(ShotRequestPacket) <= 132, "ShotRequestPacket is too large");
 static_assert(sizeof(ShotEventPacket) <= 160, "ShotEventPacket is too large");
 static_assert(sizeof(ProjectileFireRequestPacket) <= 80, "ProjectileFireRequestPacket is too large");

@@ -13,6 +13,10 @@
 #include "weapon-audio.h"
 #include "weapon-data.h"
 #include "weapon-fire.h"
+#include "config/networking-config.h"
+#include "network/multiplayer-context.h"
+
+extern MimitaNet::MultiplayerContext* gpMpContext;
 #include "weapon-grenade-launcher.h"
 #include "weapon-registry.h"
 #include "weapon-runtime.h"
@@ -885,6 +889,11 @@ std::vector<RevolverShotResult> WeaponSystem::collectRemoteGodballHits(
     const float tickInterval = def->customParams.count("damageTickInterval")
         ? def->customParams.at("damageTickInterval") : 0.1f;
 
+    const float damageRadius = mGodballPhys.radius * 1.25f;
+    const glm::vec3 currPos = mGodballPhys.position;
+    const glm::vec3 prevPos = mGodballPhys.prevPosition;
+    const float ballSpeed = glm::length(mGodballPhys.velocity);
+
     for (const auto& entry : remotePlayers)
     {
         const uint32_t targetId = entry.first;
@@ -893,46 +902,44 @@ std::vector<RevolverShotResult> WeaponSystem::collectRemoteGodballHits(
             mRemoteGodballCooldowns[targetId] > 0.0f)
             continue;
 
-        const glm::vec3 toTarget = target.pos - mGodballPhys.position;
-        const float distance = glm::length(toTarget);
-        if (distance >= mGodballPhys.radius + 0.65f)
-            continue;
+        bool hit = false;
+        glm::vec3 hitPoint, hitNormal;
+        const float targetRadius = 0.65f;
+        hit = WeaponGodball::sweptSphereOverlap(prevPos, currPos, damageRadius,
+                                                 target.pos, targetRadius,
+                                                 hitPoint, hitNormal);
 
-        const glm::vec3 direction = distance > 0.001f
-            ? toTarget / distance
-            : glm::vec3(0.0f, 1.0f, 0.0f);
-        const int damage = std::clamp(
-            (int)std::round(WeaponGodball::computeDamage(
-                mGodballPhys, *def, player, target,
-                mGodballPhys.position + direction * mGodballPhys.radius)),
-            1, 200);
+        if (!hit) continue;
 
-        RevolverShotResult hit;
-        hit.fired = true;
-        hit.hitEntity = true;
-        hit.targetIsRemotePlayer = true;
-        hit.targetId = targetId;
-        hit.damage = (float)damage;
-        hit.start = WeaponGodball::getHandPosition(player);
-        hit.end = target.pos + glm::vec3(0.0f, 0.0f, 0.8f);
-        hits.push_back(hit);
+        const float damage = WeaponGodball::damageFromSpeed(*def, ballSpeed);
+
+        RevolverShotResult hitResult;
+        hitResult.fired = true;
+        hitResult.hitEntity = true;
+        hitResult.targetIsRemotePlayer = true;
+        hitResult.targetId = targetId;
+        hitResult.damage = damage;
+        hitResult.start = WeaponGodball::getHandPosition(player);
+        hitResult.end = hitPoint;
+        hitResult.direction = hitNormal;
+        hits.push_back(hitResult);
         mRemoteGodballCooldowns[targetId] = tickInterval;
 
-        hitmarker(damage);
+        hitmarker((int)std::round(damage));
         {
             HitEvent ev;
-            ev.position = hit.end;
-            ev.normal = direction;
-            ev.direction = direction;
+            ev.position = hitPoint;
+            ev.normal = hitNormal;
+            ev.direction = hitNormal;
             ev.hitEntity = true;
-            ev.damage = damage;
+            ev.damage = (int)std::round(damage);
             ev.attacker = player.username;
             ev.victim = target.username;
-            ev.weaponSource = "godball_remote";
+            ev.weaponSource = "godball";
             HitEffects::onHit(ev);
         }
         WeaponAudio::playGodballImpact(
-            hit.end, std::clamp(hit.damage / 100.0f, 0.0f, 1.0f));
+            hitPoint, std::clamp(damage / 100.0f, 0.0f, 1.0f));
     }
 
     return hits;
@@ -1179,7 +1186,7 @@ void WeaponSystem::renderRemoteWeapon(uint32_t entityId, const Player& player, c
         const WeaponDefinition* gbDef = WeaponRegistry::instance().get("godball");
         if (gbDef)
         {
-            auto it = gbDef->customParams.find("radius");
+            auto it = gbDef->customParams.find("ballRadius");
             if (it != gbDef->customParams.end())
                 radius = it->second;
         }
@@ -1187,6 +1194,27 @@ void WeaponSystem::renderRemoteWeapon(uint32_t entityId, const Player& player, c
                                     {0.2f, 0.4f, 0.8f, 0.6f});
         DebugVis::drawWireSphere(camera, player.godballPosition, radius,
                                  {0.4f, 0.6f, 1.0f, 0.8f});
+        // Render rope from hand to ball
+        glm::vec3 handPos = WeaponGodball::getHandPosition(player);
+        glm::vec3 dir = player.godballPosition - handPos;
+        float dist = glm::length(dir);
+        if (dist > 0.01f) {
+            constexpr int SEGMENTS = 6;
+            constexpr float ROPE_RADIUS = 0.025f;
+            glm::vec3 segDir = dir / (float)SEGMENTS;
+            glm::vec3 current = handPos;
+            for (int i = 0; i < SEGMENTS; i++) {
+                glm::vec3 next = current + segDir;
+                glm::vec3 mid = (current + next) * 0.5f;
+                glm::vec3 axis = next - current;
+                float segLen = glm::length(axis);
+                if (segLen > 0.001f) {
+                    DebugVis::drawFilledCylinder(camera, mid, glm::normalize(axis),
+                                                  ROPE_RADIUS, segLen, {0.6f, 0.5f, 0.3f, 0.9f});
+                }
+                current = next;
+            }
+        }
     }
 
     // QuickHit: render glowing capsule for remote players during active ticks

@@ -425,6 +425,7 @@ public:
 
     // -------- Godball replication (set from network) --------
     glm::vec3 godballPosition{0.0f};
+    glm::vec3 godballVelocity{0.0f};
     bool godballActive = false;
 
     // -------- Body/weapon collision push (debug) --------

@@ -107,6 +107,7 @@ void engineTickNet(Engine& engine, float dt)
         {
             const auto& gb = weapons.godballPhysics();
             mpInput.godballPosition = gb.position;
+            mpInput.godballVelocity = gb.velocity;
             mpInput.godballActive = gb.active;
         }
 
@@ -201,6 +202,38 @@ void engineTickNet(Engine& engine, float dt)
         MimitaNet::mpTick(mpContext, player.username, dt, &mpInput, world);
         if (!mpContext.approvedLocalName.empty())
             player.username = mpContext.approvedLocalName;
+
+        // ── Godball: detect remote player hits and send claims ────────
+        if (weapons.godballPhysics().active && mpContext.connected && mpContext.localPlayerId)
+        {
+            auto remoteHits = weapons.collectRemoteGodballHits(
+                player, mpContext.remotePlayers, dt);
+            for (const auto& hit : remoteHits)
+            {
+                if (!hit.targetIsRemotePlayer || hit.targetId == 0) continue;
+
+                // Build and send GodballHitClaimPacket
+                MimitaNet::GodballHitClaimPacket claim{};
+                claim.header.type = MimitaNet::PACKET_GODBALL_HIT_CLAIM;
+                claim.header.tick = mpContext.tick;
+                claim.header.playerId = mpContext.localPlayerId;
+                claim.attackerId = mpContext.localPlayerId;
+                claim.targetId = hit.targetId;
+                claim.npcId = 0;
+                claim.contactSerial = 0; // simplified: no episode tracking for now
+                claim.simulationTick = mpContext.tick;
+                claim.damage = hit.damage;
+                claim.ballSpeed = glm::length(weapons.godballPhysics().velocity);
+                claim.hitX = hit.end.x;
+                claim.hitY = hit.end.y;
+                claim.hitZ = hit.end.z;
+                claim.normalX = hit.direction.x;
+                claim.normalY = hit.direction.y;
+                claim.normalZ = hit.direction.z;
+                claim.spawnGeneration = mpContext.lastKnownSpawnGeneration;
+                MimitaNet::mpSendPacket(mpContext, &claim, sizeof(claim));
+            }
+        }
 
         // ── Ammo refund for rejected projectile fire requests ───────────
         // Refund goes to the weapon that sent the request, not the currently equipped weapon.

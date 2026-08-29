@@ -160,12 +160,15 @@
       "ropeStiffness": 50.0,
       "ropeDamping": 1.0,
       "linearDamping": 0.0,
-      "baseDamagePerTick": 10.0,
-      "damageTickInterval": 0.15,
-      "speedDamageFactor": 30.0,
+      "minDamage": 5.0,
+      "maxDamage": 25.0,
+      "minDamageSpeed": 0.0,
+      "maxDamageSpeed": 40.0,
+      "damageCurveExponent": 1.2,
+      "damageTickInterval": 0.05,
       "maxDamageCap": 999999.0,
-      "relativeVelocityFactor": 2.0,
-      "swingDirectionFactor": 2.0
+      "sweepSubstepThreshold": 20.0,
+      "maxSweepSubsteps": 8.0
     }
   },
   "shotgun": {

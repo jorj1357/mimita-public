@@ -40,6 +40,28 @@ bool sameCompactFields(const CompactEntityData& a, const CompactEntityData& b)
     return std::memcmp(&a, &b, sizeof(CompactEntityData)) == 0;
 }
 
+uint16_t quantizeGodballPos(float v)
+{
+    const float clamped = std::clamp(v, -327.67f, 327.67f);
+    return static_cast<uint16_t>((clamped + 327.67f) / 0.01f);
+}
+
+float dequantizeGodballPos(uint16_t raw)
+{
+    return static_cast<float>(raw) * 0.01f - 327.67f;
+}
+
+int16_t quantizeGodballVel(float v)
+{
+    const float clamped = std::clamp(v, -3276.7f, 3276.7f);
+    return static_cast<int16_t>(clamped / 0.1f);
+}
+
+float dequantizeGodballVel(int16_t raw)
+{
+    return static_cast<float>(raw) * 0.1f;
+}
+
 CompactEntityData makeTestEntity(uint32_t id)
 {
     CompactEntityData e{};
@@ -144,6 +166,13 @@ CompactEntityData compactEntityFromSnapshot(const SnapshotEntity& entity)
     out.vipColorB = entity.vipColorB;
     out.vipFlags = entity.vipFlags;
     out.vipStyleEpoch = entity.vipStyleEpoch;
+    // Godball quantized replication
+    out.godballPosX = quantizeGodballPos(entity.godballX);
+    out.godballPosY = quantizeGodballPos(entity.godballY);
+    out.godballPosZ = quantizeGodballPos(entity.godballZ);
+    out.godballVelX = quantizeGodballVel(entity.godballVx);
+    out.godballVelY = quantizeGodballVel(entity.godballVy);
+    out.godballVelZ = quantizeGodballVel(entity.godballVz);
     std::memset(out.displayName, 0, sizeof(out.displayName));
     std::strncpy(out.displayName, entity.displayName, sizeof(out.displayName) - 1);
     std::memset(out.avatarName, 0, sizeof(out.avatarName));
@@ -191,6 +220,13 @@ SnapshotEntity snapshotEntityFromCompact(const CompactEntityData& entity)
     out.vipColorB = entity.vipColorB;
     out.vipFlags = entity.vipFlags;
     out.vipStyleEpoch = entity.vipStyleEpoch;
+    // Godball dequantized replication
+    out.godballX = dequantizeGodballPos(entity.godballPosX);
+    out.godballY = dequantizeGodballPos(entity.godballPosY);
+    out.godballZ = dequantizeGodballPos(entity.godballPosZ);
+    out.godballVx = dequantizeGodballVel(entity.godballVelX);
+    out.godballVy = dequantizeGodballVel(entity.godballVelY);
+    out.godballVz = dequantizeGodballVel(entity.godballVelZ);
     std::memset(out.displayName, 0, sizeof(out.displayName));
     std::strncpy(out.displayName, entity.displayName, sizeof(out.displayName) - 1);
     std::memset(out.avatarName, 0, sizeof(out.avatarName));

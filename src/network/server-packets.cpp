@@ -1576,6 +1576,11 @@ ServerPacketProcessResult processServerPacket(
         handleGodballState(sock, players, buffer, bytes);
         result.handled = true;
     }
+    else if (header->type == PACKET_GODBALL_HIT_CLAIM)
+    {
+        handleGodballHitClaim(sock, players, world, buffer, bytes, tick, totalPacketsOut);
+        result.handled = true;
+    }
     else if (header->type == PACKET_NPC_DAMAGE_REQUEST)
     {
         handleNpcDamageRequest(sock, buffer, bytes, from, players, npcs, tick,

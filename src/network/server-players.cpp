@@ -367,6 +367,7 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
     player.meleeCooldownTimer = 0.0f;
     player.godballActive = false;
     player.godballX = player.godballY = player.godballZ = 0.0f;
+    player.godballVx = player.godballVy = player.godballVz = 0.0f;
     player.hasLastPhysicalWeaponShape = false;
     player.lastPhysicalWeaponDefNetworkId = 0;
     player.nextPhysicalContactSerial = 1;
@@ -1226,6 +1227,16 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
         player.vipAppearance, out.vipTier, out.vipStyleKind,
         out.vipColorR, out.vipColorG, out.vipColorB, out.vipFlags);
     out.vipStyleEpoch = (uint8_t)std::min<uint32_t>(player.vipStyleEpoch, 255);
+    // Godball replication
+    if (player.godballActive) {
+        out.stateFlags |= NET_STATE_GODBALL_ACTIVE;
+    }
+    out.godballX = player.godballX;
+    out.godballY = player.godballY;
+    out.godballZ = player.godballZ;
+    out.godballVx = player.godballVx;
+    out.godballVy = player.godballVy;
+    out.godballVz = player.godballVz;
     return out;
 }
 

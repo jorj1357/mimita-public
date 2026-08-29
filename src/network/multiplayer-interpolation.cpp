@@ -86,6 +86,9 @@ SnapshotTransform transformFromEntity(const SnapshotEntity& entity)
     transform.equipSerial = entity.equipSerial;
     transform.freezeSerial = entity.freezeSerial;
     transform.spawnGeneration = entity.spawnGeneration;
+    transform.godballActive = (entity.stateFlags & NET_STATE_GODBALL_ACTIVE) != 0;
+    transform.godballPosition = {entity.godballX, entity.godballY, entity.godballZ};
+    transform.godballVelocity = {entity.godballVx, entity.godballVy, entity.godballVz};
     return transform;
 }
 
@@ -1506,6 +1509,10 @@ void updateRenderedReplica(
 
     player.ground.onGround = render.onGround;
     player.equippedSlot = render.equippedSlot;
+    // Godball replication from snapshot
+    player.godballActive = render.godballActive;
+    player.godballPosition = render.godballPosition;
+    player.godballVelocity = render.godballVelocity;
     {
         player.equippedWeaponId.clear();
         player.hasValidWeapon = false;

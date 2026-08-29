@@ -1,0 +1,65 @@
+// 08 29 2026, 00 00
+/* purpose
+* Defines the default MiMITA movement preset and its hot-reloadable tuning.
+* Uses accel mode for smooth ground acceleration via applyGroundControl.
+* Keeps Source-only tuning inert unless movement_mode explicitly selects source.
+* Does NOT implement movement formulas, poll input, or select itself globally.
+* Does NOT modify collision, networking, rendering, or player persistence.
+* Does NOT opt players into Source movement.
+*/
+{
+    "name": "default",
+    "comment": "MiMITA accel behavior. WASD uses smooth ground acceleration. Source-only tuning below remains inert unless movement_mode selects source.",
+    "movement_mode": "mimita",
+    "air_strafing": true,
+    "bunny_hop": true,
+    "auto_bhop_enabled": true,
+    "preserve_straight_speed": true,
+    "preserve_speed_when_not_strafing": true,
+    "diagonal_input_normalization": true,
+    "minimum_strafe_angle": 0.0,
+    "maximum_acceleration_per_tick": 222.0,
+    "maximum_speed_gain_per_tick": 222.0,
+    "speed_cap_enabled": true,
+    "maximum_bhop_speed": 222.0,
+    "speed_cap": 222.0,
+    "maximum_bhop_speed_mode": "none",
+    "acceleration_falloff_near_cap": 0.0,
+    "landing_speed_retention": 0.0,
+    "require_active_wish_rotation": false,
+    "stationary_camera_input_mode": "strict",
+    "air_steering_response": 1.0,
+    "maximum_steering_degrees_per_second": 0.0,
+    "minimum_camera_yaw_delta_degrees": 0.25,
+    "minimum_wish_rotation_degrees": 0.25,
+    "strafe_angular_tolerance_degrees": 60.0,
+    "soft_cap_start": 0.0,
+    "debug_draw_enabled": false,
+
+    "ground_speed": 10.0,
+    "air_speed": 10.0,
+    "ground_acceleration": 999.0,
+    "ground_deceleration": 1.0,
+    "ground_direction_change_response": 12.0,
+    "air_acceleration": 21.0,
+    "air_speed_gain_acceleration": 1.0,
+    "air_max_wishspeed": 1.0,
+    "air_wish_speed": 1.0,
+    "air_control": 1.0,
+    "stopspeed": 1.0,
+    "gravity": -58.0,
+    "jump_strength": 19.0,
+    "max_fall_speed": 400.0,
+    "jump_buffer_time": 0.12,
+    "coyote_time": 0.001,
+    "max_air_jumps": 1,
+
+    "ground_friction": 120.0,
+    "air_friction": 0.0,
+    "external_impulse_decay": 0.6,
+    "max_external_impulse_speed": 120.0,
+
+    "ground_dash_impulse": 100.0,
+    "air_dash_impulse": 50.0,
+    "down_dash_speed": -100.0
+}
