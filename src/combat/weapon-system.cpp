@@ -161,6 +161,8 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
             WeaponHafs::update(mHafsState, *def, *rt, player, npcs, camera, world, dt);
         } else if (def->behaviorType == WeaponBehaviorType::QuickHit) {
             WeaponQuickHit::update(mQuickHitState, *def, *rt, player, npcs, camera, world, dt);
+        } else if (def->behaviorType == WeaponBehaviorType::SpyKnife) {
+            WeaponSpyKnife::update(mSpyKnifeState, *def, *rt, player, npcs, camera, world, dt);
         } else if (def->behaviorType == WeaponBehaviorType::RocketLauncher) {
             WeaponRocketLauncher::update(mRocketState, *def, *rt, player, npcs, world, camera, dt);
         } else if (def->behaviorType == WeaponBehaviorType::GrenadeLauncher) {
@@ -577,6 +579,22 @@ void WeaponSystem::render(const Camera& camera, const Player& player) const {
         }
     }
 
+    // SpyKnife: render blade capsule during active swing or ready pose
+    if (def->behaviorType == WeaponBehaviorType::SpyKnife) {
+        if (mSpyKnifeState.active) {
+            Capsule cap = mSpyKnifeState.currentKnifeCapsule;
+            if (glm::length(cap.b - cap.a) > 0.001f && cap.r > 0.001f) {
+                DebugVis::drawWeaponCapsuleWire(camera, cap, {1.0f, 0.2f, 0.2f, 0.8f});
+            }
+        }
+        if (mSpyKnifeState.animState == SpyKnifeAnimState::Ready) {
+            Capsule cap = mSpyKnifeState.currentKnifeCapsule;
+            if (glm::length(cap.b - cap.a) > 0.001f && cap.r > 0.001f) {
+                DebugVis::drawWeaponCapsuleWire(camera, cap, {1.0f, 0.8f, 0.0f, 0.5f});
+            }
+        }
+    }
+
     // ── Helper to build ProjectileVisualConfig from weapon definition ──
     auto buildProjCfg = [&](const WeaponDefinition& wdef, bool isRocket) -> ProjectileVisualConfig {
         auto cp = [&](const char* key, float fallback) {
@@ -725,6 +743,11 @@ RevolverShotResult WeaponSystem::fire(
 
     if (def->behaviorType == WeaponBehaviorType::QuickHit) {
         WeaponQuickHit::startAttack(mQuickHitState, *def, player, camera);
+        return {};
+    }
+
+    if (def->behaviorType == WeaponBehaviorType::SpyKnife) {
+        WeaponSpyKnife::startSwing(mSpyKnifeState, *def, player, camera);
         return {};
     }
 

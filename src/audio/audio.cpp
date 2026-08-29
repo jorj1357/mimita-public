@@ -94,6 +94,8 @@ static std::string soundPath(const std::string& name)
     if (name == "grenadelauncher/grenadelaunchershoot") return "assets/sound/weapon/grenadelauncher/grenadelaunchershoot.wav";
     if (name == "grenadelauncher/grenadelauncherload") return "assets/sound/weapon/grenadelauncher/grenadelauncherload.wav";
     if (name == "grenadelauncher/grenadelauncherexplode") return "assets/sound/weapon/grenadelauncher/grenadelauncherexplode.wav";
+    if (name == "spyknifebackstab") return "assets/sound/weapon/spyknife/U spy knife mimita.wav";
+    if (name == "entity/falcon/falconswing") return "assets/sound/entity/falcon/falconswing.wav";
     if (name == "swordswordhit1") return "assets/sound/weapon/swordsword/swordswordhit1.wav";
     if (name == "swordswordhit2") return "assets/sound/weapon/swordsword/swordswordhit2.wav";
     if (name == "swordswordhit3") return "assets/sound/weapon/swordsword/swordswordhit3.wav";
@@ -205,6 +207,7 @@ static void initAudioOnce()
         "swordswordhit1", "swordswordhit2", "swordswordhit3", "swordswordhit4",
         "weapon/hafs/hafsequip", "weapon/hafs/hafsswing", "weapon/hafs/hafslunge",
         "weapon/hafs/hafsknockback", "weapon/hafs/hafsWorldHit",
+        "spyknifebackstab", "entity/falcon/falconswing",
         "gethurt", "player_hurt", "hitworld",
         "npc_spawn", "npc_death", "world_impact",
         "dash", "jump", "land",

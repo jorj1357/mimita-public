@@ -400,6 +400,7 @@ public:
     uint32_t spawnGeneration = 0;
     uint16_t networkTransformEpoch = 0;
     uint64_t movementSimulationTick = 0;
+    uint64_t bodySparkTick = 0;
     MovementContactSet movementContacts;
     MovementContactHistory movementContactHistory;
     // -------- Core State --------

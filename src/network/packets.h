@@ -129,7 +129,10 @@ enum PacketType : uint8_t
     PACKET_MAP_CHANGE = 58,
     // ── Godball hit claim (client → server, reliable) ─────────────────
     // Owner client claims a godball overlap hit against a player or NPC.
-    PACKET_GODBALL_HIT_CLAIM = 59
+    PACKET_GODBALL_HIT_CLAIM = 59,
+    // ── Spy Knife hit claim (client → server, unreliable) ────────────
+    // Attacker client claims a knife blade intersection hit.
+    PACKET_SPYKNIFE_HIT_CLAIM = 60
 };
 
 enum DamageConfirmedSource : uint8_t
@@ -169,7 +172,8 @@ enum NetworkWeaponType : uint8_t
     NETWORK_WEAPON_ROCKET_LAUNCHER = 5,
     NETWORK_WEAPON_HAFS = 6,
     NETWORK_WEAPON_GRENADE_LAUNCHER = 7,
-    NETWORK_WEAPON_AA12 = 8
+    NETWORK_WEAPON_AA12 = 8,
+    NETWORK_WEAPON_SPYKNIFE = 9
 };
 
 enum NetworkWeaponStateFlags : uint8_t
@@ -1218,6 +1222,20 @@ struct GodballHitClaimPacket
     float hitX = 0.0f, hitY = 0.0f, hitZ = 0.0f;
     float normalX = 0.0f, normalY = 0.0f, normalZ = 0.0f;
     uint32_t spawnGeneration = 0;
+};
+
+// ── Spy Knife hit claim (attacker → server, unreliable) ───────────────
+struct SpyKnifeHitClaimPacket
+{
+    PacketHeader header;
+    uint32_t attackerId = 0;
+    uint32_t targetId = 0;
+    uint8_t isBackstab = 0;
+    float hitX = 0.0f, hitY = 0.0f, hitZ = 0.0f;
+    float attackerX = 0.0f, attackerY = 0.0f, attackerZ = 0.0f;
+    float attackerYaw = 0.0f;
+    float victimX = 0.0f, victimY = 0.0f, victimZ = 0.0f;
+    uint16_t attackSerial = 0;
 };
 
 // ── Projectile fire result ────────────────────────────────────────────

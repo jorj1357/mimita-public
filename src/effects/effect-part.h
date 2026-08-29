@@ -134,6 +134,7 @@ public:
                                     float radius = 1.5f, float lifetime = 3.0f, float sizeScale = 1.0f);
     EffectPart* spawnFreezeTrail(glm::vec3 position);
     EffectPart* spawnDownDash(glm::vec3 position);
+    EffectPart* spawnBodyContactSpark(glm::vec3 playerPos, glm::vec3 contactPoint, glm::vec3 velocity, float partRadius);
     void spawnWorldDebris(glm::vec3 position, glm::vec3 normal, float force = 1.0f, float sizeScale = 1.0f);
     void queueWorldHit(glm::vec3 position, glm::vec3 normal, glm::vec3 direction,
                        float debrisForce, const std::string& attacker,

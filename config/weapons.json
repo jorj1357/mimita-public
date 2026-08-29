@@ -1019,5 +1019,61 @@
       "forceKnockbackScale": 1.0,
       "damageTickInterval": 0.05
     }
+  },
+  "spyknife": {
+    "id": "spyknife",
+    "display_name": "Spy Knife",
+    "slot": 12,
+    "model": {
+      "path": "assets/objects/weapons/mimita-spyknife-v1.glb"
+    },
+    "viewmodel": {
+      "enabled": true,
+      "position": [0.0, 0.0, 0.0],
+      "rotation_degrees": [0.0, 0.0, 0.0],
+      "attachment": {
+        "position": [-0.15, 0.0, 0.0],
+        "rotation_degrees": [0.0, 0.0, 0.0]
+      },
+      "scale": [1.0, 1.0, 1.0]
+    },
+    "damage": 1.0,
+    "headshot_multiplier": 1.0,
+    "fire_delay": 0.0,
+    "reload_time": 0.0,
+    "magazine_size": 0,
+    "pellet_count": 1,
+    "spread": 0.0,
+    "recoil": 0.0,
+    "projectile_speed": 0.0,
+    "projectile_radius": 0.0,
+    "projectile_lifetime": 0.0,
+    "fire_mode": "semi_auto",
+    "behavior_type": "spyknife",
+    "hitscan": false,
+    "uses_physics_projectile": false,
+    "sound": {
+      "shoot": "entity/falcon/falconswing",
+      "reload": "",
+      "hit": "player_hurt",
+      "dry_fire": "",
+      "equip": ""
+    },
+    "custom_params": {
+      "normalDamagePerTick": 1.0,
+      "backstabDamagePerTick": 999.0,
+      "backstabDistance": 0.5,
+      "backstabConeDegrees": 150.0,
+      "frontstabKnockback": 100.0,
+      "frontstabVerticalKnockback": 0.3,
+      "backstabKnockback": 20.0,
+      "swingDurationTicks": 120.0,
+      "swingForwardTicks": 60.0,
+      "bladeLength": 0.6,
+      "bladeRadius": 0.05,
+      "damageTickInterval": 0.0,
+      "hitboxRadius": 0.05,
+      "hitboxLength": 0.6
+    }
   }
 }

@@ -314,6 +314,18 @@ void EffectPartSystem::render(const Camera& camera) const {
             DebugVis::drawFilledSphereOriented(camera, center, axis, 1.0f, drawColor,
                                                dimensions * 0.5f, impact.localAxis.c_str());
         }
+        else if (effect.replayType == "body_spark") {
+            const auto& bcfg = HitEffects::config().bodyContactSpark;
+            const glm::vec3 axis = glm::length(effect.endPosition - effect.position) > 0.001f
+                ? glm::normalize(effect.endPosition - effect.position)
+                : glm::vec3(0.0f, 0.0f, 1.0f);
+            const glm::vec3 center = (effect.position + effect.endPosition) * 0.5f;
+            const float len = glm::length(effect.endPosition - effect.position);
+            const float rad = drawScale;
+            glm::vec3 dims = glm::vec3(rad, rad, std::max(len, rad));
+            DebugVis::drawFilledSphereOriented(camera, center, axis, 1.0f, drawColor,
+                                               dims, bcfg.localAxis.c_str());
+        }
         else if (!effect.billboardText) {
             DebugVis::drawFilledSphere(camera, effect.position, drawScale, drawColor);
         }

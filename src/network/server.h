@@ -22,6 +22,7 @@
 #include "combat/weapon-execution.h"
 #include "combat/weapon-swordsword.h"
 #include "combat/weapon-quick-hit.h"
+#include "combat/weapon-spyknife.h"
 #include "vip/vip-appearance.h"
 
 #include <memory>
@@ -346,6 +347,7 @@ struct ServerPlayer
     std::string iceSessionId;
     SwordswordState swordswordState;
     QuickHitState quickHitState;
+    SpyKnifeState spyKnifeState;
     float meleeCooldownTimer = 0.0f;
     std::deque<PositionHistoryEntry> posHistory;
     // ── Migration: auth + reconnect ───────────────────────────────────
@@ -896,6 +898,11 @@ void handleGodballHitClaim(SOCKET sock,
                            const HeadlessWorld& world,
                            char* buffer, int bytes,
                            uint32_t tick, uint64_t& totalPacketsOut);
+void handleSpyKnifeHitClaim(SOCKET sock,
+                            std::unordered_map<uint32_t, ServerPlayer>& players,
+                            const HeadlessWorld& world,
+                            char* buffer, int bytes,
+                            uint32_t tick, uint64_t& totalPacketsOut);
 void handleChatMessage(SOCKET sock, const char* buffer, int bytes,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
                        uint32_t tick, uint64_t& totalPacketsOut);

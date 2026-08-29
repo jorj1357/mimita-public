@@ -30,6 +30,7 @@ struct RecoveryContact
 {
     glm::vec3 normal{0.0f, 0.0f, 1.0f};
     glm::vec3 point{0.0f};
+    glm::vec3 sweepDelta{0.0f};
     float penetration = 0.0f;
     int triangleIndex = -1;
     const Block* block = nullptr;

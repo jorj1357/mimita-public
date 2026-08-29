@@ -206,7 +206,7 @@ std::vector<RecoveryContact> collectBodyWeaponContacts(
                     float depth = (bs.radius + skin) - glm::dot(bs.center - hitPoint, hitNormal);
                     depth = std::max(0.0f, depth - skin);
                     if (depth > SLIDE_SLOP) {
-                        contacts.push_back({hitNormal, hitPoint, depth, triIdx, nullptr, bs.label});
+                        contacts.push_back({hitNormal, hitPoint, bs.sweepDelta, depth, triIdx, nullptr, bs.label});
                         ++sweepHits;
                         continue;
                     }
@@ -223,7 +223,7 @@ std::vector<RecoveryContact> collectBodyWeaponContacts(
             if (staticHit && c.penetration > (SLIDE_SLOP + skin))
             {
                 float skinPen = std::max(0.0f, c.penetration - skin);
-                contacts.push_back({c.normal, c.point, skinPen, triIdx, nullptr, bs.label});
+                contacts.push_back({c.normal, c.point, bs.sweepDelta, skinPen, triIdx, nullptr, bs.label});
             }
         }
     }

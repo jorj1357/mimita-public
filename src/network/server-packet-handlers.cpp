@@ -18,6 +18,7 @@
 #include "combat/pellet-pattern.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-fire.h"
+#include "debug/debug-log.h"
 #include "combat/weapon-execution.h"
 #include "physics/movement/physics-collision.h"
 
@@ -903,6 +904,96 @@ void handleGodballHitClaim(SOCKET sock,
         }
     }
     // NPC hits are handled via the existing NPC damage request path
+}
+
+void handleSpyKnifeHitClaim(SOCKET sock,
+                            std::unordered_map<uint32_t, ServerPlayer>& players,
+                            const HeadlessWorld& world,
+                            char* buffer, int bytes,
+                            uint32_t tick, uint64_t& totalPacketsOut)
+{
+    (void)world;
+    if (bytes < (int)sizeof(SpyKnifeHitClaimPacket)) return;
+    SpyKnifeHitClaimPacket* pkt = reinterpret_cast<SpyKnifeHitClaimPacket*>(buffer);
+
+    auto attackerIt = players.find(pkt->attackerId);
+    if (attackerIt == players.end()) return;
+    ServerPlayer& attacker = attackerIt->second;
+
+    if (attacker.dead || attacker.spawnState != ServerPlayer::Active) return;
+
+    // Verify attacker has spyknife equipped
+    bool hasSpyKnife = false;
+    for (const std::string& id : attacker.ownedWeaponIds) {
+        const WeaponDefinition* d = WeaponRegistry::instance().get(id);
+        if (d && d->slot == attacker.equippedSlot && d->behaviorType == WeaponBehaviorType::SpyKnife) {
+            hasSpyKnife = true;
+            break;
+        }
+    }
+    if (!hasSpyKnife) return;
+
+    auto targetIt = players.find(pkt->targetId);
+    if (targetIt == players.end()) return;
+    ServerPlayer& target = targetIt->second;
+    if (target.dead || target.spawnState != ServerPlayer::Active) return;
+
+    // Sanity: attacker and victim must be plausibly near each other
+    float dist = glm::length(attacker.pos - target.pos);
+    if (dist > 3.0f) {
+        Debug::log(Debug::Category::Weapons,
+            "[SPY KNIFE] REJECTED hit claim: too far attacker=%u target=%u dist=%.1f\n",
+            pkt->attackerId, pkt->targetId, dist);
+        return;
+    }
+
+    const WeaponDefinition* def = nullptr;
+    for (const std::string& id : attacker.ownedWeaponIds) {
+        const WeaponDefinition* d = WeaponRegistry::instance().get(id);
+        if (d && d->slot == attacker.equippedSlot && d->behaviorType == WeaponBehaviorType::SpyKnife) {
+            def = d;
+            break;
+        }
+    }
+    if (!def) return;
+
+    int damage;
+    float kbStrength;
+    glm::vec3 knockback;
+
+    if (pkt->isBackstab) {
+        damage = (int)WeaponExecution::paramOr(*def, "backstabDamagePerTick", 999.0f);
+        kbStrength = WeaponExecution::paramOr(*def, "backstabKnockback", 20.0f);
+    } else {
+        damage = (int)WeaponExecution::paramOr(*def, "normalDamagePerTick", 1.0f);
+        kbStrength = WeaponExecution::paramOr(*def, "frontstabKnockback", 100.0f);
+    }
+
+    glm::vec3 kbDir = glm::length(target.pos - attacker.pos) > 0.001f
+        ? glm::normalize(target.pos - attacker.pos)
+        : glm::vec3(0.0f, 0.0f, 1.0f);
+    float vertFrac = pkt->isBackstab ? 0.15f
+        : WeaponExecution::paramOr(*def, "frontstabVerticalKnockback", 0.3f);
+    kbDir.z = std::max(kbDir.z, vertFrac);
+    kbDir = glm::normalize(kbDir);
+    knockback = kbDir * kbStrength;
+
+    ServerDamageResult result = applyServerDamage(
+        players, target, pkt->attackerId, damage, knockback,
+        ServerDamageSource::PhysicalContact);
+
+    if (result.applied) {
+        queueServerDamageConfirmedEvent(
+            sock, players, tick, totalPacketsOut,
+            pkt->attackerId, target, damage, result,
+            glm::vec3(pkt->hitX, pkt->hitY, pkt->hitZ),
+            kbDir, knockback, ServerDamageSource::PhysicalContact,
+            NETWORK_WEAPON_SPYKNIFE, pkt->attackSerial);
+    }
+
+    Debug::log(Debug::Category::Weapons,
+        "[SPY KNIFE] server applied: attacker=%u target=%u damage=%d backstab=%d dist=%.1f killed=%d\n",
+        pkt->attackerId, pkt->targetId, damage, (int)pkt->isBackstab, dist, (int)result.killed);
 }
 
 } // namespace MimitaNet
