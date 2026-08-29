@@ -30,9 +30,6 @@
 
 namespace {
 
-constexpr float MAX_HEALTHBAR_DISTANCE = 50.0f;
-constexpr float FADE_DISTANCE = 60.0f;
-
 // Per-player aim transition state
 std::unordered_map<const Player*, HealthbarAimState> gAimStates;
 static int gFrameCounter = 0;
@@ -166,12 +163,13 @@ HealthbarRenderResult drawPlayerHealthbar(
         return result;
     }
 
+    const auto& cfg = HealthbarConfig::instance().data();
     result.distance = glm::length(camera.pos - result.anchor);
     Debug::log(Debug::Category::Gui,
         "[HEALTHBAR] entity=%s distance=%.1f maxDistance=%.1f isLocal=%d\n",
-        player.username.c_str(), result.distance, MAX_HEALTHBAR_DISTANCE,
+        player.username.c_str(), result.distance, cfg.maxDistance,
         (int)isLocalPlayer);
-    if (result.distance > MAX_HEALTHBAR_DISTANCE)
+    if (result.distance > cfg.maxDistance)
     {
         Debug::log(Debug::Category::Gui,
             "[HEALTHBAR] SKIPPED entity=%s reason=TooFar distance=%.1f\n",
@@ -193,7 +191,6 @@ HealthbarRenderResult drawPlayerHealthbar(
     }
 
     // ── Aim mode detection ──────────────────────────────────────
-    const auto& cfg = HealthbarConfig::instance().data();
     HealthbarAimState& aimState = getOrCreateAimState(player);
     // Disable aim mode for the local player — camera cannot "aim at" yourself.
     bool inAimCone = !isLocalPlayer && cfg.aimModeEnabled &&
@@ -223,8 +220,10 @@ HealthbarRenderResult drawPlayerHealthbar(
         result.screen.x, result.screen.y);
 
     // ── Draw normal healthbar (possibly faded) ──────────────────
-    const float fade = std::clamp(
-        1.0f - result.distance / FADE_DISTANCE, 0.25f, 1.0f);
+    const float fadeRange = cfg.endFadeDistance - cfg.startFadeDistance;
+    const float fade = (fadeRange > 0.0f && result.distance > cfg.startFadeDistance)
+        ? std::clamp(1.0f - (result.distance - cfg.startFadeDistance) / fadeRange, 0.25f, 1.0f)
+        : 1.0f;
     const float ratio = player.maxHp > 0
         ? std::clamp(
             (float)player.currentHp / (float)player.maxHp, 0.0f, 1.0f)

@@ -8,6 +8,6 @@
         "friction": 0.0,
         "minSpeed": 1.0,
         "maxSpeed": 999999.0,
-        "cooldown": 0.0001
+        "cooldown": 0.001
     }
 }

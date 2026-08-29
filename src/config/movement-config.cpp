@@ -46,6 +46,10 @@ bool parseWalkMode(const json& value, MovementWalkMode& out)
         out = MovementWalkMode::Override;
         return true;
     }
+    if (mode == "accel") {
+        out = MovementWalkMode::Accel;
+        return true;
+    }
     if (mode == "source") {
         out = MovementWalkMode::Source;
         return true;
@@ -86,6 +90,23 @@ bool parseSpeedCapMode(const json& value, MovementSpeedCapMode& out)
     }
     if (mode == "soft") {
         out = MovementSpeedCapMode::Soft;
+        return true;
+    }
+    return false;
+}
+
+bool parseSpeedLimitMode(const json& value, MovementSpeedLimitMode& out)
+{
+    if (!value.is_string())
+        return false;
+
+    const std::string mode = value.get<std::string>();
+    if (mode == "clamp") {
+        out = MovementSpeedLimitMode::Clamp;
+        return true;
+    }
+    if (mode == "fixed") {
+        out = MovementSpeedLimitMode::Fixed;
         return true;
     }
     return false;
@@ -191,6 +212,9 @@ MovementConfig defaultMovementConfig()
     config.sourceAirAccelerateBugCompatible = true;
     config.airControl = 0.0f;
     config.airSpeedGainMultiplier = 0.0f;
+    config.airInputBlendingEnabled = false;
+    config.airInputBlending = 0.0f;
+    config.airInputMouseThresholdDegrees = 2.0f;
     config.stopspeed = 0.0f;
     config.bunnyHopSpeedCap = 0.0f;
     return config;
@@ -201,7 +225,7 @@ void applyPresetOverrides(const json& root, MovementConfig& config)
     if (root.contains("movement_mode") &&
         !parseWalkMode(root["movement_mode"], config.walkMode)) {
         Debug::error(Debug::Category::Physics,
-            "[MOVEMENT CONFIG] Invalid movement_mode; expected \"mimita\" or \"source\".\n");
+            "[MOVEMENT CONFIG] Invalid movement_mode; expected \"mimita\", \"accel\", or \"source\".\n");
     }
 
     if (root.contains("air_strafing") && root["air_strafing"].is_boolean())
@@ -293,6 +317,12 @@ void applyPresetOverrides(const json& root, MovementConfig& config)
     readFloat("air_control", config.airControl);
     readFloat("air_speed_gain_multiplier", config.airSpeedGainMultiplier);
     config.airSpeedGainMultiplier = std::max(0.0f, config.airSpeedGainMultiplier);
+    readBool("air_input_blending_enabled", config.airInputBlendingEnabled);
+    readFloat("air_input_blending", config.airInputBlending);
+    config.airInputBlending = std::clamp(config.airInputBlending, 0.0f, 1.0f);
+    readFloat("air_input_mouse_threshold_degrees", config.airInputMouseThresholdDegrees);
+    config.airInputMouseThresholdDegrees =
+        std::max(0.1f, config.airInputMouseThresholdDegrees);
     readFloat("stopspeed", config.stopspeed);
     readFloat("stop_speed", config.stopspeed);
     readFloat("bhop_speed_cap", config.bunnyHopSpeedCap);
@@ -338,6 +368,17 @@ void applyPresetOverrides(const json& root, MovementConfig& config)
         Debug::error(Debug::Category::Physics,
             "[MOVEMENT CONFIG] Invalid impulse_friction_mode; "
             "expected \"exponential\" or \"source\".\n");
+    }
+
+    // ── Global speed limit ──────────────────────────────────────────────
+    readBool("speed_limit_enabled", config.speedLimitEnabled);
+    readFloat("speed_limit", config.speedLimit);
+    config.speedLimit = std::max(0.0f, config.speedLimit);
+    if (root.contains("speed_limit_mode") &&
+        !parseSpeedLimitMode(root["speed_limit_mode"], config.speedLimitMode)) {
+        Debug::error(Debug::Category::Physics,
+            "[MOVEMENT CONFIG] Invalid speed_limit_mode; "
+            "expected \"clamp\" or \"fixed\".\n");
     }
 
     if (root.contains("max_air_jumps") && root["max_air_jumps"].is_number())

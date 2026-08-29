@@ -30,6 +30,14 @@ extern MimitaNet::MultiplayerContext* gpMpContext;
 
 namespace WeaponFire {
 
+// True when server-authoritative hits mode is active: client prediction
+// feedback is suppressed and only server-confirmed hits show feedback.
+static bool serverAuthHits()
+{
+    if (!gpMpContext || !gpMpContext->active) return false;
+    return NetworkingConfig::instance().data().serverAuthoritativeHits.enabled;
+}
+
 static void fireSound(const WeaponDefinition& def, const glm::vec3& muzzlePos)
 {
     WeaponAudio::playShootSound(def, muzzlePos);
@@ -102,6 +110,11 @@ static void presentRemoteHit(const WeaponDefinition& def,
                              const std::string& victimName,
                              int damage)
 {
+    // In server-authoritative mode, suppress all predicted feedback.
+    // The server's DamageConfirmedEvent will show feedback when confirmed.
+    if (serverAuthHits())
+        return;
+
     hitmarker(damage);
     if (GetPlayerSettings().debugCombat)
         Debug::log(Debug::Category::Weapons,
@@ -185,7 +198,7 @@ void processNpcHit(
              (float)totalDamage * (0.08f + ctx.angleFactor * 0.12f) * kbScale) * df;
         result.knockbackImpulse = victimKnockbackImpulse(def, shotDirection, kn);
     }
-    hitmarker(totalDamage);
+    if (!serverAuthHits()) hitmarker(totalDamage);
     if (GetPlayerSettings().debugCombat)
         Debug::log(Debug::Category::Weapons,
             "[HITMARKER] attacker=%s victim=npc_%u show=1 reason=local_player_hit_npc",
@@ -201,7 +214,7 @@ void processNpcHit(
     hitFx.attacker = shooter.username;
     hitFx.victim = "npc_" + std::to_string(victim.id);
     hitFx.weaponSource = def.id;
-    HitEffects::onHit(hitFx);
+    if (!serverAuthHits()) HitEffects::onHit(hitFx);
 
     printf("[SOUND] weapon=%s event=hit_entity body=%s damage=%.0f\n",
            def.id.c_str(), hitPart.c_str(), result.damage);
@@ -211,7 +224,7 @@ void processNpcHit(
         float severity = std::clamp(ctx.angleFactor * ((float)totalDamage / 100.0f) * headMul, 0.0f, 1.0f);
         float vol, pit;
         computeImpactAudio(1.2f, dist, severity, vol, pit);
-        playWorldSound(def.soundHit, hitEnd, vol, pit, 60.0f);
+        if (!serverAuthHits()) playWorldSound(def.soundHit, hitEnd, vol, pit, 60.0f);
         Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=%s dist=%.1f damage=%d severity=%.2f pitch=%.2f volume=%.2f\n",
                    def.soundHit.c_str(), dist, totalDamage, severity, pit, vol);
     }
@@ -298,12 +311,15 @@ void processRemoteNpcHit(
 
         // Record the prediction timestamp so the server-confirm path can
         // suppress the duplicate hitmarker/killfeed for the local shooter.
-        if (gpMpContext && gpMpContext->active)
+        // In server-authoritative mode, skip this so the server path always
+        // shows feedback (no suppression window).
+        if (gpMpContext && gpMpContext->active && !serverAuthHits())
         {
             const uint64_t nowMsVal = static_cast<uint64_t>(
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count());
             gpMpContext->predictedNpcHitMs[remoteNpcTargetId] = nowMsVal;
+            gpMpContext->predictedNpcDamage[remoteNpcTargetId] = totalDamage;
         }
 
         const glm::vec3 normal = glm::length(hitNormal) > 0.001f
@@ -724,19 +740,21 @@ void finalizeMultiPelletResult(
            totalPellets, accumulatedDamage);
 
     if (anyHitEntity) {
-        float dist = glm::length(lastPelletEnd - audioListenerPosition());
-        float severity = std::clamp(accumulatedDamage / 100.0f, 0.0f, 1.0f);
-        float vol, pit;
-        computeImpactAudio(1.2f, dist, severity, vol, pit);
-        playWorldSound(def.soundHit, lastPelletEnd, vol, pit, 60.0f);
-        Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=%s dist=%.1f damage=%.0f severity=%.2f pitch=%.2f volume=%.2f\n",
-                   def.soundHit.c_str(), dist, accumulatedDamage, severity, pit, vol);
-        hitmarker((int)accumulatedDamage);
-        EffectPartSystem::instance().spawnDamage(lastPelletEnd, shooter.username, (int)accumulatedDamage);
-        if (GetPlayerSettings().debugCombat)
-            Debug::log(Debug::Category::Weapons,
-                "[HITMARKER] attacker=%s pellet_hit=1 show=1 reason=shotgun_hit_entity",
-                shooter.username.c_str());
+        if (!serverAuthHits()) {
+            float dist = glm::length(lastPelletEnd - audioListenerPosition());
+            float severity = std::clamp(accumulatedDamage / 100.0f, 0.0f, 1.0f);
+            float vol, pit;
+            computeImpactAudio(1.2f, dist, severity, vol, pit);
+            playWorldSound(def.soundHit, lastPelletEnd, vol, pit, 60.0f);
+            Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=%s dist=%.1f damage=%.0f severity=%.2f pitch=%.2f volume=%.2f\n",
+                       def.soundHit.c_str(), dist, accumulatedDamage, severity, pit, vol);
+            hitmarker((int)accumulatedDamage);
+            EffectPartSystem::instance().spawnDamage(lastPelletEnd, shooter.username, (int)accumulatedDamage);
+            if (GetPlayerSettings().debugCombat)
+                Debug::log(Debug::Category::Weapons,
+                    "[HITMARKER] attacker=%s pellet_hit=1 show=1 reason=shotgun_hit_entity",
+                    shooter.username.c_str());
+        }
     } else if (anyHitWorld) {
         float dist = glm::length(lastPelletEnd - audioListenerPosition());
         glm::vec3 hitDir = glm::length(lastPelletEnd - muzzlePos) > 0.001f

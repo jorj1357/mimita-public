@@ -128,11 +128,9 @@
     "local_player_death_effect": true
   },
 
-  "confirmed_hit_feedback": {
-    "comment": "The client already shows an instant predicted hitmarker/number/sound on its local trace. These gate whether the server's confirmed DamageConfirmedEvent replays them (default prediction-only = one crisp hit feedback).",
-    "show_hitmarker": false,
-    "show_damage_number": false,
-    "show_hit_sound": false
+  "server_authoritative_hits": {
+    "comment": "false = client predicts hit feedback instantly (current default). true = client shows NOTHING until server confirms the hit. Disagreement effects always show when server rejects a hit. World impacts (wall/ground) always show regardless.",
+    "enabled": false
   },
 
   "disagreement_visuals": {
@@ -144,6 +142,13 @@
     "comment": "Client-side prediction scope. Hitmarker + hit sound are ALWAYS predicted (instant). predict_damage controls instant damage numbers + target health bar. predict_deaths is OFF by default so a death is presented exactly once by the reliable server event (no predicted-then-confirmed double death).",
     "predict_damage": false,
     "predict_deaths": false
+  },
+
+  "remote_projectile_interpolation": {
+    "comment": "Time-based interpolation for remote projectiles. Uses prevState/targetState bracketing with ease motion filter for smooth rendering even on bad connections.",
+    "enabled": true,
+    "ease_correction_rate": 12.0,
+    "ease_velocity_smoothing": 0.5
   },
 
   "combat": {
@@ -273,6 +278,21 @@
           "start_probability_per_second": 0.01,
           "min_ms": 1600,
           "max_ms": 4000,
+          "cooldown_ms": 60000,
+          "direction": "both",
+          "release_queued": false
+        }
+      },
+      "9": {
+        "name": "Antipodal bad internet 1.5x worse",
+        "latency": { "direction": "both", "base_ms": 300, "jitter_ms": 50 },
+        "loss": { "direction": "both", "min_percent": 3, "max_percent": 9, "burst_percent": 45, "burst_probability": 0.225 },
+        "reorder": { "direction": "both", "min_percent": 3, "max_percent": 4.5, "window": 8 },
+        "blackout": {
+          "enabled": true,
+          "start_probability_per_second": 0.0075,
+          "min_ms": 1200,
+          "max_ms": 3000,
           "cooldown_ms": 60000,
           "direction": "both",
           "release_queued": false

@@ -183,6 +183,8 @@ struct MovementAirDebug {
     glm::vec2 wishVelocity{0.0f};
     glm::vec2 wishDir{0.0f};
     glm::vec2 horizontalVelocity{0.0f};
+    float sourceWeight = 1.0f;
+    float mouseFactor = 0.0f;
 };
 
 struct MovementDashMomentumProtectionState {
@@ -477,6 +479,15 @@ enum class MovementSpeedCapMode : uint8_t {
     Soft = 2
 };
 
+enum class MovementSpeedLimitMode : uint8_t {
+    // Post-tick clamp: velocity can momentarily exceed the limit from
+    // impulse/dash/bhop but gets clamped back each tick.
+    Clamp = 0,
+    // Hard cap: acceleration never pushes past the limit. Velocity never
+    // exceeds the limit at any point during the step.
+    Fixed = 1
+};
+
 enum class StationaryCameraInputMode : uint8_t {
     Strict = 0,
     Steering = 1
@@ -509,6 +520,13 @@ struct MovementConfig {
     bool speedCapEnabled = false;
     MovementSpeedCapMode maximumBhopSpeedMode = MovementSpeedCapMode::None;
     float accelerationFalloffNearCap = 0.0f;
+
+    // Global speed limit: caps total horizontal speed regardless of movement
+    // mode. Applied after ground/air step as a post-tick clamp, and also
+    // during acceleration in Fixed mode.
+    bool speedLimitEnabled = false;
+    float speedLimit = 0.0f;
+    MovementSpeedLimitMode speedLimitMode = MovementSpeedLimitMode::Clamp;
     float landingSpeedRetention = 0.0f;
     bool debugDrawEnabled = false;
 
@@ -539,6 +557,16 @@ struct MovementConfig {
     // Scale on the residual air speed-gain term in Source mode. 0 = WASD in
     // the air only steers and never adds speed (pure strafing).
     float airSpeedGainMultiplier = 0.0f;
+    // Master toggle for air input blending (directional vs Source accel).
+    // false = pure Source PM_AirAccelerate, no blending.
+    bool airInputBlendingEnabled = false;
+    // 0..1 blend between directional air accel (WASD pushes toward maxSpeed)
+    // and Source PM_AirAccelerate (wishspd projection cap). 0 = mouse movement
+    // linearly scales Source-ness, 1 = any mouse movement = full Source.
+    float airInputBlending = 0.0f;
+    // Degrees/sec yaw threshold used to normalize mouse movement into a 0..1
+    // factor for air_input_blending. Lower = more sensitive to small flicks.
+    float airInputMouseThresholdDegrees = 2.0f;
     float stopspeed = 0.0f;
     float bunnyHopSpeedCap = 0.0f;
     float movementSpeedSizeExponent = 0.5f;

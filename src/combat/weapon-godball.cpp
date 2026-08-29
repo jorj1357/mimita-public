@@ -1,6 +1,7 @@
 #include "weapon-godball.h"
 #include "weapon-audio.h"
 #include "weapon-types.h"
+#include "weapon-execution.h"
 
 #include <algorithm>
 #include <cmath>
@@ -101,46 +102,30 @@ void despawnBall(GodballPhysics& phys) {
     }
 }
 
+float damageFromSpeed(const WeaponDefinition& def, float speed) {
+    const float minDmg = WeaponExecution::paramOr(def, "minDamage", 5.0f);
+    const float maxDmg = WeaponExecution::paramOr(def, "maxDamage", 25.0f);
+    const float minSpd = WeaponExecution::paramOr(def, "minDamageSpeed", 0.0f);
+    const float maxSpd = WeaponExecution::paramOr(def, "maxDamageSpeed", 40.0f);
+    const float exp = WeaponExecution::paramOr(def, "damageCurveExponent", 1.2f);
+
+    const float denom = std::max(maxSpd - minSpd, 0.001f);
+    const float t = std::clamp((speed - minSpd) / denom, 0.0f, 1.0f);
+    const float curved = std::pow(t, exp);
+    return minDmg + curved * (maxDmg - minDmg);
+}
+
 float computeDamage(const GodballPhysics& phys, const WeaponDefinition& def,
                      const Player& owner, const Player& target,
                      const glm::vec3& overlapPoint) {
     (void)owner;
     (void)overlapPoint;
-    float baseDamage = def.customParams.count("baseDamagePerTick")
-        ? def.customParams.at("baseDamagePerTick") : 10.0f;
-    float speedFactor = def.customParams.count("speedDamageFactor")
-        ? def.customParams.at("speedDamageFactor") : 0.5f;
-    float angleMultiplier = def.customParams.count("angleMultiplier")
-        ? def.customParams.at("angleMultiplier") : 20.0f;
-    float maxDamageCap = def.customParams.count("maxDamageCap")
-        ? def.customParams.at("maxDamageCap") : 200.0f;
-
-    float ballSpeed = glm::length(phys.velocity);
-
-    // Always deal at least base damage
-    float totalDamage = baseDamage;
-
-    // Speed bonus
-    totalDamage += ballSpeed * speedFactor;
-
-    // Angle bonus: reward clean hits where ball moves toward target
-    glm::vec3 toTarget = target.pos - phys.position;
-    float dist = glm::length(toTarget);
-    if (dist > 0.001f && ballSpeed > 0.001f) {
-        glm::vec3 dirToTarget = toTarget / dist;
-        float angleFactor = std::abs(glm::dot(glm::normalize(phys.velocity), dirToTarget));
-        totalDamage += angleFactor * angleMultiplier;
-    }
-
-    totalDamage = std::clamp(totalDamage, baseDamage, maxDamageCap);
+    const float ballSpeed = glm::length(phys.velocity);
+    const float totalDamage = damageFromSpeed(def, ballSpeed);
 
     if (DebugConfig::DEBUG_GODBALL) {
-        printf("[GODBALL DAMAGE] speed=%.1f speedBonus=%.1f angleFactor=%.2f total=%.1f\n",
-               ballSpeed, ballSpeed * speedFactor,
-               dist > 0.001f && ballSpeed > 0.001f
-                   ? (float)std::abs(glm::dot(glm::normalize(phys.velocity), glm::normalize(toTarget)))
-                   : 0.0f,
-               totalDamage);
+        printf("[GODBALL DAMAGE] speed=%.1f total=%.1f\n",
+               ballSpeed, totalDamage);
     }
 
     return totalDamage;

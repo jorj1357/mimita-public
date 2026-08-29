@@ -505,6 +505,14 @@ uint32_t mpPredictProjectileAttack(
     projectile.targetStateVel = projectile.velocity;
     projectile.targetStateRot = projectile.rotation;
 
+    // Set hasTargetState so the interpolation block runs every frame for
+    // predicted projectiles. Without this, renderPosition never updates from
+    // position and the rocket visually sticks at its spawn point.
+    projectile.hasTargetState = true;
+    projectile.prevStateTick = ctx.latestServerTick;
+    projectile.targetStateTick = ctx.latestServerTick;
+    projectile.renderTick = (double)ctx.latestServerTick;
+
     ctx.networkProjectiles[provisionalId] = projectile;
     ctx.predictedProjectileIds.insert(provisionalId);
 
@@ -637,14 +645,25 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
     // rubber-bands backward. The server's state events reconcile forward.
     if (preserveSim)
     {
-        projectile.prevStateTick = projectile.targetStateTick = ctx.latestServerTick;
-        projectile.prevStatePos = projectile.targetStatePos = projectile.position;
-        projectile.prevStateVel = projectile.targetStateVel = projectile.velocity;
-        projectile.prevStateRot = projectile.targetStateRot = projectile.rotation;
+        // Use latestServerTick - 1 as the "previous" state so there is a
+        // valid interpolation range on the first frame. The predicted position
+        // is the "previous" (spawn) state; the next server state event will
+        // provide the true target.
+        projectile.prevStateTick = ctx.latestServerTick - 1;
+        projectile.targetStateTick = ctx.latestServerTick;
+        projectile.prevStatePos = projectile.position;
+        projectile.prevStateVel = projectile.velocity;
+        projectile.prevStateRot = projectile.rotation;
+        projectile.targetStatePos = projectile.position;
+        projectile.targetStateVel = projectile.velocity;
+        projectile.targetStateRot = projectile.rotation;
+        projectile.renderTick = (double)(ctx.latestServerTick - 1);
     }
     else
     {
-        projectile.prevStateTick = event->spawnTick;
+        // Non-predicted: use spawnTick - 1 as previous so the first frame
+        // has a valid tick range for time-based interpolation.
+        projectile.prevStateTick = event->spawnTick > 0 ? event->spawnTick - 1 : 0;
         projectile.prevStatePos = projectile.position;
         projectile.prevStateVel = projectile.velocity;
         projectile.prevStateRot = projectile.rotation;
@@ -652,6 +671,7 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
         projectile.targetStatePos = serverPosition;
         projectile.targetStateVel = serverVelocity;
         projectile.targetStateRot = glm::quat(event->rotW, event->rotX, event->rotY, event->rotZ);
+        projectile.renderTick = (double)(event->spawnTick > 0 ? event->spawnTick - 1 : 0);
     }
     projectile.hasTargetState = true;
 
@@ -733,10 +753,13 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
             if (it != ctx.networkProjectiles.end())
             {
                 NetworkProjectile& adopted = it->second;
-                adopted.prevStateTick = adopted.targetStateTick = event->header.tick;
+                // Use tick - 1 as previous so there is a valid interpolation range
+                adopted.prevStateTick = event->header.tick > 0 ? event->header.tick - 1 : 0;
+                adopted.targetStateTick = event->header.tick;
                 adopted.prevStatePos = adopted.targetStatePos = adopted.position;
                 adopted.prevStateVel = adopted.targetStateVel = adopted.velocity;
                 adopted.prevStateRot = adopted.targetStateRot = adopted.rotation;
+                adopted.renderTick = (double)(event->header.tick > 0 ? event->header.tick - 1 : 0);
                 adopted.latestAcceptedTick = 0; // accept this first server tick below
                 adopted.lastTargetReceivedMs = nowMs();
             }
@@ -763,7 +786,7 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
         projectile.renderPosition = projectile.position;
         projectile.renderVelocity = projectile.velocity;
         projectile.renderRotation = projectile.rotation;
-        projectile.prevStateTick = event->header.tick;
+        projectile.prevStateTick = event->header.tick > 0 ? event->header.tick - 1 : 0;
         projectile.prevStatePos = projectile.position;
         projectile.prevStateVel = projectile.velocity;
         projectile.prevStateRot = projectile.rotation;
@@ -771,6 +794,7 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
         projectile.targetStatePos = projectile.position;
         projectile.targetStateVel = projectile.velocity;
         projectile.targetStateRot = projectile.rotation;
+        projectile.renderTick = (double)(event->header.tick > 0 ? event->header.tick - 1 : 0);
         projectile.latestAcceptedTick = event->header.tick;
         projectile.lastTargetReceivedMs = nowMs();
         projectile.hasTargetState = true;
@@ -1768,28 +1792,117 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
 
         if (projectile.hasTargetState)
         {
-            const glm::vec3 posError = projectile.targetStatePos - projectile.position;
-            const glm::vec3 velError = projectile.targetStateVel - projectile.velocity;
-            const float err = glm::length(posError);
-            if (err > 8.0f)
+            if (projectile.predicted)
             {
-                projectile.position = projectile.targetStatePos;
-                projectile.velocity = projectile.targetStateVel;
-                projectile.rotation = projectile.targetStateRot;
+                // ── Predicted (owner's own): physics drives position directly ──
+                // The client physics simulation is authoritative for the local
+                // owner's projectile position. Do NOT blend or snap toward
+                // targetStatePos — that would reset the rocket to spawn every
+                // frame (targetStatePos starts at spawn and only updates when
+                // the server sends a state event 150+ ms later).
+                //
+                // Only apply a server correction when the server state is
+                // meaningfully far from the physics position AND the projectile
+                // has been alive long enough that the server should have sent
+                // at least one state update (i.e. targetStatePos is not just
+                // the initial spawn state).
+                const glm::vec3 posError = projectile.targetStatePos - projectile.position;
+                const float err = glm::length(posError);
+                const bool serverHasSentUpdate = projectile.targetStateTick > projectile.prevStateTick;
+                if (serverHasSentUpdate && err > 4.0f)
+                {
+                    // Server disagrees with local physics — correct toward
+                    // server state but gently (don't hard-snap the position
+                    // variable, only blend renderPosition).
+                    projectile.renderPosition = projectile.position + posError * 0.3f;
+                    projectile.renderVelocity = projectile.velocity +
+                        (projectile.targetStateVel - projectile.velocity) * 0.25f;
+                    projectile.renderRotation = glm::normalize(
+                        glm::slerp(projectile.rotation, projectile.targetStateRot, 0.20f));
+                }
+                else
+                {
+                    // Normal: physics position is authoritative for rendering
+                    projectile.renderPosition = projectile.position;
+                    projectile.renderVelocity = projectile.velocity;
+                    projectile.renderRotation = projectile.rotation;
+                }
             }
-            else if (err > 0.01f)
+            else
             {
-                const float posBlend = projectile.predicted ? 0.12f : 0.35f;
-                projectile.position += posError * posBlend;
-                projectile.velocity += velError * 0.25f;
-                projectile.rotation = glm::normalize(
-                    glm::slerp(projectile.rotation, projectile.targetStateRot, 0.20f));
+                // ── Remote: time-based interpolation between prev/target state ──
+                // Advance render tick based on real elapsed time
+                projectile.renderTick += (double)dt * (double)GAMEPLAY_SIMULATION_HZ;
+
+                // Clamp render tick between prevStateTick and targetStateTick
+                const double prevTick = (double)projectile.prevStateTick;
+                const double tgtTick = (double)projectile.targetStateTick;
+                if (projectile.renderTick < prevTick)
+                    projectile.renderTick = prevTick;
+                if (projectile.renderTick > tgtTick)
+                    projectile.renderTick = tgtTick;
+
+                // Compute interpolation alpha between the two bracketing states
+                const double tickRange = tgtTick - prevTick;
+                float alpha = 0.0f;
+                if (tickRange > 0.5)
+                    alpha = (float)((projectile.renderTick - prevTick) / tickRange);
+                alpha = std::clamp(alpha, 0.0f, 1.0f);
+
+                // Lerp position and velocity
+                glm::vec3 rawPos = projectile.prevStatePos +
+                    (projectile.targetStatePos - projectile.prevStatePos) * alpha;
+                glm::vec3 rawVel = projectile.prevStateVel +
+                    (projectile.targetStateVel - projectile.prevStateVel) * alpha;
+
+                // Slerp rotation
+                glm::quat rawRot = glm::slerp(projectile.prevStateRot,
+                                               projectile.targetStateRot, alpha);
+
+                // ── Ease motion filter (persistent tight-inertia integrator) ──
+                const auto& cfg = NetworkingConfig::instance().data().remoteProjectileInterpolation;
+                if (cfg.enabled)
+                {
+                    const float safeDt = std::max(dt, 0.001f);
+
+                    if (!projectile.renderFilterSeeded)
+                    {
+                        projectile.renderSpring.value = rawPos;
+                        projectile.renderSpring.velocity = glm::vec3(0.0f);
+                        projectile.renderSpringTargetVel = rawVel;
+                        projectile.renderFilterSeeded = true;
+                    }
+                    else
+                    {
+                        // Low-pass velocity feed into persistent inertia
+                        const float smooth = (float)cfg.easeVelocitySmoothing;
+                        projectile.renderSpringTargetVel +=
+                            (rawVel - projectile.renderSpringTargetVel) * smooth;
+
+                        // Inertia drives position
+                        projectile.renderSpring.value +=
+                            projectile.renderSpringTargetVel * safeDt;
+
+                        // Gentle capped correction pulls toward exact target
+                        const glm::vec3 err = rawPos - projectile.renderSpring.value;
+                        const float rate = std::min(1.0f,
+                            (float)cfg.easeCorrectionRate * safeDt);
+                        projectile.renderSpring.value += err * rate;
+                    }
+
+                    projectile.renderPosition = projectile.renderSpring.value;
+                    projectile.renderVelocity = rawVel;
+                    projectile.renderRotation = rawRot;
+                }
+                else
+                {
+                    // Fallback: no motion filter, direct interpolation
+                    projectile.renderPosition = rawPos;
+                    projectile.renderVelocity = rawVel;
+                    projectile.renderRotation = rawRot;
+                }
             }
         }
-
-        projectile.renderPosition = projectile.position;
-        projectile.renderVelocity = projectile.velocity;
-        projectile.renderRotation = projectile.rotation;
 
         // Rotation: grenades keep integrated quaternion (tumbling); rockets face velocity
         if (projectile.weaponType != NETWORK_WEAPON_GRENADE_LAUNCHER)

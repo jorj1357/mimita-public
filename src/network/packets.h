@@ -28,7 +28,8 @@ enum NetworkPlayerStateFlags : uint16_t
     NET_STATE_DOWN_DASHING = 1 << 3,
     NET_STATE_FREEZING     = 1 << 4,
     NET_STATE_ON_GROUND    = 1 << 5,
-    NET_STATE_ATTACKING    = 1 << 6
+    NET_STATE_ATTACKING    = 1 << 6,
+    NET_STATE_GODBALL_ACTIVE = 1 << 7
 };
 constexpr int MAX_RECONNECT_TOKEN_BYTES = 64;
 constexpr int MAX_JOIN_TOKEN_BYTES = 64;
@@ -384,6 +385,13 @@ struct SnapshotEntity
     uint8_t vipFlags = 0;
     uint8_t vipStyleEpoch = 0;
     uint8_t vipReserved = 0;
+    // Godball replication (active flag carried in stateFlags NET_STATE_GODBALL_ACTIVE)
+    float godballX = 0.0f;
+    float godballY = 0.0f;
+    float godballZ = 0.0f;
+    float godballVx = 0.0f;
+    float godballVy = 0.0f;
+    float godballVz = 0.0f;
 };
 
 struct SnapshotPacket
@@ -446,10 +454,18 @@ struct CompactEntityData
     uint8_t vipFlags = 0;
     uint8_t vipStyleEpoch = 0;
     uint8_t vipReserved = 0;
+    // Godball replication (active flag in stateFlags NET_STATE_GODBALL_ACTIVE)
+    // Quantized: position 0.01m resolution ±327.67m, velocity 0.1 m/s ±3276.7 m/s
+    uint16_t godballPosX = 0;  // (raw - (-327.67)) / 0.01
+    uint16_t godballPosY = 0;
+    uint16_t godballPosZ = 0;
+    int16_t godballVelX = 0;   // raw * 0.1
+    int16_t godballVelY = 0;
+    int16_t godballVelZ = 0;
 };
 #pragma pack(pop)
 
-static_assert(sizeof(CompactEntityData) == 144, "CompactEntityData unexpected size");
+static_assert(sizeof(CompactEntityData) == 156, "CompactEntityData unexpected size");
 
 struct SnapshotChunkPacket
 {
@@ -459,12 +475,12 @@ struct SnapshotChunkPacket
     uint16_t chunkCount = 1;
     uint16_t entityCount = 0;
     uint16_t payloadBytes = 0;
-    CompactEntityData entities[8]; // 8 * 144 + header(32) = 1184 < 1200
+    CompactEntityData entities[7]; // 7 * 156 + header(32) = 1124 < 1200
 };
 
 static_assert(sizeof(SnapshotChunkPacket) < MAX_GAME_DATAGRAM_BYTES,
               "SnapshotChunkPacket exceeds safe datagram limit");
-static_assert(sizeof(SnapshotChunkPacket) == 1184, "SnapshotChunkPacket wire size changed");
+static_assert(sizeof(SnapshotChunkPacket) == 1124, "SnapshotChunkPacket wire size changed");
 
 struct SpawnNpcRequestPacket
 {
@@ -1018,9 +1034,10 @@ struct JoinRequestPacket
     char vipJoinTicket[MAX_VIP_JOIN_TICKET_BYTES];
     char name[MAX_NAME_BYTES];
     char avatarName[16];
+    char password[64];
 };
 
-static_assert(sizeof(JoinRequestPacket) == 196, "JoinRequestPacket wire size changed");
+static_assert(sizeof(JoinRequestPacket) == 260, "JoinRequestPacket wire size changed");
 
 struct JoinAcceptPacket
 {
@@ -1038,7 +1055,7 @@ static_assert(sizeof(JoinAcceptPacket) == 160, "JoinAcceptPacket wire size chang
 struct JoinRejectPacket
 {
     PacketHeader header;
-    uint8_t reason = 0; // 1=full, 2=bad-token, 3=banned, 4=version-mismatch
+    uint8_t reason = 0; // 1=full, 2=bad-token, 3=banned, 4=version-mismatch, 5=wrong-password
     uint8_t reserved[3] = {};
 };
 

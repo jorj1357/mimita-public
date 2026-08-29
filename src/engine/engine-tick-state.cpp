@@ -277,6 +277,8 @@ void engineTickState(Engine& engine, float dt)
                     else
                     {
                         mpContext.currentRoomCode = mci.roomCode;
+                        if (!mci.password.empty())
+                            mpContext.serverPassword = mci.password;
 
                         Debug::log(
                             Debug::Category::Networking,

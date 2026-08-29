@@ -68,6 +68,19 @@ struct NpcDifficultySettings {
     // Force a specific weapon. When non-empty, NPCs always use this weapon
     // and ignore distance-based switching. Set to a weapon id to test it.
     std::string forceWeapon = "";
+
+    // Mirror movement: NPCs alternate between normal AI movement and replaying
+    // the player's recent movement inputs (direction, dash, freeze, jump) while
+    // continuing to aim at the player.
+    bool mirrorMovementEnabled = false;
+    float mirrorNormalDuration = 5.0f;     // seconds in normal phase
+    float mirrorReplayDuration = 5.0f;     // seconds replaying player inputs
+    float mirrorHistorySeconds = 5.0f;     // how far back to look in player history
+    bool mirrorKeepAimingAtTarget = true;  // keep aiming at player during mirror
+    bool mirrorDashEnabled = true;         // mirror player dashes
+    bool mirrorDownDashEnabled = true;     // mirror player down-dashes
+    bool mirrorFreezeEnabled = true;       // mirror player freezes
+    bool mirrorJumpEnabled = true;         // mirror player jumps
 };
 
 class NpcDifficultyConfig {

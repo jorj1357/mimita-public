@@ -349,15 +349,13 @@ struct NetworkSnapshotRedundancyConfig
     bool enabled = true;
 };
 
-struct NetworkHitFeedbackConfig
+struct NetworkServerAuthoritativeHitsConfig
 {
-    // Server-confirmed hit feedback. The client already shows an instant
-    // predicted hitmarker/number/sound on its local trace; these gate whether
-    // the server's DamageConfirmedEvent replays them (default: prediction-only,
-    // so a hit produces exactly one crisp feedback).
-    bool showConfirmedHitmarker = false;
-    bool showConfirmedDamageNumber = false;
-    bool showConfirmedHitSound = false;
+    // When true, the client suppresses ALL predicted hit feedback (hitmarker,
+    // damage numbers, hit sounds). Feedback only shows when the server confirms
+    // the hit via DamageConfirmedEvent. Disagreement effects always show when
+    // the server rejects a hit. World impacts (wall/ground) always show.
+    bool enabled = false;
 };
 
 struct NetworkDisagreementConfig
@@ -467,6 +465,13 @@ struct NetworkCombatConfig
     bool beamContinueAfterHit = true;
 };
 
+struct RemoteProjectileInterpolationConfig
+{
+    bool enabled = true;
+    double easeCorrectionRate = 12.0;
+    double easeVelocitySmoothing = 0.5;
+};
+
 struct NetworkingConfigData
 {
     int version = 1;
@@ -480,7 +485,7 @@ struct NetworkingConfigData
     NetworkDeathEffectsConfig deathEffects;
     AdaptiveSnapshotBufferConfig adaptiveSnapshotBuffer;
     NetworkSnapshotRedundancyConfig snapshotRedundancy;
-    NetworkHitFeedbackConfig hitFeedback;
+    NetworkServerAuthoritativeHitsConfig serverAuthoritativeHits;
     NetworkDisagreementConfig disagreement;
     NetworkEventTimelineConfig eventTimeline;
     NetworkRuntimeRateConfig runtimeRates;
@@ -492,6 +497,7 @@ struct NetworkingConfigData
     NetworkingDebugConfig debug;
     NetworkPredictionConfig prediction;
     NetworkCombatConfig combat;
+    RemoteProjectileInterpolationConfig remoteProjectileInterpolation;
 };
 
 // Singleton config following the repo convention (WeaponHitFxConfig,

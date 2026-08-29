@@ -1,6 +1,7 @@
 #include "weapon-godball.h"
 #include "weapon-audio.h"
 #include "weapon-types.h"
+#include "weapon-execution.h"
 
 #include <algorithm>
 #include <cmath>
@@ -23,6 +24,20 @@
 #include "npc/npc.h"
 #include "ui/hitmarker.h"
 #include "world/world.h"
+#include "config/networking-config.h"
+#include "network/multiplayer-context.h"
+
+extern MimitaNet::MultiplayerContext* gpMpContext;
+
+namespace {
+
+bool serverAuthHits()
+{
+    if (!gpMpContext || !gpMpContext->active) return false;
+    return NetworkingConfig::instance().data().serverAuthoritativeHits.enabled;
+}
+
+} // anonymous namespace
 
 namespace WeaponGodball {
 
@@ -227,6 +242,15 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
     glm::vec3 prevPos = phys.prevPosition;
     float ballSpeed = glm::length(phys.velocity);
 
+    const float sweepThreshold = WeaponExecution::paramOr(def, "sweepSubstepThreshold", 20.0f);
+    const int maxSubsteps = (int)WeaponExecution::paramOr(def, "maxSweepSubsteps", 8.0f);
+    const float combinedRadius = damageRadius + 0.5f;
+    const float maxStepDist = combinedRadius * 0.8f;
+    const float moveDist = ballSpeed * safeDt;
+    const int substeps = (moveDist > sweepThreshold && maxStepDist > 0.001f)
+        ? std::clamp((int)std::ceil(moveDist / maxStepDist), 1, maxSubsteps)
+        : 1;
+
     for (Npc& npc : npcs.all()) {
         if (npc.body.currentHp <= 0) continue;
 
@@ -278,13 +302,21 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
             glm::vec3 halfSize = glm::max((part.collider.localMax - part.collider.localMin) * 0.5f, glm::vec3(0.12f));
             float partRadius = glm::length(halfSize) * 1.25f;
 
-            if (sweptSphereOverlap(prevPos, currPos, damageRadius,
-                                   worldCenter, partRadius,
-                                   hitPoint, hitNormal, &closestOnSeg)) {
-                hit = true;
-                hitPartName = part.name;
-                break;
+            for (int s = 0; s < substeps; s++) {
+                float t0 = (float)s / substeps;
+                float t1 = (float)(s + 1) / substeps;
+                glm::vec3 subPrev = prevPos + (currPos - prevPos) * t0;
+                glm::vec3 subCurr = prevPos + (currPos - prevPos) * t1;
+
+                if (sweptSphereOverlap(subPrev, subCurr, damageRadius,
+                                       worldCenter, partRadius,
+                                       hitPoint, hitNormal, &closestOnSeg)) {
+                    hit = true;
+                    hitPartName = part.name;
+                    break;
+                }
             }
+            if (hit) break;
         }
 
         cd.overlapCheck = true;
@@ -362,7 +394,7 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
             ev.attacker = owner.username;
             ev.victim = "npc_" + std::to_string(npcId);
             ev.weaponSource = "godball";
-            HitEffects::onHit(ev);
+            if (!serverAuthHits()) HitEffects::onHit(ev);
         }
 
         {
@@ -373,7 +405,7 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
         }
 
         cooldowns[npcId] = tickInterval;
-        hitmarker(rounded);
+        if (!serverAuthHits()) hitmarker(rounded);
 
         if (npc.body.currentHp <= 0) {
             DeathSystem::instance().kill(

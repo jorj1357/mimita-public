@@ -17,6 +17,7 @@
 #include "debug/debug-visuals.h"
 #include "entities/player.h"
 #include "input/input-state.h"
+#include "input/input-frame.h"
 #include "npc/npc-state-machine.h"
 
 class Camera;
@@ -121,6 +122,10 @@ public:
     bool facingTargetMode = true;
     float facingModeTimer = 0.0f;
 
+    // Mirror movement state
+    float mirrorCycleTimer = 0.0f;
+    bool mirrorPhaseActive = false; // true = replay phase, false = normal phase
+
     // The actual fired shot from the last successful tryFire. The server
     // broadcast reads these so the remote tracer goes exactly where the damage
     // ray went (look direction == shoot direction == bullet endpoint).
@@ -158,13 +163,22 @@ struct CombatSoundEvent {
     float intensity = 1.0f;
 };
 
+struct PlayerMovementEvent {
+    float time = 0.0f;
+    glm::vec2 moveDir{0.0f};
+    bool jumped = false;
+    bool dashed = false;
+    bool downDashed = false;
+    bool froze = false;
+};
+
 class NpcSystem {
 public:
     void spawnPrototypeScene();
     void clear();
     void destroySelected(const std::vector<std::uint32_t>& ids);
     void destroyAll();
-    void update(const World& world, Player& player, float dt);
+    void update(const World& world, Player& player, float dt, const InputFrame& frame);
     // Server hook: simulate a single NPC against a specific player target so
     // each online NPC can target its own nearest live player (instead of a
     // single shared mirror). Advances that NPC's AI, movement, and firing.
@@ -197,6 +211,10 @@ public:
     // NPC communication: count how many NPCs are targeting the same position
     int npcCountNear(glm::vec3 pos, float radius) const;
 
+    // Player movement recording for mirror mode
+    void recordPlayerInput(const InputFrame& frame, float time);
+    const PlayerMovementEvent* findPlayerEvent(float targetTime) const;
+
 private:
     std::vector<Npc> npcs;
     uint32_t nextId = 100;
@@ -208,6 +226,12 @@ private:
     CombatSoundEvent heardSounds[MAX_HEARD_SOUNDS]{};
     int heardSoundHead = 0;
     int heardSoundCount = 0;
+
+    // Player movement history for mirror mode (shared by all NPCs)
+    static constexpr int MAX_PLAYER_HISTORY = 360; // ~6 seconds at 60fps
+    PlayerMovementEvent playerHistory[MAX_PLAYER_HISTORY]{};
+    int playerHistoryHead = 0;
+    int playerHistoryCount = 0;
 
     void updateOneNpc(Npc& npc, const World& world, Player& player, float dt);
 };

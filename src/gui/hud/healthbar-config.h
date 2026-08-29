@@ -15,6 +15,9 @@ struct HealthbarConfigData {
     bool showNameInAimMode = false;
     bool showHpTextInAimMode = false;
     bool showBarInAimMode = false;
+    float maxDistance = 2000.0f;
+    float startFadeDistance = 1000.0f;
+    float endFadeDistance = 2000.0f;
     glm::vec4 greenColor{0.2f, 1.0f, 0.3f, 1.0f};
     glm::vec4 yellowColor{1.0f, 1.0f, 0.2f, 1.0f};
     glm::vec4 orangeColor{1.0f, 0.5f, 0.1f, 1.0f};

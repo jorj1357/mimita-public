@@ -10,10 +10,16 @@
 namespace MimitaNet {
 
 constexpr uint16_t MAX_SNAPSHOT_CHUNKS = 256;
-constexpr uint32_t SNAPSHOT_CHUNK_MAX_ENTITIES = 8;
+constexpr uint32_t SNAPSHOT_CHUNK_MAX_ENTITIES = 7;
 
 size_t snapshotChunkHeaderBytes();
 size_t snapshotChunkWireSize(uint16_t entityCount);
+
+// Godball quantization helpers (0.01m position, 0.1 m/s velocity)
+uint16_t quantizeGodballPos(float v);
+float dequantizeGodballPos(uint16_t raw);
+int16_t quantizeGodballVel(float v);
+float dequantizeGodballVel(int16_t raw);
 
 CompactEntityData compactEntityFromSnapshot(const SnapshotEntity& entity);
 SnapshotEntity snapshotEntityFromCompact(const CompactEntityData& entity);

@@ -256,6 +256,19 @@ bool HitEffects::loadConfig(const std::string& path)
             if (s.contains("alpha")) cfg.downDash.alpha = s["alpha"];
         }
 
+        if (j.contains("bodyContactSpark")) {
+            const json& s = j["bodyContactSpark"];
+            if (s.contains("enabled")) cfg.bodyContactSpark.enabled = s["enabled"];
+            if (s.contains("color")) cfg.bodyContactSpark.color = readVec3Json(s["color"]);
+            if (s.contains("alpha")) cfg.bodyContactSpark.alpha = s["alpha"];
+            if (s.contains("lifetimeTicks")) cfg.bodyContactSpark.lifetimeTicks = s["lifetimeTicks"];
+            if (s.contains("baseLength")) cfg.bodyContactSpark.baseLength = s["baseLength"];
+            if (s.contains("baseRadius")) cfg.bodyContactSpark.baseRadius = s["baseRadius"];
+            if (s.contains("speedScale")) cfg.bodyContactSpark.speedScale = s["speedScale"];
+            if (s.contains("minSpeed")) cfg.bodyContactSpark.minSpeed = s["minSpeed"];
+            if (s.contains("local_axis")) cfg.bodyContactSpark.localAxis = s["local_axis"];
+        }
+
         if (j.contains("hitmarkerVisual")) {
             const json& s = j["hitmarkerVisual"];
             if (s.contains("enabled")) cfg.hitmarkerVisual.enabled = s["enabled"];

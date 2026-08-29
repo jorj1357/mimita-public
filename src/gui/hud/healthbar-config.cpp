@@ -65,6 +65,9 @@ bool HealthbarConfig::load(const std::string& path)
         d.showNameInAimMode = j.value("show_name_in_aim_mode", d.showNameInAimMode);
         d.showHpTextInAimMode = j.value("show_hp_text_in_aim_mode", d.showHpTextInAimMode);
         d.showBarInAimMode = j.value("show_bar_in_aim_mode", d.showBarInAimMode);
+        d.maxDistance = std::max(0.0f, j.value("max_distance", d.maxDistance));
+        d.startFadeDistance = std::max(0.0f, j.value("start_fade_distance", d.startFadeDistance));
+        d.endFadeDistance = std::max(0.0f, j.value("end_fade_distance", d.endFadeDistance));
         d.greenColor = readColor(j, "green_r", "green_g", "green_b", "green_a", 0.2f, 1.0f, 0.3f, 1.0f);
         d.yellowColor = readColor(j, "yellow_r", "yellow_g", "yellow_b", "yellow_a", 1.0f, 1.0f, 0.2f, 1.0f);
         d.orangeColor = readColor(j, "orange_r", "orange_g", "orange_b", "orange_a", 1.0f, 0.5f, 0.1f, 1.0f);
@@ -96,6 +99,9 @@ bool HealthbarConfig::save()
         {"show_name_in_aim_mode", d.showNameInAimMode},
         {"show_hp_text_in_aim_mode", d.showHpTextInAimMode},
         {"show_bar_in_aim_mode", d.showBarInAimMode},
+        {"max_distance", d.maxDistance},
+        {"start_fade_distance", d.startFadeDistance},
+        {"end_fade_distance", d.endFadeDistance},
         {"green_r", d.greenColor.r}, {"green_g", d.greenColor.g}, {"green_b", d.greenColor.b}, {"green_a", d.greenColor.a},
         {"yellow_r", d.yellowColor.r}, {"yellow_g", d.yellowColor.g}, {"yellow_b", d.yellowColor.b}, {"yellow_a", d.yellowColor.a},
         {"orange_r", d.orangeColor.r}, {"orange_g", d.orangeColor.g}, {"orange_b", d.orangeColor.b}, {"orange_a", d.orangeColor.a},

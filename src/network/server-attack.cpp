@@ -287,6 +287,10 @@ void handleAttackRequest(
 
     ServerPlayer& shooter = shooterIt->second;
 
+    // ── Per-tick incoming packet flood guard ───────────────────────
+    if (++shooter.attackPktsThisTick > ServerPlayer::MAX_ATTACK_PKTS_PER_TICK)
+        return;
+
     Debug::log(Debug::Category::Weapons, "[ATTACK REQUEST RX] playerId=%u requestId=%u spawnGen=%u weaponDefNetId=%u slot=%d\n",
                shooter.id, req->requestId, req->spawnGeneration, req->weaponDefNetworkId, req->equippedSlot);
 
@@ -432,6 +436,16 @@ void handleAttackRequest(
                    shooter.id, req->requestId, tick, (unsigned long long)rt.nextAllowedFireTick);
         emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
                             shooter, req->requestId, "COOLDOWN");
+        sendAttackResult(sock, shooter, req, tick, false, 1, 0,
+                         rt.magazineAmmo, rt.reserveAmmo,
+                         rt.nextAllowedFireTick, rt.stateRevision);
+        return;
+    }
+
+    // ── Per-tick shot rate limit ───────────────────────────────────
+    if (def->executionType == WeaponExecutionType::Hitscan &&
+        shooter.shotsThisTick >= ServerPlayer::MAX_SHOTS_PER_TICK)
+    {
         sendAttackResult(sock, shooter, req, tick, false, 1, 0,
                          rt.magazineAmmo, rt.reserveAmmo,
                          rt.nextAllowedFireTick, rt.stateRevision);
@@ -623,28 +637,12 @@ void handleAttackRequest(
             if (!alreadyConfirmed && claimedDist > 0.001f &&
                 claimedDist <= maxRange)
             {
-                // World occlusion: a claimed hit must not pass through a wall
-                // relative to the shooter's fire-time origin.
+                // World occlusion: reuse the main trace's worldBlockDistance
+                // instead of a second full raycast. The main trace already
+                // found the nearest world hit along this direction.
                 bool occluded = false;
-                if (beamWorldThickness > 0.0f)
-                {
-                    float sweptDist = 0.0f;
-                    glm::vec3 wNml;
-                    if (serverSweptSphereWorld(origin, claimedDir / claimedDist,
-                                               claimedDist, beamWorldThickness,
-                                               world, sweptDist, wNml) &&
-                        sweptDist < claimedDist - 0.1f)
-                        occluded = true;
-                }
-                else
-                {
-                    glm::vec3 worldHit;
-                    glm::vec3 wNml;
-                    if (serverRaycastWorld(origin, claimedDir / claimedDist,
-                                           claimedDist, world, worldHit, wNml) &&
-                        glm::length(worldHit - origin) < claimedDist - 0.1f)
-                        occluded = true;
-                }
+                if (worldBlockDistance < claimedDist - 0.1f)
+                    occluded = true;
 
                 if (!occluded)
                 {
@@ -758,6 +756,7 @@ void handleAttackRequest(
         rt.nextAllowedFireTick = cooldownTickFor(*def, tick);
         rt.reloading = false;
         rt.stateRevision++;
+        shooter.shotsThisTick++;
 
         const uint8_t netWeapon = networkWeaponTypeForDefinition(*def);
         for (const WeaponExecution::HitscanDamageAggregate& aggregate : trace.aggregates)
@@ -902,14 +901,18 @@ void handleAttackRequest(
                 }
             }
 
-            // Reliable broadcast: the bullet visual is re-sent until every
-            // client ACKs it, so a dropped shot event under badconn never
-            // loses the tracer.
-            queueReliableGameplayEventToAll(sock, players, &shotEvent,
-                                            sizeof(shotEvent),
-                                            shotEvent.eventId,
-                                            reliableGameplayEventSessionForPlayer(shooter),
-                                            totalPacketsOut);
+            // Unreliable broadcast: shot visuals are fire-and-forget. The
+            // reliable DamageConfirmed event below is the source of truth for
+            // HP; a dropped visual just means one fewer tracer, not lost damage.
+            for (const auto& pe : players)
+            {
+                if (pe.second.transport)
+                    pe.second.transport->send(&shotEvent, sizeof(shotEvent));
+                else
+                    sendto(sock, (const char*)&shotEvent, sizeof(shotEvent), 0,
+                           (sockaddr*)&pe.second.addr, sizeof(pe.second.addr));
+                ++totalPacketsOut;
+            }
 
             Debug::log(Debug::Category::Weapons,
                        "[WEAPON_EVENT_BROADCAST] shooter=%u requestId=%u weapon=%s "
@@ -999,13 +1002,18 @@ void handleAttackRequest(
                 t.targetSpawnGeneration = vit != players.end() ? vit->second.spawnGeneration : 0;
             }
 
-            // Reliable broadcast: pellet visuals are re-sent until ACKed so a
-            // dropped event under badconn never loses the shotgun blast.
-            queueReliableGameplayEventToAll(sock, players, &blastEvent,
-                                            sizeof(blastEvent),
-                                            blastEvent.eventId,
-                                            reliableGameplayEventSessionForPlayer(shooter),
-                                            totalPacketsOut);
+            // Unreliable broadcast: pellet visuals are fire-and-forget. The
+            // reliable DamageConfirmed events below are the source of truth for
+            // HP; a dropped visual just means fewer tracers, not lost damage.
+            for (const auto& pe : players)
+            {
+                if (pe.second.transport)
+                    pe.second.transport->send(&blastEvent, sizeof(blastEvent));
+                else
+                    sendto(sock, (const char*)&blastEvent, sizeof(blastEvent), 0,
+                           (sockaddr*)&pe.second.addr, sizeof(pe.second.addr));
+                ++totalPacketsOut;
+            }
         }
 
         uint8_t hitVerdict = HIT_VERDICT_MISS;

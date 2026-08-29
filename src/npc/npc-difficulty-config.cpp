@@ -145,6 +145,17 @@ bool NpcDifficultyConfig::load(const std::string& path)
         // Force weapon mode
         next.forceWeapon = optString(root, "forceWeapon", next.forceWeapon);
 
+        // Mirror movement
+        next.mirrorMovementEnabled = optBool(root, "mirrorMovementEnabled", next.mirrorMovementEnabled);
+        next.mirrorNormalDuration = std::max(0.1f, optFloat(root, "mirrorNormalDuration", next.mirrorNormalDuration));
+        next.mirrorReplayDuration = std::max(0.1f, optFloat(root, "mirrorReplayDuration", next.mirrorReplayDuration));
+        next.mirrorHistorySeconds = std::max(0.1f, optFloat(root, "mirrorHistorySeconds", next.mirrorHistorySeconds));
+        next.mirrorKeepAimingAtTarget = optBool(root, "mirrorKeepAimingAtTarget", next.mirrorKeepAimingAtTarget);
+        next.mirrorDashEnabled = optBool(root, "mirrorDashEnabled", next.mirrorDashEnabled);
+        next.mirrorDownDashEnabled = optBool(root, "mirrorDownDashEnabled", next.mirrorDownDashEnabled);
+        next.mirrorFreezeEnabled = optBool(root, "mirrorFreezeEnabled", next.mirrorFreezeEnabled);
+        next.mirrorJumpEnabled = optBool(root, "mirrorJumpEnabled", next.mirrorJumpEnabled);
+
         // NPC movement preset: "follow" uses the player's global movement config;
         // any other value resolves a preset from config/movement/*.json.
         next.movementPreset = "follow";
@@ -182,12 +193,13 @@ bool NpcDifficultyConfig::load(const std::string& path)
         mData = next;
         mLastWrite = writeTime;
         Debug::warn(Debug::Category::NpcCombat,
-            "[NPC DIFFICULTY] Loaded %s: maxErr=%.1fdeg diffScale=%.2f dmg=%.2fx fireDelay=[%.2f,%.2f] aggressionBonus=%.2f hitRadius=%.2f forceHit=%d panic=%d loadout=%zu\n",
+            "[NPC DIFFICULTY] Loaded %s: maxErr=%.1fdeg diffScale=%.2f dmg=%.2fx fireDelay=[%.2f,%.2f] aggressionBonus=%.2f hitRadius=%.2f forceHit=%d panic=%d loadout=%zu mirror=%d\n",
             fileName.c_str(),
             mData.maxAngularErrorDegrees, mData.difficultyErrorScale,
             mData.damageMultiplier, mData.fireDelayMin, mData.fireDelayMax,
             mData.aggressionBonus, mData.npcHitRadius, (int)mData.forceHit,
-            (int)mData.hitReactionEnabled, mData.weaponLoadout.size());
+            (int)mData.hitReactionEnabled, mData.weaponLoadout.size(),
+            (int)mData.mirrorMovementEnabled);
         return true;
     } catch (const json::parse_error& e) {
         mLastWrite = writeTime;
@@ -260,6 +272,16 @@ bool NpcDifficultyConfig::save(const std::string& path)
     j["movementNoiseScale"] = mData.movementNoiseScale;
     j["jukeFrequency"] = mData.jukeFrequency;
     j["forceWeapon"] = mData.forceWeapon;
+
+    j["mirrorMovementEnabled"] = mData.mirrorMovementEnabled;
+    j["mirrorNormalDuration"] = mData.mirrorNormalDuration;
+    j["mirrorReplayDuration"] = mData.mirrorReplayDuration;
+    j["mirrorHistorySeconds"] = mData.mirrorHistorySeconds;
+    j["mirrorKeepAimingAtTarget"] = mData.mirrorKeepAimingAtTarget;
+    j["mirrorDashEnabled"] = mData.mirrorDashEnabled;
+    j["mirrorDownDashEnabled"] = mData.mirrorDownDashEnabled;
+    j["mirrorFreezeEnabled"] = mData.mirrorFreezeEnabled;
+    j["mirrorJumpEnabled"] = mData.mirrorJumpEnabled;
 
     std::ofstream file(path);
     if (!file.is_open())

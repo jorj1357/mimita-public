@@ -286,10 +286,14 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
     auto predIt = ctx.predictedNpcHitMs.find(event->npcEntityId);
     const bool predicted = predIt != ctx.predictedNpcHitMs.end() &&
         now - predIt->second < NPC_PREDICT_WINDOW_MS;
+    const bool authMode = NetworkingConfig::instance().data().serverAuthoritativeHits.enabled;
+    // In server-authoritative mode, we never showed prediction feedback,
+    // so always take the server-confirmed path.
+    const bool actuallyPredicted = predicted && !authMode;
 
     if (isLocalShooter && event->damage > 0)
     {
-        if (predicted)
+        if (actuallyPredicted)
         {
             // Server says the NPC survived a hit we predicted as lethal:
             // revive the replica and show a disagreement indicator.
@@ -300,16 +304,37 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
                 // disagreement effect above spawns.
                 mpRollbackPredictedKillHeal(ctx, event->npcEntityId);
             }
+            // Damage mismatch: show disagreement if server damage differs significantly
+            auto dmgIt = ctx.predictedNpcDamage.find(event->npcEntityId);
+            if (dmgIt != ctx.predictedNpcDamage.end() && dmgIt->second > 0)
+            {
+                const float ratio = std::abs((float)event->damage - (float)dmgIt->second) / (float)dmgIt->second;
+                if (ratio > 0.1f)
+                {
+                    if (NetworkingConfig::instance().data().disagreement.enabled)
+                    {
+                        DisagreementEvent de;
+                        de.timeMs = nowMs();
+                        de.reason = DISAGREEMENT_INVALID_DAMAGE;
+                        de.position = hitPos;
+                        de.sourcePlayerId = ctx.localPlayerId;
+                        de.targetPlayerId = event->npcEntityId;
+                        de.description = "DAMAGE MISMATCH";
+                        spawnDisagreementEffect(de);
+                        logDisagreement(de);
+                    }
+                }
+            }
             Debug::log(Debug::Category::Networking,
                        "[NET NPC HIT PRESENT] shooter=%u npc=%u damage=%d predicted=1 (suppressed duplicate)",
                        event->shooterPlayerId, event->npcEntityId, event->damage);
         }
         else
         {
-            // Non-predicted path (melee/godball/multi-pellet): show the
-            // server-confirmed feedback as before.
+            // Non-predicted path (melee/godball/multi-pellet, or server-authoritative
+            // mode where prediction feedback was suppressed): show the
+            // server-confirmed feedback.
             hitmarker(event->damage);
-            playHitmarkerSound(event->damage);
             HitEvent ev;
             ev.position = hitPos;
             ev.normal = glm::length(hitNml) > 0.001f
@@ -326,6 +351,24 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
                    event->shooterPlayerId, event->npcEntityId, event->damage);
         }
     }
+
+    // Server says 0 damage (miss) but client predicted a hit: show disagreement
+    if (isLocalShooter && event->damage == 0 && (predicted || authMode))
+    {
+        if (NetworkingConfig::instance().data().disagreement.enabled)
+        {
+            DisagreementEvent de;
+            de.timeMs = nowMs();
+            de.reason = DISAGREEMENT_REWIND_MISS;
+            de.position = hitPos;
+            de.sourcePlayerId = ctx.localPlayerId;
+            de.targetPlayerId = event->npcEntityId;
+            de.description = "HIT REJECTED: server says miss";
+            spawnDisagreementEffect(de);
+            logDisagreement(de);
+        }
+    }
+
     if (npcPtr)
     {
         if (isLocalShooter)

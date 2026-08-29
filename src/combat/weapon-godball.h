@@ -99,6 +99,8 @@ void checkOverlaps(
     float dt
 );
 
+float damageFromSpeed(const WeaponDefinition& def, float speed);
+
 float computeDamage(
     const GodballPhysics& phys,
     const WeaponDefinition& def,

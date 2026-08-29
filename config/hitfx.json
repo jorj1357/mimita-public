@@ -357,6 +357,18 @@
         "alpha": 0.35
     },
 
+    "bodyContactSpark": {
+        "enabled": true,
+        "color": [1.0, 1.0, 1.0],
+        "alpha": 1.0,
+        "lifetimeTicks": 15,
+        "baseLength": 2.0,
+        "baseRadius": 0.4,
+        "speedScale": 0.3,
+        "minSpeed": 0.1,
+        "local_axis": "+Z"
+    },
+
     "hitmarkerVisual": {
         "enabled": true,
         "duration": 0.5,

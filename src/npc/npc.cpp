@@ -417,11 +417,56 @@ int NpcSystem::npcCountNear(glm::vec3 pos, float radius) const
     return count;
 }
 
-void NpcSystem::update(const World& world, Player& player, float dt)
+void NpcSystem::recordPlayerInput(const InputFrame& frame, float time)
+{
+    PlayerMovementEvent evt;
+    evt.time = time;
+    evt.moveDir = {frame.moveX, frame.moveY};
+    evt.jumped = frame.jumpPressed;
+    evt.dashed = frame.dashPressed;
+    evt.downDashed = frame.downDashPressed;
+    evt.froze = frame.freezePressed;
+
+    int i = playerHistoryHead;
+    playerHistory[i] = evt;
+    playerHistoryHead = (i + 1) % MAX_PLAYER_HISTORY;
+    if (playerHistoryCount < MAX_PLAYER_HISTORY)
+        playerHistoryCount++;
+}
+
+const PlayerMovementEvent* NpcSystem::findPlayerEvent(float targetTime) const
+{
+    if (playerHistoryCount == 0) return nullptr;
+
+    int bestIdx = -1;
+    float bestDist = 1e10f;
+
+    int count = std::min(playerHistoryCount, MAX_PLAYER_HISTORY);
+    int tail = (playerHistoryHead - 1 + MAX_PLAYER_HISTORY) % MAX_PLAYER_HISTORY;
+
+    for (int j = 0; j < count; ++j)
+    {
+        int i = (tail - j + MAX_PLAYER_HISTORY) % MAX_PLAYER_HISTORY;
+        float dist = std::abs(playerHistory[i].time - targetTime);
+        if (dist < bestDist)
+        {
+            bestDist = dist;
+            bestIdx = i;
+        }
+    }
+
+    return bestIdx >= 0 ? &playerHistory[bestIdx] : nullptr;
+}
+
+void NpcSystem::update(const World& world, Player& player, float dt, const InputFrame& frame)
 {
     Perf::ScopedTimer _updateTimer("NpcUpdate");
     Perf::state().current.npcCount = (int)npcs.size();
     currentTime += dt;
+
+    // Record player movement for mirror mode
+    recordPlayerInput(frame, currentTime);
+
     for (Npc& nc : npcs)
     {
         // Register NPC weapon fire for other NPCs' hearing
@@ -478,6 +523,15 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
 
     npc.timeSinceLastShot += safeDt;
     npc.fireRhythmOffset = std::sin(npc.sensors.time * 0.4f + npc.id * 2.1f);
+
+    // Advance mirror movement cycle timer
+    {
+        const auto& mc = NpcDifficultyConfig::instance().settings();
+        if (mc.mirrorMovementEnabled)
+            npc.mirrorCycleTimer += safeDt;
+        else
+            npc.mirrorCycleTimer = 0.0f;
+    }
 
     // Update model-world transforms once per simulation tick
     // (collision code reads these without recomputing them)
@@ -689,7 +743,43 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
 
     glm::vec3 moveDir;
     bool jump, dash, attack;
-    computeStateMovement(npc, moveDir, jump, dash, attack, safeDt);
+    bool inMirrorPhase = false;
+
+    // Mirror movement cycle: alternate between normal AI and replaying player inputs
+    const auto& mirrorCfg = NpcDifficultyConfig::instance().settings();
+    if (mirrorCfg.mirrorMovementEnabled && npc.sensors.hasTarget)
+    {
+        float cycleDuration = mirrorCfg.mirrorNormalDuration + mirrorCfg.mirrorReplayDuration;
+        float phaseTime = std::fmod(npc.mirrorCycleTimer, cycleDuration);
+        inMirrorPhase = phaseTime >= mirrorCfg.mirrorNormalDuration;
+        npc.mirrorPhaseActive = inMirrorPhase;
+
+        if (inMirrorPhase)
+        {
+            float mirrorPhaseTime = phaseTime - mirrorCfg.mirrorNormalDuration;
+            float targetTime = currentTime - mirrorCfg.mirrorHistorySeconds + mirrorPhaseTime;
+            const PlayerMovementEvent* evt = findPlayerEvent(targetTime);
+
+            if (evt)
+            {
+                moveDir = glm::vec3(evt->moveDir, 0.0f);
+                jump = mirrorCfg.mirrorJumpEnabled && evt->jumped;
+                dash = mirrorCfg.mirrorDashEnabled && evt->dashed;
+                attack = false; // don't force attack from mirror
+                if (mirrorCfg.mirrorKeepAimingAtTarget)
+                    npc.facingTargetMode = true;
+            }
+            else
+            {
+                inMirrorPhase = false;
+            }
+        }
+    }
+
+    if (!inMirrorPhase)
+    {
+        computeStateMovement(npc, moveDir, jump, dash, attack, safeDt);
+    }
 
     // Situaltional jump if obstacle ahead or stuck
     if (npc.sensors.touchFloor && !jump && glm::length(moveDir) > 0.1f)
@@ -825,12 +915,41 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     }
 
     // Freeze: occasionally freeze to dodge shots / break prediction
+    // (skipped when mirror phase provides its own freeze input)
     bool freeze = false;
-    if (npc.sensors.hasTarget && npc.sensors.touchFloor && npc.dashCooldown <= 0.0f
-        && npc.body.freeze.freezeAvailable && npc.body.freeze.freezeTimer <= 0.0f)
+    if (!inMirrorPhase)
     {
-        const auto& cfg = NpcDifficultyConfig::instance().settings();
-        freeze = random01(npc.rngState) < (0.003f * cfg.freezeChance);
+        if (npc.sensors.hasTarget && npc.sensors.touchFloor && npc.dashCooldown <= 0.0f
+            && npc.body.freeze.freezeAvailable && npc.body.freeze.freezeTimer <= 0.0f)
+        {
+            const auto& cfg = NpcDifficultyConfig::instance().settings();
+            freeze = random01(npc.rngState) < (0.003f * cfg.freezeChance);
+        }
+    }
+    else if (mirrorCfg.mirrorFreezeEnabled)
+    {
+        // Mirror phase: check if the historical event had a freeze
+        float cycleDuration = mirrorCfg.mirrorNormalDuration + mirrorCfg.mirrorReplayDuration;
+        float phaseTime = std::fmod(npc.mirrorCycleTimer, cycleDuration);
+        float mirrorPhaseTime = phaseTime - mirrorCfg.mirrorNormalDuration;
+        float targetTime = currentTime - mirrorCfg.mirrorHistorySeconds + mirrorPhaseTime;
+        const PlayerMovementEvent* evt = findPlayerEvent(targetTime);
+        if (evt)
+            freeze = evt->froze;
+    }
+
+    // Mirror phase: override wantDownDash from player history
+    if (inMirrorPhase)
+    {
+        float cycleDuration = mirrorCfg.mirrorNormalDuration + mirrorCfg.mirrorReplayDuration;
+        float phaseTime = std::fmod(npc.mirrorCycleTimer, cycleDuration);
+        float mirrorPhaseTime = phaseTime - mirrorCfg.mirrorNormalDuration;
+        float targetTime = currentTime - mirrorCfg.mirrorHistorySeconds + mirrorPhaseTime;
+        const PlayerMovementEvent* evt = findPlayerEvent(targetTime);
+        if (evt && mirrorCfg.mirrorDownDashEnabled)
+            wantDownDash = evt->downDashed;
+        else
+            wantDownDash = false;
     }
 
     InputState input = buildInputState(npc, moveDir, jump, dash, attack, wantDownDash, safeDt);
@@ -876,6 +995,19 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             npc.id, (int)npc.sensors.touchFloor,
             npc.body.vel.x, npc.body.vel.y, npc.body.vel.z,
             npc.lastFinalSpeed);
+
+            if (NpcDifficultyConfig::instance().settings().mirrorMovementEnabled)
+            {
+                std::string mirrorKey = "npc-mirror-" + std::to_string(npc.id);
+                Debug::logThrottled(Debug::Category::NpcMovement, mirrorKey.c_str(), DebugConfig::PRINT_INTERVAL,
+                    "[NPC MIRROR] id=%u phase=%s timer=%.2f history=%d move=(%.2f %.2f) jump=%d dash=%d freeze=%d\n",
+                    npc.id,
+                    npc.mirrorPhaseActive ? "MIRROR" : "NORMAL",
+                    npc.mirrorCycleTimer,
+                    playerHistoryCount,
+                    input.wishMoveXY.x, input.wishMoveXY.y,
+                    (int)input.jumpHeld, (int)input.dashPressed, (int)input.freezeHeld);
+            }
         }
     }
 

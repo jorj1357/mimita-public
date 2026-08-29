@@ -307,6 +307,18 @@ struct HitFxConfig {
         float alpha = 0.35f;
     } downDash;
 
+    struct BodyContactSparkConfig {
+        bool enabled = true;
+        glm::vec3 color{1.0f, 1.0f, 1.0f};
+        float alpha = 0.5f;
+        int lifetimeTicks = 1;
+        float baseLength = 0.4f;
+        float baseRadius = 0.1f;
+        float speedScale = 0.2f;
+        float minSpeed = 0.1f;
+        std::string localAxis = "+Z";
+    } bodyContactSpark;
+
     struct HitmarkerVisualConfig {
         bool enabled = true;
         float duration = 0.5f;

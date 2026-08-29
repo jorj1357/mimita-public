@@ -71,7 +71,7 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
 
     {
         MIMITA_PERF_SCOPE("NpcUpdate");
-        sim.npcSystem->update(*sim.world, *sim.player, TICK_DT);
+        sim.npcSystem->update(*sim.world, *sim.player, TICK_DT, frame);
     }
 
     // Resolve NPC vs Player collisions

@@ -1,5 +1,5 @@
 {
-  "aim_mode_enabled": true,
+  "aim_mode_enabled": false,
   "aim_cone_degrees": 0.01,
   "triangle_size": 14.0,
   "triangle_offset": 8.0,
@@ -10,6 +10,9 @@
   "show_name_in_aim_mode": false,
   "show_hp_text_in_aim_mode": false,
   "show_bar_in_aim_mode": false,
+  "max_distance": 2000.0,
+  "start_fade_distance": 1000.0,
+  "end_fade_distance": 2000.0,
   "green_r": 0.2,
   "green_g": 1.0,
   "green_b": 0.3,

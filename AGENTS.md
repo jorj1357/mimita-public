@@ -52,6 +52,29 @@ VSync adds 16-29ms of driver-level stall per frame (measured at the Swap scope).
 
 You don't. Use `maxFrames` in the terminal or settings to cap FPS. If the frame rate is unstable, fix the frame pacer or reduce render cost — do not add VSync.
 
+# Bug Report and Explanation Standards
+
+When reporting a bug or explaining a fix, ALWAYS show:
+
+1. **The exact code path that is wrong** — include file path, line numbers, and the actual code. Example:
+   - `src/effects/effect-part-render.cpp:307` renders `damage_impact_sphere` using `drawFilledSphereOriented` with `impact.localDimensions`
+   - The `death_ellipsoid` branch at `effect-part-render.cpp:297` uses `drawFilledSphere` with a `scaleVec` that stretches along world axes, not the hit direction
+
+2. **The exact code that should replace it** — include the full replacement snippet, not vague descriptions. Example:
+   ```cpp
+   // WRONG: stretches along world axes
+   glm::vec3 scaleVec = dir * (len / std::max(rad, 0.001f)) + glm::vec3(1.0f) - dir;
+   DebugVis::drawFilledSphere(camera, effect.position, rad, drawColor, scaleVec);
+
+   // CORRECT: oriented along hit direction
+   DebugVis::drawFilledSphereOriented(camera, center, axis, 1.0f, drawColor, dims, localAxis);
+   ```
+
+3. **Evidence from logs or code logic** — explain WHY the current code fails and WHY the fix works, citing specific function behavior, data flow, or log output. Example:
+   - "The `death_ellipsoid` path computes `scaleVec` from a direction vector but applies it as a non-uniform scale in world space. When the hit direction is `(0.7, 0.7, 0)`, the scaleVec becomes `(0.7, 0.7, 1.0)` which stretches the sphere diagonally in XY but not along the actual hit axis. `drawFilledSphereOriented` builds an orthonormal basis from the direction vector and remaps via `impactBasis()`, so the sphere's local Z pole always aligns with the hit direction regardless of world-space orientation."
+
+Vague statements like "this rendering looks wrong" or "try a different approach" are insufficient. Always trace the exact data flow from input to output.
+
 # Mandatory Overseer Check
 
 Before marking ANY task as complete, ALWAYS run `python overseer.py` from the workspace root.

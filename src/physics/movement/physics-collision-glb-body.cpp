@@ -16,6 +16,7 @@
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
 #include "config.h"
+#include "effects/effect-part.h"
 
 #include <chrono>
 #include <cstdio>
@@ -80,6 +81,12 @@ static int runBodyWeaponPass(
             c.penetration,
             c.triangleIndex,
             bodyWeaponContactSource(c.label));
+
+        if (c.label && std::strcmp(c.label, "weapon") != 0 &&
+            p.bodySparkTick != p.movementSimulationTick) {
+            p.bodySparkTick = p.movementSimulationTick;
+            EffectPartSystem::instance().spawnBodyContactSpark(p.pos, c.point, c.sweepDelta, 0.1f);
+        }
     }
 
     if (bwContacts.empty())

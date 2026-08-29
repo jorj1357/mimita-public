@@ -226,9 +226,11 @@ static void drawServerBrowser(GLFWwindow* win, OnlineMenuResult& r, const GuiLay
             {0.15f, 0.55f, 0.25f, 1.0f}, btnId.c_str());
         if (bs.clicked)
         {
-            printf("[SERVER BROWSER] join code=%s\n", e.code.c_str());
+            printf("[SERVER BROWSER] join code=%s private=%d\n", e.code.c_str(), (int)e.passwordProtected);
             r.roomCode = e.code;
             r.connectToServer = true;
+            r.passwordProtected = e.passwordProtected;
+            r.serverName = e.serverName;
         }
     }
 
@@ -441,7 +443,9 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
                 {
                     r.roomCode = code;
                     r.connectToServer = true;
-                    printf("[ONLINE MENU] found room code=%s\n", code.c_str());
+                    r.passwordProtected = lookup.passwordProtected;
+                    r.serverName = lookup.serverName;
+                    printf("[ONLINE MENU] found room code=%s private=%d\n", code.c_str(), (int)lookup.passwordProtected);
                 }
                 else if (!lookup.reachable)
                 {
@@ -485,7 +489,9 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
             {
                 r.roomCode = code;
                 r.connectToServer = true;
-                printf("[ONLINE MENU] enter found room code=%s\n", code.c_str());
+                r.passwordProtected = lookup.passwordProtected;
+                r.serverName = lookup.serverName;
+                printf("[ONLINE MENU] enter found room code=%s private=%d\n", code.c_str(), (int)lookup.passwordProtected);
             }
             else if (!lookup.reachable)
                 b.set("join.code", "Coordinator unreachable");

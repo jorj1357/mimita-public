@@ -134,6 +134,7 @@ bool initServerIceListener(ListenServerState& state)
     hostedRoomSession().coordinatorRoomType = "ice";
     hostedRoomSession().createdAtMs = nowMs();
     setServerCoordinatorState(hostResult.roomCode, hostResult.joinToken);
+    setServerPasswordState(state.passwordProtected, state.password);
 
     printf("[SERVER ICE] listener registered: code=%s session=%s\n",
            hostResult.roomCode.c_str(), state.iceSessionId.c_str());

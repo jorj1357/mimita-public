@@ -393,6 +393,7 @@ int runServer(const LaunchOptions& options)
     dedicatedIceState.gameMode = "sandbox";
     dedicatedIceState.maxPlayers = options.maxPlayers;
     dedicatedIceState.passwordProtected = options.passwordProtected;
+    dedicatedIceState.password = options.password;
     dedicatedIceState.hostPlayerName = options.hostPlayerName;
     // The host is identified by name so the person who launched the server can
     // run host commands (healthall / setspawn / npc_delete_all), no account.
@@ -584,6 +585,11 @@ int runServer(const LaunchOptions& options)
         while (accumulator >= (double)SERVER_DT && steps < MAX_STEPS)
         {
             handleClientTimeout(players, sock, tick, totalPacketsOut);
+            for (auto& kv : players)
+            {
+                kv.second.shotsThisTick = 0;
+                kv.second.attackPktsThisTick = 0;
+            }
             for (auto& kv : players)
             {
                 // A disconnected/stale player's body freezes in place (slot kept
@@ -873,6 +879,7 @@ bool startListenServer(ListenServerState& state, uint16_t port,
         state.gameMode = settings->gameMode;
         state.maxPlayers = settings->maxPlayers;
         state.passwordProtected = settings->passwordProtected;
+        state.password = settings->password;
         state.hostPlayerName = settings->hostPlayerName;
     }
     gServerHostPlayerName = settings ? settings->hostPlayerName : "";
@@ -1235,6 +1242,7 @@ int runServerWithSettings(const ServerLaunchSettings& settings)
     opts.hostPlayerName = settings.hostPlayerName;
     opts.maxPlayers = settings.maxPlayers;
     opts.passwordProtected = settings.passwordProtected;
+    opts.password = settings.password;
     opts.npcsEnabled = settings.startupNpcsEnabled;
     opts.npcCount = settings.startupNpcCount;
     opts.bind = "0.0.0.0:" + std::to_string(settings.port);

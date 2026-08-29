@@ -18,6 +18,7 @@
 #include "config/networking-config.h"
 #include "physics/movement/movement-conversion.h"
 #include "physics/movement/physics-collision.h"
+#include "physics/movement/physics-collision-shared.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
 #include "debug/debug-log.h"
@@ -335,6 +336,10 @@ static std::string gServerCoordinatorJoinToken;
 // ── Global server map ID ─────────────────────────────────────────────
 static std::string gServerMapId = "funworldv3";
 
+// ── Global server password state for private servers ─────────────────
+static bool gServerPasswordProtected = false;
+static std::string gServerPassword;
+
 void setServerCoordinatorState(const std::string& code, const std::string& joinToken)
 {
     gServerCoordinatorCode = code;
@@ -346,6 +351,12 @@ const std::string& getServerCoordinatorJoinToken() { return gServerCoordinatorJo
 
 void setServerMapId(const std::string& mapId) { gServerMapId = mapId; }
 const std::string& getServerMapId() { return gServerMapId; }
+
+void setServerPasswordState(bool protectedFlag, const std::string& password)
+{
+    gServerPasswordProtected = protectedFlag;
+    gServerPassword = password;
+}
 
 const char* transportKindName(TransportKind kind)
 {
@@ -482,20 +493,187 @@ bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
                          float maxDist, const HeadlessWorld& world,
                          glm::vec3& outHitPos, glm::vec3& outNormal)
 {
-    float closest = maxDist;
-    bool hit = false;
-    for (const CollisionTriangle& tri : world.triangles)
+    if (glm::dot(direction, direction) < 0.000001f)
     {
+        outHitPos = origin;
+        outNormal = glm::vec3(0.0f);
+        return false;
+    }
+
+    const float cs = world.collisionChunkSize;
+    if (world.collisionChunks.empty() || cs <= 0.001f || world.triangles.empty())
+    {
+        float closest = maxDist;
+        bool hit = false;
+        for (const CollisionTriangle& tri : world.triangles)
+        {
+            float d;
+            if (serverRayTriangle(origin, direction, tri.a, tri.b, tri.c, d) && d < closest)
+            {
+                closest = d;
+                outNormal = tri.normal;
+                hit = true;
+            }
+        }
+        if (hit) outHitPos = origin + direction * closest;
+        return hit;
+    }
+
+    AABB rayAABB{
+        glm::min(origin, origin + direction * maxDist),
+        glm::max(origin, origin + direction * maxDist)
+    };
+
+    glm::ivec3 cStart = collisionChunkCoord(origin, cs);
+    glm::ivec3 cEnd = collisionChunkCoord(origin + direction * maxDist, cs);
+    auto clampC = [](int v) -> int { return glm::clamp(v, -10000, 10000); };
+    cStart = glm::ivec3(clampC(cStart.x), clampC(cStart.y), clampC(cStart.z));
+    cEnd = glm::ivec3(clampC(cEnd.x), clampC(cEnd.y), clampC(cEnd.z));
+
+    glm::ivec3 step(
+        direction.x > 0 ? 1 : (direction.x < 0 ? -1 : 0),
+        direction.y > 0 ? 1 : (direction.y < 0 ? -1 : 0),
+        direction.z > 0 ? 1 : (direction.z < 0 ? -1 : 0)
+    );
+    glm::vec3 tDelta(
+        (direction.x != 0.0f) ? std::fabs(cs / direction.x) : 1e30f,
+        (direction.y != 0.0f) ? std::fabs(cs / direction.y) : 1e30f,
+        (direction.z != 0.0f) ? std::fabs(cs / direction.z) : 1e30f
+    );
+    glm::ivec3 cell = cStart;
+    auto cellBoundary = [&](int axis) -> float {
+        float boundary = (float)cell[axis] * cs;
+        if (step[axis] > 0) boundary += cs;
+        return (boundary - origin[axis]) / direction[axis];
+    };
+    glm::vec3 tMax(
+        (step.x != 0) ? cellBoundary(0) : 1e30f,
+        (step.y != 0) ? cellBoundary(1) : 1e30f,
+        (step.z != 0) ? cellBoundary(2) : 1e30f
+    );
+
+    thread_local std::vector<uint32_t> s_triGen;
+    thread_local uint32_t s_gen = 0;
+    s_gen++;
+    if (s_gen == 0) { s_triGen.assign(1, 0); s_gen = 1; }
+
+    float closest = maxDist;
+    glm::vec3 bestN(0.0f);
+    bool hit = false;
+
+    while (true)
+    {
+        auto it = world.collisionChunks.find(cell);
+        if (it != world.collisionChunks.end())
+        {
+            const glm::vec3 chunkMin((float)cell.x * cs, (float)cell.y * cs, (float)cell.z * cs);
+            AABB cellAABB{chunkMin, chunkMin + glm::vec3(cs)};
+            AABB overlap{glm::max(rayAABB.min, cellAABB.min), glm::min(rayAABB.max, cellAABB.max)};
+
+            auto subIt = world.collisionSubGrids.find(cell);
+            if (subIt != world.collisionSubGrids.end() && subIt->second.subSize > 0.001f)
+            {
+                const HeadlessSubGrid& sub = subIt->second;
+                const int subdiv = std::max(1, (int)std::floor(cs / sub.subSize + 0.5f));
+                if (overlap.min.x <= overlap.max.x && overlap.min.y <= overlap.max.y && overlap.min.z <= overlap.max.z)
+                {
+                    glm::ivec3 s0((int)std::floor((overlap.min.x - chunkMin.x) / sub.subSize),
+                                  (int)std::floor((overlap.min.y - chunkMin.y) / sub.subSize),
+                                  (int)std::floor((overlap.min.z - chunkMin.z) / sub.subSize));
+                    glm::ivec3 s1((int)std::floor((overlap.max.x - chunkMin.x) / sub.subSize),
+                                  (int)std::floor((overlap.max.y - chunkMin.y) / sub.subSize),
+                                  (int)std::floor((overlap.max.z - chunkMin.z) / sub.subSize));
+                    s0 = glm::clamp(s0, glm::ivec3(0), glm::ivec3(subdiv - 1));
+                    s1 = glm::clamp(s1, glm::ivec3(0), glm::ivec3(subdiv - 1));
+                    for (int sx = s0.x; sx <= s1.x; ++sx)
+                    for (int sy = s0.y; sy <= s1.y; ++sy)
+                    for (int sz = s0.z; sz <= s1.z; ++sz)
+                    {
+                        auto scIt = sub.cells.find(glm::ivec3(sx, sy, sz));
+                        if (scIt == sub.cells.end()) continue;
+                        for (int triIdx : scIt->second)
+                        {
+                            if (triIdx < 0 || triIdx >= (int)world.triangles.size()) continue;
+                            if (s_triGen.size() <= (size_t)triIdx)
+                                s_triGen.resize((size_t)triIdx + 1, 0);
+                            if (s_triGen[triIdx] == s_gen) continue;
+                            s_triGen[triIdx] = s_gen;
+                            float d;
+                            if (serverRayTriangle(origin, direction,
+                                world.triangles[triIdx].a, world.triangles[triIdx].b,
+                                world.triangles[triIdx].c, d) && d < closest)
+                            {
+                                closest = d;
+                                bestN = world.triangles[triIdx].normal;
+                                hit = true;
+                            }
+                        }
+                    }
+                }
+            }
+            else
+            {
+                for (int triIdx : it->second)
+                {
+                    if (triIdx < 0 || triIdx >= (int)world.triangles.size()) continue;
+                    if (s_triGen.size() <= (size_t)triIdx)
+                        s_triGen.resize((size_t)triIdx + 1, 0);
+                    if (s_triGen[triIdx] == s_gen) continue;
+                    s_triGen[triIdx] = s_gen;
+                    float d;
+                    if (serverRayTriangle(origin, direction,
+                        world.triangles[triIdx].a, world.triangles[triIdx].b,
+                        world.triangles[triIdx].c, d) && d < closest)
+                    {
+                        closest = d;
+                        bestN = world.triangles[triIdx].normal;
+                        hit = true;
+                    }
+                }
+            }
+        }
+
+        if (tMax.x < tMax.y) {
+            if (tMax.x < tMax.z) {
+                if (tMax.x > closest) break;
+                cell.x += step.x; tMax.x += tDelta.x;
+            } else {
+                if (tMax.z > closest) break;
+                cell.z += step.z; tMax.z += tDelta.z;
+            }
+        } else {
+            if (tMax.y < tMax.z) {
+                if (tMax.y > closest) break;
+                cell.y += step.y; tMax.y += tDelta.y;
+            } else {
+                if (tMax.z > closest) break;
+                cell.z += step.z; tMax.z += tDelta.z;
+            }
+        }
+        if (std::abs(cell.x) > 10000 || std::abs(cell.y) > 10000 || std::abs(cell.z) > 10000)
+            break;
+    }
+
+    for (int triIdx : world.collisionLargeTriangles)
+    {
+        if (triIdx < 0 || triIdx >= (int)world.triangles.size()) continue;
+        if (s_triGen.size() <= (size_t)triIdx)
+            s_triGen.resize((size_t)triIdx + 1, 0);
+        if (s_triGen[triIdx] == s_gen) continue;
+        s_triGen[triIdx] = s_gen;
         float d;
-        if (serverRayTriangle(origin, direction, tri.a, tri.b, tri.c, d) && d < closest)
+        if (serverRayTriangle(origin, direction,
+            world.triangles[triIdx].a, world.triangles[triIdx].b,
+            world.triangles[triIdx].c, d) && d >= 0.0f && d < closest)
         {
             closest = d;
-            outNormal = tri.normal;
+            bestN = world.triangles[triIdx].normal;
             hit = true;
         }
     }
-    if (hit)
-        outHitPos = origin + direction * closest;
+
+    if (hit) outHitPos = origin + direction * closest;
+    outNormal = bestN;
     return hit;
 }
 
@@ -507,23 +685,148 @@ bool serverSweptSphereWorld(const glm::vec3& origin, const glm::vec3& direction,
                             float maxDist, float radius, const HeadlessWorld& world,
                             float& outHitDist, glm::vec3& outNormal)
 {
+    const float cs = world.collisionChunkSize;
+    if (world.collisionChunks.empty() || cs <= 0.001f || world.triangles.empty())
+    {
+        float closest = maxDist;
+        glm::vec3 bestN(0.0f);
+        bool hit = false;
+        for (const CollisionTriangle& tri : world.triangles)
+        {
+            float d = 0.0f;
+            glm::vec3 n(0.0f);
+            glm::vec3 p(0.0f);
+            if (sweptSphereTriangle(origin, direction, radius, tri, maxDist, d, n, p) && d < closest)
+            {
+                closest = d;
+                bestN = n;
+                hit = true;
+            }
+        }
+        if (hit) outNormal = bestN;
+        outHitDist = closest;
+        return hit;
+    }
+
+    AABB rayAABB{
+        glm::min(origin, origin + direction * maxDist),
+        glm::max(origin, origin + direction * maxDist)
+    };
+    rayAABB.min -= glm::vec3(radius);
+    rayAABB.max += glm::vec3(radius);
+
+    glm::ivec3 cStart = collisionChunkCoord(rayAABB.min, cs);
+    glm::ivec3 cEnd = collisionChunkCoord(rayAABB.max, cs);
+    auto clampC = [](int v) -> int { return glm::clamp(v, -10000, 10000); };
+    cStart = glm::ivec3(clampC(cStart.x), clampC(cStart.y), clampC(cStart.z));
+    cEnd = glm::ivec3(clampC(cEnd.x), clampC(cEnd.y), clampC(cEnd.z));
+
+    thread_local std::vector<uint32_t> s_triGen;
+    thread_local uint32_t s_gen = 0;
+    s_gen++;
+    if (s_gen == 0) { s_triGen.assign(1, 0); s_gen = 1; }
+
     float closest = maxDist;
     glm::vec3 bestN(0.0f);
     bool hit = false;
-    for (const CollisionTriangle& tri : world.triangles)
+
+    for (int x = cStart.x; x <= cEnd.x; ++x)
+    for (int y = cStart.y; y <= cEnd.y; ++y)
+    for (int z = cStart.z; z <= cEnd.z; ++z)
     {
+        glm::ivec3 cell(x, y, z);
+        auto it = world.collisionChunks.find(cell);
+        if (it == world.collisionChunks.end()) continue;
+
+        const glm::vec3 chunkMin((float)x * cs, (float)y * cs, (float)z * cs);
+        AABB cellAABB{chunkMin, chunkMin + glm::vec3(cs)};
+        AABB overlap{glm::max(rayAABB.min, cellAABB.min), glm::min(rayAABB.max, cellAABB.max)};
+
+        auto subIt = world.collisionSubGrids.find(cell);
+        if (subIt != world.collisionSubGrids.end() && subIt->second.subSize > 0.001f)
+        {
+            const HeadlessSubGrid& sub = subIt->second;
+            const int subdiv = std::max(1, (int)std::floor(cs / sub.subSize + 0.5f));
+            if (overlap.min.x <= overlap.max.x && overlap.min.y <= overlap.max.y && overlap.min.z <= overlap.max.z)
+            {
+                glm::ivec3 s0((int)std::floor((overlap.min.x - chunkMin.x) / sub.subSize),
+                              (int)std::floor((overlap.min.y - chunkMin.y) / sub.subSize),
+                              (int)std::floor((overlap.min.z - chunkMin.z) / sub.subSize));
+                glm::ivec3 s1((int)std::floor((overlap.max.x - chunkMin.x) / sub.subSize),
+                              (int)std::floor((overlap.max.y - chunkMin.y) / sub.subSize),
+                              (int)std::floor((overlap.max.z - chunkMin.z) / sub.subSize));
+                s0 = glm::clamp(s0, glm::ivec3(0), glm::ivec3(subdiv - 1));
+                s1 = glm::clamp(s1, glm::ivec3(0), glm::ivec3(subdiv - 1));
+                for (int sx = s0.x; sx <= s1.x; ++sx)
+                for (int sy = s0.y; sy <= s1.y; ++sy)
+                for (int sz = s0.z; sz <= s1.z; ++sz)
+                {
+                    auto scIt = sub.cells.find(glm::ivec3(sx, sy, sz));
+                    if (scIt == sub.cells.end()) continue;
+                    for (int triIdx : scIt->second)
+                    {
+                        if (triIdx < 0 || triIdx >= (int)world.triangles.size()) continue;
+                        if (s_triGen.size() <= (size_t)triIdx)
+                            s_triGen.resize((size_t)triIdx + 1, 0);
+                        if (s_triGen[triIdx] == s_gen) continue;
+                        s_triGen[triIdx] = s_gen;
+                        float d = 0.0f;
+                        glm::vec3 n(0.0f);
+                        glm::vec3 p(0.0f);
+                        if (sweptSphereTriangle(origin, direction, radius,
+                            world.triangles[triIdx], maxDist, d, n, p) && d < closest)
+                        {
+                            closest = d;
+                            bestN = n;
+                            hit = true;
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            for (int triIdx : it->second)
+            {
+                if (triIdx < 0 || triIdx >= (int)world.triangles.size()) continue;
+                if (s_triGen.size() <= (size_t)triIdx)
+                    s_triGen.resize((size_t)triIdx + 1, 0);
+                if (s_triGen[triIdx] == s_gen) continue;
+                s_triGen[triIdx] = s_gen;
+                float d = 0.0f;
+                glm::vec3 n(0.0f);
+                glm::vec3 p(0.0f);
+                if (sweptSphereTriangle(origin, direction, radius,
+                    world.triangles[triIdx], maxDist, d, n, p) && d < closest)
+                {
+                    closest = d;
+                    bestN = n;
+                    hit = true;
+                }
+            }
+        }
+    }
+
+    for (int triIdx : world.collisionLargeTriangles)
+    {
+        if (triIdx < 0 || triIdx >= (int)world.triangles.size()) continue;
+        if (s_triGen.size() <= (size_t)triIdx)
+            s_triGen.resize((size_t)triIdx + 1, 0);
+        if (s_triGen[triIdx] == s_gen) continue;
+        s_triGen[triIdx] = s_gen;
         float d = 0.0f;
         glm::vec3 n(0.0f);
         glm::vec3 p(0.0f);
-        if (sweptSphereTriangle(origin, direction, radius, tri, maxDist, d, n, p) && d < closest)
+        if (sweptSphereTriangle(origin, direction, radius,
+            world.triangles[triIdx], maxDist, d, n, p) && d < closest)
         {
             closest = d;
             bestN = n;
             hit = true;
         }
     }
-    if (hit)
-        outNormal = bestN;
+
+    if (hit) outNormal = bestN;
     outHitDist = closest;
     return hit;
 }
@@ -1113,6 +1416,29 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         }
         printf("%s [SERVER JOIN REJECT] reason=no-coordinator-code\n", serverTimestamp());
         return;
+    }
+
+    // ── Password check for private servers ──
+    if (gServerPasswordProtected && !gServerPassword.empty())
+    {
+        const std::string supplied = boundedPacketString(join->password, sizeof(join->password));
+        if (supplied != gServerPassword)
+        {
+            JoinRejectPacket reject{};
+            reject.header.type = PACKET_JOIN_REJECT;
+            reject.header.tick = tick;
+            reject.reason = 5; // wrong password
+            if (sendToSourceOrPlayer(sock, from, nullptr, claimedTransport, &reject, sizeof(reject)))
+                ++totalPacketsOut;
+            if (claimedTransport && claimedTransport->get())
+            {
+                (*claimedTransport)->close();
+                claimedTransport->reset();
+            }
+            printf("%s [SERVER JOIN REJECT] reason=wrong-password name=%s\n",
+                   serverTimestamp(), join->name);
+            return;
+        }
     }
 
     const std::string vipTicket = boundedPacketString(

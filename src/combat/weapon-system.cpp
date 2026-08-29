@@ -51,6 +51,20 @@ bool gWeaponCollisionVisualsProbes = false;
 #include "npc/npc.h"
 #include "ui/hitmarker.h"
 #include "world/world.h"
+#include "config/networking-config.h"
+#include "network/multiplayer-context.h"
+
+extern MimitaNet::MultiplayerContext* gpMpContext;
+
+namespace {
+
+bool serverAuthHits()
+{
+    if (!gpMpContext || !gpMpContext->active) return false;
+    return NetworkingConfig::instance().data().serverAuthoritativeHits.enabled;
+}
+
+} // anonymous namespace
 
 static float weaponParamOr(const WeaponDefinition& def, const char* key, float fallback)
 {
@@ -918,7 +932,7 @@ std::vector<RevolverShotResult> WeaponSystem::collectRemoteGodballHits(
         hits.push_back(hit);
         mRemoteGodballCooldowns[targetId] = tickInterval;
 
-        hitmarker(damage);
+        if (!serverAuthHits()) hitmarker(damage);
         {
             HitEvent ev;
             ev.position = hit.end;
@@ -929,7 +943,7 @@ std::vector<RevolverShotResult> WeaponSystem::collectRemoteGodballHits(
             ev.attacker = player.username;
             ev.victim = target.username;
             ev.weaponSource = "godball_remote";
-            HitEffects::onHit(ev);
+            if (!serverAuthHits()) HitEffects::onHit(ev);
         }
         WeaponAudio::playGodballImpact(
             hit.end, std::clamp(hit.damage / 100.0f, 0.0f, 1.0f));

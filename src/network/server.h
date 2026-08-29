@@ -347,6 +347,11 @@ struct ServerPlayer
     QuickHitState quickHitState;
     float meleeCooldownTimer = 0.0f;
     std::deque<PositionHistoryEntry> posHistory;
+    // ── Per-tick rate limits ───────────────────────────────────────
+    uint32_t shotsThisTick = 0;
+    uint32_t attackPktsThisTick = 0;
+    static constexpr uint32_t MAX_SHOTS_PER_TICK = 8;
+    static constexpr uint32_t MAX_ATTACK_PKTS_PER_TICK = 16;
     // ── Migration: auth + reconnect ───────────────────────────────────
     std::string joinToken;
     std::string reconnectToken;
@@ -956,6 +961,9 @@ void setServerCoordinatorState(const std::string& code, const std::string& joinT
 const std::string& getServerCoordinatorCode();
 const std::string& getServerCoordinatorJoinToken();
 
+// Password state for private servers
+void setServerPasswordState(bool protectedFlag, const std::string& password);
+
 // Server map identity
 void setServerMapId(const std::string& mapId);
 const std::string& getServerMapId();
@@ -1099,6 +1107,7 @@ struct ListenServerState
     std::string gameMode = "sandbox";
     uint32_t maxPlayers = 999;
     bool passwordProtected = false;
+    std::string password;
     // ── Background thread for 60 Hz independent server timing ──────
     std::atomic<bool> serverRunning{false};
     std::thread serverThread;

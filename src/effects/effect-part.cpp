@@ -629,6 +629,37 @@ EffectPart* EffectPartSystem::spawnDownDash(glm::vec3 position) {
     return spawn(e);
 }
 
+EffectPart* EffectPartSystem::spawnBodyContactSpark(glm::vec3 playerPos, glm::vec3 contactPoint, glm::vec3 sweepDelta, float partRadius) {
+    const auto& cfg = HitEffects::config().bodyContactSpark;
+    if (!cfg.enabled) return nullptr;
+
+    float speed = glm::length(sweepDelta);
+    if (speed < cfg.minSpeed) return nullptr;
+
+    glm::vec3 toContact = contactPoint - playerPos;
+    float dist = glm::length(toContact);
+    if (dist < 0.001f) return nullptr;
+    glm::vec3 dir = toContact / dist;
+
+    float len = dist + speed * cfg.speedScale;
+    float rad = cfg.baseRadius;
+    float lifetimeSec = cfg.lifetimeTicks * (1.0f / 60.0f);
+
+    EffectPart e;
+    e.position = playerPos;
+    e.endPosition = contactPoint;
+    e.replayType = "body_spark";
+    e.color = cfg.color;
+    e.alpha = cfg.alpha;
+    e.maxLifetime = lifetimeSec;
+    e.scale = rad;
+    e.endScale = rad;
+    e.sticky = true;
+    e.billboardText = false;
+    e.flatDecal = false;
+    return spawn(e);
+}
+
 EffectPart* EffectPartSystem::spawnImpact(glm::vec3 position, glm::vec3 color, const char* label) {
     EffectPart e;
     e.position = position;

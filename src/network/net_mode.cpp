@@ -47,6 +47,8 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
             options.maxPlayers = (uint32_t)std::max(1, std::atoi(argv[++i]));
         else if (std::strcmp(argv[i], "--password-protected") == 0 && i + 1 < argc)
             options.passwordProtected = std::strcmp(argv[++i], "1") == 0;
+        else if (std::strcmp(argv[i], "--password") == 0 && i + 1 < argc)
+            options.password = argv[++i];
         else if (std::strcmp(argv[i], "--npcs") == 0 && i + 1 < argc)
             options.npcCount = (uint32_t)std::max(0, std::atoi(argv[++i]));
         else if (std::strcmp(argv[i], "--no-npcs") == 0)

@@ -20,6 +20,7 @@
 #include "menus/server-info-menu.h"
 #include "menus/sign-in-menu.h"
 #include "menus/login-menu.h"
+#include "password-popup.h"
 #include "auth/auth-system.h"
 #include "auth/auth-controller.h"
 #include "auth/auth-popup.h"
@@ -246,6 +247,7 @@ static bool launchServerProcess(const MimitaNet::ServerLaunchSettings& settings)
         + " --host-player \"" + settings.hostPlayerName + "\""
         + " --max-players " + std::to_string(settings.maxPlayers)
         + " --password-protected " + std::string(settings.passwordProtected ? "1" : "0")
+        + " --password \"" + settings.password + "\""
         + " --room-file \"" + roomFilePath + "\""
         + (settings.startupNpcsEnabled
             ? " --npcs " + std::to_string(settings.startupNpcCount)
@@ -982,6 +984,10 @@ void guiMain(GLFWwindow* win, GameState& state)
 
                         onlineMenuSetServerCode("Enter a room code");
                     }
+                    else if (r.passwordProtected)
+                    {
+                        PasswordPopup::open(r.roomCode, r.serverName);
+                    }
                     else
                     {
                         gPendingConnect = {};
@@ -1204,8 +1210,25 @@ void guiMain(GLFWwindow* win, GameState& state)
         }
     }
 
+    // Handle password popup result: when user submits password, start the connect
+    if (!PasswordPopup::isOpen() && !PasswordPopup::getPassword().empty())
+    {
+        gPendingConnect = {};
+        gPendingConnect.shouldConnect = true;
+        gPendingConnect.roomCode = PasswordPopup::getRoomCode();
+        gPendingConnect.password = PasswordPopup::getPassword();
+        PasswordPopup::clearResult();
+        onlineMenuSetActive(false);
+        state = GAME_PLAYING;
+        printf("[PASSWORD POPUP] connect room=%s\n", gPendingConnect.roomCode.c_str());
+    }
+
     // Draw code login dialog if active (from Enter Sign-In Code button)
     drawAuthCodeDialog(win);
+
+    // Draw password popup on top of everything
+    if (PasswordPopup::isOpen())
+        PasswordPopup::render(win);
 
     MusicManager::instance().drawAllOverlay();
     NotificationSystem::instance().render(false);

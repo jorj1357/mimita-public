@@ -12,6 +12,8 @@ struct OnlineMenuResult
     bool stopServer = false;
     bool connectToServer = false;
     std::string roomCode;
+    bool passwordProtected = false;
+    std::string serverName;
     bool goBack = false;
 };
 

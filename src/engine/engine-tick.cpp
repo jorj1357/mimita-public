@@ -44,6 +44,7 @@
 #include "gui/gui-main.h"
 #include "terminal/terminal-state.h"
 #include "gui/menus/pause-menu.h"
+#include "gui/password-popup.h"
 #include "effects/effect-part.h"
 
 extern DuelManager gDuelManager;
@@ -134,8 +135,9 @@ void engineTick(Engine& engine)
     bool escapeDown = glfwGetKey(engine.window(), GLFW_KEY_ESCAPE) == GLFW_PRESS;
     if (escapeDown && !escapePrev)
     {
-        // If keyframe prompt is active, let the camera handler cancel it
-        if (PauseMenu::isOpen()) {
+        if (PasswordPopup::isOpen()) {
+            PasswordPopup::handleKey(engine.window(), GLFW_KEY_ESCAPE, GLFW_PRESS);
+        } else if (PauseMenu::isOpen()) {
             PauseMenu::handleKey(engine.window(), GLFW_KEY_ESCAPE, GLFW_PRESS);
         } else if (gReplayEditor.keyframePromptStage > 0) {
             // handled in engine-tick-camera.cpp

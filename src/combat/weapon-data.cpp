@@ -560,7 +560,7 @@ WeaponDefinition createRocketLauncherDefinition() {
     def.customParams["projectileOutlineColorB"] = 0.2f;
     def.customParams["projectileOutlineAlpha"] = 0.4f;
     def.customParams["projectileOutlineScale"] = 1.15f;
-    def.customParams["projectileGlowEnabled"] = 1.0f;
+    def.customParams["projectileGlowEnabled"] = 0.0f;
     def.customParams["projectileGlowColorR"] = 1.0f;
     def.customParams["projectileGlowColorG"] = 0.85f;
     def.customParams["projectileGlowColorB"] = 0.5f;

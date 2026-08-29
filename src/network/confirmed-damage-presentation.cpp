@@ -103,7 +103,7 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
     ++ctx.confirmedHits;
 
     const NetworkingConfigData& netCfg = NetworkingConfig::instance().data();
-    const auto& feedback = netCfg.hitFeedback;
+    const bool authMode = netCfg.serverAuthoritativeHits.enabled;
 
     HitEvent hit;
     hit.position = {event.hitX, event.hitY, event.hitZ};
@@ -117,25 +117,27 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
     hit.victim = playerNameFor(ctx, event.targetPlayerId);
     hit.weaponSource = weaponId;
 
+    // In server-authoritative mode, always show confirmed feedback.
+    // In prediction-only mode, only show if the individual flags are set.
     if (presentation.hitmarker)
     {
         if (sink && sink->showHitmarker)
             sink->showHitmarker(event.damage, sink->user);
-        else if (feedback.showConfirmedHitmarker)
+        else if (authMode)
             hitmarkerVisualOnly(event.damage);
     }
     if (presentation.hitSound)
     {
         if (sink && sink->playHitSound)
             sink->playHitSound(event.damage, sink->user);
-        else if (feedback.showConfirmedHitSound)
+        else if (authMode)
             playHitmarkerSound(event.damage);
     }
     if (presentation.damageNumber)
     {
         if (sink && sink->showDamageNumber)
             sink->showDamageNumber(hit, sink->user);
-        else if (feedback.showConfirmedDamageNumber)
+        else if (authMode)
             HitEffects::spawnHitEffects(hit.position, hit.direction, hit.normal,
                                         hit.damage, hit.attacker, hit.victim, true);
     }

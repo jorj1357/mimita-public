@@ -168,6 +168,13 @@ void registerMovementCommands()
                 cfg.maximumFallSpeed, cfg.maximumAirJumps);
             Terminal::instance().addLog(buf);
             std::snprintf(buf, sizeof(buf),
+                "[MOVEMENT] speed_limit=%s limit=%.1f mode=%s",
+                cfg.speedLimitEnabled ? "ON" : "OFF",
+                cfg.speedLimit,
+                cfg.speedLimitMode == MovementSpeedLimitMode::Fixed
+                    ? "fixed" : "clamp");
+            Terminal::instance().addLog(buf);
+            std::snprintf(buf, sizeof(buf),
                 "[MOVEMENT] ground_friction=%.1f air_friction=%.1f "
                 "ground_dash=%.1f air_dash=%.1f down_dash=%.1f",
                 cfg.groundFrictionAmount, cfg.airFrictionAmount,

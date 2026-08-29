@@ -23,6 +23,20 @@
 #include "effects/hit-effects.h"
 #include "entities/player.h"
 #include "map/map_loader.h"
+#include "config/networking-config.h"
+#include "network/multiplayer-context.h"
+
+extern MimitaNet::MultiplayerContext* gpMpContext;
+
+namespace {
+
+bool serverAuthHits()
+{
+    if (!gpMpContext || !gpMpContext->active) return false;
+    return NetworkingConfig::instance().data().serverAuthoritativeHits.enabled;
+}
+
+} // anonymous namespace
 #include "npc/npc.h"
 #include "physics/config.h"
 #include "renderer/renderer.h"
@@ -315,7 +329,7 @@ RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, N
         victim->body.externalImpulse += shotDirection * knockback + glm::vec3(0,0,knockback * 0.12f);
         victim->hitReactionTimer = 0.3f;
         result.hitEntity = true;
-        hitmarker(rounded);
+        if (!serverAuthHits()) hitmarker(rounded);
         result.bodyPart = hitPart;
         result.damage = (float)rounded;
         result.knockbackImpulse = shotDirection * knockback + glm::vec3(0, 0, knockback * 0.12f);
@@ -329,7 +343,7 @@ RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, N
             ev.attacker = shooter.username;
             ev.victim = "npc_" + std::to_string(victim->id);
             ev.weaponSource = "revolver";
-            HitEffects::onHit(ev);
+            if (!serverAuthHits()) HitEffects::onHit(ev);
         }
         {
             float dist = glm::length(result.end - audioListenerPosition());
@@ -337,7 +351,7 @@ RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, N
             float severity = std::clamp(angleFactor * ((float)rounded / 100.0f) * headMul, 0.0f, 1.0f);
             float vol, pit;
             computeImpactAudio(1.2f, dist, severity, vol, pit);
-            playWorldSound("player_hurt", result.end, vol, pit, 60.0f);
+            if (!serverAuthHits()) playWorldSound("player_hurt", result.end, vol, pit, 60.0f);
             Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=player_hurt dist=%.1f damage=%d severity=%.2f pitch=%.2f volume=%.2f\n",
                        dist, rounded, severity, pit, vol);
         }

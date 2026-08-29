@@ -1102,6 +1102,21 @@ float sourceMaxSpeedValue(const MovementConfig& config, float sizeScale)
     return base * movementSizeScaleFactor(sizeScale, config.movementSpeedSizeExponent);
 }
 
+// Global speed limit: clamp horizontal velocity to the configured limit.
+// Called at the end of each movement step regardless of movement mode.
+void applySpeedLimitClamp(MovementState& state, const MovementConfig& config)
+{
+    if (!config.speedLimitEnabled || config.speedLimit <= 0.0f)
+        return;
+
+    glm::vec2 vel(state.baseVelocity.x, state.baseVelocity.y);
+    const float speed = glm::length(vel);
+    if (speed > config.speedLimit && speed > 0.0f)
+        vel *= config.speedLimit / speed;
+    state.baseVelocity.x = vel.x;
+    state.baseVelocity.y = vel.y;
+}
+
 // Source-style external impulse: no exponential decay. The impulse carries
 // through any input and is only bled by ground friction (stopspeed-based),
 // plus a carry window where friction does not touch a fresh knockback.
@@ -1161,7 +1176,11 @@ void applySourceGround(MovementState& state,
                        float dt)
 {
     glm::vec2 vel(state.baseVelocity.x, state.baseVelocity.y);
-    const float maxSpeed = sourceMaxSpeedValue(config, state.sizeScale);
+    float maxSpeed = sourceMaxSpeedValue(config, state.sizeScale);
+    if (config.speedLimitEnabled &&
+        config.speedLimitMode == MovementSpeedLimitMode::Fixed &&
+        config.speedLimit > 0.0f)
+        maxSpeed = std::min(maxSpeed, config.speedLimit);
     const bool dashGrace = state.dash.dashGraceTimerSeconds > 0.0f;
 
     float frictionAmount = config.sourceFriction * config.surfaceFriction;
@@ -1211,13 +1230,13 @@ void applySourceGround(MovementState& state,
         state.baseVelocity.z = 0.0f;
 }
 
-// Airborne Source step: Source PM_AirAccelerate projection. WASD only
-// defines wishdir (camera-relative, rebuilt by the input layer as the camera
-// turns). There is NO steering toward the wish, NO air_control, NO camera-turn
-// gating, and NO A/D matching rules. The mouse works only through wishdir:
-// turning the camera rotates the wish, and the projection does the rest.
-// Any leftward drift while holding A is the emergent Source "circle strafe",
-// not a hard directional steer.
+// Airborne Source step: Source PM_AirAccelerate projection with optional
+// directional blending. WASD defines wishdir (camera-relative, rebuilt by the
+// input layer as the camera turns). The air_input_blending parameter controls
+// how mouse movement transitions between directional accel (WASD pushes toward
+// maxSpeed) and Source PM_AirAccelerate (wishspd projection cap). At 0 the
+// transition is linear with mouse yaw speed; at 1 any mouse movement triggers
+// full Source strafing.
 //
 //   currentSpeed = dot(vel, wishDir)
 //   addSpeed     = wishspd - currentSpeed
@@ -1251,7 +1270,11 @@ void applySourceAir(MovementState& state,
     if (!hasInput)
         return;
 
-    const float maxSpeed = sourceMaxSpeedValue(config, state.sizeScale);
+    const float maxSpeed = config.speedLimitEnabled &&
+        config.speedLimitMode == MovementSpeedLimitMode::Fixed &&
+        config.speedLimit > 0.0f
+        ? std::min(sourceMaxSpeedValue(config, state.sizeScale), config.speedLimit)
+        : sourceMaxSpeedValue(config, state.sizeScale);
     const glm::vec2 wishVelocity = wish * maxSpeed;
     const float wishSpeed = glm::length(wishVelocity);
     const glm::vec2 wishDir = movementNormalizeDirectionOrZero(wishVelocity);
@@ -1269,16 +1292,46 @@ void applySourceAir(MovementState& state,
     state.airDebug.cappedWishSpeed = wishspd;
 
     state.airDebug.currentSpeed = glm::dot(vel, wishDir);
-    state.airDebug.addSpeed = wishspd - state.airDebug.currentSpeed;
     if (state.airDebug.horizontalSpeed <= 0.1f)
         return; // MiMITA Source contract: air input cannot launch from rest.
 
-    if (state.airDebug.addSpeed > 0.0f) {
+    float blendedAddSpeed;
+    if (config.airInputBlendingEnabled) {
+        // Air input blending: directional accel (push toward maxSpeed) vs Source
+        // PM_AirAccelerate (wishspd projection cap). The mouse yaw delta drives
+        // a 0..1 mouseFactor; the blend parameter curves the transition.
+        const float yawDelta = std::abs(
+            shortestSignedAngleDegrees(state.previousYaw, command.lookYaw));
+        const float threshold = std::max(0.1f, config.airInputMouseThresholdDegrees);
+        const float mouseFactor = std::clamp(yawDelta / threshold, 0.0f, 1.0f);
+        const bool mouseMoved = yawDelta > 0.01f;
+        const float sourceWeight = glm::mix(
+            mouseFactor,
+            mouseMoved ? 1.0f : 0.0f,
+            config.airInputBlending);
+        state.airDebug.mouseFactor = mouseFactor;
+        state.airDebug.sourceWeight = sourceWeight;
+
+        const float directionalAddSpeed = maxSpeed - state.airDebug.currentSpeed;
+        const float sourceAddSpeed = wishspd - state.airDebug.currentSpeed;
+        blendedAddSpeed = glm::mix(directionalAddSpeed, sourceAddSpeed, sourceWeight);
+    } else {
+        // Pure Source: wishspd projection cap.
+        blendedAddSpeed = wishspd - state.airDebug.currentSpeed;
+    }
+    state.airDebug.addSpeed = blendedAddSpeed;
+
+    if (blendedAddSpeed > 0.0f) {
         const float accelerationWishSpeed =
             config.sourceAirAccelerateBugCompatible ? wishSpeed : wishspd;
-        float accelSpeed = config.airAcceleration * accelerationWishSpeed * dt *
-                           config.surfaceFriction * config.airSpeedGainMultiplier;
-        accelSpeed = std::min(accelSpeed, state.airDebug.addSpeed);
+        const float baseAccelSpeed = config.airAcceleration * accelerationWishSpeed *
+                                     dt * config.surfaceFriction *
+                                     config.airSpeedGainMultiplier;
+
+        // Directional uses uncapped wishSpeed in the accel term; Source uses
+        // the bug-compatible uncapped value too, so the accel term is the same
+        // for both. Only the addSpeed cap differs (maxSpeed vs wishspd).
+        const float accelSpeed = std::min(baseAccelSpeed, blendedAddSpeed);
         if (accelSpeed > 0.0f) {
             state.airDebug.accelSpeed = accelSpeed;
             state.airDebug.applied = true;
@@ -1318,6 +1371,8 @@ void applySourceMovement(MovementState& state,
     } else if (config.airControlEnabled) {
         applySourceAir(state, command, config, dt);
     }
+
+    applySpeedLimitClamp(state, config);
 }
 
 void applyBasicWalk(MovementState& state,
@@ -1349,6 +1404,7 @@ void applyBasicWalk(MovementState& state,
                                    config);
         state.baseVelocity.x = next.x;
         state.baseVelocity.y = next.y;
+        applySpeedLimitClamp(state, config);
         return;
     }
 
@@ -1368,6 +1424,7 @@ void applyBasicWalk(MovementState& state,
     const AirStrafeEvaluation ev = evaluateAirStrafe(state, command, config);
     applyAirSteering(state, wishDir, config, dt, ev);
     applyAirSpeedGain(state, wishDir, config, dt, ev, glm::length(wish));
+    applySpeedLimitClamp(state, config);
 }
 
 void applyBasicJump(MovementState& state,

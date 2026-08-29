@@ -29,6 +29,7 @@
 #include "entities/player.h"
 #include "notifications/notifications.h"
 #include "npc/npc-avatar.h"
+#include "gui/password-popup.h"
 
 #include <algorithm>
 #include <chrono>
@@ -545,6 +546,8 @@ void sendJoinRequest(MultiplayerContext& ctx, const std::string& playerName)
     std::strncpy(join.name, playerName.c_str(), sizeof(join.name) - 1);
     std::memset(join.avatarName, 0, sizeof(join.avatarName));
     std::strncpy(join.avatarName, GetPlayerSettings().avatarName.c_str(), sizeof(join.avatarName) - 1);
+    std::memset(join.password, 0, sizeof(join.password));
+    std::strncpy(join.password, ctx.serverPassword.c_str(), sizeof(join.password) - 1);
     mpSendPacket(ctx, &join, sizeof(join));
     printf("[NET CONNECT] join request sent token=%s\n", ctx.joinToken.c_str());
 }
@@ -724,11 +727,22 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         teardownPreviousSession(ctx, DisconnectPolicy::ConnectionFailure);
     }
 
+    // ── Password popup result: re-trigger join with new password ──────
+    if (ctx.wrongPassword && !PasswordPopup::isOpen() && !PasswordPopup::getPassword().empty())
+    {
+        ctx.serverPassword = PasswordPopup::getPassword();
+        ctx.wrongPassword = false;
+        ctx.connectionState = ConnectionState::Connecting;
+        ctx.lastHelloMs = 0;
+        PasswordPopup::clearResult();
+        printf("[NET CONNECT] password submitted, re-joining\n");
+    }
+
     // ── Connection state machine ───────────────────────────────────────
     if (ctx.connectionState == ConnectionState::Connecting ||
         ctx.connectionState == ConnectionState::WaitJoinAccept)
     {
-        if (currentMs - ctx.lastHelloMs > 500)
+        if (!ctx.wrongPassword && currentMs - ctx.lastHelloMs > 500)
         {
             if (!ctx.joinToken.empty())
             {
@@ -823,6 +837,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.connectFailed = false;
             ctx.connectionState = ConnectionState::Connected;
             ctx.connectionStatus = "Connected";
+            ctx.wrongPassword = false;
             ctx.approvedLocalName = accept->approvedName;
             ctx.reconnectToken = accept->reconnectToken;
             ctx.reliableEventSessionId = accept->reliableEventSessionId;
@@ -856,9 +871,21 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         else if (header->type == PACKET_JOIN_REJECT && bytes >= (int)sizeof(JoinRejectPacket))
         {
             const JoinRejectPacket* reject = reinterpret_cast<const JoinRejectPacket*>(buffer);
-            ctx.connectionStatus = "Join rejected";
-            printf("[NET CONNECT] join rejected reason=%u\n", reject->reason);
-            teardownPreviousSession(ctx, DisconnectPolicy::Rejected);
+            if (reject->reason == 5)
+            {
+                ctx.wrongPassword = true;
+                ctx.connectionStatus = "Wrong password";
+                ctx.connectionState = ConnectionState::Disconnected;
+                PasswordPopup::open(ctx.roomCode, "");
+                PasswordPopup::setWrongPassword(true);
+                printf("[NET CONNECT] join rejected reason=5 wrong-password\n");
+            }
+            else
+            {
+                ctx.connectionStatus = "Join rejected";
+                printf("[NET CONNECT] join rejected reason=%u\n", reject->reason);
+                teardownPreviousSession(ctx, DisconnectPolicy::Rejected);
+            }
         }
         else if (header->type == PACKET_RECONNECT_ACCEPT && bytes >= (int)sizeof(ReconnectAcceptPacket))
         {

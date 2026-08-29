@@ -520,15 +520,13 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
         c.enabled = readBool(r, "enabled", c.enabled);
     }
 
-    // ── confirmed_hit_feedback ───────────────────────────────────────
-    if (root.contains("confirmed_hit_feedback") &&
-        root["confirmed_hit_feedback"].is_object())
+    // ── server_authoritative_hits ─────────────────────────────────
+    if (root.contains("server_authoritative_hits") &&
+        root["server_authoritative_hits"].is_object())
     {
-        const json& r = root["confirmed_hit_feedback"];
-        NetworkHitFeedbackConfig& c = next.hitFeedback;
-        c.showConfirmedHitmarker = readBool(r, "show_hitmarker", c.showConfirmedHitmarker);
-        c.showConfirmedDamageNumber = readBool(r, "show_damage_number", c.showConfirmedDamageNumber);
-        c.showConfirmedHitSound = readBool(r, "show_hit_sound", c.showConfirmedHitSound);
+        const json& r = root["server_authoritative_hits"];
+        NetworkServerAuthoritativeHitsConfig& c = next.serverAuthoritativeHits;
+        c.enabled = readBool(r, "enabled", c.enabled);
     }
 
     // ── disagreement_visuals ─────────────────────────────────────────
@@ -680,6 +678,19 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
         NetworkCombatConfig& c = next.combat;
         c.beamContinueAfterHit = readBool(r, "beam_continue_after_hit",
                                           c.beamContinueAfterHit);
+    }
+
+    // ── remote_projectile_interpolation ────────────────────────────────
+    if (root.contains("remote_projectile_interpolation") &&
+        root["remote_projectile_interpolation"].is_object())
+    {
+        const json& r = root["remote_projectile_interpolation"];
+        RemoteProjectileInterpolationConfig& c = next.remoteProjectileInterpolation;
+        c.enabled = readBool(r, "enabled", c.enabled);
+        c.easeCorrectionRate = readMsRange(
+            r, "ease_correction_rate", c.easeCorrectionRate, 0.1, 100.0);
+        c.easeVelocitySmoothing = clampRange(
+            readDouble(r, "ease_velocity_smoothing", c.easeVelocitySmoothing), 0.01, 1.0);
     }
 
     out = next;

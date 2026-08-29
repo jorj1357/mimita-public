@@ -824,20 +824,23 @@ bool getPlayerPoseAtTick(const ServerPlayer& p, uint32_t targetTick,
         outYaw = front.yaw;
         return true;
     }
-    for (int i = (int)p.posHistory.size() - 1; i > 0; --i)
+    int lo = 0;
+    int hi = (int)p.posHistory.size() - 1;
+    while (lo < hi - 1)
     {
-        if (p.posHistory[i].tick <= targetTick)
-        {
-            const auto& a = p.posHistory[i];
-            const auto& b = p.posHistory[i + 1];
-            const float frac = float(targetTick - a.tick) / float(b.tick - a.tick);
-            outPos = glm::mix(a.pos, b.pos, frac);
-            outYaw = a.yaw + (b.yaw - a.yaw) * frac;
-            return true;
-        }
+        int mid = (lo + hi) / 2;
+        if (p.posHistory[mid].tick <= targetTick)
+            lo = mid;
+        else
+            hi = mid;
     }
-    outPos = front.pos;
-    outYaw = front.yaw;
+    const auto& a = p.posHistory[lo];
+    const auto& b = p.posHistory[lo + 1];
+    const float frac = (b.tick > a.tick)
+        ? float(targetTick - a.tick) / float(b.tick - a.tick)
+        : 0.0f;
+    outPos = glm::mix(a.pos, b.pos, frac);
+    outYaw = a.yaw + (b.yaw - a.yaw) * frac;
     return true;
 }
 

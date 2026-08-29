@@ -5,7 +5,7 @@
     "enabled": true,
     "thickness": 0.2,
     "end_thickness": 0.0,
-    "lifetime": 0.5,
+    "lifetime": 0.1,
     "scale": 0.2,
     "end_scale": 0.0,
     "start_alpha": 1.0,
@@ -22,12 +22,12 @@
     "thickness": 0.1,
     "end_thickness": 0.1,
     "lifetime": 0.1,
-    "color": [1.0, 0.4, 0.1]
+    "color": [1.0, 0.7, 0.1]
   },
   "aa12": {
     "thickness": 0.15,
     "end_thickness": 0.0,
-    "lifetime": 0.35,
+    "lifetime": 0.1,
     "color": [1.0, 0.6, 0.1]
   }
 }

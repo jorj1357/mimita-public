@@ -78,6 +78,8 @@ struct MultiplayerConnectInfo
     std::string directAddress;
     // Map to load on the connecting client so it matches the server.
     std::string mapName;
+    // Password for private servers (entered via popup).
+    std::string password;
 };
 MultiplayerConnectInfo getPendingMultiplayerConnect();
 void setPendingMultiplayerConnect(const MultiplayerConnectInfo& info);

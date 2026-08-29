@@ -176,6 +176,12 @@ struct NetworkProjectile
     uint32_t latestAcceptedTick = 0;
     uint64_t lastTargetReceivedMs = 0;
     bool hasTargetState = false;
+
+    // Time-based interpolation state (for smooth remote projectile rendering)
+    double renderTick = 0.0;
+    bool renderFilterSeeded = false;
+    SpringState renderSpring;
+    glm::vec3 renderSpringTargetVel{0.0f};
 };
 
 struct EntityInterpolationState
@@ -412,6 +418,8 @@ struct MultiplayerContext
     std::string joinToken;
     std::string vipJoinTicket;
     bool vipJoinTicketRequested = false;
+    std::string serverPassword;
+    bool wrongPassword = false;
     std::string reconnectToken;
     std::string requiredMapId;
     int reconnectAttempts = 0;
@@ -594,6 +602,10 @@ struct MultiplayerContext
     // mpProcessNpcDamageEventPacket to suppress the server-confirm hitmarker/
     // killfeed that the local shooter already predicted (avoiding duplicates).
     std::unordered_map<uint32_t, uint64_t> predictedNpcHitMs;
+
+    // npcEntityId -> predicted damage amount. Used by mpProcessNpcDamageEventPacket
+    // to detect damage mismatches and spawn disagreement effects.
+    std::unordered_map<uint32_t, int> predictedNpcDamage;
 
 
     // ── Pending authoritative spawn (queued outside mpTick for player-scoped weapon reconciliation) ──

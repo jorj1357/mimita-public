@@ -10,6 +10,7 @@
 #include "gui/menus/server-info-menu.h"
 #include "gui/menus/online-menu.h"
 #include "gui/menus/pause-menu.h"
+#include "gui/password-popup.h"
 #include "avatar/avatar-editor.h"
 #include <GLFW/glfw3.h>
 #include <fstream>
@@ -85,6 +86,9 @@ void InputCommandSystem::keyCallback(GLFWwindow* window, int key, int scancode, 
         // Escape itself is consumed by the frame-level edge handler so it can
         // reliably close the modal after all current input edges are flushed.
         if (PauseMenu::isOpen())
+            return;
+
+        if (PasswordPopup::isOpen())
             return;
 
         // If terminal is open, it owns keyboard input exclusively
