@@ -59,8 +59,9 @@ void engineTickUIHUD(Engine& engine, float dt)
     KillfeedManager& kf = KillfeedManager::instance();
 
     if (gpReplayPlayer && gpReplayPlayer->isPlaying()) {
-        for (const ReplayKillfeedEvent& ev :
-             gpReplayPlayer->takeTriggeredKillfeedEvents()) {
+        static thread_local std::vector<ReplayKillfeedEvent> killEvents;
+        gpReplayPlayer->takeTriggeredKillfeedEvents(killEvents);
+        for (const ReplayKillfeedEvent& ev : killEvents) {
             kf.onKill(ev.killerName.empty() ? ev.killerId : ev.killerName,
                       ev.victimName.empty() ? ev.victimId : ev.victimName,
                       ev.weaponName.empty() ? "unknown" : ev.weaponName,

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <chrono>
@@ -26,8 +27,8 @@ struct PerfScopeCapture {
     uint32_t callCount = 0;
 
     // Counters
-    uint32_t allocCount = 0;
-    size_t allocBytes = 0;
+    uint64_t allocCount = 0;
+    uint64_t allocBytes = 0;
     uint32_t assetLoadCount = 0;
     uint32_t collisionQueryCount = 0;
 
@@ -77,9 +78,9 @@ extern int gPerfScopeStack[MAX_SCOPES_PER_FRAME];
 extern int gPerfScopeStackDepth;
 
 // Allocation tracking globals
-extern int gPerfAllocCount;
-extern size_t gPerfAllocBytes;
-extern size_t gPerfLargestAlloc;
+extern std::atomic<uint64_t> gPerfAllocCount;
+extern std::atomic<uint64_t> gPerfAllocBytes;
+extern std::atomic<uint64_t> gPerfLargestAlloc;
 extern const char* gPerfLargestAllocSite;
 
 // Correlation ID stack
@@ -98,8 +99,8 @@ public:
 private:
     int mScopeIndex = -1;
     uint64_t mStartCycles = 0;
-    int mAllocBefore = 0;
-    size_t mBytesBefore = 0;
+    uint64_t mAllocBefore = 0;
+    uint64_t mBytesBefore = 0;
     uint32_t mAssetLoadBefore = 0;
     uint32_t mBloodBefore = 0;
     uint32_t mDebrisBefore = 0;

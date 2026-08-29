@@ -52,7 +52,7 @@ void Player::applyReplayPose(
     for (PhysicalBodyPart& bodyPart : physicalBody.parts) {
         const ReplayBodyPartState* found = nullptr;
         for (uint8_t i = 0; i < partCount; ++i) {
-            if (parts[i].name == bodyPart.name) {
+            if (parts[i].partId == partIdFromName(bodyPart.name.c_str())) {
                 found = &parts[i];
                 break;
             }

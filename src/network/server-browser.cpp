@@ -153,10 +153,10 @@ void serverBrowserSetOwnRoomCode(const std::string& code)
     gOwnRoomCode = code;
 }
 
-std::vector<ServerBrowserEntry> serverBrowserEntries()
+void serverBrowserEntries(std::vector<ServerBrowserEntry>& out)
 {
     std::lock_guard<std::mutex> lock(gMutex);
-    return gEntries;
+    out = gEntries;
 }
 
 bool serverBrowserRefreshing()

@@ -28,6 +28,10 @@ struct Renderer {
     void setVSync(bool on);
     bool vsync() const { return mVSync; }
 
+    // Force VSync OFF at the driver level. Called after context creation,
+    // fullscreen transitions, config loads, and any attempt to enable VSync.
+    void forceVSyncOff(const char* reason);
+
 private:
     bool mVSync = false;
 };

@@ -27,10 +27,11 @@ std::string chatUtcNow()
     return buf;
 }
 
-std::vector<std::string> wrapChatText(const std::string& text,
-                                      float maxWidth, float scale)
+void wrapChatText(const std::string& text,
+                  float maxWidth, float scale,
+                  std::vector<std::string>& lines)
 {
-    std::vector<std::string> lines;
+    lines.clear();
     std::istringstream words(text);
     std::string word;
     std::string current;
@@ -49,7 +50,6 @@ std::vector<std::string> wrapChatText(const std::string& text,
         lines.push_back(current);
     if (lines.empty())
         lines.push_back("");
-    return lines;
 }
 }
 
@@ -356,7 +356,9 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
     const float textScale = 0.28f;
     float lineH_d = 20.0f;
     const float wrapWidth = uiScaleX(std::max(1.0f, msgAreaW_d - 4.0f));
-    std::vector<std::vector<std::string>> wrappedLines;
+    static thread_local std::vector<std::vector<std::string>> wrappedLines;
+    static thread_local std::vector<std::string> singleMsgLines;
+    wrappedLines.clear();
     wrappedLines.reserve(history.size());
     float contentH_d = 0.0f;
     for (size_t i = 0; i < history.size(); ++i)
@@ -365,7 +367,8 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
         const std::string text = entry.senderType == ChatSenderType::Server
             ? "[system] " + entry.text
             : entry.senderName + ": " + entry.text;
-        wrappedLines.push_back(wrapChatText(text, wrapWidth, textScale));
+        wrapChatText(text, wrapWidth, textScale, singleMsgLines);
+        wrappedLines.push_back(singleMsgLines);
         contentH_d += (float)wrappedLines.back().size() * lineH_d;
     }
 

@@ -72,11 +72,18 @@ void trimName(std::string& name)
 
 std::vector<std::string> scanPlayerModels()
 {
-    std::vector<std::string> result{"Default body model"};
+    static std::vector<std::string> cached{"Default body model"};
+    static double lastScanTime = 0.0;
+    double now = glfwGetTime();
+    if (now - lastScanTime < 1.0 && cached.size() > 1)
+        return cached;
+    lastScanTime = now;
+    cached.clear();
+    cached.push_back("Default body model");
     const std::filesystem::path root("assets/entity/player");
     std::error_code ec;
     if (!std::filesystem::exists(root, ec))
-        return result;
+        return cached;
 
     for (const auto& entry : std::filesystem::recursive_directory_iterator(root, ec)) {
         if (ec) break;
@@ -84,10 +91,10 @@ std::vector<std::string> scanPlayerModels()
         std::string ext = entry.path().extension().string();
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
         if (ext == ".glb")
-            result.push_back(entry.path().generic_string());
+            cached.push_back(entry.path().generic_string());
     }
-    std::sort(result.begin() + 1, result.end());
-    return result;
+    std::sort(cached.begin() + 1, cached.end());
+    return cached;
 }
 
 bool cursorInDesignRect(GLFWwindow* win, UIRect designRect)
@@ -194,7 +201,12 @@ void drawSaveLoadTab(GLFWwindow* win, float px, float py, float pw, float ph)
     const std::string loadLabel = editorLabelText("saveLoadLoadLabel", "Load avatar");
     uiDrawText(loadLabel.c_str(), uiScaleX(px), uiScaleY(py + 222),
                editorLabelFontSize("saveLoadLoadLabel", avatarEditorSectionFontSize), {0.4f,0.75f,0.55f,1});
-    gAvatarLoadItems = av.listAvatars();
+    static double lastAvatarListTime = 0.0;
+    double now = glfwGetTime();
+    if (now - lastAvatarListTime >= 1.0) {
+        lastAvatarListTime = now;
+        gAvatarLoadItems = av.listAvatars();
+    }
     if (!gAvatarLoadItems.empty()) {
         int current = 0;
         for (int i = 0; i < (int)gAvatarLoadItems.size(); ++i)

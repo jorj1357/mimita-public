@@ -28,10 +28,11 @@
 
 namespace
 {
-std::vector<std::string> wrapBubbleText(const std::string& text,
-                                        float maxWidth, float scale)
+void wrapBubbleText(const std::string& text,
+                    float maxWidth, float scale,
+                    std::vector<std::string>& lines)
 {
-    std::vector<std::string> lines;
+    lines.clear();
     std::istringstream words(text);
     std::string word;
     std::string current;
@@ -50,7 +51,6 @@ std::vector<std::string> wrapBubbleText(const std::string& text,
         lines.push_back(current);
     if (lines.empty())
         lines.push_back("");
-    return lines;
 }
 }
 
@@ -131,7 +131,8 @@ void renderChatBubbles(const ActorChatState& state, const Player& player, const 
 
         std::string displayText = "\"" + msg.text + "\"";
         const float maxTextW = 260.0f * scale;
-        const auto lines = wrapBubbleText(displayText, maxTextW, bubbleScale);
+        static thread_local std::vector<std::string> lines;
+        wrapBubbleText(displayText, maxTextW, bubbleScale, lines);
         float textW = 0.0f;
         for (const auto& line : lines)
             textW = std::max(textW, uiMeasureText(line.c_str(), bubbleScale));

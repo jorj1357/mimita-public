@@ -33,8 +33,8 @@ struct PerfFrame {
     int ragdollCount = 0;
     int bloodDecalCount = 0;
     int projectileCount = 0;
-    int allocCount = 0;
-    size_t allocBytes = 0;
+    uint64_t allocCount = 0;
+    uint64_t allocBytes = 0;
     int collisionQueryCount = 0;
 };
 
@@ -58,8 +58,8 @@ struct EntitySnapshot {
     int ragdollCount = 0;
     int bloodDecalCount = 0;
     int projectileCount = 0;
-    int allocCount = 0;
-    size_t allocBytes = 0;
+    uint64_t allocCount = 0;
+    uint64_t allocBytes = 0;
     int collisionQueryCount = 0;
 
     EntitySnapshot& operator=(const PerfFrame& f) {

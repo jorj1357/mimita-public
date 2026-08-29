@@ -378,8 +378,10 @@ ProjectileStepResult simulateProjectileTick(
     float subDt = fixedDt / (float)subSteps;
 
     static constexpr int MAX_BOUNCE_ITER = 4;
-    std::vector<int> triCandidates;
-    std::vector<SweptPlayerCapsule> capsuleCandidates;
+    static thread_local std::vector<int> triCandidates;
+    static thread_local std::vector<SweptPlayerCapsule> capsuleCandidates;
+    triCandidates.clear();
+    capsuleCandidates.clear();
     triCandidates.reserve(64);
     capsuleCandidates.reserve(16);
 

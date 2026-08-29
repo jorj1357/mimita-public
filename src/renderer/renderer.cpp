@@ -178,10 +178,10 @@ Renderer::Renderer(int w, int h, const char* title) {
 
     glfwMakeContextCurrent(window);
 
-    // VSync defaults OFF. The setting is re-applied later from
-    // VideoSettings once config loads; this guarantees uncapped swaps
-    // even before that, so Wine/Mesa never lock the game to the refresh rate.
+    // VSync is FORCED OFF and cannot be re-enabled.
     glfwSwapInterval(0);
+    Debug::log(Debug::Category::Render,
+        "[VSYNC] forced OFF: glfwSwapInterval(0) after context creation\n");
 
     // this might go here idk ? mar 6 2026
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
@@ -386,15 +386,29 @@ void Renderer::applyVideoMode(int w, int h, bool fullscreen)
     printf("[RENDERER] Video mode applied: %dx%d fullscreen=%d\n", w, h, (int)fullscreen);
 
     // Some GLFW/driver paths reset the swap interval when the window monitor
-    // changes (fullscreen/windowed switch). Re-apply our intended vsync state.
-    glfwSwapInterval(mVSync ? 1 : 0);
+    // changes (fullscreen/windowed switch). Always force OFF.
+    glfwSwapInterval(0);
+    mVSync = false;
 }
 
 void Renderer::setVSync(bool on)
 {
+    if (on) {
+        Debug::warn(Debug::Category::Render,
+            "[VSYNC] BLOCKED attempt to enable VSync (swap interval forced to 0)\n");
+    }
     if (window)
-        glfwSwapInterval(on ? 1 : 0);
-    mVSync = on;
-    Debug::log(Debug::Category::Render, "[RENDERER] vsync=%s (swap interval %d)\n",
-               on ? "ON" : "OFF", on ? 1 : 0);
+        glfwSwapInterval(0);
+    mVSync = false;
+    Debug::log(Debug::Category::Render,
+        "[VSYNC] swap interval=0 (forced OFF)\n");
+}
+
+void Renderer::forceVSyncOff(const char* reason)
+{
+    mVSync = false;
+    if (window)
+        glfwSwapInterval(0);
+    Debug::log(Debug::Category::Render,
+        "[VSYNC] forced OFF: reason=%s\n", reason ? reason : "unknown");
 }

@@ -82,21 +82,27 @@ static void suppressTabScrollForOpenDropdowns(GLFWwindow* win)
 
 std::vector<std::string> scanGlbs()
 {
-    std::vector<std::string> result;
+    static std::vector<std::string> cached;
+    static double lastScanTime = 0.0;
+    double now = glfwGetTime();
+    if (now - lastScanTime < 1.0 && !cached.empty())
+        return cached;
+    lastScanTime = now;
+    cached.clear();
     const std::filesystem::path dir("assets/objects/things/cosmetics");
     std::error_code ec;
     if (!std::filesystem::exists(dir, ec))
-        return result;
+        return cached;
     for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
         if (entry.is_regular_file(ec)) {
             std::string ext = entry.path().extension().string();
             std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
             if (ext == ".glb")
-                result.push_back(entry.path().filename().string());
+                cached.push_back(entry.path().filename().string());
         }
     }
-    std::sort(result.begin(), result.end());
-    return result;
+    std::sort(cached.begin(), cached.end());
+    return cached;
 }
 
 std::string cosmeticName(const CosmeticSlot& cosmetic, int index)
@@ -257,8 +263,19 @@ void drawCosmeticControls(GLFWwindow* win, AvatarSystem& avatar,
 
     gTextureItems.clear();
     gTextureItems.push_back("none");
-    for (const std::string& png : avatar.listPngs(avatar.currentName()))
-        gTextureItems.push_back(png);
+    {
+        static std::string cachedPngName;
+        static std::vector<std::string> cachedPngs;
+        static double lastPngScanTime = 0.0;
+        double now = glfwGetTime();
+        if (avatar.currentName() != cachedPngName || now - lastPngScanTime >= 1.0) {
+            cachedPngName = avatar.currentName();
+            lastPngScanTime = now;
+            cachedPngs = avatar.listPngs(avatar.currentName());
+        }
+        for (const std::string& png : cachedPngs)
+            gTextureItems.push_back(png);
+    }
     if (!gTextureState.open) {
         int textureIndex = 0;
         for (int i = 0; i < (int)gTextureItems.size(); ++i)

@@ -49,9 +49,9 @@ ReplayActorState mixActor(
     result.bodyPartCount = a.bodyPartCount;
     for (int i = 0; i < result.bodyPartCount; ++i) {
         ReplayBodyPartState& part = result.bodyParts[i];
-        // Find matching part in b by name
+        // Find matching part in b by partId
         for (int j = 0; j < b.bodyPartCount; ++j) {
-            if (b.bodyParts[j].name == part.name) {
+            if (b.bodyParts[j].partId == part.partId) {
                 part = mixPart(part, b.bodyParts[j], t);
                 break;
             }
@@ -228,25 +228,19 @@ void ReplayPlayer::pollPoseInvariant()
     }
 }
 
-std::vector<ReplayEffectEvent> ReplayPlayer::takeTriggeredEffects()
+void ReplayPlayer::takeTriggeredEffects(std::vector<ReplayEffectEvent>& out)
 {
-    std::vector<ReplayEffectEvent> result;
-    result.swap(mTriggeredEffects);
-    return result;
+    out.swap(mTriggeredEffects);
 }
 
-std::vector<ReplaySoundEvent> ReplayPlayer::takeTriggeredSounds()
+void ReplayPlayer::takeTriggeredSounds(std::vector<ReplaySoundEvent>& out)
 {
-    std::vector<ReplaySoundEvent> result;
-    result.swap(mTriggeredSounds);
-    return result;
+    out.swap(mTriggeredSounds);
 }
 
-std::vector<ReplayKillfeedEvent> ReplayPlayer::takeTriggeredKillfeedEvents()
+void ReplayPlayer::takeTriggeredKillfeedEvents(std::vector<ReplayKillfeedEvent>& out)
 {
-    std::vector<ReplayKillfeedEvent> result;
-    result.swap(mTriggeredKillfeedEvents);
-    return result;
+    out.swap(mTriggeredKillfeedEvents);
 }
 
 bool ReplayPlayer::getFrameAt(uint32_t tick, InputFrame& out) const {

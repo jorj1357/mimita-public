@@ -931,7 +931,8 @@ void resolveRemoteBodyAgainstGeometry(
         return;
 
     const Capsule cap = player.getCapsule();
-    std::vector<int> candidates;
+    static thread_local std::vector<int> candidates;
+    candidates.clear();
     appendChunkTrianglesForAABB(world,
         makeSweptCapsuleAABB(cap, glm::vec3(0.0f)),
         0.25f, candidates, "remote-geometry-safety");

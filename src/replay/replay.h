@@ -147,12 +147,6 @@ public:
         return mKillfeedEvents;
     }
 
-    // Identity cache access
-    const ReplayActorState* getCachedIdentity(uint32_t actorId) const {
-        auto it = mIdentityCache.find(actorId);
-        return it != mIdentityCache.end() ? &it->second : nullptr;
-    }
-
     // Identity table access
     const ReplayActorIdentity* getIdentity(uint32_t actorId) const {
         auto it = mIdentityTable.find(actorId);
@@ -163,11 +157,11 @@ public:
     }
     void removeIdentity(uint32_t actorId) {
         mIdentityTable.erase(actorId);
-        mPreviousTickState.erase(actorId);
+        mPreviousCompactState.erase(actorId);
     }
     void clearIdentities() {
         mIdentityTable.clear();
-        mPreviousTickState.clear();
+        mPreviousCompactState.clear();
     }
 
     // Delta detection: compare current state with previous, return dirty mask
@@ -208,15 +202,11 @@ private:
     std::vector<ReplayEffectEvent> mPendingEffects;
     uint32_t mMaxTicks = 0;
 
-    // Identity cache — stores last-known identity per actor to avoid
-    // re-copying constant strings every tick. Keys are stable actor IDs.
-    std::unordered_map<uint32_t, ReplayActorState> mIdentityCache;
-
-    // Previous tick state for delta detection
-    std::unordered_map<uint32_t, ReplayActorState> mPreviousTickState;
-
-    // ── New identity table for compact recording ──
+    // ── Identity table: stores constant strings once per lifetime ──
+    // Keys are stable actor IDs (player=0, npc=1000+npc.id, remote=20000+id).
     std::unordered_map<uint32_t, ReplayActorIdentity> mIdentityTable;
+
+    // Previous compact tick state for delta detection (no strings)
     std::unordered_map<uint32_t, ReplayActorTickState> mPreviousCompactState;
 
     // NPC avatar cache: key = (npcId << 16) | epoch
@@ -275,9 +265,9 @@ public:
     float timescale() const { return mTimescale; }
     ReplayCameraController& cameraController() { return mCameraController; }
     const ReplaySceneFrame* currentSceneFrame() const;
-    std::vector<ReplayEffectEvent> takeTriggeredEffects();
-    std::vector<ReplaySoundEvent> takeTriggeredSounds();
-    std::vector<ReplayKillfeedEvent> takeTriggeredKillfeedEvents();
+    void takeTriggeredEffects(std::vector<ReplayEffectEvent>& out);
+    void takeTriggeredSounds(std::vector<ReplaySoundEvent>& out);
+    void takeTriggeredKillfeedEvents(std::vector<ReplayKillfeedEvent>& out);
     const std::string& killerId() const { return mClip.killerId; }
     const std::string& victimId() const { return mClip.victimId; }
     bool isPaused() const { return mPaused; }

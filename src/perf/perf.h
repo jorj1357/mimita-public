@@ -277,7 +277,7 @@ struct PerfState {
     double replayMemoryMb = 0.0;
 
     int allocationsThisFrame = 0;
-    int totalAllocations = 0;
+    uint64_t totalAllocations = 0;
     int assetLoadsThisFrame = 0;
 
     bool soundLoadsDetected = false;

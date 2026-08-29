@@ -64,8 +64,7 @@ void registerVideoCommands()
             Terminal::instance().addLog("[VIDEO] Resizable: OFF");
             Terminal::instance().addLog("[VIDEO] maxFrames=" +
                 std::to_string(vs.maxFrames()));
-            Terminal::instance().addLog(std::string("[VIDEO] vsync=") +
-                (vs.vsync() ? "ON" : "OFF"));
+            Terminal::instance().addLog("[VIDEO] vsync=OFF (forced)");
         }
     });
     Terminal::instance().registerCommand({
@@ -84,18 +83,13 @@ void registerVideoCommands()
         }
     });
     Terminal::instance().registerCommand({
-        "vsync", "Toggle VSync", "vsync <0|1>",
+        "vsync", "VSync is forced OFF", "vsync",
         [](const std::vector<std::string>& args) {
             if (args.empty()) {
-                Terminal::instance().addLog(std::string("[VIDEO] vsync=") +
-                    (VideoSettings::instance().vsync() ? "ON" : "OFF"));
+                Terminal::instance().addLog("[VSYNC] VSync is FORCED OFF (cannot be enabled)");
                 return;
             }
-            bool on = args[0] == "1";
-            VideoSettings::instance().setVSync(on);
-            gFramePacer.setVSync(on);
-            Terminal::instance().addLog(std::string("[VIDEO] vsync=") +
-                (on ? "ON" : "OFF"));
+            Terminal::instance().addLog("[VSYNC] BLOCKED: VSync is forced OFF and cannot be enabled");
         }
     });
     Terminal::instance().registerCommand({

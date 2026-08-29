@@ -98,7 +98,8 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
 
     if (gReplayPlayer.totalTicks() > 0) {
         const ReplaySceneFrame* cleanupFrame = gReplayPlayer.currentSceneFrame();
-        std::vector<std::string> toRemove;
+        static thread_local std::vector<std::string> toRemove;
+        toRemove.clear();
         for (const auto& kv : replayActorModels) {
             if (!cleanupFrame ||
                 std::none_of(cleanupFrame->actors.begin(),

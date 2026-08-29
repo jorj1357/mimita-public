@@ -261,6 +261,7 @@ bool GuiLayout::load(const std::string& filePath)
         mElements = std::move(loadedElements);
         mLastModified = getFileModifiedTime(filePath);
         mDirty = false;
+        invalidateIdsCache();
         printf("[GUI LAYOUT] Loaded %zu elements from %s\n",
                mElements.size(), filePath.c_str());
         return true;
@@ -401,6 +402,7 @@ void GuiLayout::set(const std::string& id, float x, float y, float w, float h)
     mElements[id].w = w;
     mElements[id].h = h;
     mDirty = true;
+    invalidateIdsCache();
 }
 
 void GuiLayout::set(const std::string& id, float x, float y, float w, float h, float tx, float ty)
@@ -413,6 +415,7 @@ void GuiLayout::set(const std::string& id, float x, float y, float w, float h, f
     mElements[id].textOffsetX = tx;
     mElements[id].textOffsetY = ty;
     mDirty = true;
+    invalidateIdsCache();
 }
 
 void GuiLayout::setElement(const GuiElement& element)
@@ -420,12 +423,14 @@ void GuiLayout::setElement(const GuiElement& element)
     if (element.id.empty()) return;
     mElements[element.id] = element;
     mDirty = true;
+    invalidateIdsCache();
 }
 
 void GuiLayout::clear()
 {
     mElements.clear();
     mDirty = true;
+    invalidateIdsCache();
 }
 
 bool GuiLayout::checkFileChanged() const
@@ -435,12 +440,16 @@ bool GuiLayout::checkFileChanged() const
     return current != mLastModified && current != 0;
 }
 
-std::vector<std::string> GuiLayout::elementIds() const
+const std::vector<std::string>& GuiLayout::elementIds() const
 {
-    std::vector<std::string> ids;
-    for (const auto& pair : mElements)
-        ids.push_back(pair.first);
-    return ids;
+    if (mIdsCacheDirty) {
+        mCachedIds.clear();
+        mCachedIds.reserve(mElements.size());
+        for (const auto& pair : mElements)
+            mCachedIds.push_back(pair.first);
+        mIdsCacheDirty = false;
+    }
+    return mCachedIds;
 }
 
 // ----------------------------------------------------------------

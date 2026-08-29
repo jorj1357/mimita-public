@@ -86,8 +86,8 @@ void Perf::renderOverlay()
 
         if (s.allocAudit)
         {
-            snprintf(buf, sizeof(buf), "Allocs: %d (total: %d)",
-                     s.allocationsThisFrame, s.totalAllocations);
+            snprintf(buf, sizeof(buf), "Allocs: %d (total: %llu)",
+                     s.allocationsThisFrame, (unsigned long long)s.totalAllocations);
             glm::vec4 col = s.allocationsThisFrame > 0 ? glm::vec4{1.0f, 0.3f, 0.3f, 1.0f} : glm::vec4{0.3f, 1.0f, 0.3f, 1.0f};
             text(buf, col);
         }
@@ -256,8 +256,8 @@ void Perf::renderOverlay()
 
         if (s.allocAudit)
         {
-            snprintf(buf, sizeof(buf), "Allocs: %d (total: %d)",
-                     s.allocationsThisFrame, s.totalAllocations);
+            snprintf(buf, sizeof(buf), "Allocs: %d (total: %llu)",
+                     s.allocationsThisFrame, (unsigned long long)s.totalAllocations);
             glm::vec4 col = s.allocationsThisFrame > 0 ? glm::vec4{1.0f, 0.3f, 0.3f, 1.0f} : glm::vec4{0.3f, 1.0f, 0.3f, 1.0f};
             text(buf, col);
         }

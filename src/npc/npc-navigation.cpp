@@ -68,7 +68,8 @@ float NpcNavigation::groundHeightAt(const World& world, const glm::vec3& pos, fl
     if (searchDist <= 0.0f)
         return NOT_FOUND;
 
-    std::vector<int> candidates;
+    static thread_local std::vector<int> candidates;
+    candidates.clear();
     AABB b;
     b.min = pos - glm::vec3(radius, radius, searchDist);
     b.max = pos + glm::vec3(radius, radius, 1.0f);
@@ -135,7 +136,8 @@ glm::vec3 NpcNavigation::wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir
 
 glm::vec3 NpcNavigation::wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir, const World& world)
 {
-    std::vector<int> candidates;
+    static thread_local std::vector<int> candidates;
+    candidates.clear();
     gatherNear(world, npc.body.pos + glm::vec3(0.0f, 0.0f, 0.5f), 2.5f, candidates);
     return wallAvoidDirection(npc, desiredDir, world, candidates);
 }
@@ -185,7 +187,8 @@ glm::vec3 NpcNavigation::unstuckDirection(const Npc& npc, unsigned int& rng, con
 
 glm::vec3 NpcNavigation::unstuckDirection(const Npc& npc, unsigned int& rng, const World& world)
 {
-    std::vector<int> candidates;
+    static thread_local std::vector<int> candidates;
+    candidates.clear();
     gatherNear(world, npc.body.pos + glm::vec3(0.0f, 0.0f, 0.5f), 10.0f, candidates);
     return unstuckDirection(npc, rng, world, candidates);
 }
@@ -223,7 +226,8 @@ bool NpcNavigation::isClimbableWall(const Npc& npc, glm::vec3 moveDir, const Wor
 {
     glm::vec3 origin = npc.body.pos;
     origin.z += 1.1f;
-    std::vector<int> candidates;
+    static thread_local std::vector<int> candidates;
+    candidates.clear();
     gatherNear(world, origin, 2.2f, candidates);
     return isClimbableWall(npc, moveDir, world, outWallNormal, candidates);
 }
@@ -247,7 +251,8 @@ glm::vec3 NpcNavigation::findCoverDirection(const Npc& npc, glm::vec3 threatPos,
 
     // Gather nearby triangles only — cover test positions are within 4m of NPC.
     // There is no need to include the distant threat position in the query.
-    std::vector<int> allCandidates;
+    static thread_local std::vector<int> allCandidates;
+    allCandidates.clear();
     gatherNear(world, origin, COVER_CHECK_DIST + 4.0f, allCandidates);
 
     for (const auto& dir : testDirs)
@@ -305,7 +310,8 @@ bool NpcNavigation::obstacleInDirection(const Npc& npc, glm::vec3 dir, float che
 
 bool NpcNavigation::obstacleInDirection(const Npc& npc, glm::vec3 dir, float checkDist, const World& world)
 {
-    std::vector<int> candidates;
+    static thread_local std::vector<int> candidates;
+    candidates.clear();
     gatherNear(world, npc.body.pos + glm::vec3(0.0f, 0.0f, 0.5f), checkDist + 1.0f, candidates);
     return obstacleInDirection(npc, dir, checkDist, world, candidates);
 }

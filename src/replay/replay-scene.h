@@ -65,7 +65,7 @@ struct ReplaySoundEvent {
 };
 
 struct ReplayBodyPartState {
-    std::string name;
+    uint8_t partId = 0xFF;  // ReplayBodyPartId, resolved to name only at export/load
     glm::vec3 position{};
     glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
     glm::vec3 scale{1.0f};
@@ -211,6 +211,17 @@ static const char* kReplayBodyPartNames[] = {
     "head", "torso", "leftArm", "rightArm", "leftLeg", "rightLeg"
 };
 
+inline uint8_t partIdFromName(const char* name) {
+    if (!name || !name[0]) return 0xFF;
+    if (name[0] == 'h' && name[1] == 'e' && name[2] == 'a') return 0; // head
+    if (name[0] == 't' && name[1] == 'o') return 1; // torso
+    if (name[0] == 'l' && name[1] == 'e' && name[2] == 'f' && name[3] == 't' && name[4] == 'A') return 2; // leftArm
+    if (name[0] == 'r' && name[1] == 'i' && name[2] == 'g' && name[3] == 'h' && name[4] == 't' && name[5] == 'A') return 3; // rightArm
+    if (name[0] == 'l' && name[1] == 'e' && name[2] == 'f' && name[3] == 't' && name[4] == 'L') return 4; // leftLeg
+    if (name[0] == 'r' && name[1] == 'i' && name[2] == 'g' && name[3] == 'h' && name[4] == 't' && name[5] == 'L') return 5; // rightLeg
+    return 0xFF;
+}
+
 struct ReplayBodyPartPose {
     glm::vec3 position{};
     glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
@@ -236,6 +247,31 @@ struct ReplayActorTickState {
     float sizeScale = 1.0f;
     std::array<ReplayBodyPartPose, REPLAY_MAX_BODY_PARTS> bodyParts{};
     uint8_t bodyPartCount = 0;
+
+    bool operator==(const ReplayActorTickState& o) const {
+        if (actorId != o.actorId || bodyPartCount != o.bodyPartCount)
+            return false;
+        if (position != o.position || rotation != o.rotation || velocity != o.velocity)
+            return false;
+        if (health != o.health || maxHealth != o.maxHealth)
+            return false;
+        if (currentAmmo != o.currentAmmo || reserveAmmo != o.reserveAmmo)
+            return false;
+        if (dead != o.dead || shooting != o.shooting || reloading != o.reloading || grounded != o.grounded)
+            return false;
+        if (sizeScale != o.sizeScale)
+            return false;
+        for (uint8_t i = 0; i < bodyPartCount; ++i) {
+            if (bodyParts[i].position != o.bodyParts[i].position ||
+                bodyParts[i].rotation.x != o.bodyParts[i].rotation.x ||
+                bodyParts[i].rotation.y != o.bodyParts[i].rotation.y ||
+                bodyParts[i].rotation.z != o.bodyParts[i].rotation.z ||
+                bodyParts[i].rotation.w != o.bodyParts[i].rotation.w)
+                return false;
+        }
+        return true;
+    }
+    bool operator!=(const ReplayActorTickState& o) const { return !(*this == o); }
 };
 
 // ── Delta detection: dirty mask for field-level change tracking ──

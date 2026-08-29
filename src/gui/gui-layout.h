@@ -181,8 +181,8 @@ public:
     // Check if file changed since last load (for hot reload)
     bool checkFileChanged() const;
 
-    // Get all element IDs
-    std::vector<std::string> elementIds() const;
+    // Get all element IDs (cached, rebuilt on layout changes)
+    const std::vector<std::string>& elementIds() const;
 
     const std::string& filePath() const { return mFilePath; }
 
@@ -194,10 +194,14 @@ public:
     void clear();
 
 private:
+    void invalidateIdsCache() { mIdsCacheDirty = true; }
+
     std::string mFilePath;
     std::unordered_map<std::string, GuiElement> mElements;
     mutable int64_t mLastModified = 0;
     mutable bool mDirty = false;
+    mutable bool mIdsCacheDirty = true;
+    mutable std::vector<std::string> mCachedIds;
 };
 
 // Manages ALL layouts with global hot-reload

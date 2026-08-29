@@ -50,13 +50,9 @@ BodyPartArray captureReplayBodyParts(const Player& player)
         if (result.count >= ReplayActorState::MAX_BODY_PARTS)
             break;
 
-        // Skip body parts that aren't in our fixed set
-        const char* name = part.name.c_str();
-        bool match = (name[0] == 'h' && name[1] == 'e') ||  // head
-                     (name[0] == 't' && name[1] == 'o') ||  // torso
-                     (name[0] == 'l' && name[1] == 'e') ||  // leftArm/leftLeg
-                     (name[0] == 'r' && name[1] == 'i');    // rightArm/rightLeg
-        if (!match) continue;
+        // Convert name to enum ID without heap allocation
+        uint8_t pid = partIdFromName(part.name.c_str());
+        if (pid == 0xFF) continue;
 
         // Direct extraction from world transform — no glm::decompose needed.
         const glm::mat4& wt = part.worldTransform;
@@ -84,7 +80,7 @@ BodyPartArray captureReplayBodyParts(const Player& player)
         glm::quat localRot = glm::inverse(rootRot) * worldRot;
 
         ReplayBodyPartState& state = result.parts[result.count];
-        state.name = part.name;  // kept for JSON export compatibility
+        state.partId = pid;
         state.position = bodyLocal;
         state.rotation = glm::normalize(localRot);
         state.scale = glm::vec3(1.0f);
@@ -114,8 +110,6 @@ void ReplayRecorder::beginRecording(float randomSeed, const char* mapName) {
         mSceneFrames[i].tick = 0;
         mSceneFrames[i].time = 0.0f;
     }
-    mIdentityCache.clear();
-    mPreviousTickState.clear();
     mIdentityTable.clear();
     mPreviousCompactState.clear();
     mNpcAvatarCache.clear();
@@ -139,6 +133,8 @@ void ReplayRecorder::beginRecording(float randomSeed, const char* mapName) {
 
     printf("[REPLAY] Recording started  map=%s seed=%.1f\n",
            mHeader.mapName, mHeader.randomSeed);
+    Debug::log(Debug::Category::Replay,
+        "[REPLAY][PERF] compact recording enabled — identity strings cached, store-if-dirty active");
 }
 
 // ── Delta detection ──
@@ -483,7 +479,9 @@ bool ReplayRecorder::exportToJSON(const std::string& path) const {
             a["bodyParts"] = json::object();
             for (int i = 0; i < actor.bodyPartCount; ++i) {
                 const ReplayBodyPartState& part = actor.bodyParts[i];
-                a["bodyParts"][part.name] = {
+                const char* partName = (part.partId < (uint8_t)ReplayBodyPartId::Count)
+                    ? kReplayBodyPartNames[part.partId] : "unknown";
+                a["bodyParts"][partName] = {
                     {"position", vec3Json(part.position)},
                     {"rotation", {part.rotation.w, part.rotation.x, part.rotation.y, part.rotation.z}},
                     {"scale", vec3Json(part.scale)}

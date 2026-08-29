@@ -217,7 +217,7 @@ MovementStepResult applyPostCollisionMovementWithSpecials(
     const MovementConfig& config,
     const MovementCollisionFeedback& collision,
     float fixedDt,
-    MovementStepEvents preCollisionEvents = MovementStepEvents{});
+    MovementStepEvents& preCollisionEvents);
 
 MovementStepResult simulateBasicMovementStep(MovementState& state,
                                              const MovementCommand& command,

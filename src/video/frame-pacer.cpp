@@ -141,8 +141,10 @@ void FramePacer::setMaxFrames(int fps)
 
 void FramePacer::setVSync(bool on)
 {
-    mVSync = on;
-    printf("[FRAME PACER] vsync=%s\n", on ? "ON" : "OFF");
+    if (on) {
+        printf("[VSYNC] BLOCKED attempt to enable VSync in FramePacer\n");
+    }
+    mVSync = false;
 }
 
 void FramePacer::updateStats()

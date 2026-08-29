@@ -20,9 +20,9 @@ PerfBudgetConfig gPerfBudget;
 int gPerfScopeStack[MAX_SCOPES_PER_FRAME];
 int gPerfScopeStackDepth = 0;
 
-int gPerfAllocCount = 0;
-size_t gPerfAllocBytes = 0;
-size_t gPerfLargestAlloc = 0;
+std::atomic<uint64_t> gPerfAllocCount{0};
+std::atomic<uint64_t> gPerfAllocBytes{0};
+std::atomic<uint64_t> gPerfLargestAlloc{0};
 const char* gPerfLargestAllocSite = nullptr;
 
 char gPerfCorrelationStack[8][32] = {};
@@ -77,8 +77,8 @@ PerfScopeGuard::PerfScopeGuard(
     }
 
     // Capture pre-scope counters
-    mAllocBefore = gPerfAllocCount;
-    mBytesBefore = gPerfAllocBytes;
+    mAllocBefore = gPerfAllocCount.load(std::memory_order_relaxed);
+    mBytesBefore = gPerfAllocBytes.load(std::memory_order_relaxed);
     mAssetLoadBefore = 0;
     mBloodBefore = 0;
     mDebrisBefore = 0;
@@ -113,11 +113,18 @@ PerfScopeGuard::~PerfScopeGuard()
     if (elapsed > cap.maxCycles) cap.maxCycles = elapsed;
     cap.callCount++;
 
-    // Record counters (use size_t throughout to avoid truncation)
-    int allocDelta = gPerfAllocCount - mAllocBefore;
-    size_t bytesDelta = gPerfAllocBytes - mBytesBefore;
-    cap.allocCount += (uint32_t)(allocDelta > 0 ? allocDelta : 0);
+    // Record counters — uint64_t snapshot delta, no clamp needed
+    const uint64_t currentCount = gPerfAllocCount.load(std::memory_order_relaxed);
+    const uint64_t currentBytes = gPerfAllocBytes.load(std::memory_order_relaxed);
+    const uint64_t allocDelta = currentCount - mAllocBefore;
+    const uint64_t bytesDelta = currentBytes - mBytesBefore;
+    cap.allocCount += allocDelta;
     cap.allocBytes += bytesDelta;
+    if (bytesDelta > 0 && allocDelta == 0) {
+        Debug::warn(Debug::Category::General,
+            "[PERF][ALLOC][WARN] bytes increased without count increase; "
+            "investigate allocation hook mismatch");
+    }
 
     // Pop from stack
     if (gPerfScopeStackDepth > 0) {
@@ -429,7 +436,8 @@ void perfWriteSpikeReport(double totalFrameMs, double budgetMs, int frameNumber)
         // Measured work
         pos += std::snprintf(msg + pos, sizeof(msg) - pos, "  Measured work:\n");
         pos += std::snprintf(msg + pos, sizeof(msg) - pos,
-            "    Allocations: %u (%zu bytes)\n", cap.allocCount, cap.allocBytes);
+            "    Allocations: %llu (%llu bytes)\n",
+            (unsigned long long)cap.allocCount, (unsigned long long)cap.allocBytes);
         if (cap.assetLoadCount > 0)
             pos += std::snprintf(msg + pos, sizeof(msg) - pos,
                 "    Asset loads: %u\n", cap.assetLoadCount);
@@ -452,7 +460,7 @@ void perfWriteSpikeReport(double totalFrameMs, double budgetMs, int frameNumber)
     }
 
     // Compute allocation status
-    bool allocInstrumented = (gPerfAllocCount > 0);
+    bool allocInstrumented = (gPerfAllocCount.load(std::memory_order_relaxed) > 0);
 
     // Send to StructuredLogger
     StructuredLogger::Entry e;

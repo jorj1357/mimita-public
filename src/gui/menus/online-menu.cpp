@@ -252,9 +252,9 @@ void ensureMapListScanned()
 }
 
 // Build items list for a dropdown element (same logic as in drawGuiElement)
-static std::vector<std::string> buildDropdownItems(const GuiElement* elem)
+static void buildDropdownItems(const GuiElement* elem, std::vector<std::string>& items)
 {
-    std::vector<std::string> items;
+    items.clear();
     if (!elem->bindingItems.empty()) {
         std::string itemsStr = GuiBindings::instance().get(elem->bindingItems);
         if (!itemsStr.empty()) {
@@ -276,7 +276,6 @@ static std::vector<std::string> buildDropdownItems(const GuiElement* elem)
         if (!itemsStr.empty()) items.push_back(itemsStr);
     }
     if (items.empty()) items.push_back("None");
-    return items;
 }
 
 } // anonymous namespace
@@ -388,7 +387,8 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
     }
 
     // Phase 1: draw all elements sorted by layer
-    std::vector<std::pair<int, std::string>> sorted;
+    static thread_local std::vector<std::pair<int, std::string>> sorted;
+    sorted.clear();
     for (const std::string& id : layout.elementIds()) {
         const GuiElement* e = layout.get(id);
         if (e) sorted.push_back({e->layer, id});
@@ -462,7 +462,8 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
     // Populate the PUBLIC SERVERS panel: clear fallback text when rows exist,
     // sort by the selected mode, then draw the server browser rows over the panel.
     {
-        std::vector<MimitaNet::ServerBrowserEntry> entries = MimitaNet::serverBrowserEntries();
+        static thread_local std::vector<MimitaNet::ServerBrowserEntry> entries;
+        MimitaNet::serverBrowserEntries(entries);
         sortServerEntries(entries, serverSortModeFromBinding(b.get("server.sort")));
         b.set("server.list", entries.empty() ? "No public servers found. Start one above!" : " ");
         drawServerBrowser(win, r, layout, entries);
@@ -503,7 +504,8 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
         const GuiElement* elem = layout.get(kv.first);
         if (!elem || elem->type != "dropdown") continue;
 
-        std::vector<std::string> items = buildDropdownItems(elem);
+        static thread_local std::vector<std::string> items;
+        buildDropdownItems(elem, items);
         if (items.empty()) continue;
 
         int sel = drawDropdownOverlay(win, ds, elem->x, elem->y, elem->w, elem->h, items);

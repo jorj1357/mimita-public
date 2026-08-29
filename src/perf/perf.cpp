@@ -874,9 +874,10 @@ void Perf::endFrame(float currentFrameMs)
             char msg[4096];
             int pos = 0;
             pos += std::snprintf(msg + pos, sizeof(msg) - pos,
-                "FRAME_%06d  total=%.2fms  budget=%.2fms  npcs=%d  effects=%d  audio=%d  allocs=%d\n",
+                "FRAME_%06d  total=%.2fms  budget=%.2fms  npcs=%d  effects=%d  audio=%d  allocs=%llu\n",
                 frame.frameNumber, frame.totalMs, frame.budgetMs,
-                frame.npcCount, frame.effectCount, frame.audioCount, frame.allocCount);
+                frame.npcCount, frame.effectCount, frame.audioCount,
+                (unsigned long long)frame.allocCount);
 
             // Top 5 scopes by self time
             struct SortInfo { int idx; double selfMs; };

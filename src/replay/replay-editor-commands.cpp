@@ -964,10 +964,12 @@ void registerReplayEditorCommands() {
         [](const std::vector<std::string>&) {
             if (!E.isLoaded()) { requireEditor("rpleevents"); return; }
             // Basic events from the replay player
-            std::vector<ReplayKillfeedEvent> kills = REPLAY_PLAYER.takeTriggeredKillfeedEvents();
+            std::vector<ReplayKillfeedEvent> kills;
+            REPLAY_PLAYER.takeTriggeredKillfeedEvents(kills);
             // Re-trigger — they were consumed, but we can list from the clip
             // For now, just log what's available
-            auto sounds = REPLAY_PLAYER.takeTriggeredSounds(); (void)sounds;
+            std::vector<ReplaySoundEvent> sounds;
+            REPLAY_PLAYER.takeTriggeredSounds(sounds); (void)sounds;
             char buf[256];
             std::snprintf(buf, sizeof(buf), "[RPLE] %d total ticks, %d keyframes, %d bookmarks",
                 E.totalTicks(), E.cameraKeyframeCount(), E.bookmarkCount());

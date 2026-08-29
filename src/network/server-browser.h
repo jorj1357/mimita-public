@@ -55,7 +55,7 @@ void serverBrowserRequestRefresh();
 void serverBrowserSetOwnRoomCode(const std::string& code);
 
 // Thread-safe snapshot of the latest list (empty until first refresh).
-std::vector<ServerBrowserEntry> serverBrowserEntries();
+void serverBrowserEntries(std::vector<ServerBrowserEntry>& out);
 
 bool serverBrowserRefreshing();
 

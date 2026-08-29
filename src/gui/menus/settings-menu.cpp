@@ -144,11 +144,10 @@ static void drawVideoTab(GLFWwindow* win)
         y += 120.0f;
     }
 
-    // VSync
+    // VSync — forced OFF, no toggle
     {
-        int vsIdx = VideoSettings::instance().vsync() ? 1 : 0;
-        drawDropdownSimple(win, "VSync", y, kOnOff, 2, vsIdx, changed);
-        if (changed) VideoSettings::instance().setVSync(vsIdx == 1);
+        uiDrawText("VSync", uiScaleX(60.0f), uiScaleY(y + 2.0f), 0.32f, {0.8f, 0.85f, 0.95f, 1.0f});
+        uiDrawText("OFF (forced)", uiScaleX(60.0f + 300.0f), uiScaleY(y + 2.0f), 0.28f, {0.5f, 0.5f, 0.55f, 1.0f});
         y += 120.0f;
     }
 

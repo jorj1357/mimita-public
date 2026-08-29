@@ -213,7 +213,13 @@ void gameInitSubsystems(Engine& engine)
     VideoSettings::instance().load();
     VideoSettings::instance().apply();
     gFramePacer.setMaxFrames(VideoSettings::instance().maxFrames());
-    gFramePacer.setVSync(VideoSettings::instance().vsync());
+    gFramePacer.setVSync(false);
+
+    printf("[VSYNC] FORCED OFF: software frame pacing only (maxFrames=%d)\n",
+           gFramePacer.maxFrames());
+    Debug::log(Debug::Category::Render,
+        "[VSYNC] FORCED OFF: swap interval=0, software pacer active, "
+        "VSync cannot be re-enabled at runtime\n");
 
     PostFX::instance().loadConfig("config/postfx.json");
     // PostFX FBO is lazily initialized on first bindFBO() call

@@ -635,6 +635,7 @@ inline bool movementEventMatchesLifecycle(const MovementExternalEvent& event,
     return sameMovementLifecycle(event.targetLifecycle, lifecycle);
 }
 
+// Hot-path movement event data. Keep this stack-only; do not add std::vector/std::string here.
 struct MovementStepEvents {
     bool didGroundJump = false;
     bool didAirJump = false;
@@ -660,7 +661,6 @@ struct MovementStepEvents {
     uint8_t dedupedContactCount = 0;
     uint16_t contactOverflowCount = 0;
     MovementContactSet contacts;
-    std::vector<MovementExternalEvent> consumedExternalEvents;
 };
 
 struct MovementStepResult {

@@ -1546,7 +1546,7 @@ static MovementStepResult applyPostCollisionMovementInternal(
     const MovementCollisionFeedback& collision,
     float fixedDt,
     bool specialMovementEnabled,
-    MovementStepEvents events)
+    MovementStepEvents& events)
 {
     const float dt = movementClampStepDelta(fixedDt, config);
     const bool previousOnGround = state.ground.onGround;
@@ -1655,8 +1655,9 @@ MovementStepResult applyPostCollisionBasicMovement(MovementState& state,
                                                    const MovementCollisionFeedback& collision,
                                                    float fixedDt)
 {
+    MovementStepEvents events;
     return applyPostCollisionMovementInternal(
-        state, command, config, collision, fixedDt, false, MovementStepEvents{});
+        state, command, config, collision, fixedDt, false, events);
 }
 
 MovementStepResult applyPostCollisionMovementWithSpecials(
@@ -1665,7 +1666,7 @@ MovementStepResult applyPostCollisionMovementWithSpecials(
     const MovementConfig& config,
     const MovementCollisionFeedback& collision,
     float fixedDt,
-    MovementStepEvents preCollisionEvents)
+    MovementStepEvents& preCollisionEvents)
 {
     return applyPostCollisionMovementInternal(
         state, command, config, collision, fixedDt, true, preCollisionEvents);

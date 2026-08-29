@@ -29,7 +29,16 @@ void drawAvatarLibrary(GLFWwindow* win, float px, float py, float pw, float ph)
         return;
 
     const std::string avatarName = av.currentName();
-    auto pngs = av.listPngs(avatarName);
+    static std::string cachedPngName;
+    static std::vector<std::string> cachedPngs;
+    static double lastPngScanTime = 0.0;
+    double now = glfwGetTime();
+    if (avatarName != cachedPngName || now - lastPngScanTime >= 1.0) {
+        cachedPngName = avatarName;
+        lastPngScanTime = now;
+        cachedPngs = av.listPngs(avatarName);
+    }
+    const auto& pngs = cachedPngs;
     if (pngs.empty()) {
         const std::string emptyText = editorLabelText("pngLibraryEmpty", "No PNGs yet.");
         const std::string importText = editorLabelText("pngLibraryImportHint", "Drag PNGs here to import.");

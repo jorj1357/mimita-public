@@ -268,7 +268,8 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
                 AABB rayBounds;
                 rayBounds.min = glm::min(camera.pos, crossPos);
                 rayBounds.max = glm::max(camera.pos, crossPos);
-                std::vector<int> candidates;
+                static thread_local std::vector<int> candidates;
+                candidates.clear();
                 appendChunkTrianglesForAABB(world, rayBounds, 0.1f, candidates, "weaponCrosshairOcclusion");
                 for (int ti : candidates)
                 {

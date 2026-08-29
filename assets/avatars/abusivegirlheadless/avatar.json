@@ -1,21 +1,32 @@
 {
   "advanced": {
     "head_back": {
-      "brightness": -5.9914326667785645,
-      "scale_x": 0.9025089740753174,
-      "scale_y": 3.93957257270813,
+      "brightness": 8.834148406982422,
+      "contrast": 0.8353731632232666,
+      "offset_x": 494,
+      "offset_y": 499,
+      "rotation": 176.36471557617188,
+      "saturation": 2.729496955871582,
+      "scale_x": 1.22219979763031,
+      "scale_y": 1.1536946296691895,
       "texture": "hair2.png"
     },
     "head_bottom": {
-      "brightness": -5.9914326667785645,
-      "scale_x": 0.9025089740753174,
-      "scale_y": 3.93957257270813,
+      "brightness": 8.834148406982422,
+      "contrast": 0.8353731632232666,
+      "offset_x": 494,
+      "offset_y": 499,
+      "rotation": 176.36471557617188,
+      "saturation": 2.729496955871582,
+      "scale_x": 1.22219979763031,
+      "scale_y": 1.1536946296691895,
       "texture": "hair2.png"
     },
     "head_front": {
       "brightness": 8.834148406982422,
       "contrast": 0.8353731632232666,
-      "offset_y": 157,
+      "offset_x": 494,
+      "offset_y": 499,
       "rotation": 176.36471557617188,
       "saturation": 2.729496955871582,
       "scale_x": 1.22219979763031,
@@ -23,21 +34,36 @@
       "texture": "girlface4.png"
     },
     "head_left": {
-      "brightness": -5.9914326667785645,
-      "scale_x": 0.9025089740753174,
-      "scale_y": 3.93957257270813,
+      "brightness": 8.834148406982422,
+      "contrast": 0.8353731632232666,
+      "offset_x": 494,
+      "offset_y": 499,
+      "rotation": 176.36471557617188,
+      "saturation": 2.729496955871582,
+      "scale_x": 1.22219979763031,
+      "scale_y": 1.1536946296691895,
       "texture": "hair2.png"
     },
     "head_right": {
-      "brightness": -5.9914326667785645,
-      "scale_x": 0.9025089740753174,
-      "scale_y": 3.93957257270813,
+      "brightness": 8.834148406982422,
+      "contrast": 0.8353731632232666,
+      "offset_x": 494,
+      "offset_y": 499,
+      "rotation": 176.36471557617188,
+      "saturation": 2.729496955871582,
+      "scale_x": 1.22219979763031,
+      "scale_y": 1.1536946296691895,
       "texture": "hair2.png"
     },
     "head_top": {
-      "brightness": -5.9914326667785645,
-      "scale_x": 0.9025089740753174,
-      "scale_y": 3.93957257270813,
+      "brightness": 8.834148406982422,
+      "contrast": 0.8353731632232666,
+      "offset_x": 494,
+      "offset_y": 499,
+      "rotation": 176.36471557617188,
+      "saturation": 2.729496955871582,
+      "scale_x": 1.22219979763031,
+      "scale_y": 1.1536946296691895,
       "texture": "hair2.png"
     },
     "leftArm_back": {
@@ -304,17 +330,17 @@
       ],
       "slot": "",
       "texture": {
-        "brightness": 2.4173803329467773,
+        "brightness": 9.990818977355957,
         "color": [
-          0.007649821229279041,
-          0.03059963695704937,
-          0.007649821229279041
+          9.94491958618164,
+          9.990818977355957,
+          9.990818977355957
         ],
-        "image": "fishnetbottomfoot.png",
-        "offset_x": 0.0,
-        "offset_y": 0.0,
-        "opacity": 1.0,
-        "rotation": 226.65237426757813,
+        "image": "croptoparmsides.png",
+        "offset_x": -704.71240234375,
+        "offset_y": -741.43212890625,
+        "opacity": 0.3082925081253052,
+        "rotation": 289.44305419921875,
         "scale_x": 1.0,
         "scale_y": 1.0
       },
@@ -323,7 +349,7 @@
   ],
   "created_at": "2026-07-10T18:44:15Z",
   "format_version": 1,
-  "name": "abusivegirl3",
+  "name": "abusivegirlheadless",
   "player_model": "assets/entity/player/girl/mimita-girl-v7.glb",
   "simple": {
     "face": "",
@@ -331,5 +357,5 @@
     "shirt": "",
     "skin": ""
   },
-  "updated_at": "2026-08-28T23:52:13Z"
+  "updated_at": "2026-08-28T23:53:37Z"
 }

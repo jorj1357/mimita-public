@@ -264,7 +264,8 @@ UIButtonState drawGuiElement(GLFWwindow* win, const GuiElement& elem,
         DropdownState& state = gDropdownState[elem.id];
 
         // Build items list
-        std::vector<std::string> items;
+        static thread_local std::vector<std::string> items;
+        items.clear();
         if (!elem.bindingItems.empty()) {
             std::string itemsStr = GuiBindings::instance().get(elem.bindingItems);
             if (!itemsStr.empty()) {

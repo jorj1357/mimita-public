@@ -9,11 +9,16 @@
 
 void* operator new(std::size_t size)
 {
-    gPerfAllocCount++;
-    gPerfAllocBytes += size;
-    if (size > gPerfLargestAlloc) {
-        gPerfLargestAlloc = size;
-    }
+    gPerfAllocCount.fetch_add(1, std::memory_order_relaxed);
+    gPerfAllocBytes.fetch_add(static_cast<uint64_t>(size), std::memory_order_relaxed);
+
+    uint64_t oldLargest = gPerfLargestAlloc.load(std::memory_order_relaxed);
+    const uint64_t size64 = static_cast<uint64_t>(size);
+    while (size64 > oldLargest &&
+           !gPerfLargestAlloc.compare_exchange_weak(
+               oldLargest, size64,
+               std::memory_order_relaxed, std::memory_order_relaxed)) {}
+
     void* ptr = std::malloc(size);
     if (!ptr) throw std::bad_alloc();
     return ptr;
@@ -36,11 +41,16 @@ void operator delete[](void* ptr) noexcept
 
 void* operator new(std::size_t size, const std::nothrow_t&) noexcept
 {
-    gPerfAllocCount++;
-    gPerfAllocBytes += size;
-    if (size > gPerfLargestAlloc) {
-        gPerfLargestAlloc = size;
-    }
+    gPerfAllocCount.fetch_add(1, std::memory_order_relaxed);
+    gPerfAllocBytes.fetch_add(static_cast<uint64_t>(size), std::memory_order_relaxed);
+
+    uint64_t oldLargest = gPerfLargestAlloc.load(std::memory_order_relaxed);
+    const uint64_t size64 = static_cast<uint64_t>(size);
+    while (size64 > oldLargest &&
+           !gPerfLargestAlloc.compare_exchange_weak(
+               oldLargest, size64,
+               std::memory_order_relaxed, std::memory_order_relaxed)) {}
+
     return std::malloc(size);
 }
 

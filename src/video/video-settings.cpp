@@ -69,10 +69,12 @@ void VideoSettings::setMaxFrames(int fps)
 
 void VideoSettings::setVSync(bool on)
 {
-    mVSync = on;
-    printf("[VIDEO] vsync=%s\n", on ? "ON" : "OFF");
+    if (on) {
+        printf("[VSYNC] BLOCKED attempt to enable VSync via settings\n");
+    }
+    mVSync = false;
     if (gRenderer)
-        gRenderer->setVSync(on);
+        gRenderer->setVSync(false);
     save();
 }
 
@@ -110,8 +112,10 @@ void VideoSettings::load()
             mFullscreen = j["fullscreen"].get<bool>();
         if (j.contains("maxFrames"))
             mMaxFrames = std::clamp(j["maxFrames"].get<int>(), 10, 999);
-        if (j.contains("vsync"))
-            mVSync = j["vsync"].get<bool>();
+        if (j.contains("vsync") && j["vsync"].get<bool>()) {
+            printf("[VSYNC] config had vsync=true, forced OFF\n");
+        }
+        mVSync = false;
 
         printf("[VIDEO] Loaded: resolution=%d (%dx%d) fullscreen=%d maxFrames=%d vsync=%d\n",
                mIndex, width(), height(), (int)mFullscreen, mMaxFrames, (int)mVSync);
@@ -135,7 +139,7 @@ void VideoSettings::save()
     j["resolution_index"] = mIndex;
     j["fullscreen"] = mFullscreen;
     j["maxFrames"] = mMaxFrames;
-    j["vsync"] = mVSync;
+    j["vsync"] = false;
     j["width"] = width();
     j["height"] = height();
 

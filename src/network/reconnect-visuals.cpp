@@ -147,7 +147,8 @@ void mpUpdateReconnectVisuals(MultiplayerContext& ctx, float dt)
         return;
 
     const uint64_t now = nowMs();
-    std::vector<uint32_t> toErase;
+    static thread_local std::vector<uint32_t> toErase;
+    toErase.clear();
     for (auto& kv : ctx.remoteConnectionStates)
     {
         const uint32_t playerId = kv.first;

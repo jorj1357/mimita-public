@@ -894,8 +894,9 @@ void engineTickCamera(Engine& engine, float dt)
     EffectPartSystem::instance().setWorld(world);
     if (replayPlaybackActive) {
         const double tFx0 = replayExportNowSec();
-        for (const ReplayEffectEvent& effect :
-             gReplayPlayer.takeTriggeredEffects()) {
+        static thread_local std::vector<ReplayEffectEvent> effects;
+        gReplayPlayer.takeTriggeredEffects(effects);
+        for (const ReplayEffectEvent& effect : effects) {
             if (gReplayExportVerbose)
                 printf("[REPLAY EFFECT] type=%s pos=(%.1f %.1f %.1f) label=%s\n",
                        effect.type.c_str(),
@@ -1109,8 +1110,9 @@ void engineTickCamera(Engine& engine, float dt)
                     viewedEntity = gReplayPlayer.victimId();
                     break;
             }
-            for (const ReplaySoundEvent& sound :
-                 gReplayPlayer.takeTriggeredSounds()) {
+            static thread_local std::vector<ReplaySoundEvent> sounds;
+            gReplayPlayer.takeTriggeredSounds(sounds);
+            for (const ReplaySoundEvent& sound : sounds) {
                 bool play = true;
                 if (sound.soundPath == "hitmarker1") {
                     play = ReplayShouldPlayHitmarkerAudio(

@@ -16,6 +16,42 @@ Never launch `mimita.exe` without `--server` or `--timeout <secs>`. Without thes
 
 For build purposes, human or AI agents are authorized to terminate existing `mimita.exe` processes at any time, until this instruction is changed. This authorization applies only to releasing the executable lock so the updated build can be produced and tested.
 
+# VSync Policy (Hard Rule — Never Override)
+
+VSync is **forced OFF globally** and must never be re-enabled. This is a permanent performance constraint.
+
+## Rules
+
+1. **Never call `glfwSwapInterval(1)` anywhere in the codebase.** Every call must be `glfwSwapInterval(0)`.
+2. **Never write `mVSync = true`** in any file (Renderer, VideoSettings, FramePacer).
+3. **Never add a UI toggle, slider, or terminal command that enables VSync.**
+4. **Never read `"vsync": true` from config and apply it.** Config loads must override any stored vsync value to `false`.
+5. **Never add command-line flags that control VSync.**
+6. **Never skip the software frame pacer** (`FramePacer::endFrame()`) by claiming "VSync handles pacing."
+7. **Fullscreen/window transitions must always call `glfwSwapInterval(0)`** after `glfwSetWindowMonitor`.
+8. **Any code path that calls `Renderer::setVSync(true)` must be blocked** with a `[VSYNC] BLOCKED` log.
+
+## Why
+
+VSync adds 16-29ms of driver-level stall per frame (measured at the Swap scope). The engine uses a software frame pacer (`FramePacer::endFrame()`) with `maxFrames` to control frame rate. VSync is incompatible with the performance target of <1ms frame times.
+
+## Enforcement Points
+
+- `Renderer::setVSync()` — always calls `glfwSwapInterval(0)`, logs `[VSYNC] BLOCKED` if `on==true`
+- `Renderer::applyVideoMode()` — always calls `glfwSwapInterval(0)` after monitor changes
+- `Renderer::forceVSyncOff()` — explicit force-off with reason logging
+- `VideoSettings::setVSync()` — forces `mVSync = false`, logs blocked attempt
+- `VideoSettings::load()` — overrides JSON `"vsync": true` to `false`
+- `VideoSettings::save()` — always writes `"vsync": false`
+- `FramePacer::setVSync()` — forces `mVSync = false`, logs blocked attempt
+- Settings menu — shows "VSync: OFF (forced)" with no toggle
+- Terminal `vsync` command — logs blocked, refuses to enable
+- Boot sequence — loud `[VSYNC] FORCED OFF` log confirming state
+
+## If You Think You Need VSync
+
+You don't. Use `maxFrames` in the terminal or settings to cap FPS. If the frame rate is unstable, fix the frame pacer or reduce render cost — do not add VSync.
+
 # Mandatory Overseer Check
 
 Before marking ANY task as complete, ALWAYS run `python overseer.py` from the workspace root.

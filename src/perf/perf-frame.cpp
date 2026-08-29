@@ -6,6 +6,8 @@
 #include "config.h"
 
 #include <algorithm>
+#include <chrono>
+#include <climits>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -57,7 +59,7 @@ void perfCaptureFrame(double totalMs, double budgetMs, int frameNumber)
     }
 
     // Fill entity snapshot from PerfState (already populated by engine systems)
-    const PerfState& ps = Perf::state();
+    PerfState& ps = Perf::state();
     frame.npcCount = ps.npcCount;
     frame.playerCount = ps.playerCount > 0 ? ps.playerCount : 1;
     frame.particleCount = ps.current.particleCount;
@@ -67,9 +69,55 @@ void perfCaptureFrame(double totalMs, double budgetMs, int frameNumber)
     frame.ragdollCount = 0;
     frame.bloodDecalCount = ps.current.damageNumbersAlive;
     frame.projectileCount = ps.projectileCount;
-    frame.allocCount = ps.allocationsThisFrame;
-    frame.allocBytes = (size_t)gPerfAllocBytes;
     frame.collisionQueryCount = ps.queryRecordCount;
+
+    // Allocation frame deltas from monotonically increasing global counters.
+    // These globals (std::atomic<uint64_t>) are incremented by operator new
+    // and never reset. Frame deltas are current minus previous snapshot.
+    static bool sAllocSnapshotsInit = false;
+    static uint64_t sPrevAllocCount = 0;
+    static uint64_t sPrevAllocBytes = 0;
+
+    const uint64_t curAllocCount = gPerfAllocCount.load(std::memory_order_relaxed);
+    const uint64_t curAllocBytes = gPerfAllocBytes.load(std::memory_order_relaxed);
+
+    uint64_t frameAllocCount = 0;
+    uint64_t frameAllocBytes = 0;
+    if (sAllocSnapshotsInit) {
+        frameAllocCount = curAllocCount - sPrevAllocCount;
+        frameAllocBytes = curAllocBytes - sPrevAllocBytes;
+    } else {
+        sAllocSnapshotsInit = true;
+    }
+    sPrevAllocCount = curAllocCount;
+    sPrevAllocBytes = curAllocBytes;
+
+    frame.allocCount = frameAllocCount;
+    frame.allocBytes = frameAllocBytes;
+
+    // Derived display values — allocationsThisFrame is NOT the source of truth.
+    ps.allocationsThisFrame = frameAllocCount > static_cast<uint64_t>(INT_MAX)
+        ? INT_MAX : static_cast<int>(frameAllocCount);
+    ps.totalAllocations = curAllocCount;
+
+    if (frameAllocBytes > 0 && frameAllocCount == 0) {
+        Debug::warn(Debug::Category::General,
+            "[PERF][ALLOC][WARN] frame bytes increased without frame count increase; "
+            "investigate allocation hook mismatch");
+    }
+
+    // 60-second heartbeat: log lifetime allocation totals
+    {
+        static auto sLastHeartbeat = std::chrono::steady_clock::now();
+        auto now = std::chrono::steady_clock::now();
+        double elapsed = std::chrono::duration<double>(now - sLastHeartbeat).count();
+        if (elapsed >= 60.0) {
+            Debug::log(Debug::Category::General,
+                "[PERF][ALLOC] totals count=%llu bytes=%llu\n",
+                (unsigned long long)curAllocCount, (unsigned long long)curAllocBytes);
+            sLastHeartbeat = now;
+        }
+    }
 
     gFrameHistoryIndex++;
     if (gFrameHistoryCount < FRAME_HISTORY_CAPACITY)
@@ -131,8 +179,8 @@ void perfWriteFrameBreakdown(FILE* f, const PerfFrame& frame, bool showChildren)
     fprintf(f, "    ragdolls:   %d\n", frame.ragdollCount);
     fprintf(f, "    decals:     %d\n", frame.bloodDecalCount);
     fprintf(f, "    projectiles: %d\n", frame.projectileCount);
-    fprintf(f, "    allocs:     %d\n", frame.allocCount);
-    fprintf(f, "    alloc_bytes: %zu\n", frame.allocBytes);
+    fprintf(f, "    allocs:     %llu\n", (unsigned long long)frame.allocCount);
+    fprintf(f, "    alloc_bytes: %llu\n", (unsigned long long)frame.allocBytes);
     fprintf(f, "    coll_queries: %d\n", frame.collisionQueryCount);
 }
 
@@ -198,9 +246,9 @@ void perfDumpSpikeContext(int spikeFrameIndex, int framesBefore, int framesAfter
             pos += std::snprintf(msg + pos, sizeof(msg) - pos, "           ");
 
         pos += std::snprintf(msg + pos, sizeof(msg) - pos,
-            "FRAME_%06d total=%.2fms budget=%.2fms npcs=%d effects=%d allocs=%d\n",
+            "FRAME_%06d total=%.2fms budget=%.2fms npcs=%d effects=%d allocs=%llu\n",
             frame.frameNumber, frame.totalMs, frame.budgetMs,
-            frame.npcCount, frame.effectCount, frame.allocCount);
+            frame.npcCount, frame.effectCount, (unsigned long long)frame.allocCount);
     }
 
     // Entity delta
@@ -220,6 +268,22 @@ void perfDumpSpikeContext(int spikeFrameIndex, int framesBefore, int framesAfter
                     "  %s: %d → %d (%+d)\n", name, b, a, diff);
         };
 
+        auto deltaU64 = [&](const char* name, uint64_t b, uint64_t a) {
+            if (a != b) {
+                if (a > b) {
+                    pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                        "  %s: %llu → %llu (+%llu)\n", name,
+                        (unsigned long long)b, (unsigned long long)a,
+                        (unsigned long long)(a - b));
+                } else {
+                    pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                        "  %s: %llu → %llu (-%llu)\n", name,
+                        (unsigned long long)b, (unsigned long long)a,
+                        (unsigned long long)(b - a));
+                }
+            }
+        };
+
         delta("npcs",       before.npcCount, spike.npcCount);
         delta("particles",  before.particleCount, spike.particleCount);
         delta("effects",    before.effectCount, spike.effectCount);
@@ -228,7 +292,7 @@ void perfDumpSpikeContext(int spikeFrameIndex, int framesBefore, int framesAfter
         delta("ragdolls",   before.ragdollCount, spike.ragdollCount);
         delta("decals",     before.bloodDecalCount, spike.bloodDecalCount);
         delta("projectiles", before.projectileCount, spike.projectileCount);
-        delta("allocs",     before.allocCount, spike.allocCount);
+        deltaU64("allocs",  before.allocCount, spike.allocCount);
     }
 
     pos += std::snprintf(msg + pos, sizeof(msg) - pos,
