@@ -706,6 +706,41 @@ WeaponDefinition createQuickHitDefinition() {
     return def;
 }
 
+WeaponDefinition createSpyKnifeDefinition() {
+    WeaponDefinition def;
+    def.id = "spyknife";
+    def.displayName = "Spy Knife";
+    def.slot = 12;
+    def.modelPath = "assets/objects/weapons/mimita-spyknife-v1.glb";
+    def.damage = 1.0f;
+    def.headshotMultiplier = 1.0f;
+    def.fireDelay = 0.0f;
+    def.reloadTime = 0.0f;
+    def.magazineSize = 0;
+    def.pelletCount = 1;
+    def.fireMode = WeaponFireMode::SemiAuto;
+    def.behaviorType = WeaponBehaviorType::SpyKnife;
+    def.hitscan = false;
+    def.usesPhysicsProjectile = false;
+    def.soundShoot = "entity/falcon/falconswing";
+    def.soundHit = "player_hurt";
+    def.customParams["normalDamagePerTick"] = 1.0f;
+    def.customParams["backstabDamagePerTick"] = 999.0f;
+    def.customParams["backstabDistance"] = 0.5f;
+    def.customParams["backstabConeDegrees"] = 150.0f;
+    def.customParams["frontstabKnockback"] = 100.0f;
+    def.customParams["frontstabVerticalKnockback"] = 0.3f;
+    def.customParams["backstabKnockback"] = 20.0f;
+    def.customParams["swingDurationTicks"] = 120.0f;
+    def.customParams["swingForwardTicks"] = 60.0f;
+    def.customParams["bladeLength"] = 0.6f;
+    def.customParams["bladeRadius"] = 0.05f;
+    def.customParams["damageTickInterval"] = 0.0f;
+    def.customParams["hitboxRadius"] = 0.05f;
+    def.customParams["hitboxLength"] = 0.6f;
+    return def;
+}
+
 void registerBuiltinWeapons() {
     loadWeaponJsonConfig();
     registerWeaponFromJson(createRevolverDefinition());
@@ -719,7 +754,8 @@ void registerBuiltinWeapons() {
     registerWeaponFromJson(createAdminRevolverDefinition());
     registerWeaponFromJson(createHafsDefinition());
     registerWeaponFromJson(createQuickHitDefinition());
-    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver, hafs, quick_hit");
+    registerWeaponFromJson(createSpyKnifeDefinition());
+    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver, hafs, quick_hit, spyknife");
 
     // Diagnostics: print the actually-loaded weapon stats so config edits are
     // verifiable in logs (reveals builtin-default fallback when the JSON file

@@ -126,7 +126,8 @@ enum PacketType : uint8_t
     // ── Live map change (server → clients) ─────────────────────────────
     // The server swapped the map without restarting; clients must load the
     // new map and re-complete the spawn handshake.
-    PACKET_MAP_CHANGE = 58
+    PACKET_MAP_CHANGE = 58,
+    PACKET_SPYKNIFE_HIT_CLAIM = 59
 };
 
 enum DamageConfirmedSource : uint8_t
@@ -166,7 +167,8 @@ enum NetworkWeaponType : uint8_t
     NETWORK_WEAPON_ROCKET_LAUNCHER = 5,
     NETWORK_WEAPON_HAFS = 6,
     NETWORK_WEAPON_GRENADE_LAUNCHER = 7,
-    NETWORK_WEAPON_AA12 = 8
+    NETWORK_WEAPON_AA12 = 8,
+    NETWORK_WEAPON_SPYKNIFE = 9
 };
 
 enum NetworkWeaponStateFlags : uint8_t
@@ -1201,6 +1203,20 @@ struct GodballStatePacket
     uint8_t active = 0;
 };
 
+// ── Spy Knife hit claim (attacker → server, unreliable) ───────────────
+struct SpyKnifeHitClaimPacket
+{
+    PacketHeader header;
+    uint32_t attackerId = 0;
+    uint32_t targetId = 0;
+    uint8_t isBackstab = 0;
+    float hitX = 0.0f, hitY = 0.0f, hitZ = 0.0f;
+    float attackerX = 0.0f, attackerY = 0.0f, attackerZ = 0.0f;
+    float attackerYaw = 0.0f;
+    float victimX = 0.0f, victimY = 0.0f, victimZ = 0.0f;
+    uint16_t attackSerial = 0;
+};
+
 // ── Projectile fire result ────────────────────────────────────────────
 enum ProjectileFireResultReason : uint8_t
 {
@@ -1355,7 +1371,7 @@ struct SpawnActivatedPacket
     uint32_t serverTick = 0;
 };
 
-static_assert(sizeof(SnapshotPacket) < 16000, "SnapshotPacket exceeds client receive buffer");
+static_assert(sizeof(SnapshotPacket) < 16384, "SnapshotPacket exceeds client receive buffer");
 static_assert(sizeof(ShotRequestPacket) <= 132, "ShotRequestPacket is too large");
 static_assert(sizeof(ShotEventPacket) <= 160, "ShotEventPacket is too large");
 static_assert(sizeof(ProjectileFireRequestPacket) <= 80, "ProjectileFireRequestPacket is too large");

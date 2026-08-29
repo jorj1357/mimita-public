@@ -13,6 +13,7 @@ extern bool gWeaponCollisionVisualsProbes;
 #include "weapon-swordsword.h"
 #include "weapon-hafs.h"
 #include "weapon-quick-hit.h"
+#include "weapon-spyknife.h"
 #include "weapon-rocket-launcher.h"
 #include "weapon-grenade-launcher.h"
 
@@ -95,6 +96,7 @@ private:
     SwordswordState mSwordswordState;
     HafsState mHafsState;
     QuickHitState mQuickHitState;
+    SpyKnifeState mSpyKnifeState;
     RocketLauncherState mRocketState;
     float mShotCooldown = 0.0f;
     float mShootingTimer = 0.0f;

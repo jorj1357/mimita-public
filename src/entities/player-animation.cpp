@@ -375,24 +375,44 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         } else if (isReloading) {
             if (!tryWeaponPoseState("reloading"))
                 tryWeaponPoseState("reload");
-        } else if (currentWeaponRuntime->shootEffectTimer > 0.0f) {
-            // Allow weapon to override pose via custom float (used by Swordsword)
-            auto poseIt = currentWeaponRuntime->customFloats.find("swordPoseState");
-            if (poseIt != currentWeaponRuntime->customFloats.end()) {
-                if (poseIt->second == 1.0f)
-                    tryWeaponPoseState("slash");
-                else if (poseIt->second == 2.0f)
-                    tryWeaponPoseState("lunge");
-                else
-                    tryWeaponPoseState("shooting");
-            } else if (!tryWeaponPoseState("shooting")) {
-                tryWeaponPoseState("fire");
+        } else {
+            // Check SpyKnife animation state (ready pose can override idle)
+            auto knifeIt = currentWeaponRuntime->customFloats.find("knifeAnimState");
+            bool knifeHandled = false;
+            if (knifeIt != currentWeaponRuntime->customFloats.end() && knifeIt->second > 0.0f) {
+                float ks = knifeIt->second;
+                if (ks == 1.0f) {
+                    knifeHandled = tryWeaponPoseState("ready");
+                    if (!knifeHandled) knifeHandled = tryWeaponPoseState("shooting");
+                } else if (ks == 2.0f) {
+                    knifeHandled = tryWeaponPoseState("shooting");
+                    if (!knifeHandled) knifeHandled = tryWeaponPoseState("fire");
+                } else if (ks == 3.0f) {
+                    knifeHandled = tryWeaponPoseState("idle");
+                    if (!knifeHandled) knifeHandled = tryWeaponPoseState("equipped");
+                }
             }
-        } else if (currentWeaponRuntime->fireCooldown > 0.0f) {
-            if (!tryWeaponPoseState("cooldown"))
-                tryWeaponPoseState("just_shot");
-        } else if (!tryWeaponPoseState("idle")) {
-            tryWeaponPoseState("equipped");
+
+            if (!knifeHandled) {
+                if (currentWeaponRuntime->shootEffectTimer > 0.0f) {
+                    auto poseIt = currentWeaponRuntime->customFloats.find("swordPoseState");
+                    if (poseIt != currentWeaponRuntime->customFloats.end()) {
+                        if (poseIt->second == 1.0f)
+                            tryWeaponPoseState("slash");
+                        else if (poseIt->second == 2.0f)
+                            tryWeaponPoseState("lunge");
+                        else
+                            tryWeaponPoseState("shooting");
+                    } else if (!tryWeaponPoseState("shooting")) {
+                        tryWeaponPoseState("fire");
+                    }
+                } else if (currentWeaponRuntime->fireCooldown > 0.0f) {
+                    if (!tryWeaponPoseState("cooldown"))
+                        tryWeaponPoseState("just_shot");
+                } else if (!tryWeaponPoseState("idle")) {
+                    tryWeaponPoseState("equipped");
+                }
+            }
         }
     }
 

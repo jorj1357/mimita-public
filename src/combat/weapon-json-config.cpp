@@ -137,6 +137,8 @@ void weaponJsonBehaviorType(const json& root, WeaponDefinition& def)
         def.behaviorType = WeaponBehaviorType::Hafs;
     else if (type == "quickhit" || type == "quick_hit")
         def.behaviorType = WeaponBehaviorType::QuickHit;
+    else if (type == "spyknife" || type == "spy_knife")
+        def.behaviorType = WeaponBehaviorType::SpyKnife;
     else if (type == "rocketlauncher" || type == "rocket")
         def.behaviorType = WeaponBehaviorType::RocketLauncher;
     else if (type == "grenadelauncher" || type == "grenade")
