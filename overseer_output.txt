@@ -1,11 +1,11 @@
 ==============================================================================
 MIMITA OVERSEER REPORT
 ==============================================================================
-Generated: 2026-08-30T14:05:41
+Generated: 2026-08-30T14:45:34
 Repository: C:\mimita-priv-v8
 Mode: report-only by default; use --strict to make ERROR findings block.
 
-Findings: 5217 total | ERROR 2173 | WARNING 1622 | INFO 1422
+Findings: 5220 total | ERROR 2173 | WARNING 1622 | INFO 1425
 
 
 [printf]
@@ -670,31 +670,31 @@ ERROR   src/combat/weapon-registry.cpp:32
 ERROR   src/combat/weapon-rocket-launcher.cpp:500
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ROCKET DEBUG] distTraveled=%.2f/%.1f pos=(%.1f,%.1f,%.1f)\n",
-ERROR   src/combat/weapon-runtime.cpp:50
+ERROR   src/combat/weapon-runtime.cpp:48
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[WEAPON] Runtime initialized for weapon '%s': ammo=%d reserve=%d\n",
-ERROR   src/combat/weapon-runtime.cpp:93
+ERROR   src/combat/weapon-runtime.cpp:91
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[WEAPON] Started reload: timer=%.2f current=%d reserve=%d\n",
-ERROR   src/combat/weapon-runtime.cpp:111
+ERROR   src/combat/weapon-runtime.cpp:109
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[WEAPON] Reload +1: ammo=%d reserve=%d\n",
-ERROR   src/combat/weapon-runtime.cpp:118
+ERROR   src/combat/weapon-runtime.cpp:116
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[WEAPON] Reload complete: ammo=%d reserve=%d\n",
-ERROR   src/combat/weapon-runtime.cpp:128
+ERROR   src/combat/weapon-runtime.cpp:126
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[WEAPON] Reload complete: ammo=%d reserve=%d\n",
-ERROR   src/combat/weapon-runtime.cpp:143
+ERROR   src/combat/weapon-runtime.cpp:141
         Raw output via fprintf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > fprintf(gSpawnDebugFile, "=== spawn weapon state log ===\n");
-ERROR   src/combat/weapon-runtime.cpp:173
+ERROR   src/combat/weapon-runtime.cpp:171
         Raw output via fprintf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > fprintf(gSpawnDebugFile, "Player/NPC weapon=%s caller=%s\n", weaponId.c_str(), caller);
-ERROR   src/combat/weapon-runtime.cpp:174
+ERROR   src/combat/weapon-runtime.cpp:172
         Raw output via fprintf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > fprintf(gSpawnDebugFile, "  Before: ammo=%d reserve=%d reloading=%d reloadTimer=%.2f cooldown=%.2f\n",
-ERROR   src/combat/weapon-runtime.cpp:176
+ERROR   src/combat/weapon-runtime.cpp:174
         Raw output via fprintf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > fprintf(gSpawnDebugFile, "  After:  ammo=%d reserve=%d reloading=%d reloadTimer=%.2f cooldown=%.2f\n",
 ERROR   src/combat/weapon-spyknife.cpp:77
@@ -1267,7 +1267,7 @@ ERROR   src/engine/engine-tick-camera.cpp:777
 ERROR   src/engine/engine-tick-camera.cpp:901
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[REPLAY EFFECT] type=%s pos=(%.1f %.1f %.1f) label=%s\n",
-ERROR   src/engine/engine-tick-combat.cpp:429
+ERROR   src/engine/engine-tick-combat.cpp:426
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[CINEMATIC] %s\n", gReplayCinematicMode ? "Enabled" : "Disabled");
 ERROR   src/engine/engine-tick-net.cpp:189
@@ -3409,94 +3409,94 @@ ERROR   src/network/multiplayer-packets.cpp:452
 ERROR   src/network/multiplayer-packets.cpp:470
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[NET DISCONNECT] shutdown complete\n");
-ERROR   src/network/multiplayer-packets.cpp:706
+ERROR   src/network/multiplayer-packets.cpp:633
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[NET SERVER COMMAND SEND] cmd=\"%s\"\n", command.c_str());
-ERROR   src/network/multiplayer-packets.cpp:832
+ERROR   src/network/multiplayer-packets.cpp:759
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] room=%s not found on coordinator\n", roomCode.c_str());
-ERROR   src/network/multiplayer-packets.cpp:839
+ERROR   src/network/multiplayer-packets.cpp:766
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] starting ICE connection to room=%s as \"%s\"\n",
-ERROR   src/network/multiplayer-packets.cpp:844
+ERROR   src/network/multiplayer-packets.cpp:771
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] FATAL: WSAStartup failed\n");
-ERROR   src/network/multiplayer-packets.cpp:860
+ERROR   src/network/multiplayer-packets.cpp:787
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] TURN credentials fetched from coordinator: %s:%u\n",
-ERROR   src/network/multiplayer-packets.cpp:865
+ERROR   src/network/multiplayer-packets.cpp:792
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] WARNING: no TURN credentials from coordinator; "
-ERROR   src/network/multiplayer-packets.cpp:880
+ERROR   src/network/multiplayer-packets.cpp:807
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] attempt %d/%d room=%s\n", attempt, kMaxRetries, roomCode.c_str());
-ERROR   src/network/multiplayer-packets.cpp:885
+ERROR   src/network/multiplayer-packets.cpp:812
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] agent initialization failed (attempt %d)\n", attempt);
-ERROR   src/network/multiplayer-packets.cpp:894
+ERROR   src/network/multiplayer-packets.cpp:821
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] candidate gathering failed (attempt %d)\n", attempt);
-ERROR   src/network/multiplayer-packets.cpp:903
+ERROR   src/network/multiplayer-packets.cpp:830
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] gather timeout (15s) (attempt %d)\n", attempt);
-ERROR   src/network/multiplayer-packets.cpp:908
+ERROR   src/network/multiplayer-packets.cpp:835
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] candidates gathered (attempt %d)\n", attempt);
-ERROR   src/network/multiplayer-packets.cpp:918
+ERROR   src/network/multiplayer-packets.cpp:845
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] coordinator ICE begin-join failed "
-ERROR   src/network/multiplayer-packets.cpp:927
+ERROR   src/network/multiplayer-packets.cpp:854
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] begin-join accepted room=%s request=%s (attempt %d)\n",
-ERROR   src/network/multiplayer-packets.cpp:956
+ERROR   src/network/multiplayer-packets.cpp:883
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] server answer failed "
-ERROR   src/network/multiplayer-packets.cpp:969
+ERROR   src/network/multiplayer-packets.cpp:896
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] request stale, retrying begin-join room=%s (attempt %d)\n",
-ERROR   src/network/multiplayer-packets.cpp:980
+ERROR   src/network/multiplayer-packets.cpp:907
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] retry begin-join accepted room=%s request=%s\n",
-ERROR   src/network/multiplayer-packets.cpp:987
+ERROR   src/network/multiplayer-packets.cpp:914
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] retry begin-join also failed\n");
-ERROR   src/network/multiplayer-packets.cpp:998
+ERROR   src/network/multiplayer-packets.cpp:925
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] server answer timeout "
-ERROR   src/network/multiplayer-packets.cpp:1008
+ERROR   src/network/multiplayer-packets.cpp:935
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] received host SDP request=%s bytes=%zu (attempt %d)\n",
-ERROR   src/network/multiplayer-packets.cpp:1014
+ERROR   src/network/multiplayer-packets.cpp:941
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] setRemoteDescription failed (attempt %d)\n", attempt);
-ERROR   src/network/multiplayer-packets.cpp:1019
+ERROR   src/network/multiplayer-packets.cpp:946
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] remote description applied (attempt %d)\n", attempt);
-ERROR   src/network/multiplayer-packets.cpp:1027
+ERROR   src/network/multiplayer-packets.cpp:954
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] connection timeout (30s) (attempt %d)\n", attempt);
-ERROR   src/network/multiplayer-packets.cpp:1032
+ERROR   src/network/multiplayer-packets.cpp:959
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] ICE connection established (attempt %d)\n", attempt);
-ERROR   src/network/multiplayer-packets.cpp:1047
+ERROR   src/network/multiplayer-packets.cpp:974
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] connected via ICE to room=%s\n", roomCode.c_str());
-ERROR   src/network/multiplayer-packets.cpp:1058
+ERROR   src/network/multiplayer-packets.cpp:985
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] FATAL: all %d attempts failed room=%s\n", kMaxRetries, roomCode.c_str());
-ERROR   src/network/multiplayer-packets.cpp:1068
+ERROR   src/network/multiplayer-packets.cpp:995
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[ICE CONNECT] room %s still exists (%d/%d players) — "
-ERROR   src/network/multiplayer-packets.cpp:1221
+ERROR   src/network/multiplayer-packets.cpp:1148
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[NET DISAGREEMENT RECV] reason=%u out of range — ignoring\n",
-ERROR   src/network/multiplayer-packets.cpp:1230
+ERROR   src/network/multiplayer-packets.cpp:1157
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[NET DISAGREEMENT RECV] non-finite position/correction — ignoring\n");
-ERROR   src/network/multiplayer-packets.cpp:1239
+ERROR   src/network/multiplayer-packets.cpp:1166
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[NET DISAGREEMENT RECV] eventId=%u duplicate=1 skipped=1\n", packet->eventId);
-ERROR   src/network/multiplayer-packets.cpp:1269
+ERROR   src/network/multiplayer-packets.cpp:1196
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[NET DISAGREEMENT RECV] eventId=%u shotSerial=%u shooter=%u target=%u "
 ERROR   src/network/multiplayer-projectiles.cpp:293
@@ -4168,55 +4168,55 @@ ERROR   src/network/server-packets.cpp:1751
 ERROR   src/network/server-packets.cpp:1766
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("%s [SERVER PACKET] rejected reason=unknown-type bytes=%d "
-ERROR   src/network/server-packets.cpp:1964
+ERROR   src/network/server-packets.cpp:1958
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("%s [SERVER MAP READY REJECT] reason=assignedPlayerId-mismatch "
-ERROR   src/network/server-packets.cpp:1974
+ERROR   src/network/server-packets.cpp:1968
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("%s [SERVER MAP READY REJECT] reason=player-not-found id=%u\n",
-ERROR   src/network/server-packets.cpp:1980
+ERROR   src/network/server-packets.cpp:1974
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("%s [SERVER MAP READY REJECT] reason=connection-mismatch "
-ERROR   src/network/server-packets.cpp:1992
+ERROR   src/network/server-packets.cpp:1986
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("%s [SERVER MAP READY REJECT] reason=map-mismatch id=%u "
-ERROR   src/network/server-packets.cpp:2003
+ERROR   src/network/server-packets.cpp:1997
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("%s [SERVER MAP READY] transport=%s connection=%llu "
-ERROR   src/network/server-packets.cpp:2017
+ERROR   src/network/server-packets.cpp:2011
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("%s [SERVER PACKET] rejected reason=unsupported-or-short type=%u "
-ERROR   src/network/server-packets.cpp:2062
+ERROR   src/network/server-packets.cpp:2056
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("%s [SERVER AUTHORITATIVE TRANSFORM] playerId=%u reason=%s "
-ERROR   src/network/server-packets.cpp:2128
+ERROR   src/network/server-packets.cpp:2122
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("%s [NET TX ERROR] broadcastVipStyleEvent failed id=%u error=%d\n",
-ERROR   src/network/server-packets.cpp:2155
+ERROR   src/network/server-packets.cpp:2149
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("%s [SERVER SNAPSHOT SKIP] playerId=%u reason=not-spawned "
-ERROR   src/network/server-packets.cpp:2175
+ERROR   src/network/server-packets.cpp:2169
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("%s [SERVER SNAPSHOT BUILD] tick=%u entities=%u\n",
-ERROR   src/network/server-packets.cpp:2183
+ERROR   src/network/server-packets.cpp:2177
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("%s [SERVER SNAPSHOT] chunk build failed for tick=%u\n",
-ERROR   src/network/server-packets.cpp:2190
+ERROR   src/network/server-packets.cpp:2184
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("%s [SERVER SNAPSHOT CHUNKS] tick=%u chunks=%zu maxChunkBytes=%zu\n",
-ERROR   src/network/server-packets.cpp:2236
+ERROR   src/network/server-packets.cpp:2230
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("%s [NET TX ERROR] sendto failed id=%u error=%d\n",
-ERROR   src/network/server-packets.cpp:2249
+ERROR   src/network/server-packets.cpp:2243
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("%s [SERVER SNAPSHOT SEND] toClientId=%u chunks=%zu%s\n",
-ERROR   src/network/server-packets.cpp:2299
+ERROR   src/network/server-packets.cpp:2293
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("%s [SERVER DISAGREEMENT SEND] eventId=%u shotSerial=%u shooter=%u target=%u "
-ERROR   src/network/server-packets.cpp:2320
+ERROR   src/network/server-packets.cpp:2314
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("%s [NET TX ERROR] sendDisagreementToAll failed id=%u error=%d\n",
-ERROR   src/network/server-packets.cpp:2354
+ERROR   src/network/server-packets.cpp:2348
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("%s [SERVER DISAGREEMENT SEND] eventId=%u attempt=%d recipients=%zu "
 ERROR   src/network/server-players.cpp:187
@@ -5998,10 +5998,10 @@ ERROR   src/terminal/weapon-bench-commands.cpp:415
 ERROR   src/terminal/weapon-bench-commands.cpp:416
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("\n");
-ERROR   src/terminal/weapon-commands.cpp:1168
+ERROR   src/terminal/weapon-commands.cpp:1193
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[COOL SHOT LINE] %s\n", msg);
-ERROR   src/terminal/weapon-commands.cpp:1341
+ERROR   src/terminal/weapon-commands.cpp:1366
         Raw output via printf; use centralized Debug::log / Debug::warn / Debug::logThrottled.
         > printf("[COOL SHOT LINE]\n"
 ERROR   src/video/frame-pacer.cpp:91
@@ -6636,19 +6636,19 @@ WARNING src/network/ice/ice-test.cpp:1
 WARNING src/network/multiplayer-interpolation.cpp:1
         Very large file: 2112 lines. Review whether it owns multiple responsibilities.
 WARNING src/network/multiplayer-packets.cpp:1
-        Very large file: 1589 lines. Review whether it owns multiple responsibilities.
+        Very large file: 1516 lines. Review whether it owns multiple responsibilities.
 WARNING src/network/multiplayer-projectiles.cpp:1
         Very large file: 1936 lines. Review whether it owns multiple responsibilities.
 WARNING src/network/multiplayer-tick.cpp:1
         Very large file: 2003 lines. Review whether it owns multiple responsibilities.
 WARNING src/network/packets.h:1
-        Very large file: 1446 lines. Review whether it owns multiple responsibilities.
+        Very large file: 1416 lines. Review whether it owns multiple responsibilities.
 WARNING src/network/server-attack.cpp:1
         Very large file: 1151 lines. Review whether it owns multiple responsibilities.
 WARNING src/network/server-packet-handlers.cpp:1
-        Very large file: 1112 lines. Review whether it owns multiple responsibilities.
+        Very large file: 1050 lines. Review whether it owns multiple responsibilities.
 WARNING src/network/server-packets.cpp:1
-        Very large file: 2644 lines. Review whether it owns multiple responsibilities.
+        Very large file: 2638 lines. Review whether it owns multiple responsibilities.
 WARNING src/network/server-players.cpp:1
         Very large file: 1245 lines. Review whether it owns multiple responsibilities.
 WARNING src/network/server-projectiles.cpp:1
@@ -6656,7 +6656,7 @@ WARNING src/network/server-projectiles.cpp:1
 WARNING src/network/server.cpp:1
         Very large file: 1259 lines. Review whether it owns multiple responsibilities.
 WARNING src/network/server.h:1
-        Very large file: 1223 lines. Review whether it owns multiple responsibilities.
+        Very large file: 1218 lines. Review whether it owns multiple responsibilities.
 WARNING src/npc/npc.cpp:1
         Very large file: 1142 lines. Review whether it owns multiple responsibilities.
 WARNING src/perf/perf.cpp:1
@@ -6672,7 +6672,7 @@ WARNING src/replay/replay-export-mf.cpp:1
 WARNING src/terminal/network-commands.cpp:1
         Very large file: 1185 lines. Review whether it owns multiple responsibilities.
 WARNING src/terminal/weapon-commands.cpp:1
-        Very large file: 1353 lines. Review whether it owns multiple responsibilities.
+        Very large file: 1378 lines. Review whether it owns multiple responsibilities.
 WARNING src/website/api-client.cpp:1
         Very large file: 1100 lines. Review whether it owns multiple responsibilities.
 WARNING tests/movement-special-kernel-test.cpp:1
@@ -6747,7 +6747,7 @@ WARNING src/engine/engine-tick-camera.cpp:192
         Very long function engineTickCamera: 1008 lines.
         > void engineTickCamera(Engine& engine, float dt)
 WARNING src/engine/engine-tick-combat.cpp:60
-        Very long function engineTickCombat: 375 lines.
+        Very long function engineTickCombat: 372 lines.
         > void engineTickCombat(Engine& engine, float dt)
 WARNING src/engine/engine-tick-net.cpp:49
         Very long function engineTickNet: 782 lines.
@@ -6923,10 +6923,10 @@ WARNING src/terminal/terminal-debug-toggles.cpp:11
 WARNING src/terminal/terminal-help-commands.cpp:10
         Very long function registerHelpCommands: 236 lines.
         > void registerHelpCommands()
-WARNING src/terminal/weapon-commands.cpp:58
-        Very long function registerWeaponCommands: 449 lines.
+WARNING src/terminal/weapon-commands.cpp:93
+        Very long function registerWeaponCommands: 439 lines.
         > void registerWeaponCommands()
-WARNING src/terminal/weapon-commands.cpp:543
+WARNING src/terminal/weapon-commands.cpp:568
         Very long function registerWorldXhCommands: 203 lines.
         > static void registerWorldXhCommands()
 WARNING src/utils/path_utils.cpp:83
@@ -10172,7 +10172,7 @@ INFO    src/terminal/player-commands.cpp:313
 INFO    src/terminal/player-commands.cpp:325
         Repository cleanliness signal: TODO.
         > TODO
-INFO    src/terminal/weapon-commands.cpp:517
+INFO    src/terminal/weapon-commands.cpp:542
         Repository cleanliness signal: broad catch.
         > catch (...)
 INFO    src/website/api-client.cpp:367
@@ -10432,7 +10432,7 @@ INFO    src/network/ice/ice-server.cpp:1
 INFO    src/network/movement-validation.cpp:1
         Large file: 752 lines. Consider splitting only when ownership becomes unclear.
 INFO    src/network/multiplayer-context.h:1
-        Large file: 966 lines. Consider splitting only when ownership becomes unclear.
+        Large file: 944 lines. Consider splitting only when ownership becomes unclear.
 INFO    src/network/multiplayer-shots.cpp:1
         Large file: 824 lines. Consider splitting only when ownership becomes unclear.
 INFO    src/network/server-npcs.cpp:1
@@ -10734,7 +10734,7 @@ INFO    src/terminal/npc-commands.cpp:22
 INFO    src/terminal/weapon-bench-commands.cpp:192
         Long function runWeaponCompareProfile: 137 lines.
         > static void runWeaponCompareProfile()
-INFO    src/terminal/weapon-commands.cpp:903
+INFO    src/terminal/weapon-commands.cpp:928
         Long function loadWorldCrosshairFromJSON: 116 lines.
         > static bool loadWorldCrosshairFromJSON()
 INFO    src/video/outro-ffmpeg.cpp:166
@@ -10918,7 +10918,7 @@ INFO    src/network/coordinator-client.cpp:189
         Many identifiers normalize to concept 'coordinator_ice_host': coordinatorIceHost, coordinatorIceHostAnswer, coordinatorIceHostPeer, coordinatorIceHostPoll
 INFO    src/network/coordinator-client.h:114
         Many identifiers normalize to concept 'coordinator_ice_host': coordinatorIceHost, coordinatorIceHostAnswer, coordinatorIceHostPeer, coordinatorIceHostPoll
-INFO    src/network/multiplayer-context.h:308
+INFO    src/network/multiplayer-context.h:309
         Many identifiers normalize to concept 'mp_process_projectile': mpProcessProjectileDespawnEventPacket, mpProcessProjectileExplodeEventPacket, mpProcessProjectileFireResultPacket, mpProcessProjectileSpawnEventPacket, mpProcessProjectileStateEventPacket
 INFO    src/network/multiplayer-interpolation.cpp:60
         Many identifiers normalize to concept 'health': authoritativeHealth, health, localServerHealth, predictedHealth
@@ -10980,11 +10980,11 @@ INFO    src/replay/replay-export.h:83
         Many identifiers normalize to concept 'replay_export_timing': replayExportTimingFrameBegin, replayExportTimingFrameEnd, replayExportTimingLogSummary, replayExportTimingReset
 INFO    src/replay/replay-export.h:167
         Many identifiers normalize to concept 'get_replay_export': getReplayExportAudioVolume, getReplayExportJob, getReplayExportProgress, getReplayExportResultPath, getReplayExportStatusText
-INFO    src/terminal/weapon-commands.cpp:142
+INFO    src/terminal/weapon-commands.cpp:177
         Many identifiers normalize to concept 'set_world_xh': setWorldXhAlpha, setWorldXhColor, setWorldXhGap, setWorldXhLength, setWorldXhMaxSize, setWorldXhMinSize, setWorldXhOutlineAlpha, setWorldXhThickness
-INFO    src/terminal/weapon-commands.cpp:461
+INFO    src/terminal/weapon-commands.cpp:496
         Many identifiers normalize to concept 'worl_x_trai': WORLD_XH_TRAIL_ALPHA, WORLD_XH_TRAIL_B, WORLD_XH_TRAIL_ENABLED, WORLD_XH_TRAIL_FADE, WORLD_XH_TRAIL_G, WORLD_XH_TRAIL_LIFETIME_TICKS, WORLD_XH_TRAIL_MAX_POINTS, WORLD_XH_TRAIL_MODE, WORLD_XH_TRAIL_R, WORLD_XH_TRAIL_SHAPE, WORLD_XH_TRAIL_SIZE, WORLD_XH_TRAIL_SPAWN_INTERVAL
-INFO    src/terminal/weapon-commands.cpp:736
+INFO    src/terminal/weapon-commands.cpp:771
         Many identifiers normalize to concept 'coo_sho_lin': COOL_SHOT_LINE_COLOR_B, COOL_SHOT_LINE_COLOR_G, COOL_SHOT_LINE_COLOR_R, COOL_SHOT_LINE_CONFIG_PATH, COOL_SHOT_LINE_ENABLED, COOL_SHOT_LINE_END_ALPHA, COOL_SHOT_LINE_END_SIZE, COOL_SHOT_LINE_LENGTH, COOL_SHOT_LINE_START_ALPHA, COOL_SHOT_LINE_START_SIZE
 INFO    tests/movement-basic-kernel-test.cpp:168
         Many identifiers normalize to concept 'down_dash': didDownDash, downDash, downDashAvailable, downDashPressed
@@ -11378,17 +11378,17 @@ INFO    src/combat/weapon-rocket-launcher.cpp:425
         Suspicious drift-prone identifier 'volDb' contains: old.
 INFO    src/combat/weapon-runtime.cpp:22
         Suspicious drift-prone identifier 'fireCooldown' contains: old.
-INFO    src/combat/weapon-runtime.cpp:56
+INFO    src/combat/weapon-runtime.cpp:54
         Suspicious drift-prone identifier 'updateCooldowns' contains: old.
-INFO    src/combat/weapon-runtime.cpp:163
+INFO    src/combat/weapon-runtime.cpp:161
         Suspicious drift-prone identifier 'oldAmmo' contains: old.
-INFO    src/combat/weapon-runtime.cpp:164
+INFO    src/combat/weapon-runtime.cpp:162
         Suspicious drift-prone identifier 'oldReserve' contains: old.
-INFO    src/combat/weapon-runtime.cpp:165
+INFO    src/combat/weapon-runtime.cpp:163
         Suspicious drift-prone identifier 'oldReloading' contains: old.
-INFO    src/combat/weapon-runtime.cpp:166
+INFO    src/combat/weapon-runtime.cpp:164
         Suspicious drift-prone identifier 'oldReloadTimer' contains: old.
-INFO    src/combat/weapon-runtime.cpp:167
+INFO    src/combat/weapon-runtime.cpp:165
         Suspicious drift-prone identifier 'oldCooldown' contains: old.
 INFO    src/combat/weapon-runtime.h:14
         Suspicious drift-prone identifier 'updateCooldowns' contains: old.
@@ -11446,7 +11446,7 @@ INFO    src/combat/weapon-system.h:105
         Suspicious drift-prone identifier 'mRemoteGodballCooldowns' contains: old.
 INFO    src/combat/weapon-types.h:145
         Suspicious drift-prone identifier 'fireCooldown' contains: old.
-INFO    src/combat/weapon-types.h:179
+INFO    src/combat/weapon-types.h:163
         Suspicious drift-prone identifier 'targetCooldowns' contains: old.
 INFO    src/combat/weapon-viewmodel.cpp:94
         Suspicious drift-prone identifier 'modelLoadAttempted' contains: temp.
@@ -11612,9 +11612,9 @@ INFO    src/engine/engine-tick-combat.cpp:140
         Suspicious drift-prone identifier 'finalKillReplayPath' contains: final.
 INFO    src/engine/engine-tick-combat.cpp:220
         Suspicious drift-prone identifier 'shouldFire' contains: should.
-INFO    src/engine/engine-tick-combat.cpp:303
+INFO    src/engine/engine-tick-combat.cpp:300
         Suspicious drift-prone identifier 'leftHoldTimer' contains: old.
-INFO    src/engine/engine-tick-combat.cpp:341
+INFO    src/engine/engine-tick-combat.cpp:338
         Suspicious drift-prone identifier 'rightHoldTimer' contains: old.
 INFO    src/engine/engine-tick-net.cpp:169
         Suspicious drift-prone identifier 'shouldRequestRespawn' contains: should.
@@ -11892,7 +11892,9 @@ INFO    src/network/connection-health.h:33
         Suspicious drift-prone identifier 'staleThresholdMs' contains: old.
 INFO    src/network/disagreement-rate-limit.h:18
         Suspicious drift-prone identifier 'shouldEmitDisagreement' contains: should.
-INFO    src/network/disagreement-visuals.cpp:494
+INFO    src/network/disagreement-visuals.cpp:423
+        Suspicious drift-prone identifier 'descriptionIsFinalLabel' contains: final.
+INFO    src/network/disagreement-visuals.cpp:496
         Suspicious drift-prone identifier 'shouldLog' contains: should.
 INFO    src/network/ice/ice-agent.cpp:247
         Suspicious drift-prone identifier 'newState' contains: new.
@@ -11914,13 +11916,15 @@ INFO    src/network/movement-validation.h:178
         Suspicious drift-prone identifier 'oldLifeReports' contains: old.
 INFO    src/network/movement-validation.h:194
         Suspicious drift-prone identifier 'movementReportSequenceIsNewer' contains: new.
-INFO    src/network/multiplayer-context.h:213
-        Suspicious drift-prone identifier 'sampleOlderTick' contains: old.
+INFO    src/network/multiplayer-context.h:51
+        Suspicious drift-prone identifier 'descriptionIsFinalLabel' contains: final.
 INFO    src/network/multiplayer-context.h:214
+        Suspicious drift-prone identifier 'sampleOlderTick' contains: old.
+INFO    src/network/multiplayer-context.h:215
         Suspicious drift-prone identifier 'sampleNewerTick' contains: new.
-INFO    src/network/multiplayer-context.h:218
+INFO    src/network/multiplayer-context.h:219
         Suspicious drift-prone identifier 'holding' contains: old.
-INFO    src/network/multiplayer-context.h:293
+INFO    src/network/multiplayer-context.h:294
         Suspicious drift-prone identifier 'fallbackNewestTick' contains: new.
 INFO    src/network/multiplayer-interpolation.cpp:114
         Suspicious drift-prone identifier 'oldestTick' contains: old.
@@ -11968,15 +11972,15 @@ INFO    src/network/multiplayer-packets.cpp:268
         Suspicious drift-prone identifier 'reconnectAttempts' contains: temp.
 INFO    src/network/multiplayer-packets.cpp:272
         Suspicious drift-prone identifier 'lastReconnectAttemptMs' contains: temp.
-INFO    src/network/multiplayer-packets.cpp:790
+INFO    src/network/multiplayer-packets.cpp:717
         Suspicious drift-prone identifier 'attempt' contains: temp.
-INFO    src/network/multiplayer-packets.cpp:1244
+INFO    src/network/multiplayer-packets.cpp:1171
         Suspicious drift-prone identifier 'mpNotifyReconnectAttempt' contains: temp.
-INFO    src/network/multiplayer-packets.cpp:1374
+INFO    src/network/multiplayer-packets.cpp:1301
         Suspicious drift-prone identifier 'reconnectMaxAttempts' contains: temp.
-INFO    src/network/multiplayer-packets.cpp:1451
+INFO    src/network/multiplayer-packets.cpp:1378
         Suspicious drift-prone identifier 'stalePacketThresholdMs' contains: old.
-INFO    src/network/multiplayer-packets.cpp:1451
+INFO    src/network/multiplayer-packets.cpp:1378
         Suspicious drift-prone identifier 'staleThreshold' contains: old.
 INFO    src/network/multiplayer-projectiles.cpp:56
         Suspicious drift-prone identifier 'shouldLog' contains: should.
@@ -12008,9 +12012,9 @@ INFO    src/network/multiplayer-tick.cpp:1660
         Suspicious drift-prone identifier 'attackRetryMaxAttempts' contains: temp.
 INFO    src/network/multiplayer-tick.cpp:1660
         Suspicious drift-prone identifier 'attempts' contains: temp.
-INFO    src/network/packets.h:755
+INFO    src/network/packets.h:728
         Suspicious drift-prone identifier 'PROJECTILE_FIRE_COOLDOWN' contains: old.
-INFO    src/network/packets.h:771
+INFO    src/network/packets.h:744
         Suspicious drift-prone identifier 'cooldownRemaining' contains: old.
 INFO    src/network/reliable-gameplay-events.cpp:23
         Suspicious drift-prone identifier 'attemptsExhausted' contains: temp.
@@ -12114,23 +12118,23 @@ INFO    src/network/server.cpp:148
         Suspicious drift-prone identifier 'shouldLog' contains: should.
 INFO    src/network/server.h:165
         Suspicious drift-prone identifier 'recvAttempts' contains: temp.
-INFO    src/network/server.h:256
+INFO    src/network/server.h:255
         Suspicious drift-prone identifier 'cooldownRemaining' contains: old.
-INFO    src/network/server.h:262
+INFO    src/network/server.h:261
         Suspicious drift-prone identifier 'projectileFireCooldown' contains: old.
-INFO    src/network/server.h:297
+INFO    src/network/server.h:296
         Suspicious drift-prone identifier 'dashCooldownTimer' contains: old.
-INFO    src/network/server.h:315
+INFO    src/network/server.h:314
         Suspicious drift-prone identifier 'meleeCooldownTimer' contains: old.
-INFO    src/network/server.h:543
+INFO    src/network/server.h:542
         Suspicious drift-prone identifier 'ServerPlayerBodyPartTemplate' contains: temp.
-INFO    src/network/server.h:543
+INFO    src/network/server.h:542
         Suspicious drift-prone identifier 'gServerBodyTemplate' contains: temp.
-INFO    src/network/server.h:544
+INFO    src/network/server.h:543
         Suspicious drift-prone identifier 'loadServerBodyTemplateFromGlb' contains: temp.
-INFO    src/network/server.h:546
+INFO    src/network/server.h:545
         Suspicious drift-prone identifier 'standardPlayerBodyTemplate' contains: temp.
-INFO    src/network/server.h:601
+INFO    src/network/server.h:600
         Suspicious drift-prone identifier 'legacyEndpointForTransportConnection' contains: legacy.
 INFO    src/network/udp-echo.cpp:101
         Suspicious drift-prone identifier 'recvAttempts' contains: temp.
@@ -12462,7 +12466,9 @@ INFO    src/terminal/player-commands.cpp:194
         Suspicious drift-prone identifier 'syncLegacyStateToLayers' contains: legacy.
 INFO    src/terminal/terminal-config-commands.cpp:187
         Suspicious drift-prone identifier 'newBinding' contains: new.
-INFO    src/terminal/weapon-commands.cpp:738
+INFO    src/terminal/weapon-commands.cpp:60
+        Suspicious drift-prone identifier 'descriptionIsFinalLabel' contains: final.
+INFO    src/terminal/weapon-commands.cpp:773
         Suspicious drift-prone identifier 'gCoolShotLineWatchLogged' contains: new.
 INFO    src/video/frame-pacer.cpp:88
         Suspicious drift-prone identifier 'hitchThreshold' contains: old.

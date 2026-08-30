@@ -1,8 +1,9 @@
-// 08 29 2026, 00 00
+// 08 30 2026, 12 00
 /* purpose
-* Declares SpyKnife client-side state with configurable box hitbox.
-* Box collision runs at 60Hz tick rate, not per-frame.
+* Declares SpyKnife client-side state with swept-sphere blade hitbox.
+* Sphere collision runs at 60Hz tick rate, not per-frame.
 * Force-based damage: speed + angle + directness determine damage.
+* Uses godball-style swept sphere overlap for NPC hit detection.
 * Does NOT own server-authoritative damage validation or packet transport.
 */
 
@@ -45,6 +46,9 @@ struct SpyKnifeState {
 
     Capsule previousBladeCapsule;
     bool hasPreviousBladeCapsule = false;
+
+    glm::vec3 prevBladeTip{0.0f};
+    bool hasPrevBladeTip = false;
 
     uint32_t readyTargetId = 0;
     bool hasReadyTarget = false;

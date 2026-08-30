@@ -125,8 +125,8 @@ void weaponJsonNetworkMode(const json& root, WeaponDefinition& def)
     if (!root.contains("network_mode") || !root["network_mode"].is_string())
         return;
     const std::string mode = normalizedToken(root["network_mode"].get<std::string>());
-    def.networkMode = mode == "clientbatchedhitscan"
-        ? WeaponNetworkMode::ClientBatchedHitscan
+    def.networkMode = mode == "clientonly"
+        ? WeaponNetworkMode::ClientOnly
         : WeaponNetworkMode::Normal;
 }
 

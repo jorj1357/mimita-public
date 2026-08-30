@@ -250,7 +250,6 @@ struct ServerPlayer
     bool onGround = false;
     bool dashAvailable = true;
     bool attackQueued = false;
-    uint32_t lastOpHitscanBatchSequence = 0;
     bool dead = false;
     float respawnSeconds = 0.0f;
     // Duel mode: fixed team spawn this player returns to on every respawn.
@@ -852,10 +851,6 @@ void handleAttackRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
                          const HeadlessWorld& world,
                          uint32_t tick, uint64_t& totalPacketsOut,
                          DisagreementRetransmitState* retransmitState = nullptr);
-void handleOpHitscanBatch(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
-                          std::unordered_map<uint32_t, ServerPlayer>& players,
-                          std::unordered_map<uint32_t, ServerNpc>& npcs,
-                          uint32_t tick, uint64_t& totalPacketsOut);
 void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                                  std::unordered_map<uint32_t, ServerPlayer>& players,
                                  std::unordered_map<uint32_t, ServerProjectile>& projectiles,
@@ -911,6 +906,7 @@ void handleGodballHitClaim(SOCKET sock,
                            uint32_t tick, uint64_t& totalPacketsOut);
 void handleSpyKnifeHitClaim(SOCKET sock,
                             std::unordered_map<uint32_t, ServerPlayer>& players,
+                            std::unordered_map<uint32_t, ServerNpc>& npcs,
                             const HeadlessWorld& world,
                             char* buffer, int bytes,
                             uint32_t tick, uint64_t& totalPacketsOut);

@@ -420,7 +420,9 @@ void spawnDisagreementEffect(const DisagreementEvent& event)
         e.position = pos + glm::vec3(0, 0, cfg.text.zOffset);
         e.color = color;
         e.maxLifetime = lifetime + cfg.text.lifetimeExtra;
-        if (!event.description.empty())
+        if (event.descriptionIsFinalLabel)
+            e.label = event.description;
+        else if (!event.description.empty())
             e.label = cfg.text.prefix + event.description;
         else
             e.label = cfg.text.prefix + reasonLabel(event.reason);

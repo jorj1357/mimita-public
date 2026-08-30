@@ -464,7 +464,7 @@ WeaponDefinition createOpRevolverDefinition() {
     def.fireMode = WeaponFireMode::Automatic;
     def.restricted = true;
     def.poseId = "revolver";
-    def.networkMode = WeaponNetworkMode::ClientBatchedHitscan;
+    def.networkMode = WeaponNetworkMode::ClientOnly;
     return def;
 }
 
@@ -477,7 +477,7 @@ WeaponDefinition createAa12Definition() {
     def.magazineSize = 999;
     def.customParams["reserveAmmo"] = 9999.0f;
     def.fireMode = WeaponFireMode::Automatic;
-    def.networkMode = WeaponNetworkMode::ClientBatchedHitscan;
+    def.networkMode = WeaponNetworkMode::ClientOnly;
     def.poseId = "shotgun";
     Debug::log(Debug::Category::Weapons, "[AA12] Registered: aa12 (slot 6, auto, fireDelay=%.2f, ammo=%d, reserve=%.0f)",
                def.fireDelay, def.magazineSize, def.customParams["reserveAmmo"]);
@@ -664,7 +664,7 @@ WeaponDefinition createAdminRevolverDefinition() {
     def.fireMode = WeaponFireMode::Automatic;
     def.restricted = true;
     def.poseId = "revolver";
-    def.networkMode = WeaponNetworkMode::ClientBatchedHitscan;
+    def.networkMode = WeaponNetworkMode::ClientOnly;
     return def;
 }
 
@@ -731,15 +731,10 @@ WeaponDefinition createSpyKnifeDefinition() {
     def.soundShoot = "entity/falcon/falconswing";
     def.soundHit = "player_hurt";
     def.poseId = "spyknife";
-    def.customParams["hitboxHalfX"] = 0.15f;
-    def.customParams["hitboxHalfY"] = 0.05f;
-    def.customParams["hitboxHalfZ"] = 0.4f;
-    def.customParams["hitboxOffsetX"] = 0.0f;
-    def.customParams["hitboxOffsetY"] = 0.0f;
-    def.customParams["hitboxOffsetZ"] = 0.3f;
-    def.customParams["hitboxRotX"] = 0.0f;
-    def.customParams["hitboxRotY"] = 0.0f;
-    def.customParams["hitboxRotZ"] = 0.0f;
+    def.customParams["bladeSphereRadius"] = 1.0f;
+    def.customParams["bladeSphereOffsetX"] = 0.0f;
+    def.customParams["bladeSphereOffsetY"] = 0.0f;
+    def.customParams["bladeSphereOffsetZ"] = 0.0f;
     def.customParams["hitboxAlpha"] = 0.5f;
     def.customParams["hitboxVisible"] = 1.0f;
     def.customParams["baseDamage"] = 15.0f;

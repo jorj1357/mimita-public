@@ -28,6 +28,7 @@ using json = nlohmann::json;
 #include "network/net_mode.h"
 #include "network/network-weapons.h"
 #include "network/weapon-runtime-reconciliation.h"
+#include "network/disagreement-visuals.h"
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
 #include "entities/player-animation-config.h"
@@ -37,19 +38,53 @@ extern DuelManager gDuelManager;
 
 namespace {
 
+bool isClientOnlyWeapon(const std::string& weaponId)
+{
+    const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
+    return def && def->networkMode == WeaponNetworkMode::ClientOnly;
+}
+
+void spawnClientOnlyDisagreement(const RevolverShotResult& shot,
+                                 const WeaponDefinition& def,
+                                 uint32_t tick)
+{
+    if (!(shot.targetIsRemotePlayer || shot.targetIsRemoteNpc))
+        return;
+    static uint32_t lastEffectTick = 0;
+    if (lastEffectTick == tick)
+        return;
+    lastEffectTick = tick;
+
+    MimitaNet::DisagreementEvent event;
+    event.timeMs = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+    event.reason = MimitaNet::DISAGREEMENT_INVALID_STATE;
+    event.sourcePlayerId = MP_CONTEXT.localPlayerId;
+    event.targetPlayerId = shot.targetId;
+    event.position = shot.end;
+    event.description = "weapon too OP";
+    event.descriptionIsFinalLabel = true;
+    event.lifetime = 0.35f;
+    MimitaNet::spawnDisagreementEffect(event);
+    Debug::logThrottled(Debug::Category::Weapons, "client-only-op-disagreement", 1.0,
+        "[CLIENT ONLY WEAPON] weapon=%s target=%u effect=weapon-too-OP tick=%u\n",
+        def.id.c_str(), shot.targetId, tick);
+}
+
 // Equip a weapon; if switching away started a background reload on the
 // holstered weapon, tell the server too (fire-and-forget, same packet as R).
 void equipSlotAndSync(Player& player, WeaponSystem& weapons, int slot)
 {
     const std::string holsteredReloaded = weapons.equip(player, slot);
-    if (!holsteredReloaded.empty())
+    if (!holsteredReloaded.empty() && !isClientOnlyWeapon(holsteredReloaded))
         MimitaNet::sendReloadRequestForWeapon(MP_CONTEXT, player, holsteredReloaded);
 }
 
 void unequipAndSync(Player& player, WeaponSystem& weapons)
 {
     const std::string holsteredReloaded = weapons.unequip(player);
-    if (!holsteredReloaded.empty())
+    if (!holsteredReloaded.empty() && !isClientOnlyWeapon(holsteredReloaded))
         MimitaNet::sendReloadRequestForWeapon(MP_CONTEXT, player, holsteredReloaded);
 }
 
@@ -78,7 +113,9 @@ void registerWeaponCommands()
 
             // Auto-reload on empty trigger: send ReloadRequest (with the
             // client's ammo) so the server adopts it and starts reloading too.
-            if (shot.autoReloadTriggered && mpContext.active && mpContext.localPlayerId)
+            const WeaponDefinition* firedDef = weapons.getCurrentDef(player);
+            if (shot.autoReloadTriggered && mpContext.active && mpContext.localPlayerId &&
+                firedDef && firedDef->networkMode != WeaponNetworkMode::ClientOnly)
             {
                 const WeaponDefinition* wdef = weapons.getCurrentDef(player);
                 if (wdef)
@@ -141,6 +178,16 @@ void registerWeaponCommands()
                         MimitaNet::SHOT_EFFECT_HIT_SOUND;
                 }
                 const WeaponDefinition* wdef = weapons.getCurrentDef(player);
+                if (wdef && wdef->networkMode == WeaponNetworkMode::ClientOnly) {
+                    spawnClientOnlyDisagreement(shot, *wdef, mpContext.tick);
+                    Debug::logThrottled(Debug::Category::Weapons,
+                        "client-only-op-route", 1.0,
+                        "[WEAPON FIRE ROUTE] playerId=%u weaponId=%s networkAction=client-only-no-packet\n",
+                        mpContext.localPlayerId, wdef->id.c_str());
+                    Terminal::instance().addLog("[WEAPON] fired");
+                    return;
+                }
+
                 uint8_t netWeapon = wdef
                     ? MimitaNet::networkWeaponTypeForDefinition(*wdef)
                     : MimitaNet::NETWORK_WEAPON_NONE;
@@ -173,28 +220,6 @@ void registerWeaponCommands()
 
                 if (usesProjectilePath || usesHitscanPath || usesPhysicalContactPath) {
                     const WeaponDefinition* wdef2 = weapons.getCurrentDef(player);
-                    if (wdef2 &&
-                        wdef2->networkMode == WeaponNetworkMode::ClientBatchedHitscan) {
-                        uint16_t netId = MimitaNet::weaponDefNetworkIdFor(wdef2->id);
-                        if (netId != 0) {
-                            uint8_t claimedBodyPart = 0;
-                            if (shot.bodyPart == "head") claimedBodyPart = 1;
-                            else if (shot.bodyPart == "leg") claimedBodyPart = 3;
-                            else if (!shot.bodyPart.empty()) claimedBodyPart = 2;
-                            MimitaNet::mpRecordOpHitscanShot(
-                                mpContext, *wdef2, netId, wdef2->slot,
-                                (shot.targetIsRemotePlayer || shot.targetIsRemoteNpc)
-                                    ? shot.targetId : 0,
-                                (int)std::round(shot.damage), claimedBodyPart,
-                                mpContext.tick, mpContext.lastKnownSpawnGeneration);
-                            Debug::logThrottled(Debug::Category::Weapons,
-                                "op-hit-batch-route", 1.0,
-                                "[WEAPON FIRE ROUTE] player=%u weapon=%s networkAction=op-hit-batch\n",
-                                mpContext.localPlayerId, wdef2->id.c_str());
-                        }
-                        Terminal::instance().addLog("[WEAPON] fired");
-                        return;
-                    }
                     // Send generic AttackRequest for all migrated weapon execution families.
                     if (wdef2)
                     {
@@ -265,7 +290,7 @@ void registerWeaponCommands()
             if (mpContext.active && mpContext.localPlayerId)
             {
                 const WeaponDefinition* def = weapons.getCurrentDef(player);
-                if (def)
+                if (def && def->networkMode != WeaponNetworkMode::ClientOnly)
                     MimitaNet::sendReloadRequestForWeapon(mpContext, player, def->id);
             }
 

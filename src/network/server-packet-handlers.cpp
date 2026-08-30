@@ -965,6 +965,7 @@ void handleGodballHitClaim(SOCKET sock,
 
 void handleSpyKnifeHitClaim(SOCKET sock,
                             std::unordered_map<uint32_t, ServerPlayer>& players,
+                            std::unordered_map<uint32_t, ServerNpc>& npcs,
                             const HeadlessWorld& world,
                             char* buffer, int bytes,
                             uint32_t tick, uint64_t& totalPacketsOut)
@@ -989,18 +990,6 @@ void handleSpyKnifeHitClaim(SOCKET sock,
     }
     if (!hasSpyKnife) return;
 
-    auto targetIt = players.find(pkt->targetId);
-    if (targetIt == players.end()) return;
-    ServerPlayer& target = targetIt->second;
-    if (target.dead || target.spawnState != ServerPlayer::Active) return;
-
-    float dist = glm::length(attacker.pos - target.pos);
-    if (dist > 3.0f) {
-        printf("[SPY KNIFE] REJECTED hit claim: too far attacker=%u target=%u dist=%.1f\n",
-               pkt->attackerId, pkt->targetId, dist);
-        return;
-    }
-
     const WeaponDefinition* def = nullptr;
     for (const std::string& id : attacker.ownedWeaponIds) {
         const WeaponDefinition* d = WeaponRegistry::instance().get(id);
@@ -1017,8 +1006,76 @@ void handleSpyKnifeHitClaim(SOCKET sock,
         damage = (int)WeaponExecution::paramOr(*def, "backstabDamagePerTick", 999.0f);
         kbStrength = WeaponExecution::paramOr(*def, "backstabKnockback", 20.0f);
     } else {
-        damage = (int)WeaponExecution::paramOr(*def, "normalDamagePerTick", 1.0f);
+        damage = std::clamp((int)std::round(pkt->damage), 1, 500);
         kbStrength = WeaponExecution::paramOr(*def, "frontstabKnockback", 100.0f);
+    }
+
+    glm::vec3 hitPos(pkt->hitX, pkt->hitY, pkt->hitZ);
+
+    // NPC entity IDs are authoritative. Resolve NPCs before players.
+    auto npcIt = npcs.find(pkt->targetId);
+    if (npcIt != npcs.end()) {
+        ServerNpc& npc = npcIt->second;
+        if (npc.health <= 0) {
+            printf("[SPY KNIFE] REJECTED hit claim: npc already dead target=%u\n", pkt->targetId);
+            return;
+        }
+
+        float dist = glm::length(attacker.pos - glm::vec3(npc.pos.x, npc.pos.y, npc.pos.z));
+        if (dist > 3.0f) {
+            printf("[SPY KNIFE] REJECTED NPC hit claim: too far attacker=%u target=%u dist=%.1f\n",
+                   pkt->attackerId, pkt->targetId, dist);
+            return;
+        }
+
+        const int healthBefore = npc.health;
+        const int intDamage = std::max(1, damage);
+        npc.health = std::max(0, npc.health - intDamage);
+
+        glm::vec3 kbDir = glm::length(glm::vec3(npc.pos.x, npc.pos.y, npc.pos.z) - attacker.pos) > 0.001f
+            ? glm::normalize(glm::vec3(npc.pos.x, npc.pos.y, npc.pos.z) - attacker.pos)
+            : glm::vec3(0.0f, 0.0f, 1.0f);
+        kbDir.z = std::max(kbDir.z, pkt->isBackstab ? 0.15f : 0.3f);
+        kbDir = glm::normalize(kbDir);
+        npc.knockbackImpulse += kbDir * kbStrength;
+
+        const bool killed = npc.health == 0;
+
+        printf("[SPY KNIFE] server NPC applied: attacker=%u targetNpc=%u damage=%d backstab=%d "
+               "healthBefore=%d healthAfter=%d killed=%d dist=%.1f\n",
+               pkt->attackerId, pkt->targetId, intDamage, (int)pkt->isBackstab,
+               healthBefore, npc.health, (int)killed, dist);
+
+        const glm::vec3 origin = attacker.pos;
+        const glm::vec3 dir = glm::length(hitPos - origin) > 0.001f
+            ? glm::normalize(hitPos - origin) : kbDir;
+
+        broadcastNpcDamageEvent(
+            sock, players, tick, totalPacketsOut,
+            pkt->attackerId, npc, intDamage, killed,
+            origin, hitPos, dir, kbDir, NETWORK_WEAPON_SPYKNIFE);
+
+        if (killed) {
+            auto attacker2 = players.find(pkt->attackerId);
+            if (attacker2 != players.end()) {
+                attacker2->second.kills += 1;
+                attacker2->second.health = serverMaxHp();
+            }
+        }
+        return;
+    }
+
+    // No NPC matched, try player target.
+    auto targetIt = players.find(pkt->targetId);
+    if (targetIt == players.end()) return;
+    ServerPlayer& target = targetIt->second;
+    if (target.dead || target.spawnState != ServerPlayer::Active) return;
+
+    float dist = glm::length(attacker.pos - target.pos);
+    if (dist > 3.0f) {
+        printf("[SPY KNIFE] REJECTED hit claim: too far attacker=%u target=%u dist=%.1f\n",
+               pkt->attackerId, pkt->targetId, dist);
+        return;
     }
 
     glm::vec3 kbDir = glm::length(target.pos - attacker.pos) > 0.001f
@@ -1038,75 +1095,12 @@ void handleSpyKnifeHitClaim(SOCKET sock,
         queueServerDamageConfirmedEvent(
             sock, players, tick, totalPacketsOut,
             pkt->attackerId, target, damage, result,
-            glm::vec3(pkt->hitX, pkt->hitY, pkt->hitZ),
-            kbDir, knockback, ServerDamageSource::PhysicalContact,
+            hitPos, kbDir, knockback, ServerDamageSource::PhysicalContact,
             NETWORK_WEAPON_SPYKNIFE, pkt->attackSerial);
     }
 
     printf("[SPY KNIFE] server applied: attacker=%u target=%u damage=%d backstab=%d dist=%.1f killed=%d\n",
            pkt->attackerId, pkt->targetId, damage, (int)pkt->isBackstab, dist, (int)result.killed);
-}
-
-void handleOpHitscanBatch(SOCKET sock, const sockaddr_in& from, const char* buffer,
-                          int bytes, std::unordered_map<uint32_t, ServerPlayer>& players,
-                          std::unordered_map<uint32_t, ServerNpc>& npcs,
-                          uint32_t tick, uint64_t& totalPacketsOut)
-{
-    (void)sock;
-    (void)tick;
-    (void)totalPacketsOut;
-    (void)npcs;
-    if (bytes < (int)sizeof(OpHitscanBatchPacket)) return;
-    const auto* packet = reinterpret_cast<const OpHitscanBatchPacket*>(buffer);
-    auto attackerIt = players.find(packet->header.playerId);
-    if (attackerIt == players.end() ||
-        !playerOwnsConnectionSource(attackerIt->second, &from, nullptr)) return;
-    ServerPlayer& attacker = attackerIt->second;
-    if (attacker.dead || attacker.spawnState != ServerPlayer::Active ||
-        packet->spawnGeneration != attacker.spawnGeneration ||
-        packet->batchSequence <= attacker.lastOpHitscanBatchSequence ||
-        packet->hitCount > MAX_OP_HIT_ENTRIES ||
-        packet->endTick < packet->startTick) return;
-
-    const std::string* weaponId = weaponIdForDefNetworkId(packet->weaponDefNetworkId);
-    const WeaponDefinition* def = weaponId ? WeaponRegistry::instance().get(*weaponId) : nullptr;
-    if (!def || def->networkMode != WeaponNetworkMode::ClientBatchedHitscan ||
-        def->slot != packet->equippedSlot || attacker.equippedSlot != packet->equippedSlot ||
-        packet->shotsFired == 0) return;
-
-    const uint32_t spanTicks = packet->endTick - packet->startTick + 1;
-    const uint32_t maxShots = (uint32_t)std::ceil(
-        (double)spanTicks / 60.0 / std::max(0.0001f, def->fireDelay)) + 4;
-    if (packet->shotsFired > maxShots) return;
-
-    attacker.lastOpHitscanBatchSequence = packet->batchSequence;
-    int accepted = 0;
-    for (uint8_t i = 0; i < packet->hitCount; ++i) {
-        const auto& hit = packet->hits[i];
-        auto targetIt = players.find(hit.targetId);
-        if (targetIt == players.end() || hit.targetId == attacker.id ||
-            targetIt->second.dead || targetIt->second.spawnState != ServerPlayer::Active)
-            continue;
-        ServerPlayer& target = targetIt->second;
-        const int damage = std::clamp((int)hit.damage, 1, 500);
-        const glm::vec3 direction = target.pos - attacker.pos;
-        const glm::vec3 knockback = glm::length(direction) > 0.001f
-            ? glm::normalize(direction) * (float)damage * 0.08f
-            : glm::vec3(0.0f);
-        ServerDamageResult result = applyServerDamage(
-            players, target, attacker.id, damage, knockback, ServerDamageSource::Hitscan);
-        if (!result.applied) continue;
-        ++accepted;
-        // Do not enqueue a reliable event for OP bullets. The authoritative
-        // health snapshot carries the durable result; local clients already
-        // predicted the rapid hit presentation, and reliable fanout here
-        // would recreate the queue flood this path is designed to remove.
-        (void)result;
-    }
-    Debug::logThrottled(Debug::Category::Weapons, "op-hit-batch-server", 1.0,
-        "[OP HIT BATCH SERVER] attacker=%u weapon=%u shots=%u hits=%u accepted=%d span=%u..%u\n",
-        attacker.id, packet->weaponDefNetworkId, packet->shotsFired,
-        packet->hitCount, accepted, packet->startTick, packet->endTick);
 }
 
 } // namespace MimitaNet

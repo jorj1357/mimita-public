@@ -17,7 +17,7 @@ namespace MimitaNet {
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // 30: ShotEvent/PelletBlastEvent become reliable (eventId+session+ACK) and
 // carry real damage/health; every bullet visual is guaranteed delivery.
-constexpr uint16_t PROTOCOL_VERSION = 33;
+constexpr uint16_t PROTOCOL_VERSION = 32;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -128,8 +128,7 @@ enum PacketType : uint8_t
     // new map and re-complete the spawn handshake.
     PACKET_MAP_CHANGE = 58,
     PACKET_SPYKNIFE_HIT_CLAIM = 59,
-    PACKET_GODBALL_HIT_CLAIM = 60,
-    PACKET_OP_HIT_BATCH = 61
+    PACKET_GODBALL_HIT_CLAIM = 60
 };
 
 enum DamageConfirmedSource : uint8_t
@@ -1221,33 +1220,6 @@ struct GodballHitClaimPacket
     uint32_t spawnGeneration = 0;
 };
 
-// Client-predicted hit results for explicitly configured extreme-rate hitscan
-// weapons. This is sequenced best-effort traffic, never a reliable event.
-struct OpHitscanHitEntry
-{
-    uint32_t targetId = 0;
-    int16_t damage = 0;
-    uint8_t bodyPart = 0;
-    uint8_t relativeTick = 0;
-};
-
-constexpr int MAX_OP_HIT_ENTRIES = 96;
-
-struct OpHitscanBatchPacket
-{
-    PacketHeader header;
-    uint32_t spawnGeneration = 0;
-    uint32_t batchSequence = 0;
-    uint32_t startTick = 0;
-    uint32_t endTick = 0;
-    uint32_t shotsFired = 0;
-    uint16_t weaponDefNetworkId = 0;
-    int16_t equippedSlot = 0;
-    uint8_t hitCount = 0;
-    uint8_t reserved[3] = {};
-    OpHitscanHitEntry hits[MAX_OP_HIT_ENTRIES]{};
-};
-
 // ── Spy Knife hit claim (attacker → server, unreliable) ───────────────
 struct SpyKnifeHitClaimPacket
 {
@@ -1255,6 +1227,7 @@ struct SpyKnifeHitClaimPacket
     uint32_t attackerId = 0;
     uint32_t targetId = 0;
     uint8_t isBackstab = 0;
+    float damage = 0.0f;
     float hitX = 0.0f, hitY = 0.0f, hitZ = 0.0f;
     float attackerX = 0.0f, attackerY = 0.0f, attackerZ = 0.0f;
     float attackerYaw = 0.0f;
@@ -1433,8 +1406,6 @@ static_assert(sizeof(PelletBlastEventPacket) < MAX_GAME_DATAGRAM_BYTES,
               "PelletBlastEventPacket exceeds safe datagram limit");
 static_assert(sizeof(PelletBlastTargetResult) <= 24, "PelletBlastTargetResult is too large");
 static_assert(sizeof(AttackRequestPacket) <= 128, "AttackRequestPacket is too large");
-static_assert(sizeof(OpHitscanBatchPacket) <= MAX_GAME_DATAGRAM_BYTES,
-              "OpHitscanBatchPacket must fit one safe datagram");
 static_assert(sizeof(AttackResultPacket) <= 96, "AttackResultPacket is too large");
 static_assert(sizeof(ReloadRequestPacket) <= 48, "ReloadRequestPacket is too large");
 static_assert(sizeof(ReloadResultPacket) <= 72, "ReloadResultPacket is too large");

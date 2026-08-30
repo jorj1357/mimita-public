@@ -117,7 +117,7 @@
     "linear_never_skip": true,
     "linear_hold_gap_ticks": 2,
     "linear_glide_max_units_per_second": 400.0,
-    "ease_correction_rate": 12.0,
+    "ease_correction_rate": 6.0,
     "ease_velocity_smoothing": 0.5,
     "max_render_time_jump_ms": 1
   },

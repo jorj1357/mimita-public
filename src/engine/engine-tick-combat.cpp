@@ -236,9 +236,6 @@ void engineTickCombat(Engine& engine, float dt)
             }
         }
     }
-    if (!mouseDown && mousePrev && mpContext.active)
-        MimitaNet::mpFlushOpHitscanBatch(mpContext,
-                                         mpContext.lastKnownSpawnGeneration);
     mousePrev = mouseDown;
 
     static bool rightMousePrev = false;
