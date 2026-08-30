@@ -20,6 +20,7 @@
 #include "combat/weapon-fire.h"
 #include "combat/weapon-execution.h"
 #include "physics/movement/physics-collision.h"
+#include "debug/debug-log.h"
 
 #include <algorithm>
 #include <cmath>
@@ -850,10 +851,28 @@ void handleGodballHitClaim(SOCKET sock,
     if (bytes < (int)sizeof(GodballHitClaimPacket)) return;
     GodballHitClaimPacket* pkt = reinterpret_cast<GodballHitClaimPacket*>(buffer);
 
+    Debug::warn(Debug::Category::Weapons,
+        "[GODBALL_DBG] SERVER_CLAIM_RECEIVED attacker=%u target=%u "
+        "damageClaimed=%.1f simulationTick=%u spawnGeneration=%u serverTick=%u "
+        "players=%zu npcs=%zu",
+        pkt->attackerId, pkt->targetId, pkt->damage,
+        pkt->simulationTick, pkt->spawnGeneration, tick,
+        players.size(), npcs.size());
+
     auto attackerIt = players.find(pkt->attackerId);
-    if (attackerIt == players.end()) return;
+    if (attackerIt == players.end()) {
+        Debug::warn(Debug::Category::Weapons,
+            "[GODBALL_DBG] SERVER_CLAIM_REJECT reason=attacker-not-found attacker=%u",
+            pkt->attackerId);
+        return;
+    }
     ServerPlayer& attacker = attackerIt->second;
-    if (attacker.dead || attacker.spawnState != ServerPlayer::Active) return;
+    if (attacker.dead || attacker.spawnState != ServerPlayer::Active) {
+        Debug::warn(Debug::Category::Weapons,
+            "[GODBALL_DBG] SERVER_CLAIM_REJECT reason=attacker-inactive attacker=%u dead=%d state=%d",
+            pkt->attackerId, (int)attacker.dead, (int)attacker.spawnState);
+        return;
+    }
 
     const float clampedDamage = std::clamp(pkt->damage, 1.0f, 500.0f);
     const glm::vec3 normal = glm::length(glm::vec3(pkt->normalX, pkt->normalY, pkt->normalZ)) > 0.001f
@@ -866,8 +885,18 @@ void handleGodballHitClaim(SOCKET sock,
     auto targetIt = players.find(pkt->targetId);
     if (targetIt != players.end()) {
         ServerPlayer& target = targetIt->second;
-        if (target.dead || target.spawnState != ServerPlayer::Active) return;
-        if (target.spawnGeneration != pkt->spawnGeneration) return;
+        if (target.dead || target.spawnState != ServerPlayer::Active) {
+            Debug::warn(Debug::Category::Weapons,
+                "[GODBALL_DBG] SERVER_CLAIM_REJECT reason=player-inactive target=%u",
+                pkt->targetId);
+            return;
+        }
+        if (target.spawnGeneration != pkt->spawnGeneration) {
+            Debug::warn(Debug::Category::Weapons,
+                "[GODBALL_DBG] SERVER_CLAIM_REJECT reason=player-generation-mismatch target=%u expected=%u received=%u",
+                pkt->targetId, target.spawnGeneration, pkt->spawnGeneration);
+            return;
+        }
 
         ServerDamageResult result = applyServerDamage(
             players, target, pkt->attackerId, (int)std::round(clampedDamage),
@@ -885,15 +914,40 @@ void handleGodballHitClaim(SOCKET sock,
 
     // Try NPC target
     auto npcIt = npcs.find(pkt->targetId);
-    if (npcIt != npcs.end()) {
+    if (npcIt == npcs.end()) {
+        Debug::warn(Debug::Category::Weapons,
+            "[GODBALL_DBG] SERVER_CLAIM_REJECT reason=npc-not-found attacker=%u targetNpc=%u serverNpcCount=%zu",
+            pkt->attackerId, pkt->targetId, npcs.size());
+        printf("[SERVER GODBALL NPC MISS] attacker=%u targetId=%u NOT FOUND in npcs map (size=%zu)\n",
+               pkt->attackerId, pkt->targetId, npcs.size());
+        return;
+    }
+    {
         ServerNpc& npc = npcIt->second;
-        if (npc.health <= 0) return;
+        if (npc.health <= 0) {
+            Debug::warn(Debug::Category::Weapons,
+                "[GODBALL_DBG] SERVER_CLAIM_REJECT reason=npc-already-dead targetNpc=%u health=%d",
+                pkt->targetId, npc.health);
+            printf("[SERVER GODBALL NPC SKIP] attacker=%u npc=%u already dead health=%d\n",
+                   pkt->attackerId, pkt->targetId, npc.health);
+            return;
+        }
 
+        const int healthBefore = npc.health;
         const int intDamage = std::max(1, (int)std::round(clampedDamage));
         npc.health -= intDamage;
         npc.knockbackImpulse += knockback;
         const bool killed = npc.health <= 0;
         if (killed) npc.health = 0;
+
+        Debug::warn(Debug::Category::Weapons,
+            "[GODBALL_DBG] SERVER_NPC_DAMAGE attacker=%u targetNpc=%u "
+            "damageClaimed=%.1f damageApplied=%d healthBefore=%d healthAfter=%d killed=%d "
+            "hit=(%.2f,%.2f,%.2f) normal=(%.2f,%.2f,%.2f)",
+            pkt->attackerId, pkt->targetId, pkt->damage, intDamage,
+            healthBefore, npc.health, (int)killed,
+            hitPos.x, hitPos.y, hitPos.z,
+            normal.x, normal.y, normal.z);
 
         const glm::vec3 origin = attacker.pos;
         const glm::vec3 dir = glm::length(hitPos - origin) > 0.001f
@@ -912,7 +966,7 @@ void handleGodballHitClaim(SOCKET sock,
             }
         }
 
-        printf("[SERVER GODBALL NPC HIT] attacker=%u npc=%u damage=%d health=%d killed=%d\n",
+        printf("[SERVER GODBALL NPC HIT] attacker=%u npc=%u damage=%d healthAfter=%d killed=%d\n",
                pkt->attackerId, pkt->targetId, intDamage, npc.health, (int)killed);
         return;
     }

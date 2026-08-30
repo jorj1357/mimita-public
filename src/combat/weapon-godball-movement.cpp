@@ -297,8 +297,10 @@ bool sweptSphereOverlap(const glm::vec3& prevPos, const glm::vec3& currPos,
 }
 
 void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
-                    WeaponRuntime& runtime, Player& owner,
-                    NpcSystem& npcs, const Camera& camera, float dt) {
+                   WeaponRuntime& runtime, Player& owner,
+                   NpcSystem& npcs,
+                   std::unordered_map<uint32_t, Player>* remoteNpcs,
+                   const Camera& camera, float dt) {
     if (!phys.active) return;
 
     phys.lastFrameHit = false;
@@ -332,11 +334,24 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
 
     godballLog("CHECK active=1 tickReady=%d timer=%.4f interval=%.3f dt=%.4f "
                "ballPos=(%.2f,%.2f,%.2f) prevPos=(%.2f,%.2f,%.2f) speed=%.2f "
-               "damageRadius=%.3f npcs=%zu substeps=%d",
+               "damageRadius=%.3f npcs=%zu remoteNpcs=%s/%zu substeps=%d",
                (int)tickReady, runtime.godball.overlapDamageTimer, tickInterval, safeDt,
                currPos.x, currPos.y, currPos.z,
                prevPos.x, prevPos.y, prevPos.z,
-               ballSpeed, damageRadius, npcs.all().size(), substeps);
+               ballSpeed, damageRadius, npcs.all().size(),
+               remoteNpcs ? "ready" : "null",
+               remoteNpcs ? remoteNpcs->size() : 0u, substeps);
+
+    if (tickReady) {
+        godballLog("TARGET_COLLECTION localNpcs=%zu remoteNpcs=%s/%zu "
+                   "ball=(%.2f,%.2f,%.2f) prev=(%.2f,%.2f,%.2f) "
+                   "radius=%.3f speed=%.2f",
+                   npcs.all().size(), remoteNpcs ? "ready" : "null",
+                   remoteNpcs ? remoteNpcs->size() : 0u,
+                   currPos.x, currPos.y, currPos.z,
+                   prevPos.x, prevPos.y, prevPos.z,
+                   damageRadius, ballSpeed);
+    }
 
     for (Npc& npc : npcs.all()) {
         if (npc.body.currentHp <= 0) continue;
@@ -543,10 +558,13 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
         while (gRemoteOverlapAccum >= REMOTE_OVERLAP_DT) {
             gRemoteOverlapAccum -= REMOTE_OVERLAP_DT;
 
-            if (!gpMpContext || !gpMpContext->active || !gpMpContext->localPlayerId) continue;
+            if (!remoteNpcs) {
+                godballLog("REMOTE_NPC_SCAN skipped reason=null-target-map");
+                continue;
+            }
 
             auto& remoteCooldowns = runtime.godball.targetCooldowns;
-            for (auto& entry : gpMpContext->remoteNpcs) {
+            for (auto& entry : *remoteNpcs) {
                 const uint32_t npcId = entry.first;
                 Player& remote = entry.second;
                 if (remote.dead || remote.currentHp <= 0) continue;
@@ -557,6 +575,15 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
                 if (cdIt != remoteCooldowns.end() && cdIt->second > 0.0f) continue;
 
                 remote.updateModelWorldTransforms();
+                if (tickReady) {
+                    const float targetDistance = glm::length(remote.pos - currPos);
+                    godballLog("NPC_CANDIDATE id=%u name=%s hp=%d pos=(%.2f,%.2f,%.2f) "
+                               "parts=%zu ballDistance=%.3f cooldown=%.3f",
+                               npcId, remote.username.c_str(), remote.currentHp,
+                               remote.pos.x, remote.pos.y, remote.pos.z,
+                               remote.physicalBody.parts.size(), targetDistance,
+                               cdIt != remoteCooldowns.end() ? cdIt->second : 0.0f);
+                }
                 bool hit = false;
                 glm::vec3 hitPt, hitNm;
 
@@ -584,6 +611,7 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
 
                 if (!hit) continue;
 
+                const int hpBeforePrediction = remote.currentHp;
                 float damage = computeDamage(phys, def, owner, remote, hitPt);
                 int rounded = std::max(1, (int)std::round(damage));
 
@@ -591,6 +619,19 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
                            "speed=%.2f hitPt=(%.2f,%.2f,%.2f)",
                            npcId, remote.username.c_str(), damage, rounded, ballSpeed,
                            hitPt.x, hitPt.y, hitPt.z);
+
+                godballLog("CLIENT_DAMAGE_DECISION attacker=%s targetNpc=%u part=unknown "
+                           "ballPrev=(%.2f,%.2f,%.2f) ballCurr=(%.2f,%.2f,%.2f) "
+                           "hitPoint=(%.2f,%.2f,%.2f) hitNormal=(%.2f,%.2f,%.2f) "
+                           "speed=%.2f damageComputed=%.2f damageRounded=%d hpBefore=%d "
+                           "serverAuthMode=%d",
+                           owner.username.c_str(), npcId,
+                           prevPos.x, prevPos.y, prevPos.z,
+                           currPos.x, currPos.y, currPos.z,
+                           hitPt.x, hitPt.y, hitPt.z,
+                           hitNm.x, hitNm.y, hitNm.z,
+                           ballSpeed, damage, rounded, hpBeforePrediction,
+                           (int)serverAuthHits());
 
                 // Visual feedback — damage numbers, blood, hitmarker
                 if (!serverAuthHits()) {
@@ -625,6 +666,8 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
                 gpMpContext->predictedNpcHitMs[npcId] = nowMsVal;
                 gpMpContext->predictedNpcDamage[npcId] = rounded;
                 MimitaNet::mpApplyPredictedDamage(*gpMpContext, npcId, rounded, true);
+                godballLog("CLIENT_PREDICTED_HP targetNpc=%u hpBefore=%d hpAfter=%d damage=%d",
+                           npcId, hpBeforePrediction, remote.currentHp, rounded);
 
                 // Predict knockback
                 glm::vec3 kbDir = ballSpeed > 0.5f
@@ -651,6 +694,14 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
                 claim.normalY = hitNm.y;
                 claim.normalZ = hitNm.z;
                 claim.spawnGeneration = gpMpContext->lastKnownSpawnGeneration;
+                godballLog("CLIENT_CLAIM_SENT attacker=%u targetNpc=%u damage=%.1f "
+                           "ballSpeed=%.2f simulationTick=%u spawnGeneration=%u "
+                           "contactSerial=%u hit=(%.2f,%.2f,%.2f) normal=(%.2f,%.2f,%.2f)",
+                           claim.attackerId, claim.targetId, claim.damage,
+                           claim.ballSpeed, claim.simulationTick,
+                           claim.spawnGeneration, claim.contactSerial,
+                           claim.hitX, claim.hitY, claim.hitZ,
+                           claim.normalX, claim.normalY, claim.normalZ);
                 MimitaNet::mpSendPacket(*gpMpContext, &claim, sizeof(claim));
 
                 // 1-tick cooldown (next 60Hz step can hit again)

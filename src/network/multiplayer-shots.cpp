@@ -291,6 +291,14 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
     // so always take the server-confirmed path.
     const bool actuallyPredicted = predicted && !authMode;
 
+    Debug::warn(Debug::Category::Weapons,
+        "[GODBALL_DBG] CLIENT_SERVER_DAMAGE_EVENT npc=%u damage=%d serverHealth=%d "
+        "killed=%d localShooter=%d replicaFound=%d replicaHealthBefore=%d "
+        "predictedHitPresent=%d serverAuthMode=%d",
+        event->npcEntityId, event->damage, event->npcHealth,
+        (int)event->killed, (int)isLocalShooter, (int)(npcPtr != nullptr),
+        npcPtr ? npcPtr->currentHp : -1, (int)predicted, (int)authMode);
+
     if (isLocalShooter && event->damage > 0)
     {
         if (actuallyPredicted)
@@ -371,11 +379,23 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
 
     if (npcPtr)
     {
+        printf("[NET GODBALL NPC DAMAGE APPLY] npcId=%u healthBefore=%d healthAfter=%d isLocal=%d\n",
+               event->npcEntityId, npcPtr->currentHp, event->npcHealth, (int)isLocalShooter);
         if (isLocalShooter)
             mpConfirmPredictedDamage(ctx, event->npcEntityId, event->npcHealth,
                                      event->killed != 0, true);
         else
             npcPtr->currentHp = event->npcHealth;
+        printf("[NET GODBALL NPC DAMAGE AFTER] npcId=%u currentHp=%d\n",
+               event->npcEntityId, npcPtr->currentHp);
+        Debug::warn(Debug::Category::Weapons,
+            "[GODBALL_DBG] CLIENT_SERVER_HP_RESULT npc=%u replicaHealthAfter=%d serverHealth=%d",
+            event->npcEntityId, npcPtr->currentHp, event->npcHealth);
+    }
+    else
+    {
+        printf("[NET GODBALL NPC DAMAGE SKIP] npcId=%u npcPtr=NULL not-found-in-remoteNpcs\n",
+               event->npcEntityId);
     }
 
     if (event->killed)

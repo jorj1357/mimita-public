@@ -105,7 +105,8 @@ WeaponRuntime* WeaponSystem::getCurrentRuntime(Player& player) {
     return rt;
 }
 
-void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const World& world, float dt) {
+void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const World& world,
+                          std::unordered_map<uint32_t, Player>* remoteNpcs, float dt) {
     // Upload any finished background weapon model parses (must run on the main
     // thread) before viewmodels try to adopt them this frame.
     WeaponModelCache::instance().finalizeWeaponModelsIfReady();
@@ -163,7 +164,8 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
                 WeaponGodball::spawnBall(mGodballPhys, *def, player);
             }
             WeaponGodball::updatePhysics(mGodballPhys, *def, *rt, player, camera, dt);
-            WeaponGodball::checkOverlaps(mGodballPhys, *def, *rt, player, npcs, camera, dt);
+            WeaponGodball::checkOverlaps(mGodballPhys, *def, *rt, player, npcs,
+                                          remoteNpcs, camera, dt);
 
             Debug::logThrottled(Debug::Category::Weapons, "godball-update", 1.0f,
                 "[GODBALL_DBG] UPDATE slot=%d def=%s active=%d pos=(%.2f,%.2f,%.2f) "

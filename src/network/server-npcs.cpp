@@ -171,8 +171,11 @@ static void syncServerNpcDamageToNpc(const std::unordered_map<uint32_t, ServerNp
         for (Npc& n : npcSystem.all())
         {
             if (n.id != kv.first) continue;
-            if (n.body.currentHp != kv.second.health)
+            if (n.body.currentHp != kv.second.health) {
+                printf("[SERVER SYNC NPC DAMAGE] npcId=%u serverHealth=%d npcBodyHp=%d -> syncing to %d\n",
+                       kv.first, kv.second.health, n.body.currentHp, kv.second.health);
                 n.body.currentHp = kv.second.health;
+            }
             if (glm::length(kv.second.knockbackImpulse) > 0.05f)
                 n.body.externalImpulse += kv.second.knockbackImpulse;
             // A killed ServerNpc must stop acting immediately and start its
@@ -843,6 +846,8 @@ SnapshotEntity makeNpcEntity(const ServerNpc& npc)
     out.aimX = npc.aim.x; out.aimY = npc.aim.y; out.aimZ = npc.aim.z;
     out.yaw = npc.yaw;
     out.health = npc.health;
+    if (npc.health < 100)
+        printf("[SERVER SNAPSHOT NPC] entityId=%u health=%d\n", npc.entityId, npc.health);
     out.onGround = npc.onGround ? 1 : 0;
     out.equippedSlot = npc.equippedSlot;
     out.weaponState = npc.weaponState;

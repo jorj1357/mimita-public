@@ -534,6 +534,18 @@ Every log must:
 * Explain expected state, actual state, and why the engine made a decision
 * Include enough context to diagnose issues without recompiling
 
+## Feature Diagnostic Requirement
+
+Every new feature must add or improve an adjacent debug logging hook at its
+owner or entry point, directly beside the code it explains. The diagnostic
+must identify the important input, decision, output, and rejection/failure
+reason, and must use the owning subsystem's log file as well as the centralized
+debug category. On every AI-agent task that changes repository behavior, the
+agent must improve the relevant diagnostics or explicitly verify and document
+why the existing diagnostics are sufficient. Repeated paths must remain
+rate-limited and useful; adding duplicate spam does not count as an
+improvement.
+
 Spam is forbidden.
 
 If a message repeats identically more than once per second, it must use logThrottled.

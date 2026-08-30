@@ -708,7 +708,11 @@ void mpApplyPredictedDamage(MultiplayerContext& ctx, uint32_t entityId,
                             int damage, bool npc)
 {
     if (!NetworkingConfig::instance().data().prediction.predictDamage)
+    {
+        printf("[NET PREDICT DAMAGE SKIP] entityId=%u damage=%d npc=%d reason=predictDamage=false\n",
+               entityId, damage, (int)npc);
         return;
+    }
     if (entityId == 0 || damage <= 0)
         return;
     auto& replicas = npc ? ctx.remoteNpcs : ctx.remotePlayers;
@@ -748,11 +752,20 @@ void mpConfirmPredictedDamage(MultiplayerContext& ctx, uint32_t entityId,
     auto playerIt = replicas.find(entityId);
     auto stateIt = states.find(entityId);
     if (playerIt == replicas.end() || stateIt == states.end())
+    {
+        printf("[NET CONFIRM DAMAGE] entityId=%u npc=%d NOT FOUND in replicas\n",
+               entityId, (int)npc);
         return;
+    }
 
     EntityInterpolationState& interpolation = stateIt->second;
     Player& replica = playerIt->second;
     healthAfter = std::max(0, healthAfter);
+
+    printf("[NET CONFIRM DAMAGE] entityId=%u npc=%d healthBefore=%d healthAfter=%d "
+           "predictedCap=%d killed=%d\n",
+           entityId, (int)npc, replica.currentHp, healthAfter,
+           interpolation.predictedHealthCap, (int)killed);
 
     const bool predictedDeathRollback = !killed && replica.netPredictedDead;
     if (predictedDeathRollback)
@@ -1396,6 +1409,18 @@ void updateRenderedReplica(
     }
     const int displayHealth =
         applyPredictedHealthOverlay(player, interpolation, authoritativeRenderHealth);
+
+    // Log health changes for NPCs
+    if (player.currentHp != displayHealth && displayHealth < 1000)
+    {
+        Debug::logThrottled(Debug::Category::Networking, "health-display", 0.5f,
+            "[HEALTH DISPLAY] entityId=%u healthBefore=%d displayHealth=%d "
+            "authHealth=%d predictedCap=%d snapshotHealth=%d tick=%u\n",
+            interpolation.networkEntityId, player.currentHp, displayHealth,
+            authoritativeRenderHealth, interpolation.predictedHealthCap,
+            render.health, render.serverTick);
+    }
+
     player.currentHp = displayHealth;
     // Server max HP (healthall override) isn't transmitted; derive it from the
     // highest server health seen so nameplates/NPC bars show 999/999 not 999/100.

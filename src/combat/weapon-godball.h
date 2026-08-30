@@ -95,6 +95,7 @@ void checkOverlaps(
     WeaponRuntime& runtime,
     Player& owner,
     NpcSystem& npcs,
+    std::unordered_map<uint32_t, Player>* remoteNpcs,
     const Camera& camera,
     float dt
 );

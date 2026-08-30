@@ -32,7 +32,9 @@ class WeaponSystem {
 public:
     WeaponSystem();
 
-    void update(Camera& camera, Player& player, NpcSystem& npcs, const World& world, float dt);
+    void update(Camera& camera, Player& player, NpcSystem& npcs, const World& world,
+                std::unordered_map<uint32_t, Player>* remoteNpcs = nullptr,
+                float dt = 0.0f);
     void render(const Camera& camera, const Player& player) const;
     RevolverShotResult fire(
         Camera& camera,

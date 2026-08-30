@@ -35,7 +35,9 @@ extern void updatePhysics(GodballPhysics& phys, const WeaponDefinition& def,
                           const Camera& camera, float dt);
 extern void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
                           WeaponRuntime& runtime, Player& owner,
-                          NpcSystem& npcs, const Camera& camera, float dt);
+                          NpcSystem& npcs,
+                          std::unordered_map<uint32_t, Player>* remoteNpcs,
+                          const Camera& camera, float dt);
 extern void render(const Camera& camera, const GodballPhysics& phys, const glm::vec3& handPos);
 extern void renderDebug(const Camera& camera, const GodballPhysics& phys,
                         const WeaponRuntime& runtime, const glm::vec3& handPos);
