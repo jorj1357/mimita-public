@@ -47,7 +47,7 @@
     //
     // This makes WASD feel nearly instant instead of gradually accelerating
     // like strict CS 1.6 sv_accelerate 5.
-    "ground_acceleration": 20.0,
+    "ground_acceleration": 999.5,
 
     // Ground friction from the fast Source preset.
     //
@@ -101,7 +101,7 @@
     // building total speed.
     //
     // Matches the fast Source preset.
-    "air_max_wishspeed": 2.0,
+    "air_max_wishspeed": 1.1,
 
     // Historical Valve-style AirAccelerate behavior.
     //

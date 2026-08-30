@@ -131,7 +131,7 @@
         1.0
       ]
     },
-    "damage": 102.0,
+    "damage": 1.0,
     "headshot_multiplier": 1.0,
     "fire_delay": 0.0,
     "reload_time": 0.0,
@@ -155,17 +155,17 @@
     },
     "custom_params": {
       "ballRadius": 0.5,
-      "ballMass": 0.18,
-      "ropeLength": 2.8,
-      "ropeStiffness": 50.0,
-      "ropeDamping": 1.0,
+      "ballMass": 1.0,
+      "ropeLength": 0.01,
+      "ropeStiffness": 1.0,
+      "ropeDamping": 0.0,
       "linearDamping": 0.0,
       "minDamage": 5.0,
-      "maxDamage": 25.0,
-      "minDamageSpeed": 0.0,
-      "maxDamageSpeed": 40.0,
-      "damageCurveExponent": 1.2,
-      "damageTickInterval": 0.15,
+      "maxDamage": 999.0,
+      "minDamageSpeed": 1.0,
+      "maxDamageSpeed": 999.0,
+      "damageCurveExponent": 2.0,
+      "damageTickInterval": 0.01,
       "relativeVelocityFactor": 2.0,
       "swingDirectionFactor": 2.0
     }
