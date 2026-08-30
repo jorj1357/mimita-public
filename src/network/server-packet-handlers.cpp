@@ -881,64 +881,23 @@ void handleGodballHitClaim(SOCKET sock,
     const glm::vec3 knockback = normal * std::max(1.0f, clampedDamage * 0.75f);
     const glm::vec3 hitPos(pkt->hitX, pkt->hitY, pkt->hitZ);
 
-    // Try player target first
-    auto targetIt = players.find(pkt->targetId);
-    if (targetIt != players.end()) {
-        ServerPlayer& target = targetIt->second;
-        if (target.dead || target.spawnState != ServerPlayer::Active) {
-            Debug::warn(Debug::Category::Weapons,
-                "[GODBALL_DBG] SERVER_CLAIM_REJECT reason=player-inactive target=%u",
-                pkt->targetId);
-            return;
-        }
-        if (target.spawnGeneration != pkt->spawnGeneration) {
-            Debug::warn(Debug::Category::Weapons,
-                "[GODBALL_DBG] SERVER_CLAIM_REJECT reason=player-generation-mismatch target=%u expected=%u received=%u",
-                pkt->targetId, target.spawnGeneration, pkt->spawnGeneration);
-            return;
-        }
-
-        ServerDamageResult result = applyServerDamage(
-            players, target, pkt->attackerId, (int)std::round(clampedDamage),
-            knockback, ServerDamageSource::PhysicalContact);
-
-        if (result.applied) {
-            queueServerDamageConfirmedEvent(
-                sock, players, tick, totalPacketsOut,
-                pkt->attackerId, target, (int)std::round(clampedDamage), result,
-                hitPos, normal, knockback, ServerDamageSource::PhysicalContact,
-                NETWORK_WEAPON_GODBALL, pkt->contactSerial);
-        }
-        return;
-    }
-
-    // Try NPC target
+    // NPC entity IDs are authoritative. Resolve NPCs before players so an
+    // accidental ID overlap cannot route an NPC hit through player damage.
     auto npcIt = npcs.find(pkt->targetId);
-    if (npcIt == npcs.end()) {
-        Debug::warn(Debug::Category::Weapons,
-            "[GODBALL_DBG] SERVER_CLAIM_REJECT reason=npc-not-found attacker=%u targetNpc=%u serverNpcCount=%zu",
-            pkt->attackerId, pkt->targetId, npcs.size());
-        printf("[SERVER GODBALL NPC MISS] attacker=%u targetId=%u NOT FOUND in npcs map (size=%zu)\n",
-               pkt->attackerId, pkt->targetId, npcs.size());
-        return;
-    }
-    {
+    if (npcIt != npcs.end()) {
         ServerNpc& npc = npcIt->second;
         if (npc.health <= 0) {
             Debug::warn(Debug::Category::Weapons,
                 "[GODBALL_DBG] SERVER_CLAIM_REJECT reason=npc-already-dead targetNpc=%u health=%d",
                 pkt->targetId, npc.health);
-            printf("[SERVER GODBALL NPC SKIP] attacker=%u npc=%u already dead health=%d\n",
-                   pkt->attackerId, pkt->targetId, npc.health);
             return;
         }
 
         const int healthBefore = npc.health;
         const int intDamage = std::max(1, (int)std::round(clampedDamage));
-        npc.health -= intDamage;
+        npc.health = std::max(0, npc.health - intDamage);
         npc.knockbackImpulse += knockback;
-        const bool killed = npc.health <= 0;
-        if (killed) npc.health = 0;
+        const bool killed = npc.health == 0;
 
         Debug::warn(Debug::Category::Weapons,
             "[GODBALL_DBG] SERVER_NPC_DAMAGE attacker=%u targetNpc=%u "
@@ -965,10 +924,42 @@ void handleGodballHitClaim(SOCKET sock,
                 attacker2->second.health = serverMaxHp();
             }
         }
-
-        printf("[SERVER GODBALL NPC HIT] attacker=%u npc=%u damage=%d healthAfter=%d killed=%d\n",
-               pkt->attackerId, pkt->targetId, intDamage, npc.health, (int)killed);
         return;
+    }
+
+    // No NPC matched, so now try a player target.
+    auto targetIt = players.find(pkt->targetId);
+    if (targetIt == players.end()) {
+        Debug::warn(Debug::Category::Weapons,
+            "[GODBALL_DBG] SERVER_CLAIM_REJECT reason=npc-not-found attacker=%u targetNpc=%u serverNpcCount=%zu",
+            pkt->attackerId, pkt->targetId, npcs.size());
+        return;
+    }
+
+    ServerPlayer& target = targetIt->second;
+    if (target.dead || target.spawnState != ServerPlayer::Active) {
+        Debug::warn(Debug::Category::Weapons,
+            "[GODBALL_DBG] SERVER_CLAIM_REJECT reason=player-inactive target=%u",
+            pkt->targetId);
+        return;
+    }
+    if (target.spawnGeneration != pkt->spawnGeneration) {
+        Debug::warn(Debug::Category::Weapons,
+            "[GODBALL_DBG] SERVER_CLAIM_REJECT reason=player-generation-mismatch target=%u expected=%u received=%u",
+            pkt->targetId, target.spawnGeneration, pkt->spawnGeneration);
+        return;
+    }
+
+    ServerDamageResult result = applyServerDamage(
+        players, target, pkt->attackerId, (int)std::round(clampedDamage),
+        knockback, ServerDamageSource::PhysicalContact);
+
+    if (result.applied) {
+        queueServerDamageConfirmedEvent(
+            sock, players, tick, totalPacketsOut,
+            pkt->attackerId, target, (int)std::round(clampedDamage), result,
+            hitPos, normal, knockback, ServerDamageSource::PhysicalContact,
+            NETWORK_WEAPON_GODBALL, pkt->contactSerial);
     }
 }
 

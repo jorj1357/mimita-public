@@ -130,7 +130,9 @@ void countPacketType(ServerTransportStats& stats, uint8_t type)
 
 bool isKnownPacketType(uint8_t type)
 {
-    return type >= PACKET_HELLO && type <= PACKET_MAP_CHANGE;
+    // 2026-08-29: TODO use an explicit switch here so future packet types
+    // cannot be silently rejected by an outdated numeric range.
+    return type >= PACKET_HELLO && type <= PACKET_GODBALL_HIT_CLAIM;
 }
 
 void recordServerLoopPerf(ServerLoopPerf& perf, uint64_t loopUs, bool cappedCatchup)

@@ -454,7 +454,9 @@ static void bindPlayerConnection(ServerPlayer& player,
 
 static bool isKnownPacketType(uint8_t type)
 {
-    return type >= PACKET_HELLO && type <= PACKET_MAP_CHANGE;
+    // 2026-08-29: TODO use an explicit switch here so future packet types
+    // cannot be silently rejected by an outdated numeric range.
+    return type >= PACKET_HELLO && type <= PACKET_GODBALL_HIT_CLAIM;
 }
 
 static void countPacketType(ServerPacketStats& stats, uint8_t type)
@@ -1904,6 +1906,9 @@ ServerPacketProcessResult processServerPacket(
     }
     else if (header->type == PACKET_GODBALL_HIT_CLAIM)
     {
+        Debug::warn(Debug::Category::Weapons,
+            "[GODBALL_DBG] SERVER_GODBALL_DISPATCH bytes=%d playerId=%u tick=%u",
+            bytes, header->playerId, tick);
         handleGodballHitClaim(sock, players, npcs, world, buffer, bytes, tick, totalPacketsOut);
         result.handled = true;
     }

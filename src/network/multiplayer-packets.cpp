@@ -104,25 +104,50 @@ uint32_t mpFireRenderTickForTarget(const MultiplayerContext& ctx, uint32_t targe
     return mpFireRenderTick(ctx, fallbackNewestTick);
 }
 
-void mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes)
+bool mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes)
 {
     if (!ctx.active || !data || bytes <= 0)
-        return;
+        return false;
     if (!ctx.transport && ctx.sock == INVALID_SOCKET)
-        return;
+        return false;
+
+    const auto packetType = ((const PacketHeader*)data)->type;
+    const bool godballClaim = packetType == PACKET_GODBALL_HIT_CLAIM;
+    if (godballClaim)
+    {
+        Debug::warn(Debug::Category::Weapons,
+            "[GODBALL_DBG] CLAIM_SEND_BEGIN type=%u bytes=%d transport=%d socketValid=%d",
+            (unsigned)packetType, bytes, (int)(ctx.transport != nullptr),
+            (int)(ctx.sock != INVALID_SOCKET));
+    }
 
     // Per-client badconn simulator may delay, reorder, or drop this packet.
     if (badconn::processOutgoing(data, (size_t)bytes))
-        return;
+    {
+        if (godballClaim)
+        {
+            Debug::warn(Debug::Category::Weapons,
+                "[GODBALL_DBG] CLAIM_SEND_RESULT type=%u sent=0 reason=badconn-drop",
+                (unsigned)packetType);
+        }
+        return false;
+    }
 
     ctx.lastPacketSentMs = nowMs();
 
     // Use ICE transport if available
     if (ctx.transport)
     {
-        ctx.transport->send(data, (size_t)bytes);
-        ++ctx.packetsSent;
-        return;
+        const bool sent = ctx.transport->send(data, (size_t)bytes);
+        if (sent)
+            ++ctx.packetsSent;
+        if (godballClaim)
+        {
+            Debug::warn(Debug::Category::Weapons,
+                "[GODBALL_DBG] CLAIM_SEND_RESULT type=%u sent=%d packetsSent=%u",
+                (unsigned)packetType, (int)sent, ctx.packetsSent);
+        }
+        return sent;
     }
 
     int sentBytes = sendto(ctx.sock, (const char*)data, bytes, 0,
@@ -131,7 +156,16 @@ void mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes)
         printf("[NET TX ERROR] sendto failed error=%d\n", WSAGetLastError());
     else
         printf("[NET TX] type=%d bytes=%d\n", ((PacketHeader*)data)->type, bytes);
-    ++ctx.packetsSent;
+    const bool sent = sentBytes == bytes;
+    if (sent)
+        ++ctx.packetsSent;
+    if (godballClaim)
+    {
+        Debug::warn(Debug::Category::Weapons,
+            "[GODBALL_DBG] CLAIM_SEND_RESULT type=%u sent=%d sentBytes=%d packetsSent=%u",
+            (unsigned)packetType, (int)sent, sentBytes, ctx.packetsSent);
+    }
+    return sent;
 }
 
 // ── Connection lifecycle ──────────────────────────────────────────────

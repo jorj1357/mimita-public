@@ -154,7 +154,7 @@
       "equip": ""
     },
     "custom_params": {
-      "ballRadius": 1.5,
+      "ballRadius": 0.5,
       "ballMass": 0.18,
       "ropeLength": 2.8,
       "ropeStiffness": 50.0,

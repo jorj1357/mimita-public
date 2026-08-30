@@ -872,7 +872,7 @@ uint32_t mpSendMeleeHitRequest(
     const glm::vec3& normal,
     const glm::vec3& knockback,
     float weaponSpeed);
-void mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes);
+bool mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes);
 
 // Returns the server tick the client is currently rendering remote entities at.
 // In interpolation mode (direct_render=false) this is the delayed buffer clock,

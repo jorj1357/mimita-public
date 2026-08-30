@@ -702,7 +702,10 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
                            claim.spawnGeneration, claim.contactSerial,
                            claim.hitX, claim.hitY, claim.hitZ,
                            claim.normalX, claim.normalY, claim.normalZ);
-                MimitaNet::mpSendPacket(*gpMpContext, &claim, sizeof(claim));
+                const bool claimSent = MimitaNet::mpSendPacket(
+                    *gpMpContext, &claim, sizeof(claim));
+                godballLog("CLIENT_CLAIM_RESULT targetNpc=%u damage=%d sent=%d",
+                           claim.targetId, rounded, (int)claimSent);
 
                 // 1-tick cooldown (next 60Hz step can hit again)
                 remoteCooldowns[npcId] = 1.0f / 60.0f;
