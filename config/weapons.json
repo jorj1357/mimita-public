@@ -160,10 +160,12 @@
       "ropeStiffness": 50.0,
       "ropeDamping": 1.0,
       "linearDamping": 0.0,
-      "baseDamagePerTick": 10.0,
+      "minDamage": 5.0,
+      "maxDamage": 25.0,
+      "minDamageSpeed": 0.0,
+      "maxDamageSpeed": 40.0,
+      "damageCurveExponent": 1.2,
       "damageTickInterval": 0.15,
-      "speedDamageFactor": 30.0,
-      "maxDamageCap": 999999.0,
       "relativeVelocityFactor": 2.0,
       "swingDirectionFactor": 2.0
     }
@@ -1022,10 +1024,37 @@
     "display_name": "Spy Knife",
     "slot": 12,
     "model": {
-      "path": "assets/objects/weapons/mimita-spyknife-v1.glb"
+      "path": "assets/objects/weapons/mimita-spy-knife-v2.glb"
     },
     "viewmodel": {
-      "enabled": true
+      "enabled": true,
+      "position": [
+        -9.0,
+        -3.0,
+        0.5
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "attachment": {
+        "position": [
+          9.0,
+          3.05,
+          -0.5
+        ],
+        "rotation_degrees": [
+            0.0,
+          90.0,
+          -25.0
+        ]
+      },
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
     },
     "damage": 1.0,
     "behavior_type": "spyknife",
@@ -1046,9 +1075,10 @@
       "backstabKnockback": 20.0,
       "swingDurationTicks": 120.0,
       "swingForwardTicks": 60.0,
-      "bladeLength": 0.6,
-      "bladeRadius": 0.05,
-      "damageTickInterval": 0.0
+      "bladeCollisionRadius": 0.25,
+      "damageTickInterval": 0.0,
+      "showCollisionCapsule": 0,
+      "collisionAlpha": 0.5
     }
   }
 }

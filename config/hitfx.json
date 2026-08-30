@@ -359,13 +359,12 @@
 
     "bodyContactSpark": {
         "enabled": true,
-        "color": [1.0, 1.0, 1.0],
+        "color": [1.0, 0.8, 0.5],
         "alpha": 1.0,
-        "lifetimeTicks": 15,
+        "lifetimeTicks": 2,
         "baseLength": 2.0,
-        "baseRadius": 0.4,
-        "speedScale": 0.3,
-        "minSpeed": 0.1,
+        "baseRadius": 0.01,
+        "speedScale": 1.0,
         "local_axis": "+Z"
     },
 

@@ -163,8 +163,15 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
                 WeaponGodball::spawnBall(mGodballPhys, *def, player);
             }
             WeaponGodball::updatePhysics(mGodballPhys, *def, *rt, player, camera, dt);
-            // Continuous overlap damage every frame, not just on fire input
             WeaponGodball::checkOverlaps(mGodballPhys, *def, *rt, player, npcs, camera, dt);
+
+            Debug::logThrottled(Debug::Category::Weapons, "godball-update", 1.0f,
+                "[GODBALL_DBG] UPDATE slot=%d def=%s active=%d pos=(%.2f,%.2f,%.2f) "
+                "playerPos=(%.2f,%.2f,%.2f) player=%s npcs=%zu",
+                player.equippedSlot, def->id.c_str(), (int)mGodballPhys.active,
+                mGodballPhys.position.x, mGodballPhys.position.y, mGodballPhys.position.z,
+                player.pos.x, player.pos.y, player.pos.z,
+                player.username.c_str(), npcs.all().size());
         } else if (def->behaviorType == WeaponBehaviorType::Swordsword) {
             WeaponSwordsword::update(mSwordswordState, *def, *rt, player, npcs, camera, world, dt);
         } else if (def->behaviorType == WeaponBehaviorType::Hafs) {
@@ -588,22 +595,6 @@ void WeaponSystem::render(const Camera& camera, const Player& player) const {
         }
     }
 
-    // SpyKnife: render blade capsule during active swing or ready pose
-    if (def->behaviorType == WeaponBehaviorType::SpyKnife) {
-        if (mSpyKnifeState.active) {
-            Capsule cap = mSpyKnifeState.currentKnifeCapsule;
-            if (glm::length(cap.b - cap.a) > 0.001f && cap.r > 0.001f) {
-                DebugVis::drawWeaponCapsuleWire(camera, cap, {1.0f, 0.2f, 0.2f, 0.8f});
-            }
-        }
-        if (mSpyKnifeState.animState == SpyKnifeAnimState::Ready) {
-            Capsule cap = mSpyKnifeState.currentKnifeCapsule;
-            if (glm::length(cap.b - cap.a) > 0.001f && cap.r > 0.001f) {
-                DebugVis::drawWeaponCapsuleWire(camera, cap, {1.0f, 0.8f, 0.0f, 0.5f});
-            }
-        }
-    }
-
     // ── Helper to build ProjectileVisualConfig from weapon definition ──
     auto buildProjCfg = [&](const WeaponDefinition& wdef, bool isRocket) -> ProjectileVisualConfig {
         auto cp = [&](const char* key, float fallback) {
@@ -929,18 +920,16 @@ std::vector<RevolverShotResult> WeaponSystem::collectRemoteGodballHits(
             mRemoteGodballCooldowns[targetId] > 0.0f)
             continue;
 
-        const glm::vec3 toTarget = target.pos - mGodballPhys.position;
-        const float distance = glm::length(toTarget);
-        if (distance >= mGodballPhys.radius + 0.65f)
+        glm::vec3 hitPoint, hitNormal;
+        if (!WeaponGodball::sweptSphereOverlap(
+                mGodballPhys.prevPosition, mGodballPhys.position,
+                mGodballPhys.radius, target.pos, 0.65f,
+                hitPoint, hitNormal))
             continue;
 
-        const glm::vec3 direction = distance > 0.001f
-            ? toTarget / distance
-            : glm::vec3(0.0f, 1.0f, 0.0f);
         const int damage = std::clamp(
             (int)std::round(WeaponGodball::computeDamage(
-                mGodballPhys, *def, player, target,
-                mGodballPhys.position + direction * mGodballPhys.radius)),
+                mGodballPhys, *def, player, target, hitPoint)),
             1, 200);
 
         RevolverShotResult hit;
@@ -950,7 +939,8 @@ std::vector<RevolverShotResult> WeaponSystem::collectRemoteGodballHits(
         hit.targetId = targetId;
         hit.damage = (float)damage;
         hit.start = WeaponGodball::getHandPosition(player);
-        hit.end = target.pos + glm::vec3(0.0f, 0.0f, 0.8f);
+        hit.end = hitPoint;
+        hit.direction = hitNormal;
         hits.push_back(hit);
         mRemoteGodballCooldowns[targetId] = tickInterval;
 
@@ -958,8 +948,8 @@ std::vector<RevolverShotResult> WeaponSystem::collectRemoteGodballHits(
         {
             HitEvent ev;
             ev.position = hit.end;
-            ev.normal = direction;
-            ev.direction = direction;
+            ev.normal = hitNormal;
+            ev.direction = hitNormal;
             ev.hitEntity = true;
             ev.damage = damage;
             ev.attacker = player.username;
@@ -1223,6 +1213,19 @@ void WeaponSystem::renderRemoteWeapon(uint32_t entityId, const Player& player, c
                                     {0.2f, 0.4f, 0.8f, 0.6f});
         DebugVis::drawWireSphere(camera, player.godballPosition, radius,
                                  {0.4f, 0.6f, 1.0f, 0.8f});
+
+        // Rope: 6 beam segments from hand to ball
+        const glm::vec3 handPos = WeaponGodball::getHandPosition(player);
+        const int ropeSegments = 6;
+        for (int i = 0; i < ropeSegments; ++i)
+        {
+            const float t0 = (float)i / (float)ropeSegments;
+            const float t1 = (float)(i + 1) / (float)ropeSegments;
+            const glm::vec3 a = handPos + (player.godballPosition - handPos) * t0;
+            const glm::vec3 b = handPos + (player.godballPosition - handPos) * t1;
+            DebugVis::drawFilledBeam(camera, a, b, 0.03f,
+                                     {0.3f, 0.5f, 0.9f, 0.7f});
+        }
     }
 
     // QuickHit: render glowing capsule for remote players during active ticks

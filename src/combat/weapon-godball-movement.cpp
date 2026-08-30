@@ -4,10 +4,13 @@
 #include "weapon-execution.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <limits>
+#include <filesystem>
 
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
@@ -30,6 +33,71 @@
 extern MimitaNet::MultiplayerContext* gpMpContext;
 
 namespace {
+
+// ── Godball debug file logger ──────────────────────────────────
+FILE* gGodballLogFile = nullptr;
+bool gGodballLogOpened = false;
+
+void openGodballLog()
+{
+    if (gGodballLogOpened) return;
+    gGodballLogOpened = true;
+
+    auto now = std::chrono::system_clock::now();
+    auto t = std::chrono::system_clock::to_time_t(now);
+    std::tm local{};
+#ifdef _WIN32
+    localtime_s(&local, &t);
+#else
+    localtime_r(&t, &local);
+#endif
+    char dateBuf[16], timeBuf[16];
+    std::strftime(dateBuf, sizeof(dateBuf), "%m-%d-%Y", &local);
+    std::strftime(timeBuf, sizeof(timeBuf), "%H%M%S", &local);
+
+    std::string dir = "logs/" + std::string(dateBuf);
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+
+    std::string path = dir + "/Weapons_log_" + std::string(timeBuf) + ".txt";
+    gGodballLogFile = fopen(path.c_str(), "w");
+    if (gGodballLogFile) {
+        fprintf(gGodballLogFile, "==================================================\n");
+        fprintf(gGodballLogFile, " GODBALL NPC DAMAGE LOG\n");
+        fprintf(gGodballLogFile, " Start: %s\n", std::string(timeBuf).c_str());
+        fprintf(gGodballLogFile, " File: %s\n", path.c_str());
+        fprintf(gGodballLogFile, "==================================================\n\n");
+        fflush(gGodballLogFile);
+    }
+    Debug::warn(Debug::Category::Weapons, "[GODBALL_DBG] Log opened: %s\n", path.c_str());
+}
+
+void closeGodballLog()
+{
+    if (gGodballLogFile) {
+        fprintf(gGodballLogFile, "\n==================================================\n");
+        fprintf(gGodballLogFile, " LOG CLOSED\n");
+        fprintf(gGodballLogFile, "==================================================\n");
+        fclose(gGodballLogFile);
+        gGodballLogFile = nullptr;
+    }
+}
+
+void godballLog(const char* fmt, ...)
+{
+    openGodballLog();
+    Debug::warn(Debug::Category::Weapons, "[GODBALL_DBG] ");
+    va_list args;
+    va_start(args, fmt);
+    char buf[1024];
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    Debug::warn(Debug::Category::Weapons, "%s\n", buf);
+    if (gGodballLogFile) {
+        fprintf(gGodballLogFile, "[GODBALL_DBG] %s\n", buf);
+        fflush(gGodballLogFile);
+    }
+}
 
 bool serverAuthHits()
 {
@@ -166,12 +234,22 @@ void updatePhysics(GodballPhysics& phys, const WeaponDefinition& def,
                phys.constraintDist, phys.ropeLength, phys.ropeTension,
                phys.handedEnergy);
     }
+
+    godballLog("PHYSICS prev=(%.2f,%.2f,%.2f) curr=(%.2f,%.2f,%.2f) "
+               "vel=(%.2f,%.2f,%.2f) speed=%.2f "
+               "hand=(%.2f,%.2f,%.2f) handSpeed=%.2f "
+               "ropeTaut=%d tension=%.2f ownerDist=%.2f",
+               phys.prevPosition.x, phys.prevPosition.y, phys.prevPosition.z,
+               phys.position.x, phys.position.y, phys.position.z,
+               phys.velocity.x, phys.velocity.y, phys.velocity.z, speed,
+               handPos.x, handPos.y, handPos.z, handSpeed,
+               (int)ropeTaut, phys.ropeTension, ownerDist);
 }
 
-static bool sweptSphereOverlap(const glm::vec3& prevPos, const glm::vec3& currPos,
+bool sweptSphereOverlap(const glm::vec3& prevPos, const glm::vec3& currPos,
                                  float radius, const glm::vec3& targetPos, float targetRadius,
                                  glm::vec3& hitPoint, glm::vec3& hitNormal,
-                                 glm::vec3* outClosest = nullptr) {
+                                 glm::vec3* outClosest) {
     glm::vec3 seg = currPos - prevPos;
     float segLen = glm::length(seg);
 
@@ -251,6 +329,14 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
         ? std::clamp((int)std::ceil(moveDist / maxStepDist), 1, maxSubsteps)
         : 1;
 
+    godballLog("CHECK active=1 tickReady=%d timer=%.4f interval=%.3f dt=%.4f "
+               "ballPos=(%.2f,%.2f,%.2f) prevPos=(%.2f,%.2f,%.2f) speed=%.2f "
+               "damageRadius=%.3f npcs=%zu substeps=%d",
+               (int)tickReady, runtime.godball.overlapDamageTimer, tickInterval, safeDt,
+               currPos.x, currPos.y, currPos.z,
+               prevPos.x, prevPos.y, prevPos.z,
+               ballSpeed, damageRadius, npcs.all().size(), substeps);
+
     for (Npc& npc : npcs.all()) {
         if (npc.body.currentHp <= 0) continue;
 
@@ -270,12 +356,23 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
                 ballSpeed > 0.001f ? glm::normalize(phys.velocity) : glm::vec3(0.0f, 1.0f, 0.0f));
         }
 
+        float cooldownVal = 0.0f;
         auto& cooldowns = runtime.godball.targetCooldowns;
         auto cooldownIt = cooldowns.find(npcId);
+        if (cooldownIt != cooldowns.end()) cooldownVal = cooldownIt->second;
+
+        godballLog("NPC id=%u hp=%d pos=(%.2f,%.2f,%.2f) dist=%.3f cooldown=%.3f "
+                   "bodyParts=%zu",
+                   npcId, npc.body.currentHp,
+                   npc.body.pos.x, npc.body.pos.y, npc.body.pos.z,
+                   cd.distanceToTarget, cooldownVal,
+                   npc.body.physicalBody.parts.size());
+
         if (cooldownIt != cooldowns.end() && cooldownIt->second > 0.0f) {
             cd.cooldownActive = true;
             cd.rejected = true;
             cd.rejectReason = "cooldown";
+            godballLog("  SKIP id=%u reason=cooldown cd=%.3f", npcId, cooldownIt->second);
             if (DebugConfig::DEBUG_GODBALL) {
                 printf("[GODBALL] npc=%u cooldown=%.3f -> skip\n",
                        npcId, cooldownIt->second);
@@ -288,6 +385,7 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
         if (!tickReady) {
             cd.rejected = true;
             cd.rejectReason = "notTickReady";
+            godballLog("  SKIP id=%u reason=tickReady", npcId);
             phys.npcCollisions.push_back(cd);
             continue;
         }
@@ -295,6 +393,7 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
         bool hit = false;
         glm::vec3 hitPoint, hitNormal, closestOnSeg;
         std::string hitPartName;
+        float bestDist = 999999.0f;
 
         for (const PhysicalBodyPart& part : npc.body.physicalBody.parts) {
             glm::vec3 localCenter = (part.collider.localMin + part.collider.localMax) * 0.5f;
@@ -308,13 +407,16 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
                 glm::vec3 subPrev = prevPos + (currPos - prevPos) * t0;
                 glm::vec3 subCurr = prevPos + (currPos - prevPos) * t1;
 
+                glm::vec3 oc;
                 if (sweptSphereOverlap(subPrev, subCurr, damageRadius,
                                        worldCenter, partRadius,
-                                       hitPoint, hitNormal, &closestOnSeg)) {
+                                       hitPoint, hitNormal, &oc)) {
                     hit = true;
                     hitPartName = part.name;
                     break;
                 }
+                float d = glm::length(worldCenter - oc);
+                if (d < bestDist) bestDist = d;
             }
             if (hit) break;
         }
@@ -329,6 +431,8 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
         if (!hit) {
             cd.rejected = true;
             cd.rejectReason = "noIntersection";
+            godballLog("  MISS id=%u dist=%.3f bestDist=%.3f combinedR=%.3f",
+                       npcId, cd.distanceToTarget, bestDist, damageRadius + 0.5f);
             if (DebugConfig::DEBUG_GODBALL) {
                 printf("[GODBALL] npc=%u noIntersection dist=%.2f\n",
                        npcId, cd.distanceToTarget);
@@ -366,6 +470,17 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
         npc.body.currentHp = std::max(0, npc.body.currentHp - rounded);
         npc.body.externalImpulse += kbDir * knockbackForce + glm::vec3(0, 0, knockbackForce * 0.4f);
         npc.hitReactionTimer = 0.25f + std::min(ballSpeed * 0.005f, 0.15f);
+
+        godballLog("  HIT id=%u name=%s part=%s damage=%.1f rounded=%d "
+                   "speed=%.2f hitPt=(%.2f,%.2f,%.2f) hitNormal=(%.2f,%.2f,%.2f) "
+                   "kbDir=(%.2f,%.2f,%.2f) kbForce=%.2f "
+                   "hpBefore=%d hpAfter=%d",
+                   npcId, npc.body.username.c_str(), hitPartName.c_str(),
+                   damage, rounded, ballSpeed,
+                   hitPoint.x, hitPoint.y, hitPoint.z,
+                   hitNormal.x, hitNormal.y, hitNormal.z,
+                   kbDir.x, kbDir.y, kbDir.z, knockbackForce,
+                   npc.body.currentHp + rounded, npc.body.currentHp);
 
         {
             GodballPhysics::ImpactEvent ev;

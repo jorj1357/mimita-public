@@ -1,7 +1,8 @@
 // 08 29 2026, 00 00
 /* purpose
-* Implements SpyKnife client-side state machine: swing animation, swept blade collision, backstab.
-* Owns input detection, attack lifecycle, backstab geometry, NPC hit detection, and local damage.
+* Implements SpyKnife client-side state machine: swept blade collision, backstab, sounds.
+* Uses the engine's weaponCollisionCapsule for collision (same as swordsword).
+* Owns swing lifecycle, per-tick blade collision, backstab cone check, and local NPC damage.
 * Stores pending remote player hits for the network layer to send as hit claims.
 * Does NOT send network packets directly.
 * Does NOT independently simulate knife collision on the server.
@@ -15,6 +16,7 @@
 #include "camera.h"
 #include "audio/audio.h"
 #include "debug/debug-log.h"
+#include "debug/debug-visuals.h"
 #include "entities/player.h"
 #include "npc/npc.h"
 #include "world/world.h"
@@ -31,40 +33,6 @@ static constexpr unsigned int SPYKNIFE_SOUND_OWNER_ID = 0xFFFF0002;
 static float skCp(const WeaponDefinition& def, const char* key, float fallback) {
     auto it = def.customParams.find(key);
     return (it != def.customParams.end()) ? it->second : fallback;
-}
-
-Capsule WeaponSpyKnife::computeKnifeCapsule(const Player& owner,
-                                              const WeaponDefinition& def)
-{
-    const float bladeLength = skCp(def, "bladeLength", 0.6f);
-    const float bladeRadius = skCp(def, "bladeRadius", 0.05f);
-
-    glm::vec3 armCenter(0.0f);
-    bool foundArm = false;
-    for (const PhysicalBodyPart& part : owner.physicalBody.parts) {
-        if (part.name == "rightArm") {
-            armCenter = glm::vec3(part.worldTransform[3]);
-            foundArm = true;
-            break;
-        }
-    }
-
-    if (!foundArm) {
-        glm::vec3 forward = owner.aimDirection;
-        if (glm::length(forward) < 0.001f) forward = glm::vec3(0.0f, 1.0f, 0.0f);
-        forward = glm::normalize(forward);
-        armCenter = owner.pos + glm::vec3(0.0f, 0.0f, 1.2f) + forward * 0.6f;
-    }
-
-    glm::vec3 forward = owner.aimDirection;
-    if (glm::length(forward) < 0.001f) forward = glm::vec3(0.0f, 1.0f, 0.0f);
-    forward = glm::normalize(forward);
-
-    Capsule cap;
-    cap.a = armCenter;
-    cap.b = armCenter + forward * bladeLength;
-    cap.r = bladeRadius;
-    return cap;
 }
 
 bool WeaponSpyKnife::isBackstabGeometry(const Player& attacker, const Player& victim,
@@ -131,10 +99,10 @@ static bool sweptBladeHitPart(const Capsule& prev, const Capsule& curr,
 void WeaponSpyKnife::startSwing(SpyKnifeState& state, const WeaponDefinition& def,
                                   Player& owner, Camera& camera)
 {
-    if (state.active) {
-        state.previousKnifeCapsule = state.currentKnifeCapsule;
-    } else {
-        state.previousKnifeCapsule = computeKnifeCapsule(owner, def);
+    // Initialize previous capsule from engine's weapon collision capsule
+    if (!state.hasPreviousBladeCapsule) {
+        state.previousBladeCapsule = owner.weaponCollisionCapsule;
+        state.hasPreviousBladeCapsule = true;
     }
 
     state.attackSequenceId++;
@@ -146,9 +114,6 @@ void WeaponSpyKnife::startSwing(SpyKnifeState& state, const WeaponDefinition& de
     state.hitCooldowns.clear();
     state.backstabSoundPlayed.clear();
     state.pendingRemoteHits.clear();
-
-    state.currentKnifeCapsule = computeKnifeCapsule(owner, def);
-    state.hasPreviousCapsule = true;
 
     AudioManager::instance().stopOwner(SPYKNIFE_SOUND_OWNER_ID);
     {
@@ -170,7 +135,7 @@ void WeaponSpyKnife::startSwing(SpyKnifeState& state, const WeaponDefinition& de
         rt = &it->second;
         rt->shootEffectTimer = std::max(0.1f,
             (float)skCp(def, "swingDurationTicks", 120.0f) / 60.0f);
-        rt->customFloats["knifeAnimState"] = 2.0f;
+        rt->customFloats["swordPoseState"] = 1.0f;
     }
 
     Debug::log(Debug::Category::Weapons,
@@ -230,9 +195,11 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
 
     const uint32_t swingDurationTicks = (uint32_t)skCp(def, "swingDurationTicks", 120.0f);
     const uint32_t swingForwardTicks = (uint32_t)skCp(def, "swingForwardTicks", 60.0f);
+    const float collisionRadius = skCp(def, "bladeCollisionRadius", 0.25f);
 
-    state.previousKnifeCapsule = state.currentKnifeCapsule;
-    state.currentKnifeCapsule = computeKnifeCapsule(owner, def);
+    // Use engine's weaponCollisionCapsule (follows actual weapon model position)
+    Capsule currentBlade = owner.weaponCollisionCapsule;
+    currentBlade.r = collisionRadius;
 
     if (state.active) {
         for (uint32_t t = 0; t < ticksThisFrame; t++) {
@@ -253,8 +220,8 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
                     glm::vec3 partCenter = glm::vec3(part.worldTransform[3]);
                     float partRadius = 0.3f;
 
-                    if (sweptBladeHitPart(state.previousKnifeCapsule,
-                                          state.currentKnifeCapsule,
+                    if (sweptBladeHitPart(state.previousBladeCapsule,
+                                          currentBlade,
                                           partCenter, partRadius)) {
                         hitFound = true;
                         break;
@@ -279,8 +246,9 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
 
         if (state.swingTick >= swingDurationTicks) {
             state.active = false;
-            state.hasPreviousCapsule = false;
+            state.hasPreviousBladeCapsule = false;
             runtime.shootEffectTimer = 0.0f;
+            runtime.customFloats["swordPoseState"] = 0.0f;
 
             bool foundReady = false;
             for (const Npc& npc : npcs.all()) {
@@ -291,10 +259,9 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
                 }
             }
             state.animState = foundReady ? SpyKnifeAnimState::Ready : SpyKnifeAnimState::Idle;
-            runtime.customFloats["knifeAnimState"] = (float)state.animState;
         } else if (state.swingTick >= swingForwardTicks) {
             state.animState = SpyKnifeAnimState::Returning;
-            runtime.customFloats["knifeAnimState"] = 3.0f;
+            runtime.customFloats["swordPoseState"] = 0.0f;
         }
     }
 
@@ -311,7 +278,21 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
         SpyKnifeAnimState newState = foundReady ? SpyKnifeAnimState::Ready : SpyKnifeAnimState::Idle;
         if (newState != state.animState) {
             state.animState = newState;
-            runtime.customFloats["knifeAnimState"] = (float)newState;
+        }
+    }
+
+    // Save for next frame's swept test
+    state.previousBladeCapsule = currentBlade;
+    state.hasPreviousBladeCapsule = true;
+
+    // Optional debug capsule rendering
+    if (skCp(def, "showCollisionCapsule", 0.0f) > 0.5f) {
+        float alpha = skCp(def, "collisionAlpha", 0.5f);
+        if (state.active) {
+            DebugVis::drawWeaponCapsuleWire(camera, currentBlade, {1.0f, 0.2f, 0.2f, alpha});
+        }
+        if (state.animState == SpyKnifeAnimState::Ready) {
+            DebugVis::drawWeaponCapsuleWire(camera, currentBlade, {1.0f, 0.8f, 0.0f, alpha});
         }
     }
 }

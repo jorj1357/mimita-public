@@ -286,8 +286,11 @@ WeaponDefinition createGodballDefinition() {
     def.customParams["linearDamping"] = 0.0f;
     def.customParams["baseDamagePerTick"] = 10.0f;
     def.customParams["damageTickInterval"] = 0.15f;
-    def.customParams["speedDamageFactor"] = 3.0f;
-    def.customParams["maxDamageCap"] = 200.0f;
+    def.customParams["minDamage"] = 5.0f;
+    def.customParams["maxDamage"] = 25.0f;
+    def.customParams["minDamageSpeed"] = 0.0f;
+    def.customParams["maxDamageSpeed"] = 40.0f;
+    def.customParams["damageCurveExponent"] = 1.2f;
     def.customParams["relativeVelocityFactor"] = 2.0f;
     def.customParams["swingDirectionFactor"] = 2.0f;
 
@@ -711,7 +714,7 @@ WeaponDefinition createSpyKnifeDefinition() {
     def.id = "spyknife";
     def.displayName = "Spy Knife";
     def.slot = 12;
-    def.modelPath = "assets/objects/weapons/mimita-spyknife-v1.glb";
+    def.modelPath = "assets/objects/weapons/mimita-spy-knife-v2.glb";
     def.damage = 1.0f;
     def.headshotMultiplier = 1.0f;
     def.fireDelay = 0.0f;
@@ -733,11 +736,10 @@ WeaponDefinition createSpyKnifeDefinition() {
     def.customParams["backstabKnockback"] = 20.0f;
     def.customParams["swingDurationTicks"] = 120.0f;
     def.customParams["swingForwardTicks"] = 60.0f;
-    def.customParams["bladeLength"] = 0.6f;
-    def.customParams["bladeRadius"] = 0.05f;
+    def.customParams["bladeCollisionRadius"] = 0.25f;
     def.customParams["damageTickInterval"] = 0.0f;
-    def.customParams["hitboxRadius"] = 0.05f;
-    def.customParams["hitboxLength"] = 0.6f;
+    def.customParams["showCollisionCapsule"] = 0.0f;
+    def.customParams["collisionAlpha"] = 0.5f;
     return def;
 }
 

@@ -84,8 +84,8 @@ static int runBodyWeaponPass(
 
         if (c.label && std::strcmp(c.label, "weapon") != 0 &&
             p.bodySparkTick != p.movementSimulationTick) {
-            p.bodySparkTick = p.movementSimulationTick;
-            EffectPartSystem::instance().spawnBodyContactSpark(p.pos, c.point, c.sweepDelta, 0.1f);
+            EffectPart* spawned = EffectPartSystem::instance().spawnBodyContactSpark(p.pos, c.point, p.vel, 0.1f);
+            if (spawned) p.bodySparkTick = p.movementSimulationTick;
         }
     }
 

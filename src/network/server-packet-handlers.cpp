@@ -820,24 +820,16 @@ void handleGodballState(SOCKET sock,
                         char* buffer, int bytes) {
     if (bytes < (int)sizeof(GodballStatePacket)) return;
     GodballStatePacket* pkt = reinterpret_cast<GodballStatePacket*>(buffer);
-    (void)sock;
-    (void)players;
-    (void)pkt;
-    return;
     auto it = players.find(pkt->ownerPlayerId);
-    if (it == players.end()) {
-        printf("[GODBALL SERVER RX] playerId=%u NOT FOUND in players\n", pkt->ownerPlayerId);
-        return;
-    }
+    if (it == players.end()) return;
     ServerPlayer& p = it->second;
     p.godballX = pkt->posX;
     p.godballY = pkt->posY;
     p.godballZ = pkt->posZ;
+    p.godballVx = pkt->velX;
+    p.godballVy = pkt->velY;
+    p.godballVz = pkt->velZ;
     p.godballActive = pkt->active != 0;
-    printf("[GODBALL SERVER RX] playerId=%u pos=(%.1f,%.1f,%.1f) active=%d\n",
-           pkt->ownerPlayerId, pkt->posX, pkt->posY, pkt->posZ, (int)pkt->active);
-    // Rebroadcast to all OTHER connected players
-    int forwarded = 0;
     for (auto& kv : players) {
         if (kv.first == pkt->ownerPlayerId) continue;
         if (kv.second.transport)
@@ -845,10 +837,47 @@ void handleGodballState(SOCKET sock,
         else
             sendto(sock, (const char*)buffer, bytes, 0,
                    (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
-        forwarded++;
     }
-    printf("[GODBALL SERVER TX] playerId=%u forwardedTo=%d clients\n",
-           pkt->ownerPlayerId, forwarded);
+}
+
+void handleGodballHitClaim(SOCKET sock,
+                           std::unordered_map<uint32_t, ServerPlayer>& players,
+                           const HeadlessWorld& world,
+                           char* buffer, int bytes,
+                           uint32_t tick, uint64_t& totalPacketsOut) {
+    (void)world;
+    if (bytes < (int)sizeof(GodballHitClaimPacket)) return;
+    GodballHitClaimPacket* pkt = reinterpret_cast<GodballHitClaimPacket*>(buffer);
+
+    auto attackerIt = players.find(pkt->attackerId);
+    if (attackerIt == players.end()) return;
+    ServerPlayer& attacker = attackerIt->second;
+    if (attacker.dead || attacker.spawnState != ServerPlayer::Active) return;
+
+    auto targetIt = players.find(pkt->targetId);
+    if (targetIt == players.end()) return;
+    ServerPlayer& target = targetIt->second;
+    if (target.dead || target.spawnState != ServerPlayer::Active) return;
+    if (target.spawnGeneration != pkt->spawnGeneration) return;
+
+    const float clampedDamage = std::clamp(pkt->damage, 1.0f, 500.0f);
+    const glm::vec3 normal = glm::length(glm::vec3(pkt->normalX, pkt->normalY, pkt->normalZ)) > 0.001f
+        ? glm::normalize(glm::vec3(pkt->normalX, pkt->normalY, pkt->normalZ))
+        : glm::vec3(0.0f, 0.0f, 1.0f);
+    const glm::vec3 knockback = normal * std::max(1.0f, clampedDamage * 0.75f);
+
+    ServerDamageResult result = applyServerDamage(
+        players, target, pkt->attackerId, (int)std::round(clampedDamage),
+        knockback, ServerDamageSource::PhysicalContact);
+
+    if (result.applied) {
+        queueServerDamageConfirmedEvent(
+            sock, players, tick, totalPacketsOut,
+            pkt->attackerId, target, (int)std::round(clampedDamage), result,
+            glm::vec3(pkt->hitX, pkt->hitY, pkt->hitZ),
+            normal, knockback, ServerDamageSource::PhysicalContact,
+            NETWORK_WEAPON_GODBALL, pkt->contactSerial);
+    }
 }
 
 void handleSpyKnifeHitClaim(SOCKET sock,

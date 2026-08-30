@@ -101,6 +101,11 @@ void checkOverlaps(
 
 float damageFromSpeed(const WeaponDefinition& def, float speed);
 
+bool sweptSphereOverlap(const glm::vec3& prevPos, const glm::vec3& currPos,
+                         float radius, const glm::vec3& targetPos, float targetRadius,
+                         glm::vec3& hitPoint, glm::vec3& hitNormal,
+                         glm::vec3* outClosest = nullptr);
+
 float computeDamage(
     const GodballPhysics& phys,
     const WeaponDefinition& def,

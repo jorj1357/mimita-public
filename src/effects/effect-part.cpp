@@ -629,18 +629,15 @@ EffectPart* EffectPartSystem::spawnDownDash(glm::vec3 position) {
     return spawn(e);
 }
 
-EffectPart* EffectPartSystem::spawnBodyContactSpark(glm::vec3 playerPos, glm::vec3 contactPoint, glm::vec3 sweepDelta, float partRadius) {
+EffectPart* EffectPartSystem::spawnBodyContactSpark(glm::vec3 playerPos, glm::vec3 contactPoint, glm::vec3 velocity, float partRadius) {
     const auto& cfg = HitEffects::config().bodyContactSpark;
     if (!cfg.enabled) return nullptr;
-
-    float speed = glm::length(sweepDelta);
-    if (speed < cfg.minSpeed) return nullptr;
 
     glm::vec3 toContact = contactPoint - playerPos;
     float dist = glm::length(toContact);
     if (dist < 0.001f) return nullptr;
-    glm::vec3 dir = toContact / dist;
 
+    float speed = glm::length(velocity);
     float len = dist + speed * cfg.speedScale;
     float rad = cfg.baseRadius;
     float lifetimeSec = cfg.lifetimeTicks * (1.0f / 60.0f);

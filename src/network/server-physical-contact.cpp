@@ -167,16 +167,9 @@ static bool buildPhysicalShape(ServerPlayer& attacker,
 
     if (def.behaviorType == WeaponBehaviorType::Godball)
     {
-        const float radius = std::max(0.05f,
-            WeaponExecution::paramOr(def, "ballRadius", std::max(0.1f, def.projectileRadius)));
-        const float ropeLength = std::max(0.5f,
-            WeaponExecution::paramOr(def, "ropeLength", 2.5f));
-        const glm::vec3 center = attacker.pos + glm::vec3(0.0f, 0.0f, 0.9f) +
-            forward * ropeLength;
-        outShape.kind = WeaponExecution::PhysicalShapeKind::Sphere;
-        outShape.currentA = center;
-        outShape.currentB = center;
-        outShape.radius = radius;
+        // Godball position is replicated from the owning client.
+        // The owner's hit claims are authoritative.
+        return false;
     }
     else if (def.behaviorType == WeaponBehaviorType::Swordsword ||
              def.behaviorType == WeaponBehaviorType::Melee ||

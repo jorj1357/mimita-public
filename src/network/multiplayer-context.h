@@ -94,6 +94,9 @@ struct SnapshotTransform
     uint16_t freezeSerial = 0;
     uint32_t spawnGeneration = 0;
     MimitaVip::VipAppearance vipAppearance;
+    bool godballActive = false;
+    glm::vec3 godballPosition{0.0f};
+    glm::vec3 godballVelocity{0.0f};
 };
 
 struct NetworkShotEvent
@@ -753,6 +756,7 @@ struct MpInput
     uint8_t weaponState = 0;
     float sizeScale = 1.0f;
     glm::vec3 godballPosition{0.0f};
+    glm::vec3 godballVelocity{0.0f};
     bool godballActive = false;
 };
 

@@ -141,7 +141,7 @@ public:
     void drainPendingWorldHits(int maxCount);
     void destroyOwner(unsigned int ownerId);
     EffectPart* spawnCustom(glm::vec3 position, glm::vec3 color, float lifetime, const char* label);
-    EffectPart* spawnBodyContactSpark(glm::vec3 playerPos, glm::vec3 contactPoint, glm::vec3 sweepDelta, float partRadius);
+    EffectPart* spawnBodyContactSpark(glm::vec3 playerPos, glm::vec3 contactPoint, glm::vec3 velocity, float partRadius);
     
     void setWorld(const class World& world) { mWorld = &world; }
     void clear();

@@ -1,0 +1,287 @@
+// 08 27 2026
+/* purpose
+* Counter-Strike 1.6 / GoldSrc movement preset,
+* but tuned to use MiMITA's faster current Source preset values.
+*
+* Ground:
+*   Source / GoldSrc PM_Friction + PM_Accelerate behavior.
+*
+* Air:
+*   GoldSrc / Source PM_AirAccelerate:
+*   - projection-limited air acceleration
+*   - historical Valve behavior where uncapped wishspeed can be used in the
+*     acceleration term while capped wishspd is used for projection.
+*
+* IMPORTANT:
+* This is no longer a numerically strict CS 1.6 preset.
+* The movement equations remain Source/GoldSrc-family behavior, but the actual
+* tuning values below match MiMITA's faster "source" preset.
+*
+* This file is parsed with JSON comments enabled.
+*/
+{
+    "name": "cs16",
+
+    // Uses MiMITA's Source/GoldSrc-style movement kernel.
+    "movement_mode": "source",
+
+    // Scale/reference value.
+    // 1 MiMITA unit = 20 Source / GoldSrc units.
+    //
+    // Rates such as acceleration and friction are NOT divided by this.
+    // Distances and velocities are.
+    "source_units_per_mimita_unit": 20.0,
+
+    // ── Ground speed and acceleration ─────────────────────────────────────
+
+    // MiMITA normal ground speed.
+    //
+    // FAST SOURCE PRESET VALUE:
+    // 20 MiMITA units/sec.
+    "max_speed": 20.0,
+
+    // Keep server-side ground movement validation at the same speed.
+    "ground_speed": 20.0,
+
+    // Extremely high ground acceleration from the fast Source preset.
+    //
+    // This makes WASD feel nearly instant instead of gradually accelerating
+    // like strict CS 1.6 sv_accelerate 5.
+    "ground_acceleration": 999.5,
+
+    // Ground friction from the fast Source preset.
+    //
+    // Higher values remove ground velocity more aggressively when movement
+    // input is released.
+    "friction": 5.25,
+
+    // Very small stop-speed threshold from the fast preset.
+    //
+    // This avoids the stronger low-speed braking behavior of a traditional
+    // GoldSrc stopspeed value and keeps movement responsive.
+    "stop_speed": 0.01,
+
+    // ── Air — Source / GoldSrc PM_AirAccelerate ───────────────────────────
+
+    // Scales how much speed can be gained from air strafing.
+    //
+    // 0 = no air speed gain.
+    // 1 = normal implementation gain.
+    // 2 = current MiMITA fast preset.
+    "air_speed_gain_multiplier": 2.0,
+
+    // Disable the experimental MiMITA directional/input blend.
+    //
+    // false = use pure Source-style PM_AirAccelerate behavior.
+    "air_input_blending_enabled": false,
+
+    // Unused while air_input_blending_enabled is false.
+    //
+    // Kept here so the config remains compatible with the extended MiMITA
+    // movement configuration format.
+    "air_input_blending": -1.0,
+
+    // Unused while air input blending is disabled.
+    //
+    // A deliberately huge value is retained from the previous cs16 config so
+    // enabling blending accidentally does not immediately make tiny mouse
+    // movements count as full Source strafing.
+    "air_input_mouse_threshold_degrees": 9992.0,
+
+    // Air acceleration strength.
+    //
+    // Matches the fast Source preset.
+    "air_acceleration": 12.0,
+
+    // Projection cap for Source-style air acceleration.
+    //
+    // This does NOT cap total horizontal air velocity to 1.1.
+    // It limits the portion of velocity projected onto the current wish
+    // direction, allowing repeated correctly-angled strafes to continue
+    // building total speed.
+    //
+    // Matches the fast Source preset.
+    "air_max_wishspeed": 1.1,
+
+    // Historical Valve-style AirAccelerate behavior.
+    //
+    // The capped wishspd is used for projection/addspeed while the uncapped
+    // wishspeed can be used in the acceleration calculation.
+    //
+    // Keep true for the movement behavior used by the fast Source preset.
+    "source_airaccelerate_bug_compatible": true,
+
+    // ── Gravity and jump ──────────────────────────────────────────────────
+
+    // Downward acceleration.
+    //
+    // Matches the fast Source preset.
+    "gravity": -40.0,
+
+    // Upward velocity applied when jumping.
+    //
+    // Matches the fast Source preset.
+    "jump_velocity": 15.1,
+
+    // Maximum downward falling speed.
+    //
+    // Matches the fast Source preset.
+    "max_fall_speed": 175.0,
+
+    // ── Jump behavior ─────────────────────────────────────────────────────
+
+    // Hold jump to automatically jump again immediately on landing.
+    //
+    // This is a MiMITA convenience extension rather than strict vanilla CS
+    // input behavior.
+    "auto_bhop_enabled": true,
+
+    // Remember jump input for this long before landing.
+    //
+    // Matches the fast Source preset.
+    "jump_buffer_time": 0.2,
+
+    // No coyote-time forgiveness.
+    //
+    // 0 keeps ledge behavior closer to old Source/GoldSrc movement.
+    "coyote_time": 0.0,
+
+    // MiMITA's current fast preset allows one extra air jump.
+    //
+    // This is NOT vanilla CS 1.6 behavior, but is intentionally kept here so
+    // this preset now matches the fast MiMITA Source preset.
+    "max_air_jumps": 1,
+
+    // ── Ground snap ───────────────────────────────────────────────────────
+
+    // Remove tiny downward numerical velocity while grounded to prevent
+    // visible ground jitter.
+    "ground_snap": true,
+
+    // Numerical cleanup threshold used by ground snap.
+    //
+    // Matches the fast Source preset.
+    "velocity_clip_epsilon": 0.01,
+
+    // Normal surface friction multiplier.
+    "surface_friction": 1.0,
+
+    // Amount of overspeed friction applied around landing behavior.
+    //
+    // 1.0 = full configured landing bleed.
+    // 0.0 = preserve overspeed completely through landing.
+    //
+    // Matches the fast Source preset.
+    "landing_overspeed_bleed": 1.0,
+
+    // ── MiMITA dash extensions ────────────────────────────────────────────
+    //
+    // These abilities are not vanilla Counter-Strike 1.6.
+    //
+    // They are intentionally ENABLED because this preset is now meant to use
+    // the same fast MiMITA movement tuning as the "source" preset.
+
+    // Shift ground/air dash.
+    "dash_enabled": true,
+
+    // Q down-dash / slam.
+    "down_dash_enabled": true,
+
+    // MiMITA freeze ability.
+    "freeze_enabled": true,
+
+    // Time after a dash during which its boost is protected from ordinary
+    // ground friction.
+    //
+    // Matches the fast Source preset.
+    "dash_grace_seconds": 0.25,
+
+    // Ground-friction multiplier during dash grace.
+    //
+    // 0.0 = dash receives no ground friction during the grace period.
+    "dash_friction_multiplier": 0.0,
+
+    // Horizontal velocity impulse from a grounded dash.
+    //
+    // Matches the fast Source preset.
+    "ground_dash_impulse": 20.0,
+
+    // Horizontal velocity impulse from an airborne dash.
+    //
+    // Matches the fast Source preset.
+    "air_dash_impulse": 20.0,
+
+    // Vertical velocity assigned by down-dash.
+    //
+    // Negative = downward.
+    "down_dash_speed": -100.0,
+
+    // ── External impulse / knockback ─────────────────────────────────────
+    //
+    // These values match the fast Source preset.
+    //
+    // NOTE:
+    // MiMITA's current movement implementation may fold knockback into the
+    // player's real velocity as a single-tick impulse before this older
+    // external-velocity behavior becomes relevant.
+
+    // Exponential decay rate for the legacy separate external impulse path.
+    //
+    // In a true "source" impulse mode this may be ignored, but the fast preset
+    // currently uses exponential mode.
+    "external_impulse_decay": 99.0,
+
+    // Maximum allowed horizontal external impulse speed.
+    //
+    // 9999 is intentionally effectively unlimited for normal gameplay.
+    "max_external_impulse_speed": 9999.0,
+
+    // Match the current fast Source preset's knockback behavior.
+    //
+    // "exponential" = external impulse uses the legacy decay behavior when
+    // that code path is active.
+    "impulse_friction_mode": "exponential",
+
+    // Fresh knockback remains untouched for this duration before its normal
+    // decay/friction behavior begins.
+    //
+    // Gives impacts a short, clearly visible pop.
+    "impulse_carry_seconds": 0.1,
+
+    // ── Misc ──────────────────────────────────────────────────────────────
+
+    // Allow Source-style WASD air strafing.
+    "air_strafing": true,
+
+    // Movement debug visualization.
+    "debug_draw_enabled": false,
+
+    // ── Global speed limit ────────────────────────────────────────────────
+    //
+    // The original cs16 preset had a hard 50-unit horizontal speed ceiling.
+    //
+    // The fast Source preset DOES NOT contain that ceiling. Leaving a fixed
+    // 50-unit cap enabled would make this preset slower even though every
+    // acceleration/dash value above matched.
+    //
+    // Therefore the limit is disabled here so bhop, dash, knockback, and other
+    // momentum can behave like the fast Source preset.
+    //
+    // The numeric values remain defined so this can be enabled live without
+    // requiring another schema/config change.
+
+    "speed_limit_enabled": true,
+
+    // Only used if speed_limit_enabled is true.
+    "speed_limit": 50.0,
+
+    // "fixed" = acceleration/impulses are prevented from exceeding the limit.
+    // "clamp" = final horizontal velocity is clamped after movement.
+    //
+    // Irrelevant while speed_limit_enabled is false.
+    "speed_limit_mode": "clamp",
+
+    "tuning_notes": {
+        "comment": "Source/GoldSrc-family movement equations with the fast MiMITA source preset values. Ground: max_speed=20, acceleration=999.5, friction=5.25, stopspeed=0.01. Air: gain=2, airaccelerate=12, projection cap=1.1, Valve bug compatibility enabled. Jump=15.1, gravity=-40, auto-bhop enabled. Dash=100 ground / 50 air, down-dash=-100. Global 50-unit speed limit disabled so it does not artificially suppress the faster Source preset behavior."
+    }
+}

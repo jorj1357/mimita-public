@@ -87,6 +87,15 @@ void spawnBall(GodballPhysics& phys, const WeaponDefinition& def, const Player& 
     phys.impactEvents.clear();
     phys.hitstopTimer = 0.0f;
 
+    Debug::warn(Debug::Category::Weapons,
+        "[GODBALL_DBG] SPAWN owner=%s pos=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f) "
+        "rope=%.2f radius=%.2f yaw=%.1f handPos=(%.2f,%.2f,%.2f)",
+        owner.username.c_str(),
+        phys.position.x, phys.position.y, phys.position.z,
+        phys.velocity.x, phys.velocity.y, phys.velocity.z,
+        phys.ropeLength, phys.radius, owner.yaw,
+        handPos.x, handPos.y, handPos.z);
+
     if (DebugConfig::DEBUG_GODBALL) {
         printf("[GODBALL] spawned at (%.2f, %.2f, %.2f) vel (%.2f, %.2f, %.2f) rope=%.2f radius=%.2f\n",
                phys.position.x, phys.position.y, phys.position.z,
@@ -97,6 +106,7 @@ void spawnBall(GodballPhysics& phys, const WeaponDefinition& def, const Player& 
 
 void despawnBall(GodballPhysics& phys) {
     phys.active = false;
+    Debug::warn(Debug::Category::Weapons, "[GODBALL_DBG] DESPAWN");
     if (DebugConfig::DEBUG_GODBALL) {
         printf("[GODBALL] despawned\n");
     }
@@ -112,7 +122,14 @@ float damageFromSpeed(const WeaponDefinition& def, float speed) {
     const float denom = std::max(maxSpd - minSpd, 0.001f);
     const float t = std::clamp((speed - minSpd) / denom, 0.0f, 1.0f);
     const float curved = std::pow(t, exp);
-    return minDmg + curved * (maxDmg - minDmg);
+    float result = minDmg + curved * (maxDmg - minDmg);
+
+    Debug::warn(Debug::Category::Weapons,
+        "[GODBALL_DBG] DAMAGE_FORMULA speed=%.2f minDmg=%.1f maxDmg=%.1f "
+        "minSpd=%.1f maxSpd=%.1f exp=%.2f t=%.3f curved=%.3f result=%.1f",
+        speed, minDmg, maxDmg, minSpd, maxSpd, exp, t, curved, result);
+
+    return result;
 }
 
 float computeDamage(const GodballPhysics& phys, const WeaponDefinition& def,
@@ -122,6 +139,10 @@ float computeDamage(const GodballPhysics& phys, const WeaponDefinition& def,
     (void)overlapPoint;
     const float ballSpeed = glm::length(phys.velocity);
     const float totalDamage = damageFromSpeed(def, ballSpeed);
+
+    Debug::warn(Debug::Category::Weapons,
+        "[GODBALL_DBG] COMPUTE_DAMAGE target=%s speed=%.2f totalDamage=%.1f",
+        target.username.c_str(), ballSpeed, totalDamage);
 
     if (DebugConfig::DEBUG_GODBALL) {
         printf("[GODBALL DAMAGE] speed=%.1f total=%.1f\n",

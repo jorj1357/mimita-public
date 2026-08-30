@@ -127,7 +127,8 @@ enum PacketType : uint8_t
     // The server swapped the map without restarting; clients must load the
     // new map and re-complete the spawn handshake.
     PACKET_MAP_CHANGE = 58,
-    PACKET_SPYKNIFE_HIT_CLAIM = 59
+    PACKET_SPYKNIFE_HIT_CLAIM = 59,
+    PACKET_GODBALL_HIT_CLAIM = 60
 };
 
 enum DamageConfirmedSource : uint8_t
@@ -1194,13 +1195,29 @@ struct PelletBlastEventPacket
     PelletBlastTargetResult targets[MAX_PELLET_BLAST_TARGETS];
 };
 
-// ── Godball state (position for remote visual replication) ────────────
+// ── Godball state (position + velocity for remote visual replication) ──
 struct GodballStatePacket
 {
     PacketHeader header;
     uint32_t ownerPlayerId = 0;
     float posX = 0.0f, posY = 0.0f, posZ = 0.0f;
+    float velX = 0.0f, velY = 0.0f, velZ = 0.0f;
     uint8_t active = 0;
+};
+
+// ── Godball hit claim (owner → server, reliable) ──────────────────────
+struct GodballHitClaimPacket
+{
+    PacketHeader header;
+    uint32_t attackerId = 0;
+    uint32_t targetId = 0;
+    uint32_t contactSerial = 0;
+    uint32_t simulationTick = 0;
+    float damage = 0.0f;
+    float ballSpeed = 0.0f;
+    float hitX = 0.0f, hitY = 0.0f, hitZ = 0.0f;
+    float normalX = 0.0f, normalY = 0.0f, normalZ = 0.0f;
+    uint32_t spawnGeneration = 0;
 };
 
 // ── Spy Knife hit claim (attacker → server, unreliable) ───────────────

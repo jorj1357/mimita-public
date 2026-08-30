@@ -1,9 +1,9 @@
 // 08 29 2026, 00 00
 /* purpose
 * Declares SpyKnife client-side state and per-frame update for the backstab knife weapon.
-* Owns swing animation, swept blade collision, backstab geometry, ready pose, sounds, and damage.
+* Owns swing animation, backstab geometry, ready pose, sounds, and damage.
+* Uses the engine's weaponCollisionCapsule for collision (same as swordsword).
 * Does NOT own server-authoritative damage validation or packet transport.
-* Does NOT independently simulate knife collision on the server.
 */
 
 #pragma once
@@ -43,9 +43,8 @@ struct SpyKnifeState {
 
     SpyKnifeAnimState animState = SpyKnifeAnimState::Idle;
 
-    Capsule previousKnifeCapsule;
-    Capsule currentKnifeCapsule;
-    bool hasPreviousCapsule = false;
+    Capsule previousBladeCapsule;
+    bool hasPreviousBladeCapsule = false;
 
     uint32_t readyTargetId = 0;
     bool hasReadyTarget = false;
@@ -66,8 +65,6 @@ void update(SpyKnifeState& state, const WeaponDefinition& def,
             const World& world, float dt);
 
 std::vector<SpyKnifeHitResult> collectRemoteHits(SpyKnifeState& state);
-
-Capsule computeKnifeCapsule(const Player& owner, const WeaponDefinition& def);
 
 bool isBackstabGeometry(const Player& attacker, const Player& victim,
                         const WeaponDefinition& def);
