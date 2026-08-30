@@ -456,7 +456,7 @@ static bool isKnownPacketType(uint8_t type)
 {
     // 2026-08-29: TODO use an explicit switch here so future packet types
     // cannot be silently rejected by an outdated numeric range.
-    return type >= PACKET_HELLO && type <= PACKET_GODBALL_HIT_CLAIM;
+    return type >= PACKET_HELLO && type <= PACKET_OP_HIT_BATCH;
 }
 
 static void countPacketType(ServerPacketStats& stats, uint8_t type)
@@ -1865,6 +1865,12 @@ ServerPacketProcessResult processServerPacket(
         handleAttackRequest(sock, from, buffer, bytes, players, npcs, projectiles,
                             nextProjectileId, world, tick, totalPacketsOut,
                             retransmitState);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_OP_HIT_BATCH)
+    {
+        handleOpHitscanBatch(sock, from, buffer, bytes, players, npcs,
+                             tick, totalPacketsOut);
         result.handled = true;
     }
     else if (header->type == PACKET_MELEE_HIT_REQUEST)

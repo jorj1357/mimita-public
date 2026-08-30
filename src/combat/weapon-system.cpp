@@ -181,7 +181,7 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
         } else if (def->behaviorType == WeaponBehaviorType::QuickHit) {
             WeaponQuickHit::update(mQuickHitState, *def, *rt, player, npcs, camera, world, dt);
         } else if (def->behaviorType == WeaponBehaviorType::SpyKnife) {
-            WeaponSpyKnife::update(mSpyKnifeState, *def, *rt, player, npcs, camera, world, dt);
+            WeaponSpyKnife::update(mSpyKnifeState, *def, *rt, player, remoteNpcs, camera, world, dt);
         } else if (def->behaviorType == WeaponBehaviorType::RocketLauncher) {
             WeaponRocketLauncher::update(mRocketState, *def, *rt, player, npcs, world, camera, dt);
         } else if (def->behaviorType == WeaponBehaviorType::GrenadeLauncher) {

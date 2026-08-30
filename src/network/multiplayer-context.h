@@ -567,6 +567,19 @@ struct MultiplayerContext
     };
     std::unordered_map<uint32_t, PendingAttackRequest> pendingAttackRequests;
 
+    struct PendingOpHitscanBatch {
+        uint32_t batchSequence = 1;
+        uint32_t startTick = 0;
+        uint32_t endTick = 0;
+        uint32_t shotsFired = 0;
+        uint16_t weaponDefNetworkId = 0;
+        int16_t equippedSlot = 0;
+        uint8_t hitCount = 0;
+        OpHitscanHitEntry hits[MAX_OP_HIT_ENTRIES]{};
+        uint64_t lastSendMs = 0;
+        bool active = false;
+    } pendingOpHitscanBatch;
+
     // ── Pending reload requests (retransmission like attacks) ─────────
     struct PendingReloadRequest {
         uint32_t requestId = 0;
@@ -812,6 +825,16 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     uint32_t claimedTargetId = 0,
     const glm::vec3& claimedHit = glm::vec3(0.0f),
     uint8_t claimedBodyPart = 0);
+void mpRecordOpHitscanShot(MultiplayerContext& ctx,
+                           const WeaponDefinition& definition,
+                           uint16_t weaponDefNetworkId,
+                           int16_t equippedSlot,
+                           uint32_t targetId,
+                           int damage,
+                           uint8_t bodyPart,
+                           uint32_t tick,
+                           uint32_t spawnGeneration);
+void mpFlushOpHitscanBatch(MultiplayerContext& ctx, uint32_t spawnGeneration);
 void mpSendServerCommand(MultiplayerContext& ctx, const std::string& command);
 uint32_t mpSendShotEvent(
     MultiplayerContext& ctx,

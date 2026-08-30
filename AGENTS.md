@@ -16,6 +16,24 @@ Never launch `mimita.exe` without `--server` or `--timeout <secs>`. Without thes
 
 For build purposes, human or AI agents are authorized to terminate existing `mimita.exe` processes at any time, until this instruction is changed. This authorization applies only to releasing the executable lock so the updated build can be produced and tested.
 
+# Tick Rate Rule (Hard Rule)
+
+All gameplay collision, damage, and physics MUST run at the fixed 60Hz tick rate, never per-frame. The game uses `constexpr double kClientFixedDt = 1.0 / 60.0` in `engine-tick-combat.cpp`. Running collision per-frame means:
+- Low-FPS devices get fewer collision checks (unfair disadvantage)
+- High-FPS devices get more collision checks (unfair advantage)
+- Gameplay behavior varies by hardware
+
+Weapon collision, NPC overlap detection, damage application, and knockback MUST use the tick accumulator pattern:
+```cpp
+const float tickDt = 1.0f / 60.0f;
+const uint32_t ticksThisFrame = std::max(1u, (uint32_t)std::round(dt / tickDt));
+for (uint32_t t = 0; t < ticksThisFrame; t++) {
+    // collision + damage logic here
+}
+```
+
+Never run collision logic in the raw render loop without tick quantization.
+
 # VSync Policy (Hard Rule — Never Override)
 
 VSync is **forced OFF globally** and must never be re-enabled. This is a permanent performance constraint.

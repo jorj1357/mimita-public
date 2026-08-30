@@ -1047,4 +1047,66 @@ void handleSpyKnifeHitClaim(SOCKET sock,
            pkt->attackerId, pkt->targetId, damage, (int)pkt->isBackstab, dist, (int)result.killed);
 }
 
+void handleOpHitscanBatch(SOCKET sock, const sockaddr_in& from, const char* buffer,
+                          int bytes, std::unordered_map<uint32_t, ServerPlayer>& players,
+                          std::unordered_map<uint32_t, ServerNpc>& npcs,
+                          uint32_t tick, uint64_t& totalPacketsOut)
+{
+    (void)sock;
+    (void)tick;
+    (void)totalPacketsOut;
+    (void)npcs;
+    if (bytes < (int)sizeof(OpHitscanBatchPacket)) return;
+    const auto* packet = reinterpret_cast<const OpHitscanBatchPacket*>(buffer);
+    auto attackerIt = players.find(packet->header.playerId);
+    if (attackerIt == players.end() ||
+        !playerOwnsConnectionSource(attackerIt->second, &from, nullptr)) return;
+    ServerPlayer& attacker = attackerIt->second;
+    if (attacker.dead || attacker.spawnState != ServerPlayer::Active ||
+        packet->spawnGeneration != attacker.spawnGeneration ||
+        packet->batchSequence <= attacker.lastOpHitscanBatchSequence ||
+        packet->hitCount > MAX_OP_HIT_ENTRIES ||
+        packet->endTick < packet->startTick) return;
+
+    const std::string* weaponId = weaponIdForDefNetworkId(packet->weaponDefNetworkId);
+    const WeaponDefinition* def = weaponId ? WeaponRegistry::instance().get(*weaponId) : nullptr;
+    if (!def || def->networkMode != WeaponNetworkMode::ClientBatchedHitscan ||
+        def->slot != packet->equippedSlot || attacker.equippedSlot != packet->equippedSlot ||
+        packet->shotsFired == 0) return;
+
+    const uint32_t spanTicks = packet->endTick - packet->startTick + 1;
+    const uint32_t maxShots = (uint32_t)std::ceil(
+        (double)spanTicks / 60.0 / std::max(0.0001f, def->fireDelay)) + 4;
+    if (packet->shotsFired > maxShots) return;
+
+    attacker.lastOpHitscanBatchSequence = packet->batchSequence;
+    int accepted = 0;
+    for (uint8_t i = 0; i < packet->hitCount; ++i) {
+        const auto& hit = packet->hits[i];
+        auto targetIt = players.find(hit.targetId);
+        if (targetIt == players.end() || hit.targetId == attacker.id ||
+            targetIt->second.dead || targetIt->second.spawnState != ServerPlayer::Active)
+            continue;
+        ServerPlayer& target = targetIt->second;
+        const int damage = std::clamp((int)hit.damage, 1, 500);
+        const glm::vec3 direction = target.pos - attacker.pos;
+        const glm::vec3 knockback = glm::length(direction) > 0.001f
+            ? glm::normalize(direction) * (float)damage * 0.08f
+            : glm::vec3(0.0f);
+        ServerDamageResult result = applyServerDamage(
+            players, target, attacker.id, damage, knockback, ServerDamageSource::Hitscan);
+        if (!result.applied) continue;
+        ++accepted;
+        // Do not enqueue a reliable event for OP bullets. The authoritative
+        // health snapshot carries the durable result; local clients already
+        // predicted the rapid hit presentation, and reliable fanout here
+        // would recreate the queue flood this path is designed to remove.
+        (void)result;
+    }
+    Debug::logThrottled(Debug::Category::Weapons, "op-hit-batch-server", 1.0,
+        "[OP HIT BATCH SERVER] attacker=%u weapon=%u shots=%u hits=%u accepted=%d span=%u..%u\n",
+        attacker.id, packet->weaponDefNetworkId, packet->shotsFired,
+        packet->hitCount, accepted, packet->startTick, packet->endTick);
+}
+
 } // namespace MimitaNet

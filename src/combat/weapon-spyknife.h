@@ -1,8 +1,8 @@
 // 08 29 2026, 00 00
 /* purpose
-* Declares SpyKnife client-side state and per-frame update for the backstab knife weapon.
-* Owns swing animation, backstab geometry, ready pose, sounds, and damage.
-* Uses the engine's weaponCollisionCapsule for collision (same as swordsword).
+* Declares SpyKnife client-side state with configurable box hitbox.
+* Box collision runs at 60Hz tick rate, not per-frame.
+* Force-based damage: speed + angle + directness determine damage.
 * Does NOT own server-authoritative damage validation or packet transport.
 */
 
@@ -61,7 +61,8 @@ void startSwing(SpyKnifeState& state, const WeaponDefinition& def,
 
 void update(SpyKnifeState& state, const WeaponDefinition& def,
             WeaponRuntime& runtime, Player& owner,
-            NpcSystem& npcs, const Camera& camera,
+            std::unordered_map<uint32_t, Player>* remoteNpcs,
+            const Camera& camera,
             const World& world, float dt);
 
 std::vector<SpyKnifeHitResult> collectRemoteHits(SpyKnifeState& state);

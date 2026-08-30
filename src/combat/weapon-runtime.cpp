@@ -26,6 +26,7 @@ void WeaponRuntime::reset(const WeaponDefinition& def)
     isReloading = false;
     isCharging = false;
     chargeAmount = 0.0f;
+    opFireBatch = OpFireBatchState{};
     godball = GodballState{};
     customFloats.clear();
     customVec3s.clear();
@@ -42,6 +43,7 @@ void WeaponRuntimeHelper::initRuntime(WeaponRuntime& rt, const WeaponDefinition&
     rt.isReloading = false;
     rt.isCharging = false;
     rt.chargeAmount = 0.0f;
+    rt.opFireBatch = WeaponRuntime::OpFireBatchState{};
     rt.godball = WeaponRuntime::GodballState{};
     rt.customFloats.clear();
     rt.customVec3s.clear();

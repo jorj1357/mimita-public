@@ -39,6 +39,11 @@ enum class WeaponExecutionType {
     PhysicalContact
 };
 
+enum class WeaponNetworkMode {
+    Normal,
+    ClientBatchedHitscan
+};
+
 inline WeaponExecutionType weaponExecutionTypeForBehavior(WeaponBehaviorType behavior)
 {
     switch (behavior)
@@ -112,6 +117,7 @@ struct WeaponDefinition {
     WeaponExecutionType executionType = WeaponExecutionType::Hitscan;
     bool hitscan = true;
     bool usesPhysicsProjectile = false;
+    WeaponNetworkMode networkMode = WeaponNetworkMode::Normal;
 
     std::string soundShoot;
     std::string soundReload;
@@ -151,6 +157,22 @@ struct WeaponRuntime {
     bool isReloading = false;
     bool isCharging = false;
     float chargeAmount = 0.0f;
+
+    struct OpFireBatchState {
+        uint32_t nextSequence = 1;
+        uint32_t startTick = 0;
+        uint32_t endTick = 0;
+        uint32_t shotsFired = 0;
+        uint64_t lastSendMs = 0;
+        struct Hit {
+            uint32_t targetId = 0;
+            int16_t damage = 0;
+            uint8_t bodyPart = 0;
+            uint8_t relativeTick = 0;
+        } hits[96]{};
+        uint8_t hitCount = 0;
+        bool active = false;
+    } opFireBatch;
 
     uint32_t authoritativeStateRevision = 0;
     uint32_t authoritativeSpawnGeneration = 0;

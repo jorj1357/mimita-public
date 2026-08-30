@@ -120,6 +120,16 @@ void weaponJsonFireMode(const json& root, WeaponDefinition& def)
         def.fireMode = WeaponFireMode::SemiAuto;
 }
 
+void weaponJsonNetworkMode(const json& root, WeaponDefinition& def)
+{
+    if (!root.contains("network_mode") || !root["network_mode"].is_string())
+        return;
+    const std::string mode = normalizedToken(root["network_mode"].get<std::string>());
+    def.networkMode = mode == "clientbatchedhitscan"
+        ? WeaponNetworkMode::ClientBatchedHitscan
+        : WeaponNetworkMode::Normal;
+}
+
 void weaponJsonBehaviorType(const json& root, WeaponDefinition& def)
 {
     if (!root.contains("behavior_type") || !root["behavior_type"].is_string())
@@ -189,6 +199,7 @@ void applyWeaponStatsJson(WeaponDefinition& def, const json& root)
     weaponJsonFloat(root, "projectile_radius", def.projectileRadius);
     weaponJsonFloat(root, "projectile_lifetime", def.projectileLifetime);
     weaponJsonFireMode(root, def);
+    weaponJsonNetworkMode(root, def);
     weaponJsonBehaviorType(root, def);
     weaponJsonBool(root, "hitscan", def.hitscan);
     weaponJsonFloat(root, "beam_thickness", def.beamThickness);

@@ -383,6 +383,7 @@
     "projectile_lifetime": 0.0,
     "fire_mode": "automatic",
     "behavior_type": "hitscan",
+    "network_mode": "client_batched_hitscan",
     "hitscan": true,
     "beam_thickness": 0.0,
     "uses_physics_projectile": false,
@@ -447,6 +448,7 @@
     "projectile_lifetime": 0.0,
     "fire_mode": "automatic",
     "behavior_type": "hitscan",
+    "network_mode": "client_batched_hitscan",
     "hitscan": true,
     "beam_thickness": 0.0,
     "uses_physics_projectile": false,
@@ -817,6 +819,7 @@
     "projectile_lifetime": 0.0,
     "fire_mode": "automatic",
     "behavior_type": "hitscan",
+    "network_mode": "client_batched_hitscan",
     "hitscan": true,
     "beam_thickness": 2.0,
     "uses_physics_projectile": false,
@@ -1046,8 +1049,8 @@
         ],
         "rotation_degrees": [
             0.0,
-          90.0,
-          -25.0
+          0.0,
+          -5.0
         ]
       },
       "scale": [
@@ -1066,19 +1069,32 @@
       "hit": "player_hurt"
     },
     "custom_params": {
-      "normalDamagePerTick": 1.0,
-      "backstabDamagePerTick": 999.0,
+      "hitboxHalfX": 0.15,
+      "hitboxHalfY": 0.05,
+      "hitboxHalfZ": 0.4,
+      "hitboxOffsetX": 0.0,
+      "hitboxOffsetY": 0.0,
+      "hitboxOffsetZ": 0.3,
+      "hitboxRotX": 0.0,
+      "hitboxRotY": 0.0,
+      "hitboxRotZ": 0.0,
+      "hitboxAlpha": 0.5,
+      "hitboxVisible": 1,
+      "baseDamage": 15.0,
+      "speedDamageFactor": 20.0,
+      "angleDamageFactor": 10.0,
+      "maxDamage": 100.0,
+      "baseKnockback": 30.0,
+      "speedKnockbackFactor": 4.0,
+      "angleKnockbackFactor": 2.0,
+      "maxKnockback": 200.0,
       "backstabDistance": 0.5,
       "backstabConeDegrees": 150.0,
-      "frontstabKnockback": 100.0,
-      "frontstabVerticalKnockback": 0.3,
+      "backstabDamagePerTick": 999.0,
       "backstabKnockback": 20.0,
       "swingDurationTicks": 120.0,
       "swingForwardTicks": 60.0,
-      "bladeCollisionRadius": 0.25,
-      "damageTickInterval": 0.0,
-      "showCollisionCapsule": 1,
-      "collisionAlpha": 0.5
+      "damageTickInterval": 0.166
     }
   }
 }

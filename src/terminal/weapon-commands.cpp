@@ -172,8 +172,30 @@ void registerWeaponCommands()
                 }
 
                 if (usesProjectilePath || usesHitscanPath || usesPhysicalContactPath) {
-                    // Send generic AttackRequest for all migrated weapon execution families.
                     const WeaponDefinition* wdef2 = weapons.getCurrentDef(player);
+                    if (wdef2 &&
+                        wdef2->networkMode == WeaponNetworkMode::ClientBatchedHitscan) {
+                        uint16_t netId = MimitaNet::weaponDefNetworkIdFor(wdef2->id);
+                        if (netId != 0) {
+                            uint8_t claimedBodyPart = 0;
+                            if (shot.bodyPart == "head") claimedBodyPart = 1;
+                            else if (shot.bodyPart == "leg") claimedBodyPart = 3;
+                            else if (!shot.bodyPart.empty()) claimedBodyPart = 2;
+                            MimitaNet::mpRecordOpHitscanShot(
+                                mpContext, *wdef2, netId, wdef2->slot,
+                                (shot.targetIsRemotePlayer || shot.targetIsRemoteNpc)
+                                    ? shot.targetId : 0,
+                                (int)std::round(shot.damage), claimedBodyPart,
+                                mpContext.tick, mpContext.lastKnownSpawnGeneration);
+                            Debug::logThrottled(Debug::Category::Weapons,
+                                "op-hit-batch-route", 1.0,
+                                "[WEAPON FIRE ROUTE] player=%u weapon=%s networkAction=op-hit-batch\n",
+                                mpContext.localPlayerId, wdef2->id.c_str());
+                        }
+                        Terminal::instance().addLog("[WEAPON] fired");
+                        return;
+                    }
+                    // Send generic AttackRequest for all migrated weapon execution families.
                     if (wdef2)
                     {
                         uint16_t netId = MimitaNet::weaponDefNetworkIdFor(wdef2->id);
