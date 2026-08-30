@@ -325,7 +325,6 @@ std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p);
 std::vector<RecoveryContact> collectBodyWeaponContacts(
     const Player& p,
     const World& world,
-    const std::vector<int>& candidates,
     const std::vector<BodyWeaponSphere>& spheres
 );
 std::vector<glm::vec3> collectPlayerBodyCollisionSamples(Player& p);

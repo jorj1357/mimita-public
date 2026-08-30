@@ -227,6 +227,23 @@ void registerDebugToggleCommands()
     });
 
     term.registerCommand({
+        "spyknife_debug",
+        "Toggle spy knife debug logging and capsule visibility (0=off, 1=on)",
+        "spyknife_debug <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                DebugConfig::DEBUG_SPYKNIFE = !DebugConfig::DEBUG_SPYKNIFE;
+            } else {
+                DebugConfig::DEBUG_SPYKNIFE = args[0] != "0";
+            }
+            Terminal::instance().addLog(
+                DebugConfig::DEBUG_SPYKNIFE
+                ? "[OK] spyknife debug enabled"
+                : "[OK] spyknife debug disabled");
+        }
+    });
+
+    term.registerCommand({
         "animation_debug",
         "Toggle animation debug logging (0=off, 1=on)",
         "animation_debug <0|1>",

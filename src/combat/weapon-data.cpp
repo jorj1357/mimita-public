@@ -727,6 +727,7 @@ WeaponDefinition createSpyKnifeDefinition() {
     def.usesPhysicsProjectile = false;
     def.soundShoot = "entity/falcon/falconswing";
     def.soundHit = "player_hurt";
+    def.poseId = "spyknife";
     def.customParams["normalDamagePerTick"] = 1.0f;
     def.customParams["backstabDamagePerTick"] = 999.0f;
     def.customParams["backstabDistance"] = 0.5f;

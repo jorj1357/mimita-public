@@ -923,8 +923,14 @@ void perfResetScopes()
         gPerfScopes[i].minCycles = UINT64_MAX;
         gPerfScopes[i].maxCycles = 0;
         gPerfScopes[i].allocCount = 0;
+        gPerfScopes[i].allocBytes = 0;
         gPerfScopes[i].assetLoadCount = 0;
         gPerfScopes[i].collisionQueryCount = 0;
+        gPerfScopes[i].bloodParticlesSpawned = 0;
+        gPerfScopes[i].debrisChunksSpawned = 0;
+        gPerfScopes[i].bloodDecalsSpawned = 0;
+        gPerfScopes[i].replayEventsCreated = 0;
+        gPerfScopes[i].replayJsonBytes = 0;
         gPerfScopes[i].parentIndex = -1;
     }
 }

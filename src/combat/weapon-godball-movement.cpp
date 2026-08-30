@@ -15,6 +15,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
 
+#include "audio/audio.h"
 #include "camera.h"
 #include "combat/death-system.h"
 #include "config.h"
@@ -531,6 +532,131 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
         }
 
         phys.npcCollisions.push_back(cd);
+    }
+
+    // ── Remote NPC overlap detection (server NPCs via mpContext) ──
+    // Runs at 60Hz fixed-step, independent of frame rate.
+    {
+        static double gRemoteOverlapAccum = 0.0;
+        constexpr double REMOTE_OVERLAP_DT = 1.0 / 60.0;
+        gRemoteOverlapAccum += (double)safeDt;
+        while (gRemoteOverlapAccum >= REMOTE_OVERLAP_DT) {
+            gRemoteOverlapAccum -= REMOTE_OVERLAP_DT;
+
+            if (!gpMpContext || !gpMpContext->active || !gpMpContext->localPlayerId) continue;
+
+            auto& remoteCooldowns = runtime.godball.targetCooldowns;
+            for (auto& entry : gpMpContext->remoteNpcs) {
+                const uint32_t npcId = entry.first;
+                Player& remote = entry.second;
+                if (remote.dead || remote.currentHp <= 0) continue;
+                if (remote.physicalBody.parts.empty()) continue;
+
+                // Per-NPC cooldown: 1 tick (1/60s)
+                auto cdIt = remoteCooldowns.find(npcId);
+                if (cdIt != remoteCooldowns.end() && cdIt->second > 0.0f) continue;
+
+                remote.updateModelWorldTransforms();
+                bool hit = false;
+                glm::vec3 hitPt, hitNm;
+
+                for (const PhysicalBodyPart& part : remote.physicalBody.parts) {
+                    glm::vec3 localCenter = (part.collider.localMin + part.collider.localMax) * 0.5f;
+                    glm::vec3 worldCenter = glm::vec3(part.worldTransform * glm::vec4(localCenter, 1.0f));
+                    glm::vec3 halfSize = glm::max((part.collider.localMax - part.collider.localMin) * 0.5f, glm::vec3(0.12f));
+                    float partRadius = glm::length(halfSize) * 1.25f;
+
+                    for (int s = 0; s < substeps; s++) {
+                        float t0 = (float)s / substeps;
+                        float t1 = (float)(s + 1) / substeps;
+                        glm::vec3 subPrev = prevPos + (currPos - prevPos) * t0;
+                        glm::vec3 subCurr = prevPos + (currPos - prevPos) * t1;
+
+                        if (sweptSphereOverlap(subPrev, subCurr, damageRadius,
+                                               worldCenter, partRadius,
+                                               hitPt, hitNm)) {
+                            hit = true;
+                            break;
+                        }
+                    }
+                    if (hit) break;
+                }
+
+                if (!hit) continue;
+
+                float damage = computeDamage(phys, def, owner, remote, hitPt);
+                int rounded = std::max(1, (int)std::round(damage));
+
+                godballLog("REMOTE_NPC_HIT id=%u name=%s damage=%.1f rounded=%d "
+                           "speed=%.2f hitPt=(%.2f,%.2f,%.2f)",
+                           npcId, remote.username.c_str(), damage, rounded, ballSpeed,
+                           hitPt.x, hitPt.y, hitPt.z);
+
+                // Visual feedback — damage numbers, blood, hitmarker
+                if (!serverAuthHits()) {
+                    hitmarker(rounded);
+                    {
+                        HitEvent ev;
+                        ev.position = hitPt;
+                        ev.normal = hitNm;
+                        ev.direction = glm::length(phys.velocity) > 0.001f
+                            ? glm::normalize(phys.velocity) : hitNm;
+                        ev.hitEntity = true;
+                        ev.damage = rounded;
+                        ev.hitDistance = 0.0f;
+                        ev.attacker = owner.username;
+                        ev.victim = remote.username;
+                        ev.weaponSource = "godball";
+                        HitEffects::onHit(ev);
+                    }
+                    {
+                        float dist = glm::length(hitPt - audioListenerPosition());
+                        float severity = std::clamp((float)rounded / 100.0f, 0.0f, 1.0f);
+                        float vol, pit;
+                        computeImpactAudio(1.0f, dist, severity, vol, pit);
+                        playWorldSound("godballhit", hitPt, vol, pit, 60.0f);
+                    }
+                }
+
+                // Predict damage locally (instant feedback)
+                const uint64_t nowMsVal = static_cast<uint64_t>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch()).count());
+                gpMpContext->predictedNpcHitMs[npcId] = nowMsVal;
+                gpMpContext->predictedNpcDamage[npcId] = rounded;
+                MimitaNet::mpApplyPredictedDamage(*gpMpContext, npcId, rounded, true);
+
+                // Predict knockback
+                glm::vec3 kbDir = ballSpeed > 0.5f
+                    ? glm::normalize(glm::mix(hitNm, glm::normalize(phys.velocity), std::min(ballSpeed / 15.0f, 1.0f)))
+                    : hitNm;
+                float knockbackForce = damage * 0.02f * (0.5f + 0.5f * ballSpeed / 10.0f);
+                remote.externalImpulse += kbDir * knockbackForce + glm::vec3(0, 0, knockbackForce * 0.4f);
+
+                // Send hit claim to server
+                MimitaNet::GodballHitClaimPacket claim{};
+                claim.header.type = MimitaNet::PACKET_GODBALL_HIT_CLAIM;
+                claim.header.tick = gpMpContext->tick;
+                claim.header.playerId = gpMpContext->localPlayerId;
+                claim.attackerId = gpMpContext->localPlayerId;
+                claim.targetId = npcId;
+                claim.contactSerial = 0;
+                claim.simulationTick = gpMpContext->tick;
+                claim.damage = (float)rounded;
+                claim.ballSpeed = ballSpeed;
+                claim.hitX = hitPt.x;
+                claim.hitY = hitPt.y;
+                claim.hitZ = hitPt.z;
+                claim.normalX = hitNm.x;
+                claim.normalY = hitNm.y;
+                claim.normalZ = hitNm.z;
+                claim.spawnGeneration = gpMpContext->lastKnownSpawnGeneration;
+                MimitaNet::mpSendPacket(*gpMpContext, &claim, sizeof(claim));
+
+                // 1-tick cooldown (next 60Hz step can hit again)
+                remoteCooldowns[npcId] = 1.0f / 60.0f;
+            }
+        }
     }
 
     if (tickReady) {

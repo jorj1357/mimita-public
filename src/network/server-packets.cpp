@@ -1904,7 +1904,7 @@ ServerPacketProcessResult processServerPacket(
     }
     else if (header->type == PACKET_GODBALL_HIT_CLAIM)
     {
-        handleGodballHitClaim(sock, players, world, buffer, bytes, tick, totalPacketsOut);
+        handleGodballHitClaim(sock, players, npcs, world, buffer, bytes, tick, totalPacketsOut);
         result.handled = true;
     }
     else if (header->type == PACKET_SPYKNIFE_HIT_CLAIM)

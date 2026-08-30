@@ -842,6 +842,7 @@ void handleGodballState(SOCKET sock,
 
 void handleGodballHitClaim(SOCKET sock,
                            std::unordered_map<uint32_t, ServerPlayer>& players,
+                           std::unordered_map<uint32_t, ServerNpc>& npcs,
                            const HeadlessWorld& world,
                            char* buffer, int bytes,
                            uint32_t tick, uint64_t& totalPacketsOut) {
@@ -854,29 +855,66 @@ void handleGodballHitClaim(SOCKET sock,
     ServerPlayer& attacker = attackerIt->second;
     if (attacker.dead || attacker.spawnState != ServerPlayer::Active) return;
 
-    auto targetIt = players.find(pkt->targetId);
-    if (targetIt == players.end()) return;
-    ServerPlayer& target = targetIt->second;
-    if (target.dead || target.spawnState != ServerPlayer::Active) return;
-    if (target.spawnGeneration != pkt->spawnGeneration) return;
-
     const float clampedDamage = std::clamp(pkt->damage, 1.0f, 500.0f);
     const glm::vec3 normal = glm::length(glm::vec3(pkt->normalX, pkt->normalY, pkt->normalZ)) > 0.001f
         ? glm::normalize(glm::vec3(pkt->normalX, pkt->normalY, pkt->normalZ))
         : glm::vec3(0.0f, 0.0f, 1.0f);
     const glm::vec3 knockback = normal * std::max(1.0f, clampedDamage * 0.75f);
+    const glm::vec3 hitPos(pkt->hitX, pkt->hitY, pkt->hitZ);
 
-    ServerDamageResult result = applyServerDamage(
-        players, target, pkt->attackerId, (int)std::round(clampedDamage),
-        knockback, ServerDamageSource::PhysicalContact);
+    // Try player target first
+    auto targetIt = players.find(pkt->targetId);
+    if (targetIt != players.end()) {
+        ServerPlayer& target = targetIt->second;
+        if (target.dead || target.spawnState != ServerPlayer::Active) return;
+        if (target.spawnGeneration != pkt->spawnGeneration) return;
 
-    if (result.applied) {
-        queueServerDamageConfirmedEvent(
+        ServerDamageResult result = applyServerDamage(
+            players, target, pkt->attackerId, (int)std::round(clampedDamage),
+            knockback, ServerDamageSource::PhysicalContact);
+
+        if (result.applied) {
+            queueServerDamageConfirmedEvent(
+                sock, players, tick, totalPacketsOut,
+                pkt->attackerId, target, (int)std::round(clampedDamage), result,
+                hitPos, normal, knockback, ServerDamageSource::PhysicalContact,
+                NETWORK_WEAPON_GODBALL, pkt->contactSerial);
+        }
+        return;
+    }
+
+    // Try NPC target
+    auto npcIt = npcs.find(pkt->targetId);
+    if (npcIt != npcs.end()) {
+        ServerNpc& npc = npcIt->second;
+        if (npc.health <= 0) return;
+
+        const int intDamage = std::max(1, (int)std::round(clampedDamage));
+        npc.health -= intDamage;
+        npc.knockbackImpulse += knockback;
+        const bool killed = npc.health <= 0;
+        if (killed) npc.health = 0;
+
+        const glm::vec3 origin = attacker.pos;
+        const glm::vec3 dir = glm::length(hitPos - origin) > 0.001f
+            ? glm::normalize(hitPos - origin) : normal;
+
+        broadcastNpcDamageEvent(
             sock, players, tick, totalPacketsOut,
-            pkt->attackerId, target, (int)std::round(clampedDamage), result,
-            glm::vec3(pkt->hitX, pkt->hitY, pkt->hitZ),
-            normal, knockback, ServerDamageSource::PhysicalContact,
-            NETWORK_WEAPON_GODBALL, pkt->contactSerial);
+            pkt->attackerId, npc, intDamage, killed,
+            origin, hitPos, dir, normal, NETWORK_WEAPON_GODBALL);
+
+        if (killed) {
+            auto attacker2 = players.find(pkt->attackerId);
+            if (attacker2 != players.end()) {
+                attacker2->second.kills += 1;
+                attacker2->second.health = serverMaxHp();
+            }
+        }
+
+        printf("[SERVER GODBALL NPC HIT] attacker=%u npc=%u damage=%d health=%d killed=%d\n",
+               pkt->attackerId, pkt->targetId, intDamage, npc.health, (int)killed);
+        return;
     }
 }
 

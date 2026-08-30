@@ -1540,6 +1540,65 @@
           }
         }
       }
+    },
+    "spyknife": {
+      "active_pose": "idle",
+      "poses": {
+        "idle": {
+          "useWeaponPose": true,
+          "leftArm": {
+            "translation": [
+              0.2,
+              -0.1,
+              0.2
+            ],
+            "rotation": [
+              -20.0,
+              -35.0,
+              75.0
+            ]
+          },
+          "rightArm": {
+            "translation": [
+              0.15,
+              -0.08,
+              -0.08
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              90.0
+            ]
+          }
+        },
+        "slash": {
+          "useWeaponPose": true,
+          "leftArm": {
+            "translation": [
+              0.5,
+              -0.05,
+              0.15
+            ],
+            "rotation": [
+              10.0,
+              -25.0,
+              60.0
+            ]
+          },
+          "rightArm": {
+            "translation": [
+              2.5,
+              -0.05,
+              -0.15
+            ],
+            "rotation": [
+              15.0,
+              -350.0,
+              120.0
+            ]
+          }
+        }
+      }
     }
   }
 }

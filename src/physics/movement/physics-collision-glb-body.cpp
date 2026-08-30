@@ -52,7 +52,7 @@ static int runBodyWeaponPass(
     std::vector<int> sharedCandidates = gatherGLBTriangles(world, rootCap, p.aimDirection * 1.5f, rootTag);
     gBW.candidateCount = (int)sharedCandidates.size();
 
-    std::vector<RecoveryContact> bwContacts = collectBodyWeaponContacts(p, world, sharedCandidates, bwSpheres);
+    std::vector<RecoveryContact> bwContacts = collectBodyWeaponContacts(p, world, bwSpheres);
 
     // Weapon capsule: the weapon's solid bounding volume, tested exactly against
     // nearby world triangles. The single smooth capsule has no discrete gaps, so

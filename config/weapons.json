@@ -131,7 +131,7 @@
         1.0
       ]
     },
-    "damage": 10.0,
+    "damage": 102.0,
     "headshot_multiplier": 1.0,
     "fire_delay": 0.0,
     "reload_time": 0.0,
@@ -154,7 +154,7 @@
       "equip": ""
     },
     "custom_params": {
-      "ballRadius": 0.5,
+      "ballRadius": 1.5,
       "ballMass": 0.18,
       "ropeLength": 2.8,
       "ropeStiffness": 50.0,
@@ -1077,7 +1077,7 @@
       "swingForwardTicks": 60.0,
       "bladeCollisionRadius": 0.25,
       "damageTickInterval": 0.0,
-      "showCollisionCapsule": 0,
+      "showCollisionCapsule": 1,
       "collisionAlpha": 0.5
     }
   }

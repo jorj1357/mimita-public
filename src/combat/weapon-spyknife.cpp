@@ -15,6 +15,7 @@
 #include "weapon-registry.h"
 #include "camera.h"
 #include "audio/audio.h"
+#include "config.h"
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
 #include "entities/player.h"
@@ -27,6 +28,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdarg>
 
 static constexpr unsigned int SPYKNIFE_SOUND_OWNER_ID = 0xFFFF0002;
 
@@ -34,6 +36,47 @@ static float skCp(const WeaponDefinition& def, const char* key, float fallback) 
     auto it = def.customParams.find(key);
     return (it != def.customParams.end()) ? it->second : fallback;
 }
+
+// ── Debug logging (godball-style) ─────────────────────────────
+
+static FILE* gSpyknifeLogFile = nullptr;
+
+static void openSpyknifeLog()
+{
+    if (gSpyknifeLogFile) return;
+    // Create logs directory if needed
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    char dateDir[64];
+    snprintf(dateDir, sizeof(dateDir), "logs/%02d-%02d-%04d", st.wMonth, st.wDay, st.wYear);
+    CreateDirectoryA("logs", NULL);
+    CreateDirectoryA(dateDir, NULL);
+
+    char path[256];
+    snprintf(path, sizeof(path), "%s/SpyKnife_log_%02d%02d%02d.txt",
+             dateDir, st.wHour, st.wMinute, st.wSecond);
+    gSpyknifeLogFile = fopen(path, "w");
+    if (gSpyknifeLogFile)
+        Debug::warn(Debug::Category::Weapons, "[SPYKNIFE_DBG] Log opened: %s\n", path);
+}
+
+static void spyknifeLog(const char* fmt, ...)
+{
+    openSpyknifeLog();
+    Debug::warn(Debug::Category::Weapons, "[SPYKNIFE_DBG] ");
+    va_list args;
+    va_start(args, fmt);
+    char buf[1024];
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    Debug::warn(Debug::Category::Weapons, "%s\n", buf);
+    if (gSpyknifeLogFile) {
+        fprintf(gSpyknifeLogFile, "[SPYKNIFE_DBG] %s\n", buf);
+        fflush(gSpyknifeLogFile);
+    }
+}
+
+// ── Backstab geometry ─────────────────────────────────────────
 
 bool WeaponSpyKnife::isBackstabGeometry(const Player& attacker, const Player& victim,
                                           const WeaponDefinition& def)
@@ -70,8 +113,11 @@ std::vector<SpyKnifeHitResult> WeaponSpyKnife::collectRemoteHits(SpyKnifeState& 
     return result;
 }
 
+// ── Swept blade collision ─────────────────────────────────────
+
 static bool sweptBladeHitPart(const Capsule& prev, const Capsule& curr,
-                               const glm::vec3& partCenter, float partRadius)
+                               const glm::vec3& partCenter, float partRadius,
+                               bool logDetails, const char* npcName)
 {
     for (int si = 0; si <= 4; si++) {
         float t = (float)si / 4.0f;
@@ -81,8 +127,13 @@ static bool sweptBladeHitPart(const Capsule& prev, const Capsule& curr,
         glm::vec3 seg = currPt - prevPt;
         float segLen = glm::length(seg);
         if (segLen < 0.001f) {
-            if (glm::length(currPt - partCenter) < curr.r + partRadius)
+            float d = glm::length(currPt - partCenter);
+            if (d < curr.r + partRadius) {
+                if (logDetails)
+                    spyknifeLog("  SWEEP hit(sample=%d t=%.2f) dist=%.3f combinedR=%.3f part=%s",
+                                si, t, d, curr.r + partRadius, npcName);
                 return true;
+            }
             continue;
         }
         glm::vec3 segDir = seg / segLen;
@@ -90,16 +141,21 @@ static bool sweptBladeHitPart(const Capsule& prev, const Capsule& curr,
         float tProj = glm::clamp(glm::dot(toTarget, segDir), 0.0f, segLen);
         glm::vec3 closest = prevPt + segDir * tProj;
         float dist = glm::length(closest - partCenter);
-        if (dist < curr.r + partRadius)
+        if (dist < curr.r + partRadius) {
+            if (logDetails)
+                spyknifeLog("  SWEEP hit(sample=%d t=%.2f) dist=%.3f combinedR=%.3f part=%s",
+                            si, t, dist, curr.r + partRadius, npcName);
             return true;
+        }
     }
     return false;
 }
 
+// ── Swing start ───────────────────────────────────────────────
+
 void WeaponSpyKnife::startSwing(SpyKnifeState& state, const WeaponDefinition& def,
                                   Player& owner, Camera& camera)
 {
-    // Initialize previous capsule from engine's weapon collision capsule
     if (!state.hasPreviousBladeCapsule) {
         state.previousBladeCapsule = owner.weaponCollisionCapsule;
         state.hasPreviousBladeCapsule = true;
@@ -138,13 +194,30 @@ void WeaponSpyKnife::startSwing(SpyKnifeState& state, const WeaponDefinition& de
         rt->customFloats["swordPoseState"] = 1.0f;
     }
 
-    Debug::log(Debug::Category::Weapons,
-        "[SPY KNIFE] swing start seq=%u\n",
-        state.attackSequenceId);
+    // Always log swing start
+    spyknifeLog("SWING_START seq=%u pos=(%.2f,%.2f,%.2f) aim=(%.2f,%.2f,%.2f)",
+                state.attackSequenceId,
+                owner.pos.x, owner.pos.y, owner.pos.z,
+                owner.aimDirection.x, owner.aimDirection.y, owner.aimDirection.z);
+
+    const Capsule& ec = owner.weaponCollisionCapsule;
+    bool ecValid = (glm::length(ec.b - ec.a) > 0.001f && ec.r > 0.001f);
+    spyknifeLog("  engineCapsule: valid=%d A=(%.2f,%.2f,%.2f) B=(%.2f,%.2f,%.2f) R=%.3f",
+                (int)ecValid,
+                ec.a.x, ec.a.y, ec.a.z,
+                ec.b.x, ec.b.y, ec.b.z,
+                ec.r);
+    spyknifeLog("  bladeCollisionRadius=%.3f swingDurationTicks=%u swingForwardTicks=%u",
+                skCp(def, "bladeCollisionRadius", 0.25f),
+                (uint32_t)skCp(def, "swingDurationTicks", 120.0f),
+                (uint32_t)skCp(def, "swingForwardTicks", 60.0f));
 }
 
+// ── Apply NPC damage ──────────────────────────────────────────
+
 static void applySpyKnifeNpcHit(SpyKnifeState& state, const WeaponDefinition& def,
-                                 Player& owner, Npc& npc, bool isBackstab)
+                                 Player& owner, Npc& npc, bool isBackstab,
+                                 uint32_t swingTick, size_t totalHits)
 {
     float damage = isBackstab
         ? skCp(def, "backstabDamagePerTick", 999.0f)
@@ -175,12 +248,20 @@ static void applySpyKnifeNpcHit(SpyKnifeState& state, const WeaponDefinition& de
 
     npc.body.takeDamage(damage, kbDir, kbStrength);
 
-    Debug::log(Debug::Category::Weapons,
-        "[SPY KNIFE] hit npc=%u damage=%.1f kb=%.1f backstab=%d\n",
-        npc.id, damage, kbStrength, (int)isBackstab);
+    // Always log hits
+    spyknifeLog("HIT id=%u name=%s damage=%.1f backstab=%d",
+                npc.id, npc.body.username.c_str(), damage, (int)isBackstab);
+    spyknifeLog("  myPos=(%.2f,%.2f,%.2f) npcPos=(%.2f,%.2f,%.2f) dist=%.3f",
+                owner.pos.x, owner.pos.y, owner.pos.z,
+                npc.body.pos.x, npc.body.pos.y, npc.body.pos.z,
+                glm::length(npc.body.pos - owner.pos));
+    spyknifeLog("  kbDir=(%.2f,%.2f,%.2f) kbStrength=%.1f swingTick=%u totalHits=%zu",
+                kbDir.x, kbDir.y, kbDir.z, kbStrength, swingTick, totalHits);
 
     WeaponAudio::playHitSound(def, npc.body.pos);
 }
+
+// ── Per-frame update ──────────────────────────────────────────
 
 void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
                               WeaponRuntime& runtime, Player& owner,
@@ -201,47 +282,140 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
     Capsule currentBlade = owner.weaponCollisionCapsule;
     currentBlade.r = collisionRadius;
 
+    const bool logVerbose = DebugConfig::DEBUG_SPYKNIFE;
+
+    // ── Per-frame capsule state log ──
+    if (logVerbose) {
+        const Capsule& ec = owner.weaponCollisionCapsule;
+        bool ecValid = (glm::length(ec.b - ec.a) > 0.001f && ec.r > 0.001f);
+        spyknifeLog("CAPSULE tick=%u active=%d animState=%d",
+                    state.swingTick, (int)state.active, (int)state.animState);
+        spyknifeLog("  myPos=(%.2f,%.2f,%.2f) myAim=(%.2f,%.2f,%.2f)",
+                    owner.pos.x, owner.pos.y, owner.pos.z,
+                    owner.aimDirection.x, owner.aimDirection.y, owner.aimDirection.z);
+        spyknifeLog("  engineCapsule: valid=%d A=(%.2f,%.2f,%.2f) B=(%.2f,%.2f,%.2f) R=%.3f",
+                    (int)ecValid,
+                    ec.a.x, ec.a.y, ec.a.z,
+                    ec.b.x, ec.b.y, ec.b.z,
+                    ec.r);
+        spyknifeLog("  prevBlade: A=(%.2f,%.2f,%.2f) B=(%.2f,%.2f,%.2f) R=%.3f",
+                    state.previousBladeCapsule.a.x, state.previousBladeCapsule.a.y, state.previousBladeCapsule.a.z,
+                    state.previousBladeCapsule.b.x, state.previousBladeCapsule.b.y, state.previousBladeCapsule.b.z,
+                    state.previousBladeCapsule.r);
+        spyknifeLog("  currentBlade: A=(%.2f,%.2f,%.2f) B=(%.2f,%.2f,%.2f) R=%.3f",
+                    currentBlade.a.x, currentBlade.a.y, currentBlade.a.z,
+                    currentBlade.b.x, currentBlade.b.y, currentBlade.b.z,
+                    currentBlade.r);
+        float swordPose = 0.0f;
+        auto spIt = runtime.customFloats.find("swordPoseState");
+        if (spIt != runtime.customFloats.end()) swordPose = spIt->second;
+        spyknifeLog("  swordPoseState=%.1f shootEffectTimer=%.3f npcCount=%zu",
+                    swordPose, runtime.shootEffectTimer, npcs.all().size());
+    }
+
+    // Always log NPC count (even when 0)
+    spyknifeLog("NPC_STATUS npcCount=%zu active=%d", npcs.all().size(), (int)state.active);
+
+    // ── ALWAYS: NPC collision (knife damages on contact, not just during swing) ──
+    {
+        for (Npc& npc : npcs.all()) {
+            if (npc.body.dead) continue;
+
+            auto cdIt = state.hitCooldowns.find(npc.id);
+            if (cdIt != state.hitCooldowns.end() && cdIt->second > 0.0f) {
+                if (logVerbose)
+                    spyknifeLog("  SKIP id=%u name=%s reason=cooldown cd=%.3f",
+                                npc.id, npc.body.username.c_str(), cdIt->second);
+                continue;
+            }
+
+            if (logVerbose) {
+                spyknifeLog("NPC_CHECK id=%u name=%s hp=%d dead=%d active=%d",
+                            npc.id, npc.body.username.c_str(), npc.body.currentHp, (int)npc.body.dead, (int)state.active);
+                spyknifeLog("  npcPos=(%.2f,%.2f,%.2f) myPos=(%.2f,%.2f,%.2f) dist=%.3f",
+                            npc.body.pos.x, npc.body.pos.y, npc.body.pos.z,
+                            owner.pos.x, owner.pos.y, owner.pos.z,
+                            glm::length(npc.body.pos - owner.pos));
+                spyknifeLog("  npcPartCount=%zu", npc.body.physicalBody.parts.size());
+            }
+
+            bool hitFound = false;
+            for (const auto& part : npc.body.physicalBody.parts) {
+                glm::vec3 partCenter = glm::vec3(part.worldTransform[3]);
+                float partRadius = 0.3f;
+
+                if (logVerbose) {
+                    spyknifeLog("  COLLISION part=%s center=(%.2f,%.2f,%.2f) radius=%.3f bladeR=%.3f combinedR=%.3f",
+                                part.name.c_str(),
+                                partCenter.x, partCenter.y, partCenter.z,
+                                partRadius, currentBlade.r, currentBlade.r + partRadius);
+                }
+
+                if (sweptBladeHitPart(state.previousBladeCapsule,
+                                      currentBlade,
+                                      partCenter, partRadius,
+                                      logVerbose, part.name.c_str())) {
+                    hitFound = true;
+                    break;
+                }
+            }
+
+            if (!hitFound) {
+                if (logVerbose) {
+                    float dist = glm::length(npc.body.pos - owner.pos);
+                    spyknifeLog("  MISS id=%u name=%s dist=%.3f", npc.id, npc.body.username.c_str(), dist);
+                }
+                continue;
+            }
+
+            // Backstab check with logging
+            bool isBs = isBackstabGeometry(owner, npc.body, def);
+            if (logVerbose) {
+                const float backstabDist = skCp(def, "backstabDistance", 0.5f);
+                const float backstabConeDeg = skCp(def, "backstabConeDegrees", 150.0f);
+                float dist = glm::length(owner.pos - npc.body.pos);
+
+                glm::vec2 victimFwd2(npc.body.aimDirection.x, npc.body.aimDirection.y);
+                float fwdLen = glm::length(victimFwd2);
+                if (fwdLen > 0.001f) victimFwd2 /= fwdLen;
+
+                glm::vec2 attackerDir2(owner.pos.x - npc.body.pos.x, owner.pos.y - npc.body.pos.y);
+                float dirLen = glm::length(attackerDir2);
+                if (dirLen > 0.001f) attackerDir2 /= dirLen;
+
+                float cosAngle = glm::dot(victimFwd2, attackerDir2);
+                float halfConeCos = std::cos(backstabConeDeg * 0.5f * 3.14159265f / 180.0f);
+
+                spyknifeLog("BACKSTAB_CHECK id=%u name=%s", npc.id, npc.body.username.c_str());
+                spyknifeLog("  dist=%.3f backstabDist=%.3f", dist, backstabDist);
+                spyknifeLog("  victimFwd=(%.2f,%.2f) attackerDir=(%.2f,%.2f)",
+                            victimFwd2.x, victimFwd2.y, attackerDir2.x, attackerDir2.y);
+                spyknifeLog("  cosAngle=%.3f halfConeCos=%.3f result=%d",
+                            cosAngle, halfConeCos, (int)isBs);
+            }
+
+            applySpyKnifeNpcHit(state, def, owner, npc, isBs,
+                                state.swingTick, 0);
+            state.hitCooldowns[npc.id] = skCp(def, "damageTickInterval", 0.0f);
+        }
+
+        // Decay hit cooldowns
+        for (auto cdIt = state.hitCooldowns.begin(); cdIt != state.hitCooldowns.end(); ) {
+            cdIt->second -= dt;
+            if (cdIt->second <= 0.0f)
+                cdIt = state.hitCooldowns.erase(cdIt);
+            else
+                ++cdIt;
+        }
+    }
+
+    // ── Swing animation (only when actively swinging) ──
     if (state.active) {
         for (uint32_t t = 0; t < ticksThisFrame; t++) {
             state.swingTick++;
 
             runtime.shootEffectTimer = std::max(runtime.shootEffectTimer,
                 (float)(swingDurationTicks - state.swingTick) / 60.0f);
-
-            for (Npc& npc : npcs.all()) {
-                if (npc.body.dead) continue;
-
-                auto cdIt = state.hitCooldowns.find(npc.id);
-                if (cdIt != state.hitCooldowns.end() && cdIt->second > 0.0f)
-                    continue;
-
-                bool hitFound = false;
-                for (const auto& part : npc.body.physicalBody.parts) {
-                    glm::vec3 partCenter = glm::vec3(part.worldTransform[3]);
-                    float partRadius = 0.3f;
-
-                    if (sweptBladeHitPart(state.previousBladeCapsule,
-                                          currentBlade,
-                                          partCenter, partRadius)) {
-                        hitFound = true;
-                        break;
-                    }
-                }
-
-                if (!hitFound) continue;
-
-                bool isBs = isBackstabGeometry(owner, npc.body, def);
-                applySpyKnifeNpcHit(state, def, owner, npc, isBs);
-                state.hitCooldowns[npc.id] = skCp(def, "damageTickInterval", 0.0f);
-            }
-
-            for (auto cdIt = state.hitCooldowns.begin(); cdIt != state.hitCooldowns.end(); ) {
-                cdIt->second -= tickDt;
-                if (cdIt->second <= 0.0f)
-                    cdIt = state.hitCooldowns.erase(cdIt);
-                else
-                    ++cdIt;
-            }
         }
 
         if (state.swingTick >= swingDurationTicks) {
@@ -249,6 +423,8 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
             state.hasPreviousBladeCapsule = false;
             runtime.shootEffectTimer = 0.0f;
             runtime.customFloats["swordPoseState"] = 0.0f;
+
+            spyknifeLog("SWING_END seq=%u totalTicks=%u", state.attackSequenceId, state.swingTick);
 
             bool foundReady = false;
             for (const Npc& npc : npcs.all()) {
@@ -285,14 +461,56 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
     state.previousBladeCapsule = currentBlade;
     state.hasPreviousBladeCapsule = true;
 
-    // Optional debug capsule rendering
-    if (skCp(def, "showCollisionCapsule", 0.0f) > 0.5f) {
-        float alpha = skCp(def, "collisionAlpha", 0.5f);
+    // Debug capsule rendering (always on when DEBUG_SPYKNIFE, or via config)
+    bool showCapsule = DebugConfig::DEBUG_SPYKNIFE || (skCp(def, "showCollisionCapsule", 0.0f) > 0.5f);
+    if (showCapsule) {
+        float alpha = DebugConfig::DEBUG_SPYKNIFE ? 0.8f : skCp(def, "collisionAlpha", 0.5f);
         if (state.active) {
             DebugVis::drawWeaponCapsuleWire(camera, currentBlade, {1.0f, 0.2f, 0.2f, alpha});
+            if (logVerbose)
+                spyknifeLog("CAPSULE_RENDER active alpha=%.2f A=(%.2f,%.2f,%.2f) B=(%.2f,%.2f,%.2f) R=%.3f",
+                            alpha,
+                            currentBlade.a.x, currentBlade.a.y, currentBlade.a.z,
+                            currentBlade.b.x, currentBlade.b.y, currentBlade.b.z,
+                            currentBlade.r);
         }
         if (state.animState == SpyKnifeAnimState::Ready) {
             DebugVis::drawWeaponCapsuleWire(camera, currentBlade, {1.0f, 0.8f, 0.0f, alpha});
+            if (logVerbose)
+                spyknifeLog("CAPSULE_RENDER ready alpha=%.2f A=(%.2f,%.2f,%.2f) B=(%.2f,%.2f,%.2f) R=%.3f",
+                            alpha,
+                            currentBlade.a.x, currentBlade.a.y, currentBlade.a.z,
+                            currentBlade.b.x, currentBlade.b.y, currentBlade.b.z,
+                            currentBlade.r);
+        }
+    }
+
+    // Rate-limited summary (once per second, always on)
+    if (DebugConfig::DEBUG_SPYKNIFE) {
+        static float summaryTimer = 0.0f;
+        summaryTimer += dt;
+        if (summaryTimer >= 1.0f) {
+            summaryTimer = 0.0f;
+            const Capsule& ec = owner.weaponCollisionCapsule;
+            bool ecValid = (glm::length(ec.b - ec.a) > 0.001f && ec.r > 0.001f);
+            float closestDist = 999.0f;
+            for (const Npc& npc : npcs.all()) {
+                if (npc.body.dead) continue;
+                float d = glm::length(npc.body.pos - owner.pos);
+                if (d < closestDist) closestDist = d;
+            }
+            float swordPose = 0.0f;
+            auto spIt = runtime.customFloats.find("swordPoseState");
+            if (spIt != runtime.customFloats.end()) swordPose = spIt->second;
+            spyknifeLog("SUMMARY active=%d swingTick=%u animState=%d",
+                        (int)state.active, state.swingTick, (int)state.animState);
+            spyknifeLog("  capsuleValid=%d A=(%.2f,%.2f,%.2f) B=(%.2f,%.2f,%.2f) R=%.3f",
+                        (int)ecValid,
+                        ec.a.x, ec.a.y, ec.a.z,
+                        ec.b.x, ec.b.y, ec.b.z,
+                        ec.r);
+            spyknifeLog("  npcCount=%zu closestNpcDist=%.3f swordPoseState=%.1f",
+                        npcs.all().size(), closestDist, swordPose);
         }
     }
 }

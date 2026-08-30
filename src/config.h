@@ -47,6 +47,7 @@ namespace DebugConfig
     inline bool DEBUG_ANIMATION = false;
     inline bool DEBUG_GODBALL = false;
     inline bool DEBUG_GODBALL_HITSTOP = false;
+    inline bool DEBUG_SPYKNIFE = false;
     inline bool DEBUG_ANIM_ARMS = false;
     // 7 1 2026 I MADE A GIT COMMIT ON THIS DA
     // TO MIMITA REPO
@@ -168,6 +169,7 @@ namespace DebugConfig
         DEBUG_ANIMATION = false;
         DEBUG_GODBALL = false;
         DEBUG_GODBALL_HITSTOP = false;
+        DEBUG_SPYKNIFE = false;
         DEBUG_ANIM_ARMS = false;
         DEBUG_NPC_MOVEMENT = false;
         DEBUG_COLLISION_PLAYER = false;

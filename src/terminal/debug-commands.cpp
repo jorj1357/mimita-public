@@ -37,6 +37,7 @@ void registerDebugCommands()
     registerDebugToggle("debug_blood_force", DebugConfig::DEBUG_BLOOD_FORCE);
     registerDebugToggle("debug_debris", DebugConfig::DEBUG_DEBRIS);
     registerDebugToggle("godball_debug", DebugConfig::DEBUG_GODBALL);
+    registerDebugToggle("spyknife_debug", DebugConfig::DEBUG_SPYKNIFE);
     registerDebugToggle("final_kill_debug", DebugConfig::DEBUG_NPC_DEATH);
     registerDebugToggle("collision_debug", DebugConfig::DEBUG_COLLISION_SYSTEM);
     registerDebugToggle("collision_trace", DebugConfig::DEBUG_COLLISION_TRACE);

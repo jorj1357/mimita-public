@@ -149,16 +149,17 @@ std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p)
 
 // Collect world-triangle contacts from all body/weapon spheres.
 // Returns RecoveryContacts compatible with the batched solver.
+// Uses a single union broadphase gather for all spheres instead of per-sphere
+// uncached gathers. This eliminates ~250 heap allocations and ~250 spatial hash
+// queries per frame (6 substeps × 3 passes × ~15 spheres).
 std::vector<RecoveryContact> collectBodyWeaponContacts(
     const Player& p,
     const World& world,
-    const std::vector<int>& candidates,
     const std::vector<BodyWeaponSphere>& spheres
 ) {
     auto t0 = std::chrono::steady_clock::now();
     std::vector<RecoveryContact> contacts;
     constexpr float SLIDE_SLOP = 0.002f;
-    (void)candidates;
 
     // Use per-weapon collision skin from config, fall back to default
     float skin = p.weaponCollisionDebug.valid
@@ -169,18 +170,35 @@ std::vector<RecoveryContact> collectBodyWeaponContacts(
     int totalTests = 0;
     int sweepHits = 0;
 
+    if (spheres.empty()) return contacts;
+
+    // Build a union AABB encompassing all body/weapon spheres. This is the key
+    // optimization: instead of doing N separate uncached broadphase queries (one
+    // per sphere), we do ONE query for the union region and then filter per sphere.
+    // The union AABB is tight — it only covers the actual sphere positions + radii.
+    AABB unionBounds;
+    {
+        const auto& first = spheres[0];
+        float r0 = first.radius + skin;
+        unionBounds.min = first.center - glm::vec3(r0);
+        unionBounds.max = first.center + glm::vec3(r0);
+        for (size_t i = 1; i < spheres.size(); ++i) {
+            const auto& s = spheres[i];
+            float r = s.radius + skin;
+            unionBounds.min = glm::min(unionBounds.min, s.center - glm::vec3(r));
+            unionBounds.max = glm::max(unionBounds.max, s.center + glm::vec3(r));
+        }
+    }
+
+    // Single broadphase query for the union region
+    std::vector<int> unionCandidates;
+    appendChunkTrianglesForAABB(world, unionBounds, 0.0f, unionCandidates, "bwUnionGather");
+    gBW.candidateCount = (int)unionCandidates.size();
+
+    // Per-sphere contact testing against the union candidates
     for (const BodyWeaponSphere& bs : spheres)
     {
-        // Gather only the triangles near this sphere (sub-grid broadphase) instead
-        // of testing every body/weapon sphere against the whole shared candidate
-        // list. Near dense geometry this turns O(spheres × candidates) into
-        // O(sum of per-sphere local candidates) and also correctly covers limbs
-        // and the weapon that extend beyond the root capsule.
-        std::vector<int> localCandidates = gatherGLBTrianglesForSphere(
-            world, bs.center, bs.radius + skin, bs.sweepDelta, "bwSphereGather");
-        gBW.candidateCount += (int)localCandidates.size();
-
-        for (int triIdx : localCandidates)
+        for (int triIdx : unionCandidates)
         {
             ++totalTests;
             if (triIdx < 0 || triIdx >= (int)world.collisionMesh.triangles.size())

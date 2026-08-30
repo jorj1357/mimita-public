@@ -900,6 +900,7 @@ void handleGodballState(SOCKET sock,
                         char* buffer, int bytes);
 void handleGodballHitClaim(SOCKET sock,
                            std::unordered_map<uint32_t, ServerPlayer>& players,
+                           std::unordered_map<uint32_t, ServerNpc>& npcs,
                            const HeadlessWorld& world,
                            char* buffer, int bytes,
                            uint32_t tick, uint64_t& totalPacketsOut);
