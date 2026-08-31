@@ -1069,9 +1069,9 @@
       "hit": "player_hurt"
     },
     "custom_params": {
-      "hitboxHalfX": 0.15,
-      "hitboxHalfY": 0.05,
-      "hitboxHalfZ": 0.4,
+      "hitboxHalfX": 0.5,
+      "hitboxHalfY": 0.5,
+      "hitboxHalfZ": 0.5,
       "hitboxOffsetX": 0.0,
       "hitboxOffsetY": 0.0,
       "hitboxOffsetZ": 0.3,
@@ -1093,7 +1093,7 @@
       "backstabDamagePerTick": 999.0,
       "backstabKnockback": 20.0,
       "swingDurationTicks": 120.0,
-      "swingForwardTicks": 60.0,
+      "swingForwardTicks": 120.0,
       "damageTickInterval": 0.166
     }
   }

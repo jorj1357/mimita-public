@@ -140,7 +140,7 @@
 
   "prediction": {
     "comment": "Client-side prediction scope. Hitmarker + hit sound are ALWAYS predicted (instant). predict_damage controls instant damage numbers + target health bar. predict_deaths is OFF by default so a death is presented exactly once by the reliable server event (no predicted-then-confirmed double death).",
-    "predict_damage": false,
+    "predict_damage": true,
     "predict_deaths": false
   },
 
