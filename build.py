@@ -32,6 +32,22 @@ from build_toolchain import compiler, ccache, glfw_include, glfw_lib, runtime_pa
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
+def stage_runtime_dlls():
+    """Place the shared runtime DLLs beside the executable for local runs."""
+    runtime_files = {
+        "libgcc_s_seh-1.dll": os.path.join(os.path.dirname(COMPILER), "libgcc_s_seh-1.dll"),
+        "libstdc++-6.dll": os.path.join(os.path.dirname(COMPILER), "libstdc++-6.dll"),
+        "libwinpthread-1.dll": os.path.join(os.path.dirname(COMPILER), "libwinpthread-1.dll"),
+        "glfw3.dll": os.path.join(GLFW_LIB, "glfw3.dll"),
+    }
+    for name, source in runtime_files.items():
+        if not os.path.isfile(source):
+            print("[RUNTIME] missing dependency: %s" % source)
+            continue
+        destination = os.path.join(ROOT, name)
+        shutil.copy2(source, destination)
+        print("[RUNTIME] staged %s" % name)
+
 try:
     COMPILER = compiler()
     CCACHE = ccache(COMPILER)
@@ -636,6 +652,7 @@ needs_link = (
 )  
 
 if not needs_link:
+    stage_runtime_dlls()
     print()
     print("Nothing changed.")
     print()
@@ -684,6 +701,8 @@ if result.returncode != 0:
     print(" LINK FAILED")
     print("==================================================")
     sys.exit(1)
+
+stage_runtime_dlls()
 
 # ============================================================
 # DONE

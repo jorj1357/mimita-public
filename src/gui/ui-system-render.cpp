@@ -113,27 +113,33 @@ void ensureProgram()
         "#version 330 core\n"
         "layout(location=0) in vec2 aPos;\n"
         "layout(location=1) in vec2 aUV;\n"
+        "layout(location=2) in vec4 aColor;\n"
+        "layout(location=3) in float aTextureMode;\n"
         "uniform vec2 uScreen;\n"
         "out vec2 vUV;\n"
+        "out vec4 vColor;\n"
+        "flat out int vTextureMode;\n"
         "void main(){\n"
         "  vec2 ndc = vec2((aPos.x/uScreen.x)*2.0-1.0, 1.0-(aPos.y/uScreen.y)*2.0);\n"
         "  vUV = aUV;\n"
+        "  vColor = aColor;\n"
+        "  vTextureMode = int(aTextureMode + 0.5);\n"
         "  gl_Position = vec4(ndc, 0.0, 1.0);\n"
         "}\n";
     const char* fs =
         "#version 330 core\n"
         "out vec4 FragColor;\n"
         "in vec2 vUV;\n"
-        "uniform vec4 uColor;\n"
-        "uniform sampler2D uTex;\n"
-        "uniform int uUseTex;\n"
+        "in vec4 vColor;\n"
+        "flat in int vTextureMode;\n"
+        "uniform sampler2D uFontPage0;\n"
+        "uniform sampler2D uFontPage1;\n"
+        "uniform sampler2D uImageTex;\n"
         "void main(){\n"
-        "  if (uUseTex == 1) {\n"
-        "    vec4 texel = texture(uTex, vUV);\n"
-        "FragColor = vec4(texel.rgb * uColor.rgb, texel.a * uColor.a);\n"
-        "  } else {\n"
-        "    FragColor = uColor;\n"
-        "  }\n"
+        "  if (vTextureMode == 3) { FragColor = texture(uImageTex, vUV) * vColor; return; }\n"
+        "  if (vTextureMode == 2) { FragColor = texture(uFontPage1, vUV) * vColor; return; }\n"
+        "  if (vTextureMode == 1) { FragColor = texture(uFontPage0, vUV) * vColor; return; }\n"
+        "  FragColor = vColor;\n"
         "}\n";
 
     MIMITA_GL_CLEAR_STAGE("ui ensureProgram");
@@ -162,35 +168,33 @@ void ensureProgram()
     }
 
     gScreenLoc = glGetUniformLocation(gProgram, "uScreen");
-    gColorLoc = glGetUniformLocation(gProgram, "uColor");
-    gUseTexLoc = glGetUniformLocation(gProgram, "uUseTex");
-    gTexLoc = glGetUniformLocation(gProgram, "uTex");
+    gColorLoc = -1;
+    gUseTexLoc = -1;
+    gTexLoc = -1;
+    gImageTexLoc = glGetUniformLocation(gProgram, "uImageTex");
 
     MIMITA_GL_CALL(glGenVertexArrays(1, &gVao));
     MIMITA_GL_CALL(glGenBuffers(1, &gVbo));
     MIMITA_GL_CALL(glBindVertexArray(gVao));
     MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gVbo));
-    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 128, nullptr, GL_DYNAMIC_DRAW));
+    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(UIVertex) * 1024, nullptr, GL_DYNAMIC_DRAW));
     MIMITA_GL_CALL(glEnableVertexAttribArray(0));
-    MIMITA_GL_CALL(glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, (void*)0));
+    MIMITA_GL_CALL(glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(UIVertex), (void*)offsetof(UIVertex, position)));
     MIMITA_GL_CALL(glEnableVertexAttribArray(1));
-    MIMITA_GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, (void*)(sizeof(float) * 2)));
+    MIMITA_GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(UIVertex), (void*)offsetof(UIVertex, uv)));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(1));
+    MIMITA_GL_CALL(glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(UIVertex), (void*)offsetof(UIVertex, color)));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(2));
+    MIMITA_GL_CALL(glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(UIVertex), (void*)offsetof(UIVertex, textureMode)));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(3));
 }
 
 void drawTriVerts(const float* verts, int vertCount, glm::vec4 color, GLenum mode)
 {
-    ensureProgram();
-    if (!gProgram || !gVao || !gVbo || !verts || vertCount <= 0)
+    if (!verts || vertCount <= 0 || mode != GL_TRIANGLES)
         return;
-    MIMITA_GL_CALL(glUseProgram(gProgram));
-    MIMITA_GL_CALL(glUniform2f(gScreenLoc, (float)gFbW, (float)gFbH));
-    MIMITA_GL_CALL(glUniform4fv(gColorLoc, 1, &color.x));
-    MIMITA_GL_CALL(glUniform1i(gUseTexLoc, 0));
-    MIMITA_GL_CALL(glBindVertexArray(gVao));
-    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gVbo));
-    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 4 * vertCount, verts, GL_DYNAMIC_DRAW));
-    MIMITA_GL_CALL(glDrawArrays(mode, 0, vertCount));
-    ++gDrawCalls;
+    for (int i = 0; i < vertCount; ++i)
+        gBatchVertices.push_back({{verts[i * 4], verts[i * 4 + 1]}, {verts[i * 4 + 2], verts[i * 4 + 3]}, color, 0.0f});
 }
 
 void drawTexturedQuad(const float* verts, int vertCount, GLuint tex, glm::vec4 color)
@@ -198,20 +202,51 @@ void drawTexturedQuad(const float* verts, int vertCount, GLuint tex, glm::vec4 c
     ensureProgram();
     if (!gProgram || !gVao || !gVbo || !verts || !tex || vertCount <= 0)
         return;
+    uiFlushBatch();
     MIMITA_GL_CALL(glUseProgram(gProgram));
     MIMITA_GL_CALL(glEnable(GL_BLEND));
     MIMITA_GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
     MIMITA_GL_CALL(glUniform2f(gScreenLoc, (float)gFbW, (float)gFbH));
-    MIMITA_GL_CALL(glUniform4fv(gColorLoc, 1, &color.x));
-    MIMITA_GL_CALL(glUniform1i(gUseTexLoc, 1));
-    MIMITA_GL_CALL(glUniform1i(gTexLoc, 0));
+    MIMITA_GL_CALL(glUniform1i(gImageTexLoc, 0));
     MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
     MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
     MIMITA_GL_CALL(glBindVertexArray(gVao));
     MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gVbo));
-    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 4 * vertCount, verts, GL_DYNAMIC_DRAW));
+    static std::vector<UIVertex> imageVertices;
+    imageVertices.clear();
+    imageVertices.reserve(static_cast<size_t>(vertCount));
+    for (int i = 0; i < vertCount; ++i)
+        imageVertices.push_back({{verts[i * 4], verts[i * 4 + 1]}, {verts[i * 4 + 2], verts[i * 4 + 3]}, color, 3.0f});
+    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, imageVertices.size() * sizeof(UIVertex), imageVertices.data(), GL_DYNAMIC_DRAW));
     MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, vertCount));
     ++gDrawCalls;
+}
+
+void uiFlushBatch()
+{
+    if (gBatchVertices.empty())
+        return;
+    ensureProgram();
+    MIMITA_GL_CALL(glUseProgram(gProgram));
+    MIMITA_GL_CALL(glUniform2f(gScreenLoc, (float)gFbW, (float)gFbH));
+    static GLint fontPage0Loc = -1;
+    static GLint fontPage1Loc = -1;
+    if (fontPage0Loc < 0) {
+        fontPage0Loc = glGetUniformLocation(gProgram, "uFontPage0");
+        fontPage1Loc = glGetUniformLocation(gProgram, "uFontPage1");
+    }
+    MIMITA_GL_CALL(glUniform1i(fontPage0Loc, 0));
+    MIMITA_GL_CALL(glUniform1i(fontPage1Loc, 1));
+    MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
+    MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, gFontPages[0]));
+    MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE1));
+    MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, gFontPages[1]));
+    MIMITA_GL_CALL(glBindVertexArray(gVao));
+    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gVbo));
+    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, gBatchVertices.size() * sizeof(UIVertex), gBatchVertices.data(), GL_DYNAMIC_DRAW));
+    MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(gBatchVertices.size())));
+    ++gDrawCalls;
+    gBatchVertices.clear();
 }
 
 void debugWidget(const char* type, const char* name, UIRect r, bool hovered, bool pressed)
@@ -264,7 +299,10 @@ void uiDrawRectOutline(UIRect r, glm::vec4 color, const char* debugName)
         r.x + r.w, r.y + r.h, 0, 0, r.x, r.y + r.h, 0, 0,
         r.x, r.y + r.h, 0, 0, r.x, r.y, 0, 0
     };
-    drawTriVerts(verts, 8, color, GL_LINES);
+    uiDrawRect({r.x, r.y, r.w, 1.0f}, color, debugName);
+    uiDrawRect({r.x, r.y + r.h - 1.0f, r.w, 1.0f}, color, debugName);
+    uiDrawRect({r.x, r.y, 1.0f, r.h}, color, debugName);
+    uiDrawRect({r.x + r.w - 1.0f, r.y, 1.0f, r.h}, color, debugName);
 }
 
 void uiDrawText(const char* text, float x, float y, float scale, glm::vec4 color,
@@ -327,7 +365,9 @@ void uiDrawText(const char* text, float x, float y, float scale, glm::vec4 color
                 x0 + topShift,y0,u0,v0, x1 + topShift,y0,u1,v0, x1,y1,u1,v1,
                 x0 + topShift,y0,u0,v0, x1,y1,u1,v1, x0,y1,u0,v1
             };
-            drawTexturedQuad(verts, 6, pageTex, color);
+            const float textureMode = (g.page == 1) ? 2.0f : 1.0f;
+            for (int i = 0; i < 6; ++i)
+                gBatchVertices.push_back({{verts[i * 4], verts[i * 4 + 1]}, {verts[i * 4 + 2], verts[i * 4 + 3]}, color, textureMode});
 
             if (gDebug)
             {
@@ -491,5 +531,3 @@ void uiDrawWarning(const char* text, float x, float y)
     uiDrawRect({x - 8.0f, y - 8.0f, 560.0f, 34.0f}, {0.6f, 0.0f, 0.0f, 0.85f}, "warning-bg");
     uiDrawText(text, x, y, 0.34f, {1.0f, 1.0f, 0.1f, 1.0f});
 }
-
-

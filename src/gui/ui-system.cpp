@@ -25,6 +25,7 @@ GLint gScreenLoc = -1;
 GLint gColorLoc = -1;
 GLint gUseTexLoc = -1;
 GLint gTexLoc = -1;
+GLint gImageTexLoc = -1;
 int gFbW = 1;
 int gFbH = 1;
 bool gDebug = false;
@@ -43,6 +44,7 @@ bool gOverlapDebugEnabled = false;
 bool gCoordDebug = false;
 double gScrollYOffset = 0.0;
 bool gDropdownModalActive = false;
+std::vector<UIVertex> gBatchVertices;
 }
 
 using namespace UISys;
@@ -80,6 +82,9 @@ void uiBeginFrame(GLFWwindow* win, const char* passName)
     gDrawCalls = 0;
     gWidgets = 0;
     gTrackedWidgets.clear();
+    gBatchVertices.clear();
+    if (gBatchVertices.capacity() == 0)
+        gBatchVertices.reserve(8192);
     gHoverOwnerKey.clear();
     gMouseDown = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
     gMouseClickEdge = gMouseDown && !gMousePrev;
@@ -208,6 +213,8 @@ void uiEndFrame()
     }
 
     uiDrawTooltip();
+
+    uiFlushBatch();
 
     if (gFrame % 120 == 1)
         Debug::logThrottled(Debug::Category::Render, "ui-frame-complete", DebugConfig::PRINT_INTERVAL, "[UI] Render pass complete drawCalls=%d widgets=%d warnings=%zu\n", gDrawCalls, gWidgets, gWarnings.size());

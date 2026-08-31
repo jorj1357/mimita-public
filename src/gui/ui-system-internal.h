@@ -9,6 +9,13 @@
 #include <vector>
 #include "gui/ui-system.h"
 
+struct UIVertex {
+    glm::vec2 position;
+    glm::vec2 uv;
+    glm::vec4 color;
+    float textureMode;
+};
+
 namespace UISys {
 extern GLFWwindow* gWindow;
 extern GLuint gProgram;
@@ -36,6 +43,8 @@ extern bool gOverlapDebugEnabled;
 extern bool gCoordDebug;
 extern double gScrollYOffset;
 extern bool gDropdownModalActive;
+extern std::vector<UIVertex> gBatchVertices;
+extern GLint gImageTexLoc;
 }
 
 inline bool pointIn(double mx, double my, UIRect r)
@@ -44,4 +53,5 @@ inline bool pointIn(double mx, double my, UIRect r)
 }
 
 void ensureProgram();
+void uiFlushBatch();
 bool uiCanPlayUISound();
