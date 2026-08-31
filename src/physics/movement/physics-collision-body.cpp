@@ -56,7 +56,9 @@ void recomputeWeaponCapsule(Player& p)
         p.weaponCollisionDebug.valid = false;
         p.weaponCollisionDebug.spheres.clear();
         p.weaponCollisionDebug.capsule.enabled = false;
+        p.weaponCollisionDebug.capsules.clear();
         p.collision.hasWeaponCollisionCapsule = false;
+        p.weaponModelTransform = glm::mat4(1.0f);
         return;
     }
 

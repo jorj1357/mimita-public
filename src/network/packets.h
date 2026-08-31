@@ -128,7 +128,8 @@ enum PacketType : uint8_t
     // new map and re-complete the spawn handshake.
     PACKET_MAP_CHANGE = 58,
     PACKET_SPYKNIFE_HIT_CLAIM = 59,
-    PACKET_GODBALL_HIT_CLAIM = 60
+    PACKET_GODBALL_HIT_CLAIM = 60,
+    PACKET_SERVER_NOTIFICATION = 61
 };
 
 enum DamageConfirmedSource : uint8_t
@@ -1218,6 +1219,17 @@ struct GodballHitClaimPacket
     float hitX = 0.0f, hitY = 0.0f, hitZ = 0.0f;
     float normalX = 0.0f, normalY = 0.0f, normalZ = 0.0f;
     uint32_t spawnGeneration = 0;
+};
+
+// Server -> all clients: short authoritative UI notification.
+struct ServerNotificationPacket
+{
+    PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
+    uint16_t durationTicks = 180;
+    char title[32] = {};
+    char message[192] = {};
 };
 
 // ── Spy Knife hit claim (attacker → server, unreliable) ───────────────

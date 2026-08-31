@@ -1,4 +1,4 @@
-// 07 21 2026, 17 10
+// 08 31 2026, 17 14
 /* purpose
 * Owns authoritative server player names, spawning, collision, simulation, and snapshot entity state.
 * Keeps server Player lifecycle, movement parity state, and weapon spawn inventory synchronized.
@@ -9,6 +9,7 @@
 */
 
 #include "network/server.h"
+#include "network/server-duel.h"
 #include "network/network-weapons.h"
 #include "physics/movement/movement-conversion.h"
 #include "physics/movement/movement-step.h"
@@ -310,15 +311,18 @@ void resolvePlayerCollision(std::unordered_map<uint32_t, ServerPlayer>& players)
     (void)players;
 }
 
-// ── Initial inventory: temporary — grants non-restricted weapons ─────
-// Documented as: temporary until a proper inventory/ownership system exists.
-// Excludes weapons with `restricted=true` (admin_revolver, op_revolver).
+// ── Initial inventory ────────────────────────────────────────────────
+// Community servers derive the inventory from the selected JSON weapon set.
+// Set 5 is the explicit opt-in for restricted/OP weapons.
 static void getInitialInventory(std::vector<std::string>& out)
 {
     out.clear();
+    const bool community = serverDuelState().mapOnly;
+    const bool includeRestricted = community && serverDuelState().communityWeaponSetId == 5;
     for (const auto& kv : WeaponRegistry::instance().all())
     {
-        if (!kv.second.restricted)
+        if ((includeRestricted || !kv.second.restricted) &&
+            (!community || serverCommunityWeaponAllowed(kv.first)))
             out.push_back(kv.first);
     }
 }
@@ -1055,15 +1059,15 @@ uint32_t estimateServerRewindTick(const ServerPlayer& attacker,
     const int64_t compTicks = (int64_t)std::llround(
         NetworkingConfig::instance().data().remotePlayers
             .rewindCompensationSeconds * (double)GAMEPLAY_SIMULATION_HZ);
-    // Under high-latency connections the client's render tick is far behind the
-    // server tick.  Add a ping-based extra rewind so the server validates the
-    // shot against the NPC position the client actually saw, not a more recent
-    // one the client's lag means it could never have aimed at.
+    // A non-zero clientSimulationTick is already the client's delayed rendered
+    // world tick.  Do not subtract ping again: the received snapshot is already
+    // old by the network transit time, and subtracting ping here double-counts
+    // that delay and validates against a pose older than the shooter saw.
     const int64_t pingTicks = (int64_t)std::llround(
         (double)attacker.pingMs / 1000.0 * (double)GAMEPLAY_SIMULATION_HZ);
     int64_t rewind;
     if (clientSimulationTick != 0)
-        rewind = (int64_t)clientSimulationTick - (int64_t)REWIND_INTERP_DELAY_TICKS - compTicks - pingTicks;
+        rewind = (int64_t)clientSimulationTick - (int64_t)REWIND_INTERP_DELAY_TICKS - compTicks;
     else if (attacker.movementValidation.lastAcceptedClientTick != 0 &&
              attacker.lastAcceptedServerTick != 0)
         rewind = (int64_t)attacker.lastAcceptedServerTick -

@@ -15,9 +15,59 @@
 #include "gui/gui-bindings.h"
 #include "network/server.h"
 #include "network/server-duel.h"
+#include "network/community-server-config.h"
+#include "map/map-catalog.h"
 
 void registerDebugCommands()
 {
+    Terminal::instance().registerCommand({
+        "modelist", "List community modes from config/onlinemodes.json", "modelist",
+        [](const std::vector<std::string>&) {
+            auto& cfg = MimitaNet::CommunityServerConfig::instance();
+            if (cfg.modes().empty()) cfg.load();
+            int index = 1;
+            for (const auto& mode : cfg.modes())
+                Terminal::instance().addLog(std::to_string(index++) + " = " + mode.id + " - " + mode.name);
+        }
+    });
+    Terminal::instance().registerCommand({
+        "modepick", "Select a community mode; host only", "modepick <number>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) { Terminal::instance().addLog("[MODEPICK] Usage: modepick <number>"); return; }
+            auto& cfg = MimitaNet::CommunityServerConfig::instance();
+            if (cfg.modes().empty()) cfg.load();
+            const int index = std::atoi(args[0].c_str()) - 1;
+            if (index < 0 || index >= (int)cfg.modes().size()) { Terminal::instance().addLog("[MODEPICK] Invalid mode number"); return; }
+            const std::string id = cfg.modes()[(size_t)index].id;
+            if (MimitaNet::isServerHost()) MimitaNet::serverCommunitySetMode(id);
+            else if (::gpMpContext && ::gpMpContext->active) MimitaNet::mpSendServerCommand(*::gpMpContext, "modepick " + std::to_string(index + 1));
+            else { Terminal::instance().addLog("[MODEPICK] HOST ONLY"); return; }
+            Terminal::instance().addLog("[MODEPICK] selected " + id);
+        }
+    });
+    Terminal::instance().registerCommand({
+        "maplist", "List maps from assets/maps", "maplist",
+        [](const std::vector<std::string>&) {
+            const auto catalog = scanMapCatalog();
+            int index = 1;
+            for (const auto& map : catalog.maps)
+                Terminal::instance().addLog(std::to_string(index++) + " = " + map.displayName);
+        }
+    });
+    Terminal::instance().registerCommand({
+        "mapchange", "Change the community server map; host only", "mapchange <number>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) { Terminal::instance().addLog("[MAPCHANGE] Usage: mapchange <number>"); return; }
+            const auto catalog = scanMapCatalog();
+            const int index = std::atoi(args[0].c_str()) - 1;
+            if (index < 0 || index >= (int)catalog.maps.size()) { Terminal::instance().addLog("[MAPCHANGE] Invalid map number"); return; }
+            const std::string mapId = std::filesystem::path(catalog.maps[(size_t)index].assetPath).stem().string();
+            if (MimitaNet::isServerHost()) MimitaNet::serverDuelRequestMapChange(mapId);
+            else if (::gpMpContext && ::gpMpContext->active) MimitaNet::mpSendServerCommand(*::gpMpContext, "mapchange " + std::to_string(index + 1));
+            else { Terminal::instance().addLog("[MAPCHANGE] HOST ONLY"); return; }
+            Terminal::instance().addLog("[MAPCHANGE] requested " + mapId);
+        }
+    });
     auto registerDebugToggle = [](const char* name, bool& flag) {
         Terminal::instance().registerCommand({
             name, std::string("Toggle ") + name, std::string(name) + " [0|1]",

@@ -27,6 +27,7 @@ struct MainMenuResult
     bool logOut = false;
     bool enterSignInCode = false;
     bool goLogin = false;
+    bool goHelp = false;
 };
 
 MainMenuResult drawMainMenu(GLFWwindow* win);

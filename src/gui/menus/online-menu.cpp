@@ -11,6 +11,7 @@
 #include "../../network/coordinator-client.h"
 #include "../../network/server-browser.h"
 #include "../../network/server.h"
+#include "../../network/community-server-config.h"
 #include "../../auth/auth-system.h"
 #include <cstdio>
 #include <cstring>
@@ -344,6 +345,11 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
     b.set("server.map_placeholder", "funworld3");
     b.set("server.player_limit_placeholder", "999");
     b.set("server.map_items", mapItemsCache);
+    MimitaNet::CommunityServerConfig& communityConfig = MimitaNet::CommunityServerConfig::instance();
+    if (communityConfig.modes().empty()) communityConfig.load();
+    communityConfig.pollReload();
+    b.set("server.mode_items", communityConfig.modeItems());
+    b.set("server.weapon_set_items", communityConfig.weaponSetItems());
     // Log current map selection
     {
         static std::string lastMapSelection;
@@ -362,6 +368,18 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
 
         if (b.get("server.startup_npc_count").empty())
             b.set("server.startup_npc_count", "1");
+        if (b.get("server.mode").empty())
+            b.set("server.mode", "Sandbox");
+        if (b.get("server.weapon_set").empty())
+            b.set("server.weapon_set", "Set 1: Stable weapons");
+        if (b.get("server.weapon_set_description").empty())
+            b.set("server.weapon_set_description", communityConfig.weaponSetDescription(1));
+        if (b.get("server.auto_map_rotation").empty())
+            b.set("server.auto_map_rotation", "true");
+        if (b.get("server.map_rotation_minutes").empty())
+            b.set("server.map_rotation_minutes", "15");
+        if (b.get("server.discord_notification").empty())
+            b.set("server.discord_notification", "true");
 
         if (b.get("join.code_placeholder").empty())
             b.set("join.code_placeholder", "______");
@@ -375,6 +393,15 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
             "[ONLINE MENU] defaults initialized startupNpcs=%s npcCount=%s\n",
             b.get("server.startup_npcs").c_str(),
             b.get("server.startup_npc_count").c_str());
+    }
+
+    static std::string lastWeaponSet;
+    const std::string selectedWeaponSet = b.get("server.weapon_set");
+    if (selectedWeaponSet != lastWeaponSet && !selectedWeaponSet.empty()) {
+        lastWeaponSet = selectedWeaponSet;
+        int setId = selectedWeaponSet.rfind("Set ", 0) == 0
+            ? std::max(1, std::atoi(selectedWeaponSet.c_str() + 4)) : 1;
+        b.set("server.weapon_set_description", communityConfig.weaponSetDescription(setId));
     }
 
     GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/community-menu.json");

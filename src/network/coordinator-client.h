@@ -46,6 +46,7 @@ struct IceHostMetadata
     std::string gamemode = "sandbox";
     int maxPlayers = 999;
     bool passwordProtected = false;
+    bool discordNotification = true;
     std::string hostPlayerName;
     int port = 1357;
 };

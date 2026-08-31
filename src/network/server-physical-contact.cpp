@@ -9,6 +9,7 @@
 */
 
 #include "network/server.h"
+#include "network/server-duel.h"
 #include "network/network-weapons.h"
 #include "combat/weapon-execution.h"
 #include "combat/weapon-registry.h"
@@ -29,7 +30,7 @@ static const WeaponDefinition* equippedWeaponDefinition(const ServerPlayer& play
     for (const std::string& id : player.ownedWeaponIds)
     {
         const WeaponDefinition* def = WeaponRegistry::instance().get(id);
-        if (def && def->slot == player.equippedSlot)
+        if (def && def->slot == player.equippedSlot && serverCommunityWeaponAllowed(def->id))
             return def;
     }
     return nullptr;

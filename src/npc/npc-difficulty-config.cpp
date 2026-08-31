@@ -191,6 +191,7 @@ bool NpcDifficultyConfig::load(const std::string& path)
 
         mRoot = root;
         mData = next;
+        ++mRevision;
         mLastWrite = writeTime;
         Debug::warn(Debug::Category::NpcCombat,
             "[NPC DIFFICULTY] Loaded %s: maxErr=%.1fdeg diffScale=%.2f dmg=%.2fx fireDelay=[%.2f,%.2f] aggressionBonus=%.2f hitRadius=%.2f forceHit=%d panic=%d loadout=%zu mirror=%d\n",

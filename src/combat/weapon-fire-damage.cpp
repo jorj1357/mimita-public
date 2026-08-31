@@ -256,28 +256,29 @@ void processRemotePlayerHit(
         result.knockbackImpulse = victimKnockbackImpulse(def, shotDirection, kn);
     }
 
-    presentRemoteHit(def, hitEnd, hitNormal, shotDirection, nearest, hitPart,
-                     shooter.username, remoteVictim->username, totalDamage);
-
-    // Predict the victim's knockback instantly so the shooter sees the push
-    // immediately (the server's authoritative knockback corrects it if needed).
-    if (remoteVictim)
-        remoteVictim->externalImpulse += result.knockbackImpulse;
-
     const int hpBeforePrediction = remoteVictim
         ? remoteVictim->currentHp : totalDamage;
     const auto& prediction = NetworkingConfig::instance().data().prediction;
-    if (gpMpContext && gpMpContext->active && remoteVictim &&
-        prediction.predictDamage)
+    bool predictedApplied = false;
+    if (gpMpContext && gpMpContext->active && remoteVictim && !serverAuthHits())
     {
-        MimitaNet::mpApplyPredictedDamage(
+        predictedApplied = MimitaNet::mpApplyPredictedDamage(
             *gpMpContext, remoteTargetId, totalDamage, false);
+    }
+    if (predictedApplied)
+    {
+        // Predict knockback only with the same successful prediction that
+        // authorizes the hitmarker and damage overlay.
+        if (remoteVictim)
+            remoteVictim->externalImpulse += result.knockbackImpulse;
+        presentRemoteHit(def, hitEnd, hitNormal, shotDirection, nearest, hitPart,
+                         shooter.username, remoteVictim->username, totalDamage);
     }
 
     // Predicted kill: if this hit would drop the victim to 0 hp, show the
     // death immediately (gated by predict_deaths). The server's
     // DamageConfirmedEvent reconciles it.
-    if (prediction.predictDeaths &&
+    if (predictedApplied && prediction.predictDeaths &&
         remoteVictim && totalDamage >= hpBeforePrediction)
     {
         remoteVictim->killedByWeapon = def.displayName;
@@ -309,26 +310,18 @@ void processRemoteNpcHit(
         result.targetId = remoteNpcTargetId;
         result.targetIsRemoteNpc = true;
 
-        // Record the prediction timestamp so the server-confirm path can
-        // suppress the duplicate hitmarker/killfeed for the local shooter.
-        // In server-authoritative mode, skip this so the server path always
-        // shows feedback (no suppression window).
-        if (gpMpContext && gpMpContext->active && !serverAuthHits())
-        {
-            const uint64_t nowMsVal = static_cast<uint64_t>(
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now().time_since_epoch()).count());
-            gpMpContext->predictedNpcHitMs[remoteNpcTargetId] = nowMsVal;
-            gpMpContext->predictedNpcDamage[remoteNpcTargetId] = totalDamage;
-        }
-
         const glm::vec3 normal = glm::length(hitNormal) > 0.001f
             ? glm::normalize(hitNormal) : -shotDirection;
-        presentRemoteHit(def, hitEnd, normal, shotDirection, nearest, hitPart,
-                         shooter.username, remoteNpc->username, totalDamage);
 
-        // Predict the NPC knockback instantly (corrected by the server confirm).
+        const int hpBeforePrediction = remoteNpc->currentHp;
+        const auto& prediction = NetworkingConfig::instance().data().prediction;
+        bool predictedApplied = false;
+        if (gpMpContext && gpMpContext->active && !serverAuthHits())
+            predictedApplied = MimitaNet::mpApplyPredictedDamage(
+                *gpMpContext, remoteNpcTargetId, totalDamage, true);
+        if (predictedApplied)
         {
+            // Predict NPC knockback only after the damage overlay was accepted.
             const glm::vec3 hitDir = result.end - result.start;
             const float hitLen = glm::length(hitDir);
             if (hitLen > 0.001f)
@@ -339,18 +332,19 @@ void processRemoteNpcHit(
                 remoteNpc->externalImpulse +=
                     victimKnockbackImpulse(def, hitDir / hitLen, kn);
             }
+            const uint64_t nowMsVal = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count());
+            gpMpContext->predictedNpcHitMs[remoteNpcTargetId] = nowMsVal;
+            gpMpContext->predictedNpcDamage[remoteNpcTargetId] = totalDamage;
+            presentRemoteHit(def, hitEnd, normal, shotDirection, nearest, hitPart,
+                             shooter.username, remoteNpc->username, totalDamage);
         }
-
-        const int hpBeforePrediction = remoteNpc->currentHp;
-        const auto& prediction = NetworkingConfig::instance().data().prediction;
-        if (gpMpContext && gpMpContext->active && prediction.predictDamage)
-            MimitaNet::mpApplyPredictedDamage(
-                *gpMpContext, remoteNpcTargetId, totalDamage, true);
 
         // Predicted kill: the server NpcDamageEvent remains authoritative and
         // reconciles this (revive + disagreement if the server disagrees).
         // Gated by predict_deaths.
-        if (prediction.predictDeaths && totalDamage >= hpBeforePrediction)
+        if (predictedApplied && prediction.predictDeaths && totalDamage >= hpBeforePrediction)
         {
             remoteNpc->killedByWeapon = def.displayName;
             remoteNpc->lastDamagedBy = shooter.username;
@@ -382,7 +376,8 @@ void processRemoteBlastHitFeedback(
     uint32_t targetId,
     bool isNpc,
     Player& target,
-    int damage)
+    int damage,
+    uint32_t predictionSerial)
 {
     if (target.dead || target.currentHp <= 0)
         return;
@@ -392,12 +387,30 @@ void processRemoteBlastHitFeedback(
         ? glm::normalize(blastDir) : glm::vec3(0.0f, 0.0f, -1.0f);
     const int hpBefore = target.currentHp;
 
+    bool predictedApplied = false;
+    if (gpMpContext && gpMpContext->active && !serverAuthHits())
+        predictedApplied = MimitaNet::mpApplyPredictedDamage(
+            *gpMpContext, targetId, damage, isNpc);
+    if (!predictedApplied)
+    {
+        Debug::log(Debug::Category::Weapons,
+            "[REMOTE BLAST PREDICT REJECTED] target=%u npc=%d damage=%d serial=%u reason=no-authoritative-local-prediction",
+            targetId, (int)isNpc, damage, predictionSerial);
+        return;
+    }
+
+    if (isNpc)
+    {
+        const uint64_t nowMsVal = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+        gpMpContext->predictedNpcHitMs[targetId] = nowMsVal;
+        gpMpContext->predictedNpcDamage[targetId] = damage;
+    }
     presentRemoteHit(def, hitEnd, normal, -normal, 1.0f, "torso",
                      shooterName, target.username, damage);
 
     const auto& prediction = NetworkingConfig::instance().data().prediction;
-    if (gpMpContext && gpMpContext->active && prediction.predictDamage)
-        MimitaNet::mpApplyPredictedDamage(*gpMpContext, targetId, damage, isNpc);
 
     if (prediction.predictDeaths && damage >= hpBefore)
     {

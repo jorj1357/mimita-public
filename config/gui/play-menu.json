@@ -23,7 +23,8 @@
       "text": "COMPETITIVE DUELS",
       "fontSize": 0.38,
       "textColor": [1, 1, 1, 1],
-      "backgroundColor": [0.65, 0.12, 0.08, 1.0]
+      "backgroundColor": [0.65, 0.12, 0.08, 1.0],
+      "visible": false
     },
     {
       "id": "competitiveDesc",
@@ -34,7 +35,8 @@
       "height": 24,
       "text": "Ranked account matchmaking.",
       "fontSize": 0.32,
-      "textColor": [0.72, 0.78, 0.88, 1.0]
+      "textColor": [0.72, 0.78, 0.88, 1.0],
+      "visible": false
     },
     {
       "id": "competitiveGate",
@@ -58,7 +60,8 @@
       "text": "DUELS",
       "fontSize": 0.42,
       "textColor": [1, 1, 1, 1],
-      "backgroundColor": [0.9, 0.28, 0.12, 1.0]
+      "backgroundColor": [0.9, 0.28, 0.12, 1.0],
+      "visible": false
     },
     {
       "id": "duelsDesc",
@@ -69,7 +72,8 @@
       "height": 24,
       "text": "Fast 1v1 and PvE combat.",
       "fontSize": 0.32,
-      "textColor": [0.72, 0.78, 0.88, 1.0]
+      "textColor": [0.72, 0.78, 0.88, 1.0],
+      "visible": false
     },
     {
       "id": "queueDuelsButton",
@@ -81,7 +85,8 @@
       "text": "QUEUE DUELS",
       "fontSize": 0.45,
       "textColor": [1, 1, 1, 1],
-      "backgroundColor": [0.5, 0.0, 0.0, 1.0]
+      "backgroundColor": [0.5, 0.0, 0.0, 1.0],
+      "visible": false
     },
     {
       "id": "queueDuelsDesc",
@@ -92,7 +97,8 @@
       "height": 24,
       "text": "Auto-match any map. No account needed!!!!!!!!!",
       "fontSize": 0.38,
-      "textColor": [0.72, 0.78, 0.88, 1.0]
+      "textColor": [0.72, 0.78, 0.88, 1.0],
+      "visible": false
     },
     {
       "id": "bombTagButton",

@@ -1,4 +1,4 @@
-// 07 21 2026, 21 30
+// 08 31 2026, 17 14
 /* purpose
 * Handles authoritative generic AttackRequest validation and execution dispatch.
 * Routes hitscan, physical-contact, and projectile weapon definitions through one request path.
@@ -11,6 +11,7 @@
 #include "network/server.h"
 #include "network/packets.h"
 #include "network/network-weapons.h"
+#include "network/server-duel.h"
 #include "network/disagreement-visuals.h"
 #include "combat/weapon-execution.h"
 #include "combat/weapon-registry.h"
@@ -336,6 +337,17 @@ void handleAttackRequest(
                    shooter.id, req->requestId, wepId->c_str());
         emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
                             shooter, req->requestId, "UNKNOWN WEAPON");
+        sendAttackResult(sock, shooter, req, tick, false, 7, 0, -1, -1, 0, 0);
+        return;
+    }
+
+    if (!serverCommunityWeaponAllowed(def->id))
+    {
+        Debug::log(Debug::Category::Weapons,
+            "[COMMUNITY WEAPON REJECT] playerId=%u requestId=%u weapon=%s reason=weapon-set\n",
+            shooter.id, req->requestId, def->id.c_str());
+        emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
+                            shooter, req->requestId, "WEAPON SET DISABLED");
         sendAttackResult(sock, shooter, req, tick, false, 7, 0, -1, -1, 0, 0);
         return;
     }
@@ -1120,6 +1132,7 @@ void handleAttackRequest(
             handleGenericProjectileAttack(
                 sock, players, npcs, projectiles, nextProjectileId,
                 shooter, *def, req->requestId, origin, direction,
+                req->clientSimulationTick,
                 tick, totalPacketsOut);
         sendAttackResult(sock, shooter, req, tick,
                          projectileResult.accepted,

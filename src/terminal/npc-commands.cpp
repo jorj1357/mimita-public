@@ -7,8 +7,11 @@
 */
 
 #include <cstdio>
+#include <cstdlib>
+#include <algorithm>
 #include <string>
 #include <vector>
+#include <filesystem>
 #include "devtools/terminal.h"
 #include "terminal/terminal-state.h"
 #include "npc/npc.h"
@@ -17,6 +20,8 @@
 #include "devtools/dev-npc-selection.h"
 #include "physics/config.h"
 #include "network/net_mode.h"
+#include "network/server.h"
+#include "network/multiplayer-context.h"
 #include "game/spawn-utils.h"
 
 void registerNpcCommands()
@@ -72,9 +77,60 @@ void registerNpcCommands()
     Terminal::instance().registerCommand({
         "npc_delete_all", "Delete every NPC", "npc_delete_all",
         [](const std::vector<std::string>&) {
+            if (!MimitaNet::isServerHost()) {
+                if (::gpMpContext && ::gpMpContext->active) {
+                    MimitaNet::mpSendServerCommand(*::gpMpContext, "npc_delete_all");
+                    Terminal::instance().addLog("[NPC COMMAND] sent to host");
+                } else {
+                    Terminal::instance().addLog("[NPC COMMAND] HOST ONLY");
+                }
+                return;
+            }
             NpcSystem& npcSystem = THE_NPC_SYSTEM;
             npcSystem.destroyAll();
             Terminal::instance().addLog("[NPC COMMAND] npc_delete_all");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "npcdifflist", "List JSON NPC difficulty presets", "npcdifflist",
+        [](const std::vector<std::string>&) {
+            std::vector<std::filesystem::path> presets;
+            std::error_code ec;
+            for (const auto& entry : std::filesystem::directory_iterator("config/npcpresets", ec))
+                if (entry.is_regular_file(ec) && entry.path().extension() == ".json") presets.push_back(entry.path());
+            std::sort(presets.begin(), presets.end());
+            for (size_t i = 0; i < presets.size(); ++i)
+                Terminal::instance().addLog(std::to_string(i + 1) + " = " + presets[i].filename().string());
+        }
+    });
+    Terminal::instance().registerCommand({
+        "npcdiffload", "Load an NPC difficulty preset; host only", "npcdiffload <number>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) { Terminal::instance().addLog("[NPC DIFFICULTY] Usage: npcdiffload <number>"); return; }
+            if (!MimitaNet::isServerHost()) {
+                if (::gpMpContext && ::gpMpContext->active) {
+                    MimitaNet::mpSendServerCommand(*::gpMpContext, "npcdiffload " + args[0]);
+                    Terminal::instance().addLog("[NPC DIFFICULTY] sent to host");
+                } else Terminal::instance().addLog("[NPC DIFFICULTY] HOST ONLY");
+                return;
+            }
+            std::vector<std::filesystem::path> presets;
+            std::error_code ec;
+            for (const auto& entry : std::filesystem::directory_iterator("config/npcpresets", ec))
+                if (entry.is_regular_file(ec) && entry.path().extension() == ".json") presets.push_back(entry.path());
+            std::sort(presets.begin(), presets.end());
+            const int index = std::atoi(args[0].c_str()) - 1;
+            if (index < 0 || index >= (int)presets.size()) {
+                Terminal::instance().addLog("[NPC DIFFICULTY] Invalid preset number");
+                return;
+            }
+            if (NpcDifficultyConfig::instance().load(presets[(size_t)index].string()))
+            {
+                NpcSystem& npcSystem = THE_NPC_SYSTEM;
+                npcSystem.refreshDifficultyTuning();
+                Terminal::instance().addLog("[NPC DIFFICULTY] loaded " + presets[(size_t)index].filename().string());
+            }
+            else Terminal::instance().addLog("[NPC DIFFICULTY] load failed");
         }
     });
     Terminal::instance().registerCommand({

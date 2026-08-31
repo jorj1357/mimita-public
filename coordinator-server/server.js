@@ -1,4 +1,14 @@
+// 08 31 2026, 19 10
+/* purpose
+* Owns public community-server room registration, discovery, and ICE signaling.
+* Announces newly registered community servers to the configured MiMITA Discord webhook.
+* Keeps webhook credentials in the coordinator environment and never sends them to clients.
+* Does NOT host game simulation, authenticate gameplay packets, or own client UI.
+* Does NOT announce rooms whose host explicitly disabled Discord notifications.
+*/
+
 const http = require("http");
+const https = require("https");
 const crypto = require("crypto");
 
 const fs = require("fs");
@@ -12,6 +22,11 @@ if (!process.env.MIMITA_TURN_SECRET && fs.existsSync(envPath)) {
     if (match) {
         process.env.MIMITA_TURN_SECRET = match[1].trim();
     }
+}
+if (!process.env.MIMITA_DISCORD_WEBHOOK_URL && fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, "utf8");
+    const match = envContent.match(/^MIMITA_DISCORD_WEBHOOK_URL=(.+)$/m);
+    if (match) process.env.MIMITA_DISCORD_WEBHOOK_URL = match[1].trim().replace(/^['\"]|['\"]$/g, "");
 }
 
 const PORT = process.env.COORDINATOR_PORT || 3001;
@@ -254,6 +269,45 @@ function roomToBrowserEntry(room) {
     };
 }
 
+function announceDiscordServerLive(room) {
+    if (room.discord_notification === false) {
+        console.log("[DISCORD SERVER ANNOUNCE] disabled code=" + room.code);
+        return;
+    }
+    const webhookUrl = process.env.MIMITA_DISCORD_WEBHOOK_URL || "";
+    if (!webhookUrl) {
+        console.log("[DISCORD SERVER ANNOUNCE] skipped code=" + room.code + " reason=webhook-not-configured");
+        return;
+    }
+
+    let target;
+    try {
+        target = new URL(webhookUrl);
+    } catch (error) {
+        console.error("[DISCORD SERVER ANNOUNCE] invalid webhook URL: " + error.message);
+        return;
+    }
+    const payload = JSON.stringify({
+        content: "MiMITA server " + room.server_name + " is live at " +
+            new Date().toISOString() + " UTC. Join it with this code " + room.code + "."
+    });
+    const client = target.protocol === "https:" ? https : http;
+    const request = client.request(target, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(payload)
+        },
+        timeout: 5000
+    }, response => {
+        response.resume();
+        console.log("[DISCORD SERVER ANNOUNCE] code=" + room.code + " status=" + response.statusCode);
+    });
+    request.on("error", error =>
+        console.error("[DISCORD SERVER ANNOUNCE] code=" + room.code + " failed=" + error.message));
+    request.end(payload);
+}
+
 const routes = {
     // ── Standard room registration ──
     "/api/coordinator/register": async (req, res) => {
@@ -362,6 +416,7 @@ const routes = {
             players: body.players || 0,
             max_players: body.max_players || 999,
             password_protected: !!body.password_protected,
+            discord_notification: body.discord_notification !== false,
             started_at: Date.now(),
             last_heartbeat: Date.now(),
             join_tokens: [joinToken],
@@ -369,6 +424,7 @@ const routes = {
             connections: new Map()    // requestId -> connection object
         });
         console.log("[ICE ROOM REGISTER] code=" + code + " name=\"" + (body.server_name || "") + "\" players=" + (body.players || 0) + " descBytes=" + (body.ice_description || "").length);
+        announceDiscordServerLive(rooms.get(code));
         json(res, 200, {
             ok: true,
             room_code: code,

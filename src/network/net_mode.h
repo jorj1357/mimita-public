@@ -36,6 +36,11 @@ struct LaunchOptions
     bool udpEcho = false;
     bool duel = false;
     std::string gamemodeId = "duel";
+    std::string gameMode = "sandbox";
+    int weaponSetId = 1;
+    bool autoMapRotation = true;
+    uint32_t mapRotationMinutes = 15;
+    bool discordNotification = true;
 };
 
 LaunchOptions parseLaunchOptions(int argc, char** argv);

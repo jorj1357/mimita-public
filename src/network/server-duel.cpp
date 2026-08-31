@@ -19,6 +19,7 @@
 #include "network/server.h"
 #include "npc/npc.h"
 #include "debug/debug-log.h"
+#include "network/community-server-config.h"
 
 namespace MimitaNet {
 
@@ -32,6 +33,14 @@ void serverDuelStart(const ServerDuelState& rules)
 {
     ServerDuelState& d = serverDuelState();
     d.enabled = true;
+    d.mapOnly = false;
+    d.communityMode = "sandbox";
+    d.communityWeaponSetId = 1;
+    d.communityScores.clear();
+    d.communityTeams.clear();
+    d.communityTeamScore[0] = d.communityTeamScore[1] = 0;
+    d.communityRoundOver = false;
+    d.communityRoundResetMs = 0;
     d.phase = DUEL_PHASE_WAITING;
     d.matchOver = false;
     d.scoreA = 0;
@@ -60,11 +69,77 @@ void serverDuelStart(const ServerDuelState& rules)
     d.usedMaps.insert(rules.mapId); // avoid immediately re-picking the launch map
     d.hasPendingManualMap = false;
     d.pendingManualMap.clear();
+    d.autoMapRotation = false;
+    d.mapRotationMinutes = 15;
+    d.nextMapRotationMs = 0;
+    d.mapChangeCountdownStartMs = 0;
+    d.pendingAutomaticMap.clear();
     Debug::warn(Debug::Category::Duel,
         "[DUEL SERVER] enabled goal=%d countdown=%.1fs rematch=%.1fs teams=%s/%s rotate=%d pool=%zu offset=%.1f\n",
         d.goalValue, d.countdownSeconds, d.rematchSeconds,
         d.teamAName.c_str(), d.teamBName.c_str(), (int)d.rotateMaps, d.mapPool.size(),
         d.spawnOffsetRadius);
+}
+
+void serverCommunityMapStart(const std::vector<std::string>& mapPool,
+                             const std::string& mapId,
+                             bool autoRotation,
+                             uint32_t rotationMinutes,
+                             int weaponSetId)
+{
+    ServerDuelState rules;
+    rules.mapPool = mapPool;
+    rules.mapId = mapId;
+    rules.rotateMaps = false;
+    rules.mapOnly = true;
+    rules.autoMapRotation = autoRotation;
+    rules.mapRotationMinutes = std::clamp(rotationMinutes, 1u, 9999u);
+    serverDuelStart(rules);
+    ServerDuelState& state = serverDuelState();
+    state.mapOnly = true;
+    state.communityMode = "sandbox";
+    state.communityWeaponSetId = std::max(1, weaponSetId);
+    state.autoMapRotation = rules.autoMapRotation;
+    state.mapRotationMinutes = rules.mapRotationMinutes;
+    state.nextMapRotationMs = nowMs() + (uint64_t)state.mapRotationMinutes * 60000ull;
+    Debug::warn(Debug::Category::Networking,
+        "[COMMUNITY MAP RUNTIME] map=%s auto=%d intervalMinutes=%u pool=%zu\n",
+        mapId.c_str(), (int)autoRotation, state.mapRotationMinutes, mapPool.size());
+}
+
+void serverCommunitySetWeaponSet(int weaponSetId)
+{
+    ServerDuelState& state = serverDuelState();
+    if (!state.enabled || !state.mapOnly) return;
+    CommunityServerConfig& config = CommunityServerConfig::instance();
+    if (config.weaponSets().empty()) config.load();
+    if (!config.weaponSetById(weaponSetId)) return;
+    state.communityWeaponSetId = weaponSetId;
+    Debug::warn(Debug::Category::Networking,
+        "[COMMUNITY WEAPON SET] selected=%d\n", state.communityWeaponSetId);
+}
+
+bool serverCommunityWeaponAllowed(const std::string& weaponId)
+{
+    const ServerDuelState& state = serverDuelState();
+    if (!state.mapOnly) return true;
+    CommunityServerConfig& config = CommunityServerConfig::instance();
+    if (config.weaponSets().empty()) config.load();
+    return config.weaponAllowed(state.communityWeaponSetId, weaponId);
+}
+
+void serverCommunitySetMode(const std::string& modeId)
+{
+    ServerDuelState& state = serverDuelState();
+    if (!state.enabled || !state.mapOnly || modeId.empty()) return;
+    state.communityMode = modeId;
+    state.communityScores.clear();
+    state.communityTeams.clear();
+    state.communityTeamScore[0] = state.communityTeamScore[1] = 0;
+    state.communityRoundOver = false;
+    state.communityRoundResetMs = 0;
+    Debug::warn(Debug::Category::Networking,
+        "[COMMUNITY MODE] selected=%s\n", state.communityMode.c_str());
 }
 
 namespace {
@@ -288,6 +363,32 @@ void broadcastMapChange(SOCKET sock,
     }
 }
 
+void broadcastCommunityNotification(
+    SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    const std::string& message,
+    uint16_t durationTicks,
+    uint64_t& totalPacketsOut)
+{
+    ServerNotificationPacket packet{};
+    packet.header.type = PACKET_SERVER_NOTIFICATION;
+    packet.eventId = nextReliableGameplayEventId();
+    packet.eventSessionId = serverReliableEventSessionId();
+    packet.durationTicks = durationTicks;
+    std::strncpy(packet.title, "MiMITA Server", sizeof(packet.title) - 1);
+    std::strncpy(packet.message, message.c_str(), sizeof(packet.message) - 1);
+    for (auto& kv : players) {
+        if (kv.second.spawnState != ServerPlayer::Active) continue;
+        const ReliableGameplayEventQueueResult result = queueReliableGameplayEventToPlayer(
+            sock, kv.second, &packet, sizeof(packet), packet.eventId,
+            reliableGameplayEventSessionForPlayer(kv.second), totalPacketsOut);
+        Debug::log(Debug::Category::Networking,
+            "[SERVER NOTIFICATION SEND] player=%u queued=%d message=%s\n",
+            kv.second.id, result == ReliableGameplayEventQueueResult::Queued,
+            message.c_str());
+    }
+}
+
 // Load a map into a fresh temp world; true only if it loads AND has real
 // spawn points, so players always anchor at spawn points, never under the map.
 bool tryLoadDuelMap(const std::string& mapId, HeadlessWorld& out)
@@ -409,6 +510,116 @@ void serverDuelTick(SOCKET sock,
 {
     ServerDuelState& d = serverDuelState();
     if (!d.enabled) return;
+    if (d.mapOnly)
+    {
+        const uint64_t now = nowMs();
+        if (d.communityRoundOver && now >= d.communityRoundResetMs) {
+            d.communityRoundOver = false;
+            d.communityScores.clear();
+            d.communityTeamScore[0] = d.communityTeamScore[1] = 0;
+            Debug::log(Debug::Category::Networking, "[COMMUNITY MATCH] new round mode=%s\n", d.communityMode.c_str());
+        }
+        if (d.hasPendingKill) {
+            const uint32_t killer = d.pendingKillerId;
+            d.hasPendingKill = false;
+            if (!d.communityRoundOver && killer != 0) {
+                if (d.communityMode == "team_deathmatch") {
+                    std::vector<uint32_t> ids;
+                    for (const auto& kv : players)
+                        if (kv.second.spawnState == ServerPlayer::Active) ids.push_back(kv.first);
+                    std::sort(ids.begin(), ids.end());
+                    for (size_t i = 0; i < ids.size(); ++i)
+                        d.communityTeams[ids[i]] = (int)(i % 2);
+                    const auto teamIt = d.communityTeams.find(killer);
+                    if (teamIt != d.communityTeams.end()) {
+                        const int team = teamIt->second;
+                        if (++d.communityTeamScore[team] >= 30) {
+                            d.communityRoundOver = true;
+                            const std::string message = "Team " + std::to_string(team + 1) +
+                                " wins Team Deathmatch (30 kills)!";
+                            broadcastCommunityNotification(sock, players, message, 300, totalPacketsOut);
+                            d.communityRoundResetMs = now + 5000;
+                        }
+                    }
+                } else if (d.communityMode == "free_for_all") {
+                    const int score = ++d.communityScores[killer];
+                    if (score >= 20) {
+                        d.communityRoundOver = true;
+                        const auto winner = players.find(killer);
+                        const std::string name = winner == players.end() ? "Player" : winner->second.name;
+                        const std::string message = name + " wins Free For All (20 kills)!";
+                        broadcastCommunityNotification(sock, players, message, 300, totalPacketsOut);
+                        d.communityRoundResetMs = now + 5000;
+                    }
+                }
+            }
+        }
+        if (d.hasPendingManualMap && d.pendingAutomaticMap.empty()) {
+            d.pendingAutomaticMap = d.pendingManualMap;
+            d.pendingManualMap.clear();
+            d.hasPendingManualMap = false;
+            d.mapChangeCountdownStartMs = now;
+        }
+        if (d.autoMapRotation && d.pendingAutomaticMap.empty() && now >= d.nextMapRotationMs) {
+            std::vector<std::string> candidates;
+            for (const auto& candidate : d.mapPool)
+                if (candidate != d.mapId && !d.usedMaps.count(candidate)) candidates.push_back(candidate);
+            if (candidates.empty()) {
+                d.usedMaps.clear();
+                d.usedMaps.insert(d.mapId);
+                for (const auto& candidate : d.mapPool)
+                    if (candidate != d.mapId) candidates.push_back(candidate);
+            }
+            if (!candidates.empty()) {
+                d.pendingAutomaticMap = candidates.front();
+                d.mapChangeCountdownStartMs = now;
+                Debug::warn(Debug::Category::Networking,
+                    "[COMMUNITY MAP ROTATION] current=%s next=%s\n",
+                    d.mapId.c_str(), d.pendingAutomaticMap.c_str());
+            } else {
+                d.nextMapRotationMs = now + (uint64_t)d.mapRotationMinutes * 60000ull;
+            }
+        }
+        if (!d.pendingAutomaticMap.empty()) {
+            const uint64_t elapsed = now - d.mapChangeCountdownStartMs;
+            const uint64_t interval = 30000;
+            const uint64_t remaining = elapsed >= interval ? 0 : interval - elapsed;
+            static std::string lastNoticeMap;
+            static uint32_t lastNotice = UINT32_MAX;
+            if (lastNoticeMap != d.pendingAutomaticMap) {
+                lastNoticeMap = d.pendingAutomaticMap;
+                lastNotice = UINT32_MAX;
+            }
+            const uint32_t seconds = (uint32_t)((remaining + 999) / 1000);
+            if (remaining > 0 && remaining <= interval &&
+                (seconds == 30 || seconds == 5 || seconds == 3 || seconds == 2 || seconds == 1) &&
+                seconds != lastNotice) {
+                lastNotice = seconds;
+                std::string msg = "Server changing map to " + d.pendingAutomaticMap +
+                                  " in " + std::to_string(seconds) + " sec...";
+                broadcastCommunityNotification(sock, players, msg, 180, totalPacketsOut);
+                Debug::warn(Debug::Category::Networking, "[COMMUNITY MAP NOTICE] %s\n", msg.c_str());
+            }
+            if (remaining == 0) {
+                const std::string next = d.pendingAutomaticMap;
+                d.pendingAutomaticMap.clear();
+                lastNoticeMap.clear();
+                lastNotice = UINT32_MAX;
+                if (reloadDuelMap(sock, d, players, world, npcWorld, next, totalPacketsOut)) {
+                    d.nextMapRotationMs = now + (uint64_t)d.mapRotationMinutes * 60000ull;
+                    npcSystem.destroyAll();
+                    npcs.clear();
+                    npcIdsAlive.clear();
+                    Debug::warn(Debug::Category::Networking,
+                        "[COMMUNITY MAP CHANGE] loaded=%s nextRotationMs=%llu\n",
+                        next.c_str(), (unsigned long long)d.nextMapRotationMs);
+                } else {
+                    d.nextMapRotationMs = now + 5000;
+                }
+            }
+        }
+        return;
+    }
     (void)tick;
 
     // Host-only changemap command: swap the map live on the next tick.

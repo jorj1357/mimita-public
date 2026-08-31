@@ -335,6 +335,28 @@ static void processSnapshotEntities(
         Player& p = (*replicas)[entity.networkEntityId];
         bool isNew = !existsBefore;
         EntityInterpolationState& interpolation = (*interpolationMap)[entity.networkEntityId];
+        const bool npcNewLife = entity.entityType == ENTITY_NPC && existsBefore &&
+            entity.transformEpoch != 0 &&
+            interpolation.lastSnapshotTransformEpoch != 0 &&
+            entity.transformEpoch != interpolation.lastSnapshotTransformEpoch;
+        if (npcNewLife)
+        {
+            // A reused NPC id is a new life, not a continuation of the old
+            // prediction. Drop old damage/death overlays before this snapshot
+            // can render the respawned body.
+            ctx.predictedNpcHitMs.erase(entity.networkEntityId);
+            ctx.predictedNpcDamage.erase(entity.networkEntityId);
+            interpolation.pendingPredictedDamage = 0;
+            interpolation.predictedHealthCap = -1;
+            interpolation.predictedHealthUpdatedMs = 0;
+            p.netPredictedDead = false;
+            p.dead = false;
+            Debug::warn(Debug::Category::Networking,
+                "[NPC LIFE RESET] npcId=%u oldEpoch=%u newEpoch=%u reason=respawn",
+                entity.networkEntityId,
+                (unsigned)interpolation.lastSnapshotTransformEpoch,
+                (unsigned)entity.transformEpoch);
+        }
         if (isNew)
         {
             if (entity.entityType != ENTITY_NPC)
@@ -478,6 +500,8 @@ static void processSnapshotEntities(
                        interp.missingTracker.confirmations);
                 it = ctx.remoteNpcs.erase(it);
                 ctx.remoteNpcInterpolation.erase(eid);
+                ctx.predictedNpcHitMs.erase(eid);
+                ctx.predictedNpcDamage.erase(eid);
             }
             else
             {
@@ -607,6 +631,11 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
     ctx.predictedProjectileIds.clear();
     ctx.predictedExplosions.clear();
     ctx.predictedSelfKnockbacks.clear();
+    ctx.predictedNpcHitMs.clear();
+    ctx.predictedNpcDamage.clear();
+    ctx.clientSimulationAccumulator = 0.0;
+    ctx.clientSimulationTick = 0;
+    ctx.clientSimulationStepsThisUpdate = 0;
     ctx.pendingFireRequests.clear();
     ctx.pendingReloadRequests.clear();
     ctx.fireRejections.clear();
@@ -618,6 +647,28 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
 
 void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input, const World& world)
 {
+    // Network gameplay prediction advances on the same fixed 60 Hz clock as
+    // server collision/damage. Render FPS and a bad connection must not change
+    // how many projectile collision steps are simulated.
+    constexpr double kClientSimulationDt = 1.0 / 60.0;
+    ctx.clientSimulationAccumulator += std::max(0.0, (double)dt);
+    ctx.clientSimulationStepsThisUpdate = 0;
+    while (ctx.clientSimulationAccumulator >= kClientSimulationDt &&
+           ctx.clientSimulationStepsThisUpdate < 5)
+    {
+        ctx.clientSimulationAccumulator -= kClientSimulationDt;
+        ++ctx.clientSimulationTick;
+        ++ctx.clientSimulationStepsThisUpdate;
+    }
+    if (ctx.clientSimulationStepsThisUpdate == 5 &&
+        ctx.clientSimulationAccumulator >= kClientSimulationDt)
+        ctx.clientSimulationAccumulator = kClientSimulationDt;
+
+    Debug::logThrottled(Debug::Category::Networking, "client-fixed-step", 1.0,
+        "[CLIENT FIXED STEP] tick=%u steps=%u accumulator=%.5f hz=60\n",
+        ctx.clientSimulationTick, ctx.clientSimulationStepsThisUpdate,
+        ctx.clientSimulationAccumulator);
+
     // ── Async ICE connect job ───────────────────────────────────────────
     // The ICE connect runs on a background thread; poll it every frame so the
     // game never blocks. Progress messages surface on the HUD via
@@ -806,6 +857,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.clientMapReadySent = false;
             ctx.clientMapReadySentForMap.clear();
             ctx.clientMapReadySentForPlayerId = 0;
+            ctx.mapLoadAttempts = 0;
+            ctx.lastMapLoadAttemptMs = 0;
             // Reset reconciliation state for new connection
             ctx.hasLocalServerPosition = false;
             ctx.localPlayerReconciled = false;
@@ -847,6 +900,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.clientMapReadySent = false;
             ctx.clientMapReadySentForMap.clear();
             ctx.clientMapReadySentForPlayerId = 0;
+            ctx.mapLoadAttempts = 0;
+            ctx.lastMapLoadAttemptMs = 0;
             // Reset reconciliation state for new connection
             ctx.hasLocalServerPosition = false;
             ctx.localPlayerReconciled = false;
@@ -1154,7 +1209,24 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.clientMapReadySent = false;
             ctx.clientMapReadySentForMap.clear();
             ctx.clientMapReadySentForPlayerId = 0;
+            ctx.mapLoadAttempts = 0;
+            ctx.lastMapLoadAttemptMs = 0;
             DuelQueue::instance().onMapChange(mc->mapId, mc->duelId, mc->mapVersion);
+        }
+        else if (header->type == PACKET_SERVER_NOTIFICATION &&
+                 bytes >= (int)sizeof(ServerNotificationPacket))
+        {
+            const ServerNotificationPacket* notification =
+                reinterpret_cast<const ServerNotificationPacket*>(buffer);
+            if (!mpAcceptReliableEventOnce(ctx, notification->eventId,
+                                           notification->eventSessionId))
+                return;
+            NotificationSystem::instance().push(
+                notification->title, notification->message,
+                notification->durationTicks, {});
+            Debug::log(Debug::Category::Networking,
+                "[SERVER NOTIFICATION] title=%s message=%s\n",
+                notification->title, notification->message);
         }
         else if (header->type == PACKET_RELOAD_RESULT &&
                  bytes >= (int)sizeof(ReloadResultPacket))
@@ -1784,7 +1856,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.nextInputCommandSequence = 1;
         in.clientSimulationTick = input->movementSimulationTick != 0
             ? input->movementSimulationTick
-            : ctx.tick;
+            : ctx.clientSimulationTick;
         in.spawnGeneration = ctx.lastKnownSpawnGeneration;
         in.transformEpoch = ctx.transformEpoch;
         in.movementFlags = movementReportFlagsFromMpInput(*input);

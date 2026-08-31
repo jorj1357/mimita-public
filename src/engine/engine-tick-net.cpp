@@ -405,13 +405,18 @@ void engineTickNet(Engine& engine, float dt)
         // mpTick() already ran above — heartbeats and packets keep flowing.
         {
             using namespace MimitaNet;
+            const uint64_t now = MimitaNet::nowMs();
+            const bool mapLoadRetryDue = mpContext.lastMapLoadAttemptMs == 0 ||
+                now - mpContext.lastMapLoadAttemptMs >= 500;
             const bool needsLoad = !mpContext.requiredMapId.empty() && worldLoaded &&
                 !mapIdsReferToSameMap(ACTIVE_MAP_PATH, mpContext.requiredMapId) &&
-                !mpContext.waitingForMapLoad;
+                !mpContext.waitingForMapLoad && mapLoadRetryDue;
 
             if (needsLoad)
             {
                 mpContext.waitingForMapLoad = true;
+                mpContext.lastMapLoadAttemptMs = now;
+                ++mpContext.mapLoadAttempts;
                 std::string requiredPath = "assets/maps/" + mpContext.requiredMapId + ".glb";
                 printf("[NET MAP REQUIRED] mapId=%s path=%s loadingMap=1\n",
                        mpContext.requiredMapId.c_str(), requiredPath.c_str());
@@ -420,16 +425,19 @@ void engineTickNet(Engine& engine, float dt)
                 bool loadOk = loadWorldFromGLB(world, requiredPath.c_str());
                 if (loadOk)
                 {
+                    const std::string oldMap = ACTIVE_MAP_PATH;
                     ACTIVE_MAP_PATH = requiredPath;
                     WORLD_LOADED = true;
-                    printf("[CLIENT MAP SWITCH] old=%s new=%s\n",
-                           ACTIVE_MAP_PATH.c_str(), requiredPath.c_str());
+                    mpContext.mapLoadAttempts = 0;
+                    printf("[CLIENT MAP SWITCH] old=%s new=%s attempts=%u\n",
+                           oldMap.c_str(), requiredPath.c_str(), mpContext.mapLoadAttempts);
                     player.reset();
                     DeathGhostSystem::instance().clear();  // old map positions invalid
                 }
                 else
                 {
-                    printf("[CLIENT MAP ERROR] failed to load map=%s\n", requiredPath.c_str());
+                    printf("[CLIENT MAP ERROR] failed to load map=%s attempt=%u retryMs=500\n",
+                           requiredPath.c_str(), mpContext.mapLoadAttempts);
                 }
                 GAME_STATE = GAME_PLAYING;
                 mpContext.waitingForMapLoad = false;

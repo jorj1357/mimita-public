@@ -36,6 +36,7 @@ struct WeaponCollisionGeneratedSpheresConfig {
 
 struct WeaponCollisionEntry {
     bool enabled = true;
+    bool visible = false;        // show capsule wireframes in-game (from JSON "visible" field)
     bool collidesWithWorld = true;
     float collisionSkin = 0.05f;
     std::string source = "capsule";  // "capsule" (default, single smooth capsule) or "json" (legacy spheres)

@@ -1,4 +1,4 @@
-// 07 19 2026, 09 29
+// 08 31 2026, 17 14
 /* purpose
 * Authoritative server projectile spawn, simulation, damage, and replication.
 * Validates projectile fire requests and owns server-created projectile state.
@@ -11,6 +11,7 @@
 #include "network/server.h"
 #include "network/network-weapons.h"
 #include "debug/structured-log.h"
+#include "debug/debug-log.h"
 
 #include <algorithm>
 #include <chrono>
@@ -399,13 +400,15 @@ public:
                               const std::unordered_map<uint32_t, ServerNpc>& npcs,
                               uint32_t ownerPlayerId,
                               uint32_t ownerNpcId,
-                              bool skipOwner)
+                              bool skipOwner,
+                              uint32_t targetTick = 0)
         : mWorld(world),
           mPlayers(players),
           mNpcs(npcs),
           mOwnerPlayerId(ownerPlayerId),
           mOwnerNpcId(ownerNpcId),
-          mSkipOwner(skipOwner)
+          mSkipOwner(skipOwner),
+          mTargetTick(targetTick)
     {
     }
 
@@ -454,9 +457,12 @@ public:
             SweptPlayerCapsule cap;
             cap.playerId = player.id;
             cap.spawnGeneration = player.spawnGeneration;
-            cap.a = player.pos + glm::vec3(0.0f, 0.0f,
+            glm::vec3 targetPos = player.pos;
+            if (mTargetTick != 0)
+                getPositionAtTick(player, mTargetTick, targetPos);
+            cap.a = targetPos + glm::vec3(0.0f, 0.0f,
                                            -PLAYER_HEIGHT * 0.5f + PLAYER_RADIUS);
-            cap.b = player.pos + glm::vec3(0.0f, 0.0f,
+            cap.b = targetPos + glm::vec3(0.0f, 0.0f,
                                            PLAYER_HEIGHT * 0.5f - PLAYER_RADIUS);
             cap.radius = PLAYER_RADIUS;
 
@@ -478,9 +484,12 @@ public:
             SweptPlayerCapsule cap;
             cap.playerId = npc.entityId;
             cap.spawnGeneration = 0;
-            cap.a = npc.pos + glm::vec3(0.0f, 0.0f,
+            glm::vec3 targetPos = npc.pos;
+            if (mTargetTick != 0)
+                getNpcPositionAtTick(npc, mTargetTick, targetPos);
+            cap.a = targetPos + glm::vec3(0.0f, 0.0f,
                                         -PLAYER_HEIGHT * 0.5f + PLAYER_RADIUS);
-            cap.b = npc.pos + glm::vec3(0.0f, 0.0f,
+            cap.b = targetPos + glm::vec3(0.0f, 0.0f,
                                         PLAYER_HEIGHT * 0.5f - PLAYER_RADIUS);
             cap.radius = PLAYER_RADIUS;
 
@@ -506,6 +515,7 @@ private:
     uint32_t mOwnerPlayerId = 0;
     uint32_t mOwnerNpcId = 0;
     bool mSkipOwner = false;
+    uint32_t mTargetTick = 0;
 };
 
 ProjectilePhysicsState makePhysicsState(const ServerProjectile& projectile)
@@ -581,14 +591,18 @@ bool splashHasLineOfSight(const HeadlessWorld& world,
 // Falls back to the torso center when no template is available.
 bool splashNearestPlayerBodyPoint(const ServerPlayer& victim,
                                   const glm::vec3& blast,
-                                  glm::vec3& outPoint)
+                                  glm::vec3& outPoint,
+                                  const glm::vec3* historicalPos = nullptr,
+                                  const float* historicalYaw = nullptr)
 {
     SplashBodyPartBox boxes[8];
     int count = 0;
     if (const auto* tpl = standardPlayerBodyTemplate())
     {
-        const float c = std::cos(victim.yaw);
-        const float s = std::sin(victim.yaw);
+        const glm::vec3 basePos = historicalPos ? *historicalPos : victim.pos;
+        const float yaw = historicalYaw ? *historicalYaw : victim.yaw;
+        const float c = std::cos(yaw);
+        const float s = std::sin(yaw);
         for (const auto& t : *tpl)
         {
             if (count >= 8)
@@ -596,14 +610,15 @@ bool splashNearestPlayerBodyPoint(const ServerPlayer& victim,
             const glm::vec3 off(t.offset.x * c - t.offset.y * s,
                                 t.offset.x * s + t.offset.y * c,
                                 t.offset.z);
-            boxes[count].center = victim.pos + off;
+            boxes[count].center = basePos + off;
             boxes[count].half = t.half;
             ++count;
         }
     }
     if (count == 0)
     {
-        outPoint = victim.pos + glm::vec3(0.0f, 0.0f, PLAYER_HEIGHT * 0.25f);
+        outPoint = (historicalPos ? *historicalPos : victim.pos) +
+            glm::vec3(0.0f, 0.0f, PLAYER_HEIGHT * 0.25f);
         return true;
     }
     return splashNearestBodyPartPoint(blast, boxes, count, outPoint);
@@ -611,10 +626,28 @@ bool splashNearestPlayerBodyPoint(const ServerPlayer& victim,
 
 bool splashNearestNpcBodyPoint(const ServerNpc& npc,
                                const glm::vec3& blast,
-                               glm::vec3& outPoint)
+                               glm::vec3& outPoint,
+                               uint32_t historicalTick = 0)
 {
     SplashBodyPartBox boxes[8];
     int count = 0;
+    if (historicalTick != 0)
+    {
+        const ServerNpcBodyPartSample* parts = nullptr;
+        uint8_t partCount = 0;
+        if (getNpcBodyPartsAtTick(npc, historicalTick, &parts, &partCount))
+        {
+            SplashBodyPartBox boxes[8];
+            const int count = std::min<int>(partCount, 8);
+            for (int i = 0; i < count; ++i)
+            {
+                boxes[i].center = {parts[i].cx, parts[i].cy, parts[i].cz};
+                boxes[i].half = {parts[i].hx, parts[i].hy, parts[i].hz};
+            }
+            if (count > 0)
+                return splashNearestBodyPartPoint(blast, boxes, count, outPoint);
+        }
+    }
     for (uint8_t i = 0; i < npc.bodyPartCount && i < npc.bodyParts.size(); ++i)
     {
         const ServerNpcBodyPartSample& s = npc.bodyParts[i];
@@ -639,6 +672,7 @@ void explodeProjectile(SOCKET sock,
                        const char* impactType,
                        uint32_t directTargetId,
                        uint32_t tick,
+                       uint32_t targetTick,
                        uint64_t& totalPacketsOut)
 {
     if (projectile.exploded)
@@ -690,7 +724,11 @@ void explodeProjectile(SOCKET sock,
         if (victim.dead)
             continue;
 
-        const glm::vec3 center = playerDamageCenter(victim);
+        glm::vec3 historicalPos = victim.pos;
+        float historicalYaw = victim.yaw;
+        if (targetTick != 0)
+            getPlayerPoseAtTick(victim, targetTick, historicalPos, historicalYaw);
+        const glm::vec3 center = historicalPos + glm::vec3(0.0f, 0.0f, PLAYER_HEIGHT * 0.25f);
         const glm::vec3 toVictim = center - position;
         const float dist = glm::length(toVictim);
         if (dist >= projectile.splashRadius)
@@ -699,7 +737,8 @@ void explodeProjectile(SOCKET sock,
         if (projectile.splashLineOfSight)
         {
             glm::vec3 target;
-            splashNearestPlayerBodyPoint(victim, position, target);
+            splashNearestPlayerBodyPoint(victim, position, target,
+                                         &historicalPos, &historicalYaw);
             if (!splashHasLineOfSight(world, position, target))
                 continue; // wall/cover between blast and the victim's nearest body part → no hit
         }
@@ -782,7 +821,12 @@ void explodeProjectile(SOCKET sock,
         if (projectile.ownerNpcId != 0 && npc.entityId == projectile.ownerNpcId)
             continue;
 
-        const glm::vec3 npcCenter = npc.pos + glm::vec3(0.0f, 0.0f, PLAYER_HEIGHT * 0.25f);
+        glm::vec3 historicalNpcPos = npc.pos;
+        float historicalNpcYaw = npc.yaw;
+        if (targetTick != 0)
+            getNpcPoseAtTick(npc, targetTick, historicalNpcPos, historicalNpcYaw);
+        const glm::vec3 npcCenter = historicalNpcPos +
+            glm::vec3(0.0f, 0.0f, PLAYER_HEIGHT * 0.25f);
         const glm::vec3 toNpc = npcCenter - position;
         const float dist = glm::length(toNpc);
         if (dist >= projectile.splashRadius)
@@ -791,7 +835,7 @@ void explodeProjectile(SOCKET sock,
         if (projectile.splashLineOfSight)
         {
             glm::vec3 target;
-            splashNearestNpcBodyPoint(npc, position, target);
+            splashNearestNpcBodyPoint(npc, position, target, targetTick);
             if (!splashHasLineOfSight(world, position, target))
                 continue; // wall/cover between blast and the NPC's nearest body part → no hit
         }
@@ -883,6 +927,7 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
     uint32_t requestId,
     const glm::vec3& origin,
     const glm::vec3& direction,
+    uint32_t clientSimulationTick,
     uint32_t tick,
     uint64_t& totalPacketsOut)
 {
@@ -1007,7 +1052,18 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
     projectile.explodeOnWorldImpact = cp("explodeOnWorldImpact", 0.0f) > 0.0f;
     projectile.explodeOnLifetime = cp("explodeOnLifetime", 1.0f) > 0.0f;
     projectile.splashLineOfSight = cfg.splashLineOfSight;
+    const uint32_t fireViewTick = estimateServerRewindTick(
+        shooter, clientSimulationTick, tick);
     projectile.spawnTick = tick;
+    projectile.fireViewTick = fireViewTick;
+    projectile.simulationTick = fireViewTick > 0 ? fireViewTick : tick;
+
+    Debug::logThrottled(Debug::Category::Weapons, "projectile-replay", 1.0,
+        "[PROJECTILE REPLAY] playerId=%u requestId=%u receiveTick=%u "
+        "clientFireTick=%u mappedFireTick=%u replayTicks=%u weapon=%s\n",
+        shooter.id, requestId, tick, clientSimulationTick, fireViewTick,
+        fireViewTick > 0 && fireViewTick < tick ? tick - fireViewTick : 0,
+        networkWeaponTypeName(networkWeapon));
 
     if (consumesAmmo && runtime.magazineAmmo > 0)
         --runtime.magazineAmmo;
@@ -1478,8 +1534,9 @@ void tickServerProjectiles(SOCKET sock,
                            std::unordered_map<uint32_t, ServerNpc>& npcs,
                            std::unordered_map<uint32_t, ServerProjectile>& projectiles,
                            const HeadlessWorld& world,
-                           float dt, uint32_t tick, uint64_t& totalPacketsOut)
+                           float /*dt*/, uint32_t tick, uint64_t& totalPacketsOut)
 {
+    constexpr float tickDt = GAMEPLAY_FIXED_DT;
     uint32_t activeCount = 0;
     uint32_t movingCount = 0;
     uint32_t sleepingCount = 0;
@@ -1493,46 +1550,52 @@ void tickServerProjectiles(SOCKET sock,
         else
             ++movingCount;
 
-        projectile.previousPosition = projectile.position;
-        projectile.stateAccumulator += dt;
-
         const bool sharedProjectile =
             projectile.weaponType == NETWORK_WEAPON_ROCKET_LAUNCHER ||
             projectile.weaponType == NETWORK_WEAPON_GRENADE_LAUNCHER;
 
         if (sharedProjectile)
         {
-            const int previousBounceCount = projectile.bounceCount;
-            ProjectilePhysicsState state = makePhysicsState(projectile);
-            ProjectilePhysicsConfig config = makePhysicsConfig(projectile);
-            ServerProjectileWorldView physicsWorld(
-                world, players, npcs, projectile.ownerPlayerId,
-                projectile.ownerNpcId,
-                projectile.distanceTraveled < projectile.armingDistance);
-
-            auto simStart = std::chrono::steady_clock::now();
-            ProjectileStepResult step =
-                simulateProjectileTick(state, config, physicsWorld, dt);
-            gProjectilePerf.projectileSimUs += (uint64_t)std::chrono::duration<double, std::micro>(
-                std::chrono::steady_clock::now() - simStart).count();
-            gProjectilePerf.triangleQueryCount += step.triangleQueryCount;
-            gProjectilePerf.triangleCandidateTotal += step.triangleCandidateTotal;
-            gProjectilePerf.triangleCandidateMax = std::max(
-                gProjectilePerf.triangleCandidateMax, step.triangleCandidateMax);
-            gProjectilePerf.playerCapsuleCandidateTotal += step.playerCapsuleCandidateTotal;
-            gProjectilePerf.playerCapsuleCandidateMax = std::max(
-                gProjectilePerf.playerCapsuleCandidateMax, step.playerCapsuleCandidateMax);
-            applyPhysicsState(projectile, state);
-            projectile.distanceTraveled += step.travelDistance;
-            if (state.sleeping || state.bounceCount > previousBounceCount ||
-                step.type == ProjectileCollisionType::WorldBounce ||
-                step.type == ProjectileCollisionType::WorldImpact)
+            const uint32_t firstStepTick = projectile.simulationTick != 0
+                ? projectile.simulationTick + 1 : tick;
+            for (uint32_t stepTick = firstStepTick;
+                 stepTick <= tick && !projectile.exploded; ++stepTick)
             {
-                projectile.worldTouched = true;
-            }
+                projectile.previousPosition = projectile.position;
+                projectile.stateAccumulator += tickDt;
+                const int previousBounceCount = projectile.bounceCount;
+                ProjectilePhysicsState state = makePhysicsState(projectile);
+                ProjectilePhysicsConfig config = makePhysicsConfig(projectile);
+                ServerProjectileWorldView physicsWorld(
+                    world, players, npcs, projectile.ownerPlayerId,
+                    projectile.ownerNpcId,
+                    projectile.distanceTraveled < projectile.armingDistance,
+                    stepTick);
 
-            if (step.type != ProjectileCollisionType::None)
-            {
+                auto simStart = std::chrono::steady_clock::now();
+                ProjectileStepResult step =
+                    simulateProjectileTick(state, config, physicsWorld, tickDt);
+                gProjectilePerf.projectileSimUs += (uint64_t)std::chrono::duration<double, std::micro>(
+                    std::chrono::steady_clock::now() - simStart).count();
+                gProjectilePerf.triangleQueryCount += step.triangleQueryCount;
+                gProjectilePerf.triangleCandidateTotal += step.triangleCandidateTotal;
+                gProjectilePerf.triangleCandidateMax = std::max(
+                    gProjectilePerf.triangleCandidateMax, step.triangleCandidateMax);
+                gProjectilePerf.playerCapsuleCandidateTotal += step.playerCapsuleCandidateTotal;
+                gProjectilePerf.playerCapsuleCandidateMax = std::max(
+                    gProjectilePerf.playerCapsuleCandidateMax, step.playerCapsuleCandidateMax);
+                applyPhysicsState(projectile, state);
+                projectile.distanceTraveled += step.travelDistance;
+                projectile.simulationTick = stepTick;
+                if (state.sleeping || state.bounceCount > previousBounceCount ||
+                    step.type == ProjectileCollisionType::WorldBounce ||
+                    step.type == ProjectileCollisionType::WorldImpact)
+                {
+                    projectile.worldTouched = true;
+                }
+
+                if (step.type != ProjectileCollisionType::None)
+                {
                 auto& _lg = ::StructuredLogger::instance();
                 if (_lg.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Important)) {
                     ::StructuredLogger::Entry e;
@@ -1554,41 +1617,46 @@ void tickServerProjectiles(SOCKET sock,
                     e.message = b;
                     _lg.write(e);
                 }
-            }
+                }
 
-            if (step.type == ProjectileCollisionType::LifetimeExpired && projectile.explodeOnLifetime)
-            {
-                explodeProjectile(sock, world, players, npcs, projectile, projectile.position,
-                                  "lifetime", 0, tick, totalPacketsOut);
-            }
-            else if (step.type == ProjectileCollisionType::PlayerImpact && projectile.explodeOnPlayerImpact)
-            {
-                explodeProjectile(sock, world, players, npcs, projectile, step.hitPosition,
-                                  "player", step.hitPlayerId, tick,
-                                  totalPacketsOut);
-            }
-            else if (step.type == ProjectileCollisionType::WorldImpact && projectile.explodeOnWorldImpact)
-            {
-                explodeProjectile(sock, world, players, npcs, projectile, step.hitPosition,
-                                  "world", 0, tick, totalPacketsOut);
-            }
+                if (step.type == ProjectileCollisionType::LifetimeExpired && projectile.explodeOnLifetime)
+                {
+                    explodeProjectile(sock, world, players, npcs, projectile, projectile.position,
+                                      "lifetime", 0, tick, stepTick, totalPacketsOut);
+                }
+                else if (step.type == ProjectileCollisionType::PlayerImpact && projectile.explodeOnPlayerImpact)
+                {
+                    explodeProjectile(sock, world, players, npcs, projectile, step.hitPosition,
+                                      "player", step.hitPlayerId, tick, stepTick,
+                                      totalPacketsOut);
+                }
+                else if (step.type == ProjectileCollisionType::WorldImpact && projectile.explodeOnWorldImpact)
+                {
+                    explodeProjectile(sock, world, players, npcs, projectile, step.hitPosition,
+                                      "world", 0, tick, stepTick, totalPacketsOut);
+                }
 
-            if (!projectile.exploded &&
-                projectile.weaponType == NETWORK_WEAPON_ROCKET_LAUNCHER &&
-                glm::length(projectile.velocity) > 0.001f)
-            {
-                projectile.rotation = glm::rotation(
-                    glm::vec3(0.0f, 0.0f, 1.0f),
-                    glm::normalize(projectile.velocity));
+                if (!projectile.exploded &&
+                    projectile.weaponType == NETWORK_WEAPON_ROCKET_LAUNCHER &&
+                    glm::length(projectile.velocity) > 0.001f)
+                {
+                    projectile.rotation = glm::rotation(
+                        glm::vec3(0.0f, 0.0f, 1.0f),
+                        glm::normalize(projectile.velocity));
+                }
             }
         }
         else
         {
-            projectile.age += dt;
+            projectile.previousPosition = projectile.position;
+            projectile.stateAccumulator += tickDt;
+            projectile.age += tickDt;
+            projectile.simulationTick = tick;
             if (projectile.age >= projectile.lifetime)
             {
                 explodeProjectile(sock, world, players, npcs, projectile, projectile.position,
-                                  "lifetime", 0, tick, totalPacketsOut);
+                                  "lifetime", 0, tick, tick,
+                                  totalPacketsOut);
             }
         }
 
@@ -1680,6 +1748,48 @@ void tickServerProjectiles(SOCKET sock,
     gProjectilePerf.activeProjectiles = activeCount;
     gProjectilePerf.movingProjectiles = movingCount;
     gProjectilePerf.sleepingProjectiles = sleepingCount;
+}
+
+void cancelDeadNpcProjectiles(
+    SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    const std::unordered_map<uint32_t, ServerNpc>& npcs,
+    std::unordered_map<uint32_t, ServerProjectile>& projectiles,
+    uint32_t tick,
+    uint64_t& totalPacketsOut)
+{
+    for (auto it = projectiles.begin(); it != projectiles.end(); )
+    {
+        const ServerProjectile& projectile = it->second;
+        if (projectile.ownerNpcId == 0)
+        {
+            ++it;
+            continue;
+        }
+
+        const auto npcIt = npcs.find(projectile.ownerNpcId);
+        if (npcIt != npcs.end() && npcIt->second.health > 0)
+        {
+            ++it;
+            continue;
+        }
+
+        ProjectileDespawnEventPacket event{};
+        event.header.type = PACKET_PROJECTILE_DESPAWN_EVENT;
+        event.header.tick = tick;
+        event.eventId = nextReliableGameplayEventId();
+        event.eventSessionId = serverReliableEventSessionId();
+        event.projectileId = projectile.id;
+        event.weapon = projectile.weaponType;
+        event.reason = 2; // owner NPC died or was removed
+        queueReliableGameplayEventToAll(
+            sock, players, &event, sizeof(event), event.eventId,
+            event.eventSessionId, totalPacketsOut);
+        Debug::log(Debug::Category::Networking,
+            "[NPC PROJECTILE CANCEL] projectileId=%u ownerNpcId=%u tick=%u reason=owner-dead",
+            projectile.id, projectile.ownerNpcId, tick);
+        it = projectiles.erase(it);
+    }
 }
 
 } // namespace MimitaNet

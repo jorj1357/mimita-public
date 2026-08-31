@@ -1,4 +1,4 @@
-// 07 31 2026, 20 15
+// 08 31 2026, 17 24
 /* purpose
 * Declares the validated, hot-reloadable networking tuning configuration.
 * Owns the typed NetworkingConfigData structs read by interpolation, snapshots, and reconciliation.
@@ -449,11 +449,10 @@ struct NetworkPredictionConfig
     // Predict the target's damage numbers + health bar on the local trace.
     // Hitmarker + hit sound are ALWAYS predicted regardless of this toggle.
     bool predictDamage = true;
-    // Predict lethal deaths (instant death animation + kill heal). OFF by
-    // default so a death is presented exactly once by the reliable server
-    // event (no predicted-then-confirmed double death). When enabled it rolls
-    // back on server disagreement.
-    bool predictDeaths = false;
+    // Predict lethal deaths (instant death animation + kill heal). The
+    // reliable server event still owns the final health/death verdict, and a
+    // disagreement rolls the local death back exactly once.
+    bool predictDeaths = true;
 };
 
 // Combat visual toggle: when true (default), hitscan/bullet tracers continue to

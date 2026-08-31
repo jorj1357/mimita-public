@@ -211,24 +211,59 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
 
         if (player.collision.hasWeaponCollisionCapsule) {
             const glm::vec4 weaponColor{1.0f, 0.85f, 0.15f, 0.9f};
-            const Capsule& weaponCap = player.weaponCollisionCapsule;
-            drawCapsuleWire(camera, weaponCap, weaponColor);
-            glm::vec3 center = (weaponCap.a + weaponCap.b) * 0.5f;
-            drawWorldLabel(center + glm::vec3(0.0f, 0.0f, weaponCap.r + 0.3f),
-                           player.weaponCollisionName.empty()
-                               ? "weapon"
-                               : player.weaponCollisionName.c_str(),
-                           weaponColor);
+            // Draw all capsules from multi-capsule config
+            const auto& dbgCaps = player.weaponCollisionDebug.capsules;
+            if (!dbgCaps.empty()) {
+                for (size_t ci = 0; ci < dbgCaps.size(); ++ci) {
+                    if (!dbgCaps[ci].enabled) continue;
+                    Capsule wCap;
+                    wCap.a = dbgCaps[ci].currentStart;
+                    wCap.b = dbgCaps[ci].currentEnd;
+                    wCap.r = dbgCaps[ci].radius;
+                    drawCapsuleWire(camera, wCap, weaponColor);
+                    glm::vec3 center = (wCap.a + wCap.b) * 0.5f;
+                    char lbl[96];
+                    std::snprintf(lbl, sizeof(lbl), "weapon[%zu] r=%.2f", ci, wCap.r);
+                    drawWorldLabel(center + glm::vec3(0.0f, 0.0f, wCap.r + 0.3f), lbl, weaponColor);
+                }
+            } else {
+                // Fallback: single primary capsule
+                const Capsule& weaponCap = player.weaponCollisionCapsule;
+                drawCapsuleWire(camera, weaponCap, weaponColor);
+                glm::vec3 center = (weaponCap.a + weaponCap.b) * 0.5f;
+                drawWorldLabel(center + glm::vec3(0.0f, 0.0f, weaponCap.r + 0.3f),
+                               player.weaponCollisionName.empty()
+                                   ? "weapon"
+                                   : player.weaponCollisionName.c_str(),
+                               weaponColor);
+            }
         }
 
         if (DebugConfig::DEBUG_WEAPON_HITBOX && player.collision.hasWeaponCollisionCapsule) {
             const glm::vec4 hitboxColor{1.0f, 0.4f, 1.0f, 0.95f};
-            drawCapsuleWire(camera, player.weaponCollisionCapsule, hitboxColor);
-            char label[96];
-            const Capsule& cap = player.weaponCollisionCapsule;
-            std::snprintf(label, sizeof(label), "weapon hitbox r=%.2f", cap.r);
-            glm::vec3 center = (cap.a + cap.b) * 0.5f;
-            drawWorldLabel(center + glm::vec3(0.0f, 0.0f, cap.r + 0.35f), label, hitboxColor);
+            // Draw all hitbox capsules
+            const auto& dbgCaps = player.weaponCollisionDebug.capsules;
+            if (!dbgCaps.empty()) {
+                for (size_t ci = 0; ci < dbgCaps.size(); ++ci) {
+                    if (!dbgCaps[ci].enabled) continue;
+                    Capsule hCap;
+                    hCap.a = dbgCaps[ci].currentStart;
+                    hCap.b = dbgCaps[ci].currentEnd;
+                    hCap.r = dbgCaps[ci].radius;
+                    drawCapsuleWire(camera, hCap, hitboxColor);
+                    char label[96];
+                    std::snprintf(label, sizeof(label), "hitbox[%zu] r=%.2f", ci, hCap.r);
+                    glm::vec3 center = (hCap.a + hCap.b) * 0.5f;
+                    drawWorldLabel(center + glm::vec3(0.0f, 0.0f, hCap.r + 0.35f), label, hitboxColor);
+                }
+            } else {
+                drawCapsuleWire(camera, player.weaponCollisionCapsule, hitboxColor);
+                char label[96];
+                const Capsule& cap = player.weaponCollisionCapsule;
+                std::snprintf(label, sizeof(label), "weapon hitbox r=%.2f", cap.r);
+                glm::vec3 center = (cap.a + cap.b) * 0.5f;
+                drawWorldLabel(center + glm::vec3(0.0f, 0.0f, cap.r + 0.35f), label, hitboxColor);
+            }
         }
 
         if (DebugConfig::DEBUG_COLLISION_BODY_PUSH)

@@ -1,4 +1,4 @@
-// 07 19 2026, 11 05
+// 08 31 2026, 17 14
 /* purpose
 * Declares authoritative server state, constants, and subsystem entry points.
 * Shares fixed 60 Hz server interfaces with network, projectile, NPC, and player code.
@@ -618,6 +618,12 @@ struct ServerProjectile
     bool explodeOnLifetime = true;
     bool splashLineOfSight = true;
     uint32_t spawnTick = 0;
+    // Server tick represented by the shooter's rendered world when this
+    // projectile was fired.  `simulationTick` advances from this historical
+    // launch tick to the live server tick so delayed requests replay against
+    // the same target timeline the shooter saw.
+    uint32_t fireViewTick = 0;
+    uint32_t simulationTick = 0;
 };
 
 struct ServerProjectilePerfStats
@@ -868,6 +874,7 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
     uint32_t requestId,
     const glm::vec3& origin,
     const glm::vec3& direction,
+    uint32_t clientSimulationTick,
     uint32_t tick,
     uint64_t& totalPacketsOut);
 void tickServerProjectiles(SOCKET sock,
@@ -876,6 +883,15 @@ void tickServerProjectiles(SOCKET sock,
                            std::unordered_map<uint32_t, ServerProjectile>& projectiles,
                            const HeadlessWorld& world,
                            float dt, uint32_t tick, uint64_t& totalPacketsOut);
+// Removes NPC-fired projectiles as soon as their owner is dead or missing and
+// sends the terminal event to clients so a dead NPC cannot keep attacking.
+void cancelDeadNpcProjectiles(
+    SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    const std::unordered_map<uint32_t, ServerNpc>& npcs,
+    std::unordered_map<uint32_t, ServerProjectile>& projectiles,
+    uint32_t tick,
+    uint64_t& totalPacketsOut);
 void handleMeleeHitRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                            std::unordered_map<uint32_t, ServerPlayer>& players,
                            uint32_t tick, uint64_t& totalPacketsOut);
@@ -1086,6 +1102,10 @@ struct ServerLaunchSettings
     std::string hostPlayerName;
     bool duelMode = false;
     std::string gamemodeId = "duel";
+    int weaponSetId = 1;
+    bool autoMapRotation = true;
+    uint32_t mapRotationMinutes = 15;
+    bool discordNotification = true;
 
     // Resolved state (set during startup, not from UI)
     std::string resolvedMapPath;
@@ -1121,6 +1141,12 @@ struct ListenServerState
     std::string mapName = "funworldv3";
     std::string gameMode = "sandbox";
     uint32_t maxPlayers = 999;
+    int weaponSetId = 1;
+    bool autoMapRotation = true;
+    uint32_t mapRotationMinutes = 15;
+    bool discordNotification = true;
+    uint64_t nextMapRotationMs = 0;
+    bool mapRotationAnnounced = false;
     bool passwordProtected = false;
     std::string password;
     // ── Background thread for 60 Hz independent server timing ──────

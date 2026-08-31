@@ -56,22 +56,22 @@
     },
     "hl_mode1": {
       "type": "text", "x": 620, "y": 358, "width": 680, "height": 26,
-      "text": "Casual  -- Free-roam sandbox, explore and fight NPCs.",
+      "text": "Sandbox  -- Free-roam community play with NPCs and all server tools.",
       "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
     },
     "hl_mode2": {
       "type": "text", "x": 620, "y": 384, "width": 680, "height": 26,
-      "text": "Duels   -- 1vNPC rounds, first to kills wins the match.",
+      "text": "Team Deathmatch -- Two teams; the first team to 30 kills wins.",
       "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
     },
     "hl_mode3": {
       "type": "text", "x": 620, "y": 410, "width": 680, "height": 26,
-      "text": "Multiplayer -- Connect to servers and fight other players.",
+      "text": "Free For All -- Every player is their own team; first to 20 kills wins.",
       "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
     },
     "hl_mode4": {
       "type": "text", "x": 620, "y": 436, "width": 680, "height": 26,
-      "text": "Practice -- Spawn training NPCs to test weapons and movement.",
+      "text": "Weapon sets and maps are selected when creating a community server.",
       "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
     },
     "hl_basicControls": {
@@ -173,6 +173,31 @@
       "type": "text", "x": 620, "y": 1004, "width": 680, "height": 26,
       "text": "Code -- Gameplay, physics, UI, networking, tools",
       "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_serverCommands": {
+      "type": "text", "x": 620, "y": 1040, "width": 680, "height": 30,
+      "text": "Community Server Commands", "fontSize": 0.38,
+      "textColor": [0.95, 0.98, 1.0, 1.0]
+    },
+    "hl_serverCommands1": {
+      "type": "text", "x": 620, "y": 1074, "width": 680, "height": 26,
+      "text": "modelist / modepick N -- list or choose a mode (host only)",
+      "fontSize": 0.30, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_serverCommands2": {
+      "type": "text", "x": 620, "y": 1100, "width": 680, "height": 26,
+      "text": "maplist / mapchange N -- list or change maps (host only)",
+      "fontSize": 0.30, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_serverCommands3": {
+      "type": "text", "x": 620, "y": 1126, "width": 680, "height": 26,
+      "text": "npc_delete_all -- remove all server NPCs (host only)",
+      "fontSize": 0.30, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_serverCommands4": {
+      "type": "text", "x": 620, "y": 1152, "width": 680, "height": 26,
+      "text": "npcdifflist / npcdiffload N -- list or load NPC presets",
+      "fontSize": 0.30, "textColor": [0.75, 0.85, 1.0, 1.0]
     },
     "backButton": {
       "type": "button",

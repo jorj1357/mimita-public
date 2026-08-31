@@ -14,12 +14,17 @@
 #include "void-death/void-death.h"
 #include "config/networking-config.h"
 #include "debug/debug-log.h"
+#include "map/map-catalog.h"
+#include "network/community-server-config.h"
+#include "npc/npc-difficulty-config.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <filesystem>
 
 // Global chat rate limiter instance
 static ChatRateLimiter gChatRateLimiter;
@@ -347,7 +352,78 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
 
     ServerGameOverrides& ov = serverGameOverrides();
 
-    if (commandStr == "npc_delete_all")
+    if (commandStr == "modelist")
+    {
+        auto& cfg = CommunityServerConfig::instance();
+        if (cfg.modes().empty()) cfg.load();
+        std::string list;
+        for (size_t i = 0; i < cfg.modes().size(); ++i) {
+            if (i) list += " | ";
+            list += std::to_string(i + 1) + "=" + cfg.modes()[i].id;
+        }
+        ack(true, list.c_str());
+    }
+    else if (commandStr.rfind("modepick ", 0) == 0)
+    {
+        auto& cfg = CommunityServerConfig::instance();
+        if (cfg.modes().empty()) cfg.load();
+        const int index = std::atoi(commandStr.c_str() + 9) - 1;
+        if (index < 0 || index >= (int)cfg.modes().size()) ack(false, "rejected: invalid mode number");
+        else {
+            serverCommunitySetMode(cfg.modes()[(size_t)index].id);
+            ack(true, ("applied: modepick " + cfg.modes()[(size_t)index].id).c_str());
+        }
+    }
+    else if (commandStr == "maplist")
+    {
+        const auto catalog = scanMapCatalog();
+        std::string list;
+        for (size_t i = 0; i < catalog.maps.size(); ++i) {
+            if (i) list += " | ";
+            list += std::to_string(i + 1) + "=" + catalog.maps[i].displayName;
+        }
+        ack(true, list.empty() ? "no maps found" : list.c_str());
+    }
+    else if (commandStr.rfind("mapchange ", 0) == 0)
+    {
+        const auto catalog = scanMapCatalog();
+        const int index = std::atoi(commandStr.c_str() + 10) - 1;
+        if (index < 0 || index >= (int)catalog.maps.size()) ack(false, "rejected: invalid map number");
+        else {
+            const std::string mapId = std::filesystem::path(catalog.maps[(size_t)index].assetPath).stem().string();
+            serverDuelRequestMapChange(mapId);
+            ack(true, ("applied: mapchange " + mapId).c_str());
+        }
+    }
+    else if (commandStr == "npcdifflist")
+    {
+        std::vector<std::filesystem::path> presets;
+        std::string list;
+        std::error_code ec;
+        for (const auto& entry : std::filesystem::directory_iterator("config/npcpresets", ec)) {
+            if (entry.is_regular_file(ec) && entry.path().extension() == ".json") presets.push_back(entry.path());
+        }
+        std::sort(presets.begin(), presets.end());
+        for (size_t i = 0; i < presets.size(); ++i) {
+            if (i) list += " | ";
+            list += std::to_string(i + 1) + "=" + presets[i].filename().string();
+        }
+        ack(true, list.empty() ? "no NPC presets found" : list.c_str());
+    }
+    else if (commandStr.rfind("npcdiffload ", 0) == 0)
+    {
+        std::vector<std::filesystem::path> presets;
+        std::error_code ec;
+        for (const auto& entry : std::filesystem::directory_iterator("config/npcpresets", ec))
+            if (entry.is_regular_file(ec) && entry.path().extension() == ".json") presets.push_back(entry.path());
+        std::sort(presets.begin(), presets.end());
+        const int index = std::atoi(commandStr.c_str() + 12) - 1;
+        if (index < 0 || index >= (int)presets.size()) ack(false, "rejected: invalid NPC preset number");
+        else if (NpcDifficultyConfig::instance().load(presets[(size_t)index].string()))
+            ack(true, ("applied: npcdiffload " + presets[(size_t)index].filename().string()).c_str());
+        else ack(false, "rejected: NPC preset could not be loaded");
+    }
+    else if (commandStr == "npc_delete_all")
     {
         printf("%s [SERVER COMMAND] npc_delete_all by playerId=%u count=%zu\n",
                serverTimestamp(), it->second.id, npcs.size());

@@ -1,4 +1,4 @@
-// 07 20 2026, 20 00
+// 08 31 2026, 17 14
 /* purpose
 * Declares multiplayer client context, packets, prediction state, and public network helpers.
 * Owns pending request bookkeeping shared by packet send, receive, and focused tests.
@@ -487,6 +487,8 @@ struct MultiplayerContext
     // ── Ghost: show authoritative server position ─────────────────────
     bool showServerGhost = false;
     bool waitingForMapLoad = false;
+    uint32_t mapLoadAttempts = 0;
+    uint64_t lastMapLoadAttemptMs = 0;
 
     // ── Remote sword state for visual reconstruction ──────────────────
     std::unordered_map<uint32_t, SwordswordState> remoteSwordStates;
@@ -626,6 +628,14 @@ struct MultiplayerContext
     uint32_t pendingSpawnAckGeneration = 0;   // 0 = no ack in flight
     uint32_t pendingSpawnAckEpoch = 0;
     uint64_t pendingSpawnAckLastSendMs = 0;
+
+    // ── Fixed client gameplay clock (60 Hz, independent of render frames) ──
+    // This clock is the only step source for local projectile prediction. The
+    // render loop may run at any FPS, but collision and damage prediction do
+    // not change with that FPS.
+    double clientSimulationAccumulator = 0.0;
+    uint32_t clientSimulationTick = 0;
+    uint32_t clientSimulationStepsThisUpdate = 0;
 
     // ── Predicted projectile IDs (locally simulated, suppress server interpolation) ──
     std::unordered_set<uint32_t> predictedProjectileIds;
@@ -924,7 +934,7 @@ bool pushInterpolationTarget(EntityInterpolationState& interpolation, const Snap
 void updateRenderedReplica(Player& player, EntityInterpolationState& interpolation,
                            double renderTick, float dt, bool spawnDeathEffects);
 void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt);
-void mpApplyPredictedDamage(MultiplayerContext& ctx, uint32_t entityId, int damage, bool npc);
+bool mpApplyPredictedDamage(MultiplayerContext& ctx, uint32_t entityId, int damage, bool npc);
 void mpConfirmPredictedDamage(MultiplayerContext& ctx, uint32_t entityId, int healthAfter, bool killed, bool npc);
 void mpRollbackPredictedDamage(MultiplayerContext& ctx, uint32_t entityId, bool npc, const char* reason);
 void mpApplyPredictedKillHeal(MultiplayerContext& ctx, uint32_t entityId, bool npc);

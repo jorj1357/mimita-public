@@ -1,9 +1,9 @@
-// 08 30 2026, 12 00
+// 08 31 2026, 00 00
 /* purpose
-* Declares SpyKnife client-side state with swept-sphere blade hitbox.
-* Sphere collision runs at 60Hz tick rate, not per-frame.
+* Declares SpyKnife client-side state with swept-OBB blade hitbox.
+* Oriented box collision runs at 60Hz tick rate, not per-frame.
 * Force-based damage: speed + angle + directness determine damage.
-* Uses godball-style swept sphere overlap for NPC hit detection.
+* Box is welded to the knife model orientation via weapon capsule axes.
 * Does NOT own server-authoritative damage validation or packet transport.
 */
 
@@ -37,6 +37,16 @@ struct SpyKnifeHitResult {
     glm::vec3 victimPosition{0.0f};
 };
 
+struct BladeOBB {
+    glm::vec3 center{0.0f};
+    glm::vec3 axes[3] = { glm::vec3(1,0,0), glm::vec3(0,1,0), glm::vec3(0,0,1) };
+    glm::vec3 halfExtents{0.0f};
+
+    glm::vec3 localToWorld(const glm::vec3& local) const {
+        return center + axes[0] * local.x + axes[1] * local.y + axes[2] * local.z;
+    }
+};
+
 struct SpyKnifeState {
     bool active = false;
     uint32_t swingTick = 0;
@@ -47,8 +57,8 @@ struct SpyKnifeState {
     Capsule previousBladeCapsule;
     bool hasPreviousBladeCapsule = false;
 
-    glm::vec3 prevBladeTip{0.0f};
-    bool hasPrevBladeTip = false;
+    BladeOBB prevBladeOBB;
+    bool hasPrevBladeOBB = false;
 
     uint32_t readyTargetId = 0;
     bool hasReadyTarget = false;

@@ -704,23 +704,23 @@ bool pushInterpolationTarget(
     return true;
 }
 
-void mpApplyPredictedDamage(MultiplayerContext& ctx, uint32_t entityId,
+bool mpApplyPredictedDamage(MultiplayerContext& ctx, uint32_t entityId,
                             int damage, bool npc)
 {
     if (!NetworkingConfig::instance().data().prediction.predictDamage)
     {
         printf("[NET PREDICT DAMAGE SKIP] entityId=%u damage=%d npc=%d reason=predictDamage=false\n",
                entityId, damage, (int)npc);
-        return;
+        return false;
     }
     if (entityId == 0 || damage <= 0)
-        return;
+        return false;
     auto& replicas = npc ? ctx.remoteNpcs : ctx.remotePlayers;
     auto& states = npc ? ctx.remoteNpcInterpolation : ctx.remotePlayerInterpolation;
     auto playerIt = replicas.find(entityId);
     auto stateIt = states.find(entityId);
     if (playerIt == replicas.end() || stateIt == states.end())
-        return;
+        return false;
 
     EntityInterpolationState& interpolation = stateIt->second;
     Player& replica = playerIt->second;
@@ -740,6 +740,7 @@ void mpApplyPredictedDamage(MultiplayerContext& ctx, uint32_t entityId,
         "[NET PREDICTED DAMAGE] entityId=%u npc=%d damage=%d displayHp=%d pending=%d",
         entityId, (int)npc, damage, replica.currentHp,
         interpolation.pendingPredictedDamage);
+    return true;
 }
 
 void mpConfirmPredictedDamage(MultiplayerContext& ctx, uint32_t entityId,

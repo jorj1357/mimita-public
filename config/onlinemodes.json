@@ -1,0 +1,25 @@
+{
+  "modes": [
+    {
+      "id": "sandbox",
+      "name": "Sandbox",
+      "description": "Current free sandbox behavior.",
+      "teams": 0,
+      "score_limit": 0
+    },
+    {
+      "id": "team_deathmatch",
+      "name": "Team Deathmatch",
+      "description": "Two teams. First team to 30 kills wins.",
+      "teams": 2,
+      "score_limit": 30
+    },
+    {
+      "id": "free_for_all",
+      "name": "Free For All",
+      "description": "Everyone fights alone. First player to 20 kills wins.",
+      "teams": -1,
+      "score_limit": 20
+    }
+  ]
+}

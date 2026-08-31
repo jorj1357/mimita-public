@@ -111,6 +111,7 @@ bool initServerIceListener(ListenServerState& state)
     metadata.gamemode = state.gameMode.empty() ? "sandbox" : state.gameMode;
     metadata.maxPlayers = (int)state.maxPlayers;
     metadata.passwordProtected = state.passwordProtected;
+    metadata.discordNotification = state.discordNotification;
     metadata.hostPlayerName = state.hostPlayerName;
     metadata.port = state.port;
 

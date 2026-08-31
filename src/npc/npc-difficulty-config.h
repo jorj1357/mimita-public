@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -90,6 +91,7 @@ public:
     bool load(const std::string& path = "config/npc-difficulty.json");
     bool pollReload();
     bool save(const std::string& path = "config/npc-difficulty.json");
+    uint64_t revision() const { return mRevision; }
 
     const NpcDifficultySettings& settings() const { return mData; }
     NpcDifficultySettings& settings() { return mData; }
@@ -111,6 +113,7 @@ private:
     std::string mPath = "config/npc-difficulty.json";
     std::filesystem::file_time_type mLastWrite{};
     bool mWatchLogged = false;
+    uint64_t mRevision = 0;
 
     // Cached NPC movement preset (only used when movementPreset != "follow").
     MovementConfig mNpcMovement;

@@ -306,6 +306,15 @@ void NpcSystem::setGlobalDifficulty(float d)
                globalDifficulty_, npcs.size());
 }
 
+void NpcSystem::refreshDifficultyTuning()
+{
+    for (Npc& npc : npcs)
+        npc.tuning = tuningForDifficulty(npc.difficulty);
+    Debug::log(Debug::Category::NpcCombat,
+        "[NPC DIFFICULTY] refreshed existing NPC tuning count=%zu configRevision=%llu\n",
+        npcs.size(), (unsigned long long)NpcDifficultyConfig::instance().revision());
+}
+
 float weaponEffectiveRange(const Npc& npc)
 {
     const WeaponDefinition* def = WeaponRegistry::instance().get(npc.body.equippedWeaponId);

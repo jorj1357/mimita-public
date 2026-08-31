@@ -10,6 +10,7 @@
 
 #include "network/server.h"
 #include "network/server-duel.h"
+#include "network/server-duel.h"
 #include "network/multiplayer-context.h"
 #include "network/coordinator-client.h"
 #include "network/snapshot-chunks.h"
@@ -96,6 +97,8 @@ bool playerCanEquipSlot(const ServerPlayer& player, int slot)
         return true;
     const WeaponDefinition* def = weaponDefinitionForSlot(slot);
     if (!def)
+        return false;
+    if (!serverCommunityWeaponAllowed(def->id))
         return false;
     auto rt = player.weaponRuntimes.find(def->id);
     return rt != player.weaponRuntimes.end() && rt->second.initialized;
@@ -456,7 +459,7 @@ static bool isKnownPacketType(uint8_t type)
 {
     // 2026-08-29: TODO use an explicit switch here so future packet types
     // cannot be silently rejected by an outdated numeric range.
-    return type >= PACKET_HELLO && type <= PACKET_GODBALL_HIT_CLAIM;
+    return type >= PACKET_HELLO && type <= PACKET_SERVER_NOTIFICATION;
 }
 
 static void countPacketType(ServerPacketStats& stats, uint8_t type)

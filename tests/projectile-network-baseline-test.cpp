@@ -1,4 +1,4 @@
-// 07 20 2026, 19 40
+// 08 31 2026, 17 27
 /* purpose
 * Protects the Stage 0 rocket and grenade network authority baseline.
 * Exercises generic AttackRequest routing, projectile idempotency, and spawn lifetime rejection.
@@ -939,6 +939,53 @@ void testRocketExplosionDamageDeathAndRespawnFire(const WeaponDefinition& rocket
     checkEq(runtimeAmmo(fixture.players.at(3), rocket), respawnAmmoBefore - 1, "respawned victim fire consumes one round");
 }
 
+void testRocketReplaysHistoricalTargetPose(const WeaponDefinition& rocket)
+{
+    Fixture fixture;
+    fixture.addPlayer(1, 4751);
+    fixture.addPlayer(2, 4752);
+
+    auto& shooter = fixture.players.at(1);
+    auto& target = fixture.players.at(2);
+    shooter.pos = glm::vec3(0.0f);
+    target.health = 100;
+    target.spawnState = ServerPlayer::Active;
+    target.spawnGeneration = 43;
+
+    // At the fire-view tick the target was in the rocket's path. By the time
+    // the delayed request arrives, the live pose has moved far enough away
+    // that current-pose collision would miss.
+    target.pos = glm::vec3(10.0f, 0.0f, 0.0f);
+    pushPositionHistory(target, 100);
+    target.pos = glm::vec3(2.0f, 3.0f, 0.0f);
+    equipProjectileWeapon(shooter, rocket, 44);
+
+    AttackRequestPacket request = makeAttackRequest(
+        shooter, rocket, 9050, 150, shooter.pos, glm::vec3(1.0f, 0.0f, 0.0f));
+    request.clientSimulationTick = 100;
+    sendGenericAttack(fixture, shooter, request, 150);
+
+    checkEq(fixture.projectiles.size(), static_cast<size_t>(1),
+            "delayed rocket creates one replayable projectile");
+    if (fixture.projectiles.empty())
+        return;
+
+    const ServerProjectile& projectile = fixture.projectiles.begin()->second;
+    checkEq(projectile.fireViewTick, 100u,
+            "delayed rocket stores the shooter's fire-view tick");
+    checkEq(projectile.simulationTick, 100u,
+            "delayed rocket starts simulation at the historical fire tick");
+
+    tickServerProjectiles(
+        INVALID_SOCKET, fixture.players, fixture.npcs, fixture.projectiles,
+        fixture.world, 1.0f / 30.0f, 150, fixture.totalPacketsOut);
+
+    check(fixture.projectiles.empty(),
+          "delayed rocket replays through the historical target and explodes");
+    check(target.health < 100 || target.dead,
+          "historical target pose receives replayed rocket damage");
+}
+
 void testAttackReconcilesValidEquipRace(const WeaponDefinition& grenade)
 {
     Fixture fixture;
@@ -1173,6 +1220,7 @@ int main()
         testDuplicateAndDifferentRequestIds(*refs.rocket, NETWORK_WEAPON_ROCKET_LAUNCHER, 2000);
         testOldLifeRejectionAndRespawnFire(*refs.rocket, NETWORK_WEAPON_ROCKET_LAUNCHER, 3000);
         testRocketExplosionDamageDeathAndRespawnFire(*refs.rocket);
+        testRocketReplaysHistoricalTargetPose(*refs.rocket);
     }
     if (refs.grenade)
     {

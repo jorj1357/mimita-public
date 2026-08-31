@@ -149,6 +149,7 @@ std::string WeaponSystem::unequip(Player& player) {
     player.equippedWeaponId.clear();
     player.collision.hasWeaponCollisionCapsule = false;
     player.weaponCollisionName.clear();
+    player.weaponModelTransform = glm::mat4(1.0f);
     mCurrentSlot = 0;
     mCurrentWeaponId.clear();
     for (PhysicalBodyPart& part : player.physicalBody.parts) {

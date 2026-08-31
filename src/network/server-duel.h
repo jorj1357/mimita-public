@@ -25,6 +25,14 @@ namespace MimitaNet {
 struct ServerDuelState
 {
     bool enabled = false;
+    bool mapOnly = false;
+    std::string communityMode = "sandbox";
+    int communityWeaponSetId = 1;
+    std::unordered_map<uint32_t, int> communityScores;
+    std::unordered_map<uint32_t, int> communityTeams;
+    int communityTeamScore[2] = {0, 0};
+    bool communityRoundOver = false;
+    uint64_t communityRoundResetMs = 0;
     // DuelStatePhase (packets.h)
     uint8_t phase = DUEL_PHASE_WAITING;
     bool matchOver = false;
@@ -60,6 +68,11 @@ struct ServerDuelState
     // Live map rotation (auto on rematch) + manual changemap request.
     std::vector<std::string> mapPool;
     bool rotateMaps = false;
+    bool autoMapRotation = false;
+    uint32_t mapRotationMinutes = 15;
+    uint64_t nextMapRotationMs = 0;
+    uint64_t mapChangeCountdownStartMs = 0;
+    std::string pendingAutomaticMap;
     bool hasPendingManualMap = false;
     std::string pendingManualMap;
     // Maps already used this rotation cycle (so each new duel picks a map we
@@ -106,5 +119,15 @@ void serverDuelRematchNow();
 
 // Host-only changemap command: reload the given map live on the next tick.
 void serverDuelRequestMapChange(const std::string& mapId);
+
+// Starts the shared community map runtime without enabling duel scoring.
+void serverCommunityMapStart(const std::vector<std::string>& mapPool,
+                             const std::string& mapId,
+                             bool autoRotation,
+                             uint32_t rotationMinutes,
+                             int weaponSetId);
+void serverCommunitySetMode(const std::string& modeId);
+void serverCommunitySetWeaponSet(int weaponSetId);
+bool serverCommunityWeaponAllowed(const std::string& weaponId);
 
 } // namespace MimitaNet

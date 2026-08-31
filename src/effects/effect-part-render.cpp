@@ -10,6 +10,7 @@
 #include "camera.h"
 #include "debug/debug-visuals.h"
 #include "gui/ui-system.h"
+#include "gui/ui-system-internal.h"
 #include "effects/hit-effects.h"
 #include "debug/debug-log.h"
 #include "config.h"
@@ -414,6 +415,11 @@ void EffectPartSystem::render(const Camera& camera) const {
                 glDisable(GL_DEPTH_TEST);
         }
     }
+
+    // Flush billboard text vertices (damage numbers, server disagreement text)
+    // that were pushed into the UI batch during the effects loop above.
+    // Without this flush, uiBeginFrame() clears the batch before it renders.
+    uiFlushBatch();
 
     drawTexturedHitParticles(camera, texturedHitParticles, texturedHitParticlePath);
 

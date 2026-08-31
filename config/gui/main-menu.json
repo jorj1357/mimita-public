@@ -40,6 +40,14 @@
       "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.3, 0.6, 0.5, 1.0]
     },
+    "helpButton": {
+      "type": "button",
+      "x": 480, "y": 837, "width": 354, "height": 60,
+      "text": "HELP",
+      "fontSize": 0.44,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.25, 0.3, 0.5, 1.0]
+    },
     "enterSignInCodeButton": {
       "type": "button",
       "x": 5480, "y": 837, "width": 354, "height": 60,

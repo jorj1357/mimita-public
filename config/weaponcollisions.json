@@ -1,12 +1,14 @@
 {
-  "_comment": "Weapon collision config. source \"capsule\" (default) = one smooth bounding capsule auto-derived from the weapon model's full width. Optional per-weapon capsule start/end/radius override the auto shape. Set source to \"json\" for the legacy multi-sphere config. Hot-reloaded every 250ms. See the hitbox live with: debug_weapon_hitbox 1",
+  "_comment": "Weapon collision config. source \"capsule\" (default) = smooth bounding capsule(s) welded to the weapon model. Use \"capsule\" (singular) for one capsule, or \"capsules\" (plural) for multiple named capsules. Each capsule: start/end = local-space endpoints, radius = capsule radius, scale = axis scale, rotation_degrees = euler rotation. Hot-reloaded every 250ms. Set \"visible\": true to see capsule wireframes in-game.",
 
   "revolver": {
     "enabled": true,
+    "visible": true,
     "collision_skin": 0.05,
     "source": "capsule",
     "capsule": {
       "enabled": true,
+      "name": "body",
       "start": [-0.65, 0.0, 0.0],
       "end": [0.95, 0.0, 0.0],
       "radius": 0.22,
@@ -17,39 +19,136 @@
 
   "shotgun": {
     "enabled": true,
-    "collision_skin": 0.15,
-    "source": "capsule"
+    "visible": true,
+    "collision_skin": 0.05,
+    "source": "capsule",
+    "capsules": [
+      {
+        "enabled": true,
+        "name": "barrel",
+        "start": [-0.4, 0.0, 0.05],
+        "end": [1.2, 0.0, 0.05],
+        "radius": 0.12,
+        "scale": [1.0, 1.0, 1.0],
+        "rotation_degrees": [0.0, 0.0, 0.0]
+      },
+      {
+        "enabled": true,
+        "name": "stock",
+        "start": [-0.9, 0.0, -0.05],
+        "end": [-0.2, 0.0, -0.05],
+        "radius": 0.18,
+        "scale": [1.0, 1.0, 1.0],
+        "rotation_degrees": [0.0, 0.0, 0.0]
+      }
+    ]
   },
 
   "rocket_launcher": {
     "enabled": true,
+    "visible": true,
     "collision_skin": 0.05,
-    "source": "capsule"
+    "source": "capsule",
+    "capsules": [
+      {
+        "enabled": true,
+        "name": "tube",
+        "start": [-0.8, 0.0, 0.0],
+        "end": [1.0, 0.0, 0.0],
+        "radius": 0.2,
+        "scale": [1.0, 1.0, 1.0],
+        "rotation_degrees": [0.0, 0.0, 0.0]
+      },
+      {
+        "enabled": true,
+        "name": "grip",
+        "start": [-0.15, 0.0, -0.3],
+        "end": [-0.15, 0.0, 0.0],
+        "radius": 0.1,
+        "scale": [1.0, 1.0, 1.0],
+        "rotation_degrees": [0.0, 0.0, 0.0]
+      }
+    ]
   },
 
   "grenade_launcher": {
     "enabled": true,
+    "visible": true,
     "collision_skin": 0.05,
-    "source": "capsule"
+    "source": "capsule",
+    "capsules": [
+      {
+        "enabled": true,
+        "name": "barrel",
+        "start": [-0.5, 0.0, 0.0],
+        "end": [0.8, 0.0, 0.0],
+        "radius": 0.18,
+        "scale": [1.0, 1.0, 1.0],
+        "rotation_degrees": [0.0, 0.0, 0.0]
+      },
+      {
+        "enabled": true,
+        "name": "grip",
+        "start": [-0.1, 0.0, -0.25],
+        "end": [-0.1, 0.0, 0.0],
+        "radius": 0.1,
+        "scale": [1.0, 1.0, 1.0],
+        "rotation_degrees": [0.0, 0.0, 0.0]
+      }
+    ]
   },
 
   "swordsword": {
     "enabled": true,
+    "visible": true,
     "collision_skin": 0.05,
-    "source": "capsule"
+    "source": "capsule",
+    "capsules": [
+      {
+        "enabled": true,
+        "name": "blade",
+        "start": [-0.3, 0.0, 0.0],
+        "end": [1.4, 0.0, 0.0],
+        "radius": 0.08,
+        "scale": [1.0, 1.0, 1.0],
+        "rotation_degrees": [0.0, 0.0, 0.0]
+      },
+      {
+        "enabled": true,
+        "name": "guard",
+        "start": [-0.3, -0.1, 0.0],
+        "end": [-0.3, 0.1, 0.0],
+        "radius": 0.1,
+        "scale": [1.0, 1.0, 1.0],
+        "rotation_degrees": [0.0, 0.0, 0.0]
+      }
+    ]
   },
 
   "spyknife": {
     "enabled": true,
+    "visible": true,
     "collision_skin": 0.1,
     "source": "capsule",
-    "capsule": {
-      "enabled": true,
-      "start": [-0.3, 0.0, 0.0],
-      "end": [0.8, 0.0, 0.0],
-      "radius": 0.25,
-      "scale": [1.0, 1.0, 1.0],
-      "rotation_degrees": [0.0, 0.0, 0.0]
-    }
+    "capsules": [
+      {
+        "enabled": true,
+        "name": "blade",
+        "start": [-0.3, 0.0, 0.0],
+        "end": [0.8, 0.0, 0.0],
+        "radius": 0.25,
+        "scale": [1.0, 1.0, 1.0],
+        "rotation_degrees": [0.0, 0.0, 0.0]
+      },
+      {
+        "enabled": true,
+        "name": "handle",
+        "start": [-0.55, 0.0, 0.0],
+        "end": [-0.3, 0.0, 0.0],
+        "radius": 0.12,
+        "scale": [1.0, 1.0, 1.0],
+        "rotation_degrees": [0.0, 0.0, 0.0]
+      }
+    ]
   }
 }

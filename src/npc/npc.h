@@ -194,6 +194,7 @@ public:
     uint32_t nextNpcId() { return nextId++; }
 
     void setGlobalDifficulty(float d);
+    void refreshDifficultyTuning();
     float globalDifficulty() const { return globalDifficulty_; }
 
     // Register a combat sound for NPC hearing system

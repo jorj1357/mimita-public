@@ -66,11 +66,13 @@ struct WeaponColliderDebugCapsule {
 
 struct WeaponCollisionRuntimeDebug {
     std::vector<WeaponColliderDebugSphere> spheres;
-    WeaponColliderDebugCapsule capsule;
+    WeaponColliderDebugCapsule capsule;                  // primary capsule (backward compat)
+    std::vector<WeaponColliderDebugCapsule> capsules;    // all capsules from JSON config
     std::string weaponId;
     bool valid = false;
+    bool visibleFromConfig = false;  // from weaponcollisions.json "visible" field
     bool fromJsonConfig = false; // true when JSON config drives this data
-    bool capsuleMode = false;    // true = single smooth capsule collision (default), false = JSON spheres
+    bool capsuleMode = false;    // true = smooth capsule collision (default), false = JSON spheres
     float collisionSkin = 0.04f; // per-weapon skin from config, defaults to 0.04
 };
 
@@ -540,8 +542,10 @@ public:
     // Previous frame body sample positions for limb sweep collisions
     std::vector<glm::vec3> previousBodySamplePositions;
     Capsule weaponCollisionCapsule{};
+    std::vector<Capsule> weaponCollisionCapsules;
     Capsule prevWeaponCollisionCapsule{}; // previous frame for sweep delta computation
     std::string weaponCollisionName;
+    glm::mat4 weaponModelTransform{1.0f}; // full world-space weapon model transform (3 axes)
 
     // Runtime debug data populated by collision solver, consumed by debug visuals
     WeaponCollisionRuntimeDebug weaponCollisionDebug;

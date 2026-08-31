@@ -235,7 +235,8 @@ void processRemoteBlastHitFeedback(
     uint32_t targetId,
     bool isNpc,
     Player& target,
-    int damage);
+    int damage,
+    uint32_t predictionSerial = 0);
 
 void processPlayerHit(
     RevolverShotResult& result,

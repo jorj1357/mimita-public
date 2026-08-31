@@ -1,4 +1,4 @@
-// 07 21 2026, 23 20
+// 08 31 2026, 17 24
 /* purpose
 * Owns client-side network projectile prediction, adoption, correction, and rendering.
 * Steps rocket and grenade projectiles through the shared projectile physics kernel.
@@ -16,6 +16,7 @@
 #include "network/weapon-runtime-reconciliation.h"
 #include "network/disagreement-visuals.h"
 #include "npc/npc-combat-log.h"
+#include "debug/debug-log.h"
 #include "debug/structured-log.h"
 
 #include <algorithm>
@@ -226,7 +227,7 @@ std::vector<ClientCollisionWorldView::PlayerReplica> projectileReplicas(
     const MultiplayerContext& ctx)
 {
     std::vector<ClientCollisionWorldView::PlayerReplica> replicas;
-    replicas.reserve(ctx.remotePlayers.size());
+    replicas.reserve(ctx.remotePlayers.size() + ctx.remoteNpcs.size());
     for (const auto& entry : ctx.remotePlayers)
     {
         const Player& player = entry.second;
@@ -237,6 +238,21 @@ std::vector<ClientCollisionWorldView::PlayerReplica> projectileReplicas(
         replica.dead = player.dead;
         replica.sizeScale = player.sizeScale;
         Capsule capsule = player.getCapsule();
+        replica.capsuleRadius = capsule.r;
+        replica.capsuleHeight = std::max(0.001f, capsule.b.z - capsule.a.z);
+        replica.capsuleCenter = (capsule.a + capsule.b) * 0.5f;
+        replicas.push_back(replica);
+    }
+    for (const auto& entry : ctx.remoteNpcs)
+    {
+        const Player& npc = entry.second;
+        ClientCollisionWorldView::PlayerReplica replica;
+        replica.playerId = entry.first;
+        replica.spawnGeneration = npc.spawnGeneration;
+        replica.pos = npc.pos;
+        replica.dead = npc.dead;
+        replica.sizeScale = npc.sizeScale;
+        Capsule capsule = npc.getCapsule();
         replica.capsuleRadius = capsule.r;
         replica.capsuleHeight = std::max(0.001f, capsule.b.z - capsule.a.z);
         replica.capsuleCenter = (capsule.a + capsule.b) * 0.5f;
@@ -1596,6 +1612,19 @@ void mpUpdateRemoteSwordStates(MultiplayerContext& ctx, float dt)
 
 void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& world)
 {
+    constexpr float kProjectileFixedDt = 1.0f / 60.0f;
+    (void)dt;
+    const uint32_t predictedSteps = ctx.clientSimulationStepsThisUpdate;
+
+    if (predictedSteps > 0)
+    {
+        Debug::logThrottled(Debug::Category::Weapons, "projectile-fixed-step", 1.0,
+            "[PROJECTILE FIXED STEP] localPlayerId=%u steps=%u accumulator=%.5f dt=%.5f hz=%u\n",
+            ctx.localPlayerId, predictedSteps,
+            ctx.clientSimulationAccumulator, kProjectileFixedDt,
+            GAMEPLAY_SIMULATION_HZ);
+    }
+
     // ── Retransmit unacknowledged fire requests ─────────────────────
     const uint64_t now = nowMs();
     for (auto it = ctx.pendingFireRequests.begin(); it != ctx.pendingFireRequests.end(); )
@@ -1634,9 +1663,15 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
         NetworkProjectile& projectile = it->second;
         projectile.previousPosition = projectile.position;
 
-        if (networkWeaponTypeIsProjectile(projectile.weaponType) &&
-            projectile.radius > 0.0f && dt > 0.0f)
+        const bool localPredicted = projectile.predicted &&
+            projectile.ownerPlayerId == ctx.localPlayerId;
+        const uint32_t simulationSteps = localPredicted ? predictedSteps : 0;
+        for (uint32_t simulationStep = 0;
+             simulationStep < simulationSteps && !projectile.exploded;
+             ++simulationStep)
         {
+            const float simulationDt = kProjectileFixedDt;
+            projectile.previousPosition = projectile.position;
             ClientCollisionWorldView physicsWorld(
                 world.collisionMesh,
                 world.collisionChunkSize,
@@ -1647,7 +1682,7 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
             ProjectilePhysicsState state = makePhysicsState(projectile);
             ProjectilePhysicsConfig config = makePhysicsConfig(projectile);
             ProjectileStepResult step =
-                simulateProjectileTick(state, config, physicsWorld, dt);
+                simulateProjectileTick(state, config, physicsWorld, simulationDt);
             applyPhysicsState(projectile, state);
             projectile.distanceTraveled += step.travelDistance;
             if (state.sleeping || step.type == ProjectileCollisionType::WorldBounce ||
@@ -1721,7 +1756,7 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
                             const int dmg = std::max(1, (int)std::round(dv));
                             WeaponFire::processRemoteBlastHitFeedback(
                                 *def, t.pos, t.pos - explodePos, attacker,
-                                id, isNpc, t, dmg);
+                                id, isNpc, t, dmg, projectile.fireSerial);
                         };
                         for (auto& kv : ctx.remoteNpcs)
                             applyBlast(kv.second, kv.first, true);
@@ -1769,8 +1804,11 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
                 }
             }
         }
-        else
+        if (!localPredicted && dt > 0.0f && !projectile.exploded)
         {
+            // Remote projectiles have no local collision authority. This is
+            // render-only extrapolation between server state packets; all
+            // collision, splash damage, and explosions remain server-owned.
             projectile.age += dt;
             projectile.position += projectile.velocity * dt;
         }

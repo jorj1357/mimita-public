@@ -14,6 +14,7 @@
 #include "gamemode/gamemode.h"
 #include "duel/duel-map-pool.h"
 #include "duel/duel-weapon-pool.h"
+#include "network/community-server-config.h"
 #include "network/multiplayer-context.h"
 #include "network/coordinator-client.h"
 #include "network/network-weapons.h"
@@ -26,6 +27,7 @@
 #include "npc/npc-combat-log.h"
 #include "entities/player.h"
 #include "world/world.h"
+#include "map/map-catalog.h"
 #include "config/networking-config.h"
 #include "config/movement-config.h"
 #include "debug/debug-log.h"
@@ -132,7 +134,7 @@ bool isKnownPacketType(uint8_t type)
 {
     // 2026-08-29: TODO use an explicit switch here so future packet types
     // cannot be silently rejected by an outdated numeric range.
-    return type >= PACKET_HELLO && type <= PACKET_GODBALL_HIT_CLAIM;
+    return type >= PACKET_HELLO && type <= PACKET_SERVER_NOTIFICATION;
 }
 
 void recordServerLoopPerf(ServerLoopPerf& perf, uint64_t loopUs, bool cappedCatchup)
@@ -206,6 +208,15 @@ namespace {
 
 ServerGameOverrides gServerOverrides;
 
+std::vector<std::string> communityMapPool()
+{
+    std::vector<std::string> result;
+    const MapCatalogResult catalog = scanMapCatalog();
+    for (const auto& entry : catalog.maps)
+        result.push_back(std::filesystem::path(entry.assetPath).stem().string());
+    return result;
+}
+
 } // namespace
 
 std::string gServerHostPlayerName;
@@ -252,6 +263,7 @@ int runServer(const LaunchOptions& options)
     // Load NPC difficulty config so server-authoritative NPC damage/fire rate
     // honors config/npc-difficulty.json (hot-reloaded in the server loop below).
     NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
+    CommunityServerConfig::instance().load();
     GamemodeRegistry::instance().loadDirectory("config/gamemodes");
     DuelMapPool::instance().load("config/duel-maps.json");
     DuelWeaponPool::instance().load("config/duel-weapons.json");
@@ -392,8 +404,12 @@ int runServer(const LaunchOptions& options)
     ListenServerState dedicatedIceState;
     dedicatedIceState.serverName = options.name.empty() ? "MiMITA Server" : options.name;
     dedicatedIceState.mapName = mapName;
-    dedicatedIceState.gameMode = "sandbox";
+    dedicatedIceState.gameMode = options.gameMode;
     dedicatedIceState.maxPlayers = options.maxPlayers;
+    dedicatedIceState.weaponSetId = options.weaponSetId;
+    dedicatedIceState.autoMapRotation = options.autoMapRotation;
+    dedicatedIceState.mapRotationMinutes = options.mapRotationMinutes;
+    dedicatedIceState.discordNotification = options.discordNotification;
     dedicatedIceState.passwordProtected = options.passwordProtected;
     dedicatedIceState.password = options.password;
     dedicatedIceState.hostPlayerName = options.hostPlayerName;
@@ -421,6 +437,15 @@ int runServer(const LaunchOptions& options)
         printf("%s [SERVER DUEL] enabled gamemode=%s goal=%d countdown=%.1fs rematch=%.1fs\n",
                serverTimestamp(), options.gamemodeId.c_str(), gm.goalValue,
                gm.countdownSeconds, gm.rematchSeconds);
+    }
+    else
+    {
+        serverCommunityMapStart(communityMapPool(), mapName,
+                                options.autoMapRotation,
+                                options.mapRotationMinutes,
+                                options.weaponSetId);
+        serverCommunitySetMode(options.gameMode);
+        serverCommunitySetWeaponSet(options.weaponSetId);
     }
 
     // Startup NPCs (controlled by --npcs and --no-npcs flags)
@@ -523,6 +548,13 @@ int runServer(const LaunchOptions& options)
         // Hot-reload config/npc-difficulty.json so server NPC damage/fire rate
         // edits apply live without a server restart.
         NpcDifficultyConfig::instance().pollReload();
+        static uint64_t dedicatedNpcDifficultyRevision = 0;
+        if (dedicatedNpcDifficultyRevision != NpcDifficultyConfig::instance().revision())
+        {
+            npcSystem.refreshDifficultyTuning();
+            dedicatedNpcDifficultyRevision = NpcDifficultyConfig::instance().revision();
+        }
+        CommunityServerConfig::instance().pollReload();
         DuelWeaponPool::instance().pollReload();
 
         // Hot-reload the movement preset (config/movement.json + preset) so the
@@ -880,10 +912,22 @@ bool startListenServer(ListenServerState& state, uint16_t port,
         state.mapName = settings->mapName;
         state.gameMode = settings->gameMode;
         state.maxPlayers = settings->maxPlayers;
+        state.weaponSetId = settings->weaponSetId;
+        state.autoMapRotation = settings->autoMapRotation;
+        state.mapRotationMinutes = settings->mapRotationMinutes;
+        state.discordNotification = settings->discordNotification;
         state.passwordProtected = settings->passwordProtected;
         state.password = settings->password;
         state.hostPlayerName = settings->hostPlayerName;
     }
+    if (settings && !settings->duelMode)
+        serverCommunityMapStart(communityMapPool(), state.mapName,
+                                state.autoMapRotation,
+                                state.mapRotationMinutes,
+                                state.weaponSetId);
+        serverCommunitySetWeaponSet(state.weaponSetId);
+    if (settings && !settings->duelMode)
+        serverCommunitySetMode(settings->gameMode);
     gServerHostPlayerName = settings ? settings->hostPlayerName : "";
 
     // Startup NPCs
@@ -994,6 +1038,13 @@ static void simulateOneServerTick(ListenServerState& state)
 
     // Hot-reload NPC difficulty so hosted-server NPCs honor the JSON live.
     NpcDifficultyConfig::instance().pollReload();
+    static uint64_t listenNpcDifficultyRevision = 0;
+    if (listenNpcDifficultyRevision != NpcDifficultyConfig::instance().revision())
+    {
+        state.npcSystem->refreshDifficultyTuning();
+        listenNpcDifficultyRevision = NpcDifficultyConfig::instance().revision();
+    }
+    CommunityServerConfig::instance().pollReload();
 
     {
         char buffer[2048];
@@ -1086,6 +1137,9 @@ static void simulateOneServerTick(ListenServerState& state)
                                    state.totalPacketsOut);
         tickReliableGameplayEvents(state.sock, state.players,
                                    state.totalPacketsOut);
+        serverDuelTick(state.sock, state.players, state.world, *state.npcWorld,
+                       state.npcs, *state.npcSystem, state.npcIdsAlive,
+                       state.tick, state.totalPacketsOut);
 
         uint64_t now = nowMs();
         if (now - state.lastLog >= 1000)
@@ -1251,6 +1305,11 @@ int runServerWithSettings(const ServerLaunchSettings& settings)
     opts.bindExplicit = true;
     opts.duel = settings.duelMode;
     opts.gamemodeId = settings.gamemodeId;
+    opts.gameMode = settings.gameMode;
+    opts.weaponSetId = settings.weaponSetId;
+    opts.autoMapRotation = settings.autoMapRotation;
+    opts.mapRotationMinutes = settings.mapRotationMinutes;
+    opts.discordNotification = settings.discordNotification;
 
     // Delegate to existing runServer
     return runServer(opts);

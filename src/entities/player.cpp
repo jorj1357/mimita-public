@@ -112,6 +112,7 @@ void Player::reset()
     equippedWeaponId.clear();
     collision.hasWeaponCollisionCapsule = false;
     weaponCollisionCapsule = Capsule{};
+    weaponModelTransform = glm::mat4(1.0f);
     weaponCollisionName.clear();
     weaponCollisionDebug = WeaponCollisionRuntimeDebug{};
 

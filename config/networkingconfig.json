@@ -130,7 +130,7 @@
 
   "server_authoritative_hits": {
     "comment": "false = client predicts hit feedback instantly (current default). true = client shows NOTHING until server confirms the hit. Disagreement effects always show when server rejects a hit. World impacts (wall/ground) always show regardless.",
-    "enabled": false
+    "enabled": true
   },
 
   "disagreement_visuals": {
@@ -139,8 +139,8 @@
   },
 
   "prediction": {
-    "comment": "Client-side prediction scope. Hitmarker + hit sound are ALWAYS predicted (instant). predict_damage controls instant damage numbers + target health bar. predict_deaths is OFF by default so a death is presented exactly once by the reliable server event (no predicted-then-confirmed double death).",
-    "predict_damage": true,
+    "comment": "Client-side prediction scope. Hitmarker + hit sound are ALWAYS predicted (instant). predict_damage controls instant damage numbers + target health bar. predict_deaths controls instant lethal presentation; the reliable server event remains authoritative and disagreement rolls back once.",
+    "predict_damage": false,
     "predict_deaths": false
   },
 

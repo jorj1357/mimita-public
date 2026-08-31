@@ -54,18 +54,17 @@ static int runBodyWeaponPass(
 
     std::vector<RecoveryContact> bwContacts = collectBodyWeaponContacts(p, world, bwSpheres);
 
-    // Weapon capsule: the weapon's solid bounding volume, tested exactly against
-    // nearby world triangles. The single smooth capsule has no discrete gaps, so
-    // it slides over edges/corners instead of catching, and the solver pushes the
-    // player so the weapon never sinks into a surface. JSON spheres are the
-    // opt-in legacy path (source "json").
+    // Weapon capsules: the weapon's solid bounding volume, tested exactly
+    // against nearby world triangles.
     if (p.weaponCollisionDebug.capsuleMode && p.collision.hasWeaponCollisionCapsule) {
+        const Capsule& wCap = p.weaponCollisionCapsule;
         std::vector<int> weaponCands = gatherGLBTriangles(
-            world, p.weaponCollisionCapsule, glm::vec3(0.0f), "weaponGather");
+            world, wCap, glm::vec3(0.0f), "weaponGather");
         std::vector<RecoveryContact> weaponCapsuleContacts =
-            collectCapsuleRecoveryContacts(world, p.weaponCollisionCapsule, weaponCands, "weapon");
-        gBW.weaponCapsuleContactCount = (int)weaponCapsuleContacts.size();
+            collectCapsuleRecoveryContacts(world, wCap, weaponCands, "weapon");
+        int totalWeaponContacts = (int)weaponCapsuleContacts.size();
         bwContacts.insert(bwContacts.end(), weaponCapsuleContacts.begin(), weaponCapsuleContacts.end());
+        gBW.weaponCapsuleContactCount = totalWeaponContacts;
     }
 
     for (const auto& c : bwContacts) {
@@ -135,7 +134,7 @@ static int runBodyWeaponPass(
     }
 
     if (pass == maxPasses - 1) {
-        for (const auto& pc : bodyPushContacts) projectVelocityAgainstNormal(p, pc.normal);
+        for (const auto& pc : bodyPushContacts) respondVelocityAgainstNormal(p, pc.normal);
     }
 
     auto t1 = std::chrono::steady_clock::now();

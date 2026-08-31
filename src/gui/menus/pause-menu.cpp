@@ -26,6 +26,7 @@
 #include "gui/gui-layout.h"
 #include "gui/gui-main.h"
 #include "gui/menus/settings-menu.h"
+#include "gui/menus/help-menu.h"
 #include "gui/ui-system.h"
 #include "input/input-commands.h"
 #include "input/mouse-lock.h"
@@ -38,7 +39,7 @@ extern DuelManager gDuelManager;
 namespace PauseMenu {
 namespace {
 
-enum class View { Main, ConfirmLeave, Settings };
+enum class View { Main, ConfirmLeave, Settings, Help };
 bool gOpen = false;
 View gView = View::Main;
 
@@ -186,6 +187,12 @@ void render(GLFWwindow* window)
         return;
     }
 
+    if (gView == View::Help) {
+        HelpMenuResult result = drawHelpMenu(window);
+        if (result.goBack) gView = View::Main;
+        return;
+    }
+
     if (gView == View::ConfirmLeave) {
         drawGuiElement(window, *layout.get("confirmPanel"));
         drawText(layout.get("confirmText"), layout.get("confirmText")->text);
@@ -199,6 +206,7 @@ void render(GLFWwindow* window)
     }
     if (const GuiElement* resume = layout.get("resumeButton"); resume && drawGuiElement(window, *resume).clicked) close(window);
     if (const GuiElement* settings = layout.get("settingsButton"); settings && drawGuiElement(window, *settings).clicked) gView = View::Settings;
+    if (const GuiElement* help = layout.get("helpButton"); help && drawGuiElement(window, *help).clicked) gView = View::Help;
     if (const GuiElement* invite = layout.get("inviteButton"); invite && drawGuiElement(window, *invite).clicked) {
         const GuiElement* url = layout.get("inviteUrl");
         const std::string value = url && !url->text.empty() ? url->text : "https://www.mimita.fun/download";

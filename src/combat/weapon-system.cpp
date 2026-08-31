@@ -194,6 +194,7 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
     } else {
         player.collision.hasWeaponCollisionCapsule = false;
         player.weaponCollisionName.clear();
+        player.weaponModelTransform = glm::mat4(1.0f);
         mPhysicalAimValid = false;
         if (mGodballPhys.active) {
             WeaponGodball::despawnBall(mGodballPhys);
@@ -705,6 +706,17 @@ void WeaponSystem::render(const Camera& camera, const Player& player) const {
                 DebugVis::drawWeaponLine(camera, ds.previousCenter, ds.currentCenter, {1.0f, 1.0f, 0.0f, 0.9f});
             }
         }
+    }
+
+    // Config-driven weapon capsule visibility (from weaponcollisions.json "visible" field)
+    // Uses ungated DebugVis::drawWeapon* functions — no debug flags needed.
+    if (player.weaponCollisionDebug.visibleFromConfig && player.collision.hasWeaponCollisionCapsule) {
+        const Capsule& cap = player.weaponCollisionCapsule;
+        DebugVis::drawWeaponCapsuleWire(camera, cap, {0.0f, 0.85f, 1.0f, 0.5f});
+        glm::vec3 center = (cap.a + cap.b) * 0.5f;
+        char label[96];
+        std::snprintf(label, sizeof(label), "weapon r=%.2f", cap.r);
+        DebugVis::drawWorldLabel(center + glm::vec3(0.0f, 0.0f, cap.r + 0.3f), label, {1.0f, 1.0f, 1.0f, 0.9f});
     }
 }
 

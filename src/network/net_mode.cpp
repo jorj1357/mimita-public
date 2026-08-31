@@ -61,6 +61,16 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
             options.duel = true;
         else if (std::strcmp(argv[i], "--gamemode") == 0 && i + 1 < argc)
             options.gamemodeId = argv[++i];
+        else if (std::strcmp(argv[i], "--mode") == 0 && i + 1 < argc)
+            options.gameMode = argv[++i];
+        else if (std::strcmp(argv[i], "--weapon-set") == 0 && i + 1 < argc)
+            options.weaponSetId = std::max(1, std::atoi(argv[++i]));
+        else if (std::strcmp(argv[i], "--no-map-rotation") == 0)
+            options.autoMapRotation = false;
+        else if (std::strcmp(argv[i], "--no-discord-notification") == 0)
+            options.discordNotification = false;
+        else if (std::strcmp(argv[i], "--map-rotation-minutes") == 0 && i + 1 < argc)
+            options.mapRotationMinutes = (uint32_t)std::clamp(std::atoi(argv[++i]), 1, 9999);
         else if (std::strcmp(argv[i], "--udp-echo") == 0)
         {
             options.udpEcho = true;
@@ -84,6 +94,11 @@ void printLaunchUsage()
     printf("  --timeout <secs>  Auto-exit server after N seconds (0=no timeout, default)\n");
     printf("  --duel            Run a first-to-goal PvP duel match (2 players)\n");
     printf("  --gamemode <id>   Gamemode JSON id used for duel rules (default: duel)\n");
+    printf("  --mode <id>       Community mode from config/onlinemodes.json\n");
+    printf("  --weapon-set <n>  Community weapon set from config/weaponsets.json\n");
+    printf("  --no-map-rotation Disable automatic community map rotation\n");
+    printf("  --map-rotation-minutes <1-9999> Automatic map rotation interval\n");
+    printf("  --no-discord-notification Disable the server-live Discord announcement\n");
     printf("  --ice             ICE NAT traversal is always enabled\n");
     printf("No args keeps the normal single-player/menu flow.\n");
 }

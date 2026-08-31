@@ -776,6 +776,11 @@ void simulateSharedNpcs(SOCKET sock,
             respawnServerNpc(n);
     }
 
+    // The NPC map is the authoritative lifecycle gate for its rockets. This
+    // runs before the next NPC fire broadcast, so an NPC that died this tick
+    // cannot leave a projectile alive or fire again while its body respawns.
+    cancelDeadNpcProjectiles(sock, players, npcs, projectiles, tick, totalPacketsOut);
+
     // Broadcast NPC weapon fire so clients see/hear the shot.
     // For projectile weapons (rocket, grenade), also creates ServerProjectile
     // and broadcasts ProjectileSpawnEventPacket — same path as player rockets.

@@ -112,7 +112,15 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
         AvatarSystem::instance().pollHotReload();
         RagdollConfig::instance().pollReload();
         RagdollDeathConfig::instance().pollReload();
-        NpcDifficultyConfig::instance().pollReload();
+        if (NpcDifficultyConfig::instance().pollReload())
+        {
+            static uint64_t lastNpcDifficultyRevision = 0;
+            if (lastNpcDifficultyRevision != NpcDifficultyConfig::instance().revision())
+            {
+                THE_NPC_SYSTEM.refreshDifficultyTuning();
+                lastNpcDifficultyRevision = NpcDifficultyConfig::instance().revision();
+            }
+        }
         GamemodeRegistry::instance().pollReload();
         DuelMapPool::instance().pollReload();
         DuelWeaponPool::instance().pollReload();

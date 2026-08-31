@@ -29,6 +29,7 @@
 #include "gamemode/gamemode.h"
 #include "menus/sandbox-map-menu.h"
 #include "menus/help-menu.h"
+#include "network/community-server-config.h"
 #include "game/bomb-tag-config.h"
 #include "map/map-catalog.h"
 #include "avatar/avatar-editor.h"
@@ -187,6 +188,9 @@ static void readServerSettingsFromBindings()
     std::string npcsStr = b.get("server.startup_npcs", "true");
     std::string npcCountStr = b.get("server.startup_npc_count", "1");
     std::string privacy = b.get("server.privacy", "Public (no password)");
+    std::string mode = b.get("server.mode", "Sandbox");
+    std::string weaponSet = b.get("server.weapon_set", "Set 1: Stable weapons");
+    std::string rotation = b.get("server.map_rotation_minutes", "15");
 
     gServerLaunchSettings.serverName = name;
     gServerLaunchSettings.mapName = mapName;
@@ -195,6 +199,17 @@ static void readServerSettingsFromBindings()
         privacy.find("Private") != std::string::npos;
     gServerLaunchSettings.password = b.get("server.password");
     gServerLaunchSettings.hostPlayerName = AuthSystem::instance().displayName();
+    const MimitaNet::CommunityMode* selectedMode =
+        MimitaNet::CommunityServerConfig::instance().modeByName(mode);
+    gServerLaunchSettings.gameMode = selectedMode ? selectedMode->id : "sandbox";
+    gServerLaunchSettings.weaponSetId = weaponSet.rfind("Set ", 0) == 0
+        ? std::max(1, std::atoi(weaponSet.c_str() + 4)) : 1;
+    gServerLaunchSettings.autoMapRotation =
+        b.get("server.auto_map_rotation", "true") == "true";
+    gServerLaunchSettings.mapRotationMinutes =
+        (uint32_t)std::clamp(std::atoi(rotation.c_str()), 1, 9999);
+    gServerLaunchSettings.discordNotification =
+        b.get("server.discord_notification", "true") == "true";
     gServerLaunchSettings.startupNpcsEnabled =
         npcsStr == "true" ||
         npcsStr == "1" ||
@@ -246,6 +261,11 @@ static bool launchServerProcess(const MimitaNet::ServerLaunchSettings& settings)
         + " --map \"" + settings.mapName + "\""
         + " --host-player \"" + settings.hostPlayerName + "\""
         + " --max-players " + std::to_string(settings.maxPlayers)
+        + " --mode \"" + settings.gameMode + "\""
+        + " --weapon-set " + std::to_string(settings.weaponSetId)
+        + (settings.autoMapRotation ? "" : " --no-map-rotation")
+        + " --map-rotation-minutes " + std::to_string(settings.mapRotationMinutes)
+        + (settings.discordNotification ? "" : " --no-discord-notification")
         + " --password-protected " + std::string(settings.passwordProtected ? "1" : "0")
         + " --password \"" + settings.password + "\""
         + " --room-file \"" + roomFilePath + "\""
@@ -614,7 +634,12 @@ void guiMain(GLFWwindow* win, GameState& state)
             MainMenuResult r = drawMainMenu(win);
 
             if (r.goPlay)
-                gGuiMenuState = GUI_MENU_PLAY;
+            {
+                // Play now opens the community server browser/create flow.
+                // Duel queue remains disabled until it is intentionally restored.
+                onlineMenuSetActive(true);
+                gGuiMenuState = GUI_MENU_SERVERS;
+            }
             else if (r.goSettings)
             {
                 AnalyticsManager::instance().trackUi("settings_opened");
@@ -658,6 +683,10 @@ void guiMain(GLFWwindow* win, GameState& state)
                 printf("[MAIN MENU] switching to login screen\n");
                 loginMenuSetActive(true);
                 gGuiMenuState = GUI_MENU_LOGIN;
+            }
+            else if (r.goHelp)
+            {
+                gGuiMenuState = GUI_MENU_HELP;
             }
 
             break;

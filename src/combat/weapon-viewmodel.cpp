@@ -258,6 +258,8 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
 
     if (world)
         player.collision.hasWeaponCollisionCapsule = false;
+    if (world)
+        player.weaponModelTransform = glm::mat4(1.0f);
     if (updatePlayerPose)
         player.updateModelWorldTransforms();
 
@@ -416,6 +418,7 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
                 weaponTransform, colGrip, colMuzzle, colRadius);
             player.collision.hasWeaponCollisionCapsule = true;
             player.weaponCollisionCapsule = weaponCap;
+            player.weaponModelTransform = weaponTransform;
 
             // Base transform from arm to weapon model space (no viewmodel config)
             glm::mat4 armToWeapon = glm::translate(glm::mat4(1.0f), handPoint) *

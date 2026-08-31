@@ -233,6 +233,7 @@ IceHostResult coordinatorIceHost(const std::string& hostSessionId, const std::st
         + "\",\"gamemode\":\"" + jsonEscape(metadata.gamemode)
         + "\",\"max_players\":" + std::to_string(metadata.maxPlayers)
         + ",\"password_protected\":" + (metadata.passwordProtected ? "true" : "false")
+        + ",\"discord_notification\":" + (metadata.discordNotification ? "true" : "false")
         + ",\"host_player_name\":\"" + jsonEscape(metadata.hostPlayerName)
         + "\",\"port\":" + std::to_string(metadata.port) + "}";
     std::string response;
