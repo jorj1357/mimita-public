@@ -606,60 +606,6 @@ void guiMain(GLFWwindow* win, GameState& state)
     uiBeginFrame(win, "menu");
     GuiEditor::instance().setActiveLayout(layoutFileForMenu(gGuiMenuState));
 
-    // ── 3D Avatar Preview for Main Menu ──────────────────────────
-    if (gGuiMenuState == GUI_MENU_AUTH || gGuiMenuState == GUI_MENU_MAIN)
-    {
-        MenuAvatarPreview& av = MenuAvatarPreview::instance();
-        av.pollHotReload();
-
-        extern Player* gpPlayer;
-        if (gpPlayer && gpPlayer->modelLoaded)
-        {
-            glClear(GL_DEPTH_BUFFER_BIT);
-            setupPlayerPreviewLighting();
-
-            GuiLayout& mmLayout = GuiLayoutManager::instance().getLayout("config/gui/main-menu.json");
-            const GuiElement* coverEl = mmLayout.get("coverImage");
-            const GuiElement* exitEl = mmLayout.get("exitButton");
-            int fbW = 0, fbH = 0;
-            glfwGetFramebufferSize(win, &fbW, &fbH);
-            float scaleX = (float)fbW / 1920.0f;
-
-            float panelLeft = exitEl ? (exitEl->x + exitEl->w + 40.0f) : 650.0f;
-            float panelRight = coverEl ? (coverEl->x + coverEl->w) * 0.85f : 1400.0f;
-
-            int prevPX = (int)(panelLeft * scaleX);
-            int prevPW = (int)((panelRight - panelLeft) * scaleX);
-
-            glEnable(GL_SCISSOR_TEST);
-            glScissor(prevPX, 0, prevPW, fbH);
-            glClearColor(0.035f, 0.040f, 0.055f, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-            glDisable(GL_SCISSOR_TEST);
-
-            const auto& cfg = av.config();
-            Camera previewCam;
-            previewCam.fov = cfg.cameraFOV;
-
-            float yawRad = glm::radians(av.rotationAngle());
-            glm::vec3 offset = cfg.cameraPosition;
-            float cosA = std::cos(yawRad);
-            float sinA = std::sin(yawRad);
-            glm::vec3 rotated(
-                offset.x * cosA - offset.y * sinA,
-                offset.x * sinA + offset.y * cosA,
-                offset.z
-            );
-            previewCam.pos = cfg.cameraTarget + rotated;
-            glm::vec3 lookTarget = cfg.cameraTarget;
-            previewCam.front = glm::normalize(lookTarget - previewCam.pos);
-            previewCam.right = glm::normalize(glm::cross(previewCam.front, glm::vec3(0.0f, 0.0f, 1.0f)));
-            previewCam.up = glm::normalize(glm::cross(previewCam.right, previewCam.front));
-
-            renderPlayer(*gpPlayer, previewCam);
-        }
-    }
-
     switch (gGuiMenuState)
     {
         case GUI_MENU_AUTH:

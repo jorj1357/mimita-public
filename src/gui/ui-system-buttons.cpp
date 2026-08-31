@@ -137,6 +137,11 @@ void uiPlaceholderImageButton(GLFWwindow* win, const char* label, UIRect r)
 void uiBeginScrollArea(GLFWwindow* win, UIRect area, float contentHeight, UIScrollState& scroll)
 {
     GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+
+    // Finish earlier UI before changing the active clip rectangle.  Batched
+    // geometry must not be rendered under this scroll area's scissor state.
+    uiFlushBatch();
+
     UIRect fbArea = cs.designToScreen(area);
 
     glEnable(GL_SCISSOR_TEST);
@@ -145,8 +150,11 @@ void uiBeginScrollArea(GLFWwindow* win, UIRect area, float contentHeight, UIScro
 
     double mx, my;
     glfwGetCursorPos(win, &mx, &my);
-    bool inArea = mx >= fbArea.x && mx <= fbArea.x + fbArea.w &&
-                  my >= fbArea.y && my <= fbArea.y + fbArea.h;
+    double fbX = 0.0;
+    double fbY = 0.0;
+    cs.cursorWindowToScreen(mx, my, fbX, fbY);
+    bool inArea = fbX >= fbArea.x && fbX <= fbArea.x + fbArea.w &&
+                  fbY >= fbArea.y && fbY <= fbArea.y + fbArea.h;
 
     if (inArea)
     {
@@ -167,6 +175,10 @@ void uiEndScrollArea(UIRect area, float contentHeight, UIScrollState& scroll)
     GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
     cs.popTranslate();
 
+    // The list was queued while the scissor rectangle was active.  Flush it
+    // before disabling the scissor rectangle so content cannot leak out of
+    // the scroll box.
+    uiFlushBatch();
     glDisable(GL_SCISSOR_TEST);
 
     float maxScroll = std::max(0.0f, contentHeight - area.h);
