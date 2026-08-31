@@ -10,14 +10,17 @@ import os
 import subprocess
 import sys
 
+from build_toolchain import compiler, ccache, glfw_include
+
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
-# Toolchain paths are overridable via environment variables so the same scripts
-# run locally (defaults below) and on CI runners (e.g. GitHub Actions).
-DEFAULT_COMPILER = r"C:\important\winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4\mingw64\bin\g++.exe"
-COMPILER = os.environ.get("MIMITA_COMPILER", DEFAULT_COMPILER)
-CCACHE = os.environ.get("MIMITA_CCACHE", os.path.join(os.path.dirname(COMPILER), "ccache.exe"))
-GLFW_INCLUDE = os.environ.get("MIMITA_GLFW_INCLUDE", r"C:\important\glfw-3.4.bin.WIN64\include")
+try:
+    COMPILER = compiler()
+    CCACHE = ccache(COMPILER)
+    GLFW_INCLUDE = glfw_include()
+except FileNotFoundError as error:
+    print(f"[TOOLCHAIN] {error}")
+    sys.exit(2)
 BUILD_DIR = os.path.join(ROOT, "build")
 SOURCE = os.path.join(ROOT, "src", "effects", "effect-part.cpp")
 STAGING_DLL = os.path.join(BUILD_DIR, "mimita-game.build.dll")

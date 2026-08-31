@@ -1,4 +1,5 @@
 # ── Dependencies ──────────────────────────────────────────────────────────────
+developer/
 node_modules/
 website/node_modules/
 
@@ -115,5 +116,4 @@ release/
 
 # ── Overseer / Dev tools ────────────────────────────────────────────────────
 overseer_test.py
-
 

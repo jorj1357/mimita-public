@@ -1,4 +1,5 @@
-C:\mimita-priv-v8\src\pch.h.gch: C:\mimita-priv-v8\src\pch.h \
+C:\Users\Administrator\Downloads\mimita-public-8292026stash\src\pch.h.gch: \
+ C:\Users\Administrator\Downloads\mimita-public-8292026stash\src\pch.h \
  include/glad/glad.h include/KHR/khrplatform.h include/GLFW/glfw3.h \
  include/glm/glm.hpp include/glm/detail/_fixes.hpp \
  include/glm/detail/setup.hpp include/glm/detail/../simd/platform.h \
@@ -48,79 +49,80 @@ C:\mimita-priv-v8\src\pch.h.gch: C:\mimita-priv-v8\src\pch.h \
  include/glm/./ext/matrix_double2x2.hpp \
  include/glm/./ext/../detail/type_mat2x2.hpp \
  include/glm/./ext/../detail/type_mat2x2.inl \
- C:/mimita-priv-v8/include/glm/matrix.hpp \
- C:/mimita-priv-v8/include/glm/detail/setup.hpp \
- C:/mimita-priv-v8/include/glm/mat2x3.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_double2x3.hpp \
- C:/mimita-priv-v8/include/glm/detail/type_mat2x3.hpp \
- C:/mimita-priv-v8/include/glm/detail/type_mat2x3.inl \
- C:/mimita-priv-v8/include/glm/ext/matrix_double2x3_precision.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_float2x3.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_float2x3_precision.hpp \
- C:/mimita-priv-v8/include/glm/mat2x4.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_double2x4.hpp \
- C:/mimita-priv-v8/include/glm/detail/type_mat2x4.hpp \
- C:/mimita-priv-v8/include/glm/detail/type_mat2x4.inl \
- C:/mimita-priv-v8/include/glm/ext/matrix_double2x4_precision.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_float2x4.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_float2x4_precision.hpp \
- C:/mimita-priv-v8/include/glm/mat3x2.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_double3x2.hpp \
- C:/mimita-priv-v8/include/glm/detail/type_mat3x2.hpp \
- C:/mimita-priv-v8/include/glm/detail/type_mat3x2.inl \
- C:/mimita-priv-v8/include/glm/ext/matrix_double3x2_precision.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_float3x2.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_float3x2_precision.hpp \
- C:/mimita-priv-v8/include/glm/mat3x3.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_double3x3.hpp \
- C:/mimita-priv-v8/include/glm/detail/type_mat3x3.hpp \
- C:/mimita-priv-v8/include/glm/detail/type_mat3x3.inl \
- C:/mimita-priv-v8/include/glm/ext/matrix_double3x3_precision.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_float3x3.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_float3x3_precision.hpp \
- C:/mimita-priv-v8/include/glm/mat3x4.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_double3x4.hpp \
- C:/mimita-priv-v8/include/glm/detail/type_mat3x4.hpp \
- C:/mimita-priv-v8/include/glm/detail/type_mat3x4.inl \
- C:/mimita-priv-v8/include/glm/ext/matrix_double3x4_precision.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_float3x4.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_float3x4_precision.hpp \
- C:/mimita-priv-v8/include/glm/mat4x2.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_double4x2.hpp \
- C:/mimita-priv-v8/include/glm/detail/type_mat4x2.hpp \
- C:/mimita-priv-v8/include/glm/detail/type_mat4x2.inl \
- C:/mimita-priv-v8/include/glm/ext/matrix_double4x2_precision.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_float4x2.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_float4x2_precision.hpp \
- C:/mimita-priv-v8/include/glm/mat4x3.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_double4x3.hpp \
- C:/mimita-priv-v8/include/glm/detail/type_mat4x3.hpp \
- C:/mimita-priv-v8/include/glm/detail/type_mat4x3.inl \
- C:/mimita-priv-v8/include/glm/ext/matrix_double4x3_precision.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_float4x3.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_float4x3_precision.hpp \
- C:/mimita-priv-v8/include/glm/mat4x4.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_double4x4.hpp \
- C:/mimita-priv-v8/include/glm/detail/type_mat4x4.hpp \
- C:/mimita-priv-v8/include/glm/detail/type_mat4x4.inl \
- C:/mimita-priv-v8/include/glm/ext/matrix_double4x4_precision.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_float4x4.hpp \
- C:/mimita-priv-v8/include/glm/ext/matrix_float4x4_precision.hpp \
- C:/mimita-priv-v8/include/glm/detail/func_matrix.inl \
- C:/mimita-priv-v8/include/glm/geometric.hpp \
- C:/mimita-priv-v8/include/glm/detail/func_geometric.inl \
- C:/mimita-priv-v8/include/glm/exponential.hpp \
- C:/mimita-priv-v8/include/glm/detail/type_vec1.hpp \
- C:/mimita-priv-v8/include/glm/detail/type_vec1.inl \
- C:/mimita-priv-v8/include/glm/detail/func_exponential.inl \
- C:/mimita-priv-v8/include/glm/vector_relational.hpp \
- C:/mimita-priv-v8/include/glm/detail/func_vector_relational.inl \
- C:/mimita-priv-v8/include/glm/detail/_vectorize.hpp \
- C:/mimita-priv-v8/include/glm/common.hpp \
- C:/mimita-priv-v8/include/glm/detail/_fixes.hpp \
- C:/mimita-priv-v8/include/glm/detail/func_common.inl \
- C:/mimita-priv-v8/include/glm/detail/compute_common.hpp \
- C:/mimita-priv-v8/include/glm/detail/setup.hpp \
+ include/glm/./ext/../detail/../matrix.hpp \
+ include/glm/./ext/../detail/../detail/setup.hpp \
+ include/glm/./ext/../detail/../mat2x3.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_double2x3.hpp \
+ include/glm/./ext/../detail/.././ext/../detail/type_mat2x3.hpp \
+ include/glm/./ext/../detail/.././ext/../detail/type_mat2x3.inl \
+ include/glm/./ext/../detail/.././ext/matrix_double2x3_precision.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_float2x3.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_float2x3_precision.hpp \
+ include/glm/./ext/../detail/../mat2x4.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_double2x4.hpp \
+ include/glm/./ext/../detail/.././ext/../detail/type_mat2x4.hpp \
+ include/glm/./ext/../detail/.././ext/../detail/type_mat2x4.inl \
+ include/glm/./ext/../detail/.././ext/matrix_double2x4_precision.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_float2x4.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_float2x4_precision.hpp \
+ include/glm/./ext/../detail/../mat3x2.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_double3x2.hpp \
+ include/glm/./ext/../detail/.././ext/../detail/type_mat3x2.hpp \
+ include/glm/./ext/../detail/.././ext/../detail/type_mat3x2.inl \
+ include/glm/./ext/../detail/.././ext/matrix_double3x2_precision.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_float3x2.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_float3x2_precision.hpp \
+ include/glm/./ext/../detail/../mat3x3.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_double3x3.hpp \
+ include/glm/./ext/../detail/.././ext/../detail/type_mat3x3.hpp \
+ include/glm/./ext/../detail/.././ext/../detail/type_mat3x3.inl \
+ include/glm/./ext/../detail/.././ext/matrix_double3x3_precision.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_float3x3.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_float3x3_precision.hpp \
+ include/glm/./ext/../detail/../mat3x4.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_double3x4.hpp \
+ include/glm/./ext/../detail/.././ext/../detail/type_mat3x4.hpp \
+ include/glm/./ext/../detail/.././ext/../detail/type_mat3x4.inl \
+ include/glm/./ext/../detail/.././ext/matrix_double3x4_precision.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_float3x4.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_float3x4_precision.hpp \
+ include/glm/./ext/../detail/../mat4x2.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_double4x2.hpp \
+ include/glm/./ext/../detail/.././ext/../detail/type_mat4x2.hpp \
+ include/glm/./ext/../detail/.././ext/../detail/type_mat4x2.inl \
+ include/glm/./ext/../detail/.././ext/matrix_double4x2_precision.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_float4x2.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_float4x2_precision.hpp \
+ include/glm/./ext/../detail/../mat4x3.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_double4x3.hpp \
+ include/glm/./ext/../detail/.././ext/../detail/type_mat4x3.hpp \
+ include/glm/./ext/../detail/.././ext/../detail/type_mat4x3.inl \
+ include/glm/./ext/../detail/.././ext/matrix_double4x3_precision.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_float4x3.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_float4x3_precision.hpp \
+ include/glm/./ext/../detail/../mat4x4.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_double4x4.hpp \
+ include/glm/./ext/../detail/.././ext/../detail/type_mat4x4.hpp \
+ include/glm/./ext/../detail/.././ext/../detail/type_mat4x4.inl \
+ include/glm/./ext/../detail/.././ext/matrix_double4x4_precision.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_float4x4.hpp \
+ include/glm/./ext/../detail/.././ext/matrix_float4x4_precision.hpp \
+ include/glm/./ext/../detail/../detail/func_matrix.inl \
+ include/glm/./ext/../detail/../detail/../geometric.hpp \
+ include/glm/./ext/../detail/../detail/../detail/func_geometric.inl \
+ include/glm/./ext/../detail/../detail/../detail/../exponential.hpp \
+ include/glm/./ext/../detail/../detail/../detail/../detail/type_vec1.hpp \
+ include/glm/./ext/../detail/../detail/../detail/../detail/type_vec1.inl \
+ include/glm/./ext/../detail/../detail/../detail/../detail/func_exponential.inl \
+ include/glm/./ext/../detail/../detail/../detail/../detail/../vector_relational.hpp \
+ include/glm/./ext/../detail/../detail/../detail/../detail/../detail/setup.hpp \
+ include/glm/./ext/../detail/../detail/../detail/../detail/../detail/func_vector_relational.inl \
+ include/glm/./ext/../detail/../detail/../detail/../detail/_vectorize.hpp \
+ include/glm/./ext/../detail/../detail/../detail/../common.hpp \
+ include/glm/./ext/../detail/../detail/../detail/../detail/_fixes.hpp \
+ include/glm/./ext/../detail/../detail/../detail/../detail/func_common.inl \
+ include/glm/./ext/../detail/../detail/../detail/../detail/compute_common.hpp \
+ include/glm/./ext/../detail/../detail/../detail/../detail/setup.hpp \
  include/glm/./ext/matrix_double2x2_precision.hpp \
  include/glm/./ext/matrix_float2x2.hpp \
  include/glm/./ext/matrix_float2x2_precision.hpp \
@@ -131,9 +133,9 @@ C:\mimita-priv-v8\src\pch.h.gch: C:\mimita-priv-v8\src\pch.h \
  include/glm/gtc/matrix_transform.hpp \
  include/glm/gtc/../ext/matrix_projection.hpp \
  include/glm/gtc/../ext/../gtc/constants.hpp \
- C:/mimita-priv-v8/include/glm/ext/scalar_constants.hpp \
- C:/mimita-priv-v8/include/glm/detail/setup.hpp \
- C:/mimita-priv-v8/include/glm/ext/scalar_constants.inl \
+ include/glm/gtc/../ext/../gtc/../ext/scalar_constants.hpp \
+ include/glm/gtc/../ext/../gtc/../ext/../detail/setup.hpp \
+ include/glm/gtc/../ext/../gtc/../ext/scalar_constants.inl \
  include/glm/gtc/../ext/../gtc/constants.inl \
  include/glm/gtc/../ext/matrix_projection.inl \
  include/glm/gtc/../ext/matrix_clip_space.hpp \
@@ -144,16 +146,17 @@ C:\mimita-priv-v8\src\pch.h.gch: C:\mimita-priv-v8\src\pch.h \
  include/glm/gtc/../gtc/quaternion.hpp \
  include/glm/gtc/../gtc/../ext/vector_relational.hpp \
  include/glm/gtc/../gtc/../ext/vector_relational.inl \
- C:/mimita-priv-v8/include/glm/detail/type_float.hpp \
+ include/glm/gtc/../gtc/../ext/../detail/type_float.hpp \
+ include/glm/gtc/../gtc/../ext/../detail/setup.hpp \
  include/glm/gtc/../gtc/../ext/quaternion_common.hpp \
- C:/mimita-priv-v8/include/glm/ext/quaternion_geometric.hpp \
- C:/mimita-priv-v8/include/glm/ext/quaternion_geometric.inl \
+ include/glm/gtc/../gtc/../ext/../ext/quaternion_geometric.hpp \
+ include/glm/gtc/../gtc/../ext/../ext/quaternion_geometric.inl \
  include/glm/gtc/../gtc/../ext/quaternion_common.inl \
  include/glm/gtc/../gtc/../ext/quaternion_float.hpp \
- C:/mimita-priv-v8/include/glm/detail/type_quat.hpp \
- C:/mimita-priv-v8/include/glm/ext/quaternion_relational.hpp \
- C:/mimita-priv-v8/include/glm/ext/quaternion_relational.inl \
- C:/mimita-priv-v8/include/glm/detail/type_quat.inl \
+ include/glm/gtc/../gtc/../ext/../detail/type_quat.hpp \
+ include/glm/gtc/../gtc/../ext/../detail/../ext/quaternion_relational.hpp \
+ include/glm/gtc/../gtc/../ext/../detail/../ext/quaternion_relational.inl \
+ include/glm/gtc/../gtc/../ext/../detail/type_quat.inl \
  include/glm/gtc/../gtc/../ext/quaternion_float_precision.hpp \
  include/glm/gtc/../gtc/../ext/quaternion_double.hpp \
  include/glm/gtc/../gtc/../ext/quaternion_double_precision.hpp \
@@ -234,79 +237,80 @@ include/glm/mat2x2.hpp:
 include/glm/./ext/matrix_double2x2.hpp:
 include/glm/./ext/../detail/type_mat2x2.hpp:
 include/glm/./ext/../detail/type_mat2x2.inl:
-C:/mimita-priv-v8/include/glm/matrix.hpp:
-C:/mimita-priv-v8/include/glm/detail/setup.hpp:
-C:/mimita-priv-v8/include/glm/mat2x3.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_double2x3.hpp:
-C:/mimita-priv-v8/include/glm/detail/type_mat2x3.hpp:
-C:/mimita-priv-v8/include/glm/detail/type_mat2x3.inl:
-C:/mimita-priv-v8/include/glm/ext/matrix_double2x3_precision.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_float2x3.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_float2x3_precision.hpp:
-C:/mimita-priv-v8/include/glm/mat2x4.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_double2x4.hpp:
-C:/mimita-priv-v8/include/glm/detail/type_mat2x4.hpp:
-C:/mimita-priv-v8/include/glm/detail/type_mat2x4.inl:
-C:/mimita-priv-v8/include/glm/ext/matrix_double2x4_precision.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_float2x4.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_float2x4_precision.hpp:
-C:/mimita-priv-v8/include/glm/mat3x2.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_double3x2.hpp:
-C:/mimita-priv-v8/include/glm/detail/type_mat3x2.hpp:
-C:/mimita-priv-v8/include/glm/detail/type_mat3x2.inl:
-C:/mimita-priv-v8/include/glm/ext/matrix_double3x2_precision.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_float3x2.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_float3x2_precision.hpp:
-C:/mimita-priv-v8/include/glm/mat3x3.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_double3x3.hpp:
-C:/mimita-priv-v8/include/glm/detail/type_mat3x3.hpp:
-C:/mimita-priv-v8/include/glm/detail/type_mat3x3.inl:
-C:/mimita-priv-v8/include/glm/ext/matrix_double3x3_precision.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_float3x3.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_float3x3_precision.hpp:
-C:/mimita-priv-v8/include/glm/mat3x4.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_double3x4.hpp:
-C:/mimita-priv-v8/include/glm/detail/type_mat3x4.hpp:
-C:/mimita-priv-v8/include/glm/detail/type_mat3x4.inl:
-C:/mimita-priv-v8/include/glm/ext/matrix_double3x4_precision.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_float3x4.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_float3x4_precision.hpp:
-C:/mimita-priv-v8/include/glm/mat4x2.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_double4x2.hpp:
-C:/mimita-priv-v8/include/glm/detail/type_mat4x2.hpp:
-C:/mimita-priv-v8/include/glm/detail/type_mat4x2.inl:
-C:/mimita-priv-v8/include/glm/ext/matrix_double4x2_precision.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_float4x2.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_float4x2_precision.hpp:
-C:/mimita-priv-v8/include/glm/mat4x3.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_double4x3.hpp:
-C:/mimita-priv-v8/include/glm/detail/type_mat4x3.hpp:
-C:/mimita-priv-v8/include/glm/detail/type_mat4x3.inl:
-C:/mimita-priv-v8/include/glm/ext/matrix_double4x3_precision.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_float4x3.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_float4x3_precision.hpp:
-C:/mimita-priv-v8/include/glm/mat4x4.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_double4x4.hpp:
-C:/mimita-priv-v8/include/glm/detail/type_mat4x4.hpp:
-C:/mimita-priv-v8/include/glm/detail/type_mat4x4.inl:
-C:/mimita-priv-v8/include/glm/ext/matrix_double4x4_precision.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_float4x4.hpp:
-C:/mimita-priv-v8/include/glm/ext/matrix_float4x4_precision.hpp:
-C:/mimita-priv-v8/include/glm/detail/func_matrix.inl:
-C:/mimita-priv-v8/include/glm/geometric.hpp:
-C:/mimita-priv-v8/include/glm/detail/func_geometric.inl:
-C:/mimita-priv-v8/include/glm/exponential.hpp:
-C:/mimita-priv-v8/include/glm/detail/type_vec1.hpp:
-C:/mimita-priv-v8/include/glm/detail/type_vec1.inl:
-C:/mimita-priv-v8/include/glm/detail/func_exponential.inl:
-C:/mimita-priv-v8/include/glm/vector_relational.hpp:
-C:/mimita-priv-v8/include/glm/detail/func_vector_relational.inl:
-C:/mimita-priv-v8/include/glm/detail/_vectorize.hpp:
-C:/mimita-priv-v8/include/glm/common.hpp:
-C:/mimita-priv-v8/include/glm/detail/_fixes.hpp:
-C:/mimita-priv-v8/include/glm/detail/func_common.inl:
-C:/mimita-priv-v8/include/glm/detail/compute_common.hpp:
-C:/mimita-priv-v8/include/glm/detail/setup.hpp:
+include/glm/./ext/../detail/../matrix.hpp:
+include/glm/./ext/../detail/../detail/setup.hpp:
+include/glm/./ext/../detail/../mat2x3.hpp:
+include/glm/./ext/../detail/.././ext/matrix_double2x3.hpp:
+include/glm/./ext/../detail/.././ext/../detail/type_mat2x3.hpp:
+include/glm/./ext/../detail/.././ext/../detail/type_mat2x3.inl:
+include/glm/./ext/../detail/.././ext/matrix_double2x3_precision.hpp:
+include/glm/./ext/../detail/.././ext/matrix_float2x3.hpp:
+include/glm/./ext/../detail/.././ext/matrix_float2x3_precision.hpp:
+include/glm/./ext/../detail/../mat2x4.hpp:
+include/glm/./ext/../detail/.././ext/matrix_double2x4.hpp:
+include/glm/./ext/../detail/.././ext/../detail/type_mat2x4.hpp:
+include/glm/./ext/../detail/.././ext/../detail/type_mat2x4.inl:
+include/glm/./ext/../detail/.././ext/matrix_double2x4_precision.hpp:
+include/glm/./ext/../detail/.././ext/matrix_float2x4.hpp:
+include/glm/./ext/../detail/.././ext/matrix_float2x4_precision.hpp:
+include/glm/./ext/../detail/../mat3x2.hpp:
+include/glm/./ext/../detail/.././ext/matrix_double3x2.hpp:
+include/glm/./ext/../detail/.././ext/../detail/type_mat3x2.hpp:
+include/glm/./ext/../detail/.././ext/../detail/type_mat3x2.inl:
+include/glm/./ext/../detail/.././ext/matrix_double3x2_precision.hpp:
+include/glm/./ext/../detail/.././ext/matrix_float3x2.hpp:
+include/glm/./ext/../detail/.././ext/matrix_float3x2_precision.hpp:
+include/glm/./ext/../detail/../mat3x3.hpp:
+include/glm/./ext/../detail/.././ext/matrix_double3x3.hpp:
+include/glm/./ext/../detail/.././ext/../detail/type_mat3x3.hpp:
+include/glm/./ext/../detail/.././ext/../detail/type_mat3x3.inl:
+include/glm/./ext/../detail/.././ext/matrix_double3x3_precision.hpp:
+include/glm/./ext/../detail/.././ext/matrix_float3x3.hpp:
+include/glm/./ext/../detail/.././ext/matrix_float3x3_precision.hpp:
+include/glm/./ext/../detail/../mat3x4.hpp:
+include/glm/./ext/../detail/.././ext/matrix_double3x4.hpp:
+include/glm/./ext/../detail/.././ext/../detail/type_mat3x4.hpp:
+include/glm/./ext/../detail/.././ext/../detail/type_mat3x4.inl:
+include/glm/./ext/../detail/.././ext/matrix_double3x4_precision.hpp:
+include/glm/./ext/../detail/.././ext/matrix_float3x4.hpp:
+include/glm/./ext/../detail/.././ext/matrix_float3x4_precision.hpp:
+include/glm/./ext/../detail/../mat4x2.hpp:
+include/glm/./ext/../detail/.././ext/matrix_double4x2.hpp:
+include/glm/./ext/../detail/.././ext/../detail/type_mat4x2.hpp:
+include/glm/./ext/../detail/.././ext/../detail/type_mat4x2.inl:
+include/glm/./ext/../detail/.././ext/matrix_double4x2_precision.hpp:
+include/glm/./ext/../detail/.././ext/matrix_float4x2.hpp:
+include/glm/./ext/../detail/.././ext/matrix_float4x2_precision.hpp:
+include/glm/./ext/../detail/../mat4x3.hpp:
+include/glm/./ext/../detail/.././ext/matrix_double4x3.hpp:
+include/glm/./ext/../detail/.././ext/../detail/type_mat4x3.hpp:
+include/glm/./ext/../detail/.././ext/../detail/type_mat4x3.inl:
+include/glm/./ext/../detail/.././ext/matrix_double4x3_precision.hpp:
+include/glm/./ext/../detail/.././ext/matrix_float4x3.hpp:
+include/glm/./ext/../detail/.././ext/matrix_float4x3_precision.hpp:
+include/glm/./ext/../detail/../mat4x4.hpp:
+include/glm/./ext/../detail/.././ext/matrix_double4x4.hpp:
+include/glm/./ext/../detail/.././ext/../detail/type_mat4x4.hpp:
+include/glm/./ext/../detail/.././ext/../detail/type_mat4x4.inl:
+include/glm/./ext/../detail/.././ext/matrix_double4x4_precision.hpp:
+include/glm/./ext/../detail/.././ext/matrix_float4x4.hpp:
+include/glm/./ext/../detail/.././ext/matrix_float4x4_precision.hpp:
+include/glm/./ext/../detail/../detail/func_matrix.inl:
+include/glm/./ext/../detail/../detail/../geometric.hpp:
+include/glm/./ext/../detail/../detail/../detail/func_geometric.inl:
+include/glm/./ext/../detail/../detail/../detail/../exponential.hpp:
+include/glm/./ext/../detail/../detail/../detail/../detail/type_vec1.hpp:
+include/glm/./ext/../detail/../detail/../detail/../detail/type_vec1.inl:
+include/glm/./ext/../detail/../detail/../detail/../detail/func_exponential.inl:
+include/glm/./ext/../detail/../detail/../detail/../detail/../vector_relational.hpp:
+include/glm/./ext/../detail/../detail/../detail/../detail/../detail/setup.hpp:
+include/glm/./ext/../detail/../detail/../detail/../detail/../detail/func_vector_relational.inl:
+include/glm/./ext/../detail/../detail/../detail/../detail/_vectorize.hpp:
+include/glm/./ext/../detail/../detail/../detail/../common.hpp:
+include/glm/./ext/../detail/../detail/../detail/../detail/_fixes.hpp:
+include/glm/./ext/../detail/../detail/../detail/../detail/func_common.inl:
+include/glm/./ext/../detail/../detail/../detail/../detail/compute_common.hpp:
+include/glm/./ext/../detail/../detail/../detail/../detail/setup.hpp:
 include/glm/./ext/matrix_double2x2_precision.hpp:
 include/glm/./ext/matrix_float2x2.hpp:
 include/glm/./ext/matrix_float2x2_precision.hpp:
@@ -321,9 +325,9 @@ include/glm/detail/func_integer.inl:
 include/glm/gtc/matrix_transform.hpp:
 include/glm/gtc/../ext/matrix_projection.hpp:
 include/glm/gtc/../ext/../gtc/constants.hpp:
-C:/mimita-priv-v8/include/glm/ext/scalar_constants.hpp:
-C:/mimita-priv-v8/include/glm/detail/setup.hpp:
-C:/mimita-priv-v8/include/glm/ext/scalar_constants.inl:
+include/glm/gtc/../ext/../gtc/../ext/scalar_constants.hpp:
+include/glm/gtc/../ext/../gtc/../ext/../detail/setup.hpp:
+include/glm/gtc/../ext/../gtc/../ext/scalar_constants.inl:
 include/glm/gtc/../ext/../gtc/constants.inl:
 include/glm/gtc/../ext/matrix_projection.inl:
 include/glm/gtc/../ext/matrix_clip_space.hpp:
@@ -335,16 +339,17 @@ include/glm/gtc/type_ptr.hpp:
 include/glm/gtc/../gtc/quaternion.hpp:
 include/glm/gtc/../gtc/../ext/vector_relational.hpp:
 include/glm/gtc/../gtc/../ext/vector_relational.inl:
-C:/mimita-priv-v8/include/glm/detail/type_float.hpp:
+include/glm/gtc/../gtc/../ext/../detail/type_float.hpp:
+include/glm/gtc/../gtc/../ext/../detail/setup.hpp:
 include/glm/gtc/../gtc/../ext/quaternion_common.hpp:
-C:/mimita-priv-v8/include/glm/ext/quaternion_geometric.hpp:
-C:/mimita-priv-v8/include/glm/ext/quaternion_geometric.inl:
+include/glm/gtc/../gtc/../ext/../ext/quaternion_geometric.hpp:
+include/glm/gtc/../gtc/../ext/../ext/quaternion_geometric.inl:
 include/glm/gtc/../gtc/../ext/quaternion_common.inl:
 include/glm/gtc/../gtc/../ext/quaternion_float.hpp:
-C:/mimita-priv-v8/include/glm/detail/type_quat.hpp:
-C:/mimita-priv-v8/include/glm/ext/quaternion_relational.hpp:
-C:/mimita-priv-v8/include/glm/ext/quaternion_relational.inl:
-C:/mimita-priv-v8/include/glm/detail/type_quat.inl:
+include/glm/gtc/../gtc/../ext/../detail/type_quat.hpp:
+include/glm/gtc/../gtc/../ext/../detail/../ext/quaternion_relational.hpp:
+include/glm/gtc/../gtc/../ext/../detail/../ext/quaternion_relational.inl:
+include/glm/gtc/../gtc/../ext/../detail/type_quat.inl:
 include/glm/gtc/../gtc/../ext/quaternion_float_precision.hpp:
 include/glm/gtc/../gtc/../ext/quaternion_double.hpp:
 include/glm/gtc/../gtc/../ext/quaternion_double_precision.hpp:

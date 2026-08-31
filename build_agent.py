@@ -75,21 +75,21 @@ def acquire_build_lock():
         fd = os.open(LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
-        print(f"[BUILD LOCK] acquired pid={payload['pid']} file={LOCK_FILE}")
+        print(f"[BUILD LOCK] acquired pid={payload['pid']} file=build/build-agent.lock", flush=True)
         return True
     except FileExistsError:
         info = _read_lock_info()
         owner = _format_lock_info(info)
         owner_pid = int(info.get("pid", 0) or 0)
         if not _process_is_running(owner_pid):
-            print(f"[BUILD LOCK] removing stale lock: {owner}")
+            print(f"[BUILD LOCK] removing stale lock: {owner}", flush=True)
             try:
                 os.remove(LOCK_FILE)
                 return acquire_build_lock()
             except OSError:
                 pass
-        print(f"[BUILD LOCK] another build already running: {owner}")
-        print("[BUILD LOCK] skipping — build is already in progress")
+        print(f"[BUILD LOCK] another build already running: {owner}", flush=True)
+        print("[BUILD LOCK] skipping — build is already in progress", flush=True)
         sys.exit(0)
 
 
@@ -98,7 +98,7 @@ def release_build_lock():
     if int(info.get("pid", 0) or 0) == os.getpid():
         try:
             os.remove(LOCK_FILE)
-            print("[BUILD LOCK] released")
+            print("[BUILD LOCK] released", flush=True)
         except FileNotFoundError:
             pass
 
@@ -141,17 +141,16 @@ if __name__ == "__main__":
     if "release" in sys.argv:
         build_args.append("release")
 
-    result = subprocess.run(
-        build_args,
-        capture_output=True,
-        text=True,
-    )
+    print("[BUILD] starting build.py build-only", flush=True)
+    # Stream compiler output live so a slow compile is visible instead of
+    # appearing to hang until the subprocess exits.
+    result = subprocess.run(build_args, text=True)
 
     elapsed = (datetime.datetime.now() - start).total_seconds()
 
     # Determine build result
     if result.returncode == 0:
-        if "Nothing changed" in result.stdout:
+        if "Nothing changed" in (result.stdout or ""):
             status = "NOTHING_CHANGED"
         else:
             status = "SUCCESS"
@@ -175,7 +174,7 @@ if __name__ == "__main__":
         f.write(f"Return Code: {result.returncode}\n")
         f.write(f"Duration: {elapsed:.2f}s\n")
         f.write("\n--- Build Output ---\n")
-        f.write(result.stdout)
+        f.write(result.stdout or "")
         if result.stderr:
             f.write("\n--- Stderr ---\n")
             f.write(result.stderr)

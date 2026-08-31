@@ -24,6 +24,7 @@ import shutil
 import time
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from build_toolchain import compiler, ccache, glfw_include, glfw_lib, runtime_path
 
 # ============================================================
 # CONFIG
@@ -31,11 +32,17 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
-# Toolchain paths are overridable via environment variables so the same scripts
-# run locally (defaults below) and on CI runners (e.g. GitHub Actions).
-DEFAULT_COMPILER = r"C:\important\winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4\mingw64\bin\g++.exe"
-COMPILER = os.environ.get("MIMITA_COMPILER", DEFAULT_COMPILER)
-CCACHE = os.environ.get("MIMITA_CCACHE", os.path.join(os.path.dirname(COMPILER), "ccache.exe"))
+try:
+    COMPILER = compiler()
+    CCACHE = ccache(COMPILER)
+    GLFW_INCLUDE = glfw_include()
+    GLFW_LIB = glfw_lib()
+    # Debug builds use MinGW's shared C++ runtime DLLs. Make the project-local
+    # toolchain visible to mimita.exe without installing DLLs system-wide.
+    os.environ["PATH"] = runtime_path(COMPILER) + os.pathsep + os.environ.get("PATH", "")
+except FileNotFoundError as error:
+    print(f"[TOOLCHAIN] {error}")
+    sys.exit(2)
 
 def ccache_cmd():
     # Fall back to the plain compiler when ccache.exe is not installed (e.g.
@@ -44,10 +51,6 @@ def ccache_cmd():
         return [CCACHE, COMPILER]
     return [COMPILER]
 
-DEFAULT_GLFW_INCLUDE = r"C:\important\glfw-3.4.bin.WIN64\include"
-DEFAULT_GLFW_LIB = r"C:\important\glfw-3.4.bin.WIN64\lib-mingw-w64"
-GLFW_INCLUDE = os.environ.get("MIMITA_GLFW_INCLUDE", DEFAULT_GLFW_INCLUDE)
-GLFW_LIB = os.environ.get("MIMITA_GLFW_LIB", DEFAULT_GLFW_LIB)
 
 SRC_DIR = os.path.join(ROOT, "src")
 BUILD_DIR = os.path.join(ROOT, "build")
@@ -70,14 +73,22 @@ RUN_AFTER_BUILD = True
 AUTO_CLOSE_SECONDS = 0
 
 if len(sys.argv) > 1:
-    for arg in sys.argv[1:]:
+    args = sys.argv[1:]
+    for index, arg in enumerate(args):
         a = arg.lower()
         if a in ("build-only", "compile-only", "norun", "no-run"):
             if MODE != "release":
                 MODE = "debug"
             RUN_AFTER_BUILD = False
-        elif a in ("auto-close", "timeout"):
+        elif a == "auto-close":
             AUTO_CLOSE_SECONDS = 5
+        elif a == "timeout":
+            AUTO_CLOSE_SECONDS = 5
+            if index + 1 < len(args):
+                try:
+                    AUTO_CLOSE_SECONDS = max(1, int(args[index + 1]))
+                except ValueError:
+                    pass
         elif a == "release":
             MODE = "release"
         elif a == "clean":
@@ -568,8 +579,11 @@ with ThreadPoolExecutor(max_workers=BUILD_JOBS) as juice_executor:
 # RESOURCE (icon) — mimita.rc → build/mimita.res.o
 # ============================================================
 
-DEFAULT_WINDRES = r"C:\important\winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4\mingw64\bin\windres.exe"
-WINDRES = os.environ.get("MIMITA_WINDRES", DEFAULT_WINDRES)
+WINDRES = os.environ.get("MIMITA_WINDRES") or shutil.which("windres")
+if not WINDRES:
+    candidate = os.path.join(os.path.dirname(COMPILER), "windres.exe")
+    if os.path.isfile(candidate):
+        WINDRES = candidate
 RC_FILE = os.path.join(ROOT, "mimita.rc")
 RES_OBJ = os.path.join(BUILD_DIR, "mimita.res.o")
 res_compiled = False
@@ -594,6 +608,9 @@ if os.path.isfile(RC_FILE):
         if os.path.isfile(full_icon) and os.path.getmtime(RES_OBJ) < os.path.getmtime(full_icon):
             need_res = True
     if need_res:
+        if not WINDRES:
+            print("[TOOLCHAIN] windres.exe was not found. Add MinGW to PATH or set MIMITA_WINDRES.")
+            sys.exit(2)
         print("[RC  ]", os.path.relpath(RC_FILE, ROOT))
         r = subprocess.run([WINDRES, RC_FILE, "-O", "coff", "-o", RES_OBJ])
         if r.returncode != 0:
@@ -647,17 +664,17 @@ if not needs_link:
 print()
 print("[LINK]", EXE_NAME)
 
-cmd = ccache_cmd()
+# Windows limits CreateProcess command lines to roughly 32K characters.
+# The full object list exceeds that limit, so pass linker arguments through a
+# response file kept under build/ (which is already ignored by Git).
+link_response = os.path.join(BUILD_DIR, "link.rsp")
+link_args = object_files + LIB_FLAGS + LINK_LIBS + LINK_FLAGS + ["-o", EXE_NAME]
+with open(link_response, "w", encoding="utf-8", newline="\n") as response:
+    for argument in link_args:
+        response.write('"' + argument.replace('"', '\\"') + '"\n')
 
-cmd += object_files
-cmd += LIB_FLAGS
-cmd += LINK_LIBS
-cmd += LINK_FLAGS
-
-cmd += [
-    "-o",
-    EXE_NAME,
-]
+print("[LINK] using build/link.rsp", flush=True)
+cmd = ccache_cmd() + ["@" + link_response]
 
 result = subprocess.run(cmd)
 
