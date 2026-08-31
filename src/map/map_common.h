@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <glad/glad.h>
+#include <limits>
 
 struct Vertex {
     glm::vec3 pos;
@@ -29,6 +30,9 @@ struct Mesh {
         size_t first = 0;
         size_t count = 0;
         bool doubleSided = false;   // GLTF material doubleSided flag
+        glm::vec3 boundsMin{std::numeric_limits<float>::max()};
+        glm::vec3 boundsMax{std::numeric_limits<float>::lowest()};
+        bool hasBounds = false;
     };
 
     std::vector<Batch> batches;

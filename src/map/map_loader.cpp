@@ -120,6 +120,11 @@ Mesh loadOBJ(const std::string& path)
     batch.texture = gTextures.get("default");
     batch.first = 0;
     batch.count = mesh.verts.size();
+    for (const Vertex& vertex : mesh.verts) {
+        batch.boundsMin = glm::min(batch.boundsMin, vertex.pos);
+        batch.boundsMax = glm::max(batch.boundsMax, vertex.pos);
+        batch.hasBounds = true;
+    }
     mesh.batches.push_back(batch);
 
     printf("OBJ verts = %zu\n", mesh.verts.size());
@@ -265,6 +270,16 @@ Mesh loadGLB(const std::string& path, bool /*storeDebugInfo*/, Mesh* skyMesh,
             merged.back().first + merged.back().count == batch.first)
         {
             merged.back().count += batch.count;
+            if (batch.hasBounds) {
+                if (!merged.back().hasBounds) {
+                    merged.back().boundsMin = batch.boundsMin;
+                    merged.back().boundsMax = batch.boundsMax;
+                    merged.back().hasBounds = true;
+                } else {
+                    merged.back().boundsMin = glm::min(merged.back().boundsMin, batch.boundsMin);
+                    merged.back().boundsMax = glm::max(merged.back().boundsMax, batch.boundsMax);
+                }
+            }
         }
         else
         {

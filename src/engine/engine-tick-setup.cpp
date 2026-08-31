@@ -3,6 +3,7 @@
 #include "terminal/terminal-state.h"
 #include "video/frame-pacer.h"
 #include "perf/perf.h"
+#include "perf/perf-spike.h"
 #include "analytics/analytics-manager.h"
 #include "avatar/avatar.h"
 #include "ragdoll/ragdoll-config.h"
@@ -72,13 +73,15 @@ static void loadHotReloadConfig()
 
 void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
 {
-    HotReloadSystem::instance().reloadGameDLLIfChanged();
+    { MIMITA_PERF_SCOPE("Setup::HotReloadDLL");
+      if (sHotReloadEnabled)
+          HotReloadSystem::instance().reloadGameDLLIfChanged(); }
     // gFramePacer.beginFrame() and Perf::beginFrame() are now called in
     // engineTick() BEFORE the first MIMITA_PERF_SCOPE so the scope stack
     // is empty when perfResetScopes() runs.
-    dt = engine.beginFrame();
-    AnalyticsManager::instance().update(dt);
-    updatePlayerProceduralHotReload(dt);
+    { MIMITA_PERF_SCOPE("Setup::BeginFrame"); dt = engine.beginFrame(); }
+    { MIMITA_PERF_SCOPE("Setup::Analytics"); AnalyticsManager::instance().update(dt); }
+    { MIMITA_PERF_SCOPE("Setup::PlayerHotReload"); updatePlayerProceduralHotReload(dt); }
 
     // Load hot-reload config once at startup
     static bool sFirstFrame = true;
@@ -91,6 +94,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     // When enabled, throttle to every N frames.
     const bool shouldPoll = sHotReloadEnabled && (++sHotReloadFrameCounter % HOT_RELOAD_THROTTLE_FRAMES == 0);
 
+    { MIMITA_PERF_SCOPE("Setup::ConfigPolling");
     if (shouldPoll) {
         GameplayConfig::instance().pollReload();
         MovementJsonConfig::instance().pollReload();
@@ -122,8 +126,9 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
             redecimateCollision(THE_WORLD);
         CollisionConfig::instance().pollHotReload();
     }
+    }
 
-    DynamicLightManager::instance().update(dt);
+    { MIMITA_PERF_SCOPE("Setup::DynamicLights"); DynamicLightManager::instance().update(dt); }
     worldPassRan = false;
 
     {
@@ -136,6 +141,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
         }
     }
 
-    DebugVis::update();
-    uiSetDebug(DebugVis::ui());
+    { MIMITA_PERF_SCOPE("Setup::Debug");
+      DebugVis::update();
+      uiSetDebug(DebugVis::ui()); }
 }

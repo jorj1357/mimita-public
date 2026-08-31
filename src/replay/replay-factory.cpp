@@ -178,3 +178,21 @@ bool ReplayFactory::saveLastKill(std::string* savedPath)
     mLastClip.reset();
     return true;
 }
+
+bool ReplayFactory::enqueueInstantReplay(uint32_t durationSeconds, std::string* queuedPath)
+{
+    if (!mRing.isRecording() || mRing.currentTick() == 0)
+        return false;
+    const uint32_t desiredTicks = durationSeconds * ReplayRingBuffer::TickRate;
+    const uint32_t currentTick = mRing.currentTick();
+    const uint32_t startTick = currentTick > desiredTicks ? currentTick - desiredTicks : 0;
+    ReplayClip clip = mRing.makeClip(startTick, currentTick, 0, "", "");
+    if (clip.sceneFrames.empty() && clip.frames.empty())
+        return false;
+    const std::string path = generateReplayExportPath();
+    if (!enqueueClipSave(std::move(clip), path))
+        return false;
+    if (queuedPath)
+        *queuedPath = path;
+    return true;
+}

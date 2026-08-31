@@ -6,6 +6,7 @@
 #include "effects/effect-part.h"
 #include "shadow/shadow-config.h"
 #include "debug/debug-visuals.h"
+#include "perf/perf-gpu.h"
 
 extern FramePacer gFramePacer;
 
@@ -85,6 +86,7 @@ void registerPerfCommands()
                 Perf::togglePerfReport();
             else
                 Perf::state().showPerfReport = args[0] == "1";
+            Perf::setDeepProfiling(Perf::state().showPerfReport);
             Terminal::instance().addLog(std::string("[PERF] perf_report=") +
                 (Perf::state().showPerfReport ? "ON" : "OFF"));
         }

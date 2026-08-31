@@ -211,7 +211,9 @@ void registerReplayCommands()
                 Terminal::instance().addLog("[ERROR] No replay recording active");
                 return;
             }
-            std::string path = saveInstantReplay(REPLAY_RECORDER, 15);
+            std::string path;
+            if (!REPLAY_FACTORY.enqueueInstantReplay(15, &path))
+                path.clear();
             if (path.empty()) {
                 Terminal::instance().addLog("[ERROR] Failed to save instant replay");
                 return;

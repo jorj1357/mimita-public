@@ -259,13 +259,20 @@ void engineTick(Engine& engine)
     { Perf::ScopedTimer _t("Diag"); diagRenderStage(8); }
 
     HEARTBEAT("end frame");
-    { MIMITA_PERF_SCOPE("Swap"); engine.endFrame(); }
+    { MIMITA_PERF_SCOPE("Swap");
+      Perf::ScopedTimer _beforeSwap("FramePacing::BeforeSwap");
+      { Perf::ScopedTimer _engineEndFrame("FramePacing::EngineEndFrame");
+        engine.endFrame(); }
+    }
     { Perf::ScopedTimer _t("Diag"); diagRenderStage(9); }
     { Perf::ScopedTimer _t("Diag"); diagRenderFrameEnd(); }
 
     // Sleep BEFORE Perf::endFrame() so the Sleep scope is measured and the
     // spike report sees the full frame time (work + sleep).
-    { MIMITA_PERF_SCOPE("Sleep"); gFramePacer.endFrame(); }
+    { MIMITA_PERF_SCOPE("Sleep");
+      Perf::ScopedTimer _pacerSleep("FramePacing::PacerSleep");
+      gFramePacer.endFrame();
+    }
 
     // Pass the current frame's actual wall-clock time so the profiler doesn't
     // use the stale "previous frame" time from gFramePacer.frameTimeMs().

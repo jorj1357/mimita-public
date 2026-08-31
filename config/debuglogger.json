@@ -43,7 +43,7 @@
     },
     "rendering": {
       "level": "verbose",
-      "file_output": false
+      "file_output": true
     },
     "glb_models": {
       "level": "off",
@@ -106,5 +106,4 @@
     "log_render_counts": true
   }
 }
-
 

@@ -44,6 +44,7 @@
 #include "config/networking-config.h"
 #include "engine/engine-tick-net.h"
 #include "perf/perf.h"
+#include "perf/perf-gpu.h"
 #include "perf/perf-spike.h"
 #include "replay/replay.h"
 #include "replay/replay-export.h"
@@ -86,7 +87,9 @@ static void renderReplayActors(
     std::unordered_map<std::string, std::unique_ptr<Player>>& replayActorModels,
     std::unordered_map<std::string, WeaponViewModel>& replayWeaponModels)
 {
+    MIMITA_PERF_SCOPE("Rendering::ReplayActors::Total");
     for (const ReplayActorState& actorState : replayFrame.actors) {
+        MIMITA_PERF_SCOPE("Rendering::ReplayActors::Actor");
         std::unique_ptr<Player>& actor = replayActorModels[actorState.id];
 
         // Detect life transition: was dead last tick, alive this tick = new life
@@ -96,6 +99,7 @@ static void renderReplayActors(
         wasDead = actorState.dead;
 
         if (firstCreation) {
+            Perf::ScopedTimer actorCreationTimer("Rendering::ReplayActors::Create");
             // Create player without loading current account's character
             actor = std::make_unique<Player>(false);
             // Load the recorded character (not the current account's)
@@ -106,6 +110,7 @@ static void renderReplayActors(
 
             // Per-instance avatar path: does NOT mutate singleton
             if (!actorState.avatarName.empty()) {
+                Perf::ScopedTimer avatarTimer("Rendering::ReplayActors::Avatar");
                 AvatarSystem::instance().applyAvatarToPlayer(*actor, actorState.avatarName);
                 Debug::warn(Debug::Category::Replay,
                     "[REPLAY AVATAR] first creation actorId='%s' type='%s' avatar='%s' atlas=%u model=%s\n",
@@ -113,6 +118,7 @@ static void renderReplayActors(
                     actor->avatarInstance ? actor->avatarInstance->atlasTexture : 0,
                     actor->avatarInstance ? actor->avatarInstance->definition.playerModel.c_str() : "?");
             } else {
+                Perf::ScopedTimer avatarTimer("Rendering::ReplayActors::Avatar");
                 AvatarSystem::instance().applyToPlayer(*actor);
                 Debug::warn(Debug::Category::Replay,
                     "[REPLAY AVATAR] first creation actorId='%s' type='%s' fallback to local avatar\n",
@@ -176,11 +182,14 @@ static void renderReplayActors(
         actor->vel = actorState.velocity;
         actor->ground.onGround = actorState.grounded;
         actor->equippedWeaponId = actorState.weaponName;
-        actor->applyReplayPose(
-            actorState.position,
-            actorState.rotation.z,
-            actorState.bodyParts.data(),
-            actorState.bodyPartCount);
+        {
+            MIMITA_PERF_SCOPE("Rendering::ReplayActors::ApplyPose");
+            actor->applyReplayPose(
+                actorState.position,
+                actorState.rotation.z,
+                actorState.bodyParts.data(),
+                actorState.bodyPartCount);
+        }
 
         const bool hideFirstPersonActor =
             REPLAY_PLAYER.cameraController().mode() ==
@@ -193,14 +202,18 @@ static void renderReplayActors(
                 GLuint shader = engine.renderer->shaderProgram;
                 glUniform1i(glGetUniformLocation(shader, "uUseColor"), 1);
                 glUniform4f(glGetUniformLocation(shader, "uColor"), 1.0f, 1.0f, 1.0f, 1.0f);
-                actor->renderCurrentPose(shader, view, proj);
-                CosmeticSystem::instance().renderCosmetics(*actor);
+                { MIMITA_PERF_SCOPE("Rendering::ReplayActors::Mesh");
+                  actor->renderCurrentPose(shader, view, proj); }
+                { MIMITA_PERF_SCOPE("Rendering::ReplayActors::Cosmetics");
+                  CosmeticSystem::instance().renderCosmetics(*actor); }
                 glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
             } else {
-                actor->renderCurrentPose(
-                    engine.renderer->shaderProgram,
-                    view, proj);
-                CosmeticSystem::instance().renderCosmetics(*actor);
+                { MIMITA_PERF_SCOPE("Rendering::ReplayActors::Mesh");
+                  actor->renderCurrentPose(
+                      engine.renderer->shaderProgram,
+                      view, proj); }
+                { MIMITA_PERF_SCOPE("Rendering::ReplayActors::Cosmetics");
+                  CosmeticSystem::instance().renderCosmetics(*actor); }
             }
         }
 
@@ -215,9 +228,10 @@ static void renderReplayActors(
                 actorState.id + ":" + replayDefinition.id;
             WeaponViewModel& viewModel =
                 replayWeaponModels[weaponKey];
-            viewModel.update(
-                cam, *actor, dt, &replayDefinition, false,
-                nullptr, true);
+            { MIMITA_PERF_SCOPE("Rendering::ReplayActors::WeaponUpdate");
+              viewModel.update(
+                  cam, *actor, dt, &replayDefinition, false,
+                  nullptr, true); }
 
             if (gReplayExportVerbose &&
                 (!viewModel.vao || viewModel.heldMesh.verts.empty())) {
@@ -227,8 +241,9 @@ static void renderReplayActors(
                     actorState.weaponModelPath.c_str(), viewModel.vao,
                     viewModel.heldMesh.verts.size(), actor->equippedSlot);
             }
-            viewModel.render(
-                cam, *actor, replayDefinition.slot);
+            { MIMITA_PERF_SCOPE("Rendering::ReplayActors::WeaponDraw");
+              viewModel.render(
+                  cam, *actor, replayDefinition.slot); }
         } else if (gReplayExportVerbose && !actorState.weaponName.empty() &&
                    actorState.weaponName != "none") {
             Debug::warn(Debug::Category::Replay,
@@ -323,25 +338,31 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     }
 
     // Update skybox animations and check for hot-reload
-    gSkybox.pollReload();
-    gSkybox.update(dt);
+    { MIMITA_PERF_SCOPE("Rendering::Skybox::Reload"); gSkybox.pollReload(); }
+    { MIMITA_PERF_SCOPE("Rendering::Skybox::Update"); gSkybox.update(dt); }
 
     { MIMITA_PERF_SCOPE("Rendering");
     diagRenderFrameBegin(dt);
-    { MIMITA_PERF_SCOPE("Rendering::Shadows"); renderShadowMap(world, camera.pos); }
+    { MIMITA_PERF_SCOPE("Rendering::Shadows");
+      Perf::ScopedTimer _shadowDraw("Rendering::Shadows::Draw");
+      PerfGpu::beginRegion("GPU::Shadows");
+      renderShadowMap(world, camera.pos);
+      PerfGpu::endRegion(); }
     glViewport(0, 0, engine.renderer->width, engine.renderer->height);
-    PostFX::instance().bindFBO();
+    { MIMITA_PERF_SCOPE("Rendering::PostFX::Bind"); PostFX::instance().bindFBO(); }
     diagRenderStage(1);
     // Skybox renders first (if loaded), otherwise fall back to mesh-based sky
     { MIMITA_PERF_SCOPE("Rendering::World");
+    PerfGpu::beginRegion("GPU::World");
     if (gSkybox.isEnabled()) {
-        gSkybox.render(camera);
+        { MIMITA_PERF_SCOPE("Rendering::World::Skybox"); gSkybox.render(camera); }
     } else {
-        renderSky(world, camera);
+        { MIMITA_PERF_SCOPE("Rendering::World::Sky"); renderSky(world, camera); }
     }
-    renderWorld(world, camera);
+    { MIMITA_PERF_SCOPE("Rendering::World::Mesh"); renderWorld(world, camera); }
+    PerfGpu::endRegion();
     }
-    PostFX::instance().consumeMagentaTest();
+    { MIMITA_PERF_SCOPE("Rendering::World::Finalize"); PostFX::instance().consumeMagentaTest(); }
     diagRenderStage(2);
     {
         static uint64_t renderLogFrame = 0;
@@ -369,13 +390,15 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             const glm::mat4 replayProj = camera.getProj(
                 (float)engine.renderer->width,
                 (float)engine.renderer->height);
-            renderReplayActors(
-                *replayFrame, camera, replayView, replayProj,
-                engine, dt, replayActorModels, replayWeaponModels);
+            { MIMITA_PERF_SCOPE("Rendering::ReplayActors");
+              renderReplayActors(
+                  *replayFrame, camera, replayView, replayProj,
+                  engine, dt, replayActorModels, replayWeaponModels); }
         }
         gExportFrameTimings.renderMs += (replayExportNowSec() - tRender0) * 1000.0;
     } else {
         { MIMITA_PERF_SCOPE("Rendering::Actors");
+        PerfGpu::beginRegion("GPU::Actors");
         if (player.spawnFlashTimer > 0.0f) {
             static GLuint spawnFlashVao = 0, spawnFlashVbo = 0;
             if (!spawnFlashVao) {
@@ -401,27 +424,37 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             glDrawArrays(GL_TRIANGLES, 0, 3);
             glEnable(GL_DEPTH_TEST);
         }
-        renderPlayer(player, camera);
+        { MIMITA_PERF_SCOPE("Rendering::Actors::LocalPlayer");
+          Perf::state().renderPerf.actorLocal++;
+          renderPlayer(player, camera); }
         // Draw the local weapon now while the shared viewmodel still contains
         // the local transform calculated during WeaponSystem::update().
         // This prevents renderRemoteWeapon (below) from overwriting the transform
         // before the local weapon renders.
         if (!replayPlaybackActive)
-            { Perf::ScopedTimer _wr("WeaponRender"); weapons.render(camera, player); }
+            { Perf::ScopedTimer _wr("WeaponRender");
+              Perf::ScopedTimer _localWeapon("Rendering::Actors::LocalWeapon");
+              weapons.render(camera, player); }
         if (mpContext.active) {
+            Perf::ScopedTimer _networkEntities("Rendering::Actors::NetworkEntities");
             for (auto& kv : mpContext.remotePlayers) {
+                Perf::state().renderPerf.actorRemotePlayers++;
                 renderNetworkPlayer(kv.second, camera, kv.first, false);
                 weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt);
             }
             for (auto& kv : mpContext.remoteNpcs) {
+                Perf::state().renderPerf.actorRemoteNpcs++;
                 renderNetworkPlayer(kv.second, camera, kv.first, false);
                 weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt);
             }
-            MimitaNet::mpRenderNetworkProjectiles(mpContext, camera);
+            { Perf::ScopedTimer _networkProjectiles("Rendering::Actors::NetworkProjectiles");
+              MimitaNet::mpRenderNetworkProjectiles(mpContext, camera); }
             // Render server position ghost if enabled
             engineRenderGhost(player, camera);
         }
-        npcSystem.render(camera);
+        { MIMITA_PERF_SCOPE("Rendering::Actors::NPCSystem");
+          Perf::state().renderPerf.actorNpcs += static_cast<uint32_t>(npcSystem.all().size());
+          npcSystem.render(camera); }
         if (!replayPlaybackActive) {
             for (const Npc& npc : npcSystem.all()) {
                 if (npc.body.dead || npc.body.currentHp <= 0)
@@ -429,6 +462,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                 weapons.renderRemoteWeapon(npc.id, npc.body, camera, dt);
             }
         }
+        PerfGpu::endRegion();
         } // Rendering::Actors
     }
     diagRenderStage(3);
@@ -563,11 +597,23 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                 kv.second.dead ? glm::vec4(1,0.3f,0,1) : glm::vec4(0.2f,0.8f,1,1));
     }
 
-    { MIMITA_PERF_SCOPE("Rendering::Particles"); EffectPartSystem::instance().render(camera); }
-    { MIMITA_PERF_SCOPE("Rendering::Particles"); DeathGhostSystem::instance().render(camera); }
-    { MIMITA_PERF_SCOPE("Rendering::Particles"); PersistentPhysicsSystem::instance().render(camera); }
-    { MIMITA_PERF_SCOPE("Rendering::Decals"); HitEffects::renderHitBursts(camera); }
-    { MIMITA_PERF_SCOPE("Rendering::DebugVis");
+    { MIMITA_PERF_SCOPE("Rendering::Effects::EffectParts");
+      Perf::state().renderPerf.effectParts =
+          static_cast<uint32_t>(EffectPartSystem::instance().activeCount());
+      PerfGpu::beginRegion("GPU::Particles");
+      EffectPartSystem::instance().render(camera);
+      PerfGpu::endRegion(); }
+    { MIMITA_PERF_SCOPE("Rendering::Effects::DeathGhosts");
+      Perf::state().renderPerf.deathGhosts =
+          static_cast<uint32_t>(DeathGhostSystem::instance().activeCount());
+      DeathGhostSystem::instance().render(camera); }
+    { MIMITA_PERF_SCOPE("Rendering::Effects::PersistentPhysics");
+      Perf::state().renderPerf.persistentPhysics++;
+      PersistentPhysicsSystem::instance().render(camera); }
+    { MIMITA_PERF_SCOPE("Rendering::Effects::HitBursts");
+      Perf::state().renderPerf.hitBursts++;
+      HitEffects::renderHitBursts(camera); }
+    { MIMITA_PERF_SCOPE("Rendering::Debug::Visuals");
     DebugVis::flushTris(camera);
     DebugVis::flushWeaponLines(camera);
     }
@@ -578,7 +624,10 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     diagRenderStage(6);
     PostFX::instance().advanceTime(dt);
     // PostFX hot-reload gated by master hot-reload config
-    { Perf::ScopedTimer _pfx("PostFX"); PostFX::instance().render(); }
+    { Perf::ScopedTimer _pfx("PostFX");
+      PerfGpu::beginRegion("GPU::PostFX");
+      PostFX::instance().render();
+      PerfGpu::endRegion(); }
     renderShadowMapOverlay(engine.renderer->width, engine.renderer->height);
     diagRenderStage(7);
 
@@ -738,5 +787,3 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         NpcSelectionManager::instance().drawSelection(npcSystem, camera);
     }
 }
-
-

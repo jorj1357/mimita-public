@@ -1,5 +1,6 @@
 #include "perf/perf.h"
 #include "perf/perf-spike.h"
+#include "perf/perf-gpu.h"
 #include "perf/perf-frame.h"
 #include "debug/structured-log.h"
 
@@ -29,11 +30,121 @@ static uint64_t nowUs()
 
 PerfState& Perf::state() { return gState; }
 
+void Perf::setDeepProfiling(bool enabled)
+{
+    gState.deepProfiling = enabled;
+    PerfGpu::setEnabled(enabled);
+    Debug::log(Debug::Category::General,
+        "[PERF] deep profiling %s; GPU timer queries %s\n",
+        enabled ? "ON" : "OFF", enabled ? "ON" : "OFF");
+}
+
+bool Perf::deepProfiling()
+{
+    return gState.deepProfiling;
+}
+
+void Perf::logDetailedSubsystemStats()
+{
+    if (!gState.deepProfiling)
+        return;
+
+    const RenderPerfStats& r = gState.renderPerf;
+    const ReplayPerfStats& p = gState.replayPerf;
+    const AudioPerfStats& a = gState.audioPerf;
+
+    Debug::logThrottled(Debug::Category::Render, "perf-render-detail", 1.0f,
+        "[PERF][RENDER] world batches=%u submitted=%u skipped=%u drawCalls=%u textureBinds=%u "
+        "vertices=%llu triangles=%llu actors(local=%u remotePlayers=%u remoteNpcs=%u npcs=%u) "
+        "effects(parts=%u ghosts=%u persistent=%u bursts=%u) culling=%u\n",
+        r.worldBatches, r.worldSubmittedBatches, r.worldSkippedBatches, r.worldDrawCalls,
+        r.worldTextureBinds, (unsigned long long)r.worldVertices,
+        (unsigned long long)r.worldTriangles, r.actorLocal,
+        r.actorRemotePlayers, r.actorRemoteNpcs, r.actorNpcs,
+        r.effectParts, r.deathGhosts, r.persistentPhysics, r.hitBursts,
+        r.worldBackfaceCulling);
+
+    Debug::logThrottled(Debug::Category::Replay, "perf-replay-detail", 1.0f,
+        "[PERF][REPLAY] visited=%u stored=%u unchanged=%u identityLookups=%u "
+        "identityChanges=%u bodyParts=%u effects=%u sounds=%u killfeeds=%u "
+        "sceneFrames=%u vectorGrows=%u avatarCacheHits=%u avatarCacheMisses=%u deferred=%u\n",
+        p.actorsVisited, p.actorsStored, p.actorsUnchanged,
+        p.identityLookups, p.identityChanges, p.bodyPartsVisited,
+        p.bodyPartsCaptured, p.effectsRecorded, p.soundsRecorded,
+        p.killfeedsRecorded, p.sceneFramesCommitted, p.vectorCapacityGrowths,
+        p.avatarCacheHits, p.avatarCacheMisses, p.actorsDeferred);
+
+    Debug::logThrottled(Debug::Category::Audio, "perf-audio-detail", 1.0f,
+        "[PERF][AUDIO] requested=%u started=%u rejected=%u cacheHits=%u "
+        "cacheMisses=%u decoderFailures=%u soundInitFailures=%u active=%u cleaned=%u\n",
+        a.soundsRequested, a.soundsStarted, a.soundsRejected,
+        a.cacheHits, a.cacheMisses, a.decoderFailures, a.soundInitFailures,
+        a.activeVoices, a.voicesCleaned);
+
+    static uint64_t lastSummaryUs = 0;
+    const uint64_t now = nowUs();
+    if (now - lastSummaryUs < 1000000)
+        return;
+    lastSummaryUs = now;
+
+    const PerfTimes& t = gState.current;
+    const PerfTimes& c = gState.children;
+    double accountedMs = (t.input - c.input) + (t.setup - c.setup) +
+        (t.audio - c.audio) + (t.state - c.state) + (t.camera - c.camera) +
+        (t.combat - c.combat) + (t.ui - c.ui) + (t.replay - c.replay) +
+        (t.networking - c.networking) + (t.rendering - c.rendering) +
+        (t.swapTime - c.swapTime) + (t.sleepTime - c.sleepTime);
+    const double frameMs = gState.lastFrameTimeMs;
+    uint64_t replayAllocations = 0;
+    for (int i = 0; i < gPerfScopeCount; ++i) {
+        const char* label = gPerfScopes[i].label;
+        if (label && std::strncmp(label, "Replay", 6) == 0)
+            replayAllocations += gPerfScopes[i].allocCount;
+    }
+
+    char message[4096];
+    std::snprintf(message, sizeof(message),
+        "frame=%d mode=deep cpuFrameMs=%.3f gpuFrameMs=%.3f "
+        "worldBatches=%u worldSubmitted=%u worldCulled=%u "
+        "worldVertices=%llu worldTriangles=%llu "
+        "shadowBatches=%u shadowCpuMs=%.3f shadowGpuMs=%.3f "
+        "actors=%u effects=%u replayActors=%u replayAllocations=%llu "
+        "networkMs=%.3f swapMs=%.3f unaccountedMs=%.3f",
+        gState.frameNumber, frameMs, PerfGpu::lastCompletedFrameMs(),
+        r.worldBatches, r.worldSubmittedBatches, r.worldSkippedBatches,
+        (unsigned long long)r.worldVertices, (unsigned long long)r.worldTriangles,
+        r.shadowBatches, t.shadowRender - c.shadowRender,
+        PerfGpu::lastCompletedRegionMs("GPU::Shadows"),
+        r.actorLocal + r.actorRemotePlayers + r.actorRemoteNpcs + r.actorNpcs,
+        r.effectParts + r.deathGhosts + r.persistentPhysics + r.hitBursts,
+        p.actorsVisited, (unsigned long long)replayAllocations,
+        t.networking - c.networking, t.swapTime - c.swapTime,
+        std::max(0.0, frameMs - accountedMs));
+
+    if (StructuredLogger::instance().shouldLog(StructuredCategory::Performance,
+                                                StructuredLevel::Verbose)) {
+        StructuredLogger::Entry entry;
+        entry.category = StructuredCategory::Performance;
+        entry.level = StructuredLevel::Verbose;
+        entry.eventId = "PERFORMANCE_SUMMARY";
+        entry.reason = "One-second performance summary";
+        entry.sourceFile = __FILE__;
+        entry.sourceLine = __LINE__;
+        entry.functionName = "Perf::logDetailedSubsystemStats";
+        entry.frame = static_cast<uint32_t>(gState.frameNumber);
+        entry.message = message;
+        StructuredLogger::instance().write(entry);
+    }
+}
+
 void Perf::beginFrame()
 {
     PerfState& s = gState;
     s.allocationsThisFrame = 0;
     s.assetLoadsThisFrame = 0;
+    s.renderPerf = RenderPerfStats{};
+    s.replayPerf = ReplayPerfStats{};
+    s.audioPerf = AudioPerfStats{};
     s.current = PerfTimes{};
     s.children = PerfTimes{};
     s.npcProfileCount = 0;
@@ -47,6 +158,7 @@ void Perf::beginFrame()
     gPerfFrameStartCycles = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
     perfResetScopes();
+    PerfGpu::beginFrame();
 
     // Assert: scope stack should be empty at frame start
     if (gPerfScopeStackDepth != 0) {
@@ -688,6 +800,7 @@ void Perf::endFrame(float currentFrameMs)
     // time (including the previous frame's sleep).  A zero or negative value
     // falls back to the pacer for backward compatibility.
     float currentMs = (currentFrameMs > 0.0f) ? currentFrameMs : gFramePacer.frameTimeMs();
+    s.lastFrameTimeMs = currentMs;
     s.avgFrameCount += 1.0;
     s.avgFrameTimeMs += (currentMs - s.avgFrameTimeMs) / std::min(s.avgFrameCount, 100.0);
 
@@ -699,7 +812,8 @@ void Perf::endFrame(float currentFrameMs)
         s.frameHistory[i] = gFramePacer.historyMs(i);
 
     // Build spike report for frames > 10ms
-    if ((s.showSpikes || s.perfFileLogging) && currentMs > 10.0f)
+    if ((s.showSpikes || s.perfFileLogging || s.deepProfiling) &&
+        (currentMs > 10.0f || s.deepProfiling))
     {
         FrameSpikeReport& r = s.lastSpikeReport;
         r.frameNumber = s.frameNumber;
@@ -858,10 +972,13 @@ void Perf::endFrame(float currentFrameMs)
         perfAggregateScopes((double)currentMs, targetMs, s.frameNumber);
     }
 
+    PerfGpu::endFrame();
+    Perf::logDetailedSubsystemStats();
+
     // Periodic frame summary via StructuredLogger (every 60 frames)
     static int sBreakdownCount = 0;
     sBreakdownCount++;
-    if ((s.perfFileLogging || DebugConfig::DEBUG_DEATH_PERF || sBreakdownCount % 60 == 0) &&
+    if ((s.perfFileLogging || s.deepProfiling || DebugConfig::DEBUG_DEATH_PERF || sBreakdownCount % 60 == 0) &&
         gFrameHistoryCount > 0 &&
         StructuredLogger::instance().shouldLog(StructuredCategory::Performance, StructuredLevel::Verbose))
     {
@@ -1138,6 +1255,7 @@ void Perf::printEntityCounts()
 void Perf::togglePerfReport()
 {
     gState.showPerfReport = !gState.showPerfReport;
+    setDeepProfiling(gState.showPerfReport);
     Debug::log(Debug::Category::General, "[PERF] perf_report=%s",
                gState.showPerfReport ? "ON" : "OFF");
 }

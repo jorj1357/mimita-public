@@ -188,6 +188,9 @@ void appendPrimitive(
             v.uv = {0,0};
 
         mesh.verts.push_back(v);
+        batch.boundsMin = glm::min(batch.boundsMin, v.pos);
+        batch.boundsMax = glm::max(batch.boundsMax, v.pos);
+        batch.hasBounds = true;
         return true;
     };
 

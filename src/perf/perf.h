@@ -221,6 +221,57 @@ struct LargeAABBAlert {
     const char* suspectedCause = "?";
 };
 
+struct RenderPerfStats {
+    uint32_t worldBatches = 0;
+    uint32_t worldSubmittedBatches = 0;
+    uint32_t worldSkippedBatches = 0;
+    uint32_t worldDrawCalls = 0;
+    uint32_t worldTextureBinds = 0;
+    uint64_t worldVertices = 0;
+    uint64_t worldTriangles = 0;
+    uint32_t worldBackfaceCulling = 0;
+    uint32_t shadowBatches = 0;
+    uint32_t actorLocal = 0;
+    uint32_t actorRemotePlayers = 0;
+    uint32_t actorRemoteNpcs = 0;
+    uint32_t actorNpcs = 0;
+    uint32_t networkProjectiles = 0;
+    uint32_t effectParts = 0;
+    uint32_t deathGhosts = 0;
+    uint32_t persistentPhysics = 0;
+    uint32_t hitBursts = 0;
+};
+
+struct ReplayPerfStats {
+    uint32_t actorsVisited = 0;
+    uint32_t actorsStored = 0;
+    uint32_t actorsUnchanged = 0;
+    uint32_t identityLookups = 0;
+    uint32_t identityChanges = 0;
+    uint32_t bodyPartsVisited = 0;
+    uint32_t bodyPartsCaptured = 0;
+    uint32_t effectsRecorded = 0;
+    uint32_t soundsRecorded = 0;
+    uint32_t killfeedsRecorded = 0;
+    uint32_t sceneFramesCommitted = 0;
+    uint32_t vectorCapacityGrowths = 0;
+    uint32_t avatarCacheHits = 0;
+    uint32_t avatarCacheMisses = 0;
+    uint32_t actorsDeferred = 0;
+};
+
+struct AudioPerfStats {
+    uint32_t soundsRequested = 0;
+    uint32_t soundsStarted = 0;
+    uint32_t soundsRejected = 0;
+    uint32_t cacheHits = 0;
+    uint32_t cacheMisses = 0;
+    uint32_t decoderFailures = 0;
+    uint32_t soundInitFailures = 0;
+    uint32_t activeVoices = 0;
+    uint32_t voicesCleaned = 0;
+};
+
 struct PerfState {
     bool showPerfReport = false;
     bool showGraph = false;
@@ -234,6 +285,11 @@ struct PerfState {
     bool showLargeAabb = false;
     bool showCollQueries = false;
     bool showEntityCounts = false;
+    bool deepProfiling = false;
+
+    RenderPerfStats renderPerf;
+    ReplayPerfStats replayPerf;
+    AudioPerfStats audioPerf;
 
     int preset = 0;
 
@@ -242,6 +298,7 @@ struct PerfState {
 
     double avgFrameTimeMs = 0.0;
     double avgFrameCount = 0.0;
+    double lastFrameTimeMs = 0.0;
 
     SpikeInfo lastSpike;
     FrameSpikeReport lastSpikeReport;
@@ -368,6 +425,9 @@ void checkLargeAABB(const char* caller, const char* entity, const char* object,
 void trackDuplicateQuery(const char* caller, double ms);
 
 void togglePerfReport();
+void setDeepProfiling(bool enabled);
+bool deepProfiling();
+void logDetailedSubsystemStats();
 void toggleGraph();
 void toggleNpcPerf();
 void toggleMemory();

@@ -32,6 +32,7 @@
 #include "debug/debug-log.h"
 #include "devtools/terminal.h"
 #include "replay/replay.h"
+#include "replay/replay-factory.h"
 #include "replay/replay-editor.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
@@ -91,6 +92,7 @@ void engineTickCombat(Engine& engine, float dt)
     auto& gReplayChatStates = REPLAY_CHAT_STATES;
     auto& gReplayRecorder = REPLAY_RECORDER;
     auto& gReplayPlayer = REPLAY_PLAYER;
+    auto& gReplayFactory = REPLAY_FACTORY;
 
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
 
@@ -143,12 +145,14 @@ void engineTickCombat(Engine& engine, float dt)
                 }
                 if (!clip.sceneFrames.empty()) {
                     std::string savePath = generateReplayClipPath();
-                    clip.save(savePath);
+                    ReplayClip saveCopy = clip;
+                    const bool saveQueued = gReplayFactory.enqueueClipSave(std::move(saveCopy), savePath);
                     gDuelManager.finalKillReplayPath = savePath;
-                    std::string tmpPath = "replays/_final_kill_temp.json";
-                    clip.save(tmpPath);
-                    if (gReplayPlayer.loadFromJSON(tmpPath)) {
+                    if (gReplayPlayer.loadClip(std::move(clip))) {
                         gDuelManager.setReplayReady();
+                        Debug::log(Debug::Category::Replay,
+                            "[REPLAY] final kill save %s path=%s",
+                            saveQueued ? "queued" : "rejected", savePath.c_str());
                         Debug::log(Debug::Category::Duel, "[REPLAY] Replay Loaded totalTicks=%u",
                                    gReplayPlayer.totalTicks());
                         gReplayPlayer.beginPlayback();

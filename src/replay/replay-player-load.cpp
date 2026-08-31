@@ -14,18 +14,24 @@
 
 using json = nlohmann::json;
 
+bool ReplayPlayer::loadClip(ReplayClip clip)
+{
+    mClip = std::move(clip);
+    mHeader = mClip.header;
+    mFrames = mClip.frames;
+    mCurrentTick = 0;
+    mPlaybackTick = 0.0f;
+    mLastEventTick = -1;
+    mOutfitPath.clear();
+    rebuildInterpolatedFrameAtTick();
+    return !mClip.sceneFrames.empty() || !mFrames.empty();
+}
+
 bool ReplayPlayer::loadFromJSON(const std::string& path) {
     printf("[REPLAY] loading clip from %s\n", path.c_str());
     ReplayClip clip;
     if (clip.load(path)) {
-        mClip = std::move(clip);
-        mHeader = mClip.header;
-        mFrames = mClip.frames;
-        mCurrentTick = 0;
-        mPlaybackTick = 0.0f;
-        mLastEventTick = -1;
-        mOutfitPath.clear();
-        rebuildInterpolatedFrameAtTick();
+        loadClip(std::move(clip));
         printf("[REPLAY] clip loaded path=%s sceneFrames=%zu frames=%zu header.tickCount=%u\n",
                path.c_str(), mClip.sceneFrames.size(), mFrames.size(), mHeader.tickCount);
         return true;

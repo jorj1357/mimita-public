@@ -15,6 +15,7 @@
 #include "npc/npc.h"
 #include "effects/hit-effects.h"
 #include "effects/effect-part.h"
+#include "perf/perf.h"
 
 extern Renderer* gRenderer;
 extern Player* gpPlayer;
@@ -275,14 +276,17 @@ void renderShadowMap(const World& world, const glm::vec3& focusPoint)
 
 void renderPlayerDepth(const Player& player, GLuint shadowShader, const glm::mat4& lightViewProj)
 {
+    Perf::state().renderPerf.shadowBatches++;
     player.renderDepth(shadowShader, lightViewProj);
 }
 
 void renderNpcDepths(GLuint shadowShader, const glm::mat4& lightViewProj)
 {
     if (!gpNpcSystem) return;
-    for (const Npc& npc : gpNpcSystem->all())
+    for (const Npc& npc : gpNpcSystem->all()) {
+        Perf::state().renderPerf.shadowBatches++;
         npc.body.renderDepth(shadowShader, lightViewProj);
+    }
 }
 
 void renderEffectDepths(GLuint shadowShader, const glm::mat4& lightViewProj)
@@ -303,6 +307,7 @@ void renderEffectDepths(GLuint shadowShader, const glm::mat4& lightViewProj)
     for (int i = 0; i < count; ++i) {
         const auto& b = bursts[i];
         if (!b.alive) continue;
+        Perf::state().renderPerf.shadowBatches++;
 
         float progress = b.totalTicks > 0 ? (float)b.ageTicks / (float)b.totalTicks : 0.0f;
         float baseRadius = 0.3f + progress * 0.5f;
@@ -335,6 +340,7 @@ void renderParticleDepths(GLuint shadowShader, const glm::mat4& lightViewProj)
         const auto& p = parts[i];
         float radius = p.scale * 0.5f;
         if (radius < 0.01f) continue;
+        Perf::state().renderPerf.shadowBatches++;
 
         glm::mat4 model = glm::scale(glm::translate(glm::mat4(1.0f), p.position), glm::vec3(radius));
         glm::mat4 mvp = lightViewProj * model;

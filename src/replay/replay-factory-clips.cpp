@@ -12,6 +12,7 @@
 #include <nlohmann/json.hpp>
 
 #include "combat/weapon-types.h"
+#include "debug/debug-log.h"
 
 using json = nlohmann::json;
 
@@ -145,7 +146,18 @@ void ReplayFactory::finalizeAndSave(PendingClip& pending)
         return;
     }
 
-    // Copy data needed by the worker for classification + naming
+    // Snapshot the ring buffer on the owning gameplay thread. The worker must
+    // never read the live ring while the recorder is writing the next tick.
+    ReplayClip clip = mRing.makeClip(startTick, endTick, killTick,
+                                     pending.killerId, pending.victimId);
+    if (clip.sceneFrames.empty()) {
+        printf("[REPLAY FACTORY] empty clip, not saving\n");
+        return;
+    }
+    clip.weaponId = pending.weaponId;
+    clip.killDistance = pending.distance;
+
+    // Copy only immutable data needed by the worker for classification + naming.
     KillContext ctx;
     ctx.killerId = pending.killerId;
     ctx.victimId = pending.victimId;
@@ -157,48 +169,34 @@ void ReplayFactory::finalizeAndSave(PendingClip& pending)
     ctx.ticksSinceLastKill = pending.ticksSinceLastKill;
     ctx.roundWinning = pending.roundWinning;
 
-    // ── Offload clip creation + save to background worker ──
-    // makeClip() copies data from the ring buffer (heap alloc + vector copies).
-    // Running it on the worker thread prevents main-thread frame spikes.
-    mWorker->enqueue(
-        [this, startTick, endTick, killTick,
-         killerId = pending.killerId, victimId = pending.victimId,
-         weaponId = pending.weaponId, distance = pending.distance,
-         roundWinning = pending.roundWinning, ctx]() mutable
-        {
-            ReplayClip clip = mRing.makeClip(startTick, endTick, killTick,
-                                              killerId, victimId);
-            if (clip.sceneFrames.empty()) {
-                printf("[REPLAY FACTORY] empty clip, not saving\n");
-                return;
-            }
+    const HighlightType type = classifyHighlight(ctx);
+    std::time_t now = std::time(nullptr);
+    std::tm localTime{};
+#ifdef _WIN32
+    localtime_s(&localTime, &now);
+#else
+    localtime_r(&now, &localTime);
+#endif
+    char fileName[128];
+    std::strftime(fileName, sizeof(fileName), "%Y-%m-%d_%H-%M-%S", &localTime);
+    const std::string clipName = std::string(fileName) + "_" + std::to_string(killTick)
+        + "_" + highlightTypeName(type) + ".mclip.json";
+    const std::string path = (std::filesystem::path("replays") / "clips" / clipName).string();
+    const bool queued = enqueueClipSave(std::move(clip), path);
+    if (!queued)
+        printf("[REPLAY FACTORY] save queue full; replay save dropped\n");
+}
 
-            clip.weaponId = weaponId;
-            clip.killDistance = distance;
-
-            HighlightType type = classifyHighlight(ctx);
-
-            // Build filename with timestamp
-            std::time_t now = std::time(nullptr);
-            std::tm localTime{};
-        #ifdef _WIN32
-            localtime_s(&localTime, &now);
-        #else
-            localtime_r(&now, &localTime);
-        #endif
-            char fileName[128];
-            std::strftime(fileName, sizeof(fileName), "%Y-%m-%d_%H-%M-%S", &localTime);
-
-            std::string typeStr = highlightTypeName(type);
-            std::string clipName = std::string(fileName) + "_" + std::to_string(killTick)
-                                   + "_" + typeStr + ".mclip.json";
-            std::string path = (std::filesystem::path("replays") / "clips" / clipName).string();
-
-            printf("[REPLAY FACTORY] saving clip: %s  type=%s killer=%s victim=%s weapon=%s dist=%.1f\n",
-                   path.c_str(), typeStr.c_str(),
-                   killerId.c_str(), victimId.c_str(),
-                   weaponId.c_str(), distance);
-
-            saveClipJob(std::move(clip), std::move(path));
+bool ReplayFactory::enqueueClipSave(ReplayClip clip, const std::string& path)
+{
+    if (!mWorker)
+        return false;
+    const bool queued = mWorker->enqueue(
+        [clip = std::move(clip), path]() mutable {
+            saveClipJob(std::move(clip), path);
         });
+    Debug::log(queued ? Debug::Category::Replay : Debug::Category::General,
+        "[PERF][REPLAY_SAVE] queued=%d queueDepth=%zu path=%s\n",
+        queued ? 1 : 0, mWorker->queueDepth(), path.c_str());
+    return queued;
 }

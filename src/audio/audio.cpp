@@ -37,6 +37,7 @@
 #include "config/weapon-hitfx-config.h"
 #include "debug/debug-log.h"
 #include "replay/replay.h"
+#include "perf/perf.h"
 #include "perf/perf-spike.h"
 
 static ma_engine gEngine;
@@ -113,9 +114,13 @@ static std::string soundPath(const std::string& name)
 
 static const std::vector<uint8_t>& getCachedSoundData(const std::string& name)
 {
+    MIMITA_PERF_SCOPE("Audio::StartSound::CacheLookup");
     auto it = gSoundFileCache.find(name);
-    if (it != gSoundFileCache.end())
+    if (it != gSoundFileCache.end()) {
+        Perf::state().audioPerf.cacheHits++;
         return it->second;
+    }
+    Perf::state().audioPerf.cacheMisses++;
     std::string path = soundPath(name);
     if (!std::filesystem::exists(path)) {
         static std::vector<uint8_t> empty;
@@ -138,22 +143,33 @@ static void startSound(const std::string& name, float volume, float pitch,
                        const glm::vec3* position, float maxDistance)
 {
     MIMITA_PERF_SCOPE("Audio::StartSound");
-    initAudioOnce();
-    if (!gAudioInit) return;
-    auto active = std::make_unique<ActiveSound>();
+    { MIMITA_PERF_SCOPE("Audio::StartSound::InitAudio"); initAudioOnce(); }
+    if (!gAudioInit) { Perf::state().audioPerf.soundsRejected++; return; }
+    std::unique_ptr<ActiveSound> active;
+    { MIMITA_PERF_SCOPE("Audio::StartSound::Allocation");
+      active = std::make_unique<ActiveSound>(); }
     const std::vector<uint8_t>& cached = getCachedSoundData(name);
     if (cached.empty()) {
+        Perf::state().audioPerf.soundsRejected++;
         if (gSoundDebug) printf("[SOUND] invalid path event=%s\n", name.c_str());
         return;
     }
-    if (ma_decoder_init_memory(cached.data(), cached.size(), nullptr, &active->decoder) != MA_SUCCESS) {
+    { MIMITA_PERF_SCOPE("Audio::StartSound::DecoderInit");
+      if (ma_decoder_init_memory(cached.data(), cached.size(), nullptr, &active->decoder) != MA_SUCCESS) {
+        Perf::state().audioPerf.decoderFailures++;
+        Perf::state().audioPerf.soundsRejected++;
         if (gSoundDebug) printf("[SOUND] decoder failed event=%s\n", name.c_str());
         return;
+      }
     }
-    if (ma_sound_init_from_data_source(&gEngine, &active->decoder, 0, nullptr, &active->sound) != MA_SUCCESS) {
+    { MIMITA_PERF_SCOPE("Audio::StartSound::SoundInit");
+      if (ma_sound_init_from_data_source(&gEngine, &active->decoder, 0, nullptr, &active->sound) != MA_SUCCESS) {
+        Perf::state().audioPerf.soundInitFailures++;
+        Perf::state().audioPerf.soundsRejected++;
         ma_decoder_uninit(&active->decoder);
         if (gSoundDebug) printf("[SOUND] sound init failed event=%s\n", name.c_str());
         return;
+      }
     }
     active->initialized = true;
     active->name = name;
@@ -162,19 +178,21 @@ static void startSound(const std::string& name, float volume, float pitch,
     active->pitch = pitch;
     active->maxDistance = maxDistance;
     active->createdTime = gAudioTime;
-    const PlayerSettings& settings = GetPlayerSettings();
-    ma_sound_set_volume(&active->sound, std::max(0.0f, volume * settings.masterVolume * settings.sfxVolume));
-    ma_sound_set_pitch(&active->sound, std::clamp(pitch, 0.25f, 3.0f));
-    if (position) {
-        ma_sound_set_position(&active->sound, position->x, position->y, position->z);
-        ma_sound_set_spatialization_enabled(&active->sound, MA_TRUE);
-        ma_sound_set_attenuation_model(&active->sound, ma_attenuation_model_linear);
-        ma_sound_set_min_distance(&active->sound, 2.0f);
-        ma_sound_set_max_distance(&active->sound, std::max(1.0f, maxDistance));
-    } else {
-        ma_sound_set_spatialization_enabled(&active->sound, MA_FALSE);
+    { MIMITA_PERF_SCOPE("Audio::StartSound::ConfigureVoice");
+      const PlayerSettings& settings = GetPlayerSettings();
+      ma_sound_set_volume(&active->sound, std::max(0.0f, volume * settings.masterVolume * settings.sfxVolume));
+      ma_sound_set_pitch(&active->sound, std::clamp(pitch, 0.25f, 3.0f));
+      if (position) {
+          ma_sound_set_position(&active->sound, position->x, position->y, position->z);
+          ma_sound_set_spatialization_enabled(&active->sound, MA_TRUE);
+          ma_sound_set_attenuation_model(&active->sound, ma_attenuation_model_linear);
+          ma_sound_set_min_distance(&active->sound, 2.0f);
+          ma_sound_set_max_distance(&active->sound, std::max(1.0f, maxDistance));
+      } else {
+          ma_sound_set_spatialization_enabled(&active->sound, MA_FALSE);
+      }
     }
-    ma_sound_start(&active->sound);
+    { MIMITA_PERF_SCOPE("Audio::StartSound::StartVoice"); ma_sound_start(&active->sound); }
     if (gSoundDebug) printf("[SOUND] playing event=%s category=%s\n",
                             name.c_str(), position ? "3D" : "2D");
     Debug::warn(Debug::Category::Audio, "[AUDIO] startSound name=%s pos=%s vol=%.2f maxDist=%.2f spatial=%s\n",
@@ -182,7 +200,10 @@ static void startSound(const std::string& name, float volume, float pitch,
                 position ? "(set)" : "(null)",
                 volume, maxDistance,
                 position ? "ENABLED" : "DISABLED");
-    gActiveSounds.push_back(std::move(active));
+    { MIMITA_PERF_SCOPE("Audio::StartSound::ContainerInsert");
+      gActiveSounds.push_back(std::move(active)); }
+    Perf::state().audioPerf.soundsStarted++;
+    Perf::state().audioPerf.activeVoices = static_cast<uint32_t>(gActiveSounds.size());
 }
 
 static void initAudioOnce()
@@ -232,6 +253,7 @@ void audioUpdate(float dt)
     // Background cache: one sound per frame, never block
     if (gAudioInit && !gSoundCacheComplete && gSoundCacheIndex < gSoundCacheQueue.size())
     {
+        MIMITA_PERF_SCOPE("Audio::Update::CacheOneSound");
         getCachedSoundData(gSoundCacheQueue[gSoundCacheIndex]);
         ++gSoundCacheIndex;
         if (gSoundCacheIndex >= gSoundCacheQueue.size())
@@ -241,6 +263,8 @@ void audioUpdate(float dt)
         }
     }
 
+    const size_t voicesBeforeCleanup = gActiveSounds.size();
+    { MIMITA_PERF_SCOPE("Audio::Update::RemoveFinishedSounds");
     gActiveSounds.erase(
         std::remove_if(gActiveSounds.begin(), gActiveSounds.end(), [](const std::unique_ptr<ActiveSound>& active) {
             if (!active || !active->initialized || ma_sound_at_end(&active->sound)) {
@@ -254,7 +278,10 @@ void audioUpdate(float dt)
             }
             return false;
         }),
-        gActiveSounds.end());
+        gActiveSounds.end()); }
+    Perf::state().audioPerf.voicesCleaned += static_cast<uint32_t>(
+        voicesBeforeCleanup - gActiveSounds.size());
+    Perf::state().audioPerf.activeVoices = static_cast<uint32_t>(gActiveSounds.size());
 }
 
 AudioManager& AudioManager::instance()
@@ -270,6 +297,7 @@ bool AudioManager::debug() const { return gSoundDebug; }
 
 void AudioManager::play(const AudioEvent& event)
 {
+    Perf::state().audioPerf.soundsRequested++;
     ReplaySoundEvent replayEvent;
     replayEvent.soundPath = event.name;
     replayEvent.world = event.world;

@@ -1,9 +1,9 @@
 {
     "enabled": true,
 
-    "shadowMapSize": 1024,
+    "shadowMapSize": 512,
 
-    "shadowDistance": 100.0,
+    "shadowDistance": 60.0,
 
     "shadowBias": 0.002,
 
@@ -23,11 +23,11 @@
 
     "npcsCastShadows": true,
 
-    "weaponsCastShadows": true,
+    "weaponsCastShadows": false,
 
-    "effectsCastShadows": true,
+    "effectsCastShadows": false,
 
-    "particlesCastShadows": true,
+    "particlesCastShadows": false,
 
     "playersReceiveShadows": true,
 

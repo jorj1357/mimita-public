@@ -20,6 +20,8 @@
 #include "shadow/shadow-render.h"
 #include "debug/debug-diag.h"
 #include "world/texture-store.h"
+#include "perf/perf.h"
+#include "perf/perf-spike.h"
 
 extern Renderer* gRenderer;
 extern TextureStore gTextures;
@@ -70,6 +72,7 @@ void uploadMeshIfNeeded(const World& world)
         world.renderRevision == gBuiltRevision)
         return;
 
+    MIMITA_PERF_SCOPE("Rendering::World::MeshUpload");
     if (!gVao) {
         glGenVertexArrays(1, &gVao);
         glGenBuffers(1, &gVbo);
@@ -126,6 +129,7 @@ bool texBreatheEnabled() { return gTexBreatheEnabled || gTexBreatheRestoring; }
 
 void setUniforms(GLuint shader, const glm::vec3& cameraPos)
 {
+    MIMITA_PERF_SCOPE("Rendering::World::UniformSetup");
     const auto& cfg = LightingConfig::instance();
     const auto& scfg = ShadowConfig::instance();
 
@@ -210,14 +214,48 @@ void setUniforms(GLuint shader, const glm::vec3& cameraPos)
 }
 
 bool gWorldTextureDebug = false;
-bool gRenderBackfaces = true;
+bool gRenderBackfaces = false;
 bool gSolidRedDebug = false;
 
 void setWorldSolidRedDebug(bool enabled) { gSolidRedDebug = enabled; }
 bool worldSolidRedDebug() { return gSolidRedDebug; }
 
+static bool batchVisible(const Mesh::Batch& batch, const glm::mat4& viewProjection)
+{
+    if (!batch.hasBounds)
+        return true;
+
+    const glm::vec3& mn = batch.boundsMin;
+    const glm::vec3& mx = batch.boundsMax;
+    const glm::vec3 corners[8] = {
+        {mn.x, mn.y, mn.z}, {mx.x, mn.y, mn.z},
+        {mn.x, mx.y, mn.z}, {mx.x, mx.y, mn.z},
+        {mn.x, mn.y, mx.z}, {mx.x, mn.y, mx.z},
+        {mn.x, mx.y, mx.z}, {mx.x, mx.y, mx.z}
+    };
+
+    bool outsideLeft = true;
+    bool outsideRight = true;
+    bool outsideBottom = true;
+    bool outsideTop = true;
+    bool outsideNear = true;
+    bool outsideFar = true;
+    for (const glm::vec3& corner : corners) {
+        const glm::vec4 clip = viewProjection * glm::vec4(corner, 1.0f);
+        outsideLeft &= clip.x < -clip.w;
+        outsideRight &= clip.x > clip.w;
+        outsideBottom &= clip.y < -clip.w;
+        outsideTop &= clip.y > clip.w;
+        outsideNear &= clip.z < -clip.w;
+        outsideFar &= clip.z > clip.w;
+    }
+    return !(outsideLeft || outsideRight || outsideBottom ||
+             outsideTop || outsideNear || outsideFar);
+}
+
 void renderWorldMeshBatches(const World& world, const Camera& cam)
 {
+    MIMITA_PERF_SCOPE("Rendering::World::BatchSubmission");
     if (gRenderBackfaces)
         glDisable(GL_CULL_FACE);
     else
@@ -232,6 +270,7 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
     glm::mat4 model(1.0f);
     glm::mat4 view = cam.getView();
     glm::mat4 proj = cam.getProj((float)gRenderer->width, (float)gRenderer->height);
+    const glm::mat4 viewProjection = proj * view;
 
     setMat4(shader, "model", model);
     setMat4(shader, "view", view);
@@ -243,22 +282,47 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
 
     const Mesh& mesh = world.mesh;
     size_t drawCalls = 0;
+    GLuint boundTexture = 0;
+    auto& renderPerf = Perf::state().renderPerf;
+    renderPerf.worldBatches += static_cast<uint32_t>(mesh.batches.size());
+    renderPerf.worldBackfaceCulling = gRenderBackfaces ? 0u : 1u;
 
     // Ensure texture unit 0 is active before binding world textures
     glActiveTexture(GL_TEXTURE0);
 
     for (const auto& batch : mesh.batches)
     {
+        if (!batchVisible(batch, viewProjection)) {
+            renderPerf.worldSkippedBatches++;
+            continue;
+        }
         GLuint tex = batch.texture ? batch.texture : gTextures.get("default");
         if (gWorldTextureDebug)
         {
             printf("[WORLD TEX] batch first=%zu count=%zu texture=%u material=%s\n",
                    batch.first, batch.count, tex, batch.materialName.c_str());
         }
-        MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
+        if (tex != boundTexture) {
+            MIMITA_PERF_SCOPE("Rendering::World::TextureBind");
+            MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
+            boundTexture = tex;
+            renderPerf.worldTextureBinds++;
+        }
 
-        MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
+        const bool temporarilyDisableCulling = !gRenderBackfaces && batch.doubleSided;
+        if (temporarilyDisableCulling)
+            glDisable(GL_CULL_FACE);
+        {
+            MIMITA_PERF_SCOPE("Rendering::World::DrawCall");
+            MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
+        }
+        if (temporarilyDisableCulling)
+            glEnable(GL_CULL_FACE);
         ++drawCalls;
+        renderPerf.worldSubmittedBatches++;
+        renderPerf.worldDrawCalls++;
+        renderPerf.worldVertices += static_cast<uint64_t>(batch.count);
+        renderPerf.worldTriangles += static_cast<uint64_t>(batch.count / 3);
     }
     diagRenderWorldCounts(mesh.batches.size(), mesh.verts.size(), drawCalls);
 }

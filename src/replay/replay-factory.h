@@ -176,6 +176,8 @@ public:
 
     // Manual save (e.g., F8 key)
     bool saveLastKill(std::string* savedPath = nullptr);
+    bool enqueueClipSave(ReplayClip clip, const std::string& path);
+    bool enqueueInstantReplay(uint32_t durationSeconds, std::string* queuedPath = nullptr);
     bool hasLastKill() const { return mLastClip.has_value(); }
 
     const ReplayClipInfo* lastClipInfo() const {

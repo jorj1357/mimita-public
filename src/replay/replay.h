@@ -251,6 +251,7 @@ private:
 
 class ReplayPlayer {
 public:
+    bool loadClip(ReplayClip clip);
     bool loadFromJSON(const std::string& path);
     bool loadFromBinary(const std::string& path);
 

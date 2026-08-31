@@ -18,17 +18,19 @@ public:
 
     // Enqueue a job that runs on the worker thread.
     // The function should not touch mutable game state.
-    void enqueue(std::function<void()> job);
+    bool enqueue(std::function<void()> job);
 
     // Wait for all queued jobs to complete (for shutdown safety).
     void drain();
+    size_t queueDepth() const;
 
 private:
     void threadLoop();
 
     std::thread mThread;
-    std::mutex mMutex;
+    mutable std::mutex mMutex;
     std::condition_variable mCv;
     std::queue<std::function<void()>> mJobs;
+    size_t mActiveJobs = 0;
     std::atomic<bool> mShutdown{false};
 };

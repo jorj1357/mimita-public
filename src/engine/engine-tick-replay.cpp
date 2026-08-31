@@ -78,6 +78,7 @@ void engineTickReplay(Engine& engine, float dt)
     auto& gReplayFactory = REPLAY_FACTORY;
     auto& gReplayBrowser = REPLAY_BROWSER;
     auto& gReplayTimeline = REPLAY_TIMELINE;
+    auto& replayPerf = Perf::state().replayPerf;
 
     struct ReplayTestState {
         bool active = false;
@@ -131,28 +132,21 @@ void engineTickReplay(Engine& engine, float dt)
         if (!clip.sceneFrames.empty()) {
             Debug::log(Debug::Category::Replay, "[REPLAY] clip has %zu sceneFrames, %zu frames", clip.sceneFrames.size(), clip.frames.size());
             std::string savePath = generateReplayClipPath();
-            Debug::log(Debug::Category::Replay, "[REPLAY] saving clip to %s", savePath.c_str());
-            if (clip.save(savePath)) {
+            ReplayClip saveCopy = clip;
+            if (gReplayFactory.enqueueClipSave(std::move(saveCopy), savePath)) {
                 gDuelManager.finalKillReplayPath = savePath;
                 gDuelManager.finalKillSavedOnce = true;
-                Debug::log(Debug::Category::Replay, "[REPLAY] final kill auto-saved: %s frames=%zu", savePath.c_str(), clip.sceneFrames.size());
+                Debug::log(Debug::Category::Replay, "[REPLAY] final kill save queued: %s frames=%zu", savePath.c_str(), clip.sceneFrames.size());
             } else {
-                Debug::log(Debug::Category::Replay, "[REPLAY] clip.save FAILED for %s", savePath.c_str());
+                Debug::warn(Debug::Category::Replay, "[REPLAY] final kill save queue rejected: %s", savePath.c_str());
             }
-            std::string tmpPath = "replays/_final_kill_temp.json";
-            if (clip.save(tmpPath)) {
-                Debug::log(Debug::Category::Replay, "[REPLAY] temp clip saved OK");
-            } else {
-                Debug::log(Debug::Category::Replay, "[REPLAY] temp clip save FAILED");
-            }
-            Debug::log(Debug::Category::Replay, "[REPLAY] loading clip from %s", tmpPath.c_str());
-            if (gReplayPlayer.loadFromJSON(tmpPath)) {
+            if (gReplayPlayer.loadClip(std::move(clip))) {
                 gDuelManager.setReplayReady();
                 Debug::log(Debug::Category::Replay, "[REPLAY] replayReady=1 clip loaded OK totalTicks=%u currentTick=%u",
                            gReplayPlayer.totalTicks(), gReplayPlayer.currentTick());
                 clipCreated = true;
             } else {
-                Debug::log(Debug::Category::Replay, "[REPLAY] loadFromJSON FAILED");
+                Debug::log(Debug::Category::Replay, "[REPLAY] loadClip FAILED");
             }
         } else {
             Debug::log(Debug::Category::Replay, "[REPLAY] clip.sceneFrames EMPTY after makeClip - NO REPLAY DATA");
@@ -305,7 +299,7 @@ void engineTickReplay(Engine& engine, float dt)
         uint32_t replayTick = 0;
         if (recordingReplayTick) {
             replayTick = gReplayRecorder.currentTick();
-            { MIMITA_PERF_SCOPE("Replay::RecordFrame");
+            { MIMITA_PERF_SCOPE("Replay::RecordFrame::Input");
               gReplayRecorder.recordFrame(tickFrame);
             }
         }
@@ -330,9 +324,10 @@ void engineTickReplay(Engine& engine, float dt)
             sceneFrame.effects.clear();
 
             // Camera
-            sceneFrame.camera.position = camera.pos;
-            sceneFrame.camera.rotation = glm::vec3(camera.pitch, 0.0f, player.yaw);
-            sceneFrame.camera.fov = camera.fov;
+            { MIMITA_PERF_SCOPE("Replay::RecordFrame::Camera");
+              sceneFrame.camera.position = camera.pos;
+              sceneFrame.camera.rotation = glm::vec3(camera.pitch, 0.0f, player.yaw);
+              sceneFrame.camera.fov = camera.fov; }
 
             // ── Identity table update: only copies strings on actual change ──
             // Returns true if identity changed. Uses const char* for weapon fields
@@ -405,19 +400,28 @@ void engineTickReplay(Engine& engine, float dt)
 
             // ── Player ──
             {
+                MIMITA_PERF_SCOPE("Replay::Player::Total");
                 const uint32_t actorId = 0;
-                const WeaponDefinition* wdef = weapons.getCurrentDef(player);
+                const WeaponDefinition* wdef = nullptr;
+                { MIMITA_PERF_SCOPE("Replay::Player::WeaponLookup");
+                  wdef = weapons.getCurrentDef(player);
+                }
                 auto wit = player.weaponRuntimes.find(player.equippedWeaponId);
                 uint16_t curAmmo = (wit != player.weaponRuntimes.end()) ? wit->second.currentAmmo : 0;
                 uint16_t resAmmo = (wit != player.weaponRuntimes.end()) ? wit->second.reserveAmmo : 0;
 
-                bool idChanged = updateIdentity(actorId, ReplayActorType::Player,
+                bool idChanged = false;
+                { MIMITA_PERF_SCOPE("Replay::Player::Identity");
+                  idChanged = updateIdentity(actorId, ReplayActorType::Player,
                     player.username.empty() ? std::string("admin") : player.username,
                     player.username, kDefaultModelPath, GetPlayerSettings().outfitPath,
                     GetPlayerSettings().characterName, GetPlayerSettings().avatarName,
                     wdef ? wdef->id.c_str() : "none",
                     wdef ? wdef->modelPath.c_str() : "");
-                if (idChanged) perfIdentityChanges++;
+                }
+                replayPerf.actorsVisited++;
+                replayPerf.identityLookups++;
+                if (idChanged) { perfIdentityChanges++; replayPerf.identityChanges++; }
 
                 // Build compact tick state (NO string copies)
                 ReplayActorTickState compact{};
@@ -436,17 +440,26 @@ void engineTickReplay(Engine& engine, float dt)
                 compact.sizeScale = player.sizeScale;
 
                 // Capture body parts (compact poses, partId not name)
-                { auto bp = captureReplayBodyParts(player);
-                  for (int i = 0; i < bp.count && i < REPLAY_MAX_BODY_PARTS; ++i) {
-                      compact.bodyParts[i].position = bp.parts[i].position;
-                      compact.bodyParts[i].rotation = bp.parts[i].rotation;
-                      compact.bodyParts[i].scale = bp.parts[i].scale;
+                BodyPartArray bodyParts;
+                { MIMITA_PERF_SCOPE("Replay::Player::BodyParts");
+                  bodyParts = captureReplayBodyParts(player);
+                  replayPerf.bodyPartsVisited += bodyParts.count;
+                  replayPerf.bodyPartsCaptured += bodyParts.count;
+                  for (int i = 0; i < bodyParts.count && i < REPLAY_MAX_BODY_PARTS; ++i) {
+                      compact.bodyParts[i].position = bodyParts.parts[i].position;
+                      compact.bodyParts[i].rotation = bodyParts.parts[i].rotation;
+                      compact.bodyParts[i].scale = bodyParts.parts[i].scale;
                   }
-                  compact.bodyPartCount = bp.count; }
+                  compact.bodyPartCount = bodyParts.count; }
 
                 // Store if identity changed OR numeric state changed
                 const auto* prevState = gReplayRecorder.getPreviousState(actorId);
-                if (idChanged || !prevState || compact != *prevState) {
+                bool actorChanged = false;
+                { MIMITA_PERF_SCOPE("Replay::Player::CompareState");
+                  actorChanged = idChanged || !prevState || compact != *prevState;
+                }
+                if (actorChanged) {
+                    MIMITA_PERF_SCOPE("Replay::Player::StoreState");
                     ReplayActorState actor;
                     expandActorFromIdentity(actor, actorId);
                     actor.position = compact.position;
@@ -461,22 +474,26 @@ void engineTickReplay(Engine& engine, float dt)
                     actor.reloading = compact.reloading;
                     actor.grounded = compact.grounded;
                     actor.sizeScale = compact.sizeScale;
-                    { auto bp = captureReplayBodyParts(player);
-                      actor.bodyParts = bp.parts; actor.bodyPartCount = bp.count; }
+                    actor.bodyParts = bodyParts.parts;
+                    actor.bodyPartCount = bodyParts.count;
                     sceneFrame.actors.push_back(std::move(actor));
                     perfStoredActors++;
-                }
+                    replayPerf.actorsStored++;
+                } else replayPerf.actorsUnchanged++;
                 gReplayRecorder.storePreviousState(actorId, compact);
                 perfActors++;
             }
 
             // ── NPCs ──
             {
-            MIMITA_PERF_SCOPE("Replay::ActorSnapshot");
+            MIMITA_PERF_SCOPE("Replay::NPC::Total");
             for (const Npc& npc : npcSystem.all()) {
                 const uint32_t actorId = 1000u + npc.id;
                 perfActors++;
-                const WeaponDefinition* wdef = weapons.getDefForSlot(npc.body.equippedSlot);
+                const WeaponDefinition* wdef = nullptr;
+                { MIMITA_PERF_SCOPE("Replay::NPC::WeaponLookup");
+                  wdef = weapons.getDefForSlot(npc.body.equippedSlot);
+                }
                 auto wit = npc.body.weaponRuntimes.find(npc.body.equippedWeaponId);
                 uint16_t curAmmo = (wit != npc.body.weaponRuntimes.end()) ? wit->second.currentAmmo : 0;
                 uint16_t resAmmo = (wit != npc.body.weaponRuntimes.end()) ? wit->second.reserveAmmo : 0;
@@ -488,14 +505,19 @@ void engineTickReplay(Engine& engine, float dt)
                     idStr = "npc_" + std::to_string(npc.id);
                 }
 
-                bool idChanged = updateIdentity(actorId,
+                bool idChanged = false;
+                { MIMITA_PERF_SCOPE("Replay::NPC::Identity");
+                  idChanged = updateIdentity(actorId,
                     npc.body.dead ? ReplayActorType::Corpse : ReplayActorType::Npc,
                     idStr.empty() ? existingIdent->idString : idStr,
                     npc.body.username, kDefaultModelPath, "",
                     "", npc.avatarName,
                     wdef ? wdef->id.c_str() : "none",
                     wdef ? wdef->modelPath.c_str() : "");
-                if (idChanged) perfIdentityChanges++;
+                }
+                replayPerf.actorsVisited++;
+                replayPerf.identityLookups++;
+                if (idChanged) { perfIdentityChanges++; replayPerf.identityChanges++; }
 
                 ReplayActorTickState compact{};
                 compact.actorId = actorId;
@@ -510,17 +532,25 @@ void engineTickReplay(Engine& engine, float dt)
                 compact.grounded = npc.body.ground.onGround;
                 compact.sizeScale = npc.body.sizeScale;
 
-                { MIMITA_PERF_SCOPE("Replay::BodyParts");
-                  auto bp = captureReplayBodyParts(npc.body);
-                  for (int i = 0; i < bp.count && i < REPLAY_MAX_BODY_PARTS; ++i) {
-                      compact.bodyParts[i].position = bp.parts[i].position;
-                      compact.bodyParts[i].rotation = bp.parts[i].rotation;
-                      compact.bodyParts[i].scale = bp.parts[i].scale;
+                BodyPartArray bodyParts;
+                { MIMITA_PERF_SCOPE("Replay::NPC::BodyParts");
+                  bodyParts = captureReplayBodyParts(npc.body);
+                  replayPerf.bodyPartsVisited += bodyParts.count;
+                  replayPerf.bodyPartsCaptured += bodyParts.count;
+                  for (int i = 0; i < bodyParts.count && i < REPLAY_MAX_BODY_PARTS; ++i) {
+                      compact.bodyParts[i].position = bodyParts.parts[i].position;
+                      compact.bodyParts[i].rotation = bodyParts.parts[i].rotation;
+                      compact.bodyParts[i].scale = bodyParts.parts[i].scale;
                   }
-                  compact.bodyPartCount = bp.count; }
+                  compact.bodyPartCount = bodyParts.count; }
 
                 const auto* prevState = gReplayRecorder.getPreviousState(actorId);
-                if (idChanged || !prevState || compact != *prevState) {
+                bool actorChanged = false;
+                { MIMITA_PERF_SCOPE("Replay::NPC::CompareState");
+                  actorChanged = idChanged || !prevState || compact != *prevState;
+                }
+                if (actorChanged) {
+                    MIMITA_PERF_SCOPE("Replay::NPC::StoreState");
                     ReplayActorState actor;
                     expandActorFromIdentity(actor, actorId);
                     actor.position = compact.position;
@@ -533,23 +563,27 @@ void engineTickReplay(Engine& engine, float dt)
                     actor.dead = compact.dead;
                     actor.grounded = compact.grounded;
                     actor.sizeScale = compact.sizeScale;
-                    { auto bp = captureReplayBodyParts(npc.body);
-                      actor.bodyParts = bp.parts; actor.bodyPartCount = bp.count; }
+                    actor.bodyParts = bodyParts.parts;
+                    actor.bodyPartCount = bodyParts.count;
                     sceneFrame.actors.push_back(std::move(actor));
                     perfStoredActors++;
-                }
+                    replayPerf.actorsStored++;
+                } else replayPerf.actorsUnchanged++;
                 gReplayRecorder.storePreviousState(actorId, compact);
             }
             } // ReplayCaptureNPCs
 
             // ── Remote players ──
             {
-            MIMITA_PERF_SCOPE("Replay::ActorSnapshot");
+            MIMITA_PERF_SCOPE("Replay::RemotePlayer::Total");
             for (const auto& kv : mpContext.remotePlayers) {
                 const Player& p = kv.second;
                 const uint32_t actorId = 20000u + kv.first;
                 perfActors++;
-                const WeaponDefinition* wdef = weapons.getCurrentDef(p);
+                const WeaponDefinition* wdef = nullptr;
+                { MIMITA_PERF_SCOPE("Replay::RemotePlayer::WeaponLookup");
+                  wdef = weapons.getCurrentDef(p);
+                }
                 auto wit = p.weaponRuntimes.find(p.equippedWeaponId);
                 uint16_t curAmmo = (wit != p.weaponRuntimes.end()) ? wit->second.currentAmmo : 0;
                 uint16_t resAmmo = (wit != p.weaponRuntimes.end()) ? wit->second.reserveAmmo : 0;
@@ -560,14 +594,19 @@ void engineTickReplay(Engine& engine, float dt)
                     idStr = "remote_" + std::to_string(kv.first);
                 }
 
-                bool idChanged = updateIdentity(actorId,
+                bool idChanged = false;
+                { MIMITA_PERF_SCOPE("Replay::RemotePlayer::Identity");
+                  idChanged = updateIdentity(actorId,
                     p.dead ? ReplayActorType::Corpse : ReplayActorType::RemotePlayer,
                     idStr.empty() ? existingIdent->idString : idStr,
                     p.username, kDefaultModelPath, "",
                     p.characterName(), p.avatarName(),
                     wdef ? wdef->id.c_str() : "none",
                     wdef ? wdef->modelPath.c_str() : "");
-                if (idChanged) perfIdentityChanges++;
+                }
+                replayPerf.actorsVisited++;
+                replayPerf.identityLookups++;
+                if (idChanged) { perfIdentityChanges++; replayPerf.identityChanges++; }
 
                 ReplayActorTickState compact{};
                 compact.actorId = actorId;
@@ -582,17 +621,25 @@ void engineTickReplay(Engine& engine, float dt)
                 compact.grounded = p.ground.onGround;
                 compact.sizeScale = p.sizeScale;
 
-                { MIMITA_PERF_SCOPE("Replay::BodyParts");
-                  auto bp = captureReplayBodyParts(p);
-                  for (int i = 0; i < bp.count && i < REPLAY_MAX_BODY_PARTS; ++i) {
-                      compact.bodyParts[i].position = bp.parts[i].position;
-                      compact.bodyParts[i].rotation = bp.parts[i].rotation;
-                      compact.bodyParts[i].scale = bp.parts[i].scale;
+                BodyPartArray bodyParts;
+                { MIMITA_PERF_SCOPE("Replay::RemotePlayer::BodyParts");
+                  bodyParts = captureReplayBodyParts(p);
+                  replayPerf.bodyPartsVisited += bodyParts.count;
+                  replayPerf.bodyPartsCaptured += bodyParts.count;
+                  for (int i = 0; i < bodyParts.count && i < REPLAY_MAX_BODY_PARTS; ++i) {
+                      compact.bodyParts[i].position = bodyParts.parts[i].position;
+                      compact.bodyParts[i].rotation = bodyParts.parts[i].rotation;
+                      compact.bodyParts[i].scale = bodyParts.parts[i].scale;
                   }
-                  compact.bodyPartCount = bp.count; }
+                  compact.bodyPartCount = bodyParts.count; }
 
                 const auto* prevState = gReplayRecorder.getPreviousState(actorId);
-                if (idChanged || !prevState || compact != *prevState) {
+                bool actorChanged = false;
+                { MIMITA_PERF_SCOPE("Replay::RemotePlayer::CompareState");
+                  actorChanged = idChanged || !prevState || compact != *prevState;
+                }
+                if (actorChanged) {
+                    MIMITA_PERF_SCOPE("Replay::RemotePlayer::StoreState");
                     ReplayActorState actor;
                     expandActorFromIdentity(actor, actorId);
                     actor.position = compact.position;
@@ -605,34 +652,48 @@ void engineTickReplay(Engine& engine, float dt)
                     actor.dead = compact.dead;
                     actor.grounded = compact.grounded;
                     actor.sizeScale = compact.sizeScale;
-                    { auto bp = captureReplayBodyParts(p);
-                      actor.bodyParts = bp.parts; actor.bodyPartCount = bp.count; }
+                    actor.bodyParts = bodyParts.parts;
+                    actor.bodyPartCount = bodyParts.count;
                     sceneFrame.actors.push_back(std::move(actor));
                     perfStoredActors++;
-                }
+                    replayPerf.actorsStored++;
+                } else replayPerf.actorsUnchanged++;
                 gReplayRecorder.storePreviousState(actorId, compact);
             }
             } // ReplayCaptureRemotePlayers
 
             // ── Remote NPCs ──
             {
-            MIMITA_PERF_SCOPE("Replay::ActorSnapshot");
+            MIMITA_PERF_SCOPE("Replay::RemoteNPC::Total");
             for (const auto& kv : mpContext.remoteNpcs) {
                 const Player& p = kv.second;
                 const uint32_t actorId = 30000u + kv.first;
                 perfActors++;
 
-                // Use cached avatar instead of filesystem call
+                // Prefer the avatar already carried by the network snapshot.
+                // Only resolve/cache when the snapshot has no avatar name.
                 const std::string& avatarName = [&]() -> const std::string& {
+                    MIMITA_PERF_SCOPE("Replay::RemoteNPC::AvatarLookup");
+                    if (!p.avatarName().empty()) {
+                        replayPerf.avatarCacheHits++;
+                        return p.avatarName();
+                    }
                     const std::string& cached = gReplayRecorder.getCachedNpcAvatar(kv.first, p.networkTransformEpoch);
-                    if (!cached.empty()) return cached;
+                    if (!cached.empty()) {
+                        replayPerf.avatarCacheHits++;
+                        return cached;
+                    }
+                    replayPerf.avatarCacheMisses++;
                     static std::string resolved;
                     resolved = npcAvatarNameForLife(kv.first, p.networkTransformEpoch);
                     gReplayRecorder.cacheNpcAvatar(kv.first, p.networkTransformEpoch, resolved);
                     return resolved;
                 }();
 
-                const WeaponDefinition* wdef = weapons.getCurrentDef(p);
+                const WeaponDefinition* wdef = nullptr;
+                { MIMITA_PERF_SCOPE("Replay::RemoteNPC::WeaponLookup");
+                  wdef = weapons.getCurrentDef(p);
+                }
                 auto wit = p.weaponRuntimes.find(p.equippedWeaponId);
                 uint16_t curAmmo = (wit != p.weaponRuntimes.end()) ? wit->second.currentAmmo : 0;
                 uint16_t resAmmo = (wit != p.weaponRuntimes.end()) ? wit->second.reserveAmmo : 0;
@@ -643,14 +704,19 @@ void engineTickReplay(Engine& engine, float dt)
                     idStr = "rnpc_" + std::to_string(kv.first);
                 }
 
-                bool idChanged = updateIdentity(actorId,
+                bool idChanged = false;
+                { MIMITA_PERF_SCOPE("Replay::RemoteNPC::Identity");
+                  idChanged = updateIdentity(actorId,
                     p.dead ? ReplayActorType::Corpse : ReplayActorType::RemoteNpc,
                     idStr.empty() ? existingIdent->idString : idStr,
                     p.username, kDefaultModelPath, "",
                     p.characterName(), avatarName,
                     wdef ? wdef->id.c_str() : "none",
                     wdef ? wdef->modelPath.c_str() : "");
-                if (idChanged) perfIdentityChanges++;
+                }
+                replayPerf.actorsVisited++;
+                replayPerf.identityLookups++;
+                if (idChanged) { perfIdentityChanges++; replayPerf.identityChanges++; }
 
                 ReplayActorTickState compact{};
                 compact.actorId = actorId;
@@ -665,17 +731,39 @@ void engineTickReplay(Engine& engine, float dt)
                 compact.grounded = p.ground.onGround;
                 compact.sizeScale = p.sizeScale;
 
-                { MIMITA_PERF_SCOPE("Replay::BodyParts");
-                  auto bp = captureReplayBodyParts(p);
-                  for (int i = 0; i < bp.count && i < REPLAY_MAX_BODY_PARTS; ++i) {
-                      compact.bodyParts[i].position = bp.parts[i].position;
-                      compact.bodyParts[i].rotation = bp.parts[i].rotation;
-                      compact.bodyParts[i].scale = bp.parts[i].scale;
-                  }
-                  compact.bodyPartCount = bp.count; }
-
+                BodyPartArray bodyParts;
                 const auto* prevState = gReplayRecorder.getPreviousState(actorId);
-                if (idChanged || !prevState || compact != *prevState) {
+                const bool captureBodyParts = !prevState || idChanged || (replayTick & 1u) == 0;
+                { MIMITA_PERF_SCOPE("Replay::RemoteNPC::BodyParts");
+                  if (captureBodyParts) {
+                      bodyParts = captureReplayBodyParts(p);
+                      replayPerf.bodyPartsVisited += bodyParts.count;
+                      replayPerf.bodyPartsCaptured += bodyParts.count;
+                      for (int i = 0; i < bodyParts.count && i < REPLAY_MAX_BODY_PARTS; ++i) {
+                          compact.bodyParts[i].position = bodyParts.parts[i].position;
+                          compact.bodyParts[i].rotation = bodyParts.parts[i].rotation;
+                          compact.bodyParts[i].scale = bodyParts.parts[i].scale;
+                      }
+                      compact.bodyPartCount = bodyParts.count;
+                  } else {
+                      compact.bodyParts = prevState->bodyParts;
+                      compact.bodyPartCount = prevState->bodyPartCount;
+                      bodyParts.count = prevState->bodyPartCount;
+                      for (int i = 0; i < bodyParts.count && i < REPLAY_MAX_BODY_PARTS; ++i) {
+                          bodyParts.parts[i].position = prevState->bodyParts[i].position;
+                          bodyParts.parts[i].rotation = prevState->bodyParts[i].rotation;
+                          bodyParts.parts[i].scale = prevState->bodyParts[i].scale;
+                      }
+                      replayPerf.actorsDeferred++;
+                  }
+                }
+
+                bool actorChanged = false;
+                { MIMITA_PERF_SCOPE("Replay::RemoteNPC::CompareState");
+                  actorChanged = idChanged || !prevState || compact != *prevState;
+                }
+                if (actorChanged) {
+                    MIMITA_PERF_SCOPE("Replay::RemoteNPC::StoreState");
                     ReplayActorState actor;
                     expandActorFromIdentity(actor, actorId);
                     actor.position = compact.position;
@@ -688,17 +776,18 @@ void engineTickReplay(Engine& engine, float dt)
                     actor.dead = compact.dead;
                     actor.grounded = compact.grounded;
                     actor.sizeScale = compact.sizeScale;
-                    { auto bp = captureReplayBodyParts(p);
-                      actor.bodyParts = bp.parts; actor.bodyPartCount = bp.count; }
+                    actor.bodyParts = bodyParts.parts;
+                    actor.bodyPartCount = bodyParts.count;
                     sceneFrame.actors.push_back(std::move(actor));
                     perfStoredActors++;
-                }
+                    replayPerf.actorsStored++;
+                } else replayPerf.actorsUnchanged++;
                 gReplayRecorder.storePreviousState(actorId, compact);
             }
             } // ReplayCaptureRemoteNpcs
             // ── Godball ────────────────────────────────────────────────
             if (weapons.godballPhysics().active) {
-                MIMITA_PERF_SCOPE("Replay::Effects");
+                MIMITA_PERF_SCOPE("Replay::RecordFrame::Effects");
                 const auto& gb = weapons.godballPhysics();
                 glm::vec3 handPos = WeaponGodball::getHandPosition(player);
 
@@ -721,6 +810,7 @@ void engineTickReplay(Engine& engine, float dt)
             {
             MIMITA_PERF_SCOPE("Replay::StoreFrame");
             gReplayRecorder.commitFrame();
+            replayPerf.sceneFramesCommitted++;
             }
 
             // Perf summary every 5 seconds
@@ -811,4 +901,3 @@ void engineTickReplay(Engine& engine, float dt)
     ProcessNpcSpawnCommands(npcSystem, camera, world, player);
     ProcessNpcTrainingSpawnCommands(npcSystem, camera, world, player);
 }
-

@@ -1,6 +1,7 @@
 #include "replay.h"
 #include "replay-io.h"
 #include "perf/perf.h"
+#include "perf/perf-spike.h"
 
 #include <cstdio>
 #include <algorithm>
@@ -47,6 +48,7 @@ BodyPartArray captureReplayBodyParts(const Player& player)
     const float rootYaw = player.yaw;
 
     for (const PhysicalBodyPart& part : player.physicalBody.parts) {
+        MIMITA_PERF_SCOPE("Replay::CaptureBodyParts::Transform");
         if (result.count >= ReplayActorState::MAX_BODY_PARTS)
             break;
 
@@ -72,8 +74,12 @@ BodyPartArray captureReplayBodyParts(const Player& player)
         );
 
         // Extract rotation quaternion from world transform's upper-left 3x3
-        glm::mat3 rotMat(wt);
-        glm::quat worldRot = glm::quat_cast(rotMat);
+        glm::quat worldRot;
+        {
+            MIMITA_PERF_SCOPE("Replay::CaptureBodyParts::Quaternion");
+            glm::mat3 rotMat(wt);
+            worldRot = glm::quat_cast(rotMat);
+        }
 
         // Convert to body-local rotation by removing root yaw
         glm::quat rootRot = glm::angleAxis(glm::radians(rootYaw), glm::vec3(0, 0, 1));
@@ -209,6 +215,7 @@ void ReplayRecorder::cacheNpcAvatar(uint32_t npcId, uint16_t epoch, const std::s
 
 void ReplayRecorder::recordFrame(const InputFrame& frame) {
     if (!mRecording) return;
+    MIMITA_PERF_SCOPE("Replay::RecordFrame::Store");
     std::lock_guard<std::mutex> lock(mRingMutex);
 
     ReplayFrame rf;
@@ -224,10 +231,14 @@ void ReplayRecorder::recordFrame(const InputFrame& frame) {
 void ReplayRecorder::recordSceneFrame(ReplaySceneFrame inputFrame)
 {
     if (!mRecording) return;
+    MIMITA_PERF_SCOPE("Replay::StoreFrame::Commit");
     std::lock_guard<std::mutex> lock(mRingMutex);
 
     // Merge pending effects directly into the frame (no extra copy)
-    inputFrame.effects.insert(inputFrame.effects.end(), mPendingEffects.begin(), mPendingEffects.end());
+    {
+        MIMITA_PERF_SCOPE("Replay::StoreFrame::MergeEffects");
+        inputFrame.effects.insert(inputFrame.effects.end(), mPendingEffects.begin(), mPendingEffects.end());
+    }
     mPendingEffects.clear();
 
     // Move into circular buffer slot (reuses existing vector capacity)

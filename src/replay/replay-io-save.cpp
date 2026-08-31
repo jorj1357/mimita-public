@@ -6,6 +6,7 @@
 #include <fstream>
 #include <cstring>
 #include <filesystem>
+#include <chrono>
 #include <nlohmann/json.hpp>
 
 #include "debug/debug-log.h"
@@ -15,7 +16,7 @@ using json = nlohmann::json;
 
 bool ReplayClip::save(const std::string& path) const
 {
-    MIMITA_PERF_SCOPE("ReplayClipSave");
+    const auto saveStart = std::chrono::steady_clock::now();
     json root;
     root["metadata"] = {
         {"format", "mimita-in-engine-clip"},
@@ -103,7 +104,16 @@ bool ReplayClip::save(const std::string& path) const
     if (ec || !file.is_open())
         return false;
     file << root.dump(2);
-    return (bool)file;
+    const bool ok = (bool)file;
+    const double elapsedMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - saveStart).count();
+    const std::streampos endPosition = file.tellp();
+    const size_t bytesWritten = endPosition > std::streampos(0)
+        ? static_cast<size_t>(endPosition) : 0u;
+    Debug::log(Debug::Category::Replay,
+        "[PERF][REPLAY_SAVE] path=%s ok=%d serializeWriteMs=%.3f bytes=%zu\n",
+        path.c_str(), ok ? 1 : 0, elapsedMs, bytesWritten);
+    return ok;
 }
 
 bool ReplayClip::load(const std::string& path)
