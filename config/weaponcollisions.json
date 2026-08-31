@@ -22,27 +22,19 @@
     "visible": true,
     "collision_skin": 0.05,
     "source": "capsule",
-    "capsules": [
+    "capsule": 
       {
         "enabled": true,
         "name": "barrel",
-        "start": [-0.4, 0.0, 0.05],
-        "end": [1.2, 0.0, 0.05],
-        "radius": 0.12,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      },
-      {
-        "enabled": true,
-        "name": "stock",
-        "start": [-0.9, 0.0, -0.05],
-        "end": [-0.2, 0.0, -0.05],
-        "radius": 0.18,
+        "start": [0.0, 0.0, -2.5],
+        "end": [0.0, 0.4, 2.5],
+        "radius": 0.3,
         "scale": [1.0, 1.0, 1.0],
         "rotation_degrees": [0.0, 0.0, 0.0]
       }
-    ]
   },
+
+  
 
   "rocket_launcher": {
     "enabled": true,

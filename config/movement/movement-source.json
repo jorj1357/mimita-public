@@ -47,7 +47,7 @@
     //
     // This makes WASD feel nearly instant instead of gradually accelerating
     // like strict CS 1.6 sv_accelerate 5.
-    "ground_acceleration": 20.0,
+    "ground_acceleration": 999.0,
 
     // Ground friction from the fast Source preset.
     //
@@ -135,6 +135,7 @@
     // This is a MiMITA convenience extension rather than strict vanilla CS
     // input behavior.
     "auto_bhop_enabled": true,
+    // "auto_bhop_enabled": false,
 
     // Remember jump input for this long before landing.
     //
