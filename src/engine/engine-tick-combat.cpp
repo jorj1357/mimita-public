@@ -256,9 +256,17 @@ void engineTickCombat(Engine& engine, float dt)
                 const WeaponDefinition* curDef = weapons.getCurrentDef(player);
                 if (curDef && curDef->behaviorType == WeaponBehaviorType::Swordsword) {
                     uint16_t netId = MimitaNet::weaponDefNetworkIdFor(curDef->id);
+                    int requestSlot = curDef->slot;
+                    if (mpContext.communityWeaponSetId > 0) {
+                        auto& cfg = MimitaNet::CommunityServerConfig::instance();
+                        if (cfg.weaponSets().empty()) cfg.load();
+                        const int logical = cfg.slotForWeapon(
+                            mpContext.communityWeaponSetId, curDef->id);
+                        if (logical > 0) requestSlot = logical;
+                    }
                     if (netId != 0)
                         MimitaNet::mpSendAttackRequest(
-                            mpContext, netId, curDef->slot,
+                            mpContext, netId, requestSlot,
                             player.pos, camera.front, player.pos, 2);
                 }
             }

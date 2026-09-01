@@ -82,6 +82,17 @@ void equipSlotAndSync(Player& player, WeaponSystem& weapons, int slot)
         MimitaNet::sendReloadRequestForWeapon(MP_CONTEXT, player, holsteredReloaded);
 }
 
+static int communityRequestSlot(const MimitaNet::MultiplayerContext& ctx,
+                                 const std::string& weaponId,
+                                 int nativeSlot)
+{
+    if (ctx.communityWeaponSetId <= 0) return nativeSlot;
+    auto& config = MimitaNet::CommunityServerConfig::instance();
+    if (config.weaponSets().empty()) config.load();
+    const int logical = config.slotForWeapon(ctx.communityWeaponSetId, weaponId);
+    return logical > 0 ? logical : nativeSlot;
+}
+
 static int nativeSlotForCommunitySlot(int slot)
 {
     if (MP_CONTEXT.communityWeaponSetId <= 0) return slot;
@@ -252,14 +263,16 @@ void registerWeaponCommands()
                                 claimedBodyPart = 3;
                             else if (!shot.bodyPart.empty())
                                 claimedBodyPart = 2;
+                            const int requestSlot = communityRequestSlot(
+                                mpContext, wdef2->id, wdef2->slot);
                             uint32_t requestId = MimitaNet::mpSendAttackRequest(
-                                mpContext, netId, wdef2->slot,
+                                mpContext, netId, requestSlot,
                                 shot.start, direction, shot.start, attackVariant,
                                 claimedTargetId, shot.end, claimedBodyPart);
                             Debug::log(Debug::Category::Weapons,
                                        "[ATTACK] INPUT_FIRE playerId=%u weapon=%s slot=%d "
                                        "requestId=%u claimedTarget=%u gameplay=%d\n",
-                                       mpContext.localPlayerId, wdef2->id.c_str(), wdef2->slot,
+                                       mpContext.localPlayerId, wdef2->id.c_str(), requestSlot,
                                        requestId, claimedTargetId,
                                        (int)mpContext.gameplayActive);
                             if (requestId != 0 && usesProjectilePath)
