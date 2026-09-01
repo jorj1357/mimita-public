@@ -23,9 +23,12 @@
 
 namespace MimitaNet {
 
+enum class ServerMode { Sandbox, Duel, TeamDeathmatch, FreeForAll };
+
 struct ServerDuelState
 {
     bool enabled = false;
+    ServerMode mode = ServerMode::Sandbox;
     bool mapOnly = false;
     std::string communityMode = "sandbox";
     int communityWeaponSetId = 1;
@@ -66,6 +69,9 @@ struct ServerDuelState
     uint32_t pendingVictimId = 0;
     // Periodic DuelState broadcast cadence so clients can detect a dead server.
     uint32_t lastBroadcastTick = 0;
+    // Forces the first authoritative community-match state to reach clients
+    // immediately after modestart/modestartnow changes the runtime mode.
+    bool stateBroadcastPending = false;
     // Live map rotation (auto on rematch) + manual changemap request.
     std::vector<std::string> mapPool;
     bool rotateMaps = false;
@@ -130,7 +136,11 @@ struct ServerDuelState
 // Singleton duel state for the current server process.
 ServerDuelState& serverDuelState();
 
-// Start duel mode with the given gamemode rules. Safe to call repeatedly.
+// Start the shared server runtime with the given mode rules. Duel, FFA, TDM,
+// and sandbox all use this same lifecycle owner.
+void serverStartMode(const ServerDuelState& rules);
+
+// Compatibility entry point for existing duel callers.
 void serverDuelStart(const ServerDuelState& rules);
 
 // Called every server tick while the server runs in duel mode.

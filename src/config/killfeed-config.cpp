@@ -70,6 +70,8 @@ bool KillfeedConfig::load(const std::string& path)
 
         loaded.defaultKillVerb = root.value("defaultKillVerb",
                                              root.value("defaultKillVerbs", std::string("killed")));
+        loaded.showTick = root.value("showTick", true);
+        loaded.tickPrefix = root.value("tickPrefix", std::string("TICK"));
         readColor(root.value("colors", json::object()), "killer", loaded.killerColor);
         readColor(root.value("colors", json::object()), "victim", loaded.victimColor);
         readColor(root.value("colors", json::object()), "verb", loaded.verbColor);

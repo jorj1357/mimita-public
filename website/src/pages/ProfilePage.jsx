@@ -20,6 +20,7 @@ export default function ProfilePage() {
 
     useEffect(() => {
         let alive = true
+        let statsTimer = null
         Promise.all([
             apiRequest("/api/auth/me"),
             apiRequest("/api/vip/me"),
@@ -32,17 +33,29 @@ export default function ProfilePage() {
                 setConfig(cfg.config)
                 setStyle(normalizeStyle(vipMe.vip?.name_style))
                 setLoading(false)
-                // Fetch game stats
-                if (me.user?.id) {
-                    apiRequest(`/api/profile/${me.user.id}`)
-                        .then(data => { if (alive && data.profile) setGameStats(data.profile) })
-                        .catch(() => {})
+                if (me.user?.id > 0) {
+                    const refreshStats = () => {
+                        apiRequest(`/api/profile/${me.user.id}`)
+                            .then(data => {
+                                if (alive && data.profile)
+                                    setGameStats(data.profile)
+                            })
+                            .catch(() => {})
+                    }
+                    // The game batches persistence roughly once per minute;
+                    // refresh at the same low rate so the profile catches up
+                    // without creating load on the API.
+                    refreshStats()
+                    statsTimer = setInterval(refreshStats, 60 * 1000)
                 }
             })
             .catch(() => {
                 if (alive) navigate("/signin")
             })
-        return () => { alive = false }
+        return () => {
+            alive = false
+            if (statsTimer) clearInterval(statsTimer)
+        }
     }, [navigate])
 
     async function saveStyle() {

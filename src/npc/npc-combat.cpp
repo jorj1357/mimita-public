@@ -219,6 +219,8 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     if (player.dead || player.currentHp <= 0)
         return false;
 
+    const int hpBeforeShot = player.currentHp;
+
     if (npc.attackCooldown > 0.0f)
     {
         Debug::logThrottled(Debug::Category::NpcCombat, "npc-cd",
@@ -452,6 +454,18 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
                    npc.id, def->id.c_str(), aimDir.x, aimDir.y, aimDir.z);
         break;
     }
+    }
+
+    if (player.currentHp < hpBeforeShot)
+    {
+        player.lastDamagedBy = npc.body.username.empty()
+            ? "npc-" + std::to_string(npc.id) : npc.body.username;
+        player.killedByWeapon = def->displayName.empty()
+            ? def->id : def->displayName;
+        Debug::log(Debug::Category::NpcCombat,
+            "[NPC DAMAGE ATTRIBUTION] npc=%u name=%s weapon=%s victim=%s hpBefore=%d hpAfter=%d\n",
+            npc.id, player.lastDamagedBy.c_str(), player.killedByWeapon.c_str(),
+            player.username.c_str(), hpBeforeShot, player.currentHp);
     }
 
     // Remember the shot so the server broadcast sends the true tracer

@@ -13,6 +13,8 @@
 #include "camera.h"
 #include "debug/debug-log.h"
 #include "replay/replay-export.h"
+#include "killfeed/killfeed.h"
+#include "config/killfeed-config.h"
 
 using json = nlohmann::json;
 
@@ -166,6 +168,9 @@ void ReplayPlayer::beginPlayback() {
     mTriggeredEffects.clear();
     mTriggeredSounds.clear();
     mTriggeredKillfeedEvents.clear();
+    KillfeedManager::instance().clear();
+    KillfeedConfig::instance().load();
+    KillfeedManager::instance().setMode(KillfeedConfig::instance().data().mode);
     rebuildInterpolatedFrameAtTick();
     printf("[REPLAY] Playback started ticks=%u currentTick=%u isPlaying=%d\n",
            mHeader.tickCount, mCurrentTick, (int)mPlaying);

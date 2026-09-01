@@ -176,7 +176,8 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
                 ? victimIt->second.vipAppearance : MimitaVip::freeAppearance(),
             victimIt != ctx.playerRegistry.end()
                 ? victimIt->second.vipStyleDetail : MimitaVip::VipStyleDetail{},
-            weaponDisplay, false);
+            weaponDisplay, false, event.header.tick,
+            presentationEventKey(event.eventSessionId, event.eventId));
     }
 
     printf("[NET DAMAGE PRESENT] eventId=%u attacker=%u target=%u damage=%d weapon=%u hitmarker=%d sound=%d damageNumber=%d killed=%d\n",

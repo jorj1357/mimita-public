@@ -33,6 +33,8 @@
 #include "shadow/shadow-config.h"
 #include "void-death/void-death.h"
 #include "audio/hitmarker-audio.h"
+#include "killfeed/killfeed.h"
+#include "config/killfeed-config.h"
 #include "video/outro.h"
 #include "game/duel.h"
 #include "game/bomb-tag.h"
@@ -890,6 +892,8 @@ void engineTickReplay(Engine& engine, float dt)
     // These do filesystem stat() calls; running them inside the catch-up loop
     // would multiply their cost by the number of catch-up ticks.
     GuiLayoutManager::instance().pollReload();
+    KillfeedConfig::instance().pollReload();
+    KillfeedManager::instance().setMode(KillfeedConfig::instance().data().mode);
     LightingConfig::instance().pollReload();
     ShadowConfig::instance().pollReload();
     pollVoidDeathConfig();

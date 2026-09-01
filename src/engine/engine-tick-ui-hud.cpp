@@ -2,6 +2,7 @@
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include <cstdio>
+#include <algorithm>
 #include <GLFW/glfw3.h>
 #include "camera.h"
 #include "entities/player.h"
@@ -67,7 +68,7 @@ void engineTickUIHUD(Engine& engine, float dt)
             kf.onKill(ev.killerName.empty() ? ev.killerId : ev.killerName,
                       ev.victimName.empty() ? ev.victimId : ev.victimName,
                       ev.weaponName.empty() ? "unknown" : ev.weaponName,
-                      true);
+                      true, (uint32_t)std::max(ev.tick, 0));
         }
     }
 

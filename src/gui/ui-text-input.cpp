@@ -439,8 +439,8 @@ bool uiTextInputRender(GLFWwindow* window, const char* id, UIRect designRect,
         // Placeholder
         if (!state.focused)
         {
-            glm::vec4 placeholderColor(0.35f, 0.4f, 0.5f, 1.0f);
-            uiDrawText("type here...", textX, textY, textScale, placeholderColor);
+            uiDrawText(opts.placeholder.c_str(), textX, textY,
+                       textScale, opts.placeholderColor);
         }
     }
 

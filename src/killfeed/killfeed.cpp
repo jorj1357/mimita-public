@@ -32,11 +32,13 @@ KillfeedManager& KillfeedManager::instance()
 void KillfeedManager::onKill(const std::string& killerName,
                               const std::string& victimName,
                               const std::string& weaponName,
-                              bool fromReplay)
+                              bool fromReplay,
+                              uint32_t eventTick,
+                              uint64_t eventKey)
 {
     onKillStyled(killerName, MimitaVip::freeAppearance(),
                  victimName, MimitaVip::freeAppearance(),
-                 weaponName, fromReplay);
+                 weaponName, fromReplay, eventTick, eventKey);
 }
 
 void KillfeedManager::onKillStyled(const std::string& killerName,
@@ -44,11 +46,13 @@ void KillfeedManager::onKillStyled(const std::string& killerName,
                                    const std::string& victimName,
                                    const MimitaVip::VipAppearance& victimVipAppearance,
                                    const std::string& weaponName,
-                                   bool fromReplay)
+                                   bool fromReplay,
+                                   uint32_t eventTick,
+                                   uint64_t eventKey)
 {
     onKillStyled(killerName, killerVipAppearance, MimitaVip::VipStyleDetail{},
                  victimName, victimVipAppearance, MimitaVip::VipStyleDetail{},
-                 weaponName, fromReplay);
+                 weaponName, fromReplay, eventTick, eventKey);
 }
 
 void KillfeedManager::onKillStyled(const std::string& killerName,
@@ -58,14 +62,19 @@ void KillfeedManager::onKillStyled(const std::string& killerName,
                                    const MimitaVip::VipAppearance& victimVipAppearance,
                                    const MimitaVip::VipStyleDetail& victimVipStyleDetail,
                                    const std::string& weaponName,
-                                   bool fromReplay)
+                                   bool fromReplay,
+                                   uint32_t eventTick,
+                                   uint64_t eventKey)
 {
+    if (eventKey != 0 && !mPresentedEventKeys.insert(eventKey).second)
+        return;
     const auto& cfg = KillfeedConfig::instance().data();
     mMode = cfg.mode;
     KillfeedEntry entry;
     entry.killerName = killerName;
     entry.victimName = victimName;
     entry.weaponName = weaponName;
+    entry.eventTick = eventTick;
     entry.killVerb = cfg.defaultKillVerb;
     auto weaponIt = cfg.weapons.find(weaponName);
     if (weaponIt != cfg.weapons.end() && !weaponIt->second.killVerb.empty())
@@ -103,8 +112,12 @@ void KillfeedManager::onKillStructured(const std::string& killerName,
                                        const std::string& killVerb,
                                        float distanceMeters,
                                        bool isNpcVictim,
-                                       bool isNpcAttacker)
+                                       bool isNpcAttacker,
+                                       uint32_t eventTick,
+                                       uint64_t eventKey)
 {
+    if (eventKey != 0 && !mPresentedEventKeys.insert(eventKey).second)
+        return;
     const auto& cfg = KillfeedConfig::instance().data();
     mMode = cfg.mode;
     KillfeedEntry entry;
@@ -113,6 +126,7 @@ void KillfeedManager::onKillStructured(const std::string& killerName,
     entry.weaponName = weaponName;
     entry.killVerb = killVerb;
     entry.distanceMeters = distanceMeters;
+    entry.eventTick = eventTick;
     entry.isNpcVictim = isNpcVictim;
     entry.isNpcAttacker = isNpcAttacker;
     entry.killerVipAppearance = killerVipAppearance;
@@ -180,14 +194,14 @@ void KillfeedManager::render()
             nameOptions.detail = &entry.killerVipStyleDetail;
 
             // Use structured kill verb if available, otherwise fall back to "killed"
-            const char* verbText = entry.killVerb.empty() ? " killed " : (entry.killVerb + " ").c_str();
+            const std::string verbText = entry.killVerb.empty() ? " killed " : entry.killVerb + " ";
             const char* withText = " with ";
             const char* fromText = " from ";
 
             // Build the full line width
             float totalW =
                 vipMeasureStyledName(entry.killerName, entry.killerVipAppearance, nameOptions) +
-                uiMeasureText(verbText, ENTRY_FONT_SCALE) +
+                uiMeasureText(verbText.c_str(), ENTRY_FONT_SCALE) +
                 vipMeasureStyledName(entry.victimName, entry.victimVipAppearance, nameOptions) +
                 uiMeasureText(withText, ENTRY_FONT_SCALE) +
                 uiMeasureText(entry.weaponName.c_str(), ENTRY_FONT_SCALE);
@@ -209,8 +223,8 @@ void KillfeedManager::render()
 
             vipDrawStyledName(entry.killerName, entry.killerVipAppearance, x, y, nameOptions);
             x += vipMeasureStyledName(entry.killerName, entry.killerVipAppearance, nameOptions);
-            uiDrawText(verbText, x, y, ENTRY_FONT_SCALE, verbColor);
-            x += uiMeasureText(verbText, ENTRY_FONT_SCALE);
+            uiDrawText(verbText.c_str(), x, y, ENTRY_FONT_SCALE, verbColor);
+            x += uiMeasureText(verbText.c_str(), ENTRY_FONT_SCALE);
             nameOptions.detail = &entry.victimVipStyleDetail;
             nameOptions.alpha = textOpacity;
             vipDrawStyledName(entry.victimName, entry.victimVipAppearance, x, y, nameOptions);
@@ -223,6 +237,15 @@ void KillfeedManager::render()
             // Distance in pale yellow
             if (distBuf[0]) {
                 uiDrawText(distBuf, x, y, ENTRY_FONT_SCALE, distanceColor);
+                x += uiMeasureText(distBuf, ENTRY_FONT_SCALE);
+            }
+
+            if (KillfeedConfig::instance().data().showTick && entry.eventTick != 0) {
+                char tickBuf[48] = {};
+                snprintf(tickBuf, sizeof(tickBuf), " [%s %u]",
+                         KillfeedConfig::instance().data().tickPrefix.c_str(),
+                         entry.eventTick);
+                uiDrawText(tickBuf, x, y, ENTRY_FONT_SCALE, distanceColor);
             }
 
             y += ENTRY_HEIGHT;
@@ -243,8 +266,12 @@ void KillfeedManager::appendChatMessage(const KillfeedEntry& entry) const
     ChatHistoryEntry chat;
     chat.senderType = ChatSenderType::Server;
     chat.senderName = "SYSTEM";
+    chat.serverTick = entry.eventTick;
     chat.text = entry.killerName + " " + entry.killVerb + " " +
                 entry.victimName + " with " + entry.weaponName;
+    const auto& cfg = KillfeedConfig::instance().data();
+    if (cfg.showTick && entry.eventTick != 0)
+        chat.text = "[" + cfg.tickPrefix + " " + std::to_string(entry.eventTick) + "] " + chat.text;
     gpChatHistory->append(chat);
     noteChatActivity();
     Debug::log(Debug::Category::Chat,
@@ -256,4 +283,5 @@ void KillfeedManager::appendChatMessage(const KillfeedEntry& entry) const
 void KillfeedManager::clear()
 {
     mEntries.clear();
+    mPresentedEventKeys.clear();
 }

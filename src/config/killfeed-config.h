@@ -34,6 +34,8 @@ struct KillfeedConfigData {
     glm::vec4 verbColor{0.65f, 0.65f, 0.65f, 1.0f};
     glm::vec4 weaponColor{1.0f, 0.85f, 0.25f, 1.0f};
     glm::vec4 distanceColor{0.75f, 0.75f, 0.75f, 1.0f};
+    bool showTick = true;
+    std::string tickPrefix = "TICK";
     std::unordered_map<std::string, KillfeedVerbConfig> verbs;
     std::unordered_map<std::string, KillfeedWeaponConfig> weapons;
 };

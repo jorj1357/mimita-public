@@ -11,6 +11,7 @@
 #include "network/multiplayer-context.h"
 #include "network/packets.h"
 #include "duel/duel-queue.h"
+#include "network/community-match-client.h"
 #include "network/snapshot-chunks.h"
 #include "network/remote-entity-lifecycle.h"
 #include "network/badconn/badconn.h"
@@ -351,6 +352,14 @@ static void processSnapshotEntities(
             interpolation.predictedHealthUpdatedMs = 0;
             p.netPredictedDead = false;
             p.dead = false;
+            const std::string npcAvatar = entity.avatarName[0] != '\0'
+                ? std::string(entity.avatarName)
+                : npcAvatarNameForLife(entity.networkEntityId, entity.transformEpoch);
+            if (!npcAvatar.empty()) {
+                if (!AvatarSystem::instance().applyAvatarToPlayer(p, npcAvatar))
+                    p.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
+                p.setAvatarName(npcAvatar);
+            }
             Debug::warn(Debug::Category::Networking,
                 "[NPC LIFE RESET] npcId=%u oldEpoch=%u newEpoch=%u reason=respawn",
                 entity.networkEntityId,
@@ -1208,8 +1217,10 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 duel->playerAId, duel->playerBId);
             if (!mpAcceptReliableEventOnce(ctx, duel->eventId, duel->eventSessionId))
                 return;
-            DuelQueue::instance().onDuelState(
-                *duel);
+            if (duel->matchMode[0] == 'f' || duel->matchMode[0] == 't')
+                CommunityMatchClient::instance().onState(*duel);
+            else
+                DuelQueue::instance().onDuelState(*duel);
         }
         else if (header->type == PACKET_DUEL_ENEMY_SPAWN &&
                  bytes >= (int)sizeof(DuelEnemySpawnPacket))

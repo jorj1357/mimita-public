@@ -316,6 +316,11 @@ UIButtonState drawGuiElement(GLFWwindow* win, const GuiElement& elem,
         UITextInputOptions tiOpts;
         tiOpts.maxLength = (size_t)elem.maxLength;
         tiOpts.password = (type == "password_input");
+        tiOpts.placeholder = elem.placeholder;
+        if (elem.placeholderColor.size() == 4)
+            tiOpts.placeholderColor = glm::vec4(
+                elem.placeholderColor[0], elem.placeholderColor[1],
+                elem.placeholderColor[2], elem.placeholderColor[3]);
         // For password, check visibility binding
         if (type == "password_input")
         {

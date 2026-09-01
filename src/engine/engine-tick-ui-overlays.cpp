@@ -40,6 +40,7 @@
 #include "notifications/notifications.h"
 #include "gui/hud/reward-popup.h"
 #include "duel/duel-queue.h"
+#include "network/community-match-client.h"
 #include "input/mouse-lock.h"
 #include "ui/hitmarker.h"
 #include "crosshair/crosshair-render.h"
@@ -574,9 +575,10 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         // ── FFA/TDM intermission + countdown HUD ──────────────────
         {
             GuiLayout& matchLayout = GuiLayoutManager::instance().getLayout("config/gui/match-hud.json");
-            const DuelQueue& dq = DuelQueue::instance();
+            const MimitaNet::CommunityMatchClient& match =
+                MimitaNet::CommunityMatchClient::instance();
 
-            if (dq.matchMode() == "ffa" || dq.matchMode() == "tdm")
+            if (match.active())
             {
                 auto drawCentered = [&](const char* id, const std::string& text) {
                     const GuiElement* el = matchLayout.get(id);
@@ -586,33 +588,49 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                     uiDrawText(text.c_str(), uiScreenW() * 0.5f - w * 0.5f,
                                uiScaleY(el->y), scale, el->getTextColorVec());
                 };
-                drawCentered("modeTitle", dq.matchMode() == "ffa" ? "FREE FOR ALL" : "TEAM DEATHMATCH");
+                auto textTemplate = [&](const char* id, const std::vector<std::pair<std::string, std::string>>& values) {
+                    const GuiElement* el = matchLayout.get(id);
+                    std::string text = el ? el->text : "";
+                    for (const auto& value : values) {
+                        size_t at = 0;
+                        while ((at = text.find(value.first, at)) != std::string::npos) {
+                            text.replace(at, value.first.size(), value.second);
+                            at += value.second.size();
+                        }
+                    }
+                    return text;
+                };
+                drawCentered("modeTitle", textTemplate("modeTitle", {
+                    {"{mode_name}", match.mode() == "ffa" ? "FREE FOR ALL" : "TEAM DEATHMATCH"}}));
 
-                if (dq.matchMode() == "tdm") {
-                    drawCentered("scoreText", "RED " + std::to_string(dq.redTeamKills()) +
-                        " / " + std::to_string(dq.goal()) + "    BLUE " +
-                        std::to_string(dq.blueTeamKills()) + " / " + std::to_string(dq.goal()));
+                if (match.mode() == "tdm") {
+                    drawCentered("scoreText", textTemplate("scoreText", {
+                        {"{red_name}", "RED"}, {"{red_score}", std::to_string(match.redScore())},
+                        {"{blue_name}", "BLUE"}, {"{blue_score}", std::to_string(match.blueScore())},
+                        {"{goal}", std::to_string(match.goal())}}));
                 }
 
                 // Intermission text: "Starting FREE FOR ALL in 12..."
-                if (dq.matchPhase() == MimitaNet::DUEL_PHASE_INTERMISSION) {
-                    drawCentered("intermissionText", "Intermission " +
-                        std::to_string((int)std::ceil(std::max(0.0f, dq.phaseTimer()))) + "...");
+                if (match.phase() == MimitaNet::DUEL_PHASE_INTERMISSION) {
+                    drawCentered("intermissionText", textTemplate("intermissionText", {
+                        {"{seconds}", std::to_string((int)std::ceil(std::max(0.0f, match.phaseTimer())))}}));
                 }
 
-                if (dq.matchPhase() == MimitaNet::DUEL_PHASE_COUNTDOWN) {
-                    const uint32_t ticksLeft = dq.matchStartTick() > dq.serverTick()
-                        ? dq.matchStartTick() - dq.serverTick() : 0;
+                if (match.phase() == MimitaNet::DUEL_PHASE_COUNTDOWN) {
+                    const uint32_t ticksLeft = match.matchStartTick() > match.serverTick()
+                        ? match.matchStartTick() - match.serverTick() : 0;
                     const int number = (int)std::ceil((float)ticksLeft / 60.0f);
-                    drawCentered("countdownText", number > 0 ? std::to_string(number) : "GO");
+                    drawCentered("countdownText", textTemplate("countdownText", {
+                        {"{countdown}", number > 0 ? std::to_string(number) : "GO"}}));
                 }
 
-                if (dq.matchPhase() == MimitaNet::DUEL_PHASE_ACTIVE && dq.timeLimitSeconds() > 0) {
-                    const uint32_t elapsed = dq.serverTick() > dq.matchStartTick()
-                        ? dq.serverTick() - dq.matchStartTick() : 0;
-                    const int left = std::max(0, dq.timeLimitSeconds() - (int)(elapsed / 60));
-                    drawCentered("matchTime", "TIME LEFT " + std::to_string(left / 60) + ":" +
-                        (left % 60 < 10 ? "0" : "") + std::to_string(left % 60));
+                if (match.phase() == MimitaNet::DUEL_PHASE_ACTIVE && match.timeLimitSeconds() > 0) {
+                    const uint32_t elapsed = match.serverTick() > match.matchStartTick()
+                        ? match.serverTick() - match.matchStartTick() : 0;
+                    const int left = std::max(0, match.timeLimitSeconds() - (int)(elapsed / 60));
+                    drawCentered("matchTime", textTemplate("matchTime", {
+                        {"{minutes}", std::to_string(left / 60)},
+                        {"{seconds}", std::string(left % 60 < 10 ? "0" : "") + std::to_string(left % 60)}}));
                 }
             }
         }

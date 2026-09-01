@@ -1,5 +1,7 @@
 {
   "mode": "chat",
+  "showTick": true,
+  "tickPrefix": "TICK",
   "defaultKillVerb": "killed",
   "colors": {
     "killer": [1.0, 1.0, 1.0, 1.0],

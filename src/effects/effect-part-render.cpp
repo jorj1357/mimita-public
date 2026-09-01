@@ -330,12 +330,9 @@ void EffectPartSystem::render(const Camera& camera) const {
                                                dims, bcfg.localAxis.c_str());
         }
         else if (effect.replayType == "replay_rocket") {
-            ProjectileVisualConfig rocketCfg;
-            rocketCfg.length = 1.5f;
-            rocketCfg.radius = 0.18f;
-            rocketCfg.fillAlpha = 1.0f;
-            rocketCfg.outlineEnabled = true;
-            rocketCfg.glowEnabled = true;
+            const ProjectileVisualConfig rocketCfg =
+                projectileVisualConfigForWeapon(
+                    effect.assetId.empty() ? "rocket_launcher" : effect.assetId);
             const glm::vec3 direction = glm::length(effect.velocity) > 0.001f
                 ? glm::normalize(effect.velocity)
                 : glm::vec3(0.0f, 0.0f, 1.0f);

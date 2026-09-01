@@ -12,6 +12,17 @@ Favor deleting code over adding code when both solutions achieve the same result
 
 # EXE Safety
 
+# VPS Branch Verification and Deployment
+
+Before pulling code onto the VPS:
+
+1. Identify the most recently updated candidate branch from the authoritative Git remote.
+2. Confirm its branch name, latest commit, commit date, and intended task with the user before deployment.
+3. Do not assume `develop/v2.0.1` or any version branch is current; those branches may be stale.
+4. Pull only the confirmed branch with `git pull --ff-only origin <confirmed-branch>`.
+5. Preserve and report any pre-existing untracked or local VPS files; never delete or overwrite them as part of a pull.
+6. Verify the deployed commit and restart only the relevant existing service after a successful pull.
+
 Never launch `mimita.exe` without `--server` or `--timeout <secs>`. Without these flags the game opens a full graphics window and stays open indefinitely (it won't automatically exit). If you need to test server behavior, always use `--server --timeout 30 --no-coordinator` or similar so the process self-terminates.
 
 For build purposes, human or AI agents are authorized to terminate existing `mimita.exe` processes at any time, until this instruction is changed. This authorization applies only to releasing the executable lock so the updated build can be produced and tested.

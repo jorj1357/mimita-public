@@ -145,7 +145,8 @@ void RewardPopupSystem::render() const
             uiDrawText(xpBuf, baseX, floatY, cfg.fontScale, xpCol);
         }
 
-        if (p.goldAmount > 0)
+        // Zero gold is a real NPC reward and must remain visible as +0 Gold.
+        if (p.goldAmount >= 0)
         {
             char goldBuf[32];
             snprintf(goldBuf, sizeof(goldBuf), "+%d Gold", p.goldAmount);

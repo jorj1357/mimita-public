@@ -406,16 +406,18 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
         mpConfirmPredictedKillHeal(ctx, event->npcEntityId);
         const bool localShooterPredictedKill =
             isLocalShooter && npcPtr && npcPtr->netPredictedDead;
-        // Killing an NPC heals the local killer to full health.
+        // Killing an NPC heals the local killer to full health. Reward
+        // presentation is independent of the Player pointer because the
+        // authoritative network event is sufficient to identify the killer.
         if (isLocalShooter && gpPlayer)
         {
             DeathSystem::instance().healKillerToFull(*gpPlayer, shooterName);
             printf("[NET KILL HEAL] shooter=%u npc=%u health=%d\n",
                    event->shooterPlayerId, event->npcEntityId, gpPlayer->currentHp);
-            // Show reward popup for NPC kill
-            if (event->shooterPlayerId == ctx.localPlayerId)
-                RewardPopupSystem::instance().pushReward(10, 0);
         }
+        // Show both reward lines, including +0 Gold, for the local shooter.
+        if (isLocalShooter)
+            RewardPopupSystem::instance().pushReward(10, 0);
         if (!localShooterPredictedKill)
         {
             // Death sound (the red-sphere ellipsoid spawns loss-proof for every
@@ -430,7 +432,8 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
             KillfeedManager::instance().onKillStyled(
                 shooterName, shooterVipAppearance, shooterVipStyleDetail,
                 npcName, MimitaVip::freeAppearance(), MimitaVip::VipStyleDetail{},
-                weaponDisplay);
+                weaponDisplay, false, event->header.tick,
+                ((uint64_t)event->eventSessionId << 32) | event->eventId);
             printf("[NET NPC KILL PRESENT] shooter=%u npc=%u name=\"%s\"\n",
                    event->shooterPlayerId, event->npcEntityId, npcName.c_str());
         }

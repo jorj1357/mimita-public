@@ -80,6 +80,16 @@ void MatchLeaderboard::update(float dt)
 void MatchLeaderboard::render()
 {
     GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/match-hud.json");
+    auto format = [](std::string text, const std::vector<std::pair<std::string, std::string>>& values) {
+        for (const auto& value : values) {
+            size_t at = 0;
+            while ((at = text.find(value.first, at)) != std::string::npos) {
+                text.replace(at, value.first.size(), value.second);
+                at += value.second.size();
+            }
+        }
+        return text;
+    };
     const float fontScale = layout.get("scoreText") && layout.get("scoreText")->fontSize > 0.0f
         ? layout.get("scoreText")->fontSize : 0.36f;
     const float smallScale = layout.get("leaderboardText") && layout.get("leaderboardText")->fontSize > 0.0f
@@ -100,9 +110,12 @@ void MatchLeaderboard::render()
         for (int i = 0; i < 3 && i < (int)mFFATop3.size(); ++i) {
             const auto& entry = mFFATop3[i];
             char buf[128];
-            snprintf(buf, sizeof(buf), "%d. %s: %dK", i + 1, entry.name.c_str(), entry.score);
             const GuiElement* el = layout.get("ffaLeader" + std::to_string(i + 1));
             glm::vec4 color = el ? el->getTextColorVec() : rankColors[i];
+            const std::string line = el && !el->text.empty()
+                ? format(el->text, {{"{rank}", std::to_string(i + 1)}, {"{name}", entry.name}, {"{score}", std::to_string(entry.score)}})
+                : std::to_string(i + 1) + ". " + entry.name + ": " + std::to_string(entry.score) + "K";
+            snprintf(buf, sizeof(buf), "%s", line.c_str());
             const float drawX = el ? el->x : x;
             const float drawY = el ? el->y : y;
             uiDrawText(buf, uiScaleX(drawX), uiScaleY(drawY), smallScale, color);
@@ -119,9 +132,12 @@ void MatchLeaderboard::render()
         // Red team (left side)
         {
             char buf[64];
-            snprintf(buf, sizeof(buf), "RED: %dK", mRedKills);
             const GuiElement* el = layout.get("redScore");
             glm::vec4 redColor = el ? el->getTextColorVec() : glm::vec4(1.0f, 0.3f, 0.3f, 1.0f);
+            const std::string line = el && !el->text.empty()
+                ? format(el->text, {{"{red_score}", std::to_string(mRedKills)}})
+                : "RED: " + std::to_string(mRedKills) + "K";
+            snprintf(buf, sizeof(buf), "%s", line.c_str());
             uiDrawText(buf, uiScaleX(el ? el->x : 20.0f), uiScaleY(y), fontScale, redColor);
 
             // YOUR TEAM indicator
@@ -134,11 +150,14 @@ void MatchLeaderboard::render()
         // Blue team (right side)
         {
             char buf[64];
-            snprintf(buf, sizeof(buf), "BLUE: %dK", mBlueKills);
-            float w = uiMeasureText(buf, fontScale);
             const GuiElement* el = layout.get("blueScore");
-            float x = el ? el->x : uiScreenW() - w - 20.0f;
             glm::vec4 blueColor = el ? el->getTextColorVec() : glm::vec4(0.3f, 0.5f, 1.0f, 1.0f);
+            const std::string line = el && !el->text.empty()
+                ? format(el->text, {{"{blue_score}", std::to_string(mBlueKills)}})
+                : "BLUE: " + std::to_string(mBlueKills) + "K";
+            snprintf(buf, sizeof(buf), "%s", line.c_str());
+            const float w = uiMeasureText(buf, fontScale);
+            const float x = el ? el->x : uiScreenW() - w - 20.0f;
             uiDrawText(buf, uiScaleX(x), uiScaleY(el ? el->y : y), fontScale, blueColor);
 
             // YOUR TEAM indicator
@@ -158,7 +177,8 @@ void MatchLeaderboard::render()
         const GuiElement* el = layout.get("scoreGain");
         glm::vec4 color = el ? el->getTextColorVec() : glm::vec4(0.0f, 1.0f, 0.0f, 1.0f);
         color.a *= alpha;
-        uiDrawText("+1", uiScaleX(anim.startX), uiScaleY(anim.startY + offsetY),
+        const std::string gainText = el && !el->text.empty() ? el->text : "+1";
+        uiDrawText(gainText.c_str(), uiScaleX(anim.startX), uiScaleY(anim.startY + offsetY),
                   smallScale, color);
     }
 }

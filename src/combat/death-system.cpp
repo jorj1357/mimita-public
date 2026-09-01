@@ -192,7 +192,10 @@ bool DeathSystem::kill(
         }
         std::string victimName = victim.username.empty() ? actorId : victim.username;
         std::string weaponName = victim.killedByWeapon.empty() ? "unknown" : victim.killedByWeapon;
-        KillfeedManager::instance().onKill(effectiveKiller, victimName, weaponName);
+        const uint32_t eventTick = gActiveReplayRecorder
+            ? gActiveReplayRecorder->currentTick() : 0;
+        KillfeedManager::instance().onKill(
+            effectiveKiller, victimName, weaponName, false, eventTick);
 
         ReplayKillfeedEvent kfEvent;
         kfEvent.killerId = effectiveKiller;
@@ -200,6 +203,7 @@ bool DeathSystem::kill(
         kfEvent.victimId = actorId;
         kfEvent.victimName = victimName;
         kfEvent.weaponName = weaponName;
+        kfEvent.tick = (int)eventTick;
         captureReplayKillfeed(kfEvent);
     }
     victim.respawnTimer = (actorType == "npc") ? npcRespawnDelaySeconds : RESPAWN_SECONDS;

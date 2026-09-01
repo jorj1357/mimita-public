@@ -483,6 +483,12 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
         opts.maxLength = 256;
         opts.selectAllOnFocus = true;
         opts.submitOnEnter = true;
+        opts.placeholder = chatBar && !chatBar->placeholder.empty()
+            ? chatBar->placeholder : "press / to chat...";
+        if (chatBar && chatBar->placeholderColor.size() == 4)
+            opts.placeholderColor = glm::vec4(
+                chatBar->placeholderColor[0], chatBar->placeholderColor[1],
+                chatBar->placeholderColor[2], chatBar->placeholderColor[3]);
         // uiTextInputRender converts design coordinates to screen coordinates.
         // Passing already-scaled values double-scaled the input bar.
         uiTextInputRender(win, "chat_input",

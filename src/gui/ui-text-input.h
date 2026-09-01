@@ -3,6 +3,7 @@
 #include <string>
 #include <functional>
 #include <cstdint>
+#include <glm/glm.hpp>
 
 struct GLFWwindow;
 struct UIRect;
@@ -33,6 +34,8 @@ struct UITextInputOptions
     bool selectAllOnFocus = true;
     bool submitOnEnter = false;
     bool password = false;
+    std::string placeholder = "type here...";
+    glm::vec4 placeholderColor{0.35f, 0.4f, 0.5f, 1.0f};
 
     // Return false to reject the character.
     // Called for both typed chars and pasted text (per character).

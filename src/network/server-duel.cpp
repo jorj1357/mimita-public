@@ -33,11 +33,14 @@ ServerDuelState& serverDuelState()
     return state;
 }
 
-void serverDuelStart(const ServerDuelState& rules)
+void serverStartMode(const ServerDuelState& rules)
 {
     ServerDuelState& d = serverDuelState();
     d.enabled = true;
     d.mapOnly = false;
+    d.mode = rules.matchMode == "tdm" ? ServerMode::TeamDeathmatch
+        : rules.matchMode == "ffa" ? ServerMode::FreeForAll
+        : rules.matchMode == "duel" ? ServerMode::Duel : ServerMode::Sandbox;
     d.communityMode = "sandbox";
     d.communityWeaponSetId = 1;
     d.communityScores.clear();
@@ -46,6 +49,7 @@ void serverDuelStart(const ServerDuelState& rules)
     d.communityRoundOver = false;
     d.communityRoundResetMs = 0;
     d.phase = DUEL_PHASE_WAITING;
+    d.stateBroadcastPending = false;
     d.matchOver = false;
     d.scoreA = 0;
     d.scoreB = 0;
@@ -105,6 +109,11 @@ void serverDuelStart(const ServerDuelState& rules)
         d.spawnOffsetRadius, d.timeLimitSeconds, (int)d.intermissionSeconds, (int)d.resultsSeconds);
 }
 
+void serverDuelStart(const ServerDuelState& rules)
+{
+    serverStartMode(rules);
+}
+
 void serverCommunityMapStart(const std::vector<std::string>& mapPool,
                              const std::string& mapId,
                              bool autoRotation,
@@ -118,9 +127,10 @@ void serverCommunityMapStart(const std::vector<std::string>& mapPool,
     rules.mapOnly = true;
     rules.autoMapRotation = autoRotation;
     rules.mapRotationMinutes = std::clamp(rotationMinutes, 1u, 9999u);
-    serverDuelStart(rules);
+    serverStartMode(rules);
     ServerDuelState& state = serverDuelState();
     state.mapOnly = true;
+    state.mode = ServerMode::Sandbox;
     state.communityMode = "sandbox";
     state.communityWeaponSetId = std::max(1, weaponSetId);
     state.autoMapRotation = rules.autoMapRotation;
@@ -146,7 +156,10 @@ void serverCommunitySetWeaponSet(int weaponSetId)
 bool serverCommunityWeaponAllowed(const std::string& weaponId)
 {
     const ServerDuelState& state = serverDuelState();
-    if (!state.mapOnly) return true;
+    const bool communityMode = state.communityMode == "sandbox"
+        || state.communityMode == "free_for_all"
+        || state.communityMode == "team_deathmatch";
+    if (!communityMode) return true;
     CommunityServerConfig& config = CommunityServerConfig::instance();
     if (config.weaponSets().empty()) config.load();
     return config.weaponAllowed(state.communityWeaponSetId, weaponId);
@@ -173,9 +186,15 @@ void serverCommunityStartMatch(bool skipIntermission)
 
     // Set match mode from community mode
     if (d.communityMode == "free_for_all")
+    {
         d.matchMode = "ffa";
+        d.mode = ServerMode::FreeForAll;
+    }
     else if (d.communityMode == "team_deathmatch")
+    {
         d.matchMode = "tdm";
+        d.mode = ServerMode::TeamDeathmatch;
+    }
     else
         return;  // sandbox mode doesn't have a match to start
 
@@ -191,6 +210,17 @@ void serverCommunityStartMatch(bool skipIntermission)
     // modestart enters the configured intermission. modestartnow enters the
     // existing pre-match handoff with a zero timer; serverDuelTick owns the
     // participant assignment and authoritative 3-2-1 countdown.
+    d.mapOnly = false;
+    d.lastBroadcastTick = 0;
+    d.stateBroadcastPending = true;
+    d.rotateMaps = d.autoMapRotation;
+    d.ffaKills.clear();
+    d.ffaDeaths.clear();
+    d.matchTeams.clear();
+    d.participants.clear();
+    d.redTeamKills = 0;
+    d.blueTeamKills = 0;
+    d.spawnsAssigned = false;
     d.startCountdownImmediately = skipIntermission;
     d.phase = skipIntermission ? DUEL_PHASE_PRE_MATCH : DUEL_PHASE_INTERMISSION;
     d.phaseTimer = skipIntermission ? 0.0f : d.intermissionSeconds;
@@ -1065,6 +1095,14 @@ void serverDuelTick(SOCKET sock,
     // ── FFA/TDM match mode state machine ────────────────────────────
     if (d.matchMode == "ffa" || d.matchMode == "tdm")
     {
+        if (d.stateBroadcastPending)
+        {
+            // The command changed the authoritative mode/phase between ticks.
+            // Send that state now so every client can show intermission or the
+            // immediate countdown without waiting for the periodic broadcast.
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            d.stateBroadcastPending = false;
+        }
         switch (d.phase)
         {
         case DUEL_PHASE_WAITING:

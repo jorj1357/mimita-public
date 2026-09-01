@@ -5,6 +5,7 @@
 #include <string>
 
 class Camera;
+struct WeaponDefinition;
 
 // Generates and renders a simple textured cylinder/capsule mesh for projectiles.
 // Uses the same Vertex format as GLB meshes: pos, normal, uv.
@@ -46,6 +47,10 @@ void renderProjectile(
     const glm::vec3& position,
     const glm::quat& orientation,
     const ProjectileVisualConfig& cfg);
+
+// Builds the same visual settings for live, network, and replay projectiles.
+ProjectileVisualConfig projectileVisualConfigForWeapon(
+    const std::string& weaponId);
 
 // Free cached mesh resources
 void clearProjectileMeshes();

@@ -93,6 +93,8 @@ struct GuiElement {
     bool selectAllOnFocus = false;
     bool submitOnEnter = false;
     std::string characterFilter; // "server_address", "numeric", etc.
+    std::string placeholder;
+    std::vector<float> placeholderColor;
 
     // Colors: [r, g, b, a] each in 0-1 range (empty vector = not set for overrides)
     std::vector<float> textColor = {1.0f, 1.0f, 1.0f, 1.0f};

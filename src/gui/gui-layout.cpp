@@ -156,6 +156,9 @@ bool GuiLayout::load(const std::string& filePath)
             e.selectAllOnFocus = elem.value("selectAllOnFocus", false);
             e.submitOnEnter = elem.value("submitOnEnter", false);
             e.characterFilter = elem.value("characterFilter", "");
+            e.placeholder = elem.value("placeholder", "");
+            if (elem.contains("placeholderColor") && elem["placeholderColor"].is_array())
+                e.placeholderColor = elem["placeholderColor"].get<std::vector<float>>();
             if (elem.contains("textRuns") && elem["textRuns"].is_array()) {
                 for (const auto& run : elem["textRuns"]) {
                     UiTextRun tr;

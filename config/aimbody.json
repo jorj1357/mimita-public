@@ -6,7 +6,7 @@
     "torso":    { "pitch": 0.0, "yaw": 0.0, "roll": -0.2 },
     "leftArm":  { "pitch": 0.0, "yaw": 0.0, "roll": -1.0 },
     "rightArm": { "pitch": 0.0, "yaw": 0.0, "roll": -1.0 },
-    "leftLeg":  { "pitch": 0.0, "yaw": 0.0, "roll": -0.2 },
-    "rightLeg": { "pitch": 0.0, "yaw": 0.0, "roll": -0.2 }
+    "leftLeg":  { "pitch": 0.0, "yaw": 0.0, "roll": 0.0 },
+    "rightLeg": { "pitch": 0.0, "yaw": 0.0, "roll": 0.0 }
   }
 }

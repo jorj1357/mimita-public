@@ -12,6 +12,8 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "camera.h"
+#include "combat/weapon-data.h"
+#include "combat/weapon-registry.h"
 #include "debug/debug-visuals.h"
 #include "map/map_common.h"
 #include "renderer/renderer.h"
@@ -20,6 +22,55 @@
 extern Renderer* gRenderer;
 
 static std::unordered_map<std::string, ProjectileRenderMesh> gMeshCache;
+
+namespace {
+
+float projectileParam(const WeaponDefinition* def, const char* key, float fallback)
+{
+    if (!def)
+        return fallback;
+    const auto it = def->customParams.find(key);
+    return it == def->customParams.end() ? fallback : it->second;
+}
+
+}
+
+ProjectileVisualConfig projectileVisualConfigForWeapon(const std::string& weaponId)
+{
+    const bool rocket = weaponId == "rocket_launcher";
+    const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
+    ProjectileVisualConfig cfg;
+    cfg.texturePath = rocket ? "assets/textureshq/colorful2.png" : "assets/textureshq/meat1.png";
+    cfg.length = projectileParam(def, "projectileVisualLength", rocket ? 1.5f : 1.8f);
+    cfg.radius = projectileParam(def, "projectileVisualRadius", rocket ? 0.18f : 0.28f);
+    cfg.scale = {
+        projectileParam(def, "projectileVisualScaleX", 1.0f),
+        projectileParam(def, "projectileVisualScaleY", 1.0f),
+        projectileParam(def, "projectileVisualScaleZ", 1.0f)};
+    cfg.rotationOffsetDegrees = {
+        projectileParam(def, "projectileVisualRotationOffsetX", 0.0f),
+        projectileParam(def, "projectileVisualRotationOffsetY", 0.0f),
+        projectileParam(def, "projectileVisualRotationOffsetZ", 0.0f)};
+    cfg.textureTiling = {
+        projectileParam(def, "projectileVisualTextureTilingU", 1.0f),
+        projectileParam(def, "projectileVisualTextureTilingV", 1.0f)};
+    cfg.fillAlpha = projectileParam(def, "projectileFillAlpha", 1.0f);
+    cfg.outlineEnabled = projectileParam(def, "projectileOutlineEnabled", 1.0f) > 0.0f;
+    cfg.outlineColor = {
+        projectileParam(def, "projectileOutlineColorR", 1.0f),
+        projectileParam(def, "projectileOutlineColorG", 0.8f),
+        projectileParam(def, "projectileOutlineColorB", 0.2f)};
+    cfg.outlineAlpha = projectileParam(def, "projectileOutlineAlpha", 0.4f);
+    cfg.outlineScale = projectileParam(def, "projectileOutlineScale", 1.15f);
+    cfg.glowEnabled = projectileParam(def, "projectileGlowEnabled", 1.0f) > 0.0f;
+    cfg.glowColor = {
+        projectileParam(def, "projectileGlowColorR", 1.0f),
+        projectileParam(def, "projectileGlowColorG", 0.6f),
+        projectileParam(def, "projectileGlowColorB", 0.0f)};
+    cfg.glowAlpha = projectileParam(def, "projectileGlowAlpha", 0.15f);
+    cfg.glowRadiusMultiplier = projectileParam(def, "projectileGlowRadiusMultiplier", 3.0f);
+    return cfg;
+}
 
 // Generates a cylinder mesh oriented along local +Z (forward).
 static void generateCylinderMesh(

@@ -1016,7 +1016,20 @@ void engineTickCamera(Engine& engine, float dt)
                 rocket.alpha = 1.0f;
                 rocket.billboardText = false;
                 rocket.replayType = "replay_rocket";
+                rocket.assetId = effect.assetId.empty()
+                    ? "rocket_launcher" : effect.assetId;
                 EffectPartSystem::instance().spawn(rocket);
+            } else if (effect.type == "impact_tick") {
+                EffectPart impact;
+                impact.position = effect.position;
+                impact.color = glm::vec3(effect.color);
+                impact.alpha = effect.alpha;
+                impact.scale = effect.scale.x;
+                impact.endScale = effect.endScale.x;
+                impact.maxLifetime = std::max(effect.lifetime, 1.0f / 60.0f);
+                impact.replayType = "impact_tick";
+                impact.sticky = true;
+                EffectPartSystem::instance().spawn(impact);
             } else if (effect.type == "death_ellipsoid") {
                 glm::vec3 dir = glm::length(effect.to - effect.from) > 0.001f
                     ? glm::normalize(effect.to - effect.from)

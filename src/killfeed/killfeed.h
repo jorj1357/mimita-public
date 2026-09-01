@@ -14,6 +14,8 @@
 
 #include <string>
 #include <vector>
+#include <cstdint>
+#include <unordered_set>
 
 #include <glm/glm.hpp>
 
@@ -27,6 +29,7 @@ struct KillfeedEntry {
     std::string weaponName;
     std::string killVerb;       // "killed", "fragged", "destroyed", "stabbed"
     float distanceMeters = 0.0f;
+    uint32_t eventTick = 0;
     bool isNpcVictim = false;
     bool isNpcAttacker = false;
     MimitaVip::VipAppearance killerVipAppearance;
@@ -49,13 +52,17 @@ public:
     void onKill(const std::string& killerName,
                 const std::string& victimName,
                 const std::string& weaponName,
-                bool fromReplay = false);
+                bool fromReplay = false,
+                uint32_t eventTick = 0,
+                uint64_t eventKey = 0);
     void onKillStyled(const std::string& killerName,
                       const MimitaVip::VipAppearance& killerVipAppearance,
                       const std::string& victimName,
                       const MimitaVip::VipAppearance& victimVipAppearance,
                       const std::string& weaponName,
-                      bool fromReplay = false);
+                      bool fromReplay = false,
+                      uint32_t eventTick = 0,
+                      uint64_t eventKey = 0);
     void onKillStyled(const std::string& killerName,
                       const MimitaVip::VipAppearance& killerVipAppearance,
                       const MimitaVip::VipStyleDetail& killerVipStyleDetail,
@@ -63,7 +70,9 @@ public:
                       const MimitaVip::VipAppearance& victimVipAppearance,
                       const MimitaVip::VipStyleDetail& victimVipStyleDetail,
                       const std::string& weaponName,
-                      bool fromReplay = false);
+                      bool fromReplay = false,
+                      uint32_t eventTick = 0,
+                      uint64_t eventKey = 0);
 
     // Structured kill with verb and distance
     void onKillStructured(const std::string& killerName,
@@ -74,7 +83,9 @@ public:
                           const std::string& killVerb,
                           float distanceMeters,
                           bool isNpcVictim = false,
-                          bool isNpcAttacker = false);
+                          bool isNpcAttacker = false,
+                          uint32_t eventTick = 0,
+                          uint64_t eventKey = 0);
 
     void update(float dt);
     void render();
@@ -98,5 +109,6 @@ private:
     static constexpr float ENTRY_FONT_SCALE = 0.30f;
 
     std::vector<KillfeedEntry> mEntries;
+    std::unordered_set<uint64_t> mPresentedEventKeys;
     std::string mMode = "chat";  // "hud" or "chat"
 };

@@ -111,39 +111,10 @@ float cp(const WeaponDefinition* def, const char* key, float fallback)
 
 ProjectileVisualConfig projectileVisualConfig(uint8_t weapon)
 {
-    const bool isRocket = weapon == NETWORK_WEAPON_ROCKET_LAUNCHER;
-    const WeaponDefinition* def = projectileDefinition(weapon);
-    ProjectileVisualConfig cfg;
-    cfg.texturePath = isRocket ? "assets/textureshq/colorful2.png" : "assets/textureshq/meat1.png";
-    cfg.length = cp(def, "projectileVisualLength", isRocket ? 1.5f : 1.8f);
-    cfg.radius = cp(def, "projectileVisualRadius", isRocket ? 0.18f : 0.28f);
-    cfg.scale = glm::vec3(
-        cp(def, "projectileVisualScaleX", 1.0f),
-        cp(def, "projectileVisualScaleY", 1.0f),
-        cp(def, "projectileVisualScaleZ", 1.0f));
-    cfg.rotationOffsetDegrees = glm::vec3(
-        cp(def, "projectileVisualRotationOffsetX", 0.0f),
-        cp(def, "projectileVisualRotationOffsetY", 0.0f),
-        cp(def, "projectileVisualRotationOffsetZ", 0.0f));
-    cfg.textureTiling = glm::vec2(
-        cp(def, "projectileVisualTextureTilingU", 1.0f),
-        cp(def, "projectileVisualTextureTilingV", 1.0f));
-    cfg.fillAlpha = cp(def, "projectileFillAlpha", 1.0f);
-    cfg.outlineEnabled = cp(def, "projectileOutlineEnabled", 1.0f) > 0.0f;
-    cfg.outlineColor = glm::vec3(
-        cp(def, "projectileOutlineColorR", 1.0f),
-        cp(def, "projectileOutlineColorG", 0.8f),
-        cp(def, "projectileOutlineColorB", 0.2f));
-    cfg.outlineAlpha = cp(def, "projectileOutlineAlpha", 0.4f);
-    cfg.outlineScale = cp(def, "projectileOutlineScale", 1.15f);
-    cfg.glowEnabled = cp(def, "projectileGlowEnabled", 1.0f) > 0.0f;
-    cfg.glowColor = glm::vec3(
-        cp(def, "projectileGlowColorR", 1.0f),
-        cp(def, "projectileGlowColorG", 0.6f),
-        cp(def, "projectileGlowColorB", 0.0f));
-    cfg.glowAlpha = cp(def, "projectileGlowAlpha", 0.15f);
-    cfg.glowRadiusMultiplier = cp(def, "projectileGlowRadiusMultiplier", 3.0f);
-    return cfg;
+    return projectileVisualConfigForWeapon(
+        weapon == NETWORK_WEAPON_ROCKET_LAUNCHER
+            ? "rocket_launcher"
+            : "grenade_launcher");
 }
 
 uint32_t provisionalProjectileId(uint32_t requestId)
@@ -693,8 +664,18 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
 
     // Muzzle flash on fire for remote shooters (owner already has the
     // instant client-side muzzle flash from local prediction).
-    if (!localOwner)
+    if (!localOwner) {
         EffectPartSystem::instance().spawnMuzzleFlash(serverPosition, "", 1.0f, networkWeaponTypeName(event->weapon));
+
+        ReplayEffectEvent replayProjectile;
+        replayProjectile.type = "projectile_spawn";
+        replayProjectile.position = serverPosition;
+        replayProjectile.velocity = serverVelocity;
+        replayProjectile.lifetime = event->lifetime;
+        replayProjectile.assetId = networkWeaponTypeName(event->weapon);
+        replayProjectile.sourceActorId = std::to_string(event->ownerPlayerId);
+        captureReplayEffect(replayProjectile);
+    }
 
     // ── Correlation promotion: provisional fireSerial now has authoritative projectileId ──
     {
