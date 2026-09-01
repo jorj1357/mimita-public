@@ -56,6 +56,8 @@ struct GameStats
     float accuracy = 0.0f;
     int headshots = 0;
     int bestKillStreak = 0;
+    long long totalXp = 0;
+    long long gold = 0;
 };
 
 struct MatchEntry

@@ -337,6 +337,8 @@ static void parseStats(GameStats& stats, const json& s)
     stats.accuracy = s.value("accuracy", 0.0f);
     stats.headshots = s.value("headshots", 0);
     stats.bestKillStreak = s.value("best_kill_streak", 0);
+    stats.totalXp = s.value("total_xp", 0LL);
+    stats.gold = s.value("gold", 0LL);
 }
 
 bool websiteReachable()

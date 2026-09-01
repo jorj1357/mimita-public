@@ -37,7 +37,21 @@ function defaultStats() {
         current_mmr: 5000,
         accuracy: 0.0,
         headshots: 0,
-        best_kill_streak: 0
+        best_kill_streak: 0,
+        total_xp: 0,
+        gold: 0,
+        lifetime_player_kills: 0,
+        lifetime_npc_kills: 0,
+        lifetime_deaths: 0,
+        draws: 0,
+        matches_played: 0,
+        matches_won: 0,
+        matches_lost: 0,
+        matches_drawn: 0,
+        ffa_matches_played: 0,
+        ffa_wins: 0,
+        tdm_matches_played: 0,
+        tdm_wins: 0
     }
 }
 
@@ -125,7 +139,10 @@ async function getAccountData(user) {
     const [statsResult, settingsResult, inventoryResult, loadoutResult, titlesResult] = await Promise.all([
         pool.query(
             `SELECT wins, losses, kills, deaths, games_played, playtime_seconds,
-                    highest_mmr, current_mmr, accuracy, headshots, best_kill_streak
+                    highest_mmr, current_mmr, accuracy, headshots, best_kill_streak,
+                    total_xp, gold, lifetime_player_kills, lifetime_npc_kills, lifetime_deaths,
+                    draws, matches_played, matches_won, matches_lost, matches_drawn,
+                    ffa_matches_played, ffa_wins, tdm_matches_played, tdm_wins
              FROM game_stats WHERE user_id = $1`,
             [user.id]
         ),
@@ -376,7 +393,10 @@ router.get("/stats", authenticateToken, async (req, res, next) => {
     try {
         const result = await pool.query(
             `SELECT wins, losses, kills, deaths, games_played, playtime_seconds,
-                    highest_mmr, current_mmr, accuracy, headshots, best_kill_streak
+                    highest_mmr, current_mmr, accuracy, headshots, best_kill_streak,
+                    total_xp, gold, lifetime_player_kills, lifetime_npc_kills, lifetime_deaths,
+                    draws, matches_played, matches_won, matches_lost, matches_drawn,
+                    ffa_matches_played, ffa_wins, tdm_matches_played, tdm_wins
              FROM game_stats WHERE user_id = $1`,
             [req.user.id]
         )
