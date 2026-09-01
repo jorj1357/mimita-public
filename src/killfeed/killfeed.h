@@ -35,6 +35,11 @@ struct KillfeedEntry {
     MimitaVip::VipStyleDetail victimVipStyleDetail;
     float age = 0.0f;
     float opacity = 0.0f;
+    glm::vec4 killerColor{1.0f};
+    glm::vec4 victimColor{1.0f};
+    glm::vec4 verbColor{0.7f};
+    glm::vec4 weaponColor{1.0f, 1.0f, 0.7f, 1.0f};
+    glm::vec4 distanceColor{0.75f};
 };
 
 class KillfeedManager {
@@ -81,6 +86,7 @@ public:
     const std::string& mode() const { return mMode; }
 
 private:
+    void appendChatMessage(const KillfeedEntry& entry) const;
     static constexpr int MAX_ENTRIES = 5;
     static constexpr float STILL_OPACITY = 0.50f;
     static constexpr float STILL_DURATION = 3.0f;

@@ -39,6 +39,7 @@
 #include "game/game-state.h"
 #include "notifications/notifications.h"
 #include "gui/hud/reward-popup.h"
+#include "duel/duel-queue.h"
 #include "input/mouse-lock.h"
 #include "ui/hitmarker.h"
 #include "crosshair/crosshair-render.h"
@@ -572,61 +573,46 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
     {
         // ── FFA/TDM intermission + countdown HUD ──────────────────
         {
-            const MimitaNet::ServerDuelState& d = MimitaNet::serverDuelState();
             GuiLayout& matchLayout = GuiLayoutManager::instance().getLayout("config/gui/match-hud.json");
+            const DuelQueue& dq = DuelQueue::instance();
 
-            if (d.matchMode == "ffa" || d.matchMode == "tdm")
+            if (dq.matchMode() == "ffa" || dq.matchMode() == "tdm")
             {
+                auto drawCentered = [&](const char* id, const std::string& text) {
+                    const GuiElement* el = matchLayout.get(id);
+                    if (!el || !el->visible) return;
+                    const float scale = el->fontSize > 0.0f ? el->fontSize : 0.4f;
+                    const float w = uiMeasureText(text.c_str(), scale);
+                    uiDrawText(text.c_str(), uiScreenW() * 0.5f - w * 0.5f,
+                               uiScaleY(el->y), scale, el->getTextColorVec());
+                };
+                drawCentered("modeTitle", dq.matchMode() == "ffa" ? "FREE FOR ALL" : "TEAM DEATHMATCH");
+
+                if (dq.matchMode() == "tdm") {
+                    drawCentered("scoreText", "RED " + std::to_string(dq.redTeamKills()) +
+                        " / " + std::to_string(dq.goal()) + "    BLUE " +
+                        std::to_string(dq.blueTeamKills()) + " / " + std::to_string(dq.goal()));
+                }
+
                 // Intermission text: "Starting FREE FOR ALL in 12..."
-                if (d.phase == MimitaNet::DUEL_PHASE_INTERMISSION)
-                {
-                    const GuiElement* el = matchLayout.get("intermissionText");
-                    if (el) {
-                        float scale = el->fontSize > 0.0f ? el->fontSize : 0.6f;
-                        glm::vec4 color = el->getTextColorVec();
-                        std::string modeName = (d.matchMode == "ffa") ? "FREE FOR ALL" : "TEAM DEATHMATCH";
-                        int seconds = (int)std::ceil(d.phaseTimer);
-                        char buf[128];
-                        snprintf(buf, sizeof(buf), "Starting %s in %d...", modeName.c_str(), seconds);
-                        float w = uiMeasureText(buf, scale);
-                        uiDrawText(buf, uiScreenW() * 0.5f - w * 0.5f,
-                                  uiScaleY(el->y), scale, color);
-                    }
+                if (dq.matchPhase() == MimitaNet::DUEL_PHASE_INTERMISSION) {
+                    drawCentered("intermissionText", "Intermission " +
+                        std::to_string((int)std::ceil(std::max(0.0f, dq.phaseTimer()))) + "...");
                 }
 
-                // Countdown text: "3.00", "2.98", etc.
-                if (d.phase == MimitaNet::DUEL_PHASE_COUNTDOWN && d.countdownStartTick > 0)
-                {
-                    const GuiElement* el = matchLayout.get("countdownText");
-                    if (el) {
-                        float scale = el->fontSize > 0.0f ? el->fontSize : 2.5f;
-                        glm::vec4 color = el->getTextColorVec();
-                        float remaining = std::max(0.0f, d.countdown);
-                        char buf[32];
-                        snprintf(buf, sizeof(buf), "%.2f", remaining);
-                        float w = uiMeasureText(buf, scale);
-                        uiDrawText(buf, uiScreenW() * 0.5f - w * 0.5f,
-                                  uiScaleY(el->y), scale, color);
-                    }
+                if (dq.matchPhase() == MimitaNet::DUEL_PHASE_COUNTDOWN) {
+                    const uint32_t ticksLeft = dq.matchStartTick() > dq.serverTick()
+                        ? dq.matchStartTick() - dq.serverTick() : 0;
+                    const int number = (int)std::ceil((float)ticksLeft / 60.0f);
+                    drawCentered("countdownText", number > 0 ? std::to_string(number) : "GO");
                 }
 
-                // Results text
-                if (d.phase == MimitaNet::DUEL_PHASE_RESULTS && d.matchOver)
-                {
-                    const GuiElement* el = matchLayout.get("countdownText");
-                    if (el) {
-                        float scale = el->fontSize > 0.0f ? el->fontSize : 2.5f;
-                        glm::vec4 color = el->getTextColorVec();
-                        std::string text;
-                        if (d.matchMode == "ffa") {
-                            text = "MATCH OVER";
-                        } else {
-                            text = (d.winnerTeam == 0) ? "RED TEAM WINS" : "BLUE TEAM WINS";
-                        }
-                        float w = uiMeasureText(text.c_str(), scale);
-                        uiDrawText(text.c_str(), uiScreenW() * 0.5f - w * 0.5f,
-                                  uiScaleY(el->y), scale, color);
-                    }
+                if (dq.matchPhase() == MimitaNet::DUEL_PHASE_ACTIVE && dq.timeLimitSeconds() > 0) {
+                    const uint32_t elapsed = dq.serverTick() > dq.matchStartTick()
+                        ? dq.serverTick() - dq.matchStartTick() : 0;
+                    const int left = std::max(0, dq.timeLimitSeconds() - (int)(elapsed / 60));
+                    drawCentered("matchTime", "TIME LEFT " + std::to_string(left / 60) + ":" +
+                        (left % 60 < 10 ? "0" : "") + std::to_string(left % 60));
                 }
             }
         }

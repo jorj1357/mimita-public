@@ -65,6 +65,8 @@ bool RewardPopupConfig::load(const std::string& path)
         d.durationTicks = std::max(1, j.value("duration_ticks", d.durationTicks));
         d.startAlpha = std::clamp(j.value("start_alpha", d.startAlpha), 0.0f, 1.0f);
         d.fadeToAlpha = std::clamp(j.value("fade_to_alpha", d.fadeToAlpha), 0.0f, 1.0f);
+        d.anchorX = j.value("anchor_x", d.anchorX);
+        d.anchorY = j.value("anchor_y", d.anchorY);
         d.offsetX = j.value("offset_x", d.offsetX);
         d.offsetY = j.value("offset_y", d.offsetY);
         d.stackSpacing = std::max(0.0f, j.value("stack_spacing", d.stackSpacing));
@@ -123,15 +125,16 @@ void RewardPopupSystem::render() const
         return;
 
     const auto& cfg = RewardPopupConfig::instance().data();
-    const float baseX = uiScaleX(1920.0f + cfg.offsetX);
-    const float baseY = uiScaleY(1080.0f + cfg.offsetY);
+    const float baseX = uiScaleX(cfg.anchorX + cfg.offsetX);
+    const float baseY = uiScaleY(cfg.anchorY + cfg.offsetY);
 
     for (int i = 0; i < (int)mPopups.size(); ++i)
     {
         const auto& p = mPopups[i];
         const float progress = (float)p.elapsedTicks / (float)cfg.durationTicks;
         const float alpha = cfg.startAlpha + (cfg.fadeToAlpha - cfg.startAlpha) * progress;
-        const float floatY = baseY + cfg.stackSpacing * i + cfg.floatSpeedY * p.elapsedTicks;
+        const float floatY = baseY + uiScaleY(
+            cfg.stackSpacing * i + cfg.floatSpeedY * p.elapsedTicks);
 
         if (p.xpAmount > 0)
         {
@@ -139,7 +142,7 @@ void RewardPopupSystem::render() const
             snprintf(xpBuf, sizeof(xpBuf), "+%d XP", p.xpAmount);
             glm::vec4 xpCol = cfg.xpColor;
             xpCol.a = alpha;
-            uiDrawText(xpBuf, baseX, uiScaleY(floatY), cfg.fontScale, xpCol);
+            uiDrawText(xpBuf, baseX, floatY, cfg.fontScale, xpCol);
         }
 
         if (p.goldAmount > 0)
@@ -148,7 +151,9 @@ void RewardPopupSystem::render() const
             snprintf(goldBuf, sizeof(goldBuf), "+%d Gold", p.goldAmount);
             glm::vec4 goldCol = cfg.goldColor;
             goldCol.a = alpha;
-            uiDrawText(goldBuf, baseX, uiScaleY(floatY + cfg.stackSpacing * 0.5f), cfg.fontScale, goldCol);
+            uiDrawText(goldBuf, baseX,
+                       floatY + uiScaleY(cfg.stackSpacing * 0.5f),
+                       cfg.fontScale, goldCol);
         }
     }
 }

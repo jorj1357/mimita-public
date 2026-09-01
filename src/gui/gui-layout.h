@@ -80,6 +80,8 @@ struct GuiElement {
     std::string text;
     std::string font;
     float fontSize = 0.0f;
+    float animationLifetimeTicks = 0.0f;
+    float animationRisePixels = 0.0f;
     std::string textAlign = "left"; // "left", "center", "right"
     std::string verticalAlign = "top"; // "top", "middle", "bottom"
     float paddingX = 8.0f;

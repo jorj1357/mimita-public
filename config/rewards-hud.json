@@ -5,8 +5,10 @@
   "duration_ticks": 30,
   "start_alpha": 0.5,
   "fade_to_alpha": 0.0,
-  "offset_x": -200,
-  "offset_y": -120,
+  "anchor_x": 960,
+  "anchor_y": 540,
+  "offset_x": 180,
+  "offset_y": 0,
   "stack_spacing": 22,
   "float_speed_y": -0.4
 }

@@ -96,9 +96,11 @@ struct ServerDuelState
     uint32_t countdownStartTick = 0;
     uint32_t matchStartTick = 0;
     uint32_t matchTimeLimitTick = 0;  // matchStartTick + timeLimitTicks
+    uint32_t currentServerTick = 0;
 
     // Intermission/results phase timers
     float phaseTimer = 0.0f;
+    bool startCountdownImmediately = false;
     float intermissionSeconds = 15.0f;
     float resultsSeconds = 8.0f;
     int timeLimitSeconds = 300;
@@ -166,6 +168,6 @@ void serverCommunityMapStart(const std::vector<std::string>& mapPool,
 void serverCommunitySetMode(const std::string& modeId);
 void serverCommunitySetWeaponSet(int weaponSetId);
 bool serverCommunityWeaponAllowed(const std::string& weaponId);
-void serverCommunityStartMatch();
+void serverCommunityStartMatch(bool skipIntermission = false);
 
 } // namespace MimitaNet

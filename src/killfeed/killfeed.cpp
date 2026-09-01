@@ -18,6 +18,10 @@
 #include "replay/replay-export.h"
 #include "terminal/terminal-state.h"
 #include "vip/vip-name-render.h"
+#include "config/killfeed-config.h"
+#include "gui/hud/chat-history.h"
+#include "gui/hud/chat-window.h"
+#include "debug/debug-log.h"
 
 KillfeedManager& KillfeedManager::instance()
 {
@@ -56,17 +60,31 @@ void KillfeedManager::onKillStyled(const std::string& killerName,
                                    const std::string& weaponName,
                                    bool fromReplay)
 {
+    const auto& cfg = KillfeedConfig::instance().data();
+    mMode = cfg.mode;
     KillfeedEntry entry;
     entry.killerName = killerName;
     entry.victimName = victimName;
     entry.weaponName = weaponName;
-    entry.killVerb = "killed";  // default verb
+    entry.killVerb = cfg.defaultKillVerb;
+    auto weaponIt = cfg.weapons.find(weaponName);
+    if (weaponIt != cfg.weapons.end() && !weaponIt->second.killVerb.empty())
+        entry.killVerb = weaponIt->second.killVerb;
+    auto verbIt = cfg.verbs.find(entry.killVerb);
+    if (verbIt != cfg.verbs.end()) entry.killVerb = verbIt->second.text;
+    entry.killerColor = cfg.killerColor;
+    entry.victimColor = cfg.victimColor;
+    entry.verbColor = verbIt != cfg.verbs.end() ? verbIt->second.color : cfg.verbColor;
+    entry.weaponColor = weaponIt != cfg.weapons.end() ? weaponIt->second.color : cfg.weaponColor;
+    entry.distanceColor = cfg.distanceColor;
     entry.killerVipAppearance = killerVipAppearance;
     entry.victimVipAppearance = victimVipAppearance;
     entry.killerVipStyleDetail = killerVipStyleDetail;
     entry.victimVipStyleDetail = victimVipStyleDetail;
     entry.age = 0.0f;
     entry.opacity = STILL_OPACITY;
+    if (cfg.mode == "chat") appendChatMessage(entry);
+
     mEntries.push_back(std::move(entry));
 
     if (mEntries.size() > MAX_ENTRIES)
@@ -87,6 +105,8 @@ void KillfeedManager::onKillStructured(const std::string& killerName,
                                        bool isNpcVictim,
                                        bool isNpcAttacker)
 {
+    const auto& cfg = KillfeedConfig::instance().data();
+    mMode = cfg.mode;
     KillfeedEntry entry;
     entry.killerName = killerName;
     entry.victimName = victimName;
@@ -99,6 +119,13 @@ void KillfeedManager::onKillStructured(const std::string& killerName,
     entry.victimVipAppearance = victimVipAppearance;
     entry.age = 0.0f;
     entry.opacity = STILL_OPACITY;
+    entry.killerColor = cfg.killerColor;
+    entry.victimColor = cfg.victimColor;
+    entry.verbColor = cfg.verbs.count(killVerb) ? cfg.verbs.at(killVerb).color : cfg.verbColor;
+    entry.weaponColor = cfg.weapons.count(weaponName) ? cfg.weapons.at(weaponName).color : cfg.weaponColor;
+    entry.distanceColor = cfg.distanceColor;
+    if (cfg.mode == "chat") appendChatMessage(entry);
+
     mEntries.push_back(std::move(entry));
 
     if (mEntries.size() > MAX_ENTRIES)
@@ -173,15 +200,19 @@ void KillfeedManager::render()
             }
 
             float x = screenW - totalW - ENTRY_X_OFFSET;
-            glm::vec4 color = {1.0f, 1.0f, 1.0f, textOpacity};
-            glm::vec4 verbColor = {0.7f, 0.7f, 0.7f, textOpacity};  // gray for verb
-            glm::vec4 weaponColor = {1.0f, 1.0f, 0.7f, textOpacity};  // pale yellow for weapon
+            glm::vec4 verbColor = entry.verbColor;
+            verbColor.a = textOpacity;
+            glm::vec4 weaponColor = entry.weaponColor;
+            weaponColor.a = textOpacity;
+            glm::vec4 distanceColor = entry.distanceColor;
+            distanceColor.a = textOpacity;
 
             vipDrawStyledName(entry.killerName, entry.killerVipAppearance, x, y, nameOptions);
             x += vipMeasureStyledName(entry.killerName, entry.killerVipAppearance, nameOptions);
             uiDrawText(verbText, x, y, ENTRY_FONT_SCALE, verbColor);
             x += uiMeasureText(verbText, ENTRY_FONT_SCALE);
             nameOptions.detail = &entry.victimVipStyleDetail;
+            nameOptions.alpha = textOpacity;
             vipDrawStyledName(entry.victimName, entry.victimVipAppearance, x, y, nameOptions);
             x += vipMeasureStyledName(entry.victimName, entry.victimVipAppearance, nameOptions);
             uiDrawText(withText, x, y, ENTRY_FONT_SCALE, verbColor);
@@ -191,7 +222,7 @@ void KillfeedManager::render()
 
             // Distance in pale yellow
             if (distBuf[0]) {
-                uiDrawText(distBuf, x, y, ENTRY_FONT_SCALE, weaponColor);
+                uiDrawText(distBuf, x, y, ENTRY_FONT_SCALE, distanceColor);
             }
 
             y += ENTRY_HEIGHT;
@@ -204,6 +235,22 @@ void KillfeedManager::render()
                   isReplay ? "replay" : "live",
                   rendered ? "yes" : "no", opacity, entry.age);
     }
+}
+
+void KillfeedManager::appendChatMessage(const KillfeedEntry& entry) const
+{
+    if (!gpChatHistory) return;
+    ChatHistoryEntry chat;
+    chat.senderType = ChatSenderType::Server;
+    chat.senderName = "SYSTEM";
+    chat.text = entry.killerName + " " + entry.killVerb + " " +
+                entry.victimName + " with " + entry.weaponName;
+    gpChatHistory->append(chat);
+    noteChatActivity();
+    Debug::log(Debug::Category::Chat,
+               "[KILLFEED CHAT] killer=%s victim=%s verb=%s weapon=%s\n",
+               entry.killerName.c_str(), entry.victimName.c_str(),
+               entry.killVerb.c_str(), entry.weaponName.c_str());
 }
 
 void KillfeedManager::clear()

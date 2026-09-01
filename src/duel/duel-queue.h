@@ -83,6 +83,14 @@ public:
     int goal() const { return mGoal; }
     bool countdownActive() const { return mCountdownActive; }
     float countdownLeft() const { return mCountdownLeft; }
+    uint8_t matchPhase() const { return mDuelPhase; }
+    std::string matchMode() const { return mMatchMode; }
+    float phaseTimer() const { return mPhaseTimer; }
+    int timeLimitSeconds() const { return mTimeLimitSeconds; }
+    uint32_t matchStartTick() const { return mMatchStartTick; }
+    uint32_t serverTick() const { return mServerTick; }
+    int redTeamKills() const { return mRedTeamKills; }
+    int blueTeamKills() const { return mBlueTeamKills; }
     bool matchOver() const { return mMatchOver; }
     bool won() const { return mWon; }
     float rematchLeft() const { return mRematchLeft; }
@@ -190,6 +198,13 @@ private:
     uint32_t mStateVersion = 0;
     bool mCountdownActive = false;
     float mCountdownLeft = 0.0f;
+    std::string mMatchMode = "duel";
+    float mPhaseTimer = 0.0f;
+    int mTimeLimitSeconds = 0;
+    uint32_t mMatchStartTick = 0;
+    uint32_t mServerTick = 0;
+    int mRedTeamKills = 0;
+    int mBlueTeamKills = 0;
     float mRematchLeft = 0.0f;
     std::string mMyTeamName = "RED";
     std::string mEnemyTeamName = "BLUE";

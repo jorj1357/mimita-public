@@ -8,6 +8,35 @@
       "fontSize": 0.6,
       "textColor": [1.0, 1.0, 1.0, 0.9]
     },
+    "modeTitle": {
+      "type": "text",
+      "x": 960, "y": 18,
+      "fontSize": 0.42,
+      "textColor": [1.0, 1.0, 1.0, 1.0]
+    },
+    "scoreText": {
+      "type": "text",
+      "x": 960, "y": 45,
+      "fontSize": 0.38,
+      "textColor": [1.0, 1.0, 1.0, 1.0]
+    },
+    "matchTime": {
+      "type": "text",
+      "x": 960, "y": 72,
+      "fontSize": 0.34,
+      "textColor": [1.0, 1.0, 1.0, 1.0]
+    },
+    "leaderboardText": {
+      "type": "text",
+      "fontSize": 0.30,
+      "textColor": [1.0, 1.0, 1.0, 1.0]
+    },
+    "ffaLeader1": { "type": "text", "x": 20, "y": 20, "fontSize": 0.36, "textColor": [1.0, 0.85, 0.0, 1.0] },
+    "ffaLeader2": { "type": "text", "x": 220, "y": 20, "fontSize": 0.36, "textColor": [0.75, 0.75, 0.8, 1.0] },
+    "ffaLeader3": { "type": "text", "x": 420, "y": 20, "fontSize": 0.36, "textColor": [0.8, 0.5, 0.2, 1.0] },
+    "redScore": { "type": "text", "x": 20, "y": 20, "fontSize": 0.36, "textColor": [1.0, 0.3, 0.3, 1.0] },
+    "blueScore": { "type": "text", "x": 1740, "y": 20, "fontSize": 0.36, "textColor": [0.3, 0.5, 1.0, 1.0] },
+    "scoreGain": { "type": "text", "x": 960, "y": 45, "fontSize": 0.36, "textColor": [0.0, 1.0, 0.0, 1.0], "risePixels": 18, "lifetimeTicks": 30 },
     "countdownText": {
       "type": "text",
       "x": 960, "y": 100,

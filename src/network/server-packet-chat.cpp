@@ -193,7 +193,7 @@ void handleChatRequestV2(SOCKET sock, const char* buffer, int bytes,
     event.utcUnixMilliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
     event.senderEntityId = req->header.playerId;
-    event.senderAccountId = (uint32_t)std::max(0, it->second.vipAccountId);
+    event.senderAccountId = it->second.accountId;
     event.senderType = 0; // Player
     event.channel = 0; // Global
     std::strncpy(event.senderName, it->second.name.c_str(), sizeof(event.senderName) - 1);
@@ -374,6 +374,19 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
             ack(true, ("applied: modepick " + cfg.modes()[(size_t)index].id).c_str());
         }
     }
+    else if (commandStr.rfind("modestartnow ", 0) == 0)
+    {
+        auto& cfg = CommunityServerConfig::instance();
+        if (cfg.modes().empty()) cfg.load();
+        const int index = std::atoi(commandStr.c_str() + 13) - 1;
+        if (index < 0 || index >= (int)cfg.modes().size()) ack(false, "rejected: invalid mode number");
+        else {
+            const auto& mode = cfg.modes()[(size_t)index];
+            serverCommunitySetMode(mode.id);
+            serverCommunityStartMatch(true);
+            ack(true, ("started now: " + mode.id + " (3-2-1)").c_str());
+        }
+    }
     else if (commandStr.rfind("modestart ", 0) == 0)
     {
         auto& cfg = CommunityServerConfig::instance();
@@ -383,8 +396,8 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         else {
             const auto& mode = cfg.modes()[(size_t)index];
             serverCommunitySetMode(mode.id);
-            serverCommunityStartMatch();
-            ack(true, ("started: " + mode.id + " (" + mode.name + ")").c_str());
+            serverCommunityStartMatch(false);
+            ack(true, ("started at intermission: " + mode.id + " (" + mode.name + ")").c_str());
         }
     }
     else if (commandStr == "maplist")

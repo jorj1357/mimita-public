@@ -1,10 +1,10 @@
-// 08 31 2026, 00 00
+// 09 01 2026, 00 00
 /* purpose
 * Implements SpyKnife client-side state machine with swept-OBB blade hitbox.
 * Oriented box collision runs at 60Hz tick rate, not per-frame.
 * Force-based damage: speed + angle + directness determine damage.
 * Box is welded to the knife model orientation via weapon capsule axes.
-* Sends SpyKnifeHitClaimPacket to server on remote NPC hits.
+* Applies remote NPC damage directly on the attacking client for now.
 * Does NOT render the hitbox outside debug visualization mode.
 */
 
@@ -329,17 +329,18 @@ static int applySpyKnifeRemoteHit(SpyKnifeState& state, const WeaponDefinition& 
 
     int hpBefore = target.currentHp;
 
-    // Client-side prediction (godball pattern)
-    if (gpMpContext && gpMpContext->connected && gpMpContext->localPlayerId) {
-        const uint64_t nowMsVal = static_cast<uint64_t>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count());
-        gpMpContext->predictedNpcHitMs[targetId] = nowMsVal;
-        gpMpContext->predictedNpcDamage[targetId] = roundedDamage;
+    // Temporary client-authoritative NPC damage: the hit the attacker sees is
+    // the damage that is applied. Do not route this through the prediction
+    // overlay or send a server claim, because either path can overwrite the
+    // local NPC health after the feedback has already been shown.
+    target.currentHp = std::max(0, target.currentHp - roundedDamage);
+    if (gpMpContext && gpMpContext->connected && gpMpContext->localPlayerId)
         MimitaNet::mpApplyPredictedDamage(*gpMpContext, targetId, roundedDamage, true);
-    } else {
-        target.currentHp = std::max(0, target.currentHp - roundedDamage);
-    }
+    target.currentHp = std::max(0, target.currentHp);
+    target.dead = target.currentHp <= 0;
+    Debug::log(Debug::Category::NpcCombat,
+        "[SPYKNIFE CLIENT NPC DAMAGE] attacker=%s npc=%u damage=%d hpBefore=%d hpAfter=%d",
+        owner.username.c_str(), targetId, roundedDamage, hpBefore, target.currentHp);
 
     target.externalImpulse += kbDir * kbForce + glm::vec3(0, 0, kbForce * 0.3f);
 
@@ -436,6 +437,20 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
     const bool logVerbose = DebugConfig::DEBUG_SPYKNIFE;
 
     BladeOBB currBox = computeBladeBox(owner, def);
+    // Spy Knife is continuously live while equipped. The attack input still
+    // starts the animation/sound, but the collision volume is re-armed here
+    // so the weapon does not wait for another click after its swing timer.
+    if (!state.active) {
+        state.active = true;
+        state.swingTick = 0;
+        state.animState = SpyKnifeAnimState::Swinging;
+        state.hitCooldowns.clear();
+        state.backstabSoundPlayed.clear();
+        state.prevBladeOBB = currBox;
+        state.hasPrevBladeOBB = true;
+        runtime.shootEffectTimer = (float)swingDurationTicks / 60.0f;
+        runtime.customFloats["swordPoseState"] = 1.0f;
+    }
     BladeOBB prevBox = state.hasPrevBladeOBB ? state.prevBladeOBB : currBox;
 
     // ── Swing tick advancement ──
@@ -538,7 +553,7 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
                             npcId, remote.username.c_str(), (int)isBs);
 
                 int hitDamage = applySpyKnifeRemoteHit(state, def, owner, npcId, remote, isBs, hitPt);
-                sendSpyKnifeHitClaim(owner, npcId, isBs, (float)hitDamage, hitPt);
+                (void)hitDamage;
                 state.hitCooldowns[npcId] = 1.0f / 60.0f;
             }
         }

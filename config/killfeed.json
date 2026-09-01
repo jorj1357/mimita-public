@@ -1,22 +1,38 @@
 {
   "mode": "chat",
-  "defaultKillVerbs": ["killed", "fragged", "eliminated", "destroyed"],
+  "defaultKillVerb": "killed",
+  "colors": {
+    "killer": [1.0, 1.0, 1.0, 1.0],
+    "victim": [1.0, 0.35, 0.35, 1.0],
+    "verb": [0.65, 0.65, 0.65, 1.0],
+    "weapon": [1.0, 0.85, 0.25, 1.0],
+    "distance": [0.75, 0.75, 0.75, 1.0]
+  },
+  "verbs": {
+    "killed": {"text": "killed", "color": [0.65, 0.65, 0.65, 1.0]},
+    "fragged": {"text": "fragged", "color": [1.0, 0.35, 0.15, 1.0]},
+    "stabbed": {"text": "stabbed", "color": [0.85, 0.2, 1.0, 1.0]}
+  },
   "weapons": {
     "rocket_launcher": {
       "displayName": "Rocket Launcher",
-      "killVerbs": ["fragged", "destroyed", "eliminated"]
+      "killVerb": "destroyed",
+      "color": [1.0, 0.45, 0.1, 1.0]
     },
     "grenade_launcher": {
       "displayName": "Grenade Launcher",
-      "killVerbs": ["fragged", "detonated", "eliminated"]
+      "killVerb": "detonated",
+      "color": [1.0, 0.65, 0.1, 1.0]
     },
     "spy_knife": {
       "displayName": "Spy Knife",
-      "killVerbs": ["stabbed", "slashed", "eliminated"]
+      "killVerb": "stabbed",
+      "color": [0.9, 0.25, 1.0, 1.0]
     },
     "hitscan": {
       "displayName": "Blaster",
-      "killVerbs": ["killed", "shot", "eliminated"]
+      "killVerb": "shot",
+      "color": [0.4, 0.9, 1.0, 1.0]
     }
   },
   "scoreGainAnimation": {

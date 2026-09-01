@@ -27,6 +27,8 @@
 #include "notifications/notifications.h"
 #include "auth/auth-system.h"
 #include "debug/debug-log.h"
+#include "gui/hud/match-leaderboard.h"
+#include "gui/hud/match-leaderboard.h"
 
 using namespace MimitaNet;
 
@@ -639,6 +641,29 @@ void DuelQueue::onDuelState(const DuelStatePacket& pkt)
     mDuelPhase = pkt.phase;
     mInDuel = true;
 
+    const int previousScore = mMyScore;
+    mMatchMode = pkt.matchMode;
+    mPhaseTimer = pkt.phaseTimer;
+    mTimeLimitSeconds = pkt.timeLimitSeconds;
+    mMatchStartTick = pkt.matchStartTick;
+    mServerTick = pkt.serverTick;
+    mRedTeamKills = pkt.redTeamKills;
+    mBlueTeamKills = pkt.blueTeamKills;
+
+    std::vector<MatchLeaderboardEntry> ffaLeaders;
+    if (mMatchMode == "ffa")
+    {
+        for (int i = 0; i < 3 && pkt.ffaLeaderIds[i] != 0; ++i)
+        {
+            MatchLeaderboardEntry entry;
+            entry.name = pkt.ffaLeaderNames[i];
+            entry.score = pkt.ffaLeaderScores[i];
+            entry.rank = i;
+            entry.isLocalPlayer = pkt.ffaLeaderIds[i] == MP_CONTEXT.localPlayerId;
+            ffaLeaders.push_back(entry);
+        }
+    }
+
     // Determine which side is ours.
     const uint32_t myId = MP_CONTEXT.localPlayerId;
     const bool amA = (pkt.playerAId != 0 && myId == pkt.playerAId) ||
@@ -651,6 +676,24 @@ void DuelQueue::onDuelState(const DuelStatePacket& pkt)
     mMyScore = amA ? pkt.scoreA : pkt.scoreB;
     mOppScore = amA ? pkt.scoreB : pkt.scoreA;
     mWinnerId = pkt.winnerPlayerId;
+
+    if (mMatchMode == "ffa" || mMatchMode == "tdm")
+    {
+        MatchLeaderboard& leaderboard = MatchLeaderboard::instance();
+        leaderboard.setMode(mMatchMode, pkt.goalValue);
+        if (mMatchMode == "ffa")
+            leaderboard.updateFFA(ffaLeaders);
+        else
+        {
+            bool isRedTeam = false;
+            for (uint8_t i = 0; i < pkt.participantCount; ++i)
+                if (pkt.participantIds[i] == MP_CONTEXT.localPlayerId)
+                    isRedTeam = pkt.participantTeams[i] == 0;
+            leaderboard.updateTDM(pkt.redTeamKills, pkt.blueTeamKills, isRedTeam);
+        }
+        if (mMyScore > previousScore)
+            leaderboard.onConfirmedScoreGain();
+    }
 
     switch (static_cast<DuelStatePhase>(pkt.phase))
     {

@@ -566,6 +566,8 @@ void sendJoinRequest(MultiplayerContext& ctx, const std::string& playerName)
     std::strncpy(join.joinToken, ctx.joinToken.c_str(), sizeof(join.joinToken) - 1);
     std::memset(join.vipJoinTicket, 0, sizeof(join.vipJoinTicket));
     std::strncpy(join.vipJoinTicket, ctx.vipJoinTicket.c_str(), sizeof(join.vipJoinTicket) - 1);
+    const auto& authUser = AuthSystem::instance().user();
+    join.accountId = authUser.id > 0 ? static_cast<uint32_t>(authUser.id) : 0;
     std::memset(join.name, 0, sizeof(join.name));
     std::strncpy(join.name, playerName.c_str(), sizeof(join.name) - 1);
     std::memset(join.avatarName, 0, sizeof(join.avatarName));

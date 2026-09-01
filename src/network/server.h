@@ -232,6 +232,8 @@ struct ServerPlayer
     uint32_t id = 0;
     std::string name;
     std::string avatarName;
+    // Website users.id for a registered player. Guests remain zero.
+    uint32_t accountId = 0;
     int vipAccountId = 0;
     std::string accountRole;
     MimitaVip::VipAppearance vipAppearance;

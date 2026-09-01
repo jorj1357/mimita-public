@@ -22,6 +22,8 @@ struct RewardPopupConfigData
     int durationTicks = 30;
     float startAlpha = 0.5f;
     float fadeToAlpha = 0.0f;
+    float anchorX = 960.0f;
+    float anchorY = 540.0f;
     float offsetX = -200.0f;
     float offsetY = -120.0f;
     float stackSpacing = 22.0f;

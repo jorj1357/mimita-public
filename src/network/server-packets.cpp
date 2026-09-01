@@ -1501,6 +1501,7 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     p.joinToken = joinTokenStr;
     p.joinTokenValidated = true;
     p.reconnectToken = generateReconnectToken();
+    p.accountId = join->accountId;
     p.name = uniquePlayerName(players, boundedPacketString(join->name, sizeof(join->name)), id);
     p.avatarName = boundedPacketString(join->avatarName, sizeof(join->avatarName));
     // Host detection for the ICE/room-code join path (the host connects this
@@ -1522,6 +1523,10 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         p.vipStyleDetail = MimitaVip::VipStyleDetail{};
         p.vipStyleEpoch = 0;
     }
+
+    printf("%s [SERVER ACCOUNT] playerId=%u name=\"%s\" accountId=%u guest=%d\n",
+           serverTimestamp(), p.id, p.name.c_str(), p.accountId,
+           p.accountId == 0 ? 1 : 0);
 
     if (!existingId)
     {

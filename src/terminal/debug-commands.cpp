@@ -1,3 +1,13 @@
+// 09 01 2026, 13 10
+/* purpose
+* Registers developer and host terminal commands for community modes and debug tools.
+* Provides mode selection and the intermission/countdown match start commands.
+* Keeps host authority in the network server and forwards client requests to it.
+* Does not own match simulation, scoring, or HUD rendering.
+* Does not bypass host-only command validation.
+* Does not launch or manage the game executable.
+*/
+
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -20,6 +30,25 @@
 
 void registerDebugCommands()
 {
+    Terminal::instance().registerCommand({
+        "modestartnow", "Start a community mode at the 3-2-1 countdown; host only.", "modestartnow <number>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) { Terminal::instance().addLog("[MODESTARTNOW] Usage: modestartnow <number>"); return; }
+            auto& cfg = MimitaNet::CommunityServerConfig::instance();
+            if (cfg.modes().empty()) cfg.load();
+            const int index = std::atoi(args[0].c_str()) - 1;
+            if (index < 0 || index >= (int)cfg.modes().size()) { Terminal::instance().addLog("[MODESTARTNOW] Invalid mode number"); return; }
+            const auto& mode = cfg.modes()[(size_t)index];
+            if (MimitaNet::isServerHost()) {
+                MimitaNet::serverCommunitySetMode(mode.id);
+                MimitaNet::serverCommunityStartMatch(true);
+                Terminal::instance().addLog("[MODESTARTNOW] started " + mode.id + " at countdown");
+            } else if (::gpMpContext && ::gpMpContext->active) {
+                MimitaNet::mpSendServerCommand(*::gpMpContext, "modestartnow " + std::to_string(index + 1));
+                Terminal::instance().addLog("[MODESTARTNOW] sent to server");
+            } else Terminal::instance().addLog("[MODESTARTNOW] HOST ONLY");
+        }
+    });
     Terminal::instance().registerCommand({
         "modelist", "List community modes from config/onlinemodes.json", "modelist",
         [](const std::vector<std::string>&) {
@@ -56,7 +85,7 @@ void registerDebugCommands()
             const auto& mode = cfg.modes()[(size_t)index];
             if (MimitaNet::isServerHost()) {
                 MimitaNet::serverCommunitySetMode(mode.id);
-                MimitaNet::serverCommunityStartMatch();
+                MimitaNet::serverCommunityStartMatch(false);
                 Terminal::instance().addLog("[MODESTART] started " + mode.id + " (" + mode.name + ")");
             } else if (::gpMpContext && ::gpMpContext->active) {
                 MimitaNet::mpSendServerCommand(*::gpMpContext, "modestart " + std::to_string(index + 1));

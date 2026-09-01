@@ -979,6 +979,7 @@ struct DuelStatePacket
     int32_t scoreB = 0;
     int32_t goalValue = 20;
     float countdownLeft = 0.0f;
+    float phaseTimer = 0.0f;
     float rematchLeft = 0.0f;
     uint32_t playerAId = 0;
     uint32_t playerBId = 0;
@@ -1060,12 +1061,13 @@ struct JoinRequestPacket
     PacketHeader header;
     char joinToken[MAX_JOIN_TOKEN_BYTES];
     char vipJoinTicket[MAX_VIP_JOIN_TICKET_BYTES];
+    uint32_t accountId = 0;
     char name[MAX_NAME_BYTES];
     char avatarName[16];
     char password[64];
 };
 
-static_assert(sizeof(JoinRequestPacket) == 260, "JoinRequestPacket wire size changed");
+static_assert(sizeof(JoinRequestPacket) == 264, "JoinRequestPacket wire size changed");
 
 struct JoinAcceptPacket
 {

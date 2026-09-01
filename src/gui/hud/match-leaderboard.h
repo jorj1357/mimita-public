@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-struct LeaderboardEntry {
+struct MatchLeaderboardEntry {
     std::string name;
     int score = 0;
     int rank = 0;  // 0=1st, 1=2nd, 2=3rd
@@ -24,20 +24,25 @@ struct ScoreGainAnim {
     float lifetimeTicks = 30.0f;
     float startX = 0.0f;
     float startY = 0.0f;
+    float risePixels = 18.0f;
 };
 
 class MatchLeaderboard {
 public:
     static MatchLeaderboard& instance();
 
-    void updateFFA(const std::vector<LeaderboardEntry>& top3);
+    void updateFFA(const std::vector<MatchLeaderboardEntry>& top3);
     void updateTDM(int redKills, int blueKills, bool isRedTeam);
+    void setMode(const std::string& mode, int goal);
+    void onConfirmedScoreGain();
     void onScoreGain(float x, float y);
     void update(float dt);
     void render();
 
 private:
-    std::vector<LeaderboardEntry> mFFATop3;
+    std::vector<MatchLeaderboardEntry> mFFATop3;
+    std::string mMode;
+    int mGoal = 0;
     int mRedKills = 0;
     int mBlueKills = 0;
     bool mIsRedTeam = false;

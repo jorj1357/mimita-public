@@ -72,7 +72,8 @@ void engineTickUIHUD(Engine& engine, float dt)
     }
 
     kf.update(dt);
-    kf.render();
+    if (kf.mode() == "hud")
+        kf.render();
 
     // Online match HUD: leaderboard + timer
     MatchLeaderboard::instance().update(dt);

@@ -28,7 +28,7 @@ static std::string makeEventId(const char* prefix, uint32_t tick,
 
 static int64_t resolveAccountId(const ServerPlayer& p)
 {
-    return p.vipAccountId > 0 ? static_cast<int64_t>(p.vipAccountId) : 0;
+    return p.accountId > 0 ? static_cast<int64_t>(p.accountId) : 0;
 }
 
 static float distanceBetween(const glm::vec3& a, const glm::vec3& b)

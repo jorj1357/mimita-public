@@ -146,6 +146,8 @@ bool GuiLayout::load(const std::string& filePath)
             e.text = elem.value("text", "");
             e.font = elem.value("font", "");
             e.fontSize = elem.value("fontSize", 0.0f);
+            e.animationLifetimeTicks = elem.value("lifetimeTicks", 0.0f);
+            e.animationRisePixels = elem.value("risePixels", 0.0f);
             e.textAlign = elem.value("textAlign", "left");
             e.verticalAlign = elem.value("verticalAlign", "top");
             e.paddingX = elem.value("paddingX", 8.0f);
@@ -322,6 +324,8 @@ bool GuiLayout::save(const std::string& filePath) const
         if (!e.text.empty()) obj["text"] = e.text;
         if (!e.font.empty()) obj["font"] = e.font;
         if (e.fontSize != 0.0f) obj["fontSize"] = e.fontSize;
+        if (e.animationLifetimeTicks != 0.0f) obj["lifetimeTicks"] = e.animationLifetimeTicks;
+        if (e.animationRisePixels != 0.0f) obj["risePixels"] = e.animationRisePixels;
         if (e.textAlign != "left") obj["textAlign"] = e.textAlign;
 
         // Colors

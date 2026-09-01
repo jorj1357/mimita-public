@@ -14,6 +14,7 @@
 
 #include "gui/ui-system.h"
 #include "gui/gui-coord.h"
+#include "gui/gui-layout.h"
 
 MatchLeaderboard& MatchLeaderboard::instance()
 {
@@ -21,9 +22,22 @@ MatchLeaderboard& MatchLeaderboard::instance()
     return mgr;
 }
 
-void MatchLeaderboard::updateFFA(const std::vector<LeaderboardEntry>& top3)
+void MatchLeaderboard::updateFFA(const std::vector<MatchLeaderboardEntry>& top3)
 {
     mFFATop3 = top3;
+}
+
+void MatchLeaderboard::setMode(const std::string& mode, int goal)
+{
+    mMode = mode;
+    mGoal = goal;
+}
+
+void MatchLeaderboard::onConfirmedScoreGain()
+{
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/match-hud.json");
+    const GuiElement* el = layout.get("scoreGain");
+    if (el) onScoreGain(el->x, el->y);
 }
 
 void MatchLeaderboard::updateTDM(int redKills, int blueKills, bool isRedTeam)
@@ -35,10 +49,18 @@ void MatchLeaderboard::updateTDM(int redKills, int blueKills, bool isRedTeam)
 
 void MatchLeaderboard::onScoreGain(float x, float y)
 {
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/match-hud.json");
+    const GuiElement* el = layout.get("scoreGain");
     ScoreGainAnim anim;
     anim.startX = x;
     anim.startY = y;
     anim.age = 0.0f;
+    if (el) {
+        if (el->animationLifetimeTicks > 0.0f)
+            anim.lifetimeTicks = el->animationLifetimeTicks;
+        if (el->animationRisePixels > 0.0f)
+            anim.risePixels = el->animationRisePixels;
+    }
     mScoreGains.push_back(anim);
 }
 
@@ -57,13 +79,16 @@ void MatchLeaderboard::update(float dt)
 
 void MatchLeaderboard::render()
 {
-    const float fontScale = 0.36f;
-    const float smallScale = 0.30f;
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/match-hud.json");
+    const float fontScale = layout.get("scoreText") && layout.get("scoreText")->fontSize > 0.0f
+        ? layout.get("scoreText")->fontSize : 0.36f;
+    const float smallScale = layout.get("leaderboardText") && layout.get("leaderboardText")->fontSize > 0.0f
+        ? layout.get("leaderboardText")->fontSize : 0.30f;
 
     // FFA leaderboard: show top 3 horizontally
-    if (!mFFATop3.empty()) {
-        float x = 20.0f;
-        const float y = 20.0f;
+    if (mMode == "ffa" && !mFFATop3.empty()) {
+        float x = layout.get("ffaLeader1") ? layout.get("ffaLeader1")->x : 20.0f;
+        const float y = layout.get("ffaLeader1") ? layout.get("ffaLeader1")->y : 20.0f;
 
         // Rank colors: gold, silver, bronze
         glm::vec4 rankColors[3] = {
@@ -74,11 +99,13 @@ void MatchLeaderboard::render()
 
         for (int i = 0; i < 3 && i < (int)mFFATop3.size(); ++i) {
             const auto& entry = mFFATop3[i];
-            glm::vec4 color = rankColors[i];
-
             char buf[128];
             snprintf(buf, sizeof(buf), "%d. %s: %dK", i + 1, entry.name.c_str(), entry.score);
-            uiDrawText(buf, uiScaleX(x), uiScaleY(y), fontScale, color);
+            const GuiElement* el = layout.get("ffaLeader" + std::to_string(i + 1));
+            glm::vec4 color = el ? el->getTextColorVec() : rankColors[i];
+            const float drawX = el ? el->x : x;
+            const float drawY = el ? el->y : y;
+            uiDrawText(buf, uiScaleX(drawX), uiScaleY(drawY), smallScale, color);
 
             float w = uiMeasureText(buf, fontScale);
             x += w + 40.0f;  // spacing between entries
@@ -86,19 +113,20 @@ void MatchLeaderboard::render()
     }
 
     // TDM leaderboard: Red left, Blue right
-    if (mRedKills > 0 || mBlueKills > 0 || (!mFFATop3.empty() && mFFATop3[0].isLocalPlayer)) {
-        const float y = 20.0f;
+    if (mMode == "tdm") {
+        const float y = layout.get("redScore") ? layout.get("redScore")->y : 20.0f;
 
         // Red team (left side)
         {
             char buf[64];
             snprintf(buf, sizeof(buf), "RED: %dK", mRedKills);
-            glm::vec4 redColor = {1.0f, 0.3f, 0.3f, 1.0f};
-            uiDrawText(buf, uiScaleX(20.0f), uiScaleY(y), fontScale, redColor);
+            const GuiElement* el = layout.get("redScore");
+            glm::vec4 redColor = el ? el->getTextColorVec() : glm::vec4(1.0f, 0.3f, 0.3f, 1.0f);
+            uiDrawText(buf, uiScaleX(el ? el->x : 20.0f), uiScaleY(y), fontScale, redColor);
 
             // YOUR TEAM indicator
             if (mIsRedTeam) {
-                uiDrawText("^ YOUR TEAM", uiScaleX(20.0f), uiScaleY(y + 18.0f),
+                uiDrawText("^ YOUR TEAM", uiScaleX(el ? el->x : 20.0f), uiScaleY(y + 18.0f),
                           smallScale, redColor);
             }
         }
@@ -108,9 +136,10 @@ void MatchLeaderboard::render()
             char buf[64];
             snprintf(buf, sizeof(buf), "BLUE: %dK", mBlueKills);
             float w = uiMeasureText(buf, fontScale);
-            float x = uiScreenW() - w - 20.0f;
-            glm::vec4 blueColor = {0.3f, 0.5f, 1.0f, 1.0f};
-            uiDrawText(buf, uiScaleX(x), uiScaleY(y), fontScale, blueColor);
+            const GuiElement* el = layout.get("blueScore");
+            float x = el ? el->x : uiScreenW() - w - 20.0f;
+            glm::vec4 blueColor = el ? el->getTextColorVec() : glm::vec4(0.3f, 0.5f, 1.0f, 1.0f);
+            uiDrawText(buf, uiScaleX(x), uiScaleY(el ? el->y : y), fontScale, blueColor);
 
             // YOUR TEAM indicator
             if (!mIsRedTeam) {
@@ -125,8 +154,10 @@ void MatchLeaderboard::render()
     for (const auto& anim : mScoreGains) {
         float progress = anim.age / anim.lifetimeTicks;
         float alpha = 1.0f - progress;  // lerp from 1.0 to 0.0
-        float offsetY = progress * 18.0f;  // move down 18px
-        glm::vec4 color = {0.0f, 1.0f, 0.0f, alpha};  // green
+        float offsetY = progress * anim.risePixels;
+        const GuiElement* el = layout.get("scoreGain");
+        glm::vec4 color = el ? el->getTextColorVec() : glm::vec4(0.0f, 1.0f, 0.0f, 1.0f);
+        color.a *= alpha;
         uiDrawText("+1", uiScaleX(anim.startX), uiScaleY(anim.startY + offsetY),
                   smallScale, color);
     }

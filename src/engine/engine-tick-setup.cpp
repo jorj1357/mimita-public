@@ -18,6 +18,7 @@
 #include "map/map-loader-collision.h"
 #include "gui/hud/healthbar-config.h"
 #include "gui/hud/reward-popup.h"
+#include "config/killfeed-config.h"
 #include "effects/hit-effects.h"
 #include "effects/muzzle-flash-config.h"
 #include "render/dynamic-light-config.h"
@@ -40,6 +41,7 @@
 #include "devtools/terminal.h"
 #include "terminal/weapon-commands.h"
 #include "render/post-fx.h"
+#include "killfeed/killfeed.h"
 
 #include <chrono>
 #include <fstream>
@@ -88,6 +90,9 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     static bool sFirstFrame = true;
     if (sFirstFrame) {
         loadHotReloadConfig();
+        RewardPopupConfig::instance().load();
+        KillfeedConfig::instance().load();
+        KillfeedManager::instance().setMode(KillfeedConfig::instance().data().mode);
         sFirstFrame = false;
     }
 
@@ -135,6 +140,8 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
             redecimateCollision(THE_WORLD);
         CollisionConfig::instance().pollHotReload();
         RewardPopupConfig::instance().pollReload();
+        if (KillfeedConfig::instance().pollReload())
+            KillfeedManager::instance().setMode(KillfeedConfig::instance().data().mode);
     }
     }
 

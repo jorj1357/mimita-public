@@ -166,7 +166,7 @@ void serverCommunitySetMode(const std::string& modeId)
         "[COMMUNITY MODE] selected=%s\n", state.communityMode.c_str());
 }
 
-void serverCommunityStartMatch()
+void serverCommunityStartMatch(bool skipIntermission)
 {
     ServerDuelState& d = serverDuelState();
     if (!d.enabled) return;
@@ -188,9 +188,12 @@ void serverCommunityStartMatch()
     d.countdownSeconds = gm.countdownSeconds;
     d.spawnOffsetRadius = gm.spawnOffsetRadius;
 
-    // Enter intermission
-    d.phase = DUEL_PHASE_INTERMISSION;
-    d.phaseTimer = d.intermissionSeconds;
+    // modestart enters the configured intermission. modestartnow enters the
+    // existing pre-match handoff with a zero timer; serverDuelTick owns the
+    // participant assignment and authoritative 3-2-1 countdown.
+    d.startCountdownImmediately = skipIntermission;
+    d.phase = skipIntermission ? DUEL_PHASE_PRE_MATCH : DUEL_PHASE_INTERMISSION;
+    d.phaseTimer = skipIntermission ? 0.0f : d.intermissionSeconds;
     d.matchOver = false;
     d.winnerPlayerId = 0;
     d.winnerTeam = -1;
@@ -198,8 +201,10 @@ void serverCommunityStartMatch()
     ++d.duelId;
 
     Debug::warn(Debug::Category::Duel,
-        "[MODESTART] mode=%s matchMode=%s goal=%d timeLimit=%d intermission=%.0f\n",
-        d.communityMode.c_str(), d.matchMode.c_str(), d.goalValue,
+        "[MODESTART] mode=%s matchMode=%s phase=%s goal=%d timeLimit=%d intermission=%.0f\n",
+        d.communityMode.c_str(), d.matchMode.c_str(),
+        skipIntermission ? "COUNTDOWN_PENDING" : "INTERMISSION",
+        d.goalValue,
         d.timeLimitSeconds, d.intermissionSeconds);
 }
 
@@ -253,6 +258,7 @@ void broadcastDuelState(SOCKET sock,
     pkt.scoreB = d.scoreB;
     pkt.goalValue = d.goalValue;
     pkt.countdownLeft = d.countdown;
+    pkt.phaseTimer = d.phaseTimer;
     pkt.rematchLeft = d.rematchLeft;
     pkt.playerAId = d.playerAId;
     pkt.playerBId = d.playerBId;
@@ -263,7 +269,7 @@ void broadcastDuelState(SOCKET sock,
     // ── FFA/TDM extension fields ───────────────────────────────────
     std::strncpy(pkt.matchMode, d.matchMode.c_str(), sizeof(pkt.matchMode) - 1);
     pkt.matchStartTick = d.matchStartTick;
-    pkt.serverTick = 0;  // will be set by caller if needed
+    pkt.serverTick = d.currentServerTick;
     pkt.victoryType = d.victoryType;
     pkt.redTeamKills = d.redTeamKills;
     pkt.blueTeamKills = d.blueTeamKills;
@@ -687,6 +693,7 @@ void beginMatchCountdown(ServerDuelState& d,
     d.victoryType = 0;
     d.countdownStartTick = currentTick;
     d.matchStartTick = currentTick + (uint32_t)(d.countdownSeconds * 60.0f);
+    d.countdown = d.countdownSeconds;
     if (d.timeLimitSeconds > 0)
         d.matchTimeLimitTick = d.matchStartTick + (uint32_t)(d.timeLimitSeconds * 60.0f);
     else
@@ -715,7 +722,7 @@ static void emitDuelMatchPersistence(ServerDuelState& d, uint32_t tick,
     for (auto& kv : players) {
         if (kv.second.spawnState != ServerPlayer::Active) continue;
         PersistenceMatchParticipant p;
-        p.userId = kv.second.vipAccountId > 0 ? (int64_t)kv.second.vipAccountId : 0;
+        p.userId = kv.second.accountId > 0 ? (int64_t)kv.second.accountId : 0;
         p.username = kv.second.name;
         auto teamIt = d.matchTeams.find(kv.first);
         p.team = (teamIt != d.matchTeams.end() && teamIt->second == 0) ? "red" : "blue";
@@ -828,6 +835,7 @@ void serverDuelTick(SOCKET sock,
 {
     ServerDuelState& d = serverDuelState();
     if (!d.enabled) return;
+    d.currentServerTick = tick;
     if (d.mapOnly)
     {
         const uint64_t now = nowMs();
@@ -1083,6 +1091,11 @@ void serverDuelTick(SOCKET sock,
             d.phaseTimer -= SERVER_DT;
             if (d.phaseTimer <= 0.0f)
             {
+                if (d.startCountdownImmediately) {
+                    d.startCountdownImmediately = false;
+                    assignDuelSpawns(d, world);
+                    assignMatchParticipants(d, players);
+                }
                 beginMatchCountdown(d, players, tick);
                 ++d.stateVersion;
                 broadcastDuelState(sock, d, players, totalPacketsOut);
