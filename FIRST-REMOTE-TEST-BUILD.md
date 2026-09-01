@@ -15,7 +15,7 @@
 | 7. Build installer | `iscc installer\setup.iss` | **OK** — 19.906s |
 
 ## Build Changes Made
-
+ssss
 ### `build.py`
 
 | Change | Reason |
