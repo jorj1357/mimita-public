@@ -21,6 +21,7 @@
 #include "npc/npc.h"
 #include "debug/debug-log.h"
 #include "network/community-server-config.h"
+#include "gamemode/gamemode.h"
 #include "persistence/persistence-queue.h"
 #include "persistence/persistence-events.h"
 
@@ -163,6 +164,43 @@ void serverCommunitySetMode(const std::string& modeId)
     state.communityRoundResetMs = 0;
     Debug::warn(Debug::Category::Networking,
         "[COMMUNITY MODE] selected=%s\n", state.communityMode.c_str());
+}
+
+void serverCommunityStartMatch()
+{
+    ServerDuelState& d = serverDuelState();
+    if (!d.enabled) return;
+
+    // Set match mode from community mode
+    if (d.communityMode == "free_for_all")
+        d.matchMode = "ffa";
+    else if (d.communityMode == "team_deathmatch")
+        d.matchMode = "tdm";
+    else
+        return;  // sandbox mode doesn't have a match to start
+
+    // Load gamemode config for timing
+    const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+    d.goalValue = gm.goalValue;
+    d.timeLimitSeconds = gm.timeLimitSeconds;
+    d.intermissionSeconds = (float)gm.intermissionSeconds;
+    d.resultsSeconds = (float)gm.resultsSeconds;
+    d.countdownSeconds = gm.countdownSeconds;
+    d.spawnOffsetRadius = gm.spawnOffsetRadius;
+
+    // Enter intermission
+    d.phase = DUEL_PHASE_INTERMISSION;
+    d.phaseTimer = d.intermissionSeconds;
+    d.matchOver = false;
+    d.winnerPlayerId = 0;
+    d.winnerTeam = -1;
+    ++d.stateVersion;
+    ++d.duelId;
+
+    Debug::warn(Debug::Category::Duel,
+        "[MODESTART] mode=%s matchMode=%s goal=%d timeLimit=%d intermission=%.0f\n",
+        d.communityMode.c_str(), d.matchMode.c_str(), d.goalValue,
+        d.timeLimitSeconds, d.intermissionSeconds);
 }
 
 namespace {

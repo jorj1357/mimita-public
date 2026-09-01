@@ -121,6 +121,27 @@ This is the final quality gate. Nothing overrides it.
 * Fixes discovered on VPS must be implemented locally.
 * Test locally before deployment.
 
+# Hot-Reloadable JSON Config Files
+
+These files are hot-reloaded automatically when saved. Edit them while the game is running:
+
+| File | Controls | What to edit |
+|------|----------|--------------|
+| `config/gui/match-hud.json` | Match countdown, intermission text, recording indicator | `fontSize`, `textColor`, `x`, `y` positions |
+| `config/gui/duel-hud.json` | Local duel HUD (countdown, score, timer) | `fontSize`, `textColor`, positions |
+| `config/gui/duel-match-hud.json` | Network duel match HUD (countdown, scoreboard) | `fontSize`, `textColor`, positions |
+| `config/gui/duel-queue-hud.json` | Duel queue/waiting screen | All elements |
+| `config/gui/help-menu.json` | Help menu content and layout | Text, positions, colors |
+| `config/gui/pause-menu.json` | ESC pause menu | Button text, positions, colors |
+| `config/gamemodes/ffa.json` | FFA mode settings | `goal_value`, `time_limit_seconds`, `countdown_seconds` |
+| `config/gamemodes/tdm.json` | TDM mode settings | `goal_value`, `time_limit_seconds`, `countdown_seconds` |
+| `config/gamemodes/duel.json` | Duel mode settings | `goal_value`, `time_limit_seconds` |
+| `config/killfeed.json` | Killfeed display mode and weapon verbs | `mode` ("hud" or "chat"), weapon verbs |
+| `config/onlinemodes.json` | Community server modes | Mode definitions |
+| `config/weaponsets.json` | Weapon set configurations | Weapon lists |
+
+To apply changes: save the JSON file, wait ~1 second for hot-reload, changes appear immediately.
+
 SSH inspection command:
 
 ssh root@107.191.48.226

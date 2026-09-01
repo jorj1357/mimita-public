@@ -166,5 +166,6 @@ void serverCommunityMapStart(const std::vector<std::string>& mapPool,
 void serverCommunitySetMode(const std::string& modeId);
 void serverCommunitySetWeaponSet(int weaponSetId);
 bool serverCommunityWeaponAllowed(const std::string& weaponId);
+void serverCommunityStartMatch();
 
 } // namespace MimitaNet

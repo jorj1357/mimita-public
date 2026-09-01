@@ -92,5 +92,5 @@ private:
     static constexpr float ENTRY_FONT_SCALE = 0.30f;
 
     std::vector<KillfeedEntry> mEntries;
-    std::string mMode = "hud";  // "hud" or "chat"
+    std::string mMode = "chat";  // "hud" or "chat"
 };

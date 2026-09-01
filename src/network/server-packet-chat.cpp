@@ -374,6 +374,19 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
             ack(true, ("applied: modepick " + cfg.modes()[(size_t)index].id).c_str());
         }
     }
+    else if (commandStr.rfind("modestart ", 0) == 0)
+    {
+        auto& cfg = CommunityServerConfig::instance();
+        if (cfg.modes().empty()) cfg.load();
+        const int index = std::atoi(commandStr.c_str() + 10) - 1;
+        if (index < 0 || index >= (int)cfg.modes().size()) ack(false, "rejected: invalid mode number");
+        else {
+            const auto& mode = cfg.modes()[(size_t)index];
+            serverCommunitySetMode(mode.id);
+            serverCommunityStartMatch();
+            ack(true, ("started: " + mode.id + " (" + mode.name + ")").c_str());
+        }
+    }
     else if (commandStr == "maplist")
     {
         const auto catalog = scanMapCatalog();

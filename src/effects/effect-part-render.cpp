@@ -331,6 +331,9 @@ void EffectPartSystem::render(const Camera& camera) const {
             DebugVis::drawFilledSphere(camera, effect.position, drawScale, drawColor);
         }
         
+        // Billboard text is rendered after uiBeginFrame() by renderText().
+        if (effect.billboardText)
+            continue;
         if (effect.billboardText && !effect.label.empty()) {
             // Damage numbers must never write depth (that creates invisible
             // occluding rectangles over the world) and optionally skip depth
@@ -415,11 +418,6 @@ void EffectPartSystem::render(const Camera& camera) const {
                 glDisable(GL_DEPTH_TEST);
         }
     }
-
-    // Flush billboard text vertices (damage numbers, server disagreement text)
-    // that were pushed into the UI batch during the effects loop above.
-    // Without this flush, uiBeginFrame() clears the batch before it renders.
-    uiFlushBatch();
 
     drawTexturedHitParticles(camera, texturedHitParticles, texturedHitParticlePath);
 
@@ -532,5 +530,52 @@ void EffectPartSystem::render(const Camera& camera) const {
             snprintf(dbgLabel, sizeof(dbgLabel), "debris:%d", debrisCount);
             DebugVis::drawWorldLabel(centroid + glm::vec3(0, 0, 0.3f), dbgLabel, {1.0f, 0.9f, 0.0f, 1.0f});
         }
+    }
+}
+
+void EffectPartSystem::renderText(const Camera& camera) const {
+    if (!mEffectsEnabled) return;
+    for (const auto& effect : mPool) {
+        if (!effect.alive || effect.lifetime < 0.0f || !effect.billboardText || effect.label.empty())
+            continue;
+        if (effect.debugVisual && !DebugVis::masterEnabled()) continue;
+
+        const float dist = glm::length(effect.position - camera.pos);
+        const bool damageNumber = effect.replayType == "damage_number" ||
+                                  effect.replayType == "server_disagreement_text";
+        const float cullDist = damageNumber ? (effect.replayType == "server_disagreement_text" ? 200.0f : 40.0f) : 40.0f;
+        if (dist > cullDist) continue;
+        const float fadeStart = damageNumber && effect.replayType == "server_disagreement_text" ? 150.0f : 20.0f;
+        const float distFade = dist > fadeStart ? (cullDist - dist) / (cullDist - fadeStart) : 1.0f;
+        const float t = std::clamp(effect.lifetime / effect.maxLifetime, 0.0f, 1.0f);
+
+        GLboolean depthWasEnabled = glIsEnabled(GL_DEPTH_TEST);
+        GLboolean depthMaskWasOn;
+        glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMaskWasOn);
+        const auto& dnCfg = HitEffects::config().damageNumber;
+        const std::string depthMode = damageNumber
+            ? (dnCfg.occluded && dnCfg.depthMode == "always_on_top" ? "occluded" : dnCfg.depthMode)
+            : "always_on_top";
+        if (depthMode != "always_on_top") glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+        glDepthMask(depthMode == "normal" ? GL_TRUE : GL_FALSE);
+
+        float x = 0.0f, y = 0.0f;
+        const glm::vec3 projectPos = damageNumber ? effect.position : effect.position + glm::vec3(0, 0, 0.5f);
+        if (DebugVis::projectToScreen(camera, projectPos, x, y)) {
+            if (damageNumber) {
+                const auto& cfg = HitEffects::config().damageNumber;
+                const float textScale = std::max(0.01f, cfg.fontSize * std::max(0.0f, cfg.startScale + (cfg.endScale - cfg.startScale) * t));
+                const float textAlpha = damageNumberOpacity(cfg, t, distFade);
+                const glm::vec3 color = effect.label[0] == '+' ? cfg.healingColor : effect.color;
+                drawDamageNumberText(effect.label.c_str(), x + cfg.screenOffsetX, y + cfg.screenOffsetY,
+                                     textScale, {color.x, color.y, color.z, textAlpha}, cfg);
+            } else {
+                const float driftPx = (1.0f - t) * 60.0f;
+                uiDrawText(effect.label.c_str(), x, y - driftPx, std::abs(effect.scale),
+                           {effect.color.x, effect.color.y, effect.color.z, effect.alpha * distFade * (1.0f - t)});
+            }
+        }
+        if (depthMaskWasOn) glDepthMask(GL_TRUE); else glDepthMask(GL_FALSE);
+        if (depthWasEnabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
     }
 }

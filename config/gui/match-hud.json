@@ -1,0 +1,24 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 3,
+  "elements": {
+    "intermissionText": {
+      "type": "text",
+      "x": 960, "y": 400,
+      "fontSize": 0.6,
+      "textColor": [1.0, 1.0, 1.0, 0.9]
+    },
+    "countdownText": {
+      "type": "text",
+      "x": 960, "y": 100,
+      "fontSize": 2.5,
+      "textColor": [1.0, 1.0, 1.0, 1.0]
+    },
+    "recordingIndicator": {
+      "type": "text",
+      "x": 1800, "y": 20,
+      "fontSize": 0.28,
+      "textColor": [0.2, 1.0, 0.3, 0.9]
+    }
+  }
+}

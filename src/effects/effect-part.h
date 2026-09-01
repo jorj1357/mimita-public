@@ -105,6 +105,7 @@ public:
     void init();
     void update(float dt);
     void render(const class Camera& camera) const;
+    void renderText(const class Camera& camera) const;
     
     EffectPart* spawn(const EffectPart& effect);
     EffectPart* spawnFootstep(glm::vec3 position, float sizeScale = 1.0f);

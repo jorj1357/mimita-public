@@ -91,6 +91,8 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
     { Perf::ScopedTimer _ui("UI");
     uiBeginFrame(engine.window(), "game-debug-overlay");
 
+    EffectPartSystem::instance().renderText(camera);
+
     engineTickUIHUD(engine, dt);
 
     if (player.spawnFlashTimer <= 0.0f)

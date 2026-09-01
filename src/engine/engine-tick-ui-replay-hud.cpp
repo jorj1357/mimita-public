@@ -108,6 +108,18 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
             hudText("connectionText", std::string(MimitaNet::mpConnectionHealthText(mpContext)) + "  " + tick);
         }
     }
+    if (gReplayRecorder.isRecording() && !gReplayExportRenderMode) {
+        const float overlayX = uiScreenW() - 230.0f;
+        uiDrawRect({overlayX - 18.0f, 20.0f, 12.0f, 12.0f},
+                   {1.0f, 0.05f, 0.05f, 1.0f}, "replay-record-dot");
+        uiDrawText("[REPLAY REC]", overlayX, 30.0f, 0.34f,
+                   {1.0f, 0.12f, 0.12f, 1.0f});
+        char replayTickText[64];
+        snprintf(replayTickText, sizeof(replayTickText), "tick: %u",
+                 gReplayRecorder.currentTick());
+        uiDrawText(replayTickText, overlayX, 58.0f, 0.30f,
+                   {1.0f, 0.12f, 0.12f, 1.0f});
+    }
     if (replayPlaybackActive && !gReplayCinematicMode) {
         if (!gReplayExportRenderMode || ReplayExportUI::showReplayInfo()) {
         const float rOverlayX = uiScreenW() - 280.0f;

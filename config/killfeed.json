@@ -1,5 +1,5 @@
 {
-  "mode": "hud",
+  "mode": "chat",
   "defaultKillVerbs": ["killed", "fragged", "eliminated", "destroyed"],
   "weapons": {
     "rocket_launcher": {

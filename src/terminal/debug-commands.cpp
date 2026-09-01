@@ -46,6 +46,27 @@ void registerDebugCommands()
         }
     });
     Terminal::instance().registerCommand({
+        "modestart", "Start a community mode immediately; host only. Syntax: modestart <number>", "modestart <number>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) { Terminal::instance().addLog("[MODESTART] Usage: modestart <number>"); return; }
+            auto& cfg = MimitaNet::CommunityServerConfig::instance();
+            if (cfg.modes().empty()) cfg.load();
+            const int index = std::atoi(args[0].c_str()) - 1;
+            if (index < 0 || index >= (int)cfg.modes().size()) { Terminal::instance().addLog("[MODESTART] Invalid mode number"); return; }
+            const auto& mode = cfg.modes()[(size_t)index];
+            if (MimitaNet::isServerHost()) {
+                MimitaNet::serverCommunitySetMode(mode.id);
+                MimitaNet::serverCommunityStartMatch();
+                Terminal::instance().addLog("[MODESTART] started " + mode.id + " (" + mode.name + ")");
+            } else if (::gpMpContext && ::gpMpContext->active) {
+                MimitaNet::mpSendServerCommand(*::gpMpContext, "modestart " + std::to_string(index + 1));
+                Terminal::instance().addLog("[MODESTART] sent to server");
+            } else {
+                Terminal::instance().addLog("[MODESTART] HOST ONLY");
+            }
+        }
+    });
+    Terminal::instance().registerCommand({
         "maplist", "List maps from assets/maps", "maplist",
         [](const std::vector<std::string>&) {
             const auto catalog = scanMapCatalog();
