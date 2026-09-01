@@ -1023,6 +1023,7 @@ enum DuelStatePhase : uint8_t
     DUEL_PHASE_INTERMISSION = 4,
     DUEL_PHASE_PRE_MATCH = 5,
     DUEL_PHASE_RESULTS = 6
+    ,DUEL_PHASE_GO = 7
 };
 
 struct DuelStatePacket

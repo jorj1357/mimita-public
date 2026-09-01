@@ -78,6 +78,7 @@ struct GuiElement {
 
     // Text
     std::string text;
+    std::string goText;
     std::string font;
     float fontSize = 0.0f;
     float animationLifetimeTicks = 0.0f;

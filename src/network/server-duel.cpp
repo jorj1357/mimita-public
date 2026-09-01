@@ -205,6 +205,7 @@ void serverCommunityStartMatch(bool skipIntermission)
     d.intermissionSeconds = (float)gm.intermissionSeconds;
     d.resultsSeconds = (float)gm.resultsSeconds;
     d.countdownSeconds = gm.countdownSeconds;
+    d.goSeconds = gm.goSeconds;
     d.spawnOffsetRadius = gm.spawnOffsetRadius;
 
     // modestart enters the configured intermission. modestartnow enters the
@@ -726,10 +727,7 @@ void beginMatchCountdown(ServerDuelState& d,
     d.countdownStartTick = currentTick;
     d.matchStartTick = currentTick + (uint32_t)(d.countdownSeconds * 60.0f);
     d.countdown = d.countdownSeconds;
-    if (d.timeLimitSeconds > 0)
-        d.matchTimeLimitTick = d.matchStartTick + (uint32_t)(d.timeLimitSeconds * 60.0f);
-    else
-        d.matchTimeLimitTick = 0;
+    d.matchTimeLimitTick = 0;
     resetMatchScores(d);
     d.phase = DUEL_PHASE_COUNTDOWN;
     teleportAllParticipantsToSpawns(d, players);
@@ -1150,16 +1148,33 @@ void serverDuelTick(SOCKET sock,
         case DUEL_PHASE_COUNTDOWN:
             if (tick >= d.matchStartTick)
             {
-                d.phase = DUEL_PHASE_ACTIVE;
+                d.phase = DUEL_PHASE_GO;
+                d.phaseTimer = d.goSeconds;
                 ++d.stateVersion;
-                respawnAllParticipants(d, players);
                 d.lastBroadcastTick = tick;
                 Debug::log(Debug::Category::Duel,
-                    "[FFA/TDM] Match ACTIVE mode=%s tick=%u matchStartTick=%u\n",
+                    "[FFA/TDM] GO shown mode=%s tick=%u duration=%.2f\n",
+                    d.matchMode.c_str(), tick, d.goSeconds);
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+            }
+            break;
+
+        case DUEL_PHASE_GO:
+            d.phaseTimer -= SERVER_DT;
+            if (d.phaseTimer <= 0.0f)
+            {
+                d.phase = DUEL_PHASE_ACTIVE;
+                d.matchStartTick = tick;
+                if (d.timeLimitSeconds > 0)
+                    d.matchTimeLimitTick = tick + (uint32_t)(d.timeLimitSeconds * 60.0f);
+                respawnAllParticipants(d, players);
+                ++d.stateVersion;
+                d.lastBroadcastTick = tick;
+                Debug::log(Debug::Category::Duel,
+                    "[FFA/TDM] Match ACTIVE mode=%s tick=%u\n",
                     d.matchMode.c_str(), tick, d.matchStartTick);
                 broadcastDuelState(sock, d, players, totalPacketsOut);
             }
-            // Do NOT broadcast every tick during countdown — clients interpolate locally.
             break;
 
         case DUEL_PHASE_ACTIVE:

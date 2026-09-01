@@ -44,6 +44,7 @@
     "countdownText": {
       "type": "text",
       "text": "{countdown}",
+      "goText": "GO!!!",
       "x": 960, "y": 100,
       "fontSize": 2.5,
       "textColor": [1.0, 1.0, 1.0, 1.0]

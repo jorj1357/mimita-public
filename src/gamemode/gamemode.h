@@ -25,6 +25,7 @@ struct Gamemode {
     float respawnSeconds = 0.0f;
     bool killHeals = true;
     float countdownSeconds = 3.0f;
+    float goSeconds = 0.75f;
     float rematchSeconds = 5.0f;
     float spawnTracerSeconds = 1.5f;
     bool allowRematch = true;

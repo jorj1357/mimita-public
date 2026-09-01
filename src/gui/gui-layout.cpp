@@ -144,6 +144,7 @@ bool GuiLayout::load(const std::string& filePath)
             e.borderThickness = elem.value("borderThickness", 0.0f);
 
             e.text = elem.value("text", "");
+            e.goText = elem.value("goText", "");
             e.font = elem.value("font", "");
             e.fontSize = elem.value("fontSize", 0.0f);
             e.animationLifetimeTicks = elem.value("lifetimeTicks", 0.0f);
@@ -325,6 +326,7 @@ bool GuiLayout::save(const std::string& filePath) const
 
         // Text
         if (!e.text.empty()) obj["text"] = e.text;
+        if (!e.goText.empty()) obj["goText"] = e.goText;
         if (!e.font.empty()) obj["font"] = e.font;
         if (e.fontSize != 0.0f) obj["fontSize"] = e.fontSize;
         if (e.animationLifetimeTicks != 0.0f) obj["lifetimeTicks"] = e.animationLifetimeTicks;

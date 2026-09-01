@@ -45,6 +45,7 @@ struct ServerDuelState
     int goalValue = 20;
     float countdown = 0.0f;
     float countdownSeconds = 3.0f;
+    float goSeconds = 0.75f;
     float rematchLeft = 0.0f;
     float rematchSeconds = 5.0f;
     std::string teamAName = "RED";

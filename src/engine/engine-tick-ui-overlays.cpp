@@ -616,12 +616,16 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                         {"{seconds}", std::to_string((int)std::ceil(std::max(0.0f, match.phaseTimer())))}}));
                 }
 
-                if (match.phase() == MimitaNet::DUEL_PHASE_COUNTDOWN) {
+                if (match.phase() == MimitaNet::DUEL_PHASE_COUNTDOWN ||
+                    match.phase() == MimitaNet::DUEL_PHASE_GO) {
+                    const GuiElement* countdownElement = matchLayout.get("countdownText");
                     const uint32_t ticksLeft = match.matchStartTick() > match.serverTick()
                         ? match.matchStartTick() - match.serverTick() : 0;
                     const int number = (int)std::ceil((float)ticksLeft / 60.0f);
-                    drawCentered("countdownText", textTemplate("countdownText", {
-                        {"{countdown}", number > 0 ? std::to_string(number) : "GO"}}));
+                    const std::string countdownText = match.phase() == MimitaNet::DUEL_PHASE_GO
+                        ? (countdownElement && !countdownElement->goText.empty() ? countdownElement->goText : "GO!!!")
+                        : textTemplate("countdownText", {{"{countdown}", std::to_string(number)}});
+                    drawCentered("countdownText", countdownText);
                 }
 
                 if (match.phase() == MimitaNet::DUEL_PHASE_ACTIVE && match.timeLimitSeconds() > 0) {
