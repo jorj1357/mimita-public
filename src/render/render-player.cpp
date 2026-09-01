@@ -33,11 +33,18 @@ void renderPlayerInternal(
     Player& p = const_cast<Player&>(player);
     AvatarSystem& av = AvatarSystem::instance();
 
+    // NPCs carry their own per-life avatar identity. Bind it before queuing
+    // the shared async model load; this keeps avatar work out of spawn/update.
+    if (!p.avatarName().empty() &&
+        (!p.avatarInstance || p.avatarInstance->name != p.avatarName()))
+        av.applyAvatarToPlayer(p, p.avatarName());
+
     // Kick async load once per player
-    if (!p.modelLoaded && !p.mLazyLoadRequested && av.hasAvatar()) {
+    if (!p.modelLoaded && !p.mLazyLoadRequested &&
+        (av.hasAvatar() || p.avatarInstance)) {
         p.mLazyLoadRequested = true;
-        av.requestModelLoad(p);
-        av.requestAtlasBuild(p);
+        if (!p.avatarInstance)
+            av.requestModelLoad(p);
     }
     p.finalizeModelIfReady();
     av.finalizeAtlasIfReady(p);

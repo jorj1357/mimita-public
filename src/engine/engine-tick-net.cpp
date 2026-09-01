@@ -32,6 +32,7 @@
 #include "replay/replay.h"
 #include "gui/hud/chat-bubble.h"
 #include "network/multiplayer-context.h"
+#include "network/community-server-config.h"
 #include "network/network-weapons.h"
 #include "network/weapon-runtime-reconciliation.h"
 #include "network/disagreement-visuals.h"
@@ -102,6 +103,15 @@ void engineTickNet(Engine& engine, float dt)
             glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED &&
             glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
         mpInput.equippedSlot = player.equippedSlot;
+        if (mpContext.communityWeaponSetId > 0) {
+            auto& cfg = MimitaNet::CommunityServerConfig::instance();
+            if (cfg.weaponSets().empty()) cfg.load();
+            const WeaponDefinition* current = weapons.getCurrentDef(player);
+            if (current) {
+                const int logical = cfg.slotForWeapon(mpContext.communityWeaponSetId, current->id);
+                if (logical > 0) mpInput.equippedSlot = logical;
+            }
+        }
         mpInput.weaponState = weapons.networkVisualState(player);
         mpInput.sizeScale = player.sizeScale;
         {

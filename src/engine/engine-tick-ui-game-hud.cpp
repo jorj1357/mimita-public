@@ -18,6 +18,8 @@
 #include "npc/npc.h"
 #include "combat/weapon-system.h"
 #include "combat/weapon-registry.h"
+#include "network/multiplayer-context.h"
+#include "network/community-server-config.h"
 #include "combat/death-system.h"
 #include "effects/effect-part.h"
 #include "replay/replay.h"
@@ -293,6 +295,13 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         float gap = readVal("hotbarGap", 7.0f);
         float yOffset = readVal("hotbarY", 70.0f);
         int slotCount = (int)readVal("hotbarSlotCount", 10.0f);
+        if (MP_CONTEXT.communityWeaponSetId > 0) {
+            auto& cfg = MimitaNet::CommunityServerConfig::instance();
+            if (cfg.weaponSets().empty()) cfg.load();
+            const auto* set = cfg.weaponSetById(MP_CONTEXT.communityWeaponSetId);
+            if (set && !(set->weapons.size() == 1 && set->weapons.front() == "*"))
+                slotCount = static_cast<int>(set->weapons.size());
+        }
         glm::vec4 bgEq = readCol("hotbarBgEquipped", {0.32f,0.32f,0.36f,0.95f});
         glm::vec4 bgNorm = readCol("hotbarBgNormal", {0.12f,0.12f,0.14f,0.92f});
         glm::vec4 borderEq = readTextCol("hotbarBorderEquipped", {1,1,1,1});
@@ -313,11 +322,13 @@ void engineTickUIGameHUD(Engine& engine, float dt)
             std::string label = slot == 10 ? "0" : std::to_string(slot);
             uiDrawText(label.c_str(), rect.x + 5, rect.y + 16, 0.30f, {1,1,1,1});
             const WeaponDefinition* slotDef = nullptr;
-            for (const auto& pair : WeaponRegistry::instance().all()) {
-                if (pair.second.slot == slot) {
-                    slotDef = &pair.second;
-                    break;
-                }
+            if (MP_CONTEXT.communityWeaponSetId > 0) {
+                auto& cfg = MimitaNet::CommunityServerConfig::instance();
+                const auto* id = cfg.weaponForSlot(MP_CONTEXT.communityWeaponSetId, slot);
+                if (id) slotDef = WeaponRegistry::instance().get(*id);
+                if (slotDef) equipped = player.equippedSlot == slotDef->slot;
+            } else for (const auto& pair : WeaponRegistry::instance().all()) {
+                if (pair.second.slot == slot) { slotDef = &pair.second; break; }
             }
             if (slotDef) {
                 std::string shortName = slotDef->id.substr(0, 3);

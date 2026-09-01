@@ -24,10 +24,12 @@
 #include "perf/perf.h"
 #include "perf/perf-spike.h"
 #include "combat/weapon-system.h"
+#include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
 #include "combat/weapon-rocket-launcher.h"
 #include "combat/death-system.h"
 #include "network/multiplayer-context.h"
+#include "network/community-server-config.h"
 #include "network/network-weapons.h"
 #include "debug/debug-log.h"
 #include "devtools/terminal.h"
@@ -269,8 +271,9 @@ void engineTickCombat(Engine& engine, float dt)
         int key = keySlot == 0 ? GLFW_KEY_0 : GLFW_KEY_0 + keySlot;
         bool down = glfwGetKey(engine.window(), key) == GLFW_PRESS;
         if (!replayPlaybackActive && !duelCountdown &&
-            gameplayInputAllowed && InputCommandSystem::instance().isKeyboardEnabled() && down && !slotPrev[keySlot])
+            gameplayInputAllowed && InputCommandSystem::instance().isKeyboardEnabled() && down && !slotPrev[keySlot]) {
             Terminal::instance().execute("equipslot" + std::to_string(keySlot));
+        }
         slotPrev[keySlot] = down;
     }
 

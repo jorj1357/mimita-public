@@ -198,7 +198,9 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn,
 
     // Initialize full weapon loadout from config and equip starting weapon
     npcInitLoadout(*this);
-    assignNpcAvatar(*this);
+    // Select/store the per-life identity without loading GPU assets here.
+    // Rendering queues the avatar through the shared asynchronous path.
+    avatarName = npcAvatarNameForLife(id, transformEpoch);
 
     // Spawn wakeup visual sphere (30 ticks @ 60 Hz = 0.5s)
     {

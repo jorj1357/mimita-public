@@ -576,6 +576,15 @@ void AvatarSystem::requestModelLoad(Player& player) {
     if (player.modelLoaded) return;
     if (player.mPendingModel) return; // thread already started
 
+    // Startup loads avatar metadata before the renderer starts the async
+    // model request.  Attach the cached identity and cosmetic slots here so
+    // the model-ready callback can finalize them without avatar.reload.
+    if (!player.avatarInstance) {
+        player.avatarInstance = getOrLoadAvatar(mAvatarName);
+        if (player.avatarInstance)
+            player.setCosmetics(player.avatarInstance->definition.cosmetics);
+    }
+
     // The startup renderer reaches this lazy path directly, without first
     // calling applyToPlayer(). Preserve the avatar's body-part transforms for
     // both default and custom model loads.
@@ -712,6 +721,26 @@ bool AvatarSystem::applyAvatarToPlayer(Player& player, const std::string& avatar
 
     player.setAvatarName(avatarName);
     player.avatarInstance = inst;
+
+    // A newly-created replica may not have a model yet.  Bind the avatar
+    // identity now, but defer model/texture/cosmetic loading to the existing
+    // async model-ready path so network/NPC creation cannot hitch.
+    if (!player.modelLoaded && !reloadTextures) {
+        if (!inst->definition.bodypartOverrides.is_null())
+            gAvatarBodypartOverrides = inst->definition.bodypartOverrides;
+        else
+            gAvatarBodypartOverrides = nullptr;
+        player.setCosmetics(inst->definition.cosmetics);
+        const std::string modelPath = !inst->definition.playerModel.empty()
+            ? inst->definition.playerModel
+            : "assets/entity/player/default/mimita-char-no-animations-v4.glb";
+        player.requestModelLoad(modelPath);
+        Debug::log(Debug::Category::Avatar,
+            "[AVATAR ASYNC] queued avatar='%s' player='%s' cosmetics=%zu",
+            avatarName.c_str(), player.username.c_str(),
+            inst->definition.cosmetics.size());
+        return true;
+    }
 
     // Load model from THIS avatar's definition, NOT from the singleton
     if (!inst->definition.playerModel.empty()) {

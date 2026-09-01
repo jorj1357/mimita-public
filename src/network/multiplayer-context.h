@@ -665,6 +665,7 @@ struct MultiplayerContext
     // and SpawnAck is sent in engineTickNet where Player is in scope.
     // Cleared after processing or when the spawn handshake completes.
     std::optional<PlayerRespawnedPacket> pendingAuthoritativeSpawn;
+    int communityWeaponSetId = 0;
 
     // ── SpawnAck retry (reliable respawn handshake) ───────────────────
     // The client re-sends its one-shot SpawnAck until the server's

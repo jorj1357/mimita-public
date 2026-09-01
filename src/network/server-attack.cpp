@@ -414,23 +414,26 @@ void handleAttackRequest(
     ServerPlayer::ServerWeaponRuntime& rt = rtIt->second;
 
     // ── Validate or reconcile equipped slot ───────────────────────────
-    if (req->equippedSlot != def->slot)
+    const int logicalSlot = serverCommunityWeaponLogicalSlot(def->id);
+    const int expectedSlot = logicalSlot > 0 ? logicalSlot : def->slot;
+    if (req->equippedSlot != expectedSlot)
     {
         Debug::log(Debug::Category::Weapons,
                    "[ATTACK REJECT] playerId=%u requestId=%u request slot does not match weapon req=%d def=%d\n",
-                   shooter.id, req->requestId, req->equippedSlot, def->slot);
+                   shooter.id, req->requestId, req->equippedSlot, expectedSlot);
         emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
                             shooter, req->requestId, "SLOT MISMATCH");
         sendAttackResult(sock, shooter, req, tick, false, 4, 0, -1, -1, 0, 0);
         return;
     }
-    if (req->equippedSlot != shooter.equippedSlot)
+    const int nativeSlot = serverCommunityWeaponNativeSlot(req->equippedSlot);
+    if (nativeSlot != shooter.equippedSlot)
     {
         Debug::log(Debug::Category::Weapons,
                    "[ATTACK EQUIP RECONCILE] playerId=%u requestId=%u oldSlot=%d newSlot=%d weapon=%s\n",
                    shooter.id, req->requestId, shooter.equippedSlot,
-                   req->equippedSlot, def->id.c_str());
-        shooter.equippedSlot = req->equippedSlot;
+                   nativeSlot, def->id.c_str());
+        shooter.equippedSlot = nativeSlot;
     }
 
     // ── Ammo is client-authoritative ──────────────────────────────────

@@ -163,6 +163,24 @@ bool CommunityServerConfig::weaponAllowed(int setId, const std::string& weaponId
     return false;
 }
 
+const std::string* CommunityServerConfig::weaponForSlot(int setId, int slot) const
+{
+    const CommunityWeaponSet* set = weaponSetById(setId);
+    if (!set) return nullptr;
+    if (slot <= 0 || set->weapons.size() < static_cast<size_t>(slot)) return nullptr;
+    const std::string& weapon = set->weapons[static_cast<size_t>(slot - 1)];
+    return weapon == "*" ? nullptr : &weapon;
+}
+
+int CommunityServerConfig::slotForWeapon(int setId, const std::string& weaponId) const
+{
+    const CommunityWeaponSet* set = weaponSetById(setId);
+    if (!set) return -1;
+    for (size_t i = 0; i < set->weapons.size(); ++i)
+        if (set->weapons[i] == weaponId) return static_cast<int>(i + 1);
+    return -1;
+}
+
 std::string CommunityServerConfig::modeItems() const
 {
     std::string out;

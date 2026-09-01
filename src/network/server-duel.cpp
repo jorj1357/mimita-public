@@ -19,6 +19,7 @@
 #include "network/packets.h"
 #include "network/server.h"
 #include "npc/npc.h"
+#include "combat/weapon-registry.h"
 #include "debug/debug-log.h"
 #include "network/community-server-config.h"
 #include "gamemode/gamemode.h"
@@ -163,6 +164,24 @@ bool serverCommunityWeaponAllowed(const std::string& weaponId)
     CommunityServerConfig& config = CommunityServerConfig::instance();
     if (config.weaponSets().empty()) config.load();
     return config.weaponAllowed(state.communityWeaponSetId, weaponId);
+}
+
+int serverCommunityWeaponNativeSlot(int logicalSlot)
+{
+    CommunityServerConfig& config = CommunityServerConfig::instance();
+    if (config.weaponSets().empty()) config.load();
+    const std::string* id = config.weaponForSlot(serverDuelState().communityWeaponSetId, logicalSlot);
+    if (!id) return logicalSlot;
+    const WeaponDefinition* def = WeaponRegistry::instance().get(*id);
+    return def ? def->slot : -1;
+}
+
+int serverCommunityWeaponLogicalSlot(const std::string& weaponId)
+{
+    CommunityServerConfig& config = CommunityServerConfig::instance();
+    if (config.weaponSets().empty()) config.load();
+    const int slot = config.slotForWeapon(serverDuelState().communityWeaponSetId, weaponId);
+    return slot > 0 ? slot : -1;
 }
 
 void serverCommunitySetMode(const std::string& modeId)
@@ -927,11 +946,13 @@ void serverDuelTick(SOCKET sock,
                     if (candidate != d.mapId) candidates.push_back(candidate);
             }
             if (!candidates.empty()) {
+                std::mt19937 rng(std::random_device{}());
+                std::shuffle(candidates.begin(), candidates.end(), rng);
                 d.pendingAutomaticMap = candidates.front();
                 d.mapChangeCountdownStartMs = now;
                 Debug::warn(Debug::Category::Networking,
-                    "[COMMUNITY MAP ROTATION] current=%s next=%s\n",
-                    d.mapId.c_str(), d.pendingAutomaticMap.c_str());
+                    "[COMMUNITY MAP ROTATION] current=%s next=%s candidates=%zu (randomized)\n",
+                    d.mapId.c_str(), d.pendingAutomaticMap.c_str(), candidates.size());
             } else {
                 d.nextMapRotationMs = now + (uint64_t)d.mapRotationMinutes * 60000ull;
             }

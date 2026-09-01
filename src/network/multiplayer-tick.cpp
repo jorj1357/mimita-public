@@ -618,6 +618,7 @@ static const char* disconnectReasonStr(MultiplayerContext& ctx)
 // ── Apply authoritative spawn state from server ──────────────────────
 void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacket* spawn)
 {
+    ctx.communityWeaponSetId = spawn->communityWeaponSetId;
     uint32_t oldGen = ctx.lastKnownSpawnGeneration;
     ctx.lastKnownSpawnGeneration = spawn->spawnGeneration;
     // A duel teleport can reuse the same spawn generation while advancing the

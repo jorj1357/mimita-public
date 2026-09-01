@@ -26,6 +26,7 @@ using json = nlohmann::json;
 #include "combat/weapon-config.h"
 #include "combat/weapon-registry.h"
 #include "network/net_mode.h"
+#include "network/community-server-config.h"
 #include "network/network-weapons.h"
 #include "network/weapon-runtime-reconciliation.h"
 #include "network/disagreement-visuals.h"
@@ -79,6 +80,16 @@ void equipSlotAndSync(Player& player, WeaponSystem& weapons, int slot)
     const std::string holsteredReloaded = weapons.equip(player, slot);
     if (!holsteredReloaded.empty() && !isClientOnlyWeapon(holsteredReloaded))
         MimitaNet::sendReloadRequestForWeapon(MP_CONTEXT, player, holsteredReloaded);
+}
+
+static int nativeSlotForCommunitySlot(int slot)
+{
+    if (MP_CONTEXT.communityWeaponSetId <= 0) return slot;
+    auto& cfg = MimitaNet::CommunityServerConfig::instance();
+    if (cfg.weaponSets().empty()) cfg.load();
+    const auto* id = cfg.weaponForSlot(MP_CONTEXT.communityWeaponSetId, slot);
+    const auto* def = id ? WeaponRegistry::instance().get(*id) : nullptr;
+    return def ? def->slot : -1;
 }
 
 void unequipAndSync(Player& player, WeaponSystem& weapons)
@@ -318,7 +329,8 @@ void registerWeaponCommands()
                 WeaponSystem& weapons = THE_WEAPONS;
                 // Local/offline duel only — network duels have no DuelWeaponPool.
                 const int nativeSlot = gDuelManager.enabled()
-                    ? DuelWeaponPool::instance().nativeSlotForDuelSlot(slot) : slot;
+                    ? DuelWeaponPool::instance().nativeSlotForDuelSlot(slot)
+                    : nativeSlotForCommunitySlot(slot);
                 if (nativeSlot <= 0) {
                     Terminal::instance().addLog("[INVENTORY] weapon not available in duels");
                     return;
@@ -375,7 +387,8 @@ void registerWeaponCommands()
                 return;
             }
             const int nativeSlot = gDuelManager.enabled()
-                ? DuelWeaponPool::instance().nativeSlotForDuelSlot(slot) : slot;
+                ? DuelWeaponPool::instance().nativeSlotForDuelSlot(slot)
+                : nativeSlotForCommunitySlot(slot);
             if (nativeSlot <= 0) {
                 Terminal::instance().addLog("[INVENTORY] weapon not available in duels");
                 return;

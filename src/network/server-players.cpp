@@ -429,6 +429,8 @@ void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitia
     spawnSync.posY = player.pos.y;
     spawnSync.posZ = player.pos.z;
     spawnSync.health = player.health;
+    spawnSync.communityWeaponSetId = serverDuelState().mapOnly
+        ? static_cast<uint8_t>(std::clamp(serverDuelState().communityWeaponSetId, 0, 255)) : 0;
     Debug::log(Debug::Category::Duel,
         "[DuelPacketSend] type=PlayerRespawnedPacket reliable=1 player=%u spawnGeneration=%u epoch=%u pos=(%.3f,%.3f,%.3f)\n",
         player.id, spawnSync.spawnGeneration, spawnSync.transformEpoch,

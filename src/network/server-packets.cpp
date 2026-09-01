@@ -95,7 +95,7 @@ bool playerCanEquipSlot(const ServerPlayer& player, int slot)
 {
     if (slot == 0)
         return true;
-    const WeaponDefinition* def = weaponDefinitionForSlot(slot);
+    const WeaponDefinition* def = weaponDefinitionForSlot(serverCommunityWeaponNativeSlot(slot));
     if (!def)
         return false;
     if (!serverCommunityWeaponAllowed(def->id))
@@ -139,7 +139,7 @@ bool applyEquipIntentFromInput(ServerPlayer& player,
     const int oldSlot = player.equippedSlot;
     if (input.equipSerial != 0)
         player.lastEquipSerial = input.equipSerial;
-    player.equippedSlot = input.equippedSlot;
+    player.equippedSlot = serverCommunityWeaponNativeSlot(input.equippedSlot);
     player.weaponState = input.weaponState;
     Debug::log(
         Debug::Category::Weapons,

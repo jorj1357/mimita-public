@@ -48,6 +48,8 @@ public:
     const CommunityMode* modeByName(const std::string& name) const;
     const CommunityWeaponSet* weaponSetById(int id) const;
     bool weaponAllowed(int setId, const std::string& weaponId) const;
+    const std::string* weaponForSlot(int setId, int slot) const;
+    int slotForWeapon(int setId, const std::string& weaponId) const;
 
     std::string modeItems() const;
     std::string weaponSetItems() const;
