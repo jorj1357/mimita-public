@@ -30,6 +30,9 @@ struct Gamemode {
     bool allowRematch = true;
     // Random XY offset radius around the match anchor that both teams spawn near.
     float spawnOffsetRadius = 5.0f;
+    std::string spawnStrategy = "shared";  // "shared", "team_shared", "distributed", "random"
+    int intermissionSeconds = 15;
+    int resultsSeconds = 8;
     std::vector<std::string> maps;
 };
 

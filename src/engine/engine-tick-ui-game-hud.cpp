@@ -245,14 +245,6 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         snprintf(modeText, sizeof(modeText), "%s | %s | slot %d",
                  editorMode ? "EDITOR" : "PLAYING", activeGameMode.c_str(), player.equippedSlot);
         hudText("modeText", modeText);
-        if (mpContext.active) {
-            char mpText[128];
-            snprintf(mpText, sizeof(mpText), "MP id=%u players=%zu server=%s",
-                     mpContext.localPlayerId,
-                     mpContext.remotePlayers.size() + (mpContext.localPlayerId ? 1 : 0),
-                     mpContext.serverAddress.c_str());
-            uiDrawText(mpText, 24, 232, 0.32f, {0.7f, 0.9f, 1.0f, 1.0f});
-        }
         if (replayViewedActor) {
             const char* weaponName = replayViewedActor->weaponName.empty() ? "?" : replayViewedActor->weaponName.c_str();
             const WeaponDefinition* replayDef = WeaponRegistry::instance().get(weaponName);
@@ -430,23 +422,6 @@ void engineTickUIGameHUD(Engine& engine, float dt)
             printf("[PLAYER HP FRAME] hp=%d/%d pos=(%.1f %.1f %.1f)\n",
                    player.currentHp, player.maxHp,
                    player.pos.x, player.pos.y, player.pos.z);
-        }
-    }
-    if (!gReplayExportRenderMode || ReplayExportUI::showNpcDebug())
-    {
-        char npcText[96];
-        snprintf(npcText, sizeof(npcText), "NPCs: %zu", npcSystem.all().size());
-        uiDrawText(npcText, 24, 168, 0.32f, {1.0f, 0.82f, 0.38f, 1.0f});
-        if (!npcSystem.all().empty()) {
-            const Npc& first = npcSystem.all().front();
-            char tuneText[256];
-            snprintf(tuneText, sizeof(tuneText),
-                     "  Diff=%.0f aimErr=%.1fdeg reaction=%.2fs moveVar=%.2f",
-                     first.difficulty,
-                     NpcCombat::aimErrorDegrees(first.difficulty),
-                     first.tuning.reactionDelay,
-                     first.tuning.movementPrecision);
-            uiDrawText(tuneText, 24, 184, 0.28f, {0.8f, 0.9f, 1.0f, 1.0f});
         }
     }
     if (DebugVis::render() && (!gReplayExportRenderMode || ReplayExportUI::showDebugVis()))

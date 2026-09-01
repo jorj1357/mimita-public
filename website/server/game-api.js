@@ -701,4 +701,318 @@ router.get("/games/:gameId/leaderboard", async (req, res, next) => {
     }
 })
 
+// ── Plan 2: Server-Authoritative Persistence Ingest ─────────────────────
+
+function calculateLevel(totalXp) {
+    if (totalXp <= 0) return 1
+    return Math.floor(Math.sqrt(totalXp / 100)) + 1
+}
+
+const WEAPON_IDS = {
+    0: "none", 1: "revolver", 2: "godball", 3: "shotgun",
+    4: "swordsword", 5: "rocket_launcher", 6: "hafs",
+    7: "grenade_launcher", 8: "aa12", 9: "spyknife"
+}
+
+function validateIngestEvent(event) {
+    if (!event || typeof event !== "object") return false
+    if (!event.eventId || typeof event.eventId !== "string") return false
+    if (!event.type || !["kill", "match_result"].includes(event.type)) return false
+    return true
+}
+
+router.post("/stats/ingest", authenticateToken, async (req, res, next) => {
+    try {
+        const { events } = req.body
+        if (!Array.isArray(events) || events.length === 0)
+            return res.status(400).json({ success: false, error: "empty_events" })
+
+        const client = await pool.connect()
+        const results = { processed: 0, duplicates: 0, errors: 0 }
+
+        try {
+            await client.query("BEGIN")
+
+            for (const event of events) {
+                if (!validateIngestEvent(event)) {
+                    results.errors++
+                    continue
+                }
+
+                const dupCheck = await client.query(
+                    "SELECT 1 FROM processed_events WHERE event_id = $1",
+                    [event.eventId]
+                )
+                if (dupCheck.rowCount > 0) {
+                    results.duplicates++
+                    continue
+                }
+
+                if (event.type === "kill") {
+                    await processKillEvent(client, event)
+                } else if (event.type === "match_result") {
+                    await processMatchResultEvent(client, event)
+                }
+
+                await client.query(
+                    "INSERT INTO processed_events (event_id, event_type) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                    [event.eventId, event.type]
+                )
+                results.processed++
+            }
+
+            await client.query("COMMIT")
+        } catch (error) {
+            await client.query("ROLLBACK")
+            throw error
+        } finally {
+            client.release()
+        }
+
+        res.json({ success: true, results })
+    } catch (error) {
+        next(error)
+    }
+})
+
+async function processKillEvent(client, event) {
+    const attackerId = event.attackerId || 0
+    const victimId = event.victimId || 0
+    const isPlayerKill = event.attackerType === "player" && event.victimType === "player"
+    const isNpcKill = event.attackerType === "player" && event.victimType === "npc"
+    const isSelfKill = attackerId > 0 && attackerId === victimId
+
+    // Store raw kill event
+    const weaponStr = typeof event.weaponId === "number"
+        ? (WEAPON_IDS[event.weaponId] || String(event.weaponId))
+        : String(event.weaponId || "")
+
+    await client.query(
+        `INSERT INTO kill_events (event_id, match_id, server_tick, attacker_type, attacker_id,
+         victim_type, victim_id, weapon_id, distance_meters)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING`,
+        [event.eventId, event.matchId || "", event.serverTick || 0,
+         event.attackerType || "player", attackerId,
+         event.victimType || "player", victimId,
+         weaponStr, event.distanceMeters || 0.0]
+    )
+
+    const rewards = { playerKillXp: 100, playerKillGold: 50, npcKillXp: 10, npcKillGold: 0 }
+
+    if (isNpcKill && attackerId > 0) {
+        await client.query(
+            `INSERT INTO game_stats (user_id, total_xp, gold, lifetime_npc_kills, updated_at)
+             VALUES ($1, $2, $3, 1, NOW())
+             ON CONFLICT (user_id) DO UPDATE SET
+                 total_xp = game_stats.total_xp + $2,
+                 gold = game_stats.gold + $3,
+                 lifetime_npc_kills = game_stats.lifetime_npc_kills + 1,
+                 updated_at = NOW()`,
+            [attackerId, rewards.npcKillXp, rewards.npcKillGold]
+        )
+    }
+
+    if (isPlayerKill && !isSelfKill) {
+        // Attacker: +player kills, XP, gold
+        if (attackerId > 0) {
+            await client.query(
+                `INSERT INTO game_stats (user_id, total_xp, gold, lifetime_player_kills, updated_at)
+                 VALUES ($1, $2, $3, 1, NOW())
+                 ON CONFLICT (user_id) DO UPDATE SET
+                     total_xp = game_stats.total_xp + $2,
+                     gold = game_stats.gold + $3,
+                     lifetime_player_kills = game_stats.lifetime_player_kills + 1,
+                     updated_at = NOW()`,
+                [attackerId, rewards.playerKillXp, rewards.playerKillGold]
+            )
+        }
+
+        // Victim: +death
+        if (victimId > 0) {
+            await client.query(
+                `INSERT INTO game_stats (user_id, lifetime_deaths, updated_at)
+                 VALUES ($1, 1, NOW())
+                 ON CONFLICT (user_id) DO UPDATE SET
+                     lifetime_deaths = game_stats.lifetime_deaths + 1,
+                     updated_at = NOW()`,
+                [victimId]
+            )
+        }
+
+        // PvP relationship
+        if (attackerId > 0 && victimId > 0) {
+            await client.query(
+                `INSERT INTO player_kill_relationships (attacker_id, victim_id, kill_count, first_kill_at, last_kill_at)
+                 VALUES ($1, $2, 1, NOW(), NOW())
+                 ON CONFLICT (attacker_id, victim_id) DO UPDATE SET
+                     kill_count = player_kill_relationships.kill_count + 1,
+                     last_kill_at = NOW()`,
+                [attackerId, victimId]
+            )
+        }
+
+        // Weapon stats
+        if (attackerId > 0 && weaponStr) {
+            await client.query(
+                `INSERT INTO player_weapon_stats (player_id, weapon_id, kills)
+                 VALUES ($1, $2, 1)
+                 ON CONFLICT (player_id, weapon_id) DO UPDATE SET
+                     kills = player_weapon_stats.kills + 1`,
+                [attackerId, weaponStr]
+            )
+        }
+    }
+}
+
+async function processMatchResultEvent(client, event) {
+    // Insert match record (idempotent)
+    await client.query(
+        `INSERT INTO match_history (match_id, game_mode, victory_type, red_score, blue_score, winner_id)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (match_id) DO NOTHING`,
+        [event.matchId || "", event.mode || "", event.victoryType || "unknown",
+         event.redScore || 0, event.blueScore || 0, event.winnerPlayerId || null]
+    )
+
+    if (!Array.isArray(event.participants)) return
+
+    for (const p of event.participants) {
+        if (!p.userId || p.userId <= 0) continue
+
+        const won = p.won ? 1 : 0
+        const lost = p.won ? 0 : 1
+        const drawn = event.victoryType === "draw" ? 1 : 0
+        const isFfa = event.mode === "free_for_all"
+        const isTdm = event.mode === "team_deathmatch"
+
+        // Insert match participant (idempotent)
+        await client.query(
+            `INSERT INTO match_participants (match_id, user_id, username, kills, deaths, team, won)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT (match_id, user_id) DO NOTHING`,
+            [event.matchId, p.userId, p.username || "", p.kills || 0, p.deaths || 0,
+             p.team || "", p.won || false]
+        )
+
+        // Update aggregate match stats
+        await client.query(
+            `INSERT INTO game_stats (user_id, matches_played, wins, losses, draws,
+                                     ffa_matches_played, ffa_wins,
+                                     tdm_matches_played, tdm_wins, updated_at)
+             VALUES ($1, 1, $2, $3, $4, $5, $6, $7, $8, NOW())
+             ON CONFLICT (user_id) DO UPDATE SET
+                 matches_played = game_stats.matches_played + 1,
+                 wins = game_stats.wins + $2,
+                 losses = game_stats.losses + $3,
+                 draws = game_stats.draws + $4,
+                 ffa_matches_played = game_stats.ffa_matches_played + $5,
+                 ffa_wins = game_stats.ffa_wins + $6,
+                 tdm_matches_played = game_stats.tdm_matches_played + $7,
+                 tdm_wins = game_stats.tdm_wins + $8,
+                 updated_at = NOW()`,
+            [p.userId, won, lost, drawn,
+             isFfa ? 1 : 0, (isFfa && won) ? 1 : 0,
+             isTdm ? 1 : 0, (isTdm && won) ? 1 : 0]
+        )
+    }
+}
+
+// ── Plan 2: Public Profile Stats ───────────────────────────────────────
+
+router.get("/profile/:userId", async (req, res, next) => {
+    try {
+        const userId = parseInt(req.params.userId) || 0
+        if (userId <= 0)
+            return res.status(400).json({ success: false, error: "invalid_user_id" })
+
+        const userResult = await pool.query(
+            `SELECT id, username, avatar_url, supporter_tier, role, created_at
+             FROM users WHERE id = $1 AND deleted_at IS NULL`,
+            [userId]
+        )
+        if (!userResult.rowCount)
+            return res.status(404).json({ success: false, error: "user_not_found" })
+
+        const user = userResult.rows[0]
+        const statsResult = await pool.query(
+            `SELECT total_xp, gold, lifetime_player_kills, lifetime_npc_kills, lifetime_deaths,
+                    wins, losses, draws, games_played,
+                    matches_played, matches_won, matches_lost, matches_drawn,
+                    ffa_matches_played, ffa_wins, tdm_matches_played, tdm_wins
+             FROM game_stats WHERE user_id = $1`,
+            [userId]
+        )
+
+        const stats = statsResult.rowCount ? statsResult.rows[0] : {}
+        const totalXp = stats.total_xp || 0
+        const level = calculateLevel(totalXp)
+
+        const vip = await getVipStateForUser(user, pool)
+
+        res.json({
+            success: true,
+            profile: {
+                id: user.id,
+                username: user.username,
+                avatarUrl: user.avatar_url || "",
+                supporterTier: vip.active_tier,
+                role: user.role,
+                createdAt: user.created_at,
+                level,
+                totalXp,
+                gold: stats.gold || 0,
+                playerKills: stats.lifetime_player_kills || 0,
+                npcKills: stats.lifetime_npc_kills || 0,
+                deaths: stats.lifetime_deaths || 0,
+                matchesPlayed: stats.matches_played || stats.games_played || 0,
+                wins: stats.matches_won || stats.wins || 0,
+                losses: stats.matches_lost || stats.losses || 0,
+                draws: stats.matches_drawn || stats.draws || 0,
+                ffa: { played: stats.ffa_matches_played || 0, wins: stats.ffa_wins || 0 },
+                tdm: { played: stats.tdm_matches_played || 0, wins: stats.tdm_wins || 0 }
+            }
+        })
+    } catch (error) {
+        next(error)
+    }
+})
+
+// ── Plan 2: Rivals / Most Killed Players ───────────────────────────────
+
+router.get("/profile/:userId/rivals", async (req, res, next) => {
+    try {
+        const userId = parseInt(req.params.userId) || 0
+        if (userId <= 0)
+            return res.status(400).json({ success: false, error: "invalid_user_id" })
+
+        const mostKilledResult = await pool.query(
+            `SELECT pk.victim_id AS "userId", u.username, pk.kill_count AS "killCount"
+             FROM player_kill_relationships pk
+             JOIN users u ON u.id = pk.victim_id
+             WHERE pk.attacker_id = $1 AND u.deleted_at IS NULL
+             ORDER BY pk.kill_count DESC
+             LIMIT 10`,
+            [userId]
+        )
+
+        const killedByResult = await pool.query(
+            `SELECT pk.attacker_id AS "userId", u.username, pk.kill_count AS "killCount"
+             FROM player_kill_relationships pk
+             JOIN users u ON u.id = pk.attacker_id
+             WHERE pk.victim_id = $1 AND u.deleted_at IS NULL
+             ORDER BY pk.kill_count DESC
+             LIMIT 10`,
+            [userId]
+        )
+
+        res.json({
+            success: true,
+            mostKilled: mostKilledResult.rows,
+            killedBy: killedByResult.rows
+        })
+    } catch (error) {
+        next(error)
+    }
+})
+
 export default router

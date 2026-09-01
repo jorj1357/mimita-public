@@ -364,6 +364,7 @@ struct ServerPlayer
     bool spawned = false;
     int kills = 0;
     int deaths = 0;
+    int matchTeam = -1;  // -1 = no team (FFA), 0 = red, 1 = blue
     uint16_t transformEpoch = 0;
 
     // ── Input command buffer for server-side movement simulation ──────

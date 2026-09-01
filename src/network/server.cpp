@@ -31,7 +31,10 @@
 #include "config/networking-config.h"
 #include "config/movement-config.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "audio/audio.h"
+#include "persistence/persistence-queue.h"
+#include "auth/auth-system.h"
 #include "debug/structured-log.h"
 
 #include <algorithm>
@@ -1015,6 +1018,16 @@ void stopListenServer(ListenServerState& state)
 
     // Signal background thread to stop
     state.serverRunning = false;
+
+    // Flush any remaining persistence events before shutdown
+    {
+        const auto& authUser = AuthSystem::instance().user();
+        PersistenceQueue::instance().flushBlocking(authUser.sessionToken);
+        const size_t depth = PersistenceQueue::instance().queueDepth();
+        if (depth > 0)
+            printf("[PERSISTENCE] WARNING: %zu events could not be flushed on shutdown\n", depth);
+    }
+
     if (state.serverThread.joinable())
         state.serverThread.join();
 
@@ -1140,6 +1153,12 @@ static void simulateOneServerTick(ListenServerState& state)
         serverDuelTick(state.sock, state.players, state.world, *state.npcWorld,
                        state.npcs, *state.npcSystem, state.npcIdsAlive,
                        state.tick, state.totalPacketsOut);
+
+        // Flush persistence queue every 5 seconds using host's session token
+        {
+            const auto& authUser = AuthSystem::instance().user();
+            PersistenceQueue::instance().update(SERVER_DT, authUser.sessionToken);
+        }
 
         uint64_t now = nowMs();
         if (now - state.lastLog >= 1000)

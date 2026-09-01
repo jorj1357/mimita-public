@@ -5,7 +5,7 @@
     "helpBg": {
       "type": "panel",
       "x": 0, "y": 0, "width": 1920, "height": 1080,
-      "backgroundColor": [0.035, 0.04, 0.052, 1.0]
+      "backgroundColor": [0.035, 0.04, 0.052, 0.7]
     },
     "helpTitle": {
       "type": "text",

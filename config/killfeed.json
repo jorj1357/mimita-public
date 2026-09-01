@@ -1,0 +1,36 @@
+{
+  "mode": "hud",
+  "defaultKillVerbs": ["killed", "fragged", "eliminated", "destroyed"],
+  "weapons": {
+    "rocket_launcher": {
+      "displayName": "Rocket Launcher",
+      "killVerbs": ["fragged", "destroyed", "eliminated"]
+    },
+    "grenade_launcher": {
+      "displayName": "Grenade Launcher",
+      "killVerbs": ["fragged", "detonated", "eliminated"]
+    },
+    "spy_knife": {
+      "displayName": "Spy Knife",
+      "killVerbs": ["stabbed", "slashed", "eliminated"]
+    },
+    "hitscan": {
+      "displayName": "Blaster",
+      "killVerbs": ["killed", "shot", "eliminated"]
+    }
+  },
+  "scoreGainAnimation": {
+    "enabled": true,
+    "text": "+1",
+    "lifetimeTicks": 30,
+    "startAlpha": 1.0,
+    "endAlpha": 0.0,
+    "startOffsetX": 0,
+    "startOffsetY": 0,
+    "endOffsetX": 0,
+    "endOffsetY": 18,
+    "startScale": 1.0,
+    "endScale": 1.0,
+    "color": [0.0, 1.0, 0.0, 1.0]
+  }
+}

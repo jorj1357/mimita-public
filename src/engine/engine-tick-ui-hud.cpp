@@ -20,6 +20,8 @@
 #include "gui/gui-element-render.h"
 #include "gui/hud/player-nameplates.h"
 #include "gui/hud/chat-bubble.h"
+#include "gui/hud/match-leaderboard.h"
+#include "gui/hud/match-timer.h"
 #include "gui/gui-editor.h"
 #include "ui/hitmarker.h"
 #include "crosshair/crosshair-render.h"
@@ -71,4 +73,15 @@ void engineTickUIHUD(Engine& engine, float dt)
 
     kf.update(dt);
     kf.render();
+
+    // Online match HUD: leaderboard + timer
+    MatchLeaderboard::instance().update(dt);
+    MatchLeaderboard::instance().render();
+    MatchTimer::instance().update(dt);
+    if (MatchTimer::instance().isActive()) {
+        std::string timer = MatchTimer::instance().formatElapsed();
+        float timerW = uiMeasureText(timer.c_str(), 0.40f);
+        uiDrawText(timer.c_str(), uiScreenW() * 0.5f - timerW * 0.5f, 18.0f, 0.40f,
+                  {1.0f, 1.0f, 1.0f, 1.0f});
+    }
 }

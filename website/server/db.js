@@ -625,6 +625,78 @@ const MIGRATION_STATEMENTS = [
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`,
     `CREATE INDEX IF NOT EXISTS admin_actions_created_idx ON admin_actions(created_at DESC)`,
+
+    // ── Plan 2: Persistent Progression, XP, Gold, PvP History ───────────
+
+    // Extend game_stats with progression columns
+    `ALTER TABLE game_stats ADD COLUMN IF NOT EXISTS total_xp BIGINT NOT NULL DEFAULT 0`,
+    `ALTER TABLE game_stats ADD COLUMN IF NOT EXISTS gold BIGINT NOT NULL DEFAULT 0`,
+    `ALTER TABLE game_stats ADD COLUMN IF NOT EXISTS lifetime_player_kills INT NOT NULL DEFAULT 0`,
+    `ALTER TABLE game_stats ADD COLUMN IF NOT EXISTS lifetime_npc_kills INT NOT NULL DEFAULT 0`,
+    `ALTER TABLE game_stats ADD COLUMN IF NOT EXISTS lifetime_deaths INT NOT NULL DEFAULT 0`,
+    `ALTER TABLE game_stats ADD COLUMN IF NOT EXISTS draws INT NOT NULL DEFAULT 0`,
+    `ALTER TABLE game_stats ADD COLUMN IF NOT EXISTS matches_played INT NOT NULL DEFAULT 0`,
+    `ALTER TABLE game_stats ADD COLUMN IF NOT EXISTS matches_won INT NOT NULL DEFAULT 0`,
+    `ALTER TABLE game_stats ADD COLUMN IF NOT EXISTS matches_lost INT NOT NULL DEFAULT 0`,
+    `ALTER TABLE game_stats ADD COLUMN IF NOT EXISTS matches_drawn INT NOT NULL DEFAULT 0`,
+    `ALTER TABLE game_stats ADD COLUMN IF NOT EXISTS ffa_matches_played INT NOT NULL DEFAULT 0`,
+    `ALTER TABLE game_stats ADD COLUMN IF NOT EXISTS ffa_wins INT NOT NULL DEFAULT 0`,
+    `ALTER TABLE game_stats ADD COLUMN IF NOT EXISTS tdm_matches_played INT NOT NULL DEFAULT 0`,
+    `ALTER TABLE game_stats ADD COLUMN IF NOT EXISTS tdm_wins INT NOT NULL DEFAULT 0`,
+
+    // Processed events (idempotency dedup table)
+    `CREATE TABLE IF NOT EXISTS processed_events (
+        event_id TEXT PRIMARY KEY,
+        event_type TEXT NOT NULL,
+        processed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        result JSONB NOT NULL DEFAULT '{}'
+    )`,
+
+    // PvP kill relationships (who killed whom, how many times)
+    `CREATE TABLE IF NOT EXISTS player_kill_relationships (
+        id BIGSERIAL PRIMARY KEY,
+        attacker_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        victim_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kill_count INT NOT NULL DEFAULT 0,
+        first_kill_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_kill_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(attacker_id, victim_id)
+    )`,
+    `CREATE INDEX IF NOT EXISTS pkr_attacker_idx ON player_kill_relationships(attacker_id, kill_count DESC)`,
+    `CREATE INDEX IF NOT EXISTS pkr_victim_idx ON player_kill_relationships(victim_id, kill_count DESC)`,
+
+    // Raw kill event history
+    `CREATE TABLE IF NOT EXISTS kill_events (
+        id BIGSERIAL PRIMARY KEY,
+        event_id TEXT NOT NULL UNIQUE,
+        match_id TEXT,
+        server_tick INT NOT NULL DEFAULT 0,
+        attacker_type TEXT NOT NULL DEFAULT 'player',
+        attacker_id BIGINT NOT NULL DEFAULT 0,
+        victim_type TEXT NOT NULL DEFAULT 'player',
+        victim_id BIGINT NOT NULL DEFAULT 0,
+        weapon_id TEXT NOT NULL DEFAULT '',
+        distance_meters REAL NOT NULL DEFAULT 0.0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE INDEX IF NOT EXISTS kill_events_attacker_idx ON kill_events(attacker_id, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS kill_events_victim_idx ON kill_events(victim_id, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS kill_events_match_idx ON kill_events(match_id)`,
+
+    // Per-player weapon kill stats
+    `CREATE TABLE IF NOT EXISTS player_weapon_stats (
+        id BIGSERIAL PRIMARY KEY,
+        player_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        weapon_id TEXT NOT NULL DEFAULT '',
+        kills INT NOT NULL DEFAULT 0,
+        UNIQUE(player_id, weapon_id)
+    )`,
+    `CREATE INDEX IF NOT EXISTS pws_player_idx ON player_weapon_stats(player_id, kills DESC)`,
+
+    // Extend match_history with victory type and team scores
+    `ALTER TABLE match_history ADD COLUMN IF NOT EXISTS victory_type TEXT NOT NULL DEFAULT 'unknown'`,
+    `ALTER TABLE match_history ADD COLUMN IF NOT EXISTS red_score INT NOT NULL DEFAULT 0`,
+    `ALTER TABLE match_history ADD COLUMN IF NOT EXISTS blue_score INT NOT NULL DEFAULT 0`,
 ]
 
 export async function runMigrations() {

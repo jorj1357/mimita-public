@@ -121,6 +121,9 @@ bool uploadAvatarData(const std::string& sessionToken, const json& avatarData);
 GameStats getStats(const std::string& sessionToken);
 bool submitMatchResult(const std::string& sessionToken, const json& matchData);
 
+// Persistence (server-authoritative kill/match event batching)
+bool submitPersistenceBatch(const std::string& sessionToken, const std::string& bodyJson);
+
 // Leaderboard
 std::vector<LeaderboardEntry> getLeaderboard(const std::string& type, int limit = 50);
 

@@ -18,6 +18,7 @@
 #include "combat/pellet-pattern.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-fire.h"
+#include "persistence/persistence-emit.h"
 #include "combat/weapon-execution.h"
 #include "physics/movement/physics-collision.h"
 #include "debug/debug-log.h"
@@ -334,6 +335,9 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
                     players, target, shooter.id, shot->damage,
                     glm::vec3(shot->knockX, shot->knockY, shot->knockZ),
                     ServerDamageSource::Hitscan);
+                if (damage.killed)
+                    emitPvPKillPersistenceEvent(players, shooter.id, target.id,
+                        shot->weapon, tick, shooter.pos, target.pos);
                 queueServerDamageConfirmedEvent(
                     sock, players, tick, totalPacketsOut, shooter.id, target,
                     shot->damage, damage, position, normalizedNormal,
@@ -613,6 +617,10 @@ void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* 
         {
             const ServerPlayer& target = entry.second;
             if (target.id == shooter.id || target.dead) continue;
+            // Team-based friendly fire filtering: skip friendly players
+            if (shooter.matchTeam >= 0 && target.matchTeam >= 0 &&
+                shooter.matchTeam == target.matchTeam)
+                continue;
 
             glm::vec3 mn(
                 target.pos.x - kPlayerRadius,
@@ -746,6 +754,9 @@ void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* 
         ServerDamageResult dmg = applyServerDamage(
             players, players[targets[t].id], shooter.id,
             damage, knockback, ServerDamageSource::Hitscan);
+        if (dmg.killed)
+            emitPvPKillPersistenceEvent(players, shooter.id, targets[t].id,
+                request->weapon, tick, shooter.pos, players[targets[t].id].pos);
         queueServerDamageConfirmedEvent(
             sock, players, tick, totalPacketsOut, shooter.id, players[targets[t].id],
             damage, dmg, players[targets[t].id].pos + glm::vec3(0.0f, 0.0f, 0.8f),
@@ -954,6 +965,10 @@ void handleGodballHitClaim(SOCKET sock,
         players, target, pkt->attackerId, (int)std::round(clampedDamage),
         knockback, ServerDamageSource::PhysicalContact);
 
+    if (result.killed)
+        emitPvPKillPersistenceEvent(players, pkt->attackerId, target.id,
+            NETWORK_WEAPON_GODBALL, tick, attacker.pos, target.pos);
+
     if (result.applied) {
         queueServerDamageConfirmedEvent(
             sock, players, tick, totalPacketsOut,
@@ -1061,6 +1076,9 @@ void handleSpyKnifeHitClaim(SOCKET sock,
                 attacker2->second.kills += 1;
                 attacker2->second.health = serverMaxHp();
             }
+            emitNpcKillPersistenceEvent(players, pkt->attackerId,
+                npc.entityId, NETWORK_WEAPON_SPYKNIFE, tick,
+                attacker.pos, npc.pos);
         }
         return;
     }
@@ -1090,6 +1108,10 @@ void handleSpyKnifeHitClaim(SOCKET sock,
     ServerDamageResult result = applyServerDamage(
         players, target, pkt->attackerId, damage, knockback,
         ServerDamageSource::PhysicalContact);
+
+    if (result.killed)
+        emitPvPKillPersistenceEvent(players, pkt->attackerId, target.id,
+            NETWORK_WEAPON_SPYKNIFE, tick, attacker.pos, target.pos);
 
     if (result.applied) {
         queueServerDamageConfirmedEvent(

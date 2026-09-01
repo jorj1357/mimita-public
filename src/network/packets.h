@@ -950,12 +950,16 @@ static_assert(sizeof(PlayerConnectionStatePacket) == 32,
 // Broadcast by the server during a --duel match. Carries phase, per-team
 // score, the goal, the countdown/rematch timers, and team names. Clients
 // derive "my score" by comparing their assigned player id to playerAId.
+// Also supports FFA and TDM match modes with multi-player scoring.
 enum DuelStatePhase : uint8_t
 {
     DUEL_PHASE_WAITING = 0,
     DUEL_PHASE_COUNTDOWN = 1,
     DUEL_PHASE_ACTIVE = 2,
-    DUEL_PHASE_MATCH_END = 3
+    DUEL_PHASE_MATCH_END = 3,
+    DUEL_PHASE_INTERMISSION = 4,
+    DUEL_PHASE_PRE_MATCH = 5,
+    DUEL_PHASE_RESULTS = 6
 };
 
 struct DuelStatePacket
@@ -994,6 +998,26 @@ struct DuelStatePacket
     float playerBSpawnX = 0.0f;
     float playerBSpawnY = 0.0f;
     float playerBSpawnZ = 0.0f;
+
+    // ── FFA/TDM extension fields ───────────────────────────────────
+    char matchMode[16] = {};           // "duel", "ffa", "tdm"
+    uint32_t matchStartTick = 0;       // authoritative tick when match started
+    uint32_t serverTick = 0;           // current server tick for sync
+    int32_t victoryType = 0;           // 0=ScoreLimit, 1=TimeLimit
+    int32_t redTeamKills = 0;          // TDM red team score
+    int32_t blueTeamKills = 0;         // TDM blue team score
+    int32_t timeLimitSeconds = 0;      // match time limit
+    int32_t intermissionSeconds = 0;   // intermission duration
+    int32_t resultsSeconds = 0;        // results display duration
+    // FFA top-3 leaderboard (for HUD rendering)
+    uint32_t ffaLeaderIds[3] = {};
+    int32_t ffaLeaderScores[3] = {};
+    char ffaLeaderNames[3][64] = {};
+    // All participant IDs and teams (for pre-match screen)
+    uint32_t participantIds[32] = {};
+    uint8_t participantCount = 0;
+    uint8_t participantTeams[32] = {};  // 0=red, 1=blue, 0xFF=none
+    uint8_t reserved2[3] = {};
 };
 
 // Server → a player: their opponent just respawned here. Used to draw a

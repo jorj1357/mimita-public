@@ -1,8 +1,9 @@
-// 08 10 2026, 14 34
+// 09 01 2026, 00 00
 /* purpose
 * Declares the authoritative PvP duel state and tick entry points for the server.
 * Runs a first-to-goal duel between two connected players: waiting, countdown,
 * active scoring, match end, and the post-match rematch window.
+* Also supports FFA and TDM match modes with multi-player scoring.
 * Does NOT simulate players, apply damage, or render anything.
 * Does NOT own the client queue/matchmaking or the coordinator protocol.
 * Does NOT create team spawns - it reads them from the loaded headless world.
@@ -86,6 +87,42 @@ struct ServerDuelState
     uint32_t respawnSequence = 0;
     uint32_t stateVersion = 0;
     uint32_t spawnAnchorIndex = 0;
+
+    // ── FFA/TDM match mode fields ──────────────────────────────────
+    // Match mode: "duel", "ffa", "tdm"
+    std::string matchMode = "duel";
+
+    // Authoritative tick references for countdown/start/end
+    uint32_t countdownStartTick = 0;
+    uint32_t matchStartTick = 0;
+    uint32_t matchTimeLimitTick = 0;  // matchStartTick + timeLimitTicks
+
+    // Intermission/results phase timers
+    float phaseTimer = 0.0f;
+    float intermissionSeconds = 15.0f;
+    float resultsSeconds = 8.0f;
+    int timeLimitSeconds = 300;
+
+    // FFA scoring: per-player kills/deaths
+    std::unordered_map<uint32_t, int> ffaKills;
+    std::unordered_map<uint32_t, int> ffaDeaths;
+
+    // TDM scoring
+    int redTeamKills = 0;
+    int blueTeamKills = 0;
+
+    // Team assignments (persistent per match, 0=red, 1=blue)
+    std::unordered_map<uint32_t, int> matchTeams;
+
+    // All participating player IDs (FFA/TDM can have >2 players)
+    std::vector<uint32_t> participants;
+
+    // Victory info
+    int victoryType = 0;  // 0=ScoreLimit, 1=TimeLimit
+    int winnerTeam = -1;  // for TDM: 0=red, 1=blue
+
+    // Match event counter for KillEvent IDs
+    uint32_t killEventCounter = 0;
 };
 
 // Singleton duel state for the current server process.

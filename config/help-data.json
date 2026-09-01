@@ -1,0 +1,116 @@
+{
+  "controls": [
+    {
+      "id": "mouse_lock",
+      "name": "Mouse lock/unlock",
+      "keybindAction": "toggleMouseLock",
+      "quick": true,
+      "category": "System",
+      "description": "Switch between captured and free mouse movement."
+    },
+    {
+      "id": "save_replay",
+      "name": "Save last 15 sec replay",
+      "keybindAction": "saveReplay",
+      "quick": true,
+      "category": "Replay",
+      "description": "Save the previous 15 seconds of gameplay."
+    },
+    {
+      "id": "open_replay",
+      "name": "Open latest replay",
+      "keybindAction": "openReplay",
+      "quick": true,
+      "category": "Replay",
+      "description": "Open the most recently saved replay."
+    },
+    {
+      "id": "invite",
+      "name": "Invite friend",
+      "keybindAction": "invite",
+      "quick": true,
+      "category": "Social",
+      "description": "Copy an invite link to clipboard."
+    },
+    {
+      "id": "move_forward",
+      "name": "Move forward",
+      "keybindAction": "moveForward",
+      "quick": false,
+      "category": "Movement",
+      "description": "Move your character forward."
+    },
+    {
+      "id": "move_back",
+      "name": "Move backward",
+      "keybindAction": "moveBack",
+      "quick": false,
+      "category": "Movement",
+      "description": "Move your character backward."
+    },
+    {
+      "id": "move_left",
+      "name": "Move left",
+      "keybindAction": "moveLeft",
+      "quick": false,
+      "category": "Movement",
+      "description": "Strafe left."
+    },
+    {
+      "id": "move_right",
+      "name": "Move right",
+      "keybindAction": "moveRight",
+      "quick": false,
+      "category": "Movement",
+      "description": "Strafe right."
+    },
+    {
+      "id": "jump",
+      "name": "Jump",
+      "keybindAction": "jump",
+      "quick": false,
+      "category": "Movement",
+      "description": "Jump or autojump."
+    },
+    {
+      "id": "dash",
+      "name": "Dash",
+      "keybindAction": "dash",
+      "quick": false,
+      "category": "Movement",
+      "description": "Quick dash in your movement direction."
+    },
+    {
+      "id": "down_dash",
+      "name": "Down dash",
+      "keybindAction": "downDash",
+      "quick": false,
+      "category": "Movement",
+      "description": "Dash downward."
+    },
+    {
+      "id": "freeze",
+      "name": "Freeze",
+      "keybindAction": "freeze",
+      "quick": false,
+      "category": "Movement",
+      "description": "Freeze in place."
+    },
+    {
+      "id": "chat",
+      "name": "Open chat",
+      "keybindAction": "chat",
+      "quick": false,
+      "category": "Chat",
+      "description": "Open the chat input."
+    },
+    {
+      "id": "console",
+      "name": "Open console",
+      "keybindAction": "console",
+      "quick": false,
+      "category": "System",
+      "description": "Open the developer console."
+    }
+  ]
+}

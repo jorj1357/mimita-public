@@ -1,9 +1,10 @@
-// 08 10 2026, 14 34
+// 09 01 2026, 00 00
 /* purpose
 * Implements the authoritative PvP duel state machine on the server.
 * Waits for two players, runs a single countdown, scores first-to-goal,
 * instant-respawns victims at their team spawn, and auto-rematches after the
 * post-match window while both players are still connected.
+* Also supports FFA and TDM match modes with multi-player scoring.
 * Does NOT apply damage, simulate movement, or render anything.
 * Does NOT touch the client queue/matchmaking or coordinator protocol.
 * Does NOT alter normal (non-duel) server behavior.
@@ -20,6 +21,8 @@
 #include "npc/npc.h"
 #include "debug/debug-log.h"
 #include "network/community-server-config.h"
+#include "persistence/persistence-queue.h"
+#include "persistence/persistence-events.h"
 
 namespace MimitaNet {
 
@@ -66,7 +69,7 @@ void serverDuelStart(const ServerDuelState& rules)
     d.stateVersion = 0;
     d.spawnAnchorIndex = 0;
     d.usedMaps.clear();
-    d.usedMaps.insert(rules.mapId); // avoid immediately re-picking the launch map
+    d.usedMaps.insert(rules.mapId);
     d.hasPendingManualMap = false;
     d.pendingManualMap.clear();
     d.autoMapRotation = false;
@@ -74,11 +77,31 @@ void serverDuelStart(const ServerDuelState& rules)
     d.nextMapRotationMs = 0;
     d.mapChangeCountdownStartMs = 0;
     d.pendingAutomaticMap.clear();
+
+    // ── FFA/TDM fields ─────────────────────────────────────────────
+    d.matchMode = rules.matchMode;
+    d.countdownStartTick = 0;
+    d.matchStartTick = 0;
+    d.matchTimeLimitTick = 0;
+    d.phaseTimer = 0.0f;
+    d.intermissionSeconds = rules.intermissionSeconds;
+    d.resultsSeconds = rules.resultsSeconds;
+    d.timeLimitSeconds = rules.timeLimitSeconds;
+    d.ffaKills.clear();
+    d.ffaDeaths.clear();
+    d.redTeamKills = 0;
+    d.blueTeamKills = 0;
+    d.matchTeams.clear();
+    d.participants.clear();
+    d.victoryType = 0;
+    d.winnerTeam = -1;
+    d.killEventCounter = 0;
+
     Debug::warn(Debug::Category::Duel,
-        "[DUEL SERVER] enabled goal=%d countdown=%.1fs rematch=%.1fs teams=%s/%s rotate=%d pool=%zu offset=%.1f\n",
-        d.goalValue, d.countdownSeconds, d.rematchSeconds,
+        "[DUEL SERVER] enabled mode=%s goal=%d countdown=%.1fs rematch=%.1fs teams=%s/%s rotate=%d pool=%zu offset=%.1f timeLimit=%d intermission=%d results=%d\n",
+        d.matchMode.c_str(), d.goalValue, d.countdownSeconds, d.rematchSeconds,
         d.teamAName.c_str(), d.teamBName.c_str(), (int)d.rotateMaps, d.mapPool.size(),
-        d.spawnOffsetRadius);
+        d.spawnOffsetRadius, d.timeLimitSeconds, (int)d.intermissionSeconds, (int)d.resultsSeconds);
 }
 
 void serverCommunityMapStart(const std::vector<std::string>& mapPool,
@@ -199,6 +222,42 @@ void broadcastDuelState(SOCKET sock,
     std::strncpy(pkt.teamAName, d.teamAName.c_str(), sizeof(pkt.teamAName) - 1);
     std::strncpy(pkt.teamBName, d.teamBName.c_str(), sizeof(pkt.teamBName) - 1);
 
+    // ── FFA/TDM extension fields ───────────────────────────────────
+    std::strncpy(pkt.matchMode, d.matchMode.c_str(), sizeof(pkt.matchMode) - 1);
+    pkt.matchStartTick = d.matchStartTick;
+    pkt.serverTick = 0;  // will be set by caller if needed
+    pkt.victoryType = d.victoryType;
+    pkt.redTeamKills = d.redTeamKills;
+    pkt.blueTeamKills = d.blueTeamKills;
+    pkt.timeLimitSeconds = d.timeLimitSeconds;
+    pkt.intermissionSeconds = (int32_t)d.intermissionSeconds;
+    pkt.resultsSeconds = (int32_t)d.resultsSeconds;
+
+    // FFA top-3 leaderboard
+    if (d.matchMode == "ffa") {
+        // Sort players by kills descending
+        std::vector<std::pair<uint32_t, int>> sorted;
+        for (const auto& kv : d.ffaKills)
+            sorted.push_back({kv.first, kv.second});
+        std::sort(sorted.begin(), sorted.end(),
+            [](const auto& a, const auto& b) { return a.second > b.second; });
+        for (int i = 0; i < 3 && i < (int)sorted.size(); ++i) {
+            pkt.ffaLeaderIds[i] = sorted[i].first;
+            pkt.ffaLeaderScores[i] = sorted[i].second;
+            auto nameIt = players.find(sorted[i].first);
+            if (nameIt != players.end())
+                std::strncpy(pkt.ffaLeaderNames[i], nameIt->second.name.c_str(), sizeof(pkt.ffaLeaderNames[i]) - 1);
+        }
+    }
+
+    // Participant IDs and teams
+    pkt.participantCount = (uint8_t)std::min((size_t)32, d.participants.size());
+    for (uint8_t i = 0; i < pkt.participantCount; ++i) {
+        pkt.participantIds[i] = d.participants[i];
+        auto teamIt = d.matchTeams.find(d.participants[i]);
+        pkt.participantTeams[i] = teamIt != d.matchTeams.end() ? (uint8_t)teamIt->second : 0xFF;
+    }
+
     for (const auto& kv : players) {
         if (kv.second.spawnState != ServerPlayer::Active)
             continue;
@@ -208,9 +267,9 @@ void broadcastDuelState(SOCKET sock,
             reliableGameplayEventSessionForPlayer(const_cast<ServerPlayer&>(kv.second)), totalPacketsOut);
         const bool sent = result == ReliableGameplayEventQueueResult::Queued;
         Debug::log(Debug::Category::Duel,
-            "[ServerDuel] sent duel state duelId=%u version=%u phase=%u map=%s player=%u sent=%d score=%d-%d\n",
-            d.duelId, d.stateVersion, (unsigned)d.phase, d.mapId.c_str(),
-            kv.second.id, (int)sent, d.scoreA, d.scoreB);
+            "[ServerDuel] sent duel state duelId=%u version=%u phase=%u mode=%s map=%s player=%u sent=%d score=%d-%d red=%d blue=%d\n",
+            d.duelId, d.stateVersion, (unsigned)d.phase, d.matchMode.c_str(), d.mapId.c_str(),
+            kv.second.id, (int)sent, d.scoreA, d.scoreB, d.redTeamKills, d.blueTeamKills);
     }
 }
 
@@ -496,6 +555,227 @@ bool rotateToNextDuelMap(SOCKET sock,
     return false; // nothing valid — keep the current map
 }
 
+// ── FFA/TDM match helpers ───────────────────────────────────────────────
+
+void assignMatchParticipants(ServerDuelState& d,
+                             const std::unordered_map<uint32_t, ServerPlayer>& players)
+{
+    d.participants.clear();
+    d.ffaKills.clear();
+    d.ffaDeaths.clear();
+    d.matchTeams.clear();
+    d.redTeamKills = 0;
+    d.blueTeamKills = 0;
+
+    for (const auto& kv : players) {
+        if (kv.second.spawnState == ServerPlayer::Active) {
+            d.participants.push_back(kv.first);
+            d.ffaKills[kv.first] = 0;
+            d.ffaDeaths[kv.first] = 0;
+        }
+    }
+
+    // Sort by ID for deterministic team assignment
+    std::sort(d.participants.begin(), d.participants.end());
+
+    if (d.matchMode == "tdm") {
+        for (size_t i = 0; i < d.participants.size(); ++i) {
+            d.matchTeams[d.participants[i]] = (int)(i % 2);
+        }
+        Debug::log(Debug::Category::Duel,
+            "[FFA/TDM] Assigned %zu players to teams (red=%d blue=%d)\n",
+            d.participants.size(), d.redTeamKills, d.blueTeamKills);
+    }
+}
+
+void teleportAllParticipantsToSpawns(ServerDuelState& d,
+                                     std::unordered_map<uint32_t, ServerPlayer>& players)
+{
+    for (uint32_t pid : d.participants) {
+        auto it = players.find(pid);
+        if (it == players.end()) continue;
+        ServerPlayer& p = it->second;
+        const glm::vec3 spawn = duelSpawnPoint(d);
+        p.duelSpawnPos = spawn;
+        p.hasDuelSpawnPos = true;
+        p.respawnSeconds = 0.0f;
+        if (!p.dead) {
+            beginAuthoritativeTransform(p, spawn, glm::vec3(0.0f), p.yaw, "match-spawn");
+            p.justRespawned = true;
+        }
+        Debug::log(Debug::Category::Duel,
+            "[MatchSpawn] player=%u spawn=(%.3f,%.3f,%.3f)\n",
+            pid, spawn.x, spawn.y, spawn.z);
+    }
+}
+
+void respawnAllParticipants(ServerDuelState& d,
+                            std::unordered_map<uint32_t, ServerPlayer>& players)
+{
+    for (uint32_t pid : d.participants) {
+        auto it = players.find(pid);
+        if (it == players.end()) continue;
+        ServerPlayer& p = it->second;
+        p.duelSpawnPos = duelSpawnPoint(d);
+        p.hasDuelSpawnPos = true;
+        p.respawnSeconds = 0.0f;
+    }
+}
+
+void resetMatchScores(ServerDuelState& d)
+{
+    d.scoreA = 0;
+    d.scoreB = 0;
+    d.redTeamKills = 0;
+    d.blueTeamKills = 0;
+    d.ffaKills.clear();
+    d.ffaDeaths.clear();
+    for (uint32_t pid : d.participants) {
+        d.ffaKills[pid] = 0;
+        d.ffaDeaths[pid] = 0;
+    }
+}
+
+void beginMatchCountdown(ServerDuelState& d,
+                         std::unordered_map<uint32_t, ServerPlayer>& players,
+                         uint32_t currentTick)
+{
+    ++d.duelId;
+    ++d.respawnSequence;
+    ++d.stateVersion;
+    d.matchOver = false;
+    d.winnerPlayerId = 0;
+    d.winnerTeam = -1;
+    d.victoryType = 0;
+    d.countdownStartTick = currentTick;
+    d.matchStartTick = currentTick + (uint32_t)(d.countdownSeconds * 60.0f);
+    if (d.timeLimitSeconds > 0)
+        d.matchTimeLimitTick = d.matchStartTick + (uint32_t)(d.timeLimitSeconds * 60.0f);
+    else
+        d.matchTimeLimitTick = 0;
+    resetMatchScores(d);
+    d.phase = DUEL_PHASE_COUNTDOWN;
+    teleportAllParticipantsToSpawns(d, players);
+    Debug::log(Debug::Category::Duel,
+        "[ServerMatch] countdown started mode=%s duelId=%u matchStartTick=%u timeLimitTick=%u participants=%zu\n",
+        d.matchMode.c_str(), d.duelId, d.matchStartTick, d.matchTimeLimitTick, d.participants.size());
+}
+
+static void emitDuelMatchPersistence(ServerDuelState& d, uint32_t tick,
+                                      const std::unordered_map<uint32_t, ServerPlayer>& players)
+{
+    PersistenceMatchEvent event;
+    event.eventId = "match_" + std::to_string(tick) + "_" + std::to_string(d.duelId);
+    event.matchId = "match_" + std::to_string(d.duelId);
+    event.mode = d.matchMode;
+    event.victoryType = d.victoryType == 0 ? "score_limit" : "time_limit";
+    event.redScore = d.redTeamKills;
+    event.blueScore = d.blueTeamKills;
+    event.winnerTeam = d.winnerTeam == 0 ? "red" : "blue";
+    event.winnerPlayerId = (int64_t)d.winnerPlayerId;
+
+    for (auto& kv : players) {
+        if (kv.second.spawnState != ServerPlayer::Active) continue;
+        PersistenceMatchParticipant p;
+        p.userId = kv.second.vipAccountId > 0 ? (int64_t)kv.second.vipAccountId : 0;
+        p.username = kv.second.name;
+        auto teamIt = d.matchTeams.find(kv.first);
+        p.team = (teamIt != d.matchTeams.end() && teamIt->second == 0) ? "red" : "blue";
+        p.kills = kv.second.kills;
+        p.deaths = kv.second.deaths;
+
+        if (d.matchMode == "free_for_all") {
+            auto killIt = d.ffaKills.find(kv.first);
+            p.kills = killIt != d.ffaKills.end() ? killIt->second : 0;
+            auto deathIt = d.ffaDeaths.find(kv.first);
+            p.deaths = deathIt != d.ffaDeaths.end() ? deathIt->second : 0;
+            p.won = (kv.first == d.winnerPlayerId);
+        } else if (d.matchMode == "team_deathmatch") {
+            auto killIt = d.ffaKills.find(kv.first);
+            p.kills = killIt != d.ffaKills.end() ? killIt->second : 0;
+            auto deathIt = d.ffaDeaths.find(kv.first);
+            p.deaths = deathIt != d.ffaDeaths.end() ? deathIt->second : 0;
+            p.won = (p.team == event.winnerTeam);
+        } else {
+            p.won = (kv.first == d.winnerPlayerId);
+        }
+        event.participants.push_back(std::move(p));
+    }
+
+    PersistenceQueue::instance().enqueueMatchResult(event);
+    Debug::warn(Debug::Category::Duel,
+        "[PERSISTENCE] Match result emitted: mode=%s winner=%s participants=%zu\n",
+        event.mode.c_str(),
+        event.winnerTeam.empty() ? std::to_string(d.winnerPlayerId).c_str() : event.winnerTeam.c_str(),
+        event.participants.size());
+}
+
+void checkMatchWinConditions(ServerDuelState& d, uint32_t tick,
+                             SOCKET sock,
+                             std::unordered_map<uint32_t, ServerPlayer>& players,
+                             uint64_t& totalPacketsOut)
+{
+    if (d.matchMode == "ffa") {
+        for (const auto& kv : d.ffaKills) {
+            if (kv.second >= d.goalValue) {
+                d.matchOver = true;
+                d.phase = DUEL_PHASE_RESULTS;
+                d.winnerPlayerId = kv.first;
+                d.victoryType = 0;  // ScoreLimit
+                d.phaseTimer = d.resultsSeconds;
+                ++d.stateVersion;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+                emitDuelMatchPersistence(d, tick, players);
+                Debug::warn(Debug::Category::Duel,
+                    "[DUEL SERVER] FFA match over winner=%u score=%d goal=%d\n",
+                    kv.first, kv.second, d.goalValue);
+                return;
+            }
+        }
+    } else if (d.matchMode == "tdm") {
+        if (d.redTeamKills >= d.goalValue || d.blueTeamKills >= d.goalValue) {
+            d.matchOver = true;
+            d.phase = DUEL_PHASE_RESULTS;
+            d.winnerTeam = d.redTeamKills >= d.blueTeamKills ? 0 : 1;
+            d.victoryType = 0;  // ScoreLimit
+            d.phaseTimer = d.resultsSeconds;
+            ++d.stateVersion;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            emitDuelMatchPersistence(d, tick, players);
+            Debug::warn(Debug::Category::Duel,
+                "[DUEL SERVER] TDM match over winnerTeam=%d red=%d blue=%d goal=%d\n",
+                d.winnerTeam, d.redTeamKills, d.blueTeamKills, d.goalValue);
+            return;
+        }
+    }
+
+    // Time limit check
+    if (d.matchTimeLimitTick > 0 && tick >= d.matchTimeLimitTick) {
+        d.matchOver = true;
+        d.phase = DUEL_PHASE_RESULTS;
+        d.victoryType = 1;  // TimeLimit
+        d.phaseTimer = d.resultsSeconds;
+        if (d.matchMode == "ffa") {
+            int best = -1;
+            for (const auto& kv : d.ffaKills) {
+                if (kv.second > best) {
+                    best = kv.second;
+                    d.winnerPlayerId = kv.first;
+                }
+            }
+            emitDuelMatchPersistence(d, tick, players);
+        } else if (d.matchMode == "tdm") {
+            d.winnerTeam = d.redTeamKills >= d.blueTeamKills ? 0 : 1;
+            emitDuelMatchPersistence(d, tick, players);
+        }
+        ++d.stateVersion;
+        broadcastDuelState(sock, d, players, totalPacketsOut);
+        Debug::warn(Debug::Category::Duel,
+            "[DUEL SERVER] Time limit reached mode=%s red=%d blue=%d\n",
+            d.matchMode.c_str(), d.redTeamKills, d.blueTeamKills);
+    }
+}
+
 } // namespace
 
 void serverDuelTick(SOCKET sock,
@@ -688,26 +968,171 @@ void serverDuelTick(SOCKET sock,
         // Score only counts during the active phase, and never for a suicide.
         if (d.phase == DUEL_PHASE_ACTIVE && !d.matchOver && killerId != victimId)
         {
-            if (killerId == d.playerAId)
-                ++d.scoreA;
-            else if (killerId == d.playerBId)
-                ++d.scoreB;
+            // Duel 1v1 scoring (original behavior)
+            if (d.matchMode == "duel") {
+                if (killerId == d.playerAId)
+                    ++d.scoreA;
+                else if (killerId == d.playerBId)
+                    ++d.scoreB;
 
-            if (d.scoreA >= d.goalValue || d.scoreB >= d.goalValue)
-            {
-                d.matchOver = true;
-                d.phase = DUEL_PHASE_MATCH_END;
-                d.winnerPlayerId = killerId;
-                d.rematchLeft = d.rematchSeconds;
-                Debug::warn(Debug::Category::Duel,
-                    "[DUEL SERVER] match over winner=%u score=%d-%d goal=%d\n",
-                    d.winnerPlayerId, d.scoreA, d.scoreB, d.goalValue);
+                if (d.scoreA >= d.goalValue || d.scoreB >= d.goalValue)
+                {
+                    d.matchOver = true;
+                    d.phase = DUEL_PHASE_MATCH_END;
+                    d.winnerPlayerId = killerId;
+                    d.rematchLeft = d.rematchSeconds;
+                    emitDuelMatchPersistence(d, tick, players);
+                    Debug::warn(Debug::Category::Duel,
+                        "[DUEL SERVER] match over winner=%u score=%d-%d goal=%d\n",
+                        d.winnerPlayerId, d.scoreA, d.scoreB, d.goalValue);
+                }
+            }
+            // FFA scoring
+            else if (d.matchMode == "ffa") {
+                ++d.ffaKills[killerId];
+                ++d.ffaDeaths[victimId];
+                // Win condition checked in checkMatchWinConditions
+            }
+            // TDM scoring
+            else if (d.matchMode == "tdm") {
+                ++d.ffaKills[killerId];
+                ++d.ffaDeaths[victimId];
+                auto teamIt = d.matchTeams.find(killerId);
+                if (teamIt != d.matchTeams.end()) {
+                    int victimTeam = -1;
+                    auto vtIt = d.matchTeams.find(victimId);
+                    if (vtIt != d.matchTeams.end()) victimTeam = vtIt->second;
+                    // Only score if killer and victim are on different teams
+                    if (victimTeam >= 0 && teamIt->second != victimTeam) {
+                        if (teamIt->second == 0) ++d.redTeamKills;
+                        else ++d.blueTeamKills;
+                    }
+                }
             }
         }
 
         broadcastDuelState(sock, d, players, totalPacketsOut);
     }
 
+    // ── FFA/TDM match mode state machine ────────────────────────────
+    if (d.matchMode == "ffa" || d.matchMode == "tdm")
+    {
+        switch (d.phase)
+        {
+        case DUEL_PHASE_WAITING:
+            if (countActivePlayers(players) >= 2)
+            {
+                // If the current map has no spawn points, rotate.
+                if (world.spawnPoints.empty())
+                    rotateToNextDuelMap(sock, d, players, world, npcWorld, totalPacketsOut);
+                // Drop practice NPCs.
+                npcs.clear();
+                npcSystem.destroyAll();
+                npcIdsAlive.clear();
+                assignDuelSpawns(d, world);
+                assignMatchParticipants(d, players);
+                d.phase = DUEL_PHASE_PRE_MATCH;
+                d.phaseTimer = 3.0f;
+                ++d.stateVersion;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+                Debug::warn(Debug::Category::Duel,
+                    "[FFA/TDM] Pre-match started mode=%s participants=%zu\n",
+                    d.matchMode.c_str(), d.participants.size());
+            }
+            break;
+
+        case DUEL_PHASE_PRE_MATCH:
+            d.phaseTimer -= SERVER_DT;
+            if (d.phaseTimer <= 0.0f)
+            {
+                beginMatchCountdown(d, players, tick);
+                ++d.stateVersion;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+            }
+            else if (tick - d.lastBroadcastTick >= 60)
+            {
+                d.lastBroadcastTick = tick;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+            }
+            break;
+
+        case DUEL_PHASE_COUNTDOWN:
+            if (tick >= d.matchStartTick)
+            {
+                d.phase = DUEL_PHASE_ACTIVE;
+                ++d.stateVersion;
+                respawnAllParticipants(d, players);
+                d.lastBroadcastTick = tick;
+                Debug::log(Debug::Category::Duel,
+                    "[FFA/TDM] Match ACTIVE mode=%s tick=%u matchStartTick=%u\n",
+                    d.matchMode.c_str(), tick, d.matchStartTick);
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+            }
+            // Do NOT broadcast every tick during countdown — clients interpolate locally.
+            break;
+
+        case DUEL_PHASE_ACTIVE:
+            // Check win conditions on every tick
+            checkMatchWinConditions(d, tick, sock, players, totalPacketsOut);
+            if (d.phase != DUEL_PHASE_ACTIVE) break;  // win condition triggered
+            // Periodic broadcast
+            if (tick - d.lastBroadcastTick >= 60)
+            {
+                d.lastBroadcastTick = tick;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+            }
+            break;
+
+        case DUEL_PHASE_RESULTS:
+            d.phaseTimer -= SERVER_DT;
+            if (d.phaseTimer <= 0.0f)
+            {
+                d.phase = DUEL_PHASE_INTERMISSION;
+                d.phaseTimer = d.intermissionSeconds;
+                ++d.stateVersion;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+                Debug::log(Debug::Category::Duel,
+                    "[FFA/TDM] Intermission started mode=%s duration=%.0f\n",
+                    d.matchMode.c_str(), d.intermissionSeconds);
+            }
+            else if (tick - d.lastBroadcastTick >= 60)
+            {
+                d.lastBroadcastTick = tick;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+            }
+            break;
+
+        case DUEL_PHASE_INTERMISSION:
+            d.phaseTimer -= SERVER_DT;
+            if (d.phaseTimer <= 0.0f)
+            {
+                // Rotate map if configured
+                if (d.rotateMaps && d.mapPool.size() > 1)
+                    rotateToNextDuelMap(sock, d, players, world, npcWorld, totalPacketsOut);
+                assignDuelSpawns(d, world);
+                assignMatchParticipants(d, players);
+                d.phase = DUEL_PHASE_PRE_MATCH;
+                d.phaseTimer = 3.0f;
+                ++d.stateVersion;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+                Debug::log(Debug::Category::Duel,
+                    "[FFA/TDM] Pre-match started mode=%s participants=%zu\n",
+                    d.matchMode.c_str(), d.participants.size());
+            }
+            else if (tick - d.lastBroadcastTick >= 60)
+            {
+                d.lastBroadcastTick = tick;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+            }
+            break;
+
+        default:
+            break;
+        }
+        return;
+    }
+
+    // ── Original duel 1v1 state machine ─────────────────────────────
     switch (d.phase)
     {
     case DUEL_PHASE_WAITING:
@@ -796,6 +1221,9 @@ void serverDuelTick(SOCKET sock,
             d.lastBroadcastTick = tick;
             broadcastDuelState(sock, d, players, totalPacketsOut);
         }
+        break;
+
+    default:
         break;
     }
 }

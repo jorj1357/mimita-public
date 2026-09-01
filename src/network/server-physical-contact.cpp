@@ -15,6 +15,7 @@
 #include "combat/weapon-registry.h"
 #include "debug/debug-log.h"
 #include "physics/movement/movement-step.h"
+#include "persistence/persistence-emit.h"
 
 #include <algorithm>
 #include <cmath>
@@ -436,6 +437,9 @@ static void applyPhysicalContactHit(SOCKET sock,
     ServerDamageResult result = applyServerDamage(
         players, target, attacker.id, damage, knockback,
         ServerDamageSource::PhysicalContact);
+    if (result.killed && attacker.id != target.id)
+        emitPvPKillPersistenceEvent(players, attacker.id, target.id,
+            def.id, tick, attacker.pos, target.pos);
     if (!result.applied)
         return;
 

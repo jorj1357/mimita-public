@@ -160,6 +160,9 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         next.spawnTracerSeconds = std::max(0.0f, optFloat(root, "spawn_tracer_seconds", next.spawnTracerSeconds));
         next.allowRematch = optBool(root, "allow_rematch", next.allowRematch);
         next.spawnOffsetRadius = std::max(0.0f, optFloat(root, "spawn_offset_radius", next.spawnOffsetRadius));
+        next.spawnStrategy = optString(root, "spawn_strategy", next.spawnStrategy);
+        next.intermissionSeconds = std::max(0, optInt(root, "intermission_seconds", next.intermissionSeconds));
+        next.resultsSeconds = std::max(0, optInt(root, "results_seconds", next.resultsSeconds));
         next.maps = optStringArray(root, "maps");
 
         slot.mode = next;

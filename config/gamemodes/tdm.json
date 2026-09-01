@@ -1,0 +1,17 @@
+{
+  "id": "tdm",
+  "name": "Team Deathmatch",
+  "description": "Red vs Blue. First team to 30 kills wins.",
+  "team_names": ["RED", "BLUE"],
+  "goal_value": 30,
+  "time_limit_seconds": 300,
+  "respawn_seconds": 0.01,
+  "kill_heals": true,
+  "countdown_seconds": 3,
+  "rematch_seconds": 5,
+  "spawn_offset_radius": 5.0,
+  "spawn_strategy": "shared",
+  "intermission_seconds": 15,
+  "results_seconds": 8,
+  "maps": ["mimita-duels-map-v3", "atdm", "funworld"]
+}

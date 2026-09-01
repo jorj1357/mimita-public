@@ -490,19 +490,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
     }
     MusicManager::instance().drawAllOverlay();
     NotificationSystem::instance().render(true);
-    // Gameplay mouse-lock indicator (right side). Red = locked, green = unlocked.
-    if ((!gReplayExportRenderMode || ReplayExportUI::showDevOverlay()) && GAME_STATE == GAME_PLAYING)
-    {
-        const bool lockOn = MouseLock::locked();
-        const char* lockText = lockOn
-            ? "MOUSE LOCKED - PRESS L TO UNLOCK"
-            : "MOUSE UNLOCKED - PRESS L TO LOCK";
-        const float lockScale = 0.30f;
-        const float lockW = uiMeasureText(lockText, lockScale);
-        uiDrawText(lockText, uiScreenW() - lockW - 20.0f, uiScaleY(300.0f), lockScale,
-                   lockOn ? glm::vec4(1.0f, 0.30f, 0.30f, 0.95f)
-                          : glm::vec4(0.30f, 1.0f, 0.40f, 0.95f));
-    }
+    // Mouse lock indicator removed — belongs in ESC/Help menu.
     if (gFramePacer.showFPS() && (!gReplayExportRenderMode || ReplayExportUI::showFps()))
     {
         const GuiElement* fpsEl = hudLayout.get("fpsText");
@@ -572,17 +560,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                 ? glm::vec4(0.6f, 1.0f, 0.6f, 1.0f)
                 : glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
             uiDrawText(buf, cx - codeW * 0.5f, 18.0f, codeScale, codeColor);
-            float instrScale = 0.32f;
-            const char* line1 = "Press ` to open console";
-            const char* line2 = isLocal
-                ? "Type goonline to make this server public"
-                : "Type roomcodeshow 0 to hide the code";
-            float line1W = uiMeasureText(line1, instrScale);
-            float line2W = uiMeasureText(line2, instrScale);
-            float instrY = 46.0f;
-            float lineGap = 16.0f;
-            uiDrawText(line1, cx - line1W * 0.5f, instrY, instrScale, {0.75f, 0.85f, 1.0f, 1.0f});
-            uiDrawText(line2, cx - line2W * 0.5f, instrY + lineGap, instrScale, {0.75f, 0.85f, 1.0f, 1.0f});
+            // Room code instruction lines removed — belongs in ESC/Help menu.
         }
     }
 

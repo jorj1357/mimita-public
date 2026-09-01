@@ -1,11 +1,11 @@
-// 08 22 2026, 12 00
+// 09 01 2026, 00 00
 /* purpose
-* Implements the in-game ESC modal with resume, settings, invite, leave, and recent duels.
+* Implements the in-game ESC modal with resume, settings, invite, leave, and quick controls.
 * Uses config/gui/pause-menu.json for every visual rectangle, label, color, and row cadence.
 * Keeps player input disabled while the modal or embedded settings screen is visible.
 * Does NOT draw the 3D world, own the settings controls, or duplicate duel queue behavior.
 * Does NOT disconnect until the player explicitly confirms Leave Room.
-* Does NOT require the active mode to be a duel before showing recent duels.
+* Does NOT require the active mode to be a duel before showing quick controls.
 */
 
 #include "gui/menus/pause-menu.h"
@@ -67,49 +67,35 @@ std::string lastSeenText(uint64_t unixMs)
     return "Last seen: " + std::to_string(seconds / 86400) + "d ago";
 }
 
-void drawRecentDuels(GLFWwindow* window, GuiLayout& layout)
+void drawQuickControls(GLFWwindow* window, GuiLayout& layout)
 {
     const GuiElement* panel = layout.get("recentPanel");
     const GuiElement* header = layout.get("recentHeader");
     const GuiElement* empty = layout.get("recentEmpty");
     const GuiElement* username = layout.get("recentUsername");
     const GuiElement* room = layout.get("recentRoom");
-    const GuiElement* seen = layout.get("recentLastSeen");
-    const GuiElement* rematch = layout.get("recentRematch");
-    const GuiElement* invite = layout.get("recentInvite");
-    if (!panel || !username || !room || !seen || !rematch || !invite) return;
+    if (!panel || !username || !room) return;
 
     drawGuiElement(window, *panel);
-    drawText(header, header ? header->text : "RECENT DUELS");
-    const auto& entries = DuelHistory::instance().entries();
-    if (entries.empty()) {
-        drawText(empty, empty ? empty->text : "NO RECENT DUELS");
-        return;
-    }
+    drawText(header, header ? header->text : "QUICK CONTROLS");
 
-    const int count = std::min(3, static_cast<int>(entries.size()));
+    // Draw keybind entries
+    struct QuickControl {
+        const char* name;
+        const char* key;
+    };
+    static const QuickControl controls[] = {
+        {"Mouse lock/unlock", "L"},
+        {"Save last 15 sec replay", "P"},
+        {"Open latest replay", "J"},
+        {"Invite friend", "I"},
+    };
+
+    const int count = (int)(sizeof(controls) / sizeof(controls[0]));
     for (int i = 0; i < count; ++i) {
-        const DuelHistoryEntry& entry = entries[i];
         const float offset = username->h * static_cast<float>(i);
-        drawText(username, entry.opponentName.empty() ? "Unknown player" : entry.opponentName, offset);
-        drawText(room, "Room: " + (entry.roomCode.empty() ? std::string("Unknown room") : entry.roomCode), offset);
-        drawText(seen, lastSeenText(entry.unixMs), offset);
-
-        GuiElement rematchButton = *rematch;
-        rematchButton.id += "-" + std::to_string(i);
-        const UIRect rematchRect = {rematch->x, rematch->y + offset, rematch->w, rematch->h};
-        if (drawGuiElement(window, rematchButton, nullptr, &rematchRect).clicked)
-            DuelQueue::instance().requestRematchWith(entry.opponentProfileId);
-
-        GuiElement inviteButton = *invite;
-        inviteButton.id += "-" + std::to_string(i);
-        const UIRect inviteRect = {invite->x, invite->y + offset, invite->w, invite->h};
-        if (drawGuiElement(window, inviteButton, nullptr, &inviteRect).clicked) {
-            const GuiElement* url = layout.get("inviteUrl");
-            const std::string value = url && !url->text.empty() ? url->text : "https://www.mimita.fun/download";
-            glfwSetClipboardString(window, value.c_str());
-            NotificationSystem::instance().push("Code copied!", "Code: " + value, 180, {});
-        }
+        drawText(username, controls[i].name, offset);
+        drawText(room, controls[i].key, offset);
     }
 }
 
@@ -214,7 +200,7 @@ void render(GLFWwindow* window)
         NotificationSystem::instance().push("Code copied!", "Code: " + value, 180, {});
     }
     if (const GuiElement* leave = layout.get("leaveButton"); leave && drawGuiElement(window, *leave).clicked) gView = View::ConfirmLeave;
-    drawRecentDuels(window, layout);
+    drawQuickControls(window, layout);
 }
 
 } // namespace PauseMenu

@@ -560,6 +560,20 @@ bool submitMatchResult(const std::string& sessionToken, const json& matchData)
     return false;
 }
 
+bool submitPersistenceBatch(const std::string& sessionToken, const std::string& bodyJson)
+{
+    std::string respBody;
+    int httpCode = 0;
+    bool ok = httpRequest("POST", "https://mimita.fun/api/stats/ingest",
+                          bodyJson, sessionToken, respBody, httpCode);
+    if (!ok || httpCode != 200) return false;
+    try {
+        json j = json::parse(respBody);
+        return j.value("success", false);
+    } catch (...) {}
+    return false;
+}
+
 std::vector<LeaderboardEntry> getLeaderboard(const std::string& type, int limit)
 {
     std::vector<LeaderboardEntry> result;

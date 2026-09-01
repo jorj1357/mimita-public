@@ -12,6 +12,7 @@
 #include "network/network-weapons.h"
 #include "debug/structured-log.h"
 #include "debug/debug-log.h"
+#include "persistence/persistence-emit.h"
 
 #include <algorithm>
 #include <chrono>
@@ -401,14 +402,16 @@ public:
                               uint32_t ownerPlayerId,
                               uint32_t ownerNpcId,
                               bool skipOwner,
-                              uint32_t targetTick = 0)
+                              uint32_t targetTick = 0,
+                              int ownerTeam = -1)
         : mWorld(world),
           mPlayers(players),
           mNpcs(npcs),
           mOwnerPlayerId(ownerPlayerId),
           mOwnerNpcId(ownerNpcId),
           mSkipOwner(skipOwner),
-          mTargetTick(targetTick)
+          mTargetTick(targetTick),
+          mOwnerTeam(ownerTeam)
     {
     }
 
@@ -452,6 +455,9 @@ public:
             if (player.dead)
                 continue;
             if (mSkipOwner && player.id == mOwnerPlayerId)
+                continue;
+            // Team-based friendly fire filtering: skip friendly players
+            if (mOwnerTeam >= 0 && player.matchTeam >= 0 && mOwnerTeam == player.matchTeam)
                 continue;
 
             SweptPlayerCapsule cap;
@@ -516,6 +522,7 @@ private:
     uint32_t mOwnerNpcId = 0;
     bool mSkipOwner = false;
     uint32_t mTargetTick = 0;
+    int mOwnerTeam = -1;  // -1 = no team, 0 = red, 1 = blue
 };
 
 ProjectilePhysicsState makePhysicsState(const ServerProjectile& projectile)
@@ -723,6 +730,14 @@ void explodeProjectile(SOCKET sock,
         ServerPlayer& victim = entry.second;
         if (victim.dead)
             continue;
+        // Team-based friendly fire filtering: skip friendly players in explosion splash
+        {
+            auto ownerIt = players.find(projectile.ownerPlayerId);
+            if (ownerIt != players.end() && ownerIt->second.matchTeam >= 0 &&
+                victim.matchTeam >= 0 && ownerIt->second.matchTeam == victim.matchTeam &&
+                victim.id != projectile.ownerPlayerId)
+                continue;
+        }
 
         glm::vec3 historicalPos = victim.pos;
         float historicalYaw = victim.yaw;
@@ -774,6 +789,9 @@ void explodeProjectile(SOCKET sock,
         ServerDamageResult damage = applyServerDamage(
             players, victim, projectile.ownerPlayerId, finalDamage,
             knockback, source);
+        if (damage.killed && projectile.ownerPlayerId != victim.id)
+            emitPvPKillPersistenceEvent(players, projectile.ownerPlayerId, victim.id,
+                projectile.weaponType, tick, position, victim.pos);
         if (damage.applied)
         {
             MovementLifecycleIdentity lifecycle{
@@ -1566,11 +1584,16 @@ void tickServerProjectiles(SOCKET sock,
                 const int previousBounceCount = projectile.bounceCount;
                 ProjectilePhysicsState state = makePhysicsState(projectile);
                 ProjectilePhysicsConfig config = makePhysicsConfig(projectile);
+                // Look up owner's team for friendly fire filtering
+                int ownerTeam = -1;
+                auto ownerIt = players.find(projectile.ownerPlayerId);
+                if (ownerIt != players.end())
+                    ownerTeam = ownerIt->second.matchTeam;
                 ServerProjectileWorldView physicsWorld(
                     world, players, npcs, projectile.ownerPlayerId,
                     projectile.ownerNpcId,
                     projectile.distanceTraveled < projectile.armingDistance,
-                    stepTick);
+                    stepTick, ownerTeam);
 
                 auto simStart = std::chrono::steady_clock::now();
                 ProjectileStepResult step =

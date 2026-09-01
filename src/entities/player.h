@@ -399,6 +399,7 @@ public:
     std::string lastDamagedBy;
     bool voidDeathTriggered = false;
     float sizeScale = 1.0f;  // player size multiplier
+    int matchTeam = -1;  // -1 = no team (FFA), 0 = red, 1 = blue
     uint32_t spawnGeneration = 0;
     uint16_t networkTransformEpoch = 0;
     uint64_t movementSimulationTick = 0;

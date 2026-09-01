@@ -21,6 +21,7 @@
 #include "config/networking-config.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "persistence/persistence-emit.h"
 
 #include <cmath>
 #include <vector>
@@ -797,6 +798,9 @@ void handleAttackRequest(
                         attacker->second.kills += 1;
                         attacker->second.health = serverMaxHp();
                     }
+                    emitNpcKillPersistenceEvent(players, shooter.id,
+                        npcTarget.entityId, netWeapon, tick,
+                        shooter.pos, npcTarget.pos);
                     // Do NOT erase: syncServerNpcDamageToNpc marks the real NPC
                     // dead and respawnServerNpc re-admits it after the delay.
                 }
@@ -815,6 +819,9 @@ void handleAttackRequest(
             ServerDamageResult dmgResult = applyServerDamage(
                 players, target, shooter.id, aggregate.damage,
                 aggregate.knockback, ServerDamageSource::Hitscan);
+            if (dmgResult.killed)
+                emitPvPKillPersistenceEvent(players, shooter.id, target.id,
+                    netWeapon, tick, shooter.pos, target.pos);
             queueServerDamageConfirmedEvent(
                 sock, players, tick, totalPacketsOut, shooter.id, target,
                 aggregate.damage, dmgResult,

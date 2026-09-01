@@ -1,8 +1,9 @@
-// 07 21 2026, 17 10
+// 09 01 2026, 00 00
 /* purpose
 * Owns authoritative server damage application and confirmed damage event packet creation.
 * Bridges server-owned knockback into shared movement external impulse state.
 * Keeps kill, death, health, and damage-confirmed replication decisions server-side.
+* Filters friendly fire in team-based modes (TDM) at the authoritative damage path.
 * Does NOT trust client health, ammo, score, damage, projectile hits, or knockback outcomes.
 * Does NOT simulate movement frames, poll sockets, or render damage presentation.
 * Does NOT let death leave active movement impulse state behind.
@@ -76,6 +77,24 @@ ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>&
                serverTimestamp(), target.id, attackerPlayerId,
                damageSourceName(source), damage, target.health);
         return result;
+    }
+
+    // Team-based friendly fire filtering: teammates cannot damage each other.
+    // Self-damage (attacker == target) is always allowed for rocket jumping.
+    if (attackerPlayerId != target.id && target.matchTeam >= 0)
+    {
+        auto attackerIt = players.find(attackerPlayerId);
+        if (attackerIt != players.end() && attackerIt->second.matchTeam >= 0)
+        {
+            if (attackerIt->second.matchTeam == target.matchTeam)
+            {
+                printf("%s [SERVER DAMAGE] target=%u attacker=%u source=%s accepted=0 "
+                       "reason=friendly-fire teams=%d damage=%d health=%d\n",
+                       serverTimestamp(), target.id, attackerPlayerId,
+                       damageSourceName(source), target.matchTeam, damage, target.health);
+                return result;
+            }
+        }
     }
 
     const int clampedDamage = std::clamp(damage, 1, 500);
