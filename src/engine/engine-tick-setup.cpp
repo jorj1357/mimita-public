@@ -17,6 +17,7 @@
 #include "config/collision-config.h"
 #include "map/map-loader-collision.h"
 #include "gui/hud/healthbar-config.h"
+#include "gui/hud/reward-popup.h"
 #include "effects/hit-effects.h"
 #include "effects/muzzle-flash-config.h"
 #include "render/dynamic-light-config.h"
@@ -133,6 +134,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
         if (CollisionLodConfig::instance().pollHotReload())
             redecimateCollision(THE_WORLD);
         CollisionConfig::instance().pollHotReload();
+        RewardPopupConfig::instance().pollReload();
     }
     }
 

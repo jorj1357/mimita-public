@@ -16,6 +16,7 @@ export default function ProfilePage() {
     const [busy, setBusy] = useState("")
     const [message, setMessage] = useState("")
     const [loading, setLoading] = useState(true)
+    const [gameStats, setGameStats] = useState(null)
 
     useEffect(() => {
         let alive = true
@@ -31,6 +32,12 @@ export default function ProfilePage() {
                 setConfig(cfg.config)
                 setStyle(normalizeStyle(vipMe.vip?.name_style))
                 setLoading(false)
+                // Fetch game stats
+                if (me.user?.id) {
+                    apiRequest(`/api/profile/${me.user.id}`)
+                        .then(data => { if (alive && data.profile) setGameStats(data.profile) })
+                        .catch(() => {})
+                }
             })
             .catch(() => {
                 if (alive) navigate("/signin")
@@ -175,9 +182,69 @@ export default function ProfilePage() {
                 <div className="profilePageGrid">
                     <div className="profilePageSection">
                         <h2 className="profilePageSectionTitle">Statistics</h2>
-                        <div className="profilePageEmpty">
-                            <p>No statistics available yet.</p>
-                        </div>
+                        {gameStats ? (
+                            <div className="profileStats">
+                                <div className="profileStatRow">
+                                    <span className="profileStatLabel">Level</span>
+                                    <span className="profileStatValue" style={{ color: "#00d9d9" }}>{gameStats.level}</span>
+                                </div>
+                                <div className="profileStatRow">
+                                    <span className="profileStatLabel">Total XP</span>
+                                    <span className="profileStatValue" style={{ color: "#00d9d9" }}>{(gameStats.totalXp || 0).toLocaleString()}</span>
+                                </div>
+                                <div className="profileStatRow">
+                                    <span className="profileStatLabel">Gold</span>
+                                    <span className="profileStatValue" style={{ color: "#ffd900" }}>{(gameStats.gold || 0).toLocaleString()}</span>
+                                </div>
+                                <div className="profileStatDivider" />
+                                <div className="profileStatRow">
+                                    <span className="profileStatLabel">Player Kills</span>
+                                    <span className="profileStatValue">{(gameStats.playerKills || 0).toLocaleString()}</span>
+                                </div>
+                                <div className="profileStatRow">
+                                    <span className="profileStatLabel">NPC Kills</span>
+                                    <span className="profileStatValue">{(gameStats.npcKills || 0).toLocaleString()}</span>
+                                </div>
+                                <div className="profileStatRow">
+                                    <span className="profileStatLabel">Deaths</span>
+                                    <span className="profileStatValue">{(gameStats.deaths || 0).toLocaleString()}</span>
+                                </div>
+                                <div className="profileStatDivider" />
+                                <div className="profileStatRow">
+                                    <span className="profileStatLabel">Matches</span>
+                                    <span className="profileStatValue">{(gameStats.matchesPlayed || 0).toLocaleString()}</span>
+                                </div>
+                                <div className="profileStatRow">
+                                    <span className="profileStatLabel">Wins</span>
+                                    <span className="profileStatValue" style={{ color: "#4caf50" }}>{(gameStats.wins || 0).toLocaleString()}</span>
+                                </div>
+                                <div className="profileStatRow">
+                                    <span className="profileStatLabel">Losses</span>
+                                    <span className="profileStatValue" style={{ color: "#f44336" }}>{(gameStats.losses || 0).toLocaleString()}</span>
+                                </div>
+                                <div className="profileStatDivider" />
+                                <div className="profileStatRow">
+                                    <span className="profileStatLabel">FFA Played</span>
+                                    <span className="profileStatValue">{(gameStats.ffa?.played || 0).toLocaleString()}</span>
+                                </div>
+                                <div className="profileStatRow">
+                                    <span className="profileStatLabel">FFA Wins</span>
+                                    <span className="profileStatValue" style={{ color: "#4caf50" }}>{(gameStats.ffa?.wins || 0).toLocaleString()}</span>
+                                </div>
+                                <div className="profileStatRow">
+                                    <span className="profileStatLabel">TDM Played</span>
+                                    <span className="profileStatValue">{(gameStats.tdm?.played || 0).toLocaleString()}</span>
+                                </div>
+                                <div className="profileStatRow">
+                                    <span className="profileStatLabel">TDM Wins</span>
+                                    <span className="profileStatValue" style={{ color: "#4caf50" }}>{(gameStats.tdm?.wins || 0).toLocaleString()}</span>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="profilePageEmpty">
+                                <p>No statistics available yet.</p>
+                            </div>
+                        )}
                     </div>
 
                     <div className="profilePageSection">

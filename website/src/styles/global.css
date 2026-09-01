@@ -144,6 +144,36 @@ body {
   font-style: italic;
 }
 
+.profileStats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.profileStatRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.3rem 0;
+}
+
+.profileStatLabel {
+  opacity: 0.6;
+  font-size: 0.85rem;
+}
+
+.profileStatValue {
+  font-weight: bold;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.profileStatDivider {
+  height: 1px;
+  background: rgba(255,255,255,0.06);
+  margin: 0.3rem 0;
+}
+
 .profilePageGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;

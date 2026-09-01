@@ -18,6 +18,7 @@
 #include "network/multiplayer-context.h"
 #include "network/network-weapons.h"
 #include "effects/hit-effects.h"
+#include "gui/hud/reward-popup.h"
 #include "killfeed/killfeed.h"
 #include "terminal/terminal-state.h"
 #include "ui/hitmarker.h"
@@ -150,6 +151,10 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
         mpConfirmPredictedKillHeal(ctx, event.targetPlayerId);
         DeathSystem::instance().healKillerToFull(*gpPlayer, playerNameFor(ctx, event.attackerPlayerId));
         printf("[NET KILL HEAL] attacker=%u health=%d\n", event.attackerPlayerId, gpPlayer->currentHp);
+
+        // Show reward popup for PvP kill
+        if (event.attackerPlayerId == ctx.localPlayerId)
+            RewardPopupSystem::instance().pushReward(100, 50);
 
         // Killfeed entry (the legacy ShotEvent path already fed it; the generic
         // path must too). Attacker-only presentation like the rest of this path.

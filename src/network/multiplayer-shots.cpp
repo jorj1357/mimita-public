@@ -18,6 +18,7 @@
 #include "effects/hit-effects.h"
 #include "entities/death-ghost.h"
 #include "audio/audio.h"
+#include "gui/hud/reward-popup.h"
 #include "audio/hitmarker-audio.h"
 #include "ui/hitmarker.h"
 #include "killfeed/killfeed.h"
@@ -411,6 +412,9 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
             DeathSystem::instance().healKillerToFull(*gpPlayer, shooterName);
             printf("[NET KILL HEAL] shooter=%u npc=%u health=%d\n",
                    event->shooterPlayerId, event->npcEntityId, gpPlayer->currentHp);
+            // Show reward popup for NPC kill
+            if (event->shooterPlayerId == ctx.localPlayerId)
+                RewardPopupSystem::instance().pushReward(10, 0);
         }
         if (!localShooterPredictedKill)
         {

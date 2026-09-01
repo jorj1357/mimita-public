@@ -12,6 +12,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <atomic>
 
 #include <nlohmann/json.hpp>
 
@@ -32,6 +33,7 @@ public:
     uint64_t totalSent() const;
     uint64_t totalRetries() const;
     uint64_t totalDuplicates() const;
+    bool consumeAutoSaveNotification();
 
     void resetStats();
 
@@ -51,6 +53,7 @@ private:
     uint64_t mTotalSent = 0;
     uint64_t mTotalRetries = 0;
     uint64_t mTotalDuplicates = 0;
+    std::atomic<bool> mAutoSaveNotificationPending{false};
 
     void flushBatch(const std::string& sessionToken);
 };

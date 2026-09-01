@@ -17,6 +17,7 @@
 
 #include "network/net_common.h"
 #include "website/api-client.h"
+#include "notifications/notifications.h"
 
 using json = nlohmann::json;
 
@@ -96,7 +97,7 @@ void PersistenceQueue::enqueueMatchResult(const PersistenceMatchEvent& event)
 void PersistenceQueue::update(float dt, const std::string& sessionToken)
 {
     mFlushTimer += dt;
-    if (mFlushTimer < 5.0f)
+    if (mFlushTimer < 60.0f)
         return;
     mFlushTimer = 0.0f;
     flushBatch(sessionToken);
@@ -132,6 +133,7 @@ void PersistenceQueue::flushBatch(const std::string& sessionToken)
         if (ok)
         {
             mTotalSent += batchCopy.size();
+            mAutoSaveNotificationPending.store(true);
         }
         else
         {
@@ -164,4 +166,9 @@ void PersistenceQueue::resetStats()
     mTotalSent = 0;
     mTotalRetries = 0;
     mTotalDuplicates = 0;
+}
+
+bool PersistenceQueue::consumeAutoSaveNotification()
+{
+    return mAutoSaveNotificationPending.exchange(false);
 }

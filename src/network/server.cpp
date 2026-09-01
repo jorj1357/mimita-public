@@ -1154,7 +1154,7 @@ static void simulateOneServerTick(ListenServerState& state)
                        state.npcs, *state.npcSystem, state.npcIdsAlive,
                        state.tick, state.totalPacketsOut);
 
-        // Flush persistence queue every 5 seconds using host's session token
+        // Flush persistence queue every 60 seconds using host's session token
         {
             const auto& authUser = AuthSystem::instance().user();
             PersistenceQueue::instance().update(SERVER_DT, authUser.sessionToken);

@@ -19,6 +19,8 @@
 #include "gui/hud/chat-window.h"
 #include "gui/menus/online-menu.h"
 #include "notifications/notifications.h"
+#include "gui/hud/reward-popup.h"
+#include "persistence/persistence-queue.h"
 #include "input/mouse-lock.h"
 #include "input/input-commands.h"
 #include "devtools/dev-overlay.h"
@@ -84,6 +86,10 @@ void engineTick(Engine& engine)
     // Step UI tick clock (60 Hz fixed step, independent of render FPS)
     gChatUiTickClock.tick();
     NotificationSystem::instance().advanceTicks();
+    RewardPopupSystem::instance().tick();
+    if (PersistenceQueue::instance().consumeAutoSaveNotification())
+        NotificationSystem::instance().pushImportant(
+            "AUTO-SAVE", "Stats synced to server", 180);
     if (GAME_STATE == GAME_PLAYING)
         NotificationSystem::instance().updateTips();
     auto tFrameStart = std::chrono::steady_clock::now();

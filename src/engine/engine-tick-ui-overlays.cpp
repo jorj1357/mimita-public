@@ -38,6 +38,7 @@
 #include "gui/gui-main.h"
 #include "game/game-state.h"
 #include "notifications/notifications.h"
+#include "gui/hud/reward-popup.h"
 #include "input/mouse-lock.h"
 #include "ui/hitmarker.h"
 #include "crosshair/crosshair-render.h"
@@ -63,6 +64,7 @@
 #include "config/player-settings.h"
 #include "npc/npc-combat.h"
 #include "network/server.h"
+#include "network/server-duel.h"
 
 extern DuelManager gDuelManager;
 extern BombTagManager gBombTagManager;
@@ -490,6 +492,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
     }
     MusicManager::instance().drawAllOverlay();
     NotificationSystem::instance().render(true);
+    RewardPopupSystem::instance().render();
     // Mouse lock indicator removed — belongs in ESC/Help menu.
     if (gFramePacer.showFPS() && (!gReplayExportRenderMode || ReplayExportUI::showFps()))
     {
@@ -567,6 +570,67 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
     // ── Duels queue + PvP match HUD ────────────────────────────────
     if (!gReplayExportRenderMode && gameState == GAME_PLAYING)
     {
+        // ── FFA/TDM intermission + countdown HUD ──────────────────
+        {
+            const MimitaNet::ServerDuelState& d = MimitaNet::serverDuelState();
+            GuiLayout& matchLayout = GuiLayoutManager::instance().getLayout("config/gui/match-hud.json");
+
+            if (d.matchMode == "ffa" || d.matchMode == "tdm")
+            {
+                // Intermission text: "Starting FREE FOR ALL in 12..."
+                if (d.phase == MimitaNet::DUEL_PHASE_INTERMISSION)
+                {
+                    const GuiElement* el = matchLayout.get("intermissionText");
+                    if (el) {
+                        float scale = el->fontSize > 0.0f ? el->fontSize : 0.6f;
+                        glm::vec4 color = el->getTextColorVec();
+                        std::string modeName = (d.matchMode == "ffa") ? "FREE FOR ALL" : "TEAM DEATHMATCH";
+                        int seconds = (int)std::ceil(d.phaseTimer);
+                        char buf[128];
+                        snprintf(buf, sizeof(buf), "Starting %s in %d...", modeName.c_str(), seconds);
+                        float w = uiMeasureText(buf, scale);
+                        uiDrawText(buf, uiScreenW() * 0.5f - w * 0.5f,
+                                  uiScaleY(el->y), scale, color);
+                    }
+                }
+
+                // Countdown text: "3.00", "2.98", etc.
+                if (d.phase == MimitaNet::DUEL_PHASE_COUNTDOWN && d.countdownStartTick > 0)
+                {
+                    const GuiElement* el = matchLayout.get("countdownText");
+                    if (el) {
+                        float scale = el->fontSize > 0.0f ? el->fontSize : 2.5f;
+                        glm::vec4 color = el->getTextColorVec();
+                        float remaining = std::max(0.0f, d.countdown);
+                        char buf[32];
+                        snprintf(buf, sizeof(buf), "%.2f", remaining);
+                        float w = uiMeasureText(buf, scale);
+                        uiDrawText(buf, uiScreenW() * 0.5f - w * 0.5f,
+                                  uiScaleY(el->y), scale, color);
+                    }
+                }
+
+                // Results text
+                if (d.phase == MimitaNet::DUEL_PHASE_RESULTS && d.matchOver)
+                {
+                    const GuiElement* el = matchLayout.get("countdownText");
+                    if (el) {
+                        float scale = el->fontSize > 0.0f ? el->fontSize : 2.5f;
+                        glm::vec4 color = el->getTextColorVec();
+                        std::string text;
+                        if (d.matchMode == "ffa") {
+                            text = "MATCH OVER";
+                        } else {
+                            text = (d.winnerTeam == 0) ? "RED TEAM WINS" : "BLUE TEAM WINS";
+                        }
+                        float w = uiMeasureText(text.c_str(), scale);
+                        uiDrawText(text.c_str(), uiScreenW() * 0.5f - w * 0.5f,
+                                  uiScaleY(el->y), scale, color);
+                    }
+                }
+            }
+        }
+
         renderDuelQueueHud(engine.window(), dt);
         renderDuelMatchHud(engine.window(), dt);
         renderDuelTracer(camera);
