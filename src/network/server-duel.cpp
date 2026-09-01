@@ -587,7 +587,9 @@ bool rotateToNextDuelMap(SOCKET sock,
         {
             d.usedMaps.insert(cand);
             commitDuelMap(d, world, npcWorld, tmp, cand);
+            assignDuelSpawns(d, world);
             broadcastMapChange(sock, d, cand, players, totalPacketsOut);
+            teleportDuelistsToSpawns(d, players);
             Debug::warn(Debug::Category::Duel,
                 "[DUEL SERVER] rotated to map %s (spawns=%zu)\n",
                 cand.c_str(), world.spawnPoints.size());

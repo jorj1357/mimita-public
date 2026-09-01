@@ -723,10 +723,9 @@ bool AvatarSystem::applyAvatarToPlayer(Player& player, const std::string& avatar
         player.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
     }
 
-    if (!buildAtlasForInstance(*inst, reloadTextures)) return false;
-    bool applied = applyAtlasFromInstance(*inst, player);
-
-    if (applied && !inst->definition.cosmetics.empty()) {
+    // Cosmetics belong to the player identity, not to the model-ready event.
+    // Store them immediately so an async model load cannot silently lose them.
+    if (!inst->definition.cosmetics.empty()) {
         CosmeticSystem::instance().loadCosmetics(inst->definition.cosmetics);
         std::vector<CosmeticSlot> playerCosmetics = inst->definition.cosmetics;
         for (CosmeticSlot& slot : playerCosmetics) {
@@ -736,13 +735,46 @@ bool AvatarSystem::applyAvatarToPlayer(Player& player, const std::string& avatar
                 slot.texture.image = inst->basePath + "/" + slot.texture.image;
         }
         player.setCosmetics(playerCosmetics);
-    } else if (applied) {
+    } else {
         player.setCosmetics({});
     }
 
+    const bool applied = player.modelLoaded && finalizeAvatarForPlayer(player);
+
     Debug::warn(Debug::Category::Avatar,
-        "[AVATAR] applyAvatarToPlayer: '%s' -> '%s' atlas=%u model=%s reload=%d\n",
+        "[AVATAR] applyAvatarToPlayer: '%s' -> '%s' atlas=%u model=%s ready=%d reload=%d\n",
         avatarName.c_str(), player.username.c_str(), inst->atlasTexture,
-        inst->definition.playerModel.c_str(), (int)reloadTextures);
-    return applied;
+        inst->definition.playerModel.c_str(), (int)applied, (int)reloadTextures);
+    return true;
+}
+
+bool AvatarSystem::finalizeAvatarForPlayer(Player& player)
+{
+    AvatarInstance* inst = player.avatarInstance;
+    if (!inst || !player.modelLoaded)
+        return false;
+    if (!buildAtlasForInstance(*inst, false))
+        return false;
+    if (!applyAtlasFromInstance(*inst, player))
+        return false;
+
+    if (!inst->definition.cosmetics.empty()) {
+        CosmeticSystem::instance().loadCosmetics(inst->definition.cosmetics);
+        std::vector<CosmeticSlot> playerCosmetics = inst->definition.cosmetics;
+        for (CosmeticSlot& slot : playerCosmetics) {
+            if (!slot.texture.image.empty() &&
+                slot.texture.image.find('/') == std::string::npos &&
+                slot.texture.image.find('\\') == std::string::npos)
+                slot.texture.image = inst->basePath + "/" + slot.texture.image;
+        }
+        player.setCosmetics(playerCosmetics);
+    } else {
+        player.setCosmetics({});
+    }
+
+    Debug::log(Debug::Category::Avatar,
+        "[AVATAR READY] player='%s' avatar='%s' atlas=%u cosmetics=%zu\n",
+        player.username.c_str(), inst->name.c_str(), inst->atlasTexture,
+        player.getCosmetics().size());
+    return true;
 }

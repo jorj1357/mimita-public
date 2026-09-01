@@ -203,7 +203,7 @@ static void bindShaderAndMesh(
     glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
     glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
     glUniform3f(glGetUniformLocation(shader, "uTint"), tint.x, tint.y, tint.z);
-    glUniform1f(glGetUniformLocation(shader, "uAlphaCutoff"), 0.0f);
+    glUniform1f(glGetUniformLocation(shader, "uAlphaCutoff"), alpha >= 0.999f ? 0.5f : 0.0f);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texture);
@@ -253,6 +253,15 @@ void renderProjectile(
     if (mesh.vertexCount <= 0)
         return;
 
+    // The rocket body is an opaque, closed cylinder. Only the outline and glow
+    // are allowed to use blending; the fill must write depth so the far cap
+    // cannot show through the projectile.
+    GLboolean blendWas = glIsEnabled(GL_BLEND);
+    GLboolean depthWriteWas = GL_FALSE;
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthWriteWas);
+    glDisable(GL_BLEND);
+    glDepthMask(GL_TRUE);
+
     // 1. Outline pass: slightly larger mesh with outline color
     if (cfg.outlineEnabled && cfg.outlineAlpha > 0.001f) {
         glm::vec3 outlineScale = cfg.scale * cfg.outlineScale;
@@ -263,8 +272,11 @@ void renderProjectile(
     // 2. Main fill pass: textured mesh with fill alpha
     {
         glm::mat4 fillModel = buildModelMatrix(position, orientation, cfg.rotationOffsetDegrees, cfg.scale);
-        bindShaderAndMesh(camera, fillModel, mesh, tex, glm::vec3(1.0f), cfg.fillAlpha);
+        bindShaderAndMesh(camera, fillModel, mesh, tex, glm::vec3(1.0f), 1.0f);
     }
+
+    if (blendWas) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+    glDepthMask(depthWriteWas);
 
     // 3. Glow sphere: large semi-transparent sphere
     if (cfg.glowEnabled && cfg.glowAlpha > 0.001f) {

@@ -1,10 +1,10 @@
-// 08 31 2026, 19 10
+// 09 01 2026, 00 00
 /* purpose
 * Owns public community-server room registration, discovery, and ICE signaling.
-* Announces newly registered community servers to the configured MiMITA Discord webhook.
+* Announces newly registered community servers once to the configured MiMITA Discord webhook.
 * Keeps webhook credentials in the coordinator environment and never sends them to clients.
 * Does NOT host game simulation, authenticate gameplay packets, or own client UI.
-* Does NOT announce rooms whose host explicitly disabled Discord notifications.
+* Does NOT edit, delete, or send offline updates for Discord announcements.
 */
 
 const http = require("http");
@@ -287,9 +287,20 @@ function announceDiscordServerLive(room) {
         console.error("[DISCORD SERVER ANNOUNCE] invalid webhook URL: " + error.message);
         return;
     }
+    const startedAtMs = room.started_at || Date.now();
+    const startedAtSeconds = Math.floor(startedAtMs / 1000);
+    const utcStartedAt = new Date(startedAtMs).toISOString();
     const payload = JSON.stringify({
-        content: "MiMITA server " + room.server_name + " is live at " +
-            new Date().toISOString() + " UTC. Join it with this code " + room.code + "."
+        content: "🟢 MiMITA server started\n\n" +
+            "Server: " + room.server_name + "\n" +
+            "Host: " + (room.host_player_name || "Unknown") + "\n" +
+            "Players: " + room.players + "/" + room.max_players + "\n" +
+            "Map: " + room.map + "\n" +
+            "Mode: " + room.gamemode + "\n" +
+            "Started: <t:" + startedAtSeconds + ":F>\n" +
+            "Relative: <t:" + startedAtSeconds + ":R>\n" +
+            "UTC: " + utcStartedAt + "\n" +
+            "Join code: " + room.code
     });
     const client = target.protocol === "https:" ? https : http;
     const request = client.request(target, {

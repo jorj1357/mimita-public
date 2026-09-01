@@ -400,6 +400,23 @@ static void processSnapshotEntities(
                    entity.px, entity.py, entity.pz);
         }
 
+        // Avatar identity can change while a replica is alive (for example
+        // after an editor save or reconnect). Re-run the shared async avatar
+        // application only when the network identity actually changes.
+        if (!isNew && entity.entityType != ENTITY_NPC) {
+            const std::string networkAvatar(entity.avatarName);
+            if (networkAvatar != p.avatarName()) {
+                if (!networkAvatar.empty())
+                    AvatarSystem::instance().applyAvatarToPlayer(p, networkAvatar);
+                else
+                    p.setCosmetics({});
+                p.setAvatarName(networkAvatar);
+                Debug::warn(Debug::Category::Avatar,
+                    "[REMOTE AVATAR] entityId=%u changed avatar='%s' ready=%d\n",
+                    entity.networkEntityId, networkAvatar.c_str(), (int)p.modelLoaded);
+            }
+        }
+
         if (!pushInterpolationTarget(interpolation, entity, serverTick))
             continue;
         p.spawnGeneration = entity.spawnGeneration;
@@ -1137,6 +1154,18 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         {
             mpProcessProjectileDespawnEventPacket(
                 ctx, reinterpret_cast<const ProjectileDespawnEventPacket*>(buffer));
+        }
+        else if (header->type == PACKET_AVATAR_MANIFEST &&
+                 bytes >= (int)sizeof(AvatarManifestChunkPacket))
+        {
+            mpProcessAvatarManifestPacket(
+                ctx, *reinterpret_cast<const AvatarManifestChunkPacket*>(buffer), bytes);
+        }
+        else if (header->type == PACKET_AVATAR_ASSET_CHUNK &&
+                 bytes >= (int)sizeof(AvatarAssetChunkPacket))
+        {
+            mpProcessAvatarAssetChunkPacket(
+                ctx, *reinterpret_cast<const AvatarAssetChunkPacket*>(buffer), bytes);
         }
         else if (header->type == PACKET_ATTACK_RESULT &&
                  bytes >= (int)sizeof(AttackResultPacket))
@@ -2053,6 +2082,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     }
 
     mpUpdateRemoteEntities(ctx, dt);
+    mpAvatarNetworkTick(ctx);
     mpReleaseTimelineEvents(ctx);
     mpUpdateRemoteSwordStates(ctx, dt);
     mpUpdateNetworkProjectiles(ctx, dt, world);

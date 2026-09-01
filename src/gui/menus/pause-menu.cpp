@@ -1,6 +1,6 @@
 // 09 01 2026, 00 00
 /* purpose
-* Implements the in-game ESC modal with resume, settings, invite, leave, and quick controls.
+* Implements the in-game ESC modal with resume, settings, Discord, invite, leave, and quick controls.
 * Uses config/gui/pause-menu.json for every visual rectangle, label, color, and row cadence.
 * Keeps player input disabled while the modal or embedded settings screen is visible.
 * Does NOT draw the 3D world, own the settings controls, or duplicate duel queue behavior.
@@ -16,6 +16,8 @@
 #include <algorithm>
 #include <cstdio>
 #include <string>
+
+#include <shellapi.h>
 
 #include "debug/debug-log.h"
 #include "duel/duel-history.h"
@@ -193,6 +195,13 @@ void render(GLFWwindow* window)
     if (const GuiElement* resume = layout.get("resumeButton"); resume && drawGuiElement(window, *resume).clicked) close(window);
     if (const GuiElement* settings = layout.get("settingsButton"); settings && drawGuiElement(window, *settings).clicked) gView = View::Settings;
     if (const GuiElement* help = layout.get("helpButton"); help && drawGuiElement(window, *help).clicked) gView = View::Help;
+    if (const GuiElement* discord = layout.get("discordButton"); discord && drawGuiElement(window, *discord).clicked) {
+        const GuiElement* url = layout.get("discordUrl");
+        const std::string value = url && !url->text.empty()
+            ? url->text : "https://discord.gg/sY8QHbfG9D";
+        ShellExecuteA(nullptr, "open", value.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        Debug::log(Debug::Category::Gui, "[DISCORD] opened invite link\n");
+    }
     if (const GuiElement* invite = layout.get("inviteButton"); invite && drawGuiElement(window, *invite).clicked) {
         const GuiElement* url = layout.get("inviteUrl");
         const std::string value = url && !url->text.empty() ? url->text : "https://www.mimita.fun/download";

@@ -15,9 +15,11 @@
 #include "debug/debug-log.h"
 #include "config.h"
 #include "world/texture-store.h"
+#include "combat/projectile-render.h"
 #include <algorithm>
 #include <cstdio>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <cstring>
 #include <vector>
 
@@ -326,6 +328,25 @@ void EffectPartSystem::render(const Camera& camera) const {
             glm::vec3 dims = glm::vec3(rad, rad, std::max(len, rad));
             DebugVis::drawFilledSphereOriented(camera, center, axis, 1.0f, drawColor,
                                                dims, bcfg.localAxis.c_str());
+        }
+        else if (effect.replayType == "replay_rocket") {
+            ProjectileVisualConfig rocketCfg;
+            rocketCfg.length = 1.5f;
+            rocketCfg.radius = 0.18f;
+            rocketCfg.fillAlpha = 1.0f;
+            rocketCfg.outlineEnabled = true;
+            rocketCfg.glowEnabled = true;
+            const glm::vec3 direction = glm::length(effect.velocity) > 0.001f
+                ? glm::normalize(effect.velocity)
+                : glm::vec3(0.0f, 0.0f, 1.0f);
+            const glm::vec3 sourceAxis(0.0f, 0.0f, 1.0f);
+            const float alignment = glm::dot(sourceAxis, direction);
+            glm::quat orientation(1.0f, 0.0f, 0.0f, 0.0f);
+            if (alignment < -0.9999f)
+                orientation = glm::angleAxis(3.14159265f, glm::vec3(1.0f, 0.0f, 0.0f));
+            else if (alignment < 0.9999f)
+                orientation = glm::normalize(glm::quat(alignment + 1.0f, glm::cross(sourceAxis, direction)));
+            renderProjectile(camera, effect.position, orientation, rocketCfg);
         }
         else if (!effect.billboardText) {
             DebugVis::drawFilledSphere(camera, effect.position, drawScale, drawColor);

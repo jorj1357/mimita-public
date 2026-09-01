@@ -232,6 +232,10 @@ struct ServerPlayer
     uint32_t id = 0;
     std::string name;
     std::string avatarName;
+    // Avatar JSON is forwarded as chunked metadata. PNG/JPEG bytes are stored
+    // by their SHA-256 so a receiver can request only cache misses.
+    std::unordered_map<std::string, std::vector<std::vector<uint8_t>>> avatarManifestChunks;
+    std::unordered_map<std::string, std::vector<AvatarAssetChunkPacket>> avatarAssetChunks;
     // Website users.id for a registered player. Guests remain zero.
     uint32_t accountId = 0;
     int vipAccountId = 0;
@@ -967,6 +971,25 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
                             uint32_t tick, uint64_t& totalPacketsOut,
                             const TransportConnectionId* connectionId = nullptr,
                             std::unique_ptr<IGameTransport>* claimedTransport = nullptr);
+void handleAvatarManifestPacket(SOCKET sock, const sockaddr_in& from,
+                                const char* buffer, int bytes,
+                                std::unordered_map<uint32_t, ServerPlayer>& players,
+                                uint64_t& totalPacketsOut,
+                                const TransportConnectionId* connectionId = nullptr);
+void handleAvatarAssetRequestPacket(SOCKET sock, const sockaddr_in& from,
+                                    const char* buffer, int bytes,
+                                    std::unordered_map<uint32_t, ServerPlayer>& players,
+                                    uint64_t& totalPacketsOut,
+                                    const TransportConnectionId* connectionId = nullptr);
+void handleAvatarAssetChunkPacket(SOCKET sock, const sockaddr_in& from,
+                                  const char* buffer, int bytes,
+                                  std::unordered_map<uint32_t, ServerPlayer>& players,
+                                  uint64_t& totalPacketsOut,
+                                  const TransportConnectionId* connectionId = nullptr);
+void sendStoredAvatarManifestsToPlayer(
+    SOCKET sock, ServerPlayer& receiver,
+    const std::unordered_map<uint32_t, ServerPlayer>& players,
+    uint64_t& totalPacketsOut);
 
 ServerPacketProcessResult processServerPacket(
     SOCKET sock,

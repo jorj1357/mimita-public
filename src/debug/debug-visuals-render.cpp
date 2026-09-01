@@ -245,6 +245,36 @@ void drawFilledCylinder(const Camera& camera, glm::vec3 center, glm::vec3 axis, 
     }
 }
 
+void drawFilledShockwave(const Camera&, glm::vec3 center, glm::vec3 normal,
+                         float radius, float height, int points, float pointLength, float rotationDegrees, glm::vec4 color)
+{
+    const glm::vec3 n = glm::length(normal) > 0.001f ? glm::normalize(normal) : glm::vec3(0, 0, 1);
+    glm::vec3 tangent = glm::normalize(std::fabs(n.z) < 0.9f ? glm::cross(n, glm::vec3(0, 0, 1)) : glm::cross(n, glm::vec3(0, 1, 0)));
+    glm::vec3 bitangent = glm::normalize(glm::cross(n, tangent));
+    const int count = std::clamp(points, 3, 64);
+    const float inner = std::max(0.0f, radius * 0.42f);
+    const float outer = std::max(inner, radius);
+    const float tip = outer + std::max(0.0f, pointLength);
+    const float halfHeight = std::max(0.001f, height * 0.5f);
+    const float rotation = glm::radians(rotationDegrees);
+    auto point = [&](float r, float angle, float z) {
+        return center + tangent * (std::cos(angle) * r) + bitangent * (std::sin(angle) * r) + n * z;
+    };
+    for (int i = 0; i < count; ++i) {
+        const float a0 = rotation + glm::two_pi<float>() * (float)i / (float)count;
+        const float a1 = rotation + glm::two_pi<float>() * (float)(i + 1) / (float)count;
+        const float amid = (a0 + a1) * 0.5f;
+        const glm::vec3 p0 = point(inner, a0, halfHeight);
+        const glm::vec3 p1 = point(outer, a0, halfHeight);
+        const glm::vec3 pm = point(tip, amid, halfHeight);
+        const glm::vec3 p2 = point(outer, a1, halfHeight);
+        const glm::vec3 p3 = point(inner, a1, halfHeight);
+        gTriVerts.push_back({p0, color}); gTriVerts.push_back({p1, color}); gTriVerts.push_back({pm, color});
+        gTriVerts.push_back({p0, color}); gTriVerts.push_back({pm, color}); gTriVerts.push_back({p3, color});
+        gTriVerts.push_back({point(inner, a0, -halfHeight), color}); gTriVerts.push_back({point(inner, a1, -halfHeight), color}); gTriVerts.push_back({point(tip, amid, -halfHeight), color});
+    }
+}
+
 glm::mat4 eulerToMat4(const glm::vec3& euler)
 {
     float cx = std::cos(euler.x), sx = std::sin(euler.x);
@@ -313,6 +343,11 @@ void drawFilledSphereOriented(const Camera& camera, glm::vec3 center, glm::vec3 
 
 void drawFilledCylinder(const Camera& camera, glm::vec3 center, glm::vec3 axis, float radius, float height, glm::vec4 color) {
     ::drawFilledCylinder(camera, center, axis, radius, height, color);
+}
+
+void drawFilledShockwave(const Camera& camera, glm::vec3 center, glm::vec3 normal,
+                         float radius, float height, int points, float pointLength, float rotationDegrees, glm::vec4 color) {
+    ::drawFilledShockwave(camera, center, normal, radius, height, points, pointLength, rotationDegrees, color);
 }
 
 void drawFilledBeam(const Camera& camera, glm::vec3 start, glm::vec3 end, float thickness, glm::vec4 color) {

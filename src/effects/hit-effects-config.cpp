@@ -500,6 +500,16 @@ bool HitEffects::loadConfig(const std::string& path)
                 cfg.deathEllipsoid.length, cfg.deathEllipsoid.radius);
         }
 
+        if (j.contains("elongatedSphere")) {
+            const json& e = j["elongatedSphere"];
+            if (e.contains("shape")) cfg.elongatedSphere.shape = e["shape"];
+            if (e.contains("rotation")) cfg.elongatedSphere.rotation = readVec3Json(e["rotation"]);
+            if (e.contains("shockwaveHeight")) cfg.elongatedSphere.shockwaveHeight = e["shockwaveHeight"];
+            if (e.contains("shockwavePoints")) cfg.elongatedSphere.shockwavePoints = e["shockwavePoints"];
+            if (e.contains("shockwavePointLength")) cfg.elongatedSphere.shockwavePointLength = e["shockwavePointLength"];
+            if (e.contains("shockwaveRotationSpeedDegrees")) cfg.elongatedSphere.shockwaveRotationSpeedDegrees = e["shockwaveRotationSpeedDegrees"];
+        }
+
         auto loadBurstConfig = [&](const json& jc, MovementDashBurstConfig& burstCfg) {
             if (jc.contains("enabled")) burstCfg.enabled = jc["enabled"];
             if (jc.contains("lifetimeTicks")) burstCfg.lifetimeTicks = jc["lifetimeTicks"];
@@ -527,6 +537,11 @@ bool HitEffects::loadConfig(const std::string& path)
             if (jc.contains("scale")) burstCfg.scale = readVec3Json(jc["scale"]);
             if (jc.contains("rotation")) burstCfg.rotation = readVec3Json(jc["rotation"]);
             if (jc.contains("stretchAxis")) burstCfg.stretchAxis = jc["stretchAxis"];
+            if (jc.contains("shape")) burstCfg.shape = jc["shape"];
+            if (jc.contains("shockwaveHeight")) burstCfg.shockwaveHeight = jc["shockwaveHeight"];
+            if (jc.contains("shockwavePoints")) burstCfg.shockwavePoints = jc["shockwavePoints"];
+            if (jc.contains("shockwavePointLength")) burstCfg.shockwavePointLength = jc["shockwavePointLength"];
+            if (jc.contains("shockwaveRotationSpeedDegrees")) burstCfg.shockwaveRotationSpeedDegrees = jc["shockwaveRotationSpeedDegrees"];
         };
 
         if (j.contains("movementDashBurst")) loadBurstConfig(j["movementDashBurst"], cfg.movementDashBurst);

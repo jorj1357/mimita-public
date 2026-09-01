@@ -853,6 +853,12 @@ void Player::finalizeModelIfReady()
     updateModelWorldTransforms();
     modelLoaded = true;
 
+    // Avatar application can happen before this async model finishes. Complete
+    // the per-player atlas, body overrides, and cosmetics at the ready boundary
+    // so joining never requires avatar.reload.
+    if (avatarInstance)
+        AvatarSystem::instance().finalizeAvatarForPlayer(*this);
+
     printf("[PLAYER] async model loaded: path=%s nodes=%zu bodyParts=%zu textures=%d\n",
            d->path.c_str(), nodes.size(), bodyParts.size(), (int)texIds.size());
     mPendingModel.reset();

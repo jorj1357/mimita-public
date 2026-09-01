@@ -32,6 +32,39 @@
 
 namespace MimitaNet {
 
+struct RemoteAvatarAsset
+{
+    std::string logicalName;
+    std::string hashHex;
+    uint32_t size = 0;
+};
+
+struct RemoteAvatarManifest
+{
+    uint32_t sourcePlayerId = 0;
+    std::string manifestHash;
+    std::string avatarName;
+    std::string avatarJson;
+    std::vector<RemoteAvatarAsset> assets;
+    std::vector<std::vector<uint8_t>> manifestChunks;
+    uint16_t expectedManifestChunks = 0;
+    bool parsed = false;
+    bool requestsSent = false;
+    uint64_t lastRequestMs = 0;
+    bool applied = false;
+};
+
+struct IncomingAvatarAsset
+{
+    uint32_t sourcePlayerId = 0;
+    uint32_t requestId = 0;
+    std::string hashHex;
+    std::string logicalName;
+    uint32_t totalBytes = 0;
+    uint16_t expectedChunks = 0;
+    std::vector<std::vector<uint8_t>> chunks;
+};
+
 // Debug toggle for remote-player interpolation state (terminal: netinterp debug).
 extern bool gNetInterpDebug;
 
@@ -316,6 +349,19 @@ struct MultiplayerContext
     std::unordered_map<uint32_t, EntityInterpolationState> remotePlayerInterpolation;
     std::unordered_map<uint32_t, EntityInterpolationState> remoteNpcInterpolation;
     std::unordered_map<uint32_t, PlayerInfo> playerRegistry;
+
+    // ── Remote avatar manifest/cache state ──────────────────────────
+    // The manifest is tiny metadata. Image bytes are kept by SHA-256 and
+    // requested only after a remote player is visible and the local cache
+    // does not already contain that exact file.
+    bool avatarNetworkPublished = false;
+    std::string avatarNetworkManifestHash;
+    std::vector<std::vector<uint8_t>> avatarNetworkUploadQueue;
+    size_t avatarNetworkUploadIndex = 0;
+    std::unordered_map<std::string, RemoteAvatarManifest> remoteAvatarManifests;
+    std::unordered_map<std::string, IncomingAvatarAsset> incomingAvatarAssets;
+    uint32_t nextAvatarAssetRequestId = 1;
+
     // Style events that arrived before the owning player's first snapshot.
     // Applied when the registry entry is created/refreshed.
     std::unordered_map<uint32_t, MimitaVip::VipStyleDetail> pendingVipStyles;
@@ -884,6 +930,14 @@ uint32_t mpSendMeleeHitRequest(
     const glm::vec3& knockback,
     float weaponSpeed);
 bool mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes);
+void mpAvatarNetworkTick(MultiplayerContext& ctx);
+void mpProcessAvatarManifestPacket(MultiplayerContext& ctx,
+                                   const AvatarManifestChunkPacket& packet,
+                                   int bytes);
+void mpProcessAvatarAssetChunkPacket(MultiplayerContext& ctx,
+                                     const AvatarAssetChunkPacket& packet,
+                                     int bytes);
+void mpResetAvatarNetwork(MultiplayerContext& ctx);
 
 // Returns the server tick the client is currently rendering remote entities at.
 // In interpolation mode (direct_render=false) this is the delayed buffer clock,

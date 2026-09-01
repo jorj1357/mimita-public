@@ -77,6 +77,12 @@ struct HitFxDirectionalShape {
     float alphaEnd = 0.0f;
     float brightnessStart = 2.5f;
     float brightnessEnd = 0.0f;
+    std::string shape = "elongated_sphere";
+    glm::vec3 rotation{0.0f};
+    float shockwaveHeight = 0.06f;
+    int shockwavePoints = 8;
+    float shockwavePointLength = 0.8f;
+    float shockwaveRotationSpeedDegrees = 0.0f;
 };
 
 struct HitFxImpactDisc {
@@ -189,6 +195,11 @@ struct MovementDashBurstConfig {
     // "up" = vertical (for landing shockwave flattening)
     // "right" = horizontal perpendicular (for sideways spread)
     std::string stretchAxis = "forward";
+    std::string shape = "elongated_sphere";
+    float shockwaveHeight = 0.06f;
+    int shockwavePoints = 8;
+    float shockwavePointLength = 0.8f;
+    float shockwaveRotationSpeedDegrees = 0.0f;
 };
 
 struct HitFxConfig {

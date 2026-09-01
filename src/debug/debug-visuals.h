@@ -145,6 +145,9 @@ namespace DebugVis {
                                        float size, float gap, float thickness,
                                        bool showDot, glm::vec4 color);
     void drawFilledCylinder(const Camera& camera, glm::vec3 center, glm::vec3 axis, float radius, float height, glm::vec4 color);
+    void drawFilledShockwave(const Camera& camera, glm::vec3 center, glm::vec3 normal,
+                             float radius, float height, int points, float pointLength,
+                             float rotationDegrees, glm::vec4 color);
     void drawFilledBeam(const Camera& camera, glm::vec3 start, glm::vec3 end, float thickness, glm::vec4 color);
     void drawFilledBox(const Camera& camera, glm::vec3 center, glm::vec3 halfSize, glm::vec4 color, glm::vec3 rotationEuler = glm::vec3(0.0f));
     

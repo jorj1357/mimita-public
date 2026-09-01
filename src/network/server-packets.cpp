@@ -926,6 +926,7 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
     std::strncpy(welcome.mapId, gServerMapId.c_str(), sizeof(welcome.mapId) - 1);
     if (sendToSourceOrPlayer(sock, from, &p, nullptr, &welcome, sizeof(welcome)))
         ++totalPacketsOut;
+    sendStoredAvatarManifestsToPlayer(sock, p, players, totalPacketsOut);
 
     // Broadcast join message for new players
     if (!existingId)
@@ -1579,6 +1580,7 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     std::strncpy(accept.mapId, gServerMapId.c_str(), sizeof(accept.mapId) - 1);
     if (sendToSourceOrPlayer(sock, from, &p, nullptr, &accept, sizeof(accept)))
         ++totalPacketsOut;
+    sendStoredAvatarManifestsToPlayer(sock, p, players, totalPacketsOut);
 
     // Broadcast the joining player's full VIP style so every client renders
     // exact colors for both the newcomer and the existing roster.
@@ -1680,6 +1682,7 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
         if (sendToSourceOrPlayer(sock, from, &p, nullptr, &accept, sizeof(accept)))
             ++totalPacketsOut;
     }
+    sendStoredAvatarManifestsToPlayer(sock, p, players, totalPacketsOut);
 
     printf("%s [SERVER RECONNECT] %s id=%u name=\"%s\" health=%d copies=%d\n",
            serverTimestamp(), resendExistingAccept ? "resent" : "accepted",
@@ -1821,6 +1824,24 @@ ServerPacketProcessResult processServerPacket(
                                claimedTransport);
         result.handled = true;
         result.transportConsumed = claimedTransport && !claimedTransport->get();
+    }
+    else if (header->type == PACKET_AVATAR_MANIFEST)
+    {
+        handleAvatarManifestPacket(sock, from, buffer, bytes, players,
+                                   totalPacketsOut, sourceConnection);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_AVATAR_ASSET_REQUEST)
+    {
+        handleAvatarAssetRequestPacket(sock, from, buffer, bytes, players,
+                                       totalPacketsOut, sourceConnection);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_AVATAR_ASSET_CHUNK)
+    {
+        handleAvatarAssetChunkPacket(sock, from, buffer, bytes, players,
+                                     totalPacketsOut, sourceConnection);
+        result.handled = true;
     }
     else if (header->type == PACKET_INPUT)
     {
@@ -2007,6 +2028,27 @@ ServerPacketProcessResult processServerPacket(
                            serverTimestamp(), transportKindName(event.transportKind),
                            (unsigned long long)event.connectionId.value,
                            it->second.id, it->second.name.c_str());
+                }
+                else
+                {
+                    // A map change keeps the player object alive, so the
+                    // initial-spawn branch above is not entered again.  Re-arm
+                    // the existing transform-epoch acknowledgement gate at
+                    // the server's current map position.  This makes the
+                    // client's first movement report after loading the map
+                    // acknowledge the same authoritative position instead of
+                    // being compared with stale client state.
+                    beginAuthoritativeTransform(
+                        it->second, it->second.pos, glm::vec3(0.0f),
+                        it->second.yaw, "map-ready");
+                    printf("%s [SERVER MAP READY] transport=%s connection=%llu "
+                           "id=%u name=\"%s\" rearmedTransformEpoch=%u "
+                           "position=(%.2f,%.2f,%.2f)\n",
+                           serverTimestamp(), transportKindName(event.transportKind),
+                           (unsigned long long)event.connectionId.value,
+                           it->second.id, it->second.name.c_str(),
+                           (unsigned)it->second.transformEpoch,
+                           it->second.pos.x, it->second.pos.y, it->second.pos.z);
                 }
             }
         }

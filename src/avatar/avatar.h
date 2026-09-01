@@ -174,6 +174,8 @@ public:
     // reloadTextures=true: force atlas rebuild (only for avatar.reload / editor hot-reload).
     AvatarInstance* getOrLoadAvatar(const std::string& name);
     bool applyAvatarToPlayer(Player& player, const std::string& avatarName, bool reloadTextures = false);
+    // Completes a previously requested avatar after the player's async model is ready.
+    bool finalizeAvatarForPlayer(Player& player);
 
     const AvatarDefinition& current() const { return mAvatar; }
     bool hasAvatar() const { return mHasAvatar; }

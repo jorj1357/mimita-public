@@ -31,6 +31,7 @@
 #include "input/input-commands.h"
 #include "game/game-state.h"
 #include "physics/config.h"
+#include "combat/projectile-render.h"
 
 extern DuelManager gDuelManager;
 
@@ -1002,6 +1003,20 @@ void engineTickCamera(Engine& engine, float dt)
                     effect.to.x, effect.to.y, effect.to.z, effect.sourceActorId.c_str());
                 EffectPartSystem::instance().spawnTracer(
                     effect.from, effect.to, effect.sourceActorId);
+            } else if (effect.type == "projectile_spawn") {
+                Debug::log(Debug::Category::Replay,
+                    "[REPLAY EFFECT] spawned type=projectile_spawn tick=%d pos=(%.2f %.2f %.2f) velocity=(%.2f %.2f %.2f)\n",
+                    effect.spawnTick, effect.position.x, effect.position.y, effect.position.z,
+                    effect.velocity.x, effect.velocity.y, effect.velocity.z);
+                EffectPart rocket;
+                rocket.position = effect.position;
+                rocket.velocity = effect.velocity;
+                rocket.maxLifetime = std::max(effect.lifetime, 0.1f);
+                rocket.scale = 1.0f;
+                rocket.alpha = 1.0f;
+                rocket.billboardText = false;
+                rocket.replayType = "replay_rocket";
+                EffectPartSystem::instance().spawn(rocket);
             } else if (effect.type == "death_ellipsoid") {
                 glm::vec3 dir = glm::length(effect.to - effect.from) > 0.001f
                     ? glm::normalize(effect.to - effect.from)

@@ -227,6 +227,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     // Clear remote state
     ctx.remotePlayers.clear();
     ctx.remoteNpcs.clear();
+    mpResetAvatarNetwork(ctx);
     ctx.remotePlayerInterpolation.clear();
     ctx.remoteNpcInterpolation.clear();
     DeathGhostSystem::instance().clear();
@@ -246,6 +247,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.processedReliableEventOrder.clear();
     ctx.playerRegistry.clear();
     ctx.pendingVipStyles.clear();
+    mpResetAvatarNetwork(ctx);
     ctx.predictedProjectileIds.clear();
     ctx.predictedExplosions.clear();
     ctx.predictedSelfKnockbacks.clear();

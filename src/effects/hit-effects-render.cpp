@@ -63,6 +63,16 @@ static void renderElongatedSphere(const HitBurstEffect& b, int age, const Camera
     float alpha = lerp(cfg.alphaStart, cfg.alphaEnd, evalCurve(gConfig.curves.alphaCurve, t));
     float brightness = lerp(cfg.brightnessStart, cfg.brightnessEnd, evalCurve(gConfig.curves.brightnessCurve, t));
     glm::vec3 color = lerpVec3(cfg.colorStart, cfg.colorEnd, t);
+
+    if (cfg.shape == "shockwave") {
+        const float shockRadius = std::max(0.0f, len);
+        const float rotation = cfg.rotation.z + cfg.shockwaveRotationSpeedDegrees * (float)age / 60.0f;
+        const glm::vec4 shockColor{color.x * brightness, color.y * brightness, color.z * brightness, std::clamp(alpha, 0.0f, 1.0f)};
+        DebugVis::drawFilledShockwave(camera, b.position, b.normal, shockRadius,
+                                      cfg.shockwaveHeight, cfg.shockwavePoints,
+                                      cfg.shockwavePointLength, rotation, shockColor);
+        return;
+    }
     glm::vec4 col{color.x * brightness, color.y * brightness, color.z * brightness, std::clamp(alpha, 0.0f, 1.0f)};
 
     glm::vec3 dir = glm::length(b.direction) > 0.001f ? glm::normalize(b.direction) : glm::vec3(0.0f, 0.0f, 1.0f);

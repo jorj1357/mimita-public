@@ -129,7 +129,13 @@ enum PacketType : uint8_t
     PACKET_MAP_CHANGE = 58,
     PACKET_SPYKNIFE_HIT_CLAIM = 59,
     PACKET_GODBALL_HIT_CLAIM = 60,
-    PACKET_SERVER_NOTIFICATION = 61
+    PACKET_SERVER_NOTIFICATION = 61,
+    // Avatar identity is transferred separately from snapshots. The manifest
+    // contains avatar.json and SHA-256 references to image assets; image bytes
+    // are requested only when the receiving client cache misses them.
+    PACKET_AVATAR_MANIFEST = 62,
+    PACKET_AVATAR_ASSET_REQUEST = 63,
+    PACKET_AVATAR_ASSET_CHUNK = 64
 };
 
 enum DamageConfirmedSource : uint8_t
@@ -248,6 +254,63 @@ struct PacketHeader
 };
 
 static_assert(sizeof(PacketHeader) == 20, "PacketHeader wire size changed");
+
+constexpr uint16_t AVATAR_MANIFEST_PAYLOAD_BYTES = 1024;
+constexpr uint16_t AVATAR_ASSET_PAYLOAD_BYTES = 1024;
+constexpr uint16_t AVATAR_ASSET_NAME_BYTES = 96;
+constexpr uint8_t AVATAR_ASSET_TYPE_IMAGE = 1;
+
+// Client -> server -> clients. A manifest is deliberately chunked so it stays
+// below MAX_GAME_DATAGRAM_BYTES on both UDP and ICE transports.
+struct AvatarManifestChunkPacket
+{
+    PacketHeader header;
+    uint32_t ownerPlayerId = 0;
+    uint8_t manifestHash[32] = {};
+    uint16_t chunkIndex = 0;
+    uint16_t chunkCount = 0;
+    uint16_t payloadBytes = 0;
+    uint16_t reserved = 0;
+    uint8_t payload[AVATAR_MANIFEST_PAYLOAD_BYTES] = {};
+};
+
+static_assert(sizeof(AvatarManifestChunkPacket) <= MAX_GAME_DATAGRAM_BYTES,
+              "AvatarManifestChunkPacket exceeds datagram limit");
+
+// Receiver -> server. The server uses sourcePlayerId to find the owner's
+// already-uploaded bytes, then forwards the matching chunks to this receiver.
+struct AvatarAssetRequestPacket
+{
+    PacketHeader header;
+    uint32_t sourcePlayerId = 0;
+    uint32_t requestId = 0;
+    uint8_t assetHash[32] = {};
+};
+
+static_assert(sizeof(AvatarAssetRequestPacket) <= MAX_GAME_DATAGRAM_BYTES,
+              "AvatarAssetRequestPacket exceeds datagram limit");
+
+// Owner -> server upload and server -> receiver lazy download. PNG/JPEG bytes
+// are already compressed by their file format, so they are sent unmodified.
+struct AvatarAssetChunkPacket
+{
+    PacketHeader header;
+    uint32_t sourcePlayerId = 0;
+    uint32_t targetPlayerId = 0;
+    uint32_t requestId = 0;
+    uint8_t assetHash[32] = {};
+    uint16_t chunkIndex = 0;
+    uint16_t chunkCount = 0;
+    uint16_t payloadBytes = 0;
+    uint32_t totalBytes = 0;
+    uint8_t assetType = AVATAR_ASSET_TYPE_IMAGE;
+    uint8_t reserved = 0;
+    char logicalName[AVATAR_ASSET_NAME_BYTES] = {};
+    uint8_t payload[AVATAR_ASSET_PAYLOAD_BYTES] = {};
+};
+
+static_assert(sizeof(AvatarAssetChunkPacket) <= MAX_GAME_DATAGRAM_BYTES,
+              "AvatarAssetChunkPacket exceeds datagram limit");
 
 struct HelloPacket
 {

@@ -176,7 +176,8 @@
     },
 
     "movementDashBurst": {
-        "enabled": false,
+        "enabled": true,
+        "shape": "shockwave",
         "lifetimeTicks": 25,
         "lengthStart": 0.5,
         "lengthEnd": 3.1,
@@ -193,6 +194,10 @@
         "speedScaleMin": 1.0,
         "speedScaleMax": 2.5,
         "stretchAxis": "forward"
+        ,"shockwaveHeight": 0.06
+        ,"shockwavePoints": 8
+        ,"shockwavePointLength": 0.8
+        ,"shockwaveRotationSpeedDegrees": 180.0
     },
 
     "groundJumpBurst": {
