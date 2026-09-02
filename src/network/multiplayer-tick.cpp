@@ -812,10 +812,12 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     {
         ctx.serverPassword = PasswordPopup::getPassword();
         ctx.wrongPassword = false;
-        ctx.connectionState = ConnectionState::Connecting;
-        ctx.lastHelloMs = 0;
         PasswordPopup::clearResult();
-        printf("[NET CONNECT] password submitted, re-joining\n");
+        const std::string roomCode = !ctx.currentRoomCode.empty()
+            ? ctx.currentRoomCode : ctx.roomCode;
+        const bool restarted = mpIceConnectStart(ctx, roomCode, playerName);
+        printf("[NET CONNECT] password submitted, restarting ICE join room=%s started=%d\n",
+               roomCode.c_str(), (int)restarted);
     }
 
     // ── Connection state machine ───────────────────────────────────────

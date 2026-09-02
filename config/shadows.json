@@ -1,15 +1,15 @@
 {
     "enabled": true,
 
-    "shadowMapSize": 512,
+    "shadowMapSize": 1024,
 
-    "shadowDistance": 60.0,
+    "shadowDistance": 512.0,
 
     "shadowBias": 0.002,
 
-    "shadowDarkness": 0.75,
+    "shadowDarkness": 0.5,
 
-    "shadowSoftness": 1.5,
+    "shadowSoftness": 0.5,
 
     "shadowTint": [0.0, 0.0, 0.0],
 
