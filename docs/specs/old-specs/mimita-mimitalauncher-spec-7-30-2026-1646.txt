@@ -1,4 +1,6 @@
-﻿MiMITALauncher Specification
+﻿9 2 2026 we are gonna do tihs later, after we have code signing, for now, we are gonna have like just install the newest .zip version so whatverrrr
+
+MiMITALauncher Specification
 7 30 2026 1646
 1. Product definition
 MiMITALauncher.exe is the single official entrance into MiMITA.
