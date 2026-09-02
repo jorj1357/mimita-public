@@ -2,6 +2,11 @@ Favor deleting code over adding code when both solutions achieve the same result
 
 # MiMITA Documentation Router
 
+Start with `docs/ROUTER.md`. It is the short map for all humans and AI agents.
+For any bug, also read `docs/regressions/regressions-v1.md` before changing code.
+That file is append-only: never delete or rewrite old entries. When a bug is a
+regression, append a dated entry and tell the user that you did so.
+
 The detailed behavioral specifications are organized under `docs/specs/`.
 Architecture rules are under `docs/architecture/`.
 Build, deployment, and completion procedures are under `docs/operations/`.
