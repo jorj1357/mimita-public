@@ -10,5 +10,11 @@
 
 * `assets/sound/music/ingame/donttrack` is intentionally excluded from source control via `.gitignore`. It contains local music work files, exports, experiments, and temporary audio assets. Any file that should become part of the game must be moved out of this folder into the proper tracked asset location.
 
+# assets that DO get tracked 
+
+maps get tracked by git assets\maps\
+
+9 2 2026 expand, because, we should add a folder of 
+
 ---
 
