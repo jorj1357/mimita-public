@@ -1,4 +1,74 @@
 Favor deleting code over adding code when both solutions achieve the same result.
+
+# MiMITA Documentation Router
+
+The detailed behavioral specifications are organized under `docs/specs/`.
+Architecture rules are under `docs/architecture/`.
+Build, deployment, and completion procedures are under `docs/operations/`.
+Known recurring failures belong under `docs/regressions/`.
+
+Before changing behavior, classify the task and read the routed documents below.
+Use the specification as the intended behavior, then compare it with the current
+implementation. Do not silently rewrite a specification to match existing code.
+
+## Task Routing
+
+GUI, HUD, menus, damage numbers, or missing text:
+
+- `docs/specs/gui/gui.md`
+- `docs/specs/weapons/weapons.md` when damage or hit events are involved
+- `docs/architecture/json-configuration/json-configuration.md` when settings or hot reload are involved
+- `docs/regressions/`
+
+Movement, physics, grounded state, or collision:
+
+- `docs/specs/movement/movement.md`
+- `docs/architecture/collision/collision.md`
+- `docs/specs/performance/performance.md`
+
+Weapons, damage, hit detection, or knockback:
+
+- `docs/specs/weapons/weapons.md`
+- `docs/specs/networking/networking.md`
+- `docs/architecture/collision/collision.md`
+- `docs/specs/performance/performance.md`
+
+Networking or multiplayer:
+
+- `docs/specs/networking/networking.md`
+- the relevant weapons or gamemodes specification
+- `docs/regressions/`
+
+Game modes, matches, scoring, timers, or spawns:
+
+- `docs/specs/gamemodes/gamemodes.md`
+- the relevant movement, networking, or GUI specification
+
+Logging or diagnostics:
+
+- `docs/specs/debug-logging/debug-logging.md`
+
+Build, EXE, deployment, or completion:
+
+- `docs/operations/build-and-exe/build-and-exe.md`
+- `docs/operations/vps-deployment/vps-deployment.md` when VPS work is involved
+- `docs/operations/task-completion/task-completion.md`
+
+## Bug Workflow
+
+For an ambiguous bug:
+
+1. Read the routed specifications.
+2. Search `docs/regressions/` for similar failures.
+3. Find the current implementation owner.
+4. Trace the data flow from input to output.
+5. Compare current behavior with the specification.
+6. Make the smallest correct fix.
+7. Run focused validation, including JSON or hot-reload checks when applicable.
+8. Build `mimita.exe` when code changes.
+9. Run `python overseer.py` and require `Overall Status: PASS`.
+10. Report source/build evidence separately from final human playtesting.
+
 7 18 2026 addition: always maintain this format at the top of files
 // mm dd yyyy, hh mm
 /* purpose
