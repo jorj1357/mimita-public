@@ -364,11 +364,11 @@
 
     "bodyContactSpark": {
         "enabled": true,
-        "color": [1.0, 0.8, 0.5],
+        "color": [1.0, 0.0, 0.5],
         "alpha": 1.0,
         "lifetimeTicks": 2,
         "baseLength": 2.0,
-        "baseRadius": 0.01,
+        "baseRadius": 2.01,
         "speedScale": 1.0,
         "local_axis": "+Z"
     },

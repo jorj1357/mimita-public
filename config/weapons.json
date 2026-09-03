@@ -505,7 +505,7 @@
     "spread": 0.0,
     "recoil": 50.0,
     "projectile_speed": 45.0,
-    "projectile_radius": 0.3,
+    "projectile_radius": 0.7,
     "projectile_lifetime": 5.0,
     "fire_mode": "semi_auto",
     "behavior_type": "rocket_launcher",
