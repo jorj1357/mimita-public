@@ -1,5 +1,7 @@
 # Architecture Direction
 
+9 3 2026 todo maybe expand this? explain what exact kinds of files should go where , without putting exact file paths so that code can change to match the spec 
+
 Target architecture. Use judgment.
 
 ## Small Files
@@ -227,3 +229,4 @@ Creating a new function requires justification.
 
 ---
 
+9 3 2026 todo explain generalization of functions, e.g. making a gamemode, first attempt = duelsmatchfunction(), but a better function is, gamemodefunction() with duels as an argument within it. think like, how can we step outside the box, and make the desired behavior happen while making the functions that get that behavior to happen  to be more general and support other functions - also add this to like overall vision and direction of repo, over time it becomes atomic and ridiculiusly generic each function so emergent cool behaviors happen no hardcoded animation locks

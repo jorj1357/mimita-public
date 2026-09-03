@@ -12,7 +12,25 @@ Whats this
    2. Date and time first observed:   
       1.    
    3. Why bad behavior  
-      1.    
+      1.     
+   4. What fixed it, date and time  
+      1.  
+   5. What we learned  
+      1. 
+
+newest at top 9 3 2026
+
+9 3 2026
+
+1. Issue: the website https://mimita.fun the signing up and logging in is broken 9 3 2026 1526
+   1. Bad behavior  
+      1.    i go to the site and i log in and it sas database connection failed. check server logs.
+      2. thats not good and sucks dick
+   2. Date and time first observed:   
+      1.    this hapepned before, but its happened first viewed at  9 3 2026 at 201 am est  bc of a discrod message in mimita discord
+      2. viewed again  9 3 2026 1527
+   3. Why bad behavior  
+      1.    i need to be able to log in like thats a  core, if mimita is a tree, logging in/signingup is the roots of the tree, thats so so so imporatnt to work 
    4. What we learned  
       1.    
    5. What fixed it, date and time  

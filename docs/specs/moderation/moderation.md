@@ -1,4 +1,13 @@
-﻿Moderation full spec
+﻿9 3 2026
+
+needs better working so format this better 
+
+need now vs later:
+now = go to website, mute this specific account/unmute
+view all muted, view all blocked
+report button = sends a report of this user to  moderation queue and i get an email 
+
+Moderation full spec
 End goal
 * 7 19 2026
 * No moderators are neede because all users are moderator s

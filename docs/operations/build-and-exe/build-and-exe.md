@@ -30,9 +30,6 @@ Rules:
 
 If there is a TODO comment in the file you are working on, and it is easy enough to do, just do it and continue rather than skipping it.
 
-Do not output chain-of-thought.
-Do not narrate internal reasoning.
-
 When building or testing the EXE, use build_agent.py instead of build.py, because build.py opens the EXE on the computer and may falsely appear to error when it has not.
 
 ## Single EXE Output
