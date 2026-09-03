@@ -1,5 +1,30 @@
 Favor deleting code over adding code when both solutions achieve the same result.
 
+# Current Documentation System
+
+This file is the project introduction for AI agents. The authoritative project
+documents are under `docs/architecture/`, `docs/operations/`,
+`docs/regressions/`, `docs/skills/`, `docs/specs/`, and `docs/workflows/`, plus
+`docs/ROUTER.md`, `docs/doc-review-09-03-2026.md`, and `docs/changelog/`.
+
+Start every task by reading `docs/ROUTER.md` and then the documents it routes.
+The current specification describes the desired behavior. Code is an
+implementation of that specification. If code disagrees with a specification,
+quote the exact specification, explain the disagreement, and bring the code
+toward the specification as far as safely possible.
+
+Every AI session that touches the repository must create exactly one file under
+`docs/changelog/mm-dd-yyyy/`. Write it immediately before completion so it
+describes the final state. Record the branch, commits, time in EST, pre-existing
+changes, exact files and lines, exact old and new content, reasoning, documents,
+skills, validation, and remaining human review. Never claim pre-existing edits.
+
+Confirmed regressions belong in `docs/regressions/`; ordinary work history does
+not. The focused documents under `docs/skills/` replace `overseer.py` as the
+documentation workflow's review method. Older text in this file that calls
+`overseer.py` the final authority is superseded by this section and by
+`docs/operations/task-completion/task-completion.md`.
+
 # MiMITA Documentation Router
 
 Start with `docs/ROUTER.md`. It is the short map for all humans and AI agents.

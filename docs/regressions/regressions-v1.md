@@ -1,4 +1,21 @@
-Whats this 
+// 09 03 2026, 15 42
+/* purpose
+* record confirmed behavior breaks discovered through human review or playtesting
+* preserve the exact wrong behavior, cause, fix, and proof for future agents
+* connect each regression to the changelog session that introduced or fixed it
+* this file DOES NOT record normal AI work history
+* this file DOES NOT replace current specifications
+* this file DOES NOT allow old entries to be rewritten or deleted
+*/
+
+# MiMITA Regression Records
+
+This is an append-only record of confirmed regressions. Normal AI work history
+belongs in `docs/changelog/`. A new entry must include the expected behavior,
+actual behavior, exact specification, wrong code, corrected code, cause, fix,
+proof, observed time, and related changelog file.
+
+Whats this
 
 - 9 2 2026 this tracks like  
 - Ok if the behavior we want worked before, then later, it stopped working,   

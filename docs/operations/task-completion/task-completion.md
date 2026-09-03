@@ -1,121 +1,56 @@
-# Bug Report and Explanation Standards
+// 09 03 2026, 15 40
+/* purpose
+* define how an AI session proves its work is ready for human review
+* require the right documents, focused skills, validation, and final changelog
+* keep source evidence separate from visual or gameplay acceptance
+* this file DOES NOT define gameplay behavior
+* this file DOES NOT replace the detailed specifications
+* this file DOES NOT make overseer.py the final authority
+*/
 
-When reporting a bug or explaining a fix, ALWAYS show:
+# Task Completion
 
-1. **The exact code path that is wrong** — include file path, line numbers, and the actual code. Example:
-   - `src/effects/effect-part-render.cpp:307` renders `damage_impact_sphere` using `drawFilledSphereOriented` with `impact.localDimensions`
-   - The `death_ellipsoid` branch at `effect-part-render.cpp:297` uses `drawFilledSphere` with a `scaleVec` that stretches along world axes, not the hit direction
+## Completion flow
 
-2. **The exact code that should replace it** — include the full replacement snippet, not vague descriptions. Example:
-   ```cpp
-   // WRONG: stretches along world axes
-   glm::vec3 scaleVec = dir * (len / std::max(rad, 0.001f)) + glm::vec3(1.0f) - dir;
-   DebugVis::drawFilledSphere(camera, effect.position, rad, drawColor, scaleVec);
+1. Read `AGENTS.md` and `docs/ROUTER.md`.
+2. Read the routed specification before changing behavior.
+3. Read related architecture and workflow documents.
+4. Inspect current code, git state, and pre-existing changes.
+5. Compare code with the specification and record disagreements.
+6. Make the smallest correct change.
+7. Run the focused skills required by the route.
+8. Run relevant tests, checks, and the canonical build when code changed.
+9. Confirm expected outputs exist.
+10. Write exactly one changelog file immediately before completion.
+11. Report what was proven and what still needs human review.
 
-   // CORRECT: oriented along hit direction
-   DebugVis::drawFilledSphereOriented(camera, center, axis, 1.0f, drawColor, dims, localAxis);
-   ```
+## Focused skills
 
-3. **Evidence from logs or code logic** — explain WHY the current code fails and WHY the fix works, citing specific function behavior, data flow, or log output. Example:
-   - "The `death_ellipsoid` path computes `scaleVec` from a direction vector but applies it as a non-uniform scale in world space. When the hit direction is `(0.7, 0.7, 0)`, the scaleVec becomes `(0.7, 0.7, 1.0)` which stretches the sphere diagonally in XY but not along the actual hit axis. `drawFilledSphereOriented` builds an orthonormal basis from the direction vector and remaps via `impactBasis()`, so the sphere's local Z pole always aligns with the hit direction regardless of world-space orientation."
+Skills are the focused review documents in `docs/skills/`. Use the smallest set
+that covers the task and record each exact path in the changelog. They replace
+the old idea that `overseer.py` is a universal final authority.
 
-Vague statements like "this rendering looks wrong" or "try a different approach" are insufficient. Always trace the exact data flow from input to output.
+## Changelog requirement
 
-# Mandatory Overseer Check
+Every AI session that touches the repository creates one file at:
 
-Before marking ANY task as complete, ALWAYS run `python overseer.py` from the workspace root.
+`docs/changelog/mm-dd-yyyy/mm-dd-yyyy-three-word-summary-hh-mm-ss.md`
 
-Every checker must pass. If any checker reports a finding — fix it and re-run.
+Write it at the end of the session. It must describe the final state and
+include the EST timestamp, branch, commits, pre-existing edits, exact files and
+lines, exact old and new content, reasoning, documents, skills, validation, and
+human review still needed. Use function or heading names as well as line
+numbers because later edits can move line numbers.
 
-Do not claim work is complete while `overseer.py` returns anything other than `Overall Status: PASS`.
+## Regression requirement
 
-This is the final quality gate. Nothing overrides it.
+Only confirmed behavior breaks belong in `docs/regressions/`. Human playtesting
+may discover one. The AI may recommend one. Each entry must link its changelog
+and include expected behavior, actual behavior, specification, wrong code,
+corrected code, cause, fix, and proof. The regression record is append-only.
 
-# TASK COMPLETION REQUIREMENTS
+## Human review
 
-Before ending any task:
-
-1. **Run specialized skills** — Load and execute any skill relevant to the work (collision, physics, state, dependencies, etc.). See "Specialized Skills Check" in the Overseer skill.
-2. **Build** if code changed (using `build_agent.py`)
-3. **Run relevant validation/tests**
-4. **Verify expected outputs exist**
-
-## Final Validation (Required)
-
-Before considering ANY task complete, always execute:
-
-```
-python overseer.py
-```
-
-Every checker must pass.
-
-Do not claim work is complete while any checker reports failures.
-
-If a checker fails:
-
-1. Fix the reported issues.
-2. Run overseer.py again.
-3. Repeat until every checker passes.
-
-5. **Save logs**
-6. **Trigger completion notification script**
-7. **Print summary**
-
-Agents should never simply stop after editing files.
-
-They must validate work first.
-
-If Overseer cannot be loaded: treat this as a FAILURE condition. Run the diagnostics section below and report the exact reason.
-
----
-
-# TASK COMPLETION HOOK
-
-When work is complete, run:
-
-```
-python devscripts/agent_task_complete.py [task_name]
-```
-
-Do NOT use `devscripts\agent_finish.bat` — it can cause AI agents to hang.
-
-This will:
-
-* Play a completion sound (`assets/sound/entity/player/spawning.wav`)
-* Show a Windows toast notification ("MiMITA Agent: Task Completed")
-* Print `[AGENT COMPLETE]` to the console
-
-## Example
-
-After building and verifying:
-
-```
-python build_agent.py
-:: check for SUCCESS
-python devscripts/agent_task_complete.py "Fix duel replay flow"
-```
-
-## Failure handling
-
-If the sound file is missing: a warning is printed.
-If the notification fails: a warning is printed.
-The script never crashes.
-
----
-
-# Mandatory Final Check
-
-Before completing any task that modifies code, configuration, scripts, documentation, or build files, always execute:
-
-```
-python overseer.py
-```
-
-Every checker must pass.
-
-## Zero-Tolerance Policy
-
-Overseer is the final authority. Nothing is considered complete until `python overseer.py` returns:
-
-```
+Builds and focused checks prove source or executable facts. They do not prove
+that the game feels correct or that a visual result is acceptable. State human
+playtesting separately and never call it complete when it was not performed.

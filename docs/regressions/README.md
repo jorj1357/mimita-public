@@ -1,12 +1,21 @@
-# MiMITA Regression Records
+# Regression Records
 
-Record recurring failures here after the cause is confirmed.
+Use this folder only for confirmed behavior breaks discovered through human
+review or playtesting.
 
-Each record should state:
+Normal AI work history belongs in `docs/changelog/`, not here.
 
-- the observed symptom
-- the expected behavior and its specification
-- the exact failing code path
-- the confirmed cause
-- the fix
-- the test or check that prevents recurrence
+Every regression record must include:
+
+- observed date and time;
+- expected behavior;
+- actual behavior;
+- exact specification used;
+- exact wrong code;
+- exact corrected code;
+- confirmed cause;
+- fix;
+- proof; and
+- the related changelog file.
+
+`regressions-v1.md` is append-only. Never rewrite or delete an older entry.

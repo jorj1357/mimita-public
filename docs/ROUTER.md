@@ -1,33 +1,91 @@
+// 09 03 2026, 15 40
+/* purpose
+* route AI agents and humans to the correct authoritative project documents
+* explain the document order before code is inspected or changed
+* prevent agents from guessing when the repository already has written guidance
+* this file DOES NOT contain the full game specifications
+* this file DOES NOT replace the documents it routes
+* this file DOES NOT make archived material authoritative
+*/
+
 # MiMITA Documentation Router
 
-This file is the map for humans and AI agents.
+This is the map for the project documentation.
 
-## If the task is a bug
+## Document hierarchy
 
-1. Read `C:\mimita-priv-v8\docs\regressions\regressions-v1.md`.
-2. Read the workflow that matches the bug in `C:\mimita-priv-v8\docs\workflows\`.
-3. Read the relevant behavior specification in `C:\mimita-priv-v8\docs\specs\`.
-4. Read the relevant architecture note in `C:\mimita-priv-v8\docs\architecture\`.
-5. Search the code for the current owner and trace the event from input to visible output.
-6. Make the smallest fix and validate the exact user-visible result.
+- `AGENTS.md`: project introduction and permanent working rules.
+- `docs/ROUTER.md`: this map and the required reading order.
+- `docs/specs/`: desired behavior; the main source of truth for what the game should do.
+- `docs/architecture/`: ownership and structural rules.
+- `docs/workflows/`: methods for common kinds of work.
+- `docs/operations/`: build, deployment, assets, and completion procedures.
+- `docs/skills/`: focused review checklists used for the task.
+- `docs/regressions/`: confirmed failures and their permanent lessons.
+- `docs/changelog/`: one final record for every AI work session.
+- `docs/doc-review-09-03-2026.md`: current documentation review notes.
+
+The specification describes the desired behavior. If code disagrees with it,
+the code is wrong unless a human changes the specification first. Quote the
+specification, explain the disagreement, and align the implementation as far as
+the task safely allows.
+
+## Every task
+
+1. Read `AGENTS.md`.
+2. Read this router.
+3. Classify the task.
+4. Read the relevant specification first.
+5. Read related architecture and workflow documents.
+6. Read the required focused skills.
+7. Inspect the current code and pre-existing changes.
+8. Compare the implementation with the specification.
+9. Make the smallest correct change.
+10. Run focused validation and build when required.
+11. Write one changelog file immediately before completion.
+12. Report evidence separately from human review still needed.
+
+## Route priority
+
+When several routes apply, check the dependency most likely to break other
+systems first. Use this default order:
+
+1. documentation and specification
+2. logging and diagnostics
+3. performance
+4. terminal commands
+5. in-game chat
+6. moderation
+7. assets
 
 ## Common routes
 
-| User says | Read first |
+| Task type | Read first |
 |---|---|
-| UI, HUD, menu, text, damage numbers do not show | `docs/workflows/fix-repeated-bug.md`, `docs/specs/gui/gui.md` |
-| Damage, hit, weapon, knockback | `docs/workflows/fix-repeated-bug.md`, `docs/specs/weapons/weapons.md`, `docs/specs/networking/networking.md` |
+| Documentation | `docs/doc-review-09-03-2026.md`, the relevant docs folder, `docs/skills/documentation-checker-v1.md` |
+| UI, HUD, menus, text | `docs/specs/gui/gui.md`, `docs/skills/documentation-checker-v1.md` |
+| Damage, weapons, knockback | `docs/specs/weapons/weapons.md`, `docs/specs/networking/networking.md` |
 | Movement, physics, collision | `docs/specs/movement/movement.md`, `docs/architecture/collision/collision.md` |
 | Multiplayer or server behavior | `docs/specs/networking/networking.md`, `docs/specs/gamemodes/gamemodes.md` |
-| JSON or hot reload | `docs/architecture/json-configuration/json-configuration.md` |
-| Build, EXE, or deployment | `docs/operations/build-and-exe/build-and-exe.md` |
+| Logging or diagnostics | `docs/specs/debug-logging/debug-logging.md`, `docs/skills/logging-checker-v1.md` |
+| Performance | `docs/specs/performance/performance.md`, `docs/skills/efficiency-checker-v1.md` |
+| Terminal commands | `docs/architecture/terminal-commands/terminal-commands.md`, `docs/skills/terminal-command-checker-v1.md` |
+| In-game chat | `docs/specs/ingame-chat/ingame-chat.md`, `docs/skills/chat-checker-v1.md` |
+| Moderation | `docs/specs/moderation/moderation.md`, `docs/skills/moderation-checker-v1.md` |
+| Assets or sound | `docs/operations/asset-management/asset-management.md`, `docs/skills/asset-checker-v1.md` |
+| Build or EXE | `docs/operations/build-and-exe/build-and-exe.md`, `docs/operations/task-completion/task-completion.md` |
 
-## Permanent rule for regressions
+Also read `docs/regressions/regressions-v1.md` for any bug or human-reported
+break. Read JSON architecture when settings or hot reload are involved.
 
-`docs/regressions/regressions-v1.md` is append-only.
+## Historical documents
 
-When a previously working behavior breaks, add a new dated entry describing the
-bad behavior, what was learned, and what fixed it. Never delete or rewrite an
-older entry. In the final report, explicitly say whether a regression entry was
-added. If no entry was added, say why.
+Documents under historical or archive locations are background reference only.
+They must not override current specifications, architecture, workflows,
+operations documents, skills, or regression records.
 
+## Regression rule
+
+If human review discovers that previously working behavior broke, connect the
+failure to the changelog, record the exact wrong and corrected code, explain the
+cause, and add a careful append-only regression entry.

@@ -23,43 +23,12 @@ For build purposes, human or AI agents are authorized to terminate existing `mim
 * Fixes discovered on VPS must be implemented locally.
 * Test locally before deployment.
 
-python overseer.py
-```
+## Validation before deployment
 
-Every checker must pass.
-
-## Zero-Tolerance Policy
-
-Overseer is the final authority. Nothing is considered complete until `python overseer.py` returns:
-
-```
-Overall Status:  PASS
-```
-
-The following statuses are NOT acceptable: WARNING, LOW, MEDIUM, HIGH, CRITICAL, or any finding that requires action. Any finding whatsoever — including "acceptable warning," "justified," "known issue," "technical debt," or "follow-up item" — is a failed review.
-
-## Workflow
-
-1. Make code changes
-2. Run `python overseer.py`
-3. If any checker finds ANY issue — fix it, re-run overseer.py
-4. Repeat until every checker passes
-5. Only then claim the task is complete
-
-## Forbidden
-
-- Arguing that a warning is acceptable
-- Marking work complete with unresolved findings
-- Deferring issues to a follow-up
-- Accepting technical debt without fixing it immediately
-
-## Exceptions
-
-If overseer.py cannot run (e.g., Python not available), explain exactly why in the completion report. Do not skip the check.
-
-## Temporary Notice (2026-07-15)
-
-overseer.py is currently broken and needs to be fixed. Until it is repaired, treat it as a warning, not a blocker. Do not let overseer failure prevent task completion. Focus on building and verifying via build_agent.py instead.
+Use the task-specific focused skills under `docs/skills/` and record their
+exact paths and results in the session changelog. Deployment verification is
+separate from source validation: confirm the deployed commit, service health,
+and recent logs after the approved pull and restart.
 
 ## VPS and Production Deployment Rules
 
