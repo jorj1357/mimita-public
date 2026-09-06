@@ -5,7 +5,7 @@
 * keep source evidence separate from visual or gameplay acceptance
 * this file DOES NOT define gameplay behavior
 * this file DOES NOT replace the detailed specifications
-* this file DOES NOT make overseer.py the final authority
+* this file DOES NOT require the deprecated overseer.py script
 */
 
 # Task Completion
@@ -19,16 +19,26 @@
 5. Compare code with the specification and record disagreements.
 6. Make the smallest correct change.
 7. Run the focused skills required by the route.
-8. Run relevant tests, checks, and the canonical build when code changed.
+8. Run relevant tests, focused Markdown skills, checks, and the canonical build when code changed.
 9. Confirm expected outputs exist.
 10. Write exactly one changelog file immediately before completion.
 11. Report what was proven and what still needs human review.
 
+## Review authority
+
+`overseer.py` is deprecated and is not required for new work. The maintained
+review system is specification review, focused Markdown skills, relevant tests,
+build evidence, runtime evidence, and human acceptance where required.
+
+Use these result states: `PASS`, `PASS_WITH_HUMAN_REVIEW`, `NEEDS_SPEC_DECISION`,
+`BLOCKED`, and `NOT_APPLICABLE`.
+
 ## Focused skills
 
 Skills are the focused review documents in `docs/skills/`. Use the smallest set
-that covers the task and record each exact path in the changelog. They replace
-the old idea that `overseer.py` is a universal final authority.
+that covers the task and record each exact path in the changelog. They are the
+maintained, task-specific review system. Record each skill's result, findings,
+unresolved warnings, and evidence still required from human review.
 
 ## Changelog requirement
 

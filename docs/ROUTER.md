@@ -23,6 +23,9 @@ This is the map for the project documentation.
 - `docs/skills/`: focused review checklists used for the task.
 - `docs/regressions/`: confirmed failures and their permanent lessons.
 - `docs/changelog/`: one final record for every AI work session.
+- `docs/features/`: stable feature records linking goals, owners, tests, logs,
+  changelogs, regressions, and human acceptance.
+- `docs/gold/`: examples of complete evidence and changelog quality.
 - `docs/doc-review-09-03-2026.md`: current documentation review notes.
 
 The specification describes the desired behavior. If code disagrees with it,
@@ -37,7 +40,8 @@ the task safely allows.
 3. Classify the task.
 4. Read the relevant specification first.
 5. Read related architecture and workflow documents.
-6. Read the required focused skills.
+6. Read the required focused skills, including
+   `docs/skills/spec-behavior-review-v1.md` for behavior changes or spec review.
 7. Inspect the current code and pre-existing changes.
 8. Compare the implementation with the specification.
 9. Make the smallest correct change.
@@ -79,6 +83,11 @@ systems first. Use this default order:
 
 Also read `docs/regressions/regressions-v1.md` for any bug or human-reported
 break. Read JSON architecture when settings or hot reload are involved.
+
+For active configuration, resolve the runtime-loaded path before inspecting or
+editing candidates. Files marked `.bak`, `.archive`, `.experimental`, dated
+copies, or free-form historical text are archive material unless an active
+configuration manifest explicitly identifies them.
 
 ## Historical documents
 

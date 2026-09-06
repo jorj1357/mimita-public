@@ -84,6 +84,25 @@ ________________
 
 
 3. Simulation timing and coordinate rules
+
+Timing precedence:
+
+* Input is sampled every render frame so local intent is recognized with the
+  minimum possible latency.
+* Local prediction and local display may update every render frame.
+* Authoritative gameplay movement, collision, and damage use the fixed 60 Hz
+  simulation tick.
+* Network replication sends movement snapshots at up to 60 Hz; remote clients
+  may see movement on the next received snapshot.
+* Remote rendering interpolates or predicts received state and never changes
+  authoritative gameplay state.
+* Client prediction, server simulation, replay, and tests call the same shared
+  movement rules.
+
+If informal notes conflict with a normative section, the normative section wins.
+If two normative sections conflict, the task is `NEEDS_SPEC_DECISION` until the
+specification is clarified.
+
 Default gameplay simulation:
 constexpr uint32_t MOVEMENT_SIMULATION_HZ = 60;
 constexpr float MOVEMENT_FIXED_DT = 1.0f / 60.0f;

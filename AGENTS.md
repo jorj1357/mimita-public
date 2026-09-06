@@ -96,7 +96,7 @@ For an ambiguous bug:
 6. Make the smallest correct fix.
 7. Run focused validation, including JSON or hot-reload checks when applicable.
 8. Build `mimita.exe` when code changes.
-9. Run `python overseer.py` and require `Overall Status: PASS`.
+9. Run the required focused Markdown skills and record their results.
 10. Report source/build evidence separately from final human playtesting.
 
 7 18 2026 addition: always maintain this format at the top of files
@@ -204,15 +204,12 @@ When reporting a bug or explaining a fix, ALWAYS show:
 
 Vague statements like "this rendering looks wrong" or "try a different approach" are insufficient. Always trace the exact data flow from input to output.
 
-# Mandatory Overseer Check
+# Deprecated Overseer Notice
 
-Before marking ANY task as complete, ALWAYS run `python overseer.py` from the workspace root.
-
-Every checker must pass. If any checker reports a finding — fix it and re-run.
-
-Do not claim work is complete while `overseer.py` returns anything other than `Overall Status: PASS`.
-
-This is the final quality gate. Nothing overrides it.
+`overseer.py` is deprecated and is not required for new work. The maintained
+quality gate is the routed specification, focused Markdown skills, relevant
+tests, build/runtime evidence, and human acceptance where required. Do not edit
+unrelated checkers merely to obtain a legacy Overseer pass.
 
 # Asset Rules
 
@@ -1019,28 +1016,17 @@ Creating a new function requires justification.
 
 Before ending any task:
 
-1. **Run specialized skills** — Load and execute any skill relevant to the work (collision, physics, state, dependencies, etc.). See "Specialized Skills Check" in the Overseer skill.
+1. **Run specialized skills** — Load and execute every focused Markdown skill relevant to the work, including `docs/skills/spec-behavior-review-v1.md` for behavior or specification changes.
 2. **Build** if code changed (using `build_agent.py`)
 3. **Run relevant validation/tests**
 4. **Verify expected outputs exist**
 
 ## Final Validation (Required)
 
-Before considering ANY task complete, always execute:
-
-```
-python overseer.py
-```
-
-Every checker must pass.
-
-Do not claim work is complete while any checker reports failures.
-
-If a checker fails:
-
-1. Fix the reported issues.
-2. Run overseer.py again.
-3. Repeat until every checker passes.
+Before considering a task complete, run the routed focused Markdown skills,
+relevant tests, and build/runtime validation required by the task. Record each
+result and unresolved human-review requirement in the changelog. Do not claim
+completion when a task-scoped review reports a blocker.
 
 5. **Save logs**
 6. **Trigger completion notification script**
@@ -1301,48 +1287,26 @@ Avoid rounded corners.
 
 ---
 
-# Mandatory Final Check
+# Maintained Final Review
 
-Before completing any task that modifies code, configuration, scripts, documentation, or build files, always execute:
-
-```
-python overseer.py
-```
-
-Every checker must pass.
-
-## Zero-Tolerance Policy
-
-Overseer is the final authority. Nothing is considered complete until `python overseer.py` returns:
-
-```
-Overall Status:  PASS
-```
-
-The following statuses are NOT acceptable: WARNING, LOW, MEDIUM, HIGH, CRITICAL, or any finding that requires action. Any finding whatsoever — including "acceptable warning," "justified," "known issue," "technical debt," or "follow-up item" — is a failed review.
+Before completing work, run the routed focused Markdown skills and record their
+statuses, findings, and evidence. `overseer.py` is deprecated and is not a
+required check for new work.
 
 ## Workflow
 
-1. Make code changes
-2. Run `python overseer.py`
-3. If any checker finds ANY issue — fix it, re-run overseer.py
-4. Repeat until every checker passes
-5. Only then claim the task is complete
+1. Make the narrow requested changes
+2. Run the routed specification and focused skills
+3. Fix task-scoped blockers or record a specification decision needed
+4. Run relevant tests, builds, and runtime validation
+5. Only then claim technical completion, with human acceptance stated separately
 
 ## Forbidden
 
-- Arguing that a warning is acceptable
-- Marking work complete with unresolved findings
-- Deferring issues to a follow-up
-- Accepting technical debt without fixing it immediately
-
-## Exceptions
-
-If overseer.py cannot run (e.g., Python not available), explain exactly why in the completion report. Do not skip the check.
-
-## Temporary Notice (2026-07-15)
-
-overseer.py is currently broken and needs to be fixed. Until it is repaired, treat it as a warning, not a blocker. Do not let overseer failure prevent task completion. Focus on building and verifying via build_agent.py instead.
+- Hiding a task-scoped blocker
+- Claiming human acceptance without performing it
+- Silently rewriting a specification to match code
+- Editing unrelated files to satisfy a deprecated checker
 
 ## VPS and Production Deployment Rules
 
@@ -1530,4 +1494,5 @@ To add a new checker, create a new directory under `.opencode/skills/<name>/` wi
 - Returns exit code 0 for PASS, non-zero for FAIL
 - Runs in under 120 seconds
 
-The overseer automatically discovers and runs all checker scripts. No changes to `overseer.py` are required.
+Focused Markdown skills are the maintained review system. Each skill records
+its own scope, result, findings, and evidence; no universal checker is required.
