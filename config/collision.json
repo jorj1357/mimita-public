@@ -4,7 +4,7 @@
     "maxStepHeight": 0.25,
     "bounce": {
         "enabled": true,
-        "strength": 0.1,
+        "strength": 0.35,
         "friction": 0.0,
         "minSpeed": 0.01,
         "maxSpeed": 999999.0,

@@ -115,8 +115,9 @@ void engineTickCombat(Engine& engine, float dt)
         if (gDuelManager.enabled()) {
             gDuelManager.update(dt, player, npcSystem, world, camera);
         }
+        // Bomb Tag: client-side rendering only (server owns all gameplay)
         if (gBombTagManager.enabled()) {
-            gBombTagManager.update(dt, player, npcSystem, world);
+            gBombTagManager.update(dt, player);
         }
         player.updateAudio(dt);
 
@@ -218,7 +219,7 @@ void engineTickCombat(Engine& engine, float dt)
         DuelQueue::instance().matchOver();
     bool duelCountdown = gDuelManager.isCountdownActive() ||
         DuelQueue::instance().countdownActive();
-    bool bombTagEndVisible = gBombTagManager.phase() == BombTagPhase::MatchEnd;
+    bool bombTagEndVisible = gBombTagManager.isMatchEnd();
     bool bombTagCountdown = gBombTagManager.isCountdownActive();
     if ((duelEndVisible || bombTagEndVisible) && mouseDown && !mousePrev) {
         Debug::log(Debug::Category::Duel, "[INPUT OWNERSHIP] mouseClick=1 owner=game_end_ui consumed=1");

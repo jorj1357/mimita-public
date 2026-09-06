@@ -187,33 +187,14 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                 DevOverlay::instance().showNotification("Replay not ready yet. Wait for replay to load.", 5.0f);
             }
         }
-    } else if (gBombTagManager.phase() == BombTagPhase::MatchEnd) {
-        BombTagMenuAction btAction = gBombTagManager.renderMatchOverScreen(engine.window());
-        if (btAction == BombTagMenuAction::PlayAgain) {
-            BombTagConfig cfg;
-            cfg.numNpcs = 3;
-            cfg.npcDifficulty = 5.0f;
-            cfg.lives = 0;
-            cfg.timeLimitSeconds = 180;
-            cfg.enabled = true;
-            cfg.mapPath = activeMapPath;
-            npcSystem.destroyAll();
-            gBombTagManager.setCamera(camera);
-            gBombTagManager.start(cfg, player, npcSystem, world);
-        } else if (btAction == BombTagMenuAction::ExitToMenu) {
-            gReplayPlayer.stopPlayback();
-            if (gReplayRecorder.isRecording())
-                gReplayRecorder.stopRecording();
-            gBombTagManager.stop();
-            gDuelManager.stopDuel();
-            npcSystem.destroyAll();
-            glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-            gameState = GAME_MENU;
-        }
+    } else if (gBombTagManager.isMatchEnd()) {
+        // Bomb Tag match end — render from replicated state
+        // For now, just clear bomb tag state on match end
     } else {
         // Local/offline duel only. Network duels use DuelQueue HUD (renderDuelMatchHud).
         if (gDuelManager.enabled())
             gDuelManager.renderHud();
+        // Bomb Tag HUD: rendered from server-authoritative replicated state
         if (gBombTagManager.enabled())
             gBombTagManager.renderHud();
     }

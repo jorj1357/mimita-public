@@ -166,6 +166,12 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         next.resultsSeconds = std::max(0, optInt(root, "results_seconds", next.resultsSeconds));
         next.maps = optStringArray(root, "maps");
 
+        // ── Bomb Tag specific fields ─────────────────────────────────
+        next.bombTimerTicks = std::max(60, optInt(root, "bomb_timer_ticks", next.bombTimerTicks));
+        next.inactiveTicks = std::max(0, optInt(root, "inactive_ticks", next.inactiveTicks));
+        next.blinkTicks = std::max(1, optInt(root, "blink_ticks", next.blinkTicks));
+        next.maxPassSanityDistance = std::max(0.5f, optFloat(root, "max_pass_sanity_distance", next.maxPassSanityDistance));
+
         slot.mode = next;
         Debug::warn(Debug::Category::Duel,
             "[GAMEMODE] Loaded %s: %s | goal=%d | time=%d | respawn=%.1fs | heal=%d | maps=%zu\n",

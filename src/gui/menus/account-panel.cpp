@@ -5,6 +5,7 @@
 #include "gui/gui-coord.h"
 #include "auth/auth-system.h"
 #include "auth/auth-controller.h"
+#include "vip/vip-name-render.h"
 
 #include <cstdio>
 
@@ -45,9 +46,14 @@ AccountPanelAction drawAccountPanel(GLFWwindow* window)
         const GuiElement* ue = layout.get("usernameText");
         if (ue && ue->visible)
         {
-            GuiElement dyn = *ue;
-            dyn.text = getDisplayUsername();
-            drawGuiElement(window, dyn);
+            VipNameDrawOptions nameOpts;
+            nameOpts.scale = ue->fontSize > 0.0f ? ue->fontSize : 0.32f;
+            nameOpts.alpha = 1.0f;
+            nameOpts.phase = 0.0f;
+            nameOpts.drawBadge = false;
+            nameOpts.detail = &auth.user().vipStyleDetail;
+            vipDrawStyledNameCentered(getDisplayUsername(), auth.user().vipAppearance,
+                                      uiScaleX(ue->x + ue->w * 0.5f), uiScaleY(ue->y), nameOpts);
         }
     }
     else

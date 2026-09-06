@@ -1517,7 +1517,8 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         p.accountRole = verifiedVipRole;
         p.vipAppearance = verifiedVipAppearance;
         p.vipStyleDetail = vipResult.vipStyleDetail;
-        p.vipStyleEpoch = 1;
+        p.vipStyleEpoch = vipResult.vipStyleDetail.styleEpoch > 0
+            ? vipResult.vipStyleDetail.styleEpoch : 1;
     }
     else if (!existingId)
     {

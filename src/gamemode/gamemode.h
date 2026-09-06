@@ -35,6 +35,11 @@ struct Gamemode {
     int intermissionSeconds = 15;
     int resultsSeconds = 8;
     std::vector<std::string> maps;
+    // ── Bomb Tag specific fields ─────────────────────────────────────
+    int bombTimerTicks = 900;          // Ticks per bomb cycle (15s * 60 = 900)
+    int inactiveTicks = 60;            // Ticks of inactive grace after pass
+    int blinkTicks = 30;               // Ticks per color blink phase
+    float maxPassSanityDistance = 3.0f;// Hard rejection distance for passes (meters)
 };
 
 class GamemodeRegistry {

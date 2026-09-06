@@ -136,7 +136,13 @@ enum PacketType : uint8_t
     PACKET_AVATAR_MANIFEST = 62,
     PACKET_AVATAR_ASSET_REQUEST = 63,
     PACKET_AVATAR_ASSET_CHUNK = 64,
-    PACKET_PROGRESSION_EVENT = 65
+    PACKET_PROGRESSION_EVENT = 65,
+    // ── Bomb Tag state (server → clients) ───────────────────────────
+    // Replicates authoritative bomb holder, timer, and inactive state.
+    PACKET_BOMB_TAG_STATE = 66,
+    // ── Bomb Tag pass event (server → all clients) ──────────────────
+    // Broadcast on every successful bomb transfer for pass visualization.
+    PACKET_BOMB_TAG_PASS_EVENT = 67
 };
 
 enum DamageConfirmedSource : uint8_t
@@ -1504,6 +1510,62 @@ struct SpawnActivatedPacket
     uint32_t serverTick = 0;
 };
 
+// ── Bomb Tag state replication (server → clients) ────────────────────
+// Carries authoritative bomb holder, timer ticks, inactive ticks, and
+// the match phase so clients can render HUD and bomb visual from one
+// authoritative source without running their own simulation.
+enum BombTagOwnerType : uint8_t
+{
+    BOMB_OWNER_NONE = 0,
+    BOMB_OWNER_PLAYER = 1,
+    BOMB_OWNER_NPC = 2
+};
+
+struct BombTagStatePacket
+{
+    PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
+    uint32_t duelId = 0;
+    uint32_t stateVersion = 0;
+    uint8_t phase = 0;                  // DuelStatePhase
+    uint8_t bombOwnerType = 0;          // BombTagOwnerType
+    uint8_t reserved[2] = {};
+    uint32_t bombOwnerPlayerId = 0;     // player ID if owner is player
+    uint32_t bombOwnerNpcIndex = 0;     // NPC index if owner is NPC
+    uint32_t timerTicksRemaining = 0;   // server-authoritative bomb timer
+    uint32_t inactiveTicksRemaining = 0;// 60-tick cooldown after pass
+    uint32_t serverTick = 0;            // current server tick for sync
+    float bombPosX = 0.0f;
+    float bombPosY = 0.0f;
+    float bombPosZ = 0.0f;
+};
+
+// ── Bomb Tag pass visualization event (server → all) ─────────────────
+// Broadcast on every successful bomb transfer so clients can draw a
+// pass beam and display distance information.
+struct BombTagPassEventPacket
+{
+    PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
+    uint32_t serverTick = 0;
+    uint32_t oldOwnerPlayerId = 0;
+    uint32_t newOwnerPlayerId = 0;
+    uint32_t oldOwnerNpcIndex = 0;
+    uint32_t newOwnerNpcIndex = 0;
+    float oldBombPosX = 0.0f;
+    float oldBombPosY = 0.0f;
+    float oldBombPosZ = 0.0f;
+    float newBombPosX = 0.0f;
+    float newBombPosY = 0.0f;
+    float newBombPosZ = 0.0f;
+    float passDistance = 0.0f;
+    float serverRewoundDistance = 0.0f;
+    uint8_t accepted = 1;
+    uint8_t reserved[3] = {};
+};
+
 static_assert(sizeof(SnapshotPacket) < 16384, "SnapshotPacket exceeds client receive buffer");
 static_assert(sizeof(ShotRequestPacket) <= 132, "ShotRequestPacket is too large");
 static_assert(sizeof(ShotEventPacket) <= 160, "ShotEventPacket is too large");
@@ -1526,6 +1588,8 @@ static_assert(sizeof(ReloadRequestPacket) <= 48, "ReloadRequestPacket is too lar
 static_assert(sizeof(ReloadResultPacket) <= 72, "ReloadResultPacket is too large");
 static_assert(sizeof(RespawnRequestPacket) <= 32, "RespawnRequestPacket is too large");
 static_assert(sizeof(PlayerRespawnedPacket) <= 576, "PlayerRespawnedPacket is too large");
+static_assert(sizeof(BombTagStatePacket) <= 96, "BombTagStatePacket is too large");
+static_assert(sizeof(BombTagPassEventPacket) <= 96, "BombTagPassEventPacket is too large");
 
 bool validHeader(const PacketHeader& header, uint8_t expectedType);
 

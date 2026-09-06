@@ -204,7 +204,7 @@ function makeDispatch(store) {
             return rows([...store.subscriptions.values()].filter(s => s.user_id === params[0]).map(s => structuredClone(s)))
         }
 
-        if (text.startsWith("SELECT style_json FROM vip_name_styles")) return rows([])
+        if (text.startsWith("SELECT style_json") && text.includes("FROM vip_name_styles")) return rows([])
         if (text.startsWith("SELECT COUNT(*)::int AS count FROM vip_name_presets")) return rows([{ count: 0 }])
 
         if (text.startsWith("UPDATE users SET supporter_tier")) {

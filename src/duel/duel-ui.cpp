@@ -24,9 +24,12 @@
 #include "gui/gui-layout.h"
 #include "input/mouse-lock.h"
 #include "network/net_common.h"
+#include "network/multiplayer-context.h"
 #include "camera.h"
 #include "debug/debug-visuals.h"
 #include "game/game-state.h"
+#include "auth/auth-system.h"
+#include "vip/vip-name-render.h"
 
 namespace {
 
@@ -230,11 +233,41 @@ void renderDuelMatchHud(GLFWwindow* win, float dt)
     }
 
     // Active fight: scoreboard with player names (me on the left, them on the right).
-    char score[128];
-    snprintf(score, sizeof(score), "%s %d - %d %s",
-             dq.playerName().c_str(), dq.myScore(), dq.oppScore(),
-             dq.opponentName().c_str());
-    hudText(layout, "scoreText", score);
+    const GuiElement* scoreEl = layout.get("scoreText");
+    const float scoreX = scoreEl ? scoreEl->x : 20.0f;
+    const float scoreY = scoreEl ? scoreEl->y : 20.0f;
+    const float scoreScale = scoreEl && scoreEl->fontSize > 0.0f ? scoreEl->fontSize : 0.36f;
+
+    VipNameDrawOptions nameOpts;
+    nameOpts.scale = scoreScale;
+    nameOpts.alpha = 1.0f;
+    nameOpts.phase = 0.0f;
+    nameOpts.drawBadge = false;
+
+    MimitaVip::VipAppearance myVip = AuthSystem::instance().user().vipAppearance;
+    MimitaVip::VipStyleDetail myDetail = AuthSystem::instance().user().vipStyleDetail;
+    nameOpts.detail = &myDetail;
+    const float myNameW = vipMeasureStyledName(dq.playerName(), myVip, nameOpts);
+    vipDrawStyledName(dq.playerName(), myVip,
+                      uiScaleX(scoreX), uiScaleY(scoreY), nameOpts);
+
+    char scoreBuf[64];
+    snprintf(scoreBuf, sizeof(scoreBuf), " %d - %d ", dq.myScore(), dq.oppScore());
+    const float scoreTextW = uiMeasureText(scoreBuf, scoreScale);
+    uiDrawText(scoreBuf, uiScaleX(scoreX) + myNameW, uiScaleY(scoreY), scoreScale,
+               {1.0f, 1.0f, 1.0f, 1.0f});
+
+    MimitaVip::VipAppearance oppVip;
+    MimitaVip::VipStyleDetail oppDetail;
+    auto it = MP_CONTEXT.remotePlayers.find(dq.enemyPlayerId());
+    if (it != MP_CONTEXT.remotePlayers.end())
+    {
+        oppVip = it->second.vipAppearance;
+        oppDetail = it->second.vipStyleDetail;
+    }
+    nameOpts.detail = &oppDetail;
+    vipDrawStyledName(dq.opponentName(), oppVip,
+                      uiScaleX(scoreX) + myNameW + scoreTextW, uiScaleY(scoreY), nameOpts);
 
     char goal[64];
     snprintf(goal, sizeof(goal), "first to %d", dq.goal());

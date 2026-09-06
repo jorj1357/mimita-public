@@ -9,6 +9,7 @@
 #include "effects/effect-part.h"
 #include "debug/debug-log.h"
 #include "replay/replay.h"
+#include "replay/replay.h"
 
 constexpr int MAX_BURSTS = 64;
 extern HitBurstEffect gBursts[MAX_BURSTS];
@@ -96,6 +97,21 @@ void HitEffects::spawnMovementDashBurst(const glm::vec3& position, const glm::ve
     b.dashBurst = true;
     b.dashSpeed = speed;
     b.burstType = BurstType::Dash;
+
+    {
+        ReplayEffectEvent ev;
+        ev.type = "hit_burst";
+        ev.position = spawnPos;
+        ev.direction = dir;
+        ev.normal = b.normal;
+        ev.sourceActorId = "hitfx";
+        ev.targetActorId = "burst";
+        ev.lifetime = (float)b.totalTicks / 60.0f;
+        ev.burstType = (int)BurstType::Dash;
+        ev.dashSpeed = speed;
+        ev.dashBurst = true;
+        captureReplayEffect(ev);
+    }
 }
 
 void HitEffects::spawnGroundJumpBurst(const glm::vec3& position, const glm::vec3& direction)
@@ -123,6 +139,19 @@ void HitEffects::spawnGroundJumpBurst(const glm::vec3& position, const glm::vec3
     b.dashBurst = false;
     b.dashSpeed = 0.0f;
     b.burstType = BurstType::GroundJump;
+
+    {
+        ReplayEffectEvent ev;
+        ev.type = "hit_burst";
+        ev.position = spawnPos;
+        ev.direction = dir;
+        ev.normal = b.normal;
+        ev.sourceActorId = "hitfx";
+        ev.targetActorId = "burst";
+        ev.lifetime = (float)b.totalTicks / 60.0f;
+        ev.burstType = (int)BurstType::GroundJump;
+        captureReplayEffect(ev);
+    }
 }
 
 void HitEffects::spawnAirJumpBurst(const glm::vec3& position, const glm::vec3& direction)
@@ -150,6 +179,19 @@ void HitEffects::spawnAirJumpBurst(const glm::vec3& position, const glm::vec3& d
     b.dashBurst = false;
     b.dashSpeed = 0.0f;
     b.burstType = BurstType::AirJump;
+
+    {
+        ReplayEffectEvent ev;
+        ev.type = "hit_burst";
+        ev.position = spawnPos;
+        ev.direction = dir;
+        ev.normal = b.normal;
+        ev.sourceActorId = "hitfx";
+        ev.targetActorId = "burst";
+        ev.lifetime = (float)b.totalTicks / 60.0f;
+        ev.burstType = (int)BurstType::AirJump;
+        captureReplayEffect(ev);
+    }
 }
 
 void HitEffects::spawnWalkBurst(const glm::vec3& position, const glm::vec3& direction, float speed)
@@ -180,6 +222,20 @@ void HitEffects::spawnWalkBurst(const glm::vec3& position, const glm::vec3& dire
     b.dashBurst = false;
     b.dashSpeed = speed;
     b.burstType = BurstType::Walk;
+
+    {
+        ReplayEffectEvent ev;
+        ev.type = "hit_burst";
+        ev.position = spawnPos;
+        ev.direction = dir;
+        ev.normal = up;
+        ev.sourceActorId = "hitfx";
+        ev.targetActorId = "burst";
+        ev.lifetime = (float)b.totalTicks / 60.0f;
+        ev.burstType = (int)BurstType::Walk;
+        ev.dashSpeed = speed;
+        captureReplayEffect(ev);
+    }
 }
 
 void HitEffects::spawnHealthGainedEffect(const glm::vec3& position)
@@ -200,6 +256,19 @@ void HitEffects::spawnHealthGainedEffect(const glm::vec3& position)
     b.dashBurst = false;
     b.dashSpeed = 0.0f;
     b.burstType = BurstType::HealthGained;
+
+    {
+        ReplayEffectEvent ev;
+        ev.type = "hit_burst";
+        ev.position = position;
+        ev.direction = b.direction;
+        ev.normal = b.normal;
+        ev.sourceActorId = "hitfx";
+        ev.targetActorId = "burst";
+        ev.lifetime = (float)b.totalTicks / 60.0f;
+        ev.burstType = (int)BurstType::HealthGained;
+        captureReplayEffect(ev);
+    }
 }
 
 void HitEffects::spawnLandingBurst(const glm::vec3& position, const glm::vec3& direction, float speed)
@@ -230,4 +299,18 @@ void HitEffects::spawnLandingBurst(const glm::vec3& position, const glm::vec3& d
     b.dashBurst = false;
     b.dashSpeed = speed;
     b.burstType = BurstType::Landing;
+
+    {
+        ReplayEffectEvent ev;
+        ev.type = "hit_burst";
+        ev.position = spawnPos;
+        ev.direction = dir;
+        ev.normal = up;
+        ev.sourceActorId = "hitfx";
+        ev.targetActorId = "burst";
+        ev.lifetime = (float)b.totalTicks / 60.0f;
+        ev.burstType = (int)BurstType::Landing;
+        ev.dashSpeed = speed;
+        captureReplayEffect(ev);
+    }
 }

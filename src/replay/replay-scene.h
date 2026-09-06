@@ -138,6 +138,11 @@ struct ReplayEffectEvent {
     std::string materialName;
     bool billboardText = false;
     bool beam = false;
+
+    // HitBurstEffect reconstruction fields (for replay export parity)
+    int burstType = 0;
+    float dashSpeed = 0.0f;
+    bool dashBurst = false;
 };
 
 struct ReplayKillfeedEvent {

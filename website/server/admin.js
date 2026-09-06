@@ -718,9 +718,9 @@ router.post("/vip/style", requireAdmin, async (req, res, next) => {
         }
 
         await pool.query(
-            `INSERT INTO vip_name_styles (user_id, style_json, updated_at)
-             VALUES ($1, $2, NOW())
-             ON CONFLICT (user_id) DO UPDATE SET style_json = $2, updated_at = NOW()`,
+            `INSERT INTO vip_name_styles (user_id, style_json, style_revision, updated_at)
+             VALUES ($1, $2, 1, NOW())
+             ON CONFLICT (user_id) DO UPDATE SET style_json = $2, style_revision = vip_name_styles.style_revision + 1, updated_at = NOW()`,
             [userId, JSON.stringify(validation.style)]
         )
         await recomputeAndStoreVipForUser(pool, userId)

@@ -660,6 +660,20 @@ void DuelQueue::onDuelState(const DuelStatePacket& pkt)
             entry.score = pkt.ffaLeaderScores[i];
             entry.rank = i;
             entry.isLocalPlayer = pkt.ffaLeaderIds[i] == MP_CONTEXT.localPlayerId;
+            if (entry.isLocalPlayer)
+            {
+                entry.vipAppearance = AuthSystem::instance().user().vipAppearance;
+                entry.vipStyleDetail = AuthSystem::instance().user().vipStyleDetail;
+            }
+            else
+            {
+                auto it = MP_CONTEXT.remotePlayers.find(pkt.ffaLeaderIds[i]);
+                if (it != MP_CONTEXT.remotePlayers.end())
+                {
+                    entry.vipAppearance = it->second.vipAppearance;
+                    entry.vipStyleDetail = it->second.vipStyleDetail;
+                }
+            }
             ffaLeaders.push_back(entry);
         }
     }

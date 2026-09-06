@@ -214,6 +214,11 @@ void serverCommunityStartMatch(bool skipIntermission)
         d.matchMode = "tdm";
         d.mode = ServerMode::TeamDeathmatch;
     }
+    else if (d.communityMode == "bomb_tag")
+    {
+        d.matchMode = "bombtag";
+        d.mode = ServerMode::Sandbox;  // Bomb tag uses Sandbox base mode
+    }
     else
         return;  // sandbox mode doesn't have a match to start
 
@@ -1259,6 +1264,18 @@ void serverDuelTick(SOCKET sock,
         return;
     }
 
+    // ── Bomb Tag match mode state machine ──────────────────────────
+    if (d.matchMode == "bombtag")
+    {
+        if (d.stateBroadcastPending)
+        {
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            d.stateBroadcastPending = false;
+        }
+        serverBombTagTick(sock, players, world, npcs, npcSystem, tick, totalPacketsOut);
+        return;
+    }
+
     // ── Original duel 1v1 state machine ─────────────────────────────
     switch (d.phase)
     {
@@ -1379,6 +1396,491 @@ void serverDuelOnPlayerDeath(uint32_t killerPlayerId,
     d.hasPendingKill = true;
     d.pendingKillerId = killerPlayerId;
     d.pendingVictimId = victimPlayerId;
+}
+
+// ── Bomb Tag ──────────────────────────────────────────────────────────
+
+namespace {
+
+// Shuffle bag for bomb holder selection. Ensures every eligible player
+// is selected once before the bag is reshuffled.
+struct BombShuffleBag {
+    std::vector<uint32_t> order;
+    int position = 0;
+
+    void build(const std::vector<uint32_t>& eligible) {
+        order = eligible;
+        // Fisher-Yates shuffle
+        for (int i = (int)order.size() - 1; i > 0; --i) {
+            int j = (int)((uint32_t)std::rand() % (uint32_t)(i + 1));
+            std::swap(order[i], order[j]);
+        }
+        position = 0;
+    }
+
+    uint32_t next() {
+        if (order.empty()) return 0;
+        if (position >= (int)order.size()) {
+            // Bag exhausted — rebuild with current eligible list
+            // Caller must call build() before next() if they want a fresh bag.
+            // If called without build(), just wrap around.
+            position = 0;
+        }
+        return order[position++];
+    }
+
+    void remove(uint32_t id) {
+        auto it = std::find(order.begin() + position, order.end(), id);
+        if (it != order.end()) {
+            order.erase(it);
+            if (position >= (int)order.size() && !order.empty())
+                position = 0;
+        }
+    }
+};
+
+BombShuffleBag sBombShuffleBag;
+
+// Simple sphere overlap test for bomb contact detection on the server.
+// Uses player body-part sphere positions if available, otherwise root position.
+bool bombSphereOverlap(const glm::vec3& aPos, float aRadius,
+                       const glm::vec3& bPos, float bRadius)
+{
+    float dist = glm::length(aPos - bPos);
+    return dist < (aRadius + bRadius);
+}
+
+// Get a rough position for an entity (root position for players, body.pos for NPCs).
+glm::vec3 getEntityRootPos(const ServerPlayer& p) {
+    return p.pos;
+}
+
+glm::vec3 getEntityRootPos(const ServerNpc& n) {
+    return n.pos;
+}
+
+// Find the bomb holder's world position from server state.
+glm::vec3 getBombHolderPosition(const ServerDuelState& d,
+                                const std::unordered_map<uint32_t, ServerPlayer>& players,
+                                const std::unordered_map<uint32_t, ServerNpc>& npcs)
+{
+    if (d.bombOwnerType == 1 /* player */) {
+        auto it = players.find(d.bombOwnerPlayerId);
+        if (it != players.end()) return getEntityRootPos(it->second);
+    } else if (d.bombOwnerType == 2 /* npc */) {
+        auto it = npcs.find((uint32_t)d.bombOwnerNpcIndex);
+        if (it != npcs.end()) return getEntityRootPos(it->second);
+    }
+    return glm::vec3(0.0f);
+}
+
+// Select a new bomb holder using the shuffle bag.
+void selectNewBombHolder(ServerDuelState& d,
+                         const std::unordered_map<uint32_t, ServerPlayer>& players)
+{
+    std::vector<uint32_t> eligible;
+    for (const auto& kv : players) {
+        if (kv.second.spawnState == ServerPlayer::Active && !kv.second.dead)
+            eligible.push_back(kv.first);
+    }
+    if (eligible.empty()) {
+        d.bombOwnerType = 0;
+        d.bombOwnerPlayerId = 0;
+        d.bombOwnerNpcIndex = 0;
+        return;
+    }
+    // Check if current bag is valid for current eligible set
+    bool needRebuild = sBombShuffleBag.order.empty();
+    if (!needRebuild) {
+        // Check if all remaining bag entries are still eligible
+        for (uint32_t id : sBombShuffleBag.order) {
+            bool found = false;
+            for (uint32_t e : eligible) {
+                if (e == id) { found = true; break; }
+            }
+            if (!found) { needRebuild = true; break; }
+        }
+    }
+    if (needRebuild) {
+        sBombShuffleBag.build(eligible);
+    }
+    uint32_t chosen = sBombShuffleBag.next();
+    if (chosen == 0) {
+        // Fallback: random pick
+        chosen = eligible[(uint32_t)std::rand() % eligible.size()];
+    }
+    d.bombOwnerType = 1;
+    d.bombOwnerPlayerId = chosen;
+    d.bombOwnerNpcIndex = 0;
+
+    Debug::log(Debug::Category::Duel,
+        "[BOMB TAG] bomb assigned to player=%u eligible=%zu\n",
+        chosen, eligible.size());
+}
+
+// Broadcast bomb tag state to all active clients.
+void broadcastBombTagState(SOCKET sock,
+                           ServerDuelState& d,
+                           const std::unordered_map<uint32_t, ServerPlayer>& players,
+                           uint64_t& totalPacketsOut)
+{
+    BombTagStatePacket pkt{};
+    pkt.header.type = PACKET_BOMB_TAG_STATE;
+    pkt.header.tick = 0;
+    pkt.duelId = d.duelId;
+    pkt.stateVersion = d.stateVersion;
+    pkt.phase = d.phase;
+    pkt.bombOwnerType = d.bombOwnerType;
+    pkt.bombOwnerPlayerId = d.bombOwnerPlayerId;
+    pkt.bombOwnerNpcIndex = d.bombOwnerNpcIndex;
+    pkt.timerTicksRemaining = d.bombTimerTicks;
+    pkt.inactiveTicksRemaining = d.bombInactiveTicks;
+    pkt.serverTick = d.currentServerTick;
+
+    glm::vec3 bombPos = getBombHolderPosition(d, players, {});
+    pkt.bombPosX = bombPos.x;
+    pkt.bombPosY = bombPos.y;
+    pkt.bombPosZ = bombPos.z;
+
+    for (const auto& kv : players) {
+        if (kv.second.spawnState != ServerPlayer::Active)
+            continue;
+        const uint32_t eventId = nextReliableGameplayEventId();
+        const ReliableGameplayEventQueueResult result = queueReliableGameplayEventToPlayer(
+            sock, const_cast<ServerPlayer&>(kv.second), &pkt, sizeof(pkt), eventId,
+            reliableGameplayEventSessionForPlayer(const_cast<ServerPlayer&>(kv.second)), totalPacketsOut);
+        Debug::log(Debug::Category::Duel,
+            "[BOMB TAG] sent state player=%u phase=%u owner=%u timer=%u inactive=%u\n",
+            kv.second.id, d.phase, d.bombOwnerPlayerId, d.bombTimerTicks, d.bombInactiveTicks);
+    }
+}
+
+// Broadcast pass visualization event to all clients.
+void broadcastBombTagPass(SOCKET sock,
+                          ServerDuelState& d,
+                          const std::unordered_map<uint32_t, ServerPlayer>& players,
+                          uint32_t oldOwnerPlayerId, uint32_t newOwnerPlayerId,
+                          const glm::vec3& oldPos, const glm::vec3& newPos,
+                          float passDist, float rewoundDist,
+                          uint64_t& totalPacketsOut)
+{
+    BombTagPassEventPacket pkt{};
+    pkt.header.type = PACKET_BOMB_TAG_PASS_EVENT;
+    pkt.header.tick = 0;
+    pkt.eventId = nextReliableGameplayEventId();
+    pkt.eventSessionId = serverReliableEventSessionId();
+    pkt.serverTick = d.currentServerTick;
+    pkt.oldOwnerPlayerId = oldOwnerPlayerId;
+    pkt.newOwnerPlayerId = newOwnerPlayerId;
+    pkt.oldBombPosX = oldPos.x;
+    pkt.oldBombPosY = oldPos.y;
+    pkt.oldBombPosZ = oldPos.z;
+    pkt.newBombPosX = newPos.x;
+    pkt.newBombPosY = newPos.y;
+    pkt.newBombPosZ = newPos.z;
+    pkt.passDistance = passDist;
+    pkt.serverRewoundDistance = rewoundDist;
+    pkt.accepted = 1;
+
+    for (const auto& kv : players) {
+        if (kv.second.spawnState != ServerPlayer::Active)
+            continue;
+        const ReliableGameplayEventQueueResult result = queueReliableGameplayEventToPlayer(
+            sock, const_cast<ServerPlayer&>(kv.second), &pkt, sizeof(pkt), pkt.eventId,
+            reliableGameplayEventSessionForPlayer(const_cast<ServerPlayer&>(kv.second)), totalPacketsOut);
+    }
+    ++d.bombPassCounter;
+    Debug::log(Debug::Category::Duel,
+        "[BOMB TAG PASS] old=%u new=%u dist=%.2f rewound=%.2f passes=%u\n",
+        oldOwnerPlayerId, newOwnerPlayerId, passDist, rewoundDist, d.bombPassCounter);
+}
+
+} // anonymous namespace
+
+void serverBombTagStartMatch(bool skipIntermission)
+{
+    ServerDuelState& d = serverDuelState();
+    if (!d.enabled) return;
+
+    // Load bomb tag gamemode config
+    const Gamemode& gm = GamemodeRegistry::instance().get("bombtag");
+    d.bombTimerTicksMax = (uint32_t)(gm.bombTimerTicks > 0 ? gm.bombTimerTicks : 900);
+    d.bombInactiveTicksMax = (uint32_t)(gm.inactiveTicks > 0 ? gm.inactiveTicks : 60);
+    d.bombBlinkTicks = (uint32_t)(gm.blinkTicks > 0 ? gm.blinkTicks : 30);
+    d.bombMaxPassSanityDist = gm.maxPassSanityDistance > 0.0f ? gm.maxPassSanityDistance : 3.0f;
+    d.bombTagActive = true;
+    d.bombPassCounter = 0;
+    d.bombExplosionCounter = 0;
+    d.bombTimerTicks = d.bombTimerTicksMax;
+    d.bombInactiveTicks = 0;
+    d.bombOwnerType = 0;
+    d.bombOwnerPlayerId = 0;
+    d.bombOwnerNpcIndex = 0;
+
+    // Standard match lifecycle
+    d.countdownSeconds = gm.countdownSeconds;
+    d.goSeconds = gm.goSeconds;
+    d.intermissionSeconds = (float)gm.intermissionSeconds;
+    d.resultsSeconds = (float)gm.resultsSeconds;
+    d.timeLimitSeconds = 0;  // infinite
+    d.mapOnly = false;
+    d.lastBroadcastTick = 0;
+    d.stateBroadcastPending = true;
+    d.phase = skipIntermission ? DUEL_PHASE_PRE_MATCH : DUEL_PHASE_INTERMISSION;
+    d.phaseTimer = skipIntermission ? 0.0f : d.intermissionSeconds;
+    d.matchOver = false;
+    d.spawnOffsetRadius = gm.spawnOffsetRadius;
+    ++d.stateVersion;
+    ++d.duelId;
+
+    Debug::warn(Debug::Category::Duel,
+        "[BOMB TAG] match starting timerTicks=%u inactiveTicks=%u blinkTicks=%u sanityDist=%.1f\n",
+        d.bombTimerTicksMax, d.bombInactiveTicksMax, d.bombBlinkTicks, d.bombMaxPassSanityDist);
+}
+
+void serverBombTagTick(SOCKET sock,
+                       std::unordered_map<uint32_t, ServerPlayer>& players,
+                       HeadlessWorld& world,
+                       std::unordered_map<uint32_t, ServerNpc>& npcs,
+                       NpcSystem& npcSystem,
+                       uint32_t tick,
+                       uint64_t& totalPacketsOut)
+{
+    ServerDuelState& d = serverDuelState();
+    if (!d.enabled || !d.bombTagActive) return;
+    d.currentServerTick = tick;
+
+    // ── Handle pending kill from explosion ───────────────────────────
+    if (d.hasPendingKill)
+    {
+        d.hasPendingKill = false;
+        const uint32_t victimId = d.pendingVictimId;
+        // Instant respawn at spawn point
+        auto victimIt = players.find(victimId);
+        if (victimIt != players.end()) {
+            victimIt->second.respawnSeconds = 0.0f;
+            victimIt->second.duelSpawnPos = duelSpawnPoint(d);
+        }
+    }
+
+    // ── State machine ────────────────────────────────────────────────
+    switch (d.phase) {
+    case DUEL_PHASE_WAITING:
+        if (countActivePlayers(players) >= 1) {
+            // Start bomb tag with available players
+            if (world.spawnPoints.empty())
+                assignDuelSpawns(d, world);
+            npcs.clear();
+            npcSystem.destroyAll();
+            assignMatchParticipants(d, players);
+            d.phase = DUEL_PHASE_PRE_MATCH;
+            d.phaseTimer = 3.0f;
+            ++d.stateVersion;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            broadcastBombTagState(sock, d, players, totalPacketsOut);
+            Debug::warn(Debug::Category::Duel,
+                "[BOMB TAG] pre-match started participants=%zu\n", d.participants.size());
+        }
+        break;
+
+    case DUEL_PHASE_PRE_MATCH:
+        d.phaseTimer -= SERVER_DT;
+        if (d.phaseTimer <= 0.0f) {
+            if (d.startCountdownImmediately) {
+                d.startCountdownImmediately = false;
+                assignDuelSpawns(d, world);
+                assignMatchParticipants(d, players);
+            }
+            beginMatchCountdown(d, players, tick);
+            // Initialize bomb timer
+            d.bombTimerTicks = d.bombTimerTicksMax;
+            d.bombInactiveTicks = 0;
+            ++d.stateVersion;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            broadcastBombTagState(sock, d, players, totalPacketsOut);
+        } else if (tick - d.lastBroadcastTick >= 60) {
+            d.lastBroadcastTick = tick;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            broadcastBombTagState(sock, d, players, totalPacketsOut);
+        }
+        break;
+
+    case DUEL_PHASE_COUNTDOWN:
+        if (tick >= d.matchStartTick) {
+            d.phase = DUEL_PHASE_GO;
+            d.phaseTimer = d.goSeconds;
+            ++d.stateVersion;
+            d.lastBroadcastTick = tick;
+            Debug::log(Debug::Category::Duel,
+                "[BOMB TAG] GO shown tick=%u\n", tick);
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            broadcastBombTagState(sock, d, players, totalPacketsOut);
+        }
+        break;
+
+    case DUEL_PHASE_GO:
+        d.phaseTimer -= SERVER_DT;
+        if (d.phaseTimer <= 0.0f) {
+            d.phase = DUEL_PHASE_ACTIVE;
+            d.matchStartTick = tick;
+            d.bombTimerTicks = d.bombTimerTicksMax;
+            d.bombInactiveTicks = 0;
+            // Select first bomb holder
+            selectNewBombHolder(d, players);
+            respawnAllParticipants(d, players);
+            ++d.stateVersion;
+            d.lastBroadcastTick = tick;
+            Debug::warn(Debug::Category::Duel,
+                "[BOMB TAG] ACTIVE tick=%u holder=%u timerTicks=%u\n",
+                tick, d.bombOwnerPlayerId, d.bombTimerTicks);
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            broadcastBombTagState(sock, d, players, totalPacketsOut);
+        }
+        break;
+
+    case DUEL_PHASE_ACTIVE:
+    {
+        // ── Bomb timer countdown ──────────────────────────────────
+        if (d.bombTimerTicks > 0)
+            --d.bombTimerTicks;
+
+        // ── Inactive grace period ─────────────────────────────────
+        if (d.bombInactiveTicks > 0)
+            --d.bombInactiveTicks;
+
+        // ── Bomb explosion ────────────────────────────────────────
+        if (d.bombTimerTicks == 0 && d.bombOwnerType != 0) {
+            // Kill the bomb holder
+            uint32_t victimId = d.bombOwnerPlayerId;
+            auto victimIt = players.find(victimId);
+            if (victimIt != players.end() && !victimIt->second.dead) {
+                // Apply lethal damage via the normal server damage path
+                victimIt->second.health = 0;
+                victimIt->second.dead = true;
+                victimIt->second.respawnSeconds = 0.01f;
+                ++victimIt->second.deaths;
+
+                // Credit kill to a random other player (explosion is environment)
+                // For bomb tag, we credit no one — bomb explosion is environmental
+                d.hasPendingKill = true;
+                d.pendingKillerId = 0;
+                d.pendingVictimId = victimId;
+
+                Debug::warn(Debug::Category::Duel,
+                    "[BOMB TAG] explosion! victim=%u deaths=%u explosions=%u\n",
+                    victimId, victimIt->second.deaths, d.bombExplosionCounter + 1);
+            }
+            ++d.bombExplosionCounter;
+
+            // Select new bomb holder and reset timer
+            d.bombTimerTicks = d.bombTimerTicksMax;
+            d.bombInactiveTicks = 0;
+            selectNewBombHolder(d, players);
+
+            // Respawn the killed player instantly
+            if (victimIt != players.end()) {
+                victimIt->second.dead = false;
+                victimIt->second.health = 100;
+                victimIt->second.duelSpawnPos = duelSpawnPoint(d);
+                victimIt->second.respawnSeconds = 0.0f;
+                beginAuthoritativeTransform(victimIt->second,
+                    victimIt->second.duelSpawnPos, glm::vec3(0.0f),
+                    victimIt->second.yaw, "bomb-respawn");
+            }
+
+            ++d.stateVersion;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            broadcastBombTagState(sock, d, players, totalPacketsOut);
+            break;
+        }
+
+        // ── Physical contact detection (bomb pass) ────────────────
+        if (d.bombInactiveTicks == 0 && d.bombOwnerType == 1 && !d.matchOver) {
+            // Player holds bomb — check contact with other players
+            auto holderIt = players.find(d.bombOwnerPlayerId);
+            if (holderIt != players.end() && !holderIt->second.dead) {
+                glm::vec3 holderPos = getEntityRootPos(holderIt->second);
+                float bombRadius = 0.5f;
+                float targetRadius = 1.5f;
+
+                for (const auto& kv : players) {
+                    if (kv.first == d.bombOwnerPlayerId) continue;
+                    if (kv.second.spawnState != ServerPlayer::Active) continue;
+                    if (kv.second.dead) continue;
+
+                    glm::vec3 targetPos = getEntityRootPos(kv.second);
+                    float dist = glm::length(holderPos - targetPos);
+
+                    // Sanity distance check
+                    if (dist > d.bombMaxPassSanityDist) continue;
+
+                    // Physical overlap check
+                    if (bombSphereOverlap(holderPos, bombRadius, targetPos, targetRadius)) {
+                        // Transfer bomb
+                        glm::vec3 oldPos = holderPos;
+                        d.bombOwnerType = 1;
+                        d.bombOwnerPlayerId = kv.first;
+                        d.bombOwnerNpcIndex = 0;
+                        d.bombInactiveTicks = d.bombInactiveTicksMax;
+
+                        glm::vec3 newPos = getEntityRootPos(kv.second);
+                        broadcastBombTagPass(sock, d, players,
+                            d.bombOwnerPlayerId, kv.first,
+                            oldPos, newPos, dist, dist, totalPacketsOut);
+                        ++d.stateVersion;
+                        broadcastBombTagState(sock, d, players, totalPacketsOut);
+                        Debug::log(Debug::Category::Duel,
+                            "[BOMB TAG] PASS %u -> %u dist=%.2f\n",
+                            d.bombOwnerPlayerId, kv.first, dist);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // ── Periodic state broadcast ──────────────────────────────
+        if (tick - d.lastBroadcastTick >= 10) {
+            d.lastBroadcastTick = tick;
+            broadcastBombTagState(sock, d, players, totalPacketsOut);
+        }
+        break;
+    }
+
+    case DUEL_PHASE_RESULTS:
+        d.phaseTimer -= SERVER_DT;
+        if (d.phaseTimer <= 0.0f) {
+            d.phase = DUEL_PHASE_INTERMISSION;
+            d.phaseTimer = d.intermissionSeconds;
+            ++d.stateVersion;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            broadcastBombTagState(sock, d, players, totalPacketsOut);
+        } else if (tick - d.lastBroadcastTick >= 60) {
+            d.lastBroadcastTick = tick;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+        }
+        break;
+
+    case DUEL_PHASE_INTERMISSION:
+        d.phaseTimer -= SERVER_DT;
+        if (d.phaseTimer <= 0.0f) {
+            assignDuelSpawns(d, world);
+            assignMatchParticipants(d, players);
+            d.phase = DUEL_PHASE_PRE_MATCH;
+            d.phaseTimer = 3.0f;
+            d.bombTimerTicks = d.bombTimerTicksMax;
+            d.bombInactiveTicks = 0;
+            ++d.stateVersion;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            broadcastBombTagState(sock, d, players, totalPacketsOut);
+        } else if (tick - d.lastBroadcastTick >= 60) {
+            d.lastBroadcastTick = tick;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+        }
+        break;
+
+    default:
+        break;
+    }
 }
 
 } // namespace MimitaNet

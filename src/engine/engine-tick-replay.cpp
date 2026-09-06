@@ -235,7 +235,7 @@ void engineTickReplay(Engine& engine, float dt)
             if (gDuelManager.phase() == DuelPhase::Countdown ||
                 gDuelManager.phase() == DuelPhase::MatchEnd ||
                 gBombTagManager.isCountdownActive() ||
-                gBombTagManager.phase() == BombTagPhase::MatchEnd)
+                gBombTagManager.isMatchEnd())
             {
                 tickFrame.moveX = 0.0f;
                 tickFrame.moveY = 0.0f;

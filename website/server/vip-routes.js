@@ -113,9 +113,9 @@ export function createVipRouter(deps = {}) {
             }
 
             await query(
-                `INSERT INTO vip_name_styles (user_id, style_json, updated_at)
-                 VALUES ($1, $2, NOW())
-                 ON CONFLICT (user_id) DO UPDATE SET style_json = $2, updated_at = NOW()`,
+                `INSERT INTO vip_name_styles (user_id, style_json, style_revision, updated_at)
+                 VALUES ($1, $2, 1, NOW())
+                 ON CONFLICT (user_id) DO UPDATE SET style_json = $2, style_revision = vip_name_styles.style_revision + 1, updated_at = NOW()`,
                 [req.user.id, JSON.stringify(validation.style)]
             )
             const nextState = await getVipStateForUser(req.user, query)
@@ -139,9 +139,9 @@ export function createVipRouter(deps = {}) {
                 role: req.user.role || "user"
             })
             await query(
-                `INSERT INTO vip_name_styles (user_id, style_json, updated_at)
-                 VALUES ($1, $2, NOW())
-                 ON CONFLICT (user_id) DO UPDATE SET style_json = $2, updated_at = NOW()`,
+                `INSERT INTO vip_name_styles (user_id, style_json, style_revision, updated_at)
+                 VALUES ($1, $2, 1, NOW())
+                 ON CONFLICT (user_id) DO UPDATE SET style_json = $2, style_revision = vip_name_styles.style_revision + 1, updated_at = NOW()`,
                 [req.user.id, JSON.stringify(style)]
             )
             res.json({ success: true, vip: await getVipStateForUser(req.user, query) })

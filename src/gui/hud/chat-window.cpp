@@ -360,15 +360,34 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
     static thread_local std::vector<std::string> singleMsgLines;
     wrappedLines.clear();
     wrappedLines.reserve(history.size());
+    static thread_local std::vector<float> namePrefixWidths;
+    namePrefixWidths.clear();
+    namePrefixWidths.reserve(history.size());
     float contentH_d = 0.0f;
     for (size_t i = 0; i < history.size(); ++i)
     {
         const auto& entry = history.get(i);
-        const std::string text = entry.senderType == ChatSenderType::Server
-            ? "[system] " + entry.text
-            : entry.senderName + ": " + entry.text;
-        wrapChatText(text, wrapWidth, textScale, singleMsgLines);
-        wrappedLines.push_back(singleMsgLines);
+        if (entry.senderType == ChatSenderType::Server)
+        {
+            namePrefixWidths.push_back(0.0f);
+            const std::string text = "[system] " + entry.text;
+            wrapChatText(text, wrapWidth, textScale, singleMsgLines);
+            wrappedLines.push_back(singleMsgLines);
+        }
+        else
+        {
+            const std::string namePrefix = entry.senderName + ": ";
+            const float nameW = uiMeasureText(namePrefix.c_str(), textScale);
+            namePrefixWidths.push_back(nameW);
+            const float msgWrapWidth = std::max(1.0f, wrapWidth - nameW);
+            wrapChatText(entry.text, msgWrapWidth, textScale, singleMsgLines);
+            std::vector<std::string> combined;
+            combined.reserve(singleMsgLines.size() + 1);
+            combined.push_back(namePrefix + singleMsgLines[0]);
+            for (size_t j = 1; j < singleMsgLines.size(); ++j)
+                combined.push_back(singleMsgLines[j]);
+            wrappedLines.push_back(std::move(combined));
+        }
         contentH_d += (float)wrappedLines.back().size() * lineH_d;
     }
 
@@ -402,6 +421,8 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
     {
         const auto& entry = history.get(i);
         const float cursorX = msgAreaX + uiScaleX(2.0f);
+        const bool isPlayerMsg = entry.senderType == ChatSenderType::Player && !entry.muted;
+        const float namePrefixW = namePrefixWidths[i];
         for (size_t lineIndex = 0; lineIndex < wrappedLines[i].size(); ++lineIndex)
         {
             const size_t flatLine = linesBefore + lineIndex;
@@ -411,7 +432,24 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
                                 uiScaleY(state.scroll.scrollY);
             const glm::vec4 col = entry.muted ? mutedColor :
                 (entry.senderType == ChatSenderType::Server ? serverColor : playerColor);
-            uiDrawText(wrappedLines[i][lineIndex].c_str(), cursorX, lineY, textScale, col);
+
+            if (isPlayerMsg && lineIndex == 0 && namePrefixW > 0.0f)
+            {
+                VipNameDrawOptions nameOpts;
+                nameOpts.scale = textScale;
+                nameOpts.alpha = alpha;
+                nameOpts.phase = 0.0f;
+                nameOpts.drawBadge = false;
+                nameOpts.detail = &entry.senderVipStyleDetail;
+                vipDrawStyledName(entry.senderName, entry.senderVipAppearance,
+                                  cursorX, lineY, nameOpts);
+                const std::string rest = ": " + wrappedLines[i][0].substr(entry.senderName.size() + 2);
+                uiDrawText(rest.c_str(), cursorX + namePrefixW, lineY, textScale, col);
+            }
+            else
+            {
+                uiDrawText(wrappedLines[i][lineIndex].c_str(), cursorX, lineY, textScale, col);
+            }
 
             std::string renderKey = "chat-debug-message-" +
                                     std::to_string(entry.messageId);

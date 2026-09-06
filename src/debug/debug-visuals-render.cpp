@@ -152,13 +152,13 @@ void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm:
             glm::vec3 p11 = center + off2;
             if (lat > 0) {
                 gTriVerts.push_back({p00, color});
-                gTriVerts.push_back({p10, color});
                 gTriVerts.push_back({p01, color});
+                gTriVerts.push_back({p10, color});
             }
             if (lat < LAT_SEGMENTS - 1) {
                 gTriVerts.push_back({p01, color});
-                gTriVerts.push_back({p10, color});
                 gTriVerts.push_back({p11, color});
+                gTriVerts.push_back({p10, color});
             }
         }
     }
@@ -202,8 +202,8 @@ void drawFilledSphereOriented(const Camera& camera, glm::vec3 center, glm::vec3 
             const glm::vec3 p10 = world(scale * glm::vec3(radius*r1*std::sin(b0), radius*r1*std::cos(b0), radius*y1));
             const glm::vec3 p01 = world(scale * glm::vec3(radius*r0*std::sin(b1), radius*r0*std::cos(b1), radius*y0));
             const glm::vec3 p11 = world(scale * glm::vec3(radius*r1*std::sin(b1), radius*r1*std::cos(b1), radius*y1));
-            if (lat > 0) { gTriVerts.push_back({p00,color}); gTriVerts.push_back({p10,color}); gTriVerts.push_back({p01,color}); }
-            if (lat < LAT - 1) { gTriVerts.push_back({p01,color}); gTriVerts.push_back({p10,color}); gTriVerts.push_back({p11,color}); }
+            if (lat > 0) { gTriVerts.push_back({p00,color}); gTriVerts.push_back({p01,color}); gTriVerts.push_back({p10,color}); }
+            if (lat < LAT - 1) { gTriVerts.push_back({p01,color}); gTriVerts.push_back({p11,color}); gTriVerts.push_back({p10,color}); }
         }
     }
 }

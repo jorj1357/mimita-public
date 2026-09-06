@@ -15,6 +15,7 @@
 #include "gui/ui-system.h"
 #include "gui/gui-coord.h"
 #include "gui/gui-layout.h"
+#include "vip/vip-name-render.h"
 
 MatchLeaderboard& MatchLeaderboard::instance()
 {
@@ -112,15 +113,25 @@ void MatchLeaderboard::render()
             char buf[128];
             const GuiElement* el = layout.get("ffaLeader" + std::to_string(i + 1));
             glm::vec4 color = el ? el->getTextColorVec() : rankColors[i];
-            const std::string line = el && !el->text.empty()
-                ? format(el->text, {{"{rank}", std::to_string(i + 1)}, {"{name}", entry.name}, {"{score}", std::to_string(entry.score)}})
-                : std::to_string(i + 1) + ". " + entry.name + ": " + std::to_string(entry.score) + "K";
-            snprintf(buf, sizeof(buf), "%s", line.c_str());
             const float drawX = el ? el->x : x;
             const float drawY = el ? el->y : y;
-            uiDrawText(buf, uiScaleX(drawX), uiScaleY(drawY), smallScale, color);
 
-            float w = uiMeasureText(buf, fontScale);
+            VipNameDrawOptions nameOpts;
+            nameOpts.scale = smallScale;
+            nameOpts.alpha = 1.0f;
+            nameOpts.phase = 0.0f;
+            nameOpts.drawBadge = false;
+            nameOpts.detail = &entry.vipStyleDetail;
+            vipDrawStyledName(entry.name, entry.vipAppearance,
+                              uiScaleX(drawX), uiScaleY(drawY), nameOpts);
+
+            char scoreBuf[64];
+            snprintf(scoreBuf, sizeof(scoreBuf), ": %dK", entry.score);
+            const float nameW = vipMeasureStyledName(entry.name, entry.vipAppearance, nameOpts);
+            uiDrawText(scoreBuf, uiScaleX(drawX) + nameW, uiScaleY(drawY), smallScale, color);
+
+            float w = vipMeasureStyledName(entry.name, entry.vipAppearance, nameOpts)
+                      + uiMeasureText(scoreBuf, smallScale);
             x += w + 40.0f;  // spacing between entries
         }
     }

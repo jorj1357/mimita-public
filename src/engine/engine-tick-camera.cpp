@@ -35,6 +35,9 @@
 
 extern DuelManager gDuelManager;
 
+// HitBurstEffect reconstruction from replay events
+extern int gGlobalTick;
+
 // Export debug effect counters (declared extern in replay-export.h)
 int gRplxImpactWorldCount = 0;
 int gRplxHitBurstCount = 0;
@@ -983,7 +986,30 @@ void engineTickCamera(Engine& engine, float dt)
                 // Per-particle debris_block events recorded during gameplay
                 // must not spawn another full burst here.
             } else if (effect.type == "hit_burst") {
-                // Already handled as separate effect events; no action needed.
+                // Reconstruct HitBurstEffect from replay data so it renders
+                // identically to live gameplay (sphere timeline, elongated sphere, etc.)
+                {
+                    constexpr int MAX_BURSTS = 64;
+                    extern HitBurstEffect gBursts[MAX_BURSTS];
+                    extern int gBurstCount;
+                    if (gBurstCount < MAX_BURSTS) {
+                        HitBurstEffect& b = gBursts[gBurstCount++];
+                        b = HitBurstEffect{};
+                        b.position = effect.position;
+                        b.direction = glm::length(effect.direction) > 0.001f
+                            ? glm::normalize(effect.direction)
+                            : glm::vec3(0.0f, 0.0f, 1.0f);
+                        b.normal = glm::length(effect.normal) > 0.001f
+                            ? glm::normalize(effect.normal)
+                            : -b.direction;
+                        b.spawnTick = gGlobalTick;
+                        b.totalTicks = std::max(1, (int)(effect.lifetime * 60.0f));
+                        b.alive = true;
+                        b.dashBurst = effect.dashBurst;
+                        b.dashSpeed = effect.dashSpeed;
+                        b.burstType = (BurstType)effect.burstType;
+                    }
+                }
             } else if (effect.type == "impact_entity") {
                 // Visual effects are separate events; no action needed.
             } else if (effect.type == "muzzle_flash") {

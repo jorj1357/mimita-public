@@ -33,6 +33,7 @@ depending on one device. Support, where the platform allows it:
 - remapping and multiple bindings;
 - hold, toggle, and timing alternatives;
 - adjustable sensitivity, dead zones, and aim behavior;
+- 9 6 2026 also VR support is huge huge huge i want that over time
 - navigation without requiring a mouse.
 
 The terminal command layer and the shared player/NPC action layer are useful

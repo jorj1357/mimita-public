@@ -58,6 +58,7 @@
 #include "npc/npc-combat.h"
 #include "network/server.h"
 #include "debug/debug-visuals.h"
+#include "vip/vip-name-render.h"
 
 extern DuelManager gDuelManager;
 extern BombTagManager gBombTagManager;
@@ -177,7 +178,30 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     }
     else
     {
-    hudText("playerName", replayViewedActor ? replayViewedActor->name : player.username);
+    {
+        const GuiElement* nameEl = hudLayout.get("playerName");
+        if (nameEl)
+        {
+            float scale = nameEl->fontSize > 0.0f ? nameEl->fontSize : 0.32f;
+            const std::string displayName = replayViewedActor ? replayViewedActor->name : player.username;
+            if (replayViewedActor)
+            {
+                glm::vec4 color = nameEl->getTextColorVec();
+                uiDrawText(displayName.c_str(), uiScaleX(nameEl->x), uiScaleY(nameEl->y), scale, color);
+            }
+            else
+            {
+                VipNameDrawOptions nameOpts;
+                nameOpts.scale = scale;
+                nameOpts.alpha = 1.0f;
+                nameOpts.phase = 0.0f;
+                nameOpts.drawBadge = false;
+                nameOpts.detail = &player.vipStyleDetail;
+                vipDrawStyledNameCentered(displayName, player.vipAppearance,
+                                          uiScaleX(nameEl->x + nameEl->w * 0.5f), uiScaleY(nameEl->y), nameOpts);
+            }
+        }
+    }
     int hp = replayViewedActor ? replayViewedActor->health : player.currentHp;
     int maxHp = replayViewedActor ? replayViewedActor->maxHealth : player.maxHp;
     bool dead = replayViewedActor ? replayViewedActor->dead : player.dead;

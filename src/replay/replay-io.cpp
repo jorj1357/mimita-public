@@ -65,6 +65,9 @@ ReplayEffectEvent parseEffect(const json& value)
     effect.materialName = value.value("material", "");
     effect.billboardText = value.value("billboardText", false);
     effect.beam = value.value("beam", false);
+    effect.burstType = value.value("burstType", 0);
+    effect.dashSpeed = value.value("dashSpeed", 0.0f);
+    effect.dashBurst = value.value("dashBurst", false);
     return effect;
 }
 
@@ -180,7 +183,10 @@ json effectJson(const ReplayEffectEvent& effect)
         {"texturePath", effect.texturePath},
         {"material", effect.materialName},
         {"billboardText", effect.billboardText},
-        {"beam", effect.beam}
+        {"beam", effect.beam},
+        {"burstType", effect.burstType},
+        {"dashSpeed", effect.dashSpeed},
+        {"dashBurst", effect.dashBurst}
     };
     return entry;
 }

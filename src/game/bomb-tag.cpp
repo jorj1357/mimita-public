@@ -1,31 +1,44 @@
+// 09 06 2026, 00 00
+/* purpose
+* Client-side Bomb Tag rendering: HUD text, bomb sphere visual, world timer,
+* and pass beam effect. All data comes from server-authoritative replicated
+* state via CommunityMatchClient. No gameplay simulation runs here.
+* Does NOT decide bomb ownership, manage timers, validate passes, or
+* apply damage — the server owns all gameplay decisions.
+* Does NOT produce per-frame log spam — uses throttled debug logging.
+*/
+
 #include "bomb-tag.h"
-#include "spawn-utils.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
-#include <cstdlib>
 
 #include <glm/glm.hpp>
 
 #include "entities/player.h"
-#include "npc/npc.h"
-#include "world/world.h"
-#include "world/world-loader.h"
 #include "camera.h"
 #include "debug/debug-log.h"
 #include "gui/ui-system.h"
 #include "gui/gui-layout.h"
 #include "gui/gui-element-render.h"
-
-#include "combat/weapon-godball.h"
 #include "debug/debug-visuals.h"
 #include "audio/audio.h"
-#include "config.h"
+#include "network/community-match-client.h"
+#include "network/multiplayer-context.h"
+#include "terminal/terminal-state.h"
 
+using namespace MimitaNet;
+
+// ── Arm pose for bomb holder ──────────────────────────────────────────
+// Forces the right arm into a forward+up pose (different from revolver).
+// The exact rotation values should be tuned for a "presenting the bomb" look.
 void setArmToWeaponPose(Player& p, bool hasBomb) {
     if (!hasBomb) return;
     for (PhysicalBodyPart& part : p.physicalBody.parts) {
         if (part.name == "rightArm") {
+            // Use revolver pose as base, but the actual visual distinction
+            // comes from the bomb sphere attached to the hand.
             WeaponPoseConfig* revPose = nullptr;
             auto it = gPlayerProcedural.weaponPoses.find("revolver");
             if (it != gPlayerProcedural.weaponPoses.end())
@@ -44,208 +57,101 @@ void setArmToWeaponPose(Player& p, bool hasBomb) {
     }
 }
 
-static const char* npcName(int index) {
-    static char buf[32];
-    snprintf(buf, sizeof(buf), "NPC %d", index + 1);
-    return buf;
-}
+// ── BombTagManager implementation ──────────────────────────────────────
 
-void BombTagManager::start(const BombTagConfig& cfg, Player& player, NpcSystem& npcs, World& world) {
-    mConfig = cfg;
-    mPhase = BombTagPhase::Countdown;
-    mCountdown = 3.0f;
-    mTimer = 0.0f;
-    mBombTimer = 15.0f;
-    mPassCooldown = 0.0f;
-    mTransferCooldown = 0.0f;
-    mLastTickSecond = -1;
-    mTickPitch = 1.0f;
-    mCooldownSoundPlayed = false;
-    mPlayerKills = 0;
-    mPlayerDeaths = 0;
-    mPlayerBombPasses = 0;
-    mNpcKills.assign(cfg.numNpcs, 0);
-    mNpcPasses.assign(cfg.numNpcs, 0);
-    mPlayerLivesRemaining = (cfg.lives > 0) ? cfg.lives : 999999;
-    mEndState = BombTagEndState::None;
-    mBombHolderIsPlayer = false;
-    mBombHolderIndex = -1;
-    mCurrentBombHolderNpc = -1;
-    mWinnerIndex = -1;
-    mWinnerKills = 0;
-    matchEndTick = 0;
-    finalKillSavedOnce = false;
-
-    npcs.destroyAll();
-    for (int i = 0; i < cfg.numNpcs; ++i)
-        spawnNpcAtSafePosition(npcs, (uint32_t)(100 + i), cfg.npcDifficulty, world, i);
-
-    glm::vec3 spawnPos = getSpawnPosition(world, cfg.numNpcs);
-    player.pos = spawnPos;
-    player.vel = glm::vec3(0.0f);
-    if (player.dead) {
-        player.dead = false;
-        player.currentHp = player.maxHp;
-        player.spawnFlashTimer = 0.0f;
-    }
-
-    logSpawnDiagnostics(world, player, npcs);
-    printf("[BOMB TAG] started: npcs=%d lives=%d time=%ds difficulty=%.0f map=%s\n",
-           cfg.numNpcs, cfg.lives, cfg.timeLimitSeconds, cfg.npcDifficulty, cfg.mapPath.c_str());
+void BombTagManager::start() {
+    mEnabled = true;
+    mClientBombTick = 0;
+    mPassBeamTimer = 0.0f;
+    Debug::log(Debug::Category::Duel, "[BOMB TAG CLIENT] started\n");
 }
 
 void BombTagManager::stop() {
-    mConfig.enabled = false;
-    mPhase = BombTagPhase::Off;
-    printf("[BOMB TAG] stopped\n");
+    mEnabled = false;
+    mPassBeamTimer = 0.0f;
+    Debug::log(Debug::Category::Duel, "[BOMB TAG CLIENT] stopped\n");
 }
 
-void BombTagManager::assignInitialBomb(Player& player, NpcSystem& npcs) {
-    int npcCount = (int)npcs.all().size();
-    int total = 1 + npcCount;
-    int chosen = rand() % total;
-    if (chosen == 0 && !player.dead) {
-        mBombHolderIsPlayer = true;
-        mBombHolderIndex = 0;
-        mCurrentBombHolderNpc = -1;
-        printf("[BOMB TAG] player has the bomb\n");
-    } else {
-        int npcIdx = -1;
-        for (int attempt = 0; attempt < npcCount * 2; ++attempt) {
-            int idx = rand() % npcCount;
-            if (!npcs.all()[idx].body.dead) { npcIdx = idx; break; }
-        }
-        if (npcIdx < 0) npcIdx = chosen > 0 ? chosen - 1 : 0;
-        npcIdx = std::min(npcIdx, npcCount - 1);
-        if (npcIdx >= 0) {
-            mBombHolderIsPlayer = false;
-            mBombHolderIndex = npcIdx;
-            mCurrentBombHolderNpc = npcIdx;
-            printf("[BOMB TAG] %s has the bomb\n", npcName(npcIdx));
-        } else {
-            mBombHolderIsPlayer = true;
-            mBombHolderIndex = 0;
-            mCurrentBombHolderNpc = -1;
-            printf("[BOMB TAG] bomb given to player (no NPCs)\n");
-        }
-    }
-    // Timer stays at whatever start() set — transfer only changes owner
-    mTransferCooldown = 2.0f;
-    mCooldownSoundPlayed = false;
-    printf("[BOMB TAG] initial bomb assignment, timer=%.2f\n", mBombTimer);
+bool BombTagManager::isActive() const {
+    const auto& c = CommunityMatchClient::instance();
+    return c.isBombTag() && c.phase() == DUEL_PHASE_ACTIVE;
 }
 
-int BombTagManager::findNearestLivingNpc(const glm::vec3& pos, NpcSystem& npcs, int excludeIndex) {
-    float bestDist = 1e9f;
-    int best = -1;
-    for (int i = 0; i < (int)npcs.all().size(); ++i) {
-        if (i == excludeIndex || npcs.all()[i].body.dead) continue;
-        float d = glm::distance(pos, npcs.all()[i].body.pos);
-        if (d < bestDist) { bestDist = d; best = i; }
-    }
-    return best;
+bool BombTagManager::isCountdownActive() const {
+    const auto& c = CommunityMatchClient::instance();
+    return c.isBombTag() && (c.phase() == DUEL_PHASE_COUNTDOWN ||
+                              c.phase() == DUEL_PHASE_PRE_MATCH ||
+                              c.phase() == DUEL_PHASE_GO);
 }
 
-void BombTagManager::passBomb(Player& player, NpcSystem& npcs) {
-    glm::vec3 passPos = mBombWorldPos;
-
-    if (mBombHolderIsPlayer) {
-        int target = findNearestLivingNpc(player.pos, npcs, -1);
-        if (target >= 0) {
-            mBombHolderIsPlayer = false;
-            mBombHolderIndex = target;
-            mCurrentBombHolderNpc = target;
-            mPlayerBombPasses++;
-            printf("[BOMB TAG] player -> %s\n", npcName(target));
-        }
-    } else {
-        int cn = mCurrentBombHolderNpc;
-        if (cn < 0 || cn >= (int)npcs.all().size()) {
-            if (!player.dead) {
-                mBombHolderIsPlayer = true;
-                mBombHolderIndex = 0;
-                mCurrentBombHolderNpc = -1;
-                printf("[BOMB TAG] bomb -> player (invalid holder)\n");
-            }
-            return;
-        }
-        glm::vec3 pos = npcs.all()[cn].body.pos;
-        float playerDist = glm::distance(pos, player.pos);
-        if (playerDist < 15.0f && !player.dead) {
-            mBombHolderIsPlayer = true;
-            mBombHolderIndex = 0;
-            mCurrentBombHolderNpc = -1;
-            mNpcPasses[cn]++;
-            printf("[BOMB TAG] %s -> player\n", npcName(cn));
-        } else {
-            int target = findNearestLivingNpc(pos, npcs, cn);
-            if (target >= 0) {
-                mBombHolderIsPlayer = false;
-                mBombHolderIndex = target;
-                mCurrentBombHolderNpc = target;
-                mNpcPasses[cn]++;
-                printf("[BOMB TAG] %s -> %s\n", npcName(cn), npcName(target));
-            }
-        }
-    }
-
-    // Transfer cooldown + sounds
-    mTransferCooldown = 2.0f;
-    mCooldownSoundPlayed = false;
-    playWorldSound("weapon/bomb/bombpass1", passPos, 1.0f, 1.0f, 30.0f);
-
-    // IMPORTANT: Timer belongs to the bomb, NOT the holder.
-    // Transfer only changes ownership, never resets the timer.
-    printf("[BOMB TAG] transfer completed, cooldown=2s timer=%.2f\n", mBombTimer);
+bool BombTagManager::isMatchEnd() const {
+    const auto& c = CommunityMatchClient::instance();
+    return c.isBombTag() && (c.phase() == DUEL_PHASE_MATCH_END ||
+                              c.phase() == DUEL_PHASE_RESULTS);
 }
 
-void BombTagManager::explodeBomb(Player& player, NpcSystem& npcs) {
-    printf("[BOMB TAG] BOOM! holder=%s\n", mBombHolderIsPlayer ? "player" : "npc");
+bool BombTagManager::playerIsBombHolder(uint32_t localPlayerId) const {
+    const auto& c = CommunityMatchClient::instance();
+    return c.isBombTag() && c.bombOwnerType() == BOMB_OWNER_PLAYER
+        && c.bombOwnerPlayerId() == localPlayerId;
+}
 
-    playWorldSound("weapon/bomb/explosion2", mBombWorldPos, 1.0f, 1.0f, 50.0f);
-
-    if (mBombHolderIsPlayer) {
-        mPlayerDeaths++;
-        mPlayerLivesRemaining--;
-        player.dead = true;
-        player.currentHp = 0;
-        player.respawnTimer = 3.0f;
-        int killerNpc = findNearestLivingNpc(player.pos, npcs, -1);
-        if (killerNpc >= 0) mNpcKills[killerNpc]++;
-    } else {
-        int idx = mCurrentBombHolderNpc;
-        if (idx >= 0 && idx < (int)npcs.all().size()) {
-            npcs.all()[idx].body.dead = true;
-            npcs.all()[idx].body.currentHp = 0;
-            if (!player.dead) mPlayerKills++;
-        }
+const char* BombTagManager::bombHolderName(uint32_t localPlayerId, const Player& player) const {
+    const auto& c = CommunityMatchClient::instance();
+    if (!c.isBombTag()) return "";
+    if (c.bombOwnerType() == BOMB_OWNER_PLAYER) {
+        if (c.bombOwnerPlayerId() == localPlayerId)
+            return "You";
+        // Look up remote player name
+        auto it = MP_CONTEXT.remotePlayers.find(c.bombOwnerPlayerId());
+        if (it != MP_CONTEXT.remotePlayers.end())
+            return it->second.username.c_str();
+        return "Player";
     }
+    return "Bomb Holder";
+}
 
-    mBombHolderIsPlayer = false;
-    mBombHolderIndex = -1;
-    mCurrentBombHolderNpc = -1;
+float BombTagManager::bombSecondsRemaining() const {
+    const auto& c = CommunityMatchClient::instance();
+    if (!c.isBombTag()) return 0.0f;
+    return c.bombSecondsRemaining();
+}
 
-    if (!player.dead) {
-        mBombHolderIsPlayer = true;
-        mBombHolderIndex = 0;
-    } else {
-        int target = findNearestLivingNpc(player.pos, npcs, -1);
-        if (target >= 0) {
-            mBombHolderIsPlayer = false;
-            mBombHolderIndex = target;
-            mCurrentBombHolderNpc = target;
-        } else {
-            mBombTimer = 999.0f;
-            return;
-        }
-    }
-    mBombTimer = 15.0f + (float)(rand() % 5);
-    mTransferCooldown = 2.0f;
-    mCooldownSoundPlayed = false;
+bool BombTagManager::bombIsActive() const {
+    const auto& c = CommunityMatchClient::instance();
+    if (!c.isBombTag()) return false;
+    return c.bombIsActive();
+}
+
+glm::vec3 BombTagManager::bombWorldPosition() const {
+    const auto& c = CommunityMatchClient::instance();
+    if (!c.isBombTag()) return glm::vec3(0.0f);
+    return c.bombPosition();
+}
+
+void BombTagManager::update(float dt, Player& player) {
+    if (!mEnabled) return;
+
+    const auto& c = CommunityMatchClient::instance();
+    if (!c.isBombTag()) return;
+
+    // Update client-side bomb tick for blink timing (visual only)
+    mClientBombTick++;
+
+    // Update pass beam timer
+    if (mPassBeamTimer > 0.0f)
+        mPassBeamTimer -= dt;
+
+    // Force arm pose on bomb holder
+    setArmToWeaponPose(player, playerIsBombHolder(MP_CONTEXT.localPlayerId));
 }
 
 void BombTagManager::renderHud() {
-    if (!mConfig.enabled) return;
+    if (!mEnabled) return;
+
+    const auto& c = CommunityMatchClient::instance();
+    if (!c.isBombTag()) return;
+
     GuiLayout& btLayout = GuiLayoutManager::instance().getLayout("config/gui/bomb-tag-hud.json");
     auto btText = [&](const std::string& id, const std::string& text) {
         const GuiElement* el = btLayout.get(id);
@@ -254,77 +160,91 @@ void BombTagManager::renderHud() {
         uiDrawText(text.c_str(), uiScaleX(el->x), uiScaleY(el->y), s, el->getTextColorVec());
     };
 
-    if (mPhase == BombTagPhase::Countdown) {
+    if (isCountdownActive()) {
+        float timer = c.phaseTimer();
         char buf[64];
-        snprintf(buf, sizeof(buf), "%.0f", std::ceil(mCountdown));
+        snprintf(buf, sizeof(buf), "%.2f", std::max(0.0f, timer));
         btText("countdownText", buf);
         return;
     }
 
-    if (mPhase == BombTagPhase::Active) {
+    if (isActive()) {
+        float seconds = bombSecondsRemaining();
         char buf[256];
-        float remaining = std::max(0.0f, (float)mConfig.timeLimitSeconds - mTimer);
-        snprintf(buf, sizeof(buf), "%.0f", remaining);
+
+        // Timer display
+        snprintf(buf, sizeof(buf), "%.2f", std::max(0.0f, seconds));
         btText("timerText", buf);
 
-        if (mBombHolderIsPlayer) {
-            snprintf(buf, sizeof(buf), "YOU HAVE THE BOMB! (%.0fs)", mBombTimer);
+        // Bomb holder alert
+        uint32_t localId = MP_CONTEXT.localPlayerId;
+        if (playerIsBombHolder(localId)) {
+            snprintf(buf, sizeof(buf), "You have the bomb!!!! %.2f until it explodes!!!", std::max(0.0f, seconds));
             btText("bombAlert", buf);
-        } else if (mCurrentBombHolderNpc >= 0) {
-            snprintf(buf, sizeof(buf), "NPC %d has the bomb", mCurrentBombHolderNpc + 1);
+        } else {
+            const char* name = bombHolderName(localId, THE_PLAYER);
+            snprintf(buf, sizeof(buf), "%s has the bomb!!!! %.2f until it explodes!!!", name, std::max(0.0f, seconds));
             btText("npcBombAlert", buf);
         }
-
-        snprintf(buf, sizeof(buf), "Kills: %d", mPlayerKills);
-        btText("killsText", buf);
-
-        if (mConfig.lives > 0) {
-            snprintf(buf, sizeof(buf), "Lives: %d/%d", mPlayerLivesRemaining, mConfig.lives);
-            btText("livesText", buf);
-        }
     }
 }
 
-BombTagMenuAction BombTagManager::renderMatchOverScreen(GLFWwindow* win) {
-    if (mPhase != BombTagPhase::MatchEnd) return BombTagMenuAction::None;
-    float sw = uiScreenW(), sh = uiScreenH();
+void BombTagManager::renderBombVisual(Camera& camera, Player& player) {
+    if (!mEnabled) return;
 
-    GuiLayout& btLayout = GuiLayoutManager::instance().getLayout("config/gui/bomb-tag-hud.json");
-    auto btText = [&](const std::string& id, const std::string& text) {
-        const GuiElement* el = btLayout.get(id);
-        if (!el) return;
-        float s = el->fontSize > 0.0f ? el->fontSize : 0.32f;
-        uiDrawText(text.c_str(), uiScaleX(el->x), uiScaleY(el->y), s, el->getTextColorVec());
-    };
+    const auto& c = CommunityMatchClient::instance();
+    if (!c.isBombTag() || c.phase() != DUEL_PHASE_ACTIVE) return;
 
-    if (mEndState == BombTagEndState::VictoryScreen) {
-        drawGuiElement(win, *btLayout.get("victoryDim"));
-        char buf[128];
-        if (mWinnerIndex == -2) {
-            btText("stalemateText", "STALEMATE");
-            btText("stalemateDesc", "Nobody scored a kill.");
-        } else if (mWinnerIsTie) {
-            btText("tieText", "TIE");
-            snprintf(buf, sizeof(buf), "Kills: %d", mWinnerKills);
-            btText("tieScoreText", buf);
-        } else {
-            bool playerWon = mWinnerKills >= 0 && mWinnerIndex < 0;
-            btText(playerWon ? "winnerText" : "gameOverText",
-                   playerWon ? "WINNER" : "GAME OVER");
-            snprintf(buf, sizeof(buf), "Kills: %d  Deaths: %d", mPlayerKills, mPlayerDeaths);
-            btText("scoreText", buf);
-        }
-    }
+    glm::vec3 bombPos = bombWorldPosition();
+    if (bombPos == glm::vec3(0.0f)) return;
 
-    if (mEndState == BombTagEndState::Countdown || mEndState == BombTagEndState::FinalKillReplay) {
-        const GuiElement* pa = btLayout.get("playAgainButton");
-        if (pa && drawGuiElement(win, *pa).clicked)
-            return BombTagMenuAction::PlayAgain;
-        const GuiElement* ex = btLayout.get("exitButton");
-        if (ex && drawGuiElement(win, *ex).clicked)
-            return BombTagMenuAction::ExitToMenu;
-    }
-    return BombTagMenuAction::None;
+    bool isActive = bombIsActive();
+    float timerTicks = (float)c.bombTimerTicks();
+
+    renderBombSphere(bombPos, timerTicks, isActive);
+    renderWorldTimer(bombPos, bombSecondsRemaining());
 }
 
+void BombTagManager::renderPassEffect(Camera& camera) {
+    if (!mEnabled) return;
+    if (mPassBeamTimer <= 0.0f) return;
 
+    float alpha = std::min(1.0f, mPassBeamTimer * 2.0f);
+    glm::vec4 beamColor(0.2f, 0.8f, 1.0f, alpha);
+    DebugVis::drawFilledBeam(camera, mPassBeamStart, mPassBeamEnd, 0.05f, beamColor);
+}
+
+void BombTagManager::renderBombSphere(const glm::vec3& pos, float timerTicks, bool isActive) {
+    if (!mCamera) return;
+
+    // Spec: blink every 30 ticks between (10,10,10) and (255,0,0)
+    // Inactive: grey (80,80,80)
+    glm::vec4 col;
+    if (!isActive) {
+        // Inactive: grey
+        col = glm::vec4(80.0f/255.0f, 80.0f/255.0f, 80.0f/255.0f, 1.0f);
+    } else {
+        // Active: blink every 30 ticks
+        uint32_t tick = (uint32_t)std::floor(timerTicks);
+        bool blink = (tick % 60) < 30;  // First 30 of each 60-tick cycle = dark
+        if (blink)
+            col = glm::vec4(10.0f/255.0f, 10.0f/255.0f, 10.0f/255.0f, 1.0f);
+        else
+            col = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
+    }
+
+    DebugVis::drawFilledSphere(*mCamera, pos, 0.5f, col);
+}
+
+void BombTagManager::renderWorldTimer(const glm::vec3& pos, float seconds) {
+    if (!mCamera) return;
+
+    char timerTxt[32];
+    snprintf(timerTxt, sizeof(timerTxt), "%.2f", std::max(0.0f, seconds));
+    float sx = 0, sy = 0;
+    glm::vec3 labelPos = pos + glm::vec3(0.0f, 0.0f, 1.3f);
+    if (DebugVis::projectToScreen(*mCamera, labelPos, sx, sy)) {
+        float tw = uiMeasureText(timerTxt, 0.40f);
+        uiDrawText(timerTxt, sx - tw * 0.5f, sy - 16.0f, 0.40f, glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
+    }
+}

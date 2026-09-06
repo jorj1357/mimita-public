@@ -502,12 +502,10 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             lastReplicaRenderLogMs = renderLogNow;
         }
     }
-    if (!replayPlaybackActive) {
-        { Perf::ScopedTimer _dr("EffectRender"); DeathSystem::instance().render(camera); }
-        // [RAGDOLL RENDER REMOVED] — DeadBody render handles corpses
-        // Local weapon render moved earlier (before renderRemoteWeapon) to prevent
-        // shared WeaponViewModel transform from being overwritten by remote players.
-    }
+    { MIMITA_PERF_SCOPE("EffectRender"); DeathSystem::instance().render(camera); }
+    // [RAGDOLL RENDER REMOVED] — DeadBody render handles corpses
+    // Local weapon render moved earlier (before renderRemoteWeapon) to prevent
+    // shared WeaponViewModel transform from being overwritten by remote players.
     diagRenderStage(4);
 
     if (gNetPresentationDebug && mpContext.active)

@@ -1,0 +1,22 @@
+{
+  "id": "bombtag",
+  "name": "Bomb Tag",
+  "description": "One bomb, infinite gameplay. Pass it or explode. First to survive wins.",
+  "team_names": [],
+  "goal_value": 0,
+  "time_limit_seconds": 0,
+  "respawn_seconds": 0.01,
+  "kill_heals": true,
+  "countdown_seconds": 3,
+  "go_seconds": 0.75,
+  "rematch_seconds": 0,
+  "spawn_offset_radius": 5.0,
+  "spawn_strategy": "shared",
+  "intermission_seconds": 15,
+  "results_seconds": 8,
+  "maps": ["mimita-duels-map-v3", "atdm", "funworld"],
+  "bomb_timer_ticks": 900,
+  "inactive_ticks": 60,
+  "blink_ticks": 30,
+  "max_pass_sanity_distance": 3.0
+}

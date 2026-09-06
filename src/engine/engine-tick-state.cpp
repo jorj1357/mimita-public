@@ -198,16 +198,9 @@ void engineTickState(Engine& engine, float dt)
                 BombTagConfigResult bcr = getPendingBombTagConfig();
                 if (bcr.start) {
                     gDuelManager.stopDuel();
-                    BombTagConfig cfg;
-                    cfg.numNpcs = bcr.numNpcs;
-                    cfg.lives = bcr.lives;
-                    cfg.timeLimitSeconds = bcr.timeLimitSeconds;
-                    cfg.npcDifficulty = bcr.npcDifficulty;
-                    cfg.enabled = true;
-                    gBombTagManager.setCamera(camera);
-                    gBombTagManager.start(cfg, player, npcSystem, world);
-                    activeMapPath = cfg.mapPath;
-                    worldLoaded = !world.mesh.verts.empty();
+                    // Local bomb tag config menu is deprecated.
+                    // Bomb Tag is now server-authoritative via community server browser.
+                    // The config result is ignored; bomb tag starts via server mode selection.
                     clearPendingBombTagConfig();
                 }
             }

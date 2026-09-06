@@ -11,12 +11,15 @@
 
 #include <string>
 #include <vector>
+#include "vip/vip-appearance.h"
 
 struct MatchLeaderboardEntry {
     std::string name;
     int score = 0;
     int rank = 0;  // 0=1st, 1=2nd, 2=3rd
     bool isLocalPlayer = false;
+    MimitaVip::VipAppearance vipAppearance;
+    MimitaVip::VipStyleDetail vipStyleDetail;
 };
 
 struct ScoreGainAnim {

@@ -155,7 +155,7 @@ bool parseHexColor(const std::string& hex, uint8_t& r, uint8_t& g, uint8_t& b)
 const char* staffColorForRole(const std::string& role)
 {
     if (role == "owner") return "#000000";
-    if (role == "admin") return "#191919";
+    if (role == "admin") return "#000000";
     if (role == "moderator") return "#ff0000";
     return "";
 }
@@ -292,6 +292,8 @@ MimitaVip::VipStyleDetail parseVipStyleDetailJson(const json& owner,
         out.animation = MimitaVip::VIP_ANIMATION_PULSE;
     else
         out.animation = MimitaVip::VIP_ANIMATION_NONE;
+
+    out.styleEpoch = (uint32_t)vip.value("style_revision", 1);
 
     return out;
 }

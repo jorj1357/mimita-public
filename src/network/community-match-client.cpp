@@ -10,6 +10,7 @@
 #include "network/community-match-client.h"
 #include "network/multiplayer-context.h"
 #include "terminal/terminal-state.h"
+#include "auth/auth-system.h"
 
 namespace MimitaNet {
 
@@ -45,7 +46,21 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         entry.score = packet.ffaLeaderScores[i];
         entry.rank = i;
         entry.isLocalPlayer = packet.ffaLeaderIds[i] == MP_CONTEXT.localPlayerId;
-        if (entry.isLocalPlayer) newLocalScore = entry.score;
+        if (entry.isLocalPlayer)
+        {
+            entry.vipAppearance = AuthSystem::instance().user().vipAppearance;
+            entry.vipStyleDetail = AuthSystem::instance().user().vipStyleDetail;
+            newLocalScore = entry.score;
+        }
+        else
+        {
+            auto it = MP_CONTEXT.remotePlayers.find(packet.ffaLeaderIds[i]);
+            if (it != MP_CONTEXT.remotePlayers.end())
+            {
+                entry.vipAppearance = it->second.vipAppearance;
+                entry.vipStyleDetail = it->second.vipStyleDetail;
+            }
+        }
         leaders.push_back(entry);
     }
 
@@ -62,6 +77,29 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     }
     if (newLocalScore > mLocalScore) hud.onConfirmedScoreGain();
     mLocalScore = newLocalScore;
+}
+
+void CommunityMatchClient::onBombTagState(const BombTagStatePacket& packet)
+{
+    if (packet.duelId < mMatchId ||
+        (packet.duelId == mMatchId && packet.stateVersion < mStateVersion)) return;
+
+    mMatchId = packet.duelId;
+    mStateVersion = packet.stateVersion;
+    mPhase = packet.phase;
+    mBombOwnerType = packet.bombOwnerType;
+    mBombOwnerPlayerId = packet.bombOwnerPlayerId;
+    mBombTimerTicks = packet.timerTicksRemaining;
+    mBombInactiveTicks = packet.inactiveTicksRemaining;
+    mServerTick = packet.serverTick;
+    mBombPos = glm::vec3(packet.bombPosX, packet.bombPosY, packet.bombPosZ);
+
+    // Set mode to bombtag if we receive bomb tag state
+    if (mMode != "bombtag") {
+        mMode = "bombtag";
+        MatchLeaderboard& hud = MatchLeaderboard::instance();
+        hud.setMode(mMode, 0);
+    }
 }
 
 }

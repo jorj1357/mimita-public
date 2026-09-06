@@ -47,7 +47,7 @@
     //
     // This makes WASD feel nearly instant instead of gradually accelerating
     // like strict CS 1.6 sv_accelerate 5.
-    "ground_acceleration": 5.0,
+    "ground_acceleration": 10.0,
 
     // Ground friction from the fast Source preset.
     //
@@ -155,7 +155,7 @@
     //
     // This is NOT vanilla CS 1.6 behavior, but is intentionally kept here so
     // this preset now matches the fast MiMITA Source preset.
-    "max_air_jumps": 0,
+    "max_air_jumps": 1,
 
     // ── Ground snap ───────────────────────────────────────────────────────
 
@@ -187,19 +187,19 @@
     // the same fast MiMITA movement tuning as the "source" preset.
 
     // Shift ground/air dash.
-    "dash_enabled": false,
+    "dash_enabled": true,
 
     // Q down-dash / slam.
-    "down_dash_enabled": false,
+    "down_dash_enabled": true,
 
     // MiMITA freeze ability.
-    "freeze_enabled": false,
+    "freeze_enabled": true,
 
     // Time after a dash during which its boost is protected from ordinary
     // ground friction.
     //
     // Matches the fast Source preset.
-    "dash_grace_seconds": 0.01,
+    "dash_grace_seconds": 0.1,
 
     // Ground-friction multiplier during dash grace.
     //
@@ -209,12 +209,12 @@
     // Horizontal velocity impulse from a grounded dash.
     //
     // Matches the fast Source preset.
-    "ground_dash_impulse": 20.0,
+    "ground_dash_impulse": 10.0,
 
     // Horizontal velocity impulse from an airborne dash.
     //
     // Matches the fast Source preset.
-    "air_dash_impulse": 20.0,
+    "air_dash_impulse": 10.0,
 
     // Vertical velocity assigned by down-dash.
     //

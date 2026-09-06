@@ -208,7 +208,8 @@ export function computeVipState({
         },
         subscription,
         preset_count: Number(presetCount) || 0,
-        warnings_due: expirationWarnings(expiresAt, current)
+        warnings_due: expirationWarnings(expiresAt, current),
+        style_revision: style?.style_revision || 1
     }
 }
 
@@ -238,7 +239,7 @@ export async function getVipStateForUser(user, clientOrQuery = pool, now = new D
             [ids]
         ),
         query(
-            `SELECT ${selectUser}style_json FROM vip_name_styles WHERE ${predicate}`,
+            `SELECT ${selectUser}style_json, style_revision FROM vip_name_styles WHERE ${predicate}`,
             [ids]
         ),
         query(

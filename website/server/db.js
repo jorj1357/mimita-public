@@ -479,8 +479,10 @@ export const MIGRATION_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS vip_name_styles (
         user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
         style_json JSONB NOT NULL DEFAULT '{"version":1,"kind":"none"}',
+        style_revision INT NOT NULL DEFAULT 1,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`,
+    `ALTER TABLE vip_name_styles ADD COLUMN IF NOT EXISTS style_revision INT NOT NULL DEFAULT 1`,
 
     `CREATE TABLE IF NOT EXISTS vip_name_presets (
         id BIGSERIAL PRIMARY KEY,

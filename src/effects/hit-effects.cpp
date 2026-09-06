@@ -161,9 +161,14 @@ void HitEffects::spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitDirecti
     ReplayEffectEvent ev;
     ev.type = "hit_burst";
     ev.position = hitPoint;
+    ev.direction = b.direction;
+    ev.normal = b.normal;
     ev.sourceActorId = "hitfx";
     ev.targetActorId = "burst";
     ev.lifetime = (float)b.totalTicks / 60.0f;
+    ev.burstType = (int)b.burstType;
+    ev.dashSpeed = b.dashSpeed;
+    ev.dashBurst = b.dashBurst;
     captureReplayEffect(ev);
 
     spawnHitParticles(b);

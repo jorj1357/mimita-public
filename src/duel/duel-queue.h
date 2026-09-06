@@ -95,6 +95,7 @@ public:
     bool won() const { return mWon; }
     float rematchLeft() const { return mRematchLeft; }
     std::string teamName(bool mine) const { return mine ? mMyTeamName : mEnemyTeamName; }
+    uint32_t enemyPlayerId() const { return mEnemyPlayerId; }
 
     // Spawn tracer
     bool tracerActive() const { return mTracerActive; }
