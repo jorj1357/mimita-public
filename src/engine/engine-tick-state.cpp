@@ -67,7 +67,7 @@ void engineTickState(Engine& engine, float dt)
     //     "assets/maps/mimita-aabb-only-interior-small-v4.glb";
     // 9 5 2026 setting bc no wifi makes it suck 
     static const std::string defaultMapPath =
-        "assets/maps/dust2cyberiav3 .glb";
+        "assets/maps/dust2cyberiav3.glb";
 
     if (gameState != prevState)
     {

@@ -42,9 +42,11 @@ unresolved warnings, and evidence still required from human review.
 
 ## Changelog requirement
 
-Every AI session that touches the repository creates one file at:
+Every AI session that touches the repository creates one file under a date
+folder using the universal standard in
+`docs/architecture/time-and-formatting/time-and-formatting.md`:
 
-`docs/changelog/mm-dd-yyyy/mm-dd-yyyy-three-word-summary-hh-mm-ss.md`
+`docs/changelog/yyyy-mm-dd/yyyymmdd_hhmmss-three-word-summary.md`
 
 Write it at the end of the session. It must describe the final state and 
 include the EST timestamp, branch, commits, pre-existing edits, exact files and

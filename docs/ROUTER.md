@@ -18,6 +18,8 @@ This is the map for the project documentation.
 - `docs/ROUTER.md`: this map and the required reading order.
 - `docs/specs/`: desired behavior; the main source of truth for what the game should do.
 - `docs/architecture/`: ownership and structural rules.
+- `docs/architecture/time-and-formatting/time-and-formatting.md`: universal
+  UTC, ISO 8601, folder, and generated filename rules.
 - `docs/workflows/`: methods for common kinds of work.
 - `docs/operations/`: build, deployment, assets, and completion procedures.
 - `docs/skills/`: focused review checklists used for the task.
@@ -67,6 +69,7 @@ systems first. Use this default order:
 | Task type | Read first |
 |---|---|
 | Documentation | `docs/doc-review-09-03-2026.md`, the relevant docs folder, `docs/skills/documentation-checker-v1.md` |
+| Time, dates, filenames, or generated artifacts | `docs/architecture/time-and-formatting/time-and-formatting.md` |
 | UI, HUD, menus, text | `docs/specs/gui/gui.md`, `docs/skills/documentation-checker-v1.md` |
 | Damage, weapons, knockback | `docs/specs/weapons/weapons.md`, `docs/specs/networking/networking.md` |
 | Movement, physics, collision | `docs/specs/movement/movement.md`, `docs/architecture/collision/collision.md` |

@@ -43,6 +43,12 @@ line = 284
 
 ________________
 2. Log folder and file output
+New log folders and filenames follow the universal standard in
+`docs/architecture/time-and-formatting/time-and-formatting.md`. The current
+`mm-dd-yyyy` and `mmddyyyy_hhmmss` examples below are historical compatibility
+format examples only; new generated logs use UTC `yyyy-mm-dd` folders and
+`yyyymmdd_hhmmss` filenames such as `combat_20260906_193200.log`.
+
 All logs are written under:
 C:\important\mimita-priv-v8\logs\mm-dd-yyyy\
 Example:
