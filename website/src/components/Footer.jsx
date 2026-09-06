@@ -1,8 +1,6 @@
 import { useLocation } from "react-router-dom"
 import FeedbackBox from "./FeedbackBox"
 
-declare const __BUILD_UTC__: string
-
 export default function Footer() {
   const location = useLocation()
   const buildTime = typeof __BUILD_UTC__ !== "undefined" ? __BUILD_UTC__ : ""
