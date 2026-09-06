@@ -9,6 +9,7 @@
 */
 
 #include "website/api-client.h"
+#include "debug/debug-log.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -324,21 +325,48 @@ static void parseUserInfo(GameUserInfo& info, const json& u)
     info.createdAt = u.value("created_at", "");
 }
 
+static int jsonInt(const json& j, const std::string& key, int fallback)
+{
+    if (!j.contains(key)) return fallback;
+    const json& v = j[key];
+    if (v.is_number_integer()) return v.get<int>();
+    if (v.is_string()) return std::atoi(v.get<std::string>().c_str());
+    return fallback;
+}
+
+static long long jsonLong(const json& j, const std::string& key, long long fallback)
+{
+    if (!j.contains(key)) return fallback;
+    const json& v = j[key];
+    if (v.is_number()) return v.get<long long>();
+    if (v.is_string()) return std::atoll(v.get<std::string>().c_str());
+    return fallback;
+}
+
+static float jsonFloat(const json& j, const std::string& key, float fallback)
+{
+    if (!j.contains(key)) return fallback;
+    const json& v = j[key];
+    if (v.is_number()) return v.get<float>();
+    if (v.is_string()) return (float)std::atof(v.get<std::string>().c_str());
+    return fallback;
+}
+
 static void parseStats(GameStats& stats, const json& s)
 {
-    stats.wins = s.value("wins", 0);
-    stats.losses = s.value("losses", 0);
-    stats.kills = s.value("kills", 0);
-    stats.deaths = s.value("deaths", 0);
-    stats.gamesPlayed = s.value("games_played", 0);
-    stats.playtimeSeconds = s.value("playtime_seconds", 0LL);
-    stats.highestMmr = s.value("highest_mmr", 5000);
-    stats.currentMmr = s.value("current_mmr", 5000);
-    stats.accuracy = s.value("accuracy", 0.0f);
-    stats.headshots = s.value("headshots", 0);
-    stats.bestKillStreak = s.value("best_kill_streak", 0);
-    stats.totalXp = s.value("total_xp", 0LL);
-    stats.gold = s.value("gold", 0LL);
+    stats.wins = jsonInt(s, "wins", 0);
+    stats.losses = jsonInt(s, "losses", 0);
+    stats.kills = jsonInt(s, "kills", 0);
+    stats.deaths = jsonInt(s, "deaths", 0);
+    stats.gamesPlayed = jsonInt(s, "games_played", 0);
+    stats.playtimeSeconds = jsonLong(s, "playtime_seconds", 0LL);
+    stats.highestMmr = jsonInt(s, "highest_mmr", 5000);
+    stats.currentMmr = jsonInt(s, "current_mmr", 5000);
+    stats.accuracy = jsonFloat(s, "accuracy", 0.0f);
+    stats.headshots = jsonInt(s, "headshots", 0);
+    stats.bestKillStreak = jsonInt(s, "best_kill_streak", 0);
+    stats.totalXp = jsonLong(s, "total_xp", 0LL);
+    stats.gold = jsonLong(s, "gold", 0LL);
 }
 
 bool websiteReachable()
@@ -426,17 +454,31 @@ GameUserInfo validateSession(const std::string& sessionToken)
 GameBootstrap getGameBootstrap(const std::string& sessionToken)
 {
     GameBootstrap bootstrap;
-    if (sessionToken.empty()) return bootstrap;
+    if (sessionToken.empty())
+    {
+        Debug::warn(Debug::Category::Auth, "BOOTSTRAP skipped: empty session token\n");
+        return bootstrap;
+    }
 
     std::string body;
     int httpCode = 0;
     bool ok = httpRequest("GET", "https://mimita.fun/api/game/me",
                           "", sessionToken, body, httpCode);
-    if (!ok || httpCode != 200) return bootstrap;
+    if (!ok || httpCode != 200)
+    {
+        Debug::warn(Debug::Category::Auth, "BOOTSTRAP failed: httpCode=%d ok=%d\n",
+               httpCode, (int)ok);
+        return bootstrap;
+    }
 
     try {
         json j = json::parse(body);
-        if (!j.value("success", false)) return bootstrap;
+        if (!j.value("success", false))
+        {
+            Debug::warn(Debug::Category::Auth, "BOOTSTRAP failed: server success=false body=%.200s\n",
+                   body.c_str());
+            return bootstrap;
+        }
         parseUserInfo(bootstrap.user, j["profile"]);
         parseStats(bootstrap.stats, j.value("stats", json::object()));
         bootstrap.settings = j.value("settings", json::object());
@@ -444,7 +486,21 @@ GameBootstrap getGameBootstrap(const std::string& sessionToken)
         bootstrap.titles = j.value("titles", json::object());
         bootstrap.loadout = j.value("loadout", json::object());
         bootstrap.valid = bootstrap.user.valid && !bootstrap.user.username.empty();
-    } catch (...) {}
+        if (!bootstrap.valid)
+        {
+            Debug::warn(Debug::Category::Auth, "BOOTSTRAP failed: user.valid=%d username='%s'\n",
+                   (int)bootstrap.user.valid, bootstrap.user.username.c_str());
+        }
+    }
+    catch (const std::exception& e)
+    {
+        Debug::warn(Debug::Category::Auth, "BOOTSTRAP failed: json parse exception '%s'\n",
+               e.what());
+    }
+    catch (...)
+    {
+        Debug::warn(Debug::Category::Auth, "BOOTSTRAP failed: unknown exception\n");
+    }
     return bootstrap;
 }
 

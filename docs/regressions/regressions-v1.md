@@ -148,4 +148,53 @@ newest at top 9 3 2026
    5. What we learned
       1. Every deployment that touches website/src/ MUST rebuild the frontend
       2. A stale dist/ serves old JavaScript that may lack new components
-      3. The deployment procedure must include `cd /root/mimita-site/website && npm run build` as a mandatory step
+       3. The deployment procedure must include `cd /root/mimita-site/website && npm run build` as a mandatory step
+
+9 6 2026 2000 — In-game sign-in fails with "Could not load account data" and status text overlaps error
+
+   Game version: v2.0.6
+   Git branch: 8292026stash
+   Git HEAD: decc9fa
+   Affected clients: all v2.0.x releases (v2.0.0 through v2.0.6)
+   Affected endpoint: GET /api/game/me (bootstrap)
+
+1. Issue: signing in through the in-game exe fails with "Could not load account data" error, and the green "Signing in..." / "Loading account..." status text overlaps the red error text at the same screen position
+   1. Bad behavior
+      1. User enters correct admin credentials and clicks Sign In
+      2. Login succeeds (HTTP 200, accountId=1, username=admin returned)
+      3. The `getGameBootstrap()` call to `GET https://mimita.fun/api/game/me` throws a JSON parse exception: `json.exception.type_error.302: type must be number, but is string`
+      4. Bootstrap fails, error "Could not load account data" is set
+      5. But the green status text ("Loading account...") is never cleared, so both green status and red error render at position (720, 504) overlapping each other
+   2. Date and time first observed: 2026-09-06T19:40:00Z (first log capture), confirmed again at 2026-09-06T00:02:00Z
+   3. Why bad behavior
+      1. Three bugs combined:
+         A. SERVER-SIDE: node-postgres returns PostgreSQL BIGINT columns (OID 20) as JavaScript strings by default. The `game_stats` table has BIGINT columns: `total_xp`, `gold`, `playtime_ticks`, `playtime_seconds`, `lifetime_player_kills`, `lifetime_npc_kills`, `lifetime_deaths`. The `/api/game/me` endpoint returns these as `"0"` (string) instead of `0` (number). The `db.js` file had no `pg.types.setTypeParser` configuration.
+         B. CLIENT-SIDE: `parseStats()` in `api-client.cpp` used `s.value("total_xp", 0LL)` which throws when the JSON value is a string like `"0"` instead of a number `0`. All v2.0.x clients have this bug.
+         C. CLIENT-SIDE: `setError()` in `auth-controller.cpp` set `mRuntime.state = Failed` and `mRuntime.errorMessage` but never cleared `mRuntime.statusText`. Since both `statusText` and `errorText` elements in `login-menu.json` are at the same position (x=720, y=504), both rendered on screen simultaneously.
+   4. What fixed it, date and time: 2026-09-06T00:05:00Z
+      1. Fix A — SERVER: Added `pg.types.setTypeParser(20, parseInt)` to `db.js` to convert BIGINT to JavaScript Number globally. This fixes ALL existing v2.0.x clients without requiring a new release.
+      2. Fix B — SERVER: Fixed `defaultStats()` in `game-api.js` line 38: changed `playtime_ticks: "0"` (string) to `playtime_ticks: 0` (number). This fixes the fallback for new users with no stats row.
+      3. Fix C — CLIENT: Replaced direct `.value()` calls with helper functions `jsonInt()`, `jsonLong()`, `jsonFloat()` in `parseStats()` that check `is_number_integer()`, `is_number()`, or `is_string()` and convert accordingly. This makes the client robust against both string and number values.
+      4. Fix D — CLIENT: Added `mRuntime.statusText.clear()` to `setError()` so the green status text disappears when an error is set.
+      5. Fix E — CLIENT: Added `Debug::warn(Debug::Category::Auth, ...)` at all 5 `getGameBootstrap()` failure return paths so future failures are diagnosable from logs.
+   5. What we learned
+      1. node-postgres returns PostgreSQL BIGINT as JavaScript strings by default (not numbers). This is deliberate to avoid precision loss beyond Number.MAX_SAFE_INTEGER. Any code that reads BIGINT columns must handle string values. The proper fix is `pg.types.setTypeParser(20, parseInt)` in `db.js`.
+      2. Never assume JSON numeric fields are always numbers. Any field that goes through a database driver, HTTP transport, or JSON serialization boundary can be a string. Use defensive parsing (check type before get).
+      3. `setError()` must clear all previous status text. If it doesn't, both status and error text render at the same GUI position and overlap visually.
+      4. Silent failure paths in network calls are dangerous — the original `getGameBootstrap()` had 5 return paths with zero logging. Adding logging at each path immediately revealed the root cause on the first test run.
+      5. The server-side `defaultStats()` must return numbers, not strings, for all numeric fields. A string default creates a type inconsistency that breaks clients.
+      6. Server-side fixes (db.js type parser) help ALL existing clients immediately without requiring a new game release. Always prefer server-side fixes for backward compatibility.
+   6. Proof: after deploying the server fix, v2.0.6 clients can sign in successfully. The `/api/game/me` endpoint now returns numeric fields as numbers. The client bootstrap completes and transitions to the main menu.
+   7. Files changed:
+      1. `website/server/db.js:17` — added `pg.types.setTypeParser(20, parseInt)` to convert BIGINT to Number
+      2. `website/server/game-api.js:38` — fixed `playtime_ticks: "0"` → `playtime_ticks: 0`
+      3. `src/auth/auth-controller.cpp:263-268` — added `mRuntime.statusText.clear()` to `setError()`
+      4. `src/website/api-client.cpp:300-343` — added `jsonInt()`, `jsonLong()`, `jsonFloat()` helpers and rewrote `parseStats()` to use them
+      5. `src/website/api-client.cpp:426-475` — added `Debug::warn` logging at all 5 `getGameBootstrap()` failure paths
+   8. How to prevent this from breaking again
+      1. NEVER remove or comment out the `pg.types.setTypeParser(20, parseInt)` line in `db.js`. Without it, all BIGINT fields return as strings and break C++ clients.
+      2. NEVER use `.value("key", 0)` on a JSON field that comes from an external API without checking the type first. Use the `jsonInt`/`jsonLong`/`jsonFloat` helpers.
+      3. ALWAYS clear `mRuntime.statusText` in `setError()` — any new code path that sets an error must not leave stale status text.
+      4. When adding new fields to `GameStats` or `GameUserInfo`, add them to `parseStats`/`parseUserInfo` with the same string-or-number defensive parsing.
+      5. The server-side `defaultStats()` in `game-api.js` must return numbers, not strings, for all numeric fields.
+      6. When changing the database schema (adding BIGINT columns), always verify the API response types by curling the endpoint and checking JSON types.

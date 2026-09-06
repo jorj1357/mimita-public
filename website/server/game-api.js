@@ -35,7 +35,7 @@ function defaultStats() {
         deaths: 0,
         games_played: 0,
         playtime_seconds: 0,
-        playtime_ticks: "0",
+        playtime_ticks: 0,
         highest_mmr: 5000,
         current_mmr: 5000,
         accuracy: 0.0,

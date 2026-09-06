@@ -265,6 +265,7 @@ void AuthController::setError(const std::string& code, const std::string& messag
     mRuntime.state = AuthState::Failed;
     mRuntime.errorCode = code;
     mRuntime.errorMessage = message;
+    mRuntime.statusText.clear();
 }
 
 void AuthController::updateFromLoginResult(int accountId, const std::string& username,

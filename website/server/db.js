@@ -16,6 +16,8 @@ import { readFile } from "node:fs/promises"
 
 const { Pool } = pg
 
+pg.types.setTypeParser(20, (val) => parseInt(val, 10))
+
 export const pool = new Pool({
     connectionString: process.env.DATABASE_URL || undefined,
     user: process.env.DATABASE_URL ? undefined : process.env.DB_USER,
