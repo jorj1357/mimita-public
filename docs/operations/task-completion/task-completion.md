@@ -36,7 +36,7 @@ Every AI session that touches the repository creates one file at:
 
 `docs/changelog/mm-dd-yyyy/mm-dd-yyyy-three-word-summary-hh-mm-ss.md`
 
-Write it at the end of the session. It must describe the final state and
+Write it at the end of the session. It must describe the final state and 
 include the EST timestamp, branch, commits, pre-existing edits, exact files and
 lines, exact old and new content, reasoning, documents, skills, validation, and
 human review still needed. Use function or heading names as well as line

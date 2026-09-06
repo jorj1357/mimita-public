@@ -415,9 +415,6 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
             printf("[NET KILL HEAL] shooter=%u npc=%u health=%d\n",
                    event->shooterPlayerId, event->npcEntityId, gpPlayer->currentHp);
         }
-        // Show both reward lines, including +0 Gold, for the local shooter.
-        if (isLocalShooter)
-            RewardPopupSystem::instance().pushReward(10, 0);
         if (!localShooterPredictedKill)
         {
             // Death sound (the red-sphere ellipsoid spawns loss-proof for every

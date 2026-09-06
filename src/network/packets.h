@@ -135,7 +135,8 @@ enum PacketType : uint8_t
     // are requested only when the receiving client cache misses them.
     PACKET_AVATAR_MANIFEST = 62,
     PACKET_AVATAR_ASSET_REQUEST = 63,
-    PACKET_AVATAR_ASSET_CHUNK = 64
+    PACKET_AVATAR_ASSET_CHUNK = 64,
+    PACKET_PROGRESSION_EVENT = 65
 };
 
 enum DamageConfirmedSource : uint8_t
@@ -1320,6 +1321,17 @@ struct ServerNotificationPacket
     uint16_t durationTicks = 180;
     char title[32] = {};
     char message[192] = {};
+};
+
+// Server-owned progression feedback, using the shared reliable event envelope.
+struct ProgressionEventPacket
+{
+    PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
+    uint8_t kind = 0;
+    char name[128] = {};
+    char confirmedAt[40] = {};
 };
 
 // ── Spy Knife hit claim (attacker → server, unreliable) ───────────────

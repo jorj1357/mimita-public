@@ -11,6 +11,7 @@
 
 #include "network/server.h"
 #include "network/server-duel.h"
+#include "persistence/persistence-emit.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -125,6 +126,8 @@ ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>&
             }
         }
         result.killed = true;
+        emitPvPKillPersistenceEvent(players, attackerPlayerId, target.id,
+            damageSourceName(source), 0, target.pos, target.pos);
     }
 
     if (result.killed)

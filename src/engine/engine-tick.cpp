@@ -84,12 +84,9 @@ void engineTick(Engine& engine)
     // The sub-scopes (Setup, Audio, etc.) are the roots. The EngineTick scope
     // was never recorded because its destructor ran AFTER Perf::endFrame().
     // Step UI tick clock (60 Hz fixed step, independent of render FPS)
-    gChatUiTickClock.tick();
+    const uint64_t rewardTicks = gChatUiTickClock.tick();
     NotificationSystem::instance().advanceTicks();
-    RewardPopupSystem::instance().tick();
-    if (PersistenceQueue::instance().consumeAutoSaveNotification())
-        NotificationSystem::instance().pushImportant(
-            "AUTO-SAVE", "Stats synced to server", 180);
+    for (uint64_t i = 0; i < rewardTicks; ++i) RewardPopupSystem::instance().tick();
     if (GAME_STATE == GAME_PLAYING)
         NotificationSystem::instance().updateTips();
     auto tFrameStart = std::chrono::steady_clock::now();

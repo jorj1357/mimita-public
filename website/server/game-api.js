@@ -14,8 +14,10 @@ import { pool } from "./db.js"
 import { parseCookies, sessionCookieName, sessionSecret } from "./session.js"
 import { getVipStateForUser } from "./vip-entitlements.js"
 import crypto from "crypto"
+import { createProgressionRouter, progressionFields, progressionTotals } from "./progression-routes.js"
 
 const router = Router()
+router.use("/progression", createProgressionRouter({ database: pool, authenticateMw: authenticateToken }))
 
 function debugAim(...args) {
     console.log("[AimTrainerAPI]", ...args)
@@ -33,6 +35,7 @@ function defaultStats() {
         deaths: 0,
         games_played: 0,
         playtime_seconds: 0,
+        playtime_ticks: "0",
         highest_mmr: 5000,
         current_mmr: 5000,
         accuracy: 0.0,
@@ -115,14 +118,15 @@ function defaultTitles(user) {
 }
 
 async function attachVipToRows(rows) {
-    return Promise.all(rows.map(async row => {
-        const vip = await getVipStateForUser({ id: row.id, role: row.role || "user" }, pool)
+    const states = await getVipStateForUser(rows, pool)
+    return rows.map((row, index) => {
+        const vip = states[index]
         return {
             ...row,
             supporter_tier: vip.active_tier,
             vip
         }
-    }))
+    })
 }
 function withDefaultTitle(user, titles) {
     const result = titles && typeof titles === "object" ? { ...titles } : defaultTitles(user)
@@ -138,7 +142,7 @@ function withDefaultTitle(user, titles) {
 async function getAccountData(user) {
     const [statsResult, settingsResult, inventoryResult, loadoutResult, titlesResult] = await Promise.all([
         pool.query(
-            `SELECT wins, losses, kills, deaths, games_played, playtime_seconds,
+            `SELECT wins, losses, kills, deaths, games_played, playtime_seconds, playtime_ticks,
                     highest_mmr, current_mmr, accuracy, headshots, best_kill_streak,
                     total_xp, gold, lifetime_player_kills, lifetime_npc_kills, lifetime_deaths,
                     draws, matches_played, matches_won, matches_lost, matches_drawn,
@@ -163,13 +167,9 @@ async function getAccountData(user) {
 
 async function authenticateToken(req, res, next) {
     try {
-        let token = parseCookies(req)[sessionCookieName]
-        if (!token) {
-            const authHeader = req.headers["authorization"]
-            if (authHeader && authHeader.startsWith("Bearer ")) {
-                token = authHeader.slice(7)
-            }
-        }
+        const authHeader = req.headers["authorization"]
+        const token = authHeader?.startsWith("Bearer ")
+            ? authHeader.slice(7) : parseCookies(req)[sessionCookieName]
         if (!token) {
             return res.status(401).json({ success: false, error: "auth_required", message: "sign in required" })
         }
@@ -392,7 +392,7 @@ router.put("/avatar/data", authenticateToken, async (req, res, next) => {
 router.get("/stats", authenticateToken, async (req, res, next) => {
     try {
         const result = await pool.query(
-            `SELECT wins, losses, kills, deaths, games_played, playtime_seconds,
+            `SELECT wins, losses, kills, deaths, games_played, playtime_seconds, playtime_ticks,
                     highest_mmr, current_mmr, accuracy, headshots, best_kill_streak,
                     total_xp, gold, lifetime_player_kills, lifetime_npc_kills, lifetime_deaths,
                     draws, matches_played, matches_won, matches_lost, matches_drawn,
@@ -417,103 +417,49 @@ router.get("/stats", authenticateToken, async (req, res, next) => {
     }
 })
 
-router.post("/stats", authenticateToken, async (req, res, next) => {
-    try {
-        const { match_id, map_name, game_mode, duration_seconds, winner_id,
-                kills, deaths, accuracy, headshots, damage_dealt, won, team,
-                mmr_before, mmr_after } = req.body
-
-        const client = await pool.connect()
-        try {
-            await client.query("BEGIN")
-
-            await client.query(
-                `INSERT INTO match_history (match_id, map_name, game_mode, duration_seconds, winner_id)
-                 VALUES ($1, $2, $3, $4, $5)
-                 ON CONFLICT (match_id) DO NOTHING`,
-                [match_id, map_name || "", game_mode || "", duration_seconds || 0, winner_id || null]
-            )
-
-            await client.query(
-                `INSERT INTO match_participants (match_id, user_id, username, kills, deaths, accuracy, headshots, damage_dealt, team, won, mmr_before, mmr_after)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-                 ON CONFLICT (match_id, user_id) DO NOTHING`,
-                [match_id, req.user.id, req.user.username,
-                 kills || 0, deaths || 0, accuracy || 0.0, headshots || 0,
-                 damage_dealt || 0, team || 0, won || false,
-                 mmr_before || 5000, mmr_after || 5000]
-            )
-
-            await client.query(
-                `INSERT INTO game_stats (user_id, wins, losses, kills, deaths, games_played, playtime_seconds,
-                                         highest_mmr, current_mmr, accuracy, headshots, best_kill_streak)
-                 VALUES ($1, $2, $3, $4, $5, 1, $6, $7, $8, $9, $10, $11)
-                 ON CONFLICT (user_id) DO UPDATE SET
-                     wins = game_stats.wins + $2,
-                     losses = game_stats.losses + $3,
-                     kills = game_stats.kills + $4,
-                     deaths = game_stats.deaths + $5,
-                     games_played = game_stats.games_played + 1,
-                     playtime_seconds = game_stats.playtime_seconds + $6,
-                     highest_mmr = GREATEST(game_stats.highest_mmr, $7),
-                     current_mmr = $8,
-                     accuracy = $9,
-                     headshots = game_stats.headshots + $10,
-                     best_kill_streak = GREATEST(game_stats.best_kill_streak, $11),
-                     updated_at = NOW()`,
-                [req.user.id,
-                 won ? 1 : 0, won ? 0 : 1,
-                 kills || 0, deaths || 0, duration_seconds || 0,
-                 mmr_after || 5000, mmr_after || 5000,
-                 accuracy || 0.0, headshots || 0, kills || 0]
-            )
-
-            await client.query("COMMIT")
-            res.json({ success: true })
-        }
-        catch (error) {
-            await client.query("ROLLBACK")
-            throw error
-        }
-        finally {
-            client.release()
-        }
-    }
-    catch (error) {
-        next(error)
-    }
+router.post("/stats", authenticateToken, (req, res) => {
+    res.status(410).json({ success: false, error: "stats_write_retired", message: "Use authenticated host progression sessions." })
 })
 
 router.get("/leaderboard", async (req, res, next) => {
     try {
         const type = req.query.type || "mmr"
-        const limit = Math.min(Number(req.query.limit) || 50, 200)
+        const limit = Math.min(Math.max(Math.trunc(Number(req.query.limit)) || 50, 1), 200)
 
         let orderBy
         switch (type) {
             case "wins": orderBy = "gs.wins DESC"; break
-            case "kills": orderBy = "gs.kills DESC"; break
+            case "kills": orderBy = "gs.lifetime_player_kills DESC"; break
+            case "deaths": orderBy = "gs.lifetime_deaths DESC"; break
+            case "xp": orderBy = "gs.total_xp DESC"; break
+            case "gold": orderBy = "gs.gold DESC"; break
+            case "playtime": orderBy = "gs.playtime_ticks DESC"; break
             case "kill_streak": orderBy = "gs.best_kill_streak DESC"; break
             default: orderBy = "gs.current_mmr DESC"
         }
 
         const result = await pool.query(
             `SELECT
-                ROW_NUMBER() OVER (ORDER BY ${orderBy}) AS rank,
+                ROW_NUMBER() OVER (ORDER BY ${orderBy}, u.id ASC) AS rank,
                 u.id, u.username, u.avatar_url, u.supporter_tier, u.role,
                 gs.wins, gs.losses, gs.kills, gs.deaths,
-                gs.games_played, gs.playtime_seconds,
+                gs.games_played, gs.playtime_seconds, gs.playtime_ticks,
+                gs.total_xp, gs.gold, gs.lifetime_player_kills, gs.lifetime_deaths,
                 gs.highest_mmr, gs.current_mmr,
                 gs.accuracy, gs.headshots, gs.best_kill_streak
              FROM game_stats gs
              JOIN users u ON u.id = gs.user_id
              WHERE u.deleted_at IS NULL
-             ORDER BY ${orderBy}
+             ORDER BY ${orderBy}, u.id ASC
              LIMIT $1`,
             [limit]
         )
 
-        res.json({ success: true, leaderboard: await attachVipToRows(result.rows) })
+        const rows = result.rows.map(row => ({ ...row,
+            ...Object.fromEntries(["id", "rank", "playtime_seconds", ...Object.values(progressionFields)]
+                .filter(key => row[key] !== undefined).map(key => [key, String(row[key])]))
+        }))
+        res.json({ success: true, leaderboard: await attachVipToRows(rows) })
     }
     catch (error) {
         next(error)
@@ -728,220 +674,15 @@ function calculateLevel(totalXp) {
     return Math.floor(Math.sqrt(totalXp / 100)) + 1
 }
 
-const WEAPON_IDS = {
-    0: "none", 1: "revolver", 2: "godball", 3: "shotgun",
-    4: "swordsword", 5: "rocket_launcher", 6: "hafs",
-    7: "grenade_launcher", 8: "aa12", 9: "spyknife"
-}
-
-function validateIngestEvent(event) {
-    if (!event || typeof event !== "object") return false
-    if (!event.eventId || typeof event.eventId !== "string") return false
-    if (!event.type || !["kill", "match_result"].includes(event.type)) return false
-    return true
-}
-
-router.post("/stats/ingest", authenticateToken, async (req, res, next) => {
-    try {
-        const { events } = req.body
-        if (!Array.isArray(events) || events.length === 0)
-            return res.status(400).json({ success: false, error: "empty_events" })
-
-        const client = await pool.connect()
-        const results = { processed: 0, duplicates: 0, errors: 0 }
-
-        try {
-            await client.query("BEGIN")
-
-            for (const event of events) {
-                if (!validateIngestEvent(event)) {
-                    results.errors++
-                    continue
-                }
-
-                const dupCheck = await client.query(
-                    "SELECT 1 FROM processed_events WHERE event_id = $1",
-                    [event.eventId]
-                )
-                if (dupCheck.rowCount > 0) {
-                    results.duplicates++
-                    continue
-                }
-
-                if (event.type === "kill") {
-                    await processKillEvent(client, event)
-                } else if (event.type === "match_result") {
-                    await processMatchResultEvent(client, event)
-                }
-
-                await client.query(
-                    "INSERT INTO processed_events (event_id, event_type) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-                    [event.eventId, event.type]
-                )
-                results.processed++
-            }
-
-            await client.query("COMMIT")
-        } catch (error) {
-            await client.query("ROLLBACK")
-            throw error
-        } finally {
-            client.release()
-        }
-
-        res.json({ success: true, results })
-    } catch (error) {
-        next(error)
-    }
+router.post("/stats/ingest", authenticateToken, (req, res) => {
+    res.status(410).json({ success: false, error: "stats_ingest_retired", message: "Use authenticated host progression batches." })
 })
-
-async function processKillEvent(client, event) {
-    const attackerId = event.attackerId || 0
-    const victimId = event.victimId || 0
-    const isPlayerKill = event.attackerType === "player" && event.victimType === "player"
-    const isNpcKill = event.attackerType === "player" && event.victimType === "npc"
-    const isSelfKill = attackerId > 0 && attackerId === victimId
-
-    // Store raw kill event
-    const weaponStr = typeof event.weaponId === "number"
-        ? (WEAPON_IDS[event.weaponId] || String(event.weaponId))
-        : String(event.weaponId || "")
-
-    await client.query(
-        `INSERT INTO kill_events (event_id, match_id, server_tick, attacker_type, attacker_id,
-         victim_type, victim_id, weapon_id, distance_meters)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING`,
-        [event.eventId, event.matchId || "", event.serverTick || 0,
-         event.attackerType || "player", attackerId,
-         event.victimType || "player", victimId,
-         weaponStr, event.distanceMeters || 0.0]
-    )
-
-    const rewards = { playerKillXp: 100, playerKillGold: 50, npcKillXp: 10, npcKillGold: 0 }
-
-    if (isNpcKill && attackerId > 0) {
-        await client.query(
-            `INSERT INTO game_stats (user_id, total_xp, gold, lifetime_npc_kills, updated_at)
-             VALUES ($1, $2, $3, 1, NOW())
-             ON CONFLICT (user_id) DO UPDATE SET
-                 total_xp = game_stats.total_xp + $2,
-                 gold = game_stats.gold + $3,
-                 lifetime_npc_kills = game_stats.lifetime_npc_kills + 1,
-                 updated_at = NOW()`,
-            [attackerId, rewards.npcKillXp, rewards.npcKillGold]
-        )
-    }
-
-    if (isPlayerKill && !isSelfKill) {
-        // Attacker: +player kills, XP, gold
-        if (attackerId > 0) {
-            await client.query(
-                `INSERT INTO game_stats (user_id, total_xp, gold, lifetime_player_kills, updated_at)
-                 VALUES ($1, $2, $3, 1, NOW())
-                 ON CONFLICT (user_id) DO UPDATE SET
-                     total_xp = game_stats.total_xp + $2,
-                     gold = game_stats.gold + $3,
-                     lifetime_player_kills = game_stats.lifetime_player_kills + 1,
-                     updated_at = NOW()`,
-                [attackerId, rewards.playerKillXp, rewards.playerKillGold]
-            )
-        }
-
-        // Victim: +death
-        if (victimId > 0) {
-            await client.query(
-                `INSERT INTO game_stats (user_id, lifetime_deaths, updated_at)
-                 VALUES ($1, 1, NOW())
-                 ON CONFLICT (user_id) DO UPDATE SET
-                     lifetime_deaths = game_stats.lifetime_deaths + 1,
-                     updated_at = NOW()`,
-                [victimId]
-            )
-        }
-
-        // PvP relationship
-        if (attackerId > 0 && victimId > 0) {
-            await client.query(
-                `INSERT INTO player_kill_relationships (attacker_id, victim_id, kill_count, first_kill_at, last_kill_at)
-                 VALUES ($1, $2, 1, NOW(), NOW())
-                 ON CONFLICT (attacker_id, victim_id) DO UPDATE SET
-                     kill_count = player_kill_relationships.kill_count + 1,
-                     last_kill_at = NOW()`,
-                [attackerId, victimId]
-            )
-        }
-
-        // Weapon stats
-        if (attackerId > 0 && weaponStr) {
-            await client.query(
-                `INSERT INTO player_weapon_stats (player_id, weapon_id, kills)
-                 VALUES ($1, $2, 1)
-                 ON CONFLICT (player_id, weapon_id) DO UPDATE SET
-                     kills = player_weapon_stats.kills + 1`,
-                [attackerId, weaponStr]
-            )
-        }
-    }
-}
-
-async function processMatchResultEvent(client, event) {
-    // Insert match record (idempotent)
-    await client.query(
-        `INSERT INTO match_history (match_id, game_mode, victory_type, red_score, blue_score, winner_id)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT (match_id) DO NOTHING`,
-        [event.matchId || "", event.mode || "", event.victoryType || "unknown",
-         event.redScore || 0, event.blueScore || 0, event.winnerPlayerId || null]
-    )
-
-    if (!Array.isArray(event.participants)) return
-
-    for (const p of event.participants) {
-        if (!p.userId || p.userId <= 0) continue
-
-        const won = p.won ? 1 : 0
-        const lost = p.won ? 0 : 1
-        const drawn = event.victoryType === "draw" ? 1 : 0
-        const isFfa = event.mode === "free_for_all"
-        const isTdm = event.mode === "team_deathmatch"
-
-        // Insert match participant (idempotent)
-        await client.query(
-            `INSERT INTO match_participants (match_id, user_id, username, kills, deaths, team, won)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
-             ON CONFLICT (match_id, user_id) DO NOTHING`,
-            [event.matchId, p.userId, p.username || "", p.kills || 0, p.deaths || 0,
-             p.team || "", p.won || false]
-        )
-
-        // Update aggregate match stats
-        await client.query(
-            `INSERT INTO game_stats (user_id, matches_played, wins, losses, draws,
-                                     ffa_matches_played, ffa_wins,
-                                     tdm_matches_played, tdm_wins, updated_at)
-             VALUES ($1, 1, $2, $3, $4, $5, $6, $7, $8, NOW())
-             ON CONFLICT (user_id) DO UPDATE SET
-                 matches_played = game_stats.matches_played + 1,
-                 wins = game_stats.wins + $2,
-                 losses = game_stats.losses + $3,
-                 draws = game_stats.draws + $4,
-                 ffa_matches_played = game_stats.ffa_matches_played + $5,
-                 ffa_wins = game_stats.ffa_wins + $6,
-                 tdm_matches_played = game_stats.tdm_matches_played + $7,
-                 tdm_wins = game_stats.tdm_wins + $8,
-                 updated_at = NOW()`,
-            [p.userId, won, lost, drawn,
-             isFfa ? 1 : 0, (isFfa && won) ? 1 : 0,
-             isTdm ? 1 : 0, (isTdm && won) ? 1 : 0]
-        )
-    }
-}
 
 // ── Plan 2: Public Profile Stats ───────────────────────────────────────
 
 router.get("/profile/:userId", async (req, res, next) => {
     try {
-        const userId = parseInt(req.params.userId) || 0
+        const userId = /^[1-9][0-9]{0,18}$/.test(req.params.userId) && BigInt(req.params.userId) <= 9223372036854775807n ? req.params.userId : "0"
         if (userId <= 0)
             return res.status(400).json({ success: false, error: "invalid_user_id" })
 
@@ -955,7 +696,7 @@ router.get("/profile/:userId", async (req, res, next) => {
 
         const user = userResult.rows[0]
         const statsResult = await pool.query(
-            `SELECT total_xp, gold, lifetime_player_kills, lifetime_npc_kills, lifetime_deaths,
+            `SELECT total_xp, gold, lifetime_player_kills, lifetime_npc_kills, lifetime_deaths, playtime_ticks,
                     wins, losses, draws, games_played,
                     matches_played, matches_won, matches_lost, matches_drawn,
                     ffa_matches_played, ffa_wins, tdm_matches_played, tdm_wins
@@ -964,7 +705,8 @@ router.get("/profile/:userId", async (req, res, next) => {
         )
 
         const stats = statsResult.rowCount ? statsResult.rows[0] : {}
-        const totalXp = stats.total_xp || 0
+        const totals = progressionTotals(stats)
+        const totalXp = totals.totalXp
         const level = calculateLevel(totalXp)
 
         const vip = await getVipStateForUser(user, pool)
@@ -979,11 +721,7 @@ router.get("/profile/:userId", async (req, res, next) => {
                 role: user.role,
                 createdAt: user.created_at,
                 level,
-                totalXp,
-                gold: stats.gold || 0,
-                playerKills: stats.lifetime_player_kills || 0,
-                npcKills: stats.lifetime_npc_kills || 0,
-                deaths: stats.lifetime_deaths || 0,
+                ...totals,
                 matchesPlayed: stats.matches_played || stats.games_played || 0,
                 wins: stats.matches_won || stats.wins || 0,
                 losses: stats.matches_lost || stats.losses || 0,
@@ -1001,7 +739,7 @@ router.get("/profile/:userId", async (req, res, next) => {
 
 router.get("/profile/:userId/rivals", async (req, res, next) => {
     try {
-        const userId = parseInt(req.params.userId) || 0
+        const userId = /^[1-9][0-9]{0,18}$/.test(req.params.userId) && BigInt(req.params.userId) <= 9223372036854775807n ? req.params.userId : "0"
         if (userId <= 0)
             return res.status(400).json({ success: false, error: "invalid_user_id" })
 

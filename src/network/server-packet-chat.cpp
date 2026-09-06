@@ -8,6 +8,7 @@
 * DOES NOT own NPC combat, projectile, or movement packet handling.
 */
 #include "network/server.h"
+#include "persistence/persistence-emit.h"
 #include "network/server-duel.h"
 #include "network/multiplayer-context.h"
 #include "network/chat-rate-limiter.h"
@@ -664,6 +665,8 @@ void checkVoidDeath(std::unordered_map<uint32_t, ServerPlayer>& players,
         {
             kv.second.health = 0;
             kv.second.dead = true;
+            emitPvPKillPersistenceEvent(players, 0, kv.second.id, "environment", 0,
+                                       kv.second.pos, kv.second.pos);
             kv.second.respawnSeconds = 0.01f;  // instant respawn (next server tick)
             kv.second.vel = glm::vec3(0.0f);
             printf("%s [SERVER VOID DEATH] playerId=%u name=%s z=%.1f killZ=%.1f\n",

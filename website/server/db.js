@@ -12,6 +12,7 @@ import dotenv from "dotenv"
 dotenv.config()
 
 import pg from "pg"
+import { readFile } from "node:fs/promises"
 
 const { Pool } = pg
 
@@ -29,7 +30,7 @@ export const pool = new Pool({
         : undefined
 })
 
-const MIGRATION_STATEMENTS = [
+export const MIGRATION_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS newsletter (
         id BIGSERIAL PRIMARY KEY,
         email TEXT UNIQUE NOT NULL,
@@ -238,6 +239,7 @@ const MIGRATION_STATEMENTS = [
         won BOOLEAN NOT NULL DEFAULT FALSE,
         UNIQUE(match_id, user_id)
     )`,
+    `ALTER TABLE match_participants ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP`,
     `CREATE INDEX IF NOT EXISTS match_participants_user_idx ON match_participants(user_id, created_at DESC)`,
 
     `CREATE TABLE IF NOT EXISTS user_settings (
@@ -699,42 +701,36 @@ const MIGRATION_STATEMENTS = [
     `ALTER TABLE match_history ADD COLUMN IF NOT EXISTS blue_score INT NOT NULL DEFAULT 0`,
 ]
 
-export async function runMigrations() {
-    console.log("[DB] Running migrations...")
-    for (const sql of MIGRATION_STATEMENTS) {
-        try {
-            await pool.query(sql)
+export async function runMigrations(database = pool) {
+    const client = await database.connect()
+    let version = 0
+    try {
+        await client.query("BEGIN")
+        await client.query("SELECT pg_advisory_xact_lock(1835627636)")
+        await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
+            version INTEGER PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )`)
+        const applied = await client.query("SELECT version FROM schema_migrations")
+        const versions = new Set(applied.rows.map(row => Number(row.version)))
+        // Version 1 adopts the existing bootstrap, including installations without a ledger.
+        // Version 1 adopts db.js's complete historical bootstrap (001 through 004).
+        // Version 5 matches the next SQL filename; versions 2-4 are not rerun separately.
+        for (version of [1, 5]) {
+            if (versions.has(version)) continue
+            const statements = version === 1 ? MIGRATION_STATEMENTS : [
+                await readFile(new URL("./migrations/005_progression.sql", import.meta.url), "utf8")
+            ]
+            for (const sql of statements) await client.query(sql)
+            await client.query("INSERT INTO schema_migrations(version) VALUES ($1)", [version])
         }
-        catch (error) {
-            console.log(`[DB] Migration step failed: ${error.message.substring(0, 100)}`)
-            console.log(`[DB] SQL: ${sql.substring(0, 80)}...`)
-        }
-    }
-    console.log("[DB] Migrations complete.")
-
-    // Print email campaign schema
-    const emailTables = ["user_tags", "email_templates", "email_campaigns", "email_campaign_recipients", "user_tag_assignments"]
-    for (const table of emailTables) {
-        try {
-            const schema = await pool.query(`
-                SELECT column_name, data_type, is_nullable, column_default
-                FROM information_schema.columns
-                WHERE table_name = $1
-                ORDER BY ordinal_position
-            `, [table])
-            console.log(`[DB] Schema for ${table}:`)
-            for (const row of schema.rows) {
-                console.log(`[DB]   ${row.column_name} (${row.data_type}) nullable=${row.is_nullable} default=${row.column_default || 'none'}`)
-            }
-            const count = await pool.query(`SELECT COUNT(*)::int AS cnt FROM ${table}`)
-            console.log(`[DB]   ${table} row count: ${count.rows[0].cnt}`)
-            if (count.rows[0].cnt > 0) {
-                const sample = await pool.query(`SELECT * FROM ${table} LIMIT 5`)
-                console.log(`[DB]   ${table} sample rows:`, JSON.stringify(sample.rows, null, 2))
-            }
-        } catch (e) {
-            console.log(`[DB] Could not inspect ${table}: ${e.message}`)
-        }
+        await client.query("COMMIT")
+        console.log("[DB] Versioned migrations committed")
+    } catch (error) {
+        await client.query("ROLLBACK")
+        console.error(`[DB] Migration ${version} rolled back; code=${error.code || "unknown"}`)
+        throw error
+    } finally {
+        client.release()
     }
 }
 

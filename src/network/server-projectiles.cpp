@@ -789,9 +789,6 @@ void explodeProjectile(SOCKET sock,
         ServerDamageResult damage = applyServerDamage(
             players, victim, projectile.ownerPlayerId, finalDamage,
             knockback, source);
-        if (damage.killed && projectile.ownerPlayerId != victim.id)
-            emitPvPKillPersistenceEvent(players, projectile.ownerPlayerId, victim.id,
-                projectile.weaponType, tick, position, victim.pos);
         if (damage.applied)
         {
             MovementLifecycleIdentity lifecycle{

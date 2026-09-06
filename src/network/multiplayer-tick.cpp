@@ -29,6 +29,7 @@
 #include "world/world.h"
 #include "entities/player.h"
 #include "notifications/notifications.h"
+#include "gui/hud/reward-popup.h"
 #include "npc/npc-avatar.h"
 #include "gui/password-popup.h"
 
@@ -1257,6 +1258,16 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.mapLoadAttempts = 0;
             ctx.lastMapLoadAttemptMs = 0;
             DuelQueue::instance().onMapChange(mc->mapId, mc->duelId, mc->mapVersion);
+        }
+        else if (header->type == PACKET_PROGRESSION_EVENT &&
+                 bytes >= (int)sizeof(ProgressionEventPacket))
+        {
+            const auto* event = reinterpret_cast<const ProgressionEventPacket*>(buffer);
+            if (!mpAcceptReliableEventOnce(ctx, event->eventId, event->eventSessionId)) return;
+            if (event->kind <= 4)
+                RewardPopupSystem::instance().pushProgression(event->kind,
+                    std::string(event->name, strnlen(event->name, sizeof(event->name))),
+                    std::string(event->confirmedAt, strnlen(event->confirmedAt, sizeof(event->confirmedAt))));
         }
         else if (header->type == PACKET_SERVER_NOTIFICATION &&
                  bytes >= (int)sizeof(ServerNotificationPacket))

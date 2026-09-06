@@ -1,6 +1,13 @@
+// 09 06 2026, 14 43
+/* purpose
+* Show the signed-in account and existing VIP profile controls.
+* Reuse shared persisted statistics for the account.
+* DOES NOT award or save gameplay progression.
+*/
 import { useEffect, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import Layout from "../components/Layout"
+import ProfileStats from "../components/ProfileStats"
 import Avatar from "../components/Avatar"
 import Username from "../components/Username"
 import NameStyleEditor from "../components/NameStyleEditor"
@@ -16,11 +23,9 @@ export default function ProfilePage() {
     const [busy, setBusy] = useState("")
     const [message, setMessage] = useState("")
     const [loading, setLoading] = useState(true)
-    const [gameStats, setGameStats] = useState(null)
 
     useEffect(() => {
         let alive = true
-        let statsTimer = null
         Promise.all([
             apiRequest("/api/auth/me"),
             apiRequest("/api/vip/me"),
@@ -33,28 +38,12 @@ export default function ProfilePage() {
                 setConfig(cfg.config)
                 setStyle(normalizeStyle(vipMe.vip?.name_style))
                 setLoading(false)
-                if (me.user?.id > 0) {
-                    const refreshStats = () => {
-                        apiRequest(`/api/profile/${me.user.id}`)
-                            .then(data => {
-                                if (alive && data.profile)
-                                    setGameStats(data.profile)
-                            })
-                            .catch(() => {})
-                    }
-                    // The game batches persistence roughly once per minute;
-                    // refresh at the same low rate so the profile catches up
-                    // without creating load on the API.
-                    refreshStats()
-                    statsTimer = setInterval(refreshStats, 60 * 1000)
-                }
             })
             .catch(() => {
                 if (alive) navigate("/signin")
             })
         return () => {
             alive = false
-            if (statsTimer) clearInterval(statsTimer)
         }
     }, [navigate])
 
@@ -195,69 +184,7 @@ export default function ProfilePage() {
                 <div className="profilePageGrid">
                     <div className="profilePageSection">
                         <h2 className="profilePageSectionTitle">Statistics</h2>
-                        {gameStats ? (
-                            <div className="profileStats">
-                                <div className="profileStatRow">
-                                    <span className="profileStatLabel">Level</span>
-                                    <span className="profileStatValue" style={{ color: "#00d9d9" }}>{gameStats.level}</span>
-                                </div>
-                                <div className="profileStatRow">
-                                    <span className="profileStatLabel">Total XP</span>
-                                    <span className="profileStatValue" style={{ color: "#00d9d9" }}>{(gameStats.totalXp || 0).toLocaleString()}</span>
-                                </div>
-                                <div className="profileStatRow">
-                                    <span className="profileStatLabel">Gold</span>
-                                    <span className="profileStatValue" style={{ color: "#ffd900" }}>{(gameStats.gold || 0).toLocaleString()}</span>
-                                </div>
-                                <div className="profileStatDivider" />
-                                <div className="profileStatRow">
-                                    <span className="profileStatLabel">Player Kills</span>
-                                    <span className="profileStatValue">{(gameStats.playerKills || 0).toLocaleString()}</span>
-                                </div>
-                                <div className="profileStatRow">
-                                    <span className="profileStatLabel">NPC Kills</span>
-                                    <span className="profileStatValue">{(gameStats.npcKills || 0).toLocaleString()}</span>
-                                </div>
-                                <div className="profileStatRow">
-                                    <span className="profileStatLabel">Deaths</span>
-                                    <span className="profileStatValue">{(gameStats.deaths || 0).toLocaleString()}</span>
-                                </div>
-                                <div className="profileStatDivider" />
-                                <div className="profileStatRow">
-                                    <span className="profileStatLabel">Matches</span>
-                                    <span className="profileStatValue">{(gameStats.matchesPlayed || 0).toLocaleString()}</span>
-                                </div>
-                                <div className="profileStatRow">
-                                    <span className="profileStatLabel">Wins</span>
-                                    <span className="profileStatValue" style={{ color: "#4caf50" }}>{(gameStats.wins || 0).toLocaleString()}</span>
-                                </div>
-                                <div className="profileStatRow">
-                                    <span className="profileStatLabel">Losses</span>
-                                    <span className="profileStatValue" style={{ color: "#f44336" }}>{(gameStats.losses || 0).toLocaleString()}</span>
-                                </div>
-                                <div className="profileStatDivider" />
-                                <div className="profileStatRow">
-                                    <span className="profileStatLabel">FFA Played</span>
-                                    <span className="profileStatValue">{(gameStats.ffa?.played || 0).toLocaleString()}</span>
-                                </div>
-                                <div className="profileStatRow">
-                                    <span className="profileStatLabel">FFA Wins</span>
-                                    <span className="profileStatValue" style={{ color: "#4caf50" }}>{(gameStats.ffa?.wins || 0).toLocaleString()}</span>
-                                </div>
-                                <div className="profileStatRow">
-                                    <span className="profileStatLabel">TDM Played</span>
-                                    <span className="profileStatValue">{(gameStats.tdm?.played || 0).toLocaleString()}</span>
-                                </div>
-                                <div className="profileStatRow">
-                                    <span className="profileStatLabel">TDM Wins</span>
-                                    <span className="profileStatValue" style={{ color: "#4caf50" }}>{(gameStats.tdm?.wins || 0).toLocaleString()}</span>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="profilePageEmpty">
-                                <p>No statistics available yet.</p>
-                            </div>
-                        )}
+                        <ProfileStats key={user.id} userId={user.id} />
                     </div>
 
                     <div className="profilePageSection">

@@ -25,6 +25,7 @@
 #include "debug/debug-log.h"
 #include "void-death/void-death.h"
 #include "website/api-client.h"
+#include "persistence/persistence-emit.h"
 
 #include <algorithm>
 #include <atomic>
@@ -1311,6 +1312,7 @@ void handleExplodeRequest(const char* buffer, int bytes,
     ServerPlayer& p = it->second;
     p.health = 0;
     p.dead = true;
+    emitPvPKillPersistenceEvent(players, p.id, p.id, "self", header->tick, p.pos, p.pos);
     p.respawnSeconds = 0.01f;  // instant respawn (next server tick)
     p.vel = glm::vec3(0.0f);
     printf("%s [SERVER DEATH] playerId=%u cause=explode respawn=instant\n",
@@ -1502,7 +1504,8 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     p.joinToken = joinTokenStr;
     p.joinTokenValidated = true;
     p.reconnectToken = generateReconnectToken();
-    p.accountId = join->accountId;
+    p.accountId = hasVerifiedVipTicket ? static_cast<uint32_t>(verifiedVipAccountId) : 0;
+    p.progressionTicket = hasVerifiedVipTicket ? vipTicket : std::string();
     p.name = uniquePlayerName(players, boundedPacketString(join->name, sizeof(join->name)), id);
     p.avatarName = boundedPacketString(join->avatarName, sizeof(join->avatarName));
     // Host detection for the ICE/room-code join path (the host connects this

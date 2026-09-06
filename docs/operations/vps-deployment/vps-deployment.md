@@ -45,30 +45,39 @@ All application changes must follow this path:
 6. Restart or reload only the affected service.
 7. Verify health and logs after deployment.
 
-### Known Production Paths and Services
+### Production paths and historical deployment evidence
 
-Verified 2026-07-29 via read-only SSH audit:
+Paths below were inspected historically. Refresh their service entry points,
+Git state, and environment presence with `docs/operations/vps-audit.md` before
+deployment. Historical branch labels are not approved deployment targets.
 
 | Path on VPS | Service | Port | Git Tracked |
 |---|---|---|---|
-| `/root/mimita-site` (Git clone) | Website API (Node.js) | 3002 | Yes — `avatar-editor-6-27-2026` branch |
+| `/root/mimita-site` (Git clone; application under `website/`) | Website API (Node.js) | 3002 | Yes; verify current branch and commit |
 | `/root/mimita-coordinator/server.js` (standalone) | ICE Coordinator (Node.js) | 3001 | **Moved to `coordinator-server/server.js` in repo** |
 | `/etc/turnserver.conf` | coTURN STUN/TURN | 3478 | No — config provided in repo |
 | nginx (system service) | Reverse proxy | 80 / 443 | Config not yet in repo |
 
-### Approved Deployment Workflow
+### Deployment preparation
 
-For the **coordinator** (once VPS migrates to Git clone):
-```bash
-ssh root@107.191.48.226 "cd /root/mimita-coordinator && git pull && pm2 restart mimita-coordinator"
-```
+The 09-06-2026 read-only website audit observed branch `8292026stash` at
+`5c4d846d95a8a0e56aa8ae2d69a8b4f457d3f426` and preserved the untracked file
+`website/src/pages/ProfilePage.jsx.pre-reward-20260901-150551`. This is dated
+evidence, not authorization to deploy that branch or remove the file.
 
-For the **website API** (already Git-tracked):
-```bash
-ssh root@107.191.48.226 "cd /root/mimita-site && git pull && pm2 restart mimita-api"
-```
+Before deploying persistence, follow `docs/operations/persistence-recovery.md`
+to establish a usable backup and isolated restore evidence. Inspect the proposed
+migration against the live schema, test it locally, and review the exact commit.
+Use only `git pull --ff-only origin <confirmed-branch>` in the verified clone.
+Run the tracked migration entry point from `website/` and require success before
+restarting only `mimita-api`. Build the frontend from that same commit. On failure,
+stop the rollout; do not reset data or retry unrelated migration commands.
+Verify the deployed commit, database health, migration versions, auth path,
+profiles, and leaderboards after the restart. Multiplayer save confirmation and
+restart preservation require their separate end-to-end acceptance tests.
 
-Current state: the website at `/root/mimita-site` is on branch `avatar-editor-6-27-2026` (commit `12e8d82`). The coordinator at `/root/mimita-coordinator` is a standalone directory — it must be migrated to a Git clone for reproducible deployment.
+Do not assume the coordinator is a Git clone. Verify its actual PM2 entry point
+and repository state before applying the same reviewed-commit procedure there.
 
 ### Allowed Direct VPS Actions
 
@@ -76,7 +85,7 @@ Current state: the website at `/root/mimita-site` is on branch `avatar-editor-6-
 - Inspect service status (`systemctl status <name>`, `pm2 status`, `pm2 describe <name>`)
 - Inspect ports and process state (`ss -lntup`, `ps aux | grep <name>`)
 - Check Git state (`git status --short`, `git log -5 --oneline`, `git rev-parse HEAD`)
-- Verify environment-variable presence WITHOUT printing values (`echo NAME:${VAR:+SET}:${VAR:-UNSET}`)
+- Verify only environment-variable presence through the audit procedure; never expand a fallback that prints its value
 - Pull an already reviewed and committed revision
 - Restart or reload a service as part of an intentional deployment
 - Roll back to a known committed revision (`git checkout <sha>`)

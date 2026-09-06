@@ -530,6 +530,8 @@ int runServer(const LaunchOptions& options)
     uint32_t lastPerfTick = 0;
     uint64_t lastPerfMs = nowMs();
 
+    PersistenceQueue::instance().beginSession(serverCode, AuthSystem::instance().user().sessionToken,
+                                              AuthSystem::instance().user().id);
     while (true)
     {
         printf("[LOOP TOP] tick=%u players=%zu entering main loop iteration\n",
@@ -669,6 +671,7 @@ int runServer(const LaunchOptions& options)
             tickReliableGameplayEvents(sock, players, totalPacketsOut);
             serverDuelTick(sock, players, world, npcWorld, npcs, npcSystem,
                            npcIdsAlive, tick, totalPacketsOut);
+            tickServerProgression(sock, players, true, totalPacketsOut);
 
             accumulator -= (double)SERVER_DT;
             ++tick;
@@ -803,6 +806,7 @@ int runServer(const LaunchOptions& options)
         }
     }
 
+    PersistenceQueue::instance().flushBlocking();
     ::StructuredLogger::instance().shutdown();
     if (!serverCode.empty())
     {
@@ -1000,6 +1004,8 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     printf("[LISTEN SERVER] started port=%u code=%s\n", port, state.serverCode.c_str());
 
     // Spawn background thread for genuine 60 Hz independent server timing
+    PersistenceQueue::instance().beginSession(state.serverCode, AuthSystem::instance().user().sessionToken,
+                                              AuthSystem::instance().user().id);
     state.serverRunning = true;
     state.serverThread = std::thread(listenServerThreadFunc, std::ref(state));
 
@@ -1019,17 +1025,16 @@ void stopListenServer(ListenServerState& state)
     // Signal background thread to stop
     state.serverRunning = false;
 
+    if (state.serverThread.joinable())
+        state.serverThread.join();
+
     // Flush any remaining persistence events before shutdown
     {
-        const auto& authUser = AuthSystem::instance().user();
-        PersistenceQueue::instance().flushBlocking(authUser.sessionToken);
+        PersistenceQueue::instance().flushBlocking();
         const size_t depth = PersistenceQueue::instance().queueDepth();
         if (depth > 0)
             printf("[PERSISTENCE] WARNING: %zu events could not be flushed on shutdown\n", depth);
     }
-
-    if (state.serverThread.joinable())
-        state.serverThread.join();
 
     // Deregister with coordinator (skip for local-only servers)
     if (!state.serverCode.empty() && state.serverCode.find("LOCAL-") != 0)
@@ -1154,11 +1159,7 @@ static void simulateOneServerTick(ListenServerState& state)
                        state.npcs, *state.npcSystem, state.npcIdsAlive,
                        state.tick, state.totalPacketsOut);
 
-        // Flush persistence queue every 60 seconds using host's session token
-        {
-            const auto& authUser = AuthSystem::instance().user();
-            PersistenceQueue::instance().update(SERVER_DT, authUser.sessionToken);
-        }
+        tickServerProgression(state.sock, state.players, true, state.totalPacketsOut);
 
         uint64_t now = nowMs();
         if (now - state.lastLog >= 1000)
@@ -1270,6 +1271,8 @@ static void listenServerThreadFunc(ListenServerState& state)
 
 void tickListenServer(ListenServerState& state, float /*dt*/)
 {
+    const auto& user = AuthSystem::instance().user();
+    PersistenceQueue::instance().setHostToken(user.sessionToken, user.id);
     // No-op: the background thread handles all authoritative server ticks.
     // This function exists only as compatibility for the render-loop caller.
     if (!state.serverRunning && state.active)

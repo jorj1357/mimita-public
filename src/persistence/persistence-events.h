@@ -18,6 +18,10 @@ struct PersistenceKillEvent
     std::string eventId;
     std::string matchId;
     uint32_t serverTick = 0;
+    uint32_t attackerPlayerId = 0;
+    uint32_t victimPlayerId = 0;
+    uint64_t victimIdentity = 0;
+    uint64_t deathGeneration = 0;
 
     std::string attackerType;     // "player" | "npc"
     int64_t attackerId = 0;       // website user_id (0 = guest)

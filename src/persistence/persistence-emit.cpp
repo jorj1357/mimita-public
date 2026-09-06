@@ -11,6 +11,7 @@
 #include "persistence/persistence-events.h"
 #include "network/server.h"
 #include "auth/auth-system.h"
+#include "debug/debug-log.h"
 
 #include <cstdio>
 #include <sstream>
@@ -18,11 +19,36 @@
 
 namespace MimitaNet {
 
+void tickServerProgression(SOCKET sock, std::unordered_map<uint32_t, ServerPlayer>& players,
+                           bool worldActive, uint64_t& totalPacketsOut)
+{
+    auto& queue = PersistenceQueue::instance();
+    for (const auto& item : players)
+    {
+        const auto& p = item.second;
+        queue.observePlayer(p.id, p.accountId, p.name, p.progressionTicket,
+            worldActive && !p.connectionStale && p.spawnState != ServerPlayer::AwaitingMapReady);
+    }
+    queue.tick();
+    for (const auto& notice : queue.takeNotices())
+    {
+        auto player = players.find(notice.playerId);
+        if (player == players.end() || player->second.connectionStale) continue;
+        ProgressionEventPacket packet{};
+        packet.header.type = PACKET_PROGRESSION_EVENT;
+        packet.kind = notice.kind;
+        std::snprintf(packet.name, sizeof(packet.name), "%s", notice.name.c_str());
+        std::snprintf(packet.confirmedAt, sizeof(packet.confirmedAt), "%s", notice.confirmedAt.c_str());
+        queueReliableGameplayEventToPlayer(sock, player->second, &packet, sizeof(packet),
+            nextReliableGameplayEventId(), reliableGameplayEventSessionForPlayer(player->second), totalPacketsOut);
+    }
+}
+
 static std::string makeEventId(const char* prefix, uint32_t tick,
                                uint64_t attacker, uint64_t victim)
 {
     std::ostringstream ss;
-    ss << prefix << "_" << tick << "_" << attacker << "_" << victim;
+    ss << PersistenceQueue::instance().sessionId() << "_" << prefix << "_" << tick << "_" << attacker << "_" << victim;
     return ss.str();
 }
 
@@ -78,15 +104,20 @@ void emitPvPKillPersistenceEvent(
 {
     auto attIt = players.find(attackerPlayerId);
     auto vitIt = players.find(victimPlayerId);
-    if (attIt == players.end() || vitIt == players.end())
+    if (vitIt == players.end())
         return;
 
     PersistenceKillEvent event;
-    event.eventId = makeEventId("kill", serverTick, attackerPlayerId, victimPlayerId);
+    // One death per victim life, independent of how many weapon callers report it.
+    event.eventId = makeEventId("death", vitIt->second.spawnGeneration, 0, victimPlayerId);
     event.serverTick = serverTick;
-    event.attackerType = "player";
-    event.attackerId = resolveAccountId(attIt->second);
-    event.attackerName = attIt->second.name;
+    event.attackerPlayerId = attackerPlayerId;
+    event.victimPlayerId = victimPlayerId;
+    event.victimIdentity = victimPlayerId;
+    event.deathGeneration = vitIt->second.spawnGeneration;
+    event.attackerType = attIt == players.end() ? "environment" : "player";
+    event.attackerId = attIt == players.end() ? 0 : resolveAccountId(attIt->second);
+    event.attackerName = attIt == players.end() ? "environment" : attIt->second.name;
     event.victimType = "player";
     event.victimId = resolveAccountId(vitIt->second);
     event.victimName = vitIt->second.name;
@@ -95,10 +126,10 @@ void emitPvPKillPersistenceEvent(
 
     PersistenceQueue::instance().enqueueKill(event);
 
-    printf("[PERSISTENCE] PvP kill emitted: %s killed %s weapon=%s dist=%.1f accountId=%lld/%lld\n",
-           attIt->second.name.c_str(), vitIt->second.name.c_str(),
-           event.weaponId.c_str(), event.distanceMeters,
-           (long long)event.attackerId, (long long)event.victimId);
+    Debug::logThrottled(Debug::Category::Networking, "progression-death", 1.0f,
+        "[PERSISTENCE] death event=%s attacker=%lld victim=%lld source=%s\n",
+        event.eventId.c_str(), (long long)event.attackerId, (long long)event.victimId,
+        event.attackerType.c_str());
 }
 
 void emitNpcKillPersistenceEvent(
@@ -129,7 +160,10 @@ void emitNpcKillPersistenceEvent(
 
     PersistenceKillEvent event;
     event.eventId = makeEventId("npc_kill", serverTick, attackerPlayerId, npcEntityId);
+    event.victimIdentity = (uint64_t(1) << 32) | npcEntityId;
+    event.deathGeneration = serverTick;
     event.serverTick = serverTick;
+    event.attackerPlayerId = attackerPlayerId;
     event.attackerType = "player";
     event.attackerId = resolveAccountId(attIt->second);
     event.attackerName = attIt->second.name;

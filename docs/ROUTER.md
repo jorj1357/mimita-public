@@ -74,6 +74,8 @@ systems first. Use this default order:
 | Moderation | `docs/specs/moderation/moderation.md`, `docs/skills/moderation-checker-v1.md` |
 | Assets or sound | `docs/operations/asset-management/asset-management.md`, `docs/skills/asset-checker-v1.md` |
 | Build or EXE | `docs/operations/build-and-exe/build-and-exe.md`, `docs/operations/task-completion/task-completion.md` |
+| VPS inspection or repository-to-production comparison | `docs/operations/vps-audit.md`, `docs/operations/vps-deployment/vps-deployment.md`, `docs/operations/task-completion/task-completion.md` |
+| Persistent progression, rewards, profiles, leaderboards | `docs/specs/data-saving/data-saving.md`, `docs/operations/vps-audit.md`, `docs/operations/persistence-recovery.md` |
 
 Also read `docs/regressions/regressions-v1.md` for any bug or human-reported
 break. Read JSON architecture when settings or hot reload are involved.
@@ -89,3 +91,7 @@ operations documents, skills, or regression records.
 If human review discovers that previously working behavior broke, connect the
 failure to the changelog, record the exact wrong and corrected code, explain the
 cause, and add a careful append-only regression entry.
+
+## Spec/doc TODOs
+
+If there is a comment in any document or spec like "todo: explain this better", the agent notes this, and in it's response, it notes the exact file path and line number that has that todo, and then suggests an expansion or a fix for that specific todo, but does not edit the document/spec.

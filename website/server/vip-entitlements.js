@@ -214,34 +214,56 @@ export function computeVipState({
 
 export async function getVipStateForUser(user, clientOrQuery = pool, now = new Date()) {
     const query = queryFrom(clientOrQuery)
+    const batch = Array.isArray(user)
+    if (batch && !user.length) return []
     const userId = typeof user === "object" ? user.id : user
     const role = typeof user === "object" ? user.role : "user"
+    const ids = batch ? [...new Set(user.map(row => String(row.id)))] : userId
+    const selectUser = batch ? "user_id, " : ""
+    const predicate = batch ? "user_id = ANY($1::bigint[])" : "user_id = $1"
 
     const [entitlements, subscriptions, style, presets] = await Promise.all([
         query(
-            `SELECT tier, source, status, starts_at, expires_at,
+            `SELECT ${selectUser}tier, source, status, starts_at, expires_at,
                     stripe_subscription_id, stripe_checkout_session_id
              FROM vip_entitlements
-             WHERE user_id = $1`,
-            [userId]
+             WHERE ${predicate}`,
+            [ids]
         ),
         query(
-            `SELECT tier, status, current_period_start, current_period_end,
+            `SELECT ${selectUser}tier, status, current_period_start, current_period_end,
                     cancel_at_period_end, stripe_subscription_id
              FROM vip_subscriptions
-             WHERE user_id = $1`,
-            [userId]
+             WHERE ${predicate}`,
+            [ids]
         ),
         query(
-            `SELECT style_json FROM vip_name_styles WHERE user_id = $1`,
-            [userId]
+            `SELECT ${selectUser}style_json FROM vip_name_styles WHERE ${predicate}`,
+            [ids]
         ),
         query(
-            `SELECT COUNT(*)::int AS count FROM vip_name_presets WHERE user_id = $1`,
-            [userId]
+            `SELECT ${selectUser}COUNT(*)::int AS count FROM vip_name_presets WHERE ${predicate}${batch ? " GROUP BY user_id" : ""}`,
+            [ids]
         )
     ])
 
+    if (batch) {
+        const groups = [entitlements, subscriptions, style, presets].map(result => {
+            const grouped = new Map()
+            for (const row of result.rows) {
+                const id = String(row.user_id)
+                if (!grouped.has(id)) grouped.set(id, [])
+                grouped.get(id).push(row)
+            }
+            return grouped
+        })
+        return user.map(row => {
+            const id = String(row.id)
+            return computeVipState({ user: row, now,
+                entitlements: groups[0].get(id) || [], subscriptions: groups[1].get(id) || [],
+                style: groups[2].get(id)?.[0] || null, presetCount: groups[3].get(id)?.[0]?.count || 0 })
+        })
+    }
     return computeVipState({
         user: { id: userId, role },
         entitlements: entitlements.rows,

@@ -238,6 +238,7 @@ struct ServerPlayer
     std::unordered_map<std::string, std::vector<AvatarAssetChunkPacket>> avatarAssetChunks;
     // Website users.id for a registered player. Guests remain zero.
     uint32_t accountId = 0;
+    std::string progressionTicket; // Backend-issued verified room admission; never log.
     int vipAccountId = 0;
     std::string accountRole;
     MimitaVip::VipAppearance vipAppearance;
@@ -1266,6 +1267,8 @@ void handleReliableEventAck(const char* buffer, int bytes,
 void tickReliableGameplayEvents(SOCKET sock,
                                 std::unordered_map<uint32_t, ServerPlayer>& players,
                                 uint64_t& totalPacketsOut);
+void tickServerProgression(SOCKET sock, std::unordered_map<uint32_t, ServerPlayer>& players,
+                           bool worldActive, uint64_t& totalPacketsOut);
 void setReliableGameplayEventTestNowMs(uint64_t nowMsOverride);
 
 } // namespace MimitaNet

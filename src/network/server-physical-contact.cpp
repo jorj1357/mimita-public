@@ -437,9 +437,6 @@ static void applyPhysicalContactHit(SOCKET sock,
     ServerDamageResult result = applyServerDamage(
         players, target, attacker.id, damage, knockback,
         ServerDamageSource::PhysicalContact);
-    if (result.killed && attacker.id != target.id)
-        emitPvPKillPersistenceEvent(players, attacker.id, target.id,
-            def.id, tick, attacker.pos, target.pos);
     if (!result.applied)
         return;
 

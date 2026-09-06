@@ -18,6 +18,11 @@ struct RewardPopupConfigData
 {
     glm::vec4 xpColor{0.0f, 0.85f, 0.85f, 1.0f};
     glm::vec4 goldColor{1.0f, 0.85f, 0.0f, 1.0f};
+    glm::vec4 statColor{1.0f}, deathColor{1.0f};
+    std::string killText, deathText, xpText, goldText, attemptedText, confirmedText;
+    std::string selfName, environmentName;
+    std::string stacking = "vertical";
+    float lineSpacing = 22.0f;
     float fontScale = 0.38f;
     int durationTicks = 30;
     float startAlpha = 0.5f;
@@ -53,6 +58,8 @@ struct ActiveRewardPopup
     int xpAmount = 0;
     int goldAmount = 0;
     int elapsedTicks = 0;
+    uint8_t kind = 0;
+    std::string name, confirmedAt;
 };
 
 class RewardPopupSystem
@@ -60,7 +67,7 @@ class RewardPopupSystem
 public:
     static RewardPopupSystem& instance();
 
-    void pushReward(int xpAmount, int goldAmount);
+    void pushProgression(uint8_t kind, const std::string& name, const std::string& confirmedAt);
     void tick();
     void render() const;
 

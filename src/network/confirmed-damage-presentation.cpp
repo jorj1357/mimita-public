@@ -152,10 +152,6 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
         DeathSystem::instance().healKillerToFull(*gpPlayer, playerNameFor(ctx, event.attackerPlayerId));
         printf("[NET KILL HEAL] attacker=%u health=%d\n", event.attackerPlayerId, gpPlayer->currentHp);
 
-        // Show reward popup for PvP kill
-        if (event.attackerPlayerId == ctx.localPlayerId)
-            RewardPopupSystem::instance().pushReward(100, 50);
-
         // Killfeed entry (the legacy ShotEvent path already fed it; the generic
         // path must too). Attacker-only presentation like the rest of this path.
         const char* weaponId = networkWeaponTypeName(event.weapon);

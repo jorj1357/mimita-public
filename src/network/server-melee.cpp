@@ -430,9 +430,6 @@ void tickServerSwordCombat(SOCKET sock,
             ServerDamageResult dmgResult = applyServerDamage(
                 players, target, attacker.id, (int)damage, kbVec,
                 ServerDamageSource::Melee);
-            if (dmgResult.killed)
-                emitPvPKillPersistenceEvent(players, attacker.id, target.id,
-                    NETWORK_WEAPON_SWORDSWORD, tick, attacker.pos, target.pos);
             queueServerDamageConfirmedEvent(
                 sock, players, tick, totalPacketsOut, attacker.id, target,
                 (int)damage, dmgResult, hitPoint, kbDir, kbVec,

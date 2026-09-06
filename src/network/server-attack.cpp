@@ -822,9 +822,6 @@ void handleAttackRequest(
             ServerDamageResult dmgResult = applyServerDamage(
                 players, target, shooter.id, aggregate.damage,
                 aggregate.knockback, ServerDamageSource::Hitscan);
-            if (dmgResult.killed)
-                emitPvPKillPersistenceEvent(players, shooter.id, target.id,
-                    netWeapon, tick, shooter.pos, target.pos);
             queueServerDamageConfirmedEvent(
                 sock, players, tick, totalPacketsOut, shooter.id, target,
                 aggregate.damage, dmgResult,
