@@ -136,6 +136,32 @@ time limits
 score limits
 Those are explicitly not required for V1.
 
+1.1 9 6 2026 
+ok first we need to make this  doc much cleanre its hard to read
+but
+second
+the ideal flow is this: 
+
+i join a bombtag game, either im the host or whatever
+if its the absoltue start, i see 
+"intermission: 15" 
+in big letters on the top middle of m screen
+it counts down from 15 to 0 , in 1 sec icrements
+when it reaches 0, mode switches frmointermission to  countdown
+then u see like
+"3..."
+"2..."
+"1..." 
+"GO!!!!!!"
+
+then, the gamemode whatevr it is, bc this should work for all gamemodes, it starts
+but since this is bomb tag, it just goes infintiely.
+
+i should see the username of whoeevr has thebomb at the top of m screen allthe time. if its a npc, then the npc's name is the username, and how much time it is until the bomb expodes 
+if its me, i should see "you" instead of the username
+
+the bomb as well shoul dhave a timer above it in the world so people can see how much time it has befoer it explodes
+
 2. Bomb Appearance, Pose, Audio & Hot Reload
 The bomb is a physical sphere attached to the holder's right hand.
 Default dimensions:

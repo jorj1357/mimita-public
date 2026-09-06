@@ -1,3 +1,26 @@
+9 6 2026
+
+todo this not good but move tothis version more  more general things  for gamemodes
+i want to literally be able to support 100 trillion different gamemodes at the very aboslute least super ultra scalable bc other people i  act as if they aregonna make their own gamemdoes so we need ways to diffrentiate between two modes 
+
+can we make it so it doesnt need else if? it doestn care if thre is 5 modes or 500,000 , it just  works for any mode u give it  according to that mode's json setings and stuff
+
+like we dotn  do it with  f, or t, or b
+no else if  match mode  being a sepcific thing that seems like it would break super ez, we should do like 
+
+the json alreadt defines an id bombtag  
+like this C:\mimita-priv-v8\config\gamemodes\bombtag.json 
+
+so just check wahtever that  id is and look for the data from  that json and use that as the intermisison and countdown and game start etc 
+
+so we shoudl achnge the  underling logic underneath , the code should not do hardcoded things like if the name of the mode starts with this specific letter like that is  very fragile and if files move or things are renamed it will break, it should work  based on the id in the json for now, and not require  exact letters matching 
+
+also, somehow  to change from bombtagmanager, this is too specific, m ake it like
+gamemodemanager
+
+BombTagManager::renderHud() — renders bomb holder text and timer from replicated state
+BombTagManager::renderBombVisual() — renders bomb sphere and world timer - like all this, just change it to be a general function that ahndles all the hud and stuff, that the json requests u to render. so this should work for not onl a  bomb with a world timer, but maybe, a boss with a healthbar above their head, a car with a healthbar u need to destroy, a npc that is telling u something with world text visually, etc. super general 
+
 9 2 2026
 
 - End goal  

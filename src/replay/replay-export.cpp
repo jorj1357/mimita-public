@@ -171,6 +171,14 @@ void updateReplayExport()
         DWORD exitCode = 0;
         BOOL done = GetExitCodeProcess((HANDLE)sExportSubprocess, &exitCode);
         if (done && exitCode != STILL_ACTIVE) {
+            Debug::warn(Debug::Category::Replay,
+                "[EXPORT] subprocess finished: exitCode=%lu outputPath='%s'\n",
+                (unsigned long)exitCode, gJob.outputPath.c_str());
+            Debug::warn(Debug::Category::Replay,
+                "[EXPORT] output file exists=%d size=%llu\n",
+                (int)std::filesystem::exists(gJob.outputPath),
+                std::filesystem::exists(gJob.outputPath)
+                    ? (unsigned long long)std::filesystem::file_size(gJob.outputPath) : 0ULL);
             CloseHandle((HANDLE)sExportSubprocess);
             sExportSubprocess = nullptr;
 
@@ -179,8 +187,17 @@ void updateReplayExport()
                 std::filesystem::file_size(gJob.outputPath) > 0;
 
             if (success) {
+                Debug::warn(Debug::Category::Replay,
+                    "[EXPORT] subprocess SUCCESS: %llu bytes\n",
+                    (unsigned long long)std::filesystem::file_size(gJob.outputPath));
                 finishReplayExport(true);
             } else {
+                Debug::error(Debug::Category::Replay,
+                    "[EXPORT] subprocess FAILED: exitCode=%lu exists=%d size=%llu\n",
+                    (unsigned long)exitCode,
+                    (int)std::filesystem::exists(gJob.outputPath),
+                    std::filesystem::exists(gJob.outputPath)
+                        ? (unsigned long long)std::filesystem::file_size(gJob.outputPath) : 0ULL);
                 finishReplayExport(false,
                     "Export subprocess failed (exit code " + std::to_string(exitCode) + ")");
             }
@@ -193,7 +210,17 @@ void updateReplayExport()
             bool ok = false;
             bool outroMissing = false;
             std::string error;
+            Debug::log(Debug::Category::Replay,
+                "[EXPORT] MF encoding in progress, polling...\n");
             if (pollMfReplayExport(gJob.mfWriter, ok, outroMissing, error)) {
+                Debug::warn(Debug::Category::Replay,
+                    "[EXPORT] MF encoding done: ok=%d outroMissing=%d error='%s'\n",
+                    (int)ok, (int)outroMissing, error.c_str());
+                Debug::warn(Debug::Category::Replay,
+                    "[EXPORT] output file exists=%d size=%llu\n",
+                    (int)std::filesystem::exists(gJob.outputPath),
+                    std::filesystem::exists(gJob.outputPath)
+                        ? (unsigned long long)std::filesystem::file_size(gJob.outputPath) : 0ULL);
                 if (!gJob.ffmpegWavPath.empty()) {
                     std::error_code ec;
                     std::filesystem::remove(gJob.ffmpegWavPath, ec);
@@ -204,6 +231,8 @@ void updateReplayExport()
             }
             return;
         }
+        Debug::log(Debug::Category::Replay,
+            "[EXPORT] FFmpeg encoding in progress, polling...\n");
         pollReplayFfmpegEncode();
         return;
     }
@@ -592,6 +621,14 @@ const ReplayExportJob& getReplayExportJob()
 
 void finishReplayExport(bool success, const std::string& error)
 {
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT] ========== FINISH EXPORT ==========\n");
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT] success=%d error='%s'\n", (int)success, error.c_str());
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT] outputPath='%s'\n", gJob.outputPath.c_str());
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT] capturedFrames=%u totalTicks=%u\n", gJob.capturedTicks, gJob.totalTicks);
     replayExportTargetDestroy();
     restoreReplayExportEditorState();
     if (gJob.restoreLiveOnFinish) {

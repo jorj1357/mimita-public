@@ -1,0 +1,18 @@
+{
+  "id": "sandbox",
+  "name": "Sandbox",
+  "description": "Free building and testing. No scoring, no timer.",
+  "team_names": [],
+  "goal_value": 0,
+  "time_limit_seconds": 0,
+  "respawn_seconds": 0.01,
+  "kill_heals": false,
+  "countdown_seconds": 0,
+  "go_seconds": 0,
+  "rematch_seconds": 0,
+  "spawn_offset_radius": 5.0,
+  "spawn_strategy": "shared",
+  "intermission_seconds": 0,
+  "results_seconds": 0,
+  "maps": []
+}

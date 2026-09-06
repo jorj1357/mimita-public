@@ -1052,11 +1052,17 @@ static void workerLoop(MfMp4Writer* w)
 bool startMfReplayExport(MfMp4Writer*& writer, const std::string& outputPath,
                          int width, int height, int bitrate, std::string& error)
 {
+    Debug::warn(Debug::Category::Replay,
+        "[MF EXPORT] startMfReplayExport: output='%s' size=%dx%d bitrate=%d mode='%s'\n",
+        outputPath.c_str(), width, height, bitrate, gExportConfig.encoderMode.c_str());
     writer = new MfMp4Writer();
     writer->width = width & ~1;
     writer->height = height & ~1;
     if (writer->width < 2 || writer->height < 2) {
         error = "invalid export size";
+        Debug::error(Debug::Category::Replay,
+            "[MF EXPORT] FAILED: invalid size %dx%d (adjusted to %dx%d)\n",
+            width, height, writer->width, writer->height);
         delete writer;
         writer = nullptr;
         return false;
@@ -1064,6 +1070,8 @@ bool startMfReplayExport(MfMp4Writer*& writer, const std::string& outputPath,
     writer->bitrate = bitrate;
     writer->outputPath = outputPath;
     writer->encoderModeConfig = gExportConfig.encoderMode;
+    Debug::warn(Debug::Category::Replay,
+        "[MF EXPORT] starting worker thread\n");
     writer->worker = std::thread(workerLoop, writer);
     return true;
 }
@@ -1103,9 +1111,23 @@ bool writeMfReplayVideoFrame(MfMp4Writer* writer, const uint8_t* rgbBottomUp,
                              bool* accepted, std::string& error)
 {
     if (accepted) *accepted = false;
-    if (!writer) { error = "Media Foundation writer is not active"; return false; }
-    if (!writer->initReady.load()) return true; // init in progress; skip this frame
-    if (!writer->initOk.load()) { error = writer->initError; return false; }
+    if (!writer) {
+        error = "Media Foundation writer is not active";
+        Debug::error(Debug::Category::Replay,
+            "[MF WRITE] FAILED: writer is null\n");
+        return false;
+    }
+    if (!writer->initReady.load()) {
+        Debug::log(Debug::Category::Replay,
+            "[MF WRITE] frame=%u init not ready yet, skipping\n", frameIndex);
+        return true; // init in progress; skip this frame
+    }
+    if (!writer->initOk.load()) {
+        error = writer->initError;
+        Debug::error(Debug::Category::Replay,
+            "[MF WRITE] FAILED: init failed error='%s'\n", error.c_str());
+        return false;
+    }
 
     EncodeFrame frame;
     frame.rgb.assign(rgbBottomUp, rgbBottomUp + (size_t)sourceWidth * sourceHeight * 3);
@@ -1126,7 +1148,16 @@ bool writeMfReplayVideoFrame(MfMp4Writer* writer, const uint8_t* rgbBottomUp,
 void finishMfReplayExport(MfMp4Writer*& writer, const std::string& wavPath,
                           const std::string& outroPath)
 {
-    if (!writer) return;
+    if (!writer) {
+        Debug::warn(Debug::Category::Replay,
+            "[MF FINISH] writer is null, nothing to finalize\n");
+        return;
+    }
+    Debug::warn(Debug::Category::Replay,
+        "[MF FINISH] finalize requested: wav='%s' outro='%s' outroEnabled=%d\n",
+        wavPath.c_str(), outroPath.c_str(), (int)gOutroConfig.enabled);
+    Debug::warn(Debug::Category::Replay,
+        "[MF FINISH] outro config path='%s'\n", gOutroConfig.outroPath.c_str());
     {
         std::lock_guard<std::mutex> lock(writer->mtx);
         writer->wavPath = wavPath;

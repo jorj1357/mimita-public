@@ -10,7 +10,7 @@
 `develop/v2.0.1`
 
 ## Time (EST)
-09-06-2026 18:00 - 18:10
+09-06-2026 18:00 - 18:14
 
 ## Task
 Implement the Bomb Tag gamemode as described in `docs/specs/gamemodes/bombtag.md`.
@@ -39,6 +39,16 @@ bag-wraparound, disconnect-removes-player, single-player, varied-ordering,
 empty-bag, remove-during-active, two-player-bag. All pass.
 
 ## Files Modified
+
+### `config/onlinemodes.json`
+- Added Bomb Tag mode (`"bomb_tag"`) to the mode picker list
+- All 4 modes now show in Create Server dropdown: Sandbox, Free For All, Team Deathmatch, Bomb Tag
+
+### `config/gamemodes/sandbox.json` (created)
+- Added sandbox gamemode definition for consistency with other modes
+
+### `src/network/server-duel.cpp`
+- Added `"bomb_tag"` to `serverCommunityWeaponAllowed()` recognized modes
 
 ### `src/network/packets.h`
 - Added `PACKET_BOMB_TAG_STATE = 66` and `PACKET_BOMB_TAG_PASS_EVENT = 67` to PacketType enum

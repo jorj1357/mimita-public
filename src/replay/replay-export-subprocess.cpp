@@ -88,6 +88,18 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
                          int width, int height)
 {
     namespace fs = std::filesystem;
+
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] ========== SUBPROCESS START ==========\n");
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] clip=%s\n", clipPath);
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] output=%s\n", outputPath);
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] requested size=%dx%d\n", width, height);
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] cwd=%s\n", fs::current_path().string().c_str());
+
     if (width <= 0 || height <= 0) {
         Debug::error(Debug::Category::Replay,
             "[EXPORT-SUBPROCESS] FAILED: invalid render size %dx%d\n", width, height);
@@ -117,6 +129,12 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
         engine.renderer->width, engine.renderer->height);
 
     // ── 1. Load the clip ──────────────────────────────────────────────
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] STAGE 1: Loading clip from %s\n", clipPath);
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] clip file exists=%d size=%llu\n",
+        (int)fs::exists(clipPath),
+        fs::exists(clipPath) ? (unsigned long long)fs::file_size(clipPath) : 0ULL);
     if (!REPLAY_PLAYER.loadFromJSON(clipPath)) {
         Debug::error(Debug::Category::Replay,
             "[EXPORT-SUBPROCESS] FAILED: cannot load clip %s\n", clipPath);
@@ -124,20 +142,26 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
     }
     const auto& hdr = REPLAY_PLAYER.header();
     Debug::warn(Debug::Category::Replay,
-        "[EXPORT-SUBPROCESS] clip loaded: ticks=%u rate=%u map=%s\n",
+        "[EXPORT-SUBPROCESS] clip loaded OK: ticks=%u rate=%u map='%s'\n",
         hdr.tickCount, hdr.tickRate, hdr.mapName);
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] clip sceneFrames=%zu soundEvents=%zu\n",
+        REPLAY_PLAYER.totalTicks(), REPLAY_PLAYER.soundEvents().size());
 
     // ── 2. Load the world from the clip's map path ────────────────────
-    // The clip stores its map path; we must load it so the scene renders.
-    // We explicitly own the map state: set WORLD_LOADED and activeMapPath
-    // BEFORE the tick loop to prevent engine-tick-state.cpp from loading
-    // the default map as fallback (which would show the wrong scene).
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] STAGE 2: Loading world\n");
     ReplayClip tempClip;
     bool worldLoadOk = false;
     if (tempClip.load(clipPath) && !tempClip.mapPath.empty()) {
         Debug::warn(Debug::Category::Replay,
-            "[EXPORT-SUBPROCESS] loading world: %s\n", tempClip.mapPath.c_str());
+            "[EXPORT-SUBPROCESS] world map path='%s'\n", tempClip.mapPath.c_str());
+        Debug::warn(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS] world file exists=%d\n",
+            (int)fs::exists(tempClip.mapPath));
         worldLoadOk = loadWorldFromGLB(THE_WORLD, tempClip.mapPath.c_str());
+        Debug::warn(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS] world load result=%d\n", (int)worldLoadOk);
         if (worldLoadOk) {
             Debug::warn(Debug::Category::Replay,
                 "[EXPORT-SUBPROCESS] world loaded OK\n");
@@ -148,10 +172,20 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
     } else {
         Debug::warn(Debug::Category::Replay,
             "[EXPORT-SUBPROCESS] clip has no mapPath (empty or missing metadata)\n");
+        Debug::warn(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS] tempClip.load=%d mapPath='%s'\n",
+            (int)tempClip.load(clipPath), tempClip.mapPath.c_str());
     }
 
-    if (!waitForReplayWeaponModels(tempClip))
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] STAGE 3: Waiting for weapon models\n");
+    if (!waitForReplayWeaponModels(tempClip)) {
+        Debug::error(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS] FAILED: weapon model wait timed out\n");
         return;
+    }
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] weapon models ready\n");
 
     // Always own the world state to block the default-map fallback
     // in engine-tick-state.cpp:160 (GAME_PLAYING && !WORLD_LOADED triggers it).
@@ -159,8 +193,8 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
     if (gpActiveMapPath) {
         *gpActiveMapPath = tempClip.mapPath;
         Debug::warn(Debug::Category::Replay,
-            "[EXPORT-SUBPROCESS] activeMapPath=%s worldLoaded=%d\n",
-            tempClip.mapPath.c_str(), worldLoadOk);
+            "[EXPORT-SUBPROCESS] world state: WORLD_LOADED=1 activeMapPath='%s'\n",
+            tempClip.mapPath.c_str());
     }
 
     // Set GAME_PLAYING AFTER map state is fully resolved so the render
@@ -168,7 +202,15 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
     if (gpGameState) *gpGameState = GAME_PLAYING;
 
     // ── 3. Setup editor (camera keyframes if present) ─────────────────
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] STAGE 3: Setting up editor\n");
     gReplayEditor.load(clipPath);
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] editor loaded=%d cameraKFs=%d modeKFs=%d timeKFs=%d\n",
+        (int)gReplayEditor.isLoaded(),
+        gReplayEditor.cameraKeyframeCount(),
+        gReplayEditor.cameraModeKeyframeCount(),
+        gReplayEditor.timeKeyframeCount());
     if (gReplayEditor.isLoaded() && gReplayEditor.cameraKeyframeCount() > 0) {
         gReplayEditor.freecam = true;
         REPLAY_PLAYER.cameraController().setMode("freecam");
@@ -178,7 +220,8 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
     }
 
     // ── 4. Setup export job ───────────────────────────────────────────
-    // Reuse the existing gJob state machine.
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] STAGE 4: Setting up export job\n");
     gJob = ReplayExportJob{};
     gJob.state = ReplayExportJob::Capturing;
     gJob.jsonPath = clipPath;
@@ -197,32 +240,56 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
     gJob.mp4FileBytes = 0;
     gJob.startTimeSec = replayExportNowSec();
     replayExportTimingReset();
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] job: totalTicks=%u capWidth=%d capHeight=%d\n",
+        gJob.totalTicks, gJob.capWidth, gJob.capHeight);
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] job: ffmpegPath='%s'\n", gJob.ffmpegPath.c_str());
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] job: outputPath='%s'\n", gJob.outputPath.c_str());
 
     // Create temp directories
     std::error_code ec;
     fs::create_directories(fs::path("replays") / "exports" / "_tmp", ec);
 
     // Create raw file for ffmpeg encoding path
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] creating raw temp file\n");
     gJob.rawTempPath = (fs::path("replays") / "exports" / "_tmp" / "subprocess_raw.rgb").string();
     gJob.rawFile = fopen(gJob.rawTempPath.c_str(), "wb");
     if (!gJob.rawFile) {
         Debug::error(Debug::Category::Replay,
-            "[EXPORT-SUBPROCESS] FAILED: cannot create raw file %s\n", gJob.rawTempPath.c_str());
+            "[EXPORT-SUBPROCESS] FAILED: cannot create raw file %s (errno=%d)\n",
+            gJob.rawTempPath.c_str(), errno);
         return;
     }
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] raw file created: %s\n", gJob.rawTempPath.c_str());
 
     // Create the offscreen capture FBO
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] creating export FBO %dx%d\n", width, height);
     if (!replayExportTargetInit(width, height)) {
         Debug::warn(Debug::Category::Replay,
             "[EXPORT-SUBPROCESS] WARNING: export FBO unavailable, using window read\n");
+    } else {
+        Debug::warn(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS] export FBO created OK\n");
     }
 
     // ── 5. Begin replay playback ──────────────────────────────────────
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] STAGE 5: Beginning replay playback\n");
     REPLAY_PLAYER.beginPlayback();
     REPLAY_PLAYER.seekToTick(0);
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] playback started: isPlaying=%d currentTick=%u totalTicks=%u\n",
+        (int)REPLAY_PLAYER.isPlaying(), REPLAY_PLAYER.currentTick(), REPLAY_PLAYER.totalTicks());
 
     Debug::warn(Debug::Category::Replay,
-        "[EXPORT-SUBPROCESS] capture start: %u ticks %dx%d pid=%lu\n",
+        "[EXPORT-SUBPROCESS] ========== CAPTURE LOOP START ==========\n");
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] capture: %u ticks %dx%d pid=%lu\n",
         gJob.totalTicks, width, height, (unsigned long)GetCurrentProcessId());
     glfwSetWindowTitle(engine.window(), "MiMITA Replay Export - Recording...");
 
@@ -231,9 +298,18 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
     // The capture happens inside updateReplayExport which reads pixels and
     // writes raw frames. Once all frames are captured, the state moves to
     // Encoding (ffmpeg subprocess) or Done.
+    int loopIterations = 0;
     while (gJob.state == ReplayExportJob::Capturing ||
            gJob.state == ReplayExportJob::Encoding) {
         engineTick(engine);
+        loopIterations++;
+
+        // Log every 60 iterations (roughly once per second of export time)
+        if (loopIterations % 60 == 0) {
+            Debug::warn(Debug::Category::Replay,
+                "[EXPORT-SUBPROCESS] loop iteration=%d state=%d capturedTicks=%u exportTick=%.1f totalTicks=%u\n",
+                loopIterations, (int)gJob.state, gJob.capturedTicks, gJob.exportTick, gJob.totalTicks);
+        }
 
         // Periodic progress report
         if (gJob.state == ReplayExportJob::Capturing && gJob.totalTicks > 0) {
@@ -249,20 +325,31 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
     }
 
     // ── 7. Result ─────────────────────────────────────────────────────
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] ========== CAPTURE LOOP END ==========\n");
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] final state=%d capturedTicks=%u totalTicks=%u loopIterations=%d\n",
+        (int)gJob.state, gJob.capturedTicks, gJob.totalTicks, loopIterations);
     replayExportTimingLogSummary();
 
     if (gJob.state == ReplayExportJob::Done) {
         Debug::warn(Debug::Category::Replay,
-            "[EXPORT-SUBPROCESS] complete: %s (%.1f MB)\n",
+            "[EXPORT-SUBPROCESS] EXPORT COMPLETE: %s (%.1f MB)\n",
             gJob.outputPath.c_str(),
             (double)gJob.mp4FileBytes / (1024.0 * 1024.0));
+        Debug::warn(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS] outro=%s\n",
+            gJob.mfOutroMissing ? "MISSING" : "OK");
         glfwSetWindowTitle(engine.window(),
             "MiMITA Replay Export - Complete!");
     } else if (gJob.state == ReplayExportJob::Failed) {
         Debug::error(Debug::Category::Replay,
-            "[EXPORT-SUBPROCESS] FAILED: %s\n", gJob.errorMsg.c_str());
+            "[EXPORT-SUBPROCESS] EXPORT FAILED: %s\n", gJob.errorMsg.c_str());
         glfwSetWindowTitle(engine.window(),
             "MiMITA Replay Export - Failed");
+    } else {
+        Debug::error(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS] UNEXPECTED final state=%d\n", (int)gJob.state);
     }
 
     // Brief pause so user can see the result before window closes

@@ -165,6 +165,14 @@ bool probeVideoSizeViaFfmpeg(const std::string& path, int& outW, int& outH)
 
 bool appendOutroToFinishedMp4(const char* replayMp4Path, int replayW, int replayH, bool hasAudio)
 {
+    Debug::warn(Debug::Category::Replay,
+        "[OUTRO APPEND] ========== START ==========\n");
+    Debug::warn(Debug::Category::Replay,
+        "[OUTRO APPEND] input='%s' size=%dx%d audio=%d\n",
+        replayMp4Path, replayW, replayH, (int)hasAudio);
+    Debug::warn(Debug::Category::Replay,
+        "[OUTRO APPEND] outroConfig enabled=%d path='%s'\n",
+        (int)gOutroConfig.enabled, gOutroConfig.outroPath.c_str());
     std::string replayPath = absPath(replayMp4Path);
     std::string outroPath = absPath(gOutroConfig.outroPath);
     std::error_code ec;

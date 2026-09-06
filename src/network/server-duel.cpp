@@ -159,7 +159,8 @@ bool serverCommunityWeaponAllowed(const std::string& weaponId)
     const ServerDuelState& state = serverDuelState();
     const bool communityMode = state.communityMode == "sandbox"
         || state.communityMode == "free_for_all"
-        || state.communityMode == "team_deathmatch";
+        || state.communityMode == "team_deathmatch"
+        || state.communityMode == "bomb_tag";
     if (!communityMode) return true;
     CommunityServerConfig& config = CommunityServerConfig::instance();
     if (config.weaponSets().empty()) config.load();
