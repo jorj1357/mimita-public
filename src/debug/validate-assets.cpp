@@ -51,6 +51,8 @@ int validateAllAssets()
 {
     int passed = 0, failed = 0;
 
+    // 9 5 2026 todo why we doing this this is like super duper hardcoded nto good
+    // eventually replace, unless we dont even use this code 
     AssetCheck checks[] = {
         // Fonts
         {"font", "assets/font/noto-serif-cjk-tc-mimita-v1.fnt", "", 0, true},

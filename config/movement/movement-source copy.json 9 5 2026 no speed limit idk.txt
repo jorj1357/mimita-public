@@ -47,19 +47,19 @@
     //
     // This makes WASD feel nearly instant instead of gradually accelerating
     // like strict CS 1.6 sv_accelerate 5.
-    "ground_acceleration": 5.0,
+    "ground_acceleration": 20.0,
 
     // Ground friction from the fast Source preset.
     //
     // Higher values remove ground velocity more aggressively when movement
     // input is released.
-    "friction": 3.25,
+    "friction": 5.25,
 
     // Very small stop-speed threshold from the fast preset.
     //
     // This avoids the stronger low-speed braking behavior of a traditional
     // GoldSrc stopspeed value and keeps movement responsive.
-    "stop_speed": 1.0,
+    "stop_speed": 0.01,
 
     // ── Air — Source / GoldSrc PM_AirAccelerate ───────────────────────────
 
@@ -70,10 +70,7 @@
     // 2 = current MiMITA fast preset.
     "air_speed_gain_multiplier": 2.0,
 
-    //  the experimental MiMITA directional/input blend.
-    //  9 5 2026 its not working super good its supposed t
-    // o let u press a movement key in the air with no mouse 
-    // = u move in that direction like default behavior but in the air
+    // Disable the experimental MiMITA directional/input blend.
     //
     // false = use pure Source-style PM_AirAccelerate behavior.
     "air_input_blending_enabled": false,
@@ -82,14 +79,14 @@
     //
     // Kept here so the config remains compatible with the extended MiMITA
     // movement configuration format.
-    "air_input_blending": 1.0,
+    "air_input_blending": -1.0,
 
     // Unused while air input blending is disabled.
     //
     // A deliberately huge value is retained from the previous cs16 config so
     // enabling blending accidentally does not immediately make tiny mouse
     // movements count as full Source strafing.
-    "air_input_mouse_threshold_degrees": 0.0,
+    "air_input_mouse_threshold_degrees": 9992.0,
 
     // Air acceleration strength.
     //
@@ -143,7 +140,6 @@
     // Remember jump input for this long before landing.
     //
     // Matches the fast Source preset.
-    // "jump_buffer_time": 0.1,
     "jump_buffer_time": 0.2,
 
     // No coyote-time forgiveness.
@@ -155,7 +151,7 @@
     //
     // This is NOT vanilla CS 1.6 behavior, but is intentionally kept here so
     // this preset now matches the fast MiMITA Source preset.
-    "max_air_jumps": 0,
+    "max_air_jumps": 1,
 
     // ── Ground snap ───────────────────────────────────────────────────────
 
@@ -166,7 +162,7 @@
     // Numerical cleanup threshold used by ground snap.
     //
     // Matches the fast Source preset.
-    "velocity_clip_epsilon": 1.01,
+    "velocity_clip_epsilon": 0.01,
 
     // Normal surface friction multiplier.
     "surface_friction": 1.0,
@@ -177,7 +173,7 @@
     // 0.0 = preserve overspeed completely through landing.
     //
     // Matches the fast Source preset.
-    "landing_overspeed_bleed": 0.0,
+    "landing_overspeed_bleed": 1.0,
 
     // ── MiMITA dash extensions ────────────────────────────────────────────
     //
@@ -187,19 +183,19 @@
     // the same fast MiMITA movement tuning as the "source" preset.
 
     // Shift ground/air dash.
-    "dash_enabled": false,
+    "dash_enabled": true,
 
     // Q down-dash / slam.
-    "down_dash_enabled": false,
+    "down_dash_enabled": true,
 
     // MiMITA freeze ability.
-    "freeze_enabled": false,
+    "freeze_enabled": true,
 
     // Time after a dash during which its boost is protected from ordinary
     // ground friction.
     //
     // Matches the fast Source preset.
-    "dash_grace_seconds": 0.01,
+    "dash_grace_seconds": 0.25,
 
     // Ground-friction multiplier during dash grace.
     //
@@ -276,7 +272,7 @@
     // requiring another schema/config change.
 
     // "speed_limit_enabled": false,
-    "speed_limit_enabled": true,
+    "speed_limit_enabled": false,
 
     // Only used if speed_limit_enabled is true.
     "speed_limit": 50.0,

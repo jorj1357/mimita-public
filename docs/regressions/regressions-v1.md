@@ -74,3 +74,23 @@ newest at top 9 3 2026
    
 2. Issue: collisions sucked dick and made huge frame time lag when getting close to a big clinder  
    1. 9 2 2026 fill in later bc thats liek mimita preview liek v2.14 on mimtia youtube channel
+
+9 6 2026 resolution for the 9 3 2026 website authentication outage
+
+1. Expected behavior: `https://mimita.fun` signup and signin requests can query
+   the account database and return normal validation or authentication results.
+2. Actual behavior: PostgreSQL cluster `14/main` was down, with no PostgreSQL
+   process or listener on port 5432. The online `mimita-api` process returned
+   `500` and `ECONNREFUSED` for `/api/auth/signin`, `/api/auth/me`, and
+   `/api/site/banner`.
+3. Why it happened: the API's configured database dependency was unavailable;
+   the application could not connect to PostgreSQL. This was an infrastructure
+   service outage, not a bad username, password, signup form, or frontend route.
+4. What fixed it, 9 6 2026 08:33 EST: started only the existing PostgreSQL
+   `14/main` cluster on the VPS. It became `online` and `pg_isready` reported
+   `accepting connections`; no code or VPS files were changed.
+5. Proof: a correctly formatted non-mutating invalid-signin probe returned
+   HTTP `401` with `invalid username/email or password`, proving the auth query
+   path reached the database instead of failing with HTTP `500`.
+6. Related session record: `docs/changelog/09-06-2026/09-06-2026-08-34-02-website-auth-recovery.md`.
+7. 9 6 2026 0900 extra note: SO ENSURE THE VPS IS ALWAYS RUNNNING, AND IF DATABASE ISSUES HAPPEN, NEED TO BE ABLE TO START THE VPS FROM MOBILE PHONE NOT JUST PC

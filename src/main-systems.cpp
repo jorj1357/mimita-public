@@ -331,8 +331,13 @@ void gameInitSubsystems(Engine& engine)
 
     static bool editorMode = false;
     static std::string activeGameMode = "sandbox";
+    // const std::string defaultMapPath =
+    //     "assets/maps/mimita-aabb-only-interior-small-v4.glb";
+    // 9 5 2026 not good  needs to work without wifi
+    // cuz i cant strart a server without wfii so just make it start a local one todo
     const std::string defaultMapPath =
-        "assets/maps/mimita-aabb-only-interior-small-v4.glb";
+       "assets/maps/dust2cyberiav3.glb";
+        
     static std::string activeMapPath;
     static int selectedEditorObject = -1;
     static WeaponSystem weapons;

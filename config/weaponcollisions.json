@@ -3,7 +3,7 @@
 
   "revolver": {
     "enabled": true,
-    "visible": true,
+    "visible": false,
     "collision_skin": 0.05,
     "source": "capsule",
     "capsule": {
@@ -19,7 +19,7 @@
 
   "shotgun": {
     "enabled": true,
-    "visible": true,
+    "visible": false,
     "collision_skin": 0.05,
     "source": "capsule",
     "capsule": 

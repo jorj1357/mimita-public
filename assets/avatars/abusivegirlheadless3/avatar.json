@@ -1,0 +1,420 @@
+{
+  "advanced": {
+    "head_back": {
+      "brightness": 8.834148406982422,
+      "contrast": 0.8353731632232666,
+      "offset_x": 494,
+      "offset_y": 499,
+      "rotation": 176.36471557617188,
+      "saturation": 2.729496955871582,
+      "scale_x": 1.22219979763031,
+      "scale_y": 1.1536946296691895,
+      "texture": "hair2.png"
+    },
+    "head_bottom": {
+      "brightness": 8.834148406982422,
+      "contrast": 0.8353731632232666,
+      "offset_x": 494,
+      "offset_y": 499,
+      "rotation": 176.36471557617188,
+      "saturation": 2.729496955871582,
+      "scale_x": 1.22219979763031,
+      "scale_y": 1.1536946296691895,
+      "texture": "hair2.png"
+    },
+    "head_front": {
+      "brightness": 8.834148406982422,
+      "contrast": 0.8353731632232666,
+      "offset_x": 494,
+      "offset_y": 499,
+      "rotation": 176.36471557617188,
+      "saturation": 2.729496955871582,
+      "scale_x": 1.22219979763031,
+      "scale_y": 1.1536946296691895,
+      "texture": "girlface4.png"
+    },
+    "head_left": {
+      "brightness": 8.834148406982422,
+      "contrast": 0.8353731632232666,
+      "offset_x": 494,
+      "offset_y": 499,
+      "rotation": 176.36471557617188,
+      "saturation": 2.729496955871582,
+      "scale_x": 1.22219979763031,
+      "scale_y": 1.1536946296691895,
+      "texture": "hair2.png"
+    },
+    "head_right": {
+      "brightness": 8.834148406982422,
+      "contrast": 0.8353731632232666,
+      "offset_x": 494,
+      "offset_y": 499,
+      "rotation": 176.36471557617188,
+      "saturation": 2.729496955871582,
+      "scale_x": 1.22219979763031,
+      "scale_y": 1.1536946296691895,
+      "texture": "hair2.png"
+    },
+    "head_top": {
+      "brightness": 8.834148406982422,
+      "contrast": 0.8353731632232666,
+      "offset_x": 494,
+      "offset_y": 499,
+      "rotation": 176.36471557617188,
+      "saturation": 2.729496955871582,
+      "scale_x": 1.22219979763031,
+      "scale_y": 1.1536946296691895,
+      "texture": "hair2.png"
+    },
+    "leftArm_back": {
+      "contrast": 1.2209300994873047,
+      "texture": "croptopleftarmfront.png"
+    },
+    "leftArm_bottom": "croptoparmsides.png",
+    "leftArm_front": {
+      "contrast": 1.2209300994873047,
+      "texture": "croptopleftarmfront.png"
+    },
+    "leftArm_left": {
+      "contrast": 1.2209300994873047,
+      "texture": "croptopleftarmfront.png"
+    },
+    "leftArm_right": {
+      "contrast": 1.2209300994873047,
+      "texture": "croptopleftarmfront.png"
+    },
+    "leftArm_top": "croptoparmsides.png",
+    "leftLeg_back": {
+      "brightness": -4.614443778991699,
+      "offset_x": 496,
+      "offset_y": 496,
+      "rotation": 178.84329223632813,
+      "saturation": -4.247246742248535,
+      "scale_x": 9.85385513305664,
+      "scale_y": 9.968029975891113,
+      "texture": "fishnetsidelegs.png"
+    },
+    "leftLeg_bottom": {
+      "brightness": -4.614443778991699,
+      "offset_x": 496,
+      "offset_y": 496,
+      "rotation": 178.84329223632813,
+      "saturation": -4.247246742248535,
+      "scale_x": 9.85385513305664,
+      "scale_y": 9.968029975891113,
+      "texture": "fishnetbottomfoot.png"
+    },
+    "leftLeg_front": {
+      "brightness": -4.614443778991699,
+      "offset_x": 496,
+      "offset_y": 496,
+      "rotation": 178.84329223632813,
+      "saturation": -4.247246742248535,
+      "scale_x": 9.85385513305664,
+      "scale_y": 9.968029975891113,
+      "texture": "fishnetfrontleg.png"
+    },
+    "leftLeg_left": {
+      "brightness": -4.614443778991699,
+      "offset_x": 496,
+      "offset_y": 496,
+      "rotation": 178.84329223632813,
+      "saturation": -4.247246742248535,
+      "scale_x": 9.85385513305664,
+      "scale_y": 9.968029975891113,
+      "texture": "fishnetsidelegs.png"
+    },
+    "leftLeg_right": {
+      "brightness": -4.614443778991699,
+      "offset_x": 496,
+      "offset_y": 496,
+      "rotation": 178.84329223632813,
+      "saturation": -4.247246742248535,
+      "scale_x": 9.85385513305664,
+      "scale_y": 9.968029975891113,
+      "texture": "fishnetsidelegs.png"
+    },
+    "leftLeg_top": {
+      "brightness": -4.614443778991699,
+      "offset_x": 496,
+      "offset_y": 496,
+      "rotation": 178.84329223632813,
+      "saturation": -4.247246742248535,
+      "scale_x": 9.85385513305664,
+      "scale_y": 9.968029975891113,
+      "texture": "fishnetsidelegs.png"
+    },
+    "rightArm_back": {
+      "offset_x": 496,
+      "offset_y": 499,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "croptopleftarmfront.png"
+    },
+    "rightArm_bottom": {
+      "offset_x": 496,
+      "offset_y": 499,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "croptoparmsides.png"
+    },
+    "rightArm_front": {
+      "offset_x": 496,
+      "offset_y": 499,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "croptopleftarmfront.png"
+    },
+    "rightArm_left": {
+      "offset_x": 496,
+      "offset_y": 499,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "croptopleftarmfront.png"
+    },
+    "rightArm_right": {
+      "offset_x": 496,
+      "offset_y": 499,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "croptopleftarmfront.png"
+    },
+    "rightArm_top": {
+      "offset_x": 496,
+      "offset_y": 499,
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.899524688720703,
+      "texture": "croptoparmsides.png"
+    },
+    "rightLeg_back": {
+      "rotation": 178.01708984375,
+      "texture": "fishnetsidelegs.png"
+    },
+    "rightLeg_bottom": "fishnetbottomfoot.png",
+    "rightLeg_front": {
+      "rotation": 178.84329223632813,
+      "scale_x": 1.0851894617080688,
+      "texture": "fishnetfrontleg.png"
+    },
+    "rightLeg_left": {
+      "rotation": 178.01708984375,
+      "texture": "fishnetsidelegs.png"
+    },
+    "rightLeg_right": {
+      "rotation": 178.01708984375,
+      "texture": "fishnetsidelegs.png"
+    },
+    "rightLeg_top": {
+      "scale_x": 9.968029975891113,
+      "scale_y": 9.990864753723145,
+      "texture": "fishnetsidelegs.png"
+    },
+    "torso_back": "croptopback.png",
+    "torso_bottom": "croptopback.png",
+    "torso_front": {
+      "offset_x": 5,
+      "offset_y": -8,
+      "scale_y": 0.9710142016410828,
+      "texture": "croptopfront.png"
+    },
+    "torso_left": "croptopback.png",
+    "torso_right": "croptopback.png",
+    "torso_top": "croptoprightarmfront.png"
+  },
+  "advanced_mode": true,
+  "avatar_id": "local_cb3b330533cf64d6",
+  "bodyparts": {
+    "head": {
+      "offset": [
+        0,
+        1.15,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "leftArm": {
+      "offset": [
+        0,
+        1.0,
+        -0.4
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "leftLeg": {
+      "offset": [
+        0,
+        -0.1,
+        0.25
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "rightArm": {
+      "offset": [
+        0,
+        1.0,
+        0.4
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "rightLeg": {
+      "offset": [
+        0,
+        -0.1,
+        -0.25
+      ],
+      "rotation": [
+        0,
+        180,
+        0
+      ],
+      "scale": [
+        -1,
+        1,
+        1
+      ]
+    },
+    "torso": {
+      "offset": [
+        0,
+        0.4,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    }
+  },
+  "colors": {
+    "head": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "torso": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "cosmetics": [
+    {
+      "anchor_part": "torso",
+      "attachTo": "torso",
+      "choice": "spikehair3.glb",
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "enabled": false,
+      "glb": "spikehair3.glb",
+      "id": "spikehair3.glb",
+      "offset": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "",
+      "texture": {
+        "brightness": 1.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "image": "",
+        "offset_x": 0.0,
+        "offset_y": 0.0,
+        "opacity": 1.0,
+        "rotation": 0.0,
+        "scale_x": 1.0,
+        "scale_y": 1.0
+      },
+      "type": ""
+    }
+  ],
+  "created_at": "2026-07-10T18:44:15Z",
+  "format_version": 1,
+  "name": "abusivegirlheadless3",
+  "player_model": "assets/entity/player/girl/mimita-girl-v7.glb",
+  "simple": {
+    "face": "",
+    "pants": "",
+    "shirt": "",
+    "skin": ""
+  },
+  "updated_at": "2026-09-02T23:20:30Z"
+}
