@@ -42,8 +42,14 @@ All application changes must follow this path:
 3. Commit it to Git.
 4. Push it to GitHub.
 5. Deploy by pulling the committed revision on the VPS.
-6. Restart or reload only the affected service.
-7. Verify health and logs after deployment.
+6. **Rebuild the frontend** on the VPS: `cd /root/mimita-site/website && npm run build`
+7. Restart or reload only the affected service.
+8. Verify health and logs after deployment.
+
+**Every deployment that touches `website/src/` MUST rebuild the frontend.**
+A stale `dist/` means the live site serves old JavaScript that may lack new
+components, routes, or fixes. Always run `npm run build` after pulling and
+before restarting services.
 
 ### Production paths and historical deployment evidence
 
@@ -89,4 +95,12 @@ and repository state before applying the same reviewed-commit procedure there.
 - Pull an already reviewed and committed revision
 - Restart or reload a service as part of an intentional deployment
 - Roll back to a known committed revision (`git checkout <sha>`)
+
+## Article Content Tracking
+
+Articles created through the admin editor at `/admin/articles` are stored as
+`.md` files in `content/articles/` at the repo root. This directory MUST be
+committed to git. If articles exist only on the VPS filesystem (untracked),
+a `git pull` will overwrite them. Always run `git add content/articles/` and
+commit after creating or editing articles through the admin panel.
 

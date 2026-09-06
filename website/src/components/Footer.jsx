@@ -1,8 +1,11 @@
 import { useLocation } from "react-router-dom"
 import FeedbackBox from "./FeedbackBox"
 
+declare const __BUILD_UTC__: string
+
 export default function Footer() {
   const location = useLocation()
+  const buildTime = typeof __BUILD_UTC__ !== "undefined" ? __BUILD_UTC__ : ""
 
   return (
     <footer className="footer">
@@ -16,9 +19,14 @@ export default function Footer() {
         :D
         <br></br>
         thanks  for visiting i am very grateful 
-        <br></br>
-        last big update: 7 9 2026
-        i added a red bouncy ball + aim trainer game + more stuff to mimita.exe hehehe
+        {buildTime && (
+          <>
+            <br></br>
+            <span style={{ opacity: 0.5, fontSize: "0.85em" }}>
+              built: {buildTime}
+            </span>
+          </>
+        )}
         <br></br>
         hello@mimita.fun contact me/us!!! 
       </p>

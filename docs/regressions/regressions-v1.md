@@ -107,3 +107,45 @@ newest at top 9 3 2026
       1.  we fixed it sometime between  8 31 2026 and like 9 6 2026, its in the git commit history, i committed from the low power device ihave
    5. What we learned  
       1. sometimes code is not efficient even if it seems like it, like who would thiink teh UI is taking 3ms to render every single frame, so question all assumptions over and over bc it might be the most randomest little thing making the issues happen 
+
+   ## 2. 9 6 2026 2000 — Articles lost after VPS git pull
+
+   1. Bad behavior
+      1. 20-30 articles created through the admin editor at /admin/articles disappeared from the live site
+      2. Only 1 article remains (welcome-to-mimita-news.md)
+      3. The /articles page shows the article but clicking it does nothing (broken link)
+   2. Date and time first observed: 9 6 2026 ~19:30 UTC
+   3. Why bad behavior
+      1. Articles are stored as .md files in content/articles/ on the VPS filesystem
+      2. These files were never committed to git — they existed only on the VPS
+      3. When we ran `git pull --ff-only` to deploy the data-saving persistence, the content/articles/ directory was updated to match the repo state (which only had 1 article)
+      4. The untracked .md files were overwritten/lost by the pull
+      5. Additionally, ArticlesIndex.jsx used `article.url` but the generated JSON has no `url` field — only `slug` — so links were broken even for the remaining article
+   4. What fixed it, date and time
+      1. Fixed ArticlesIndex.jsx: changed `article.url` to `/articles/${article.slug}` (9 6 2026)
+      2. Articles cannot be recovered from git — they were never committed
+      3. Added rule to vps-deployment.md: content/articles/ must be committed to git so articles survive deployments
+   5. What we learned
+      1. Files created on the VPS through the admin editor are NOT automatically committed to git
+      2. `git pull --ff-only` does not preserve untracked files in tracked directories
+      3. Always commit user-generated content (articles) to git before deploying
+      4. The ARTICLES_DIR path in admin.js resolves to content/articles/ at the repo root — this directory must be tracked
+
+   ## 3. 9 6 2026 2000 — Profile stats not visible on live site
+
+   1. Bad behavior
+      1. The profile page at /users/admin did not show gold, XP, kills, deaths, or playtime
+      2. The API returned correct data but the frontend didn't render it
+   2. Date and time first observed: 9 6 2026 ~19:30 UTC
+   3. Why bad behavior
+      1. ProfileStats.jsx and persistentStats.js were added to the repo on 9 6 2026
+      2. The VPS frontend dist was built on 9 1 2026 — before these components existed
+      3. The deployed JS bundle had 0 matches for ProfileStats, playtimeTicks, or formatPersistentStat
+      4. The VPS deployment procedure did not include a frontend rebuild step
+   4. What fixed it, date and time
+      1. Added "rebuild frontend" step to vps-deployment.md (9 6 2026)
+      2. Ran `npm run build` on VPS to rebuild dist with new components (9 6 2026)
+   5. What we learned
+      1. Every deployment that touches website/src/ MUST rebuild the frontend
+      2. A stale dist/ serves old JavaScript that may lack new components
+      3. The deployment procedure must include `cd /root/mimita-site/website && npm run build` as a mandatory step

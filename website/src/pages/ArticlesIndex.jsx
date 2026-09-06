@@ -84,7 +84,7 @@ export default function ArticlesIndex() {
 
             <Link
               key={article.slug}
-              to={article.url}
+              to={`/articles/${article.slug}`}
               className="articleCard"
             >
 
