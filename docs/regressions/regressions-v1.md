@@ -697,3 +697,20 @@ jorj - this not official format not good but  when we edit netowkring stuff or d
    2. Duplicate clicks and already-refunded orders are rejected.
    3. Email bookkeeping failures cannot turn a completed Stripe refund into a failed webhook.
 4. Status: RESOLVED in source. Test-mode Stripe refund and live production refund acceptance remain required.
+
+## 2026-09-07T19:45:00Z — VIP order management returned 500 because migration 008 was not registered (RESOLVED)
+
+1. Bad behavior
+   1. `/api/vip/orders` returned HTTP 500 on the live site.
+   2. The `/vip` page therefore displayed `Purchase details are still loading` forever, even after refresh.
+2. Exact evidence
+   1. VPS PM2 logs reported `DatabaseError: column "refund_status" does not exist` for `GET /api/vip/orders`.
+   2. `/api/auth/me`, `/api/vip/config`, and `/api/vip/me` returned successfully, isolating the failure to the order query.
+3. Cause
+   1. `website/server/migrations/008_vip_refunds.sql` existed and added the queried columns.
+   2. `website/server/db.js` only iterated migrations `[1, 5, 6, 7]`, so `npm run migrate` reported success while never applying migration 008.
+4. Fix
+   1. Registered migration version 8 in the migration list.
+   2. Added the version-8 filename mapping to `008_vip_refunds.sql`.
+   3. Deployment reran the migration and verified the order endpoint after restart.
+4. Status: RESOLVED in source and deployment. Cloudflare/Metricool/font warnings are unrelated analytics/browser warnings.
