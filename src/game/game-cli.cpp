@@ -677,6 +677,9 @@ bool handleGameCLI(int argc, char** argv)
             f.tick = (int)i;
             f.time = (float)i / 60.0f;
             actorA.position.x = (float)i * 2.0f;
+            f.camera.position = {100.0f + (float)i * 3.0f, 200.0f, 300.0f};
+            f.camera.rotation = {5.0f, 0.0f, 90.0f + (float)i * 2.0f};
+            f.camera.fov = 100.0f;
             f.actors.push_back(actorA);
             clip.sceneFrames.push_back(f);
         }
@@ -704,17 +707,24 @@ bool handleGameCLI(int argc, char** argv)
         const ReplaySceneFrame* frame0 = player.currentSceneFrame();
         check(frame0 != nullptr && !frame0->actors.empty(), "seekToTick(0) returns scene frame with actors");
         check(frame0 && frame0->actors[0].position.x == 0.0f, "actor0.x at tick 0 == 0.0");
+        check(frame0 && frame0->camera.position == glm::vec3(100.0f, 200.0f, 300.0f),
+              "camera at tick 0 matches recorded player camera");
 
         player.seekToTick(5);
         player.update(0.0f);
         const ReplaySceneFrame* frame5 = player.currentSceneFrame();
         check(frame5 != nullptr, "seekToTick(5) returns scene frame");
         check(frame5 && frame5->actors[0].position.x > 0.0f, "actor0.x at tick 5 > 0.0 (advancing)");
+        check(frame5 && frame5->camera.position.x > 100.0f,
+              "camera position advances with replay tick");
+        const float cameraXAtTick5 = frame5 ? frame5->camera.position.x : 0.0f;
 
         player.seekToTick(9);
         player.update(0.0f);
         const ReplaySceneFrame* frame9 = player.currentSceneFrame();
         check(frame9 != nullptr, "seekToTick(9) returns scene frame");
+        check(frame9 && frame9->camera.position.x > cameraXAtTick5,
+              "camera continues moving at final replay tick");
 
         check(player.currentTick() > 0, "currentTick > 0 (replay advances)");
 

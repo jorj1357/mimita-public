@@ -130,6 +130,17 @@ async function getStripeSubscription(stripe, subscriptionId) {
     return stripe.subscriptions.retrieve(id)
 }
 
+async function getStripePrice(stripe, priceId) {
+    const id = cleanId(priceId)
+    if (!id || !stripe?.prices?.retrieve) return null
+    return stripe.prices.retrieve(id)
+}
+
+function priceAmountCents(price) {
+    const amount = Number(price?.unit_amount)
+    return Number.isInteger(amount) && amount > 0 ? amount : 0
+}
+
 function checkoutLineItem(def, priceId, amountCents = null) {
     if (priceId && amountCents == null) return { price: priceId, quantity: 1 }
     const priceData = {
@@ -224,8 +235,8 @@ async function processCheckoutCompleted({ client, stripe, session, event }) {
     if (order.status !== "pending") throw new Error(`VIP order cannot be paid from ${order.status}`)
 
     const def = order.purchase_type === "prepaid"
-        ? prepaidPurchaseDefinition(order.tier, order.purchase_months)
-        : getPurchaseDefinition(order.tier, order.purchase_type)
+        ? prepaidPurchaseDefinition(order.tier, order.purchase_months, process.env)
+        : getPurchaseDefinition(order.tier, order.purchase_type, process.env)
     if (!def) throw new Error("VIP order has invalid tier or purchase type")
 
     const priceId = await getSessionPriceId(stripe, session)
@@ -664,8 +675,23 @@ export function createVipCheckoutRouter(deps = {}) {
             const requestedType = String(req.body.purchase_type || "").trim()
             const months = requestedType === "prepaid" ? Number(req.body.months) : null
             const purchaseType = requestedType === "prepaid" ? "prepaid" : requestedType
+            const monthlyPriceId = purchaseType === "prepaid"
+                ? getStripePriceId(tier, "monthly_subscription", env)
+                : ""
+            if ((purchaseType === "prepaid" || purchaseType === "monthly_subscription" || purchaseType === "lifetime") &&
+                !getStripePriceId(tier, purchaseType === "prepaid" ? "monthly_subscription" : purchaseType, env)) {
+                return res.status(503).json({
+                    success: false,
+                    message: "This VIP purchase option is not configured yet"
+                })
+            }
+
+            const configuredMonthlyPrice = monthlyPriceId
+                ? await getStripePrice(stripe, monthlyPriceId)
+                : null
+            const configuredMonthlyAmount = priceAmountCents(configuredMonthlyPrice)
             const def = purchaseType === "prepaid"
-                ? prepaidPurchaseDefinition(tier, months)
+                ? prepaidPurchaseDefinition(tier, months, env, configuredMonthlyAmount || null)
                 : getPurchaseDefinition(tier, purchaseType, env)
             if (!def) {
                 return res.status(400).json({ success: false, message: "invalid VIP purchase option" })
@@ -687,6 +713,15 @@ export function createVipCheckoutRouter(deps = {}) {
 
             let amountCents = def.amount_cents
             let effectivePriceId = priceId
+            const configuredFixedPrice = priceId ? await getStripePrice(stripe, priceId) : null
+            if (configuredFixedPrice) {
+                const stripeAmount = priceAmountCents(configuredFixedPrice)
+                if (!stripeAmount) throw new Error("Stripe Price has no positive amount")
+                if (String(configuredFixedPrice.currency || "").toLowerCase() !== def.currency) {
+                    throw new Error("Stripe Price currency does not match VIP configuration")
+                }
+                amountCents = stripeAmount
+            }
             let discountCents = 0
             if (tierRank(tier) > tierRank(currentTier) && currentTier !== "free" && def.mode === "payment") {
                 const entitlements = await query(

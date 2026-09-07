@@ -43,14 +43,17 @@ function makeDispatch(store) {
 
         if (text.startsWith("INSERT INTO vip_orders")) {
             const id = store.nextOrderId++
+            const isExtendedOneTime = text.includes("purchase_months, is_lifetime")
             store.orders.set(id, {
                 id,
                 user_id: params[0],
                 tier: params[1],
                 purchase_type: params[2],
-                amount_cents: params[3],
-                currency: params[4],
-                stripe_price_id: params[5],
+                purchase_months: isExtendedOneTime ? params[3] : null,
+                is_lifetime: isExtendedOneTime ? params[4] === true : false,
+                amount_cents: isExtendedOneTime ? params[5] : params[3],
+                currency: isExtendedOneTime ? params[6] : params[4],
+                stripe_price_id: isExtendedOneTime ? params[7] : params[5],
                 status: "pending",
                 stripe_checkout_session_id: "",
                 stripe_payment_intent_id: "",
@@ -353,7 +356,9 @@ beforeEach(() => {
     env = {
         VIP_PRICE_VIP_ONE_MONTH: "333",
         VIP_PRICE_VIP_MONTHLY: "333",
-        VIP_PRICE_VIP_TWELVE_MONTH: "1999"
+        VIP_PRICE_VIP_TWELVE_MONTH: "1999",
+        MIMITA_STRIPE_PRICE_VIP_MONTHLY: "price_vip_monthly",
+        MIMITA_STRIPE_PRICE_VIP_LIFETIME: "price_vip_lifetime"
     }
     fake = {
         state: {
@@ -365,8 +370,8 @@ beforeEach(() => {
                 id: "sub_test",
                 customer: "cus_test",
                 status: "active",
-                current_period_start: 1785585600,
-                current_period_end: 1788264000,
+                current_period_start: 1790000000,
+                current_period_end: 1792600000,
                 cancel_at_period_end: false,
                 metadata: { user_id: "42", tier: "vip" }
             }
@@ -383,6 +388,19 @@ beforeEach(() => {
                     },
                     async listLineItems() {
                         return { data: [{ price: { id: "price_vip_1m" } }] }
+                    }
+                }
+            },
+            prices: {
+                async retrieve(priceId) {
+                    if (priceId === "price_vip_lifetime") {
+                        return { id: priceId, unit_amount: 11111, currency: "usd" }
+                    }
+                    return {
+                        id: priceId,
+                        unit_amount: 333,
+                        currency: "usd",
+                        recurring: { interval: "month", interval_count: 1 }
                     }
                 }
             },
@@ -554,12 +572,30 @@ test("subscription checkout records Stripe subscription period", async () => {
     const checkout = await createCheckout({ purchase_type: "monthly_subscription" })
     fake.state.event = checkoutEvent(checkout.body.order_id, {
         subscription: "sub_test",
+        priceId: "price_vip_monthly",
         metadata: { purchase_type: "monthly_subscription" }
     })
     const res = await deliver(fake.state.event)
     assert.equal(res.status, 200)
     assert.equal(store.subscriptions.get("sub_test").status, "active")
     assert.equal(store.users.get(42).supporter_tier, "vip")
+})
+
+test("prepaid slider uses the requested integer months and server-calculated amount", async () => {
+    const res = await createCheckout({ purchase_type: "prepaid", months: 7, amount_cents: 1 })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.months, 7)
+    assert.equal(fake.state.sessionParams.line_items[0].price_data.unit_amount, 1696)
+    assert.equal(store.orders.get(res.body.order_id).amount_cents, 1696)
+    assert.equal(fake.state.sessionParams.line_items[0].price, undefined)
+})
+
+test("lifetime checkout uses the configured Stripe lifetime Price", async () => {
+    const res = await createCheckout({ purchase_type: "lifetime" })
+    assert.equal(res.status, 200)
+    assert.equal(fake.state.sessionParams.line_items[0].price, "price_vip_lifetime")
+    assert.equal(fake.state.sessionParams.line_items[0].price_data, undefined)
+    assert.equal(store.orders.get(res.body.order_id).amount_cents, 11111)
 })
 
 test("refund marks linked order and entitlement inactive", async () => {
@@ -728,7 +764,7 @@ test("syncActiveSubscriptions creates a missing entitlement for an active subscr
     fake.state.subscription = {
         id: "sub_selfheal",
         status: "active",
-        billing_cycle_anchor: 1786051745,
+        billing_cycle_anchor: 1790000000,
         current_period_start: null,
         current_period_end: null,
         cancel_at_period_end: false,

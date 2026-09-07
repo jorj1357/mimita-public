@@ -251,18 +251,21 @@ export function getPurchaseDefinition(tier, purchaseType, env = process.env) {
     }
 }
 
-export function prepaidAmountCents(tier, months) {
+export function prepaidAmountCents(tier, months, env = process.env, monthlyAmountCents = null) {
     const normalizedTier = normalizeTier(tier)
     const count = Number(months)
     if (!Number.isInteger(count) || count < 1 || count > 12) return 0
-    const monthly = VIP_PRICE_CONFIG[normalizedTier]?.monthly_subscription?.amount_cents || 0
+    const configuredMonthly = getPurchaseDefinition(normalizedTier, "monthly_subscription", env)?.amount_cents || 0
+    const monthly = Number.isInteger(monthlyAmountCents) && monthlyAmountCents > 0
+        ? monthlyAmountCents
+        : configuredMonthly
     const full = monthly * count
     const discount = Math.floor(full * 0.5 * (count - 1) / 11)
     return full - discount
 }
 
-export function prepaidPurchaseDefinition(tier, months) {
-    const amount = prepaidAmountCents(tier, months)
+export function prepaidPurchaseDefinition(tier, months, env = process.env, monthlyAmountCents = null) {
+    const amount = prepaidAmountCents(tier, months, env, monthlyAmountCents)
     if (!amount) return null
     const normalizedTier = normalizeTier(tier)
     return {
@@ -281,9 +284,29 @@ export function getStripePriceId(tier, purchaseType, env = process.env) {
     return String(env[def.price_env] || "").trim()
 }
 
+export function vipStripeConfig(env = process.env) {
+    const missing = []
+    if (!String(env.STRIPE_SECRET_KEY || "").trim()) missing.push("STRIPE_SECRET_KEY")
+    if (!String(env.STRIPE_VIP_WEBHOOK_SECRET || env.STRIPE_WEBHOOK_SECRET || "").trim()) {
+        missing.push("STRIPE_VIP_WEBHOOK_SECRET")
+    }
+    for (const tier of PAID_VIP_TIERS) {
+        for (const type of ["monthly_subscription", "lifetime"]) {
+            const def = getPurchaseDefinition(tier, type, env)
+            if (!getStripePriceId(tier, type, env)) missing.push(def.price_env)
+        }
+    }
+    return {
+        mode: String(env.STRIPE_SECRET_KEY || "").startsWith("sk_live_") ? "live" : "test",
+        configured: missing.length === 0,
+        missing
+    }
+}
+
 export function publicVipConfig(env = process.env) {
     const paymentsConfigured = Boolean(String(env.STRIPE_SECRET_KEY || "").trim())
     return {
+        stripe: vipStripeConfig(env),
         tiers: PAID_VIP_TIERS.map(tier => ({
             tier,
             rank: tierRank(tier),
@@ -297,7 +320,11 @@ export function publicVipConfig(env = process.env) {
                     amount_cents: def.amount_cents,
                     currency: def.currency,
                     mode: def.mode,
-                    configured: paymentsConfigured && (type === "prepaid" || type === "monthly_subscription" || Boolean(getStripePriceId(tier, type, env)))
+                    configured: paymentsConfigured && (
+                        type === "prepaid"
+                            ? Boolean(getStripePriceId(tier, "monthly_subscription", env))
+                            : Boolean(getStripePriceId(tier, type, env))
+                    )
                 }
             })
         })),

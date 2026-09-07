@@ -37,6 +37,67 @@ Whats this
 
 newest at top 9 3 2026
 
+9 7 2026 1255 — Camera stuck under the map in exported MP4 — NOT FIXED
+
+1. Issue: exported MP4 shows camera at (0,0,0) instead of the player's recorded POV
+   1. Bad behavior
+      1. Exported video shows static view under the map at position (0, 0, 0)
+      2. Camera does not follow the player's recorded perspective at all
+      3. Every scene frame in the clip has `camera.position: [0.0, 0.0, 0.0]`
+      4. The player's actual camera position during gameplay was (-1.50, 8.94, 61.11) — completely different
+   2. Date and time first observed: 2026-09-07T16:04:25Z
+   3. Why bad behavior
+      1. The export subprocess's camera controller is skipped by the `anyFreecam` gate in `engine-tick-camera.cpp:628`
+      2. `anyFreecam = (freecamEnabled || replayFreecam) && isKeyboardEnabled()`
+      3. `isKeyboardEnabled()` defaults to `true` and is never reset in the subprocess
+      4. So `anyFreecam = true`, and the `else if (!anyFreecam)` block that reads camera from the clip is skipped entirely
+      5. Camera stays at default (0,0,0) for the entire export
+      6. The clip itself is saved with (0,0,0) camera data because the recording block in `engine-tick-replay.cpp:343` captures `camera.pos` BEFORE the camera controller updates it (and in the subprocess, the camera controller never runs)
+   4. What we tried and what happened
+
+      Attempt 1 (2026-09-07T15:15:00Z) — Effects pipeline fix
+         - Changed: `commitFrame()` in `replay.h` to merge `mPendingEffects` into scene frames
+         - Thought: "maybe effects and camera share the same recording pipeline issue"
+         - Result: Effects fix worked (effects now record), but camera still (0,0,0). Different bug entirely.
+
+      Attempt 2 (2026-09-07T15:15:00Z) — Quaternion hemisphere fix
+         - Changed: `captureReplayBodyParts()` in `replay-recorder.cpp` to enforce consistent quaternion hemisphere
+         - Thought: "left leg flips because glm::quat_cast returns antipodal quaternions near 90-degree rest pose"
+         - Result: This was for a different bug (left leg rotation). Did not affect camera.
+
+      Attempt 3 (2026-09-07T16:04:00Z) — RPLXDEBUG removal + clip.load() fix
+         - Changed: Removed raw-printf RPLXDEBUG logging, replaced with Debug::log; fixed `ReplayClip::load()` to accept empty sceneFrames
+         - Thought: "clip.load() returns false, so subprocess never spawns, so no export happens"
+         - Result: Clip now loads, subprocess spawns, but camera is still (0,0,0) in the exported MP4. The clip file itself has (0,0,0) camera data.
+
+      Attempt 4 (2026-09-07T16:04:00Z) — Diagnostic logging
+         - Changed: Added `Debug::warn` at `beginRecording()` and `makeClip()` entry points
+         - Thought: "sceneFrames was empty before, need to trace why"
+         - Result: Logging confirmed `mSceneFrameCount=765 mFrames=765` — recording works, scene frames exist, but camera data is (0,0,0) inside them.
+
+      Attempt 5 (2026-09-07T16:55:00Z) — anyFreecam gate fix (LATEST)
+         - Changed: `engine-tick-camera.cpp:628` from `else if (!anyFreecam)` to `else if (!anyFreecam || isReplayExportActive())`
+         - Thought: "the camera controller is skipped during export because anyFreecam is true. During export, the camera should always read from the clip data."
+         - Result: BUILD SUCCESS. NOT YET TESTED BY USER. This is the current best theory. If the camera controller runs during export, it should read `currentSceneFrame()->camera.position` and set `camera.pos` to the player's POV.
+
+   5. What we learned
+      1. The clip file's scene frames have `camera.position: [0, 0, 0]` — the camera was never recorded correctly
+      2. In normal gameplay, `camera.pos` is set from mouse input BEFORE the recording block captures it, so the first tick has the correct position
+      3. In the export subprocess, the camera starts at (0,0,0) and the camera controller is skipped (by `anyFreecam`), so `camera.pos` is never updated from the clip data
+      4. The recording block at `engine-tick-replay.cpp:354` captures `camera.pos` — it does NOT read directly from the scene frame
+      5. The camera controller at `engine-tick-camera.cpp:628` is the code that reads from `currentSceneFrame()` and sets `camera.pos` — but it's gated by `!anyFreecam`
+      6. The `isKeyboardEnabled()` flag defaults to `true` and is never reset in the subprocess, making `anyFreecam = true` even when no freecam is needed
+      7. The old 1951 regression (beginPlayback blocking recording) is NOT the current root cause — the recording condition fix is in place and recording works
+      8. The old 1839 regression (clip.load() failing) was fixed by accepting empty sceneFrames — but the underlying data was already (0,0,0)
+
+   6. Status: NOT FIXED — Attempt 5 needs user testing
+   7. If Attempt 5 does not work, next steps:
+      1. Check the export subprocess log for `CAM_CTRL_STATE` after the fix — if it still shows (0,0,0), the camera controller ran but `currentSceneFrame()` returned a frame with (0,0,0)
+      2. If `currentSceneFrame()` returns (0,0,0), check if `seekToTick(0)` properly calls `rebuildInterpolatedFrameAtTick()` — the interpolated frame might not be populated
+      3. If the interpolated frame is empty, check if `mClip.sceneFrames` is actually populated after `loadFromJSON()` in the subprocess
+      4. If scene frames are populated but camera is (0,0,0), check if `jsonVec3()` in `replay-io.cpp` is failing to parse the camera position from the JSON
+      5. If all else fails, read camera position directly from the scene frame in the recording block instead of from `camera.pos`
+
 9 7 2026 1604 — Replay export fails: clip.load() returns false because sceneFrames is empty
 
 1. Issue: pressing P to export replay fails with "CLIP EXPORT FAILED" — clip file is saved OK but cannot be loaded back
@@ -385,3 +446,53 @@ newest at top 9 3 2026
 
 ## 2026-09-07T17:22:55Z login issue
 jorj - this not official format not good but  when we edit netowkring stuff or database stuff i noticeit makes like login issues, so we should make a centralized  data or netwroking info controller, bc we cant keep having failures just because we added 1 more field to a json and the database entirely fails bc it cant handle  one more, the database should get autoupdated somehow, same with the ingame mimita.exe code 
+
+## 2026-09-07T17:30:26Z — Full-access Codex enabled VPS diagnosis and recovery (RESOLVED)
+
+1. After the OpenAI Codex desktop app was changed to Full access mode, GPT-5.6 on Windows could run `ssh mimita-vps`, inspect VPS logs, identify the missing `style_revision` column, create and deploy the forward migration, restart the API, and verify login recovery in one pass.
+2. Exact deployment proof: `C:\mimita-priv-v8\docs\changelog\2026-09-07\20260907_162530_vip-style-revision-migration.md`.
+
+## 2026-09-07T17:30:26Z — Prepaid VIP slider amount differs from Stripe Checkout (UNRESOLVED)
+
+1. Selecting 7 prepaid months can show one amount on `/vip`, while Stripe Checkout shows the fixed 12-month amount such as `$19.98`.
+2. `Vip.jsx` sends `purchase_type: "prepaid"` and `months`; `vip-payments.js` must calculate the amount server-side and use inline Stripe `price_data.unit_amount` for that exact amount.
+3. Required evidence: browser request body, server checkout log, Stripe session line item, and `vip_orders.amount_cents` for the same order.
+
+## 2026-09-07T17:30:26Z — Lifetime VIP buttons report Stripe not configured (UNRESOLVED)
+
+1. Lifetime buttons are disabled because `/api/vip/config` reports `configured: false` when the API process does not see the lifetime Stripe Price environment keys.
+2. The VPS must independently contain the three lifetime key values; the local `.env` is not automatically used by the VPS.
+3. Status remains unresolved until VPS key presence is verified without printing values and the API reports all three lifetime options configured.
+
+## 2026-09-07T17:45:00Z — Replay quick-export camera stuck at world origin (UNRESOLVED recurrence)
+
+1. Issue: pressing `P` after gameplay or a server kill creates an export, but the MP4 camera remains under the map near `(0,0,0)` instead of following the exporting player's camera.
+   1. Bad behavior
+      1. Export completes, but the camera is static or otherwise does not move with the local player's recorded POV.
+      2. The result is contrary to the replay export requirement that the MP4 reconstruct the local client's experience, including the local camera and camera mode.
+   2. Date and time first observed in this investigation: 2026-09-07, user-reported current behavior.
+   3. Specification
+      1. `docs/specs/replays/replay-editor-and-export-v2.md` section 1.2 requires quick export to recreate what the local player experienced, including `local camera`, `local camera transform`, and camera mode.
+      2. Section 7.10 requires the MP4 to reconstruct the local client's experience for the replay period, including `local camera` and `camera mode`.
+      3. Section 10.1 lists `correct local camera` and `correct camera mode` as hard quick-export correctness requirements.
+   4. Exact current code path
+      1. `src/engine/engine-tick-replay.cpp:303-304` records while exporting with `gReplayRecorder.isRecording() && (!replayPlaybackActive || isReplayExportActive())`.
+      2. `src/engine/engine-tick-replay.cpp:352-356` copies `camera.pos`, rotation, and FOV into each `ReplaySceneFrame`.
+      3. `src/replay/replay-export-subprocess.cpp:337-345` intentionally uses `seekToTick(0)` and does not call `beginPlayback()`.
+      4. `src/engine/engine-tick-camera.cpp:628-636` obtains the current scene frame and sends it to `ReplayCameraController::update()`.
+      5. `src/replay/replay-player.cpp:276-286` in recorded mode assigns `camera.pos = frame.camera.position` and rebuilds the camera vectors.
+   5. Why the behavior is wrong
+      1. If the exported clip contains default scene-frame camera data, the exporter faithfully reconstructs the default `(0,0,0)` camera; the exporter cannot recover the live player's camera after the snapshot has been made.
+      2. The 2026-09-06 regression established the earlier cause: `beginPlayback()` made `replayPlaybackActive` block recording, leaving scene frames with tick 0, camera `(0,0,0)`, and no actors. That fix is present in the current source, so this report cannot yet prove whether the recurrence is a stale executable, a newly produced clip with empty/default camera fields, or another runtime state transition.
+   6. Corrected code direction (not implemented in this investigation)
+      1. Preserve the existing recording condition and subprocess `seekToTick(0)` fix unless runtime evidence disproves them.
+      2. Add or use diagnostics that correlate: P press and clip path, first/last scene-frame camera position, `isRecording`, `replayPlaybackActive`, `isReplayExportActive`, subprocess pre-loop camera, and camera-controller output per export tick.
+      3. Reject or clearly report a newly captured clip whose scene-frame camera data is default/invalid rather than exporting a misleading origin view.
+   7. Evidence and status
+      1. User runtime report confirms the visible failure.
+      2. Source inspection confirms the intended data flow exists and confirms the prior root-cause fix remains in source.
+      3. `mimita.exe` was last successfully built at 2026-09-07 12:31:59 local build time and is newer than the inspected source snapshot, but no new user reproduction log or exported clip JSON was available in this investigation.
+      4. Status: UNRESOLVED. Do not claim the prior fix is effective for this current reproduction until a fresh clip's scene-frame JSON and export diagnostics are inspected.
+   8. Related records
+      1. Existing regression: `9 6 2026 1951 — Replay export camera stuck at (0,0,0) instead of following player POV`.
+      2. Existing follow-up: `9 6 2026 2136 — Replay export camera fix confirmed working via diagnostic logging`.

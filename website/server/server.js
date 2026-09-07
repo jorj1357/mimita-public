@@ -43,6 +43,7 @@ import { createVipCheckoutRouter, createVipWebhookRouter } from "./vip-payments.
 import { createVipRouter } from "./vip-routes.js"
 import { getVipStateForUser, runVipReconcile } from "./vip-entitlements.js"
 import { syncActiveSubscriptions } from "./vip-payments.js"
+import { vipStripeConfig } from "./vip-config.js"
 import {
     createSiteBannerPublicRouter,
     createSiteBannerUserRouter,
@@ -105,6 +106,9 @@ const port = Number(process.env.PORT || 3001)
 if (production && sessionSecret === "development-only-change-me") {
     throw new Error("SESSION_SECRET is required in production")
 }
+
+const vipStripeStatus = vipStripeConfig(process.env)
+console.log(`[VIP CONFIG] mode=${vipStripeStatus.mode} configured=${vipStripeStatus.configured} missing=${vipStripeStatus.missing.join(",") || "none"}`)
 
 app.set("trust proxy", 1)
 app.use(cors({

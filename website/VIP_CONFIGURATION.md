@@ -9,18 +9,18 @@ Required server environment variables for checkout:
 - `STRIPE_SECRET_KEY`
 - `STRIPE_VIP_WEBHOOK_SECRET`
 - `APP_ORIGIN`
-- `MIMITA_STRIPE_PRICE_VIP_ONE_MONTH`
 - `MIMITA_STRIPE_PRICE_VIP_MONTHLY`
-- `MIMITA_STRIPE_PRICE_VIP_TWELVE_MONTH`
-- `MIMITA_STRIPE_PRICE_SUPER_VIP_ONE_MONTH`
 - `MIMITA_STRIPE_PRICE_SUPER_VIP_MONTHLY`
-- `MIMITA_STRIPE_PRICE_SUPER_VIP_TWELVE_MONTH`
-- `MIMITA_STRIPE_PRICE_ULTRA_VIP_ONE_MONTH`
 - `MIMITA_STRIPE_PRICE_ULTRA_VIP_MONTHLY`
-- `MIMITA_STRIPE_PRICE_ULTRA_VIP_TWELVE_MONTH`
 - `MIMITA_STRIPE_PRICE_VIP_LIFETIME`
 - `MIMITA_STRIPE_PRICE_SUPER_VIP_LIFETIME`
 - `MIMITA_STRIPE_PRICE_ULTRA_VIP_LIFETIME`
+
+The VPS `.env` is the deployment source of truth for these values. Keep a
+dated comment beside the group, for example `VIP_STRIPE_CONFIG_UPDATED_AT_UTC`,
+`VIP_STRIPE_CONFIG_VERSION`, and `VIP_STRIPE_MODE`. Do not commit the secret
+key or webhook secret. The server logs only whether each required value is
+present and whether it is in test or live mode.
 
 Webhook events handled by `/api/vip/payment/webhook`:
 
@@ -68,10 +68,13 @@ one-time purchases once the session is older than 60 seconds.
 
 ## Prepaid duration slider and lifetime
 
-The prepaid checkout accepts a server-validated `months` value from 1 through
-12. The browser does not choose the final amount. The API calculates the
-integer-cent amount using the monthly tier price and a linear discount that
-reaches 50% at 12 months, then verifies the same amount in the Stripe webhook.
+The prepaid checkout accepts a server-validated integer `months` value from 1
+through 12. The browser does not choose the final amount. The API reads the
+configured Stripe monthly Price, calculates the integer-cent amount using a
+linear discount that reaches 50% at 12 months, creates an inline one-time Price
+for that exact amount, stores it in `vip_orders`, and verifies the same amount
+in the Stripe webhook. A customer can therefore pay the amount displayed for
+7 months rather than silently receiving a different 12-month amount.
 
 Lifetime is a separate one-time purchase for each tier. Lifetime entitlements
 use `is_lifetime = true` and no expiration timestamp; they do not use a far-
@@ -79,7 +82,7 @@ future fake expiration date.
 
 ## Refunds
 
-One-time VIP purchases (`one_month`, `twelve_month`) are refundable for 100% within
+One-time VIP purchases (`prepaid`, `lifetime`) are refundable for 100% within
 30 days of `paid_at`. Refunds are handled through a support ticket:
 
 - The VIP success screen links to `/support?refund_order=<id>`, which pre-fills a ticket with
@@ -108,7 +111,7 @@ The checkout endpoint (`POST /api/vip/payment/checkout`) enforces:
 Once VIP is verified, move to production Stripe (secrets only — never committed):
 
 1. In the Stripe Dashboard, open the account in **Live mode** and copy the `sk_live_...` key.
-2. Create the 9 live Price IDs matching `MIMITA_STRIPE_PRICE_*` (or reuse the same amounts).
+2. Create the 6 live monthly/lifetime Price IDs matching `MIMITA_STRIPE_PRICE_*` (or reuse the same amounts).
 3. Create a live webhook endpoint: URL `https://mimita.fun/api/vip/payment/webhook`, the 8 events.
 4. Copy the live webhook signing secret (`whsec_...`).
 5. On the VPS, update `/root/mimita-site/website/.env`:

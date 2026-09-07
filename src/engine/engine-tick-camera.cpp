@@ -625,7 +625,7 @@ void engineTickCamera(Engine& engine, float dt)
             // when the editor is NOT loaded. Editor keyframes are the authority.
             if (gReplayCameraMgr.mode() == "keyframed" && !gReplayEditor.isLoaded()) {
                 gReplayCameraMgr.update(gReplayPlayer.currentTick(), camera, dt);
-            } else if (!anyFreecam) {
+            } else if (!anyFreecam || isReplayExportActive()) {
                 if (const ReplaySceneFrame* replayFrame =
                         gReplayPlayer.currentSceneFrame()) {
                     gReplayPlayer.cameraController().update(
