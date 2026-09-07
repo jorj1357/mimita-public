@@ -1,4 +1,7 @@
+// 9 7 2026 0925  this deprecated and dont use this  - jorj , jutst use
+// C:\mimita-priv-v8\config\replayexport.json  use this instead 
 {
+   
     "encoder": "ffmpeg",
     "encoderMode": "auto",
     "audioVolumeMultiplier": 0.8,

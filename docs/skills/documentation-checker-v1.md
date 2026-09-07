@@ -16,3 +16,7 @@ point to real current files and that instructions do not contradict higher-level
 specifications. Flag duplicate rules, stale commands, unexplained exceptions,
 and claims unsupported by the repository. Report exact paths, headings, and
 recommended smallest corrections.
+
+# Todo Checker 
+
+Check the entire \docs directory in the repo to see if there are any comments such as "todo: explain this better" or "todo: clean this document up" or "todo: add an explanation for (insert thing)" in any document. Note these, with exact code paths and line numbers and quotes of waht it says, with a suggestion as to what we should replace the todo with.

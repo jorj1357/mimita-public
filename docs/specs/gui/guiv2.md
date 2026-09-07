@@ -1,3 +1,5 @@
+9 7 2026  0928 jorj - todo, add a section or explain how the entire game is DATA/COMMAND/TERMINAL driven, not gui driven. that means, gui buttons are dumb, they just call the same functions that  u can write in the command/terminal bar. so first, we should maek it work with terminal commands, and then maek the gui just call those terminal commands. that is much better overall, its like steam/valve/source engine and source engine i believe is a great example of waht to build/how to build.
+
 9 2 2026
 
 - IF IT IS A GUI ELEMENT IT IS JSON HOT RELOADALBE  
