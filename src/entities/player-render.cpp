@@ -86,7 +86,10 @@ void Player::renderCurrentPose(unsigned int shader,
                                const glm::mat4& view,
                                const glm::mat4& proj,
                                bool whiteOverride,
-                               bool hideHead) const
+                               bool hideHead,
+                               bool outlinePass,
+                               float outlineThickness,
+                               const glm::vec4& outlineColor) const
 {
     {
         static bool perfModelLogged = false;
@@ -113,6 +116,7 @@ void Player::renderCurrentPose(unsigned int shader,
     {
         static GLint uViewLoc = -1, uProjLoc = -1, uModelLoc = -1;
         static GLint uUseColorLoc = -1, uColorLoc = -1, uTexLoc = -1, uTintLoc = -1;
+        static GLint uOutlinePassLoc = -1, uOutlineThicknessLoc = -1;
         static GLint uAlphaCutoffLoc = -1, uDebugViewLoc = -1;
         static GLint uCosmeticTextureEnabledLoc = -1;
         static GLint uCosmeticUvOffsetLoc = -1, uCosmeticUvScaleLoc = -1;
@@ -121,6 +125,8 @@ void Player::renderCurrentPose(unsigned int shader,
         if (uViewLoc < 0) uViewLoc = glGetUniformLocation(shader, "view");
         if (uProjLoc < 0) uProjLoc = glGetUniformLocation(shader, "projection");
         if (uModelLoc < 0) uModelLoc = glGetUniformLocation(shader, "model");
+        if (uOutlinePassLoc < 0) uOutlinePassLoc = glGetUniformLocation(shader, "uOutlinePass");
+        if (uOutlineThicknessLoc < 0) uOutlineThicknessLoc = glGetUniformLocation(shader, "uOutlineThickness");
         if (uUseColorLoc < 0) uUseColorLoc = glGetUniformLocation(shader, "uUseColor");
         if (uColorLoc < 0) uColorLoc = glGetUniformLocation(shader, "uColor");
         if (uTexLoc < 0) uTexLoc = glGetUniformLocation(shader, "uTex");
@@ -144,6 +150,8 @@ void Player::renderCurrentPose(unsigned int shader,
         MIMITA_GL_CALL(glUseProgram(shader));
         glUniformMatrix4fv(uViewLoc, 1, 0, &view[0][0]);
         glUniformMatrix4fv(uProjLoc, 1, 0, &proj[0][0]);
+        if (uOutlinePassLoc >= 0) glUniform1i(uOutlinePassLoc, outlinePass ? 1 : 0);
+        if (uOutlineThicknessLoc >= 0) glUniform1f(uOutlineThicknessLoc, outlineThickness);
         glUniform1i(uUseColorLoc, whiteOverride ? 1 : 0);
         glUniform1i(uTexLoc, 0);
         if (uTintLoc >= 0)
@@ -232,7 +240,10 @@ void Player::renderCurrentPose(unsigned int shader,
             glm::vec3 tint(1.0f);
             if (!whiteOverride && i < outfitPartColors.size())
                 tint = outfitPartColors[i];
-            glUniform4f(uColorLoc, tint.r, tint.g, tint.b, deathAlpha);
+            glUniform4f(uColorLoc, outlinePass ? outlineColor.r : tint.r,
+                        outlinePass ? outlineColor.g : tint.g,
+                        outlinePass ? outlineColor.b : tint.b,
+                        outlinePass ? outlineColor.a : deathAlpha);
 
             for (const Mesh::Batch& batch : mesh.batches)
             {
@@ -252,7 +263,8 @@ void Player::renderCurrentPose(unsigned int shader,
                     glUniform1i(uUseColorLoc, whiteOverride ? 1 : 0);
                 } else {
                     // Character meshes are thin-shell — always render both sides
-                    glDisable(GL_CULL_FACE);
+                    if (outlinePass) { glEnable(GL_CULL_FACE); glCullFace(GL_FRONT); }
+                    else glDisable(GL_CULL_FACE);
                     MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
                 }
                 diagRenderCountPlayerDraw();
@@ -311,6 +323,8 @@ void Player::renderCurrentPose(unsigned int shader,
 
         // Reset avatar-only shader uniforms to prevent leaking into world/subsequent renders
         if (uAlphaCutoffLoc >= 0) glUniform1f(uAlphaCutoffLoc, 0.0f);
+        if (uOutlinePassLoc >= 0) glUniform1i(uOutlinePassLoc, 0);
+        if (uOutlineThicknessLoc >= 0) glUniform1f(uOutlineThicknessLoc, 0.0f);
         if (uCosmeticTextureEnabledLoc >= 0) glUniform1i(uCosmeticTextureEnabledLoc, 0);
         if (uCosmeticBrightnessLoc >= 0) glUniform1f(uCosmeticBrightnessLoc, 1.0f);
         if (uCosmeticOpacityLoc >= 0) glUniform1f(uCosmeticOpacityLoc, 1.0f);

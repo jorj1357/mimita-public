@@ -15,6 +15,8 @@
 #include "renderer/renderer.h"
 #include "terminal/terminal-state.h"
 #include "avatar/cosmetic-system.h"
+#include "config/player-visuals-config.h"
+#include "debug/debug-log.h"
 #include <chrono>
 #include <cstdio>
 #include <unordered_map>
@@ -28,7 +30,8 @@ void renderPlayerInternal(
     const Player& player,
     const Camera& cam,
     uint32_t networkEntityId,
-    bool isLocal)
+    bool isLocal,
+    int localTeam)
 {
     Player& p = const_cast<Player&>(player);
     AvatarSystem& av = AvatarSystem::instance();
@@ -128,6 +131,35 @@ void renderPlayerInternal(
         hideHead
     );
 
+    const PlayerVisualsData& visuals = PlayerVisualsConfig::instance().data();
+    const PlayerOutlineSettings* outline = &visuals.self;
+    if (!isLocal)
+        outline = (localTeam >= 0 && player.matchTeam >= 0 && localTeam == player.matchTeam)
+            ? &visuals.teammate : &visuals.enemy;
+    if (outline->enabled && outline->thickness > 0.0f && outline->alpha != 0.0f &&
+        !(player.dead && outline->disappearOnDeath)) {
+        const GLboolean depthWas = glIsEnabled(GL_DEPTH_TEST);
+        const GLboolean blendWas = glIsEnabled(GL_BLEND);
+        GLint depthFuncWas = GL_LESS;
+        glGetIntegerv(GL_DEPTH_FUNC, &depthFuncWas);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        if (outline->visibleThroughWalls) glDisable(GL_DEPTH_TEST); else glEnable(GL_DEPTH_TEST);
+        glDepthMask(GL_FALSE);
+        const glm::vec4 color(outline->color.r / 255.0f, outline->color.g / 255.0f,
+                              outline->color.b / 255.0f, outline->alpha);
+        player.renderCurrentPose(gRenderer->shaderProgram, view, proj, true, hideHead,
+                                 true, outline->thickness, color);
+        glDepthMask(GL_TRUE);
+        glDepthFunc(depthFuncWas);
+        if (depthWas) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+        if (blendWas) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+        Debug::logThrottled(Debug::Category::Render, "player_visuals_outline", 1.0f,
+            "[PLAYER VISUALS] outline entity=%u category=%s throughWalls=%d thickness=%.2f",
+            networkEntityId, isLocal ? "self" : (localTeam >= 0 && player.matchTeam == localTeam ? "teammate" : "enemy"),
+            outline->visibleThroughWalls ? 1 : 0, outline->thickness);
+    }
+
     // Render attached cosmetic meshes (hats etc.) on top of the body.
     CosmeticSystem::instance().renderCosmetics(player);
 
@@ -145,14 +177,15 @@ void renderPlayerInternal(
 
 void renderPlayer(const Player& player, const Camera& cam)
 {
-    renderPlayerInternal(player, cam, 0, true);
+    renderPlayerInternal(player, cam, 0, true, -1);
 }
 
 void renderNetworkPlayer(
     const Player& player,
     const Camera& cam,
     uint32_t networkEntityId,
-    bool isLocal)
+    bool isLocal,
+    int localTeam)
 {
-    renderPlayerInternal(player, cam, networkEntityId, isLocal);
+    renderPlayerInternal(player, cam, networkEntityId, isLocal, localTeam);
 }

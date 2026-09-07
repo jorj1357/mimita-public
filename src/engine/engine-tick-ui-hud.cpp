@@ -70,6 +70,9 @@ void engineTickUIHUD(Engine& engine, float dt)
                       ev.weaponName.empty() ? "unknown" : ev.weaponName,
                       true, (uint32_t)std::max(ev.tick, 0));
         }
+        // takeTriggeredKillfeedEvents() swaps into this reusable buffer.
+        // Do not return consumed events to ReplayPlayer on the next frame.
+        killEvents.clear();
     }
 
     kf.update(dt);

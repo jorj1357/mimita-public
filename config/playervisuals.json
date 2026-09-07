@@ -1,0 +1,6 @@
+{
+  "renderOrder": ["outline"],
+  "self": { "outline": { "enabled": false, "thickness": 1.0, "alpha": 1.0, "color": [255, 255, 255], "visibleThroughWalls": false, "disappearOnDeath": true, "renderOrder": 100 } },
+  "enemy": { "outline": { "enabled": true, "thickness": 3.0, "alpha": 1.0, "color": [255, 80, 80], "visibleThroughWalls": false, "disappearOnDeath": true, "renderOrder": 100 } },
+  "teammate": { "outline": { "enabled": false, "thickness": 2.0, "alpha": 1.0, "color": [100, 200, 255], "visibleThroughWalls": false, "disappearOnDeath": true, "renderOrder": 100 } }
+}

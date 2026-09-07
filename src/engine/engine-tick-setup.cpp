@@ -34,6 +34,7 @@
 #include "duel/duel-map-pool.h"
 #include "duel/duel-weapon-pool.h"
 #include "hot-reload/hot-reload-system.h"
+#include "config/player-visuals-config.h"
 #include "notifications/notifications.h"
 #include "gui/gui-layout.h"
 #include "debug/debug-visuals.h"
@@ -135,6 +136,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
         NotificationSystem::instance().pollReload();
         GuiLayoutManager::instance().pollReload();
         NetworkingConfig::instance().pollReload();
+        PlayerVisualsConfig::instance().pollReload();
         PostFX::instance().pollReload();
         if (CollisionLodConfig::instance().pollHotReload())
             redecimateCollision(THE_WORLD);

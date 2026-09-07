@@ -439,12 +439,12 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             Perf::ScopedTimer _networkEntities("Rendering::Actors::NetworkEntities");
             for (auto& kv : mpContext.remotePlayers) {
                 Perf::state().renderPerf.actorRemotePlayers++;
-                renderNetworkPlayer(kv.second, camera, kv.first, false);
+                renderNetworkPlayer(kv.second, camera, kv.first, false, player.matchTeam);
                 weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt);
             }
             for (auto& kv : mpContext.remoteNpcs) {
                 Perf::state().renderPerf.actorRemoteNpcs++;
-                renderNetworkPlayer(kv.second, camera, kv.first, false);
+                renderNetworkPlayer(kv.second, camera, kv.first, false, player.matchTeam);
                 weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt);
             }
             { Perf::ScopedTimer _networkProjectiles("Rendering::Actors::NetworkProjectiles");

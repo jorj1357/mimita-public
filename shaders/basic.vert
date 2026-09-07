@@ -21,6 +21,8 @@ uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
 uniform mat4 uShadowMatrix;
+uniform int uOutlinePass;
+uniform float uOutlineThickness;
 
 out vec2 vUV;
 out vec3 vWorldPos;
@@ -31,6 +33,8 @@ out vec4 vShadowCoord;
 
 void main() {
     vec4 worldPos = model * vec4(aPos, 1.0);
+    if (uOutlinePass != 0)
+        worldPos.xyz += normalize(mat3(transpose(inverse(model))) * aNormal) * uOutlineThickness;
 
     vUV = aUV;
     vWorldPos = worldPos.xyz;

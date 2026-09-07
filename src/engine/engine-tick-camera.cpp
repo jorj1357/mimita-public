@@ -1149,6 +1149,10 @@ void engineTickCamera(Engine& engine, float dt)
                 EffectPartSystem::instance().spawn(spawnParams);
             }
         }
+        // takeTriggeredEffects() swaps ownership with this reusable buffer.
+        // Clear the consumed batch so it cannot be swapped back and replayed
+        // on the next rendered frame.
+        effects.clear();
         gExportFrameTimings.weaponEventsMs +=
             (replayExportNowSec() - tFx0) * 1000.0;
         {
@@ -1218,6 +1222,8 @@ void engineTickCamera(Engine& engine, float dt)
                         sound.volume, sound.pitch * pbspeedMul,
                         sound.maxDistance > 0.0f ? sound.maxDistance : 40.0f);
             }
+            // takeTriggeredSounds() also uses swap() into this reusable buffer.
+            sounds.clear();
             gExportFrameTimings.audioEventsMs +=
                 (replayExportNowSec() - tAud0) * 1000.0;
         }

@@ -492,7 +492,10 @@ public:
                            const glm::mat4& view,
                            const glm::mat4& proj,
                            bool whiteOverride = false,
-                           bool hideHead = false) const;
+                           bool hideHead = false,
+                           bool outlinePass = false,
+                           float outlineThickness = 0.0f,
+                           const glm::vec4& outlineColor = glm::vec4(1.0f)) const;
     void syncLegacyStateToLayers();
     void syncLayersToLegacyState();
     void updateModelWorldTransforms();
