@@ -327,14 +327,6 @@ void updateReplayExport()
             printf("[RPLX] hasActiveReplayEditor=0\n");
             printf("[RPLX] exportUsesReplayEditorCamera=0\n");
         }
-
-        RPLXDEBUG("====================\n");
-        RPLXDEBUG("LISTENER / CAMERA\n");
-        RPLXDEBUG("====================\n\n");
-
-        RPLXDEBUG("====================\n");
-        RPLXDEBUG("HEALTHBARS\n");
-        RPLXDEBUG("====================\n\n");
     }
 
     if (gReplayExportVerbose)
@@ -628,10 +620,7 @@ void finishReplayExport(bool success, const std::string& error)
     Debug::warn(Debug::Category::Replay,
         "[EXPORT] outputPath='%s'\n", gJob.outputPath.c_str());
     Debug::warn(Debug::Category::Replay,
-        "[EXPORT] capturedFrames=%u totalTicks=%u\n", gJob.capturedTicks, gJob.totalTicks);
-    RPLXDEBUG("[FINISH] success=%d error='%s'\n", (int)success, error.c_str());
-    RPLXDEBUG("[FINISH] outputPath='%s'\n", gJob.outputPath.c_str());
-    RPLXDEBUG("[FINISH] capturedFrames=%u totalTicks=%u rawBytes=%llu\n",
+        "[EXPORT] capturedFrames=%u totalTicks=%u rawBytes=%llu\n",
         gJob.capturedTicks, gJob.totalTicks, (unsigned long long)gJob.rawFileBytes);
     replayExportTargetDestroy();
     restoreReplayExportEditorState();
@@ -648,10 +637,9 @@ void finishReplayExport(bool success, const std::string& error)
         gJob.state = ReplayExportJob::Failed;
         gJob.errorMsg = error.empty() ? "MP4 export failed." : error;
         Debug::warn(Debug::Category::Replay, "[REPLAY EXPORT] FAILED: %s\n", gJob.errorMsg.c_str());
-        RPLXDEBUG("[FINISH] FAILED: %s\n", gJob.errorMsg.c_str());
         if (gJob.clipExport)
             NotificationSystem::instance().pushCritical("CLIP EXPORT FAILED",
-                gJob.errorMsg + "\nCheck logs/replay_export_debug.txt", 800);
+                gJob.errorMsg, 800);
         replayExportTimingLogSummary();
         return;
     }
@@ -667,16 +655,16 @@ void finishReplayExport(bool success, const std::string& error)
             std::filesystem::exists(gJob.outputPath)
                 ? (unsigned long long)std::filesystem::file_size(gJob.outputPath) : 0ULL,
             ec.value());
-        RPLXDEBUG("[FINISH] FAILED: output file missing or empty\n");
         if (gJob.clipExport)
             NotificationSystem::instance().pushCritical("CLIP EXPORT FAILED",
-                "Encoder completed but MP4 is missing or empty.\nCheck logs/replay_export_debug.txt", 600);
+                "Encoder completed but MP4 is missing or empty.", 600);
         replayExportTimingLogSummary();
         return;
     }
     gLastSuccessfulExportPath = std::filesystem::absolute(gJob.outputPath).make_preferred().string();
     gJob.state = ReplayExportJob::Done;
-    RPLXDEBUG("[FINISH] SUCCESS: %llu bytes\n", (unsigned long long)gJob.mp4FileBytes);
+    Debug::warn(Debug::Category::Replay,
+        "[REPLAY EXPORT] SUCCESS: %llu bytes\n", (unsigned long long)gJob.mp4FileBytes);
     if (gJob.clipExport) {
         NotificationSystem::instance().pushImportant(
             "CLIP EXPORTED",

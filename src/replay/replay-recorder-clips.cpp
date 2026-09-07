@@ -5,6 +5,7 @@
 #include <cstring>
 #include <glm/glm.hpp>
 
+#include "debug/debug-log.h"
 #include "perf/perf-spike.h"
 
 ReplayClip ReplayRecorder::makeClip(
@@ -13,6 +14,9 @@ ReplayClip ReplayRecorder::makeClip(
 {
     MIMITA_PERF_SCOPE("Replay::MakeClip");
     std::lock_guard<std::mutex> lock(mRingMutex);
+    Debug::warn(Debug::Category::Replay,
+        "[MAKECLIP] startTick=%u endTick=%u mSceneFrameCount=%u mFrames=%zu mTick=%u\n",
+        startTick, endTick, mSceneFrameCount, mFrames.size(), mTick);
     ReplayClip clip;
     clip.header = mHeader;
     clip.header.tickCount = 0;

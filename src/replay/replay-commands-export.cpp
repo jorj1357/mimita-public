@@ -436,22 +436,20 @@ void registerReplayExportCommands()
     Terminal::instance().registerCommand({
         "rplfx", "Export the latest 15 seconds to MP4 without opening the editor", "rplfx",
         [](const std::vector<std::string>&) {
-            RPLXDEBUG("[RPLFX] ========== EXPORT ATTEMPT ==========\n");
-            RPLXDEBUG("[RPLFX] isExportActive=%d isRecording=%d currentTick=%u\n",
+            Debug::warn(Debug::Category::Replay,
+                "[RPLFX] export attempt: isExportActive=%d isRecording=%d currentTick=%u\n",
                 (int)isReplayExportActive(), (int)REPLAY_RECORDER.isRecording(),
                 REPLAY_RECORDER.currentTick());
             if (isReplayExportActive()) {
                 Terminal::instance().addLog("Clip is already exporting...");
                 NotificationSystem::instance().push(
                     "CLIP EXPORT", "Clip is already exporting...", 180, {});
-                RPLXDEBUG("[RPLFX] FAILED: export already active\n");
                 return;
             }
             if (!REPLAY_RECORDER.isRecording()) {
                 Terminal::instance().addLog("No replay recording active");
                 NotificationSystem::instance().pushCritical(
                     "CLIP EXPORT FAILED", "No replay recording active. Start recording first.", 600);
-                RPLXDEBUG("[RPLFX] FAILED: not recording\n");
                 return;
             }
             // Ensure the clip records the CURRENT map, not whatever map was
@@ -460,23 +458,21 @@ void registerReplayExportCommands()
                 ReplayWorldMetadata wm;
                 wm.mapPath = ACTIVE_MAP_PATH;
                 REPLAY_RECORDER.setWorldMetadata(wm);
-                RPLXDEBUG("[RPLFX] map='%s'\n", ACTIVE_MAP_PATH.c_str());
             }
-            RPLXDEBUG("[RPLFX] calling saveInstantReplay for 15 seconds...\n");
+            Debug::warn(Debug::Category::Replay,
+                "[RPLFX] map='%s' calling saveInstantReplay...\n", ACTIVE_MAP_PATH.c_str());
             std::string path = saveInstantReplay(REPLAY_RECORDER, 15);
             if (path.empty()) {
                 NotificationSystem::instance().pushCritical(
-                    "CLIP EXPORT FAILED", "Failed to save clip. Check replay_export_debug.txt.", 600);
-                RPLXDEBUG("[RPLFX] FAILED: saveInstantReplay returned empty\n");
+                    "CLIP EXPORT FAILED", "Failed to save clip. Check Gameterminal log.", 600);
                 return;
             }
-            RPLXDEBUG("[RPLFX] clip saved: '%s'\n", path.c_str());
-            RPLXDEBUG("[RPLFX] calling startReplayExport...\n");
+            Debug::warn(Debug::Category::Replay,
+                "[RPLFX] clip saved: '%s' calling startReplayExport...\n", path.c_str());
             if (!startReplayExport(path, gExportConfig.exportWidth, gExportConfig.exportHeight, true)) {
                 std::string errDetail = gJob.errorMsg.empty() ? "Unknown error" : gJob.errorMsg;
                 NotificationSystem::instance().pushCritical(
-                    "CLIP EXPORT FAILED", "Export failed: " + errDetail + "\nCheck replay_export_debug.txt", 600);
-                RPLXDEBUG("[RPLFX] FAILED: startReplayExport returned false\n");
+                    "CLIP EXPORT FAILED", "Export failed: " + errDetail, 600);
                 return;
             }
             NotificationSystem::instance().pushImportant(
@@ -485,8 +481,6 @@ void registerReplayExportCommands()
                         "[CLIP EXPORT] source=%s windowTicks=%u output=%s",
                         path.c_str(), 15u * ReplayRingBuffer::TickRate,
                         getReplayExportResultPath().c_str());
-            RPLXDEBUG("[RPLFX] export started OK: output='%s'\n",
-                getReplayExportResultPath().c_str());
         },
         std::string(), CommandCategory::Replay
     });

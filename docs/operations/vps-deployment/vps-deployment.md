@@ -1,3 +1,12 @@
+2026-09-07T17:13:59Z  jorj  here do this ssh mimita-vps  
+thecmd is this 
+ssh mimita-vps
+for AI agents 
+to get into the vps and stuff and check 
+todo make this prettier and update docs to look nicer 
+
+also todo 2026-09-07T17:17:34Z  jorj  the vps does not need  game code no like cpp and stuff just website thats all the vps needs go
+
 # VPS Branch Verification and Deployment
 
 Before pulling code onto the VPS:

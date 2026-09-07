@@ -60,33 +60,11 @@ extern ReplayExportConfig gExportConfig;
 #define EXPORTLOG(fmt, ...) Debug::log(Debug::Category::Replay, "[EXPORT] " fmt, ##__VA_ARGS__)
 #define EXPORTTRACE_CRASH(fmt, ...) do { printf("[EXPORT] " fmt "\n", ##__VA_ARGS__); fflush(stdout); } while(0)
 
-FILE* gReplayExportDebugFile = nullptr;
+// RPLXDEBUG is defined in replay-export.h, routing through Debug::log
 
-void replayExportDebugOpen()
-{
-    namespace fs = std::filesystem;
-    std::error_code ec;
-    fs::create_directories("logs", ec);
-    gReplayExportDebugFile = fopen("logs/replay_export_debug.txt", "w");
-    if (gReplayExportDebugFile)
-    {
-        fprintf(gReplayExportDebugFile, "====================\n");
-        fprintf(gReplayExportDebugFile, "REPLAY EXPORT DEBUG\n");
-        fprintf(gReplayExportDebugFile, "====================\n\n");
-    }
-}
-
-void replayExportDebugClose()
-{
-    if (gReplayExportDebugFile)
-    {
-        fprintf(gReplayExportDebugFile, "\n====================\n");
-        fprintf(gReplayExportDebugFile, "END DEBUG LOG\n");
-        fprintf(gReplayExportDebugFile, "====================\n");
-        fclose(gReplayExportDebugFile);
-        gReplayExportDebugFile = nullptr;
-    }
-}
+// RPLXDEBUG is superseded by the central Debug::log system.
+// The gReplayExportDebugFile and replayExportDebugOpen/Close functions are removed.
+// All export diagnostics now go through Debug::log with Category::Replay.
 
 bool writeReplayExportWav(const std::string& path, const int16_t* samples,
                           size_t sampleCount, uint32_t sampleRate, uint16_t channels)
@@ -283,7 +261,6 @@ bool buildReplayExportAudio(const std::string& wavPath, uint32_t totalTicks)
         printf("[RPLX AUDIO] No sound events found, creating silent track\n");
         std::vector<int16_t> silent(48000 * 2, 0);
         RPLXDEBUG("No sound events found\n");
-        replayExportDebugClose();
         return writeReplayExportWav(wavPath, silent.data(), silent.size(), 48000);
     }
 
@@ -565,7 +542,6 @@ bool buildReplayExportAudio(const std::string& wavPath, uint32_t totalTicks)
     } else {
         printf("[RPLX AUDIO] FAILED to write WAV file: %s\n", wavPath.c_str());
     }
-    replayExportDebugClose();
     return ok;
 }
 

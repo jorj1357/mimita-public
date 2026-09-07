@@ -216,7 +216,10 @@ bool ReplayClip::load(const std::string& path)
 
         header.tickCount = sceneFrames.empty() ? (uint32_t)frames.size()
                                                 : (uint32_t)sceneFrames.size();
-        return !sceneFrames.empty();
+        // Accept clips with either sceneFrames or input frames.
+        // A clip with empty sceneFrames but valid frames can still be used for
+        // playback via the input frame data path.
+        return !sceneFrames.empty() || !frames.empty();
     } catch (const std::exception& e) {
         printf("[REPLAY] clip load failed %s: %s\n", path.c_str(), e.what());
         return false;

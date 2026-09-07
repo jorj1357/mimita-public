@@ -37,6 +37,34 @@ Whats this
 
 newest at top 9 3 2026
 
+9 7 2026 1604 — Replay export fails: clip.load() returns false because sceneFrames is empty
+
+1. Issue: pressing P to export replay fails with "CLIP EXPORT FAILED" — clip file is saved OK but cannot be loaded back
+   1. Bad behavior
+      1. Clip file `replays\09-07-2026\11-44-52-replay.json` is saved successfully (valid JSON, 900 input frames, 153 sound events)
+      2. `ReplayClip::load()` returns false because `sceneFrames` array is empty `[]`
+      3. Export fails at `startReplayExport()` pre-check before subprocess spawns
+      4. No `ReplayExport_log_*.txt` is created (subprocess never launches)
+      5. User sees "CLIP EXPORT FAILED" notification
+   2. Date and time first observed: 2026-09-07T16:04:25Z
+   3. Why bad behavior
+      1. The clip has `sceneFrames=0` but `frames=900` — the ring buffer's `mSceneFrameCount` was 0 when `makeClip()` was called
+      2. Both input frames and scene frames are recorded in the same `if (recordingReplayTick)` block, so if 900 input frames exist, scene frames should also exist
+      3. The only code that resets `mSceneFrameCount = 0` is `beginRecording()` at `replay-recorder.cpp:125`, but that also clears `mFrames` (the input vector)
+      4. `ReplayClip::load()` at `replay-io-save.cpp:219` had `return !sceneFrames.empty()` which rejects valid clips with empty sceneFrames
+      5. Root cause of empty sceneFrames is UNKNOWN — diagnostic logging added to `beginRecording()` and `makeClip()` to trace on next attempt
+   4. What fixed it, date and time: 2026-09-07 16:04 UTC (partial)
+      1. Fixed `ReplayClip::load()` to accept clips with empty sceneFrames but valid frames: `return !sceneFrames.empty() || !frames.empty()`
+      2. Added `Debug::warn` at start of `beginRecording()` to log when recording is restarted (previous tick/sceneFrameCount/frames state)
+      3. Added `Debug::warn` at start of `makeClip()` to log `mSceneFrameCount`, `mFrames.size()`, `mTick`, and requested range
+      4. These diagnostics will reveal on next attempt whether `beginRecording()` was called unexpectedly or if `mSceneFrameCount` is 0 for another reason
+   5. What we learned
+      1. The old 1951 camera regression fix (recording condition `|| isReplayExportActive()`) is still in place and correct
+      2. The current failure is NOT the camera stuck at (0,0,0) — it's that the clip can't be loaded at all because sceneFrames is empty
+      3. `ReplayClip::load()` was too strict — it rejected valid clips with input data but no scene frames
+      4. The relationship between `mSceneFrameCount` (ring buffer) and `mFrames` (input vector) needs investigation — they should always be in sync since both are written in the same `if (recordingReplayTick)` block
+      5. The `replay_export_debug.txt` file (RPLXDEBUG) was superseded by the central `Debug::log` system per logging spec
+
 9 6 2026 2136 — Replay export camera fix confirmed working via diagnostic logging
 
 1. Issue: replay export camera stuck under the world, not following player POV
@@ -308,3 +336,52 @@ newest at top 9 3 2026
    2. Inspect the browser response from `/api/vip/config` and confirm it includes `prepaid` and `lifetime` for all three tiers.
    3. Confirm Vite is serving `C:\mimita-priv-v8\website\src\pages\Vip.jsx`, not a different checkout or stale `dist/` directory.
    4. If the API is the old VPS version, deploy only after confirming the exact branch and commit, then rebuild the frontend and restart the relevant service.
+
+## 9 7 2026 — VIP slider missing because VPS API was behind local frontend (RESOLVED)
+
+1. Bad behavior
+   1. The local `website/src/pages/Vip.jsx` contained the prepaid slider, but the browser page showed only monthly subscription buttons.
+   2. The slider was conditionally rendered only when `/api/vip/config` returned a `prepaid` purchase type.
+2. Cause and fix
+   1. The local frontend and VPS API were on different revisions. The local source expected the new prepaid/lifetime configuration, while the tunneled API was still serving the older VIP configuration.
+   2. The VPS was updated from the confirmed Git revision, its website frontend was rebuilt, database migrations were run, and only `mimita-api` was restarted.
+3. Resolution evidence
+   1. VPS output reported a successful Vite build.
+   2. VPS output reported `database migrations complete`.
+   3. PM2 reported `mimita-api` online after restart.
+   4. The prior untracked VPS files were preserved and reported.
+4. Lesson
+   1. For tunneled local testing, frontend source and the VPS API must be deployed from the same reviewed revision. A local Vite rebuild alone cannot make an old VPS API return the new purchase types.
+
+## 9 7 2026 — Authentication endpoints return HTTP 500 after VIP deployment (UNRESOLVED)
+
+1. Bad behavior
+   1. On the local Vite page, `GET http://localhost:5173/api/auth/me` returns HTTP 500.
+   2. `POST http://localhost:5173/api/auth/signin` returns HTTP 500 during sign-in attempts.
+   3. The browser reports `auth state invalid` and cannot complete sign-in. `/api/vip/config` still returns HTTP success.
+2. Date and time first observed: 2026-09-07, immediately after the VPS pull, frontend build, migration, and `mimita-api` restart.
+3. Changes immediately preceding the symptom
+   1. The VPS pulled the confirmed latest repository revision.
+   2. `cd /root/mimita-site/website && npm run build` completed successfully.
+   3. `npm run migrate` completed with `database migrations complete`.
+   4. PM2 restarted `mimita-api`, which reported online.
+   5. Existing untracked VPS files were preserved; no direct production file edits were performed.
+4. Current status: UNRESOLVED. The browser output proves an API-side 500, but does not identify whether the cause is database connectivity, schema/migration state, environment loading, session configuration, or an application exception.
+5. Required next investigation
+   1. Read the `mimita-api` PM2 error/output logs at the exact sign-in request time.
+   2. Check PostgreSQL service/readiness and the `mimita_db` migration version without exposing credentials or user records.
+   3. Test an invalid sign-in request directly against the VPS API and require a controlled HTTP 401/400 response rather than 500.
+   4. Compare the deployed commit, website environment-variable presence, and API startup logs with the pre-deployment state.
+   5. Do not claim this is caused by the VIP UI or change authentication code until the first server-side exception is identified.
+
+6. Evidence collected directly from VPS logs: 2026-09-07T16:20:00Z
+   1. PostgreSQL service was active and `pg_isready` reported accepting connections.
+   2. PM2 showed `mimita-api` online at `/root/mimita-site/website/server/server.js`.
+   3. The deployed Git revision was `bbaf43d09ad0f2fb5bcb29d6115171f463c9490e`.
+   4. Repeated API errors for `/api/auth/me`, `/api/auth/signin`, `/api/profile/131`, and game login all reported PostgreSQL error code `42703`: `column "style_revision" does not exist`.
+   5. The same missing column also caused VIP entitlement subscription-sync errors, proving this is a shared schema mismatch rather than a signin-only failure.
+   6. The deployed migration runner reported success because its version ledger can consider the historical bootstrap already applied; adding a statement to that historical bootstrap does not guarantee it runs on an existing database.
+7. Corrective direction: create and test a new forward migration that adds `vip_name_styles.style_revision` with `ADD COLUMN IF NOT EXISTS`, deploy it through the repository migration path, then verify auth/profile/game-login requests. Do not apply an ad hoc production SQL patch or mark this regression resolved yet.
+
+## 2026-09-07T17:22:55Z login issue
+jorj - this not official format not good but  when we edit netowkring stuff or database stuff i noticeit makes like login issues, so we should make a centralized  data or netwroking info controller, bc we cant keep having failures just because we added 1 more field to a json and the database entirely fails bc it cant handle  one more, the database should get autoupdated somehow, same with the ingame mimita.exe code 

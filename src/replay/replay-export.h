@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <string>
+#include "debug/debug-log.h"
 #include <vector>
 
 // ── Replay export configuration (hot-reloaded from config/replay/replay-export.json)
@@ -225,8 +226,9 @@ extern int gRplxHitBurstCount;
 extern int gRplxDebrisBlockCount;
 extern int gRplxEffectDuplicateCount;
 
-// Debug log for replay export diagnostics
-void replayExportDebugOpen();
-void replayExportDebugClose();
-extern FILE* gReplayExportDebugFile;
-#define RPLXDEBUG(...) do { if (gReplayExportDebugFile) { fprintf(gReplayExportDebugFile, __VA_ARGS__); fflush(gReplayExportDebugFile); } } while(0)
+// RPLXDEBUG is superseded by the central Debug::log system.
+// This macro routes all existing RPLXDEBUG calls through Debug::log.
+// All export diagnostics now go through Debug::log with Category::Replay.
+#ifndef RPLXDEBUG
+#define RPLXDEBUG(fmt, ...) Debug::log(Debug::Category::Replay, "[RPLX] " fmt, ##__VA_ARGS__)
+#endif

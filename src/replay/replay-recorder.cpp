@@ -115,6 +115,9 @@ BodyPartArray captureReplayBodyParts(const Player& player)
 // ============================================================
 
 void ReplayRecorder::beginRecording(float randomSeed, const char* mapName) {
+    Debug::warn(Debug::Category::Replay,
+        "[RECORD] beginRecording called: prevTick=%u prevSceneFrameCount=%u prevFrames=%zu map='%s'\n",
+        mTick, mSceneFrameCount, mFrames.size(), mapName ? mapName : "(null)");
     std::lock_guard<std::mutex> lock(mRingMutex);
     mFrames.clear();
     mAssets.clear();
