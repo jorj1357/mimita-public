@@ -1,4 +1,19 @@
-﻿Weapon system spec after full client/server architecture change
+﻿9 7 2026 1701 est jorj - todo, confirm that this is like
+a single weapon object exists, and all other weapons are just diffrent implementations of that.
+
+e.g. 
+weapon struct 
+ammo, reserver ammo, damage, hitscan or projectile, etc
+
+so u can make 
+revovler: 1337 ammo, 6 in clip, like 10 dmg per shot, hitscan
+shotgun: hitscan, pelllet
+swrod: its a melee so prob counts as a projectile?
+grenade: phsics object that explodes
+shield: phsics object that nullifies or blocks damage or dampens knockback or dont even add a shield bc shields are annoying 
+this all relates to  the expansion toward like a  easier to  edit mode, and adding an LMG and a minigun for juggernaut mode for retrograd mode that i want to  do and need to credit them and link their game entirely to them and their server bc that game is awesome 
+
+Weapon system spec after full client/server architecture change
 Date: 7/18/2026
 End goal
 There is no separate local-play gameplay path.

@@ -146,6 +146,7 @@ struct ServerDuelState
     uint32_t bombBlinkTicks = 30;       // Config: ticks per color blink phase
     float bombMaxPassSanityDist = 3.0f; // Config: hard rejection distance (meters)
     bool bombTagActive = false;         // True when bomb tag match is running
+    bool hasBombFeature = false;        // True when gamemode declares bomb_holder_text feature
     uint32_t bombPassCounter = 0;       // Total passes this session (for logging)
     uint32_t bombExplosionCounter = 0;  // Total explosions this session
 };

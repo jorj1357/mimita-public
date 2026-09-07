@@ -1,0 +1,1 @@
+9 7 2026 1658 est jorj - this should be the big implementation for the alreadt existing but  bad performance   of blood spray when shooting otherrs, bullet holes on the world, cracks on the world, bombs exploding leave a big mark onteh ground. and relates to like camera sway and stuff for realism, like bobm exploding near u in realistic mode = u can 

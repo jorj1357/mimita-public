@@ -35,6 +35,10 @@ struct SpyKnifeHitResult {
     bool isBackstab = false;
     glm::vec3 hitPosition{0.0f};
     glm::vec3 victimPosition{0.0f};
+    glm::vec3 direction{0.0f, 0.0f, 1.0f};
+    uint32_t contactTick = 0;
+    uint32_t contactId = 0;
+    bool targetIsNpc = true;
 };
 
 struct BladeOBB {
@@ -66,6 +70,7 @@ struct SpyKnifeState {
     std::unordered_map<uint32_t, float> hitCooldowns;
     std::unordered_map<uint32_t, bool> backstabSoundPlayed;
     std::vector<SpyKnifeHitResult> pendingRemoteHits;
+    float networkBatchTimer = 0.0f;
 };
 
 namespace WeaponSpyKnife {
@@ -75,6 +80,7 @@ void startSwing(SpyKnifeState& state, const WeaponDefinition& def,
 
 void update(SpyKnifeState& state, const WeaponDefinition& def,
             WeaponRuntime& runtime, Player& owner,
+            std::unordered_map<uint32_t, Player>* remotePlayers,
             std::unordered_map<uint32_t, Player>* remoteNpcs,
             const Camera& camera,
             const World& world, float dt);

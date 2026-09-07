@@ -1340,19 +1340,30 @@ struct ProgressionEventPacket
     char confirmedAt[40] = {};
 };
 
-// ── Spy Knife hit claim (attacker → server, unreliable) ───────────────
-struct SpyKnifeHitClaimPacket
+// ── Batched Spy Knife physical contacts (attacker → server) ───────────
+// Damage is never trusted from this packet. The server reconstructs the
+// target pose at contactTick and resolves damage from weapon configuration.
+static constexpr uint8_t SPYKNIFE_CONTACT_BATCH_MAX = 8;
+struct SpyKnifeContact
+{
+    uint32_t targetId = 0;
+    uint32_t contactTick = 0;
+    uint32_t contactId = 0;
+    uint8_t targetIsNpc = 0;
+    uint8_t isBackstab = 0;
+    uint16_t reserved = 0;
+    float hitX = 0.0f, hitY = 0.0f, hitZ = 0.0f;
+    float dirX = 0.0f, dirY = 0.0f, dirZ = 1.0f;
+};
+
+struct SpyKnifeContactBatchPacket
 {
     PacketHeader header;
     uint32_t attackerId = 0;
-    uint32_t targetId = 0;
-    uint8_t isBackstab = 0;
-    float damage = 0.0f;
-    float hitX = 0.0f, hitY = 0.0f, hitZ = 0.0f;
-    float attackerX = 0.0f, attackerY = 0.0f, attackerZ = 0.0f;
-    float attackerYaw = 0.0f;
-    float victimX = 0.0f, victimY = 0.0f, victimZ = 0.0f;
-    uint16_t attackSerial = 0;
+    uint32_t attackerSpawnGeneration = 0;
+    uint8_t contactCount = 0;
+    uint8_t reserved[3] = {};
+    SpyKnifeContact contacts[SPYKNIFE_CONTACT_BATCH_MAX]{};
 };
 
 // ── Projectile fire result ────────────────────────────────────────────

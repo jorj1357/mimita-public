@@ -90,6 +90,7 @@ void CommunityMatchClient::onBombTagState(const BombTagStatePacket& packet)
     mPhase = packet.phase;
     mBombOwnerType = packet.bombOwnerType;
     mBombOwnerPlayerId = packet.bombOwnerPlayerId;
+    mBombOwnerNpcIndex = packet.bombOwnerNpcIndex;
     mBombTimerTicks = packet.timerTicksRemaining;
     mBombInactiveTicks = packet.inactiveTicksRemaining;
     mServerTick = packet.serverTick;

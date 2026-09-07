@@ -3,11 +3,11 @@
 * Sets NPC AI flags for Bomb Tag behavior (chase/flee) based on
 * server-authoritative bomb holder state received via CommunityMatchClient.
 * Does NOT simulate bomb ownership, timers, or transfers — the server owns all gameplay.
-* Does NOT render the bomb visual or HUD — that is handled by BombTagManager.
+ * Does NOT render the bomb visual or HUD — that is handled by GamemodeManager.
 * Does NOT produce per-frame log spam — uses throttled debug logging.
 */
 
-#include "bomb-tag.h"
+#include "game/gamemode-manager.h"
 
 #include <algorithm>
 #include <cmath>

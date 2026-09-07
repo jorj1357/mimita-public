@@ -239,12 +239,15 @@ void registerMovementCommands()
             Player& player = THE_PLAYER;
             const MovementAirDebug& a = player.airDebug;
             const auto& cfg = MovementJsonConfig::instance().config();
+            const char* branch =
+                a.branch == MovementAirDebug::Branch::Ground ? "ground" :
+                a.branch == MovementAirDebug::Branch::Air ? "air" : "none";
             char buf[384];
             std::snprintf(buf, sizeof(buf),
-                "[AIR] mode=%s grounded=%d input=(forward=%.2f side=%.2f) "
+                "[AIR] mode=%s branch=%s grounded=%d input=(forward=%.2f side=%.2f) "
                 "wishvel=(%.2f,%.2f) wishdir=(%.2f,%.2f) wishspeed=%.2f capped=%.2f",
                 cfg.walkMode == MovementWalkMode::Source ? "source" : "mimita",
-                (int)a.grounded, a.forwardMove, a.sideMove,
+                branch, (int)a.grounded, a.forwardMove, a.sideMove,
                 a.wishVelocity.x, a.wishVelocity.y,
                 a.wishDir.x, a.wishDir.y, a.wishSpeed, a.cappedWishSpeed);
             Terminal::instance().addLog(buf);

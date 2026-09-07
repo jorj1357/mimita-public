@@ -33,6 +33,7 @@ public:
     WeaponSystem();
 
     void update(Camera& camera, Player& player, NpcSystem& npcs, const World& world,
+                std::unordered_map<uint32_t, Player>* remotePlayers = nullptr,
                 std::unordered_map<uint32_t, Player>* remoteNpcs = nullptr,
                 float dt = 0.0f);
     void render(const Camera& camera, const Player& player) const;

@@ -164,12 +164,19 @@ struct MovementGroundReturnState {
 };
 
 // Per-tick air-strafe projection values for the debug overlay / console.
-// Filled by applySourceAir in Source mode so the player can SEE why speed was
-// gained or not, instead of guessing.
+// Filled by the Source movement dispatcher so the player can SEE which branch
+// ran and why air speed was gained or not, instead of guessing.
 struct MovementAirDebug {
+    enum class Branch : uint8_t {
+        None,
+        Ground,
+        Air
+    };
+
     bool hasInput = false;
     bool applied = false;
     bool grounded = false;
+    Branch branch = Branch::None;
     bool sourceBugCompatible = true;
     float horizontalSpeed = 0.0f;
     float finalHorizontalSpeed = 0.0f;

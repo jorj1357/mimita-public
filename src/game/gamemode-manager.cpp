@@ -28,6 +28,7 @@
 #include "network/multiplayer-context.h"
 #include "gamemode/gamemode.h"
 #include "terminal/terminal-state.h"
+#include "npc/npc.h"
 
 using namespace MimitaNet;
 
@@ -69,6 +70,9 @@ void GamemodeManager::start() {
     mEnabled = true;
     mClientBombTick = 0;
     mPassBeamTimer = 0.0f;
+    mPrevBombTimerTicks = 0;
+    mPrevBombHolderId = 0;
+    mInactiveSoundPlaying = false;
     Debug::log(Debug::Category::Duel, "[GAMEMODE MANAGER] started mode=%s\n",
         CommunityMatchClient::instance().mode().c_str());
 }
@@ -135,6 +139,18 @@ const char* GamemodeManager::bombHolderName(uint32_t localPlayerId, const Player
             return it->second.username.c_str();
         return "Player";
     }
+    if (c.bombOwnerType() == BOMB_OWNER_NPC && gpNpcSystem) {
+        uint32_t npcId = c.bombOwnerNpcIndex();
+        auto& npcs = gpNpcSystem->all();
+        for (const Npc& npc : npcs) {
+            if (npc.id == npcId) {
+                if (!npc.avatarName.empty())
+                    return npc.avatarName.c_str();
+                break;
+            }
+        }
+        return "NPC";
+    }
     return "Bomb Holder";
 }
 
@@ -171,6 +187,44 @@ void GamemodeManager::update(float dt, Player& player) {
     const Gamemode& gm = GamemodeRegistry::instance().get(c.mode());
     if (gm.features.bombHolderText) {
         setArmToWeaponPose(player, playerIsBombHolder(MP_CONTEXT.localPlayerId));
+    }
+
+    // ── Bomb sound playback (client-side, from replicated state) ────
+    if (gm.features.bombHolderText && c.phase() == DUEL_PHASE_ACTIVE) {
+        uint32_t curTimer = c.bombTimerTicks();
+        uint32_t curHolder = c.bombOwnerPlayerId();
+
+        // Explosion: timer was > 0, now == 0
+        if (mPrevBombTimerTicks > 0 && curTimer == 0) {
+            playEventSound("assets/sound/weapon/bomb/explosion2.wav", 1.0f);
+        }
+
+        // Pass: holder changed (both > 0 means a real transfer, not initial assignment)
+        if (mPrevBombHolderId != 0 && curHolder != 0 && mPrevBombHolderId != curHolder) {
+            playEventSound("assets/sound/weapon/bomb/bombpass1.wav", 1.0f);
+        }
+
+        // Tick sound: timer crossed a 60-tick boundary (once per second)
+        if (curTimer > 0 && mPrevBombTimerTicks > 0) {
+            uint32_t prevSecond = mPrevBombTimerTicks / 60;
+            uint32_t curSecond = curTimer / 60;
+            if (curSecond < prevSecond) {
+                playEventSound("assets/sound/weapon/bomb/bombtick1.wav", 0.8f);
+            }
+        }
+
+        // Inactive sound: play while inactive, stop when active
+        if (c.bombInactiveTicks() > 0) {
+            if (!mInactiveSoundPlaying) {
+                playEventSound("assets/sound/weapon/bomb/bombinactive1.wav", 0.6f);
+                mInactiveSoundPlaying = true;
+            }
+        } else {
+            mInactiveSoundPlaying = false;
+        }
+
+        mPrevBombTimerTicks = curTimer;
+        mPrevBombHolderId = curHolder;
     }
 }
 

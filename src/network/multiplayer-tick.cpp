@@ -1223,7 +1223,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 return;
             // All community match modes (FFA, TDM, Bomb Tag, and any future mode)
             // go to CommunityMatchClient. Only the original 1v1 duel goes to DuelQueue.
-            if (duel->matchMode[0] == 'd' && std::string(duel->matchMode) == "duel")
+            if (std::string(duel->matchMode) == "duel")
                 DuelQueue::instance().onDuelState(*duel);
             else
                 CommunityMatchClient::instance().onState(*duel);

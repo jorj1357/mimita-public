@@ -26,6 +26,7 @@
 #include "combat/death-system.h"
 #include "devtools/terminal.h"
 #include "network/multiplayer-context.h"
+#include "network/packets.h"
 
 extern MimitaNet::MultiplayerContext* gpMpContext;
 
@@ -378,6 +379,11 @@ static int applySpyKnifeRemoteHit(SpyKnifeState& state, const WeaponDefinition& 
     hitResult.isBackstab = isBackstab;
     hitResult.hitPosition = hitPoint;
     hitResult.victimPosition = target.pos;
+    hitResult.direction = bladeDir;
+    hitResult.contactTick = gpMpContext ? gpMpContext->tick : 0;
+    hitResult.contactId = (state.attackSequenceId << 16) |
+        static_cast<uint32_t>(state.pendingRemoteHits.size() & 0xffffu);
+    hitResult.targetIsNpc = true;
     state.pendingRemoteHits.push_back(hitResult);
 
     return roundedDamage;
@@ -385,47 +391,52 @@ static int applySpyKnifeRemoteHit(SpyKnifeState& state, const WeaponDefinition& 
 
 // ── Send hit claim packet to server ───────────────────────────
 
-static void sendSpyKnifeHitClaim(const Player& owner, uint32_t targetId,
-                                   bool isBackstab, float damage,
-                                   const glm::vec3& hitPos)
+static void flushSpyKnifeContactBatch(SpyKnifeState& state)
 {
     if (!gpMpContext || !gpMpContext->connected || !gpMpContext->localPlayerId)
         return;
 
-    MimitaNet::SpyKnifeHitClaimPacket claim{};
-    claim.header.type = MimitaNet::PACKET_SPYKNIFE_HIT_CLAIM;
-    claim.header.tick = gpMpContext->tick;
-    claim.header.playerId = gpMpContext->localPlayerId;
-    claim.attackerId = gpMpContext->localPlayerId;
-    claim.targetId = targetId;
-    claim.isBackstab = isBackstab ? 1 : 0;
-    claim.damage = damage;
-    claim.hitX = hitPos.x;
-    claim.hitY = hitPos.y;
-    claim.hitZ = hitPos.z;
-    claim.attackerX = owner.pos.x;
-    claim.attackerY = owner.pos.y;
-    claim.attackerZ = owner.pos.z;
-    claim.attackerYaw = 0.0f;
-    claim.victimX = hitPos.x;
-    claim.victimY = hitPos.y;
-    claim.victimZ = hitPos.z;
-    claim.attackSerial = (uint16_t)(0);
-
-    MimitaNet::mpSendPacket(*gpMpContext, &claim, sizeof(claim));
-    spyknifeLog("CLAIM_SENT targetId=%u backstab=%d damage=%.1f hit=(%.2f,%.2f,%.2f)",
-                targetId, (int)isBackstab, damage, hitPos.x, hitPos.y, hitPos.z);
+    while (!state.pendingRemoteHits.empty()) {
+        MimitaNet::SpyKnifeContactBatchPacket batch{};
+        batch.header.type = MimitaNet::PACKET_SPYKNIFE_HIT_CLAIM;
+        batch.header.tick = gpMpContext->tick;
+        batch.header.playerId = gpMpContext->localPlayerId;
+        batch.attackerId = gpMpContext->localPlayerId;
+        batch.attackerSpawnGeneration = gpMpContext->lastKnownSpawnGeneration;
+        const size_t count = std::min<size_t>(
+            MimitaNet::SPYKNIFE_CONTACT_BATCH_MAX, state.pendingRemoteHits.size());
+        batch.contactCount = static_cast<uint8_t>(count);
+        for (size_t i = 0; i < count; ++i) {
+            const SpyKnifeHitResult& hit = state.pendingRemoteHits[i];
+            auto& out = batch.contacts[i];
+            out.targetId = hit.targetId;
+            out.contactTick = hit.contactTick;
+            out.contactId = hit.contactId;
+            out.targetIsNpc = hit.targetIsNpc ? 1 : 0;
+            out.isBackstab = hit.isBackstab ? 1 : 0;
+            out.hitX = hit.hitPosition.x; out.hitY = hit.hitPosition.y; out.hitZ = hit.hitPosition.z;
+            out.dirX = hit.direction.x; out.dirY = hit.direction.y; out.dirZ = hit.direction.z;
+        }
+        MimitaNet::mpSendPacket(*gpMpContext, &batch, sizeof(batch));
+        spyknifeLog("CONTACT_BATCH_SENT attacker=%u count=%u tick=%u",
+                    batch.attackerId, batch.contactCount, batch.header.tick);
+        state.pendingRemoteHits.erase(state.pendingRemoteHits.begin(),
+                                      state.pendingRemoteHits.begin() + count);
+    }
 }
 
 // ── Per-tick update (60Hz) ────────────────────────────────────
 
 void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
                               WeaponRuntime& runtime, Player& owner,
+                              std::unordered_map<uint32_t, Player>* remotePlayers,
                               std::unordered_map<uint32_t, Player>* remoteNpcs,
                               const Camera& camera,
                               const World& world, float dt)
 {
     (void)world;
+    (void)remotePlayers;
+    state.networkBatchTimer += dt;
 
     dt = std::min(dt, 0.05f);
     const float tickDt = 1.0f / 60.0f;
@@ -475,9 +486,21 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
         }
     }
 
+    if (state.networkBatchTimer >= 0.1f && !state.pendingRemoteHits.empty()) {
+        state.networkBatchTimer = 0.0f;
+        flushSpyKnifeContactBatch(state);
+    }
+
     // ── Remote NPC status log ──
-    size_t remoteNpcCount = remoteNpcs ? remoteNpcs->size() : 0;
-    spyknifeLog("REMOTE_NPC_STATUS remoteNpcCount=%zu active=%d", remoteNpcCount, (int)state.active);
+    std::unordered_map<uint32_t, Player>* targetMap = remoteNpcs;
+    bool targetIsNpc = targetMap != nullptr;
+    if ((!targetMap || targetMap->empty()) && remotePlayers) {
+        targetMap = remotePlayers;
+        targetIsNpc = false;
+    }
+    const size_t remoteTargetCount = targetMap ? targetMap->size() : 0;
+    spyknifeLog("REMOTE_TARGET_STATUS count=%zu npc=%d active=%d",
+                remoteTargetCount, targetIsNpc ? 1 : 0, (int)state.active);
 
     // ── Swept OBB collision against remote NPCs ──
     {
@@ -486,7 +509,7 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
                     currBox.center.x, currBox.center.y, currBox.center.z,
                     prevBox.center.x, prevBox.center.y, prevBox.center.z, boxSpeed);
 
-        if (remoteNpcs) {
+        if (targetMap) {
             const float sweepThreshold = 20.0f;
             const int maxSubsteps = 8;
             float maxDim = std::max({currBox.halfExtents.x, currBox.halfExtents.y, currBox.halfExtents.z});
@@ -497,7 +520,7 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
                 ? std::clamp((int)std::ceil(moveDist / maxStepDist), 1, maxSubsteps)
                 : 1;
 
-            for (auto& entry : *remoteNpcs) {
+            for (auto& entry : *targetMap) {
                 uint32_t npcId = entry.first;
                 Player& remote = entry.second;
 
@@ -554,6 +577,8 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
 
                 int hitDamage = applySpyKnifeRemoteHit(state, def, owner, npcId, remote, isBs, hitPt);
                 (void)hitDamage;
+                if (!state.pendingRemoteHits.empty())
+                    state.pendingRemoteHits.back().targetIsNpc = targetIsNpc;
                 state.hitCooldowns[npcId] = 1.0f / 60.0f;
             }
         }
@@ -575,9 +600,9 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
     state.hasPreviousBladeCapsule = true;
 
     // ── Ready pose detection ──
-    if (!state.active && remoteNpcs) {
+    if (!state.active && targetMap) {
         bool foundReady = false;
-        for (auto& entry : *remoteNpcs) {
+        for (auto& entry : *targetMap) {
             if (entry.second.dead || entry.second.currentHp <= 0) continue;
             if (isBackstabGeometry(owner, entry.second, def)) {
                 foundReady = true;
@@ -643,8 +668,8 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
         if (summaryTimer >= 1.0f) {
             summaryTimer = 0.0f;
             float closestDist = 999.0f;
-            if (remoteNpcs) {
-                for (auto& entry : *remoteNpcs) {
+            if (targetMap) {
+                for (auto& entry : *targetMap) {
                     if (entry.second.dead || entry.second.currentHp <= 0) continue;
                     float d = glm::length(entry.second.pos - currBox.center);
                     if (d < closestDist) closestDist = d;
@@ -654,7 +679,7 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
             auto spIt = runtime.customFloats.find("swordPoseState");
             if (spIt != runtime.customFloats.end()) swordPose = spIt->second;
             spyknifeLog("SUMMARY active=%d swingTick=%u animState=%d remoteNpcCount=%zu",
-                        (int)state.active, state.swingTick, (int)state.animState, remoteNpcCount);
+                        (int)state.active, state.swingTick, (int)state.animState, remoteTargetCount);
             spyknifeLog("  center=(%.2f,%.2f,%.2f) half=(%.2f,%.2f,%.2f)",
                         currBox.center.x, currBox.center.y, currBox.center.z,
                         currBox.halfExtents.x, currBox.halfExtents.y, currBox.halfExtents.z);

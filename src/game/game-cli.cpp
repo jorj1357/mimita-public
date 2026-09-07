@@ -691,6 +691,7 @@ bool handleGameCLI(int argc, char** argv)
                 rocketEvent.eventId = 9001;
                 rocketEvent.type = "projectile_spawn";
                 rocketEvent.assetId = "rocket_launcher";
+                rocketEvent.sourceActorId = "player";
                 rocketEvent.spawnTick = 2;
                 rocketEvent.position = {1.0f, 2.0f, 3.0f};
                 rocketEvent.velocity = {45.0f, 0.0f, 0.0f};
@@ -751,6 +752,10 @@ bool handleGameCLI(int argc, char** argv)
         for (const ReplayEffectEvent& event : clip.sceneFrames[2].effects)
             foundRocketEvent |= event.eventId == 9001 && event.assetId == "rocket_launcher";
         check(foundRocketEvent, "rocket event keeps stable event ID and weapon identity");
+        bool foundRocketOwner = false;
+        for (const ReplayEffectEvent& event : clip.sceneFrames[2].effects)
+            foundRocketOwner |= event.eventId == 9001 && event.sourceActorId == "player";
+        check(foundRocketOwner, "rocket event keeps source actor identity");
 
         // 3. Verify the player-default Windows encoder without launching the game.
 #ifdef _WIN32

@@ -160,7 +160,7 @@ bool serverCommunityWeaponAllowed(const std::string& weaponId)
     const bool communityMode = state.communityMode == "sandbox"
         || state.communityMode == "free_for_all"
         || state.communityMode == "team_deathmatch"
-        || state.communityMode == "bomb_tag";
+        || state.hasBombFeature;
     if (!communityMode) return true;
     CommunityServerConfig& config = CommunityServerConfig::instance();
     if (config.weaponSets().empty()) config.load();
@@ -229,6 +229,7 @@ void serverCommunityStartMatch(bool skipIntermission)
     d.countdownSeconds = gm.countdownSeconds;
     d.goSeconds = gm.goSeconds;
     d.spawnOffsetRadius = gm.spawnOffsetRadius;
+    d.hasBombFeature = gm.features.bombHolderText;
 
     // modestart enters the configured intermission. modestartnow enters the
     // existing pre-match handoff with a zero timer; serverDuelTick owns the
@@ -256,7 +257,7 @@ void serverCommunityStartMatch(bool skipIntermission)
     // ── Mode-specific activation ─────────────────────────────────────
     // Each mode that needs extra initialization gets its entry point called here.
     // This replaces the old hardcoded if/else if chain.
-    if (d.matchMode == "bomb_tag") {
+    if (d.hasBombFeature) {
         serverBombTagStartMatch(skipIntermission);
     }
 
@@ -1270,7 +1271,7 @@ void serverDuelTick(SOCKET sock,
     }
 
     // ── Bomb Tag match mode state machine ──────────────────────────
-    if (d.matchMode == "bomb_tag")
+    if (d.hasBombFeature)
     {
         if (d.stateBroadcastPending)
         {
@@ -1745,6 +1746,23 @@ void serverBombTagTick(SOCKET sock,
 
     case DUEL_PHASE_ACTIVE:
     {
+        // ── Bomb holder disconnected or died? Transfer immediately ───
+        if (d.bombOwnerType == 1 && d.bombOwnerPlayerId != 0) {
+            auto holderIt = players.find(d.bombOwnerPlayerId);
+            if (holderIt == players.end() || holderIt->second.spawnState != ServerPlayer::Active
+                || holderIt->second.dead) {
+                Debug::warn(Debug::Category::Duel,
+                    "[BOMB TAG] holder lost id=%u — transferring\n",
+                    d.bombOwnerPlayerId);
+                d.bombOwnerType = 0;
+                d.bombOwnerPlayerId = 0;
+                d.bombInactiveTicks = 0;
+                selectNewBombHolder(d, players);
+                ++d.stateVersion;
+                broadcastBombTagState(sock, d, players, totalPacketsOut);
+            }
+        }
+
         // ── Bomb timer countdown ──────────────────────────────────
         if (d.bombTimerTicks > 0)
             --d.bombTimerTicks;

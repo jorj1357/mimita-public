@@ -102,6 +102,7 @@ void engineTickCombat(Engine& engine, float dt)
     { MIMITA_PERF_SCOPE("Combat::HitResolve");
     if (!replayPlaybackActive)
         weapons.update(camera, player, npcSystem, world,
+                       &mpContext.remotePlayers,
                        &mpContext.remoteNpcs, dt);
     }
     if (!replayPlaybackActive) {

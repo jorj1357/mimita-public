@@ -2,9 +2,8 @@
 /* purpose
 * Generic gamemode manager that renders HUD, world elements, and mode-specific
 * visuals based on feature declarations in the active gamemode's JSON config.
-* Replaces the hardcoded BombTagManager with a data-driven approach.
-* Any new gamemode that declares features in its JSON will automatically get
-* the correct rendering without C++ code changes.
+* Data-driven: any new gamemode that declares features in its JSON will
+* automatically get the correct rendering without C++ code changes.
 * Does NOT run gameplay simulation — the server owns all gameplay decisions.
 * Does NOT produce per-frame log spam — uses throttled debug logging.
 */
@@ -64,6 +63,11 @@ private:
 
     // Bomb blink state (client-side tick counting for visual only)
     uint32_t mClientBombTick = 0;
+
+    // Sound state tracking (detect changes from server replication)
+    uint32_t mPrevBombTimerTicks = 0;
+    uint32_t mPrevBombHolderId = 0;
+    bool mInactiveSoundPlaying = false;
 
     // ── Feature-based renderers ──────────────────────────────────────
     // Each renders only when its feature flag is true in the gamemode JSON.

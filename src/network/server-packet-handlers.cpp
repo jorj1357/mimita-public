@@ -977,15 +977,16 @@ void handleSpyKnifeHitClaim(SOCKET sock,
                             uint32_t tick, uint64_t& totalPacketsOut)
 {
     (void)world;
-    if (bytes < (int)sizeof(SpyKnifeHitClaimPacket)) return;
-    SpyKnifeHitClaimPacket* pkt = reinterpret_cast<SpyKnifeHitClaimPacket*>(buffer);
+    if (bytes < (int)sizeof(SpyKnifeContactBatchPacket)) return;
+    SpyKnifeContactBatchPacket* batch = reinterpret_cast<SpyKnifeContactBatchPacket*>(buffer);
 
-    auto attackerIt = players.find(pkt->attackerId);
+    auto attackerIt = players.find(batch->attackerId);
     if (attackerIt == players.end()) return;
     ServerPlayer& attacker = attackerIt->second;
 
     if (attacker.dead || attacker.spawnState != ServerPlayer::Active) return;
 
+    if (batch->attackerSpawnGeneration != attacker.spawnGeneration) return;
     bool hasSpyKnife = false;
     for (const std::string& id : attacker.ownedWeaponIds) {
         const WeaponDefinition* d = WeaponRegistry::instance().get(id);
@@ -1006,31 +1007,35 @@ void handleSpyKnifeHitClaim(SOCKET sock,
     }
     if (!def) return;
 
-    int damage;
-    float kbStrength;
-    if (pkt->isBackstab) {
-        damage = (int)WeaponExecution::paramOr(*def, "backstabDamagePerTick", 999.0f);
-        kbStrength = WeaponExecution::paramOr(*def, "backstabKnockback", 20.0f);
-    } else {
-        damage = std::clamp((int)std::round(pkt->damage), 1, 500);
-        kbStrength = WeaponExecution::paramOr(*def, "frontstabKnockback", 100.0f);
-    }
+    const uint8_t count = std::min<uint8_t>(batch->contactCount, SPYKNIFE_CONTACT_BATCH_MAX);
+    for (uint8_t i = 0; i < count; ++i) {
+        const SpyKnifeContact& pkt = batch->contacts[i];
+        if (pkt.targetId == 0 || pkt.contactId == 0 || pkt.contactTick > tick ||
+            tick - pkt.contactTick > 600 || !std::isfinite(pkt.hitX) ||
+            !std::isfinite(pkt.hitY) || !std::isfinite(pkt.hitZ)) continue;
+        const int damage = pkt.isBackstab
+            ? (int)WeaponExecution::paramOr(*def, "backstabDamagePerTick", 999.0f)
+            : (int)WeaponExecution::paramOr(*def, "baseDamage", 15.0f);
+        const float kbStrength = pkt.isBackstab
+            ? WeaponExecution::paramOr(*def, "backstabKnockback", 20.0f)
+            : WeaponExecution::paramOr(*def, "baseKnockback", 30.0f);
+        glm::vec3 hitPos(pkt.hitX, pkt.hitY, pkt.hitZ);
 
-    glm::vec3 hitPos(pkt->hitX, pkt->hitY, pkt->hitZ);
-
-    // NPC entity IDs are authoritative. Resolve NPCs before players.
-    auto npcIt = npcs.find(pkt->targetId);
+        // NPC entity IDs are authoritative. Resolve NPCs before players.
+        auto npcIt = npcs.find(pkt.targetId);
     if (npcIt != npcs.end()) {
         ServerNpc& npc = npcIt->second;
         if (npc.health <= 0) {
-            printf("[SPY KNIFE] REJECTED hit claim: npc already dead target=%u\n", pkt->targetId);
+            printf("[SPY KNIFE] REJECTED hit claim: npc already dead target=%u\n", pkt.targetId);
             return;
         }
 
-        float dist = glm::length(attacker.pos - glm::vec3(npc.pos.x, npc.pos.y, npc.pos.z));
+        glm::vec3 historicalNpcPos;
+        if (!getNpcPositionAtTick(npc, pkt.contactTick, historicalNpcPos)) continue;
+        float dist = glm::length(attacker.pos - historicalNpcPos);
         if (dist > 3.0f) {
             printf("[SPY KNIFE] REJECTED NPC hit claim: too far attacker=%u target=%u dist=%.1f\n",
-                   pkt->attackerId, pkt->targetId, dist);
+                   batch->attackerId, pkt.targetId, dist);
             return;
         }
 
@@ -1038,10 +1043,10 @@ void handleSpyKnifeHitClaim(SOCKET sock,
         const int intDamage = std::max(1, damage);
         npc.health = std::max(0, npc.health - intDamage);
 
-        glm::vec3 kbDir = glm::length(glm::vec3(npc.pos.x, npc.pos.y, npc.pos.z) - attacker.pos) > 0.001f
-            ? glm::normalize(glm::vec3(npc.pos.x, npc.pos.y, npc.pos.z) - attacker.pos)
+        glm::vec3 kbDir = glm::length(historicalNpcPos - attacker.pos) > 0.001f
+            ? glm::normalize(historicalNpcPos - attacker.pos)
             : glm::vec3(0.0f, 0.0f, 1.0f);
-        kbDir.z = std::max(kbDir.z, pkt->isBackstab ? 0.15f : 0.3f);
+            kbDir.z = std::max(kbDir.z, pkt.isBackstab ? 0.15f : 0.3f);
         kbDir = glm::normalize(kbDir);
         npc.knockbackImpulse += kbDir * kbStrength;
 
@@ -1049,68 +1054,72 @@ void handleSpyKnifeHitClaim(SOCKET sock,
 
         printf("[SPY KNIFE] server NPC applied: attacker=%u targetNpc=%u damage=%d backstab=%d "
                "healthBefore=%d healthAfter=%d killed=%d dist=%.1f\n",
-               pkt->attackerId, pkt->targetId, intDamage, (int)pkt->isBackstab,
+               batch->attackerId, pkt.targetId, intDamage, (int)pkt.isBackstab,
                healthBefore, npc.health, (int)killed, dist);
 
         const glm::vec3 origin = attacker.pos;
-        const glm::vec3 dir = glm::length(hitPos - origin) > 0.001f
-            ? glm::normalize(hitPos - origin) : kbDir;
+        const glm::vec3 dir = glm::length(glm::vec3(pkt.dirX, pkt.dirY, pkt.dirZ)) > 0.001f
+            ? glm::normalize(glm::vec3(pkt.dirX, pkt.dirY, pkt.dirZ)) : kbDir;
 
         broadcastNpcDamageEvent(
             sock, players, tick, totalPacketsOut,
-            pkt->attackerId, npc, intDamage, killed,
+            batch->attackerId, npc, intDamage, killed,
             origin, hitPos, dir, kbDir, NETWORK_WEAPON_SPYKNIFE);
 
         if (killed) {
-            auto attacker2 = players.find(pkt->attackerId);
+            auto attacker2 = players.find(batch->attackerId);
             if (attacker2 != players.end()) {
                 attacker2->second.kills += 1;
                 attacker2->second.health = serverMaxHp();
             }
-            emitNpcKillPersistenceEvent(players, pkt->attackerId,
+            emitNpcKillPersistenceEvent(players, batch->attackerId,
                 npc.entityId, NETWORK_WEAPON_SPYKNIFE, tick,
                 attacker.pos, npc.pos);
         }
-        return;
+        continue;
     }
 
     // No NPC matched, try player target.
-    auto targetIt = players.find(pkt->targetId);
+    auto targetIt = players.find(pkt.targetId);
     if (targetIt == players.end()) return;
     ServerPlayer& target = targetIt->second;
     if (target.dead || target.spawnState != ServerPlayer::Active) return;
 
-    float dist = glm::length(attacker.pos - target.pos);
+    glm::vec3 historicalTargetPos;
+    float historicalTargetYaw = 0.0f;
+    if (!getPlayerPoseAtTick(target, pkt.contactTick, historicalTargetPos, historicalTargetYaw)) continue;
+    float dist = glm::length(attacker.pos - historicalTargetPos);
     if (dist > 3.0f) {
         printf("[SPY KNIFE] REJECTED hit claim: too far attacker=%u target=%u dist=%.1f\n",
-               pkt->attackerId, pkt->targetId, dist);
+               batch->attackerId, pkt.targetId, dist);
         return;
     }
 
-    glm::vec3 kbDir = glm::length(target.pos - attacker.pos) > 0.001f
-        ? glm::normalize(target.pos - attacker.pos)
+    glm::vec3 kbDir = glm::length(historicalTargetPos - attacker.pos) > 0.001f
+        ? glm::normalize(historicalTargetPos - attacker.pos)
         : glm::vec3(0.0f, 0.0f, 1.0f);
-    float vertFrac = pkt->isBackstab ? 0.15f
+    float vertFrac = pkt.isBackstab ? 0.15f
         : WeaponExecution::paramOr(*def, "frontstabVerticalKnockback", 0.3f);
     kbDir.z = std::max(kbDir.z, vertFrac);
     kbDir = glm::normalize(kbDir);
     glm::vec3 knockback = kbDir * kbStrength;
 
     ServerDamageResult result = applyServerDamage(
-        players, target, pkt->attackerId, damage, knockback,
+        players, target, batch->attackerId, damage, knockback,
         ServerDamageSource::PhysicalContact);
 
 
     if (result.applied) {
         queueServerDamageConfirmedEvent(
             sock, players, tick, totalPacketsOut,
-            pkt->attackerId, target, damage, result,
+            batch->attackerId, target, damage, result,
             hitPos, kbDir, knockback, ServerDamageSource::PhysicalContact,
-            NETWORK_WEAPON_SPYKNIFE, pkt->attackSerial);
+            NETWORK_WEAPON_SPYKNIFE, pkt.contactId);
     }
 
     printf("[SPY KNIFE] server applied: attacker=%u target=%u damage=%d backstab=%d dist=%.1f killed=%d\n",
-           pkt->attackerId, pkt->targetId, damage, (int)pkt->isBackstab, dist, (int)result.killed);
+           batch->attackerId, pkt.targetId, damage, (int)pkt.isBackstab, dist, (int)result.killed);
+    }
 }
 
 } // namespace MimitaNet

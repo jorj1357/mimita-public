@@ -1253,6 +1253,9 @@ void applySourceAir(MovementState& state,
     state.airDebug = MovementAirDebug{};
     state.airDebug.hasInput = hasInput;
     state.airDebug.grounded = state.ground.onGround;
+    state.airDebug.branch = MovementAirDebug::Branch::Air;
+    if (state.ground.onGround)
+        return;
     state.airDebug.sourceBugCompatible =
         config.sourceAirAccelerateBugCompatible;
     glm::vec2 cameraForward = movementNormalizeDirectionOrZero(
@@ -1361,6 +1364,7 @@ void applySourceMovement(MovementState& state,
     const bool jumpingNow = state.ground.onGround &&
         (command.jumpPressed || (config.autoBhopEnabled && command.jumpHeld));
     if (state.ground.onGround && !jumpingNow) {
+        state.airDebug.branch = MovementAirDebug::Branch::Ground;
         state.airDebug.hasInput = movementHasMoveInput(command.moveAxes);
         state.airDebug.horizontalVelocity =
             glm::vec2(state.baseVelocity.x, state.baseVelocity.y);
@@ -1369,6 +1373,7 @@ void applySourceMovement(MovementState& state,
         state.airDebug.finalHorizontalSpeed = state.airDebug.horizontalSpeed;
         applySourceGround(state, command, config, dt);
     } else if (config.airControlEnabled) {
+        state.airDebug.branch = MovementAirDebug::Branch::Air;
         applySourceAir(state, command, config, dt);
     }
 

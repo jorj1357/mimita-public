@@ -106,7 +106,8 @@ WeaponRuntime* WeaponSystem::getCurrentRuntime(Player& player) {
 }
 
 void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const World& world,
-                          std::unordered_map<uint32_t, Player>* remoteNpcs, float dt) {
+                           std::unordered_map<uint32_t, Player>* remotePlayers,
+                           std::unordered_map<uint32_t, Player>* remoteNpcs, float dt) {
     // Upload any finished background weapon model parses (must run on the main
     // thread) before viewmodels try to adopt them this frame.
     WeaponModelCache::instance().finalizeWeaponModelsIfReady();
@@ -181,7 +182,7 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
         } else if (def->behaviorType == WeaponBehaviorType::QuickHit) {
             WeaponQuickHit::update(mQuickHitState, *def, *rt, player, npcs, camera, world, dt);
         } else if (def->behaviorType == WeaponBehaviorType::SpyKnife) {
-            WeaponSpyKnife::update(mSpyKnifeState, *def, *rt, player, remoteNpcs, camera, world, dt);
+            WeaponSpyKnife::update(mSpyKnifeState, *def, *rt, player, remotePlayers, remoteNpcs, camera, world, dt);
         } else if (def->behaviorType == WeaponBehaviorType::RocketLauncher) {
             WeaponRocketLauncher::update(mRocketState, *def, *rt, player, npcs, world, camera, dt);
         } else if (def->behaviorType == WeaponBehaviorType::GrenadeLauncher) {

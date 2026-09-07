@@ -5,6 +5,12 @@ Scope: Player-controlled movement, collision, touch resets, knockback interactio
 ________________
 
 
+<!-- 2026-09-07T00:00:00Z
+Source mode is the fundamental movement model. It should stay as close as
+practical to TF2/Source movement: grounded movement uses ground friction and
+acceleration, while air strafing is an airborne-only mechanic layered on top.
+-->
+
 1. End goal
 MiMITA movement MUST!!!!!!!!!!!!!!!! feel immediate, controllable, chainable, and intentionally arcade-like. Make it weird and jank. Exploitable. No hitstun no animation locks no nothing that stops u from  doing a new valid input every frame at 999fps 
 The default movement style is based on direct player control rather than realistic inertia:
@@ -368,7 +374,9 @@ airMoveSpeed = 20.0f;
 2. WASD does not overwrite Z.
    1. Z is like carried over from all the other sources of velocity changing things 
 3. Diagonal movement is normalized.
-4. Ground and air use the same instant-control behavior.!!!!!!!!!!!
+4. In the default instant-control mode, grounded and airborne movement both
+   accept horizontal input, but Source mode uses separate ground and air
+   movement rules: air-strafe logic is airborne-only.
 5. Pressing or intentionally changing movement direction cancels horizontal knockback momentum.
 6. No movement input allows existing velocity and external impulse to continue.
 7. Jump does not cancel knockback.
@@ -400,6 +408,37 @@ Vertical movement remains unchanged.
 Future movement modes may support acceleration or preserved air momentum.
 They must not silently replace the default instant movement style.
 ________________
+
+### Source mode baseline
+
+Source mode is the fundamental movement model for the TF2/Source-like preset.
+Its baseline behavior is:
+
+* Grounded movement uses Source-style ground friction and acceleration.
+* Grounded WASD may provide ordinary horizontal movement, including lateral A/D movement.
+* Grounded movement does not run `PM_AirAccelerate`, air-strafe steering, or air-strafe speed gain.
+* Airborne movement uses Source-style air acceleration and may use air strafing when air control is enabled.
+* Air strafing must never be applied while `grounded == true`.
+
+Optional mechanics such as bhopping, air-speed gain, dash momentum, knockback
+carry, and speed caps are layered on top of this baseline and must not change
+which branch owns grounded versus airborne movement.
+
+The shared Source movement dispatcher must classify each simulation step as
+grounded or airborne before applying movement:
+
+```cpp
+if (state.ground.onGround && !jumpingNow) {
+    applySourceGround(state, command, config, dt);
+} else if (config.airControlEnabled) {
+    applySourceAir(state, command, config, dt);
+}
+```
+
+The grounded branch owns only ground friction and ground acceleration. The
+airborne branch owns air acceleration and air-strafe speed gain. A jump or
+autobhop transition must be treated as airborne after the jump state changes,
+so the jump tick cannot accidentally apply grounded air-strafe behavior.
 
 
 8. Dash and dash-momentum protection

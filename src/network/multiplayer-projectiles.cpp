@@ -40,6 +40,7 @@
 #include "combat/weapon-types.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "replay/replay.h"
 #include "terminal/terminal-state.h"
 #include "world/world.h"
 #include "physics/movement/physics-collision.h"
@@ -503,6 +504,30 @@ uint32_t mpPredictProjectileAttack(
     ctx.networkProjectiles[provisionalId] = projectile;
     ctx.predictedProjectileIds.insert(provisionalId);
 
+    // The local multiplayer fire path is predicted here instead of entering
+    // WeaponRocketLauncher::fire().  Record the same one-shot replay event at
+    // this boundary so export has a projectile to simulate and render.  The
+    // authoritative spawn is correlated by requestId and must not record a
+    // second event when this prediction exists.
+    if (networkWeapon == NETWORK_WEAPON_ROCKET_LAUNCHER)
+    {
+        ReplayEffectEvent replayProjectile;
+        replayProjectile.type = "projectile_spawn";
+        replayProjectile.position = projectile.position;
+        replayProjectile.velocity = projectile.velocity;
+        replayProjectile.lifetime = projectile.lifetime;
+        replayProjectile.assetId = weaponIdForDefNetworkId(weaponDefNetworkId)
+            ? *weaponIdForDefNetworkId(weaponDefNetworkId) : "rocket_launcher";
+        replayProjectile.sourceActorId = std::to_string(ctx.localPlayerId);
+        captureReplayEffect(replayProjectile);
+        Debug::log(Debug::Category::Replay,
+            "[REPLAY ROCKET RECORD] source=local-prediction fireSerial=%u "
+            "ownerId=%u spawn=(%.2f %.2f %.2f) velocity=(%.2f %.2f %.2f)\n",
+            requestId, ctx.localPlayerId,
+            projectile.position.x, projectile.position.y, projectile.position.z,
+            projectile.velocity.x, projectile.velocity.y, projectile.velocity.z);
+    }
+
     printf("[PROJECTILE CLIENT PREDICT] requestId=%u provisionalId=%u weapon=%s "
            "pos=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f)\n",
            requestId, provisionalId, networkWeaponTypeName(networkWeapon),
@@ -664,7 +689,8 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
 
     // Muzzle flash on fire for remote shooters (owner already has the
     // instant client-side muzzle flash from local prediction).
-    if (!localOwner) {
+    const bool recordLocalFallback = localOwner && !adoptedPrediction && !ownAlreadyExists;
+    if (!localOwner || recordLocalFallback) {
         EffectPartSystem::instance().spawnMuzzleFlash(serverPosition, "", 1.0f, networkWeaponTypeName(event->weapon));
 
         ReplayEffectEvent replayProjectile;
@@ -675,6 +701,12 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
         replayProjectile.assetId = networkWeaponTypeName(event->weapon);
         replayProjectile.sourceActorId = std::to_string(event->ownerPlayerId);
         captureReplayEffect(replayProjectile);
+        Debug::log(Debug::Category::Replay,
+            "[REPLAY ROCKET RECORD] source=%s fireSerial=%u ownerId=%u "
+            "spawn=(%.2f %.2f %.2f)\n",
+            localOwner ? "authoritative-fallback" : "remote-authority",
+            event->fireSerial, event->ownerPlayerId,
+            serverPosition.x, serverPosition.y, serverPosition.z);
     }
 
     // ── Correlation promotion: provisional fireSerial now has authoritative projectileId ──

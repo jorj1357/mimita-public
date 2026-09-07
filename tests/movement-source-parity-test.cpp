@@ -192,6 +192,20 @@ int main()
               "ground W keeps lateral velocity ~0");
     }
 
+    // ── 1b. Ground uses normal lateral walking, never air-strafe gain ────
+    {
+        MovementState s = freshState(glm::vec2(0.0f, 20.0f));
+        s.ground.onGround = true;
+        const MovementState end =
+            runTicks(s, cmdFor(glm::vec2(-1.0f, 0.0f)), cfg, groundCollision(), 60);
+        check(end.airDebug.branch == MovementAirDebug::Branch::Ground,
+              "ground A selects the ground movement branch");
+        check(end.baseVelocity.x < -1.0f,
+              "ground A provides ordinary lateral ground movement");
+        check(!end.airDebug.applied,
+              "ground A never reports air-strafe acceleration");
+    }
+
     // ── 2. Ground: release keys -> stopspeed friction brings you to rest ──
     {
         MovementState s = freshState(glm::vec2(0.0f, 20.0f));

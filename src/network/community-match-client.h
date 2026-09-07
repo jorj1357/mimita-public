@@ -39,6 +39,7 @@ public:
     // ── Bomb Tag state (replicated from server) ──────────────────────
     uint8_t bombOwnerType() const { return mBombOwnerType; }
     uint32_t bombOwnerPlayerId() const { return mBombOwnerPlayerId; }
+    uint32_t bombOwnerNpcIndex() const { return mBombOwnerNpcIndex; }
     uint32_t bombTimerTicks() const { return mBombTimerTicks; }
     uint32_t bombInactiveTicks() const { return mBombInactiveTicks; }
     float bombSecondsRemaining() const { return (float)mBombTimerTicks / 60.0f; }
@@ -62,6 +63,7 @@ private:
     // ── Bomb Tag replicated state ────────────────────────────────────
     uint8_t mBombOwnerType = 0;        // 0=none, 1=player, 2=npc
     uint32_t mBombOwnerPlayerId = 0;
+    uint32_t mBombOwnerNpcIndex = 0;
     uint32_t mBombTimerTicks = 0;
     uint32_t mBombInactiveTicks = 0;
     glm::vec3 mBombPos{0.0f};
