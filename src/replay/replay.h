@@ -115,6 +115,17 @@ public:
         return mSceneFrames[mSceneFrameWriteIndex];
     }
     void commitFrame() {
+        // Merge captured effects into the scene frame before advancing.
+        // Effects accumulate in mPendingEffects during simulateTick() and
+        // must be flushed into the frame's effects vector here — the old
+        // recordSceneFrame() path that did this merge was replaced by the
+        // getWritableFrame()/commitFrame() fast path but the merge was lost.
+        ReplaySceneFrame& frame = mSceneFrames[mSceneFrameWriteIndex];
+        if (!mPendingEffects.empty()) {
+            frame.effects.insert(frame.effects.end(),
+                mPendingEffects.begin(), mPendingEffects.end());
+            mPendingEffects.clear();
+        }
         mSceneFrameWriteIndex = (mSceneFrameWriteIndex + 1) % REPLAY_RING_CAPACITY;
         if (mSceneFrameCount < REPLAY_RING_CAPACITY)
             mSceneFrameCount++;

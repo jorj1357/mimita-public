@@ -18,6 +18,9 @@ Required server environment variables for checkout:
 - `MIMITA_STRIPE_PRICE_ULTRA_VIP_ONE_MONTH`
 - `MIMITA_STRIPE_PRICE_ULTRA_VIP_MONTHLY`
 - `MIMITA_STRIPE_PRICE_ULTRA_VIP_TWELVE_MONTH`
+- `MIMITA_STRIPE_PRICE_VIP_LIFETIME`
+- `MIMITA_STRIPE_PRICE_SUPER_VIP_LIFETIME`
+- `MIMITA_STRIPE_PRICE_ULTRA_VIP_LIFETIME`
 
 Webhook events handled by `/api/vip/payment/webhook`:
 
@@ -62,6 +65,17 @@ paid one-time purchase appear even if Stripe webhooks are not configured.
 
 If you do not run `stripe listen`, the paid-checkout recovery above still grants
 one-time purchases once the session is older than 60 seconds.
+
+## Prepaid duration slider and lifetime
+
+The prepaid checkout accepts a server-validated `months` value from 1 through
+12. The browser does not choose the final amount. The API calculates the
+integer-cent amount using the monthly tier price and a linear discount that
+reaches 50% at 12 months, then verifies the same amount in the Stripe webhook.
+
+Lifetime is a separate one-time purchase for each tier. Lifetime entitlements
+use `is_lifetime = true` and no expiration timestamp; they do not use a far-
+future fake expiration date.
 
 ## Refunds
 

@@ -45,7 +45,7 @@ export default function Vip() {
     const [vip, setVip] = useState(null)
     const [message, setMessage] = useState("loading VIP...")
     const [busy, setBusy] = useState("")
-    const [months, setMonths] = useState(1)
+    const [monthsByTier, setMonthsByTier] = useState({ vip: 1, super_vip: 1, ultra_vip: 1 })
 
     useEffect(() => {
         let alive = true
@@ -70,7 +70,7 @@ export default function Vip() {
         return () => { alive = false }
     }, [navigate, location.pathname])
 
-    async function checkout(tier, purchaseType, selectedMonths = months) {
+    async function checkout(tier, purchaseType, selectedMonths = monthsByTier[tier] || 1) {
         if (!user) {
             navigate(buildSigninPath(location.pathname))
             return
@@ -149,6 +149,25 @@ export default function Vip() {
                         const rank = TIER_RANK[tier.tier] || 0
                         const isLower = vipState.active_tier !== "free" && rank < currentRank
                         const isUpgrade = vipState.active_tier !== "free" && rank > currentRank
+                        const selectedMonths = monthsByTier[tier.tier] || 1
+                        const prepaid = tier.purchases.find(option => option.type === "prepaid")
+                        const monthly = tier.purchases.find(option => option.type === "monthly_subscription")
+                        const lifetime = tier.purchases.find(option => option.type === "lifetime")
+                        const prepaidCents = prepaid
+                            ? Math.floor(prepaid.amount_cents * selectedMonths - prepaid.amount_cents * 0.5 * (selectedMonths - 1) / 11)
+                            : 0
+                        const savingsCents = prepaid ? Math.max(0, prepaid.amount_cents * selectedMonths - prepaidCents) : 0
+                        const discountPercent = prepaid
+                            ? (50 * (selectedMonths - 1) / 11).toFixed(1).replace(/\.0$/, "")
+                            : "0"
+                        const setMonths = value => {
+                            const parsed = Number(value)
+                            if (!Number.isInteger(parsed)) return
+                            setMonthsByTier(current => ({
+                                ...current,
+                                [tier.tier]: Math.min(12, Math.max(1, parsed))
+                            }))
+                        }
                         return (
                             <article key={tier.tier} className="vipTierBox">
                                 <div className="vipTierIcon">
@@ -169,34 +188,27 @@ export default function Vip() {
                                 {isUpgrade && (
                                     <p className="vipNotice">Upgrade - a rollover discount applies from your current {TIER_LABELS[vipState.active_tier]} time.</p>
                                 )}
-                                <div className="vipCheckoutBtns">
-                                    {tier.purchases.map(option => (
-                                        <button
-                                            key={option.type}
-                                            type="button"
-                                            disabled={isLower || !option.configured || busy === `${tier.tier}:${option.type}`}
-                                            onClick={() => checkout(tier.tier, option.type)}
-                                            title={option.configured ? "" : "Stripe is not configured"}
-                                        >
-                                            {option.type === "prepaid" && `buy ${months} month${months === 1 ? "" : "s"} ${dollars(Math.floor(option.amount_cents * months - option.amount_cents * 0.5 * (months - 1) / 11))}`}
-                                            {option.type === "monthly_subscription" && `subscribe monthly ${dollars(option.amount_cents)}`}
-                                            {option.type === "lifetime" && `lifetime ∞ ${dollars(option.amount_cents)}`}
+                                <div className="vipPurchaseModes">
+                                    {prepaid && <div className="vipPrepaidBox">
+                                        <div className="vipModeHeading">PREPAID</div>
+                                        <div className="vipMonthSummary">
+                                            <strong>{selectedMonths} month{selectedMonths === 1 ? "" : "s"} for {dollars(prepaidCents)}</strong>
+                                            {discountPercent !== "0" && <span>{discountPercent}% off</span>}
+                                        </div>
+                                        <input id={`${tier.tier}-months`} className="vipMonthRange" type="range" min="1" max="12" step="1" value={selectedMonths} onChange={event => setMonths(event.target.value)} aria-label={`${tier.tier} prepaid months`} />
+                                        <div className="vipMonthEnds"><span>1 month</span><span>12 months</span></div>
+                                        {savingsCents > 0 && <div className="vipSavings">Save {dollars(savingsCents)} · buy 12 months for the price of 6</div>}
+                                        <button type="button" className="vipModeButton" disabled={isLower || !prepaid.configured || busy === `${tier.tier}:prepaid`} onClick={() => checkout(tier.tier, "prepaid", selectedMonths)} title={prepaid.configured ? "" : "Stripe is not configured"}>
+                                            {busy === `${tier.tier}:prepaid` ? "Opening checkout…" : `buy ${selectedMonths} month${selectedMonths === 1 ? "" : "s"}`}
                                         </button>
-                                    ))}
+                                    </div>}
+                                    {monthly && <button type="button" className="vipModeButton" disabled={isLower || !monthly.configured || busy === `${tier.tier}:monthly_subscription`} onClick={() => checkout(tier.tier, "monthly_subscription")} title={monthly.configured ? "" : "Stripe is not configured"}>
+                                        {busy === `${tier.tier}:monthly_subscription` ? "Opening checkout…" : `subscribe monthly ${dollars(monthly.amount_cents)}`}
+                                    </button>}
+                                    {lifetime && <button type="button" className="vipModeButton vipLifetimeButton" disabled={isLower || !lifetime.configured || busy === `${tier.tier}:lifetime`} onClick={() => checkout(tier.tier, "lifetime")} title={lifetime.configured ? "" : "Stripe is not configured"}>
+                                        {busy === `${tier.tier}:lifetime` ? "Opening checkout…" : `get permanently ∞ ${dollars(lifetime.amount_cents)}`}
+                                    </button>}
                                 </div>
-                                {tier.purchases.some(option => option.type === "prepaid") && (
-                                    <label className="vipSliderLabel">
-                                        Prepaid months: {months}
-                                        <input
-                                            type="range"
-                                            min="1"
-                                            max="12"
-                                            step="1"
-                                            value={months}
-                                            onChange={event => setMonths(Number(event.target.value))}
-                                        />
-                                    </label>
-                                )}
                             </article>
                         )
                     })}

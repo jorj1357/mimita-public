@@ -309,8 +309,16 @@ std::string generateExportOutputPath()
 bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderHeight,
                        bool restoreLiveOnFinish)
 {
+    // Always open the debug log file at the start of every export attempt
+    replayExportDebugOpen();
+    RPLXDEBUG("[EXPORT-START] startReplayExport called: jsonPath='%s' requested=%dx%d restore=%d\n",
+        jsonPath.c_str(), renderWidth, renderHeight, (int)restoreLiveOnFinish);
+
     if (gJob.state == ReplayExportJob::Capturing || gJob.state == ReplayExportJob::Encoding)
     {
+        Debug::warn(Debug::Category::Replay,
+            "[EXPORT-PRESS] FAILED: already active (state=%d)\n", (int)gJob.state);
+        RPLXDEBUG("[EXPORT-START] FAILED: already active (state=%d)\n", (int)gJob.state);
         return false;
     }
 
@@ -318,6 +326,9 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
     {
         gJob.state = ReplayExportJob::Failed;
         gJob.errorMsg = "Replay file not found:\n" + jsonPath;
+        Debug::warn(Debug::Category::Replay,
+            "[EXPORT-PRESS] FAILED: file not found: %s\n", jsonPath.c_str());
+        RPLXDEBUG("[EXPORT-START] FAILED: file not found: %s\n", jsonPath.c_str());
         return false;
     }
 
@@ -328,25 +339,38 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
     if (!clip.load(jsonPath)) {
         gJob.state = ReplayExportJob::Failed;
         gJob.errorMsg = "Failed to load clip for export:\n" + jsonPath;
+        Debug::warn(Debug::Category::Replay,
+            "[EXPORT-PRESS] FAILED: clip.load() failed: %s\n", jsonPath.c_str());
+        RPLXDEBUG("[EXPORT-START] FAILED: clip.load() failed: %s\n", jsonPath.c_str());
         return false;
     }
     if (clip.header.tickCount == 0 && clip.sceneFrames.empty()) {
         gJob.state = ReplayExportJob::Failed;
         gJob.errorMsg = "Clip has no scene frames to export:\n" + jsonPath;
+        Debug::warn(Debug::Category::Replay,
+            "[EXPORT-PRESS] FAILED: clip empty (tickCount=%u sceneFrames=%zu)\n",
+            clip.header.tickCount, clip.sceneFrames.size());
+        RPLXDEBUG("[EXPORT-START] FAILED: clip empty (tickCount=%u sceneFrames=%zu)\n",
+            clip.header.tickCount, clip.sceneFrames.size());
         return false;
     }
     gJob.totalTicks = clip.header.tickCount;
     Debug::warn(Debug::Category::Replay,
         "[EXPORT-PRESS] startReplayExport: clip=%s totalTicks=%u sceneFrames=%zu\n",
         jsonPath.c_str(), gJob.totalTicks, clip.sceneFrames.size());
+    RPLXDEBUG("[EXPORT-START] clip loaded: totalTicks=%u sceneFrames=%zu soundEvents=%zu map='%s'\n",
+        gJob.totalTicks, clip.sceneFrames.size(), clip.soundEvents.size(), clip.mapPath.c_str());
 
     const int width = gExportConfig.exportWidth;
     const int height = gExportConfig.exportHeight;
     Debug::warn(Debug::Category::Replay,
         "[EXPORT-PRESS] startReplayExport: clip=%s requested=%dx%d config=%dx%d\n",
         jsonPath.c_str(), renderWidth, renderHeight, width, height);
+    RPLXDEBUG("[EXPORT-START] resolution: requested=%dx%d config=%dx%d final=%dx%d\n",
+        renderWidth, renderHeight, width, height, width, height);
     gJob.clipExport = restoreLiveOnFinish;
     gJob.restoreLiveOnFinish = restoreLiveOnFinish;
+    RPLXDEBUG("[EXPORT-START] spawning subprocess...\n");
     return spawnExportSubprocess(jsonPath, width, height);
 }
 
@@ -425,12 +449,14 @@ bool spawnExportSubprocess(const std::string& clipPath, int width, int height)
     if (sExportSubprocess) {
         Debug::log(Debug::Category::Replay,
             "[REPLAY] spawnExportSubprocess: already running\n");
+        RPLXDEBUG("[SPAWN] FAILED: subprocess already running\n");
         return false;
     }
 
     if (!std::filesystem::exists(clipPath)) {
         Debug::log(Debug::Category::Replay,
             "[REPLAY] spawnExportSubprocess: clip not found: %s\n", clipPath.c_str());
+        RPLXDEBUG("[SPAWN] FAILED: clip not found: %s\n", clipPath.c_str());
         return false;
     }
 
@@ -439,6 +465,7 @@ bool spawnExportSubprocess(const std::string& clipPath, int width, int height)
     if (!GetModuleFileNameA(nullptr, exePathBuf, MAX_PATH)) {
         Debug::log(Debug::Category::Replay,
             "[REPLAY] spawnExportSubprocess: GetModuleFileName failed\n");
+        RPLXDEBUG("[SPAWN] FAILED: GetModuleFileName error=%lu\n", (unsigned long)GetLastError());
         return false;
     }
 
@@ -453,6 +480,12 @@ bool spawnExportSubprocess(const std::string& clipPath, int width, int height)
         " --height " + std::to_string(height);
     if (gReplayExportVerbose)
         cmd += " --replay-export-verbose";
+
+    RPLXDEBUG("[SPAWN] exe='%s'\n", exePathBuf);
+    RPLXDEBUG("[SPAWN] clip='%s'\n", clipPath.c_str());
+    RPLXDEBUG("[SPAWN] output='%s'\n", outputPath.c_str());
+    RPLXDEBUG("[SPAWN] size=%dx%d\n", width, height);
+    RPLXDEBUG("[SPAWN] cmdline='%s'\n", cmd.c_str());
 
     Debug::warn(Debug::Category::Replay,
         "[EXPORT-SPAWN-REQUEST] clip=%s output=%s %dx%d\n",
@@ -470,6 +503,7 @@ bool spawnExportSubprocess(const std::string& clipPath, int width, int height)
         Debug::error(Debug::Category::Replay,
             "[EXPORT-SPAWN-FAILED] CreateProcess error=%lu\n",
             (unsigned long)err);
+        RPLXDEBUG("[SPAWN] FAILED: CreateProcess error=%lu\n", (unsigned long)err);
         return false;
     }
 
@@ -484,6 +518,8 @@ bool spawnExportSubprocess(const std::string& clipPath, int width, int height)
         "[EXPORT-SPAWN-SUCCESS] cmdline=%s\n", cmd.c_str());
     Debug::warn(Debug::Category::Replay,
         "[EXPORT-SUBPROCESS-LOG] child log will appear in logs/ as ReplayExport_log_*.txt\n");
+    RPLXDEBUG("[SPAWN] SUCCESS: pid=%lu\n", pi.dwProcessId);
+    RPLXDEBUG("[SPAWN] child log: logs/*/ReplayExport_log_*.txt\n");
 
     CloseHandle(pi.hThread); // We only need the process handle
     return true;

@@ -85,10 +85,24 @@ BodyPartArray captureReplayBodyParts(const Player& player)
         glm::quat rootRot = glm::angleAxis(glm::radians(rootYaw), glm::vec3(0, 0, 1));
         glm::quat localRot = glm::inverse(rootRot) * worldRot;
 
+        // Enforce consistent quaternion hemisphere to prevent visual flipping.
+        // glm::quat_cast can return q or -q (both represent the same rotation).
+        // Near the 90°-X rest pose + large-Z animation configuration, the
+        // extraction can alternate hemispheres across frames, causing the left
+        // leg (or any part with a 90° rest rotation) to flip in exported MP4s.
+        // Fix: use the local +Y axis (hip-to-knee for legs) as a reference and
+        // negate the quaternion if it would rotate +Y to the wrong hemisphere.
+        localRot = glm::normalize(localRot);
+        {
+            glm::vec3 refDir = localRot * glm::vec3(0.0f, 1.0f, 0.0f);
+            if (refDir.y < 0.0f)
+                localRot = -localRot;
+        }
+
         ReplayBodyPartState& state = result.parts[result.count];
         state.partId = pid;
         state.position = bodyLocal;
-        state.rotation = glm::normalize(localRot);
+        state.rotation = localRot;
         state.scale = glm::vec3(1.0f);
         result.count++;
     }

@@ -23,6 +23,7 @@
 #include "world/world-gltf-loader.h"
 #include "terminal/terminal-state.h"
 #include "game/game-state.h"
+#include "game/version.h"
 #include "replay/replay.h"
 #include "replay/replay-export.h"
 #include "replay/replay-export-target.h"
@@ -99,6 +100,62 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
         "[EXPORT-SUBPROCESS] requested size=%dx%d\n", width, height);
     Debug::warn(Debug::Category::Replay,
         "[EXPORT-SUBPROCESS] cwd=%s\n", fs::current_path().string().c_str());
+
+    // ── Environment diagnostics ──────────────────────────────────────
+    {
+        // FFmpeg existence and path
+        std::string ffmpegPath = defaultFfmpegPath();
+        bool ffmpegExists = fs::exists(ffmpegPath);
+        Debug::warn(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS] ENV ffmpegPath='%s' exists=%d\n",
+            ffmpegPath.c_str(), (int)ffmpegExists);
+
+        // Game version
+        Debug::warn(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS] ENV gameVersion='%s'\n",
+            MIMITA_VERSION_STRING);
+
+        // OS / process info
+        Debug::warn(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS] ENV pid=%lu exe=",
+            (unsigned long)GetCurrentProcessId());
+        {
+            char exeBuf[MAX_PATH] = {};
+            if (GetModuleFileNameA(nullptr, exeBuf, MAX_PATH))
+                Debug::warn(Debug::Category::Replay, "%s\n", exeBuf);
+            else
+                Debug::warn(Debug::Category::Replay, "(unknown)\n");
+        }
+
+        // Memory
+        MEMORYSTATUSEX memInfo = {};
+        memInfo.dwLength = sizeof(memInfo);
+        if (GlobalMemoryStatusEx(&memInfo)) {
+            Debug::warn(Debug::Category::Replay,
+                "[EXPORT-SUBPROCESS] ENV totalPhysMB=%llu availPhysMB=%llu\n",
+                (unsigned long long)(memInfo.ullTotalPhys / (1024*1024)),
+                (unsigned long long)(memInfo.ullAvailPhys / (1024*1024)));
+        }
+
+        // Export config
+        Debug::warn(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS] ENV config: exportWidth=%d exportHeight=%d\n",
+            gExportConfig.exportWidth, gExportConfig.exportHeight);
+        Debug::warn(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS] ENV config: encoder='%s' encoderMode='%s'\n",
+            gExportConfig.encoder.c_str(), gExportConfig.encoderMode.c_str());
+        Debug::warn(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS] ENV config: crf=%d bitrate=%d volume=%.2f\n",
+            gExportConfig.exportCrf, gExportConfig.exportBitrate,
+            gExportConfig.audioVolumeMultiplier);
+        Debug::warn(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS] ENV config: effects.muzzleLighting=%d worldDebris=%d bulletHoles=%d muzzleFlash=%d worldCracks=%d\n",
+            (int)gExportConfig.effects.muzzleLighting,
+            (int)gExportConfig.effects.worldDebris,
+            (int)gExportConfig.effects.bulletHoles,
+            (int)gExportConfig.effects.muzzleFlash,
+            (int)gExportConfig.effects.worldCracks);
+    }
 
     if (width <= 0 || height <= 0) {
         Debug::error(Debug::Category::Replay,
@@ -351,6 +408,9 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
     Debug::warn(Debug::Category::Replay,
         "[EXPORT-SUBPROCESS] final state=%d capturedTicks=%u totalTicks=%u loopIterations=%d\n",
         (int)gJob.state, gJob.capturedTicks, gJob.totalTicks, loopIterations);
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] clip stats: soundEvents=%zu\n",
+        REPLAY_PLAYER.soundEvents().size());
     replayExportTimingLogSummary();
 
     if (gJob.state == ReplayExportJob::Done) {
@@ -359,13 +419,18 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
             gJob.outputPath.c_str(),
             (double)gJob.mp4FileBytes / (1024.0 * 1024.0));
         Debug::warn(Debug::Category::Replay,
-            "[EXPORT-SUBPROCESS] outro=%s\n",
-            gJob.mfOutroMissing ? "MISSING" : "OK");
+            "[EXPORT-SUBPROCESS] outro=%s rawBytes=%llu mp4Bytes=%llu\n",
+            gJob.mfOutroMissing ? "MISSING" : "OK",
+            (unsigned long long)gJob.rawFileBytes,
+            (unsigned long long)gJob.mp4FileBytes);
         glfwSetWindowTitle(engine.window(),
             "MiMITA Replay Export - Complete!");
     } else if (gJob.state == ReplayExportJob::Failed) {
         Debug::error(Debug::Category::Replay,
             "[EXPORT-SUBPROCESS] EXPORT FAILED: %s\n", gJob.errorMsg.c_str());
+        Debug::error(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS] FAILED state=%d capturedTicks=%u totalTicks=%u\n",
+            (int)gJob.state, gJob.capturedTicks, gJob.totalTicks);
         glfwSetWindowTitle(engine.window(),
             "MiMITA Replay Export - Failed");
     } else {

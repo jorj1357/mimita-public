@@ -205,6 +205,87 @@ purpose
   margin-top: auto;
 }
 
+.vipPurchaseModes {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: auto;
+}
+
+.vipPrepaidBox {
+  border: 2px solid #00ffcc;
+  background: rgba(0, 255, 204, 0.08);
+  padding: 0.75rem;
+  text-align: left;
+}
+
+.vipModeHeading {
+  color: #00ffcc;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.55rem;
+}
+
+.vipMonthControls,
+.vipMonthEnds {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.vipMonthInput {
+  width: 4.5rem;
+  border: 1px solid #ffffff;
+  background: #111111;
+  color: #ffffff;
+  padding: 0.35rem;
+}
+
+.vipMonthRange {
+  width: 100%;
+  accent-color: #00ffcc;
+  margin: 0.7rem 0 0.2rem;
+}
+
+.vipMonthEnds {
+  color: #bbbbbb;
+  font-size: 0.8rem;
+}
+
+.vipPrepaidPrice,
+.vipSavings {
+  margin-top: 0.5rem;
+  font-weight: 800;
+}
+
+.vipSavings {
+  color: #ffff00;
+}
+
+.vipModeButton {
+  width: 100%;
+  border: 1px solid #ffffff;
+  background: #111111;
+  color: #ffffff;
+  padding: 0.6rem 0.7rem;
+  cursor: pointer;
+}
+
+.vipModeButton:hover {
+  background: #00ff66;
+  color: #000000;
+}
+
+.vipModeButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.vipLifetimeButton {
+  border-color: #ffcc00;
+  color: #ffcc00;
+}
+
 .vipTierPrice {
   color: #ffff00;
   font-size: 1.1rem;
