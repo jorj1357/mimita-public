@@ -30,6 +30,23 @@ For build purposes, human or AI agents are authorized to terminate existing `mim
 * Do not create production-only fixes.
 * Do not edit production files unless investigating.
 * Fixes discovered on VPS must be implemented locally.
+
+## VPS storage policy
+
+Treat the VPS as a storage-constrained deployment target. The VPS should hold
+only the website runtime, its production `dist/` output, the website's
+installed Node dependencies, required configuration/secrets, database
+backups, and the minimum service files needed to run them. Do not copy or
+build the game source, C++ files, game assets, development artifacts, local
+test output, or unrelated repositories on the VPS. Keep those in the local
+repository or CI/build storage and deploy only the website files required by
+the active service.
+
+Before and after deployment, report disk usage and preserve unrelated
+untracked files. Do not delete files merely to save space; identify their
+owner and obtain explicit approval before cleanup. Prefer pruning known build
+cache or package-cache data only after verifying it is not needed by a running
+service.
 * Test locally before deployment.
 
 ## Validation before deployment
