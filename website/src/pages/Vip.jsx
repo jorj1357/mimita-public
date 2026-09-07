@@ -153,10 +153,8 @@ export default function Vip() {
                         const prepaid = tier.purchases.find(option => option.type === "prepaid")
                         const monthly = tier.purchases.find(option => option.type === "monthly_subscription")
                         const lifetime = tier.purchases.find(option => option.type === "lifetime")
-                        const prepaidCents = prepaid
-                            ? Math.floor(prepaid.amount_cents * selectedMonths - prepaid.amount_cents * 0.5 * (selectedMonths - 1) / 11)
-                            : 0
-                        const savingsCents = prepaid ? Math.max(0, prepaid.amount_cents * selectedMonths - prepaidCents) : 0
+                        const prepaidCents = prepaid?.amounts_cents?.[selectedMonths - 1] || 0
+                        const savingsCents = prepaid?.savings_cents?.[selectedMonths - 1] || 0
                         const discountPercent = prepaid
                             ? (50 * (selectedMonths - 1) / 11).toFixed(1).replace(/\.0$/, "")
                             : "0"

@@ -27,4 +27,8 @@ test("lifetime badges and configured prices are exposed", () => {
     const vip = config.tiers.find(tier => tier.tier === "vip")
     assert.equal(vip.purchases.find(option => option.type === "prepaid").configured, true)
     assert.equal(vip.purchases.find(option => option.type === "lifetime").configured, true)
+    const prepaid = vip.purchases.find(option => option.type === "prepaid")
+    assert.deepEqual(prepaid.amounts_cents.slice(0, 3), [333, 636, 909])
+    assert.equal(prepaid.amounts_cents[11], 1998)
+    assert.equal(prepaid.savings_cents[11], 1998)
 })

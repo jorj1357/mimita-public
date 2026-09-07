@@ -314,7 +314,7 @@ export function publicVipConfig(env = process.env) {
             default_style: defaultStyleForTier(tier),
             purchases: VIP_PURCHASE_TYPES.map(type => {
                 const def = getPurchaseDefinition(tier, type, env)
-                return {
+                const option = {
                     type,
                     label: def.label,
                     amount_cents: def.amount_cents,
@@ -326,6 +326,15 @@ export function publicVipConfig(env = process.env) {
                             : Boolean(getStripePriceId(tier, type, env))
                     )
                 }
+                if (type === "prepaid") {
+                    option.amounts_cents = Array.from({ length: 12 }, (_, index) =>
+                        prepaidAmountCents(tier, index + 1, env)
+                    )
+                    option.savings_cents = option.amounts_cents.map((amount, index) =>
+                        Math.max((def.amount_cents * (index + 1)) - amount, 0)
+                    )
+                }
+                return option
             })
         })),
         reserved_staff_colors: STAFF_ROLE_COLORS,
