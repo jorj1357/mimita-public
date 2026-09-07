@@ -87,6 +87,7 @@ bool ReplayClip::save(const std::string& path) const
     root["killfeedEvents"] = json::array();
     for (const ReplayKillfeedEvent& kf : killfeedEvents) {
         root["killfeedEvents"].push_back({
+            {"eventId", kf.eventId},
             {"tick", kf.tick},
             {"killerId", kf.killerId},
             {"killerName", kf.killerName},
@@ -205,6 +206,7 @@ bool ReplayClip::load(const std::string& path)
         killfeedEvents.clear();
         for (const json& value : root.value("killfeedEvents", json::array())) {
             ReplayKillfeedEvent kf;
+            kf.eventId = value.value("eventId", (uint64_t)0);
             kf.tick = value.value("tick", 0);
             kf.killerId = value.value("killerId", "");
             kf.killerName = value.value("killerName", "");

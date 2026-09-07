@@ -63,6 +63,22 @@ void Player::applyReplayPose(
             * glm::mat4_cast(found->rotation)
             * glm::scale(glm::mat4(1.0f), found->scale);
         bodyPart.worldTransform = root * local;
+
+        // Left/right leg diagnostic: log quaternion at apply time
+        uint8_t pid = partIdFromName(bodyPart.name.c_str());
+        if (pid == 4 || pid == 5) {
+            static int legDiagCounter = 0;
+            if (legDiagCounter++ % 60 == 0) {
+                const char* legName = (pid == 4) ? "leftLeg" : "rightLeg";
+                glm::vec3 appliedEuler = glm::degrees(glm::eulerAngles(found->rotation));
+                Debug::log(Debug::Category::Replay,
+                    "[LEG DIAG] apply part=%s localRot=(%.4f %.4f %.4f %.4f) euler=(%.1f %.1f %.1f) pos=(%.3f %.3f %.3f)\n",
+                    legName,
+                    found->rotation.w, found->rotation.x, found->rotation.y, found->rotation.z,
+                    appliedEuler.x, appliedEuler.y, appliedEuler.z,
+                    found->position.x, found->position.y, found->position.z);
+            }
+        }
     }
 }
 

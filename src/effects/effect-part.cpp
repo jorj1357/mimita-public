@@ -446,7 +446,12 @@ void EffectPartSystem::destroyOwner(unsigned int ownerId) {
 
 EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
     MIMITA_PERF_SCOPE("EffectPart::Spawn");
-    if (mSpawnFrameCount >= mSpawnCap) return nullptr;
+    if (mSpawnFrameCount >= mSpawnCap) {
+        Debug::logThrottled(Debug::Category::Replay, "effect-spawn-cap", 1.0f,
+            "[EFFECT POOL] spawn rejected: per-frame cap reached (%d/%d) type=%s\n",
+            mSpawnFrameCount, mSpawnCap, effect.replayType.c_str());
+        return nullptr;
+    }
     mSpawnFrameCount++;
     if (gShotProfiler) {
         gShotProfiler->effectsSpawned++;
@@ -517,6 +522,9 @@ EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
         }
     }
     if (gShotProfiler) gShotProfiler->poolLinearScans += POOL_SIZE;
+    Debug::logThrottled(Debug::Category::Replay, "effect-pool-full", 1.0f,
+        "[EFFECT POOL] pool full: active=%u/%u type=%s\n",
+        mActiveCount, POOL_SIZE, effect.replayType.c_str());
     return nullptr;
 }
 

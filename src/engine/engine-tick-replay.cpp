@@ -355,6 +355,23 @@ void engineTickReplay(Engine& engine, float dt)
               sceneFrame.camera.rotation = glm::vec3(camera.pitch, 0.0f, player.yaw);
               sceneFrame.camera.fov = camera.fov; }
 
+            // Camera capture invariant: warn if camera is at default position
+            // after the first few ticks of recording with a loaded player
+            if (replayTick == 5 && !player.dead) {
+                float camDist = glm::length(camera.pos);
+                if (camDist < 0.01f) {
+                    Debug::warn(Debug::Category::Replay,
+                        "[CAMERA INVARIANT] FAIL: scene-frame camera is default (0,0,0) at tick=%u "
+                        "playerPos=(%.2f %.2f %.2f) playerDead=%d gameState=%d\n",
+                        replayTick, player.pos.x, player.pos.y, player.pos.z,
+                        (int)player.dead, (int)gameState);
+                } else {
+                    Debug::log(Debug::Category::Replay,
+                        "[CAMERA INVARIANT] OK: tick=%u cameraPos=(%.2f %.2f %.2f) dist=%.2f\n",
+                        replayTick, camera.pos.x, camera.pos.y, camera.pos.z, camDist);
+                }
+            }
+
             // ── Identity table update: only copies strings on actual change ──
             // Returns true if identity changed. Uses const char* for weapon fields
             // to avoid temp std::string construction every tick.

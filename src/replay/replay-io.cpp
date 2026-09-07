@@ -33,6 +33,7 @@ glm::vec3 jsonVec3(const json& value, const glm::vec3& fallback)
 ReplayEffectEvent parseEffect(const json& value)
 {
     ReplayEffectEvent effect;
+    effect.eventId = value.value("eventId", (uint64_t)0);
     effect.type = value.value("type", "");
     effect.label = value.value("label", "");
     effect.position = jsonVec3(value.value("position", json::array()));
@@ -154,6 +155,7 @@ json materialJson(const ReplayMaterialReference& material)
 json effectJson(const ReplayEffectEvent& effect)
 {
     json entry = {
+        {"eventId", effect.eventId},
         {"type", effect.type},
         {"label", effect.label},
         {"position", vec3Json(effect.position)},

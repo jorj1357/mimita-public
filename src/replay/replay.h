@@ -17,6 +17,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include "input/input-frame.h"
 
@@ -212,6 +213,7 @@ private:
     std::vector<ReplayKillfeedEvent> mKillfeedEvents;
     std::vector<ReplayEffectEvent> mPendingEffects;
     uint32_t mMaxTicks = 0;
+    uint64_t mNextEventId = 1;
 
     // ── Identity table: stores constant strings once per lifetime ──
     // Keys are stable actor IDs (player=0, npc=1000+npc.id, remote=20000+id).
@@ -286,6 +288,10 @@ public:
     const std::string& outfitPath() const { return mOutfitPath; }
     void setOutfitPath(const std::string& path) { mOutfitPath = path; }
     size_t totalEffectCount() const { return mClip.sceneFrames.empty() ? 0 : mClip.soundEvents.size(); }
+    uint32_t effectsDelivered() const { return mEffectsDelivered; }
+    uint32_t effectsDeduplicated() const { return mEffectsDeduplicated; }
+    uint32_t killfeedsDelivered() const { return mKillfeedsDelivered; }
+    uint32_t killfeedsDeduplicated() const { return mKillfeedsDeduplicated; }
 
     bool getFrameAt(uint32_t tick, InputFrame& out) const;
     const InputFrame* advanceTick();
@@ -313,9 +319,16 @@ private:
     std::vector<ReplayEffectEvent> mTriggeredEffects;
     std::vector<ReplaySoundEvent> mTriggeredSounds;
     std::vector<ReplayKillfeedEvent> mTriggeredKillfeedEvents;
+    std::unordered_set<uint64_t> mDeliveredEventIds;
     ReplayCameraController mCameraController;
     std::string mOutfitPath;
     std::vector<ReplayAsset> mAssets;
+
+    // Effect delivery diagnostics
+    uint32_t mEffectsDelivered = 0;
+    uint32_t mEffectsDeduplicated = 0;
+    uint32_t mKillfeedsDelivered = 0;
+    uint32_t mKillfeedsDeduplicated = 0;
 
     void rebuildInterpolatedFrameAtTick();
 

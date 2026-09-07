@@ -105,6 +105,7 @@ struct ReplayActorState {
 };
 
 struct ReplayEffectEvent {
+    uint64_t eventId = 0;
     std::string type;
     std::string label;
 
@@ -146,6 +147,7 @@ struct ReplayEffectEvent {
 };
 
 struct ReplayKillfeedEvent {
+    uint64_t eventId = 0;
     int tick = 0;
     std::string killerId;
     std::string killerName;

@@ -314,6 +314,8 @@ RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, N
     gunshotEvent.from = mMuzzle;
     gunshotEvent.to = result.end;
     gunshotEvent.sourceActorId = shooter.username;
+    gunshotEvent.assetId = "revolver";
+    gunshotEvent.scale = glm::vec3(shooter.sizeScale);
     captureReplayEffect(gunshotEvent);
 
     EffectPartSystem::instance().spawnMuzzleFlash(mMuzzle, shooter.username, shooter.sizeScale, "revolver");

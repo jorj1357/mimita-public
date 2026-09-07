@@ -176,6 +176,8 @@ RevolverShotResult tryFireHitscan(
     gunshotEvent.from = muzzlePos;
     gunshotEvent.to = result.end;
     gunshotEvent.sourceActorId = shooter.username;
+    gunshotEvent.assetId = def.id;
+    gunshotEvent.scale = glm::vec3(shooter.sizeScale);
     captureReplayEffect(gunshotEvent);
 
     EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, shooter.username, shooter.sizeScale, def.id);
@@ -263,6 +265,8 @@ RevolverShotResult tryFireHitscanDir(
     gunshotEvent.from = muzzlePos;
     gunshotEvent.to = result.end;
     gunshotEvent.sourceActorId = shooter.username;
+    gunshotEvent.assetId = def.id;
+    gunshotEvent.scale = glm::vec3(shooter.sizeScale);
     captureReplayEffect(gunshotEvent);
 
     EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, shooter.username, shooter.sizeScale, def.id);

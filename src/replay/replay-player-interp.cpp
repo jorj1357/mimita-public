@@ -112,16 +112,35 @@ void ReplayPlayer::update(float dt)
     for (const ReplaySceneFrame& frame : mClip.sceneFrames) {
         if (frame.tick <= mLastEventTick || frame.tick > currentEventTick)
             continue;
-        mTriggeredEffects.insert(
-            mTriggeredEffects.end(), frame.effects.begin(), frame.effects.end());
+        for (const ReplayEffectEvent& fx : frame.effects) {
+            if (fx.eventId != 0 && mDeliveredEventIds.count(fx.eventId)) {
+                mEffectsDeduplicated++;
+                continue;
+            }
+            if (fx.eventId != 0)
+                mDeliveredEventIds.insert(fx.eventId);
+            mTriggeredEffects.push_back(fx);
+            mEffectsDelivered++;
+        }
     }
     for (const ReplaySoundEvent& sound : mClip.soundEvents) {
         if (sound.tick > mLastEventTick && sound.tick <= currentEventTick)
             mTriggeredSounds.push_back(sound);
     }
     for (const ReplayKillfeedEvent& kf : mClip.killfeedEvents) {
-        if (kf.tick > mLastEventTick && kf.tick <= currentEventTick)
-            mTriggeredKillfeedEvents.push_back(kf);
+        if (kf.tick <= mLastEventTick || kf.tick > currentEventTick)
+            continue;
+        if (kf.eventId != 0 && mDeliveredEventIds.count(kf.eventId)) {
+            mKillfeedsDeduplicated++;
+            Debug::log(Debug::Category::Replay,
+                "[REPLAY KILLFEED] deduplicated eventId=%llu tick=%d killer=%s victim=%s\n",
+                (unsigned long long)kf.eventId, kf.tick, kf.killerId.c_str(), kf.victimId.c_str());
+            continue;
+        }
+        if (kf.eventId != 0)
+            mDeliveredEventIds.insert(kf.eventId);
+        mTriggeredKillfeedEvents.push_back(kf);
+        mKillfeedsDelivered++;
     }
     if (currentEventTick >= previousTick)
         mLastEventTick = currentEventTick;

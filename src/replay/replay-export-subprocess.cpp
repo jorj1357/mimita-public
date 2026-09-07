@@ -343,6 +343,29 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
     Debug::warn(Debug::Category::Replay,
         "[EXPORT-SUBPROCESS] STAGE 5: Beginning replay playback\n");
     REPLAY_PLAYER.seekToTick(0);
+    // The first export frame must not depend on the subprocess camera's prior
+    // initialization.  The replay scene frame is the authoritative camera
+    // source for recorded export mode, so seed the live camera before the
+    // first engine tick/capture.
+    if (gpCamera) {
+        if (const ReplaySceneFrame* sf = REPLAY_PLAYER.currentSceneFrame()) {
+            gpCamera->pos = sf->camera.position;
+            gpCamera->pitch = sf->camera.rotation.x;
+            gpCamera->yaw = sf->camera.rotation.z;
+            gpCamera->fov = sf->camera.fov;
+            gpCamera->updateVectors();
+            Debug::warn(Debug::Category::Replay,
+                "[EXPORT-SUBPROCESS] camera seeded from tick=%d pos=(%.2f %.2f %.2f) yaw=%.2f pitch=%.2f\n",
+                sf->tick, gpCamera->pos.x, gpCamera->pos.y, gpCamera->pos.z,
+                gpCamera->yaw, gpCamera->pitch);
+        } else {
+            Debug::error(Debug::Category::Replay,
+                "[EXPORT-SUBPROCESS] camera seed skipped: replay has no scene frame\n");
+        }
+    } else {
+        Debug::error(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS] camera seed skipped: gpCamera is null\n");
+    }
     Debug::warn(Debug::Category::Replay,
         "[EXPORT-SUBPROCESS] playback started: isPlaying=%d currentTick=%u totalTicks=%u\n",
         (int)REPLAY_PLAYER.isPlaying(), REPLAY_PLAYER.currentTick(), REPLAY_PLAYER.totalTicks());

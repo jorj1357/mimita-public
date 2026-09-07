@@ -27,6 +27,7 @@ void ReplayRecorder::recordEffectEvent(const ReplayEffectEvent& inputEvent)
     {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->replayRecordMs : nullptr);
         ReplayEffectEvent event = inputEvent;
+        event.eventId = mNextEventId++;
         event.spawnTick = (int)mEventTick;
         event.spawnTime = (float)mEventTick / (float)std::max(mHeader.tickRate, 1u);
         size_t oldCap = mPendingEffects.capacity();
@@ -78,6 +79,7 @@ void ReplayRecorder::recordKillfeedEvent(const ReplayKillfeedEvent& inputEvent)
     std::lock_guard<std::mutex> lock(mRingMutex);
     Perf::state().replayPerf.killfeedsRecorded++;
     ReplayKillfeedEvent event = inputEvent;
+    event.eventId = mNextEventId++;
     event.tick = (int)mEventTick;
     mKillfeedEvents.push_back(event);
     if (mMaxTicks > 0) {

@@ -168,6 +168,11 @@ void ReplayPlayer::beginPlayback() {
     mTriggeredEffects.clear();
     mTriggeredSounds.clear();
     mTriggeredKillfeedEvents.clear();
+    mDeliveredEventIds.clear();
+    mEffectsDelivered = 0;
+    mEffectsDeduplicated = 0;
+    mKillfeedsDelivered = 0;
+    mKillfeedsDeduplicated = 0;
     KillfeedManager::instance().clear();
     KillfeedConfig::instance().load();
     KillfeedManager::instance().setMode(KillfeedConfig::instance().data().mode);
@@ -206,6 +211,11 @@ void ReplayPlayer::seekToTick(uint32_t tick) {
     mLastEventTick = (int)tick - 1;
     mPlaying = true;
     mPaused = false;
+    mDeliveredEventIds.clear();
+    mEffectsDelivered = 0;
+    mEffectsDeduplicated = 0;
+    mKillfeedsDelivered = 0;
+    mKillfeedsDeduplicated = 0;
     rebuildInterpolatedFrameAtTick();
     if (!isReplayExportActive() || gReplayExportVerbose)
         printf("[REPLAY] seekToTick(%u) -> mCurrentTick=%u max=%zu frames=%zu scene=%zu playing=1\n",

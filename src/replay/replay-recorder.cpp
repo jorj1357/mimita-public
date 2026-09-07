@@ -105,6 +105,20 @@ BodyPartArray captureReplayBodyParts(const Player& player)
         state.rotation = localRot;
         state.scale = glm::vec3(1.0f);
         result.count++;
+
+        // Left/right leg diagnostic: log quaternion comparison every 60 ticks
+        if ((pid == 4 || pid == 5) && gActiveReplayRecorder) {
+            uint32_t curTick = gActiveReplayRecorder->currentTick();
+            if (curTick % 60 == 0) {
+                const char* legName = (pid == 4) ? "leftLeg" : "rightLeg";
+                Debug::log(Debug::Category::Replay,
+                    "[LEG DIAG] capture tick=%u part=%s worldRot=(%.4f %.4f %.4f %.4f) localRot=(%.4f %.4f %.4f %.4f) bodyLocal=(%.3f %.3f %.3f)\n",
+                    curTick, legName,
+                    worldRot.w, worldRot.x, worldRot.y, worldRot.z,
+                    localRot.w, localRot.x, localRot.y, localRot.z,
+                    bodyLocal.x, bodyLocal.y, bodyLocal.z);
+            }
+        }
     }
 
     return result;
@@ -392,6 +406,7 @@ bool ReplayRecorder::exportToJSON(const std::string& path) const {
     for (const ReplayKillfeedEvent& kf : mKillfeedEvents) {
         json kfJson = {
             {"type", "killfeed"},
+            {"eventId", kf.eventId},
             {"tick", kf.tick},
             {"killerId", kf.killerId},
             {"killerName", kf.killerName},

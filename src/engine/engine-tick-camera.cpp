@@ -938,15 +938,18 @@ void engineTickCamera(Engine& engine, float dt)
                     playChatSound((int)effect.assetId.size());
             } else if (effect.type == "gunshot") {
                 Debug::log(Debug::Category::Replay,
-                    "[REPLAY EFFECT] spawned type=gunshot tick=%d from=(%.2f %.2f %.2f) to=(%.2f %.2f %.2f) source=%s\n",
+                    "[REPLAY EFFECT] spawned type=gunshot tick=%d from=(%.2f %.2f %.2f) to=(%.2f %.2f %.2f) source=%s weapon=%s\n",
                     effect.spawnTick, effect.from.x, effect.from.y, effect.from.z,
-                    effect.to.x, effect.to.y, effect.to.z, effect.sourceActorId.c_str());
+                    effect.to.x, effect.to.y, effect.to.z, effect.sourceActorId.c_str(),
+                    effect.assetId.c_str());
                 const bool muzzleLighting = !isReplayExportActive() || gExportConfig.effects.muzzleLighting;
+                const bool muzzleFlash = !isReplayExportActive() || gExportConfig.effects.muzzleFlash;
+                float sizeScale = effect.scale.x > 0.0f ? effect.scale.x : 1.0f;
                 EffectPartSystem::instance().spawnMuzzleFlash(
-                    effect.from, effect.sourceActorId, 1.0f, effect.assetId,
-                    false, muzzleLighting);
+                    effect.from, effect.sourceActorId, sizeScale, effect.assetId,
+                    muzzleFlash, muzzleLighting);
                 EffectPartSystem::instance().spawnTracer(
-                    effect.from, effect.to, effect.sourceActorId);
+                    effect.from, effect.to, effect.sourceActorId, sizeScale, effect.assetId);
             } else if (effect.type == "blood_spurt_emitter") {
                 Debug::log(Debug::Category::Replay,
                     "[REPLAY EFFECT] spawned type=blood_spurt_emitter tick=%d pos=(%.2f %.2f %.2f) dir=(%.2f %.2f %.2f) source=%s target=%s\n",
@@ -1014,13 +1017,14 @@ void engineTickCamera(Engine& engine, float dt)
                 // Visual effects are separate events; no action needed.
             } else if (effect.type == "muzzle_flash") {
                 Debug::log(Debug::Category::Replay,
-                    "[REPLAY EFFECT] spawned type=muzzle_flash tick=%d pos=(%.2f %.2f %.2f) source=%s\n",
+                    "[REPLAY EFFECT] spawned type=muzzle_flash tick=%d pos=(%.2f %.2f %.2f) source=%s weapon=%s\n",
                     effect.spawnTick, effect.position.x, effect.position.y, effect.position.z,
-                    effect.sourceActorId.c_str());
+                    effect.sourceActorId.c_str(), effect.assetId.c_str());
                 const bool muzzleFlash = !isReplayExportActive() || gExportConfig.effects.muzzleFlash;
                 const bool muzzleLighting = !isReplayExportActive() || gExportConfig.effects.muzzleLighting;
+                float sizeScale = effect.scale.x > 0.0f ? effect.scale.x : 1.0f;
                 EffectPartSystem::instance().spawnMuzzleFlash(
-                    effect.position, effect.sourceActorId, 1.0f, effect.assetId,
+                    effect.position, effect.sourceActorId, sizeScale, effect.assetId,
                     muzzleFlash, muzzleLighting);
             } else if (effect.type == "tracer") {
                 Debug::log(Debug::Category::Replay,
