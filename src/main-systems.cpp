@@ -151,7 +151,7 @@ void registerCursorCommands();
 #include "config/weapon-hitfx-config.h"
 #include "config/impact-decals-config.h"
 #include "config/weapon-tracers-config.h"
-#include "game/bomb-tag.h"
+#include "game/gamemode-manager.h"
 #include "gui/gui-editor-commands.h"
 #include "camera/camera-commands.h"
 #include "audio/music-commands.h"
@@ -160,7 +160,7 @@ void registerCursorCommands();
 #include <glad/glad.h>
 
 extern DuelManager gDuelManager;
-extern BombTagManager gBombTagManager;
+extern GamemodeManager gGamemodeManager;
 extern FramePacer gFramePacer;
 extern Player* gpPlayer;
 extern Camera* gpCamera;

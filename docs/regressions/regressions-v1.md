@@ -37,6 +37,56 @@ Whats this
 
 newest at top 9 3 2026
 
+9 6 2026 1951 — Replay export camera stuck at (0,0,0) instead of following player POV
+
+1. Issue: replay export produces valid MP4 with outro, but camera is stuck at position (0,0,0) for the entire export instead of following the player's recorded POV
+   1. Bad behavior
+      1. Exported video shows static view under the map at (0,0,0)
+      2. Camera does not follow the player's recorded perspective
+      3. All 619 scene frames in the clip have tick=0, camera=(0,0,0), no actors
+   2. Date and time first observed: 9 6 2026 ~19:35 EST
+   3. Why bad behavior
+      1. `replay-export-subprocess.cpp` called `beginPlayback()` which set `mPlaying=true`
+      2. This made `replayPlaybackActive = gReplayPlayer.isPlaying()` return true
+      3. The recording condition `isRecording() && !replayPlaybackActive` became false
+      4. The recording block in `engine-tick-replay.cpp` was skipped entirely
+      5. Scene frames were never populated with camera position, actors, or tick data
+      6. Ring buffer got empty frames (tick=0, camera=(0,0,0), no actors)
+      7. `makeClip` copied these empty frames into the clip
+   4. What fixed it, date and time: 9 6 2026 19:51 EST
+      1. Changed recording condition to `isRecording() && (!replayPlaybackActive || isReplayExportActive())`
+      2. Removed `beginPlayback()` from the export subprocess (seekToTick already sets mPlaying=true)
+   5. What we learned
+      1. `beginPlayback()` has side effects beyond setting mPlaying — it blocks recording via the replayPlaybackActive check
+      2. The recording condition must account for the export state to allow recording during export
+      3. `seekToTick()` is sufficient for the export subprocess — `beginPlayback()` is redundant and harmful
+      4. Empty ring buffer frames propagate through makeClip into the exported clip, producing camera at (0,0,0)
+      5. The export subprocess and main process have separate REPLAY_RECORDER instances — the subprocess's recorder must be properly initialized for recording to work
+
+9 6 2026 1839 — Replay export produces 261-byte empty MP4 (totalTicks=0)
+
+1. Issue: pressing P to export replay produces a 261-byte MP4 with no video content, and the outro fails to append
+   1. Bad behavior
+      1. Export produces 261-byte file (MP4 header only, no video frames)
+      2. Outro append fails because MP4 has no video stream
+      3. Export completes in 0.5 seconds with only 1 frame captured
+   2. Date and time first observed: 9 6 2026 ~18:12 EST
+   3. Why bad behavior
+      1. `startReplayExport()` in `replay-export-json.cpp` spawned a subprocess without loading the clip to determine `gJob.totalTicks`
+      2. The main process's `gJob.totalTicks` remained at 0 (default)
+      3. The export loop checked `doneTick >= gJob.totalTicks` → `0 >= 0` = true → stopped after 1 frame
+      4. The subprocess loaded the clip and set its own `gJob.totalTicks`, but this was the subprocess's copy — the main process's value was never updated
+   4. What fixed it, date and time: 9 6 2026 18:39 EST
+      1. Added `ReplayClip::load(jsonPath)` in `startReplayExport()` before spawning the subprocess
+      2. Set `gJob.totalTicks = clip.header.tickCount` from the loaded clip
+      3. Added validation: fail if clip has 0 ticks and no scene frames
+   5. What we learned
+      1. The subprocess export architecture means the main process and subprocess have separate copies of `gJob` — changes in the subprocess don't propagate back
+      2. The main process must load the clip to extract metadata (totalTicks) before spawning the subprocess
+      3. The 261-byte file was an MP4 container header with no video content — FFmpeg creates the output file on `BeginWriting()` but writes no frames when totalTicks=0
+      4. The outro append fails on empty MP4s because FFmpeg's concat filter requires valid video streams
+      5. Always validate clip metadata before starting export — don't assume the subprocess will fix it
+
 9 3 2026
 
 1. Issue: the website https://mimita.fun the signing up and logging in is broken 9 3 2026 1526

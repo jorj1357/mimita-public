@@ -130,7 +130,7 @@
 #include "replay/replay-export.h"
 #include "effects/hitfx-commands.h"
 #include "effects/hit-effects.h"
-#include "game/bomb-tag.h"
+#include "game/gamemode-manager.h"
 #include "debug/log-manager.h"
 #include "camera/camera-commands.h"
 #include "devtools/dev-log-commands.h"
@@ -148,7 +148,7 @@
 // duelamanger should be  a game manager, with specific modes in it
 // not all in main todo 
 DuelManager gDuelManager;
-BombTagManager gBombTagManager;
+GamemodeManager gGamemodeManager;
 FramePacer gFramePacer;
 
 // Global game objects (pointers set by main() for terminal command access)

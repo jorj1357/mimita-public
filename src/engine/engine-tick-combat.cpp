@@ -42,7 +42,7 @@
 #include "gui/hud/chat-bubble.h"
 #include "game/duel.h"
 #include "duel/duel-queue.h"
-#include "game/bomb-tag.h"
+#include "game/gamemode-manager.h"
 #include "game/game-state.h"
 #include "world/world.h"
 #include "render/post-fx.h"
@@ -51,7 +51,7 @@
 #include "gui/menus/pause-menu.h"
 
 extern DuelManager gDuelManager;
-extern BombTagManager gBombTagManager;
+extern GamemodeManager gGamemodeManager;
 extern bool gReplayCinematicMode;
 
 // ── Client fixed-step prediction accumulator ─────────────────────────
@@ -116,8 +116,9 @@ void engineTickCombat(Engine& engine, float dt)
             gDuelManager.update(dt, player, npcSystem, world, camera);
         }
         // Bomb Tag: client-side rendering only (server owns all gameplay)
-        if (gBombTagManager.enabled()) {
-            gBombTagManager.update(dt, player);
+        if (gGamemodeManager.enabled()) {
+            gGamemodeManager.update(dt, player);
+            gGamemodeManager.renderWorldElements(camera, player);
         }
         player.updateAudio(dt);
 
@@ -219,8 +220,8 @@ void engineTickCombat(Engine& engine, float dt)
         DuelQueue::instance().matchOver();
     bool duelCountdown = gDuelManager.isCountdownActive() ||
         DuelQueue::instance().countdownActive();
-    bool bombTagEndVisible = gBombTagManager.isMatchEnd();
-    bool bombTagCountdown = gBombTagManager.isCountdownActive();
+    bool bombTagEndVisible = gGamemodeManager.isMatchEnd();
+    bool bombTagCountdown = gGamemodeManager.isCountdownActive();
     if ((duelEndVisible || bombTagEndVisible) && mouseDown && !mousePrev) {
         Debug::log(Debug::Category::Duel, "[INPUT OWNERSHIP] mouseClick=1 owner=game_end_ui consumed=1");
         Debug::log(Debug::Category::Duel, "[INPUT OWNERSHIP] weaponInputBlocked=1 reason=end_ui_visible");

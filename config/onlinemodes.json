@@ -2,6 +2,7 @@
   "modes": [
     {
       "id": "sandbox",
+      "gamemode_id": "sandbox",
       "name": "Sandbox",
       "description": "Free building and testing. No scoring.",
       "teams": 0,
@@ -9,6 +10,7 @@
     },
     {
       "id": "free_for_all",
+      "gamemode_id": "ffa",
       "name": "Free For All",
       "description": "Everyone fights alone. First to 20 kills wins.",
       "teams": -1,
@@ -16,6 +18,7 @@
     },
     {
       "id": "team_deathmatch",
+      "gamemode_id": "tdm",
       "name": "Team Deathmatch",
       "description": "Red vs Blue. First team to 30 kills wins.",
       "teams": 2,
@@ -23,6 +26,7 @@
     },
     {
       "id": "bomb_tag",
+      "gamemode_id": "bombtag",
       "name": "Bomb Tag",
       "description": "One bomb, infinite gameplay. Pass it or explode.",
       "teams": 0,

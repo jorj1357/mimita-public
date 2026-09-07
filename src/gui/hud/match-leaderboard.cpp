@@ -97,7 +97,7 @@ void MatchLeaderboard::render()
         ? layout.get("leaderboardText")->fontSize : 0.30f;
 
     // FFA leaderboard: show top 3 horizontally
-    if (mMode == "ffa" && !mFFATop3.empty()) {
+    if (mMode == "free_for_all" && !mFFATop3.empty()) {
         float x = layout.get("ffaLeader1") ? layout.get("ffaLeader1")->x : 20.0f;
         const float y = layout.get("ffaLeader1") ? layout.get("ffaLeader1")->y : 20.0f;
 
@@ -137,7 +137,7 @@ void MatchLeaderboard::render()
     }
 
     // TDM leaderboard: Red left, Blue right
-    if (mMode == "tdm") {
+    if (mMode == "team_deathmatch") {
         const float y = layout.get("redScore") ? layout.get("redScore")->y : 20.0f;
 
         // Red team (left side)

@@ -30,32 +30,8 @@
 
 using namespace MimitaNet;
 
-// ── Arm pose for bomb holder ──────────────────────────────────────────
-// Forces the right arm into a forward+up pose (different from revolver).
-// The exact rotation values should be tuned for a "presenting the bomb" look.
-void setArmToWeaponPose(Player& p, bool hasBomb) {
-    if (!hasBomb) return;
-    for (PhysicalBodyPart& part : p.physicalBody.parts) {
-        if (part.name == "rightArm") {
-            // Use revolver pose as base, but the actual visual distinction
-            // comes from the bomb sphere attached to the hand.
-            WeaponPoseConfig* revPose = nullptr;
-            auto it = gPlayerProcedural.weaponPoses.find("revolver");
-            if (it != gPlayerProcedural.weaponPoses.end())
-                revPose = &it->second;
-            if (revPose && revPose->useWeaponPose) {
-                ProceduralPose target;
-                target.rotationEuler = revPose->rightArm.rotation;
-                target.translation = revPose->rightArm.translation;
-                part.perfectPose = target;
-                part.pose = target;
-                part.translationSpring = SpringState{};
-                part.rotationSpring = SpringState{};
-            }
-            break;
-        }
-    }
-}
+// DEPRECATED: setArmToWeaponPose is now defined in gamemode-manager.cpp
+// This file is kept for backward compatibility but should not be used by new code.
 
 // ── BombTagManager implementation ──────────────────────────────────────
 

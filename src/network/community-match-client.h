@@ -24,8 +24,8 @@ public:
     static CommunityMatchClient& instance();
     void onState(const DuelStatePacket& packet);
     void onBombTagState(const BombTagStatePacket& packet);
-    bool active() const { return mMode == "ffa" || mMode == "tdm" || mMode == "bombtag"; }
-    bool isBombTag() const { return mMode == "bombtag"; }
+    bool active() const { return !mMode.empty() && mMode != "duel" && mMode != "sandbox"; }
+    bool isBombTag() const { return mMode == "bomb_tag"; }
     const std::string& mode() const { return mMode; }
     uint8_t phase() const { return mPhase; }
     float phaseTimer() const { return mPhaseTimer; }

@@ -1,7 +1,7 @@
 {
   "id": "bombtag",
   "name": "Bomb Tag",
-  "description": "One bomb, infinite gameplay. Pass it or explode........",
+  "description": "One bomb, infinite gameplay. Pass it or explode.",
   "team_names": [],
   "goal_value": 0,
   "time_limit_seconds": 0,
@@ -18,5 +18,12 @@
   "bomb_timer_ticks": 900,
   "inactive_ticks": 60,
   "blink_ticks": 30,
-  "max_pass_sanity_distance": 3.0
+  "max_pass_sanity_distance": 3.0,
+  "features": {
+    "world_timer": true,
+    "bomb_holder_text": true,
+    "bomb_blink": true,
+    "infinite_rounds": true,
+    "no_weapons_except_bomb": true
+  }
 }

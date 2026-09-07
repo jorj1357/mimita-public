@@ -1221,10 +1221,20 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 duel->playerAId, duel->playerBId);
             if (!mpAcceptReliableEventOnce(ctx, duel->eventId, duel->eventSessionId))
                 return;
-            if (duel->matchMode[0] == 'f' || duel->matchMode[0] == 't')
-                CommunityMatchClient::instance().onState(*duel);
-            else
+            // All community match modes (FFA, TDM, Bomb Tag, and any future mode)
+            // go to CommunityMatchClient. Only the original 1v1 duel goes to DuelQueue.
+            if (duel->matchMode[0] == 'd' && std::string(duel->matchMode) == "duel")
                 DuelQueue::instance().onDuelState(*duel);
+            else
+                CommunityMatchClient::instance().onState(*duel);
+        }
+        else if (header->type == PACKET_BOMB_TAG_STATE &&
+                 bytes >= (int)sizeof(BombTagStatePacket))
+        {
+            const BombTagStatePacket* bt = reinterpret_cast<const BombTagStatePacket*>(buffer);
+            if (!mpAcceptReliableEventOnce(ctx, bt->eventId, bt->eventSessionId))
+                return;
+            CommunityMatchClient::instance().onBombTagState(*bt);
         }
         else if (header->type == PACKET_DUEL_ENEMY_SPAWN &&
                  bytes >= (int)sizeof(DuelEnemySpawnPacket))

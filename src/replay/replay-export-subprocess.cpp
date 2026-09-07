@@ -278,13 +278,34 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
     }
 
     // ── 5. Begin replay playback ──────────────────────────────────────
+    // NOTE: Do NOT call beginPlayback() here. It sets mPlaying=true AND
+    // resets mLastEventTick=-1, but more importantly it makes
+    // replayPlaybackActive=true which blocks recording in engine-tick-replay.cpp.
+    // seekToTick() already sets mPlaying=true and mLastEventTick=tick-1,
+    // which is all we need for the capture loop.
     Debug::warn(Debug::Category::Replay,
         "[EXPORT-SUBPROCESS] STAGE 5: Beginning replay playback\n");
-    REPLAY_PLAYER.beginPlayback();
     REPLAY_PLAYER.seekToTick(0);
     Debug::warn(Debug::Category::Replay,
         "[EXPORT-SUBPROCESS] playback started: isPlaying=%d currentTick=%u totalTicks=%u\n",
         (int)REPLAY_PLAYER.isPlaying(), REPLAY_PLAYER.currentTick(), REPLAY_PLAYER.totalTicks());
+
+    // Log camera state before capture loop
+    {
+        const ReplaySceneFrame* sf = REPLAY_PLAYER.currentSceneFrame();
+        Debug::warn(Debug::Category::Replay,
+            "[EXPORT-SUBPROCESS] pre-loop camera: hasSceneFrame=%d cameraPos=(%.2f %.2f %.2f) actors=%zu\n",
+            sf ? 1 : 0,
+            sf ? sf->camera.position.x : 0.0f,
+            sf ? sf->camera.position.y : 0.0f,
+            sf ? sf->camera.position.z : 0.0f,
+            sf ? sf->actors.size() : 0);
+    }
+
+    // Check what GAME_STATE and recording state are before the loop
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-SUBPROCESS] pre-loop: gameState=%d isRecording=%d worldLoaded=%d\n",
+        (int)GAME_STATE, (int)REPLAY_RECORDER.isRecording(), (int)WORLD_LOADED);
 
     Debug::warn(Debug::Category::Replay,
         "[EXPORT-SUBPROCESS] ========== CAPTURE LOOP START ==========\n");

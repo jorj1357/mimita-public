@@ -116,7 +116,7 @@
 #include "debug/structured-log.h"
 #include "effects/hitfx-commands.h"
 #include "effects/hit-effects.h"
-#include "game/bomb-tag.h"
+#include "game/gamemode-manager.h"
 #include "gui/gui-editor-commands.h"
 #include "camera/camera-commands.h"
 #include "audio/music-commands.h"
@@ -129,7 +129,7 @@
 void requestSendChatMessage(const std::string& message);
 
 extern DuelManager gDuelManager;
-extern BombTagManager gBombTagManager;
+extern GamemodeManager gGamemodeManager;
 extern FramePacer gFramePacer;
 extern Player* gpPlayer;
 extern Camera* gpCamera;

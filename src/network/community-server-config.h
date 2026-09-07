@@ -19,6 +19,7 @@ namespace MimitaNet {
 struct CommunityMode
 {
     std::string id;
+    std::string gamemodeId;  // bridges to config/gamemodes/*.json id
     std::string name;
     std::string description;
     int teams = 0;

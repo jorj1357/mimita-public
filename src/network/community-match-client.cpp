@@ -22,7 +22,8 @@ CommunityMatchClient& CommunityMatchClient::instance()
 
 void CommunityMatchClient::onState(const DuelStatePacket& packet)
 {
-    if (packet.matchMode[0] != 'f' && packet.matchMode[0] != 't') return;
+    // Accept all community match modes (FFA, TDM, Bomb Tag, and any future mode).
+    // The old character-prefix filter (matchMode[0] == 'f' || 't') is deprecated.
     if (packet.duelId < mMatchId ||
         (packet.duelId == mMatchId && packet.stateVersion < mStateVersion)) return;
 
@@ -66,8 +67,8 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
 
     MatchLeaderboard& hud = MatchLeaderboard::instance();
     hud.setMode(mMode, mGoal);
-    if (mMode == "ffa") hud.updateFFA(leaders);
-    else {
+    if (mMode == "free_for_all") hud.updateFFA(leaders);
+    else if (mMode == "team_deathmatch") {
         bool isRed = false;
         for (uint8_t i = 0; i < packet.participantCount; ++i)
             if (packet.participantIds[i] == MP_CONTEXT.localPlayerId)
@@ -95,8 +96,8 @@ void CommunityMatchClient::onBombTagState(const BombTagStatePacket& packet)
     mBombPos = glm::vec3(packet.bombPosX, packet.bombPosY, packet.bombPosZ);
 
     // Set mode to bombtag if we receive bomb tag state
-    if (mMode != "bombtag") {
-        mMode = "bombtag";
+    if (mMode != "bomb_tag") {
+        mMode = "bomb_tag";
         MatchLeaderboard& hud = MatchLeaderboard::instance();
         hud.setMode(mMode, 0);
     }

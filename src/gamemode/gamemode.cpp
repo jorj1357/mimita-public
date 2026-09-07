@@ -172,6 +172,19 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         next.blinkTicks = std::max(1, optInt(root, "blink_ticks", next.blinkTicks));
         next.maxPassSanityDistance = std::max(0.5f, optFloat(root, "max_pass_sanity_distance", next.maxPassSanityDistance));
 
+        // ── Feature declarations ─────────────────────────────────────
+        if (root.contains("features") && root["features"].is_object()) {
+            const auto& f = root["features"];
+            next.features.worldTimer = optBool(f, "world_timer", next.features.worldTimer);
+            next.features.bombHolderText = optBool(f, "bomb_holder_text", next.features.bombHolderText);
+            next.features.bombBlink = optBool(f, "bomb_blink", next.features.bombBlink);
+            next.features.infiniteRounds = optBool(f, "infinite_rounds", next.features.infiniteRounds);
+            next.features.noWeaponsExceptBomb = optBool(f, "no_weapons_except_bomb", next.features.noWeaponsExceptBomb);
+            next.features.bossHealthbar = optBool(f, "boss_healthbar", next.features.bossHealthbar);
+            next.features.worldText = optBool(f, "world_text", next.features.worldText);
+            next.features.timerAboveEntity = optBool(f, "timer_above_entity", next.features.timerAboveEntity);
+        }
+
         slot.mode = next;
         Debug::warn(Debug::Category::Duel,
             "[GAMEMODE] Loaded %s: %s | goal=%d | time=%d | respawn=%.1fs | heal=%d | maps=%zu\n",

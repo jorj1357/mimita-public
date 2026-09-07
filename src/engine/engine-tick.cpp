@@ -37,7 +37,7 @@
 #include "replay/replay-export-ui.h"
 #include "game/duel.h"
 #include "duel/duel-queue.h"
-#include "game/bomb-tag.h"
+#include "game/gamemode-manager.h"
 #include "game/game-cli.h"
 #include "game/game-state.h"
 #include "replay/replay.h"
@@ -50,7 +50,7 @@
 #include "effects/effect-part.h"
 
 extern DuelManager gDuelManager;
-extern BombTagManager gBombTagManager;
+extern GamemodeManager gGamemodeManager;
 extern FramePacer gFramePacer;
 extern bool gReplayExportRenderMode;
 

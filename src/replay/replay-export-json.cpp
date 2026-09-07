@@ -321,6 +321,25 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
         return false;
     }
 
+    // Load the clip in the main process to extract totalTicks BEFORE spawning
+    // the subprocess. Without this, gJob.totalTicks stays 0 and the export
+    // loop finishes after capturing exactly 1 frame (261-byte empty MP4).
+    ReplayClip clip;
+    if (!clip.load(jsonPath)) {
+        gJob.state = ReplayExportJob::Failed;
+        gJob.errorMsg = "Failed to load clip for export:\n" + jsonPath;
+        return false;
+    }
+    if (clip.header.tickCount == 0 && clip.sceneFrames.empty()) {
+        gJob.state = ReplayExportJob::Failed;
+        gJob.errorMsg = "Clip has no scene frames to export:\n" + jsonPath;
+        return false;
+    }
+    gJob.totalTicks = clip.header.tickCount;
+    Debug::warn(Debug::Category::Replay,
+        "[EXPORT-PRESS] startReplayExport: clip=%s totalTicks=%u sceneFrames=%zu\n",
+        jsonPath.c_str(), gJob.totalTicks, clip.sceneFrames.size());
+
     const int width = gExportConfig.exportWidth;
     const int height = gExportConfig.exportHeight;
     Debug::warn(Debug::Category::Replay,

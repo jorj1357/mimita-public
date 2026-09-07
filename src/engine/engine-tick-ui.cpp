@@ -45,7 +45,7 @@
 #include "render/lighting-config.h"
 #include "audio/music-manager.h"
 #include "game/duel.h"
-#include "game/bomb-tag.h"
+#include "game/gamemode-manager.h"
 #include "game/game-state.h"
 #include "network/multiplayer-context.h"
 
@@ -56,7 +56,7 @@
 #include "gui/menus/pause-menu.h"
 
 extern DuelManager gDuelManager;
-extern BombTagManager gBombTagManager;
+extern GamemodeManager gGamemodeManager;
 extern FramePacer gFramePacer;
 extern bool gReplayExportRenderMode;
 extern bool gReplayCinematicMode;

@@ -204,27 +204,24 @@ void serverCommunityStartMatch(bool skipIntermission)
     ServerDuelState& d = serverDuelState();
     if (!d.enabled) return;
 
-    // Set match mode from community mode
-    if (d.communityMode == "free_for_all")
-    {
-        d.matchMode = "ffa";
-        d.mode = ServerMode::FreeForAll;
-    }
-    else if (d.communityMode == "team_deathmatch")
-    {
-        d.matchMode = "tdm";
-        d.mode = ServerMode::TeamDeathmatch;
-    }
-    else if (d.communityMode == "bomb_tag")
-    {
-        d.matchMode = "bombtag";
-        d.mode = ServerMode::Sandbox;  // Bomb tag uses Sandbox base mode
-    }
-    else
-        return;  // sandbox mode doesn't have a match to start
+    // ── Look up the community mode and resolve its gamemode_id ───────
+    const CommunityServerConfig& communityConfig = CommunityServerConfig::instance();
+    const CommunityMode* cm = communityConfig.modeById(d.communityMode);
+    if (!cm) return;  // unknown mode — cannot start
 
-    // Load gamemode config for timing
-    const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+    // Use gamemode_id to look up the actual gamemode config.
+    // This bridges onlinemodes.json (community menu) to gamemodes/*.json (gameplay rules).
+    const std::string& resolvedGamemodeId = cm->gamemodeId;
+
+    // Set match mode from community mode id (used for routing and state machine)
+    d.matchMode = d.communityMode;
+    // DEPRECATED: the old ServerMode enum and short-form matchMode strings
+    // are kept for backward compatibility with duel/FFA/TDM code paths.
+    // New modes should use matchMode directly (the community mode id).
+    d.mode = ServerMode::Sandbox;
+
+    // Load gamemode config using the resolved gamemode_id
+    const Gamemode& gm = GamemodeRegistry::instance().get(resolvedGamemodeId);
     d.goalValue = gm.goalValue;
     d.timeLimitSeconds = gm.timeLimitSeconds;
     d.intermissionSeconds = (float)gm.intermissionSeconds;
@@ -256,9 +253,16 @@ void serverCommunityStartMatch(bool skipIntermission)
     ++d.stateVersion;
     ++d.duelId;
 
+    // ── Mode-specific activation ─────────────────────────────────────
+    // Each mode that needs extra initialization gets its entry point called here.
+    // This replaces the old hardcoded if/else if chain.
+    if (d.matchMode == "bomb_tag") {
+        serverBombTagStartMatch(skipIntermission);
+    }
+
     Debug::warn(Debug::Category::Duel,
-        "[MODESTART] mode=%s matchMode=%s phase=%s goal=%d timeLimit=%d intermission=%.0f\n",
-        d.communityMode.c_str(), d.matchMode.c_str(),
+        "[MODESTART] community=%s gamemode=%s phase=%s goal=%d timeLimit=%d intermission=%.0f\n",
+        d.communityMode.c_str(), resolvedGamemodeId.c_str(),
         skipIntermission ? "COUNTDOWN_PENDING" : "INTERMISSION",
         d.goalValue,
         d.timeLimitSeconds, d.intermissionSeconds);
@@ -334,7 +338,7 @@ void broadcastDuelState(SOCKET sock,
     pkt.resultsSeconds = (int32_t)d.resultsSeconds;
 
     // FFA top-3 leaderboard
-    if (d.matchMode == "ffa") {
+    if (d.matchMode == "free_for_all") {
         // Sort players by kills descending
         std::vector<std::pair<uint32_t, int>> sorted;
         for (const auto& kv : d.ffaKills)
@@ -680,7 +684,7 @@ void assignMatchParticipants(ServerDuelState& d,
     // Sort by ID for deterministic team assignment
     std::sort(d.participants.begin(), d.participants.end());
 
-    if (d.matchMode == "tdm") {
+    if (d.matchMode == "team_deathmatch") {
         for (size_t i = 0; i < d.participants.size(); ++i) {
             d.matchTeams[d.participants[i]] = (int)(i % 2);
         }
@@ -815,7 +819,7 @@ void checkMatchWinConditions(ServerDuelState& d, uint32_t tick,
                              std::unordered_map<uint32_t, ServerPlayer>& players,
                              uint64_t& totalPacketsOut)
 {
-    if (d.matchMode == "ffa") {
+    if (d.matchMode == "free_for_all") {
         for (const auto& kv : d.ffaKills) {
             if (kv.second >= d.goalValue) {
                 d.matchOver = true;
@@ -832,7 +836,7 @@ void checkMatchWinConditions(ServerDuelState& d, uint32_t tick,
                 return;
             }
         }
-    } else if (d.matchMode == "tdm") {
+    } else if (d.matchMode == "team_deathmatch") {
         if (d.redTeamKills >= d.goalValue || d.blueTeamKills >= d.goalValue) {
             d.matchOver = true;
             d.phase = DUEL_PHASE_RESULTS;
@@ -855,7 +859,7 @@ void checkMatchWinConditions(ServerDuelState& d, uint32_t tick,
         d.phase = DUEL_PHASE_RESULTS;
         d.victoryType = 1;  // TimeLimit
         d.phaseTimer = d.resultsSeconds;
-        if (d.matchMode == "ffa") {
+        if (d.matchMode == "free_for_all") {
             int best = -1;
             for (const auto& kv : d.ffaKills) {
                 if (kv.second > best) {
@@ -864,7 +868,7 @@ void checkMatchWinConditions(ServerDuelState& d, uint32_t tick,
                 }
             }
             emitDuelMatchPersistence(d, tick, players);
-        } else if (d.matchMode == "tdm") {
+        } else if (d.matchMode == "team_deathmatch") {
             d.winnerTeam = d.redTeamKills >= d.blueTeamKills ? 0 : 1;
             emitDuelMatchPersistence(d, tick, players);
         }
@@ -1091,13 +1095,13 @@ void serverDuelTick(SOCKET sock,
                 }
             }
             // FFA scoring
-            else if (d.matchMode == "ffa") {
+            else if (d.matchMode == "free_for_all") {
                 ++d.ffaKills[killerId];
                 ++d.ffaDeaths[victimId];
                 // Win condition checked in checkMatchWinConditions
             }
             // TDM scoring
-            else if (d.matchMode == "tdm") {
+            else if (d.matchMode == "team_deathmatch") {
                 ++d.ffaKills[killerId];
                 ++d.ffaDeaths[victimId];
                 auto teamIt = d.matchTeams.find(killerId);
@@ -1118,7 +1122,7 @@ void serverDuelTick(SOCKET sock,
     }
 
     // ── FFA/TDM match mode state machine ────────────────────────────
-    if (d.matchMode == "ffa" || d.matchMode == "tdm")
+    if (d.matchMode == "free_for_all" || d.matchMode == "team_deathmatch")
     {
         if (d.stateBroadcastPending)
         {
@@ -1266,7 +1270,7 @@ void serverDuelTick(SOCKET sock,
     }
 
     // ── Bomb Tag match mode state machine ──────────────────────────
-    if (d.matchMode == "bombtag")
+    if (d.matchMode == "bomb_tag")
     {
         if (d.stateBroadcastPending)
         {
@@ -1603,7 +1607,7 @@ void serverBombTagStartMatch(bool skipIntermission)
     ServerDuelState& d = serverDuelState();
     if (!d.enabled) return;
 
-    // Load bomb tag gamemode config
+    // Load bomb tag gamemode config using the gamemode_id from the JSON.
     const Gamemode& gm = GamemodeRegistry::instance().get("bombtag");
     d.bombTimerTicksMax = (uint32_t)(gm.bombTimerTicks > 0 ? gm.bombTimerTicks : 900);
     d.bombInactiveTicksMax = (uint32_t)(gm.inactiveTicks > 0 ? gm.inactiveTicks : 60);

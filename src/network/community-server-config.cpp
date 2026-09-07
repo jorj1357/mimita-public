@@ -62,6 +62,7 @@ bool CommunityServerConfig::loadModes(const std::string& path)
             if (!item.is_object() || !item.contains("id") || !item["id"].is_string()) continue;
             CommunityMode mode;
             mode.id = item.value("id", "");
+            mode.gamemodeId = item.value("gamemode_id", mode.id);
             mode.name = item.value("name", mode.id);
             mode.description = item.value("description", "");
             mode.teams = item.value("teams", 0);

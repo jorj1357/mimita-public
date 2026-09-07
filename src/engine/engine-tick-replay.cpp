@@ -37,7 +37,7 @@
 #include "config/killfeed-config.h"
 #include "video/outro.h"
 #include "game/duel.h"
-#include "game/bomb-tag.h"
+#include "game/gamemode-manager.h"
 #include "config/player-settings.h"
 #include "npc/npc-state-machine.h"
 #include "config.h"
@@ -45,7 +45,7 @@
 #include "perf/perf-spike.h"
 
 extern DuelManager gDuelManager;
-extern BombTagManager gBombTagManager;
+extern GamemodeManager gGamemodeManager;
 
 constexpr double SIM_DT = 1.0 / 60.0;
 
@@ -234,8 +234,8 @@ void engineTickReplay(Engine& engine, float dt)
 
             if (gDuelManager.phase() == DuelPhase::Countdown ||
                 gDuelManager.phase() == DuelPhase::MatchEnd ||
-                gBombTagManager.isCountdownActive() ||
-                gBombTagManager.isMatchEnd())
+                gGamemodeManager.isCountdownActive() ||
+                gGamemodeManager.isMatchEnd())
             {
                 tickFrame.moveX = 0.0f;
                 tickFrame.moveY = 0.0f;
@@ -296,13 +296,37 @@ void engineTickReplay(Engine& engine, float dt)
             }
         }
 
+        // During export, recording must proceed even though replayPlaybackActive
+        // is true (beginPlayback was called). Without this, scene frames are empty
+        // because the recording block is skipped, producing clips with tick=0,
+        // camera=(0,0,0), and no actors.
         const bool recordingReplayTick =
-            gReplayRecorder.isRecording() && !replayPlaybackActive;
+            gReplayRecorder.isRecording() && (!replayPlaybackActive || isReplayExportActive());
         uint32_t replayTick = 0;
         if (recordingReplayTick) {
             replayTick = gReplayRecorder.currentTick();
             { MIMITA_PERF_SCOPE("Replay::RecordFrame::Input");
               gReplayRecorder.recordFrame(tickFrame);
+            }
+            // Log first few recording frames to verify data is populated
+            if (replayTick < 3) {
+                Debug::warn(Debug::Category::Replay,
+                    "[RECORD] tick=%u cameraPos=(%.2f %.2f %.2f) cameraRot=(%.2f %.2f %.2f) fov=%.1f gameState=%d\n",
+                    replayTick, camera.pos.x, camera.pos.y, camera.pos.z,
+                    camera.pitch, 0.0f, player.yaw, (int)gameState);
+            }
+        } else if (replayPlaybackActive && !isReplayExportActive()) {
+            // Only log the "not recording" state during live replay, not during export
+            // (export has its own recording path)
+        } else if (!gReplayRecorder.isRecording() && !replayPlaybackActive) {
+            // During export subprocess, check why recording is off
+            static int sNotRecordingLogCount = 0;
+            if (sNotRecordingLogCount < 5) {
+                Debug::warn(Debug::Category::Replay,
+                    "[RECORD] NOT RECORDING: isRecording=%d replayPlaybackActive=%d isExportActive=%d gameState=%d\n",
+                    (int)gReplayRecorder.isRecording(), (int)replayPlaybackActive,
+                    (int)isReplayExportActive(), (int)gameState);
+                sNotRecordingLogCount++;
             }
         }
 
@@ -811,6 +835,13 @@ void engineTickReplay(Engine& engine, float dt)
 
             {
             MIMITA_PERF_SCOPE("Replay::StoreFrame");
+            // Log what's being committed for the first few frames
+            if (replayTick < 3) {
+                Debug::warn(Debug::Category::Replay,
+                    "[RECORD COMMIT] tick=%u actors=%zu effects=%zu cameraPos=(%.2f %.2f %.2f)\n",
+                    replayTick, sceneFrame.actors.size(), sceneFrame.effects.size(),
+                    sceneFrame.camera.position.x, sceneFrame.camera.position.y, sceneFrame.camera.position.z);
+            }
             gReplayRecorder.commitFrame();
             replayPerf.sceneFramesCommitted++;
             }

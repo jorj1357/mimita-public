@@ -11,7 +11,7 @@
 #include "gui/hud/chat-window.h"
 #include "gui/menus/duel-config-menu.h"
 #include "game/duel.h"
-#include "game/bomb-tag.h"
+#include "game/gamemode-manager.h"
 #include "game/spawn-utils.h"
 #include "game/spawn-override.h"
 #include "duel/duel-queue.h"
@@ -25,10 +25,11 @@
 #include "devtools/dev-overlay.h"
 #include "devtools/dev-npc-selection.h"
 #include "replay/replay.h"
+#include "replay/replay-export.h"
 #include "debug/debug-log.h"
 
 extern DuelManager gDuelManager;
-extern BombTagManager gBombTagManager;
+extern GamemodeManager gGamemodeManager;
 
 void engineTickState(Engine& engine, float dt)
 {
@@ -45,6 +46,17 @@ void engineTickState(Engine& engine, float dt)
     bool& editorMode = EDITOR_MODE;
     std::string& activeGameMode = ACTIVE_GAME_MODE;
     std::string& activeMapPath = ACTIVE_MAP_PATH;
+
+    // Log gameState during export subprocess (first 5 ticks)
+    if (isReplayExportActive()) {
+        static int sExportStateLogCount = 0;
+        if (sExportStateLogCount < 5) {
+            Debug::warn(Debug::Category::Replay,
+                "[STATE] export gameState=%d worldLoaded=%d activeMapPath='%s'\n",
+                (int)gameState, (int)worldLoaded, activeMapPath.c_str());
+            sExportStateLogCount++;
+        }
+    }
     int& selectedEditorObject = SELECTED_EDITOR_OBJ;
     bool& freecamEnabled = FREECAM_ENABLED;
     glm::vec3& deathPosition = DEATH_POSITION;
@@ -72,6 +84,11 @@ void engineTickState(Engine& engine, float dt)
     if (gameState != prevState)
     {
         printf("[MAIN] gameState changed %d -> %d\n", (int)prevState, (int)gameState);
+        if (isReplayExportActive()) {
+            Debug::warn(Debug::Category::Replay,
+                "[STATE] gameState CHANGED during export: %d -> %d\n",
+                (int)prevState, (int)gameState);
+        }
         if (gameState == GAME_PLAYING) {
             MusicManager::instance().enterGameMode();
         } else {
@@ -191,7 +208,7 @@ void engineTickState(Engine& engine, float dt)
                     activeMapPath = cfg.mapPath;
                     worldLoaded = !world.mesh.verts.empty();
                     clearPendingDuelConfig();
-                    gBombTagManager.stop();
+                    gGamemodeManager.stop();
                 }
             }
             {

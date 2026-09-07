@@ -15,6 +15,22 @@
 
 struct DuelConfig;
 
+// ── Gamemode Feature Declarations ─────────────────────────────────────
+// Each gamemode JSON can declare which features it uses.
+// The GamemodeManager reads these to determine what to render.
+// Adding a new feature type = adding a field here + JSON key + renderer.
+struct GamemodeFeatures {
+    bool worldTimer = false;        // Render a countdown timer above a world entity
+    bool bombHolderText = false;    // Render "X has the bomb!!!!" at top of screen
+    bool bombBlink = false;         // Bomb sphere blinks between two colors
+    bool infiniteRounds = false;    // Mode runs indefinitely, no win condition
+    bool noWeaponsExceptBomb = false; // Player loadout restricted to bomb only
+    // Future features:
+    bool bossHealthbar = false;     // Render healthbar above a boss entity
+    bool worldText = false;         // Render arbitrary text in world space
+    bool timerAboveEntity = false;  // Render timer above any entity
+};
+
 struct Gamemode {
     std::string id = "duel";
     std::string name = "Duel";
@@ -40,6 +56,9 @@ struct Gamemode {
     int inactiveTicks = 60;            // Ticks of inactive grace after pass
     int blinkTicks = 30;               // Ticks per color blink phase
     float maxPassSanityDistance = 3.0f;// Hard rejection distance for passes (meters)
+    // ── Feature declarations ─────────────────────────────────────────
+    // Declares what this gamemode renders/uses. Drives GamemodeManager.
+    GamemodeFeatures features;
 };
 
 class GamemodeRegistry {

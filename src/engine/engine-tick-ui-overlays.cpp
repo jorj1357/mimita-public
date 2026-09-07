@@ -56,7 +56,7 @@
 #include "render/lighting-config.h"
 #include "audio/music-manager.h"
 #include "game/duel.h"
-#include "game/bomb-tag.h"
+#include "game/gamemode-manager.h"
 #include "game/game-state.h"
 #include "duel/duel-ui.h"
 #include "network/multiplayer-context.h"
@@ -69,7 +69,7 @@
 #include "network/server-duel.h"
 
 extern DuelManager gDuelManager;
-extern BombTagManager gBombTagManager;
+extern GamemodeManager gGamemodeManager;
 extern FramePacer gFramePacer;
 extern bool gReplayExportRenderMode;
 extern bool gReplayCinematicMode;extern bool gRoomCodeShow;
@@ -156,7 +156,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             gGuiMenuState = GUI_MENU_COMPETITIVE_RESULT;
             gDuelManager.stopDuel();
-            gBombTagManager.stop();
+            gGamemodeManager.stop();
             npcSystem.destroyAll();
             gReplayPlayer.stopPlayback();
             if (gReplayRecorder.isRecording())
@@ -171,7 +171,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             if (gReplayRecorder.isRecording())
                 gReplayRecorder.stopRecording();
             gDuelManager.stopDuel();
-            gBombTagManager.stop();
+            gGamemodeManager.stop();
             npcSystem.destroyAll();
             glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             gameState = GAME_MENU;
@@ -187,16 +187,15 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                 DevOverlay::instance().showNotification("Replay not ready yet. Wait for replay to load.", 5.0f);
             }
         }
-    } else if (gBombTagManager.isMatchEnd()) {
-        // Bomb Tag match end — render from replicated state
-        // For now, just clear bomb tag state on match end
+    } else if (gGamemodeManager.isMatchEnd()) {
+        // Community match end — render from replicated state
     } else {
         // Local/offline duel only. Network duels use DuelQueue HUD (renderDuelMatchHud).
         if (gDuelManager.enabled())
             gDuelManager.renderHud();
-        // Bomb Tag HUD: rendered from server-authoritative replicated state
-        if (gBombTagManager.enabled())
-            gBombTagManager.renderHud();
+        // Community match HUD: rendered from server-authoritative replicated state
+        if (gGamemodeManager.enabled())
+            gGamemodeManager.renderHud();
     }
 
     if (mpContext.active && mpContext.showPlayerList &&
@@ -582,9 +581,12 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                     return text;
                 };
                 drawCentered("modeTitle", textTemplate("modeTitle", {
-                    {"{mode_name}", match.mode() == "ffa" ? "FREE FOR ALL" : "TEAM DEATHMATCH"}}));
+                    {"{mode_name}", match.mode() == "free_for_all" ? "FREE FOR ALL"
+                        : match.mode() == "team_deathmatch" ? "TEAM DEATHMATCH"
+                        : match.mode() == "bomb_tag" ? "BOMB TAG"
+                        : match.mode()}}));
 
-                if (match.mode() == "tdm") {
+                if (match.mode() == "team_deathmatch") {
                     drawCentered("scoreText", textTemplate("scoreText", {
                         {"{red_name}", "RED"}, {"{red_score}", std::to_string(match.redScore())},
                         {"{blue_name}", "BLUE"}, {"{blue_score}", std::to_string(match.blueScore())},
