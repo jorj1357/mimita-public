@@ -23,6 +23,7 @@ ReplayBodyPartState mixPart(
     const ReplayBodyPartState& a, const ReplayBodyPartState& b, float t)
 {
     ReplayBodyPartState result = a;
+    result.parentPartId = t < 0.5f ? a.parentPartId : b.parentPartId;
     result.position = glm::mix(a.position, b.position, t);
     result.rotation = glm::slerp(a.rotation, b.rotation, t);
     result.scale = glm::mix(a.scale, b.scale, t);

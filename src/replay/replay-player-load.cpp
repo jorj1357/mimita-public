@@ -158,6 +158,7 @@ bool ReplayPlayer::loadFromJSON(const std::string& path) {
                                 if (actor.bodyPartCount >= ReplayActorState::MAX_BODY_PARTS) break;
                                 ReplayBodyPartState& part = actor.bodyParts[actor.bodyPartCount];
                                 part.partId = partIdFromName(bp.key().c_str());
+                                part.parentPartId = bp.value().value("parentPartId", 0xFF);
                                 if (bp.value().contains("position")) {
                                     auto& p = bp.value()["position"];
                                     part.position = {p[0].get<float>(), p[1].get<float>(), p[2].get<float>()};

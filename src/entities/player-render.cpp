@@ -49,6 +49,8 @@ void Player::applyReplayPose(
     const glm::mat4 root =
         glm::translate(glm::mat4(1.0f), rootPosition) *
         glm::rotate(glm::mat4(1.0f), glm::radians(rootYaw), glm::vec3(0, 0, 1));
+    std::array<bool, ReplayActorState::MAX_BODY_PARTS> applied{};
+    for (int pass = 0; pass < 2; ++pass) {
     for (PhysicalBodyPart& bodyPart : physicalBody.parts) {
         const ReplayBodyPartState* found = nullptr;
         for (uint8_t i = 0; i < partCount; ++i) {
@@ -59,10 +61,28 @@ void Player::applyReplayPose(
         }
         if (!found) continue;
 
+        glm::mat4 parentWorld = root;
+        if (found->parentPartId != 0xFF) {
+            bool parentApplied = false;
+            for (size_t i = 0; i < physicalBody.parts.size(); ++i) {
+                const PhysicalBodyPart& parent = physicalBody.parts[i];
+                if (i < applied.size() &&
+                    partIdFromName(parent.name.c_str()) == found->parentPartId && applied[i]) {
+                    parentWorld = parent.worldTransform;
+                    parentApplied = true;
+                    break;
+                }
+            }
+            if (!parentApplied)
+                continue;
+        }
         glm::mat4 local = glm::translate(glm::mat4(1.0f), found->position)
             * glm::mat4_cast(found->rotation)
             * glm::scale(glm::mat4(1.0f), found->scale);
-        bodyPart.worldTransform = root * local;
+        bodyPart.worldTransform = parentWorld * local;
+        const size_t bodyPartIndex = (size_t)(&bodyPart - physicalBody.parts.data());
+        if (bodyPartIndex < applied.size())
+            applied[bodyPartIndex] = true;
 
         // Left/right leg diagnostic: log quaternion at apply time
         uint8_t pid = partIdFromName(bodyPart.name.c_str());
@@ -79,6 +99,7 @@ void Player::applyReplayPose(
                     found->position.x, found->position.y, found->position.z);
             }
         }
+    }
     }
 }
 

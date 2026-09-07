@@ -71,7 +71,7 @@ static void doExplosion(
     const float knockbackHorizontalMul = cp(def, "knockbackHorizontalMultiplier", 1.0f);
     const float knockbackVerticalMul = cp(def, "knockbackVerticalMultiplier", 1.0f);
 
-    spawnExplosionFx(position, "rocket_launcher", owner.username, owner.sizeScale);
+    spawnExplosionFx(position, "rocket_launcher", owner.username, owner.sizeScale, !presentationOnly);
 
     {
         float distToCam = glm::length(position - camera.pos);
@@ -101,7 +101,7 @@ static void doExplosion(
         float t = dist / splashRadius;
         float knockScale = 1.0f - t * t;
         knockScale = knockScale * 0.85f + 0.15f;
-        {
+        if (!presentationOnly) {
             float kb = knockbackStrength * knockScale;
             glm::vec3 kbVec(dir.x * kb * knockbackHorizontalMul,
                             dir.y * kb * knockbackHorizontalMul,
@@ -363,7 +363,7 @@ void update(
                          ownerCapsule.b.z + ownerCapsule.r);
             glm::vec3 closest = glm::clamp(checkPos, mn, mx);
             float dist = glm::length(checkPos - closest);
-            if (dist < 0.5f && rocket.distanceTraveled >= IGNORE_OWNER_DIST) {
+            if (!presentationOnly && dist < 0.5f && rocket.distanceTraveled >= IGNORE_OWNER_DIST) {
                 hitOwner = true;
             }
             if (!hitOwner) {
@@ -436,7 +436,7 @@ void update(
         }
 
         // ── In-air looping sound ──
-        {
+        if (!presentationOnly) {
             float inAirInterval = 0.15f;
             if (state.gameTime - rocket.lastInAirSoundTime >= inAirInterval) {
                 float volDb = cp(def, "flightSoundVolumeDb", 15.0f);

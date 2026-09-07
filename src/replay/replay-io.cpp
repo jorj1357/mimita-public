@@ -102,6 +102,7 @@ ReplayActorState parseActor(const json& value)
             if (actor.bodyPartCount >= ReplayActorState::MAX_BODY_PARTS) break;
             ReplayBodyPartState& part = actor.bodyParts[actor.bodyPartCount];
             part.partId = partIdFromName(it.key().c_str());
+            part.parentPartId = it->value("parentPartId", 0xFF);
             part.position = jsonVec3(it->value("position", json::array()));
             if (it->contains("rotation") && (*it)["rotation"].is_array() && (*it)["rotation"].size() >= 4) {
                 auto& r = (*it)["rotation"];
@@ -136,6 +137,7 @@ json actorJson(const ReplayActorState& actor)
             ? kReplayBodyPartNames[part.partId] : "unknown";
         value["bodyParts"][partName] = {
             {"position", vec3Json(part.position)},
+            {"parentPartId", part.parentPartId},
             {"rotation", {part.rotation.w, part.rotation.x, part.rotation.y, part.rotation.z}},
             {"scale", vec3Json(part.scale)}
         };

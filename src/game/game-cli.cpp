@@ -672,6 +672,11 @@ bool handleGameCLI(int argc, char** argv)
         actorA.type = "player";
         actorA.position = {0.0f, 0.0f, 0.0f};
         actorA.weaponName = "revolver";
+        actorA.bodyPartCount = 2;
+        actorA.bodyParts[0].partId = (uint8_t)ReplayBodyPartId::LeftLeg;
+        actorA.bodyParts[0].parentPartId = (uint8_t)ReplayBodyPartId::Torso;
+        actorA.bodyParts[1].partId = (uint8_t)ReplayBodyPartId::RightLeg;
+        actorA.bodyParts[1].parentPartId = (uint8_t)ReplayBodyPartId::Torso;
         for (uint32_t i = 0; i < 10; i++) {
             ReplaySceneFrame f;
             f.tick = (int)i;
@@ -681,6 +686,17 @@ bool handleGameCLI(int argc, char** argv)
             f.camera.rotation = {5.0f, 0.0f, 90.0f + (float)i * 2.0f};
             f.camera.fov = 100.0f;
             f.actors.push_back(actorA);
+            if (i == 2) {
+                ReplayEffectEvent rocketEvent;
+                rocketEvent.eventId = 9001;
+                rocketEvent.type = "projectile_spawn";
+                rocketEvent.assetId = "rocket_launcher";
+                rocketEvent.spawnTick = 2;
+                rocketEvent.position = {1.0f, 2.0f, 3.0f};
+                rocketEvent.velocity = {45.0f, 0.0f, 0.0f};
+                rocketEvent.lifetime = 5.0f;
+                f.effects.push_back(rocketEvent);
+            }
             clip.sceneFrames.push_back(f);
         }
 
@@ -727,6 +743,14 @@ bool handleGameCLI(int argc, char** argv)
               "camera continues moving at final replay tick");
 
         check(player.currentTick() > 0, "currentTick > 0 (replay advances)");
+        const ReplaySceneFrame* eventFrame = player.currentSceneFrame();
+        check(eventFrame && eventFrame->actors[0].bodyParts[0].parentPartId ==
+                  (uint8_t)ReplayBodyPartId::Torso,
+              "replay body-part parent relationship survives serialization");
+        bool foundRocketEvent = false;
+        for (const ReplayEffectEvent& event : clip.sceneFrames[2].effects)
+            foundRocketEvent |= event.eventId == 9001 && event.assetId == "rocket_launcher";
+        check(foundRocketEvent, "rocket event keeps stable event ID and weapon identity");
 
         // 3. Verify the player-default Windows encoder without launching the game.
 #ifdef _WIN32

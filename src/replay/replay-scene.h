@@ -66,6 +66,7 @@ struct ReplaySoundEvent {
 
 struct ReplayBodyPartState {
     uint8_t partId = 0xFF;  // ReplayBodyPartId, resolved to name only at export/load
+    uint8_t parentPartId = 0xFF; // nearest recorded body-part ancestor; 0xFF means root-local
     glm::vec3 position{};
     glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
     glm::vec3 scale{1.0f};
@@ -230,6 +231,7 @@ inline uint8_t partIdFromName(const char* name) {
 }
 
 struct ReplayBodyPartPose {
+    uint8_t parentPartId = 0xFF;
     glm::vec3 position{};
     glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
     glm::vec3 scale{1.0f};
@@ -269,7 +271,8 @@ struct ReplayActorTickState {
         if (sizeScale != o.sizeScale)
             return false;
         for (uint8_t i = 0; i < bodyPartCount; ++i) {
-            if (bodyParts[i].position != o.bodyParts[i].position ||
+            if (bodyParts[i].parentPartId != o.bodyParts[i].parentPartId ||
+                bodyParts[i].position != o.bodyParts[i].position ||
                 bodyParts[i].rotation.x != o.bodyParts[i].rotation.x ||
                 bodyParts[i].rotation.y != o.bodyParts[i].rotation.y ||
                 bodyParts[i].rotation.z != o.bodyParts[i].rotation.z ||

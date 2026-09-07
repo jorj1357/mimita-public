@@ -708,6 +708,16 @@ jorj - this not official format not good but  when we edit netowkring stuff or d
 6. Validation: canonical `mimita.exe` build passed with `Status: SUCCESS`; `mimita.exe --replay-export-selftest --timeout 60 --no-coordinator` passed 26/26. Human MP4 verification of rocket travel, world collision, explosion timing, smoke, and muzzle effects remains required.
 7. Status: PARTIALLY FIXED. Tracer suppression and weapon identity are implemented. Full shared gameplay projectile replay and the left-leg rotation issue remain open.
 
+## 2026-09-07T20:13:40Z — Replay rockets used a non-colliding visual approximation and legs lost skeleton parent space (IMPLEMENTED; LIVE REVIEW REQUIRED)
+
+1. Observed bad behavior: replay rocket launchers showed delayed/slow projectiles, tracer-like presentation, no reliable world collision or explosion timing, and the left leg used the wrong world-axis orientation.
+2. Exact old replay rocket path: `src\\engine\\engine-tick-camera.cpp` constructed an `EffectPart`, assigned `replayType = "replay_rocket"`, copied the recorded position/velocity/lifetime, and spawned it. This made every delivered event a visual object rather than a `RocketLauncherState::Rocket` advanced by the live weapon update.
+3. Exact new rocket path: replay creates one `RocketLauncherState::Rocket` per event ID, advances `WeaponRocketLauncher::update(..., presentationOnly=true)` at `1.0f / 60.0f`, renders the shared rocket state through `WeaponRocketLauncher::render`, and reuses `spawnExplosionFx` plus the live smoke/collision/orientation code. Presentation-only mode suppresses NPC/player damage, knockback, health, kill, and replay-authority changes; it also suppresses duplicate in-air and explosion sounds because recorded replay audio is authoritative.
+4. Exact old leg path: `captureReplayBodyParts()` removed only the player root yaw and stored each world transform as root-local. `Player::applyReplayPose()` then applied every part as `root * translate(position) * rotate(rotation)`, bypassing the skeleton parent chain.
+5. Exact new leg path: body-part records carry `parentPartId`; capture computes the nearest recorded body-part ancestor and decomposes `inverse(parentWorld) * partWorld`; replay reconstructs `parentWorld * localTransform` in two passes. Files include `src\\replay\\replay-scene.h`, `src\\replay\\replay-recorder.cpp`, `src\\replay\\replay-io.cpp`, `src\\replay\\replay-player-load.cpp`, `src\\replay\\replay-player-interp.cpp`, and `src\\entities\\player-render.cpp`. Old replay files remain root-local through the `0xFF` fallback.
+6. Automated proof: canonical build succeeded with `Status: SUCCESS`; replay export self-test passed `28/28`, including rocket event identity and body-parent serialization checks. This proves source/build contracts, not final MP4 appearance.
+7. Status: IMPLEMENTED; LIVE REVIEW REQUIRED. Human export testing must verify rocket travel, wall collision, one explosion, smoke/lifetime decay, no duplicate audio/effects, and the left/right leg world-axis result. The automated test does not yet instantiate a real wall-collision rocket or compare rendered leg axes.
+
 ## 2026-09-07T19:45:00Z — VIP order management returned 500 because migration 008 was not registered (RESOLVED)
 
 1. Bad behavior
@@ -724,3 +734,13 @@ jorj - this not official format not good but  when we edit netowkring stuff or d
    2. Added the version-8 filename mapping to `008_vip_refunds.sql`.
    3. Deployment reran the migration and verified the order endpoint after restart.
 4. Status: RESOLVED in source and deployment. Cloudflare/Metricool/font warnings are unrelated analytics/browser warnings.
+
+## 2026-09-07T20:29:18Z — NPC replay rockets and left-leg rotation confirmed working; player rockets were removed at launch (PLAYER ROCKET FIXED; LIVE MP4 REVIEW REQUIRED)
+
+1. Human acceptance update: NPC rockets now appear in exported MP4s with visible smoke, and the left-leg rotation issue is no longer observed. These are confirmed working changes from the shared replay rocket and parent-relative transform implementation.
+2. Exact wrong left-leg code: replay capture stored each part after only removing the player root yaw, and replay applied it as `root * translate(found->position) * glm::mat4_cast(found->rotation)`. This flattened the skeleton and bypassed the original parent chain, so the left leg could be interpreted in the wrong axis space.
+3. Exact corrected left-leg code: capture now finds the nearest recorded body-part ancestor, computes `localTransform = inverse(parentWorld) * wt`, stores `parentPartId`, and replay applies `parentWorld * localTransform` in two passes. Older root-local replay files use the `parentPartId == 0xFF` fallback.
+4. Exact wrong player-rocket code: presentation-only replay reused the live owner collision check with the current local player as a temporary owner. A player-fired replay rocket starts inside/near that player capsule; after the arming distance it could be treated as an owner hit and erased immediately, before it became visible in the MP4.
+5. Exact corrected player-rocket code in `src\\combat\\weapon-rocket-launcher.cpp`: `if (!presentationOnly && dist < 0.5f && rocket.distanceTraveled >= IGNORE_OWNER_DIST) { hitOwner = true; }`. Replay presentation skips only temporary-owner self-collision; world collision, shared movement, smoke, orientation, lifetime, and explosion presentation remain active. Replay damage/authority remains suppressed.
+6. Automated proof: canonical build passed with `Status: SUCCESS`; `mimita.exe --replay-export-selftest --timeout 60 --no-coordinator` passed `28/28`. The test covers replay event identity and parent metadata, but not a rendered player-fired rocket in a live MP4.
+7. Status: NPC rocket smoke/export and left-leg rotation: HUMAN CONFIRMED WORKING. Player-owned rocket visibility: SOURCE FIXED; fresh live MP4 confirmation still required. Remaining acceptance includes player rocket travel, wall collision, explosion, smoke decay, and no duplicate effects/audio.

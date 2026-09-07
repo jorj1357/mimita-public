@@ -8,6 +8,7 @@
 * Does NOT own menus, terminal rendering, or UI input.
 */
 #include "engine/engine-tick-render.h"
+#include "engine/engine-tick-camera.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include <cstdio>
@@ -28,6 +29,7 @@
 #include "shadow/shadow-config.h"
 #include "render/lighting-config.h"
 #include "combat/weapon-system.h"
+#include "combat/weapon-rocket-launcher.h"
 #include "combat/weapon-registry.h"
 #include "combat/death-system.h"
 #include "ragdoll/ragdoll.h"
@@ -394,6 +396,11 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
               renderReplayActors(
                   *replayFrame, camera, replayView, replayProj,
                   engine, dt, replayActorModels, replayWeaponModels); }
+            if (const WeaponDefinition* replayRocket =
+                    WeaponRegistry::instance().get("rocket_launcher")) {
+                WeaponRocketLauncher::render(
+                    replayRocketState(), camera, *replayRocket);
+            }
         }
         gExportFrameTimings.renderMs += (replayExportNowSec() - tRender0) * 1000.0;
     } else {

@@ -492,6 +492,7 @@ void engineTickReplay(Engine& engine, float dt)
                   replayPerf.bodyPartsCaptured += bodyParts.count;
                   for (int i = 0; i < bodyParts.count && i < REPLAY_MAX_BODY_PARTS; ++i) {
                       compact.bodyParts[i].position = bodyParts.parts[i].position;
+                      compact.bodyParts[i].parentPartId = bodyParts.parts[i].parentPartId;
                       compact.bodyParts[i].rotation = bodyParts.parts[i].rotation;
                       compact.bodyParts[i].scale = bodyParts.parts[i].scale;
                   }
@@ -584,6 +585,7 @@ void engineTickReplay(Engine& engine, float dt)
                   replayPerf.bodyPartsCaptured += bodyParts.count;
                   for (int i = 0; i < bodyParts.count && i < REPLAY_MAX_BODY_PARTS; ++i) {
                       compact.bodyParts[i].position = bodyParts.parts[i].position;
+                      compact.bodyParts[i].parentPartId = bodyParts.parts[i].parentPartId;
                       compact.bodyParts[i].rotation = bodyParts.parts[i].rotation;
                       compact.bodyParts[i].scale = bodyParts.parts[i].scale;
                   }
@@ -673,6 +675,7 @@ void engineTickReplay(Engine& engine, float dt)
                   replayPerf.bodyPartsCaptured += bodyParts.count;
                   for (int i = 0; i < bodyParts.count && i < REPLAY_MAX_BODY_PARTS; ++i) {
                       compact.bodyParts[i].position = bodyParts.parts[i].position;
+                      compact.bodyParts[i].parentPartId = bodyParts.parts[i].parentPartId;
                       compact.bodyParts[i].rotation = bodyParts.parts[i].rotation;
                       compact.bodyParts[i].scale = bodyParts.parts[i].scale;
                   }
@@ -786,6 +789,7 @@ void engineTickReplay(Engine& engine, float dt)
                       replayPerf.bodyPartsCaptured += bodyParts.count;
                       for (int i = 0; i < bodyParts.count && i < REPLAY_MAX_BODY_PARTS; ++i) {
                           compact.bodyParts[i].position = bodyParts.parts[i].position;
+                          compact.bodyParts[i].parentPartId = bodyParts.parts[i].parentPartId;
                           compact.bodyParts[i].rotation = bodyParts.parts[i].rotation;
                           compact.bodyParts[i].scale = bodyParts.parts[i].scale;
                       }
@@ -796,6 +800,7 @@ void engineTickReplay(Engine& engine, float dt)
                       bodyParts.count = prevState->bodyPartCount;
                       for (int i = 0; i < bodyParts.count && i < REPLAY_MAX_BODY_PARTS; ++i) {
                           bodyParts.parts[i].position = prevState->bodyParts[i].position;
+                          bodyParts.parts[i].parentPartId = prevState->bodyParts[i].parentPartId;
                           bodyParts.parts[i].rotation = prevState->bodyParts[i].rotation;
                           bodyParts.parts[i].scale = prevState->bodyParts[i].scale;
                       }

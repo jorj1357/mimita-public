@@ -13,4 +13,5 @@
 #include <glm/glm.hpp>
 
 void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
-                      const std::string& attacker, float sizeScale = 1.0f);
+                      const std::string& attacker, float sizeScale = 1.0f,
+                      bool playSound = true);

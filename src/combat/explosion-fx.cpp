@@ -16,7 +16,7 @@
 #include "effects/hit-effects.h"
 
 void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
-                      const std::string& attacker, float sizeScale)
+                      const std::string& attacker, float sizeScale, bool playSound)
 {
     const auto& expCfg = WeaponHitFxConfig::instance().explosionBurstFor(weaponId);
 
@@ -24,7 +24,8 @@ void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
     const char* sound = weaponId == "grenade_launcher"
         ? "grenadelauncher/grenadelauncherexplode"
         : "rocketlauncher/rocketlauncherexplode";
-    playWorldSound(sound, position, 1.0f, 1.0f, 50.0f);
+    if (playSound)
+        playWorldSound(sound, position, 1.0f, 1.0f, 50.0f);
 
     // Explosion flash, debris, and red 1-tick impact sphere — each config-gated
     if (expCfg.muzzleFlash)

@@ -81,9 +81,29 @@ BodyPartArray captureReplayBodyParts(const Player& player)
             worldRot = glm::quat_cast(rotMat);
         }
 
-        // Convert to body-local rotation by removing root yaw
-        glm::quat rootRot = glm::angleAxis(glm::radians(rootYaw), glm::vec3(0, 0, 1));
-        glm::quat localRot = glm::inverse(rootRot) * worldRot;
+        uint8_t parentPartId = 0xFF;
+        glm::mat4 parentWorld = glm::translate(glm::mat4(1.0f), rootPos) *
+            glm::rotate(glm::mat4(1.0f), glm::radians(rootYaw), glm::vec3(0, 0, 1));
+        int parentNode = part.nodeIndex >= 0 && part.nodeIndex < (int)player.perfectPoseSkeleton.nodes.size()
+            ? player.perfectPoseSkeleton.nodes[part.nodeIndex].parent : -1;
+        while (parentNode >= 0 && parentNode < (int)player.perfectPoseSkeleton.nodes.size()) {
+            const char* parentName = player.perfectPoseSkeleton.nodes[parentNode].name.c_str();
+            uint8_t candidate = partIdFromName(parentName);
+            if (candidate != 0xFF) {
+                parentPartId = candidate;
+                for (const PhysicalBodyPart& parentPart : player.physicalBody.parts)
+                    if (partIdFromName(parentPart.name.c_str()) == candidate)
+                        parentWorld = parentPart.worldTransform;
+                break;
+            }
+            parentNode = player.perfectPoseSkeleton.nodes[parentNode].parent;
+        }
+
+        glm::mat4 localTransform = glm::inverse(parentWorld) * wt;
+        glm::vec3 localScale(1.0f), skew(0.0f), localPosition(0.0f);
+        glm::vec4 perspective(0.0f);
+        glm::quat localRot(1.0f, 0.0f, 0.0f, 0.0f);
+        glm::decompose(localTransform, localScale, localRot, localPosition, skew, perspective);
 
         // Enforce consistent quaternion hemisphere to prevent visual flipping.
         // glm::quat_cast can return q or -q (both represent the same rotation).
@@ -101,9 +121,10 @@ BodyPartArray captureReplayBodyParts(const Player& player)
 
         ReplayBodyPartState& state = result.parts[result.count];
         state.partId = pid;
-        state.position = bodyLocal;
+        state.parentPartId = parentPartId;
+        state.position = localPosition;
         state.rotation = localRot;
-        state.scale = glm::vec3(1.0f);
+        state.scale = localScale;
         result.count++;
 
         // Left/right leg diagnostic: log quaternion comparison every 60 ticks
@@ -209,7 +230,8 @@ uint32_t ReplayRecorder::computeDirtyMask(uint32_t actorId, const ReplayActorTic
         dirty |= ReplayDirtyPose;
     } else {
         for (uint8_t i = 0; i < current.bodyPartCount; ++i) {
-            if (glm::length2(current.bodyParts[i].position - prev.bodyParts[i].position) > 1e-10f ||
+            if (current.bodyParts[i].parentPartId != prev.bodyParts[i].parentPartId ||
+                glm::length2(current.bodyParts[i].position - prev.bodyParts[i].position) > 1e-10f ||
                 current.bodyParts[i].rotation.x != prev.bodyParts[i].rotation.x ||
                 current.bodyParts[i].rotation.y != prev.bodyParts[i].rotation.y ||
                 current.bodyParts[i].rotation.z != prev.bodyParts[i].rotation.z ||
@@ -526,6 +548,7 @@ bool ReplayRecorder::exportToJSON(const std::string& path) const {
                     ? kReplayBodyPartNames[part.partId] : "unknown";
                 a["bodyParts"][partName] = {
                     {"position", vec3Json(part.position)},
+                    {"parentPartId", part.parentPartId},
                     {"rotation", {part.rotation.w, part.rotation.x, part.rotation.y, part.rotation.z}},
                     {"scale", vec3Json(part.scale)}
                 };

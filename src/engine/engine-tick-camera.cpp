@@ -33,6 +33,8 @@
 #include "physics/config.h"
 #include "combat/projectile-render.h"
 #include "combat/weapon-registry.h"
+#include "combat/weapon-rocket-launcher.h"
+#include "combat/weapon-runtime.h"
 
 extern DuelManager gDuelManager;
 
@@ -45,6 +47,13 @@ int gRplxHitBurstCount = 0;
 int gRplxDebrisBlockCount = 0;
 int gRplxEffectDuplicateCount = 0;
 static std::string gRplxLastEffectKey;
+static RocketLauncherState gReplayRocketState;
+static std::unordered_set<uint64_t> gReplayRocketEvents;
+static uint32_t gReplayRocketLastTick = 0;
+static uint32_t gReplayRocketSimTick = 0;
+static WeaponRuntime gReplayRocketRuntime;
+
+const RocketLauncherState& replayRocketState() { return gReplayRocketState; }
 
 static void syncPlayerYawFromCamera(Player& player, const Camera& camera)
 {
@@ -226,6 +235,12 @@ void engineTickCamera(Engine& engine, float dt)
 
     // ── Replay camera control ──────────────────────────────
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
+    if (!replayPlaybackActive || gReplayPlayer.currentTick() < gReplayRocketLastTick) {
+        WeaponRocketLauncher::clear(gReplayRocketState);
+        gReplayRocketEvents.clear();
+        gReplayRocketSimTick = gReplayPlayer.currentTick();
+    }
+    gReplayRocketLastTick = gReplayPlayer.currentTick();
     const bool replayFreecam =
         replayPlaybackActive &&
         (gReplayPlayer.cameraController().mode() ==
@@ -1050,17 +1065,19 @@ void engineTickCamera(Engine& engine, float dt)
                     "[REPLAY EFFECT] spawned type=projectile_spawn tick=%d pos=(%.2f %.2f %.2f) velocity=(%.2f %.2f %.2f)\n",
                     effect.spawnTick, effect.position.x, effect.position.y, effect.position.z,
                     effect.velocity.x, effect.velocity.y, effect.velocity.z);
-                EffectPart rocket;
-                rocket.position = effect.position;
-                rocket.velocity = effect.velocity;
-                rocket.maxLifetime = std::max(effect.lifetime, 0.1f);
-                rocket.scale = 1.0f;
-                rocket.alpha = 1.0f;
-                rocket.billboardText = false;
-                rocket.replayType = "replay_rocket";
-                rocket.assetId = effect.assetId.empty()
-                    ? "rocket_launcher" : effect.assetId;
-                EffectPartSystem::instance().spawn(rocket);
+                if (effect.eventId == 0 || gReplayRocketEvents.insert(effect.eventId).second) {
+                    RocketLauncherState::Rocket rocket;
+                    rocket.position = effect.position;
+                    rocket.prevPosition = effect.position;
+                    rocket.velocity = effect.velocity;
+                    rocket.lifetime = std::max(effect.lifetime, 0.1f);
+                    rocket.replayEventId = effect.eventId;
+                    gReplayRocketState.activeRockets.push_back(rocket);
+                    Debug::log(Debug::Category::Replay,
+                        "[REPLAY ROCKET] spawn event=%llu tick=%u pos=(%.2f %.2f %.2f)\n",
+                        (unsigned long long)effect.eventId, gReplayPlayer.currentTick(),
+                        effect.position.x, effect.position.y, effect.position.z);
+                }
             } else if (effect.type == "impact_tick") {
                 EffectPart impact;
                 impact.position = effect.position;
@@ -1240,6 +1257,19 @@ void engineTickCamera(Engine& engine, float dt)
                 (replayExportNowSec() - tAud0) * 1000.0;
         }
     }
+    if (replayPlaybackActive) {
+        const WeaponDefinition* rocketDef = WeaponRegistry::instance().get("rocket_launcher");
+        if (rocketDef) {
+            while (gReplayRocketSimTick < gReplayPlayer.currentTick()) {
+                WeaponRocketLauncher::update(
+                    gReplayRocketState, *rocketDef, gReplayRocketRuntime,
+                    player, npcSystem, world, camera, 1.0f / 60.0f,
+                    nullptr, true);
+                ++gReplayRocketSimTick;
+            }
+        }
+    }
+
     // Coupling diagnostic: orientation change per unit of position movement
     if (replayPlaybackActive && (!isReplayExportActive() || gReplayExportVerbose))
         logCouplingDiagnostic(camera, gReplayPlayer.currentTick());
