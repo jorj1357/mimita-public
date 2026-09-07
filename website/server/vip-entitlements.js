@@ -21,6 +21,7 @@ import {
     tierRank,
     VIP_STYLE_KINDS
 } from "./vip-config.js"
+import { lifetimeBadgeForTier } from "./vip-config.js"
 
 export const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing", "past_due"])
 
@@ -74,13 +75,13 @@ function currentEntitlement(row, now) {
     const expiresAt = toDate(row.expires_at)
     return row.status === "active" &&
         startsAt && startsAt <= now &&
-        expiresAt && expiresAt > now
+        (row.is_lifetime === true || (expiresAt && expiresAt > now))
 }
 
 function liveOrFutureEntitlement(row, now) {
     const expiresAt = toDate(row.expires_at)
     return row.status === "active" &&
-        expiresAt && expiresAt > now
+        (row.is_lifetime === true || (expiresAt && expiresAt > now))
 }
 
 function activeSubscription(row, now) {
@@ -125,6 +126,7 @@ export function computeVipState({
             extensionRows.push({
                 tier: normalizeTier(row.tier),
                 expires_at: toDate(row.expires_at),
+                is_lifetime: row.is_lifetime === true,
                 source: row.source || "stripe"
             })
         }
@@ -132,6 +134,7 @@ export function computeVipState({
             visibleRows.push({
                 tier: normalizeTier(row.tier),
                 expires_at: toDate(row.expires_at),
+                is_lifetime: row.is_lifetime === true,
                 source: row.source || "stripe"
             })
         }
@@ -158,9 +161,11 @@ export function computeVipState({
     }
 
     let expiresAt = null
+    let lifetime = false
     for (const row of extensionRows) {
         if (row.tier !== activeTier) continue
-        if (!expiresAt || row.expires_at > expiresAt) expiresAt = row.expires_at
+        if (row.is_lifetime) lifetime = true
+        else if (!expiresAt || row.expires_at > expiresAt) expiresAt = row.expires_at
     }
 
     const staff = staffStyleForRole(user.role)
@@ -194,8 +199,9 @@ export function computeVipState({
     return {
         active: activeTier !== "free",
         active_tier: activeTier,
-        badge_url: badgeForTier(activeTier),
-        expires_at: iso(expiresAt),
+        badge_url: lifetime ? lifetimeBadgeForTier(activeTier) : badgeForTier(activeTier),
+        is_lifetime: lifetime,
+        expires_at: lifetime ? null : iso(expiresAt),
         server_time: current.toISOString(),
         controls_unlocked: activeTier !== "free",
         allowed_styles: unlockedStyles(activeTier),
@@ -208,7 +214,7 @@ export function computeVipState({
         },
         subscription,
         preset_count: Number(presetCount) || 0,
-        warnings_due: expirationWarnings(expiresAt, current),
+        warnings_due: lifetime ? [] : expirationWarnings(expiresAt, current),
         style_revision: style?.style_revision || 1
     }
 }
@@ -226,7 +232,7 @@ export async function getVipStateForUser(user, clientOrQuery = pool, now = new D
     const [entitlements, subscriptions, style, presets] = await Promise.all([
         query(
             `SELECT ${selectUser}tier, source, status, starts_at, expires_at,
-                    stripe_subscription_id, stripe_checkout_session_id
+                    stripe_subscription_id, stripe_checkout_session_id, is_lifetime
              FROM vip_entitlements
              WHERE ${predicate}`,
             [ids]
@@ -363,10 +369,25 @@ export async function grantPrepaidEntitlement(clientOrQuery, {
     stripeCheckoutSessionId = "",
     stripePaymentIntentId = "",
     stripeCustomerId = "",
+    isLifetime = false,
     now = new Date()
 }) {
     const query = queryFrom(clientOrQuery)
     const normalizedTier = normalizeTier(tier)
+    if (isLifetime) {
+        const inserted = await query(
+            `INSERT INTO vip_entitlements (
+                user_id, order_id, tier, source, status, starts_at, expires_at, is_lifetime,
+                stripe_checkout_session_id, stripe_payment_intent_id, stripe_customer_id
+             )
+             VALUES ($1, $2, $3, $4, 'active', $5, NULL, TRUE, $6, $7, $8)
+             RETURNING id, starts_at, expires_at, is_lifetime`,
+            [userId, orderId, normalizedTier, source, now, stripeCheckoutSessionId, stripePaymentIntentId, stripeCustomerId]
+        )
+        await recomputeAndStoreVipForUser(query, userId, now)
+        return { ...inserted.rows[0], tier: normalizedTier, purchase_type: purchaseType }
+    }
+
     const latest = await query(
         `SELECT MAX(expires_at) AS expires_at
          FROM vip_entitlements
@@ -383,10 +404,10 @@ export async function grantPrepaidEntitlement(clientOrQuery, {
 
     const inserted = await query(
         `INSERT INTO vip_entitlements (
-            user_id, order_id, tier, source, status, starts_at, expires_at,
+            user_id, order_id, tier, source, status, starts_at, expires_at, is_lifetime,
             stripe_checkout_session_id, stripe_payment_intent_id, stripe_customer_id
          )
-         VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9)
+         VALUES ($1, $2, $3, $4, 'active', $5, $6, FALSE, $7, $8, $9)
          RETURNING id, starts_at, expires_at`,
         [
             userId,

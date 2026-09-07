@@ -19,6 +19,25 @@ import {
 
 const NOW = new Date("2026-08-03T12:00:00.000Z")
 
+test("lifetime entitlement remains active without an expiration date", () => {
+    const state = computeVipState({
+        user: { id: 42, role: "user" },
+        entitlements: [{
+            tier: "ultra_vip",
+            source: "stripe",
+            status: "active",
+            starts_at: "2026-08-01T00:00:00.000Z",
+            expires_at: null,
+            is_lifetime: true
+        }],
+        now: NOW
+    })
+    assert.equal(state.active_tier, "ultra_vip")
+    assert.equal(state.is_lifetime, true)
+    assert.equal(state.expires_at, null)
+    assert.match(state.badge_url, /mimita-ultravip-lifetime-v1\.png$/)
+})
+
 test("calendar month arithmetic clamps to valid UTC month days", () => {
     assert.equal(
         addUtcCalendarMonths(new Date("2026-01-31T10:15:00.000Z"), 1).toISOString(),

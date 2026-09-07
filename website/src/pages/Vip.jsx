@@ -45,6 +45,7 @@ export default function Vip() {
     const [vip, setVip] = useState(null)
     const [message, setMessage] = useState("loading VIP...")
     const [busy, setBusy] = useState("")
+    const [months, setMonths] = useState(1)
 
     useEffect(() => {
         let alive = true
@@ -69,7 +70,7 @@ export default function Vip() {
         return () => { alive = false }
     }, [navigate, location.pathname])
 
-    async function checkout(tier, purchaseType) {
+    async function checkout(tier, purchaseType, selectedMonths = months) {
         if (!user) {
             navigate(buildSigninPath(location.pathname))
             return
@@ -79,7 +80,11 @@ export default function Vip() {
         try {
             const data = await apiRequest("/api/vip/payment/checkout", {
                 method: "POST",
-                body: JSON.stringify({ tier, purchase_type: purchaseType })
+                body: JSON.stringify({
+                    tier,
+                    purchase_type: purchaseType,
+                    ...(purchaseType === "prepaid" ? { months: selectedMonths } : {})
+                })
             })
             if (data.checkout_url) window.location.assign(data.checkout_url)
             else setMessage("checkout did not return a url")
@@ -173,12 +178,25 @@ export default function Vip() {
                                             onClick={() => checkout(tier.tier, option.type)}
                                             title={option.configured ? "" : "Stripe is not configured"}
                                         >
-                                            {option.type === "one_month" && `1 month ${dollars(option.amount_cents)}`}
+                                            {option.type === "prepaid" && `buy ${months} month${months === 1 ? "" : "s"} ${dollars(Math.floor(option.amount_cents * months - option.amount_cents * 0.5 * (months - 1) / 11))}`}
                                             {option.type === "monthly_subscription" && `subscribe monthly ${dollars(option.amount_cents)}`}
-                                            {option.type === "twelve_month" && `12 months ${dollars(option.amount_cents)}`}
+                                            {option.type === "lifetime" && `lifetime ∞ ${dollars(option.amount_cents)}`}
                                         </button>
                                     ))}
                                 </div>
+                                {tier.purchases.some(option => option.type === "prepaid") && (
+                                    <label className="vipSliderLabel">
+                                        Prepaid months: {months}
+                                        <input
+                                            type="range"
+                                            min="1"
+                                            max="12"
+                                            step="1"
+                                            value={months}
+                                            onChange={event => setMonths(Number(event.target.value))}
+                                        />
+                                    </label>
+                                )}
                             </article>
                         )
                     })}

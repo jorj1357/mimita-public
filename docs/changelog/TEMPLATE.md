@@ -13,9 +13,7 @@
 - Task ID:
 - Summary:
 - Status:
-- Date: YYYY-MM-DD
-- Time: HH:MM:SS
-- Timezone: EST/EDT
+- Date, time, timezone: YYYY-MM-DDTHH:MM:SSZ, ISO 8601 
 - Branch:
 - Base commit:
 - Final commit:

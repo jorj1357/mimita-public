@@ -24,6 +24,12 @@ export const VIP_BADGES = {
     ultra_vip: "/assets/images/mimita%20ultra%20vip.png"
 }
 
+export const VIP_LIFETIME_BADGES = {
+    vip: "/assets/images/mimita-vip-lifetime-v1.png",
+    super_vip: "/assets/images/mimita-supervip-lifetime-v1.png",
+    ultra_vip: "/assets/images/mimita-ultravip-lifetime-v1.png"
+}
+
 export const STAFF_ROLE_COLORS = {
     owner: "#000000",
     admin: "#000000",
@@ -35,7 +41,7 @@ export const VIP_COLORS = {
     vip: "#40e0d0"
 }
 
-export const VIP_PURCHASE_TYPES = ["one_month", "monthly_subscription", "twelve_month"]
+export const VIP_PURCHASE_TYPES = ["prepaid", "monthly_subscription", "lifetime"]
 
 export const VIP_PRICE_CONFIG = {
     vip: {
@@ -47,6 +53,12 @@ export const VIP_PRICE_CONFIG = {
             mode: "payment",
             calendar_months: 1,
             price_env: "MIMITA_STRIPE_PRICE_VIP_ONE_MONTH"
+        },
+        prepaid: {
+            label: "VIP prepaid",
+            amount_cents: 333,
+            currency: "usd",
+            mode: "payment"
         },
         monthly_subscription: {
             label: "VIP monthly",
@@ -64,6 +76,14 @@ export const VIP_PRICE_CONFIG = {
             mode: "payment",
             calendar_months: 12,
             price_env: "MIMITA_STRIPE_PRICE_VIP_TWELVE_MONTH"
+        },
+        lifetime: {
+            label: "VIP lifetime",
+            amount_cents: 11111,
+            currency: "usd",
+            mode: "payment",
+            is_lifetime: true,
+            price_env: "MIMITA_STRIPE_PRICE_VIP_LIFETIME"
         }
     },
     super_vip: {
@@ -75,6 +95,12 @@ export const VIP_PRICE_CONFIG = {
             mode: "payment",
             calendar_months: 1,
             price_env: "MIMITA_STRIPE_PRICE_SUPER_VIP_ONE_MONTH"
+        },
+        prepaid: {
+            label: "Super VIP prepaid",
+            amount_cents: 888,
+            currency: "usd",
+            mode: "payment"
         },
         monthly_subscription: {
             label: "Super VIP monthly",
@@ -92,6 +118,14 @@ export const VIP_PRICE_CONFIG = {
             mode: "payment",
             calendar_months: 12,
             price_env: "MIMITA_STRIPE_PRICE_SUPER_VIP_TWELVE_MONTH"
+        },
+        lifetime: {
+            label: "Super VIP lifetime",
+            amount_cents: 22222,
+            currency: "usd",
+            mode: "payment",
+            is_lifetime: true,
+            price_env: "MIMITA_STRIPE_PRICE_SUPER_VIP_LIFETIME"
         }
     },
     ultra_vip: {
@@ -103,6 +137,12 @@ export const VIP_PRICE_CONFIG = {
             mode: "payment",
             calendar_months: 1,
             price_env: "MIMITA_STRIPE_PRICE_ULTRA_VIP_ONE_MONTH"
+        },
+        prepaid: {
+            label: "Ultra VIP prepaid",
+            amount_cents: 1777,
+            currency: "usd",
+            mode: "payment"
         },
         monthly_subscription: {
             label: "Ultra VIP monthly",
@@ -120,6 +160,14 @@ export const VIP_PRICE_CONFIG = {
             mode: "payment",
             calendar_months: 12,
             price_env: "MIMITA_STRIPE_PRICE_ULTRA_VIP_TWELVE_MONTH"
+        },
+        lifetime: {
+            label: "Ultra VIP lifetime",
+            amount_cents: 33333,
+            currency: "usd",
+            mode: "payment",
+            is_lifetime: true,
+            price_env: "MIMITA_STRIPE_PRICE_ULTRA_VIP_LIFETIME"
         }
     }
 }
@@ -181,6 +229,11 @@ export function badgeForTier(tier) {
     return VIP_BADGES[normalized] || ""
 }
 
+export function lifetimeBadgeForTier(tier) {
+    const normalized = normalizeTier(tier)
+    return VIP_LIFETIME_BADGES[normalized] || ""
+}
+
 function envPositiveInt(env, name, fallback) {
     const value = Number(env?.[name])
     if (!Number.isInteger(value) || value <= 0) return fallback
@@ -198,8 +251,32 @@ export function getPurchaseDefinition(tier, purchaseType, env = process.env) {
     }
 }
 
+export function prepaidAmountCents(tier, months) {
+    const normalizedTier = normalizeTier(tier)
+    const count = Number(months)
+    if (!Number.isInteger(count) || count < 1 || count > 12) return 0
+    const monthly = VIP_PRICE_CONFIG[normalizedTier]?.monthly_subscription?.amount_cents || 0
+    const full = monthly * count
+    const discount = Math.floor(full * 0.5 * (count - 1) / 11)
+    return full - discount
+}
+
+export function prepaidPurchaseDefinition(tier, months) {
+    const amount = prepaidAmountCents(tier, months)
+    if (!amount) return null
+    const normalizedTier = normalizeTier(tier)
+    return {
+        label: `${normalizedTier} prepaid`,
+        amount_cents: amount,
+        currency: "usd",
+        mode: "payment",
+        calendar_months: Number(months),
+        purchase_type: "prepaid"
+    }
+}
+
 export function getStripePriceId(tier, purchaseType, env = process.env) {
-    const def = getPurchaseDefinition(tier, purchaseType)
+    const def = getPurchaseDefinition(tier, purchaseType, env)
     if (!def) return ""
     return String(env[def.price_env] || "").trim()
 }
@@ -220,7 +297,7 @@ export function publicVipConfig(env = process.env) {
                     amount_cents: def.amount_cents,
                     currency: def.currency,
                     mode: def.mode,
-                    configured: paymentsConfigured
+                    configured: paymentsConfigured && (type === "prepaid" || type === "monthly_subscription" || Boolean(getStripePriceId(tier, type, env)))
                 }
             })
         })),

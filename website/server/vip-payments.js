@@ -18,6 +18,7 @@ import {
     getPurchaseDefinition,
     getStripePriceId,
     normalizeTier,
+    prepaidPurchaseDefinition,
     tierRank
 } from "./vip-config.js"
 import {
@@ -222,7 +223,9 @@ async function processCheckoutCompleted({ client, stripe, session, event }) {
     if (order.status === "paid") return "duplicate_paid_order"
     if (order.status !== "pending") throw new Error(`VIP order cannot be paid from ${order.status}`)
 
-    const def = getPurchaseDefinition(order.tier, order.purchase_type)
+    const def = order.purchase_type === "prepaid"
+        ? prepaidPurchaseDefinition(order.tier, order.purchase_months)
+        : getPurchaseDefinition(order.tier, order.purchase_type)
     if (!def) throw new Error("VIP order has invalid tier or purchase type")
 
     const priceId = await getSessionPriceId(stripe, session)
@@ -241,6 +244,10 @@ async function processCheckoutCompleted({ client, stripe, session, event }) {
     if (normalizeTier(session.metadata?.tier) !== order.tier ||
         String(session.metadata?.purchase_type || "") !== order.purchase_type) {
         throw new Error("Stripe tier metadata mismatch")
+    }
+    if (order.purchase_type === "prepaid" &&
+        String(session.metadata?.months || "") !== String(order.purchase_months || "")) {
+        throw new Error("Stripe prepaid months mismatch")
     }
     if (session.payment_status && session.payment_status !== "paid" && session.payment_status !== "no_payment_required") {
         throw new Error("Stripe session is not paid")
@@ -280,7 +287,8 @@ async function processCheckoutCompleted({ client, stripe, session, event }) {
             orderId: order.id,
             tier: order.tier,
             purchaseType: order.purchase_type,
-            months: def.calendar_months,
+            months: def.is_lifetime ? null : (order.purchase_months || def.calendar_months),
+            isLifetime: def.is_lifetime === true,
             stripeCheckoutSessionId: cleanId(session.id),
             stripePaymentIntentId: cleanId(session.payment_intent),
             stripeCustomerId: cleanId(session.customer),
@@ -295,18 +303,43 @@ async function processCheckoutCompleted({ client, stripe, session, event }) {
         )
         const account = userResult.rows?.[0]
         if (account?.email) {
-            sendVipPurchaseEmail({
-                email: account.email,
-                username: account.username || "",
-                tier: order.tier,
-                purchaseType: order.purchase_type,
-                amountCents: order.amount_cents,
-                currency: order.currency,
-                orderId: order.id,
-                paidAt: new Date()
-            })
-                .then(() => vipLog("purchase_email_sent", { user_id: order.user_id, order_id: order.id }))
-                .catch(error => vipLog("purchase_email_failed", { user_id: order.user_id, order_id: order.id, reason: error.message }))
+            await client.query(
+                `UPDATE vip_orders SET confirmation_email = $1, confirmation_email_status = 'sending',
+                    confirmation_email_error = '', updated_at = NOW() WHERE id = $2`,
+                [account.email, order.id]
+            )
+            try {
+                await sendVipPurchaseEmail({
+                    email: account.email,
+                    username: account.username || "",
+                    tier: order.tier,
+                    purchaseType: order.purchase_type,
+                    amountCents: order.amount_cents,
+                    currency: order.currency,
+                    orderId: order.id,
+                    paidAt: new Date()
+                })
+                await client.query(
+                    `UPDATE vip_orders SET confirmation_email_status = 'sent',
+                        confirmation_email_sent_at = NOW(), updated_at = NOW() WHERE id = $1`,
+                    [order.id]
+                )
+                vipLog("purchase_email_sent", { user_id: order.user_id, order_id: order.id })
+            }
+            catch (error) {
+                await client.query(
+                    `UPDATE vip_orders SET confirmation_email_status = 'failed',
+                        confirmation_email_error = $1, updated_at = NOW() WHERE id = $2`,
+                    [String(error.message || error).slice(0, 500), order.id]
+                )
+                vipLog("purchase_email_failed", { user_id: order.user_id, order_id: order.id, reason: error.message })
+            }
+        }
+        else {
+            await client.query(
+                `UPDATE vip_orders SET confirmation_email_status = 'unavailable', updated_at = NOW() WHERE id = $1`,
+                [order.id]
+            )
         }
     }
     catch (error) {
@@ -492,6 +525,8 @@ export async function getVipOrders({ query = pool, userId = 0, now = new Date() 
 
     const result = await q(
         `SELECT id, tier, purchase_type, amount_cents, currency, status,
+                purchase_months, is_lifetime, confirmation_email, confirmation_email_status,
+                confirmation_email_sent_at, confirmation_email_error,
                 paid_at, created_at, stripe_payment_intent_id
          FROM vip_orders
          WHERE user_id = $1
@@ -512,6 +547,12 @@ export async function getVipOrders({ query = pool, userId = 0, now = new Date() 
             id: row.id,
             tier: row.tier,
             purchase_type: row.purchase_type,
+            months: row.purchase_months == null ? null : Number(row.purchase_months),
+            is_lifetime: row.is_lifetime === true,
+            confirmation_email: row.confirmation_email || "",
+            confirmation_email_status: row.confirmation_email_status || "not_attempted",
+            confirmation_email_sent_at: toIso(row.confirmation_email_sent_at),
+            confirmation_email_error: row.confirmation_email_error || "",
             amount_cents: Number(row.amount_cents) || 0,
             currency: row.currency,
             status: row.status,
@@ -620,8 +661,12 @@ export function createVipCheckoutRouter(deps = {}) {
             }
 
             const tier = normalizeTier(req.body.tier)
-            const purchaseType = String(req.body.purchase_type || "").trim()
-            const def = getPurchaseDefinition(tier, purchaseType, env)
+            const requestedType = String(req.body.purchase_type || "").trim()
+            const months = requestedType === "prepaid" ? Number(req.body.months) : null
+            const purchaseType = requestedType === "prepaid" ? "prepaid" : requestedType
+            const def = purchaseType === "prepaid"
+                ? prepaidPurchaseDefinition(tier, months)
+                : getPurchaseDefinition(tier, purchaseType, env)
             if (!def) {
                 return res.status(400).json({ success: false, message: "invalid VIP purchase option" })
             }
@@ -670,14 +715,25 @@ export function createVipCheckoutRouter(deps = {}) {
                 }
             }
 
-            const order = await query(
-                `INSERT INTO vip_orders (
-                    user_id, tier, purchase_type, amount_cents, currency, stripe_price_id
-                 )
-                 VALUES ($1, $2, $3, $4, $5, $6)
-                 RETURNING id`,
-                [req.user.id, tier, purchaseType, amountCents, def.currency, effectivePriceId]
-            )
+            const order = purchaseType === "prepaid" || purchaseType === "lifetime"
+                ? await query(
+                    `INSERT INTO vip_orders (
+                        user_id, tier, purchase_type, purchase_months, is_lifetime,
+                        amount_cents, currency, stripe_price_id
+                     )
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                     RETURNING id`,
+                    [req.user.id, tier, purchaseType, months, def.is_lifetime === true,
+                        amountCents, def.currency, effectivePriceId]
+                )
+                : await query(
+                    `INSERT INTO vip_orders (
+                        user_id, tier, purchase_type, amount_cents, currency, stripe_price_id
+                     )
+                     VALUES ($1, $2, $3, $4, $5, $6)
+                     RETURNING id`,
+                    [req.user.id, tier, purchaseType, amountCents, def.currency, effectivePriceId]
+                )
             const orderId = order.rows[0].id
             const origin = appOrigin(req)
             const metadata = {
@@ -685,7 +741,8 @@ export function createVipCheckoutRouter(deps = {}) {
                 vip_order_id: String(orderId),
                 user_id: String(req.user.id),
                 tier,
-                purchase_type: purchaseType
+                purchase_type: purchaseType,
+                months: months == null ? "" : String(months)
             }
             const params = {
                 mode: def.mode,
@@ -724,7 +781,8 @@ export function createVipCheckoutRouter(deps = {}) {
                 order_id: orderId,
                 checkout_url: session.url,
                 tier,
-                purchase_type: purchaseType
+                purchase_type: purchaseType,
+                months
             })
         }
         catch (error) {

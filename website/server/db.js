@@ -719,10 +719,10 @@ export async function runMigrations(database = pool) {
         // Version 1 adopts the existing bootstrap, including installations without a ledger.
         // Version 1 adopts db.js's complete historical bootstrap (001 through 004).
         // Version 5 matches the next SQL filename; versions 2-4 are not rerun separately.
-        for (version of [1, 5]) {
+        for (version of [1, 5, 6]) {
             if (versions.has(version)) continue
             const statements = version === 1 ? MIGRATION_STATEMENTS : [
-                await readFile(new URL("./migrations/005_progression.sql", import.meta.url), "utf8")
+                await readFile(new URL(`./migrations/00${version === 5 ? "5_progression" : "6_vip_lifetime_slider"}.sql`, import.meta.url), "utf8")
             ]
             for (const sql of statements) await client.query(sql)
             await client.query("INSERT INTO schema_migrations(version) VALUES ($1)", [version])

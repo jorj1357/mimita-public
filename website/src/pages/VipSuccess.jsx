@@ -28,6 +28,10 @@ function tierLabel(tier) {
     return TIER_LABELS[tier] || String(tier || "").replace("_", " ").toUpperCase() || "VIP"
 }
 
+function dollars(cents) {
+    return `$${(Number(cents || 0) / 100).toFixed(2)}`
+}
+
 function pad(value) {
     return String(value).padStart(2, "0")
 }
@@ -66,7 +70,9 @@ export default function VipSuccess() {
                 setUser(me.user)
                 setVip(status.vip)
                 setOrders(ordersData.orders || [])
-                if (status.vip?.active_tier && status.vip.active_tier !== "free") {
+                const matchingOrder = (ordersData.orders || []).find(order => Number(order.id) === orderId)
+                const paymentConfirmed = orderId > 0 ? matchingOrder?.status === "paid" : true
+                if (paymentConfirmed && status.vip?.active_tier && status.vip.active_tier !== "free") {
                     setState("success")
                     return
                 }
@@ -93,8 +99,7 @@ export default function VipSuccess() {
         ? { ...user, supporter_tier: vip.active_tier, vip }
         : user
 
-    const paidOrder = orders.find(o => o.id === orderId)
-        || orders.find(o => o.status === "paid")
+    const paidOrder = orders.find(o => Number(o.id) === orderId)
         || null
 
     const refundOrder = paidOrder && paidOrder.refundable ? paidOrder : null
@@ -157,9 +162,19 @@ export default function VipSuccess() {
                         <p className="vipSuccessTitle">Success!!!</p>
                         <p className="vipNotice">
                             <strong>{user?.username || "you"}</strong> now has{" "}
-                            <strong>{tierLabel(vip.active_tier)}</strong> until{" "}
-                            <strong>{stampText(vip.expires_at)}</strong>
+                            <strong>{paidOrder ? tierLabel(paidOrder.tier) : tierLabel(vip.active_tier)}</strong>{" "}
+                            {paidOrder?.is_lifetime ? "forever ∞" : <>until <strong>{stampText(paidOrder?.expires_at || vip.expires_at)}</strong></>}
                         </p>
+                        <div className="vipStatusRows">
+                            <p>account email: <span>{user?.email || "not available"}</span></p>
+                            {paidOrder && <p>order: <span>#{paidOrder.id} · {paidOrder.purchase_type}{paidOrder.months ? ` · ${paidOrder.months} months` : ""}</span></p>}
+                            {paidOrder && <p>amount: <span>{dollars(paidOrder.amount_cents)} {String(paidOrder.currency || "usd").toUpperCase()}</span></p>}
+                            <p>confirmation email: <span>{paidOrder?.confirmation_email_status === "sent"
+                                ? `sent to ${paidOrder.confirmation_email}`
+                                : paidOrder?.confirmation_email_status === "failed"
+                                    ? `failed for ${paidOrder.confirmation_email}`
+                                    : `pending for ${paidOrder?.confirmation_email || user?.email || "your account email"}`}</span></p>
+                        </div>
 
                         <div className="vipPreview">
                             <Username user={previewUser} size="lg" />

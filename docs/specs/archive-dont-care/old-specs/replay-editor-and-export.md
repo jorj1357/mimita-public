@@ -1,0 +1,300 @@
+## 9 6 2026 neeesd updating
+
+9 6 2026 1717 est jorj - this i dont think is  super accurat eto how it even is in the repo right now so this needs updateing but its prett good for now 
+
+- Like  
+- P \= export  
+- J \= open that exported video  
+- And the console commandsn ot sure if the are accurate rn but whatever 
+- also migt need to  separate between repla export, repla editor, repla  browser, etc
+- and avatar systme dont need to be here 
+
+## 9 2 2026
+
+- We have p \= export now  
+- J \= open what u just exported  
+- Todo: make it so it does not P \= export even when u are exporting a replay already ,   
+  - Or just support multiple parallel exports bc thats possible and should be doable right now 
+
+## Replay editor full spec
+
+- Replay editor  
+  - Ideal:  
+    - AUTOSAVES. AUTO SAVES LIKE EVERY 30 SEC AT LEAST  
+      - Autosave every 30 seconds while replay editor is open.  
+      - Also autosave immediately after:  
+      - \- adding keyframe  
+      - \- deleting keyframe  
+      - \- deleting all keyframes  
+      - \- changing export settings  
+      - \- running rplesave  
+      - Ctrl z \= u can roll back changes to the most recent autosave, max like 50 autosaves   
+  - Play game, get sick shot	  
+    - Press f3, does “rpls”   
+      - Saves the last 15 sec, just use the same logic that current rpls uses 7 4 2026   
+    - Then, do “rple”, means replay editor, in the terminal, it loads the most recent replay from doing “rpls”, as a editable replay thing  
+      - This loads it, and puts u into the replay editor thing, and starts playing it immediately  
+      - This puts u into the thing where it has the timeline on the bottom   
+    - Replay editor cmds  
+      - Rplei \= rpl editor info, in the terminal  
+        - Show total ticks, total time   
+        - Show events like username shot username at tick N using weapon X, username respawned at pos X at tick N , etc   
+        - E.g.  
+        - Total ticks: 4729  
+        - Total time: 00:00:17  
+        - Events: 3cage killed bobomb at tick 762, bobomb respawned at tick 774  
+      - Controls once ur in replau editor  
+        - Left arrow \= back 1 sec  
+        - Right arrow \= forward 1 sec, 60 ticks  
+          - Ctrl \+ left/right arrow \= go back/forward 1 tick  
+          - Ctrl \+ left \= back 1 tick  
+          - Ctrl \+ right \= forward 1 tick   
+        - Space \= play, pause  
+          - FREECAM DOESNT CARE ABT SPACEBAR  
+          - play/pause works regardless of u being in freecam/not  
+        - F \= freecam toggle  
+          - We have freecam logic right now, just need to bind it being true/false to pressing F  
+        - Freecam controls  
+          - Same as current  
+          - Wasd \= move around  
+          - E \= up, Q \= down  
+      - Todo: all these fov rotation commands are just buttons, not a cmd, as of 7 10 2026   
+      - Rplefc\_fov \= fcam mode fov  
+        - Rplefc\_fov 150, for example  
+        - Default is rplefc\_fov 100  
+        - This can be changed by keyframes  
+      - Rplefc\_rot \= 0 to 360, rotate like about the forward axis ur looking at  
+        - This is roll, camera roll  
+        - This can be changed by keframes   
+      - Rplefc\_skf  \= rpl editor free cam set keframe   
+        - THIS IS BOUND TO K, THE KEY K ON THE KEYBOARD  
+        - Ordering:  
+          - Order per tick:  
+          - 1\. Apply cammode keyframes  
+          - 2\. Apply pbspeed keyframes  
+          - 3\. Apply campos interpolation  
+          - 4\. Apply manual editor input if paused/freecam editing  
+        - When u press K, while in the replay editor, AND freecam mode is enabled, it saves   
+          - The tick ur at  
+          - The camera position   
+          - The camera look direction  
+          - The camera FOV  
+          - The camera rotation/roll  
+          - It prints it in the console when u do this as well, the pos and tick etc   
+        - IT ALSO ASKS  
+          - What mode is this keframe?   
+            - Until u answer this, no other keyboard presses do anything.   
+            - So pressing 1 or 2 or E doesnt mess anything up in the game. This eats all those and turns those inputs into null  
+            - Press enter \= default, campos  
+            - Press 1 \= campos  
+            - Press 2 \= cammode  
+              - Then it asks: what mode?  
+              - Press 1 \= 3rd person  
+              - Press 2 \= freecam  
+              - Press 3 \= 1st person  
+            - Press 3 \= pbspeed  
+      - If no keframes  
+        - Just be in the players POV whole replay, nothing different  
+      - If 1 keframe of the campos type, AND a keframe sets cammode to 2, being freecam  
+        - It will go from the camera pos at tick 0, to the keframe.  
+          - E.g. u set 1 keframe, at tick 984  
+          - It will start at normal plr POV on tick 0,   
+          - but it will run the keframes at tick 0, for example cammode 2 means freecam, so at tick 0 and onward, the replay will be in freecam until u set it to be otherwise   
+          - but it will take 984 ticks to get to tick 984 where ur keframe is, smooth interp to that keframe   
+          - Then, it wont move until the replay is over   
+      - If 2 keframes  
+        - It will go from camera pos at tick 0, to keframe 1, to keframe 2, then wont move   
+      - Keframe types   
+        - Campos  
+          - This is where the camera is in the world, on the tick timeline   
+          - So tick 732 ,   
+          - cam pos is like 21, 562, 33   
+          - cam angle is 0, 0.4, 0.3,   
+          - cam fov is 120,   
+          - Cam rotation/roll is 30 degrees, etc  
+          - Press K \= quick save this to tick timeline  
+        - cammode   
+          - This is how to avoid the issue of   
+          - setting only  1 keframe leading to this behavior:  
+          - At tick 0, it doenst follow player, it just slowly moves to that keframe at like tick 999, from the initial replay cam start pos  
+          - Default start,  
+            - if theres no keframes,   
+            - cammode 1 \= normal 3rd person player POV.  
+            - So its like u didnt do anything to the camera at all.  
+            - Insert this at tick 0 or tick 1, whatever teh start is, automatically , with any replay.   
+          - cammode 2 \= freecam,   
+            - so at this tick,   
+            - enter freecam mode,   
+            - and just stay right there where u are at that tick,   
+            - E.g. from tick 0 to tick 426, ur in cammode 1, following the plr.   
+              - Ur position at tick 426 is like  84, 81, 123 for exmaple  
+            - Then, at tick 427, keframe for cammode exists, and it sas cammode 2 is now our mode until a new keframe exist OR replay ends.  
+              - So, ur position from tick 427 and onward, is still 84, 81, 123\. Because there are no new keframes of where the camera wants to move  
+            - unless we have keframes, which then u follow the keframes   
+          - also  
+            - Mode runs first,   
+            - so if tick 777 has cammode 2 keframe  
+            - AND a campos keframe, to be at like 121, 45, 982, when our current position at tick 776 is NOT that, like 53, 19, 321  
+            - But we started in cammode 1  
+            - it will follow teh cammode first,   
+            - THEN keframes,   
+            - so no bugs, like no  jittering to that far position for 1 tick, then jittering back to normla 3rd person mode on the next tick  
+          - cammode 3 \= first person, same as mode 1 but its 1st person   
+        - Pbspeed  
+          - Playbackspeed keframe type   
+          - Put this in the tick timeline and its default is 1x, for 1x speed  
+          - When u put in a pbspeed thing, it geos in,  
+          - Then asks u, what speed u want?  
+            - U can type antting, 0.01x, 0.1x, 1x 10x 100x etc  
+            - Just put a numbe,r like  
+            - U would in real life type “0.5”  
+            - And so thats ur speed multiplier, it will go at 0.5x speed  
+            - Until the next playback speed keframe   
+          - By default, it puts a 1x plabakc speed at start of replay, on tick 0 or wahtever is teh first tick,  
+        - Clarifying playback speed math  
+          - Small correction:  
+          -   
+          - At 0.1x speed, the replay ticks advance slower.  
+          -   
+          - So from tick 950 to 960:  
+          -   
+          - normal 1x: 10 ticks \= 0.166 sec  
+          - 0.1x: 10 ticks takes 1.66 sec  
+          -   
+          - Better wording:  
+          -   
+          - 60 replay ticks \= 1 second at 1x.  
+          - At 0.1x, 60 replay ticks take 10 real seconds.  
+          - At 2x, 60 replay ticks take 0.5 real seconds.  
+- Editing keframes   
+  - Press shift \+ up to go to later keframes,   
+    - DO NOT PLAY REPLAY WHEN JUMPING TO KEYFRAMES  
+    - If theres 3 keframes, one at tick 121, tick 853, and tick 1753,  
+    - Pressing shift \+ up will go to the tick 853 one, assuming u started at tick 121 keframe  
+    - Shift \+ up \= go forward in time  
+  - Press shift \+ down to go to earlier keframes  
+    - Shift \+ down \= go back in time   
+  - Edge cases  
+    - If u are at the latest keframe, and press shift \+ up to go to a later keframe, it will wrap back around to the earliest.  
+    - Similarly, if u are at the earliest keframe, and press shift \+ down to go to an earlier keframe, it will wrap back around to the latest.  
+  - List all keframes   
+    - Replay editor keframe \_ list  
+    - Rplekf\_l  
+  - Delete closest keframe  
+    - Replay editor keframe \_ delete  
+    - Rplekf\_d  
+  - Delete all keframes AFTER CONFIRMATION IN TERMINAL  
+    - Above, but \_ delete all  
+    - Rplekf\_da  
+    - Are uou sure?  
+    - 1 \= yes  
+    - 2 \= no  
+  - Jump to exact tick  
+    - Replay editor tick jump  
+    - Rpletj 984  
+- Adding music  
+  - Accepts wav, mp3, ogg, flac, etc  
+  - Open console, and do this  
+  - Cmd: rple\_mi  
+    - Rplau editor music import  
+  - So id do this  
+    - Rple\_mi "C:\\Users\\guita\\Downloads\\UW newq hitori OHLY CRAPO SO GOODe\_2.wav \- \-300 cents.mp3"  
+  - Then, this is loaded  
+  - The 0 seconds of this song is the 0 tick/start tick of the replay  
+  - And it goes whole song  
+  - U can also change the start offset, if u dont want to crop it  
+    - Like  
+    - Rple\_mo \= replay editor music offset  
+    - Itll give u the total length of song in hh:mm:ss:miliseconds format  
+    - And then u ttpe in hh:mm:ss format where u want teh song to start  
+    - For example  
+    - I run rple\_mi with a file  
+    - Then i do rple\_mo  
+    - It lists like 00:03:18  
+    - And sas “Write in hh:mm:ss format where u want the song to start”  
+    - Then i as the user i write like   
+    - “00:00:30”  
+    - Then when i write that, it will auto preview it/play it from that seconds of the song  
+    - Type 1 \= good, keep offset  
+    - Type 2 \= start over, stop music plauing, pick a new song offset  
+  - We also have logic for playback speed changing, for the music plauer in game  
+    - Reuse this  
+    - For this command  
+    - Rple\_mpbs  
+    - Replay editor music playback speed  
+    - So   
+    - Its a multiplier  
+    - So if i write  
+    - “Rple\_mpbs 0.9”  
+    - The song will ahve a plabakc speed of 0.9x  
+    - It auto starts at rple\_mpbs 1  
+    - Bc thats 1x speed  
+    - But i can do like 0.01 and itll be 0.01x speed  
+    - Or like 100x and thats 100x speed   
+- Later  
+  - BUT. u can crop it.   
+  - Rple\_mc \= replau editor music crop   
+    - Itll give u the total length of song in hh:mm:ss:miliseconds format  
+    - And then itll ask “What section do u want?”  
+    - User types hh:mm:ss-hh:mm:ss  
+    - For example  
+    - 00:00:15-00:01:05  
+- Replay saving  
+  - 1\. Save edited replay project  
+  - Run “rplesave”, it will save it to file  
+  - separate file for editor data:  
+  -   
+  - original replay file \= gameplay data  
+  - editor project file \= camera keyframes, playback speed, render settings  
+  -   
+  - Example:  
+  -   
+  - replays/  
+  -   2026-07-06\_15-22-10.rpl  
+  -   2026-07-06\_15-22-10.rple.json  
+  -   
+  - This way rple loads the replay AND any saved camera edits.  
+- Exporting a replay   
+  - Do “rplx” in the terminal, logic already exists   
+    - Wait until the tick that the keframe is on, e.g. 528  
+    - So , tick 0 to tick 527, follow plr pov like normal  
+    - Tick 528 \= camera is at that pos  
+    - By default, there is no keframes, its just bound to ur character’s pov 3rd person   
+    - Setting 1 keframe \= it will smoothly interp to that cam pos from tick 1 of replay, to the tick of that keframe being set  
+  - 7 4 2026 this architecture not done, but this kinda what i want it to be like  
+- Auto uploading a replau 7 10 2026   
+  - It just fucking  works and exprots and its sick and webhook uploads to teh discord server mimtia   
+    - OPTIONAL  
+    - IF U DONT WANT TI TO DO THAT THEN IT WONT 
+
+      - 
+
+
+
+# exporting replay temp spec 9 6 2026
+1. i am in the game
+2. i get a cool kill
+3. i perss P to record a instant replay of what i just did
+4. it exports to like "game\replays\exports\09-06-2026\19-35-14-clip-duel.mp4" for example in that format
+5. i open it, watch it , and it is waht i asw in the game at that time.from my point of view, whaetver i had at the time, thirdpersn first person etc,  sonuds, effects, etc, chat, gui , crosshair, etc its all in the .mp4 , and it has the watermark at the end
+6. awesome now i can post that  mp4 in places etc 
+
+## Avatar system full spec 
+
+This
+
+- 7 12 2026  
+  - Sttructure   
+  - plrOrigin  
+    - Its a empty in blender  
+  - “head”  
+  - “torso”  
+  - “leftArm”  
+  - “rightArm”  
+  - “leftLeg”  
+  - “rightLeg”  
+  - Export with Y up disabled, apply all transforms   
+  - Put the origin points at their natural rotation points like hips shoulders etc   
+- 9 6 2026  
+  - This is superseded by a GUI in the game  
+  - Todo define the gui that it is in the game cuz its awesome and needs more clear definitions so the little things we dont miss 
