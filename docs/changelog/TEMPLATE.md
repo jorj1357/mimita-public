@@ -1,4 +1,4 @@
-// 09 06 2026, 12 00
+// 2026-09-06 12:00 EST
 /* purpose
 * provide one consistent raw-evidence template for AI session changelogs
 * preserve branch, commit, timestamp, path, line, and validation facts

@@ -190,7 +190,7 @@ export default function Vip() {
                                 )}
                                 <div className="vipPurchaseModes">
                                     {prepaid && <div className="vipPrepaidBox">
-                                        <div className="vipModeHeading">PREPAID</div>
+                                        <div className="vipModeHeading">PREPAID · PAY ONCE</div>
                                         <div className="vipMonthSummary">
                                             <strong>{selectedMonths} month{selectedMonths === 1 ? "" : "s"} for {dollars(prepaidCents)}</strong>
                                             {discountPercent !== "0" && <span>{discountPercent}% off</span>}

@@ -288,4 +288,23 @@ newest at top 9 3 2026
       3. ALWAYS clear `mRuntime.statusText` in `setError()` — any new code path that sets an error must not leave stale status text.
       4. When adding new fields to `GameStats` or `GameUserInfo`, add them to `parseStats`/`parseUserInfo` with the same string-or-number defensive parsing.
       5. The server-side `defaultStats()` in `game-api.js` must return numbers, not strings, for all numeric fields.
-      6. When changing the database schema (adding BIGINT columns), always verify the API response types by curling the endpoint and checking JSON types.
+   6. When changing the database schema (adding BIGINT columns), always verify the API response types by curling the endpoint and checking JSON types.
+
+## 9 7 2026 — VIP source changes not visible through SSH-tunnel development site (UNRESOLVED)
+
+1. Bad behavior
+   1. The local repository file `website/src/pages/Vip.jsx` contains the prepaid slider markup at lines 191-202, including `input type="range"`, `min="1"`, `max="12"`, and `step="1"`.
+   2. The browser page opened through `website/npm-run-dev-ssh-v2.bat` shows only the monthly subscription buttons. It does not show the prepaid slider, prepaid summary, or lifetime purchase button.
+   3. The user can see the source around line 190 as JSX closing syntax (`)}`), but the running page does not correspond to the current source file.
+2. Date and time first observed: 2026-09-07, local development session.
+3. Current evidence and likely boundary
+   1. `website/npm-run-dev-ssh-v2.bat` starts an SSH tunnel with `ssh -L 3002:localhost:3002 root@107.191.48.226` and separately starts local Vite with `npm run dev`.
+   2. The local React page calls `/api/vip/config`; the slider is conditionally rendered only when the API returns a purchase with `type: "prepaid"`.
+   3. The VPS API can therefore supply an older configuration even when the local Vite bundle contains the newer `Vip.jsx`, especially because the API changes have not yet been deployed to the VPS.
+   4. A previous regression on 2026-09-06 confirmed the same class of failure: source/frontend changes were invisible because the deployed `dist/` bundle had not been rebuilt. That entry is `docs/regressions/regressions-v1.md`, “Profile stats not visible on live site.”
+4. Status: UNRESOLVED — do not mark fixed until the browser network response for `/api/vip/config`, the served Vite/bundle source, and the API/frontend deployment commit are compared and the slider is visibly accepted in the browser.
+5. Required investigation
+   1. Confirm which process owns ports 5173 and 3002 and whether the browser is actually at `localhost:5173`.
+   2. Inspect the browser response from `/api/vip/config` and confirm it includes `prepaid` and `lifetime` for all three tiers.
+   3. Confirm Vite is serving `C:\mimita-priv-v8\website\src\pages\Vip.jsx`, not a different checkout or stale `dist/` directory.
+   4. If the API is the old VPS version, deploy only after confirming the exact branch and commit, then rebuild the frontend and restart the relevant service.

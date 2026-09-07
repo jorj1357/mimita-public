@@ -8,7 +8,8 @@ Pre-existing worktree changes: replay source/config edits and the existing untra
 
 Changed files and behavior:
 - website/src/pages/Vip.jsx: replaced the shared slider plus generic purchase-button list with one prepaid box per tier, an integer 1-12 month range/number control, a separate monthly subscription button, and a separate lifetime button. Each tier now stores its selected month count independently.
-- website/src/styles/vip.css: added the prepaid box, month controls, savings display, purchase-mode buttons, and lifetime styling.
+- website/src/pages/Vip.jsx: refined the order and labels so prepaid appears above monthly, and permanent purchase appears below monthly. The prepaid summary displays the selected months, server-derived amount, and linear discount percentage above the slider.
+- website/src/styles/vip.css: added the prepaid box, custom grey slider track/thumb, savings display, purchase-mode buttons, and dark-turquoise lifetime styling.
 - website/VIP_CONFIGURATION.md: documented the lifetime price environment keys and the 1-12 prepaid/lifetime model.
 
 Reasoning: the prior page rendered all purchase types through one generic button map and used one global month state, so the slider was visually outside the purchase mode and changing one tier changed every tier. The new client sends prepaid months explicitly and leaves monthly/lifetime checkout types separate. The server remains the authority and rejects non-integer or out-of-range prepaid months.

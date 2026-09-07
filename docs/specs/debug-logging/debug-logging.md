@@ -43,44 +43,43 @@ line = 284
 
 ________________
 2. Log folder and file output
-New log folders and filenames follow the universal standard in
-`docs/architecture/time-and-formatting/time-and-formatting.md`. The current
-`mm-dd-yyyy` and `mmddyyyy_hhmmss` examples below are historical compatibility
-format examples only; new generated logs use UTC `yyyy-mm-dd` folders and
-`yyyymmdd_hhmmss` filenames such as `combat_20260906_193200.log`.
+
+All log folders and filenames follow the universal standard in
+`docs/architecture/time-and-formatting/time-and-formatting.md`.
+
+Folder format: `yyyy-mm-dd`
+Filename format: `<Type>_yyyymmdd_hhmmss.txt`
 
 All logs are written under:
-C:\important\mimita-priv-v8\logs\mm-dd-yyyy\
-Example:
-C:\important\mimita-priv-v8\logs\07-18-2026\
-The format is:
-month-day-year
-Not:
-day-month-year
-If the daily folder does not exist, create it.
+    logs/yyyy-mm-dd/
+
+Example:
+    logs/2026-09-07/
+        Summary_20260907_093015.txt
+        Network_20260907_093015.txt
+        Weapons_20260907_093015.txt
+        Physics_20260907_093015.txt
+        Performance_20260907_093015.txt
+        Errors_20260907_093015.txt
+
+A second execution creates:
+    logs/2026-09-07/
+        Summary_20260907_101422.txt
+        Network_20260907_101422.txt
+        ...
+
+If the daily folder does not exist, create it.
 If it already exists, reuse it.
 Every execution creates new timestamped files.
-Files are like
-(section)_mmddyyyy_hhmmss.txt
-And its .txt because other extensions are hard to understand for other players 
-Example:
-Summary_07182026_093015.txt
-Network_07182026_093015.txt
-Weapons_07182026_093015.txt
-Physics_07182026_093015.txt
-Performance_07182026_093015.txt
-Errors_07182026_093015.txt
-A second execution creates:
-Summary_07182026_101422.txt
-Network_07182026_101422.txt
-Weapons_07182026_101422.txt
-Physics_07182026_101422.txt
-Performance_07182026_101422.txt
-Errors_07182026_101422.txt
-Never overwrite an earlier run.
-Summary contains the relevant contents of all enabled category logs in chronological order.
-Logs must also print live to the game terminal.
-The terminal and text files use the same formatted log records.
+Never overwrite an earlier run.
+
+Summary contains the relevant contents of all enabled category logs in
+chronological order. Logs must also print live to the game terminal. The
+terminal and text files use the same formatted log records.
+
+Historical format (pre-2026-09-06):
+    Old logs used `mm-dd-yyyy` folders and `mmddyyyy_hhmmss` filenames.
+    These remain valid historical evidence but must not be used for new logs.
 ________________
 
 

@@ -14,10 +14,12 @@ quote the exact specification, explain the disagreement, and bring the code
 toward the specification as far as safely possible.
 
 Every AI session that touches the repository must create exactly one file under
-`docs/changelog/mm-dd-yyyy/`. Write it immediately before completion so it
-describes the final state. Record the branch, commits, time in EST, pre-existing
-changes, exact files and lines, exact old and new content, reasoning, documents,
-skills, validation, and remaining human review. Never claim pre-existing edits.
+`docs/changelog/yyyy-mm-dd/`. Write it immediately before completion so it
+describes the final state. Record the branch, commits, timestamp in ISO 8601
+UTC (`YYYY-MM-DDTHH:MM:SSZ`), pre-existing changes, exact files and lines,
+exact old and new content, reasoning, documents, skills, validation, and
+remaining human review. Never claim pre-existing edits. The changelog must be
+as detailed as possible — never skip or abbreviate it.
 
 Confirmed regressions belong in `docs/regressions/`; ordinary work history does
 not. The focused documents under `docs/skills/` replace `overseer.py` as the
@@ -99,15 +101,28 @@ For an ambiguous bug:
 9. Run the required focused Markdown skills and record their results.
 10. Report source/build evidence separately from final human playtesting.
 
-7 18 2026 addition: always maintain this format at the top of files
-// mm dd yyyy, hh mm
+Every source file must open with this header format:
+
+// YYYY-MM-DD HH:MM EST
 /* purpose
-* fill in purpose of file
-* fill in 2nd line
-* fill in 3rd line
-* fill in what this file DOES NOT do
-* fill in 2nd line
-* fill in 3rd line
+* one-line summary of what this file does
+* second detail about scope or responsibility
+* third detail about scope or responsibility
+* one-line statement of what this file does NOT do
+* second statement of excluded scope
+* third statement of excluded scope
+*/
+
+Example:
+
+// 2026-09-07 11:15 EST
+/* purpose
+* ragdoll death physics: spawn, simulate, fade, and destroy ragdolls
+* manages per-tick joint solving, world collision, and sleep detection
+* owns ragdoll config hot-reload and diagnostic logging
+* does NOT handle player movement or alive-state physics
+* does NOT control death animation timeline or ghost spawning
+* does NOT manage multiplayer ragdoll replication
 */
 
 # EXE Safety
@@ -707,6 +722,35 @@ When adding a new log:
 4. Use Debug::logThrottled for per-frame checks
 5. Never use printf
 
+## No Loose Debug Files
+
+All debug output must go through the centralized `Debug::log` / `Debug::warn` /
+`Debug::logThrottled` system. Do not open standalone `.txt` or `.log` files for
+debug output. Do not use `fopen` / `fprintf` / `printf` to write diagnostic data
+to loose files in `logs/`.
+
+The centralized system handles folder creation, file naming, rotation, and
+timestamping automatically. Custom per-system log files bypass these guarantees
+and produce unmanaged files that accumulate without rotation.
+
+Forbidden pattern:
+
+```cpp
+// BAD — bypasses centralized logging, creates unmanaged loose file
+FILE* f = fopen("logs/my_feature_debug.txt", "w");
+fprintf(f, "value: %f\n", val);
+```
+
+Correct pattern:
+
+```cpp
+// GOOD — uses centralized Debug system
+Debug::log(Debug::Category::MyFeature, "value: %f", val);
+```
+
+Existing loose debug files (e.g., `ragdoll_diagnostic.txt`) are legacy and
+should be migrated to the centralized system when touched.
+
 ---
 
 # Accessibility
@@ -1020,6 +1064,7 @@ Before ending any task:
 2. **Build** if code changed (using `build_agent.py`)
 3. **Run relevant validation/tests**
 4. **Verify expected outputs exist**
+5. **Write changelog** — Create exactly one file under `docs/changelog/yyyy-mm-dd/` following the template at `docs/changelog/TEMPLATE.md`. The filename format is `yyyymmdd_hhmmss-<slug>.md`. This is mandatory. Every session that touches the repository produces exactly one changelog. The changelog must be as detailed as possible: exact file paths, line numbers, old vs. new content, spec references, skill results, build status, and remaining human review. Write it immediately before completion. Never skip this step.
 
 ## Final Validation (Required)
 
@@ -1028,9 +1073,9 @@ relevant tests, and build/runtime validation required by the task. Record each
 result and unresolved human-review requirement in the changelog. Do not claim
 completion when a task-scoped review reports a blocker.
 
-5. **Save logs**
-6. **Trigger completion notification script**
-7. **Print summary**
+6. **Save logs**
+7. **Trigger completion notification script**
+8. **Print summary**
 
 Agents should never simply stop after editing files.
 
@@ -1063,6 +1108,7 @@ After building and verifying:
 ```
 python build_agent.py
 :: check for SUCCESS
+:: write changelog: docs/changelog/2026-09-07/20260907_143000-fix-duel-replay.md
 python devscripts/agent_task_complete.py "Fix duel replay flow"
 ```
 
