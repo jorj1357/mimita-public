@@ -565,4 +565,23 @@ jorj - this not official format not good but  when we edit netowkring stuff or d
    1. All six Stripe Price IDs are now retrievable from the VPS using the active test key.
    2. Startup reports `[VIP CONFIG] mode=test configured=true missing=none`.
    3. `/api/vip/config` reports every prepaid, monthly, and lifetime option configured for all three tiers.
-   4. Status: RESOLVED for configuration. Human test-mode checkout, webhook, email, entitlement, and refund acceptance remain required.
+4. Status: RESOLVED for configuration. Human test-mode checkout, webhook, email, entitlement, and refund acceptance remain required.
+
+## 2026-09-07T17:30:00Z — VIP slider displayed the base-month discount instead of total savings (RESOLVED)
+
+1. Bad behavior
+   1. For VIP at 12 months, the server/Stripe amount was `$19.98`, but the browser displayed `$38.29`.
+   2. The browser displayed savings of `$1.67` instead of the correct `$19.98`.
+   3. The browser and Stripe therefore appeared to disagree even though Stripe had the correct server-created amount.
+2. Exact wrong code
+   1. `website/src/pages/Vip.jsx` calculated `prepaidCents` by subtracting the discount from `prepaid.amount_cents` instead of from the full `prepaid.amount_cents * selectedMonths` total.
+   2. At 12 months this computed `3996 - 167 = 3829` cents rather than `3996 - 1998 = 1998` cents.
+3. Fix
+   1. `website/server/vip-config.js` now returns server-calculated `amounts_cents` and `savings_cents` arrays for every tier and every integer month from 1 through 12.
+   2. `website/src/pages/Vip.jsx` reads those arrays and no longer recomputes the amount in the browser.
+   3. The display text now uses the selected month count and discount percentage instead of hardcoded “buy 12 months for the price of 6” text.
+4. Resolution evidence
+   1. VPS `/api/vip/config` now returns VIP prepaid amounts `[333,636,909,1151,1363,1544,1696,1817,1908,1968,1998,1998]` cents.
+   2. The 12-month amount and savings are both `1998` cents (`$19.98`).
+   3. Focused VIP tests pass 25/25; local and VPS website builds pass.
+   4. Status: RESOLVED for browser/server quote disagreement. Stripe test checkout and webhook acceptance remain human tests.
