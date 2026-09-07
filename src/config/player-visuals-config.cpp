@@ -21,6 +21,10 @@ std::filesystem::file_time_type writeTime(const std::filesystem::path& p) {
     return std::filesystem::last_write_time(p, ec);
 }
 bool finite(float v) { return std::isfinite(v); }
+glm::vec3 readColor(const json& o, const char* key, const glm::vec3& fallback) {
+    if (!o.contains(key) || !o.at(key).is_array() || o.at(key).size() < 3) return fallback;
+    return {o.at(key)[0].get<float>(), o.at(key)[1].get<float>(), o.at(key)[2].get<float>()};
+}
 bool readSettings(const json& root, const char* name, PlayerOutlineSettings& s, std::string& err) {
     if (!root.contains(name)) return true;
     if (!root[name].is_object()) { err = std::string(name) + " must be an object"; return false; }
@@ -62,6 +66,34 @@ bool PlayerVisualsConfig::parseAndValidate(const std::string& text, PlayerVisual
                 if (std::string(layer) == "enemy") target = &out.enemy;
                 if (std::string(layer) == "teammate") target = &out.teammate;
                 if (!readSettings(wrapper, layer, *target, mLastError)) return false;
+            }
+            PlayerCapsuleSettings* capsule = &out.selfCapsule;
+            PlayerWireframeSettings* wire = &out.selfWireframe;
+            if (std::string(layer) == "enemy") { capsule = &out.enemyCapsule; wire = &out.enemyWireframe; }
+            if (std::string(layer) == "teammate") { capsule = &out.teammateCapsule; wire = &out.teammateWireframe; }
+            if (section.contains("capsule")) {
+                const auto& c = section.at("capsule");
+                capsule->enabled = c.value("enabled", capsule->enabled);
+                capsule->geometrySource = c.value("geometrySource", capsule->geometrySource);
+                capsule->alpha = c.value("alpha", capsule->alpha);
+                capsule->color = readColor(c, "color", capsule->color);
+                capsule->frontFaceCull = c.value("frontFaceCull", capsule->frontFaceCull);
+                capsule->backFaceCull = c.value("backFaceCull", capsule->backFaceCull);
+                capsule->depthTest = c.value("depthTest", capsule->depthTest);
+                capsule->depthWrite = c.value("depthWrite", capsule->depthWrite);
+                capsule->visibleThroughWalls = c.value("visibleThroughWalls", capsule->visibleThroughWalls);
+                capsule->scale = c.value("scale", capsule->scale);
+                capsule->renderOrder = c.value("renderOrder", capsule->renderOrder);
+            }
+            if (section.contains("wireframe")) {
+                const auto& w = section.at("wireframe");
+                wire->enabled = w.value("enabled", wire->enabled);
+                wire->alpha = w.value("alpha", wire->alpha);
+                wire->color = readColor(w, "color", wire->color);
+                wire->lineWidth = w.value("lineWidth", wire->lineWidth);
+                wire->visibleThroughWalls = w.value("visibleThroughWalls", wire->visibleThroughWalls);
+                wire->disappearOnDeath = w.value("disappearOnDeath", wire->disappearOnDeath);
+                wire->renderOrder = w.value("renderOrder", wire->renderOrder);
             }
         }
         return true;

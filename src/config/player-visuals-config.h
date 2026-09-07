@@ -24,11 +24,37 @@ struct PlayerOutlineSettings {
     int renderOrder = 100;
 };
 
+struct PlayerCapsuleSettings {
+    bool enabled = false;
+    std::string geometrySource = "collision";
+    float alpha = 0.15f;
+    glm::vec3 color{0.0f};
+    bool frontFaceCull = true;
+    bool backFaceCull = false;
+    bool depthTest = true;
+    bool depthWrite = false;
+    bool visibleThroughWalls = false;
+    float scale = 1.05f;
+    int renderOrder = 80;
+};
+
+struct PlayerWireframeSettings {
+    bool enabled = false;
+    float alpha = 0.9f;
+    glm::vec3 color{255.0f};
+    float lineWidth = 1.0f;
+    bool visibleThroughWalls = false;
+    bool disappearOnDeath = true;
+    int renderOrder = 120;
+};
+
 struct PlayerVisualsData {
-    std::vector<std::string> renderOrder{"outline"};
+    std::vector<std::string> renderOrder{"capsule", "outline", "wireframe"};
     PlayerOutlineSettings self;
     PlayerOutlineSettings enemy;
     PlayerOutlineSettings teammate;
+    PlayerCapsuleSettings selfCapsule, enemyCapsule, teammateCapsule;
+    PlayerWireframeSettings selfWireframe, enemyWireframe, teammateWireframe;
 };
 
 class PlayerVisualsConfig {
