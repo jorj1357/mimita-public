@@ -3,7 +3,7 @@
 - Branch: `8292026stash`
 - Timestamp: `2026-09-07T19:30:00Z`
 - Pre-existing worktree changes: unrelated game/replay/config edits were present and were not staged or modified by this task.
-- Commit: to be recorded after validation.
+- Application commit: `8cb50c563215d006d2c69076ddeedbc6789ed10a`
 
 ## Implemented
 
@@ -27,4 +27,14 @@
 
 ## Deployment
 
-VPS deployment will occur only after the local migration, focused tests, and website build are confirmed. The final commit and VPS migration/restart evidence will be added before completion.
+## Deployment evidence
+
+- The exact application commit was pushed to `origin/8292026stash`.
+- VPS pulled with `git pull --ff-only origin 8292026stash`.
+- VPS migration completed with `database migrations complete`.
+- VPS website build passed.
+- `mimita-api` restarted and reported online.
+- Deployed VPS commit: `8cb50c563215d006d2c69076ddeedbc6789ed10a`.
+- Live `/api/vip/config` returned `stripe.mode=live`, `configured=true`, and `missing=[]`.
+- Existing VPS untracked backups and temporary files were preserved.
+- Remaining human acceptance: perform a controlled Stripe test-mode refund, then a deliberately selected live refund only after verifying the test-mode flow.
