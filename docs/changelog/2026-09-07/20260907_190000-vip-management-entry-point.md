@@ -3,7 +3,7 @@
 - Branch: `8292026stash`
 - Timestamp: `2026-09-07T19:00:00Z`
 - Pre-existing worktree changes: unrelated game/replay/config edits were present and were not staged or modified by this task.
-- Commit: to be recorded after validation.
+- Commit: `0a187d460c838b2dba5a9292637a4daceba3e01a`
 
 ## Change
 
@@ -37,4 +37,4 @@ Added the append-only regression record `2026-09-07T19:00:00Z` describing the mi
 
 ## Deployment
 
-This changelog is created before completion. The final deployed commit and service verification will be added to the completion report after the exact commit is deployed.
+The exact commit was pushed to `origin/8292026stash`, pulled with `git pull --ff-only origin 8292026stash`, built on the VPS, and deployed at `/root/mimita-site`. `mimita-api` was restarted and reported online. The live `/api/vip/config` endpoint returned `stripe.mode=live`, `configured=true`, `missing=[]`.
