@@ -1778,6 +1778,12 @@ ServerPacketProcessResult processServerPacket(
     {
         if (stats)
             ++stats->unknownPacketTypes;
+        Debug::warn(Debug::Category::Networking,
+            "[MELEE_NET] REJECT unknown_type=%u bytes=%d player=%u serverTick=%u "
+            "expectedGeneric=%u expectedLegacyKnife=%u reason=packet_gate",
+            (unsigned)header->type, event.payloadBytes, header->playerId, tick,
+            (unsigned)PACKET_NPC_DAMAGE_REQUEST,
+            (unsigned)PACKET_SPYKNIFE_HIT_CLAIM);
         printf("%s [SERVER PACKET] rejected reason=unknown-type bytes=%d "
                "transport=%s connection=%llu source=%s type=%u\n",
                serverTimestamp(), event.payloadBytes,
@@ -1785,6 +1791,18 @@ ServerPacketProcessResult processServerPacket(
                (unsigned long long)event.connectionId.value,
                source.c_str(), header->type);
         return result;
+    }
+
+    if (header->type == PACKET_NPC_DAMAGE_REQUEST ||
+        header->type == PACKET_SPYKNIFE_HIT_CLAIM)
+    {
+        Debug::warn(Debug::Category::Networking,
+            "[MELEE_NET] RECEIVED type=%u bytes=%d player=%u serverTick=%u "
+            "expectedGeneric=%u expectedLegacyKnife=%u genericBatchBytes=%zu",
+            (unsigned)header->type, event.payloadBytes, header->playerId, tick,
+            (unsigned)PACKET_NPC_DAMAGE_REQUEST,
+            (unsigned)PACKET_SPYKNIFE_HIT_CLAIM,
+            sizeof(SpyKnifeContactBatchPacket));
     }
 
     if (stats)
@@ -1952,8 +1970,26 @@ ServerPacketProcessResult processServerPacket(
     }
     else if (header->type == PACKET_NPC_DAMAGE_REQUEST)
     {
-        handleNpcDamageRequest(sock, buffer, bytes, from, players, npcs, tick,
-                               totalPacketsOut);
+        // The generic damage-request transport also carries the authoritative
+        // physical-melee batch.  Keep the old single-request format intact for
+        // existing weapons, but route the fixed-size knife batch through its
+        // historical validation and shared authoritative damage path.
+        if (bytes == (int)sizeof(SpyKnifeContactBatchPacket))
+        {
+            Debug::warn(Debug::Category::Weapons,
+                "[SPYKNIFE_NET] DISPATCH batch=1 bytes=%d player=%u serverTick=%u",
+                bytes, header->playerId, tick);
+            handleSpyKnifeHitClaim(sock, players, npcs, world, buffer, bytes,
+                                   tick, totalPacketsOut);
+        }
+        else
+        {
+            Debug::warn(Debug::Category::Weapons,
+                "[SPYKNIFE_NET] DISPATCH batch=0 genericNpcDamage=1 bytes=%d player=%u",
+                bytes, header->playerId);
+            handleNpcDamageRequest(sock, buffer, bytes, from, players, npcs,
+                                   tick, totalPacketsOut);
+        }
         result.handled = true;
     }
     else if (header->type == PACKET_SERVER_COMMAND)

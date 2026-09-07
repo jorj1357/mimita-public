@@ -13,6 +13,8 @@ grenade: phsics object that explodes
 shield: phsics object that nullifies or blocks damage or dampens knockback or dont even add a shield bc shields are annoying 
 this all relates to  the expansion toward like a  easier to  edit mode, and adding an LMG and a minigun for juggernaut mode for retrograd mode that i want to  do and need to credit them and link their game entirely to them and their server bc that game is awesome 
 
+also 7 9 2026 1717 jorj - todo expand this to includ grenades and explosives liek that, and also being able to switch hitscan weapons from  hitsacn to being  projectile, like imagine  minigun that shoots rockets, and it doenst lag the server and has insatnt client side prediciton for all clients and just sends minimal data to the server. should work with 999 ppl firing that minigun in all random directions , it should  not lag or chug or go below  tick rate it should be like  just normal work that is fine for it to do 
+
 Weapon system spec after full client/server architecture change
 Date: 7/18/2026
 End goal

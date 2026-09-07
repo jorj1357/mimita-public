@@ -1343,7 +1343,7 @@ struct ProgressionEventPacket
 // ── Batched Spy Knife physical contacts (attacker → server) ───────────
 // Damage is never trusted from this packet. The server reconstructs the
 // target pose at contactTick and resolves damage from weapon configuration.
-static constexpr uint8_t SPYKNIFE_CONTACT_BATCH_MAX = 8;
+static constexpr uint8_t SPYKNIFE_CONTACT_BATCH_MAX = 6;
 struct SpyKnifeContact
 {
     uint32_t targetId = 0;
@@ -1361,6 +1361,7 @@ struct SpyKnifeContactBatchPacket
     PacketHeader header;
     uint32_t attackerId = 0;
     uint32_t attackerSpawnGeneration = 0;
+    uint32_t batchId = 0;
     uint8_t contactCount = 0;
     uint8_t reserved[3] = {};
     SpyKnifeContact contacts[SPYKNIFE_CONTACT_BATCH_MAX]{};

@@ -71,6 +71,8 @@ struct SpyKnifeState {
     std::unordered_map<uint32_t, bool> backstabSoundPlayed;
     std::vector<SpyKnifeHitResult> pendingRemoteHits;
     float networkBatchTimer = 0.0f;
+    uint32_t contactSerial = 0;
+    uint32_t batchSerial = 0;
 };
 
 namespace WeaponSpyKnife {

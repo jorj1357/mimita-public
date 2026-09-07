@@ -4,7 +4,7 @@
 * Oriented box collision runs at 60Hz tick rate, not per-frame.
 * Force-based damage: speed + angle + directness determine damage.
 * Box is welded to the knife model orientation via weapon capsule axes.
-* Applies remote NPC damage directly on the attacking client for now.
+* Predicts remote contact presentation while the server owns NPC/player health.
 * Does NOT render the hitbox outside debug visualization mode.
 */
 
@@ -328,27 +328,18 @@ static int applySpyKnifeRemoteHit(SpyKnifeState& state, const WeaponDefinition& 
     kbDir.z = std::max(kbDir.z, 0.15f);
     kbDir = glm::normalize(kbDir);
 
-    int hpBefore = target.currentHp;
+    const int hpBefore = target.currentHp;
 
-    // Temporary client-authoritative NPC damage: the hit the attacker sees is
-    // the damage that is applied. Do not route this through the prediction
-    // overlay or send a server claim, because either path can overwrite the
-    // local NPC health after the feedback has already been shown.
-    target.currentHp = std::max(0, target.currentHp - roundedDamage);
+    // Remote NPC health remains server-owned.  The local damage number,
+    // effects, and temporary impulse are prediction; the queued contact is
+    // what can change authoritative health.
     if (gpMpContext && gpMpContext->connected && gpMpContext->localPlayerId)
         MimitaNet::mpApplyPredictedDamage(*gpMpContext, targetId, roundedDamage, true);
-    target.currentHp = std::max(0, target.currentHp);
-    target.dead = target.currentHp <= 0;
     Debug::log(Debug::Category::NpcCombat,
         "[SPYKNIFE CLIENT NPC DAMAGE] attacker=%s npc=%u damage=%d hpBefore=%d hpAfter=%d",
         owner.username.c_str(), targetId, roundedDamage, hpBefore, target.currentHp);
 
     target.externalImpulse += kbDir * kbForce + glm::vec3(0, 0, kbForce * 0.3f);
-
-    if (target.currentHp <= 0) {
-        std::string line = owner.username + " killed " + target.username + " with Spy Knife";
-        Terminal::instance().addLog(line);
-    }
 
     {
         HitEvent ev;
@@ -380,9 +371,15 @@ static int applySpyKnifeRemoteHit(SpyKnifeState& state, const WeaponDefinition& 
     hitResult.hitPosition = hitPoint;
     hitResult.victimPosition = target.pos;
     hitResult.direction = bladeDir;
-    hitResult.contactTick = gpMpContext ? gpMpContext->tick : 0;
-    hitResult.contactId = (state.attackSequenceId << 16) |
-        static_cast<uint32_t>(state.pendingRemoteHits.size() & 0xffffu);
+    // Contact history must use the server-tick domain.  ctx.tick is a
+    // per-network-update counter and can run far ahead of the 60 Hz server;
+    // use the same target-specific rendered-tick mapping as other attacks.
+    hitResult.contactTick = gpMpContext
+        ? MimitaNet::mpFireRenderTickForTarget(
+            *gpMpContext, targetId, gpMpContext->latestServerTick != 0
+                ? gpMpContext->latestServerTick : gpMpContext->latestLocalSnapshotTick)
+        : 0;
+    hitResult.contactId = ++state.contactSerial;
     hitResult.targetIsNpc = true;
     state.pendingRemoteHits.push_back(hitResult);
 
@@ -391,20 +388,26 @@ static int applySpyKnifeRemoteHit(SpyKnifeState& state, const WeaponDefinition& 
 
 // ── Send hit claim packet to server ───────────────────────────
 
-static void flushSpyKnifeContactBatch(SpyKnifeState& state)
+static void flushSpyKnifeContactBatch(SpyKnifeState& state, size_t configuredMaxContacts)
 {
     if (!gpMpContext || !gpMpContext->connected || !gpMpContext->localPlayerId)
         return;
 
     while (!state.pendingRemoteHits.empty()) {
         MimitaNet::SpyKnifeContactBatchPacket batch{};
-        batch.header.type = MimitaNet::PACKET_SPYKNIFE_HIT_CLAIM;
+        // Physical knife contacts use the established authoritative NPC/player
+        // damage-request transport.  The payload remains a batch so contact
+        // detection stays at 60 Hz while transmission stays at the configured
+        // melee request rate.
+        batch.header.type = MimitaNet::PACKET_NPC_DAMAGE_REQUEST;
         batch.header.tick = gpMpContext->tick;
         batch.header.playerId = gpMpContext->localPlayerId;
         batch.attackerId = gpMpContext->localPlayerId;
         batch.attackerSpawnGeneration = gpMpContext->lastKnownSpawnGeneration;
-        const size_t count = std::min<size_t>(
-            MimitaNet::SPYKNIFE_CONTACT_BATCH_MAX, state.pendingRemoteHits.size());
+        const size_t count = std::min({
+            static_cast<size_t>(MimitaNet::SPYKNIFE_CONTACT_BATCH_MAX),
+            configuredMaxContacts,
+            state.pendingRemoteHits.size()});
         batch.contactCount = static_cast<uint8_t>(count);
         for (size_t i = 0; i < count; ++i) {
             const SpyKnifeHitResult& hit = state.pendingRemoteHits[i];
@@ -417,7 +420,20 @@ static void flushSpyKnifeContactBatch(SpyKnifeState& state)
             out.hitX = hit.hitPosition.x; out.hitY = hit.hitPosition.y; out.hitZ = hit.hitPosition.z;
             out.dirX = hit.direction.x; out.dirY = hit.direction.y; out.dirZ = hit.direction.z;
         }
-        MimitaNet::mpSendPacket(*gpMpContext, &batch, sizeof(batch));
+        Debug::warn(Debug::Category::Weapons,
+            "[SPYKNIFE_NET] SEND transport=generic_npc_damage type=%u expected=%u bytes=%zu "
+            "attacker=%u batchTick=%u contacts=%u firstContact=%u firstContactTick=%u",
+            (unsigned)batch.header.type,
+            (unsigned)MimitaNet::PACKET_NPC_DAMAGE_REQUEST,
+            sizeof(batch), batch.attackerId, batch.header.tick,
+            (unsigned)batch.contactCount,
+            batch.contactCount ? batch.contacts[0].contactId : 0u,
+            batch.contactCount ? batch.contacts[0].contactTick : 0u);
+        const bool sent = MimitaNet::mpSendPacket(*gpMpContext, &batch, sizeof(batch));
+        Debug::warn(Debug::Category::Weapons,
+            "[SPYKNIFE_NET] SEND_RESULT sent=%d type=%u bytes=%zu pendingAfter=%zu",
+            (int)sent, (unsigned)batch.header.type, sizeof(batch),
+            state.pendingRemoteHits.size() - count);
         spyknifeLog("CONTACT_BATCH_SENT attacker=%u count=%u tick=%u",
                     batch.attackerId, batch.contactCount, batch.header.tick);
         state.pendingRemoteHits.erase(state.pendingRemoteHits.begin(),
@@ -486,9 +502,15 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
         }
     }
 
-    if (state.networkBatchTimer >= 0.1f && !state.pendingRemoteHits.empty()) {
+    const float batchIntervalTicks = std::max(1.0f,
+        skCp(def, "networkBatchIntervalTicks", 10.0f));
+    const size_t batchMaxContacts = std::clamp<size_t>(
+        static_cast<size_t>(skCp(def, "networkBatchMaxContacts", 6.0f)),
+        1u, MimitaNet::SPYKNIFE_CONTACT_BATCH_MAX);
+    const float batchInterval = batchIntervalTicks / 60.0f;
+    if (state.networkBatchTimer >= batchInterval && !state.pendingRemoteHits.empty()) {
         state.networkBatchTimer = 0.0f;
-        flushSpyKnifeContactBatch(state);
+        flushSpyKnifeContactBatch(state, batchMaxContacts);
     }
 
     // ── Remote NPC status log ──

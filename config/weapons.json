@@ -1069,6 +1069,8 @@
       "hit": "player_hurt"
     },
     "custom_params": {
+      "networkBatchIntervalTicks": 10.0,
+      "networkBatchMaxContacts": 6.0,
       "hitboxHalfX": 0.5,
       "hitboxHalfY": 0.5,
       "hitboxHalfZ": 0.5,

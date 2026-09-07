@@ -2,13 +2,14 @@
 /* purpose
 * Implements miscellaneous legacy and utility server packet handlers.
 * Keeps non-migrated packet handling for chat, ping, NPC, reload, spawn, and compatibility paths.
-* Leaves Stage 4A weapon-specific shot, pellet, melee, and Godball packets inert.
+* Keeps compatibility packet handlers while sharing authoritative weapon-set slot resolution.
 * Does NOT own generic AttackRequest execution, projectile ticking, or transport receive loops.
 * Does NOT trust client weapon damage, target, health, death, or contact claims.
 * Does NOT implement client rendering, audio, or local prediction.
 */
 
 #include "network/server.h"
+#include "network/server-duel.h"
 #include "network/multiplayer-context.h"
 #include "network/network-weapons.h"
 #include "network/disagreement-visuals.h"
@@ -977,42 +978,105 @@ void handleSpyKnifeHitClaim(SOCKET sock,
                             uint32_t tick, uint64_t& totalPacketsOut)
 {
     (void)world;
-    if (bytes < (int)sizeof(SpyKnifeContactBatchPacket)) return;
+    if (bytes < (int)sizeof(SpyKnifeContactBatchPacket)) {
+        Debug::warn(Debug::Category::Weapons,
+            "[SPYKNIFE_AUTH] REJECT reason=short_batch bytes=%d expected=%zu serverTick=%u",
+            bytes, sizeof(SpyKnifeContactBatchPacket), tick);
+        return;
+    }
     SpyKnifeContactBatchPacket* batch = reinterpret_cast<SpyKnifeContactBatchPacket*>(buffer);
 
     auto attackerIt = players.find(batch->attackerId);
-    if (attackerIt == players.end()) return;
+    if (attackerIt == players.end()) {
+        Debug::warn(Debug::Category::Weapons,
+            "[SPYKNIFE_AUTH] REJECT reason=attacker_not_found attacker=%u serverTick=%u",
+            batch->attackerId, tick);
+        return;
+    }
     ServerPlayer& attacker = attackerIt->second;
 
-    if (attacker.dead || attacker.spawnState != ServerPlayer::Active) return;
+    if (attacker.dead || attacker.spawnState != ServerPlayer::Active) {
+        Debug::warn(Debug::Category::Weapons,
+            "[SPYKNIFE_AUTH] REJECT reason=attacker_inactive attacker=%u dead=%d spawnState=%d serverTick=%u",
+            batch->attackerId, (int)attacker.dead, (int)attacker.spawnState, tick);
+        return;
+    }
 
-    if (batch->attackerSpawnGeneration != attacker.spawnGeneration) return;
+    if (batch->attackerSpawnGeneration != attacker.spawnGeneration) {
+        Debug::warn(Debug::Category::Weapons,
+            "[SPYKNIFE_AUTH] REJECT reason=spawn_generation attacker=%u claimed=%u server=%u serverTick=%u",
+            batch->attackerId, batch->attackerSpawnGeneration,
+            attacker.spawnGeneration, tick);
+        return;
+    }
     bool hasSpyKnife = false;
     for (const std::string& id : attacker.ownedWeaponIds) {
         const WeaponDefinition* d = WeaponRegistry::instance().get(id);
-        if (d && d->slot == attacker.equippedSlot && d->behaviorType == WeaponBehaviorType::SpyKnife) {
+        if (!d || d->behaviorType != WeaponBehaviorType::SpyKnife)
+            continue;
+        const int logicalSlot = serverCommunityWeaponLogicalSlot(d->id);
+        const int nativeSlot = logicalSlot > 0
+            ? serverCommunityWeaponNativeSlot(logicalSlot) : d->slot;
+        // Community weapon sets use logical slots (Stable Weapons puts the
+        // knife in slot 4), while the weapon definition uses its native slot
+        // (Spy Knife is native slot 12). Accept either representation because
+        // the replicated player state may be before or after equip reconcile.
+        if (attacker.equippedSlot == d->slot ||
+            attacker.equippedSlot == logicalSlot ||
+            attacker.equippedSlot == nativeSlot) {
             hasSpyKnife = true;
+            Debug::log(Debug::Category::Weapons,
+                "[SPYKNIFE_AUTH] EQUIP_RESOLVED attacker=%u weapon=%s equippedSlot=%d logicalSlot=%d nativeSlot=%d",
+                batch->attackerId, d->id.c_str(), attacker.equippedSlot,
+                logicalSlot, nativeSlot);
             break;
         }
     }
-    if (!hasSpyKnife) return;
+    if (!hasSpyKnife) {
+        Debug::warn(Debug::Category::Weapons,
+            "[SPYKNIFE_AUTH] REJECT reason=knife_not_equipped attacker=%u equippedSlot=%d ownedWeapons=%zu serverTick=%u",
+            batch->attackerId, attacker.equippedSlot, attacker.ownedWeaponIds.size(), tick);
+        return;
+    }
 
     const WeaponDefinition* def = nullptr;
     for (const std::string& id : attacker.ownedWeaponIds) {
         const WeaponDefinition* d = WeaponRegistry::instance().get(id);
-        if (d && d->slot == attacker.equippedSlot && d->behaviorType == WeaponBehaviorType::SpyKnife) {
+        if (!d || d->behaviorType != WeaponBehaviorType::SpyKnife)
+            continue;
+        const int logicalSlot = serverCommunityWeaponLogicalSlot(d->id);
+        const int nativeSlot = logicalSlot > 0
+            ? serverCommunityWeaponNativeSlot(logicalSlot) : d->slot;
+        if (attacker.equippedSlot == d->slot ||
+            attacker.equippedSlot == logicalSlot ||
+            attacker.equippedSlot == nativeSlot) {
             def = d;
             break;
         }
     }
-    if (!def) return;
+    if (!def) {
+        Debug::warn(Debug::Category::Weapons,
+            "[SPYKNIFE_AUTH] REJECT reason=knife_definition_missing attacker=%u equippedSlot=%d serverTick=%u",
+            batch->attackerId, attacker.equippedSlot, tick);
+        return;
+    }
 
     const uint8_t count = std::min<uint8_t>(batch->contactCount, SPYKNIFE_CONTACT_BATCH_MAX);
+    Debug::warn(Debug::Category::Weapons,
+        "[SPYKNIFE_AUTH] BATCH attacker=%u count=%u contactCountRaw=%u serverTick=%u attackerPos=(%.2f,%.2f,%.2f)",
+        batch->attackerId, (unsigned)count, (unsigned)batch->contactCount, tick,
+        attacker.pos.x, attacker.pos.y, attacker.pos.z);
     for (uint8_t i = 0; i < count; ++i) {
         const SpyKnifeContact& pkt = batch->contacts[i];
         if (pkt.targetId == 0 || pkt.contactId == 0 || pkt.contactTick > tick ||
             tick - pkt.contactTick > 600 || !std::isfinite(pkt.hitX) ||
-            !std::isfinite(pkt.hitY) || !std::isfinite(pkt.hitZ)) continue;
+            !std::isfinite(pkt.hitY) || !std::isfinite(pkt.hitZ)) {
+            Debug::warn(Debug::Category::Weapons,
+                "[SPYKNIFE_AUTH] CONTACT_REJECT reason=invalid_contact attacker=%u index=%u target=%u contactId=%u contactTick=%u serverTick=%u",
+                batch->attackerId, (unsigned)i, pkt.targetId, pkt.contactId,
+                pkt.contactTick, tick);
+            continue;
+        }
         const int damage = pkt.isBackstab
             ? (int)WeaponExecution::paramOr(*def, "backstabDamagePerTick", 999.0f)
             : (int)WeaponExecution::paramOr(*def, "baseDamage", 15.0f);
@@ -1023,19 +1087,22 @@ void handleSpyKnifeHitClaim(SOCKET sock,
 
         // NPC entity IDs are authoritative. Resolve NPCs before players.
         auto npcIt = npcs.find(pkt.targetId);
-    if (npcIt != npcs.end()) {
+        if (npcIt != npcs.end()) {
         ServerNpc& npc = npcIt->second;
-        if (npc.health <= 0) {
-            printf("[SPY KNIFE] REJECTED hit claim: npc already dead target=%u\n", pkt.targetId);
-            return;
-        }
+            if (npc.health <= 0) {
+                Debug::warn(Debug::Category::Weapons,
+                    "[SPYKNIFE_AUTH] CONTACT_REJECT reason=npc_dead attacker=%u target=%u health=%d contactId=%u",
+                    batch->attackerId, pkt.targetId, npc.health, pkt.contactId);
+                return;
+            }
 
         glm::vec3 historicalNpcPos;
         if (!getNpcPositionAtTick(npc, pkt.contactTick, historicalNpcPos)) continue;
         float dist = glm::length(attacker.pos - historicalNpcPos);
         if (dist > 3.0f) {
-            printf("[SPY KNIFE] REJECTED NPC hit claim: too far attacker=%u target=%u dist=%.1f\n",
-                   batch->attackerId, pkt.targetId, dist);
+            Debug::warn(Debug::Category::Weapons,
+                "[SPYKNIFE_AUTH] CONTACT_REJECT reason=distance attacker=%u target=%u dist=%.2f limit=3.0 contactTick=%u serverTick=%u",
+                batch->attackerId, pkt.targetId, dist, pkt.contactTick, tick);
             return;
         }
 
@@ -1052,10 +1119,11 @@ void handleSpyKnifeHitClaim(SOCKET sock,
 
         const bool killed = npc.health == 0;
 
-        printf("[SPY KNIFE] server NPC applied: attacker=%u targetNpc=%u damage=%d backstab=%d "
-               "healthBefore=%d healthAfter=%d killed=%d dist=%.1f\n",
-               batch->attackerId, pkt.targetId, intDamage, (int)pkt.isBackstab,
-               healthBefore, npc.health, (int)killed, dist);
+        Debug::warn(Debug::Category::Weapons,
+            "[SPYKNIFE_AUTH] NPC_APPLIED attacker=%u target=%u damage=%d backstab=%d healthBefore=%d healthAfter=%d killed=%d dist=%.2f contactId=%u contactTick=%u serverTick=%u",
+            batch->attackerId, pkt.targetId, intDamage, (int)pkt.isBackstab,
+            healthBefore, npc.health, (int)killed, dist, pkt.contactId,
+            pkt.contactTick, tick);
 
         const glm::vec3 origin = attacker.pos;
         const glm::vec3 dir = glm::length(glm::vec3(pkt.dirX, pkt.dirY, pkt.dirZ)) > 0.001f

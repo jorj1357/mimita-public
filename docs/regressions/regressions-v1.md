@@ -37,6 +37,50 @@ Whats this
 
 newest at top 9 3 2026
 
+9 7 2026 — Spy Knife contact ticks use render/network-update time instead of the fixed 60 Hz simulation domain — CONFIRMED NOT FIXED
+
+1. Evidence:
+   1. Server trace at `Server_log_184741.txt` shows `serverTick=2035` while rejected knife contacts carry `contactTick=8002` and `contactTick=8006`.
+   2. The server rejects these contacts as `reason=invalid_contact` because the claimed contact tick is in the future.
+   3. The same trace proves packet transport and slot resolution now work: `[SPYKNIFE_NET] DISPATCH batch=1 bytes=272` and `[SPYKNIFE_AUTH] EQUIP_RESOLVED ... equippedSlot=12 logicalSlot=4 nativeSlot=12`.
+2. Exact code disagreement:
+   1. `src/combat/weapon-spyknife.cpp:374` stamps `hitResult.contactTick` from `gpMpContext->tick`.
+   2. `src/network/multiplayer-tick.cpp:2139` increments `ctx.tick` once per `mpTick()` update, which is tied to network/frame updates rather than the fixed gameplay simulation loop.
+   3. `src/network/multiplayer-tick.cpp:683-691` separately advances `ctx.clientSimulationTick` using a 1/60-second accumulator with a five-step catch-up cap.
+   4. `src/engine/engine-tick-combat.cpp:68-75` has another fixed 60 Hz prediction counter, confirming the project has distinct frame/update and simulation clocks.
+3. Expected behavior: physical contact and its claimed tick must use the fixed 60 Hz gameplay/simulation time, then be mapped to the server tick domain using the existing snapshot/server-tick estimate. A frame/network-update counter must not be sent as a historical collision tick.
+4. Actual behavior: client contacts are stamped with a faster/different counter, producing future claims that are rejected before historical NPC collision validation and damage application.
+5. Status: NOT FIXED — this is now the primary blocker after packet dispatch and weapon-set slot resolution were confirmed working.
+
+9 7 2026 — Spy Knife reaches server dispatch but still applies no NPC damage — CONFIRMED NOT FIXED
+
+1. Evidence from the 18:22-18:24 run:
+   1. `pasted-text.txt` records `[SPYKNIFE_NET] DISPATCH batch=1 bytes=272` repeatedly, proving the generic request reaches the server dispatch path in this run.
+   2. The server trace records the NPC remaining at `hp=9999` and contains no authoritative Spy Knife NPC-applied damage event.
+   3. The older `Server_log_182251.txt` also records `SERVER EQUIP REJECT ... requestedSlot=10 ... reason=not-owned-or-unknown`, while the active Spy Knife configuration is slot 12. This is the leading current rejection hypothesis, not yet proven by a handler-level diagnostic.
+2. Exact current code path:
+   1. `src/combat/weapon-spyknife.cpp` records local contact, predicts presentation, and sends the six-contact batch.
+   2. `src/network/server-packets.cpp` recognizes the generic request and logs `DISPATCH batch=1`.
+   3. `src/network/server-packet-handlers.cpp:handleSpyKnifeHitClaim` validates attacker existence, active state, spawn generation, equipped Spy Knife, contact fields, historical NPC position, and distance before applying health.
+   4. Several of those rejection branches previously returned silently, so the reason was invisible.
+3. This attempt: added centralized `[SPYKNIFE_AUTH]` diagnostics for batch size, attacker state, spawn generation, equipped weapon, contact validation, dead NPC, distance rejection, and authoritative NPC application. No damage rules or collision rules were changed.
+4. Expected next proof: one `[SPYKNIFE_AUTH] REJECT reason=...` or `[SPYKNIFE_AUTH] NPC_APPLIED ... healthBefore=... healthAfter=...` for every dispatched batch.
+5. Status: NOT FIXED — rebuild and runtime NPC acceptance still required.
+
+9 7 2026 — Spy Knife predicted hits do not produce authoritative NPC damage — CONFIRMED NOT FIXED
+
+1. Issue: Spy Knife displays local hit effects and damage numbers, but the server does not reduce NPC health.
+   1. Expected behavior: physical contact is detected at 60 Hz, contacts are batched at approximately 10 Hz, the server validates each historical contact, and authoritative NPC health changes according to `docs/specs/weapons/melee-weapons.md`.
+   2. Actual behavior: `SpyKnife_log_181350.txt` records local hits and batches, including `HIT id=1000 ... hpBefore=100 hpAfter=100` and `CONTACT_BATCH_SENT ... count=6`; `Server_log_181344.txt` rejects the received payloads as `unknown-type` with `type=62` and `type=64`, including knife-sized payloads of 1196 bytes.
+   3. Root cause status: the current runtime still has a client/server packet-protocol mismatch. The current source intends to send the generic NPC damage request type 17, but the observed server receives types 62/64 and rejects them before dispatch. The new diagnostics added in this session will identify whether the rebuilt client sends the wrong type or a transport/runtime binary is stale.
+   4. Attempts recorded:
+      1. Knife-only batched packet: rejected before `handleSpyKnifeHitClaim` as unknown type 64.
+      2. Generic damage-request transport: implemented in source and rebuilt, but the supplied runtime log still shows types 62/64, so end-to-end acceptance is not yet proven.
+      3. Client-authoritative NPC health mutation: removed; client now keeps presentation/prediction only and cannot be the final NPC health owner.
+   5. Next evidence required: matching `[SPYKNIFE_NET] SEND` and server `[MELEE_NET] RECEIVED` records with type 17 and 1196 bytes, followed by `[SPYKNIFE_NET] DISPATCH batch=1` and authoritative damage/health-before/after output.
+   6. Related specification: `docs/specs/weapons/melee-weapons.md` sections 7 and 8; `docs/specs/networking/networking.md` client prediction/server authority.
+   7. Status: NOT FIXED — runtime two-client/NPC acceptance remains required.
+
 9 7 2026 1255 — Camera stuck under the map in exported MP4 — NOT FIXED
 
 1. Issue: exported MP4 shows camera at (0,0,0) instead of the player's recorded POV
