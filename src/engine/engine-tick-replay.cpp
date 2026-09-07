@@ -187,7 +187,9 @@ void engineTickReplay(Engine& engine, float dt)
                 const double tSeek0 = replayExportNowSec();
                 if (gReplayExportVerbose)
                     Debug::log(Debug::Category::Replay, "[EXPORTTRACE] seek tick %u / total %u", seekTick, gReplayPlayer.totalTicks());
-                gReplayPlayer.seekToTick(seekTick);
+                // Export may redraw the same historical tick while the encoder
+                // drains. Preserve delivered event IDs across those redraws.
+                gReplayPlayer.seekToTick(seekTick, false);
                 gExportFrameTimings.seekMs += (replayExportNowSec() - tSeek0) * 1000.0;
                 const double tUpd0 = replayExportNowSec();
                 gReplayPlayer.update(0.0f);
@@ -352,7 +354,7 @@ void engineTickReplay(Engine& engine, float dt)
             // Camera
             { MIMITA_PERF_SCOPE("Replay::RecordFrame::Camera");
               sceneFrame.camera.position = camera.pos;
-              sceneFrame.camera.rotation = glm::vec3(camera.pitch, 0.0f, player.yaw);
+              sceneFrame.camera.rotation = glm::vec3(camera.pitch, camera.roll, camera.yaw);
               sceneFrame.camera.fov = camera.fov; }
 
             // Camera capture invariant: warn if camera is at default position

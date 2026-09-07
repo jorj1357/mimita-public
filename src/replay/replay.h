@@ -296,7 +296,7 @@ public:
     bool getFrameAt(uint32_t tick, InputFrame& out) const;
     const InputFrame* advanceTick();
 
-    void seekToTick(uint32_t tick);
+    void seekToTick(uint32_t tick, bool resetEvents = true);
     uint32_t currentTick() const { return mCurrentTick; }
     uint32_t totalTicks() const { return mHeader.tickCount; }
 

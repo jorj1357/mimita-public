@@ -34,6 +34,7 @@
 #include "debug/debug-log.h"
 #include "devtools/terminal.h"
 #include "replay/replay.h"
+#include "replay/replay-export.h"
 #include "replay/replay-factory.h"
 #include "replay/replay-editor.h"
 #include "effects/effect-part.h"
@@ -189,7 +190,8 @@ void engineTickCombat(Engine& engine, float dt)
     if (gDuelManager.endState() == DuelEndState::FinalKillReplay &&
         gReplayPlayer.isPlaying() &&
         gReplayPlayer.currentTick() >= gReplayPlayer.totalTicks() &&
-        gReplayPlayer.totalTicks() > 0)
+        gReplayPlayer.totalTicks() > 0 &&
+        !isReplayExportActive())
     {
         Debug::log(Debug::Category::Duel, "[DUEL] Replay Looping (tick=%u/%u)",
                    gReplayPlayer.currentTick(), gReplayPlayer.totalTicks());

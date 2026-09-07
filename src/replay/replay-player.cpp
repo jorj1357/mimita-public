@@ -204,18 +204,21 @@ void ReplayPlayer::setTimescale(float value)
     mTimescale = glm::clamp(value, 0.05f, 4.0f);
 }
 
-void ReplayPlayer::seekToTick(uint32_t tick) {
+void ReplayPlayer::seekToTick(uint32_t tick, bool resetEvents) {
     size_t maxTicks = mClip.sceneFrames.empty() ? mFrames.size() : mClip.sceneFrames.size();
     mCurrentTick = std::min(tick, (uint32_t)maxTicks);
     mPlaybackTick = (float)tick;
-    mLastEventTick = (int)tick - 1;
+    if (resetEvents)
+        mLastEventTick = (int)tick - 1;
     mPlaying = true;
     mPaused = false;
-    mDeliveredEventIds.clear();
-    mEffectsDelivered = 0;
-    mEffectsDeduplicated = 0;
-    mKillfeedsDelivered = 0;
-    mKillfeedsDeduplicated = 0;
+    if (resetEvents) {
+        mDeliveredEventIds.clear();
+        mEffectsDelivered = 0;
+        mEffectsDeduplicated = 0;
+        mKillfeedsDelivered = 0;
+        mKillfeedsDeduplicated = 0;
+    }
     rebuildInterpolatedFrameAtTick();
     if (!isReplayExportActive() || gReplayExportVerbose)
         printf("[REPLAY] seekToTick(%u) -> mCurrentTick=%u max=%zu frames=%zu scene=%zu playing=1\n",
