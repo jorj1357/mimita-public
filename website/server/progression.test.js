@@ -65,7 +65,7 @@ test("fresh schema, safe adoption of 83 accounts, backfill, constraints and futu
         assert.equal(String(stats.playtime_ticks), "5460")
         await runMigrations(database)
         assert.deepEqual((await database.query("SELECT * FROM game_stats WHERE user_id=1")).rows[0], stats)
-        assert.deepEqual((await database.query("SELECT version FROM schema_migrations ORDER BY version")).rows.map(r => r.version), [1, 5])
+        assert.deepEqual((await database.query("SELECT version FROM schema_migrations ORDER BY version")).rows.map(r => r.version), [1, 5, 6, 7])
         await assert.rejects(database.query("UPDATE game_stats SET gold=-1 WHERE user_id=1"))
         await assert.rejects(database.query("INSERT INTO game_stats(user_id) VALUES(1)"))
         await database.query("INSERT INTO users(username,username_key,email,password_hash) VALUES('new','new','new@test.invalid','fake')")
