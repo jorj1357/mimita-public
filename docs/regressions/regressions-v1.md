@@ -37,6 +37,47 @@ Whats this
 
 newest at top 9 3 2026
 
+9 6 2026 2136 — Replay export camera fix confirmed working via diagnostic logging
+
+1. Issue: replay export camera stuck under the world, not following player POV
+   1. Bad behavior
+      1. Exported video shows camera at ground level / (0,0,0) for entire clip
+      2. Camera does not follow the player's recorded perspective
+      3. All three exports from 9/6 (18:53, 19:35, 19:54) had this bug
+   2. Date and time first observed: 9 6 2026 ~19:35 EST (same as 1951 regression)
+   3. Why bad behavior
+      1. Same root cause as 1951 regression: `beginPlayback()` in subprocess blocked recording
+      2. Recording condition `isRecording() && !replayPlaybackActive` was false during export
+      3. Scene frames in clip had empty camera data (tick=0, camera=(0,0,0), no actors)
+      4. The fix at 19:51 was correct in source code but the running binary was not rebuilt
+      5. Clips recorded with old binary had empty camera data baked into JSON
+      6. Rebuilding binary and re-recording clips was required to fix the output
+   4. What fixed it, date and time: 9 6 2026 2136 EST (confirmation via diagnostic logging)
+      1. Verified the 19:51 fix is correct by adding diagnostic logging to engine-tick-camera.cpp
+      2. Ran export subprocess directly: `mimita.exe --export-replay <clip> --output <path> --visible --timeout 30 --replay-export-verbose`
+      3. Diagnostic logs confirmed camera position follows clip data at every tick:
+         - Tick 0: frameCamPos=(6.97, -26.14, 95.66) → controller sets it → finalPos=(6.97, -26.14, 95.66)
+         - Tick 1: frameCamPos=(6.97, -26.14, 95.55) → correctly interpolating downward
+         - Tick 2: frameCamPos=(6.97, -26.14, 95.43) → still following clip data
+      4. Export produced 5.4MB MP4 with correct camera (vs 600-760KB from broken builds)
+      5. User confirmed test export plays correctly with camera following player
+   5. What we learned
+      1. The 1951 fix (recording condition + removing beginPlayback) is correct and sufficient
+      2. The camera controller in "Recorded" mode reads scene frames and sets camera.pos correctly
+      3. The export subprocess is identical whether run directly or spawned from the game
+      4. Old clips recorded with broken binary have empty camera data that cannot be fixed by rebuilding — must re-record
+      5. The `test-diag-export.mp4` (5.4MB) vs user's broken exports (600KB) proves the camera fix works when clip has valid data
+      6. The `anyFreecam` flag was 0 during export, `camCtrlMode=0` (Recorded), `hasFrame=1` — all conditions correct
+   6. Proof: diagnostic log file at `logs/09-06-2026/ReplayExport_log_*.txt` shows camera position at every tick matching clip data
+   7. Files changed:
+      1. `src/engine/engine-tick-replay.cpp:303-304` — recording condition: `isRecording() && (!replayPlaybackActive || isReplayExportActive())`
+      2. `src/replay/replay-export-subprocess.cpp:281-288` — removed `beginPlayback()` before `seekToTick(0)`
+   8. How to prevent this from breaking again
+      1. NEVER call `beginPlayback()` in the export subprocess — `seekToTick()` is sufficient
+      2. NEVER change the recording condition to remove the `|| isReplayExportActive()` check
+      3. When testing export, always rebuild binary BEFORE recording new clips
+      4. Verify clip JSON has non-zero camera positions in scene frames before debugging export issues
+
 9 6 2026 1951 — Replay export camera stuck at (0,0,0) instead of following player POV
 
 1. Issue: replay export produces valid MP4 with outro, but camera is stuck at position (0,0,0) for the entire export instead of following the player's recorded POV
