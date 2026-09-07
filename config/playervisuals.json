@@ -1,6 +1,30 @@
 {
-  "renderOrder": ["outline"],
-  "self": { "outline": { "enabled": false, "thickness": 1.0, "alpha": 1.0, "color": [255, 255, 255], "visibleThroughWalls": false, "disappearOnDeath": true, "renderOrder": 100 } },
-  "enemy": { "outline": { "enabled": true, "thickness": 3.0, "alpha": 1.0, "color": [255, 80, 80], "visibleThroughWalls": false, "disappearOnDeath": true, "renderOrder": 100 } },
-  "teammate": { "outline": { "enabled": false, "thickness": 2.0, "alpha": 1.0, "color": [100, 200, 255], "visibleThroughWalls": false, "disappearOnDeath": true, "renderOrder": 100 } }
+  "comment_file": "Player readability presentation. Save while the game runs; valid changes hot reload.",
+  "comment_modes": {
+    "none": "No additional layer.",
+    "outline": "Edge-only silhouette outline.",
+    "capsule": "Transparent collision/custom capsule; front-face culling can show its inside/back surface.",
+    "wireframe": "Wireframe rendering of player body-part meshes."
+  },
+  "comment_colors": "RGB colors use 0-255. Alpha uses 0.0 invisible through 1.0 opaque.",
+  "comment_visibility": "visibleThroughWalls controls whether the selected layer ignores world depth.",
+  "renderOrder": ["capsule", "outline", "wireframe"],
+  "self": {
+    "mode": "none",
+    "outline": { "enabled": false, "thickness": 2.0, "alpha": 1.0, "color": [255, 255, 255], "visibleThroughWalls": false, "disappearOnDeath": true, "renderOrder": 100 },
+    "capsule": { "enabled": false, "geometrySource": "collision", "alpha": 0.15, "color": [0, 0, 0], "frontFaceCull": true, "backFaceCull": false, "depthTest": true, "depthWrite": false, "visibleThroughWalls": false, "scale": 1.05, "renderOrder": 80 },
+    "wireframe": { "enabled": false, "alpha": 0.9, "color": [255, 255, 255], "lineWidth": 1.0, "visibleThroughWalls": false, "disappearOnDeath": true, "renderOrder": 120 }
+  },
+  "enemy": {
+    "mode": "outline",
+    "outline": { "enabled": true, "thickness": 2.0, "alpha": 1.0, "color": [255, 80, 80], "visibleThroughWalls": false, "disappearOnDeath": true, "renderOrder": 100 },
+    "capsule": { "enabled": false, "geometrySource": "collision", "alpha": 0.15, "color": [0, 0, 0], "frontFaceCull": true, "backFaceCull": false, "depthTest": true, "depthWrite": false, "visibleThroughWalls": false, "scale": 1.05, "renderOrder": 80 },
+    "wireframe": { "enabled": false, "alpha": 0.9, "color": [255, 255, 255], "lineWidth": 1.0, "visibleThroughWalls": false, "disappearOnDeath": true, "renderOrder": 120 }
+  },
+  "teammate": {
+    "mode": "none",
+    "outline": { "enabled": false, "thickness": 2.0, "alpha": 1.0, "color": [100, 200, 255], "visibleThroughWalls": false, "disappearOnDeath": true, "renderOrder": 100 },
+    "capsule": { "enabled": false, "geometrySource": "collision", "alpha": 0.15, "color": [0, 0, 0], "frontFaceCull": true, "backFaceCull": false, "depthTest": true, "depthWrite": false, "visibleThroughWalls": false, "scale": 1.05, "renderOrder": 80 },
+    "wireframe": { "enabled": false, "alpha": 0.9, "color": [100, 200, 255], "lineWidth": 1.0, "visibleThroughWalls": false, "disappearOnDeath": true, "renderOrder": 120 }
+  }
 }

@@ -53,6 +53,7 @@ struct PlayerVisualsData {
     PlayerOutlineSettings self;
     PlayerOutlineSettings enemy;
     PlayerOutlineSettings teammate;
+    std::string selfMode = "none", enemyMode = "outline", teammateMode = "none";
     PlayerCapsuleSettings selfCapsule, enemyCapsule, teammateCapsule;
     PlayerWireframeSettings selfWireframe, enemyWireframe, teammateWireframe;
 };

@@ -36,6 +36,7 @@ struct RocketLauncherState {
         float smokeAccumulator = 0.0f;
         uint32_t fireSerial = 0;
         uint32_t authoritativeProjectileId = 0;
+        uint64_t replayEventId = 0;
     };
     std::vector<Rocket> activeRockets;
     float gameTime = 0.0f;
@@ -60,7 +61,10 @@ void update(
     const World& world,
     Camera& camera,
     float dt,
-    Player* victimPlayer = nullptr);
+    Player* victimPlayer = nullptr,
+    bool presentationOnly = false);
+
+void render(const RocketLauncherState& state, const Camera& camera, const WeaponDefinition& def);
 
 void clear(RocketLauncherState& state);
 

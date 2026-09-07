@@ -698,6 +698,16 @@ jorj - this not official format not good but  when we edit netowkring stuff or d
    3. Email bookkeeping failures cannot turn a completed Stripe refund into a failed webhook.
 4. Status: RESOLVED in source. Test-mode Stripe refund and live production refund acceptance remain required.
 
+## 2026-09-07T19:38:47Z — Replay rocket gunshot incorrectly rendered as a tracer (PARTIALLY FIXED)
+
+1. Observed bad behavior: an exported replay of an NPC rocket-launcher shot played the rocket-launcher sound, then showed a tracer; the visible projectile was delayed, slow, non-colliding, and did not reproduce the live rocket explosion path.
+2. Expected behavior: the replay must preserve the recorded weapon identity and present a rocket-launcher projectile, not a hitscan tracer. The replay specification requires the recorded player's experience tick by tick, including rocket projectiles, smoke, and explosions through shared effect behavior.
+3. Exact old code: `src\\engine\\engine-tick-camera.cpp` handled every `gunshot` by calling `spawnMuzzleFlash(...)` and then unconditionally calling `EffectPartSystem::instance().spawnTracer(...)`. `src\\combat\\weapon-rocket-launcher.cpp` recorded both rocket events without setting `ReplayEffectEvent::assetId`, so replay could not reliably identify the weapon.
+4. Exact new code: rocket fire now sets `projEvent.assetId = def.id` and `gunshotEvent.assetId = def.id`. Replay resolves the weapon through `WeaponRegistry`; it spawns a tracer only when the weapon definition is hitscan and logs `[REPLAY EFFECT] gunshot has projectile behavior; tracer suppressed` for projectile weapons.
+5. Cause: the replay gunshot dispatch treated the generic event type as hitscan regardless of the weapon, while the source event omitted the weapon contract. The replay `projectile_spawn` branch remains a replay-only `EffectPart` approximation and is not yet the full `WeaponRocketLauncher::update` collision/explosion path.
+6. Validation: canonical `mimita.exe` build passed with `Status: SUCCESS`; `mimita.exe --replay-export-selftest --timeout 60 --no-coordinator` passed 26/26. Human MP4 verification of rocket travel, world collision, explosion timing, smoke, and muzzle effects remains required.
+7. Status: PARTIALLY FIXED. Tracer suppression and weapon identity are implemented. Full shared gameplay projectile replay and the left-leg rotation issue remain open.
+
 ## 2026-09-07T19:45:00Z — VIP order management returned 500 because migration 008 was not registered (RESOLVED)
 
 1. Bad behavior

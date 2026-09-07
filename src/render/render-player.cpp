@@ -17,6 +17,7 @@
 #include "avatar/cosmetic-system.h"
 #include "config/player-visuals-config.h"
 #include "debug/debug-log.h"
+#include "debug/debug-visuals.h"
 #include <chrono>
 #include <cstdio>
 #include <unordered_map>
@@ -133,10 +134,18 @@ void renderPlayerInternal(
 
     const PlayerVisualsData& visuals = PlayerVisualsConfig::instance().data();
     const PlayerOutlineSettings* outline = &visuals.self;
+    const PlayerCapsuleSettings* capsule = &visuals.selfCapsule;
+    const PlayerWireframeSettings* wireframe = &visuals.selfWireframe;
+    const std::string* mode = &visuals.selfMode;
     if (!isLocal)
-        outline = (localTeam >= 0 && player.matchTeam >= 0 && localTeam == player.matchTeam)
-            ? &visuals.teammate : &visuals.enemy;
-    if (outline->enabled && outline->thickness > 0.0f && outline->alpha != 0.0f &&
+    {
+        const bool teammate = localTeam >= 0 && player.matchTeam >= 0 && localTeam == player.matchTeam;
+        outline = teammate ? &visuals.teammate : &visuals.enemy;
+        capsule = teammate ? &visuals.teammateCapsule : &visuals.enemyCapsule;
+        wireframe = teammate ? &visuals.teammateWireframe : &visuals.enemyWireframe;
+        mode = teammate ? &visuals.teammateMode : &visuals.enemyMode;
+    }
+    if (*mode == "outline" && outline->enabled && outline->thickness > 0.0f && outline->alpha != 0.0f &&
         !(player.dead && outline->disappearOnDeath)) {
         const GLboolean depthWas = glIsEnabled(GL_DEPTH_TEST);
         const GLboolean blendWas = glIsEnabled(GL_BLEND);
@@ -146,10 +155,13 @@ void renderPlayerInternal(
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         if (outline->visibleThroughWalls) glDisable(GL_DEPTH_TEST); else glEnable(GL_DEPTH_TEST);
         glDepthMask(GL_FALSE);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        glLineWidth(outline->thickness);
         const glm::vec4 color(outline->color.r / 255.0f, outline->color.g / 255.0f,
                               outline->color.b / 255.0f, outline->alpha);
         player.renderCurrentPose(gRenderer->shaderProgram, view, proj, true, hideHead,
-                                 true, outline->thickness, color);
+                                 true, 0.0f, color);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         glDepthMask(GL_TRUE);
         glDepthFunc(depthFuncWas);
         if (depthWas) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
@@ -158,6 +170,50 @@ void renderPlayerInternal(
             "[PLAYER VISUALS] outline entity=%u category=%s throughWalls=%d thickness=%.2f",
             networkEntityId, isLocal ? "self" : (localTeam >= 0 && player.matchTeam == localTeam ? "teammate" : "enemy"),
             outline->visibleThroughWalls ? 1 : 0, outline->thickness);
+    }
+
+    if (*mode == "capsule" && capsule->enabled && capsule->alpha != 0.0f &&
+        !(player.dead && outline->disappearOnDeath)) {
+        const Capsule c = player.getCapsule();
+        const glm::vec4 color(capsule->color.r / 255.0f, capsule->color.g / 255.0f,
+                              capsule->color.b / 255.0f, capsule->alpha);
+        const GLboolean depthWas = glIsEnabled(GL_DEPTH_TEST);
+        const GLboolean cullWas = glIsEnabled(GL_CULL_FACE);
+        GLint cullModeWas = GL_BACK;
+        if (cullWas) glGetIntegerv(GL_CULL_FACE_MODE, &cullModeWas);
+        if (capsule->visibleThroughWalls) glDisable(GL_DEPTH_TEST); else if (capsule->depthTest) glEnable(GL_DEPTH_TEST);
+        if (capsule->frontFaceCull || capsule->backFaceCull) {
+            glEnable(GL_CULL_FACE);
+            glCullFace(capsule->frontFaceCull && !capsule->backFaceCull ? GL_FRONT : GL_BACK);
+        } else glDisable(GL_CULL_FACE);
+        glDepthMask(capsule->depthWrite ? GL_TRUE : GL_FALSE);
+        const glm::vec3 axis = c.b - c.a;
+        const float length = glm::length(axis);
+        const glm::vec3 center = (c.a + c.b) * 0.5f;
+        if (length > 0.001f)
+            DebugVis::drawFilledCylinder(cam, center, axis, c.r * capsule->scale, length, color);
+        DebugVis::drawFilledSphere(cam, c.a, c.r * capsule->scale, color);
+        DebugVis::drawFilledSphere(cam, c.b, c.r * capsule->scale, color);
+        glDepthMask(GL_TRUE);
+        if (cullWas) { glEnable(GL_CULL_FACE); glCullFace(cullModeWas); }
+        else glDisable(GL_CULL_FACE);
+        if (depthWas) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+    }
+
+    if (*mode == "wireframe" && wireframe->enabled && wireframe->alpha != 0.0f &&
+        !(player.dead && wireframe->disappearOnDeath)) {
+        const GLboolean depthWas = glIsEnabled(GL_DEPTH_TEST);
+        if (wireframe->visibleThroughWalls) glDisable(GL_DEPTH_TEST); else glEnable(GL_DEPTH_TEST);
+        glDepthMask(GL_FALSE);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        glLineWidth(wireframe->lineWidth);
+        const glm::vec4 wireColor(wireframe->color.r / 255.0f, wireframe->color.g / 255.0f,
+                                  wireframe->color.b / 255.0f, wireframe->alpha);
+        player.renderCurrentPose(gRenderer->shaderProgram, view, proj, true, hideHead,
+                                 true, 0.0f, wireColor);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        glDepthMask(GL_TRUE);
+        if (depthWas) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
     }
 
     // Render attached cosmetic meshes (hats etc.) on top of the body.

@@ -59,6 +59,14 @@ bool PlayerVisualsConfig::parseAndValidate(const std::string& text, PlayerVisual
         if (root.contains("renderOrder")) out.renderOrder = root.at("renderOrder").get<std::vector<std::string>>();
         for (const char* layer : {"self", "enemy", "teammate"}) {
             const json& section = root.contains(layer) ? root.at(layer) : json::object();
+            std::string* mode = &out.selfMode;
+            if (std::string(layer) == "enemy") mode = &out.enemyMode;
+            if (std::string(layer) == "teammate") mode = &out.teammateMode;
+            if (section.contains("mode")) *mode = section.at("mode").get<std::string>();
+            if (*mode != "none" && *mode != "outline" && *mode != "capsule" && *mode != "wireframe") {
+                mLastError = std::string(layer) + ".mode must be none, outline, capsule, or wireframe";
+                return false;
+            }
             if (section.contains("outline")) {
                 json wrapper = json::object();
                 wrapper[layer] = section.at("outline");

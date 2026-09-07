@@ -33,6 +33,7 @@
 #include "npc/npc.h"
 #include "world/world.h"
 #include "physics/physics-types.h"
+#include "combat/projectile-render.h"
 
 namespace WeaponRocketLauncher {
 
@@ -56,7 +57,8 @@ static void doExplosion(
     const glm::vec3& position,
     uint32_t directHitEntityId,
     bool directHitIsNpc,
-    Player* victimPlayer = nullptr)
+    Player* victimPlayer,
+    bool presentationOnly)
 {
     const auto& sc = SizeScalingConfig::instance().data();
     float ss = std::max(owner.sizeScale, 0.001f);
@@ -79,7 +81,7 @@ static void doExplosion(
         camera.addPunch(shakeStrength * 4.0f * shakeMul, shakeStrength * 2.0f * shakeMul);
     }
 
-    for (Npc& npc : npcs.all()) {
+    if (!presentationOnly) for (Npc& npc : npcs.all()) {
         if (npc.body.currentHp <= 0) continue;
         glm::vec3 toEntity = npc.body.pos - position;
         float dist = glm::length(toEntity);
@@ -118,7 +120,7 @@ static void doExplosion(
         HitEffects::onHit(ev);
     }
 
-    {
+    if (!presentationOnly) {
         glm::vec3 toSelf = owner.pos - position;
         float dist = glm::length(toSelf);
         if (dist < splashRadius) {
@@ -152,7 +154,7 @@ static void doExplosion(
     }
 
     // Victim player splash damage (for NPC-fired rockets hitting the player)
-    if (victimPlayer && victimPlayer->currentHp > 0 && !victimPlayer->dead) {
+    if (!presentationOnly && victimPlayer && victimPlayer->currentHp > 0 && !victimPlayer->dead) {
         glm::vec3 toVictim = victimPlayer->pos - position;
         float dist = glm::length(toVictim);
         if (dist < splashRadius) {
@@ -228,6 +230,7 @@ void fire(
         projEvent.position = spawnPos;
         projEvent.velocity = dir * rocketSpeed;
         projEvent.lifetime = rocket.lifetime;
+        projEvent.assetId = def.id;
         projEvent.sourceActorId = std::to_string(rocket.ownerId);
         captureReplayEffect(projEvent);
     }
@@ -236,6 +239,7 @@ void fire(
         gunshotEvent.type = "gunshot";
         gunshotEvent.from = muzzlePos;
         gunshotEvent.to = muzzlePos + dir * 2.0f;
+        gunshotEvent.assetId = def.id;
         gunshotEvent.sourceActorId = std::to_string(rocket.ownerId);
         captureReplayEffect(gunshotEvent);
     }
@@ -258,7 +262,8 @@ void update(
     const World& world,
     Camera& camera,
     float dt,
-    Player* victimPlayer)
+    Player* victimPlayer,
+    bool presentationOnly)
 {
     if (dt <= 0.0f) return;
     state.gameTime += dt;
@@ -306,7 +311,7 @@ void update(
 
         rocket.lifetime -= dt;
         if (rocket.lifetime <= 0.0f) {
-            doExplosion(state, def, runtime, owner, npcs, camera, rocket.position, 0, false, victimPlayer);
+            doExplosion(state, def, runtime, owner, npcs, camera, rocket.position, 0, false, victimPlayer, presentationOnly);
             rocket.exploded = true;
             it = state.activeRockets.erase(it);
             continue;
@@ -337,7 +342,7 @@ void update(
                     }
                 }
                 if (hitWorld) {
-                    doExplosion(state, def, runtime, owner, npcs, camera, worldHitPos, 0, false, victimPlayer);
+                    doExplosion(state, def, runtime, owner, npcs, camera, worldHitPos, 0, false, victimPlayer, presentationOnly);
                     rocket.exploded = true;
                     it = state.activeRockets.erase(it);
                     continue;
@@ -384,7 +389,7 @@ void update(
                     if (hitNpc) break;
                 }
                 if (hitNpc) {
-                    doExplosion(state, def, runtime, owner, npcs, camera, checkPos, hitNpcId, true, victimPlayer);
+                    doExplosion(state, def, runtime, owner, npcs, camera, checkPos, hitNpcId, true, victimPlayer, presentationOnly);
                     rocket.exploded = true;
                     it = state.activeRockets.erase(it);
                     continue;
@@ -401,7 +406,7 @@ void update(
                     glm::vec3 vclosest = glm::clamp(checkPos, vmn, vmx);
                     float vdist = glm::length(checkPos - vclosest);
                     if (vdist < 0.5f && rocket.distanceTraveled >= IGNORE_OWNER_DIST) {
-                        doExplosion(state, def, runtime, owner, npcs, camera, checkPos, 0, false, victimPlayer);
+                        doExplosion(state, def, runtime, owner, npcs, camera, checkPos, 0, false, victimPlayer, presentationOnly);
                         rocket.exploded = true;
                         it = state.activeRockets.erase(it);
                         continue;
@@ -513,6 +518,15 @@ void update(
 
 void clear(RocketLauncherState& state) {
     state.activeRockets.clear();
+}
+
+void render(const RocketLauncherState& state, const Camera& camera, const WeaponDefinition& def)
+{
+    const ProjectileVisualConfig cfg = projectileVisualConfigForWeapon(def.id);
+    for (const RocketLauncherState::Rocket& rocket : state.activeRockets) {
+        if (!rocket.exploded)
+            renderProjectile(camera, rocket.position, rocket.orientation, cfg);
+    }
 }
 
 } // namespace WeaponRocketLauncher

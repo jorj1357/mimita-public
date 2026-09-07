@@ -32,6 +32,7 @@
 #include "game/game-state.h"
 #include "physics/config.h"
 #include "combat/projectile-render.h"
+#include "combat/weapon-registry.h"
 
 extern DuelManager gDuelManager;
 
@@ -948,8 +949,19 @@ void engineTickCamera(Engine& engine, float dt)
                 EffectPartSystem::instance().spawnMuzzleFlash(
                     effect.from, effect.sourceActorId, sizeScale, effect.assetId,
                     muzzleFlash, muzzleLighting);
-                EffectPartSystem::instance().spawnTracer(
-                    effect.from, effect.to, effect.sourceActorId, sizeScale, effect.assetId);
+                const WeaponDefinition* weapon = effect.assetId.empty()
+                    ? nullptr : WeaponRegistry::instance().get(effect.assetId);
+                const bool isHitscan = weapon
+                    ? weapon->hitscan
+                    : effect.assetId != "rocket_launcher";
+                if (isHitscan) {
+                    EffectPartSystem::instance().spawnTracer(
+                        effect.from, effect.to, effect.sourceActorId, sizeScale, effect.assetId);
+                } else {
+                    Debug::log(Debug::Category::Replay,
+                        "[REPLAY EFFECT] gunshot has projectile behavior; tracer suppressed weapon=%s\n",
+                        effect.assetId.c_str());
+                }
             } else if (effect.type == "blood_spurt_emitter") {
                 Debug::log(Debug::Category::Replay,
                     "[REPLAY EFFECT] spawned type=blood_spurt_emitter tick=%d pos=(%.2f %.2f %.2f) dir=(%.2f %.2f %.2f) source=%s target=%s\n",
