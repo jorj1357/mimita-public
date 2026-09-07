@@ -584,4 +584,20 @@ jorj - this not official format not good but  when we edit netowkring stuff or d
    1. VPS `/api/vip/config` now returns VIP prepaid amounts `[333,636,909,1151,1363,1544,1696,1817,1908,1968,1998,1998]` cents.
    2. The 12-month amount and savings are both `1998` cents (`$19.98`).
    3. Focused VIP tests pass 25/25; local and VPS website builds pass.
-   4. Status: RESOLVED for browser/server quote disagreement. Stripe test checkout and webhook acceptance remain human tests.
+4. Status: RESOLVED for browser/server quote disagreement. Stripe test checkout and webhook acceptance remain human tests.
+
+## 2026-09-07T17:55:09Z — VIP Stripe test-mode end-to-end display and Checkout amounts agree (TEST-MODE RESOLVED)
+
+1. Human acceptance evidence
+   1. VIP prepaid values matched between the website and Stripe Checkout: VIP 1 month `$3.33`, 7 months `$16.96`, and 9 months `$19.08`.
+   2. VIP monthly subscription matched at `$3.33` on the website and Stripe.
+   3. VIP lifetime matched at `$111.11` on the website and Stripe.
+   4. Ultra VIP Checkout entered Stripe's loading/checkout flow successfully for the admin test account.
+   5. The success page was visible and reassuring after Checkout, reducing buyer uncertainty.
+2. Infrastructure lesson
+   1. Local `.env` values alone were insufficient because the SSH-tunnel development page uses the VPS API.
+   2. Putting the matching Stripe test secret, monthly/lifetime Price IDs, and configuration metadata on the VPS made the tunneled local test flow work.
+   3. The VPS must use Price IDs belonging to the same Stripe account and mode as its `STRIPE_SECRET_KEY`; presence-only key checks are not enough.
+3. Status
+   1. Test-mode website display, server quote, and Stripe Checkout amount are accepted for the observed cases.
+   2. Live-mode payments, live webhook delivery, live receipts/emails, refunds, subscription cancellation, and production monitoring are not yet tested.
