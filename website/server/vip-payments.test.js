@@ -158,8 +158,8 @@ function makeDispatch(store) {
 
         if (text.startsWith("UPDATE users SET stripe_customer_id")) {
             const user = store.users.get(params[1])
-            if (user && user.stripe_customer_id !== params[0]) {
-                user.stripe_customer_id = params[0]
+            if (user) {
+                user.stripe_customer_id = text.includes("stripe_customer_id = ''") ? "" : params[0]
             }
             return rows([])
         }
@@ -407,6 +407,14 @@ beforeEach(() => {
             customers: {
                 async create() {
                     return { id: "cus_created" }
+                },
+                async retrieve(customerId) {
+                    if (customerId === "cus_stale") {
+                        const error = new Error("No such customer")
+                        error.code = "resource_missing"
+                        throw error
+                    }
+                    return { id: customerId }
                 }
             },
             subscriptions: {
@@ -465,6 +473,14 @@ test("checkout ignores browser price fields and uses server-selected amount", as
     const order = store.orders.get(res.body.order_id)
     assert.equal(order.amount_cents, 333)
     assert.equal(order.stripe_price_id, "")
+})
+
+test("checkout replaces a Stripe customer ID from a different account", async () => {
+    currentUser.current.stripe_customer_id = "cus_stale"
+    const res = await createCheckout()
+    assert.equal(res.status, 200)
+    assert.equal(fake.state.sessionParams.customer, "cus_created")
+    assert.equal(store.users.get(42).stripe_customer_id, "cus_created")
 })
 
 test("webhook rejects invalid signatures", async () => {

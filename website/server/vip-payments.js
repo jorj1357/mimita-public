@@ -194,9 +194,31 @@ async function storeStripeCustomerId(query, userId, customerId) {
     return cleanCustomerId
 }
 
+async function clearStripeCustomerId(query, userId, customerId) {
+    const cleanCustomerId = cleanId(customerId)
+    if (!cleanCustomerId) return
+    await query(
+        `UPDATE users
+         SET stripe_customer_id = '', updated_at = NOW()
+         WHERE id = $1 AND stripe_customer_id = $2`,
+        [userId, cleanCustomerId]
+    )
+}
+
 async function ensureStripeCustomer(query, stripe, user) {
     const existing = cleanId(user?.stripe_customer_id)
-    if (existing) return existing
+    if (existing) {
+        if (!stripe?.customers?.retrieve) return existing
+        try {
+            await stripe.customers.retrieve(existing)
+            return existing
+        }
+        catch (error) {
+            if (error?.code !== "resource_missing") throw error
+            await clearStripeCustomerId(query, user.id, existing)
+            vipLog("stale_stripe_customer_cleared", { user_id: user.id })
+        }
+    }
     if (!stripe?.customers?.create) return ""
 
     const customer = await stripe.customers.create({

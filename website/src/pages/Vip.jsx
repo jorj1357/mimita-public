@@ -197,7 +197,7 @@ export default function Vip() {
                                         </div>
                                         <input id={`${tier.tier}-months`} className="vipMonthRange" type="range" min="1" max="12" step="1" value={selectedMonths} onChange={event => setMonths(event.target.value)} aria-label={`${tier.tier} prepaid months`} />
                                         <div className="vipMonthEnds"><span>1 month</span><span>12 months</span></div>
-                                        {savingsCents > 0 && <div className="vipSavings">Save {dollars(savingsCents)} · buy 12 months for the price of 6</div>}
+                                        {savingsCents > 0 && <div className="vipSavings">Save {dollars(savingsCents)} · {selectedMonths} months at {discountPercent}% off</div>}
                                         <button type="button" className="vipModeButton" disabled={isLower || !prepaid.configured || busy === `${tier.tier}:prepaid`} onClick={() => checkout(tier.tier, "prepaid", selectedMonths)} title={prepaid.configured ? "" : "Stripe is not configured"}>
                                             {busy === `${tier.tier}:prepaid` ? "Opening checkout…" : `buy ${selectedMonths} month${selectedMonths === 1 ? "" : "s"}`}
                                         </button>
