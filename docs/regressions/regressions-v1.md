@@ -543,3 +543,26 @@ jorj - this not official format not good but  when we edit netowkring stuff or d
 6. The effect specification requires event/tick identity and shared replay presentation. The current event data lacks a stable event identity visible in this path, making it difficult to distinguish a legitimate second event from the same event being delivered again.
 7. The camera issue is now narrowed: the later clip's camera is correctly present in JSON and reaches the export subprocess (`pre-loop camera` matches the JSON first camera), so the freecam-gate change is effective for that clip. The intermittent first-export origin issue remains a capture/initialization difference between clips, not a universal inability of the exporter to apply cameras.
 8. The left-leg issue remains separate from projectile duplication. The JSON loader does deserialize body-part quaternions, but no inspected evidence yet proves whether the wrong axis is recorded, serialized, converted by `applyReplayPose()`, or interpreted by the left-leg mesh/bone basis.
+
+## 2026-09-07T17:18:13Z — VIP checkout HTTP 500 because VPS Stripe account did not own configured Prices (RESOLVED)
+
+1. Bad behavior
+   1. Clicking the prepaid slider's 1-month purchase button from the SSH-tunnel development site sent `POST /api/vip/payment/checkout` and returned HTTP 500.
+   2. Monthly and lifetime buttons failed in the same way.
+   3. Authentication and `/api/vip/config` succeeded, so the failure happened after the request reached the checkout server.
+2. Exact evidence
+   1. VPS PM2 logs recorded `StripeInvalidRequestError` with `No such price: 'price_1UCp8YGvytRPXxx5PrzYedv9'`.
+   2. Direct Stripe checks using the VPS secret identified account `acct_1U05yIGgyshRntvw`; all six configured Price IDs returned `resource_missing`.
+   3. Direct Stripe checks using the local test `.env` identified account `acct_1U05r0GvytRPXxx5`; all six Prices were found with amounts 333, 11111, 888, 22222, 1777, and 33333 cents.
+3. Cause
+   1. `website/npm-run-dev-ssh-v2.bat` forwards local port 3002 to the VPS, so the browser's localhost checkout executes the VPS API.
+   2. The VPS had Price IDs from the local Stripe test account but a secret key from a different Stripe test account. Presence-only configuration reporting incorrectly said checkout was configured.
+4. Fix
+   1. Backed up the VPS environment as `/root/mimita-site/website/.env.backup-20260907_172107`.
+   2. Replaced only the VPS test `STRIPE_SECRET_KEY` with the matching local test-account key; no key value is stored in this regression.
+   3. Restarted `mimita-api` with the updated environment.
+5. Resolution evidence
+   1. All six Stripe Price IDs are now retrievable from the VPS using the active test key.
+   2. Startup reports `[VIP CONFIG] mode=test configured=true missing=none`.
+   3. `/api/vip/config` reports every prepaid, monthly, and lifetime option configured for all three tiers.
+   4. Status: RESOLVED for configuration. Human test-mode checkout, webhook, email, entitlement, and refund acceptance remain required.
