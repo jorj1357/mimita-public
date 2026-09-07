@@ -496,3 +496,50 @@ jorj - this not official format not good but  when we edit netowkring stuff or d
    8. Related records
       1. Existing regression: `9 6 2026 1951 — Replay export camera stuck at (0,0,0) instead of following player POV`.
       2. Existing follow-up: `9 6 2026 2136 — Replay export camera fix confirmed working via diagnostic logging`.
+
+## 2026-09-07T17:06:45Z — Replay export camera intermittent; projectile/effect replay duplicates; left-leg orientation wrong (UNRESOLVED)
+
+1. Issue: the first replay export after opening MiMITA can still start at `(0,0,0)` with no usable player camera/pose, while a later export after approximately five minutes can have a working camera. The later export also has incorrect replay effects and left-leg orientation.
+   1. Working-camera evidence: `C:\mimita-priv-v8\replays\exports\09-07-2026\13-02-22-clip-duel.mp4` was reported by the user as a working-camera export at `2026-09-07T17:06:45Z`.
+   2. Bad effect behavior: the replay shows rocket/effect activity repeated too often; a rocket appears to be spawned or replayed from its original firing position repeatedly instead of one projectile continuing through its recorded path.
+   3. Bad killfeed behavior: after the first rocket kills the player, the NPC kill is logged several times in replay chat instead of once for the one historical kill event.
+   4. Bad body-pose behavior: the right leg is oriented vertically along world Z when standing, but the left leg lies flat in the X/Y plane and does not rotate into the expected upright orientation.
+2. Specification disagreement
+   1. `docs/specs/replays/replay-editor-and-export-v2.md` requires the export to reconstruct the local client's experience, including projectiles, effects, kill effects, player avatars, animations, and the local camera.
+   2. The effects specification requires: `same event + same tick + same seed + same configuration = same visuals`, and says replay should record the event and replay it through the same normal implementation rather than creating repeated approximations.
+   3. The hard replay correctness test requires correct bullets/projectiles, effects, kill effects, and replay presentation.
+3. Exact current code path and evidence
+   1. `src/replay/replay-player-interp.cpp:112-129` adds every scene frame's effects whose tick falls in the playback interval to `mTriggeredEffects`; this is event delivery, not continuous projectile-state simulation.
+   2. `src/engine/engine-tick-camera.cpp:902-905` consumes those triggered effects during replay playback.
+   3. `src/engine/engine-tick-camera.cpp:1032-1051` converts every `projectile_spawn` event into a new `EffectPart` at the recorded spawn position with the recorded velocity. If the same spawn event is delivered more than once, a new rocket is created more than once.
+   4. `src/combat/weapon-rocket-launcher.cpp:227-239` records a `projectile_spawn` event when a rocket is fired. The event is supposed to represent one firing event, not a new rocket on every replay tick.
+   5. The 2026-09-07 export log `logs\\09-07-2026\\ReplayExport_log_130223.txt` contains many `net_rocket_trail` entries at successive ticks and multiple `projectile_spawn`/explosion entries, confirming that the export is loading and processing a large effect stream; it does not by itself prove whether the duplication was recorded upstream or delivered twice during playback.
+   6. `src/replay/replay-player-load.cpp:155-175` reconstructs body parts from JSON by iterating serialized body-part names and loading each quaternion. The current source does not yet prove that the serialized quaternion's local basis matches the renderer's expected leg bone basis, so the left-leg axis issue remains a pose-space/coordinate-space investigation.
+4. Camera conclusion
+   1. The successful later export means the freecam-gate change can allow the replay camera controller to run; it does not prove that every earlier clip had valid camera data.
+   2. The earlier origin symptom remains consistent with a clip whose recorded scene-frame camera was default/empty, or with export beginning before the relevant replay state was initialized.
+   3. Camera recording and camera playback must be checked separately for the first failed clip and the later working clip. The timing difference means this is not yet safe to call a permanently fixed camera issue.
+5. Effect/killfeed conclusion
+   1. A projectile spawn event should create one projectile with one historical start tick and then advance through the replayed state/path. The current playback branch explicitly creates a fresh `EffectPart` whenever it receives a `projectile_spawn` event.
+   2. Trail events are expected to occur across ticks only if they represent the recorded trail presentation; they must not also cause the original projectile spawn to be recreated repeatedly.
+   3. Repeated killfeed chat means either the same kill event is being triggered more than once, the playback event cursor is being reset/re-entered, or the event is duplicated in the saved clip. The current evidence does not distinguish these yet.
+6. Left-leg conclusion
+   1. The previously attempted quaternion-hemisphere correction addressed sign ambiguity (`q` versus `-q`), but the user's persistent flat-left-leg result indicates a different problem may remain: the left-leg source/renderer basis, part ordering, or local-versus-world rotation conversion.
+   2. The fact that the right leg is correct while the left leg is consistently flat argues against a general Z-up convention failure and points toward a left-leg-specific transform or rest-axis mismatch.
+7. Required next proof
+   1. Compare the first failed clip and `13-02-22-replay.json`: scene-frame count, first/last camera positions, actor count, killfeed event count, `projectile_spawn` count, projectile trail count, and left/right leg quaternions.
+   2. For one projectile, compare its single `projectile_spawn` event, every trail event, and every replay-side `spawn(projectile)` call by event identity and tick.
+   3. For the repeated kill, compare saved killfeed events with `takeTriggeredKillfeedEvents()` delivery and chat append calls.
+   4. For the legs, inspect the recorded left/right body-part quaternion, the JSON quaternion, `applyReplayPose()`, and the renderer's left/right bone/model basis at the same tick.
+8. Status: UNRESOLVED. The camera is partially demonstrated by one working export, but camera initialization, projectile/effect duplication, repeated killfeed delivery, and left-leg orientation are not fixed or fully localized.
+
+### Evidence update — 2026-09-07T17:06:45Z clip inspection
+
+1. The source replay `replays\\09-07-2026\\13-02-22-replay.json` contains 900 scene frames and valid moving camera data: first camera position `(4.7011, -24.4159, 87.6256)` and last camera position `(6.4519, -26.9685, 91.7210)`. This proves the later working export did capture camera data; it does not explain why an earlier clip started at the origin.
+2. The same JSON contains 8 distinct `projectile_spawn` events at ticks 47, 103, 598, 662, 712, 753, 806, and 856. The event data is not one projectile spawn per tick.
+3. `logs\\09-07-2026\\ReplayExport_log_130223.txt` shows the tick-47 `projectile_spawn` being processed repeatedly by the exporter at multiple later log times, each time at the same original position `(-19.41, -35.57, 83.97)`. This confirms a replay-side duplicate delivery/reprocessing problem for at least that event.
+4. The current playback code at `src\\engine\\engine-tick-camera.cpp:1032-1051` creates a new `EffectPart` whenever it receives `projectile_spawn`. Therefore, repeated delivery creates repeated rockets from the same historical origin instead of advancing one historical projectile.
+5. The JSON contains three killfeed events at ticks 75, 821, and 822, all with `killerId=unknown`, `victimId=admin`, and `weaponName=unknown`. The export log shows repeated chat lines for these events. This proves the saved killfeed data is already semantically wrong or duplicated around the death; it is not yet proven that one JSON event alone is appended five times.
+6. The effect specification requires event/tick identity and shared replay presentation. The current event data lacks a stable event identity visible in this path, making it difficult to distinguish a legitimate second event from the same event being delivered again.
+7. The camera issue is now narrowed: the later clip's camera is correctly present in JSON and reaches the export subprocess (`pre-loop camera` matches the JSON first camera), so the freecam-gate change is effective for that clip. The intermittent first-export origin issue remains a capture/initialization difference between clips, not a universal inability of the exporter to apply cameras.
+8. The left-leg issue remains separate from projectile duplication. The JSON loader does deserialize body-part quaternions, but no inspected evidence yet proves whether the wrong axis is recorded, serialized, converted by `applyReplayPose()`, or interpreted by the left-leg mesh/bone basis.
