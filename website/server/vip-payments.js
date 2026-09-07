@@ -13,7 +13,7 @@ import Stripe from "stripe"
 import { pool } from "./db.js"
 import { authenticate } from "./session.js"
 import { createRateLimit } from "./rateLimit.js"
-import { sendVipPurchaseEmail, sendVipSubscriptionCanceledEmail } from "./mail.js"
+import { sendVipPurchaseEmail, sendVipRefundEmail, sendVipSubscriptionCanceledEmail } from "./mail.js"
 import {
     getPurchaseDefinition,
     getStripePriceId,
@@ -560,6 +560,8 @@ export async function getVipOrders({ query = pool, userId = 0, now = new Date() 
         `SELECT id, tier, purchase_type, amount_cents, currency, status,
                 purchase_months, is_lifetime, confirmation_email, confirmation_email_status,
                 confirmation_email_sent_at, confirmation_email_error,
+                refund_status, stripe_refund_id, refund_requested_at, refunded_at,
+                refund_error, refund_email_status, refund_email_sent_at, refund_email_error,
                 paid_at, created_at, stripe_payment_intent_id
          FROM vip_orders
          WHERE user_id = $1
@@ -586,6 +588,14 @@ export async function getVipOrders({ query = pool, userId = 0, now = new Date() 
             confirmation_email_status: row.confirmation_email_status || "not_attempted",
             confirmation_email_sent_at: toIso(row.confirmation_email_sent_at),
             confirmation_email_error: row.confirmation_email_error || "",
+            refund_status: row.refund_status || "",
+            stripe_refund_id: cleanId(row.stripe_refund_id),
+            refund_requested_at: toIso(row.refund_requested_at),
+            refunded_at: toIso(row.refunded_at),
+            refund_error: row.refund_error || "",
+            refund_email_status: row.refund_email_status || "not_attempted",
+            refund_email_sent_at: toIso(row.refund_email_sent_at),
+            refund_email_error: row.refund_email_error || "",
             amount_cents: Number(row.amount_cents) || 0,
             currency: row.currency,
             status: row.status,
@@ -660,10 +670,14 @@ async function processRefundOrDispute({ client, object, status }) {
 
     const orderResult = await client.query(
         `UPDATE vip_orders
-         SET status = $1, updated_at = NOW()
+         SET status = $1,
+             refund_status = CASE WHEN $1 = 'refunded' THEN 'succeeded' ELSE refund_status END,
+             stripe_refund_id = CASE WHEN $1 = 'refunded' THEN COALESCE(NULLIF($3, ''), stripe_refund_id) ELSE stripe_refund_id END,
+             refunded_at = CASE WHEN $1 = 'refunded' THEN COALESCE(refunded_at, NOW()) ELSE refunded_at END,
+             updated_at = NOW()
          WHERE stripe_payment_intent_id = $2
-         RETURNING id, user_id`,
-        [status, paymentIntent]
+         RETURNING id, user_id, tier, purchase_type, amount_cents, currency, stripe_refund_id`,
+        [status, paymentIntent, cleanId(object.refund || object.id)]
     )
 
     for (const order of orderResult.rows) {
@@ -674,6 +688,42 @@ async function processRefundOrDispute({ client, object, status }) {
             [status === "disputed" ? "disputed" : "refunded", order.id]
         )
         await recomputeAndStoreVipForUser(client, order.user_id)
+        if (status === "refunded") {
+            try {
+                const userResult = await client.query(
+                    `SELECT email, username FROM users WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
+                    [order.user_id]
+                )
+                const user = userResult.rows[0]
+                if (user?.email) {
+                    await sendVipRefundEmail({
+                        email: user.email,
+                        username: user.username,
+                        tier: order.tier,
+                        purchaseType: order.purchase_type,
+                        amountCents: order.amount_cents,
+                        currency: order.currency,
+                        orderId: order.id
+                    })
+                    await client.query(
+                        `UPDATE vip_orders SET refund_email_status = 'sent', refund_email_sent_at = NOW(), updated_at = NOW() WHERE id = $1`,
+                        [order.id]
+                    )
+                }
+            }
+            catch (error) {
+                try {
+                    await client.query(
+                        `UPDATE vip_orders SET refund_email_status = 'failed', refund_email_error = $1, updated_at = NOW() WHERE id = $2`,
+                        [String(error.message || error).slice(0, 500), order.id]
+                    )
+                }
+                catch (recordError) {
+                    vipLog("refund_email_status_unrecorded", { order_id: order.id, reason: recordError.message })
+                }
+                vipLog("refund_email_failed", { order_id: order.id, reason: error.message })
+            }
+        }
     }
 
     return orderResult.rowCount ? `processed_${status}` : `ignored_unknown_${status}`

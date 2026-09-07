@@ -292,3 +292,27 @@ export async function sendVipPurchaseEmail({
         `
     })
 }
+
+export async function sendVipRefundEmail({
+    email,
+    username = "",
+    tier = "vip",
+    purchaseType = "prepaid",
+    amountCents = 0,
+    currency = "usd",
+    orderId = "",
+    refundedAt = new Date()
+} = {}) {
+    const tierLabel = VIP_TIER_LABELS[tier] || tier
+    const purchaseLabel = VIP_PURCHASE_LABELS[purchaseType] || purchaseType
+    const amount = `$${(Number(amountCents) / 100).toFixed(2)} ${String(currency).toUpperCase()}`
+    const time = new Date(refundedAt).toLocaleString("en-US")
+    const origin = process.env.APP_ORIGIN || "https://mimita.fun"
+
+    await sendMail({
+        to: email,
+        subject: "Your MiMITA VIP refund is complete",
+        text: `Hi ${username},\n\nYour ${tierLabel} ${purchaseLabel} purchase has been refunded.\nAmount: ${amount}\nOrder id: ${orderId}\nDate/time: ${time}\n\nYour VIP entitlement has been removed. You can support MiMITA again anytime at ${origin}/vip`,
+        html: `<h1>Your MiMITA VIP refund is complete</h1><p>Hi ${escapeHtml(username)},</p><p>Your <strong>${escapeHtml(tierLabel)}</strong> ${escapeHtml(purchaseLabel)} purchase has been refunded.</p><p><strong>Amount:</strong> ${escapeHtml(amount)}<br><strong>Order id:</strong> ${escapeHtml(String(orderId))}<br><strong>Date/time:</strong> ${escapeHtml(time)}</p><p>Your VIP entitlement has been removed.</p><p><a href="${escapeHtml(origin)}/vip">Return to VIP</a></p>`
+    })
+}

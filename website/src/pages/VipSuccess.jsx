@@ -51,6 +51,8 @@ export default function VipSuccess() {
     const [orders, setOrders] = useState([])
     const [state, setState] = useState("checking")
     const [pollKey, setPollKey] = useState(0)
+    const [refundState, setRefundState] = useState("")
+    const [refundMessage, setRefundMessage] = useState("")
 
     const orderId = Number(new URLSearchParams(location.search).get("order_id") || 0)
 
@@ -71,6 +73,10 @@ export default function VipSuccess() {
                 setVip(status.vip)
                 setOrders(ordersData.orders || [])
                 const matchingOrder = (ordersData.orders || []).find(order => Number(order.id) === orderId)
+                if (matchingOrder?.status === "refunded") {
+                    setState("refunded")
+                    return
+                }
                 const paymentConfirmed = orderId > 0 ? matchingOrder?.status === "paid" : true
                 if (paymentConfirmed && status.vip?.active_tier && status.vip.active_tier !== "free") {
                     setState("success")
@@ -108,6 +114,22 @@ export default function VipSuccess() {
     function checkAgain() {
         setState("checking")
         setPollKey(key => key + 1)
+    }
+
+    async function requestRefund() {
+        if (!paidOrder?.id) return
+        setRefundState("sending")
+        setRefundMessage("")
+        try {
+            const result = await apiRequest(`/api/vip/orders/${paidOrder.id}/refund`, { method: "POST" })
+            setRefundState("requested")
+            setRefundMessage("Stripe accepted the refund request. We are waiting for Stripe's final confirmation.")
+            setPollKey(key => key + 1)
+        }
+        catch (error) {
+            setRefundState("")
+            setRefundMessage(error.message || "Stripe could not start the refund.")
+        }
     }
 
     return (
@@ -157,6 +179,14 @@ export default function VipSuccess() {
                     </div>
                 )}
 
+                {state === "refunded" && (
+                    <div className="vipRefundBox">
+                        <p className="vipSuccessTitle">Refund complete</p>
+                        <p className="vipNotice">Stripe confirmed the refund. Your VIP entitlement has been removed, and the refund confirmation email will be sent to {user?.email || "your account email"}.</p>
+                        <p><Link to="/vip">return to VIP</Link></p>
+                    </div>
+                )}
+
                 {state === "success" && vip?.active_tier && vip.active_tier !== "free" && (
                     <>
                         <p className="vipSuccessTitle">Success!!!</p>
@@ -186,18 +216,28 @@ export default function VipSuccess() {
                             <Link to="/profile">open your profile editor</Link>
                         </p>
 
-                        {refundOrder && (
+                        {refundOrder && !refundState && (
                             <div className="vipRefundBox">
                                 <p>
                                     Want a refund? They're valid for 30 days, meaning you have until{" "}
                                     <strong>{stampText(refundOrder.refund_until)}</strong> to get a{" "}
                                     <strong>100% refund</strong>!!!
                                 </p>
-                                <p className="vipNotice">
-                                    <Link to={`/support?refund_order=${refundOrder.id}`}>Click here to request a refund</Link>
-                                </p>
+                                <button type="button" onClick={() => setRefundState("confirming")}>confirm full refund</button>
                             </div>
                         )}
+
+                        {refundState === "confirming" && refundOrder && (
+                            <div className="vipRefundBox">
+                                <p>Refund {dollars(refundOrder.amount_cents)} to {user?.email}? This removes this VIP purchase.</p>
+                                <button type="button" onClick={requestRefund}>yes, refund this purchase</button>{" "}
+                                <button type="button" onClick={() => setRefundState("")}>cancel</button>
+                            </div>
+                        )}
+
+                        {refundState === "sending" && <p className="vipNotice">Starting your Stripe refund...</p>}
+                        {refundState === "requested" && <p className="vipNotice">{refundMessage}</p>}
+                        {refundMessage && !["requested"].includes(refundState) && <p className="vipError">{refundMessage}</p>}
 
                         {refundedOrder && (
                             <div className="vipRefundBox">

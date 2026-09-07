@@ -91,6 +91,65 @@ export function createVipRouter(deps = {}) {
         }
     })
 
+    router.post("/orders/:id/refund", authenticateMw, async (req, res, next) => {
+        try {
+            const stripe = stripeFactory()
+            if (!stripe?.refunds?.create) {
+                return res.status(503).json({ success: false, message: "Stripe refunds are not configured" })
+            }
+            const orderId = Number(req.params.id)
+            if (!Number.isInteger(orderId) || orderId <= 0) {
+                return res.status(400).json({ success: false, message: "invalid VIP order" })
+            }
+            const orderResult = await query(
+                `UPDATE vip_orders
+                 SET refund_status = 'requested', refund_requested_at = NOW(), updated_at = NOW()
+                 WHERE id = $1 AND user_id = $2
+                   AND status = 'paid'
+                   AND purchase_type <> 'monthly_subscription'
+                   AND stripe_payment_intent_id <> ''
+                   AND paid_at IS NOT NULL
+                   AND paid_at > NOW() - INTERVAL '30 days'
+                   AND refund_status IN ('', 'failed')
+                 RETURNING id, user_id, tier, purchase_type, amount_cents, currency,
+                           stripe_payment_intent_id, paid_at`,
+                [orderId, req.user.id]
+            )
+            if (!orderResult.rowCount) {
+                return res.status(409).json({ success: false, message: "this VIP purchase is not refundable" })
+            }
+            const order = orderResult.rows[0]
+            try {
+                const refund = await stripe.refunds.create({
+                    payment_intent: order.stripe_payment_intent_id,
+                    amount: Number(order.amount_cents),
+                    metadata: {
+                        source: "mimita_vip",
+                        vip_order_id: String(order.id),
+                        user_id: String(req.user.id),
+                        reason: "customer_requested_within_30_days"
+                    }
+                })
+                await query(
+                    `UPDATE vip_orders SET stripe_refund_id = $1, updated_at = NOW() WHERE id = $2`,
+                    [String(refund.id || ""), order.id]
+                )
+                vipApiLog("refund_requested", { user_id: req.user.id, order_id: order.id })
+                return res.json({ success: true, status: refund.status || "pending", order_id: order.id })
+            }
+            catch (error) {
+                await query(
+                    `UPDATE vip_orders SET refund_status = 'failed', refund_error = $1, updated_at = NOW() WHERE id = $2`,
+                    [String(error.message || error).slice(0, 500), order.id]
+                )
+                return res.status(502).json({ success: false, message: "Stripe could not start the refund" })
+            }
+        }
+        catch (error) {
+            next(error)
+        }
+    })
+
     router.patch("/style", authenticateMw, async (req, res, next) => {
         try {
             const state = await getVipStateForUser(req.user, query)

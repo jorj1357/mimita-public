@@ -27,6 +27,7 @@ function makeApp(store) {
             req.user = store.user
             next()
         },
+        stripeFactory: () => store.stripe || null,
         query: async (rawText, params = []) => {
             const text = String(rawText).replace(/\s+/g, " ").trim()
 
@@ -66,6 +67,17 @@ function makeApp(store) {
 
             if (text.startsWith("SELECT COUNT(*)::int")) {
                 return rows([{ count: 0 }])
+            }
+
+            if (text.startsWith("UPDATE vip_orders SET refund_status = 'requested'")) {
+                if (!store.refundOrder || store.refundOrder.id !== params[0] || store.refundOrder.user_id !== params[1]) return rows([])
+                store.refundOrder.refund_status = "requested"
+                return rows([store.refundOrder])
+            }
+
+            if (text.startsWith("UPDATE vip_orders SET stripe_refund_id")) {
+                store.refundOrder.stripe_refund_id = params[0]
+                return rows([])
             }
 
             throw new Error(`unexpected query: ${text}`)
@@ -120,4 +132,45 @@ test("verified VIP join tickets are consumed and cannot be replayed", async () =
     assert.equal(second.body.success, true)
     assert.equal(second.body.verified, false)
     assert.equal(second.body.reason, "invalid_or_expired")
+})
+
+test("owned refundable VIP order starts one-time Stripe refund", async () => {
+    const store = {
+        user: { id: 42, username: "tester", display_name: "Tester", role: "user" },
+        refundOrder: {
+            id: 7,
+            user_id: 42,
+            tier: "vip",
+            purchase_type: "prepaid",
+            amount_cents: 1998,
+            currency: "usd",
+            stripe_payment_intent_id: "pi_test",
+            paid_at: new Date("2026-09-01T00:00:00.000Z"),
+            refund_status: ""
+        },
+        stripe: {
+            refunds: {
+                create: async params => {
+                    assert.deepEqual(params, {
+                        payment_intent: "pi_test",
+                        amount: 1998,
+                        metadata: {
+                            source: "mimita_vip",
+                            vip_order_id: "7",
+                            user_id: "42",
+                            reason: "customer_requested_within_30_days"
+                        }
+                    })
+                    return { id: "re_test", status: "pending" }
+                }
+            }
+        }
+    }
+    const response = await request(makeApp(store))
+        .post("/api/vip/orders/7/refund")
+        .expect(200)
+
+    assert.equal(response.body.status, "pending")
+    assert.equal(store.refundOrder.refund_status, "requested")
+    assert.equal(store.refundOrder.stripe_refund_id, "re_test")
 })

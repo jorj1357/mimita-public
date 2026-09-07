@@ -624,6 +624,49 @@ jorj - this not official format not good but  when we edit netowkring stuff or d
 4. Validation: canonical build passed with `Status: SUCCESS`; `mimita.exe --replay-export-selftest --timeout 60 --no-coordinator` passed `26/26`.
 5. Remaining: replay effects are still reconstructed in `src\\engine\\engine-tick-camera.cpp` rather than submitted through the complete shared live projectile/hit-effect path. A fresh live export is required to confirm the screenshot-level effect reduction and to continue the projectile collision, lifetime, tracer, lighting, and left-leg work.
 
+## 2026-09-07T19:15:00Z — Replay consumed event batches were requeued by swap buffers (FIXED; LIVE EFFECT PATH REMAINS)
+
+1. Exact failure: replay dispatch used `takeTriggeredEffects()`, `takeTriggeredSounds()`, and `takeTriggeredKillfeedEvents()`, which transfer vectors with `swap()`. The static reusable caller vectors were not cleared after processing. On the next frame, the old batch was swapped back into `ReplayPlayer` and presented again, so effects disappeared by lifetime and then respawned indefinitely.
+2. Fix: `src\\engine\\engine-tick-camera.cpp` now clears the consumed effect and sound batches after their loops. `src\\engine\\engine-tick-ui-hud.cpp` clears the consumed killfeed batch after updating `KillfeedManager`.
+3. This fixes the exact “effect expires, then returns” delivery loop. It does not yet convert replay rockets/hit effects to the shared gameplay collision/effect path; that remains a separate spec-compliance item.
+4. Camera recurrence remains confirmed: the first export after starting the executable can still have no movable camera and `(0,0,0)`, while the second/third may work. The source-camera readiness/recording path still needs live evidence and repair.
+5. Validation: canonical build passed `Status: SUCCESS`; existing replay export self-check passed `26/26`. Fresh live export acceptance is still required.
+
+## 2026-09-07T19:30:00Z — Replay export effect spam stopped by clearing consumed batches (INCREMENTAL FIX CONFIRMED; WEAPON EFFECTS UNTESTED)
+
+1. Human acceptance update: after the consumed-batch fixes, the third export no longer showed the previous effect spam. The first export still had no movable camera and a camera position of `(0,0,0)`. The second export allowed looking around but movement was not tested. The third export camera worked. This confirms progress on effect re-presentation, not camera startup correctness.
+2. Exact old effect code in `src\\engine\\engine-tick-camera.cpp`: `takeTriggeredEffects(effects);` processed the static reusable vector, but there was no `effects.clear()` after the loop. The same omission existed for `takeTriggeredSounds(sounds)`.
+3. Exact new effect code:
+
+   ```cpp
+   gReplayPlayer.takeTriggeredEffects(effects);
+   for (const ReplayEffectEvent& effect : effects) {
+       // existing effect dispatch
+   }
+   effects.clear();
+
+   gReplayPlayer.takeTriggeredSounds(sounds);
+   for (const ReplaySoundEvent& sound : sounds) {
+       // existing sound dispatch
+   }
+   sounds.clear();
+   ```
+
+4. Exact old killfeed behavior in `src\\engine\\engine-tick-ui-hud.cpp`: `takeTriggeredKillfeedEvents(killEvents);` processed the static reusable vector without clearing it afterward.
+5. Exact new killfeed code:
+
+   ```cpp
+   gpReplayPlayer->takeTriggeredKillfeedEvents(killEvents);
+   for (const ReplayKillfeedEvent& ev : killEvents) {
+       // existing KillfeedManager dispatch
+   }
+   killEvents.clear();
+   ```
+
+6. Cause: the take functions use `swap()`. Without clearing the caller-owned reusable vector, already-consumed events were swapped back into `ReplayPlayer` on the next frame and spawned again after their normal lifetime ended.
+7. Untested: revolver muzzle flash, one-tick white muzzle sphere, revolver tracer, rocket-launcher projectile, rocket smoke, rocket explosion, dynamic lighting, and other weapon effects still require live export acceptance.
+8. Status: effect re-presentation fix is confirmed incrementally by human observation; camera startup remains unresolved; full replay/live weapon-effect parity remains unresolved.
+
 ## 2026-09-07T19:00:00Z — Active prepaid/lifetime VIP had no management or refund entry point (RESOLVED)
 
 1. Bad behavior
@@ -637,3 +680,20 @@ jorj - this not official format not good but  when we edit netowkring stuff or d
    2. Active recurring subscriptions retain `manage subscription`, which opens Stripe Billing Portal for cancellation and billing management.
    3. Active prepaid/lifetime entitlements now show `manage VIP purchase / refund`, which opens the matching success page and its refund action.
 4. Status: RESOLVED in source and deployed after local validation. Human acceptance remains required for one recurring cancellation and one refundable prepaid/lifetime purchase.
+
+## 2026-09-07T19:30:00Z — One-time VIP refunds required manual support review (RESOLVED)
+
+1. Bad behavior
+   1. Prepaid and lifetime VIP users could only open a support refund request after purchase.
+   2. A refund required manual handling instead of being sent directly to Stripe after the user confirmed the exact amount.
+2. Fix
+   1. Added an authenticated, ownership-scoped refund endpoint for paid prepaid/lifetime orders inside the existing 30-day window.
+   2. The server sends Stripe the stored Payment Intent and stored order amount; browser-supplied payment data is ignored.
+   3. Stripe webhook confirmation remains authoritative: the order and entitlement are marked refunded only after Stripe reports the refund.
+   4. Added refund status, Stripe refund ID, error, timestamp, and refund-email tracking fields.
+   5. The success page now shows a final confirmation step and a completed-refund state.
+3. Safety behavior
+   1. Monthly subscriptions are excluded and remain managed through Stripe Billing Portal.
+   2. Duplicate clicks and already-refunded orders are rejected.
+   3. Email bookkeeping failures cannot turn a completed Stripe refund into a failed webhook.
+4. Status: RESOLVED in source. Test-mode Stripe refund and live production refund acceptance remain required.
