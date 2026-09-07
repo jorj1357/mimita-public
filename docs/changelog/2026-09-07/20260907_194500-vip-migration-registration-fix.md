@@ -3,7 +3,7 @@
 - Branch: `8292026stash`
 - Timestamp: `2026-09-07T19:45:00Z`
 - Pre-existing worktree changes: unrelated game/config edits were present and were not staged or modified.
-- Commit: to be recorded after validation.
+- Application commit: `9392a492e4efc9be50451ea5a3010661fd0d2fef`
 
 ## Change
 
@@ -20,3 +20,13 @@ Before this change, the runner iterated only `[1, 5, 6, 7]`. The refund migratio
 ## Remaining human review
 
 After the endpoint returns 200, the user should refresh `/vip`, open the purchase-management button, and perform a controlled refund test.
+
+## Deployment evidence
+
+- VPS pulled the exact application commit with `git pull --ff-only`.
+- `npm run migrate` completed after migration 008 was registered.
+- VPS website build passed.
+- `mimita-api` restarted and reported online.
+- Unauthenticated `GET /api/vip/orders` now returns the expected HTTP 401 instead of the previous database HTTP 500.
+- The previous missing-column error is no longer produced after restart.
+- Deployed VPS commit: `9392a492e4efc9be50451ea5a3010661fd0d2fef`.
