@@ -43,6 +43,7 @@ export default function Vip() {
     const [user, setUser] = useState(null)
     const [config, setConfig] = useState(null)
     const [vip, setVip] = useState(null)
+    const [orders, setOrders] = useState([])
     const [message, setMessage] = useState("loading VIP...")
     const [busy, setBusy] = useState("")
     const [monthsByTier, setMonthsByTier] = useState({ vip: 1, super_vip: 1, ultra_vip: 1 })
@@ -69,6 +70,22 @@ export default function Vip() {
             })
         return () => { alive = false }
     }, [navigate, location.pathname])
+
+    useEffect(() => {
+        if (!user) {
+            setOrders([])
+            return undefined
+        }
+        let alive = true
+        apiRequest("/api/vip/orders")
+            .then(data => {
+                if (alive) setOrders(Array.isArray(data.orders) ? data.orders : [])
+            })
+            .catch(() => {
+                if (alive) setOrders([])
+            })
+        return () => { alive = false }
+    }, [user])
 
     async function checkout(tier, purchaseType, selectedMonths = monthsByTier[tier] || 1) {
         if (!user) {
@@ -115,6 +132,14 @@ export default function Vip() {
         }
     }
 
+    function manageVipPurchase(order) {
+        if (!order?.id) {
+            setMessage("purchase details are still loading")
+            return
+        }
+        navigate(`/vip/success?order_id=${encodeURIComponent(order.id)}`)
+    }
+
     if (!config) {
         return (
             <Layout>
@@ -127,6 +152,13 @@ export default function Vip() {
 
     const vipState = vip || { active_tier: "free", active: false, expires_at: null, subscription: null }
     const currentRank = TIER_RANK[vipState.active_tier] || 0
+    const activeOneTimeOrder = orders.find(order =>
+        order.status === "paid" &&
+        order.tier === vipState.active_tier &&
+        order.purchase_type !== "monthly_subscription"
+    ) || orders.find(order =>
+        order.status === "paid" && order.purchase_type !== "monthly_subscription"
+    )
     const previewUser = user && vip ? {
         ...user,
         supporter_tier: vip.active_tier,
@@ -230,9 +262,18 @@ export default function Vip() {
                                     manage subscription
                                 </button>
                             ) : vip.active ? (
-                                <p className="vipNotice">
-                                    You have {TIER_LABELS[vip.active_tier]} VIP (prepaid) until {dateText(vip.expires_at)}. No active subscription.
-                                </p>
+                                <>
+                                    <p className="vipNotice">
+                                        You have {TIER_LABELS[vip.active_tier]} VIP (prepaid or lifetime) until {dateText(vip.expires_at)}. No active subscription.
+                                    </p>
+                                    {activeOneTimeOrder ? (
+                                        <button type="button" onClick={() => manageVipPurchase(activeOneTimeOrder)}>
+                                            manage VIP purchase / refund
+                                        </button>
+                                    ) : (
+                                        <p className="vipNotice">Purchase details are still loading. Refresh shortly to manage this purchase.</p>
+                                    )}
+                                </>
                             ) : (
                                 <p className="vipNotice">No active subscription detected!</p>
                             )}

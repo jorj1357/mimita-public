@@ -608,3 +608,32 @@ jorj - this not official format not good but  when we edit netowkring stuff or d
 3. The export subprocess previously called `REPLAY_PLAYER.seekToTick(0)` but relied on the first engine camera pass to copy the replay camera into the live camera. The new guarded handoff in `src\\replay\\replay-export-subprocess.cpp` seeds `gpCamera` immediately from the first scene frame and logs the source tick/position/yaw/pitch before capture. This removes the startup-order dependency for the initial export frame.
 4. Replay effect reconstruction is still not spec-compliant. `src\\engine\\engine-tick-camera.cpp` creates a replay-only `EffectPart` for `projectile_spawn`, and separately reconstructs muzzle flashes, tracers, damage numbers, hit bursts, and damage spheres. This is not the same shared live projectile/effect path required by `docs\\specs\\effects\\effects.md`; it explains why historical projectiles do not collide like live projectiles and why lifetime/decay behavior can diverge. The current event-ID delivery guard reduces repeated delivery but does not make one historical projectile into one advancing collision-aware projectile.
 5. Current status: `PASS_WITH_HUMAN_REVIEW` for deterministic initial camera seeding after a successful build; `UNRESOLVED` for projectile duplication/collision, damage-number and dynamic-light decay, tracer flicker, damage-sphere fade, and left-leg orientation. A live export must still verify the first-export case and inspect the new `[EXPORT-SUBPROCESS] camera seeded` log.
+
+## 2026-09-07T18:20:00Z — Replay export redraw re-delivered historical events (FIXED IN PLAYER CURSOR; LIVE EFFECT PARITY UNRESOLVED)
+
+1. Exact failure: the export capture loop seeks to each requested historical tick and then calls `ReplayPlayer::update(0.0f)`. `ReplayPlayer::seekToTick()` previously cleared `mDeliveredEventIds` and reset event counters on every export redraw. Re-rendering the same historical tick therefore delivered its rocket, damage, hit, and killfeed events again.
+2. Fix: `ReplayPlayer::seekToTick(uint32_t tick, bool resetEvents)` now preserves the event cursor when export calls it with `resetEvents=false`. Normal explicit/editor seeks retain the default reset behavior. Camera recording now stores `camera.pitch`, `camera.roll`, and `camera.yaw` instead of replacing roll with zero and using `player.yaw` for camera yaw.
+3. Validation: canonical build passed with `Status: SUCCESS`; existing replay export self-check passed `26/26`; its synthetic camera assertions confirmed camera position advances with replay ticks and MP4 output remains valid.
+4. Remaining status: live first/second/third export acceptance is still required. Replay-only projectile/effect reconstruction in `src\\engine\\engine-tick-camera.cpp` still does not use the shared collision-aware projectile/gameplay event path, so projectile collision, effect lifetime, dynamic-light repetition, tracer behavior, hit-sphere decay, and left-leg orientation remain unresolved.
+
+## 2026-09-07T18:45:00Z — Replay export restarted the clip and re-presented effects (EXPORT LOOP FIXED; SHARED EFFECT PARITY REMAINS)
+
+1. Evidence: `logs\\09-07-2026\\ReplayExport_log_142914.txt` contained approximately 4,967 replay-side `projectile_spawn` dispatches, 4,064 `damage_number` dispatches, 18,541 `footstep` dispatches, and 63,994 `net_rocket_trail` dispatches for a 900-tick clip. The source replay itself contained 19 projectile-spawn events, so the export was replaying the same history rather than showing a normal event count.
+2. Cause: `src\\engine\\engine-tick-combat.cpp` looped `FinalKillReplay` back to tick 0 whenever playback reached the end. The export subprocess shares this engine path, so the loop repeatedly reset playback and event delivery.
+3. Fix: the loop now requires `!isReplayExportActive()`. Export reaches the end once; normal in-game final-kill replay looping is unchanged.
+4. Validation: canonical build passed with `Status: SUCCESS`; `mimita.exe --replay-export-selftest --timeout 60 --no-coordinator` passed `26/26`.
+5. Remaining: replay effects are still reconstructed in `src\\engine\\engine-tick-camera.cpp` rather than submitted through the complete shared live projectile/hit-effect path. A fresh live export is required to confirm the screenshot-level effect reduction and to continue the projectile collision, lifetime, tracer, lighting, and left-leg work.
+
+## 2026-09-07T19:00:00Z — Active prepaid/lifetime VIP had no management or refund entry point (RESOLVED)
+
+1. Bad behavior
+   1. `/vip` showed a management button only when an active recurring subscription existed.
+   2. Users with active prepaid or lifetime VIP saw status text, but had to navigate away and find `/vip/success` themselves before they could reach purchase details or the refund request link.
+2. Cause
+   1. `website/src/pages/Vip.jsx` rendered the existing Stripe Billing Portal action only for active subscription statuses.
+   2. The page did not load the user's existing VIP orders, even though `/api/vip/orders` and `/vip/success?order_id=...` already exposed the account email, receipt status, purchase details, and one-time refund route.
+3. Fix
+   1. `/vip` now loads the authenticated user's orders and selects the paid one-time order matching the active tier.
+   2. Active recurring subscriptions retain `manage subscription`, which opens Stripe Billing Portal for cancellation and billing management.
+   3. Active prepaid/lifetime entitlements now show `manage VIP purchase / refund`, which opens the matching success page and its refund action.
+4. Status: RESOLVED in source and deployed after local validation. Human acceptance remains required for one recurring cancellation and one refundable prepaid/lifetime purchase.
