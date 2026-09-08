@@ -32,6 +32,20 @@
 
 namespace MimitaNet {
 
+static bool spyKnifeObbSphereOverlap(const glm::vec3& center,
+                                     const glm::vec3& half,
+                                     const glm::vec3 axes[3],
+                                     const glm::vec3& sphereCenter,
+                                     float sphereRadius)
+{
+    const glm::vec3 delta = sphereCenter - center;
+    const float x = std::clamp(glm::dot(delta, axes[0]), -half.x, half.x);
+    const float y = std::clamp(glm::dot(delta, axes[1]), -half.y, half.y);
+    const float z = std::clamp(glm::dot(delta, axes[2]), -half.z, half.z);
+    const glm::vec3 closest = center + axes[0] * x + axes[1] * y + axes[2] * z;
+    return glm::length(sphereCenter - closest) <= sphereRadius;
+}
+
 void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
                        const HeadlessWorld& world,
@@ -1062,10 +1076,15 @@ void handleSpyKnifeHitClaim(SOCKET sock,
     }
 
     const uint8_t count = std::min<uint8_t>(batch->contactCount, SPYKNIFE_CONTACT_BATCH_MAX);
+    const float serverContactRadius = std::max(0.5f,
+        WeaponExecution::paramOr(*def, "serverContactRadius", 3.0f));
     Debug::warn(Debug::Category::Weapons,
-        "[SPYKNIFE_AUTH] BATCH attacker=%u count=%u contactCountRaw=%u serverTick=%u attackerPos=(%.2f,%.2f,%.2f)",
+        "[SPYKNIFE_AUTH] BATCH attacker=%u count=%u contactCountRaw=%u serverTick=%u attackerPos=(%.2f,%.2f,%.2f) contactRadius=%.2f hitboxHalf=(%.2f,%.2f,%.2f)",
         batch->attackerId, (unsigned)count, (unsigned)batch->contactCount, tick,
-        attacker.pos.x, attacker.pos.y, attacker.pos.z);
+        attacker.pos.x, attacker.pos.y, attacker.pos.z, serverContactRadius,
+        WeaponExecution::paramOr(*def, "hitboxHalfX", 0.5f),
+        WeaponExecution::paramOr(*def, "hitboxHalfY", 0.5f),
+        WeaponExecution::paramOr(*def, "hitboxHalfZ", 0.5f));
     for (uint8_t i = 0; i < count; ++i) {
         const SpyKnifeContact& pkt = batch->contacts[i];
         if (pkt.targetId == 0 || pkt.contactId == 0 || pkt.contactTick > tick ||
@@ -1075,6 +1094,41 @@ void handleSpyKnifeHitClaim(SOCKET sock,
                 "[SPYKNIFE_AUTH] CONTACT_REJECT reason=invalid_contact attacker=%u index=%u target=%u contactId=%u contactTick=%u serverTick=%u",
                 batch->attackerId, (unsigned)i, pkt.targetId, pkt.contactId,
                 pkt.contactTick, tick);
+            continue;
+        }
+        const glm::vec3 boxCenter(pkt.boxCenterX, pkt.boxCenterY, pkt.boxCenterZ);
+        const glm::vec3 boxHalf(pkt.boxHalfX, pkt.boxHalfY, pkt.boxHalfZ);
+        const glm::vec3 boxAxes[3] = {
+            glm::vec3(pkt.boxAxis0X, pkt.boxAxis0Y, pkt.boxAxis0Z),
+            glm::vec3(pkt.boxAxis1X, pkt.boxAxis1Y, pkt.boxAxis1Z),
+            glm::vec3(pkt.boxAxis2X, pkt.boxAxis2Y, pkt.boxAxis2Z)
+        };
+        const bool finiteBox = std::isfinite(boxCenter.x) && std::isfinite(boxCenter.y) && std::isfinite(boxCenter.z) &&
+            std::isfinite(boxHalf.x) && std::isfinite(boxHalf.y) && std::isfinite(boxHalf.z) &&
+            boxHalf.x > 0.0f && boxHalf.y > 0.0f && boxHalf.z > 0.0f;
+        const bool validAxes = finiteBox &&
+            std::abs(glm::length(boxAxes[0]) - 1.0f) < 0.15f &&
+            std::abs(glm::length(boxAxes[1]) - 1.0f) < 0.15f &&
+            std::abs(glm::length(boxAxes[2]) - 1.0f) < 0.15f &&
+            std::abs(glm::dot(boxAxes[0], boxAxes[1])) < 0.2f &&
+            std::abs(glm::dot(boxAxes[0], boxAxes[2])) < 0.2f &&
+            std::abs(glm::dot(boxAxes[1], boxAxes[2])) < 0.2f;
+        const float maxHalfX = WeaponExecution::paramOr(*def, "hitboxHalfX", 0.5f) * 1.25f;
+        const float maxHalfY = WeaponExecution::paramOr(*def, "hitboxHalfY", 0.5f) * 1.25f;
+        const float maxHalfZ = WeaponExecution::paramOr(*def, "hitboxHalfZ", 0.5f) * 1.25f;
+        const float targetBodyRadius = std::max(0.25f,
+            WeaponExecution::paramOr(*def, "serverTargetBodyRadius", 1.25f));
+        if (!validAxes || boxHalf.x > maxHalfX || boxHalf.y > maxHalfY || boxHalf.z > maxHalfZ) {
+            Debug::warn(Debug::Category::Weapons,
+                "[SPYKNIFE_AUTH] CONTACT_REJECT reason=invalid_hitbox attacker=%u target=%u contactId=%u contactTick=%u serverTick=%u",
+                batch->attackerId, pkt.targetId, pkt.contactId, pkt.contactTick, tick);
+            continue;
+        }
+        const float boxReach = glm::length(boxHalf) + serverContactRadius;
+        if (glm::length(boxCenter - attacker.pos) > boxReach) {
+            Debug::warn(Debug::Category::Weapons,
+                "[SPYKNIFE_AUTH] CONTACT_REJECT reason=hitbox_origin attacker=%u target=%u centerDist=%.2f limit=%.2f contactId=%u",
+                batch->attackerId, pkt.targetId, glm::length(boxCenter - attacker.pos), boxReach, pkt.contactId);
             continue;
         }
         const int damage = pkt.isBackstab
@@ -1093,17 +1147,19 @@ void handleSpyKnifeHitClaim(SOCKET sock,
                 Debug::warn(Debug::Category::Weapons,
                     "[SPYKNIFE_AUTH] CONTACT_REJECT reason=npc_dead attacker=%u target=%u health=%d contactId=%u",
                     batch->attackerId, pkt.targetId, npc.health, pkt.contactId);
-                return;
+                continue;
             }
 
         glm::vec3 historicalNpcPos;
         if (!getNpcPositionAtTick(npc, pkt.contactTick, historicalNpcPos)) continue;
         float dist = glm::length(attacker.pos - historicalNpcPos);
-        if (dist > 3.0f) {
+        if (!spyKnifeObbSphereOverlap(boxCenter, boxHalf, boxAxes,
+                                      historicalNpcPos, targetBodyRadius)) {
             Debug::warn(Debug::Category::Weapons,
-                "[SPYKNIFE_AUTH] CONTACT_REJECT reason=distance attacker=%u target=%u dist=%.2f limit=3.0 contactTick=%u serverTick=%u",
-                batch->attackerId, pkt.targetId, dist, pkt.contactTick, tick);
-            return;
+                "[SPYKNIFE_AUTH] CONTACT_REJECT reason=obb_miss attacker=%u target=%u rootDist=%.2f bodyRadius=%.2f contactTick=%u serverTick=%u",
+                batch->attackerId, pkt.targetId, dist, targetBodyRadius,
+                pkt.contactTick, tick);
+            continue;
         }
 
         const int healthBefore = npc.health;
@@ -1149,18 +1205,21 @@ void handleSpyKnifeHitClaim(SOCKET sock,
 
     // No NPC matched, try player target.
     auto targetIt = players.find(pkt.targetId);
-    if (targetIt == players.end()) return;
+    if (targetIt == players.end()) continue;
     ServerPlayer& target = targetIt->second;
-    if (target.dead || target.spawnState != ServerPlayer::Active) return;
+    if (target.dead || target.spawnState != ServerPlayer::Active) continue;
 
     glm::vec3 historicalTargetPos;
     float historicalTargetYaw = 0.0f;
     if (!getPlayerPoseAtTick(target, pkt.contactTick, historicalTargetPos, historicalTargetYaw)) continue;
     float dist = glm::length(attacker.pos - historicalTargetPos);
-    if (dist > 3.0f) {
-        printf("[SPY KNIFE] REJECTED hit claim: too far attacker=%u target=%u dist=%.1f\n",
-               batch->attackerId, pkt.targetId, dist);
-        return;
+    if (!spyKnifeObbSphereOverlap(boxCenter, boxHalf, boxAxes,
+                                  historicalTargetPos, targetBodyRadius)) {
+        Debug::warn(Debug::Category::Weapons,
+            "[SPYKNIFE_AUTH] CONTACT_REJECT reason=obb_miss attacker=%u target=%u rootDist=%.2f bodyRadius=%.2f contactTick=%u serverTick=%u",
+            batch->attackerId, pkt.targetId, dist, targetBodyRadius,
+            pkt.contactTick, tick);
+        continue;
     }
 
     glm::vec3 kbDir = glm::length(historicalTargetPos - attacker.pos) > 0.001f
@@ -1185,8 +1244,10 @@ void handleSpyKnifeHitClaim(SOCKET sock,
             NETWORK_WEAPON_SPYKNIFE, pkt.contactId);
     }
 
-    printf("[SPY KNIFE] server applied: attacker=%u target=%u damage=%d backstab=%d dist=%.1f killed=%d\n",
-           batch->attackerId, pkt.targetId, damage, (int)pkt.isBackstab, dist, (int)result.killed);
+    Debug::warn(Debug::Category::Weapons,
+        "[SPYKNIFE_AUTH] PLAYER_APPLIED attacker=%u target=%u damage=%d backstab=%d dist=%.2f killed=%d contactId=%u contactTick=%u serverTick=%u",
+        batch->attackerId, pkt.targetId, damage, (int)pkt.isBackstab, dist,
+        (int)result.killed, pkt.contactId, pkt.contactTick, tick);
     }
 }
 

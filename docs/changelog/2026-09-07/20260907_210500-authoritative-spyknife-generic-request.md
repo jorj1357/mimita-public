@@ -91,3 +91,111 @@
 - Remaining validation: run the rebuilt client/server and confirm contacts no
   longer log `contactTick > serverTick`, followed by `[SPYKNIFE_SERVERDMG]
   confirmed=yes` and reduced authoritative NPC health.
+
+## Follow-up log investigation
+
+- Reviewed the supplied runtime files `Server_log_191651.txt`,
+  `Gameterminal_log_191641.txt`, `Network_log_191641.txt`, and
+  `SpyKnife_log_191655.txt`.
+- The server is receiving the current Spy Knife batch packet and resolving the
+  Stable Weapons slot correctly. The latest runtime evidence is not a packet
+  type or slot rejection: it logs `bytes=276`, `EQUIP_RESOLVED`, and 21
+  authoritative `NPC_APPLIED` contacts.
+- The rejection counts in the server log are 71 `invalid_contact`, 31
+  `distance`, 4 `attacker_inactive`, and 3 `npc_dead`. The dominant failure is
+  future contact ticks, for example `contactTick=30850` through `30854` at
+  `serverTick=30794`, which fails the existing `pkt.contactTick > tick` guard.
+- The distance guard is currently hard-coded to `3.0f`, and its failure uses
+  `return`, ending the whole handler instead of allowing later contacts in the
+  same batch to be evaluated. This explains additional under-acceptance when a
+  batch contains one invalid contact followed by valid contacts.
+- No gameplay validation was loosened in this investigation. The confirmed
+  follow-up work is to correct the client/server tick-domain alignment and
+  change batch processing to per-contact continuation before tuning the
+  specification-defined contact tolerance.
+
+## Safe follow-up implementation
+
+- `src/combat/weapon-spyknife.cpp` now clamps the target-specific rendered
+  contact tick to `latestServerTick` (or the latest local snapshot fallback),
+  preventing future historical claims while preserving the client-side hit
+  presentation and batching behavior.
+- `src/network/server-packet-handlers.cpp` now uses `continue` for per-contact
+  dead-target, missing-target, inactive-target, and distance failures. A bad
+  contact no longer aborts later contacts in the same batch.
+- The player distance path now uses centralized Weapons diagnostics rather than
+  `printf`, with contact ID and tick context.
+- The 3.0-unit validation tolerance was deliberately not widened in this safe
+  patch; it needs a separate geometry/spec measurement so the server does not
+  accept impossible hits.
+
+## Validation and review
+
+- Routed behavior review: `docs/skills/spec-behavior-review-v1.md` —
+  PASS_WITH_HUMAN_REVIEW. The implementation now preserves instant client
+  prediction, bounds claims to usable server history, and processes contacts
+  independently. Runtime acceptance is still required for actual NPC and
+  player play.
+- Task completion guidance reviewed: `docs/operations/task-completion/task-completion.md`.
+- `git diff --check`: passed; only normal line-ending conversion warnings were
+  reported.
+- Canonical build: `python build_agent.py` completed successfully at
+  `2026-09-07 19:30:37`, compiling `weapon-spyknife.cpp` and
+  `server-packet-handlers.cpp`; `build/changelog.txt` reports `Status: SUCCESS`.
+- Human review still required: run the rebuilt client/server, confirm the
+  server no longer reports future contact ticks, verify multiple valid contacts
+  in one batch all apply, and measure whether the unchanged 3.0-unit gate is
+  consistent with the shared melee collision geometry.
+
+## Client/server hitbox alignment follow-up
+
+- Investigation found that the client uses the configured Spy Knife OBB while
+  the server used only a hard-coded 3.0-unit root-to-target distance. This was
+  the remaining geometry mismatch behind many predicted-but-rejected contacts.
+- Added hot-reloadable `serverContactRadius: 4.0` under the Spy Knife
+  `custom_params` in `config/weapons.json`. The server uses this authoritative
+  value for NPC and player contact validation and logs it alongside the active
+  `hitboxHalfX/Y/Z` values.
+- This is an acceptance-envelope alignment, not client authority: damage,
+  health, death, and knockback remain server-owned, and client-supplied damage
+  remains ignored.
+- Validation after this change: canonical `python build_agent.py` completed at
+  `2026-09-07 20:09:17` with `Status: SUCCESS`, compiling and linking the
+  updated executable. Runtime two-client/NPC acceptance remains required.
+
+## Hitbox visualization investigation
+
+- `src/combat/weapon-spyknife.cpp` was drawing the configured OBB with the
+  generic `DebugVis::drawLine` queue, while the render loop flushes weapon
+  collision visuals with `DebugVis::flushWeaponLines()` after the normal debug
+  line stage. This explains why `hitboxVisible: 1.0` produced no visible box.
+- The supposed fill was also three line segments per face, not filled
+  triangles, and used `alpha * 0.3`; `hitboxAlpha: 1.0` therefore was not
+  opaque. The edges/faces now use `drawWeaponLine` and the configured alpha is
+  clamped directly.
+- Full server OBB reconstruction remains the next scoped change. The current
+  contact packet does not carry enough historical attacker/knife orientation
+  data for the server to reproduce the client's oriented box exactly, so the
+  current radius approximation remains authoritative until that packet/state
+  extension is implemented.
+- Validation after the visualization fix: canonical `python build_agent.py`
+  completed at `2026-09-07 20:15:34` with `Status: SUCCESS`, compiling and
+  linking `weapon-spyknife.cpp`. `git diff --check` passed. Runtime visual
+  confirmation and the subsequent full historical OBB protocol work remain.
+
+## Historical contact OBB transport
+
+- `SpyKnifeContact` now carries the client contact OBB center, half-extents,
+  and three axes. The client fills these fields from the same `BladeOBB` used
+  for local collision and sends them with each batched contact.
+- The server validates finite values, positive extents, approximately
+  orthonormal axes, configured-size bounds, and plausible box origin. It then
+  performs an OBB-versus-historical-target-sphere query for NPCs and players;
+  root-distance is no longer the contact decision.
+- Added hot-reloadable `serverTargetBodyRadius` under Spy Knife config for the
+  target body approximation used by the shared server query. Server damage and
+  health remain authoritative.
+- Canonical build completed at `2026-09-07 20:22:07` with `Status: SUCCESS`,
+  compiling 114 objects and linking `mimita.exe`. Runtime two-client/NPC
+  acceptance remains required, especially checking packet compatibility and
+  client/server hitbox agreement.

@@ -798,3 +798,35 @@ jorj - this not official format not good but  when we edit netowkring stuff or d
 5. Diagnostics: `[REPLAY ROCKET RECORD]` logs whether the event came from local prediction, authoritative fallback, or remote authority, including fire serial, owner ID, and spawn data. The new self-test assertion preserves the source actor identity in the replay event.
 6. Validation: the shared build process was already running under the repository build lock and had not produced a new result at completion; the previous executable result remains `Status: SUCCESS` with `28/28 passed`. This change therefore still requires a fresh build result and live multiplayer MP4 acceptance.
 7. Status: source fix implemented; automated build/self-test and human acceptance pending. Acceptance must verify local-player rocket visibility, smoke, live-speed travel, wall collision, one explosion, and no duplicate projectile/effect output.
+
+## 2026-09-07T21:00:00Z — Spy Knife authoritative contacts are accepted intermittently because client ticks lead server history and distance rejection aborts batches (CONFIRMED)
+
+1. Observed bad behavior: the client shows many predicted Spy Knife hit effects, but the NPC receives substantially fewer authoritative damage applications and eventually appears to stop taking damage.
+2. Runtime evidence from `logs/09-07-2026/Server_log_191651.txt`: the server recorded 21 `NPC_APPLIED` contacts, 71 `CONTACT_REJECT reason=invalid_contact`, 31 `CONTACT_REJECT reason=distance`, 4 attacker-inactive batch rejections, and 3 already-dead-target rejections.
+3. Exact primary rejection: `src/network/server-packet-handlers.cpp` rejects any contact when `pkt.contactTick > tick`, when it is older than 600 ticks, or when required values are non-finite. The supplied log shows claims such as `contactTick=30850` through `30854` arriving at `serverTick=30794`, so those contacts are rejected before NPC history lookup or damage application.
+4. Exact secondary rejection: the same handler compares the attacker to the historical NPC position and rejects when `dist > 3.0f`. The supplied log shows valid-looking contacts rejected at distances such as 3.13, 4.16, 6.60, and 146.08 units.
+5. Batch-loss behavior: the NPC distance branch currently executes `return` rather than `continue`, so one out-of-range contact ends processing for the entire remaining batch. The dead-NPC and missing-player branches have similar whole-handler early exits. This amplifies the difference between predicted contacts and authoritative damage.
+6. What is already fixed: the old slot mismatch is no longer the active cause in this run. The server logs `EQUIP_RESOLVED ... equippedSlot=12 logicalSlot=4 nativeSlot=12`, and packets reach the Spy Knife handler as `bytes=276`. The historical-tick change also fixed the earlier extreme mismatch caused by using the per-network-update `ctx.tick`; the remaining mapping still produces future claims in this runtime.
+7. Status: regression confirmed. Do not simply increase damage or trust client health. The next fix must align or safely clamp the contact tick to the server history domain, make per-contact validation skip only the bad contact, and separately decide the shared physical-contact tolerance from the melee specification. Preserve the immediate client prediction while treating only accepted server contacts as authoritative.
+
+## 2026-09-07T21:15:00Z — Spy Knife future-tick and batch-abort safeguards implemented
+
+1. `src/combat/weapon-spyknife.cpp` now clamps the rendered contact tick to the newest server snapshot tick before batching. Client prediction remains immediate; only the historical lookup tick is bounded so the server never receives a future pose claim.
+2. `src/network/server-packet-handlers.cpp` now continues to the next contact when an NPC is already dead, when an NPC contact is out of range, when a target player is missing/inactive, or when a player contact is out of range. One bad contact no longer discards the remainder of a batch.
+3. The player distance diagnostic now uses centralized `Debug::warn` logging instead of `printf`, and includes the contact/server ticks and contact ID.
+4. Status: source fix implemented. The shared 3.0-unit physical-contact tolerance remains unchanged pending a focused runtime measurement against the melee collision geometry; widening it is intentionally separate from the safe tick/batch fix.
+
+## 2026-09-07T21:25:00Z — Spy Knife client OBB and server root-distance validation diverged (FIXED CONFIGURATION ALIGNMENT)
+
+1. Exact mismatch: the client uses `hitboxHalfX/Y/Z`, `hitboxOffsetX/Y/Z`, and hitbox rotation to test the configured blade OBB, while `src/network/server-packet-handlers.cpp` only compared attacker root position to historical target position using a hard-coded `3.0f` distance.
+2. This caused legitimate client OBB contacts to be rejected even when the visible/configured hitbox overlapped the target. It also made the server tolerance invisible to weapon balance tuning.
+3. `config/weapons.json` now exposes hot-reloadable `serverContactRadius: 4.0` for Spy Knife. The server reads it from the authoritative weapon definition for both NPC and player validation and logs the active radius and configured hitbox dimensions for every batch.
+4. Status: source fix implemented; this intentionally increases the acceptance envelope but still does not trust client damage or health. Runtime testing must verify that the configured radius is generous enough for the visual OBB without accepting obviously separated targets.
+
+## 2026-09-07T21:35:00Z — Spy Knife configured hitbox was invisible because it used the wrong debug render queue (FIXED)
+
+1. Exact wrong code: `src/combat/weapon-spyknife.cpp` drew both the OBB edges and the supposed filled faces with `DebugVis::drawLine`.
+2. The render loop flushes weapon collision visuals through `DebugVis::flushWeaponLines()` after the normal debug-line stage. The knife OBB was therefore queued in the wrong buffer and could be absent from the frame even when `hitboxVisible` was enabled.
+3. The configured alpha was also reduced by `alpha * 0.3`, so `hitboxAlpha: 1.0` could never produce full configured opacity.
+4. Fix: route the OBB diagnostics through `DebugVis::drawWeaponLine` and clamp/use the configured alpha directly. The current implementation still draws wire geometry; true filled OBB faces require a triangle primitive/API and are separate from this visibility fix.
+5. Status: source fix implemented; runtime visual confirmation remains required.

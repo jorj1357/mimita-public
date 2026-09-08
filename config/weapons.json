@@ -1032,13 +1032,13 @@
     "viewmodel": {
       "enabled": true,
       "position": [
-        -9.0,
+        -8.4,
         -3.0,
-        0.5
+        0.4
       ],
       "rotation_degrees": [
         0.0,
-        0.0,
+        30.0,
         0.0
       ],
       "attachment": {
@@ -1071,17 +1071,19 @@
     "custom_params": {
       "networkBatchIntervalTicks": 10.0,
       "networkBatchMaxContacts": 6.0,
-      "hitboxHalfX": 0.5,
-      "hitboxHalfY": 0.5,
-      "hitboxHalfZ": 0.5,
+      "hitboxHalfX": 0.3,
+      "hitboxHalfY": 0.3,
+      "hitboxHalfZ": 2.0,
       "hitboxOffsetX": 0.0,
       "hitboxOffsetY": 0.0,
-      "hitboxOffsetZ": 0.3,
+      "hitboxOffsetZ": 0.0,
       "hitboxRotX": 0.0,
       "hitboxRotY": 0.0,
       "hitboxRotZ": 0.0,
-      "hitboxAlpha": 0.5,
+      "hitboxAlpha": 0.1,
       "hitboxVisible": 1,
+      "serverContactRadius": 4.0,
+      "serverTargetBodyRadius": 2.25,
       "baseDamage": 15.0,
       "speedDamageFactor": 20.0,
       "angleDamageFactor": 10.0,
@@ -1090,7 +1092,7 @@
       "speedKnockbackFactor": 4.0,
       "angleKnockbackFactor": 2.0,
       "maxKnockback": 200.0,
-      "backstabDistance": 0.5,
+      "backstabDistance": 0.05,
       "backstabConeDegrees": 150.0,
       "backstabDamagePerTick": 999.0,
       "backstabKnockback": 20.0,

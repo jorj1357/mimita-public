@@ -39,6 +39,9 @@ struct SpyKnifeHitResult {
     uint32_t contactTick = 0;
     uint32_t contactId = 0;
     bool targetIsNpc = true;
+    glm::vec3 hitboxCenter{0.0f};
+    glm::vec3 hitboxHalfExtents{0.5f};
+    glm::vec3 hitboxAxes[3] = {glm::vec3(1,0,0), glm::vec3(0,1,0), glm::vec3(0,0,1)};
 };
 
 struct BladeOBB {

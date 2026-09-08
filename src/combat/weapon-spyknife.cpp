@@ -371,14 +371,25 @@ static int applySpyKnifeRemoteHit(SpyKnifeState& state, const WeaponDefinition& 
     hitResult.hitPosition = hitPoint;
     hitResult.victimPosition = target.pos;
     hitResult.direction = bladeDir;
+    hitResult.hitboxCenter = state.prevBladeOBB.center;
+    hitResult.hitboxHalfExtents = state.prevBladeOBB.halfExtents;
+    for (int axis = 0; axis < 3; ++axis)
+        hitResult.hitboxAxes[axis] = state.prevBladeOBB.axes[axis];
     // Contact history must use the server-tick domain.  ctx.tick is a
     // per-network-update counter and can run far ahead of the 60 Hz server;
     // use the same target-specific rendered-tick mapping as other attacks.
-    hitResult.contactTick = gpMpContext
-        ? MimitaNet::mpFireRenderTickForTarget(
-            *gpMpContext, targetId, gpMpContext->latestServerTick != 0
-                ? gpMpContext->latestServerTick : gpMpContext->latestLocalSnapshotTick)
-        : 0;
+    if (gpMpContext) {
+        const uint32_t newestServerTick = gpMpContext->latestServerTick != 0
+            ? gpMpContext->latestServerTick : gpMpContext->latestLocalSnapshotTick;
+        const uint32_t renderedContactTick = MimitaNet::mpFireRenderTickForTarget(
+            *gpMpContext, targetId, newestServerTick);
+        // The render clock can be ahead of the newest server snapshot.  Never
+        // send a future historical claim: the server cannot rewind to a pose it
+        // has not simulated yet, so clamp to the newest usable server tick.
+        hitResult.contactTick = std::min(renderedContactTick, newestServerTick);
+    } else {
+        hitResult.contactTick = 0;
+    }
     hitResult.contactId = ++state.contactSerial;
     hitResult.targetIsNpc = true;
     state.pendingRemoteHits.push_back(hitResult);
@@ -419,6 +430,11 @@ static void flushSpyKnifeContactBatch(SpyKnifeState& state, size_t configuredMax
             out.isBackstab = hit.isBackstab ? 1 : 0;
             out.hitX = hit.hitPosition.x; out.hitY = hit.hitPosition.y; out.hitZ = hit.hitPosition.z;
             out.dirX = hit.direction.x; out.dirY = hit.direction.y; out.dirZ = hit.direction.z;
+            out.boxCenterX = hit.hitboxCenter.x; out.boxCenterY = hit.hitboxCenter.y; out.boxCenterZ = hit.hitboxCenter.z;
+            out.boxHalfX = hit.hitboxHalfExtents.x; out.boxHalfY = hit.hitboxHalfExtents.y; out.boxHalfZ = hit.hitboxHalfExtents.z;
+            out.boxAxis0X = hit.hitboxAxes[0].x; out.boxAxis0Y = hit.hitboxAxes[0].y; out.boxAxis0Z = hit.hitboxAxes[0].z;
+            out.boxAxis1X = hit.hitboxAxes[1].x; out.boxAxis1Y = hit.hitboxAxes[1].y; out.boxAxis1Z = hit.hitboxAxes[1].z;
+            out.boxAxis2X = hit.hitboxAxes[2].x; out.boxAxis2Y = hit.hitboxAxes[2].y; out.boxAxis2Z = hit.hitboxAxes[2].z;
         }
         Debug::warn(Debug::Category::Weapons,
             "[SPYKNIFE_NET] SEND transport=generic_npc_damage type=%u expected=%u bytes=%zu "
@@ -660,20 +676,22 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
         };
         glm::vec4 wireColor(1.0f, 0.2f, 0.2f, 0.9f);
         for (int e = 0; e < 12; e++) {
-            DebugVis::drawLine(camera, corners[edges[e][0]], corners[edges[e][1]], wireColor);
+            // Weapon lines are flushed after the weapon/render tick.  The
+            // generic debug-line buffer may already have been flushed by then.
+            DebugVis::drawWeaponLine(camera, corners[edges[e][0]], corners[edges[e][1]], wireColor);
         }
 
         // Draw filled faces with transparency using corners
-        glm::vec4 fillColor(1.0f, 0.2f, 0.2f, alpha * 0.3f);
+        glm::vec4 fillColor(1.0f, 0.2f, 0.2f, std::clamp(alpha, 0.0f, 1.0f));
         static const int faceTris[36] = {
             0,2,1, 0,3,2, 4,5,6, 4,6,7,
             0,1,5, 0,5,4, 1,2,6, 1,6,5,
             2,3,7, 2,7,6, 3,0,4, 3,4,7
         };
         for (int fi = 0; fi < 36; fi += 3) {
-            DebugVis::drawLine(camera, corners[faceTris[fi]],   corners[faceTris[fi+1]], fillColor);
-            DebugVis::drawLine(camera, corners[faceTris[fi+1]], corners[faceTris[fi+2]], fillColor);
-            DebugVis::drawLine(camera, corners[faceTris[fi+2]], corners[faceTris[fi]],   fillColor);
+            DebugVis::drawWeaponLine(camera, corners[faceTris[fi]],   corners[faceTris[fi+1]], fillColor);
+            DebugVis::drawWeaponLine(camera, corners[faceTris[fi+1]], corners[faceTris[fi+2]], fillColor);
+            DebugVis::drawWeaponLine(camera, corners[faceTris[fi+2]], corners[faceTris[fi]],   fillColor);
         }
 
         if (logVerbose) {

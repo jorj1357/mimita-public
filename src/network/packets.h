@@ -1354,6 +1354,11 @@ struct SpyKnifeContact
     uint16_t reserved = 0;
     float hitX = 0.0f, hitY = 0.0f, hitZ = 0.0f;
     float dirX = 0.0f, dirY = 0.0f, dirZ = 1.0f;
+    float boxCenterX = 0.0f, boxCenterY = 0.0f, boxCenterZ = 0.0f;
+    float boxHalfX = 0.5f, boxHalfY = 0.5f, boxHalfZ = 0.5f;
+    float boxAxis0X = 1.0f, boxAxis0Y = 0.0f, boxAxis0Z = 0.0f;
+    float boxAxis1X = 0.0f, boxAxis1Y = 1.0f, boxAxis1Z = 0.0f;
+    float boxAxis2X = 0.0f, boxAxis2Y = 0.0f, boxAxis2Z = 1.0f;
 };
 
 struct SpyKnifeContactBatchPacket

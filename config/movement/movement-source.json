@@ -219,7 +219,7 @@
     // Vertical velocity assigned by down-dash.
     //
     // Negative = downward.
-    "down_dash_speed": -100.0,
+    "down_dash_speed": -50.0,
 
     // ── External impulse / knockback ─────────────────────────────────────
     //
