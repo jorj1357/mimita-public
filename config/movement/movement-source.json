@@ -199,7 +199,7 @@
     // ground friction.
     //
     // Matches the fast Source preset.
-    "dash_grace_seconds": 0.1,
+    "dash_grace_seconds": 1.0,
 
     // Ground-friction multiplier during dash grace.
     //
@@ -209,12 +209,12 @@
     // Horizontal velocity impulse from a grounded dash.
     //
     // Matches the fast Source preset.
-    "ground_dash_impulse": 20.0,
+    "ground_dash_impulse": 10.0,
 
     // Horizontal velocity impulse from an airborne dash.
     //
     // Matches the fast Source preset.
-    "air_dash_impulse": 20.0,
+    "air_dash_impulse": 10.0,
 
     // Vertical velocity assigned by down-dash.
     //

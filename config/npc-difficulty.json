@@ -1,6 +1,6 @@
 {
   "comment": "NPC difficulty tuning. This file hot-reloads while the game runs (client AND hosted/dedicated server): edit it, save, and changes apply immediately (no restart). The keys with \"comment_\" prefixes are documentation only and are ignored by the game. See src/npc/npc-difficulty-config.cpp.",
-  "maxAngularErrorDegrees": 0.01,
+  "maxAngularErrorDegrees": 10.01,
   // "maxAngularErrorDegrees": 990.01,
   "comment_maxAngularErrorDegrees": "Aim miss-cone in degrees. Lower = more accurate = deadlier. 4 = arcade (most shots hit but some visibly miss), 8 = stormtrooper-ish, 0 = perfect aim (same as forceHit).",
   "difficultyErrorScale": 0.5,
