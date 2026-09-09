@@ -538,8 +538,11 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             const LimbAim* limb = ab.limb(part.name);
             if (ab.enabled() && limb &&
                 (limb->pitch != 0.0f || limb->yaw != 0.0f || limb->roll != 0.0f)) {
-                const float lookPitch = glm::degrees(std::asin(
+                const float desiredLookPitch = glm::degrees(std::asin(
                     glm::clamp(camForward.z, -1.0f, 1.0f)));
+                const float lookPitch = AimBodyConfig::instance().smoothValue(
+                    aimBodyPitch, desiredLookPitch, dt);
+                aimBodyPitch = lookPitch;
                 glm::mat4 q(1.0f);
                 q = glm::rotate(q, glm::radians(lookPitch * limb->pitch), glm::vec3(1, 0, 0));
                 q = glm::rotate(q, glm::radians(lookPitch * limb->yaw),   glm::vec3(0, 1, 0));

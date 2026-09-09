@@ -29,6 +29,7 @@
 #include "config/impact-decals-config.h"
 #include "config/weapon-tracers-config.h"
 #include "config/ragdoll-death-config.h"
+#include "config/spawn-velocity-config.h"
 #include "npc/npc-difficulty-config.h"
 #include "gamemode/gamemode.h"
 #include "duel/duel-map-pool.h"
@@ -119,6 +120,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
         AvatarSystem::instance().pollHotReload();
         RagdollConfig::instance().pollReload();
         RagdollDeathConfig::instance().pollReload();
+        SpawnVelocityConfig::instance().pollReload();
         if (NpcDifficultyConfig::instance().pollReload())
         {
             static uint64_t lastNpcDifficultyRevision = 0;

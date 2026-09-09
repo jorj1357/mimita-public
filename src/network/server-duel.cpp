@@ -188,7 +188,9 @@ int serverCommunityWeaponLogicalSlot(const std::string& weaponId)
 void serverCommunitySetMode(const std::string& modeId)
 {
     ServerDuelState& state = serverDuelState();
-    if (!state.enabled || !state.mapOnly || modeId.empty()) return;
+    if (!state.enabled || modeId.empty()) return;
+    CommunityServerConfig& config = CommunityServerConfig::instance();
+    if (config.modes().empty()) config.load();
     state.communityMode = modeId;
     state.communityScores.clear();
     state.communityTeams.clear();
@@ -214,7 +216,7 @@ void serverCommunityStartMatch(bool skipIntermission)
     const std::string& resolvedGamemodeId = cm->gamemodeId;
 
     // Set match mode from community mode id (used for routing and state machine)
-    d.matchMode = d.communityMode;
+    d.matchMode = resolvedGamemodeId;
     // DEPRECATED: the old ServerMode enum and short-form matchMode strings
     // are kept for backward compatibility with duel/FFA/TDM code paths.
     // New modes should use matchMode directly (the community mode id).
@@ -223,6 +225,9 @@ void serverCommunityStartMatch(bool skipIntermission)
     // Load gamemode config using the resolved gamemode_id
     const Gamemode& gm = GamemodeRegistry::instance().get(resolvedGamemodeId);
     d.goalValue = gm.goalValue;
+    // The gamemode JSON owns the active weapon policy.  Do not let the
+    // legacy map-only flag decide whether this match respects weapon sets.
+    d.communityWeaponSetId = std::max(1, gm.weaponSetId);
     d.timeLimitSeconds = gm.timeLimitSeconds;
     d.intermissionSeconds = (float)gm.intermissionSeconds;
     d.resultsSeconds = (float)gm.resultsSeconds;
@@ -339,7 +344,7 @@ void broadcastDuelState(SOCKET sock,
     pkt.resultsSeconds = (int32_t)d.resultsSeconds;
 
     // FFA top-3 leaderboard
-    if (d.matchMode == "free_for_all") {
+    if (d.matchMode == "ffa") {
         // Sort players by kills descending
         std::vector<std::pair<uint32_t, int>> sorted;
         for (const auto& kv : d.ffaKills)
@@ -352,6 +357,9 @@ void broadcastDuelState(SOCKET sock,
             auto nameIt = players.find(sorted[i].first);
             if (nameIt != players.end())
                 std::strncpy(pkt.ffaLeaderNames[i], nameIt->second.name.c_str(), sizeof(pkt.ffaLeaderNames[i]) - 1);
+            else
+                std::snprintf(pkt.ffaLeaderNames[i], sizeof(pkt.ffaLeaderNames[i]),
+                              "NPC %u", sorted[i].first);
         }
     }
 
@@ -602,6 +610,17 @@ bool reloadDuelMap(SOCKET sock,
     assignDuelSpawns(d, world);
     broadcastMapChange(sock, d, mapId, players, totalPacketsOut);
     teleportDuelistsToSpawns(d, players);
+    // Map changes are actor lifecycle boundaries, not duel-only teleports.
+    // Every active player receives a fresh authoritative spawn on the new map.
+    for (auto& kv : players) {
+        ServerPlayer& p = kv.second;
+        if (p.spawnState != ServerPlayer::Active) continue;
+        p.duelSpawnPos = duelSpawnPoint(d);
+        p.hasDuelSpawnPos = true;
+        beginAuthoritativeTransform(p, p.duelSpawnPos, glm::vec3(0.0f), p.yaw,
+                                    "map-change-respawn");
+        completeAuthoritativeSpawn(sock, p, false);
+    }
     Debug::warn(Debug::Category::Duel,
         "[DUEL SERVER] map changed live to %s (spawns=%zu)\n",
         mapId.c_str(), world.spawnPoints.size());
@@ -665,7 +684,8 @@ bool rotateToNextDuelMap(SOCKET sock,
 // ── FFA/TDM match helpers ───────────────────────────────────────────────
 
 void assignMatchParticipants(ServerDuelState& d,
-                             const std::unordered_map<uint32_t, ServerPlayer>& players)
+                             std::unordered_map<uint32_t, ServerPlayer>& players,
+                             std::unordered_map<uint32_t, ServerNpc>* npcs = nullptr)
 {
     d.participants.clear();
     d.ffaKills.clear();
@@ -682,12 +702,29 @@ void assignMatchParticipants(ServerDuelState& d,
         }
     }
 
+    if (npcs) {
+        for (const auto& kv : *npcs) {
+            if (kv.second.health <= 0) continue;
+            d.participants.push_back(kv.first);
+            d.ffaKills[kv.first] = 0;
+            d.ffaDeaths[kv.first] = 0;
+        }
+    }
+
     // Sort by ID for deterministic team assignment
     std::sort(d.participants.begin(), d.participants.end());
 
-    if (d.matchMode == "team_deathmatch") {
+    if (d.matchMode == "tdm") {
         for (size_t i = 0; i < d.participants.size(); ++i) {
             d.matchTeams[d.participants[i]] = (int)(i % 2);
+            auto playerIt = players.find(d.participants[i]);
+            if (playerIt != players.end())
+                playerIt->second.matchTeam = (int)(i % 2);
+            if (npcs) {
+                auto npcIt = npcs->find(d.participants[i]);
+                if (npcIt != npcs->end())
+                    npcIt->second.matchTeam = (int)(i % 2);
+            }
         }
         Debug::log(Debug::Category::Duel,
             "[FFA/TDM] Assigned %zu players to teams (red=%d blue=%d)\n",
@@ -789,13 +826,13 @@ static void emitDuelMatchPersistence(ServerDuelState& d, uint32_t tick,
         p.kills = kv.second.kills;
         p.deaths = kv.second.deaths;
 
-        if (d.matchMode == "free_for_all") {
+        if (d.matchMode == "ffa") {
             auto killIt = d.ffaKills.find(kv.first);
             p.kills = killIt != d.ffaKills.end() ? killIt->second : 0;
             auto deathIt = d.ffaDeaths.find(kv.first);
             p.deaths = deathIt != d.ffaDeaths.end() ? deathIt->second : 0;
             p.won = (kv.first == d.winnerPlayerId);
-        } else if (d.matchMode == "team_deathmatch") {
+        } else if (d.matchMode == "tdm") {
             auto killIt = d.ffaKills.find(kv.first);
             p.kills = killIt != d.ffaKills.end() ? killIt->second : 0;
             auto deathIt = d.ffaDeaths.find(kv.first);
@@ -820,7 +857,7 @@ void checkMatchWinConditions(ServerDuelState& d, uint32_t tick,
                              std::unordered_map<uint32_t, ServerPlayer>& players,
                              uint64_t& totalPacketsOut)
 {
-    if (d.matchMode == "free_for_all") {
+    if (d.matchMode == "ffa") {
         for (const auto& kv : d.ffaKills) {
             if (kv.second >= d.goalValue) {
                 d.matchOver = true;
@@ -837,7 +874,7 @@ void checkMatchWinConditions(ServerDuelState& d, uint32_t tick,
                 return;
             }
         }
-    } else if (d.matchMode == "team_deathmatch") {
+    } else if (d.matchMode == "tdm") {
         if (d.redTeamKills >= d.goalValue || d.blueTeamKills >= d.goalValue) {
             d.matchOver = true;
             d.phase = DUEL_PHASE_RESULTS;
@@ -860,7 +897,7 @@ void checkMatchWinConditions(ServerDuelState& d, uint32_t tick,
         d.phase = DUEL_PHASE_RESULTS;
         d.victoryType = 1;  // TimeLimit
         d.phaseTimer = d.resultsSeconds;
-        if (d.matchMode == "free_for_all") {
+        if (d.matchMode == "ffa") {
             int best = -1;
             for (const auto& kv : d.ffaKills) {
                 if (kv.second > best) {
@@ -869,7 +906,7 @@ void checkMatchWinConditions(ServerDuelState& d, uint32_t tick,
                 }
             }
             emitDuelMatchPersistence(d, tick, players);
-        } else if (d.matchMode == "team_deathmatch") {
+        } else if (d.matchMode == "tdm") {
             d.winnerTeam = d.redTeamKills >= d.blueTeamKills ? 0 : 1;
             emitDuelMatchPersistence(d, tick, players);
         }
@@ -996,7 +1033,18 @@ void serverDuelTick(SOCKET sock,
                 if (reloadDuelMap(sock, d, players, world, npcWorld, next, totalPacketsOut)) {
                     d.nextMapRotationMs = now + (uint64_t)d.mapRotationMinutes * 60000ull;
                     npcSystem.destroyAll();
-                    npcs.clear();
+                    size_t spawnIndex = 0;
+                    for (auto& kv : npcs) {
+                        ServerNpc& npc = kv.second;
+                        if (!world.spawnPoints.empty()) {
+                            const auto& sp = world.spawnPoints[spawnIndex % world.spawnPoints.size()];
+                            npc.pos = effectiveServerSpawn(sp.position);
+                            npc.yaw = sp.yaw;
+                            ++spawnIndex;
+                        }
+                        npc.health = 100;
+                        ++npc.transformEpoch;
+                    }
                     npcIdsAlive.clear();
                     Debug::warn(Debug::Category::Networking,
                         "[COMMUNITY MAP CHANGE] loaded=%s nextRotationMs=%llu\n",
@@ -1018,7 +1066,22 @@ void serverDuelTick(SOCKET sock,
         d.pendingManualMap.clear();
         if (!mapId.empty())
         {
-            reloadDuelMap(sock, d, players, world, npcWorld, mapId, totalPacketsOut);
+            if (reloadDuelMap(sock, d, players, world, npcWorld, mapId, totalPacketsOut)) {
+                npcSystem.destroyAll();
+                size_t spawnIndex = 0;
+                for (auto& kv : npcs) {
+                    ServerNpc& npc = kv.second;
+                    if (!world.spawnPoints.empty()) {
+                        const auto& sp = world.spawnPoints[spawnIndex % world.spawnPoints.size()];
+                        npc.pos = effectiveServerSpawn(sp.position);
+                        npc.yaw = sp.yaw;
+                        ++spawnIndex;
+                    }
+                    npc.health = 100;
+                    ++npc.transformEpoch;
+                }
+                npcIdsAlive.clear();
+            }
             broadcastDuelState(sock, d, players, totalPacketsOut);
         }
     }
@@ -1096,13 +1159,13 @@ void serverDuelTick(SOCKET sock,
                 }
             }
             // FFA scoring
-            else if (d.matchMode == "free_for_all") {
+            else if (d.matchMode == "ffa") {
                 ++d.ffaKills[killerId];
                 ++d.ffaDeaths[victimId];
                 // Win condition checked in checkMatchWinConditions
             }
             // TDM scoring
-            else if (d.matchMode == "team_deathmatch") {
+            else if (d.matchMode == "tdm") {
                 ++d.ffaKills[killerId];
                 ++d.ffaDeaths[victimId];
                 auto teamIt = d.matchTeams.find(killerId);
@@ -1123,7 +1186,7 @@ void serverDuelTick(SOCKET sock,
     }
 
     // ── FFA/TDM match mode state machine ────────────────────────────
-    if (d.matchMode == "free_for_all" || d.matchMode == "team_deathmatch")
+    if (d.matchMode == "ffa" || d.matchMode == "tdm")
     {
         if (d.stateBroadcastPending)
         {
@@ -1136,7 +1199,8 @@ void serverDuelTick(SOCKET sock,
         switch (d.phase)
         {
         case DUEL_PHASE_WAITING:
-            if (countActivePlayers(players) >= 2)
+            if (countActivePlayers(players) >= 2 ||
+                (countActivePlayers(players) >= 1 && !npcs.empty()))
             {
                 // If the current map has no spawn points, rotate.
                 if (world.spawnPoints.empty())
@@ -1146,7 +1210,7 @@ void serverDuelTick(SOCKET sock,
                 npcSystem.destroyAll();
                 npcIdsAlive.clear();
                 assignDuelSpawns(d, world);
-                assignMatchParticipants(d, players);
+                assignMatchParticipants(d, players, &npcs);
                 d.phase = DUEL_PHASE_PRE_MATCH;
                 d.phaseTimer = 3.0f;
                 ++d.stateVersion;
@@ -1164,7 +1228,7 @@ void serverDuelTick(SOCKET sock,
                 if (d.startCountdownImmediately) {
                     d.startCountdownImmediately = false;
                     assignDuelSpawns(d, world);
-                    assignMatchParticipants(d, players);
+                    assignMatchParticipants(d, players, &npcs);
                 }
                 beginMatchCountdown(d, players, tick);
                 ++d.stateVersion;
@@ -1386,6 +1450,81 @@ void serverDuelRematchNow()
     d.rematchLeft = 0.0f;
 }
 
+std::string serverActiveTeamList()
+{
+    const ServerDuelState& d = serverDuelState();
+    CommunityServerConfig& config = CommunityServerConfig::instance();
+    if (config.modes().empty()) config.load();
+    const CommunityMode* cm = config.modeById(d.communityMode);
+    const std::string id = cm ? cm->gamemodeId : d.communityMode;
+    const Gamemode& gm = GamemodeRegistry::instance().get(id);
+    if (gm.teamNames.empty()) return "no teams";
+    std::string out;
+    for (size_t i = 0; i < gm.teamNames.size(); ++i) {
+        if (!out.empty()) out += " | ";
+        out += gm.teamNames[i] + " = " + std::to_string(i + 1);
+    }
+
+    return out;
+}
+
+bool serverRequestTeamChange(uint32_t playerId, int requestedTeam,
+                             SOCKET sock,
+                             std::unordered_map<uint32_t, ServerPlayer>& players,
+                             uint32_t tick, uint64_t& totalPacketsOut,
+                             std::string& message)
+{
+    ServerDuelState& d = serverDuelState();
+    auto playerIt = players.find(playerId);
+    if (playerIt == players.end()) { message = "player not found"; return false; }
+    const CommunityMode* cm = CommunityServerConfig::instance().modeById(d.communityMode);
+    const std::string id = cm ? cm->gamemodeId : d.communityMode;
+    const Gamemode& gm = GamemodeRegistry::instance().get(id);
+    if (requestedTeam < 0 || requestedTeam >= static_cast<int>(gm.teamNames.size())) {
+        message = gm.teamNames.empty() ? "active gamemode has no teams" : "invalid team";
+        return false;
+    }
+    playerIt->second.matchTeam = requestedTeam;
+    d.matchTeams[playerId] = requestedTeam;
+    message = "switched to " + gm.teamNames[static_cast<size_t>(requestedTeam)];
+    broadcastServerChatMessage(sock, players, tick, totalPacketsOut,
+        (playerIt->second.name + " " + message).c_str());
+    Debug::warn(Debug::Category::Duel,
+        "[MATCH TEAM] player=%u team=%d mode=%s result=accepted\n",
+        playerId, requestedTeam, id.c_str());
+    return true;
+}
+
+void serverRespawnAllActors(SOCKET sock,
+                            std::unordered_map<uint32_t, ServerPlayer>& players,
+                            std::unordered_map<uint32_t, ServerNpc>& npcs,
+                            uint32_t tick, uint64_t& totalPacketsOut)
+{
+    ServerDuelState& d = serverDuelState();
+    for (auto& kv : players) {
+        ServerPlayer& player = kv.second;
+        if (player.spawnState != ServerPlayer::Active) continue;
+        player.duelSpawnPos = duelSpawnPoint(d);
+        player.hasDuelSpawnPos = true;
+        player.pos = player.duelSpawnPos;
+        completeAuthoritativeSpawn(sock, player, false);
+    }
+    for (auto& kv : npcs) {
+        ServerNpc& npc = kv.second;
+        npc.health = 100;
+        npc.knockbackImpulse = glm::vec3(0.0f);
+        ++npc.transformEpoch;
+    }
+    d.hasPendingKill = false;
+    d.pendingKillerId = 0;
+    d.pendingVictimId = 0;
+    d.pendingKillerIsNpc = false;
+    Debug::warn(Debug::Category::Duel,
+        "[MATCH RESPAWN ALL] players=%zu npcs=%zu tick=%u\n",
+        players.size(), npcs.size(), tick);
+    broadcastDuelState(sock, d, players, totalPacketsOut);
+}
+
 void serverDuelRequestMapChange(const std::string& mapId)
 {
     ServerDuelState& d = serverDuelState();
@@ -1402,6 +1541,18 @@ void serverDuelOnPlayerDeath(uint32_t killerPlayerId,
     d.hasPendingKill = true;
     d.pendingKillerId = killerPlayerId;
     d.pendingVictimId = victimPlayerId;
+    d.pendingKillerIsNpc = false;
+}
+
+void serverDuelOnNpcDeath(uint32_t killerNpcId,
+                          uint32_t victimPlayerId)
+{
+    ServerDuelState& d = serverDuelState();
+    if (!d.enabled) return;
+    d.hasPendingKill = true;
+    d.pendingKillerId = killerNpcId;
+    d.pendingVictimId = victimPlayerId;
+    d.pendingKillerIsNpc = true;
 }
 
 // ── Bomb Tag ──────────────────────────────────────────────────────────

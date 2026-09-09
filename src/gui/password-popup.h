@@ -23,6 +23,7 @@ void handleKey(GLFWwindow* window, int key, int action);
 void render(GLFWwindow* window);
 
 std::string getRoomCode();
+std::string getServerName();
 std::string getPassword();
 void clearResult();
 void setWrongPassword(bool wrong, const std::string& serverName = "");

@@ -554,12 +554,13 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
     {
         // ── FFA/TDM intermission + countdown HUD ──────────────────
         {
-            GuiLayout& matchLayout = GuiLayoutManager::instance().getLayout("config/gui/match-hud.json");
             const MimitaNet::CommunityMatchClient& match =
                 MimitaNet::CommunityMatchClient::instance();
 
             if (match.active())
             {
+                GuiLayout& matchLayout =
+                    GuiLayoutManager::instance().getGamemodeLayout(match.mode());
                 auto drawCentered = [&](const char* id, const std::string& text) {
                     const GuiElement* el = matchLayout.get(id);
                     if (!el || !el->visible) return;

@@ -334,6 +334,28 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         ++totalPacketsOut;
     };
 
+    // Team commands are player actions, not host administration.  They must
+    // be processed before the host gate so the server can validate and apply
+    // them authoritatively for any connected player.
+    if (commandStr == "teamlist")
+    {
+        ack(true, serverActiveTeamList().c_str());
+        return;
+    }
+    if (commandStr.rfind("teampick ", 0) == 0)
+    {
+        try {
+            const int team = std::stoi(commandStr.substr(9)) - 1;
+            std::string message;
+            const bool accepted = serverRequestTeamChange(
+                it->second.id, team, sock, players, tick, totalPacketsOut, message);
+            ack(accepted, message.c_str());
+        } catch (...) {
+            ack(false, "rejected: usage teampick <number>");
+        }
+        return;
+    }
+
     // Host-gate: only the player whose name matches the server host (or the
     // first joiner when no host name is set) may issue server-authoritative
     // commands. This also stops any client from deleting all NPCs.
@@ -456,6 +478,11 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
                serverTimestamp(), it->second.id, npcs.size());
         npcs.clear();
         ack(true, "applied: npc_delete_all");
+    }
+    else if (commandStr == "respawn_all")
+    {
+        serverRespawnAllActors(sock, players, npcs, tick, totalPacketsOut);
+        ack(true, "applied: respawn_all");
     }
     else if (commandStr.rfind("healthall ", 0) == 0)
     {

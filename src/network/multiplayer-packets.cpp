@@ -1290,8 +1290,10 @@ void mpNotifyConnectionStateChange(MultiplayerContext& ctx,
         const bool recovered = before == ConnectionState::Reconnecting;
         pushConnectionNotification(ctx,
             recovered ? "Reconnected" : "Connected",
-            recovered ? "Server status: Reconnected"
-                      : "Server status: Connected");
+            (recovered ? "Server status: Reconnected"
+                       : (ctx.serverName.empty()
+                           ? "Server status: Connected"
+                           : "Connected to " + ctx.serverName + "!!!!")).c_str());
         break;
     }
     case ConnectionState::Reconnecting:

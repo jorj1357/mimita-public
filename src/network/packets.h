@@ -1495,6 +1495,9 @@ struct PlayerRespawnedPacket
     float posX = 0.0f;
     float posY = 0.0f;
     float posZ = 0.0f;
+    float velX = 0.0f;
+    float velY = 0.0f;
+    float velZ = 0.0f;
     int32_t health = 100;
     // Weapon inventory follows (compact format, up to 16 weapons)
     struct WeaponSlot {
@@ -1604,7 +1607,7 @@ static_assert(sizeof(AttackResultPacket) <= 96, "AttackResultPacket is too large
 static_assert(sizeof(ReloadRequestPacket) <= 48, "ReloadRequestPacket is too large");
 static_assert(sizeof(ReloadResultPacket) <= 72, "ReloadResultPacket is too large");
 static_assert(sizeof(RespawnRequestPacket) <= 32, "RespawnRequestPacket is too large");
-static_assert(sizeof(PlayerRespawnedPacket) <= 576, "PlayerRespawnedPacket is too large");
+static_assert(sizeof(PlayerRespawnedPacket) <= 584, "PlayerRespawnedPacket is too large");
 static_assert(sizeof(BombTagStatePacket) <= 96, "BombTagStatePacket is too large");
 static_assert(sizeof(BombTagPassEventPacket) <= 96, "BombTagPassEventPacket is too large");
 

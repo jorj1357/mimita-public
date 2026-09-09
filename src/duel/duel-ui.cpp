@@ -5,7 +5,7 @@
 * (player names), countdown, win/lose overlay, rematch hints, recent-duels panel,
 * and the enemy-spawn tracer.
 * Reads state from DuelQueue and DuelHistory; all positions/colors/fonts come
-* from config/gui/duel-queue-hud.json and config/gui/duel-match-hud.json.
+* from the duel section of config/gui/gamemode-meta-gui.json.
 * Does NOT run matchmaking, connect to servers, or mutate queue state.
 */
 
@@ -189,7 +189,7 @@ void renderDuelMatchHud(GLFWwindow* win, float dt)
     if (!dq.inDuel())
         return;
 
-    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/duel-match-hud.json");
+    GuiLayout& layout = GuiLayoutManager::instance().getGamemodeLayout("duel");
 
     if (dq.countdownActive())
     {

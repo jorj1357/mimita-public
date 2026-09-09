@@ -1,6 +1,7 @@
 #include "combat/death-system.h"
 #include "combat/weapon-runtime.h"
 #include "config/ragdoll-death-config.h"
+#include "config/spawn-velocity-config.h"
 #include "entities/death-ghost.h"
 
 #include <algorithm>
@@ -253,6 +254,19 @@ void DeathSystem::respawn(Player& actor, const std::string& actorId, const World
 
     actor.vel = glm::vec3(0.0f);
     actor.externalImpulse = glm::vec3(0.0f);
+
+    // Apply spawn velocity impulse from config
+    {
+        const auto& svc = SpawnVelocityConfig::instance();
+        if (svc.enabled()) {
+            actor.vel = svc.computeSpawnImpulse(actor.yaw);
+            Debug::log(Debug::Category::General,
+                "[SPAWN VELOCITY] applied impulse=(%.1f,%.1f,%.1f) mode=%s speed=%.1f\n",
+                actor.vel.x, actor.vel.y, actor.vel.z,
+                svc.mode().c_str(), svc.speed());
+        }
+    }
+
     // Apply developer HP override if enabled
     bool isNpc = actorId.find("npc_") == 0;
     if (!isNpc && DevOverrides::playerHealthOverrideEnabled) {

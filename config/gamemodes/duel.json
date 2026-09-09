@@ -4,6 +4,7 @@
   "description": "First to 20... max action... no downtime... like MGE",
   "team_names": ["RED", "BLUE"],
   "goal_value": 20,
+  "weapon_set_id": 1,
   "time_limit_seconds": 0,
   "respawn_seconds": 0,
   "kill_heals": true,

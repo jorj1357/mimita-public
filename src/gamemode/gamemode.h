@@ -37,6 +37,7 @@ struct Gamemode {
     std::string description = "First to 20. Instant respawns. Max action, no downtime.";
     std::vector<std::string> teamNames = {"RED", "BLUE"};
     int goalValue = 20;
+    int weaponSetId = 1;
     int timeLimitSeconds = 0;
     float respawnSeconds = 0.0f;
     bool killHeals = true;

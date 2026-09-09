@@ -1,3 +1,13 @@
+// 2026-09-08 10:13 EST
+/* purpose
+* Loads, saves, and hot-reloads JSON-defined GUI element layouts.
+* Supports ordinary layout files and gamemode-specific sections in one metadata file.
+* Preserves the last valid layout when a JSON reload fails.
+* DOES NOT own gameplay state, gamemode rules, or GUI action behavior.
+* DOES NOT detect visual overlap between elements.
+* DOES NOT decide which dynamic values are supplied to a rendered element.
+*/
+
 #include "gui-layout.h"
 
 #include <cstdio>
@@ -81,7 +91,13 @@ static int64_t getFileModifiedTime(const std::string& path)
 // ----------------------------------------------------------------
 bool GuiLayout::load(const std::string& filePath)
 {
+    return load(filePath, "");
+}
+
+bool GuiLayout::load(const std::string& filePath, const std::string& sectionId)
+{
     mFilePath = filePath;
+    mSectionId = sectionId;
 
     std::ifstream file(filePath);
     if (!file.is_open()) {
@@ -236,6 +252,17 @@ bool GuiLayout::load(const std::string& filePath)
 
             return e;
         };
+
+        if (!mSectionId.empty()) {
+            if (!j.contains("gamemodes") || !j["gamemodes"].is_object() ||
+                !j["gamemodes"].contains(mSectionId) ||
+                !j["gamemodes"][mSectionId].is_object()) {
+                printf("[GUI LAYOUT ERROR] file=%s missing gamemode section=%s\n",
+                       filePath.c_str(), mSectionId.c_str());
+                return false;
+            }
+            j = j["gamemodes"][mSectionId];
+        }
 
         // Support both v2 array format and v3 object format (keyed by ID)
         if (j.contains("elements")) {
@@ -482,6 +509,23 @@ GuiLayout& GuiLayoutManager::getLayout(const std::string& filePath)
     return it->second;
 }
 
+GuiLayout& GuiLayoutManager::getGamemodeLayout(const std::string& gamemodeId)
+{
+    std::string sectionId = gamemodeId;
+    if (sectionId == "team_deathmatch") sectionId = "tdm";
+    else if (sectionId == "free_for_all") sectionId = "ffa";
+    else if (sectionId == "bomb_tag") sectionId = "bombtag";
+
+    auto it = mGamemodeLayouts.find(sectionId);
+    if (it == mGamemodeLayouts.end()) {
+        GuiLayout layout;
+        layout.load("config/gui/gamemode-meta-gui.json", sectionId);
+        mGamemodeLayouts[sectionId] = std::move(layout);
+        it = mGamemodeLayouts.find(sectionId);
+    }
+    return it->second;
+}
+
 void GuiLayoutManager::pollReload()
 {
     // Throttle polling to ~2x/sec to avoid excessive stat calls
@@ -505,6 +549,16 @@ void GuiLayoutManager::pollReload()
                            pair.first.c_str());
                 }
             }
+        }
+    }
+
+    for (auto& pair : mGamemodeLayouts) {
+        if (pair.second.checkFileChanged()) {
+            const std::string modeId = pair.first;
+            bool ok = pair.second.load("config/gui/gamemode-meta-gui.json", modeId);
+            if (!ok)
+                printf("[GUI LAYOUT ERROR] file=config/gui/gamemode-meta-gui.json section=%s load=FAILED keeping previous layout\n",
+                       modeId.c_str());
         }
     }
 }

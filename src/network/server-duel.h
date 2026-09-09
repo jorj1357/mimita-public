@@ -68,6 +68,7 @@ struct ServerDuelState
     bool hasPendingKill = false;
     uint32_t pendingKillerId = 0;
     uint32_t pendingVictimId = 0;
+    bool pendingKillerIsNpc = false;
     // Periodic DuelState broadcast cadence so clients can detect a dead server.
     uint32_t lastBroadcastTick = 0;
     // Forces the first authoritative community-match state to reach clients
@@ -179,6 +180,8 @@ void serverDuelTick(SOCKET sock,
 // tracer broadcast to the next serverDuelTick.
 void serverDuelOnPlayerDeath(uint32_t killerPlayerId,
                              uint32_t victimPlayerId);
+void serverDuelOnNpcDeath(uint32_t killerNpcId,
+                          uint32_t victimPlayerId);
 
 // A player pressed Space on the win/lose screen: skip the rematch timer and
 // start the next duel immediately (next tick).
@@ -186,6 +189,16 @@ void serverDuelRematchNow();
 
 // Host-only changemap command: reload the given map live on the next tick.
 void serverDuelRequestMapChange(const std::string& mapId);
+std::string serverActiveTeamList();
+bool serverRequestTeamChange(uint32_t playerId, int requestedTeam,
+                             SOCKET sock,
+                             std::unordered_map<uint32_t, ServerPlayer>& players,
+                             uint32_t tick, uint64_t& totalPacketsOut,
+                             std::string& message);
+void serverRespawnAllActors(SOCKET sock,
+                            std::unordered_map<uint32_t, ServerPlayer>& players,
+                            std::unordered_map<uint32_t, ServerNpc>& npcs,
+                            uint32_t tick, uint64_t& totalPacketsOut);
 
 // Starts the shared community map runtime without enabling duel scoring.
 void serverCommunityMapStart(const std::vector<std::string>& mapPool,

@@ -1,0 +1,16 @@
+// 9 8 2026 1012 am jorj - todo put settings for ragdoll mode like, 
+// limbs hitboxes, visible/invisible hitboxes, with alpha
+// limbs hitbox shape it shoudl be capsule
+// limbs size and offset, limbs should be  from the exact volume center
+// of the limb its from, like head has a  spehre or a capsule aronud it 
+// same for arms torso legs etc etc
+
+// gravity overall
+// and attachemnt points, like when ur a ragdoll, waht it rotates about, 
+// what axis it rotates around
+// and like limits? or the type of the rotator that attachment is?
+// e.g. anchor is plrorigin
+// torso is from plr origin 
+// arms attached to the torso with an attachemnt point so u can look up down extend
+// retract etc
+// just cant have ur arms go into ur body that cant happen etc 

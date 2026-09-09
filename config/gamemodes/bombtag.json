@@ -4,6 +4,7 @@
   "description": "One bomb, infinite gameplay. Pass it or explode.",
   "team_names": [],
   "goal_value": 0,
+  "weapon_set_id": 1,
   "time_limit_seconds": 0,
   "respawn_seconds": 0.01,
   "kill_heals": true,

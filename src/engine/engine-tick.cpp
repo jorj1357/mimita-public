@@ -43,6 +43,7 @@
 #include "replay/replay.h"
 #include "network/multiplayer-context.h"
 #include "network/server.h"
+#include "network/server-browser.h"
 #include "gui/gui-main.h"
 #include "terminal/terminal-state.h"
 #include "gui/menus/pause-menu.h"
@@ -89,6 +90,37 @@ void engineTick(Engine& engine)
     for (uint64_t i = 0; i < rewardTicks; ++i) RewardPopupSystem::instance().tick();
     if (GAME_STATE == GAME_PLAYING)
         NotificationSystem::instance().updateTips();
+    MimitaNet::serverBrowserTick();
+    {
+        std::vector<MimitaNet::ServerAnnouncement> announcements;
+        MimitaNet::serverBrowserTakeAnnouncements(announcements);
+        for (const auto& a : announcements) {
+            const std::string name = a.serverName.empty() ? "MiMITA Server" : a.serverName;
+            const std::string host = a.hostPlayerName.empty() ? "Someone" : a.hostPlayerName;
+            const std::string ping = a.ping.reachable ? std::to_string(a.ping.pingMs) + " ms" : "unknown";
+            const std::string message = host + " just started a server!\n"
+                "Name: " + name + "\n"
+                "Ping: " + ping + "\n"
+                "Mode: " + (a.gamemode.empty() ? "unknown" : a.gamemode) + "\n"
+                "Map: " + (a.map.empty() ? "unknown" : a.map) + "\n"
+                "Players: " + std::to_string(a.players) + "/" + std::to_string(a.maxPlayers) + "\n"
+                "Press K to join!";
+            NotificationSystem::Action action;
+            action.type = NotificationSystem::ActionType::Callback;
+            action.label = "JOIN";
+            action.callback = [a, name] {
+                MultiplayerConnectInfo connect;
+                connect.shouldConnect = true;
+                connect.roomCode = a.code;
+                connect.serverName = name;
+                connect.passwordProtected = a.passwordProtected;
+                setPendingMultiplayerConnect(connect);
+                NotificationSystem::instance().pushImportant(
+                    "Server join", "Attempting to join " + name + "...", 240);
+            };
+            NotificationSystem::instance().pushImportant("PUBLIC SERVER", message, 0);
+        }
+    }
     auto tFrameStart = std::chrono::steady_clock::now();
     HEARTBEAT("FRAME START");
 

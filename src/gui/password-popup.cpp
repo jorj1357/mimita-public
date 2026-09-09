@@ -67,6 +67,7 @@ void setWrongPassword(bool wrong, const std::string& serverName)
 }
 
 std::string getRoomCode() { return gRoomCode; }
+std::string getServerName() { return gServerName; }
 std::string getPassword() { return gPassword; }
 
 void clearResult()

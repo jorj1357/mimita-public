@@ -1,0 +1,12 @@
+// 9 8 2206 1110 est jorj - todo
+// define all settings for world destruction
+// like
+
+// also in weapons json,
+//  C:\mimita-priv-v8\config\weapons.json here
+// define things like
+// projectile mass, speed, etc, 
+// so  we can have emergent behaviors
+// e.g. a rocket has a explosion, so that explosion 
+// shoudl be a bigger explosion adn bigger destruiton
+// than, for example, a revovler or weaker wepaon

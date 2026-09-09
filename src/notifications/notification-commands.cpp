@@ -18,8 +18,9 @@
 
 void registerNotificationCommands()
 {
-    Terminal::instance().registerCommand({
-        "notifs", "Enable or disable in-game notifications (1 = on, 0 = off)", "notifs [0|1]",
+    auto registerEnableCommand = [](const std::string& name) {
+        Terminal::instance().registerCommand({
+        name, "Enable or disable in-game notifications (1 = on, 0 = off)", name + " [0|1]",
         [](const std::vector<std::string>& args) {
             NotificationSystem& ns = NotificationSystem::instance();
             if (args.empty()) {
@@ -35,7 +36,10 @@ void registerNotificationCommands()
                 : "[NOTIFS] disabled");
         },
         "2026-07-31", CommandCategory::UI
-    });
+        });
+    };
+    registerEnableCommand("notifs");
+    registerEnableCommand("notifmute");
 
     Terminal::instance().registerCommand({
         "notifsingame", "Show notifications during gameplay (1 = show, 0 = hide)", "notifsingame [0|1]",
@@ -56,8 +60,9 @@ void registerNotificationCommands()
         "2026-08-03", CommandCategory::UI
     });
 
-    Terminal::instance().registerCommand({
-        "notifstempmute", "Mute notifications for N hours (converted to ticks)", "notifstempmute [hours]",
+    auto registerTempMuteCommand = [](const std::string& name) {
+        Terminal::instance().registerCommand({
+        name, "Mute notifications for N hours (converted to ticks)", name + " [hours]",
         [](const std::vector<std::string>& args) {
             NotificationSystem& ns = NotificationSystem::instance();
             if (args.empty()) {
@@ -80,7 +85,10 @@ void registerNotificationCommands()
             Terminal::instance().addLog(buf);
         },
         "2026-07-31", CommandCategory::UI
-    });
+        });
+    };
+    registerTempMuteCommand("notifstempmute");
+    registerTempMuteCommand("notiftempmute");
 
     Terminal::instance().registerCommand({
         "notifs_test", "Push a test notification (\"long\" = long message)", "notifs_test [long]",

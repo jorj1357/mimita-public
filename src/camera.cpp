@@ -61,8 +61,7 @@ void Camera::updateVectors() {
     up    = glm::normalize(glm::cross(right, front));
 }
 
-void Camera::decayPunch(float dt) {
-    const float decayRate = 12.0f;
+void Camera::decayPunch(float dt, float decayRate) {
     if (punchPitch > 0.0f)
         punchPitch = std::max(0.0f, punchPitch - dt * decayRate);
     else if (punchPitch < 0.0f)

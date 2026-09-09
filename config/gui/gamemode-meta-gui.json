@@ -1,0 +1,86 @@
+{
+  "format": "mimita-gamemode-meta-gui",
+  "version": 1,
+  "_comment": "Gamemode IDs are string IDs today. Consider numeric IDs only as a future registry decision; do not change IDs casually because network and saved state use them.",
+  "gamemodes": {
+    "tdm": {
+      "format": "mimita-gui-layout",
+      "version": 3,
+      "elements": {
+        "intermissionText": { "type": "text", "text": "INTERMISSION {seconds}", "x": 960, "y": 400, "fontSize": 0.6, "textColor": [1, 1, 1, 0.9] },
+        "modeTitle": { "type": "text", "text": "{mode_name}", "x": 960, "y": 18, "fontSize": 0.42, "textColor": [1, 1, 1, 1] },
+        "scoreText": { "type": "text", "text": "{red_name} {red_score} / {goal}    {blue_name} {blue_score} / {goal}", "x": 960, "y": 45, "fontSize": 0.38, "textColor": [1, 1, 1, 1] },
+        "matchTime": { "type": "text", "text": "TIME LEFT {minutes}:{seconds}", "x": 960, "y": 72, "fontSize": 0.34, "textColor": [1, 1, 1, 1] },
+        "leaderboardText": { "type": "text", "fontSize": 0.30, "textColor": [1, 1, 1, 1] },
+        "ffaLeader1": { "type": "text", "text": "{rank}. {name}: {score}K", "x": 20, "y": 20, "fontSize": 0.36, "textColor": [1, 0.85, 0, 1] },
+        "ffaLeader2": { "type": "text", "text": "{rank}. {name}: {score}K", "x": 220, "y": 20, "fontSize": 0.36, "textColor": [0.75, 0.75, 0.8, 1] },
+        "ffaLeader3": { "type": "text", "text": "{rank}. {name}: {score}K", "x": 420, "y": 20, "fontSize": 0.36, "textColor": [0.8, 0.5, 0.2, 1] },
+        "redScore": { "type": "text", "text": "RED: {red_score}K", "x": 20, "y": 20, "fontSize": 0.36, "textColor": [1, 0.3, 0.3, 1] },
+        "blueScore": { "type": "text", "text": "BLUE: {blue_score}K", "x": 1740, "y": 20, "fontSize": 0.36, "textColor": [0.3, 0.5, 1, 1] },
+        "yourTeamText": { "type": "text", "text": "^ YOUR TEAM", "fontSize": 0.30 },
+        "scoreGain": { "type": "text", "text": "+1", "x": 960, "y": 45, "fontSize": 0.36, "textColor": [0, 1, 0, 1], "risePixels": 18, "lifetimeTicks": 30 },
+        "countdownText": { "type": "text", "text": "{countdown}", "goText": "GO!!!", "x": 960, "y": 100, "fontSize": 2.5, "textColor": [1, 1, 1, 1] },
+        "recordingIndicator": { "type": "text", "x": 1800, "y": 20, "fontSize": 0.28, "textColor": [0.2, 1, 0.3, 0.9] }
+      }
+    },
+    "ffa": {
+      "format": "mimita-gui-layout",
+      "version": 3,
+      "elements": {
+        "intermissionText": { "type": "text", "text": "INTERMISSION {seconds}", "x": 960, "y": 400, "fontSize": 0.6, "textColor": [1, 1, 1, 0.9] },
+        "modeTitle": { "type": "text", "text": "{mode_name}", "x": 960, "y": 18, "fontSize": 0.42, "textColor": [1, 1, 1, 1] },
+        "matchTime": { "type": "text", "text": "TIME LEFT {minutes}:{seconds}", "x": 960, "y": 72, "fontSize": 0.34, "textColor": [1, 1, 1, 1] },
+        "leaderboardText": { "type": "text", "fontSize": 0.30, "textColor": [1, 1, 1, 1] },
+        "ffaLeader1": { "type": "text", "text": "{rank}. {name}: {score}K", "x": 20, "y": 20, "fontSize": 0.36, "textColor": [1, 0.85, 0, 1] },
+        "ffaLeader2": { "type": "text", "text": "{rank}. {name}: {score}K", "x": 220, "y": 20, "fontSize": 0.36, "textColor": [0.75, 0.75, 0.8, 1] },
+        "ffaLeader3": { "type": "text", "text": "{rank}. {name}: {score}K", "x": 420, "y": 20, "fontSize": 0.36, "textColor": [0.8, 0.5, 0.2, 1] },
+        "countdownText": { "type": "text", "text": "{countdown}", "goText": "GO!!!", "x": 960, "y": 100, "fontSize": 2.5, "textColor": [1, 1, 1, 1] }
+      }
+    },
+    "bombtag": {
+      "format": "mimita-gui-layout",
+      "version": 3,
+      "elements": {
+        "modeTitle": { "type": "text", "text": "{mode_name}", "x": 960, "y": 18, "fontSize": 0.42, "textColor": [1, 1, 1, 1] },
+        "timerText": { "type": "text", "x": 940, "y": 30, "width": 200, "height": 30, "fontSize": 0.5, "textColor": [1, 1, 1, 0.9] },
+        "bombAlert": { "type": "text", "x": 660, "y": 70, "width": 600, "height": 28, "fontSize": 0.42, "textColor": [1, 0.3, 0.3, 1] },
+        "npcBombAlert": { "type": "text", "x": 660, "y": 70, "width": 600, "height": 28, "fontSize": 0.42, "textColor": [1, 0.6, 0.2, 1] },
+        "killsText": { "type": "text", "x": 20, "y": 30, "width": 200, "height": 24, "fontSize": 0.35, "textColor": [0.3, 1, 0.3, 1] },
+        "livesText": { "type": "text", "x": 20, "y": 65, "width": 200, "height": 24, "fontSize": 0.3, "textColor": [1, 0.85, 0.25, 1] },
+        "countdownText": { "type": "text", "x": 940, "y": 500, "width": 80, "height": 60, "fontSize": 1.2, "textColor": [1, 1, 1, 1] }
+      }
+    },
+    "duel": {
+      "format": "mimita-gui-layout",
+      "version": 3,
+      "elements": {
+        "scoreText": { "type": "text", "x": 760, "y": 40, "width": 400, "height": 44, "fontSize": 0.72, "textColor": [1, 0.9, 0.35, 1] },
+        "goalText": { "type": "text", "x": 860, "y": 88, "width": 200, "height": 24, "fontSize": 0.24, "textColor": [0.7, 0.75, 0.8, 0.8] },
+        "downtimeText": { "type": "text", "x": 800, "y": 124, "width": 320, "height": 30, "fontSize": 0.5, "textColor": [0.6, 1, 0.65, 1] },
+        "countdownNum": { "type": "text", "x": 940, "y": 380, "width": 80, "height": 80, "fontSize": 1.7, "textColor": [1, 1, 1, 1] },
+        "endOverlay": { "type": "panel", "x": 0, "y": 0, "width": 1920, "height": 1080, "backgroundColor": [0, 0, 0, 0.55] },
+        "winText": { "type": "text", "x": 860, "y": 360, "width": 260, "height": 70, "fontSize": 1.3, "textColor": [0.3, 1, 0.3, 1] },
+        "loseText": { "type": "text", "x": 850, "y": 360, "width": 260, "height": 70, "fontSize": 1.3, "textColor": [1, 0.3, 0.3, 1] },
+        "endScore": { "type": "text", "x": 900, "y": 460, "width": 160, "height": 40, "fontSize": 0.7, "textColor": [1, 0.85, 0.25, 1] },
+        "rematchText": { "type": "text", "x": 850, "y": 540, "width": 260, "height": 32, "fontSize": 0.42, "textColor": [0.7, 0.9, 0.75, 1] },
+        "endHintContinue": { "type": "text", "x": 830, "y": 600, "width": 300, "height": 24, "fontSize": 0.28, "textColor": [0.65, 0.65, 0.65, 0.9] },
+        "endHintSpace": { "type": "text", "x": 840, "y": 636, "width": 300, "height": 24, "fontSize": 0.3, "textColor": [0.85, 0.85, 0.85, 1] },
+        "endHintEsc": { "type": "text", "x": 840, "y": 668, "width": 300, "height": 24, "fontSize": 0.28, "textColor": [0.6, 0.6, 0.6, 0.9] },
+        "recentPanel": { "type": "panel", "x": 1570, "y": 140, "width": 300, "height": 420, "backgroundColor": [0.03, 0.03, 0.04, 0.82] },
+        "recentHeader": { "type": "text", "x": 1582, "y": 146, "width": 260, "height": 24, "fontSize": 0.34, "textColor": [0.5, 0.95, 0.6, 1] },
+        "countdownText": { "type": "text", "x": 940, "y": 500, "width": 80, "height": 60, "fontSize": 1.2, "textColor": [1, 1, 1, 1] },
+        "timerText": { "type": "text", "x": 935, "y": 90, "width": 70, "height": 30, "fontSize": 0.45, "textColor": [1, 1, 1, 0.8] },
+        "roundText": { "type": "text", "x": 920, "y": 130, "width": 100, "height": 24, "fontSize": 0.32, "textColor": [0.7, 0.8, 1, 0.9] },
+        "roundOverText": { "type": "text", "x": 860, "y": 540, "width": 200, "height": 40, "fontSize": 0.7, "textColor": [1, 0.85, 0.25, 1] },
+        "roundOverNextText": { "type": "text", "x": 880, "y": 590, "width": 200, "height": 30, "fontSize": 0.38, "textColor": [1, 1, 1, 1] }
+      }
+    },
+    "sandbox": {
+      "format": "mimita-gui-layout",
+      "version": 3,
+      "elements": {
+        "modeTitle": { "type": "text", "text": "{mode_name}", "x": 960, "y": 18, "fontSize": 0.42, "textColor": [1, 1, 1, 1] }
+      }
+    }
+  }
+}

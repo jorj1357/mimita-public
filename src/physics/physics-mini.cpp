@@ -16,6 +16,7 @@
 #include "perf/perf.h"
 
 #include "entities/player.h"
+#include "entities/aimbody-config.h"
 #include "world/world.h"
 #include "physics/config.h"
 
@@ -51,9 +52,8 @@ static void updateVisualFacingFromCamera(Player& p, const glm::vec3& camForward,
 
     flat = glm::normalize(flat);
     float targetYaw = glm::degrees(std::atan2(flat.y, flat.x));
-    // No smoothing: player yaw matches camera yaw exactly.
-    // Remote players use interpolation separately if needed.
-    p.yaw = targetYaw;
+    const AimBodyConfig& aimBody = AimBodyConfig::instance();
+    p.yaw = aimBody.smoothAngle(p.yaw, targetYaw, dt);
 }
 
 struct CollisionVelocityOverride {

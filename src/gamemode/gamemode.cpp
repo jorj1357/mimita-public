@@ -152,6 +152,7 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         if (next.teamNames.size() < 2)
             next.teamNames = {"RED", "BLUE"};
         next.goalValue = std::max(1, optInt(root, "goal_value", next.goalValue));
+        next.weaponSetId = std::max(1, optInt(root, "weapon_set_id", next.weaponSetId));
         next.timeLimitSeconds = std::max(0, optInt(root, "time_limit_seconds", next.timeLimitSeconds));
         next.respawnSeconds = std::max(0.0f, optFloat(root, "respawn_seconds", next.respawnSeconds));
         next.killHeals = optBool(root, "kill_heals", next.killHeals);

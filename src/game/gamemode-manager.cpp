@@ -264,7 +264,7 @@ void GamemodeManager::renderWorldElements(Camera& camera, Player& player) {
 }
 
 void GamemodeManager::renderBombHolderText() {
-    GuiLayout& btLayout = GuiLayoutManager::instance().getLayout("config/gui/bomb-tag-hud.json");
+    GuiLayout& btLayout = GuiLayoutManager::instance().getGamemodeLayout("bombtag");
     auto btText = [&](const std::string& id, const std::string& text) {
         const GuiElement* el = btLayout.get(id);
         if (!el) return;

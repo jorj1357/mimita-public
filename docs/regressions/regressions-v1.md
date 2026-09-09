@@ -37,6 +37,18 @@ Whats this
 
 newest at top 9 3 2026
 
+2026-09-09T00:00:00Z — AI diagnosis must verify link integration before blaming a stale EXE — PROCESS REGRESSION
+
+1. Confirmed recurring failure pattern:
+   1. AI investigations often suggest that `mimita.exe` is stale when a feature appears inactive.
+   2. Human experience indicates this was correct only rarely; in roughly fifty comparable cases, the more common cause was that the feature logic existed or compiled but was not linked through all surrounding runtime paths required for the behavior.
+   3. A related pattern is that the core logic works, but the change fails to update the several related producers, packet fields, reset paths, snapshots, handlers, or consumers needed for the value to survive end to end.
+2. Required investigation behavior:
+   1. Treat a stale executable as a hypothesis, not the default conclusion.
+   2. Trace the value from configuration through every producer, boundary, reset, consumer, and final application point.
+   3. Verify the actual link/build result with `build_agent.py` and `build/changelog.txt` before claiming the binary is stale.
+3. Status: CONFIRMED PROCESS LESSON — applies to future investigations and does not by itself identify a gameplay bug.
+
 9 7 2026 — Spy Knife contact ticks use render/network-update time instead of the fixed 60 Hz simulation domain — CONFIRMED NOT FIXED
 
 1. Evidence:
@@ -830,3 +842,73 @@ jorj - this not official format not good but  when we edit netowkring stuff or d
 3. The configured alpha was also reduced by `alpha * 0.3`, so `hitboxAlpha: 1.0` could never produce full configured opacity.
 4. Fix: route the OBB diagnostics through `DebugVis::drawWeaponLine` and clamp/use the configured alpha directly. The current implementation still draws wire geometry; true filled OBB faces require a triangle primitive/API and are separate from this visibility fix.
 5. Status: source fix implemented; runtime visual confirmation remains required.
+
+## 2026-09-08T16:10:00Z — General gamemode lifecycle was split across duel and map-only server paths (UNRESOLVED)
+
+1. Expected behavior:
+   1. Gamemode behavior is selected by the gamemode JSON ID and implemented by reusable match functions.
+   2. Players and NPCs are equivalent match actors for participation, teams, kills, deaths, score, spawning, and respawning.
+   3. A server mode selected in the GUI starts the same lifecycle as `modestart` when a player joins and continues indefinitely through rounds.
+   4. Team membership remains stable unless an authoritative team-change request is accepted.
+   5. Map changes and `respawn_all` reset every player and NPC using the new map's spawn points.
+2. Actual behavior before this session:
+   1. General match behavior was owned by `server-duel` and split from a separate map-only community runtime.
+   2. Exact community mode strings controlled scoring and HUD routing instead of the gamemode JSON ID.
+   3. NPCs were omitted from the participant, team, and player-death score flow.
+   4. Weapon-set selection was tied to the legacy `mapOnly` state instead of the gamemode JSON.
+   5. Map changes teleported duel-specific players and destroyed NPCs without one shared actor reset contract.
+3. Current correction:
+   1. Gamemode JSON files now provide `weapon_set_id` and server startup/modestart apply it through the active gamemode.
+   2. The unified FFA/TDM participant path admits one active player plus NPCs, assigns stable match teams, and routes NPC-caused player deaths into the pending score event.
+   3. `teamlist`, `teampick`, and host-only `respawn_all` now use server-authoritative command handling.
+   4. Map reloads reset active players and re-seed NPC state from the new map's spawn points.
+   5. The match packet/client HUD path now uses the gamemode IDs `ffa` and `tdm`.
+4. Remaining unresolved acceptance:
+   1. A real good-connection run must prove human-vs-NPC scoring, NPC scoreboard visibility, stable teams, team switching, automatic GUI-selected startup, repeated rounds, map-change visual reset, and weapon-set inventory.
+   2. The old map-only runtime remains present as deprecated compatibility code and must be removed after the unified path is accepted.
+   3. Bad-connection behavior remains intentionally untested until good-connection behavior passes.
+5. Related source evidence: `src/network/server-duel.cpp`, `src/network/server-npcs.cpp`, `src/network/server-damage.cpp`, `src/network/server-packet-chat.cpp`, `src/gamemode/gamemode.cpp`, and `config/gamemodes/*.json`.
+
+## 2026-09-08T14:12:27Z — Gamemode GUI presentation is not uniformly JSON hot-reloadable (UNRESOLVED)
+
+1. Expected behavior:
+   1. The GUI specification states: "IF IT IS A GUI ELEMENT, ITS PRESENTATION MUST BE JSON-DEFINED AND JSON HOT RELOADABLE."
+   2. Gamemode HUD presentation must be editable while the game is running, without rebuilding or restarting.
+   3. The active gamemode ID from `config/gamemodes/*.json` must select the presentation definition.
+2. Actual behavior before this migration:
+   1. `src/engine/engine-tick-ui-overlays.cpp:541-547` drew room status at hardcoded centered `y=18`, scale, and colors.
+   2. `src/engine/engine-tick-ui-overlays.cpp:583-620` loaded some match text from `config/gui/match-hud.json`, but mode selection and several presentation fallbacks remained in C++.
+   3. `src/gui/hud/match-leaderboard.cpp:139-178` hardcoded the `YOUR TEAM` text and its vertical offsets.
+   4. `src/engine/engine-tick-ui-replay-hud.cpp:95-109` assembled reconnect status text in C++.
+   5. `src/engine/engine-tick-ui-replay-hud.cpp:111-121` hardcoded replay recording indicator coordinates, text, scale, and colors.
+   6. `src/game/duel.cpp:299-313` still contains hardcoded duel result and countdown presentation paths.
+   7. `src/game/gamemode-manager.cpp:266-301` previously loaded `config/gui/bomb-tag-hud.json` separately from the requested gamemode metadata source.
+3. Specification disagreement:
+   1. `docs/specs/gui/guiv2.md` requires feature code to supply data while JSON supplies presentation.
+   2. `docs/architecture/json-configuration/json-configuration.md` requires an obvious owner, validation, atomic last-valid replacement, reload signaling, and a documented application boundary.
+   3. The hardcoded and split paths above made the desired live JSON editing incomplete and made it possible for the visible HUD to disagree with the edited JSON file.
+4. Current correction:
+   1. `config/gui/gamemode-meta-gui.json` now defines sections for `tdm`, `ffa`, `bombtag`, `duel`, and `sandbox`.
+   2. `src/gui/gui-layout.cpp` and `src/gui/gui-layout.h` reuse the existing parser and reload manager for selected gamemode sections.
+   3. Network mode names are normalized to the current gamemode IDs: `team_deathmatch` to `tdm`, `free_for_all` to `ffa`, and `bomb_tag` to `bombtag`.
+   4. TDM, FFA, Bomb Tag, local duel, and network duel HUD consumers now read from the gamemode metadata owner.
+5. Status and proof boundary:
+   1. UNRESOLVED until live runtime testing proves that editing each migrated gamemode HUD element changes the visible result without rebuild or restart.
+   2. Room status, reconnect suffix text, replay recording presentation, duel result presentation, and other debug/overlay paths remain outside the migrated gamemode metadata owner.
+    3. No overlap detection was added; it is intentionally out of scope for this regression fix.
+
+2026-09-08T16:30:00Z — Spawn velocity feature compiles but never reaches the EXE due to pre-existing build failure — CONFIRMED NOT WORKING
+
+1. Issue: Spawn velocity impulse on respawn does not apply at runtime.
+   1. Expected behavior: when `config/spawnvelocity.json` has `enabled: true`, the player
+      receives a velocity impulse in the configured direction on respawn.
+   2. Actual behavior: player respawns with zero velocity, identical to pre-feature behavior.
+   3. Root cause: the overall build fails before linking due to a pre-existing compile error
+      in `src/engine/engine-tick-state.cpp:294` (`PasswordPopup` not declared). Because the
+      build fails, `mimita.exe` is never relinked. The binary on disk is the old one without
+      any spawn velocity changes.
+   4. All spawn-velocity-related files compile cleanly: `spawn-velocity-config.cpp`,
+      `death-system.cpp`, `server-players.cpp`, `main-systems.cpp`, `engine-tick-setup.cpp`.
+      The failure is in an unrelated file with pre-existing uncommitted changes.
+   5. Fix required: resolve the `PasswordPopup` compile error in `engine-tick-state.cpp`,
+      then rebuild with `python build_agent.py`.

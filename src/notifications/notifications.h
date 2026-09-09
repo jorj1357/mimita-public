@@ -77,6 +77,7 @@ public:
                        uint64_t durationTicks = 0);
     void pushBuildNotice();
     void pushTip(bool force = false);
+    bool activateLatestJoinAction();
     void clear() { mNotifications.clear(); }
 
     const std::vector<HistoryEntry>& history() const { return mHistory; }

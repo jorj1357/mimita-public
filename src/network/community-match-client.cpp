@@ -67,8 +67,8 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
 
     MatchLeaderboard& hud = MatchLeaderboard::instance();
     hud.setMode(mMode, mGoal);
-    if (mMode == "free_for_all") hud.updateFFA(leaders);
-    else if (mMode == "team_deathmatch") {
+    if (mMode == "ffa") hud.updateFFA(leaders);
+    else if (mMode == "tdm") {
         bool isRed = false;
         for (uint8_t i = 0; i < packet.participantCount; ++i)
             if (packet.participantIds[i] == MP_CONTEXT.localPlayerId)

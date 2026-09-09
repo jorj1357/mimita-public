@@ -363,7 +363,7 @@ void engineTickNet(Engine& engine, float dt)
                     "[SpawnVelocityReset] player=%u spawnGen=%u epoch=%u pending=%zu -> zero\n",
                     mpContext.localPlayerId, spawn.spawnGeneration, spawn.transformEpoch,
                     mpContext.pendingKnockbacks.size());
-            player.vel = glm::vec3(0.0f);
+            player.vel = {spawn.velX, spawn.velY, spawn.velZ};
             player.externalImpulse = glm::vec3(0.0f);
             mpContext.pendingKnockbacks.clear();
 

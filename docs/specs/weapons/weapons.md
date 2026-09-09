@@ -1,4 +1,9 @@
-﻿9 7 2026 1701 est jorj - todo, confirm that this is like
+﻿9 8 2026 1107 est jorj - add to this doc that all weapons shoudl be switchable from hitscan to projectile bc i want ot have projectiles like
+mass: 3000kg
+speed: 999999m/s
+this makes emergent force reactions like knockback for plaeyrs and how big of a hole it destructs in the world, relates to C:\mimita-priv-v8\docs\specs\destructible-world\destructible-world.md
+
+9 7 2026 1701 est jorj - todo, confirm that this is like
 a single weapon object exists, and all other weapons are just diffrent implementations of that.
 
 e.g. 

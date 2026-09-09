@@ -32,7 +32,7 @@ double lastX = 400, lastY = 300;
     bool thirdPerson = true;
 
     void updateVectors(); 
-    void decayPunch(float dt);
+    void decayPunch(float dt, float decayRate = 12.0f);
     void addPunch(float pitchAmount, float yawAmount);
     void updateMouse(double xpos, double ypos);
     void follow(const glm::vec3& target, const glm::vec3& offset, float stiffness);

@@ -220,7 +220,26 @@ void engineTickCamera(Engine& engine, float dt)
     if (InputCommandSystem::instance().isKeyboardEnabled())
         applyDebugMovement(player, engine.window(), camera, dt);
 
-    camera.decayPunch(dt);
+    const auto& camCfg = CamConfig::instance().data();
+    camera.decayPunch(dt, camCfg.cameraSwayReturnRate);
+    static uint64_t lastLandingSwayTick = 0;
+    if (camCfg.cameraSwayEnabled && player.ground.didLand &&
+        player.movementSimulationTick != lastLandingSwayTick &&
+        player.ground.landingAirborneDuration >= camCfg.cameraSwayLandingThreshold) {
+        lastLandingSwayTick = player.movementSimulationTick;
+        const float intensity = std::clamp(
+            player.ground.landingAirborneDuration /
+                std::max(camCfg.cameraSwayLandingThreshold, 0.001f),
+            1.0f, 4.0f);
+        camera.addPunch(
+            camCfg.cameraSwayLandingPitch * camCfg.cameraSwayAmount * intensity,
+            camCfg.cameraSwayLandingRoll * camCfg.cameraSwayAmount * intensity);
+        Debug::logThrottled(Debug::Category::General, "camera-landing-sway", 0.25f,
+            "[CAM SWAY] landing tick=%llu amount=%.3f intensity=%.3f pitch=%.3f roll=%.3f\n",
+            (unsigned long long)player.movementSimulationTick,
+            camCfg.cameraSwayAmount, intensity,
+            camCfg.cameraSwayLandingPitch, camCfg.cameraSwayLandingRoll);
+    }
     // Zero weapon recoil punch during replay — it would otherwise add a
     // phantom rotation from decaying gameplay residuals into every frame's
     // effective yaw/pitch via updateVectors()'s internal punch inclusion.

@@ -345,6 +345,7 @@ void applyBasicLandingTimers(MovementState& state,
         previousAirborneSeconds > config.landingMinimumAirborneSeconds &&
         state.ground.landingCooldownSeconds <= 0.0f) {
         state.ground.didLand = true;
+        state.ground.landingAirborneDurationSeconds = previousAirborneSeconds;
         state.ground.landingCooldownSeconds = config.landingCooldownResetSeconds;
         events.didLand = true;
     }

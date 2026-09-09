@@ -105,6 +105,36 @@ void registerDebugCommands()
         }
     });
     Terminal::instance().registerCommand({
+        "teamlist", "List teams configured by the active gamemode", "teamlist",
+        [](const std::vector<std::string>&) {
+            if (::gpMpContext && ::gpMpContext->active)
+                MimitaNet::mpSendServerCommand(*::gpMpContext, "teamlist");
+            else if (MimitaNet::isServerHost())
+                Terminal::instance().addLog("[TEAMLIST] " + MimitaNet::serverActiveTeamList());
+            else Terminal::instance().addLog("[TEAMLIST] not connected");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "teampick", "Request an authoritative team change", "teampick <number>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) { Terminal::instance().addLog("[TEAMPICK] Usage: teampick <number>"); return; }
+            const std::string command = "teampick " + args[0];
+            if (::gpMpContext && ::gpMpContext->active)
+                MimitaNet::mpSendServerCommand(*::gpMpContext, command);
+            else if (MimitaNet::isServerHost())
+                Terminal::instance().addLog("[TEAMPICK] host must be connected to its server session");
+            else Terminal::instance().addLog("[TEAMPICK] not connected");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "respawn_all", "Respawn every server player and NPC", "respawn_all",
+        [](const std::vector<std::string>&) {
+            if (::gpMpContext && ::gpMpContext->active)
+                MimitaNet::mpSendServerCommand(*::gpMpContext, "respawn_all");
+            else Terminal::instance().addLog("[RESPAWN_ALL] not connected");
+        }
+    });
+    Terminal::instance().registerCommand({
         "mapchange", "Change the community server map; host only", "mapchange <number>",
         [](const std::vector<std::string>& args) {
             if (args.empty()) { Terminal::instance().addLog("[MAPCHANGE] Usage: mapchange <number>"); return; }

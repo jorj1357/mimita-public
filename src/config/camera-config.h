@@ -14,6 +14,12 @@ struct CameraConfigData {
     bool collisionPushEnabled = true;
     float collisionPushback = 0.3f;
     float lookAheadDistance = 0.0f;
+    bool cameraSwayEnabled = true;
+    float cameraSwayAmount = 1.0f;
+    float cameraSwayLandingThreshold = 0.25f;
+    float cameraSwayLandingPitch = 5.0f;
+    float cameraSwayLandingRoll = 3.0f;
+    float cameraSwayReturnRate = 12.0f;
 };
 
 class CamConfig {

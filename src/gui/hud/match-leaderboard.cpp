@@ -36,7 +36,7 @@ void MatchLeaderboard::setMode(const std::string& mode, int goal)
 
 void MatchLeaderboard::onConfirmedScoreGain()
 {
-    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/match-hud.json");
+    GuiLayout& layout = GuiLayoutManager::instance().getGamemodeLayout(mMode);
     const GuiElement* el = layout.get("scoreGain");
     if (el) onScoreGain(el->x, el->y);
 }
@@ -50,7 +50,7 @@ void MatchLeaderboard::updateTDM(int redKills, int blueKills, bool isRedTeam)
 
 void MatchLeaderboard::onScoreGain(float x, float y)
 {
-    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/match-hud.json");
+    GuiLayout& layout = GuiLayoutManager::instance().getGamemodeLayout(mMode);
     const GuiElement* el = layout.get("scoreGain");
     ScoreGainAnim anim;
     anim.startX = x;
@@ -80,7 +80,7 @@ void MatchLeaderboard::update(float dt)
 
 void MatchLeaderboard::render()
 {
-    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/match-hud.json");
+    GuiLayout& layout = GuiLayoutManager::instance().getGamemodeLayout(mMode);
     auto format = [](std::string text, const std::vector<std::pair<std::string, std::string>>& values) {
         for (const auto& value : values) {
             size_t at = 0;
@@ -97,7 +97,7 @@ void MatchLeaderboard::render()
         ? layout.get("leaderboardText")->fontSize : 0.30f;
 
     // FFA leaderboard: show top 3 horizontally
-    if (mMode == "free_for_all" && !mFFATop3.empty()) {
+    if (mMode == "ffa" && !mFFATop3.empty()) {
         float x = layout.get("ffaLeader1") ? layout.get("ffaLeader1")->x : 20.0f;
         const float y = layout.get("ffaLeader1") ? layout.get("ffaLeader1")->y : 20.0f;
 
@@ -137,7 +137,7 @@ void MatchLeaderboard::render()
     }
 
     // TDM leaderboard: Red left, Blue right
-    if (mMode == "team_deathmatch") {
+    if (mMode == "tdm") {
         const float y = layout.get("redScore") ? layout.get("redScore")->y : 20.0f;
 
         // Red team (left side)

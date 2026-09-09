@@ -24,6 +24,8 @@
 #include "devtools/terminal.h"
 #include "devtools/dev-overlay.h"
 #include "devtools/dev-npc-selection.h"
+#include "notifications/notifications.h"
+#include "gui/password-popup.h"
 #include "replay/replay.h"
 #include "replay/replay-export.h"
 #include "debug/debug-log.h"
@@ -290,6 +292,12 @@ void engineTickState(Engine& engine, float dt)
                     else
                     {
                         mpContext.currentRoomCode = mci.roomCode;
+                        mpContext.serverName = mci.serverName;
+                        if (mci.passwordProtected && mci.password.empty()) {
+                            PasswordPopup::open(mci.roomCode, mci.serverName);
+                            clearPendingMultiplayerConnect();
+                            return;
+                        }
                         if (!mci.password.empty())
                             mpContext.serverPassword = mci.password;
 
@@ -301,10 +309,17 @@ void engineTickState(Engine& engine, float dt)
                         // Async ICE connect: returns immediately, runs on a
                         // background thread, and is polled in mpTick. The game
                         // never blocks during ICE negotiation.
-                        MimitaNet::mpIceConnectStart(
+                        const bool started = MimitaNet::mpIceConnectStart(
                             mpContext,
                             mci.roomCode,
                             player.username);
+                        if (!started) {
+                            NotificationSystem::instance().pushCritical(
+                                "Server join failed",
+                                "Could not start joining " +
+                                    (mci.serverName.empty() ? mci.roomCode : mci.serverName) +
+                                    ".", 240);
+                        }
                     }
 
                     clearPendingMultiplayerConnect();

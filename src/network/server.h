@@ -542,6 +542,7 @@ struct ServerNpc
     // a change). Starts at 1, bumped once per respawn, never 0.
     uint16_t transformEpoch = 1;
     int health = 100;
+    int matchTeam = -1;
     bool onGround = false;
     float phase = 0.0f;
     float difficulty = 1.0f;

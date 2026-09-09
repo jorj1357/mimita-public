@@ -92,6 +92,7 @@
 #include "ragdoll/ragdoll.h"
 #include "ragdoll/ragdoll-config.h"
 #include "ragdoll/ragdoll-commands.h"
+#include "config/spawn-velocity-config.h"
 #include "void-death/void-death.h"
 #include "crosshair/crosshair-commands.h"
 #include "crosshair/crosshair-config.h"
@@ -446,6 +447,47 @@ void gameInitSubsystems(Engine& engine)
     HitEffects::loadConfig("config/hitfx.json");
     WeaponHitFxConfig::instance().load("config/weapon_hitfx.json");
     ImpactDecalsConfig::instance().load("config/impact_decals.json");
+    SpawnVelocityConfig::instance().load("config/spawnvelocity.json");
+
+    Terminal::instance().registerCommand({
+        "spawnvelocity_reload",
+        "Reload spawnvelocity.json without restart",
+        "spawnvelocity_reload",
+        [](const std::vector<std::string>&) {
+            if (SpawnVelocityConfig::instance().load()) {
+                const auto& d = SpawnVelocityConfig::instance().data();
+                char buf[256];
+                snprintf(buf, sizeof(buf),
+                    "[SPAWN VELOCITY] reloaded: enabled=%d mode=%s speed=%.1f",
+                    (int)d.enabled, d.mode.c_str(), d.speed);
+                Terminal::instance().addLog(buf);
+            } else {
+                Terminal::instance().addLog(
+                    "[SPAWN VELOCITY] config reload failed (see log)");
+            }
+        },
+        "2026-09-08",
+        CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "spawnvelocity_status",
+        "Print spawn velocity config status",
+        "spawnvelocity_status",
+        [](const std::vector<std::string>&) {
+            const auto& d = SpawnVelocityConfig::instance().data();
+            char buf[512];
+            snprintf(buf, sizeof(buf),
+                "[SPAWN VELOCITY] enabled=%d mode=%s speed=%.1f "
+                "dir=(%.1f,%.1f,%.1f) vertical=%d range=(%.0f,%.0f)",
+                (int)d.enabled, d.mode.c_str(), d.speed,
+                d.direction.x, d.direction.y, d.direction.z,
+                (int)d.applyVertical, d.randomRange.x, d.randomRange.y);
+            Terminal::instance().addLog(buf);
+        },
+        "2026-09-08",
+        CommandCategory::Debug
+    });
 
     Terminal::instance().registerCommand({
         "net_debug_entities", "Toggle entity replication debug overlay", "net_debug_entities [0|1]",

@@ -17,7 +17,9 @@
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
 #include "combat/weapon-types.h"
+#include "entities/aimbody-config.h"
 #include "config/networking-config.h"
+#include "config/spawn-velocity-config.h"
 #include "debug/debug-log.h"
 
 #include <cmath>
@@ -317,7 +319,7 @@ void resolvePlayerCollision(std::unordered_map<uint32_t, ServerPlayer>& players)
 static void getInitialInventory(std::vector<std::string>& out)
 {
     out.clear();
-    const bool community = serverDuelState().mapOnly;
+    const bool community = serverDuelState().enabled;
     const bool includeRestricted = community && serverDuelState().communityWeaponSetId == 5;
     for (const auto& kv : WeaponRegistry::instance().all())
     {
@@ -428,13 +430,17 @@ void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitia
     spawnSync.posX = player.pos.x;
     spawnSync.posY = player.pos.y;
     spawnSync.posZ = player.pos.z;
+    spawnSync.velX = player.vel.x;
+    spawnSync.velY = player.vel.y;
+    spawnSync.velZ = player.vel.z;
     spawnSync.health = player.health;
     spawnSync.communityWeaponSetId = serverDuelState().mapOnly
         ? static_cast<uint8_t>(std::clamp(serverDuelState().communityWeaponSetId, 0, 255)) : 0;
     Debug::log(Debug::Category::Duel,
-        "[DuelPacketSend] type=PlayerRespawnedPacket reliable=1 player=%u spawnGeneration=%u epoch=%u pos=(%.3f,%.3f,%.3f)\n",
+        "[DuelPacketSend] type=PlayerRespawnedPacket reliable=1 player=%u spawnGeneration=%u epoch=%u pos=(%.3f,%.3f,%.3f) velocity=(%.3f,%.3f,%.3f)\n",
         player.id, spawnSync.spawnGeneration, spawnSync.transformEpoch,
-        player.pos.x, player.pos.y, player.pos.z);
+        player.pos.x, player.pos.y, player.pos.z,
+        player.vel.x, player.vel.y, player.vel.z);
     spawnSync.weaponCount = 0;
     for (const auto& wkv : player.weaponRuntimes)
     {
@@ -527,7 +533,10 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
     // Apply input yaw BEFORE any non-dead early return.
     // Orientation comes from current input and must update every frame,
     // even when clientStateUpdated causes an early return.
-    p.yaw = p.input.yaw;
+    p.yaw = AimBodyConfig::instance().smoothAngle(
+        p.yaw, p.input.yaw, SERVER_DT);
+    if (AimBodyConfig::instance().smoothMode())
+        p.input.yaw = p.yaw;
 
     {
         static uint64_t lastLookApplyLogMs = 0;
@@ -573,7 +582,10 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
             {
                 respawnPos = {1.0f + (float)(p.id - 1) * 1.5f, 5.0f, 30.0f};
             }
-            beginAuthoritativeTransform(p, respawnPos, glm::vec3(0.0f), respawnYaw, "respawn");
+            const glm::vec3 spawnVel = SpawnVelocityConfig::instance().enabled()
+                ? SpawnVelocityConfig::instance().computeSpawnImpulse(p.yaw)
+                : glm::vec3(0.0f);
+            beginAuthoritativeTransform(p, respawnPos, spawnVel, respawnYaw, "respawn");
             // resetPlayerForSpawn is called by completeAuthoritativeSpawn
             // which is triggered by justRespawned flag in the server pump.
             p.justRespawned = true;  // signal caller to send spawn sync

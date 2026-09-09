@@ -626,7 +626,7 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
     // transform epoch. Seed the complete authoritative transform here so the
     // very next input cannot report the pre-duel local position.
     ctx.localServerPosition = {spawn->posX, spawn->posY, spawn->posZ};
-    ctx.localServerVelocity = glm::vec3(0.0f);
+    ctx.localServerVelocity = {spawn->velX, spawn->velY, spawn->velZ};
     ctx.localServerEpoch = spawn->transformEpoch;
     ctx.transformEpoch = spawn->transformEpoch;
     ctx.lastAppliedEpoch = 0;
@@ -1317,9 +1317,10 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         {
             const PlayerRespawnedPacket* pr = reinterpret_cast<const PlayerRespawnedPacket*>(buffer);
             Debug::log(Debug::Category::Duel,
-                "[DuelPacketRecv] type=PlayerRespawnedPacket reliable=1 player=%u event=%u session=%u spawnGeneration=%u epoch=%u pos=(%.3f,%.3f,%.3f)\n",
+                "[DuelPacketRecv] type=PlayerRespawnedPacket reliable=1 player=%u event=%u session=%u spawnGeneration=%u epoch=%u pos=(%.3f,%.3f,%.3f) velocity=(%.3f,%.3f,%.3f)\n",
                 ctx.localPlayerId, pr->eventId, pr->eventSessionId,
-                pr->spawnGeneration, pr->transformEpoch, pr->posX, pr->posY, pr->posZ);
+                pr->spawnGeneration, pr->transformEpoch, pr->posX, pr->posY, pr->posZ,
+                pr->velX, pr->velY, pr->velZ);
 
             // Reliable-event dedup + auto-ack: the server now delivers the
             // spawn sync through the reliable-event transport (like shot

@@ -441,6 +441,17 @@ void NotificationSystem::pushTip(bool force)
     push(title, tip, duration, a);
 }
 
+bool NotificationSystem::activateLatestJoinAction()
+{
+    for (auto it = mNotifications.rbegin(); it != mNotifications.rend(); ++it) {
+        if (it->action.type == ActionType::Callback && it->action.label == "JOIN") {
+            if (it->action.callback) it->action.callback();
+            return true;
+        }
+    }
+    return false;
+}
+
 void NotificationSystem::recordHistory(const Notification& n)
 {
     HistoryEntry e;

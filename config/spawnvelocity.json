@@ -1,0 +1,16 @@
+{
+    "comment_1": "Spawn velocity config — applies an impulse to players and NPCs on respawn",
+    "comment_2": "enabled=false means no impulse (current default behavior)",
+    "comment_3": "modes: random, look, fixed, world_x, world_y, world_z, radial",
+    "comment_4": "random = random horizontal angle within random_range degrees",
+    "comment_5": "look = player's facing direction (horizontal only)",
+    "comment_6": "fixed = use the direction vector as-is",
+    "comment_7": "radial = random 360-degree horizontal direction",
+    "comment_8": "speed reference: dash is 50.0, default spawn impulse is 40.0",
+    "enabled": true,
+    "mode": "radial",
+    "speed": 40.0,
+    "direction": [1.0, 1.0, 1.0],
+    "apply_vertical": false,
+    "random_range": [-180.0, 180.0]
+}

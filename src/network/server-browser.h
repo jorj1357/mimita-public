@@ -40,6 +40,19 @@ struct ServerBrowserEntry
     ServerBrowserPing ping;
 };
 
+struct ServerAnnouncement
+{
+    std::string code;
+    std::string serverName;
+    std::string hostPlayerName;
+    std::string map;
+    std::string gamemode;
+    int players = 0;
+    int maxPlayers = 0;
+    bool passwordProtected = false;
+    ServerBrowserPing ping;
+};
+
 // One-time startup for the browser's probe sockets (WSA).
 void serverBrowserInit();
 
@@ -58,5 +71,8 @@ void serverBrowserSetOwnRoomCode(const std::string& code);
 void serverBrowserEntries(std::vector<ServerBrowserEntry>& out);
 
 bool serverBrowserRefreshing();
+
+// Removes newly discovered public rooms since the previous call.
+void serverBrowserTakeAnnouncements(std::vector<ServerAnnouncement>& out);
 
 } // namespace MimitaNet

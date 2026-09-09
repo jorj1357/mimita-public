@@ -8,6 +8,8 @@
 #include "aimbody-config.h"
 
 #include <chrono>
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 
@@ -59,6 +61,8 @@ bool AimBodyConfig::load(const std::string& path)
 {
     mPath = path;
     mEnabled = true;
+    mMode = "default";
+    mSmoothingFactor = 1.0f;
     mLimbs.clear();
 
     std::ifstream file(path);
@@ -71,9 +75,16 @@ bool AimBodyConfig::load(const std::string& path)
 
     try {
         json j;
+        file.clear();
+        file.seekg(0);
         file >> j;
         if (j.contains("enabled"))
             mEnabled = j.value("enabled", true);
+        const std::string mode = j.value("mode", std::string("default"));
+        mMode = mode == "smooth" ? "smooth" : "default";
+        const float factor = j.value("smoothingFactor", 1.0f);
+        mSmoothingFactor = std::isfinite(factor) && factor > 0.0f
+            ? factor : 1.0f;
         if (j.contains("limbs") && j["limbs"].is_object()) {
             for (auto it = j["limbs"].begin(); it != j["limbs"].end(); ++it) {
                 LimbAim limb;
@@ -99,7 +110,10 @@ bool AimBodyConfig::save()
     std::filesystem::create_directories(
         std::filesystem::path(mPath).parent_path(), ec);
     json j;
+    j["comment"] = "default preserves immediate aimbody behavior; smooth treats camera look as a wish direction. World Z is vertical and body yaw rotates around world Z. smoothingFactor 1.0 is approximately a 250 ms response; larger is slower and smaller is faster. Smooth mode never snaps. Camera sway is configured separately in camconfig.json.";
     j["enabled"] = mEnabled;
+    j["mode"] = mMode;
+    j["smoothingFactor"] = mSmoothingFactor;
     json limbs = json::object();
     for (const auto& [name, limb] : mLimbs) {
         limbs[name] = {
@@ -115,6 +129,22 @@ bool AimBodyConfig::save()
     file.close();
     mLastModified = modifiedTimeNs(mPath);
     return true;
+}
+
+float AimBodyConfig::smoothValue(float current, float desired, float dt) const
+{
+    if (!smoothMode()) return desired;
+    const float response = std::max(0.0025f, 0.25f * mSmoothingFactor);
+    const float alpha = 1.0f - std::exp(-std::max(0.0f, dt) / response);
+    return current + (desired - current) * alpha;
+}
+
+float AimBodyConfig::smoothAngle(float current, float desired, float dt) const
+{
+    if (!smoothMode()) return desired;
+    float delta = std::fmod(desired - current + 540.0f, 360.0f) - 180.0f;
+    return current + delta * (1.0f - std::exp(
+        -std::max(0.0f, dt) / std::max(0.0025f, 0.25f * mSmoothingFactor)));
 }
 
 bool AimBodyConfig::reload()

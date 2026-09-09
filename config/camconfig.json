@@ -1,4 +1,12 @@
 {
+  "cameraSway": {
+    "enabled": false,
+    "amount": 10.0,
+    "landingThreshold": 0.25,
+    "landingPitch": -0.1,
+    "landingRoll": 0.0,
+    "returnRate": 1.0
+  },
   "thirdPerson": {
     "offset": {
       "x": 2.5,

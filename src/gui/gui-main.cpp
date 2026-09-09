@@ -1191,6 +1191,8 @@ void guiMain(GLFWwindow* win, GameState& state)
         gPendingConnect = {};
         gPendingConnect.shouldConnect = true;
         gPendingConnect.roomCode = PasswordPopup::getRoomCode();
+        gPendingConnect.serverName = PasswordPopup::getServerName();
+        gPendingConnect.passwordProtected = true;
         gPendingConnect.password = PasswordPopup::getPassword();
         PasswordPopup::clearResult();
         onlineMenuSetActive(false);

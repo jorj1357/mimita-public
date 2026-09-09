@@ -28,6 +28,12 @@ public:
 
     bool enabled() const { return mEnabled; }
     void setEnabled(bool on) { mEnabled = on; }
+    bool smoothMode() const { return mMode == "smooth"; }
+    const std::string& mode() const { return mMode; }
+    float smoothingFactor() const { return mSmoothingFactor; }
+
+    float smoothAngle(float current, float desired, float dt) const;
+    float smoothValue(float current, float desired, float dt) const;
 
     // Returns the per-limb aim gains for a body part name, or nullptr if the
     // limb is not configured.
@@ -50,6 +56,8 @@ private:
     AimBodyConfig() = default;
 
     bool mEnabled = true;
+    std::string mMode = "default";
+    float mSmoothingFactor = 1.0f;
     std::unordered_map<std::string, LimbAim> mLimbs;
     std::string mPath = "config/aimbody.json";
     int64_t mLastModified = 0;

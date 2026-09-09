@@ -465,6 +465,7 @@ struct MultiplayerContext
     // ── Connection lifecycle ──────────────────────────────────────────
     ConnectionState connectionState = ConnectionState::Disconnected;
     std::string roomCode;
+    std::string serverName;
     std::string joinToken;
     std::string vipJoinTicket;
     bool vipJoinTicketRequested = false;

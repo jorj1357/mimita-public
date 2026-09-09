@@ -449,6 +449,8 @@ int runServer(const LaunchOptions& options)
                                 options.weaponSetId);
         serverCommunitySetMode(options.gameMode);
         serverCommunitySetWeaponSet(options.weaponSetId);
+        if (options.gameMode != "sandbox")
+            serverCommunityStartMatch(false);
     }
 
     // Startup NPCs (controlled by --npcs and --no-npcs flags)
@@ -935,6 +937,8 @@ bool startListenServer(ListenServerState& state, uint16_t port,
         serverCommunitySetWeaponSet(state.weaponSetId);
     if (settings && !settings->duelMode)
         serverCommunitySetMode(settings->gameMode);
+    if (settings && !settings->duelMode && settings->gameMode != "sandbox")
+        serverCommunityStartMatch(false);
     gServerHostPlayerName = settings ? settings->hostPlayerName : "";
 
     // Startup NPCs

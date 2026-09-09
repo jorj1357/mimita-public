@@ -161,6 +161,7 @@ struct GuiElement {
 class GuiLayout {
 public:
     bool load(const std::string& filePath);
+    bool load(const std::string& filePath, const std::string& sectionId);
     bool save(const std::string& filePath) const;
 
     // Get element rect, returns fallback if not found
@@ -202,6 +203,7 @@ private:
     void invalidateIdsCache() { mIdsCacheDirty = true; }
 
     std::string mFilePath;
+    std::string mSectionId;
     std::unordered_map<std::string, GuiElement> mElements;
     mutable int64_t mLastModified = 0;
     mutable bool mDirty = false;
@@ -216,6 +218,10 @@ public:
 
     // Get or create a layout for a given config file
     GuiLayout& getLayout(const std::string& filePath);
+
+    // Get the presentation section for a gamemode. Network mode names such as
+    // "team_deathmatch" are normalized to gamemode IDs such as "tdm".
+    GuiLayout& getGamemodeLayout(const std::string& gamemodeId);
 
     // Call once per frame to reload changed files
     void pollReload();
@@ -253,6 +259,7 @@ public:
 private:
     GuiLayoutManager() = default;
     std::unordered_map<std::string, GuiLayout> mLayouts;
+    std::unordered_map<std::string, GuiLayout> mGamemodeLayouts;
     bool mEditorEnabled = false;
     int64_t mLastPollTime = 0;
 };

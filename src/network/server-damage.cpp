@@ -130,7 +130,7 @@ ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>&
             damageSourceName(source), 0, target.pos, target.pos);
     }
 
-    if (result.killed)
+    if (result.killed && attackerPlayerId != 0)
         serverDuelOnPlayerDeath(attackerPlayerId, target.id);
 
     printf("%s [SERVER DAMAGE] target=%u attacker=%u source=%s damage=%d "

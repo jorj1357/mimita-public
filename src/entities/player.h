@@ -298,6 +298,7 @@ struct GroundState {
     bool realWorldContactThisFrame = false;
     float groundLostTimer = 0.0f;
     float airborneTimer = 0.0f;
+    float landingAirborneDuration = 0.0f;
     float landingCooldown = 0.0f;
     float worldContactLostTimer = 0.0f;
     bool didLand = false;
@@ -418,6 +419,7 @@ public:
     glm::vec2 inputWishMove{0.0f};
 
     float yaw = 0.0f;
+    float aimBodyPitch = 0.0f;
 
     // -------- Grouped State --------
     GroundState ground;

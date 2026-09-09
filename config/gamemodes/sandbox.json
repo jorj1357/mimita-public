@@ -4,6 +4,7 @@
   "description": "Free building and testing. No scoring, no timer.",
   "team_names": [],
   "goal_value": 0,
+  "weapon_set_id": 1,
   "time_limit_seconds": 0,
   "respawn_seconds": 0.01,
   "kill_heals": false,

@@ -1,4 +1,12 @@
-﻿MiMITA full client/server networking specification
+﻿9 8 2026 1028 est jorj - todo explain all console commands either in here or a centralized document liek C:\mimita-priv-v8\docs\specs\terminal\terminal.md
+
+explain console commmands that a host should have, and how the server should be able to host all gamemodes all things u wnat it to have it should handle i t,
+
+and be updateable live, hot reloadable live , so all players connected will get the mode change from  tdm to ffa as soon as u write that command
+and extend the game to handle many diffrent modes, with super generalized powerful functions that work for npcs and players and all gamemodes etc, no special  single use case funcitons 
+todo define that  general thing smoewhere better , mroe central like some arthictecture doc 
+
+MiMITA full client/server networking specification
 Date: July 18, 2026
 Status: Target architecture after full client/server conversion
 ________________

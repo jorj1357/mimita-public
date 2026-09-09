@@ -238,7 +238,7 @@ void DuelManager::renderHud()
 {
     if (!config.enabled) return;
 
-    GuiLayout& hudLayout = GuiLayoutManager::instance().getLayout("config/gui/duel-hud.json");
+    GuiLayout& hudLayout = GuiLayoutManager::instance().getGamemodeLayout("duel");
 
     auto drawTextElement = [&](const std::string& id, const std::string& text) {
         const GuiElement* el = hudLayout.get(id);

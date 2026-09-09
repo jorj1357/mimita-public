@@ -12,10 +12,12 @@
 #include "network/net_common.h"
 #include "network/packets.h"
 #include "network/coordinator-client.h"
+#include "debug/debug-log.h"
 
 #include <atomic>
 #include <mutex>
 #include <thread>
+#include <unordered_set>
 
 namespace MimitaNet {
 
@@ -31,6 +33,8 @@ uint64_t gLastRefreshMs = 0;
 bool gRefreshRequested = false;
 bool gWsaStarted = false;
 std::string gOwnRoomCode;
+std::unordered_set<std::string> gKnownCodes;
+std::vector<ServerAnnouncement> gAnnouncements;
 
 // Probe one server with a raw PING packet; unreachable hosts time out.
 ServerBrowserPing probeServerPing(const ServerListEntry& e)
@@ -111,6 +115,34 @@ void refreshWorker()
     }
     {
         std::lock_guard<std::mutex> lock(gMutex);
+        std::unordered_set<std::string> currentCodes;
+        currentCodes.reserve(fresh.size());
+        for (const ServerBrowserEntry& entry : fresh) {
+            currentCodes.insert(entry.code);
+            if (gKnownCodes.find(entry.code) == gKnownCodes.end()) {
+                ServerAnnouncement announcement;
+                announcement.code = entry.code;
+                announcement.serverName = entry.serverName;
+                announcement.hostPlayerName = entry.hostPlayerName;
+                announcement.map = entry.map;
+                announcement.gamemode = entry.gamemode;
+                announcement.players = entry.players;
+                announcement.maxPlayers = entry.maxPlayers;
+                announcement.passwordProtected = entry.passwordProtected;
+                announcement.ping = entry.ping;
+                gAnnouncements.push_back(std::move(announcement));
+                Debug::log(Debug::Category::Networking,
+                    "[SERVER DISCOVERY] new room=%s host=%s name=%s mode=%s map=%s ping=%s\n",
+                    entry.code.c_str(), entry.hostPlayerName.c_str(), entry.serverName.c_str(),
+                    entry.gamemode.c_str(), entry.map.c_str(),
+                    entry.ping.reachable ? std::to_string(entry.ping.pingMs).c_str() : "unknown");
+            }
+        }
+        for (auto it = gKnownCodes.begin(); it != gKnownCodes.end();) {
+            if (currentCodes.find(*it) == currentCodes.end()) it = gKnownCodes.erase(it);
+            else ++it;
+        }
+        gKnownCodes = std::move(currentCodes);
         gEntries = std::move(fresh);
     }
     gRefreshRunning = false;
@@ -162,6 +194,13 @@ void serverBrowserEntries(std::vector<ServerBrowserEntry>& out)
 bool serverBrowserRefreshing()
 {
     return gRefreshRunning.load();
+}
+
+void serverBrowserTakeAnnouncements(std::vector<ServerAnnouncement>& out)
+{
+    std::lock_guard<std::mutex> lock(gMutex);
+    out = std::move(gAnnouncements);
+    gAnnouncements.clear();
 }
 
 } // namespace MimitaNet

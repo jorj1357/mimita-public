@@ -681,7 +681,7 @@
       "splashRadius": 8.0,
       "splashExponent": 2.0,
       "rocketDirectDamage": 150.0,
-      "knockbackStrength": 160.0,
+      "knockbackStrength": 30.0,
       "selfKnockbackMultiplier": 0.8,
       "selfDamageMultiplier": 0.5,
       "firingRecoilStrength": 20.0,
@@ -1043,9 +1043,9 @@
       ],
       "attachment": {
         "position": [
-          9.0,
-          3.05,
-          -0.5
+          9.3,
+          2.9,
+          -0.1
         ],
         "rotation_degrees": [
             0.0,
@@ -1056,7 +1056,7 @@
       "scale": [
         1.0,
         1.0,
-        1.0
+        2.0
       ]
     },
     "damage": 1.0,
@@ -1073,7 +1073,7 @@
       "networkBatchMaxContacts": 6.0,
       "hitboxHalfX": 0.5,
       "hitboxHalfY": 0.5,
-      "hitboxHalfZ": 2.5,
+      "hitboxHalfZ": 3.8,
       "hitboxOffsetX": 0.0,
       "hitboxOffsetY": 0.0,
       "hitboxOffsetZ": 0.0,
@@ -1084,18 +1084,18 @@
       "hitboxVisible": 1,
       "serverContactRadius": 4.0,
       "serverTargetBodyRadius": 3.25,
-      "baseDamage": 8.0,
-      "speedDamageFactor": 20.0,
-      "angleDamageFactor": 20.0,
+      "baseDamage": 22.0,
+      "speedDamageFactor": 1.0,
+      "angleDamageFactor": 1.0,
       "maxDamage": 999.0,
-      "baseKnockback": 20.0,
-      "speedKnockbackFactor": 4.0,
-      "angleKnockbackFactor": 2.0,
-      "maxKnockback": 200.0,
+      "baseKnockback": 1.0,
+      "speedKnockbackFactor": 1.1,
+      "angleKnockbackFactor": 1.01,
+      "maxKnockback": 5.0,
       "backstabDistance": 0.01,
       "backstabConeDegrees": 0.1,
       "backstabDamagePerTick": 999.0,
-      "backstabKnockback": 20.0,
+      "backstabKnockback": 1.0,
       "swingDurationTicks": 120.0,
       "swingForwardTicks": 120.0,
       "damageTickInterval": 0.166

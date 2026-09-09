@@ -9,6 +9,7 @@
 #include "auth/auth-popup.h"
 #include "gui/menus/server-info-menu.h"
 #include "gui/menus/online-menu.h"
+#include "notifications/notifications.h"
 #include "gui/menus/pause-menu.h"
 #include "gui/password-popup.h"
 #include "avatar/avatar-editor.h"
@@ -89,6 +90,9 @@ void InputCommandSystem::keyCallback(GLFWwindow* window, int key, int scancode, 
             return;
 
         if (PasswordPopup::isOpen())
+            return;
+
+        if (key == GLFW_KEY_K && NotificationSystem::instance().activateLatestJoinAction())
             return;
 
         // If terminal is open, it owns keyboard input exclusively

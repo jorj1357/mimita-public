@@ -2,6 +2,8 @@
 
 #include <filesystem>
 #include <fstream>
+#include <algorithm>
+#include <cmath>
 
 #include <nlohmann/json.hpp>
 
@@ -75,6 +77,21 @@ bool CamConfig::load(const std::string& path)
             next.collisionPushEnabled = tp.value("collisionPushEnabled", next.collisionPushEnabled);
             next.collisionPushback = tp.value("collisionPushback", next.collisionPushback);
             next.lookAheadDistance = tp.value("lookAheadDistance", next.lookAheadDistance);
+        }
+
+        if (root.contains("cameraSway") && root["cameraSway"].is_object()) {
+            const auto& sway = root["cameraSway"];
+            next.cameraSwayEnabled = sway.value("enabled", next.cameraSwayEnabled);
+            next.cameraSwayAmount = sway.value("amount", next.cameraSwayAmount);
+            next.cameraSwayLandingThreshold = sway.value("landingThreshold", next.cameraSwayLandingThreshold);
+            next.cameraSwayLandingPitch = sway.value("landingPitch", next.cameraSwayLandingPitch);
+            next.cameraSwayLandingRoll = sway.value("landingRoll", next.cameraSwayLandingRoll);
+            next.cameraSwayReturnRate = sway.value("returnRate", next.cameraSwayReturnRate);
+            if (!std::isfinite(next.cameraSwayAmount) || next.cameraSwayAmount < 0.0f)
+                next.cameraSwayAmount = 1.0f;
+            next.cameraSwayAmount = std::clamp(next.cameraSwayAmount, 0.01f, 100.0f);
+            next.cameraSwayLandingThreshold = std::max(0.0f, next.cameraSwayLandingThreshold);
+            next.cameraSwayReturnRate = std::max(0.1f, next.cameraSwayReturnRate);
         }
 
         mData = next;
