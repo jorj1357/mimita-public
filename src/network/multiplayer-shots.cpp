@@ -256,7 +256,7 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
         }
     }
 
-    std::string npcName = "NPC " + std::to_string(event->npcEntityId);
+    std::string npcName = "NPC-" + std::to_string(event->npcEntityId);
     Player* npcPtr = nullptr;
     auto npcIt = ctx.remoteNpcs.find(event->npcEntityId);
     if (npcIt != ctx.remoteNpcs.end())

@@ -25,3 +25,11 @@ Feature tests and raw evidence belong under:
 `logs/features/<feature-name>/`
 
 Do not copy full changelog history into feature records. Link to it instead.
+
+9 9 2026 1302 est jorj - this  todo explain how this is like
+bc that relates to the thing where , writing a spec for waht u want to implement is muc much better than 
+just wriitng about ti and making it up as  u go aloing with the AI 
+so write out desird behavior frist and then get to implementing 
+planning planning then implement
+measure 10x  cut 1x 
+For the 1x for the 1x 

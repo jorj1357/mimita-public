@@ -13,6 +13,7 @@
 #include "config/networking-config.h"
 #include "network/confirmed-damage-presentation.h"
 #include "network/network-weapons.h"
+#include "killfeed/killfeed.h"
 #include "network/weapon-runtime-reconciliation.h"
 #include "network/disagreement-visuals.h"
 #include "npc/npc-combat-log.h"
@@ -1161,6 +1162,27 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
                 gpPlayer->currentHp = std::max(0, event->healthAfter);
                 gpPlayer->maxHp = std::max(gpPlayer->maxHp, gpPlayer->currentHp);
                 gpPlayer->dead = event->killed != 0 || gpPlayer->currentHp <= 0;
+
+                if (event->killed && event->attackerEntityType == ENTITY_NPC)
+                {
+                    const uint32_t attackerId = event->attackerPlayerId;
+                    std::string attackerName = "NPC-" + std::to_string(attackerId);
+                    auto npcIt = ctx.remoteNpcs.find(attackerId);
+                    if (npcIt != ctx.remoteNpcs.end() && !npcIt->second.username.empty())
+                        attackerName = npcIt->second.username;
+
+                    std::string weaponDisplay = "unknown";
+                    const char* weaponId = networkWeaponTypeName(event->weapon);
+                    if (const WeaponDefinition* wdef = WeaponRegistry::instance().get(weaponId))
+                        if (!wdef->displayName.empty())
+                            weaponDisplay = wdef->displayName;
+
+                    std::string victimName = gpPlayer->username.empty()
+                        ? "player_" + std::to_string(ctx.localPlayerId) : gpPlayer->username;
+
+                    KillfeedManager::instance().onKill(
+                        attackerName, victimName, weaponDisplay, false, event->header.tick);
+                }
             }
         }
     }

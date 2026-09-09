@@ -24,4 +24,11 @@ struct InputState {
     bool freezePressed = false;
     float movementHeldDuration = 0.0f;
     glm::vec3 camForward{0,0,1};
+
+    // Ragdoll mode inputs
+    bool ragdollTogglePressed = false;
+    bool grabLeftHeld = false;
+    bool grabRightHeld = false;
+    bool extendLeftMouse = false;
+    bool extendRightMouse = false;
 };

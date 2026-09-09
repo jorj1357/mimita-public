@@ -230,6 +230,7 @@ static void physicsMainUpdate_Internal(
 
     const CollisionVelocityOverride velocityOverride =
         applyEffectiveVelocityForCollision(p, movementState, movementConfig);
+    const float preCollisionDownwardSpeed = std::max(0.0f, -movementState.baseVelocity.z);
 
     for (int i = 0; i < steps; i++)
     {
@@ -248,6 +249,7 @@ static void physicsMainUpdate_Internal(
         p.ground.realWorldContactThisFrame;
     collisionFeedback.simulationTick = command.clientSimulationTick;
     collisionFeedback.contacts = p.movementContacts;
+    collisionFeedback.impactSpeed = preCollisionDownwardSpeed;
 
     const bool prevOnGround = collisionState.ground.onGround;
     const float previousAirborneTime =

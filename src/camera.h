@@ -13,6 +13,10 @@ inline float CAMERA_SENS = 0.15f;
 
 class Camera {
 public:
+    struct CameraSwayState {
+        glm::vec2 offset{0.0f}; // pitch, roll in degrees
+        glm::vec2 velocity{0.0f};
+    };
 // z is up dec 19 2025 
 glm::vec3 pos{0, 0, 0};
 glm::vec3 front{0, 1, 0};
@@ -24,7 +28,8 @@ float pitch = 10.0f;
 float punchPitch = 0.0f;
 float punchYaw = 0.0f;
 float fov = 100.0f;
-float roll = 0.0f;
+    float roll = 0.0f;
+    CameraSwayState sway;
 bool firstMouse = true;
 // dec 19 2025 make this work with main.cpp window dimensions 
 double lastX = 400, lastY = 300;
@@ -34,6 +39,9 @@ double lastX = 400, lastY = 300;
     void updateVectors(); 
     void decayPunch(float dt, float decayRate = 12.0f);
     void addPunch(float pitchAmount, float yawAmount);
+    void addCameraSwayImpulse(float pitchImpulse, float rollImpulse);
+    void updateCameraSway(float dt, float stiffness, float damping,
+                          float maxPitch, float maxRoll);
     void updateMouse(double xpos, double ypos);
     void follow(const glm::vec3& target, const glm::vec3& offset, float stiffness);
     void smoothCollision(const glm::vec3& playerPos, const World& world, float dt, float stiffness, bool stiffnessEnabled, bool collisionEnabled, bool collisionPushEnabled = true, float collisionPushback = 0.3f);

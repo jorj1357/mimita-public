@@ -23,8 +23,29 @@
 #include "gamemode/gamemode.h"
 #include "persistence/persistence-queue.h"
 #include "persistence/persistence-events.h"
+#include "config/spawn-velocity-config.h"
+#include "network/actor-lifecycle.h"
 
 namespace MimitaNet {
+
+static void finalizeServerNpcMirrorSpawn(ServerNpc& npc,
+                                         ActorSpawnReason reason,
+                                         uint32_t serverTick)
+{
+    ActorSpawnEvent event;
+    event.entityId = npc.entityId;
+    event.actorKind = ActorKind::Npc;
+    event.reason = reason;
+    event.transformEpoch = npc.transformEpoch;
+    event.serverTick = serverTick;
+    event.position = npc.pos;
+    event.lookDirection = npc.aim;
+    event = finalizeActorSpawn(event, npc.name.c_str());
+    npc.aim = event.lookDirection;
+    npc.yaw = std::atan2(event.lookDirection.y, event.lookDirection.x);
+    npc.vel = event.velocity;
+    npc.knockbackImpulse = glm::vec3(0.0f);
+}
 
 ServerGamemodeState& serverGamemodeState()
 {
@@ -42,6 +63,7 @@ void serverStartMode(const ServerGamemodeState& rules)
         : rules.matchMode == "duel" ? ServerMode::Duel : ServerMode::Sandbox;
     d.communityMode = "sandbox";
     d.communityWeaponSetId = 1;
+    d.appliedCommunityWeaponSetId = 0;
     d.communityWeaponSetExplicit = false;
     d.communityScores.clear();
     d.communityTeams.clear();
@@ -102,6 +124,7 @@ void serverStartMode(const ServerGamemodeState& rules)
     d.victoryType = 0;
     d.winnerTeam = -1;
     d.killEventCounter = 0;
+    d.pendingKillEvents.clear();
 
     Debug::warn(Debug::Category::Duel,
         "[DUEL SERVER] enabled mode=%s goal=%d countdown=%.1fs rematch=%.1fs teams=%s/%s rotate=%d pool=%zu offset=%.1f timeLimit=%d intermission=%d results=%d\n",
@@ -152,6 +175,7 @@ void serverCommunitySetWeaponSet(int weaponSetId)
     if (!config.weaponSetById(weaponSetId)) return;
     state.communityWeaponSetId = weaponSetId;
     state.communityWeaponSetExplicit = true;
+    state.appliedCommunityWeaponSetId = 0;
     Debug::warn(Debug::Category::Networking,
         "[COMMUNITY WEAPON SET] selected=%d\n", state.communityWeaponSetId);
 }
@@ -279,6 +303,8 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.participants.clear();
     d.redTeamKills = 0;
     d.blueTeamKills = 0;
+    d.pendingKillEvents.clear();
+    d.hasPendingKill = false;
     d.spawnsAssigned = false;
     d.startCountdownImmediately = skipIntermission;
     d.phase = DUEL_PHASE_INTERMISSION;
@@ -493,7 +519,10 @@ void teleportGamemodeParticipantsToSpawns(ServerGamemodeState& d,
         p.respawnSeconds = 0.0f;
         if (!p.dead)
         {
-            beginAuthoritativeTransform(p, spawn, glm::vec3(0.0f), p.yaw, "duel-spawn");
+            beginAuthoritativeTransform(p, spawn,
+                SpawnVelocityConfig::instance().enabled()
+                    ? SpawnVelocityConfig::instance().computeSpawnImpulse(p.yaw)
+                    : glm::vec3(0.0f), p.yaw, "duel-spawn");
             p.justRespawned = true;
         }
     };
@@ -652,6 +681,7 @@ bool reloadGamemodeMap(SOCKET sock,
         npc.body.currentHp = npc.body.maxHp;
         npc.body.dead = false;
         npc.body.respawnTimer = 0.0f;
+        finalizeServerNpcSpawn(npc, ActorSpawnReason::MapChange);
         npc.body.syncLegacyStateToLayers();
         npc.body.updateModelWorldTransforms();
         auto mirror = npcs.find(npc.id);
@@ -670,7 +700,10 @@ bool reloadGamemodeMap(SOCKET sock,
         if (p.spawnState != ServerPlayer::Active) continue;
         p.duelSpawnPos = gamemodeSpawnPoint(d);
         p.hasDuelSpawnPos = true;
-        beginAuthoritativeTransform(p, p.duelSpawnPos, glm::vec3(0.0f), p.yaw,
+        beginAuthoritativeTransform(p, p.duelSpawnPos,
+                                    SpawnVelocityConfig::instance().enabled()
+                                        ? SpawnVelocityConfig::instance().computeSpawnImpulse(p.yaw)
+                                        : glm::vec3(0.0f), p.yaw,
                                     "map-change-respawn");
         completeAuthoritativeSpawn(sock, p, false);
     }
@@ -735,6 +768,7 @@ bool rotateToNextGamemodeMap(SOCKET sock,
                 npc.body.currentHp = npc.body.maxHp;
                 npc.body.dead = false;
                 npc.body.respawnTimer = 0.0f;
+                finalizeServerNpcSpawn(npc, ActorSpawnReason::MapChange);
                 npc.body.syncLegacyStateToLayers();
                 npc.body.updateModelWorldTransforms();
                 auto mirror = npcs.find(npc.id);
@@ -831,7 +865,10 @@ void resetGamemodeActorsAtMapSpawn(
             p.duelSpawnPos = spawn;
             p.hasDuelSpawnPos = true;
             p.respawnSeconds = 0.0f;
-            beginAuthoritativeTransform(p, spawn, glm::vec3(0.0f), p.yaw, "gamemode-spawn");
+            beginAuthoritativeTransform(p, spawn,
+                SpawnVelocityConfig::instance().enabled()
+                    ? SpawnVelocityConfig::instance().computeSpawnImpulse(p.yaw)
+                    : glm::vec3(0.0f), p.yaw, "gamemode-spawn");
             p.justRespawned = true;
             continue;
         }
@@ -866,6 +903,7 @@ void resetGamemodeActorsAtMapSpawn(
                     npc.body.hasValidWeapon = true;
                 }
             }
+            finalizeServerNpcSpawn(npc, ActorSpawnReason::GamemodeStart);
             npc.body.syncLegacyStateToLayers();
             npc.body.updateModelWorldTransforms();
             mirrorIt->second.pos = spawn;
@@ -1049,6 +1087,16 @@ void serverGamemodeTick(SOCKET sock,
     ServerGamemodeState& d = serverGamemodeState();
     if (!d.enabled) return;
     d.currentServerTick = tick;
+    if (!d.mapOnly && d.appliedCommunityWeaponSetId != d.communityWeaponSetId)
+    {
+        resetGamemodeActorsAtMapSpawn(d, players, npcs, npcSystem);
+        d.appliedCommunityWeaponSetId = d.communityWeaponSetId;
+        ++d.stateVersion;
+        d.stateBroadcastPending = true;
+        Debug::warn(Debug::Category::Duel,
+            "[GAMEMODE LOADOUT] set=%d applied actors=%zu tick=%u\n",
+            d.communityWeaponSetId, d.participants.size(), tick);
+    }
     if (d.mapOnly)
     {
         const uint64_t now = nowMs();
@@ -1202,7 +1250,26 @@ void serverGamemodeTick(SOCKET sock,
         }
     }
 
-    // Process any kill recorded by applyServerDamage last tick.
+    // Promote one ordered kill event per fixed server tick into the legacy
+    // respawn/scoring body below. The queue prevents later kills from
+    // overwriting earlier kills; the body remains the single score owner.
+    if (!d.hasPendingKill && !d.pendingKillEvents.empty())
+    {
+        const ServerGamemodeKillEvent event = std::move(d.pendingKillEvents.front());
+        d.pendingKillEvents.pop_front();
+        d.pendingKillerId = event.killerId;
+        d.pendingVictimId = event.victimId;
+        d.pendingKillerIsNpc = event.killerEntityType == ENTITY_NPC;
+        d.pendingVictimIsNpc = event.victimEntityType == ENTITY_NPC;
+        d.hasPendingKill = true;
+        Debug::log(Debug::Category::Duel,
+            "[GAMEMODE KILL QUEUE] event=%u killer=%u kind=%u victim=%u kind=%u remaining=%zu tick=%u\n",
+            event.eventId, event.killerId, (unsigned)event.killerEntityType,
+            event.victimId, (unsigned)event.victimEntityType,
+            d.pendingKillEvents.size(), tick);
+    }
+
+    // Process one queued kill recorded by authoritative damage.
     if (d.hasPendingKill)
     {
         d.hasPendingKill = false;
@@ -1216,6 +1283,13 @@ void serverGamemodeTick(SOCKET sock,
         {
             victimIt->second.respawnSeconds = 0.0f;
             victimIt->second.duelSpawnPos = gamemodeSpawnPoint(d);
+        }
+        else if (d.pendingVictimIsNpc)
+        {
+            // NPC deaths use the same current-map spawn anchor as players;
+            // retaining the old body respawn position causes repeated void
+            // deaths after a map transition.
+            resetGamemodeActorsAtMapSpawn(d, players, npcs, npcSystem);
         }
 
         // Tell the killer where the victim respawned (tracer).
@@ -1619,14 +1693,15 @@ void serverRespawnAllActors(SOCKET sock,
     for (auto& kv : npcs) {
         ServerNpc& npc = kv.second;
         npc.health = 100;
-        npc.knockbackImpulse = glm::vec3(0.0f);
         ++npc.transformEpoch;
+        finalizeServerNpcMirrorSpawn(npc, ActorSpawnReason::RespawnAll, tick);
     }
     d.hasPendingKill = false;
     d.pendingKillerId = 0;
     d.pendingVictimId = 0;
     d.pendingKillerIsNpc = false;
     d.pendingVictimIsNpc = false;
+    d.pendingKillEvents.clear();
     Debug::warn(Debug::Category::Duel,
         "[MATCH RESPAWN ALL] players=%zu npcs=%zu tick=%u\n",
         players.size(), npcs.size(), tick);
@@ -1642,39 +1717,66 @@ void serverGamemodeRequestMapChange(const std::string& mapId)
 }
 
 void serverGamemodeOnPlayerDeath(uint32_t killerPlayerId,
-                             uint32_t victimPlayerId)
+                             uint32_t victimPlayerId,
+                             const std::string& weaponId,
+                             const std::string& weaponDisplayName,
+                             uint64_t correlationId)
 {
     ServerGamemodeState& d = serverGamemodeState();
     if (!d.enabled) return;
-    d.hasPendingKill = true;
-    d.pendingKillerId = killerPlayerId;
-    d.pendingVictimId = victimPlayerId;
-    d.pendingKillerIsNpc = false;
-    d.pendingVictimIsNpc = false;
+    ServerGamemodeKillEvent event;
+    event.killerId = killerPlayerId;
+    event.victimId = victimPlayerId;
+    event.killerEntityType = ENTITY_PLAYER;
+    event.victimEntityType = ENTITY_PLAYER;
+    event.weaponId = weaponId;
+    event.weaponDisplayName = weaponDisplayName;
+    event.eventId = ++d.killEventCounter;
+    event.correlationId = correlationId;
+    event.serverTick = d.currentServerTick;
+    d.pendingKillEvents.push_back(std::move(event));
 }
 
 void serverGamemodeOnNpcDeath(uint32_t killerNpcId,
-                          uint32_t victimPlayerId)
+                          uint32_t victimPlayerId,
+                          const std::string& weaponId,
+                          const std::string& weaponDisplayName,
+                          uint64_t correlationId)
 {
     ServerGamemodeState& d = serverGamemodeState();
     if (!d.enabled) return;
-    d.hasPendingKill = true;
-    d.pendingKillerId = killerNpcId;
-    d.pendingVictimId = victimPlayerId;
-    d.pendingKillerIsNpc = true;
-    d.pendingVictimIsNpc = false;
+    ServerGamemodeKillEvent event;
+    event.killerId = killerNpcId;
+    event.victimId = victimPlayerId;
+    event.killerEntityType = ENTITY_NPC;
+    event.victimEntityType = ENTITY_PLAYER;
+    event.weaponId = weaponId;
+    event.weaponDisplayName = weaponDisplayName;
+    event.eventId = ++d.killEventCounter;
+    event.correlationId = correlationId;
+    event.serverTick = d.currentServerTick;
+    d.pendingKillEvents.push_back(std::move(event));
 }
 
 void serverGamemodeOnPlayerKilledNpc(uint32_t killerPlayerId,
-                                     uint32_t victimNpcId)
+                                     uint32_t victimNpcId,
+                                     const std::string& weaponId,
+                                     const std::string& weaponDisplayName,
+                                     uint64_t correlationId)
 {
     ServerGamemodeState& d = serverGamemodeState();
     if (!d.enabled) return;
-    d.hasPendingKill = true;
-    d.pendingKillerId = killerPlayerId;
-    d.pendingVictimId = victimNpcId;
-    d.pendingKillerIsNpc = false;
-    d.pendingVictimIsNpc = true;
+    ServerGamemodeKillEvent event;
+    event.killerId = killerPlayerId;
+    event.victimId = victimNpcId;
+    event.killerEntityType = ENTITY_PLAYER;
+    event.victimEntityType = ENTITY_NPC;
+    event.weaponId = weaponId;
+    event.weaponDisplayName = weaponDisplayName;
+    event.eventId = ++d.killEventCounter;
+    event.correlationId = correlationId;
+    event.serverTick = d.currentServerTick;
+    d.pendingKillEvents.push_back(std::move(event));
 }
 
 // ── Bomb Tag ──────────────────────────────────────────────────────────
@@ -2055,7 +2157,10 @@ void serverBombTagTick(SOCKET sock,
                 victimIt->second.duelSpawnPos = gamemodeSpawnPoint(d);
                 victimIt->second.respawnSeconds = 0.0f;
                 beginAuthoritativeTransform(victimIt->second,
-                    victimIt->second.duelSpawnPos, glm::vec3(0.0f),
+                    victimIt->second.duelSpawnPos,
+                    SpawnVelocityConfig::instance().enabled()
+                        ? SpawnVelocityConfig::instance().computeSpawnImpulse(victimIt->second.yaw)
+                        : glm::vec3(0.0f),
                     victimIt->second.yaw, "bomb-respawn");
             }
 

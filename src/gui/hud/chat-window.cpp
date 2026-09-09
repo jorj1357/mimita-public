@@ -8,6 +8,7 @@
 * Does NOT handle the "/" key or mouse lock — those are wired externally.
 */
 #include "chat-window.h"
+#include "debug/structured-log.h"
 
 #include <chrono>
 #include <ctime>
@@ -333,6 +334,7 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
     float winW = uiScaleX(winW_d);
     float winH = uiScaleY(winH_d);
 
+    if (StructuredLogger::instance().shouldLog(StructuredCategory::ChatLayout, StructuredLevel::Trace))
     Debug::logThrottled(Debug::Category::Chat, "chat-debug-layout", 0.25f,
                         "[CHAT DEBUG GUI] utc-layout=%s framebuffer=%dx%d windowDesign=(%.1f,%.1f,%.1f,%.1f) windowPixels=(%.1f,%.1f,%.1f,%.1f) messageDesign=(%.1f,%.1f,%.1f,%.1f) inputDesign=(%.1f,%.1f,%.1f,%.1f) history=%zu open=%d opacity=%.3f\n",
                         chatUtcNow().c_str(), UISys::gFbW, UISys::gFbH,

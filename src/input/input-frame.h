@@ -28,4 +28,11 @@ struct InputFrame {
     bool freezePressed = false;
     float lookYaw = 0.0f;
     float lookPitch = 0.0f;
+
+    // Ragdoll mode
+    bool ragdollTogglePressed = false;
+    bool grabLeftHeld = false;
+    bool grabRightHeld = false;
+    bool extendLeftMouse = false;
+    bool extendRightMouse = false;
 };

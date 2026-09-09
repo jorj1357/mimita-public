@@ -61,6 +61,9 @@ struct StructuredLogConfig {
     CategoryConfig glbModels;
     CategoryConfig executable;
     CategoryConfig grenadeLauncher;
+    CategoryConfig healthbar;
+    CategoryConfig skybox;
+    CategoryConfig chatLayout;
 
     struct Sampling {
         int defaultEveryNFrames = 60;
@@ -96,6 +99,9 @@ enum class StructuredCategory {
     GlbModels,
     Executable,
     GrenadeLauncher,
+    Healthbar,
+    Skybox,
+    ChatLayout,
     Count
 };
 

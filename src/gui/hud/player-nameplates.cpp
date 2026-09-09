@@ -10,6 +10,7 @@
 
 #include "player-nameplates.h"
 #include "healthbar-config.h"
+#include "debug/structured-log.h"
 
 #include <algorithm>
 #include <cmath>
@@ -150,10 +151,11 @@ HealthbarRenderResult drawPlayerHealthbar(
 
     if (player.dead || player.currentHp <= 0)
     {
-        RPLXDEBUG("[HEALTHBAR] frame=? tick=? entity=%d name=%s source=%s hp=%d/%d dead=1 pos=(%.2f %.2f %.2f) rendered=NO reason=dead actor\n",
-                  (int)(uintptr_t)&player, player.username.c_str(), sourceTag,
-                  player.currentHp, player.maxHp,
-                  result.anchor.x, result.anchor.y, result.anchor.z);
+        if (StructuredLogger::instance().shouldLog(StructuredCategory::Healthbar, StructuredLevel::Trace))
+            RPLXDEBUG("[HEALTHBAR] frame=? tick=? entity=%d name=%s source=%s hp=%d/%d dead=1 pos=(%.2f %.2f %.2f) rendered=NO reason=dead actor\n",
+                      (int)(uintptr_t)&player, player.username.c_str(), sourceTag,
+                      player.currentHp, player.maxHp,
+                      result.anchor.x, result.anchor.y, result.anchor.z);
         Debug::log(Debug::Category::Gui,
             "[HEALTHBAR] SKIPPED entity=%s reason=Dead\n",
             player.username.c_str());
@@ -314,10 +316,11 @@ HealthbarRenderResult drawPlayerHealthbar(
     result.rendered = true;
     gTotalHealthbarsRendered++;
     if (isLiveWorld) gTotalLiveWorldHealthbars++;
-    RPLXDEBUG("[HEALTHBAR] frame=? tick=? entity=%d name=%s source=%s hp=%d/%d dead=0 pos=(%.2f %.2f %.2f) rendered=YES reason=visible\n",
-              (int)(uintptr_t)&player, player.username.c_str(), sourceTag,
-              player.currentHp, player.maxHp,
-              result.anchor.x, result.anchor.y, result.anchor.z);
+    if (StructuredLogger::instance().shouldLog(StructuredCategory::Healthbar, StructuredLevel::Trace))
+        RPLXDEBUG("[HEALTHBAR] frame=? tick=? entity=%d name=%s source=%s hp=%d/%d dead=0 pos=(%.2f %.2f %.2f) rendered=YES reason=visible\n",
+                  (int)(uintptr_t)&player, player.username.c_str(), sourceTag,
+                  player.currentHp, player.maxHp,
+                  result.anchor.x, result.anchor.y, result.anchor.z);
 
     gFrameCounter++;
     return result;

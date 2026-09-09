@@ -97,6 +97,13 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
     if (in.dashPressed)
         printf("[INPUT] Dash pressed\n");
 
+    // Ragdoll mode inputs
+    in.ragdollTogglePressed = glfwGetKey(win, GLFW_KEY_G) == GLFW_PRESS;
+    in.grabLeftHeld = glfwGetKey(win, GLFW_KEY_A) == GLFW_PRESS;
+    in.grabRightHeld = glfwGetKey(win, GLFW_KEY_D) == GLFW_PRESS;
+    in.extendLeftMouse = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    in.extendRightMouse = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+
     return in;
 }
 
@@ -162,6 +169,13 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
 
     frame.lookYaw = (gTerminalInputOverride.lookYaw != 0.0f) ? gTerminalInputOverride.lookYaw : cam.yaw;
     frame.lookPitch = (gTerminalInputOverride.lookPitch != 0.0f) ? gTerminalInputOverride.lookPitch : cam.pitch;
+
+    // Ragdoll mode inputs
+    frame.ragdollTogglePressed = glfwGetKey(win, GLFW_KEY_G) == GLFW_PRESS;
+    frame.grabLeftHeld = glfwGetKey(win, GLFW_KEY_A) == GLFW_PRESS;
+    frame.grabRightHeld = glfwGetKey(win, GLFW_KEY_D) == GLFW_PRESS;
+    frame.extendLeftMouse = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    frame.extendRightMouse = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
 
     consumeTerminalInputOverride();
     return frame;

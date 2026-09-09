@@ -299,6 +299,7 @@ struct GroundState {
     float groundLostTimer = 0.0f;
     float airborneTimer = 0.0f;
     float landingAirborneDuration = 0.0f;
+    float landingImpactSpeed = 0.0f;
     float landingCooldown = 0.0f;
     float worldContactLostTimer = 0.0f;
     bool didLand = false;
@@ -392,6 +393,7 @@ public:
     // play a second death. Cleared on respawn.
     bool networkDeathPresented = false;
     bool proceduralFrozen = false;
+    bool ragdollModeActive = false;
     float respawnTimer = 0.0f;
     float spawnFlashTimer = 0.0f;
     glm::vec3 respawnPosition{1.0f, 5.0f, 60.0f};

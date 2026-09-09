@@ -328,6 +328,7 @@ void applyBasicLandingTimers(MovementState& state,
                              const MovementConfig& config,
                              bool previousStableOnGround,
                              float previousAirborneSeconds,
+                             float impactSpeed,
                              float fixedDt,
                              MovementStepEvents& events)
 {
@@ -346,6 +347,7 @@ void applyBasicLandingTimers(MovementState& state,
         state.ground.landingCooldownSeconds <= 0.0f) {
         state.ground.didLand = true;
         state.ground.landingAirborneDurationSeconds = previousAirborneSeconds;
+        state.ground.landingImpactSpeed = std::max(0.0f, impactSpeed);
         state.ground.landingCooldownSeconds = config.landingCooldownResetSeconds;
         events.didLand = true;
     }
@@ -1697,7 +1699,8 @@ static MovementStepResult applyPostCollisionMovementInternal(
         applyBasicFrictionOverrideRecovery(state, command);
     applyBasicFriction(state, config, dt);
     applyBasicLandingTimers(
-        state, config, previousStableOnGround, previousAirborneSeconds, dt, events);
+        state, config, previousStableOnGround, previousAirborneSeconds,
+        collision.impactSpeed, dt, events);
 
     events.didGroundJump = state.jump.didGroundJump;
     events.didAirJump = state.jump.didAirJump;

@@ -9,6 +9,7 @@
 */
 
 #include "network/server.h"
+#include "network/actor-lifecycle.h"
 #include "network/server-gamemode.h"
 #include "network/network-weapons.h"
 #include "physics/movement/movement-conversion.h"
@@ -341,9 +342,15 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
     // Increment spawn generation (never decremented, never reset)
     ++player.spawnGeneration;
 
-    // Build or preserve owned weapon inventory
-    if (isInitialSpawn)
+    // Community matches own the active loadout. Rebuild it on every life so a
+    // restricted GUI-selected set cannot be bypassed by a prior unrestricted
+    // inventory. Offline/non-community spawns retain their existing policy.
+    if (isInitialSpawn || serverGamemodeState().enabled)
+    {
+        player.ownedWeaponIds.clear();
         getInitialInventory(player.ownedWeaponIds);
+        player.weaponRuntimes.clear();
+    }
 
     // Reset weapon runtimes for every owned weapon
     for (const std::string& wepId : player.ownedWeaponIds)
@@ -412,6 +419,23 @@ void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitia
 {
     resetPlayerForSpawn(player, isInitialSpawn);
     player.spawnState = ServerPlayer::AwaitingSpawnAck;
+    resetServerMovementForAuthoritativeLifecycle(
+        player, makeCurrentRuntimeMovementConfig());
+
+    ActorSpawnEvent lifecycleEvent;
+    lifecycleEvent.entityId = player.id;
+    lifecycleEvent.actorKind = ActorKind::Player;
+    lifecycleEvent.reason = isInitialSpawn
+        ? ActorSpawnReason::InitialJoin : ActorSpawnReason::Respawn;
+    lifecycleEvent.spawnGeneration = player.spawnGeneration;
+    lifecycleEvent.transformEpoch = player.transformEpoch;
+    lifecycleEvent.position = player.pos;
+    lifecycleEvent.lookDirection = glm::vec3(std::cos(player.yaw),
+                                             std::sin(player.yaw), 0.0f);
+    lifecycleEvent = finalizeActorSpawn(lifecycleEvent, player.name.c_str());
+    player.yaw = std::atan2(lifecycleEvent.lookDirection.y,
+                            lifecycleEvent.lookDirection.x);
+    player.vel = lifecycleEvent.velocity;
     resetServerMovementForAuthoritativeLifecycle(
         player, makeCurrentRuntimeMovementConfig());
 
@@ -582,8 +606,12 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
             {
                 respawnPos = {1.0f + (float)(p.id - 1) * 1.5f, 5.0f, 30.0f};
             }
+            // The spawn yaw is the actor's valid look direction for this new
+            // life. Compute the impulse after choosing it, not from the old
+            // yaw left over from the previous life.
+            p.yaw = respawnYaw;
             const glm::vec3 spawnVel = SpawnVelocityConfig::instance().enabled()
-                ? SpawnVelocityConfig::instance().computeSpawnImpulse(p.yaw)
+                ? SpawnVelocityConfig::instance().computeSpawnImpulse(respawnYaw)
                 : glm::vec3(0.0f);
             beginAuthoritativeTransform(p, respawnPos, spawnVel, respawnYaw, "respawn");
             // resetPlayerForSpawn is called by completeAuthoritativeSpawn
@@ -627,7 +655,13 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         if (p.spawnState != ServerPlayer::Active ||
             (p.awaitingAuthoritativeTransformAck && !p.hasAcceptedClientTransform))
         {
-            p.vel = glm::vec3(0.0f);
+            // When awaiting a spawn ack the velocity is the authoritative
+            // spawn impulse delivered by completeAuthoritativeSpawn.  Zeroing
+            // it here would destroy the spawn velocity before the client
+            // ever applies it.  Only clear velocity for non-spawn freezes
+            // (e.g. stale transform ack on an already-active player).
+            if (p.spawnState != ServerPlayer::AwaitingSpawnAck)
+                p.vel = glm::vec3(0.0f);
             p.movement.externalImpulse = glm::vec3(0.0f);
             p.clientStateUpdated = false;
             syncServerMovementRuntime(

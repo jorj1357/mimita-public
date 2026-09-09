@@ -116,6 +116,7 @@ struct MovementGroundState {
     float groundLostTimerSeconds = 0.0f;
     float airborneTimerSeconds = 0.0f;
     float landingAirborneDurationSeconds = 0.0f;
+    float landingImpactSpeed = 0.0f;
     float landingCooldownSeconds = 0.0f;
     float worldContactLostTimerSeconds = 0.0f;
 };

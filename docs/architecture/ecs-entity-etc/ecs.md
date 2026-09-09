@@ -27,3 +27,58 @@ what if this apple sudddenly weighed 1b kg
 waht if an AK shot bullets at 100,000 m/s
 what if  i hit this simulated human flesh with a rock at 999,999,999 m/s what happens
 etc etc i want to make like  aplayground for these ideas 
+## Architecture direction
+
+ECS is a gradual migration direction for MiMITA, not a requirement to rewrite
+the whole game at once.
+
+An entity is a stable identity. Components hold data for one concern. Systems
+own behavior over entities that have the required components.
+
+Do not create one giant entity object that owns gameplay, networking, GUI,
+sound, and rendering. Keep those concerns in separate components and systems.
+Existing `Player`, `ServerPlayer`, and `Npc` structures are transitional
+containers while shared components and systems are introduced.
+
+Players and NPCs are both actors. Their input sources may differ, but shared
+movement, collision, damage, death, respawn, timers, inventory, and replication
+behavior must have one owner.
+
+## Shared actor lifecycle
+
+All authoritative new lives use one actor lifecycle owner. First join,
+reconnect, normal respawn, NPC creation, duel start, gamemode start, map change,
+and terminal-triggered respawn must enter the same lifecycle.
+
+The lifecycle order is:
+
+1. choose spawn position;
+2. choose valid look direction;
+3. advance lifecycle generation;
+4. reset health, death, timers, and temporary state;
+5. calculate spawn velocity from that look direction;
+6. assign position, look direction, and velocity together;
+7. mark the actor alive;
+8. emit one actor-spawned event;
+9. perform player- or NPC-specific replication.
+
+No caller may independently create a new life or replace the lifecycle velocity
+with a separate player/NPC rule. Compatibility entry points may remain while
+they are migrated, but they must delegate to the shared lifecycle owner.
+
+The spawn event contains entity identity, actor kind, reason, generation,
+transform epoch, server tick, position, look direction, and velocity.
+
+## First ECS-style components
+
+The first migration components are `EntityIdentity`, `Transform`, `Movement`,
+`Health`, `ActorLifecycle`, and `Timers`. The first lifecycle system is the
+actor spawn system. Later systems may consume the same components for movement,
+collision, damage, death, weapons, timers, network replication, and presentation.
+
+GUI widgets, sounds, and visual effects remain presentation systems or events;
+they do not become one giant authoritative actor object. World-owned physical
+objects may later become entities using only the components they need.
+
+New features must prefer shared actor components and systems over parallel
+player-only and NPC-only implementations.

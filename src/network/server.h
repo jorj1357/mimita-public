@@ -11,6 +11,7 @@
 #pragma once
 
 #include "network/net_common.h"
+#include "network/actor-lifecycle.h"
 #include "network/packets.h"
 #include "network/game-transport.h"
 #include "network/disagreement-rate-limit.h"
@@ -570,6 +571,14 @@ struct ServerNpc
     static constexpr size_t MAX_POS_HISTORY = 600;
 };
 
+// Shared actor lifecycle adapter for the authoritative NPC body. The NPC
+// simulation keeps its existing type during the ECS migration, but all new
+// lives must pass through the shared spawn finalization boundary.
+void finalizeServerNpcSpawn(Npc& npc, ActorSpawnReason reason);
+
+// Shared damage vocabulary. Players and NPCs are different actor kinds, but
+// damage must describe an actor hurting another actor rather than selecting a
+// player-only or NPC-only subsystem.
 enum class ServerDamageSource : uint8_t
 {
     Hitscan,
@@ -579,12 +588,40 @@ enum class ServerDamageSource : uint8_t
     GrenadeExplosion
 };
 
+enum class ServerActorKind : uint8_t { Player = ENTITY_PLAYER, Npc = ENTITY_NPC };
+
+struct ServerActorRef
+{
+    uint32_t id = 0;
+    ServerActorKind kind = ServerActorKind::Player;
+    ServerPlayer* player = nullptr;
+    ServerNpc* npc = nullptr;
+};
+
+struct ServerActorDamageRequest
+{
+    ServerActorRef attacker;
+    ServerActorRef victim;
+    int damage = 0;
+    glm::vec3 knockback{0.0f};
+    ServerDamageSource source = ServerDamageSource::Hitscan;
+    std::string weaponId;
+    std::string weaponDisplayName;
+    uint32_t eventId = 0;
+    uint64_t correlationId = 0;
+    uint32_t mapEpoch = 0;
+    uint32_t serverTick = 0;
+};
+
 struct ServerDamageResult
 {
     bool applied = false;
     bool killed = false;
     int healthBefore = 0;
     int healthAfter = 0;
+    std::string rejectionReason;
+    uint32_t eventId = 0;
+    uint64_t correlationId = 0;
 };
 
 struct ServerProjectile
@@ -1071,6 +1108,20 @@ ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>&
                                      int damage,
                                      const glm::vec3& knockback,
                                      ServerDamageSource source);
+
+// Shared actor damage boundary. Phase 1 supports the existing player target
+// implementation; NPC callers migrate into this boundary in later phases.
+ServerDamageResult applyActorDamage(
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs,
+    const ServerActorDamageRequest& request);
+
+// Phase-1 actor lookup used by the incremental damage migration. It returns
+// exactly one typed actor and never guesses that an ID is a player.
+ServerActorRef findServerActor(uint32_t actorId,
+                               ServerActorKind actorKind,
+                               std::unordered_map<uint32_t, ServerPlayer>& players,
+                               std::unordered_map<uint32_t, ServerNpc>& npcs);
 ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
     SOCKET sock,
     std::unordered_map<uint32_t, ServerPlayer>& players,

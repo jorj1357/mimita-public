@@ -20,6 +20,7 @@ struct MovementCollisionFeedback {
     bool realWorldContactThisFrame = false;
     uint64_t simulationTick = 0;
     glm::vec3 groundNormal{0.0f, 0.0f, 1.0f};
+    float impactSpeed = 0.0f;
     MovementContactSet contacts;
 };
 

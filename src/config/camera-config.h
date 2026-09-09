@@ -17,9 +17,12 @@ struct CameraConfigData {
     bool cameraSwayEnabled = true;
     float cameraSwayAmount = 1.0f;
     float cameraSwayLandingThreshold = 0.25f;
-    float cameraSwayLandingPitch = 5.0f;
-    float cameraSwayLandingRoll = 3.0f;
-    float cameraSwayReturnRate = 12.0f;
+    float cameraSwayLandingPitchImpulse = 5.0f;
+    float cameraSwayLandingRollImpulse = 3.0f;
+    float cameraSwaySpringStiffness = 28.0f;
+    float cameraSwaySpringDamping = 10.0f;
+    float cameraSwayMaxPitch = 10.0f;
+    float cameraSwayMaxRoll = 6.0f;
 };
 
 class CamConfig {

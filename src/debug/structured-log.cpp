@@ -80,6 +80,9 @@ std::string StructuredLogger::categoryName(StructuredCategory cat) const {
         case StructuredCategory::GlbModels:       return "GLB_MODELS";
         case StructuredCategory::Executable:      return "EXECUTABLE";
         case StructuredCategory::GrenadeLauncher: return "GRENADE_LAUNCHER";
+        case StructuredCategory::Healthbar:        return "HEALTHBAR";
+        case StructuredCategory::Skybox:           return "SKYBOX";
+        case StructuredCategory::ChatLayout:      return "CHAT_LAYOUT";
         case StructuredCategory::Count:           return "COUNT";
     }
     return "UNKNOWN";
@@ -99,6 +102,9 @@ std::string StructuredLogger::categoryDirName(StructuredCategory cat) const {
         case StructuredCategory::GlbModels:       return "GLBModels";
         case StructuredCategory::Executable:      return "Executable";
         case StructuredCategory::GrenadeLauncher: return "GrenadeLauncher";
+        case StructuredCategory::Healthbar:        return "Healthbar";
+        case StructuredCategory::Skybox:           return "Skybox";
+        case StructuredCategory::ChatLayout:       return "ChatLayout";
         case StructuredCategory::Count:           return "Count";
     }
     return "Unknown";
@@ -195,6 +201,12 @@ void StructuredLogger::loadConfig() {
                 cfg.executable = parseCategoryConfig(cats["executable"], cfg.defaultLevel);
             if (cats.contains("grenade_launcher"))
                 cfg.grenadeLauncher = parseCategoryConfig(cats["grenade_launcher"], cfg.defaultLevel);
+            if (cats.contains("healthbar"))
+                cfg.healthbar = parseCategoryConfig(cats["healthbar"], cfg.defaultLevel);
+            if (cats.contains("skybox"))
+                cfg.skybox = parseCategoryConfig(cats["skybox"], cfg.defaultLevel);
+            if (cats.contains("chat_layout"))
+                cfg.chatLayout = parseCategoryConfig(cats["chat_layout"], cfg.defaultLevel);
         }
 
         if (j.contains("sampling")) {
@@ -299,7 +311,10 @@ void StructuredLogger::openCategoryFile(StructuredCategory cat) {
             case StructuredCategory::Rendering:   return mConfig.rendering;
             case StructuredCategory::GlbModels:   return mConfig.glbModels;
         case StructuredCategory::Executable:      return mConfig.executable;
-        case StructuredCategory::GrenadeLauncher: return mConfig.grenadeLauncher;
+            case StructuredCategory::GrenadeLauncher: return mConfig.grenadeLauncher;
+            case StructuredCategory::Healthbar: return mConfig.healthbar;
+            case StructuredCategory::Skybox: return mConfig.skybox;
+            case StructuredCategory::ChatLayout: return mConfig.chatLayout;
     }
         return mConfig.replay;
     }();
@@ -586,6 +601,9 @@ bool StructuredLogger::shouldLog(StructuredCategory cat, StructuredLevel level) 
             case StructuredCategory::GlbModels:   return mConfig.glbModels;
         case StructuredCategory::Executable:      return mConfig.executable;
         case StructuredCategory::GrenadeLauncher: return mConfig.grenadeLauncher;
+        case StructuredCategory::Healthbar: return mConfig.healthbar;
+        case StructuredCategory::Skybox: return mConfig.skybox;
+        case StructuredCategory::ChatLayout: return mConfig.chatLayout;
     }
         return mConfig.replay;
     }();

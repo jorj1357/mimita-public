@@ -125,6 +125,7 @@ MovementState movementStateFromPlayer(const Player& player,
     state.ground.groundLostTimerSeconds = player.ground.groundLostTimer;
     state.ground.airborneTimerSeconds = player.ground.airborneTimer;
     state.ground.landingAirborneDurationSeconds = player.ground.landingAirborneDuration;
+    state.ground.landingImpactSpeed = player.ground.landingImpactSpeed;
     state.ground.landingCooldownSeconds = player.ground.landingCooldown;
     state.ground.worldContactLostTimerSeconds = player.ground.worldContactLostTimer;
 
@@ -192,6 +193,7 @@ void applyMovementStateToPlayer(const MovementState& state, Player& player)
     player.ground.groundLostTimer = state.ground.groundLostTimerSeconds;
     player.ground.airborneTimer = state.ground.airborneTimerSeconds;
     player.ground.landingAirborneDuration = state.ground.landingAirborneDurationSeconds;
+    player.ground.landingImpactSpeed = state.ground.landingImpactSpeed;
     player.ground.landingCooldown = state.ground.landingCooldownSeconds;
     player.ground.worldContactLostTimer = state.ground.worldContactLostTimerSeconds;
 

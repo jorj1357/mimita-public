@@ -35,6 +35,7 @@
 #include "combat/weapon-registry.h"
 #include "combat/weapon-rocket-launcher.h"
 #include "combat/weapon-runtime.h"
+#include "ragdoll/ragdoll-mode.h"
 
 extern DuelManager gDuelManager;
 
@@ -221,24 +222,28 @@ void engineTickCamera(Engine& engine, float dt)
         applyDebugMovement(player, engine.window(), camera, dt);
 
     const auto& camCfg = CamConfig::instance().data();
-    camera.decayPunch(dt, camCfg.cameraSwayReturnRate);
+    camera.decayPunch(dt);
+    camera.updateCameraSway(dt, camCfg.cameraSwaySpringStiffness,
+                            camCfg.cameraSwaySpringDamping,
+                            camCfg.cameraSwayMaxPitch, camCfg.cameraSwayMaxRoll);
     static uint64_t lastLandingSwayTick = 0;
     if (camCfg.cameraSwayEnabled && player.ground.didLand &&
         player.movementSimulationTick != lastLandingSwayTick &&
-        player.ground.landingAirborneDuration >= camCfg.cameraSwayLandingThreshold) {
+        player.ground.landingImpactSpeed > camCfg.cameraSwayLandingThreshold) {
         lastLandingSwayTick = player.movementSimulationTick;
         const float intensity = std::clamp(
-            player.ground.landingAirborneDuration /
-                std::max(camCfg.cameraSwayLandingThreshold, 0.001f),
-            1.0f, 4.0f);
-        camera.addPunch(
-            camCfg.cameraSwayLandingPitch * camCfg.cameraSwayAmount * intensity,
-            camCfg.cameraSwayLandingRoll * camCfg.cameraSwayAmount * intensity);
+            (player.ground.landingImpactSpeed - camCfg.cameraSwayLandingThreshold) /
+                std::max(1.0f, 5.0f - camCfg.cameraSwayLandingThreshold), 0.0f, 1.0f);
+        camera.addCameraSwayImpulse(
+            camCfg.cameraSwayLandingPitchImpulse * camCfg.cameraSwayAmount * intensity,
+            camCfg.cameraSwayLandingRollImpulse * camCfg.cameraSwayAmount * intensity);
         Debug::logThrottled(Debug::Category::General, "camera-landing-sway", 0.25f,
-            "[CAM SWAY] landing tick=%llu amount=%.3f intensity=%.3f pitch=%.3f roll=%.3f\n",
+            "[CAM SWAY] landing tick=%llu impact=%.3f threshold=%.3f intensity=%.3f amount=%.3f pitch=%.3f roll=%.3f stiffness=%.3f damping=%.3f\n",
             (unsigned long long)player.movementSimulationTick,
-            camCfg.cameraSwayAmount, intensity,
-            camCfg.cameraSwayLandingPitch, camCfg.cameraSwayLandingRoll);
+            player.ground.landingImpactSpeed, camCfg.cameraSwayLandingThreshold,
+            intensity, camCfg.cameraSwayAmount,
+            camCfg.cameraSwayLandingPitchImpulse, camCfg.cameraSwayLandingRollImpulse,
+            camCfg.cameraSwaySpringStiffness, camCfg.cameraSwaySpringDamping);
     }
     // Zero weapon recoil punch during replay — it would otherwise add a
     // phantom rotation from decaying gameplay residuals into every frame's
@@ -904,6 +909,10 @@ void engineTickCamera(Engine& engine, float dt)
         camera.fov = camCfg.fov;
         camera.follow(gDuelManager.winnerCameraTarget(), camCfg.offset, camCfg.positionStiffness);
         camera.smoothCollision(gDuelManager.winnerCameraTarget(), world, dt, camCfg.positionStiffness, camCfg.stiffnessEnabled, camCfg.collisionEnabled, camCfg.collisionPushEnabled, camCfg.collisionPushback);
+    } else if (player.ragdollModeActive && RagdollModeSystem::instance().isActive()) {
+        // Ragdoll mode: camera locked to head position
+        glm::vec3 headPos = RagdollModeSystem::instance().getHeadPosition();
+        camera.pos = headPos;
     } else if (!camera.thirdPerson) {
         // First-person camera at eye height
         float eyeHeight = PLAYER_HEIGHT * 0.52f;

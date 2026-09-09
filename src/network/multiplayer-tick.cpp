@@ -864,9 +864,6 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             header->version != PROTOCOL_VERSION)
             return;
 
-        printf("[NET RX] type=%d seq=%u bytes=%d\n",
-               header->type, header->tick, bytes);
-
         // Any validated packet from the server resets the real-time heartbeat
         // so connection timeouts are measured with monotonic wall-clock time,
         // never snapshot sequence gaps or entity absence.

@@ -28,12 +28,12 @@
       "version": 3,
       "elements": {
         "intermissionText": { "type": "text", "text": "INTERMISSION {seconds}", "x": 960, "y": 400, "fontSize": 0.6, "textColor": [1, 1, 1, 0.9] },
-        "modeTitle": { "type": "text", "text": "{mode_name}", "x": 960, "y": 18, "fontSize": 0.42, "textColor": [1, 1, 1, 1] },
-        "matchTime": { "type": "text", "text": "TIME LEFT {minutes}:{seconds}", "x": 960, "y": 72, "fontSize": 0.34, "textColor": [1, 1, 1, 1] },
+        "modeTitle": { "type": "text", "text": "{mode_name}", "x": 960, "y": 58, "fontSize": 0.42, "textColor": [1, 1, 1, 1] },
+        "matchTime": { "type": "text", "text": "TIME LEFT {minutes}:{seconds}", "x": 960, "y": 92, "fontSize": 0.34, "textColor": [1, 1, 1, 1] },
         "leaderboardText": { "type": "text", "fontSize": 0.30, "textColor": [1, 1, 1, 1] },
-        "ffaLeader1": { "type": "text", "text": "{rank}. {name}: {score}K", "x": 20, "y": 20, "fontSize": 0.36, "textColor": [1, 0.85, 0, 1] },
-        "ffaLeader2": { "type": "text", "text": "{rank}. {name}: {score}K", "x": 220, "y": 20, "fontSize": 0.36, "textColor": [0.75, 0.75, 0.8, 1] },
-        "ffaLeader3": { "type": "text", "text": "{rank}. {name}: {score}K", "x": 420, "y": 20, "fontSize": 0.36, "textColor": [0.8, 0.5, 0.2, 1] },
+        "ffaLeader1": { "type": "text", "text": "{rank}. {name}: {score}K", "x": 520, "y": 20, "fontSize": 0.36, "textColor": [1, 0.85, 0, 1] },
+        "ffaLeader2": { "type": "text", "text": "{rank}. {name}: {score}K", "x": 520, "y": 40, "fontSize": 0.36, "textColor": [0.75, 0.75, 0.8, 1] },
+        "ffaLeader3": { "type": "text", "text": "{rank}. {name}: {score}K", "x": 520, "y": 60, "fontSize": 0.36, "textColor": [0.8, 0.5, 0.2, 1] },
         "countdownText": { "type": "text", "text": "{countdown}", "goText": "GO!!!", "x": 960, "y": 100, "fontSize": 2.5, "textColor": [1, 1, 1, 1] }
       }
     },

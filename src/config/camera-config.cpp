@@ -84,14 +84,22 @@ bool CamConfig::load(const std::string& path)
             next.cameraSwayEnabled = sway.value("enabled", next.cameraSwayEnabled);
             next.cameraSwayAmount = sway.value("amount", next.cameraSwayAmount);
             next.cameraSwayLandingThreshold = sway.value("landingThreshold", next.cameraSwayLandingThreshold);
-            next.cameraSwayLandingPitch = sway.value("landingPitch", next.cameraSwayLandingPitch);
-            next.cameraSwayLandingRoll = sway.value("landingRoll", next.cameraSwayLandingRoll);
-            next.cameraSwayReturnRate = sway.value("returnRate", next.cameraSwayReturnRate);
+            next.cameraSwayLandingPitchImpulse = sway.value("landingPitchImpulse", next.cameraSwayLandingPitchImpulse);
+            next.cameraSwayLandingRollImpulse = sway.value("landingRollImpulse", next.cameraSwayLandingRollImpulse);
+            next.cameraSwaySpringStiffness = sway.value("springStiffness", next.cameraSwaySpringStiffness);
+            next.cameraSwaySpringDamping = sway.value("springDamping", next.cameraSwaySpringDamping);
+            next.cameraSwayMaxPitch = sway.value("maxPitch", next.cameraSwayMaxPitch);
+            next.cameraSwayMaxRoll = sway.value("maxRoll", next.cameraSwayMaxRoll);
             if (!std::isfinite(next.cameraSwayAmount) || next.cameraSwayAmount < 0.0f)
                 next.cameraSwayAmount = 1.0f;
             next.cameraSwayAmount = std::clamp(next.cameraSwayAmount, 0.01f, 100.0f);
             next.cameraSwayLandingThreshold = std::max(0.0f, next.cameraSwayLandingThreshold);
-            next.cameraSwayReturnRate = std::max(0.1f, next.cameraSwayReturnRate);
+            if (!std::isfinite(next.cameraSwayLandingPitchImpulse)) next.cameraSwayLandingPitchImpulse = 5.0f;
+            if (!std::isfinite(next.cameraSwayLandingRollImpulse)) next.cameraSwayLandingRollImpulse = 3.0f;
+            if (!std::isfinite(next.cameraSwaySpringStiffness) || next.cameraSwaySpringStiffness <= 0.0f) next.cameraSwaySpringStiffness = 28.0f;
+            if (!std::isfinite(next.cameraSwaySpringDamping) || next.cameraSwaySpringDamping < 0.0f) next.cameraSwaySpringDamping = 10.0f;
+            if (!std::isfinite(next.cameraSwayMaxPitch) || next.cameraSwayMaxPitch <= 0.0f) next.cameraSwayMaxPitch = 10.0f;
+            if (!std::isfinite(next.cameraSwayMaxRoll) || next.cameraSwayMaxRoll <= 0.0f) next.cameraSwayMaxRoll = 6.0f;
         }
 
         mData = next;
@@ -103,6 +111,8 @@ bool CamConfig::load(const std::string& path)
             mData.offset.x, mData.offset.y, mData.offset.z,
             mData.fov, mData.positionStiffness, (int)mData.stiffnessEnabled, (int)mData.collisionEnabled,
             (int)mData.collisionPushEnabled, mData.collisionPushback);
+        Debug::log(Debug::Category::General,
+            "[CAM CONFIG] camera sway settings updated; weapon recoil decay source unchanged\n");
         return true;
     } catch (const json::parse_error& e) {
         mLastWrite = writeTime;

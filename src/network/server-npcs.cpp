@@ -11,6 +11,7 @@
 */
 
 #include "network/server.h"
+#include "network/actor-lifecycle.h"
 #include "network/server-gamemode.h"
 
 #include "npc/npc.h"
@@ -22,6 +23,7 @@
 #include "world/world.h"
 #include "map/map-loader-collision.h"
 #include "config/collision-lod-config.h"
+#include "config/spawn-velocity-config.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
@@ -139,10 +141,14 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
         // Apply the healthall override to the newly adopted real NPC body.
         for (Npc& n : npcSystem.all())
         {
-            if (n.id == kv.first && serverGameOverrides().maxHpOverride > 0)
+            if (n.id == kv.first)
             {
-                n.body.maxHp = serverGameOverrides().maxHpOverride;
-                n.body.currentHp = n.body.maxHp;
+                if (serverGameOverrides().maxHpOverride > 0)
+                {
+                    n.body.maxHp = serverGameOverrides().maxHpOverride;
+                    n.body.currentHp = n.body.maxHp;
+                }
+                finalizeServerNpcSpawn(n, ActorSpawnReason::NpcCreate);
             }
         }
     }
@@ -193,6 +199,27 @@ static void syncServerNpcDamageToNpc(const std::unordered_map<uint32_t, ServerNp
     }
 }
 
+void finalizeServerNpcSpawn(Npc& npc, ActorSpawnReason reason)
+{
+    ActorSpawnEvent lifecycleEvent;
+    lifecycleEvent.entityId = npc.id;
+    lifecycleEvent.actorKind = ActorKind::Npc;
+    lifecycleEvent.reason = reason;
+    lifecycleEvent.transformEpoch = npc.transformEpoch;
+    lifecycleEvent.position = npc.body.pos;
+    lifecycleEvent.lookDirection = glm::vec3(std::cos(npc.body.yaw),
+                                             std::sin(npc.body.yaw), 0.0f);
+    lifecycleEvent = finalizeActorSpawn(lifecycleEvent, npc.avatarName.c_str());
+    npc.body.yaw = std::atan2(lifecycleEvent.lookDirection.y,
+                              lifecycleEvent.lookDirection.x);
+    npc.body.vel = lifecycleEvent.velocity;
+    npc.body.externalImpulse = glm::vec3(0.0f);
+    npc.body.dead = false;
+    npc.body.respawnTimer = 0.0f;
+    npc.body.syncLegacyStateToLayers();
+    npc.body.updateModelWorldTransforms();
+}
+
 // Reset a killed server NPC body back to full health at its spawn point so the
 // snapshot pipeline re-admits it (rebuildServerNpcMap skips dead bodies).
 static void respawnServerNpc(Npc& npc)
@@ -200,25 +227,17 @@ static void respawnServerNpc(Npc& npc)
     const glm::vec3 spawnPos = effectiveServerSpawn(npc.body.respawnPosition);
     npc.body.pos = spawnPos;
     npc.body.respawnPosition = spawnPos;
-    npc.body.vel = glm::vec3(0.0f);
-    npc.body.externalImpulse = glm::vec3(0.0f);
-    // New life: bump the lifecycle counter so clients detect the respawn,
-    // hard-snap the body to the spawn, and reset their death-presentation
-    // state for the next death. Wrap to [1,65535] — 0 is ignored by clients.
+    // New life: bump the lifecycle counter so clients detect the respawn.
     npc.transformEpoch = static_cast<uint16_t>((npc.transformEpoch % 65535) + 1);
     assignNpcAvatar(npc);
-    // healthall override: new spawns get the override max HP.
     if (serverGameOverrides().maxHpOverride > 0)
         npc.body.maxHp = serverGameOverrides().maxHpOverride;
     npc.body.currentHp = npc.body.maxHp;
-    npc.body.dead = false;
-    npc.body.respawnTimer = 0.0f;
     npc.body.killedBy.clear();
     npc.body.spawnFlashTimer = 10.0f;
     npc.attackCooldown = 0.0f;
     resetAllWeaponRuntimesForSpawn(npc.body, "server-npc-respawn");
-    npc.body.syncLegacyStateToLayers();
-    npc.body.updateModelWorldTransforms();
+    finalizeServerNpcSpawn(npc, ActorSpawnReason::Respawn);
     printf("%s [SERVER NPC RESPAWN] id=%u pos=(%.2f,%.2f,%.2f)\n",
            serverTimestamp(), npc.id, spawnPos.x, spawnPos.y, spawnPos.z);
 }
@@ -749,8 +768,6 @@ void simulateSharedNpcs(SOCKET sock,
             ServerDamageResult result = applyServerDamage(
                 players, *nearest, 0, damage, knockback,
                 ServerDamageSource::Hitscan);
-            if (result.killed)
-                serverGamemodeOnNpcDeath(n.id, nearest->id);
             const glm::vec3 realHit = n.lastShotEnd;
             const glm::vec3 realNormal = glm::length(n.lastShotNormal) > 0.001f
                 ? glm::normalize(n.lastShotNormal) : glm::vec3(0.0f, 0.0f, 1.0f);

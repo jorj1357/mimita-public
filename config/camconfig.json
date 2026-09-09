@@ -3,9 +3,12 @@
     "enabled": false,
     "amount": 10.0,
     "landingThreshold": 0.25,
-    "landingPitch": -10.1,
-    "landingRoll": 0.0,
-    "returnRate": 10.0
+    "landingPitchImpulse": -10.1,
+    "landingRollImpulse": 0.0,
+    "springStiffness": 28.0,
+    "springDamping": 10.0,
+    "maxPitch": 10.0,
+    "maxRoll": 6.0
   },
   "thirdPerson": {
     "offset": {

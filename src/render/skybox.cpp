@@ -386,7 +386,7 @@ void Skybox::render(const Camera& camera) {
         return;
     }
 
-    if (StructuredLogger::instance().config().rendering.fileOutput)
+    if (StructuredLogger::instance().shouldLog(StructuredCategory::Skybox, StructuredLevel::Trace))
         SKYDBG("render: CALLED tex=%u shader=%u\n", mCubemapTex, mShader);
 
     // Save render state

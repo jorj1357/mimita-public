@@ -12,6 +12,9 @@
 #include "network/server.h"
 #include "network/server-gamemode.h"
 #include "persistence/persistence-emit.h"
+#include "combat/weapon-registry.h"
+#include "network/network-weapons.h"
+#include "debug/debug-log.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -44,12 +47,31 @@ static uint8_t damageConfirmedSource(ServerDamageSource source)
     }
 }
 
-ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>& players,
-                                     ServerPlayer& target,
-                                     uint32_t attackerPlayerId,
-                                     int damage,
-                                     const glm::vec3& knockback,
-                                     ServerDamageSource source)
+ServerActorRef findServerActor(uint32_t actorId,
+                               ServerActorKind actorKind,
+                               std::unordered_map<uint32_t, ServerPlayer>& players,
+                               std::unordered_map<uint32_t, ServerNpc>& npcs)
+{
+    ServerActorRef ref;
+    ref.id = actorId;
+    ref.kind = actorKind;
+    if (actorKind == ServerActorKind::Npc) {
+        auto it = npcs.find(actorId);
+        if (it != npcs.end()) ref.npc = &it->second;
+    } else {
+        auto it = players.find(actorId);
+        if (it != players.end()) ref.player = &it->second;
+    }
+    return ref;
+}
+
+static ServerDamageResult applyPlayerDamageLegacy(
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    ServerPlayer& target,
+    uint32_t attackerPlayerId,
+    int damage,
+    const glm::vec3& knockback,
+    ServerDamageSource source)
 {
     ServerDamageResult result;
     result.healthBefore = target.health;
@@ -130,15 +152,93 @@ ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>&
             damageSourceName(source), 0, target.pos, target.pos);
     }
 
-    if (result.killed && attackerPlayerId != 0)
-        serverGamemodeOnPlayerDeath(attackerPlayerId, target.id);
-
     printf("%s [SERVER DAMAGE] target=%u attacker=%u source=%s damage=%d "
            "healthBefore=%d healthAfter=%d killed=%d knockback=(%.2f,%.2f,%.2f)\n",
            serverTimestamp(), target.id, attackerPlayerId, damageSourceName(source),
            clampedDamage, result.healthBefore, result.healthAfter,
            (int)result.killed, knockback.x, knockback.y, knockback.z);
     return result;
+}
+
+ServerDamageResult applyActorDamage(
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs,
+    const ServerActorDamageRequest& request)
+{
+    ServerDamageResult result;
+    result.eventId = request.eventId;
+    result.correlationId = request.correlationId;
+
+    const ServerActorRef victim = findServerActor(
+        request.victim.id, request.victim.kind, players, npcs);
+    if (!victim.player || victim.kind != ServerActorKind::Player) {
+        result.rejectionReason = "phase1-player-victim-required";
+        Debug::log(Debug::Category::Networking,
+            "[ACTOR_DAMAGE_REJECTED] victim=%u kind=%u reason=%s event=%u\n",
+            request.victim.id, (unsigned)request.victim.kind,
+            result.rejectionReason.c_str(), request.eventId);
+        return result;
+    }
+
+    if (request.attacker.kind != ServerActorKind::Player) {
+        result.rejectionReason = "phase1-player-attacker-required";
+        Debug::log(Debug::Category::Networking,
+            "[ACTOR_DAMAGE_REJECTED] attacker=%u kind=%u reason=%s event=%u\n",
+            request.attacker.id, (unsigned)request.attacker.kind,
+            result.rejectionReason.c_str(), request.eventId);
+        return result;
+    }
+
+    const ServerActorRef attacker = findServerActor(
+        request.attacker.id, request.attacker.kind, players, npcs);
+    if (!attacker.player) {
+        result.rejectionReason = "attacker-not-found";
+        Debug::log(Debug::Category::Networking,
+            "[ACTOR_DAMAGE_REJECTED] attacker=%u kind=%u reason=%s event=%u\n",
+            request.attacker.id, (unsigned)request.attacker.kind,
+            result.rejectionReason.c_str(), request.eventId);
+        return result;
+    }
+
+    Debug::log(Debug::Category::Networking,
+        "[ACTOR_DAMAGE_BEGIN] attacker=%u victim=%u damage=%d event=%u tick=%u\n",
+        request.attacker.id, request.victim.id, request.damage,
+        request.eventId, request.serverTick);
+    result = applyPlayerDamageLegacy(players, *victim.player,
+                                     attacker.id, request.damage,
+                                     request.knockback, request.source);
+    result.eventId = request.eventId;
+    result.correlationId = request.correlationId;
+    Debug::log(Debug::Category::Networking,
+        "[ACTOR_DAMAGE_APPLIED] attacker=%u victim=%u applied=%d killed=%d health=%d->%d event=%u\n",
+        request.attacker.id, request.victim.id, (int)result.applied,
+        (int)result.killed, result.healthBefore, result.healthAfter,
+        request.eventId);
+    return result;
+}
+
+ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>& players,
+                                     ServerPlayer& target,
+                                     uint32_t attackerPlayerId,
+                                     int damage,
+                                     const glm::vec3& knockback,
+                                     ServerDamageSource source)
+{
+    // Compatibility wrapper for existing callers. Player-to-player damage
+    // now crosses the shared actor boundary; NPC callers retain their legacy
+    // behavior until their migration phase supplies the NPC registry.
+    if (attackerPlayerId != 0) {
+        std::unordered_map<uint32_t, ServerNpc> noNpcs;
+        ServerActorDamageRequest request;
+        request.attacker = {attackerPlayerId, ServerActorKind::Player, nullptr, nullptr};
+        request.victim = {target.id, ServerActorKind::Player, nullptr, nullptr};
+        request.damage = damage;
+        request.knockback = knockback;
+        request.source = source;
+        return applyActorDamage(players, noNpcs, request);
+    }
+    return applyPlayerDamageLegacy(players, target, attackerPlayerId,
+                                   damage, knockback, source);
 }
 
 ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
@@ -192,6 +292,20 @@ ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
     event.knockX = knockback.x;
     event.knockY = knockback.y;
     event.knockZ = knockback.z;
+    if (result.killed)
+    {
+        const char* weaponId = networkWeaponTypeName(weapon);
+        std::string weaponDisplayName = weaponId;
+        if (const WeaponDefinition* definition = WeaponRegistry::instance().get(weaponId))
+            weaponDisplayName = definition->displayName.empty()
+                ? definition->id : definition->displayName;
+        if (attackerNpcId != 0)
+            serverGamemodeOnNpcDeath(attackerNpcId, target.id, weaponId,
+                                     weaponDisplayName, event.eventId);
+        else if (attackerPlayerId != 0)
+            serverGamemodeOnPlayerDeath(attackerPlayerId, target.id, weaponId,
+                                        weaponDisplayName, event.eventId);
+    }
     return queueReliableGameplayEventToAll(
         sock, players, &event, sizeof(event), event.eventId,
         event.eventSessionId, totalPacketsOut);

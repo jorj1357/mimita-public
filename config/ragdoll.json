@@ -1,16 +1,42 @@
-// 9 8 2026 1012 am jorj - todo put settings for ragdoll mode like, 
-// limbs hitboxes, visible/invisible hitboxes, with alpha
-// limbs hitbox shape it shoudl be capsule
-// limbs size and offset, limbs should be  from the exact volume center
-// of the limb its from, like head has a  spehre or a capsule aronud it 
-// same for arms torso legs etc etc
-
-// gravity overall
-// and attachemnt points, like when ur a ragdoll, waht it rotates about, 
-// what axis it rotates around
-// and like limits? or the type of the rotator that attachment is?
-// e.g. anchor is plrorigin
-// torso is from plr origin 
-// arms attached to the torso with an attachemnt point so u can look up down extend
-// retract etc
-// just cant have ur arms go into ur body that cant happen etc 
+{
+    "enabled": true,
+    "toggle_key": "G",
+    "gravity_scale": 1.0,
+    "linear_damping": 0.15,
+    "angular_damping": 0.3,
+    "joint_stiffness": 2000.0,
+    "joint_damping": 80.0,
+    "world_collision": true,
+    "capsules": {
+        "head":     { "radius": 0.15, "half_height": 0.12, "offset": [0, 0, 1.15] },
+        "torso":    { "radius": 0.25, "half_height": 0.2,  "offset": [0, 0, 0.6] },
+        "leftArm":  { "radius": 0.08, "half_height": 0.18, "offset": [0, 0.45, 1.0] },
+        "rightArm": { "radius": 0.08, "half_height": 0.18, "offset": [0, -0.45, 1.0] },
+        "leftLeg":  { "radius": 0.10, "half_height": 0.2,  "offset": [0, 0.2, -0.1] },
+        "rightLeg": { "radius": 0.10, "half_height": 0.2,  "offset": [0, -0.2, -0.1] }
+    },
+    "attachments": {
+        "head":     { "parent": "torso", "offset": [0, 0, 0.55], "cone_limit_deg": 45 },
+        "leftArm":  { "parent": "torso", "offset": [0, 0.3, 0.4], "cone_limit_deg": 90 },
+        "rightArm": { "parent": "torso", "offset": [0, -0.3, 0.4], "cone_limit_deg": 90 },
+        "leftLeg":  { "parent": "torso", "offset": [0, 0.15, -0.4], "cone_limit_deg": 60 },
+        "rightLeg": { "parent": "torso", "offset": [0, -0.15, -0.4], "cone_limit_deg": 60 }
+    },
+    "grab": {
+        "left_key": "A",
+        "right_key": "D",
+        "extend_left_mouse": 0,
+        "extend_right_mouse": 1,
+        "extend_force": 50.0,
+        "grab_reach": 2.5,
+        "grab_radius": 0.3
+    },
+    "weapon": {
+        "one_handed_enabled": true,
+        "hand": "right"
+    },
+    "camera": {
+        "mode": "locked_to_head",
+        "smooth_factor": 0.0
+    }
+}

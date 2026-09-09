@@ -30,6 +30,7 @@
 #include "map/map-catalog.h"
 #include "config/networking-config.h"
 #include "config/movement-config.h"
+#include "config/spawn-velocity-config.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "audio/audio.h"
@@ -535,10 +536,6 @@ int runServer(const LaunchOptions& options)
                                               AuthSystem::instance().user().id);
     while (true)
     {
-        printf("[LOOP TOP] tick=%u players=%zu entering main loop iteration\n",
-               tick, players.size());
-        fflush(stdout);
-
         auto loopStart = std::chrono::steady_clock::now();
         // Auto-exit when --timeout is set (for CI/agent testing)
         if (options.timeoutSecs > 0 && nowMs() - serverStartMs > (uint64_t)options.timeoutSecs * 1000)
@@ -562,6 +559,9 @@ int runServer(const LaunchOptions& options)
         }
         CommunityServerConfig::instance().pollReload();
         DuelWeaponPool::instance().pollReload();
+        // The authoritative server owns respawn velocity. Reload it here so
+        // changing spawnvelocity.json affects the next life without restart.
+        SpawnVelocityConfig::instance().pollReload();
 
         // Hot-reload the movement preset (config/movement.json + preset) so the
         // server's movement-validation tolerances match the client's live tuning.
@@ -1066,6 +1066,7 @@ static void simulateOneServerTick(ListenServerState& state)
         listenNpcDifficultyRevision = NpcDifficultyConfig::instance().revision();
     }
     CommunityServerConfig::instance().pollReload();
+    SpawnVelocityConfig::instance().pollReload();
 
     {
         char buffer[2048];

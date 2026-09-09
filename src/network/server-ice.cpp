@@ -399,9 +399,8 @@ void tickServerIceTransports(SOCKET sock,
             ++packetsProcessed;
         }
 
-        printf("[ICE POLL DONE] playerId=%u pkts=%zu processed=%zu — return to loop\n",
-               player.id, pkts.size(), packetsProcessed);
-        fflush(stdout);
+        // Empty poll results are normal transport work, not diagnostics.
+        // Keep packet-level diagnostics behind the networking debug category.
     }
 
     // Deferred erasure: remove players that disconnected via ICE transport.

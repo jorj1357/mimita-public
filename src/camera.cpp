@@ -78,13 +78,39 @@ void Camera::addPunch(float pitchAmount, float yawAmount) {
     punchYaw = glm::clamp(punchYaw + yawAmount, -6.0f, 6.0f);
 }
 
+void Camera::addCameraSwayImpulse(float pitchImpulse, float rollImpulse) {
+    if (!std::isfinite(pitchImpulse) || !std::isfinite(rollImpulse)) return;
+    sway.velocity.x += pitchImpulse;
+    sway.velocity.y += rollImpulse;
+}
+
+void Camera::updateCameraSway(float dt, float stiffness, float damping,
+                              float maxPitch, float maxRoll) {
+    dt = std::clamp(dt, 0.0f, 0.1f);
+    stiffness = std::max(0.01f, stiffness);
+    damping = std::max(0.0f, damping);
+    const glm::vec2 acceleration = -sway.offset * stiffness - sway.velocity * damping;
+    sway.velocity += acceleration * dt;
+    sway.offset += sway.velocity * dt;
+    sway.offset.x = glm::clamp(sway.offset.x, -std::abs(maxPitch), std::abs(maxPitch));
+    sway.offset.y = glm::clamp(sway.offset.y, -std::abs(maxRoll), std::abs(maxRoll));
+    if (!std::isfinite(sway.offset.x) || !std::isfinite(sway.offset.y) ||
+        !std::isfinite(sway.velocity.x) || !std::isfinite(sway.velocity.y))
+        sway = {};
+}
+
 glm::mat4 Camera::getView() const {
-    if (roll != 0.0f) {
+    const glm::vec3 swayedFront = glm::normalize(
+        glm::angleAxis(glm::radians(sway.offset.x), right) * front);
+    const glm::vec3 swayedUpBase = glm::normalize(
+        glm::cross(right, swayedFront));
+    const float totalRoll = roll + sway.offset.y;
+    if (totalRoll != 0.0f) {
         glm::vec3 rolledUp = glm::normalize(
-            glm::angleAxis(glm::radians(roll), front) * up);
-        return glm::lookAt(pos, pos + front, rolledUp);
+            glm::angleAxis(glm::radians(totalRoll), swayedFront) * swayedUpBase);
+        return glm::lookAt(pos, pos + swayedFront, rolledUp);
     }
-    return glm::lookAt(pos, pos + front, up);
+    return glm::lookAt(pos, pos + swayedFront, swayedUpBase);
 }
 
 glm::mat4 Camera::getProj(float width, float height) const {

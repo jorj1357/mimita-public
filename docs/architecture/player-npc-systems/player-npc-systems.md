@@ -20,6 +20,12 @@ Players and NPCs must use the same exact paths for movement, aiming, firing,
 jumping, dashing, down-dashing, freezing, collision, damage, knockback,
 animation, inventory, interaction, death, respawn, and network replication.
 
+The actor lifecycle is the required shared owner for becoming alive. First join,
+reconnect, normal respawn, NPC creation, duel/gamemode spawn, map change, and
+terminal-triggered respawn must enter the same lifecycle. Player and NPC code
+may adapt the final network or AI details, but neither may own a parallel spawn
+algorithm.
+
 There must not be a player implementation and a parallel NPC implementation
 that gradually develop different rules. If a behavior is valid for one actor,
 the shared actor/action path should make it valid for the other.

@@ -33,6 +33,7 @@
 #include "combat/weapon-registry.h"
 #include "combat/death-system.h"
 #include "ragdoll/ragdoll.h"
+#include "ragdoll/ragdoll-mode.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "entities/death-ghost.h"
@@ -510,6 +511,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         }
     }
     { MIMITA_PERF_SCOPE("EffectRender"); DeathSystem::instance().render(camera); }
+    { MIMITA_PERF_SCOPE("RagdollModeRender"); RagdollModeSystem::instance().render(camera); }
     // [RAGDOLL RENDER REMOVED] — DeadBody render handles corpses
     // Local weapon render moved earlier (before renderRemoteWeapon) to prevent
     // shared WeaponViewModel transform from being overwritten by remote players.

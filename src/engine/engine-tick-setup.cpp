@@ -7,6 +7,7 @@
 #include "analytics/analytics-manager.h"
 #include "avatar/avatar.h"
 #include "ragdoll/ragdoll-config.h"
+#include "ragdoll/ragdoll-mode-config.h"
 
 #include "crosshair/crosshair-config.h"
 #include "config/gameplay-config.h"
@@ -121,6 +122,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
         SizeScalingConfig::instance().pollReload();
         AvatarSystem::instance().pollHotReload();
         RagdollConfig::instance().pollReload();
+        RagdollModeConfig::instance().pollReload();
         RagdollDeathConfig::instance().pollReload();
         SpawnVelocityConfig::instance().pollReload();
         if (NpcDifficultyConfig::instance().pollReload())

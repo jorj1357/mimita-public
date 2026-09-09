@@ -8,9 +8,9 @@
     "comment_7": "radial = random 360-degree horizontal direction",
     "comment_8": "speed reference: dash is 50.0, default spawn impulse is 40.0",
     "enabled": true,
-    "mode": "radial",
+    "mode": "look",
     "speed": 40.0,
-    "direction": [1.0, 1.0, 1.0],
+    "direction": [1.0, 0.0, 0.0],
     "apply_vertical": false,
     "random_range": [-180.0, 180.0]
 }

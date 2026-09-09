@@ -25,6 +25,9 @@
 #include "combat/death-system.h"
 #include "effects/hit-effects.h"
 #include "void-death/void-death.h"
+#include "ragdoll/ragdoll-mode.h"
+#include "ragdoll/ragdoll-mode-config.h"
+#include "terminal/terminal-state.h"
 
 #include <cmath>
 #include <glm/glm.hpp>
@@ -63,10 +66,36 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     if (!sim.player || !sim.world || !sim.npcSystem) return;
 
     if (!sim.player->dead) {
-        MIMITA_PERF_SCOPE("PhysicsMainUpdate");
-        setCollisionEntityContext("Player", 0, false);
-        physicsMainUpdate(*sim.player, *sim.world, inputStateFromFrame(frame), TICK_DT);
-        clearCollisionEntityContext();
+        // Handle ragdoll mode toggle
+        static bool ragdollTogglePrev = false;
+        bool ragdollToggleNow = frame.ragdollTogglePressed;
+        if (ragdollToggleNow && !ragdollTogglePrev && RagdollModeConfig::instance().data().enabled) {
+            auto& ragdoll = RagdollModeSystem::instance();
+            if (ragdoll.isActive()) {
+                ragdoll.deactivate(*sim.player);
+                sim.player->ragdollModeActive = false;
+            } else {
+                ragdoll.activate(*sim.player);
+                sim.player->ragdollModeActive = true;
+            }
+        }
+        ragdollTogglePrev = ragdollToggleNow;
+
+        if (sim.player->ragdollModeActive && RagdollModeSystem::instance().isActive()) {
+            MIMITA_PERF_SCOPE("RagdollModeUpdate");
+            InputState ragdollInput = inputStateFromFrame(frame);
+            ragdollInput.grabLeftHeld = frame.grabLeftHeld;
+            ragdollInput.grabRightHeld = frame.grabRightHeld;
+            ragdollInput.extendLeftMouse = frame.extendLeftMouse;
+            ragdollInput.extendRightMouse = frame.extendRightMouse;
+            RagdollModeSystem::instance().update(TICK_DT, *sim.world, *sim.player,
+                ragdollInput, THE_CAMERA);
+        } else {
+            MIMITA_PERF_SCOPE("PhysicsMainUpdate");
+            setCollisionEntityContext("Player", 0, false);
+            physicsMainUpdate(*sim.player, *sim.world, inputStateFromFrame(frame), TICK_DT);
+            clearCollisionEntityContext();
+        }
     }
 
     {

@@ -65,7 +65,10 @@
       "level": "trace",
       "file_output": true
     },
-    "grenade_launcher": { "level": "trace", "file_output": true, "throttle": 0.0 }
+    "grenade_launcher": { "level": "trace", "file_output": true, "throttle": 0.0 },
+    "healthbar": { "level": "off", "file_output": false, "throttle": 0.0 },
+    "skybox": { "level": "off", "file_output": false, "throttle": 0.0 },
+    "chat_layout": { "level": "off", "file_output": false, "throttle": 0.0 }
   },
 
   "sampling": {

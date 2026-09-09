@@ -18,6 +18,8 @@
 #include "map/map-catalog.h"
 #include "network/community-server-config.h"
 #include "npc/npc-difficulty-config.h"
+#include "combat/weapon-registry.h"
+#include "network/network-weapons.h"
 
 #include <algorithm>
 #include <chrono>
@@ -282,8 +284,14 @@ void handleNpcDamageRequest(SOCKET sock, const char* buffer, int bytes,
     if (killed)
     {
         target.health = 0;
+        const char* weaponId = networkWeaponTypeName(req->weapon);
+        std::string weaponDisplayName = weaponId;
+        if (const WeaponDefinition* definition = WeaponRegistry::instance().get(weaponId))
+            weaponDisplayName = definition->displayName.empty()
+                ? definition->id : definition->displayName;
         serverGamemodeOnPlayerKilledNpc(req->header.playerId,
-                                        target.entityId);
+                                        target.entityId, weaponId,
+                                        weaponDisplayName, req->header.tick);
         printf("%s [NET NPC KILL] shooter=%u npcId=%u name=\"%s\"\n",
                serverTimestamp(), req->header.playerId,
                target.entityId, target.name.c_str());
@@ -465,7 +473,26 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
     {
         printf("%s [SERVER COMMAND] npc_delete_all by playerId=%u count=%zu\n",
                serverTimestamp(), it->second.id, npcs.size());
+        std::vector<uint32_t> removedNpcIds;
+        removedNpcIds.reserve(npcs.size());
+        for (const auto& npc : npcs) removedNpcIds.push_back(npc.first);
         npcs.clear();
+        // Keep the authoritative match snapshot in lockstep with the actor
+        // store. Otherwise deleted NPC rows survive until a later timeout.
+        ServerGamemodeState& match = serverGamemodeState();
+        for (uint32_t npcId : removedNpcIds)
+        {
+            match.participants.erase(std::remove(match.participants.begin(), match.participants.end(), npcId),
+                                     match.participants.end());
+            match.participantNames.erase(npcId);
+            match.ffaKills.erase(npcId);
+            match.ffaDeaths.erase(npcId);
+            match.matchTeams.erase(npcId);
+        }
+        match.ffaKills.clear();
+        match.ffaDeaths.clear();
+        match.stateBroadcastPending = true;
+        ++match.stateVersion;
         ack(true, "applied: npc_delete_all");
     }
     else if (commandStr == "respawn_all")
