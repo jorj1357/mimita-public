@@ -9,6 +9,7 @@
 */
 
 #include "network/multiplayer-context.h"
+#include "network/community-match-client.h"
 #include "network/packets.h"
 #include "network/connection-health.h"
 #include "network/simulation-constants.h"
@@ -191,6 +192,10 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
            disconnectPolicyName(policy),
            ctx.connectionStatus.c_str());
 
+    // CommunityMatchClient is a process-wide singleton, so clearing the
+    // MultiplayerContext alone would leave an old server countdown cached.
+    CommunityMatchClient::instance().reset();
+
     // Policy: keep the reconnect token for recoverable failures (Timeout and
     // ConnectionFailure) so the client keeps reconnecting to the SAME session
     // for the full grace window instead of giving up instantly. Only clear it
@@ -337,6 +342,9 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
 
 bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::string& playerName)
 {
+    // A new connection may target a server whose match IDs restarted at a
+    // lower value. Reset cached community state before packet ordering starts.
+    CommunityMatchClient::instance().reset();
     ctx.serverAddress = address;
 
     if (!netStartup())
@@ -449,7 +457,10 @@ void mpShutdown(MultiplayerContext& ctx)
     mpIceConnectCancel();
 
     if (!ctx.active)
+    {
+        CommunityMatchClient::instance().reset();
         return;
+    }
 
     printf("[NET DISCONNECT] initiating shutdown for playerId=%u\n", ctx.localPlayerId);
 

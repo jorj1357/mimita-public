@@ -98,6 +98,7 @@ void serverStartMode(const ServerGamemodeState& rules)
     d.blueTeamKills = 0;
     d.matchTeams.clear();
     d.participants.clear();
+    d.participantNames.clear();
     d.victoryType = 0;
     d.winnerTeam = -1;
     d.killEventCounter = 0;
@@ -383,12 +384,12 @@ void broadcastDuelState(SOCKET sock,
         for (int i = 0; i < 3 && i < (int)sorted.size(); ++i) {
             pkt.ffaLeaderIds[i] = sorted[i].first;
             pkt.ffaLeaderScores[i] = sorted[i].second;
-            auto nameIt = players.find(sorted[i].first);
-            if (nameIt != players.end())
-                std::strncpy(pkt.ffaLeaderNames[i], nameIt->second.name.c_str(), sizeof(pkt.ffaLeaderNames[i]) - 1);
+            auto nameIt = d.participantNames.find(sorted[i].first);
+            if (nameIt != d.participantNames.end())
+                std::strncpy(pkt.ffaLeaderNames[i], nameIt->second.c_str(), sizeof(pkt.ffaLeaderNames[i]) - 1);
             else
                 std::snprintf(pkt.ffaLeaderNames[i], sizeof(pkt.ffaLeaderNames[i]),
-                              "NPC %u", sorted[i].first);
+                              "NPC-%u", sorted[i].first);
         }
     }
 
@@ -625,6 +626,8 @@ bool reloadGamemodeMap(SOCKET sock,
                    std::unordered_map<uint32_t, ServerPlayer>& players,
                    HeadlessWorld& world,
                    World& npcWorld,
+                   std::unordered_map<uint32_t, ServerNpc>& npcs,
+                   NpcSystem& npcSystem,
                    const std::string& mapId,
                    uint64_t& totalPacketsOut)
 {
@@ -639,6 +642,27 @@ bool reloadGamemodeMap(SOCKET sock,
     assignGamemodeSpawns(d, world);
     broadcastMapChange(sock, d, mapId, players, totalPacketsOut);
     teleportGamemodeParticipantsToSpawns(d, players);
+    for (Npc& npc : npcSystem.all())
+    {
+        const glm::vec3 spawn = gamemodeSpawnPoint(d);
+        npc.body.pos = spawn;
+        npc.body.respawnPosition = spawn;
+        npc.body.vel = glm::vec3(0.0f);
+        npc.body.externalImpulse = glm::vec3(0.0f);
+        npc.body.currentHp = npc.body.maxHp;
+        npc.body.dead = false;
+        npc.body.respawnTimer = 0.0f;
+        npc.body.syncLegacyStateToLayers();
+        npc.body.updateModelWorldTransforms();
+        auto mirror = npcs.find(npc.id);
+        if (mirror != npcs.end())
+        {
+            mirror->second.pos = spawn;
+            mirror->second.vel = glm::vec3(0.0f);
+            mirror->second.health = npc.body.currentHp;
+            ++mirror->second.transformEpoch;
+        }
+    }
     // Map changes are actor lifecycle boundaries, not duel-only teleports.
     // Every active player receives a fresh authoritative spawn on the new map.
     for (auto& kv : players) {
@@ -664,6 +688,8 @@ bool rotateToNextGamemodeMap(SOCKET sock,
                          std::unordered_map<uint32_t, ServerPlayer>& players,
                          HeadlessWorld& world,
                          World& npcWorld,
+                         std::unordered_map<uint32_t, ServerNpc>& npcs,
+                         NpcSystem& npcSystem,
                          uint64_t& totalPacketsOut)
 {
     if (d.mapPool.size() <= 1)
@@ -699,6 +725,27 @@ bool rotateToNextGamemodeMap(SOCKET sock,
             assignGamemodeSpawns(d, world);
             broadcastMapChange(sock, d, cand, players, totalPacketsOut);
             teleportGamemodeParticipantsToSpawns(d, players);
+            for (Npc& npc : npcSystem.all())
+            {
+                const glm::vec3 spawn = gamemodeSpawnPoint(d);
+                npc.body.pos = spawn;
+                npc.body.respawnPosition = spawn;
+                npc.body.vel = glm::vec3(0.0f);
+                npc.body.externalImpulse = glm::vec3(0.0f);
+                npc.body.currentHp = npc.body.maxHp;
+                npc.body.dead = false;
+                npc.body.respawnTimer = 0.0f;
+                npc.body.syncLegacyStateToLayers();
+                npc.body.updateModelWorldTransforms();
+                auto mirror = npcs.find(npc.id);
+                if (mirror != npcs.end())
+                {
+                    mirror->second.pos = spawn;
+                    mirror->second.vel = glm::vec3(0.0f);
+                    mirror->second.health = npc.body.currentHp;
+                    ++mirror->second.transformEpoch;
+                }
+            }
             Debug::warn(Debug::Category::Duel,
                 "[DUEL SERVER] rotated to map %s (spawns=%zu)\n",
                 cand.c_str(), world.spawnPoints.size());
@@ -717,6 +764,7 @@ void assignMatchParticipants(ServerGamemodeState& d,
                              std::unordered_map<uint32_t, ServerNpc>* npcs = nullptr)
 {
     d.participants.clear();
+    d.participantNames.clear();
     d.ffaKills.clear();
     d.ffaDeaths.clear();
     d.matchTeams.clear();
@@ -726,6 +774,7 @@ void assignMatchParticipants(ServerGamemodeState& d,
     for (const auto& kv : players) {
         if (kv.second.spawnState == ServerPlayer::Active) {
             d.participants.push_back(kv.first);
+            d.participantNames[kv.first] = kv.second.name;
             d.ffaKills[kv.first] = 0;
             d.ffaDeaths[kv.first] = 0;
         }
@@ -735,6 +784,8 @@ void assignMatchParticipants(ServerGamemodeState& d,
         for (const auto& kv : *npcs) {
             if (kv.second.health <= 0) continue;
             d.participants.push_back(kv.first);
+            d.participantNames[kv.first] = kv.second.name.empty()
+                ? "NPC-" + std::to_string(kv.first) : kv.second.name;
             d.ffaKills[kv.first] = 0;
             d.ffaDeaths[kv.first] = 0;
         }
@@ -761,37 +812,71 @@ void assignMatchParticipants(ServerGamemodeState& d,
     }
 }
 
-void teleportAllParticipantsToSpawns(ServerGamemodeState& d,
-                                     std::unordered_map<uint32_t, ServerPlayer>& players)
+void resetGamemodeActorsAtMapSpawn(
+    ServerGamemodeState& d,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs,
+    NpcSystem& npcSystem)
 {
     for (uint32_t pid : d.participants) {
-        auto it = players.find(pid);
-        if (it == players.end()) continue;
-        ServerPlayer& p = it->second;
         const glm::vec3 spawn = gamemodeSpawnPoint(d);
-        p.duelSpawnPos = spawn;
-        p.hasDuelSpawnPos = true;
-        p.respawnSeconds = 0.0f;
-        if (!p.dead) {
-            beginAuthoritativeTransform(p, spawn, glm::vec3(0.0f), p.yaw, "match-spawn");
+        auto playerIt = players.find(pid);
+        if (playerIt != players.end()) {
+            ServerPlayer& p = playerIt->second;
+            // Rebuild the authoritative inventory from the currently
+            // selected community weapon set at every managed-mode boundary.
+            // This prevents a broad initial inventory from surviving into a
+            // later restricted FFA/TDM round.
+            resetPlayerForSpawn(p, true);
+            p.duelSpawnPos = spawn;
+            p.hasDuelSpawnPos = true;
+            p.respawnSeconds = 0.0f;
+            beginAuthoritativeTransform(p, spawn, glm::vec3(0.0f), p.yaw, "gamemode-spawn");
             p.justRespawned = true;
+            continue;
+        }
+
+        auto mirrorIt = npcs.find(pid);
+        if (mirrorIt == npcs.end()) continue;
+        for (Npc& npc : npcSystem.all()) {
+            if (npc.id != pid) continue;
+            npc.body.pos = spawn;
+            npc.body.respawnPosition = spawn;
+            npc.body.vel = glm::vec3(0.0f);
+            npc.body.externalImpulse = glm::vec3(0.0f);
+            npc.body.currentHp = npc.body.maxHp;
+            npc.body.dead = false;
+            npc.body.respawnTimer = 0.0f;
+            for (auto it = npc.body.weaponRuntimes.begin();
+                 it != npc.body.weaponRuntimes.end(); ) {
+                if (!serverCommunityWeaponAllowed(it->first))
+                    it = npc.body.weaponRuntimes.erase(it);
+                else
+                    ++it;
+            }
+            if (!serverCommunityWeaponAllowed(npc.body.equippedWeaponId)) {
+                npc.body.equippedWeaponId.clear();
+                npc.body.equippedSlot = -1;
+                npc.body.hasValidWeapon = false;
+                if (!npc.body.weaponRuntimes.empty()) {
+                    npc.body.equippedWeaponId = npc.body.weaponRuntimes.begin()->first;
+                    if (const WeaponDefinition* def =
+                            WeaponRegistry::instance().get(npc.body.equippedWeaponId))
+                        npc.body.equippedSlot = def->slot;
+                    npc.body.hasValidWeapon = true;
+                }
+            }
+            npc.body.syncLegacyStateToLayers();
+            npc.body.updateModelWorldTransforms();
+            mirrorIt->second.pos = spawn;
+            mirrorIt->second.vel = glm::vec3(0.0f);
+            mirrorIt->second.health = npc.body.currentHp;
+            ++mirrorIt->second.transformEpoch;
+            break;
         }
         Debug::log(Debug::Category::Duel,
-            "[MatchSpawn] player=%u spawn=(%.3f,%.3f,%.3f)\n",
+            "[GamemodeSpawn] actor=%u spawn=(%.3f,%.3f,%.3f)\n",
             pid, spawn.x, spawn.y, spawn.z);
-    }
-}
-
-void respawnAllParticipants(ServerGamemodeState& d,
-                            std::unordered_map<uint32_t, ServerPlayer>& players)
-{
-    for (uint32_t pid : d.participants) {
-        auto it = players.find(pid);
-        if (it == players.end()) continue;
-        ServerPlayer& p = it->second;
-        p.duelSpawnPos = gamemodeSpawnPoint(d);
-        p.hasDuelSpawnPos = true;
-        p.respawnSeconds = 0.0f;
     }
 }
 
@@ -811,6 +896,8 @@ void resetMatchScores(ServerGamemodeState& d)
 
 void beginMatchCountdown(ServerGamemodeState& d,
                          std::unordered_map<uint32_t, ServerPlayer>& players,
+                         std::unordered_map<uint32_t, ServerNpc>& npcs,
+                         NpcSystem& npcSystem,
                          uint32_t currentTick)
 {
     ++d.duelId;
@@ -826,7 +913,7 @@ void beginMatchCountdown(ServerGamemodeState& d,
     d.matchTimeLimitTick = 0;
     resetMatchScores(d);
     d.phase = DUEL_PHASE_COUNTDOWN;
-    teleportAllParticipantsToSpawns(d, players);
+    resetGamemodeActorsAtMapSpawn(d, players, npcs, npcSystem);
     Debug::log(Debug::Category::Duel,
         "[ServerMatch] countdown started mode=%s duelId=%u matchStartTick=%u timeLimitTick=%u participants=%zu\n",
         d.matchMode.c_str(), d.duelId, d.matchStartTick, d.matchTimeLimitTick, d.participants.size());
@@ -1059,7 +1146,7 @@ void serverGamemodeTick(SOCKET sock,
                 d.pendingAutomaticMap.clear();
                 lastNoticeMap.clear();
                 lastNotice = UINT32_MAX;
-                if (reloadGamemodeMap(sock, d, players, world, npcWorld, next, totalPacketsOut)) {
+                if (reloadGamemodeMap(sock, d, players, world, npcWorld, npcs, npcSystem, next, totalPacketsOut)) {
                     d.nextMapRotationMs = now + (uint64_t)d.mapRotationMinutes * 60000ull;
                     npcSystem.destroyAll();
                     size_t spawnIndex = 0;
@@ -1095,7 +1182,7 @@ void serverGamemodeTick(SOCKET sock,
         d.pendingManualMap.clear();
         if (!mapId.empty())
         {
-            if (reloadGamemodeMap(sock, d, players, world, npcWorld, mapId, totalPacketsOut)) {
+            if (reloadGamemodeMap(sock, d, players, world, npcWorld, npcs, npcSystem, mapId, totalPacketsOut)) {
                 npcSystem.destroyAll();
                 size_t spawnIndex = 0;
                 for (auto& kv : npcs) {
@@ -1125,14 +1212,14 @@ void serverGamemodeTick(SOCKET sock,
         // Instant respawn near the match anchor with full HP/ammo and a fresh
         // random offset so the exact respawn spot is never predictable.
         auto victimIt = players.find(victimId);
-        if (victimIt != players.end())
+        if (!d.pendingVictimIsNpc && victimIt != players.end())
         {
             victimIt->second.respawnSeconds = 0.0f;
             victimIt->second.duelSpawnPos = gamemodeSpawnPoint(d);
         }
 
         // Tell the killer where the victim respawned (tracer).
-        if (killerId != victimId)
+        if (killerId != victimId && !d.pendingVictimIsNpc)
         {
             DuelEnemySpawnPacket tracer{};
             tracer.header.type = PACKET_DUEL_ENEMY_SPAWN;
@@ -1233,10 +1320,10 @@ void serverGamemodeTick(SOCKET sock,
             {
                 // If the current map has no spawn points, rotate.
                 if (world.spawnPoints.empty())
-                    rotateToNextGamemodeMap(sock, d, players, world, npcWorld, totalPacketsOut);
+                    rotateToNextGamemodeMap(sock, d, players, world, npcWorld, npcs, npcSystem, totalPacketsOut);
                 assignGamemodeSpawns(d, world);
                 assignMatchParticipants(d, players, &npcs);
-                beginMatchCountdown(d, players, tick);
+                beginMatchCountdown(d, players, npcs, npcSystem, tick);
                 ++d.stateVersion;
                 broadcastDuelState(sock, d, players, totalPacketsOut);
                 Debug::warn(Debug::Category::Duel,
@@ -1272,7 +1359,7 @@ void serverGamemodeTick(SOCKET sock,
                 d.matchStartTick = tick;
                 if (d.timeLimitSeconds > 0)
                     d.matchTimeLimitTick = tick + (uint32_t)(d.timeLimitSeconds * 60.0f);
-                respawnAllParticipants(d, players);
+                resetGamemodeActorsAtMapSpawn(d, players, npcs, npcSystem);
                 ++d.stateVersion;
                 d.lastBroadcastTick = tick;
                 Debug::log(Debug::Category::Duel,
@@ -1331,10 +1418,10 @@ void serverGamemodeTick(SOCKET sock,
             {
                 // Rotate map if configured
                 if (d.rotateMaps && d.mapPool.size() > 1)
-                    rotateToNextGamemodeMap(sock, d, players, world, npcWorld, totalPacketsOut);
+                    rotateToNextGamemodeMap(sock, d, players, world, npcWorld, npcs, npcSystem, totalPacketsOut);
                 assignGamemodeSpawns(d, world);
                 assignMatchParticipants(d, players, &npcs);
-                beginMatchCountdown(d, players, tick);
+                beginMatchCountdown(d, players, npcs, npcSystem, tick);
                 ++d.stateVersion;
                 broadcastDuelState(sock, d, players, totalPacketsOut);
                 Debug::log(Debug::Category::Duel,
@@ -1376,7 +1463,7 @@ void serverGamemodeTick(SOCKET sock,
             // If the current map has no spawn points (e.g. the host picked a
             // spawn-less map), rotate to a spawn-capable one before starting.
             if (world.spawnPoints.empty())
-                rotateToNextGamemodeMap(sock, d, players, world, npcWorld, totalPacketsOut);
+                rotateToNextGamemodeMap(sock, d, players, world, npcWorld, npcs, npcSystem, totalPacketsOut);
             // Drop the practice NPC(s) once the real duel is about to start.
             npcs.clear();
             npcSystem.destroyAll();
@@ -1443,7 +1530,7 @@ void serverGamemodeTick(SOCKET sock,
         {
             // Rotate to a fresh map we weren't just on (skips bad/spawn-less maps).
             if (d.rotateMaps && d.mapPool.size() > 1)
-                rotateToNextGamemodeMap(sock, d, players, world, npcWorld, totalPacketsOut);
+                rotateToNextGamemodeMap(sock, d, players, world, npcWorld, npcs, npcSystem, totalPacketsOut);
             // Each new match picks a fresh random anchor (fights spread around).
             assignGamemodeSpawns(d, world);
             Debug::log(Debug::Category::Duel, "[DUEL SERVER] rematch\n");
@@ -1539,6 +1626,7 @@ void serverRespawnAllActors(SOCKET sock,
     d.pendingKillerId = 0;
     d.pendingVictimId = 0;
     d.pendingKillerIsNpc = false;
+    d.pendingVictimIsNpc = false;
     Debug::warn(Debug::Category::Duel,
         "[MATCH RESPAWN ALL] players=%zu npcs=%zu tick=%u\n",
         players.size(), npcs.size(), tick);
@@ -1562,6 +1650,7 @@ void serverGamemodeOnPlayerDeath(uint32_t killerPlayerId,
     d.pendingKillerId = killerPlayerId;
     d.pendingVictimId = victimPlayerId;
     d.pendingKillerIsNpc = false;
+    d.pendingVictimIsNpc = false;
 }
 
 void serverGamemodeOnNpcDeath(uint32_t killerNpcId,
@@ -1573,6 +1662,19 @@ void serverGamemodeOnNpcDeath(uint32_t killerNpcId,
     d.pendingKillerId = killerNpcId;
     d.pendingVictimId = victimPlayerId;
     d.pendingKillerIsNpc = true;
+    d.pendingVictimIsNpc = false;
+}
+
+void serverGamemodeOnPlayerKilledNpc(uint32_t killerPlayerId,
+                                     uint32_t victimNpcId)
+{
+    ServerGamemodeState& d = serverGamemodeState();
+    if (!d.enabled) return;
+    d.hasPendingKill = true;
+    d.pendingKillerId = killerPlayerId;
+    d.pendingVictimId = victimNpcId;
+    d.pendingKillerIsNpc = false;
+    d.pendingVictimIsNpc = true;
 }
 
 // ── Bomb Tag ──────────────────────────────────────────────────────────
@@ -1848,7 +1950,7 @@ void serverBombTagTick(SOCKET sock,
             if (world.spawnPoints.empty())
                 assignGamemodeSpawns(d, world);
             assignMatchParticipants(d, players, &npcs);
-            beginMatchCountdown(d, players, tick);
+            beginMatchCountdown(d, players, npcs, npcSystem, tick);
             ++d.stateVersion;
             broadcastDuelState(sock, d, players, totalPacketsOut);
             broadcastBombTagState(sock, d, players, totalPacketsOut);
@@ -1879,7 +1981,7 @@ void serverBombTagTick(SOCKET sock,
             d.bombInactiveTicks = 0;
             // Select first bomb holder
             selectNewBombHolder(d, players);
-            respawnAllParticipants(d, players);
+            resetGamemodeActorsAtMapSpawn(d, players, npcs, npcSystem);
             ++d.stateVersion;
             d.lastBroadcastTick = tick;
             Debug::warn(Debug::Category::Duel,
@@ -2045,7 +2147,7 @@ void serverBombTagTick(SOCKET sock,
         if (d.phaseTimer <= 0.0f) {
             assignGamemodeSpawns(d, world);
             assignMatchParticipants(d, players, &npcs);
-            beginMatchCountdown(d, players, tick);
+            beginMatchCountdown(d, players, npcs, npcSystem, tick);
             d.bombTimerTicks = d.bombTimerTicksMax;
             d.bombInactiveTicks = 0;
             ++d.stateVersion;

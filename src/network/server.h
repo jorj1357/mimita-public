@@ -1086,7 +1086,8 @@ ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
     ServerDamageSource source,
     uint8_t weapon,
     uint32_t causeSerial = 0,
-    uint32_t projectileId = 0);
+    uint32_t projectileId = 0,
+    uint32_t attackerNpcId = 0);
 
 // ─── HostedRoomSession — single canonical room for one host action ─────────
 

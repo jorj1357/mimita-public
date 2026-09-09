@@ -22,6 +22,10 @@ class CommunityMatchClient
 {
 public:
     static CommunityMatchClient& instance();
+    // Clears all replicated community-match state before leaving or replacing
+    // a server session. Presentation caches are cleared through the same
+    // session boundary so an old countdown cannot survive reconnect.
+    void reset();
     void onState(const DuelStatePacket& packet);
     void onBombTagState(const BombTagStatePacket& packet);
     bool active() const { return !mMode.empty() && mMode != "duel" && mMode != "sandbox"; }

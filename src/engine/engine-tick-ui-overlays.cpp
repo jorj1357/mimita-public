@@ -203,26 +203,47 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
     if (mpContext.active && mpContext.showPlayerList &&
         (!gReplayExportRenderMode || ReplayExportUI::showPlayerList()))
     {
+        GuiLayout& tabLayout =
+            GuiLayoutManager::instance().getLayout("config/gui/tab-leaderboard.json");
+        const GuiElement* panelElement = tabLayout.get("panel");
+        const GuiElement* titleElement = tabLayout.get("title");
+        const GuiElement* headerElement = tabLayout.get("header");
+        const GuiElement* rowElement = tabLayout.get("row");
+        const GuiElement* localRowElement = tabLayout.get("localRow");
+        const GuiElement* npcRowElement = tabLayout.get("npcRow");
         static int gPlayerListFrame = 0;
         ++gPlayerListFrame;
         const float listPhase = (float)gPlayerListFrame / 8.0f;
-        float listX = uiScreenW() * 0.5f - 160.0f;
-        float listY = uiScreenH() * 0.25f;
-        float listW = 320.0f;
-        float lineH = 24.0f;
-        float headerH = 30.0f;
+        float listX = panelElement ? uiScaleX(panelElement->x) : uiScreenW() * 0.5f - 160.0f;
+        float listY = panelElement ? uiScaleY(panelElement->y) : uiScreenH() * 0.25f;
+        float listW = panelElement ? uiScaleX(panelElement->w) : 320.0f;
+        float lineH = rowElement ? uiScaleY(rowElement->h) : 24.0f;
+        float headerH = headerElement ? uiScaleY(headerElement->h) + 6.0f : 30.0f;
 
-        size_t totalPlayers = mpContext.playerRegistry.size();
-        float listH = headerH + (totalPlayers + 1) * lineH + 10.0f;
+        size_t totalActors = mpContext.playerRegistry.size() + mpContext.remoteNpcs.size();
+        float listH = headerH + (totalActors + 1) * lineH + 10.0f;
 
-        uiDrawRect({listX, listY, listW, listH}, {0.0f, 0.0f, 0.0f, 0.85f}, "player-list-bg");
-        uiDrawRectOutline({listX, listY, listW, listH}, {0.5f, 0.6f, 0.8f, 1.0f}, "player-list-border");
+        uiDrawRect({listX, listY, listW, listH},
+                   panelElement ? panelElement->getBackgroundColorVec() : glm::vec4(0.0f, 0.0f, 0.0f, 0.85f),
+                   "player-list-bg");
+        uiDrawRectOutline({listX, listY, listW, listH},
+                           panelElement ? panelElement->getOutlineColorVec() : glm::vec4(0.5f, 0.6f, 0.8f, 1.0f),
+                           "player-list-border");
 
         float y = listY + 8.0f;
-        uiDrawText("PLAYERS", listX + 10.0f, y, 0.36f, {0.8f, 0.9f, 1.0f, 1.0f});
+        uiDrawText(titleElement && !titleElement->text.empty() ? titleElement->text.c_str() : "PLAYERS",
+                   titleElement ? uiScaleX(titleElement->x) : listX + 10.0f,
+                   titleElement ? uiScaleY(titleElement->y) : y,
+                   titleElement && titleElement->fontSize > 0.0f ? titleElement->fontSize : 0.36f,
+                   titleElement ? titleElement->getTextColorVec() : glm::vec4(0.8f, 0.9f, 1.0f, 1.0f));
         y += headerH;
-        uiDrawText("ID   NAME                         PING",
-                   listX + 10.0f, y, 0.28f, {0.65f, 0.75f, 0.9f, 1.0f});
+        uiDrawText(headerElement && !headerElement->text.empty()
+                       ? headerElement->text.c_str()
+                       : "ID   NAME                         PING",
+                   headerElement ? uiScaleX(headerElement->x) : listX + 10.0f,
+                   headerElement ? uiScaleY(headerElement->y) : y,
+                   headerElement && headerElement->fontSize > 0.0f ? headerElement->fontSize : 0.28f,
+                   headerElement ? headerElement->getTextColorVec() : glm::vec4(0.65f, 0.75f, 0.9f, 1.0f));
         y += lineH;
 
         if (mpContext.localPlayerId)
@@ -239,10 +260,14 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             char localPrefix[32];
             snprintf(localPrefix, sizeof(localPrefix), "%u   ", mpContext.localPlayerId);
             float x = listX + 10.0f;
-            uiDrawText(localPrefix, x, y, 0.32f, {0.3f, 1.0f, 0.4f, 1.0f});
-            x += uiMeasureText(localPrefix, 0.32f);
+            const float localScale = localRowElement && localRowElement->fontSize > 0.0f
+                ? localRowElement->fontSize : 0.32f;
+            const glm::vec4 localColor = localRowElement
+                ? localRowElement->getTextColorVec() : glm::vec4(0.3f, 1.0f, 0.4f, 1.0f);
+            uiDrawText(localPrefix, x, y, localScale, localColor);
+            x += uiMeasureText(localPrefix, localScale);
             VipNameDrawOptions nameOptions;
-            nameOptions.scale = 0.32f;
+            nameOptions.scale = localScale;
             nameOptions.alpha = 1.0f;
             nameOptions.phase = listPhase;
             nameOptions.detail = &localVipDetail;
@@ -250,7 +275,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             x += vipMeasureStyledName(localName, localVip, nameOptions);
             char localPing[48];
             snprintf(localPing, sizeof(localPing), "   %dms (you)", mpContext.localPingMs);
-            uiDrawText(localPing, x, y, 0.32f, {0.3f, 1.0f, 0.4f, 1.0f});
+            uiDrawText(localPing, x, y, localScale, localColor);
             y += lineH;
         }
 
@@ -262,10 +287,14 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             char remotePrefix[32];
             snprintf(remotePrefix, sizeof(remotePrefix), "%u  ", kv.first);
             float x = listX + 10.0f;
-            uiDrawText(remotePrefix, x, y, 0.32f, {0.9f, 0.95f, 1.0f, 1.0f});
-            x += uiMeasureText(remotePrefix, 0.32f);
+            const float rowScale = rowElement && rowElement->fontSize > 0.0f
+                ? rowElement->fontSize : 0.32f;
+            const glm::vec4 rowColor = rowElement
+                ? rowElement->getTextColorVec() : glm::vec4(0.9f, 0.95f, 1.0f, 1.0f);
+            uiDrawText(remotePrefix, x, y, rowScale, rowColor);
+            x += uiMeasureText(remotePrefix, rowScale);
             VipNameDrawOptions nameOptions;
-            nameOptions.scale = 0.32f;
+            nameOptions.scale = rowScale;
             nameOptions.alpha = 1.0f;
             nameOptions.phase = listPhase;
             nameOptions.detail = &kv.second.vipStyleDetail;
@@ -273,7 +302,27 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             x += vipMeasureStyledName(pname, kv.second.vipAppearance, nameOptions);
             char remotePing[32];
             snprintf(remotePing, sizeof(remotePing), "  %dms", kv.second.pingMs);
-            uiDrawText(remotePing, x, y, 0.32f, {0.9f, 0.95f, 1.0f, 1.0f});
+            uiDrawText(remotePing, x, y, rowScale, rowColor);
+            y += lineH;
+        }
+
+        for (const auto& kv : mpContext.remoteNpcs)
+        {
+            const Player& npc = kv.second;
+            char npcPrefix[32];
+            snprintf(npcPrefix, sizeof(npcPrefix), "%u  ", kv.first);
+            const float npcScale = npcRowElement && npcRowElement->fontSize > 0.0f
+                ? npcRowElement->fontSize : 0.32f;
+            const glm::vec4 npcColor = npcRowElement
+                ? npcRowElement->getTextColorVec() : glm::vec4(1.0f, 0.7f, 0.3f, 1.0f);
+            float x = listX + 10.0f;
+            uiDrawText(npcPrefix, x, y, npcScale, npcColor);
+            x += uiMeasureText(npcPrefix, npcScale);
+            const std::string npcName = npc.username.empty()
+                ? "NPC-" + std::to_string(kv.first) : npc.username;
+            uiDrawText(npcName.c_str(), x, y, npcScale, npcColor);
+            x += uiMeasureText(npcName.c_str(), npcScale);
+            uiDrawText("  NPC", x, y, npcScale, npcColor);
             y += lineH;
         }
     }

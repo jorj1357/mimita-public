@@ -159,13 +159,21 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
         const WeaponDefinition* wdef = WeaponRegistry::instance().get(weaponId);
         if (wdef && !wdef->displayName.empty())
             weaponDisplay = wdef->displayName;
-        const auto attackerIt = ctx.playerRegistry.find(event.attackerPlayerId);
+        const uint32_t attackerId = event.attackerPlayerId;
+        const auto attackerIt = ctx.playerRegistry.find(attackerId);
+        const auto attackerNpcIt = ctx.remoteNpcs.find(attackerId);
+        const bool attackerIsNpc = event.attackerEntityType == ENTITY_NPC;
+        const std::string attackerName = attackerIsNpc
+            ? (attackerNpcIt != ctx.remoteNpcs.end() && !attackerNpcIt->second.username.empty()
+                ? attackerNpcIt->second.username
+                : "NPC-" + std::to_string(attackerId))
+            : playerNameFor(ctx, event.attackerPlayerId);
         const auto victimIt = ctx.playerRegistry.find(event.targetPlayerId);
         KillfeedManager::instance().onKillStyled(
-            playerNameFor(ctx, event.attackerPlayerId),
-            attackerIt != ctx.playerRegistry.end()
+            attackerName,
+            !attackerIsNpc && attackerIt != ctx.playerRegistry.end()
                 ? attackerIt->second.vipAppearance : MimitaVip::freeAppearance(),
-            attackerIt != ctx.playerRegistry.end()
+            !attackerIsNpc && attackerIt != ctx.playerRegistry.end()
                 ? attackerIt->second.vipStyleDetail : MimitaVip::VipStyleDetail{},
             playerNameFor(ctx, event.targetPlayerId),
             victimIt != ctx.playerRegistry.end()

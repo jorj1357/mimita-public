@@ -22,6 +22,7 @@
 #include "gui/hud/chat-history.h"
 #include "gui/hud/chat-window.h"
 #include "debug/debug-log.h"
+#include "combat/weapon-registry.h"
 
 KillfeedManager& KillfeedManager::instance()
 {
@@ -77,6 +78,23 @@ void KillfeedManager::onKillStyled(const std::string& killerName,
     entry.eventTick = eventTick;
     entry.killVerb = cfg.defaultKillVerb;
     auto weaponIt = cfg.weapons.find(weaponName);
+    if (weaponIt == cfg.weapons.end())
+    {
+        const WeaponDefinition* resolved = WeaponRegistry::instance().get(weaponName);
+        if (!resolved)
+        {
+            for (const auto& candidate : WeaponRegistry::instance().all())
+            {
+                if (candidate.second.displayName == weaponName)
+                {
+                    resolved = &candidate.second;
+                    break;
+                }
+            }
+        }
+        if (resolved)
+            weaponIt = cfg.weapons.find(resolved->id);
+    }
     if (weaponIt != cfg.weapons.end() && !weaponIt->second.killVerb.empty())
         entry.killVerb = weaponIt->second.killVerb;
     auto verbIt = cfg.verbs.find(entry.killVerb);
@@ -136,7 +154,25 @@ void KillfeedManager::onKillStructured(const std::string& killerName,
     entry.killerColor = cfg.killerColor;
     entry.victimColor = cfg.victimColor;
     entry.verbColor = cfg.verbs.count(killVerb) ? cfg.verbs.at(killVerb).color : cfg.verbColor;
-    entry.weaponColor = cfg.weapons.count(weaponName) ? cfg.weapons.at(weaponName).color : cfg.weaponColor;
+    auto structuredWeaponIt = cfg.weapons.find(weaponName);
+    if (structuredWeaponIt == cfg.weapons.end())
+    {
+        if (const WeaponDefinition* resolved = WeaponRegistry::instance().get(weaponName))
+            structuredWeaponIt = cfg.weapons.find(resolved->id);
+        else
+        {
+            for (const auto& candidate : WeaponRegistry::instance().all())
+            {
+                if (candidate.second.displayName == weaponName)
+                {
+                    structuredWeaponIt = cfg.weapons.find(candidate.second.id);
+                    break;
+                }
+            }
+        }
+    }
+    entry.weaponColor = structuredWeaponIt != cfg.weapons.end()
+        ? structuredWeaponIt->second.color : cfg.weaponColor;
     entry.distanceColor = cfg.distanceColor;
     if (cfg.mode == "chat") appendChatMessage(entry);
 

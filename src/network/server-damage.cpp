@@ -156,7 +156,8 @@ ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
     ServerDamageSource source,
     uint8_t weapon,
     uint32_t causeSerial,
-    uint32_t projectileId)
+    uint32_t projectileId,
+    uint32_t attackerNpcId)
 {
     if (!result.applied)
         return ReliableGameplayEventQueueResult::Queued;
@@ -167,7 +168,8 @@ ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
     event.header.playerId = attackerPlayerId;
     event.eventId = nextReliableGameplayEventId();
     event.eventSessionId = serverReliableEventSessionId();
-    event.attackerPlayerId = attackerPlayerId;
+    event.attackerPlayerId = attackerNpcId != 0 ? attackerNpcId : attackerPlayerId;
+    event.attackerEntityType = attackerNpcId != 0 ? ENTITY_NPC : ENTITY_PLAYER;
     event.targetPlayerId = target.id;
     event.causeSerial = causeSerial;
     event.projectileId = projectileId;

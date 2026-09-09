@@ -11,6 +11,7 @@
 #include "network/multiplayer-context.h"
 #include "terminal/terminal-state.h"
 #include "auth/auth-system.h"
+#include "killfeed/killfeed.h"
 
 namespace MimitaNet {
 
@@ -18,6 +19,31 @@ CommunityMatchClient& CommunityMatchClient::instance()
 {
     static CommunityMatchClient state;
     return state;
+}
+
+void CommunityMatchClient::reset()
+{
+    mMode.clear();
+    mPhase = DUEL_PHASE_WAITING;
+    mPhaseTimer = 0.0f;
+    mMatchStartTick = 0;
+    mServerTick = 0;
+    mTimeLimitSeconds = 0;
+    mGoal = 0;
+    mRedScore = 0;
+    mBlueScore = 0;
+    mLocalScore = 0;
+    mMatchId = 0;
+    mStateVersion = 0;
+    mBombOwnerType = 0;
+    mBombOwnerPlayerId = 0;
+    mBombOwnerNpcIndex = 0;
+    mBombTimerTicks = 0;
+    mBombInactiveTicks = 0;
+    mBombPos = glm::vec3(0.0f);
+
+    MatchLeaderboard::instance().clear();
+    KillfeedManager::instance().clear();
 }
 
 void CommunityMatchClient::onState(const DuelStatePacket& packet)

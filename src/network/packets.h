@@ -789,7 +789,7 @@ struct DamageConfirmedEventPacket
     uint8_t source = 0;
     uint8_t weapon = NETWORK_WEAPON_NONE;
     uint8_t killed = 0;
-    uint8_t reserved = 0;
+    uint8_t attackerEntityType = ENTITY_PLAYER;
     float hitX = 0.0f;
     float hitY = 0.0f;
     float hitZ = 0.0f;

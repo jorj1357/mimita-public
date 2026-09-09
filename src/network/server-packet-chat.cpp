@@ -282,6 +282,8 @@ void handleNpcDamageRequest(SOCKET sock, const char* buffer, int bytes,
     if (killed)
     {
         target.health = 0;
+        serverGamemodeOnPlayerKilledNpc(req->header.playerId,
+                                        target.entityId);
         printf("%s [NET NPC KILL] shooter=%u npcId=%u name=\"%s\"\n",
                serverTimestamp(), req->header.playerId,
                target.entityId, target.name.c_str());

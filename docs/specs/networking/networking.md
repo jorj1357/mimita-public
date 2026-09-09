@@ -1,4 +1,6 @@
-﻿9 8 2026 1028 est jorj - todo explain all console commands either in here or a centralized document liek C:\mimita-priv-v8\docs\specs\terminal\terminal.md
+﻿9 8 2026 0944 jojr todo - explain little quality of life things and discoverability and scaling of mimita engine like, design it like plague inc, like mimita.exe should safely and healthily intrinsically motivate to spread it. not beacuse people feel forced, or if u share a code u get 50 bux off, it should be so good and so fun that people feel compelled and driven to share this with others, not  just to get a reward. need to design from fundamentals and emergence, because, money is emergent from value. happiness is emergent from fulfillment and feeling like u are doing it right or have a purpose or you matter or youre in pursuit of a goal, at least for me happiness comes from that. so it can take many forms, mimita can , but i watn to enseure we do not focucs on the leaves e.g. money, attention, fame, quick buy now, get this get that, taht is too fast . focus on the roots , roots > trunk > branches > leaves, ensure that the foundation is so ridiculously strong and powerful and fundamental that anything on top of it  just is a cherry on top of it all 
+
+9 8 2026 1028 est jorj - todo explain all console commands either in here or a centralized document liek C:\mimita-priv-v8\docs\specs\terminal\terminal.md
 
 explain console commmands that a host should have, and how the server should be able to host all gamemodes all things u wnat it to have it should handle i t,
 

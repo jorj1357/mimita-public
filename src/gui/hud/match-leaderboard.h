@@ -37,6 +37,7 @@ public:
     void updateFFA(const std::vector<MatchLeaderboardEntry>& top3);
     void updateTDM(int redKills, int blueKills, bool isRedTeam);
     void setMode(const std::string& mode, int goal);
+    void clear();
     void onConfirmedScoreGain();
     void onScoreGain(float x, float y);
     void update(float dt);

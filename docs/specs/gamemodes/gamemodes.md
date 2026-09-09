@@ -49,6 +49,26 @@ no `modepick` command.
 An explicit weapon set selected in the GUI or at runtime takes precedence over
 the `weapon_set_id` fallback in a gamemode JSON file.
 
+## Engine-wide actor and session rules
+
+The shared runtime is an engine service. Players and NPCs are participants in
+the same actor registry and use the same map-spawn reset, inventory, damage,
+score, membership, leaderboard, killfeed, and phase-transition services.
+Gamemode JSON supplies rules and data; it does not own a shared lifecycle.
+Generic names such as actor, participant, gamemode, match, results, and spawn
+are required so adding a new mode does not require another duel-only or
+Bomb-Tag-only lifecycle implementation.
+
+Every gamemode uses `config/gamemode-good-maps.json` for automatic and random
+map selection as of `2026-09-09`. Explicit GUI map selection and explicit
+`changemap` may use another map. Missing, invalid, or unloadable automatic
+candidates are skipped safely.
+
+The session boundary resets replicated mode, phase, countdown, timers, match
+identity, scores, results, Bomb Tag state, killfeed, and leaderboard state. A
+new server session has a new generation, so packets from a stopped server
+cannot revive its countdown or presentation state.
+
 9 2 2026
 
 - End goal  

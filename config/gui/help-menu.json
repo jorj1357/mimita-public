@@ -21,12 +21,12 @@
     },
     "hl_line1": {
       "type": "text", "x": 620, "y": 144, "width": 680, "height": 26,
-      "text": "Mimita is a fast-paced arena shooter focused on movement, flow, and style.",
+      "text": "MiMITA is a fast-paced PvP game focused on movement, flow, and style.",
       "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
     },
     "hl_line2": {
       "type": "text", "x": 620, "y": 170, "width": 680, "height": 26,
-      "text": "\"Movement is more important than aim.\"",
+      "text": " it means \"Movement is more important than aim.\"",
       "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
     },
     "hl_howToStart": {
@@ -36,17 +36,17 @@
     },
     "hl_start1": {
       "type": "text", "x": 620, "y": 238, "width": 680, "height": 26,
-      "text": "1. Choose a game mode from the PLAY menu.",
+      "text": "1. Click the PLAY menu in the main menu",
       "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
     },
     "hl_start2": {
       "type": "text", "x": 620, "y": 264, "width": 680, "height": 26,
-      "text": "2. Pick a map and start playing immediately.",
+      "text": "2. Pick a map, change server name/settings, press 'start server'.",
       "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
     },
     "hl_start3": {
       "type": "text", "x": 620, "y": 290, "width": 680, "height": 26,
-      "text": "3. No lobbies, no waiting -- just instant action.",
+      "text": "3. Now u are playing in a room!!! Invite others using the room code.",
       "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
     },
     "hl_gameModes": {
@@ -56,7 +56,7 @@
     },
     "hl_mode1": {
       "type": "text", "x": 620, "y": 358, "width": 680, "height": 26,
-      "text": "Sandbox  -- Free-roam community play with NPCs and all server tools.",
+      "text": "Sandbox  -- Free-roam community play with NPCs and all server tools. ",
       "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
     },
     "hl_mode2": {
@@ -198,6 +198,11 @@
       "type": "text", "x": 620, "y": 1152, "width": 680, "height": 26,
       "text": "npcdifflist / npcdiffload N -- list or load NPC presets",
       "fontSize": 0.30, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+     "hl_serverCommands5": {
+      "type": "text", "x": 620, "y": 1190, "width": 680, "height": 26,
+      "text": "More questions!!!?? \n Confusing still!!?? \n Want to play with others!?!! \n Join the MiMITA Discord at \n www.mimita.fun!!! \n You can talk to me (jorj/MiMITA alt)\n directly there c:",
+      "fontSize": 0.35, "textColor": [0.5, 0.0, 1.0, 1.0]
     },
     "backButton": {
       "type": "button",

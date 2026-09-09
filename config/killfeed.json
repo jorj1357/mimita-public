@@ -1,5 +1,6 @@
 {
   "mode": "chat",
+  "weapon_display_name_source": "config/weapons.json",
   "showTick": true,
   "tickPrefix": "TICK",
   "defaultKillVerb": "killed",

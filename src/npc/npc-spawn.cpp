@@ -168,7 +168,7 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn,
     tuning = tuningForDifficulty(difficulty);
     rngState = 0x9e3779b9u ^ (id * 747796405u);
     body.reset();
-    body.username = "npc-" + std::to_string(id);
+    body.username = "NPC-" + std::to_string(id);
     body.currentHp = body.maxHp;
     if (DevOverrides::healthOverrideEnabled) {
         body.maxHp = DevOverrides::healthOverrideValue;

@@ -34,6 +34,17 @@ void MatchLeaderboard::setMode(const std::string& mode, int goal)
     mGoal = goal;
 }
 
+void MatchLeaderboard::clear()
+{
+    mFFATop3.clear();
+    mMode.clear();
+    mGoal = 0;
+    mRedKills = 0;
+    mBlueKills = 0;
+    mIsRedTeam = false;
+    mScoreGains.clear();
+}
+
 void MatchLeaderboard::onConfirmedScoreGain()
 {
     GuiLayout& layout = GuiLayoutManager::instance().getGamemodeLayout(mMode);

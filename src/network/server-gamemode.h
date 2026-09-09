@@ -69,6 +69,7 @@ struct ServerGamemodeState
     uint32_t pendingKillerId = 0;
     uint32_t pendingVictimId = 0;
     bool pendingKillerIsNpc = false;
+    bool pendingVictimIsNpc = false;
     // Periodic DuelState broadcast cadence so clients can detect a dead server.
     uint32_t lastBroadcastTick = 0;
     // Forces the first authoritative community-match state to reach clients
@@ -126,6 +127,7 @@ struct ServerGamemodeState
 
     // All participating player IDs (FFA/TDM can have >2 players)
     std::vector<uint32_t> participants;
+    std::unordered_map<uint32_t, std::string> participantNames;
 
     // Victory info
     int victoryType = 0;  // 0=ScoreLimit, 1=TimeLimit
@@ -185,6 +187,9 @@ void serverGamemodeOnPlayerDeath(uint32_t killerPlayerId,
                              uint32_t victimPlayerId);
 void serverGamemodeOnNpcDeath(uint32_t killerNpcId,
                           uint32_t victimPlayerId);
+// Records a player killing an NPC for the shared gamemode score pipeline.
+void serverGamemodeOnPlayerKilledNpc(uint32_t killerPlayerId,
+                                     uint32_t victimNpcId);
 
 // A player pressed Space on the win/lose screen: skip the rematch timer and
 // start the next managed match immediately (next tick).

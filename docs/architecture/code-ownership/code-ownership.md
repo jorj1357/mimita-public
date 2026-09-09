@@ -124,6 +124,16 @@ When a generic function is needed, first generalize the existing owner and
 rename its API and callers. Do not add a second mode-specific implementation
 that duplicates the same lifecycle behavior.
 
+## Engine-first gamemode boundary
+
+MiMITA should behave like an extensible engine with a game defined inside it.
+Shared actor lifecycle, map loading, spawn reset, loadouts, combat events,
+scoring, membership, networking, countdowns, results, and GUI bindings belong
+to general engine services. JSON-defined modes select rules and data through
+stable IDs. New modes must not require functions named for a single existing
+mode, because that makes the runtime scale with hardcoded cases instead of
+with data.
+
 ---
 
 # Code Architecture
