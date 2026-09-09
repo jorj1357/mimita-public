@@ -21,6 +21,34 @@ gamemodemanager
 BombTagManager::renderHud() — renders bomb holder text and timer from replicated state
 BombTagManager::renderBombVisual() — renders bomb sphere and world timer - like all this, just change it to be a general function that ahndles all the hud and stuff, that the json requests u to render. so this should work for not onl a  bomb with a world timer, but maybe, a boss with a healthbar above their head, a car with a healthbar u need to destroy, a npc that is telling u something with world text visually, etc. super general 
 
+## General gamemode runtime — authoritative as of 2026-09-09
+
+The server lifecycle is owned by a general gamemode manager. Its state,
+participant, spawn, scoring, countdown, results, map, and inventory functions
+must describe shared behavior and must not be named or structured as duel-only,
+Bomb Tag-only, or another single-purpose mode implementation. Individual modes
+are JSON-defined rule sets and optional narrowly scoped rule data consumed by the
+shared runtime.
+
+All gamemodes currently use `config/gamemode-good-maps.json` as their automatic
+map pool. Random selection and automatic rotation may choose only valid entries
+from that file. An explicit map selected in the GUI or an explicit `changemap`
+command may choose a map outside the configured pool; invalid or unloadable
+automatic candidates are skipped safely.
+
+The active lifecycle is `WAITING → INTERMISSION → COUNTDOWN 3 → COUNTDOWN 2 →
+COUNTDOWN 1 → GO → ACTIVE → RESULTS → INTERMISSION`. `PRE_MATCH` is not used by
+the active runtime.
+
+`modelist` lists modes and their numeric IDs only. `modestart N` starts or live-
+switches to mode N through the results screen and then the new mode's default
+15-second intermission. `modestartnow N` starts or live-switches to mode N and
+enters its countdown after the five-second live-switch results screen. There is
+no `modepick` command.
+
+An explicit weapon set selected in the GUI or at runtime takes precedence over
+the `weapon_set_id` fallback in a gamemode JSON file.
+
 9 2 2026
 
 - End goal  
@@ -234,4 +262,4 @@ Full ideal flow of behavior
   - This screen is shown for 5 seconds, with a timer counting down how long its shown,   
   - Then we immediately repeat from the intermission step above, where it starts at 15 seconds.   
 - This repeats indefinitely  
-  - The entire flow should repeat indefinitely. I should be able to 
+  - The entire flow should repeat indefinitely. I should be able to

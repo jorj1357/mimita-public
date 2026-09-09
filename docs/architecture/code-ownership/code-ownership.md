@@ -107,6 +107,23 @@ fireWeapon()
 
 Keep interfaces small and obvious.
 
+## General behavior ownership
+
+Shared behavior must be owned and named for the behavior itself, not for the
+first mode that used it. A server gamemode runtime may support duel, FFA, TDM,
+Bomb Tag, sandbox, and future JSON-defined modes, so its state and functions
+must use general gamemode, match, participant, actor, spawn, score, map, and
+results terminology. A `duel-only` or `bomb-tag-only` function is incorrect when
+it handles shared lifecycle behavior.
+
+Individual gamemodes provide data and narrowly scoped rules. They do not own the
+shared server tick, participant registry, player/NPC lifecycle, map rotation,
+weapon-set application, countdown, results, or generic GUI presentation.
+
+When a generic function is needed, first generalize the existing owner and
+rename its API and callers. Do not add a second mode-specific implementation
+that duplicates the same lifecycle behavior.
+
 ---
 
 # Code Architecture

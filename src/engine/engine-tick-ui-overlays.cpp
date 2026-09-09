@@ -12,6 +12,8 @@
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include <cstdio>
+#include <cctype>
+#include <algorithm>
 #include <GLFW/glfw3.h>
 #include "camera.h"
 #include "entities/player.h"
@@ -581,20 +583,23 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                     }
                     return text;
                 };
+                std::string modeName = match.mode();
+                std::replace(modeName.begin(), modeName.end(), '_', ' ');
+                for (char& c : modeName)
+                    c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
                 drawCentered("modeTitle", textTemplate("modeTitle", {
-                    {"{mode_name}", match.mode() == "free_for_all" ? "FREE FOR ALL"
-                        : match.mode() == "team_deathmatch" ? "TEAM DEATHMATCH"
-                        : match.mode() == "bomb_tag" ? "BOMB TAG"
-                        : match.mode()}}));
+                    {"{mode_name}", modeName}}));
 
-                if (match.mode() == "team_deathmatch") {
+                // Score presentation is data-driven: a mode displays this
+                // element only when its JSON layout defines it.
+                if (matchLayout.get("scoreText")) {
                     drawCentered("scoreText", textTemplate("scoreText", {
                         {"{red_name}", "RED"}, {"{red_score}", std::to_string(match.redScore())},
                         {"{blue_name}", "BLUE"}, {"{blue_score}", std::to_string(match.blueScore())},
                         {"{goal}", std::to_string(match.goal())}}));
                 }
 
-                // Intermission text: "Starting FREE FOR ALL in 12..."
+                // Intermission text is supplied by the active JSON layout.
                 if (match.phase() == MimitaNet::DUEL_PHASE_INTERMISSION) {
                     drawCentered("intermissionText", textTemplate("intermissionText", {
                         {"{seconds}", std::to_string((int)std::ceil(std::max(0.0f, match.phaseTimer())))}}));

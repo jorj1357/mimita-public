@@ -1,2055 +1,2065 @@
 // 09 01 2026, 00 00
-/* p[ServerGamemode][ServerGamemode]pos[ServerGamemode]
-* Imp[ServerGamemode][ServerGamemode]m[ServerGamemode]nts th[ServerGamemode] a[ServerGamemode]tho[ServerGamemode]itati[ServerGamemode][ServerGamemode] P[ServerGamemode]P d[ServerGamemode][ServerGamemode][ServerGamemode] stat[ServerGamemode] machin[ServerGamemode] on th[ServerGamemode] s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode].
-* Waits fo[ServerGamemode] two p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, [ServerGamemode][ServerGamemode]ns a sing[ServerGamemode][ServerGamemode] co[ServerGamemode]ntdown, sco[ServerGamemode][ServerGamemode]s fi[ServerGamemode]st-to-goa[ServerGamemode],
-* instant-[ServerGamemode][ServerGamemode]spawns [ServerGamemode]ictims at th[ServerGamemode]i[ServerGamemode] t[ServerGamemode]am spawn, and a[ServerGamemode]to-[ServerGamemode][ServerGamemode]match[ServerGamemode]s aft[ServerGamemode][ServerGamemode] th[ServerGamemode]
-* post-match window whi[ServerGamemode][ServerGamemode] both p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s a[ServerGamemode][ServerGamemode] sti[ServerGamemode][ServerGamemode] conn[ServerGamemode]ct[ServerGamemode]d.
-* A[ServerGamemode]so s[ServerGamemode]ppo[ServerGamemode]ts FFA and T[ServerGamemode]M match mod[ServerGamemode]s with m[ServerGamemode][ServerGamemode]ti-p[ServerGamemode]ay[ServerGamemode][ServerGamemode] sco[ServerGamemode]ing.
-* [ServerGamemode]o[ServerGamemode]s NOT app[ServerGamemode]y damag[ServerGamemode], sim[ServerGamemode][ServerGamemode]at[ServerGamemode] mo[ServerGamemode][ServerGamemode]m[ServerGamemode]nt, o[ServerGamemode] [ServerGamemode][ServerGamemode]nd[ServerGamemode][ServerGamemode] anything.
-* [ServerGamemode]o[ServerGamemode]s NOT to[ServerGamemode]ch th[ServerGamemode] c[ServerGamemode]i[ServerGamemode]nt q[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]/matchmaking o[ServerGamemode] coo[ServerGamemode]dinato[ServerGamemode] p[ServerGamemode]otoco[ServerGamemode].
-* [ServerGamemode]o[ServerGamemode]s NOT a[ServerGamemode]t[ServerGamemode][ServerGamemode] no[ServerGamemode]ma[ServerGamemode] (non-d[ServerGamemode][ServerGamemode][ServerGamemode]) s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode] b[ServerGamemode]ha[ServerGamemode]io[ServerGamemode].
+/* purpose
+* Implements the authoritative JSON-defined gamemode state machine on the server.
+* Owns shared waiting, intermission, countdown, active, results, and switching phases.
+* Routes duel, FFA, TDM, Bomb Tag, sandbox, and future rules through shared actor services.
+* Does NOT apply damage, simulate movement, or render anything.
+* Does NOT touch the client queue/matchmaking or coordinator protocol.
+* Does NOT own mode presentation or mode-specific GUI layout.
 */
 
-#inc[ServerGamemode][ServerGamemode]d[ServerGamemode] "n[ServerGamemode]two[ServerGamemode]k/s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]-gam[ServerGamemode]mod[ServerGamemode].h"
+#include "network/server-gamemode.h"
 
-#inc[ServerGamemode][ServerGamemode]d[ServerGamemode] <a[ServerGamemode]go[ServerGamemode]ithm>
-#inc[ServerGamemode][ServerGamemode]d[ServerGamemode] <cmath>
-#inc[ServerGamemode][ServerGamemode]d[ServerGamemode] <[ServerGamemode]andom>
+#include <algorithm>
+#include <cmath>
+#include <random>
 
-#inc[ServerGamemode][ServerGamemode]d[ServerGamemode] "n[ServerGamemode]two[ServerGamemode]k/pack[ServerGamemode]ts.h"
-#inc[ServerGamemode][ServerGamemode]d[ServerGamemode] "n[ServerGamemode]two[ServerGamemode]k/s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode].h"
-#inc[ServerGamemode][ServerGamemode]d[ServerGamemode] "npc/npc.h"
-#inc[ServerGamemode][ServerGamemode]d[ServerGamemode] "combat/w[ServerGamemode]apon-[ServerGamemode][ServerGamemode]gist[ServerGamemode]y.h"
-#inc[ServerGamemode][ServerGamemode]d[ServerGamemode] "d[ServerGamemode]b[ServerGamemode]g/d[ServerGamemode]b[ServerGamemode]g-[ServerGamemode]og.h"
-#inc[ServerGamemode][ServerGamemode]d[ServerGamemode] "n[ServerGamemode]two[ServerGamemode]k/comm[ServerGamemode]nity-s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]-config.h"
-#inc[ServerGamemode][ServerGamemode]d[ServerGamemode] "gam[ServerGamemode]mod[ServerGamemode]/gam[ServerGamemode]mod[ServerGamemode].h"
-#inc[ServerGamemode][ServerGamemode]d[ServerGamemode] "p[ServerGamemode][ServerGamemode]sist[ServerGamemode]nc[ServerGamemode]/p[ServerGamemode][ServerGamemode]sist[ServerGamemode]nc[ServerGamemode]-q[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode].h"
-#inc[ServerGamemode][ServerGamemode]d[ServerGamemode] "p[ServerGamemode][ServerGamemode]sist[ServerGamemode]nc[ServerGamemode]/p[ServerGamemode][ServerGamemode]sist[ServerGamemode]nc[ServerGamemode]-[ServerGamemode][ServerGamemode][ServerGamemode]nts.h"
+#include "network/packets.h"
+#include "network/server.h"
+#include "npc/npc.h"
+#include "combat/weapon-registry.h"
+#include "debug/debug-log.h"
+#include "network/community-server-config.h"
+#include "gamemode/gamemode.h"
+#include "persistence/persistence-queue.h"
+#include "persistence/persistence-events.h"
 
-nam[ServerGamemode]spac[ServerGamemode] MimitaN[ServerGamemode]t {
+namespace MimitaNet {
 
-[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]()
+ServerGamemodeState& serverGamemodeState()
 {
-    static [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode] stat[ServerGamemode];
-    [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n stat[ServerGamemode];
+    static ServerGamemodeState state;
+    return state;
 }
 
-[ServerGamemode]oid s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]ta[ServerGamemode]tMod[ServerGamemode](const [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s)
+void serverStartMode(const ServerGamemodeState& rules)
 {
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d = s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]();
-    d.[ServerGamemode]nab[ServerGamemode][ServerGamemode]d = t[ServerGamemode][ServerGamemode][ServerGamemode];
-    d.mapOn[ServerGamemode]y = fa[ServerGamemode]s[ServerGamemode];
-    d.mod[ServerGamemode] = [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.matchMod[ServerGamemode] == "tdm" ? [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Mod[ServerGamemode]::T[ServerGamemode]am[ServerGamemode][ServerGamemode]athmatch
-        : [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.matchMod[ServerGamemode] == "ffa" ? [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Mod[ServerGamemode]::F[ServerGamemode][ServerGamemode][ServerGamemode]Fo[ServerGamemode]A[ServerGamemode][ServerGamemode]
-        : [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.matchMod[ServerGamemode] == "d[ServerGamemode][ServerGamemode][ServerGamemode]" ? [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Mod[ServerGamemode]::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode] : [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Mod[ServerGamemode]::[ServerGamemode]andbox;
-    d.comm[ServerGamemode]nityMod[ServerGamemode] = "sandbox";
-    d.comm[ServerGamemode]nityW[ServerGamemode]apon[ServerGamemode][ServerGamemode]tId = 1;
-    d.comm[ServerGamemode]nityW[ServerGamemode]apon[ServerGamemode][ServerGamemode]tExp[ServerGamemode]icit = fa[ServerGamemode]s[ServerGamemode];
-    d.comm[ServerGamemode]nity[ServerGamemode]co[ServerGamemode][ServerGamemode]s.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    d.comm[ServerGamemode]nityT[ServerGamemode]ams.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    d.comm[ServerGamemode]nityT[ServerGamemode]am[ServerGamemode]co[ServerGamemode][ServerGamemode][0] = d.comm[ServerGamemode]nityT[ServerGamemode]am[ServerGamemode]co[ServerGamemode][ServerGamemode][1] = 0;
-    d.comm[ServerGamemode]nityRo[ServerGamemode]ndO[ServerGamemode][ServerGamemode][ServerGamemode] = fa[ServerGamemode]s[ServerGamemode];
-    d.comm[ServerGamemode]nityRo[ServerGamemode]ndR[ServerGamemode]s[ServerGamemode]tMs = 0;
-    d.phas[ServerGamemode] = [ServerGamemode]UEL_PHA[ServerGamemode]E_WAITING;
-    d.stat[ServerGamemode]B[ServerGamemode]oadcastP[ServerGamemode]nding = fa[ServerGamemode]s[ServerGamemode];
-    d.matchO[ServerGamemode][ServerGamemode][ServerGamemode] = fa[ServerGamemode]s[ServerGamemode];
-    d.sco[ServerGamemode][ServerGamemode]A = 0;
-    d.sco[ServerGamemode][ServerGamemode]B = 0;
-    d.goa[ServerGamemode]Va[ServerGamemode][ServerGamemode][ServerGamemode] = [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.goa[ServerGamemode]Va[ServerGamemode][ServerGamemode][ServerGamemode];
-    d.co[ServerGamemode]ntdown[ServerGamemode][ServerGamemode]conds = [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.co[ServerGamemode]ntdown[ServerGamemode][ServerGamemode]conds;
-    d.[ServerGamemode][ServerGamemode]match[ServerGamemode][ServerGamemode]conds = [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.[ServerGamemode][ServerGamemode]match[ServerGamemode][ServerGamemode]conds;
-    d.t[ServerGamemode]amANam[ServerGamemode] = [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.t[ServerGamemode]amANam[ServerGamemode];
-    d.t[ServerGamemode]amBNam[ServerGamemode] = [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.t[ServerGamemode]amBNam[ServerGamemode];
-    d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]AId = 0;
-    d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]BId = 0;
-    d.winn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id = 0;
-    d.spawnsAssign[ServerGamemode]d = fa[ServerGamemode]s[ServerGamemode];
-    d.stat[ServerGamemode][ServerGamemode][ServerGamemode]nt = fa[ServerGamemode]s[ServerGamemode];
-    d.spawnOffs[ServerGamemode]tRadi[ServerGamemode]s = [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.spawnOffs[ServerGamemode]tRadi[ServerGamemode]s;
-    d.mapPoo[ServerGamemode] = [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.mapPoo[ServerGamemode];
-    d.[ServerGamemode]otat[ServerGamemode]Maps = [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.[ServerGamemode]otat[ServerGamemode]Maps;
-    d.mapId = [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.mapId;
-    d.d[ServerGamemode][ServerGamemode][ServerGamemode]Id = 0;
-    d.mapV[ServerGamemode][ServerGamemode]sion = 0;
-    d.spawnAncho[ServerGamemode]V[ServerGamemode][ServerGamemode]sion = 0;
-    d.[ServerGamemode][ServerGamemode]spawn[ServerGamemode][ServerGamemode]q[ServerGamemode][ServerGamemode]nc[ServerGamemode] = 0;
-    d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion = 0;
-    d.spawnAncho[ServerGamemode]Ind[ServerGamemode]x = 0;
-    d.[ServerGamemode]s[ServerGamemode]dMaps.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    d.[ServerGamemode]s[ServerGamemode]dMaps.ins[ServerGamemode][ServerGamemode]t([ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.mapId);
-    d.hasP[ServerGamemode]ndingMan[ServerGamemode]a[ServerGamemode]Map = fa[ServerGamemode]s[ServerGamemode];
-    d.p[ServerGamemode]ndingMan[ServerGamemode]a[ServerGamemode]Map.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    d.a[ServerGamemode]toMapRotation = fa[ServerGamemode]s[ServerGamemode];
-    d.mapRotationMin[ServerGamemode]t[ServerGamemode]s = 15;
-    d.n[ServerGamemode]xtMapRotationMs = 0;
-    d.mapChang[ServerGamemode]Co[ServerGamemode]ntdown[ServerGamemode]ta[ServerGamemode]tMs = 0;
-    d.p[ServerGamemode]ndingA[ServerGamemode]tomaticMap.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
+    ServerGamemodeState& d = serverGamemodeState();
+    d.enabled = true;
+    d.mapOnly = false;
+    d.mode = rules.matchMode == "tdm" ? ServerMode::TeamDeathmatch
+        : rules.matchMode == "ffa" ? ServerMode::FreeForAll
+        : rules.matchMode == "duel" ? ServerMode::Duel : ServerMode::Sandbox;
+    d.communityMode = "sandbox";
+    d.communityWeaponSetId = 1;
+    d.communityWeaponSetExplicit = false;
+    d.communityScores.clear();
+    d.communityTeams.clear();
+    d.communityTeamScore[0] = d.communityTeamScore[1] = 0;
+    d.communityRoundOver = false;
+    d.communityRoundResetMs = 0;
+    d.phase = DUEL_PHASE_WAITING;
+    d.stateBroadcastPending = false;
+    d.matchOver = false;
+    d.scoreA = 0;
+    d.scoreB = 0;
+    d.goalValue = rules.goalValue;
+    d.countdownSeconds = rules.countdownSeconds;
+    d.rematchSeconds = rules.rematchSeconds;
+    d.teamAName = rules.teamAName;
+    d.teamBName = rules.teamBName;
+    d.playerAId = 0;
+    d.playerBId = 0;
+    d.winnerPlayerId = 0;
+    d.spawnsAssigned = false;
+    d.stateSent = false;
+    d.spawnOffsetRadius = rules.spawnOffsetRadius;
+    d.mapPool = rules.mapPool;
+    d.rotateMaps = rules.rotateMaps;
+    d.mapId = rules.mapId;
+    d.duelId = 0;
+    d.mapVersion = 0;
+    d.spawnAnchorVersion = 0;
+    d.respawnSequence = 0;
+    d.stateVersion = 0;
+    d.spawnAnchorIndex = 0;
+    d.usedMaps.clear();
+    d.usedMaps.insert(rules.mapId);
+    d.hasPendingManualMap = false;
+    d.pendingManualMap.clear();
+    d.autoMapRotation = false;
+    d.mapRotationMinutes = 15;
+    d.nextMapRotationMs = 0;
+    d.mapChangeCountdownStartMs = 0;
+    d.pendingAutomaticMap.clear();
 
-    // ── FFA/T[ServerGamemode]M fi[ServerGamemode][ServerGamemode]ds ─────────────────────────────────────────────
-    d.matchMod[ServerGamemode] = [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.matchMod[ServerGamemode];
-    d.co[ServerGamemode]ntdown[ServerGamemode]ta[ServerGamemode]tTick = 0;
-    d.match[ServerGamemode]ta[ServerGamemode]tTick = 0;
-    d.matchTim[ServerGamemode]LimitTick = 0;
-    d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] = 0.0f;
-    d.int[ServerGamemode][ServerGamemode]mission[ServerGamemode][ServerGamemode]conds = [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.int[ServerGamemode][ServerGamemode]mission[ServerGamemode][ServerGamemode]conds;
-    d.[ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]ts[ServerGamemode][ServerGamemode]conds = [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.[ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]ts[ServerGamemode][ServerGamemode]conds;
-    d.tim[ServerGamemode]Limit[ServerGamemode][ServerGamemode]conds = [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.tim[ServerGamemode]Limit[ServerGamemode][ServerGamemode]conds;
-    d.ffaKi[ServerGamemode][ServerGamemode]s.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    d.ffa[ServerGamemode][ServerGamemode]aths.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    d.[ServerGamemode][ServerGamemode]dT[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s = 0;
-    d.b[ServerGamemode][ServerGamemode][ServerGamemode]T[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s = 0;
-    d.matchT[ServerGamemode]ams.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    d.pa[ServerGamemode]ticipants.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    d.[ServerGamemode]icto[ServerGamemode]yTyp[ServerGamemode] = 0;
-    d.winn[ServerGamemode][ServerGamemode]T[ServerGamemode]am = -1;
-    d.ki[ServerGamemode][ServerGamemode]E[ServerGamemode][ServerGamemode]ntCo[ServerGamemode]nt[ServerGamemode][ServerGamemode] = 0;
+    // ── FFA/TDM fields ─────────────────────────────────────────────
+    d.matchMode = rules.matchMode;
+    d.countdownStartTick = 0;
+    d.matchStartTick = 0;
+    d.matchTimeLimitTick = 0;
+    d.phaseTimer = 0.0f;
+    d.intermissionSeconds = rules.intermissionSeconds;
+    d.resultsSeconds = rules.resultsSeconds;
+    d.timeLimitSeconds = rules.timeLimitSeconds;
+    d.ffaKills.clear();
+    d.ffaDeaths.clear();
+    d.redTeamKills = 0;
+    d.blueTeamKills = 0;
+    d.matchTeams.clear();
+    d.participants.clear();
+    d.victoryType = 0;
+    d.winnerTeam = -1;
+    d.killEventCounter = 0;
 
-    [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-        "[GAMEMO[ServerGamemode]E [ServerGamemode]ERVER] [ServerGamemode]nab[ServerGamemode][ServerGamemode]d mod[ServerGamemode]=%s goa[ServerGamemode]=%d co[ServerGamemode]ntdown=%.1fs [ServerGamemode][ServerGamemode]match=%.1fs t[ServerGamemode]ams=%s/%s [ServerGamemode]otat[ServerGamemode]=%d poo[ServerGamemode]=%z[ServerGamemode] offs[ServerGamemode]t=%.1f tim[ServerGamemode]Limit=%d int[ServerGamemode][ServerGamemode]mission=%d [ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]ts=%d\n",
-        d.matchMod[ServerGamemode].c_st[ServerGamemode](), d.goa[ServerGamemode]Va[ServerGamemode][ServerGamemode][ServerGamemode], d.co[ServerGamemode]ntdown[ServerGamemode][ServerGamemode]conds, d.[ServerGamemode][ServerGamemode]match[ServerGamemode][ServerGamemode]conds,
-        d.t[ServerGamemode]amANam[ServerGamemode].c_st[ServerGamemode](), d.t[ServerGamemode]amBNam[ServerGamemode].c_st[ServerGamemode](), (int)d.[ServerGamemode]otat[ServerGamemode]Maps, d.mapPoo[ServerGamemode].siz[ServerGamemode](),
-        d.spawnOffs[ServerGamemode]tRadi[ServerGamemode]s, d.tim[ServerGamemode]Limit[ServerGamemode][ServerGamemode]conds, (int)d.int[ServerGamemode][ServerGamemode]mission[ServerGamemode][ServerGamemode]conds, (int)d.[ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]ts[ServerGamemode][ServerGamemode]conds);
+    Debug::warn(Debug::Category::Duel,
+        "[DUEL SERVER] enabled mode=%s goal=%d countdown=%.1fs rematch=%.1fs teams=%s/%s rotate=%d pool=%zu offset=%.1f timeLimit=%d intermission=%d results=%d\n",
+        d.matchMode.c_str(), d.goalValue, d.countdownSeconds, d.rematchSeconds,
+        d.teamAName.c_str(), d.teamBName.c_str(), (int)d.rotateMaps, d.mapPool.size(),
+        d.spawnOffsetRadius, d.timeLimitSeconds, (int)d.intermissionSeconds, (int)d.resultsSeconds);
 }
 
-[ServerGamemode]oid s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]ta[ServerGamemode]t(const [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s)
+void serverGamemodeStart(const ServerGamemodeState& rules)
 {
-    s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]ta[ServerGamemode]tMod[ServerGamemode]([ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s);
+    serverStartMode(rules);
 }
 
-[ServerGamemode]oid s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Comm[ServerGamemode]nityMap[ServerGamemode]ta[ServerGamemode]t(const std::[ServerGamemode][ServerGamemode]cto[ServerGamemode]<std::st[ServerGamemode]ing>& mapPoo[ServerGamemode],
-                             const std::st[ServerGamemode]ing& mapId,
-                             boo[ServerGamemode] a[ServerGamemode]toRotation,
-                             [ServerGamemode]int32_t [ServerGamemode]otationMin[ServerGamemode]t[ServerGamemode]s,
-                             int w[ServerGamemode]apon[ServerGamemode][ServerGamemode]tId)
+void serverCommunityMapStart(const std::vector<std::string>& mapPool,
+                             const std::string& mapId,
+                             bool autoRotation,
+                             uint32_t rotationMinutes,
+                             int weaponSetId)
 {
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode] [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s;
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.mapPoo[ServerGamemode] = mapPoo[ServerGamemode];
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.mapId = mapId;
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.[ServerGamemode]otat[ServerGamemode]Maps = fa[ServerGamemode]s[ServerGamemode];
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.mapOn[ServerGamemode]y = t[ServerGamemode][ServerGamemode][ServerGamemode];
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.a[ServerGamemode]toMapRotation = a[ServerGamemode]toRotation;
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.mapRotationMin[ServerGamemode]t[ServerGamemode]s = std::c[ServerGamemode]amp([ServerGamemode]otationMin[ServerGamemode]t[ServerGamemode]s, 1[ServerGamemode], 9999[ServerGamemode]);
-    s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]ta[ServerGamemode]tMod[ServerGamemode]([ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s);
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& stat[ServerGamemode] = s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]();
-    stat[ServerGamemode].mapOn[ServerGamemode]y = t[ServerGamemode][ServerGamemode][ServerGamemode];
-    stat[ServerGamemode].mod[ServerGamemode] = [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Mod[ServerGamemode]::[ServerGamemode]andbox;
-    stat[ServerGamemode].comm[ServerGamemode]nityMod[ServerGamemode] = "sandbox";
-    stat[ServerGamemode].comm[ServerGamemode]nityW[ServerGamemode]apon[ServerGamemode][ServerGamemode]tId = std::max(1, w[ServerGamemode]apon[ServerGamemode][ServerGamemode]tId);
-    stat[ServerGamemode].comm[ServerGamemode]nityW[ServerGamemode]apon[ServerGamemode][ServerGamemode]tExp[ServerGamemode]icit = t[ServerGamemode][ServerGamemode][ServerGamemode];
-    stat[ServerGamemode].a[ServerGamemode]toMapRotation = [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.a[ServerGamemode]toMapRotation;
-    stat[ServerGamemode].mapRotationMin[ServerGamemode]t[ServerGamemode]s = [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s.mapRotationMin[ServerGamemode]t[ServerGamemode]s;
-    stat[ServerGamemode].n[ServerGamemode]xtMapRotationMs = nowMs() + ([ServerGamemode]int64_t)stat[ServerGamemode].mapRotationMin[ServerGamemode]t[ServerGamemode]s * 60000[ServerGamemode][ServerGamemode][ServerGamemode];
-    [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::N[ServerGamemode]two[ServerGamemode]king,
-        "[COMMUNITY MAP RUNTIME] map=%s a[ServerGamemode]to=%d int[ServerGamemode][ServerGamemode][ServerGamemode]a[ServerGamemode]Min[ServerGamemode]t[ServerGamemode]s=%[ServerGamemode] poo[ServerGamemode]=%z[ServerGamemode]\n",
-        mapId.c_st[ServerGamemode](), (int)a[ServerGamemode]toRotation, stat[ServerGamemode].mapRotationMin[ServerGamemode]t[ServerGamemode]s, mapPoo[ServerGamemode].siz[ServerGamemode]());
+    ServerGamemodeState rules;
+    rules.mapPool = mapPool;
+    rules.mapId = mapId;
+    rules.rotateMaps = false;
+    rules.mapOnly = true;
+    rules.autoMapRotation = autoRotation;
+    rules.mapRotationMinutes = std::clamp(rotationMinutes, 1u, 9999u);
+    serverStartMode(rules);
+    ServerGamemodeState& state = serverGamemodeState();
+    state.mapOnly = true;
+    state.mode = ServerMode::Sandbox;
+    state.communityMode = "sandbox";
+    state.communityWeaponSetId = std::max(1, weaponSetId);
+    state.communityWeaponSetExplicit = true;
+    state.autoMapRotation = rules.autoMapRotation;
+    state.mapRotationMinutes = rules.mapRotationMinutes;
+    state.nextMapRotationMs = nowMs() + (uint64_t)state.mapRotationMinutes * 60000ull;
+    Debug::warn(Debug::Category::Networking,
+        "[COMMUNITY MAP RUNTIME] map=%s auto=%d intervalMinutes=%u pool=%zu\n",
+        mapId.c_str(), (int)autoRotation, state.mapRotationMinutes, mapPool.size());
 }
 
-[ServerGamemode]oid s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Comm[ServerGamemode]nity[ServerGamemode][ServerGamemode]tW[ServerGamemode]apon[ServerGamemode][ServerGamemode]t(int w[ServerGamemode]apon[ServerGamemode][ServerGamemode]tId)
+void serverCommunitySetWeaponSet(int weaponSetId)
 {
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& stat[ServerGamemode] = s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]();
-    if (!stat[ServerGamemode].[ServerGamemode]nab[ServerGamemode][ServerGamemode]d || !stat[ServerGamemode].mapOn[ServerGamemode]y) [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n;
-    Comm[ServerGamemode]nity[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Config& config = Comm[ServerGamemode]nity[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Config::instanc[ServerGamemode]();
-    if (config.w[ServerGamemode]apon[ServerGamemode][ServerGamemode]ts().[ServerGamemode]mpty()) config.[ServerGamemode]oad();
-    if (!config.w[ServerGamemode]apon[ServerGamemode][ServerGamemode]tById(w[ServerGamemode]apon[ServerGamemode][ServerGamemode]tId)) [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n;
-    stat[ServerGamemode].comm[ServerGamemode]nityW[ServerGamemode]apon[ServerGamemode][ServerGamemode]tId = w[ServerGamemode]apon[ServerGamemode][ServerGamemode]tId;
-    stat[ServerGamemode].comm[ServerGamemode]nityW[ServerGamemode]apon[ServerGamemode][ServerGamemode]tExp[ServerGamemode]icit = t[ServerGamemode][ServerGamemode][ServerGamemode];
-    [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::N[ServerGamemode]two[ServerGamemode]king,
-        "[COMMUNITY WEAPON [ServerGamemode]ET] s[ServerGamemode][ServerGamemode][ServerGamemode]ct[ServerGamemode]d=%d\n", stat[ServerGamemode].comm[ServerGamemode]nityW[ServerGamemode]apon[ServerGamemode][ServerGamemode]tId);
+    ServerGamemodeState& state = serverGamemodeState();
+    if (!state.enabled || !state.mapOnly) return;
+    CommunityServerConfig& config = CommunityServerConfig::instance();
+    if (config.weaponSets().empty()) config.load();
+    if (!config.weaponSetById(weaponSetId)) return;
+    state.communityWeaponSetId = weaponSetId;
+    state.communityWeaponSetExplicit = true;
+    Debug::warn(Debug::Category::Networking,
+        "[COMMUNITY WEAPON SET] selected=%d\n", state.communityWeaponSetId);
 }
 
-boo[ServerGamemode] s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Comm[ServerGamemode]nityW[ServerGamemode]aponA[ServerGamemode][ServerGamemode]ow[ServerGamemode]d(const std::st[ServerGamemode]ing& w[ServerGamemode]aponId)
+bool serverCommunityWeaponAllowed(const std::string& weaponId)
 {
-    const [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& stat[ServerGamemode] = s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]();
-    const boo[ServerGamemode] comm[ServerGamemode]nityMod[ServerGamemode] = stat[ServerGamemode].comm[ServerGamemode]nityMod[ServerGamemode] == "sandbox"
-        || stat[ServerGamemode].comm[ServerGamemode]nityMod[ServerGamemode] == "f[ServerGamemode][ServerGamemode][ServerGamemode]_fo[ServerGamemode]_a[ServerGamemode][ServerGamemode]"
-        || stat[ServerGamemode].comm[ServerGamemode]nityMod[ServerGamemode] == "t[ServerGamemode]am_d[ServerGamemode]athmatch"
-        || stat[ServerGamemode].hasBombF[ServerGamemode]at[ServerGamemode][ServerGamemode][ServerGamemode];
-    if (!comm[ServerGamemode]nityMod[ServerGamemode]) [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n t[ServerGamemode][ServerGamemode][ServerGamemode];
-    Comm[ServerGamemode]nity[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Config& config = Comm[ServerGamemode]nity[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Config::instanc[ServerGamemode]();
-    if (config.w[ServerGamemode]apon[ServerGamemode][ServerGamemode]ts().[ServerGamemode]mpty()) config.[ServerGamemode]oad();
-    [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n config.w[ServerGamemode]aponA[ServerGamemode][ServerGamemode]ow[ServerGamemode]d(stat[ServerGamemode].comm[ServerGamemode]nityW[ServerGamemode]apon[ServerGamemode][ServerGamemode]tId, w[ServerGamemode]aponId);
+    const ServerGamemodeState& state = serverGamemodeState();
+    const bool communityMode = state.communityMode == "sandbox"
+        || state.communityMode == "free_for_all"
+        || state.communityMode == "team_deathmatch"
+        || state.hasBombFeature;
+    if (!communityMode) return true;
+    CommunityServerConfig& config = CommunityServerConfig::instance();
+    if (config.weaponSets().empty()) config.load();
+    return config.weaponAllowed(state.communityWeaponSetId, weaponId);
 }
 
-int s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Comm[ServerGamemode]nityW[ServerGamemode]aponNati[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]ot(int [ServerGamemode]ogica[ServerGamemode][ServerGamemode][ServerGamemode]ot)
+int serverCommunityWeaponNativeSlot(int logicalSlot)
 {
-    Comm[ServerGamemode]nity[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Config& config = Comm[ServerGamemode]nity[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Config::instanc[ServerGamemode]();
-    if (config.w[ServerGamemode]apon[ServerGamemode][ServerGamemode]ts().[ServerGamemode]mpty()) config.[ServerGamemode]oad();
-    const std::st[ServerGamemode]ing* id = config.w[ServerGamemode]aponFo[ServerGamemode][ServerGamemode][ServerGamemode]ot(s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]().comm[ServerGamemode]nityW[ServerGamemode]apon[ServerGamemode][ServerGamemode]tId, [ServerGamemode]ogica[ServerGamemode][ServerGamemode][ServerGamemode]ot);
-    if (!id) [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n [ServerGamemode]ogica[ServerGamemode][ServerGamemode][ServerGamemode]ot;
-    const W[ServerGamemode]apon[ServerGamemode][ServerGamemode]finition* d[ServerGamemode]f = W[ServerGamemode]aponR[ServerGamemode]gist[ServerGamemode]y::instanc[ServerGamemode]().g[ServerGamemode]t(*id);
-    [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n d[ServerGamemode]f ? d[ServerGamemode]f->s[ServerGamemode]ot : -1;
+    CommunityServerConfig& config = CommunityServerConfig::instance();
+    if (config.weaponSets().empty()) config.load();
+    const std::string* id = config.weaponForSlot(serverGamemodeState().communityWeaponSetId, logicalSlot);
+    if (!id) return logicalSlot;
+    const WeaponDefinition* def = WeaponRegistry::instance().get(*id);
+    return def ? def->slot : -1;
 }
 
-int s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Comm[ServerGamemode]nityW[ServerGamemode]aponLogica[ServerGamemode][ServerGamemode][ServerGamemode]ot(const std::st[ServerGamemode]ing& w[ServerGamemode]aponId)
+int serverCommunityWeaponLogicalSlot(const std::string& weaponId)
 {
-    Comm[ServerGamemode]nity[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Config& config = Comm[ServerGamemode]nity[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Config::instanc[ServerGamemode]();
-    if (config.w[ServerGamemode]apon[ServerGamemode][ServerGamemode]ts().[ServerGamemode]mpty()) config.[ServerGamemode]oad();
-    const int s[ServerGamemode]ot = config.s[ServerGamemode]otFo[ServerGamemode]W[ServerGamemode]apon(s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]().comm[ServerGamemode]nityW[ServerGamemode]apon[ServerGamemode][ServerGamemode]tId, w[ServerGamemode]aponId);
-    [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n s[ServerGamemode]ot > 0 ? s[ServerGamemode]ot : -1;
+    CommunityServerConfig& config = CommunityServerConfig::instance();
+    if (config.weaponSets().empty()) config.load();
+    const int slot = config.slotForWeapon(serverGamemodeState().communityWeaponSetId, weaponId);
+    return slot > 0 ? slot : -1;
 }
 
-[ServerGamemode]oid s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Comm[ServerGamemode]nity[ServerGamemode][ServerGamemode]tMod[ServerGamemode](const std::st[ServerGamemode]ing& mod[ServerGamemode]Id)
+void serverCommunitySetMode(const std::string& modeId)
 {
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& stat[ServerGamemode] = s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]();
-    if (!stat[ServerGamemode].[ServerGamemode]nab[ServerGamemode][ServerGamemode]d || mod[ServerGamemode]Id.[ServerGamemode]mpty()) [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n;
-    Comm[ServerGamemode]nity[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Config& config = Comm[ServerGamemode]nity[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Config::instanc[ServerGamemode]();
-    if (config.mod[ServerGamemode]s().[ServerGamemode]mpty()) config.[ServerGamemode]oad();
-    stat[ServerGamemode].comm[ServerGamemode]nityMod[ServerGamemode] = mod[ServerGamemode]Id;
-    stat[ServerGamemode].comm[ServerGamemode]nity[ServerGamemode]co[ServerGamemode][ServerGamemode]s.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    stat[ServerGamemode].comm[ServerGamemode]nityT[ServerGamemode]ams.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    stat[ServerGamemode].comm[ServerGamemode]nityT[ServerGamemode]am[ServerGamemode]co[ServerGamemode][ServerGamemode][0] = stat[ServerGamemode].comm[ServerGamemode]nityT[ServerGamemode]am[ServerGamemode]co[ServerGamemode][ServerGamemode][1] = 0;
-    stat[ServerGamemode].comm[ServerGamemode]nityRo[ServerGamemode]ndO[ServerGamemode][ServerGamemode][ServerGamemode] = fa[ServerGamemode]s[ServerGamemode];
-    stat[ServerGamemode].comm[ServerGamemode]nityRo[ServerGamemode]ndR[ServerGamemode]s[ServerGamemode]tMs = 0;
-    [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::N[ServerGamemode]two[ServerGamemode]king,
-        "[COMMUNITY MO[ServerGamemode]E] s[ServerGamemode][ServerGamemode][ServerGamemode]ct[ServerGamemode]d=%s\n", stat[ServerGamemode].comm[ServerGamemode]nityMod[ServerGamemode].c_st[ServerGamemode]());
+    ServerGamemodeState& state = serverGamemodeState();
+    if (!state.enabled || modeId.empty()) return;
+    CommunityServerConfig& config = CommunityServerConfig::instance();
+    if (config.modes().empty()) config.load();
+    state.communityMode = modeId;
+    state.communityScores.clear();
+    state.communityTeams.clear();
+    state.communityTeamScore[0] = state.communityTeamScore[1] = 0;
+    state.communityRoundOver = false;
+    state.communityRoundResetMs = 0;
+    Debug::warn(Debug::Category::Networking,
+        "[COMMUNITY MODE] selected=%s\n", state.communityMode.c_str());
 }
 
-[ServerGamemode]oid s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Comm[ServerGamemode]nity[ServerGamemode]ta[ServerGamemode]tMatch(boo[ServerGamemode] skipInt[ServerGamemode][ServerGamemode]mission, const std::st[ServerGamemode]ing& [ServerGamemode][ServerGamemode]q[ServerGamemode][ServerGamemode]st[ServerGamemode]dMod[ServerGamemode])
+void serverCommunityStartMatch(bool skipIntermission, const std::string& requestedMode)
 {
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d = s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]();
-    if (!d.[ServerGamemode]nab[ServerGamemode][ServerGamemode]d) [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n;
+    ServerGamemodeState& d = serverGamemodeState();
+    if (!d.enabled) return;
 
-    if (![ServerGamemode][ServerGamemode]q[ServerGamemode][ServerGamemode]st[ServerGamemode]dMod[ServerGamemode].[ServerGamemode]mpty())
-        d.comm[ServerGamemode]nityMod[ServerGamemode] = [ServerGamemode][ServerGamemode]q[ServerGamemode][ServerGamemode]st[ServerGamemode]dMod[ServerGamemode];
+    if (!requestedMode.empty())
+        d.communityMode = requestedMode;
 
-    // ── Look [ServerGamemode]p th[ServerGamemode] comm[ServerGamemode]nity mod[ServerGamemode] and [ServerGamemode][ServerGamemode]so[ServerGamemode][ServerGamemode][ServerGamemode] its gam[ServerGamemode]mod[ServerGamemode]_id ───────
-    const Comm[ServerGamemode]nity[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Config& comm[ServerGamemode]nityConfig = Comm[ServerGamemode]nity[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Config::instanc[ServerGamemode]();
-    const Comm[ServerGamemode]nityMod[ServerGamemode]* cm = comm[ServerGamemode]nityConfig.mod[ServerGamemode]ById(d.comm[ServerGamemode]nityMod[ServerGamemode]);
-    if (!cm) [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n;  // [ServerGamemode]nknown mod[ServerGamemode] — cannot sta[ServerGamemode]t
+    // ── Look up the community mode and resolve its gamemode_id ───────
+    const CommunityServerConfig& communityConfig = CommunityServerConfig::instance();
+    const CommunityMode* cm = communityConfig.modeById(d.communityMode);
+    if (!cm) return;  // unknown mode — cannot start
 
-    // Us[ServerGamemode] gam[ServerGamemode]mod[ServerGamemode]_id to [ServerGamemode]ook [ServerGamemode]p th[ServerGamemode] act[ServerGamemode]a[ServerGamemode] gam[ServerGamemode]mod[ServerGamemode] config.
-    // This b[ServerGamemode]idg[ServerGamemode]s on[ServerGamemode]in[ServerGamemode]mod[ServerGamemode]s.json (comm[ServerGamemode]nity m[ServerGamemode]n[ServerGamemode]) to gam[ServerGamemode]mod[ServerGamemode]s/*.json (gam[ServerGamemode]p[ServerGamemode]ay [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]s).
-    const std::st[ServerGamemode]ing& [ServerGamemode][ServerGamemode]so[ServerGamemode][ServerGamemode][ServerGamemode]dGam[ServerGamemode]mod[ServerGamemode]Id = cm->gam[ServerGamemode]mod[ServerGamemode]Id;
+    // Use gamemode_id to look up the actual gamemode config.
+    // This bridges onlinemodes.json (community menu) to gamemodes/*.json (gameplay rules).
+    const std::string& resolvedGamemodeId = cm->gamemodeId;
 
-    // [ServerGamemode][ServerGamemode]f[ServerGamemode][ServerGamemode] a [ServerGamemode]i[ServerGamemode][ServerGamemode] mod[ServerGamemode] switch [ServerGamemode]nti[ServerGamemode] th[ServerGamemode] c[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]nt mod[ServerGamemode] has shown its [ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]ts.
-    if (!d.mapOn[ServerGamemode]y && !d.matchMod[ServerGamemode].[ServerGamemode]mpty() && d.matchMod[ServerGamemode] != [ServerGamemode][ServerGamemode]so[ServerGamemode][ServerGamemode][ServerGamemode]dGam[ServerGamemode]mod[ServerGamemode]Id &&
-        d.phas[ServerGamemode] != [ServerGamemode]UEL_PHA[ServerGamemode]E_WAITING && d.phas[ServerGamemode] != [ServerGamemode]UEL_PHA[ServerGamemode]E_RE[ServerGamemode]ULT[ServerGamemode])
+    // Defer a live mode switch until the current mode has shown its results.
+    if (!d.mapOnly && !d.matchMode.empty() && d.matchMode != resolvedGamemodeId &&
+        d.phase != DUEL_PHASE_WAITING && d.phase != DUEL_PHASE_RESULTS)
     {
-        d.p[ServerGamemode]ndingMod[ServerGamemode][ServerGamemode]witch = t[ServerGamemode][ServerGamemode][ServerGamemode];
-        d.p[ServerGamemode]ndingMod[ServerGamemode][ServerGamemode]witchCo[ServerGamemode]ntdown = skipInt[ServerGamemode][ServerGamemode]mission;
-        d.p[ServerGamemode]ndingGam[ServerGamemode]mod[ServerGamemode]Id = [ServerGamemode][ServerGamemode]so[ServerGamemode][ServerGamemode][ServerGamemode]dGam[ServerGamemode]mod[ServerGamemode]Id;
-        d.phas[ServerGamemode] = [ServerGamemode]UEL_PHA[ServerGamemode]E_RE[ServerGamemode]ULT[ServerGamemode];
-        d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] = 5.0f;
-        d.matchO[ServerGamemode][ServerGamemode][ServerGamemode] = t[ServerGamemode][ServerGamemode][ServerGamemode];
-        if (d.matchMod[ServerGamemode] == "ffa") {
-            int b[ServerGamemode]st = -1;
-            fo[ServerGamemode] (const a[ServerGamemode]to& k[ServerGamemode] : d.ffaKi[ServerGamemode][ServerGamemode]s)
-                if (k[ServerGamemode].s[ServerGamemode]cond > b[ServerGamemode]st) { b[ServerGamemode]st = k[ServerGamemode].s[ServerGamemode]cond; d.winn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id = k[ServerGamemode].fi[ServerGamemode]st; }
-        } [ServerGamemode][ServerGamemode]s[ServerGamemode] if (d.matchMod[ServerGamemode] == "tdm") {
-            d.winn[ServerGamemode][ServerGamemode]T[ServerGamemode]am = d.[ServerGamemode][ServerGamemode]dT[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s >= d.b[ServerGamemode][ServerGamemode][ServerGamemode]T[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s ? 0 : 1;
+        d.pendingModeSwitch = true;
+        d.pendingModeSwitchCountdown = skipIntermission;
+        d.pendingGamemodeId = resolvedGamemodeId;
+        d.phase = DUEL_PHASE_RESULTS;
+        d.phaseTimer = 5.0f;
+        d.matchOver = true;
+        if (d.matchMode == "ffa") {
+            int best = -1;
+            for (const auto& kv : d.ffaKills)
+                if (kv.second > best) { best = kv.second; d.winnerPlayerId = kv.first; }
+        } else if (d.matchMode == "tdm") {
+            d.winnerTeam = d.redTeamKills >= d.blueTeamKills ? 0 : 1;
         }
-        d.stat[ServerGamemode]B[ServerGamemode]oadcastP[ServerGamemode]nding = t[ServerGamemode][ServerGamemode][ServerGamemode];
-        ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-        [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-            "[GAMEMO[ServerGamemode]E [ServerGamemode]WITCH] o[ServerGamemode]d=%s n[ServerGamemode]w=%s [ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]ts[ServerGamemode][ServerGamemode]conds=5 co[ServerGamemode]ntdownAft[ServerGamemode][ServerGamemode]=%d\n",
-            d.matchMod[ServerGamemode].c_st[ServerGamemode](), [ServerGamemode][ServerGamemode]so[ServerGamemode][ServerGamemode][ServerGamemode]dGam[ServerGamemode]mod[ServerGamemode]Id.c_st[ServerGamemode](), (int)skipInt[ServerGamemode][ServerGamemode]mission);
-        [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n;
+        d.stateBroadcastPending = true;
+        ++d.stateVersion;
+        Debug::warn(Debug::Category::Duel,
+            "[GAMEMODE SWITCH] old=%s new=%s resultsSeconds=5 countdownAfter=%d\n",
+            d.matchMode.c_str(), resolvedGamemodeId.c_str(), (int)skipIntermission);
+        return;
     }
 
-    // [ServerGamemode][ServerGamemode]t match mod[ServerGamemode] f[ServerGamemode]om comm[ServerGamemode]nity mod[ServerGamemode] id ([ServerGamemode]s[ServerGamemode]d fo[ServerGamemode] [ServerGamemode]o[ServerGamemode]ting and stat[ServerGamemode] machin[ServerGamemode])
-    d.matchMod[ServerGamemode] = [ServerGamemode][ServerGamemode]so[ServerGamemode][ServerGamemode][ServerGamemode]dGam[ServerGamemode]mod[ServerGamemode]Id;
-    // [ServerGamemode]EPRECATE[ServerGamemode]: th[ServerGamemode] o[ServerGamemode]d [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Mod[ServerGamemode] [ServerGamemode]n[ServerGamemode]m and sho[ServerGamemode]t-fo[ServerGamemode]m matchMod[ServerGamemode] st[ServerGamemode]ings
-    // a[ServerGamemode][ServerGamemode] k[ServerGamemode]pt fo[ServerGamemode] backwa[ServerGamemode]d compatibi[ServerGamemode]ity with d[ServerGamemode][ServerGamemode][ServerGamemode]/FFA/T[ServerGamemode]M cod[ServerGamemode] paths.
-    // N[ServerGamemode]w mod[ServerGamemode]s sho[ServerGamemode][ServerGamemode]d [ServerGamemode]s[ServerGamemode] matchMod[ServerGamemode] di[ServerGamemode][ServerGamemode]ct[ServerGamemode]y (th[ServerGamemode] comm[ServerGamemode]nity mod[ServerGamemode] id).
-    d.mod[ServerGamemode] = [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Mod[ServerGamemode]::[ServerGamemode]andbox;
+    // Set match mode from community mode id (used for routing and state machine)
+    d.matchMode = resolvedGamemodeId;
+    // DEPRECATED: the old ServerMode enum and short-form matchMode strings
+    // are kept for backward compatibility with duel/FFA/TDM code paths.
+    // New modes should use matchMode directly (the community mode id).
+    d.mode = ServerMode::Sandbox;
 
-    // Load gam[ServerGamemode]mod[ServerGamemode] config [ServerGamemode]sing th[ServerGamemode] [ServerGamemode][ServerGamemode]so[ServerGamemode][ServerGamemode][ServerGamemode]d gam[ServerGamemode]mod[ServerGamemode]_id
-    const Gam[ServerGamemode]mod[ServerGamemode]& gm = Gam[ServerGamemode]mod[ServerGamemode]R[ServerGamemode]gist[ServerGamemode]y::instanc[ServerGamemode]().g[ServerGamemode]t([ServerGamemode][ServerGamemode]so[ServerGamemode][ServerGamemode][ServerGamemode]dGam[ServerGamemode]mod[ServerGamemode]Id);
-    d.goa[ServerGamemode]Va[ServerGamemode][ServerGamemode][ServerGamemode] = gm.goa[ServerGamemode]Va[ServerGamemode][ServerGamemode][ServerGamemode];
-    // An [ServerGamemode]xp[ServerGamemode]icit GUI/[ServerGamemode][ServerGamemode]ntim[ServerGamemode] s[ServerGamemode][ServerGamemode][ServerGamemode]ction wins o[ServerGamemode][ServerGamemode][ServerGamemode] th[ServerGamemode] gam[ServerGamemode]mod[ServerGamemode] d[ServerGamemode]fa[ServerGamemode][ServerGamemode]t.
-    if (!d.comm[ServerGamemode]nityW[ServerGamemode]apon[ServerGamemode][ServerGamemode]tExp[ServerGamemode]icit && gm.w[ServerGamemode]apon[ServerGamemode][ServerGamemode]tId > 0)
-        d.comm[ServerGamemode]nityW[ServerGamemode]apon[ServerGamemode][ServerGamemode]tId = gm.w[ServerGamemode]apon[ServerGamemode][ServerGamemode]tId;
-    d.tim[ServerGamemode]Limit[ServerGamemode][ServerGamemode]conds = gm.tim[ServerGamemode]Limit[ServerGamemode][ServerGamemode]conds;
-    d.int[ServerGamemode][ServerGamemode]mission[ServerGamemode][ServerGamemode]conds = (f[ServerGamemode]oat)gm.int[ServerGamemode][ServerGamemode]mission[ServerGamemode][ServerGamemode]conds;
-    d.[ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]ts[ServerGamemode][ServerGamemode]conds = (f[ServerGamemode]oat)gm.[ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]ts[ServerGamemode][ServerGamemode]conds;
-    d.co[ServerGamemode]ntdown[ServerGamemode][ServerGamemode]conds = gm.co[ServerGamemode]ntdown[ServerGamemode][ServerGamemode]conds;
-    d.go[ServerGamemode][ServerGamemode]conds = gm.go[ServerGamemode][ServerGamemode]conds;
-    d.spawnOffs[ServerGamemode]tRadi[ServerGamemode]s = gm.spawnOffs[ServerGamemode]tRadi[ServerGamemode]s;
-    d.hasBombF[ServerGamemode]at[ServerGamemode][ServerGamemode][ServerGamemode] = gm.f[ServerGamemode]at[ServerGamemode][ServerGamemode][ServerGamemode]s.bombHo[ServerGamemode]d[ServerGamemode][ServerGamemode]T[ServerGamemode]xt;
+    // Load gamemode config using the resolved gamemode_id
+    const Gamemode& gm = GamemodeRegistry::instance().get(resolvedGamemodeId);
+    d.goalValue = gm.goalValue;
+    // An explicit GUI/runtime selection wins over the gamemode default.
+    if (!d.communityWeaponSetExplicit && gm.weaponSetId > 0)
+        d.communityWeaponSetId = gm.weaponSetId;
+    d.timeLimitSeconds = gm.timeLimitSeconds;
+    d.intermissionSeconds = (float)gm.intermissionSeconds;
+    d.resultsSeconds = (float)gm.resultsSeconds;
+    d.countdownSeconds = gm.countdownSeconds;
+    d.goSeconds = gm.goSeconds;
+    d.spawnOffsetRadius = gm.spawnOffsetRadius;
+    d.hasBombFeature = gm.features.bombHolderText;
+    d.bombTagActive = false;
 
-    // mod[ServerGamemode]sta[ServerGamemode]t [ServerGamemode]nt[ServerGamemode][ServerGamemode]s th[ServerGamemode] config[ServerGamemode][ServerGamemode][ServerGamemode]d int[ServerGamemode][ServerGamemode]mission. mod[ServerGamemode]sta[ServerGamemode]tnow [ServerGamemode]nt[ServerGamemode][ServerGamemode]s th[ServerGamemode]
-    // co[ServerGamemode]ntdown di[ServerGamemode][ServerGamemode]ct[ServerGamemode]y; s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode]Tick owns th[ServerGamemode] a[ServerGamemode]tho[ServerGamemode]itati[ServerGamemode][ServerGamemode] 3-2-1.
-    d.mapOn[ServerGamemode]y = fa[ServerGamemode]s[ServerGamemode];
-    d.[ServerGamemode]astB[ServerGamemode]oadcastTick = 0;
-    d.stat[ServerGamemode]B[ServerGamemode]oadcastP[ServerGamemode]nding = t[ServerGamemode][ServerGamemode][ServerGamemode];
-    d.[ServerGamemode]otat[ServerGamemode]Maps = d.a[ServerGamemode]toMapRotation;
-    d.ffaKi[ServerGamemode][ServerGamemode]s.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    d.ffa[ServerGamemode][ServerGamemode]aths.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    d.matchT[ServerGamemode]ams.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    d.pa[ServerGamemode]ticipants.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    d.[ServerGamemode][ServerGamemode]dT[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s = 0;
-    d.b[ServerGamemode][ServerGamemode][ServerGamemode]T[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s = 0;
-    d.spawnsAssign[ServerGamemode]d = fa[ServerGamemode]s[ServerGamemode];
-    d.sta[ServerGamemode]tCo[ServerGamemode]ntdownImm[ServerGamemode]diat[ServerGamemode][ServerGamemode]y = skipInt[ServerGamemode][ServerGamemode]mission;
-    d.phas[ServerGamemode] = [ServerGamemode]UEL_PHA[ServerGamemode]E_INTERMI[ServerGamemode][ServerGamemode]ION;
-    d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] = skipInt[ServerGamemode][ServerGamemode]mission ? 0.0f : d.int[ServerGamemode][ServerGamemode]mission[ServerGamemode][ServerGamemode]conds;
-    d.matchO[ServerGamemode][ServerGamemode][ServerGamemode] = fa[ServerGamemode]s[ServerGamemode];
-    d.winn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id = 0;
-    d.winn[ServerGamemode][ServerGamemode]T[ServerGamemode]am = -1;
-    ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-    ++d.d[ServerGamemode][ServerGamemode][ServerGamemode]Id;
+    // modestart enters the configured intermission. modestartnow enters the
+    // countdown directly; serverGamemodeTick owns the authoritative 3-2-1.
+    d.mapOnly = false;
+    d.lastBroadcastTick = 0;
+    d.stateBroadcastPending = true;
+    d.rotateMaps = d.autoMapRotation;
+    d.ffaKills.clear();
+    d.ffaDeaths.clear();
+    d.matchTeams.clear();
+    d.participants.clear();
+    d.redTeamKills = 0;
+    d.blueTeamKills = 0;
+    d.spawnsAssigned = false;
+    d.startCountdownImmediately = skipIntermission;
+    d.phase = DUEL_PHASE_INTERMISSION;
+    d.phaseTimer = skipIntermission ? 0.0f : d.intermissionSeconds;
+    d.matchOver = false;
+    d.winnerPlayerId = 0;
+    d.winnerTeam = -1;
+    ++d.stateVersion;
+    ++d.duelId;
 
-    // ── Mod[ServerGamemode]-sp[ServerGamemode]cific acti[ServerGamemode]ation ─────────────────────────────────────
-    // Each mod[ServerGamemode] that n[ServerGamemode][ServerGamemode]ds [ServerGamemode]xt[ServerGamemode]a initia[ServerGamemode]ization g[ServerGamemode]ts its [ServerGamemode]nt[ServerGamemode]y point ca[ServerGamemode][ServerGamemode][ServerGamemode]d h[ServerGamemode][ServerGamemode][ServerGamemode].
-    // This [ServerGamemode][ServerGamemode]p[ServerGamemode]ac[ServerGamemode]s th[ServerGamemode] o[ServerGamemode]d ha[ServerGamemode]dcod[ServerGamemode]d if/[ServerGamemode][ServerGamemode]s[ServerGamemode] if chain.
-    if (d.hasBombF[ServerGamemode]at[ServerGamemode][ServerGamemode][ServerGamemode]) {
-        s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]BombTag[ServerGamemode]ta[ServerGamemode]tMatch(skipInt[ServerGamemode][ServerGamemode]mission);
+    // ── Mode-specific activation ─────────────────────────────────────
+    // Each mode that needs extra initialization gets its entry point called here.
+    // This replaces the old hardcoded if/else if chain.
+    if (d.hasBombFeature) {
+        serverBombTagStartMatch(skipIntermission);
     }
 
-    [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-        "[MO[ServerGamemode]E[ServerGamemode]TART] comm[ServerGamemode]nity=%s gam[ServerGamemode]mod[ServerGamemode]=%s phas[ServerGamemode]=%s goa[ServerGamemode]=%d tim[ServerGamemode]Limit=%d int[ServerGamemode][ServerGamemode]mission=%.0f\n",
-        d.comm[ServerGamemode]nityMod[ServerGamemode].c_st[ServerGamemode](), [ServerGamemode][ServerGamemode]so[ServerGamemode][ServerGamemode][ServerGamemode]dGam[ServerGamemode]mod[ServerGamemode]Id.c_st[ServerGamemode](),
-        skipInt[ServerGamemode][ServerGamemode]mission ? "COUNT[ServerGamemode]OWN_PEN[ServerGamemode]ING" : "INTERMI[ServerGamemode][ServerGamemode]ION",
-        d.goa[ServerGamemode]Va[ServerGamemode][ServerGamemode][ServerGamemode],
-        d.tim[ServerGamemode]Limit[ServerGamemode][ServerGamemode]conds, d.int[ServerGamemode][ServerGamemode]mission[ServerGamemode][ServerGamemode]conds);
+    Debug::warn(Debug::Category::Duel,
+        "[MODESTART] community=%s gamemode=%s phase=%s goal=%d timeLimit=%d intermission=%.0f\n",
+        d.communityMode.c_str(), resolvedGamemodeId.c_str(),
+        skipIntermission ? "COUNTDOWN_PENDING" : "INTERMISSION",
+        d.goalValue,
+        d.timeLimitSeconds, d.intermissionSeconds);
 }
 
-nam[ServerGamemode]spac[ServerGamemode] {
+namespace {
 
-[ServerGamemode]int32_t co[ServerGamemode]ntActi[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]s(const std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s)
+uint32_t countActivePlayers(const std::unordered_map<uint32_t, ServerPlayer>& players)
 {
-    [ServerGamemode]int32_t co[ServerGamemode]nt = 0;
-    fo[ServerGamemode] (const a[ServerGamemode]to& k[ServerGamemode] : p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s) {
-        if (k[ServerGamemode].s[ServerGamemode]cond.spawn[ServerGamemode]tat[ServerGamemode] == [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]::Acti[ServerGamemode][ServerGamemode])
-            ++co[ServerGamemode]nt;
+    uint32_t count = 0;
+    for (const auto& kv : players) {
+        if (kv.second.spawnState == ServerPlayer::Active)
+            ++count;
     }
-    [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n co[ServerGamemode]nt;
+    return count;
 }
 
-[ServerGamemode]oid b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode]([ServerGamemode]OCKET sock,
-                        const [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d,
-                        const std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s,
-                        [ServerGamemode]int64_t& tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t)
+void broadcastDuelState(SOCKET sock,
+                        const ServerGamemodeState& d,
+                        const std::unordered_map<uint32_t, ServerPlayer>& players,
+                        uint64_t& totalPacketsOut)
 {
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode]Pack[ServerGamemode]t pkt{};
-    pkt.h[ServerGamemode]ad[ServerGamemode][ServerGamemode].typ[ServerGamemode] = PACKET_[ServerGamemode]UEL_[ServerGamemode]TATE;
-    pkt.h[ServerGamemode]ad[ServerGamemode][ServerGamemode].tick = 0;
-    pkt.phas[ServerGamemode] = d.phas[ServerGamemode];
-    pkt.d[ServerGamemode][ServerGamemode][ServerGamemode]Id = d.d[ServerGamemode][ServerGamemode][ServerGamemode]Id;
-    pkt.mapV[ServerGamemode][ServerGamemode]sion = d.mapV[ServerGamemode][ServerGamemode]sion;
-    pkt.spawnAncho[ServerGamemode]V[ServerGamemode][ServerGamemode]sion = d.spawnAncho[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-    pkt.[ServerGamemode][ServerGamemode]spawn[ServerGamemode][ServerGamemode]q[ServerGamemode][ServerGamemode]nc[ServerGamemode] = d.[ServerGamemode][ServerGamemode]spawn[ServerGamemode][ServerGamemode]q[ServerGamemode][ServerGamemode]nc[ServerGamemode];
-    pkt.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion = d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-    std::st[ServerGamemode]ncpy(pkt.mapId, d.mapId.c_st[ServerGamemode](), siz[ServerGamemode]of(pkt.mapId) - 1);
-    pkt.spawnAncho[ServerGamemode]Ind[ServerGamemode]x = d.spawnAncho[ServerGamemode]Ind[ServerGamemode]x;
-    pkt.ancho[ServerGamemode]X = d.spawnA.x;
-    pkt.ancho[ServerGamemode]Y = d.spawnA.y;
-    pkt.ancho[ServerGamemode]Z = d.spawnA.z;
-    a[ServerGamemode]to a = p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find(d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]AId);
-    a[ServerGamemode]to b = p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find(d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]BId);
-    if (a != p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd()) {
-        pkt.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]A[ServerGamemode]pawnG[ServerGamemode]n[ServerGamemode][ServerGamemode]ation = a->s[ServerGamemode]cond.spawnG[ServerGamemode]n[ServerGamemode][ServerGamemode]ation;
-        pkt.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]A[ServerGamemode]pawnX = a->s[ServerGamemode]cond.d[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos.x;
-        pkt.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]A[ServerGamemode]pawnY = a->s[ServerGamemode]cond.d[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos.y;
-        pkt.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]A[ServerGamemode]pawnZ = a->s[ServerGamemode]cond.d[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos.z;
+    DuelStatePacket pkt{};
+    pkt.header.type = PACKET_DUEL_STATE;
+    pkt.header.tick = 0;
+    pkt.phase = d.phase;
+    pkt.duelId = d.duelId;
+    pkt.mapVersion = d.mapVersion;
+    pkt.spawnAnchorVersion = d.spawnAnchorVersion;
+    pkt.respawnSequence = d.respawnSequence;
+    pkt.stateVersion = d.stateVersion;
+    std::strncpy(pkt.mapId, d.mapId.c_str(), sizeof(pkt.mapId) - 1);
+    pkt.spawnAnchorIndex = d.spawnAnchorIndex;
+    pkt.anchorX = d.spawnA.x;
+    pkt.anchorY = d.spawnA.y;
+    pkt.anchorZ = d.spawnA.z;
+    auto a = players.find(d.playerAId);
+    auto b = players.find(d.playerBId);
+    if (a != players.end()) {
+        pkt.playerASpawnGeneration = a->second.spawnGeneration;
+        pkt.playerASpawnX = a->second.duelSpawnPos.x;
+        pkt.playerASpawnY = a->second.duelSpawnPos.y;
+        pkt.playerASpawnZ = a->second.duelSpawnPos.z;
     }
-    if (b != p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd()) {
-        pkt.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]B[ServerGamemode]pawnG[ServerGamemode]n[ServerGamemode][ServerGamemode]ation = b->s[ServerGamemode]cond.spawnG[ServerGamemode]n[ServerGamemode][ServerGamemode]ation;
-        pkt.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]B[ServerGamemode]pawnX = b->s[ServerGamemode]cond.d[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos.x;
-        pkt.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]B[ServerGamemode]pawnY = b->s[ServerGamemode]cond.d[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos.y;
-        pkt.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]B[ServerGamemode]pawnZ = b->s[ServerGamemode]cond.d[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos.z;
+    if (b != players.end()) {
+        pkt.playerBSpawnGeneration = b->second.spawnGeneration;
+        pkt.playerBSpawnX = b->second.duelSpawnPos.x;
+        pkt.playerBSpawnY = b->second.duelSpawnPos.y;
+        pkt.playerBSpawnZ = b->second.duelSpawnPos.z;
     }
-    pkt.matchO[ServerGamemode][ServerGamemode][ServerGamemode] = d.matchO[ServerGamemode][ServerGamemode][ServerGamemode] ? 1 : 0;
-    pkt.sco[ServerGamemode][ServerGamemode]A = d.sco[ServerGamemode][ServerGamemode]A;
-    pkt.sco[ServerGamemode][ServerGamemode]B = d.sco[ServerGamemode][ServerGamemode]B;
-    pkt.goa[ServerGamemode]Va[ServerGamemode][ServerGamemode][ServerGamemode] = d.goa[ServerGamemode]Va[ServerGamemode][ServerGamemode][ServerGamemode];
-    pkt.co[ServerGamemode]ntdownL[ServerGamemode]ft = d.co[ServerGamemode]ntdown;
-    pkt.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] = d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode];
-    pkt.[ServerGamemode][ServerGamemode]matchL[ServerGamemode]ft = d.[ServerGamemode][ServerGamemode]matchL[ServerGamemode]ft;
-    pkt.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]AId = d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]AId;
-    pkt.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]BId = d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]BId;
-    pkt.winn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id = d.winn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id;
-    std::st[ServerGamemode]ncpy(pkt.t[ServerGamemode]amANam[ServerGamemode], d.t[ServerGamemode]amANam[ServerGamemode].c_st[ServerGamemode](), siz[ServerGamemode]of(pkt.t[ServerGamemode]amANam[ServerGamemode]) - 1);
-    std::st[ServerGamemode]ncpy(pkt.t[ServerGamemode]amBNam[ServerGamemode], d.t[ServerGamemode]amBNam[ServerGamemode].c_st[ServerGamemode](), siz[ServerGamemode]of(pkt.t[ServerGamemode]amBNam[ServerGamemode]) - 1);
+    pkt.matchOver = d.matchOver ? 1 : 0;
+    pkt.scoreA = d.scoreA;
+    pkt.scoreB = d.scoreB;
+    pkt.goalValue = d.goalValue;
+    pkt.countdownLeft = d.countdown;
+    pkt.phaseTimer = d.phaseTimer;
+    pkt.rematchLeft = d.rematchLeft;
+    pkt.playerAId = d.playerAId;
+    pkt.playerBId = d.playerBId;
+    pkt.winnerPlayerId = d.winnerPlayerId;
+    std::strncpy(pkt.teamAName, d.teamAName.c_str(), sizeof(pkt.teamAName) - 1);
+    std::strncpy(pkt.teamBName, d.teamBName.c_str(), sizeof(pkt.teamBName) - 1);
 
-    // ── FFA/T[ServerGamemode]M [ServerGamemode]xt[ServerGamemode]nsion fi[ServerGamemode][ServerGamemode]ds ───────────────────────────────────
-    std::st[ServerGamemode]ncpy(pkt.matchMod[ServerGamemode], d.matchMod[ServerGamemode].c_st[ServerGamemode](), siz[ServerGamemode]of(pkt.matchMod[ServerGamemode]) - 1);
-    pkt.match[ServerGamemode]ta[ServerGamemode]tTick = d.match[ServerGamemode]ta[ServerGamemode]tTick;
-    pkt.s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Tick = d.c[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]nt[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Tick;
-    pkt.[ServerGamemode]icto[ServerGamemode]yTyp[ServerGamemode] = d.[ServerGamemode]icto[ServerGamemode]yTyp[ServerGamemode];
-    pkt.[ServerGamemode][ServerGamemode]dT[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s = d.[ServerGamemode][ServerGamemode]dT[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s;
-    pkt.b[ServerGamemode][ServerGamemode][ServerGamemode]T[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s = d.b[ServerGamemode][ServerGamemode][ServerGamemode]T[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s;
-    pkt.tim[ServerGamemode]Limit[ServerGamemode][ServerGamemode]conds = d.tim[ServerGamemode]Limit[ServerGamemode][ServerGamemode]conds;
-    pkt.int[ServerGamemode][ServerGamemode]mission[ServerGamemode][ServerGamemode]conds = (int32_t)d.int[ServerGamemode][ServerGamemode]mission[ServerGamemode][ServerGamemode]conds;
-    pkt.[ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]ts[ServerGamemode][ServerGamemode]conds = (int32_t)d.[ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]ts[ServerGamemode][ServerGamemode]conds;
+    // ── FFA/TDM extension fields ───────────────────────────────────
+    std::strncpy(pkt.matchMode, d.matchMode.c_str(), sizeof(pkt.matchMode) - 1);
+    pkt.matchStartTick = d.matchStartTick;
+    pkt.serverTick = d.currentServerTick;
+    pkt.victoryType = d.victoryType;
+    pkt.redTeamKills = d.redTeamKills;
+    pkt.blueTeamKills = d.blueTeamKills;
+    pkt.timeLimitSeconds = d.timeLimitSeconds;
+    pkt.intermissionSeconds = (int32_t)d.intermissionSeconds;
+    pkt.resultsSeconds = (int32_t)d.resultsSeconds;
 
-    // FFA top-3 [ServerGamemode][ServerGamemode]ad[ServerGamemode][ServerGamemode]boa[ServerGamemode]d
-    if (d.matchMod[ServerGamemode] == "ffa") {
-        // [ServerGamemode]o[ServerGamemode]t p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s by ki[ServerGamemode][ServerGamemode]s d[ServerGamemode]sc[ServerGamemode]nding
-        std::[ServerGamemode][ServerGamemode]cto[ServerGamemode]<std::pai[ServerGamemode]<[ServerGamemode]int32_t, int>> so[ServerGamemode]t[ServerGamemode]d;
-        fo[ServerGamemode] (const a[ServerGamemode]to& k[ServerGamemode] : d.ffaKi[ServerGamemode][ServerGamemode]s)
-            so[ServerGamemode]t[ServerGamemode]d.p[ServerGamemode]sh_back({k[ServerGamemode].fi[ServerGamemode]st, k[ServerGamemode].s[ServerGamemode]cond});
-        std::so[ServerGamemode]t(so[ServerGamemode]t[ServerGamemode]d.b[ServerGamemode]gin(), so[ServerGamemode]t[ServerGamemode]d.[ServerGamemode]nd(),
-            [](const a[ServerGamemode]to& a, const a[ServerGamemode]to& b) { [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n a.s[ServerGamemode]cond > b.s[ServerGamemode]cond; });
-        fo[ServerGamemode] (int i = 0; i < 3 && i < (int)so[ServerGamemode]t[ServerGamemode]d.siz[ServerGamemode](); ++i) {
-            pkt.ffaL[ServerGamemode]ad[ServerGamemode][ServerGamemode]Ids[i] = so[ServerGamemode]t[ServerGamemode]d[i].fi[ServerGamemode]st;
-            pkt.ffaL[ServerGamemode]ad[ServerGamemode][ServerGamemode][ServerGamemode]co[ServerGamemode][ServerGamemode]s[i] = so[ServerGamemode]t[ServerGamemode]d[i].s[ServerGamemode]cond;
-            a[ServerGamemode]to nam[ServerGamemode]It = p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find(so[ServerGamemode]t[ServerGamemode]d[i].fi[ServerGamemode]st);
-            if (nam[ServerGamemode]It != p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd())
-                std::st[ServerGamemode]ncpy(pkt.ffaL[ServerGamemode]ad[ServerGamemode][ServerGamemode]Nam[ServerGamemode]s[i], nam[ServerGamemode]It->s[ServerGamemode]cond.nam[ServerGamemode].c_st[ServerGamemode](), siz[ServerGamemode]of(pkt.ffaL[ServerGamemode]ad[ServerGamemode][ServerGamemode]Nam[ServerGamemode]s[i]) - 1);
-            [ServerGamemode][ServerGamemode]s[ServerGamemode]
-                std::snp[ServerGamemode]intf(pkt.ffaL[ServerGamemode]ad[ServerGamemode][ServerGamemode]Nam[ServerGamemode]s[i], siz[ServerGamemode]of(pkt.ffaL[ServerGamemode]ad[ServerGamemode][ServerGamemode]Nam[ServerGamemode]s[i]),
-                              "NPC %[ServerGamemode]", so[ServerGamemode]t[ServerGamemode]d[i].fi[ServerGamemode]st);
+    // FFA top-3 leaderboard
+    if (d.matchMode == "ffa") {
+        // Sort players by kills descending
+        std::vector<std::pair<uint32_t, int>> sorted;
+        for (const auto& kv : d.ffaKills)
+            sorted.push_back({kv.first, kv.second});
+        std::sort(sorted.begin(), sorted.end(),
+            [](const auto& a, const auto& b) { return a.second > b.second; });
+        for (int i = 0; i < 3 && i < (int)sorted.size(); ++i) {
+            pkt.ffaLeaderIds[i] = sorted[i].first;
+            pkt.ffaLeaderScores[i] = sorted[i].second;
+            auto nameIt = players.find(sorted[i].first);
+            if (nameIt != players.end())
+                std::strncpy(pkt.ffaLeaderNames[i], nameIt->second.name.c_str(), sizeof(pkt.ffaLeaderNames[i]) - 1);
+            else
+                std::snprintf(pkt.ffaLeaderNames[i], sizeof(pkt.ffaLeaderNames[i]),
+                              "NPC %u", sorted[i].first);
         }
     }
 
-    // Pa[ServerGamemode]ticipant I[ServerGamemode]s and t[ServerGamemode]ams
-    pkt.pa[ServerGamemode]ticipantCo[ServerGamemode]nt = ([ServerGamemode]int8_t)std::min((siz[ServerGamemode]_t)32, d.pa[ServerGamemode]ticipants.siz[ServerGamemode]());
-    fo[ServerGamemode] ([ServerGamemode]int8_t i = 0; i < pkt.pa[ServerGamemode]ticipantCo[ServerGamemode]nt; ++i) {
-        pkt.pa[ServerGamemode]ticipantIds[i] = d.pa[ServerGamemode]ticipants[i];
-        a[ServerGamemode]to t[ServerGamemode]amIt = d.matchT[ServerGamemode]ams.find(d.pa[ServerGamemode]ticipants[i]);
-        pkt.pa[ServerGamemode]ticipantT[ServerGamemode]ams[i] = t[ServerGamemode]amIt != d.matchT[ServerGamemode]ams.[ServerGamemode]nd() ? ([ServerGamemode]int8_t)t[ServerGamemode]amIt->s[ServerGamemode]cond : 0xFF;
+    // Participant IDs and teams
+    pkt.participantCount = (uint8_t)std::min((size_t)32, d.participants.size());
+    for (uint8_t i = 0; i < pkt.participantCount; ++i) {
+        pkt.participantIds[i] = d.participants[i];
+        auto teamIt = d.matchTeams.find(d.participants[i]);
+        pkt.participantTeams[i] = teamIt != d.matchTeams.end() ? (uint8_t)teamIt->second : 0xFF;
     }
 
-    fo[ServerGamemode] (const a[ServerGamemode]to& k[ServerGamemode] : p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s) {
-        if (k[ServerGamemode].s[ServerGamemode]cond.spawn[ServerGamemode]tat[ServerGamemode] != [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]::Acti[ServerGamemode][ServerGamemode])
-            contin[ServerGamemode][ServerGamemode];
-        const [ServerGamemode]int32_t [ServerGamemode][ServerGamemode][ServerGamemode]ntId = n[ServerGamemode]xtR[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntId();
-        const R[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntQ[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]R[ServerGamemode]s[ServerGamemode][ServerGamemode]t [ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]t = q[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]R[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntToP[ServerGamemode]ay[ServerGamemode][ServerGamemode](
-            sock, const_cast<[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]&>(k[ServerGamemode].s[ServerGamemode]cond), &pkt, siz[ServerGamemode]of(pkt), [ServerGamemode][ServerGamemode][ServerGamemode]ntId,
-            [ServerGamemode][ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]nt[ServerGamemode][ServerGamemode]ssionFo[ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode](const_cast<[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]&>(k[ServerGamemode].s[ServerGamemode]cond)), tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-        const boo[ServerGamemode] s[ServerGamemode]nt = [ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]t == R[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntQ[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]R[ServerGamemode]s[ServerGamemode][ServerGamemode]t::Q[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]d;
-        [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-            "[[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]] s[ServerGamemode]nt d[ServerGamemode][ServerGamemode][ServerGamemode] stat[ServerGamemode] d[ServerGamemode][ServerGamemode][ServerGamemode]Id=%[ServerGamemode] [ServerGamemode][ServerGamemode][ServerGamemode]sion=%[ServerGamemode] phas[ServerGamemode]=%[ServerGamemode] mod[ServerGamemode]=%s map=%s p[ServerGamemode]ay[ServerGamemode][ServerGamemode]=%[ServerGamemode] s[ServerGamemode]nt=%d sco[ServerGamemode][ServerGamemode]=%d-%d [ServerGamemode][ServerGamemode]d=%d b[ServerGamemode][ServerGamemode][ServerGamemode]=%d\n",
-            d.d[ServerGamemode][ServerGamemode][ServerGamemode]Id, d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion, ([ServerGamemode]nsign[ServerGamemode]d)d.phas[ServerGamemode], d.matchMod[ServerGamemode].c_st[ServerGamemode](), d.mapId.c_st[ServerGamemode](),
-            k[ServerGamemode].s[ServerGamemode]cond.id, (int)s[ServerGamemode]nt, d.sco[ServerGamemode][ServerGamemode]A, d.sco[ServerGamemode][ServerGamemode]B, d.[ServerGamemode][ServerGamemode]dT[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s, d.b[ServerGamemode][ServerGamemode][ServerGamemode]T[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s);
+    for (const auto& kv : players) {
+        if (kv.second.spawnState != ServerPlayer::Active)
+            continue;
+        const uint32_t eventId = nextReliableGameplayEventId();
+        const ReliableGameplayEventQueueResult result = queueReliableGameplayEventToPlayer(
+            sock, const_cast<ServerPlayer&>(kv.second), &pkt, sizeof(pkt), eventId,
+            reliableGameplayEventSessionForPlayer(const_cast<ServerPlayer&>(kv.second)), totalPacketsOut);
+        const bool sent = result == ReliableGameplayEventQueueResult::Queued;
+        Debug::log(Debug::Category::Duel,
+            "[ServerGamemode] sent state duelId=%u version=%u phase=%u mode=%s map=%s player=%u sent=%d score=%d-%d red=%d blue=%d\n",
+            d.duelId, d.stateVersion, (unsigned)d.phase, d.matchMode.c_str(), d.mapId.c_str(),
+            kv.second.id, (int)sent, d.scoreA, d.scoreB, d.redTeamKills, d.blueTeamKills);
     }
 }
 
-// Pick ONE [ServerGamemode]andom map spawn point as th[ServerGamemode] match ancho[ServerGamemode]. Both t[ServerGamemode]ams a[ServerGamemode]ways
-// spawn n[ServerGamemode]a[ServerGamemode] this sing[ServerGamemode][ServerGamemode] point (with a f[ServerGamemode][ServerGamemode]sh [ServerGamemode]andom XY offs[ServerGamemode]t [ServerGamemode]ach spawn), so
-// [ServerGamemode][ServerGamemode]spawns [ServerGamemode]and [ServerGamemode]ight back in th[ServerGamemode] fight — max action, no map [ServerGamemode]diting n[ServerGamemode][ServerGamemode]d[ServerGamemode]d.
-[ServerGamemode]oid assignGam[ServerGamemode]mod[ServerGamemode][ServerGamemode]pawns([ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d, const H[ServerGamemode]ad[ServerGamemode][ServerGamemode]ssWo[ServerGamemode][ServerGamemode]d& wo[ServerGamemode][ServerGamemode]d)
+// Pick ONE random map spawn point as the match anchor. Both teams always
+// spawn near this single point (with a fresh random XY offset each spawn), so
+// respawns land right back in the fight — max action, no map editing needed.
+void assignGamemodeSpawns(ServerGamemodeState& d, const HeadlessWorld& world)
 {
-    d.spawnsAssign[ServerGamemode]d = t[ServerGamemode][ServerGamemode][ServerGamemode];
-    if (!wo[ServerGamemode][ServerGamemode]d.spawnPoints.[ServerGamemode]mpty())
+    d.spawnsAssigned = true;
+    if (!world.spawnPoints.empty())
     {
-        std::mt19937 [ServerGamemode]ng(std::[ServerGamemode]andom_d[ServerGamemode][ServerGamemode]ic[ServerGamemode]{}());
-        std::[ServerGamemode]nifo[ServerGamemode]m_int_dist[ServerGamemode]ib[ServerGamemode]tion<siz[ServerGamemode]_t> dist(0, wo[ServerGamemode][ServerGamemode]d.spawnPoints.siz[ServerGamemode]() - 1);
-        const siz[ServerGamemode]_t ancho[ServerGamemode]Ind[ServerGamemode]x = dist([ServerGamemode]ng);
-        d.spawnAncho[ServerGamemode]Ind[ServerGamemode]x = ([ServerGamemode]int32_t)ancho[ServerGamemode]Ind[ServerGamemode]x;
-        ++d.spawnAncho[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-        const g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3 ancho[ServerGamemode] = wo[ServerGamemode][ServerGamemode]d.spawnPoints[ancho[ServerGamemode]Ind[ServerGamemode]x].position;
-        d.spawnA = ancho[ServerGamemode];
-        d.spawnB = ancho[ServerGamemode];
-        [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-            "[[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Ancho[ServerGamemode]] map=%s ancho[ServerGamemode]Ind[ServerGamemode]x=%z[ServerGamemode] ancho[ServerGamemode]=(%.3f,%.3f,%.3f)\n",
-            d.mapId.c_st[ServerGamemode](), ancho[ServerGamemode]Ind[ServerGamemode]x, ancho[ServerGamemode].x, ancho[ServerGamemode].y, ancho[ServerGamemode].z);
+        std::mt19937 rng(std::random_device{}());
+        std::uniform_int_distribution<size_t> dist(0, world.spawnPoints.size() - 1);
+        const size_t anchorIndex = dist(rng);
+        d.spawnAnchorIndex = (uint32_t)anchorIndex;
+        ++d.spawnAnchorVersion;
+        const glm::vec3 anchor = world.spawnPoints[anchorIndex].position;
+        d.spawnA = anchor;
+        d.spawnB = anchor;
+        Debug::log(Debug::Category::Duel,
+            "[DuelAnchor] map=%s anchorIndex=%zu anchor=(%.3f,%.3f,%.3f)\n",
+            d.mapId.c_str(), anchorIndex, anchor.x, anchor.y, anchor.z);
     }
-    [ServerGamemode][ServerGamemode]s[ServerGamemode]
+    else
     {
-        d.spawnA = g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3(1.0f, 5.0f, 30.0f);
+        d.spawnA = glm::vec3(1.0f, 5.0f, 30.0f);
         d.spawnB = d.spawnA;
-        [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-            "[[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Fa[ServerGamemode][ServerGamemode]back] map=%s [ServerGamemode][ServerGamemode]ason=no_spawn_points fina[ServerGamemode]=(%.3f,%.3f,%.3f)\n",
-            d.mapId.c_st[ServerGamemode](), d.spawnA.x, d.spawnA.y, d.spawnA.z);
+        Debug::warn(Debug::Category::Duel,
+            "[DuelFallback] map=%s reason=no_spawn_points final=(%.3f,%.3f,%.3f)\n",
+            d.mapId.c_str(), d.spawnA.x, d.spawnA.y, d.spawnA.z);
     }
-    [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-        "[GAMEMO[ServerGamemode]E [ServerGamemode]ERVER] ancho[ServerGamemode]=(%.1f %.1f %.1f) spawns=%z[ServerGamemode]\n",
-        d.spawnA.x, d.spawnA.y, d.spawnA.z, wo[ServerGamemode][ServerGamemode]d.spawnPoints.siz[ServerGamemode]());
+    Debug::log(Debug::Category::Duel,
+        "[DUEL SERVER] anchor=(%.1f %.1f %.1f) spawns=%zu\n",
+        d.spawnA.x, d.spawnA.y, d.spawnA.z, world.spawnPoints.size());
 }
 
-// Th[ServerGamemode] ancho[ServerGamemode] p[ServerGamemode][ServerGamemode]s a [ServerGamemode]andom XY offs[ServerGamemode]t (so nobody can p[ServerGamemode][ServerGamemode]dict th[ServerGamemode] [ServerGamemode]xact spot).
-g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3 gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]pawnPoint(const [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d)
+// The anchor plus a random XY offset (so nobody can predict the exact spot).
+glm::vec3 gamemodeSpawnPoint(const ServerGamemodeState& d)
 {
-    static std::mt19937 [ServerGamemode]ng(std::[ServerGamemode]andom_d[ServerGamemode][ServerGamemode]ic[ServerGamemode]{}());
-    std::[ServerGamemode]nifo[ServerGamemode]m_[ServerGamemode][ServerGamemode]a[ServerGamemode]_dist[ServerGamemode]ib[ServerGamemode]tion<f[ServerGamemode]oat> dist(-d.spawnOffs[ServerGamemode]tRadi[ServerGamemode]s, d.spawnOffs[ServerGamemode]tRadi[ServerGamemode]s);
-    [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n d.spawnA + g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3(dist([ServerGamemode]ng), dist([ServerGamemode]ng), 0.0f);
+    static std::mt19937 rng(std::random_device{}());
+    std::uniform_real_distribution<float> dist(-d.spawnOffsetRadius, d.spawnOffsetRadius);
+    return d.spawnA + glm::vec3(dist(rng), dist(rng), 0.0f);
 }
 
-[ServerGamemode]oid assignGam[ServerGamemode]mod[ServerGamemode]Pa[ServerGamemode]ticipants([ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d,
-                    const std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s)
+void assignGamemodeParticipants(ServerGamemodeState& d,
+                    const std::unordered_map<uint32_t, ServerPlayer>& players)
 {
-    d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]AId = 0;
-    d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]BId = 0;
-    fo[ServerGamemode] (const a[ServerGamemode]to& k[ServerGamemode] : p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s)
+    d.playerAId = 0;
+    d.playerBId = 0;
+    for (const auto& kv : players)
     {
-        if (k[ServerGamemode].s[ServerGamemode]cond.spawn[ServerGamemode]tat[ServerGamemode] != [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]::Acti[ServerGamemode][ServerGamemode])
-            contin[ServerGamemode][ServerGamemode];
-        if (d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]AId == 0)
-            d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]AId = k[ServerGamemode].fi[ServerGamemode]st;
-        [ServerGamemode][ServerGamemode]s[ServerGamemode]
-            d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]BId = k[ServerGamemode].fi[ServerGamemode]st;
+        if (kv.second.spawnState != ServerPlayer::Active)
+            continue;
+        if (d.playerAId == 0)
+            d.playerAId = kv.first;
+        else
+            d.playerBId = kv.first;
     }
 }
 
-// P[ServerGamemode]ac[ServerGamemode] both d[ServerGamemode][ServerGamemode][ServerGamemode]ists n[ServerGamemode]a[ServerGamemode] th[ServerGamemode] match ancho[ServerGamemode] with f[ServerGamemode][ServerGamemode][ServerGamemode] HP and f[ServerGamemode][ServerGamemode][ServerGamemode] ammo.
-[ServerGamemode]oid t[ServerGamemode][ServerGamemode][ServerGamemode]po[ServerGamemode]tGam[ServerGamemode]mod[ServerGamemode]Pa[ServerGamemode]ticipantsTo[ServerGamemode]pawns([ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d,
-                              std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s)
+// Place both duelists near the match anchor with full HP and full ammo.
+void teleportGamemodeParticipantsToSpawns(ServerGamemodeState& d,
+                              std::unordered_map<uint32_t, ServerPlayer>& players)
 {
-    a[ServerGamemode]to p[ServerGamemode]ac[ServerGamemode] = [&]([ServerGamemode]int32_t p[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id)
+    auto place = [&](uint32_t playerId)
     {
-        a[ServerGamemode]to it = p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find(p[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id);
-        if (it == p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd()) [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n;
-        [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]& p = it->s[ServerGamemode]cond;
-        const g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3 spawn = gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]pawnPoint(d);
-        p.d[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos = spawn;
-        p.has[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos = t[ServerGamemode][ServerGamemode][ServerGamemode];
-        const g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3 offs[ServerGamemode]t = spawn - d.spawnA;
-        [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-            "[[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawn] p[ServerGamemode]ay[ServerGamemode][ServerGamemode]=%[ServerGamemode] map=%s ancho[ServerGamemode]=(%.3f,%.3f,%.3f) offs[ServerGamemode]t=(%.3f,%.3f,%.3f) fina[ServerGamemode]=(%.3f,%.3f,%.3f)\n",
-            p[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id, d.mapId.c_st[ServerGamemode](), d.spawnA.x, d.spawnA.y, d.spawnA.z,
-            offs[ServerGamemode]t.x, offs[ServerGamemode]t.y, offs[ServerGamemode]t.z, spawn.x, spawn.y, spawn.z);
-        p.[ServerGamemode][ServerGamemode]spawn[ServerGamemode][ServerGamemode]conds = 0.0f;
-        if (!p.d[ServerGamemode]ad)
+        auto it = players.find(playerId);
+        if (it == players.end()) return;
+        ServerPlayer& p = it->second;
+        const glm::vec3 spawn = gamemodeSpawnPoint(d);
+        p.duelSpawnPos = spawn;
+        p.hasDuelSpawnPos = true;
+        const glm::vec3 offset = spawn - d.spawnA;
+        Debug::log(Debug::Category::Duel,
+            "[DuelSpawn] player=%u map=%s anchor=(%.3f,%.3f,%.3f) offset=(%.3f,%.3f,%.3f) final=(%.3f,%.3f,%.3f)\n",
+            playerId, d.mapId.c_str(), d.spawnA.x, d.spawnA.y, d.spawnA.z,
+            offset.x, offset.y, offset.z, spawn.x, spawn.y, spawn.z);
+        p.respawnSeconds = 0.0f;
+        if (!p.dead)
         {
-            b[ServerGamemode]ginA[ServerGamemode]tho[ServerGamemode]itati[ServerGamemode][ServerGamemode]T[ServerGamemode]ansfo[ServerGamemode]m(p, spawn, g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3(0.0f), p.yaw, "d[ServerGamemode][ServerGamemode][ServerGamemode]-spawn");
-            p.j[ServerGamemode]stR[ServerGamemode]spawn[ServerGamemode]d = t[ServerGamemode][ServerGamemode][ServerGamemode];
+            beginAuthoritativeTransform(p, spawn, glm::vec3(0.0f), p.yaw, "duel-spawn");
+            p.justRespawned = true;
         }
     };
-    p[ServerGamemode]ac[ServerGamemode](d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]AId);
-    p[ServerGamemode]ac[ServerGamemode](d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]BId);
+    place(d.playerAId);
+    place(d.playerBId);
 }
 
-[ServerGamemode]oid b[ServerGamemode]ginGam[ServerGamemode]mod[ServerGamemode]Co[ServerGamemode]ntdown([ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d,
-                        std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s)
+void beginGamemodeCountdown(ServerGamemodeState& d,
+                        std::unordered_map<uint32_t, ServerPlayer>& players)
 {
-    ++d.d[ServerGamemode][ServerGamemode][ServerGamemode]Id;
-    ++d.[ServerGamemode][ServerGamemode]spawn[ServerGamemode][ServerGamemode]q[ServerGamemode][ServerGamemode]nc[ServerGamemode];
-    ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-    d.matchO[ServerGamemode][ServerGamemode][ServerGamemode] = fa[ServerGamemode]s[ServerGamemode];
-    d.sco[ServerGamemode][ServerGamemode]A = 0;
-    d.sco[ServerGamemode][ServerGamemode]B = 0;
-    d.winn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id = 0;
-    d.phas[ServerGamemode] = [ServerGamemode]UEL_PHA[ServerGamemode]E_COUNT[ServerGamemode]OWN;
-    d.co[ServerGamemode]ntdown = d.co[ServerGamemode]ntdown[ServerGamemode][ServerGamemode]conds;
-    [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-        "[[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]] s[ServerGamemode][ServerGamemode][ServerGamemode]ct[ServerGamemode]d a[ServerGamemode]tho[ServerGamemode]itati[ServerGamemode][ServerGamemode] map=%s d[ServerGamemode][ServerGamemode][ServerGamemode]Id=%[ServerGamemode] stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion=%[ServerGamemode]\n",
-        d.mapId.c_st[ServerGamemode](), d.d[ServerGamemode][ServerGamemode][ServerGamemode]Id, d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion);
-    t[ServerGamemode][ServerGamemode][ServerGamemode]po[ServerGamemode]tGam[ServerGamemode]mod[ServerGamemode]Pa[ServerGamemode]ticipantsTo[ServerGamemode]pawns(d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s);
-    [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-        "[GAMEMO[ServerGamemode]E [ServerGamemode]ERVER] co[ServerGamemode]ntdown sta[ServerGamemode]t[ServerGamemode]d p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s=%[ServerGamemode]/%[ServerGamemode]\n", d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]AId, d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]BId);
+    ++d.duelId;
+    ++d.respawnSequence;
+    ++d.stateVersion;
+    d.matchOver = false;
+    d.scoreA = 0;
+    d.scoreB = 0;
+    d.winnerPlayerId = 0;
+    d.phase = DUEL_PHASE_COUNTDOWN;
+    d.countdown = d.countdownSeconds;
+    Debug::log(Debug::Category::Duel,
+        "[ServerGamemode] selected authoritative map=%s duelId=%u stateVersion=%u\n",
+        d.mapId.c_str(), d.duelId, d.stateVersion);
+    teleportGamemodeParticipantsToSpawns(d, players);
+    Debug::log(Debug::Category::Duel,
+        "[DUEL SERVER] countdown started players=%u/%u\n", d.playerAId, d.playerBId);
 }
 
-// [ServerGamemode]oadH[ServerGamemode]ad[ServerGamemode][ServerGamemode]ssWo[ServerGamemode][ServerGamemode]d app[ServerGamemode]nds, so c[ServerGamemode][ServerGamemode]a[ServerGamemode] [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]ything it pop[ServerGamemode][ServerGamemode]at[ServerGamemode]s b[ServerGamemode]fo[ServerGamemode][ServerGamemode] a [ServerGamemode][ServerGamemode][ServerGamemode]oad.
-[ServerGamemode]oid c[ServerGamemode][ServerGamemode]a[ServerGamemode]H[ServerGamemode]ad[ServerGamemode][ServerGamemode]ssWo[ServerGamemode][ServerGamemode]d(H[ServerGamemode]ad[ServerGamemode][ServerGamemode]ssWo[ServerGamemode][ServerGamemode]d& wo[ServerGamemode][ServerGamemode]d)
+// loadHeadlessWorld appends, so clear everything it populates before a reload.
+void clearHeadlessWorld(HeadlessWorld& world)
 {
-    wo[ServerGamemode][ServerGamemode]d.t[ServerGamemode]iang[ServerGamemode][ServerGamemode]s.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    wo[ServerGamemode][ServerGamemode]d.bo[ServerGamemode]ndsMin = g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3(0.0f);
-    wo[ServerGamemode][ServerGamemode]d.bo[ServerGamemode]ndsMax = g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3(0.0f);
-    wo[ServerGamemode][ServerGamemode]d.spawnPoints.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    wo[ServerGamemode][ServerGamemode]d.co[ServerGamemode][ServerGamemode]isionCh[ServerGamemode]nks.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    wo[ServerGamemode][ServerGamemode]d.co[ServerGamemode][ServerGamemode]isionLa[ServerGamemode]g[ServerGamemode]T[ServerGamemode]iang[ServerGamemode][ServerGamemode]s.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    wo[ServerGamemode][ServerGamemode]d.co[ServerGamemode][ServerGamemode]ision[ServerGamemode][ServerGamemode]bG[ServerGamemode]ids.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
+    world.triangles.clear();
+    world.boundsMin = glm::vec3(0.0f);
+    world.boundsMax = glm::vec3(0.0f);
+    world.spawnPoints.clear();
+    world.collisionChunks.clear();
+    world.collisionLargeTriangles.clear();
+    world.collisionSubGrids.clear();
 }
 
-[ServerGamemode]oid b[ServerGamemode]oadcastMapChang[ServerGamemode]([ServerGamemode]OCKET sock,
-                        const [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d,
-                        const std::st[ServerGamemode]ing& mapId,
-                        const std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s,
-                        [ServerGamemode]int64_t& tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t)
+void broadcastMapChange(SOCKET sock,
+                        const ServerGamemodeState& d,
+                        const std::string& mapId,
+                        const std::unordered_map<uint32_t, ServerPlayer>& players,
+                        uint64_t& totalPacketsOut)
 {
-    MapChang[ServerGamemode]Pack[ServerGamemode]t pkt{};
-    pkt.h[ServerGamemode]ad[ServerGamemode][ServerGamemode].typ[ServerGamemode] = PACKET_MAP_CHANGE;
-    pkt.h[ServerGamemode]ad[ServerGamemode][ServerGamemode].tick = 0;
-    std::st[ServerGamemode]ncpy(pkt.mapId, mapId.c_st[ServerGamemode](), siz[ServerGamemode]of(pkt.mapId) - 1);
-    pkt.d[ServerGamemode][ServerGamemode][ServerGamemode]Id = d.d[ServerGamemode][ServerGamemode][ServerGamemode]Id;
-    pkt.mapV[ServerGamemode][ServerGamemode]sion = d.mapV[ServerGamemode][ServerGamemode]sion;
-    fo[ServerGamemode] (const a[ServerGamemode]to& k[ServerGamemode] : p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s)
+    MapChangePacket pkt{};
+    pkt.header.type = PACKET_MAP_CHANGE;
+    pkt.header.tick = 0;
+    std::strncpy(pkt.mapId, mapId.c_str(), sizeof(pkt.mapId) - 1);
+    pkt.duelId = d.duelId;
+    pkt.mapVersion = d.mapVersion;
+    for (const auto& kv : players)
     {
-        if (k[ServerGamemode].s[ServerGamemode]cond.spawn[ServerGamemode]tat[ServerGamemode] != [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]::Acti[ServerGamemode][ServerGamemode])
-            contin[ServerGamemode][ServerGamemode];
-        const [ServerGamemode]int32_t [ServerGamemode][ServerGamemode][ServerGamemode]ntId = n[ServerGamemode]xtR[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntId();
-        const R[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntQ[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]R[ServerGamemode]s[ServerGamemode][ServerGamemode]t [ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]t = q[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]R[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntToP[ServerGamemode]ay[ServerGamemode][ServerGamemode](
-            sock, const_cast<[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]&>(k[ServerGamemode].s[ServerGamemode]cond), &pkt, siz[ServerGamemode]of(pkt), [ServerGamemode][ServerGamemode][ServerGamemode]ntId,
-            [ServerGamemode][ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]nt[ServerGamemode][ServerGamemode]ssionFo[ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode](const_cast<[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]&>(k[ServerGamemode].s[ServerGamemode]cond)), tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-        const boo[ServerGamemode] s[ServerGamemode]nt = [ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]t == R[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntQ[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]R[ServerGamemode]s[ServerGamemode][ServerGamemode]t::Q[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]d;
-        [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-            "[[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Map] s[ServerGamemode]nd map=%s p[ServerGamemode]ay[ServerGamemode][ServerGamemode]=%[ServerGamemode] [ServerGamemode][ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]=1 s[ServerGamemode]nt=%d [ServerGamemode][ServerGamemode][ServerGamemode]sion=%[ServerGamemode]\n",
-            mapId.c_st[ServerGamemode](), k[ServerGamemode].s[ServerGamemode]cond.id, (int)s[ServerGamemode]nt, d.mapV[ServerGamemode][ServerGamemode]sion);
-        [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-            "[[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Pack[ServerGamemode]t[ServerGamemode][ServerGamemode]nd] typ[ServerGamemode]=MapChang[ServerGamemode]Pack[ServerGamemode]t [ServerGamemode][ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]=1 p[ServerGamemode]ay[ServerGamemode][ServerGamemode]=%[ServerGamemode] s[ServerGamemode]nt=%d map=%s\n",
-            k[ServerGamemode].s[ServerGamemode]cond.id, (int)s[ServerGamemode]nt, mapId.c_st[ServerGamemode]());
-        if (s[ServerGamemode]nt)
-            ++tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t;
+        if (kv.second.spawnState != ServerPlayer::Active)
+            continue;
+        const uint32_t eventId = nextReliableGameplayEventId();
+        const ReliableGameplayEventQueueResult result = queueReliableGameplayEventToPlayer(
+            sock, const_cast<ServerPlayer&>(kv.second), &pkt, sizeof(pkt), eventId,
+            reliableGameplayEventSessionForPlayer(const_cast<ServerPlayer&>(kv.second)), totalPacketsOut);
+        const bool sent = result == ReliableGameplayEventQueueResult::Queued;
+        Debug::log(Debug::Category::Duel,
+            "[DuelMap] send map=%s player=%u reliable=1 sent=%d version=%u\n",
+            mapId.c_str(), kv.second.id, (int)sent, d.mapVersion);
+        Debug::log(Debug::Category::Duel,
+            "[DuelPacketSend] type=MapChangePacket reliable=1 player=%u sent=%d map=%s\n",
+            kv.second.id, (int)sent, mapId.c_str());
+        if (sent)
+            ++totalPacketsOut;
     }
 }
 
-[ServerGamemode]oid b[ServerGamemode]oadcastComm[ServerGamemode]nityNotification(
-    [ServerGamemode]OCKET sock,
-    std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s,
-    const std::st[ServerGamemode]ing& m[ServerGamemode]ssag[ServerGamemode],
-    [ServerGamemode]int16_t d[ServerGamemode][ServerGamemode]ationTicks,
-    [ServerGamemode]int64_t& tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t)
+void broadcastCommunityNotification(
+    SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    const std::string& message,
+    uint16_t durationTicks,
+    uint64_t& totalPacketsOut)
 {
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]NotificationPack[ServerGamemode]t pack[ServerGamemode]t{};
-    pack[ServerGamemode]t.h[ServerGamemode]ad[ServerGamemode][ServerGamemode].typ[ServerGamemode] = PACKET_[ServerGamemode]ERVER_NOTIFICATION;
-    pack[ServerGamemode]t.[ServerGamemode][ServerGamemode][ServerGamemode]ntId = n[ServerGamemode]xtR[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntId();
-    pack[ServerGamemode]t.[ServerGamemode][ServerGamemode][ServerGamemode]nt[ServerGamemode][ServerGamemode]ssionId = s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]R[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]E[ServerGamemode][ServerGamemode]nt[ServerGamemode][ServerGamemode]ssionId();
-    pack[ServerGamemode]t.d[ServerGamemode][ServerGamemode]ationTicks = d[ServerGamemode][ServerGamemode]ationTicks;
-    std::st[ServerGamemode]ncpy(pack[ServerGamemode]t.tit[ServerGamemode][ServerGamemode], "MiMITA [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]", siz[ServerGamemode]of(pack[ServerGamemode]t.tit[ServerGamemode][ServerGamemode]) - 1);
-    std::st[ServerGamemode]ncpy(pack[ServerGamemode]t.m[ServerGamemode]ssag[ServerGamemode], m[ServerGamemode]ssag[ServerGamemode].c_st[ServerGamemode](), siz[ServerGamemode]of(pack[ServerGamemode]t.m[ServerGamemode]ssag[ServerGamemode]) - 1);
-    fo[ServerGamemode] (a[ServerGamemode]to& k[ServerGamemode] : p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s) {
-        if (k[ServerGamemode].s[ServerGamemode]cond.spawn[ServerGamemode]tat[ServerGamemode] != [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]::Acti[ServerGamemode][ServerGamemode]) contin[ServerGamemode][ServerGamemode];
-        const R[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntQ[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]R[ServerGamemode]s[ServerGamemode][ServerGamemode]t [ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]t = q[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]R[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntToP[ServerGamemode]ay[ServerGamemode][ServerGamemode](
-            sock, k[ServerGamemode].s[ServerGamemode]cond, &pack[ServerGamemode]t, siz[ServerGamemode]of(pack[ServerGamemode]t), pack[ServerGamemode]t.[ServerGamemode][ServerGamemode][ServerGamemode]ntId,
-            [ServerGamemode][ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]nt[ServerGamemode][ServerGamemode]ssionFo[ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode](k[ServerGamemode].s[ServerGamemode]cond), tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-        [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::N[ServerGamemode]two[ServerGamemode]king,
-            "[[ServerGamemode]ERVER NOTIFICATION [ServerGamemode]EN[ServerGamemode]] p[ServerGamemode]ay[ServerGamemode][ServerGamemode]=%[ServerGamemode] q[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]d=%d m[ServerGamemode]ssag[ServerGamemode]=%s\n",
-            k[ServerGamemode].s[ServerGamemode]cond.id, [ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]t == R[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntQ[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]R[ServerGamemode]s[ServerGamemode][ServerGamemode]t::Q[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]d,
-            m[ServerGamemode]ssag[ServerGamemode].c_st[ServerGamemode]());
+    ServerNotificationPacket packet{};
+    packet.header.type = PACKET_SERVER_NOTIFICATION;
+    packet.eventId = nextReliableGameplayEventId();
+    packet.eventSessionId = serverReliableEventSessionId();
+    packet.durationTicks = durationTicks;
+    std::strncpy(packet.title, "MiMITA Server", sizeof(packet.title) - 1);
+    std::strncpy(packet.message, message.c_str(), sizeof(packet.message) - 1);
+    for (auto& kv : players) {
+        if (kv.second.spawnState != ServerPlayer::Active) continue;
+        const ReliableGameplayEventQueueResult result = queueReliableGameplayEventToPlayer(
+            sock, kv.second, &packet, sizeof(packet), packet.eventId,
+            reliableGameplayEventSessionForPlayer(kv.second), totalPacketsOut);
+        Debug::log(Debug::Category::Networking,
+            "[SERVER NOTIFICATION SEND] player=%u queued=%d message=%s\n",
+            kv.second.id, result == ReliableGameplayEventQueueResult::Queued,
+            message.c_str());
     }
 }
 
-// Load a map into a f[ServerGamemode][ServerGamemode]sh t[ServerGamemode]mp wo[ServerGamemode][ServerGamemode]d; t[ServerGamemode][ServerGamemode][ServerGamemode] on[ServerGamemode]y if it [ServerGamemode]oads AN[ServerGamemode] has [ServerGamemode][ServerGamemode]a[ServerGamemode]
-// spawn points, so p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s a[ServerGamemode]ways ancho[ServerGamemode] at spawn points, n[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode] [ServerGamemode]nd[ServerGamemode][ServerGamemode] th[ServerGamemode] map.
-boo[ServerGamemode] t[ServerGamemode]yLoad[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Map(const std::st[ServerGamemode]ing& mapId, H[ServerGamemode]ad[ServerGamemode][ServerGamemode]ssWo[ServerGamemode][ServerGamemode]d& o[ServerGamemode]t)
+// Load a map into a fresh temp world; true only if it loads AND has real
+// spawn points, so players always anchor at spawn points, never under the map.
+bool tryLoadDuelMap(const std::string& mapId, HeadlessWorld& out)
 {
-    const std::st[ServerGamemode]ing path = "ass[ServerGamemode]ts/maps/" + mapId + ".g[ServerGamemode]b";
-    H[ServerGamemode]ad[ServerGamemode][ServerGamemode]ssWo[ServerGamemode][ServerGamemode]d candidat[ServerGamemode];
-    if (![ServerGamemode]oadH[ServerGamemode]ad[ServerGamemode][ServerGamemode]ssWo[ServerGamemode][ServerGamemode]d(path.c_st[ServerGamemode](), candidat[ServerGamemode]))
-        [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n fa[ServerGamemode]s[ServerGamemode];
-    if (candidat[ServerGamemode].spawnPoints.[ServerGamemode]mpty())
-        [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n fa[ServerGamemode]s[ServerGamemode];
-    o[ServerGamemode]t = std::mo[ServerGamemode][ServerGamemode](candidat[ServerGamemode]);
-    [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n t[ServerGamemode][ServerGamemode][ServerGamemode];
+    const std::string path = "assets/maps/" + mapId + ".glb";
+    HeadlessWorld candidate;
+    if (!loadHeadlessWorld(path.c_str(), candidate))
+        return false;
+    if (candidate.spawnPoints.empty())
+        return false;
+    out = std::move(candidate);
+    return true;
 }
 
-// Mo[ServerGamemode][ServerGamemode] a [ServerGamemode]oad[ServerGamemode]d t[ServerGamemode]mp wo[ServerGamemode][ServerGamemode]d into th[ServerGamemode] [ServerGamemode]i[ServerGamemode][ServerGamemode] wo[ServerGamemode][ServerGamemode]d + NPC co[ServerGamemode][ServerGamemode]ision wo[ServerGamemode][ServerGamemode]d.
-[ServerGamemode]oid commitGam[ServerGamemode]mod[ServerGamemode]Map([ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d, H[ServerGamemode]ad[ServerGamemode][ServerGamemode]ssWo[ServerGamemode][ServerGamemode]d& wo[ServerGamemode][ServerGamemode]d, Wo[ServerGamemode][ServerGamemode]d& npcWo[ServerGamemode][ServerGamemode]d,
-                   H[ServerGamemode]ad[ServerGamemode][ServerGamemode]ssWo[ServerGamemode][ServerGamemode]d& tmp, const std::st[ServerGamemode]ing& mapId)
+// Move a loaded temp world into the live world + NPC collision world.
+void commitGamemodeMap(ServerGamemodeState& d, HeadlessWorld& world, World& npcWorld,
+                   HeadlessWorld& tmp, const std::string& mapId)
 {
-    c[ServerGamemode][ServerGamemode]a[ServerGamemode]H[ServerGamemode]ad[ServerGamemode][ServerGamemode]ssWo[ServerGamemode][ServerGamemode]d(wo[ServerGamemode][ServerGamemode]d);
-    wo[ServerGamemode][ServerGamemode]d = std::mo[ServerGamemode][ServerGamemode](tmp);
-    b[ServerGamemode]i[ServerGamemode]dNpcWo[ServerGamemode][ServerGamemode]dCo[ServerGamemode][ServerGamemode]ision(npcWo[ServerGamemode][ServerGamemode]d, wo[ServerGamemode][ServerGamemode]d);
-    s[ServerGamemode]t[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]MapId(mapId);
+    clearHeadlessWorld(world);
+    world = std::move(tmp);
+    buildNpcWorldCollision(npcWorld, world);
+    setServerMapId(mapId);
     d.mapId = mapId;
-    ++d.mapV[ServerGamemode][ServerGamemode]sion;
-    ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
+    ++d.mapVersion;
+    ++d.stateVersion;
 }
 
-// R[ServerGamemode][ServerGamemode]oad th[ServerGamemode] wo[ServerGamemode][ServerGamemode]d fo[ServerGamemode] a chos[ServerGamemode]n map (chang[ServerGamemode]map / [ServerGamemode]otation commit). On[ServerGamemode]y [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]
-// to[ServerGamemode]ch[ServerGamemode]s th[ServerGamemode] [ServerGamemode]i[ServerGamemode][ServerGamemode] wo[ServerGamemode][ServerGamemode]d aft[ServerGamemode][ServerGamemode] th[ServerGamemode] n[ServerGamemode]w map is confi[ServerGamemode]m[ServerGamemode]d [ServerGamemode]oad[ServerGamemode]d, so a fai[ServerGamemode][ServerGamemode]d
-// swap n[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode] [ServerGamemode]mpti[ServerGamemode]s th[ServerGamemode] wo[ServerGamemode][ServerGamemode]d (p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s n[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode] fa[ServerGamemode][ServerGamemode] [ServerGamemode]nd[ServerGamemode][ServerGamemode] it).
-boo[ServerGamemode] [ServerGamemode][ServerGamemode][ServerGamemode]oadGam[ServerGamemode]mod[ServerGamemode]Map([ServerGamemode]OCKET sock,
-                   [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d,
-                   std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s,
-                   H[ServerGamemode]ad[ServerGamemode][ServerGamemode]ssWo[ServerGamemode][ServerGamemode]d& wo[ServerGamemode][ServerGamemode]d,
-                   Wo[ServerGamemode][ServerGamemode]d& npcWo[ServerGamemode][ServerGamemode]d,
-                   const std::st[ServerGamemode]ing& mapId,
-                   [ServerGamemode]int64_t& tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t)
+// Reload the world for a chosen map (changemap / rotation commit). Only ever
+// touches the live world after the new map is confirmed loaded, so a failed
+// swap never empties the world (players never fall under it).
+bool reloadGamemodeMap(SOCKET sock,
+                   ServerGamemodeState& d,
+                   std::unordered_map<uint32_t, ServerPlayer>& players,
+                   HeadlessWorld& world,
+                   World& npcWorld,
+                   const std::string& mapId,
+                   uint64_t& totalPacketsOut)
 {
-    H[ServerGamemode]ad[ServerGamemode][ServerGamemode]ssWo[ServerGamemode][ServerGamemode]d tmp;
-    if (!t[ServerGamemode]yLoad[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Map(mapId, tmp))
+    HeadlessWorld tmp;
+    if (!tryLoadDuelMap(mapId, tmp))
     {
-        [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode][ServerGamemode][ServerGamemode]o[ServerGamemode]([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-            "[GAMEMO[ServerGamemode]E [ServerGamemode]ERVER] map swap fai[ServerGamemode][ServerGamemode]d o[ServerGamemode] has no spawn points: %s\n", mapId.c_st[ServerGamemode]());
-        [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n fa[ServerGamemode]s[ServerGamemode];
+        Debug::error(Debug::Category::Duel,
+            "[DUEL SERVER] map swap failed or has no spawn points: %s\n", mapId.c_str());
+        return false;
     }
-    commitGam[ServerGamemode]mod[ServerGamemode]Map(d, wo[ServerGamemode][ServerGamemode]d, npcWo[ServerGamemode][ServerGamemode]d, tmp, mapId);
-    assignGam[ServerGamemode]mod[ServerGamemode][ServerGamemode]pawns(d, wo[ServerGamemode][ServerGamemode]d);
-    b[ServerGamemode]oadcastMapChang[ServerGamemode](sock, d, mapId, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-    t[ServerGamemode][ServerGamemode][ServerGamemode]po[ServerGamemode]tGam[ServerGamemode]mod[ServerGamemode]Pa[ServerGamemode]ticipantsTo[ServerGamemode]pawns(d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s);
-    // Map chang[ServerGamemode]s a[ServerGamemode][ServerGamemode] acto[ServerGamemode] [ServerGamemode]if[ServerGamemode]cyc[ServerGamemode][ServerGamemode] bo[ServerGamemode]nda[ServerGamemode]i[ServerGamemode]s, not d[ServerGamemode][ServerGamemode][ServerGamemode]-on[ServerGamemode]y t[ServerGamemode][ServerGamemode][ServerGamemode]po[ServerGamemode]ts.
-    // E[ServerGamemode][ServerGamemode][ServerGamemode]y acti[ServerGamemode][ServerGamemode] p[ServerGamemode]ay[ServerGamemode][ServerGamemode] [ServerGamemode][ServerGamemode]c[ServerGamemode]i[ServerGamemode][ServerGamemode]s a f[ServerGamemode][ServerGamemode]sh a[ServerGamemode]tho[ServerGamemode]itati[ServerGamemode][ServerGamemode] spawn on th[ServerGamemode] n[ServerGamemode]w map.
-    fo[ServerGamemode] (a[ServerGamemode]to& k[ServerGamemode] : p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s) {
-        [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]& p = k[ServerGamemode].s[ServerGamemode]cond;
-        if (p.spawn[ServerGamemode]tat[ServerGamemode] != [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]::Acti[ServerGamemode][ServerGamemode]) contin[ServerGamemode][ServerGamemode];
-        p.d[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos = gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]pawnPoint(d);
-        p.has[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos = t[ServerGamemode][ServerGamemode][ServerGamemode];
-        b[ServerGamemode]ginA[ServerGamemode]tho[ServerGamemode]itati[ServerGamemode][ServerGamemode]T[ServerGamemode]ansfo[ServerGamemode]m(p, p.d[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos, g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3(0.0f), p.yaw,
-                                    "map-chang[ServerGamemode]-[ServerGamemode][ServerGamemode]spawn");
-        comp[ServerGamemode][ServerGamemode]t[ServerGamemode]A[ServerGamemode]tho[ServerGamemode]itati[ServerGamemode][ServerGamemode][ServerGamemode]pawn(sock, p, fa[ServerGamemode]s[ServerGamemode]);
+    commitGamemodeMap(d, world, npcWorld, tmp, mapId);
+    assignGamemodeSpawns(d, world);
+    broadcastMapChange(sock, d, mapId, players, totalPacketsOut);
+    teleportGamemodeParticipantsToSpawns(d, players);
+    // Map changes are actor lifecycle boundaries, not duel-only teleports.
+    // Every active player receives a fresh authoritative spawn on the new map.
+    for (auto& kv : players) {
+        ServerPlayer& p = kv.second;
+        if (p.spawnState != ServerPlayer::Active) continue;
+        p.duelSpawnPos = gamemodeSpawnPoint(d);
+        p.hasDuelSpawnPos = true;
+        beginAuthoritativeTransform(p, p.duelSpawnPos, glm::vec3(0.0f), p.yaw,
+                                    "map-change-respawn");
+        completeAuthoritativeSpawn(sock, p, false);
     }
-    [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-        "[GAMEMO[ServerGamemode]E [ServerGamemode]ERVER] map chang[ServerGamemode]d [ServerGamemode]i[ServerGamemode][ServerGamemode] to %s (spawns=%z[ServerGamemode])\n",
-        mapId.c_st[ServerGamemode](), wo[ServerGamemode][ServerGamemode]d.spawnPoints.siz[ServerGamemode]());
-    [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n t[ServerGamemode][ServerGamemode][ServerGamemode];
+    Debug::warn(Debug::Category::Duel,
+        "[DUEL SERVER] map changed live to %s (spawns=%zu)\n",
+        mapId.c_str(), world.spawnPoints.size());
+    return true;
 }
 
-// Ro[ServerGamemode]nd-[ServerGamemode]obin [ServerGamemode]otation: pick a map not [ServerGamemode]s[ServerGamemode]d this cyc[ServerGamemode][ServerGamemode] (n[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode] th[ServerGamemode] on[ServerGamemode] j[ServerGamemode]st
-// p[ServerGamemode]ay[ServerGamemode]d), skip maps that fai[ServerGamemode] to [ServerGamemode]oad o[ServerGamemode] ha[ServerGamemode][ServerGamemode] no spawn points, and cyc[ServerGamemode][ServerGamemode] th[ServerGamemode]
-// who[ServerGamemode][ServerGamemode] poo[ServerGamemode] b[ServerGamemode]fo[ServerGamemode][ServerGamemode] [ServerGamemode][ServerGamemode]p[ServerGamemode]ating. R[ServerGamemode]t[ServerGamemode][ServerGamemode]ns t[ServerGamemode][ServerGamemode][ServerGamemode] if th[ServerGamemode] map chang[ServerGamemode]d.
-boo[ServerGamemode] [ServerGamemode]otat[ServerGamemode]ToN[ServerGamemode]xtGam[ServerGamemode]mod[ServerGamemode]Map([ServerGamemode]OCKET sock,
-                         [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d,
-                         std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s,
-                         H[ServerGamemode]ad[ServerGamemode][ServerGamemode]ssWo[ServerGamemode][ServerGamemode]d& wo[ServerGamemode][ServerGamemode]d,
-                         Wo[ServerGamemode][ServerGamemode]d& npcWo[ServerGamemode][ServerGamemode]d,
-                         [ServerGamemode]int64_t& tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t)
+// Round-robin rotation: pick a map not used this cycle (never the one just
+// played), skip maps that fail to load or have no spawn points, and cycle the
+// whole pool before repeating. Returns true if the map changed.
+bool rotateToNextGamemodeMap(SOCKET sock,
+                         ServerGamemodeState& d,
+                         std::unordered_map<uint32_t, ServerPlayer>& players,
+                         HeadlessWorld& world,
+                         World& npcWorld,
+                         uint64_t& totalPacketsOut)
 {
-    if (d.mapPoo[ServerGamemode].siz[ServerGamemode]() <= 1)
-        [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n fa[ServerGamemode]s[ServerGamemode];
+    if (d.mapPool.size() <= 1)
+        return false;
 
-    a[ServerGamemode]to [ServerGamemode]n[ServerGamemode]s[ServerGamemode]dCandidat[ServerGamemode]s = [&]() {
-        std::[ServerGamemode][ServerGamemode]cto[ServerGamemode]<std::st[ServerGamemode]ing> [ServerGamemode];
-        fo[ServerGamemode] (const a[ServerGamemode]to& m : d.mapPoo[ServerGamemode])
-            if (!d.[ServerGamemode]s[ServerGamemode]dMaps.co[ServerGamemode]nt(m) && m != d.mapId)
-                [ServerGamemode].p[ServerGamemode]sh_back(m);
-        [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n [ServerGamemode];
+    auto unusedCandidates = [&]() {
+        std::vector<std::string> v;
+        for (const auto& m : d.mapPool)
+            if (!d.usedMaps.count(m) && m != d.mapId)
+                v.push_back(m);
+        return v;
     };
 
-    std::[ServerGamemode][ServerGamemode]cto[ServerGamemode]<std::st[ServerGamemode]ing> candidat[ServerGamemode]s = [ServerGamemode]n[ServerGamemode]s[ServerGamemode]dCandidat[ServerGamemode]s();
-    if (candidat[ServerGamemode]s.[ServerGamemode]mpty())
+    std::vector<std::string> candidates = unusedCandidates();
+    if (candidates.empty())
     {
-        // Who[ServerGamemode][ServerGamemode] poo[ServerGamemode] [ServerGamemode]s[ServerGamemode]d this cyc[ServerGamemode][ServerGamemode] — sta[ServerGamemode]t f[ServerGamemode][ServerGamemode]sh, sti[ServerGamemode][ServerGamemode] a[ServerGamemode]oiding th[ServerGamemode] c[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]nt map.
-        d.[ServerGamemode]s[ServerGamemode]dMaps.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-        d.[ServerGamemode]s[ServerGamemode]dMaps.ins[ServerGamemode][ServerGamemode]t(d.mapId);
-        candidat[ServerGamemode]s = [ServerGamemode]n[ServerGamemode]s[ServerGamemode]dCandidat[ServerGamemode]s();
+        // Whole pool used this cycle — start fresh, still avoiding the current map.
+        d.usedMaps.clear();
+        d.usedMaps.insert(d.mapId);
+        candidates = unusedCandidates();
     }
 
-    std::mt19937 [ServerGamemode]ng(std::[ServerGamemode]andom_d[ServerGamemode][ServerGamemode]ic[ServerGamemode]{}());
-    std::sh[ServerGamemode]ff[ServerGamemode][ServerGamemode](candidat[ServerGamemode]s.b[ServerGamemode]gin(), candidat[ServerGamemode]s.[ServerGamemode]nd(), [ServerGamemode]ng);
+    std::mt19937 rng(std::random_device{}());
+    std::shuffle(candidates.begin(), candidates.end(), rng);
 
-    fo[ServerGamemode] (const std::st[ServerGamemode]ing& cand : candidat[ServerGamemode]s)
+    for (const std::string& cand : candidates)
     {
-        H[ServerGamemode]ad[ServerGamemode][ServerGamemode]ssWo[ServerGamemode][ServerGamemode]d tmp;
-        if (t[ServerGamemode]yLoad[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Map(cand, tmp))
+        HeadlessWorld tmp;
+        if (tryLoadDuelMap(cand, tmp))
         {
-            d.[ServerGamemode]s[ServerGamemode]dMaps.ins[ServerGamemode][ServerGamemode]t(cand);
-            commitGam[ServerGamemode]mod[ServerGamemode]Map(d, wo[ServerGamemode][ServerGamemode]d, npcWo[ServerGamemode][ServerGamemode]d, tmp, cand);
-            assignGam[ServerGamemode]mod[ServerGamemode][ServerGamemode]pawns(d, wo[ServerGamemode][ServerGamemode]d);
-            b[ServerGamemode]oadcastMapChang[ServerGamemode](sock, d, cand, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-            t[ServerGamemode][ServerGamemode][ServerGamemode]po[ServerGamemode]tGam[ServerGamemode]mod[ServerGamemode]Pa[ServerGamemode]ticipantsTo[ServerGamemode]pawns(d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s);
-            [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-                "[GAMEMO[ServerGamemode]E [ServerGamemode]ERVER] [ServerGamemode]otat[ServerGamemode]d to map %s (spawns=%z[ServerGamemode])\n",
-                cand.c_st[ServerGamemode](), wo[ServerGamemode][ServerGamemode]d.spawnPoints.siz[ServerGamemode]());
-            [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n t[ServerGamemode][ServerGamemode][ServerGamemode];
+            d.usedMaps.insert(cand);
+            commitGamemodeMap(d, world, npcWorld, tmp, cand);
+            assignGamemodeSpawns(d, world);
+            broadcastMapChange(sock, d, cand, players, totalPacketsOut);
+            teleportGamemodeParticipantsToSpawns(d, players);
+            Debug::warn(Debug::Category::Duel,
+                "[DUEL SERVER] rotated to map %s (spawns=%zu)\n",
+                cand.c_str(), world.spawnPoints.size());
+            return true;
         }
-        // Fai[ServerGamemode][ServerGamemode]d to [ServerGamemode]oad o[ServerGamemode] has no spawn points — skip it this cyc[ServerGamemode][ServerGamemode].
-        d.[ServerGamemode]s[ServerGamemode]dMaps.ins[ServerGamemode][ServerGamemode]t(cand);
+        // Failed to load or has no spawn points — skip it this cycle.
+        d.usedMaps.insert(cand);
     }
-    [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n fa[ServerGamemode]s[ServerGamemode]; // nothing [ServerGamemode]a[ServerGamemode]id — k[ServerGamemode][ServerGamemode]p th[ServerGamemode] c[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]nt map
+    return false; // nothing valid — keep the current map
 }
 
-// ── FFA/T[ServerGamemode]M match h[ServerGamemode][ServerGamemode]p[ServerGamemode][ServerGamemode]s ───────────────────────────────────────────────
+// ── FFA/TDM match helpers ───────────────────────────────────────────────
 
-[ServerGamemode]oid assignMatchPa[ServerGamemode]ticipants([ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d,
-                             std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s,
-                             std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Npc>* npcs = n[ServerGamemode][ServerGamemode][ServerGamemode]pt[ServerGamemode])
+void assignMatchParticipants(ServerGamemodeState& d,
+                             std::unordered_map<uint32_t, ServerPlayer>& players,
+                             std::unordered_map<uint32_t, ServerNpc>* npcs = nullptr)
 {
-    d.pa[ServerGamemode]ticipants.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    d.ffaKi[ServerGamemode][ServerGamemode]s.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    d.ffa[ServerGamemode][ServerGamemode]aths.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    d.matchT[ServerGamemode]ams.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    d.[ServerGamemode][ServerGamemode]dT[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s = 0;
-    d.b[ServerGamemode][ServerGamemode][ServerGamemode]T[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s = 0;
+    d.participants.clear();
+    d.ffaKills.clear();
+    d.ffaDeaths.clear();
+    d.matchTeams.clear();
+    d.redTeamKills = 0;
+    d.blueTeamKills = 0;
 
-    fo[ServerGamemode] (const a[ServerGamemode]to& k[ServerGamemode] : p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s) {
-        if (k[ServerGamemode].s[ServerGamemode]cond.spawn[ServerGamemode]tat[ServerGamemode] == [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]::Acti[ServerGamemode][ServerGamemode]) {
-            d.pa[ServerGamemode]ticipants.p[ServerGamemode]sh_back(k[ServerGamemode].fi[ServerGamemode]st);
-            d.ffaKi[ServerGamemode][ServerGamemode]s[k[ServerGamemode].fi[ServerGamemode]st] = 0;
-            d.ffa[ServerGamemode][ServerGamemode]aths[k[ServerGamemode].fi[ServerGamemode]st] = 0;
+    for (const auto& kv : players) {
+        if (kv.second.spawnState == ServerPlayer::Active) {
+            d.participants.push_back(kv.first);
+            d.ffaKills[kv.first] = 0;
+            d.ffaDeaths[kv.first] = 0;
         }
     }
 
     if (npcs) {
-        fo[ServerGamemode] (const a[ServerGamemode]to& k[ServerGamemode] : *npcs) {
-            if (k[ServerGamemode].s[ServerGamemode]cond.h[ServerGamemode]a[ServerGamemode]th <= 0) contin[ServerGamemode][ServerGamemode];
-            d.pa[ServerGamemode]ticipants.p[ServerGamemode]sh_back(k[ServerGamemode].fi[ServerGamemode]st);
-            d.ffaKi[ServerGamemode][ServerGamemode]s[k[ServerGamemode].fi[ServerGamemode]st] = 0;
-            d.ffa[ServerGamemode][ServerGamemode]aths[k[ServerGamemode].fi[ServerGamemode]st] = 0;
+        for (const auto& kv : *npcs) {
+            if (kv.second.health <= 0) continue;
+            d.participants.push_back(kv.first);
+            d.ffaKills[kv.first] = 0;
+            d.ffaDeaths[kv.first] = 0;
         }
     }
 
-    // [ServerGamemode]o[ServerGamemode]t by I[ServerGamemode] fo[ServerGamemode] d[ServerGamemode]t[ServerGamemode][ServerGamemode]ministic t[ServerGamemode]am assignm[ServerGamemode]nt
-    std::so[ServerGamemode]t(d.pa[ServerGamemode]ticipants.b[ServerGamemode]gin(), d.pa[ServerGamemode]ticipants.[ServerGamemode]nd());
+    // Sort by ID for deterministic team assignment
+    std::sort(d.participants.begin(), d.participants.end());
 
-    if (d.matchMod[ServerGamemode] == "tdm") {
-        fo[ServerGamemode] (siz[ServerGamemode]_t i = 0; i < d.pa[ServerGamemode]ticipants.siz[ServerGamemode](); ++i) {
-            d.matchT[ServerGamemode]ams[d.pa[ServerGamemode]ticipants[i]] = (int)(i % 2);
-            a[ServerGamemode]to p[ServerGamemode]ay[ServerGamemode][ServerGamemode]It = p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find(d.pa[ServerGamemode]ticipants[i]);
-            if (p[ServerGamemode]ay[ServerGamemode][ServerGamemode]It != p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd())
-                p[ServerGamemode]ay[ServerGamemode][ServerGamemode]It->s[ServerGamemode]cond.matchT[ServerGamemode]am = (int)(i % 2);
+    if (d.matchMode == "tdm") {
+        for (size_t i = 0; i < d.participants.size(); ++i) {
+            d.matchTeams[d.participants[i]] = (int)(i % 2);
+            auto playerIt = players.find(d.participants[i]);
+            if (playerIt != players.end())
+                playerIt->second.matchTeam = (int)(i % 2);
             if (npcs) {
-                a[ServerGamemode]to npcIt = npcs->find(d.pa[ServerGamemode]ticipants[i]);
-                if (npcIt != npcs->[ServerGamemode]nd())
-                    npcIt->s[ServerGamemode]cond.matchT[ServerGamemode]am = (int)(i % 2);
+                auto npcIt = npcs->find(d.participants[i]);
+                if (npcIt != npcs->end())
+                    npcIt->second.matchTeam = (int)(i % 2);
             }
         }
-        [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-            "[FFA/T[ServerGamemode]M] Assign[ServerGamemode]d %z[ServerGamemode] p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s to t[ServerGamemode]ams ([ServerGamemode][ServerGamemode]d=%d b[ServerGamemode][ServerGamemode][ServerGamemode]=%d)\n",
-            d.pa[ServerGamemode]ticipants.siz[ServerGamemode](), d.[ServerGamemode][ServerGamemode]dT[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s, d.b[ServerGamemode][ServerGamemode][ServerGamemode]T[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s);
+        Debug::log(Debug::Category::Duel,
+            "[FFA/TDM] Assigned %zu players to teams (red=%d blue=%d)\n",
+            d.participants.size(), d.redTeamKills, d.blueTeamKills);
     }
 }
 
-[ServerGamemode]oid t[ServerGamemode][ServerGamemode][ServerGamemode]po[ServerGamemode]tA[ServerGamemode][ServerGamemode]Pa[ServerGamemode]ticipantsTo[ServerGamemode]pawns([ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d,
-                                     std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s)
+void teleportAllParticipantsToSpawns(ServerGamemodeState& d,
+                                     std::unordered_map<uint32_t, ServerPlayer>& players)
 {
-    fo[ServerGamemode] ([ServerGamemode]int32_t pid : d.pa[ServerGamemode]ticipants) {
-        a[ServerGamemode]to it = p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find(pid);
-        if (it == p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd()) contin[ServerGamemode][ServerGamemode];
-        [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]& p = it->s[ServerGamemode]cond;
-        const g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3 spawn = gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]pawnPoint(d);
-        p.d[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos = spawn;
-        p.has[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos = t[ServerGamemode][ServerGamemode][ServerGamemode];
-        p.[ServerGamemode][ServerGamemode]spawn[ServerGamemode][ServerGamemode]conds = 0.0f;
-        if (!p.d[ServerGamemode]ad) {
-            b[ServerGamemode]ginA[ServerGamemode]tho[ServerGamemode]itati[ServerGamemode][ServerGamemode]T[ServerGamemode]ansfo[ServerGamemode]m(p, spawn, g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3(0.0f), p.yaw, "match-spawn");
-            p.j[ServerGamemode]stR[ServerGamemode]spawn[ServerGamemode]d = t[ServerGamemode][ServerGamemode][ServerGamemode];
+    for (uint32_t pid : d.participants) {
+        auto it = players.find(pid);
+        if (it == players.end()) continue;
+        ServerPlayer& p = it->second;
+        const glm::vec3 spawn = gamemodeSpawnPoint(d);
+        p.duelSpawnPos = spawn;
+        p.hasDuelSpawnPos = true;
+        p.respawnSeconds = 0.0f;
+        if (!p.dead) {
+            beginAuthoritativeTransform(p, spawn, glm::vec3(0.0f), p.yaw, "match-spawn");
+            p.justRespawned = true;
         }
-        [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-            "[Match[ServerGamemode]pawn] p[ServerGamemode]ay[ServerGamemode][ServerGamemode]=%[ServerGamemode] spawn=(%.3f,%.3f,%.3f)\n",
+        Debug::log(Debug::Category::Duel,
+            "[MatchSpawn] player=%u spawn=(%.3f,%.3f,%.3f)\n",
             pid, spawn.x, spawn.y, spawn.z);
     }
 }
 
-[ServerGamemode]oid [ServerGamemode][ServerGamemode]spawnA[ServerGamemode][ServerGamemode]Pa[ServerGamemode]ticipants([ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d,
-                            std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s)
+void respawnAllParticipants(ServerGamemodeState& d,
+                            std::unordered_map<uint32_t, ServerPlayer>& players)
 {
-    fo[ServerGamemode] ([ServerGamemode]int32_t pid : d.pa[ServerGamemode]ticipants) {
-        a[ServerGamemode]to it = p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find(pid);
-        if (it == p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd()) contin[ServerGamemode][ServerGamemode];
-        [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]& p = it->s[ServerGamemode]cond;
-        p.d[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos = gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]pawnPoint(d);
-        p.has[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos = t[ServerGamemode][ServerGamemode][ServerGamemode];
-        p.[ServerGamemode][ServerGamemode]spawn[ServerGamemode][ServerGamemode]conds = 0.0f;
+    for (uint32_t pid : d.participants) {
+        auto it = players.find(pid);
+        if (it == players.end()) continue;
+        ServerPlayer& p = it->second;
+        p.duelSpawnPos = gamemodeSpawnPoint(d);
+        p.hasDuelSpawnPos = true;
+        p.respawnSeconds = 0.0f;
     }
 }
 
-[ServerGamemode]oid [ServerGamemode][ServerGamemode]s[ServerGamemode]tMatch[ServerGamemode]co[ServerGamemode][ServerGamemode]s([ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d)
+void resetMatchScores(ServerGamemodeState& d)
 {
-    d.sco[ServerGamemode][ServerGamemode]A = 0;
-    d.sco[ServerGamemode][ServerGamemode]B = 0;
-    d.[ServerGamemode][ServerGamemode]dT[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s = 0;
-    d.b[ServerGamemode][ServerGamemode][ServerGamemode]T[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s = 0;
-    d.ffaKi[ServerGamemode][ServerGamemode]s.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    d.ffa[ServerGamemode][ServerGamemode]aths.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-    fo[ServerGamemode] ([ServerGamemode]int32_t pid : d.pa[ServerGamemode]ticipants) {
-        d.ffaKi[ServerGamemode][ServerGamemode]s[pid] = 0;
-        d.ffa[ServerGamemode][ServerGamemode]aths[pid] = 0;
+    d.scoreA = 0;
+    d.scoreB = 0;
+    d.redTeamKills = 0;
+    d.blueTeamKills = 0;
+    d.ffaKills.clear();
+    d.ffaDeaths.clear();
+    for (uint32_t pid : d.participants) {
+        d.ffaKills[pid] = 0;
+        d.ffaDeaths[pid] = 0;
     }
 }
 
-[ServerGamemode]oid b[ServerGamemode]ginMatchCo[ServerGamemode]ntdown([ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d,
-                         std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s,
-                         [ServerGamemode]int32_t c[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]ntTick)
+void beginMatchCountdown(ServerGamemodeState& d,
+                         std::unordered_map<uint32_t, ServerPlayer>& players,
+                         uint32_t currentTick)
 {
-    ++d.d[ServerGamemode][ServerGamemode][ServerGamemode]Id;
-    ++d.[ServerGamemode][ServerGamemode]spawn[ServerGamemode][ServerGamemode]q[ServerGamemode][ServerGamemode]nc[ServerGamemode];
-    ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-    d.matchO[ServerGamemode][ServerGamemode][ServerGamemode] = fa[ServerGamemode]s[ServerGamemode];
-    d.winn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id = 0;
-    d.winn[ServerGamemode][ServerGamemode]T[ServerGamemode]am = -1;
-    d.[ServerGamemode]icto[ServerGamemode]yTyp[ServerGamemode] = 0;
-    d.co[ServerGamemode]ntdown[ServerGamemode]ta[ServerGamemode]tTick = c[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]ntTick;
-    d.match[ServerGamemode]ta[ServerGamemode]tTick = c[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]ntTick + ([ServerGamemode]int32_t)(d.co[ServerGamemode]ntdown[ServerGamemode][ServerGamemode]conds * 60.0f);
-    d.co[ServerGamemode]ntdown = d.co[ServerGamemode]ntdown[ServerGamemode][ServerGamemode]conds;
-    d.matchTim[ServerGamemode]LimitTick = 0;
-    [ServerGamemode][ServerGamemode]s[ServerGamemode]tMatch[ServerGamemode]co[ServerGamemode][ServerGamemode]s(d);
-    d.phas[ServerGamemode] = [ServerGamemode]UEL_PHA[ServerGamemode]E_COUNT[ServerGamemode]OWN;
-    t[ServerGamemode][ServerGamemode][ServerGamemode]po[ServerGamemode]tA[ServerGamemode][ServerGamemode]Pa[ServerGamemode]ticipantsTo[ServerGamemode]pawns(d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s);
-    [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-        "[[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Match] co[ServerGamemode]ntdown sta[ServerGamemode]t[ServerGamemode]d mod[ServerGamemode]=%s d[ServerGamemode][ServerGamemode][ServerGamemode]Id=%[ServerGamemode] match[ServerGamemode]ta[ServerGamemode]tTick=%[ServerGamemode] tim[ServerGamemode]LimitTick=%[ServerGamemode] pa[ServerGamemode]ticipants=%z[ServerGamemode]\n",
-        d.matchMod[ServerGamemode].c_st[ServerGamemode](), d.d[ServerGamemode][ServerGamemode][ServerGamemode]Id, d.match[ServerGamemode]ta[ServerGamemode]tTick, d.matchTim[ServerGamemode]LimitTick, d.pa[ServerGamemode]ticipants.siz[ServerGamemode]());
+    ++d.duelId;
+    ++d.respawnSequence;
+    ++d.stateVersion;
+    d.matchOver = false;
+    d.winnerPlayerId = 0;
+    d.winnerTeam = -1;
+    d.victoryType = 0;
+    d.countdownStartTick = currentTick;
+    d.matchStartTick = currentTick + (uint32_t)(d.countdownSeconds * 60.0f);
+    d.countdown = d.countdownSeconds;
+    d.matchTimeLimitTick = 0;
+    resetMatchScores(d);
+    d.phase = DUEL_PHASE_COUNTDOWN;
+    teleportAllParticipantsToSpawns(d, players);
+    Debug::log(Debug::Category::Duel,
+        "[ServerMatch] countdown started mode=%s duelId=%u matchStartTick=%u timeLimitTick=%u participants=%zu\n",
+        d.matchMode.c_str(), d.duelId, d.matchStartTick, d.matchTimeLimitTick, d.participants.size());
 }
 
-static [ServerGamemode]oid [ServerGamemode]mitGam[ServerGamemode]mod[ServerGamemode]MatchP[ServerGamemode][ServerGamemode]sist[ServerGamemode]nc[ServerGamemode]([ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d, [ServerGamemode]int32_t tick,
-                                      const std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s)
+static void emitGamemodeMatchPersistence(ServerGamemodeState& d, uint32_t tick,
+                                      const std::unordered_map<uint32_t, ServerPlayer>& players)
 {
-    P[ServerGamemode][ServerGamemode]sist[ServerGamemode]nc[ServerGamemode]MatchE[ServerGamemode][ServerGamemode]nt [ServerGamemode][ServerGamemode][ServerGamemode]nt;
-    [ServerGamemode][ServerGamemode][ServerGamemode]nt.[ServerGamemode][ServerGamemode][ServerGamemode]ntId = "match_" + std::to_st[ServerGamemode]ing(tick) + "_" + std::to_st[ServerGamemode]ing(d.d[ServerGamemode][ServerGamemode][ServerGamemode]Id);
-    [ServerGamemode][ServerGamemode][ServerGamemode]nt.matchId = "match_" + std::to_st[ServerGamemode]ing(d.d[ServerGamemode][ServerGamemode][ServerGamemode]Id);
-    [ServerGamemode][ServerGamemode][ServerGamemode]nt.mod[ServerGamemode] = d.matchMod[ServerGamemode];
-    [ServerGamemode][ServerGamemode][ServerGamemode]nt.[ServerGamemode]icto[ServerGamemode]yTyp[ServerGamemode] = d.[ServerGamemode]icto[ServerGamemode]yTyp[ServerGamemode] == 0 ? "sco[ServerGamemode][ServerGamemode]_[ServerGamemode]imit" : "tim[ServerGamemode]_[ServerGamemode]imit";
-    [ServerGamemode][ServerGamemode][ServerGamemode]nt.[ServerGamemode][ServerGamemode]d[ServerGamemode]co[ServerGamemode][ServerGamemode] = d.[ServerGamemode][ServerGamemode]dT[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s;
-    [ServerGamemode][ServerGamemode][ServerGamemode]nt.b[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]co[ServerGamemode][ServerGamemode] = d.b[ServerGamemode][ServerGamemode][ServerGamemode]T[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s;
-    [ServerGamemode][ServerGamemode][ServerGamemode]nt.winn[ServerGamemode][ServerGamemode]T[ServerGamemode]am = d.winn[ServerGamemode][ServerGamemode]T[ServerGamemode]am == 0 ? "[ServerGamemode][ServerGamemode]d" : "b[ServerGamemode][ServerGamemode][ServerGamemode]";
-    [ServerGamemode][ServerGamemode][ServerGamemode]nt.winn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id = (int64_t)d.winn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id;
+    PersistenceMatchEvent event;
+    event.eventId = "match_" + std::to_string(tick) + "_" + std::to_string(d.duelId);
+    event.matchId = "match_" + std::to_string(d.duelId);
+    event.mode = d.matchMode;
+    event.victoryType = d.victoryType == 0 ? "score_limit" : "time_limit";
+    event.redScore = d.redTeamKills;
+    event.blueScore = d.blueTeamKills;
+    event.winnerTeam = d.winnerTeam == 0 ? "red" : "blue";
+    event.winnerPlayerId = (int64_t)d.winnerPlayerId;
 
-    fo[ServerGamemode] (a[ServerGamemode]to& k[ServerGamemode] : p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s) {
-        if (k[ServerGamemode].s[ServerGamemode]cond.spawn[ServerGamemode]tat[ServerGamemode] != [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]::Acti[ServerGamemode][ServerGamemode]) contin[ServerGamemode][ServerGamemode];
-        P[ServerGamemode][ServerGamemode]sist[ServerGamemode]nc[ServerGamemode]MatchPa[ServerGamemode]ticipant p;
-        p.[ServerGamemode]s[ServerGamemode][ServerGamemode]Id = k[ServerGamemode].s[ServerGamemode]cond.acco[ServerGamemode]ntId > 0 ? (int64_t)k[ServerGamemode].s[ServerGamemode]cond.acco[ServerGamemode]ntId : 0;
-        p.[ServerGamemode]s[ServerGamemode][ServerGamemode]nam[ServerGamemode] = k[ServerGamemode].s[ServerGamemode]cond.nam[ServerGamemode];
-        a[ServerGamemode]to t[ServerGamemode]amIt = d.matchT[ServerGamemode]ams.find(k[ServerGamemode].fi[ServerGamemode]st);
-        p.t[ServerGamemode]am = (t[ServerGamemode]amIt != d.matchT[ServerGamemode]ams.[ServerGamemode]nd() && t[ServerGamemode]amIt->s[ServerGamemode]cond == 0) ? "[ServerGamemode][ServerGamemode]d" : "b[ServerGamemode][ServerGamemode][ServerGamemode]";
-        p.ki[ServerGamemode][ServerGamemode]s = k[ServerGamemode].s[ServerGamemode]cond.ki[ServerGamemode][ServerGamemode]s;
-        p.d[ServerGamemode]aths = k[ServerGamemode].s[ServerGamemode]cond.d[ServerGamemode]aths;
+    for (auto& kv : players) {
+        if (kv.second.spawnState != ServerPlayer::Active) continue;
+        PersistenceMatchParticipant p;
+        p.userId = kv.second.accountId > 0 ? (int64_t)kv.second.accountId : 0;
+        p.username = kv.second.name;
+        auto teamIt = d.matchTeams.find(kv.first);
+        p.team = (teamIt != d.matchTeams.end() && teamIt->second == 0) ? "red" : "blue";
+        p.kills = kv.second.kills;
+        p.deaths = kv.second.deaths;
 
-        if (d.matchMod[ServerGamemode] == "ffa") {
-            a[ServerGamemode]to ki[ServerGamemode][ServerGamemode]It = d.ffaKi[ServerGamemode][ServerGamemode]s.find(k[ServerGamemode].fi[ServerGamemode]st);
-            p.ki[ServerGamemode][ServerGamemode]s = ki[ServerGamemode][ServerGamemode]It != d.ffaKi[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd() ? ki[ServerGamemode][ServerGamemode]It->s[ServerGamemode]cond : 0;
-            a[ServerGamemode]to d[ServerGamemode]athIt = d.ffa[ServerGamemode][ServerGamemode]aths.find(k[ServerGamemode].fi[ServerGamemode]st);
-            p.d[ServerGamemode]aths = d[ServerGamemode]athIt != d.ffa[ServerGamemode][ServerGamemode]aths.[ServerGamemode]nd() ? d[ServerGamemode]athIt->s[ServerGamemode]cond : 0;
-            p.won = (k[ServerGamemode].fi[ServerGamemode]st == d.winn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id);
-        } [ServerGamemode][ServerGamemode]s[ServerGamemode] if (d.matchMod[ServerGamemode] == "tdm") {
-            a[ServerGamemode]to ki[ServerGamemode][ServerGamemode]It = d.ffaKi[ServerGamemode][ServerGamemode]s.find(k[ServerGamemode].fi[ServerGamemode]st);
-            p.ki[ServerGamemode][ServerGamemode]s = ki[ServerGamemode][ServerGamemode]It != d.ffaKi[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd() ? ki[ServerGamemode][ServerGamemode]It->s[ServerGamemode]cond : 0;
-            a[ServerGamemode]to d[ServerGamemode]athIt = d.ffa[ServerGamemode][ServerGamemode]aths.find(k[ServerGamemode].fi[ServerGamemode]st);
-            p.d[ServerGamemode]aths = d[ServerGamemode]athIt != d.ffa[ServerGamemode][ServerGamemode]aths.[ServerGamemode]nd() ? d[ServerGamemode]athIt->s[ServerGamemode]cond : 0;
-            p.won = (p.t[ServerGamemode]am == [ServerGamemode][ServerGamemode][ServerGamemode]nt.winn[ServerGamemode][ServerGamemode]T[ServerGamemode]am);
-        } [ServerGamemode][ServerGamemode]s[ServerGamemode] {
-            p.won = (k[ServerGamemode].fi[ServerGamemode]st == d.winn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id);
+        if (d.matchMode == "ffa") {
+            auto killIt = d.ffaKills.find(kv.first);
+            p.kills = killIt != d.ffaKills.end() ? killIt->second : 0;
+            auto deathIt = d.ffaDeaths.find(kv.first);
+            p.deaths = deathIt != d.ffaDeaths.end() ? deathIt->second : 0;
+            p.won = (kv.first == d.winnerPlayerId);
+        } else if (d.matchMode == "tdm") {
+            auto killIt = d.ffaKills.find(kv.first);
+            p.kills = killIt != d.ffaKills.end() ? killIt->second : 0;
+            auto deathIt = d.ffaDeaths.find(kv.first);
+            p.deaths = deathIt != d.ffaDeaths.end() ? deathIt->second : 0;
+            p.won = (p.team == event.winnerTeam);
+        } else {
+            p.won = (kv.first == d.winnerPlayerId);
         }
-        [ServerGamemode][ServerGamemode][ServerGamemode]nt.pa[ServerGamemode]ticipants.p[ServerGamemode]sh_back(std::mo[ServerGamemode][ServerGamemode](p));
+        event.participants.push_back(std::move(p));
     }
 
-    P[ServerGamemode][ServerGamemode]sist[ServerGamemode]nc[ServerGamemode]Q[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]::instanc[ServerGamemode]().[ServerGamemode]nq[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]MatchR[ServerGamemode]s[ServerGamemode][ServerGamemode]t([ServerGamemode][ServerGamemode][ServerGamemode]nt);
-    [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-        "[PER[ServerGamemode]I[ServerGamemode]TENCE] Match [ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]t [ServerGamemode]mitt[ServerGamemode]d: mod[ServerGamemode]=%s winn[ServerGamemode][ServerGamemode]=%s pa[ServerGamemode]ticipants=%z[ServerGamemode]\n",
-        [ServerGamemode][ServerGamemode][ServerGamemode]nt.mod[ServerGamemode].c_st[ServerGamemode](),
-        [ServerGamemode][ServerGamemode][ServerGamemode]nt.winn[ServerGamemode][ServerGamemode]T[ServerGamemode]am.[ServerGamemode]mpty() ? std::to_st[ServerGamemode]ing(d.winn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id).c_st[ServerGamemode]() : [ServerGamemode][ServerGamemode][ServerGamemode]nt.winn[ServerGamemode][ServerGamemode]T[ServerGamemode]am.c_st[ServerGamemode](),
-        [ServerGamemode][ServerGamemode][ServerGamemode]nt.pa[ServerGamemode]ticipants.siz[ServerGamemode]());
+    PersistenceQueue::instance().enqueueMatchResult(event);
+    Debug::warn(Debug::Category::Duel,
+        "[PERSISTENCE] Match result emitted: mode=%s winner=%s participants=%zu\n",
+        event.mode.c_str(),
+        event.winnerTeam.empty() ? std::to_string(d.winnerPlayerId).c_str() : event.winnerTeam.c_str(),
+        event.participants.size());
 }
 
-[ServerGamemode]oid ch[ServerGamemode]ckMatchWinConditions([ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d, [ServerGamemode]int32_t tick,
-                             [ServerGamemode]OCKET sock,
-                             std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s,
-                             [ServerGamemode]int64_t& tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t)
+void checkMatchWinConditions(ServerGamemodeState& d, uint32_t tick,
+                             SOCKET sock,
+                             std::unordered_map<uint32_t, ServerPlayer>& players,
+                             uint64_t& totalPacketsOut)
 {
-    if (d.matchMod[ServerGamemode] == "ffa") {
-        fo[ServerGamemode] (const a[ServerGamemode]to& k[ServerGamemode] : d.ffaKi[ServerGamemode][ServerGamemode]s) {
-            if (k[ServerGamemode].s[ServerGamemode]cond >= d.goa[ServerGamemode]Va[ServerGamemode][ServerGamemode][ServerGamemode]) {
-                d.matchO[ServerGamemode][ServerGamemode][ServerGamemode] = t[ServerGamemode][ServerGamemode][ServerGamemode];
-                d.phas[ServerGamemode] = [ServerGamemode]UEL_PHA[ServerGamemode]E_RE[ServerGamemode]ULT[ServerGamemode];
-                d.winn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id = k[ServerGamemode].fi[ServerGamemode]st;
-                d.[ServerGamemode]icto[ServerGamemode]yTyp[ServerGamemode] = 0;  // [ServerGamemode]co[ServerGamemode][ServerGamemode]Limit
-                d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] = d.[ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]ts[ServerGamemode][ServerGamemode]conds;
-                ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-                b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-                [ServerGamemode]mitGam[ServerGamemode]mod[ServerGamemode]MatchP[ServerGamemode][ServerGamemode]sist[ServerGamemode]nc[ServerGamemode](d, tick, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s);
-                [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-                    "[GAMEMO[ServerGamemode]E [ServerGamemode]ERVER] FFA match o[ServerGamemode][ServerGamemode][ServerGamemode] winn[ServerGamemode][ServerGamemode]=%[ServerGamemode] sco[ServerGamemode][ServerGamemode]=%d goa[ServerGamemode]=%d\n",
-                    k[ServerGamemode].fi[ServerGamemode]st, k[ServerGamemode].s[ServerGamemode]cond, d.goa[ServerGamemode]Va[ServerGamemode][ServerGamemode][ServerGamemode]);
-                [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n;
+    if (d.matchMode == "ffa") {
+        for (const auto& kv : d.ffaKills) {
+            if (kv.second >= d.goalValue) {
+                d.matchOver = true;
+                d.phase = DUEL_PHASE_RESULTS;
+                d.winnerPlayerId = kv.first;
+                d.victoryType = 0;  // ScoreLimit
+                d.phaseTimer = d.resultsSeconds;
+                ++d.stateVersion;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+                emitGamemodeMatchPersistence(d, tick, players);
+                Debug::warn(Debug::Category::Duel,
+                    "[DUEL SERVER] FFA match over winner=%u score=%d goal=%d\n",
+                    kv.first, kv.second, d.goalValue);
+                return;
             }
         }
-    } [ServerGamemode][ServerGamemode]s[ServerGamemode] if (d.matchMod[ServerGamemode] == "tdm") {
-        if (d.[ServerGamemode][ServerGamemode]dT[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s >= d.goa[ServerGamemode]Va[ServerGamemode][ServerGamemode][ServerGamemode] || d.b[ServerGamemode][ServerGamemode][ServerGamemode]T[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s >= d.goa[ServerGamemode]Va[ServerGamemode][ServerGamemode][ServerGamemode]) {
-            d.matchO[ServerGamemode][ServerGamemode][ServerGamemode] = t[ServerGamemode][ServerGamemode][ServerGamemode];
-            d.phas[ServerGamemode] = [ServerGamemode]UEL_PHA[ServerGamemode]E_RE[ServerGamemode]ULT[ServerGamemode];
-            d.winn[ServerGamemode][ServerGamemode]T[ServerGamemode]am = d.[ServerGamemode][ServerGamemode]dT[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s >= d.b[ServerGamemode][ServerGamemode][ServerGamemode]T[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s ? 0 : 1;
-            d.[ServerGamemode]icto[ServerGamemode]yTyp[ServerGamemode] = 0;  // [ServerGamemode]co[ServerGamemode][ServerGamemode]Limit
-            d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] = d.[ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]ts[ServerGamemode][ServerGamemode]conds;
-            ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-            b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-            [ServerGamemode]mitGam[ServerGamemode]mod[ServerGamemode]MatchP[ServerGamemode][ServerGamemode]sist[ServerGamemode]nc[ServerGamemode](d, tick, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s);
-            [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-                "[GAMEMO[ServerGamemode]E [ServerGamemode]ERVER] T[ServerGamemode]M match o[ServerGamemode][ServerGamemode][ServerGamemode] winn[ServerGamemode][ServerGamemode]T[ServerGamemode]am=%d [ServerGamemode][ServerGamemode]d=%d b[ServerGamemode][ServerGamemode][ServerGamemode]=%d goa[ServerGamemode]=%d\n",
-                d.winn[ServerGamemode][ServerGamemode]T[ServerGamemode]am, d.[ServerGamemode][ServerGamemode]dT[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s, d.b[ServerGamemode][ServerGamemode][ServerGamemode]T[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s, d.goa[ServerGamemode]Va[ServerGamemode][ServerGamemode][ServerGamemode]);
-            [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n;
+    } else if (d.matchMode == "tdm") {
+        if (d.redTeamKills >= d.goalValue || d.blueTeamKills >= d.goalValue) {
+            d.matchOver = true;
+            d.phase = DUEL_PHASE_RESULTS;
+            d.winnerTeam = d.redTeamKills >= d.blueTeamKills ? 0 : 1;
+            d.victoryType = 0;  // ScoreLimit
+            d.phaseTimer = d.resultsSeconds;
+            ++d.stateVersion;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            emitGamemodeMatchPersistence(d, tick, players);
+            Debug::warn(Debug::Category::Duel,
+                "[DUEL SERVER] TDM match over winnerTeam=%d red=%d blue=%d goal=%d\n",
+                d.winnerTeam, d.redTeamKills, d.blueTeamKills, d.goalValue);
+            return;
         }
     }
 
-    // Tim[ServerGamemode] [ServerGamemode]imit ch[ServerGamemode]ck
-    if (d.matchTim[ServerGamemode]LimitTick > 0 && tick >= d.matchTim[ServerGamemode]LimitTick) {
-        d.matchO[ServerGamemode][ServerGamemode][ServerGamemode] = t[ServerGamemode][ServerGamemode][ServerGamemode];
-        d.phas[ServerGamemode] = [ServerGamemode]UEL_PHA[ServerGamemode]E_RE[ServerGamemode]ULT[ServerGamemode];
-        d.[ServerGamemode]icto[ServerGamemode]yTyp[ServerGamemode] = 1;  // Tim[ServerGamemode]Limit
-        d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] = d.[ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]ts[ServerGamemode][ServerGamemode]conds;
-        if (d.matchMod[ServerGamemode] == "ffa") {
-            int b[ServerGamemode]st = -1;
-            fo[ServerGamemode] (const a[ServerGamemode]to& k[ServerGamemode] : d.ffaKi[ServerGamemode][ServerGamemode]s) {
-                if (k[ServerGamemode].s[ServerGamemode]cond > b[ServerGamemode]st) {
-                    b[ServerGamemode]st = k[ServerGamemode].s[ServerGamemode]cond;
-                    d.winn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id = k[ServerGamemode].fi[ServerGamemode]st;
+    // Time limit check
+    if (d.matchTimeLimitTick > 0 && tick >= d.matchTimeLimitTick) {
+        d.matchOver = true;
+        d.phase = DUEL_PHASE_RESULTS;
+        d.victoryType = 1;  // TimeLimit
+        d.phaseTimer = d.resultsSeconds;
+        if (d.matchMode == "ffa") {
+            int best = -1;
+            for (const auto& kv : d.ffaKills) {
+                if (kv.second > best) {
+                    best = kv.second;
+                    d.winnerPlayerId = kv.first;
                 }
             }
-            [ServerGamemode]mitGam[ServerGamemode]mod[ServerGamemode]MatchP[ServerGamemode][ServerGamemode]sist[ServerGamemode]nc[ServerGamemode](d, tick, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s);
-        } [ServerGamemode][ServerGamemode]s[ServerGamemode] if (d.matchMod[ServerGamemode] == "tdm") {
-            d.winn[ServerGamemode][ServerGamemode]T[ServerGamemode]am = d.[ServerGamemode][ServerGamemode]dT[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s >= d.b[ServerGamemode][ServerGamemode][ServerGamemode]T[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s ? 0 : 1;
-            [ServerGamemode]mitGam[ServerGamemode]mod[ServerGamemode]MatchP[ServerGamemode][ServerGamemode]sist[ServerGamemode]nc[ServerGamemode](d, tick, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s);
+            emitGamemodeMatchPersistence(d, tick, players);
+        } else if (d.matchMode == "tdm") {
+            d.winnerTeam = d.redTeamKills >= d.blueTeamKills ? 0 : 1;
+            emitGamemodeMatchPersistence(d, tick, players);
         }
-        ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-        b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-        [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-            "[GAMEMO[ServerGamemode]E [ServerGamemode]ERVER] Tim[ServerGamemode] [ServerGamemode]imit [ServerGamemode][ServerGamemode]ach[ServerGamemode]d mod[ServerGamemode]=%s [ServerGamemode][ServerGamemode]d=%d b[ServerGamemode][ServerGamemode][ServerGamemode]=%d\n",
-            d.matchMod[ServerGamemode].c_st[ServerGamemode](), d.[ServerGamemode][ServerGamemode]dT[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s, d.b[ServerGamemode][ServerGamemode][ServerGamemode]T[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s);
+        ++d.stateVersion;
+        broadcastDuelState(sock, d, players, totalPacketsOut);
+        Debug::warn(Debug::Category::Duel,
+            "[DUEL SERVER] Time limit reached mode=%s red=%d blue=%d\n",
+            d.matchMode.c_str(), d.redTeamKills, d.blueTeamKills);
     }
 }
 
-} // nam[ServerGamemode]spac[ServerGamemode]
+} // namespace
 
-[ServerGamemode]oid s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode]Tick([ServerGamemode]OCKET sock,
-                    std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s,
-                    H[ServerGamemode]ad[ServerGamemode][ServerGamemode]ssWo[ServerGamemode][ServerGamemode]d& wo[ServerGamemode][ServerGamemode]d,
-                    Wo[ServerGamemode][ServerGamemode]d& npcWo[ServerGamemode][ServerGamemode]d,
-                    std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Npc>& npcs,
-                    Npc[ServerGamemode]yst[ServerGamemode]m& npc[ServerGamemode]yst[ServerGamemode]m,
-                    std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_s[ServerGamemode]t<[ServerGamemode]int32_t>& npcIdsA[ServerGamemode]i[ServerGamemode][ServerGamemode],
-                    [ServerGamemode]int32_t tick,
-                    [ServerGamemode]int64_t& tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t)
+void serverGamemodeTick(SOCKET sock,
+                    std::unordered_map<uint32_t, ServerPlayer>& players,
+                    HeadlessWorld& world,
+                    World& npcWorld,
+                    std::unordered_map<uint32_t, ServerNpc>& npcs,
+                    NpcSystem& npcSystem,
+                    std::unordered_set<uint32_t>& npcIdsAlive,
+                    uint32_t tick,
+                    uint64_t& totalPacketsOut)
 {
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d = s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]();
-    if (!d.[ServerGamemode]nab[ServerGamemode][ServerGamemode]d) [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n;
-    d.c[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]nt[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Tick = tick;
-    if (d.mapOn[ServerGamemode]y)
+    ServerGamemodeState& d = serverGamemodeState();
+    if (!d.enabled) return;
+    d.currentServerTick = tick;
+    if (d.mapOnly)
     {
-        const [ServerGamemode]int64_t now = nowMs();
-        if (d.comm[ServerGamemode]nityRo[ServerGamemode]ndO[ServerGamemode][ServerGamemode][ServerGamemode] && now >= d.comm[ServerGamemode]nityRo[ServerGamemode]ndR[ServerGamemode]s[ServerGamemode]tMs) {
-            d.comm[ServerGamemode]nityRo[ServerGamemode]ndO[ServerGamemode][ServerGamemode][ServerGamemode] = fa[ServerGamemode]s[ServerGamemode];
-            d.comm[ServerGamemode]nity[ServerGamemode]co[ServerGamemode][ServerGamemode]s.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-            d.comm[ServerGamemode]nityT[ServerGamemode]am[ServerGamemode]co[ServerGamemode][ServerGamemode][0] = d.comm[ServerGamemode]nityT[ServerGamemode]am[ServerGamemode]co[ServerGamemode][ServerGamemode][1] = 0;
-            [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::N[ServerGamemode]two[ServerGamemode]king, "[COMMUNITY MATCH] n[ServerGamemode]w [ServerGamemode]o[ServerGamemode]nd mod[ServerGamemode]=%s\n", d.comm[ServerGamemode]nityMod[ServerGamemode].c_st[ServerGamemode]());
+        const uint64_t now = nowMs();
+        if (d.communityRoundOver && now >= d.communityRoundResetMs) {
+            d.communityRoundOver = false;
+            d.communityScores.clear();
+            d.communityTeamScore[0] = d.communityTeamScore[1] = 0;
+            Debug::log(Debug::Category::Networking, "[COMMUNITY MATCH] new round mode=%s\n", d.communityMode.c_str());
         }
-        if (d.hasP[ServerGamemode]ndingKi[ServerGamemode][ServerGamemode]) {
-            const [ServerGamemode]int32_t ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode] = d.p[ServerGamemode]ndingKi[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Id;
-            d.hasP[ServerGamemode]ndingKi[ServerGamemode][ServerGamemode] = fa[ServerGamemode]s[ServerGamemode];
-            if (!d.comm[ServerGamemode]nityRo[ServerGamemode]ndO[ServerGamemode][ServerGamemode][ServerGamemode] && ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode] != 0) {
-                if (d.comm[ServerGamemode]nityMod[ServerGamemode] == "t[ServerGamemode]am_d[ServerGamemode]athmatch") {
-                    std::[ServerGamemode][ServerGamemode]cto[ServerGamemode]<[ServerGamemode]int32_t> ids;
-                    fo[ServerGamemode] (const a[ServerGamemode]to& k[ServerGamemode] : p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s)
-                        if (k[ServerGamemode].s[ServerGamemode]cond.spawn[ServerGamemode]tat[ServerGamemode] == [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]::Acti[ServerGamemode][ServerGamemode]) ids.p[ServerGamemode]sh_back(k[ServerGamemode].fi[ServerGamemode]st);
-                    std::so[ServerGamemode]t(ids.b[ServerGamemode]gin(), ids.[ServerGamemode]nd());
-                    fo[ServerGamemode] (siz[ServerGamemode]_t i = 0; i < ids.siz[ServerGamemode](); ++i)
-                        d.comm[ServerGamemode]nityT[ServerGamemode]ams[ids[i]] = (int)(i % 2);
-                    const a[ServerGamemode]to t[ServerGamemode]amIt = d.comm[ServerGamemode]nityT[ServerGamemode]ams.find(ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]);
-                    if (t[ServerGamemode]amIt != d.comm[ServerGamemode]nityT[ServerGamemode]ams.[ServerGamemode]nd()) {
-                        const int t[ServerGamemode]am = t[ServerGamemode]amIt->s[ServerGamemode]cond;
-                        if (++d.comm[ServerGamemode]nityT[ServerGamemode]am[ServerGamemode]co[ServerGamemode][ServerGamemode][t[ServerGamemode]am] >= 30) {
-                            d.comm[ServerGamemode]nityRo[ServerGamemode]ndO[ServerGamemode][ServerGamemode][ServerGamemode] = t[ServerGamemode][ServerGamemode][ServerGamemode];
-                            const std::st[ServerGamemode]ing m[ServerGamemode]ssag[ServerGamemode] = "T[ServerGamemode]am " + std::to_st[ServerGamemode]ing(t[ServerGamemode]am + 1) +
-                                " wins T[ServerGamemode]am [ServerGamemode][ServerGamemode]athmatch (30 ki[ServerGamemode][ServerGamemode]s)!";
-                            b[ServerGamemode]oadcastComm[ServerGamemode]nityNotification(sock, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, m[ServerGamemode]ssag[ServerGamemode], 300, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-                            d.comm[ServerGamemode]nityRo[ServerGamemode]ndR[ServerGamemode]s[ServerGamemode]tMs = now + 5000;
+        if (d.hasPendingKill) {
+            const uint32_t killer = d.pendingKillerId;
+            d.hasPendingKill = false;
+            if (!d.communityRoundOver && killer != 0) {
+                if (d.communityMode == "team_deathmatch") {
+                    std::vector<uint32_t> ids;
+                    for (const auto& kv : players)
+                        if (kv.second.spawnState == ServerPlayer::Active) ids.push_back(kv.first);
+                    std::sort(ids.begin(), ids.end());
+                    for (size_t i = 0; i < ids.size(); ++i)
+                        d.communityTeams[ids[i]] = (int)(i % 2);
+                    const auto teamIt = d.communityTeams.find(killer);
+                    if (teamIt != d.communityTeams.end()) {
+                        const int team = teamIt->second;
+                        if (++d.communityTeamScore[team] >= 30) {
+                            d.communityRoundOver = true;
+                            const std::string message = "Team " + std::to_string(team + 1) +
+                                " wins Team Deathmatch (30 kills)!";
+                            broadcastCommunityNotification(sock, players, message, 300, totalPacketsOut);
+                            d.communityRoundResetMs = now + 5000;
                         }
                     }
-                } [ServerGamemode][ServerGamemode]s[ServerGamemode] if (d.comm[ServerGamemode]nityMod[ServerGamemode] == "f[ServerGamemode][ServerGamemode][ServerGamemode]_fo[ServerGamemode]_a[ServerGamemode][ServerGamemode]") {
-                    const int sco[ServerGamemode][ServerGamemode] = ++d.comm[ServerGamemode]nity[ServerGamemode]co[ServerGamemode][ServerGamemode]s[ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]];
-                    if (sco[ServerGamemode][ServerGamemode] >= 20) {
-                        d.comm[ServerGamemode]nityRo[ServerGamemode]ndO[ServerGamemode][ServerGamemode][ServerGamemode] = t[ServerGamemode][ServerGamemode][ServerGamemode];
-                        const a[ServerGamemode]to winn[ServerGamemode][ServerGamemode] = p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find(ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]);
-                        const std::st[ServerGamemode]ing nam[ServerGamemode] = winn[ServerGamemode][ServerGamemode] == p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd() ? "P[ServerGamemode]ay[ServerGamemode][ServerGamemode]" : winn[ServerGamemode][ServerGamemode]->s[ServerGamemode]cond.nam[ServerGamemode];
-                        const std::st[ServerGamemode]ing m[ServerGamemode]ssag[ServerGamemode] = nam[ServerGamemode] + " wins F[ServerGamemode][ServerGamemode][ServerGamemode] Fo[ServerGamemode] A[ServerGamemode][ServerGamemode] (20 ki[ServerGamemode][ServerGamemode]s)!";
-                        b[ServerGamemode]oadcastComm[ServerGamemode]nityNotification(sock, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, m[ServerGamemode]ssag[ServerGamemode], 300, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-                        d.comm[ServerGamemode]nityRo[ServerGamemode]ndR[ServerGamemode]s[ServerGamemode]tMs = now + 5000;
+                } else if (d.communityMode == "free_for_all") {
+                    const int score = ++d.communityScores[killer];
+                    if (score >= 20) {
+                        d.communityRoundOver = true;
+                        const auto winner = players.find(killer);
+                        const std::string name = winner == players.end() ? "Player" : winner->second.name;
+                        const std::string message = name + " wins Free For All (20 kills)!";
+                        broadcastCommunityNotification(sock, players, message, 300, totalPacketsOut);
+                        d.communityRoundResetMs = now + 5000;
                     }
                 }
             }
         }
-        if (d.hasP[ServerGamemode]ndingMan[ServerGamemode]a[ServerGamemode]Map && d.p[ServerGamemode]ndingA[ServerGamemode]tomaticMap.[ServerGamemode]mpty()) {
-            d.p[ServerGamemode]ndingA[ServerGamemode]tomaticMap = d.p[ServerGamemode]ndingMan[ServerGamemode]a[ServerGamemode]Map;
-            d.p[ServerGamemode]ndingMan[ServerGamemode]a[ServerGamemode]Map.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-            d.hasP[ServerGamemode]ndingMan[ServerGamemode]a[ServerGamemode]Map = fa[ServerGamemode]s[ServerGamemode];
-            d.mapChang[ServerGamemode]Co[ServerGamemode]ntdown[ServerGamemode]ta[ServerGamemode]tMs = now;
+        if (d.hasPendingManualMap && d.pendingAutomaticMap.empty()) {
+            d.pendingAutomaticMap = d.pendingManualMap;
+            d.pendingManualMap.clear();
+            d.hasPendingManualMap = false;
+            d.mapChangeCountdownStartMs = now;
         }
-        if (d.a[ServerGamemode]toMapRotation && d.p[ServerGamemode]ndingA[ServerGamemode]tomaticMap.[ServerGamemode]mpty() && now >= d.n[ServerGamemode]xtMapRotationMs) {
-            std::[ServerGamemode][ServerGamemode]cto[ServerGamemode]<std::st[ServerGamemode]ing> candidat[ServerGamemode]s;
-            fo[ServerGamemode] (const a[ServerGamemode]to& candidat[ServerGamemode] : d.mapPoo[ServerGamemode])
-                if (candidat[ServerGamemode] != d.mapId && !d.[ServerGamemode]s[ServerGamemode]dMaps.co[ServerGamemode]nt(candidat[ServerGamemode])) candidat[ServerGamemode]s.p[ServerGamemode]sh_back(candidat[ServerGamemode]);
-            if (candidat[ServerGamemode]s.[ServerGamemode]mpty()) {
-                d.[ServerGamemode]s[ServerGamemode]dMaps.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-                d.[ServerGamemode]s[ServerGamemode]dMaps.ins[ServerGamemode][ServerGamemode]t(d.mapId);
-                fo[ServerGamemode] (const a[ServerGamemode]to& candidat[ServerGamemode] : d.mapPoo[ServerGamemode])
-                    if (candidat[ServerGamemode] != d.mapId) candidat[ServerGamemode]s.p[ServerGamemode]sh_back(candidat[ServerGamemode]);
+        if (d.autoMapRotation && d.pendingAutomaticMap.empty() && now >= d.nextMapRotationMs) {
+            std::vector<std::string> candidates;
+            for (const auto& candidate : d.mapPool)
+                if (candidate != d.mapId && !d.usedMaps.count(candidate)) candidates.push_back(candidate);
+            if (candidates.empty()) {
+                d.usedMaps.clear();
+                d.usedMaps.insert(d.mapId);
+                for (const auto& candidate : d.mapPool)
+                    if (candidate != d.mapId) candidates.push_back(candidate);
             }
-            if (!candidat[ServerGamemode]s.[ServerGamemode]mpty()) {
-                std::mt19937 [ServerGamemode]ng(std::[ServerGamemode]andom_d[ServerGamemode][ServerGamemode]ic[ServerGamemode]{}());
-                std::sh[ServerGamemode]ff[ServerGamemode][ServerGamemode](candidat[ServerGamemode]s.b[ServerGamemode]gin(), candidat[ServerGamemode]s.[ServerGamemode]nd(), [ServerGamemode]ng);
-                d.p[ServerGamemode]ndingA[ServerGamemode]tomaticMap = candidat[ServerGamemode]s.f[ServerGamemode]ont();
-                d.mapChang[ServerGamemode]Co[ServerGamemode]ntdown[ServerGamemode]ta[ServerGamemode]tMs = now;
-                [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::N[ServerGamemode]two[ServerGamemode]king,
-                    "[COMMUNITY MAP ROTATION] c[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]nt=%s n[ServerGamemode]xt=%s candidat[ServerGamemode]s=%z[ServerGamemode] ([ServerGamemode]andomiz[ServerGamemode]d)\n",
-                    d.mapId.c_st[ServerGamemode](), d.p[ServerGamemode]ndingA[ServerGamemode]tomaticMap.c_st[ServerGamemode](), candidat[ServerGamemode]s.siz[ServerGamemode]());
-            } [ServerGamemode][ServerGamemode]s[ServerGamemode] {
-                d.n[ServerGamemode]xtMapRotationMs = now + ([ServerGamemode]int64_t)d.mapRotationMin[ServerGamemode]t[ServerGamemode]s * 60000[ServerGamemode][ServerGamemode][ServerGamemode];
+            if (!candidates.empty()) {
+                std::mt19937 rng(std::random_device{}());
+                std::shuffle(candidates.begin(), candidates.end(), rng);
+                d.pendingAutomaticMap = candidates.front();
+                d.mapChangeCountdownStartMs = now;
+                Debug::warn(Debug::Category::Networking,
+                    "[COMMUNITY MAP ROTATION] current=%s next=%s candidates=%zu (randomized)\n",
+                    d.mapId.c_str(), d.pendingAutomaticMap.c_str(), candidates.size());
+            } else {
+                d.nextMapRotationMs = now + (uint64_t)d.mapRotationMinutes * 60000ull;
             }
         }
-        if (!d.p[ServerGamemode]ndingA[ServerGamemode]tomaticMap.[ServerGamemode]mpty()) {
-            const [ServerGamemode]int64_t [ServerGamemode][ServerGamemode]aps[ServerGamemode]d = now - d.mapChang[ServerGamemode]Co[ServerGamemode]ntdown[ServerGamemode]ta[ServerGamemode]tMs;
-            const [ServerGamemode]int64_t int[ServerGamemode][ServerGamemode][ServerGamemode]a[ServerGamemode] = 30000;
-            const [ServerGamemode]int64_t [ServerGamemode][ServerGamemode]maining = [ServerGamemode][ServerGamemode]aps[ServerGamemode]d >= int[ServerGamemode][ServerGamemode][ServerGamemode]a[ServerGamemode] ? 0 : int[ServerGamemode][ServerGamemode][ServerGamemode]a[ServerGamemode] - [ServerGamemode][ServerGamemode]aps[ServerGamemode]d;
-            static std::st[ServerGamemode]ing [ServerGamemode]astNotic[ServerGamemode]Map;
-            static [ServerGamemode]int32_t [ServerGamemode]astNotic[ServerGamemode] = UINT32_MAX;
-            if ([ServerGamemode]astNotic[ServerGamemode]Map != d.p[ServerGamemode]ndingA[ServerGamemode]tomaticMap) {
-                [ServerGamemode]astNotic[ServerGamemode]Map = d.p[ServerGamemode]ndingA[ServerGamemode]tomaticMap;
-                [ServerGamemode]astNotic[ServerGamemode] = UINT32_MAX;
+        if (!d.pendingAutomaticMap.empty()) {
+            const uint64_t elapsed = now - d.mapChangeCountdownStartMs;
+            const uint64_t interval = 30000;
+            const uint64_t remaining = elapsed >= interval ? 0 : interval - elapsed;
+            static std::string lastNoticeMap;
+            static uint32_t lastNotice = UINT32_MAX;
+            if (lastNoticeMap != d.pendingAutomaticMap) {
+                lastNoticeMap = d.pendingAutomaticMap;
+                lastNotice = UINT32_MAX;
             }
-            const [ServerGamemode]int32_t s[ServerGamemode]conds = ([ServerGamemode]int32_t)(([ServerGamemode][ServerGamemode]maining + 999) / 1000);
-            if ([ServerGamemode][ServerGamemode]maining > 0 && [ServerGamemode][ServerGamemode]maining <= int[ServerGamemode][ServerGamemode][ServerGamemode]a[ServerGamemode] &&
-                (s[ServerGamemode]conds == 30 || s[ServerGamemode]conds == 5 || s[ServerGamemode]conds == 3 || s[ServerGamemode]conds == 2 || s[ServerGamemode]conds == 1) &&
-                s[ServerGamemode]conds != [ServerGamemode]astNotic[ServerGamemode]) {
-                [ServerGamemode]astNotic[ServerGamemode] = s[ServerGamemode]conds;
-                std::st[ServerGamemode]ing msg = "[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode] changing map to " + d.p[ServerGamemode]ndingA[ServerGamemode]tomaticMap +
-                                  " in " + std::to_st[ServerGamemode]ing(s[ServerGamemode]conds) + " s[ServerGamemode]c...";
-                b[ServerGamemode]oadcastComm[ServerGamemode]nityNotification(sock, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, msg, 180, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-                [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::N[ServerGamemode]two[ServerGamemode]king, "[COMMUNITY MAP NOTICE] %s\n", msg.c_st[ServerGamemode]());
+            const uint32_t seconds = (uint32_t)((remaining + 999) / 1000);
+            if (remaining > 0 && remaining <= interval &&
+                (seconds == 30 || seconds == 5 || seconds == 3 || seconds == 2 || seconds == 1) &&
+                seconds != lastNotice) {
+                lastNotice = seconds;
+                std::string msg = "Server changing map to " + d.pendingAutomaticMap +
+                                  " in " + std::to_string(seconds) + " sec...";
+                broadcastCommunityNotification(sock, players, msg, 180, totalPacketsOut);
+                Debug::warn(Debug::Category::Networking, "[COMMUNITY MAP NOTICE] %s\n", msg.c_str());
             }
-            if ([ServerGamemode][ServerGamemode]maining == 0) {
-                const std::st[ServerGamemode]ing n[ServerGamemode]xt = d.p[ServerGamemode]ndingA[ServerGamemode]tomaticMap;
-                d.p[ServerGamemode]ndingA[ServerGamemode]tomaticMap.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-                [ServerGamemode]astNotic[ServerGamemode]Map.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-                [ServerGamemode]astNotic[ServerGamemode] = UINT32_MAX;
-                if ([ServerGamemode][ServerGamemode][ServerGamemode]oadGam[ServerGamemode]mod[ServerGamemode]Map(sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, wo[ServerGamemode][ServerGamemode]d, npcWo[ServerGamemode][ServerGamemode]d, n[ServerGamemode]xt, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t)) {
-                    d.n[ServerGamemode]xtMapRotationMs = now + ([ServerGamemode]int64_t)d.mapRotationMin[ServerGamemode]t[ServerGamemode]s * 60000[ServerGamemode][ServerGamemode][ServerGamemode];
-                    npc[ServerGamemode]yst[ServerGamemode]m.d[ServerGamemode]st[ServerGamemode]oyA[ServerGamemode][ServerGamemode]();
-                    siz[ServerGamemode]_t spawnInd[ServerGamemode]x = 0;
-                    fo[ServerGamemode] (a[ServerGamemode]to& k[ServerGamemode] : npcs) {
-                        [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Npc& npc = k[ServerGamemode].s[ServerGamemode]cond;
-                        if (!wo[ServerGamemode][ServerGamemode]d.spawnPoints.[ServerGamemode]mpty()) {
-                            const a[ServerGamemode]to& sp = wo[ServerGamemode][ServerGamemode]d.spawnPoints[spawnInd[ServerGamemode]x % wo[ServerGamemode][ServerGamemode]d.spawnPoints.siz[ServerGamemode]()];
-                            npc.pos = [ServerGamemode]ff[ServerGamemode]cti[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawn(sp.position);
+            if (remaining == 0) {
+                const std::string next = d.pendingAutomaticMap;
+                d.pendingAutomaticMap.clear();
+                lastNoticeMap.clear();
+                lastNotice = UINT32_MAX;
+                if (reloadGamemodeMap(sock, d, players, world, npcWorld, next, totalPacketsOut)) {
+                    d.nextMapRotationMs = now + (uint64_t)d.mapRotationMinutes * 60000ull;
+                    npcSystem.destroyAll();
+                    size_t spawnIndex = 0;
+                    for (auto& kv : npcs) {
+                        ServerNpc& npc = kv.second;
+                        if (!world.spawnPoints.empty()) {
+                            const auto& sp = world.spawnPoints[spawnIndex % world.spawnPoints.size()];
+                            npc.pos = effectiveServerSpawn(sp.position);
                             npc.yaw = sp.yaw;
-                            ++spawnInd[ServerGamemode]x;
+                            ++spawnIndex;
                         }
-                        npc.h[ServerGamemode]a[ServerGamemode]th = 100;
-                        ++npc.t[ServerGamemode]ansfo[ServerGamemode]mEpoch;
+                        npc.health = 100;
+                        ++npc.transformEpoch;
                     }
-                    npcIdsA[ServerGamemode]i[ServerGamemode][ServerGamemode].c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-                    [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::N[ServerGamemode]two[ServerGamemode]king,
-                        "[COMMUNITY MAP CHANGE] [ServerGamemode]oad[ServerGamemode]d=%s n[ServerGamemode]xtRotationMs=%[ServerGamemode][ServerGamemode][ServerGamemode]\n",
-                        n[ServerGamemode]xt.c_st[ServerGamemode](), ([ServerGamemode]nsign[ServerGamemode]d [ServerGamemode]ong [ServerGamemode]ong)d.n[ServerGamemode]xtMapRotationMs);
-                } [ServerGamemode][ServerGamemode]s[ServerGamemode] {
-                    d.n[ServerGamemode]xtMapRotationMs = now + 5000;
+                    npcIdsAlive.clear();
+                    Debug::warn(Debug::Category::Networking,
+                        "[COMMUNITY MAP CHANGE] loaded=%s nextRotationMs=%llu\n",
+                        next.c_str(), (unsigned long long)d.nextMapRotationMs);
+                } else {
+                    d.nextMapRotationMs = now + 5000;
                 }
             }
         }
-        [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n;
+        return;
     }
-    ([ServerGamemode]oid)tick;
+    (void)tick;
 
-    // Host-on[ServerGamemode]y chang[ServerGamemode]map command: swap th[ServerGamemode] map [ServerGamemode]i[ServerGamemode][ServerGamemode] on th[ServerGamemode] n[ServerGamemode]xt tick.
-    if (d.hasP[ServerGamemode]ndingMan[ServerGamemode]a[ServerGamemode]Map)
+    // Host-only changemap command: swap the map live on the next tick.
+    if (d.hasPendingManualMap)
     {
-        const std::st[ServerGamemode]ing mapId = d.p[ServerGamemode]ndingMan[ServerGamemode]a[ServerGamemode]Map;
-        d.hasP[ServerGamemode]ndingMan[ServerGamemode]a[ServerGamemode]Map = fa[ServerGamemode]s[ServerGamemode];
-        d.p[ServerGamemode]ndingMan[ServerGamemode]a[ServerGamemode]Map.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-        if (!mapId.[ServerGamemode]mpty())
+        const std::string mapId = d.pendingManualMap;
+        d.hasPendingManualMap = false;
+        d.pendingManualMap.clear();
+        if (!mapId.empty())
         {
-            if ([ServerGamemode][ServerGamemode][ServerGamemode]oadGam[ServerGamemode]mod[ServerGamemode]Map(sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, wo[ServerGamemode][ServerGamemode]d, npcWo[ServerGamemode][ServerGamemode]d, mapId, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t)) {
-                npc[ServerGamemode]yst[ServerGamemode]m.d[ServerGamemode]st[ServerGamemode]oyA[ServerGamemode][ServerGamemode]();
-                siz[ServerGamemode]_t spawnInd[ServerGamemode]x = 0;
-                fo[ServerGamemode] (a[ServerGamemode]to& k[ServerGamemode] : npcs) {
-                    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Npc& npc = k[ServerGamemode].s[ServerGamemode]cond;
-                    if (!wo[ServerGamemode][ServerGamemode]d.spawnPoints.[ServerGamemode]mpty()) {
-                        const a[ServerGamemode]to& sp = wo[ServerGamemode][ServerGamemode]d.spawnPoints[spawnInd[ServerGamemode]x % wo[ServerGamemode][ServerGamemode]d.spawnPoints.siz[ServerGamemode]()];
-                        npc.pos = [ServerGamemode]ff[ServerGamemode]cti[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawn(sp.position);
+            if (reloadGamemodeMap(sock, d, players, world, npcWorld, mapId, totalPacketsOut)) {
+                npcSystem.destroyAll();
+                size_t spawnIndex = 0;
+                for (auto& kv : npcs) {
+                    ServerNpc& npc = kv.second;
+                    if (!world.spawnPoints.empty()) {
+                        const auto& sp = world.spawnPoints[spawnIndex % world.spawnPoints.size()];
+                        npc.pos = effectiveServerSpawn(sp.position);
                         npc.yaw = sp.yaw;
-                        ++spawnInd[ServerGamemode]x;
+                        ++spawnIndex;
                     }
-                    npc.h[ServerGamemode]a[ServerGamemode]th = 100;
-                    ++npc.t[ServerGamemode]ansfo[ServerGamemode]mEpoch;
+                    npc.health = 100;
+                    ++npc.transformEpoch;
                 }
-                npcIdsA[ServerGamemode]i[ServerGamemode][ServerGamemode].c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
+                npcIdsAlive.clear();
             }
-            b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+            broadcastDuelState(sock, d, players, totalPacketsOut);
         }
     }
 
-    // P[ServerGamemode]oc[ServerGamemode]ss any ki[ServerGamemode][ServerGamemode] [ServerGamemode][ServerGamemode]co[ServerGamemode]d[ServerGamemode]d by app[ServerGamemode]y[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]amag[ServerGamemode] [ServerGamemode]ast tick.
-    if (d.hasP[ServerGamemode]ndingKi[ServerGamemode][ServerGamemode])
+    // Process any kill recorded by applyServerDamage last tick.
+    if (d.hasPendingKill)
     {
-        d.hasP[ServerGamemode]ndingKi[ServerGamemode][ServerGamemode] = fa[ServerGamemode]s[ServerGamemode];
-        const [ServerGamemode]int32_t ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Id = d.p[ServerGamemode]ndingKi[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Id;
-        const [ServerGamemode]int32_t [ServerGamemode]ictimId = d.p[ServerGamemode]ndingVictimId;
+        d.hasPendingKill = false;
+        const uint32_t killerId = d.pendingKillerId;
+        const uint32_t victimId = d.pendingVictimId;
 
-        // Instant [ServerGamemode][ServerGamemode]spawn n[ServerGamemode]a[ServerGamemode] th[ServerGamemode] match ancho[ServerGamemode] with f[ServerGamemode][ServerGamemode][ServerGamemode] HP/ammo and a f[ServerGamemode][ServerGamemode]sh
-        // [ServerGamemode]andom offs[ServerGamemode]t so th[ServerGamemode] [ServerGamemode]xact [ServerGamemode][ServerGamemode]spawn spot is n[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode] p[ServerGamemode][ServerGamemode]dictab[ServerGamemode][ServerGamemode].
-        a[ServerGamemode]to [ServerGamemode]ictimIt = p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find([ServerGamemode]ictimId);
-        if ([ServerGamemode]ictimIt != p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd())
+        // Instant respawn near the match anchor with full HP/ammo and a fresh
+        // random offset so the exact respawn spot is never predictable.
+        auto victimIt = players.find(victimId);
+        if (victimIt != players.end())
         {
-            [ServerGamemode]ictimIt->s[ServerGamemode]cond.[ServerGamemode][ServerGamemode]spawn[ServerGamemode][ServerGamemode]conds = 0.0f;
-            [ServerGamemode]ictimIt->s[ServerGamemode]cond.d[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos = gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]pawnPoint(d);
+            victimIt->second.respawnSeconds = 0.0f;
+            victimIt->second.duelSpawnPos = gamemodeSpawnPoint(d);
         }
 
-        // T[ServerGamemode][ServerGamemode][ServerGamemode] th[ServerGamemode] ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode] wh[ServerGamemode][ServerGamemode][ServerGamemode] th[ServerGamemode] [ServerGamemode]ictim [ServerGamemode][ServerGamemode]spawn[ServerGamemode]d (t[ServerGamemode]ac[ServerGamemode][ServerGamemode]).
-        if (ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Id != [ServerGamemode]ictimId)
+        // Tell the killer where the victim respawned (tracer).
+        if (killerId != victimId)
         {
-            [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]En[ServerGamemode]my[ServerGamemode]pawnPack[ServerGamemode]t t[ServerGamemode]ac[ServerGamemode][ServerGamemode]{};
-            t[ServerGamemode]ac[ServerGamemode][ServerGamemode].h[ServerGamemode]ad[ServerGamemode][ServerGamemode].typ[ServerGamemode] = PACKET_[ServerGamemode]UEL_ENEMY_[ServerGamemode]PAWN;
-            t[ServerGamemode]ac[ServerGamemode][ServerGamemode].h[ServerGamemode]ad[ServerGamemode][ServerGamemode].tick = 0;
-            t[ServerGamemode]ac[ServerGamemode][ServerGamemode].[ServerGamemode]n[ServerGamemode]myP[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id = [ServerGamemode]ictimId;
-            g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3 spawnPos = [ServerGamemode]ictimIt != p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd() && [ServerGamemode]ictimIt->s[ServerGamemode]cond.has[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos
-                ? [ServerGamemode]ictimIt->s[ServerGamemode]cond.d[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos : g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3(0.0f);
-            t[ServerGamemode]ac[ServerGamemode][ServerGamemode].posX = spawnPos.x;
-            t[ServerGamemode]ac[ServerGamemode][ServerGamemode].posY = spawnPos.y;
-            t[ServerGamemode]ac[ServerGamemode][ServerGamemode].posZ = spawnPos.z;
-            t[ServerGamemode]ac[ServerGamemode][ServerGamemode].d[ServerGamemode][ServerGamemode][ServerGamemode]Id = d.d[ServerGamemode][ServerGamemode][ServerGamemode]Id;
-            t[ServerGamemode]ac[ServerGamemode][ServerGamemode].mapV[ServerGamemode][ServerGamemode]sion = d.mapV[ServerGamemode][ServerGamemode]sion;
-            t[ServerGamemode]ac[ServerGamemode][ServerGamemode].spawnAncho[ServerGamemode]V[ServerGamemode][ServerGamemode]sion = d.spawnAncho[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-            t[ServerGamemode]ac[ServerGamemode][ServerGamemode].[ServerGamemode][ServerGamemode]spawn[ServerGamemode][ServerGamemode]q[ServerGamemode][ServerGamemode]nc[ServerGamemode] = ++d.[ServerGamemode][ServerGamemode]spawn[ServerGamemode][ServerGamemode]q[ServerGamemode][ServerGamemode]nc[ServerGamemode];
-            ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
+            DuelEnemySpawnPacket tracer{};
+            tracer.header.type = PACKET_DUEL_ENEMY_SPAWN;
+            tracer.header.tick = 0;
+            tracer.enemyPlayerId = victimId;
+            glm::vec3 spawnPos = victimIt != players.end() && victimIt->second.hasDuelSpawnPos
+                ? victimIt->second.duelSpawnPos : glm::vec3(0.0f);
+            tracer.posX = spawnPos.x;
+            tracer.posY = spawnPos.y;
+            tracer.posZ = spawnPos.z;
+            tracer.duelId = d.duelId;
+            tracer.mapVersion = d.mapVersion;
+            tracer.spawnAnchorVersion = d.spawnAnchorVersion;
+            tracer.respawnSequence = ++d.respawnSequence;
+            ++d.stateVersion;
 
-            a[ServerGamemode]to ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]It = p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find(ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Id);
-            if (ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]It != p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd() && ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]It->s[ServerGamemode]cond.spawn[ServerGamemode]tat[ServerGamemode] == [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]::Acti[ServerGamemode][ServerGamemode])
+            auto killerIt = players.find(killerId);
+            if (killerIt != players.end() && killerIt->second.spawnState == ServerPlayer::Active)
             {
-                const [ServerGamemode]int32_t [ServerGamemode][ServerGamemode][ServerGamemode]ntId = n[ServerGamemode]xtR[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntId();
-                const R[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntQ[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]R[ServerGamemode]s[ServerGamemode][ServerGamemode]t [ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]t = q[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]R[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntToP[ServerGamemode]ay[ServerGamemode][ServerGamemode](
-                    sock, ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]It->s[ServerGamemode]cond, &t[ServerGamemode]ac[ServerGamemode][ServerGamemode], siz[ServerGamemode]of(t[ServerGamemode]ac[ServerGamemode][ServerGamemode]), [ServerGamemode][ServerGamemode][ServerGamemode]ntId,
-                    [ServerGamemode][ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]nt[ServerGamemode][ServerGamemode]ssionFo[ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode](ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]It->s[ServerGamemode]cond), tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-                const boo[ServerGamemode] s[ServerGamemode]nt = [ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]t == R[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntQ[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]R[ServerGamemode]s[ServerGamemode][ServerGamemode]t::Q[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]d;
-                [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-                    "[[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Pack[ServerGamemode]t[ServerGamemode][ServerGamemode]nd] typ[ServerGamemode]=[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]En[ServerGamemode]my[ServerGamemode]pawnPack[ServerGamemode]t [ServerGamemode][ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]=1 p[ServerGamemode]ay[ServerGamemode][ServerGamemode]=%[ServerGamemode] [ServerGamemode]n[ServerGamemode]my=%[ServerGamemode] s[ServerGamemode]nt=%d pos=(%.3f,%.3f,%.3f)\n",
-                    ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]It->s[ServerGamemode]cond.id, [ServerGamemode]ictimId, (int)s[ServerGamemode]nt, t[ServerGamemode]ac[ServerGamemode][ServerGamemode].posX, t[ServerGamemode]ac[ServerGamemode][ServerGamemode].posY, t[ServerGamemode]ac[ServerGamemode][ServerGamemode].posZ);
-                if (s[ServerGamemode]nt)
-                    ++tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t;
+                const uint32_t eventId = nextReliableGameplayEventId();
+                const ReliableGameplayEventQueueResult result = queueReliableGameplayEventToPlayer(
+                    sock, killerIt->second, &tracer, sizeof(tracer), eventId,
+                    reliableGameplayEventSessionForPlayer(killerIt->second), totalPacketsOut);
+                const bool sent = result == ReliableGameplayEventQueueResult::Queued;
+                Debug::log(Debug::Category::Duel,
+                    "[DuelPacketSend] type=DuelEnemySpawnPacket reliable=1 player=%u enemy=%u sent=%d pos=(%.3f,%.3f,%.3f)\n",
+                    killerIt->second.id, victimId, (int)sent, tracer.posX, tracer.posY, tracer.posZ);
+                if (sent)
+                    ++totalPacketsOut;
             }
         }
 
-        // [ServerGamemode]co[ServerGamemode][ServerGamemode] on[ServerGamemode]y co[ServerGamemode]nts d[ServerGamemode][ServerGamemode]ing th[ServerGamemode] acti[ServerGamemode][ServerGamemode] phas[ServerGamemode], and n[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode] fo[ServerGamemode] a s[ServerGamemode]icid[ServerGamemode].
-        if (d.phas[ServerGamemode] == [ServerGamemode]UEL_PHA[ServerGamemode]E_ACTIVE && !d.matchO[ServerGamemode][ServerGamemode][ServerGamemode] && ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Id != [ServerGamemode]ictimId)
+        // Score only counts during the active phase, and never for a suicide.
+        if (d.phase == DUEL_PHASE_ACTIVE && !d.matchOver && killerId != victimId)
         {
-            // [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode] 1[ServerGamemode]1 sco[ServerGamemode]ing (o[ServerGamemode]igina[ServerGamemode] b[ServerGamemode]ha[ServerGamemode]io[ServerGamemode])
-            if (d.matchMod[ServerGamemode] == "d[ServerGamemode][ServerGamemode][ServerGamemode]") {
-                if (ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Id == d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]AId)
-                    ++d.sco[ServerGamemode][ServerGamemode]A;
-                [ServerGamemode][ServerGamemode]s[ServerGamemode] if (ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Id == d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]BId)
-                    ++d.sco[ServerGamemode][ServerGamemode]B;
+            // Duel 1v1 scoring (original behavior)
+            if (d.matchMode == "duel") {
+                if (killerId == d.playerAId)
+                    ++d.scoreA;
+                else if (killerId == d.playerBId)
+                    ++d.scoreB;
 
-                if (d.sco[ServerGamemode][ServerGamemode]A >= d.goa[ServerGamemode]Va[ServerGamemode][ServerGamemode][ServerGamemode] || d.sco[ServerGamemode][ServerGamemode]B >= d.goa[ServerGamemode]Va[ServerGamemode][ServerGamemode][ServerGamemode])
+                if (d.scoreA >= d.goalValue || d.scoreB >= d.goalValue)
                 {
-                    d.matchO[ServerGamemode][ServerGamemode][ServerGamemode] = t[ServerGamemode][ServerGamemode][ServerGamemode];
-                    d.phas[ServerGamemode] = [ServerGamemode]UEL_PHA[ServerGamemode]E_MATCH_EN[ServerGamemode];
-                    d.winn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id = ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Id;
-                    d.[ServerGamemode][ServerGamemode]matchL[ServerGamemode]ft = d.[ServerGamemode][ServerGamemode]match[ServerGamemode][ServerGamemode]conds;
-                    [ServerGamemode]mitGam[ServerGamemode]mod[ServerGamemode]MatchP[ServerGamemode][ServerGamemode]sist[ServerGamemode]nc[ServerGamemode](d, tick, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s);
-                    [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-                        "[GAMEMO[ServerGamemode]E [ServerGamemode]ERVER] match o[ServerGamemode][ServerGamemode][ServerGamemode] winn[ServerGamemode][ServerGamemode]=%[ServerGamemode] sco[ServerGamemode][ServerGamemode]=%d-%d goa[ServerGamemode]=%d\n",
-                        d.winn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id, d.sco[ServerGamemode][ServerGamemode]A, d.sco[ServerGamemode][ServerGamemode]B, d.goa[ServerGamemode]Va[ServerGamemode][ServerGamemode][ServerGamemode]);
+                    d.matchOver = true;
+                    d.phase = DUEL_PHASE_MATCH_END;
+                    d.winnerPlayerId = killerId;
+                    d.rematchLeft = d.rematchSeconds;
+                    emitGamemodeMatchPersistence(d, tick, players);
+                    Debug::warn(Debug::Category::Duel,
+                        "[DUEL SERVER] match over winner=%u score=%d-%d goal=%d\n",
+                        d.winnerPlayerId, d.scoreA, d.scoreB, d.goalValue);
                 }
             }
-            // FFA sco[ServerGamemode]ing
-            [ServerGamemode][ServerGamemode]s[ServerGamemode] if (d.matchMod[ServerGamemode] == "ffa") {
-                ++d.ffaKi[ServerGamemode][ServerGamemode]s[ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Id];
-                ++d.ffa[ServerGamemode][ServerGamemode]aths[[ServerGamemode]ictimId];
-                // Win condition ch[ServerGamemode]ck[ServerGamemode]d in ch[ServerGamemode]ckMatchWinConditions
+            // FFA scoring
+            else if (d.matchMode == "ffa") {
+                ++d.ffaKills[killerId];
+                ++d.ffaDeaths[victimId];
+                // Win condition checked in checkMatchWinConditions
             }
-            // T[ServerGamemode]M sco[ServerGamemode]ing
-            [ServerGamemode][ServerGamemode]s[ServerGamemode] if (d.matchMod[ServerGamemode] == "tdm") {
-                ++d.ffaKi[ServerGamemode][ServerGamemode]s[ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Id];
-                ++d.ffa[ServerGamemode][ServerGamemode]aths[[ServerGamemode]ictimId];
-                a[ServerGamemode]to t[ServerGamemode]amIt = d.matchT[ServerGamemode]ams.find(ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Id);
-                if (t[ServerGamemode]amIt != d.matchT[ServerGamemode]ams.[ServerGamemode]nd()) {
-                    int [ServerGamemode]ictimT[ServerGamemode]am = -1;
-                    a[ServerGamemode]to [ServerGamemode]tIt = d.matchT[ServerGamemode]ams.find([ServerGamemode]ictimId);
-                    if ([ServerGamemode]tIt != d.matchT[ServerGamemode]ams.[ServerGamemode]nd()) [ServerGamemode]ictimT[ServerGamemode]am = [ServerGamemode]tIt->s[ServerGamemode]cond;
-                    // On[ServerGamemode]y sco[ServerGamemode][ServerGamemode] if ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode] and [ServerGamemode]ictim a[ServerGamemode][ServerGamemode] on diff[ServerGamemode][ServerGamemode][ServerGamemode]nt t[ServerGamemode]ams
-                    if ([ServerGamemode]ictimT[ServerGamemode]am >= 0 && t[ServerGamemode]amIt->s[ServerGamemode]cond != [ServerGamemode]ictimT[ServerGamemode]am) {
-                        if (t[ServerGamemode]amIt->s[ServerGamemode]cond == 0) ++d.[ServerGamemode][ServerGamemode]dT[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s;
-                        [ServerGamemode][ServerGamemode]s[ServerGamemode] ++d.b[ServerGamemode][ServerGamemode][ServerGamemode]T[ServerGamemode]amKi[ServerGamemode][ServerGamemode]s;
+            // TDM scoring
+            else if (d.matchMode == "tdm") {
+                ++d.ffaKills[killerId];
+                ++d.ffaDeaths[victimId];
+                auto teamIt = d.matchTeams.find(killerId);
+                if (teamIt != d.matchTeams.end()) {
+                    int victimTeam = -1;
+                    auto vtIt = d.matchTeams.find(victimId);
+                    if (vtIt != d.matchTeams.end()) victimTeam = vtIt->second;
+                    // Only score if killer and victim are on different teams
+                    if (victimTeam >= 0 && teamIt->second != victimTeam) {
+                        if (teamIt->second == 0) ++d.redTeamKills;
+                        else ++d.blueTeamKills;
                     }
                 }
             }
         }
 
-        b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+        broadcastDuelState(sock, d, players, totalPacketsOut);
     }
 
-    // ── FFA/T[ServerGamemode]M match mod[ServerGamemode] stat[ServerGamemode] machin[ServerGamemode] ────────────────────────────
-    if (d.matchMod[ServerGamemode] == "ffa" || d.matchMod[ServerGamemode] == "tdm")
+    // ── FFA/TDM match mode state machine ────────────────────────────
+    if (d.matchMode == "ffa" || d.matchMode == "tdm")
     {
-        if (d.stat[ServerGamemode]B[ServerGamemode]oadcastP[ServerGamemode]nding)
+        if (d.stateBroadcastPending)
         {
-            // Th[ServerGamemode] command chang[ServerGamemode]d th[ServerGamemode] a[ServerGamemode]tho[ServerGamemode]itati[ServerGamemode][ServerGamemode] mod[ServerGamemode]/phas[ServerGamemode] b[ServerGamemode]tw[ServerGamemode][ServerGamemode]n ticks.
-            // [ServerGamemode][ServerGamemode]nd that stat[ServerGamemode] now so [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]y c[ServerGamemode]i[ServerGamemode]nt can show int[ServerGamemode][ServerGamemode]mission o[ServerGamemode] th[ServerGamemode]
-            // imm[ServerGamemode]diat[ServerGamemode] co[ServerGamemode]ntdown witho[ServerGamemode]t waiting fo[ServerGamemode] th[ServerGamemode] p[ServerGamemode][ServerGamemode]iodic b[ServerGamemode]oadcast.
-            b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-            d.stat[ServerGamemode]B[ServerGamemode]oadcastP[ServerGamemode]nding = fa[ServerGamemode]s[ServerGamemode];
+            // The command changed the authoritative mode/phase between ticks.
+            // Send that state now so every client can show intermission or the
+            // immediate countdown without waiting for the periodic broadcast.
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            d.stateBroadcastPending = false;
         }
-        switch (d.phas[ServerGamemode])
+        switch (d.phase)
         {
-        cas[ServerGamemode] [ServerGamemode]UEL_PHA[ServerGamemode]E_WAITING:
-            if (co[ServerGamemode]ntActi[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]s(p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s) >= 2 ||
-                (co[ServerGamemode]ntActi[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]s(p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s) >= 1 && !npcs.[ServerGamemode]mpty()))
+        case DUEL_PHASE_WAITING:
+            if (countActivePlayers(players) >= 2 ||
+                (countActivePlayers(players) >= 1 && !npcs.empty()))
             {
-                // If th[ServerGamemode] c[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]nt map has no spawn points, [ServerGamemode]otat[ServerGamemode].
-                if (wo[ServerGamemode][ServerGamemode]d.spawnPoints.[ServerGamemode]mpty())
-                    [ServerGamemode]otat[ServerGamemode]ToN[ServerGamemode]xtGam[ServerGamemode]mod[ServerGamemode]Map(sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, wo[ServerGamemode][ServerGamemode]d, npcWo[ServerGamemode][ServerGamemode]d, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-                assignGam[ServerGamemode]mod[ServerGamemode][ServerGamemode]pawns(d, wo[ServerGamemode][ServerGamemode]d);
-                assignMatchPa[ServerGamemode]ticipants(d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, &npcs);
-                b[ServerGamemode]ginMatchCo[ServerGamemode]ntdown(d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tick);
-                ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-                b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-                [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-                    "[FFA/T[ServerGamemode]M] Co[ServerGamemode]ntdown sta[ServerGamemode]t[ServerGamemode]d mod[ServerGamemode]=%s pa[ServerGamemode]ticipants=%z[ServerGamemode]\n",
-                    d.matchMod[ServerGamemode].c_st[ServerGamemode](), d.pa[ServerGamemode]ticipants.siz[ServerGamemode]());
+                // If the current map has no spawn points, rotate.
+                if (world.spawnPoints.empty())
+                    rotateToNextGamemodeMap(sock, d, players, world, npcWorld, totalPacketsOut);
+                assignGamemodeSpawns(d, world);
+                assignMatchParticipants(d, players, &npcs);
+                beginMatchCountdown(d, players, tick);
+                ++d.stateVersion;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+                Debug::warn(Debug::Category::Duel,
+                    "[FFA/TDM] Countdown started mode=%s participants=%zu\n",
+                    d.matchMode.c_str(), d.participants.size());
             }
-            b[ServerGamemode][ServerGamemode]ak;
+            break;
 
-        cas[ServerGamemode] [ServerGamemode]UEL_PHA[ServerGamemode]E_COUNT[ServerGamemode]OWN:
-            if (tick >= d.match[ServerGamemode]ta[ServerGamemode]tTick)
+        case DUEL_PHASE_COUNTDOWN:
+            if (tick >= d.matchStartTick)
             {
-                d.phas[ServerGamemode] = [ServerGamemode]UEL_PHA[ServerGamemode]E_GO;
-                d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] = d.go[ServerGamemode][ServerGamemode]conds;
-                ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-                d.[ServerGamemode]astB[ServerGamemode]oadcastTick = tick;
-                [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-                    "[FFA/T[ServerGamemode]M] GO shown mod[ServerGamemode]=%s tick=%[ServerGamemode] d[ServerGamemode][ServerGamemode]ation=%.2f\n",
-                    d.matchMod[ServerGamemode].c_st[ServerGamemode](), tick, d.go[ServerGamemode][ServerGamemode]conds);
-                b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+                d.phase = DUEL_PHASE_GO;
+                d.phaseTimer = d.goSeconds;
+                ++d.stateVersion;
+                d.lastBroadcastTick = tick;
+                Debug::log(Debug::Category::Duel,
+                    "[FFA/TDM] GO shown mode=%s tick=%u duration=%.2f\n",
+                    d.matchMode.c_str(), tick, d.goSeconds);
+                broadcastDuelState(sock, d, players, totalPacketsOut);
             }
-            [ServerGamemode][ServerGamemode]s[ServerGamemode] if (tick - d.[ServerGamemode]astB[ServerGamemode]oadcastTick >= 60)
+            else if (tick - d.lastBroadcastTick >= 60)
             {
-                d.[ServerGamemode]astB[ServerGamemode]oadcastTick = tick;
-                b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+                d.lastBroadcastTick = tick;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
             }
-            b[ServerGamemode][ServerGamemode]ak;
+            break;
 
-        cas[ServerGamemode] [ServerGamemode]UEL_PHA[ServerGamemode]E_GO:
-            d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] -= [ServerGamemode]ERVER_[ServerGamemode]T;
-            if (d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] <= 0.0f)
+        case DUEL_PHASE_GO:
+            d.phaseTimer -= SERVER_DT;
+            if (d.phaseTimer <= 0.0f)
             {
-                d.phas[ServerGamemode] = [ServerGamemode]UEL_PHA[ServerGamemode]E_ACTIVE;
-                d.match[ServerGamemode]ta[ServerGamemode]tTick = tick;
-                if (d.tim[ServerGamemode]Limit[ServerGamemode][ServerGamemode]conds > 0)
-                    d.matchTim[ServerGamemode]LimitTick = tick + ([ServerGamemode]int32_t)(d.tim[ServerGamemode]Limit[ServerGamemode][ServerGamemode]conds * 60.0f);
-                [ServerGamemode][ServerGamemode]spawnA[ServerGamemode][ServerGamemode]Pa[ServerGamemode]ticipants(d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s);
-                ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-                d.[ServerGamemode]astB[ServerGamemode]oadcastTick = tick;
-                [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-                    "[FFA/T[ServerGamemode]M] Match ACTIVE mod[ServerGamemode]=%s tick=%[ServerGamemode]\n",
-                    d.matchMod[ServerGamemode].c_st[ServerGamemode](), tick, d.match[ServerGamemode]ta[ServerGamemode]tTick);
-                b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+                d.phase = DUEL_PHASE_ACTIVE;
+                d.matchStartTick = tick;
+                if (d.timeLimitSeconds > 0)
+                    d.matchTimeLimitTick = tick + (uint32_t)(d.timeLimitSeconds * 60.0f);
+                respawnAllParticipants(d, players);
+                ++d.stateVersion;
+                d.lastBroadcastTick = tick;
+                Debug::log(Debug::Category::Duel,
+                    "[FFA/TDM] Match ACTIVE mode=%s tick=%u\n",
+                    d.matchMode.c_str(), tick, d.matchStartTick);
+                broadcastDuelState(sock, d, players, totalPacketsOut);
             }
-            b[ServerGamemode][ServerGamemode]ak;
+            break;
 
-        cas[ServerGamemode] [ServerGamemode]UEL_PHA[ServerGamemode]E_ACTIVE:
-            // Ch[ServerGamemode]ck win conditions on [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]y tick
-            ch[ServerGamemode]ckMatchWinConditions(d, tick, sock, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-            if (d.phas[ServerGamemode] != [ServerGamemode]UEL_PHA[ServerGamemode]E_ACTIVE) b[ServerGamemode][ServerGamemode]ak;  // win condition t[ServerGamemode]igg[ServerGamemode][ServerGamemode][ServerGamemode]d
-            // P[ServerGamemode][ServerGamemode]iodic b[ServerGamemode]oadcast
-            if (tick - d.[ServerGamemode]astB[ServerGamemode]oadcastTick >= 60)
+        case DUEL_PHASE_ACTIVE:
+            // Check win conditions on every tick
+            checkMatchWinConditions(d, tick, sock, players, totalPacketsOut);
+            if (d.phase != DUEL_PHASE_ACTIVE) break;  // win condition triggered
+            // Periodic broadcast
+            if (tick - d.lastBroadcastTick >= 60)
             {
-                d.[ServerGamemode]astB[ServerGamemode]oadcastTick = tick;
-                b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+                d.lastBroadcastTick = tick;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
             }
-            b[ServerGamemode][ServerGamemode]ak;
+            break;
 
-        cas[ServerGamemode] [ServerGamemode]UEL_PHA[ServerGamemode]E_RE[ServerGamemode]ULT[ServerGamemode]:
-            d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] -= [ServerGamemode]ERVER_[ServerGamemode]T;
-            if (d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] <= 0.0f)
+        case DUEL_PHASE_RESULTS:
+            d.phaseTimer -= SERVER_DT;
+            if (d.phaseTimer <= 0.0f)
             {
-                if (d.p[ServerGamemode]ndingMod[ServerGamemode][ServerGamemode]witch && !d.p[ServerGamemode]ndingGam[ServerGamemode]mod[ServerGamemode]Id.[ServerGamemode]mpty())
+                if (d.pendingModeSwitch && !d.pendingGamemodeId.empty())
                 {
-                    const std::st[ServerGamemode]ing n[ServerGamemode]xtMod[ServerGamemode] = d.p[ServerGamemode]ndingGam[ServerGamemode]mod[ServerGamemode]Id;
-                    const boo[ServerGamemode] di[ServerGamemode][ServerGamemode]ctCo[ServerGamemode]ntdown = d.p[ServerGamemode]ndingMod[ServerGamemode][ServerGamemode]witchCo[ServerGamemode]ntdown;
-                    d.p[ServerGamemode]ndingMod[ServerGamemode][ServerGamemode]witch = fa[ServerGamemode]s[ServerGamemode];
-                    d.p[ServerGamemode]ndingMod[ServerGamemode][ServerGamemode]witchCo[ServerGamemode]ntdown = fa[ServerGamemode]s[ServerGamemode];
-                    d.p[ServerGamemode]ndingGam[ServerGamemode]mod[ServerGamemode]Id.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-                    d.phas[ServerGamemode] = [ServerGamemode]UEL_PHA[ServerGamemode]E_WAITING;
-                    d.matchMod[ServerGamemode].c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-                    s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Comm[ServerGamemode]nity[ServerGamemode]ta[ServerGamemode]tMatch(di[ServerGamemode][ServerGamemode]ctCo[ServerGamemode]ntdown, n[ServerGamemode]xtMod[ServerGamemode]);
-                    [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n;
+                    const std::string nextMode = d.pendingGamemodeId;
+                    const bool directCountdown = d.pendingModeSwitchCountdown;
+                    d.pendingModeSwitch = false;
+                    d.pendingModeSwitchCountdown = false;
+                    d.pendingGamemodeId.clear();
+                    d.phase = DUEL_PHASE_WAITING;
+                    d.matchMode.clear();
+                    serverCommunityStartMatch(directCountdown, nextMode);
+                    return;
                 }
-                d.phas[ServerGamemode] = [ServerGamemode]UEL_PHA[ServerGamemode]E_INTERMI[ServerGamemode][ServerGamemode]ION;
-                d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] = d.int[ServerGamemode][ServerGamemode]mission[ServerGamemode][ServerGamemode]conds;
-                ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-                b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-                [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-                    "[FFA/T[ServerGamemode]M] Int[ServerGamemode][ServerGamemode]mission sta[ServerGamemode]t[ServerGamemode]d mod[ServerGamemode]=%s d[ServerGamemode][ServerGamemode]ation=%.0f\n",
-                    d.matchMod[ServerGamemode].c_st[ServerGamemode](), d.int[ServerGamemode][ServerGamemode]mission[ServerGamemode][ServerGamemode]conds);
+                d.phase = DUEL_PHASE_INTERMISSION;
+                d.phaseTimer = d.intermissionSeconds;
+                ++d.stateVersion;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+                Debug::log(Debug::Category::Duel,
+                    "[FFA/TDM] Intermission started mode=%s duration=%.0f\n",
+                    d.matchMode.c_str(), d.intermissionSeconds);
             }
-            [ServerGamemode][ServerGamemode]s[ServerGamemode] if (tick - d.[ServerGamemode]astB[ServerGamemode]oadcastTick >= 60)
+            else if (tick - d.lastBroadcastTick >= 60)
             {
-                d.[ServerGamemode]astB[ServerGamemode]oadcastTick = tick;
-                b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+                d.lastBroadcastTick = tick;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
             }
-            b[ServerGamemode][ServerGamemode]ak;
+            break;
 
-        cas[ServerGamemode] [ServerGamemode]UEL_PHA[ServerGamemode]E_INTERMI[ServerGamemode][ServerGamemode]ION:
-            d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] -= [ServerGamemode]ERVER_[ServerGamemode]T;
-            if (d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] <= 0.0f)
+        case DUEL_PHASE_INTERMISSION:
+            d.phaseTimer -= SERVER_DT;
+            if (d.phaseTimer <= 0.0f)
             {
-                // Rotat[ServerGamemode] map if config[ServerGamemode][ServerGamemode][ServerGamemode]d
-                if (d.[ServerGamemode]otat[ServerGamemode]Maps && d.mapPoo[ServerGamemode].siz[ServerGamemode]() > 1)
-                    [ServerGamemode]otat[ServerGamemode]ToN[ServerGamemode]xtGam[ServerGamemode]mod[ServerGamemode]Map(sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, wo[ServerGamemode][ServerGamemode]d, npcWo[ServerGamemode][ServerGamemode]d, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-                assignGam[ServerGamemode]mod[ServerGamemode][ServerGamemode]pawns(d, wo[ServerGamemode][ServerGamemode]d);
-                assignMatchPa[ServerGamemode]ticipants(d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, &npcs);
-                b[ServerGamemode]ginMatchCo[ServerGamemode]ntdown(d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tick);
-                ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-                b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-                [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-                    "[FFA/T[ServerGamemode]M] Co[ServerGamemode]ntdown sta[ServerGamemode]t[ServerGamemode]d mod[ServerGamemode]=%s pa[ServerGamemode]ticipants=%z[ServerGamemode]\n",
-                    d.matchMod[ServerGamemode].c_st[ServerGamemode](), d.pa[ServerGamemode]ticipants.siz[ServerGamemode]());
+                // Rotate map if configured
+                if (d.rotateMaps && d.mapPool.size() > 1)
+                    rotateToNextGamemodeMap(sock, d, players, world, npcWorld, totalPacketsOut);
+                assignGamemodeSpawns(d, world);
+                assignMatchParticipants(d, players, &npcs);
+                beginMatchCountdown(d, players, tick);
+                ++d.stateVersion;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+                Debug::log(Debug::Category::Duel,
+                    "[FFA/TDM] Countdown started mode=%s participants=%zu\n",
+                    d.matchMode.c_str(), d.participants.size());
             }
-            [ServerGamemode][ServerGamemode]s[ServerGamemode] if (tick - d.[ServerGamemode]astB[ServerGamemode]oadcastTick >= 60)
+            else if (tick - d.lastBroadcastTick >= 60)
             {
-                d.[ServerGamemode]astB[ServerGamemode]oadcastTick = tick;
-                b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+                d.lastBroadcastTick = tick;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
             }
-            b[ServerGamemode][ServerGamemode]ak;
+            break;
 
-        d[ServerGamemode]fa[ServerGamemode][ServerGamemode]t:
-            b[ServerGamemode][ServerGamemode]ak;
+        default:
+            break;
         }
-        [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n;
+        return;
     }
 
-    // ── Bomb Tag match mod[ServerGamemode] stat[ServerGamemode] machin[ServerGamemode] ──────────────────────────
-    if (d.hasBombF[ServerGamemode]at[ServerGamemode][ServerGamemode][ServerGamemode])
+    // ── Bomb Tag match mode state machine ──────────────────────────
+    if (d.hasBombFeature)
     {
-        if (d.stat[ServerGamemode]B[ServerGamemode]oadcastP[ServerGamemode]nding)
+        if (d.stateBroadcastPending)
         {
-            b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-            d.stat[ServerGamemode]B[ServerGamemode]oadcastP[ServerGamemode]nding = fa[ServerGamemode]s[ServerGamemode];
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            d.stateBroadcastPending = false;
         }
-        s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]BombTagTick(sock, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, wo[ServerGamemode][ServerGamemode]d, npcs, npc[ServerGamemode]yst[ServerGamemode]m, tick, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-        [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n;
+        serverBombTagTick(sock, players, world, npcs, npcSystem, tick, totalPacketsOut);
+        return;
     }
 
-    // ── O[ServerGamemode]igina[ServerGamemode] d[ServerGamemode][ServerGamemode][ServerGamemode] 1[ServerGamemode]1 stat[ServerGamemode] machin[ServerGamemode] ─────────────────────────────
-    switch (d.phas[ServerGamemode])
+    // ── Original duel 1v1 state machine ─────────────────────────────
+    switch (d.phase)
     {
-    cas[ServerGamemode] [ServerGamemode]UEL_PHA[ServerGamemode]E_WAITING:
-        if (co[ServerGamemode]ntActi[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]s(p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s) >= 2)
+    case DUEL_PHASE_WAITING:
+        if (countActivePlayers(players) >= 2)
         {
-            assignGam[ServerGamemode]mod[ServerGamemode]Pa[ServerGamemode]ticipants(d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s);
-            // If th[ServerGamemode] c[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]nt map has no spawn points ([ServerGamemode].g. th[ServerGamemode] host pick[ServerGamemode]d a
-            // spawn-[ServerGamemode][ServerGamemode]ss map), [ServerGamemode]otat[ServerGamemode] to a spawn-capab[ServerGamemode][ServerGamemode] on[ServerGamemode] b[ServerGamemode]fo[ServerGamemode][ServerGamemode] sta[ServerGamemode]ting.
-            if (wo[ServerGamemode][ServerGamemode]d.spawnPoints.[ServerGamemode]mpty())
-                [ServerGamemode]otat[ServerGamemode]ToN[ServerGamemode]xtGam[ServerGamemode]mod[ServerGamemode]Map(sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, wo[ServerGamemode][ServerGamemode]d, npcWo[ServerGamemode][ServerGamemode]d, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-            // [ServerGamemode][ServerGamemode]op th[ServerGamemode] p[ServerGamemode]actic[ServerGamemode] NPC(s) onc[ServerGamemode] th[ServerGamemode] [ServerGamemode][ServerGamemode]a[ServerGamemode] d[ServerGamemode][ServerGamemode][ServerGamemode] is abo[ServerGamemode]t to sta[ServerGamemode]t.
-            npcs.c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-            npc[ServerGamemode]yst[ServerGamemode]m.d[ServerGamemode]st[ServerGamemode]oyA[ServerGamemode][ServerGamemode]();
-            npcIdsA[ServerGamemode]i[ServerGamemode][ServerGamemode].c[ServerGamemode][ServerGamemode]a[ServerGamemode]();
-            assignGam[ServerGamemode]mod[ServerGamemode][ServerGamemode]pawns(d, wo[ServerGamemode][ServerGamemode]d);
-            b[ServerGamemode]ginGam[ServerGamemode]mod[ServerGamemode]Co[ServerGamemode]ntdown(d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s);
-            b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+            assignGamemodeParticipants(d, players);
+            // If the current map has no spawn points (e.g. the host picked a
+            // spawn-less map), rotate to a spawn-capable one before starting.
+            if (world.spawnPoints.empty())
+                rotateToNextGamemodeMap(sock, d, players, world, npcWorld, totalPacketsOut);
+            // Drop the practice NPC(s) once the real duel is about to start.
+            npcs.clear();
+            npcSystem.destroyAll();
+            npcIdsAlive.clear();
+            assignGamemodeSpawns(d, world);
+            beginGamemodeCountdown(d, players);
+            broadcastDuelState(sock, d, players, totalPacketsOut);
         }
-        b[ServerGamemode][ServerGamemode]ak;
+        break;
 
-    cas[ServerGamemode] [ServerGamemode]UEL_PHA[ServerGamemode]E_COUNT[ServerGamemode]OWN:
-        // A d[ServerGamemode][ServerGamemode][ServerGamemode]ist [ServerGamemode]anish[ServerGamemode]d b[ServerGamemode]fo[ServerGamemode][ServerGamemode] th[ServerGamemode] fight — fa[ServerGamemode][ServerGamemode] back to waiting.
-        if (p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find(d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]AId) == p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd() ||
-            p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find(d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]BId) == p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd())
+    case DUEL_PHASE_COUNTDOWN:
+        // A duelist vanished before the fight — fall back to waiting.
+        if (players.find(d.playerAId) == players.end() ||
+            players.find(d.playerBId) == players.end())
         {
-            d.phas[ServerGamemode] = [ServerGamemode]UEL_PHA[ServerGamemode]E_WAITING;
-            d.stat[ServerGamemode][ServerGamemode][ServerGamemode]nt = fa[ServerGamemode]s[ServerGamemode];
-            b[ServerGamemode][ServerGamemode]ak;
+            d.phase = DUEL_PHASE_WAITING;
+            d.stateSent = false;
+            break;
         }
-        d.co[ServerGamemode]ntdown -= [ServerGamemode]ERVER_[ServerGamemode]T;
-        if (d.co[ServerGamemode]ntdown <= 0.0f)
+        d.countdown -= SERVER_DT;
+        if (d.countdown <= 0.0f)
         {
-            d.phas[ServerGamemode] = [ServerGamemode]UEL_PHA[ServerGamemode]E_ACTIVE;
-            d.stat[ServerGamemode][ServerGamemode][ServerGamemode]nt = fa[ServerGamemode]s[ServerGamemode];
-            ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-            [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-                "[[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]] co[ServerGamemode]ntdown comp[ServerGamemode][ServerGamemode]t[ServerGamemode] d[ServerGamemode][ServerGamemode][ServerGamemode]Id=%[ServerGamemode] stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion=%[ServerGamemode] phas[ServerGamemode]=ACTIVE\n",
-                d.d[ServerGamemode][ServerGamemode][ServerGamemode]Id, d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion);
-            b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+            d.phase = DUEL_PHASE_ACTIVE;
+            d.stateSent = false;
+            ++d.stateVersion;
+            Debug::log(Debug::Category::Duel,
+                "[ServerGamemode] countdown complete duelId=%u stateVersion=%u phase=ACTIVE\n",
+                d.duelId, d.stateVersion);
+            broadcastDuelState(sock, d, players, totalPacketsOut);
         }
-        // [ServerGamemode][ServerGamemode][ServerGamemode]ing co[ServerGamemode]ntdown, do NOT b[ServerGamemode]oadcast [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]y tick. R[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode] d[ServerGamemode][ServerGamemode]i[ServerGamemode][ServerGamemode][ServerGamemode]y of
-        // [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]y co[ServerGamemode]ntdown snapshot c[ServerGamemode][ServerGamemode]at[ServerGamemode]s a h[ServerGamemode]g[ServerGamemode] back[ServerGamemode]og that b[ServerGamemode]ocks th[ServerGamemode]
-        // ACTIVE t[ServerGamemode]ansition f[ServerGamemode]om b[ServerGamemode]ing d[ServerGamemode][ServerGamemode]i[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]d p[ServerGamemode]ompt[ServerGamemode]y. Th[ServerGamemode] initia[ServerGamemode]
-        // co[ServerGamemode]ntdown sta[ServerGamemode]t is b[ServerGamemode]oadcast by b[ServerGamemode]ginGam[ServerGamemode]mod[ServerGamemode]Co[ServerGamemode]ntdown(); th[ServerGamemode] ACTIVE
-        // t[ServerGamemode]ansition is b[ServerGamemode]oadcast abo[ServerGamemode][ServerGamemode]. C[ServerGamemode]i[ServerGamemode]nts int[ServerGamemode][ServerGamemode]po[ServerGamemode]at[ServerGamemode] co[ServerGamemode]ntdown [ServerGamemode]oca[ServerGamemode][ServerGamemode]y.
-        b[ServerGamemode][ServerGamemode]ak;
+        // During countdown, do NOT broadcast every tick. Reliable delivery of
+        // every countdown snapshot creates a huge backlog that blocks the
+        // ACTIVE transition from being delivered promptly. The initial
+        // countdown start is broadcast by beginGamemodeCountdown(); the ACTIVE
+        // transition is broadcast above. Clients interpolate countdown locally.
+        break;
 
-    cas[ServerGamemode] [ServerGamemode]UEL_PHA[ServerGamemode]E_ACTIVE:
-        if (p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find(d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]AId) == p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd() ||
-            p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find(d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]BId) == p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd())
+    case DUEL_PHASE_ACTIVE:
+        if (players.find(d.playerAId) == players.end() ||
+            players.find(d.playerBId) == players.end())
         {
-            d.phas[ServerGamemode] = [ServerGamemode]UEL_PHA[ServerGamemode]E_WAITING;
-            d.stat[ServerGamemode][ServerGamemode][ServerGamemode]nt = fa[ServerGamemode]s[ServerGamemode];
-            b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+            d.phase = DUEL_PHASE_WAITING;
+            d.stateSent = false;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
         }
-        [ServerGamemode][ServerGamemode]s[ServerGamemode] if (tick - d.[ServerGamemode]astB[ServerGamemode]oadcastTick >= 60)
+        else if (tick - d.lastBroadcastTick >= 60)
         {
-            d.[ServerGamemode]astB[ServerGamemode]oadcastTick = tick;
-            b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+            d.lastBroadcastTick = tick;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
         }
-        b[ServerGamemode][ServerGamemode]ak;
+        break;
 
-    cas[ServerGamemode] [ServerGamemode]UEL_PHA[ServerGamemode]E_MATCH_EN[ServerGamemode]:
-        if (p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find(d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]AId) == p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd() ||
-            p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find(d.p[ServerGamemode]ay[ServerGamemode][ServerGamemode]BId) == p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd())
+    case DUEL_PHASE_MATCH_END:
+        if (players.find(d.playerAId) == players.end() ||
+            players.find(d.playerBId) == players.end())
         {
-            // Oppon[ServerGamemode]nt [ServerGamemode][ServerGamemode]ft d[ServerGamemode][ServerGamemode]ing th[ServerGamemode] [ServerGamemode]nd sc[ServerGamemode][ServerGamemode][ServerGamemode]n — no [ServerGamemode][ServerGamemode]match.
-            d.stat[ServerGamemode][ServerGamemode][ServerGamemode]nt = fa[ServerGamemode]s[ServerGamemode];
-            b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-            b[ServerGamemode][ServerGamemode]ak;
+            // Opponent left during the end screen — no rematch.
+            d.stateSent = false;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            break;
         }
-        d.[ServerGamemode][ServerGamemode]matchL[ServerGamemode]ft -= [ServerGamemode]ERVER_[ServerGamemode]T;
-        if (d.[ServerGamemode][ServerGamemode]matchL[ServerGamemode]ft <= 0.0f)
+        d.rematchLeft -= SERVER_DT;
+        if (d.rematchLeft <= 0.0f)
         {
-            // Rotat[ServerGamemode] to a f[ServerGamemode][ServerGamemode]sh map w[ServerGamemode] w[ServerGamemode][ServerGamemode][ServerGamemode]n't j[ServerGamemode]st on (skips bad/spawn-[ServerGamemode][ServerGamemode]ss maps).
-            if (d.[ServerGamemode]otat[ServerGamemode]Maps && d.mapPoo[ServerGamemode].siz[ServerGamemode]() > 1)
-                [ServerGamemode]otat[ServerGamemode]ToN[ServerGamemode]xtGam[ServerGamemode]mod[ServerGamemode]Map(sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, wo[ServerGamemode][ServerGamemode]d, npcWo[ServerGamemode][ServerGamemode]d, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-            // Each n[ServerGamemode]w match picks a f[ServerGamemode][ServerGamemode]sh [ServerGamemode]andom ancho[ServerGamemode] (fights sp[ServerGamemode][ServerGamemode]ad a[ServerGamemode]o[ServerGamemode]nd).
-            assignGam[ServerGamemode]mod[ServerGamemode][ServerGamemode]pawns(d, wo[ServerGamemode][ServerGamemode]d);
-            [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode], "[GAMEMO[ServerGamemode]E [ServerGamemode]ERVER] [ServerGamemode][ServerGamemode]match\n");
-            b[ServerGamemode]ginGam[ServerGamemode]mod[ServerGamemode]Co[ServerGamemode]ntdown(d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s);
-            b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+            // Rotate to a fresh map we weren't just on (skips bad/spawn-less maps).
+            if (d.rotateMaps && d.mapPool.size() > 1)
+                rotateToNextGamemodeMap(sock, d, players, world, npcWorld, totalPacketsOut);
+            // Each new match picks a fresh random anchor (fights spread around).
+            assignGamemodeSpawns(d, world);
+            Debug::log(Debug::Category::Duel, "[DUEL SERVER] rematch\n");
+            beginGamemodeCountdown(d, players);
+            broadcastDuelState(sock, d, players, totalPacketsOut);
         }
-        [ServerGamemode][ServerGamemode]s[ServerGamemode] if (tick - d.[ServerGamemode]astB[ServerGamemode]oadcastTick >= 60)
+        else if (tick - d.lastBroadcastTick >= 60)
         {
-            d.[ServerGamemode]astB[ServerGamemode]oadcastTick = tick;
-            b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+            d.lastBroadcastTick = tick;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
         }
-        b[ServerGamemode][ServerGamemode]ak;
+        break;
 
-    d[ServerGamemode]fa[ServerGamemode][ServerGamemode]t:
-        b[ServerGamemode][ServerGamemode]ak;
+    default:
+        break;
     }
 }
 
-[ServerGamemode]oid s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode]R[ServerGamemode]matchNow()
+void serverGamemodeRematchNow()
 {
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d = s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]();
-    if (!d.[ServerGamemode]nab[ServerGamemode][ServerGamemode]d) [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n;
-    // Th[ServerGamemode] MATCH_EN[ServerGamemode] b[ServerGamemode]anch sta[ServerGamemode]ts th[ServerGamemode] n[ServerGamemode]xt d[ServerGamemode][ServerGamemode][ServerGamemode] wh[ServerGamemode]n [ServerGamemode][ServerGamemode]matchL[ServerGamemode]ft hits 0.
-    d.[ServerGamemode][ServerGamemode]matchL[ServerGamemode]ft = 0.0f;
+    ServerGamemodeState& d = serverGamemodeState();
+    if (!d.enabled) return;
+    // The MATCH_END branch starts the next duel when rematchLeft hits 0.
+    d.rematchLeft = 0.0f;
 }
 
-std::st[ServerGamemode]ing s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Acti[ServerGamemode][ServerGamemode]T[ServerGamemode]amList()
+std::string serverActiveTeamList()
 {
-    const [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d = s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]();
-    Comm[ServerGamemode]nity[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Config& config = Comm[ServerGamemode]nity[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Config::instanc[ServerGamemode]();
-    if (config.mod[ServerGamemode]s().[ServerGamemode]mpty()) config.[ServerGamemode]oad();
-    const Comm[ServerGamemode]nityMod[ServerGamemode]* cm = config.mod[ServerGamemode]ById(d.comm[ServerGamemode]nityMod[ServerGamemode]);
-    const std::st[ServerGamemode]ing id = cm ? cm->gam[ServerGamemode]mod[ServerGamemode]Id : d.comm[ServerGamemode]nityMod[ServerGamemode];
-    const Gam[ServerGamemode]mod[ServerGamemode]& gm = Gam[ServerGamemode]mod[ServerGamemode]R[ServerGamemode]gist[ServerGamemode]y::instanc[ServerGamemode]().g[ServerGamemode]t(id);
-    if (gm.t[ServerGamemode]amNam[ServerGamemode]s.[ServerGamemode]mpty()) [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n "no t[ServerGamemode]ams";
-    std::st[ServerGamemode]ing o[ServerGamemode]t;
-    fo[ServerGamemode] (siz[ServerGamemode]_t i = 0; i < gm.t[ServerGamemode]amNam[ServerGamemode]s.siz[ServerGamemode](); ++i) {
-        if (!o[ServerGamemode]t.[ServerGamemode]mpty()) o[ServerGamemode]t += " | ";
-        o[ServerGamemode]t += gm.t[ServerGamemode]amNam[ServerGamemode]s[i] + " = " + std::to_st[ServerGamemode]ing(i + 1);
+    const ServerGamemodeState& d = serverGamemodeState();
+    CommunityServerConfig& config = CommunityServerConfig::instance();
+    if (config.modes().empty()) config.load();
+    const CommunityMode* cm = config.modeById(d.communityMode);
+    const std::string id = cm ? cm->gamemodeId : d.communityMode;
+    const Gamemode& gm = GamemodeRegistry::instance().get(id);
+    if (gm.teamNames.empty()) return "no teams";
+    std::string out;
+    for (size_t i = 0; i < gm.teamNames.size(); ++i) {
+        if (!out.empty()) out += " | ";
+        out += gm.teamNames[i] + " = " + std::to_string(i + 1);
     }
 
-    [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n o[ServerGamemode]t;
+    return out;
 }
 
-boo[ServerGamemode] s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]R[ServerGamemode]q[ServerGamemode][ServerGamemode]stT[ServerGamemode]amChang[ServerGamemode]([ServerGamemode]int32_t p[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id, int [ServerGamemode][ServerGamemode]q[ServerGamemode][ServerGamemode]st[ServerGamemode]dT[ServerGamemode]am,
-                             [ServerGamemode]OCKET sock,
-                             std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s,
-                             [ServerGamemode]int32_t tick, [ServerGamemode]int64_t& tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t,
-                             std::st[ServerGamemode]ing& m[ServerGamemode]ssag[ServerGamemode])
+bool serverRequestTeamChange(uint32_t playerId, int requestedTeam,
+                             SOCKET sock,
+                             std::unordered_map<uint32_t, ServerPlayer>& players,
+                             uint32_t tick, uint64_t& totalPacketsOut,
+                             std::string& message)
 {
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d = s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]();
-    a[ServerGamemode]to p[ServerGamemode]ay[ServerGamemode][ServerGamemode]It = p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find(p[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id);
-    if (p[ServerGamemode]ay[ServerGamemode][ServerGamemode]It == p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd()) { m[ServerGamemode]ssag[ServerGamemode] = "p[ServerGamemode]ay[ServerGamemode][ServerGamemode] not fo[ServerGamemode]nd"; [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n fa[ServerGamemode]s[ServerGamemode]; }
-    const Comm[ServerGamemode]nityMod[ServerGamemode]* cm = Comm[ServerGamemode]nity[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Config::instanc[ServerGamemode]().mod[ServerGamemode]ById(d.comm[ServerGamemode]nityMod[ServerGamemode]);
-    const std::st[ServerGamemode]ing id = cm ? cm->gam[ServerGamemode]mod[ServerGamemode]Id : d.comm[ServerGamemode]nityMod[ServerGamemode];
-    const Gam[ServerGamemode]mod[ServerGamemode]& gm = Gam[ServerGamemode]mod[ServerGamemode]R[ServerGamemode]gist[ServerGamemode]y::instanc[ServerGamemode]().g[ServerGamemode]t(id);
-    if ([ServerGamemode][ServerGamemode]q[ServerGamemode][ServerGamemode]st[ServerGamemode]dT[ServerGamemode]am < 0 || [ServerGamemode][ServerGamemode]q[ServerGamemode][ServerGamemode]st[ServerGamemode]dT[ServerGamemode]am >= static_cast<int>(gm.t[ServerGamemode]amNam[ServerGamemode]s.siz[ServerGamemode]())) {
-        m[ServerGamemode]ssag[ServerGamemode] = gm.t[ServerGamemode]amNam[ServerGamemode]s.[ServerGamemode]mpty() ? "acti[ServerGamemode][ServerGamemode] gam[ServerGamemode]mod[ServerGamemode] has no t[ServerGamemode]ams" : "in[ServerGamemode]a[ServerGamemode]id t[ServerGamemode]am";
-        [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n fa[ServerGamemode]s[ServerGamemode];
+    ServerGamemodeState& d = serverGamemodeState();
+    auto playerIt = players.find(playerId);
+    if (playerIt == players.end()) { message = "player not found"; return false; }
+    const CommunityMode* cm = CommunityServerConfig::instance().modeById(d.communityMode);
+    const std::string id = cm ? cm->gamemodeId : d.communityMode;
+    const Gamemode& gm = GamemodeRegistry::instance().get(id);
+    if (requestedTeam < 0 || requestedTeam >= static_cast<int>(gm.teamNames.size())) {
+        message = gm.teamNames.empty() ? "active gamemode has no teams" : "invalid team";
+        return false;
     }
-    p[ServerGamemode]ay[ServerGamemode][ServerGamemode]It->s[ServerGamemode]cond.matchT[ServerGamemode]am = [ServerGamemode][ServerGamemode]q[ServerGamemode][ServerGamemode]st[ServerGamemode]dT[ServerGamemode]am;
-    d.matchT[ServerGamemode]ams[p[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id] = [ServerGamemode][ServerGamemode]q[ServerGamemode][ServerGamemode]st[ServerGamemode]dT[ServerGamemode]am;
-    m[ServerGamemode]ssag[ServerGamemode] = "switch[ServerGamemode]d to " + gm.t[ServerGamemode]amNam[ServerGamemode]s[static_cast<siz[ServerGamemode]_t>([ServerGamemode][ServerGamemode]q[ServerGamemode][ServerGamemode]st[ServerGamemode]dT[ServerGamemode]am)];
-    b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]ChatM[ServerGamemode]ssag[ServerGamemode](sock, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tick, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t,
-        (p[ServerGamemode]ay[ServerGamemode][ServerGamemode]It->s[ServerGamemode]cond.nam[ServerGamemode] + " " + m[ServerGamemode]ssag[ServerGamemode]).c_st[ServerGamemode]());
-    [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-        "[MATCH TEAM] p[ServerGamemode]ay[ServerGamemode][ServerGamemode]=%[ServerGamemode] t[ServerGamemode]am=%d mod[ServerGamemode]=%s [ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]t=acc[ServerGamemode]pt[ServerGamemode]d\n",
-        p[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id, [ServerGamemode][ServerGamemode]q[ServerGamemode][ServerGamemode]st[ServerGamemode]dT[ServerGamemode]am, id.c_st[ServerGamemode]());
-    [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n t[ServerGamemode][ServerGamemode][ServerGamemode];
+    playerIt->second.matchTeam = requestedTeam;
+    d.matchTeams[playerId] = requestedTeam;
+    message = "switched to " + gm.teamNames[static_cast<size_t>(requestedTeam)];
+    broadcastServerChatMessage(sock, players, tick, totalPacketsOut,
+        (playerIt->second.name + " " + message).c_str());
+    Debug::warn(Debug::Category::Duel,
+        "[MATCH TEAM] player=%u team=%d mode=%s result=accepted\n",
+        playerId, requestedTeam, id.c_str());
+    return true;
 }
 
-[ServerGamemode]oid s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]R[ServerGamemode]spawnA[ServerGamemode][ServerGamemode]Acto[ServerGamemode]s([ServerGamemode]OCKET sock,
-                            std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s,
-                            std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Npc>& npcs,
-                            [ServerGamemode]int32_t tick, [ServerGamemode]int64_t& tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t)
+void serverRespawnAllActors(SOCKET sock,
+                            std::unordered_map<uint32_t, ServerPlayer>& players,
+                            std::unordered_map<uint32_t, ServerNpc>& npcs,
+                            uint32_t tick, uint64_t& totalPacketsOut)
 {
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d = s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]();
-    fo[ServerGamemode] (a[ServerGamemode]to& k[ServerGamemode] : p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s) {
-        [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]& p[ServerGamemode]ay[ServerGamemode][ServerGamemode] = k[ServerGamemode].s[ServerGamemode]cond;
-        if (p[ServerGamemode]ay[ServerGamemode][ServerGamemode].spawn[ServerGamemode]tat[ServerGamemode] != [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]::Acti[ServerGamemode][ServerGamemode]) contin[ServerGamemode][ServerGamemode];
-        p[ServerGamemode]ay[ServerGamemode][ServerGamemode].d[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos = gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]pawnPoint(d);
-        p[ServerGamemode]ay[ServerGamemode][ServerGamemode].has[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos = t[ServerGamemode][ServerGamemode][ServerGamemode];
-        p[ServerGamemode]ay[ServerGamemode][ServerGamemode].pos = p[ServerGamemode]ay[ServerGamemode][ServerGamemode].d[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos;
-        comp[ServerGamemode][ServerGamemode]t[ServerGamemode]A[ServerGamemode]tho[ServerGamemode]itati[ServerGamemode][ServerGamemode][ServerGamemode]pawn(sock, p[ServerGamemode]ay[ServerGamemode][ServerGamemode], fa[ServerGamemode]s[ServerGamemode]);
+    ServerGamemodeState& d = serverGamemodeState();
+    for (auto& kv : players) {
+        ServerPlayer& player = kv.second;
+        if (player.spawnState != ServerPlayer::Active) continue;
+        player.duelSpawnPos = gamemodeSpawnPoint(d);
+        player.hasDuelSpawnPos = true;
+        player.pos = player.duelSpawnPos;
+        completeAuthoritativeSpawn(sock, player, false);
     }
-    fo[ServerGamemode] (a[ServerGamemode]to& k[ServerGamemode] : npcs) {
-        [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Npc& npc = k[ServerGamemode].s[ServerGamemode]cond;
-        npc.h[ServerGamemode]a[ServerGamemode]th = 100;
-        npc.knockbackImp[ServerGamemode][ServerGamemode]s[ServerGamemode] = g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3(0.0f);
-        ++npc.t[ServerGamemode]ansfo[ServerGamemode]mEpoch;
+    for (auto& kv : npcs) {
+        ServerNpc& npc = kv.second;
+        npc.health = 100;
+        npc.knockbackImpulse = glm::vec3(0.0f);
+        ++npc.transformEpoch;
     }
-    d.hasP[ServerGamemode]ndingKi[ServerGamemode][ServerGamemode] = fa[ServerGamemode]s[ServerGamemode];
-    d.p[ServerGamemode]ndingKi[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Id = 0;
-    d.p[ServerGamemode]ndingVictimId = 0;
-    d.p[ServerGamemode]ndingKi[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]IsNpc = fa[ServerGamemode]s[ServerGamemode];
-    [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-        "[MATCH RE[ServerGamemode]PAWN ALL] p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s=%z[ServerGamemode] npcs=%z[ServerGamemode] tick=%[ServerGamemode]\n",
-        p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.siz[ServerGamemode](), npcs.siz[ServerGamemode](), tick);
-    b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+    d.hasPendingKill = false;
+    d.pendingKillerId = 0;
+    d.pendingVictimId = 0;
+    d.pendingKillerIsNpc = false;
+    Debug::warn(Debug::Category::Duel,
+        "[MATCH RESPAWN ALL] players=%zu npcs=%zu tick=%u\n",
+        players.size(), npcs.size(), tick);
+    broadcastDuelState(sock, d, players, totalPacketsOut);
 }
 
-[ServerGamemode]oid s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode]R[ServerGamemode]q[ServerGamemode][ServerGamemode]stMapChang[ServerGamemode](const std::st[ServerGamemode]ing& mapId)
+void serverGamemodeRequestMapChange(const std::string& mapId)
 {
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d = s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]();
-    if (!d.[ServerGamemode]nab[ServerGamemode][ServerGamemode]d || mapId.[ServerGamemode]mpty()) [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n;
-    d.hasP[ServerGamemode]ndingMan[ServerGamemode]a[ServerGamemode]Map = t[ServerGamemode][ServerGamemode][ServerGamemode];
-    d.p[ServerGamemode]ndingMan[ServerGamemode]a[ServerGamemode]Map = mapId;
+    ServerGamemodeState& d = serverGamemodeState();
+    if (!d.enabled || mapId.empty()) return;
+    d.hasPendingManualMap = true;
+    d.pendingManualMap = mapId;
 }
 
-[ServerGamemode]oid s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode]OnP[ServerGamemode]ay[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]ath([ServerGamemode]int32_t ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id,
-                             [ServerGamemode]int32_t [ServerGamemode]ictimP[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id)
+void serverGamemodeOnPlayerDeath(uint32_t killerPlayerId,
+                             uint32_t victimPlayerId)
 {
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d = s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]();
-    if (!d.[ServerGamemode]nab[ServerGamemode][ServerGamemode]d) [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n;
-    d.hasP[ServerGamemode]ndingKi[ServerGamemode][ServerGamemode] = t[ServerGamemode][ServerGamemode][ServerGamemode];
-    d.p[ServerGamemode]ndingKi[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Id = ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id;
-    d.p[ServerGamemode]ndingVictimId = [ServerGamemode]ictimP[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id;
-    d.p[ServerGamemode]ndingKi[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]IsNpc = fa[ServerGamemode]s[ServerGamemode];
+    ServerGamemodeState& d = serverGamemodeState();
+    if (!d.enabled) return;
+    d.hasPendingKill = true;
+    d.pendingKillerId = killerPlayerId;
+    d.pendingVictimId = victimPlayerId;
+    d.pendingKillerIsNpc = false;
 }
 
-[ServerGamemode]oid s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode]OnNpc[ServerGamemode][ServerGamemode]ath([ServerGamemode]int32_t ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]NpcId,
-                          [ServerGamemode]int32_t [ServerGamemode]ictimP[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id)
+void serverGamemodeOnNpcDeath(uint32_t killerNpcId,
+                          uint32_t victimPlayerId)
 {
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d = s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]();
-    if (!d.[ServerGamemode]nab[ServerGamemode][ServerGamemode]d) [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n;
-    d.hasP[ServerGamemode]ndingKi[ServerGamemode][ServerGamemode] = t[ServerGamemode][ServerGamemode][ServerGamemode];
-    d.p[ServerGamemode]ndingKi[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Id = ki[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]NpcId;
-    d.p[ServerGamemode]ndingVictimId = [ServerGamemode]ictimP[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id;
-    d.p[ServerGamemode]ndingKi[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]IsNpc = t[ServerGamemode][ServerGamemode][ServerGamemode];
+    ServerGamemodeState& d = serverGamemodeState();
+    if (!d.enabled) return;
+    d.hasPendingKill = true;
+    d.pendingKillerId = killerNpcId;
+    d.pendingVictimId = victimPlayerId;
+    d.pendingKillerIsNpc = true;
 }
 
 // ── Bomb Tag ──────────────────────────────────────────────────────────
 
-nam[ServerGamemode]spac[ServerGamemode] {
+namespace {
 
-// [ServerGamemode]h[ServerGamemode]ff[ServerGamemode][ServerGamemode] bag fo[ServerGamemode] bomb ho[ServerGamemode]d[ServerGamemode][ServerGamemode] s[ServerGamemode][ServerGamemode][ServerGamemode]ction. Ens[ServerGamemode][ServerGamemode][ServerGamemode]s [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]y [ServerGamemode][ServerGamemode]igib[ServerGamemode][ServerGamemode] p[ServerGamemode]ay[ServerGamemode][ServerGamemode]
-// is s[ServerGamemode][ServerGamemode][ServerGamemode]ct[ServerGamemode]d onc[ServerGamemode] b[ServerGamemode]fo[ServerGamemode][ServerGamemode] th[ServerGamemode] bag is [ServerGamemode][ServerGamemode]sh[ServerGamemode]ff[ServerGamemode][ServerGamemode]d.
-st[ServerGamemode][ServerGamemode]ct Bomb[ServerGamemode]h[ServerGamemode]ff[ServerGamemode][ServerGamemode]Bag {
-    std::[ServerGamemode][ServerGamemode]cto[ServerGamemode]<[ServerGamemode]int32_t> o[ServerGamemode]d[ServerGamemode][ServerGamemode];
+// Shuffle bag for bomb holder selection. Ensures every eligible player
+// is selected once before the bag is reshuffled.
+struct BombShuffleBag {
+    std::vector<uint32_t> order;
     int position = 0;
 
-    [ServerGamemode]oid b[ServerGamemode]i[ServerGamemode]d(const std::[ServerGamemode][ServerGamemode]cto[ServerGamemode]<[ServerGamemode]int32_t>& [ServerGamemode][ServerGamemode]igib[ServerGamemode][ServerGamemode]) {
-        o[ServerGamemode]d[ServerGamemode][ServerGamemode] = [ServerGamemode][ServerGamemode]igib[ServerGamemode][ServerGamemode];
-        // Fish[ServerGamemode][ServerGamemode]-Yat[ServerGamemode]s sh[ServerGamemode]ff[ServerGamemode][ServerGamemode]
-        fo[ServerGamemode] (int i = (int)o[ServerGamemode]d[ServerGamemode][ServerGamemode].siz[ServerGamemode]() - 1; i > 0; --i) {
-            int j = (int)(([ServerGamemode]int32_t)std::[ServerGamemode]and() % ([ServerGamemode]int32_t)(i + 1));
-            std::swap(o[ServerGamemode]d[ServerGamemode][ServerGamemode][i], o[ServerGamemode]d[ServerGamemode][ServerGamemode][j]);
+    void build(const std::vector<uint32_t>& eligible) {
+        order = eligible;
+        // Fisher-Yates shuffle
+        for (int i = (int)order.size() - 1; i > 0; --i) {
+            int j = (int)((uint32_t)std::rand() % (uint32_t)(i + 1));
+            std::swap(order[i], order[j]);
         }
         position = 0;
     }
 
-    [ServerGamemode]int32_t n[ServerGamemode]xt() {
-        if (o[ServerGamemode]d[ServerGamemode][ServerGamemode].[ServerGamemode]mpty()) [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n 0;
-        if (position >= (int)o[ServerGamemode]d[ServerGamemode][ServerGamemode].siz[ServerGamemode]()) {
-            // Bag [ServerGamemode]xha[ServerGamemode]st[ServerGamemode]d — [ServerGamemode][ServerGamemode]b[ServerGamemode]i[ServerGamemode]d with c[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]nt [ServerGamemode][ServerGamemode]igib[ServerGamemode][ServerGamemode] [ServerGamemode]ist
-            // Ca[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode] m[ServerGamemode]st ca[ServerGamemode][ServerGamemode] b[ServerGamemode]i[ServerGamemode]d() b[ServerGamemode]fo[ServerGamemode][ServerGamemode] n[ServerGamemode]xt() if th[ServerGamemode]y want a f[ServerGamemode][ServerGamemode]sh bag.
-            // If ca[ServerGamemode][ServerGamemode][ServerGamemode]d witho[ServerGamemode]t b[ServerGamemode]i[ServerGamemode]d(), j[ServerGamemode]st w[ServerGamemode]ap a[ServerGamemode]o[ServerGamemode]nd.
+    uint32_t next() {
+        if (order.empty()) return 0;
+        if (position >= (int)order.size()) {
+            // Bag exhausted — rebuild with current eligible list
+            // Caller must call build() before next() if they want a fresh bag.
+            // If called without build(), just wrap around.
             position = 0;
         }
-        [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n o[ServerGamemode]d[ServerGamemode][ServerGamemode][position++];
+        return order[position++];
     }
 
-    [ServerGamemode]oid [ServerGamemode][ServerGamemode]mo[ServerGamemode][ServerGamemode]([ServerGamemode]int32_t id) {
-        a[ServerGamemode]to it = std::find(o[ServerGamemode]d[ServerGamemode][ServerGamemode].b[ServerGamemode]gin() + position, o[ServerGamemode]d[ServerGamemode][ServerGamemode].[ServerGamemode]nd(), id);
-        if (it != o[ServerGamemode]d[ServerGamemode][ServerGamemode].[ServerGamemode]nd()) {
-            o[ServerGamemode]d[ServerGamemode][ServerGamemode].[ServerGamemode][ServerGamemode]as[ServerGamemode](it);
-            if (position >= (int)o[ServerGamemode]d[ServerGamemode][ServerGamemode].siz[ServerGamemode]() && !o[ServerGamemode]d[ServerGamemode][ServerGamemode].[ServerGamemode]mpty())
+    void remove(uint32_t id) {
+        auto it = std::find(order.begin() + position, order.end(), id);
+        if (it != order.end()) {
+            order.erase(it);
+            if (position >= (int)order.size() && !order.empty())
                 position = 0;
         }
     }
 };
 
-Bomb[ServerGamemode]h[ServerGamemode]ff[ServerGamemode][ServerGamemode]Bag sBomb[ServerGamemode]h[ServerGamemode]ff[ServerGamemode][ServerGamemode]Bag;
+BombShuffleBag sBombShuffleBag;
 
-// [ServerGamemode]imp[ServerGamemode][ServerGamemode] sph[ServerGamemode][ServerGamemode][ServerGamemode] o[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]ap t[ServerGamemode]st fo[ServerGamemode] bomb contact d[ServerGamemode]t[ServerGamemode]ction on th[ServerGamemode] s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode].
-// Us[ServerGamemode]s p[ServerGamemode]ay[ServerGamemode][ServerGamemode] body-pa[ServerGamemode]t sph[ServerGamemode][ServerGamemode][ServerGamemode] positions if a[ServerGamemode]ai[ServerGamemode]ab[ServerGamemode][ServerGamemode], oth[ServerGamemode][ServerGamemode]wis[ServerGamemode] [ServerGamemode]oot position.
-boo[ServerGamemode] bomb[ServerGamemode]ph[ServerGamemode][ServerGamemode][ServerGamemode]O[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]ap(const g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3& aPos, f[ServerGamemode]oat aRadi[ServerGamemode]s,
-                       const g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3& bPos, f[ServerGamemode]oat bRadi[ServerGamemode]s)
+// Simple sphere overlap test for bomb contact detection on the server.
+// Uses player body-part sphere positions if available, otherwise root position.
+bool bombSphereOverlap(const glm::vec3& aPos, float aRadius,
+                       const glm::vec3& bPos, float bRadius)
 {
-    f[ServerGamemode]oat dist = g[ServerGamemode]m::[ServerGamemode][ServerGamemode]ngth(aPos - bPos);
-    [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n dist < (aRadi[ServerGamemode]s + bRadi[ServerGamemode]s);
+    float dist = glm::length(aPos - bPos);
+    return dist < (aRadius + bRadius);
 }
 
-// G[ServerGamemode]t a [ServerGamemode]o[ServerGamemode]gh position fo[ServerGamemode] an [ServerGamemode]ntity ([ServerGamemode]oot position fo[ServerGamemode] p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, body.pos fo[ServerGamemode] NPCs).
-g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3 g[ServerGamemode]tEntityRootPos(const [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]& p) {
-    [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n p.pos;
+// Get a rough position for an entity (root position for players, body.pos for NPCs).
+glm::vec3 getEntityRootPos(const ServerPlayer& p) {
+    return p.pos;
 }
 
-g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3 g[ServerGamemode]tEntityRootPos(const [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Npc& n) {
-    [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n n.pos;
+glm::vec3 getEntityRootPos(const ServerNpc& n) {
+    return n.pos;
 }
 
-// Find th[ServerGamemode] bomb ho[ServerGamemode]d[ServerGamemode][ServerGamemode]'s wo[ServerGamemode][ServerGamemode]d position f[ServerGamemode]om s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode] stat[ServerGamemode].
-g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3 g[ServerGamemode]tBombHo[ServerGamemode]d[ServerGamemode][ServerGamemode]Position(const [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d,
-                                const std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s,
-                                const std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Npc>& npcs)
+// Find the bomb holder's world position from server state.
+glm::vec3 getBombHolderPosition(const ServerGamemodeState& d,
+                                const std::unordered_map<uint32_t, ServerPlayer>& players,
+                                const std::unordered_map<uint32_t, ServerNpc>& npcs)
 {
-    if (d.bombOwn[ServerGamemode][ServerGamemode]Typ[ServerGamemode] == 1 /* p[ServerGamemode]ay[ServerGamemode][ServerGamemode] */) {
-        a[ServerGamemode]to it = p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find(d.bombOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id);
-        if (it != p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd()) [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n g[ServerGamemode]tEntityRootPos(it->s[ServerGamemode]cond);
-    } [ServerGamemode][ServerGamemode]s[ServerGamemode] if (d.bombOwn[ServerGamemode][ServerGamemode]Typ[ServerGamemode] == 2 /* npc */) {
-        a[ServerGamemode]to it = npcs.find(([ServerGamemode]int32_t)d.bombOwn[ServerGamemode][ServerGamemode]NpcInd[ServerGamemode]x);
-        if (it != npcs.[ServerGamemode]nd()) [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n g[ServerGamemode]tEntityRootPos(it->s[ServerGamemode]cond);
+    if (d.bombOwnerType == 1 /* player */) {
+        auto it = players.find(d.bombOwnerPlayerId);
+        if (it != players.end()) return getEntityRootPos(it->second);
+    } else if (d.bombOwnerType == 2 /* npc */) {
+        auto it = npcs.find((uint32_t)d.bombOwnerNpcIndex);
+        if (it != npcs.end()) return getEntityRootPos(it->second);
     }
-    [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3(0.0f);
+    return glm::vec3(0.0f);
 }
 
-// [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]ct a n[ServerGamemode]w bomb ho[ServerGamemode]d[ServerGamemode][ServerGamemode] [ServerGamemode]sing th[ServerGamemode] sh[ServerGamemode]ff[ServerGamemode][ServerGamemode] bag.
-[ServerGamemode]oid s[ServerGamemode][ServerGamemode][ServerGamemode]ctN[ServerGamemode]wBombHo[ServerGamemode]d[ServerGamemode][ServerGamemode]([ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d,
-                         const std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s)
+// Select a new bomb holder using the shuffle bag.
+void selectNewBombHolder(ServerGamemodeState& d,
+                         const std::unordered_map<uint32_t, ServerPlayer>& players)
 {
-    std::[ServerGamemode][ServerGamemode]cto[ServerGamemode]<[ServerGamemode]int32_t> [ServerGamemode][ServerGamemode]igib[ServerGamemode][ServerGamemode];
-    fo[ServerGamemode] (const a[ServerGamemode]to& k[ServerGamemode] : p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s) {
-        if (k[ServerGamemode].s[ServerGamemode]cond.spawn[ServerGamemode]tat[ServerGamemode] == [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]::Acti[ServerGamemode][ServerGamemode] && !k[ServerGamemode].s[ServerGamemode]cond.d[ServerGamemode]ad)
-            [ServerGamemode][ServerGamemode]igib[ServerGamemode][ServerGamemode].p[ServerGamemode]sh_back(k[ServerGamemode].fi[ServerGamemode]st);
+    std::vector<uint32_t> eligible;
+    for (const auto& kv : players) {
+        if (kv.second.spawnState == ServerPlayer::Active && !kv.second.dead)
+            eligible.push_back(kv.first);
     }
-    if ([ServerGamemode][ServerGamemode]igib[ServerGamemode][ServerGamemode].[ServerGamemode]mpty()) {
-        d.bombOwn[ServerGamemode][ServerGamemode]Typ[ServerGamemode] = 0;
-        d.bombOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id = 0;
-        d.bombOwn[ServerGamemode][ServerGamemode]NpcInd[ServerGamemode]x = 0;
-        [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n;
+    if (eligible.empty()) {
+        d.bombOwnerType = 0;
+        d.bombOwnerPlayerId = 0;
+        d.bombOwnerNpcIndex = 0;
+        return;
     }
-    // Ch[ServerGamemode]ck if c[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]nt bag is [ServerGamemode]a[ServerGamemode]id fo[ServerGamemode] c[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]nt [ServerGamemode][ServerGamemode]igib[ServerGamemode][ServerGamemode] s[ServerGamemode]t
-    boo[ServerGamemode] n[ServerGamemode][ServerGamemode]dR[ServerGamemode]b[ServerGamemode]i[ServerGamemode]d = sBomb[ServerGamemode]h[ServerGamemode]ff[ServerGamemode][ServerGamemode]Bag.o[ServerGamemode]d[ServerGamemode][ServerGamemode].[ServerGamemode]mpty();
-    if (!n[ServerGamemode][ServerGamemode]dR[ServerGamemode]b[ServerGamemode]i[ServerGamemode]d) {
-        // Ch[ServerGamemode]ck if a[ServerGamemode][ServerGamemode] [ServerGamemode][ServerGamemode]maining bag [ServerGamemode]nt[ServerGamemode]i[ServerGamemode]s a[ServerGamemode][ServerGamemode] sti[ServerGamemode][ServerGamemode] [ServerGamemode][ServerGamemode]igib[ServerGamemode][ServerGamemode]
-        fo[ServerGamemode] ([ServerGamemode]int32_t id : sBomb[ServerGamemode]h[ServerGamemode]ff[ServerGamemode][ServerGamemode]Bag.o[ServerGamemode]d[ServerGamemode][ServerGamemode]) {
-            boo[ServerGamemode] fo[ServerGamemode]nd = fa[ServerGamemode]s[ServerGamemode];
-            fo[ServerGamemode] ([ServerGamemode]int32_t [ServerGamemode] : [ServerGamemode][ServerGamemode]igib[ServerGamemode][ServerGamemode]) {
-                if ([ServerGamemode] == id) { fo[ServerGamemode]nd = t[ServerGamemode][ServerGamemode][ServerGamemode]; b[ServerGamemode][ServerGamemode]ak; }
+    // Check if current bag is valid for current eligible set
+    bool needRebuild = sBombShuffleBag.order.empty();
+    if (!needRebuild) {
+        // Check if all remaining bag entries are still eligible
+        for (uint32_t id : sBombShuffleBag.order) {
+            bool found = false;
+            for (uint32_t e : eligible) {
+                if (e == id) { found = true; break; }
             }
-            if (!fo[ServerGamemode]nd) { n[ServerGamemode][ServerGamemode]dR[ServerGamemode]b[ServerGamemode]i[ServerGamemode]d = t[ServerGamemode][ServerGamemode][ServerGamemode]; b[ServerGamemode][ServerGamemode]ak; }
+            if (!found) { needRebuild = true; break; }
         }
     }
-    if (n[ServerGamemode][ServerGamemode]dR[ServerGamemode]b[ServerGamemode]i[ServerGamemode]d) {
-        sBomb[ServerGamemode]h[ServerGamemode]ff[ServerGamemode][ServerGamemode]Bag.b[ServerGamemode]i[ServerGamemode]d([ServerGamemode][ServerGamemode]igib[ServerGamemode][ServerGamemode]);
+    if (needRebuild) {
+        sBombShuffleBag.build(eligible);
     }
-    [ServerGamemode]int32_t chos[ServerGamemode]n = sBomb[ServerGamemode]h[ServerGamemode]ff[ServerGamemode][ServerGamemode]Bag.n[ServerGamemode]xt();
-    if (chos[ServerGamemode]n == 0) {
-        // Fa[ServerGamemode][ServerGamemode]back: [ServerGamemode]andom pick
-        chos[ServerGamemode]n = [ServerGamemode][ServerGamemode]igib[ServerGamemode][ServerGamemode][([ServerGamemode]int32_t)std::[ServerGamemode]and() % [ServerGamemode][ServerGamemode]igib[ServerGamemode][ServerGamemode].siz[ServerGamemode]()];
+    uint32_t chosen = sBombShuffleBag.next();
+    if (chosen == 0) {
+        // Fallback: random pick
+        chosen = eligible[(uint32_t)std::rand() % eligible.size()];
     }
-    d.bombOwn[ServerGamemode][ServerGamemode]Typ[ServerGamemode] = 1;
-    d.bombOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id = chos[ServerGamemode]n;
-    d.bombOwn[ServerGamemode][ServerGamemode]NpcInd[ServerGamemode]x = 0;
+    d.bombOwnerType = 1;
+    d.bombOwnerPlayerId = chosen;
+    d.bombOwnerNpcIndex = 0;
 
-    [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-        "[BOMB TAG] bomb assign[ServerGamemode]d to p[ServerGamemode]ay[ServerGamemode][ServerGamemode]=%[ServerGamemode] [ServerGamemode][ServerGamemode]igib[ServerGamemode][ServerGamemode]=%z[ServerGamemode]\n",
-        chos[ServerGamemode]n, [ServerGamemode][ServerGamemode]igib[ServerGamemode][ServerGamemode].siz[ServerGamemode]());
+    Debug::log(Debug::Category::Duel,
+        "[BOMB TAG] bomb assigned to player=%u eligible=%zu\n",
+        chosen, eligible.size());
 }
 
-// B[ServerGamemode]oadcast bomb tag stat[ServerGamemode] to a[ServerGamemode][ServerGamemode] acti[ServerGamemode][ServerGamemode] c[ServerGamemode]i[ServerGamemode]nts.
-[ServerGamemode]oid b[ServerGamemode]oadcastBombTag[ServerGamemode]tat[ServerGamemode]([ServerGamemode]OCKET sock,
-                           [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d,
-                           const std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s,
-                           [ServerGamemode]int64_t& tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t)
+// Broadcast bomb tag state to all active clients.
+void broadcastBombTagState(SOCKET sock,
+                           ServerGamemodeState& d,
+                           const std::unordered_map<uint32_t, ServerPlayer>& players,
+                           uint64_t& totalPacketsOut)
 {
-    BombTag[ServerGamemode]tat[ServerGamemode]Pack[ServerGamemode]t pkt{};
-    pkt.h[ServerGamemode]ad[ServerGamemode][ServerGamemode].typ[ServerGamemode] = PACKET_BOMB_TAG_[ServerGamemode]TATE;
-    pkt.h[ServerGamemode]ad[ServerGamemode][ServerGamemode].tick = 0;
-    pkt.d[ServerGamemode][ServerGamemode][ServerGamemode]Id = d.d[ServerGamemode][ServerGamemode][ServerGamemode]Id;
-    pkt.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion = d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-    pkt.phas[ServerGamemode] = d.phas[ServerGamemode];
-    pkt.bombOwn[ServerGamemode][ServerGamemode]Typ[ServerGamemode] = d.bombOwn[ServerGamemode][ServerGamemode]Typ[ServerGamemode];
-    pkt.bombOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id = d.bombOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id;
-    pkt.bombOwn[ServerGamemode][ServerGamemode]NpcInd[ServerGamemode]x = d.bombOwn[ServerGamemode][ServerGamemode]NpcInd[ServerGamemode]x;
-    pkt.tim[ServerGamemode][ServerGamemode]TicksR[ServerGamemode]maining = d.bombTim[ServerGamemode][ServerGamemode]Ticks;
-    pkt.inacti[ServerGamemode][ServerGamemode]TicksR[ServerGamemode]maining = d.bombInacti[ServerGamemode][ServerGamemode]Ticks;
-    pkt.s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Tick = d.c[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]nt[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Tick;
+    BombTagStatePacket pkt{};
+    pkt.header.type = PACKET_BOMB_TAG_STATE;
+    pkt.header.tick = 0;
+    pkt.duelId = d.duelId;
+    pkt.stateVersion = d.stateVersion;
+    pkt.phase = d.phase;
+    pkt.bombOwnerType = d.bombOwnerType;
+    pkt.bombOwnerPlayerId = d.bombOwnerPlayerId;
+    pkt.bombOwnerNpcIndex = d.bombOwnerNpcIndex;
+    pkt.timerTicksRemaining = d.bombTimerTicks;
+    pkt.inactiveTicksRemaining = d.bombInactiveTicks;
+    pkt.serverTick = d.currentServerTick;
 
-    g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3 bombPos = g[ServerGamemode]tBombHo[ServerGamemode]d[ServerGamemode][ServerGamemode]Position(d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, {});
+    glm::vec3 bombPos = getBombHolderPosition(d, players, {});
     pkt.bombPosX = bombPos.x;
     pkt.bombPosY = bombPos.y;
     pkt.bombPosZ = bombPos.z;
 
-    fo[ServerGamemode] (const a[ServerGamemode]to& k[ServerGamemode] : p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s) {
-        if (k[ServerGamemode].s[ServerGamemode]cond.spawn[ServerGamemode]tat[ServerGamemode] != [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]::Acti[ServerGamemode][ServerGamemode])
-            contin[ServerGamemode][ServerGamemode];
-        const [ServerGamemode]int32_t [ServerGamemode][ServerGamemode][ServerGamemode]ntId = n[ServerGamemode]xtR[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntId();
-        const R[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntQ[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]R[ServerGamemode]s[ServerGamemode][ServerGamemode]t [ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]t = q[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]R[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntToP[ServerGamemode]ay[ServerGamemode][ServerGamemode](
-            sock, const_cast<[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]&>(k[ServerGamemode].s[ServerGamemode]cond), &pkt, siz[ServerGamemode]of(pkt), [ServerGamemode][ServerGamemode][ServerGamemode]ntId,
-            [ServerGamemode][ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]nt[ServerGamemode][ServerGamemode]ssionFo[ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode](const_cast<[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]&>(k[ServerGamemode].s[ServerGamemode]cond)), tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-        [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-            "[BOMB TAG] s[ServerGamemode]nt stat[ServerGamemode] p[ServerGamemode]ay[ServerGamemode][ServerGamemode]=%[ServerGamemode] phas[ServerGamemode]=%[ServerGamemode] own[ServerGamemode][ServerGamemode]=%[ServerGamemode] tim[ServerGamemode][ServerGamemode]=%[ServerGamemode] inacti[ServerGamemode][ServerGamemode]=%[ServerGamemode]\n",
-            k[ServerGamemode].s[ServerGamemode]cond.id, d.phas[ServerGamemode], d.bombOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id, d.bombTim[ServerGamemode][ServerGamemode]Ticks, d.bombInacti[ServerGamemode][ServerGamemode]Ticks);
+    for (const auto& kv : players) {
+        if (kv.second.spawnState != ServerPlayer::Active)
+            continue;
+        const uint32_t eventId = nextReliableGameplayEventId();
+        const ReliableGameplayEventQueueResult result = queueReliableGameplayEventToPlayer(
+            sock, const_cast<ServerPlayer&>(kv.second), &pkt, sizeof(pkt), eventId,
+            reliableGameplayEventSessionForPlayer(const_cast<ServerPlayer&>(kv.second)), totalPacketsOut);
+        Debug::log(Debug::Category::Duel,
+            "[BOMB TAG] sent state player=%u phase=%u owner=%u timer=%u inactive=%u\n",
+            kv.second.id, d.phase, d.bombOwnerPlayerId, d.bombTimerTicks, d.bombInactiveTicks);
     }
 }
 
-// B[ServerGamemode]oadcast pass [ServerGamemode]is[ServerGamemode]a[ServerGamemode]ization [ServerGamemode][ServerGamemode][ServerGamemode]nt to a[ServerGamemode][ServerGamemode] c[ServerGamemode]i[ServerGamemode]nts.
-[ServerGamemode]oid b[ServerGamemode]oadcastBombTagPass([ServerGamemode]OCKET sock,
-                          [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d,
-                          const std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s,
-                          [ServerGamemode]int32_t o[ServerGamemode]dOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id, [ServerGamemode]int32_t n[ServerGamemode]wOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id,
-                          const g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3& o[ServerGamemode]dPos, const g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3& n[ServerGamemode]wPos,
-                          f[ServerGamemode]oat pass[ServerGamemode]ist, f[ServerGamemode]oat [ServerGamemode][ServerGamemode]wo[ServerGamemode]nd[ServerGamemode]ist,
-                          [ServerGamemode]int64_t& tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t)
+// Broadcast pass visualization event to all clients.
+void broadcastBombTagPass(SOCKET sock,
+                          ServerGamemodeState& d,
+                          const std::unordered_map<uint32_t, ServerPlayer>& players,
+                          uint32_t oldOwnerPlayerId, uint32_t newOwnerPlayerId,
+                          const glm::vec3& oldPos, const glm::vec3& newPos,
+                          float passDist, float rewoundDist,
+                          uint64_t& totalPacketsOut)
 {
-    BombTagPassE[ServerGamemode][ServerGamemode]ntPack[ServerGamemode]t pkt{};
-    pkt.h[ServerGamemode]ad[ServerGamemode][ServerGamemode].typ[ServerGamemode] = PACKET_BOMB_TAG_PA[ServerGamemode][ServerGamemode]_EVENT;
-    pkt.h[ServerGamemode]ad[ServerGamemode][ServerGamemode].tick = 0;
-    pkt.[ServerGamemode][ServerGamemode][ServerGamemode]ntId = n[ServerGamemode]xtR[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntId();
-    pkt.[ServerGamemode][ServerGamemode][ServerGamemode]nt[ServerGamemode][ServerGamemode]ssionId = s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]R[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]E[ServerGamemode][ServerGamemode]nt[ServerGamemode][ServerGamemode]ssionId();
-    pkt.s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Tick = d.c[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]nt[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Tick;
-    pkt.o[ServerGamemode]dOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id = o[ServerGamemode]dOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id;
-    pkt.n[ServerGamemode]wOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id = n[ServerGamemode]wOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id;
-    pkt.o[ServerGamemode]dBombPosX = o[ServerGamemode]dPos.x;
-    pkt.o[ServerGamemode]dBombPosY = o[ServerGamemode]dPos.y;
-    pkt.o[ServerGamemode]dBombPosZ = o[ServerGamemode]dPos.z;
-    pkt.n[ServerGamemode]wBombPosX = n[ServerGamemode]wPos.x;
-    pkt.n[ServerGamemode]wBombPosY = n[ServerGamemode]wPos.y;
-    pkt.n[ServerGamemode]wBombPosZ = n[ServerGamemode]wPos.z;
-    pkt.pass[ServerGamemode]istanc[ServerGamemode] = pass[ServerGamemode]ist;
-    pkt.s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]R[ServerGamemode]wo[ServerGamemode]nd[ServerGamemode]istanc[ServerGamemode] = [ServerGamemode][ServerGamemode]wo[ServerGamemode]nd[ServerGamemode]ist;
-    pkt.acc[ServerGamemode]pt[ServerGamemode]d = 1;
+    BombTagPassEventPacket pkt{};
+    pkt.header.type = PACKET_BOMB_TAG_PASS_EVENT;
+    pkt.header.tick = 0;
+    pkt.eventId = nextReliableGameplayEventId();
+    pkt.eventSessionId = serverReliableEventSessionId();
+    pkt.serverTick = d.currentServerTick;
+    pkt.oldOwnerPlayerId = oldOwnerPlayerId;
+    pkt.newOwnerPlayerId = newOwnerPlayerId;
+    pkt.oldBombPosX = oldPos.x;
+    pkt.oldBombPosY = oldPos.y;
+    pkt.oldBombPosZ = oldPos.z;
+    pkt.newBombPosX = newPos.x;
+    pkt.newBombPosY = newPos.y;
+    pkt.newBombPosZ = newPos.z;
+    pkt.passDistance = passDist;
+    pkt.serverRewoundDistance = rewoundDist;
+    pkt.accepted = 1;
 
-    fo[ServerGamemode] (const a[ServerGamemode]to& k[ServerGamemode] : p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s) {
-        if (k[ServerGamemode].s[ServerGamemode]cond.spawn[ServerGamemode]tat[ServerGamemode] != [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]::Acti[ServerGamemode][ServerGamemode])
-            contin[ServerGamemode][ServerGamemode];
-        const R[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntQ[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]R[ServerGamemode]s[ServerGamemode][ServerGamemode]t [ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]t = q[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]R[ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]ntToP[ServerGamemode]ay[ServerGamemode][ServerGamemode](
-            sock, const_cast<[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]&>(k[ServerGamemode].s[ServerGamemode]cond), &pkt, siz[ServerGamemode]of(pkt), pkt.[ServerGamemode][ServerGamemode][ServerGamemode]ntId,
-            [ServerGamemode][ServerGamemode][ServerGamemode]iab[ServerGamemode][ServerGamemode]Gam[ServerGamemode]p[ServerGamemode]ayE[ServerGamemode][ServerGamemode]nt[ServerGamemode][ServerGamemode]ssionFo[ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode](const_cast<[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]&>(k[ServerGamemode].s[ServerGamemode]cond)), tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+    for (const auto& kv : players) {
+        if (kv.second.spawnState != ServerPlayer::Active)
+            continue;
+        const ReliableGameplayEventQueueResult result = queueReliableGameplayEventToPlayer(
+            sock, const_cast<ServerPlayer&>(kv.second), &pkt, sizeof(pkt), pkt.eventId,
+            reliableGameplayEventSessionForPlayer(const_cast<ServerPlayer&>(kv.second)), totalPacketsOut);
     }
-    ++d.bombPassCo[ServerGamemode]nt[ServerGamemode][ServerGamemode];
-    [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-        "[BOMB TAG PA[ServerGamemode][ServerGamemode]] o[ServerGamemode]d=%[ServerGamemode] n[ServerGamemode]w=%[ServerGamemode] dist=%.2f [ServerGamemode][ServerGamemode]wo[ServerGamemode]nd=%.2f pass[ServerGamemode]s=%[ServerGamemode]\n",
-        o[ServerGamemode]dOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id, n[ServerGamemode]wOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id, pass[ServerGamemode]ist, [ServerGamemode][ServerGamemode]wo[ServerGamemode]nd[ServerGamemode]ist, d.bombPassCo[ServerGamemode]nt[ServerGamemode][ServerGamemode]);
+    ++d.bombPassCounter;
+    Debug::log(Debug::Category::Duel,
+        "[BOMB TAG PASS] old=%u new=%u dist=%.2f rewound=%.2f passes=%u\n",
+        oldOwnerPlayerId, newOwnerPlayerId, passDist, rewoundDist, d.bombPassCounter);
 }
 
-} // anonymo[ServerGamemode]s nam[ServerGamemode]spac[ServerGamemode]
+} // anonymous namespace
 
-[ServerGamemode]oid s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]BombTag[ServerGamemode]ta[ServerGamemode]tMatch(boo[ServerGamemode] skipInt[ServerGamemode][ServerGamemode]mission)
+void serverBombTagStartMatch(bool skipIntermission)
 {
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d = s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]();
-    if (!d.[ServerGamemode]nab[ServerGamemode][ServerGamemode]d) [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n;
+    ServerGamemodeState& d = serverGamemodeState();
+    if (!d.enabled) return;
 
-    // Load bomb tag gam[ServerGamemode]mod[ServerGamemode] config [ServerGamemode]sing th[ServerGamemode] gam[ServerGamemode]mod[ServerGamemode]_id f[ServerGamemode]om th[ServerGamemode] J[ServerGamemode]ON.
-    const Gam[ServerGamemode]mod[ServerGamemode]& gm = Gam[ServerGamemode]mod[ServerGamemode]R[ServerGamemode]gist[ServerGamemode]y::instanc[ServerGamemode]().g[ServerGamemode]t("bombtag");
-    d.bombTim[ServerGamemode][ServerGamemode]TicksMax = ([ServerGamemode]int32_t)(gm.bombTim[ServerGamemode][ServerGamemode]Ticks > 0 ? gm.bombTim[ServerGamemode][ServerGamemode]Ticks : 900);
-    d.bombInacti[ServerGamemode][ServerGamemode]TicksMax = ([ServerGamemode]int32_t)(gm.inacti[ServerGamemode][ServerGamemode]Ticks > 0 ? gm.inacti[ServerGamemode][ServerGamemode]Ticks : 60);
-    d.bombB[ServerGamemode]inkTicks = ([ServerGamemode]int32_t)(gm.b[ServerGamemode]inkTicks > 0 ? gm.b[ServerGamemode]inkTicks : 30);
-    d.bombMaxPass[ServerGamemode]anity[ServerGamemode]ist = gm.maxPass[ServerGamemode]anity[ServerGamemode]istanc[ServerGamemode] > 0.0f ? gm.maxPass[ServerGamemode]anity[ServerGamemode]istanc[ServerGamemode] : 3.0f;
-    d.bombTagActi[ServerGamemode][ServerGamemode] = t[ServerGamemode][ServerGamemode][ServerGamemode];
-    d.bombPassCo[ServerGamemode]nt[ServerGamemode][ServerGamemode] = 0;
-    d.bombExp[ServerGamemode]osionCo[ServerGamemode]nt[ServerGamemode][ServerGamemode] = 0;
-    d.bombTim[ServerGamemode][ServerGamemode]Ticks = d.bombTim[ServerGamemode][ServerGamemode]TicksMax;
-    d.bombInacti[ServerGamemode][ServerGamemode]Ticks = 0;
-    d.bombOwn[ServerGamemode][ServerGamemode]Typ[ServerGamemode] = 0;
-    d.bombOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id = 0;
-    d.bombOwn[ServerGamemode][ServerGamemode]NpcInd[ServerGamemode]x = 0;
+    // Load bomb tag gamemode config using the gamemode_id from the JSON.
+    const Gamemode& gm = GamemodeRegistry::instance().get("bombtag");
+    d.bombTimerTicksMax = (uint32_t)(gm.bombTimerTicks > 0 ? gm.bombTimerTicks : 900);
+    d.bombInactiveTicksMax = (uint32_t)(gm.inactiveTicks > 0 ? gm.inactiveTicks : 60);
+    d.bombBlinkTicks = (uint32_t)(gm.blinkTicks > 0 ? gm.blinkTicks : 30);
+    d.bombMaxPassSanityDist = gm.maxPassSanityDistance > 0.0f ? gm.maxPassSanityDistance : 3.0f;
+    d.bombTagActive = true;
+    d.bombPassCounter = 0;
+    d.bombExplosionCounter = 0;
+    d.bombTimerTicks = d.bombTimerTicksMax;
+    d.bombInactiveTicks = 0;
+    d.bombOwnerType = 0;
+    d.bombOwnerPlayerId = 0;
+    d.bombOwnerNpcIndex = 0;
 
-    // [ServerGamemode]tanda[ServerGamemode]d match [ServerGamemode]if[ServerGamemode]cyc[ServerGamemode][ServerGamemode]
-    d.co[ServerGamemode]ntdown[ServerGamemode][ServerGamemode]conds = gm.co[ServerGamemode]ntdown[ServerGamemode][ServerGamemode]conds;
-    d.go[ServerGamemode][ServerGamemode]conds = gm.go[ServerGamemode][ServerGamemode]conds;
-    d.int[ServerGamemode][ServerGamemode]mission[ServerGamemode][ServerGamemode]conds = (f[ServerGamemode]oat)gm.int[ServerGamemode][ServerGamemode]mission[ServerGamemode][ServerGamemode]conds;
-    d.[ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]ts[ServerGamemode][ServerGamemode]conds = (f[ServerGamemode]oat)gm.[ServerGamemode][ServerGamemode]s[ServerGamemode][ServerGamemode]ts[ServerGamemode][ServerGamemode]conds;
-    d.tim[ServerGamemode]Limit[ServerGamemode][ServerGamemode]conds = 0;  // infinit[ServerGamemode]
-    d.mapOn[ServerGamemode]y = fa[ServerGamemode]s[ServerGamemode];
-    d.[ServerGamemode]astB[ServerGamemode]oadcastTick = 0;
-    d.stat[ServerGamemode]B[ServerGamemode]oadcastP[ServerGamemode]nding = t[ServerGamemode][ServerGamemode][ServerGamemode];
-    d.phas[ServerGamemode] = [ServerGamemode]UEL_PHA[ServerGamemode]E_INTERMI[ServerGamemode][ServerGamemode]ION;
-    d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] = skipInt[ServerGamemode][ServerGamemode]mission ? 0.0f : d.int[ServerGamemode][ServerGamemode]mission[ServerGamemode][ServerGamemode]conds;
-    d.matchO[ServerGamemode][ServerGamemode][ServerGamemode] = fa[ServerGamemode]s[ServerGamemode];
-    d.spawnOffs[ServerGamemode]tRadi[ServerGamemode]s = gm.spawnOffs[ServerGamemode]tRadi[ServerGamemode]s;
-    ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-    ++d.d[ServerGamemode][ServerGamemode][ServerGamemode]Id;
+    // Standard match lifecycle
+    d.countdownSeconds = gm.countdownSeconds;
+    d.goSeconds = gm.goSeconds;
+    d.intermissionSeconds = (float)gm.intermissionSeconds;
+    d.resultsSeconds = (float)gm.resultsSeconds;
+    d.timeLimitSeconds = 0;  // infinite
+    d.mapOnly = false;
+    d.lastBroadcastTick = 0;
+    d.stateBroadcastPending = true;
+    d.phase = DUEL_PHASE_INTERMISSION;
+    d.phaseTimer = skipIntermission ? 0.0f : d.intermissionSeconds;
+    d.matchOver = false;
+    d.spawnOffsetRadius = gm.spawnOffsetRadius;
+    ++d.stateVersion;
+    ++d.duelId;
 
-    [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-        "[BOMB TAG] match sta[ServerGamemode]ting tim[ServerGamemode][ServerGamemode]Ticks=%[ServerGamemode] inacti[ServerGamemode][ServerGamemode]Ticks=%[ServerGamemode] b[ServerGamemode]inkTicks=%[ServerGamemode] sanity[ServerGamemode]ist=%.1f\n",
-        d.bombTim[ServerGamemode][ServerGamemode]TicksMax, d.bombInacti[ServerGamemode][ServerGamemode]TicksMax, d.bombB[ServerGamemode]inkTicks, d.bombMaxPass[ServerGamemode]anity[ServerGamemode]ist);
+    Debug::warn(Debug::Category::Duel,
+        "[BOMB TAG] match starting timerTicks=%u inactiveTicks=%u blinkTicks=%u sanityDist=%.1f\n",
+        d.bombTimerTicksMax, d.bombInactiveTicksMax, d.bombBlinkTicks, d.bombMaxPassSanityDist);
 }
 
-[ServerGamemode]oid s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]BombTagTick([ServerGamemode]OCKET sock,
-                       std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]>& p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s,
-                       H[ServerGamemode]ad[ServerGamemode][ServerGamemode]ssWo[ServerGamemode][ServerGamemode]d& wo[ServerGamemode][ServerGamemode]d,
-                       std::[ServerGamemode]no[ServerGamemode]d[ServerGamemode][ServerGamemode][ServerGamemode]d_map<[ServerGamemode]int32_t, [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Npc>& npcs,
-                       Npc[ServerGamemode]yst[ServerGamemode]m& npc[ServerGamemode]yst[ServerGamemode]m,
-                       [ServerGamemode]int32_t tick,
-                       [ServerGamemode]int64_t& tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t)
+void serverBombTagTick(SOCKET sock,
+                       std::unordered_map<uint32_t, ServerPlayer>& players,
+                       HeadlessWorld& world,
+                       std::unordered_map<uint32_t, ServerNpc>& npcs,
+                       NpcSystem& npcSystem,
+                       uint32_t tick,
+                       uint64_t& totalPacketsOut)
 {
-    [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]& d = s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]tat[ServerGamemode]();
-    if (!d.[ServerGamemode]nab[ServerGamemode][ServerGamemode]d || !d.bombTagActi[ServerGamemode][ServerGamemode]) [ServerGamemode][ServerGamemode]t[ServerGamemode][ServerGamemode]n;
-    d.c[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]nt[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Tick = tick;
+    ServerGamemodeState& d = serverGamemodeState();
+    if (!d.enabled || !d.bombTagActive) return;
+    d.currentServerTick = tick;
 
-    // ── Hand[ServerGamemode][ServerGamemode] p[ServerGamemode]nding ki[ServerGamemode][ServerGamemode] f[ServerGamemode]om [ServerGamemode]xp[ServerGamemode]osion ───────────────────────────
-    if (d.hasP[ServerGamemode]ndingKi[ServerGamemode][ServerGamemode])
+    // ── Handle pending kill from explosion ───────────────────────────
+    if (d.hasPendingKill)
     {
-        d.hasP[ServerGamemode]ndingKi[ServerGamemode][ServerGamemode] = fa[ServerGamemode]s[ServerGamemode];
-        const [ServerGamemode]int32_t [ServerGamemode]ictimId = d.p[ServerGamemode]ndingVictimId;
-        // Instant [ServerGamemode][ServerGamemode]spawn at spawn point
-        a[ServerGamemode]to [ServerGamemode]ictimIt = p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find([ServerGamemode]ictimId);
-        if ([ServerGamemode]ictimIt != p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd()) {
-            [ServerGamemode]ictimIt->s[ServerGamemode]cond.[ServerGamemode][ServerGamemode]spawn[ServerGamemode][ServerGamemode]conds = 0.0f;
-            [ServerGamemode]ictimIt->s[ServerGamemode]cond.d[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos = gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]pawnPoint(d);
+        d.hasPendingKill = false;
+        const uint32_t victimId = d.pendingVictimId;
+        // Instant respawn at spawn point
+        auto victimIt = players.find(victimId);
+        if (victimIt != players.end()) {
+            victimIt->second.respawnSeconds = 0.0f;
+            victimIt->second.duelSpawnPos = gamemodeSpawnPoint(d);
         }
     }
 
-    // ── [ServerGamemode]tat[ServerGamemode] machin[ServerGamemode] ────────────────────────────────────────────────
-    switch (d.phas[ServerGamemode]) {
-    cas[ServerGamemode] [ServerGamemode]UEL_PHA[ServerGamemode]E_WAITING:
-        if (co[ServerGamemode]ntActi[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]s(p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s) >= 1) {
-            // [ServerGamemode]ta[ServerGamemode]t bomb tag with a[ServerGamemode]ai[ServerGamemode]ab[ServerGamemode][ServerGamemode] p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s
-            if (wo[ServerGamemode][ServerGamemode]d.spawnPoints.[ServerGamemode]mpty())
-                assignGam[ServerGamemode]mod[ServerGamemode][ServerGamemode]pawns(d, wo[ServerGamemode][ServerGamemode]d);
-            assignMatchPa[ServerGamemode]ticipants(d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, &npcs);
-            b[ServerGamemode]ginMatchCo[ServerGamemode]ntdown(d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tick);
-            ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-            b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-            b[ServerGamemode]oadcastBombTag[ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-            [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-                "[BOMB TAG] co[ServerGamemode]ntdown sta[ServerGamemode]t[ServerGamemode]d pa[ServerGamemode]ticipants=%z[ServerGamemode]\n", d.pa[ServerGamemode]ticipants.siz[ServerGamemode]());
+    // ── State machine ────────────────────────────────────────────────
+    switch (d.phase) {
+    case DUEL_PHASE_WAITING:
+        if (countActivePlayers(players) >= 1) {
+            // Start bomb tag with available players
+            if (world.spawnPoints.empty())
+                assignGamemodeSpawns(d, world);
+            assignMatchParticipants(d, players, &npcs);
+            beginMatchCountdown(d, players, tick);
+            ++d.stateVersion;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            broadcastBombTagState(sock, d, players, totalPacketsOut);
+            Debug::warn(Debug::Category::Duel,
+                "[BOMB TAG] countdown started participants=%zu\n", d.participants.size());
         }
-        b[ServerGamemode][ServerGamemode]ak;
+        break;
 
-    cas[ServerGamemode] [ServerGamemode]UEL_PHA[ServerGamemode]E_COUNT[ServerGamemode]OWN:
-        if (tick >= d.match[ServerGamemode]ta[ServerGamemode]tTick) {
-            d.phas[ServerGamemode] = [ServerGamemode]UEL_PHA[ServerGamemode]E_GO;
-            d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] = d.go[ServerGamemode][ServerGamemode]conds;
-            ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-            d.[ServerGamemode]astB[ServerGamemode]oadcastTick = tick;
-            [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-                "[BOMB TAG] GO shown tick=%[ServerGamemode]\n", tick);
-            b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-            b[ServerGamemode]oadcastBombTag[ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+    case DUEL_PHASE_COUNTDOWN:
+        if (tick >= d.matchStartTick) {
+            d.phase = DUEL_PHASE_GO;
+            d.phaseTimer = d.goSeconds;
+            ++d.stateVersion;
+            d.lastBroadcastTick = tick;
+            Debug::log(Debug::Category::Duel,
+                "[BOMB TAG] GO shown tick=%u\n", tick);
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            broadcastBombTagState(sock, d, players, totalPacketsOut);
         }
-        b[ServerGamemode][ServerGamemode]ak;
+        break;
 
-    cas[ServerGamemode] [ServerGamemode]UEL_PHA[ServerGamemode]E_GO:
-        d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] -= [ServerGamemode]ERVER_[ServerGamemode]T;
-        if (d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] <= 0.0f) {
-            d.phas[ServerGamemode] = [ServerGamemode]UEL_PHA[ServerGamemode]E_ACTIVE;
-            d.match[ServerGamemode]ta[ServerGamemode]tTick = tick;
-            d.bombTim[ServerGamemode][ServerGamemode]Ticks = d.bombTim[ServerGamemode][ServerGamemode]TicksMax;
-            d.bombInacti[ServerGamemode][ServerGamemode]Ticks = 0;
-            // [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]ct fi[ServerGamemode]st bomb ho[ServerGamemode]d[ServerGamemode][ServerGamemode]
-            s[ServerGamemode][ServerGamemode][ServerGamemode]ctN[ServerGamemode]wBombHo[ServerGamemode]d[ServerGamemode][ServerGamemode](d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s);
-            [ServerGamemode][ServerGamemode]spawnA[ServerGamemode][ServerGamemode]Pa[ServerGamemode]ticipants(d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s);
-            ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-            d.[ServerGamemode]astB[ServerGamemode]oadcastTick = tick;
-            [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-                "[BOMB TAG] ACTIVE tick=%[ServerGamemode] ho[ServerGamemode]d[ServerGamemode][ServerGamemode]=%[ServerGamemode] tim[ServerGamemode][ServerGamemode]Ticks=%[ServerGamemode]\n",
-                tick, d.bombOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id, d.bombTim[ServerGamemode][ServerGamemode]Ticks);
-            b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-            b[ServerGamemode]oadcastBombTag[ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+    case DUEL_PHASE_GO:
+        d.phaseTimer -= SERVER_DT;
+        if (d.phaseTimer <= 0.0f) {
+            d.phase = DUEL_PHASE_ACTIVE;
+            d.matchStartTick = tick;
+            d.bombTimerTicks = d.bombTimerTicksMax;
+            d.bombInactiveTicks = 0;
+            // Select first bomb holder
+            selectNewBombHolder(d, players);
+            respawnAllParticipants(d, players);
+            ++d.stateVersion;
+            d.lastBroadcastTick = tick;
+            Debug::warn(Debug::Category::Duel,
+                "[BOMB TAG] ACTIVE tick=%u holder=%u timerTicks=%u\n",
+                tick, d.bombOwnerPlayerId, d.bombTimerTicks);
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            broadcastBombTagState(sock, d, players, totalPacketsOut);
         }
-        b[ServerGamemode][ServerGamemode]ak;
+        break;
 
-    cas[ServerGamemode] [ServerGamemode]UEL_PHA[ServerGamemode]E_ACTIVE:
+    case DUEL_PHASE_ACTIVE:
     {
-        // ── Bomb ho[ServerGamemode]d[ServerGamemode][ServerGamemode] disconn[ServerGamemode]ct[ServerGamemode]d o[ServerGamemode] di[ServerGamemode]d? T[ServerGamemode]ansf[ServerGamemode][ServerGamemode] imm[ServerGamemode]diat[ServerGamemode][ServerGamemode]y ───
-        if (d.bombOwn[ServerGamemode][ServerGamemode]Typ[ServerGamemode] == 1 && d.bombOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id != 0) {
-            a[ServerGamemode]to ho[ServerGamemode]d[ServerGamemode][ServerGamemode]It = p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find(d.bombOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id);
-            if (ho[ServerGamemode]d[ServerGamemode][ServerGamemode]It == p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd() || ho[ServerGamemode]d[ServerGamemode][ServerGamemode]It->s[ServerGamemode]cond.spawn[ServerGamemode]tat[ServerGamemode] != [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]::Acti[ServerGamemode][ServerGamemode]
-                || ho[ServerGamemode]d[ServerGamemode][ServerGamemode]It->s[ServerGamemode]cond.d[ServerGamemode]ad) {
-                [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-                    "[BOMB TAG] ho[ServerGamemode]d[ServerGamemode][ServerGamemode] [ServerGamemode]ost id=%[ServerGamemode] — t[ServerGamemode]ansf[ServerGamemode][ServerGamemode][ServerGamemode]ing\n",
-                    d.bombOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id);
-                d.bombOwn[ServerGamemode][ServerGamemode]Typ[ServerGamemode] = 0;
-                d.bombOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id = 0;
-                d.bombInacti[ServerGamemode][ServerGamemode]Ticks = 0;
-                s[ServerGamemode][ServerGamemode][ServerGamemode]ctN[ServerGamemode]wBombHo[ServerGamemode]d[ServerGamemode][ServerGamemode](d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s);
-                ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-                b[ServerGamemode]oadcastBombTag[ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+        // ── Bomb holder disconnected or died? Transfer immediately ───
+        if (d.bombOwnerType == 1 && d.bombOwnerPlayerId != 0) {
+            auto holderIt = players.find(d.bombOwnerPlayerId);
+            if (holderIt == players.end() || holderIt->second.spawnState != ServerPlayer::Active
+                || holderIt->second.dead) {
+                Debug::warn(Debug::Category::Duel,
+                    "[BOMB TAG] holder lost id=%u — transferring\n",
+                    d.bombOwnerPlayerId);
+                d.bombOwnerType = 0;
+                d.bombOwnerPlayerId = 0;
+                d.bombInactiveTicks = 0;
+                selectNewBombHolder(d, players);
+                ++d.stateVersion;
+                broadcastBombTagState(sock, d, players, totalPacketsOut);
             }
         }
 
-        // ── Bomb tim[ServerGamemode][ServerGamemode] co[ServerGamemode]ntdown ──────────────────────────────────
-        if (d.bombTim[ServerGamemode][ServerGamemode]Ticks > 0)
-            --d.bombTim[ServerGamemode][ServerGamemode]Ticks;
+        // ── Bomb timer countdown ──────────────────────────────────
+        if (d.bombTimerTicks > 0)
+            --d.bombTimerTicks;
 
-        // ── Inacti[ServerGamemode][ServerGamemode] g[ServerGamemode]ac[ServerGamemode] p[ServerGamemode][ServerGamemode]iod ─────────────────────────────────
-        if (d.bombInacti[ServerGamemode][ServerGamemode]Ticks > 0)
-            --d.bombInacti[ServerGamemode][ServerGamemode]Ticks;
+        // ── Inactive grace period ─────────────────────────────────
+        if (d.bombInactiveTicks > 0)
+            --d.bombInactiveTicks;
 
-        // ── Bomb [ServerGamemode]xp[ServerGamemode]osion ────────────────────────────────────────
-        if (d.bombTim[ServerGamemode][ServerGamemode]Ticks == 0 && d.bombOwn[ServerGamemode][ServerGamemode]Typ[ServerGamemode] != 0) {
-            // Ki[ServerGamemode][ServerGamemode] th[ServerGamemode] bomb ho[ServerGamemode]d[ServerGamemode][ServerGamemode]
-            [ServerGamemode]int32_t [ServerGamemode]ictimId = d.bombOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id;
-            a[ServerGamemode]to [ServerGamemode]ictimIt = p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find([ServerGamemode]ictimId);
-            if ([ServerGamemode]ictimIt != p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd() && ![ServerGamemode]ictimIt->s[ServerGamemode]cond.d[ServerGamemode]ad) {
-                // App[ServerGamemode]y [ServerGamemode][ServerGamemode]tha[ServerGamemode] damag[ServerGamemode] [ServerGamemode]ia th[ServerGamemode] no[ServerGamemode]ma[ServerGamemode] s[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode] damag[ServerGamemode] path
-                [ServerGamemode]ictimIt->s[ServerGamemode]cond.h[ServerGamemode]a[ServerGamemode]th = 0;
-                [ServerGamemode]ictimIt->s[ServerGamemode]cond.d[ServerGamemode]ad = t[ServerGamemode][ServerGamemode][ServerGamemode];
-                [ServerGamemode]ictimIt->s[ServerGamemode]cond.[ServerGamemode][ServerGamemode]spawn[ServerGamemode][ServerGamemode]conds = 0.01f;
-                ++[ServerGamemode]ictimIt->s[ServerGamemode]cond.d[ServerGamemode]aths;
+        // ── Bomb explosion ────────────────────────────────────────
+        if (d.bombTimerTicks == 0 && d.bombOwnerType != 0) {
+            // Kill the bomb holder
+            uint32_t victimId = d.bombOwnerPlayerId;
+            auto victimIt = players.find(victimId);
+            if (victimIt != players.end() && !victimIt->second.dead) {
+                // Apply lethal damage via the normal server damage path
+                victimIt->second.health = 0;
+                victimIt->second.dead = true;
+                victimIt->second.respawnSeconds = 0.01f;
+                ++victimIt->second.deaths;
 
-                // C[ServerGamemode][ServerGamemode]dit ki[ServerGamemode][ServerGamemode] to a [ServerGamemode]andom oth[ServerGamemode][ServerGamemode] p[ServerGamemode]ay[ServerGamemode][ServerGamemode] ([ServerGamemode]xp[ServerGamemode]osion is [ServerGamemode]n[ServerGamemode]i[ServerGamemode]onm[ServerGamemode]nt)
-                // Fo[ServerGamemode] bomb tag, w[ServerGamemode] c[ServerGamemode][ServerGamemode]dit no on[ServerGamemode] — bomb [ServerGamemode]xp[ServerGamemode]osion is [ServerGamemode]n[ServerGamemode]i[ServerGamemode]onm[ServerGamemode]nta[ServerGamemode]
-                d.hasP[ServerGamemode]ndingKi[ServerGamemode][ServerGamemode] = t[ServerGamemode][ServerGamemode][ServerGamemode];
-                d.p[ServerGamemode]ndingKi[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]Id = 0;
-                d.p[ServerGamemode]ndingVictimId = [ServerGamemode]ictimId;
+                // Credit kill to a random other player (explosion is environment)
+                // For bomb tag, we credit no one — bomb explosion is environmental
+                d.hasPendingKill = true;
+                d.pendingKillerId = 0;
+                d.pendingVictimId = victimId;
 
-                [ServerGamemode][ServerGamemode]b[ServerGamemode]g::wa[ServerGamemode]n([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-                    "[BOMB TAG] [ServerGamemode]xp[ServerGamemode]osion! [ServerGamemode]ictim=%[ServerGamemode] d[ServerGamemode]aths=%[ServerGamemode] [ServerGamemode]xp[ServerGamemode]osions=%[ServerGamemode]\n",
-                    [ServerGamemode]ictimId, [ServerGamemode]ictimIt->s[ServerGamemode]cond.d[ServerGamemode]aths, d.bombExp[ServerGamemode]osionCo[ServerGamemode]nt[ServerGamemode][ServerGamemode] + 1);
+                Debug::warn(Debug::Category::Duel,
+                    "[BOMB TAG] explosion! victim=%u deaths=%u explosions=%u\n",
+                    victimId, victimIt->second.deaths, d.bombExplosionCounter + 1);
             }
-            ++d.bombExp[ServerGamemode]osionCo[ServerGamemode]nt[ServerGamemode][ServerGamemode];
+            ++d.bombExplosionCounter;
 
-            // [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]ct n[ServerGamemode]w bomb ho[ServerGamemode]d[ServerGamemode][ServerGamemode] and [ServerGamemode][ServerGamemode]s[ServerGamemode]t tim[ServerGamemode][ServerGamemode]
-            d.bombTim[ServerGamemode][ServerGamemode]Ticks = d.bombTim[ServerGamemode][ServerGamemode]TicksMax;
-            d.bombInacti[ServerGamemode][ServerGamemode]Ticks = 0;
-            s[ServerGamemode][ServerGamemode][ServerGamemode]ctN[ServerGamemode]wBombHo[ServerGamemode]d[ServerGamemode][ServerGamemode](d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s);
+            // Select new bomb holder and reset timer
+            d.bombTimerTicks = d.bombTimerTicksMax;
+            d.bombInactiveTicks = 0;
+            selectNewBombHolder(d, players);
 
-            // R[ServerGamemode]spawn th[ServerGamemode] ki[ServerGamemode][ServerGamemode][ServerGamemode]d p[ServerGamemode]ay[ServerGamemode][ServerGamemode] instant[ServerGamemode]y
-            if ([ServerGamemode]ictimIt != p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd()) {
-                [ServerGamemode]ictimIt->s[ServerGamemode]cond.d[ServerGamemode]ad = fa[ServerGamemode]s[ServerGamemode];
-                [ServerGamemode]ictimIt->s[ServerGamemode]cond.h[ServerGamemode]a[ServerGamemode]th = 100;
-                [ServerGamemode]ictimIt->s[ServerGamemode]cond.d[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos = gam[ServerGamemode]mod[ServerGamemode][ServerGamemode]pawnPoint(d);
-                [ServerGamemode]ictimIt->s[ServerGamemode]cond.[ServerGamemode][ServerGamemode]spawn[ServerGamemode][ServerGamemode]conds = 0.0f;
-                b[ServerGamemode]ginA[ServerGamemode]tho[ServerGamemode]itati[ServerGamemode][ServerGamemode]T[ServerGamemode]ansfo[ServerGamemode]m([ServerGamemode]ictimIt->s[ServerGamemode]cond,
-                    [ServerGamemode]ictimIt->s[ServerGamemode]cond.d[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]pawnPos, g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3(0.0f),
-                    [ServerGamemode]ictimIt->s[ServerGamemode]cond.yaw, "bomb-[ServerGamemode][ServerGamemode]spawn");
+            // Respawn the killed player instantly
+            if (victimIt != players.end()) {
+                victimIt->second.dead = false;
+                victimIt->second.health = 100;
+                victimIt->second.duelSpawnPos = gamemodeSpawnPoint(d);
+                victimIt->second.respawnSeconds = 0.0f;
+                beginAuthoritativeTransform(victimIt->second,
+                    victimIt->second.duelSpawnPos, glm::vec3(0.0f),
+                    victimIt->second.yaw, "bomb-respawn");
             }
 
-            ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-            b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-            b[ServerGamemode]oadcastBombTag[ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-            b[ServerGamemode][ServerGamemode]ak;
+            ++d.stateVersion;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            broadcastBombTagState(sock, d, players, totalPacketsOut);
+            break;
         }
 
-        // ── Physica[ServerGamemode] contact d[ServerGamemode]t[ServerGamemode]ction (bomb pass) ────────────────
-        if (d.bombInacti[ServerGamemode][ServerGamemode]Ticks == 0 && d.bombOwn[ServerGamemode][ServerGamemode]Typ[ServerGamemode] == 1 && !d.matchO[ServerGamemode][ServerGamemode][ServerGamemode]) {
-            // P[ServerGamemode]ay[ServerGamemode][ServerGamemode] ho[ServerGamemode]ds bomb — ch[ServerGamemode]ck contact with oth[ServerGamemode][ServerGamemode] p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s
-            a[ServerGamemode]to ho[ServerGamemode]d[ServerGamemode][ServerGamemode]It = p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.find(d.bombOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id);
-            if (ho[ServerGamemode]d[ServerGamemode][ServerGamemode]It != p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s.[ServerGamemode]nd() && !ho[ServerGamemode]d[ServerGamemode][ServerGamemode]It->s[ServerGamemode]cond.d[ServerGamemode]ad) {
-                g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3 ho[ServerGamemode]d[ServerGamemode][ServerGamemode]Pos = g[ServerGamemode]tEntityRootPos(ho[ServerGamemode]d[ServerGamemode][ServerGamemode]It->s[ServerGamemode]cond);
-                f[ServerGamemode]oat bombRadi[ServerGamemode]s = 0.5f;
-                f[ServerGamemode]oat ta[ServerGamemode]g[ServerGamemode]tRadi[ServerGamemode]s = 1.5f;
+        // ── Physical contact detection (bomb pass) ────────────────
+        if (d.bombInactiveTicks == 0 && d.bombOwnerType == 1 && !d.matchOver) {
+            // Player holds bomb — check contact with other players
+            auto holderIt = players.find(d.bombOwnerPlayerId);
+            if (holderIt != players.end() && !holderIt->second.dead) {
+                glm::vec3 holderPos = getEntityRootPos(holderIt->second);
+                float bombRadius = 0.5f;
+                float targetRadius = 1.5f;
 
-                fo[ServerGamemode] (const a[ServerGamemode]to& k[ServerGamemode] : p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s) {
-                    if (k[ServerGamemode].fi[ServerGamemode]st == d.bombOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id) contin[ServerGamemode][ServerGamemode];
-                    if (k[ServerGamemode].s[ServerGamemode]cond.spawn[ServerGamemode]tat[ServerGamemode] != [ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]::Acti[ServerGamemode][ServerGamemode]) contin[ServerGamemode][ServerGamemode];
-                    if (k[ServerGamemode].s[ServerGamemode]cond.d[ServerGamemode]ad) contin[ServerGamemode][ServerGamemode];
+                for (const auto& kv : players) {
+                    if (kv.first == d.bombOwnerPlayerId) continue;
+                    if (kv.second.spawnState != ServerPlayer::Active) continue;
+                    if (kv.second.dead) continue;
 
-                    g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3 ta[ServerGamemode]g[ServerGamemode]tPos = g[ServerGamemode]tEntityRootPos(k[ServerGamemode].s[ServerGamemode]cond);
-                    f[ServerGamemode]oat dist = g[ServerGamemode]m::[ServerGamemode][ServerGamemode]ngth(ho[ServerGamemode]d[ServerGamemode][ServerGamemode]Pos - ta[ServerGamemode]g[ServerGamemode]tPos);
+                    glm::vec3 targetPos = getEntityRootPos(kv.second);
+                    float dist = glm::length(holderPos - targetPos);
 
-                    // [ServerGamemode]anity distanc[ServerGamemode] ch[ServerGamemode]ck
-                    if (dist > d.bombMaxPass[ServerGamemode]anity[ServerGamemode]ist) contin[ServerGamemode][ServerGamemode];
+                    // Sanity distance check
+                    if (dist > d.bombMaxPassSanityDist) continue;
 
-                    // Physica[ServerGamemode] o[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]ap ch[ServerGamemode]ck
-                    if (bomb[ServerGamemode]ph[ServerGamemode][ServerGamemode][ServerGamemode]O[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]ap(ho[ServerGamemode]d[ServerGamemode][ServerGamemode]Pos, bombRadi[ServerGamemode]s, ta[ServerGamemode]g[ServerGamemode]tPos, ta[ServerGamemode]g[ServerGamemode]tRadi[ServerGamemode]s)) {
-                        // T[ServerGamemode]ansf[ServerGamemode][ServerGamemode] bomb
-                        g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3 o[ServerGamemode]dPos = ho[ServerGamemode]d[ServerGamemode][ServerGamemode]Pos;
-                        d.bombOwn[ServerGamemode][ServerGamemode]Typ[ServerGamemode] = 1;
-                        d.bombOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id = k[ServerGamemode].fi[ServerGamemode]st;
-                        d.bombOwn[ServerGamemode][ServerGamemode]NpcInd[ServerGamemode]x = 0;
-                        d.bombInacti[ServerGamemode][ServerGamemode]Ticks = d.bombInacti[ServerGamemode][ServerGamemode]TicksMax;
+                    // Physical overlap check
+                    if (bombSphereOverlap(holderPos, bombRadius, targetPos, targetRadius)) {
+                        // Transfer bomb
+                        glm::vec3 oldPos = holderPos;
+                        d.bombOwnerType = 1;
+                        d.bombOwnerPlayerId = kv.first;
+                        d.bombOwnerNpcIndex = 0;
+                        d.bombInactiveTicks = d.bombInactiveTicksMax;
 
-                        g[ServerGamemode]m::[ServerGamemode][ServerGamemode]c3 n[ServerGamemode]wPos = g[ServerGamemode]tEntityRootPos(k[ServerGamemode].s[ServerGamemode]cond);
-                        b[ServerGamemode]oadcastBombTagPass(sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s,
-                            d.bombOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id, k[ServerGamemode].fi[ServerGamemode]st,
-                            o[ServerGamemode]dPos, n[ServerGamemode]wPos, dist, dist, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-                        ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-                        b[ServerGamemode]oadcastBombTag[ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-                        [ServerGamemode][ServerGamemode]b[ServerGamemode]g::[ServerGamemode]og([ServerGamemode][ServerGamemode]b[ServerGamemode]g::Cat[ServerGamemode]go[ServerGamemode]y::[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode],
-                            "[BOMB TAG] PA[ServerGamemode][ServerGamemode] %[ServerGamemode] -> %[ServerGamemode] dist=%.2f\n",
-                            d.bombOwn[ServerGamemode][ServerGamemode]P[ServerGamemode]ay[ServerGamemode][ServerGamemode]Id, k[ServerGamemode].fi[ServerGamemode]st, dist);
-                        b[ServerGamemode][ServerGamemode]ak;
+                        glm::vec3 newPos = getEntityRootPos(kv.second);
+                        broadcastBombTagPass(sock, d, players,
+                            d.bombOwnerPlayerId, kv.first,
+                            oldPos, newPos, dist, dist, totalPacketsOut);
+                        ++d.stateVersion;
+                        broadcastBombTagState(sock, d, players, totalPacketsOut);
+                        Debug::log(Debug::Category::Duel,
+                            "[BOMB TAG] PASS %u -> %u dist=%.2f\n",
+                            d.bombOwnerPlayerId, kv.first, dist);
+                        break;
                     }
                 }
             }
         }
 
-        // ── P[ServerGamemode][ServerGamemode]iodic stat[ServerGamemode] b[ServerGamemode]oadcast ──────────────────────────────
-        if (tick - d.[ServerGamemode]astB[ServerGamemode]oadcastTick >= 10) {
-            d.[ServerGamemode]astB[ServerGamemode]oadcastTick = tick;
-            b[ServerGamemode]oadcastBombTag[ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+        // ── Periodic state broadcast ──────────────────────────────
+        if (tick - d.lastBroadcastTick >= 10) {
+            d.lastBroadcastTick = tick;
+            broadcastBombTagState(sock, d, players, totalPacketsOut);
         }
-        b[ServerGamemode][ServerGamemode]ak;
+        break;
     }
 
-    cas[ServerGamemode] [ServerGamemode]UEL_PHA[ServerGamemode]E_RE[ServerGamemode]ULT[ServerGamemode]:
-        d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] -= [ServerGamemode]ERVER_[ServerGamemode]T;
-        if (d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] <= 0.0f) {
-            d.phas[ServerGamemode] = [ServerGamemode]UEL_PHA[ServerGamemode]E_INTERMI[ServerGamemode][ServerGamemode]ION;
-            d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] = d.int[ServerGamemode][ServerGamemode]mission[ServerGamemode][ServerGamemode]conds;
-            ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-            b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-            b[ServerGamemode]oadcastBombTag[ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-        } [ServerGamemode][ServerGamemode]s[ServerGamemode] if (tick - d.[ServerGamemode]astB[ServerGamemode]oadcastTick >= 60) {
-            d.[ServerGamemode]astB[ServerGamemode]oadcastTick = tick;
-            b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+    case DUEL_PHASE_RESULTS:
+        d.phaseTimer -= SERVER_DT;
+        if (d.phaseTimer <= 0.0f) {
+            if (d.pendingModeSwitch && !d.pendingGamemodeId.empty()) {
+                const std::string nextMode = d.pendingGamemodeId;
+                const bool directCountdown = d.pendingModeSwitchCountdown;
+                d.pendingModeSwitch = false;
+                d.pendingModeSwitchCountdown = false;
+                d.pendingGamemodeId.clear();
+                d.phase = DUEL_PHASE_WAITING;
+                d.matchMode.clear();
+                serverCommunityStartMatch(directCountdown, nextMode);
+                return;
+            }
+            d.phase = DUEL_PHASE_INTERMISSION;
+            d.phaseTimer = d.intermissionSeconds;
+            ++d.stateVersion;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            broadcastBombTagState(sock, d, players, totalPacketsOut);
+        } else if (tick - d.lastBroadcastTick >= 60) {
+            d.lastBroadcastTick = tick;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
         }
-        b[ServerGamemode][ServerGamemode]ak;
+        break;
 
-    cas[ServerGamemode] [ServerGamemode]UEL_PHA[ServerGamemode]E_INTERMI[ServerGamemode][ServerGamemode]ION:
-        d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] -= [ServerGamemode]ERVER_[ServerGamemode]T;
-        if (d.phas[ServerGamemode]Tim[ServerGamemode][ServerGamemode] <= 0.0f) {
-            assignGam[ServerGamemode]mod[ServerGamemode][ServerGamemode]pawns(d, wo[ServerGamemode][ServerGamemode]d);
-            assignMatchPa[ServerGamemode]ticipants(d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, &npcs);
-            b[ServerGamemode]ginMatchCo[ServerGamemode]ntdown(d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tick);
-            d.bombTim[ServerGamemode][ServerGamemode]Ticks = d.bombTim[ServerGamemode][ServerGamemode]TicksMax;
-            d.bombInacti[ServerGamemode][ServerGamemode]Ticks = 0;
-            ++d.stat[ServerGamemode]V[ServerGamemode][ServerGamemode]sion;
-            b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-            b[ServerGamemode]oadcastBombTag[ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
-        } [ServerGamemode][ServerGamemode]s[ServerGamemode] if (tick - d.[ServerGamemode]astB[ServerGamemode]oadcastTick >= 60) {
-            d.[ServerGamemode]astB[ServerGamemode]oadcastTick = tick;
-            b[ServerGamemode]oadcast[ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode][ServerGamemode]tat[ServerGamemode](sock, d, p[ServerGamemode]ay[ServerGamemode][ServerGamemode]s, tota[ServerGamemode]Pack[ServerGamemode]tsO[ServerGamemode]t);
+    case DUEL_PHASE_INTERMISSION:
+        d.phaseTimer -= SERVER_DT;
+        if (d.phaseTimer <= 0.0f) {
+            assignGamemodeSpawns(d, world);
+            assignMatchParticipants(d, players, &npcs);
+            beginMatchCountdown(d, players, tick);
+            d.bombTimerTicks = d.bombTimerTicksMax;
+            d.bombInactiveTicks = 0;
+            ++d.stateVersion;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            broadcastBombTagState(sock, d, players, totalPacketsOut);
+        } else if (tick - d.lastBroadcastTick >= 60) {
+            d.lastBroadcastTick = tick;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
         }
-        b[ServerGamemode][ServerGamemode]ak;
+        break;
 
-    d[ServerGamemode]fa[ServerGamemode][ServerGamemode]t:
-        b[ServerGamemode][ServerGamemode]ak;
+    default:
+        break;
     }
 }
 
-} // nam[ServerGamemode]spac[ServerGamemode] MimitaN[ServerGamemode]t
+} // namespace MimitaNet

@@ -54,7 +54,7 @@ made hot-reloadable over time.
 | Weapons | `config/weapons.json`, `config/weaponsets.json`, `config/duel-weapons.json` | definitions, cooldowns, projectiles, ammo, slots, sets, duel restrictions |
 | Weapon presentation | `config/weapon_hitfx.json`, `config/weapon-cool-shot-line.json`, `config/weapon-tracers.json` | tracers, shot lines, impact visuals, timing, colors, visibility |
 | Effects | `config/hitfx.json`, `config/impact_decals.json`, `config/effects/` | particles, decals, lifetimes, sizes, colors, sound references |
-| Game modes | `config/gamemodes/`, `config/duel-maps.json`, `config/onlinemodes.json` | goals, timers, countdowns, maps, queues, team and duel rules |
+| Game modes | `config/gamemodes/`, `config/gamemode-good-maps.json`, `config/onlinemodes.json` | goals, timers, countdowns, maps, queues, team and gamemode rules |
 | GUI and HUD | `config/gui/`, `config/killfeed.json`, `config/healthbar.json`, `config/rewards-hud.json`, `config/chatgui.json` | text, fonts, colors, positions, sizes, visibility, layout, notifications |
 | Input and profiles | `config/current-profile.json`, `config/profiles.json`, future input/accessibility files | bindings, sensitivity, remapping, color-blind modes, text scale, contrast |
 | Video and lighting | `config/video-settings.json`, `config/shadows.json`, `config/lighting.json`, `config/postfx.json`, `config/skybox.json` | resolution, quality, shadows, lighting, post-processing, frame limits |

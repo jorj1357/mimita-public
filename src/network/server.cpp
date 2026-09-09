@@ -213,11 +213,10 @@ ServerGameOverrides gServerOverrides;
 
 std::vector<std::string> communityMapPool()
 {
-    std::vector<std::string> result;
-    const MapCatalogResult catalog = scanMapCatalog();
-    for (const auto& entry : catalog.maps)
-        result.push_back(std::filesystem::path(entry.assetPath).stem().string());
-    return result;
+    // Automatic community rotation is deliberately restricted to the
+    // validated, JSON-owned gamemode pool. Explicit map commands still use
+    // the normal map-loading path and may select maps outside this pool.
+    return GamemodeMapPool::instance().list();
 }
 
 } // namespace
