@@ -11,7 +11,7 @@
 
 #include "duel/duel-queue.h"
 #include "duel/duel-history.h"
-#include "duel/duel-map-pool.h"
+#include "gamemode/gamemode-map-pool.h"
 
 #include <chrono>
 #include <random>
@@ -154,8 +154,8 @@ void DuelQueue::startQueue(const std::string& profileId, const std::string& name
     }
 
     if (mMaps.empty())
-        mMaps = DuelMapPool::instance().list();
-    mChosenMap = DuelMapPool::instance().randomMap();
+        mMaps = GamemodeMapPool::instance().list();
+    mChosenMap = GamemodeMapPool::instance().randomMap();
     // One stable session id per game instance (used as the queue ticket key).
     if (mSessionId.empty())
         mSessionId = makeSessionId();

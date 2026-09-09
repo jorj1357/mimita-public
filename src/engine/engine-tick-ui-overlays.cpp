@@ -66,7 +66,7 @@
 #include "config/player-settings.h"
 #include "npc/npc-combat.h"
 #include "network/server.h"
-#include "network/server-duel.h"
+#include "network/server-gamemode.h"
 
 extern DuelManager gDuelManager;
 extern GamemodeManager gGamemodeManager;

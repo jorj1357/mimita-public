@@ -105,7 +105,7 @@
 #include "config/movement-config.h"
 #include "npc/npc-difficulty-config.h"
 #include "gamemode/gamemode.h"
-#include "duel/duel-map-pool.h"
+#include "gamemode/gamemode-map-pool.h"
 #include "duel/duel-weapon-pool.h"
 #include "npc/npc-combat-log.h"
 #include "avatar/avatar.h"
@@ -238,7 +238,7 @@ void gameInitSubsystems(Engine& engine)
     GameplayConfig::instance().load("config/gameplay.json");
     NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
     GamemodeRegistry::instance().loadDirectory("config/gamemodes");
-    DuelMapPool::instance().load("config/duel-maps.json");
+    GamemodeMapPool::instance().load("config/gamemode-good-maps.json");
     DuelWeaponPool::instance().load("config/duel-weapons.json");
     npcLogSetProc("client");
     MovementJsonConfig::instance().load("config/movement.json");
@@ -291,6 +291,7 @@ void gameInitSubsystems(Engine& engine)
     static ReplayRingBuffer gReplayRecorder;
     static ReplayPlayer gReplayPlayer;
     static ReplaySaveWorker gReplayWorker;
+    AvatarSystem::instance().setBackgroundWorker(&gReplayWorker);
     static ReplayFactory gReplayFactory(gReplayRecorder);
     gReplayFactory.setWorker(&gReplayWorker);
     static ReplayBrowser gReplayBrowser;

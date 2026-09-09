@@ -181,7 +181,7 @@
     },
     "hl_serverCommands1": {
       "type": "text", "x": 620, "y": 1074, "width": 680, "height": 26,
-      "text": "modelist / modepick N -- list or choose a mode (host only)",
+      "text": "modelist / modestart N / modestartnow N -- list or start a mode (host only)",
       "fontSize": 0.30, "textColor": [0.75, 0.85, 1.0, 1.0]
     },
     "hl_serverCommands2": {

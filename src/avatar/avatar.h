@@ -7,12 +7,15 @@
 #include <atomic>
 #include <thread>
 #include <memory>
+#include <deque>
+#include <mutex>
 #include <glm/glm.hpp>
 #include <glad/glad.h>
 #include <nlohmann/json.hpp>
 #include "avatar-autosave.h"
 
 class Player;
+class ReplaySaveWorker;
 
 struct FaceTransform {
     float offsetX = 0.0f;
@@ -155,6 +158,7 @@ struct AvatarInstance {
     std::string basePath;
     GLuint atlasTexture = 0;
     int atlasGeneration = -1;
+    std::vector<unsigned char> preparedAtlasPixels;
     ~AvatarInstance();
 };
 
@@ -168,6 +172,9 @@ public:
     void requestAtlasBuild(Player& player);
     void finalizeAtlasIfReady(Player& player);
     void requestModelLoad(Player& player);
+    void setBackgroundWorker(ReplaySaveWorker* worker) { mBackgroundWorker = worker; }
+    void pollBackgroundAvatarLoads();
+    bool isAvatarLoadPending(const std::string& name) const;
 
     // Per-instance API: loads avatar into cache, applies to player without mutating singleton.
     // reloadTextures=false (default): reuse cached atlas when possible.
@@ -270,6 +277,18 @@ private:
 
     // Per-avatar instance cache: name -> loaded definition + atlas texture
     std::unordered_map<std::string, std::unique_ptr<AvatarInstance>> mCache;
+    ReplaySaveWorker* mBackgroundWorker = nullptr;
+    enum class AvatarLoadState { Queued, Loading, Ready, Failed };
+    std::unordered_map<std::string, AvatarLoadState> mLoadStates;
+    struct PendingAvatarLoad {
+        std::string name;
+        AvatarDefinition definition;
+        std::vector<unsigned char> atlasPixels;
+        bool success = false;
+        std::string error;
+    };
+    mutable std::mutex mPendingAvatarMutex;
+    std::deque<PendingAvatarLoad> mPendingAvatarLoads;
 
     std::filesystem::file_time_type mLastWriteTime;
     std::chrono::steady_clock::time_point mLastCheckTime;

@@ -9,7 +9,7 @@
 */
 
 #include "network/server.h"
-#include "network/server-duel.h"
+#include "network/server-gamemode.h"
 #include "network/multiplayer-context.h"
 #include "network/network-weapons.h"
 #include "network/disagreement-visuals.h"

@@ -1,13 +1,13 @@
 // 08 10 2026, 14 34
 /* purpose
-* Loads and hot-reloads config/duel-maps.json, the allowed duel map pool.
+* Loads and hot-reloads config/gamemode-good-maps.json, the allowed gamemode map pool.
 * Picks a random map for a player when they queue, and lists the pool so the
 * server can auto-rotate between rematches.
 * Does NOT own matchmaking, gamemode rules, or gameplay logic.
 * Does NOT fail hard on bad JSON - keeps the last valid list and logs an error.
 */
 
-#include "duel/duel-map-pool.h"
+#include "gamemode/gamemode-map-pool.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -20,13 +20,13 @@
 
 using json = nlohmann::json;
 
-DuelMapPool& DuelMapPool::instance()
+GamemodeMapPool& GamemodeMapPool::instance()
 {
-    static DuelMapPool pool;
+    static GamemodeMapPool pool;
     return pool;
 }
 
-void DuelMapPool::load(const std::string& path)
+void GamemodeMapPool::load(const std::string& path)
 {
     mPath = path;
     std::error_code ec;
@@ -70,7 +70,7 @@ void DuelMapPool::load(const std::string& path)
     }
 }
 
-void DuelMapPool::pollReload()
+void GamemodeMapPool::pollReload()
 {
     if (mPath.empty()) return;
     std::error_code ec;
@@ -82,7 +82,7 @@ void DuelMapPool::pollReload()
     load(mPath);
 }
 
-std::string DuelMapPool::randomMap() const
+std::string GamemodeMapPool::randomMap() const
 {
     static const std::string fallback = "funworld3";
     if (mMaps.empty())
@@ -92,7 +92,7 @@ std::string DuelMapPool::randomMap() const
     return mMaps[dist(rng)];
 }
 
-bool DuelMapPool::has(const std::string& mapId) const
+bool GamemodeMapPool::has(const std::string& mapId) const
 {
     for (const auto& m : mMaps)
     {

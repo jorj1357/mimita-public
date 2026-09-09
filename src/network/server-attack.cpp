@@ -11,7 +11,7 @@
 #include "network/server.h"
 #include "network/packets.h"
 #include "network/network-weapons.h"
-#include "network/server-duel.h"
+#include "network/server-gamemode.h"
 #include "network/disagreement-visuals.h"
 #include "combat/weapon-execution.h"
 #include "combat/weapon-registry.h"

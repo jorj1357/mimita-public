@@ -11,7 +11,7 @@
 */
 
 #include "network/server.h"
-#include "network/server-duel.h"
+#include "network/server-gamemode.h"
 
 #include "npc/npc.h"
 #include "npc/npc-combat.h"
@@ -750,7 +750,7 @@ void simulateSharedNpcs(SOCKET sock,
                 players, *nearest, 0, damage, knockback,
                 ServerDamageSource::Hitscan);
             if (result.killed)
-                serverDuelOnNpcDeath(n.id, nearest->id);
+                serverGamemodeOnNpcDeath(n.id, nearest->id);
             const glm::vec3 realHit = n.lastShotEnd;
             const glm::vec3 realNormal = glm::length(n.lastShotNormal) > 0.001f
                 ? glm::normalize(n.lastShotNormal) : glm::vec3(0.0f, 0.0f, 1.0f);

@@ -91,7 +91,6 @@ bool GamemodeManager::isActive() const {
 bool GamemodeManager::isCountdownActive() const {
     const auto& c = CommunityMatchClient::instance();
     return c.active() && (c.phase() == DUEL_PHASE_COUNTDOWN ||
-                           c.phase() == DUEL_PHASE_PRE_MATCH ||
                            c.phase() == DUEL_PHASE_GO);
 }
 

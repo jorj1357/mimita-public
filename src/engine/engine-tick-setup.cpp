@@ -32,7 +32,7 @@
 #include "config/spawn-velocity-config.h"
 #include "npc/npc-difficulty-config.h"
 #include "gamemode/gamemode.h"
-#include "duel/duel-map-pool.h"
+#include "gamemode/gamemode-map-pool.h"
 #include "duel/duel-weapon-pool.h"
 #include "hot-reload/hot-reload-system.h"
 #include "config/player-visuals-config.h"
@@ -87,6 +87,8 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     { MIMITA_PERF_SCOPE("Setup::BeginFrame"); dt = engine.beginFrame(); }
     { MIMITA_PERF_SCOPE("Setup::Analytics"); AnalyticsManager::instance().update(dt); }
     { MIMITA_PERF_SCOPE("Setup::PlayerHotReload"); updatePlayerProceduralHotReload(dt); }
+    { MIMITA_PERF_SCOPE("Setup::AvatarBackgroundResults");
+      AvatarSystem::instance().pollBackgroundAvatarLoads(); }
 
     // Load hot-reload config once at startup
     static bool sFirstFrame = true;
@@ -131,7 +133,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
             }
         }
         GamemodeRegistry::instance().pollReload();
-        DuelMapPool::instance().pollReload();
+        GamemodeMapPool::instance().pollReload();
         DuelWeaponPool::instance().pollReload();
         WeaponHitFxConfig::instance().pollReload();
         ImpactDecalsConfig::instance().pollReload();

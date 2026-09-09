@@ -9,8 +9,8 @@
 */
 
 #include "network/server.h"
-#include "network/server-duel.h"
-#include "network/server-duel.h"
+#include "network/server-gamemode.h"
+#include "network/server-gamemode.h"
 #include "network/multiplayer-context.h"
 #include "network/coordinator-client.h"
 #include "network/snapshot-chunks.h"
@@ -2001,7 +2001,7 @@ ServerPacketProcessResult processServerPacket(
     else if (header->type == PACKET_DUEL_REMATCH_REQUEST)
     {
         // Space on the win/lose screen: start the next duel immediately.
-        serverDuelRematchNow();
+        serverGamemodeRematchNow();
         result.handled = true;
     }
     else if (header->type == PACKET_SPAWN_ACK &&

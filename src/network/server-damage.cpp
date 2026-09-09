@@ -10,7 +10,7 @@
 */
 
 #include "network/server.h"
-#include "network/server-duel.h"
+#include "network/server-gamemode.h"
 #include "persistence/persistence-emit.h"
 
 #include <algorithm>
@@ -131,7 +131,7 @@ ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>&
     }
 
     if (result.killed && attackerPlayerId != 0)
-        serverDuelOnPlayerDeath(attackerPlayerId, target.id);
+        serverGamemodeOnPlayerDeath(attackerPlayerId, target.id);
 
     printf("%s [SERVER DAMAGE] target=%u attacker=%u source=%s damage=%d "
            "healthBefore=%d healthAfter=%d killed=%d knockback=(%.2f,%.2f,%.2f)\n",

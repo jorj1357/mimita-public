@@ -9,7 +9,7 @@
 */
 
 #include "network/server.h"
-#include "network/server-duel.h"
+#include "network/server-gamemode.h"
 #include "network/network-weapons.h"
 #include "combat/weapon-execution.h"
 #include "combat/weapon-registry.h"

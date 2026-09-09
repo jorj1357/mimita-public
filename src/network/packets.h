@@ -1028,7 +1028,7 @@ enum DuelStatePhase : uint8_t
     DUEL_PHASE_ACTIVE = 2,
     DUEL_PHASE_MATCH_END = 3,
     DUEL_PHASE_INTERMISSION = 4,
-    DUEL_PHASE_PRE_MATCH = 5,
+    DUEL_PHASE_PRE_MATCH = 5, // Retained for wire compatibility; never emitted by the active lifecycle.
     DUEL_PHASE_RESULTS = 6
     ,DUEL_PHASE_GO = 7
 };
@@ -1085,7 +1085,7 @@ struct DuelStatePacket
     uint32_t ffaLeaderIds[3] = {};
     int32_t ffaLeaderScores[3] = {};
     char ffaLeaderNames[3][64] = {};
-    // All participant IDs and teams (for pre-match screen)
+    // All participant IDs and teams (for the generic participant/results UI)
     uint32_t participantIds[32] = {};
     uint8_t participantCount = 0;
     uint8_t participantTeams[32] = {};  // 0=red, 1=blue, 0xFF=none

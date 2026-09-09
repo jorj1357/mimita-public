@@ -34,3 +34,5 @@ private:
     size_t mActiveJobs = 0;
     std::atomic<bool> mShutdown{false};
 };
+
+using LowPriorityTaskWorker = ReplaySaveWorker;

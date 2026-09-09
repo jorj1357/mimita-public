@@ -10,9 +10,9 @@
 
 #include "network/server.h"
 #include "network/net_mode.h"
-#include "network/server-duel.h"
+#include "network/server-gamemode.h"
 #include "gamemode/gamemode.h"
-#include "duel/duel-map-pool.h"
+#include "gamemode/gamemode-map-pool.h"
 #include "duel/duel-weapon-pool.h"
 #include "network/community-server-config.h"
 #include "network/multiplayer-context.h"
@@ -268,7 +268,7 @@ int runServer(const LaunchOptions& options)
     NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
     CommunityServerConfig::instance().load();
     GamemodeRegistry::instance().loadDirectory("config/gamemodes");
-    DuelMapPool::instance().load("config/duel-maps.json");
+    GamemodeMapPool::instance().load("config/gamemode-good-maps.json");
     DuelWeaponPool::instance().load("config/duel-weapons.json");
     npcLogSetProc("server");
 
@@ -426,17 +426,17 @@ int runServer(const LaunchOptions& options)
     if (options.duel)
     {
         const Gamemode& gm = GamemodeRegistry::instance().get(options.gamemodeId);
-        ServerDuelState duelRules;
+        ServerGamemodeState duelRules;
         duelRules.goalValue = gm.goalValue;
         duelRules.countdownSeconds = gm.countdownSeconds;
         duelRules.rematchSeconds = gm.rematchSeconds;
         duelRules.teamAName = gm.teamNames.size() > 0 ? gm.teamNames[0] : "RED";
         duelRules.teamBName = gm.teamNames.size() > 1 ? gm.teamNames[1] : "BLUE";
         duelRules.spawnOffsetRadius = gm.spawnOffsetRadius;
-        duelRules.mapPool = DuelMapPool::instance().list();
+        duelRules.mapPool = GamemodeMapPool::instance().list();
         duelRules.rotateMaps = true;
         duelRules.mapId = mapName;
-        serverDuelStart(duelRules);
+        serverGamemodeStart(duelRules);
         printf("%s [SERVER DUEL] enabled gamemode=%s goal=%d countdown=%.1fs rematch=%.1fs\n",
                serverTimestamp(), options.gamemodeId.c_str(), gm.goalValue,
                gm.countdownSeconds, gm.rematchSeconds);
@@ -671,7 +671,7 @@ int runServer(const LaunchOptions& options)
             buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
             tickDisagreementRetransmit(sock, players, disagreementRetransmit, totalPacketsOut);
             tickReliableGameplayEvents(sock, players, totalPacketsOut);
-            serverDuelTick(sock, players, world, npcWorld, npcs, npcSystem,
+            serverGamemodeTick(sock, players, world, npcWorld, npcs, npcSystem,
                            npcIdsAlive, tick, totalPacketsOut);
             tickServerProgression(sock, players, true, totalPacketsOut);
 
@@ -1159,7 +1159,7 @@ static void simulateOneServerTick(ListenServerState& state)
                                    state.totalPacketsOut);
         tickReliableGameplayEvents(state.sock, state.players,
                                    state.totalPacketsOut);
-        serverDuelTick(state.sock, state.players, state.world, *state.npcWorld,
+        serverGamemodeTick(state.sock, state.players, state.world, *state.npcWorld,
                        state.npcs, *state.npcSystem, state.npcIdsAlive,
                        state.tick, state.totalPacketsOut);
 

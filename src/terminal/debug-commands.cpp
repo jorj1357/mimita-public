@@ -24,7 +24,7 @@
 #include "gui/hud/player-nameplates.h"
 #include "gui/gui-bindings.h"
 #include "network/server.h"
-#include "network/server-duel.h"
+#include "network/server-gamemode.h"
 #include "network/community-server-config.h"
 #include "map/map-catalog.h"
 
@@ -41,7 +41,7 @@ void registerDebugCommands()
             const auto& mode = cfg.modes()[(size_t)index];
             if (MimitaNet::isServerHost()) {
                 MimitaNet::serverCommunitySetMode(mode.id);
-                MimitaNet::serverCommunityStartMatch(true);
+                MimitaNet::serverCommunityStartMatch(true, mode.id);
                 Terminal::instance().addLog("[MODESTARTNOW] started " + mode.id + " at countdown");
             } else if (::gpMpContext && ::gpMpContext->active) {
                 MimitaNet::mpSendServerCommand(*::gpMpContext, "modestartnow " + std::to_string(index + 1));
@@ -60,22 +60,7 @@ void registerDebugCommands()
         }
     });
     Terminal::instance().registerCommand({
-        "modepick", "Select a community mode; host only", "modepick <number>",
-        [](const std::vector<std::string>& args) {
-            if (args.empty()) { Terminal::instance().addLog("[MODEPICK] Usage: modepick <number>"); return; }
-            auto& cfg = MimitaNet::CommunityServerConfig::instance();
-            if (cfg.modes().empty()) cfg.load();
-            const int index = std::atoi(args[0].c_str()) - 1;
-            if (index < 0 || index >= (int)cfg.modes().size()) { Terminal::instance().addLog("[MODEPICK] Invalid mode number"); return; }
-            const std::string id = cfg.modes()[(size_t)index].id;
-            if (MimitaNet::isServerHost()) MimitaNet::serverCommunitySetMode(id);
-            else if (::gpMpContext && ::gpMpContext->active) MimitaNet::mpSendServerCommand(*::gpMpContext, "modepick " + std::to_string(index + 1));
-            else { Terminal::instance().addLog("[MODEPICK] HOST ONLY"); return; }
-            Terminal::instance().addLog("[MODEPICK] selected " + id);
-        }
-    });
-    Terminal::instance().registerCommand({
-        "modestart", "Start a community mode immediately; host only. Syntax: modestart <number>", "modestart <number>",
+        "modestart", "Start or live-switch to a community mode at intermission; host only.", "modestart <number>",
         [](const std::vector<std::string>& args) {
             if (args.empty()) { Terminal::instance().addLog("[MODESTART] Usage: modestart <number>"); return; }
             auto& cfg = MimitaNet::CommunityServerConfig::instance();
@@ -85,7 +70,7 @@ void registerDebugCommands()
             const auto& mode = cfg.modes()[(size_t)index];
             if (MimitaNet::isServerHost()) {
                 MimitaNet::serverCommunitySetMode(mode.id);
-                MimitaNet::serverCommunityStartMatch(false);
+                MimitaNet::serverCommunityStartMatch(false, mode.id);
                 Terminal::instance().addLog("[MODESTART] started " + mode.id + " (" + mode.name + ")");
             } else if (::gpMpContext && ::gpMpContext->active) {
                 MimitaNet::mpSendServerCommand(*::gpMpContext, "modestart " + std::to_string(index + 1));
@@ -142,7 +127,7 @@ void registerDebugCommands()
             const int index = std::atoi(args[0].c_str()) - 1;
             if (index < 0 || index >= (int)catalog.maps.size()) { Terminal::instance().addLog("[MAPCHANGE] Invalid map number"); return; }
             const std::string mapId = std::filesystem::path(catalog.maps[(size_t)index].assetPath).stem().string();
-            if (MimitaNet::isServerHost()) MimitaNet::serverDuelRequestMapChange(mapId);
+            if (MimitaNet::isServerHost()) MimitaNet::serverGamemodeRequestMapChange(mapId);
             else if (::gpMpContext && ::gpMpContext->active) MimitaNet::mpSendServerCommand(*::gpMpContext, "mapchange " + std::to_string(index + 1));
             else { Terminal::instance().addLog("[MAPCHANGE] HOST ONLY"); return; }
             Terminal::instance().addLog("[MAPCHANGE] requested " + mapId);
@@ -436,7 +421,7 @@ void registerDebugCommands()
 
             if (MimitaNet::isServerHost())
             {
-                MimitaNet::serverDuelRequestMapChange(mapId);
+                MimitaNet::serverGamemodeRequestMapChange(mapId);
                 Terminal::instance().addLog("[CHANGEMAP] Changing map to " + mapId);
                 return;
             }

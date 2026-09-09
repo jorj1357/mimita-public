@@ -9,7 +9,7 @@
 */
 #include "network/server.h"
 #include "persistence/persistence-emit.h"
-#include "network/server-duel.h"
+#include "network/server-gamemode.h"
 #include "network/multiplayer-context.h"
 #include "network/chat-rate-limiter.h"
 #include "void-death/void-death.h"
@@ -386,17 +386,6 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         }
         ack(true, list.c_str());
     }
-    else if (commandStr.rfind("modepick ", 0) == 0)
-    {
-        auto& cfg = CommunityServerConfig::instance();
-        if (cfg.modes().empty()) cfg.load();
-        const int index = std::atoi(commandStr.c_str() + 9) - 1;
-        if (index < 0 || index >= (int)cfg.modes().size()) ack(false, "rejected: invalid mode number");
-        else {
-            serverCommunitySetMode(cfg.modes()[(size_t)index].id);
-            ack(true, ("applied: modepick " + cfg.modes()[(size_t)index].id).c_str());
-        }
-    }
     else if (commandStr.rfind("modestartnow ", 0) == 0)
     {
         auto& cfg = CommunityServerConfig::instance();
@@ -405,8 +394,7 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         if (index < 0 || index >= (int)cfg.modes().size()) ack(false, "rejected: invalid mode number");
         else {
             const auto& mode = cfg.modes()[(size_t)index];
-            serverCommunitySetMode(mode.id);
-            serverCommunityStartMatch(true);
+            serverCommunityStartMatch(true, mode.id);
             ack(true, ("started now: " + mode.id + " (3-2-1)").c_str());
         }
     }
@@ -418,8 +406,7 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         if (index < 0 || index >= (int)cfg.modes().size()) ack(false, "rejected: invalid mode number");
         else {
             const auto& mode = cfg.modes()[(size_t)index];
-            serverCommunitySetMode(mode.id);
-            serverCommunityStartMatch(false);
+            serverCommunityStartMatch(false, mode.id);
             ack(true, ("started at intermission: " + mode.id + " (" + mode.name + ")").c_str());
         }
     }
@@ -440,7 +427,7 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         if (index < 0 || index >= (int)catalog.maps.size()) ack(false, "rejected: invalid map number");
         else {
             const std::string mapId = std::filesystem::path(catalog.maps[(size_t)index].assetPath).stem().string();
-            serverDuelRequestMapChange(mapId);
+            serverGamemodeRequestMapChange(mapId);
             ack(true, ("applied: mapchange " + mapId).c_str());
         }
     }
@@ -551,9 +538,9 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
     else if (commandStr.rfind("changemap ", 0) == 0)
     {
         // Live map change without restarting (duel mode). Applied next tick by
-        // serverDuelTick, which owns the world + player teleports.
+        // serverGamemodeTick, which owns the world + player teleports.
         const std::string mapId = commandStr.substr(10);
-        serverDuelRequestMapChange(mapId);
+        serverGamemodeRequestMapChange(mapId);
         Debug::warn(Debug::Category::Duel,
             "%s [SERVER COMMAND] changemap -> %s by playerId=%u\n",
             serverTimestamp(), mapId.c_str(), it->second.id);

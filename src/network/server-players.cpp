@@ -9,7 +9,7 @@
 */
 
 #include "network/server.h"
-#include "network/server-duel.h"
+#include "network/server-gamemode.h"
 #include "network/network-weapons.h"
 #include "physics/movement/movement-conversion.h"
 #include "physics/movement/movement-step.h"
@@ -319,8 +319,8 @@ void resolvePlayerCollision(std::unordered_map<uint32_t, ServerPlayer>& players)
 static void getInitialInventory(std::vector<std::string>& out)
 {
     out.clear();
-    const bool community = serverDuelState().enabled;
-    const bool includeRestricted = community && serverDuelState().communityWeaponSetId == 5;
+    const bool community = serverGamemodeState().enabled;
+    const bool includeRestricted = community && serverGamemodeState().communityWeaponSetId == 5;
     for (const auto& kv : WeaponRegistry::instance().all())
     {
         if ((includeRestricted || !kv.second.restricted) &&
@@ -434,8 +434,8 @@ void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitia
     spawnSync.velY = player.vel.y;
     spawnSync.velZ = player.vel.z;
     spawnSync.health = player.health;
-    spawnSync.communityWeaponSetId = serverDuelState().mapOnly
-        ? static_cast<uint8_t>(std::clamp(serverDuelState().communityWeaponSetId, 0, 255)) : 0;
+    spawnSync.communityWeaponSetId = serverGamemodeState().mapOnly
+        ? static_cast<uint8_t>(std::clamp(serverGamemodeState().communityWeaponSetId, 0, 255)) : 0;
     Debug::log(Debug::Category::Duel,
         "[DuelPacketSend] type=PlayerRespawnedPacket reliable=1 player=%u spawnGeneration=%u epoch=%u pos=(%.3f,%.3f,%.3f) velocity=(%.3f,%.3f,%.3f)\n",
         player.id, spawnSync.spawnGeneration, spawnSync.transformEpoch,

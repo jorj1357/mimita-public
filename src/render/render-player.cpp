@@ -39,7 +39,7 @@ void renderPlayerInternal(
 
     // NPCs carry their own per-life avatar identity. Bind it before queuing
     // the shared async model load; this keeps avatar work out of spawn/update.
-    if (!p.avatarName().empty() &&
+    if (!p.avatarName().empty() && !av.isAvatarLoadPending(p.avatarName()) &&
         (!p.avatarInstance || p.avatarInstance->name != p.avatarName()))
         av.applyAvatarToPlayer(p, p.avatarName());
 

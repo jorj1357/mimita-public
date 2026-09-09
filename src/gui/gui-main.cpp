@@ -25,7 +25,7 @@
 #include "auth/auth-controller.h"
 #include "auth/auth-popup.h"
 #include "duel/duel-queue.h"
-#include "duel/duel-map-pool.h"
+#include "gamemode/gamemode-map-pool.h"
 #include "gamemode/gamemode.h"
 #include "menus/sandbox-map-menu.h"
 #include "menus/help-menu.h"
@@ -718,7 +718,7 @@ void guiMain(GLFWwindow* win, GameState& state)
                 DuelQueue::instance().startQueue(
                     DuelQueue::defaultProfileId(),
                     AuthSystem::instance().displayName(),
-                    "", DuelMapPool::instance().list());
+                    "", GamemodeMapPool::instance().list());
                 extern GameState* gpGameState;
                 if (gpGameState) *gpGameState = GAME_PLAYING;
             }

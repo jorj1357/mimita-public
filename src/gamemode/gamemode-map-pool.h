@@ -1,6 +1,6 @@
 // 08 10 2026, 14 34
 /* purpose
-* Declares the allowed duel maps pool loaded from config/duel-maps.json.
+* Declares the allowed gamemode maps pool loaded from config/gamemode-good-maps.json.
 * Provides randomMap() for the client to pick its map when queueing, and list()
 * for the server to auto-rotate maps between rematches.
 * Hot-reloads so map lists can change live without a rebuild.
@@ -13,10 +13,10 @@
 #include <string>
 #include <vector>
 
-class DuelMapPool
+class GamemodeMapPool
 {
 public:
-    static DuelMapPool& instance();
+    static GamemodeMapPool& instance();
 
     void load(const std::string& path);
     void pollReload();
@@ -27,7 +27,7 @@ public:
     bool has(const std::string& mapId) const;
 
 private:
-    DuelMapPool() = default;
+    GamemodeMapPool() = default;
 
     std::vector<std::string> mMaps;
     std::string mPath;

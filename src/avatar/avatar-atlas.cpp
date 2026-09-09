@@ -11,6 +11,7 @@
 
 #include "avatar/character-manifest.h"
 #include "avatar/character-registry.h"
+#include "replay/replay-factory-worker.h"
 extern nlohmann::json gAvatarBodypartOverrides;
 
 #include <glm/glm.hpp>
@@ -623,23 +624,71 @@ AvatarInstance* AvatarSystem::getOrLoadAvatar(const std::string& name) {
                    name.c_str(), it->second->atlasTexture);
         return it->second.get();
     }
-    Debug::warn(Debug::Category::Avatar, "[AVATAR CACHE] miss: %s (loading)\n", name.c_str());
-    auto inst = std::make_unique<AvatarInstance>();
-    inst->name = name;
-    inst->basePath = AvatarSystem::avatarPath(name);
-    inst->definition.clear();
-    inst->definition.name = name;
-    inst->definition.basePath = inst->basePath;
-    const std::string jsonPath = inst->basePath + "/avatar.json";
-    if (!parseAvatarJson(jsonPath, inst->basePath, inst->definition)) {
-        Debug::warn(Debug::Category::Avatar, "[AVATAR CACHE] failed to parse: %s\n", jsonPath.c_str());
+    auto stateIt = mLoadStates.find(name);
+    if (stateIt != mLoadStates.end())
+        return nullptr;
+    Debug::warn(Debug::Category::Avatar, "[AVATAR CACHE] miss: %s (queued)\n", name.c_str());
+    mLoadStates[name] = AvatarLoadState::Loading;
+    if (!mBackgroundWorker) {
+        mLoadStates[name] = AvatarLoadState::Failed;
+        Debug::warn(Debug::Category::Avatar, "[AVATAR ASYNC] unavailable avatar='%s' reason=no_worker\n", name.c_str());
         return nullptr;
     }
-    AvatarInstance* result = inst.get();
-    mCache[name] = std::move(inst);
-    Debug::warn(Debug::Category::Avatar, "[AVATAR CACHE] loaded: %s model=%s\n",
-                name.c_str(), result->definition.playerModel.c_str());
-    return result;
+    const std::string basePath = AvatarSystem::avatarPath(name);
+    const std::string jsonPath = basePath + "/avatar.json";
+    const bool accepted = mBackgroundWorker->enqueue([this, name, basePath, jsonPath]() {
+        PendingAvatarLoad pending;
+        pending.name = name;
+        pending.definition.clear();
+        pending.definition.name = name;
+        pending.definition.basePath = basePath;
+        pending.success = parseAvatarJson(jsonPath, basePath, pending.definition);
+        if (pending.success)
+            pending.atlasPixels = buildAtlasPixels(pending.definition, basePath);
+        else
+            pending.error = "avatar.json missing or invalid";
+        std::lock_guard<std::mutex> lock(mPendingAvatarMutex);
+        mPendingAvatarLoads.push_back(std::move(pending));
+    });
+    if (!accepted) {
+        mLoadStates[name] = AvatarLoadState::Failed;
+        Debug::warn(Debug::Category::Avatar, "[AVATAR ASYNC] queue rejected avatar='%s' reason=worker_queue_full\n", name.c_str());
+    } else {
+        Debug::log(Debug::Category::Avatar, "[AVATAR ASYNC] queued avatar='%s' worker=low_priority\n", name.c_str());
+    }
+    return nullptr;
+}
+
+bool AvatarSystem::isAvatarLoadPending(const std::string& name) const {
+    auto it = mLoadStates.find(name);
+    return it != mLoadStates.end() && it->second != AvatarLoadState::Ready;
+}
+
+void AvatarSystem::pollBackgroundAvatarLoads() {
+    PendingAvatarLoad pending;
+    {
+        std::lock_guard<std::mutex> lock(mPendingAvatarMutex);
+        if (mPendingAvatarLoads.empty()) return;
+        pending = std::move(mPendingAvatarLoads.front());
+        mPendingAvatarLoads.pop_front();
+    }
+    if (!pending.success) {
+        mLoadStates[pending.name] = AvatarLoadState::Failed;
+        Debug::warn(Debug::Category::Avatar,
+            "[AVATAR ASYNC] failed avatar='%s' reason=%s fallback=1\n",
+            pending.name.c_str(), pending.error.c_str());
+        return;
+    }
+    auto inst = std::make_unique<AvatarInstance>();
+    inst->name = pending.name;
+    inst->basePath = pending.definition.basePath;
+    inst->definition = std::move(pending.definition);
+    inst->preparedAtlasPixels = std::move(pending.atlasPixels);
+    mCache[pending.name] = std::move(inst);
+    mLoadStates[pending.name] = AvatarLoadState::Ready;
+    Debug::log(Debug::Category::Avatar,
+        "[AVATAR ASYNC] ready avatar='%s' atlas_pixels=%zu\n",
+        pending.name.c_str(), mCache[pending.name]->preparedAtlasPixels.size());
 }
 
 bool AvatarSystem::buildAtlasForInstance(AvatarInstance& inst, bool reloadTextures) {
@@ -653,7 +702,9 @@ bool AvatarSystem::buildAtlasForInstance(AvatarInstance& inst, bool reloadTextur
     Debug::warn(Debug::Category::Avatar, "[AVATAR ATLAS] buildAtlasForInstance: %s gen=%d reload=%d\n",
                 inst.name.c_str(), inst.atlasGeneration, (int)reloadTextures);
 
-    std::vector<unsigned char> atlasPixels = buildAtlasPixels(inst.definition, inst.basePath);
+    std::vector<unsigned char> atlasPixels = std::move(inst.preparedAtlasPixels);
+    if (atlasPixels.empty())
+        atlasPixels = buildAtlasPixels(inst.definition, inst.basePath);
 
     if (!glfwGetCurrentContext()) return true;
 
