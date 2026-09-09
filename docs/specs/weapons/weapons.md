@@ -1,4 +1,6 @@
-﻿9 8 2026 1107 est jorj - add to this doc that all weapons shoudl be switchable from hitscan to projectile bc i want ot have projectiles like
+﻿9 9 2026 1341 est jorj -  and written as a  todo to clearly state the camera config should not  mess with weapon recoil values at all  from - C:\mimita-priv-v8\docs\features\camsway-realisticish\camsway.md
+
+9 8 2026 1107 est jorj - add to this doc that all weapons shoudl be switchable from hitscan to projectile bc i want ot have projectiles like
 mass: 3000kg
 speed: 999999m/s
 this makes emergent force reactions like knockback for plaeyrs and how big of a hole it destructs in the world, relates to C:\mimita-priv-v8\docs\specs\destructible-world\destructible-world.md
