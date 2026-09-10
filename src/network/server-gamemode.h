@@ -31,8 +31,12 @@ struct ServerGamemodeKillEvent
     uint32_t victimId = 0;
     uint8_t killerEntityType = ENTITY_PLAYER;
     uint8_t victimEntityType = ENTITY_PLAYER;
+    std::string killerName;
+    std::string victimName;
     std::string weaponId;
     std::string weaponDisplayName;
+    glm::vec3 killerPos{0.0f};
+    glm::vec3 victimPos{0.0f};
     uint32_t eventId = 0;
     uint64_t correlationId = 0;
     uint32_t serverTick = 0;
@@ -60,7 +64,7 @@ struct ServerGamemodeState
     int goalValue = 20;
     float countdown = 0.0f;
     float countdownSeconds = 3.0f;
-    float goSeconds = 0.75f;
+    float goSeconds = 1.0f;
     float rematchLeft = 0.0f;
     float rematchSeconds = 5.0f;
     std::string teamAName = "RED";
@@ -86,6 +90,9 @@ struct ServerGamemodeState
     bool pendingKillerIsNpc = false;
     bool pendingVictimIsNpc = false;
     std::deque<ServerGamemodeKillEvent> pendingKillEvents;
+    // The kill promoted from pendingKillEvents this tick. Carries names and
+    // positions so scoring, persistence, and the killfeed share one event.
+    ServerGamemodeKillEvent currentKill;
     // Periodic DuelState broadcast cadence so clients can detect a dead server.
     uint32_t lastBroadcastTick = 0;
     // Forces the first authoritative community-match state to reach clients
@@ -202,25 +209,24 @@ void serverGamemodeTick(SOCKET sock,
                     uint32_t tick,
                     uint64_t& totalPacketsOut);
 
-// Called from applyServerDamage when a kill is confirmed. Has no socket, so it
-// only records the kill (instant respawn + pending flag) and defers score and
-// tracer broadcast to the next serverGamemodeTick.
-void serverGamemodeOnPlayerDeath(uint32_t killerPlayerId,
-                             uint32_t victimPlayerId,
-                             const std::string& weaponId = {},
-                             const std::string& weaponDisplayName = {},
-                             uint64_t correlationId = 0);
-void serverGamemodeOnNpcDeath(uint32_t killerNpcId,
-                          uint32_t victimPlayerId,
-                          const std::string& weaponId = {},
-                          const std::string& weaponDisplayName = {},
-                          uint64_t correlationId = 0);
-// Records a player killing an NPC for the shared gamemode score pipeline.
-void serverGamemodeOnPlayerKilledNpc(uint32_t killerPlayerId,
-                                     uint32_t victimNpcId,
-                                     const std::string& weaponId = {},
-                                     const std::string& weaponDisplayName = {},
-                                     uint64_t correlationId = 0);
+// Single authoritative kill owner. Every lethal path calls this once. It
+// heals and credits a player killer, broadcasts exactly one reliable
+// KillEventPacket to every client (killer, victim, and observers), and queues
+// one ServerGamemodeKillEvent for scoring, respawn, and persistence on the next
+// serverGamemodeTick. `npcs` may be null when the caller only has players.
+void serverGamemodeRecordKill(
+    SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>* npcs,
+    uint32_t killerId, uint8_t killerEntityType,
+    uint32_t victimId, uint8_t victimEntityType,
+    const std::string& weaponId,
+    const std::string& weaponDisplayName,
+    uint64_t correlationId,
+    const glm::vec3& killerPos,
+    const glm::vec3& victimPos,
+    uint32_t tick,
+    uint64_t& totalPacketsOut);
 
 // A player pressed Space on the win/lose screen: skip the rematch timer and
 // start the next managed match immediately (next tick).

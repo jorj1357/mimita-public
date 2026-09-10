@@ -405,8 +405,6 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
         // Server confirmed a kill: any pending predicted kill-heal for this
         // entity sticks (no rollback).
         mpConfirmPredictedKillHeal(ctx, event->npcEntityId);
-        const bool localShooterPredictedKill =
-            isLocalShooter && npcPtr && npcPtr->netPredictedDead;
         // Killing an NPC heals the local killer to full health. Reward
         // presentation is independent of the Player pointer because the
         // authoritative network event is sufficient to identify the killer.
@@ -416,48 +414,11 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
             printf("[NET KILL HEAL] shooter=%u npc=%u health=%d\n",
                    event->shooterPlayerId, event->npcEntityId, gpPlayer->currentHp);
         }
-        if (!localShooterPredictedKill)
-        {
-            // Death sound (the red-sphere ellipsoid spawns loss-proof for every
-            // client via the snapshot health transition in updateRenderedReplica).
-            AudioManager::instance().play(
-                {"npc_death", AudioCategory::NPC, true, hitPos, 1.0f, 0.9f, 45.0f, 0});
-            // Killfeed entry: killer, NPC, weapon.
-            const WeaponDefinition* wdef = WeaponRegistry::instance().get(weaponId);
-            std::string weaponDisplay = (wdef && !wdef->displayName.empty())
-                ? wdef->displayName
-                : ((weaponId && weaponId[0]) ? weaponId : "unknown");
-            DBG(Network,
-                "CLIENT_PLAYER_KILLS_NPC proc=client shooterId=%u shooterName=\"%s\" "
-                "npcId=%u npcName=\"%s\" weaponId=\"%s\" weaponDisplay=\"%s\" "
-                "serverTick=%u clientTick=%u latestServerTick=%u isLocalShooter=%d",
-                event->shooterPlayerId, shooterName.c_str(),
-                event->npcEntityId, npcName.c_str(),
-                weaponId, weaponDisplay.c_str(),
-                event->header.tick, ctx.tick, ctx.latestServerTick,
-                (int)isLocalShooter);
-            KillfeedManager::instance().onKillStyled(
-                shooterName, shooterVipAppearance, shooterVipStyleDetail,
-                npcName, MimitaVip::freeAppearance(), MimitaVip::VipStyleDetail{},
-                weaponDisplay, false, event->header.tick,
-                ((uint64_t)event->eventSessionId << 32) | event->eventId);
-            DBG(Network,
-                "CLIENT_KILLFEED_SHOW type=PLAYER_KILLS_NPC killer=\"%s\" victim=\"%s\" weapon=\"%s\"",
-                shooterName.c_str(), npcName.c_str(), weaponDisplay.c_str());
-            printf("[NET NPC KILL PRESENT] shooter=%u npc=%u name=\"%s\"\n",
-                   event->shooterPlayerId, event->npcEntityId, npcName.c_str());
-        }
-        else
-        {
-            DBG(Network,
-                "CLIENT_KILLFEED_SKIP type=PLAYER_KILLS_NPC reason=predicted_kill "
-                "shooterId=%u npcId=%u npcName=\"%s\" tick=%u",
-                event->shooterPlayerId, event->npcEntityId, npcName.c_str(),
-                event->header.tick);
-            Debug::log(Debug::Category::Networking,
-                       "[NET NPC KILL PRESENT] shooter=%u npc=%u name=\"%s\" predicted=1 (suppressed duplicate)",
-                       event->shooterPlayerId, event->npcEntityId, npcName.c_str());
-        }
+        // Death sound for every client. The killfeed line is owned by the
+        // single authoritative KillEventPacket, not this damage event, so the
+        // killer, victim, and every observer present it exactly once.
+        AudioManager::instance().play(
+            {"npc_death", AudioCategory::NPC, true, hitPos, 1.0f, 0.9f, 45.0f, 0});
         if (npcPtr)
         {
             npcPtr->netPredictedDead = false;

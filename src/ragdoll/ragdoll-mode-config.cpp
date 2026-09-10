@@ -78,6 +78,26 @@ bool RagdollModeConfig::load(const std::string& path)
         next.jointDamping = root.value("joint_damping", 80.0f);
         next.worldCollision = root.value("world_collision", true);
 
+        next.solverIterations = root.value("solver_iterations", next.solverIterations);
+        next.maxFallSpeed = root.value("max_fall_speed", next.maxFallSpeed);
+        next.restitution = root.value("restitution", next.restitution);
+        next.friction = root.value("friction", next.friction);
+        next.selfCollision = root.value("self_collision", next.selfCollision);
+        next.bodyLinearDamping = root.value("body_linear_damping", next.bodyLinearDamping);
+        next.bodyAngularDamping = root.value("body_angular_damping", next.bodyAngularDamping);
+
+        // Mass
+        if (root.contains("mass")) {
+            const auto& m = root["mass"];
+            next.massGlobalMultiplier = m.value("globalMultiplier",
+                m.value("global_multiplier", next.massGlobalMultiplier));
+            for (auto it = m.begin(); it != m.end(); ++it) {
+                if (it.key() == "globalMultiplier" || it.key() == "global_multiplier") continue;
+                if (!it.value().is_number()) continue;
+                next.massKg[it.key()] = it.value().get<float>();
+            }
+        }
+
         // Capsules
         if (root.contains("capsules")) {
             for (auto it = root["capsules"].begin(); it != root["capsules"].end(); ++it) {
@@ -112,6 +132,8 @@ bool RagdollModeConfig::load(const std::string& path)
             next.extendForce = g.value("extend_force", 50.0f);
             next.grabReach = g.value("grab_reach", 2.5f);
             next.grabRadius = g.value("grab_radius", 0.3f);
+            next.grabCompliance = g.value("compliance", next.grabCompliance);
+            next.grabGraceDistance = g.value("grace_distance", next.grabGraceDistance);
         }
 
         // Weapon
@@ -130,6 +152,18 @@ bool RagdollModeConfig::load(const std::string& path)
 
         next.torsoLookSpring = root.value("torso_look_spring", 8.0f);
         next.torsoMaxAngularStep = root.value("torso_max_angular_step", 15.0f);
+
+        if (root.contains("head")) {
+            const auto& h = root["head"];
+            next.headRotationStrength = h.value("rotation_strength", next.headRotationStrength);
+            next.headRotationSpeed = h.value("rotation_speed", next.headRotationSpeed);
+        }
+
+        if (root.contains("exit")) {
+            const auto& e = root["exit"];
+            next.exitPreserveVelocity = e.value("preserve_velocity", next.exitPreserveVelocity);
+            next.exitHopVelocity = e.value("hop_velocity", next.exitHopVelocity);
+        }
 
         mData = next;
         mLastWrite = writeTime;

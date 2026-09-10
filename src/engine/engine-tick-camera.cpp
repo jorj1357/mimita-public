@@ -910,15 +910,8 @@ void engineTickCamera(Engine& engine, float dt)
         camera.follow(gDuelManager.winnerCameraTarget(), camCfg.offset, camCfg.positionStiffness);
         camera.smoothCollision(gDuelManager.winnerCameraTarget(), world, dt, camCfg.positionStiffness, camCfg.stiffnessEnabled, camCfg.collisionEnabled, camCfg.collisionPushEnabled, camCfg.collisionPushback);
     } else if (player.ragdollModeActive && RagdollModeSystem::instance().isActive()) {
-        // Ragdoll mode: camera smoothly follows head position
-        static glm::vec3 smoothHeadPos{0.0f};
-        glm::vec3 headPos = RagdollModeSystem::instance().getHeadPosition();
-        // Snap on first frame (when mActivationTime would be small)
-        if (!camera.thirdPerson && glm::length(smoothHeadPos) < 0.01f)
-            smoothHeadPos = headPos;
-        float smoothFactor = 12.0f;
-        smoothHeadPos += (headPos - smoothHeadPos) * std::min(1.0f, smoothFactor * dt);
-        camera.pos = smoothHeadPos;
+        // Ragdoll mode: camera sits at the head, with smoothing from ragdoll.json.
+        camera.pos = RagdollModeSystem::instance().computeCameraPosition(dt);
     } else if (!camera.thirdPerson) {
         // First-person camera at eye height
         float eyeHeight = PLAYER_HEIGHT * 0.52f;

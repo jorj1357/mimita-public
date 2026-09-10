@@ -18,10 +18,24 @@
 #include "config/impact-decals-config.h"
 #include "debug/debug-log.h"
 
+#include <chrono>
+#include <cmath>
 #include <fstream>
 #include <nlohmann/json.hpp>
 
 namespace MimitaNet {
+
+namespace {
+// Client-side steady clock in milliseconds, used only to extrapolate the
+// server tick between reliable state packets so the countdown and match clock
+// keep moving smoothly. It is never sent to the server.
+uint64_t clientSteadyNowMs()
+{
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+} // namespace
 
 CommunityMatchClient& CommunityMatchClient::instance()
 {
@@ -42,6 +56,8 @@ void CommunityMatchClient::reset()
     mPhaseTimer = 0.0f;
     mMatchStartTick = 0;
     mServerTick = 0;
+    mServerTickAnchorMs = 0;
+    mGoVisibleUntilTick = 0;
     mTimeLimitSeconds = 0;
     mGoal = 0;
     mRedScore = 0;
@@ -67,8 +83,15 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
 {
     // Accept all community match modes (FFA, TDM, Bomb Tag, and any future mode).
     // The old character-prefix filter (matchMode[0] == 'f' || 't') is deprecated.
-    if (packet.duelId < mMatchId ||
-        (packet.duelId == mMatchId && packet.stateVersion < mStateVersion)) return;
+    // Same-session packets are ordered by (stateVersion, serverTick). Within a
+    // phase the server keeps stateVersion constant while serverTick advances, so
+    // rejecting every equal-version packet froze the HUD on the first countdown
+    // number. Only drop packets that are genuinely older than what we applied.
+    if (packet.duelId < mMatchId) return;
+    if (packet.duelId == mMatchId) {
+        if (packet.stateVersion < mStateVersion) return;
+        if (packet.stateVersion == mStateVersion && packet.serverTick < mServerTick) return;
+    }
 
     mMatchId = packet.duelId;
     mStateVersion = packet.stateVersion;
@@ -77,6 +100,19 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     mPhaseTimer = packet.phaseTimer;
     mMatchStartTick = packet.matchStartTick;
     mServerTick = packet.serverTick;
+    mServerTickAnchorMs = clientSteadyNowMs();
+    if (packet.phase == DUEL_PHASE_GO)
+    {
+        // phaseTimer carries the remaining GO seconds. Hold the GO! overlay
+        // until that server tick even if ACTIVE arrives first.
+        const uint32_t goTicks = packet.phaseTimer > 0.0f
+            ? (uint32_t)(packet.phaseTimer * 60.0f) : 60u;
+        mGoVisibleUntilTick = packet.serverTick + goTicks;
+    }
+    else if (packet.phase != DUEL_PHASE_ACTIVE)
+    {
+        mGoVisibleUntilTick = 0;
+    }
     mTimeLimitSeconds = packet.timeLimitSeconds;
     mGoal = packet.goalValue;
     mRedScore = packet.redTeamKills;
@@ -203,6 +239,44 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         mRagdollEnabled = newRagdoll;
         mBloodEnabled = newBlood;
     }
+
+    // Focused countdown diagnostics: which phase/number the client believes it
+    // should show, and the incoming vs last-applied authoritative tick, so
+    // reordering or a stalled countdown is visible in the Network/Duel log.
+    if (mMode == "ffa" || mMode == "tdm") {
+        const uint32_t syncedTicksLeft = mMatchStartTick > mServerTick
+            ? mMatchStartTick - mServerTick : 0;
+        // Networking category is enabled in config/debuglogger.json, so this
+        // is written to the network log for countdown/GO diagnosis.
+        Debug::log(Debug::Category::Networking,
+            "[CountdownSync] mode=%s duelId=%u stateVersion=%u phase=%u "
+            "authoritativeTick=%u syncedTick=%u matchStartTick=%u "
+            "ticksLeft=%u number=%d goVisible=%d\n",
+            mMode.c_str(), packet.duelId, packet.stateVersion, (unsigned)mPhase,
+            packet.serverTick, mServerTick, mMatchStartTick, syncedTicksLeft,
+            (int)std::ceil((float)syncedTicksLeft / 60.0f),
+            (int)(packet.phase == DUEL_PHASE_GO));
+    }
+}
+
+uint32_t CommunityMatchClient::serverTick() const
+{
+    // Extrapolate the last authoritative server tick at the fixed 60 Hz
+    // simulation rate so the countdown and match clock keep advancing even if a
+    // state packet is delayed or retransmitted. onState() re-anchors this with
+    // each accepted packet, correcting any drift.
+    if (mServerTickAnchorMs == 0)
+        return mServerTick;
+    const uint64_t now = clientSteadyNowMs();
+    const uint64_t elapsed = now >= mServerTickAnchorMs ? now - mServerTickAnchorMs : 0;
+    return mServerTick + (uint32_t)(elapsed * 60ull / 1000ull);
+}
+
+bool CommunityMatchClient::goVisible() const
+{
+    if (mPhase == DUEL_PHASE_GO)
+        return true;
+    return mGoVisibleUntilTick != 0 && serverTick() < mGoVisibleUntilTick;
 }
 
 void CommunityMatchClient::onBombTagState(const BombTagStatePacket& packet)

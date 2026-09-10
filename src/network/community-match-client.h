@@ -34,7 +34,12 @@ public:
     uint8_t phase() const { return mPhase; }
     float phaseTimer() const { return mPhaseTimer; }
     uint32_t matchStartTick() const { return mMatchStartTick; }
-    uint32_t serverTick() const { return mServerTick; }
+    // Last authoritative server tick seen, extrapolated forward at the fixed
+    // 60 Hz simulation rate so the HUD keeps advancing between state packets.
+    uint32_t serverTick() const;
+    // True while the GO! overlay should be visible. It stays true for the
+    // server-sent GO window even if the ACTIVE packet arrives before render.
+    bool goVisible() const;
     int timeLimitSeconds() const { return mTimeLimitSeconds; }
     int goal() const { return mGoal; }
     int redScore() const { return mRedScore; }
@@ -57,6 +62,8 @@ private:
     float mPhaseTimer = 0.0f;
     uint32_t mMatchStartTick = 0;
     uint32_t mServerTick = 0;
+    uint64_t mServerTickAnchorMs = 0;  // client steady-clock ms when mServerTick was received
+    uint32_t mGoVisibleUntilTick = 0;  // server tick at which the GO! window ends
     int mTimeLimitSeconds = 0;
     int mGoal = 0;
     int mRedScore = 0;

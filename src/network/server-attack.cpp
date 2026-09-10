@@ -794,16 +794,15 @@ void handleAttackRequest(
                     printf("%s [SERVER NPC KILL] shooter=%u npcId=%u name=\"%s\"\n",
                            serverTimestamp(), shooter.id,
                            npcTarget.entityId, npcTarget.name.c_str());
-                    // Award kill credit to shooter and heal to full
-                    auto attacker = players.find(shooter.id);
-                    if (attacker != players.end())
-                    {
-                        attacker->second.kills += 1;
-                        attacker->second.health = serverMaxHp();
-                    }
-                    emitNpcKillPersistenceEvent(players, shooter.id,
-                        npcTarget.entityId, netWeapon, tick,
-                        shooter.pos, npcTarget.pos);
+                    const char* killWeaponId = networkWeaponTypeName(netWeapon);
+                    std::string killWeaponDisplay = killWeaponId;
+                    if (const WeaponDefinition* wd = WeaponRegistry::instance().get(killWeaponId))
+                        if (!wd->displayName.empty()) killWeaponDisplay = wd->displayName;
+                    serverGamemodeRecordKill(sock, players, &npcs,
+                        shooter.id, ENTITY_PLAYER,
+                        npcTarget.entityId, ENTITY_NPC,
+                        killWeaponId, killWeaponDisplay, req->requestId,
+                        shooter.pos, npcTarget.pos, tick, totalPacketsOut);
                     // Do NOT erase: syncServerNpcDamageToNpc marks the real NPC
                     // dead and respawnServerNpc re-admits it after the delay.
                 }

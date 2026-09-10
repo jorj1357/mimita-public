@@ -9,6 +9,7 @@
 */
 
 #include "network/server.h"
+#include "network/server-gamemode.h"
 #include "network/network-weapons.h"
 #include "debug/structured-log.h"
 #include "debug/debug-log.h"
@@ -874,9 +875,18 @@ void explodeProjectile(SOCKET sock,
         if (killed)
         {
             npc.health = 0;
-            auto attacker = players.find(projectile.ownerPlayerId);
-            if (attacker != players.end())
-                attacker->second.health = serverMaxHp();
+            const char* killWeaponId = networkWeaponTypeName(projectile.weaponType);
+            std::string killWeaponDisplay = killWeaponId;
+            if (const WeaponDefinition* wd = WeaponRegistry::instance().get(killWeaponId))
+                if (!wd->displayName.empty()) killWeaponDisplay = wd->displayName;
+            glm::vec3 killerPos = position;
+            auto killerIt = players.find(projectile.ownerPlayerId);
+            if (killerIt != players.end()) killerPos = killerIt->second.pos;
+            serverGamemodeRecordKill(sock, players, &npcs,
+                projectile.ownerPlayerId, ENTITY_PLAYER,
+                npc.entityId, ENTITY_NPC,
+                killWeaponId, killWeaponDisplay, projectile.fireSerial,
+                killerPos, npc.pos, tick, totalPacketsOut);
         }
 
         broadcastNpcDamageEvent(

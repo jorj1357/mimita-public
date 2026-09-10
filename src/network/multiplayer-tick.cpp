@@ -32,6 +32,7 @@
 #include "entities/player.h"
 #include "notifications/notifications.h"
 #include "gui/hud/reward-popup.h"
+#include "killfeed/killfeed.h"
 #include "npc/npc-avatar.h"
 #include "gui/password-popup.h"
 
@@ -1277,6 +1278,30 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.mapLoadAttempts = 0;
             ctx.lastMapLoadAttemptMs = 0;
             DuelQueue::instance().onMapChange(mc->mapId, mc->duelId, mc->mapVersion);
+        }
+        else if (header->type == PACKET_KILL_EVENT &&
+                 bytes >= (int)sizeof(KillEventPacket))
+        {
+            const KillEventPacket* kill = reinterpret_cast<const KillEventPacket*>(buffer);
+            if (!mpAcceptReliableEventOnce(ctx, kill->eventId, kill->eventSessionId))
+                return;
+            const std::string killerName(kill->killerName,
+                strnlen(kill->killerName, sizeof(kill->killerName)));
+            const std::string victimName(kill->victimName,
+                strnlen(kill->victimName, sizeof(kill->victimName)));
+            std::string weaponDisplay(kill->weaponDisplay,
+                strnlen(kill->weaponDisplay, sizeof(kill->weaponDisplay)));
+            if (weaponDisplay.empty()) weaponDisplay = "unknown";
+            const uint64_t eventKey =
+                ((uint64_t)kill->eventSessionId << 32) | kill->eventId;
+            KillfeedManager::instance().onKill(
+                killerName, victimName, weaponDisplay, false,
+                kill->serverTick, eventKey);
+            Debug::log(Debug::Category::Networking,
+                "[KILL EVENT RX] killer=%s kind=%u victim=%s kind=%u weapon=%s tick=%u event=%u\n",
+                killerName.c_str(), (unsigned)kill->killerEntityType,
+                victimName.c_str(), (unsigned)kill->victimEntityType,
+                weaponDisplay.c_str(), kill->serverTick, kill->eventId);
         }
         else if (header->type == PACKET_PROGRESSION_EVENT &&
                  bytes >= (int)sizeof(ProgressionEventPacket))

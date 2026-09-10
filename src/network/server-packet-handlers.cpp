@@ -938,11 +938,14 @@ void handleGodballHitClaim(SOCKET sock,
             origin, hitPos, dir, normal, NETWORK_WEAPON_GODBALL);
 
         if (killed) {
-            auto attacker2 = players.find(pkt->attackerId);
-            if (attacker2 != players.end()) {
-                attacker2->second.kills += 1;
-                attacker2->second.health = serverMaxHp();
-            }
+            const char* killWeaponId = networkWeaponTypeName(NETWORK_WEAPON_GODBALL);
+            std::string killWeaponDisplay = killWeaponId;
+            if (const WeaponDefinition* wd = WeaponRegistry::instance().get(killWeaponId))
+                if (!wd->displayName.empty()) killWeaponDisplay = wd->displayName;
+            serverGamemodeRecordKill(sock, players, &npcs,
+                pkt->attackerId, ENTITY_PLAYER, npc.entityId, ENTITY_NPC,
+                killWeaponId, killWeaponDisplay, pkt->contactSerial,
+                attacker.pos, npc.pos, tick, totalPacketsOut);
         }
         return;
     }
@@ -1191,14 +1194,14 @@ void handleSpyKnifeHitClaim(SOCKET sock,
             origin, hitPos, dir, kbDir, NETWORK_WEAPON_SPYKNIFE);
 
         if (killed) {
-            auto attacker2 = players.find(batch->attackerId);
-            if (attacker2 != players.end()) {
-                attacker2->second.kills += 1;
-                attacker2->second.health = serverMaxHp();
-            }
-            emitNpcKillPersistenceEvent(players, batch->attackerId,
-                npc.entityId, NETWORK_WEAPON_SPYKNIFE, tick,
-                attacker.pos, npc.pos);
+            const char* killWeaponId = networkWeaponTypeName(NETWORK_WEAPON_SPYKNIFE);
+            std::string killWeaponDisplay = killWeaponId;
+            if (const WeaponDefinition* wd = WeaponRegistry::instance().get(killWeaponId))
+                if (!wd->displayName.empty()) killWeaponDisplay = wd->displayName;
+            serverGamemodeRecordKill(sock, players, &npcs,
+                batch->attackerId, ENTITY_PLAYER, npc.entityId, ENTITY_NPC,
+                killWeaponId, killWeaponDisplay, pkt.contactId,
+                attacker.pos, npc.pos, tick, totalPacketsOut);
         }
         continue;
     }

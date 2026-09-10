@@ -7,10 +7,26 @@
     "joint_stiffness": 2000.0,
     "joint_damping": 80.0,
     "world_collision": true,
+    "solver_iterations": 8,
+    "max_fall_speed": 60.0,
+    "restitution": 0.0,
+    "friction": 0.5,
+    "self_collision": true,
+    "body_linear_damping": 0.05,
+    "body_angular_damping": 0.05,
     "torso_look_spring": 8.0,
     "torso_max_angular_step": 15.0,
+    "mass": {
+        "globalMultiplier": 1.0,
+        "head": 2.0,
+        "torso": 8.0,
+        "leftArm": 1.5,
+        "rightArm": 1.5,
+        "leftLeg": 2.5,
+        "rightLeg": 2.5
+    },
     "capsules": {
-        "head":     { "radius": 0.15, "half_height": 0.12, "offset": [0, 0, 1.15] },
+        "head":     { "radius": 0.15, "half_height": 0.12, "offset": [0, 0, 1.5] },
         "torso":    { "radius": 0.25, "half_height": 0.2,  "offset": [0, 0, 0.6] },
         "leftArm":  { "radius": 0.08, "half_height": 0.18, "offset": [0, 0.45, 1.0] },
         "rightArm": { "radius": 0.08, "half_height": 0.18, "offset": [0, -0.45, 1.0] },
@@ -18,7 +34,7 @@
         "rightLeg": { "radius": 0.10, "half_height": 0.2,  "offset": [0, -0.2, -0.1] }
     },
     "attachments": {
-        "head":     { "parent": "torso", "offset": [0, 0, 0.55], "cone_limit_deg": 45 },
+        "head":     { "parent": "torso", "offset": [0, 0, 0.55], "cone_limit_deg": 90 },
         "leftArm":  { "parent": "torso", "offset": [0, 0.3, 0.4], "cone_limit_deg": 90 },
         "rightArm": { "parent": "torso", "offset": [0, -0.3, 0.4], "cone_limit_deg": 90 },
         "leftLeg":  { "parent": "torso", "offset": [0, 0.15, -0.4], "cone_limit_deg": 60 },
@@ -31,7 +47,17 @@
         "extend_right_mouse": 1,
         "extend_force": 50.0,
         "grab_reach": 2.5,
-        "grab_radius": 0.3
+        "grab_radius": 0.3,
+        "compliance": 0.02,
+        "grace_distance": 0.5
+    },
+    "head": {
+        "rotation_strength": 12.0,
+        "rotation_speed": 18.0
+    },
+    "exit": {
+        "preserve_velocity": true,
+        "hop_velocity": 3.0
     },
     "weapon": {
         "one_handed_enabled": true,
@@ -39,6 +65,6 @@
     },
     "camera": {
         "mode": "locked_to_head",
-        "smooth_factor": 0.0
+        "smooth_factor": 1.0
     }
 }

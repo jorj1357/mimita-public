@@ -27,6 +27,19 @@ struct RagdollModeConfigData {
     float jointDamping = 80.0f;
     bool worldCollision = true;
 
+    // Rigid-body solver
+    int solverIterations = 8;
+    float maxFallSpeed = 60.0f;
+    float restitution = 0.0f;
+    float friction = 0.5f;
+    bool selfCollision = true;
+    float bodyLinearDamping = 0.05f;
+    float bodyAngularDamping = 0.05f;
+
+    // Mass (kg). Names match the body part IDs; globalMultiplier scales all.
+    std::unordered_map<std::string, float> massKg;
+    float massGlobalMultiplier = 1.0f;
+
     std::unordered_map<std::string, RagdollModeCapsuleConfig> capsules;
     std::unordered_map<std::string, RagdollModeAttachmentConfig> attachments;
 
@@ -38,6 +51,8 @@ struct RagdollModeConfigData {
     float extendForce = 50.0f;
     float grabReach = 2.5f;
     float grabRadius = 0.3f;
+    float grabCompliance = 0.02f;
+    float grabGraceDistance = 0.5f;
 
     // Weapon
     bool oneHandedWeaponEnabled = true;
@@ -50,6 +65,14 @@ struct RagdollModeConfigData {
     // Torso look direction
     float torsoLookSpring = 8.0f;
     float torsoMaxAngularStep = 15.0f;
+
+    // Head aim
+    float headRotationStrength = 12.0f;
+    float headRotationSpeed = 18.0f;
+
+    // Exit
+    bool exitPreserveVelocity = true;
+    float exitHopVelocity = 3.0f;
 };
 
 class RagdollModeConfig {

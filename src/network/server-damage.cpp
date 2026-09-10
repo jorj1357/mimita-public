@@ -139,19 +139,9 @@ static ServerDamageResult applyPlayerDamageLegacy(
         // Clear NPC damage tracking on death so it doesn't carry over to next life
         target.lastNpcDamageSourceId = 0;
         target.lastNpcDamageTick = 0;
-        if (attackerPlayerId != target.id)
-        {
-            auto attacker = players.find(attackerPlayerId);
-            if (attacker != players.end())
-            {
-                attacker->second.kills += 1;
-                // Heal the attacker to full health
-                attacker->second.health = serverMaxHp();
-            }
-        }
+        // Kill credit, heal, persistence, and the killfeed are owned by
+        // serverGamemodeRecordKill so there is one authoritative kill owner.
         result.killed = true;
-        emitPvPKillPersistenceEvent(players, attackerPlayerId, target.id,
-            damageSourceName(source), 0, target.pos, target.pos);
     }
 
     DBG(Network, "SERVER DAMAGE target=%u attacker=%u source=%s damage=%d "
@@ -323,8 +313,10 @@ ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
                 ? definition->id : definition->displayName;
         if (effectiveAttackerNpcId != 0)
         {
-            serverGamemodeOnNpcDeath(effectiveAttackerNpcId, target.id, weaponId,
-                                     weaponDisplayName, event.eventId);
+            serverGamemodeRecordKill(sock, players, nullptr,
+                effectiveAttackerNpcId, ENTITY_NPC, target.id, ENTITY_PLAYER,
+                weaponId, weaponDisplayName, event.eventId,
+                hit, target.pos, tick, totalPacketsOut);
             event.attackerPlayerId = effectiveAttackerNpcId;
             event.attackerEntityType = ENTITY_NPC;
             DBG(Network,
@@ -336,8 +328,13 @@ ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
         }
         else if (effectiveAttackerPlayerId != 0)
         {
-            serverGamemodeOnPlayerDeath(effectiveAttackerPlayerId, target.id, weaponId,
-                                        weaponDisplayName, event.eventId);
+            glm::vec3 killerPos = target.pos;
+            auto killerIt = players.find(effectiveAttackerPlayerId);
+            if (killerIt != players.end()) killerPos = killerIt->second.pos;
+            serverGamemodeRecordKill(sock, players, nullptr,
+                effectiveAttackerPlayerId, ENTITY_PLAYER, target.id, ENTITY_PLAYER,
+                weaponId, weaponDisplayName, event.eventId,
+                killerPos, target.pos, tick, totalPacketsOut);
             DBG(Network,
                 "KILL_EVENT_ENQUEUE type=PLAYER_KILLS_PLAYER killerPlayerId=%u victimPlayerId=%u "
                 "weaponId=\"%s\" weaponDisplay=\"%s\" eventId=%u tick=%u",

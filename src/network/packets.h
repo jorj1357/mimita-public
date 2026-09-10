@@ -17,7 +17,7 @@ namespace MimitaNet {
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // 30: ShotEvent/PelletBlastEvent become reliable (eventId+session+ACK) and
 // carry real damage/health; every bullet visual is guaranteed delivery.
-constexpr uint16_t PROTOCOL_VERSION = 32;
+constexpr uint16_t PROTOCOL_VERSION = 33;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -142,7 +142,11 @@ enum PacketType : uint8_t
     PACKET_BOMB_TAG_STATE = 66,
     // ── Bomb Tag pass event (server → all clients) ──────────────────
     // Broadcast on every successful bomb transfer for pass visualization.
-    PACKET_BOMB_TAG_PASS_EVENT = 67
+    PACKET_BOMB_TAG_PASS_EVENT = 67,
+    // ── Authoritative kill event (server → all clients) ─────────────
+    // Single source for the live killfeed/chat line. Every viewer (killer,
+    // victim, and observers) receives the same entry exactly once.
+    PACKET_KILL_EVENT = 68
 };
 
 enum DamageConfirmedSource : uint8_t
@@ -986,6 +990,26 @@ struct NpcDamageEventPacket
     uint16_t effectFlags = 0;
     uint8_t weapon = NETWORK_WEAPON_NONE;
     uint8_t impactType = SHOT_IMPACT_ENTITY;
+};
+
+// Server → all clients: one authoritative kill. The reliable envelope encodes
+// eventId at the byte immediately after the header, so eventId/eventSessionId
+// must stay first (see RELIABLE_EVENT_ID_OFFSET).
+struct KillEventPacket
+{
+    PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
+    uint32_t killerId = 0;
+    uint32_t victimId = 0;
+    uint32_t serverTick = 0;
+    uint64_t correlationId = 0;
+    uint8_t killerEntityType = ENTITY_PLAYER;
+    uint8_t victimEntityType = ENTITY_PLAYER;
+    uint8_t reserved[6] = {};
+    char killerName[64] = {};
+    char victimName[64] = {};
+    char weaponDisplay[64] = {};
 };
 
 struct ServerCommandPacket

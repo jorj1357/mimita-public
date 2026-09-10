@@ -290,9 +290,12 @@ void handleNpcDamageRequest(SOCKET sock, const char* buffer, int bytes,
         if (const WeaponDefinition* definition = WeaponRegistry::instance().get(weaponId))
             weaponDisplayName = definition->displayName.empty()
                 ? definition->id : definition->displayName;
-        serverGamemodeOnPlayerKilledNpc(req->header.playerId,
-                                        target.entityId, weaponId,
-                                        weaponDisplayName, req->header.tick);
+        glm::vec3 killerPos = shooterIt != players.end()
+            ? shooterIt->second.pos : glm::vec3(req->originX, req->originY, req->originZ);
+        serverGamemodeRecordKill(sock, players, &npcs,
+            req->header.playerId, ENTITY_PLAYER, target.entityId, ENTITY_NPC,
+            weaponId, weaponDisplayName, req->header.tick,
+            killerPos, target.pos, tick, totalPacketsOut);
         printf("%s [NET NPC KILL] shooter=%u npcId=%u name=\"%s\"\n",
                serverTimestamp(), req->header.playerId,
                target.entityId, target.name.c_str());

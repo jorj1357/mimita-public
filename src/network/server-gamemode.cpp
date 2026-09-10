@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <random>
 
 #include "network/packets.h"
@@ -24,6 +25,7 @@
 #include "gamemode/gamemode.h"
 #include "persistence/persistence-queue.h"
 #include "persistence/persistence-events.h"
+#include "persistence/persistence-emit.h"
 #include "config/spawn-velocity-config.h"
 #include "network/actor-lifecycle.h"
 
@@ -962,6 +964,7 @@ void beginMatchCountdown(ServerGamemodeState& d,
     d.matchStartTick = currentTick + (uint32_t)(d.countdownSeconds * 60.0f);
     d.countdown = d.countdownSeconds;
     d.matchTimeLimitTick = 0;
+    d.lastBroadcastTick = currentTick;
     resetMatchScores(d);
     d.phase = DUEL_PHASE_COUNTDOWN;
     resetGamemodeActorsAtMapSpawn(d, players, npcs, npcSystem);
@@ -1123,8 +1126,9 @@ void serverGamemodeTick(SOCKET sock,
         // so community/mapOnly FFA and TDM scoring actually runs.
         if (!d.hasPendingKill && !d.pendingKillEvents.empty())
         {
-            const ServerGamemodeKillEvent ev = std::move(d.pendingKillEvents.front());
+            d.currentKill = std::move(d.pendingKillEvents.front());
             d.pendingKillEvents.pop_front();
+            const ServerGamemodeKillEvent& ev = d.currentKill;
             d.pendingKillerId = ev.killerId;
             d.pendingVictimId = ev.victimId;
             d.pendingKillerIsNpc = ev.killerEntityType == ENTITY_NPC;
@@ -1283,17 +1287,18 @@ void serverGamemodeTick(SOCKET sock,
     // overwriting earlier kills; the body remains the single score owner.
     if (!d.hasPendingKill && !d.pendingKillEvents.empty())
     {
-        const ServerGamemodeKillEvent event = std::move(d.pendingKillEvents.front());
+        d.currentKill = std::move(d.pendingKillEvents.front());
         d.pendingKillEvents.pop_front();
+        const ServerGamemodeKillEvent& event = d.currentKill;
         d.pendingKillerId = event.killerId;
         d.pendingVictimId = event.victimId;
         d.pendingKillerIsNpc = event.killerEntityType == ENTITY_NPC;
         d.pendingVictimIsNpc = event.victimEntityType == ENTITY_NPC;
         d.hasPendingKill = true;
         Debug::log(Debug::Category::Duel,
-            "[GAMEMODE KILL QUEUE] event=%u killer=%u kind=%u victim=%u kind=%u remaining=%zu tick=%u\n",
-            event.eventId, event.killerId, (unsigned)event.killerEntityType,
-            event.victimId, (unsigned)event.victimEntityType,
+            "[GAMEMODE KILL QUEUE] event=%u killer=%s kind=%u victim=%s kind=%u remaining=%zu tick=%u\n",
+            event.eventId, event.killerName.c_str(), (unsigned)event.killerEntityType,
+            event.victimName.c_str(), (unsigned)event.victimEntityType,
             d.pendingKillEvents.size(), tick);
         DBG(Network,
             "KILL_QUEUE_PROMOTE eventId=%u killer=%u killerKind=%u victim=%u victimKind=%u "
@@ -1429,6 +1434,21 @@ void serverGamemodeTick(SOCKET sock,
                 (int)(killerId == victimId), d.matchMode.c_str());
         }
 
+        // Persist the authoritative kill once, from the unified event.
+        const ServerGamemodeKillEvent& kill = d.currentKill;
+        const std::string& persistWeapon = kill.weaponDisplayName.empty()
+            ? kill.weaponId : kill.weaponDisplayName;
+        if (!d.pendingKillerIsNpc && !d.pendingVictimIsNpc)
+        {
+            emitPvPKillPersistenceEvent(players, killerId, victimId,
+                persistWeapon, tick, kill.killerPos, kill.victimPos);
+        }
+        else if (!d.pendingKillerIsNpc && d.pendingVictimIsNpc)
+        {
+            emitNpcKillPersistenceEvent(players, killerId, victimId,
+                persistWeapon, tick, kill.killerPos, kill.victimPos);
+        }
+
         broadcastDuelState(sock, d, players, totalPacketsOut);
     }
 
@@ -1475,7 +1495,7 @@ void serverGamemodeTick(SOCKET sock,
                     d.matchMode.c_str(), tick, d.goSeconds);
                 broadcastDuelState(sock, d, players, totalPacketsOut);
             }
-            else if (tick - d.lastBroadcastTick >= 60)
+            else if (tick - d.lastBroadcastTick >= 30)
             {
                 d.lastBroadcastTick = tick;
                 broadcastDuelState(sock, d, players, totalPacketsOut);
@@ -1496,6 +1516,11 @@ void serverGamemodeTick(SOCKET sock,
                 Debug::log(Debug::Category::Duel,
                     "[FFA/TDM] Match ACTIVE mode=%s tick=%u\n",
                     d.matchMode.c_str(), tick, d.matchStartTick);
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+            }
+            else if (tick - d.lastBroadcastTick >= 15)
+            {
+                d.lastBroadcastTick = tick;
                 broadcastDuelState(sock, d, players, totalPacketsOut);
             }
             break;
@@ -1789,78 +1814,97 @@ void serverGamemodeRequestMapChange(const std::string& mapId)
     d.pendingManualMap = mapId;
 }
 
-void serverGamemodeOnPlayerDeath(uint32_t killerPlayerId,
-                             uint32_t victimPlayerId,
-                             const std::string& weaponId,
-                             const std::string& weaponDisplayName,
-                             uint64_t correlationId)
+void serverGamemodeRecordKill(
+    SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>* npcs,
+    uint32_t killerId, uint8_t killerEntityType,
+    uint32_t victimId, uint8_t victimEntityType,
+    const std::string& weaponId,
+    const std::string& weaponDisplayName,
+    uint64_t correlationId,
+    const glm::vec3& killerPos,
+    const glm::vec3& victimPos,
+    uint32_t tick,
+    uint64_t& totalPacketsOut)
 {
-    ServerGamemodeState& d = serverGamemodeState();
-    if (!d.enabled) return;
-    ServerGamemodeKillEvent event;
-    event.killerId = killerPlayerId;
-    event.victimId = victimPlayerId;
-    event.killerEntityType = ENTITY_PLAYER;
-    event.victimEntityType = ENTITY_PLAYER;
-    event.weaponId = weaponId;
-    event.weaponDisplayName = weaponDisplayName;
-    event.eventId = ++d.killEventCounter;
-    event.correlationId = correlationId;
-    event.serverTick = d.currentServerTick;
-    d.pendingKillEvents.push_back(std::move(event));
-}
+    // Credit + heal a player killer immediately so leftover damage cannot kill
+    // them before the next score tick. NPC killers have nothing to heal.
+    if (killerEntityType == ENTITY_PLAYER && killerId != 0 && killerId != victimId)
+    {
+        auto attacker = players.find(killerId);
+        if (attacker != players.end())
+        {
+            attacker->second.kills += 1;
+            attacker->second.health = serverMaxHp();
+        }
+    }
 
-void serverGamemodeOnNpcDeath(uint32_t killerNpcId,
-                          uint32_t victimPlayerId,
-                          const std::string& weaponId,
-                          const std::string& weaponDisplayName,
-                          uint64_t correlationId)
-{
-    ServerGamemodeState& d = serverGamemodeState();
-    if (!d.enabled) return;
-    ServerGamemodeKillEvent event;
-    event.killerId = killerNpcId;
-    event.victimId = victimPlayerId;
-    event.killerEntityType = ENTITY_NPC;
-    event.victimEntityType = ENTITY_PLAYER;
-    event.weaponId = weaponId;
-    event.weaponDisplayName = weaponDisplayName;
-    event.eventId = ++d.killEventCounter;
-    event.correlationId = correlationId;
-    event.serverTick = d.currentServerTick;
-    DBG(Network,
-        "GAMEMODE_ENQUEUE type=NPC_KILLS_PLAYER killerNpcId=%u victimPlayerId=%u "
-        "weaponId=\"%s\" weaponDisplay=\"%s\" eventId=%u queueSize=%zu tick=%u",
-        killerNpcId, victimPlayerId,
-        weaponId.c_str(), weaponDisplayName.c_str(),
-        event.eventId, d.pendingKillEvents.size() + 1, d.currentServerTick);
-    d.pendingKillEvents.push_back(std::move(event));
-}
+    auto resolveName = [&](uint32_t id, uint8_t type) -> std::string {
+        if (type == ENTITY_NPC)
+        {
+            if (npcs)
+            {
+                auto it = npcs->find(id);
+                if (it != npcs->end() && !it->second.name.empty())
+                    return it->second.name;
+            }
+            return "NPC-" + std::to_string(id);
+        }
+        auto it = players.find(id);
+        return it != players.end() ? it->second.name
+                                   : "player_" + std::to_string(id);
+    };
 
-void serverGamemodeOnPlayerKilledNpc(uint32_t killerPlayerId,
-                                     uint32_t victimNpcId,
-                                     const std::string& weaponId,
-                                     const std::string& weaponDisplayName,
-                                     uint64_t correlationId)
-{
+    // Exactly one reliable killfeed event for every client, regardless of
+    // gamemode enable state so sandbox/loose kills still present.
+    KillEventPacket killPkt{};
+    killPkt.header.type = PACKET_KILL_EVENT;
+    killPkt.header.tick = tick;
+    killPkt.eventId = nextReliableGameplayEventId();
+    killPkt.eventSessionId = serverReliableEventSessionId();
+    killPkt.killerId = killerId;
+    killPkt.victimId = victimId;
+    killPkt.serverTick = tick;
+    killPkt.correlationId = correlationId;
+    killPkt.killerEntityType = killerEntityType;
+    killPkt.victimEntityType = victimEntityType;
+    const std::string killerName = resolveName(killerId, killerEntityType);
+    const std::string victimName = resolveName(victimId, victimEntityType);
+    std::strncpy(killPkt.killerName, killerName.c_str(), sizeof(killPkt.killerName) - 1);
+    std::strncpy(killPkt.victimName, victimName.c_str(), sizeof(killPkt.victimName) - 1);
+    std::strncpy(killPkt.weaponDisplay, weaponDisplayName.c_str(), sizeof(killPkt.weaponDisplay) - 1);
+    queueReliableGameplayEventToAll(sock, players, &killPkt, sizeof(killPkt),
+        killPkt.eventId, killPkt.eventSessionId, totalPacketsOut);
+    Debug::log(Debug::Category::Networking,
+        "[KILL EVENT] killer=%s kind=%u victim=%s kind=%u weapon=\"%s\" tick=%u event=%u\n",
+        killerName.c_str(), (unsigned)killerEntityType, victimName.c_str(),
+        (unsigned)victimEntityType, weaponDisplayName.c_str(), tick, killPkt.eventId);
+
     ServerGamemodeState& d = serverGamemodeState();
     if (!d.enabled) return;
+
     ServerGamemodeKillEvent event;
-    event.killerId = killerPlayerId;
-    event.victimId = victimNpcId;
-    event.killerEntityType = ENTITY_PLAYER;
-    event.victimEntityType = ENTITY_NPC;
+    event.killerId = killerId;
+    event.victimId = victimId;
+    event.killerEntityType = killerEntityType;
+    event.victimEntityType = victimEntityType;
+    event.killerName = killerName;
+    event.victimName = victimName;
     event.weaponId = weaponId;
     event.weaponDisplayName = weaponDisplayName;
+    event.killerPos = killerPos;
+    event.victimPos = victimPos;
     event.eventId = ++d.killEventCounter;
     event.correlationId = correlationId;
-    event.serverTick = d.currentServerTick;
+    event.serverTick = tick;
     DBG(Network,
-        "GAMEMODE_ENQUEUE type=PLAYER_KILLS_NPC killerPlayerId=%u victimNpcId=%u "
+        "GAMEMODE_ENQUEUE type=%s killer=%u kind=%u victim=%u kind=%u "
         "weaponId=\"%s\" weaponDisplay=\"%s\" eventId=%u queueSize=%zu tick=%u",
-        killerPlayerId, victimNpcId,
+        killerEntityType == ENTITY_NPC ? "NPC_KILLS_PLAYER" : "PLAYER_KILL",
+        killerId, (unsigned)killerEntityType, victimId, (unsigned)victimEntityType,
         weaponId.c_str(), weaponDisplayName.c_str(),
-        event.eventId, d.pendingKillEvents.size() + 1, d.currentServerTick);
+        event.eventId, d.pendingKillEvents.size() + 1, tick);
     d.pendingKillEvents.push_back(std::move(event));
 }
 

@@ -37,6 +37,59 @@ Whats this
 
 newest at top 9 3 2026
 
+2026-09-10T15:52:52Z — FFA player→NPC kills gave no score and duplicated NPC-kill code hid the authoritative kill owner
+
+1. Issue: In FFA and TDM, killing an NPC produced no score for the player and no
+   NPC score when an NPC killed the player; killfeed/chat lines were missing or
+   inconsistent.
+   1. Expected behavior: every valid kill in either direction awards one point
+      to the killer, updates the replicated score/leaderboard on every client,
+      and produces exactly one killfeed/chat line for the killer, victim, and
+      all observers. Specification: `docs/specs/gamemodes/gamemodes.md`
+      lifecycle, feature record `docs/features/gamemodes/ffa mode issues.md`.
+   2. Actual behavior: `[SERVER NPC KILL]` printed on the server, but
+      `GAMEMODE_ENQUEUE`, `GAMEMODE KILL QUEUE`, `KILL_QUEUE_PROMOTE`, and
+      `FFA_SCORED` never appeared and every `HEARTBEAT` read
+      `scores=[NPC-1000=0, admin=0]`. The killer's own NPC-kill killfeed line was
+      suppressed.
+   3. Date and time first observed: 2026-09-10 11:17 EDT.
+   4. Why the bad behavior happened (cause): duplicated kill handling. The
+      authoritative score owner is `server-gamemode.cpp`, fed only by the
+      gamemode kill queue. The live lethal sites instead incremented
+      `ServerPlayer::kills`, healed, and emitted persistence directly and never
+      enqueued a gamemode kill event. The client rebuilt killfeed lines from
+      damage packets in three places and `DeathSystem::kill` added a fourth, so
+      a kill could be missing or duplicated.
+   5. Wrong code (examples):
+      1. `src/network/server-attack.cpp` killed the NPC and only ran
+         `attacker->second.kills += 1; attacker->second.health = serverMaxHp();`
+         plus `emitNpcKillPersistenceEvent`, with no gamemode kill enqueue.
+      2. `src/network/multiplayer-shots.cpp` skipped the killfeed when
+         `localShooterPredictedKill` was true, so the killer never saw their own
+         NPC kill.
+      3. `src/network/server-projectiles.cpp` and
+         `src/network/server-packet-handlers.cpp` (godball, spy knife) had the
+         same missing enqueue.
+   6. What fixed it: one authoritative kill owner and one killfeed event.
+      1. Added `serverGamemodeRecordKill(...)` in `server-gamemode.cpp` and
+         `KillEventPacket` (type 68, `PROTOCOL_VERSION` 33) in `packets.h`.
+      2. Routed every lethal site through it and removed the per-site credit,
+         heal, and persistence copies.
+      3. Removed the three client killfeed reconstruction paths and gated
+         `DeathSystem::kill`'s local killfeed on a non-networked session.
+      4. The client presents `KillEventPacket` once via
+         `KillfeedManager::onKill` with a session+event dedup key.
+   7. Proof: `python build_agent.py` -> `BUILD SUCCESS`, return code 0. Source
+      trace: `[KILL EVENT]` is emitted by `serverGamemodeRecordKill`, which
+      queues one `ServerGamemodeKillEvent` consumed by the FFA scorer that
+      increments `d.ffaKills[killerId]` and is broadcast by
+      `broadcastDuelState`. Runtime two-client/NPC acceptance still required.
+   8. AI-model note: the duplicated implementation is believed to originate from
+      AI-generated code from model `mimo v2.5`. The hypothesis that the model is
+      the cause is not strong enough to assert; the falsifiable test is to solve
+      this same issue using that model. That experiment is not part of this fix.
+   9. Related changelog: `docs/changelog/2026-09-10/20260910_155252-unified-kill-event.md`.
+
 2026-09-09T00:00:00Z — AI diagnosis must verify link integration before blaming a stale EXE — PROCESS REGRESSION
 
 1. Confirmed recurring failure pattern:

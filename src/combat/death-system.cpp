@@ -195,8 +195,13 @@ bool DeathSystem::kill(
         std::string weaponName = victim.killedByWeapon.empty() ? "unknown" : victim.killedByWeapon;
         const uint32_t eventTick = gActiveReplayRecorder
             ? gActiveReplayRecorder->currentTick() : 0;
-        KillfeedManager::instance().onKill(
-            effectiveKiller, victimName, weaponName, false, eventTick);
+        // In a networked session the server's authoritative KillEventPacket is
+        // the single killfeed source; presenting here too would duplicate it.
+        if (!(gpMpContext && gpMpContext->active))
+        {
+            KillfeedManager::instance().onKill(
+                effectiveKiller, victimName, weaponName, false, eventTick);
+        }
 
         ReplayKillfeedEvent kfEvent;
         kfEvent.killerId = effectiveKiller;

@@ -152,36 +152,9 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
         DeathSystem::instance().healKillerToFull(*gpPlayer, playerNameFor(ctx, event.attackerPlayerId));
         printf("[NET KILL HEAL] attacker=%u health=%d\n", event.attackerPlayerId, gpPlayer->currentHp);
 
-        // Killfeed entry (the legacy ShotEvent path already fed it; the generic
-        // path must too). Attacker-only presentation like the rest of this path.
-        const char* weaponId = networkWeaponTypeName(event.weapon);
-        std::string weaponDisplay = "unknown";
-        const WeaponDefinition* wdef = WeaponRegistry::instance().get(weaponId);
-        if (wdef && !wdef->displayName.empty())
-            weaponDisplay = wdef->displayName;
-        const uint32_t attackerId = event.attackerPlayerId;
-        const auto attackerIt = ctx.playerRegistry.find(attackerId);
-        const auto attackerNpcIt = ctx.remoteNpcs.find(attackerId);
-        const bool attackerIsNpc = event.attackerEntityType == ENTITY_NPC;
-        const std::string attackerName = attackerIsNpc
-            ? (attackerNpcIt != ctx.remoteNpcs.end() && !attackerNpcIt->second.username.empty()
-                ? attackerNpcIt->second.username
-                : "NPC-" + std::to_string(attackerId))
-            : playerNameFor(ctx, event.attackerPlayerId);
-        const auto victimIt = ctx.playerRegistry.find(event.targetPlayerId);
-        KillfeedManager::instance().onKillStyled(
-            attackerName,
-            !attackerIsNpc && attackerIt != ctx.playerRegistry.end()
-                ? attackerIt->second.vipAppearance : MimitaVip::freeAppearance(),
-            !attackerIsNpc && attackerIt != ctx.playerRegistry.end()
-                ? attackerIt->second.vipStyleDetail : MimitaVip::VipStyleDetail{},
-            playerNameFor(ctx, event.targetPlayerId),
-            victimIt != ctx.playerRegistry.end()
-                ? victimIt->second.vipAppearance : MimitaVip::freeAppearance(),
-            victimIt != ctx.playerRegistry.end()
-                ? victimIt->second.vipStyleDetail : MimitaVip::VipStyleDetail{},
-            weaponDisplay, false, event.header.tick,
-            presentationEventKey(event.eventSessionId, event.eventId));
+        // The killfeed line is owned by the single authoritative
+        // KillEventPacket so every viewer sees one identical entry. This path
+        // only presents attacker-side hitmarkers, sound, and damage numbers.
     }
 
     printf("[NET DAMAGE PRESENT] eventId=%u attacker=%u target=%u damage=%d weapon=%u hitmarker=%d sound=%d damageNumber=%d killed=%d\n",
