@@ -121,7 +121,8 @@ export async function authenticate(req, res, next) {
                 u.stripe_customer_id,
                 u.role,
                 u.email_notifications_enabled,
-                u.email_verified_at IS NOT NULL AS email_verified
+                u.email_verified_at IS NOT NULL AS email_verified,
+                u.last_seen_at
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.token_hash = $1
@@ -148,6 +149,23 @@ export async function authenticate(req, res, next) {
         }
         req.user = user
         req.sessionTokenHash = hashToken(token, sessionSecret)
+
+        // Throttled last_seen_at update (once per 60 seconds per user)
+        try {
+            const sinceLastSeen = user.last_seen_at
+                ? (Date.now() - new Date(user.last_seen_at).getTime()) / 1000
+                : Infinity
+            if (sinceLastSeen > 60) {
+                pool.query(
+                    `UPDATE users SET last_seen_at = NOW() WHERE id = $1`,
+                    [user.id]
+                ).catch(() => {})
+            }
+        }
+        catch {
+            // non-critical, ignore
+        }
+
         next()
     }
     catch (error) {

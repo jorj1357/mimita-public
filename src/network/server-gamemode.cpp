@@ -292,6 +292,13 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.hasBombFeature = gm.features.bombHolderText;
     d.bombTagActive = false;
 
+    // ── Visual/settings overrides from gamemode ────────────────────
+    d.cameraFov = gm.cameraFov;
+    d.ragdollExplicit = gm.ragdollExplicit;
+    d.ragdollEnabled = gm.ragdollEnabled;
+    d.bloodExplicit = gm.bloodExplicit;
+    d.bloodEnabled = gm.bloodEnabled;
+
     // modestart enters the configured intermission. modestartnow enters the
     // countdown directly; serverGamemodeTick owns the authoritative 3-2-1.
     d.mapOnly = false;
@@ -399,6 +406,11 @@ void broadcastDuelState(SOCKET sock,
     pkt.timeLimitSeconds = d.timeLimitSeconds;
     pkt.intermissionSeconds = (int32_t)d.intermissionSeconds;
     pkt.resultsSeconds = (int32_t)d.resultsSeconds;
+
+    // ── Gamemode visual overrides ──────────────────────────────────
+    pkt.cameraFov = d.cameraFov;
+    pkt.ragdollEnabled = d.ragdollExplicit ? (d.ragdollEnabled ? 2 : 1) : 0;
+    pkt.bloodEnabled = d.bloodExplicit ? (d.bloodEnabled ? 2 : 1) : 0;
 
     // FFA top-3 leaderboard
     if (d.matchMode == "ffa") {

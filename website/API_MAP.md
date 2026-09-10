@@ -164,3 +164,116 @@ Tracked metrics:
 - Property ID: G-ZB5BEVX9MR
 - Loaded in `/dist/index.html`
 - Metricool tracker also present
+
+---
+
+## Messaging Endpoints
+
+All require authentication.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/messages/conversations/dm | Create or get DM conversation with a user |
+| GET | /api/messages/conversations | List user's conversations |
+| GET | /api/messages/conversations/:id | Get messages in a conversation |
+| POST | /api/messages/conversations/:id | Send a message |
+| GET | /api/messages/unread-count | Get unread message count |
+
+**DM body:** `{ userId }`  
+**Message body:** `{ body }`
+
+---
+
+## Forum Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | /api/forum/categories | No | List forum categories |
+| GET | /api/forum/categories/:slug/threads | No | List threads in a category |
+| GET | /api/forum/threads/:id | No | Get thread with posts |
+| POST | /api/forum/threads | Yes | Create a new thread |
+| POST | /api/forum/threads/:id/posts | Yes | Reply to a thread |
+| POST | /api/forum/posts/:id/react | Yes | Toggle a reaction on a post |
+
+**Thread body:** `{ categoryId, title, body }`  
+**Post body:** `{ body }`  
+**React body:** `{ emoji }`
+
+---
+
+## Friends Endpoints
+
+All require authentication.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/friends | List friends (accepted) |
+| GET | /api/friends/requests | List pending received requests |
+| GET | /api/friends/sent | List pending sent requests |
+| POST | /api/friends/request/:userId | Send friend request |
+| POST | /api/friends/accept/:friendshipId | Accept request |
+| POST | /api/friends/reject/:friendshipId | Reject request |
+| DELETE | /api/friends/:userId | Remove friend |
+| GET | /api/friends/mutual/:userId | Get mutual friends |
+| GET | /api/friends/status/:userId | Check friendship status |
+
+---
+
+## Moderation Endpoints
+
+All require authentication.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/moderation/report | Submit a user report |
+| POST | /api/moderation/block/:userId | Block a user |
+| DELETE | /api/moderation/block/:userId | Unblock a user |
+| POST | /api/moderation/mute/:userId | Mute a user |
+| DELETE | /api/moderation/mute/:userId | Unmute a user |
+| GET | /api/moderation/blocks | List blocked users |
+| GET | /api/moderation/mutes | List muted users |
+| GET | /api/moderation/status/:userId | Check block/mute status |
+
+**Report body:** `{ reportedId, reason, serverId?, matchId? }`
+
+### Admin Moderation Endpoints
+
+All require admin session.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/admin/moderation/reports | List reports (filter by status) |
+| PATCH | /api/admin/moderation/reports/:id | Update report status |
+| GET | /api/admin/moderation/reports/counts | Get report counts by status |
+
+---
+
+## Banner Reactions & Replies
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | /api/banner/:id/reactions | No | Get reactions for a banner |
+| POST | /api/banner/:id/react | Yes | Toggle a reaction |
+| GET | /api/banner/:id/replies | No | Get replies for a banner |
+| POST | /api/banner/:id/replies | Yes | Reply to a banner |
+
+**React body:** `{ emoji }`  
+**Reply body:** `{ body }`
+
+---
+
+## Admin Analytics Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | /api/admin/dashboard | Admin | All metrics including join events |
+
+---
+
+## Public Profile Updates
+
+Public user profiles now include `last_seen_at` (fuzzy online indicator).
+
+- Green dot if < 5 minutes ago
+- "Xm ago" / "Xh ago" / "Xd ago" for older
+- `null` if never seen

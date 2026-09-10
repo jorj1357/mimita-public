@@ -541,6 +541,141 @@ function createSiteBannerUserRouter(deps = {}) {
         }
     })
 
+    // ── Banner reactions ────────────────────────────────────────────
+
+    router.get("/:id/reactions", async (req, res, next) => {
+        try {
+            const bannerId = cleanPositiveId(req.params.id)
+            if (!bannerId) {
+                return res.status(400).json({ success: false, message: "invalid banner" })
+            }
+
+            const result = await query(
+                `SELECT emoji, COUNT(*) AS count,
+                        ARRAY_AGG(user_id) AS user_ids
+                 FROM banner_reactions
+                 WHERE banner_id = $1
+                 GROUP BY emoji
+                 ORDER BY count DESC`,
+                [bannerId]
+            )
+
+            const reactions = result.rows.map(r => ({
+                emoji: r.emoji,
+                count: Number(r.count),
+                userReacted: req.user ? r.user_ids.includes(req.user.id) : false
+            }))
+
+            res.json({ success: true, reactions })
+        }
+        catch (error) {
+            next(error)
+        }
+    })
+
+    router.post("/:id/react", authenticateMw, async (req, res, next) => {
+        try {
+            const bannerId = cleanPositiveId(req.params.id)
+            const emoji = String(req.body.emoji || "").trim().slice(0, 10)
+            if (!bannerId || !emoji) {
+                return res.status(400).json({ success: false, message: "banner id and emoji required" })
+            }
+
+            // Check banner exists
+            const banner = await query(`SELECT id FROM site_banners WHERE id = $1`, [bannerId])
+            if (!banner.rowCount) {
+                return res.status(404).json({ success: false, message: "banner not found" })
+            }
+
+            // Toggle reaction
+            const existing = await query(
+                `SELECT id FROM banner_reactions WHERE banner_id = $1 AND user_id = $2 AND emoji = $3`,
+                [bannerId, req.user.id, emoji]
+            )
+
+            if (existing.rowCount) {
+                await query(
+                    `DELETE FROM banner_reactions WHERE banner_id = $1 AND user_id = $2 AND emoji = $3`,
+                    [bannerId, req.user.id, emoji]
+                )
+                return res.json({ success: true, action: "removed" })
+            }
+
+            await query(
+                `INSERT INTO banner_reactions (banner_id, user_id, emoji) VALUES ($1, $2, $3)`,
+                [bannerId, req.user.id, emoji]
+            )
+            res.status(201).json({ success: true, action: "added" })
+        }
+        catch (error) {
+            next(error)
+        }
+    })
+
+    // ── Banner replies ──────────────────────────────────────────────
+
+    router.get("/:id/replies", async (req, res, next) => {
+        try {
+            const bannerId = cleanPositiveId(req.params.id)
+            if (!bannerId) {
+                return res.status(400).json({ success: false, message: "invalid banner" })
+            }
+
+            const result = await query(
+                `SELECT br.id, br.body, br.created_at,
+                        u.id AS user_id, u.username, u.avatar_url, u.supporter_tier, u.role
+                 FROM banner_replies br
+                 JOIN users u ON u.id = br.user_id
+                 WHERE br.banner_id = $1 AND br.deleted_at IS NULL
+                 ORDER BY br.created_at ASC
+                 LIMIT 100`,
+                [bannerId]
+            )
+
+            res.json({ success: true, replies: result.rows })
+        }
+        catch (error) {
+            next(error)
+        }
+    })
+
+    router.post("/:id/replies", authenticateMw, async (req, res, next) => {
+        try {
+            const bannerId = cleanPositiveId(req.params.id)
+            const body = String(req.body.body || "").trim().slice(0, 1000)
+            if (!bannerId || !body) {
+                return res.status(400).json({ success: false, message: "banner id and body required" })
+            }
+
+            // Check banner exists
+            const banner = await query(`SELECT id FROM site_banners WHERE id = $1`, [bannerId])
+            if (!banner.rowCount) {
+                return res.status(404).json({ success: false, message: "banner not found" })
+            }
+
+            const result = await query(
+                `INSERT INTO banner_replies (banner_id, user_id, body)
+                 VALUES ($1, $2, $3)
+                 RETURNING id, body, created_at`,
+                [bannerId, req.user.id, body]
+            )
+
+            const reply = {
+                ...result.rows[0],
+                user_id: req.user.id,
+                username: req.user.username,
+                avatar_url: req.user.avatar_url,
+                supporter_tier: req.user.supporter_tier,
+                role: req.user.role
+            }
+
+            res.status(201).json({ success: true, reply })
+        }
+        catch (error) {
+            next(error)
+        }
+    })
+
     return router
 }
 

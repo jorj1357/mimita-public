@@ -136,6 +136,9 @@ static ServerDamageResult applyPlayerDamageLegacy(
         target.movement.externalImpulse = glm::vec3(0.0f);
         target.attackQueued = false;
         target.deaths += 1;
+        // Clear NPC damage tracking on death so it doesn't carry over to next life
+        target.lastNpcDamageSourceId = 0;
+        target.lastNpcDamageTick = 0;
         if (attackerPlayerId != target.id)
         {
             auto attacker = players.find(attackerPlayerId);

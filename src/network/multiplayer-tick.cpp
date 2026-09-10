@@ -19,6 +19,7 @@
 #include "avatar/avatar.h"
 #include "config/player-settings.h"
 #include "config/networking-config.h"
+#include "config/camera-config.h"
 #include "auth/auth-system.h"
 #include "website/api-client.h"
 #include "debug/debug-log.h"
@@ -670,6 +671,17 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
     ctx.pendingReloadRequests.clear();
     ctx.fireRejections.clear();
     ctx.processedRefundSerials.clear();
+
+    // ── Reapply gamemode camera FOV override on spawn ──────────────
+    const auto& communityMatch = CommunityMatchClient::instance();
+    if (communityMatch.active() && communityMatch.cameraFov() > 0.0f) {
+        auto& camCfg = CamConfig::instance().data();
+        if (camCfg.fov != communityMatch.cameraFov()) {
+            camCfg.fov = communityMatch.cameraFov();
+            Debug::log(Debug::Category::Duel,
+                "[SPAWN] Reapplied gamemode FOV=%.0f\n", communityMatch.cameraFov());
+        }
+    }
 
     Debug::log(Debug::Category::Weapons, "[SPAWN SYNC APPLY] oldGen=%u newGen=%u health=%d weapons=%u\n",
                oldGen, spawn->spawnGeneration, spawn->health, spawn->weaponCount);

@@ -789,6 +789,28 @@ export default function AdminDashboard() {
                     </div>
                 </div>
 
+                {/* Moderation */}
+                <div className="adminSection">
+                    <h2>Moderation</h2>
+                    <div className="adminCard">
+                        <p>Review user reports, take action, and manage the moderation queue.</p>
+                        <Link to="/admin/reports" className="adminButton" style={{ display: "inline-block", marginTop: "8px", textDecoration: "none" }}>
+                            Open Moderation Queue
+                        </Link>
+                    </div>
+                </div>
+
+                {/* Analytics */}
+                <div className="adminSection">
+                    <h2>Analytics</h2>
+                    <div className="adminCard">
+                        <p>View join events by source, DAU/WAU/MAU, and detailed analytics.</p>
+                        <Link to="/admin/analytics" className="adminButton" style={{ display: "inline-block", marginTop: "8px", textDecoration: "none" }}>
+                            Open Analytics Dashboard
+                        </Link>
+                    </div>
+                </div>
+
                 {/* Error Log */}
                 <div className="adminSection adminSectionWide">
                     <h2>error log</h2>

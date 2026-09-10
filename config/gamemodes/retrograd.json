@@ -1,9 +1,9 @@
 {
-  "id": "tdm",
-  "name": "Team Deathmatch",
-  "description": "Red vs Blue. First team to 30 kills wins.",
+  "id": "retrograd",
+  "name": "Retrograd",
+  "description": "Classic arcade shooter with ragdolls and blood.",
   "team_names": ["RED", "BLUE"],
-  "goal_value": 30,
+  "goal_value": 20,
   "weapon_set_id": 1,
   "time_limit_seconds": 300,
   "respawn_seconds": 0.01,
@@ -12,9 +12,10 @@
   "go_seconds": 0.75,
   "rematch_seconds": 5,
   "spawn_offset_radius": 5.0,
-  "spawn_strategy": "shared",
   "intermission_seconds": 15,
   "results_seconds": 8,
-  "ragdoll_enabled": false,
+  "camera_fov": 70,
+  "ragdoll_enabled": true,
+  "blood_enabled": true,
   "maps": ["mimita-duels-map-v3", "atdm", "funworld"]
 }

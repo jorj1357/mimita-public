@@ -7,6 +7,7 @@ import { hashToken, createSecretToken, verifyPassword, getClientIp,
 import { sessionSecret, sessionDays } from "./session.js"
 import { createRateLimit } from "./rateLimit.js"
 import { getVipStateForUser } from "./vip-entitlements.js"
+import { trackJoinEvent } from "./join-tracking.js"
 
 const router = Router()
 const loginRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 10, name: "game_auth_login" })
@@ -128,6 +129,7 @@ router.post("/login", loginRateLimit, async (req, res, next) => {
         const vip = await getVipStateForUser(user, pool)
 
         console.log(`[GAME AUTH] login success user_id=${user.id} username=${user.username} rememberMe=${rememberMe}`)
+        trackJoinEvent(user.id, "game_client", req).catch(() => {})
 
         res.json({
             ok: true,

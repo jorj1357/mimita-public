@@ -31,6 +31,30 @@
       "description": "One bomb, infinite gameplay. Pass it or explode.",
       "teams": 0,
       "score_limit": 0
+    },
+    {
+      "id": "retrograd",
+      "gamemode_id": "retrograd",
+      "name": "Retrograd",
+      "description": "Classic arcade shooter with ragdolls and blood.",
+      "teams": 2,
+      "score_limit": 20
+    },
+    {
+      "id": "counterstrike",
+      "gamemode_id": "counterstrike",
+      "name": "Counter Strike",
+      "description": "Tactical defuse mode. No ragdolds.",
+      "teams": 2,
+      "score_limit": 10
+    },
+    {
+      "id": "funcounterstrike",
+      "gamemode_id": "funcounterstrike",
+      "name": "Fun Counter Strike",
+      "description": "All weapons, high FOV, ragdolls enabled.",
+      "teams": 2,
+      "score_limit": 15
     }
   ]
 }

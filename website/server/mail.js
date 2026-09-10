@@ -184,6 +184,33 @@ export async function sendSupportNotificationEmail({ requestId, topic, username,
     })
 }
 
+export async function sendReportNotificationEmail({ reportId, reporterUsername, reportedUsername, reason, createdAt }) {
+    const origin = process.env.APP_ORIGIN || "https://mimita.fun"
+    const adminUrl = `${origin}/admin/reports`
+    const text =
+        `New report #${reportId}\n\n` +
+        `Reporter: ${reporterUsername}\n` +
+        `Reported: ${reportedUsername}\n` +
+        `Reason: ${reason}\n` +
+        `Timestamp: ${createdAt || new Date().toISOString()}\n` +
+        `Admin: ${adminUrl}\n`
+
+    await sendMail({
+        to: "hello@mimita.fun",
+        subject: `New report #${reportId}: ${reportedUsername}`,
+        text,
+        html: `
+            <h1>New user report</h1>
+            <p><strong>Report id:</strong> ${escapeHtml(String(reportId))}</p>
+            <p><strong>Reporter:</strong> ${escapeHtml(reporterUsername)}</p>
+            <p><strong>Reported:</strong> ${escapeHtml(reportedUsername)}</p>
+            <p><strong>Reason:</strong> ${escapeHtml(reason)}</p>
+            <p><strong>Timestamp:</strong> ${escapeHtml(createdAt || new Date().toISOString())}</p>
+            <p><a href="${escapeHtml(adminUrl)}">Open the moderation queue</a></p>
+        `
+    })
+}
+
 export async function sendVipSubscriptionCanceledEmail({
     email,
     username = "",

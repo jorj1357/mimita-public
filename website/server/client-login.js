@@ -4,6 +4,7 @@ import { pool } from "./db.js"
 import { authenticate, sessionSecret, sessionDays } from "./session.js"
 import { createRateLimit } from "./rateLimit.js"
 import { getVipStateForUser } from "./vip-entitlements.js"
+import { trackJoinEvent } from "./join-tracking.js"
 
 const router = Router()
 const clientLoginRateLimit = createRateLimit({ windowMs: 10 * 1000, max: 10, name: "client_login" })
@@ -118,6 +119,7 @@ router.post("/confirm", clientLoginRateLimit, async (req, res, next) => {
                 vip
             }
         })
+        trackJoinEvent(result.rows[0].user_id, "client_login", req).catch(() => {})
     }
     catch (error) {
         next(error)

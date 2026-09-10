@@ -55,6 +55,13 @@ import BannerSuccess from "./pages/BannerSuccess"
 import BannerStatus from "./pages/BannerStatus"
 import AdminBanner from "./pages/AdminBanner"
 import AdminSupport from "./pages/AdminSupport"
+import Messages from "./pages/Messages"
+import Forum from "./pages/Forum"
+import ForumCategory from "./pages/ForumCategory"
+import ForumThread from "./pages/ForumThread"
+import Friends from "./pages/Friends"
+import AdminReports from "./pages/AdminReports"
+import AdminAnalytics from "./pages/AdminAnalytics"
 
 /* =========================
    APP
@@ -123,6 +130,14 @@ ReactDOM.createRoot(
         <Route path="/banner/status" element={<BannerStatus />} />
         <Route path="/admin/banners" element={<AdminBanner />} />
         <Route path="/admin/support" element={<AdminSupport />} />
+        <Route path="/admin/reports" element={<AdminReports />} />
+        <Route path="/admin/analytics" element={<AdminAnalytics />} />
+
+        <Route path="/messages" element={<Messages />} />
+        <Route path="/friends" element={<Friends />} />
+        <Route path="/forum" element={<Forum />} />
+        <Route path="/forum/:slug" element={<ForumCategory />} />
+        <Route path="/forum/thread/:id" element={<ForumThread />} />
 
         <Route path="*" element={<NotFound />} />
 

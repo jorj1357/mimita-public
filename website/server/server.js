@@ -53,6 +53,11 @@ import { createSupportRouter, createSupportAdminRouter } from "./support.js"
 import { trackEvent } from "./analytics.js"
 import { pushError } from "./error-queue.js"
 import { createRateLimit } from "./rateLimit.js"
+import { createMessagesRouter } from "./messages.js"
+import { createForumRouter } from "./forum.js"
+import { createFriendsRouter } from "./friends.js"
+import { createModerationRouter, createModerationAdminRouter } from "./moderation.js"
+import { trackJoinEvent } from "./join-tracking.js"
 import {
     parseCookies,
     clearSessionCookie,
@@ -283,6 +288,8 @@ app.post("/api/auth/signup", authRateLimit, async (req, res, next) => {
             user_id: user.id,
             ip_address: getClientIp(req)
         })
+        trackJoinEvent(user.id, "website_signup", req)
+            .catch(() => {})
         await safelySend(
             "welcome_sent",
             () => sendAccountWelcomeEmail(email, username, verificationToken)
@@ -774,7 +781,7 @@ app.get("/api/users/id/:id", async (req, res, next) => {
         }
         const result = await pool.query(
             `
-            SELECT id, username, bio, avatar_url, avatar_updated_at, supporter_tier, role, created_at
+            SELECT id, username, bio, avatar_url, avatar_updated_at, supporter_tier, role, created_at, last_seen_at
             FROM users
             WHERE id = $1
               AND deleted_at IS NULL
@@ -810,7 +817,7 @@ app.get("/api/users/:username", async (req, res, next) => {
     try {
         const result = await pool.query(
             `
-            SELECT id, username, bio, avatar_url, avatar_updated_at, supporter_tier, role, created_at
+            SELECT id, username, bio, avatar_url, avatar_updated_at, supporter_tier, role, created_at, last_seen_at
             FROM users
             WHERE username_key = $1
               AND deleted_at IS NULL
@@ -1187,6 +1194,11 @@ app.use("/api/admin/banners", adminRateLimit, createSiteBannerAdminRouter())
 app.use("/api/support", createSupportRouter())
 app.use("/api/admin/support", adminRateLimit, createSupportAdminRouter())
 app.use("/api/vip", createVipRouter())
+app.use("/api/messages", createMessagesRouter())
+app.use("/api/forum", createForumRouter())
+app.use("/api/friends", createFriendsRouter())
+app.use("/api/moderation", createModerationRouter())
+app.use("/api/admin/moderation", adminRateLimit, createModerationAdminRouter())
 app.use("/api", gameApiRouter)
 
 // Serve generated article/news JSON — the admin editor is the source of truth

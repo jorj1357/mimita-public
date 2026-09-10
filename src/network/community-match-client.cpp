@@ -12,6 +12,14 @@
 #include "terminal/terminal-state.h"
 #include "auth/auth-system.h"
 #include "killfeed/killfeed.h"
+#include "config/settings-backup.h"
+#include "config/camera-config.h"
+#include "config/ragdoll-death-config.h"
+#include "config/impact-decals-config.h"
+#include "debug/debug-log.h"
+
+#include <fstream>
+#include <nlohmann/json.hpp>
 
 namespace MimitaNet {
 
@@ -23,6 +31,12 @@ CommunityMatchClient& CommunityMatchClient::instance()
 
 void CommunityMatchClient::reset()
 {
+    // Restore backups if overrides were applied
+    if (mOverridesApplied) {
+        SettingsBackup::instance().restoreBackups();
+        mOverridesApplied = false;
+    }
+
     mMode.clear();
     mPhase = DUEL_PHASE_WAITING;
     mPhaseTimer = 0.0f;
@@ -41,6 +55,9 @@ void CommunityMatchClient::reset()
     mBombTimerTicks = 0;
     mBombInactiveTicks = 0;
     mBombPos = glm::vec3(0.0f);
+    mCameraFov = 0.0f;
+    mRagdollEnabled = 0;
+    mBloodEnabled = 0;
 
     MatchLeaderboard::instance().clear();
     KillfeedManager::instance().clear();
@@ -104,6 +121,88 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     }
     if (newLocalScore > mLocalScore) hud.onConfirmedScoreGain();
     mLocalScore = newLocalScore;
+
+    // ── Apply gamemode visual overrides ────────────────────────────
+    const float newFov = packet.cameraFov;
+    const uint8_t newRagdoll = packet.ragdollEnabled;
+    const uint8_t newBlood = packet.bloodEnabled;
+
+    // Only act if overrides changed or first apply
+    if (newFov != mCameraFov || newRagdoll != mRagdollEnabled || newBlood != mBloodEnabled || !mOverridesApplied)
+    {
+        // Save backups before first override
+        if (!mOverridesApplied && (newFov > 0.0f || newRagdoll != 0 || newBlood != 0)) {
+            SettingsBackup::instance().saveBackups();
+            mOverridesApplied = true;
+        }
+
+        // Apply camera FOV override
+        if (newFov > 0.0f) {
+            auto& camCfg = CamConfig::instance();
+            auto& data = const_cast<CameraConfigData&>(camCfg.data());
+            if (data.fov != newFov) {
+                data.fov = newFov;
+                Debug::log(Debug::Category::General,
+                    "[GAMEMODE OVERRIDE] Camera FOV set to %.0f\n", newFov);
+            }
+        }
+
+        // Apply ragdoll override
+        if (newRagdoll != 0) {
+            auto& ragdollCfg = RagdollDeathConfig::instance();
+            bool desiredEnabled = (newRagdoll == 2);
+            if (ragdollCfg.data().enabled != desiredEnabled) {
+                // Write to ragdolldeath.json
+                const std::string path = "config/ragdolldeath.json";
+                std::ifstream inFile(path);
+                if (inFile.is_open()) {
+                    nlohmann::json j;
+                    inFile >> j;
+                    inFile.close();
+                    j["enabled"] = desiredEnabled;
+                    std::ofstream outFile(path);
+                    if (outFile.is_open()) {
+                        outFile << j.dump(4);
+                        outFile.close();
+                        Debug::log(Debug::Category::General,
+                            "[GAMEMODE OVERRIDE] Ragdoll death set to %s\n",
+                            desiredEnabled ? "enabled" : "disabled");
+                    }
+                }
+            }
+        }
+
+        // Apply blood override
+        if (newBlood != 0) {
+            auto& decalsCfg = ImpactDecalsConfig::instance();
+            bool desiredEnabled = (newBlood == 2);
+            if (decalsCfg.data().blood.enabled != desiredEnabled) {
+                // Write to impact_decals.json
+                const std::string path = "config/impact_decals.json";
+                std::ifstream inFile(path);
+                if (inFile.is_open()) {
+                    nlohmann::json j;
+                    inFile >> j;
+                    inFile.close();
+                    if (j.contains("blood") && j["blood"].is_object()) {
+                        j["blood"]["enabled"] = desiredEnabled;
+                    }
+                    std::ofstream outFile(path);
+                    if (outFile.is_open()) {
+                        outFile << j.dump(4);
+                        outFile.close();
+                        Debug::log(Debug::Category::General,
+                            "[GAMEMODE OVERRIDE] Blood visuals set to %s\n",
+                            desiredEnabled ? "enabled" : "disabled");
+                    }
+                }
+            }
+        }
+
+        mCameraFov = newFov;
+        mRagdollEnabled = newRagdoll;
+        mBloodEnabled = newBlood;
+    }
 }
 
 void CommunityMatchClient::onBombTagState(const BombTagStatePacket& packet)

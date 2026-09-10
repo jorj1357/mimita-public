@@ -39,6 +39,7 @@ public:
     int goal() const { return mGoal; }
     int redScore() const { return mRedScore; }
     int blueScore() const { return mBlueScore; }
+    float cameraFov() const { return mCameraFov; }
 
     // ── Bomb Tag state (replicated from server) ──────────────────────
     uint8_t bombOwnerType() const { return mBombOwnerType; }
@@ -71,6 +72,12 @@ private:
     uint32_t mBombTimerTicks = 0;
     uint32_t mBombInactiveTicks = 0;
     glm::vec3 mBombPos{0.0f};
+
+    // ── Gamemode visual overrides ──────────────────────────────────
+    float mCameraFov = 0.0f;         // 0 = no override
+    uint8_t mRagdollEnabled = 0;     // 0=no override, 1=disabled, 2=enabled
+    uint8_t mBloodEnabled = 0;       // 0=no override, 1=disabled, 2=enabled
+    bool mOverridesApplied = false;  // true if backups saved + overrides applied
 };
 
 }

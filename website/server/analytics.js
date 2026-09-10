@@ -1,4 +1,5 @@
 import { pool } from "./db.js"
+import { getJoinMetrics } from "./join-tracking.js"
 
 const DEFAULT_METRICS = [
     "page_loads_today",
@@ -241,6 +242,14 @@ export async function getMetrics() {
     const gameSummary = await getGameAnalyticsSummary()
     Object.assign(metrics, gameSummary)
 
+    try {
+        const joinMetrics = await getJoinMetrics()
+        metrics.join_events = joinMetrics
+    }
+    catch {
+        // non-critical
+    }
+
     return metrics
 }
 
@@ -420,6 +429,26 @@ export async function refreshMetrics() {
     // Discord joins
     await updateMetric("discord_joins", today, await countEvents("discord_join", "all"))
     await updateMetric("discord_joins_today", today, await countEvents("discord_join", "day"))
+
+    // Join events by source
+    const joinSources = await pool.query(`
+        SELECT source, COUNT(*) AS count
+        FROM join_events
+        WHERE created_at >= CURRENT_DATE
+        GROUP BY source
+    `)
+    for (const row of joinSources.rows) {
+        await updateMetric(`joins_today_${row.source}`, today, Number(row.count))
+    }
+
+    const joinSourcesAll = await pool.query(`
+        SELECT source, COUNT(*) AS count
+        FROM join_events
+        GROUP BY source
+    `)
+    for (const row of joinSourcesAll.rows) {
+        await updateMetric(`joins_all_${row.source}`, today, Number(row.count))
+    }
 }
 
 async function getGameAnalyticsSummary() {

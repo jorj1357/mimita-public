@@ -33,6 +33,7 @@ public:
     bool pollReload();
 
     const CameraConfigData& data() const { return mData; }
+    CameraConfigData& data() { return mData; }
 
 private:
     CamConfig() = default;

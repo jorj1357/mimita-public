@@ -3,6 +3,7 @@ import { Router } from "express"
 import { createSecretToken, getClientIp, hashToken } from "./authCore.js"
 import { pool } from "./db.js"
 import { authenticate, sessionSecret, sessionDays } from "./session.js"
+import { trackJoinEvent } from "./join-tracking.js"
 
 const router = Router()
 
@@ -37,6 +38,7 @@ router.post("/exchange-session", async (req, res, next) => {
         )
 
         res.json({ success: true, session_token: token })
+        trackJoinEvent(entry.userId, "link_code", req).catch(() => {})
     }
     catch (error) {
         next(error)
