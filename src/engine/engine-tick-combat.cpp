@@ -39,7 +39,7 @@
 #include "replay/replay-editor.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
-#include "entities/death-ghost.h"
+#include "ragdoll/ragdoll-mode.h"
 #include "gui/hud/chat-bubble.h"
 #include "game/duel.h"
 #include "duel/duel-queue.h"
@@ -204,7 +204,6 @@ void engineTickCombat(Engine& engine, float dt)
     { MIMITA_PERF_SCOPE("Combat::EffectSpawn");
     EffectPartSystem::instance().update(dt);
     }
-    DeathGhostSystem::instance().update(dt);
     { MIMITA_PERF_SCOPE("Combat::DecalTrace");
     HitEffects::updateHitBursts(dt);
     }

@@ -361,6 +361,12 @@ struct HitEvent {
     std::string attacker;
     std::string victim;
     std::string weaponSource = "unknown";
+    // Which body part was struck ("head"/"torso"/"leg"/...). Carried so effects
+    // and future gore/destruction can react per part instead of re-deriving it.
+    std::string bodyPart = "torso";
+    // Canonical weapon id (e.g. "revolver") and attack family.
+    std::string weaponId;
+    std::string attackType = "unknown";
     float knockbackForce = 0.0f;
     float hitDistance = -1.0f;
     bool spawnDamageNumber = true;

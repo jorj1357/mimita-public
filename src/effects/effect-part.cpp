@@ -311,6 +311,10 @@ EffectPart* EffectPartSystem::spawnBulletImpact(glm::vec3 position, glm::vec3 no
     SurfaceDecal decal;
     decal.position = position + n * 0.01f;
     decal.normal = n;
+    {
+        const float ra = (float)(rand() % 6284) / 1000.0f;
+        decal.axis = glm::vec3(std::cos(ra), std::sin(ra), 0.1234f);
+    }
     decal.color = b.color;
     decal.kind = SurfaceDecalKind::BulletHole;
     decal.radius = b.radius;

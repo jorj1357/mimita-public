@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <unordered_map>
 #include <utility>
 
@@ -12,8 +13,12 @@
 #include <glm/gtx/quaternion.hpp>
 
 #include "config.h"
+#include "config/ragdoll-death-config.h"
 #include "camera.h"
+#include "effects/effect-part.h"
+#include "effects/hit-effects.h"
 #include "entities/player.h"
+#include "render/render-player.h"
 #include "input/input-state.h"
 #include "physics/physics-types.h"
 #include "physics/movement/physics-collision.h"
@@ -125,23 +130,30 @@ void RagdollModeSystem::activate(Player& player)
     if (!cfg.enabled) return;
 
     mActive = true;
-    mActivationTime = 0.0f;
+    mAlive = RagdollBody{};
     mCameraSmoothInit = false;
-    mLeftArmExtending = false;
-    mRightArmExtending = false;
 
-    mLeftGrab = {};
-    mRightGrab = {};
-
-    // Refresh the mesh skeleton so the bind frames reflect the current pose.
+    // Bind from the model's rest pose, not the currently animated pose.
+    // Otherwise a limb's current animation rotation (for example an arm swung
+    // about the shoulder mid-walk) is baked into meshLocal, and the visible
+    // limb stays stuck at that angle relative to its ragdoll capsule. Resetting
+    // the skeleton first snaps every limb to the capsule's canonical bind
+    // frame; physics then owns it.
+    {
+        const size_t n = std::min(player.perfectPoseSkeleton.nodes.size(),
+                                  player.perfectPoseSkeleton.restLocalTransforms.size());
+        for (size_t i = 0; i < n; ++i)
+            player.perfectPoseSkeleton.nodes[i].localTransform =
+                player.perfectPoseSkeleton.restLocalTransforms[i];
+    }
     player.updateModelWorldTransforms();
-    mTorsoPosition = player.pos;
-    mRootWorldPosition = player.pos;
-    initParts(player);
+    mAlive.torsoPosition = player.pos;
+    mAlive.rootWorldPosition = player.pos;
+    initParts(player, mAlive);
     mAppliedConfigGeneration = cfg.generation;
 
     Debug::warn(Debug::Category::Ragdoll,
-        "[RAGDOLL MODE] Activated — %zu parts\n", mParts.size());
+        "[RAGDOLL MODE] Activated — %zu parts\n", mAlive.parts.size());
 
     if (StructuredLogger::instance().shouldLog(StructuredCategory::Ragdoll, StructuredLevel::Trace)) {
         char msg[1024];
@@ -153,7 +165,7 @@ void RagdollModeSystem::activate(Player& player)
             (int)player.ground.onGround,
             player.yaw,
             (uint32_t)player.movementSimulationTick,
-            mParts.size());
+            mAlive.parts.size());
         StructuredLogger::Entry e;
         e.category = StructuredCategory::Ragdoll;
         e.level = StructuredLevel::Trace;
@@ -171,12 +183,13 @@ void RagdollModeSystem::activate(Player& player)
 
 void RagdollModeSystem::deactivate(Player& player)
 {
-    if (mTorsoIndex >= 0 && mTorsoIndex < (int)mParts.size()) {
-        const RigidBody& torso = mParts[mTorsoIndex].body;
+    RagdollBody& b = mAlive;
+    if (b.torsoIndex >= 0 && b.torsoIndex < (int)b.parts.size()) {
+        const RigidBody& torso = mAlive.parts[mAlive.torsoIndex].body;
         glm::mat4 torsoWorld = rigidWorld(torso);
         // Return the authoritative root to the same body-relative point it was
         // anchored at, so repeated toggles do not drift.
-        player.pos = glm::vec3(torsoWorld * glm::vec4(mRootOffsetLocal, 1.0f));
+        player.pos = glm::vec3(torsoWorld * glm::vec4(mAlive.rootOffsetLocal, 1.0f));
         const auto& cfg = RagdollModeConfig::instance().data();
         player.vel = cfg.exitPreserveVelocity ? torso.linearVelocity : glm::vec3(0.0f);
         player.vel.z += cfg.exitHopVelocity;
@@ -184,7 +197,7 @@ void RagdollModeSystem::deactivate(Player& player)
 
     // Restore any skeleton nodes the ragdoll neutralized, so the normal
     // animation root is valid again on the next frame.
-    for (int anc : mRootAncestorNodes) {
+    for (int anc : mAlive.rootAncestorNodes) {
         if (anc >= 0 && anc < (int)player.perfectPoseSkeleton.nodes.size())
             player.perfectPoseSkeleton.nodes[anc].localTransform =
                 player.perfectPoseSkeleton.restLocalTransforms[anc];
@@ -194,23 +207,20 @@ void RagdollModeSystem::deactivate(Player& player)
     player.modelRootRotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
 
     mActive = false;
-    mParts.clear();
-    mRootAncestorNodes.clear();
-    mLeftGrab = {};
-    mRightGrab = {};
+    mAlive = RagdollBody{};
     mCameraSmoothInit = false;
 
     Debug::warn(Debug::Category::Ragdoll,
         "[RAGDOLL MODE] Deactivated\n");
 }
 
-void RagdollModeSystem::initParts(const Player& player)
+void RagdollModeSystem::initParts(const Player& player, RagdollBody& b)
 {
     const auto& cfg = RagdollModeConfig::instance().data();
-    mParts.clear();
-    mRootAncestorNodes.clear();
-    mTorsoIndex = mHeadIndex = mLeftArmIndex = mRightArmIndex = -1;
-    mLeftLegIndex = mRightLegIndex = -1;
+    b.parts.clear();
+    b.rootAncestorNodes.clear();
+    b.torsoIndex = b.headIndex = b.leftArmIndex = b.rightArmIndex = -1;
+    b.leftLegIndex = b.rightLegIndex = -1;
 
     struct PartDef { const char* name; float defaultMass; };
     const PartDef defs[] = {
@@ -345,26 +355,26 @@ void RagdollModeSystem::initParts(const Player& player)
         // RAG-003: entering ragdoll preserves current velocity.
         part.body.linearVelocity = player.vel;
 
-        int idx = (int)mParts.size();
-        mParts.push_back(std::move(part));
+        int idx = (int)b.parts.size();
+        b.parts.push_back(std::move(part));
 
-        const std::string& n = mParts[idx].name;
-        if (n == "torso") mTorsoIndex = idx;
-        else if (n == "head") mHeadIndex = idx;
-        else if (n == "leftArm") mLeftArmIndex = idx;
-        else if (n == "rightArm") mRightArmIndex = idx;
-        else if (n == "leftLeg") mLeftLegIndex = idx;
-        else if (n == "rightLeg") mRightLegIndex = idx;
+        const std::string& n = b.parts[idx].name;
+        if (n == "torso") b.torsoIndex = idx;
+        else if (n == "head") b.headIndex = idx;
+        else if (n == "leftArm") b.leftArmIndex = idx;
+        else if (n == "rightArm") b.rightArmIndex = idx;
+        else if (n == "leftLeg") b.leftLegIndex = idx;
+        else if (n == "rightLeg") b.rightLegIndex = idx;
     }
 
     // Map skeleton node -> part index so each part can find its nearest
     // skeleton-ancestor part (flat export = root; nested export = parent part).
     std::unordered_map<int, int> nodeToPart;
-    for (int i = 0; i < (int)mParts.size(); ++i)
-        nodeToPart[mParts[i].nodeIndex] = i;
+    for (int i = 0; i < (int)b.parts.size(); ++i)
+        nodeToPart[b.parts[i].nodeIndex] = i;
 
-    for (int i = 0; i < (int)mParts.size(); ++i) {
-        RagdollModePart& part = mParts[i];
+    for (int i = 0; i < (int)b.parts.size(); ++i) {
+        RagdollModePart& part = b.parts[i];
         int anc = player.perfectPoseSkeleton.nodes[part.nodeIndex].parent;
         int guard = 0;
         while (anc >= 0 && anc < (int)player.perfectPoseSkeleton.nodes.size() && guard++ < 64) {
@@ -382,15 +392,15 @@ void RagdollModeSystem::initParts(const Player& player)
     // not the player origin.
     const char* attachNames[] = {"head", "leftArm", "rightArm", "leftLeg", "rightLeg"};
     for (const char* name : attachNames) {
-        int childIdx = findPartByName(mParts, name);
+        int childIdx = findPartByName(b.parts, name);
         if (childIdx < 0) continue;
         auto attIt = cfg.attachments.find(name);
         if (attIt == cfg.attachments.end()) continue;
-        int parentIdx = findPartByName(mParts, attIt->second.parent);
+        int parentIdx = findPartByName(b.parts, attIt->second.parent);
         if (parentIdx < 0) continue;
 
-        RagdollModePart& child = mParts[childIdx];
-        RagdollModePart& parent = mParts[parentIdx];
+        RagdollModePart& child = b.parts[childIdx];
+        RagdollModePart& parent = b.parts[parentIdx];
 
         child.parentIndex = parentIdx;
         // Arms may stretch a little away from the shoulder while extending.
@@ -435,26 +445,26 @@ void RagdollModeSystem::initParts(const Player& player)
 
     // Collect non-part skeleton ancestors above the torso (e.g. plrOrigin) so
     // they can be neutralized while ragdoll owns the model root.
-    if (mTorsoIndex >= 0) {
-        int anc = player.perfectPoseSkeleton.nodes[mParts[mTorsoIndex].nodeIndex].parent;
+    if (b.torsoIndex >= 0) {
+        int anc = player.perfectPoseSkeleton.nodes[b.parts[b.torsoIndex].nodeIndex].parent;
         int guard = 0;
         while (anc >= 0 && anc < (int)player.perfectPoseSkeleton.nodes.size() && guard++ < 64) {
             if (nodeToPart.find(anc) != nodeToPart.end()) break;
-            mRootAncestorNodes.push_back(anc);
+            b.rootAncestorNodes.push_back(anc);
             anc = player.perfectPoseSkeleton.nodes[anc].parent;
         }
     }
 
     // Anchor the authoritative root in the torso bind frame.
-    if (mTorsoIndex >= 0) {
-        glm::mat4 torsoWorld = rigidWorld(mParts[mTorsoIndex].body);
-        mRootOffsetLocal = glm::vec3(glm::inverse(torsoWorld) * glm::vec4(player.pos, 1.0f));
+    if (b.torsoIndex >= 0) {
+        glm::mat4 torsoWorld = rigidWorld(b.parts[b.torsoIndex].body);
+        b.rootOffsetLocal = glm::vec3(glm::inverse(torsoWorld) * glm::vec4(player.pos, 1.0f));
     }
 }
 
 // Re-derives capsule and attachment geometry from config while keeping the
 // current body poses and velocities. Used for live ragdoll.json tuning.
-void RagdollModeSystem::reinitPreservingState(Player& player)
+void RagdollModeSystem::reinitPreservingState(Player& player, RagdollBody& b)
 {
     struct Saved {
         glm::vec3 position;
@@ -463,18 +473,27 @@ void RagdollModeSystem::reinitPreservingState(Player& player)
         glm::vec3 angularVelocity;
     };
     std::vector<std::pair<std::string, Saved>> saved;
-    saved.reserve(mParts.size());
-    for (const auto& part : mParts) {
+    saved.reserve(b.parts.size());
+    for (const auto& part : b.parts) {
         saved.push_back({part.name,
             {part.body.position, part.body.orientation,
              part.body.linearVelocity, part.body.angularVelocity}});
     }
 
-    // Node worlds currently equal the ragdoll pose, so re-binding keeps it.
+    // Re-bind from the rest pose (not the live ragdoll pose) so meshLocal stays
+    // the true body-to-mesh bind offset; the saved body poses below restore the
+    // current ragdoll configuration on top of it.
+    {
+        const size_t n = std::min(player.perfectPoseSkeleton.nodes.size(),
+                                  player.perfectPoseSkeleton.restLocalTransforms.size());
+        for (size_t i = 0; i < n; ++i)
+            player.perfectPoseSkeleton.nodes[i].localTransform =
+                player.perfectPoseSkeleton.restLocalTransforms[i];
+    }
     player.updateModelWorldTransforms();
-    initParts(player);
+    initParts(player, b);
 
-    for (auto& part : mParts) {
+    for (auto& part : b.parts) {
         for (const auto& s : saved) {
             if (s.first != part.name) continue;
             part.body.position = s.second.position;
@@ -485,20 +504,21 @@ void RagdollModeSystem::reinitPreservingState(Player& player)
         }
     }
 
-    if (mTorsoIndex >= 0) {
-        glm::mat4 torsoWorld = rigidWorld(mParts[mTorsoIndex].body);
-        mRootOffsetLocal = glm::vec3(glm::inverse(torsoWorld) * glm::vec4(mRootWorldPosition, 1.0f));
+    if (b.torsoIndex >= 0) {
+        glm::mat4 torsoWorld = rigidWorld(b.parts[b.torsoIndex].body);
+        b.rootOffsetLocal = glm::vec3(glm::inverse(torsoWorld) * glm::vec4(b.rootWorldPosition, 1.0f));
     }
 
     Debug::log(Debug::Category::Ragdoll,
         "[RAGDOLL MODE] Geometry re-initialized (config generation %llu, parts=%zu)\n",
-        (unsigned long long)mAppliedConfigGeneration, mParts.size());
+        (unsigned long long)mAppliedConfigGeneration, b.parts.size());
 }
 
 void RagdollModeSystem::update(float dt, const World& world, Player& player,
                                 const InputState& input, const Camera& camera)
 {
     if (!mActive) return;
+    RagdollBody& b = mAlive;
 
     const auto& cfg = RagdollModeConfig::instance().data();
 
@@ -506,56 +526,56 @@ void RagdollModeSystem::update(float dt, const World& world, Player& player,
     // preserving the current pose and momentum.
     if (cfg.generation != mAppliedConfigGeneration) {
         mAppliedConfigGeneration = cfg.generation;
-        if (!mParts.empty())
-            reinitPreservingState(player);
+        if (!b.parts.empty())
+            reinitPreservingState(player, b);
     }
 
-    mActivationTime += dt;
+    b.activationTime += dt;
 
     // Step 1: Inputs and physical controls (head aim, arm extension, grabs).
-    applyControls(dt, input, camera);
-    processGrab(input, camera, world);
-    processExtend(input, camera, dt);
+    applyControls(dt, input, camera, b);
+    processGrab(input, camera, world, b);
+    processExtend(input, camera, dt, b);
 
     // Step 2: Integrate gravity and motion for every body part.
     glm::vec3 gravity(0.0f, 0.0f, -GRAVITY * cfg.gravityScale);
-    for (auto& part : mParts)
+    for (auto& part : b.parts)
         integrate(part.body, gravity, dt);
 
     // Step 3: Joints (velocity + position), angular limits, and cone limits.
-    solveJoints(cfg.solverIterations, true);
+    solveJoints(cfg.solverIterations, true, b);
 
     // Step 4: Grab constraints (velocity + position).
-    solveGrabs(cfg.solverIterations);
+    solveGrabs(cfg.solverIterations, b);
 
     // Step 5: World collision (swept, substepped).
     if (cfg.worldCollision) {
-        for (auto& part : mParts)
+        for (auto& part : b.parts)
             collideWithWorld(part.body, world, dt);
     }
 
     // Step 6: One self-collision pre-pass before the joints.
     if (cfg.selfCollision)
-        selfCollision();
+        selfCollision(b);
 
     // Step 7: Re-converge constraints after collision so links stay rigid.
-    solveJoints(cfg.solverIterations / 2, true);
-    solveGrabs(cfg.solverIterations / 2);
+    solveJoints(cfg.solverIterations / 2, true, b);
+    solveGrabs(cfg.solverIterations / 2, b);
 
     // Step 7b: Self collision again so the joint pass cannot re-penetrate parts.
     if (cfg.selfCollision) {
-        for (int i = 0; i < cfg.selfCollisionIterations; ++i) selfCollision();
+        for (int i = 0; i < cfg.selfCollisionIterations; ++i) selfCollision(b);
     }
 
     // Step 8: Final overlap cleanup so constraints cannot leave a part buried.
     if (cfg.worldCollision) {
-        for (auto& part : mParts)
+        for (auto& part : b.parts)
             depenetrateWorld(part.body, world, 2);
     }
 
     // Step 8b: Natural stop. A part below the configured speed is treated as
     // at rest for this tick so limbs settle instead of jittering.
-    for (auto& part : mParts) {
+    for (auto& part : b.parts) {
         if (part.body.stopLinearSpeed > 0.0f &&
             glm::length(part.body.linearVelocity) < part.body.stopLinearSpeed)
             part.body.linearVelocity = glm::vec3(0.0f);
@@ -565,14 +585,14 @@ void RagdollModeSystem::update(float dt, const World& world, Player& player,
     }
 
     // Step 8c: Final strict angular limits so no later pass overrides them.
-    solveRotationLimits(1.0f);
+    solveRotationLimits(1.0f, b);
 
     // Step 9: Write the authoritative root and skeleton transforms.
-    syncToPlayer(player);
+    syncToPlayer(player, b);
 
     if (StructuredLogger::instance().shouldLog(StructuredCategory::Ragdoll, StructuredLevel::Trace)) {
         float totalKE = 0.0f;
-        for (const auto& part : mParts) {
+        for (const auto& part : b.parts) {
             float spd = glm::length(part.body.linearVelocity);
             totalKE += 0.5f * part.body.mass * spd * spd;
         }
@@ -580,10 +600,10 @@ void RagdollModeSystem::update(float dt, const World& world, Player& player,
         snprintf(msg, sizeof(msg),
             "[RAGDOLLDEBUG] RAGDOLL_TICK player=%s time=%.3f grounded=%d "
             "yaw=%.3f tick=%u grab_left=%d grab_right=%d kinetic_energy=%.3f parts=%zu",
-            player.username.c_str(), mActivationTime,
+            player.username.c_str(), b.activationTime,
             (int)player.ground.onGround, player.yaw,
             (uint32_t)player.movementSimulationTick,
-            (int)mLeftGrab.active, (int)mRightGrab.active, totalKE, mParts.size());
+            (int)b.leftGrab.active, (int)b.rightGrab.active, totalKE, b.parts.size());
         StructuredLogger::Entry e;
         e.category = StructuredCategory::Ragdoll;
         e.level = StructuredLevel::Trace;
@@ -599,7 +619,7 @@ void RagdollModeSystem::update(float dt, const World& world, Player& player,
     }
 }
 
-void RagdollModeSystem::applyControls(float dt, const InputState& input, const Camera& camera)
+void RagdollModeSystem::applyControls(float dt, const InputState& input, const Camera& camera, RagdollBody& b)
 {
     (void)input;
     const auto& cfg = RagdollModeConfig::instance().data();
@@ -632,13 +652,13 @@ void RagdollModeSystem::applyControls(float dt, const InputState& input, const C
             body.angularVelocity *= maxSpeed / spd;
     };
 
-    if (mHeadIndex >= 0 && mHeadIndex < (int)mParts.size())
-        aimAtCamera(mParts[mHeadIndex], cfg.headRotationStrength, cfg.headRotationSpeed);
+    if (b.headIndex >= 0 && b.headIndex < (int)b.parts.size())
+        aimAtCamera(b.parts[b.headIndex], cfg.headRotationStrength, cfg.headRotationSpeed);
 
     // The torso strongly wishes to face where the camera looks, so the body
     // reads clearly in third person. Strength and max speed are tunable.
-    if (mTorsoIndex >= 0 && mTorsoIndex < (int)mParts.size())
-        aimAtCamera(mParts[mTorsoIndex], cfg.torsoLookSpring, cfg.torsoMaxAngularStep);
+    if (b.torsoIndex >= 0 && b.torsoIndex < (int)b.parts.size())
+        aimAtCamera(b.parts[b.torsoIndex], cfg.torsoLookSpring, cfg.torsoMaxAngularStep);
 }
 
 static glm::vec3 quatToRotationVector(const glm::quat& q)
@@ -654,17 +674,17 @@ static glm::vec3 quatToRotationVector(const glm::quat& q)
     return axis * angle;
 }
 
-void RagdollModeSystem::solveJoints(int iterations, bool positionPass)
+void RagdollModeSystem::solveJoints(int iterations, bool positionPass, RagdollBody& b)
 {
     const auto& cfg = RagdollModeConfig::instance().data();
     for (int iter = 0; iter < iterations; ++iter) {
-        for (int pi = 0; pi < (int)mParts.size(); ++pi) {
-            RagdollModePart& part = mParts[pi];
+        for (int pi = 0; pi < (int)b.parts.size(); ++pi) {
+            RagdollModePart& part = b.parts[pi];
             if (part.parentIndex < 0) continue;
-            if (part.parentIndex >= (int)mParts.size()) continue;
+            if (part.parentIndex >= (int)b.parts.size()) continue;
 
             RigidBody& child = part.body;
-            RigidBody& parent = mParts[part.parentIndex].body;
+            RigidBody& parent = b.parts[part.parentIndex].body;
 
             glm::vec3 parentAnchor = parent.position
                 + parent.orientation * part.parentLocalAnchor;
@@ -679,10 +699,10 @@ void RagdollModeSystem::solveJoints(int iterations, bool positionPass)
             // about its center. Otherwise the joint is rigid too.
             float stretch = 0.0f;
             if (part.maxStretch > 0.0f) {
-                const bool isLeft = (pi == mLeftArmIndex);
-                const bool isRight = (pi == mRightArmIndex);
-                const bool grabbing = (isLeft && mLeftGrab.active) || (isRight && mRightGrab.active);
-                const bool extending = (isLeft && mLeftArmExtending) || (isRight && mRightArmExtending);
+                const bool isLeft = (pi == b.leftArmIndex);
+                const bool isRight = (pi == b.rightArmIndex);
+                const bool grabbing = (isLeft && b.leftGrab.active) || (isRight && b.rightGrab.active);
+                const bool extending = (isLeft && b.leftArmExtending) || (isRight && b.rightArmExtending);
                 if (extending && !grabbing)
                     stretch = part.maxStretch;
             }
@@ -701,29 +721,29 @@ void RagdollModeSystem::solveJoints(int iterations, bool positionPass)
         }
 
         if (positionPass)
-            solveRotationLimits();
+            solveRotationLimits(-1.0f, b);
     }
 }
 
-void RagdollModeSystem::solveRotationLimits(float betaOverride)
+void RagdollModeSystem::solveRotationLimits(float betaOverride, RagdollBody& b)
 {
     const auto& cfg = RagdollModeConfig::instance().data();
     const float kBeta = (betaOverride >= 0.0f)
         ? glm::clamp(betaOverride, 0.0f, 1.0f)
         : glm::clamp(cfg.limitPositionBeta, 0.0f, 1.0f);
 
-    for (int pi = 0; pi < (int)mParts.size(); ++pi) {
-        RagdollModePart& part = mParts[pi];
+    for (int pi = 0; pi < (int)b.parts.size(); ++pi) {
+        RagdollModePart& part = b.parts[pi];
         if (!part.hasRotationLimits) continue;
-        if (part.parentIndex < 0 || part.parentIndex >= (int)mParts.size()) continue;
+        if (part.parentIndex < 0 || part.parentIndex >= (int)b.parts.size()) continue;
 
         // An actively extending arm must be free to point along camera-forward.
-        if ((pi == mLeftArmIndex && mLeftArmExtending) ||
-            (pi == mRightArmIndex && mRightArmExtending))
+        if ((pi == b.leftArmIndex && b.leftArmExtending) ||
+            (pi == b.rightArmIndex && b.rightArmExtending))
             continue;
 
         RigidBody& child = part.body;
-        RigidBody& parent = mParts[part.parentIndex].body;
+        RigidBody& parent = b.parts[part.parentIndex].body;
 
         glm::quat currentRelative = glm::normalize(
             glm::inverse(parent.orientation) * child.orientation);
@@ -750,15 +770,15 @@ void RagdollModeSystem::solveRotationLimits(float betaOverride)
     }
 }
 
-void RagdollModeSystem::solveGrabs(int iterations)
+void RagdollModeSystem::solveGrabs(int iterations, RagdollBody& b)
 {
     const auto& cfg = RagdollModeConfig::instance().data();
     float beta = glm::clamp(0.9f - cfg.grabCompliance * 20.0f, 0.1f, 0.95f);
 
     auto solve = [&](RagdollGrabState& grab) {
         if (!grab.active || grab.partIndex < 0
-            || grab.partIndex >= (int)mParts.size()) return;
-        RigidBody& body = mParts[grab.partIndex].body;
+            || grab.partIndex >= (int)b.parts.size()) return;
+        RigidBody& body = b.parts[grab.partIndex].body;
         for (int i = 0; i < iterations; ++i) {
             glm::vec3 hand = body.position + body.orientation * grab.handLocalAnchor;
             // Cancel the anchor velocity first so gravity cannot accumulate,
@@ -768,17 +788,17 @@ void RagdollModeSystem::solveGrabs(int iterations)
         }
     };
 
-    solve(mLeftGrab);
-    solve(mRightGrab);
+    solve(b.leftGrab);
+    solve(b.rightGrab);
 }
 
-void RagdollModeSystem::processGrab(const InputState& input, const Camera& camera, const World& world)
+void RagdollModeSystem::processGrab(const InputState& input, const Camera& camera, const World& world, RagdollBody& b)
 {
     const auto& cfg = RagdollModeConfig::instance().data();
 
     auto tryGrab = [&](RagdollGrabState& grab, int armIndex) {
-        if (armIndex < 0 || armIndex >= (int)mParts.size()) return;
-        RagdollModePart& arm = mParts[armIndex];
+        if (armIndex < 0 || armIndex >= (int)b.parts.size()) return;
+        RagdollModePart& arm = b.parts[armIndex];
         glm::vec3 handWorld = partHandWorld(arm);
         glm::vec3 rayDir = glm::normalize(camera.front);
         glm::vec3 hitPoint, hitNormal;
@@ -802,35 +822,35 @@ void RagdollModeSystem::processGrab(const InputState& input, const Camera& camer
     };
 
     bool leftHeld = input.grabLeftHeld;
-    if (leftHeld && !mLeftGrab.active)
-        tryGrab(mLeftGrab, mLeftArmIndex);
+    if (leftHeld && !b.leftGrab.active)
+        tryGrab(b.leftGrab, b.leftArmIndex);
     else if (!leftHeld)
-        mLeftGrab.active = false;
-    mLeftGrab.wasActive = mLeftGrab.active;
+        b.leftGrab.active = false;
+    b.leftGrab.wasActive = b.leftGrab.active;
 
     bool rightHeld = input.grabRightHeld;
-    if (rightHeld && !mRightGrab.active)
-        tryGrab(mRightGrab, mRightArmIndex);
+    if (rightHeld && !b.rightGrab.active)
+        tryGrab(b.rightGrab, b.rightArmIndex);
     else if (!rightHeld)
-        mRightGrab.active = false;
-    mRightGrab.wasActive = mRightGrab.active;
+        b.rightGrab.active = false;
+    b.rightGrab.wasActive = b.rightGrab.active;
 }
 
-void RagdollModeSystem::processExtend(const InputState& input, const Camera& camera, float dt)
+void RagdollModeSystem::processExtend(const InputState& input, const Camera& camera, float dt, RagdollBody& b)
 {
     const auto& cfg = RagdollModeConfig::instance().data();
     glm::vec3 targetDir = glm::normalize(camera.front);
 
-    mLeftArmExtending = input.extendLeftMouse && mLeftArmIndex >= 0;
-    mRightArmExtending = input.extendRightMouse && mRightArmIndex >= 0;
+    b.leftArmExtending = input.extendLeftMouse && b.leftArmIndex >= 0;
+    b.rightArmExtending = input.extendRightMouse && b.rightArmIndex >= 0;
 
     // Steer the arm so the hand points along camera-forward. This changes only
     // the arm's angular velocity (an internal motor at the shoulder), so it adds
     // no net linear momentum and cannot pull the player forward. The rigid
     // shoulder attachment keeps the hand within arm's length of the body.
     auto extend = [&](int armIndex) {
-        if (armIndex < 0 || armIndex >= (int)mParts.size()) return;
-        RagdollModePart& part = mParts[armIndex];
+        if (armIndex < 0 || armIndex >= (int)b.parts.size()) return;
+        RagdollModePart& part = b.parts[armIndex];
         RigidBody& arm = part.body;
 
         glm::vec3 shoulder = arm.position + arm.orientation * part.childLocalAnchor;
@@ -857,8 +877,8 @@ void RagdollModeSystem::processExtend(const InputState& input, const Camera& cam
         // The one-sided shoulder joint lets it telescope, so this does not drag
         // the body until the arm is fully extended (and only then, if body_pull
         // is enabled, or when the hand is grabbing the world).
-        if (part.parentIndex >= 0 && part.parentIndex < (int)mParts.size()) {
-            const RigidBody& parent = mParts[part.parentIndex].body;
+        if (part.parentIndex >= 0 && part.parentIndex < (int)b.parts.size()) {
+            const RigidBody& parent = b.parts[part.parentIndex].body;
             glm::vec3 parentAnchor = parent.position
                 + parent.orientation * part.parentLocalAnchor;
             float sep = glm::length(shoulder - parentAnchor);
@@ -866,56 +886,56 @@ void RagdollModeSystem::processExtend(const InputState& input, const Camera& cam
             if (sep < maxSep) {
                 arm.linearVelocity += targetDir * (cfg.armStretchForce * dt
                                                    / std::max(arm.mass, 0.001f));
-            } else if (cfg.armBodyPull > 0.0f && mTorsoIndex >= 0) {
-                RigidBody& torso = mParts[mTorsoIndex].body;
+            } else if (cfg.armBodyPull > 0.0f && b.torsoIndex >= 0) {
+                RigidBody& torso = b.parts[b.torsoIndex].body;
                 torso.linearVelocity += targetDir * (cfg.armBodyPull * dt
                                                      / std::max(torso.mass, 0.001f));
             }
         }
     };
 
-    if (mLeftArmExtending) extend(mLeftArmIndex);
-    if (mRightArmExtending) extend(mRightArmIndex);
+    if (b.leftArmExtending) extend(b.leftArmIndex);
+    if (b.rightArmExtending) extend(b.rightArmIndex);
 }
 
-void RagdollModeSystem::selfCollision()
+void RagdollModeSystem::selfCollision(RagdollBody& b)
 {
-    for (int i = 0; i < (int)mParts.size(); ++i) {
-        for (int j = i + 1; j < (int)mParts.size(); ++j) {
+    for (int i = 0; i < (int)b.parts.size(); ++i) {
+        for (int j = i + 1; j < (int)b.parts.size(); ++j) {
             // Directly-jointed parts overlap at their shared joint by design, so
             // they collide everywhere except a small sphere around that joint.
-            const bool connected = (mParts[i].parentIndex == j || mParts[j].parentIndex == i);
+            const bool connected = (b.parts[i].parentIndex == j || b.parts[j].parentIndex == i);
             glm::vec3 excludePoint(0.0f);
             float excludeRadius = 0.0f;
             if (connected) {
-                int childIdx = (mParts[i].parentIndex == j) ? i : j;
-                int parentIdx = mParts[childIdx].parentIndex;
-                if (parentIdx < 0 || parentIdx >= (int)mParts.size()) continue;
-                const RagdollModePart& c = mParts[childIdx];
-                const RigidBody& p = mParts[parentIdx].body;
+                int childIdx = (b.parts[i].parentIndex == j) ? i : j;
+                int parentIdx = b.parts[childIdx].parentIndex;
+                if (parentIdx < 0 || parentIdx >= (int)b.parts.size()) continue;
+                const RagdollModePart& c = b.parts[childIdx];
+                const RigidBody& p = b.parts[parentIdx].body;
                 excludePoint = p.position + p.orientation * c.parentLocalAnchor;
                 excludeRadius = c.body.capsuleRadius + p.capsuleRadius;
             }
             const auto& cfg = RagdollModeConfig::instance().data();
-            collideBodies(mParts[i].body, mParts[j].body, excludePoint, excludeRadius,
+            collideBodies(b.parts[i].body, b.parts[j].body, excludePoint, excludeRadius,
                           cfg.selfCollisionBeta, cfg.selfCollisionSkin,
                           cfg.selfCollisionMaxCorrection);
         }
     }
 }
 
-void RagdollModeSystem::syncToPlayer(Player& player)
+void RagdollModeSystem::syncToPlayer(Player& player, RagdollBody& b)
 {
-    if (mTorsoIndex < 0 || mTorsoIndex >= (int)mParts.size()) return;
+    if (b.torsoIndex < 0 || b.torsoIndex >= (int)b.parts.size()) return;
 
-    const RigidBody& torso = mParts[mTorsoIndex].body;
+    const RigidBody& torso = b.parts[b.torsoIndex].body;
     glm::mat4 torsoWorld = rigidWorld(torso);
 
     // The authoritative player root stays anchored to a fixed point in the
     // torso frame, so it rotates with the body and does not drift on toggles.
-    mTorsoPosition = torso.position;
-    player.pos = glm::vec3(torsoWorld * glm::vec4(mRootOffsetLocal, 1.0f));
-    mRootWorldPosition = player.pos;
+    b.torsoPosition = torso.position;
+    player.pos = glm::vec3(torsoWorld * glm::vec4(b.rootOffsetLocal, 1.0f));
+    b.rootWorldPosition = player.pos;
     player.vel = torso.linearVelocity;
     player.modelRootRotationActive = true;
     player.modelRootRotation = torso.orientation;
@@ -924,7 +944,7 @@ void RagdollModeSystem::syncToPlayer(Player& player)
                         * glm::mat4_cast(torso.orientation);
 
     // Neutralize non-part ancestors so the torso frame is the model root.
-    for (int anc : mRootAncestorNodes)
+    for (int anc : b.rootAncestorNodes)
         player.perfectPoseSkeleton.nodes[anc].localTransform = glm::mat4(1.0f);
 
     const float smoothing = RagdollModeConfig::instance().data().bodySmoothing;
@@ -932,8 +952,8 @@ void RagdollModeSystem::syncToPlayer(Player& player)
         ? 1.0f
         : glm::clamp(1.0f - smoothing, 0.02f, 1.0f);
 
-    for (int i = 0; i < (int)mParts.size(); ++i) {
-        RagdollModePart& part = mParts[i];
+    for (int i = 0; i < (int)b.parts.size(); ++i) {
+        RagdollModePart& part = b.parts[i];
         if (part.nodeIndex < 0
             || part.nodeIndex >= (int)player.perfectPoseSkeleton.nodes.size())
             continue;
@@ -954,8 +974,8 @@ void RagdollModeSystem::syncToPlayer(Player& player)
                              * glm::mat4_cast(part.renderOrientation)
                              * part.meshLocal;
         glm::mat4 parentWorld = rootWorld;
-        if (part.skeletonParentPart >= 0 && part.skeletonParentPart < (int)mParts.size()) {
-            const RagdollModePart& parent = mParts[part.skeletonParentPart];
+        if (part.skeletonParentPart >= 0 && part.skeletonParentPart < (int)b.parts.size()) {
+            const RagdollModePart& parent = b.parts[part.skeletonParentPart];
             parentWorld = glm::translate(glm::mat4(1.0f), parent.renderPosition)
                         * glm::mat4_cast(parent.renderOrientation)
                         * parent.meshLocal;
@@ -968,9 +988,9 @@ void RagdollModeSystem::syncToPlayer(Player& player)
     // Symmetry check: the model's left/right legs are identical, so any
     // left-only axis problem shows up here as a body-vs-node mismatch or a
     // non-mirrored frame. Low volume, one line per second.
-    if (mLeftLegIndex >= 0 && mRightLegIndex >= 0) {
-        const RagdollModePart& L = mParts[mLeftLegIndex];
-        const RagdollModePart& R = mParts[mRightLegIndex];
+    if (b.leftLegIndex >= 0 && b.rightLegIndex >= 0) {
+        const RagdollModePart& L = b.parts[b.leftLegIndex];
+        const RagdollModePart& R = b.parts[b.rightLegIndex];
         glm::vec3 nodeL(0.0f), nodeR(0.0f);
         if (L.nodeIndex >= 0 && L.nodeIndex < (int)player.perfectPoseSkeleton.nodes.size())
             nodeL = glm::vec3(player.perfectPoseSkeleton.nodes[L.nodeIndex].worldTransform[3]);
@@ -990,23 +1010,26 @@ void RagdollModeSystem::syncToPlayer(Player& player)
 
 glm::vec3 RagdollModeSystem::getHeadPosition() const
 {
-    if (mHeadIndex >= 0 && mHeadIndex < (int)mParts.size())
-        return mParts[mHeadIndex].body.position;
-    return mTorsoPosition + glm::vec3(0, 0, 1.15f);
+    const RagdollBody& b = mAlive;
+    if (b.headIndex >= 0 && b.headIndex < (int)b.parts.size())
+        return b.parts[b.headIndex].body.position;
+    return b.torsoPosition + glm::vec3(0, 0, 1.15f);
 }
 
 glm::mat4 RagdollModeSystem::getHeadTransform() const
 {
-    if (mHeadIndex >= 0 && mHeadIndex < (int)mParts.size()) {
-        const RigidBody& head = mParts[mHeadIndex].body;
+    const RagdollBody& b = mAlive;
+    if (b.headIndex >= 0 && b.headIndex < (int)b.parts.size()) {
+        const RigidBody& head = b.parts[b.headIndex].body;
         return glm::translate(glm::mat4(1.0f), head.position)
              * glm::mat4_cast(head.orientation);
     }
-    return glm::translate(glm::mat4(1.0f), mTorsoPosition + glm::vec3(0, 0, 1.15f));
+    return glm::translate(glm::mat4(1.0f), b.torsoPosition + glm::vec3(0, 0, 1.15f));
 }
 
 glm::vec3 RagdollModeSystem::computeCameraPosition(float dt)
 {
+    RagdollBody& b = mAlive;
     const auto& cfg = RagdollModeConfig::instance().data();
     glm::vec3 headPos = getHeadPosition();
 
@@ -1030,6 +1053,7 @@ glm::vec3 RagdollModeSystem::computeCameraPosition(float dt)
 void RagdollModeSystem::render(const Camera& camera) const
 {
     if (!mActive) return;
+    const RagdollBody& b = mAlive;
 
     const auto& rcfg = RagdollModeConfig::instance().data();
     if (!rcfg.debugHitboxesVisible) return;
@@ -1037,13 +1061,13 @@ void RagdollModeSystem::render(const Camera& camera) const
     const bool showAttach = rcfg.attachmentsVisible || DebugConfig::DEBUG_RAGDOLL;
 
     if (showAttach) {
-        DebugVis::drawWeaponWireSphere(camera, mRootWorldPosition, 0.07f, glm::vec4(1, 1, 1, 1));
-        DebugVis::drawWorldLabel(mRootWorldPosition + glm::vec3(0, 0, 0.12f), "plrOrigin", glm::vec4(1, 1, 1, 1));
-        DebugVis::drawWeaponLine(camera, mTorsoPosition, mRootWorldPosition, glm::vec4(1, 1, 1, 0.5f));
+        DebugVis::drawWeaponWireSphere(camera, b.rootWorldPosition, 0.07f, glm::vec4(1, 1, 1, 1));
+        DebugVis::drawWorldLabel(b.rootWorldPosition + glm::vec3(0, 0, 0.12f), "plrOrigin", glm::vec4(1, 1, 1, 1));
+        DebugVis::drawWeaponLine(camera, b.torsoPosition, b.rootWorldPosition, glm::vec4(1, 1, 1, 0.5f));
     }
 
-    for (size_t i = 0; i < mParts.size(); ++i) {
-        const auto& part = mParts[i];
+    for (size_t i = 0; i < b.parts.size(); ++i) {
+        const auto& part = b.parts[i];
 
         float alpha = 0.9f;
         const auto& capsules = RagdollModeConfig::instance().data().capsules;
@@ -1062,7 +1086,7 @@ void RagdollModeSystem::render(const Camera& camera) const
         DebugVis::drawWeaponCapsuleWire(camera, cap, color);
 
         if (part.parentIndex >= 0) {
-            const RigidBody& parent = mParts[part.parentIndex].body;
+            const RigidBody& parent = b.parts[part.parentIndex].body;
             glm::vec3 parentAttach = parent.position
                 + parent.orientation * part.parentLocalAnchor;
             glm::vec3 childAttach = part.body.position
@@ -1074,7 +1098,7 @@ void RagdollModeSystem::render(const Camera& camera) const
             if (showAttach) {
                 DebugVis::drawWeaponWireSphere(camera, parentAttach, 0.05f, glm::vec4(0, 1, 1, 1));
                 DebugVis::drawWeaponWireSphere(camera, childAttach, 0.05f, glm::vec4(1, 0, 1, 1));
-                DebugVis::drawWeaponLine(camera, parentAttach, mRootWorldPosition,
+                DebugVis::drawWeaponLine(camera, parentAttach, b.rootWorldPosition,
                     glm::vec4(1.0f, 0.5f, 0.0f, 0.55f));
                 DebugVis::drawWeaponLine(camera, childAttach, part.body.position,
                     glm::vec4(0.6f, 0.6f, 0.6f, 0.6f));
@@ -1096,16 +1120,16 @@ void RagdollModeSystem::render(const Camera& camera) const
             }
         }
 
-        if (mLeftGrab.active && mLeftGrab.partIndex == (int)i) {
-            DebugVis::drawWeaponWireSphere(camera, mLeftGrab.grabPoint, 0.1f,
+        if (b.leftGrab.active && b.leftGrab.partIndex == (int)i) {
+            DebugVis::drawWeaponWireSphere(camera, b.leftGrab.grabPoint, 0.1f,
                 glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
-            DebugVis::drawWeaponLine(camera, part.body.position, mLeftGrab.grabPoint,
+            DebugVis::drawWeaponLine(camera, part.body.position, b.leftGrab.grabPoint,
                 glm::vec4(0.0f, 1.0f, 0.0f, 0.9f));
         }
-        if (mRightGrab.active && mRightGrab.partIndex == (int)i) {
-            DebugVis::drawWeaponWireSphere(camera, mRightGrab.grabPoint, 0.1f,
+        if (b.rightGrab.active && b.rightGrab.partIndex == (int)i) {
+            DebugVis::drawWeaponWireSphere(camera, b.rightGrab.grabPoint, 0.1f,
                 glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
-            DebugVis::drawWeaponLine(camera, part.body.position, mRightGrab.grabPoint,
+            DebugVis::drawWeaponLine(camera, part.body.position, b.rightGrab.grabPoint,
                 glm::vec4(0.0f, 0.0f, 1.0f, 0.9f));
         }
 
@@ -1116,4 +1140,208 @@ void RagdollModeSystem::render(const Camera& camera) const
                 label, color);
         }
     }
+}
+
+// ============================================================================
+// Corpse ragdolls
+//
+// A corpse is a cloned Player body driven by the same RigidBody solver as the
+// alive ragdoll, but with no input, grabs, or look motors. This is the death
+// presentation for players and NPCs (they share the Player body type). It is
+// simulated client-side now; the spawn parameters are shaped so the server can
+// own and broadcast the same event later.
+// ============================================================================
+
+void RagdollModeSystem::spawnCorpse(const Player& victim,
+                                    const glm::vec3& deathImpulse,
+                                    const std::string& actorId,
+                                    uint32_t ownerId)
+{
+    const auto& cfg = RagdollModeConfig::instance().data();
+    if (!cfg.enabled) return;
+    if (!RagdollDeathConfig::instance().enabled()) return;
+    if (victim.physicalBody.parts.empty() || victim.physicalBody.partMeshes.empty())
+        return;
+
+    RagdollCorpse corpse;
+    corpse.actorId = actorId.empty() ? victim.username : actorId;
+    corpse.ownerId = ownerId;
+    corpse.actor = victim;
+    corpse.actor.dead = true;
+    corpse.actor.netPredictedDead = false;
+    corpse.actor.currentHp = 0;
+    // Mark the clone as ragdoll-driven so the render path keeps the physics
+    // pose instead of hiding the dead body or re-running procedural animation.
+    corpse.actor.ragdollModeActive = true;
+    corpse.actor.deathAnim = Player::DeathAnimState{};
+    corpse.lifetime = std::max(1.0f, cfg.corpseLifetimeSeconds);
+    corpse.age = 0.0f;
+    corpse.fade = 0.0f;
+    corpse.bloodTimer = 0.0f;
+    corpse.bloodInit = false;
+
+    // Build the physical parts from the victim's current (frozen) pose.
+    initParts(victim, corpse.body);
+
+    // Inherit the dying actor's momentum and add the killing-blow impulse.
+    const glm::vec3 playerVel = victim.vel + victim.externalImpulse;
+    const glm::vec3 impulse = deathImpulse * cfg.corpseDeathImpulseMultiplier;
+    for (auto& part : corpse.body.parts) {
+        part.body.linearVelocity =
+            playerVel * cfg.corpseSpawnVelocityMultiplier +
+            impulse / std::max(part.body.mass, 0.001f);
+        part.body.angularVelocity += glm::vec3(
+            ((float)(std::rand() % 2001) / 1000.0f - 1.0f) * 2.0f,
+            ((float)(std::rand() % 2001) / 1000.0f - 1.0f) * 2.0f,
+            ((float)(std::rand() % 2001) / 1000.0f - 1.0f) * 2.0f);
+    }
+
+    // Write the initial skeleton so the clone renders at its physics pose.
+    syncToPlayer(corpse.actor, corpse.body);
+
+    // Death mist at the point of death (was the DeathGhost ellipsoid).
+    const auto& deCfg = HitEffects::config().deathEllipsoid;
+    if (deCfg.enabled) {
+        glm::vec3 dir = glm::length(deathImpulse) > 0.001f
+            ? glm::normalize(deathImpulse) : glm::vec3(0.0f, 0.0f, -1.0f);
+        EffectPartSystem::instance().spawnDeathEllipsoid(
+            victim.pos, dir, deCfg.length, deCfg.radius, deCfg.lifetime,
+            victim.sizeScale);
+    }
+
+    // Bounded corpse count keeps the solver cost predictable.
+    constexpr size_t kMaxCorpses = 12;
+    while (mCorpses.size() >= kMaxCorpses)
+        mCorpses.erase(mCorpses.begin());
+
+    mCorpses.push_back(std::move(corpse));
+
+    Debug::log(Debug::Category::Ragdoll,
+        "[RAGDOLL CORPSE] spawned actor=%s id=%u parts=%zu lifetime=%.1fs\n",
+        corpse.actorId.c_str(), corpse.ownerId,
+        mCorpses.back().body.parts.size(), cfg.corpseLifetimeSeconds);
+}
+
+void RagdollModeSystem::stepBody(RagdollBody& b, const World& world, float dt)
+{
+    const auto& cfg = RagdollModeConfig::instance().data();
+
+    glm::vec3 gravity(0.0f, 0.0f, -GRAVITY * cfg.gravityScale);
+    for (auto& part : b.parts)
+        integrate(part.body, gravity, dt);
+
+    solveJoints(cfg.solverIterations, true, b);
+
+    if (cfg.worldCollision) {
+        for (auto& part : b.parts)
+            collideWithWorld(part.body, world, dt);
+    }
+
+    if (cfg.selfCollision)
+        selfCollision(b);
+
+    solveJoints(cfg.solverIterations / 2, true, b);
+
+    if (cfg.selfCollision) {
+        for (int i = 0; i < cfg.selfCollisionIterations; ++i) selfCollision(b);
+    }
+
+    if (cfg.worldCollision) {
+        for (auto& part : b.parts)
+            depenetrateWorld(part.body, world, 2);
+    }
+
+    for (auto& part : b.parts) {
+        if (part.body.stopLinearSpeed > 0.0f &&
+            glm::length(part.body.linearVelocity) < part.body.stopLinearSpeed)
+            part.body.linearVelocity = glm::vec3(0.0f);
+        if (part.body.stopAngularSpeed > 0.0f &&
+            glm::length(part.body.angularVelocity) < part.body.stopAngularSpeed)
+            part.body.angularVelocity = glm::vec3(0.0f);
+    }
+
+    solveRotationLimits(1.0f, b);
+}
+
+void RagdollModeSystem::sprayCorpseBlood(RagdollCorpse& corpse, float dt)
+{
+    RagdollBody& b = corpse.body;
+    if (b.parts.empty()) return;
+
+    corpse.bloodTimer -= dt;
+    if (corpse.bloodTimer > 0.0f) return;
+    corpse.bloodTimer = std::max(0.02f,
+        RagdollModeConfig::instance().data().corpseBloodIntervalSeconds);
+
+    // Spray from the fastest-moving part (the body pouring blood as it flies
+    // and tumbles). If everything has settled, bleed from the torso root once.
+    int fastest = b.torsoIndex >= 0 ? b.torsoIndex : 0;
+    float bestSpeed = 0.0f;
+    for (int i = 0; i < (int)b.parts.size(); ++i) {
+        const float s = glm::length(b.parts[i].body.linearVelocity);
+        if (s > bestSpeed) { bestSpeed = s; fastest = i; }
+    }
+
+    const RagdollModePart& part = b.parts[fastest];
+    const glm::vec3 pos = part.body.position;
+    glm::vec3 dir = glm::length(part.body.linearVelocity) > 0.05f
+        ? glm::normalize(part.body.linearVelocity)
+        : glm::vec3(0.0f, 0.0f, -1.0f);
+
+    const float damage = glm::clamp(bestSpeed * 6.0f, 5.0f, 80.0f);
+    EffectPartSystem::instance().spawnBloodEffect(
+        pos, dir, damage, corpse.actorId, corpse.actorId, 0.8f, -1.0f);
+}
+
+void RagdollModeSystem::updateCorpses(float dt, const World& world)
+{
+    if (mCorpses.empty()) return;
+    const auto& cfg = RagdollModeConfig::instance().data();
+
+    for (auto it = mCorpses.begin(); it != mCorpses.end();) {
+        RagdollCorpse& corpse = *it;
+        corpse.age += dt;
+        if (corpse.age >= corpse.lifetime) {
+            it = mCorpses.erase(it);
+            continue;
+        }
+
+        const float fadeStart = std::max(0.0f, corpse.lifetime - cfg.corpseFadeSeconds);
+        if (corpse.age > fadeStart && cfg.corpseFadeSeconds > 0.0f) {
+            corpse.fade = glm::clamp(
+                (corpse.age - fadeStart) / cfg.corpseFadeSeconds, 0.0f, 1.0f);
+        }
+
+        stepBody(corpse.body, world, dt);
+        syncToPlayer(corpse.actor, corpse.body);
+
+        if (cfg.corpseBloodEnabled)
+            sprayCorpseBlood(corpse, dt);
+
+        ++it;
+    }
+}
+
+void RagdollModeSystem::renderCorpses(const Camera& camera) const
+{
+    for (const RagdollCorpse& corpse : mCorpses) {
+        if (corpse.fade >= 1.0f) continue;
+        renderNetworkPlayer(corpse.actor, camera, 0, false);
+    }
+}
+
+void RagdollModeSystem::removeCorpsesForOwner(uint32_t ownerId)
+{
+    if (ownerId == 0) return;
+    mCorpses.erase(
+        std::remove_if(mCorpses.begin(), mCorpses.end(),
+            [ownerId](const RagdollCorpse& corpse) {
+                return corpse.ownerId == ownerId;
+            }),
+        mCorpses.end());
+}
+
+void RagdollModeSystem::clearCorpses()
+{
+    mCorpses.clear();
 }

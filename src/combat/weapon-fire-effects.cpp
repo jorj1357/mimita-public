@@ -100,6 +100,9 @@ int applyDamageToEntity(const DamageContext& ctx, Npc& victim,
         ev.attacker = shooter.username;
         ev.victim = victim.body.username;
         ev.weaponSource = "weaponfire";
+        ev.weaponId = def.id;
+        ev.attackType = "hitscan";
+        ev.bodyPart = ctx.bodyPart;
         ev.spawnDamageNumber = spawnDamageNumber;
         HitEffects::onHit(ev);
     }

@@ -32,11 +32,10 @@
 #include "combat/weapon-rocket-launcher.h"
 #include "combat/weapon-registry.h"
 #include "combat/death-system.h"
-#include "ragdoll/ragdoll.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
-#include "entities/death-ghost.h"
+
 #include "pobjects/persistent-physics.h"
 #include "debug/debug-visuals.h"
 #include "debug/debug-diag.h"
@@ -610,10 +609,10 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
       PerfGpu::beginRegion("GPU::Particles");
       EffectPartSystem::instance().render(camera);
       PerfGpu::endRegion(); }
-    { MIMITA_PERF_SCOPE("Rendering::Effects::DeathGhosts");
+    { MIMITA_PERF_SCOPE("Rendering::Effects::RagdollCorpses");
       Perf::state().renderPerf.deathGhosts =
-          static_cast<uint32_t>(DeathGhostSystem::instance().activeCount());
-      DeathGhostSystem::instance().render(camera); }
+          static_cast<uint32_t>(RagdollModeSystem::instance().corpseCount());
+      RagdollModeSystem::instance().renderCorpses(camera); }
     { MIMITA_PERF_SCOPE("Rendering::Effects::PersistentPhysics");
       Perf::state().renderPerf.persistentPhysics++;
       PersistentPhysicsSystem::instance().render(camera); }

@@ -6,7 +6,6 @@
 #include "perf/perf-spike.h"
 #include "analytics/analytics-manager.h"
 #include "avatar/avatar.h"
-#include "ragdoll/ragdoll-config.h"
 #include "ragdoll/ragdoll-mode-config.h"
 
 #include "crosshair/crosshair-config.h"
@@ -121,7 +120,6 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
         CamConfig::instance().pollReload();
         SizeScalingConfig::instance().pollReload();
         AvatarSystem::instance().pollHotReload();
-        RagdollConfig::instance().pollReload();
         RagdollModeConfig::instance().pollReload();
         RagdollDeathConfig::instance().pollReload();
         SpawnVelocityConfig::instance().pollReload();

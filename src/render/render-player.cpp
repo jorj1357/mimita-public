@@ -80,7 +80,9 @@ void renderPlayerInternal(
             lastLogMs[networkEntityId] = nowMs;
         return;
     }
-    if (player.dead && !player.deathAnim.active) {
+    // Dead bodies without a scripted fall-over are hidden, except ragdoll
+    // corpses which render their physically simulated pose.
+    if (player.dead && !player.deathAnim.active && !player.ragdollModeActive) {
         if (logDraw)
             printf("[DRAW PLAYER] entityId=%u isLocal=%d submitted=0 reason=dead worldPos=(%.2f,%.2f,%.2f)\n",
                    networkEntityId, (int)isLocal,

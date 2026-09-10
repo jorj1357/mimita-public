@@ -78,6 +78,16 @@ bool RagdollModeConfig::load(const std::string& path)
         next.jointDamping = root.value("joint_damping", 80.0f);
         next.worldCollision = root.value("world_collision", true);
 
+        if (root.contains("corpse")) {
+            const auto& c = root["corpse"];
+            next.corpseLifetimeSeconds = c.value("lifetime_seconds", next.corpseLifetimeSeconds);
+            next.corpseFadeSeconds = c.value("fade_seconds", next.corpseFadeSeconds);
+            next.corpseDeathImpulseMultiplier = c.value("death_impulse_multiplier", next.corpseDeathImpulseMultiplier);
+            next.corpseSpawnVelocityMultiplier = c.value("spawn_velocity_multiplier", next.corpseSpawnVelocityMultiplier);
+            next.corpseBloodIntervalSeconds = c.value("blood_interval_seconds", next.corpseBloodIntervalSeconds);
+            next.corpseBloodEnabled = c.value("blood_enabled", next.corpseBloodEnabled);
+        }
+
         next.solverIterations = root.value("solver_iterations", next.solverIterations);
         next.maxFallSpeed = root.value("max_fall_speed", next.maxFallSpeed);
         next.restitution = root.value("restitution", next.restitution);

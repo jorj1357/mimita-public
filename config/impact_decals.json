@@ -2,25 +2,28 @@
   "enabled": true,
   "blood": {
     "enabled": true,
-    "count": 12,
-    "minCount": 6,
+    "count": 10,
+    "minCount": 5,
     "coneDegrees": 35.0,
-    "coneDistance": 24.0,
-    "radius": 2.0,
-    "minRadius": 0.01,
+    "coneDistance": 2.5,
+    "radius": 0.35,
+    "minRadius": 0.12,
     "height": 0.05,
     "color": [0.7, 0.01, 0.01],
     "colorVariation": 0.55,
     "alpha": 0.9,
     "lifetime": 30.0,
     "fadeTime": 5.0,
-    "maxCount": 5122,
+    "maxCount": 4096,
+    "texture": "assets/textureshq/sblood1.png",
+    "textureScale": 1.0,
+    "randomRotationDegrees": 360.0,
     "stagger": {
       "enabled": true,
       "decals_per_tick": 2,
       "start_delay_ticks": 0,
       "max_ticks": 60,
-      "ray_budget_per_frame": 2
+      "ray_budget_per_frame": 4
     },
     "color_over_lifetime": {
       "enabled": true,
@@ -30,24 +33,24 @@
       "darken_end_seconds": 29.0
     },
     "spray": {
-      "enabled": false,
+      "enabled": true,
       "minCount": 4,
       "maxCount": 40,
-      "sizeMin": 0.15,
-      "sizeMax": 0.38,
-      "bigFraction": 0.7,
-      "speedMin": 1.0,
-      "speedMax": 250.0,
+      "sizeMin": 0.03,
+      "sizeMax": 0.12,
+      "bigFraction": 0.6,
+      "speedMin": 3.0,
+      "speedMax": 18.0,
       "coneDegreesMin": 8.0,
-      "coneDegreesMax": 50.0,
-      "lifetimeMin": 1.0,
-      "lifetimeMax": 3.0,
-      "alphaMin": 0.9,
+      "coneDegreesMax": 30.0,
+      "lifetimeMin": 0.5,
+      "lifetimeMax": 1.6,
+      "alphaMin": 0.7,
       "alphaMax": 0.95
     },
     "force": {
-      "maxDistance": 10.0,
-      "minDistance": 200.0,
+      "maxDistance": 2.0,
+      "minDistance": 24.0,
       "minForce": 0.001
     }
   },
@@ -59,7 +62,10 @@
     "alpha": 1.0,
     "lifetime": 30.0,
     "fadeTime": 5.0,
-    "maxCount": 25655
+    "maxCount": 8192,
+    "texture": "assets/textureshq/holes1.png",
+    "textureScale": 1.0,
+    "randomRotationDegrees": 360.0
   },
   "worldCracks": {
     "enabled": true,
@@ -71,6 +77,9 @@
     "lifetime": 8.0,
     "fadeTime": 2.0,
     "maxCount": 4096,
+    "texture": "assets/textureshq/crackground1.png",
+    "textureScale": 1.0,
+    "randomRotationDegrees": 0.0,
     "arms": {
       "base_count": 3,
       "weapon_force_multiplier": 0.0,

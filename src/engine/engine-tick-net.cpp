@@ -28,7 +28,7 @@
 #include "debug/structured-log.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
-#include "entities/death-ghost.h"
+#include "ragdoll/ragdoll-mode.h"
 #include "replay/replay.h"
 #include "gui/hud/chat-bubble.h"
 #include "network/multiplayer-context.h"
@@ -442,7 +442,7 @@ void engineTickNet(Engine& engine, float dt)
                     printf("[CLIENT MAP SWITCH] old=%s new=%s attempts=%u\n",
                            oldMap.c_str(), requiredPath.c_str(), mpContext.mapLoadAttempts);
                     player.reset();
-                    DeathGhostSystem::instance().clear();  // old map positions invalid
+                    RagdollModeSystem::instance().clearCorpses();  // old map positions invalid
                 }
                 else
                 {

@@ -59,6 +59,15 @@ struct RagdollModeConfigData {
     float jointDamping = 80.0f;
     bool worldCollision = true;
 
+    // Corpse ragdolls (death presentation). The corpse reuses the same solver
+    // as alive ragdoll mode, but without input, grabs, or look motors.
+    float corpseLifetimeSeconds = 20.0f;
+    float corpseFadeSeconds = 4.0f;
+    float corpseDeathImpulseMultiplier = 1.0f;
+    float corpseSpawnVelocityMultiplier = 1.0f;
+    float corpseBloodIntervalSeconds = 0.18f;
+    bool corpseBloodEnabled = true;
+
     // Rigid-body solver
     int solverIterations = 24;
     float maxFallSpeed = 60.0f;

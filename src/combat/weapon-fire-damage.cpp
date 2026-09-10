@@ -20,8 +20,8 @@
 #include "debug/debug-log.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
-#include "entities/death-ghost.h"
 #include "entities/player.h"
+#include "ragdoll/ragdoll-mode.h"
 #include "network/multiplayer-context.h"
 #include "npc/npc.h"
 #include "ui/hitmarker.h"
@@ -74,8 +74,8 @@ static void predictRemoteKill(Player& victim,
     if (!victim.networkDeathPresented)
     {
         victim.networkDeathPresented = true;
-        DeathGhostSystem::instance().spawnFromPlayer(
-            victim, direction, actorType, ownerId);
+        RagdollModeSystem::instance().spawnCorpse(
+            victim, direction * 10.0f, actorType, ownerId);
     }
 
     victim.vel = glm::vec3(0.0f);
@@ -131,6 +131,9 @@ static void presentRemoteHit(const WeaponDefinition& def,
         ev.attacker = shooterName;
         ev.victim = victimName;
         ev.weaponSource = def.id;
+        ev.weaponId = def.id;
+        ev.attackType = "hitscan";
+        ev.bodyPart = hitPart;
         HitEffects::onHit(ev);
     }
     {
@@ -214,6 +217,9 @@ void processNpcHit(
     hitFx.attacker = shooter.username;
     hitFx.victim = "npc_" + std::to_string(victim.id);
     hitFx.weaponSource = def.id;
+    hitFx.weaponId = def.id;
+    hitFx.attackType = "hitscan";
+    hitFx.bodyPart = hitPart;
     if (!serverAuthHits()) HitEffects::onHit(hitFx);
 
     printf("[SOUND] weapon=%s event=hit_entity body=%s damage=%.0f\n",

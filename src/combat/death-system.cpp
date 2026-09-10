@@ -2,7 +2,7 @@
 #include "combat/weapon-runtime.h"
 #include "config/ragdoll-death-config.h"
 #include "config/spawn-velocity-config.h"
-#include "entities/death-ghost.h"
+
 
 #include <algorithm>
 #include <chrono>
@@ -33,6 +33,7 @@
 #include "game/spawn-override.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "ragdoll/ragdoll-mode.h"
 #include "terminal/terminal-state.h"
 #include "killfeed/killfeed.h"
 
@@ -111,8 +112,8 @@ bool DeathSystem::kill(
     if (!victim.networkDeathPresented)
     {
         victim.networkDeathPresented = true;
-        DeathGhostSystem::instance().spawnFromPlayer(
-            victim, direction, actorId);
+        RagdollModeSystem::instance().spawnCorpse(
+            victim, direction * lethalForce, actorId, 0);
     }
 
     // Step 3: mark the victim dead for gameplay only (respawn logic, hit

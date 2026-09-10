@@ -16,7 +16,7 @@
 #include "config/ragdoll-death-config.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
-#include "entities/death-ghost.h"
+#include "ragdoll/ragdoll-mode.h"
 #include "audio/audio.h"
 #include "gui/hud/reward-popup.h"
 #include "audio/hitmarker-audio.h"
@@ -432,8 +432,8 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
             if (!npcPtr->networkDeathPresented)
             {
                 npcPtr->networkDeathPresented = true;
-                DeathGhostSystem::instance().spawnFromPlayer(
-                    *npcPtr, glm::vec3(0.0f, 0.0f, 1.0f),
+                RagdollModeSystem::instance().spawnCorpse(
+                    *npcPtr, glm::vec3(0.0f, 0.0f, 6.0f),
                     "net_npc_" + std::to_string(event->npcEntityId),
                     event->npcEntityId);
                 Debug::log(Debug::Category::Networking,

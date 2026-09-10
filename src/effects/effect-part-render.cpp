@@ -12,6 +12,7 @@
 #include "gui/ui-system.h"
 #include "gui/ui-system-internal.h"
 #include "effects/hit-effects.h"
+#include "config/impact-decals-config.h"
 #include "debug/debug-log.h"
 #include "config.h"
 #include "world/texture-store.h"
@@ -112,6 +113,56 @@ void appendTexturedHitParticle(std::vector<TexturedParticleVertex>& vertices,
     vertices.push_back({bl, {0.0f, 0.0f}, normal, color});
     vertices.push_back({tr, {1.0f, 1.0f}, normal, color});
     vertices.push_back({tl, {0.0f, 1.0f}, normal, color});
+}
+
+// Appends a quad from an explicit in-plane basis. Used for surface-aligned
+// decals (blood splats, bullet holes, crack segments) and blood billboards.
+void appendTexturedQuad(std::vector<TexturedParticleVertex>& vertices,
+                        const glm::vec3& center, const glm::vec3& right,
+                        const glm::vec3& up, const glm::vec4& color)
+{
+    const glm::vec3 normal = glm::normalize(glm::cross(right, up));
+    const glm::vec3 bl = center - right - up;
+    const glm::vec3 br = center + right - up;
+    const glm::vec3 tr = center + right + up;
+    const glm::vec3 tl = center - right + up;
+    vertices.push_back({bl, {0.0f, 0.0f}, normal, color});
+    vertices.push_back({br, {1.0f, 0.0f}, normal, color});
+    vertices.push_back({tr, {1.0f, 1.0f}, normal, color});
+    vertices.push_back({bl, {0.0f, 0.0f}, normal, color});
+    vertices.push_back({tr, {1.0f, 1.0f}, normal, color});
+    vertices.push_back({tl, {0.0f, 1.0f}, normal, color});
+}
+
+// Picks an in-plane tangent for a decal. Uses the decal's own axis (cracks)
+// when it lies in the surface plane; otherwise derives a stable tangent.
+void decalInPlaneBasis(const glm::vec3& n, const glm::vec3& hint,
+                       const glm::vec3& fallbackHint,
+                       glm::vec3& tangent, glm::vec3& bitangent)
+{
+    glm::vec3 h = hint - n * glm::dot(hint, n);
+    if (glm::length(h) < 0.1f)
+        h = fallbackHint - n * glm::dot(fallbackHint, n);
+    if (glm::length(h) > 0.1f) {
+        tangent = glm::normalize(h);
+    } else {
+        const glm::vec3 ref = std::fabs(n.z) < 0.9f
+            ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+        tangent = glm::normalize(glm::cross(n, ref));
+    }
+    bitangent = glm::normalize(glm::cross(n, tangent));
+}
+
+void appendTexturedBillboard(std::vector<TexturedParticleVertex>& vertices,
+                             const Camera& camera, const glm::vec3& center,
+                             float rotation, float sizeX, float sizeY,
+                             const glm::vec4& color)
+{
+    const float c = std::cos(rotation);
+    const float s = std::sin(rotation);
+    const glm::vec3 right = (camera.right * c + camera.up * s) * sizeX;
+    const glm::vec3 up = (-camera.right * s + camera.up * c) * sizeY;
+    appendTexturedQuad(vertices, center, right, up, color);
 }
 
 } // namespace
@@ -439,18 +490,37 @@ void EffectPartSystem::render(const Camera& camera) const {
 
     drawTexturedHitParticles(camera, texturedHitParticles, texturedHitParticlePath);
 
+    // Flat textured decals + textured blood spray. One quad (2 triangles) per
+    // decal instead of a 192-triangle cylinder, batched per texture so the
+    // whole decal system stays cheap at high counts.
+    const auto& decalCfg = ImpactDecalsConfig::instance().data();
+    static std::vector<TexturedParticleVertex> bloodSprayVerts;
+    static std::vector<TexturedParticleVertex> bloodDecalVerts;
+    static std::vector<TexturedParticleVertex> holeDecalVerts;
+    static std::vector<TexturedParticleVertex> crackDecalVerts;
+    bloodSprayVerts.clear();
+    bloodDecalVerts.clear();
+    holeDecalVerts.clear();
+    crackDecalVerts.clear();
+
+    const std::string& bloodTexture = decalCfg.blood.texture;
+
     for (const BloodParticle& particle : mBloodParticles) {
         const float dist = glm::length(particle.position - camera.pos);
         if (dist > 40.0f)
             continue;
         const float distFade = dist > 20.0f ? (40.0f - dist) / 20.0f : 1.0f;
-        DebugVis::drawFilledBillboard(
-            camera,
-            particle.position,
-            particle.size,
-            particle.rotation,
-            particle.stretch,
-            {particle.color.x, particle.color.y, particle.color.z, particle.alpha * distFade});
+        const float alpha = std::max(0.0f, particle.alpha * distFade);
+        if (alpha <= 0.001f)
+            continue;
+        const glm::vec4 color{particle.color.x, particle.color.y, particle.color.z, alpha};
+        if (bloodTexture.empty()) {
+            DebugVis::drawFilledBillboard(camera, particle.position, particle.size,
+                particle.rotation, particle.stretch, color);
+        } else {
+            appendTexturedBillboard(bloodSprayVerts, camera, particle.position,
+                particle.rotation, particle.size, particle.size * particle.stretch, color);
+        }
     }
 
     for (const SurfaceDecal& decal : mSurfaceDecals) {
@@ -462,14 +532,55 @@ void EffectPartSystem::render(const Camera& camera) const {
         if (alpha <= 0.001f)
             continue;
         const glm::vec4 color{decal.color.x, decal.color.y, decal.color.z, alpha};
+        const glm::vec3 n = glm::length(decal.normal) > 0.001f
+            ? glm::normalize(decal.normal) : glm::vec3(0.0f, 0.0f, 1.0f);
+
+        const std::string& texture = decal.kind == SurfaceDecalKind::Blood
+            ? decalCfg.blood.texture
+            : (decal.kind == SurfaceDecalKind::BulletHole
+                ? decalCfg.bulletHoles.texture
+                : decalCfg.worldCracks.texture);
+        const float texScale = decal.kind == SurfaceDecalKind::Blood
+            ? decalCfg.blood.textureScale
+            : (decal.kind == SurfaceDecalKind::BulletHole
+                ? decalCfg.bulletHoles.textureScale
+                : decalCfg.worldCracks.textureScale);
+
+        glm::vec3 tangent, bitangent;
+        decalInPlaneBasis(n, decal.axis, glm::vec3(0.0f, 0.0f, 1.0f), tangent, bitangent);
+
+        glm::vec3 right, up;
         if (decal.kind == SurfaceDecalKind::Crack) {
-            DebugVis::drawFilledCylinder(camera, decal.position, decal.axis,
-                std::max(0.001f, decal.radius), std::max(0.001f, decal.height), color);
+            // Crack segments are long thin strips along decal.axis.
+            right = tangent * (std::max(0.001f, decal.height) * 0.5f);
+            up = bitangent * (std::max(0.001f, decal.radius) * texScale);
         } else {
-            DebugVis::drawFilledCylinder(camera, decal.position, decal.normal,
-                std::max(0.001f, decal.radius), std::max(0.001f, decal.height), color);
+            const float half = std::max(0.001f, decal.radius * texScale);
+            right = tangent * half;
+            up = bitangent * half;
         }
+
+        if (texture.empty()) {
+            DebugVis::drawFilledDecal(camera, decal.position, n,
+                std::max(0.001f, decal.radius), color);
+            continue;
+        }
+        if (decal.kind == SurfaceDecalKind::Blood)
+            appendTexturedQuad(bloodDecalVerts, decal.position, right, up, color);
+        else if (decal.kind == SurfaceDecalKind::BulletHole)
+            appendTexturedQuad(holeDecalVerts, decal.position, right, up, color);
+        else
+            appendTexturedQuad(crackDecalVerts, decal.position, right, up, color);
     }
+
+    if (!bloodSprayVerts.empty() && !bloodTexture.empty())
+        drawTexturedHitParticles(camera, bloodSprayVerts, bloodTexture);
+    if (!bloodDecalVerts.empty())
+        drawTexturedHitParticles(camera, bloodDecalVerts, decalCfg.blood.texture);
+    if (!holeDecalVerts.empty())
+        drawTexturedHitParticles(camera, holeDecalVerts, decalCfg.bulletHoles.texture);
+    if (!crackDecalVerts.empty())
+        drawTexturedHitParticles(camera, crackDecalVerts, decalCfg.worldCracks.texture);
 
     // Particle debug logging
     if (DebugConfig::DEBUG_BLOOD_HITS || DebugConfig::DEBUG_BLOOD_RAYS) {

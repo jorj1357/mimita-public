@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -7,10 +8,10 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "physics/physical-body.h"
+#include "entities/player.h"
 
 struct World;
 class Camera;
-struct Player;
 struct InputState;
 
 struct RagdollModePart {
@@ -59,6 +60,27 @@ struct RagdollGrabState {
     int partIndex = -1;
 };
 
+// Per-body ragdoll state. Shared by the local player's alive ragdoll mode and
+// by every simulated corpse, so the two use one owner and one solver.
+struct RagdollBody {
+    std::vector<RagdollModePart> parts;
+    std::vector<int> rootAncestorNodes;
+    glm::vec3 rootOffsetLocal{0.0f};
+    glm::vec3 rootWorldPosition{0.0f};
+    glm::vec3 torsoPosition{0.0f};
+    int torsoIndex = -1;
+    int headIndex = -1;
+    int leftArmIndex = -1;
+    int rightArmIndex = -1;
+    int leftLegIndex = -1;
+    int rightLegIndex = -1;
+    RagdollGrabState leftGrab;
+    RagdollGrabState rightGrab;
+    bool leftArmExtending = false;
+    bool rightArmExtending = false;
+    float activationTime = 0.0f;
+};
+
 class RagdollModeSystem {
 public:
     static RagdollModeSystem& instance();
@@ -74,53 +96,65 @@ public:
 
     glm::vec3 getHeadPosition() const;
     glm::mat4 getHeadTransform() const;
-    glm::vec3 getTorsoPosition() const { return mTorsoPosition; }
+    glm::vec3 getTorsoPosition() const { return mAlive.torsoPosition; }
 
     // Camera position with configurable smoothing. Call once per render frame.
     // smooth_factor 0 = glued to head (instant), 1 = smooth, 10 = very slow.
     glm::vec3 computeCameraPosition(float dt);
 
-    const std::vector<RagdollModePart>& parts() const { return mParts; }
-    const RagdollGrabState& leftGrab() const { return mLeftGrab; }
-    const RagdollGrabState& rightGrab() const { return mRightGrab; }
+    const std::vector<RagdollModePart>& parts() const { return mAlive.parts; }
+    const RagdollGrabState& leftGrab() const { return mAlive.leftGrab; }
+    const RagdollGrabState& rightGrab() const { return mAlive.rightGrab; }
+
+    // ── Corpse ragdolls ─────────────────────────────────────────────
+    // Spawn a physically simulated corpse for a dead actor (player or NPC).
+    // The corpse owns a cloned Player body and is driven by the same solver as
+    // the alive ragdoll. Client-side now; the event is shaped for the server.
+    void spawnCorpse(const Player& victim, const glm::vec3& deathImpulse,
+                     const std::string& actorId, uint32_t ownerId = 0);
+    void updateCorpses(float dt, const World& world);
+    void renderCorpses(const Camera& camera) const;
+    void removeCorpsesForOwner(uint32_t ownerId);
+    void clearCorpses();
+    std::size_t corpseCount() const { return mCorpses.size(); }
 
 private:
     RagdollModeSystem() = default;
 
-    void initParts(const Player& player);
-    void reinitPreservingState(Player& player);
-    void applyControls(float dt, const InputState& input, const Camera& camera);
-    void solveJoints(int iterations, bool positionPass);
-    void solveRotationLimits(float betaOverride = -1.0f);
-    void solveGrabs(int iterations);
-    void processGrab(const InputState& input, const Camera& camera, const World& world);
-    void processExtend(const InputState& input, const Camera& camera, float dt);
-    void selfCollision();
-    void syncToPlayer(Player& player);
+    struct RagdollCorpse {
+        RagdollBody body;
+        Player actor;
+        uint32_t ownerId = 0;
+        std::string actorId;
+        float age = 0.0f;
+        float lifetime = 20.0f;
+        float fade = 0.0f;
+        float bloodTimer = 0.0f;
+        bool bloodInit = false;
+        glm::vec3 lastBloodPos{0.0f};
+    };
+
+    // Shared body construction / writeback, used by alive mode and corpses.
+    void initParts(const Player& player, RagdollBody& b);
+    void reinitPreservingState(Player& player, RagdollBody& b);
+    void applyControls(float dt, const InputState& input, const Camera& camera, RagdollBody& b);
+    void solveJoints(int iterations, bool positionPass, RagdollBody& b);
+    void solveRotationLimits(float betaOverride, RagdollBody& b);
+    void solveGrabs(int iterations, RagdollBody& b);
+    void processGrab(const InputState& input, const Camera& camera, const World& world, RagdollBody& b);
+    void processExtend(const InputState& input, const Camera& camera, float dt, RagdollBody& b);
+    void selfCollision(RagdollBody& b);
+    void syncToPlayer(Player& player, RagdollBody& b);
+
+    // Physics-only step shared by corpses (no input, no motors).
+    void stepBody(RagdollBody& b, const World& world, float dt);
+    void sprayCorpseBlood(RagdollCorpse& corpse, float dt);
 
     bool mActive = false;
-    std::vector<RagdollModePart> mParts;
-    RagdollGrabState mLeftGrab;
-    RagdollGrabState mRightGrab;
-    glm::vec3 mTorsoPosition{0.0f};
-    int mTorsoIndex = -1;
-    int mHeadIndex = -1;
-    int mLeftArmIndex = -1;
-    int mRightArmIndex = -1;
-    int mLeftLegIndex = -1;
-    int mRightLegIndex = -1;
-    float mActivationTime = 0.0f;
+    RagdollBody mAlive;
+    std::vector<RagdollCorpse> mCorpses;
     glm::vec3 mCameraSmoothPos{0.0f};
     bool mCameraSmoothInit = false;
-
-    // Skeleton nodes above the torso (e.g. plrOrigin) that must be neutralized
-    // so the physical torso frame is the model root while ragdolled.
-    std::vector<int> mRootAncestorNodes;
-    // player.pos expressed in the torso bind frame, so the authoritative root
-    // stays anchored to the body without drifting on repeated toggles.
-    glm::vec3 mRootOffsetLocal{0.0f};
-    glm::vec3 mRootWorldPosition{0.0f};
     uint64_t mAppliedConfigGeneration = 0;
-    bool mLeftArmExtending = false;
-    bool mRightArmExtending = false;
+    uint32_t mNextCorpseSerial = 0;
 };

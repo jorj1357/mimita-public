@@ -17,7 +17,7 @@
 #include "config/ragdoll-death-config.h"
 #include "avatar/avatar.h"
 #include "config/player-settings.h"
-#include "entities/death-ghost.h"
+#include "ragdoll/ragdoll-mode.h"
 #include "combat/death-system.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
@@ -427,7 +427,7 @@ void clearPredictedDeath(Player& player, const glm::vec3& at,
     // This life never died: a predicted-death ghost must be removed and the
     // next real death must be allowed to present again.
     player.networkDeathPresented = false;
-    DeathGhostSystem::instance().removeForOwner(entityId);
+    RagdollModeSystem::instance().removeCorpsesForOwner(entityId);
     Debug::warn(Debug::Category::Networking,
         "[NET PREDICTED DEATH ROLLBACK] entityId=%u reason=%s pos=(%.2f,%.2f,%.2f)\n",
         entityId, reason ? reason : "unknown", at.x, at.y, at.z);
@@ -1484,8 +1484,8 @@ void updateRenderedReplica(
                 glm::length(deathVel) > 0.001f
                     ? glm::normalize(glm::vec3(deathVel.x, deathVel.y, 0.0f))
                     : glm::vec3(0.0f, 0.0f, 1.0f);
-            DeathGhostSystem::instance().spawnFromPlayer(
-                player, deathDir,
+            RagdollModeSystem::instance().spawnCorpse(
+                player, deathDir * 10.0f,
                 "net_" + std::to_string(entityId), entityId);
             Debug::log(Debug::Category::Networking,
                 "[NET REMOTE DEATH FX] entityId=%u pos=(%.1f,%.1f,%.1f)",

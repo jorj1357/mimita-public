@@ -1,7 +1,6 @@
-#include "ragdoll/ragdoll.h"
-#include "ragdoll/ragdoll-config.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "ragdoll/ragdoll-mode-config.h"
+#include "config/ragdoll-death-config.h"
 
 #include <cstdio>
 
@@ -16,7 +15,7 @@ void registerRagdollCommands()
         "Reload ragdolldeath.json without restart",
         "ragdoll_reload",
         [](const std::vector<std::string>&) {
-            if (RagdollConfig::instance().load()) {
+            if (RagdollDeathConfig::instance().load()) {
                 Terminal::instance().addLog(
                     "[RAGDOLL] Config reloaded successfully");
             } else {
@@ -52,16 +51,16 @@ void registerRagdollCommands()
         "Print ragdoll system status",
         "ragdoll_status",
         [](const std::vector<std::string>&) {
-            const auto& cfg = RagdollConfig::instance().data();
-            auto& sys = RagdollDeathSystem::instance();
+            const auto& cfg = RagdollModeConfig::instance().data();
+            auto& sys = RagdollModeSystem::instance();
             char buf[512];
             snprintf(buf, sizeof(buf),
-                "[RAGDOLL] enabled=%d active_ragdolls=%zu "
-                "parts_defined=%zu lifetime=%.1f",
-                (int)cfg.enabled,
-                sys.ragdolls().size(),
-                cfg.parts.size(),
-                cfg.lifetimeSeconds);
+                "[RAGDOLL] death_enabled=%d active_corpses=%zu "
+                "corpse_lifetime=%.1f blood=%d",
+                (int)RagdollDeathConfig::instance().enabled(),
+                sys.corpseCount(),
+                cfg.corpseLifetimeSeconds,
+                (int)cfg.corpseBloodEnabled);
             Terminal::instance().addLog(buf);
         },
         "2026-07-08",

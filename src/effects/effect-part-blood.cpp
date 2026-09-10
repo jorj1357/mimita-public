@@ -508,6 +508,11 @@ void EffectPartSystem::processDeferredBloodDecals()
         SurfaceDecal decal;
         decal.position = surfaceHit.position;
         decal.normal = surfaceHit.normal;
+        // Random in-plane axis so repeated splats do not share one rotation.
+        {
+            const float ra = (float)(rand() % 6284) / 1000.0f;
+            decal.axis = glm::vec3(std::cos(ra), std::sin(ra), 0.1234f);
+        }
         const float jr = 1.0f + bloodCfg.colorVariation * ((float)(rand() % 2001) / 1000.0f - 1.0f);
         const float jg = 1.0f + bloodCfg.colorVariation * ((float)(rand() % 2001) / 1000.0f - 1.0f);
         const float jb = 1.0f + bloodCfg.colorVariation * ((float)(rand() % 2001) / 1000.0f - 1.0f);

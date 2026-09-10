@@ -102,6 +102,10 @@ static void readGroup(const json& j, ImpactDecalGroupConfig& cfg)
     cfg.lifetime = readJsonFloat(j, "lifetime", cfg.lifetime);
     cfg.fadeTime = readJsonFloat(j, "fadeTime", cfg.fadeTime);
     cfg.maxCount = readJsonInt(j, "maxCount", cfg.maxCount);
+    if (j.contains("texture") && j["texture"].is_string())
+        cfg.texture = j["texture"].get<std::string>();
+    cfg.textureScale = readJsonFloat(j, "textureScale", cfg.textureScale);
+    cfg.randomRotationDegrees = readJsonFloat(j, "randomRotationDegrees", cfg.randomRotationDegrees);
     if (j.contains("stagger")) {
         const auto& s = j["stagger"];
         cfg.stagger.enabled = readJsonBool(s, "enabled", cfg.stagger.enabled);

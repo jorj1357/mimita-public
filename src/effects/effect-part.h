@@ -190,7 +190,7 @@ private:
                                  const std::string& targetActorId);
 
     static constexpr unsigned int POOL_SIZE = 4096;
-    static constexpr unsigned int MAX_BLOOD_PARTICLES = 512;
+    static constexpr unsigned int MAX_BLOOD_PARTICLES = 2048;
     static constexpr unsigned int MAX_BLOOD_DEBUG_SEGMENTS = 256;
     static constexpr int DEFAULT_SPAWN_CAP = 64;
     static constexpr int DEFAULT_SOUND_CAP = 8;

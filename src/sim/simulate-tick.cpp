@@ -123,6 +123,13 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             *sim.world, *sim.player, *sim.npcSystem, frame.jumpPressed, TICK_DT);
     }
 
+    // Corpse ragdolls simulate at the fixed gameplay rate so their motion is
+    // deterministic and independent of render frame rate.
+    {
+        MIMITA_PERF_SCOPE("RagdollCorpseUpdate");
+        RagdollModeSystem::instance().updateCorpses(TICK_DT, *sim.world);
+    }
+
     if (sim.player->spawnFlashTimer > 0.0f)
         sim.player->spawnFlashTimer = std::max(0.0f, sim.player->spawnFlashTimer - 1.0f);
 

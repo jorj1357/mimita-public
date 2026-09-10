@@ -51,6 +51,14 @@ struct ImpactDecalGroupConfig {
     float lifetime = 30.0f;
     float fadeTime = 5.0f;
     int maxCount = 256;
+    // Flat textured decal rendering. The texture is sampled through an
+    // alpha-blended surface-aligned quad (2 triangles) instead of a solid
+    // cylinder, so decal cost no longer scales with triangle count.
+    std::string texture;
+    // Radius multiplier applied to the sampled texture's opaque footprint.
+    float textureScale = 1.0f;
+    // In-plane random rotation range in degrees (variety for repeated splats).
+    float randomRotationDegrees = 360.0f;
     struct StaggerConfig {
         bool enabled = false;
         int decalsPerTick = 1;
