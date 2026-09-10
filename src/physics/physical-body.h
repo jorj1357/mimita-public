@@ -79,6 +79,15 @@ void solvePointJointPosition(RigidBody& a, const glm::vec3& anchorA,
                              RigidBody& b, const glm::vec3& anchorB,
                              float beta);
 
+// One-sided distance limit: anchors may separate up to maxDistance, and are
+// pulled back only when they exceed it. Used for arm stretch.
+void solvePointJointMaxDistanceVelocity(RigidBody& a, const glm::vec3& anchorA,
+                                        RigidBody& b, const glm::vec3& anchorB,
+                                        float maxDistance);
+void solvePointJointMaxDistance(RigidBody& a, const glm::vec3& anchorA,
+                                RigidBody& b, const glm::vec3& anchorB,
+                                float maxDistance, float beta);
+
 // Cancels the body's velocity at a fixed world point (grab / static
 // attachment). This is what keeps a hanging grab from accumulating gravity.
 void solvePointToWorldVelocity(RigidBody& body, const glm::vec3& bodyAnchor);

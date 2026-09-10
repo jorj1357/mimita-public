@@ -37,6 +37,70 @@ Whats this
 
 newest at top 9 3 2026
 
+2026-09-10T21:32:00Z — Ragdoll grabbed arm rotated freely and froze in the wrong orientation (fixed)
+
+1. Expected behavior: while a grab is held, the arm pivots at the shoulder so
+   the limb stays attached to the torso and holds its pose; releasing the grab
+   leaves the arm in a sensible orientation.
+2. Actual behavior (human playtest): only while grabbing/holding, the limb
+   rotated freely; after release it froze in the wrong orientation left over
+   from the free rotation.
+3. Exact specification: `docs/specs/ragdoll-retrograd/ragdoll-retrograd.md`,
+   grab and arm-reach sections (a held grab anchors the hand; the arm should
+   follow the shoulder, with only a tiny allowed compliance).
+4. Exact wrong code: `src/ragdoll/ragdoll-mode.cpp`, `solveJoints`:
+   `if (grabbing || extending) { stretch = part.maxStretch; }`
+5. Why wrong: with `stretch > 0` the shoulder uses the one-sided sphere
+   constraint `solvePointJointMaxDistance[Velocity]` (`src/physics/physical-body.cpp`),
+   which applies no constraint inside the `maxStretch` radius. With the hand
+   pinned by `solveGrabs` and the arm spun by `processExtend`, the arm had no
+   remaining shoulder constraint and rotated freely about its center. After
+   release the rigid point joint re-locked only the anchor position (point
+   joints never constrain relative orientation) and `stop_angular_speed` froze
+   the free orientation.
+6. Corrected code: enable stretch only while reaching and not grabbing:
+   `if (extending && !grabbing) { stretch = part.maxStretch; }`
+7. Date and time first observed: 2026-09-10, human playtest of the
+   `205900`/`211409` working tree.
+8. What we learned: a one-sided sphere joint must not be used for a held
+   attachment. Keep the attachment joint rigid and reserve stretch for the
+   reach gesture, or make stretch axial so it cannot add lateral/rotational
+   freedom.
+9. Related changelog:
+   `docs/changelog/2026-09-10/20260910_213521-ragdoll-grab-rigid-shoulder.md`.
+
+2026-09-10T21:13:29Z — Ragdoll limbs lost their rigid attachment to the capsule (fixed)
+
+1. Expected behavior: each limb's joint keeps its anchor coincident with the
+   torso attachment, so the capsule and the visible body part stay locked 1:1
+   at the shoulder/hip. Arm stretch is the only intended exception, and only
+   while extending or grabbing.
+2. Actual behavior (after the center-of-mass / stretch pass): every limb could
+   separate from its torso anchor by a large fixed amount and appeared to
+   rotate/float about the center of the limb rather than staying locked to the
+   capsule. Legs were affected even though they had no configured stretch.
+3. Exact wrong code: in `src/ragdoll/ragdoll-mode.cpp`, `solveJoints`:
+   `const float maxDist = part.restLength + part.maxStretch;`
+4. Why wrong: `RagdollModePart::restLength` is set in `initParts` as
+   `glm::length(child.body.position - parentAnchorWorld)`, which is the distance
+   from the child's **center of mass to the anchor** (about the capsule
+   half-length, ~0.5 for legs and ~0.59 for arms), not the anchor-to-anchor
+   separation. At bind the two anchors are coincident (separation 0). Using
+   `restLength` as the one-sided joint base therefore granted every limb that
+   much free separation; legs (maxStretch 0) still got ~0.5 m of slack.
+5. Corrected code: base the limit on the stretch amount only, and gate it to the
+   intended actions:
+   `float stretch = 0.0f;` ... only if extending or grabbing `stretch = part.maxStretch;`
+   `if (stretch > 0.0f) { solvePointJointMaxDistance...(stretch); } else { rigid point joint; }`
+6. Date and time first observed: 2026-09-10, human play test after the
+   `193151-ragdoll-com-selfcollision-slop` and
+   `205900-ragdoll-capsule-sizes-alpha-grab-stretch-limits` passes.
+7. What we learned: a one-sided (max-distance) joint must be based on the anchor
+   separation at bind (0), not on any center-of-mass-to-anchor distance. When
+   introducing stretch, keep the default rigid and enable the limit only for the
+   action that needs it.
+8. Related changelog: `docs/changelog/2026-09-10/` (this fix's changelog).
+
 2026-09-10T17:46:58Z — Left-leg-only wrong-axis class: replay root-local flattening and quaternion hemisphere (confirmed root cause for replay; ragdoll inherits the same class)
 
 1. Expected behavior: a body part's orientation is composed in its real skeleton

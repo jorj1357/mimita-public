@@ -490,7 +490,9 @@ void drawWeaponLine(const Camera& camera, glm::vec3 a, glm::vec3 b, glm::vec4 co
 void drawWeaponCapsuleWire(const Camera& camera, const Capsule& c, glm::vec4 color)
 {
     (void)camera;
-    constexpr int segments = 20;
+    // Fewer segments than before: overlapping alpha-blended wire lines
+    // accumulated coverage and made low-alpha capsules flicker toward opaque.
+    constexpr int segments = 8;
     constexpr float pi = 3.1415926535f;
     addWeaponLine(c.a, c.b, color);
 

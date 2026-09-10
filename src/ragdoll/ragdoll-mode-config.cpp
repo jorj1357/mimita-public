@@ -123,6 +123,7 @@ bool RagdollModeConfig::load(const std::string& path)
                 cc.halfHeight = c.value("half_height", -1.0f);
                 cc.offset = readJsonVec3(c, "offset", cc.offset);
                 cc.centerOfMass = readJsonVec3(c, "center_of_mass", cc.centerOfMass);
+                cc.alpha = c.value("alpha", cc.alpha);
                 if (c.contains("axis")) {
                     glm::vec3 axis = readJsonVec3(c, "axis", glm::vec3(0.0f));
                     if (glm::length(axis) > 1e-5f) {
@@ -201,6 +202,9 @@ bool RagdollModeConfig::load(const std::string& path)
             const auto& ar = root["arms"];
             next.armExtendStrength = ar.value("extend_strength", next.armExtendStrength);
             next.armExtendMaxSpeed = ar.value("extend_max_speed", next.armExtendMaxSpeed);
+            next.armMaxStretch = ar.value("max_stretch", next.armMaxStretch);
+            next.armStretchForce = ar.value("stretch_force", next.armStretchForce);
+            next.armBodyPull = ar.value("body_pull", next.armBodyPull);
         }
 
         // Weapon
@@ -219,6 +223,7 @@ bool RagdollModeConfig::load(const std::string& path)
         }
         next.thirdPersonAllowed = root.value("third_person_allowed", next.thirdPersonAllowed);
 
+        next.debugHitboxesVisible = root.value("debug_hitboxes_visible", next.debugHitboxesVisible);
         next.attachmentsVisible = root.value("attachments_visible", next.attachmentsVisible);
 
         next.torsoLookSpring = root.value("torso_look_spring", 8.0f);

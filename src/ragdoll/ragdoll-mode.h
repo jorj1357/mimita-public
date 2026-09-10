@@ -22,6 +22,8 @@ struct RagdollModePart {
     glm::vec3 parentLocalAnchor{0.0f};
     glm::vec3 childLocalAnchor{0.0f};
     float restLength = 0.0f;
+    // Max separation of the anchors (arm stretch). 0 = rigid joint.
+    float maxStretch = 0.0f;
 
     // Skeleton mapping: body-part node and its nearest skeleton ancestor that
     // is also a body part (-1 = the model root).
@@ -89,7 +91,7 @@ private:
     void reinitPreservingState(Player& player);
     void applyControls(float dt, const InputState& input, const Camera& camera);
     void solveJoints(int iterations, bool positionPass);
-    void solveRotationLimits();
+    void solveRotationLimits(float betaOverride = -1.0f);
     void solveGrabs(int iterations);
     void processGrab(const InputState& input, const Camera& camera, const World& world);
     void processExtend(const InputState& input, const Camera& camera, float dt);

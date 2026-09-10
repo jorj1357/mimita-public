@@ -56,7 +56,7 @@ static glm::vec3 partHandWorld(const RagdollModePart& part)
 }
 
 static bool raycastWorld(const World& world, const glm::vec3& origin,
-                          const glm::vec3& dir, float maxDist,
+                          const glm::vec3& dir, float maxDist, float radius,
                           glm::vec3& hitPoint, glm::vec3& hitNormal)
 {
     float closestDist = maxDist;
@@ -74,7 +74,7 @@ static bool raycastWorld(const World& world, const glm::vec3& origin,
         const CollisionTriangle& tri = world.collisionMesh.triangles[ti];
         float dist = 0.0f;
         glm::vec3 normal, point;
-        if (sweptSphereTriangle(origin, dir, 0.01f, tri, maxDist, dist, normal, point)) {
+        if (sweptSphereTriangle(origin, dir, radius, tri, maxDist, dist, normal, point)) {
             if (dist < closestDist) {
                 closestDist = dist;
                 hitPoint = point;
@@ -393,6 +393,12 @@ void RagdollModeSystem::initParts(const Player& player)
         RagdollModePart& parent = mParts[parentIdx];
 
         child.parentIndex = parentIdx;
+        // Arms may stretch a little away from the shoulder while extending.
+        {
+            const std::string partName(name);
+            if (partName == "leftArm" || partName == "rightArm")
+                child.maxStretch = cfg.armMaxStretch;
+        }
         child.hasRotationLimits = attIt->second.hasRotationLimits;
         child.rotMinDeg = attIt->second.rotMinDeg;
         child.rotMaxDeg = attIt->second.rotMaxDeg;
@@ -558,6 +564,9 @@ void RagdollModeSystem::update(float dt, const World& world, Player& player,
             part.body.angularVelocity = glm::vec3(0.0f);
     }
 
+    // Step 8c: Final strict angular limits so no later pass overrides them.
+    solveRotationLimits(1.0f);
+
     // Step 9: Write the authoritative root and skeleton transforms.
     syncToPlayer(player);
 
@@ -649,7 +658,8 @@ void RagdollModeSystem::solveJoints(int iterations, bool positionPass)
 {
     const auto& cfg = RagdollModeConfig::instance().data();
     for (int iter = 0; iter < iterations; ++iter) {
-        for (auto& part : mParts) {
+        for (int pi = 0; pi < (int)mParts.size(); ++pi) {
+            RagdollModePart& part = mParts[pi];
             if (part.parentIndex < 0) continue;
             if (part.parentIndex >= (int)mParts.size()) continue;
 
@@ -661,11 +671,33 @@ void RagdollModeSystem::solveJoints(int iterations, bool positionPass)
             glm::vec3 childAnchor = child.position
                 + child.orientation * part.childLocalAnchor;
 
-            solvePointJointVelocity(parent, parentAnchor, child, childAnchor);
+            const float beta = glm::clamp(cfg.jointPositionBeta, 0.0f, 1.0f);
 
-            if (positionPass)
-                solvePointJointPosition(parent, parentAnchor, child, childAnchor,
-                                        cfg.jointPositionBeta);
+            // Arms may stretch only while reaching (extending) and not holding a
+            // grab. While grabbing the shoulder stays rigid so the pinned hand
+            // pivots the arm at the shoulder instead of letting it float/spin
+            // about its center. Otherwise the joint is rigid too.
+            float stretch = 0.0f;
+            if (part.maxStretch > 0.0f) {
+                const bool isLeft = (pi == mLeftArmIndex);
+                const bool isRight = (pi == mRightArmIndex);
+                const bool grabbing = (isLeft && mLeftGrab.active) || (isRight && mRightGrab.active);
+                const bool extending = (isLeft && mLeftArmExtending) || (isRight && mRightArmExtending);
+                if (extending && !grabbing)
+                    stretch = part.maxStretch;
+            }
+
+            if (stretch > 0.0f) {
+                // Anchors coincide at bind, so the allowed separation is the
+                // stretch amount itself (base 0), not restLength.
+                solvePointJointMaxDistanceVelocity(parent, parentAnchor, child, childAnchor, stretch);
+                if (positionPass)
+                    solvePointJointMaxDistance(parent, parentAnchor, child, childAnchor, stretch, beta);
+            } else {
+                solvePointJointVelocity(parent, parentAnchor, child, childAnchor);
+                if (positionPass)
+                    solvePointJointPosition(parent, parentAnchor, child, childAnchor, beta);
+            }
         }
 
         if (positionPass)
@@ -673,9 +705,12 @@ void RagdollModeSystem::solveJoints(int iterations, bool positionPass)
     }
 }
 
-void RagdollModeSystem::solveRotationLimits()
+void RagdollModeSystem::solveRotationLimits(float betaOverride)
 {
-    const float kBeta = RagdollModeConfig::instance().data().limitPositionBeta;
+    const auto& cfg = RagdollModeConfig::instance().data();
+    const float kBeta = (betaOverride >= 0.0f)
+        ? glm::clamp(betaOverride, 0.0f, 1.0f)
+        : glm::clamp(cfg.limitPositionBeta, 0.0f, 1.0f);
 
     for (int pi = 0; pi < (int)mParts.size(); ++pi) {
         RagdollModePart& part = mParts[pi];
@@ -747,7 +782,8 @@ void RagdollModeSystem::processGrab(const InputState& input, const Camera& camer
         glm::vec3 handWorld = partHandWorld(arm);
         glm::vec3 rayDir = glm::normalize(camera.front);
         glm::vec3 hitPoint, hitNormal;
-        if (!raycastWorld(world, handWorld, rayDir, cfg.grabReach, hitPoint, hitNormal))
+        if (!raycastWorld(world, handWorld, rayDir, cfg.grabReach, cfg.grabRadius,
+                          hitPoint, hitNormal))
             return;
 
         // Only grab within the grace radius of the hand, otherwise the hand
@@ -816,6 +852,26 @@ void RagdollModeSystem::processExtend(const InputState& input, const Camera& cam
         float currentSpeed = glm::dot(arm.angularVelocity, axis);
         float blend = glm::clamp(dt * 12.0f, 0.0f, 1.0f);
         arm.angularVelocity += axis * ((desiredSpeed - currentSpeed) * blend);
+
+        // Reach: push the arm away from the shoulder until it hits max stretch.
+        // The one-sided shoulder joint lets it telescope, so this does not drag
+        // the body until the arm is fully extended (and only then, if body_pull
+        // is enabled, or when the hand is grabbing the world).
+        if (part.parentIndex >= 0 && part.parentIndex < (int)mParts.size()) {
+            const RigidBody& parent = mParts[part.parentIndex].body;
+            glm::vec3 parentAnchor = parent.position
+                + parent.orientation * part.parentLocalAnchor;
+            float sep = glm::length(shoulder - parentAnchor);
+            float maxSep = part.restLength + part.maxStretch;
+            if (sep < maxSep) {
+                arm.linearVelocity += targetDir * (cfg.armStretchForce * dt
+                                                   / std::max(arm.mass, 0.001f));
+            } else if (cfg.armBodyPull > 0.0f && mTorsoIndex >= 0) {
+                RigidBody& torso = mParts[mTorsoIndex].body;
+                torso.linearVelocity += targetDir * (cfg.armBodyPull * dt
+                                                     / std::max(torso.mass, 0.001f));
+            }
+        }
     };
 
     if (mLeftArmExtending) extend(mLeftArmIndex);
@@ -975,8 +1031,10 @@ void RagdollModeSystem::render(const Camera& camera) const
 {
     if (!mActive) return;
 
-    const bool showAttach = RagdollModeConfig::instance().data().attachmentsVisible
-                            || DebugConfig::DEBUG_RAGDOLL;
+    const auto& rcfg = RagdollModeConfig::instance().data();
+    if (!rcfg.debugHitboxesVisible) return;
+
+    const bool showAttach = rcfg.attachmentsVisible || DebugConfig::DEBUG_RAGDOLL;
 
     if (showAttach) {
         DebugVis::drawWeaponWireSphere(camera, mRootWorldPosition, 0.07f, glm::vec4(1, 1, 1, 1));
@@ -987,13 +1045,18 @@ void RagdollModeSystem::render(const Camera& camera) const
     for (size_t i = 0; i < mParts.size(); ++i) {
         const auto& part = mParts[i];
 
-        glm::vec4 color(0.2f, 0.8f, 1.0f, 0.9f);
-        if (part.name == "head") color = glm::vec4(1.0f, 0.3f, 0.3f, 0.9f);
-        else if (part.name == "torso") color = glm::vec4(0.2f, 0.8f, 1.0f, 0.9f);
-        else if (part.name == "leftArm") color = glm::vec4(0.3f, 1.0f, 0.3f, 0.9f);
-        else if (part.name == "rightArm") color = glm::vec4(0.3f, 0.3f, 1.0f, 0.9f);
-        else if (part.name == "leftLeg") color = glm::vec4(1.0f, 1.0f, 0.3f, 0.9f);
-        else if (part.name == "rightLeg") color = glm::vec4(1.0f, 0.3f, 1.0f, 0.9f);
+        float alpha = 0.9f;
+        const auto& capsules = RagdollModeConfig::instance().data().capsules;
+        auto capCfg = capsules.find(part.name);
+        if (capCfg != capsules.end()) alpha = glm::clamp(capCfg->second.alpha, 0.0f, 1.0f);
+
+        glm::vec4 color(0.2f, 0.8f, 1.0f, alpha);
+        if (part.name == "head") color = glm::vec4(1.0f, 0.3f, 0.3f, alpha);
+        else if (part.name == "torso") color = glm::vec4(0.2f, 0.8f, 1.0f, alpha);
+        else if (part.name == "leftArm") color = glm::vec4(0.3f, 1.0f, 0.3f, alpha);
+        else if (part.name == "rightArm") color = glm::vec4(0.3f, 0.3f, 1.0f, alpha);
+        else if (part.name == "leftLeg") color = glm::vec4(1.0f, 1.0f, 0.3f, alpha);
+        else if (part.name == "rightLeg") color = glm::vec4(1.0f, 0.3f, 1.0f, alpha);
 
         Capsule cap = capsuleOf(part.body);
         DebugVis::drawWeaponCapsuleWire(camera, cap, color);

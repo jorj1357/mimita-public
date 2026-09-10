@@ -19,6 +19,8 @@ struct RagdollModeCapsuleConfig {
     // Per-part center of mass, in the canonical part frame, relative to the
     // capsule center. Zero = COM at the capsule center.
     glm::vec3 centerOfMass{0.0f};
+    // Debug capsule render alpha (1 opaque, 0 invisible).
+    float alpha = 0.9f;
 };
 
 struct RagdollModeAimConfig {
@@ -95,6 +97,8 @@ struct RagdollModeConfigData {
     std::unordered_map<std::string, RagdollModeAttachmentConfig> attachments;
     std::unordered_map<std::string, RagdollModeAimConfig> aim;
 
+    // Master debug hitbox visibility (all ragdoll capsules/axes/links).
+    bool debugHitboxesVisible = true;
     // Debug draw of attachment anchors/links (ragdoll.json attachments_visible).
     bool attachmentsVisible = false;
 
@@ -115,6 +119,14 @@ struct RagdollModeConfigData {
     // Arms
     float armExtendStrength = 40.0f;
     float armExtendMaxSpeed = 12.0f;
+    // How far the arm's shoulder anchor may separate from the torso while
+    // extending, in meters.
+    float armMaxStretch = 0.25f;
+    // Linear force used to push the arm out during extension.
+    float armStretchForce = 50.0f;
+    // Optional forward pull applied to the torso once the arm is fully
+    // stretched. 0 = no pull without a grab.
+    float armBodyPull = 0.0f;
 
     // Weapon
     bool oneHandedWeaponEnabled = true;

@@ -1,5 +1,5 @@
 {
-  "enabled": false,
+  "enabled": true,
   "blood": {
     "enabled": true,
     "count": 12,

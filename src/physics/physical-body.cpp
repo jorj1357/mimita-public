@@ -216,6 +216,50 @@ void solvePointJointPosition(RigidBody& a, const glm::vec3& anchorA,
     rotateBody(b, -glm::cross(rB, P) * b.invInertia);
 }
 
+void solvePointJointMaxDistanceVelocity(RigidBody& a, const glm::vec3& anchorA,
+                                        RigidBody& b, const glm::vec3& anchorB,
+                                        float maxDistance)
+{
+    glm::vec3 err = anchorB - anchorA;
+    float len = glm::length(err);
+    if (len < maxDistance || len < 1e-6f) return;
+    glm::vec3 n = err / len;
+
+    glm::vec3 rA = anchorA - a.position;
+    glm::vec3 rB = anchorB - b.position;
+    glm::vec3 vrel = pointVelocity(b, anchorB) - pointVelocity(a, anchorA);
+    float vn = glm::dot(vrel, n);
+    if (vn <= 0.0f) return; // approaching is allowed within the limit
+
+    float k = inverseMassAlong(a, rA, n) + inverseMassAlong(b, rB, n);
+    if (k < 1e-8f) return;
+
+    glm::vec3 P = n * (-vn / k);
+    applyImpulseAtPoint(a, -P, anchorA);
+    applyImpulseAtPoint(b, P, anchorB);
+}
+
+void solvePointJointMaxDistance(RigidBody& a, const glm::vec3& anchorA,
+                                RigidBody& b, const glm::vec3& anchorB,
+                                float maxDistance, float beta)
+{
+    glm::vec3 err = anchorB - anchorA;
+    float len = glm::length(err);
+    if (len <= maxDistance || len < 1e-6f) return;
+    glm::vec3 n = err / len;
+
+    glm::vec3 rA = anchorA - a.position;
+    glm::vec3 rB = anchorB - b.position;
+    float k = inverseMassAlong(a, rA, n) + inverseMassAlong(b, rB, n);
+    if (k < 1e-8f) return;
+
+    glm::vec3 P = n * ((len - maxDistance) * beta / k);
+    a.position += P * a.invMass;
+    b.position -= P * b.invMass;
+    rotateBody(a, glm::cross(rA, P) * a.invInertia);
+    rotateBody(b, -glm::cross(rB, P) * b.invInertia);
+}
+
 void solvePointToWorldVelocity(RigidBody& body, const glm::vec3& bodyAnchor)
 {
     glm::vec3 r = bodyAnchor - body.position;
