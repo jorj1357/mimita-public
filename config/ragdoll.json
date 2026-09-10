@@ -50,10 +50,10 @@
                       "rotation_limit_deg": { "x": [-180, 180], "y": [-180, 180], "z": [-180, 180] } },
         "rightArm": { "parent": "torso", "offset": [0.2, -0.6, 0.4], "cone_limit_deg": 999,
                       "rotation_limit_deg": { "x": [-180, 180], "y": [-180, 180], "z": [-180, 180] } },
-        "leftLeg":  { "parent": "torso", "offset": [0, 0.3, -0.8], "cone_limit_deg": 5,
+        "leftLeg":  { "parent": "torso", "offset": [0.1, 0.3, -0.8], "cone_limit_deg": 999,
                       "rotation_limit_deg": { "x": [-40, 40], "y": [-40, 40], "z": [-40, 40]} },
-        "rightLeg": { "parent": "torso", "offset": [0, -0.3, -0.8], "cone_limit_deg": 5,
-                      "rotation_limit_deg": { "x": [-40, 40], "y": [-40, 40], "z": [-40, 40] } }
+        "rightLeg": { "parent": "torso", "offset": [0.1, -0.3, -0.8], "cone_limit_deg": 999,
+                      "rotation_limit_deg": { "x": [-10, 10], "y": [-40, 40], "z": [-40, 40] } }
     },
     "aim": {
         "head":  { "front_axis": [1, 0, 0], "up_axis": [0, 0, 1] },
@@ -68,9 +68,9 @@
         "right_key": "D",
         "extend_left_mouse": 0,
         "extend_right_mouse": 1,
-        "extend_force": 50.0,
-        "grab_reach": 3.5,
-        "grab_radius": 0.3,
+        "extend_force": 1.0,
+        "grab_reach": 1.0,
+        "grab_radius": 35.0,
         "compliance": 0.02,
         "grace_distance": 0.5
     },
