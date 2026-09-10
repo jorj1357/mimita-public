@@ -83,8 +83,20 @@ bool RagdollModeConfig::load(const std::string& path)
         next.restitution = root.value("restitution", next.restitution);
         next.friction = root.value("friction", next.friction);
         next.selfCollision = root.value("self_collision", next.selfCollision);
-        next.bodyLinearDamping = root.value("body_linear_damping", next.bodyLinearDamping);
-        next.bodyAngularDamping = root.value("body_angular_damping", next.bodyAngularDamping);
+        next.bodyLinearDamping = root.value("body_linear_damping",
+            root.value("linear_damping", next.bodyLinearDamping));
+        next.bodyAngularDamping = root.value("body_angular_damping",
+            root.value("angular_damping", next.bodyAngularDamping));
+        next.stopLinearSpeed = root.value("stop_linear_speed", next.stopLinearSpeed);
+        next.stopAngularSpeed = root.value("stop_angular_speed", next.stopAngularSpeed);
+
+        next.jointPositionBeta = root.value("joint_position_beta", next.jointPositionBeta);
+        next.limitPositionBeta = root.value("limit_position_beta", next.limitPositionBeta);
+        next.selfCollisionIterations = root.value("self_collision_iterations", next.selfCollisionIterations);
+        next.selfCollisionBeta = root.value("self_collision_beta", next.selfCollisionBeta);
+        next.maxAngularSpeed = root.value("max_angular_speed", next.maxAngularSpeed);
+        next.lookDamping = root.value("look_damping", next.lookDamping);
+        next.bodySmoothing = root.value("body_smoothing", next.bodySmoothing);
 
         // Mass
         if (root.contains("mass")) {
@@ -101,11 +113,19 @@ bool RagdollModeConfig::load(const std::string& path)
         // Capsules
         if (root.contains("capsules")) {
             for (auto it = root["capsules"].begin(); it != root["capsules"].end(); ++it) {
+                if (!it.value().is_object()) continue;
                 RagdollModeCapsuleConfig cc;
                 const auto& c = it.value();
-                cc.radius = c.value("radius", 0.15f);
-                cc.halfHeight = c.value("half_height", 0.15f);
+                cc.radius = c.value("radius", -1.0f);
+                cc.halfHeight = c.value("half_height", -1.0f);
                 cc.offset = readJsonVec3(c, "offset", cc.offset);
+                if (c.contains("axis")) {
+                    glm::vec3 axis = readJsonVec3(c, "axis", glm::vec3(0.0f));
+                    if (glm::length(axis) > 1e-5f) {
+                        cc.axis = glm::normalize(axis);
+                        cc.hasAxis = true;
+                    }
+                }
                 next.capsules[it.key()] = cc;
             }
         }
@@ -113,10 +133,21 @@ bool RagdollModeConfig::load(const std::string& path)
         // Attachments
         if (root.contains("attachments")) {
             for (auto it = root["attachments"].begin(); it != root["attachments"].end(); ++it) {
+                if (!it.value().is_object()) continue;
                 RagdollModeAttachmentConfig ac;
                 const auto& a = it.value();
                 ac.parent = a.value("parent", "torso");
-                ac.offset = readJsonVec3(a, "offset", ac.offset);
+                if (a.contains("parent_offset")) {
+                    ac.offset = readJsonVec3(a, "parent_offset", glm::vec3(0.0f));
+                    ac.hasParentOffset = true;
+                } else if (a.contains("offset")) {
+                    ac.offset = readJsonVec3(a, "offset", glm::vec3(0.0f));
+                    ac.hasParentOffset = true;
+                }
+                if (a.contains("child_offset")) {
+                    ac.childOffset = readJsonVec3(a, "child_offset", glm::vec3(0.0f));
+                    ac.hasChildOffset = true;
+                }
                 ac.coneLimitDeg = a.value("cone_limit_deg", 90.0f);
 
                 if (a.contains("rotation_limit_deg")) {
@@ -133,6 +164,17 @@ bool RagdollModeConfig::load(const std::string& path)
                     ac.hasRotationLimits = true;
                 }
                 next.attachments[it.key()] = ac;
+            }
+        }
+
+        // Aim axes per part
+        if (root.contains("aim")) {
+            for (auto it = root["aim"].begin(); it != root["aim"].end(); ++it) {
+                if (!it.value().is_object()) continue;
+                RagdollModeAimConfig ac;
+                ac.frontAxis = readJsonVec3(it.value(), "front_axis", ac.frontAxis);
+                ac.upAxis = readJsonVec3(it.value(), "up_axis", ac.upAxis);
+                next.aim[it.key()] = ac;
             }
         }
 
@@ -173,6 +215,8 @@ bool RagdollModeConfig::load(const std::string& path)
         }
         next.thirdPersonAllowed = root.value("third_person_allowed", next.thirdPersonAllowed);
 
+        next.attachmentsVisible = root.value("attachments_visible", next.attachmentsVisible);
+
         next.torsoLookSpring = root.value("torso_look_spring", 8.0f);
         next.torsoMaxAngularStep = root.value("torso_max_angular_step", 15.0f);
 
@@ -188,6 +232,7 @@ bool RagdollModeConfig::load(const std::string& path)
             next.exitHopVelocity = e.value("hop_velocity", next.exitHopVelocity);
         }
 
+        next.generation = mData.generation + 1;
         mData = next;
         mLastWrite = writeTime;
         Debug::warn(Debug::Category::Ragdoll,

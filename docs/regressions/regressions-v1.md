@@ -37,6 +37,68 @@ Whats this
 
 newest at top 9 3 2026
 
+2026-09-10T17:46:58Z — Left-leg-only wrong-axis class: replay root-local flattening and quaternion hemisphere (confirmed root cause for replay; ragdoll inherits the same class)
+
+1. Expected behavior: a body part's orientation is composed in its real skeleton
+   parent space, and quaternion extraction is hemisphere-consistent, so the left
+   and right legs (which are symmetric in the model) rotate identically.
+2. Actual behavior (historical, replay): the left leg rendered flat/wrong while
+   the right leg was correct. Human also reports the same visual asymmetry in
+   live ragdoll mode (both first and third person).
+3. Exact specification:
+   1. `docs/specs/replays/replay-editor-and-export-v2.md`: the export must
+      reconstruct the local client's experience, including skeletal pose.
+   2. `docs/specs/ragdoll-retrograd/ragdoll-retrograd.md`: RAG-006/008/010/011
+      (physically simulated, per-part collider, self-collision, no tunneling).
+4. Why the old left-leg behavior was bad (two compounding causes):
+   1. Replay capture removed only the player root yaw and stored each part as
+      root-local; `applyReplayPose` then applied
+      `root * translate(position) * mat4_cast(rotation)`, which flattened the
+      skeleton and bypassed the real parent chain. The left leg could be
+      interpreted in the wrong axis space.
+   2. `glm::quat_cast` can return `q` or `-q` for the same rotation. Near the
+      90-degree X rest pose plus large Z animation, extraction alternated
+      hemispheres across frames, flipping the leg.
+5. What fixed it previously:
+   1. Parent-relative capture/apply: store `parentPartId`, capture
+      `localTransform = inverse(parentWorld) * partWorld`, and reconstruct
+      `parentWorld * localTransform` in two passes
+      (`src/replay/replay-recorder.cpp`, `replay-player-load.cpp`,
+      `replay-player-interp.cpp`, `player-render.cpp`).
+   2. Hemisphere enforcement in `captureReplayBodyParts()`: after normalizing the
+      extracted quaternion, negate it when the rotated local +Y points down
+      (`src/replay/replay-recorder.cpp:108-120`).
+   3. Human confirmation of the fix is recorded at
+      `2026-09-07T20:29:18Z — NPC replay rockets and left-leg rotation confirmed
+      working`.
+6. New investigation finding (2026-09-10): the left/right asymmetry cannot come
+   from parent space or mesh data in the current model. Parsing
+   `Characters/DefaultGuy/character.glb` proved:
+   1. the skeleton is flat: all six body parts are direct children of
+      `plrOrigin` (node 6), so `skeletonParentPart` is the root for all parts;
+   2. `leftLeg` and `rightLeg` have identical local rotation
+      `[0.707,0,0,0.707]` and identical translation except the Y sign;
+   3. their POSITION accessors and collider bounds are byte-identical.
+   Therefore ragdoll derives symmetric frames for both legs, and the replay
+   root-local/hemisphere class cannot explain a ragdoll left-only result through
+   parent space.
+7. Corrected code direction implemented for ragdoll:
+   1. Canonicalize the bind orientation from the mesh matrix
+      (`quatFromMatrixCanonical`, sign-normalized) so no part keeps an
+      alternate hemisphere, mirroring the replay fix.
+   2. Keep parent-relative node composition (`inverse(parentWorld) * childWorld`)
+      that already existed; no flattening.
+   3. Add the `[RAGDOLL SYM]` diagnostic (rate-limited, `Debug::Category::Ragdoll`)
+      comparing left/right body position, composed node position, and quaternion
+      so any remaining mismatch is observable instead of asserted.
+8. Proof and status: source change + diagnostic; canonical build result recorded
+   in the related changelog. Human visual confirmation still required. If the
+   left leg still diverges after this, the next checks are the renderer's
+   `physicalBody.partMeshes`/`nodeIndex` mapping and the head-camera framing,
+   not the parent-space or hemisphere causes.
+9. Related changelog:
+   `docs/changelog/2026-09-10/20260910_174658-ragdoll-capsules-attachments-left-leg.md`.
+
 2026-09-10T16:43:40Z — NPC rocket kills credited nobody, and GO was skipped on the first round after joining
 
 1. Issue: NPCs never scored or logged a killfeed line, and `GO!!!` only appeared

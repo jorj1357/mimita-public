@@ -36,6 +36,10 @@ struct UITextInputOptions
     bool password = false;
     std::string placeholder = "type here...";
     glm::vec4 placeholderColor{0.35f, 0.4f, 0.5f, 1.0f};
+    // Keep the placeholder visible even when the field is focused (until text is typed).
+    bool placeholderWhileFocused = false;
+    // When false, the field is drawn but does not handle mouse/click focus changes.
+    bool interactive = true;
 
     // Return false to reject the character.
     // Called for both typed chars and pasted text (per character).

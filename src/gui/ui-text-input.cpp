@@ -437,10 +437,24 @@ bool uiTextInputRender(GLFWwindow* window, const char* id, UIRect designRect,
     else
     {
         // Placeholder
-        if (!state.focused)
+        if (!state.focused || opts.placeholderWhileFocused)
         {
             uiDrawText(opts.placeholder.c_str(), textX, textY,
                        textScale, opts.placeholderColor);
+
+            // Draw caret over the placeholder so the active field is visible
+            if (state.focused)
+            {
+                uint64_t now = (uint64_t)(glfwGetTime() * 1000.0);
+                bool caretVis = (now - state.lastActivityMs) < 400 ||
+                                ((now - state.lastActivityMs) % 800) < 400;
+                if (caretVis)
+                {
+                    glm::vec4 caretColor(0.8f, 0.9f, 1.0f, 1.0f);
+                    UIRect caretRect = {caretX, textY, 2.0f, textH};
+                    uiDrawRect(caretRect, caretColor, "caret");
+                }
+            }
         }
     }
 
@@ -451,6 +465,8 @@ bool uiTextInputRender(GLFWwindow* window, const char* id, UIRect designRect,
         glScissor(scissorBox[0], scissorBox[1], scissorBox[2], scissorBox[3]);
 
     // ── Mouse handling ───────────────────────────────────────
+    if (opts.interactive)
+    {
     double mx, my;
     glfwGetCursorPos(window, &mx, &my);
     double fbx = mx, fby = my;
@@ -507,6 +523,7 @@ bool uiTextInputRender(GLFWwindow* window, const char* id, UIRect designRect,
     {
         state.focused = false;
         state.mouseSelecting = false;
+    }
     }
 
     return state.focused;

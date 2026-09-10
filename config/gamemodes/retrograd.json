@@ -1,3 +1,10 @@
+// 9 10 2026 1406 est jorj - todo , we need to add like
+// inside fo this mode, it has modes inside of it
+// like, juggernaut mode, murder mstery mode, team deathamtch but with 
+// retrograd rules, etc
+// or maybe even u can make ur own gamemodes but i just want to make it so 
+// there are jsons that are available for u to edit
+// so u can just make ur own gamemodes and mix and match them 
 {
   "id": "retrograd",
   "name": "Retrograd",

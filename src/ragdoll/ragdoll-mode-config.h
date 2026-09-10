@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <unordered_map>
@@ -9,12 +10,32 @@ struct RagdollModeCapsuleConfig {
     // Negative means "derive from the mesh collider bounds".
     float radius = -1.0f;
     float halfHeight = -1.0f;
+    // Center offset in the part (mesh node) frame; lets the capsule sit higher
+    // or lower on the limb without moving the body.
     glm::vec3 offset{0.0f};
+    // Optional long-axis override in the part frame. Zero = derive.
+    glm::vec3 axis{0.0f};
+    bool hasAxis = false;
+};
+
+struct RagdollModeAimConfig {
+    // Which local (part frame) axis should point along the camera forward, and
+    // which should point up. Signed axes, e.g. [1,0,0] or [-1,0,0].
+    glm::vec3 frontAxis{1.0f, 0.0f, 0.0f};
+    glm::vec3 upAxis{0.0f, 0.0f, 1.0f};
 };
 
 struct RagdollModeAttachmentConfig {
     std::string parent;
+    // Connection point on the parent body, in the parent's part frame. Kept as
+    // the legacy alias for parentOffset.
     glm::vec3 offset{0.0f};
+    bool hasParentOffset = false;
+    // Connection point on the child limb, in the child's part frame. Set this
+    // to the top of an arm so the joint (and extension) pivots at the shoulder
+    // instead of the capsule center.
+    glm::vec3 childOffset{0.0f};
+    bool hasChildOffset = false;
     float coneLimitDeg = 90.0f;
 
     // Optional per-axis rotation limits in the parent's local frame.
@@ -39,8 +60,25 @@ struct RagdollModeConfigData {
     float restitution = 0.0f;
     float friction = 0.5f;
     bool selfCollision = true;
-    float bodyLinearDamping = 0.05f;
-    float bodyAngularDamping = 0.05f;
+    float bodyLinearDamping = 0.5f;
+    float bodyAngularDamping = 2.5f;
+
+    // A part slower than these is treated as at rest and its velocity is zeroed
+    // at the end of the tick, so limbs come to a natural stop.
+    float stopLinearSpeed = 0.1f;
+    float stopAngularSpeed = 0.4f;
+
+    // Solver tuning (anti-jitter).
+    float jointPositionBeta = 0.5f;
+    float limitPositionBeta = 0.25f;
+    int selfCollisionIterations = 2;
+    float selfCollisionBeta = 0.5f;
+    float maxAngularSpeed = 25.0f;
+    // How quickly the head/torso look motor approaches its target angular
+    // velocity (higher = snappier, too high = oscillation).
+    float lookDamping = 12.0f;
+    // Exponential smoothing of the rendered part transforms (0 = off).
+    float bodySmoothing = 0.0f;
 
     // Mass (kg). Names match the body part IDs; globalMultiplier scales all.
     std::unordered_map<std::string, float> massKg;
@@ -48,6 +86,13 @@ struct RagdollModeConfigData {
 
     std::unordered_map<std::string, RagdollModeCapsuleConfig> capsules;
     std::unordered_map<std::string, RagdollModeAttachmentConfig> attachments;
+    std::unordered_map<std::string, RagdollModeAimConfig> aim;
+
+    // Debug draw of attachment anchors/links (ragdoll.json attachments_visible).
+    bool attachmentsVisible = false;
+
+    // Incremented on every successful load so owners can re-apply live changes.
+    uint64_t generation = 0;
 
     // Grab settings
     std::string leftKey = "A";

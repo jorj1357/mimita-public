@@ -41,6 +41,11 @@ struct RigidBody {
     float maxLinearSpeed = 60.0f;
     float maxAngularSpeed = 25.0f;
 
+    // Below these speeds the part is considered at rest and its velocity is
+    // zeroed, so a limb naturally comes to a stop instead of jittering.
+    float stopLinearSpeed = 0.0f;
+    float stopAngularSpeed = 0.0f;
+
     bool staticBody = false;
 };
 
@@ -89,5 +94,11 @@ bool depenetrateWorld(RigidBody& body, const World& world, int passes);
 // Swept, substepped world collision. Returns true when a contact occurred.
 bool collideWithWorld(RigidBody& body, const World& world, float dt);
 
-// Capsule-vs-capsule collision between two bodies. Returns true on contact.
-bool collideBodies(RigidBody& a, RigidBody& b);
+// Capsule-vs-capsule collision between two bodies. Contacts whose closest
+// points fall within excludeRadius of excludePoint are ignored (used to let
+// directly-jointed parts collide away from their shared joint). Returns true
+// on a resolved contact.
+bool collideBodies(RigidBody& a, RigidBody& b,
+                   const glm::vec3& excludePoint = glm::vec3(0.0f),
+                   float excludeRadius = 0.0f,
+                   float correctionBeta = 0.8f);

@@ -268,8 +268,9 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
     else
         state.backgroundOpacity = CHAT_MAX_OPACITY;
 
-    if (state.backgroundOpacity < 0.005f)
-        return;
+    // The message window fades with activity, but the input hint bar stays
+    // visible as a standing affordance (see showMessageArea below).
+    const bool showMessageArea = state.backgroundOpacity >= 0.005f;
 
     float alpha = state.backgroundOpacity;
 
@@ -344,6 +345,8 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
                         history.size(), (int)state.open, alpha);
 
     // ── Background ────────────────────────────────────────────────────
+    if (showMessageArea)
+    {
     uiDrawRect({winX, winY, winW, winH},
                {0.15f, 0.15f, 0.17f, alpha}, "chat-window-bg");
     uiDrawRectOutline({winX, winY, winW, winH},
@@ -475,7 +478,6 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
                     contentH_d, state.scroll);
 
     // ── Typing indicator lines ──────────────────────────────────────
-    {
         const MimitaNet::MultiplayerContext& mpCtx = MP_CONTEXT;
         if (mpCtx.active)
         {
@@ -506,8 +508,10 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
         }
     }
 
-    // ── Input field (only when chat is open) ──────────────────────────
-    if (state.open)
+    // ── Input / hint bar ─────────────────────────────────────────────
+    // Always drawn so the "press / to chat..." affordance stays visible
+    // even when the message window has faded out. Mouse interaction is
+    // only enabled while chat is actually open.
     {
         float inputX = uiScaleX(inputX_d);
         float inputY = uiScaleY(inputY_d);
@@ -523,6 +527,8 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
         opts.maxLength = 256;
         opts.selectAllOnFocus = true;
         opts.submitOnEnter = true;
+        opts.interactive = state.open;
+        opts.placeholderWhileFocused = true;
         opts.placeholder = chatBar && !chatBar->placeholder.empty()
             ? chatBar->placeholder : "press / to chat...";
         if (chatBar && chatBar->placeholderColor.size() == 4)

@@ -21,20 +21,30 @@ struct RagdollModePart {
     int parentIndex = -1;
     glm::vec3 parentLocalAnchor{0.0f};
     glm::vec3 childLocalAnchor{0.0f};
-    glm::vec3 restDirectionLocal{0.0f};
-    float coneLimitDeg = 90.0f;
     float restLength = 0.0f;
 
     // Skeleton mapping: body-part node and its nearest skeleton ancestor that
     // is also a body part (-1 = the model root).
     int nodeIndex = -1;
     int skeletonParentPart = -1;
+    // Transform from the canonical physics body frame to the mesh node frame
+    // (carries the model's baked Z-up rotation so the body frame stays clean).
+    glm::mat4 meshLocal{1.0f};
 
     // Per-axis angular limits relative to the bind orientation.
     glm::quat bindRelativeRotation{1.0f, 0.0f, 0.0f, 0.0f};
     bool hasRotationLimits = false;
     glm::vec3 rotMinDeg{-180.0f, -180.0f, -180.0f};
     glm::vec3 rotMaxDeg{ 180.0f,  180.0f,  180.0f};
+
+    // Offset from the configured aim axes to lookRotation's local (+Y forward,
+    // +Z up) convention, so the chosen axis points along the camera forward.
+    glm::quat aimOffset{1.0f, 0.0f, 0.0f, 0.0f};
+
+    // Render-only smoothed transform (body_smoothing).
+    glm::vec3 renderPosition{0.0f};
+    glm::quat renderOrientation{1.0f, 0.0f, 0.0f, 0.0f};
+    bool renderSmoothed = false;
 };
 
 struct RagdollGrabState {
@@ -76,9 +86,9 @@ private:
     RagdollModeSystem() = default;
 
     void initParts(const Player& player);
+    void reinitPreservingState(Player& player);
     void applyControls(float dt, const InputState& input, const Camera& camera);
     void solveJoints(int iterations, bool positionPass);
-    void solveConeLimits();
     void solveRotationLimits();
     void solveGrabs(int iterations);
     void processGrab(const InputState& input, const Camera& camera, const World& world);
@@ -107,6 +117,8 @@ private:
     // player.pos expressed in the torso bind frame, so the authoritative root
     // stays anchored to the body without drifting on repeated toggles.
     glm::vec3 mRootOffsetLocal{0.0f};
+    glm::vec3 mRootWorldPosition{0.0f};
+    uint64_t mAppliedConfigGeneration = 0;
     bool mLeftArmExtending = false;
     bool mRightArmExtending = false;
 };

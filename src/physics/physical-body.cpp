@@ -377,13 +377,22 @@ bool collideWithWorld(RigidBody& body, const World& world, float dt)
     return contacted;
 }
 
-bool collideBodies(RigidBody& a, RigidBody& b)
+bool collideBodies(RigidBody& a, RigidBody& b,
+                   const glm::vec3& excludePoint, float excludeRadius,
+                   float correctionBeta)
 {
     Capsule ca = capsuleOf(a);
     Capsule cb = capsuleOf(b);
 
     glm::vec3 pa, pb;
     closestSegmentSegment(ca.a, ca.b, cb.a, cb.b, pa, pb);
+
+    // Ignore contacts at a shared joint (directly-connected parts overlap there
+    // by construction).
+    if (excludeRadius > 0.0f &&
+        (glm::length(pa - excludePoint) < excludeRadius ||
+         glm::length(pb - excludePoint) < excludeRadius))
+        return false;
 
     glm::vec3 diff = pb - pa;
     float dist = glm::length(diff);
@@ -404,7 +413,7 @@ bool collideBodies(RigidBody& a, RigidBody& b)
 
     // Positional separation, mass weighted.
     if (totalInvMass > 1e-8f) {
-        float correction = penetration * 0.8f;
+        float correction = penetration * correctionBeta;
         a.position -= n * (correction * a.invMass / totalInvMass);
         b.position += n * (correction * b.invMass / totalInvMass);
     }
