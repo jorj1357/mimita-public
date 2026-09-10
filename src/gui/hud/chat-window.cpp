@@ -69,6 +69,7 @@ void noteChatActivity()
     gChatWindowState.backgroundOpacity = CHAT_MAX_OPACITY;
 }
 #include "chat-history.h"
+#include "chat-bubble.h"
 #include "gui/gui-coord.h"
 #include "gui/gui-layout.h"
 #include "gui/gui-element-render.h"
@@ -98,6 +99,7 @@ void initChatWindowState(ChatWindowState& state)
     state.hovered = false;
     state.scrolledUp = false;
     state.newMessageCount = 0;
+    state.lastTypingSentUiTick = 0;
 
     state.textInput.value.clear();
     state.textInput.cursorPos = 0;
@@ -119,6 +121,7 @@ void openChatWindow(ChatWindowState& state)
     state.textInput.lastActivityMs = 0;
     state.scrolledUp = false;
     state.newMessageCount = 0;
+    state.lastTypingSentUiTick = gChatUiTickClock.getTick();
     state.scroll.scrollY = 0.0f;
     state.textInput.value.clear();
     state.textInput.cursorPos = 0;
@@ -180,6 +183,33 @@ void closeChatWindow(ChatWindowState& state)
 void setChatMouseUnlocked(ChatWindowState& state, bool unlocked)
 {
     state.mouseUnlocked = unlocked;
+}
+
+void updateChatTypingHeartbeat(ChatWindowState& state, const UiTickClock& clock)
+{
+    if (!state.open)
+        return;
+
+    // Keep the local above-head indicator fresh while the player is typing.
+    THE_PLAYER.isTyping = true;
+    THE_PLAYER.typingStartedMs = MimitaNet::nowMs();
+
+    const TypingIndicatorConfig cfg = getTypingIndicatorConfig();
+    const uint64_t heartbeatTicks = (uint64_t)std::max(1, cfg.heartbeatTicks);
+    const uint64_t now = clock.getTick();
+    if (now - state.lastTypingSentUiTick < heartbeatTicks)
+        return;
+    state.lastTypingSentUiTick = now;
+
+    MimitaNet::MultiplayerContext& mpCtx = MP_CONTEXT;
+    if (!mpCtx.active || mpCtx.localPlayerId == 0)
+        return;
+
+    MimitaNet::ChatTypingStateRequestPacket pkt{};
+    pkt.header.type = MimitaNet::PACKET_CHAT_TYPING_STATE_REQUEST;
+    pkt.header.playerId = mpCtx.localPlayerId;
+    pkt.isTyping = true;
+    MimitaNet::mpSendPacket(mpCtx, &pkt, sizeof(pkt));
 }
 
 void handleChatWindowChar(ChatWindowState& state, unsigned int codepoint)
@@ -477,35 +507,45 @@ void renderChatWindow(ChatWindowState& state, GLFWwindow* win,
     uiEndScrollArea({msgAreaX_d, msgAreaY_d, msgAreaW_d, msgAreaH_d},
                     contentH_d, state.scroll);
 
-    // ── Typing indicator lines ──────────────────────────────────────
-        const MimitaNet::MultiplayerContext& mpCtx = MP_CONTEXT;
-        if (mpCtx.active)
+    // ── Typing indicator line (chat) ────────────────────────────────
+    {
+        const TypingIndicatorConfig typingCfg = getTypingIndicatorConfig();
+        if (typingCfg.enabled && typingCfg.showInChat)
         {
+            const MimitaNet::MultiplayerContext& mpCtx = MP_CONTEXT;
+            const uint64_t timeoutMs =
+                (uint64_t)typingCfg.timeoutTicks * 1000ull / 60ull;
+            const uint64_t nowMs = MimitaNet::nowMs();
             std::string typingNames;
+
+            if (typingCfg.showSelfInChat && state.open && THE_PLAYER.isTyping)
+                typingNames += THE_PLAYER.username;
+
             for (const auto& kv : mpCtx.remotePlayers)
             {
-                if (kv.second.isTyping)
-                {
-                    const uint64_t elapsedMs = MimitaNet::nowMs() - kv.second.typingStartedMs;
-                    if (elapsedMs <= 5000)
-                    {
-                        if (!typingNames.empty())
-                            typingNames += ", ";
-                        typingNames += kv.second.username;
-                    }
-                }
+                if (!kv.second.isTyping)
+                    continue;
+                if (nowMs - kv.second.typingStartedMs > timeoutMs)
+                    continue;
+                if (!typingNames.empty())
+                    typingNames += ", ";
+                typingNames += kv.second.username;
             }
+
             if (!typingNames.empty())
             {
-                std::string indicator = typingNames + (typingNames.find(',') != std::string::npos
-                    ? " are typing..." : " is typing...");
-                float indX = msgAreaX + uiScaleX(2.0f);
-                float indY = msgAreaY + uiScaleY(contentH_d) - uiScaleY(state.scroll.scrollY)
-                             + uiScaleY(lineH_d);
-                uiDrawText(indicator.c_str(), indX, indY, textScale,
-                           {0.6f, 0.6f, 0.6f, alpha * 0.7f});
+                const bool plural = typingNames.find(',') != std::string::npos;
+                std::string indicator =
+                    typingNames + (plural ? " are typing..." : " is typing...");
+                const float indX = msgAreaX + uiScaleX(2.0f);
+                const float indY = msgAreaY + uiScaleY(contentH_d) -
+                                   uiScaleY(state.scroll.scrollY) + uiScaleY(lineH_d);
+                glm::vec4 chatColor = typingCfg.textColor;
+                chatColor.a *= alpha;
+                uiDrawText(indicator.c_str(), indX, indY, typingCfg.fontSize, chatColor);
             }
         }
+    }
     }
 
     // ── Input / hint bar ─────────────────────────────────────────────

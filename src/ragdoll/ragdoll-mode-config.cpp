@@ -94,6 +94,9 @@ bool RagdollModeConfig::load(const std::string& path)
         next.limitPositionBeta = root.value("limit_position_beta", next.limitPositionBeta);
         next.selfCollisionIterations = root.value("self_collision_iterations", next.selfCollisionIterations);
         next.selfCollisionBeta = root.value("self_collision_beta", next.selfCollisionBeta);
+        next.selfCollisionSkin = root.value("self_collision_skin", next.selfCollisionSkin);
+        next.selfCollisionMaxCorrection = root.value("self_collision_max_correction",
+                                                     next.selfCollisionMaxCorrection);
         next.maxAngularSpeed = root.value("max_angular_speed", next.maxAngularSpeed);
         next.lookDamping = root.value("look_damping", next.lookDamping);
         next.bodySmoothing = root.value("body_smoothing", next.bodySmoothing);
@@ -119,6 +122,7 @@ bool RagdollModeConfig::load(const std::string& path)
                 cc.radius = c.value("radius", -1.0f);
                 cc.halfHeight = c.value("half_height", -1.0f);
                 cc.offset = readJsonVec3(c, "offset", cc.offset);
+                cc.centerOfMass = readJsonVec3(c, "center_of_mass", cc.centerOfMass);
                 if (c.contains("axis")) {
                     glm::vec3 axis = readJsonVec3(c, "axis", glm::vec3(0.0f));
                     if (glm::length(axis) > 1e-5f) {

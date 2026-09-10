@@ -83,6 +83,25 @@ struct GuiElement {
     float fontSize = 0.0f;
     float animationLifetimeTicks = 0.0f;
     float animationRisePixels = 0.0f;
+    // Chat/world HUD visuals (healthbar-style fade semantics)
+    float maxDistance = 0.0f;
+    float fadeStartDistance = 0.0f;
+    float fadeEndDistance = 0.0f;
+    int fadeTicks = 0;
+    int timeoutTicks = 0;
+    int blinkTicks = 0;
+    int heartbeatTicks = 0;
+    float heightOffset = 0.0f;
+    float nameFontSize = 0.0f;
+    float lineHeight = 0.0f;
+    float maxWidth = 0.0f;
+    int maxItems = 0;
+    int durationBaseTicks = 0;
+    int durationPerCharTicks = 0;
+    bool showAboveHead = false;
+    bool showInChat = false;
+    bool showSelfAboveHead = false;
+    bool showSelfInChat = false;
     std::string textAlign = "left"; // "left", "center", "right"
     std::string verticalAlign = "top"; // "top", "middle", "bottom"
     float paddingX = 8.0f;

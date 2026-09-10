@@ -241,19 +241,16 @@ void RagdollModeSystem::initParts(const Player& player)
         part.nodeIndex = bp->nodeIndex;
 
         const glm::mat4& nodeWorld = player.perfectPoseSkeleton.nodes[bp->nodeIndex].worldTransform;
+        const glm::vec3 nodePos = glm::vec3(nodeWorld[3]);
+        const glm::quat canonicalRot = bindCanonical;
 
-        part.body.position = glm::vec3(nodeWorld[3]);
-        part.body.orientation = bindCanonical;
-
-        // Mesh frame relative to the canonical body frame (a pure rotation here).
-        glm::mat4 bodyBindWorld = glm::translate(glm::mat4(1.0f), part.body.position)
-                                * glm::mat4_cast(bindCanonical);
-        part.meshLocal = glm::inverse(bodyBindWorld) * nodeWorld;
-        glm::quat meshRot = quatFromMatrixCanonical(part.meshLocal);
+        // Mesh rotation relative to the canonical body frame.
+        glm::quat meshRot = glm::normalize(
+            glm::inverse(canonicalRot) * quatFromMatrixCanonical(nodeWorld));
 
         // Derive the capsule from the mesh collider bounds (mesh space), then
         // express it in the canonical body frame.
-        glm::vec3 center(0.0f);
+        glm::vec3 capsuleCenter(0.0f);
         glm::vec3 axis(0.0f, 0.0f, 1.0f);
         float radius = 0.1f;
         float halfHeight = 0.2f;
@@ -261,7 +258,7 @@ void RagdollModeSystem::initParts(const Player& player)
         if (col.localMax.x >= col.localMin.x || col.localMax.y >= col.localMin.y ||
             col.localMax.z >= col.localMin.z) {
             glm::vec3 e = (col.localMax - col.localMin) * 0.5f;
-            center = (col.localMax + col.localMin) * 0.5f;
+            capsuleCenter = (col.localMax + col.localMin) * 0.5f;
             int ai = 0;
             if (e.y > e[ai]) ai = 1;
             if (e.z > e[ai]) ai = 2;
@@ -272,20 +269,34 @@ void RagdollModeSystem::initParts(const Player& player)
             radius = std::max(0.02f, std::min(other0, other1));
             halfHeight = std::max(0.0f, e[ai] - radius);
         }
-        center = meshRot * center;
+        capsuleCenter = meshRot * capsuleCenter;
         axis = meshRot * axis;
 
+        glm::vec3 comOffset(0.0f);
         auto capIt = cfg.capsules.find(d.name);
         if (capIt != cfg.capsules.end()) {
             if (capIt->second.radius > 0.0f) radius = capIt->second.radius;
             if (capIt->second.halfHeight >= 0.0f) halfHeight = capIt->second.halfHeight;
-            center += capIt->second.offset;
+            capsuleCenter += capIt->second.offset;
             if (capIt->second.hasAxis) axis = capIt->second.axis;
+            comOffset = capIt->second.centerOfMass;
         }
+
+        // The physics center of mass sits at the capsule center plus the
+        // editable per-part COM offset. This makes a limb hang from its
+        // attachment instead of behaving like an inverted pendulum.
+        glm::vec3 comLocal = capsuleCenter + comOffset;
+        part.body.position = nodePos + canonicalRot * comLocal;
+        part.body.orientation = canonicalRot;
         part.body.capsuleRadius = radius;
         part.body.capsuleHalfHeight = halfHeight;
         part.body.localAxis = axis;
-        part.body.capsuleCenter = center;
+        // Capsule center relative to the body COM frame.
+        part.body.capsuleCenter = -comOffset;
+
+        glm::mat4 bodyBindWorld = glm::translate(glm::mat4(1.0f), part.body.position)
+                                * glm::mat4_cast(canonicalRot);
+        part.meshLocal = glm::inverse(bodyBindWorld) * nodeWorld;
 
         float massKg = d.defaultMass;
         auto massIt = cfg.massKg.find(d.name);
@@ -517,10 +528,9 @@ void RagdollModeSystem::update(float dt, const World& world, Player& player,
             collideWithWorld(part.body, world, dt);
     }
 
-    // Step 6: Self collision.
-    if (cfg.selfCollision) {
-        for (int i = 0; i < cfg.selfCollisionIterations; ++i) selfCollision();
-    }
+    // Step 6: One self-collision pre-pass before the joints.
+    if (cfg.selfCollision)
+        selfCollision();
 
     // Step 7: Re-converge constraints after collision so links stay rigid.
     solveJoints(cfg.solverIterations / 2, true);
@@ -830,8 +840,10 @@ void RagdollModeSystem::selfCollision()
                 excludePoint = p.position + p.orientation * c.parentLocalAnchor;
                 excludeRadius = c.body.capsuleRadius + p.capsuleRadius;
             }
+            const auto& cfg = RagdollModeConfig::instance().data();
             collideBodies(mParts[i].body, mParts[j].body, excludePoint, excludeRadius,
-                          RagdollModeConfig::instance().data().selfCollisionBeta);
+                          cfg.selfCollisionBeta, cfg.selfCollisionSkin,
+                          cfg.selfCollisionMaxCorrection);
         }
     }
 }

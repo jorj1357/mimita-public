@@ -86,6 +86,7 @@ void engineTick(Engine& engine)
     // was never recorded because its destructor ran AFTER Perf::endFrame().
     // Step UI tick clock (60 Hz fixed step, independent of render FPS)
     const uint64_t rewardTicks = gChatUiTickClock.tick();
+    updateChatTypingHeartbeat(gChatWindowState, gChatUiTickClock);
     NotificationSystem::instance().advanceTicks();
     for (uint64_t i = 0; i < rewardTicks; ++i) RewardPopupSystem::instance().tick();
     if (GAME_STATE == GAME_PLAYING)

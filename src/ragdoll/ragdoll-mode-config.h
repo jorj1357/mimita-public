@@ -16,6 +16,9 @@ struct RagdollModeCapsuleConfig {
     // Optional long-axis override in the part frame. Zero = derive.
     glm::vec3 axis{0.0f};
     bool hasAxis = false;
+    // Per-part center of mass, in the canonical part frame, relative to the
+    // capsule center. Zero = COM at the capsule center.
+    glm::vec3 centerOfMass{0.0f};
 };
 
 struct RagdollModeAimConfig {
@@ -73,6 +76,10 @@ struct RagdollModeConfigData {
     float limitPositionBeta = 0.25f;
     int selfCollisionIterations = 2;
     float selfCollisionBeta = 0.5f;
+    // Self-collision skin/slop: overlaps smaller than this are ignored.
+    float selfCollisionSkin = 0.015f;
+    // Cap on per-pass position correction so deep overlap resolves smoothly.
+    float selfCollisionMaxCorrection = 0.05f;
     float maxAngularSpeed = 25.0f;
     // How quickly the head/torso look motor approaches its target angular
     // velocity (higher = snappier, too high = oscillation).

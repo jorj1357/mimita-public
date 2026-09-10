@@ -401,11 +401,11 @@ void engineTickUIGameHUD(Engine& engine, float dt)
 
     // Typing indicators above players
     if (!gReplayExportRenderMode) {
-        renderTypingIndicator(player, camera);
+        renderTypingIndicator(player, camera, true);
         if (!replayPlaybackActive)
         {
             for (const auto& kv : mpContext.remotePlayers)
-                renderTypingIndicator(kv.second, camera);
+                renderTypingIndicator(kv.second, camera, false);
         }
     }
 

@@ -101,4 +101,6 @@ bool collideWithWorld(RigidBody& body, const World& world, float dt);
 bool collideBodies(RigidBody& a, RigidBody& b,
                    const glm::vec3& excludePoint = glm::vec3(0.0f),
                    float excludeRadius = 0.0f,
-                   float correctionBeta = 0.8f);
+                   float correctionBeta = 0.8f,
+                   float slop = 0.0f,
+                   float maxCorrection = 0.0f);

@@ -209,11 +209,11 @@ void engineTickCombat(Engine& engine, float dt)
     HitEffects::updateHitBursts(dt);
     }
 
-    updateChatBubbles(player.chatState, dt);
+    updateChatBubbles(player.chatState);
     for (auto& kv : mpContext.remotePlayers)
-        updateChatBubbles(kv.second.chatState, dt);
+        updateChatBubbles(kv.second.chatState);
     for (auto& kv : gReplayChatStates)
-        updateChatBubbles(kv.second, dt);
+        updateChatBubbles(kv.second);
 
     static bool mousePrev = false;
     const bool gameplayInputAllowed = !PauseMenu::isOpen();

@@ -33,6 +33,7 @@ struct ChatWindowState {
     bool hovered = false;             // mouse is hovering the chat window
     bool scrolledUp = false;          // player manually scrolled up
     uint64_t newMessageCount = 0;     // messages received while scrolled up
+    uint64_t lastTypingSentUiTick = 0; // last typing heartbeat (ui ticks)
 
     UITextInputState textInput;
     UIScrollState scroll;
@@ -48,6 +49,7 @@ bool handleChatWindowKey(ChatWindowState& state, int key, int action, int mods,
 void handleChatWindowChar(ChatWindowState& state, unsigned int codepoint);
 void openChatWindow(ChatWindowState& state);
 void closeChatWindow(ChatWindowState& state);
+void updateChatTypingHeartbeat(ChatWindowState& state, const UiTickClock& clock);
 void setChatMouseUnlocked(ChatWindowState& state, bool unlocked);
 void noteChatActivity();
 

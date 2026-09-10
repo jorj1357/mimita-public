@@ -1,8 +1,8 @@
 {
     "enabled": true,
     "toggle_key": "G",
-    "gravity_scale": 1.0,
-    "body_linear_damping": 1.6,
+    "gravity_scale": 2.0,
+    "body_linear_damping": 0.01,
     "body_angular_damping": 2.5,
     "stop_linear_speed": 0.1,
     "stop_angular_speed": 0.4,
@@ -14,15 +14,17 @@
     "max_fall_speed": 60.0,
     "restitution": 0.0,
     "friction": 0.5,
-    "self_collision": false,
-    "joint_position_beta": 0.5,
+    "self_collision": true,
+    "joint_position_beta": 1.5,
     "limit_position_beta": 0.25,
     "self_collision_iterations": 2,
     "self_collision_beta": 0.5,
+    "self_collision_skin": 0.015,
+    "self_collision_max_correction": 0.05,
     "max_angular_speed": 25.0,
     "look_damping": 12.0,
-    "body_smoothing": 0.1,
-    "torso_look_spring": 10.0,
+    "body_smoothing": 0.0,
+    "torso_look_spring": 9.0,
     "torso_max_angular_step": 90.0,
     "mass": {
         "globalMultiplier": 1.0,
@@ -34,23 +36,23 @@
         "rightLeg": 2.5
     },
     "capsules": {
-        "head":     {},
-        "torso":    {},
-        "leftArm":  {},
-        "rightArm": {},
-        "leftLeg":  {},
-        "rightLeg": {}
+        "head":     { "center_of_mass": [0, 0, 0] },
+        "torso":    { "center_of_mass": [0, 0, 0] },
+        "leftArm":  { "center_of_mass": [0, 0, 0] },
+        "rightArm": { "center_of_mass": [0, 0, 0] },
+        "leftLeg":  { "center_of_mass": [0, 0, 0] },
+        "rightLeg": { "center_of_mass": [0, 0, 0] }
     },
     "attachments": {
-        "head":      { "parent": "torso", "offset": [0, 0.0, 0.8], "cone_limit_deg": 999,
+        "head":      { "parent": "torso", "offset": [0, 0.0, 1.0], "cone_limit_deg": 999,
                       "rotation_limit_deg": { "x": [-180, 180], "y": [-180, 180], "z": [-180, 180] } },
-        "leftArm":  { "parent": "torso", "offset": [0, 0.6, 0.2], "cone_limit_deg": 999,
+        "leftArm":  { "parent": "torso", "offset": [0.2, 0.6, 0.4], "cone_limit_deg": 999,
                       "rotation_limit_deg": { "x": [-180, 180], "y": [-180, 180], "z": [-180, 180] } },
-        "rightArm": { "parent": "torso", "offset": [0, -0.6, 0.2], "cone_limit_deg": 999,
+        "rightArm": { "parent": "torso", "offset": [0.2, -0.6, 0.4], "cone_limit_deg": 999,
                       "rotation_limit_deg": { "x": [-180, 180], "y": [-180, 180], "z": [-180, 180] } },
-        "leftLeg":  { "parent": "torso", "offset": [0, 0.5, -1.0], "cone_limit_deg": 5,
+        "leftLeg":  { "parent": "torso", "offset": [0, 0.3, -0.8], "cone_limit_deg": 5,
                       "rotation_limit_deg": { "x": [-40, 40], "y": [-40, 40], "z": [-40, 40]} },
-        "rightLeg": { "parent": "torso", "offset": [0, -0.5, -1.0], "cone_limit_deg": 5,
+        "rightLeg": { "parent": "torso", "offset": [0, -0.3, -0.8], "cone_limit_deg": 5,
                       "rotation_limit_deg": { "x": [-40, 40], "y": [-40, 40], "z": [-40, 40] } }
     },
     "aim": {
@@ -58,8 +60,8 @@
         "torso": { "front_axis": [1, 0, 0], "up_axis": [0, 0, 1] }
     },
     "arms": {
-        "extend_strength": 250.0,
-        "extend_max_speed": 35.0
+        "extend_strength": 99.0,
+        "extend_max_speed": 50.0
     },
     "grab": {
         "left_key": "A",
@@ -67,7 +69,7 @@
         "extend_left_mouse": 0,
         "extend_right_mouse": 1,
         "extend_force": 50.0,
-        "grab_reach": 2.5,
+        "grab_reach": 3.5,
         "grab_radius": 0.3,
         "compliance": 0.02,
         "grace_distance": 0.5

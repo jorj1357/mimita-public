@@ -379,7 +379,7 @@ bool collideWithWorld(RigidBody& body, const World& world, float dt)
 
 bool collideBodies(RigidBody& a, RigidBody& b,
                    const glm::vec3& excludePoint, float excludeRadius,
-                   float correctionBeta)
+                   float correctionBeta, float slop, float maxCorrection)
 {
     Capsule ca = capsuleOf(a);
     Capsule cb = capsuleOf(b);
@@ -408,12 +408,17 @@ bool collideBodies(RigidBody& a, RigidBody& b,
         n = (nl > 1e-6f) ? n / nl : glm::vec3(0.0f, 0.0f, 1.0f);
     }
 
-    float penetration = radiusSum - dist;
+    // Ignore overlaps inside the skin/slop so resting contact does not chatter.
+    float penetration = radiusSum - dist - slop;
+    if (penetration <= 0.0f) return false;
+
     float totalInvMass = a.invMass + b.invMass;
 
-    // Positional separation, mass weighted.
+    // Positional separation, mass weighted, optionally capped per pass.
     if (totalInvMass > 1e-8f) {
         float correction = penetration * correctionBeta;
+        if (maxCorrection > 0.0f)
+            correction = std::min(correction, maxCorrection);
         a.position -= n * (correction * a.invMass / totalInvMass);
         b.position += n * (correction * b.invMass / totalInvMass);
     }
