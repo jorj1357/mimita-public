@@ -1,4 +1,5 @@
 #include "debug-log.h"
+#include "structured-log.h"
 
 #include <chrono>
 #include <cstdio>
@@ -17,10 +18,36 @@ double secondsNow()
     return std::chrono::duration<double>(Clock::now() - start).count();
 }
 
-const char* categoryName(Debug::Category category)
+StructuredCategory structuredCategory(Debug::Category category)
 {
     switch (category)
     {
+        case Debug::Category::GLB: return StructuredCategory::Glb;
+        case Debug::Category::Collision: return StructuredCategory::Collision;
+        case Debug::Category::Physics: return StructuredCategory::Physics;
+        case Debug::Category::Render: return StructuredCategory::Rendering;
+        case Debug::Category::NpcCombat: return StructuredCategory::NpcCombat;
+        case Debug::Category::NpcMovement: return StructuredCategory::NpcMovement;
+        case Debug::Category::Ragdoll: return StructuredCategory::Ragdoll;
+        case Debug::Category::Replay: return StructuredCategory::Replay;
+        case Debug::Category::Weapons: return StructuredCategory::Weapons;
+        case Debug::Category::Animation: return StructuredCategory::Animation;
+        case Debug::Category::Gui: return StructuredCategory::Gui;
+        case Debug::Category::Networking: return StructuredCategory::Network;
+        case Debug::Category::Audio: return StructuredCategory::Audio;
+        case Debug::Category::World: return StructuredCategory::World;
+        case Debug::Category::Duel: return StructuredCategory::Duel;
+        case Debug::Category::Auth: return StructuredCategory::Auth;
+        case Debug::Category::Chat: return StructuredCategory::Chat;
+        case Debug::Category::Avatar: return StructuredCategory::Avatar;
+        case Debug::Category::Vip: return StructuredCategory::Vip;
+        default: return StructuredCategory::General;
+    }
+}
+
+const char* legacyCategoryKey(Debug::Category category)
+{
+    switch (category) {
         case Debug::Category::GLB: return "GLB";
         case Debug::Category::Collision: return "COLLISION";
         case Debug::Category::Physics: return "PHYSICS";
@@ -30,95 +57,30 @@ const char* categoryName(Debug::Category category)
         case Debug::Category::Ragdoll: return "RAGDOLL";
         case Debug::Category::Replay: return "REPLAY";
         case Debug::Category::Weapons: return "WEAPONS";
-        case Debug::Category::Animation: return "ANIM";
+        case Debug::Category::Animation: return "ANIMATION";
         case Debug::Category::Gui: return "GUI";
-        case Debug::Category::Networking: return "NET";
+        case Debug::Category::Networking: return "NETWORK";
         case Debug::Category::Audio: return "AUDIO";
         case Debug::Category::World: return "WORLD";
         case Debug::Category::Duel: return "DUEL";
         case Debug::Category::Auth: return "AUTH";
+        case Debug::Category::Avatar: return "AVATAR";
         case Debug::Category::Chat: return "CHAT";
         case Debug::Category::Vip: return "VIP";
-        default: return "DEBUG";
+        default: return "GENERAL";
     }
-}
-
-const char* categoryColor(Debug::Category category)
-{
-    switch (category)
-    {
-        case Debug::Category::Gui: return "\033[36m";   // Cyan
-        case Debug::Category::Weapons: return "\033[31m";  // Red
-        case Debug::Category::NpcCombat: return "\033[31m"; // Red
-        case Debug::Category::Physics: return "\033[33m";   // Yellow
-        case Debug::Category::Collision: return "\033[33m"; // Yellow
-        case Debug::Category::Replay: return "\033[35m";    // Magenta
-        case Debug::Category::Networking: return "\033[32m"; // Green
-        case Debug::Category::Ragdoll: return "\033[38;5;214m"; // Orange
-        case Debug::Category::Render: return "\033[34m";    // Blue
-        case Debug::Category::Audio: return "\033[36m";     // Cyan
-        case Debug::Category::Animation: return "\033[36m"; // Cyan
-        case Debug::Category::Duel: return "\033[35m";      // Magenta
-        case Debug::Category::World: return "\033[32m";     // Green
-        case Debug::Category::NpcMovement: return "\033[33m"; // Yellow
-        case Debug::Category::Chat: return "\033[36m";   // Cyan
-        case Debug::Category::Vip: return "\033[95m";    // Bright magenta
-        default: return "\033[0m";  // Reset
-    }
-}
-
-void printv(const char* level, Debug::Category category, const char* fmt, va_list args)
-{
-    std::printf("%s[%.3f][%s][%s]\033[0m ", categoryColor(category), secondsNow(), level, categoryName(category));
-    std::vprintf(fmt, args);
-    std::printf("\033[0m");
 }
 
 }
 
 bool Debug::enabled(Category category)
 {
-    switch (category)
-    {
-        case Category::GLB: return DebugConfig::ENABLE_DEBUG_LOGS && DebugConfig::GLB_VERBOSE;
-        case Category::Collision: return DebugConfig::COLLISION_VERBOSE ||
-                                          DebugConfig::DEBUG_COLLISION_SYSTEM ||
-                                          DebugConfig::DEBUG_COLLISION_TRACE ||
-                                          DebugConfig::DEBUG_COLLISION_DIAGNOSTICS;
-        case Category::Physics: return DebugConfig::PHYSICS_VERBOSE;
-        case Category::Render: return DebugConfig::ENABLE_DEBUG_LOGS && DebugConfig::RENDER_VERBOSE;
-        case Category::NpcCombat: return DebugConfig::DEBUG_NPC_COMBAT;
-        case Category::NpcMovement: return DebugConfig::DEBUG_NPC_MOVEMENT;
-        case Category::Ragdoll: return DebugConfig::DEBUG_RAGDOLL;
-        case Category::Replay: return DebugConfig::DEBUG_REPLAY;
-        case Category::Weapons: return DebugConfig::ENABLE_DEBUG_LOGS ||
-                                       DebugConfig::DEBUG_RECOIL ||
-                                       DebugConfig::DEBUG_RELOAD;
-        case Category::Animation: return DebugConfig::DEBUG_ANIMATION;
-        case Category::Gui: return DebugConfig::DEBUG_UI;
-        case Category::Networking: return DebugConfig::DEBUG_NETWORKING;
-        case Category::Audio: return DebugConfig::DEBUG_SOUND;
-        case Category::World: return DebugConfig::ENABLE_DEBUG_LOGS;
-        case Category::Duel: return DebugConfig::DEBUG_DUEL;
-        case Category::Auth: return DebugConfig::ENABLE_DEBUG_LOGS ||
-                                   DebugConfig::DEBUG_AUTH;
-        case Category::Chat: return DebugConfig::ENABLE_DEBUG_LOGS ||
-                                   DebugConfig::DEBUG_CHAT;
-        case Category::Vip: return DebugConfig::ENABLE_DEBUG_LOGS ||
-                                  DebugConfig::DEBUG_NETWORKING;
-        default:
-            return DebugConfig::ENABLE_DEBUG_LOGS ||
-                   DebugConfig::DEBUG_TICKS ||
-                   DebugConfig::DEBUG_INPUT ||
-                   DebugConfig::DEBUG_COMMANDS ||
-                   DebugConfig::DEBUG_NPC;
-    }
+    return StructuredLogger::instance().shouldLog(structuredCategory(category), StructuredLevel::Verbose);
 }
 
 void Debug::startupReport()
 {
-    if (DebugConfig::ENABLE_DEBUG_LOGS)
-        std::printf("[DEBUG] verbose logging ENABLED; disable in config.h\n");
+    log(Category::General, "legacy debug facade routed through config/debuglogger.json\n");
 }
 
 void Debug::log(Category category, const char* fmt, ...)
@@ -128,7 +90,8 @@ void Debug::log(Category category, const char* fmt, ...)
 
     va_list args;
     va_start(args, fmt);
-    printv("INFO", category, fmt, args);
+    StructuredLogger::instance().writeVFormatted(structuredCategory(category), StructuredLevel::Verbose,
+        "debug-log.cpp", 0, "Debug::log", fmt, args);
     va_end(args);
 }
 
@@ -138,12 +101,13 @@ void Debug::logOnce(Category category, const char* key, const char* fmt, ...)
         return;
 
     static std::unordered_set<std::string> printed;
-    if (!printed.insert(std::string(categoryName(category)) + ":" + key).second)
+    if (!printed.insert(std::string(legacyCategoryKey(category)) + ":" + key).second)
         return;
 
     va_list args;
     va_start(args, fmt);
-    printv("INFO", category, fmt, args);
+    StructuredLogger::instance().writeVFormatted(structuredCategory(category), StructuredLevel::Verbose,
+        "debug-log.cpp", 0, "Debug::logOnce", fmt, args);
     va_end(args);
 }
 
@@ -155,7 +119,7 @@ void Debug::logThrottled(Category category, const char* key, float intervalSecon
     static std::unordered_map<std::string, double> lastPrint;
     // Use stack buffer to avoid heap allocation for throttle key
     char keyBuf[128];
-    const char* catName = categoryName(category);
+    const char* catName = legacyCategoryKey(category);
     int catLen = (int)std::strlen(catName);
     int keyLen = (int)std::strlen(key);
     if (catLen + 1 + keyLen < (int)sizeof(keyBuf)) {
@@ -173,7 +137,8 @@ void Debug::logThrottled(Category category, const char* key, float intervalSecon
         lastPrint[fullKey] = now;
         va_list args;
         va_start(args, fmt);
-        printv("INFO", category, fmt, args);
+        StructuredLogger::instance().writeVFormatted(structuredCategory(category), StructuredLevel::Verbose,
+            "debug-log.cpp", 0, "Debug::logThrottled", fmt, args);
         va_end(args);
         return;
     }
@@ -185,7 +150,8 @@ void Debug::logThrottled(Category category, const char* key, float intervalSecon
 
     va_list args;
     va_start(args, fmt);
-    printv("INFO", category, fmt, args);
+    StructuredLogger::instance().writeVFormatted(structuredCategory(category), StructuredLevel::Verbose,
+        "debug-log.cpp", 0, "Debug::logThrottled", fmt, args);
     va_end(args);
 }
 
@@ -195,7 +161,8 @@ void Debug::warn(Category category, const char* fmt, ...)
         return;
     va_list args;
     va_start(args, fmt);
-    printv("WARN", category, fmt, args);
+    StructuredLogger::instance().writeVFormatted(structuredCategory(category), StructuredLevel::Important,
+        "debug-log.cpp", 0, "Debug::warn", fmt, args);
     va_end(args);
 }
 
@@ -203,7 +170,8 @@ void Debug::error(Category category, const char* fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
-    printv("ERROR", category, fmt, args);
+    StructuredLogger::instance().writeVFormatted(structuredCategory(category), StructuredLevel::Errors,
+        "debug-log.cpp", 0, "Debug::error", fmt, args);
     va_end(args);
 }
 
@@ -216,6 +184,8 @@ void Debug::logAuto(Category category, const char* fmt, ...)
 
     va_list args;
     va_start(args, fmt);
-    printv(isError ? "ERROR" : (isWarning ? "WARN" : "INFO"), category, fmt, args);
+    StructuredLogger::instance().writeVFormatted(structuredCategory(category),
+        isError ? StructuredLevel::Errors : (isWarning ? StructuredLevel::Important : StructuredLevel::Verbose),
+        "debug-log.cpp", 0, "Debug::logAuto", fmt, args);
     va_end(args);
 }

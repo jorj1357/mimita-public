@@ -15,6 +15,7 @@
 #include "combat/weapon-registry.h"
 #include "network/network-weapons.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -79,12 +80,11 @@ static ServerDamageResult applyPlayerDamageLegacy(
 
     if (target.dead || damage <= 0)
     {
-        printf("%s [SERVER DAMAGE] target=%u attacker=%u source=%s accepted=0 "
-               "reason=%s damage=%d health=%d\n",
-               serverTimestamp(), target.id, attackerPlayerId,
-               damageSourceName(source),
-               target.dead ? "target-dead" : "non-positive-damage",
-               damage, target.health);
+        DBG(Network, "SERVER DAMAGE target=%u attacker=%u source=%s accepted=0 "
+            "reason=%s damage=%d health=%d",
+            target.id, attackerPlayerId, damageSourceName(source),
+            target.dead ? "target-dead" : "non-positive-damage",
+            damage, target.health);
         return result;
     }
 
@@ -95,10 +95,9 @@ static ServerDamageResult applyPlayerDamageLegacy(
     // assumption for now; revisit with server-side movement/DPS accounting.
     if (target.connectionStale)
     {
-        printf("%s [SERVER DAMAGE] target=%u attacker=%u source=%s accepted=0 "
-               "reason=target-reconnecting damage=%d health=%d\n",
-               serverTimestamp(), target.id, attackerPlayerId,
-               damageSourceName(source), damage, target.health);
+        DBG(Network, "SERVER DAMAGE target=%u attacker=%u source=%s accepted=0 "
+            "reason=target-reconnecting damage=%d health=%d",
+            target.id, attackerPlayerId, damageSourceName(source), damage, target.health);
         return result;
     }
 
@@ -111,10 +110,10 @@ static ServerDamageResult applyPlayerDamageLegacy(
         {
             if (attackerIt->second.matchTeam == target.matchTeam)
             {
-                printf("%s [SERVER DAMAGE] target=%u attacker=%u source=%s accepted=0 "
-                       "reason=friendly-fire teams=%d damage=%d health=%d\n",
-                       serverTimestamp(), target.id, attackerPlayerId,
-                       damageSourceName(source), target.matchTeam, damage, target.health);
+                DBG(Network, "SERVER DAMAGE target=%u attacker=%u source=%s accepted=0 "
+                    "reason=friendly-fire teams=%d damage=%d health=%d",
+                    target.id, attackerPlayerId, damageSourceName(source),
+                    target.matchTeam, damage, target.health);
                 return result;
             }
         }
@@ -152,11 +151,11 @@ static ServerDamageResult applyPlayerDamageLegacy(
             damageSourceName(source), 0, target.pos, target.pos);
     }
 
-    printf("%s [SERVER DAMAGE] target=%u attacker=%u source=%s damage=%d "
-           "healthBefore=%d healthAfter=%d killed=%d knockback=(%.2f,%.2f,%.2f)\n",
-           serverTimestamp(), target.id, attackerPlayerId, damageSourceName(source),
-           clampedDamage, result.healthBefore, result.healthAfter,
-           (int)result.killed, knockback.x, knockback.y, knockback.z);
+    DBG(Network, "SERVER DAMAGE target=%u attacker=%u source=%s damage=%d "
+        "healthBefore=%d healthAfter=%d killed=%d knockback=(%.2f,%.2f,%.2f)",
+        target.id, attackerPlayerId, damageSourceName(source), clampedDamage,
+        result.healthBefore, result.healthAfter, (int)result.killed,
+        knockback.x, knockback.y, knockback.z);
     return result;
 }
 
@@ -294,17 +293,53 @@ ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
     event.knockZ = knockback.z;
     if (result.killed)
     {
+        // NPC damage attribution: if the victim was recently damaged by an NPC,
+        // attribute the kill to the NPC even if the final blow came from
+        // self-damage (e.g. rocket splash). 120 ticks = 2 seconds window.
+        uint32_t effectiveAttackerNpcId = attackerNpcId;
+        uint32_t effectiveAttackerPlayerId = attackerPlayerId;
+        if (effectiveAttackerNpcId == 0 && effectiveAttackerPlayerId != 0 &&
+            target.lastNpcDamageSourceId != 0 &&
+            (tick - target.lastNpcDamageTick) <= 120)
+        {
+            effectiveAttackerNpcId = target.lastNpcDamageSourceId;
+            effectiveAttackerPlayerId = 0;
+            DBG(Network,
+                "NPC_KILL_REATTRIBUTION victim=%u originalAttacker=%u npcAttacker=%u "
+                "npcDamageTick=%u currentTick=%u window=%u",
+                target.id, attackerPlayerId, effectiveAttackerNpcId,
+                target.lastNpcDamageTick, tick, tick - target.lastNpcDamageTick);
+        }
+
         const char* weaponId = networkWeaponTypeName(weapon);
         std::string weaponDisplayName = weaponId;
         if (const WeaponDefinition* definition = WeaponRegistry::instance().get(weaponId))
             weaponDisplayName = definition->displayName.empty()
                 ? definition->id : definition->displayName;
-        if (attackerNpcId != 0)
-            serverGamemodeOnNpcDeath(attackerNpcId, target.id, weaponId,
+        if (effectiveAttackerNpcId != 0)
+        {
+            serverGamemodeOnNpcDeath(effectiveAttackerNpcId, target.id, weaponId,
                                      weaponDisplayName, event.eventId);
-        else if (attackerPlayerId != 0)
-            serverGamemodeOnPlayerDeath(attackerPlayerId, target.id, weaponId,
+            event.attackerPlayerId = effectiveAttackerNpcId;
+            event.attackerEntityType = ENTITY_NPC;
+            DBG(Network,
+                "KILL_EVENT_ENQUEUE type=NPC_KILLS_PLAYER killerNpcId=%u victimPlayerId=%u "
+                "weaponId=\"%s\" weaponDisplay=\"%s\" eventId=%u tick=%u",
+                effectiveAttackerNpcId, target.id,
+                weaponId, weaponDisplayName.c_str(),
+                event.eventId, tick);
+        }
+        else if (effectiveAttackerPlayerId != 0)
+        {
+            serverGamemodeOnPlayerDeath(effectiveAttackerPlayerId, target.id, weaponId,
                                         weaponDisplayName, event.eventId);
+            DBG(Network,
+                "KILL_EVENT_ENQUEUE type=PLAYER_KILLS_PLAYER killerPlayerId=%u victimPlayerId=%u "
+                "weaponId=\"%s\" weaponDisplay=\"%s\" eventId=%u tick=%u",
+                effectiveAttackerPlayerId, target.id,
+                weaponId, weaponDisplayName.c_str(),
+                event.eventId, tick);
+        }
     }
     return queueReliableGameplayEventToAll(
         sock, players, &event, sizeof(event), event.eventId,

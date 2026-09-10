@@ -171,6 +171,12 @@ struct ServerGamemodeState
     std::string pendingGamemodeId;
     uint32_t bombPassCounter = 0;       // Total passes this session (for logging)
     uint32_t bombExplosionCounter = 0;  // Total explosions this session
+    // ── Gamemode visual overrides ───────────────────────────────────
+    float cameraFov = 0.0f;         // 0 = no override
+    bool ragdollExplicit = false;   // true if gamemode defines ragdoll_enabled
+    bool ragdollEnabled = false;    // value when ragdollExplicit is true
+    bool bloodExplicit = false;     // true if gamemode defines blood_enabled
+    bool bloodEnabled = false;      // value when bloodExplicit is true
 };
 
 // Singleton gamemode state for the current server process.

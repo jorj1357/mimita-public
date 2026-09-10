@@ -22,6 +22,7 @@
 #include "auth/auth-system.h"
 #include "website/api-client.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "terminal/terminal-state.h"
 #include "gui/hud/chat-history.h"
 #include "gui/hud/chat-window.h"
@@ -275,9 +276,9 @@ static void processSnapshotEntities(
             if (nowLocalSnap - lastLocalSnapshotLogMs >= 250)
             {
                 lastLocalSnapshotLogMs = nowLocalSnap;
-                printf("[CLIENT SNAPSHOT] %s tick=%u local pos=(%.2f,%.2f,%.2f) hp=%d epoch=%u\n",
-                       sourceName, serverTick,
-                       entity.px, entity.py, entity.pz, entity.health, entity.transformEpoch);
+                DBG(Network, "%s tick=%u local pos=(%.2f,%.2f,%.2f) hp=%d epoch=%u",
+                    sourceName, serverTick,
+                    entity.px, entity.py, entity.pz, entity.health, entity.transformEpoch);
             }
             continue;
         }
@@ -448,12 +449,11 @@ static void processSnapshotEntities(
         if (isNew || nowEnt - lastEntityLogMs >= 1000)
         {
             lastEntityLogMs = nowEnt;
-            printf("[CLIENT ENTITY] entityId=%u type=%s ownerId=%u isLocal=0 existsBefore=%d "
-                   "createdReplica=%d renderRegistered=%d position=(%.2f,%.2f,%.2f) rot=%.2f name=%s\n",
-                   entity.networkEntityId, typeName, entity.ownerClientId,
-                   (int)existsBefore, (int)isNew, (int)interpolation.renderRegistered,
-                   entity.px, entity.py, entity.pz, entity.yaw,
-                   entity.displayName);
+            DBG(Network, "CLIENT ENTITY entityId=%u type=%s ownerId=%u isLocal=0 existsBefore=%d "
+                "createdReplica=%d renderRegistered=%d position=(%.2f,%.2f,%.2f) rot=%.2f name=%s",
+                entity.networkEntityId, typeName, entity.ownerClientId,
+                (int)existsBefore, (int)isNew, (int)interpolation.renderRegistered,
+                entity.px, entity.py, entity.pz, entity.yaw, entity.displayName);
         }
     }
 

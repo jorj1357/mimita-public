@@ -1089,7 +1089,11 @@ struct DuelStatePacket
     uint32_t participantIds[32] = {};
     uint8_t participantCount = 0;
     uint8_t participantTeams[32] = {};  // 0=red, 1=blue, 0xFF=none
-    uint8_t reserved2[3] = {};
+    // ── Gamemode visual overrides ───────────────────────────────────
+    float cameraFov = 0.0f;         // 0 = no override
+    uint8_t ragdollEnabled = 0;     // 0=no override, 1=disabled, 2=enabled
+    uint8_t bloodEnabled = 0;       // 0=no override, 1=disabled, 2=enabled
+    uint8_t reserved2[1] = {};
 };
 
 // Server → a player: their opponent just respawned here. Used to draw a

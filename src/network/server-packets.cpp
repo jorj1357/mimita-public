@@ -1722,7 +1722,7 @@ ServerPacketProcessResult processServerPacket(
     {
         if (stats)
             ++stats->malformedPackets;
-        printf("%s [SERVER PACKET] rejected reason=empty-payload transport=%s connection=%llu source=%s\n",
+        DBG(Network, "%s [SERVER PACKET] rejected reason=empty-payload transport=%s connection=%llu source=%s",
                serverTimestamp(), transportKindName(event.transportKind),
                (unsigned long long)event.connectionId.value, source.c_str());
         return result;
@@ -1732,7 +1732,7 @@ ServerPacketProcessResult processServerPacket(
     {
         if (stats)
             ++stats->malformedPackets;
-        printf("%s [SERVER PACKET] rejected reason=too-small bytes=%d transport=%s "
+        DBG(Network, "%s [SERVER PACKET] rejected reason=too-small bytes=%d transport=%s "
                "connection=%llu source=%s minBytes=%zu\n",
                serverTimestamp(), event.payloadBytes,
                transportKindName(event.transportKind),
@@ -1746,7 +1746,7 @@ ServerPacketProcessResult processServerPacket(
     {
         if (stats)
             ++stats->malformedPackets;
-        printf("%s [SERVER PACKET] rejected reason=too-large bytes=%d maxBytes=%d "
+        DBG(Network, "%s [SERVER PACKET] rejected reason=too-large bytes=%d maxBytes=%d "
                "transport=%s connection=%llu source=%s\n",
                serverTimestamp(), event.payloadBytes, MAX_GAME_DATAGRAM_BYTES,
                transportKindName(event.transportKind),
@@ -1763,7 +1763,7 @@ ServerPacketProcessResult processServerPacket(
     {
         if (stats)
             ++stats->protocolMismatches;
-        printf("%s [SERVER PACKET] rejected reason=protocol-mismatch bytes=%d "
+        DBG(Network, "%s [SERVER PACKET] rejected reason=protocol-mismatch bytes=%d "
                "transport=%s connection=%llu source=%s magic=0x%08x "
                "expectedMagic=0x%08x version=%u expectedVersion=%u type=%u\n",
                serverTimestamp(), event.payloadBytes,
@@ -1784,7 +1784,7 @@ ServerPacketProcessResult processServerPacket(
             (unsigned)header->type, event.payloadBytes, header->playerId, tick,
             (unsigned)PACKET_NPC_DAMAGE_REQUEST,
             (unsigned)PACKET_SPYKNIFE_HIT_CLAIM);
-        printf("%s [SERVER PACKET] rejected reason=unknown-type bytes=%d "
+        DBG(Network, "%s [SERVER PACKET] rejected reason=unknown-type bytes=%d "
                "transport=%s connection=%llu source=%s type=%u\n",
                serverTimestamp(), event.payloadBytes,
                transportKindName(event.transportKind),
@@ -2098,7 +2098,7 @@ ServerPacketProcessResult processServerPacket(
     {
         if (stats)
             ++stats->unknownPacketTypes;
-        printf("%s [SERVER PACKET] rejected reason=unsupported-or-short type=%u "
+        DBG(Network, "%s [SERVER PACKET] rejected reason=unsupported-or-short type=%u "
                "bytes=%d transport=%s connection=%llu source=%s\n",
                serverTimestamp(), header->type, bytes,
                transportKindName(event.transportKind),

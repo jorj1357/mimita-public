@@ -1,5 +1,6 @@
 #include "structured-log.h"
 #include "debug-log.h"
+#include "log-manager.h"
 #include "../config.h"
 #include "../utils/path_utils.h"
 
@@ -68,14 +69,27 @@ std::string StructuredLogger::runTimestamp() const {
 
 std::string StructuredLogger::categoryName(StructuredCategory cat) const {
     switch (cat) {
+        case StructuredCategory::General:         return "GENERAL";
+        case StructuredCategory::Glb:             return "GLB";
         case StructuredCategory::Replay:          return "REPLAY";
         case StructuredCategory::Camera:          return "CAMERA";
         case StructuredCategory::Audio:           return "AUDIO";
+        case StructuredCategory::Physics:         return "PHYSICS";
         case StructuredCategory::Performance:     return "PERFORMANCE";
         case StructuredCategory::Collision:       return "COLLISION";
+        case StructuredCategory::NpcCombat:       return "NPC_COMBAT";
+        case StructuredCategory::NpcMovement:     return "NPC_MOVEMENT";
+        case StructuredCategory::Ragdoll:         return "RAGDOLL";
+        case StructuredCategory::Weapons:         return "WEAPONS";
+        case StructuredCategory::Animation:       return "ANIMATION";
         case StructuredCategory::Gui:             return "GUI";
         case StructuredCategory::Avatar:          return "AVATAR";
         case StructuredCategory::Network:         return "NETWORK";
+        case StructuredCategory::World:           return "WORLD";
+        case StructuredCategory::Duel:            return "DUEL";
+        case StructuredCategory::Auth:            return "AUTH";
+        case StructuredCategory::Chat:            return "CHAT";
+        case StructuredCategory::Vip:             return "VIP";
         case StructuredCategory::Rendering:       return "RENDERING";
         case StructuredCategory::GlbModels:       return "GLB_MODELS";
         case StructuredCategory::Executable:      return "EXECUTABLE";
@@ -90,14 +104,27 @@ std::string StructuredLogger::categoryName(StructuredCategory cat) const {
 
 std::string StructuredLogger::categoryDirName(StructuredCategory cat) const {
     switch (cat) {
+        case StructuredCategory::General:         return "General";
+        case StructuredCategory::Glb:             return "GLB";
         case StructuredCategory::Replay:          return "Replay";
         case StructuredCategory::Camera:          return "Camera";
         case StructuredCategory::Audio:           return "Audio";
+        case StructuredCategory::Physics:         return "Physics";
         case StructuredCategory::Performance:     return "Performance";
         case StructuredCategory::Collision:       return "Collisions";
+        case StructuredCategory::NpcCombat:       return "NPCCombat";
+        case StructuredCategory::NpcMovement:     return "NPCMovement";
+        case StructuredCategory::Ragdoll:         return "Ragdoll";
+        case StructuredCategory::Weapons:         return "Weapons";
+        case StructuredCategory::Animation:       return "Animation";
         case StructuredCategory::Gui:             return "GUI";
         case StructuredCategory::Avatar:          return "Avatar";
         case StructuredCategory::Network:         return "Network";
+        case StructuredCategory::World:           return "World";
+        case StructuredCategory::Duel:            return "Duel";
+        case StructuredCategory::Auth:            return "Auth";
+        case StructuredCategory::Chat:            return "Chat";
+        case StructuredCategory::Vip:             return "Vip";
         case StructuredCategory::Rendering:       return "Rendering";
         case StructuredCategory::GlbModels:       return "GLBModels";
         case StructuredCategory::Executable:      return "Executable";
@@ -105,7 +132,7 @@ std::string StructuredLogger::categoryDirName(StructuredCategory cat) const {
         case StructuredCategory::Healthbar:        return "Healthbar";
         case StructuredCategory::Skybox:           return "Skybox";
         case StructuredCategory::ChatLayout:       return "ChatLayout";
-        case StructuredCategory::Count:           return "Count";
+        case StructuredCategory::Count:            return "Count";
     }
     return "Unknown";
 }
@@ -177,22 +204,48 @@ void StructuredLogger::loadConfig() {
 
         if (j.contains("categories")) {
             auto& cats = j["categories"];
+            if (cats.contains("general"))
+                cfg.general = parseCategoryConfig(cats["general"], cfg.defaultLevel);
+            if (cats.contains("glb"))
+                cfg.glb = parseCategoryConfig(cats["glb"], cfg.defaultLevel);
             if (cats.contains("replay"))
                 cfg.replay = parseCategoryConfig(cats["replay"], cfg.defaultLevel);
             if (cats.contains("camera"))
                 cfg.camera = parseCategoryConfig(cats["camera"], cfg.defaultLevel);
             if (cats.contains("audio"))
                 cfg.audio = parseCategoryConfig(cats["audio"], cfg.defaultLevel);
+            if (cats.contains("physics"))
+                cfg.physics = parseCategoryConfig(cats["physics"], cfg.defaultLevel);
             if (cats.contains("performance"))
                 cfg.performance = parseCategoryConfig(cats["performance"], cfg.defaultLevel);
             if (cats.contains("collision"))
                 cfg.collision = parseCategoryConfig(cats["collision"], cfg.defaultLevel);
+            if (cats.contains("npc_combat"))
+                cfg.npcCombat = parseCategoryConfig(cats["npc_combat"], cfg.defaultLevel);
+            if (cats.contains("npc_movement"))
+                cfg.npcMovement = parseCategoryConfig(cats["npc_movement"], cfg.defaultLevel);
+            if (cats.contains("ragdoll"))
+                cfg.ragdoll = parseCategoryConfig(cats["ragdoll"], cfg.defaultLevel);
+            if (cats.contains("weapons"))
+                cfg.weapons = parseCategoryConfig(cats["weapons"], cfg.defaultLevel);
+            if (cats.contains("animation"))
+                cfg.animation = parseCategoryConfig(cats["animation"], cfg.defaultLevel);
             if (cats.contains("gui"))
                 cfg.gui = parseCategoryConfig(cats["gui"], cfg.defaultLevel);
             if (cats.contains("avatar"))
                 cfg.avatar = parseCategoryConfig(cats["avatar"], cfg.defaultLevel);
             if (cats.contains("network"))
                 cfg.network = parseCategoryConfig(cats["network"], cfg.defaultLevel);
+            if (cats.contains("world"))
+                cfg.world = parseCategoryConfig(cats["world"], cfg.defaultLevel);
+            if (cats.contains("duel"))
+                cfg.duel = parseCategoryConfig(cats["duel"], cfg.defaultLevel);
+            if (cats.contains("auth"))
+                cfg.auth = parseCategoryConfig(cats["auth"], cfg.defaultLevel);
+            if (cats.contains("chat"))
+                cfg.chat = parseCategoryConfig(cats["chat"], cfg.defaultLevel);
+            if (cats.contains("vip"))
+                cfg.vip = parseCategoryConfig(cats["vip"], cfg.defaultLevel);
             if (cats.contains("rendering"))
                 cfg.rendering = parseCategoryConfig(cats["rendering"], cfg.defaultLevel);
             if (cats.contains("glb_models"))
@@ -207,6 +260,8 @@ void StructuredLogger::loadConfig() {
                 cfg.skybox = parseCategoryConfig(cats["skybox"], cfg.defaultLevel);
             if (cats.contains("chat_layout"))
                 cfg.chatLayout = parseCategoryConfig(cats["chat_layout"], cfg.defaultLevel);
+            if (cats.contains("ragdoll"))
+                cfg.ragdoll = parseCategoryConfig(cats["ragdoll"], cfg.defaultLevel);
         }
 
         if (j.contains("sampling")) {
@@ -300,21 +355,34 @@ void StructuredLogger::openCategoryFile(StructuredCategory cat) {
 
     auto& catCfg = [&]() -> const StructuredLogConfig::CategoryConfig& {
         switch (cat) {
+            case StructuredCategory::General:         return mConfig.general;
+            case StructuredCategory::Glb:             return mConfig.glb;
             case StructuredCategory::Replay:      return mConfig.replay;
             case StructuredCategory::Camera:      return mConfig.camera;
             case StructuredCategory::Audio:       return mConfig.audio;
+            case StructuredCategory::Physics:     return mConfig.physics;
             case StructuredCategory::Performance: return mConfig.performance;
             case StructuredCategory::Collision:   return mConfig.collision;
+            case StructuredCategory::NpcCombat:   return mConfig.npcCombat;
+            case StructuredCategory::NpcMovement: return mConfig.npcMovement;
+            case StructuredCategory::Ragdoll:     return mConfig.ragdoll;
+            case StructuredCategory::Weapons:     return mConfig.weapons;
+            case StructuredCategory::Animation:   return mConfig.animation;
             case StructuredCategory::Gui:         return mConfig.gui;
             case StructuredCategory::Avatar:      return mConfig.avatar;
             case StructuredCategory::Network:     return mConfig.network;
+            case StructuredCategory::World:       return mConfig.world;
+            case StructuredCategory::Duel:        return mConfig.duel;
+            case StructuredCategory::Auth:        return mConfig.auth;
+            case StructuredCategory::Chat:        return mConfig.chat;
+            case StructuredCategory::Vip:         return mConfig.vip;
             case StructuredCategory::Rendering:   return mConfig.rendering;
             case StructuredCategory::GlbModels:   return mConfig.glbModels;
         case StructuredCategory::Executable:      return mConfig.executable;
             case StructuredCategory::GrenadeLauncher: return mConfig.grenadeLauncher;
             case StructuredCategory::Healthbar: return mConfig.healthbar;
             case StructuredCategory::Skybox: return mConfig.skybox;
-            case StructuredCategory::ChatLayout: return mConfig.chatLayout;
+        case StructuredCategory::ChatLayout: return mConfig.chatLayout;
     }
         return mConfig.replay;
     }();
@@ -394,14 +462,27 @@ void StructuredLogger::writeStartupMetadata() {
                 StructuredCategory cat = (StructuredCategory)i;
                 auto& cfg = [&]() -> const StructuredLogConfig::CategoryConfig& {
                     switch (cat) {
+                        case StructuredCategory::General:         return mConfig.general;
+                        case StructuredCategory::Glb:             return mConfig.glb;
                         case StructuredCategory::Replay:      return mConfig.replay;
                         case StructuredCategory::Camera:      return mConfig.camera;
                         case StructuredCategory::Audio:       return mConfig.audio;
+                        case StructuredCategory::Physics:     return mConfig.physics;
                         case StructuredCategory::Performance: return mConfig.performance;
                         case StructuredCategory::Collision:   return mConfig.collision;
+                        case StructuredCategory::NpcCombat:   return mConfig.npcCombat;
+                        case StructuredCategory::NpcMovement: return mConfig.npcMovement;
+                        case StructuredCategory::Ragdoll:     return mConfig.ragdoll;
+                        case StructuredCategory::Weapons:     return mConfig.weapons;
+                        case StructuredCategory::Animation:   return mConfig.animation;
                         case StructuredCategory::Gui:         return mConfig.gui;
                         case StructuredCategory::Avatar:      return mConfig.avatar;
                         case StructuredCategory::Network:     return mConfig.network;
+                        case StructuredCategory::World:       return mConfig.world;
+                        case StructuredCategory::Duel:        return mConfig.duel;
+                        case StructuredCategory::Auth:        return mConfig.auth;
+                        case StructuredCategory::Chat:        return mConfig.chat;
+                        case StructuredCategory::Vip:         return mConfig.vip;
                         case StructuredCategory::Rendering:   return mConfig.rendering;
                         case StructuredCategory::GlbModels:   return mConfig.glbModels;
                         case StructuredCategory::Executable:  return mConfig.executable;
@@ -553,14 +634,27 @@ void StructuredLogger::pollConfig() {
                 StructuredCategory cat = (StructuredCategory)i;
                 auto& newCfg = [&]() -> const StructuredLogConfig::CategoryConfig& {
                     switch (cat) {
+                        case StructuredCategory::General:         return mConfig.general;
+                        case StructuredCategory::Glb:             return mConfig.glb;
                         case StructuredCategory::Replay:      return mConfig.replay;
                         case StructuredCategory::Camera:      return mConfig.camera;
                         case StructuredCategory::Audio:       return mConfig.audio;
+                        case StructuredCategory::Physics:     return mConfig.physics;
                         case StructuredCategory::Performance: return mConfig.performance;
                         case StructuredCategory::Collision:   return mConfig.collision;
+                        case StructuredCategory::NpcCombat:   return mConfig.npcCombat;
+                        case StructuredCategory::NpcMovement: return mConfig.npcMovement;
+                        case StructuredCategory::Ragdoll:     return mConfig.ragdoll;
+                        case StructuredCategory::Weapons:     return mConfig.weapons;
+                        case StructuredCategory::Animation:   return mConfig.animation;
                         case StructuredCategory::Gui:         return mConfig.gui;
                         case StructuredCategory::Avatar:      return mConfig.avatar;
                         case StructuredCategory::Network:     return mConfig.network;
+                        case StructuredCategory::World:       return mConfig.world;
+                        case StructuredCategory::Duel:        return mConfig.duel;
+                        case StructuredCategory::Auth:        return mConfig.auth;
+                        case StructuredCategory::Chat:        return mConfig.chat;
+                        case StructuredCategory::Vip:         return mConfig.vip;
                         case StructuredCategory::Rendering:   return mConfig.rendering;
                         case StructuredCategory::GlbModels:   return mConfig.glbModels;
                         case StructuredCategory::Executable:  return mConfig.executable;
@@ -588,15 +682,28 @@ bool StructuredLogger::shouldLog(StructuredCategory cat, StructuredLevel level) 
     if (!mConfig.enabled) return false;
 
     const auto& catCfg = [&]() -> const StructuredLogConfig::CategoryConfig& {
-        switch (cat) {
-            case StructuredCategory::Replay:      return mConfig.replay;
+                    switch (cat) {
+                        case StructuredCategory::General:         return mConfig.general;
+                        case StructuredCategory::Glb:             return mConfig.glb;
+                        case StructuredCategory::Replay:      return mConfig.replay;
             case StructuredCategory::Camera:      return mConfig.camera;
-            case StructuredCategory::Audio:       return mConfig.audio;
-            case StructuredCategory::Performance: return mConfig.performance;
-            case StructuredCategory::Collision:   return mConfig.collision;
+                        case StructuredCategory::Audio:       return mConfig.audio;
+                        case StructuredCategory::Physics:     return mConfig.physics;
+                        case StructuredCategory::Performance: return mConfig.performance;
+                        case StructuredCategory::Collision:   return mConfig.collision;
+                        case StructuredCategory::NpcCombat:   return mConfig.npcCombat;
+                        case StructuredCategory::NpcMovement: return mConfig.npcMovement;
+                        case StructuredCategory::Ragdoll:     return mConfig.ragdoll;
+                        case StructuredCategory::Weapons:     return mConfig.weapons;
+                        case StructuredCategory::Animation:   return mConfig.animation;
             case StructuredCategory::Gui:         return mConfig.gui;
             case StructuredCategory::Avatar:      return mConfig.avatar;
-            case StructuredCategory::Network:     return mConfig.network;
+                        case StructuredCategory::Network:     return mConfig.network;
+                        case StructuredCategory::World:       return mConfig.world;
+                        case StructuredCategory::Duel:        return mConfig.duel;
+                        case StructuredCategory::Auth:        return mConfig.auth;
+                        case StructuredCategory::Chat:        return mConfig.chat;
+                        case StructuredCategory::Vip:         return mConfig.vip;
             case StructuredCategory::Rendering:   return mConfig.rendering;
             case StructuredCategory::GlbModels:   return mConfig.glbModels;
         case StructuredCategory::Executable:      return mConfig.executable;
@@ -609,6 +716,39 @@ bool StructuredLogger::shouldLog(StructuredCategory cat, StructuredLevel level) 
     }();
 
     return (int)level <= (int)catCfg.level;
+}
+
+void StructuredLogger::writeFormatted(StructuredCategory category, StructuredLevel level,
+                                      const char* sourceFile, int sourceLine,
+                                      const char* functionName, const char* format, ...)
+{
+    va_list args;
+    va_start(args, format);
+    writeVFormatted(category, level, sourceFile, sourceLine, functionName, format, args);
+    va_end(args);
+}
+
+void StructuredLogger::writeVFormatted(StructuredCategory category, StructuredLevel level,
+                                       const char* sourceFile, int sourceLine,
+                                       const char* functionName, const char* format, va_list args)
+{
+    if (!mInitialized || !mConfig.enabled || !shouldLog(category, level)) return;
+
+    char message[4096] = {};
+    va_list copy;
+    va_copy(copy, args);
+    std::vsnprintf(message, sizeof(message), format ? format : "", copy);
+    va_end(copy);
+
+    Entry e;
+    e.category = category;
+    e.level = level;
+    e.eventId = "DBG";
+    e.sourceFile = sourceFile ? sourceFile : "?";
+    e.sourceLine = sourceLine;
+    e.functionName = functionName ? functionName : "?";
+    e.message = message;
+    write(e);
 }
 
 // ── Write entry ─────────────────────────────────────────────
@@ -692,8 +832,9 @@ void StructuredLogger::write(const Entry& e) {
         char cbuf[512];
         int cp = 0;
         cp += std::snprintf(cbuf + cp, sizeof(cbuf) - cp,
-            "[%s][%s] %s", categoryName(e.category).c_str(),
-            levelToString(e.level).c_str(), e.reason.c_str());
+            "[%s][%s] %s%s%s", categoryName(e.category).c_str(),
+            levelToString(e.level).c_str(), e.reason.c_str(),
+            e.reason.empty() ? "" : " ", e.message.c_str());
         if (!e.numericKeys.empty()) {
             for (size_t i = 0; i < e.numericKeys.size(); i++) {
                 double expected = i < e.numericExpected.size() ? e.numericExpected[i] : 0.0;
@@ -710,14 +851,27 @@ void StructuredLogger::write(const Entry& e) {
     // ── Check if this category is throttled ───────────────────────
     auto& catCfg = [&]() -> const StructuredLogConfig::CategoryConfig& {
         switch (e.category) {
+            case StructuredCategory::General:         return mConfig.general;
+            case StructuredCategory::Glb:             return mConfig.glb;
             case StructuredCategory::Replay:      return mConfig.replay;
             case StructuredCategory::Camera:      return mConfig.camera;
             case StructuredCategory::Audio:       return mConfig.audio;
+            case StructuredCategory::Physics:     return mConfig.physics;
             case StructuredCategory::Performance: return mConfig.performance;
             case StructuredCategory::Collision:   return mConfig.collision;
+            case StructuredCategory::NpcCombat:   return mConfig.npcCombat;
+            case StructuredCategory::NpcMovement: return mConfig.npcMovement;
+            case StructuredCategory::Ragdoll:     return mConfig.ragdoll;
+            case StructuredCategory::Weapons:     return mConfig.weapons;
+            case StructuredCategory::Animation:   return mConfig.animation;
             case StructuredCategory::Gui:         return mConfig.gui;
             case StructuredCategory::Avatar:      return mConfig.avatar;
             case StructuredCategory::Network:     return mConfig.network;
+            case StructuredCategory::World:       return mConfig.world;
+            case StructuredCategory::Duel:        return mConfig.duel;
+            case StructuredCategory::Auth:        return mConfig.auth;
+            case StructuredCategory::Chat:        return mConfig.chat;
+            case StructuredCategory::Vip:         return mConfig.vip;
             case StructuredCategory::Rendering:   return mConfig.rendering;
             case StructuredCategory::GlbModels:   return mConfig.glbModels;
             case StructuredCategory::Executable:  return mConfig.executable;
@@ -742,6 +896,7 @@ void StructuredLogger::write(const Entry& e) {
 
     // ── Non-throttled: write immediately ──────────────────────────
     {
+        LogManager::instance().write(fileLine.c_str());
         FILE* f = mCategoryFiles[idx];
         if (f) {
             fprintf(f, "%s", fileLine.c_str());
@@ -750,7 +905,7 @@ void StructuredLogger::write(const Entry& e) {
     }
 
     if (mConfig.consoleOutput)
-        printf("%s", consoleLine.c_str());
+        LogManager::instance().writeConsole(consoleLine.c_str(), (int)consoleLine.size());
 }
 
 void StructuredLogger::flushThrottled(int catIdx) {
@@ -761,6 +916,11 @@ void StructuredLogger::flushThrottled(int catIdx) {
     ThrottledBuffer& tb = it->second;
 
     // Write all buffered file lines
+    std::string allLines;
+    for (const auto& line : tb.lines)
+        allLines += line;
+    LogManager::instance().write(allLines.c_str());
+
     FILE* f = mCategoryFiles[catIdx];
     if (f) {
         char header[128];
@@ -775,9 +935,11 @@ void StructuredLogger::flushThrottled(int catIdx) {
 
     // Write all buffered console lines
     if (mConfig.consoleOutput && !tb.consoleLines.empty()) {
-        printf("--- Throttled flush (%zu lines) ---\n", tb.consoleLines.size());
+        std::string console;
+        console += "--- Throttled flush (" + std::to_string(tb.consoleLines.size()) + " lines) ---\n";
         for (const auto& line : tb.consoleLines)
-            printf("%s", line.c_str());
+            console += line;
+        LogManager::instance().writeConsole(console.c_str(), (int)console.size());
     }
 
     tb.lines.clear();
@@ -797,14 +959,27 @@ void StructuredLogger::tick() {
         StructuredCategory cat = (StructuredCategory)catIdx;
         float throttle = 0.0f;
         switch (cat) {
+            case StructuredCategory::General:         throttle = mConfig.general.throttleSeconds; break;
+            case StructuredCategory::Glb:             throttle = mConfig.glb.throttleSeconds; break;
             case StructuredCategory::Replay:      throttle = mConfig.replay.throttleSeconds; break;
             case StructuredCategory::Camera:      throttle = mConfig.camera.throttleSeconds; break;
             case StructuredCategory::Audio:       throttle = mConfig.audio.throttleSeconds; break;
+            case StructuredCategory::Physics:     throttle = mConfig.physics.throttleSeconds; break;
             case StructuredCategory::Performance: throttle = mConfig.performance.throttleSeconds; break;
             case StructuredCategory::Collision:   throttle = mConfig.collision.throttleSeconds; break;
+            case StructuredCategory::NpcCombat:   throttle = mConfig.npcCombat.throttleSeconds; break;
+            case StructuredCategory::NpcMovement: throttle = mConfig.npcMovement.throttleSeconds; break;
+            case StructuredCategory::Ragdoll:     throttle = mConfig.ragdoll.throttleSeconds; break;
+            case StructuredCategory::Weapons:     throttle = mConfig.weapons.throttleSeconds; break;
+            case StructuredCategory::Animation:   throttle = mConfig.animation.throttleSeconds; break;
             case StructuredCategory::Gui:         throttle = mConfig.gui.throttleSeconds; break;
             case StructuredCategory::Avatar:      throttle = mConfig.avatar.throttleSeconds; break;
             case StructuredCategory::Network:     throttle = mConfig.network.throttleSeconds; break;
+            case StructuredCategory::World:       throttle = mConfig.world.throttleSeconds; break;
+            case StructuredCategory::Duel:        throttle = mConfig.duel.throttleSeconds; break;
+            case StructuredCategory::Auth:        throttle = mConfig.auth.throttleSeconds; break;
+            case StructuredCategory::Chat:        throttle = mConfig.chat.throttleSeconds; break;
+            case StructuredCategory::Vip:         throttle = mConfig.vip.throttleSeconds; break;
             case StructuredCategory::Rendering:   throttle = mConfig.rendering.throttleSeconds; break;
             case StructuredCategory::GlbModels:   throttle = mConfig.glbModels.throttleSeconds; break;
             case StructuredCategory::Executable:  throttle = mConfig.executable.throttleSeconds; break;

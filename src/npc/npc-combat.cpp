@@ -17,6 +17,7 @@
 #include "combat/weapon-grenade-launcher.h"
 #include "config.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "effects/effect-part.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/physics-types.h"
@@ -338,16 +339,13 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
 
     logAimDebug(npc, *def, idealDir, aimDir, errorDeg, angleDiff);
 
-    printf("[NPC SHOT] id=%u dist=%.1fm maxError=%.1fdeg "
-           "ideal=(%.3f,%.3f,%.3f) final=(%.3f,%.3f,%.3f) diff=%.1fdeg "
-           "weapon=%s ready=%s\n",
-           npc.id, dist,
-           errorDeg,
-           idealDir.x, idealDir.y, idealDir.z,
-           aimDir.x, aimDir.y, aimDir.z,
-           angleDiff,
-           def->id.c_str(),
-           rt.currentAmmo > 0 ? "yes" : "empty");
+    DBG(NpcCombat, "id=%u dist=%.1fm maxError=%.1fdeg "
+        "ideal=(%.3f,%.3f,%.3f) final=(%.3f,%.3f,%.3f) diff=%.1fdeg "
+        "weapon=%s ready=%s",
+        npc.id, dist, errorDeg,
+        idealDir.x, idealDir.y, idealDir.z,
+        aimDir.x, aimDir.y, aimDir.z, angleDiff,
+        def->id.c_str(), rt.currentAmmo > 0 ? "yes" : "empty");
 
     // Decrement ammo BEFORE firing
     if (def->magazineSize > 0)

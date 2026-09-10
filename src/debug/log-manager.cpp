@@ -158,6 +158,15 @@ void LogManager::write(const char* text)
         fputs(text, mFile);
 }
 
+void LogManager::writeConsole(const char* text, int len)
+{
+    if (!text || len <= 0) return;
+    if (mSavedStdout >= 0)
+        _write(mSavedStdout, text, len);
+    else
+        fwrite(text, 1, (size_t)len, stdout);
+}
+
 void LogManager::flush()
 {
     if (mFile)

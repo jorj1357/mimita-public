@@ -186,11 +186,24 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             next.features.timerAboveEntity = optBool(f, "timer_above_entity", next.features.timerAboveEntity);
         }
 
+        // ── Visual/settings overrides ───────────────────────────────
+        next.cameraFov = std::max(0.0f, optFloat(root, "camera_fov", next.cameraFov));
+        if (root.contains("ragdoll_enabled")) {
+            next.ragdollExplicit = true;
+            next.ragdollEnabled = root["ragdoll_enabled"].get<bool>();
+        }
+        if (root.contains("blood_enabled")) {
+            next.bloodExplicit = true;
+            next.bloodEnabled = root["blood_enabled"].get<bool>();
+        }
+
         slot.mode = next;
         Debug::warn(Debug::Category::Duel,
-            "[GAMEMODE] Loaded %s: %s | goal=%d | time=%d | respawn=%.1fs | heal=%d | maps=%zu\n",
+            "[GAMEMODE] Loaded %s: %s | goal=%d | time=%d | respawn=%.1fs | heal=%d | maps=%zu | fov=%.0f ragdoll=%d(%d) blood=%d(%d)\n",
             fileNameOf(path).c_str(), next.name.c_str(), next.goalValue,
-            next.timeLimitSeconds, next.respawnSeconds, (int)next.killHeals, next.maps.size());
+            next.timeLimitSeconds, next.respawnSeconds, (int)next.killHeals, next.maps.size(),
+            next.cameraFov, (int)next.ragdollEnabled, (int)next.ragdollExplicit,
+            (int)next.bloodEnabled, (int)next.bloodExplicit);
     } catch (const json::parse_error& e) {
         Debug::error(Debug::Category::Duel, "[GAMEMODE] Parse error in %s: %s. Keeping previous valid data.\n",
                      path.c_str(), e.what());

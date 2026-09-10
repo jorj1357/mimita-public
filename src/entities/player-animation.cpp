@@ -9,6 +9,7 @@
 #include "entities/aimbody-config.h"
 #include "physics/config.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "network/net_common.h"
 using namespace MimitaNet;
 
@@ -150,6 +151,10 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
         return;
     }
+    if (ragdollModeActive) {
+        updateModelWorldTransforms();
+        return;
+    }
 
     static bool loggedSkeleton = false;
     if (!loggedSkeleton) {
@@ -223,12 +228,12 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         uint64_t nowAnim = nowMs();
         if (nowAnim - lastAnimStateLogMs >= 1000)
         {
-            printf("[ANIM STATE] player=%s movementPressed=%d walkInputTriggered=%d "
-                   "speed=%.2f move01=%.3f nowMoving=%d currentAnim=%s activeAnim=%s "
-                   "animStateTimeBefore=%.3f\n",
-                   username.c_str(), (int)movementPressed, (int)walkInputTriggered,
-                   speed, move01, (int)nowMoving,
-                   currentAnimName.c_str(), activeAnim.c_str(), animStateTime);
+            DBG(Animation, "player=%s movementPressed=%d walkInputTriggered=%d "
+                "speed=%.2f move01=%.3f nowMoving=%d currentAnim=%s activeAnim=%s "
+                "animStateTimeBefore=%.3f",
+                username.c_str(), (int)movementPressed, (int)walkInputTriggered,
+                speed, move01, (int)nowMoving,
+                currentAnimName.c_str(), activeAnim.c_str(), animStateTime);
             lastAnimStateLogMs = nowAnim;
         }
     }

@@ -22,14 +22,16 @@
 #include "debug/debug-visuals.h"
 #include "debug/debug-log.h"
 #include "debug/gl-debug.h"
+#include "debug/structured-log.h"
 
 extern Renderer* gRenderer;
 extern TextureStore gTextures;
 
-static constexpr int CONSTRAINT_ITERATIONS = 5;
+static constexpr int PBD_ITERATIONS = 4;
 static constexpr float GRAB_SPRING = 5000.0f;
 static constexpr float GRAB_DAMPING = 200.0f;
 static constexpr float MAX_PART_SPEED = 30.0f;
+static constexpr float POSITION_CORRECTION = 0.8f;
 
 static int findPartByName(const std::vector<RagdollModePart>& parts, const std::string& name)
 {
@@ -92,15 +94,57 @@ void RagdollModeSystem::activate(Player& player)
 
     Debug::warn(Debug::Category::Ragdoll,
         "[RAGDOLL MODE] Activated — %zu parts\n", mParts.size());
+
+    // Structured log: RAGDOLL_ENTER
+    if (StructuredLogger::instance().shouldLog(StructuredCategory::Ragdoll, StructuredLevel::Trace)) {
+        char msg[2048];
+        int off = 0;
+        off += snprintf(msg + off, sizeof(msg) - off,
+            "[RAGDOLLDEBUG] RAGDOLL_ENTER player=%s pos=(%.3f,%.3f,%.3f) "
+            "config=config/ragdoll.json grounded=%d yaw=%.3f tick=%u ",
+            player.username.c_str(),
+            player.pos.x, player.pos.y, player.pos.z,
+            (int)player.ground.onGround,
+            player.yaw,
+            (uint32_t)player.movementSimulationTick);
+        for (const auto& part : mParts) {
+            off += snprintf(msg + off, sizeof(msg) - off,
+                "part=%s pos=(%.3f,%.3f,%.3f) vel=(%.3f,%.3f,%.3f) "
+                "capsule_center=(%.3f,%.3f,%.3f) capsule_r=%.3f capsule_hh=%.3f ",
+                part.name.c_str(),
+                part.position.x, part.position.y, part.position.z,
+                part.velocity.x, part.velocity.y, part.velocity.z,
+                part.position.x, part.position.y, part.position.z,
+                part.capsuleRadius, part.capsuleHalfHeight);
+        }
+        off += snprintf(msg + off, sizeof(msg) - off,
+            "grab_left=%d grab_right=%d",
+            (int)mLeftGrab.active, (int)mRightGrab.active);
+        StructuredLogger::Entry e;
+        e.category = StructuredCategory::Ragdoll;
+        e.level = StructuredLevel::Trace;
+        e.eventId = "RAGDOLL_ENTER";
+        e.correlationId = player.username;
+        e.reason = "Player entered ragdoll mode";
+        e.sourceFile = __FILE__;
+        e.sourceLine = __LINE__;
+        e.functionName = __FUNCTION__;
+        e.tick = (uint32_t)player.movementSimulationTick;
+        e.message = msg;
+        StructuredLogger::instance().write(e);
+    }
 }
 
 void RagdollModeSystem::deactivate(Player& player)
 {
+    if (mTorsoIndex >= 0 && mTorsoIndex < (int)mParts.size()) {
+        player.pos = mParts[mTorsoIndex].position;
+        player.vel = mParts[mTorsoIndex].velocity;
+    }
     mActive = false;
     mParts.clear();
     mLeftGrab = {};
     mRightGrab = {};
-    (void)player;
 
     Debug::warn(Debug::Category::Ragdoll,
         "[RAGDOLL MODE] Deactivated\n");
@@ -153,7 +197,6 @@ void RagdollModeSystem::initParts(const Player& player)
         else if (d.name == "rightLeg") mRightLegIndex = idx;
     }
 
-    // Set up attachment constraints
     const char* attachNames[] = {"head", "leftArm", "rightArm", "leftLeg", "rightLeg"};
     for (const char* name : attachNames) {
         int childIdx = findPartByName(mParts, name);
@@ -182,15 +225,8 @@ void RagdollModeSystem::update(float dt, const World& world, Player& player,
     const auto& cfg = RagdollModeConfig::instance().data();
     mActivationTime += dt;
 
-    // Step 0: Gravity + integration
+    // Step 0: Gravity + integration (ALL parts including torso)
     for (auto& part : mParts) {
-        if (part.name == "torso") {
-            // Torso follows player position (player movement still applies)
-            part.position = player.pos;
-            part.velocity = player.vel;
-            continue;
-        }
-
         part.previousPosition = part.position;
         part.velocity.z -= 9.81f * cfg.gravityScale * dt;
         part.velocity *= (1.0f - cfg.linearDamping * dt);
@@ -215,24 +251,23 @@ void RagdollModeSystem::update(float dt, const World& world, Player& player,
     // Step 2: Process extend inputs
     processExtend(input, camera);
 
-    // Step 3: Apply grab spring forces
-    auto applyGrabForce = [&](RagdollGrabState& grab) {
+    // Step 3: Apply grab spring forces (PBD-style: directly correct position)
+    auto applyGrabCorrection = [&](RagdollGrabState& grab) {
         if (!grab.active || grab.partIndex < 0) return;
         RagdollModePart& part = mParts[grab.partIndex];
-        glm::vec3 toGrab = grab.grabPoint - part.position;
-        float dist = glm::length(toGrab);
+        glm::vec3 delta = grab.grabPoint - part.position;
+        float dist = glm::length(delta);
         if (dist < 0.001f) return;
-        glm::vec3 dir = toGrab / dist;
-        glm::vec3 relVel = part.velocity;
-        float springForce = dist * GRAB_SPRING;
-        float dampingForce = glm::dot(relVel, dir) * GRAB_DAMPING;
-        part.velocity += (dir * (springForce - dampingForce) / part.mass) * dt;
+        glm::vec3 dir = delta / dist;
+        float correction = dist * POSITION_CORRECTION;
+        part.position += dir * correction;
+        part.velocity += dir * correction / dt * 0.3f;
     };
 
-    applyGrabForce(mLeftGrab);
-    applyGrabForce(mRightGrab);
+    applyGrabCorrection(mLeftGrab);
+    applyGrabCorrection(mRightGrab);
 
-    // Step 4: Joint constraint solving
+    // Step 4: PBD constraint solving
     solveConstraints(dt);
 
     // Step 5: World collision
@@ -241,13 +276,59 @@ void RagdollModeSystem::update(float dt, const World& world, Player& player,
 
     // Step 6: Sync torso position back to player
     syncToPlayer(player);
+
+    // Structured log: RAGDOLL_TICK (every tick)
+    if (StructuredLogger::instance().shouldLog(StructuredCategory::Ragdoll, StructuredLevel::Trace)) {
+        float totalKE = 0.0f;
+        for (const auto& part : mParts) {
+            float spd = glm::length(part.velocity);
+            totalKE += 0.5f * part.mass * spd * spd;
+        }
+        char msg[3072];
+        int off = 0;
+        off += snprintf(msg + off, sizeof(msg) - off,
+            "[RAGDOLLDEBUG] RAGDOLL_TICK player=%s time=%.3f grounded=%d "
+            "yaw=%.3f tick=%u grab_left=%d(grab_pt=(%.3f,%.3f,%.3f) hold=%.3f) "
+            "grab_right=%d(grab_pt=(%.3f,%.3f,%.3f) hold=%.3f) kinetic_energy=%.3f ",
+            player.username.c_str(), mActivationTime,
+            (int)player.ground.onGround, player.yaw,
+            (uint32_t)player.movementSimulationTick,
+            (int)mLeftGrab.active,
+            mLeftGrab.grabPoint.x, mLeftGrab.grabPoint.y, mLeftGrab.grabPoint.z,
+            mActivationTime,
+            (int)mRightGrab.active,
+            mRightGrab.grabPoint.x, mRightGrab.grabPoint.y, mRightGrab.grabPoint.z,
+            mActivationTime,
+            totalKE);
+        for (const auto& part : mParts) {
+            off += snprintf(msg + off, sizeof(msg) - off,
+                "part=%s pos=(%.3f,%.3f,%.3f) vel=(%.3f,%.3f,%.3f) "
+                "capsule_c=(%.3f,%.3f,%.3f) r=%.3f hh=%.3f ",
+                part.name.c_str(),
+                part.position.x, part.position.y, part.position.z,
+                part.velocity.x, part.velocity.y, part.velocity.z,
+                part.position.x, part.position.y, part.position.z,
+                part.capsuleRadius, part.capsuleHalfHeight);
+        }
+        StructuredLogger::Entry e;
+        e.category = StructuredCategory::Ragdoll;
+        e.level = StructuredLevel::Trace;
+        e.eventId = "RAGDOLL_TICK";
+        e.correlationId = player.username;
+        e.reason = "Ragdoll mode tick";
+        e.sourceFile = __FILE__;
+        e.sourceLine = __LINE__;
+        e.functionName = __FUNCTION__;
+        e.tick = (uint32_t)player.movementSimulationTick;
+        e.message = msg;
+        StructuredLogger::instance().write(e);
+    }
 }
 
 void RagdollModeSystem::processGrab(const InputState& input, const Camera& camera, const World& world)
 {
     const auto& cfg = RagdollModeConfig::instance().data();
 
-    // Left grab (A key)
     bool leftHeld = input.grabLeftHeld;
     if (leftHeld && !mLeftGrab.wasActive && mLeftArmIndex >= 0) {
         RagdollModePart& arm = mParts[mLeftArmIndex];
@@ -265,13 +346,9 @@ void RagdollModeSystem::processGrab(const InputState& input, const Camera& camer
         }
     } else if (!leftHeld && mLeftGrab.wasActive) {
         mLeftGrab.active = false;
-        if (mLeftGrab.partIndex >= 0 && mLeftGrab.partIndex < (int)mParts.size()) {
-            mParts[mLeftGrab.partIndex].velocity *= 0.5f;
-        }
     }
     mLeftGrab.wasActive = mLeftGrab.active;
 
-    // Right grab (D key)
     bool rightHeld = input.grabRightHeld;
     if (rightHeld && !mRightGrab.wasActive && mRightArmIndex >= 0) {
         RagdollModePart& arm = mParts[mRightArmIndex];
@@ -289,9 +366,6 @@ void RagdollModeSystem::processGrab(const InputState& input, const Camera& camer
         }
     } else if (!rightHeld && mRightGrab.wasActive) {
         mRightGrab.active = false;
-        if (mRightGrab.partIndex >= 0 && mRightGrab.partIndex < (int)mParts.size()) {
-            mParts[mRightGrab.partIndex].velocity *= 0.5f;
-        }
     }
     mRightGrab.wasActive = mRightGrab.active;
 }
@@ -303,20 +377,19 @@ void RagdollModeSystem::processExtend(const InputState& input, const Camera& cam
 
     if (input.extendLeftMouse && mLeftArmIndex >= 0) {
         RagdollModePart& arm = mParts[mLeftArmIndex];
-        arm.velocity += forceDir * cfg.extendForce / arm.mass;
+        arm.position += forceDir * cfg.extendForce * (1.0f / 60.0f) / arm.mass;
     }
 
     if (input.extendRightMouse && mRightArmIndex >= 0) {
         RagdollModePart& arm = mParts[mRightArmIndex];
-        arm.velocity += forceDir * cfg.extendForce / arm.mass;
+        arm.position += forceDir * cfg.extendForce * (1.0f / 60.0f) / arm.mass;
     }
 }
 
 void RagdollModeSystem::solveConstraints(float dt)
 {
-    const auto& cfg = RagdollModeConfig::instance().data();
-
-    for (int iter = 0; iter < CONSTRAINT_ITERATIONS; ++iter) {
+    (void)dt;
+    for (int iter = 0; iter < PBD_ITERATIONS; ++iter) {
         for (auto& part : mParts) {
             if (part.name == "torso") continue;
             if (part.parentIndex < 0) continue;
@@ -328,45 +401,43 @@ void RagdollModeSystem::solveConstraints(float dt)
             if (dist < 0.0001f) continue;
             glm::vec3 dir = delta / dist;
 
-            // Distance constraint (spring)
-            float displacement = dist - part.restLength;
-            float springForce = displacement * cfg.jointStiffness;
-            glm::vec3 relVel = part.velocity - parent.velocity;
-            float dampingForce = glm::dot(relVel, dir) * cfg.jointDamping;
-            float totalForce = springForce + dampingForce;
+            // PBD distance constraint: directly correct positions
+            float error = dist - part.restLength;
+            float totalInvMass = (1.0f / part.mass);
+            if (part.name != "torso")
+                totalInvMass += (1.0f / parent.mass);
+
+            if (totalInvMass < 0.0001f) continue;
+
+            glm::vec3 correction = dir * (error / totalInvMass) * POSITION_CORRECTION;
+
+            part.position -= correction * (1.0f / part.mass);
 
             // Cone limit: project child back into parent's cone
-            if (part.coneLimitDeg < 180.0f && dist > 0.001f) {
-                glm::vec3 localDir = glm::inverse(parent.rotation) * dir;
-                float coneRad = glm::radians(part.coneLimitDeg);
-                float angleFromY = std::acos(glm::clamp(localDir.y, -1.0f, 1.0f));
-                if (angleFromY > coneRad) {
-                    // Project back to cone surface
-                    float correction = angleFromY - coneRad;
-                    glm::vec3 axis = glm::normalize(glm::cross(localDir, glm::vec3(0, 1, 0)));
-                    if (glm::length(axis) < 0.001f) axis = glm::vec3(1, 0, 0);
-                    glm::vec3 corrected = glm::mat3_cast(glm::angleAxis(-correction, axis)) * localDir;
-                    part.position = parentAttachPoint + parent.rotation * corrected * dist;
-                    delta = part.position - parentAttachPoint;
-                    dir = glm::normalize(delta);
+            if (part.coneLimitDeg < 180.0f) {
+                glm::vec3 newDelta = part.position - parentAttachPoint;
+                float newDist = glm::length(newDelta);
+                if (newDist > 0.001f) {
+                    glm::vec3 newDir = newDelta / newDist;
+                    glm::vec3 localDir = glm::inverse(parent.rotation) * newDir;
+                    float coneRad = glm::radians(part.coneLimitDeg);
+                    float angleFromY = std::acos(glm::clamp(localDir.y, -1.0f, 1.0f));
+                    if (angleFromY > coneRad) {
+                        float correctionAngle = angleFromY - coneRad;
+                        glm::vec3 axis = glm::normalize(glm::cross(localDir, glm::vec3(0, 1, 0)));
+                        if (glm::length(axis) < 0.001f) axis = glm::vec3(1, 0, 0);
+                        glm::vec3 corrected = glm::mat3_cast(glm::angleAxis(-correctionAngle, axis)) * localDir;
+                        part.position = parentAttachPoint + parent.rotation * corrected * newDist;
+                    }
                 }
-            }
-
-            float invMassA = 1.0f / parent.mass;
-            float invMassB = 1.0f / part.mass;
-            float totalInvMass = invMassA + invMassB;
-
-            glm::vec3 impulse = dir * totalForce * dt / totalInvMass;
-
-            if (part.name != "torso") {
-                part.velocity += impulse * invMassB;
-                parent.velocity -= impulse * invMassA;
             }
         }
     }
 
-    // Clamp velocities after constraints
+    // Derive velocities from position changes (PBD standard)
+    float invDt = 1.0f / dt;
     for (auto& part : mParts) {
+        part.velocity = (part.position - part.previousPosition) * invDt;
         float speed = glm::length(part.velocity);
         if (speed > MAX_PART_SPEED)
             part.velocity *= MAX_PART_SPEED / speed;
@@ -376,38 +447,42 @@ void RagdollModeSystem::solveConstraints(float dt)
 void RagdollModeSystem::worldCollision(const World& world)
 {
     std::vector<int> candidates;
+    constexpr float TICK_DT = 1.0f / 60.0f;
+
     for (auto& part : mParts) {
-        if (part.name == "torso") continue;
-
         float r = part.capsuleRadius;
-        glm::vec3 move = part.velocity * (1.0f / 60.0f);
-        float moveLen = glm::length(move);
+        float halfH = part.capsuleHalfHeight;
+        float maxStep = std::max(r * 0.5f, 0.1f);
+        int steps = std::min(
+            (int)std::ceil(glm::length(part.velocity * TICK_DT) / maxStep) + 1, 8);
+        glm::vec3 stepVel = part.velocity * TICK_DT / (float)steps;
 
-        Capsule cap;
-        cap.a = part.position - glm::vec3(0, 0, part.capsuleHalfHeight);
-        cap.b = part.position + glm::vec3(0, 0, part.capsuleHalfHeight);
-        cap.r = r;
+        for (int s = 0; s < steps; ++s) {
+            part.position += stepVel;
 
-        gatherGLBTriangles(candidates, world, cap, move, "ragdollModePartCollision");
+            AABB queryBounds;
+            queryBounds.min = part.position - glm::vec3(r + 2.0f);
+            queryBounds.max = part.position + glm::vec3(r + 2.0f);
+            appendChunkTrianglesForAABB(const_cast<World&>(world), queryBounds, 0.1f, candidates, "ragdollModeCollision");
 
-        for (int ti : candidates) {
-            if (ti < 0 || ti >= (int)world.collisionMesh.triangles.size())
-                continue;
-            const CollisionTriangle& tri = world.collisionMesh.triangles[ti];
+            for (int ti : candidates) {
+                if (ti < 0 || ti >= (int)world.collisionMesh.triangles.size())
+                    continue;
+                const CollisionTriangle& tri = world.collisionMesh.triangles[ti];
 
-            Contact contact;
-            if (sphereTriangleContact(part.position, r, tri, contact)) {
-                if (contact.penetration > 0.0f) {
-                    part.position += contact.normal * contact.penetration;
-                    float velDot = glm::dot(part.velocity, contact.normal);
-                    if (velDot < 0.0f) {
-                        part.velocity -= contact.normal * velDot * 1.15f;
-                        glm::vec3 tangent = part.velocity - contact.normal * velDot;
-                        part.velocity += tangent * -0.15f;
-                        part.angularVelocity *= 0.5f;
+                Contact contact;
+                if (sphereTriangleContact(part.position, r, tri, contact)) {
+                    if (contact.penetration > 0.0f) {
+                        part.position += contact.normal * contact.penetration;
+                        float velDot = glm::dot(part.velocity, contact.normal);
+                        if (velDot < 0.0f) {
+                            part.velocity -= contact.normal * velDot * 1.15f;
+                            part.angularVelocity *= 0.5f;
+                        }
                     }
                 }
             }
+            candidates.clear();
         }
     }
 }
@@ -417,6 +492,7 @@ void RagdollModeSystem::syncToPlayer(Player& player)
     if (mTorsoIndex >= 0 && mTorsoIndex < (int)mParts.size()) {
         mTorsoPosition = mParts[mTorsoIndex].position;
         player.pos = mTorsoPosition;
+        player.vel = mParts[mTorsoIndex].velocity;
     }
 }
 
@@ -439,66 +515,49 @@ glm::mat4 RagdollModeSystem::getHeadTransform() const
 
 void RagdollModeSystem::render(const Camera& camera) const
 {
-    if (!mActive || !gRenderer) return;
-
-    const auto& cfg = RagdollModeConfig::instance().data();
-
-    glm::mat4 view = camera.getView();
-    glm::mat4 proj = camera.getProj((float)gRenderer->width, (float)gRenderer->height);
-    GLuint shader = gRenderer->shaderProgram;
-
-    static GLint uViewLoc = -1, uProjLoc = -1, uModelLoc = -1;
-    static GLint uUseColorLoc = -1, uColorLoc = -1, uTexLoc = -1;
-    if (uViewLoc < 0) uViewLoc = glGetUniformLocation(shader, "view");
-    if (uProjLoc < 0) uProjLoc = glGetUniformLocation(shader, "projection");
-    if (uModelLoc < 0) uModelLoc = glGetUniformLocation(shader, "model");
-    if (uUseColorLoc < 0) uUseColorLoc = glGetUniformLocation(shader, "uUseColor");
-    if (uColorLoc < 0) uColorLoc = glGetUniformLocation(shader, "uColor");
-    if (uTexLoc < 0) uTexLoc = glGetUniformLocation(shader, "uTex");
-
-    MIMITA_GL_CALL(glUseProgram(shader));
-    glUniformMatrix4fv(uViewLoc, 1, 0, &view[0][0]);
-    glUniformMatrix4fv(uProjLoc, 1, 0, &proj[0][0]);
-    glUniform1i(uUseColorLoc, 1);
-    glUniform1i(uTexLoc, 0);
+    if (!mActive) return;
 
     for (size_t i = 0; i < mParts.size(); ++i) {
         const auto& part = mParts[i];
 
-        // Draw capsule wireframe debug
+        glm::vec4 color(0.2f, 0.8f, 1.0f, 0.9f);
+        if (part.name == "head") color = glm::vec4(1.0f, 0.3f, 0.3f, 0.9f);
+        else if (part.name == "torso") color = glm::vec4(0.2f, 0.8f, 1.0f, 0.9f);
+        else if (part.name == "leftArm") color = glm::vec4(0.3f, 1.0f, 0.3f, 0.9f);
+        else if (part.name == "rightArm") color = glm::vec4(0.3f, 0.3f, 1.0f, 0.9f);
+        else if (part.name == "leftLeg") color = glm::vec4(1.0f, 1.0f, 0.3f, 0.9f);
+        else if (part.name == "rightLeg") color = glm::vec4(1.0f, 0.3f, 1.0f, 0.9f);
+
+        // Draw capsule using weapon line buffer (ungated, always visible like spyknife hitbox)
+        Capsule cap;
+        cap.a = part.position - glm::vec3(0, 0, part.capsuleHalfHeight);
+        cap.b = part.position + glm::vec3(0, 0, part.capsuleHalfHeight);
+        cap.r = part.capsuleRadius;
+        DebugVis::drawWeaponCapsuleWire(camera, cap, color);
+
+        // Draw attachment constraint lines
+        if (part.parentIndex >= 0) {
+            const auto& parent = mParts[part.parentIndex];
+            glm::vec3 parentAttach = parent.position + part.parentAttachmentOffset;
+            DebugVis::drawWeaponLine(camera, parentAttach, part.position,
+                glm::vec4(1.0f, 1.0f, 0.0f, 0.5f));
+        }
+
+        // Draw grab indicators
+        if (mLeftGrab.active && mLeftGrab.partIndex == (int)i) {
+            DebugVis::drawWeaponWireSphere(camera, mLeftGrab.grabPoint, 0.1f,
+                glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
+            DebugVis::drawWeaponLine(camera, part.position, mLeftGrab.grabPoint,
+                glm::vec4(0.0f, 1.0f, 0.0f, 0.9f));
+        }
+        if (mRightGrab.active && mRightGrab.partIndex == (int)i) {
+            DebugVis::drawWeaponWireSphere(camera, mRightGrab.grabPoint, 0.1f,
+                glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
+            DebugVis::drawWeaponLine(camera, part.position, mRightGrab.grabPoint,
+                glm::vec4(0.0f, 0.0f, 1.0f, 0.9f));
+        }
+
         if (DebugConfig::DEBUG_RAGDOLL) {
-            glm::vec4 color(0.2f, 0.8f, 1.0f, 0.6f);
-            if (part.name == "head") color = glm::vec4(1.0f, 0.3f, 0.3f, 0.6f);
-            else if (part.name == "leftArm") color = glm::vec4(0.3f, 1.0f, 0.3f, 0.6f);
-            else if (part.name == "rightArm") color = glm::vec4(0.3f, 0.3f, 1.0f, 0.6f);
-            else if (part.name == "leftLeg") color = glm::vec4(1.0f, 1.0f, 0.3f, 0.6f);
-            else if (part.name == "rightLeg") color = glm::vec4(1.0f, 0.3f, 1.0f, 0.6f);
-
-            DebugVis::drawWireSphere(camera, part.position, part.capsuleRadius, color);
-
-            // Draw line from parent attachment
-            if (part.parentIndex >= 0) {
-                const auto& parent = mParts[part.parentIndex];
-                glm::vec3 parentAttach = parent.position + part.parentAttachmentOffset;
-                DebugVis::drawLine(camera, parentAttach, part.position,
-                    glm::vec4(1.0f, 1.0f, 0.0f, 0.4f));
-            }
-
-            // Draw grab points
-            if (mLeftGrab.active && mLeftGrab.partIndex == (int)i) {
-                DebugVis::drawWireSphere(camera, mLeftGrab.grabPoint, 0.1f,
-                    glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
-                DebugVis::drawLine(camera, part.position, mLeftGrab.grabPoint,
-                    glm::vec4(0.0f, 1.0f, 0.0f, 0.8f));
-            }
-            if (mRightGrab.active && mRightGrab.partIndex == (int)i) {
-                DebugVis::drawWireSphere(camera, mRightGrab.grabPoint, 0.1f,
-                    glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
-                DebugVis::drawLine(camera, part.position, mRightGrab.grabPoint,
-                    glm::vec4(0.0f, 0.0f, 1.0f, 0.8f));
-            }
-
-            // Label
             char label[128];
             snprintf(label, sizeof(label), "%s", part.name.c_str());
             DebugVis::drawWorldLabel(part.position + glm::vec3(0, 0, 0.3f),

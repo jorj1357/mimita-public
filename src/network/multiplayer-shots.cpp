@@ -22,6 +22,7 @@
 #include "audio/hitmarker-audio.h"
 #include "ui/hitmarker.h"
 #include "killfeed/killfeed.h"
+
 #include "terminal/terminal-state.h"
 #include "config/networking-config.h"
 #include "debug/debug-log.h"
@@ -426,16 +427,33 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
             std::string weaponDisplay = (wdef && !wdef->displayName.empty())
                 ? wdef->displayName
                 : ((weaponId && weaponId[0]) ? weaponId : "unknown");
+            DBG(Network,
+                "CLIENT_PLAYER_KILLS_NPC proc=client shooterId=%u shooterName=\"%s\" "
+                "npcId=%u npcName=\"%s\" weaponId=\"%s\" weaponDisplay=\"%s\" "
+                "serverTick=%u clientTick=%u latestServerTick=%u isLocalShooter=%d",
+                event->shooterPlayerId, shooterName.c_str(),
+                event->npcEntityId, npcName.c_str(),
+                weaponId, weaponDisplay.c_str(),
+                event->header.tick, ctx.tick, ctx.latestServerTick,
+                (int)isLocalShooter);
             KillfeedManager::instance().onKillStyled(
                 shooterName, shooterVipAppearance, shooterVipStyleDetail,
                 npcName, MimitaVip::freeAppearance(), MimitaVip::VipStyleDetail{},
                 weaponDisplay, false, event->header.tick,
                 ((uint64_t)event->eventSessionId << 32) | event->eventId);
+            DBG(Network,
+                "CLIENT_KILLFEED_SHOW type=PLAYER_KILLS_NPC killer=\"%s\" victim=\"%s\" weapon=\"%s\"",
+                shooterName.c_str(), npcName.c_str(), weaponDisplay.c_str());
             printf("[NET NPC KILL PRESENT] shooter=%u npc=%u name=\"%s\"\n",
                    event->shooterPlayerId, event->npcEntityId, npcName.c_str());
         }
         else
         {
+            DBG(Network,
+                "CLIENT_KILLFEED_SKIP type=PLAYER_KILLS_NPC reason=predicted_kill "
+                "shooterId=%u npcId=%u npcName=\"%s\" tick=%u",
+                event->shooterPlayerId, event->npcEntityId, npcName.c_str(),
+                event->header.tick);
             Debug::log(Debug::Category::Networking,
                        "[NET NPC KILL PRESENT] shooter=%u npc=%u name=\"%s\" predicted=1 (suppressed duplicate)",
                        event->shooterPlayerId, event->npcEntityId, npcName.c_str());

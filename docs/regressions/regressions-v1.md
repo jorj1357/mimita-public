@@ -910,5 +910,31 @@ jorj - this not official format not good but  when we edit netowkring stuff or d
    4. All spawn-velocity-related files compile cleanly: `spawn-velocity-config.cpp`,
       `death-system.cpp`, `server-players.cpp`, `main-systems.cpp`, `engine-tick-setup.cpp`.
       The failure is in an unrelated file with pre-existing uncommitted changes.
-   5. Fix required: resolve the `PasswordPopup` compile error in `engine-tick-state.cpp`,
-      then rebuild with `python build_agent.py`.
+    5. Fix required: resolve the `PasswordPopup` compile error in `engine-tick-state.cpp`,
+       then rebuild with `python build_agent.py`.
+
+2026-09-09T15:30:00Z — Spawn velocity impulse on respawn: network linkage incomplete, now FIXED — RESOLVED
+
+1. Issue: Spawn velocity impulse did not apply on respawn despite config being enabled and server computing the correct velocity.
+   1. Expected behavior: when `config/spawnvelocity.json` has `enabled: true`, the player
+      receives a horizontal velocity impulse on every respawn.
+   2. Actual behavior: player respawned with zero velocity every time. The server computed
+      the correct spawn velocity and passed it to `beginAuthoritativeTransform`, but
+      `PlayerRespawnedPacket` did not carry velocity fields. The client received the
+      respawn packet and zeroed velocity in `multiplayer-tick.cpp:629` and
+      `engine-tick-net.cpp:366`.
+   3. Root cause: incomplete end-to-end network linkage. The server-side spawn velocity
+      was correct but the packet schema and client consumers did not carry or read it.
+   4. Fix applied (2026-09-09T11:27:05Z):
+      1. Added `float velX`, `velY`, `velZ` to `PlayerRespawnedPacket` in `src/network/packets.h`.
+      2. `src/network/server-players.cpp`: `completeAuthoritativeSpawn()` populates `spawnSync.velX/Y/Z`.
+      3. `src/network/multiplayer-tick.cpp`: `applyAuthoritativeSpawn()` reads `{spawn->velX, velY, velZ}`.
+      4. `src/engine/engine-tick-net.cpp`: pending spawn application reads `{spawn.velX, velY, velZ}`.
+   5. Human verification: player exploded themselves repeatedly and received the spawn
+      velocity impulse on every respawn. Considered resolved as of this timestamp.
+   6. Lessons learned:
+      1. Stale EXE is a hypothesis, not the default diagnosis. The more common failure
+         is incomplete end-to-end linkage across packet schema, server sender, and
+         client consumer.
+      2. Always trace the full data path (config → server → packet → client → movement)
+         before assuming a build or binary issue.

@@ -18,6 +18,7 @@
 #include "npc/npc-combat.h"
 #include "npc/npc-navigation.h"
 #include "npc/npc-combat-log.h"
+#include "debug/structured-log.h"
 #include "npc/npc-avatar.h"
 #include "entities/player.h"
 #include "world/world.h"
@@ -378,11 +379,11 @@ static void broadcastNpcFiring(SOCKET sock,
                 ++totalPacketsOut;
             }
 
-            printf("%s [NPC PROJECTILE] npc=%u weapon=%s projectileId=%u "
-                   "position=(%.2f,%.2f,%.2f) velocity=(%.2f,%.2f,%.2f)\n",
-                   serverTimestamp(), n.id, wdef->id.c_str(), projectile.id,
-                   projectile.position.x, projectile.position.y, projectile.position.z,
-                   projectile.velocity.x, projectile.velocity.y, projectile.velocity.z);
+            DBG(NpcCombat, "npc=%u weapon=%s projectileId=%u "
+                "position=(%.2f,%.2f,%.2f) velocity=(%.2f,%.2f,%.2f)",
+                n.id, wdef->id.c_str(), projectile.id,
+                projectile.position.x, projectile.position.y, projectile.position.z,
+                projectile.velocity.x, projectile.velocity.y, projectile.velocity.z);
         }
 
         // For multi-pellet weapons (shotgun), broadcast a PelletBlastEventPacket
@@ -768,6 +769,11 @@ void simulateSharedNpcs(SOCKET sock,
             ServerDamageResult result = applyServerDamage(
                 players, *nearest, 0, damage, knockback,
                 ServerDamageSource::Hitscan);
+            // Track NPC damage for kill attribution: if this NPC's damage
+            // brings the player to 0 HP on the next tick (or the player dies
+            // from self-damage shortly after), attribute the kill to this NPC.
+            nearest->lastNpcDamageSourceId = n.id;
+            nearest->lastNpcDamageTick = tick;
             const glm::vec3 realHit = n.lastShotEnd;
             const glm::vec3 realNormal = glm::length(n.lastShotNormal) > 0.001f
                 ? glm::normalize(n.lastShotNormal) : glm::vec3(0.0f, 0.0f, 1.0f);
@@ -783,6 +789,27 @@ void simulateSharedNpcs(SOCKET sock,
                    n.id, n.body.equippedWeaponId.c_str(), damage, result.healthBefore,
                    result.healthAfter, (int)result.applied,
                    knockback.x, knockback.y, knockback.z);
+            {
+                const char* wId = networkWeaponTypeName(hitWeapon);
+                std::string wDisp = wId;
+                if (const WeaponDefinition* wd = WeaponRegistry::instance().get(wId))
+                    if (!wd->displayName.empty()) wDisp = wd->displayName;
+                const ServerGamemodeState& gms = serverGamemodeState();
+                DBG(Network,
+                    "SERVER_NPC_KILLS_PLAYER proc=server npcId=%u npcName=\"%s\" "
+                    "playerId=%u playerName=\"%s\" weaponId=\"%s\" weaponDisplay=\"%s\" "
+                    "damage=%d healthBefore=%d healthAfter=%d killed=%d applied=%d "
+                    "serverTick=%u serverCode=\"%s\" gamemode=\"%s\" matchMode=\"%s\" "
+                    "phase=%d mapOnly=%d enabled=%d",
+                    n.id, n.body.username.c_str(),
+                    nearest->id, nearest->name.c_str(),
+                    wId, wDisp.c_str(),
+                    damage, result.healthBefore, result.healthAfter,
+                    (int)result.killed, (int)result.applied,
+                    tick, getServerCoordinatorCode().c_str(),
+                    gms.communityMode.c_str(), gms.matchMode.c_str(),
+                    (int)gms.phase, (int)gms.mapOnly, (int)gms.enabled);
+            }
         }
     }
 

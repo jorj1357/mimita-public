@@ -3,72 +3,74 @@
   "enabled": true,
   "hot_reload": true,
   "console_output": true,
-  "summary_file": true,
+  "summary_file": false,
 
   "default_level": "off",
 
   "categories": {
+    "general": { "level": "off", "file_output": false },
+    "glb": { "level": "off", "file_output": false },
     "replay": {
-      "level": "trace",
-      "file_output": true
+      "level": "off",
+      "file_output": false
     },
     "camera": {
-      "level": "trace",
-      "file_output": true
+      "level": "off",
+      "file_output": false
     },
     "audio": {
-      "level": "trace",
-      "file_output": true
+      "level": "off",
+      "file_output": false
     },
+    "physics": { "level": "off", "file_output": false },
     "performance": {
-      "level": "trace",
-      "file_output": true
+      "level": "off",
+      "file_output": false
     },
     "collision": {
-      "level": "verbose",
-      "file_output": true
+      "level": "off",
+      "file_output": false
     },
+    "npc_combat": { "level": "off", "file_output": false },
+    "npc_movement": { "level": "off", "file_output": false },
+    "ragdoll": { "level": "off", "file_output": false },
+    "weapons": { "level": "off", "file_output": false },
+    "animation": { "level": "off", "file_output": false },
     "gui": {
       "level": "off",
-      "file_output": true
+      "file_output": false
     },
     "avatar": {
       "level": "off",
-      "file_output": true
+      "file_output": false
     },
     "network": {
-      "level": "verbose",
-      "file_output": true,
+      "level": "off",
+      "file_output": false,
       "throttle": 0.0
     },
+    "world": { "level": "off", "file_output": false },
+    "duel": { "level": "off", "file_output": false },
+    "auth": { "level": "off", "file_output": false },
+    "chat": { "level": "off", "file_output": false },
+    "vip": { "level": "off", "file_output": false },
     "rendering": {
-      "level": "verbose",
-      "file_output": true
+      "level": "off",
+      "file_output": false
     },
     "glb_models": {
       "level": "off",
-      "file_output": true
+      "file_output": false
     },
     "executable": {
       "level": "errors",
-      "file_output": true
+      "file_output": false
     },
-    "npc": {
-      "level": "trace",
-      "file_output": true
-    },
-    "spawn": {
-      "level": "trace",
-      "file_output": true
-    },
-    "effects": {
-      "level": "trace",
-      "file_output": true
-    },
-    "grenade_launcher": { "level": "trace", "file_output": true, "throttle": 0.0 },
+    "grenade_launcher": { "level": "off", "file_output": false, "throttle": 0.0 },
     "healthbar": { "level": "off", "file_output": false, "throttle": 0.0 },
     "skybox": { "level": "off", "file_output": false, "throttle": 0.0 },
-    "chat_layout": { "level": "off", "file_output": false, "throttle": 0.0 }
+    "chat_layout": { "level": "off", "file_output": false, "throttle": 0.0 },
+    "ragdoll": { "level": "off", "file_output": false, "throttle": 0.0 }
   },
 
   "sampling": {

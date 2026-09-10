@@ -16,6 +16,8 @@
 #include <vector>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <cstdarg>
+#include <cstdio>
 
 // ── Structured debug logger ─────────────────────────────────
 // Extends the existing Debug::log system with:
@@ -49,14 +51,27 @@ struct StructuredLogConfig {
         float throttleSeconds = 0.0f; // 0 = no throttle; >0 = buffer and flush at this rate
     };
 
+    CategoryConfig general;
+    CategoryConfig glb;
     CategoryConfig replay;
     CategoryConfig camera;
     CategoryConfig audio;
+    CategoryConfig physics;
     CategoryConfig performance;
     CategoryConfig collision;
+    CategoryConfig npcCombat;
+    CategoryConfig npcMovement;
+    CategoryConfig ragdoll;
+    CategoryConfig weapons;
+    CategoryConfig animation;
     CategoryConfig gui;
     CategoryConfig avatar;
     CategoryConfig network;
+    CategoryConfig world;
+    CategoryConfig duel;
+    CategoryConfig auth;
+    CategoryConfig chat;
+    CategoryConfig vip;
     CategoryConfig rendering;
     CategoryConfig glbModels;
     CategoryConfig executable;
@@ -87,14 +102,27 @@ struct StructuredLogConfig {
 };
 
 enum class StructuredCategory {
+    General,
+    Glb,
     Replay,
     Camera,
     Audio,
+    Physics,
     Performance,
     Collision,
+    NpcCombat,
+    NpcMovement,
+    Ragdoll,
+    Weapons,
+    Animation,
     Gui,
     Avatar,
     Network,
+    World,
+    Duel,
+    Auth,
+    Chat,
+    Vip,
     Rendering,
     GlbModels,
     Executable,
@@ -141,6 +169,13 @@ public:
     // Write a structured entry
     void write(const Entry& e);
 
+    void writeFormatted(StructuredCategory category, StructuredLevel level,
+                        const char* sourceFile, int sourceLine,
+                        const char* functionName, const char* format, ...);
+    void writeVFormatted(StructuredCategory category, StructuredLevel level,
+                         const char* sourceFile, int sourceLine,
+                         const char* functionName, const char* format, va_list args);
+
     // Tick: flush throttled buffers
     void tick();
 
@@ -182,7 +217,7 @@ private:
 
     StructuredLogConfig mConfig;
     bool mInitialized = false;
-    std::string mLogDir;       // logs/MM-DD-YYYY/
+    std::string mLogDir;       // logs/YYYY-MM-DD/
     std::string mRunId;        // HHMMSS used for all files this run
     uint64_t mEventCounters[(int)StructuredCategory::Count] = {};
 
@@ -290,3 +325,8 @@ void logAudioAnalysis(StructuredCategory cat, StructuredLevel level,
         eventId, corrId, reason, cat, \
         __FILE__, __LINE__, __FUNCTION__, \
         key, (double)(expected), (double)(actual), (double)(tolerance))
+
+#define DBG(cat, ...) \
+    ::StructuredLogger::instance().writeFormatted( \
+        ::StructuredCategory::cat, ::StructuredLevel::Verbose, \
+        __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)

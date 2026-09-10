@@ -14,6 +14,7 @@
 #include "network/confirmed-damage-presentation.h"
 #include "network/network-weapons.h"
 #include "killfeed/killfeed.h"
+
 #include "network/weapon-runtime-reconciliation.h"
 #include "network/disagreement-visuals.h"
 #include "npc/npc-combat-log.h"
@@ -763,8 +764,8 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
 {
     if (ctx.projectileTerminals.has(event->projectileId))
     {
-        printf("[PROJECTILE STATE RX] projectileId=%u serverTick=%u accepted=0 reason=already-terminated\n",
-               event->projectileId, event->header.tick);
+        DBG(Network, "projectileId=%u serverTick=%u accepted=0 reason=already-terminated",
+            event->projectileId, event->header.tick);
         return;
     }
 
@@ -841,9 +842,9 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
     const uint32_t newTick = event->header.tick;
     if (newTick <= projectile.latestAcceptedTick)
     {
-        printf("[PROJECTILE STATE RX] projectileId=%u serverTick=%u "
-               "latestAcceptedTick=%u accepted=0 reason=stale-or-duplicate\n",
-               event->projectileId, newTick, projectile.latestAcceptedTick);
+        DBG(Network, "projectileId=%u serverTick=%u latestAcceptedTick=%u "
+            "accepted=0 reason=stale-or-duplicate",
+            event->projectileId, newTick, projectile.latestAcceptedTick);
         return;
     }
 
@@ -878,12 +879,11 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
     projectile.lastTargetReceivedMs = nowMs();
     projectile.hasTargetState = true;
 
-    printf("[PROJECTILE STATE RX] projectileId=%u serverTick=%u "
-           "latestAcceptedTick=%u accepted=1 pos=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f) age=%.2f\n",
-           event->projectileId, newTick, projectile.latestAcceptedTick,
-           event->posX, event->posY, event->posZ,
-           event->velX, event->velY, event->velZ,
-           event->age);
+    DBG(Network, "projectileId=%u serverTick=%u latestAcceptedTick=%u accepted=1 "
+        "pos=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f) age=%.2f",
+        event->projectileId, newTick, projectile.latestAcceptedTick,
+        event->posX, event->posY, event->posZ,
+        event->velX, event->velY, event->velZ, event->age);
 }
 
 void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const ProjectileExplodeEventPacket* event)
@@ -1154,8 +1154,9 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
     // victim, and observers converge even while movement snapshots are delayed.
     if (event->targetPlayerId == ctx.localPlayerId)
     {
-        if (event->targetSpawnGeneration == 0 ||
-            event->targetSpawnGeneration == ctx.lastKnownSpawnGeneration)
+        const bool spawnGenOk = (event->targetSpawnGeneration == 0 ||
+            event->targetSpawnGeneration == ctx.lastKnownSpawnGeneration);
+        if (spawnGenOk)
         {
             if (gpPlayer)
             {
@@ -1180,10 +1181,34 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
                     std::string victimName = gpPlayer->username.empty()
                         ? "player_" + std::to_string(ctx.localPlayerId) : gpPlayer->username;
 
+                    DBG(Network,
+                        "CLIENT_NPC_KILLS_PLAYER proc=client npcId=%u npcName=\"%s\" "
+                        "playerId=%u playerName=\"%s\" weaponId=\"%s\" weaponDisplay=\"%s\" "
+                        "serverTick=%u clientTick=%u latestServerTick=%u "
+                        "spawnGen=%u localGen=%u healthAfter=%d",
+                        attackerId, attackerName.c_str(),
+                        ctx.localPlayerId, victimName.c_str(),
+                        weaponId, weaponDisplay.c_str(),
+                        event->header.tick, ctx.tick, ctx.latestServerTick,
+                        event->targetSpawnGeneration, ctx.lastKnownSpawnGeneration,
+                        event->healthAfter);
+
                     KillfeedManager::instance().onKill(
                         attackerName, victimName, weaponDisplay, false, event->header.tick);
+
+                    DBG(Network,
+                        "CLIENT_KILLFEED_SHOW type=NPC_KILLS_PLAYER killer=\"%s\" victim=\"%s\" weapon=\"%s\"",
+                        attackerName.c_str(), victimName.c_str(), weaponDisplay.c_str());
                 }
             }
+        }
+        else
+        {
+            DBG(Network,
+                "CLIENT_KILLFEED_SKIP type=NPC_KILLS_PLAYER reason=spawn_generation_mismatch "
+                "eventGen=%u localGen=%u playerId=%u tick=%u",
+                event->targetSpawnGeneration, ctx.lastKnownSpawnGeneration,
+                ctx.localPlayerId, event->header.tick);
         }
     }
     else

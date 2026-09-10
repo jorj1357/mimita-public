@@ -373,6 +373,11 @@ struct ServerPlayer
     int kills = 0;
     int deaths = 0;
     int matchTeam = -1;  // -1 = no team (FFA), 0 = red, 1 = blue
+    // NPC damage tracking: when an NPC damages this player, record the NPC's ID
+    // and the tick so that if the player dies shortly after, the kill can be
+    // attributed to the NPC instead of self-damage.
+    uint32_t lastNpcDamageSourceId = 0;
+    uint32_t lastNpcDamageTick = 0;
     uint16_t transformEpoch = 0;
 
     // ── Input command buffer for server-side movement simulation ──────

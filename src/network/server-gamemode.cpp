@@ -19,6 +19,7 @@
 #include "npc/npc.h"
 #include "combat/weapon-registry.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "network/community-server-config.h"
 #include "gamemode/gamemode.h"
 #include "persistence/persistence-queue.h"
@@ -1106,6 +1107,18 @@ void serverGamemodeTick(SOCKET sock,
             d.communityTeamScore[0] = d.communityTeamScore[1] = 0;
             Debug::log(Debug::Category::Networking, "[COMMUNITY MATCH] new round mode=%s\n", d.communityMode.c_str());
         }
+        // Promote one kill event per tick from the queue into hasPendingKill
+        // so community/mapOnly FFA and TDM scoring actually runs.
+        if (!d.hasPendingKill && !d.pendingKillEvents.empty())
+        {
+            const ServerGamemodeKillEvent ev = std::move(d.pendingKillEvents.front());
+            d.pendingKillEvents.pop_front();
+            d.pendingKillerId = ev.killerId;
+            d.pendingVictimId = ev.victimId;
+            d.pendingKillerIsNpc = ev.killerEntityType == ENTITY_NPC;
+            d.pendingVictimIsNpc = ev.victimEntityType == ENTITY_NPC;
+            d.hasPendingKill = true;
+        }
         if (d.hasPendingKill) {
             const uint32_t killer = d.pendingKillerId;
             d.hasPendingKill = false;
@@ -1267,6 +1280,13 @@ void serverGamemodeTick(SOCKET sock,
             event.eventId, event.killerId, (unsigned)event.killerEntityType,
             event.victimId, (unsigned)event.victimEntityType,
             d.pendingKillEvents.size(), tick);
+        DBG(Network,
+            "KILL_QUEUE_PROMOTE eventId=%u killer=%u killerKind=%u victim=%u victimKind=%u "
+            "weapon=\"%s\" remaining=%zu tick=%u phase=%d matchMode=\"%s\" enabled=%d mapOnly=%d",
+            event.eventId, event.killerId, (unsigned)event.killerEntityType,
+            event.victimId, (unsigned)event.victimEntityType,
+            event.weaponDisplayName.c_str(), d.pendingKillEvents.size(),
+            tick, (int)d.phase, d.matchMode.c_str(), (int)d.enabled, (int)d.mapOnly);
     }
 
     // Process one queued kill recorded by authoritative damage.
@@ -1350,9 +1370,19 @@ void serverGamemodeTick(SOCKET sock,
             }
             // FFA scoring
             else if (d.matchMode == "ffa") {
+                const int killsBefore = d.ffaKills[killerId];
+                const int deathsBefore = d.ffaDeaths[victimId];
                 ++d.ffaKills[killerId];
                 ++d.ffaDeaths[victimId];
-                // Win condition checked in checkMatchWinConditions
+                DBG(Network,
+                    "FFA_SCORED killer=%u killerKind=%d victim=%u victimKind=%d "
+                    "killsBefore=%d killsAfter=%d deathsBefore=%d deathsAfter=%d "
+                    "tick=%u phase=%d matchOver=%d",
+                    killerId, (int)d.pendingKillerIsNpc,
+                    victimId, (int)d.pendingVictimIsNpc,
+                    killsBefore, d.ffaKills[killerId],
+                    deathsBefore, d.ffaDeaths[victimId],
+                    tick, (int)d.phase, (int)d.matchOver);
             }
             // TDM scoring
             else if (d.matchMode == "tdm") {
@@ -1370,6 +1400,18 @@ void serverGamemodeTick(SOCKET sock,
                     }
                 }
             }
+        }
+        else
+        {
+            DBG(Network,
+                "KILL_SCORE_SKIPPED killer=%u killerKind=%d victim=%u victimKind=%d "
+                "reason=%s tick=%u phase=%d matchOver=%d suicide=%d matchMode=\"%s\"",
+                killerId, (int)d.pendingKillerIsNpc,
+                victimId, (int)d.pendingVictimIsNpc,
+                d.phase != DUEL_PHASE_ACTIVE ? "phase_not_active" :
+                    d.matchOver ? "match_over" : "suicide",
+                tick, (int)d.phase, (int)d.matchOver,
+                (int)(killerId == victimId), d.matchMode.c_str());
         }
 
         broadcastDuelState(sock, d, players, totalPacketsOut);
@@ -1452,6 +1494,22 @@ void serverGamemodeTick(SOCKET sock,
             {
                 d.lastBroadcastTick = tick;
                 broadcastDuelState(sock, d, players, totalPacketsOut);
+                {
+                    std::string scores;
+                    for (const auto& kv : d.ffaKills) {
+                        if (!scores.empty()) scores += ", ";
+                        auto nameIt = d.participantNames.find(kv.first);
+                        scores += (nameIt != d.participantNames.end() ? nameIt->second : "id" + std::to_string(kv.first))
+                                  + "=" + std::to_string(kv.second);
+                    }
+                    DBG(Network,
+                        "HEARTBEAT mode=\"%s\" phase=%d tick=%u participants=%zu scores=[%s] "
+                        "queueSize=%zu enabled=%d mapOnly=%d serverCode=\"%s\"",
+                        d.matchMode.c_str(), (int)d.phase, tick,
+                        d.participants.size(), scores.c_str(),
+                        d.pendingKillEvents.size(), (int)d.enabled, (int)d.mapOnly,
+                        getServerCoordinatorCode().c_str());
+                }
             }
             break;
 
@@ -1755,6 +1813,12 @@ void serverGamemodeOnNpcDeath(uint32_t killerNpcId,
     event.eventId = ++d.killEventCounter;
     event.correlationId = correlationId;
     event.serverTick = d.currentServerTick;
+    DBG(Network,
+        "GAMEMODE_ENQUEUE type=NPC_KILLS_PLAYER killerNpcId=%u victimPlayerId=%u "
+        "weaponId=\"%s\" weaponDisplay=\"%s\" eventId=%u queueSize=%zu tick=%u",
+        killerNpcId, victimPlayerId,
+        weaponId.c_str(), weaponDisplayName.c_str(),
+        event.eventId, d.pendingKillEvents.size() + 1, d.currentServerTick);
     d.pendingKillEvents.push_back(std::move(event));
 }
 
@@ -1776,6 +1840,12 @@ void serverGamemodeOnPlayerKilledNpc(uint32_t killerPlayerId,
     event.eventId = ++d.killEventCounter;
     event.correlationId = correlationId;
     event.serverTick = d.currentServerTick;
+    DBG(Network,
+        "GAMEMODE_ENQUEUE type=PLAYER_KILLS_NPC killerPlayerId=%u victimNpcId=%u "
+        "weaponId=\"%s\" weaponDisplay=\"%s\" eventId=%u queueSize=%zu tick=%u",
+        killerPlayerId, victimNpcId,
+        weaponId.c_str(), weaponDisplayName.c_str(),
+        event.eventId, d.pendingKillEvents.size() + 1, d.currentServerTick);
     d.pendingKillEvents.push_back(std::move(event));
 }
 

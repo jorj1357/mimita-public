@@ -36,6 +36,7 @@
 #include "config/size-scaling-config.h"
 #include "config/weapon-hitfx-config.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "replay/replay.h"
 #include "perf/perf.h"
 #include "perf/perf-spike.h"
@@ -273,7 +274,7 @@ void audioUpdate(float dt)
                     ma_decoder_uninit(&active->decoder);
                 }
                 if (gSoundDebug && active)
-                    printf("[SOUND] stopped event=%s\n", active->name.c_str());
+                    DBG(Audio, "stopped event=%s", active->name.c_str());
                 return true;
             }
             return false;
@@ -338,7 +339,7 @@ void AudioManager::stopOwner(unsigned int ownerId)
                 ma_sound_uninit(&active->sound);
                 ma_decoder_uninit(&active->decoder);
             }
-            if (gSoundDebug) printf("[SOUND] stopped event=%s owner=%u\n", active->name.c_str(), ownerId);
+            if (gSoundDebug) DBG(Audio, "stopped event=%s owner=%u", active->name.c_str(), ownerId);
             return true;
         }),
         gActiveSounds.end());

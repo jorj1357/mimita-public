@@ -618,6 +618,7 @@ int runServer(const LaunchOptions& options)
                                 &transportStats, &disagreementRetransmit);
         }
 
+        ::StructuredLogger::instance().pollConfig();
         ::StructuredLogger::instance().tick();
 
         // Accumulator-based timing: run simulation ticks for accumulated debt
@@ -1242,6 +1243,7 @@ static void listenServerThreadFunc(ListenServerState& state)
         // Flush structured logger periodically
         if (state.tick - lastLogTick >= 60)
         {
+            ::StructuredLogger::instance().pollConfig();
             ::StructuredLogger::instance().tick();
             lastLogTick = state.tick;
         }

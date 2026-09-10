@@ -488,9 +488,9 @@ void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitia
         gSpawnSyncTotalPacketsOut);
     (void)qr;
 
-    printf("[SPAWN TX CREATE] id=%u spawnGen=%u epoch=%u reason=%s health=%d ownedWeapons=%zu\n",
-           player.id, player.spawnGeneration, player.transformEpoch,
-           isInitialSpawn ? "initial" : "respawn", player.health, player.ownedWeaponIds.size());
+    DBG(Network, "SPAWN TX CREATE id=%u spawnGen=%u epoch=%u reason=%s health=%d ownedWeapons=%zu",
+        player.id, player.spawnGeneration, player.transformEpoch,
+        isInitialSpawn ? "initial" : "respawn", player.health, player.ownedWeaponIds.size());
 }
 
 // ── Advance all reload timers — called once per server tick ─────────

@@ -2,6 +2,7 @@
 
 #include <cstdarg>
 #include "../config.h"
+#include "structured-log.h"
 
 namespace Debug
 {

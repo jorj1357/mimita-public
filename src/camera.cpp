@@ -10,6 +10,7 @@
 #include "physics/physics-types.h"
 #include "physics/movement/physics-collision.h"
 #include "world/world.h"
+#include "debug/structured-log.h"
 
 void Camera::updateMouse(double xpos, double ypos) {
     if (firstMouse) { lastX = xpos; lastY = ypos; firstMouse = false; }
@@ -119,7 +120,7 @@ glm::mat4 Camera::getProj(float width, float height) const {
     logTimer += 1.0f / 60.0f;
     if (logTimer >= 1.0f) {
         logTimer = 0.0f;
-        printf("[CAMERA] nearPlane=0.01 farPlane=5000.0 fov=%.0f\n", fov);
+        DBG(Camera, "nearPlane=0.01 farPlane=5000.0 fov=%.0f", fov);
     }
     if (!std::isfinite(width) || !std::isfinite(height) || width <= 0.0f || height <= 0.0f)
         return glm::mat4(1.0f);

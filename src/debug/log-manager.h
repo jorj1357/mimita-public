@@ -15,6 +15,7 @@ public:
 
     void write(const char* text, int len);
     void write(const char* text);
+    void writeConsole(const char* text, int len);
 
     void flush();
 

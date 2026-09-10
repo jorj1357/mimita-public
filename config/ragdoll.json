@@ -4,9 +4,9 @@
     "gravity_scale": 1.0,
     "linear_damping": 0.15,
     "angular_damping": 0.3,
-    "joint_stiffness": 2000.0,
-    "joint_damping": 80.0,
-    "world_collision": true,
+    "joint_stiffness": 2.0,
+    "joint_damping": 1.0,
+    "world_collision": false,
     "capsules": {
         "head":     { "radius": 0.15, "half_height": 0.12, "offset": [0, 0, 1.15] },
         "torso":    { "radius": 0.25, "half_height": 0.2,  "offset": [0, 0, 0.6] },

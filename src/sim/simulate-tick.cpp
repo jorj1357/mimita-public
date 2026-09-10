@@ -106,12 +106,14 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     // Resolve NPC vs Player collisions
     {
         MIMITA_PERF_SCOPE("NpcVsPlayerCollision");
-        for (auto& npc : sim.npcSystem->all())
-        {
-            bool groundedPlayer = false;
-            bool groundedNpc = false;
-            if (!sim.player->dead && !npc.body.dead)
-                resolveCapsuleVsCapsule(*sim.player, npc.body, groundedPlayer, groundedNpc);
+        if (!sim.player->ragdollModeActive) {
+            for (auto& npc : sim.npcSystem->all())
+            {
+                bool groundedPlayer = false;
+                bool groundedNpc = false;
+                if (!sim.player->dead && !npc.body.dead)
+                    resolveCapsuleVsCapsule(*sim.player, npc.body, groundedPlayer, groundedNpc);
+            }
         }
     }
 

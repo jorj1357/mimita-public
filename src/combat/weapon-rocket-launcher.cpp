@@ -198,7 +198,7 @@ void fire(
     unsigned int rng = (unsigned int)(runtime.shootEffectTimer * 1000.0f) + 1;
     glm::vec3 dir = WeaponFire::computeSpreadDirection(muzzleDir, def.spread, rng);
     Debug::warn(Debug::Category::Weapons,
-        "[AIM] Final Direction Used By Projectile: (%.4f, %.4f, %.4f)\n",
+        "[AIM] Final Direction Used By Projectile: (%.4f, %.4f, %.4f)",
         dir.x, dir.y, dir.z);
 
     float spawnAhead = 1.2f;

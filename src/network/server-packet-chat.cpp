@@ -15,6 +15,7 @@
 #include "void-death/void-death.h"
 #include "config/networking-config.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "map/map-catalog.h"
 #include "network/community-server-config.h"
 #include "npc/npc-difficulty-config.h"
@@ -295,6 +296,22 @@ void handleNpcDamageRequest(SOCKET sock, const char* buffer, int bytes,
         printf("%s [NET NPC KILL] shooter=%u npcId=%u name=\"%s\"\n",
                serverTimestamp(), req->header.playerId,
                target.entityId, target.name.c_str());
+        {
+            const ServerGamemodeState& gms = serverGamemodeState();
+            const auto shooterIt = players.find(req->header.playerId);
+            DBG(Network,
+                "KILL_EVENT_ENQUEUE type=PLAYER_KILLS_NPC killerPlayerId=%u killerName=\"%s\" "
+                "victimNpcId=%u victimNpcName=\"%s\" weaponId=\"%s\" weaponDisplay=\"%s\" "
+                "clientTick=%u serverCode=\"%s\" gamemode=\"%s\" matchMode=\"%s\" "
+                "phase=%d mapOnly=%d enabled=%d",
+                req->header.playerId,
+                shooterIt != players.end() ? shooterIt->second.name.c_str() : "unknown",
+                target.entityId, target.name.c_str(),
+                weaponId, weaponDisplayName.c_str(),
+                req->header.tick, getServerCoordinatorCode().c_str(),
+                gms.communityMode.c_str(), gms.matchMode.c_str(),
+                (int)gms.phase, (int)gms.mapOnly, (int)gms.enabled);
+        }
         // Heal the shooter to full health
         auto shooterIt = players.find(req->header.playerId);
         if (shooterIt != players.end())

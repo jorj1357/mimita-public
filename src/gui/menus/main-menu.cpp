@@ -26,6 +26,7 @@
 #include <filesystem>
 #include <shellapi.h>
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "world/texture-store.h"
 #include "vip/vip-name-render.h"
 
@@ -83,15 +84,15 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
             float iy = cover->y * scaleY;
             float iw = cover->w * scaleX;
             float ih = cover->h * scaleY;
-            printf("[MAIN MENU] cover rect=(%.0f,%.0f,%.0f,%.0f) fb=(%d,%d)\n", ix, iy, iw, ih, fbW, fbH);
+            DBG(Gui, "cover rect=(%.0f,%.0f,%.0f,%.0f) fb=(%d,%d)", ix, iy, iw, ih, fbW, fbH);
             // Draw bright red rect first to confirm UI rendering works here
             uiDrawRect({ix, iy, iw, ih}, {1.0f, 0.0f, 0.0f, 1.0f}, "cover-test");
             uiDrawImage(cover->backgroundImage.c_str(), {ix, iy, iw, ih});
             uiDrawRectOutline({ix, iy, iw, ih}, {0.0f, 1.0f, 0.0f, 1.0f}, "cover-bounds");
         } else {
-            printf("[MAIN MENU] cover missing: cover=%p visible=%d bg='%s'\n",
-                   (void*)cover, cover ? (int)cover->visible : -1,
-                   cover ? cover->backgroundImage.c_str() : "null");
+            DBG(Gui, "cover missing: cover=%p visible=%d bg='%s'",
+                (void*)cover, cover ? (int)cover->visible : -1,
+                cover ? cover->backgroundImage.c_str() : "null");
         }
     }
 

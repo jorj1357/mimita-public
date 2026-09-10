@@ -431,8 +431,8 @@ IceHostPendingRequest coordinatorIceHostPoll(const std::string& roomCode,
     uint64_t t0 = nowMs();
     if (!httpPostJsonInner(gCoordinatorUrl + "/api/coordinator/ice/host-poll", body, response, 5000, httpCode))
     {
-        printf("[ICE HOST POLL] code=%s status=%ld duration=%llums HTTP-FAIL\n",
-               roomCode.c_str(), httpCode, nowMs() - t0);
+        DBG(Network, "ICE HOST POLL code=%s status=%ld duration=%llums HTTP-FAIL",
+            roomCode.c_str(), httpCode, nowMs() - t0);
         return result;
     }
     try {
@@ -443,8 +443,8 @@ IceHostPendingRequest coordinatorIceHostPoll(const std::string& roomCode,
             result.clientSessionId = jsonStr(j, "client_session_id");
             result.clientIceDescription = jsonStr(j, "client_ice_description");
         }
-        printf("[ICE HOST POLL] code=%s players=%d hasRequest=%d duration=%llums status=%ld\n",
-               roomCode.c_str(), players, (int)result.hasRequest, nowMs() - t0, httpCode);
+        DBG(Network, "ICE HOST POLL code=%s players=%d hasRequest=%d duration=%llums status=%ld",
+            roomCode.c_str(), players, (int)result.hasRequest, nowMs() - t0, httpCode);
         if (result.hasRequest) {
             printf("[ICE HOST REQUEST] code=%s req=%s client=%s sdp=%s duration=%llums\n",
                    roomCode.c_str(), result.requestId.substr(0, 12).c_str(),
@@ -452,7 +452,7 @@ IceHostPendingRequest coordinatorIceHostPoll(const std::string& roomCode,
                    iceLogSdpSummary(result.clientIceDescription).c_str(), nowMs() - t0);
         }
     } catch (const std::exception& e) {
-        printf("[ICE HOST POLL] parse error: %s\n", e.what());
+        DBG(Network, "ICE HOST POLL parse error: %s", e.what());
     }
     return result;
 }
