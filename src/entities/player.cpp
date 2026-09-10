@@ -139,7 +139,7 @@ void Player::reset()
 void Player::syncLegacyStateToLayers()
 {
     origin.position = pos;
-    origin.rotation = yawRotation(yaw);
+    origin.rotation = modelRootRotationActive ? modelRootRotation : yawRotation(yaw);
 
     movementCapsule.position = origin.position;
     movementCapsule.rotation = origin.rotation;

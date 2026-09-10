@@ -394,6 +394,10 @@ public:
     bool networkDeathPresented = false;
     bool proceduralFrozen = false;
     bool ragdollModeActive = false;
+    // While ragdolled the model root must be the physical torso (full 3-axis
+    // orientation), not the yaw-only movement capsule. Ragdoll mode owns this.
+    bool modelRootRotationActive = false;
+    glm::quat modelRootRotation{1.0f, 0.0f, 0.0f, 0.0f};
     float respawnTimer = 0.0f;
     float spawnFlashTimer = 0.0f;
     glm::vec3 respawnPosition{1.0f, 5.0f, 60.0f};

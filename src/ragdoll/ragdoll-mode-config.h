@@ -6,8 +6,9 @@
 #include <glm/glm.hpp>
 
 struct RagdollModeCapsuleConfig {
-    float radius = 0.15f;
-    float halfHeight = 0.15f;
+    // Negative means "derive from the mesh collider bounds".
+    float radius = -1.0f;
+    float halfHeight = -1.0f;
     glm::vec3 offset{0.0f};
 };
 

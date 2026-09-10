@@ -26,27 +26,27 @@
         "rightLeg": 2.5
     },
     "capsules": {
-        "head":     { "radius": 0.15, "half_height": 0.12, "offset": [0, 0, 1.5] },
-        "torso":    { "radius": 0.25, "half_height": 0.2,  "offset": [0, 0, 0.6] },
-        "leftArm":  { "radius": 0.08, "half_height": 0.18, "offset": [0, 0.45, 1.0] },
-        "rightArm": { "radius": 0.08, "half_height": 0.18, "offset": [0, -0.45, 1.0] },
-        "leftLeg":  { "radius": 0.10, "half_height": 0.2,  "offset": [0, 0.2, -0.1] },
-        "rightLeg": { "radius": 0.10, "half_height": 0.2,  "offset": [0, -0.2, -0.1] }
+        "head":     {},
+        "torso":    {},
+        "leftArm":  {},
+        "rightArm": {},
+        "leftLeg":  {},
+        "rightLeg": {}
     },
     "attachments": {
-        "head":     { "parent": "torso", "offset": [0, 0, 0.55], "cone_limit_deg": 90 },
-        "leftArm":  { "parent": "torso", "offset": [0, 0.3, 0.4], "cone_limit_deg": 90,
-                      "rotation_limit_deg": { "x": [-80, 80], "y": [-80, 80], "z": [-60, 60] } },
-        "rightArm": { "parent": "torso", "offset": [0, -0.3, 0.4], "cone_limit_deg": 90,
-                      "rotation_limit_deg": { "x": [-80, 80], "y": [-80, 80], "z": [-60, 60] } },
-        "leftLeg":  { "parent": "torso", "offset": [0, 0.15, -0.4], "cone_limit_deg": 60,
+        "head":     { "parent": "torso", "offset": [0, 0, 0], "cone_limit_deg": 90 },
+        "leftArm":  { "parent": "torso", "offset": [0, 0, 0], "cone_limit_deg": 999,
+                      "rotation_limit_deg": { "x": [-180, 180], "y": [-180, 180], "z": [-180, 180] } },
+        "rightArm": { "parent": "torso", "offset": [0, 0, 0], "cone_limit_deg": 999,
+                      "rotation_limit_deg": { "x": [-180, 180], "y": [-180, 180], "z": [-180, 180] } },
+        "leftLeg":  { "parent": "torso", "offset": [0, 0, 0], "cone_limit_deg": 60,
                       "rotation_limit_deg": { "x": [-70, 70], "y": [-40, 40], "z": [-40, 40] } },
-        "rightLeg": { "parent": "torso", "offset": [0, -0.15, -0.4], "cone_limit_deg": 60,
+        "rightLeg": { "parent": "torso", "offset": [0, 0, 0], "cone_limit_deg": 60,
                       "rotation_limit_deg": { "x": [-70, 70], "y": [-40, 40], "z": [-40, 40] } }
     },
     "arms": {
-        "extend_strength": 40.0,
-        "extend_max_speed": 12.0
+        "extend_strength": 400.0,
+        "extend_max_speed": 120.0
     },
     "grab": {
         "left_key": "A",

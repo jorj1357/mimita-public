@@ -25,6 +25,11 @@ struct RagdollModePart {
     float coneLimitDeg = 90.0f;
     float restLength = 0.0f;
 
+    // Skeleton mapping: body-part node and its nearest skeleton ancestor that
+    // is also a body part (-1 = the model root).
+    int nodeIndex = -1;
+    int skeletonParentPart = -1;
+
     // Per-axis angular limits relative to the bind orientation.
     glm::quat bindRelativeRotation{1.0f, 0.0f, 0.0f, 0.0f};
     bool hasRotationLimits = false;
@@ -95,4 +100,13 @@ private:
     float mActivationTime = 0.0f;
     glm::vec3 mCameraSmoothPos{0.0f};
     bool mCameraSmoothInit = false;
+
+    // Skeleton nodes above the torso (e.g. plrOrigin) that must be neutralized
+    // so the physical torso frame is the model root while ragdolled.
+    std::vector<int> mRootAncestorNodes;
+    // player.pos expressed in the torso bind frame, so the authoritative root
+    // stays anchored to the body without drifting on repeated toggles.
+    glm::vec3 mRootOffsetLocal{0.0f};
+    bool mLeftArmExtending = false;
+    bool mRightArmExtending = false;
 };

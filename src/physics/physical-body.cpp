@@ -89,10 +89,11 @@ void closestSegmentSegment(const glm::vec3& p1, const glm::vec3& q1,
 
 Capsule capsuleOf(const RigidBody& body)
 {
+    glm::vec3 center = body.position + rotateVector(body.orientation, body.capsuleCenter);
     glm::vec3 axis = rotateVector(body.orientation, body.localAxis) * body.capsuleHalfHeight;
     Capsule cap;
-    cap.a = body.position - axis;
-    cap.b = body.position + axis;
+    cap.a = center - axis;
+    cap.b = center + axis;
     cap.r = body.capsuleRadius;
     return cap;
 }

@@ -31,6 +31,7 @@ struct RigidBody {
     float capsuleRadius = 0.15f;
     float capsuleHalfHeight = 0.15f;
     glm::vec3 localAxis{0.0f, 0.0f, 1.0f};
+    glm::vec3 capsuleCenter{0.0f};
 
     float linearDamping = 0.0f;
     float angularDamping = 0.0f;
