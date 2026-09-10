@@ -17,7 +17,7 @@
         "blood_interval_seconds": 0.18,
         "blood_enabled": true
     },
-    "debug_hitboxes_visible": true,
+    "debug_hitboxes_visible": false,
     "attachments_visible": true,
     "solver_iterations": 24,
     "max_fall_speed": 60.0,
