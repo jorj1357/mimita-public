@@ -17,7 +17,7 @@ namespace MimitaNet {
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // 30: ShotEvent/PelletBlastEvent become reliable (eventId+session+ACK) and
 // carry real damage/health; every bullet visual is guaranteed delivery.
-constexpr uint16_t PROTOCOL_VERSION = 33;
+constexpr uint16_t PROTOCOL_VERSION = 34;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -1109,6 +1109,9 @@ struct DuelStatePacket
     int32_t timeLimitSeconds = 0;      // match time limit
     int32_t intermissionSeconds = 0;   // intermission duration
     int32_t resultsSeconds = 0;        // results display duration
+    float goSeconds = 0.0f;            // GO! overlay duration; lets the client
+                                       // show GO even if the GO-phase packet is
+                                       // missed while loading
     // FFA top-3 leaderboard (for HUD rendering)
     uint32_t ffaLeaderIds[3] = {};
     int32_t ffaLeaderScores[3] = {};

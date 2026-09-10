@@ -688,36 +688,74 @@ void simulateSharedNpcs(SOCKET sock,
     adoptNewServerNpcs(npcs, npcSystem, npcIdsAlive);
     syncServerNpcDamageToNpc(npcs, npcSystem, npcIdsAlive);
 
-    // Each NPC targets its own nearest live player so range never blocks firing
-    // for NPCs far from a single shared target. Damage stays server-authoritative:
-    // an NPC's damage to its mirror is routed onto the real player it targeted.
+    // Each NPC targets its own nearest HOSTILE actor: live players and other
+    // NPCs. Unteamed modes (FFA/sandbox) make everyone hostile; TDM only enemies.
+    // Damage stays server-authoritative: an NPC's damage to its mirror is routed
+    // onto the real target, so NPCs behave exactly like players.
+    auto actorsAreHostile = [](int a, int b) {
+        if (a < 0 || b < 0) return true;  // no teams -> free for all
+        return a != b;
+    };
+    auto npcTeamOf = [&](const Npc& npc) -> int {
+        auto it = npcs.find(npc.id);
+        return it != npcs.end() ? it->second.matchTeam : npc.body.matchTeam;
+    };
+
     for (Npc& n : npcSystem.all())
     {
         if (n.body.dead || n.body.currentHp <= 0)
             continue;
 
-        ServerPlayer* nearest = nullptr;
+        const int myTeam = npcTeamOf(n);
+        ServerPlayer* nearestPlayer = nullptr;
+        Npc* nearestNpc = nullptr;
         float bestD2 = std::numeric_limits<float>::max();
+
         for (auto& kv : players)
         {
             ServerPlayer& p = kv.second;
             if (p.dead || p.connectionStale) continue;
+            if (!actorsAreHostile(myTeam, p.matchTeam)) continue;
             const glm::vec3 d = p.pos - n.body.pos;
             const float d2 = glm::dot(d, d);
-            if (d2 < bestD2) { bestD2 = d2; nearest = &p; }
+            if (d2 < bestD2) { bestD2 = d2; nearestPlayer = &p; nearestNpc = nullptr; }
+        }
+        for (Npc& other : npcSystem.all())
+        {
+            if (&other == &n) continue;
+            if (other.body.dead || other.body.currentHp <= 0) continue;
+            if (!actorsAreHostile(myTeam, npcTeamOf(other))) continue;
+            const glm::vec3 d = other.body.pos - n.body.pos;
+            const float d2 = glm::dot(d, d);
+            if (d2 < bestD2) { bestD2 = d2; nearestNpc = &other; nearestPlayer = nullptr; }
         }
 
-        if (nearest)
+        if (nearestPlayer)
         {
-            mirrorPlayer.pos = nearest->pos;
-            mirrorPlayer.vel = nearest->vel;
-            mirrorPlayer.yaw = nearest->yaw;
-            mirrorPlayer.currentHp = nearest->health;
-            mirrorPlayer.dead = nearest->dead;
+            mirrorPlayer.pos = nearestPlayer->pos;
+            mirrorPlayer.vel = nearestPlayer->vel;
+            mirrorPlayer.yaw = nearestPlayer->yaw;
+            mirrorPlayer.currentHp = nearestPlayer->health;
+            mirrorPlayer.dead = nearestPlayer->dead;
+            mirrorPlayer.username = nearestPlayer->name;
+            mirrorPlayer.matchTeam = nearestPlayer->matchTeam;
+        }
+        else if (nearestNpc)
+        {
+            const int targetHp = (npcs.find(nearestNpc->id) != npcs.end())
+                ? npcs.find(nearestNpc->id)->second.health
+                : nearestNpc->body.currentHp;
+            mirrorPlayer.pos = nearestNpc->body.pos;
+            mirrorPlayer.vel = nearestNpc->body.vel;
+            mirrorPlayer.yaw = nearestNpc->body.yaw;
+            mirrorPlayer.currentHp = targetHp;
+            mirrorPlayer.dead = nearestNpc->body.dead;
+            mirrorPlayer.username = nearestNpc->body.username;
+            mirrorPlayer.matchTeam = npcTeamOf(*nearestNpc);
         }
         else
         {
-            // No live player to target: still advance the NPC's physics so it
+            // No live hostile target: still advance the NPC's physics so it
             // falls from its spawn and stands on the floor instead of hovering
             // frozen in the air. A dead mirror means no targeting, no combat,
             // and no damage.
@@ -759,42 +797,44 @@ void simulateSharedNpcs(SOCKET sock,
             }
         }
 
-        if (nearest && hpBefore > mirrorPlayer.currentHp)
+        if ((nearestPlayer || nearestNpc) && hpBefore > mirrorPlayer.currentHp)
         {
             const int damage = hpBefore - mirrorPlayer.currentHp;
             // Forward the exact knockback processPlayerHit applied to the mirror
             // so NPC shots push the victim like a player's shot (also fixes the
             // client HP bar, which only applies confirmed HP when knockback exists).
             const glm::vec3 knockback = mirrorPlayer.externalImpulse;
-            ServerDamageResult result = applyServerDamage(
-                players, *nearest, 0, damage, knockback,
-                ServerDamageSource::Hitscan);
-            // Track NPC damage for kill attribution: if this NPC's damage
-            // brings the player to 0 HP on the next tick (or the player dies
-            // from self-damage shortly after), attribute the kill to this NPC.
-            nearest->lastNpcDamageSourceId = n.id;
-            nearest->lastNpcDamageTick = tick;
             const glm::vec3 realHit = n.lastShotEnd;
             const glm::vec3 realNormal = glm::length(n.lastShotNormal) > 0.001f
                 ? glm::normalize(n.lastShotNormal) : glm::vec3(0.0f, 0.0f, 1.0f);
             uint8_t hitWeapon = NETWORK_WEAPON_NONE;
             if (const WeaponDefinition* nwdef = WeaponRegistry::instance().get(n.body.equippedWeaponId))
                 hitWeapon = networkWeaponTypeForDefinition(*nwdef);
-            queueServerDamageConfirmedEvent(
-                sock, players, tick, totalPacketsOut, 0, *nearest, damage, result,
-                realHit, realNormal, knockback,
-                ServerDamageSource::Hitscan, hitWeapon, 0, 0, n.id,
-                n.body.equippedWeaponId);
-            npcLog("npc=%u weapon=%s damage=%d healthBefore=%d healthAfter=%d "
-                   "accepted=%d knockback=(%.2f %.2f %.2f)",
-                   n.id, n.body.equippedWeaponId.c_str(), damage, result.healthBefore,
-                   result.healthAfter, (int)result.applied,
-                   knockback.x, knockback.y, knockback.z);
+            const char* wId = networkWeaponTypeName(hitWeapon);
+            std::string wDisp = wId;
+            if (const WeaponDefinition* wd = WeaponRegistry::instance().get(wId))
+                if (!wd->displayName.empty()) wDisp = wd->displayName;
+
+            if (nearestPlayer)
             {
-                const char* wId = networkWeaponTypeName(hitWeapon);
-                std::string wDisp = wId;
-                if (const WeaponDefinition* wd = WeaponRegistry::instance().get(wId))
-                    if (!wd->displayName.empty()) wDisp = wd->displayName;
+                ServerDamageResult result = applyServerDamage(
+                    players, *nearestPlayer, 0, damage, knockback,
+                    ServerDamageSource::Hitscan);
+                // Track NPC damage for kill attribution: if this NPC's damage
+                // brings the player to 0 HP on the next tick (or the player dies
+                // from self-damage shortly after), attribute the kill to this NPC.
+                nearestPlayer->lastNpcDamageSourceId = n.id;
+                nearestPlayer->lastNpcDamageTick = tick;
+                queueServerDamageConfirmedEvent(
+                    sock, players, tick, totalPacketsOut, 0, *nearestPlayer, damage, result,
+                    realHit, realNormal, knockback,
+                    ServerDamageSource::Hitscan, hitWeapon, 0, 0, n.id,
+                    n.body.equippedWeaponId);
+                npcLog("npc=%u weapon=%s damage=%d healthBefore=%d healthAfter=%d "
+                       "accepted=%d knockback=(%.2f %.2f %.2f)",
+                       n.id, n.body.equippedWeaponId.c_str(), damage, result.healthBefore,
+                       result.healthAfter, (int)result.applied,
+                       knockback.x, knockback.y, knockback.z);
                 const ServerGamemodeState& gms = serverGamemodeState();
                 DBG(Network,
                     "SERVER_NPC_KILLS_PLAYER proc=server npcId=%u npcName=\"%s\" "
@@ -803,13 +843,46 @@ void simulateSharedNpcs(SOCKET sock,
                     "serverTick=%u serverCode=\"%s\" gamemode=\"%s\" matchMode=\"%s\" "
                     "phase=%d mapOnly=%d enabled=%d",
                     n.id, n.body.username.c_str(),
-                    nearest->id, nearest->name.c_str(),
+                    nearestPlayer->id, nearestPlayer->name.c_str(),
                     wId, wDisp.c_str(),
                     damage, result.healthBefore, result.healthAfter,
                     (int)result.killed, (int)result.applied,
                     tick, getServerCoordinatorCode().c_str(),
                     gms.communityMode.c_str(), gms.matchMode.c_str(),
                     (int)gms.phase, (int)gms.mapOnly, (int)gms.enabled);
+            }
+            else if (nearestNpc)
+            {
+                auto victimIt = npcs.find(nearestNpc->id);
+                if (victimIt != npcs.end() && victimIt->second.health > 0)
+                {
+                    ServerNpc& victim = victimIt->second;
+                    victim.health = std::max(0, victim.health - damage);
+                    victim.knockbackImpulse += knockback;
+                    nearestNpc->body.currentHp = victim.health;
+                    nearestNpc->body.killedByWeapon = wId;
+                    nearestNpc->body.lastDamagedBy = n.body.username;
+                    const bool killed = victim.health <= 0;
+                    if (killed)
+                    {
+                        victim.health = 0;
+                        nearestNpc->body.currentHp = 0;
+                        nearestNpc->body.dead = true;
+                        nearestNpc->body.respawnTimer = SERVER_NPC_RESPAWN_SECONDS;
+                        serverGamemodeRecordKill(sock, players, &npcs,
+                            n.id, ENTITY_NPC, nearestNpc->id, ENTITY_NPC,
+                            wId, wDisp, tick,
+                            n.body.pos, nearestNpc->body.pos, tick, totalPacketsOut);
+                    }
+                    DBG(Network,
+                        "SERVER_NPC_KILLS_NPC proc=server npcId=%u npcName=\"%s\" "
+                        "victimNpcId=%u victimName=\"%s\" weaponId=\"%s\" weaponDisplay=\"%s\" "
+                        "damage=%d victimHealth=%d killed=%d serverTick=%u",
+                        n.id, n.body.username.c_str(),
+                        nearestNpc->id, nearestNpc->body.username.c_str(),
+                        wId, wDisp.c_str(), damage, victim.health,
+                        (int)killed, tick);
+                }
             }
         }
     }

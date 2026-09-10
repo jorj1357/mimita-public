@@ -13,10 +13,12 @@
 #include <cmath>
 #include <vector>
 
+#include <glm/matrix.hpp>
 #include <glm/gtx/quaternion.hpp>
 
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-glb-sweep.h"
+#include "physics/movement/physics-collision-shared.h"
 #include "world/world.h"
 
 namespace {
@@ -161,23 +163,32 @@ void rotateBody(RigidBody& body, const glm::vec3& deltaTheta)
     }
 }
 
+// Full 3D inverse effective-mass operator at an offset point. With isotropic
+// inertia K = invMass*I + invI*(|r|^2*I - outer(r,r)).
+static glm::mat3 effectiveInverseMassMatrix(const RigidBody& body, const glm::vec3& r)
+{
+    glm::mat3 K(body.invMass);
+    if (body.invInertia <= 0.0f) return K;
+    float r2 = glm::dot(r, r);
+    glm::mat3 outer(
+        r.x * r.x, r.x * r.y, r.x * r.z,
+        r.y * r.x, r.y * r.y, r.y * r.z,
+        r.z * r.x, r.z * r.y, r.z * r.z);
+    return K + body.invInertia * (r2 * glm::mat3(1.0f) - outer);
+}
+
 void solvePointJointVelocity(RigidBody& a, const glm::vec3& anchorA,
                              RigidBody& b, const glm::vec3& anchorB)
 {
-    glm::vec3 err = anchorB - anchorA;
-    float len = glm::length(err);
-    if (len < 1e-6f) return;
-    glm::vec3 n = err / len;
-
     glm::vec3 rA = anchorA - a.position;
     glm::vec3 rB = anchorB - b.position;
     glm::vec3 vrel = pointVelocity(b, anchorB) - pointVelocity(a, anchorA);
 
-    float k = inverseMassAlong(a, rA, n) + inverseMassAlong(b, rB, n);
-    if (k < 1e-8f) return;
+    glm::mat3 K = effectiveInverseMassMatrix(a, rA)
+                + effectiveInverseMassMatrix(b, rB);
+    if (std::abs(glm::determinant(K)) < 1e-12f) return;
 
-    float j = -glm::dot(vrel, n) / k;
-    glm::vec3 P = n * j;
+    glm::vec3 P = -glm::inverse(K) * vrel;
     applyImpulseAtPoint(a, -P, anchorA);
     applyImpulseAtPoint(b, P, anchorB);
 }
@@ -204,6 +215,16 @@ void solvePointJointPosition(RigidBody& a, const glm::vec3& anchorA,
     rotateBody(b, -glm::cross(rB, P) * b.invInertia);
 }
 
+void solvePointToWorldVelocity(RigidBody& body, const glm::vec3& bodyAnchor)
+{
+    glm::vec3 r = bodyAnchor - body.position;
+    glm::vec3 v = pointVelocity(body, bodyAnchor);
+    glm::mat3 K = effectiveInverseMassMatrix(body, r);
+    if (std::abs(glm::determinant(K)) < 1e-12f) return;
+    glm::vec3 P = -glm::inverse(K) * v;
+    applyImpulseAtPoint(body, P, bodyAnchor);
+}
+
 void solvePointToWorld(RigidBody& body, const glm::vec3& bodyAnchor,
                        const glm::vec3& worldPoint, float beta)
 {
@@ -222,20 +243,88 @@ void solvePointToWorld(RigidBody& body, const glm::vec3& bodyAnchor,
     rotateBody(body, glm::cross(r, P) * body.invInertia);
 }
 
+namespace {
+
+// Removes the body's velocity into a contact normal and applies Coulomb
+// friction, both at the contact point so angular response is included.
+void resolveContactVelocity(RigidBody& body, const glm::vec3& point, const glm::vec3& normal)
+{
+    glm::vec3 r = point - body.position;
+    glm::vec3 v = pointVelocity(body, point);
+    float vn = glm::dot(v, normal);
+    if (vn >= 0.0f) return;
+
+    float k = inverseMassAlong(body, r, normal);
+    if (k < 1e-8f) return;
+    float jn = -(1.0f + body.restitution) * vn / k;
+    applyImpulseAtPoint(body, normal * jn, point);
+
+    glm::vec3 vt = v - normal * vn;
+    float vtLen = glm::length(vt);
+    if (vtLen > 1e-5f) {
+        glm::vec3 t = vt / vtLen;
+        float kt = inverseMassAlong(body, r, t);
+        if (kt > 1e-8f) {
+            float jt = glm::clamp(-vtLen / kt, -body.friction * jn, body.friction * jn);
+            applyImpulseAtPoint(body, t * jt, point);
+        }
+    }
+}
+
+// Resolves every current capsule/triangle overlap using the shared recovery
+// contact collector and batched correction solver. This handles bodies that
+// start a tick already penetrating, which the swept phase cannot detect.
+bool depenetrateStatic(RigidBody& body, const World& world, int passes)
+{
+    bool any = false;
+    static thread_local std::vector<int> candidates;
+
+    for (int pass = 0; pass < passes; ++pass) {
+        Capsule cap = capsuleOf(body);
+        AABB bounds;
+        bounds.min = glm::min(cap.a, cap.b) - glm::vec3(cap.r + 0.25f);
+        bounds.max = glm::max(cap.a, cap.b) + glm::vec3(cap.r + 0.25f);
+
+        candidates.clear();
+        appendChunkTrianglesForAABB(world, bounds, 0.1f, candidates,
+                                    "ragdollModePhysicsCollision");
+        std::vector<RecoveryContact> contacts =
+            collectCapsuleRecoveryContacts(world, cap, candidates,
+                                           "ragdollModePhysicsCollision");
+        if (contacts.empty()) break;
+
+        any = true;
+        body.position += solveBatchedCorrection(contacts, 0.0f);
+        for (const RecoveryContact& c : contacts)
+            resolveContactVelocity(body, c.point, c.normal);
+    }
+    return any;
+}
+
+} // namespace
+
+bool depenetrateWorld(RigidBody& body, const World& world, int passes)
+{
+    if (body.staticBody) return false;
+    if (world.collisionMesh.triangles.empty()) return false;
+    return depenetrateStatic(body, world, passes);
+}
+
 bool collideWithWorld(RigidBody& body, const World& world, float dt)
 {
     if (body.staticBody) return false;
     if (world.collisionMesh.triangles.empty()) return false;
 
-    bool contacted = false;
+    // 1. Resolve any overlap the body started the tick with.
+    bool contacted = depenetrateStatic(body, world, 3);
 
+    // 2. Swept, substepped motion so fast parts cannot tunnel.
     float speed = glm::length(body.linearVelocity);
-    float maxStep = std::max(body.capsuleRadius * 0.5f, 0.08f);
-    int steps = std::max(1, std::min(8, (int)std::ceil(speed * dt / maxStep)));
+    float maxStep = std::max(body.capsuleRadius * 0.4f, 0.05f);
+    int steps = std::max(1, std::min(16, (int)std::ceil(speed * dt / maxStep)));
     glm::vec3 stepMove = body.linearVelocity * (dt / (float)steps);
 
     static thread_local std::vector<int> candidates;
-    candidates.clear();
 
     for (int s = 0; s < steps; ++s) {
         Capsule cap = capsuleOf(body);
@@ -273,43 +362,16 @@ bool collideWithWorld(RigidBody& body, const World& world, float dt)
 
         if (bestIdx >= 0 && bestT <= 1.0f) {
             body.position += stepMove * bestT;
-            cap = capsuleOf(body);
-
-            const CollisionTriangle& tri = world.collisionMesh.triangles[bestIdx];
-            Contact contact;
-            if (capsuleTriangleContact(cap, tri, bestIdx, contact) && contact.penetration > 0.0f) {
-                body.position += contact.normal * contact.penetration;
-                bestNormal = contact.normal;
-                bestPoint = contact.point;
-            }
-
-            glm::vec3 r = bestPoint - body.position;
-            glm::vec3 v = pointVelocity(body, bestPoint);
-            float vn = glm::dot(v, bestNormal);
-            if (vn < 0.0f) {
-                float k = inverseMassAlong(body, r, bestNormal);
-                if (k > 1e-8f) {
-                    float jn = -(1.0f + body.restitution) * vn / k;
-                    glm::vec3 P = bestNormal * jn;
-                    applyImpulseAtPoint(body, P, bestPoint);
-
-                    glm::vec3 vt = v - bestNormal * vn;
-                    float vtLen = glm::length(vt);
-                    if (vtLen > 1e-5f) {
-                        glm::vec3 t = vt / vtLen;
-                        float kt = inverseMassAlong(body, r, t);
-                        if (kt > 1e-8f) {
-                            float jt = glm::clamp(-vtLen / kt, -body.friction * jn, body.friction * jn);
-                            applyImpulseAtPoint(body, t * jt, bestPoint);
-                        }
-                    }
-                }
-            }
+            resolveContactVelocity(body, bestPoint, bestNormal);
+            depenetrateStatic(body, world, 2);
             contacted = true;
         } else {
             body.position += stepMove;
         }
     }
+
+    // 3. Final overlap cleanup in case constraints or the sweep left any.
+    if (depenetrateStatic(body, world, 2)) contacted = true;
 
     return contacted;
 }

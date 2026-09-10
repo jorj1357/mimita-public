@@ -726,6 +726,14 @@ void explodeProjectile(SOCKET sock,
         ? ServerDamageSource::GrenadeExplosion
         : ServerDamageSource::RocketExplosion;
 
+    // The authoritative owner: a player or an NPC. NPC-fired rockets carry
+    // ownerPlayerId=0 and ownerNpcId set, so all attribution must use this
+    // resolved owner rather than ownerPlayerId alone.
+    const uint32_t ownerId = projectile.ownerNpcId != 0
+        ? projectile.ownerNpcId : projectile.ownerPlayerId;
+    const uint8_t ownerKind = projectile.ownerNpcId != 0
+        ? ENTITY_NPC : ENTITY_PLAYER;
+
     for (auto& entry : players)
     {
         ServerPlayer& victim = entry.second;
@@ -799,11 +807,19 @@ void explodeProjectile(SOCKET sock,
                 packet.eventId, projectile.ownerPlayerId, tick,
                 lifecycle, position, glm::length(knockback));
             victim.movement.contactHistory.recordStable(contact);
+            // NPC-owned splash counts as recent NPC damage so a later ownerless
+            // or self-inflicted killing blow is still attributed to the NPC.
+            if (projectile.ownerNpcId != 0)
+            {
+                victim.lastNpcDamageSourceId = projectile.ownerNpcId;
+                victim.lastNpcDamageTick = tick;
+            }
         }
         queueServerDamageConfirmedEvent(
             sock, players, tick, totalPacketsOut, projectile.ownerPlayerId, victim,
             finalDamage, damage, center, dir, knockback, source,
-            projectile.weaponType, projectile.fireSerial, projectile.id);
+            projectile.weaponType, projectile.fireSerial, projectile.id,
+            projectile.ownerNpcId, std::string());
 
         if (packet.victimCount < MAX_PROJECTILE_DAMAGE_RESULTS && damage.applied)
         {
@@ -880,10 +896,10 @@ void explodeProjectile(SOCKET sock,
             if (const WeaponDefinition* wd = WeaponRegistry::instance().get(killWeaponId))
                 if (!wd->displayName.empty()) killWeaponDisplay = wd->displayName;
             glm::vec3 killerPos = position;
-            auto killerIt = players.find(projectile.ownerPlayerId);
+            auto killerIt = players.find(ownerId);
             if (killerIt != players.end()) killerPos = killerIt->second.pos;
             serverGamemodeRecordKill(sock, players, &npcs,
-                projectile.ownerPlayerId, ENTITY_PLAYER,
+                ownerId, ownerKind,
                 npc.entityId, ENTITY_NPC,
                 killWeaponId, killWeaponDisplay, projectile.fireSerial,
                 killerPos, npc.pos, tick, totalPacketsOut);

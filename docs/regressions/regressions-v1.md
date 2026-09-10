@@ -37,6 +37,55 @@ Whats this
 
 newest at top 9 3 2026
 
+2026-09-10T16:43:40Z — NPC rocket kills credited nobody, and GO was skipped on the first round after joining
+
+1. Issue: NPCs never scored or logged a killfeed line, and `GO!!!` only appeared
+   on the second FFA round, not the first countdown after joining.
+   1. Expected behavior: an NPC killing a player (or another NPC) awards one
+      point to the NPC and produces one killfeed/chat line such as
+      `NPC-1000 killed NPC-1001 with Rocket Launcher`; `GO!!!` shows on every
+      countdown, including the first.
+   2. Actual behavior: the NPC's rocket killed the player, but the
+      `DamageConfirmedEventPacket` carried `attacker=0` and no gamemode kill
+      event was queued; the score stayed 0. The first countdown showed `3,2,1`,
+      then stuck on `1`, then ACTIVE with no GO.
+   3. Date and time first observed: 2026-09-10 12:25 EDT (NPC) and 2026-09-10
+      12:25 EDT (GO).
+   4. Why the bad behavior happened (cause): the projectile explosion path in
+      `server-projectiles.cpp` used `projectile.ownerPlayerId` for attribution,
+      but NPC-fired rockets have `ownerPlayerId=0` and store the NPC in
+      `ownerNpcId`; `queueServerDamageConfirmedEvent` was called without
+      `attackerNpcId`, so the kill owner was lost. Separately, `GO` was gated on
+      the client applying the short `DUEL_PHASE_GO` packet. On the first join the
+      client is busy loading and missed it: `Network_log_121030.txt` shows
+      `phase=1` count 1, `phase=7` count 0, `phase=2` count 255, with
+      `stateVersion` jumping 5→7. The countdown numbers survived because they are
+      computed from `matchStartTick`/`serverTick`, but GO was phase-driven.
+   5. Wrong code (examples):
+      1. `src/network/server-projectiles.cpp`:
+         `applyServerDamage(players, victim, projectile.ownerPlayerId, ...)` and
+         `queueServerDamageConfirmedEvent(... projectile.id)` with no
+         `attackerNpcId`.
+      2. `src/network/server-damage.cpp`: re-attribution required
+         `effectiveAttackerPlayerId != 0`, so ownerless/self killing blows could
+         not be credited to a recent NPC attacker.
+      3. `src/network/community-match-client.cpp`: GO visibility depended on the
+         GO-phase packet, not on authoritative time.
+   6. What fixed it:
+      1. Resolve the projectile owner once (`ownerNpcId ? ownerNpcId :
+         ownerPlayerId`) and pass it through both splash loops; credit NPC kills.
+      2. Allow re-attribution when there is no real player attacker.
+      3. NPC target selection now includes other NPCs (respecting teams) and
+         routes victim damage/credit to the `ServerNpc`.
+      4. Add `DuelStatePacket.goSeconds`; the client shows `GO!!!` for that
+         window starting at the first ACTIVE when no GO packet was seen.
+   7. Proof: `python build_agent.py` -> `BUILD SUCCESS`, return code 0. Source
+      trace: `serverGamemodeRecordKill` is now reached from the rocket path with
+      the NPC as killer, and `goVisible()` is time-driven in
+      `community-match-client.cpp`. Runtime two-client/NPC acceptance remains.
+   8. Related changelog:
+      `docs/changelog/2026-09-10/20260910_164340-npc-kill-attribution-go.md`.
+
 2026-09-10T15:52:52Z — FFA player→NPC kills gave no score and duplicated NPC-kill code hid the authoritative kill owner
 
 1. Issue: In FFA and TDM, killing an NPC produced no score for the player and no

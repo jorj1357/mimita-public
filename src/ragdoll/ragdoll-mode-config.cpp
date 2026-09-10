@@ -118,6 +118,20 @@ bool RagdollModeConfig::load(const std::string& path)
                 ac.parent = a.value("parent", "torso");
                 ac.offset = readJsonVec3(a, "offset", ac.offset);
                 ac.coneLimitDeg = a.value("cone_limit_deg", 90.0f);
+
+                if (a.contains("rotation_limit_deg")) {
+                    const auto& rl = a["rotation_limit_deg"];
+                    auto readAxis = [&](const char* key, float& mn, float& mx) {
+                        if (rl.contains(key) && rl[key].is_array() && rl[key].size() >= 2) {
+                            mn = rl[key][0].get<float>();
+                            mx = rl[key][1].get<float>();
+                        }
+                    };
+                    readAxis("x", ac.rotMinDeg.x, ac.rotMaxDeg.x);
+                    readAxis("y", ac.rotMinDeg.y, ac.rotMaxDeg.y);
+                    readAxis("z", ac.rotMinDeg.z, ac.rotMaxDeg.z);
+                    ac.hasRotationLimits = true;
+                }
                 next.attachments[it.key()] = ac;
             }
         }
@@ -136,6 +150,13 @@ bool RagdollModeConfig::load(const std::string& path)
             next.grabGraceDistance = g.value("grace_distance", next.grabGraceDistance);
         }
 
+        // Arms
+        if (root.contains("arms")) {
+            const auto& ar = root["arms"];
+            next.armExtendStrength = ar.value("extend_strength", next.armExtendStrength);
+            next.armExtendMaxSpeed = ar.value("extend_max_speed", next.armExtendMaxSpeed);
+        }
+
         // Weapon
         if (root.contains("weapon")) {
             const auto& w = root["weapon"];
@@ -148,7 +169,9 @@ bool RagdollModeConfig::load(const std::string& path)
             const auto& cam = root["camera"];
             next.cameraMode = cam.value("mode", "locked_to_head");
             next.cameraSmoothFactor = cam.value("smooth_factor", 0.0f);
+            next.thirdPersonAllowed = cam.value("third_person_allowed", next.thirdPersonAllowed);
         }
+        next.thirdPersonAllowed = root.value("third_person_allowed", next.thirdPersonAllowed);
 
         next.torsoLookSpring = root.value("torso_look_spring", 8.0f);
         next.torsoMaxAngularStep = root.value("torso_max_angular_step", 15.0f);

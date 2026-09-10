@@ -24,6 +24,12 @@ struct RagdollModePart {
     glm::vec3 restDirectionLocal{0.0f};
     float coneLimitDeg = 90.0f;
     float restLength = 0.0f;
+
+    // Per-axis angular limits relative to the bind orientation.
+    glm::quat bindRelativeRotation{1.0f, 0.0f, 0.0f, 0.0f};
+    bool hasRotationLimits = false;
+    glm::vec3 rotMinDeg{-180.0f, -180.0f, -180.0f};
+    glm::vec3 rotMaxDeg{ 180.0f,  180.0f,  180.0f};
 };
 
 struct RagdollGrabState {
@@ -68,9 +74,10 @@ private:
     void applyControls(float dt, const InputState& input, const Camera& camera);
     void solveJoints(int iterations, bool positionPass);
     void solveConeLimits();
+    void solveRotationLimits();
     void solveGrabs(int iterations);
     void processGrab(const InputState& input, const Camera& camera, const World& world);
-    void processExtend(const InputState& input, const Camera& camera);
+    void processExtend(const InputState& input, const Camera& camera, float dt);
     void selfCollision();
     void syncToPlayer(Player& player);
 

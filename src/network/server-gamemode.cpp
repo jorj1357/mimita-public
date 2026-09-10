@@ -408,6 +408,7 @@ void broadcastDuelState(SOCKET sock,
     pkt.timeLimitSeconds = d.timeLimitSeconds;
     pkt.intermissionSeconds = (int32_t)d.intermissionSeconds;
     pkt.resultsSeconds = (int32_t)d.resultsSeconds;
+    pkt.goSeconds = d.goSeconds;
 
     // ── Gamemode visual overrides ──────────────────────────────────
     pkt.cameraFov = d.cameraFov;

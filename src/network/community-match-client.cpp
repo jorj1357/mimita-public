@@ -58,6 +58,7 @@ void CommunityMatchClient::reset()
     mServerTick = 0;
     mServerTickAnchorMs = 0;
     mGoVisibleUntilTick = 0;
+    mSawGoThisMatch = false;
     mTimeLimitSeconds = 0;
     mGoal = 0;
     mRedScore = 0;
@@ -93,6 +94,8 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         if (packet.stateVersion == mStateVersion && packet.serverTick < mServerTick) return;
     }
 
+    const uint8_t prevPhase = mPhase;
+
     mMatchId = packet.duelId;
     mStateVersion = packet.stateVersion;
     mMode = packet.matchMode;
@@ -108,10 +111,25 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         const uint32_t goTicks = packet.phaseTimer > 0.0f
             ? (uint32_t)(packet.phaseTimer * 60.0f) : 60u;
         mGoVisibleUntilTick = packet.serverTick + goTicks;
+        mSawGoThisMatch = true;
     }
-    else if (packet.phase != DUEL_PHASE_ACTIVE)
+    else if (packet.phase == DUEL_PHASE_ACTIVE)
+    {
+        // First round after a join: the client is busy loading and can miss the
+        // short GO phase entirely. When ACTIVE starts the match without a GO
+        // packet seen, hold GO! for the configured window so it always shows.
+        if (!mSawGoThisMatch &&
+            (prevPhase == DUEL_PHASE_COUNTDOWN || prevPhase == DUEL_PHASE_GO))
+        {
+            const uint32_t goTicks = packet.goSeconds > 0.0f
+                ? (uint32_t)(packet.goSeconds * 60.0f) : 60u;
+            mGoVisibleUntilTick = packet.serverTick + goTicks;
+        }
+    }
+    else
     {
         mGoVisibleUntilTick = 0;
+        mSawGoThisMatch = false;
     }
     mTimeLimitSeconds = packet.timeLimitSeconds;
     mGoal = packet.goalValue;

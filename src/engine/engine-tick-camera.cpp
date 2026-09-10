@@ -36,6 +36,7 @@
 #include "combat/weapon-rocket-launcher.h"
 #include "combat/weapon-runtime.h"
 #include "ragdoll/ragdoll-mode.h"
+#include "ragdoll/ragdoll-mode-config.h"
 
 extern DuelManager gDuelManager;
 
@@ -910,8 +911,23 @@ void engineTickCamera(Engine& engine, float dt)
         camera.follow(gDuelManager.winnerCameraTarget(), camCfg.offset, camCfg.positionStiffness);
         camera.smoothCollision(gDuelManager.winnerCameraTarget(), world, dt, camCfg.positionStiffness, camCfg.stiffnessEnabled, camCfg.collisionEnabled, camCfg.collisionPushEnabled, camCfg.collisionPushback);
     } else if (player.ragdollModeActive && RagdollModeSystem::instance().isActive()) {
-        // Ragdoll mode: camera sits at the head, with smoothing from ragdoll.json.
-        camera.pos = RagdollModeSystem::instance().computeCameraPosition(dt);
+        const auto& rcfg = RagdollModeConfig::instance().data();
+        // If ragdoll third person is not allowed, force first person.
+        if (!rcfg.thirdPersonAllowed && camera.thirdPerson)
+            camera.thirdPerson = false;
+
+        if (camera.thirdPerson) {
+            // Keep the player's existing third-person view while ragdolled.
+            auto& camCfg = CamConfig::instance().data();
+            camera.fov = camCfg.fov;
+            camera.follow(player.pos, camCfg.offset, camCfg.positionStiffness);
+            camera.smoothCollision(player.pos, world, dt, camCfg.positionStiffness,
+                camCfg.stiffnessEnabled, camCfg.collisionEnabled,
+                camCfg.collisionPushEnabled, camCfg.collisionPushback);
+        } else {
+            // First person: camera sits at the head, with smoothing from ragdoll.json.
+            camera.pos = RagdollModeSystem::instance().computeCameraPosition(dt);
+        }
     } else if (!camera.thirdPerson) {
         // First-person camera at eye height
         float eyeHeight = PLAYER_HEIGHT * 0.52f;

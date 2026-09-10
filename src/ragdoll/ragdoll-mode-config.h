@@ -15,6 +15,11 @@ struct RagdollModeAttachmentConfig {
     std::string parent;
     glm::vec3 offset{0.0f};
     float coneLimitDeg = 90.0f;
+
+    // Optional per-axis rotation limits in the parent's local frame.
+    bool hasRotationLimits = false;
+    glm::vec3 rotMinDeg{-180.0f, -180.0f, -180.0f};
+    glm::vec3 rotMaxDeg{ 180.0f,  180.0f,  180.0f};
 };
 
 struct RagdollModeConfigData {
@@ -28,7 +33,7 @@ struct RagdollModeConfigData {
     bool worldCollision = true;
 
     // Rigid-body solver
-    int solverIterations = 8;
+    int solverIterations = 24;
     float maxFallSpeed = 60.0f;
     float restitution = 0.0f;
     float friction = 0.5f;
@@ -54,6 +59,10 @@ struct RagdollModeConfigData {
     float grabCompliance = 0.02f;
     float grabGraceDistance = 0.5f;
 
+    // Arms
+    float armExtendStrength = 40.0f;
+    float armExtendMaxSpeed = 12.0f;
+
     // Weapon
     bool oneHandedWeaponEnabled = true;
     std::string weaponHand = "right";
@@ -61,6 +70,7 @@ struct RagdollModeConfigData {
     // Camera
     std::string cameraMode = "locked_to_head";
     float cameraSmoothFactor = 0.0f;
+    bool thirdPersonAllowed = true;
 
     // Torso look direction
     float torsoLookSpring = 8.0f;

@@ -64,6 +64,7 @@ private:
     uint32_t mServerTick = 0;
     uint64_t mServerTickAnchorMs = 0;  // client steady-clock ms when mServerTick was received
     uint32_t mGoVisibleUntilTick = 0;  // server tick at which the GO! window ends
+    bool mSawGoThisMatch = false;      // true once a GO-phase packet was applied
     int mTimeLimitSeconds = 0;
     int mGoal = 0;
     int mRedScore = 0;

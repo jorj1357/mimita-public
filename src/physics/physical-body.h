@@ -73,9 +73,17 @@ void solvePointJointPosition(RigidBody& a, const glm::vec3& anchorA,
                              RigidBody& b, const glm::vec3& anchorB,
                              float beta);
 
+// Cancels the body's velocity at a fixed world point (grab / static
+// attachment). This is what keeps a hanging grab from accumulating gravity.
+void solvePointToWorldVelocity(RigidBody& body, const glm::vec3& bodyAnchor);
+
 // Projects a body point onto a fixed world point (grab / static attachment).
 void solvePointToWorld(RigidBody& body, const glm::vec3& bodyAnchor,
                        const glm::vec3& worldPoint, float beta);
+
+// Position-only overlap recovery against the world (no velocity integration).
+// Used as a final solidity pass after constraints.
+bool depenetrateWorld(RigidBody& body, const World& world, int passes);
 
 // Swept, substepped world collision. Returns true when a contact occurred.
 bool collideWithWorld(RigidBody& body, const World& world, float dt);

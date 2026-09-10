@@ -289,11 +289,13 @@ ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
     if (result.killed)
     {
         // NPC damage attribution: if the victim was recently damaged by an NPC,
-        // attribute the kill to the NPC even if the final blow came from
-        // self-damage (e.g. rocket splash). 120 ticks = 2 seconds window.
+        // attribute the kill to the NPC even if the final blow was ownerless or
+        // self-inflicted (e.g. rocket splash). 120 ticks = 2 seconds window.
         uint32_t effectiveAttackerNpcId = attackerNpcId;
         uint32_t effectiveAttackerPlayerId = attackerPlayerId;
-        if (effectiveAttackerNpcId == 0 && effectiveAttackerPlayerId != 0 &&
+        const bool hasRealPlayerAttacker =
+            effectiveAttackerPlayerId != 0 && effectiveAttackerPlayerId != target.id;
+        if (effectiveAttackerNpcId == 0 && !hasRealPlayerAttacker &&
             target.lastNpcDamageSourceId != 0 &&
             (tick - target.lastNpcDamageTick) <= 120)
         {
