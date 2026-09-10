@@ -1155,6 +1155,8 @@ void serverGamemodeTick(SOCKET sock,
                     }
                 } else if (d.communityMode == "free_for_all") {
                     const int score = ++d.communityScores[killer];
+                    // Sync to ffaKills so broadcastDuelState leaderboard renders correctly
+                    d.ffaKills[killer] = score;
                     if (score >= 20) {
                         d.communityRoundOver = true;
                         const auto winner = players.find(killer);
@@ -1163,6 +1165,7 @@ void serverGamemodeTick(SOCKET sock,
                         broadcastCommunityNotification(sock, players, message, 300, totalPacketsOut);
                         d.communityRoundResetMs = now + 5000;
                     }
+                    broadcastDuelState(sock, d, players, totalPacketsOut);
                 }
             }
         }

@@ -1143,7 +1143,8 @@ ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
     uint8_t weapon,
     uint32_t causeSerial = 0,
     uint32_t projectileId = 0,
-    uint32_t attackerNpcId = 0);
+    uint32_t attackerNpcId = 0,
+    const std::string& weaponDefId = "");
 
 // ─── HostedRoomSession — single canonical room for one host action ─────────
 

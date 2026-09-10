@@ -263,7 +263,8 @@ static void flushEpisode(SOCKET sock,
         episode.pendingConfirmationDamage, confirmed,
         episode.lastHitPosition, episode.lastNormal, episode.accumulatedKnockback,
         ServerDamageSource::PhysicalContact,
-        networkWeaponTypeForDefinition(def), episode.contactSerial);
+        networkWeaponTypeForDefinition(def), episode.contactSerial,
+        0, 0, def.id);
 
     episode.pendingConfirmationDamage = 0;
     episode.pendingHealthBefore = 0;

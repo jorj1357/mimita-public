@@ -783,7 +783,8 @@ void simulateSharedNpcs(SOCKET sock,
             queueServerDamageConfirmedEvent(
                 sock, players, tick, totalPacketsOut, 0, *nearest, damage, result,
                 realHit, realNormal, knockback,
-                ServerDamageSource::Hitscan, hitWeapon, 0, 0, n.id);
+                ServerDamageSource::Hitscan, hitWeapon, 0, 0, n.id,
+                n.body.equippedWeaponId);
             npcLog("npc=%u weapon=%s damage=%d healthBefore=%d healthAfter=%d "
                    "accepted=%d knockback=(%.2f %.2f %.2f)",
                    n.id, n.body.equippedWeaponId.c_str(), damage, result.healthBefore,

@@ -1173,22 +1173,27 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
                         attackerName = npcIt->second.username;
 
                     std::string weaponDisplay = "unknown";
-                    const char* weaponId = networkWeaponTypeName(event->weapon);
-                    if (const WeaponDefinition* wdef = WeaponRegistry::instance().get(weaponId))
-                        if (!wdef->displayName.empty())
-                            weaponDisplay = wdef->displayName;
+                    if (event->weaponDefNetworkId != 0)
+                        weaponDisplay = weaponDisplayName(event->weaponDefNetworkId);
+                    else
+                    {
+                        const char* weaponId = networkWeaponTypeName(event->weapon);
+                        if (const WeaponDefinition* wdef = WeaponRegistry::instance().get(weaponId))
+                            if (!wdef->displayName.empty())
+                                weaponDisplay = wdef->displayName;
+                    }
 
                     std::string victimName = gpPlayer->username.empty()
                         ? "player_" + std::to_string(ctx.localPlayerId) : gpPlayer->username;
 
                     DBG(Network,
                         "CLIENT_NPC_KILLS_PLAYER proc=client npcId=%u npcName=\"%s\" "
-                        "playerId=%u playerName=\"%s\" weaponId=\"%s\" weaponDisplay=\"%s\" "
+                        "playerId=%u playerName=\"%s\" weaponDefNetId=%u weaponDisplay=\"%s\" "
                         "serverTick=%u clientTick=%u latestServerTick=%u "
                         "spawnGen=%u localGen=%u healthAfter=%d",
                         attackerId, attackerName.c_str(),
                         ctx.localPlayerId, victimName.c_str(),
-                        weaponId, weaponDisplay.c_str(),
+                        event->weaponDefNetworkId, weaponDisplay.c_str(),
                         event->header.tick, ctx.tick, ctx.latestServerTick,
                         event->targetSpawnGeneration, ctx.lastKnownSpawnGeneration,
                         event->healthAfter);
@@ -1234,6 +1239,44 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
     }
 
     presentConfirmedDamage(ctx, *event, sink);
+
+    // Universal killfeed: ALL clients see NPC kills, not just the victim.
+    // This ensures observers, other players, and the victim all see the same
+    // killfeed entry when an NPC delivers a killing blow.
+    if (event->killed && event->attackerEntityType == ENTITY_NPC &&
+        event->targetPlayerId != ctx.localPlayerId)
+    {
+        const uint32_t attackerId = event->attackerPlayerId;
+        std::string attackerName = "NPC-" + std::to_string(attackerId);
+        auto npcIt = ctx.remoteNpcs.find(attackerId);
+        if (npcIt != ctx.remoteNpcs.end() && !npcIt->second.username.empty())
+            attackerName = npcIt->second.username;
+
+        std::string weaponDisplay = "unknown";
+        if (event->weaponDefNetworkId != 0)
+            weaponDisplay = weaponDisplayName(event->weaponDefNetworkId);
+        else
+        {
+            const char* wId = networkWeaponTypeName(event->weapon);
+            if (const WeaponDefinition* wdef = WeaponRegistry::instance().get(wId))
+                if (!wdef->displayName.empty())
+                    weaponDisplay = wdef->displayName;
+        }
+
+        std::string victimName = "player_" + std::to_string(event->targetPlayerId);
+        auto victimIt = ctx.playerRegistry.find(event->targetPlayerId);
+        if (victimIt != ctx.playerRegistry.end())
+            victimName = victimIt->second.name;
+
+        KillfeedManager::instance().onKill(
+            attackerName, victimName, weaponDisplay, false, event->header.tick);
+
+        DBG(Network,
+            "CLIENT_OBSERVER_KILLFEED type=NPC_KILLS_PLAYER killer=\"%s\" victim=\"%s\" weapon=\"%s\" "
+            "observerId=%u serverTick=%u",
+            attackerName.c_str(), victimName.c_str(), weaponDisplay.c_str(),
+            ctx.localPlayerId, event->header.tick);
+    }
 
     const glm::vec3 knockback(event->knockX, event->knockY, event->knockZ);
     const bool isLocalVictim = (event->targetPlayerId == ctx.localPlayerId);

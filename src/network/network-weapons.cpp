@@ -11,10 +11,12 @@
 #include "network/network-weapons.h"
 
 #include "combat/weapon-types.h"
+#include "combat/weapon-registry.h"
 #include "network/packets.h"
 
 namespace MimitaNet {
 
+// DEPRECATED: Do not use for new code. Use weaponDefNetworkIdFor() + WeaponRegistry instead.
 uint8_t networkWeaponTypeForDefinition(const WeaponDefinition& definition)
 {
     if (definition.id == "revolver" ||
@@ -93,6 +95,17 @@ const std::string* weaponIdForDefNetworkId(uint16_t networkId)
         if (kv.second == networkId)
             return &kv.first;
     return nullptr;
+}
+
+const char* weaponDisplayName(uint16_t defNetworkId)
+{
+    if (defNetworkId == 0) return "unknown";
+    const std::string* id = weaponIdForDefNetworkId(defNetworkId);
+    if (!id) return "unknown";
+    if (const WeaponDefinition* def = WeaponRegistry::instance().get(*id))
+        if (!def->displayName.empty())
+            return def->displayName.c_str();
+    return id->c_str();
 }
 
 int slotForNetworkWeaponType(uint8_t type)

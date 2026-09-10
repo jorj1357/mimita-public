@@ -20,9 +20,11 @@ void DuelManager::beginFight(Player& player, NpcSystem& npcs, World& world)
         for (int i = 0; i < config.numNpcs; ++i) {
             glm::vec3 spawnPos = getTeamSpawn(DuelTeam::NPC, i, config.numNpcs);
             uint32_t id = npcs.nextNpcId();
-            npcs.spawnNpc(id, config.npcDifficulty, spawnPos);
-            Debug::log(Debug::Category::Duel, "[DUEL SPAWN] NPC %d id=%u team=NPC spawn=(%.2f %.2f %.2f)",
-                       i, id, spawnPos.x, spawnPos.y, spawnPos.z);
+            std::string npcName = config.npcNames.empty()
+                ? "" : config.npcNames[i % config.npcNames.size()];
+            npcs.spawnNpc(id, config.npcDifficulty, spawnPos, npcName);
+            Debug::log(Debug::Category::Duel, "[DUEL SPAWN] NPC %d id=%u name=\"%s\" team=NPC spawn=(%.2f %.2f %.2f)",
+                       i, id, npcName.c_str(), spawnPos.x, spawnPos.y, spawnPos.z);
         }
     }
 

@@ -17,11 +17,18 @@ struct WeaponDefinition;
 
 namespace MimitaNet {
 
+// DEPRECATED: Do not use for new code. This function hardcodes weapon ID strings
+// and will not map any weapon added after this date. Use the dynamic
+// weaponDefNetworkId system (registerWeaponDefNetworkId / weaponDefNetworkIdFor)
+// combined with WeaponRegistry lookups instead.
 uint8_t networkWeaponTypeForDefinition(const WeaponDefinition& definition);
 uint8_t networkWeaponTypeForSlot(int slot);
 uint16_t registerWeaponDefNetworkId(const std::string& weaponId);
 uint16_t weaponDefNetworkIdFor(const std::string& weaponId);
 const std::string* weaponIdForDefNetworkId(uint16_t networkId);
+// Returns the display name for a weapon given its dynamic network ID.
+// Works for ANY registered weapon. Prefer this over networkWeaponTypeName.
+const char* weaponDisplayName(uint16_t defNetworkId);
 int slotForNetworkWeaponType(uint8_t type);
 const char* networkWeaponTypeName(uint8_t type);
 bool networkWeaponTypeIsProjectile(uint8_t type);

@@ -826,7 +826,8 @@ void handleAttackRequest(
                 sock, players, tick, totalPacketsOut, shooter.id, target,
                 aggregate.damage, dmgResult,
                 aggregate.hitPosition, aggregate.hitNormal, aggregate.knockback,
-                ServerDamageSource::Hitscan, netWeapon, req->requestId);
+                ServerDamageSource::Hitscan, netWeapon, req->requestId,
+                0, 0, def->id);
         }
 
         Debug::log(Debug::Category::Weapons,

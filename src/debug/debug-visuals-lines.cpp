@@ -320,12 +320,24 @@ void drawCapsuleWire(const Camera& camera, const Capsule& c, glm::vec4 color)
     constexpr int segments = 20;
     constexpr float pi = 3.1415926535f;
     drawLine(camera, c.a, c.b, color);
+
+    glm::vec3 axis = c.b - c.a;
+    float len = glm::length(axis);
+    if (len < 1e-6f) return;
+    axis /= len;
+
+    glm::vec3 up = (std::abs(axis.z) < 0.999f)
+        ? glm::vec3(0.0f, 0.0f, 1.0f)
+        : glm::vec3(1.0f, 0.0f, 0.0f);
+    glm::vec3 tangent  = glm::normalize(glm::cross(axis, up));
+    glm::vec3 bitangent = glm::cross(axis, tangent);
+
     for (int i = 0; i < segments; ++i)
     {
         float a0 = (float)i / (float)segments * pi * 2.0f;
         float a1 = (float)(i + 1) / (float)segments * pi * 2.0f;
-        glm::vec3 r0(std::cos(a0) * c.r, std::sin(a0) * c.r, 0.0f);
-        glm::vec3 r1(std::cos(a1) * c.r, std::sin(a1) * c.r, 0.0f);
+        glm::vec3 r0 = tangent * std::cos(a0) * c.r + bitangent * std::sin(a0) * c.r;
+        glm::vec3 r1 = tangent * std::cos(a1) * c.r + bitangent * std::sin(a1) * c.r;
         drawLine(camera, c.a + r0, c.a + r1, color);
         drawLine(camera, c.b + r0, c.b + r1, color);
         if (i % 5 == 0)
@@ -481,12 +493,24 @@ void drawWeaponCapsuleWire(const Camera& camera, const Capsule& c, glm::vec4 col
     constexpr int segments = 20;
     constexpr float pi = 3.1415926535f;
     addWeaponLine(c.a, c.b, color);
+
+    glm::vec3 axis = c.b - c.a;
+    float len = glm::length(axis);
+    if (len < 1e-6f) return;
+    axis /= len;
+
+    glm::vec3 up = (std::abs(axis.z) < 0.999f)
+        ? glm::vec3(0.0f, 0.0f, 1.0f)
+        : glm::vec3(1.0f, 0.0f, 0.0f);
+    glm::vec3 tangent  = glm::normalize(glm::cross(axis, up));
+    glm::vec3 bitangent = glm::cross(axis, tangent);
+
     for (int i = 0; i < segments; ++i)
     {
         float a0 = (float)i / (float)segments * pi * 2.0f;
         float a1 = (float)(i + 1) / (float)segments * pi * 2.0f;
-        glm::vec3 r0(std::cos(a0) * c.r, std::sin(a0) * c.r, 0.0f);
-        glm::vec3 r1(std::cos(a1) * c.r, std::sin(a1) * c.r, 0.0f);
+        glm::vec3 r0 = tangent * std::cos(a0) * c.r + bitangent * std::sin(a0) * c.r;
+        glm::vec3 r1 = tangent * std::cos(a1) * c.r + bitangent * std::sin(a1) * c.r;
         addWeaponLine(c.a + r0, c.a + r1, color);
         addWeaponLine(c.b + r0, c.b + r1, color);
         if (i % 5 == 0)

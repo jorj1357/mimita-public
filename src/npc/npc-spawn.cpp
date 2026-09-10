@@ -162,13 +162,13 @@ bool npcSwitchWeapon(Npc& npc, const std::string& weaponId)
 }
 
 Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn,
-         const std::string& weaponId)
+         const std::string& weaponId, const std::string& customName)
     : id(npcId), difficulty(std::clamp(npcDifficulty, 0.0f, 10.0f))
 {
     tuning = tuningForDifficulty(difficulty);
     rngState = 0x9e3779b9u ^ (id * 747796405u);
     body.reset();
-    body.username = "NPC-" + std::to_string(id);
+    body.username = customName.empty() ? "NPC-" + std::to_string(id) : customName;
     body.currentHp = body.maxHp;
     if (DevOverrides::healthOverrideEnabled) {
         body.maxHp = DevOverrides::healthOverrideValue;
@@ -271,11 +271,12 @@ void NpcSystem::spawnNpc(float difficulty)
                id, spawnPos.x, spawnPos.y, spawnPos.z, d);
 }
 
-void NpcSystem::spawnNpc(uint32_t id, float difficulty, glm::vec3 spawnPos)
+void NpcSystem::spawnNpc(uint32_t id, float difficulty, glm::vec3 spawnPos,
+                         const std::string& customName)
 {
     Perf::ScopedTimer _spawnTimer("NpcSpawn");
     float d = globalDifficulty_ > 0.0f ? globalDifficulty_ : difficulty;
-    npcs.emplace_back(id, d, spawnPos);
+    npcs.emplace_back(id, d, spawnPos, "revolver", customName);
     AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, spawnPos, 0.8f, 1.0f, 35.0f, id});
     Debug::log(Debug::Category::General, "[NPC] spawned id=%u at (%.2f, %.2f, %.2f) (network, diff=%.1f)\n",
                id, spawnPos.x, spawnPos.y, spawnPos.z, d);

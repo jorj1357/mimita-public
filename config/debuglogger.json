@@ -33,7 +33,6 @@
     },
     "npc_combat": { "level": "off", "file_output": false },
     "npc_movement": { "level": "off", "file_output": false },
-    "ragdoll": { "level": "off", "file_output": false },
     "weapons": { "level": "off", "file_output": false },
     "animation": { "level": "off", "file_output": false },
     "gui": {
@@ -45,8 +44,8 @@
       "file_output": false
     },
     "network": {
-      "level": "off",
-      "file_output": false,
+      "level": "verbose",
+      "file_output": true,
       "throttle": 0.0
     },
     "world": { "level": "off", "file_output": false },
@@ -103,12 +102,12 @@
     "history_frames_before_spike": 120,
     "history_frames_after_spike": 180,
     "aggregate_window_frames": 600,
-    "log_allocations": true,
-    "log_asset_io": true,
-    "log_collision_queries": true,
-    "log_entity_counts": true,
-    "log_effect_counts": true,
-    "log_render_counts": true
+    "log_allocations": false,
+    "log_asset_io": false,
+    "log_collision_queries": false,
+    "log_entity_counts": false,
+    "log_effect_counts": false,
+    "log_render_counts": false
   }
 }
 

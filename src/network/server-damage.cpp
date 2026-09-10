@@ -259,7 +259,8 @@ ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
     uint8_t weapon,
     uint32_t causeSerial,
     uint32_t projectileId,
-    uint32_t attackerNpcId)
+    uint32_t attackerNpcId,
+    const std::string& weaponDefId)
 {
     if (!result.applied)
         return ReliableGameplayEventQueueResult::Queued;
@@ -284,6 +285,7 @@ ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
     event.healthAfter = result.healthAfter;
     event.source = damageConfirmedSource(source);
     event.weapon = weapon;
+    event.weaponDefNetworkId = weaponDefId.empty() ? 0 : weaponDefNetworkIdFor(weaponDefId);
     event.killed = result.killed ? 1 : 0;
     event.hitX = hit.x;
     event.hitY = hit.y;

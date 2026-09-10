@@ -128,6 +128,9 @@ bool RagdollModeConfig::load(const std::string& path)
             next.cameraSmoothFactor = cam.value("smooth_factor", 0.0f);
         }
 
+        next.torsoLookSpring = root.value("torso_look_spring", 8.0f);
+        next.torsoMaxAngularStep = root.value("torso_max_angular_step", 15.0f);
+
         mData = next;
         mLastWrite = writeTime;
         Debug::warn(Debug::Category::Ragdoll,

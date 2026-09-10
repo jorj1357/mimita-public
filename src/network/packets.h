@@ -174,6 +174,9 @@ enum EntityType : uint8_t
 
 enum NetworkWeaponType : uint8_t
 {
+    // DEPRECATED: Do not use for new code. Use weaponDefNetworkId (uint16_t)
+    // from the dynamic registration system in network-weapons.h instead.
+    // This enum is kept only for legacy packet struct wire compatibility.
     NETWORK_WEAPON_NONE = 0,
     NETWORK_WEAPON_REVOLVER = 1,
     NETWORK_WEAPON_GODBALL = 2,
@@ -790,6 +793,7 @@ struct DamageConfirmedEventPacket
     uint8_t weapon = NETWORK_WEAPON_NONE;
     uint8_t killed = 0;
     uint8_t attackerEntityType = ENTITY_PLAYER;
+    uint16_t weaponDefNetworkId = 0;  // Dynamic weapon ID — use weaponIdForDefNetworkId() to resolve
     float hitX = 0.0f;
     float hitY = 0.0f;
     float hitZ = 0.0f;
@@ -1600,7 +1604,7 @@ static_assert(sizeof(ProjectileExplodeEventPacket) < MAX_GAME_DATAGRAM_BYTES,
               "ProjectileExplodeEventPacket exceeds safe datagram limit");
 static_assert(sizeof(MeleeHitRequestPacket) <= 96, "MeleeHitRequestPacket is too large");
 static_assert(sizeof(MeleeHitEventPacket) <= 96, "MeleeHitEventPacket is too large");
-static_assert(sizeof(DamageConfirmedEventPacket) <= 104, "DamageConfirmedEventPacket is too large");
+static_assert(sizeof(DamageConfirmedEventPacket) <= 112, "DamageConfirmedEventPacket is too large");
 static_assert(sizeof(DisagreementPacket) <= 128, "DisagreementPacket is too large");
 static_assert(sizeof(PelletBlastRequestPacket) <= 80, "PelletBlastRequestPacket is too large");
 static_assert(sizeof(PelletBlastEventPacket) < MAX_GAME_DATAGRAM_BYTES,

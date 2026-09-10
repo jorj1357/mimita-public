@@ -46,6 +46,10 @@ struct RagdollModeConfigData {
     // Camera
     std::string cameraMode = "locked_to_head";
     float cameraSmoothFactor = 0.0f;
+
+    // Torso look direction
+    float torsoLookSpring = 8.0f;
+    float torsoMaxAngularStep = 15.0f;
 };
 
 class RagdollModeConfig {
