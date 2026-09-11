@@ -355,6 +355,8 @@ void NpcSystem::setGlobalDifficulty(float d)
     {
         npc.difficulty = globalDifficulty_;
         npc.tuning = tuningForDifficulty(globalDifficulty_);
+        if (npc.behavior.active && npc.behavior.aggression >= 0.0f)
+            npc.tuning.aggression = npc.behavior.aggression;
     }
     Debug::log(Debug::Category::General, "[NPC] global difficulty set to %.1f for %zu NPCs\n",
                globalDifficulty_, npcs.size());
@@ -364,18 +366,42 @@ void NpcSystem::refreshDifficultyTuning()
 {
     for (Npc& npc : npcs)
         npc.tuning = tuningForDifficulty(npc.difficulty);
+    // Re-apply role behavior aggression so a difficulty refresh cannot silently
+    // overwrite a profile-driven value.
+    for (Npc& npc : npcs)
+        if (npc.behavior.active && npc.behavior.aggression >= 0.0f)
+            npc.tuning.aggression = npc.behavior.aggression;
     Debug::log(Debug::Category::NpcCombat,
         "[NPC DIFFICULTY] refreshed existing NPC tuning count=%zu configRevision=%llu\n",
         npcs.size(), (unsigned long long)NpcDifficultyConfig::instance().revision());
+}
+
+float weaponEffectiveRangeOf(const WeaponDefinition& def)
+{
+    auto it = def.customParams.find("effectiveRange");
+    if (it != def.customParams.end()) return it->second;
+    if (def.projectileSpeed > 0.0f)
+        return def.projectileSpeed * std::max(def.projectileLifetime, 2.0f);
+    return 150.0f;
+}
+
+float weaponSelectionRangeOf(const WeaponDefinition& def)
+{
+    auto it = def.customParams.find("effectiveRange");
+    if (it != def.customParams.end()) return it->second;
+    if (def.projectileSpeed > 0.0f)
+        return def.projectileSpeed * std::max(def.projectileLifetime, 2.0f);
+    auto fo = def.customParams.find("distanceFalloffStart");
+    if (fo != def.customParams.end() && fo->second > 0.0f) return fo->second;
+    if (def.behaviorType == WeaponBehaviorType::Melee ||
+        def.behaviorType == WeaponBehaviorType::Swordsword)
+        return 2.5f;
+    return 60.0f;
 }
 
 float weaponEffectiveRange(const Npc& npc)
 {
     const WeaponDefinition* def = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
     if (!def) return 150.0f;
-    auto it = def->customParams.find("effectiveRange");
-    if (it != def->customParams.end()) return it->second;
-    if (def->projectileSpeed > 0.0f)
-        return def->projectileSpeed * std::max(def->projectileLifetime, 2.0f);
-    return 150.0f;
+    return weaponEffectiveRangeOf(*def);
 }

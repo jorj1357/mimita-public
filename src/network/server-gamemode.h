@@ -222,6 +222,7 @@ struct ActorSpawnProfile
     std::string startingWeapon;
     std::vector<std::string> weapons;     // resolved role loadout (may be empty)
     std::string movementPreset;           // resolved/validated role movement preset
+    std::string behaviorProfileId;        // resolved/validated role behavior profile
 };
 ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId);
 

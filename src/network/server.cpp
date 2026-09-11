@@ -13,6 +13,7 @@
 #include "network/server-gamemode.h"
 #include "gamemode/gamemode.h"
 #include "gamemode/match-roles.h"
+#include "npc/npc-behavior.h"
 #include "gamemode/gamemode-map-pool.h"
 #include "duel/duel-weapon-pool.h"
 #include "network/community-server-config.h"
@@ -270,6 +271,7 @@ int runServer(const LaunchOptions& options)
     CommunityServerConfig::instance().load();
     GamemodeRegistry::instance().loadDirectory("config/gamemodes");
     MatchRoleRegistry::instance().load("config/roles.json");
+    BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
     GamemodeMapPool::instance().load("config/gamemode-good-maps.json");
     DuelWeaponPool::instance().load("config/duel-weapons.json");
     npcLogSetProc("server");
@@ -574,6 +576,7 @@ int runServer(const LaunchOptions& options)
 
         // Hot-reload config/roles.json so role/profile references apply live.
     MatchRoleRegistry::instance().pollReload();
+    BehaviorProfileRegistry::instance().pollReload();
     RoleMovementCache::instance().pollReload();
 
         // Hot-reload config/weapons.json (rate-limited to 250ms internally) so
@@ -1078,6 +1081,7 @@ static void simulateOneServerTick(ListenServerState& state)
     CommunityServerConfig::instance().pollReload();
     SpawnVelocityConfig::instance().pollReload();
     MatchRoleRegistry::instance().pollReload();
+    BehaviorProfileRegistry::instance().pollReload();
 
     {
         char buffer[2048];

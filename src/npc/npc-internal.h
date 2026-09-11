@@ -23,6 +23,13 @@ float targetCanSeeNpc(const Npc& npc, const World& world);
 // Get effective range of the NPC's equipped weapon (from WeaponDefinition or default 150)
 float weaponEffectiveRange(const Npc& npc);
 
+// Effective range of a weapon definition (same formula as above).
+float weaponEffectiveRangeOf(const WeaponDefinition& def);
+
+// Practical selection range for weapon scoring: explicit effectiveRange, else
+// projectile travel, else hitscan falloff distance, else melee/near.
+float weaponSelectionRangeOf(const WeaponDefinition& def);
+
 // Initialize all weapons in the NPC's loadout (from config) and equip the starting weapon.
 // Each loadout weapon gets a WeaponRuntime with full ammo.
 void npcInitLoadout(Npc& npc);

@@ -27,9 +27,12 @@ float scoreState(NpcState s, const Npc& npc, float d01)
     float hasTarget = sensors.hasTarget ? 1.0f : 0.0f;
     float agg = npc.tuning.aggression;
 
-    // Weapon range awareness: prefer distances matching weapon effective range
+    // Weapon range awareness: prefer distances matching weapon effective range.
+    // A role behavior preferred_range overrides the weapon-derived distance.
     float wepRange = weaponEffectiveRange(npc);
-    float idealDist = std::clamp(wepRange * 0.6f, 5.0f, wepRange);
+    float idealDist = (npc.behavior.active && npc.behavior.preferredRange > 0.0f)
+        ? npc.behavior.preferredRange
+        : std::clamp(wepRange * 0.6f, 5.0f, wepRange);
     float rangeMatch = 1.0f - std::fabs(dist - idealDist) / std::max(wepRange, 20.0f);
     rangeMatch = clamp01(rangeMatch);
 

@@ -32,6 +32,9 @@ bool tryFire(Npc& npc, const World& world, Player& player, float dt);
 glm::vec3 applyAimError(const Npc& npc, glm::vec3 aimDir);
 
 float aimErrorDegrees(float difficulty);
+// Effective aim error for the actor: the role behavior profile override when
+// present, otherwise the difficulty-derived value.
+float effectiveAimErrorDegrees(const Npc& npc);
 float maxAngularErrorForAccuracy(float acc);
 
 bool rayCapsule(const glm::vec3& origin, const glm::vec3& dir,

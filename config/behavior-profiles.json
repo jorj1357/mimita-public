@@ -1,0 +1,62 @@
+// 09 11 2026
+/* purpose
+* Named NPC behavior profiles referenced by config/roles.json behavior_profile.
+* Combat, target-selection, and weapon-selection tuning. Missing values fall
+* back to NpcDifficultyConfig / neutral defaults.
+* Does NOT contain role/team/health/loadout/movement data.
+*/
+{
+  "profiles": [
+    {
+      "id": "balanced",
+      "aim_error_deg": 5.0,
+      "reaction_delay": 0.15,
+      "fire_cadence_multiplier": 1.0,
+      "aggression": 0.6,
+      "preferred_range": 12.0,
+      "target_stickiness": 0.3,
+      "target_switch_threshold": 0.15,
+      "low_health_target_bias": 0.2,
+      "threat_bias": 0.2,
+      "distance_target_bias": 1.0,
+      "weapon_range_bias": 1.0,
+      "weapon_damage_bias": 0.4,
+      "weapon_safety_bias": 0.4,
+      "weapon_switch_threshold": 0.1
+    },
+    {
+      "id": "aggressive",
+      "aim_error_deg": 3.0,
+      "reaction_delay": 0.08,
+      "fire_cadence_multiplier": 1.15,
+      "aggression": 0.9,
+      "preferred_range": 8.0,
+      "target_stickiness": 0.6,
+      "target_switch_threshold": 0.3,
+      "low_health_target_bias": 0.4,
+      "threat_bias": 0.5,
+      "distance_target_bias": 0.8,
+      "weapon_range_bias": 0.6,
+      "weapon_damage_bias": 1.0,
+      "weapon_safety_bias": 0.1,
+      "weapon_switch_threshold": 0.2
+    },
+    {
+      "id": "nervous",
+      "aim_error_deg": 8.0,
+      "reaction_delay": 0.25,
+      "fire_cadence_multiplier": 0.8,
+      "aggression": 0.35,
+      "preferred_range": 18.0,
+      "target_stickiness": 0.05,
+      "target_switch_threshold": 0.03,
+      "low_health_target_bias": 0.1,
+      "threat_bias": 0.05,
+      "distance_target_bias": 1.2,
+      "weapon_range_bias": 1.2,
+      "weapon_damage_bias": 0.2,
+      "weapon_safety_bias": 1.2,
+      "weapon_switch_threshold": 0.03
+    }
+  ]
+}

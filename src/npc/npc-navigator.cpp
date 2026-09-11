@@ -48,6 +48,7 @@ struct LocalNode
     float f = 1e18f;
     int parent = -1;
     bool closed = false;
+    bool gap = false;   // edge from parent crosses a gap (needs a dash)
 };
 
 const char* goalKindName(NpcGoalKind kind)
@@ -61,14 +62,6 @@ const char* goalKindName(NpcGoalKind kind)
         case NpcGoalKind::None:              return "none";
     }
     return "none";
-}
-
-float maxJumpHeight(const MovementConfig& m)
-{
-    const float g = std::fabs(m.gravityZ);
-    if (m.jumpVerticalSpeed <= 0.0f || g <= 0.01f)
-        return 0.0f;
-    return (m.jumpVerticalSpeed * m.jumpVerticalSpeed) / (2.0f * g);
 }
 
 // Highest walkable surface below `fromZ` at (x,y), tested against a window
@@ -111,7 +104,8 @@ bool consumePlanToken()
 
 // Grid A* over the local window. Returns false when no route exists.
 bool planLocalPath(const Npc& npc, const glm::vec3& goalPos, const World& world,
-                   const MovementConfig& movement, std::vector<glm::vec3>& outPoints)
+                   const MovementConfig& movement, std::vector<glm::vec3>& outPoints,
+                   std::vector<uint8_t>& outGaps)
 {
     const int N = kGridN;
     const int half = N / 2;
@@ -174,7 +168,29 @@ bool planLocalPath(const Npc& npc, const glm::vec3& goalPos, const World& world,
     if (start < 0 || goalNode < 0)
         return false;
 
-    const float jump = maxJumpHeight(movement);
+    const float jump = npcMaxJumpHeight(movement);
+
+    // A gap edge is only valid when a horizontal probe at the higher surface
+    // level is clear, so a dash never launches into a wall face.
+    auto gapClear = [&](int ax, int ay, int bx, int by, float maxZ) {
+        const float axw = ox + (ax - half) * c;
+        const float ayw = oy + (ay - half) * c;
+        const float bxw = ox + (bx - half) * c;
+        const float byw = oy + (by - half) * c;
+        glm::vec3 dir(bxw - axw, byw - ayw, 0.0f);
+        const float dist = glm::length(dir);
+        if (dist < 0.001f) return true;
+        dir /= dist;
+        const glm::vec3 o(axw, ayw, maxZ + 0.6f);
+        const auto& tris = world.collisionMesh.triangles;
+        for (int ti : candidates) {
+            if (ti < 0 || ti >= (int)tris.size()) continue;
+            float t = 0.0f;
+            if (NpcNavigation::rayTriangle(o, dir, tris[ti], dist, t))
+                return false;
+        }
+        return true;
+    };
 
     nodes[start].g = 0.0f;
     nodes[start].f = dist2(start, goalNode);
@@ -220,14 +236,44 @@ bool planLocalPath(const Npc& npc, const glm::vec3& goalPos, const World& world,
                 open.push_back(nb);
             }
         }
+
+        // Gap edges: a dash can cross one invalid cell to a valid cell 2 steps
+        // away. Only created for actors that can dash and only when the higher
+        // surface line is clear.
+        if (movement.dashEnabled && jump > 0.0f) {
+            static const int GX[4] = {1, -1, 0, 0};
+            static const int GY[4] = {0, 0, 1, -1};
+            for (int gd = 0; gd < 4; ++gd) {
+                const int mx = cx + GX[gd], my = cy + GY[gd];
+                const int fx = cx + 2 * GX[gd], fy = cy + 2 * GY[gd];
+                if (fx < 0 || fy < 0 || fx >= N || fy >= N) continue;
+                if (valid(mx, my) || !valid(fx, fy)) continue;
+                const int nb = fy * N + fx;
+                if (nodes[nb].closed) continue;
+                const float dz = nodes[nb].z - nodes[cur].z;
+                if (dz > jump) continue;
+                const float maxZ = std::max(nodes[cur].z, nodes[nb].z);
+                if (!gapClear(cx, cy, fx, fy, maxZ)) continue;
+                const float ng = nodes[cur].g + 2.0f * c + 2.5f;
+                if (ng < nodes[nb].g) {
+                    nodes[nb].g = ng;
+                    nodes[nb].parent = cur;
+                    nodes[nb].gap = true;
+                    nodes[nb].f = ng + dist2(nb, goalNode);
+                    open.push_back(nb);
+                }
+            }
+        }
     }
 
     if (nodes[goalNode].g >= 1e17f)
         return false;
 
     outPoints.clear();
+    outGaps.clear();
     if (start == goalNode) {
         outPoints.push_back(goalPos);
+        outGaps.push_back(0);
         return true;
     }
     std::vector<int> idx;
@@ -240,17 +286,29 @@ bool planLocalPath(const Npc& npc, const glm::vec3& goalPos, const World& world,
         outPoints.push_back(glm::vec3(ox + (gx - half) * c,
                                       oy + (gy - half) * c,
                                       nodes[id].z));
+        outGaps.push_back(nodes[id].gap ? 1 : 0);
     }
-    if (outPoints.empty())
+    if (outPoints.empty()) {
         outPoints.push_back(goalPos);
+        outGaps.push_back(0);
+    }
     return true;
 }
 
 } // anonymous namespace
 
+float npcMaxJumpHeight(const MovementConfig& m)
+{
+    const float g = std::fabs(m.gravityZ);
+    if (m.jumpVerticalSpeed <= 0.0f || g <= 0.01f)
+        return 0.0f;
+    return (m.jumpVerticalSpeed * m.jumpVerticalSpeed) / (2.0f * g);
+}
+
 void NpcNavigator::reset()
 {
     path.clear();
+    pathGap.clear();
     pathIndex = 0;
     repathTimer = 0.0f;
     hasLastGoal = false;
@@ -264,6 +322,7 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
     goal = newGoal;
     if (!goal.valid()) {
         path.clear();
+        pathGap.clear();
         pathIndex = 0;
         return result;
     }
@@ -299,6 +358,7 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
     }
     if (!haveDest) {
         path.clear();
+        pathGap.clear();
         pathIndex = 0;
         return result;
     }
@@ -326,8 +386,10 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
         const MovementConfig& cfg = movement ? *movement
                                              : MovementJsonConfig::instance().config();
         std::vector<glm::vec3> plan;
-        if (planLocalPath(npc, dest, world, cfg, plan) && !plan.empty()) {
+        std::vector<uint8_t> planGaps;
+        if (planLocalPath(npc, dest, world, cfg, plan, planGaps) && !plan.empty()) {
             path = std::move(plan);
+            pathGap = std::move(planGaps);
             pathIndex = 0;
             lastGoal = dest;
             hasLastGoal = true;
@@ -338,11 +400,12 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
             Debug::log(Debug::Category::NpcMovement,
                 "[NPC NAV] actor=%u goal=%s target=%u pathNodes=%d jumpCap=%.2f netDz=%.1f reason=%s\n",
                 npc.id, goalKindName(goal.kind), goal.targetActorId,
-                (int)path.size(), maxJumpHeight(cfg), netDz, reason);
+                (int)path.size(), npcMaxJumpHeight(cfg), netDz, reason);
         } else {
             // No route in the local window: fall back to direct steering and
             // retry soon (target may have moved into a reachable cell).
             path.clear();
+            pathGap.clear();
             pathIndex = 0;
             repathTimer = 0.4f;
         }
@@ -367,13 +430,17 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
     result.destination = dest;
     result.hasPath = pathActive;
     result.pathNodes = pathActive ? (int)path.size() - pathIndex : 0;
+    result.valid = true;
 
     glm::vec3 to(target.x - npc.body.pos.x, target.y - npc.body.pos.y, 0.0f);
     const float len = glm::length(to);
     const float dz = target.z - npc.body.pos.z;
+    result.heightDelta = dz;
+    result.distance = len;
 
     if (pathActive) {
         if (len > 0.001f) result.dir = to / len;
+        result.hasGap = pathIndex < (int)pathGap.size() && pathGap[pathIndex] != 0;
         // Only treat the route as a detour when it is long or pulls away from
         // the direct line to the destination, so tactical strafing is kept in
         // open space.
@@ -383,10 +450,6 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
             result.detour = result.pathNodes > 2 ||
                             glm::dot(result.dir, toDest / dl) < 0.8f;
         }
-        if (dz > kStepUp && len < kCell * 1.5f && npc.sensors.touchFloor)
-            result.wantJump = true;
-        if (dz < -kStepUp)
-            result.wantDownDash = true;
         return result;
     }
 
@@ -395,8 +458,5 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
         dest.x - npc.body.pos.x, dest.y - npc.body.pos.y, 0.0f));
     if (goalDist > goal.tolerance && len > 0.001f)
         result.dir = to / len;
-    if (goal.kind == NpcGoalKind::FollowActor && dz > kStepUp &&
-        goalDist < 3.0f && npc.sensors.touchFloor)
-        result.wantJump = true;
     return result;
 }

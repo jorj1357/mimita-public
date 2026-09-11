@@ -104,6 +104,7 @@
 #include "npc/npc-difficulty-config.h"
 #include "gamemode/gamemode.h"
 #include "gamemode/match-roles.h"
+#include "npc/npc-behavior.h"
 #include "gamemode/gamemode-map-pool.h"
 #include "duel/duel-weapon-pool.h"
 #include "npc/npc-combat-log.h"
@@ -239,6 +240,7 @@ void gameInitSubsystems(Engine& engine)
     NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
     GamemodeRegistry::instance().loadDirectory("config/gamemodes");
     MatchRoleRegistry::instance().load("config/roles.json");
+    BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
     GamemodeMapPool::instance().load("config/gamemode-good-maps.json");
     DuelWeaponPool::instance().load("config/duel-weapons.json");
     npcLogSetProc("client");

@@ -10,6 +10,7 @@
 #include "npc.h"
 #include "npc/npc-internal.h"
 #include "npc/npc-difficulty-config.h"
+#include "npc/npc-combat-log.h"
 #include "gamemode/match-roles.h"
 
 #include <algorithm>
@@ -282,7 +283,9 @@ NpcGoal makeNavGoal(const Npc& npc)
         case NpcState::Aim:
             goal.kind = NpcGoalKind::MaintainDistance;
             goal.desiredDistance =
-                std::clamp(weaponEffectiveRange(npc) * 0.6f, 5.0f, 25.0f);
+                (npc.behavior.active && npc.behavior.preferredRange > 0.0f)
+                    ? npc.behavior.preferredRange
+                    : std::clamp(weaponEffectiveRange(npc) * 0.6f, 5.0f, 25.0f);
             break;
         case NpcState::Retreat:
         case NpcState::Recover:
@@ -638,7 +641,54 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         // override ignores the global forceWeapon so roles stay authoritative.
         if (npc.loadoutOverride.empty() && !cfg.forceWeapon.empty()) {
             bestWeapon = cfg.forceWeapon;
+        } else if (npc.behavior.active) {
+            // Scored weapon selection from existing weapon metadata plus the
+            // behavior profile weights. Ammo/legality remain authoritative.
+            const NpcBehaviorTuning& b = npc.behavior;
+            auto weaponScore = [&](const WeaponDefinition& def) {
+                const float effRange = weaponSelectionRangeOf(def);
+                const float rangeFit = 1.0f - glm::clamp(
+                    std::fabs(effRange - dist) / std::max(effRange, 1.0f), 0.0f, 1.0f);
+                const float burst = def.damage * (float)std::max(1, def.pelletCount);
+                const float damageUtility = glm::clamp(burst / 80.0f, 0.0f, 1.0f);
+                float safety = glm::clamp(effRange / 80.0f, 0.0f, 1.0f);
+                if (def.behaviorType == WeaponBehaviorType::RocketLauncher ||
+                    def.behaviorType == WeaponBehaviorType::GrenadeLauncher ||
+                    def.behaviorType == WeaponBehaviorType::Projectile)
+                    safety *= 0.5f;
+                else if (def.behaviorType == WeaponBehaviorType::Melee ||
+                         def.behaviorType == WeaponBehaviorType::Swordsword)
+                    safety = 0.05f;
+                return rangeFit * b.weaponRangeBias
+                     + damageUtility * b.weaponDamageBias
+                     + safety * b.weaponSafetyBias;
+            };
+            auto usable = [&](const std::string& wid) {
+                auto it = npc.body.weaponRuntimes.find(wid);
+                if (it == npc.body.weaponRuntimes.end()) return false;
+                const auto& rt = it->second;
+                return rt.currentAmmo > 0 || rt.reserveAmmo > 0 || rt.isReloading;
+            };
+
+            const WeaponDefinition* curDef =
+                WeaponRegistry::instance().get(npc.body.equippedWeaponId);
+            const float currentScore = curDef ? weaponScore(*curDef) : -1e30f;
+
+            float bestScore = -1e30f;
+            for (const auto& wid : loadout) {
+                if (!usable(wid)) continue;
+                const WeaponDefinition* d = WeaponRegistry::instance().get(wid);
+                if (!d) continue;
+                const float s = weaponScore(*d);
+                if (s > bestScore) { bestScore = s; bestWeapon = wid; }
+            }
+            // Keep the current weapon unless a candidate is clearly better.
+            if (curDef && usable(npc.body.equippedWeaponId) &&
+                bestWeapon != npc.body.equippedWeaponId &&
+                bestScore <= currentScore + b.weaponSwitchThreshold)
+                bestWeapon = npc.body.equippedWeaponId;
         } else {
+            // Legacy distance-based switching (unchanged without a profile).
             // Check ammo: if current weapon is empty, force a switch
             auto curIt = npc.body.weaponRuntimes.find(npc.body.equippedWeaponId);
             bool currentEmpty = curIt != npc.body.weaponRuntimes.end()
@@ -684,8 +734,13 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         }
 
         if (bestWeapon != npc.body.equippedWeaponId) {
+            const std::string switched = bestWeapon;
             npcSwitchWeapon(npc, bestWeapon);
             npc.weaponSwitchCooldown = cfg.switchCooldown;
+            npcLog("npc-weapon npc=%u profile=%s weapon=%s dist=%.1f t=%.2f",
+                   npc.id,
+                   npc.behaviorProfileId.empty() ? "default" : npc.behaviorProfileId.c_str(),
+                   switched.c_str(), dist, npc.sensors.time);
         }
     }
 
@@ -844,11 +899,20 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         const NpcGoal navGoal = makeNavGoal(npc);
         const NpcNavResult nav =
             npc.navigator.update(npc, navGoal, world, navMovement, safeDt);
-        if (nav.hasPath && nav.detour && glm::length(nav.dir) > 0.01f)
-            moveDir = nav.dir;
-        if (nav.wantJump && npc.sensors.touchFloor)
+        const NpcTraversalStep trav =
+            npc.traversal.update(npc, nav, navMovement, safeDt);
+        // Traversal steers when following a detour route or performing a
+        // non-walk traversal; otherwise the tactical direction is preserved.
+        const bool traversalSteers = nav.detour ||
+            (trav.active && trav.type != TraversalType::Walk);
+        if (trav.active && traversalSteers &&
+            glm::length(trav.direction) > 0.01f)
+            moveDir = trav.direction;
+        if (trav.jump && npc.sensors.touchFloor)
             jump = true;
-        if (nav.wantDownDash && navMovement && navMovement->downDashEnabled)
+        if (trav.dash && navMovement && navMovement->dashEnabled)
+            dash = true;
+        if (trav.downDash && navMovement && navMovement->downDashEnabled)
             wantDownDash = true;
     }
 
@@ -1100,10 +1164,34 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         npc.downDashCooldown = 0.80f - difficulty01(npc.difficulty) * 0.50f;
     }
 
-    // No reaction timer — NPC fires immediately when cooldown expires
-    npc.reactionTimer = 0.0f;
+    // Reaction delay: after acquiring a target, wait before the first shot.
+    // Profile-driven; defaults to 0 (immediate) when no profile applies.
+    if (npc.sensors.hasTarget && !npc.prevHadTarget)
+    {
+        npc.reactionTimer = std::max(0.0f, npc.behavior.reactionDelay);
+        if (npc.reactionTimer > 0.0f)
+        {
+            npcLog("npc-react npc=%u profile=%s delay=%.2f",
+                   npc.id,
+                   npc.behaviorProfileId.empty() ? "default" : npc.behaviorProfileId.c_str(),
+                   npc.reactionTimer);
+            std::string reactKey = "npc-react-" + std::to_string(npc.id);
+            Debug::logThrottled(Debug::Category::NpcCombat, reactKey.c_str(),
+                DebugConfig::PRINT_INTERVAL,
+                "[NPC REACTION] npc=%u delay=%.2f\n", npc.id, npc.reactionTimer);
+        }
+    }
+    else if (!npc.sensors.hasTarget)
+    {
+        npc.reactionTimer = 0.0f;
+    }
+    else
+    {
+        npc.reactionTimer = std::max(0.0f, npc.reactionTimer - safeDt);
+    }
+    npc.prevHadTarget = npc.sensors.hasTarget;
 
-    if (attack && npc.attackCooldown <= 0.0f)
+    if (attack && npc.attackCooldown <= 0.0f && npc.reactionTimer <= 0.0f)
     {
         Debug::log(Debug::Category::NpcCombat,
             "[NPC FIRE] npc=%u timeSinceLastShot=%.3f\n",

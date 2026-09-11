@@ -26,17 +26,24 @@ struct NpcNavResult
     glm::vec3 dir{0.0f};        // planar steering direction, zero if none
     glm::vec3 waypoint{0.0f};   // current navigation target
     glm::vec3 destination{0.0f};// goal-resolved destination point
-    bool wantJump = false;      // next traversal needs a jump
-    bool wantDownDash = false;  // next traversal is a drop
+    float heightDelta = 0.0f;   // waypoint.z - actor.z
+    float distance = 0.0f;      // planar distance to the waypoint
     bool hasPath = false;       // following a cached multi-node route
     bool detour = false;        // route deviates from the direct line to dest
+    bool hasGap = false;        // current segment crosses a gap (needs dash)
+    bool valid = false;         // a movement target exists
     int pathNodes = 0;          // waypoints remaining on the cached route
 };
+
+// Maximum vertical rise the actor can clear with a jump, from its movement
+// config (v^2 / 2g). Shared by navigation and the traversal layer.
+float npcMaxJumpHeight(const MovementConfig& movement);
 
 struct NpcNavigator
 {
     NpcGoal goal;
     std::vector<glm::vec3> path;
+    std::vector<uint8_t> pathGap;   // per-path-point: segment into it crosses a gap
     int pathIndex = 0;
     float repathTimer = 0.0f;
     glm::vec3 lastGoal{0.0f};

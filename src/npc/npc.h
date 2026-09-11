@@ -20,6 +20,8 @@
 #include "input/input-frame.h"
 #include "npc/npc-state-machine.h"
 #include "npc/npc-navigator.h"
+#include "npc/npc-traversal.h"
+#include "npc/npc-behavior.h"
 
 class Camera;
 struct World;
@@ -67,10 +69,19 @@ public:
     std::string startingWeaponOverride;
     // Role movement preset for this life; empty = legacy/NpcDifficultyConfig.
     std::string movementProfileId;
+    // Resolved role behavior profile for this life (combat tuning).
+    std::string behaviorProfileId;
+    NpcBehaviorTuning behavior;
+    // Target-acquisition edge tracking for the reaction-delay gate.
+    bool prevHadTarget = false;
+    // Server-selected current target id (persisted for stickiness/scoring).
+    uint32_t serverTargetId = 0;
     NpcSensorContext sensors;
     NpcStateMachine stateMachine;
     // Goal -> navigation -> movement pipeline (cached local route).
     NpcNavigator navigator;
+    // Capability-aware traversal chosen from the navigator's waypoint info.
+    NpcTraversalExecutor traversal;
 
     float dashCooldown = 0.0f;
     float downDashCooldown = 0.0f;

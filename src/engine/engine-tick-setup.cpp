@@ -33,6 +33,7 @@
 #include "npc/npc-difficulty-config.h"
 #include "gamemode/gamemode.h"
 #include "gamemode/match-roles.h"
+#include "npc/npc-behavior.h"
 #include "gamemode/gamemode-map-pool.h"
 #include "duel/duel-weapon-pool.h"
 #include "hot-reload/hot-reload-system.h"
@@ -135,6 +136,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
         }
         GamemodeRegistry::instance().pollReload();
         MatchRoleRegistry::instance().pollReload();
+        BehaviorProfileRegistry::instance().pollReload();
         RoleMovementCache::instance().pollReload();
         GamemodeMapPool::instance().pollReload();
         DuelWeaponPool::instance().pollReload();

@@ -121,6 +121,17 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
                 def->id.c_str(), def->weaponSet.c_str());
         }
     }
+
+    if (!def->behaviorProfile.empty()) {
+        // Validate once here (warn with role context) instead of per tick.
+        if (BehaviorProfileRegistry::instance().get(def->behaviorProfile)) {
+            out.behaviorProfileId = def->behaviorProfile;
+        } else {
+            Debug::warn(Debug::Category::Duel,
+                "[ROLES] role %s references unknown behavior profile \"%s\"; using NPC defaults\n",
+                def->id.c_str(), def->behaviorProfile.c_str());
+        }
+    }
     return out;
 }
 
@@ -1150,6 +1161,23 @@ void resetGamemodeActorsAtMapSpawn(
             npc.body.dead = false;
             npc.body.respawnTimer = 0.0f;
             npc.movementProfileId = profile.movementPreset;
+            npc.navigator.reset();
+            npc.traversal.reset();
+            npc.prevHadTarget = false;
+            npc.reactionTimer = 0.0f;
+            npc.serverTargetId = 0;
+            // Resolve the role behavior profile once for this life.
+            npc.behaviorProfileId = profile.behaviorProfileId;
+            npc.behavior = resolveNpcBehavior(profile.behaviorProfileId);
+            if (npc.behavior.active && npc.behavior.aggression >= 0.0f)
+                npc.tuning.aggression = npc.behavior.aggression;
+            Debug::log(Debug::Category::NpcCombat,
+                "[NPC BEHAVIOR] actor=%u role=%s profile=%s aim=%.1f react=%.2f cadence=%.2f aggr=%.2f range=%.1f\n",
+                npc.id, profile.roleId.c_str(),
+                profile.behaviorProfileId.empty() ? "default" : profile.behaviorProfileId.c_str(),
+                npc.behavior.aimErrorDeg, npc.behavior.reactionDelay,
+                npc.behavior.fireCadenceMultiplier, npc.behavior.aggression,
+                npc.behavior.preferredRange);
             if (!profile.weapons.empty()) {
                 // Role loadout is authoritative; the global set is not consulted.
                 npcApplyLoadout(npc, profile.weapons, profile.startingWeapon);

@@ -93,9 +93,12 @@ static void logAimDebug(const Npc& npc, const WeaponDefinition& def,
     float facingAimDeg = 0.0f;
     if (glm::length(planarFacing) > 0.001f && glm::length(planarShot) > 0.001f)
         facingAimDeg = glm::degrees(std::acos(std::clamp(glm::dot(planarFacing, planarShot), -1.0f, 1.0f)));
-    npcLog("npc-shot npc=%u weapon=%s maxError=%.1fdeg err=%.1fdeg facingAim=%.1fdeg "
+    npcLog("npc-shot npc=%u weapon=%s profile=%s dist=%.1f maxError=%.1fdeg err=%.1fdeg facingAim=%.1fdeg "
            "target=(%.3f %.3f %.3f) aim=(%.3f %.3f %.3f) angleDiff=%.1fdeg",
-           npc.id, def.id.c_str(), maxErrorDeg, actualErrorDeg, facingAimDeg,
+           npc.id, def.id.c_str(),
+           npc.behaviorProfileId.empty() ? "default" : npc.behaviorProfileId.c_str(),
+           npc.sensors.targetDistance,
+           maxErrorDeg, actualErrorDeg, facingAimDeg,
            idealDir.x, idealDir.y, idealDir.z,
            finalDir.x, finalDir.y, finalDir.z, angleDiff);
 }
@@ -109,6 +112,14 @@ float NpcCombat::aimErrorDegrees(float difficulty)
         return 0.0f;
     float d01 = difficulty01(difficulty);
     return cfg.maxAngularErrorDegrees * (1.0f - d01 * cfg.difficultyErrorScale);
+}
+
+float NpcCombat::effectiveAimErrorDegrees(const Npc& npc)
+{
+    // Role behavior profile wins when it sets an aim error.
+    if (npc.behavior.active && npc.behavior.aimErrorDeg >= 0.0f)
+        return npc.behavior.aimErrorDeg;
+    return aimErrorDegrees(npc.difficulty);
 }
 
 float NpcCombat::maxAngularErrorForAccuracy(float acc)
@@ -185,7 +196,7 @@ bool NpcCombat::rayCapsule(const glm::vec3& origin, const glm::vec3& dir,
 
 glm::vec3 NpcCombat::applyAimError(const Npc& npc, glm::vec3 aimDir)
 {
-    float errorDeg = aimErrorDegrees(npc.difficulty);
+    float errorDeg = effectiveAimErrorDegrees(npc);
     float maxErrorRad = glm::radians(errorDeg);
     if (maxErrorRad > 0.0001f) {
         float theta = random01(const_cast<Npc&>(npc).rngState) * glm::two_pi<float>();
@@ -204,7 +215,8 @@ glm::vec3 NpcCombat::applyAimError(const Npc& npc, glm::vec3 aimDir)
 
 static float computeFireAggression(const Npc& npc)
 {
-    float base = npc.tuning.aggression;
+    float base = (npc.behavior.active && npc.behavior.aggression >= 0.0f)
+        ? npc.behavior.aggression : npc.tuning.aggression;
     float healthFrac = (float)npc.body.currentHp / (float)npc.body.maxHp;
     float lowHealth = (1.0f - healthFrac) * 0.3f;
     float closeTarget = npc.sensors.targetDistance < 5.0f ? 0.3f : 0.0f;
@@ -334,7 +346,7 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     aimDir = NpcCombat::applyAimError(npc, aimDir);
 
     glm::vec3 idealDir = glm::normalize(npc.sensors.targetPos + glm::vec3(0.0f, 0.0f, 0.8f) - npcPos);
-    float errorDeg = aimErrorDegrees(npc.difficulty);
+    float errorDeg = NpcCombat::effectiveAimErrorDegrees(npc);
     float angleDiff = glm::degrees(std::acos(std::clamp(glm::dot(idealDir, aimDir), -1.0f, 1.0f)));
 
     logAimDebug(npc, *def, idealDir, aimDir, errorDeg, angleDiff);
@@ -483,6 +495,11 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     const auto& npcCfg = NpcDifficultyConfig::instance().settings();
     float minDelay = std::max(npcCfg.fireDelayMin, def->fireDelay);
     float maxDelay = std::max(minDelay, npcCfg.fireDelayMax);
+    // Role behavior cadence scales the fire delay (higher multiplier = faster).
+    const float cadence = npc.behavior.active
+        ? std::max(0.1f, npc.behavior.fireCadenceMultiplier) : 1.0f;
+    minDelay = std::max(0.0f, minDelay / cadence);
+    maxDelay = std::max(minDelay, maxDelay / cadence);
     float rawPos = random01(npc.rngState);
     float aggression = glm::clamp(computeFireAggression(npc) + npcCfg.aggressionBonus, 0.0f, 1.0f);
     npc.fireAggressionBias = aggression;

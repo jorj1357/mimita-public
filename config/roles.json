@@ -7,7 +7,7 @@
       "movement_preset": "retrograd_fast",
       "weapon_set": "standard",
       "starting_weapon": "revolver",
-      "behavior_profile": "hunter"
+      "behavior_profile": "balanced"
     },
     {
       "id": "juggernaut",
@@ -17,6 +17,15 @@
       "weapon_set": "juggernaut",
       "starting_weapon": "rocket_launcher",
       "behavior_profile": "aggressive"
+    },
+    {
+      "id": "skirmisher",
+      "team": 0,
+      "health": 100,
+      "movement_preset": "retrograd_fast",
+      "weapon_set": "standard",
+      "starting_weapon": "revolver",
+      "behavior_profile": "nervous"
     }
   ]
 }

@@ -242,6 +242,16 @@ static void respawnServerNpc(Npc& npc)
     npc.body.maxHp = maxHp;
     npc.body.currentHp = maxHp;
     npc.movementProfileId = profile.movementPreset;
+    npc.navigator.reset();
+    npc.traversal.reset();
+    npc.prevHadTarget = false;
+    npc.reactionTimer = 0.0f;
+    npc.serverTargetId = 0;
+    // Reapply the role behavior profile for the new life.
+    npc.behaviorProfileId = profile.behaviorProfileId;
+    npc.behavior = resolveNpcBehavior(profile.behaviorProfileId);
+    if (npc.behavior.active && npc.behavior.aggression >= 0.0f)
+        npc.tuning.aggression = npc.behavior.aggression;
     if (!profile.weapons.empty())
         npcApplyLoadout(npc, profile.weapons, profile.startingWeapon);
     npc.body.killedBy.clear();
@@ -716,28 +726,117 @@ void simulateSharedNpcs(SOCKET sock,
         if (n.body.dead || n.body.currentHp <= 0)
             continue;
 
+        const uint32_t prevTarget = n.serverTargetId;
         const int myTeam = npcTeamOf(n);
         ServerPlayer* nearestPlayer = nullptr;
         Npc* nearestNpc = nullptr;
-        float bestD2 = std::numeric_limits<float>::max();
 
-        for (auto& kv : players)
+        if (n.behavior.active)
         {
-            ServerPlayer& p = kv.second;
-            if (p.dead || p.connectionStale) continue;
-            if (!actorsAreHostile(myTeam, p.matchTeam)) continue;
-            const glm::vec3 d = p.pos - n.body.pos;
-            const float d2 = glm::dot(d, d);
-            if (d2 < bestD2) { bestD2 = d2; nearestPlayer = &p; nearestNpc = nullptr; }
+            // Scored target selection. Weights come only from the behavior
+            // profile; the legacy nearest-hostile path is used without one.
+            const NpcBehaviorTuning& b = n.behavior;
+            auto scoreCandidate = [&](const glm::vec3& pos, int hp, int maxHp,
+                                      float threat01) {
+                const glm::vec3 d = pos - n.body.pos;
+                const float dist = glm::length(d);
+                const float distanceScore = 1.0f / (1.0f + dist);
+                const float healthFrac = maxHp > 0
+                    ? glm::clamp((float)hp / (float)maxHp, 0.0f, 1.0f) : 1.0f;
+                const float vulnerability = 1.0f - healthFrac;
+                return distanceScore * b.distanceTargetBias
+                     + vulnerability * b.lowHealthTargetBias
+                     + threat01 * b.threatBias;
+            };
+
+            float bestScore = -1e30f;
+            float currentScore = -1e30f;
+            for (auto& kv : players)
+            {
+                ServerPlayer& p = kv.second;
+                if (p.dead || p.connectionStale) continue;
+                if (!actorsAreHostile(myTeam, p.matchTeam)) continue;
+                float s = scoreCandidate(p.pos, p.health, std::max(1, p.maxHealth), 0.5f);
+                const bool isCurrent = (p.id == n.serverTargetId);
+                if (isCurrent) s += b.targetStickiness;
+                if (s > bestScore) { bestScore = s; nearestPlayer = &p; nearestNpc = nullptr; }
+                if (isCurrent) currentScore = s;
+            }
+            for (Npc& other : npcSystem.all())
+            {
+                if (&other == &n) continue;
+                if (other.body.dead || other.body.currentHp <= 0) continue;
+                if (!actorsAreHostile(myTeam, npcTeamOf(other))) continue;
+                float threat01 = 0.0f;
+                if (const WeaponDefinition* wd =
+                        WeaponRegistry::instance().get(other.body.equippedWeaponId))
+                    threat01 = glm::clamp(wd->damage / 50.0f, 0.0f, 1.0f);
+                float s = scoreCandidate(other.body.pos, other.body.currentHp,
+                                         other.body.maxHp, threat01);
+                const bool isCurrent = (other.id == n.serverTargetId);
+                if (isCurrent) s += b.targetStickiness;
+                if (s > bestScore) { bestScore = s; nearestNpc = &other; nearestPlayer = nullptr; }
+                if (isCurrent) currentScore = s;
+            }
+
+            // Switch only when a new candidate beats the current target by the
+            // configured threshold (reduces target thrashing).
+            if ((nearestPlayer || nearestNpc) && n.serverTargetId != 0 &&
+                currentScore > -1e29f)
+            {
+                const uint32_t bestId = nearestPlayer ? nearestPlayer->id : nearestNpc->id;
+                if (bestId != n.serverTargetId &&
+                    bestScore <= currentScore + b.targetSwitchThreshold)
+                {
+                    bool kept = false;
+                    for (auto& kv : players)
+                    {
+                        if (kv.second.id == n.serverTargetId && !kv.second.dead)
+                        { nearestPlayer = &kv.second; nearestNpc = nullptr; kept = true; break; }
+                    }
+                    if (!kept)
+                        for (Npc& other : npcSystem.all())
+                            if (other.id == n.serverTargetId && !other.body.dead &&
+                                other.body.currentHp > 0)
+                            { nearestNpc = &other; nearestPlayer = nullptr; kept = true; break; }
+                }
+            }
         }
-        for (Npc& other : npcSystem.all())
+        else
         {
-            if (&other == &n) continue;
-            if (other.body.dead || other.body.currentHp <= 0) continue;
-            if (!actorsAreHostile(myTeam, npcTeamOf(other))) continue;
-            const glm::vec3 d = other.body.pos - n.body.pos;
-            const float d2 = glm::dot(d, d);
-            if (d2 < bestD2) { bestD2 = d2; nearestNpc = &other; nearestPlayer = nullptr; }
+            // Legacy nearest-hostile (unchanged when no behavior profile applies).
+            float bestD2 = std::numeric_limits<float>::max();
+            for (auto& kv : players)
+            {
+                ServerPlayer& p = kv.second;
+                if (p.dead || p.connectionStale) continue;
+                if (!actorsAreHostile(myTeam, p.matchTeam)) continue;
+                const glm::vec3 d = p.pos - n.body.pos;
+                const float d2 = glm::dot(d, d);
+                if (d2 < bestD2) { bestD2 = d2; nearestPlayer = &p; nearestNpc = nullptr; }
+            }
+            for (Npc& other : npcSystem.all())
+            {
+                if (&other == &n) continue;
+                if (other.body.dead || other.body.currentHp <= 0) continue;
+                if (!actorsAreHostile(myTeam, npcTeamOf(other))) continue;
+                const glm::vec3 d = other.body.pos - n.body.pos;
+                const float d2 = glm::dot(d, d);
+                if (d2 < bestD2) { bestD2 = d2; nearestNpc = &other; nearestPlayer = nullptr; }
+            }
+        }
+
+        n.serverTargetId = nearestPlayer ? nearestPlayer->id
+                        : (nearestNpc ? nearestNpc->id : 0);
+        if (n.serverTargetId != prevTarget)
+        {
+            float targetDist = 0.0f;
+            if (nearestPlayer) targetDist = glm::length(nearestPlayer->pos - n.body.pos);
+            else if (nearestNpc) targetDist = glm::length(nearestNpc->body.pos - n.body.pos);
+            npcLog("npc-target npc=%u profile=%s target=%u dist=%.1f tick=%u",
+                   n.id,
+                   n.behaviorProfileId.empty() ? "default" : n.behaviorProfileId.c_str(),
+                   n.serverTargetId, targetDist, tick);
         }
 
         if (nearestPlayer)
