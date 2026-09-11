@@ -11,7 +11,9 @@
 #include "network/server.h"
 #include "network/actor-lifecycle.h"
 #include "network/server-gamemode.h"
+#include "network/community-server-config.h"
 #include "network/network-weapons.h"
+#include "gamemode/match-roles.h"
 #include "physics/movement/movement-conversion.h"
 #include "physics/movement/movement-step.h"
 #include "physics/movement/physics-collision.h"
@@ -315,17 +317,33 @@ void resolvePlayerCollision(std::unordered_map<uint32_t, ServerPlayer>& players)
 }
 
 // ── Initial inventory ────────────────────────────────────────────────
-// Community servers derive the inventory from the selected JSON weapon set.
-// Set 5 is the explicit opt-in for restricted/OP weapons.
-static void getInitialInventory(std::vector<std::string>& out)
+// Community servers derive the inventory from the effective weapon set. The
+// role's weapon_set (resolved by the caller) wins; otherwise the gamemode's
+// community set applies. Set 5 is the explicit opt-in for restricted weapons.
+static void getInitialInventory(std::vector<std::string>& out, int setId)
 {
     out.clear();
     const bool community = serverGamemodeState().enabled;
-    const bool includeRestricted = community && serverGamemodeState().communityWeaponSetId == 5;
     for (const auto& kv : WeaponRegistry::instance().all())
     {
+        if (!community) {
+            if (!kv.second.restricted) out.push_back(kv.first);
+            continue;
+        }
+        if (setId <= 0) {
+            // Legacy path: no explicit set, use the gamemode's allowed filter.
+            const bool includeRestricted =
+                serverGamemodeState().communityWeaponSetId == 5;
+            if ((includeRestricted || !kv.second.restricted) &&
+                serverCommunityWeaponAllowed(kv.first))
+                out.push_back(kv.first);
+            continue;
+        }
+        CommunityServerConfig& config = CommunityServerConfig::instance();
+        if (config.weaponSets().empty()) config.load();
+        const bool includeRestricted = setId == 5;
         if ((includeRestricted || !kv.second.restricted) &&
-            (!community || serverCommunityWeaponAllowed(kv.first)))
+            config.weaponAllowed(setId, kv.first))
             out.push_back(kv.first);
     }
 }
@@ -333,11 +351,17 @@ static void getInitialInventory(std::vector<std::string>& out)
 // ── Centralized spawn/respawn reset ──────────────────────────────────
 void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
 {
-    // Health and death
+    // Health and death. A role health override applies unless a host healthall
+    // override is set (the debug override wins, preserving its behavior).
     player.dead = false;
-    const int maxHp = serverGameOverrides().maxHpOverride > 0
-        ? serverGameOverrides().maxHpOverride : 100;
+    const ActorSpawnProfile profile = serverResolveActorSpawnProfile(player.id);
+    const int overrideHp = serverGameOverrides().maxHpOverride;
+    const int maxHp = overrideHp > 0 ? overrideHp
+                   : (profile.health > 0 ? profile.health : 100);
+    player.maxHealth = maxHp;
     player.health = maxHp;
+    // Role movement identity persists for this life; used by the shared kernel.
+    player.movementProfileId = profile.movementPreset;
 
     // Increment spawn generation (never decremented, never reset)
     ++player.spawnGeneration;
@@ -347,8 +371,15 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
     // inventory. Offline/non-community spawns retain their existing policy.
     if (isInitialSpawn || serverGamemodeState().enabled)
     {
+        // Role weapon set wins over the gamemode's community set for this life.
+        if (serverGamemodeState().enabled)
+            player.weaponSetId = profile.weaponSetId > 0
+                ? profile.weaponSetId
+                : serverGamemodeState().communityWeaponSetId;
+        else
+            player.weaponSetId = 0;
         player.ownedWeaponIds.clear();
-        getInitialInventory(player.ownedWeaponIds);
+        getInitialInventory(player.ownedWeaponIds, player.weaponSetId);
         player.weaponRuntimes.clear();
     }
 
@@ -407,9 +438,10 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
     player.simBroadcastPos = player.pos;
 
     printf("[SERVER SPAWN RESET] playerId=%u spawnGeneration=%u ownedWeapons=%zu"
-           " isInitialSpawn=%d\n",
+           " isInitialSpawn=%d maxHealth=%d weaponSet=%d role=%s\n",
            player.id, player.spawnGeneration, player.ownedWeaponIds.size(),
-           (int)isInitialSpawn);
+           (int)isInitialSpawn, player.maxHealth, player.weaponSetId,
+           profile.hasRole ? profile.roleId.c_str() : "none");
 }
 
 // ── Complete authoritative spawn and notify client ────────────────────
@@ -459,7 +491,7 @@ void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitia
     spawnSync.velZ = player.vel.z;
     spawnSync.health = player.health;
     spawnSync.communityWeaponSetId = serverGamemodeState().enabled
-        ? static_cast<uint8_t>(std::clamp(serverGamemodeState().communityWeaponSetId, 0, 255)) : 0;
+        ? static_cast<uint8_t>(std::clamp(player.weaponSetId, 0, 255)) : 0;
     Debug::log(Debug::Category::Duel,
         "[DuelPacketSend] type=PlayerRespawnedPacket reliable=1 player=%u spawnGeneration=%u epoch=%u pos=(%.3f,%.3f,%.3f) velocity=(%.3f,%.3f,%.3f)\n",
         player.id, spawnSync.spawnGeneration, spawnSync.transformEpoch,
@@ -580,6 +612,16 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         p.movement.externalImpulse = glm::vec3(0.0f);
         syncServerMovementRuntime(p, false);
         p.projectileFireCooldown = std::max(0.0f, p.projectileFireCooldown - SERVER_DT);
+
+        // One-life / no-respawn mode: the actor remains dead for the round
+        // (Spectating in the match state) and never revives here, even if a
+        // client requests an instant respawn.
+        if (!serverMatchRespawnsEnabled())
+        {
+            p.instantRespawnRequested = false;
+            return;
+        }
+
         // Instant respawn request from client Space press
         if (p.instantRespawnRequested)
         {
@@ -713,7 +755,13 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
                 MovementLifecycleIdentity{p.spawnGeneration, p.transformEpoch});
         }
 
-        const MovementConfig cfg = makeCurrentRuntimeMovementConfig();
+        // Role movement preset (if any) drives the shared kernel for this
+        // actor; otherwise the global movement config applies.
+        const MovementConfig* roleMove =
+            RoleMovementCache::instance().get(p.movementProfileId);
+        const MovementConfig cfg = roleMove
+            ? applyRuntimeMovementTuning(*roleMove)
+            : makeCurrentRuntimeMovementConfig();
         MovementState state = movementStateFromServerPlayer(p);
 
         // Phase 1: Pre-collision movement (gravity, walk, jump, dash)

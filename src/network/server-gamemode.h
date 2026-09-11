@@ -20,6 +20,7 @@
 #include <glm/glm.hpp>
 
 #include "network/server.h"
+#include "network/actor-match.h"
 
 namespace MimitaNet {
 
@@ -148,6 +149,11 @@ struct ServerGamemodeState
     // Team assignments (persistent per match, 0=red, 1=blue)
     std::unordered_map<uint32_t, int> matchTeams;
 
+    // The single authoritative match identity for every participant (human or
+    // NPC), keyed by actor id. Assigned by assignMatchParticipants and updated
+    // as actor state changes. Replicated (team/role/state) via DuelStatePacket.
+    std::unordered_map<uint32_t, ActorMatchDescriptor> matchActors;
+
     // All participating player IDs (FFA/TDM can have >2 players)
     std::vector<uint32_t> participants;
     std::unordered_map<uint32_t, std::string> participantNames;
@@ -155,6 +161,13 @@ struct ServerGamemodeState
     // Victory info
     int victoryType = 0;  // 0=ScoreLimit, 1=TimeLimit
     int winnerTeam = -1;  // for TDM: 0=red, 1=blue
+
+    // ── Authoritative match-rule values (from Gamemode JSON) ────────
+    // respawnSeconds: <0 = unset (legacy instant 0.01s), 0 = one-life (no
+    // respawn; dead actors become Spectating), >0 = respawn delay.
+    float respawnSeconds = -1.0f;
+    bool killHeals = true;
+    std::string winCondition;
 
     // Match event counter for KillEvent IDs
     uint32_t killEventCounter = 0;
@@ -188,6 +201,29 @@ struct ServerGamemodeState
 
 // Singleton gamemode state for the current server process.
 ServerGamemodeState& serverGamemodeState();
+
+// Authoritative match lifecycle-rule queries. These read the active
+// ServerGamemodeState so damage/respawn/NPC code has one source of truth.
+// serverMatchRespawnsEnabled: false => one-life; dead actors become Spectating.
+bool serverMatchRespawnsEnabled();
+// Effective respawn delay in seconds (unset falls back to the legacy 0.01s).
+float serverMatchRespawnSeconds();
+
+// Role-resolved spawn data for one authoritative actor. Values are 0/empty when
+// the actor has no role or the role does not override that field, so callers
+// keep their legacy/default behavior. Weapon list comes from the referenced
+// weapon set (no weapon definitions are duplicated inside roles).
+struct ActorSpawnProfile
+{
+    bool hasRole = false;
+    std::string roleId;
+    int health = 0;                       // 0 = no override
+    int weaponSetId = 0;                  // 0 = no override
+    std::string startingWeapon;
+    std::vector<std::string> weapons;     // resolved role loadout (may be empty)
+    std::string movementPreset;           // resolved/validated role movement preset
+};
+ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId);
 
 // Start the shared server runtime with the given mode rules. Duel, FFA, TDM,
 // and sandbox all use this same lifecycle owner.

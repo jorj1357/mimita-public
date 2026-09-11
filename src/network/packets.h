@@ -1120,6 +1120,9 @@ struct DuelStatePacket
     uint32_t participantIds[32] = {};
     uint8_t participantCount = 0;
     uint8_t participantTeams[32] = {};  // 0=red, 1=blue, 0xFF=none
+    // Actor identity: 1-based MatchRoleRegistry index (0 = none), and ActorState.
+    uint8_t participantRoles[32] = {};
+    uint8_t participantStates[32] = {};
     // ── Gamemode visual overrides ───────────────────────────────────
     float cameraFov = 0.0f;         // 0 = no override
     uint8_t ragdollEnabled = 0;     // 0=no override, 1=disabled, 2=enabled

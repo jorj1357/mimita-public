@@ -29,8 +29,10 @@ struct CommunityMode
 struct CommunityWeaponSet
 {
     int id = 1;
+    std::string key;         // stable string handle referenced by role configs
     std::string name;
     std::string description;
+    bool roleOnly = false;   // role loadout sets are hidden from the host menu
     std::vector<std::string> weapons;
 };
 
@@ -48,6 +50,10 @@ public:
     const CommunityMode* modeById(const std::string& id) const;
     const CommunityMode* modeByName(const std::string& name) const;
     const CommunityWeaponSet* weaponSetById(int id) const;
+    // Resolve a weapon set by its stable string key (falls back to name).
+    // Returns nullptr when no set matches, so callers can preserve legacy
+    // behavior instead of silently selecting the first set.
+    const CommunityWeaponSet* weaponSetByKey(const std::string& key) const;
     bool weaponAllowed(int setId, const std::string& weaponId) const;
     const std::string* weaponForSlot(int setId, int slot) const;
     int slotForWeapon(int setId, const std::string& weaponId) const;

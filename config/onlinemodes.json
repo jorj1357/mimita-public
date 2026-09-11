@@ -55,6 +55,14 @@
       "description": "All weapons, high FOV, ragdolls enabled.",
       "teams": 2,
       "score_limit": 15
+    },
+    {
+      "id": "elimination",
+      "gamemode_id": "elimination",
+      "name": "Elimination",
+      "description": "One life. Last team standing wins.",
+      "teams": 2,
+      "score_limit": 0
     }
   ]
 }

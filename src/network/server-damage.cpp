@@ -129,7 +129,12 @@ static ServerDamageResult applyPlayerDamageLegacy(
     if (target.health == 0)
     {
         target.dead = true;
-        target.respawnSeconds = 0.01f;  // instant respawn (next server tick)
+        // Honor the active gamemode's respawn rule. One-life modes set a
+        // negative timer so the respawn pump never revives the actor and the
+        // match state advances it to Spectating.
+        target.respawnSeconds = serverMatchRespawnsEnabled()
+            ? serverMatchRespawnSeconds()
+            : -1.0f;
         target.vel = glm::vec3(0.0f);
         target.movement.movementEnabled = false;
         target.movement.baseVelocity = glm::vec3(0.0f);

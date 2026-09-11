@@ -315,10 +315,11 @@ void handleNpcDamageRequest(SOCKET sock, const char* buffer, int bytes,
                 gms.communityMode.c_str(), gms.matchMode.c_str(),
                 (int)gms.phase, (int)gms.mapOnly, (int)gms.enabled);
         }
-        // Heal the shooter to full health
+        // Heal the shooter to their role-resolved life maximum.
         auto shooterIt = players.find(req->header.playerId);
         if (shooterIt != players.end())
-            shooterIt->second.health = serverMaxHp();
+            shooterIt->second.health = shooterIt->second.maxHealth > 0
+                ? shooterIt->second.maxHealth : serverMaxHp();
     }
 
     const glm::vec3 origin(req->originX, req->originY, req->originZ);
@@ -558,8 +559,10 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
             // "healthall 999" immediately shows 999/999, not just future spawns.
             const int effectiveMax = serverMaxHp();
             for (auto& kv : players)
-                if (!kv.second.dead)
+                if (!kv.second.dead) {
+                    kv.second.maxHealth = effectiveMax;
                     kv.second.health = effectiveMax;
+                }
             for (auto& kv : npcs)
                 if (kv.second.health > 0)
                     kv.second.health = effectiveMax;
@@ -730,7 +733,8 @@ void checkVoidDeath(std::unordered_map<uint32_t, ServerPlayer>& players,
             kv.second.dead = true;
             emitPvPKillPersistenceEvent(players, 0, kv.second.id, "environment", 0,
                                        kv.second.pos, kv.second.pos);
-            kv.second.respawnSeconds = 0.01f;  // instant respawn (next server tick)
+            kv.second.respawnSeconds = serverMatchRespawnsEnabled()
+                ? serverMatchRespawnSeconds() : -1.0f;
             kv.second.vel = glm::vec3(0.0f);
             printf("%s [SERVER VOID DEATH] playerId=%u name=%s z=%.1f killZ=%.1f\n",
                    serverTimestamp(), kv.second.id, kv.second.name.c_str(),

@@ -37,6 +37,38 @@ Whats this
 
 newest at top 9 3 2026
 
+2026-09-10T22:19:14Z — Ragdoll activation inherited the animated pose; rest-pose bind corrected it (source-built, awaiting playtest)
+
+1. Expected behavior: entering ragdoll mode resets each limb to the canonical
+   capsule orientation instead of inheriting the animation frame (for example,
+   an arm swung ~30 degrees mid-walk snaps to its capsule).
+2. Actual behavior (human report): the arm stayed rotated ~30 degrees around
+   the shoulder relative to its capsule.
+3. Exact specification: `docs/specs/ragdoll-retrograd/ragdoll-retrograd.md`;
+   the visible body must stay 1:1 with the physical capsules.
+4. Exact wrong code: `src/ragdoll/ragdoll-mode.cpp`, `RagdollModeSystem::initParts`:
+   `part.meshLocal = glm::inverse(bodyBindWorld) * nodeWorld;`
+   with `activate` first calling `player.updateModelWorldTransforms()` on the
+   current animated skeleton.
+5. Why wrong: the animated node rotation was baked into `meshLocal`, so physics
+   moved the canonical body while the mesh remained rigidly off-axis by the
+   inherited rotation.
+6. Corrected code: reset the player skeleton to `perfectPoseSkeleton.restLocalTransforms`
+   before `player.updateModelWorldTransforms()` in `activate` and before
+   `initParts` in `reinitPreservingState`; then restore saved body states in the
+   reload path. Corpse spawning still binds intentionally from the victim's
+   frozen death pose.
+7. Date and time first observed: 2026-09-10, human playtest; recorded
+   2026-09-10T22:19:14Z.
+8. Proof so far: source change plus successful canonical build. Dedicated
+   runtime playtest evidence is still pending, although the human accepts this
+   as the intended correction.
+9. Related changelog:
+   `docs/changelog/2026-09-10/20260910_220958-ragdoll-activation-rest-bind.md`.
+10. What we learned: bind-time inputs matter as much as solver constraints. Do
+    not derive a body-to-mesh transform from a live animated or simulated pose
+    unless preserving that pose is explicitly intended.
+
 2026-09-10T21:32:00Z — Ragdoll grabbed arm rotated freely and froze in the wrong orientation (fixed)
 
 1. Expected behavior: while a grab is held, the arm pivots at the shoulder so

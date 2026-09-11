@@ -1,0 +1,24 @@
+// 09 10 2026
+/* purpose
+* Role movement preset: fast, agile "retrograd_fast" profile.
+* Named preset consumed by role configs through RoleMovementCache.
+* Only overrides the fields that make it distinct from the built-in default.
+* Does NOT implement movement formulas or select itself globally.
+*/
+{
+    "name": "retrograd_fast",
+    "comment": "Fast role movement: higher speed/jump, stronger dash, freeze enabled.",
+    "movement_mode": "mimita",
+    "ground_speed": 24.0,
+    "air_speed": 24.0,
+    "ground_acceleration": 62.0,
+    "air_acceleration": 28.0,
+    "jump_strength": 19.0,
+    "gravity": -58.0,
+    "ground_dash_impulse": 118.0,
+    "air_dash_impulse": 62.0,
+    "down_dash_speed": -110.0,
+    "dash_enabled": true,
+    "down_dash_enabled": true,
+    "freeze_enabled": true
+}

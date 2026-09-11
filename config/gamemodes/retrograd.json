@@ -24,5 +24,9 @@
   "camera_fov": 70,
   "ragdoll_enabled": true,
   "blood_enabled": true,
+  "roles": {
+    "juggernaut": 4,
+    "hunter": 27
+  },
   "maps": ["mimita-duels-map-v3", "atdm", "funworld"]
 }

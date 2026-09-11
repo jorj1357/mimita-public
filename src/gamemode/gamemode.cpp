@@ -197,13 +197,27 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             next.bloodEnabled = root["blood_enabled"].get<bool>();
         }
 
+        // ── Match role counts (optional) ────────────────────────────
+        if (root.contains("roles") && root["roles"].is_object()) {
+            for (auto it = root["roles"].begin(); it != root["roles"].end(); ++it) {
+                if (!it.value().is_number()) continue;
+                const int count = it.value().get<int>();
+                if (count > 0)
+                    next.roleCounts.push_back({it.key(), count});
+            }
+        }
+
+        // ── Elimination / win rules (optional) ──────────────────────
+        next.winCondition = optString(root, "win_condition", next.winCondition);
+
         slot.mode = next;
         Debug::warn(Debug::Category::Duel,
-            "[GAMEMODE] Loaded %s: %s | goal=%d | time=%d | respawn=%.1fs | heal=%d | maps=%zu | fov=%.0f ragdoll=%d(%d) blood=%d(%d)\n",
+            "[GAMEMODE] Loaded %s: %s | goal=%d | time=%d | respawn=%.1fs | heal=%d | maps=%zu | fov=%.0f ragdoll=%d(%d) blood=%d(%d) win=%s\n",
             fileNameOf(path).c_str(), next.name.c_str(), next.goalValue,
             next.timeLimitSeconds, next.respawnSeconds, (int)next.killHeals, next.maps.size(),
             next.cameraFov, (int)next.ragdollEnabled, (int)next.ragdollExplicit,
-            (int)next.bloodEnabled, (int)next.bloodExplicit);
+            (int)next.bloodEnabled, (int)next.bloodExplicit,
+            next.winCondition.empty() ? "default" : next.winCondition.c_str());
     } catch (const json::parse_error& e) {
         Debug::error(Debug::Category::Duel, "[GAMEMODE] Parse error in %s: %s. Keeping previous valid data.\n",
                      path.c_str(), e.what());

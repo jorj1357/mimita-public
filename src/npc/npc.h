@@ -19,6 +19,7 @@
 #include "input/input-state.h"
 #include "input/input-frame.h"
 #include "npc/npc-state-machine.h"
+#include "npc/npc-navigator.h"
 
 class Camera;
 struct World;
@@ -59,8 +60,17 @@ public:
     float difficulty = 1.0f;
     NpcDifficultyTuning tuning;
     Player body;
+    // Role-resolved loadout override. Empty = use NpcDifficultyConfig's global
+    // weaponLoadout/startingWeapon/forceWeapon. Non-empty = role set is
+    // authoritative for spawning and AI weapon switching.
+    std::vector<std::string> loadoutOverride;
+    std::string startingWeaponOverride;
+    // Role movement preset for this life; empty = legacy/NpcDifficultyConfig.
+    std::string movementProfileId;
     NpcSensorContext sensors;
     NpcStateMachine stateMachine;
+    // Goal -> navigation -> movement pipeline (cached local route).
+    NpcNavigator navigator;
 
     float dashCooldown = 0.0f;
     float downDashCooldown = 0.0f;

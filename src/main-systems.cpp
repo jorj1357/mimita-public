@@ -103,6 +103,7 @@
 #include "config/movement-config.h"
 #include "npc/npc-difficulty-config.h"
 #include "gamemode/gamemode.h"
+#include "gamemode/match-roles.h"
 #include "gamemode/gamemode-map-pool.h"
 #include "duel/duel-weapon-pool.h"
 #include "npc/npc-combat-log.h"
@@ -137,6 +138,7 @@ void registerCursorCommands();
 #include "terminal/weapon-bench-commands.h"
 #include "terminal/npc-commands.h"
 #include "terminal/duel-commands.h"
+#include "terminal/actor-commands.h"
 #include "terminal/editor-commands.h"
 #include "terminal/network-commands.h"
 #include "terminal/badconn-commands.h"
@@ -236,6 +238,7 @@ void gameInitSubsystems(Engine& engine)
     GameplayConfig::instance().load("config/gameplay.json");
     NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
     GamemodeRegistry::instance().loadDirectory("config/gamemodes");
+    MatchRoleRegistry::instance().load("config/roles.json");
     GamemodeMapPool::instance().load("config/gamemode-good-maps.json");
     DuelWeaponPool::instance().load("config/duel-weapons.json");
     npcLogSetProc("client");
@@ -555,6 +558,7 @@ void gameInitSubsystems(Engine& engine)
     });
 
     registerDuelCommands();
+    registerActorCommands();
     registerCompetitiveCommands();
     registerLeaderboardCommands();
     registerCursorCommands();

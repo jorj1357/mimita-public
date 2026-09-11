@@ -255,6 +255,14 @@ struct ServerPlayer
     glm::vec3 vel{0.0f};
     float yaw = 0.0f;
     int health = 100;
+    // Role-resolved life maximum (includes any healthall override at spawn).
+    // Used by kill-heal and damage clamping so role health is not overwritten.
+    int maxHealth = 100;
+    // Effective weapon/loadout set for this life (role weapon_set or the
+    // gamemode's community set). 0 = unrestricted/legacy.
+    int weaponSetId = 0;
+    // Role movement preset resolved for this life; empty = legacy/global.
+    std::string movementProfileId;
     bool onGround = false;
     bool dashAvailable = true;
     bool attackQueued = false;

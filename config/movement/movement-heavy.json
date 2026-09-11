@@ -1,0 +1,24 @@
+// 09 10 2026
+/* purpose
+* Role movement preset: slow, heavy "heavy" profile.
+* Named preset consumed by role configs through RoleMovementCache.
+* Only overrides the fields that make it distinct from the built-in default.
+* Does NOT implement movement formulas or select itself globally.
+*/
+{
+    "name": "heavy",
+    "comment": "Heavy role movement: lower speed/accel/jump, no dash, no freeze.",
+    "movement_mode": "mimita",
+    "ground_speed": 13.0,
+    "air_speed": 13.0,
+    "ground_acceleration": 28.0,
+    "air_acceleration": 9.0,
+    "jump_strength": 13.0,
+    "gravity": -70.0,
+    "ground_dash_impulse": 40.0,
+    "air_dash_impulse": 20.0,
+    "down_dash_speed": -60.0,
+    "dash_enabled": false,
+    "down_dash_enabled": false,
+    "freeze_enabled": false
+}

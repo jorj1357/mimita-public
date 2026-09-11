@@ -132,6 +132,57 @@ void npcInitLoadout(Npc& npc)
         npc.id, loadout.size(), finalWpn.c_str(), cfg.forceWeapon.c_str());
 }
 
+void npcApplyLoadout(Npc& npc, const std::vector<std::string>& weaponIds,
+                     const std::string& startingWeapon)
+{
+    if (weaponIds.empty()) {
+        // No role override: leave the current/global loadout untouched.
+        npc.loadoutOverride.clear();
+        npc.startingWeaponOverride.clear();
+        return;
+    }
+
+    // Replace the runtime inventory with exactly the role weapons so the AI
+    // cannot switch to a weapon outside the role loadout.
+    npc.body.weaponRuntimes.clear();
+    std::vector<std::string> valid;
+    for (const auto& wid : weaponIds) {
+        const WeaponDefinition* def = WeaponRegistry::instance().get(wid);
+        if (!def) {
+            Debug::log(Debug::Category::NpcCombat,
+                "[NPC ROLE LOADOUT] npc=%u weapon '%s' not found, skipping\n",
+                npc.id, wid.c_str());
+            continue;
+        }
+        npc.body.weaponRuntimes[wid] = WeaponRuntime{};
+        WeaponRuntimeHelper::initRuntime(npc.body.weaponRuntimes[wid], *def);
+        valid.push_back(wid);
+    }
+    if (valid.empty()) {
+        npc.loadoutOverride.clear();
+        npc.startingWeaponOverride.clear();
+        return;
+    }
+
+    npc.loadoutOverride = valid;
+    npc.startingWeaponOverride = startingWeapon;
+
+    std::string equip = startingWeapon;
+    if (equip.empty() ||
+        npc.body.weaponRuntimes.find(equip) == npc.body.weaponRuntimes.end())
+        equip = valid.front();
+    const WeaponDefinition* def = WeaponRegistry::instance().get(equip);
+    if (def) {
+        npc.body.equippedWeaponId = equip;
+        npc.body.equippedSlot = def->slot;
+        npc.body.hasValidWeapon = true;
+    }
+    resetAllWeaponRuntimesForSpawn(npc.body, "npc role loadout");
+    Debug::log(Debug::Category::NpcCombat,
+        "[NPC ROLE LOADOUT] npc=%u weapons=%zu equipped=%s\n",
+        npc.id, valid.size(), equip.c_str());
+}
+
 bool npcSwitchWeapon(Npc& npc, const std::string& weaponId)
 {
     if (npc.body.equippedWeaponId == weaponId) return false;

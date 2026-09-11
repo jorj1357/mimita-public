@@ -99,8 +99,10 @@ bool CommunityServerConfig::loadWeaponSets(const std::string& path)
             if (!item.is_object()) continue;
             CommunityWeaponSet set;
             set.id = item.value("id", 0);
+            set.key = item.value("key", "");
             set.name = item.value("name", "Weapon Set " + std::to_string(set.id));
             set.description = item.value("description", "");
+            set.roleOnly = item.value("role_only", false);
             if (item.contains("weapons") && item["weapons"].is_array())
                 for (const auto& weapon : item["weapons"])
                     if (weapon.is_string()) set.weapons.push_back(weapon.get<std::string>());
@@ -153,6 +155,15 @@ const CommunityWeaponSet* CommunityServerConfig::weaponSetById(int id) const
     return weaponSets_.empty() ? nullptr : &weaponSets_.front();
 }
 
+const CommunityWeaponSet* CommunityServerConfig::weaponSetByKey(const std::string& key) const
+{
+    if (key.empty()) return nullptr;
+    for (const auto& set : weaponSets_) {
+        if (set.key == key || set.name == key) return &set;
+    }
+    return nullptr;
+}
+
 bool CommunityServerConfig::weaponAllowed(int setId, const std::string& weaponId) const
 {
     const CommunityWeaponSet* set = weaponSetById(setId);
@@ -196,6 +207,7 @@ std::string CommunityServerConfig::weaponSetItems() const
 {
     std::string out;
     for (const auto& set : weaponSets_) {
+        if (set.roleOnly) continue;  // role loadout sets are not host-selectable
         if (!out.empty()) out += ',';
         out += "Set " + std::to_string(set.id) + ": " + set.name;
     }

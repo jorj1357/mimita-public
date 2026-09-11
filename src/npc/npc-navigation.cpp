@@ -14,20 +14,7 @@ namespace {
 
 bool rayTriangleIntersect(glm::vec3 origin, glm::vec3 dir, const CollisionTriangle& tri, float maxT, float& outT)
 {
-    glm::vec3 e1 = tri.b - tri.a;
-    glm::vec3 e2 = tri.c - tri.a;
-    glm::vec3 p = glm::cross(dir, e2);
-    float det = glm::dot(e1, p);
-    if (std::fabs(det) < 0.0001f) return false;
-    float invDet = 1.0f / det;
-    glm::vec3 tVec = origin - tri.a;
-    float u = glm::dot(tVec, p) * invDet;
-    if (u < 0.0f || u > 1.0f) return false;
-    glm::vec3 q = glm::cross(tVec, e1);
-    float v = glm::dot(dir, q) * invDet;
-    if (v < 0.0f || u + v > 1.0f) return false;
-    outT = glm::dot(e2, q) * invDet;
-    return outT > 0.01f && outT < maxT;
+    return NpcNavigation::rayTriangle(origin, dir, tri, maxT, outT);
 }
 
 static void gatherNear(const World& world, glm::vec3 pos, float radius, std::vector<int>& out) {
@@ -61,6 +48,25 @@ static bool rayHitsAny(glm::vec3 origin, glm::vec3 dir, float maxDist,
 }
 
 } // anonymous namespace
+
+bool NpcNavigation::rayTriangle(const glm::vec3& origin, const glm::vec3& dir,
+                                const CollisionTriangle& tri, float maxT, float& outT)
+{
+    glm::vec3 e1 = tri.b - tri.a;
+    glm::vec3 e2 = tri.c - tri.a;
+    glm::vec3 p = glm::cross(dir, e2);
+    float det = glm::dot(e1, p);
+    if (std::fabs(det) < 0.0001f) return false;
+    float invDet = 1.0f / det;
+    glm::vec3 tVec = origin - tri.a;
+    float u = glm::dot(tVec, p) * invDet;
+    if (u < 0.0f || u > 1.0f) return false;
+    glm::vec3 q = glm::cross(tVec, e1);
+    float v = glm::dot(dir, q) * invDet;
+    if (v < 0.0f || u + v > 1.0f) return false;
+    outT = glm::dot(e2, q) * invDet;
+    return outT > 0.01f && outT < maxT;
+}
 
 float NpcNavigation::groundHeightAt(const World& world, const glm::vec3& pos, float searchDist, float radius)
 {

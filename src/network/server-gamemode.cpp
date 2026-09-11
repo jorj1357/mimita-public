@@ -18,11 +18,13 @@
 #include "network/packets.h"
 #include "network/server.h"
 #include "npc/npc.h"
+#include "npc/npc-internal.h"
 #include "combat/weapon-registry.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "network/community-server-config.h"
 #include "gamemode/gamemode.h"
+#include "gamemode/match-roles.h"
 #include "persistence/persistence-queue.h"
 #include "persistence/persistence-events.h"
 #include "persistence/persistence-emit.h"
@@ -54,6 +56,72 @@ ServerGamemodeState& serverGamemodeState()
 {
     static ServerGamemodeState state;
     return state;
+}
+
+bool serverMatchRespawnsEnabled()
+{
+    const ServerGamemodeState& d = serverGamemodeState();
+    if (!d.enabled) return true;      // legacy / sandbox keeps instant respawn
+    return d.respawnSeconds != 0.0f;  // 0 == one-life
+}
+
+float serverMatchRespawnSeconds()
+{
+    const ServerGamemodeState& d = serverGamemodeState();
+    if (!d.enabled) return 0.01f;
+    return d.respawnSeconds >= 0.0f ? d.respawnSeconds : 0.01f;
+}
+
+ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
+{
+    ActorSpawnProfile out;
+    const ServerGamemodeState& d = serverGamemodeState();
+    auto it = d.matchActors.find(actorId);
+    if (it == d.matchActors.end() || it->second.roleId.empty())
+        return out;
+
+    const MatchRoleDefinition* def =
+        MatchRoleRegistry::instance().get(it->second.roleId);
+    if (!def)
+        return out;
+
+    out.hasRole = true;
+    out.roleId = def->id;
+    out.health = def->health;
+    out.startingWeapon = def->startingWeapon;
+
+    if (!def->movementPreset.empty()) {
+        // Validate once through the cache so an unknown preset is caught here
+        // (and logged with role context) instead of every simulation tick.
+        const MovementConfig* mc =
+            RoleMovementCache::instance().get(def->movementPreset);
+        if (mc) {
+            out.movementPreset = def->movementPreset;
+            Debug::log(Debug::Category::Duel,
+                "[ROLE MOVEMENT] actor=%u role=%s preset=%s groundSpeed=%.1f airSpeed=%.1f jump=%.1f gravity=%.1f dash=%d downDash=%d freeze=%d\n",
+                actorId, def->id.c_str(), out.movementPreset.c_str(),
+                mc->groundSpeed, mc->airSpeed, mc->jumpVerticalSpeed, mc->gravityZ,
+                (int)mc->dashEnabled, (int)mc->downDashEnabled, (int)mc->freezeEnabled);
+        } else {
+            Debug::warn(Debug::Category::Duel,
+                "[ROLES] role %s references unknown movement preset \"%s\"; using default movement\n",
+                def->id.c_str(), def->movementPreset.c_str());
+        }
+    }
+
+    if (!def->weaponSet.empty()) {
+        const CommunityWeaponSet* set =
+            CommunityServerConfig::instance().weaponSetByKey(def->weaponSet);
+        if (set) {
+            out.weaponSetId = set->id;
+            out.weapons = set->weapons;
+        } else {
+            Debug::warn(Debug::Category::Duel,
+                "[ROLES] role %s references unknown weapon_set \"%s\"\n",
+                def->id.c_str(), def->weaponSet.c_str());
+        }
+    }
+    return out;
 }
 
 void serverStartMode(const ServerGamemodeState& rules)
@@ -117,6 +185,9 @@ void serverStartMode(const ServerGamemodeState& rules)
     d.intermissionSeconds = rules.intermissionSeconds;
     d.resultsSeconds = rules.resultsSeconds;
     d.timeLimitSeconds = rules.timeLimitSeconds;
+    d.respawnSeconds = rules.respawnSeconds;
+    d.killHeals = rules.killHeals;
+    d.winCondition = rules.winCondition;
     d.ffaKills.clear();
     d.ffaDeaths.clear();
     d.redTeamKills = 0;
@@ -286,6 +357,9 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     if (!d.communityWeaponSetExplicit && gm.weaponSetId > 0)
         d.communityWeaponSetId = gm.weaponSetId;
     d.timeLimitSeconds = gm.timeLimitSeconds;
+    d.respawnSeconds = gm.respawnSeconds;
+    d.killHeals = gm.killHeals;
+    d.winCondition = gm.winCondition;
     d.intermissionSeconds = (float)gm.intermissionSeconds;
     d.resultsSeconds = (float)gm.resultsSeconds;
     d.countdownSeconds = gm.countdownSeconds;
@@ -301,6 +375,12 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.bloodExplicit = gm.bloodExplicit;
     d.bloodEnabled = gm.bloodEnabled;
 
+    Debug::warn(Debug::Category::Duel,
+        "[MATCH RULES] mode=%s respawn=%.2fs respawns=%d kill_heals=%d win=%s roles=%zu\n",
+        resolvedGamemodeId.c_str(), d.respawnSeconds, (int)serverMatchRespawnsEnabled(),
+        (int)d.killHeals, d.winCondition.empty() ? "default" : d.winCondition.c_str(),
+        gm.roleCounts.size());
+
     // modestart enters the configured intermission. modestartnow enters the
     // countdown directly; serverGamemodeTick owns the authoritative 3-2-1.
     d.mapOnly = false;
@@ -310,6 +390,7 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.ffaKills.clear();
     d.ffaDeaths.clear();
     d.matchTeams.clear();
+    d.matchActors.clear();
     d.participants.clear();
     d.redTeamKills = 0;
     d.blueTeamKills = 0;
@@ -438,9 +519,19 @@ void broadcastDuelState(SOCKET sock,
     // Participant IDs and teams
     pkt.participantCount = (uint8_t)std::min((size_t)32, d.participants.size());
     for (uint8_t i = 0; i < pkt.participantCount; ++i) {
-        pkt.participantIds[i] = d.participants[i];
-        auto teamIt = d.matchTeams.find(d.participants[i]);
+        const uint32_t actorId = d.participants[i];
+        pkt.participantIds[i] = actorId;
+        auto teamIt = d.matchTeams.find(actorId);
         pkt.participantTeams[i] = teamIt != d.matchTeams.end() ? (uint8_t)teamIt->second : 0xFF;
+        auto actorIt = d.matchActors.find(actorId);
+        if (actorIt != d.matchActors.end()) {
+            pkt.participantRoles[i] =
+                (uint8_t)MatchRoleRegistry::instance().indexOf(actorIt->second.roleId);
+            pkt.participantStates[i] = (uint8_t)actorIt->second.state;
+        } else {
+            pkt.participantRoles[i] = 0;
+            pkt.participantStates[i] = (uint8_t)ActorState::Alive;
+        }
     }
 
     for (const auto& kv : players) {
@@ -809,6 +900,10 @@ bool rotateToNextGamemodeMap(SOCKET sock,
 
 // ── FFA/TDM match helpers ───────────────────────────────────────────────
 
+// Assign one authoritative match identity to every participant (human or NPC)
+// from a single path. Roles come from config/roles.json; a gamemode may declare
+// per-role counts. When no roles are configured, teams fall back to the legacy
+// round-robin assignment and no role is set.
 void assignMatchParticipants(ServerGamemodeState& d,
                              std::unordered_map<uint32_t, ServerPlayer>& players,
                              std::unordered_map<uint32_t, ServerNpc>* npcs = nullptr)
@@ -818,6 +913,7 @@ void assignMatchParticipants(ServerGamemodeState& d,
     d.ffaKills.clear();
     d.ffaDeaths.clear();
     d.matchTeams.clear();
+    d.matchActors.clear();
     d.redTeamKills = 0;
     d.blueTeamKills = 0;
 
@@ -841,24 +937,171 @@ void assignMatchParticipants(ServerGamemodeState& d,
         }
     }
 
-    // Sort by ID for deterministic team assignment
+    // Sort by ID for deterministic assignment
     std::sort(d.participants.begin(), d.participants.end());
 
-    if (d.matchMode == "tdm") {
-        for (size_t i = 0; i < d.participants.size(); ++i) {
-            d.matchTeams[d.participants[i]] = (int)(i % 2);
-            auto playerIt = players.find(d.participants[i]);
-            if (playerIt != players.end())
-                playerIt->second.matchTeam = (int)(i % 2);
-            if (npcs) {
-                auto npcIt = npcs->find(d.participants[i]);
-                if (npcIt != npcs->end())
-                    npcIt->second.matchTeam = (int)(i % 2);
+    // Seed one descriptor per participant with the correct controller type.
+    // Humans and NPCs get the same structure and go through the same path below.
+    for (uint32_t id : d.participants) {
+        ActorMatchDescriptor desc;
+        desc.controller = (players.find(id) != players.end())
+            ? ActorController::Human : ActorController::Npc;
+        desc.state = ActorState::Alive;
+        desc.teamId = -1;
+        d.matchActors[id] = std::move(desc);
+    }
+
+    // Role assignment from the gamemode's declared role counts. Roles are
+    // apportioned proportionally across the participant list (largest-remainder
+    // style) so a mode with e.g. 8 hunters + 4 juggernauts still shows both
+    // roles in a small match and stays deterministic for a given config + set.
+    const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+    struct RoleSlot { std::string id; int cap; int assigned; };
+    std::vector<RoleSlot> roles;
+    int totalSlots = 0;
+    for (const auto& rc : gm.roleCounts) {
+        if (rc.second <= 0) continue;
+        if (!MatchRoleRegistry::instance().get(rc.first)) {
+            Debug::warn(Debug::Category::Duel,
+                "[ROLES] gamemode %s references unknown role \"%s\"\n",
+                d.matchMode.c_str(), rc.first.c_str());
+            continue;
+        }
+        roles.push_back({rc.first, rc.second, 0});
+        totalSlots += rc.second;
+    }
+
+    for (size_t i = 0; i < d.participants.size() && totalSlots > 0; ++i) {
+        int best = -1;
+        double bestScore = 0.0;
+        for (int r = 0; r < (int)roles.size(); ++r) {
+            if (roles[r].assigned >= roles[r].cap) continue;
+            // Cumulative target for this position minus what the role already
+            // holds. The most under-served role is dealt next.
+            const double want =
+                (double)roles[r].cap * (double)(i + 1) / (double)totalSlots;
+            const double score = want - (double)roles[r].assigned;
+            if (best < 0 || score > bestScore) {
+                best = r;
+                bestScore = score;
             }
         }
+        if (best < 0) break;
+        roles[best].assigned++;
+
+        ActorMatchDescriptor& desc = d.matchActors[d.participants[i]];
+        desc.roleId = roles[best].id;
+        if (const MatchRoleDefinition* def =
+                MatchRoleRegistry::instance().get(desc.roleId)) {
+            desc.movementProfileId = def->movementPreset;
+            desc.weaponProfileId = def->weaponSet;
+            if (desc.controller == ActorController::Npc)
+                desc.behaviorProfileId = def->behaviorProfile;
+            if (def->team >= 0)
+                desc.teamId = def->team;
+        }
+    }
+
+    // Team assignment. A role-declared team wins; otherwise only explicit team
+    // modes (TDM, or a team elimination mode) get the legacy round-robin. FFA
+    // stays teamless even though its parsed team_names defaults to RED/BLUE.
+    for (size_t i = 0; i < d.participants.size(); ++i) {
+        const uint32_t id = d.participants[i];
+        ActorMatchDescriptor& desc = d.matchActors[id];
+        int team = desc.teamId;
+        if (team < 0 && (d.matchMode == "tdm" ||
+                         d.winCondition == "last_team_standing"))
+            team = (int)(i % 2);
+        desc.teamId = team;
+        if (team >= 0)
+            d.matchTeams[id] = team;
+
+        auto playerIt = players.find(id);
+        if (playerIt != players.end())
+            playerIt->second.matchTeam = team;
+        if (npcs) {
+            auto npcIt = npcs->find(id);
+            if (npcIt != npcs->end())
+                npcIt->second.matchTeam = team;
+        }
+    }
+
+    if (d.matchMode == "tdm") {
         Debug::log(Debug::Category::Duel,
             "[FFA/TDM] Assigned %zu players to teams (red=%d blue=%d)\n",
             d.participants.size(), d.redTeamKills, d.blueTeamKills);
+    }
+    Debug::log(Debug::Category::Duel,
+        "[MATCH ACTORS] assigned=%zu mode=%s roleCounts=%zu\n",
+        d.participants.size(), d.matchMode.c_str(), gm.roleCounts.size());
+
+    // One-shot per-actor identity dump (once per assignment, Duel category).
+    // Mirrors the "actorlist" console command for headless/server testing.
+    for (uint32_t id : d.participants) {
+        const ActorMatchDescriptor& a = d.matchActors[id];
+        Debug::log(Debug::Category::Duel,
+            "[MATCH ACTOR] id=%u controller=%s role=%s team=%d state=%s "
+            "movement=%s weapon=%s behavior=%s\n",
+            id,
+            a.controller == ActorController::Npc ? "npc" : "human",
+            a.roleId.empty() ? "none" : a.roleId.c_str(),
+            a.teamId,
+            a.state == ActorState::Alive ? "alive" :
+            a.state == ActorState::Dead ? "dead" :
+            a.state == ActorState::Respawning ? "respawning" : "spectating",
+            a.movementProfileId.empty() ? "none" : a.movementProfileId.c_str(),
+            a.weaponProfileId.empty() ? "none" : a.weaponProfileId.c_str(),
+            a.behaviorProfileId.empty() ? "none" : a.behaviorProfileId.c_str());
+    }
+}
+
+// Advance each participant's authoritative match lifecycle state. This is the
+// single owner of the Alive/Dead/Respawning/Spectating transitions and maps the
+// legacy `dead`/health fields onto ActorState:
+//   !dead                     -> Alive
+//   dead + respawns enabled   -> Dead (one tick) -> Respawning -> Alive
+//   dead + no respawn enabled -> Dead (one tick) -> Spectating (terminal)
+void updateActorStates(ServerGamemodeState& d,
+                       const std::unordered_map<uint32_t, ServerPlayer>& players,
+                       const std::unordered_map<uint32_t, ServerNpc>& npcs)
+{
+    const bool respawns = serverMatchRespawnsEnabled();
+    for (auto& kv : d.matchActors) {
+        ActorMatchDescriptor& desc = kv.second;
+        const ActorState before = desc.state;
+
+        bool dead = false;
+        bool found = false;
+        auto pIt = players.find(kv.first);
+        if (pIt != players.end()) {
+            dead = pIt->second.dead;
+            found = true;
+        } else {
+            auto nIt = npcs.find(kv.first);
+            if (nIt != npcs.end()) {
+                dead = nIt->second.health <= 0;
+                found = true;
+            }
+        }
+        if (!found) continue;
+
+        desc.state = nextActorState(before, dead, respawns);
+
+        if (desc.state != before) {
+            auto nameOf = [](ActorState s) {
+                switch (s) {
+                    case ActorState::Alive:      return "alive";
+                    case ActorState::Dead:       return "dead";
+                    case ActorState::Respawning: return "respawning";
+                    case ActorState::Spectating: return "spectating";
+                }
+                return "unknown";
+            };
+            Debug::log(Debug::Category::Duel,
+                "[ACTOR STATE] id=%u role=%s team=%d %s -> %s\n",
+                kv.first, desc.roleId.empty() ? "none" : desc.roleId.c_str(),
+                desc.teamId, nameOf(before), nameOf(desc.state));
+        }
     }
 }
 
@@ -891,37 +1134,55 @@ void resetGamemodeActorsAtMapSpawn(
 
         auto mirrorIt = npcs.find(pid);
         if (mirrorIt == npcs.end()) continue;
+        const ActorSpawnProfile profile = serverResolveActorSpawnProfile(pid);
         for (Npc& npc : npcSystem.all()) {
             if (npc.id != pid) continue;
             npc.body.pos = spawn;
             npc.body.respawnPosition = spawn;
             npc.body.vel = glm::vec3(0.0f);
             npc.body.externalImpulse = glm::vec3(0.0f);
-            npc.body.currentHp = npc.body.maxHp;
+            // Role health override applies unless a host healthall override is set.
+            const int npcOverrideHp = serverGameOverrides().maxHpOverride;
+            const int npcMaxHp = npcOverrideHp > 0 ? npcOverrideHp
+                : (profile.health > 0 ? profile.health : npc.body.maxHp);
+            npc.body.maxHp = npcMaxHp;
+            npc.body.currentHp = npcMaxHp;
             npc.body.dead = false;
             npc.body.respawnTimer = 0.0f;
-            for (auto it = npc.body.weaponRuntimes.begin();
-                 it != npc.body.weaponRuntimes.end(); ) {
-                if (!serverCommunityWeaponAllowed(it->first))
-                    it = npc.body.weaponRuntimes.erase(it);
-                else
-                    ++it;
-            }
-            if (!serverCommunityWeaponAllowed(npc.body.equippedWeaponId)) {
-                npc.body.equippedWeaponId.clear();
-                npc.body.equippedSlot = -1;
-                npc.body.hasValidWeapon = false;
-                if (!npc.body.weaponRuntimes.empty()) {
-                    npc.body.equippedWeaponId = npc.body.weaponRuntimes.begin()->first;
-                    if (const WeaponDefinition* def =
-                            WeaponRegistry::instance().get(npc.body.equippedWeaponId))
-                        npc.body.equippedSlot = def->slot;
-                    npc.body.hasValidWeapon = true;
+            npc.movementProfileId = profile.movementPreset;
+            if (!profile.weapons.empty()) {
+                // Role loadout is authoritative; the global set is not consulted.
+                npcApplyLoadout(npc, profile.weapons, profile.startingWeapon);
+            } else {
+                // Legacy: filter the global loadout by the gamemode weapon set.
+                for (auto it = npc.body.weaponRuntimes.begin();
+                     it != npc.body.weaponRuntimes.end(); ) {
+                    if (!serverCommunityWeaponAllowed(it->first))
+                        it = npc.body.weaponRuntimes.erase(it);
+                    else
+                        ++it;
+                }
+                if (!serverCommunityWeaponAllowed(npc.body.equippedWeaponId)) {
+                    npc.body.equippedWeaponId.clear();
+                    npc.body.equippedSlot = -1;
+                    npc.body.hasValidWeapon = false;
+                    if (!npc.body.weaponRuntimes.empty()) {
+                        npc.body.equippedWeaponId = npc.body.weaponRuntimes.begin()->first;
+                        if (const WeaponDefinition* def =
+                                WeaponRegistry::instance().get(npc.body.equippedWeaponId))
+                            npc.body.equippedSlot = def->slot;
+                        npc.body.hasValidWeapon = true;
+                    }
                 }
             }
             finalizeServerNpcSpawn(npc, ActorSpawnReason::GamemodeStart);
             npc.body.syncLegacyStateToLayers();
             npc.body.updateModelWorldTransforms();
+            Debug::log(Debug::Category::Duel,
+                "[ROLE SPAWN] actor=%u controller=npc role=%s hp=%d weaponSet=%d weapons=%zu equipped=%s\n",
+                npc.id, profile.hasRole ? profile.roleId.c_str() : "none",
+                npc.body.currentHp, profile.weaponSetId, profile.weapons.size(),
+                npc.body.equippedWeaponId.c_str());
             mirrorIt->second.pos = spawn;
             mirrorIt->second.vel = glm::vec3(0.0f);
             mirrorIt->second.health = npc.body.currentHp;
@@ -1028,6 +1289,73 @@ void checkMatchWinConditions(ServerGamemodeState& d, uint32_t tick,
                              std::unordered_map<uint32_t, ServerPlayer>& players,
                              uint64_t& totalPacketsOut)
 {
+    // ── Generic last-team-standing / last-man-standing elimination ──
+    // A team is in play while it has at least one participant whose actor state
+    // is Alive or Respawning. Works identically for humans and NPCs.
+    if (d.winCondition == "last_team_standing") {
+        bool anyTeam = false;
+        std::unordered_map<int, int> aliveByTeam;
+        std::unordered_set<int> teams;
+        int aliveActors = 0;
+        uint32_t lastAliveActor = 0;
+
+        for (uint32_t id : d.participants) {
+            auto tIt = d.matchTeams.find(id);
+            const int team = (tIt != d.matchTeams.end()) ? tIt->second : -1;
+            auto aIt = d.matchActors.find(id);
+            const bool inPlay = aIt != d.matchActors.end() &&
+                (aIt->second.state == ActorState::Alive ||
+                 aIt->second.state == ActorState::Respawning);
+            if (inPlay) { ++aliveActors; lastAliveActor = id; }
+            if (team >= 0) {
+                anyTeam = true;
+                teams.insert(team);
+                if (inPlay) aliveByTeam[team]++;
+            }
+        }
+
+        int winnerTeam = -1;
+        uint32_t winnerActor = 0;
+        bool decided = false;
+
+        if (anyTeam) {
+            int aliveTeams = 0;
+            for (int t : teams)
+                if (aliveByTeam[t] > 0) { ++aliveTeams; winnerTeam = t; }
+            if (teams.size() >= 2 && aliveTeams <= 1) decided = true;
+            if (decided) {
+                for (uint32_t id : d.participants) {
+                    auto tIt = d.matchTeams.find(id);
+                    if (tIt != d.matchTeams.end() && tIt->second == winnerTeam) {
+                        winnerActor = id;
+                        break;
+                    }
+                }
+            }
+        } else if (d.participants.size() >= 2 && aliveActors <= 1) {
+            // FFA elimination: each actor is its own "team".
+            decided = true;
+            winnerActor = lastAliveActor;
+        }
+
+        if (decided) {
+            d.matchOver = true;
+            d.phase = DUEL_PHASE_RESULTS;
+            d.victoryType = 0;
+            d.winnerTeam = winnerTeam;
+            d.winnerPlayerId = winnerActor;
+            d.phaseTimer = d.resultsSeconds;
+            ++d.stateVersion;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            emitGamemodeMatchPersistence(d, tick, players);
+            Debug::warn(Debug::Category::Duel,
+                "[ELIMINATION] last_team_standing winnerTeam=%d winnerActor=%u "
+                "aliveActors=%d mode=%s\n",
+                winnerTeam, winnerActor, aliveActors, d.matchMode.c_str());
+            return;
+        }
+    }
+
     if (d.matchMode == "ffa") {
         for (const auto& kv : d.ffaKills) {
             if (kv.second >= d.goalValue) {
@@ -1104,6 +1432,7 @@ void serverGamemodeTick(SOCKET sock,
     ServerGamemodeState& d = serverGamemodeState();
     if (!d.enabled) return;
     d.currentServerTick = tick;
+    updateActorStates(d, players, npcs);
     if (!d.mapOnly && d.appliedCommunityWeaponSetId != d.communityWeaponSetId)
     {
         resetGamemodeActorsAtMapSpawn(d, players, npcs, npcSystem);
@@ -1317,20 +1646,24 @@ void serverGamemodeTick(SOCKET sock,
         const uint32_t killerId = d.pendingKillerId;
         const uint32_t victimId = d.pendingVictimId;
 
-        // Instant respawn near the match anchor with full HP/ammo and a fresh
-        // random offset so the exact respawn spot is never predictable.
+        // The victim's respawn delay/state was assigned by the lethal damage
+        // path (server-damage / server-npcs). Here we only pin the respawn
+        // anchor; do NOT zero the timer or the gamemode delay would be lost.
         auto victimIt = players.find(victimId);
         if (!d.pendingVictimIsNpc && victimIt != players.end())
         {
-            victimIt->second.respawnSeconds = 0.0f;
             victimIt->second.duelSpawnPos = gamemodeSpawnPoint(d);
         }
         else if (d.pendingVictimIsNpc)
         {
-            // NPC deaths use the same current-map spawn anchor as players;
-            // retaining the old body respawn position causes repeated void
-            // deaths after a map transition.
-            resetGamemodeActorsAtMapSpawn(d, players, npcs, npcSystem);
+            // Pin the dead NPC's respawn anchor to the current match spawn so a
+            // later map change cannot resurrect it into stale/void space.
+            for (Npc& n : npcSystem.all()) {
+                if (n.id == victimId) {
+                    n.body.respawnPosition = gamemodeSpawnPoint(d);
+                    break;
+                }
+            }
         }
 
         // Tell the killer where the victim respawned (tracer).
@@ -1453,8 +1786,11 @@ void serverGamemodeTick(SOCKET sock,
         broadcastDuelState(sock, d, players, totalPacketsOut);
     }
 
-    // ── FFA/TDM match mode state machine ────────────────────────────
-    if (d.matchMode == "ffa" || d.matchMode == "tdm")
+    // ── Shared FFA/TDM/elimination match mode state machine ─────────
+    // Any mode with a generic win condition (e.g. last_team_standing) uses the
+    // same lifecycle instead of requiring a mode-specific branch.
+    if (d.matchMode == "ffa" || d.matchMode == "tdm" ||
+        d.winCondition == "last_team_standing")
     {
         if (d.stateBroadcastPending)
         {
@@ -1829,15 +2165,24 @@ void serverGamemodeRecordKill(
     uint32_t tick,
     uint64_t& totalPacketsOut)
 {
-    // Credit + heal a player killer immediately so leftover damage cannot kill
-    // them before the next score tick. NPC killers have nothing to heal.
+    // Credit the kill. Heal the player killer only when the active gamemode
+    // rule allows it (kill_heals); one-life / tactical modes set false.
     if (killerEntityType == ENTITY_PLAYER && killerId != 0 && killerId != victimId)
     {
         auto attacker = players.find(killerId);
         if (attacker != players.end())
         {
             attacker->second.kills += 1;
-            attacker->second.health = serverMaxHp();
+            const ServerGamemodeState& rules = serverGamemodeState();
+            if (matchKillHeals(rules.enabled, rules.killHeals)) {
+                // Heal to the actor's role-resolved life maximum, not a flat 100.
+                attacker->second.health = attacker->second.maxHealth > 0
+                    ? attacker->second.maxHealth : serverMaxHp();
+            }
+            Debug::log(Debug::Category::Duel,
+                "[KILL HEAL] killer=%u mode=%s kill_heals=%d healed=%d\n",
+                killerId, rules.matchMode.c_str(), (int)rules.killHeals,
+                (int)matchKillHeals(rules.enabled, rules.killHeals));
         }
     }
 
@@ -2260,7 +2605,8 @@ void serverBombTagTick(SOCKET sock,
                 // Apply lethal damage via the normal server damage path
                 victimIt->second.health = 0;
                 victimIt->second.dead = true;
-                victimIt->second.respawnSeconds = 0.01f;
+                victimIt->second.respawnSeconds = serverMatchRespawnsEnabled()
+                    ? serverMatchRespawnSeconds() : -1.0f;
                 ++victimIt->second.deaths;
 
                 // Credit kill to a random other player (explosion is environment)

@@ -27,6 +27,13 @@ float weaponEffectiveRange(const Npc& npc);
 // Each loadout weapon gets a WeaponRuntime with full ammo.
 void npcInitLoadout(Npc& npc);
 
+// Apply an explicit role-resolved loadout: replaces the NPC's weapon runtimes
+// with exactly these weapons, stores the list as the AI switching override, and
+// equips startingWeapon (or the first weapon). An empty list clears the
+// override and leaves the current loadout untouched.
+void npcApplyLoadout(Npc& npc, const std::vector<std::string>& weaponIds,
+                     const std::string& startingWeapon);
+
 // Switch the NPC's equipped weapon. Starts background reload on the old weapon.
 // Returns true if the switch succeeded.
 bool npcSwitchWeapon(Npc& npc, const std::string& weaponId);

@@ -3,10 +3,17 @@
 #include <vector>
 #include <glm/glm.hpp>
 
+#include "physics/physics-types.h"
+
 struct World;
 class Npc;
 
 namespace NpcNavigation {
+
+// Ray vs a single collision triangle (Moller-Trumbore). Returns true and sets
+// outT (> 0.01 and < maxT) when the ray hits. Shared by navigation planners.
+bool rayTriangle(const glm::vec3& origin, const glm::vec3& dir,
+                 const CollisionTriangle& tri, float maxT, float& outT);
 
 glm::vec3 wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir, const World& world);
 

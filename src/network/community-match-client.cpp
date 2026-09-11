@@ -76,6 +76,8 @@ void CommunityMatchClient::reset()
     mRagdollEnabled = 0;
     mBloodEnabled = 0;
 
+    mActors.clear();
+
     MatchLeaderboard::instance().clear();
     KillfeedManager::instance().clear();
 }
@@ -175,6 +177,20 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     }
     if (newLocalScore > mLocalScore) hud.onConfirmedScoreGain();
     mLocalScore = newLocalScore;
+
+    // ── Replicate actor identity (team / role / state) ─────────────
+    // The server owns these values; the client only mirrors them for HUD and
+    // diagnostics. Role is a 1-based MatchRoleRegistry index (0 = none).
+    mActors.clear();
+    mActors.reserve(packet.participantCount);
+    for (uint8_t i = 0; i < packet.participantCount; ++i) {
+        ReplicatedActorIdentity identity;
+        identity.actorId = packet.participantIds[i];
+        identity.team = packet.participantTeams[i];
+        identity.roleIndex = packet.participantRoles[i];
+        identity.state = packet.participantStates[i];
+        mActors.push_back(identity);
+    }
 
     // ── Apply gamemode visual overrides ────────────────────────────
     const float newFov = packet.cameraFov;

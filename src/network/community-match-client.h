@@ -56,6 +56,18 @@ public:
     bool bombIsActive() const { return mBombInactiveTicks == 0; }
     glm::vec3 bombPosition() const { return mBombPos; }
 
+    // ── Replicated match-actor identity (team / role / state) ────────
+    // Mirrors the server's participantRoles/participantStates arrays. Role is a
+    // 1-based MatchRoleRegistry index (0 = none); state is an ActorState.
+    struct ReplicatedActorIdentity
+    {
+        uint32_t actorId = 0;
+        uint8_t team = 0xFF;
+        uint8_t roleIndex = 0;
+        uint8_t state = 0;
+    };
+    const std::vector<ReplicatedActorIdentity>& actorIdentities() const { return mActors; }
+
 private:
     std::string mMode;
     uint8_t mPhase = DUEL_PHASE_WAITING;
@@ -86,6 +98,7 @@ private:
     uint8_t mRagdollEnabled = 0;     // 0=no override, 1=disabled, 2=enabled
     uint8_t mBloodEnabled = 0;       // 0=no override, 1=disabled, 2=enabled
     bool mOverridesApplied = false;  // true if backups saved + overrides applied
+    std::vector<ReplicatedActorIdentity> mActors;
 };
 
 }

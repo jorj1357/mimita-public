@@ -12,6 +12,7 @@
 #include "network/net_mode.h"
 #include "network/server-gamemode.h"
 #include "gamemode/gamemode.h"
+#include "gamemode/match-roles.h"
 #include "gamemode/gamemode-map-pool.h"
 #include "duel/duel-weapon-pool.h"
 #include "network/community-server-config.h"
@@ -268,6 +269,7 @@ int runServer(const LaunchOptions& options)
     NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
     CommunityServerConfig::instance().load();
     GamemodeRegistry::instance().loadDirectory("config/gamemodes");
+    MatchRoleRegistry::instance().load("config/roles.json");
     GamemodeMapPool::instance().load("config/gamemode-good-maps.json");
     DuelWeaponPool::instance().load("config/duel-weapons.json");
     npcLogSetProc("server");
@@ -566,6 +568,13 @@ int runServer(const LaunchOptions& options)
         // Hot-reload the movement preset (config/movement.json + preset) so the
         // server's movement-validation tolerances match the client's live tuning.
         MovementJsonConfig::instance().pollReload();
+
+        // Refresh cached role movement presets whose files changed on disk.
+        RoleMovementCache::instance().pollReload();
+
+        // Hot-reload config/roles.json so role/profile references apply live.
+    MatchRoleRegistry::instance().pollReload();
+    RoleMovementCache::instance().pollReload();
 
         // Hot-reload config/weapons.json (rate-limited to 250ms internally) so
         // live weapon damage/falloff edits apply without a server restart.
@@ -1068,6 +1077,7 @@ static void simulateOneServerTick(ListenServerState& state)
     }
     CommunityServerConfig::instance().pollReload();
     SpawnVelocityConfig::instance().pollReload();
+    MatchRoleRegistry::instance().pollReload();
 
     {
         char buffer[2048];

@@ -1,0 +1,24 @@
+{
+  "id": "elimination",
+  "name": "Elimination",
+  "description": "One life. Last team standing wins.",
+  "team_names": ["RED", "BLUE"],
+  "goal_value": 1,
+  "weapon_set_id": 1,
+  "time_limit_seconds": 300,
+  "respawn_seconds": 0,
+  "kill_heals": false,
+  "win_condition": "last_team_standing",
+  "countdown_seconds": 2,
+  "go_seconds": 0.5,
+  "rematch_seconds": 5,
+  "spawn_offset_radius": 5.0,
+  "spawn_strategy": "shared",
+  "intermission_seconds": 0,
+  "results_seconds": 6,
+  "roles": {
+    "hunter": 8,
+    "juggernaut": 4
+  },
+  "maps": ["atdm", "mimita-duels-map-v3", "funworld"]
+}

@@ -29,6 +29,22 @@
       "name": "All weapons",
       "description": "All stable and OP weapons, including future weapons.",
       "weapons": ["*"]
+    },
+    {
+      "id": 6,
+      "key": "standard",
+      "name": "Standard (role)",
+      "description": "Role loadout: Revolver, Shotgun, Spyknife. Not host-selectable.",
+      "role_only": true,
+      "weapons": ["revolver", "shotgun", "spyknife"]
+    },
+    {
+      "id": 7,
+      "key": "juggernaut",
+      "name": "Juggernaut (role)",
+      "description": "Role loadout: Rocket Launcher, Shotgun. Not host-selectable.",
+      "role_only": true,
+      "weapons": ["rocket_launcher", "shotgun"]
     }
   ]
 }

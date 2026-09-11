@@ -10,6 +10,7 @@
 #include "npc.h"
 #include "npc/npc-internal.h"
 #include "npc/npc-difficulty-config.h"
+#include "gamemode/match-roles.h"
 
 #include <algorithm>
 #include <cmath>
@@ -251,6 +252,48 @@ void logStateChange(const Npc& npc, NpcState oldState, NpcState newState)
         (int)npc.sensors.hasTarget,
         npc.sensors.targetDistance
     );
+}
+
+// Translate the current brain state into an abstract navigation goal.
+// Combat decisions stay here; navigation only sees positions and distances.
+NpcGoal makeNavGoal(const Npc& npc)
+{
+    NpcGoal goal;
+    if (!npc.sensors.hasTarget) {
+        if (npc.stateMachine.currentState == NpcState::Chase) {
+            goal.kind = NpcGoalKind::ReachPosition;
+            goal.targetPos = npc.stateMachine.lastKnownTarget;
+        } else if (npc.stateMachine.currentState == NpcState::RandomWalk) {
+            goal.kind = NpcGoalKind::ReachPosition;
+            goal.targetPos = npc.stateMachine.wanderTarget;
+        }
+        return goal;
+    }
+
+    switch (npc.stateMachine.currentState) {
+        case NpcState::Chase:
+        case NpcState::Advance:
+            goal.kind = NpcGoalKind::FollowActor;
+            break;
+        case NpcState::Circle:
+        case NpcState::Strafe:
+        case NpcState::HoldPosition:
+        case NpcState::Peek:
+        case NpcState::Aim:
+            goal.kind = NpcGoalKind::MaintainDistance;
+            goal.desiredDistance =
+                std::clamp(weaponEffectiveRange(npc) * 0.6f, 5.0f, 25.0f);
+            break;
+        case NpcState::Retreat:
+        case NpcState::Recover:
+            goal.kind = NpcGoalKind::FleeActor;
+            goal.desiredDistance = 8.0f;
+            break;
+        default:
+            goal.kind = NpcGoalKind::FollowActor;
+            break;
+    }
+    return goal;
 }
 
 InputState buildInputState(Npc& npc, glm::vec3 moveDir, bool jump, bool dash, bool attack, bool downDash, float dt)
@@ -545,7 +588,9 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     // away from a weapon, it starts reloading in the background.
     {
         const auto& cfg = NpcDifficultyConfig::instance().settings();
-        for (const auto& wid : cfg.weaponLoadout) {
+        const std::vector<std::string>& loadout =
+            npc.loadoutOverride.empty() ? cfg.weaponLoadout : npc.loadoutOverride;
+        for (const auto& wid : loadout) {
             auto it = npc.body.weaponRuntimes.find(wid);
             if (it == npc.body.weaponRuntimes.end()) continue;
             auto& rt = it->second;
@@ -584,11 +629,14 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     if (npc.sensors.hasTarget && npc.weaponSwitchCooldown <= 0.0f)
     {
         const auto& cfg = NpcDifficultyConfig::instance().settings();
+        const std::vector<std::string>& loadout =
+            npc.loadoutOverride.empty() ? cfg.weaponLoadout : npc.loadoutOverride;
         float dist = npc.sensors.targetDistance;
         std::string bestWeapon = npc.body.equippedWeaponId;
 
-        // Force weapon mode: always use the specified weapon
-        if (!cfg.forceWeapon.empty()) {
+        // Force weapon mode: always use the specified weapon. A role loadout
+        // override ignores the global forceWeapon so roles stay authoritative.
+        if (npc.loadoutOverride.empty() && !cfg.forceWeapon.empty()) {
             bestWeapon = cfg.forceWeapon;
         } else {
             // Check ammo: if current weapon is empty, force a switch
@@ -597,7 +645,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
                 && curIt->second.currentAmmo <= 0 && !curIt->second.isReloading;
 
             if (currentEmpty) {
-                for (const auto& wid : cfg.weaponLoadout) {
+                for (const auto& wid : loadout) {
                     auto wit = npc.body.weaponRuntimes.find(wid);
                     if (wit != npc.body.weaponRuntimes.end() && wit->second.currentAmmo > 0) {
                         bestWeapon = wid;
@@ -605,7 +653,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
                     }
                 }
             } else if (dist < cfg.closeSwitchDist) {
-                for (const auto& wid : cfg.weaponLoadout) {
+                for (const auto& wid : loadout) {
                     if (wid == "shotgun") {
                         auto it = npc.body.weaponRuntimes.find(wid);
                         if (it != npc.body.weaponRuntimes.end() && it->second.currentAmmo > 0)
@@ -614,7 +662,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
                     }
                 }
             } else if (dist > cfg.farSwitchDist) {
-                for (const auto& wid : cfg.weaponLoadout) {
+                for (const auto& wid : loadout) {
                     if (wid == "rocket_launcher" || wid == "grenade_launcher") {
                         auto it = npc.body.weaponRuntimes.find(wid);
                         if (it != npc.body.weaponRuntimes.end() && it->second.currentAmmo > 0) {
@@ -624,7 +672,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
                     }
                 }
             } else {
-                for (const auto& wid : cfg.weaponLoadout) {
+                for (const auto& wid : loadout) {
                     if (wid == "revolver") {
                         auto it = npc.body.weaponRuntimes.find(wid);
                         if (it != npc.body.weaponRuntimes.end() && it->second.currentAmmo > 0)
@@ -781,6 +829,29 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         computeStateMovement(npc, moveDir, jump, dash, attack, safeDt);
     }
 
+    // ── Goal -> navigation -> movement ──────────────────────────────
+    // The navigator turns the brain's abstract goal into a cached route and a
+    // steering direction. It only overrides the tactical direction while a
+    // multi-node route is active, so local strafing/circling is preserved when
+    // no detour is needed. Movement execution still flows through the same
+    // situational checks, buildInputState, and shared kernel below.
+    const MovementConfig* navMovement =
+        RoleMovementCache::instance().get(npc.movementProfileId);
+    if (!navMovement)
+        navMovement = NpcDifficultyConfig::instance().npcMovementConfig();
+    if (!inMirrorPhase)
+    {
+        const NpcGoal navGoal = makeNavGoal(npc);
+        const NpcNavResult nav =
+            npc.navigator.update(npc, navGoal, world, navMovement, safeDt);
+        if (nav.hasPath && nav.detour && glm::length(nav.dir) > 0.01f)
+            moveDir = nav.dir;
+        if (nav.wantJump && npc.sensors.touchFloor)
+            jump = true;
+        if (nav.wantDownDash && navMovement && navMovement->downDashEnabled)
+            wantDownDash = true;
+    }
+
     // Situaltional jump if obstacle ahead or stuck
     if (npc.sensors.touchFloor && !jump && glm::length(moveDir) > 0.1f)
     {
@@ -906,6 +977,11 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
                 jump = true;
                 dash = npc.dashCooldown <= 0.0f;
                 npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime, 0.3f);
+                {
+                    std::string key = "npc-nav-stuck-" + std::to_string(npc.id);
+                    Debug::logThrottled(Debug::Category::NpcMovement, key.c_str(), 1.0f,
+                        "[NPC NAV] actor=%u stuck=1 recovery=jump\n", npc.id);
+                }
             }
         }
         else
@@ -968,8 +1044,9 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         glm::vec3 velocityBefore = npc.body.vel;
         float planarSpeedBefore = glm::length(glm::vec2(velocityBefore.x, velocityBefore.y));
 
-        physicsMainUpdate(npc.body, world, input, safeDt, 2,
-            NpcDifficultyConfig::instance().npcMovementConfig());
+        // navMovement (resolved above) carries the actor's role movement config
+        // through the same shared kernel as the human actor.
+        physicsMainUpdate(npc.body, world, input, safeDt, 2, navMovement);
 
         clearCollisionEntityContext();
 

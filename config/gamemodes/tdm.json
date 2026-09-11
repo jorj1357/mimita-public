@@ -16,5 +16,9 @@
   "intermission_seconds": 15,
   "results_seconds": 8,
   "ragdoll_enabled": false,
+  "roles": {
+    "hunter": 8,
+    "juggernaut": 4
+  },
   "maps": ["mimita-duels-map-v3", "atdm", "funworld"]
 }

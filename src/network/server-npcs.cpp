@@ -15,6 +15,7 @@
 #include "network/server-gamemode.h"
 
 #include "npc/npc.h"
+#include "npc/npc-internal.h"
 #include "npc/npc-combat.h"
 #include "npc/npc-navigation.h"
 #include "npc/npc-combat-log.h"
@@ -193,7 +194,8 @@ static void syncServerNpcDamageToNpc(const std::unordered_map<uint32_t, ServerNp
             {
                 n.body.currentHp = 0;
                 n.body.dead = true;
-                n.body.respawnTimer = SERVER_NPC_RESPAWN_SECONDS;
+                n.body.respawnTimer = serverMatchRespawnsEnabled()
+                    ? serverMatchRespawnSeconds() : -1.0f;
             }
             break;
         }
@@ -231,9 +233,17 @@ static void respawnServerNpc(Npc& npc)
     // New life: bump the lifecycle counter so clients detect the respawn.
     npc.transformEpoch = static_cast<uint16_t>((npc.transformEpoch % 65535) + 1);
     assignNpcAvatar(npc);
-    if (serverGameOverrides().maxHpOverride > 0)
-        npc.body.maxHp = serverGameOverrides().maxHpOverride;
-    npc.body.currentHp = npc.body.maxHp;
+    // Reapply the actor's role stats/loadout for the new life so role identity
+    // is never lost across respawn.
+    const ActorSpawnProfile profile = serverResolveActorSpawnProfile(npc.id);
+    const int overrideHp = serverGameOverrides().maxHpOverride;
+    const int maxHp = overrideHp > 0 ? overrideHp
+        : (profile.health > 0 ? profile.health : npc.body.maxHp);
+    npc.body.maxHp = maxHp;
+    npc.body.currentHp = maxHp;
+    npc.movementProfileId = profile.movementPreset;
+    if (!profile.weapons.empty())
+        npcApplyLoadout(npc, profile.weapons, profile.startingWeapon);
     npc.body.killedBy.clear();
     npc.body.spawnFlashTimer = 10.0f;
     npc.attackCooldown = 0.0f;
@@ -868,7 +878,8 @@ void simulateSharedNpcs(SOCKET sock,
                         victim.health = 0;
                         nearestNpc->body.currentHp = 0;
                         nearestNpc->body.dead = true;
-                        nearestNpc->body.respawnTimer = SERVER_NPC_RESPAWN_SECONDS;
+                        nearestNpc->body.respawnTimer = serverMatchRespawnsEnabled()
+                            ? serverMatchRespawnSeconds() : -1.0f;
                         serverGamemodeRecordKill(sock, players, &npcs,
                             n.id, ENTITY_NPC, nearestNpc->id, ENTITY_NPC,
                             wId, wDisp, tick,
@@ -889,9 +900,12 @@ void simulateSharedNpcs(SOCKET sock,
 
     // Respawn killed NPCs (updateOneNpc freezes dead bodies; this loop drives
     // their countdown and resets them so rebuildServerNpcMap re-admits them).
+    // One-life modes never revive: the dead body stays Spectating for the round.
+    const bool npcRespawns = serverMatchRespawnsEnabled();
     for (Npc& n : npcSystem.all())
     {
         if (!n.body.dead) continue;
+        if (!npcRespawns) continue;
         n.body.respawnTimer = std::max(0.0f, n.body.respawnTimer - SERVER_DT);
         if (n.body.respawnTimer <= 0.0f)
             respawnServerNpc(n);
@@ -921,11 +935,14 @@ void simulateSharedNpcs(SOCKET sock,
             {
                 const auto& rtIt = n.body.weaponRuntimes.find(n.body.equippedWeaponId);
                 const bool hasRt = rtIt != n.body.weaponRuntimes.end();
+                const float planarSpeed =
+                    glm::length(glm::vec2(n.body.vel.x, n.body.vel.y));
                 char buf[256];
                 snprintf(buf, sizeof(buf),
-                    "id=%u state=%s ammo=%d reserve=%d reloading=%d cd=%.2f "
+                    "id=%u state=%s spd=%.1f ammo=%d reserve=%d reloading=%d cd=%.2f "
                     "dist=%.1f los=%d hasTarget=%d; ",
                     n.id, npcStateName(n.stateMachine.currentState).c_str(),
+                    planarSpeed,
                     hasRt ? rtIt->second.currentAmmo : -1,
                     hasRt ? rtIt->second.reserveAmmo : -1,
                     hasRt ? (int)rtIt->second.isReloading : -1,
