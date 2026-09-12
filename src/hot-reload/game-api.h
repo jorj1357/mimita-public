@@ -328,6 +328,9 @@ struct DamagePolicyV1 {
 using GameBehaviorOnEventFn = void (MIMITA_GAME_CALL *)(
     const GameEventV1* event, GameplayContextV1* context);
 
+using GameEmitEventFn = void (MIMITA_GAME_CALL *)(
+    GameplayContextV1* context, const GameEventV1* event);
+
 using GameAdjustRocketFlightFn = bool (MIMITA_GAME_CALL *)(
     const RocketFlightStateV1* state, const RocketFlightParamsV1* base,
     RocketFlightParamsV1* out, GameMemory* memory);

@@ -18,6 +18,13 @@ namespace LiveBehavior {
 // values and may be overridden by the behavior.
 bool dispatchDamagePolicy(DamagePolicyV1& payload, std::uint64_t tick);
 
+// Dispatch an arbitrary event to the active behavior table.
+bool dispatchEvent(const GameEventV1& event, std::uint64_t tick);
+
+// Kernel event queue used by the emitEvent capability. Bounded and FIFO.
+void enqueueEvent(const GameEventV1& event);
+int drainEvents(int maxEvents);
+
 // True when the active gameplay module provides an event handler.
 bool available();
 

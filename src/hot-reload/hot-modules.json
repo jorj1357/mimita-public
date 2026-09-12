@@ -35,6 +35,9 @@
     "src/hot-reload/game-api.h",
     "src/hot-reload/game-modules.h"
   ],
+  "globs": [
+    "src/hot-reload/modules/*.cpp"
+  ],
   "cold": [
     "src/hot-reload/hot-reload-system.cpp",
     "src/live-code/live-behavior.cpp",

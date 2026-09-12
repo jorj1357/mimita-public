@@ -62,11 +62,18 @@ bool runHotAuthoritativeSelfTest(std::string& report)
     ok &= check(resolved == probe.outDamage,
                 "kernel applies the hot policy result", report);
 
-    // No cold gameplay clamp may restore a small constant (the old 150/500).
+    // The kernel must apply exactly what the behavior returned for any
+    // magnitude. Do NOT assume the policy passes values through: the developer
+    // deliberately tunes the result.
+    DamagePolicyV1 bigProbe{};
+    bigProbe.baseDamage = 999999;
+    bigProbe.outDamage = 999999;
+    bigProbe.source = GAME_DAMAGE_SOURCE_EXPLOSION;
+    LiveBehavior::dispatchDamagePolicy(bigProbe, 101);
     glm::vec3 bigKnockback{0.0f};
     const int largeResolved = serverResolveDamagePolicy(makeInput(), 999999, bigKnockback);
-    ok &= check(largeResolved > 500,
-                "large hot damage is not clamped to a gameplay constant", report);
+    ok &= check(largeResolved == bigProbe.outDamage,
+                "kernel applies the hot policy result for large input", report);
     ok &= check(serverAuthoritativeDamageLimit() == 0,
                 "dev-branch authoritative damage limit is unlimited", report);
 

@@ -37,6 +37,55 @@ See `docs/architecture/live-development/hot-kernel.md` for the architecture.
   result=hot`, matched by a server `code_activation`, with stable PID/session/
   entity ids.
 
+## Round 3 (2026-09-12, project layer + behaviors) — implemented source
+
+Phases 0-3 primitives are implemented in `src/project/` and `src/live-code/`:
+
+- Versioned project tree + content-addressed blob store + ChangeSet/
+  ProjectVersion/ProjectHistory (record/undo/redo/checkpoint/restore/diff).
+- `.d` dependency graph and state schema registry with package migrations.
+- Shared authoring surface: `project` terminal command + loopback control server
+  (`project serve [port]`) for agents.
+- Glob-based hot sources (`hot-modules.json` `globs`) so live add/delete/rename
+  of hot files changes the package source set and triggers a rebuild.
+- `BehaviorBindingsComponent` (behavior referenced by id/hash, not duplicated).
+- Kernel event queue + `emitEvent` capability: behaviors can emit nested events;
+  `LiveBehavior::drainEvents` processes them FIFO after a dispatch.
+
+Run `--project-selftest` for the primitives. Still requires one cold build to
+install these EXE-owned mechanisms, then the live proofs.
+
+## Round 4 (2026-09-12, phases 4-6 primitives) — implemented source
+
+- **Phase 4:** per-source hot build with `-MMD` (per-TU `.d` in the generation
+  `obj/` dir) then link; tree packages (`package.json`); content-addressed
+  resources; subsystem replacement lifecycle
+  (`initialize -> mirror -> validate -> switch -> retire`); runtime component
+  schemas; recursive `ReadDirectoryChangesW` watcher wired into the loader;
+  `ProjectControl` on the server.
+- **Phase 5:** `CodeGenerationPacket` extended with `logicalCodeHash`,
+  `platformPackageHash`, `moduleSetHash`, and `phase` (status/READY/SWITCH);
+  clients report generation/hash + READY; servers announce switch generation and
+  tick; per-player reports stored.
+- **Phase 6:** capability model (grant/request/denial, not yet enforced at every
+  call site); dependency hash verification (`Verified`/`NotLocal`/`HashMismatch`;
+  download later); multi-domain scheduler (`gameplay.60`, `solver.600`);
+  deterministic world hashing; agent control socket + terminal surface.
+
+Run `--project-selftest` and `--phase456-selftest`. One cold build installs these
+EXE-owned mechanisms.
+
+Remaining after that cold build:
+1. Behavior-table ABI (per-behavior id/hash) + per-entity binding dispatch.
+2. Assets/shaders/configs in the project tree with generation-stamped loaders.
+3. Run declared schema migrations at activation.
+4. Full READY/switch-tick handshake with delayed activation at tick N.
+5. Capability enforcement at call sites; agent auth on the control socket.
+6. Dependency download/sandbox/promote pipeline.
+7. Inspector for entities/components/bindings/generations/hashes.
+8. Schema-driven components/events, hierarchical spaces, GPU/CPU compute
+   capabilities, and the "arbitrary real-time domain" generality.
+
 ## Implemented (round 1)
 
 - Generic event ABI: `GameEventV1`, `GameplayContextV1`, `DamagePolicyV1`,

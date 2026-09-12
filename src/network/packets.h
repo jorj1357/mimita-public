@@ -1693,13 +1693,15 @@ struct CodeGenerationPacket
 {
     PacketHeader header;
     uint32_t generation = 0;
-    uint32_t direction = 0;
-    uint32_t phase = 0;
+    uint32_t direction = 0;   // 0 = client report, 1 = server announce
+    uint32_t phase = 0;       // 0 = status, 1 = READY, 2 = SWITCH at switchTick
     uint32_t switchTick = 0;
-    uint64_t codeHash = 0;
-    uint64_t moduleSetHash = 0;
+    uint64_t codeHash = 0;             // low 64 bits of the canonical hash
+    uint64_t logicalCodeHash = 0;      // platform-independent source/IR hash
+    uint64_t platformPackageHash = 0;  // local compiled package hash
+    uint64_t moduleSetHash = 0;        // reserved module-set hash
 };
-static_assert(sizeof(CodeGenerationPacket) <= 64, "CodeGenerationPacket is too large");
+static_assert(sizeof(CodeGenerationPacket) <= 96, "CodeGenerationPacket is too large");
 
 bool validHeader(const PacketHeader& header, uint8_t expectedType);
 

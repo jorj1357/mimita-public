@@ -460,6 +460,9 @@ struct MultiplayerContext
     uint32_t serverCodeGeneration = 0;
     uint64_t serverCodeHash = 0;
     uint32_t serverCodeSwitchTick = 0;
+    uint32_t serverCodePhase = 0;
+    uint64_t serverLogicalHash = 0;
+    uint64_t serverPlatformHash = 0;
     uint32_t lastCodeGenerationSentTick = 0;
     // Newest server tick the monotonic render clock was anchored to. If the
     // server ever regresses its tick (map change / server restart), the clock

@@ -723,7 +723,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             report.header.playerId = ctx.localPlayerId;
             report.generation = liveStatus.activeGeneration;
             report.direction = 0;  // client -> server
-            report.phase = 0;
+            report.phase = liveStatus.loaded ? 1 : 0;  // 1 = READY
             auto hexValue = [](char c) -> uint64_t {
                 if (c >= '0' && c <= '9') return (uint64_t)(c - '0');
                 if (c >= 'a' && c <= 'f') return (uint64_t)(c - 'a' + 10);
@@ -734,6 +734,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 report.codeHash = (report.codeHash << 8) |
                     (hexValue(liveStatus.activeHash[i]) << 4) |
                     hexValue(liveStatus.activeHash[i + 1]);
+            report.logicalCodeHash = report.codeHash;
+            report.platformPackageHash = liveStatus.activeGeneration;
             mpSendPacket(ctx, &report, sizeof(report));
         }
         if (ctx.serverCodeGeneration != 0 && liveStatus.activeGeneration != 0 &&
@@ -1329,6 +1331,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 ctx.serverCodeGeneration = announce->generation;
                 ctx.serverCodeHash = announce->codeHash;
                 ctx.serverCodeSwitchTick = announce->switchTick;
+                ctx.serverCodePhase = announce->phase;
+                ctx.serverLogicalHash = announce->logicalCodeHash;
+                ctx.serverPlatformHash = announce->platformPackageHash;
             }
         }
         else if (header->type == PACKET_KILL_EVENT &&

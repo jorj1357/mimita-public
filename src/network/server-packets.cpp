@@ -2013,6 +2013,9 @@ ServerPacketProcessResult processServerPacket(
             it->second.reportedCodeHash = report->codeHash;
             it->second.reportedModuleSetHash = report->moduleSetHash;
             it->second.reportedCodeTick = tick;
+            it->second.reportedCodePhase = report->phase;
+            it->second.reportedLogicalCodeHash = report->logicalCodeHash;
+            it->second.reportedPlatformPackageHash = report->platformPackageHash;
         }
         result.handled = true;
     }

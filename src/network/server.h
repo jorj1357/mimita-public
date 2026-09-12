@@ -395,6 +395,9 @@ struct ServerPlayer
     uint64_t reportedCodeHash = 0;
     uint64_t reportedModuleSetHash = 0;
     uint32_t reportedCodeTick = 0;
+    uint32_t reportedCodePhase = 0;       // 0 status, 1 READY
+    uint64_t reportedLogicalCodeHash = 0;
+    uint64_t reportedPlatformPackageHash = 0;
 
     // ── Input command buffer for server-side movement simulation ──────
     // Spec: server stores received input commands and simulates movement

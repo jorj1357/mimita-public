@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <filesystem>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -144,6 +145,8 @@ void registerCursorCommands();
 #include "terminal/network-commands.h"
 #include "terminal/badconn-commands.h"
 #include "terminal/live-code-commands.h"
+#include "terminal/project-commands.h"
+#include "project/project-control.h"
 #include "terminal/entity-commands.h"
 #include "terminal/vip-commands.h"
 #include "network/badconn/badconn.h"
@@ -431,6 +434,8 @@ void gameInitSubsystems(Engine& engine)
     registerBadConnCommands();
     registerLiveCodeCommands();
     registerEntityCommands();
+    Project::ProjectControl::instance().init(std::filesystem::current_path());
+    registerProjectCommands();
 
     registerReplayCaptureCommands();
     registerReplayCommands();

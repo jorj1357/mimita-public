@@ -131,3 +131,26 @@ struct ColliderComponent {
     float radius = 0.25f;
     float height = 0.25f;
 };
+
+// A behavior is referenced by identity/hash, never duplicated per entity.
+// Multiple entities may point at the same behavior implementation.
+struct BehaviorBinding {
+    std::uint32_t eventType = 0;   // GameEventType the binding reacts to
+    std::uint64_t behaviorId = 0;
+    std::uint64_t codeHash = 0;
+    std::uint32_t generation = 0;
+};
+
+struct BehaviorBindingsComponent {
+    static constexpr int MAX_BINDINGS = 8;
+    BehaviorBinding bindings[MAX_BINDINGS]{};
+    int count = 0;
+
+    bool add(const BehaviorBinding& binding)
+    {
+        if (count >= MAX_BINDINGS)
+            return false;
+        bindings[count++] = binding;
+        return true;
+    }
+};

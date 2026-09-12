@@ -26,6 +26,60 @@ void MIMITA_GAME_CALL platformLog(const char* message)
         std::printf("%s\n", message);
 }
 
+bool wildcardMatch(const std::string& pattern, const std::string& text)
+{
+    std::size_t p = 0;
+    std::size_t t = 0;
+    std::size_t star = std::string::npos;
+    std::size_t match = 0;
+    while (t < text.size()) {
+        if (p < pattern.size() && (pattern[p] == '?' || pattern[p] == text[t])) {
+            ++p;
+            ++t;
+        } else if (p < pattern.size() && pattern[p] == '*') {
+            star = p++;
+            match = t;
+        } else if (star != std::string::npos) {
+            p = star + 1;
+            t = ++match;
+        } else {
+            return false;
+        }
+    }
+    while (p < pattern.size() && pattern[p] == '*')
+        ++p;
+    return p == pattern.size();
+}
+
+// Expands a manifest glob like "src/hot-reload/modules/*.cpp" into relative
+// source paths. Supports '*' and '?' in the final segment (recursive).
+void expandGlob(const std::filesystem::path& root, const std::string& pattern,
+                std::vector<std::string>& out)
+{
+    const std::filesystem::path patternPath(pattern);
+    const std::filesystem::path base = patternPath.parent_path();
+    const std::string filePattern = patternPath.filename().string();
+    const std::filesystem::path searchRoot = root / base;
+
+    std::error_code error;
+    if (!std::filesystem::exists(searchRoot, error))
+        return;
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(searchRoot, error)) {
+        if (error)
+            break;
+        if (!entry.is_regular_file())
+            continue;
+        const std::string name = entry.path().filename().string();
+        if (!wildcardMatch(filePattern, name))
+            continue;
+        std::error_code relError;
+        const std::filesystem::path relative =
+            std::filesystem::relative(entry.path(), root, relError);
+        if (!relError)
+            out.push_back(relative.generic_string());
+    }
+}
+
 } // namespace
 
 HotReloadSystem& HotReloadSystem::instance()
@@ -101,6 +155,9 @@ void HotReloadSystem::startup()
 
     workerStop_ = false;
     worker_ = std::thread(&HotReloadSystem::workerMain, this);
+
+    // Low-latency change signal; the hash scan remains the source of truth.
+    watcher_.start(root_ / "src" / "hot-reload");
 }
 
 bool HotReloadSystem::pollAndAdvance()
@@ -113,9 +170,14 @@ bool HotReloadSystem::pollAndAdvance()
             return true;
     }
 
+    const bool watcherDirty = watcher_.poll();
     if (!buildRunning_.load() && !buildRequested_.load()) {
-        if (++pollCounter_ % HOT_RELOAD_POLL_THROTTLE == 0) {
+        const bool throttled = (++pollCounter_ % HOT_RELOAD_POLL_THROTTLE == 0);
+        if (throttled || watcherDirty) {
             pollManifestReload();
+            // Re-resolve globs so live-added/removed/renamed hot files change
+            // the package source set (and therefore the source hash).
+            loadManifest();
             pollColdBoundary();
             const std::string hash = computeSourceHash();
             if (!hash.empty() && hash != observedSourceHash_) {
@@ -437,6 +499,7 @@ bool HotReloadSystem::rollback()
 
 void HotReloadSystem::unloadGameDLL()
 {
+    watcher_.stop();
     workerStop_ = true;
     cv_.notify_all();
     if (worker_.joinable())
@@ -469,6 +532,10 @@ void HotReloadSystem::loadManifest()
         if (json.contains("headers") && json["headers"].is_array()) {
             for (const auto& header : json["headers"])
                 hotSources_.push_back(header.get<std::string>());
+        }
+        if (json.contains("globs") && json["globs"].is_array()) {
+            for (const auto& pattern : json["globs"])
+                expandGlob(root_, pattern.get<std::string>(), hotSources_);
         }
         if (json.contains("cold") && json["cold"].is_array()) {
             for (const auto& cold : json["cold"])

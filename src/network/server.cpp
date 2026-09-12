@@ -39,6 +39,7 @@
 #include "hot-reload/hot-reload-system.h"
 #include "live-code/live-identity.h"
 #include "live-code/live-journal.h"
+#include "project/project-control.h"
 #include "audio/audio.h"
 #include "persistence/persistence-queue.h"
 #include "auth/auth-system.h"
@@ -270,6 +271,7 @@ int runServer(const LaunchOptions& options)
     LiveIdentity::setProcess("server");
     LiveIdentity::setSessionId((std::uint64_t)nowMs());
     HotReloadSystem::instance().startup();
+    Project::ProjectControl::instance().init(std::filesystem::current_path());
     {
         const HotReloadSystem::Status liveStatus = HotReloadSystem::instance().status();
         printf("%s [SERVER LIVE CODE] loaded=%d generation=%u code_hash=%s\n",
@@ -670,8 +672,8 @@ int runServer(const LaunchOptions& options)
                 announce.header.tick = tick;
                 announce.generation = liveStatus.activeGeneration;
                 announce.direction = 1;  // server -> clients
-                announce.phase = 0;      // status (READY/SWITCH reserved)
-                announce.switchTick = tick + 30;
+                announce.phase = 2;      // SWITCH: clients must match this generation
+                announce.switchTick = tick;
                 auto hexValue = [](char c) -> uint64_t {
                     if (c >= '0' && c <= '9') return (uint64_t)(c - '0');
                     if (c >= 'a' && c <= 'f') return (uint64_t)(c - 'a' + 10);
@@ -682,6 +684,8 @@ int runServer(const LaunchOptions& options)
                     announce.codeHash = (announce.codeHash << 8) |
                         (hexValue(liveStatus.activeHash[i]) << 4) |
                         hexValue(liveStatus.activeHash[i + 1]);
+                announce.logicalCodeHash = announce.codeHash;
+                announce.platformPackageHash = liveStatus.activeGeneration;
                 for (auto& pe : players)
                 {
                     if (pe.second.transport)

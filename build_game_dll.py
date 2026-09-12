@@ -9,6 +9,7 @@
 # Does NOT link mimita.exe, launch the game, or modify game source code.
 
 import hashlib
+import glob
 import json
 import os
 import subprocess
@@ -56,6 +57,15 @@ def load_manifest(path):
         for source in module.get("sources", []):
             if source not in sources:
                 sources.append(source)
+    # Globs let live-added/removed/renamed files change the package source set
+    # without editing the manifest by hand.
+    for pattern in manifest.get("globs", []):
+        for match in sorted(glob.glob(os.path.join(ROOT, pattern), recursive=True)):
+            if not os.path.isfile(match):
+                continue
+            relative = os.path.relpath(match, ROOT).replace("\\", "/")
+            if relative not in sources:
+                sources.append(relative)
     return sources, list(manifest.get("headers", []))
 
 
@@ -137,26 +147,56 @@ def main():
             print("[HOT RELOAD] DLL up to date, skipping")
             return 0
 
-    command = [CCACHE] if os.path.isfile(CCACHE) else []
-    command += [
+    ccache_prefix = [CCACHE] if os.path.isfile(CCACHE) else []
+    base_flags = [
         COMPILER,
         "-std=c++17",
         "-Og",
         "-g",
-        "-shared",
         "-DMIMITA_GAME_DLL",
         "-DGLM_ENABLE_EXPERIMENTAL",
         "-Iinclude",
         "-Isrc",
         f"-I{GLFW_INCLUDE}",
     ]
-    command += [os.path.join(ROOT, source) for source in sources]
-    staging = output + ".staging"
-    command += ["-o", staging]
+
+    # Compile each hot source separately so it emits a .d dependency file for
+    # the live dependency graph, then link the objects into the package DLL.
+    obj_dir = os.path.join(os.path.dirname(output), "obj")
+    os.makedirs(obj_dir, exist_ok=True)
+    objects = []
 
     print(f"[HOT RELOAD] rebuilding DLL generation={generation} sources={len(sources)}")
     started = time.time()
-    completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+
+    for source in sources:
+        stem = os.path.splitext(os.path.basename(source))[0]
+        obj = os.path.join(obj_dir, stem + ".o")
+        dep = obj + ".d"
+        compile_command = ccache_prefix + base_flags + [
+            "-c", os.path.join(ROOT, source), "-MMD", "-MF", dep, "-o", obj,
+        ]
+        result = subprocess.run(compile_command, cwd=ROOT, capture_output=True, text=True)
+        if result.returncode != 0:
+            write_result(result_path, {
+                "status": "failed",
+                "error": (result.stderr or result.stdout or "compile failed")[-4000:],
+                "generation": generation,
+                "code_hash": code_hash,
+                "sources": {rel: sha256_file(os.path.join(ROOT, rel)) for rel in watched},
+                "duration_ms": int((time.time() - started) * 1000),
+                "utc": utc_now(),
+            })
+            print(result.stdout or "")
+            print(result.stderr or "")
+            print("[HOT RELOAD] reload failed")
+            return result.returncode or 1
+        objects.append(obj)
+
+    staging = output + ".staging"
+    completed = subprocess.run(
+        ccache_prefix + [COMPILER, "-shared", "-o", staging] + objects,
+        cwd=ROOT, capture_output=True, text=True)
     duration_ms = int((time.time() - started) * 1000)
 
     if completed.returncode != 0:

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "hot-reload/game-api.h"
+#include "project/project-watcher.h"
 
 // Owns the live replaceable-code pipeline: hash-based change detection, a
 // non-blocking background build worker, generation-stamped candidates, API/ABI
@@ -107,6 +108,7 @@ private:
     std::unordered_map<std::string, std::uint64_t> coldMtimes_;
     std::string coldPendingFile_;
     std::uint64_t lastColdNoticeMs_ = 0;
+    Project::ProjectWatcher watcher_;
 
     GameMemory memory_{};
     GenerationRecord active_;
