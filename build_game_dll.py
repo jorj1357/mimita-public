@@ -28,6 +28,7 @@ def parse_args(argv):
     args = {
         "generation": None,
         "output": DEFAULT_OUTPUT,
+        "output_explicit": False,
         "result": None,
         "hot_modules": DEFAULT_MANIFEST,
     }
@@ -39,6 +40,8 @@ def parse_args(argv):
                 raise SystemExit(f"[HOT RELOAD] {arg} requires a value")
             key = arg[2:].replace("-", "_")
             args[key] = argv[index + 1]
+            if arg == "--output":
+                args["output_explicit"] = True
             index += 2
             continue
         index += 1
@@ -84,7 +87,12 @@ def write_result(path, payload):
 def main():
     args = parse_args(sys.argv[1:])
     generation = args["generation"]
-    output = os.path.abspath(args["output"])
+    if generation is not None and not args["output_explicit"]:
+        # Immutable generation filename: never overwrite an existing generation.
+        output = os.path.abspath(
+            os.path.join(BUILD_DIR, "hotreload", f"mimita-live-g{int(generation):06d}.dll"))
+    else:
+        output = os.path.abspath(args["output"])
     result_path = args["result"]
     manifest_path = os.path.abspath(args["hot_modules"])
 

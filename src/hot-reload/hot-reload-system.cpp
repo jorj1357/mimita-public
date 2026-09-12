@@ -57,6 +57,18 @@ void HotReloadSystem::startup()
 
     loadManifest();
     observedSourceHash_ = computeSourceHash();
+    manifestHash_ = LiveCodeHash::sha256File(manifestPath().string());
+    for (const auto& relative : coldSources_) {
+        const std::string path = (root_ / relative).string();
+        WIN32_FILE_ATTRIBUTE_DATA data{};
+        if (GetFileAttributesExW((root_ / relative).wstring().c_str(),
+                                 GetFileExInfoStandard, &data)) {
+            ULARGE_INTEGER value{};
+            value.LowPart = data.ftLastWriteTime.dwLowDateTime;
+            value.HighPart = data.ftLastWriteTime.dwHighDateTime;
+            coldMtimes_[path] = value.QuadPart;
+        }
+    }
 
     if (std::filesystem::exists(sourceDLL_)) {
         GenerationRecord initial;
@@ -89,6 +101,8 @@ bool HotReloadSystem::pollAndAdvance()
 
     if (!buildRunning_.load() && !buildRequested_.load()) {
         if (++pollCounter_ % HOT_RELOAD_POLL_THROTTLE == 0) {
+            pollManifestReload();
+            pollColdBoundary();
             const std::string hash = computeSourceHash();
             if (!hash.empty() && hash != observedSourceHash_)
                 beginBuild("source_change");
@@ -116,7 +130,12 @@ bool HotReloadSystem::beginBuild(const std::string& reason)
     BuildRequest request;
     request.generation = generation;
     request.sourceHash = hash;
-    request.outputPath = dir / "mimita-game.dll";
+    // Immutable generation filename: a new file is written every build and the
+    // active generation is never overwritten.
+    char generationName[64]{};
+    std::snprintf(generationName, sizeof(generationName),
+                  "mimita-live-g%06u.dll", generation);
+    request.outputPath = dir / generationName;
     request.resultPath = dir / "build-result.json";
     request.logPath = dir / "build.log";
     request.reason = reason;
@@ -383,7 +402,8 @@ void HotReloadSystem::unloadGameDLL()
 void HotReloadSystem::loadManifest()
 {
     hotSources_.clear();
-    std::ifstream file(root_ / "src" / "hot-reload" / "hot-modules.json");
+    coldSources_.clear();
+    std::ifstream file(manifestPath());
     if (!file.is_open()) {
         hotSources_ = {"src/effects/effect-part.cpp", "src/hot-reload/game-api.h"};
         return;
@@ -403,6 +423,10 @@ void HotReloadSystem::loadManifest()
             for (const auto& header : json["headers"])
                 hotSources_.push_back(header.get<std::string>());
         }
+        if (json.contains("cold") && json["cold"].is_array()) {
+            for (const auto& cold : json["cold"])
+                coldSources_.push_back(cold.get<std::string>());
+        }
     } catch (...) {
         hotSources_ = {"src/effects/effect-part.cpp", "src/hot-reload/game-api.h"};
     }
@@ -412,6 +436,59 @@ void HotReloadSystem::loadManifest()
 
     std::sort(hotSources_.begin(), hotSources_.end());
     hotSources_.erase(std::unique(hotSources_.begin(), hotSources_.end()), hotSources_.end());
+    std::sort(coldSources_.begin(), coldSources_.end());
+    coldSources_.erase(std::unique(coldSources_.begin(), coldSources_.end()), coldSources_.end());
+}
+
+std::filesystem::path HotReloadSystem::manifestPath() const
+{
+    return root_ / "src" / "hot-reload" / "hot-modules.json";
+}
+
+void HotReloadSystem::pollManifestReload()
+{
+    const std::string hash = LiveCodeHash::sha256File(manifestPath().string());
+    if (hash.empty() || hash == manifestHash_)
+        return;
+    manifestHash_ = hash;
+    loadManifest();
+    observedSourceHash_ = computeSourceHash();
+
+    LiveEventJournal::Fields fields;
+    fields.file = "src/hot-reload/hot-modules.json";
+    fields.codeHash = hash;
+    fields.result = "reloaded";
+    LiveEventJournal::instance().record("manifest_reloaded", fields);
+    std::printf("[LIVE CODE] hot-modules manifest reloaded\n");
+}
+
+void HotReloadSystem::pollColdBoundary()
+{
+    for (const auto& relative : coldSources_) {
+        const std::filesystem::path path = root_ / relative;
+        WIN32_FILE_ATTRIBUTE_DATA data{};
+        if (!GetFileAttributesExW(path.wstring().c_str(), GetFileExInfoStandard, &data))
+            continue;
+        ULARGE_INTEGER value{};
+        value.LowPart = data.ftLastWriteTime.dwLowDateTime;
+        value.HighPart = data.ftLastWriteTime.dwHighDateTime;
+        const std::uint64_t stamp = value.QuadPart;
+        auto it = coldMtimes_.find(relative);
+        if (it == coldMtimes_.end()) {
+            coldMtimes_[relative] = stamp;
+            continue;
+        }
+        if (it->second == stamp)
+            continue;
+        it->second = stamp;
+
+        LiveEventJournal::Fields fields;
+        fields.file = relative;
+        fields.result = "HOT_RELOAD_BOUNDARY_VIOLATION";
+        fields.error = "cold kernel change cannot be activated without relinking mimita.exe";
+        LiveEventJournal::instance().record("hot_reload_boundary_violation", fields);
+        LiveCodeEvents::notifyBoundaryViolation(relative);
+    }
 }
 
 std::string HotReloadSystem::computeSourceHash() const

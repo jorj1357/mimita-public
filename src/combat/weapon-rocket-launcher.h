@@ -14,6 +14,8 @@
 #include <glm/gtc/quaternion.hpp>
 #include <vector>
 
+#include "ecs/entity-types.h"
+
 class Camera;
 class Player;
 class NpcSystem;
@@ -37,6 +39,9 @@ struct RocketLauncherState {
         uint32_t fireSerial = 0;
         uint32_t authoritativeProjectileId = 0;
         uint64_t replayEventId = 0;
+        // Entity/component slice: stable rocket identity and firing owner.
+        EntityId entityId = kInvalidEntityId;
+        EntityId ownerEntity = kInvalidEntityId;
     };
     std::vector<Rocket> activeRockets;
     float gameTime = 0.0f;
@@ -50,7 +55,9 @@ void fire(
     WeaponRuntime& runtime,
     Player& owner,
     const glm::vec3& muzzlePos,
-    const glm::vec3& muzzleDir);
+    const glm::vec3& muzzleDir,
+    EntityId ownerEntity = kInvalidEntityId,
+    EntityRealm realm = EntityRealm::ClientPredicted);
 
 void update(
     RocketLauncherState& state,

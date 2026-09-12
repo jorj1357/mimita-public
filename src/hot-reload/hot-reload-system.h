@@ -7,6 +7,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include "hot-reload/game-api.h"
@@ -86,6 +87,9 @@ private:
     void loadManifest();
     std::string computeSourceHash() const;
     std::string manifestSummary() const;
+    std::filesystem::path manifestPath() const;
+    void pollManifestReload();
+    void pollColdBoundary();
     bool beginBuild(const std::string& reason);
     void workerMain();
     BuildResult runBuild(const BuildRequest& request);
@@ -96,8 +100,11 @@ private:
     std::filesystem::path makeUniqueTempDLLPath();
 
     std::vector<std::string> hotSources_;
+    std::vector<std::string> coldSources_;
     std::filesystem::path root_;
     std::filesystem::path sourceDLL_;
+    std::string manifestHash_;
+    std::unordered_map<std::string, std::uint64_t> coldMtimes_;
 
     GameMemory memory_{};
     GenerationRecord active_;

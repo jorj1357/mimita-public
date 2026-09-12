@@ -15,6 +15,7 @@
 #include "combat/weapon-audio.h"
 #include "combat/weapon-rocket-launcher.h"
 #include "combat/weapon-grenade-launcher.h"
+#include "ecs/actor-entities.h"
 #include "config.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
@@ -434,7 +435,11 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     case WeaponBehaviorType::Projectile:
     case WeaponBehaviorType::RocketLauncher:
     {
-        WeaponRocketLauncher::fire(gNpcRocketState, *def, rt, npc.body, npcPos, aimDir);
+        const EntityId npcEntity = Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npc.id);
+        Ecs::setControlSource(npcEntity, ControlSource::ServerNpc);
+        Ecs::setAuthority(npcEntity, NetworkAuthority::Server);
+        WeaponRocketLauncher::fire(gNpcRocketState, *def, rt, npc.body, npcPos, aimDir,
+                                   npcEntity, EntityRealm::Server);
         fired = true;
         {
             float range = effectiveRange(*def);

@@ -125,4 +125,14 @@ void notifyValidationFailed(std::uint32_t generation, const std::string& error)
     LiveEventJournal::instance().record("sound_emitted", sound);
 }
 
+void notifyBoundaryViolation(const std::string& file)
+{
+    NotificationSystem::instance().pushCritical(
+        "LIVE CODE",
+        "HOT_RELOAD_BOUNDARY_VIOLATION: " + file +
+            "\ncold kernel change cannot activate without relinking; move the behavior behind the hot ABI",
+        0);
+    playSound("live/failure", 0.7f);
+}
+
 } // namespace LiveCodeEvents

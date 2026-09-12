@@ -22,6 +22,7 @@
 #include "pobjects/persistent-physics.h"
 #include "network/packets.h"
 #include "debug/debug-visuals.h"
+#include "ecs/actor-entities.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1049,7 +1050,8 @@ RevolverShotResult WeaponSystem::fireRocketLauncher(Camera& camera, Player& play
     }
     else
     {
-        WeaponRocketLauncher::fire(mRocketState, *def, *rt, player, muzzlePos, dir);
+        WeaponRocketLauncher::fire(mRocketState, *def, *rt, player, muzzlePos, dir,
+                                   Ecs::ensureLocalPlayerEntity(), EntityRealm::Local);
     }
     rt->shootEffectTimer = weaponParamOr(*def, "shootPoseTime", 0.12f);
     mShotCooldown = def->fireDelay;

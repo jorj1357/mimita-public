@@ -11,6 +11,7 @@
 #include "network/server.h"
 #include "network/actor-lifecycle.h"
 #include "network/server-gamemode.h"
+#include "ecs/actor-entities.h"
 #include "network/community-server-config.h"
 #include "network/network-weapons.h"
 #include "gamemode/match-roles.h"
@@ -586,6 +587,17 @@ void tickWeaponRuntimes(std::unordered_map<uint32_t, ServerPlayer>& players, uin
 
 void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
 {
+    // Entity/component slice: keep the server player entity, identity, authority,
+    // and live state in sync for the migrated slice.
+    {
+        const EntityId playerEntity =
+            Ecs::ensure(EntityRealm::Server, EntityDomain::Player, p.id);
+        Ecs::setAuthority(playerEntity, NetworkAuthority::Server);
+        Ecs::setTransform(playerEntity, p.pos, glm::vec3(1.0f, 0.0f, 0.0f), p.yaw, 0.0f);
+        Ecs::setVelocity(playerEntity, p.vel, p.movement.externalImpulse);
+        Ecs::setHealth(playerEntity, p.health, p.maxHealth, p.dead);
+    }
+
     // Apply input yaw BEFORE any non-dead early return.
     // Orientation comes from current input and must update every frame,
     // even when clientStateUpdated causes an early return.

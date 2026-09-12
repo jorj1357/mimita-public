@@ -1198,3 +1198,32 @@ jorj - this not official format not good but  when we edit netowkring stuff or d
          client consumer.
       2. Always trace the full data path (config → server → packet → client → movement)
          before assuming a build or binary issue.
+
+2026-09-12T15:40:00Z — COLD BUILD auto-killed the running game; live-development invariant now enforced — RESOLVED
+
+1. Issue: `build_agent.py` ran `taskkill /f /im mimita.exe` before every build, so
+   any agent build killed a running MiMITA, destroying the live session.
+2. Expected behavior: if `MiMITA.exe` is already running it must remain running;
+   gameplay code edits activate through the hot generation pipeline without
+   relinking or closing the executable.
+3. Actual behavior: the cold build path killed `mimita.exe`, then relinked. This
+   looked like "the running exe blocks the link", and the previous workaround was
+   to run the full build and report a lock, or ask the human to close the game.
+4. Root cause: cold build and live build were not separated, and the cold build
+   took ownership of the running process instead of refusing.
+5. Fix applied (2026-09-12):
+   1. Removed the `taskkill` block from `build_agent.py`.
+   2. Added `enforce_live_invariant()`: cold build refuses to link while
+      `mimita.exe` runs and prints `HOT_RELOAD_BOUNDARY_VIOLATION`; the only
+      override is the loud `MIMITA_FORCE_COLD=1` last resort.
+   3. Added `devscripts/live-build.py`, which never writes `mimita.exe` and emits
+      immutable `mimita-live-gNNNNNN.dll` generations.
+   4. Documented the invariant in
+      `docs/architecture/live-development/live-development.md` and
+      `docs/operations/build-and-exe/build-and-exe.md`.
+   5. Added `devscripts/test-live-build-invariant.py`.
+6. Proof: `devscripts/test-live-build-invariant.py` shows a live build leaves the
+   executable unchanged and the cold guard refuses while a game is running.
+7. Lessons learned: never kill, close, restart, or relink a running game. If a
+   change cannot activate live, classify it and move gameplay policy behind the
+   hot ABI instead of relinking.

@@ -4,6 +4,18 @@
 
 This is a C++17 OpenGL game engine.
 
+## Live-development invariant
+
+If `MiMITA.exe` is already running, it must remain running. Do not close,
+restart, relink, replace, or unlock it. Live iteration edits hot sources (see
+`docs/architecture/live-development/live-development.md`) and uses
+`python devscripts/live-build.py`, which never writes `mimita.exe`.
+
+`python build_agent.py` is a COLD BUILD: it relinks the executable and therefore
+refuses to run while `mimita.exe` is open. `MIMITA_FORCE_COLD=1` is a loud,
+last-resort override for an intentional cold build only; it is not part of the
+normal loop. Never run `taskkill` on `mimita.exe`.
+
 ## Repository Workflow
 
 When solving coding problems:
@@ -32,6 +44,9 @@ If there is a TODO comment in the file you are working on, and it is easy enough
 
 When building or testing the EXE, use build_agent.py instead of build.py, because build.py opens the EXE on the computer and may falsely appear to error when it has not.
 
+Build_agent.py is a cold build. It must not be used while the game is open. For
+all live iteration use `python devscripts/live-build.py`.
+
 ## Single EXE Output
 
 All development builds must use the single canonical output:
@@ -49,8 +64,9 @@ python build_agent.py
 Do not set `MIMITA_EXE_NAME` and do not create alternate development
 executables such as `mimita-chat-test.exe`, `mimita-duel-handshake-test.exe`,
 or feature-specific test executables. Focused tests must use the canonical
-`mimita.exe` or a non-EXE test harness. Before building, close any running
-`mimita.exe`; never kill a possibly user-owned process to release the file.
+`mimita.exe` or a non-EXE test harness. Never kill a running `mimita.exe`; the
+cold build refuses to link while it is open and reports
+`HOT_RELOAD_BOUNDARY_VIOLATION`.
 
 After any build_agent.py invocation, check the build result status printed in the output:
 

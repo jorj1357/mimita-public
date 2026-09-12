@@ -14,6 +14,8 @@
 #include "debug/structured-log.h"
 #include "debug/debug-log.h"
 #include "persistence/persistence-emit.h"
+#include "ecs/actor-entities.h"
+#include "ecs/entity-registry.h"
 
 #include <algorithm>
 #include <chrono>
@@ -1197,6 +1199,19 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
     spawn.header.tick = tick;
     fillProjectilePose(spawn, projectile);
     projectiles[projectile.id] = projectile;
+
+    // Entity/component slice: authoritative rocket entity owned by the shooter
+    // player entity, keyed by the existing network projectile id.
+    {
+        const EntityId ownerEntity =
+            Ecs::ensure(EntityRealm::Server, EntityDomain::Player, shooter.id);
+        Ecs::setAuthority(ownerEntity, NetworkAuthority::Server);
+        Ecs::spawnRocket(EntityRealm::Server, projectile.id, ownerEntity,
+                         projectile.position, projectile.velocity,
+                         projectile.weaponDefNetworkId, projectile.fireSerial,
+                         projectile.lifetime, NetworkAuthority::Server);
+    }
+
     // Broadcast the spawn to everyone EXCEPT the shooter — the shooter's client
     // already has its own instant predicted projectile and adopting a server copy
     // back is what caused the "two rockets" duplicate on badconn.
@@ -1830,6 +1845,8 @@ void tickServerProjectiles(SOCKET sock,
                     _lg.write(e);
                 }
             }
+            Ecs::despawn(EntityRegistry::instance().find(
+                EntityRealm::Server, EntityDomain::Projectile, projectile.id));
             it = projectiles.erase(it);
             continue;
         }
@@ -1969,6 +1986,8 @@ void cancelDeadNpcProjectiles(
         Debug::log(Debug::Category::Networking,
             "[NPC PROJECTILE CANCEL] projectileId=%u ownerNpcId=%u tick=%u reason=owner-dead",
             projectile.id, projectile.ownerNpcId, tick);
+        Ecs::despawn(EntityRegistry::instance().find(
+            EntityRealm::Server, EntityDomain::Projectile, projectile.id));
         it = projectiles.erase(it);
     }
 }

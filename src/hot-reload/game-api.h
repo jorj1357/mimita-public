@@ -221,6 +221,59 @@ struct GamePresentationModuleV1 {
     GameRocketTrailFn rocketTrail;
 };
 
+// ── Gameplay policy module ──────────────────────────────────
+// Rocket flight and explosion policy as plain data. The EXE owns projectile
+// state and authority; this module only returns parameters.
+static constexpr std::uint32_t ROCKET_FLIGHT_VERSION = 1;
+static constexpr std::uint32_t EXPLOSION_PARAMS_VERSION = 1;
+
+struct RocketFlightStateV1 {
+    float position[3];
+    float velocity[3];
+    float age;
+    float lifetime;
+    std::uint32_t weaponNetworkId;
+    std::uint32_t flags;
+};
+
+struct RocketFlightParamsV1 {
+    float speedScale;
+    float gravityScale;
+    float dragScale;
+    float upBias;
+    float lifetime;
+    std::uint32_t bounces;
+};
+
+struct ExplosionStateV1 {
+    float distance;
+    float splashRadius;
+    std::uint32_t directHit;
+    std::uint32_t weaponNetworkId;
+};
+
+struct ExplosionParamsV1 {
+    float splashRadius;
+    float splashExponent;
+    float baseDamage;
+    float knockbackStrength;
+    float selfDamageMultiplier;
+};
+
+using GameAdjustRocketFlightFn = bool (MIMITA_GAME_CALL *)(
+    const RocketFlightStateV1* state, const RocketFlightParamsV1* base,
+    RocketFlightParamsV1* out, GameMemory* memory);
+using GameExplosionParamsFn = bool (MIMITA_GAME_CALL *)(
+    const ExplosionStateV1* state, const ExplosionParamsV1* base,
+    ExplosionParamsV1* out, GameMemory* memory);
+
+struct GameGameplayModuleV1 {
+    std::uint32_t abiVersion;
+    std::uint32_t structSize;
+    GameAdjustRocketFlightFn adjustRocketFlight;
+    GameExplosionParamsFn explosionParameters;
+};
+
 struct GameAPI {
     std::uint32_t version;
     std::uint32_t structSize;

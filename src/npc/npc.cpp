@@ -37,6 +37,8 @@
 #include "perf/perf.h"
 #include "npc/npc-state-machine.h"
 #include "live-code/live-actor.h"
+#include "ecs/actor-entities.h"
+#include "ecs/entity-registry.h"
 
 static constexpr float SEARCH_TIMEOUT = 8.0f;
 
@@ -405,13 +407,36 @@ InputState buildInputState(Npc& npc, glm::vec3 moveDir, bool jump, bool dash, bo
     return input;
 }
 
-// Project one NPC into the shared Actor model, run the hot actor module, and
-// apply its decision to the shared movement input. Falls back to the existing
-// behavior when no actor module is active.
+// Project one NPC into the shared entity/component model, run the hot actor
+// module, and apply its decision to the shared movement input. Falls back to
+// the existing behavior when no actor module is active. The entity path owns
+// identity, control source, and the movement/aim intent for this life.
 void applyLiveActorBehavior(Npc& npc, InputState& input, float dt, double now)
 {
+    // Identity + components are maintained even when no hot module is loaded,
+    // so the entity registry is the canonical record for the migrated slice.
+    const EntityId entity = Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npc.id);
+    Ecs::setControlSource(entity, ControlSource::ServerNpc);
+    Ecs::setAuthority(entity, NetworkAuthority::Server);
+    Ecs::setTransform(entity, npc.body.pos, npc.currentFacing,
+                      npc.body.yaw, npc.body.aimBodyPitch);
+    Ecs::setVelocity(entity, npc.body.vel, npc.body.externalImpulse);
+    Ecs::setHealth(entity, npc.body.currentHp, npc.body.maxHp, npc.body.dead);
+    Ecs::setBody(entity, npc.body.sizeScale,
+                 npc.body.movementCapsule.radius, npc.body.movementCapsule.height);
+
     if (!LiveActor::available())
         return;
+
+    auto& registry = EntityRegistry::instance();
+    const TransformComponent* transform = registry.tryGet<TransformComponent>(entity);
+    const VelocityComponent* velocity = registry.tryGet<VelocityComponent>(entity);
+    const HealthComponent* health = registry.tryGet<HealthComponent>(entity);
+
+    const glm::vec3 position = transform ? transform->position : npc.body.pos;
+    const glm::vec3 vel = velocity ? velocity->linear : npc.body.vel;
+    const int currentHp = health ? health->current : npc.body.currentHp;
+    const int maxHp = health ? health->max : npc.body.maxHp;
 
     ActorStateV1 state{};
     state.id = npc.id;
@@ -419,17 +444,17 @@ void applyLiveActorBehavior(Npc& npc, InputState& input, float dt, double now)
     state.flags = (npc.body.dead ? 0u : 1u)
         | (npc.sensors.touchFloor ? 2u : 0u)
         | (npc.sensors.hasTarget ? 4u : 0u);
-    state.position[0] = npc.body.pos.x;
-    state.position[1] = npc.body.pos.y;
-    state.position[2] = npc.body.pos.z;
-    state.velocity[0] = npc.body.vel.x;
-    state.velocity[1] = npc.body.vel.y;
-    state.velocity[2] = npc.body.vel.z;
+    state.position[0] = position.x;
+    state.position[1] = position.y;
+    state.position[2] = position.z;
+    state.velocity[0] = vel.x;
+    state.velocity[1] = vel.y;
+    state.velocity[2] = vel.z;
     state.aim[0] = npc.currentFacing.x;
     state.aim[1] = npc.currentFacing.y;
     state.aim[2] = npc.currentFacing.z;
-    state.health = static_cast<float>(npc.body.currentHp);
-    state.maxHealth = static_cast<float>(npc.body.maxHp);
+    state.health = static_cast<float>(currentHp);
+    state.maxHealth = static_cast<float>(maxHp);
     state.emotionPanic = npc.emotion.panic;
     state.emotionFear = npc.emotion.fear;
     state.emotionConfidence = npc.emotion.confidence;
@@ -438,7 +463,7 @@ void applyLiveActorBehavior(Npc& npc, InputState& input, float dt, double now)
     state.role = npc.liveRoleId;
     state.targetId = npc.serverTargetId;
     state.distanceToTarget = npc.sensors.hasTarget
-        ? glm::length(npc.sensors.targetPos - npc.body.pos) : -1.0f;
+        ? glm::length(npc.sensors.targetPos - position) : -1.0f;
     state.tick = static_cast<std::uint64_t>(now * 60.0);
 
     LiveActor::updateEmotion(state, nullptr, dt);
@@ -469,6 +494,12 @@ void applyLiveActorBehavior(Npc& npc, InputState& input, float dt, double now)
     npc.emotion.stress = std::clamp(command.emotionStress, 0.0f, 1.0f);
     if (command.role != 0)
         npc.liveRoleId = command.role;
+
+    // Record the decision as the entity's intent for this tick.
+    Ecs::setMovementIntent(entity, input.wishMoveXY.x, input.wishMoveXY.y,
+                           input.movementPressed, input.jumpHeld, input.dashPressed,
+                           input.downDashPressed, input.freezeHeld);
+    Ecs::setAimIntent(entity, npc.currentFacing, npc.body.yaw, npc.body.aimBodyPitch);
 }
 
 } // anonymous namespace

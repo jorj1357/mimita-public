@@ -44,6 +44,7 @@
 #include "network/coordinator-client.h"
 #include "network/badconn/badconn.h"
 #include "live-code/live-code-selftest.h"
+#include "ecs/entity-slice-selftest.h"
 
 extern DuelManager gDuelManager;
 extern bool gMainmenuDebug;
@@ -206,6 +207,14 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = runLiveCodeSelfTest(report);
         printf("%s", report.c_str());
         printf("[LIVE CODE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--entity-slice-selftest") {
+        std::string report;
+        const bool ok = runEntitySliceSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[ENTITY SLICE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

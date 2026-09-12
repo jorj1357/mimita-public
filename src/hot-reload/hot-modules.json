@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "comment": "Hot replaceable module manifest. Sources are compiled into the coarse mimita-game DLL; headers participate in change detection and code hashing. Extend modules in later live-code phases.",
+  "comment": "Hot replaceable module manifest. Sources compile into the coarse mimita-game DLL; headers participate in change detection and code hashing. 'cold' lists EXE-owned sources whose changes cannot be activated live (HOT_RELOAD_BOUNDARY_VIOLATION).",
   "modules": [
     {
       "name": "effects",
@@ -22,10 +22,30 @@
       "sources": [
         "src/hot-reload/modules/presentation.cpp"
       ]
+    },
+    {
+      "name": "gameplay",
+      "abi": 1,
+      "sources": [
+        "src/hot-reload/modules/rocket-behavior.cpp"
+      ]
     }
   ],
   "headers": [
     "src/hot-reload/game-api.h",
     "src/hot-reload/game-modules.h"
+  ],
+  "cold": [
+    "src/hot-reload/hot-reload-system.cpp",
+    "src/combat/weapon-rocket-launcher.cpp",
+    "src/combat/weapon-system.cpp",
+    "src/npc/npc.cpp",
+    "src/network/server-projectiles.cpp",
+    "src/network/server-npcs.cpp",
+    "src/network/server-players.cpp",
+    "src/network/multiplayer-projectiles.cpp",
+    "src/ecs/entity-registry.cpp",
+    "src/ecs/actor-entities.cpp",
+    "src/sim/simulate-tick.cpp"
   ]
 }

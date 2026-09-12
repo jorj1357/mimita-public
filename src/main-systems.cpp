@@ -144,6 +144,7 @@ void registerCursorCommands();
 #include "terminal/network-commands.h"
 #include "terminal/badconn-commands.h"
 #include "terminal/live-code-commands.h"
+#include "terminal/entity-commands.h"
 #include "terminal/vip-commands.h"
 #include "network/badconn/badconn.h"
 #include "terminal/auth-commands.h"
@@ -429,6 +430,7 @@ void gameInitSubsystems(Engine& engine)
     badconn::loadConfig(badconn::configPath());
     registerBadConnCommands();
     registerLiveCodeCommands();
+    registerEntityCommands();
 
     registerReplayCaptureCommands();
     registerReplayCommands();

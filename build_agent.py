@@ -1,9 +1,12 @@
 # 07 19 2026, 11 10
 # purpose
-# Build script for AI agents that compiles MiMITA without launching the game.
+# COLD BUILD entry for MiMITA. Compiles and relinks mimita.exe.
+# Refuses to run while mimita.exe is open: the running executable must remain
+# running, and live development uses the live build path instead.
 # Serializes agent builds through a visible lock file to avoid object-file races.
 # Writes build/changelog.txt after each build so agents can verify status.
 # Does NOT run mimita.exe, open graphics windows, or deploy builds.
+# Does NOT kill, close, restart, or unlock a running mimita.exe.
 # Does NOT modify source code other than normal compiler outputs.
 # Does NOT hide failed builds or lock ownership from callers.
 
@@ -123,12 +126,50 @@ def save_build_history(timestamp):
 def timestamp_now():
     return datetime.datetime.now().strftime("%m%d%Y %H%M%S")
 
-# Auto-kill running mimita.exe so linker can overwrite it
-kill_result = subprocess.run(
-    ["taskkill", "/f", "/im", "mimita.exe"],
-    capture_output=True, text=True
-)
-time.sleep(0.5)
+def mimita_is_running():
+    """Return True when any mimita.exe process is currently running."""
+    try:
+        result = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq mimita.exe", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return "mimita.exe" in (result.stdout or "").lower()
+    except Exception:
+        # If detection fails, assume it might be running and protect it.
+        return True
+
+
+def enforce_live_invariant():
+    """COLD BUILD must never unlock, replace, or kill a running mimita.exe."""
+    if not mimita_is_running():
+        return
+    if os.environ.get("MIMITA_FORCE_COLD") == "1":
+        print("[COLD BUILD] " + "=" * 60, flush=True)
+        print("[COLD BUILD] MIMITA_FORCE_COLD=1: relinking a RUNNING mimita.exe.", flush=True)
+        print("[COLD BUILD] This is the nuclear last resort and is almost never", flush=True)
+        print("[COLD BUILD] necessary. The running executable is supposed to stay", flush=True)
+        print("[COLD BUILD] alive and receive code edits live. Continuing anyway.", flush=True)
+        print("[COLD BUILD] " + "=" * 60, flush=True)
+        return
+    print("HOT_RELOAD_BOUNDARY_VIOLATION", flush=True)
+    print("mimita.exe is running. COLD BUILD refused: it would relink the running", flush=True)
+    print("executable, which the live-development invariant forbids.", flush=True)
+    print("", flush=True)
+    print("Use LIVE BUILD instead (never writes mimita.exe):", flush=True)
+    print("    python devscripts/live-build.py", flush=True)
+    print("", flush=True)
+    print("If a change genuinely cannot be activated live, classify it and move the", flush=True)
+    print("behavior behind the stable hot ABI. MIMITA_FORCE_COLD=1 is the loud,", flush=True)
+    print("last-resort override for an intentional cold build only.", flush=True)
+    sys.exit(3)
+
+
+# 07 19 2026: the old build path force-killed every running mimita.exe here.
+# That is forbidden. A running mimita.exe must never be killed, closed, or
+# unlocked.
+enforce_live_invariant()
 
 if __name__ == "__main__":
     if not acquire_build_lock():

@@ -29,6 +29,9 @@
 #include "effects/hit-effects.h"
 #include "debug/debug-log.h"
 #include "live-code/live-presentation.h"
+#include "live-code/live-gameplay.h"
+#include "ecs/actor-entities.h"
+#include "ecs/entity-registry.h"
 #include "debug/debug-visuals.h"
 #include "replay/replay.h"
 #include "npc/npc.h"
@@ -59,18 +62,42 @@ static void doExplosion(
     uint32_t directHitEntityId,
     bool directHitIsNpc,
     Player* victimPlayer,
-    bool presentationOnly)
+    bool presentationOnly,
+    EntityId ownerEntity = kInvalidEntityId)
 {
     const auto& sc = SizeScalingConfig::instance().data();
     float ss = std::max(owner.sizeScale, 0.001f);
-    const float splashRadius = cp(def, "splashRadius", 8.0f) * sc.scale(1.0f, sc.explosionRadiusExponent, ss);
-    const float splashExponent = cp(def, "splashExponent", 2.0f);
-    const float baseDamage = cp(def, "rocketDirectDamage", 150.0f) * sc.scale(1.0f, sc.projectileDamageExponent, ss);
-    const float knockbackStrength = cp(def, "knockbackStrength", 40.0f) * sc.scale(1.0f, sc.knockbackExponent, ss);
+    float splashRadius = cp(def, "splashRadius", 8.0f) * sc.scale(1.0f, sc.explosionRadiusExponent, ss);
+    float splashExponent = cp(def, "splashExponent", 2.0f);
+    float baseDamage = cp(def, "rocketDirectDamage", 150.0f) * sc.scale(1.0f, sc.projectileDamageExponent, ss);
+    float knockbackStrength = cp(def, "knockbackStrength", 40.0f) * sc.scale(1.0f, sc.knockbackExponent, ss);
     const float selfKnockbackMul = cp(def, "selfKnockbackMultiplier", 0.8f);
-    const float selfDamageMul = std::max(0.0f, cp(def, "selfDamageMultiplier", 1.0f));
+    float selfDamageMul = std::max(0.0f, cp(def, "selfDamageMultiplier", 1.0f));
     const float knockbackHorizontalMul = cp(def, "knockbackHorizontalMultiplier", 1.0f);
     const float knockbackVerticalMul = cp(def, "knockbackVerticalMultiplier", 1.0f);
+
+    // Hot gameplay policy: the replaceable module may override explosion params.
+    {
+        ExplosionStateV1 explosionState{};
+        explosionState.distance = 0.0f;
+        explosionState.splashRadius = splashRadius;
+        explosionState.directHit = directHitEntityId > 0 ? 1u : 0u;
+        explosionState.weaponNetworkId = 0;
+        ExplosionParamsV1 explosionBase{};
+        explosionBase.splashRadius = splashRadius;
+        explosionBase.splashExponent = splashExponent;
+        explosionBase.baseDamage = baseDamage;
+        explosionBase.knockbackStrength = knockbackStrength;
+        explosionBase.selfDamageMultiplier = selfDamageMul;
+        ExplosionParamsV1 explosionOut{};
+        if (LiveGameplay::explosion(explosionState, explosionBase, explosionOut)) {
+            splashRadius = std::max(0.01f, explosionOut.splashRadius);
+            splashExponent = explosionOut.splashExponent;
+            baseDamage = std::max(0.0f, explosionOut.baseDamage);
+            knockbackStrength = std::max(0.0f, explosionOut.knockbackStrength);
+            selfDamageMul = std::max(0.0f, explosionOut.selfDamageMultiplier);
+        }
+    }
 
     spawnExplosionFx(position, "rocket_launcher", owner.username, owner.sizeScale, !presentationOnly);
 
@@ -98,6 +125,10 @@ static void doExplosion(
         int finalDmg = std::max(1, (int)std::round(dmg));
         npc.body.currentHp -= finalDmg;
         if (npc.body.currentHp < 0) npc.body.currentHp = 0;
+
+        const EntityId npcEntity = Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npc.id);
+        Ecs::setHealth(npcEntity, npc.body.currentHp, npc.body.maxHp, npc.body.currentHp <= 0);
+        Ecs::journalDamage(npcEntity, ownerEntity, (float)finalDmg, "rocket_launcher");
 
         float t = dist / splashRadius;
         float knockScale = 1.0f - t * t;
@@ -191,7 +222,9 @@ void fire(
     WeaponRuntime& runtime,
     Player& owner,
     const glm::vec3& muzzlePos,
-    const glm::vec3& muzzleDir)
+    const glm::vec3& muzzleDir,
+    EntityId ownerEntity,
+    EntityRealm realm)
 {
     const float rocketSpeed = def.projectileSpeed > 0.0f
         ? def.projectileSpeed : 50.0f;
@@ -209,12 +242,39 @@ void fire(
         muzzlePos.x, muzzlePos.y, muzzlePos.z,
         spawnPos.x, spawnPos.y, spawnPos.z);
 
+    // Hot gameplay policy: the replaceable module may scale rocket flight.
+    RocketFlightStateV1 flightState{};
+    flightState.position[0] = spawnPos.x;
+    flightState.position[1] = spawnPos.y;
+    flightState.position[2] = spawnPos.z;
+    flightState.velocity[0] = dir.x * rocketSpeed;
+    flightState.velocity[1] = dir.y * rocketSpeed;
+    flightState.velocity[2] = dir.z * rocketSpeed;
+    flightState.age = 0.0f;
+    flightState.lifetime = def.projectileLifetime > 0.0f ? def.projectileLifetime : 5.0f;
+    flightState.weaponNetworkId = 0;
+    flightState.flags = 0;
+    RocketFlightParamsV1 flightBase{};
+    flightBase.speedScale = 1.0f;
+    flightBase.gravityScale = 1.0f;
+    flightBase.dragScale = 1.0f;
+    flightBase.upBias = 0.0f;
+    flightBase.lifetime = flightState.lifetime;
+    flightBase.bounces = 0;
+    RocketFlightParamsV1 flightOut{};
+    float finalSpeed = rocketSpeed;
+    float finalLifetime = flightState.lifetime;
+    if (LiveGameplay::rocketFlight(flightState, flightBase, flightOut)) {
+        finalSpeed = rocketSpeed * std::max(0.0f, flightOut.speedScale);
+        finalLifetime = flightOut.lifetime > 0.0f ? flightOut.lifetime : finalLifetime;
+    }
+
     RocketLauncherState::Rocket rocket;
     rocket.position = spawnPos;
     rocket.prevPosition = muzzlePos;
-    rocket.velocity = dir * rocketSpeed;
+    rocket.velocity = dir * finalSpeed;
     rocket.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-    rocket.lifetime = def.projectileLifetime > 0.0f ? def.projectileLifetime : 5.0f;
+    rocket.lifetime = finalLifetime;
     rocket.distanceTraveled = 0.0f;
     rocket.exploded = false;
     rocket.ownerId = (uint32_t)(uintptr_t)(&owner);
@@ -222,6 +282,16 @@ void fire(
     rocket.smokeAccumulator = 0.0f;
     rocket.fireSerial = 0;
     rocket.authoritativeProjectileId = 0;
+    rocket.ownerEntity = ownerEntity;
+
+    // Entity/component slice: the rocket is a real entity with a stable id and
+    // an owner entity, replacing the pointer-derived owner identity.
+    static uint32_t gRocketEntitySerial = 0;
+    rocket.entityId = Ecs::spawnRocket(
+        realm, ++gRocketEntitySerial, ownerEntity, spawnPos, rocket.velocity,
+        0, 0, rocket.lifetime,
+        realm == EntityRealm::Server ? NetworkAuthority::Server
+                                     : NetworkAuthority::ClientPredicted);
 
     state.activeRockets.push_back(rocket);
 
@@ -229,7 +299,7 @@ void fire(
         ReplayEffectEvent projEvent;
         projEvent.type = "projectile_spawn";
         projEvent.position = spawnPos;
-        projEvent.velocity = dir * rocketSpeed;
+        projEvent.velocity = dir * finalSpeed;
         projEvent.lifetime = rocket.lifetime;
         projEvent.assetId = def.id;
         projEvent.sourceActorId = std::to_string(rocket.ownerId);
@@ -338,7 +408,7 @@ void update(
 
         rocket.lifetime -= dt;
         if (rocket.lifetime <= 0.0f) {
-            doExplosion(state, def, runtime, owner, npcs, camera, rocket.position, 0, false, victimPlayer, presentationOnly);
+            doExplosion(state, def, runtime, owner, npcs, camera, rocket.position, 0, false, victimPlayer, presentationOnly, rocket.ownerEntity);
             rocket.exploded = true;
             it = state.activeRockets.erase(it);
             continue;
@@ -369,9 +439,10 @@ void update(
                     }
                 }
                 if (hitWorld) {
-                    doExplosion(state, def, runtime, owner, npcs, camera, worldHitPos, 0, false, victimPlayer, presentationOnly);
+                    doExplosion(state, def, runtime, owner, npcs, camera, worldHitPos, 0, false, victimPlayer, presentationOnly, rocket.ownerEntity);
                     rocket.exploded = true;
-                    it = state.activeRockets.erase(it);
+                    Ecs::despawn(rocket.entityId);
+                it = state.activeRockets.erase(it);
                     continue;
                 }
             }
@@ -416,9 +487,10 @@ void update(
                     if (hitNpc) break;
                 }
                 if (hitNpc) {
-                    doExplosion(state, def, runtime, owner, npcs, camera, checkPos, hitNpcId, true, victimPlayer, presentationOnly);
+                    doExplosion(state, def, runtime, owner, npcs, camera, checkPos, hitNpcId, true, victimPlayer, presentationOnly, rocket.ownerEntity);
                     rocket.exploded = true;
-                    it = state.activeRockets.erase(it);
+                    Ecs::despawn(rocket.entityId);
+                it = state.activeRockets.erase(it);
                     continue;
                 }
                 // ── Victim player collision (NPC-fired rockets) ──
@@ -433,9 +505,10 @@ void update(
                     glm::vec3 vclosest = glm::clamp(checkPos, vmn, vmx);
                     float vdist = glm::length(checkPos - vclosest);
                     if (vdist < 0.5f && rocket.distanceTraveled >= IGNORE_OWNER_DIST) {
-                        doExplosion(state, def, runtime, owner, npcs, camera, checkPos, 0, false, victimPlayer, presentationOnly);
+                        doExplosion(state, def, runtime, owner, npcs, camera, checkPos, 0, false, victimPlayer, presentationOnly, rocket.ownerEntity);
                         rocket.exploded = true;
-                        it = state.activeRockets.erase(it);
+                        Ecs::despawn(rocket.entityId);
+                it = state.activeRockets.erase(it);
                         continue;
                     }
                 }
@@ -539,11 +612,15 @@ void update(
                    rocket.position.x, rocket.position.y, rocket.position.z);
         }
 
+        Ecs::setRocketMotion(rocket.entityId, rocket.position, rocket.velocity);
+
         ++it;
     }
 }
 
 void clear(RocketLauncherState& state) {
+    for (const auto& rocket : state.activeRockets)
+        Ecs::despawn(rocket.entityId);
     state.activeRockets.clear();
 }
 

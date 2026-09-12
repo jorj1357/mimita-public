@@ -10,6 +10,7 @@
 #include "hot-reload/hot-reload-system.h"
 #include "live-code/code-hash.h"
 #include "live-code/live-actor.h"
+#include "live-code/live-gameplay.h"
 #include "live-code/live-journal.h"
 #include "live-code/live-presentation.h"
 #include "utils/time-format.h"
@@ -111,6 +112,23 @@ bool runLiveCodeSelfTest(std::string& report)
         ok &= check(LivePresentation::rocketTrail(trailBase, trailOut) &&
                         trailOut.size > trailBase.size,
                     "presentation rocket trail", report);
+
+        RocketFlightStateV1 flightState{};
+        RocketFlightParamsV1 flightBase{};
+        flightBase.speedScale = 1.0f;
+        flightBase.lifetime = 5.0f;
+        RocketFlightParamsV1 flightOut{};
+        ok &= check(LiveGameplay::rocketFlight(flightState, flightBase, flightOut) &&
+                        flightOut.speedScale == 1.0f,
+                    "gameplay rocket flight params", report);
+
+        ExplosionStateV1 explosionState{};
+        ExplosionParamsV1 explosionBase{};
+        explosionBase.baseDamage = 100.0f;
+        ExplosionParamsV1 explosionOut{};
+        ok &= check(LiveGameplay::explosion(explosionState, explosionBase, explosionOut) &&
+                        explosionOut.baseDamage == 100.0f,
+                    "gameplay explosion params", report);
     }
 
     HotReloadSystem::instance().unloadGameDLL();

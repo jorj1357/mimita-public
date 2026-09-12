@@ -34,4 +34,7 @@ void notifyRollbackActivated(std::uint32_t generation, const std::string& codeHa
 // Record that a notification was emitted for a live-code event.
 void notifyValidationFailed(std::uint32_t generation, const std::string& error);
 
+// A cold-kernel source changed; it cannot be activated without relinking.
+void notifyBoundaryViolation(const std::string& file);
+
 } // namespace LiveCodeEvents

@@ -13,6 +13,7 @@
 #include "network/server.h"
 #include "network/actor-lifecycle.h"
 #include "network/server-gamemode.h"
+#include "ecs/actor-entities.h"
 
 #include "npc/npc.h"
 #include "npc/npc-internal.h"
@@ -394,6 +395,19 @@ static void broadcastNpcFiring(SOCKET sock,
             spawn.radius = projectile.radius;
 
             projectiles[projectile.id] = projectile;
+
+            // Entity/component slice: authoritative rocket entity owned by the
+            // firing NPC entity, keyed by the network projectile id.
+            {
+                const EntityId ownerEntity =
+                    Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, n.id);
+                Ecs::setControlSource(ownerEntity, ControlSource::ServerNpc);
+                Ecs::setAuthority(ownerEntity, NetworkAuthority::Server);
+                Ecs::spawnRocket(EntityRealm::Server, projectile.id, ownerEntity,
+                                 projectile.position, projectile.velocity,
+                                 projectile.weaponDefNetworkId, projectile.fireSerial,
+                                 projectile.lifetime, NetworkAuthority::Server);
+            }
 
             // Broadcast to ALL players (NPC has no "shooter client" to skip)
             for (const auto& pe : players)

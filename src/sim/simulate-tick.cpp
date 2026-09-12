@@ -25,6 +25,7 @@
 #include "combat/death-system.h"
 #include "effects/hit-effects.h"
 #include "void-death/void-death.h"
+#include "ecs/actor-entities.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "ragdoll/ragdoll-mode-config.h"
 #include "terminal/terminal-state.h"
@@ -64,6 +65,21 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
 {
     MIMITA_PERF_SCOPE("Simulation::SimulateTick");
     if (!sim.player || !sim.world || !sim.npcSystem) return;
+
+    // Entity/component slice: the local human player is a stable entity with
+    // identity, control source, live transform/health, and a movement intent.
+    {
+        const EntityId playerEntity = Ecs::ensureLocalPlayerEntity();
+        Ecs::setTransform(playerEntity, sim.player->pos,
+                          glm::vec3(1.0f, 0.0f, 0.0f), sim.player->yaw,
+                          sim.player->aimBodyPitch);
+        Ecs::setVelocity(playerEntity, sim.player->vel, sim.player->externalImpulse);
+        Ecs::setHealth(playerEntity, sim.player->currentHp, sim.player->maxHp,
+                       sim.player->dead);
+        Ecs::setMovementIntent(playerEntity, frame.moveX, frame.moveY,
+                               frame.movementPressed, frame.jump, frame.dashPressed,
+                               frame.downDashPressed, frame.freezeHeld);
+    }
 
     if (!sim.player->dead) {
         // Handle ragdoll mode toggle

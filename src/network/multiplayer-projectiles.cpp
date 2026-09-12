@@ -9,6 +9,7 @@
 */
 
 #include "network/multiplayer-context.h"
+#include "ecs/actor-entities.h"
 #include "network/simulation-constants.h"
 #include "config/networking-config.h"
 #include "network/confirmed-damage-presentation.h"
@@ -515,6 +516,19 @@ uint32_t mpPredictProjectileAttack(
 
     ctx.networkProjectiles[provisionalId] = projectile;
     ctx.predictedProjectileIds.insert(provisionalId);
+
+    // Entity/component slice: the client-predicted rocket is an entity owned by
+    // the local human player entity, keyed by the provisional projectile id.
+    {
+        const EntityId ownerEntity = Ecs::ensure(
+            EntityRealm::ClientPredicted, EntityDomain::Player, ctx.localPlayerId);
+        Ecs::setControlSource(ownerEntity, ControlSource::LocalHuman);
+        Ecs::setAuthority(ownerEntity, NetworkAuthority::ClientPredicted);
+        Ecs::spawnRocket(EntityRealm::ClientPredicted, provisionalId, ownerEntity,
+                         projectile.position, projectile.velocity,
+                         weaponDefNetworkId, requestId, projectile.lifetime,
+                         NetworkAuthority::ClientPredicted);
+    }
 
     // The local multiplayer fire path is predicted here instead of entering
     // WeaponRocketLauncher::fire().  Record the same one-shot replay event at
