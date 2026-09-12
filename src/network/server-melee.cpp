@@ -10,6 +10,8 @@
 
 #include "network/server.h"
 #include "network/network-weapons.h"
+#include "network/server-damage-policy.h"
+#include "ecs/actor-entities.h"
 #include "combat/weapon-registry.h"
 #include "persistence/persistence-emit.h"
 
@@ -426,13 +428,25 @@ void tickServerSwordCombat(SOCKET sock,
                             kbDir.y * knockback * kbH,
                             kbDir.z * knockback * kbV);
 
-            // Apply server-authoritative damage
+            // Apply server-authoritative damage through the generic policy path.
+            int meleeDamage = (int)damage;
+            {
+                ServerDamagePolicyInput policyInput{};
+                policyInput.source = GAME_DAMAGE_SOURCE_MELEE;
+                policyInput.attackerEntity = Ecs::raw(
+                    Ecs::ensure(EntityRealm::Server, EntityDomain::Player, attacker.id));
+                policyInput.victimEntity = Ecs::raw(
+                    Ecs::ensure(EntityRealm::Server, EntityDomain::Player, target.id));
+                policyInput.victimIsNpc = 0;
+                policyInput.tick = tick;
+                meleeDamage = serverResolveDamagePolicy(policyInput, meleeDamage, kbVec);
+            }
             ServerDamageResult dmgResult = applyServerDamage(
-                players, target, attacker.id, (int)damage, kbVec,
+                players, target, attacker.id, meleeDamage, kbVec,
                 ServerDamageSource::Melee);
             queueServerDamageConfirmedEvent(
                 sock, players, tick, totalPacketsOut, attacker.id, target,
-                (int)damage, dmgResult, hitPoint, kbDir, kbVec,
+                meleeDamage, dmgResult, hitPoint, kbDir, kbVec,
                 ServerDamageSource::Melee, NETWORK_WEAPON_SWORDSWORD,
                 attacker.lastMeleeAttackSerial);
 

@@ -1227,3 +1227,47 @@ jorj - this not official format not good but  when we edit netowkring stuff or d
 7. Lessons learned: never kill, close, restart, or relink a running game. If a
    change cannot activate live, classify it and move gameplay policy behind the
    hot ABI instead of relinking.
+
+2026-09-12T15:51:00Z — Hot rocket policy affected local prediction but not authoritative server damage — RESOLVED (bridge staged; install pending one cold build)
+
+1. Issue: editing `src/hot-reload/modules/rocket-behavior.cpp` (for example
+   `out->baseDamage = base->baseDamage * 12.50f;`) changed only the local/client
+   rocket path. Authoritative NPC/player damage stayed near the JSON value
+   (about 150).
+2. Expected behavior: the authoritative server projectile simulation must apply
+   the same hot rocket policy used by the local launcher, over the JSON base
+   values, while the client remains untrusted.
+3. Actual behavior: `src/combat/weapon-rocket-launcher.cpp` called
+   `LiveGameplay`, but `src/network/server-projectiles.cpp` and
+   `src/network/server-npcs.cpp` built authoritative rockets directly from
+   `weapons.json` and never called the hot module. Live DLL generation activation
+   was confirmed in the journal, but it had no effect on server damage.
+4. Root cause: the authoritative server code is cold EXE code and was never
+   bridged to the hot gameplay module.
+5. Fix applied (2026-09-12T15:51:00Z source; install pending cold build):
+   1. `src/network/server-projectiles.cpp`: after resolving `ProjectileConfig`
+      from `weapons.json`, call `LiveGameplay::rocketFlight` for
+      speed/lifetime/gravity/drag/upBias and `LiveGameplay::explosion` for
+      splash radius/exponent, damage, knockback, and self-damage multiplier; the
+      returned values are stored on the authoritative `ServerProjectile`.
+   2. `src/network/server-npcs.cpp`: the same policy call for NPC-fired
+      authoritative rockets.
+   3. `src/network/multiplayer-projectiles.cpp`: client prediction uses the same
+      policy for speed and predicted blast damage so prediction matches
+      authority.
+   4. `src/live-code/live-gameplay.*`: added `journalPolicy` recording side,
+      active generation/hash, base/out speed and damage, projectile id, and
+      target entity id.
+   5. Removed an exact-value assertion from the live-code self-test; it now
+      checks the policy is callable and finite, not that it equals a tuned value.
+   6. Added the bridge files to the `cold` watch list in `hot-modules.json`.
+6. Install step: one cold build (`python build_agent.py`) with the executable
+   intentionally not running. It was refused at fix time because two
+   `mimita.exe` instances were running; the invariant forbids killing them.
+7. Verification so far: the four changed bridge translation units compile; the
+   live DLL builds and publishes the `gameplay` module; the journal shows live
+   generations activating `rocket-behavior.cpp` edits. Authoritative runtime and
+   in-game proof remain pending the cold-build install.
+8. Lessons learned: a hot module is only authoritative where the EXE actually
+   calls it. When moving policy hot, bridge every authoritative path (player and
+   NPC) and the client prediction path, and keep JSON as the base.

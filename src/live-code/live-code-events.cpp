@@ -135,4 +135,17 @@ void notifyBoundaryViolation(const std::string& file)
     playSound("live/failure", 0.7f);
 }
 
+void notifyColdRestartPending(const std::string& file)
+{
+    NotificationSystem::instance().pushImportant(
+        "LIVE CODE",
+        "cold change pending: restart MiMITA to apply " + file +
+            "\nlive gameplay edits keep working; this one needs a cold start",
+        600);
+    LiveEventJournal::Fields fields;
+    fields.file = file;
+    fields.result = "pending";
+    LiveEventJournal::instance().record("cold_restart_pending", fields);
+}
+
 } // namespace LiveCodeEvents

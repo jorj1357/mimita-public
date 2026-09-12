@@ -11,6 +11,7 @@
 
 #include "network/server.h"
 #include "network/server-gamemode.h"
+#include "network/server-damage-policy.h"
 #include "persistence/persistence-emit.h"
 #include "combat/weapon-registry.h"
 #include "network/network-weapons.h"
@@ -119,7 +120,10 @@ static ServerDamageResult applyPlayerDamageLegacy(
         }
     }
 
-    const int clampedDamage = std::clamp(damage, 1, 500);
+    const int damageLimit = serverAuthoritativeDamageLimit();
+    int clampedDamage = std::max(1, damage);
+    if (damageLimit > 0 && clampedDamage > damageLimit)
+        clampedDamage = damageLimit;
     target.health = std::max(0, target.health - clampedDamage);
     target.vel += knockback;
     recordServerMovementExternalImpulse(target, knockback);

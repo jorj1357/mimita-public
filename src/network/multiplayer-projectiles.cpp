@@ -10,6 +10,7 @@
 
 #include "network/multiplayer-context.h"
 #include "ecs/actor-entities.h"
+#include "live-code/live-gameplay.h"
 #include "network/simulation-constants.h"
 #include "config/networking-config.h"
 #include "network/confirmed-damage-presentation.h"
@@ -465,8 +466,43 @@ uint32_t mpPredictProjectileAttack(
         return 0;
 
     const glm::vec3 dir = glm::normalize(direction);
-    const float speed = def->projectileSpeed > 0.0f ? def->projectileSpeed : 40.0f;
-    const float upBias = cp(def, "upBias", 4.0f);
+    float speed = def->projectileSpeed > 0.0f ? def->projectileSpeed : 40.0f;
+    float upBias = cp(def, "upBias", 4.0f);
+    float projectileLifetime = def->projectileLifetime > 0.0f ? def->projectileLifetime : 5.0f;
+
+    // Live gameplay policy: client prediction uses the same hot rocket policy as
+    // the authoritative server so predicted motion matches the server.
+    {
+        RocketFlightStateV1 flightState{};
+        flightState.position[0] = origin.x;
+        flightState.position[1] = origin.y;
+        flightState.position[2] = origin.z;
+        flightState.velocity[0] = dir.x * speed;
+        flightState.velocity[1] = dir.y * speed;
+        flightState.velocity[2] = dir.z * speed;
+        flightState.age = 0.0f;
+        flightState.lifetime = projectileLifetime;
+        flightState.weaponNetworkId = weaponDefNetworkId;
+        flightState.flags = 0;
+        RocketFlightParamsV1 flightBase{};
+        flightBase.speedScale = 1.0f;
+        flightBase.gravityScale = 1.0f;
+        flightBase.dragScale = 1.0f;
+        flightBase.upBias = upBias;
+        flightBase.lifetime = projectileLifetime;
+        flightBase.bounces = 0;
+        RocketFlightParamsV1 flightOut{};
+        if (LiveGameplay::rocketFlight(flightState, flightBase, flightOut))
+        {
+            speed *= std::max(0.0f, flightOut.speedScale);
+            upBias = flightOut.upBias;
+            if (flightOut.lifetime > 0.0f)
+                projectileLifetime = flightOut.lifetime;
+            LiveGameplay::journalPolicy("client", "rocket_flight", provisionalId, 0,
+                                        def->projectileSpeed > 0.0f ? def->projectileSpeed : 40.0f,
+                                        speed, 0.0f, 0.0f);
+        }
+    }
     NetworkProjectile projectile;
     projectile.projectileId = provisionalId;
     projectile.ownerPlayerId = ctx.localPlayerId;
@@ -480,7 +516,7 @@ uint32_t mpPredictProjectileAttack(
         projectile.velocity += ctx.localServerVelocity;
     projectile.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
     projectile.angularVelocity = glm::vec3(0.0f);
-    projectile.lifetime = def->projectileLifetime > 0.0f ? def->projectileLifetime : 5.0f;
+    projectile.lifetime = projectileLifetime;
     projectile.radius = def->projectileRadius > 0.0f ? def->projectileRadius : 0.3f;
     projectile.predicted = true;
     projectile.exploded = false;

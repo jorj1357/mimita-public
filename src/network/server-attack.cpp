@@ -12,6 +12,8 @@
 #include "network/packets.h"
 #include "network/network-weapons.h"
 #include "network/server-gamemode.h"
+#include "network/server-damage-policy.h"
+#include "ecs/actor-entities.h"
 #include "network/disagreement-visuals.h"
 #include "combat/weapon-execution.h"
 #include "combat/weapon-registry.h"
@@ -782,10 +784,25 @@ void handleAttackRequest(
             if (npcIt != npcs.end())
             {
                 ServerNpc& npcTarget = npcIt->second;
+                glm::vec3 npcKnockback = aggregate.knockback;
+                int npcDamageResolved = aggregate.damage;
+                {
+                    ServerDamagePolicyInput policyInput{};
+                    policyInput.source = GAME_DAMAGE_SOURCE_HITSCAN;
+                    policyInput.attackerEntity = Ecs::raw(
+                        Ecs::ensure(EntityRealm::Server, EntityDomain::Player, shooter.id));
+                    policyInput.victimEntity = Ecs::raw(
+                        Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npcTarget.entityId));
+                    policyInput.weaponNetworkId = weaponDefNetworkIdFor(def->id);
+                    policyInput.victimIsNpc = 1;
+                    policyInput.tick = tick;
+                    npcDamageResolved = serverResolveDamagePolicy(
+                        policyInput, aggregate.damage, npcKnockback);
+                }
                 if (npcTarget.health > 0)
                 {
-                    npcTarget.health -= aggregate.damage;
-                    npcTarget.knockbackImpulse += aggregate.knockback;
+                    npcTarget.health -= npcDamageResolved;
+                    npcTarget.knockbackImpulse += npcKnockback;
                     npcTarget.lastAttackerId = shooter.id;
                     npcTarget.lastAttackerPos = shooter.pos;
                 }
@@ -810,7 +827,7 @@ void handleAttackRequest(
                 }
                 broadcastNpcDamageEvent(
                     sock, players, tick, totalPacketsOut, shooter.id, npcTarget,
-                    aggregate.damage, killed,
+                    npcDamageResolved, killed,
                     origin, aggregate.hitPosition, direction, aggregate.hitNormal,
                     netWeapon);
                 continue;
@@ -820,13 +837,28 @@ void handleAttackRequest(
                 targetIt->second.spawnGeneration != aggregate.targetSpawnGeneration)
                 continue;
             ServerPlayer& target = targetIt->second;
+            glm::vec3 playerKnockback = aggregate.knockback;
+            int playerDamage = aggregate.damage;
+            {
+                ServerDamagePolicyInput policyInput{};
+                policyInput.source = GAME_DAMAGE_SOURCE_HITSCAN;
+                policyInput.attackerEntity = Ecs::raw(
+                    Ecs::ensure(EntityRealm::Server, EntityDomain::Player, shooter.id));
+                policyInput.victimEntity = Ecs::raw(
+                    Ecs::ensure(EntityRealm::Server, EntityDomain::Player, target.id));
+                policyInput.weaponNetworkId = weaponDefNetworkIdFor(def->id);
+                policyInput.victimIsNpc = 0;
+                policyInput.tick = tick;
+                playerDamage = serverResolveDamagePolicy(
+                    policyInput, aggregate.damage, playerKnockback);
+            }
             ServerDamageResult dmgResult = applyServerDamage(
-                players, target, shooter.id, aggregate.damage,
-                aggregate.knockback, ServerDamageSource::Hitscan);
+                players, target, shooter.id, playerDamage,
+                playerKnockback, ServerDamageSource::Hitscan);
             queueServerDamageConfirmedEvent(
                 sock, players, tick, totalPacketsOut, shooter.id, target,
-                aggregate.damage, dmgResult,
-                aggregate.hitPosition, aggregate.hitNormal, aggregate.knockback,
+                playerDamage, dmgResult,
+                aggregate.hitPosition, aggregate.hitNormal, playerKnockback,
                 ServerDamageSource::Hitscan, netWeapon, req->requestId,
                 0, 0, def->id);
         }

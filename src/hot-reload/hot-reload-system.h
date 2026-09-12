@@ -105,6 +105,8 @@ private:
     std::filesystem::path sourceDLL_;
     std::string manifestHash_;
     std::unordered_map<std::string, std::uint64_t> coldMtimes_;
+    std::string coldPendingFile_;
+    std::uint64_t lastColdNoticeMs_ = 0;
 
     GameMemory memory_{};
     GenerationRecord active_;

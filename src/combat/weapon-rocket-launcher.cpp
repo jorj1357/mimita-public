@@ -76,29 +76,6 @@ static void doExplosion(
     const float knockbackHorizontalMul = cp(def, "knockbackHorizontalMultiplier", 1.0f);
     const float knockbackVerticalMul = cp(def, "knockbackVerticalMultiplier", 1.0f);
 
-    // Hot gameplay policy: the replaceable module may override explosion params.
-    {
-        ExplosionStateV1 explosionState{};
-        explosionState.distance = 0.0f;
-        explosionState.splashRadius = splashRadius;
-        explosionState.directHit = directHitEntityId > 0 ? 1u : 0u;
-        explosionState.weaponNetworkId = 0;
-        ExplosionParamsV1 explosionBase{};
-        explosionBase.splashRadius = splashRadius;
-        explosionBase.splashExponent = splashExponent;
-        explosionBase.baseDamage = baseDamage;
-        explosionBase.knockbackStrength = knockbackStrength;
-        explosionBase.selfDamageMultiplier = selfDamageMul;
-        ExplosionParamsV1 explosionOut{};
-        if (LiveGameplay::explosion(explosionState, explosionBase, explosionOut)) {
-            splashRadius = std::max(0.01f, explosionOut.splashRadius);
-            splashExponent = explosionOut.splashExponent;
-            baseDamage = std::max(0.0f, explosionOut.baseDamage);
-            knockbackStrength = std::max(0.0f, explosionOut.knockbackStrength);
-            selfDamageMul = std::max(0.0f, explosionOut.selfDamageMultiplier);
-        }
-    }
-
     spawnExplosionFx(position, "rocket_launcher", owner.username, owner.sizeScale, !presentationOnly);
 
     {

@@ -11,6 +11,8 @@
 #include "network/server.h"
 #include "network/server-gamemode.h"
 #include "network/network-weapons.h"
+#include "network/server-damage-policy.h"
+#include "ecs/actor-entities.h"
 #include "combat/weapon-execution.h"
 #include "combat/weapon-registry.h"
 #include "debug/debug-log.h"
@@ -433,8 +435,20 @@ static void applyPhysicalContactHit(SOCKET sock,
         return;
 
     episode.lastSampleTick = tick;
-    const int damage = physicalContactDamage(def, shape, swordLunge, dt);
-    const glm::vec3 knockback = physicalContactKnockback(def, hit, damage, swordLunge);
+    int damage = physicalContactDamage(def, shape, swordLunge, dt);
+    glm::vec3 knockback = physicalContactKnockback(def, hit, damage, swordLunge);
+    {
+        ServerDamagePolicyInput policyInput{};
+        policyInput.source = GAME_DAMAGE_SOURCE_CONTACT;
+        policyInput.attackerEntity = Ecs::raw(
+            Ecs::ensure(EntityRealm::Server, EntityDomain::Player, attacker.id));
+        policyInput.victimEntity = Ecs::raw(
+            Ecs::ensure(EntityRealm::Server, EntityDomain::Player, target.id));
+        policyInput.weaponNetworkId = defNetId;
+        policyInput.victimIsNpc = 0;
+        policyInput.tick = tick;
+        damage = serverResolveDamagePolicy(policyInput, damage, knockback);
+    }
     ServerDamageResult result = applyServerDamage(
         players, target, attacker.id, damage, knockback,
         ServerDamageSource::PhysicalContact);

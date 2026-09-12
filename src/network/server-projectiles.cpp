@@ -16,6 +16,8 @@
 #include "persistence/persistence-emit.h"
 #include "ecs/actor-entities.h"
 #include "ecs/entity-registry.h"
+#include "live-code/live-gameplay.h"
+#include "network/server-damage-policy.h"
 
 #include <algorithm>
 #include <chrono>
@@ -848,14 +850,33 @@ void explodeProjectile(SOCKET sock,
         const bool isSelfDamage = (victim.id == projectile.ownerPlayerId);
         if (isSelfDamage)
             damageValue *= std::max(0.0f, projectile.selfDamageMultiplier);
-        const int finalDamage = std::max(1, (int)std::round(damageValue));
+        int finalDamage = std::max(1, (int)std::round(damageValue));
 
         const float knockScale = splashKnockScaleAt(dist, damageValue);
         const float ownerMul = isSelfDamage
             ? projectile.selfKnockbackMultiplier
             : 1.0f;
-        const glm::vec3 knockback =
+        glm::vec3 knockback =
             dir * projectile.knockbackStrength * knockScale * ownerMul;
+
+        // Generic authoritative damage policy: the hot behavior owns the final
+        // value. Falls back to the JSON-derived base if no behavior handles it.
+        {
+            ServerDamagePolicyInput policyInput{};
+            policyInput.source = GAME_DAMAGE_SOURCE_EXPLOSION;
+            policyInput.attackerEntity = Ecs::raw(ownerKind == ENTITY_NPC
+                ? Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, ownerId)
+                : Ecs::ensure(EntityRealm::Server, EntityDomain::Player, ownerId));
+            policyInput.victimEntity = Ecs::raw(
+                Ecs::ensure(EntityRealm::Server, EntityDomain::Player, victim.id));
+            policyInput.projectileEntity = Ecs::raw(EntityRegistry::instance().find(
+                EntityRealm::Server, EntityDomain::Projectile, projectile.id));
+            policyInput.weaponNetworkId = projectile.weaponDefNetworkId;
+            policyInput.victimIsNpc = 0;
+            policyInput.distance = dist;
+            policyInput.tick = tick;
+            finalDamage = serverResolveDamagePolicy(policyInput, finalDamage, knockback);
+        }
 
         printf("%s [SELF_DAMAGE] ownerId=%u victimId=%u isSelf=%d "
                "baseDmg=%.1f mul=%.2f finalDmg=%d\n",
@@ -947,11 +968,29 @@ void explodeProjectile(SOCKET sock,
             ? toNpc / dist
             : glm::vec3(0.0f, 1.0f, 0.0f);
         float damageValue = splashDamageAt(dist);
-        const int finalDamage = std::max(1, (int)std::round(damageValue));
+        int finalDamage = std::max(1, (int)std::round(damageValue));
 
         const float knockScale = splashKnockScaleAt(dist, damageValue);
-        const glm::vec3 knockback =
+        glm::vec3 knockback =
             dir * projectile.knockbackStrength * knockScale;
+
+        // Generic authoritative damage policy (NPC victim).
+        {
+            ServerDamagePolicyInput policyInput{};
+            policyInput.source = GAME_DAMAGE_SOURCE_EXPLOSION;
+            policyInput.attackerEntity = Ecs::raw(ownerKind == ENTITY_NPC
+                ? Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, ownerId)
+                : Ecs::ensure(EntityRealm::Server, EntityDomain::Player, ownerId));
+            policyInput.victimEntity = Ecs::raw(
+                Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npc.entityId));
+            policyInput.projectileEntity = Ecs::raw(EntityRegistry::instance().find(
+                EntityRealm::Server, EntityDomain::Projectile, projectile.id));
+            policyInput.weaponNetworkId = projectile.weaponDefNetworkId;
+            policyInput.victimIsNpc = 1;
+            policyInput.distance = dist;
+            policyInput.tick = tick;
+            finalDamage = serverResolveDamagePolicy(policyInput, finalDamage, knockback);
+        }
 
         npc.health -= finalDamage;
         npc.knockbackImpulse += knockback;
@@ -1174,6 +1213,46 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
     projectile.spawnTick = tick;
     projectile.fireViewTick = fireViewTick;
     projectile.simulationTick = fireViewTick > 0 ? fireViewTick : tick;
+
+    // Live gameplay policy: apply the replaceable rocket policy to the
+    // AUTHORITATIVE projectile so server damage and motion match the local
+    // launcher. JSON remains the base; the hot module modifies resolved values.
+    // If the module is unavailable or rejects the call, the JSON values stay.
+    {
+        RocketFlightStateV1 flightState{};
+        flightState.position[0] = projectile.position.x;
+        flightState.position[1] = projectile.position.y;
+        flightState.position[2] = projectile.position.z;
+        flightState.velocity[0] = projectile.velocity.x;
+        flightState.velocity[1] = projectile.velocity.y;
+        flightState.velocity[2] = projectile.velocity.z;
+        flightState.age = 0.0f;
+        flightState.lifetime = projectile.lifetime;
+        flightState.weaponNetworkId = projectile.weaponDefNetworkId;
+        flightState.flags = 0;
+        RocketFlightParamsV1 flightBase{};
+        flightBase.speedScale = 1.0f;
+        flightBase.gravityScale = 1.0f;
+        flightBase.dragScale = 1.0f;
+        flightBase.upBias = cfg.upBias;
+        flightBase.lifetime = projectile.lifetime;
+        flightBase.bounces = static_cast<std::uint32_t>(cfg.maxBounceCount > 0 ? cfg.maxBounceCount : 0);
+        RocketFlightParamsV1 flightOut{};
+        if (LiveGameplay::rocketFlight(flightState, flightBase, flightOut))
+        {
+            const float speedScale = std::max(0.0f, flightOut.speedScale);
+            const float outSpeed = cfg.speed * speedScale;
+            projectile.velocity = dir * outSpeed + glm::vec3(0.0f, 0.0f, flightOut.upBias);
+            if (cfg.inheritOwnerVelocity)
+                projectile.velocity += shooter.vel;
+            if (flightOut.lifetime > 0.0f)
+                projectile.lifetime = flightOut.lifetime;
+            projectile.gravity *= std::max(0.0f, flightOut.gravityScale);
+            projectile.drag *= std::max(0.0f, flightOut.dragScale);
+            LiveGameplay::journalPolicy("server", "rocket_flight", projectile.id, 0,
+                                        cfg.speed, outSpeed, 0.0f, 0.0f);
+        }
+    }
 
     Debug::logThrottled(Debug::Category::Weapons, "projectile-replay", 1.0,
         "[PROJECTILE REPLAY] playerId=%u requestId=%u receiveTick=%u "

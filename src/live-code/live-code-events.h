@@ -37,4 +37,7 @@ void notifyValidationFailed(std::uint32_t generation, const std::string& error);
 // A cold-kernel source changed; it cannot be activated without relinking.
 void notifyBoundaryViolation(const std::string& file);
 
+// Periodic reminder while a cold change is pending (throttled by the caller).
+void notifyColdRestartPending(const std::string& file);
+
 } // namespace LiveCodeEvents

@@ -3,6 +3,8 @@
 Date: 2026-09-12
 Status: in progress, vertical slice only
 Related: `docs/architecture/ecs-entity-etc/ecs.md`,
+`docs/architecture/live-development/hot-kernel.md`,
+`docs/architecture/live-development/hot-kernel-next-steps.md`,
 `docs/features/live-code-development/live-code-development.md`
 
 ## Before

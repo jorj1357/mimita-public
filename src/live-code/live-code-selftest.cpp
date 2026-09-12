@@ -10,11 +10,13 @@
 #include "hot-reload/hot-reload-system.h"
 #include "live-code/code-hash.h"
 #include "live-code/live-actor.h"
+#include "live-code/live-behavior.h"
 #include "live-code/live-gameplay.h"
 #include "live-code/live-journal.h"
 #include "live-code/live-presentation.h"
 #include "utils/time-format.h"
 
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <string>
@@ -118,17 +120,22 @@ bool runLiveCodeSelfTest(std::string& report)
         flightBase.speedScale = 1.0f;
         flightBase.lifetime = 5.0f;
         RocketFlightParamsV1 flightOut{};
+        // Assert the policy is callable and returns a usable result. Do NOT pin
+        // the tuned output: the developer edits this policy live on purpose.
         ok &= check(LiveGameplay::rocketFlight(flightState, flightBase, flightOut) &&
-                        flightOut.speedScale == 1.0f,
+                        std::isfinite(flightOut.speedScale) && flightOut.speedScale > 0.0f,
                     "gameplay rocket flight params", report);
 
-        ExplosionStateV1 explosionState{};
-        ExplosionParamsV1 explosionBase{};
-        explosionBase.baseDamage = 100.0f;
-        ExplosionParamsV1 explosionOut{};
-        ok &= check(LiveGameplay::explosion(explosionState, explosionBase, explosionOut) &&
-                        explosionOut.baseDamage == 100.0f,
-                    "gameplay explosion params", report);
+        // Generic behavior path: the kernel emits a damage-policy event and the
+        // hot behavior must handle it. Do NOT pin the returned damage value.
+        DamagePolicyV1 policy{};
+        policy.baseDamage = 123;
+        policy.outDamage = 123;
+        policy.source = GAME_DAMAGE_SOURCE_EXPLOSION;
+        const bool handled = LiveBehavior::dispatchDamagePolicy(policy, 42);
+        ok &= check(handled && policy.handled == 1 &&
+                        std::isfinite((float)policy.outDamage) && policy.outDamage >= 0,
+                    "hot damage policy dispatch", report);
     }
 
     HotReloadSystem::instance().unloadGameDLL();

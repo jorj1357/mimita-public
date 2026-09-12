@@ -6,6 +6,8 @@
 */
 #pragma once
 
+#include <cstdint>
+
 #include "hot-reload/game-api.h"
 
 namespace LiveGameplay {
@@ -14,8 +16,11 @@ bool rocketFlight(const RocketFlightStateV1& state,
                   const RocketFlightParamsV1& base,
                   RocketFlightParamsV1& out);
 
-bool explosion(const ExplosionStateV1& state,
-               const ExplosionParamsV1& base,
-               ExplosionParamsV1& out);
+// Structured evidence for one applied policy decision. `side` is "server" or
+// "client"; `kind` describes the decision. Records the active generation/hash.
+void journalPolicy(const char* side, const char* kind,
+                   std::uint64_t projectileId, std::uint64_t targetId,
+                   float baseSpeed, float outSpeed,
+                   float baseDamage, float outDamage);
 
 } // namespace LiveGameplay

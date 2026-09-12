@@ -13,7 +13,10 @@
 #include "network/server.h"
 #include "network/actor-lifecycle.h"
 #include "network/server-gamemode.h"
+#include "network/network-weapons.h"
+#include "network/server-damage-policy.h"
 #include "ecs/actor-entities.h"
+#include "live-code/live-gameplay.h"
 
 #include "npc/npc.h"
 #include "npc/npc-internal.h"
@@ -369,6 +372,42 @@ static void broadcastNpcFiring(SOCKET sock,
             projectile.explodeOnLifetime = cp("explodeOnLifetime", 1.0f) > 0.0f;
             projectile.splashLineOfSight = true;
             projectile.spawnTick = tick;
+
+            // Live gameplay policy: apply the replaceable rocket policy to the
+            // authoritative NPC projectile exactly like the player path.
+            {
+                RocketFlightStateV1 flightState{};
+                flightState.position[0] = projectile.position.x;
+                flightState.position[1] = projectile.position.y;
+                flightState.position[2] = projectile.position.z;
+                flightState.velocity[0] = projectile.velocity.x;
+                flightState.velocity[1] = projectile.velocity.y;
+                flightState.velocity[2] = projectile.velocity.z;
+                flightState.age = 0.0f;
+                flightState.lifetime = projectile.lifetime;
+                flightState.weaponNetworkId = projectile.weaponDefNetworkId;
+                flightState.flags = 0;
+                RocketFlightParamsV1 flightBase{};
+                flightBase.speedScale = 1.0f;
+                flightBase.gravityScale = 1.0f;
+                flightBase.dragScale = 1.0f;
+                flightBase.upBias = upBias;
+                flightBase.lifetime = projectile.lifetime;
+                flightBase.bounces = static_cast<std::uint32_t>(projectile.maxBounceCount > 0 ? projectile.maxBounceCount : 0);
+                RocketFlightParamsV1 flightOut{};
+                if (LiveGameplay::rocketFlight(flightState, flightBase, flightOut))
+                {
+                    const float speedScale = std::max(0.0f, flightOut.speedScale);
+                    const float outSpeed = speed * speedScale;
+                    projectile.velocity = dir * outSpeed + glm::vec3(0.0f, 0.0f, flightOut.upBias);
+                    if (flightOut.lifetime > 0.0f)
+                        projectile.lifetime = flightOut.lifetime;
+                    projectile.gravity *= std::max(0.0f, flightOut.gravityScale);
+                    projectile.drag *= std::max(0.0f, flightOut.dragScale);
+                    LiveGameplay::journalPolicy("server", "npc_rocket_flight", projectile.id, n.id,
+                                                speed, outSpeed, 0.0f, 0.0f);
+                }
+            }
 
             ProjectileSpawnEventPacket spawn{};
             spawn.header.type = PACKET_PROJECTILE_SPAWN_EVENT;
@@ -934,7 +973,8 @@ void simulateSharedNpcs(SOCKET sock,
             // Forward the exact knockback processPlayerHit applied to the mirror
             // so NPC shots push the victim like a player's shot (also fixes the
             // client HP bar, which only applies confirmed HP when knockback exists).
-            const glm::vec3 knockback = mirrorPlayer.externalImpulse;
+            glm::vec3 knockback = mirrorPlayer.externalImpulse;
+            int resolvedDamage = damage;
             const glm::vec3 realHit = n.lastShotEnd;
             const glm::vec3 realNormal = glm::length(n.lastShotNormal) > 0.001f
                 ? glm::normalize(n.lastShotNormal) : glm::vec3(0.0f, 0.0f, 1.0f);
@@ -948,8 +988,19 @@ void simulateSharedNpcs(SOCKET sock,
 
             if (nearestPlayer)
             {
+                ServerDamagePolicyInput policyInput{};
+                policyInput.source = GAME_DAMAGE_SOURCE_HITSCAN;
+                policyInput.attackerEntity = Ecs::raw(
+                    Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, n.id));
+                policyInput.victimEntity = Ecs::raw(
+                    Ecs::ensure(EntityRealm::Server, EntityDomain::Player, nearestPlayer->id));
+                policyInput.weaponNetworkId = weaponDefNetworkIdFor(n.body.equippedWeaponId);
+                policyInput.victimIsNpc = 0;
+                policyInput.tick = tick;
+                resolvedDamage = serverResolveDamagePolicy(policyInput, damage, knockback);
+
                 ServerDamageResult result = applyServerDamage(
-                    players, *nearestPlayer, 0, damage, knockback,
+                    players, *nearestPlayer, 0, resolvedDamage, knockback,
                     ServerDamageSource::Hitscan);
                 // Track NPC damage for kill attribution: if this NPC's damage
                 // brings the player to 0 HP on the next tick (or the player dies
@@ -957,7 +1008,7 @@ void simulateSharedNpcs(SOCKET sock,
                 nearestPlayer->lastNpcDamageSourceId = n.id;
                 nearestPlayer->lastNpcDamageTick = tick;
                 queueServerDamageConfirmedEvent(
-                    sock, players, tick, totalPacketsOut, 0, *nearestPlayer, damage, result,
+                    sock, players, tick, totalPacketsOut, 0, *nearestPlayer, resolvedDamage, result,
                     realHit, realNormal, knockback,
                     ServerDamageSource::Hitscan, hitWeapon, 0, 0, n.id,
                     n.body.equippedWeaponId);

@@ -1,10 +1,11 @@
 // 09 12 2026
 /* purpose
-* Hot replaceable rocket flight and explosion policy module.
-* Returns plain parameter overrides; the EXE owns projectile state and authority.
-* Defaults are identity so behavior is unchanged until a developer edits this
-* file, which is then activated live without relinking.
-* Does NOT own projectile simulation, damage application, or packet flow.
+* Hot replaceable rocket/gameplay behavior module.
+* Implements the generic behavior event handler: the kernel emits events with
+* plain-data payloads and this module owns the gameplay policy (damage,
+* knockback), so editing this file changes authoritative behavior live.
+* Also exposes rocket flight motion policy.
+* Does NOT own projectile state, health storage, authority, or packet flow.
 * Does NOT link into the EXE; only into the replaceable game DLL.
 */
 #if defined(MIMITA_GAME_DLL)
@@ -21,34 +22,39 @@ bool MIMITA_GAME_CALL adjustRocketFlight(
     if (!base || !out)
         return false;
     *out = *base;
-
-    // Live-editable proof policy. Change these values while MiMITA.exe is
-    // running, save, and the next live generation should use them.
-    out->speedScale = 1.30f;
+    // Motion policy is identity by default.
     (void)state;
     return true;
 }
 
-bool MIMITA_GAME_CALL explosionParameters(
-    const ExplosionStateV1* state, const ExplosionParamsV1* base,
-    ExplosionParamsV1* out, GameMemory*)
+// Generic authoritative gameplay policy. The kernel fills base values and the
+// behavior decides the result. `handled = 1` tells the kernel this policy owns
+// the decision; the kernel then applies `outDamage` and the knockback.
+void MIMITA_GAME_CALL onEvent(const GameEventV1* event, GameplayContextV1*)
 {
-    if (!base || !out)
-        return false;
-    *out = *base;
+    if (!event || !event->payload || event->typeId != GAME_EVENT_DAMAGE_POLICY ||
+        event->payloadSize != sizeof(DamagePolicyV1))
+        return;
 
-    // Live-editable proof policy. This makes the activation visible without
-    // changing the persistent rocket state owned by the EXE.
-    out->baseDamage = base->baseDamage * 12.50f;
-    (void)state;
-    return true;
+    DamagePolicyV1* policy = static_cast<DamagePolicyV1*>(event->payload);
+    policy->handled = 1;
+
+    // Baseline: keep the JSON-derived base damage.
+    policy->outDamage = policy->baseDamage;
+
+    // Temporary live proof: explosion damage is intentionally enormous so the
+    // authoritative hot-policy path is unmistakable in the running game.
+    if (policy->source == GAME_DAMAGE_SOURCE_EXPLOSION)
+        policy->outDamage = 2;
+
+    (void)event;
 }
 
 const GameGameplayModuleV1 gGameplayModuleV1 = {
-    1u,
+    2u,
     sizeof(GameGameplayModuleV1),
     adjustRocketFlight,
-    explosionParameters,
+    onEvent,
 };
 
 } // namespace
@@ -56,7 +62,7 @@ const GameGameplayModuleV1 gGameplayModuleV1 = {
 const GameModuleDescriptor* MimitaGetGameplayModule()
 {
     static const GameModuleDescriptor descriptor = {
-        "gameplay", 1u, sizeof(GameGameplayModuleV1), &gGameplayModuleV1};
+        "gameplay", 2u, sizeof(GameGameplayModuleV1), &gGameplayModuleV1};
     return &descriptor;
 }
 

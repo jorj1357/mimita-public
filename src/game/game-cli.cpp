@@ -44,6 +44,7 @@
 #include "network/coordinator-client.h"
 #include "network/badconn/badconn.h"
 #include "live-code/live-code-selftest.h"
+#include "live-code/live-authoritative-selftest.h"
 #include "ecs/entity-slice-selftest.h"
 
 extern DuelManager gDuelManager;
@@ -215,6 +216,14 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = runEntitySliceSelfTest(report);
         printf("%s", report.c_str());
         printf("[ENTITY SLICE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--hot-authoritative-selftest") {
+        std::string report;
+        const bool ok = runHotAuthoritativeSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[HOT AUTHORITATIVE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

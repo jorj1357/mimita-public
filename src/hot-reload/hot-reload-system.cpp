@@ -4,6 +4,7 @@
 #include "live-code/code-hash.h"
 #include "live-code/live-code-events.h"
 #include "live-code/live-journal.h"
+#include "utils/time-format.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -488,6 +489,16 @@ void HotReloadSystem::pollColdBoundary()
         fields.error = "cold kernel change cannot be activated without relinking mimita.exe";
         LiveEventJournal::instance().record("hot_reload_boundary_violation", fields);
         LiveCodeEvents::notifyBoundaryViolation(relative);
+        coldPendingFile_ = relative;
+    }
+
+    // Periodic in-game reminder while a cold change is waiting for a restart.
+    if (!coldPendingFile_.empty()) {
+        const std::uint64_t nowMs = MiMitaTime::monotonicMillis();
+        if (nowMs - lastColdNoticeMs_ >= 10000) {
+            lastColdNoticeMs_ = nowMs;
+            LiveCodeEvents::notifyColdRestartPending(coldPendingFile_);
+        }
     }
 }
 

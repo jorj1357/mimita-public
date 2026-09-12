@@ -260,18 +260,85 @@ struct ExplosionParamsV1 {
     float selfDamageMultiplier;
 };
 
+// ── Gameplay behavior module ────────────────────────────────
+// Generic event/behavior boundary. The kernel owns state and authority and
+// emits events with mutable POD payloads; hot behaviors read/write the payload
+// and the kernel applies the result. New behavior is added by extending hot
+// code, not by adding EXE call sites.
+static constexpr std::uint32_t GAMEPLAY_EVENT_VERSION = 1;
+
+enum GameEventType : std::uint32_t {
+    GAME_EVENT_NONE = 0,
+    GAME_EVENT_DAMAGE_POLICY = 1,
+    GAME_EVENT_EXPLOSION = 2,
+    GAME_EVENT_COLLISION = 3,
+    GAME_EVENT_SPAWN = 4,
+    GAME_EVENT_DESTROY = 5,
+};
+
+// Damage source ids carried by DamagePolicyV1::source.
+enum GameDamageSource : std::uint32_t {
+    GAME_DAMAGE_SOURCE_EXPLOSION = 0,
+    GAME_DAMAGE_SOURCE_HITSCAN = 1,
+    GAME_DAMAGE_SOURCE_MELEE = 2,
+    GAME_DAMAGE_SOURCE_CONTACT = 3,
+};
+
+struct GameEventV1 {
+    std::uint32_t typeId;
+    std::uint32_t payloadVersion;
+    std::uint32_t payloadSize;
+    std::uint32_t flags;
+    std::uint64_t sourceEntity;
+    std::uint64_t targetEntity;
+    std::uint64_t projectileEntity;
+    std::uint64_t tick;
+    void* payload;  // mutable, kernel-owned plain data
+};
+
+struct GameplayContextV1 {
+    void* host;
+    std::uint64_t tick;
+    std::uint64_t generation;
+    std::uint64_t codeHash;
+    void* emitEvent;    // reserved capability (future nested events)
+    void* findEntities; // reserved capability (future queries)
+};
+
+// Request/response payload for GAME_EVENT_DAMAGE_POLICY. The kernel fills the
+// base values; a hot behavior sets `handled = 1` and may override `outDamage`
+// and the knockback. If no behavior handles it, the kernel uses baseDamage.
+struct DamagePolicyV1 {
+    std::uint64_t attackerEntity;
+    std::uint64_t victimEntity;
+    std::uint64_t projectileEntity;
+    std::uint32_t source;  // GameDamageSource
+    std::uint32_t victimIsNpc;
+    std::uint32_t weaponNetworkId;
+    float distance;
+    std::int32_t baseDamage;
+    std::int32_t outDamage;
+    float knockbackX;
+    float knockbackY;
+    float knockbackZ;
+    std::uint32_t handled;
+    std::uint32_t reserved;
+};
+
+using GameBehaviorOnEventFn = void (MIMITA_GAME_CALL *)(
+    const GameEventV1* event, GameplayContextV1* context);
+
 using GameAdjustRocketFlightFn = bool (MIMITA_GAME_CALL *)(
     const RocketFlightStateV1* state, const RocketFlightParamsV1* base,
     RocketFlightParamsV1* out, GameMemory* memory);
-using GameExplosionParamsFn = bool (MIMITA_GAME_CALL *)(
-    const ExplosionStateV1* state, const ExplosionParamsV1* base,
-    ExplosionParamsV1* out, GameMemory* memory);
 
+// The gameplay module now exposes motion policy plus the generic behavior
+// event handler. `explosionParameters` was replaced by the behavior path.
 struct GameGameplayModuleV1 {
-    std::uint32_t abiVersion;
+    std::uint32_t abiVersion;  // 2
     std::uint32_t structSize;
     GameAdjustRocketFlightFn adjustRocketFlight;
-    GameExplosionParamsFn explosionParameters;
+    GameBehaviorOnEventFn onEvent;
 };
 
 struct GameAPI {
