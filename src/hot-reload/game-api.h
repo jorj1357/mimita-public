@@ -111,6 +111,116 @@ struct GameEffectModuleV1 {
     GameUpdateEffectsFn updateEffects;
 };
 
+// ── Actor module ────────────────────────────────────────────
+// Plain-data actor state and command. Player and NPC both project into
+// ActorStateV1; the hot module returns decisions without owning EXE objects.
+static constexpr std::uint32_t ACTOR_STATE_VERSION = 1;
+static constexpr std::uint32_t ACTOR_COMMAND_VERSION = 1;
+static constexpr std::uint32_t ACTOR_EVENT_VERSION = 1;
+
+enum ActorEventType : std::uint32_t {
+    ACTOR_EVENT_NONE = 0,
+    ACTOR_EVENT_DAMAGED = 1,
+    ACTOR_EVENT_KILLED = 2,
+    ACTOR_EVENT_TARGET_SEEN = 3,
+    ACTOR_EVENT_TARGET_LOST = 4,
+};
+
+struct ActorStateV1 {
+    std::uint64_t id;
+    std::uint32_t kind;   // 0 = player, 1 = npc
+    std::uint32_t flags;  // bit0 alive, bit1 onGround, bit2 hasTarget
+    float position[3];
+    float velocity[3];
+    float aim[3];
+    float health;
+    float maxHealth;
+    float emotionPanic;
+    float emotionFear;
+    float emotionConfidence;
+    float emotionStress;
+    std::uint32_t team;
+    std::uint32_t role;
+    std::uint32_t targetId;
+    float distanceToTarget;
+    std::uint64_t tick;
+};
+
+struct ActorCommandV1 {
+    float speedScale;
+    std::uint32_t buttons;  // reserved action bits
+    std::uint32_t role;
+    float emotionPanic;
+    float emotionFear;
+    float emotionConfidence;
+    float emotionStress;
+    std::uint64_t tick;
+};
+
+struct ActorEventV1 {
+    std::uint32_t type;
+    std::uint32_t reserved;
+    std::uint64_t otherId;
+    float amount;
+    std::uint64_t tick;
+};
+
+using GameActorChooseCommandFn = bool (MIMITA_GAME_CALL *)(
+    const GameEnvelope* state, GameEnvelope* outCommand, GameMemory* memory);
+using GameActorUpdateEmotionFn = void (MIMITA_GAME_CALL *)(
+    GameEnvelope* state, const GameEnvelope* event, float dt, GameMemory* memory);
+using GameActorChooseRoleFn = std::uint32_t (MIMITA_GAME_CALL *)(
+    const GameEnvelope* state, GameMemory* memory);
+
+struct GameActorModuleV1 {
+    std::uint32_t abiVersion;
+    std::uint32_t structSize;
+    GameActorChooseCommandFn chooseActorCommand;
+    GameActorUpdateEmotionFn updateActorEmotion;
+    GameActorChooseRoleFn chooseActorRole;
+};
+
+// ── Presentation module ─────────────────────────────────────
+// Visual/UI behavior without transferring GPU resources or live engine objects.
+static constexpr std::uint32_t DAMAGE_NUMBER_STYLE_VERSION = 1;
+static constexpr std::uint32_t ROCKET_TRAIL_STYLE_VERSION = 1;
+
+struct DamageNumberStyleV1 {
+    float scale;
+    float endScale;
+    float alpha;
+    float color[3];
+    float lifetime;
+    float moveSpeed;
+    std::uint32_t visible;
+    char text[32];
+};
+
+struct RocketTrailStyleV1 {
+    float emissionRate;
+    float size;
+    float endSize;
+    float lifetime;
+    float alpha;
+    float color[3];
+    float speed;
+    float spreadDegrees;
+    std::uint32_t enabled;
+};
+
+using GameFormatDamageFn = bool (MIMITA_GAME_CALL *)(
+    const DamageNumberStyleV1* base, int damage, std::uint32_t flags,
+    DamageNumberStyleV1* out, GameMemory* memory);
+using GameRocketTrailFn = bool (MIMITA_GAME_CALL *)(
+    const RocketTrailStyleV1* base, RocketTrailStyleV1* out, GameMemory* memory);
+
+struct GamePresentationModuleV1 {
+    std::uint32_t abiVersion;
+    std::uint32_t structSize;
+    GameFormatDamageFn formatDamageNumber;
+    GameRocketTrailFn rocketTrail;
+};
+
 struct GameAPI {
     std::uint32_t version;
     std::uint32_t structSize;

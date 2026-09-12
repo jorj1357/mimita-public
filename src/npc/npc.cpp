@@ -36,6 +36,7 @@
 #include "combat/weapon-registry.h"
 #include "perf/perf.h"
 #include "npc/npc-state-machine.h"
+#include "live-code/live-actor.h"
 
 static constexpr float SEARCH_TIMEOUT = 8.0f;
 
@@ -402,6 +403,72 @@ InputState buildInputState(Npc& npc, glm::vec3 moveDir, bool jump, bool dash, bo
     input.camForward = npc.currentFacing;
 
     return input;
+}
+
+// Project one NPC into the shared Actor model, run the hot actor module, and
+// apply its decision to the shared movement input. Falls back to the existing
+// behavior when no actor module is active.
+void applyLiveActorBehavior(Npc& npc, InputState& input, float dt, double now)
+{
+    if (!LiveActor::available())
+        return;
+
+    ActorStateV1 state{};
+    state.id = npc.id;
+    state.kind = 1;
+    state.flags = (npc.body.dead ? 0u : 1u)
+        | (npc.sensors.touchFloor ? 2u : 0u)
+        | (npc.sensors.hasTarget ? 4u : 0u);
+    state.position[0] = npc.body.pos.x;
+    state.position[1] = npc.body.pos.y;
+    state.position[2] = npc.body.pos.z;
+    state.velocity[0] = npc.body.vel.x;
+    state.velocity[1] = npc.body.vel.y;
+    state.velocity[2] = npc.body.vel.z;
+    state.aim[0] = npc.currentFacing.x;
+    state.aim[1] = npc.currentFacing.y;
+    state.aim[2] = npc.currentFacing.z;
+    state.health = static_cast<float>(npc.body.currentHp);
+    state.maxHealth = static_cast<float>(npc.body.maxHp);
+    state.emotionPanic = npc.emotion.panic;
+    state.emotionFear = npc.emotion.fear;
+    state.emotionConfidence = npc.emotion.confidence;
+    state.emotionStress = npc.emotion.stress;
+    state.team = npc.body.matchTeam;
+    state.role = npc.liveRoleId;
+    state.targetId = npc.serverTargetId;
+    state.distanceToTarget = npc.sensors.hasTarget
+        ? glm::length(npc.sensors.targetPos - npc.body.pos) : -1.0f;
+    state.tick = static_cast<std::uint64_t>(now * 60.0);
+
+    LiveActor::updateEmotion(state, nullptr, dt);
+
+    if (npc.liveRoleId == 0) {
+        const std::uint32_t role = LiveActor::chooseRole(state);
+        if (role != 0) {
+            npc.liveRoleId = role;
+            state.role = role;
+        }
+    }
+
+    ActorCommandV1 command{};
+    if (!LiveActor::chooseCommand(state, command)) {
+        npc.emotion.panic = std::clamp(state.emotionPanic, 0.0f, 1.0f);
+        npc.emotion.fear = std::clamp(state.emotionFear, 0.0f, 1.0f);
+        npc.emotion.confidence = std::clamp(state.emotionConfidence, 0.0f, 1.0f);
+        npc.emotion.stress = std::clamp(state.emotionStress, 0.0f, 1.0f);
+        return;
+    }
+
+    if (input.movementPressed)
+        input.wishMoveXY *= std::clamp(command.speedScale, 0.0f, 2.0f);
+
+    npc.emotion.panic = std::clamp(command.emotionPanic, 0.0f, 1.0f);
+    npc.emotion.fear = std::clamp(command.emotionFear, 0.0f, 1.0f);
+    npc.emotion.confidence = std::clamp(command.emotionConfidence, 0.0f, 1.0f);
+    npc.emotion.stress = std::clamp(command.emotionStress, 0.0f, 1.0f);
+    if (command.role != 0)
+        npc.liveRoleId = command.role;
 }
 
 } // anonymous namespace
@@ -1108,6 +1175,8 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     input.groundReturnPressed = false;
     if (input.dashPressed)
         npc.dashCommandConsumed = true;
+
+    applyLiveActorBehavior(npc, input, safeDt, currentTime);
 
     bool downDashAvailableBefore = npc.body.dash.downDashAvailable;
     {

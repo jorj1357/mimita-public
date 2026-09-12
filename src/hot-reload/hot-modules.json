@@ -8,9 +8,24 @@
       "sources": [
         "src/effects/effect-part.cpp"
       ]
+    },
+    {
+      "name": "actor",
+      "abi": 1,
+      "sources": [
+        "src/hot-reload/modules/actor-behavior.cpp"
+      ]
+    },
+    {
+      "name": "presentation",
+      "abi": 1,
+      "sources": [
+        "src/hot-reload/modules/presentation.cpp"
+      ]
     }
   ],
   "headers": [
-    "src/hot-reload/game-api.h"
+    "src/hot-reload/game-api.h",
+    "src/hot-reload/game-modules.h"
   ]
 }

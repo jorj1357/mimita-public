@@ -28,6 +28,7 @@
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "debug/debug-log.h"
+#include "live-code/live-presentation.h"
 #include "debug/debug-visuals.h"
 #include "replay/replay.h"
 #include "npc/npc.h"
@@ -299,6 +300,32 @@ void update(
         cp(def, "smokeEndColorG", 0.2f),
         cp(def, "smokeEndColorB", 0.2f));
     float smokeEndAlpha = cp(def, "smokeEndColorA", 0.0f);
+
+    // Live replaceable presentation: the hot module may override trail params.
+    RocketTrailStyleV1 trailBase{};
+    trailBase.emissionRate = smokeEmissionRate;
+    trailBase.size = smokeSize;
+    trailBase.endSize = smokeEndSize;
+    trailBase.lifetime = smokeLifetime;
+    trailBase.alpha = smokeAlpha;
+    trailBase.color[0] = smokeColor.r;
+    trailBase.color[1] = smokeColor.g;
+    trailBase.color[2] = smokeColor.b;
+    trailBase.speed = smokeSpeed;
+    trailBase.spreadDegrees = smokeSpreadDeg;
+    trailBase.enabled = smokeEnabled ? 1u : 0u;
+    RocketTrailStyleV1 trail{};
+    if (LivePresentation::rocketTrail(trailBase, trail)) {
+        smokeEnabled = trail.enabled != 0;
+        smokeEmissionRate = trail.emissionRate;
+        smokeSize = trail.size;
+        smokeEndSize = trail.endSize;
+        smokeLifetime = trail.lifetime;
+        smokeAlpha = trail.alpha;
+        smokeColor = glm::vec3(trail.color[0], trail.color[1], trail.color[2]);
+        smokeSpeed = trail.speed;
+        smokeSpreadDeg = trail.spreadDegrees;
+    }
 
     for (auto it = state.activeRockets.begin(); it != state.activeRockets.end(); )
     {

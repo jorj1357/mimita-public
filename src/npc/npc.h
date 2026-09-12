@@ -76,6 +76,8 @@ public:
     // Temporary runtime state (per life) fed into the behavior math.
     NpcRuntimeEmotion emotion;
     NpcMemory memory;
+    // Live-code actor role selected by the hot actor module (0 = unset).
+    std::uint32_t liveRoleId = 0;
     // Target-acquisition edge tracking for the reaction-delay gate.
     bool prevHadTarget = false;
     // Server-selected current target id (persisted for stickiness/scoring).

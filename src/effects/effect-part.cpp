@@ -8,6 +8,7 @@
 #if defined(MIMITA_GAME_DLL)
 
 #include "hot-reload/game-api.h"
+#include "hot-reload/game-modules.h"
 
 #include <algorithm>
 #include <cmath>
@@ -70,29 +71,56 @@ bool MIMITA_GAME_CALL gameSelfTest(GameSelfTestResult* out)
     out->checksum = 0;
     out->message[0] = '\0';
 
-    GameEffectPartState effect{};
-    effect.alive = 1;
-    effect.velocity[0] = 1.0f;
-    effect.maxLifetime = 10.0f;
-    gameUpdateEffects(nullptr, &effect, 1, 1.0f);
+    // Deterministic smoke test. It must accept intended behavior changes, so it
+    // verifies invariant and determinism properties rather than pinning an exact
+    // constant: forward motion under +x velocity, finite output, an alive effect,
+    // a sticky effect staying put, and identical results for identical inputs.
+    auto makeEffect = [] {
+        GameEffectPartState effect{};
+        effect.alive = 1;
+        effect.velocity[0] = 1.0f;
+        effect.maxLifetime = 10.0f;
+        return effect;
+    };
 
-    const float expected = 0.1f;
-    const float delta = effect.position[0] - expected;
-    if (delta < -0.001f || delta > 0.001f) {
-        std::snprintf(out->message, sizeof(out->message),
-                      "effect step mismatch x=%.4f", effect.position[0]);
-        return false;
-    }
+    GameEffectPartState a = makeEffect();
+    GameEffectPartState b = makeEffect();
+    const float step = 1.0f / 60.0f;
+    gameUpdateEffects(nullptr, &a, 1, step);
+    gameUpdateEffects(nullptr, &b, 1, step);
 
-    out->passed = 1;
-    out->checksum = 0xEFFEC7001ull;
-    std::snprintf(out->message, sizeof(out->message), "effect step ok");
-    return true;
+    const bool deterministic =
+        a.position[0] == b.position[0] &&
+        a.position[1] == b.position[1] &&
+        a.position[2] == b.position[2];
+    const bool finite =
+        std::isfinite(a.position[0]) && std::isfinite(a.position[1]) &&
+        std::isfinite(a.position[2]) && std::isfinite(a.velocity[0]);
+    const bool advanced = a.position[0] > 0.0f && a.position[0] < 1.0f;
+    const bool staysAlive = a.alive == 1;
+
+    GameEffectPartState sticky = makeEffect();
+    sticky.sticky = 1;
+    gameUpdateEffects(nullptr, &sticky, 1, step);
+    const bool staysPut = sticky.position[0] == 0.0f;
+
+    const bool ok = deterministic && finite && advanced && staysAlive && staysPut;
+    out->passed = ok ? 1u : 0u;
+    out->checksum = ok ? 0xEFFEC7001ull : 0ull;
+    std::snprintf(out->message, sizeof(out->message), "%s",
+                  ok ? "effect invariants ok" : "effect invariants invalid");
+    return ok;
 }
 
-const GameEffectModuleV1 gEffectModuleV1 = {
-    1u, sizeof(GameEffectModuleV1), gameUpdateEffects};
+}
 
+const GameModuleDescriptor* MimitaGetEffectModule()
+{
+    static const GameEffectModuleV1 module = {
+        1u, sizeof(GameEffectModuleV1), gameUpdateEffects};
+    static const GameModuleDescriptor descriptor = {
+        "effects", 1u, sizeof(GameEffectModuleV1), &module};
+    return &descriptor;
 }
 
 MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
@@ -109,11 +137,16 @@ MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
     outAPI->beforeUnload = gameBeforeUnload;
     outAPI->updateEffects = gameUpdateEffects;
     outAPI->selfTest = gameSelfTest;
-    outAPI->moduleCount = 1;
-    outAPI->modules[0].name = "effects";
-    outAPI->modules[0].abiVersion = 1;
-    outAPI->modules[0].structSize = sizeof(GameEffectModuleV1);
-    outAPI->modules[0].functions = &gEffectModuleV1;
+
+    const GameModuleDescriptor* descriptors[] = {
+        MimitaGetEffectModule(),
+        MimitaGetActorModule(),
+        MimitaGetPresentationModule(),
+    };
+    for (const GameModuleDescriptor* descriptor : descriptors) {
+        if (descriptor && outAPI->moduleCount < MIMITA_GAME_MAX_MODULES)
+            outAPI->modules[outAPI->moduleCount++] = *descriptor;
+    }
     return true;
 }
 

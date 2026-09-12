@@ -219,7 +219,7 @@ sandboxing, signing, and incident response exist.
 
 ## Current status
 
-solved as of 2026-09-12T00:00:00Z | implemented (Phase 0-2 foundation) | not implemented (actor/UI/projectile hot functions, migrations, rollback, multiplayer protocol)
+solved as of 2026-09-12T10:05:00Z | implemented (Phase 0-4 foundation) | not implemented (migrations, multi-module activation, projectile/network tests, multiplayer protocol)
 
 Implemented foundation:
 
@@ -232,13 +232,21 @@ Implemented foundation:
   generation-stamped candidates, ABI/self-test validation, safe-tick activation,
   and one-tick deferred unload;
 - generation registry with rollback support at the system level;
-- `hotreload status` terminal command.
+- `hotreload status` terminal command;
+- hot `actor` module (`chooseActorCommand`, `updateActorEmotion`,
+  `chooseActorRole`) driving NPC emotion, role, and movement speed through the
+  shared Actor model, with EXE-owned state;
+- hot `presentation` module for damage-number formatting and rocket trail
+  parameters;
+- deterministic smoke validation that asserts invariants and determinism rather
+  than pinning tuned constants (a `* 1.1` effect edit now activates instead of
+  being rejected);
+- `--live-code-selftest` headless verification of time, hashing, journal, and
+  all active modules.
 
 Not yet implemented:
 
-- hot actor functions (`chooseActorCommand`, `updateActorEmotion`,
-  `chooseActorRole`);
-- hot movement/projectile/UI behavior moved across the boundary;
+- player-side hot actor decisions (only the NPC path is wired);
 - state migration execution;
 - atomic multi-module activation and dependency-graph invalidation;
 - deterministic rocket lag-compensation test and end-to-end network evidence;
@@ -259,6 +267,9 @@ Not yet implemented:
   the interpreter explicitly is future work.
 - Source-change detection uses SHA-256 content hashes. Watching uses a throttled
   periodic hash poll (every 15 frames) rather than filesystem notifications.
+- The deterministic candidate self-test asserts invariants and determinism, not
+  the currently tuned numeric output. Pinning tuned constants would reject
+  intended behavior changes (observed with a `* 1.1` effect edit).
 
 ## Ownership
 
@@ -284,25 +295,39 @@ Not yet implemented:
 ## Relevant files
 
 - `src/hot-reload/game-api.h`
+- `src/hot-reload/game-modules.h`
 - `src/hot-reload/hot-reload-system.h`
 - `src/hot-reload/hot-reload-system.cpp`
+- `src/hot-reload/hot-modules.json`
+- `src/hot-reload/modules/actor-behavior.cpp`
+- `src/hot-reload/modules/presentation.cpp`
 - `src/live-code/live-journal.h`
 - `src/live-code/live-journal.cpp`
 - `src/live-code/live-code-events.h`
 - `src/live-code/live-code-events.cpp`
+- `src/live-code/live-actor.h`
+- `src/live-code/live-actor.cpp`
+- `src/live-code/live-presentation.h`
+- `src/live-code/live-presentation.cpp`
+- `src/live-code/live-modules.h`
+- `src/live-code/live-modules.cpp`
+- `src/live-code/live-code-selftest.h`
+- `src/live-code/live-code-selftest.cpp`
 - `src/utils/time-format.h`
 - `src/utils/time-format.cpp`
 - `build_game_dll.py`
-- `src/hot-reload/hot-modules.json`
+- `docs/gold/2026-09-12-live-code-hot-reload-reference.md`
 
 ## Tests and evidence
 
-- Automated tests: pending a feature-specific harness under
-  `tests/features/live-code-development/`.
-- Runtime commands: `hotreload status`.
+- Automated tests: `mimita.exe --live-code-selftest` (headless; time, hashing,
+  journal, GameAPI load/ABI/self-test, and all active modules).
+- Runtime commands: `hotreload status`, `hotreload rollback`.
 - Logs: `logs/features/live-code/yyyy-mm-dd/live_events_yyyymmdd_hhmmss.jsonl`
   and the build worker's `build/hotreload/<generation>/build-result.json`.
-- Human playtest: required for notification and success-sound acceptance.
+- Reference: `docs/gold/2026-09-12-live-code-hot-reload-reference.md`.
+- Human playtest: required for notification, damage-number, and rocket-trail
+  visual acceptance.
 
 ## Acceptance criteria
 
@@ -326,4 +351,6 @@ Not yet implemented:
 
 ## Changelog and regression links
 
-- `docs/changelog/2026-09-12/20260912_095451-live-code-bootstrap.md`
+- `docs/changelog/2026-09-12/20260912_095451-live-code-bootstrap.md` (phases 0-2)
+- `docs/changelog/2026-09-12/20260912_101238-live-code-actor-presentation.md`
+  (phases 3-4 and the smoke-test fix)

@@ -11,8 +11,10 @@
 #include "config/impact-decals-config.h"
 #include "debug/debug-log.h"
 #include "config.h"
+#include "live-code/live-presentation.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <glm/glm.hpp>
 
@@ -40,18 +42,40 @@ EffectPart* EffectPartSystem::spawnDamage(glm::vec3 position, const std::string&
         randomSignedRange(verticalSpread)
     };
 
+    DamageNumberStyleV1 base{};
+    base.scale = std::max(0.0f, dn.startScale);
+    base.endScale = std::max(0.0f, dn.endScale);
+    base.alpha = std::clamp(dn.startOpacity, 0.0f, 1.0f);
+    base.lifetime = std::max(0.01f, dn.lifetime);
+    base.moveSpeed = dn.moveSpeed;
+    const glm::vec3 baseColor = damage < 0 ? dn.healingColor
+        : (damage >= 100 ? dn.criticalColor : dn.textColor);
+    base.color[0] = baseColor.r;
+    base.color[1] = baseColor.g;
+    base.color[2] = baseColor.b;
+    base.visible = 1;
+    const std::string baseText = damage < 0 ? ("+" + std::to_string(-damage))
+                                           : std::to_string(damage);
+    std::snprintf(base.text, sizeof(base.text), "%s", baseText.c_str());
+
+    DamageNumberStyleV1 style{};
+    if (!LivePresentation::formatDamage(base, damage, 0u, style))
+        style = base;
+    if (!style.visible)
+        return nullptr;
+
     EffectPart e;
     e.position = position + glm::vec3(dn.worldOffsetX, dn.worldOffsetY, dn.worldOffsetZ) + jitter;
-    e.color = damage < 0 ? dn.healingColor : (damage >= 100 ? dn.criticalColor : dn.textColor);
-    e.velocity = glm::vec3(dn.moveX, dn.moveY, dn.moveZ) * dn.moveSpeed;
-    e.maxLifetime = std::max(0.01f, dn.lifetime);
+    e.color = glm::vec3(style.color[0], style.color[1], style.color[2]);
+    e.velocity = glm::vec3(dn.moveX, dn.moveY, dn.moveZ) * style.moveSpeed;
+    e.maxLifetime = std::max(0.01f, style.lifetime);
     e.lifetime = -std::max(0.0f, dn.spawnDelay);
-    e.label = damage < 0 ? ("+" + std::to_string(-damage)) : std::to_string(damage);
+    e.label = style.text;
     e.replayType = "damage_number";
     e.billboardText = true;
-    e.scale = std::max(0.0f, dn.startScale);
-    e.endScale = std::max(0.0f, dn.endScale);
-    e.alpha = std::clamp(dn.startOpacity, 0.0f, 1.0f);
+    e.scale = std::max(0.0f, style.scale);
+    e.endScale = std::max(0.0f, style.endScale);
+    e.alpha = std::clamp(style.alpha, 0.0f, 1.0f);
     return spawn(e);
 }
 

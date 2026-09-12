@@ -9,9 +9,12 @@
 
 #include "hot-reload/hot-reload-system.h"
 #include "live-code/code-hash.h"
+#include "live-code/live-actor.h"
 #include "live-code/live-journal.h"
+#include "live-code/live-presentation.h"
 #include "utils/time-format.h"
 
+#include <cstdio>
 #include <fstream>
 #include <string>
 
@@ -69,6 +72,47 @@ bool runLiveCodeSelfTest(std::string& report)
     report += "  activeHash=" + status.activeHash + "\n";
     report += "  reloadCount=" + std::to_string(status.reloadCount) + "\n";
     ok &= check(status.loaded, "GameAPI load + ABI + self-test", report);
+
+    if (status.loaded) {
+        ok &= check(LiveActor::available(), "actor module present", report);
+        ActorStateV1 actor{};
+        actor.id = 7;
+        actor.kind = 1;
+        actor.health = 100.0f;
+        actor.maxHealth = 100.0f;
+        actor.emotionConfidence = 0.5f;
+        actor.emotionFear = 0.5f;
+        actor.distanceToTarget = 3.0f;
+        actor.tick = 123;
+        ActorCommandV1 command{};
+        ok &= check(LiveActor::chooseCommand(actor, command) &&
+                        command.speedScale > 0.0f && command.speedScale <= 1.6f,
+                    "actor chooseCommand", report);
+        ok &= check(LiveActor::chooseRole(actor) != 0, "actor chooseRole", report);
+
+        DamageNumberStyleV1 damageBase{};
+        damageBase.scale = 1.0f;
+        damageBase.endScale = 1.0f;
+        damageBase.alpha = 1.0f;
+        damageBase.lifetime = 1.0f;
+        damageBase.moveSpeed = 1.0f;
+        damageBase.visible = 1;
+        std::snprintf(damageBase.text, sizeof(damageBase.text), "150");
+        DamageNumberStyleV1 damageOut{};
+        ok &= check(LivePresentation::formatDamage(damageBase, 150, 0u, damageOut) &&
+                        damageOut.scale > damageBase.scale,
+                    "presentation damage format", report);
+
+        RocketTrailStyleV1 trailBase{};
+        trailBase.size = 0.25f;
+        trailBase.endSize = 0.8f;
+        trailBase.enabled = 1;
+        RocketTrailStyleV1 trailOut{};
+        ok &= check(LivePresentation::rocketTrail(trailBase, trailOut) &&
+                        trailOut.size > trailBase.size,
+                    "presentation rocket trail", report);
+    }
+
     HotReloadSystem::instance().unloadGameDLL();
 
     return ok;
