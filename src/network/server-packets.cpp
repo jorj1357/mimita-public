@@ -460,7 +460,9 @@ static bool isKnownPacketType(uint8_t type)
 {
     // 2026-08-29: TODO use an explicit switch here so future packet types
     // cannot be silently rejected by an outdated numeric range.
-    return type >= PACKET_HELLO && type <= PACKET_SERVER_NOTIFICATION;
+    // 2026-09-12: raised to the newest defined type so client->server
+    // PACKET_CODE_GENERATION is accepted.
+    return type >= PACKET_HELLO && type <= PACKET_CODE_GENERATION;
 }
 
 static void countPacketType(ServerPacketStats& stats, uint8_t type)
@@ -1997,6 +1999,21 @@ ServerPacketProcessResult processServerPacket(
     {
         handleServerCommand(sock, from, buffer, bytes, players, npcs,
                             tick, totalPacketsOut);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_CODE_GENERATION &&
+             bytes >= (int)sizeof(CodeGenerationPacket))
+    {
+        const CodeGenerationPacket* report =
+            reinterpret_cast<const CodeGenerationPacket*>(buffer);
+        auto it = players.find(report->header.playerId);
+        if (it != players.end())
+        {
+            it->second.reportedCodeGeneration = report->generation;
+            it->second.reportedCodeHash = report->codeHash;
+            it->second.reportedModuleSetHash = report->moduleSetHash;
+            it->second.reportedCodeTick = tick;
+        }
         result.handled = true;
     }
     else if (header->type == PACKET_DUEL_REMATCH_REQUEST)

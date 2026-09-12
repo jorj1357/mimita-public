@@ -123,6 +123,10 @@ private:
     BuildResult result_;
 
     std::string observedSourceHash_;
+    std::string attemptedHash_;
+    std::string pendingHash_;
+    int attemptFailures_ = 0;
+    std::uint64_t nextRetryMonoMs_ = 0;
     std::uint32_t nextGeneration_ = 1;
     std::uint32_t tempGeneration_ = 0;
     std::uint32_t pollCounter_ = 0;

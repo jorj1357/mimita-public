@@ -16,17 +16,26 @@ namespace LiveCodeEvents {
 // Called when a source change is detected and a build is queued.
 void notifyEditDetected(const std::string& file);
 
-// Called when the background build worker actually starts.
-void notifyCompiling(const std::string& file);
+// Called when the background build worker actually starts (attempt >= 1).
+void notifyCompiling(const std::string& file, std::uint32_t candidateGeneration,
+                     int attempt);
 
 // Called when compilation fails. The previous generation stays active.
-void notifyCompileFailed(const std::string& file, const std::string& error);
+void notifyCompileFailed(const std::string& file, std::uint32_t candidateGeneration,
+                         std::uint32_t activeGeneration, const std::string& error,
+                         int attempt);
 
 // Called when a candidate passed API/ABI and deterministic self-test.
 void notifyCandidateReady(std::uint32_t generation, const std::string& codeHash);
 
 // Called when a candidate becomes the active function table.
 void notifyActivated(std::uint32_t generation, const std::string& codeHash);
+
+// Called when a process activates while another side is on a different
+// generation (for example a client activation while the server is independent).
+void notifyGenerationMismatch(std::uint32_t localGeneration,
+                              std::uint32_t remoteGeneration,
+                              bool remoteKnown);
 
 // Called when the previous generation is reactivated.
 void notifyRollbackActivated(std::uint32_t generation, const std::string& codeHash);

@@ -36,6 +36,9 @@
 #include "npc/npc-avatar.h"
 #include "gui/password-popup.h"
 #include "utils/time-format.h"
+#include "hot-reload/hot-reload-system.h"
+#include "live-code/live-code-events.h"
+#include "live-code/live-identity.h"
 
 #include <algorithm>
 #include <chrono>
@@ -702,6 +705,53 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         ctx.clientSimulationTick, ctx.clientSimulationStepsThisUpdate,
         ctx.clientSimulationAccumulator);
 
+    // ── Live code generation agreement ──────────────────────────────
+    // Report our active generation/hash to the server and surface a mismatch
+    // with the server's announced generation. This is the seed of the future
+    // multiplayer READY/switch-tick hot-code protocol.
+    if (ctx.active && ctx.localPlayerId != 0)
+    {
+        const HotReloadSystem::Status liveStatus = HotReloadSystem::instance().status();
+        if (ctx.reliableEventSessionId != 0)
+            LiveIdentity::setSessionId(ctx.reliableEventSessionId);
+        if (ctx.clientSimulationTick - ctx.lastCodeGenerationSentTick >= 30)
+        {
+            ctx.lastCodeGenerationSentTick = ctx.clientSimulationTick;
+            CodeGenerationPacket report{};
+            report.header.type = PACKET_CODE_GENERATION;
+            report.header.tick = ctx.clientSimulationTick;
+            report.header.playerId = ctx.localPlayerId;
+            report.generation = liveStatus.activeGeneration;
+            report.direction = 0;  // client -> server
+            report.phase = 0;
+            auto hexValue = [](char c) -> uint64_t {
+                if (c >= '0' && c <= '9') return (uint64_t)(c - '0');
+                if (c >= 'a' && c <= 'f') return (uint64_t)(c - 'a' + 10);
+                if (c >= 'A' && c <= 'F') return (uint64_t)(c - 'A' + 10);
+                return 0;
+            };
+            for (int i = 0; i + 1 < (int)liveStatus.activeHash.size() && i < 16; i += 2)
+                report.codeHash = (report.codeHash << 8) |
+                    (hexValue(liveStatus.activeHash[i]) << 4) |
+                    hexValue(liveStatus.activeHash[i + 1]);
+            mpSendPacket(ctx, &report, sizeof(report));
+        }
+        if (ctx.serverCodeGeneration != 0 && liveStatus.activeGeneration != 0 &&
+            ctx.serverCodeGeneration != liveStatus.activeGeneration)
+        {
+            static uint32_t lastLocalGen = 0;
+            static uint32_t lastServerGen = 0;
+            if (lastLocalGen != liveStatus.activeGeneration ||
+                lastServerGen != ctx.serverCodeGeneration)
+            {
+                LiveCodeEvents::notifyGenerationMismatch(
+                    liveStatus.activeGeneration, ctx.serverCodeGeneration, true);
+                lastLocalGen = liveStatus.activeGeneration;
+                lastServerGen = ctx.serverCodeGeneration;
+            }
+        }
+    }
+
     // ── Async ICE connect job ───────────────────────────────────────────
     // The ICE connect runs on a background thread; poll it every frame so the
     // game never blocks. Progress messages surface on the HUD via
@@ -1268,6 +1318,18 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.mapLoadAttempts = 0;
             ctx.lastMapLoadAttemptMs = 0;
             DuelQueue::instance().onMapChange(mc->mapId, mc->duelId, mc->mapVersion);
+        }
+        else if (header->type == PACKET_CODE_GENERATION &&
+                 bytes >= (int)sizeof(CodeGenerationPacket))
+        {
+            const CodeGenerationPacket* announce =
+                reinterpret_cast<const CodeGenerationPacket*>(buffer);
+            if (announce->direction == 1)
+            {
+                ctx.serverCodeGeneration = announce->generation;
+                ctx.serverCodeHash = announce->codeHash;
+                ctx.serverCodeSwitchTick = announce->switchTick;
+            }
         }
         else if (header->type == PACKET_KILL_EVENT &&
                  bytes >= (int)sizeof(KillEventPacket))

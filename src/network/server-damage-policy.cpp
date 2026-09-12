@@ -6,7 +6,9 @@
 #include "network/server-damage-policy.h"
 
 #include "hot-reload/game-api.h"
+#include "hot-reload/hot-reload-system.h"
 #include "live-code/live-behavior.h"
+#include "live-code/live-identity.h"
 #include "live-code/live-journal.h"
 
 #include <string>
@@ -48,17 +50,27 @@ int serverResolveDamagePolicy(const ServerDamagePolicyInput& input,
     if (limit > 0 && finalDamage > limit)
         finalDamage = limit;
 
+    // Attach the exact active generation/hash so the damage record proves which
+    // hot code produced the result.
+    const HotReloadSystem::Status liveStatus = HotReloadSystem::instance().status();
+
     LiveEventJournal::Fields fields;
     fields.actorId = "server";
     fields.projectileId = std::to_string(input.projectileEntity);
     fields.result = handled ? "hot" : "fallback";
+    fields.generation = liveStatus.activeGeneration;
+    fields.hasGeneration = true;
+    fields.codeHash = liveStatus.activeHash;
     fields.extra = std::string("\"event\":\"hot_damage_policy_result\"") +
         ",\"source\":" + std::to_string(input.source) +
         ",\"base_damage\":" + std::to_string(baseDamage) +
         ",\"out_damage\":" + std::to_string(finalDamage) +
         ",\"attacker_entity\":" + std::to_string(input.attackerEntity) +
         ",\"victim_entity\":" + std::to_string(input.victimEntity) +
-        ",\"weapon_network_id\":" + std::to_string(input.weaponNetworkId);
+        ",\"weapon_network_id\":" + std::to_string(input.weaponNetworkId) +
+        ",\"distance\":" + std::to_string(input.distance) +
+        ",\"module\":\"gameplay\"" +
+        ",\"source_file\":\"src/hot-reload/modules/rocket-behavior.cpp\"";
     LiveEventJournal::instance().record("hot_damage_policy_result", fields);
     return finalDamage;
 }

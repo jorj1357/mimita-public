@@ -6,6 +6,7 @@
 * Does NOT start compiles, choose candidates, or own notifications.
 */
 #include "live-code/live-journal.h"
+#include "live-code/live-identity.h"
 #include "utils/time-format.h"
 
 #include <cstdio>
@@ -118,6 +119,18 @@ void LiveEventJournal::record(const char* type, const Fields& fields)
     first = false;
     line += "\"mono_ms\":";
     line += std::to_string(mono);
+
+    // Every event identifies the process side, PID, and session so client and
+    // server evidence can never be confused.
+    line += ",\"process\":\"";
+    line += escapeJson(LiveIdentity::process());
+    line += '"';
+    line += ",\"pid\":";
+    line += std::to_string(LiveIdentity::pid());
+    if (LiveIdentity::sessionId() != 0) {
+        line += ",\"session_id\":";
+        line += std::to_string(LiveIdentity::sessionId());
+    }
 
     if (!first) line += ",";
     line += "\"type\":\"";

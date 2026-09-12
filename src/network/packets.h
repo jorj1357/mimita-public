@@ -146,7 +146,13 @@ enum PacketType : uint8_t
     // ── Authoritative kill event (server → all clients) ─────────────
     // Single source for the live killfeed/chat line. Every viewer (killer,
     // victim, and observers) receives the same entry exactly once.
-    PACKET_KILL_EVENT = 68
+    PACKET_KILL_EVENT = 68,
+    // ── Live code generation agreement (bidirectional) ──────────────
+    // Generic, extensible code-generation/READY/switch-tick record. Clients
+    // report their active generation/hash; the server announces its own and a
+    // future shared switch tick. Designed so a fuller protocol can extend the
+    // same packet without a new type.
+    PACKET_CODE_GENERATION = 69
 };
 
 enum DamageConfirmedSource : uint8_t
@@ -1677,6 +1683,23 @@ static_assert(sizeof(RespawnRequestPacket) <= 32, "RespawnRequestPacket is too l
 static_assert(sizeof(PlayerRespawnedPacket) <= 584, "PlayerRespawnedPacket is too large");
 static_assert(sizeof(BombTagStatePacket) <= 96, "BombTagStatePacket is too large");
 static_assert(sizeof(BombTagPassEventPacket) <= 96, "BombTagPassEventPacket is too large");
+
+// ── Live code generation agreement ─────────────────────────────
+// Generic, extensible record for the future multiplayer READY/switch-tick
+// protocol. direction: 0 = client report, 1 = server announce. phase: 0 =
+// status, 1 = READY, 2 = SWITCH at switchTick. codeHash is the low 64 bits of
+// the active code hash; moduleSetHash is reserved for the module-set hash.
+struct CodeGenerationPacket
+{
+    PacketHeader header;
+    uint32_t generation = 0;
+    uint32_t direction = 0;
+    uint32_t phase = 0;
+    uint32_t switchTick = 0;
+    uint64_t codeHash = 0;
+    uint64_t moduleSetHash = 0;
+};
+static_assert(sizeof(CodeGenerationPacket) <= 64, "CodeGenerationPacket is too large");
 
 bool validHeader(const PacketHeader& header, uint8_t expectedType);
 

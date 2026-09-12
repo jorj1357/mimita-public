@@ -11,7 +11,33 @@
 Status as of 2026-09-12 (session `20260912_153000` and follow-ups).
 See `docs/architecture/live-development/hot-kernel.md` for the architecture.
 
-## Implemented
+## Round 2 (2026-09-12, repeated activation + observability) — implemented
+
+- Per-process build isolation: `build/hotreload/p<pid>/gen<gen>/` with
+  per-generation `build-result.json`/`build.log`, so client and server can no
+  longer read each other's build outcome.
+- Failed-hash retry with bounded backoff (2s -> 10s, indefinite), notification
+  on every attempt, and `activeSourceHash_` only updated on success.
+- Process identity on every journal event: `process`, `pid`, `session_id`
+  (`src/live-code/live-identity.*`, auto-stamped by `live-journal`).
+- `hot_damage_policy_result` now records `generation`, `code_hash`, `module`,
+  `source_file`, `distance`, `base_damage`, `out_damage`, `result`.
+- Notifications identify `side`, `pid`, `session`, `generation`, `hash`,
+  candidate/active generation, and cold restart severity.
+- Generation agreement seed `PACKET_CODE_GENERATION` (client report + server
+  announce) and a client mismatch warning. Each process keeps independent state.
+- Dedicated server live-code lifecycle (journal + loader + poll + announce).
+
+## Still required before round 2 is proven
+
+- One cold build to install the EXE-owned mechanism changes (loader, journal,
+  notifications, damage-policy call site, server lifecycle, packet).
+- Running-server proof: `hot_damage_policy_result process=server
+  generation=<current> code_hash=<current> base_damage=1520 out_damage=999999
+  result=hot`, matched by a server `code_activation`, with stable PID/session/
+  entity ids.
+
+## Implemented (round 1)
 
 - Generic event ABI: `GameEventV1`, `GameplayContextV1`, `DamagePolicyV1`,
   `GAME_EVENT_DAMAGE_POLICY`, `GameDamageSource` (`src/hot-reload/game-api.h`).

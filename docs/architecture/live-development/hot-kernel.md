@@ -108,6 +108,50 @@ private development branch it is `0` (unlimited) so behavior proofs can use
 large values. Public servers set a finite bound; untrusted client damage claims
 remain capped separately in `server-packet-handlers.cpp`.
 
+## Generation agreement protocol (seed)
+
+`PACKET_CODE_GENERATION` (`src/network/packets.h`) is the generic, extensible
+seed of the future multiplayer READY/switch-tick protocol:
+
+```text
+direction: 0 = client report, 1 = server announce
+phase:     0 = status, 1 = READY, 2 = SWITCH at switchTick (reserved)
+generation, codeHash (low 64 bits), moduleSetHash (reserved), switchTick
+```
+
+- The client reports its active generation/hash every ~30 client ticks.
+- The server stores the report per player and announces its own generation/hash
+  (and a provisional `switchTick`) whenever it activates a new generation.
+- The client stores the server's announcement and warns when its generation
+  differs.
+
+Each process keeps independent runtime state but shares source content. The
+packet is deliberately wide (phase, switchTick, module-set hash) so a full
+agreement protocol can extend it without a new packet type. A later phase adds
+READY handshakes, a shared switch tick, and module-set hashing.
+
+## Why a cold build is required (and what the next phase must remove)
+
+The hot loader, the live journal and its identity fields, the notification
+schema, the authoritative damage-policy call site, and the server live-code
+lifecycle are **EXE-owned mechanisms**. A running process cannot gain a new call
+site, a new struct field, or a new lifecycle hook. So this observability/retry
+work needs one cold build to install. That is the same reason the earlier
+server bridge needed one.
+
+This is the exact problem the next phase must reduce:
+
+- every new mechanism currently lives in cold code and forces a cold build;
+- gameplay policy should not. The next phase moves behavior behind the hot ABI
+  (behavior bindings, component capabilities, kernel event queue) and grows a
+  generic kernel so future changes are data/behavior, not new C++ call sites;
+- long-term, a bytecode/IR or data-driven evaluator makes even new mechanisms
+  hot, so the executable only changes when the process/authority model changes.
+
+Until then, any edit to a file listed in the manifest `cold` block is a
+`HOT_RELOAD_BOUNDARY_VIOLATION` and must wait for an intentional cold build
+window, never a kill/relink of a running process.
+
 ## Server lifecycle
 
 The dedicated server (`mimita.exe --server`) bypasses `gameInit`, so it owns its

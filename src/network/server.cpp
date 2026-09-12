@@ -37,6 +37,7 @@
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "hot-reload/hot-reload-system.h"
+#include "live-code/live-identity.h"
 #include "live-code/live-journal.h"
 #include "audio/audio.h"
 #include "persistence/persistence-queue.h"
@@ -143,7 +144,9 @@ bool isKnownPacketType(uint8_t type)
 {
     // 2026-08-29: TODO use an explicit switch here so future packet types
     // cannot be silently rejected by an outdated numeric range.
-    return type >= PACKET_HELLO && type <= PACKET_SERVER_NOTIFICATION;
+    // 2026-09-12: raised to the newest defined type so client->server
+    // PACKET_CODE_GENERATION is accepted.
+    return type >= PACKET_HELLO && type <= PACKET_CODE_GENERATION;
 }
 
 void recordServerLoopPerf(ServerLoopPerf& perf, uint64_t loopUs, bool cappedCatchup)
@@ -264,6 +267,8 @@ int runServer(const LaunchOptions& options)
     // the live journal itself. Without this the authoritative path silently used
     // the JSON fallback and wrote no policy evidence.
     LiveEventJournal::instance().init();
+    LiveIdentity::setProcess("server");
+    LiveIdentity::setSessionId((std::uint64_t)nowMs());
     HotReloadSystem::instance().startup();
     {
         const HotReloadSystem::Status liveStatus = HotReloadSystem::instance().status();
@@ -656,7 +661,40 @@ int runServer(const LaunchOptions& options)
             // Safe authoritative boundary: activate any ready hot generation
             // before simulating this fixed step. The game thread never blocks on
             // compilation; the worker handles it in the background.
-            HotReloadSystem::instance().pollAndAdvance();
+            if (HotReloadSystem::instance().pollAndAdvance())
+            {
+                const HotReloadSystem::Status liveStatus =
+                    HotReloadSystem::instance().status();
+                CodeGenerationPacket announce{};
+                announce.header.type = PACKET_CODE_GENERATION;
+                announce.header.tick = tick;
+                announce.generation = liveStatus.activeGeneration;
+                announce.direction = 1;  // server -> clients
+                announce.phase = 0;      // status (READY/SWITCH reserved)
+                announce.switchTick = tick + 30;
+                auto hexValue = [](char c) -> uint64_t {
+                    if (c >= '0' && c <= '9') return (uint64_t)(c - '0');
+                    if (c >= 'a' && c <= 'f') return (uint64_t)(c - 'a' + 10);
+                    if (c >= 'A' && c <= 'F') return (uint64_t)(c - 'A' + 10);
+                    return 0;
+                };
+                for (int i = 0; i + 1 < (int)liveStatus.activeHash.size() && i < 16; i += 2)
+                    announce.codeHash = (announce.codeHash << 8) |
+                        (hexValue(liveStatus.activeHash[i]) << 4) |
+                        hexValue(liveStatus.activeHash[i + 1]);
+                for (auto& pe : players)
+                {
+                    if (pe.second.transport)
+                        pe.second.transport->send(&announce, sizeof(announce));
+                    else
+                        sendto(sock, (const char*)&announce, sizeof(announce), 0,
+                               (sockaddr*)&pe.second.addr, sizeof(pe.second.addr));
+                }
+                printf("%s [SERVER LIVE CODE] announce generation=%u hash=%s switchTick=%u\n",
+                       serverTimestamp(), liveStatus.activeGeneration,
+                       liveStatus.activeHash.c_str(), announce.switchTick);
+            }
+            LiveIdentity::setSimulationTick(tick);
 
             handleClientTimeout(players, sock, tick, totalPacketsOut);
             for (auto& kv : players)

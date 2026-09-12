@@ -455,6 +455,12 @@ struct MultiplayerContext
     uint32_t nextLocalMeleeAttackSerial = 1;
     uint32_t nextActionRequestId = 1;  // monotonic, shared across all action types
     uint32_t latestServerTick = 0;
+    // Live code generation agreement (see PACKET_CODE_GENERATION). The server
+    // announces its active generation/hash and a future shared switch tick.
+    uint32_t serverCodeGeneration = 0;
+    uint64_t serverCodeHash = 0;
+    uint32_t serverCodeSwitchTick = 0;
+    uint32_t lastCodeGenerationSentTick = 0;
     // Newest server tick the monotonic render clock was anchored to. If the
     // server ever regresses its tick (map change / server restart), the clock
     // domain is invalid and must be reset instead of pinned by monotonicity.

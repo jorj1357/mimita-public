@@ -1308,3 +1308,45 @@ jorj - this not official format not good but  when we edit netowkring stuff or d
 8. Lessons learned: a separate server process has its own lifecycle. Every
    process that runs authoritative simulation must initialize and poll the hot
    loader and the live journal, not just the client render loop.
+
+2026-09-12T18:05:00Z — Client and server shared a build namespace; a failed build stalled the server on an old generation — FIX STAGED (bootstrap cold build pending)
+
+1. Issue: the running server journal showed `hot_damage_policy_result
+   base_damage=1111 out_damage=2222 result=hot` while the source file contained
+   `outDamage = 66666`. The client reported a newer activation; the server stayed
+   on an older generation.
+2. Expected behavior: each process detects the source hash, builds a candidate,
+   validates it, activates at a safe tick, and records the generation/hash with
+   the damage result; repeated valid edits keep activating; a compile error
+   retains the last generation until the source is valid again.
+3. Actual behavior: `build/hotreload/gen2` contained
+   `mimita-live-p25116-g000002.dll` and `mimita-live-p27412-g000002.dll` from two
+   processes in the same generation directory. Client journal generations 6-9
+   compiled ok at 17:03:04/17:03:19/17:07:37/17:11:38; the server failed the
+   same generations at 17:03:04/17:03:18/17:07:35/17:11:37 and its last
+   activation was generation 5.
+4. Root cause (two parts):
+   1. Both processes wrote `genN/{mimita-game.dll, build-result.json,
+      build.log}` with identical generation counters. The single
+      `build-result.json` was overwritten by whichever process wrote last, so a
+      process could read the other's outcome; gen 9 reported `compiler exit 1`
+      because its own compiler failed while the JSON said ok.
+   2. `beginBuild` set `observedSourceHash_ = hash` before compiling, so a
+      failed/raced build was never retried for the same hash. The server's
+      transient failures therefore stalled it permanently while the client
+      (which built slightly later) succeeded.
+5. Fix staged (2026-09-12T18:05:00Z):
+   1. Per-process, per-generation build directories
+      `build/hotreload/p<pid>/gen<gen>/` with per-generation result/log files.
+   2. Failed-hash retry with bounded backoff (2s to 10s, indefinite);
+      `activeSourceHash_` is only updated on successful activation.
+   3. `process`, `pid`, `session_id` added to every journal event; generation,
+      code hash, module, and source file added to `hot_damage_policy_result`.
+   4. Notifications identify side/PID/session/generation/hash and cold severity.
+   5. `PACKET_CODE_GENERATION` generation-agreement seed and a client mismatch
+      warning.
+6. Install step: one cold build with no process running. Refused at fix time
+   because the client and dedicated server were running; the invariant forbids
+   killing them.
+7. Lessons learned: independent processes must never share build artifact
+   paths, and a failed build must be retryable without another source edit.

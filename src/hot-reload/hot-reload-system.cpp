@@ -118,8 +118,15 @@ bool HotReloadSystem::pollAndAdvance()
             pollManifestReload();
             pollColdBoundary();
             const std::string hash = computeSourceHash();
-            if (!hash.empty() && hash != observedSourceHash_)
-                beginBuild("source_change");
+            if (!hash.empty() && hash != observedSourceHash_) {
+                // Retry the same failed hash with bounded backoff instead of
+                // suppressing it forever. A transient or racing build must be
+                // recoverable without another source edit.
+                const std::uint64_t nowMs = MiMitaTime::monotonicMillis();
+                const bool sameAsFailed = (!attemptedHash_.empty() && hash == attemptedHash_);
+                if (!sameAsFailed || nowMs >= nextRetryMonoMs_)
+                    beginBuild(sameAsFailed ? "retry" : "source_change");
+            }
         }
     }
     return false;
@@ -133,23 +140,27 @@ bool HotReloadSystem::beginBuild(const std::string& reason)
     const std::string hash = computeSourceHash();
     if (hash.empty())
         return false;
-    observedSourceHash_ = hash;
+    // Do NOT mark this hash active before the build succeeds. `attemptedHash_`
+    // records the try so a failure can be retried with backoff.
+    attemptedHash_ = hash;
+    pendingHash_ = hash;
 
     const std::uint32_t generation = nextGeneration_++;
-    const std::filesystem::path dir =
-        root_ / "build" / "hotreload" / ("gen" + std::to_string(generation));
+    const std::filesystem::path processDir =
+        root_ / "build" / "hotreload" / ("p" + std::to_string(GetCurrentProcessId()));
+    const std::filesystem::path dir = processDir / ("gen" + std::to_string(generation));
     std::error_code error;
     std::filesystem::create_directories(dir, error);
 
     BuildRequest request;
     request.generation = generation;
     request.sourceHash = hash;
-    // Immutable generation filename: a new file is written every build and the
-    // active generation is never overwritten.
-    char generationName[96]{};
+    // Immutable generation filename inside a per-process directory. The result
+    // and log are per-generation as well, so two processes can never read each
+    // other's build outcome.
+    char generationName[64]{};
     std::snprintf(generationName, sizeof(generationName),
-                  "mimita-live-p%lu-g%06u.dll",
-                  (unsigned long)GetCurrentProcessId(), generation);
+                  "mimita-live-g%06u.dll", generation);
     request.outputPath = dir / generationName;
     request.resultPath = dir / "build-result.json";
     request.logPath = dir / "build.log";
@@ -162,7 +173,7 @@ bool HotReloadSystem::beginBuild(const std::string& reason)
     const std::string summary = manifestSummary();
     if (reason == "source_change")
         LiveCodeEvents::notifyEditDetected(summary);
-    LiveCodeEvents::notifyCompiling(summary);
+    LiveCodeEvents::notifyCompiling(summary, generation, attemptFailures_);
 
     LiveEventJournal::Fields fields;
     fields.generation = generation;
@@ -260,14 +271,24 @@ bool HotReloadSystem::tryActivateCandidate()
 
     if (!result.success) {
         lastError_ = result.error;
+        ++attemptFailures_;
+        const std::uint64_t backoffMs =
+            (std::uint64_t)std::min(10000, 2000 * attemptFailures_);
+        nextRetryMonoMs_ = MiMitaTime::monotonicMillis() + backoffMs;
         LiveEventJournal::Fields failure;
         failure.generation = result.generation;
         failure.hasGeneration = true;
         failure.file = summary;
         failure.result = "failed";
         failure.error = result.error;
+        failure.extra = std::string("\"active_generation\":") +
+            std::to_string(active_.generation) +
+            ",\"attempt\": " + std::to_string(attemptFailures_) +
+            ",\"retry_in_ms\": " + std::to_string(backoffMs);
         LiveEventJournal::instance().record("compile_finished", failure);
-        LiveCodeEvents::notifyCompileFailed(summary, result.error);
+        LiveCodeEvents::notifyCompileFailed(summary, result.generation,
+                                            active_.generation, result.error,
+                                            attemptFailures_);
         return false;
     }
 
@@ -282,6 +303,10 @@ bool HotReloadSystem::tryActivateCandidate()
     std::string error;
     if (!loadCandidateFromFile(result.outputPath, candidate, error)) {
         lastError_ = error;
+        ++attemptFailures_;
+        const std::uint64_t backoffMs =
+            (std::uint64_t)std::min(10000, 2000 * attemptFailures_);
+        nextRetryMonoMs_ = MiMitaTime::monotonicMillis() + backoffMs;
         LiveCodeEvents::notifyValidationFailed(result.generation, error);
         return false;
     }
@@ -303,6 +328,13 @@ bool HotReloadSystem::tryActivateCandidate()
     active_ = candidate;
     ++memory_.reloadCount;
     lastError_.clear();
+
+    // Success: this hash is now the active one. Clear failure/retry state.
+    observedSourceHash_ = result.sourceHash.empty() ? active_.codeHash : result.sourceHash;
+    attemptedHash_ = observedSourceHash_;
+    pendingHash_.clear();
+    attemptFailures_ = 0;
+    nextRetryMonoMs_ = 0;
 
     LiveCodeEvents::notifyActivated(active_.generation, active_.codeHash);
     return true;

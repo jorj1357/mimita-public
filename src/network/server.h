@@ -388,6 +388,14 @@ struct ServerPlayer
     uint32_t lastNpcDamageTick = 0;
     uint16_t transformEpoch = 0;
 
+    // ── Live code generation report (client -> server) ────────────────
+    // The client's currently active hot generation/hash, used for the future
+    // READY/switch-tick agreement and for observability.
+    uint32_t reportedCodeGeneration = 0;
+    uint64_t reportedCodeHash = 0;
+    uint64_t reportedModuleSetHash = 0;
+    uint32_t reportedCodeTick = 0;
+
     // ── Input command buffer for server-side movement simulation ──────
     // Spec: server stores received input commands and simulates movement
     // from them using the shared movement kernel.
