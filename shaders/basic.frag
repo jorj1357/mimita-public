@@ -78,6 +78,13 @@ uniform float uTextureBrightness;
 // Global time (seconds)
 uniform float uTime;
 
+// Inside-smoke vision fog. Enabled only while the camera is inside a smoke
+// volume; world geometry fades to uFogColor beyond uFogMaxView meters.
+uniform int   uFogEnabled;
+uniform vec3  uFogColor;
+uniform vec3  uFogCameraPos;
+uniform float uFogMaxView;
+
 // Texbreathe — living texture animation
 uniform int uTexBreatheEnabled;
 uniform float uTexBreatheTime;
@@ -273,6 +280,13 @@ void main()
     // Alpha cutoff: discard transparent fragments when enabled
     if (uAlphaCutoff > 0.0f && texel.a < uAlphaCutoff)
         discard;
+
+    // Inside-smoke fog: hide world geometry beyond the smoke view distance.
+    if (uFogEnabled != 0) {
+        float camDist = distance(vWorldPos, uFogCameraPos);
+        float fogFactor = smoothstep(uFogMaxView * 0.35, uFogMaxView, camDist);
+        lit = mix(lit, uFogColor, fogFactor);
+    }
 
     if (uDebugView == 1) {
         float c = checker(vUV);

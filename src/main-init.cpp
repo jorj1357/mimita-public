@@ -96,6 +96,7 @@
 #include "render/lighting-commands.h"
 #include "render/postfx-commands.h"
 #include "hot-reload/hot-reload-system.h"
+#include "live-code/live-journal.h"
 #include "profile/local-profile-system.h"
 #include "gui/menus/sign-in-menu.h"
 #include "gui/menus/server-info-menu.h"
@@ -173,6 +174,8 @@ void gameInit(int argc, char** argv, Engine& engine)
 
     
     StructuredLogger::instance().init();
+    LiveEventJournal::instance().init();
+    HotReloadSystem::instance().startup();
     AnalyticsManager::instance().init(LocalProfileSystem::instance().currentUsername());
 
     printf("[LOG] Console output enabled\n");

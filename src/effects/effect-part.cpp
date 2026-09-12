@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 namespace {
 
@@ -60,6 +61,38 @@ void MIMITA_GAME_CALL gameUpdateEffects(
     }
 }
 
+bool MIMITA_GAME_CALL gameSelfTest(GameSelfTestResult* out)
+{
+    if (!out || out->structSize != sizeof(GameSelfTestResult))
+        return false;
+
+    out->passed = 0;
+    out->checksum = 0;
+    out->message[0] = '\0';
+
+    GameEffectPartState effect{};
+    effect.alive = 1;
+    effect.velocity[0] = 1.0f;
+    effect.maxLifetime = 10.0f;
+    gameUpdateEffects(nullptr, &effect, 1, 1.0f);
+
+    const float expected = 0.1f;
+    const float delta = effect.position[0] - expected;
+    if (delta < -0.001f || delta > 0.001f) {
+        std::snprintf(out->message, sizeof(out->message),
+                      "effect step mismatch x=%.4f", effect.position[0]);
+        return false;
+    }
+
+    out->passed = 1;
+    out->checksum = 0xEFFEC7001ull;
+    std::snprintf(out->message, sizeof(out->message), "effect step ok");
+    return true;
+}
+
+const GameEffectModuleV1 gEffectModuleV1 = {
+    1u, sizeof(GameEffectModuleV1), gameUpdateEffects};
+
 }
 
 MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
@@ -75,6 +108,12 @@ MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
     outAPI->onReload = gameOnReload;
     outAPI->beforeUnload = gameBeforeUnload;
     outAPI->updateEffects = gameUpdateEffects;
+    outAPI->selfTest = gameSelfTest;
+    outAPI->moduleCount = 1;
+    outAPI->modules[0].name = "effects";
+    outAPI->modules[0].abiVersion = 1;
+    outAPI->modules[0].structSize = sizeof(GameEffectModuleV1);
+    outAPI->modules[0].functions = &gEffectModuleV1;
     return true;
 }
 

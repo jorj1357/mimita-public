@@ -26,6 +26,24 @@
       "weapon_set": "standard",
       "starting_weapon": "revolver",
       "behavior_profile": "nervous"
+    },
+    {
+      "id": "terrorist",
+      "team": 0,
+      "health": 100,
+      "movement_preset": "",
+      "weapon_set": "cs_t",
+      "starting_weapon": "ak",
+      "behavior_profile": "aggressive"
+    },
+    {
+      "id": "counter_terrorist",
+      "team": 1,
+      "health": 100,
+      "movement_preset": "",
+      "weapon_set": "cs_ct",
+      "starting_weapon": "sniper",
+      "behavior_profile": "balanced"
     }
   ]
 }

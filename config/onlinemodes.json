@@ -44,9 +44,9 @@
       "id": "counterstrike",
       "gamemode_id": "counterstrike",
       "name": "Counter Strike",
-      "description": "Tactical defuse mode. No ragdolds.",
+      "description": "Tactical defuse. First to 8 rounds. No ragdolls.",
       "teams": 2,
-      "score_limit": 10
+      "score_limit": 8
     },
     {
       "id": "funcounterstrike",
@@ -62,6 +62,14 @@
       "name": "Elimination",
       "description": "One life. Last team standing wins.",
       "teams": 2,
+      "score_limit": 0
+    },
+    {
+      "id": "npc_waves",
+      "gamemode_id": "waves",
+      "name": "NPC Waves",
+      "description": "Endless NPC waves. One death ends your run and resets to round 1.",
+      "teams": 0,
       "score_limit": 0
     }
   ]

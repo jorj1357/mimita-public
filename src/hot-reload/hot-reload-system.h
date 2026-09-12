@@ -1,24 +1,53 @@
 #pragma once
 
+#include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <filesystem>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "hot-reload/game-api.h"
 
+// Owns the live replaceable-code pipeline: hash-based change detection, a
+// non-blocking background build worker, generation-stamped candidates, API/ABI
+// and deterministic self-test validation, safe-tick activation, and rollback.
+// The game thread never blocks on compilation; it only loads and swaps a ready
+// candidate at the top of the fixed tick.
 class HotReloadSystem {
 public:
     static HotReloadSystem& instance();
 
-    bool loadGameDLL();
+    // Load any existing DLL and start the background build worker.
+    void startup();
+    // Called each frame at the top of the fixed tick (the safe activation
+    // boundary). Returns true when a new generation became active.
+    bool pollAndAdvance();
+
     void unloadGameDLL();
-    bool reloadGameDLLIfChanged();
-    std::uint64_t getDLLWriteTime() const;
+
+    // Reactivate the previous generation at the next safe boundary.
+    bool rollback();
 
     const GameAPI* gameAPI() const;
     GameMemory& gameMemory();
     bool loaded() const;
+
+    struct Status {
+        bool loaded = false;
+        bool workerRunning = false;
+        bool buildRunning = false;
+        bool candidateReady = false;
+        std::uint32_t activeGeneration = 0;
+        std::uint32_t previousGeneration = 0;
+        std::string activeHash;
+        std::string observedSourceHash;
+        std::string lastError;
+        std::uint32_t reloadCount = 0;
+    };
+    Status status() const;
 
 private:
     HotReloadSystem();
@@ -26,26 +55,67 @@ private:
     HotReloadSystem(const HotReloadSystem&) = delete;
     HotReloadSystem& operator=(const HotReloadSystem&) = delete;
 
-    bool loadCandidate(const std::filesystem::path& sourceDLL);
-    bool rebuildIfSourcesChanged();
-    std::uint64_t newestSourceWriteTime() const;
+    struct GenerationRecord {
+        std::uint32_t generation = 0;
+        std::string codeHash;
+        std::filesystem::path dllPath;
+        std::filesystem::path loadedTempPath;
+        void* module = nullptr;
+        GameAPI api{};
+        bool valid = false;
+    };
+
+    struct BuildRequest {
+        std::uint32_t generation = 0;
+        std::string sourceHash;
+        std::filesystem::path outputPath;
+        std::filesystem::path resultPath;
+        std::filesystem::path logPath;
+        std::string reason;
+    };
+
+    struct BuildResult {
+        bool success = false;
+        std::uint32_t generation = 0;
+        std::string sourceHash;
+        std::string codeHash;
+        std::string error;
+        std::filesystem::path outputPath;
+    };
+
+    void loadManifest();
+    std::string computeSourceHash() const;
+    std::string manifestSummary() const;
+    bool beginBuild(const std::string& reason);
+    void workerMain();
+    BuildResult runBuild(const BuildRequest& request);
+    bool tryActivateCandidate();
+    bool loadCandidateFromFile(const std::filesystem::path& sourceDLL,
+                               GenerationRecord& out, std::string& error);
+    void retireRecord(GenerationRecord& record);
     std::filesystem::path makeUniqueTempDLLPath();
-    void deleteRetiredTempDLLs();
 
-    void* module_ = nullptr;
-    GameAPI api_{};
-    GameMemory memory_{};
+    std::vector<std::string> hotSources_;
+    std::filesystem::path root_;
     std::filesystem::path sourceDLL_;
-    std::filesystem::path loadedTempDLL_;
-    std::vector<std::filesystem::path> retiredTempDLLs_;
-    std::uint64_t loadedDLLWriteTime_ = 0;
-    std::uint64_t observedSourceWriteTime_ = 0;
-    std::uint64_t tempGeneration_ = 0;
-    bool rebuildInProgress_ = false;
-};
 
-// TODO(hot-reload): add shader source watching without touching the game DLL.
-// TODO(hot-reload): add texture and animation asset replacement through renderer-owned handles.
-// TODO(hot-reload): add map reload as an explicit editor transaction, never as a code reload side effect.
-// TODO(hot-reload): add reloadable UI behavior while keeping GUI state and GPU resources in the EXE.
-// TODO(hot-reload): add live editor integration and a non-blocking background DLL compiler.
+    GameMemory memory_{};
+    GenerationRecord active_;
+    GenerationRecord previous_;
+
+    std::atomic<bool> workerStop_{false};
+    std::atomic<bool> buildRequested_{false};
+    std::atomic<bool> buildRunning_{false};
+    std::atomic<bool> candidateReady_{false};
+    std::thread worker_;
+    mutable std::mutex mutex_;
+    std::condition_variable cv_;
+    BuildRequest request_;
+    BuildResult result_;
+
+    std::string observedSourceHash_;
+    std::uint32_t nextGeneration_ = 1;
+    std::uint32_t tempGeneration_ = 0;
+    std::uint32_t pollCounter_ = 0;
+    std::string lastError_;
+};

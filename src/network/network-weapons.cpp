@@ -33,7 +33,10 @@ uint8_t networkWeaponTypeForDefinition(const WeaponDefinition& definition)
         return NETWORK_WEAPON_SWORDSWORD;
     if (definition.id == "rocket_launcher")
         return NETWORK_WEAPON_ROCKET_LAUNCHER;
-    if (definition.id == "grenade_launcher")
+    if (definition.id == "grenade_launcher" ||
+        definition.id == "grenade_smoke" ||
+        definition.id == "grenade_frag" ||
+        definition.id == "grenade_fire")
         return NETWORK_WEAPON_GRENADE_LAUNCHER;
     if (definition.id == "hafs")
         return NETWORK_WEAPON_HAFS;
@@ -57,6 +60,10 @@ uint8_t networkWeaponTypeForSlot(int slot)
     case 7:
         return NETWORK_WEAPON_ROCKET_LAUNCHER;
     case 8:
+        return NETWORK_WEAPON_GRENADE_LAUNCHER;
+    case 13:
+    case 14:
+    case 15:
         return NETWORK_WEAPON_GRENADE_LAUNCHER;
     case 10:
         return NETWORK_WEAPON_HAFS;

@@ -27,29 +27,7 @@ bool parseAimMode(const json& value, GameplayAimMode& out)
 {
     if (!value.is_string())
         return false;
-
-    const std::string mode = value.get<std::string>();
-    if (mode == "crosshair") {
-        out = GameplayAimMode::Crosshair;
-        return true;
-    }
-    if (mode == "world_hit") {
-        out = GameplayAimMode::WorldHit;
-        return true;
-    }
-    if (mode == "farpoint") {
-        out = GameplayAimMode::Farpoint;
-        return true;
-    }
-    if (mode == "camforward") {
-        out = GameplayAimMode::CamForward;
-        return true;
-    }
-    if (mode == "physical") {
-        out = GameplayAimMode::Physical;
-        return true;
-    }
-    return false;
+    return gameplayAimModeFromString(value.get<std::string>(), out);
 }
 
 bool parseDashMode(const json& value, DashMode& out)
@@ -78,6 +56,16 @@ const char* dashModeName(DashMode mode)
         case DashMode::TF2: return "tf2";
     }
     return "glide";
+}
+
+bool gameplayAimModeFromString(const std::string& mode, GameplayAimMode& out)
+{
+    if (mode == "crosshair") { out = GameplayAimMode::Crosshair; return true; }
+    if (mode == "world_hit") { out = GameplayAimMode::WorldHit; return true; }
+    if (mode == "farpoint") { out = GameplayAimMode::Farpoint; return true; }
+    if (mode == "camforward") { out = GameplayAimMode::CamForward; return true; }
+    if (mode == "physical") { out = GameplayAimMode::Physical; return true; }
+    return false;
 }
 
 const char* gameplayAimModeName(GameplayAimMode mode)

@@ -187,6 +187,9 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
             WeaponRocketLauncher::update(mRocketState, *def, *rt, player, npcs, world, camera, dt);
         } else if (def->behaviorType == WeaponBehaviorType::GrenadeLauncher) {
             WeaponGrenadeLauncher::update(*def, *rt, player, npcs, world, camera, dt);
+        } else if (def->behaviorType == WeaponBehaviorType::Grenade) {
+            // Thrown grenade projectiles are simulated by the authoritative server
+            // and the client prediction path; no local per-tick work here.
         } else {
             if (mGodballPhys.active) {
                 WeaponGodball::despawnBall(mGodballPhys);
@@ -770,7 +773,8 @@ RevolverShotResult WeaponSystem::fire(
         return fireRocketLauncher(camera, player, npcs, world, remotePlayers);
     }
 
-    bool canInterruptReload = (def->behaviorType == WeaponBehaviorType::GrenadeLauncher);
+    bool canInterruptReload = (def->behaviorType == WeaponBehaviorType::GrenadeLauncher ||
+                               def->behaviorType == WeaponBehaviorType::Grenade);
 
     if (!canInterruptReload && (rt->isReloading || rt->fireCooldown > 0.0f)) {
         return {};
@@ -793,7 +797,8 @@ RevolverShotResult WeaponSystem::fire(
         return dryResult;
     }
 
-    if (def->behaviorType == WeaponBehaviorType::GrenadeLauncher) {
+    if (def->behaviorType == WeaponBehaviorType::GrenadeLauncher ||
+        def->behaviorType == WeaponBehaviorType::Grenade) {
         rt->currentAmmo--;
         rt->fireCooldown = def->fireDelay;
         // Interrupt reload on successful fire

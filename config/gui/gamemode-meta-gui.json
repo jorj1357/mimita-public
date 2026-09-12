@@ -75,6 +75,19 @@
         "roundOverNextText": { "type": "text", "x": 880, "y": 590, "width": 200, "height": 30, "fontSize": 0.38, "textColor": [1, 1, 1, 1] }
       }
     },
+    "counterstrike": {
+      "format": "mimita-gui-layout",
+      "version": 3,
+      "elements": {
+        "intermissionText": { "type": "text", "text": "INTERMISSION {seconds}", "x": 960, "y": 400, "fontSize": 0.6, "textColor": [1, 1, 1, 0.9] },
+        "modeTitle": { "type": "text", "text": "COUNTER STRIKE", "x": 960, "y": 18, "fontSize": 0.42, "textColor": [1, 1, 1, 1] },
+        "scoreText": { "type": "text", "text": "TERRORIST {red_score} / {goal}          CT {blue_score} / {goal}", "x": 960, "y": 45, "fontSize": 0.38, "textColor": [1, 1, 1, 1] },
+        "matchTime": { "type": "text", "text": "TIME LEFT {minutes}:{seconds}", "x": 960, "y": 72, "fontSize": 0.34, "textColor": [1, 1, 1, 1] },
+        "bombAlert": { "type": "text", "text": "", "x": 960, "y": 104, "fontSize": 0.36, "textColor": [1, 0.3, 0.3, 1] },
+        "bombPlanted": { "type": "text", "text": "", "x": 960, "y": 132, "fontSize": 0.4, "textColor": [1, 0.55, 0.1, 1] },
+        "countdownText": { "type": "text", "text": "{countdown}", "goText": "GO!!!", "x": 960, "y": 100, "fontSize": 2.5, "textColor": [1, 1, 1, 1] }
+      }
+    },
     "sandbox": {
       "format": "mimita-gui-layout",
       "version": 3,

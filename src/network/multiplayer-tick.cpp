@@ -35,6 +35,7 @@
 #include "killfeed/killfeed.h"
 #include "npc/npc-avatar.h"
 #include "gui/password-popup.h"
+#include "utils/time-format.h"
 
 #include <algorithm>
 #include <chrono>
@@ -47,17 +48,6 @@
 namespace MimitaNet {
 
 namespace {
-
-std::string chatUtcNow()
-{
-    const std::time_t now = std::chrono::system_clock::to_time_t(
-        std::chrono::system_clock::now());
-    std::tm utc{};
-    gmtime_s(&utc, &now);
-    char buf[32]{};
-    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &utc);
-    return buf;
-}
 
 // A snapshot tick gap larger than this (~500ms of missed snapshots) means a
 // blackout/reconnect, not ordinary packet loss. It arms the client's post-gap
@@ -1495,7 +1485,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 gChatHistory.append(entry);
                 Debug::log(Debug::Category::Chat,
                            "[CHAT DEBUG HISTORY ADD] utc=%s messageId=%llu text=\"%s\" sender=%s senderEntityId=%u senderAccountId=%u serverTick=%llu eventUtcMs=%lld count=%zu server=%s room=%s session=%s\n",
-                           chatUtcNow().c_str(), (unsigned long long)ev->messageId,
+                           MiMitaTime::utcIso8601Seconds().c_str(), (unsigned long long)ev->messageId,
                            ev->utf8Message, ev->senderName, ev->senderEntityId,
                            ev->senderAccountId, (unsigned long long)ev->serverTick,
                            (long long)ev->utcUnixMilliseconds, gChatHistory.size(),
@@ -1515,7 +1505,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
 
             Debug::log(Debug::Category::Chat,
                        "[CHAT DEBUG RECEIVED] utc=%s text=\"%s\" messageId=%llu sender=%s senderType=%u senderEntityId=%u senderAccountId=%u serverTick=%llu eventUtcMs=%lld bytes=%zu server=%s room=%s session=%s\n",
-                       chatUtcNow().c_str(), ev->utf8Message,
+                        MiMitaTime::utcIso8601Seconds().c_str(), ev->utf8Message,
                        (unsigned long long)ev->messageId, ev->senderName,
                        (unsigned)ev->senderType, ev->senderEntityId,
                        ev->senderAccountId, (unsigned long long)ev->serverTick,

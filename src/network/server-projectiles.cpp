@@ -26,6 +26,7 @@
 #include <glm/gtx/quaternion.hpp>
 
 #include "combat/projectile-simulation.h"
+#include "combat/area-effect.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
 #include "combat/weapon-types.h"
@@ -206,6 +207,10 @@ struct ProjectileConfig
     float angularDrag = 0.0f;
     float angularSpeed = 6.0f;
     bool splashLineOfSight = true;
+    float fullDamageRadius = 0.0f;
+    float edgeDamage = 0.0f;
+    float onExpireEffect = 0.0f; // 0=explosion, 1=smoke, 2=fire
+    bool inheritOwnerVelocity = false;
 };
 
 std::optional<ProjectileConfig> projectileConfigFromDefinition(
@@ -241,6 +246,15 @@ std::optional<ProjectileConfig> projectileConfigFromDefinition(
     cfg.angularDrag = cp("angularDrag", 0.3f);
     cfg.angularSpeed = cp("angSpeed", 6.0f);
     cfg.splashLineOfSight = cp("splashLineOfSight", 1.0f) > 0.0f;
+    cfg.fullDamageRadius = cp("full_damage_radius", 0.0f);
+    cfg.edgeDamage = cp("edge_damage", 0.0f);
+    cfg.onExpireEffect = cp("on_expire_effect", 0.0f);
+    cfg.inheritOwnerVelocity = cp("inherit_owner_velocity", 0.0f) > 0.0f;
+    // Thrown grenades author their fuse in server ticks; convert once to the
+    // shared kernel's seconds so client prediction matches exactly at 60 Hz.
+    const float fuseTicks = cp("fuse_ticks", 0.0f);
+    if (fuseTicks > 0.0f)
+        cfg.lifetime = fuseTicks / 60.0f;
 
     bool valid = true;
     if (cfg.speed <= 0.0f || !std::isfinite(cfg.speed))
@@ -336,6 +350,7 @@ void fillProjectilePose(ProjectileSpawnEventPacket& packet, const ServerProjecti
     packet.ownerPlayerId = projectile.ownerPlayerId;
     packet.fireSerial = projectile.fireSerial;
     packet.weapon = projectile.weaponType;
+    packet.weaponDefNetworkId = projectile.weaponDefNetworkId;
     packet.posX = projectile.position.x;
     packet.posY = projectile.position.y;
     packet.posZ = projectile.position.z;
@@ -365,6 +380,7 @@ void broadcastProjectileState(SOCKET sock,
     packet.header.tick = tick;
     packet.projectileId = projectile.id;
     packet.weapon = projectile.weaponType;
+    packet.weaponDefNetworkId = projectile.weaponDefNetworkId;
     packet.posX = projectile.position.x;
     packet.posY = projectile.position.y;
     packet.posZ = projectile.position.z;
@@ -696,10 +712,62 @@ void explodeProjectile(SOCKET sock,
     packet.ownerPlayerId = projectile.ownerPlayerId;
     packet.fireSerial = projectile.fireSerial;
     packet.weapon = projectile.weaponType;
+    packet.weaponDefNetworkId = projectile.weaponDefNetworkId;
     packet.posX = position.x;
     packet.posY = position.y;
     packet.posZ = position.z;
     packet.radius = projectile.splashRadius;
+
+    // Resolve the exact weapon definition so thrown smoke/fire grenades spawn
+    // their area-effect volume instead of a splash explosion. Frag/rocket keep
+    // the splash path. The explode packet is broadcast for every case so every
+    // client can spawn the same visual deterministically from weaponDefNetworkId.
+    const WeaponDefinition* explodeDef = nullptr;
+    if (const std::string* defId = weaponIdForDefNetworkId(projectile.weaponDefNetworkId))
+        explodeDef = WeaponRegistry::instance().get(*defId);
+    float onExpireEffect = 0.0f;
+    if (explodeDef)
+    {
+        auto it = explodeDef->customParams.find("on_expire_effect");
+        if (it != explodeDef->customParams.end())
+            onExpireEffect = it->second;
+    }
+    if (explodeDef && onExpireEffect > 0.5f)
+    {
+        const AreaEffectType effect =
+            onExpireEffect >= 1.5f ? AreaEffectType::Fire : AreaEffectType::Smoke;
+        const AreaEffectParams params =
+            areaEffectParamsFromDefinition(*explodeDef, effect);
+        if (effect == AreaEffectType::Smoke)
+            AreaEffectSystem::instance().spawnSmoke(position, params, (int)tick,
+                                                    projectile.ownerPlayerId);
+        else
+            AreaEffectSystem::instance().spawnFire(position, params, (int)tick,
+                                                   projectile.ownerPlayerId);
+    }
+
+    auto splashDamageAt = [&](float dist) -> float {
+        if (projectile.fullDamageRadius > 0.0f)
+        {
+            if (dist <= projectile.fullDamageRadius)
+                return projectile.splashDamage;
+            if (dist >= projectile.splashRadius)
+                return projectile.edgeDamage;
+            const float t = (dist - projectile.fullDamageRadius) /
+                std::max(0.001f, projectile.splashRadius - projectile.fullDamageRadius);
+            return glm::mix(projectile.splashDamage, projectile.edgeDamage, t);
+        }
+        return projectile.splashDamage *
+            std::exp(-std::pow(dist / projectile.splashRadius, 2.0f) *
+                     projectile.splashExponent);
+    };
+    auto splashKnockScaleAt = [&](float dist, float damageValue) -> float {
+        if (projectile.fullDamageRadius > 0.0f)
+            return std::clamp(damageValue / std::max(0.001f, projectile.splashDamage),
+                              0.0f, 1.0f);
+        const float t = dist / projectile.splashRadius;
+        return (1.0f - t * t) * 0.85f + 0.15f;
+    };
 
     if (directTargetId != 0)
     {
@@ -737,6 +805,8 @@ void explodeProjectile(SOCKET sock,
     for (auto& entry : players)
     {
         ServerPlayer& victim = entry.second;
+        if (!projectile.splashEnabled)
+            break;
         if (victim.dead)
             continue;
         // Team-based friendly fire filtering: skip friendly players in explosion splash
@@ -770,9 +840,7 @@ void explodeProjectile(SOCKET sock,
         const glm::vec3 dir = dist > 0.001f
             ? toVictim / dist
             : glm::vec3(0.0f, 1.0f, 0.0f);
-        float damageValue = projectile.splashDamage *
-            std::exp(-std::pow(dist / projectile.splashRadius, 2.0f) *
-                     projectile.splashExponent);
+        float damageValue = splashDamageAt(dist);
         if (victim.id == directTargetId && dist < 1.5f)
             damageValue = std::max(damageValue, projectile.splashDamage);
         const bool isSelfDamage = (victim.id == projectile.ownerPlayerId);
@@ -780,8 +848,7 @@ void explodeProjectile(SOCKET sock,
             damageValue *= std::max(0.0f, projectile.selfDamageMultiplier);
         const int finalDamage = std::max(1, (int)std::round(damageValue));
 
-        const float t = dist / projectile.splashRadius;
-        const float knockScale = (1.0f - t * t) * 0.85f + 0.15f;
+        const float knockScale = splashKnockScaleAt(dist, damageValue);
         const float ownerMul = isSelfDamage
             ? projectile.selfKnockbackMultiplier
             : 1.0f;
@@ -847,6 +914,8 @@ void explodeProjectile(SOCKET sock,
     for (auto& npcEntry : npcs)
     {
         ServerNpc& npc = npcEntry.second;
+        if (!projectile.splashEnabled)
+            break;
         if (npc.health <= 0)
             continue;
         // Skip the NPC that fired this projectile (no self-damage)
@@ -875,13 +944,10 @@ void explodeProjectile(SOCKET sock,
         const glm::vec3 dir = dist > 0.001f
             ? toNpc / dist
             : glm::vec3(0.0f, 1.0f, 0.0f);
-        float damageValue = projectile.splashDamage *
-            std::exp(-std::pow(dist / projectile.splashRadius, 2.0f) *
-                     projectile.splashExponent);
+        float damageValue = splashDamageAt(dist);
         const int finalDamage = std::max(1, (int)std::round(damageValue));
 
-        const float t = dist / projectile.splashRadius;
-        const float knockScale = (1.0f - t * t) * 0.85f + 0.15f;
+        const float knockScale = splashKnockScaleAt(dist, damageValue);
         const glm::vec3 knockback =
             dir * projectile.knockbackStrength * knockScale;
 
@@ -892,6 +958,8 @@ void explodeProjectile(SOCKET sock,
         {
             npc.health = 0;
             const char* killWeaponId = networkWeaponTypeName(projectile.weaponType);
+            if (const std::string* defId = weaponIdForDefNetworkId(projectile.weaponDefNetworkId))
+                killWeaponId = defId->c_str();
             std::string killWeaponDisplay = killWeaponId;
             if (const WeaponDefinition* wd = WeaponRegistry::instance().get(killWeaponId))
                 if (!wd->displayName.empty()) killWeaponDisplay = wd->displayName;
@@ -1055,9 +1123,12 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
     projectile.ownerPlayerId = shooter.id;
     projectile.fireSerial = requestId;
     projectile.weaponType = networkWeapon;
+    projectile.weaponDefNetworkId = weaponDefNetworkIdFor(definition.id);
     projectile.position = origin;
     projectile.previousPosition = origin;
     projectile.velocity = dir * cfg.speed + glm::vec3(0.0f, 0.0f, cfg.upBias);
+    if (cfg.inheritOwnerVelocity)
+        projectile.velocity += shooter.vel;
     projectile.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
     if (networkWeapon == NETWORK_WEAPON_GRENADE_LAUNCHER)
     {
@@ -1073,6 +1144,9 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
     projectile.splashRadius = cfg.splashRadius;
     projectile.splashDamage = cfg.splashDamage;
     projectile.splashExponent = cfg.splashExponent;
+    projectile.fullDamageRadius = cfg.fullDamageRadius;
+    projectile.edgeDamage = cfg.edgeDamage;
+    projectile.splashEnabled = (cfg.onExpireEffect == 0.0f);
     projectile.knockbackStrength = cfg.knockbackStrength;
     projectile.selfKnockbackMultiplier = cfg.selfKnockbackMultiplier;
     projectile.selfDamageMultiplier = cfg.selfDamageMultiplier;
@@ -1794,6 +1868,67 @@ void tickServerProjectiles(SOCKET sock,
     gProjectilePerf.activeProjectiles = activeCount;
     gProjectilePerf.movingProjectiles = movingCount;
     gProjectilePerf.sleepingProjectiles = sleepingCount;
+
+    // ── Persistent area effects (smoke/fire) ─────────────────────────
+    // The server owns fire damage; clients predict it locally and reconcile.
+    AreaEffectSystem::instance().update((int)tick);
+    std::vector<AreaEffectContactTarget> fireTargets;
+    fireTargets.reserve(players.size() + npcs.size());
+    for (const auto& entry : players)
+    {
+        const ServerPlayer& p = entry.second;
+        if (p.dead)
+            continue;
+        AreaEffectContactTarget t;
+        t.id = p.id;
+        t.center = p.pos + glm::vec3(0.0f, 0.0f, PLAYER_HEIGHT * 0.5f);
+        t.radius = PLAYER_RADIUS;
+        t.height = PLAYER_HEIGHT;
+        fireTargets.push_back(t);
+    }
+    for (const auto& entry : npcs)
+    {
+        const ServerNpc& n = entry.second;
+        if (n.health <= 0)
+            continue;
+        AreaEffectContactTarget t;
+        t.id = n.entityId;
+        t.center = n.pos + glm::vec3(0.0f, 0.0f, PLAYER_HEIGHT * 0.5f);
+        t.radius = PLAYER_RADIUS;
+        t.height = PLAYER_HEIGHT;
+        fireTargets.push_back(t);
+    }
+    std::vector<AreaEffectDamageEvent> fireDamage;
+    AreaEffectSystem::instance().collectFireDamage(fireTargets, (int)tick, fireDamage);
+    for (const AreaEffectDamageEvent& ev : fireDamage)
+    {
+        auto pIt = players.find(ev.targetId);
+        if (pIt != players.end() && !pIt->second.dead)
+        {
+            ServerPlayer& victim = pIt->second;
+            const ServerDamageResult dmg = applyServerDamage(
+                players, victim, 0, ev.damage, glm::vec3(0.0f), ServerDamageSource::Fire);
+            queueServerDamageConfirmedEvent(
+                sock, players, tick, totalPacketsOut, 0, victim, ev.damage, dmg,
+                victim.pos, glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f),
+                ServerDamageSource::Fire, NETWORK_WEAPON_GRENADE_LAUNCHER, 0, 0, 0,
+                std::string());
+            continue;
+        }
+        auto nIt = npcs.find(ev.targetId);
+        if (nIt != npcs.end() && nIt->second.health > 0)
+        {
+            ServerNpc& npc = nIt->second;
+            npc.health -= ev.damage;
+            const bool killed = npc.health <= 0;
+            if (killed)
+                npc.health = 0;
+            broadcastNpcDamageEvent(
+                sock, players, tick, totalPacketsOut, 0, npc, ev.damage, killed,
+                npc.pos, npc.pos, glm::vec3(0.0f, 0.0f, 1.0f),
+                glm::vec3(0.0f, 0.0f, -1.0f), NETWORK_WEAPON_GRENADE_LAUNCHER);
+        }
+    }
 }
 
 void cancelDeadNpcProjectiles(

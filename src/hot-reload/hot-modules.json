@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "comment": "Hot replaceable module manifest. Sources are compiled into the coarse mimita-game DLL; headers participate in change detection and code hashing. Extend modules in later live-code phases.",
+  "modules": [
+    {
+      "name": "effects",
+      "abi": 1,
+      "sources": [
+        "src/effects/effect-part.cpp"
+      ]
+    }
+  ],
+  "headers": [
+    "src/hot-reload/game-api.h"
+  ]
+}

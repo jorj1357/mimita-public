@@ -566,6 +566,10 @@ struct ServerNpc
     float orbitAngle = 0.0f;
     ServerNpcState aiState = ServerNpcState::Chase;
     glm::vec3 knockbackImpulse{0.0f};
+    // Most recent attacker, used to attribute the real NPC's mind events when
+    // health is synced from this mirror back onto the simulated body.
+    uint32_t lastAttackerId = 0;
+    glm::vec3 lastAttackerPos{0.0f};
     // Replicated weapon presentation: which slot the NPC holds and its
     // runtime state (firing / reloading / empty), mirroring player snapshots.
     int16_t equippedSlot = 0;
@@ -598,7 +602,8 @@ enum class ServerDamageSource : uint8_t
     Melee,
     PhysicalContact,
     RocketExplosion,
-    GrenadeExplosion
+    GrenadeExplosion,
+    Fire
 };
 
 enum class ServerActorKind : uint8_t { Player = ENTITY_PLAYER, Npc = ENTITY_NPC };
@@ -644,6 +649,7 @@ struct ServerProjectile
     uint32_t ownerNpcId = 0;       // NPC that fired this projectile (0 = player-fired)
     uint32_t fireSerial = 0;
     uint8_t weaponType = NETWORK_WEAPON_NONE;
+    uint16_t weaponDefNetworkId = 0;
     glm::vec3 position{0.0f};
     glm::vec3 previousPosition{0.0f};
     glm::vec3 velocity{0.0f};
@@ -655,6 +661,9 @@ struct ServerProjectile
     float splashRadius = 0.0f;
     float splashDamage = 0.0f;
     float splashExponent = 2.0f;
+    float fullDamageRadius = 0.0f;
+    float edgeDamage = 0.0f;
+    bool splashEnabled = true;
     float knockbackStrength = 0.0f;
     float selfKnockbackMultiplier = 1.0f;
     float selfDamageMultiplier = 1.0f;

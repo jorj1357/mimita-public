@@ -131,3 +131,23 @@ HealthbarConfigData& HealthbarConfig::edit()
 {
     return mData;
 }
+
+void HealthbarConfig::setMatchOverride(bool aimModeEnabled, bool showName,
+                                       bool showHpText, bool showBar,
+                                       float maxDistance)
+{
+    // Start from the user's current values so colors and timings are preserved,
+    // then override only the mode-declared fields.
+    mMatchOverride = mData;
+    mMatchOverride.aimModeEnabled = aimModeEnabled;
+    mMatchOverride.showNameInAimMode = showName;
+    mMatchOverride.showHpTextInAimMode = showHpText;
+    mMatchOverride.showBarInAimMode = showBar;
+    mMatchOverride.maxDistance = std::max(0.0f, maxDistance);
+    mMatchOverrideActive = true;
+}
+
+void HealthbarConfig::clearMatchOverride()
+{
+    mMatchOverrideActive = false;
+}

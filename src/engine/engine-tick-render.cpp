@@ -31,6 +31,7 @@
 #include "combat/weapon-system.h"
 #include "combat/weapon-rocket-launcher.h"
 #include "combat/weapon-registry.h"
+#include "combat/area-effect.h"
 #include "combat/death-system.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "effects/effect-part.h"
@@ -616,6 +617,8 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     { MIMITA_PERF_SCOPE("Rendering::Effects::PersistentPhysics");
       Perf::state().renderPerf.persistentPhysics++;
       PersistentPhysicsSystem::instance().render(camera); }
+    { MIMITA_PERF_SCOPE("Rendering::Effects::AreaEffects");
+      AreaEffectSystem::instance().render(camera); }
     { MIMITA_PERF_SCOPE("Rendering::Effects::HitBursts");
       Perf::state().renderPerf.hitBursts++;
       HitEffects::renderHitBursts(camera); }

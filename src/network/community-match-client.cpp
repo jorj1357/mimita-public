@@ -16,6 +16,8 @@
 #include "config/camera-config.h"
 #include "config/ragdoll-death-config.h"
 #include "config/impact-decals-config.h"
+#include "config/gameplay-config.h"
+#include "gui/hud/healthbar-config.h"
 #include "debug/debug-log.h"
 
 #include <chrono>
@@ -75,6 +77,14 @@ void CommunityMatchClient::reset()
     mCameraFov = 0.0f;
     mRagdollEnabled = 0;
     mBloodEnabled = 0;
+    mAimMode.clear();
+    mObjectiveBombState = 0;
+    mPlantPercent = 0;
+    mDefusePercent = 0;
+
+    // Restore player-owned gameplay/healthbar settings when a match ends.
+    GameplayConfig::instance().clearAimModeOverride();
+    HealthbarConfig::instance().clearMatchOverride();
 
     mActors.clear();
 
@@ -274,6 +284,38 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         mBloodEnabled = newBlood;
     }
 
+    // ── Apply forced aim mode (mode wins while the match is active) ──
+    const std::string newAimMode = packet.aimMode;
+    if (newAimMode != mAimMode)
+    {
+        mAimMode = newAimMode;
+        if (!mAimMode.empty())
+        {
+            GameplayAimMode parsed;
+            if (gameplayAimModeFromString(mAimMode, parsed))
+            {
+                GameplayConfig::instance().setAimModeOverride(parsed);
+                Debug::log(Debug::Category::Weapons,
+                    "[GAMEMODE OVERRIDE] aim mode forced to %s\n", mAimMode.c_str());
+            }
+        }
+        else
+        {
+            GameplayConfig::instance().clearAimModeOverride();
+        }
+    }
+
+    // ── Apply forced healthbar settings ─────────────────────────────
+    if (packet.healthbarOverride)
+    {
+        HealthbarConfig::instance().setMatchOverride(
+            packet.healthbarAimModeEnabled != 0,
+            packet.healthbarShowName != 0,
+            packet.healthbarShowHpText != 0,
+            packet.healthbarShowBar != 0,
+            packet.healthbarMaxDistance);
+    }
+
     // Focused countdown diagnostics: which phase/number the client believes it
     // should show, and the incoming vs last-applied authoritative tick, so
     // reordering or a stalled countdown is visible in the Network/Duel log.
@@ -328,13 +370,30 @@ void CommunityMatchClient::onBombTagState(const BombTagStatePacket& packet)
     mBombInactiveTicks = packet.inactiveTicksRemaining;
     mServerTick = packet.serverTick;
     mBombPos = glm::vec3(packet.bombPosX, packet.bombPosY, packet.bombPosZ);
+    mObjectiveBombState = packet.objectiveState;
+    mPlantPercent = packet.plantPercent;
+    mDefusePercent = packet.defusePercent;
 
-    // Set mode to bombtag if we receive bomb tag state
-    if (mMode != "bomb_tag") {
+    // Set mode to bombtag only when this packet is the mode's primary source.
+    // Objective modes (counterstrike) already have their mode set by
+    // DuelStatePacket and must not be relabeled.
+    if (mMode.empty()) {
         mMode = "bomb_tag";
         MatchLeaderboard& hud = MatchLeaderboard::instance();
         hud.setMode(mMode, 0);
     }
+}
+
+bool CommunityMatchClient::localActorSpectating() const
+{
+    if (!active()) return false;
+    const uint32_t localId = MP_CONTEXT.localPlayerId;
+    for (const ReplicatedActorIdentity& actor : mActors)
+    {
+        if (actor.actorId == localId)
+            return actor.state == 3;  // ActorState::Spectating
+    }
+    return false;
 }
 
 }

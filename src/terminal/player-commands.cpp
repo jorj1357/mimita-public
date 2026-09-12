@@ -19,28 +19,13 @@
 #include "gui/hud/chat-window.h"
 #include "replay/replay-scene.h"
 #include "avatar/avatar.h"
+#include "utils/time-format.h"
 
 #include <chrono>
 #include <ctime>
 
 namespace
 {
-std::string chatUtcNow()
-{
-    const std::time_t now = std::chrono::system_clock::to_time_t(
-        std::chrono::system_clock::now());
-    std::tm utc{};
-    gmtime_s(&utc, &now);
-    char buf[32]{};
-    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &utc);
-    return buf;
-}
-
-uint64_t chatNowMs()
-{
-    return (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
-}
 }
 
 // TODO(main-cleanup): move to devtools/dev-teleport.cpp
@@ -73,7 +58,7 @@ void requestSendChatMessage(const std::string& message)
         noteChatActivity();
         Debug::log(Debug::Category::Chat,
                    "[CHAT DEBUG SEND] utc=%s text=\"%s\" sender=%s localPlayerId=%u server=%s room=%s session=%s\n",
-                   chatUtcNow().c_str(), trimmed.c_str(), player.username.c_str(),
+                   MiMitaTime::utcIso8601Seconds().c_str(), trimmed.c_str(), player.username.c_str(),
                    mpContext.localPlayerId, mpContext.serverAddress.c_str(),
                    mpContext.roomCode.c_str(), mpContext.sessionId.c_str());
         // Use new v2 chat request packet
@@ -85,7 +70,7 @@ void requestSendChatMessage(const std::string& message)
         req.clientSimulationTick = mpContext.tick;
         std::strncpy(req.utf8Message, trimmed.c_str(), sizeof(req.utf8Message) - 1);
         MimitaNet::mpSendPacket(mpContext, &req, sizeof(req));
-        const uint64_t sentMs = chatNowMs();
+        const uint64_t sentMs = MiMitaTime::monotonicMillis();
         mpContext.pendingChatRequests[req.requestId] = {
             req.requestId, sentMs, sentMs, 1, trimmed};
         Debug::log(Debug::Category::Chat,

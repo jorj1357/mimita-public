@@ -1,0 +1,22 @@
+{
+  "id": "waves",
+  "name": "NPC Waves",
+  "description": "Endless NPC waves. Round N spawns N enemies. Kill them all to advance a round. One death ends your run and resets to round 1.",
+  "team_names": [],
+  "goal_value": 1,
+  "weapon_set_id": 1,
+  "time_limit_seconds": 0,
+  "respawn_seconds": 0,
+  "kill_heals": true,
+  "win_condition": "npc_waves",
+  "countdown_seconds": 3,
+  "go_seconds": 0.75,
+  "rematch_seconds": 0,
+  "spawn_offset_radius": 6.0,
+  "spawn_strategy": "shared",
+  "intermission_seconds": 5,
+  "results_seconds": 5,
+  "wave_start_count": 1,
+  "wave_increment": 1,
+  "maps": ["mimita-duels-map-v3", "atdm", "funworld"]
+}

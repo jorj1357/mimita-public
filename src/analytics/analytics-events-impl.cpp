@@ -2,6 +2,7 @@
 
 #include "analytics/analytics-events.h"
 #include "game/version.h"
+#include "utils/time-format.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -25,18 +26,6 @@ std::string dateToday()
                   tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
     return buf;
 }
-
-std::string isoNow()
-{
-    std::time_t t = std::time(nullptr);
-    std::tm tm{};
-    gmtime_s(&tm, &t);
-    char buf[32]{};
-    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
-    return buf;
-}
-
-
 
 bool parseDate(const std::string& value, std::tm& out)
 {
@@ -77,7 +66,7 @@ void AnalyticsManager::track(const std::string& eventName, const json& propertie
         mSessionId + "-" + std::to_string(++mEventCounter);
     event["username"] = mUsername;
     event["app_version"] = MIMITA_VERSION_STRING;
-    event["occurred_at"] = isoNow();
+    event["occurred_at"] = MiMitaTime::utcIso8601Seconds();
     event["properties"] = properties.is_object() ? properties : json::object();
     if (!mAccountId.empty())
         event["account_id"] = mAccountId;

@@ -143,6 +143,7 @@ void registerCursorCommands();
 #include "terminal/editor-commands.h"
 #include "terminal/network-commands.h"
 #include "terminal/badconn-commands.h"
+#include "terminal/live-code-commands.h"
 #include "terminal/vip-commands.h"
 #include "network/badconn/badconn.h"
 #include "terminal/auth-commands.h"
@@ -201,6 +202,10 @@ extern std::unordered_map<std::string, WeaponViewModel>* gpReplayWeaponModels;
 
 extern Renderer* gRenderer;
 
+// Gameplay spectator freecam lock. The spectator owner forces freecam on and
+// holds this true until the round resets, so the player cannot detach early.
+bool gSpectatorFreecamLocked = false;
+
 void gameInitSubsystems(Engine& engine)
 {
     DevConfig::instance().load("config/dev_controls.txt");
@@ -251,7 +256,7 @@ void gameInitSubsystems(Engine& engine)
     HealthbarConfig::instance().load();
 
     EffectPartSystem::instance().init();
-    // HotReload DLL is lazy-loaded on first reloadGameDLLIfChanged() call
+    // HotReload DLL and its background build worker start in gameInit().
     printf("[MAIN] dev tools initialized\n");
 
     glEnable(GL_BLEND);
@@ -423,6 +428,7 @@ void gameInitSubsystems(Engine& engine)
     registerNetworkCommands();
     badconn::loadConfig(badconn::configPath());
     registerBadConnCommands();
+    registerLiveCodeCommands();
 
     registerReplayCaptureCommands();
     registerReplayCommands();

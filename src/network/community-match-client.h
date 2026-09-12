@@ -45,6 +45,18 @@ public:
     int redScore() const { return mRedScore; }
     int blueScore() const { return mBlueScore; }
     float cameraFov() const { return mCameraFov; }
+    // Forced gameplay overrides ("" = no override).
+    const std::string& aimMode() const { return mAimMode; }
+
+    // ── Objective bomb (Counter-Strike style) ────────────────────────
+    uint8_t objectiveBombState() const { return mObjectiveBombState; }
+    uint8_t objectivePlantPercent() const { return mPlantPercent; }
+    uint8_t objectiveDefusePercent() const { return mDefusePercent; }
+    bool objectiveBombActive() const { return mObjectiveBombState != 0; }
+
+    // True when the local actor is dead/spectating for the current round. Used
+    // by the spectator camera owner to lock freecam until the round resets.
+    bool localActorSpectating() const;
 
     // ── Bomb Tag state (replicated from server) ──────────────────────
     uint8_t bombOwnerType() const { return mBombOwnerType; }
@@ -98,6 +110,11 @@ private:
     uint8_t mRagdollEnabled = 0;     // 0=no override, 1=disabled, 2=enabled
     uint8_t mBloodEnabled = 0;       // 0=no override, 1=disabled, 2=enabled
     bool mOverridesApplied = false;  // true if backups saved + overrides applied
+    std::string mAimMode;            // "" = no override
+    // Objective bomb replicated state.
+    uint8_t mObjectiveBombState = 0;
+    uint8_t mPlantPercent = 0;
+    uint8_t mDefusePercent = 0;
     std::vector<ReplicatedActorIdentity> mActors;
 };
 

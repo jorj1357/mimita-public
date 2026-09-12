@@ -105,6 +105,7 @@ void GamemodeRegistry::loadDirectory(const std::string& dir)
         if (!slot.mode.id.empty())
             modes_.push_back(std::move(slot));
     }
+    ++revision_;
 
     Debug::warn(Debug::Category::Duel, "[GAMEMODE] Loaded %zu gamemode(s) from %s\n", modes_.size(), dir.c_str());
 }
@@ -124,8 +125,10 @@ void GamemodeRegistry::pollReload()
         loadFile(slot.path, slot);
     }
 
-    if (changed)
+    if (changed) {
+        ++revision_;
         Debug::warn(Debug::Category::Duel, "[GAMEMODE] Reload complete\n");
+    }
 }
 
 void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
@@ -184,6 +187,7 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             next.features.bossHealthbar = optBool(f, "boss_healthbar", next.features.bossHealthbar);
             next.features.worldText = optBool(f, "world_text", next.features.worldText);
             next.features.timerAboveEntity = optBool(f, "timer_above_entity", next.features.timerAboveEntity);
+            next.features.objectiveBomb = optBool(f, "objective_bomb", next.features.objectiveBomb);
         }
 
         // ── Visual/settings overrides ───────────────────────────────
@@ -207,8 +211,33 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             }
         }
 
+        // ── Forced gameplay overrides (optional) ────────────────────
+        next.aimMode = optString(root, "aim_mode", next.aimMode);
+        next.movementPreset = optString(root, "movement_preset", next.movementPreset);
+        if (root.contains("healthbar") && root["healthbar"].is_object()) {
+            const auto& hb = root["healthbar"];
+            next.healthbar.explicitValue = true;
+            next.healthbar.aimModeEnabled = optBool(hb, "aim_mode_enabled", next.healthbar.aimModeEnabled);
+            next.healthbar.showNameInAimMode = optBool(hb, "show_name_in_aim_mode", next.healthbar.showNameInAimMode);
+            next.healthbar.showHpTextInAimMode = optBool(hb, "show_hp_text_in_aim_mode", next.healthbar.showHpTextInAimMode);
+            next.healthbar.showBarInAimMode = optBool(hb, "show_bar_in_aim_mode", next.healthbar.showBarInAimMode);
+            next.healthbar.maxDistance = optFloat(hb, "max_distance", next.healthbar.maxDistance);
+        }
+
+        // ── Objective bomb timings (optional) ───────────────────────
+        next.bombPlantSeconds = std::max(0.0f, optFloat(root, "bomb_plant_seconds", next.bombPlantSeconds));
+        next.bombDefuseSeconds = std::max(0.0f, optFloat(root, "bomb_defuse_seconds", next.bombDefuseSeconds));
+        next.bombTimerSeconds = std::max(1.0f, optFloat(root, "bomb_timer_seconds", next.bombTimerSeconds));
+        next.bombExplosionRadius = std::max(0.0f, optFloat(root, "bomb_explosion_radius", next.bombExplosionRadius));
+        next.bombExplosionDamage = std::max(0.0f, optFloat(root, "bomb_explosion_damage", next.bombExplosionDamage));
+
         // ── Elimination / win rules (optional) ──────────────────────
         next.winCondition = optString(root, "win_condition", next.winCondition);
+        next.useModeMaps = optBool(root, "use_mode_maps", next.useModeMaps);
+
+        // ── NPC wave rules (optional) ───────────────────────────────
+        next.waveStartCount = std::max(0, optInt(root, "wave_start_count", next.waveStartCount));
+        next.waveIncrement = std::max(0, optInt(root, "wave_increment", next.waveIncrement));
 
         slot.mode = next;
         Debug::warn(Debug::Category::Duel,

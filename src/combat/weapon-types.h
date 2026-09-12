@@ -28,6 +28,7 @@ enum class WeaponBehaviorType {
     Swordsword,
     RocketLauncher,
     GrenadeLauncher,
+    Grenade,
     Hafs,
     QuickHit,
     SpyKnife
@@ -52,6 +53,7 @@ inline WeaponExecutionType weaponExecutionTypeForBehavior(WeaponBehaviorType beh
         return WeaponExecutionType::Hitscan;
     case WeaponBehaviorType::RocketLauncher:
     case WeaponBehaviorType::GrenadeLauncher:
+    case WeaponBehaviorType::Grenade:
     case WeaponBehaviorType::Projectile:
         return WeaponExecutionType::Projectile;
     case WeaponBehaviorType::Godball:

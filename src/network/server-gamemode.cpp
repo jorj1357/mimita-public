@@ -25,6 +25,8 @@
 #include "network/community-server-config.h"
 #include "gamemode/gamemode.h"
 #include "gamemode/match-roles.h"
+#include "gamemode/map-config.h"
+#include "config/gameplay-config.h"
 #include "persistence/persistence-queue.h"
 #include "persistence/persistence-events.h"
 #include "persistence/persistence-emit.h"
@@ -76,9 +78,24 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
 {
     ActorSpawnProfile out;
     const ServerGamemodeState& d = serverGamemodeState();
+
+    // Mode-level movement preset applies to every actor unless the actor's role
+    // names its own preset. Validated once through the shared role cache.
+    auto applyMovementPreset = [&](const std::string& preset) {
+        if (preset.empty()) return;
+        if (RoleMovementCache::instance().get(preset)) {
+            out.movementPreset = preset;
+        } else {
+            Debug::warn(Debug::Category::Duel,
+                "[ROLES] unknown movement preset \"%s\"; using default movement\n",
+                preset.c_str());
+        }
+    };
+    applyMovementPreset(d.movementPreset);
+
     auto it = d.matchActors.find(actorId);
     if (it == d.matchActors.end() || it->second.roleId.empty())
-        return out;
+        return out;  // no role: mode-level overrides still apply
 
     const MatchRoleDefinition* def =
         MatchRoleRegistry::instance().get(it->second.roleId);
@@ -210,6 +227,26 @@ void serverStartMode(const ServerGamemodeState& rules)
     d.winnerTeam = -1;
     d.killEventCounter = 0;
     d.pendingKillEvents.clear();
+
+    // ── Forced gameplay overrides / objective rounds ───────────────
+    d.aimMode.clear();
+    d.movementPreset.clear();
+    d.healthbarOverride = false;
+    d.appliedRulesRevision = 0;
+    d.objectiveRounds = false;
+    d.roundWins[0] = d.roundWins[1] = 0;
+    d.roundNumber = 0;
+    d.roundOver = false;
+    d.roundEndReason.clear();
+    d.teamSpawnPoints[0].clear();
+    d.teamSpawnPoints[1].clear();
+    d.objectiveBombState = BOMB_OBJ_NONE;
+    d.objectiveBombCarrierId = 0;
+    d.objectiveBombPos = glm::vec3(0.0f);
+    d.objectiveBombTimer = 0.0f;
+    d.objectiveBombPlantProgress = 0.0f;
+    d.objectiveBombDefuseProgress = 0.0f;
+    d.appliedRulesRevision = GamemodeRegistry::instance().revision();
 
     Debug::warn(Debug::Category::Duel,
         "[DUEL SERVER] enabled mode=%s goal=%d countdown=%.1fs rematch=%.1fs teams=%s/%s rotate=%d pool=%zu offset=%.1f timeLimit=%d intermission=%d results=%d\n",
@@ -386,6 +423,54 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.bloodExplicit = gm.bloodExplicit;
     d.bloodEnabled = gm.bloodEnabled;
 
+    // ── Forced gameplay overrides from gamemode ────────────────────
+    d.aimMode = gm.aimMode;
+    d.movementPreset = gm.movementPreset;
+    d.healthbarOverride = gm.healthbar.explicitValue;
+    d.healthbarAimModeEnabled = gm.healthbar.aimModeEnabled;
+    d.healthbarShowName = gm.healthbar.showNameInAimMode;
+    d.healthbarShowHpText = gm.healthbar.showHpTextInAimMode;
+    d.healthbarShowBar = gm.healthbar.showBarInAimMode;
+    d.healthbarMaxDistance = gm.healthbar.maxDistance;
+    // Server-side authority uses the same forced aim mode as clients.
+    if (!d.aimMode.empty()) {
+        GameplayAimMode parsed;
+        if (gameplayAimModeFromString(d.aimMode, parsed))
+            GameplayConfig::instance().setAimModeOverride(parsed);
+        else
+            Debug::warn(Debug::Category::Duel,
+                "[GAMEMODE] mode %s has unknown aim_mode \"%s\"; keeping player setting\n",
+                resolvedGamemodeId.c_str(), d.aimMode.c_str());
+    } else {
+        GameplayConfig::instance().clearAimModeOverride();
+    }
+    d.appliedRulesRevision = GamemodeRegistry::instance().revision();
+
+    // ── Objective rounds + bomb ────────────────────────────────────
+    d.objectiveRounds = (gm.winCondition == "objective_rounds");
+    d.roundWins[0] = d.roundWins[1] = 0;
+    d.roundNumber = 0;
+    d.roundOver = false;
+    d.roundEndReason.clear();
+    d.objectiveBombPlantSeconds = gm.bombPlantSeconds;
+    d.objectiveBombDefuseSeconds = gm.bombDefuseSeconds;
+    d.objectiveBombTimerMax = gm.bombTimerSeconds;
+    d.objectiveBombExplosionRadius = gm.bombExplosionRadius;
+    d.objectiveBombExplosionDamage = gm.bombExplosionDamage;
+    d.objectiveBombState = BOMB_OBJ_NONE;
+    d.objectiveBombCarrierId = 0;
+    d.objectiveBombPlantProgress = 0.0f;
+    d.objectiveBombDefuseProgress = 0.0f;
+    d.objectiveBombTimer = 0.0f;
+    d.objectiveBombPos = glm::vec3(0.0f);
+
+    // ── NPC waves ──────────────────────────────────────────────────
+    d.npcWaves = (gm.winCondition == "npc_waves");
+    d.waveStartCount = gm.waveStartCount;
+    d.waveIncrement = gm.waveIncrement;
+    d.waveNumber = 0;
+    d.waveBest.clear();
+
     Debug::warn(Debug::Category::Duel,
         "[MATCH RULES] mode=%s respawn=%.2fs respawns=%d kill_heals=%d win=%s roles=%zu\n",
         resolvedGamemodeId.c_str(), d.respawnSeconds, (int)serverMatchRespawnsEnabled(),
@@ -397,7 +482,15 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.mapOnly = false;
     d.lastBroadcastTick = 0;
     d.stateBroadcastPending = true;
-    d.rotateMaps = d.autoMapRotation;
+    if (gm.useModeMaps && !gm.maps.empty()) {
+        // Opt-in mode-specific pool: a mode that asks for its own maps plays
+        // only those, so Counter-Strike stays on its authored map. Other modes
+        // keep the shared good-map pool behavior.
+        d.mapPool = gm.maps;
+        d.rotateMaps = (gm.maps.size() > 1);
+    } else {
+        d.rotateMaps = d.autoMapRotation;
+    }
     d.ffaKills.clear();
     d.ffaDeaths.clear();
     d.matchTeams.clear();
@@ -433,6 +526,15 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
 }
 
 namespace {
+
+// Defined later in this translation unit's unnamed namespace; used by the
+// shared state machine and the objective-bomb helpers.
+void broadcastBombTagState(SOCKET sock,
+                           ServerGamemodeState& d,
+                           const std::unordered_map<uint32_t, ServerPlayer>& players,
+                           uint64_t& totalPacketsOut);
+glm::vec3 getEntityRootPos(const ServerPlayer& p);
+glm::vec3 getEntityRootPos(const ServerNpc& n);
 
 uint32_t countActivePlayers(const std::unordered_map<uint32_t, ServerPlayer>& players)
 {
@@ -495,8 +597,10 @@ void broadcastDuelState(SOCKET sock,
     pkt.matchStartTick = d.matchStartTick;
     pkt.serverTick = d.currentServerTick;
     pkt.victoryType = d.victoryType;
-    pkt.redTeamKills = d.redTeamKills;
-    pkt.blueTeamKills = d.blueTeamKills;
+    // Objective-round modes present round wins through the shared team-score
+    // fields so the generic HUD shows the current round score.
+    pkt.redTeamKills = d.objectiveRounds ? d.roundWins[0] : d.redTeamKills;
+    pkt.blueTeamKills = d.objectiveRounds ? d.roundWins[1] : d.blueTeamKills;
     pkt.timeLimitSeconds = d.timeLimitSeconds;
     pkt.intermissionSeconds = (int32_t)d.intermissionSeconds;
     pkt.resultsSeconds = (int32_t)d.resultsSeconds;
@@ -506,6 +610,15 @@ void broadcastDuelState(SOCKET sock,
     pkt.cameraFov = d.cameraFov;
     pkt.ragdollEnabled = d.ragdollExplicit ? (d.ragdollEnabled ? 2 : 1) : 0;
     pkt.bloodEnabled = d.bloodExplicit ? (d.bloodEnabled ? 2 : 1) : 0;
+
+    // ── Forced gameplay overrides ──────────────────────────────────
+    std::strncpy(pkt.aimMode, d.aimMode.c_str(), sizeof(pkt.aimMode) - 1);
+    pkt.healthbarOverride = d.healthbarOverride ? 1 : 0;
+    pkt.healthbarAimModeEnabled = d.healthbarAimModeEnabled ? 1 : 0;
+    pkt.healthbarShowName = d.healthbarShowName ? 1 : 0;
+    pkt.healthbarShowHpText = d.healthbarShowHpText ? 1 : 0;
+    pkt.healthbarShowBar = d.healthbarShowBar ? 1 : 0;
+    pkt.healthbarMaxDistance = d.healthbarMaxDistance;
 
     // FFA top-3 leaderboard
     if (d.matchMode == "ffa") {
@@ -588,17 +701,39 @@ void assignGamemodeSpawns(ServerGamemodeState& d, const HeadlessWorld& world)
             "[DuelFallback] map=%s reason=no_spawn_points final=(%.3f,%.3f,%.3f)\n",
             d.mapId.c_str(), d.spawnA.x, d.spawnA.y, d.spawnA.z);
     }
+    // Per-map team spawns (config/maps/<map>.json). When present, team modes
+    // use these instead of the single match anchor; otherwise the anchor is the
+    // fallback so maps without a config keep working.
+    const MapConfig& mc = MapConfigRegistry::instance().get(d.mapId);
+    d.teamSpawnPoints[0].clear();
+    d.teamSpawnPoints[1].clear();
+    for (const MapTeamSpawn& sp : mc.teamSpawns[0]) d.teamSpawnPoints[0].push_back(sp.position);
+    for (const MapTeamSpawn& sp : mc.teamSpawns[1]) d.teamSpawnPoints[1].push_back(sp.position);
+
     Debug::log(Debug::Category::Duel,
-        "[DUEL SERVER] anchor=(%.1f %.1f %.1f) spawns=%zu\n",
-        d.spawnA.x, d.spawnA.y, d.spawnA.z, world.spawnPoints.size());
+        "[DUEL SERVER] anchor=(%.1f %.1f %.1f) spawns=%zu teamSpawnsT=%zu teamSpawnsCT=%zu\n",
+        d.spawnA.x, d.spawnA.y, d.spawnA.z, world.spawnPoints.size(),
+        d.teamSpawnPoints[0].size(), d.teamSpawnPoints[1].size());
+}
+
+// Team-aware spawn: team 0 = T, 1 = CT. Falls back to the single anchor when the
+// map has no per-team spawns, so non-team modes and unconfigured maps are
+// unchanged.
+glm::vec3 gamemodeSpawnPoint(const ServerGamemodeState& d, int team)
+{
+    static std::mt19937 rng(std::random_device{}());
+    std::uniform_real_distribution<float> dist(-d.spawnOffsetRadius, d.spawnOffsetRadius);
+    if (team >= 0 && team < 2 && !d.teamSpawnPoints[team].empty()) {
+        std::uniform_int_distribution<size_t> pick(0, d.teamSpawnPoints[team].size() - 1);
+        return d.teamSpawnPoints[team][pick(rng)] + glm::vec3(dist(rng), dist(rng), 0.0f);
+    }
+    return d.spawnA + glm::vec3(dist(rng), dist(rng), 0.0f);
 }
 
 // The anchor plus a random XY offset (so nobody can predict the exact spot).
 glm::vec3 gamemodeSpawnPoint(const ServerGamemodeState& d)
 {
-    static std::mt19937 rng(std::random_device{}());
-    std::uniform_real_distribution<float> dist(-d.spawnOffsetRadius, d.spawnOffsetRadius);
-    return d.spawnA + glm::vec3(dist(rng), dist(rng), 0.0f);
+    return gamemodeSpawnPoint(d, -1);
 }
 
 void assignGamemodeParticipants(ServerGamemodeState& d,
@@ -939,7 +1074,10 @@ void assignMatchParticipants(ServerGamemodeState& d,
 
     if (npcs) {
         for (const auto& kv : *npcs) {
-            if (kv.second.health <= 0) continue;
+            // Round-based modes keep dead NPCs on the roster so they are revived
+            // at the next round instead of being dropped from the match. Other
+            // modes keep skipping dead NPCs.
+            if (kv.second.health <= 0 && !d.objectiveRounds) continue;
             d.participants.push_back(kv.first);
             d.participantNames[kv.first] = kv.second.name.empty()
                 ? "NPC-" + std::to_string(kv.first) : kv.second.name;
@@ -1020,8 +1158,12 @@ void assignMatchParticipants(ServerGamemodeState& d,
         const uint32_t id = d.participants[i];
         ActorMatchDescriptor& desc = d.matchActors[id];
         int team = desc.teamId;
-        if (team < 0 && (d.matchMode == "tdm" ||
-                         d.winCondition == "last_team_standing"))
+        if (team < 0 && d.npcWaves)
+            // NPC waves are players-vs-NPCs: everyone NPC shares one team so
+            // they target the players and never each other.
+            team = (desc.controller == ActorController::Npc) ? 1 : 0;
+        else if (team < 0 && (d.matchMode == "tdm" ||
+                              d.winCondition == "last_team_standing"))
             team = (int)(i % 2);
         desc.teamId = team;
         if (team >= 0)
@@ -1123,7 +1265,10 @@ void resetGamemodeActorsAtMapSpawn(
     NpcSystem& npcSystem)
 {
     for (uint32_t pid : d.participants) {
-        const glm::vec3 spawn = gamemodeSpawnPoint(d);
+        int team = -1;
+        auto teamIt = d.matchTeams.find(pid);
+        if (teamIt != d.matchTeams.end()) team = teamIt->second;
+        const glm::vec3 spawn = gamemodeSpawnPoint(d, team);
         auto playerIt = players.find(pid);
         if (playerIt != players.end()) {
             ServerPlayer& p = playerIt->second;
@@ -1171,6 +1316,7 @@ void resetGamemodeActorsAtMapSpawn(
             npc.behavior = resolveNpcBehavior(profile.behaviorProfileId);
             if (npc.behavior.active && npc.behavior.aggression >= 0.0f)
                 npc.tuning.aggression = npc.behavior.aggression;
+            npcMindReset(npc);
             Debug::log(Debug::Category::NpcCombat,
                 "[NPC BEHAVIOR] actor=%u role=%s profile=%s aim=%.1f react=%.2f cadence=%.2f aggr=%.2f range=%.1f\n",
                 npc.id, profile.roleId.c_str(),
@@ -1271,8 +1417,8 @@ static void emitGamemodeMatchPersistence(ServerGamemodeState& d, uint32_t tick,
     event.matchId = "match_" + std::to_string(d.duelId);
     event.mode = d.matchMode;
     event.victoryType = d.victoryType == 0 ? "score_limit" : "time_limit";
-    event.redScore = d.redTeamKills;
-    event.blueScore = d.blueTeamKills;
+    event.redScore = d.objectiveRounds ? d.roundWins[0] : d.redTeamKills;
+    event.blueScore = d.objectiveRounds ? d.roundWins[1] : d.blueTeamKills;
     event.winnerTeam = d.winnerTeam == 0 ? "red" : "blue";
     event.winnerPlayerId = (int64_t)d.winnerPlayerId;
 
@@ -1445,7 +1591,386 @@ void checkMatchWinConditions(ServerGamemodeState& d, uint32_t tick,
     }
 }
 
+// ── NPC wave lifecycle (win_condition == "npc_waves") ──────────────────
+
+// Remove every NPC currently in the wave roster. The next server tick's
+// syncServerNpcDamageToNpc destroys the matching simulated bodies.
+void clearWaveNpcs(std::unordered_map<uint32_t, ServerNpc>& npcs,
+                   NpcSystem& npcSystem)
+{
+    npcs.clear();
+    npcSystem.destroyAll();
+}
+
+// Add `count` fresh NPCs for the current wave at the match anchor. Entries in
+// the ServerNpc map are adopted into the simulated NpcSystem on the next tick.
+void spawnWaveNpcs(ServerGamemodeState& d,
+                   std::unordered_map<uint32_t, ServerNpc>& npcs,
+                   int count)
+{
+    uint32_t nextId = 100000;
+    for (const auto& kv : npcs)
+        nextId = std::max(nextId, kv.first + 1);
+    for (int i = 0; i < count; ++i) {
+        while (npcs.count(nextId)) ++nextId;
+        ServerNpc npc;
+        npc.entityId = nextId;
+        npc.name = "Wave " + std::to_string(d.waveNumber) +
+                   " NPC " + std::to_string(i + 1);
+        npc.pos = gamemodeSpawnPoint(d);
+        npc.yaw = 0.0f;
+        npcs[nextId] = npc;
+        ++nextId;
+    }
+}
+
+// Start one NPC wave: wipe the previous wave, spawn round(N) enemies, rebuild
+// the participant roster, and run the shared 3-2-1-GO countdown so the player
+// is never dropped straight into a fight.
+void beginNpcWave(SOCKET sock,
+                  ServerGamemodeState& d,
+                  std::unordered_map<uint32_t, ServerPlayer>& players,
+                  std::unordered_map<uint32_t, ServerNpc>& npcs,
+                  NpcSystem& npcSystem,
+                  uint32_t tick,
+                  uint64_t& totalPacketsOut)
+{
+    if (d.waveNumber < 1) d.waveNumber = 1;
+    clearWaveNpcs(npcs, npcSystem);
+    const int count = std::max(1, d.waveStartCount +
+                                  (d.waveNumber - 1) * d.waveIncrement);
+    spawnWaveNpcs(d, npcs, count);
+    assignMatchParticipants(d, players, &npcs);
+    beginMatchCountdown(d, players, npcs, npcSystem, tick);
+    const std::string msg = "WAVE " + std::to_string(d.waveNumber) +
+                            " - " + std::to_string(count) + " ENEMIES";
+    broadcastServerChatMessage(sock, players, tick, totalPacketsOut, msg.c_str());
+    Debug::warn(Debug::Category::Duel,
+        "[WAVES] round=%d enemies=%d participants=%zu tick=%u\n",
+        d.waveNumber, count, d.participants.size(), tick);
+}
+
+// Resolve the NPC-wave round. Records each player's highest round, ends the
+// run when no player is left, and advances the round when every enemy is dead.
+void checkWaveConditions(ServerGamemodeState& d, uint32_t tick, SOCKET sock,
+                         std::unordered_map<uint32_t, ServerPlayer>& players,
+                         uint64_t& totalPacketsOut)
+{
+    if (!d.npcWaves || d.phase != DUEL_PHASE_ACTIVE) return;
+
+    int humanParticipants = 0;
+    int alivePlayers = 0;
+    int aliveNpcs = 0;
+    for (uint32_t id : d.participants) {
+        auto aIt = d.matchActors.find(id);
+        const bool inPlay = aIt != d.matchActors.end() &&
+            (aIt->second.state == ActorState::Alive ||
+             aIt->second.state == ActorState::Respawning);
+        if (players.find(id) != players.end()) {
+            ++humanParticipants;
+            int& best = d.waveBest[id];
+            if (d.waveNumber > best) best = d.waveNumber;
+            if (inPlay) ++alivePlayers;
+        } else if (inPlay) {
+            ++aliveNpcs;
+        }
+    }
+
+    // Every player is out of lives: the run is over. Show the best round.
+    // Guarded on a human being present so an empty server does not loop
+    // NPC-only runs forever after the last player leaves.
+    if (humanParticipants > 0 && alivePlayers <= 0) {
+        d.matchOver = true;
+        d.winnerPlayerId = 0;
+        d.winnerTeam = -1;
+        d.victoryType = 0;
+        d.phase = DUEL_PHASE_RESULTS;
+        d.phaseTimer = d.resultsSeconds;
+        ++d.stateVersion;
+        broadcastDuelState(sock, d, players, totalPacketsOut);
+        for (const auto& kv : d.waveBest) {
+            auto nameIt = d.participantNames.find(kv.first);
+            const std::string name = nameIt != d.participantNames.end()
+                ? nameIt->second : ("player " + std::to_string(kv.first));
+            const std::string line = name + " reached round " +
+                std::to_string(kv.second);
+            broadcastServerChatMessage(sock, players, tick, totalPacketsOut,
+                                       line.c_str());
+        }
+        Debug::warn(Debug::Category::Duel,
+            "[WAVES] run over round=%d participants=%zu\n",
+            d.waveNumber, d.participants.size());
+        return;
+    }
+
+    // Every enemy is dead: brief pause, then the next wave's countdown.
+    if (aliveNpcs <= 0) {
+        d.matchOver = false;
+        d.phase = DUEL_PHASE_RESULTS;
+        d.phaseTimer = 2.0f;
+        ++d.stateVersion;
+        broadcastDuelState(sock, d, players, totalPacketsOut);
+        Debug::warn(Debug::Category::Duel,
+            "[WAVES] round %d cleared; next wave\n", d.waveNumber);
+    }
+}
+
 } // namespace
+
+// ── Objective rounds + bomb (Counter-Strike style) ────────────────────
+// These are generic enough for any defuse-style mode; the JSON mode decides
+// whether they run (win_condition == "objective_rounds", objective_bomb feature).
+
+static bool bombSiteContains(const MapConfig& mc, const glm::vec3& p, int* siteIndexOut)
+{
+    for (int i = 0; i < (int)mc.bombSites.size(); ++i) {
+        const MapBombSite& site = mc.bombSites[i];
+        const glm::vec3 delta = p - site.center;
+        if (glm::dot(delta, delta) <= site.radius * site.radius) {
+            if (siteIndexOut) *siteIndexOut = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool objectiveTeamAlive(const ServerGamemodeState& d, int team)
+{
+    for (uint32_t id : d.participants) {
+        auto tIt = d.matchTeams.find(id);
+        if (tIt == d.matchTeams.end() || tIt->second != team) continue;
+        auto aIt = d.matchActors.find(id);
+        if (aIt != d.matchActors.end() &&
+            (aIt->second.state == ActorState::Alive ||
+             aIt->second.state == ActorState::Respawning))
+            return true;
+    }
+    return false;
+}
+
+static bool objectiveActorPos(const ServerGamemodeState&,
+                              uint32_t id,
+                              const std::unordered_map<uint32_t, ServerPlayer>& players,
+                              const std::unordered_map<uint32_t, ServerNpc>& npcs,
+                              glm::vec3& out)
+{
+    auto pIt = players.find(id);
+    if (pIt != players.end()) { out = getEntityRootPos(pIt->second); return true; }
+    auto nIt = npcs.find(id);
+    if (nIt != npcs.end()) { out = nIt->second.pos; return true; }
+    return false;
+}
+
+static uint32_t objectivePickCarrier(const ServerGamemodeState& d)
+{
+    // Called at round start, immediately after every participant is revived, so
+    // the replicated ActorState may still read Spectating from the last round.
+    // Team membership is the only reliable input here.
+    for (uint32_t id : d.participants) {
+        auto tIt = d.matchTeams.find(id);
+        if (tIt == d.matchTeams.end() || tIt->second != 0) continue;
+        return id;
+    }
+    return 0;
+}
+
+// Advances the bomb for one active tick. Sets d.roundOver + roundEndReason when
+// the bomb decides the round (exploded / defused). Does not transition phase.
+static void updateObjectiveBomb(ServerGamemodeState& d,
+                                std::unordered_map<uint32_t, ServerPlayer>& players,
+                                const std::unordered_map<uint32_t, ServerNpc>& npcs)
+{
+    if (!d.objectiveRounds || d.phase != DUEL_PHASE_ACTIVE || d.roundOver)
+        return;
+
+    const MapConfig& mc = MapConfigRegistry::instance().get(d.mapId);
+    const float pickupRadius = 2.0f;
+    const float defuseRadius = 2.5f;
+
+    switch (d.objectiveBombState) {
+    case BOMB_OBJ_CARRIED: {
+        auto cIt = players.find(d.objectiveBombCarrierId);
+        const bool carrierValid = cIt != players.end() && !cIt->second.dead &&
+            cIt->second.spawnState == ServerPlayer::Active;
+        if (!carrierValid) {
+            // Carrier disappeared without a kill event: drop in place.
+            d.objectiveBombState = BOMB_OBJ_DROPPED;
+            d.objectiveBombCarrierId = 0;
+            d.objectiveBombPlantProgress = 0.0f;
+            d.stateBroadcastPending = true;
+            break;
+        }
+        d.objectiveBombPos = getEntityRootPos(cIt->second);
+        // Plant while the carrier holds position inside a bomb site.
+        if (bombSiteContains(mc, d.objectiveBombPos, nullptr)) {
+            d.objectiveBombPlantProgress += SERVER_DT;
+            if (d.objectiveBombPlantProgress >= d.objectiveBombPlantSeconds) {
+                d.objectiveBombState = BOMB_OBJ_PLANTED;
+                d.objectiveBombCarrierId = 0;
+                d.objectiveBombTimer = d.objectiveBombTimerMax;
+                d.objectiveBombPlantProgress = d.objectiveBombPlantSeconds;
+                d.stateBroadcastPending = true;
+                Debug::warn(Debug::Category::Duel,
+                    "[BOMB] planted at (%.1f %.1f %.1f) timer=%.0fs\n",
+                    d.objectiveBombPos.x, d.objectiveBombPos.y, d.objectiveBombPos.z,
+                    d.objectiveBombTimerMax);
+            }
+        } else {
+            d.objectiveBombPlantProgress = 0.0f;
+        }
+        break;
+    }
+    case BOMB_OBJ_DROPPED: {
+        for (uint32_t id : d.participants) {
+            auto tIt = d.matchTeams.find(id);
+            if (tIt == d.matchTeams.end() || tIt->second != 0) continue;
+            auto aIt = d.matchActors.find(id);
+            if (aIt == d.matchActors.end() || aIt->second.state != ActorState::Alive) continue;
+            glm::vec3 p;
+            if (!objectiveActorPos(d, id, players, npcs, p)) continue;
+            if (glm::distance(p, d.objectiveBombPos) <= pickupRadius) {
+                d.objectiveBombState = BOMB_OBJ_CARRIED;
+                d.objectiveBombCarrierId = id;
+                d.objectiveBombPlantProgress = 0.0f;
+                d.objectiveBombDefuseProgress = 0.0f;
+                d.stateBroadcastPending = true;
+                Debug::log(Debug::Category::Duel,
+                    "[BOMB] picked up by actor=%u\n", id);
+                break;
+            }
+        }
+        break;
+    }
+    case BOMB_OBJ_PLANTED: {
+        bool defusing = false;
+        for (uint32_t id : d.participants) {
+            auto tIt = d.matchTeams.find(id);
+            if (tIt == d.matchTeams.end() || tIt->second != 1) continue;
+            auto aIt = d.matchActors.find(id);
+            if (aIt == d.matchActors.end() || aIt->second.state != ActorState::Alive) continue;
+            glm::vec3 p;
+            if (!objectiveActorPos(d, id, players, npcs, p)) continue;
+            if (glm::distance(p, d.objectiveBombPos) <= defuseRadius) { defusing = true; break; }
+        }
+        if (defusing) {
+            d.objectiveBombDefuseProgress += SERVER_DT;
+            if (d.objectiveBombDefuseProgress >= d.objectiveBombDefuseSeconds) {
+                d.objectiveBombState = BOMB_OBJ_DEFUSED;
+                d.roundOver = true;
+                d.roundEndReason = "bomb_defused";
+                d.stateBroadcastPending = true;
+                Debug::warn(Debug::Category::Duel, "[BOMB] defused\n");
+                break;
+            }
+        } else {
+            d.objectiveBombDefuseProgress = 0.0f;
+        }
+        d.objectiveBombTimer -= SERVER_DT;
+        if (d.objectiveBombTimer <= 0.0f) {
+            d.objectiveBombTimer = 0.0f;
+            d.objectiveBombState = BOMB_OBJ_EXPLODED;
+            d.roundOver = true;
+            d.roundEndReason = "bomb_exploded";
+            d.stateBroadcastPending = true;
+            for (uint32_t id : d.participants) {
+                glm::vec3 p;
+                if (!objectiveActorPos(d, id, players, npcs, p)) continue;
+                if (glm::distance(p, d.objectiveBombPos) > d.objectiveBombExplosionRadius) continue;
+                auto pIt = players.find(id);
+                if (pIt != players.end() && !pIt->second.dead) {
+                    pIt->second.dead = true;
+                    pIt->second.health = 0;
+                    pIt->second.respawnSeconds = serverMatchRespawnsEnabled()
+                        ? serverMatchRespawnSeconds() : -1.0f;
+                    ++pIt->second.deaths;
+                }
+            }
+            Debug::warn(Debug::Category::Duel,
+                "[BOMB] exploded at (%.1f %.1f %.1f) radius=%.1f\n",
+                d.objectiveBombPos.x, d.objectiveBombPos.y, d.objectiveBombPos.z,
+                d.objectiveBombExplosionRadius);
+        }
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+// Decides the round for objective_rounds. On a decision, records the round win,
+// advances the phase to RESULTS, and declares the match over at goal_value.
+static bool checkObjectiveRoundEnd(ServerGamemodeState& d, uint32_t tick,
+                                   SOCKET sock,
+                                   std::unordered_map<uint32_t, ServerPlayer>& players,
+                                   uint64_t& totalPacketsOut)
+{
+    if (!d.objectiveRounds || d.phase != DUEL_PHASE_ACTIVE) return false;
+
+    int winnerTeam = -1;
+    const char* reason = "elimination";
+    if (d.objectiveBombState == BOMB_OBJ_DEFUSED) {
+        winnerTeam = 1; reason = "bomb_defused";
+    } else if (d.objectiveBombState == BOMB_OBJ_EXPLODED) {
+        winnerTeam = 0; reason = "bomb_exploded";
+    } else {
+        const bool tAlive = objectiveTeamAlive(d, 0);
+        const bool ctAlive = objectiveTeamAlive(d, 1);
+        if (!tAlive && !ctAlive) { winnerTeam = 1; }         // T failed to close it out
+        else if (!tAlive) { winnerTeam = 1; }
+        else if (!ctAlive) { winnerTeam = 0; }
+        // Round clock: expired with no plant means CT held the sites.
+        if (winnerTeam < 0 && d.matchTimeLimitTick > 0 && tick >= d.matchTimeLimitTick &&
+            d.objectiveBombState != BOMB_OBJ_PLANTED) {
+            winnerTeam = 1; reason = "time";
+        }
+    }
+    if (winnerTeam < 0) return false;
+
+    ++d.roundWins[winnerTeam];
+    d.roundOver = true;
+    d.roundEndReason = reason;
+    d.winnerTeam = winnerTeam;
+    d.matchOver = d.roundWins[winnerTeam] >= d.goalValue;
+    d.victoryType = 0;
+    d.phaseTimer = d.resultsSeconds;
+    d.phase = DUEL_PHASE_RESULTS;
+    ++d.stateVersion;
+    broadcastDuelState(sock, d, players, totalPacketsOut);
+    if (d.matchOver)
+        emitGamemodeMatchPersistence(d, tick, players);
+    Debug::warn(Debug::Category::Duel,
+        "[CS ROUND] round=%d winnerTeam=%d reason=%s score=%d-%d matchOver=%d\n",
+        d.roundNumber, winnerTeam, reason, d.roundWins[0], d.roundWins[1], (int)d.matchOver);
+    return true;
+}
+
+// Starts a fresh objective round (or the first one). Resets the bomb, assigns
+// the carrier, and runs the shared countdown/spawn path.
+static void beginObjectiveRound(ServerGamemodeState& d,
+                                std::unordered_map<uint32_t, ServerPlayer>& players,
+                                std::unordered_map<uint32_t, ServerNpc>& npcs,
+                                NpcSystem& npcSystem,
+                                uint32_t tick)
+{
+    ++d.roundNumber;
+    d.roundOver = false;
+    d.roundEndReason.clear();
+    d.objectiveBombState = BOMB_OBJ_CARRIED;
+    d.objectiveBombCarrierId = 0;
+    d.objectiveBombPos = glm::vec3(0.0f);
+    d.objectiveBombPlantProgress = 0.0f;
+    d.objectiveBombDefuseProgress = 0.0f;
+    d.objectiveBombTimer = 0.0f;
+    beginMatchCountdown(d, players, npcs, npcSystem, tick);
+    // Carrier is chosen after the spawn assignment so the actor set is current.
+    d.objectiveBombCarrierId = objectivePickCarrier(d);
+    if (d.objectiveBombCarrierId == 0)
+        d.objectiveBombState = BOMB_OBJ_DROPPED;
+    d.stateBroadcastPending = true;
+    Debug::warn(Debug::Category::Duel,
+        "[CS ROUND] starting round=%d carrier=%u score=%d-%d\n",
+        d.roundNumber, d.objectiveBombCarrierId, d.roundWins[0], d.roundWins[1]);
+}
 
 void serverGamemodeTick(SOCKET sock,
                     std::unordered_map<uint32_t, ServerPlayer>& players,
@@ -1460,6 +1985,62 @@ void serverGamemodeTick(SOCKET sock,
     ServerGamemodeState& d = serverGamemodeState();
     if (!d.enabled) return;
     d.currentServerTick = tick;
+
+    // ── Live JSON rule reload ──────────────────────────────────────
+    // Editing a gamemode JSON re-applies its rules to the running match at a
+    // safe tick boundary. Phase, scores, spawns, and round state are preserved;
+    // only policy values change.
+    if (!d.mapOnly && !d.matchMode.empty()) {
+        const uint64_t rev = GamemodeRegistry::instance().revision();
+        if (rev != d.appliedRulesRevision) {
+            const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+            d.goalValue = gm.goalValue;
+            d.timeLimitSeconds = gm.timeLimitSeconds;
+            d.respawnSeconds = gm.respawnSeconds;
+            d.killHeals = gm.killHeals;
+            d.winCondition = gm.winCondition;
+            d.intermissionSeconds = (float)gm.intermissionSeconds;
+            d.resultsSeconds = (float)gm.resultsSeconds;
+            d.cameraFov = gm.cameraFov;
+            d.ragdollExplicit = gm.ragdollExplicit;
+            d.ragdollEnabled = gm.ragdollEnabled;
+            d.bloodExplicit = gm.bloodExplicit;
+            d.bloodEnabled = gm.bloodEnabled;
+            d.aimMode = gm.aimMode;
+            d.movementPreset = gm.movementPreset;
+            d.healthbarOverride = gm.healthbar.explicitValue;
+            d.healthbarAimModeEnabled = gm.healthbar.aimModeEnabled;
+            d.healthbarShowName = gm.healthbar.showNameInAimMode;
+            d.healthbarShowHpText = gm.healthbar.showHpTextInAimMode;
+            d.healthbarShowBar = gm.healthbar.showBarInAimMode;
+            d.healthbarMaxDistance = gm.healthbar.maxDistance;
+            d.objectiveRounds = (gm.winCondition == "objective_rounds");
+            d.npcWaves = (gm.winCondition == "npc_waves");
+            d.waveStartCount = gm.waveStartCount;
+            d.waveIncrement = gm.waveIncrement;
+            d.objectiveBombPlantSeconds = gm.bombPlantSeconds;
+            d.objectiveBombDefuseSeconds = gm.bombDefuseSeconds;
+            d.objectiveBombTimerMax = gm.bombTimerSeconds;
+            d.objectiveBombExplosionRadius = gm.bombExplosionRadius;
+            d.objectiveBombExplosionDamage = gm.bombExplosionDamage;
+            if (!d.aimMode.empty()) {
+                GameplayAimMode parsed;
+                if (gameplayAimModeFromString(d.aimMode, parsed))
+                    GameplayConfig::instance().setAimModeOverride(parsed);
+            } else {
+                GameplayConfig::instance().clearAimModeOverride();
+            }
+            d.appliedRulesRevision = rev;
+            d.stateBroadcastPending = true;
+            ++d.stateVersion;
+            Debug::warn(Debug::Category::Duel,
+                "[GAMEMODE] live rules reloaded mode=%s goal=%d fov=%.0f aim=%s move=%s\n",
+                d.matchMode.c_str(), d.goalValue, d.cameraFov,
+                d.aimMode.empty() ? "player" : d.aimMode.c_str(),
+                d.movementPreset.empty() ? "player" : d.movementPreset.c_str());
+        }
+    }
+
     updateActorStates(d, players, npcs);
     if (!d.mapOnly && d.appliedCommunityWeaponSetId != d.communityWeaponSetId)
     {
@@ -1674,13 +2255,29 @@ void serverGamemodeTick(SOCKET sock,
         const uint32_t killerId = d.pendingKillerId;
         const uint32_t victimId = d.pendingVictimId;
 
+        // Objective bomb: a killed carrier drops the bomb where it died.
+        if (d.objectiveBombState == BOMB_OBJ_CARRIED &&
+            victimId == d.objectiveBombCarrierId) {
+            d.objectiveBombState = BOMB_OBJ_DROPPED;
+            d.objectiveBombCarrierId = 0;
+            d.objectiveBombPos = d.currentKill.victimPos;
+            d.objectiveBombPlantProgress = 0.0f;
+            Debug::warn(Debug::Category::Duel,
+                "[BOMB] carrier %u died; bomb dropped at (%.1f %.1f %.1f)\n",
+                victimId, d.objectiveBombPos.x, d.objectiveBombPos.y, d.objectiveBombPos.z);
+            d.stateBroadcastPending = true;
+        }
+
         // The victim's respawn delay/state was assigned by the lethal damage
         // path (server-damage / server-npcs). Here we only pin the respawn
         // anchor; do NOT zero the timer or the gamemode delay would be lost.
         auto victimIt = players.find(victimId);
         if (!d.pendingVictimIsNpc && victimIt != players.end())
         {
-            victimIt->second.duelSpawnPos = gamemodeSpawnPoint(d);
+            int victimTeam = -1;
+            auto vTeamIt = d.matchTeams.find(victimId);
+            if (vTeamIt != d.matchTeams.end()) victimTeam = vTeamIt->second;
+            victimIt->second.duelSpawnPos = gamemodeSpawnPoint(d, victimTeam);
         }
         else if (d.pendingVictimIsNpc)
         {
@@ -1690,6 +2287,38 @@ void serverGamemodeTick(SOCKET sock,
                 if (n.id == victimId) {
                     n.body.respawnPosition = gamemodeSpawnPoint(d);
                     break;
+                }
+            }
+        }
+
+        // ── NPC mind events: killer confidence + perceivable witnessed deaths ──
+        {
+            glm::vec3 victimPos(0.0f);
+            bool haveVictimPos = false;
+            if (!d.pendingVictimIsNpc && victimIt != players.end()) {
+                victimPos = victimIt->second.pos;
+                haveVictimPos = true;
+            } else {
+                for (const Npc& n : npcSystem.all())
+                    if (n.id == victimId) { victimPos = n.body.pos; haveVictimPos = true; break; }
+            }
+            if (d.pendingKillerIsNpc) {
+                for (Npc& k : npcSystem.all())
+                    if (k.id == killerId) { npcMindOnKill(k); break; }
+            }
+            if (haveVictimPos) {
+                auto teamOf = [&](uint32_t id) -> int {
+                    auto it = d.matchTeams.find(id);
+                    return it != d.matchTeams.end() ? it->second : -1;
+                };
+                const int victimTeam = teamOf(victimId);
+                for (Npc& w : npcSystem.all()) {
+                    if (w.id == victimId) continue;
+                    if (w.body.dead || w.body.currentHp <= 0) continue;
+                    if (!npcMindCanPerceive(w, npcWorld, victimPos)) continue;
+                    const int wTeam = teamOf(w.id);
+                    const bool ally = (wTeam >= 0 && victimTeam >= 0 && wTeam == victimTeam);
+                    npcMindOnWitnessedDeath(w, victimId, victimPos, ally);
                 }
             }
         }
@@ -1818,7 +2447,7 @@ void serverGamemodeTick(SOCKET sock,
     // Any mode with a generic win condition (e.g. last_team_standing) uses the
     // same lifecycle instead of requiring a mode-specific branch.
     if (d.matchMode == "ffa" || d.matchMode == "tdm" ||
-        d.winCondition == "last_team_standing")
+        d.winCondition == "last_team_standing" || d.objectiveRounds || d.npcWaves)
     {
         if (d.stateBroadcastPending)
         {
@@ -1826,20 +2455,33 @@ void serverGamemodeTick(SOCKET sock,
             // Send that state now so every client can show intermission or the
             // immediate countdown without waiting for the periodic broadcast.
             broadcastDuelState(sock, d, players, totalPacketsOut);
+            if (d.objectiveRounds)
+                broadcastBombTagState(sock, d, players, totalPacketsOut);
             d.stateBroadcastPending = false;
         }
         switch (d.phase)
         {
         case DUEL_PHASE_WAITING:
             if (countActivePlayers(players) >= 2 ||
-                (countActivePlayers(players) >= 1 && !npcs.empty()))
+                (countActivePlayers(players) >= 1 && (!npcs.empty() || d.npcWaves)))
             {
                 // If the current map has no spawn points, rotate.
                 if (world.spawnPoints.empty())
                     rotateToNextGamemodeMap(sock, d, players, world, npcWorld, npcs, npcSystem, totalPacketsOut);
                 assignGamemodeSpawns(d, world);
-                assignMatchParticipants(d, players, &npcs);
-                beginMatchCountdown(d, players, npcs, npcSystem, tick);
+                if (d.npcWaves) {
+                    d.waveNumber = 0;
+                    d.waveBest.clear();
+                    beginNpcWave(sock, d, players, npcs, npcSystem, tick, totalPacketsOut);
+                } else if (d.objectiveRounds) {
+                    assignMatchParticipants(d, players, &npcs);
+                    d.roundWins[0] = d.roundWins[1] = 0;
+                    d.roundNumber = 0;
+                    beginObjectiveRound(d, players, npcs, npcSystem, tick);
+                } else {
+                    assignMatchParticipants(d, players, &npcs);
+                    beginMatchCountdown(d, players, npcs, npcSystem, tick);
+                }
                 ++d.stateVersion;
                 broadcastDuelState(sock, d, players, totalPacketsOut);
                 Debug::warn(Debug::Category::Duel,
@@ -1891,9 +2533,22 @@ void serverGamemodeTick(SOCKET sock,
             break;
 
         case DUEL_PHASE_ACTIVE:
-            // Check win conditions on every tick
-            checkMatchWinConditions(d, tick, sock, players, totalPacketsOut);
+            // NPC waves, objective rounds, and scored modes each own their
+            // round/win resolution behind the shared lifecycle.
+            if (d.npcWaves) {
+                checkWaveConditions(d, tick, sock, players, totalPacketsOut);
+            } else if (d.objectiveRounds) {
+                updateObjectiveBomb(d, players, npcs);
+                checkObjectiveRoundEnd(d, tick, sock, players, totalPacketsOut);
+            } else {
+                checkMatchWinConditions(d, tick, sock, players, totalPacketsOut);
+            }
             if (d.phase != DUEL_PHASE_ACTIVE) break;  // win condition triggered
+            // Objective bomb state is fairly volatile; keep clients in sync.
+            if (d.objectiveRounds && tick - d.objectiveBombBroadcastTick >= 30) {
+                d.objectiveBombBroadcastTick = tick;
+                broadcastBombTagState(sock, d, players, totalPacketsOut);
+            }
             // Periodic broadcast
             if (tick - d.lastBroadcastTick >= 60)
             {
@@ -1934,6 +2589,51 @@ void serverGamemodeTick(SOCKET sock,
                     serverCommunityStartMatch(directCountdown, nextMode);
                     return;
                 }
+                if (d.npcWaves && !d.matchOver)
+                {
+                    // Wave cleared: advance the round and run the next 3-2-1.
+                    ++d.waveNumber;
+                    beginNpcWave(sock, d, players, npcs, npcSystem, tick, totalPacketsOut);
+                    ++d.stateVersion;
+                    broadcastDuelState(sock, d, players, totalPacketsOut);
+                    break;
+                }
+                if (d.npcWaves && d.matchOver)
+                {
+                    // Run over: show the best round, then a fresh run at round 1.
+                    d.phase = DUEL_PHASE_INTERMISSION;
+                    d.phaseTimer = (float)d.intermissionSeconds;
+                    d.waveNumber = 0;
+                    ++d.stateVersion;
+                    broadcastDuelState(sock, d, players, totalPacketsOut);
+                    Debug::warn(Debug::Category::Duel,
+                        "[WAVES] run over; intermission %.0fs\n", d.intermissionSeconds);
+                    break;
+                }
+                if (d.objectiveRounds && !d.matchOver)
+                {
+                    // Between-round pause: start the next round directly (no
+                    // full intermission) so the match keeps its momentum.
+                    beginObjectiveRound(d, players, npcs, npcSystem, tick);
+                    ++d.stateVersion;
+                    broadcastDuelState(sock, d, players, totalPacketsOut);
+                    broadcastBombTagState(sock, d, players, totalPacketsOut);
+                    break;
+                }
+                if (d.objectiveRounds && d.matchOver)
+                {
+                    // Match decided: full intermission, then a fresh match.
+                    d.phase = DUEL_PHASE_INTERMISSION;
+                    d.phaseTimer = (float)d.intermissionSeconds;
+                    d.roundWins[0] = d.roundWins[1] = 0;
+                    d.roundNumber = 0;
+                    d.roundOver = false;
+                    ++d.stateVersion;
+                    broadcastDuelState(sock, d, players, totalPacketsOut);
+                    Debug::warn(Debug::Category::Duel,
+                        "[CS ROUND] match over; intermission %.0fs\n", d.intermissionSeconds);
+                    break;
+                }
                 d.phase = DUEL_PHASE_INTERMISSION;
                 d.phaseTimer = d.intermissionSeconds;
                 ++d.stateVersion;
@@ -1957,8 +2657,19 @@ void serverGamemodeTick(SOCKET sock,
                 if (d.rotateMaps && d.mapPool.size() > 1)
                     rotateToNextGamemodeMap(sock, d, players, world, npcWorld, npcs, npcSystem, totalPacketsOut);
                 assignGamemodeSpawns(d, world);
-                assignMatchParticipants(d, players, &npcs);
-                beginMatchCountdown(d, players, npcs, npcSystem, tick);
+                if (d.npcWaves) {
+                    d.waveNumber = 0;
+                    d.waveBest.clear();
+                    beginNpcWave(sock, d, players, npcs, npcSystem, tick, totalPacketsOut);
+                } else if (d.objectiveRounds) {
+                    assignMatchParticipants(d, players, &npcs);
+                    d.roundWins[0] = d.roundWins[1] = 0;
+                    d.roundNumber = 0;
+                    beginObjectiveRound(d, players, npcs, npcSystem, tick);
+                } else {
+                    assignMatchParticipants(d, players, &npcs);
+                    beginMatchCountdown(d, players, npcs, npcSystem, tick);
+                }
                 ++d.stateVersion;
                 broadcastDuelState(sock, d, players, totalPacketsOut);
                 Debug::log(Debug::Category::Duel,
@@ -1977,6 +2688,9 @@ void serverGamemodeTick(SOCKET sock,
         }
         return;
     }
+
+    // ── Objective rounds without the shared FFA/TDM machine ─────────
+    // (objectiveRounds is already handled above by the widened condition.)
 
     // ── Bomb Tag match mode state machine ──────────────────────────
     if (d.hasBombFeature)
@@ -2425,6 +3139,27 @@ void broadcastBombTagState(SOCKET sock,
     pkt.bombPosX = bombPos.x;
     pkt.bombPosY = bombPos.y;
     pkt.bombPosZ = bombPos.z;
+
+    // Objective bomb modes (Counter-Strike) reuse this packet for their state.
+    if (d.objectiveRounds) {
+        pkt.objectiveState = d.objectiveBombState;
+        pkt.bombOwnerType = (d.objectiveBombState == BOMB_OBJ_CARRIED &&
+                             d.objectiveBombCarrierId != 0)
+            ? BOMB_OWNER_PLAYER : BOMB_OWNER_NONE;
+        pkt.bombOwnerPlayerId = d.objectiveBombCarrierId;
+        pkt.bombOwnerNpcIndex = 0;
+        pkt.inactiveTicksRemaining = 0;
+        pkt.timerTicksRemaining = (uint32_t)std::max(0.0f, d.objectiveBombTimer * 60.0f);
+        pkt.bombPosX = d.objectiveBombPos.x;
+        pkt.bombPosY = d.objectiveBombPos.y;
+        pkt.bombPosZ = d.objectiveBombPos.z;
+        if (d.objectiveBombPlantSeconds > 0.0f)
+            pkt.plantPercent = (uint8_t)std::min(100.0f,
+                d.objectiveBombPlantProgress / d.objectiveBombPlantSeconds * 100.0f);
+        if (d.objectiveBombDefuseSeconds > 0.0f)
+            pkt.defusePercent = (uint8_t)std::min(100.0f,
+                d.objectiveBombDefuseProgress / d.objectiveBombDefuseSeconds * 100.0f);
+    }
 
     for (const auto& kv : players) {
         if (kv.second.spawnState != ServerPlayer::Active)

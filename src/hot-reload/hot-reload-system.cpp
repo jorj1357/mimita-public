@@ -1,12 +1,22 @@
 #include "hot-reload/hot-reload-system.h"
 
+#include "hot-reload/game-api.h"
+#include "live-code/code-hash.h"
+#include "live-code/live-code-events.h"
+#include "live-code/live-journal.h"
+
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <system_error>
 
 #include <windows.h>
+#include <nlohmann/json.hpp>
 
 namespace {
+
+constexpr int HOT_RELOAD_POLL_THROTTLE = 15;
 
 void MIMITA_GAME_CALL platformLog(const char* message)
 {
@@ -14,19 +24,7 @@ void MIMITA_GAME_CALL platformLog(const char* message)
         std::printf("%s\n", message);
 }
 
-std::uint64_t fileWriteTime(const std::filesystem::path& path)
-{
-    WIN32_FILE_ATTRIBUTE_DATA data{};
-    if (!GetFileAttributesExW(path.wstring().c_str(), GetFileExInfoStandard, &data))
-        return 0;
-
-    ULARGE_INTEGER value{};
-    value.LowPart = data.ftLastWriteTime.dwLowDateTime;
-    value.HighPart = data.ftLastWriteTime.dwHighDateTime;
-    return value.QuadPart;
-}
-
-}
+} // namespace
 
 HotReloadSystem& HotReloadSystem::instance()
 {
@@ -36,7 +34,8 @@ HotReloadSystem& HotReloadSystem::instance()
 
 HotReloadSystem::HotReloadSystem()
 {
-    sourceDLL_ = std::filesystem::current_path() / "build" / "mimita-game.dll";
+    root_ = std::filesystem::current_path();
+    sourceDLL_ = root_ / "build" / "mimita-game.dll";
     memory_.apiVersion = MIMITA_GAME_API_VERSION;
     memory_.platform.version = MIMITA_GAME_API_VERSION;
     memory_.platform.log = platformLog;
@@ -45,150 +44,402 @@ HotReloadSystem::HotReloadSystem()
 HotReloadSystem::~HotReloadSystem()
 {
     unloadGameDLL();
-    deleteRetiredTempDLLs();
 }
 
-bool HotReloadSystem::loadGameDLL()
+void HotReloadSystem::startup()
 {
-    if (!std::filesystem::exists(sourceDLL_)) {
-        return false;
+    if (worker_.joinable())
+        return;
+
+    memory_.apiVersion = MIMITA_GAME_API_VERSION;
+    memory_.platform.version = MIMITA_GAME_API_VERSION;
+    memory_.platform.log = platformLog;
+
+    loadManifest();
+    observedSourceHash_ = computeSourceHash();
+
+    if (std::filesystem::exists(sourceDLL_)) {
+        GenerationRecord initial;
+        std::string error;
+        if (loadCandidateFromFile(sourceDLL_, initial, error)) {
+            initial.generation = nextGeneration_++;
+            initial.codeHash = LiveCodeHash::sha256File(sourceDLL_.string());
+            active_ = initial;
+            ++memory_.reloadCount;
+            std::printf("[HOT RELOAD] initial generation=%u\n", active_.generation);
+        } else {
+            lastError_ = error;
+            std::printf("[HOT RELOAD] initial load failed: %s\n", error.c_str());
+        }
     }
-    return loadCandidate(sourceDLL_);
+
+    workerStop_ = false;
+    worker_ = std::thread(&HotReloadSystem::workerMain, this);
 }
 
-bool HotReloadSystem::loadCandidate(const std::filesystem::path& sourceDLL)
+bool HotReloadSystem::pollAndAdvance()
 {
-    const std::filesystem::path tempDLL = makeUniqueTempDLLPath();
+    if (!worker_.joinable())
+        return false;
+
+    if (candidateReady_.exchange(false)) {
+        if (tryActivateCandidate())
+            return true;
+    }
+
+    if (!buildRunning_.load() && !buildRequested_.load()) {
+        if (++pollCounter_ % HOT_RELOAD_POLL_THROTTLE == 0) {
+            const std::string hash = computeSourceHash();
+            if (!hash.empty() && hash != observedSourceHash_)
+                beginBuild("source_change");
+        }
+    }
+    return false;
+}
+
+bool HotReloadSystem::beginBuild(const std::string& reason)
+{
+    if (buildRunning_.load() || buildRequested_.load())
+        return false;
+
+    const std::string hash = computeSourceHash();
+    if (hash.empty())
+        return false;
+    observedSourceHash_ = hash;
+
+    const std::uint32_t generation = nextGeneration_++;
+    const std::filesystem::path dir =
+        root_ / "build" / "hotreload" / ("gen" + std::to_string(generation));
     std::error_code error;
-    std::filesystem::copy_file(
-        sourceDLL, tempDLL, std::filesystem::copy_options::overwrite_existing, error);
-    if (error) {
-        std::printf("[HOT RELOAD] reload failed: DLL copy: %s\n", error.message().c_str());
+    std::filesystem::create_directories(dir, error);
+
+    BuildRequest request;
+    request.generation = generation;
+    request.sourceHash = hash;
+    request.outputPath = dir / "mimita-game.dll";
+    request.resultPath = dir / "build-result.json";
+    request.logPath = dir / "build.log";
+    request.reason = reason;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        request_ = request;
+    }
+
+    const std::string summary = manifestSummary();
+    if (reason == "source_change")
+        LiveCodeEvents::notifyEditDetected(summary);
+    LiveCodeEvents::notifyCompiling(summary);
+
+    LiveEventJournal::Fields fields;
+    fields.generation = generation;
+    fields.hasGeneration = true;
+    fields.codeHash = hash;
+    fields.module = summary;
+    fields.result = reason;
+    LiveEventJournal::instance().record("source_hash_changed", fields);
+
+    buildRunning_ = true;
+    buildRequested_ = true;
+    cv_.notify_one();
+    return true;
+}
+
+void HotReloadSystem::workerMain()
+{
+    for (;;) {
+        BuildRequest request;
+        {
+            std::unique_lock<std::mutex> lock(mutex_);
+            cv_.wait(lock, [this] {
+                return workerStop_.load() || buildRequested_.load();
+            });
+            if (workerStop_.load())
+                break;
+            request = request_;
+            buildRequested_ = false;
+        }
+
+        BuildResult result = runBuild(request);
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            result_ = result;
+        }
+        candidateReady_ = true;
+        buildRunning_ = false;
+    }
+}
+
+HotReloadSystem::BuildResult HotReloadSystem::runBuild(const BuildRequest& request)
+{
+    BuildResult result;
+    result.generation = request.generation;
+    result.sourceHash = request.sourceHash;
+    result.outputPath = request.outputPath;
+
+    const std::string manifest =
+        (root_ / "src" / "hot-reload" / "hot-modules.json").string();
+    std::string command = "cd /d \"" + root_.string() + "\" && python build_game_dll.py";
+    command += " --generation " + std::to_string(request.generation);
+    command += " --output \"" + request.outputPath.string() + "\"";
+    command += " --result \"" + request.resultPath.string() + "\"";
+    command += " --hot-modules \"" + manifest + "\"";
+    command += " > \"" + request.logPath.string() + "\" 2>&1";
+
+    const int exitCode = std::system(command.c_str());
+
+    std::ifstream file(request.resultPath);
+    if (file.is_open()) {
+        try {
+            nlohmann::json json;
+            file >> json;
+            result.codeHash = json.value("code_hash", "");
+            result.error = json.value("error", "");
+            result.success = json.value("status", "") == "ok";
+        } catch (...) {
+            result.success = false;
+            result.error = "build result parse error";
+        }
+    } else {
+        result.success = false;
+        result.error = "build result missing";
+    }
+
+    if (result.success && exitCode != 0) {
+        result.success = false;
+        result.error = "compiler exit " + std::to_string(exitCode);
+    }
+    if (result.success && !std::filesystem::exists(request.outputPath)) {
+        result.success = false;
+        result.error = "staged DLL missing";
+    }
+    return result;
+}
+
+bool HotReloadSystem::tryActivateCandidate()
+{
+    BuildResult result;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        result = result_;
+    }
+    const std::string summary = manifestSummary();
+
+    if (!result.success) {
+        lastError_ = result.error;
+        LiveEventJournal::Fields failure;
+        failure.generation = result.generation;
+        failure.hasGeneration = true;
+        failure.file = summary;
+        failure.result = "failed";
+        failure.error = result.error;
+        LiveEventJournal::instance().record("compile_finished", failure);
+        LiveCodeEvents::notifyCompileFailed(summary, result.error);
         return false;
     }
 
-    std::printf("[HOT RELOAD] loading new DLL %s\n", tempDLL.string().c_str());
-    HMODULE candidateModule = LoadLibraryW(tempDLL.wstring().c_str());
-    if (!candidateModule) {
-        std::printf("[HOT RELOAD] reload failed: LoadLibrary error=%lu\n", GetLastError());
-        std::filesystem::remove(tempDLL, error);
+    LiveEventJournal::Fields built;
+    built.generation = result.generation;
+    built.hasGeneration = true;
+    built.codeHash = result.codeHash;
+    built.result = "ok";
+    LiveEventJournal::instance().record("compile_finished", built);
+
+    GenerationRecord candidate;
+    std::string error;
+    if (!loadCandidateFromFile(result.outputPath, candidate, error)) {
+        lastError_ = error;
+        LiveCodeEvents::notifyValidationFailed(result.generation, error);
+        return false;
+    }
+    candidate.generation = result.generation;
+    candidate.codeHash = result.codeHash;
+
+    LiveCodeEvents::notifyCandidateReady(result.generation, result.codeHash);
+    {
+        LiveEventJournal::Fields loaded;
+        loaded.generation = result.generation;
+        loaded.hasGeneration = true;
+        loaded.codeHash = result.codeHash;
+        loaded.result = "loaded";
+        LiveEventJournal::instance().record("candidate_loaded", loaded);
+    }
+
+    retireRecord(previous_);
+    previous_ = active_;
+    active_ = candidate;
+    ++memory_.reloadCount;
+    lastError_.clear();
+
+    LiveCodeEvents::notifyActivated(active_.generation, active_.codeHash);
+    return true;
+}
+
+bool HotReloadSystem::loadCandidateFromFile(const std::filesystem::path& sourceDLL,
+                                            GenerationRecord& out, std::string& error)
+{
+    if (!std::filesystem::exists(sourceDLL)) {
+        error = "candidate DLL missing";
+        return false;
+    }
+
+    const std::filesystem::path tempDLL = makeUniqueTempDLLPath();
+    std::error_code copyError;
+    std::filesystem::copy_file(sourceDLL, tempDLL,
+                               std::filesystem::copy_options::overwrite_existing, copyError);
+    if (copyError) {
+        error = "copy: " + copyError.message();
+        return false;
+    }
+
+    HMODULE module = LoadLibraryW(tempDLL.wstring().c_str());
+    if (!module) {
+        error = "LoadLibrary error " + std::to_string(GetLastError());
+        std::filesystem::remove(tempDLL, copyError);
         return false;
     }
 
     auto getGameAPI = reinterpret_cast<GetGameAPIFn>(
-        GetProcAddress(candidateModule, "GetGameAPI"));
-    GameAPI candidateAPI{};
-    if (!getGameAPI ||
-        !getGameAPI(MIMITA_GAME_API_VERSION, &candidateAPI) ||
-        candidateAPI.version != MIMITA_GAME_API_VERSION ||
-        candidateAPI.structSize != sizeof(GameAPI) ||
-        !candidateAPI.updateEffects) {
-        std::printf("[HOT RELOAD] reload failed: incompatible or incomplete GameAPI\n");
-        FreeLibrary(candidateModule);
-        std::filesystem::remove(tempDLL, error);
+        GetProcAddress(module, "GetGameAPI"));
+    GameAPI api{};
+    const bool compatible = getGameAPI &&
+        getGameAPI(MIMITA_GAME_API_VERSION, &api) &&
+        api.version == MIMITA_GAME_API_VERSION &&
+        api.structSize == sizeof(GameAPI) &&
+        api.updateEffects != nullptr &&
+        api.selfTest != nullptr;
+    if (!compatible) {
+        error = "incompatible or incomplete GameAPI";
+        FreeLibrary(module);
+        std::filesystem::remove(tempDLL, copyError);
         return false;
     }
 
-    if (candidateAPI.onReload && !candidateAPI.onReload(&memory_)) {
-        std::printf("[HOT RELOAD] reload failed: onReload rejected persistent memory\n");
-        FreeLibrary(candidateModule);
-        std::filesystem::remove(tempDLL, error);
+    if (api.onReload && !api.onReload(&memory_)) {
+        error = "onReload rejected persistent memory";
+        FreeLibrary(module);
+        std::filesystem::remove(tempDLL, copyError);
         return false;
     }
 
-    HMODULE previousModule = static_cast<HMODULE>(module_);
-    GameAPI previousAPI = api_;
-    std::filesystem::path previousTempDLL = loadedTempDLL_;
+    GameSelfTestResult selfTest{};
+    selfTest.structSize = sizeof(GameSelfTestResult);
+    if (!api.selfTest(&selfTest) || !selfTest.passed) {
+        error = selfTest.message[0]
+            ? "self-test failed: " + std::string(selfTest.message)
+            : "self-test failed";
+        FreeLibrary(module);
+        std::filesystem::remove(tempDLL, copyError);
+        return false;
+    }
 
-    module_ = candidateModule;
-    api_ = candidateAPI;
-    loadedTempDLL_ = tempDLL;
-    loadedDLLWriteTime_ = fileWriteTime(sourceDLL);
+    out.module = module;
+    out.api = api;
+    out.dllPath = sourceDLL;
+    out.loadedTempPath = tempDLL;
+    out.valid = true;
+    return true;
+}
+
+void HotReloadSystem::retireRecord(GenerationRecord& record)
+{
+    if (!record.valid)
+        return;
+
+    if (record.module) {
+        if (record.api.beforeUnload)
+            record.api.beforeUnload(&memory_);
+        FreeLibrary(static_cast<HMODULE>(record.module));
+    }
+    std::error_code error;
+    if (!record.loadedTempPath.empty())
+        std::filesystem::remove(record.loadedTempPath, error);
+    record = GenerationRecord{};
+}
+
+bool HotReloadSystem::rollback()
+{
+    if (!previous_.valid)
+        return false;
+
+    GenerationRecord target = previous_;
+    previous_ = active_;
+    active_ = target;
     ++memory_.reloadCount;
-
-    if (previousModule) {
-        std::printf("[HOT RELOAD] unloading old DLL\n");
-        if (previousAPI.beforeUnload)
-            previousAPI.beforeUnload(&memory_);
-        FreeLibrary(previousModule);
-        retiredTempDLLs_.push_back(previousTempDLL);
-    }
-
-    deleteRetiredTempDLLs();
-    std::printf("[HOT RELOAD] reload success generation=%u\n", memory_.reloadCount);
+    LiveCodeEvents::notifyRollbackActivated(active_.generation, active_.codeHash);
     return true;
 }
 
 void HotReloadSystem::unloadGameDLL()
 {
-    if (!module_)
+    workerStop_ = true;
+    cv_.notify_all();
+    if (worker_.joinable())
+        worker_.join();
+
+    retireRecord(previous_);
+    retireRecord(active_);
+}
+
+void HotReloadSystem::loadManifest()
+{
+    hotSources_.clear();
+    std::ifstream file(root_ / "src" / "hot-reload" / "hot-modules.json");
+    if (!file.is_open()) {
+        hotSources_ = {"src/effects/effect-part.cpp", "src/hot-reload/game-api.h"};
         return;
+    }
+    try {
+        nlohmann::json json;
+        file >> json;
+        if (json.contains("modules") && json["modules"].is_array()) {
+            for (const auto& module : json["modules"]) {
+                if (module.contains("sources") && module["sources"].is_array()) {
+                    for (const auto& source : module["sources"])
+                        hotSources_.push_back(source.get<std::string>());
+                }
+            }
+        }
+        if (json.contains("headers") && json["headers"].is_array()) {
+            for (const auto& header : json["headers"])
+                hotSources_.push_back(header.get<std::string>());
+        }
+    } catch (...) {
+        hotSources_ = {"src/effects/effect-part.cpp", "src/hot-reload/game-api.h"};
+    }
 
-    std::printf("[HOT RELOAD] unloading old DLL\n");
-    if (api_.beforeUnload)
-        api_.beforeUnload(&memory_);
-    FreeLibrary(static_cast<HMODULE>(module_));
-    retiredTempDLLs_.push_back(loadedTempDLL_);
-    module_ = nullptr;
-    api_ = {};
-    loadedTempDLL_.clear();
-    deleteRetiredTempDLLs();
+    if (hotSources_.empty())
+        hotSources_ = {"src/effects/effect-part.cpp", "src/hot-reload/game-api.h"};
+
+    std::sort(hotSources_.begin(), hotSources_.end());
+    hotSources_.erase(std::unique(hotSources_.begin(), hotSources_.end()), hotSources_.end());
 }
 
-bool HotReloadSystem::reloadGameDLLIfChanged()
+std::string HotReloadSystem::computeSourceHash() const
 {
-    if (!module_) {
-        loadGameDLL();
-        return module_ != nullptr;
+    std::string combined;
+    for (const auto& relative : hotSources_) {
+        const std::string hash = LiveCodeHash::sha256File((root_ / relative).string());
+        if (hash.empty())
+            return {};
+        combined += relative;
+        combined += ':';
+        combined += hash;
+        combined += '\n';
     }
-    rebuildIfSourcesChanged();
-
-    const std::uint64_t writeTime = getDLLWriteTime();
-    if (writeTime == 0 || writeTime == loadedDLLWriteTime_)
-        return false;
-
-    std::printf("[HOT RELOAD] detected source change\n");
-    return loadCandidate(sourceDLL_);
+    if (combined.empty())
+        return {};
+    return LiveCodeHash::sha256Bytes(combined.data(), combined.size());
 }
 
-bool HotReloadSystem::rebuildIfSourcesChanged()
+std::string HotReloadSystem::manifestSummary() const
 {
-    if (rebuildInProgress_)
-        return false;
-
-    const std::uint64_t newest = newestSourceWriteTime();
-    if (observedSourceWriteTime_ == 0) {
-        observedSourceWriteTime_ = newest;
-        return false;
+    std::string summary;
+    for (std::size_t i = 0; i < hotSources_.size(); ++i) {
+        if (i)
+            summary += "+";
+        summary += hotSources_[i];
     }
-    if (newest <= observedSourceWriteTime_)
-        return false;
-
-    observedSourceWriteTime_ = newest;
-    rebuildInProgress_ = true;
-    std::printf("[HOT RELOAD] detected source change\n");
-    std::printf("[HOT RELOAD] rebuilding DLL\n");
-    const int result = std::system("python build_game_dll.py");
-    rebuildInProgress_ = false;
-    if (result != 0) {
-        std::printf("[HOT RELOAD] reload failed: DLL rebuild exit=%d\n", result);
-        return false;
-    }
-    return true;
-}
-
-std::uint64_t HotReloadSystem::newestSourceWriteTime() const
-{
-    const std::filesystem::path root = std::filesystem::current_path();
-    const std::filesystem::path sources[] = {
-        root / "src" / "effects" / "effect-part.cpp",
-        root / "src" / "hot-reload" / "game-api.h",
-    };
-
-    std::uint64_t newest = 0;
-    for (const auto& source : sources)
-        newest = (std::max)(newest, fileWriteTime(source));
-    return newest;
+    return summary;
 }
 
 std::filesystem::path HotReloadSystem::makeUniqueTempDLLPath()
@@ -200,26 +451,9 @@ std::filesystem::path HotReloadSystem::makeUniqueTempDLLPath()
          std::to_string(tempGeneration_) + ".dll");
 }
 
-void HotReloadSystem::deleteRetiredTempDLLs()
-{
-    std::error_code error;
-    for (auto it = retiredTempDLLs_.begin(); it != retiredTempDLLs_.end();) {
-        error.clear();
-        if (it->empty() || std::filesystem::remove(*it, error) || !std::filesystem::exists(*it))
-            it = retiredTempDLLs_.erase(it);
-        else
-            ++it;
-    }
-}
-
-std::uint64_t HotReloadSystem::getDLLWriteTime() const
-{
-    return fileWriteTime(sourceDLL_);
-}
-
 const GameAPI* HotReloadSystem::gameAPI() const
 {
-    return module_ ? &api_ : nullptr;
+    return active_.valid ? &active_.api : nullptr;
 }
 
 GameMemory& HotReloadSystem::gameMemory()
@@ -229,5 +463,21 @@ GameMemory& HotReloadSystem::gameMemory()
 
 bool HotReloadSystem::loaded() const
 {
-    return module_ != nullptr;
+    return active_.valid;
+}
+
+HotReloadSystem::Status HotReloadSystem::status() const
+{
+    Status status;
+    status.loaded = active_.valid;
+    status.workerRunning = worker_.joinable();
+    status.buildRunning = buildRunning_.load();
+    status.candidateReady = candidateReady_.load();
+    status.activeGeneration = active_.generation;
+    status.previousGeneration = previous_.generation;
+    status.activeHash = active_.codeHash;
+    status.observedSourceHash = observedSourceHash_;
+    status.lastError = lastError_;
+    status.reloadCount = memory_.reloadCount;
+    return status;
 }

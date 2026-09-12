@@ -49,6 +49,15 @@ void readProfile(const json& j, const std::string& fallbackId,
     out.weaponDamageBias = j.value("weapon_damage_bias", out.weaponDamageBias);
     out.weaponSafetyBias = j.value("weapon_safety_bias", out.weaponSafetyBias);
     out.weaponSwitchThreshold = j.value("weapon_switch_threshold", out.weaponSwitchThreshold);
+    out.baseFear = j.value("base_fear", out.baseFear);
+    out.baseConfidence = j.value("base_confidence", out.baseConfidence);
+    out.damagePanicSensitivity = j.value("damage_panic_sensitivity", out.damagePanicSensitivity);
+    out.damageFearSensitivity = j.value("damage_fear_sensitivity", out.damageFearSensitivity);
+    out.panicAimPenalty = j.value("panic_aim_penalty", out.panicAimPenalty);
+    out.fearRetreatWeight = j.value("fear_retreat_weight", out.fearRetreatWeight);
+    out.confidenceAttackWeight = j.value("confidence_attack_weight", out.confidenceAttackWeight);
+    out.panicDecayPerSecond = j.value("panic_decay_per_second", out.panicDecayPerSecond);
+    out.stressDecayPerSecond = j.value("stress_decay_per_second", out.stressDecayPerSecond);
 }
 
 } // anonymous namespace
@@ -173,5 +182,15 @@ NpcBehaviorTuning resolveNpcBehavior(const std::string& id)
     if (def->weaponDamageBias >= 0.0f) out.weaponDamageBias = def->weaponDamageBias;
     if (def->weaponSafetyBias >= 0.0f) out.weaponSafetyBias = def->weaponSafetyBias;
     if (def->weaponSwitchThreshold >= 0.0f) out.weaponSwitchThreshold = def->weaponSwitchThreshold;
+    // Emotional baseline + sensitivity.
+    if (def->baseFear >= 0.0f) out.baseFear = def->baseFear;
+    if (def->baseConfidence >= 0.0f) out.baseConfidence = def->baseConfidence;
+    if (def->damagePanicSensitivity >= 0.0f) out.damagePanicSensitivity = def->damagePanicSensitivity;
+    if (def->damageFearSensitivity >= 0.0f) out.damageFearSensitivity = def->damageFearSensitivity;
+    if (def->panicAimPenalty >= 0.0f) out.panicAimPenalty = def->panicAimPenalty;
+    if (def->fearRetreatWeight >= 0.0f) out.fearRetreatWeight = def->fearRetreatWeight;
+    if (def->confidenceAttackWeight >= 0.0f) out.confidenceAttackWeight = def->confidenceAttackWeight;
+    if (def->panicDecayPerSecond >= 0.0f) out.panicDecayPerSecond = def->panicDecayPerSecond;
+    if (def->stressDecayPerSecond >= 0.0f) out.stressDecayPerSecond = def->stressDecayPerSecond;
     return out;
 }

@@ -700,7 +700,8 @@ struct ProjectileSpawnEventPacket
     uint32_t ownerPlayerId = 0;
     uint32_t fireSerial = 0;
     uint8_t weapon = NETWORK_WEAPON_NONE;
-    uint8_t reserved[3] = {};
+    uint16_t weaponDefNetworkId = 0;
+    uint8_t reserved[1] = {};
     float posX = 0.0f;
     float posY = 0.0f;
     float posZ = 0.0f;
@@ -726,7 +727,8 @@ struct ProjectileStateEventPacket
     uint32_t ownerPlayerId = 0;
     uint32_t fireSerial = 0;
     uint8_t weapon = NETWORK_WEAPON_NONE;
-    uint8_t reserved[3] = {};
+    uint16_t weaponDefNetworkId = 0;
+    uint8_t reserved[1] = {};
     float posX = 0.0f;
     float posY = 0.0f;
     float posZ = 0.0f;
@@ -753,7 +755,7 @@ struct ProjectileExplodeEventPacket
     uint32_t fireSerial = 0;
     uint8_t weapon = NETWORK_WEAPON_NONE;
     uint8_t victimCount = 0;
-    uint8_t reserved[2] = {};
+    uint16_t weaponDefNetworkId = 0;
     float posX = 0.0f;
     float posY = 0.0f;
     float posZ = 0.0f;
@@ -1128,6 +1130,15 @@ struct DuelStatePacket
     uint8_t ragdollEnabled = 0;     // 0=no override, 1=disabled, 2=enabled
     uint8_t bloodEnabled = 0;       // 0=no override, 1=disabled, 2=enabled
     uint8_t reserved2[1] = {};
+    // ── Forced gameplay overrides ───────────────────────────────────
+    char aimMode[16] = {};          // "" = no override; else "physical" etc.
+    uint8_t healthbarOverride = 0;  // 1 = mode forces the fields below
+    uint8_t healthbarAimModeEnabled = 1;
+    uint8_t healthbarShowName = 0;
+    uint8_t healthbarShowHpText = 0;
+    uint8_t healthbarShowBar = 0;
+    uint8_t reserved3[3] = {};
+    float healthbarMaxDistance = 2000.0f;
 };
 
 // Server → a player: their opponent just respawned here. Used to draw a
@@ -1579,6 +1590,17 @@ enum BombTagOwnerType : uint8_t
     BOMB_OWNER_NPC = 2
 };
 
+// Counter-Strike style objective bomb lifecycle.
+enum BombObjectiveState : uint8_t
+{
+    BOMB_OBJ_NONE = 0,
+    BOMB_OBJ_CARRIED = 1,
+    BOMB_OBJ_DROPPED = 2,
+    BOMB_OBJ_PLANTED = 3,
+    BOMB_OBJ_DEFUSED = 4,
+    BOMB_OBJ_EXPLODED = 5
+};
+
 struct BombTagStatePacket
 {
     PacketHeader header;
@@ -1597,6 +1619,13 @@ struct BombTagStatePacket
     float bombPosX = 0.0f;
     float bombPosY = 0.0f;
     float bombPosZ = 0.0f;
+    // ── Objective bomb (Counter-Strike style defuse) ────────────────
+    // Reuses the bomb-holder fields above for carrier/position, and adds the
+    // objective state plus plant/defuse progress so clients can render it.
+    uint8_t objectiveState = 0;         // BombObjectiveState (0=none)
+    uint8_t plantPercent = 0;           // 0..100
+    uint8_t defusePercent = 0;          // 0..100
+    uint8_t reservedObjective = 0;
 };
 
 // ── Bomb Tag pass visualization event (server → all) ─────────────────

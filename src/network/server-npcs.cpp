@@ -181,6 +181,13 @@ static void syncServerNpcDamageToNpc(const std::unordered_map<uint32_t, ServerNp
         {
             if (n.id != kv.first) continue;
             if (n.body.currentHp != kv.second.health) {
+                const int drop = n.body.currentHp - kv.second.health;
+                if (drop > 0) {
+                    // Attribute the damage to the real NPC's mind (emotion +
+                    // attacker memory). Works for player and NPC attackers.
+                    npcMindOnDamaged(n, kv.second.lastAttackerId,
+                                     kv.second.lastAttackerPos, drop, n.body.maxHp);
+                }
                 printf("[SERVER SYNC NPC DAMAGE] npcId=%u serverHealth=%d npcBodyHp=%d -> syncing to %d\n",
                        kv.first, kv.second.health, n.body.currentHp, kv.second.health);
                 n.body.currentHp = kv.second.health;
@@ -252,6 +259,7 @@ static void respawnServerNpc(Npc& npc)
     npc.behavior = resolveNpcBehavior(profile.behaviorProfileId);
     if (npc.behavior.active && npc.behavior.aggression >= 0.0f)
         npc.tuning.aggression = npc.behavior.aggression;
+    npcMindReset(npc);
     if (!profile.weapons.empty())
         npcApplyLoadout(npc, profile.weapons, profile.startingWeapon);
     npc.body.killedBy.clear();
@@ -758,7 +766,7 @@ void simulateSharedNpcs(SOCKET sock,
                 if (!actorsAreHostile(myTeam, p.matchTeam)) continue;
                 float s = scoreCandidate(p.pos, p.health, std::max(1, p.maxHealth), 0.5f);
                 const bool isCurrent = (p.id == n.serverTargetId);
-                if (isCurrent) s += b.targetStickiness;
+                if (isCurrent) s += npcMindStickiness(n);
                 if (s > bestScore) { bestScore = s; nearestPlayer = &p; nearestNpc = nullptr; }
                 if (isCurrent) currentScore = s;
             }
@@ -774,7 +782,7 @@ void simulateSharedNpcs(SOCKET sock,
                 float s = scoreCandidate(other.body.pos, other.body.currentHp,
                                          other.body.maxHp, threat01);
                 const bool isCurrent = (other.id == n.serverTargetId);
-                if (isCurrent) s += b.targetStickiness;
+                if (isCurrent) s += npcMindStickiness(n);
                 if (s > bestScore) { bestScore = s; nearestNpc = &other; nearestPlayer = nullptr; }
                 if (isCurrent) currentScore = s;
             }
@@ -968,9 +976,13 @@ void simulateSharedNpcs(SOCKET sock,
                     ServerNpc& victim = victimIt->second;
                     victim.health = std::max(0, victim.health - damage);
                     victim.knockbackImpulse += knockback;
+                    victim.lastAttackerId = n.id;
+                    victim.lastAttackerPos = n.body.pos;
                     nearestNpc->body.currentHp = victim.health;
                     nearestNpc->body.killedByWeapon = wId;
                     nearestNpc->body.lastDamagedBy = n.body.username;
+                    npcMindOnDamaged(*nearestNpc, n.id, n.body.pos, damage,
+                                     nearestNpc->body.maxHp);
                     const bool killed = victim.health <= 0;
                     if (killed)
                     {
@@ -979,6 +991,7 @@ void simulateSharedNpcs(SOCKET sock,
                         nearestNpc->body.dead = true;
                         nearestNpc->body.respawnTimer = serverMatchRespawnsEnabled()
                             ? serverMatchRespawnSeconds() : -1.0f;
+                        npcMindOnKill(n);
                         serverGamemodeRecordKill(sock, players, &npcs,
                             n.id, ENTITY_NPC, nearestNpc->id, ENTITY_NPC,
                             wId, wDisp, tick,

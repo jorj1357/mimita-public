@@ -20,6 +20,7 @@
 #include <unordered_map>
 
 #include "camera.h"
+#include "combat/area-effect.h"
 #include "debug/debug-visuals.h"
 #include "entities/player.h"
 #include "gui/ui-system.h"
@@ -179,6 +180,10 @@ HealthbarRenderResult drawPlayerHealthbar(
         result.cullReason = HealthbarCullReason::TooFar;
         return result;
     }
+
+    // Inside smoke, healthbars are hidden (configurable per smoke grenade).
+    if (AreaEffectSystem::instance().queryCameraSmoke(camera.pos).hideHealthbars)
+        return result;
 
     if (!DebugVis::projectToScreen(
             camera, result.anchor, result.screen.x, result.screen.y))

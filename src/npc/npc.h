@@ -22,6 +22,7 @@
 #include "npc/npc-navigator.h"
 #include "npc/npc-traversal.h"
 #include "npc/npc-behavior.h"
+#include "npc/npc-mind.h"
 
 class Camera;
 struct World;
@@ -72,6 +73,9 @@ public:
     // Resolved role behavior profile for this life (combat tuning).
     std::string behaviorProfileId;
     NpcBehaviorTuning behavior;
+    // Temporary runtime state (per life) fed into the behavior math.
+    NpcRuntimeEmotion emotion;
+    NpcMemory memory;
     // Target-acquisition edge tracking for the reaction-delay gate.
     bool prevHadTarget = false;
     // Server-selected current target id (persisted for stickiness/scoring).

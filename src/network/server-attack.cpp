@@ -786,6 +786,8 @@ void handleAttackRequest(
                 {
                     npcTarget.health -= aggregate.damage;
                     npcTarget.knockbackImpulse += aggregate.knockback;
+                    npcTarget.lastAttackerId = shooter.id;
+                    npcTarget.lastAttackerPos = shooter.pos;
                 }
                 const bool killed = npcTarget.health <= 0;
                 if (killed)
@@ -1120,7 +1122,8 @@ void handleAttackRequest(
     // ── Projectile weapons (grenade, rocket) ─────────────────────────
     if (def->executionType == WeaponExecutionType::Projectile &&
         (def->behaviorType == WeaponBehaviorType::RocketLauncher ||
-         def->behaviorType == WeaponBehaviorType::GrenadeLauncher))
+         def->behaviorType == WeaponBehaviorType::GrenadeLauncher ||
+         def->behaviorType == WeaponBehaviorType::Grenade))
     {
         glm::vec3 origin(req->muzzlePosX, req->muzzlePosY, req->muzzlePosZ);
         if (!finiteVec3(origin))

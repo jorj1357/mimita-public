@@ -35,6 +35,7 @@
 #include "combat/weapon-registry.h"
 #include "combat/weapon-rocket-launcher.h"
 #include "combat/weapon-runtime.h"
+#include "network/community-match-client.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "ragdoll/ragdoll-mode-config.h"
 
@@ -218,6 +219,25 @@ void engineTickCamera(Engine& engine, float dt)
     auto& gReplayCameraMgr = REPLAY_CAMERA_MGR;
     auto& gReplayChatStates = REPLAY_CHAT_STATES;
     auto& mpContext = MP_CONTEXT;
+
+    // ── Spectator freecam lock (one-life / objective rounds) ─────────
+    // When the local actor is Spectating, force the gameplay freecam on and
+    // hold it until the round resets. The terminal `freecam 0` command is also
+    // gated while locked, so the player cannot detach early.
+    {
+        using MimitaNet::CommunityMatchClient;
+        const bool spectating = CommunityMatchClient::instance().localActorSpectating();
+        if (spectating) {
+            if (!freecamEnabled) {
+                freecamEnabled = true;
+                camera.pos = player.pos + glm::vec3(0.0f, 0.0f, 2.0f);
+            }
+            gSpectatorFreecamLocked = true;
+        } else if (gSpectatorFreecamLocked) {
+            gSpectatorFreecamLocked = false;
+            freecamEnabled = false;
+        }
+    }
 
     if (InputCommandSystem::instance().isKeyboardEnabled())
         applyDebugMovement(player, engine.window(), camera, dt);

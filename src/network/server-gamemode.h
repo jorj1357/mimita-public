@@ -197,6 +197,54 @@ struct ServerGamemodeState
     bool ragdollEnabled = false;    // value when ragdollExplicit is true
     bool bloodExplicit = false;     // true if gamemode defines blood_enabled
     bool bloodEnabled = false;      // value when bloodExplicit is true
+
+    // ── Forced gameplay overrides (mode JSON) ───────────────────────
+    std::string aimMode;            // "" = no override
+    std::string movementPreset;     // "" = no override; applies to all actors
+    bool healthbarOverride = false; // mode forces the fields below
+    bool healthbarAimModeEnabled = true;
+    bool healthbarShowName = false;
+    bool healthbarShowHpText = false;
+    bool healthbarShowBar = false;
+    float healthbarMaxDistance = 2000.0f;
+
+    // ── Live rule hot-reload ────────────────────────────────────────
+    uint64_t appliedRulesRevision = 0;  // GamemodeRegistry revision applied live
+
+    // ── Objective round lifecycle (win_condition == "objective_rounds") ──
+    bool objectiveRounds = false;
+    int roundWins[2] = {0, 0};      // [0]=team 0, [1]=team 1
+    int roundNumber = 0;
+    bool roundOver = false;         // current round decided, showing ROUND_END
+    std::string roundEndReason;     // "elimination", "bomb_exploded", "bomb_defused", "time"
+
+    // ── NPC wave lifecycle (win_condition == "npc_waves") ──────────
+    // Round N spawns wave_start_count + (N-1) * wave_increment NPCs. Clearing
+    // every NPC advances the round. A player death ends their run, records
+    // their highest round in waveBest, and the run restarts at round 1 once
+    // no living player remains.
+    bool npcWaves = false;
+    int waveNumber = 0;             // current round, 1-based while a run is live
+    int waveStartCount = 1;         // NPCs in round 1
+    int waveIncrement = 1;          // extra NPCs per round
+    std::unordered_map<uint32_t, int> waveBest;  // per-player highest round
+
+    // ── Per-team spawn points (from config/maps/<map>.json) ─────────
+    std::vector<glm::vec3> teamSpawnPoints[2];  // [0]=T, [1]=CT
+
+    // ── Objective bomb (Counter-Strike style) ───────────────────────
+    uint8_t objectiveBombState = 0;      // BombObjectiveState
+    uint32_t objectiveBombCarrierId = 0;
+    glm::vec3 objectiveBombPos{0.0f};
+    float objectiveBombTimer = 0.0f;     // seconds left once planted
+    float objectiveBombPlantProgress = 0.0f;
+    float objectiveBombDefuseProgress = 0.0f;
+    float objectiveBombPlantSeconds = 3.0f;
+    float objectiveBombDefuseSeconds = 5.0f;
+    float objectiveBombTimerMax = 40.0f;
+    float objectiveBombExplosionRadius = 8.0f;
+    float objectiveBombExplosionDamage = 500.0f;
+    uint32_t objectiveBombBroadcastTick = 0;  // throttles objective bomb packets
 };
 
 // Singleton gamemode state for the current server process.

@@ -264,6 +264,16 @@ NpcGoal makeNavGoal(const Npc& npc)
         if (npc.stateMachine.currentState == NpcState::Chase) {
             goal.kind = NpcGoalKind::ReachPosition;
             goal.targetPos = npc.stateMachine.lastKnownTarget;
+        } else if (npc.memory.lastAttackerAge < 6.0f &&
+                   glm::length(npc.memory.lastAttackerPos - npc.body.pos) > 2.0f) {
+            // Investigate the last attacker (bounded memory).
+            goal.kind = NpcGoalKind::ReachPosition;
+            goal.targetPos = npc.memory.lastAttackerPos;
+        } else if (npc.memory.recentDangerAge < 6.0f &&
+                   glm::length(npc.memory.recentDangerPos - npc.body.pos) > 2.0f) {
+            // Move toward recent danger even without a visible target.
+            goal.kind = NpcGoalKind::ReachPosition;
+            goal.targetPos = npc.memory.recentDangerPos;
         } else if (npc.stateMachine.currentState == NpcState::RandomWalk) {
             goal.kind = NpcGoalKind::ReachPosition;
             goal.targetPos = npc.stateMachine.wanderTarget;
@@ -615,6 +625,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     }
 
     senseWorld(npc, player, safeDt);
+    npcMindUpdate(npc, safeDt);
 
     // Hearing: if no target, react to nearby combat sounds
     if (!npc.sensors.hasTarget && npc.stateMachine.lastKnownAge > 2.0f)
@@ -1168,7 +1179,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     // Profile-driven; defaults to 0 (immediate) when no profile applies.
     if (npc.sensors.hasTarget && !npc.prevHadTarget)
     {
-        npc.reactionTimer = std::max(0.0f, npc.behavior.reactionDelay);
+        npc.reactionTimer = std::max(0.0f, npcMindReactionDelay(npc));
         if (npc.reactionTimer > 0.0f)
         {
             npcLog("npc-react npc=%u profile=%s delay=%.2f",

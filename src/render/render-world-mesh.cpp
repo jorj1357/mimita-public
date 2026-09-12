@@ -8,6 +8,7 @@
 #include <glm/glm.hpp>
 
 #include "camera.h"
+#include "combat/area-effect.h"
 #include "debug/debug-visuals.h"
 #include "debug/debug-log.h"
 #include "debug/gl-debug.h"
@@ -210,6 +211,18 @@ void setUniforms(GLuint shader, const glm::vec3& cameraPos)
         glm::vec3 tint = scfg.shadowTint();
         setVec3(shader, "uShadowTint", tint);
         glActiveTexture(GL_TEXTURE0);
+    }
+
+    // Inside-smoke vision fog: only active while the camera is inside a smoke
+    // volume. The world shader fades geometry beyond the configured view limit.
+    const SmokeViewState smoke = AreaEffectSystem::instance().queryCameraSmoke(cameraPos);
+    if (smoke.inside && smoke.viewMeters > 0.0f) {
+        setInt(shader, "uFogEnabled", 1);
+        setVec3(shader, "uFogColor", glm::vec3(0.31f, 0.31f, 0.31f));
+        setVec3(shader, "uFogCameraPos", cameraPos);
+        setFloat(shader, "uFogMaxView", smoke.viewMeters);
+    } else {
+        setInt(shader, "uFogEnabled", 0);
     }
 }
 

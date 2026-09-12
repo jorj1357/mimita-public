@@ -32,6 +32,7 @@
 #include "audio/audio.h"
 #include "camera.h"
 #include "combat/client-collision-world-view.h"
+#include "combat/area-effect.h"
 #include "combat/explosion-fx.h"
 #include "combat/projectile-render.h"
 #include "combat/projectile-simulation.h"
@@ -150,6 +151,12 @@ void configureNetworkProjectile(NetworkProjectile& projectile,
     projectile.explodeOnPlayerImpact = cp(def, "explodeOnPlayerImpact", 1.0f) > 0.0f;
     projectile.explodeOnWorldImpact = cp(def, "explodeOnWorldImpact", 0.0f) > 0.0f;
     projectile.explodeOnLifetime = cp(def, "explodeOnLifetime", 1.0f) > 0.0f;
+    projectile.fullDamageRadius = cp(def, "full_damage_radius", 0.0f);
+    projectile.edgeDamage = cp(def, "edge_damage", 0.0f);
+    // Thrown grenades author their fuse in server ticks.
+    const float fuseTicks = cp(def, "fuse_ticks", 0.0f);
+    if (fuseTicks > 0.0f)
+        projectile.lifetime = fuseTicks / 60.0f;
 }
 
 ProjectilePhysicsState makePhysicsState(const NetworkProjectile& projectile)
@@ -464,9 +471,12 @@ uint32_t mpPredictProjectileAttack(
     projectile.ownerPlayerId = ctx.localPlayerId;
     projectile.fireSerial = requestId;
     projectile.weaponType = networkWeapon;
+    projectile.weaponDefNetworkId = weaponDefNetworkId;
     projectile.position = origin;
     projectile.previousPosition = origin;
     projectile.velocity = dir * speed + glm::vec3(0.0f, 0.0f, upBias);
+    if (cp(def, "inherit_owner_velocity", 0.0f) > 0.0f)
+        projectile.velocity += ctx.localServerVelocity;
     projectile.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
     projectile.angularVelocity = glm::vec3(0.0f);
     projectile.lifetime = def->projectileLifetime > 0.0f ? def->projectileLifetime : 5.0f;
@@ -627,6 +637,7 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
     projectile.ownerPlayerId = event->ownerPlayerId;
     projectile.fireSerial = event->fireSerial;
     projectile.weaponType = event->weapon;
+    projectile.weaponDefNetworkId = event->weaponDefNetworkId;
     const glm::vec3 serverPosition(event->posX, event->posY, event->posZ);
     const glm::vec3 serverVelocity(event->velX, event->velY, event->velZ);
     if (!preserveSim)
@@ -643,7 +654,11 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
     projectile.radius = event->radius;
     projectile.predicted = localOwner && preserveSim;
     projectile.exploded = false;
-    configureNetworkProjectile(projectile, projectileDefinition(event->weapon));
+    const WeaponDefinition* spawnDef = nullptr;
+    if (const std::string* defId = weaponIdForDefNetworkId(event->weaponDefNetworkId))
+        spawnDef = WeaponRegistry::instance().get(*defId);
+    configureNetworkProjectile(projectile,
+                               spawnDef ? spawnDef : projectileDefinition(event->weapon));
     if (projectile.predicted)
         ctx.predictedProjectileIds.insert(event->projectileId);
 
@@ -802,6 +817,7 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
         projectile.projectileId = event->projectileId;
         projectile.ownerPlayerId = 0;
         projectile.weaponType = event->weapon;
+        projectile.weaponDefNetworkId = event->weaponDefNetworkId;
         projectile.position = {event->posX, event->posY, event->posZ};
         projectile.previousPosition = projectile.position;
         projectile.velocity = {event->velX, event->velY, event->velZ};
@@ -812,7 +828,11 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
         projectile.radius = 0.0f;
         projectile.predicted = false;
         projectile.exploded = false;
-        configureNetworkProjectile(projectile, projectileDefinition(event->weapon));
+        const WeaponDefinition* recoverDef = nullptr;
+        if (const std::string* defId = weaponIdForDefNetworkId(event->weaponDefNetworkId))
+            recoverDef = WeaponRegistry::instance().get(*defId);
+        configureNetworkProjectile(projectile,
+                                   recoverDef ? recoverDef : projectileDefinition(event->weapon));
         // Initialize render state for recovery
         projectile.renderPosition = projectile.position;
         projectile.renderVelocity = projectile.velocity;
@@ -923,11 +943,9 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
             removedLegacy = gpWeapons->removeLocalRocketByFireSerial(event->fireSerial);
     }
 
-    // ── Explosion visuals: reconcile against the client-predicted explosion ──
-    // The local owner predicts the explosion instantly. The server confirm either
-    // agrees (let the predicted effect play out — no redraw) or disagrees (show a
-    // disagreement marker + the corrected explosion). Other clients always render
-    // the server-confirmed explosion.
+    // ── Explosion / area-effect visuals ──
+    // Frag and rockets reconcile against the client-predicted explosion. Thrown
+    // smoke/fire grenades instead spawn a persistent area-effect volume.
     constexpr float kExplosionAgreeDistance = 3.0f;
     std::string attacker = "player_" + std::to_string(event->ownerPlayerId);
     {
@@ -935,6 +953,38 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
         if (pi != ctx.playerRegistry.end())
             attacker = pi->second.name;
     }
+    const WeaponDefinition* explodeDef = nullptr;
+    if (const std::string* defId = weaponIdForDefNetworkId(event->weaponDefNetworkId))
+        explodeDef = WeaponRegistry::instance().get(*defId);
+    float onExpireEffect = 0.0f;
+    if (explodeDef)
+    {
+        auto eit = explodeDef->customParams.find("on_expire_effect");
+        if (eit != explodeDef->customParams.end())
+            onExpireEffect = eit->second;
+    }
+    const bool isAreaEffect = onExpireEffect > 0.5f;
+    auto emitProjectileEffect = [&](const glm::vec3& effectPos) {
+        if (isAreaEffect && explodeDef)
+        {
+            const AreaEffectType effect =
+                onExpireEffect >= 1.5f ? AreaEffectType::Fire : AreaEffectType::Smoke;
+            const AreaEffectParams params =
+                areaEffectParamsFromDefinition(*explodeDef, effect);
+            if (effect == AreaEffectType::Smoke)
+                AreaEffectSystem::instance().spawnSmoke(effectPos, params,
+                                                        (int)event->header.tick,
+                                                        event->ownerPlayerId);
+            else
+                AreaEffectSystem::instance().spawnFire(effectPos, params,
+                                                       (int)event->header.tick,
+                                                       event->ownerPlayerId);
+        }
+        else
+        {
+            spawnExplosionFx(effectPos, weaponName, attacker);
+        }
+    };
     const auto predIt = ctx.predictedExplosions.find(event->fireSerial);
     if (predIt != ctx.predictedExplosions.end())
     {
@@ -946,6 +996,7 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
                    "server=(%.2f,%.2f,%.2f)\n",
                    event->fireSerial, predictedPos.x, predictedPos.y, predictedPos.z,
                    position.x, position.y, position.z);
+            // Frag: predicted blast already played. Area: predicted volume already exists.
         }
         else
         {
@@ -962,12 +1013,12 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
             de.correction = position - predictedPos;
             de.description = "explosion position mismatch";
             spawnDisagreementEffect(de);
-            spawnExplosionFx(position, weaponName, attacker);
+            emitProjectileEffect(position);
         }
     }
     else
     {
-        spawnExplosionFx(position, weaponName, attacker);
+        emitProjectileEffect(position);
     }
 
     for (uint8_t i = 0; i < event->victimCount && i < MAX_PROJECTILE_DAMAGE_RESULTS; ++i)
@@ -1644,6 +1695,8 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
 {
     constexpr float kProjectileFixedDt = 1.0f / 60.0f;
     (void)dt;
+    // Expire smoke/fire volumes against the latest authoritative server tick.
+    AreaEffectSystem::instance().update((int)ctx.latestServerTick);
     const uint32_t predictedSteps = ctx.clientSimulationStepsThisUpdate;
 
     if (predictedSteps > 0)
@@ -1747,13 +1800,41 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
                 if (shouldExplode)
                 {
                     projectile.exploded = true;
-                    const char* weaponId = networkWeaponTypeName(projectile.weaponType);
+                    const WeaponDefinition* def = nullptr;
+                    if (const std::string* defId = weaponIdForDefNetworkId(projectile.weaponDefNetworkId))
+                        def = WeaponRegistry::instance().get(*defId);
+                    if (!def)
+                        def = projectileDefinition(projectile.weaponType);
+                    const char* weaponId = def ? def->id.c_str()
+                                               : networkWeaponTypeName(projectile.weaponType);
                     std::string attacker = "player_" + std::to_string(ctx.localPlayerId);
                     auto pi = ctx.playerRegistry.find(ctx.localPlayerId);
                     if (pi != ctx.playerRegistry.end())
                         attacker = pi->second.name;
-                    spawnExplosionFx(explodePos, weaponId, attacker);
+                    const float predOnExpire = def ? cp(def, "on_expire_effect", 0.0f) : 0.0f;
+                    const bool predIsArea = predOnExpire > 0.5f;
+                    if (predIsArea && def)
+                    {
+                        const AreaEffectType effect =
+                            predOnExpire >= 1.5f ? AreaEffectType::Fire : AreaEffectType::Smoke;
+                        const AreaEffectParams params =
+                            areaEffectParamsFromDefinition(*def, effect);
+                        if (effect == AreaEffectType::Smoke)
+                            AreaEffectSystem::instance().spawnSmoke(
+                                explodePos, params, (int)ctx.latestServerTick,
+                                ctx.localPlayerId);
+                        else
+                            AreaEffectSystem::instance().spawnFire(
+                                explodePos, params, (int)ctx.latestServerTick,
+                                ctx.localPlayerId);
+                    }
+                    else
+                    {
+                        spawnExplosionFx(explodePos, weaponId, attacker);
+                    }
                     ctx.predictedExplosions[projectile.fireSerial] = explodePos;
+                    if (!predIsArea)
+                    {
 
                     // ── Predicted blast hit feedback (instant) ──────────────
                     // Replicates the server's splash damage formula so the local
@@ -1763,13 +1844,28 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
                     // splash line-of-sight check mirrors the server so predicted
                     // feedback aligns with the authoritative verdict (a target
                     // behind a wall is skipped, not rolled back later).
-                    const WeaponDefinition* def = projectileDefinition(projectile.weaponType);
                     if (def)
                     {
                         const float radius = cp(def, "splashRadius", 8.0f);
                         const float splashDamage = cp(def, "rocketDirectDamage", 150.0f);
                         const float exponent = cp(def, "splashExponent", 2.0f);
+                        const float fullRadius = cp(def, "full_damage_radius", 0.0f);
+                        const float edgeDamage = cp(def, "edge_damage", 0.0f);
                         const bool losOn = cp(def, "splashLineOfSight", 1.0f) > 0.0f;
+                        // Mirrors the server's splash falloff: linear between
+                        // full_damage_radius and splash_radius for thrown grenades,
+                        // exponential otherwise.
+                        const auto blastDamageAt = [&](float d) -> float {
+                            if (fullRadius > 0.0f) {
+                                if (d <= fullRadius) return splashDamage;
+                                if (d >= radius) return edgeDamage;
+                                const float u = (d - fullRadius) /
+                                    std::max(0.001f, radius - fullRadius);
+                                return glm::mix(splashDamage, edgeDamage, u);
+                            }
+                            return splashDamage *
+                                std::exp(-std::pow(d / radius, 2.0f) * exponent);
+                        };
                         const auto applyBlast = [&](Player& t, uint32_t id, bool isNpc) {
                             if (t.dead || t.currentHp <= 0) return;
                             const float d = glm::length(t.pos - explodePos);
@@ -1781,9 +1877,7 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
                                 if (!clientSplashHasLineOfSight(world, explodePos, target))
                                     return; // wall/cover → server will also skip
                             }
-                            float dv = splashDamage *
-                                std::exp(-std::pow(d / radius, 2.0f) * exponent);
-                            const int dmg = std::max(1, (int)std::round(dv));
+                            const int dmg = std::max(1, (int)std::round(blastDamageAt(d)));
                             WeaponFire::processRemoteBlastHitFeedback(
                                 *def, t.pos, t.pos - explodePos, attacker,
                                 id, isNpc, t, dmg, projectile.fireSerial);
@@ -1799,6 +1893,7 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
                         // supersedes it (no double push).
                         const float kbStrength = cp(def, "knockbackStrength", 160.0f);
                         const float selfMul = cp(def, "selfKnockbackMultiplier", 1.0f);
+                        const float selfDmgMul = cp(def, "selfDamageMultiplier", 1.0f);
                         if (gpPlayer && !gpPlayer->dead)
                         {
                             const Capsule cap = gpPlayer->getCapsule();
@@ -1816,7 +1911,13 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
                                     const glm::vec3 dir = selfDist > 0.001f
                                         ? toSelf / selfDist : glm::vec3(0.0f, 1.0f, 0.0f);
                                     const float t = selfDist / radius;
-                                    const float knockScale = (1.0f - t * t) * 0.85f + 0.15f;
+                                    float knockScale = (1.0f - t * t) * 0.85f + 0.15f;
+                                    if (fullRadius > 0.0f) {
+                                        const float selfDmg = blastDamageAt(selfDist) * selfDmgMul;
+                                        knockScale = std::clamp(
+                                            selfDmg / std::max(0.001f, splashDamage * selfDmgMul),
+                                            0.0f, 1.0f);
+                                    }
                                     const glm::vec3 kb =
                                         dir * kbStrength * knockScale * selfMul;
                                     gpPlayer->externalImpulse += kb;
@@ -1826,6 +1927,7 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
                                 }
                             }
                         }
+                    }
                     }
                     printf("[PROJECTILE CLIENT PREDICTED EXPLOSION] fireSerial=%u weapon=%s "
                            "pos=(%.2f,%.2f,%.2f)\n",

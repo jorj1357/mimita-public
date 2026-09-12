@@ -30,6 +30,9 @@ extern World* gpWorld;
 extern NpcSystem* gpNpcSystem;
 extern WeaponSystem* gpWeapons;
 extern bool* gpFreecamEnabled;
+// While true, gameplay freecam is forced on and cannot be turned off. Set by
+// the spectator owner when the local actor is Spectating for the round.
+extern bool gSpectatorFreecamLocked;
 extern glm::vec3* gpDeathPosition;
 extern int* gpSelectedEditorObject;
 extern bool* gpEditorMode;

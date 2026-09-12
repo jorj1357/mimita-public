@@ -25,6 +25,7 @@
 #include "npc/npc-internal.h"
 #include "npc/npc-difficulty-config.h"
 #include "npc/npc-combat-log.h"
+#include "npc/npc-mind.h"
 
 // Shared NPC projectile state (rockets, grenades, etc.)
 static RocketLauncherState gNpcRocketState;
@@ -116,10 +117,12 @@ float NpcCombat::aimErrorDegrees(float difficulty)
 
 float NpcCombat::effectiveAimErrorDegrees(const Npc& npc)
 {
-    // Role behavior profile wins when it sets an aim error.
-    if (npc.behavior.active && npc.behavior.aimErrorDeg >= 0.0f)
-        return npc.behavior.aimErrorDeg;
-    return aimErrorDegrees(npc.difficulty);
+    // Role behavior profile wins when it sets an aim error; runtime panic/stress
+    // add on top for all actors.
+    float base = (npc.behavior.active && npc.behavior.aimErrorDeg >= 0.0f)
+        ? npc.behavior.aimErrorDeg
+        : aimErrorDegrees(npc.difficulty);
+    return std::max(0.0f, base + npcMindAimErrorBonus(npc));
 }
 
 float NpcCombat::maxAngularErrorForAccuracy(float acc)
@@ -215,8 +218,9 @@ glm::vec3 NpcCombat::applyAimError(const Npc& npc, glm::vec3 aimDir)
 
 static float computeFireAggression(const Npc& npc)
 {
-    float base = (npc.behavior.active && npc.behavior.aggression >= 0.0f)
+    float baseRaw = (npc.behavior.active && npc.behavior.aggression >= 0.0f)
         ? npc.behavior.aggression : npc.tuning.aggression;
+    float base = npcMindEffectiveAggression(npc, baseRaw);
     float healthFrac = (float)npc.body.currentHp / (float)npc.body.maxHp;
     float lowHealth = (1.0f - healthFrac) * 0.3f;
     float closeTarget = npc.sensors.targetDistance < 5.0f ? 0.3f : 0.0f;

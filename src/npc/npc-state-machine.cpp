@@ -8,6 +8,7 @@
 #include "config.h"
 #include "debug/debug-log.h"
 #include "npc/npc-internal.h"
+#include "npc/npc-mind.h"
 #include "combat/weapon-registry.h"
 
 // Search and cover constants
@@ -25,7 +26,8 @@ float scoreState(NpcState s, const Npc& npc, float d01)
     float mid01 = 1.0f - std::fabs(dist - 8.0f) / 12.0f;
     float longRange01 = clamp01((dist - 20.0f) / 130.0f);
     float hasTarget = sensors.hasTarget ? 1.0f : 0.0f;
-    float agg = npc.tuning.aggression;
+    // Personality baseline plus runtime confidence/fear.
+    float agg = npcMindEffectiveAggression(npc, npc.tuning.aggression);
 
     // Weapon range awareness: prefer distances matching weapon effective range.
     // A role behavior preferred_range overrides the weapon-derived distance.
@@ -57,7 +59,8 @@ float scoreState(NpcState s, const Npc& npc, float d01)
                  * (0.7f + 0.3f * rangeMatch);
 
         case NpcState::Retreat:
-            return hasTarget * (close01 * 0.3f + (1.0f - agg) * 0.2f);
+            return hasTarget * (close01 * 0.3f + (1.0f - agg) * 0.2f)
+                 + npcMindRetreatBonus(npc);
 
         case NpcState::Attack:
             if (npc.attackCooldown > 0.0f) return 0.0f;

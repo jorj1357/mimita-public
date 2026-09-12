@@ -1,0 +1,24 @@
+{
+  "id": "dust2cyberiav3",
+  "_comment": "Per-map gameplay metadata for Counter-Strike objective mode. Team spawns and bomb sites are map-authored data. TODO(author-in-blender): replace these provisional offsets with real bombsite volumes and dedicated 'spawn T'/'spawn CT' glb nodes; the loader prefers glb tags when present.",
+  "team_spawns": {
+    "T": [
+      { "x": -614.89, "y": 28.29, "z": 2366.22, "yaw": 0.0 },
+      { "x": -610.89, "y": 33.29, "z": 2366.22, "yaw": 0.0 },
+      { "x": -618.89, "y": 23.29, "z": 2366.22, "yaw": 0.0 }
+    ],
+    "CT": [
+      { "x": -594.89, "y": 28.29, "z": 2366.22, "yaw": 180.0 },
+      { "x": -598.89, "y": 33.29, "z": 2366.22, "yaw": 180.0 },
+      { "x": -590.89, "y": 23.29, "z": 2366.22, "yaw": 180.0 }
+    ]
+  },
+  "bomb_sites": [
+    { "name": "A", "x": -604.89, "y": 28.29, "z": 2366.22, "radius": 30.0 }
+  ],
+  "bomb": {
+    "timer_seconds": 40,
+    "plant_seconds": 3,
+    "defuse_seconds": 5
+  }
+}

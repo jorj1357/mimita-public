@@ -34,13 +34,25 @@ public:
     bool reload();
     bool pollReload();
 
-    const HealthbarConfigData& data() const { return mData; }
+    // Effective settings: the active gamemode override when one is set, else the
+    // player's config/healthbar.json. The override is process-local and is
+    // applied by the gamemode/client state owner, never persisted.
+    const HealthbarConfigData& data() const { return mMatchOverrideActive ? mMatchOverride : mData; }
     HealthbarConfigData& edit();
+
+    // Force a subset of healthbar values while a match is active. Only the
+    // mode-declared fields are changed; colors/timing keep the user's values.
+    void setMatchOverride(bool aimModeEnabled, bool showName, bool showHpText,
+                          bool showBar, float maxDistance);
+    void clearMatchOverride();
+    bool hasMatchOverride() const { return mMatchOverrideActive; }
 
 private:
     HealthbarConfig() = default;
 
     HealthbarConfigData mData;
+    HealthbarConfigData mMatchOverride;
+    bool mMatchOverrideActive = false;
     std::string mPath = "config/healthbar.json";
     int64_t mLastModified = 0;
 };

@@ -1,20 +1,44 @@
 {
   "id": "counterstrike",
   "name": "Counter Strike",
-  "description": "Tactical defuse mode. No ragdolds.",
-  "team_names": ["RED", "BLUE"],
-  "goal_value": 10,
-  "weapon_set_id": 1,
-  "time_limit_seconds": 120,
+  "description": "Tactical defuse. First team to 8 rounds. No ragdolls.",
+  "team_names": ["TERRORIST", "COUNTER-TERRORIST"],
+  "goal_value": 8,
+  "weapon_set_id": 9,
+  "time_limit_seconds": 115,
   "respawn_seconds": 0,
   "kill_heals": false,
-  "countdown_seconds": 5,
+  "countdown_seconds": 3,
   "go_seconds": 0.75,
   "rematch_seconds": 5,
-  "spawn_offset_radius": 5.0,
+  "spawn_offset_radius": 3.0,
   "intermission_seconds": 15,
-  "results_seconds": 8,
+  "results_seconds": 5,
   "camera_fov": 70,
+  "aim_mode": "physical",
+  "movement_preset": "counterstrike",
   "ragdoll_enabled": false,
-  "maps": ["atdm"]
+  "blood_enabled": true,
+  "healthbar": {
+    "aim_mode_enabled": true,
+    "show_name_in_aim_mode": false,
+    "show_hp_text_in_aim_mode": false,
+    "show_bar_in_aim_mode": false,
+    "max_distance": 9999.0
+  },
+  "bomb_plant_seconds": 3,
+  "bomb_defuse_seconds": 5,
+  "bomb_timer_seconds": 40,
+  "bomb_explosion_radius": 8,
+  "bomb_explosion_damage": 500,
+  "win_condition": "objective_rounds",
+  "features": {
+    "objective_bomb": true
+  },
+  "roles": {
+    "terrorist": 10,
+    "counter_terrorist": 10
+  },
+  "use_mode_maps": true,
+  "maps": ["dust2cyberiav3"]
 }

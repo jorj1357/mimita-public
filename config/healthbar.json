@@ -1,9 +1,9 @@
 {
-  "aim_mode_enabled": false,
-  "aim_cone_degrees": 90.0,
-  "triangle_size": 14.0,
+  "aim_mode_enabled": true,
+  "aim_cone_degrees": 45.0,
+  "triangle_size": 10.0,
   "triangle_offset": 8.0,
-  "triangle_alpha": 0.95,
+  "triangle_alpha": 0.5,
   "triangle_fade_ticks": 1,
   "blink_hp_threshold": 5,
   "blink_ticks": 60,

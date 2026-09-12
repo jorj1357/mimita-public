@@ -165,6 +165,7 @@ struct NetworkProjectile
     uint32_t ownerPlayerId = 0;
     uint32_t fireSerial = 0;
     uint8_t weaponType = NETWORK_WEAPON_NONE;
+    uint16_t weaponDefNetworkId = 0;
 
     // Authoritative/server state (directly from packets, NOT for rendering)
     glm::vec3 position{0.0f};
@@ -193,6 +194,8 @@ struct NetworkProjectile
     bool explodeOnPlayerImpact = true;
     bool explodeOnWorldImpact = false;
     bool explodeOnLifetime = true;
+    float fullDamageRadius = 0.0f;
+    float edgeDamage = 0.0f;
 
     // Interpolation state (for smooth visual rendering)
     glm::vec3 renderPosition{0.0f};

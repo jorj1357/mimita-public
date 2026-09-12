@@ -35,6 +35,16 @@ struct BehaviorProfileDefinition
     float weaponDamageBias = -1.0f;      // preference for high damage
     float weaponSafetyBias = -1.0f;      // preference for safer/ranged weapons
     float weaponSwitchThreshold = -1.0f; // required score margin to switch
+    // Emotional baseline + event sensitivity (<0 = no override).
+    float baseFear = -1.0f;
+    float baseConfidence = -1.0f;
+    float damagePanicSensitivity = -1.0f;
+    float damageFearSensitivity = -1.0f;
+    float panicAimPenalty = -1.0f;       // degrees of aim error per unit panic
+    float fearRetreatWeight = -1.0f;     // retreat score bonus per unit fear
+    float confidenceAttackWeight = -1.0f;// aggression bonus per unit confidence
+    float panicDecayPerSecond = -1.0f;
+    float stressDecayPerSecond = -1.0f;
 };
 
 // Resolved combat tuning carried by an NPC for its current life. `active` is
@@ -58,6 +68,16 @@ struct NpcBehaviorTuning
     float weaponDamageBias = 0.0f;
     float weaponSafetyBias = 0.0f;
     float weaponSwitchThreshold = 0.0f;
+    // Emotional baseline + sensitivity.
+    float baseFear = 0.0f;
+    float baseConfidence = 0.5f;
+    float damagePanicSensitivity = 1.0f;
+    float damageFearSensitivity = 1.0f;
+    float panicAimPenalty = 0.0f;
+    float fearRetreatWeight = 0.0f;
+    float confidenceAttackWeight = 0.0f;
+    float panicDecayPerSecond = 0.7f;
+    float stressDecayPerSecond = 0.4f;
 };
 
 class BehaviorProfileRegistry

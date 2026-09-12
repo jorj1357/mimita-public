@@ -21,6 +21,7 @@
 #include "network/badconn/badconn.h"
 #include "config/networking-config.h"
 #include "analytics/analytics-manager.h"
+#include "combat/area-effect.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "ragdoll/ragdoll-mode.h"
@@ -247,6 +248,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.lastClockAnchorServerTick = 0;
     ctx.networkProjectiles.clear();
     ctx.projectileTerminals.clear();
+    AreaEffectSystem::instance().clear();
     ctx.reliableEventSessionId = 0;
     ctx.processedReliableEventIds.clear();
     ctx.processedReliableEventOrder.clear();

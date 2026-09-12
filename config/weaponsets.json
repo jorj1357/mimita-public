@@ -45,6 +45,28 @@
       "description": "Role loadout: Rocket Launcher, Shotgun. Not host-selectable.",
       "role_only": true,
       "weapons": ["rocket_launcher", "shotgun"]
+    },
+    {
+      "id": 8,
+      "name": "Grenades",
+      "description": "Smoke, Frag (1), Fire (2), and Spyknife (3).",
+      "weapons": ["grenade_smoke", "grenade_frag", "grenade_fire", "spyknife"]
+    },
+    {
+      "id": 9,
+      "key": "cs_t",
+      "name": "Terrorist (role)",
+      "description": "Counter-Strike Terrorist loadout: AK-47, Spy Knife.",
+      "role_only": true,
+      "weapons": ["ak", "spyknife"]
+    },
+    {
+      "id": 10,
+      "key": "cs_ct",
+      "name": "Counter-Terrorist (role)",
+      "description": "Counter-Strike CT loadout: Sniper, Revolver, Spy Knife.",
+      "role_only": true,
+      "weapons": ["sniper", "revolver", "spyknife"]
     }
   ]
 }

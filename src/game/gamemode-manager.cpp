@@ -240,6 +240,11 @@ void GamemodeManager::renderHud() {
         renderBombHolderText();
     }
 
+    // ── Feature: objective_bomb (Counter-Strike style) ───────────────
+    if (gm.features.objectiveBomb) {
+        renderObjectiveBombHud();
+    }
+
     // ── Future features render here ──────────────────────────────────
     // if (gm.features.bossHealthbar) renderBossHealthbar();
     // if (gm.features.worldText) renderWorldText();
@@ -256,6 +261,20 @@ void GamemodeManager::renderWorldElements(Camera& camera, Player& player) {
     // ── Feature: bomb_blink + world_timer ────────────────────────────
     if (gm.features.bombBlink || gm.features.worldTimer) {
         renderBombVisual(camera, player);
+    }
+
+    // ── Feature: objective_bomb (Counter-Strike style) ───────────────
+    // Render the dropped/planted C4 and its timer from replicated state.
+    if (gm.features.objectiveBomb) {
+        const uint8_t bombState = c.objectiveBombState();
+        if (bombState == BOMB_OBJ_DROPPED || bombState == BOMB_OBJ_PLANTED) {
+            const glm::vec3 pos = c.bombPosition();
+            if (pos != glm::vec3(0.0f)) {
+                renderBombSphere(pos, (float)c.bombTimerTicks(),
+                                 bombState == BOMB_OBJ_PLANTED);
+                renderWorldTimer(pos, c.bombSecondsRemaining());
+            }
+        }
     }
 
     // ── Feature: pass effect ─────────────────────────────────────────
@@ -296,6 +315,45 @@ void GamemodeManager::renderBombHolderText() {
             const char* name = bombHolderName(localId, THE_PLAYER);
             snprintf(buf, sizeof(buf), "%s has the bomb!!!! %.2f until it explodes!!!", name, std::max(0.0f, seconds));
             btText("npcBombAlert", buf);
+        }
+    }
+}
+
+void GamemodeManager::renderObjectiveBombHud() {
+    const auto& c = CommunityMatchClient::instance();
+    const uint8_t state = c.objectiveBombState();
+    if (state == BOMB_OBJ_NONE) return;
+
+    GuiLayout& layout = GuiLayoutManager::instance().getGamemodeLayout(c.mode());
+    auto draw = [&](const char* id, const std::string& text) {
+        const GuiElement* el = layout.get(id);
+        if (!el || !el->visible) return;
+        const float scale = el->fontSize > 0.0f ? el->fontSize : 0.36f;
+        const float w = uiMeasureText(text.c_str(), scale);
+        uiDrawText(text.c_str(), uiScreenW() * 0.5f - w * 0.5f,
+                   uiScaleY(el->y), scale, el->getTextColorVec());
+    };
+
+    if (state == BOMB_OBJ_CARRIED) {
+        char buf[96];
+        if (c.bombOwnerPlayerId() == MP_CONTEXT.localPlayerId) {
+            if (c.objectivePlantPercent() > 0)
+                snprintf(buf, sizeof(buf), "Planting... %u%%", (unsigned)c.objectivePlantPercent());
+            else
+                snprintf(buf, sizeof(buf), "You have the bomb! Plant it in a bomb site.");
+            draw("bombAlert", buf);
+        }
+    } else if (state == BOMB_OBJ_DROPPED) {
+        draw("bombAlert", "Bomb dropped - Terrorists can pick it up.");
+    } else if (state == BOMB_OBJ_PLANTED) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "BOMB PLANTED  %.1fs",
+                 std::max(0.0f, c.bombSecondsRemaining()));
+        draw("bombPlanted", buf);
+        if (c.objectiveDefusePercent() > 0) {
+            char def[64];
+            snprintf(def, sizeof(def), "DEFUSING... %u%%", (unsigned)c.objectiveDefusePercent());
+            draw("bombAlert", def);
         }
     }
 }

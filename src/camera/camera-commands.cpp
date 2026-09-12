@@ -42,6 +42,13 @@ void registerCameraCommands()
     Terminal::instance().registerCommand({
         "freecam", "Detach or attach the gameplay camera", "freecam <0|1>",
         [](const std::vector<std::string>& args) {
+            // While spectating a round, freecam is forced on and cannot be
+            // detached until the round ends.
+            if (gSpectatorFreecamLocked && !args.empty() && args[0] == "0") {
+                Terminal::instance().addLog(
+                    "[FREECAM] locked until the round ends (spectating)");
+                return;
+            }
             FREECAM_ENABLED = args.empty() ? !FREECAM_ENABLED : args[0] != "0";
             if (FREECAM_ENABLED)
                 THE_CAMERA.pos = THE_PLAYER.pos + glm::vec3(0, 0, 2.0f);

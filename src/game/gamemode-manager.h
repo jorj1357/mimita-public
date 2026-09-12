@@ -72,6 +72,7 @@ private:
     // ── Feature-based renderers ──────────────────────────────────────
     // Each renders only when its feature flag is true in the gamemode JSON.
     void renderBombHolderText();
+    void renderObjectiveBombHud();
     void renderBombVisual(Camera& camera, Player& player);
     void renderPassEffect(Camera& camera);
     void renderBombSphere(const glm::vec3& pos, float timerTicks, bool isActive);

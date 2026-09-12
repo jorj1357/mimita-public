@@ -108,6 +108,7 @@
 #include "avatar/avatar-commands.h"
 #include "render/lighting-config.h"
 #include "hot-reload/hot-reload-system.h"
+#include "live-code/live-journal.h"
 #include "profile/local-profile-system.h"
 #include "gui/menus/sign-in-menu.h"
 #include "gui/menus/server-info-menu.h"
@@ -337,6 +338,7 @@ int main(int argc, char** argv)
     AnalyticsManager::instance().shutdown();
     StructuredLogger::instance().shutdown();
     HotReloadSystem::instance().unloadGameDLL();
+    LiveEventJournal::instance().shutdown();
     engine.shutdown();
     LogManager::instance().shutdown();
     

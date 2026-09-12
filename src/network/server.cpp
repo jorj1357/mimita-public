@@ -24,6 +24,7 @@
 #include "void-death/void-death.h"
 #include "combat/weapon-data.h"
 #include "combat/weapon-registry.h"
+#include "combat/area-effect.h"
 #include "npc/npc.h"
 #include "npc/npc-difficulty-config.h"
 #include "npc/npc-combat-log.h"
@@ -918,6 +919,7 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     state.players.clear();
     state.npcs.clear();
     state.projectiles.clear();
+    AreaEffectSystem::instance().clear();
     state.nextPlayerId = 1;
     state.nextEntityId = 1000;
     state.nextProjectileId = 1;

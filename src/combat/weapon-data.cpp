@@ -760,6 +760,105 @@ WeaponDefinition createSpyKnifeDefinition() {
     return def;
 }
 
+namespace {
+
+void setThrownGrenadeCommon(WeaponDefinition& def, int slot, const std::string& sound)
+{
+    def.slot = slot;
+    def.damage = 0.0f;
+    def.fireDelay = 1.0f;
+    def.reloadTime = 1.0f;
+    def.magazineSize = 1;
+    def.pelletCount = 1;
+    def.projectileSpeed = 18.0f;
+    def.projectileRadius = 0.12f;
+    def.projectileLifetime = 3.0f;
+    def.fireMode = WeaponFireMode::SemiAuto;
+    def.behaviorType = WeaponBehaviorType::Grenade;
+    def.hitscan = false;
+    def.usesPhysicsProjectile = true;
+    def.soundShoot = sound;
+    def.soundReload = "";
+    def.soundDryFire = "ui/click";
+    auto& p = def.customParams;
+    p["reserveAmmo"] = 999.0f;
+    p["throw_speed"] = 18.0f;
+    p["up_bias"] = 4.0f;
+    p["inherit_owner_velocity"] = 1.0f;
+    p["fuse_ticks"] = 180.0f;
+    p["gravity"] = 20.0f;
+    p["drag"] = 0.15f;
+    p["angularDrag"] = 0.3f;
+    p["bounceRestitution"] = 0.35f;
+    p["bounceFriction"] = 0.5f;
+    p["minBounceSpeed"] = 0.1f;
+    p["maxBounceCount"] = 10.0f;
+    p["armingDistance"] = 2.0f;
+    p["angSpeed"] = 6.0f;
+    p["explodeOnPlayerImpact"] = 0.0f;
+    p["explodeOnWorldImpact"] = 0.0f;
+    p["explodeOnLifetime"] = 1.0f;
+    p["splashRadius"] = 1.0f;
+    p["splashExponent"] = 2.0f;
+    p["splashLineOfSight"] = 1.0f;
+}
+
+} // namespace
+
+WeaponDefinition createGrenadeSmokeDefinition() {
+    WeaponDefinition def;
+    def.id = "grenade_smoke";
+    def.displayName = "Smoke Grenade";
+    setThrownGrenadeCommon(def, 13, "grenadelauncher/grenadelaunchershoot");
+    auto& p = def.customParams;
+    p["on_expire_effect"] = 1.0f; // smoke
+    p["smoke_radius"] = 10.0f;
+    p["smoke_lifetime_ticks"] = 600.0f;
+    p["smoke_visibility_meters"] = 1.0f;
+    p["smoke_hide_healthbars"] = 1.0f;
+    p["smoke_color_r"] = 0.31f;
+    p["smoke_color_g"] = 0.31f;
+    p["smoke_color_b"] = 0.31f;
+    p["smoke_color_a"] = 1.0f;
+    return def;
+}
+
+WeaponDefinition createGrenadeFragDefinition() {
+    WeaponDefinition def;
+    def.id = "grenade_frag";
+    def.displayName = "Frag Grenade";
+    setThrownGrenadeCommon(def, 14, "grenadelauncher/grenadelaunchershoot");
+    auto& p = def.customParams;
+    p["on_expire_effect"] = 0.0f; // explosion
+    p["splashRadius"] = 10.0f;
+    p["rocketDirectDamage"] = 150.0f;
+    p["full_damage_radius"] = 3.0f;
+    p["edge_damage"] = 10.0f;
+    p["knockbackStrength"] = 120.0f;
+    p["selfKnockbackMultiplier"] = 0.8f;
+    p["selfDamageMultiplier"] = 0.5f;
+    return def;
+}
+
+WeaponDefinition createGrenadeFireDefinition() {
+    WeaponDefinition def;
+    def.id = "grenade_fire";
+    def.displayName = "Fire Grenade";
+    setThrownGrenadeCommon(def, 15, "grenadelauncher/grenadelaunchershoot");
+    auto& p = def.customParams;
+    p["on_expire_effect"] = 2.0f; // fire
+    // Fire detonates on first contact (player or world) or on fuse.
+    p["explodeOnPlayerImpact"] = 1.0f;
+    p["explodeOnWorldImpact"] = 1.0f;
+    p["fire_radius"] = 8.0f;
+    p["fire_height"] = 8.0f;
+    p["fire_lifetime_ticks"] = 480.0f;
+    p["fire_cycle_speed"] = 2.0f;
+    p["fire_damage_per_interval"] = 5.0f;
+    p["fire_damage_interval_ticks"] = 10.0f;
+    return def;
+}
+
 void registerBuiltinWeapons() {
     loadWeaponJsonConfig();
     registerWeaponFromJson(createRevolverDefinition());
@@ -774,7 +873,10 @@ void registerBuiltinWeapons() {
     registerWeaponFromJson(createHafsDefinition());
     registerWeaponFromJson(createQuickHitDefinition());
     registerWeaponFromJson(createSpyKnifeDefinition());
-    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver, hafs, quick_hit, spyknife");
+    registerWeaponFromJson(createGrenadeSmokeDefinition());
+    registerWeaponFromJson(createGrenadeFragDefinition());
+    registerWeaponFromJson(createGrenadeFireDefinition());
+    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver, hafs, quick_hit, spyknife, grenade_smoke, grenade_frag, grenade_fire");
 
     // Diagnostics: print the actually-loaded weapon stats so config edits are
     // verifiable in logs (reveals builtin-default fallback when the JSON file

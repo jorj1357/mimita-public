@@ -1,8 +1,8 @@
 // 09 11 2026
 /* purpose
 * Named NPC behavior profiles referenced by config/roles.json behavior_profile.
-* Combat, target-selection, and weapon-selection tuning. Missing values fall
-* back to NpcDifficultyConfig / neutral defaults.
+* Combat, target-selection, weapon-selection, and emotional baseline/sensitivity
+* tuning. Missing values fall back to NpcDifficultyConfig / neutral defaults.
 * Does NOT contain role/team/health/loadout/movement data.
 */
 {
@@ -22,7 +22,16 @@
       "weapon_range_bias": 1.0,
       "weapon_damage_bias": 0.4,
       "weapon_safety_bias": 0.4,
-      "weapon_switch_threshold": 0.1
+      "weapon_switch_threshold": 0.1,
+      "base_fear": 0.15,
+      "base_confidence": 0.5,
+      "damage_panic_sensitivity": 0.8,
+      "damage_fear_sensitivity": 0.6,
+      "panic_aim_penalty": 6.0,
+      "fear_retreat_weight": 0.5,
+      "confidence_attack_weight": 0.3,
+      "panic_decay_per_second": 0.7,
+      "stress_decay_per_second": 0.4
     },
     {
       "id": "aggressive",
@@ -39,7 +48,16 @@
       "weapon_range_bias": 0.6,
       "weapon_damage_bias": 1.0,
       "weapon_safety_bias": 0.1,
-      "weapon_switch_threshold": 0.2
+      "weapon_switch_threshold": 0.2,
+      "base_fear": 0.05,
+      "base_confidence": 0.7,
+      "damage_panic_sensitivity": 0.4,
+      "damage_fear_sensitivity": 0.3,
+      "panic_aim_penalty": 3.0,
+      "fear_retreat_weight": 0.2,
+      "confidence_attack_weight": 0.6,
+      "panic_decay_per_second": 0.9,
+      "stress_decay_per_second": 0.5
     },
     {
       "id": "nervous",
@@ -56,7 +74,16 @@
       "weapon_range_bias": 1.2,
       "weapon_damage_bias": 0.2,
       "weapon_safety_bias": 1.2,
-      "weapon_switch_threshold": 0.03
+      "weapon_switch_threshold": 0.03,
+      "base_fear": 0.35,
+      "base_confidence": 0.35,
+      "damage_panic_sensitivity": 1.5,
+      "damage_fear_sensitivity": 1.4,
+      "panic_aim_penalty": 10.0,
+      "fear_retreat_weight": 1.2,
+      "confidence_attack_weight": 0.1,
+      "panic_decay_per_second": 0.5,
+      "stress_decay_per_second": 0.3
     }
   ]
 }
