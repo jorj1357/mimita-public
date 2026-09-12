@@ -432,10 +432,13 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
             if (!npcPtr->networkDeathPresented)
             {
                 npcPtr->networkDeathPresented = true;
+                uint32_t deathTick = 0, deathEventId = 0;
+                RagdollModeSystem::instance().consumeNetworkDeath(
+                    event->npcEntityId, deathTick, deathEventId);
                 RagdollModeSystem::instance().spawnCorpse(
                     *npcPtr, glm::vec3(0.0f, 0.0f, 6.0f),
                     "net_npc_" + std::to_string(event->npcEntityId),
-                    event->npcEntityId);
+                    event->npcEntityId, deathTick, deathEventId);
                 Debug::log(Debug::Category::Networking,
                     "[NET NPC DEATH FX] entityId=%u pos=(%.1f,%.1f,%.1f) source=reliable-event\n",
                     event->npcEntityId, npcPtr->pos.x, npcPtr->pos.y, npcPtr->pos.z);

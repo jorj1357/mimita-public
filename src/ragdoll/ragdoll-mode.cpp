@@ -1,5 +1,7 @@
 #include "ragdoll/ragdoll-mode.h"
 #include "ragdoll/ragdoll-mode-config.h"
+#include "ragdoll/ragdoll-entities.h"
+#include "ragdoll/ragdoll-solver.h"
 
 #include <algorithm>
 #include <cmath>
@@ -24,6 +26,8 @@
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/ray-utils.h"
+#include "sim/domain-scheduler.h"
+#include "telemetry/telemetry.h"
 #include "renderer/renderer.h"
 #include "world/texture-store.h"
 #include "world/world.h"
@@ -35,7 +39,39 @@
 extern Renderer* gRenderer;
 extern TextureStore gTextures;
 
-static constexpr float GRAVITY = 9.81f;
+// Deterministic corpse seed: same world seed, owner, death tick, and event id
+// produce the same corpse on every client (FNV-1a over the identity, finalized
+// with a splitmix64 step so small id changes fully decorrelate the spawn).
+static std::uint64_t corpseSeedFor(const std::string& actorId, std::uint32_t ownerId,
+                                   std::uint32_t deathTick, std::uint32_t deathEventId,
+                                   std::uint64_t worldSeed)
+{
+    std::uint64_t h = 1469598103934665603ull ^ worldSeed;
+    auto mix = [&h](std::uint64_t v) {
+        h ^= v;
+        h *= 1099511628211ull;
+    };
+    for (unsigned char c : actorId)
+        mix(c);
+    mix(ownerId);
+    mix(deathTick);
+    mix(deathEventId);
+    h += 0x9E3779B97F4A7C15ull;
+    h = (h ^ (h >> 30)) * 0xBF58476D1CE4E5B9ull;
+    h = (h ^ (h >> 27)) * 0x94D049BB133111EBull;
+    return h ^ (h >> 31);
+}
+
+// xorshift64* stream so a corpse's random tumble is reproducible from its seed.
+static float seededSigned(std::uint64_t& state)
+{
+    state ^= state >> 12;
+    state ^= state << 25;
+    state ^= state >> 27;
+    const std::uint64_t v = state * 2685821657736338717ull;
+    return ((float)((v >> 11) % 2001) / 1000.0f - 1.0f) * 2.0f;
+}
+
 
 static int findPartByName(const std::vector<RagdollModePart>& parts, const std::string& name)
 {
@@ -132,6 +168,11 @@ void RagdollModeSystem::activate(Player& player)
     mActive = true;
     mAlive = RagdollBody{};
     mCameraSmoothInit = false;
+
+    // Reset the solver domain accumulator so activation never bursts through
+    // the configured catch-up with stale time.
+    if (Sim::SimulationDomain* domain = Sim::DomainScheduler::instance().find("ragdoll.solver"))
+        domain->accumulator = 0.0;
 
     // Bind from the model's rest pose, not the currently animated pose.
     // Otherwise a limb's current animation rotation (for example an arm swung
@@ -537,55 +578,42 @@ void RagdollModeSystem::update(float dt, const World& world, Player& player,
     processGrab(input, camera, world, b);
     processExtend(input, camera, dt, b);
 
-    // Step 2: Integrate gravity and motion for every body part.
-    glm::vec3 gravity(0.0f, 0.0f, -GRAVITY * cfg.gravityScale);
-    for (auto& part : b.parts)
-        integrate(part.body, gravity, dt);
+    // Publish the alive ragdoll into the entity components so the solver domain
+    // reads and writes the canonical limb state.
+    Ragdoll::RagdollEntities& entities = Ragdoll::RagdollEntities::instance();
+    const std::uint32_t owner = mOwnerActorId;
+    entities.bind(owner, b);
+    entities.syncFromBody(owner, b);
+    entities.setGrab(owner, true, b.leftGrab);
+    entities.setGrab(owner, false, b.rightGrab);
 
-    // Step 3: Joints (velocity + position), angular limits, and cone limits.
-    solveJoints(cfg.solverIterations, true, b);
+    // Base solver policy comes from config; a hot gameplay module may override.
+    Ragdoll::SolveParams base;
+    base.stiffness = 1.0f;
+    base.damping = 1.0f;
+    base.iterations = cfg.solverIterations;
+    base.gravityScale = cfg.gravityScale;
+    entities.setSolveParams(owner, base);
+    const Ragdoll::SolveParams params = entities.solveParams(owner);
 
-    // Step 4: Grab constraints (velocity + position).
-    solveGrabs(cfg.solverIterations, b);
-
-    // Step 5: World collision (swept, substepped).
-    if (cfg.worldCollision) {
-        for (auto& part : b.parts)
-            collideWithWorld(part.body, world, dt);
-    }
-
-    // Step 6: One self-collision pre-pass before the joints.
-    if (cfg.selfCollision)
-        selfCollision(b);
-
-    // Step 7: Re-converge constraints after collision so links stay rigid.
-    solveJoints(cfg.solverIterations / 2, true, b);
-    solveGrabs(cfg.solverIterations / 2, b);
-
-    // Step 7b: Self collision again so the joint pass cannot re-penetrate parts.
-    if (cfg.selfCollision) {
-        for (int i = 0; i < cfg.selfCollisionIterations; ++i) selfCollision(b);
-    }
-
-    // Step 8: Final overlap cleanup so constraints cannot leave a part buried.
-    if (cfg.worldCollision) {
-        for (auto& part : b.parts)
-            depenetrateWorld(part.body, world, 2);
-    }
-
-    // Step 8b: Natural stop. A part below the configured speed is treated as
-    // at rest for this tick so limbs settle instead of jittering.
-    for (auto& part : b.parts) {
-        if (part.body.stopLinearSpeed > 0.0f &&
-            glm::length(part.body.linearVelocity) < part.body.stopLinearSpeed)
-            part.body.linearVelocity = glm::vec3(0.0f);
-        if (part.body.stopAngularSpeed > 0.0f &&
-            glm::length(part.body.angularVelocity) < part.body.stopAngularSpeed)
-            part.body.angularVelocity = glm::vec3(0.0f);
-    }
-
-    // Step 8c: Final strict angular limits so no later pass overrides them.
-    solveRotationLimits(1.0f, b);
+    // Advance the editable solver domain. At solver_hz the solver substeps more
+    // than once per 60 Hz gameplay tick; input and look motors are applied once
+    // above. The 60 Hz gameplay tick itself is untouched.
+    Sim::DomainScheduler& scheduler = Sim::DomainScheduler::instance();
+    scheduler.add("ragdoll.solver", (double)std::max(1.0f, cfg.solverHz));
+    scheduler.advance(dt, [&](const Sim::SimulationDomain& domain) {
+        if (domain.name != "ragdoll.solver") return;
+        MIMITA_TELEMETRY_SCOPE("RagdollSolverSubstep");
+        entities.syncToBody(owner, b);
+        Ragdoll::Solver::solveSubstep(b, world,
+            (float)(1.0 / domain.tickRateHz), cfg, params);
+        entities.syncFromBody(owner, b);
+        Telemetry::EntityCounters counters;
+        counters.updates = b.parts.size();
+        counters.physicsContacts = 1;
+        counters.lastTouchedTick = domain.tick;
+        Telemetry::Registry::instance().addEntityCounter(owner, counters);
+    });
 
     // Step 9: Write the authoritative root and skeleton transforms.
     syncToPlayer(player, b);
@@ -617,6 +645,43 @@ void RagdollModeSystem::update(float dt, const World& world, Player& player,
         e.message = msg;
         StructuredLogger::instance().write(e);
     }
+}
+
+bool RagdollModeSystem::grabLimb(bool left, int targetLimbIndex, float strength)
+{
+    if (!mActive) return false;
+    RagdollBody& b = mAlive;
+    const int armIndex = left ? b.leftArmIndex : b.rightArmIndex;
+    if (armIndex < 0 || armIndex >= (int)b.parts.size()) return false;
+    if (targetLimbIndex < 0 || targetLimbIndex >= (int)b.parts.size()) return false;
+    if (targetLimbIndex == armIndex) return false;
+
+    RagdollGrabState& grab = left ? b.leftGrab : b.rightGrab;
+    RagdollModePart& arm = b.parts[armIndex];
+    RagdollModePart& target = b.parts[targetLimbIndex];
+    grab.active = true;
+    grab.partIndex = armIndex;
+    grab.targetPart = targetLimbIndex;
+    grab.strength = glm::clamp(strength, 0.0f, 1.0f);
+    grab.handPosition = partHandWorld(arm);
+    grab.handLocalAnchor = glm::inverse(arm.body.orientation)
+        * (grab.handPosition - arm.body.position);
+    grab.targetLocalAnchor = glm::inverse(target.body.orientation)
+        * (grab.handPosition - target.body.position);
+    grab.grabPoint = grab.handPosition;
+    return true;
+}
+
+void RagdollModeSystem::releaseGrab(bool left)
+{
+    RagdollGrabState& grab = left ? mAlive.leftGrab : mAlive.rightGrab;
+    grab.active = false;
+    grab.targetPart = -1;
+}
+
+int RagdollModeSystem::grabTargetPart(bool left) const
+{
+    return left ? mAlive.leftGrab.targetPart : mAlive.rightGrab.targetPart;
 }
 
 void RagdollModeSystem::applyControls(float dt, const InputState& input, const Camera& camera, RagdollBody& b)
@@ -661,137 +726,6 @@ void RagdollModeSystem::applyControls(float dt, const InputState& input, const C
         aimAtCamera(b.parts[b.torsoIndex], cfg.torsoLookSpring, cfg.torsoMaxAngularStep);
 }
 
-static glm::vec3 quatToRotationVector(const glm::quat& q)
-{
-    glm::quat n = glm::normalize(q);
-    float w = glm::clamp(n.w, -1.0f, 1.0f);
-    float angle = 2.0f * std::acos(w);
-    float s = std::sqrt(std::max(0.0f, 1.0f - w * w));
-    if (s < 1e-5f) return glm::vec3(0.0f);
-    glm::vec3 axis(n.x, n.y, n.z);
-    axis /= s;
-    if (angle > 3.14159265f) angle -= 2.0f * 3.14159265f;
-    return axis * angle;
-}
-
-void RagdollModeSystem::solveJoints(int iterations, bool positionPass, RagdollBody& b)
-{
-    const auto& cfg = RagdollModeConfig::instance().data();
-    for (int iter = 0; iter < iterations; ++iter) {
-        for (int pi = 0; pi < (int)b.parts.size(); ++pi) {
-            RagdollModePart& part = b.parts[pi];
-            if (part.parentIndex < 0) continue;
-            if (part.parentIndex >= (int)b.parts.size()) continue;
-
-            RigidBody& child = part.body;
-            RigidBody& parent = b.parts[part.parentIndex].body;
-
-            glm::vec3 parentAnchor = parent.position
-                + parent.orientation * part.parentLocalAnchor;
-            glm::vec3 childAnchor = child.position
-                + child.orientation * part.childLocalAnchor;
-
-            const float beta = glm::clamp(cfg.jointPositionBeta, 0.0f, 1.0f);
-
-            // Arms may stretch only while reaching (extending) and not holding a
-            // grab. While grabbing the shoulder stays rigid so the pinned hand
-            // pivots the arm at the shoulder instead of letting it float/spin
-            // about its center. Otherwise the joint is rigid too.
-            float stretch = 0.0f;
-            if (part.maxStretch > 0.0f) {
-                const bool isLeft = (pi == b.leftArmIndex);
-                const bool isRight = (pi == b.rightArmIndex);
-                const bool grabbing = (isLeft && b.leftGrab.active) || (isRight && b.rightGrab.active);
-                const bool extending = (isLeft && b.leftArmExtending) || (isRight && b.rightArmExtending);
-                if (extending && !grabbing)
-                    stretch = part.maxStretch;
-            }
-
-            if (stretch > 0.0f) {
-                // Anchors coincide at bind, so the allowed separation is the
-                // stretch amount itself (base 0), not restLength.
-                solvePointJointMaxDistanceVelocity(parent, parentAnchor, child, childAnchor, stretch);
-                if (positionPass)
-                    solvePointJointMaxDistance(parent, parentAnchor, child, childAnchor, stretch, beta);
-            } else {
-                solvePointJointVelocity(parent, parentAnchor, child, childAnchor);
-                if (positionPass)
-                    solvePointJointPosition(parent, parentAnchor, child, childAnchor, beta);
-            }
-        }
-
-        if (positionPass)
-            solveRotationLimits(-1.0f, b);
-    }
-}
-
-void RagdollModeSystem::solveRotationLimits(float betaOverride, RagdollBody& b)
-{
-    const auto& cfg = RagdollModeConfig::instance().data();
-    const float kBeta = (betaOverride >= 0.0f)
-        ? glm::clamp(betaOverride, 0.0f, 1.0f)
-        : glm::clamp(cfg.limitPositionBeta, 0.0f, 1.0f);
-
-    for (int pi = 0; pi < (int)b.parts.size(); ++pi) {
-        RagdollModePart& part = b.parts[pi];
-        if (!part.hasRotationLimits) continue;
-        if (part.parentIndex < 0 || part.parentIndex >= (int)b.parts.size()) continue;
-
-        // An actively extending arm must be free to point along camera-forward.
-        if ((pi == b.leftArmIndex && b.leftArmExtending) ||
-            (pi == b.rightArmIndex && b.rightArmExtending))
-            continue;
-
-        RigidBody& child = part.body;
-        RigidBody& parent = b.parts[part.parentIndex].body;
-
-        glm::quat currentRelative = glm::normalize(
-            glm::inverse(parent.orientation) * child.orientation);
-        glm::quat delta = glm::normalize(
-            currentRelative * glm::inverse(part.bindRelativeRotation));
-
-        glm::vec3 rv = quatToRotationVector(delta);
-        glm::vec3 clamped(
-            glm::clamp(rv.x, part.rotMinDeg.x, part.rotMaxDeg.x),
-            glm::clamp(rv.y, part.rotMinDeg.y, part.rotMaxDeg.y),
-            glm::clamp(rv.z, part.rotMinDeg.z, part.rotMaxDeg.z));
-
-        glm::vec3 rejected = rv - clamped;
-        if (glm::length(rejected) < 1e-6f) continue;
-
-        float invA = child.invInertia;
-        float invB = parent.invInertia;
-        float total = invA + invB;
-        if (total < 1e-8f) continue;
-
-        glm::vec3 worldCorrection = parent.orientation * (-rejected);
-        rotateBody(child,  worldCorrection * (kBeta * invA / total));
-        rotateBody(parent, -worldCorrection * (kBeta * invB / total));
-    }
-}
-
-void RagdollModeSystem::solveGrabs(int iterations, RagdollBody& b)
-{
-    const auto& cfg = RagdollModeConfig::instance().data();
-    float beta = glm::clamp(0.9f - cfg.grabCompliance * 20.0f, 0.1f, 0.95f);
-
-    auto solve = [&](RagdollGrabState& grab) {
-        if (!grab.active || grab.partIndex < 0
-            || grab.partIndex >= (int)b.parts.size()) return;
-        RigidBody& body = b.parts[grab.partIndex].body;
-        for (int i = 0; i < iterations; ++i) {
-            glm::vec3 hand = body.position + body.orientation * grab.handLocalAnchor;
-            // Cancel the anchor velocity first so gravity cannot accumulate,
-            // then project the position so the grip stays effectively rigid.
-            solvePointToWorldVelocity(body, hand);
-            solvePointToWorld(body, hand, grab.grabPoint, beta);
-        }
-    };
-
-    solve(b.leftGrab);
-    solve(b.rightGrab);
-}
-
 void RagdollModeSystem::processGrab(const InputState& input, const Camera& camera, const World& world, RagdollBody& b)
 {
     const auto& cfg = RagdollModeConfig::instance().data();
@@ -819,6 +753,8 @@ void RagdollModeSystem::processGrab(const InputState& input, const Camera& camer
         grab.handLocalAnchor = glm::inverse(arm.body.orientation)
             * (handWorld - arm.body.position);
         grab.partIndex = armIndex;
+        grab.targetPart = -1;
+        grab.strength = 1.0f;
     };
 
     bool leftHeld = input.grabLeftHeld;
@@ -896,32 +832,6 @@ void RagdollModeSystem::processExtend(const InputState& input, const Camera& cam
 
     if (b.leftArmExtending) extend(b.leftArmIndex);
     if (b.rightArmExtending) extend(b.rightArmIndex);
-}
-
-void RagdollModeSystem::selfCollision(RagdollBody& b)
-{
-    for (int i = 0; i < (int)b.parts.size(); ++i) {
-        for (int j = i + 1; j < (int)b.parts.size(); ++j) {
-            // Directly-jointed parts overlap at their shared joint by design, so
-            // they collide everywhere except a small sphere around that joint.
-            const bool connected = (b.parts[i].parentIndex == j || b.parts[j].parentIndex == i);
-            glm::vec3 excludePoint(0.0f);
-            float excludeRadius = 0.0f;
-            if (connected) {
-                int childIdx = (b.parts[i].parentIndex == j) ? i : j;
-                int parentIdx = b.parts[childIdx].parentIndex;
-                if (parentIdx < 0 || parentIdx >= (int)b.parts.size()) continue;
-                const RagdollModePart& c = b.parts[childIdx];
-                const RigidBody& p = b.parts[parentIdx].body;
-                excludePoint = p.position + p.orientation * c.parentLocalAnchor;
-                excludeRadius = c.body.capsuleRadius + p.capsuleRadius;
-            }
-            const auto& cfg = RagdollModeConfig::instance().data();
-            collideBodies(b.parts[i].body, b.parts[j].body, excludePoint, excludeRadius,
-                          cfg.selfCollisionBeta, cfg.selfCollisionSkin,
-                          cfg.selfCollisionMaxCorrection);
-        }
-    }
 }
 
 void RagdollModeSystem::syncToPlayer(Player& player, RagdollBody& b)
@@ -1155,7 +1065,9 @@ void RagdollModeSystem::render(const Camera& camera) const
 void RagdollModeSystem::spawnCorpse(const Player& victim,
                                     const glm::vec3& deathImpulse,
                                     const std::string& actorId,
-                                    uint32_t ownerId)
+                                    uint32_t ownerId,
+                                    uint32_t deathTick,
+                                    uint32_t deathEventId)
 {
     const auto& cfg = RagdollModeConfig::instance().data();
     if (!cfg.enabled) return;
@@ -1166,6 +1078,10 @@ void RagdollModeSystem::spawnCorpse(const Player& victim,
     RagdollCorpse corpse;
     corpse.actorId = actorId.empty() ? victim.username : actorId;
     corpse.ownerId = ownerId;
+    corpse.deathTick = deathTick;
+    corpse.deathEventId = deathEventId;
+    corpse.seed = corpseSeedFor(corpse.actorId, ownerId, deathTick, deathEventId, 0);
+    mLastCorpseSeed = corpse.seed;
     corpse.actor = victim;
     corpse.actor.dead = true;
     corpse.actor.netPredictedDead = false;
@@ -1184,20 +1100,28 @@ void RagdollModeSystem::spawnCorpse(const Player& victim,
     initParts(victim, corpse.body);
 
     // Inherit the dying actor's momentum and add the killing-blow impulse.
+    // The tumble comes from the deterministic seed, so every client that sees
+    // the same death produces the same corpse.
     const glm::vec3 playerVel = victim.vel + victim.externalImpulse;
     const glm::vec3 impulse = deathImpulse * cfg.corpseDeathImpulseMultiplier;
+    std::uint64_t rng = corpse.seed ? corpse.seed : 0x9E3779B97F4A7C15ull;
     for (auto& part : corpse.body.parts) {
         part.body.linearVelocity =
             playerVel * cfg.corpseSpawnVelocityMultiplier +
             impulse / std::max(part.body.mass, 0.001f);
         part.body.angularVelocity += glm::vec3(
-            ((float)(std::rand() % 2001) / 1000.0f - 1.0f) * 2.0f,
-            ((float)(std::rand() % 2001) / 1000.0f - 1.0f) * 2.0f,
-            ((float)(std::rand() % 2001) / 1000.0f - 1.0f) * 2.0f);
+            seededSigned(rng), seededSigned(rng), seededSigned(rng));
     }
 
     // Write the initial skeleton so the clone renders at its physics pose.
     syncToPlayer(corpse.actor, corpse.body);
+
+    mLastCorpseInfo.ownerId = ownerId;
+    mLastCorpseInfo.deathTick = deathTick;
+    mLastCorpseInfo.deathEventId = deathEventId;
+    mLastCorpseInfo.impulse = deathImpulse;
+    mLastCorpseInfo.actorId = corpse.actorId;
+    ++mCorpseSerial;
 
     // Death mist at the point of death (was the DeathGhost ellipsoid).
     const auto& deCfg = HitEffects::config().deathEllipsoid;
@@ -1220,47 +1144,6 @@ void RagdollModeSystem::spawnCorpse(const Player& victim,
         "[RAGDOLL CORPSE] spawned actor=%s id=%u parts=%zu lifetime=%.1fs\n",
         corpse.actorId.c_str(), corpse.ownerId,
         mCorpses.back().body.parts.size(), cfg.corpseLifetimeSeconds);
-}
-
-void RagdollModeSystem::stepBody(RagdollBody& b, const World& world, float dt)
-{
-    const auto& cfg = RagdollModeConfig::instance().data();
-
-    glm::vec3 gravity(0.0f, 0.0f, -GRAVITY * cfg.gravityScale);
-    for (auto& part : b.parts)
-        integrate(part.body, gravity, dt);
-
-    solveJoints(cfg.solverIterations, true, b);
-
-    if (cfg.worldCollision) {
-        for (auto& part : b.parts)
-            collideWithWorld(part.body, world, dt);
-    }
-
-    if (cfg.selfCollision)
-        selfCollision(b);
-
-    solveJoints(cfg.solverIterations / 2, true, b);
-
-    if (cfg.selfCollision) {
-        for (int i = 0; i < cfg.selfCollisionIterations; ++i) selfCollision(b);
-    }
-
-    if (cfg.worldCollision) {
-        for (auto& part : b.parts)
-            depenetrateWorld(part.body, world, 2);
-    }
-
-    for (auto& part : b.parts) {
-        if (part.body.stopLinearSpeed > 0.0f &&
-            glm::length(part.body.linearVelocity) < part.body.stopLinearSpeed)
-            part.body.linearVelocity = glm::vec3(0.0f);
-        if (part.body.stopAngularSpeed > 0.0f &&
-            glm::length(part.body.angularVelocity) < part.body.stopAngularSpeed)
-            part.body.angularVelocity = glm::vec3(0.0f);
-    }
-
-    solveRotationLimits(1.0f, b);
 }
 
 void RagdollModeSystem::sprayCorpseBlood(RagdollCorpse& corpse, float dt)
@@ -1312,7 +1195,16 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world)
                 (corpse.age - fadeStart) / cfg.corpseFadeSeconds, 0.0f, 1.0f);
         }
 
-        stepBody(corpse.body, world, dt);
+        // Corpses run the same component-driven solve core. They substep at the
+        // editable solver rate (solver_hz / 60) so death presentation is
+        // deterministic and independent of the render rate.
+        Ragdoll::SolveParams params;
+        params.iterations = cfg.solverIterations;
+        params.gravityScale = cfg.gravityScale;
+        const int steps = std::max(1, (int)std::lround(cfg.solverHz / 60.0f));
+        const float sub = dt / (float)steps;
+        for (int s = 0; s < steps; ++s)
+            Ragdoll::Solver::solveSubstep(corpse.body, world, sub, cfg, params);
         syncToPlayer(corpse.actor, corpse.body);
 
         if (cfg.corpseBloodEnabled)
@@ -1344,4 +1236,27 @@ void RagdollModeSystem::removeCorpsesForOwner(uint32_t ownerId)
 void RagdollModeSystem::clearCorpses()
 {
     mCorpses.clear();
+}
+
+bool RagdollModeSystem::noteNetworkDeath(std::uint32_t ownerId, std::uint32_t deathTick,
+                                         std::uint32_t deathEventId)
+{
+    if (ownerId == 0)
+        return false;
+    auto result = mNetworkDeaths.emplace(ownerId, std::make_pair(deathTick, deathEventId));
+    if (!result.second)
+        result.first->second = std::make_pair(deathTick, deathEventId);
+    return true;
+}
+
+bool RagdollModeSystem::consumeNetworkDeath(std::uint32_t ownerId, std::uint32_t& deathTick,
+                                            std::uint32_t& deathEventId)
+{
+    auto it = mNetworkDeaths.find(ownerId);
+    if (it == mNetworkDeaths.end())
+        return false;
+    deathTick = it->second.first;
+    deathEventId = it->second.second;
+    mNetworkDeaths.erase(it);
+    return true;
 }

@@ -9,8 +9,11 @@
 */
 
 #include "network/multiplayer-context.h"
+#include "telemetry/telemetry.h"
 #include "network/community-match-client.h"
 #include "network/packets.h"
+#include "ragdoll/ragdoll-entities.h"
+#include "ragdoll/ragdoll-mode.h"
 #include "network/connection-health.h"
 #include "network/simulation-constants.h"
 #include "network/udp-transport.h"
@@ -631,6 +634,105 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
                ctx.localPlayerId, requestId, weaponDefNetworkId, req.spawnGeneration,
                ctx.pendingAttackRequests.size());
     return requestId;
+}
+
+void mpSendFireIntent(MultiplayerContext& ctx, uint32_t action,
+    uint16_t weaponDefNetworkId, uint16_t attackVariant,
+    const glm::vec3& origin, const glm::vec3& direction, uint32_t count)
+{
+    if (!ctx.active || !ctx.localPlayerId)
+        return;
+    if (action == FIRE_INTENT_START)
+        ctx.fireIntentId = ctx.nextActionRequestId++;
+
+    FireIntentPacket packet{};
+    packet.header.type = PACKET_FIRE_INTENT_REQUEST;
+    packet.header.tick = ctx.tick;
+    packet.header.playerId = ctx.localPlayerId;
+    packet.intentId = ctx.fireIntentId;
+    packet.action = action;
+    packet.weaponDefNetworkId = weaponDefNetworkId;
+    packet.attackVariant = attackVariant;
+    packet.startTick = ctx.clientSimulationTick;
+    packet.endTick = ctx.clientSimulationTick;
+    packet.count = count;
+    packet.deterministicSeed = ctx.fireIntentId * 73856093u;
+    packet.originX = origin.x;
+    packet.originY = origin.y;
+    packet.originZ = origin.z;
+    packet.dirX = direction.x;
+    packet.dirY = direction.y;
+    packet.dirZ = direction.z;
+    mpSendPacket(ctx, &packet, sizeof(packet));
+}
+
+void mpSendRagdollSnapshot(MultiplayerContext& ctx)
+{
+    if (!ctx.active || !ctx.localPlayerId)
+        return;
+    RagdollModeSystem& ragdoll = RagdollModeSystem::instance();
+    if (!ragdoll.isActive())
+        return;
+    Ragdoll::Snapshot snapshot;
+    Ragdoll::RagdollEntities& entities = Ragdoll::RagdollEntities::instance();
+    if (!entities.writeSnapshot(ctx.localPlayerId, snapshot))
+        return;
+
+    RagdollStatePacket packet{};
+    packet.header.type = PACKET_RAGDOLL_STATE;
+    packet.header.tick = ctx.tick;
+    packet.header.playerId = ctx.localPlayerId;
+    packet.ownerActorId = ctx.localPlayerId;
+    packet.sourceTick = ctx.clientSimulationTick;
+    const std::uint32_t count = std::min(snapshot.limbCount,
+                                         (std::uint32_t)MAX_RAGDOLL_LIMBS_PACKET);
+    packet.limbCount = (std::uint16_t)count;
+    for (std::uint32_t i = 0; i < count; ++i) {
+        packet.limbs[i].limbIndex = snapshot.limbs[i].limbIndex;
+        for (int k = 0; k < 3; ++k)
+            packet.limbs[i].position[k] = snapshot.limbs[i].position[k];
+        for (int k = 0; k < 4; ++k)
+            packet.limbs[i].rotation[k] = snapshot.limbs[i].rotation[k];
+    }
+    for (int h = 0; h < 2; ++h) {
+        const Ragdoll::GrabSnapshot& gs = snapshot.grabs[h];
+        RagdollGrabStatePacket& out = packet.grabs[h];
+        out.active = gs.active;
+        out.hand = gs.hand;
+        out.targetLimb = gs.targetLimb;
+        out.strength = gs.strength;
+        for (int k = 0; k < 3; ++k) {
+            out.anchor[k] = gs.anchor[k];
+            out.handLocal[k] = gs.handLocal[k];
+        }
+    }
+    mpSendPacket(ctx, &packet, sizeof(packet));
+    Telemetry::EntityCounters counters;
+    counters.networkUpdates = 1;
+    counters.networkBytes = sizeof(packet);
+    counters.lastTouchedTick = ctx.clientSimulationTick;
+    Telemetry::Registry::instance().addEntityCounter(ctx.localPlayerId, counters);
+}
+
+void mpSendCorpseSpawn(MultiplayerContext& ctx, uint32_t ownerActorId,
+    uint32_t deathTick, uint32_t deathEventId, const glm::vec3& impulse,
+    const std::string& actorId)
+{
+    if (!ctx.active || !ctx.localPlayerId)
+        return;
+    CorpseSpawnPacket packet{};
+    packet.header.type = PACKET_CORPSE_SPAWN;
+    packet.header.tick = ctx.tick;
+    packet.header.playerId = ctx.localPlayerId;
+    packet.ownerActorId = ownerActorId;
+    packet.deathTick = deathTick;
+    packet.deathEventId = deathEventId;
+    packet.impulse[0] = impulse.x;
+    packet.impulse[1] = impulse.y;
+    packet.impulse[2] = impulse.z;
+    std::memset(packet.actorId, 0, sizeof(packet.actorId));
+    std::strncpy(packet.actorId, actorId.c_str(), sizeof(packet.actorId) - 1);
+    mpSendPacket(ctx, &packet, sizeof(packet));
 }
 
 void mpSendServerCommand(MultiplayerContext& ctx, const std::string& command)

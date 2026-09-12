@@ -26,6 +26,7 @@
 #include "effects/hit-effects.h"
 #include "void-death/void-death.h"
 #include "ecs/actor-entities.h"
+#include "ragdoll/ragdoll-entities.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "ragdoll/ragdoll-mode-config.h"
 #include "terminal/terminal-state.h"
@@ -106,6 +107,15 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             ragdollInput.extendRightMouse = frame.extendRightMouse;
             RagdollModeSystem::instance().update(TICK_DT, *sim.world, *sim.player,
                 ragdollInput, THE_CAMERA);
+
+            // Project the live ragdoll into persistent entities so it can be
+            // inspected and replicated; owner id 1 is the local player.
+            Ragdoll::RagdollEntities& ragdollEntities = Ragdoll::RagdollEntities::instance();
+            const RagdollBody& aliveBody = RagdollModeSystem::instance().aliveBody();
+            ragdollEntities.bind(1, aliveBody);
+            ragdollEntities.syncFromBody(1, aliveBody);
+            ragdollEntities.setGrab(1, true, RagdollModeSystem::instance().leftGrab());
+            ragdollEntities.setGrab(1, false, RagdollModeSystem::instance().rightGrab());
         } else {
             MIMITA_PERF_SCOPE("PhysicsMainUpdate");
             setCollisionEntityContext("Player", 0, false);

@@ -152,7 +152,27 @@ enum PacketType : uint8_t
     // report their active generation/hash; the server announces its own and a
     // future shared switch tick. Designed so a fuller protocol can extend the
     // same packet without a new type.
-    PACKET_CODE_GENERATION = 69
+    PACKET_CODE_GENERATION = 69,
+    // ── Held-fire intent (client -> server) ─────────────────────────
+    // START opens a held-fire window; HEARTBEAT resynchronizes aim/seed after
+    // loss; STOP closes it. One packet per window/heartbeat, never one per
+    // projectile. Each authoritative projectile keeps its own id.
+    PACKET_FIRE_INTENT_REQUEST = 70,
+    // ── Ragdoll limb state (client -> server -> others) ─────────────
+    // Bounded snapshot so a ragdoll can replicate without one packet per limb.
+    PACKET_RAGDOLL_STATE = 71,
+    // ── Corpse spawn (client -> server -> others) ───────────────────
+    // Notifies peers of a death so each client deterministically derives the
+    // same corpse from hash(owner, deathTick, deathEventId). Carries the death
+    // identity and impulse, never the full corpse pose.
+    PACKET_CORPSE_SPAWN = 72
+};
+
+enum FireIntentAction : std::uint8_t
+{
+    FIRE_INTENT_START = 0,
+    FIRE_INTENT_STOP = 1,
+    FIRE_INTENT_HEARTBEAT = 2
 };
 
 enum DamageConfirmedSource : uint8_t
@@ -1702,6 +1722,73 @@ struct CodeGenerationPacket
     uint64_t moduleSetHash = 0;        // reserved module-set hash
 };
 static_assert(sizeof(CodeGenerationPacket) <= 96, "CodeGenerationPacket is too large");
+
+// Held-fire intent. The server simulates one authoritative projectile per
+// gameplay tick while the window is open, subject to ammo and rate.
+struct FireIntentPacket
+{
+    PacketHeader header;
+    uint32_t intentId = 0;
+    uint32_t action = FIRE_INTENT_START;
+    uint16_t weaponDefNetworkId = 0;
+    uint16_t attackVariant = 0;
+    uint32_t startTick = 0;
+    uint32_t endTick = 0;   // last tick covered (heartbeat)
+    uint32_t count = 0;     // projectiles claimed in this window/batch
+    uint32_t deterministicSeed = 0;
+    float originX = 0.0f, originY = 0.0f, originZ = 0.0f;
+    float dirX = 0.0f, dirY = 0.0f, dirZ = 0.0f;
+};
+static_assert(sizeof(FireIntentPacket) <= 128, "FireIntentPacket is too large");
+
+// One ragdoll limb in a replicated snapshot.
+struct RagdollLimbStatePacket
+{
+    uint32_t limbIndex = 0;
+    float position[3]{};
+    float rotation[4]{1.0f, 0.0f, 0.0f, 0.0f};
+};
+
+inline constexpr int MAX_RAGDOLL_LIMBS_PACKET = 16;
+
+// One replicated grab constraint. targetLimb is a limb index within the same
+// owner (0xffffffff for a world anchor); anchor is the world grab point.
+struct RagdollGrabStatePacket
+{
+    uint8_t active = 0;
+    uint8_t hand = 0;
+    uint16_t reserved = 0;
+    uint32_t targetLimb = 0xffffffffu;
+    float anchor[3]{};
+    float handLocal[3]{};
+    float strength = 1.0f;
+};
+
+// Replicated ragdoll snapshot for one owner actor.
+struct RagdollStatePacket
+{
+    PacketHeader header;
+    uint32_t ownerActorId = 0;
+    uint16_t limbCount = 0;
+    uint16_t reserved = 0;
+    uint32_t sourceTick = 0;
+    RagdollLimbStatePacket limbs[MAX_RAGDOLL_LIMBS_PACKET];
+    RagdollGrabStatePacket grabs[2];
+};
+static_assert(sizeof(RagdollStatePacket) <= 800, "RagdollStatePacket is too large");
+
+// Death notification used to derive a deterministic corpse on every client.
+struct CorpseSpawnPacket
+{
+    PacketHeader header;
+    uint32_t ownerActorId = 0;
+    uint32_t deathTick = 0;
+    uint32_t deathEventId = 0;
+    uint32_t reserved = 0;
+    float impulse[3]{};
+    char actorId[32]{};
+};
+static_assert(sizeof(CorpseSpawnPacket) <= 96, "CorpseSpawnPacket is too large");
 
 bool validHeader(const PacketHeader& header, uint8_t expectedType);
 

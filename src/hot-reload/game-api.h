@@ -274,6 +274,8 @@ enum GameEventType : std::uint32_t {
     GAME_EVENT_COLLISION = 3,
     GAME_EVENT_SPAWN = 4,
     GAME_EVENT_DESTROY = 5,
+    GAME_EVENT_FIRE_INTENT = 6,
+    GAME_EVENT_RAGDOLL_SOLVE = 7,
 };
 
 // Damage source ids carried by DamagePolicyV1::source.
@@ -327,6 +329,39 @@ struct DamagePolicyV1 {
 
 using GameBehaviorOnEventFn = void (MIMITA_GAME_CALL *)(
     const GameEventV1* event, GameplayContextV1* context);
+
+// Request/response payload for GAME_EVENT_FIRE_INTENT (one held-fire tick).
+// The kernel fills baseFire (1 normally); a behavior sets handled and may
+// suppress or adjust the shot and its ammo cost.
+struct FireIntentPolicyV1 {
+    std::uint64_t entity;
+    std::uint32_t weaponNetworkId;
+    std::uint32_t tick;
+    std::uint32_t baseFire;
+    std::uint32_t outFire;
+    std::uint32_t ammoCost;
+    std::uint32_t handled;
+    std::uint32_t reserved;
+};
+
+// Request/response payload for GAME_EVENT_RAGDOLL_SOLVE. The kernel fills the
+// base solver parameters; a behavior sets handled and may override stiffness,
+// damping, gravity, and iteration count. This is the live solver-policy seam.
+struct RagdollPolicyV1 {
+    std::uint64_t ownerActor;
+    std::uint32_t limbCount;
+    std::uint32_t tick;
+    float baseStiffness;
+    float baseDamping;
+    float baseGravityScale;
+    std::uint32_t baseIterations;
+    float outStiffness;
+    float outDamping;
+    float outGravityScale;
+    std::uint32_t outIterations;
+    std::uint32_t handled;
+    std::uint32_t reserved;
+};
 
 using GameEmitEventFn = void (MIMITA_GAME_CALL *)(
     GameplayContextV1* context, const GameEventV1* event);

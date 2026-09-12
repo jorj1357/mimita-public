@@ -507,7 +507,7 @@
     "projectile_speed": 45.0,
     "projectile_radius": 0.7,
     "projectile_lifetime": 5.0,
-    "fire_mode": "semi_auto",
+    "fire_mode": "automatic",
     "behavior_type": "rocket_launcher",
     "hitscan": false,
     "uses_physics_projectile": false,

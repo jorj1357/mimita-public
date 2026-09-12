@@ -39,6 +39,9 @@
 #include "hot-reload/hot-reload-system.h"
 #include "live-code/live-code-events.h"
 #include "live-code/live-identity.h"
+#include "ragdoll/ragdoll-entities.h"
+#include "ragdoll/ragdoll-mode.h"
+#include "ragdoll/ragdoll-mode-config.h"
 
 #include <algorithm>
 #include <chrono>
@@ -752,6 +755,40 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 lastServerGen = ctx.serverCodeGeneration;
             }
         }
+
+        // Ragdoll limb replication: bind the live ragdoll into the entity
+        // registry and replicate a bounded snapshot every few ticks.
+        if (RagdollModeSystem::instance().isActive())
+        {
+            Ragdoll::RagdollEntities& entities = Ragdoll::RagdollEntities::instance();
+            const RagdollBody& body = RagdollModeSystem::instance().aliveBody();
+            entities.bind(ctx.localPlayerId, body);
+            entities.syncFromBody(ctx.localPlayerId, body);
+            entities.setGrab(ctx.localPlayerId, true, RagdollModeSystem::instance().leftGrab());
+            entities.setGrab(ctx.localPlayerId, false, RagdollModeSystem::instance().rightGrab());
+            // Replication cadence is an editable primitive (snapshot_send_interval_ticks).
+            const int sendInterval = std::max(1, RagdollModeConfig::instance().data().snapshotSendIntervalTicks);
+            if (ctx.clientSimulationTick - ctx.lastRagdollSentTick >= (std::uint32_t)sendInterval)
+            {
+                ctx.lastRagdollSentTick = ctx.clientSimulationTick;
+                mpSendRagdollSnapshot(ctx);
+            }
+        }
+
+        // Corpse replication: announce a locally-simulated death once so peers
+        // derive the same deterministic corpse (seed = f(owner, tick, eventId)).
+        {
+            RagdollModeSystem& ragdoll = RagdollModeSystem::instance();
+            if (ragdoll.corpseSerial() != ctx.lastCorpseSerial)
+            {
+                ctx.lastCorpseSerial = ragdoll.corpseSerial();
+                const RagdollModeSystem::CorpseSpawnInfo& info = ragdoll.lastCorpseInfo();
+                if (RagdollModeConfig::instance().data().replicateCorpses &&
+                    (info.ownerId == 0 || info.ownerId == ctx.localPlayerId))
+                    mpSendCorpseSpawn(ctx, info.ownerId, info.deathTick,
+                        info.deathEventId, info.impulse, info.actorId);
+            }
+        }
     }
 
     // ── Async ICE connect job ───────────────────────────────────────────
@@ -1335,6 +1372,46 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 ctx.serverLogicalHash = announce->logicalCodeHash;
                 ctx.serverPlatformHash = announce->platformPackageHash;
             }
+        }
+        else if (header->type == PACKET_RAGDOLL_STATE &&
+                 bytes >= (int)sizeof(RagdollStatePacket))
+        {
+            const RagdollStatePacket* state =
+                reinterpret_cast<const RagdollStatePacket*>(buffer);
+            Ragdoll::Snapshot snapshot;
+            snapshot.ownerActorId = state->ownerActorId;
+            const std::uint32_t count = std::min(
+                (std::uint32_t)state->limbCount, (std::uint32_t)Ragdoll::kMaxSnapshotLimbs);
+            snapshot.limbCount = count;
+            snapshot.tick = state->sourceTick;
+            for (std::uint32_t i = 0; i < count; ++i) {
+                snapshot.limbs[i].limbIndex = state->limbs[i].limbIndex;
+                for (int k = 0; k < 3; ++k)
+                    snapshot.limbs[i].position[k] = state->limbs[i].position[k];
+                for (int k = 0; k < 4; ++k)
+                    snapshot.limbs[i].rotation[k] = state->limbs[i].rotation[k];
+            }
+            for (int h = 0; h < 2; ++h) {
+                const RagdollGrabStatePacket& in = state->grabs[h];
+                Ragdoll::GrabSnapshot& gs = snapshot.grabs[h];
+                gs.active = in.active;
+                gs.hand = in.hand;
+                gs.targetLimb = in.targetLimb;
+                gs.strength = in.strength;
+                for (int k = 0; k < 3; ++k) {
+                    gs.anchor[k] = in.anchor[k];
+                    gs.handLocal[k] = in.handLocal[k];
+                }
+            }
+            Ragdoll::RagdollEntities::instance().applySnapshot(snapshot);
+        }
+        else if (header->type == PACKET_CORPSE_SPAWN &&
+                 bytes >= (int)sizeof(CorpseSpawnPacket))
+        {
+            const CorpseSpawnPacket* spawn =
+                reinterpret_cast<const CorpseSpawnPacket*>(buffer);
+            RagdollModeSystem::instance().noteNetworkDeath(
+                spawn->ownerActorId, spawn->deathTick, spawn->deathEventId);
         }
         else if (header->type == PACKET_KILL_EVENT &&
                  bytes >= (int)sizeof(KillEventPacket))

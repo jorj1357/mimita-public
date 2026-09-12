@@ -32,7 +32,34 @@ bool MIMITA_GAME_CALL adjustRocketFlight(
 // the decision; the kernel then applies `outDamage` and the knockback.
 void MIMITA_GAME_CALL onEvent(const GameEventV1* event, GameplayContextV1*)
 {
-    if (!event || !event->payload || event->typeId != GAME_EVENT_DAMAGE_POLICY ||
+    if (!event || !event->payload)
+        return;
+
+    if (event->typeId == GAME_EVENT_FIRE_INTENT &&
+        event->payloadSize == sizeof(FireIntentPolicyV1))
+    {
+        FireIntentPolicyV1* policy = static_cast<FireIntentPolicyV1*>(event->payload);
+        policy->handled = 1;
+        policy->outFire = policy->baseFire;
+        policy->ammoCost = 1;
+        // Live proof: setting outFire = 0 here stops the held fire.
+        return;
+    }
+
+    if (event->typeId == GAME_EVENT_RAGDOLL_SOLVE &&
+        event->payloadSize == sizeof(RagdollPolicyV1))
+    {
+        RagdollPolicyV1* policy = static_cast<RagdollPolicyV1*>(event->payload);
+        policy->handled = 1;
+        policy->outStiffness = policy->baseStiffness;
+        policy->outDamping = policy->baseDamping;
+        policy->outIterations = policy->baseIterations;
+        policy->outGravityScale = policy->baseGravityScale;
+        // Live proof: change outStiffness/outIterations here and save.
+        return;
+    }
+
+    if (event->typeId != GAME_EVENT_DAMAGE_POLICY ||
         event->payloadSize != sizeof(DamagePolicyV1))
         return;
 

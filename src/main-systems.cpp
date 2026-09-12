@@ -146,6 +146,8 @@ void registerCursorCommands();
 #include "terminal/badconn-commands.h"
 #include "terminal/live-code-commands.h"
 #include "terminal/project-commands.h"
+#include "terminal/telemetry-commands.h"
+#include "terminal/creation-commands.h"
 #include "project/project-control.h"
 #include "terminal/entity-commands.h"
 #include "terminal/vip-commands.h"
@@ -436,6 +438,8 @@ void gameInitSubsystems(Engine& engine)
     registerEntityCommands();
     Project::ProjectControl::instance().init(std::filesystem::current_path());
     registerProjectCommands();
+    registerTelemetryCommands();
+    registerCreationCommands();
 
     registerReplayCaptureCommands();
     registerReplayCommands();

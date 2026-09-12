@@ -14,6 +14,7 @@
 #include "network/server-gamemode.h"
 #include "network/server-damage-policy.h"
 #include "ecs/actor-entities.h"
+#include "live-code/live-behavior.h"
 #include "network/disagreement-visuals.h"
 #include "combat/weapon-execution.h"
 #include "combat/weapon-registry.h"
@@ -1201,6 +1202,121 @@ void handleAttackRequest(
     sendAttackResult(sock, shooter, req, tick, false, 9, 0,
                      rt.magazineAmmo, rt.reserveAmmo,
                      rt.nextAllowedFireTick, rt.stateRevision);
+}
+
+// ── Held-fire intent ────────────────────────────────────────────────
+void handleFireIntentPacket(SOCKET, const char* buffer, int bytes,
+                            std::unordered_map<uint32_t, ServerPlayer>& players,
+                            uint32_t tick)
+{
+    if (bytes < (int)sizeof(FireIntentPacket))
+        return;
+    const FireIntentPacket* req = reinterpret_cast<const FireIntentPacket*>(buffer);
+    auto it = players.find(req->header.playerId);
+    if (it == players.end())
+        return;
+    ServerPlayer& player = it->second;
+    if (player.dead)
+        return;
+
+    if (req->action == FIRE_INTENT_STOP)
+    {
+        player.heldFire.active = false;
+        return;
+    }
+
+    HeldFireState& held = player.heldFire;
+    if (!held.active || held.intentId != req->intentId)
+    {
+        held = HeldFireState{};
+        held.active = true;
+        held.intentId = req->intentId;
+        held.startTick = req->startTick ? req->startTick : tick;
+        held.lastEmitTick = tick - 1;  // allow an emission this tick
+    }
+    held.weaponDefNetworkId = req->weaponDefNetworkId;
+    held.attackVariant = req->attackVariant;
+    held.deterministicSeed = req->deterministicSeed;
+    held.origin = glm::vec3(req->originX, req->originY, req->originZ);
+    held.direction = glm::vec3(req->dirX, req->dirY, req->dirZ);
+    held.reportedCount = req->count;
+    held.lastHeartbeatTick = tick;
+}
+
+void tickHeldFireIntents(
+    SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs,
+    std::unordered_map<uint32_t, ServerProjectile>& projectiles,
+    uint32_t& nextProjectileId,
+    uint32_t tick,
+    uint64_t& totalPacketsOut)
+{
+    for (auto& entry : players)
+    {
+        ServerPlayer& player = entry.second;
+        HeldFireState& held = player.heldFire;
+        if (!held.active)
+            continue;
+        if (player.dead || tick <= held.lastEmitTick)
+            continue;
+
+        const std::string* weaponId =
+            weaponIdForDefNetworkId(held.weaponDefNetworkId);
+        if (!weaponId)
+        {
+            held.active = false;
+            continue;
+        }
+        const WeaponDefinition* def = WeaponRegistry::instance().get(*weaponId);
+        if (!def)
+        {
+            held.active = false;
+            continue;
+        }
+        auto rtIt = player.weaponRuntimes.find(*weaponId);
+        if (rtIt == player.weaponRuntimes.end() || !rtIt->second.initialized)
+        {
+            held.active = false;
+            continue;
+        }
+        if (rtIt->second.magazineAmmo <= 0)
+        {
+            held.active = false;
+            continue;
+        }
+
+        // Hot fire-intent policy: one decision per held tick.
+        FireIntentPolicyV1 policy{};
+        policy.entity = player.id;
+        policy.weaponNetworkId = held.weaponDefNetworkId;
+        policy.tick = tick;
+        policy.baseFire = 1;
+        policy.outFire = 1;
+        policy.ammoCost = 1;
+        LiveBehavior::dispatchFireIntent(policy, tick);
+        if (policy.handled && policy.outFire == 0)
+        {
+            held.lastEmitTick = tick;
+            continue;
+        }
+
+        glm::vec3 direction = glm::length(held.direction) > 0.001f
+            ? glm::normalize(held.direction) : glm::vec3(1.0f, 0.0f, 0.0f);
+        const glm::vec3 origin = player.pos + glm::vec3(0.0f, 0.0f, 0.8f);
+        const uint32_t requestId = held.intentId * 100000u + held.emittedCount + 1u;
+        // Held fire enforces at most one projectile per tick itself.
+        rtIt->second.nextAllowedFireTick = tick;
+
+        ServerProjectileAttackResult result = handleGenericProjectileAttack(
+            sock, players, npcs, projectiles, nextProjectileId, player, *def,
+            requestId, origin, direction, tick, tick, totalPacketsOut);
+        held.lastEmitTick = tick;
+        if (result.accepted)
+            ++held.emittedCount;
+        else if (rtIt->second.magazineAmmo <= 0)
+            held.active = false;
+    }
 }
 
 } // namespace MimitaNet

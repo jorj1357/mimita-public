@@ -9,6 +9,9 @@
     "joint_stiffness": 2000.0,
     "joint_damping": 80.0,
     "world_collision": true,
+    "solver_hz": 120.0,
+    "snapshot_send_interval_ticks": 3,
+    "replicate_corpses": true,
     "corpse": {
         "lifetime_seconds": 20.0,
         "fade_seconds": 4.0,

@@ -68,6 +68,16 @@ struct RagdollModeConfigData {
     float corpseBloodIntervalSeconds = 0.18f;
     bool corpseBloodEnabled = true;
 
+    // ── Editable simulation rates (primitives) ──────────────────────
+    // solver_hz: fixed rate of the ragdoll.solver domain. The 60 Hz gameplay
+    // tick stays untouched; the solver substeps at this rate and is clamped by
+    // the domain catch-up. Hot-reloadable via config/ragdoll.json.
+    float solverHz = 120.0f;
+    // Client replication cadence for PACKET_RAGDOLL_STATE, in gameplay ticks.
+    int snapshotSendIntervalTicks = 3;
+    // Replicate deterministic corpse spawns to peers (PACKET_CORPSE_SPAWN).
+    bool replicateCorpses = true;
+
     // Rigid-body solver
     int solverIterations = 24;
     float maxFallSpeed = 60.0f;

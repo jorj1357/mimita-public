@@ -228,23 +228,53 @@ void engineTickCombat(Engine& engine, float dt)
         Debug::log(Debug::Category::Duel, "[INPUT OWNERSHIP] mouseClick=1 owner=game_end_ui consumed=1");
         Debug::log(Debug::Category::Duel, "[INPUT OWNERSHIP] weaponInputBlocked=1 reason=end_ui_visible");
     }
+    const WeaponDefinition* curDef = weapons.getCurrentDef(player);
+    const bool isAuto = curDef && curDef->fireMode == WeaponFireMode::Automatic;
+    const bool isAutoProjectile = isAuto && curDef &&
+        curDef->executionType == WeaponExecutionType::Projectile;
+    const bool online = mpContext.active && mpContext.gameplayActive;
+
     if (!replayPlaybackActive && !duelEndVisible && !duelCountdown &&
         !bombTagEndVisible && !bombTagCountdown &&
         gameplayInputAllowed && InputCommandSystem::instance().isKeyboardEnabled() && mouseDown &&
         glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
-        const WeaponDefinition* curDef = weapons.getCurrentDef(player);
-        bool isAuto = curDef && curDef->fireMode == WeaponFireMode::Automatic;
-        bool shouldFire = isAuto || (!isAuto && mouseDown && !mousePrev);
-        if (shouldFire) {
-            if (editorMode) {
-                selectedEditorObject = selectWorldTriangle(world, camera.pos, camera.front);
-                Terminal::instance().addLog(selectedEditorObject >= 0
-                    ? "[EDITOR] selected triangle id " + std::to_string(selectedEditorObject)
-                    : "[EDITOR] no object selected");
-            } else {
-                Terminal::instance().execute("shoot");
+        if (isAutoProjectile && online) {
+            const uint16_t netId = MimitaNet::weaponDefNetworkIdFor(curDef->id);
+            if (netId != 0) {
+                if (!mpContext.fireIntentActive) {
+                    mpContext.fireIntentActive = true;
+                    mpContext.fireIntentWeapon = netId;
+                    mpContext.fireIntentVariant = (uint16_t)curDef->slot;
+                    mpContext.fireIntentLastHeartbeatTick = mpContext.clientSimulationTick;
+                    MimitaNet::mpSendFireIntent(mpContext, MimitaNet::FIRE_INTENT_START, netId,
+                        (uint16_t)curDef->slot, camera.pos, camera.front, 0);
+                } else if (mpContext.clientSimulationTick -
+                           mpContext.fireIntentLastHeartbeatTick >= 6) {
+                    mpContext.fireIntentLastHeartbeatTick = mpContext.clientSimulationTick;
+                    MimitaNet::mpSendFireIntent(mpContext, MimitaNet::FIRE_INTENT_HEARTBEAT, netId,
+                        (uint16_t)curDef->slot, camera.pos, camera.front, 0);
+                }
+            }
+        } else {
+            bool shouldFire = isAuto || (!isAuto && mouseDown && !mousePrev);
+            if (shouldFire) {
+                if (editorMode) {
+                    selectedEditorObject = selectWorldTriangle(world, camera.pos, camera.front);
+                    Terminal::instance().addLog(selectedEditorObject >= 0
+                        ? "[EDITOR] selected triangle id " + std::to_string(selectedEditorObject)
+                        : "[EDITOR] no object selected");
+                } else {
+                    Terminal::instance().execute("shoot");
+                }
             }
         }
+    }
+
+    // Close the held-fire window on release, weapon change, or disconnect.
+    if (mpContext.fireIntentActive && (!mouseDown || !isAutoProjectile || !online)) {
+        MimitaNet::mpSendFireIntent(mpContext, MimitaNet::FIRE_INTENT_STOP, mpContext.fireIntentWeapon,
+            mpContext.fireIntentVariant, camera.pos, camera.front, 0);
+        mpContext.fireIntentActive = false;
     }
     mousePrev = mouseDown;
 

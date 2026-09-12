@@ -47,6 +47,9 @@
 #include "live-code/live-authoritative-selftest.h"
 #include "project/project-selftest.h"
 #include "project/phase456-selftest.h"
+#include "telemetry/telemetry-selftest.h"
+#include "editor/creation-selftest.h"
+#include "ragdoll/ragdoll-slice-selftest.h"
 #include "ecs/entity-slice-selftest.h"
 
 extern DuelManager gDuelManager;
@@ -242,6 +245,30 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = runPhase456SelfTest(report);
         printf("%s", report.c_str());
         printf("[PHASE456 SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--telemetry-selftest") {
+        std::string report;
+        const bool ok = runTelemetrySelfTest(report);
+        printf("%s", report.c_str());
+        printf("[TELEMETRY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--creation-selftest") {
+        std::string report;
+        const bool ok = runCreationSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[CREATION SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--ragdoll-slice-selftest") {
+        std::string report;
+        const bool ok = runRagdollSliceSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[RAGDOLL SLICE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

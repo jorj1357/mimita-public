@@ -18,6 +18,13 @@ namespace LiveBehavior {
 // values and may be overridden by the behavior.
 bool dispatchDamagePolicy(DamagePolicyV1& payload, std::uint64_t tick);
 
+// Dispatch a GAME_EVENT_FIRE_INTENT event for one held-fire tick. Returns true
+// when a hot behavior handled it (payload.handled set).
+bool dispatchFireIntent(FireIntentPolicyV1& payload, std::uint64_t tick);
+
+// Dispatch a GAME_EVENT_RAGDOLL_SOLVE event. Returns true when handled.
+bool dispatchRagdollPolicy(RagdollPolicyV1& payload, std::uint64_t tick);
+
 // Dispatch an arbitrary event to the active behavior table.
 bool dispatchEvent(const GameEventV1& event, std::uint64_t tick);
 

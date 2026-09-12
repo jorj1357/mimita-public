@@ -462,7 +462,7 @@ static bool isKnownPacketType(uint8_t type)
     // cannot be silently rejected by an outdated numeric range.
     // 2026-09-12: raised to the newest defined type so client->server
     // PACKET_CODE_GENERATION is accepted.
-    return type >= PACKET_HELLO && type <= PACKET_CODE_GENERATION;
+    return type >= PACKET_HELLO && type <= PACKET_CORPSE_SPAWN;
 }
 
 static void countPacketType(ServerPacketStats& stats, uint8_t type)
@@ -2016,6 +2016,38 @@ ServerPacketProcessResult processServerPacket(
             it->second.reportedCodePhase = report->phase;
             it->second.reportedLogicalCodeHash = report->logicalCodeHash;
             it->second.reportedPlatformPackageHash = report->platformPackageHash;
+        }
+        result.handled = true;
+    }
+    else if (header->type == PACKET_FIRE_INTENT_REQUEST &&
+             bytes >= (int)sizeof(FireIntentPacket))
+    {
+        handleFireIntentPacket(sock, buffer, bytes, players, tick);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_RAGDOLL_STATE &&
+             bytes >= (int)sizeof(RagdollStatePacket))
+    {
+        // Ragdoll physics is still local in this slice; the server fans the
+        // snapshot out to every other peer so remote ragdolls replicate.
+        for (const auto& pe : players)
+        {
+            if (pe.first == header->playerId)
+                continue;
+            serverSendToPlayer(sock, pe.second, buffer, bytes);
+        }
+        result.handled = true;
+    }
+    else if (header->type == PACKET_CORPSE_SPAWN &&
+             bytes >= (int)sizeof(CorpseSpawnPacket))
+    {
+        // Death identity is authoritative from the dying client; fan it out so
+        // every peer derives the same deterministic corpse.
+        for (const auto& pe : players)
+        {
+            if (pe.first == header->playerId)
+                continue;
+            serverSendToPlayer(sock, pe.second, buffer, bytes);
         }
         result.handled = true;
     }

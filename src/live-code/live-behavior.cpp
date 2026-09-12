@@ -131,6 +131,56 @@ bool dispatchDamagePolicy(DamagePolicyV1& payload, std::uint64_t tick)
     return payload.handled != 0;
 }
 
+bool dispatchFireIntent(FireIntentPolicyV1& payload, std::uint64_t tick)
+{
+    const GameGameplayModuleV1* module = gameplayModule();
+    if (!module || !module->onEvent)
+        return false;
+
+    payload.handled = 0;
+
+    GameEventV1 event{};
+    event.typeId = GAME_EVENT_FIRE_INTENT;
+    event.payloadVersion = GAMEPLAY_EVENT_VERSION;
+    event.payloadSize = sizeof(FireIntentPolicyV1);
+    event.flags = 0;
+    event.sourceEntity = payload.entity;
+    event.targetEntity = 0;
+    event.projectileEntity = 0;
+    event.tick = tick;
+    event.payload = &payload;
+
+    GameplayContextV1 context = makeContext(tick);
+    module->onEvent(&event, &context);
+    drainEvents(16);
+    return payload.handled != 0;
+}
+
+bool dispatchRagdollPolicy(RagdollPolicyV1& payload, std::uint64_t tick)
+{
+    const GameGameplayModuleV1* module = gameplayModule();
+    if (!module || !module->onEvent)
+        return false;
+
+    payload.handled = 0;
+
+    GameEventV1 event{};
+    event.typeId = GAME_EVENT_RAGDOLL_SOLVE;
+    event.payloadVersion = GAMEPLAY_EVENT_VERSION;
+    event.payloadSize = sizeof(RagdollPolicyV1);
+    event.flags = 0;
+    event.sourceEntity = payload.ownerActor;
+    event.targetEntity = 0;
+    event.projectileEntity = 0;
+    event.tick = tick;
+    event.payload = &payload;
+
+    GameplayContextV1 context = makeContext(tick);
+    module->onEvent(&event, &context);
+    drainEvents(16);
+    return payload.handled != 0;
+}
+
 } // namespace LiveBehavior
 
 namespace {

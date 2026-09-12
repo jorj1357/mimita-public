@@ -228,6 +228,24 @@ struct PositionHistoryEntry
     uint32_t tick = 0;
 };
 
+// Continuous held-fire window. The server simulates one authoritative
+// projectile per gameplay tick while active; ammo is server-authoritative here.
+struct HeldFireState
+{
+    bool active = false;
+    uint32_t intentId = 0;
+    uint16_t weaponDefNetworkId = 0;
+    uint16_t attackVariant = 0;
+    uint32_t startTick = 0;
+    uint32_t lastEmitTick = 0;
+    uint32_t emittedCount = 0;
+    uint32_t reportedCount = 0;
+    uint32_t deterministicSeed = 0;
+    glm::vec3 origin{0.0f};
+    glm::vec3 direction{1.0f, 0.0f, 0.0f};
+    uint32_t lastHeartbeatTick = 0;
+};
+
 struct ServerPlayer
 {
     uint32_t id = 0;
@@ -398,6 +416,9 @@ struct ServerPlayer
     uint32_t reportedCodePhase = 0;       // 0 status, 1 READY
     uint64_t reportedLogicalCodeHash = 0;
     uint64_t reportedPlatformPackageHash = 0;
+
+    // Continuous held-fire window (see HeldFireState).
+    HeldFireState heldFire;
 
     // ── Input command buffer for server-side movement simulation ──────
     // Spec: server stores received input commands and simulates movement
@@ -954,6 +975,18 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
     const glm::vec3& origin,
     const glm::vec3& direction,
     uint32_t clientSimulationTick,
+    uint32_t tick,
+    uint64_t& totalPacketsOut);
+// Held-fire intent (start/stop/heartbeat) and its per-tick authoritative driver.
+void handleFireIntentPacket(SOCKET sock, const char* buffer, int bytes,
+                            std::unordered_map<uint32_t, ServerPlayer>& players,
+                            uint32_t tick);
+void tickHeldFireIntents(
+    SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs,
+    std::unordered_map<uint32_t, ServerProjectile>& projectiles,
+    uint32_t& nextProjectileId,
     uint32_t tick,
     uint64_t& totalPacketsOut);
 void tickServerProjectiles(SOCKET sock,

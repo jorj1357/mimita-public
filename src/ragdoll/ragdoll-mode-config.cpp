@@ -88,6 +88,9 @@ bool RagdollModeConfig::load(const std::string& path)
             next.corpseBloodEnabled = c.value("blood_enabled", next.corpseBloodEnabled);
         }
 
+        next.solverHz = root.value("solver_hz", next.solverHz);
+        next.snapshotSendIntervalTicks = root.value("snapshot_send_interval_ticks", next.snapshotSendIntervalTicks);
+        next.replicateCorpses = root.value("replicate_corpses", next.replicateCorpses);
         next.solverIterations = root.value("solver_iterations", next.solverIterations);
         next.maxFallSpeed = root.value("max_fall_speed", next.maxFallSpeed);
         next.restitution = root.value("restitution", next.restitution);

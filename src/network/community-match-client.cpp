@@ -52,6 +52,8 @@ void CommunityMatchClient::reset()
         SettingsBackup::instance().restoreBackups();
         mOverridesApplied = false;
     }
+    // Clear the runtime ragdoll gamemode override (never a file write).
+    RagdollDeathConfig::instance().clearEnabledOverride();
 
     mMode.clear();
     mPhase = DUEL_PHASE_WAITING;
@@ -227,28 +229,16 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
             }
         }
 
-        // Apply ragdoll override
+        // Apply ragdoll override. Runtime-only: the gamemode must not rewrite
+        // config/ragdolldeath.json (config stays the user's own setting).
         if (newRagdoll != 0) {
             auto& ragdollCfg = RagdollDeathConfig::instance();
-            bool desiredEnabled = (newRagdoll == 2);
-            if (ragdollCfg.data().enabled != desiredEnabled) {
-                // Write to ragdolldeath.json
-                const std::string path = "config/ragdolldeath.json";
-                std::ifstream inFile(path);
-                if (inFile.is_open()) {
-                    nlohmann::json j;
-                    inFile >> j;
-                    inFile.close();
-                    j["enabled"] = desiredEnabled;
-                    std::ofstream outFile(path);
-                    if (outFile.is_open()) {
-                        outFile << j.dump(4);
-                        outFile.close();
-                        Debug::log(Debug::Category::General,
-                            "[GAMEMODE OVERRIDE] Ragdoll death set to %s\n",
-                            desiredEnabled ? "enabled" : "disabled");
-                    }
-                }
+            const bool desiredEnabled = (newRagdoll == 2);
+            if (ragdollCfg.enabled() != desiredEnabled || !ragdollCfg.hasEnabledOverride()) {
+                ragdollCfg.setEnabledOverride(desiredEnabled);
+                Debug::log(Debug::Category::General,
+                    "[GAMEMODE OVERRIDE] Ragdoll death set to %s (runtime)\n",
+                    desiredEnabled ? "enabled" : "disabled");
             }
         }
 

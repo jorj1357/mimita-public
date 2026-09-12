@@ -77,6 +77,17 @@ bool runHotAuthoritativeSelfTest(std::string& report)
     ok &= check(serverAuthoritativeDamageLimit() == 0,
                 "dev-branch authoritative damage limit is unlimited", report);
 
+    // Held-fire intent policy is dispatched to the hot behavior each held tick.
+    FireIntentPolicyV1 fire{};
+    fire.entity = 1;
+    fire.weaponNetworkId = 0;
+    fire.tick = 100;
+    fire.baseFire = 1;
+    fire.outFire = 1;
+    const bool fireHandled = LiveBehavior::dispatchFireIntent(fire, 100);
+    ok &= check(fireHandled && fire.handled == 1 && fire.outFire == fire.baseFire,
+                "hot fire-intent policy dispatch", report);
+
     // Structured evidence must exist for the authoritative policy chain.
     {
         std::ifstream journal(LiveEventJournal::instance().path());

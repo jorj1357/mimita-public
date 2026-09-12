@@ -464,6 +464,15 @@ struct MultiplayerContext
     uint64_t serverLogicalHash = 0;
     uint64_t serverPlatformHash = 0;
     uint32_t lastCodeGenerationSentTick = 0;
+
+    // Held-fire intent state (START while held; HEARTBEAT; STOP on release).
+    bool fireIntentActive = false;
+    uint32_t fireIntentId = 1;
+    uint16_t fireIntentWeapon = 0;
+    uint16_t fireIntentVariant = 0;
+    uint32_t fireIntentLastHeartbeatTick = 0;
+    uint32_t lastRagdollSentTick = 0;
+    uint64_t lastCorpseSerial = 0;
     // Newest server tick the monotonic render clock was anchored to. If the
     // server ever regresses its tick (map change / server restart), the clock
     // domain is invalid and must be reset instead of pinned by monotonicity.
@@ -883,6 +892,18 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     uint32_t claimedTargetId = 0,
     const glm::vec3& claimedHit = glm::vec3(0.0f),
     uint8_t claimedBodyPart = 0);
+
+// Held-fire intent. One packet per window/heartbeat, never one per projectile.
+void mpSendFireIntent(MultiplayerContext& ctx, uint32_t action,
+    uint16_t weaponDefNetworkId, uint16_t attackVariant,
+    const glm::vec3& origin, const glm::vec3& direction, uint32_t count);
+
+// Replicate the local player's ragdoll limb snapshot (when active).
+void mpSendRagdollSnapshot(MultiplayerContext& ctx);
+// Announce a death so peers deterministically derive the same corpse.
+void mpSendCorpseSpawn(MultiplayerContext& ctx, uint32_t ownerActorId,
+    uint32_t deathTick, uint32_t deathEventId, const glm::vec3& impulse,
+    const std::string& actorId);
 void mpSendServerCommand(MultiplayerContext& ctx, const std::string& command);
 uint32_t mpSendShotEvent(
     MultiplayerContext& ctx,
