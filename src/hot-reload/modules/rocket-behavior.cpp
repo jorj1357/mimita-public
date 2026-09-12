@@ -45,7 +45,7 @@ void MIMITA_GAME_CALL onEvent(const GameEventV1* event, GameplayContextV1*)
     // Temporary live proof: explosion damage is intentionally enormous so the
     // authoritative hot-policy path is unmistakable in the running game.
     if (policy->source == GAME_DAMAGE_SOURCE_EXPLOSION)
-        policy->outDamage = 9999999;
+        policy->outDamage = 333333;
 
     (void)event;
 }

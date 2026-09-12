@@ -96,6 +96,20 @@ changed files are HOT, COLD, or UNKNOWN.
 Prefer moving actively developed gameplay policy behind the hot ABI. The cold
 kernel should contain mechanisms, not frequently edited gameplay policy.
 
+## Cold restart severity
+
+`cold_restart_pending` is a severe live-development violation, not a normal
+progress reminder. It means the current edit cannot enter the running process
+and would require losing the live session. The event must identify the exact
+cold source and why its owner remains outside the hot boundary. Do not kill,
+close, or silently restart `MiMITA.exe` to clear it. The preferred next step is
+to move the editable behavior behind the stable hot ABI; only a genuine kernel,
+ABI, or runtime-mechanism change may remain cold until an intentional,
+no-process installation window.
+
+The detailed observability and AI-evidence direction is recorded in
+`docs/gold/2026-09-12-live-jsonl-ai-observability.md`.
+
 ## Tooling
 
 - `devscripts/live-build.py`: the documented live entry (never writes the exe).

@@ -524,7 +524,7 @@
       "rocketRadius": 1.0,
       "splashRadius": 12.0,
       "splashExponent": 2.0,
-      "rocketDirectDamage": 1520.0,
+      "rocketDirectDamage": 1111.0,
       "knockbackStrength": 15.0,
       "selfKnockbackMultiplier": 1.0,
       "selfDamageMultiplier": 0.2,
