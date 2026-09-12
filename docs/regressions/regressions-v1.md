@@ -1271,3 +1271,40 @@ jorj - this not official format not good but  when we edit netowkring stuff or d
 8. Lessons learned: a hot module is only authoritative where the EXE actually
    calls it. When moving policy hot, bridge every authoritative path (player and
    NPC) and the client prediction path, and keep JSON as the base.
+
+2026-09-12T16:35:00Z — Dedicated server never loaded the hot gameplay module; authoritative explosions used JSON damage — FIX STAGED (bootstrap cold build pending)
+
+1. Issue: the running dedicated server (`mimita.exe --server`) log showed
+   `[PROJECTILE CONFIG] ... splashDamage=1520.00 source=weapon-definition` and
+   `[EXPLOSION NPC DAMAGE] damage=714`, with no `hot_damage_policy_result` line,
+   even though `--hot-authoritative-selftest` passed and the client hot module
+   was active.
+2. Expected behavior: the authoritative server dispatches each explosion damage
+   decision to the active hot `GameGameplayModuleV1::onEvent` and applies
+   `outDamage`.
+3. Actual behavior: the server used the JSON base damage and wrote no policy
+   evidence. `serverResolveDamagePolicy` was compiled in but always fell back.
+4. Root cause: `main.cpp` handles `--server` inside `handleGameCLI` and returns
+   before `gameInit`. `HotReloadSystem::startup()` and
+   `LiveEventJournal::init()` live in `gameInit`, so the dedicated server never
+   started the hot loader, never polled `pollAndAdvance`, and never opened the
+   journal. `LiveModules::findFunctions` therefore found no active generation
+   and the resolver fell back to JSON; the journal write was a no-op.
+5. Fix staged (2026-09-12T16:35:00Z): in `src/network/server.cpp::runServer`,
+   initialize `LiveEventJournal` and `HotReloadSystem`, log
+   `[SERVER LIVE CODE] loaded= generation= code_hash=`, call
+   `HotReloadSystem::pollAndAdvance()` at the top of each fixed simulation step,
+   and unload/shutdown on exit. Generation output files now include the process
+   id so server and client compiles cannot collide.
+6. Install step: one cold build (`python build_agent.py`) with the executable
+   not running. It was refused at fix time because the client (PID 19960) and the
+   dedicated server (PID 39616) were running; the invariant forbids killing them.
+   After the cold build, only `rocket-behavior.cpp` changes are needed for
+   subsequent live damage proofs.
+7. Verification so far: `--live-code-selftest` and
+   `--hot-authoritative-selftest` pass; the changed `server.cpp` and
+   `hot-reload-system.cpp` compile. The running-server proof is pending the cold
+   build.
+8. Lessons learned: a separate server process has its own lifecycle. Every
+   process that runs authoritative simulation must initialize and poll the hot
+   loader and the live journal, not just the client render loop.

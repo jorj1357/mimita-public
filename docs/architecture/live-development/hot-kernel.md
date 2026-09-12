@@ -108,6 +108,21 @@ private development branch it is `0` (unlimited) so behavior proofs can use
 large values. Public servers set a finite bound; untrusted client damage claims
 remain capped separately in `server-packet-handlers.cpp`.
 
+## Server lifecycle
+
+The dedicated server (`mimita.exe --server`) bypasses `gameInit`, so it owns its
+own live-code lifecycle in `src/network/server.cpp::runServer`:
+
+- `LiveEventJournal::init()` and `HotReloadSystem::startup()` at server start,
+  with a `[SERVER LIVE CODE] loaded= generation= code_hash=` log line;
+- `HotReloadSystem::pollAndAdvance()` at the top of each fixed simulation step
+  (the safe activation boundary);
+- `unloadGameDLL()` and journal shutdown on exit.
+
+The client-hosted listen server is covered by the client `gameInit` /
+`engineTickSetup` lifecycle. Generation output files include the process id so a
+server and client compiling at the same time never collide.
+
 ## Cold-start reminder
 
 While a `cold` source change is pending, the runtime records a

@@ -36,6 +36,8 @@
 #include "config/spawn-velocity-config.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "hot-reload/hot-reload-system.h"
+#include "live-code/live-journal.h"
 #include "audio/audio.h"
 #include "persistence/persistence-queue.h"
 #include "auth/auth-system.h"
@@ -256,6 +258,19 @@ int runServer(const LaunchOptions& options)
     setServerAudioMode(true);
 
     ::StructuredLogger::instance().init();
+
+    // Server-side live-code lifecycle. The dedicated server bypasses gameInit
+    // (main.cpp handles --server before it), so it must start the hot loader and
+    // the live journal itself. Without this the authoritative path silently used
+    // the JSON fallback and wrote no policy evidence.
+    LiveEventJournal::instance().init();
+    HotReloadSystem::instance().startup();
+    {
+        const HotReloadSystem::Status liveStatus = HotReloadSystem::instance().status();
+        printf("%s [SERVER LIVE CODE] loaded=%d generation=%u code_hash=%s\n",
+               serverTimestamp(), (int)liveStatus.loaded, liveStatus.activeGeneration,
+               liveStatus.activeHash.empty() ? "(none)" : liveStatus.activeHash.c_str());
+    }
 
     // Load the standard player body shape headlessly so the authoritative
     // server can reconstruct real body-part hitboxes (players + NPCs) for hit
@@ -638,6 +653,11 @@ int runServer(const LaunchOptions& options)
         int steps = 0;
         while (accumulator >= (double)SERVER_DT && steps < MAX_STEPS)
         {
+            // Safe authoritative boundary: activate any ready hot generation
+            // before simulating this fixed step. The game thread never blocks on
+            // compilation; the worker handles it in the background.
+            HotReloadSystem::instance().pollAndAdvance();
+
             handleClientTimeout(players, sock, tick, totalPacketsOut);
             for (auto& kv : players)
             {
@@ -822,6 +842,8 @@ int runServer(const LaunchOptions& options)
     }
 
     PersistenceQueue::instance().flushBlocking();
+    HotReloadSystem::instance().unloadGameDLL();
+    LiveEventJournal::instance().shutdown();
     ::StructuredLogger::instance().shutdown();
     if (!serverCode.empty())
     {

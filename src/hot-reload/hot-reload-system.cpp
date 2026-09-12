@@ -4,6 +4,7 @@
 #include "live-code/code-hash.h"
 #include "live-code/live-code-events.h"
 #include "live-code/live-journal.h"
+#include "utils/path_utils.h"
 #include "utils/time-format.h"
 
 #include <algorithm>
@@ -35,7 +36,19 @@ HotReloadSystem& HotReloadSystem::instance()
 
 HotReloadSystem::HotReloadSystem()
 {
+    // Prefer the executable directory so a server process spawned with a
+    // different working directory still finds the manifest and build output.
+    // Fall back to the current directory for normal local development.
     root_ = std::filesystem::current_path();
+    const std::string executableDir = getExecutableDirectory();
+    if (!executableDir.empty()) {
+        std::error_code existsError;
+        const std::filesystem::path candidate(executableDir);
+        if (std::filesystem::exists(
+                candidate / "src" / "hot-reload" / "hot-modules.json", existsError)) {
+            root_ = candidate;
+        }
+    }
     sourceDLL_ = root_ / "build" / "mimita-game.dll";
     memory_.apiVersion = MIMITA_GAME_API_VERSION;
     memory_.platform.version = MIMITA_GAME_API_VERSION;
@@ -133,9 +146,10 @@ bool HotReloadSystem::beginBuild(const std::string& reason)
     request.sourceHash = hash;
     // Immutable generation filename: a new file is written every build and the
     // active generation is never overwritten.
-    char generationName[64]{};
+    char generationName[96]{};
     std::snprintf(generationName, sizeof(generationName),
-                  "mimita-live-g%06u.dll", generation);
+                  "mimita-live-p%lu-g%06u.dll",
+                  (unsigned long)GetCurrentProcessId(), generation);
     request.outputPath = dir / generationName;
     request.resultPath = dir / "build-result.json";
     request.logPath = dir / "build.log";
