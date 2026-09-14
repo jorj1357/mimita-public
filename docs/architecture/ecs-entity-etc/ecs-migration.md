@@ -89,6 +89,30 @@ players, remote players, NPCs, replay bodies, and projectiles.
 - Journal evidence: `entity_registered`, `entity_destroyed`,
   `control_source_set`, `rocket_entity_spawned`, `damage_applied`.
 
+## Dynamic entity / component lifecycle (2026-09-14)
+
+A hot package can now introduce entirely new state without an EXE call site:
+
+```text
+package declares schema (64-bit type id, version)
+ -> DynamicComponentStore.applySchemaUpdate migrates existing bytes at activation
+ -> hot system calls entity.create / component attach-read-write-remove /
+    component.enumerate / component.typesOnEntity / component.schema /
+    relationship.add-remove-query through GameplayContextV1 (ABI v6)
+ -> entity.destroy purges dynamic components and relationships
+```
+
+- New package entities use `EntityDomain::None` plus a kernel-allocated
+  monotonic id (`EntityRegistry::createGeneric`), so no gameplay enum grows and
+  ids never collide with player/npc/projectile/world-object ids.
+- Schema migrations are owned by `DynamicComponentStore` and keyed by the full
+  64-bit type id (the project `StateSchemaRegistry` stays 32-bit for typed POD
+  state). A failed migration rejects the candidate before any registration is
+  committed, so old code and old bytes both survive.
+- `--dynamic-lifecycle-selftest` proves create/attach/read/write/remove/
+  enumerate/inspect, relationships, v1->v2 migration, rejected bad migration,
+  deterministic serialization, and destroy cleanup.
+
 ## What remains legacy
 
 - `Player`, `Npc`, `ServerPlayer`, `ServerNpc`, `ServerProjectile` still own the
@@ -98,7 +122,9 @@ players, remote players, NPCs, replay bodies, and projectiles.
 - The client-predicted rocket entity is registered but not yet reconciled on
   authoritative adoption; predicted entities may outlive their network
   projectile until a sweep is added.
-- No full-world ECS conversion, dynamic schemas, or cross-platform determinism.
+- Dynamic components are not yet replicated from `networkPolicy`, not yet
+  editor-editable, and have no copy/paste integration yet.
+- No full-world ECS conversion or cross-platform determinism.
 
 ## Verification
 

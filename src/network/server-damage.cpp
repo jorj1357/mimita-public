@@ -10,8 +10,10 @@
 */
 
 #include "network/server.h"
+#include "network/server-context.h"
 #include "network/server-gamemode.h"
 #include "network/server-damage-policy.h"
+#include "ecs/entity-types.h"
 #include "persistence/persistence-emit.h"
 #include "combat/weapon-registry.h"
 #include "network/network-weapons.h"
@@ -240,6 +242,81 @@ ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>&
     }
     return applyPlayerDamageLegacy(players, target, attackerPlayerId,
                                    damage, knockback, source);
+}
+
+// Generic authoritative damage from a package: the caller supplies victim and
+// source entity ids and a generic damage source; the kernel maps the entities
+// to actors and applies damage through the shared actor damage boundary. Raw
+// containers stay private.
+bool serverApplyEntityDamage(GameDamageApplyV1& request)
+{
+    ServerContextV1* context = activeServerContext();
+    if (!context || !context->players || !context->npcs)
+        return false;
+    auto& players =
+        *static_cast<std::unordered_map<uint32_t, ServerPlayer>*>(context->players);
+    auto& npcs =
+        *static_cast<std::unordered_map<uint32_t, ServerNpc>*>(context->npcs);
+
+    const EntityId victimEntity = static_cast<EntityId>(request.victimEntity);
+    if (victimEntity == kInvalidEntityId)
+        return false;
+    const bool victimIsNpc = entityDomain(victimEntity) == EntityDomain::Npc;
+
+    ServerActorDamageRequest damageRequest;
+    damageRequest.victim = findServerActor(
+        entityLegacyId(victimEntity),
+        victimIsNpc ? ServerActorKind::Npc : ServerActorKind::Player, players, npcs);
+    if (!damageRequest.victim.player && !damageRequest.victim.npc)
+        return false;
+
+    damageRequest.damage = request.amount;
+    damageRequest.knockback =
+        glm::vec3(request.knockback[0], request.knockback[1], request.knockback[2]);
+    // Map the generic damage source onto the shared server damage vocabulary.
+    switch (request.sourceKind) {
+    case GAME_DAMAGE_SOURCE_HITSCAN: damageRequest.source = ServerDamageSource::Hitscan; break;
+    case GAME_DAMAGE_SOURCE_MELEE: damageRequest.source = ServerDamageSource::Melee; break;
+    case GAME_DAMAGE_SOURCE_CONTACT: damageRequest.source = ServerDamageSource::PhysicalContact; break;
+    default: damageRequest.source = ServerDamageSource::RocketExplosion; break;
+    }
+    if (context->tick)
+        damageRequest.serverTick = *context->tick;
+
+    const EntityId sourceEntity = static_cast<EntityId>(request.sourceEntity);
+    bool havePlayerAttacker = false;
+    uint32_t attackerPlayerId = 0;
+    if (sourceEntity != kInvalidEntityId) {
+        const bool sourceIsNpc = entityDomain(sourceEntity) == EntityDomain::Npc;
+        damageRequest.attacker = findServerActor(
+            entityLegacyId(sourceEntity),
+            sourceIsNpc ? ServerActorKind::Npc : ServerActorKind::Player, players, npcs);
+        havePlayerAttacker = damageRequest.attacker.player != nullptr;
+        if (havePlayerAttacker)
+            attackerPlayerId = damageRequest.attacker.id;
+    }
+
+    ServerDamageResult result;
+    if (!victimIsNpc && havePlayerAttacker) {
+        // Full shared actor damage boundary (player attacker + player victim).
+        result = applyActorDamage(players, npcs, damageRequest);
+    } else if (!victimIsNpc) {
+        // No player attacker: apply to the player victim directly (self/world
+        // damage), which is also the phase-1 generic damage path.
+        result = applyPlayerDamageLegacy(players, *damageRequest.victim.player,
+                                         attackerPlayerId, damageRequest.damage,
+                                         damageRequest.knockback, damageRequest.source);
+    } else {
+        // NPC victims migrate onto the shared boundary in a later phase.
+        request.applied = 0;
+        request.killed = 0;
+        request.healthAfter = 0;
+        return false;
+    }
+    request.applied = result.applied ? 1u : 0u;
+    request.killed = result.killed ? 1u : 0u;
+    request.healthAfter = result.healthAfter;
+    return result.applied;
 }
 
 ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(

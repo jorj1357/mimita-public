@@ -28,6 +28,19 @@ bool dispatchRagdollPolicy(RagdollPolicyV1& payload, std::uint64_t tick);
 // Dispatch an arbitrary event to the active behavior table.
 bool dispatchEvent(const GameEventV1& event, std::uint64_t tick);
 
+// Generic match facts. `actor.killed` describes the occurrence; a hot handler
+// that sets `handled` owns the scoring decision for that kill. `match.evaluate`
+// asks the active mode to decide the outcome; a handler that sets `handled`
+// suppresses the cold mode-specific win branch. Both return whether handled.
+bool dispatchActorKilled(GameActorKilledV1& payload, std::uint64_t tick);
+bool dispatchMatchEvaluate(GameMatchEvaluateV1& payload, std::uint64_t tick);
+
+// Generic combat policy facts. `projectile.impact` lets a hot behavior own the
+// consequence of a projectile hit; `tool.primary-use`/`tool.alt-use` lets a hot
+// behavior own one held use of a tool. Both return whether a handler handled it.
+bool dispatchProjectileImpact(ProjectileImpactPolicyV1& payload, std::uint64_t tick);
+bool dispatchToolUse(ToolUsePolicyV1& payload, std::uint64_t tick);
+
 // Generic dispatch for any event type with a mutable POD payload. This is the
 // single call site shape for all hot behavior seams: the kernel fills base
 // values, calls this, then applies the payload's `handled`/out fields. New
@@ -37,6 +50,21 @@ bool dispatchPayload(std::uint32_t typeId, void* payload,
                      std::uint64_t sourceEntity = 0,
                      std::uint64_t targetEntity = 0,
                      std::uint64_t projectileEntity = 0);
+
+// Dispatch an arbitrary runtime event by full 64-bit id with a valid
+// GameplayContextV1 host, so domain-scoped hot handlers can resolve capabilities
+// and use dynamic components. Returns true when a handler ran.
+bool dispatchGameplayEvent64(std::uint64_t typeId, void* payload,
+                             std::uint32_t payloadSize, std::uint64_t tick,
+                             std::uint64_t sourceEntity = 0,
+                             std::uint64_t targetEntity = 0);
+
+// Per-entity behavior bindings: read the entity's BehaviorBindingsComponent and
+// emit the bound behaviorId (a runtime event id) for the matching event type.
+// This is how a tool/projectile is composed without a global weapon switch.
+bool runBehaviorBindings(std::uint64_t entity, std::uint32_t eventType,
+                         void* payload, std::uint32_t payloadSize,
+                         std::uint64_t tick);
 
 // World used by the queryWorldRay capability while a dispatch is in flight.
 void setDispatchWorld(const void* world);

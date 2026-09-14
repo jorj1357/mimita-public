@@ -24,7 +24,8 @@ GenericRuntime& GenericRuntime::instance()
     return runtime;
 }
 
-bool GenericRuntime::activate(const GamePackageDescriptorV1* package, std::string& error)
+bool GenericRuntime::activate(const GamePackageDescriptorV1* package, std::string& error,
+                              std::uint32_t generation)
 {
     if (!package) {
         // Null descriptor is allowed: it clears the generic registration while
@@ -46,9 +47,13 @@ bool GenericRuntime::activate(const GamePackageDescriptorV1* package, std::strin
     std::vector<CommandEntry> commands;
     std::unordered_map<std::string, std::size_t> commandIndex;
     std::vector<EventEntry> events;
+    std::vector<ModeEntry> modes;
+    std::unordered_map<std::uint64_t, std::size_t> modeIndex;
+    std::vector<std::uint64_t> modeDomains;
     std::vector<SchemaEntry> schemas;
+    std::vector<DynamicComponentSchema> dynamicSchemas;
     std::vector<CapabilityEntry> providers;
-    std::vector<std::uint64_t> requirements;
+    std::vector<CapabilityRequirement> requirements;
 
     if (package->systems) {
         for (std::uint32_t i = 0; i < package->systemCount; ++i) {
@@ -101,9 +106,35 @@ bool GenericRuntime::activate(const GamePackageDescriptorV1* package, std::strin
             EventEntry e;
             e.id = ev.id;
             e.schemaHash = ev.schemaHash;
+            e.domainId = ev.domainId;
             e.dispatch = ev.dispatch;
             e.name = ev.name ? ev.name : "";
             events.push_back(std::move(e));
+        }
+    }
+
+    if (package->modes) {
+        for (std::uint32_t i = 0; i < package->modeCount; ++i) {
+            const GameModeDescriptorV1& m = package->modes[i];
+            if (m.id == 0 || m.domainId == 0) {
+                error = "invalid mode descriptor";
+                return false;
+            }
+            if (modeIndex.find(m.id) != modeIndex.end()) {
+                error = "duplicate mode id=" + std::to_string(m.id);
+                return false;
+            }
+            ModeEntry e;
+            e.id = m.id;
+            e.domainId = m.domainId;
+            e.matchSchemaId = m.matchSchemaId;
+            e.matchSchemaHash = m.matchSchemaHash;
+            e.displayName = m.displayName ? m.displayName : "";
+            modeIndex[m.id] = modes.size();
+            if (std::find(modeDomains.begin(), modeDomains.end(), m.domainId) ==
+                modeDomains.end())
+                modeDomains.push_back(m.domainId);
+            modes.push_back(std::move(e));
         }
     }
 
@@ -120,44 +151,79 @@ bool GenericRuntime::activate(const GamePackageDescriptorV1* package, std::strin
             e.name = cs.name ? cs.name : "";
             schemas.push_back(std::move(e));
 
+            // Stage; the dynamic store is updated atomically at commit so a
+            // rejected candidate leaves the previous schemas and bytes intact.
             DynamicComponentSchema schema;
             schema.typeId = cs.id;
             schema.schemaHash = cs.schemaHash;
+            schema.version = cs.version ? cs.version : 1;
             schema.size = cs.size;
             schema.align = cs.align ? cs.align : 1;
             schema.copyPolicy = cs.copyPolicy;
             schema.networkPolicy = cs.networkPolicy;
             schema.name = cs.name ? cs.name : "";
-            DynamicComponentStore::instance().registerSchema(schema);
+            dynamicSchemas.push_back(std::move(schema));
         }
     }
 
     if (package->capabilityProviders) {
         for (std::uint32_t i = 0; i < package->capabilityProviderCount; ++i) {
             const GameCapabilityDescriptorV1& cap = package->capabilityProviders[i];
+            if (cap.id == 0)
+                continue;
+            for (const CapabilityEntry& existing : providers) {
+                if (existing.id == cap.id) {
+                    error = "duplicate capability provider id=" + std::to_string(cap.id);
+                    return false;
+                }
+            }
             CapabilityEntry e;
             e.id = cap.id;
+            e.signatureId = cap.signatureId;
+            e.schemaHash = cap.schemaHash;
             e.callable = cap.callable;
+            e.providerPackage = package->packageId;
+            e.providerGeneration = generation;
             e.name = cap.name ? cap.name : "";
             providers.push_back(std::move(e));
         }
     }
     if (package->capabilityRequirements) {
-        for (std::uint32_t i = 0; i < package->capabilityRequirementCount; ++i)
-            requirements.push_back(package->capabilityRequirements[i]);
+        for (std::uint32_t i = 0; i < package->capabilityRequirementCount; ++i) {
+            const GameCapabilityRequirementV1& r = package->capabilityRequirements[i];
+            CapabilityRequirement req;
+            req.id = r.id;
+            req.signatureId = r.signatureId;
+            req.schemaHash = r.schemaHash;
+            requirements.push_back(req);
+        }
     }
 
-    // Resolve capability requirements: satisfied by a package provider or by a
-    // kernel primitive capability. An unresolved requirement fails the candidate.
-    for (std::uint64_t req : requirements) {
-        bool provided = kernelProvidesCapability(req);
-        if (!provided) {
-            for (const CapabilityEntry& p : providers) {
-                if (p.id == req) { provided = true; break; }
+    // Resolve capability requirements generically: satisfied by a staged package
+    // provider or by a kernel primitive, with a compatible signature. The kernel
+    // only knows ids + signatures here; it never switches on a concept name.
+    for (const CapabilityRequirement& req : requirements) {
+        const CapabilityEntry* provider = nullptr;
+        for (const CapabilityEntry& p : providers) {
+            if (p.id == req.id) { provider = &p; break; }
+        }
+        if (!provider) {
+            for (const CapabilityEntry& p : kernelCapabilities_) {
+                if (p.id == req.id) { provider = &p; break; }
             }
         }
-        if (!provided) {
-            error = "missing capability provider id=" + std::to_string(req);
+        if (!provider) {
+            error = "missing capability provider id=" + std::to_string(req.id);
+            return false;
+        }
+        if (req.signatureId != 0 && provider->signatureId != 0 &&
+            req.signatureId != provider->signatureId) {
+            error = "capability signature mismatch id=" + std::to_string(req.id);
+            return false;
+        }
+        if (req.schemaHash != 0 && provider->schemaHash != 0 &&
+            req.schemaHash != provider->schemaHash) {
+            error = "capability schema mismatch id=" + std::to_string(req.id);
             return false;
         }
     }
@@ -169,11 +235,45 @@ bool GenericRuntime::activate(const GamePackageDescriptorV1* package, std::strin
             domains.push_back(s.domainId);
     }
 
+    // Route migrations. A migration whose type id is one of this package's
+    // dynamic component schemas is owned by the dynamic store (64-bit keyed);
+    // everything else stays with the project typed-state registry. Registering
+    // migrations is additive and harmless if the migration then fails.
+    if (package->migrations) {
+        for (std::uint32_t i = 0; i < package->migrationCount; ++i) {
+            const GameMigrationDescriptorV1& m = package->migrations[i];
+            if (!m.migrate || m.toVersion <= m.fromVersion)
+                continue;
+            bool isDynamic = false;
+            for (const DynamicComponentSchema& s : dynamicSchemas) {
+                if (s.typeId == m.typeId) { isDynamic = true; break; }
+            }
+            if (isDynamic) {
+                DynamicComponentStore::instance().registerMigration(
+                    m.typeId, m.fromVersion, m.toVersion,
+                    reinterpret_cast<DynamicMigrationFn>(m.migrate));
+            } else {
+                Project::StateSchemaRegistry::instance().registerMigration(
+                    static_cast<std::uint32_t>(m.typeId), m.fromVersion, m.toVersion,
+                    reinterpret_cast<Project::MigrationFn>(m.migrate));
+            }
+        }
+    }
+
+    // Apply the staged dynamic schemas. If any stored blob cannot be migrated
+    // to its new version, the candidate is rejected here, before any runtime
+    // registration is committed, so old code and old state both survive.
+    if (!DynamicComponentStore::instance().applySchemaUpdate(dynamicSchemas, error))
+        return false;
+
     // Commit atomically.
     systems_ = std::move(systems);
     commands_ = std::move(commands);
     commandIndex_ = std::move(commandIndex);
     events_ = std::move(events);
+    modes_ = std::move(modes);
+    modeIndex_ = std::move(modeIndex);
+    modeDomains_ = std::move(modeDomains);
     schemas_ = std::move(schemas);
     capabilityProviders_ = std::move(providers);
     capabilityRequirements_ = std::move(requirements);
@@ -196,24 +296,14 @@ bool GenericRuntime::activate(const GamePackageDescriptorV1* package, std::strin
         layout.alignment = s.align ? s.align : 1;
         Project::ComponentSchemaRegistry::instance().registerLayout(layout);
     }
-    if (package->migrations) {
-        for (std::uint32_t i = 0; i < package->migrationCount; ++i) {
-            const GameMigrationDescriptorV1& m = package->migrations[i];
-            if (!m.migrate || m.toVersion <= m.fromVersion)
-                continue;
-            Project::StateSchemaRegistry::instance().registerMigration(
-                static_cast<std::uint32_t>(m.typeId), m.fromVersion, m.toVersion,
-                reinterpret_cast<Project::MigrationFn>(m.migrate));
-        }
-    }
 
     // Register generic capability ids so a hot package can both provide and
     // require capabilities by id without extending the fixed enum.
     const std::string subject = packageName_.empty() ? "package" : packageName_;
     for (const CapabilityEntry& c : capabilityProviders_)
         Project::CapabilityRegistry::instance().provideId(subject, c.id);
-    for (std::uint64_t required : capabilityRequirements_)
-        Project::CapabilityRegistry::instance().requestId(subject, required);
+    for (const CapabilityRequirement& required : capabilityRequirements_)
+        Project::CapabilityRegistry::instance().requestId(subject, required.id);
 
     // One-time registration observability (never per frame).
     std::printf("[GENERIC_RUNTIME] %s\n", describe().c_str());
@@ -239,6 +329,10 @@ void GenericRuntime::deactivate()
     commands_.clear();
     commandIndex_.clear();
     events_.clear();
+    modes_.clear();
+    modeIndex_.clear();
+    modeDomains_.clear();
+    activeModeDomain_ = 0;
     schemas_.clear();
     capabilityProviders_.clear();
     capabilityRequirements_.clear();
@@ -271,6 +365,9 @@ bool GenericRuntime::dispatchEvent(const GameEventV1& event, void* host)
         if (event.schemaHash != 0 && e.schemaHash != 0 &&
             event.schemaHash != e.schemaHash)
             continue;
+        // Mode-scoped handlers run only while their mode domain is active.
+        if (e.domainId != 0 && e.domainId != activeModeDomain_)
+            continue;
         e.dispatch(host, &event);
         return true;
     }
@@ -283,10 +380,47 @@ bool GenericRuntime::runRegisteredDomains(std::uint64_t tick, float dt, void* ho
     for (std::uint64_t domain : domains_) {
         if (domain == GAME_DOMAIN_GAMEPLAY || domain == GAME_DOMAIN_RENDER)
             continue;  // timed by the kernel
+        if (std::find(modeDomains_.begin(), modeDomains_.end(), domain) !=
+            modeDomains_.end())
+            continue;  // mode domains run only while their mode is active
         if (runDomain(domain, tick, dt, host))
             ran = true;
     }
     return ran;
+}
+
+bool GenericRuntime::hasMode(std::uint64_t modeId) const
+{
+    return modeIndex_.find(modeId) != modeIndex_.end();
+}
+
+std::uint64_t GenericRuntime::modeDomain(std::uint64_t modeId) const
+{
+    auto it = modeIndex_.find(modeId);
+    return it == modeIndex_.end() ? 0 : modes_[it->second].domainId;
+}
+
+const char* GenericRuntime::modeDisplayName(std::uint64_t modeId) const
+{
+    auto it = modeIndex_.find(modeId);
+    return it == modeIndex_.end() ? "" : modes_[it->second].displayName.c_str();
+}
+
+std::uint64_t GenericRuntime::modeIdAt(std::size_t index) const
+{
+    return index < modes_.size() ? modes_[index].id : 0;
+}
+
+void GenericRuntime::setActiveModeDomain(std::uint64_t domainId)
+{
+    activeModeDomain_ = domainId;
+}
+
+bool GenericRuntime::runActiveModeDomain(std::uint64_t tick, float dt, void* host)
+{
+    if (activeModeDomain_ == 0)
+        return false;
+    return runDomain(activeModeDomain_, tick, dt, host);
 }
 
 bool GenericRuntime::emit(std::uint64_t typeId, std::uint64_t sourceEntity,
@@ -306,6 +440,10 @@ bool GenericRuntime::emit(std::uint64_t typeId, std::uint64_t sourceEntity,
 
 void* GenericRuntime::capability(std::uint64_t id) const
 {
+    for (const CapabilityEntry& p : kernelCapabilities_) {
+        if (p.id == id)
+            return p.callable;
+    }
     for (const CapabilityEntry& p : capabilityProviders_) {
         if (p.id == id)
             return p.callable;
@@ -315,26 +453,76 @@ void* GenericRuntime::capability(std::uint64_t id) const
 
 bool GenericRuntime::hasCapability(std::uint64_t id) const
 {
-    return capability(id) != nullptr || kernelProvidesCapability(id);
+    return capability(id) != nullptr;
 }
 
 bool GenericRuntime::kernelProvidesCapability(std::uint64_t id) const
 {
-    static const std::uint64_t kKernelCapabilities[] = {
-        gameHash("component.read"),
-        gameHash("component.write"),
-        gameHash("entity.find"),
-        gameHash("physics.query"),
-        gameHash("log.write"),
-        gameHash("time.now"),
-        gameHash("dynamic.component.read"),
-        gameHash("dynamic.component.write"),
-    };
-    for (std::uint64_t cap : kKernelCapabilities) {
-        if (cap == id)
+    for (const CapabilityEntry& p : kernelCapabilities_) {
+        if (p.id == id)
             return true;
     }
     return false;
+}
+
+void GenericRuntime::registerKernelCapability(std::uint64_t id,
+                                              std::uint64_t signatureId,
+                                              std::uint64_t schemaHash,
+                                              void* callable,
+                                              const char* name)
+{
+    if (id == 0 || !callable)
+        return;
+    for (CapabilityEntry& existing : kernelCapabilities_) {
+        if (existing.id == id) {
+            // Idempotent re-registration (e.g. selftest re-init).
+            existing.signatureId = signatureId;
+            existing.schemaHash = schemaHash;
+            existing.callable = callable;
+            existing.name = name ? name : "";
+            return;
+        }
+    }
+    CapabilityEntry e;
+    e.id = id;
+    e.signatureId = signatureId;
+    e.schemaHash = schemaHash;
+    e.callable = callable;
+    e.providerPackage = 0;
+    e.providerGeneration = 0;
+    e.name = name ? name : "";
+    kernelCapabilities_.push_back(std::move(e));
+}
+
+bool GenericRuntime::capabilityInfo(std::uint64_t id, std::uint64_t* outSignatureId,
+                                    std::uint64_t* outSchemaHash,
+                                    std::uint64_t* outProviderPackage,
+                                    std::uint32_t* outProviderGeneration) const
+{
+    for (const CapabilityEntry& p : kernelCapabilities_) {
+        if (p.id != id) continue;
+        if (outSignatureId) *outSignatureId = p.signatureId;
+        if (outSchemaHash) *outSchemaHash = p.schemaHash;
+        if (outProviderPackage) *outProviderPackage = p.providerPackage;
+        if (outProviderGeneration) *outProviderGeneration = p.providerGeneration;
+        return true;
+    }
+    for (const CapabilityEntry& p : capabilityProviders_) {
+        if (p.id != id) continue;
+        if (outSignatureId) *outSignatureId = p.signatureId;
+        if (outSchemaHash) *outSchemaHash = p.schemaHash;
+        if (outProviderPackage) *outProviderPackage = p.providerPackage;
+        if (outProviderGeneration) *outProviderGeneration = p.providerGeneration;
+        return true;
+    }
+    return false;
+}
+
+std::uint32_t GenericRuntime::capabilityProviderGeneration(std::uint64_t id) const
+{
+    std::uint32_t generation = 0;
+    capabilityInfo(id, nullptr, nullptr, nullptr, &generation);
+    return generation;
 }
 
 bool GenericRuntime::hasCommand(const std::string& name) const
@@ -364,7 +552,7 @@ std::uint64_t GenericRuntime::manifestHash() const
     for (const EventEntry& e : events_) ids.push_back(e.id);
     for (const SchemaEntry& s : schemas_) ids.push_back(s.id);
     for (const CapabilityEntry& c : capabilityProviders_) ids.push_back(c.id);
-    for (std::uint64_t r : capabilityRequirements_) ids.push_back(r);
+    for (const CapabilityRequirement& r : capabilityRequirements_) ids.push_back(r.id);
     for (const CommandEntry& c : commands_) ids.push_back(gameHash(c.name.c_str()));
     ids.push_back(packageId_);
     std::sort(ids.begin(), ids.end());

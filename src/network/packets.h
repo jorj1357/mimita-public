@@ -1740,6 +1740,10 @@ struct FireIntentPacket
     uint32_t action = FIRE_INTENT_START;
     uint16_t weaponDefNetworkId = 0;
     uint16_t attackVariant = 0;
+    // Runtime tool identity (64-bit hash). When non-zero the server resolves the
+    // equipped tool entity and dispatches generic action routing instead of
+    // requiring a registered network weapon. 0 = legacy weapon path.
+    uint64_t toolId = 0;
     uint32_t startTick = 0;
     uint32_t endTick = 0;   // last tick covered (heartbeat)
     uint32_t count = 0;     // projectiles claimed in this window/batch

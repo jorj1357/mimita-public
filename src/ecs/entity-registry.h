@@ -26,6 +26,11 @@ public:
     // existing stable id and never resets its components.
     EntityId create(EntityRealm realm, EntityDomain domain, std::uint32_t legacyId,
                     std::uint16_t generation = 0);
+    // Allocates a fresh identity for a package/dynamic concept that has no
+    // compile-time domain. Uses EntityDomain::None plus a kernel-owned monotonic
+    // id, so it never collides with player/npc/projectile/world-object ids and
+    // requires no new enum. Pass a non-zero legacyId to request a stable id.
+    EntityId createGeneric(EntityRealm realm, std::uint32_t legacyId = 0);
     void destroy(EntityId id);
     void destroyAll();
     bool alive(EntityId id) const;
@@ -118,4 +123,5 @@ private:
     std::unordered_map<EntityId, EntityIdentity> mIdentities;
     std::unordered_map<std::uint64_t, EntityId> mLookup;
     std::unordered_map<std::type_index, std::unique_ptr<IComponentStore>> mStores;
+    std::uint32_t nextDynamicId_ = 1;
 };

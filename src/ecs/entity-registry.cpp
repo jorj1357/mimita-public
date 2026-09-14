@@ -5,6 +5,8 @@
 */
 #include "ecs/entity-registry.h"
 
+#include "ecs/dynamic-components.h"
+#include "ecs/relationship-store.h"
 #include "live-code/live-journal.h"
 
 namespace {
@@ -49,6 +51,16 @@ EntityId EntityRegistry::create(EntityRealm realm, EntityDomain domain,
     return id;
 }
 
+EntityId EntityRegistry::createGeneric(EntityRealm realm, std::uint32_t legacyId)
+{
+    if (legacyId == 0) {
+        do {
+            legacyId = nextDynamicId_++;
+        } while (alive(find(realm, EntityDomain::None, legacyId)));
+    }
+    return create(realm, EntityDomain::None, legacyId);
+}
+
 void EntityRegistry::destroy(EntityId id)
 {
     if (id == kInvalidEntityId)
@@ -61,6 +73,10 @@ void EntityRegistry::destroy(EntityId id)
     mIdentities.erase(it);
     for (auto& entry : mStores)
         entry.second->erase(id);
+    // Entity lifetime owns every component storage: purge the dynamic component
+    // blobs and relationship edges that reference this entity.
+    MimitaRuntime::DynamicComponentStore::instance().eraseEntity(id);
+    MimitaRuntime::RelationshipStore::instance().eraseEntity(id);
 }
 
 void EntityRegistry::destroyAll()

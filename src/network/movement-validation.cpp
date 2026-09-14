@@ -504,11 +504,14 @@ MovementValidationResult validateClientMovementReport(
                                            player.lastMovementSequence))
             return reject(MovementValidationReason::OldSequence);
     }
-    if (player.movementValidation.lastAcceptedClientTick != 0 &&
-        report.clientSimulationTick <= player.movementValidation.lastAcceptedClientTick)
-    {
-        return reject(MovementValidationReason::StaleClientTick);
-    }
+    // Stale-tick handling. The movement sequence is the authoritative per-life
+    // ordering key and is already validated as strictly newer above. A newer
+    // sequence carrying an older or equal client tick therefore means the
+    // client's simulation clock restarted (for example Player::reset() on
+    // respawn or a map switch), not a replay of an old command. Letting it
+    // through re-baselines lastAcceptedClientTick on accept; rejecting it would
+    // wedge the player at one server position forever, because every later
+    // report would be compared against the stale high-water tick.
 
     MovementValidationResult result;
     result.acceptedState = stateFromAcceptedReport(player, report, config);

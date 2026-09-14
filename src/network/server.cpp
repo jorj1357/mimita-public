@@ -9,6 +9,7 @@
 */
 
 #include "network/server.h"
+#include "network/server-context.h"
 #include "network/net_mode.h"
 #include "network/server-gamemode.h"
 #include "gamemode/gamemode.h"
@@ -432,6 +433,23 @@ int runServer(const LaunchOptions& options)
     ServerPacketStats transportStats;
     DisagreementRetransmitState disagreementRetransmit;
 
+    // Generic authoritative server context: valid for the whole server run so
+    // kernel capabilities (projectile.spawn, damage.apply, ...) can perform real
+    // world actions on behalf of hot code. The raw containers remain private.
+    MimitaNet::ServerContextV1 serverContext;
+    serverContext.sock = static_cast<std::uintptr_t>(sock);
+    serverContext.players = &players;
+    serverContext.npcs = &npcs;
+    serverContext.projectiles = &projectiles;
+    serverContext.nextProjectileId = &nextProjectileId;
+    serverContext.tick = &tick;
+    serverContext.totalPacketsOut = &totalPacketsOut;
+    serverContext.world = &world;
+    MimitaNet::setActiveServerContext(&serverContext);
+    struct ServerContextGuard {
+        ~ServerContextGuard() { MimitaNet::setActiveServerContext(nullptr); }
+    } serverContextGuard;
+
     // ── Dedicated server ICE support ──
     ListenServerState dedicatedIceState;
     dedicatedIceState.serverName = options.name.empty() ? "MiMITA Server" : options.name;
@@ -722,6 +740,8 @@ int runServer(const LaunchOptions& options)
                     MimitaRuntime::GenericRuntime::instance();
                 void* runtimeHost = LiveBehavior::hostContext(tick);
                 runtime.runDomain(GAME_DOMAIN_GAMEPLAY, tick, (float)SERVER_DT, runtimeHost);
+                // The active gamemode's own systems (data-driven domain routing).
+                runtime.runActiveModeDomain(tick, (float)SERVER_DT, runtimeHost);
                 runtime.runRegisteredDomains(tick, (float)SERVER_DT, runtimeHost);
                 // Deliver any generic events emitted by those systems this tick.
                 LiveBehavior::drainEvents(64);

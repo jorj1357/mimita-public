@@ -236,6 +236,8 @@ struct HeldFireState
     uint32_t intentId = 0;
     uint16_t weaponDefNetworkId = 0;
     uint16_t attackVariant = 0;
+    // Generic runtime tool key (0 = legacy network weapon path).
+    uint64_t toolId = 0;
     uint32_t startTick = 0;
     uint32_t lastEmitTick = 0;
     uint32_t emittedCount = 0;
@@ -310,6 +312,10 @@ struct ServerPlayer
     // episode, so it is sent exactly once (not every tick).
     bool connectionStateNotified = false;
     int equippedSlot = 0;
+    // Generic runtime tool: the equipped tool entity (created/owned generically)
+    // and its runtime key hash. 0 = the legacy weapon path owns the equipped item.
+    uint64_t runtimeToolId = 0;
+    uint64_t equippedToolEntity = 0;
     uint8_t weaponState = 0;
     int pingMs = 0;
     uint32_t lastShotSerial = 0;
@@ -723,6 +729,11 @@ struct ServerProjectile
     bool explodeOnLifetime = true;
     bool splashLineOfSight = true;
     uint32_t spawnTick = 0;
+    // Generic (package-spawned) projectile: uses the shared physics motion path
+    // and carries its runtime type key for the generic impact policy. Set by
+    // serverSpawnGenericProjectile; no kernel projectile enum is involved.
+    bool genericMotion = false;
+    std::uint64_t genericTypeId = 0;
     // Server tick represented by the shooter's rendered world when this
     // projectile was fired.  `simulationTick` advances from this historical
     // launch tick to the live server tick so delayed requests replay against

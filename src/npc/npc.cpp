@@ -1221,6 +1221,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
 
         // navMovement (resolved above) carries the actor's role movement config
         // through the same shared kernel as the human actor.
+        ++npc.body.movementSimulationTick;
         physicsMainUpdate(npc.body, world, input, safeDt, 2, navMovement);
 
         clearCollisionEntityContext();

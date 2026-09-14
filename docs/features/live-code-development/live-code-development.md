@@ -247,7 +247,11 @@ Implemented foundation:
 Not yet implemented:
 
 - player-side hot actor decisions (only the NPC path is wired);
-- state migration execution;
+- state migration execution for typed POD state (dynamic component migration is
+  implemented as of 2026-09-14; see the changelog
+  `20260914_114738-generic-dynamic-entity-component-lifecycle.md`);
+- dynamic-component replication, editor edit/copy-paste, and per-entity behavior
+  bindings;
 - atomic multi-module activation and dependency-graph invalidation;
 - deterministic rocket lag-compensation test and end-to-end network evidence;
 - the multiplayer READY/switch-tick protocol.

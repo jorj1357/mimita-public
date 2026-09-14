@@ -190,7 +190,9 @@ static void physicsMainUpdate_Internal(
     if (dt <= 0.0f)
         return;
 
-    ++p.movementSimulationTick;
+    // The fixed-tick clock is advanced by the simulation owner
+    // (simulateTick for the local player, Npc::update for NPCs) so that it
+    // keeps advancing even when a hot movement override skips this function.
     p.movementContacts.clear();
 
     MovementCommand command = buildMovementCommandFromPhysicsInputs(

@@ -20,7 +20,7 @@
 // (read/write/find/query/log) and the ragdoll-bind, movement, projectile,
 // death/respawn, and connection-state behavior seams, so those systems are
 // edited as hot behavior instead of cold kernel code.
-static constexpr std::uint32_t MIMITA_GAME_API_VERSION = 5;
+static constexpr std::uint32_t MIMITA_GAME_API_VERSION = 8;
 static constexpr std::uint32_t MIMITA_GAME_MAX_MODULES = 8;
 static constexpr std::size_t MIMITA_GAME_SELFTEST_MESSAGE = 128;
 
@@ -486,6 +486,122 @@ using GameDynamicComponentReadFn = bool (MIMITA_GAME_CALL *)(
 using GameDynamicComponentWriteFn = bool (MIMITA_GAME_CALL *)(
     void* host, std::uint64_t entity, std::uint64_t typeId, const void* in, std::uint32_t inSize);
 
+// ── Generic entity / dynamic-component lifecycle (ABI v6) ─────────────
+// Operation-generic capabilities over the entity registry and the dynamic
+// component store. None of these are per-component-type: the type is a 64-bit
+// schema id the package declared at runtime. This is the layer that lets a hot
+// package create state that did not exist when the EXE started.
+struct GameDynamicComponentInfoV1 {
+    std::uint64_t typeId;
+    std::uint64_t schemaHash;
+    std::uint32_t version;
+    std::uint32_t size;
+    std::uint32_t align;
+    std::uint32_t copyPolicy;    // GameCopyPolicy
+    std::uint32_t networkPolicy;
+    std::uint32_t reserved;
+    char name[48];
+};
+
+using GameEntityCreateFn = bool (MIMITA_GAME_CALL *)(
+    void* host, std::uint32_t realm, std::uint64_t* outEntity);
+using GameEntityDestroyFn = bool (MIMITA_GAME_CALL *)(
+    void* host, std::uint64_t entity);
+using GameDynamicComponentRemoveFn = bool (MIMITA_GAME_CALL *)(
+    void* host, std::uint64_t entity, std::uint64_t typeId);
+using GameDynamicComponentEnumerateFn = std::uint32_t (MIMITA_GAME_CALL *)(
+    void* host, std::uint64_t typeId, std::uint64_t* out, std::uint32_t maxOut);
+using GameDynamicComponentsOnEntityFn = std::uint32_t (MIMITA_GAME_CALL *)(
+    void* host, std::uint64_t entity, std::uint64_t* out, std::uint32_t maxOut);
+using GameDynamicComponentInfoFn = bool (MIMITA_GAME_CALL *)(
+    void* host, std::uint64_t typeId, GameDynamicComponentInfoV1* out);
+using GameRelationshipAddFn = bool (MIMITA_GAME_CALL *)(
+    void* host, std::uint64_t typeId, std::uint64_t from, std::uint64_t to,
+    std::uint64_t value);
+using GameRelationshipRemoveFn = bool (MIMITA_GAME_CALL *)(
+    void* host, std::uint64_t typeId, std::uint64_t from, std::uint64_t to);
+using GameRelationshipQueryFn = std::uint32_t (MIMITA_GAME_CALL *)(
+    void* host, std::uint64_t typeId, std::uint64_t from, std::uint64_t* outTo,
+    std::uint64_t* outValue, std::uint32_t maxOut);
+
+// ── Generic match mechanism (ABI v7) ─────────────────────────────────
+// A gamemode is runtime-registered metadata: an id (hash), a display name, and
+// the simulation domain whose systems own that mode's policy. The kernel does
+// not know any mode name; it routes the active mode id to its domain and lets
+// those systems decide. No mode enum or per-mode callback exists.
+struct GameModeDescriptorV1 {
+    std::uint64_t id;             // gameHash("ffa")
+    std::uint64_t domainId;       // domain whose systems run while this mode is active
+    std::uint64_t matchSchemaId;  // optional package match-state component (0 = none)
+    std::uint64_t matchSchemaHash;
+    const char* displayName;
+};
+
+// General occurrence fact: one actor killed another. Describes the event only.
+// Team/role/state must be queried from dynamic components or relationships; a
+// hot handler that sets `handled` owns the scoring decision for this kill.
+struct GameActorKilledV1 {
+    std::uint64_t killerEntity;
+    std::uint64_t victimEntity;
+    std::uint32_t killerId;
+    std::uint32_t victimId;
+    std::uint32_t killerIsNpc;
+    std::uint32_t victimIsNpc;
+    std::uint32_t weaponNetworkId;
+    std::uint32_t tick;
+    std::uint32_t handled;
+    std::uint32_t reserved;
+};
+
+// General match evaluation request/response. The kernel asks the active mode to
+// decide the match outcome; a handler that sets `handled` owns that decision and
+// the cold mode-specific win branch is skipped.
+struct GameMatchEvaluateV1 {
+    std::uint64_t matchEntity;
+    std::uint32_t tick;
+    std::uint32_t phase;
+    std::uint32_t handled;
+    std::uint32_t outEndMatch;
+    std::uint32_t outWinnerKind;   // 0 none, 1 actor, 2 team
+    std::uint32_t outWinnerId;
+    std::uint32_t outVictoryType;  // 0 score, 1 time
+    std::uint32_t reserved;
+};
+
+// TEMPORARY compatibility bridge to the existing DuelStatePacket/UI. Authoritative
+// score lives in package dynamic components; this snapshot lets the legacy packet
+// builder read it generically. It is NOT the canonical future gamemode-state
+// representation and should be replaced by generic state replication.
+static constexpr std::uint32_t GAME_MAX_MATCH_SCORES = 32;
+struct GameMatchScoreEntryV1 {
+    std::uint64_t ownerId;   // actor id or team id
+    std::int32_t score;
+    std::int32_t deaths;
+    std::uint32_t kind;      // 0 actor, 1 team
+    std::uint32_t reserved;
+};
+struct GameMatchScoreSnapshotV1 {
+    std::uint32_t count;
+    std::uint32_t reserved;
+    GameMatchScoreEntryV1 entries[GAME_MAX_MATCH_SCORES];
+};
+
+using GameMatchCurrentFn = bool (MIMITA_GAME_CALL *)(
+    void* host, std::uint64_t* outMatchEntity);
+using GameMatchActorTeamReadFn = bool (MIMITA_GAME_CALL *)(
+    void* host, std::uint32_t actorId, std::int32_t* outTeam);
+using GameMatchFinishFn = bool (MIMITA_GAME_CALL *)(
+    void* host, std::uint32_t winnerKind, std::uint32_t winnerId,
+    std::uint32_t victoryType);
+using GameMatchSetPhaseFn = bool (MIMITA_GAME_CALL *)(
+    void* host, std::uint32_t phase);
+using GameMatchRespawnFn = bool (MIMITA_GAME_CALL *)(
+    void* host, std::uint64_t actorEntity);
+using GameMatchSetTeamFn = bool (MIMITA_GAME_CALL *)(
+    void* host, std::uint32_t actorId, std::int32_t team);
+using GameMatchScoreSnapshotFn = void (MIMITA_GAME_CALL *)(
+    void* host, GameMatchScoreSnapshotV1* out);
+
 // A hot movement system requests a full local-player movement override for this
 // tick (free-fly/noclip). flags bit0 = active. The kernel applies the transform
 // and skips the built-in physics step when active.
@@ -514,6 +630,71 @@ struct MovementStateV1 {
 using GameMoveCapsuleFn = void (MIMITA_GAME_CALL *)(
     void* host, MovementStateV1* state, float dt);
 
+// ── Generic capability resolution (ABI v8) ──────────────────────────
+// ONE generic bridge so hot code reaches kernel primitives (physics.move,
+// effect.spawn, skeleton.apply, ...) by id without a permanent context field per
+// concept. New reusable primitives register by id; ordinary gameplay never adds
+// an ABI field again.
+using GameResolveCapabilityFn = void* (MIMITA_GAME_CALL *)(
+    void* host, std::uint64_t capabilityId);
+
+// physics.move: a low-level, policy-free physics/collision primitive. The caller
+// supplies the velocity + gravity scale; the kernel runs the shared collision
+// pipeline (sweep/slide, step-up, floor recovery, contact grounded) and writes
+// the resolved state back in place. This is a general capsule move, not a
+// movement-policy function; vehicles/swimming/climbing call the same primitive.
+static constexpr std::uint32_t GAME_PHYSICS_MOVE_FULL_PIPELINE = 1u;
+using GamePhysicsMoveFn = void (MIMITA_GAME_CALL *)(
+    void* host, MovementStateV1* state, float dt, std::uint32_t flags);
+
+// effect.spawn: ONE generic effect/particle spawn descriptor. The `kind` hash
+// selects an emitter template (footstep, dash, freeze, spark, smoke, blood,
+// debris, muzzle flash, ...); the numeric fields tune it. Future effects use the
+// same mechanism and need no ABI change.
+struct GameEffectSpawnV1 {
+    std::uint64_t kind;         // gameHash("effect.footstep") etc.
+    std::uint64_t ownerEntity;  // 0 = none
+    std::uint32_t count;
+    std::uint32_t flags;
+    float position[3];
+    float direction[3];
+    float color[4];
+    float scale;
+    float endScale;
+    float speed;
+    float lifetime;
+    float spread;
+};
+using GameEffectSpawnFn = void (MIMITA_GAME_CALL *)(
+    void* host, const GameEffectSpawnV1* desc);
+
+// skeleton.apply: apply a pose to an actor's skeleton. The kernel owns the
+// rest pose, hierarchy, and node mapping; the caller supplies per-part euler
+// offsets keyed by part-name hash. Generic for animation graphs, ragdoll poses,
+// replay poses, and any future pose source.
+static constexpr std::uint32_t GAME_MAX_POSE_PARTS = 16;
+struct GamePosePartV1 {
+    std::uint64_t part;         // gameHash("torso") etc.
+    float translation[3];
+    float rotationEuler[3];
+};
+struct GameSkeletonPoseV1 {
+    std::uint32_t count;
+    std::uint32_t flags;
+    std::uint64_t entity;
+    GamePosePartV1 parts[GAME_MAX_POSE_PARTS];
+};
+using GameSkeletonApplyFn = void (MIMITA_GAME_CALL *)(
+    void* host, const GameSkeletonPoseV1* pose);
+
+// animation.update: TEMPORARY BRIDGE (allowed by the animation guidance). The
+// hot animation system owns when/how this runs; the kernel currently runs the
+// existing procedural animation behind it. The desired forward path is a hot
+// system computing poses itself and calling skeleton.apply; this bridge exists
+// so animation is correct immediately and can be replaced hot, piece by piece.
+using GameAnimationUpdateFn = void (MIMITA_GAME_CALL *)(
+    void* host, float dt, std::uint32_t flags);
+
 struct GameplayContextV1 {
     std::uint32_t abiVersion;
     std::uint32_t structSize;
@@ -538,6 +719,27 @@ struct GameplayContextV1 {
     GameRequestMovementOverrideFn requestMovementOverride;
     // v6 additions (append-only): kernel capsule-vs-world solve.
     GameMoveCapsuleFn moveCapsule;
+    // v6 additions (append-only): generic entity / dynamic-component lifecycle.
+    GameEntityCreateFn entityCreate;
+    GameEntityDestroyFn entityDestroy;
+    GameDynamicComponentRemoveFn dynamicRemoveComponent;
+    GameDynamicComponentEnumerateFn dynamicEnumerateComponent;
+    GameDynamicComponentsOnEntityFn dynamicComponentsOnEntity;
+    GameDynamicComponentInfoFn dynamicComponentInfo;
+    GameRelationshipAddFn relationshipAdd;
+    GameRelationshipRemoveFn relationshipRemove;
+    GameRelationshipQueryFn relationshipQuery;
+    // v7 additions (append-only): generic authoritative match capabilities.
+    GameMatchCurrentFn matchCurrent;
+    GameMatchActorTeamReadFn matchActorTeamRead;
+    GameMatchFinishFn matchFinish;
+    GameMatchSetPhaseFn matchSetPhase;
+    GameMatchRespawnFn matchRespawn;
+    GameMatchSetTeamFn matchSetTeam;
+    // v8 additions (append-only): one generic capability resolver. Kernel
+    // primitives register by id (physics.move, effect.spawn, skeleton.apply);
+    // hot code resolves and calls them. This replaces per-concept ABI fields.
+    GameResolveCapabilityFn resolveCapability;
 };
 
 // Small kernel-owned shared state area at the start of permanentStorage so hot
@@ -551,11 +753,12 @@ struct GameSharedStateV1 {
     std::uint64_t hoveredEntity;
     std::uint64_t localPlayerEntity;
     std::uint32_t reserved[4];
+    // Kernel-owned match entity for the active match (0 = none). Package match
+    // state attaches to this entity through the dynamic component capabilities.
+    std::uint64_t matchEntity;
 };
 static constexpr std::uint32_t GAME_MODE_FLAG_CREATION = 1u;
 static constexpr std::uint32_t GAME_MODE_FLAG_HOT_MOVEMENT = 2u;
-// Opt out of the hot movement step and use the built-in step instead.
-static constexpr std::uint32_t GAME_MODE_FLAG_LEGACY_MOVEMENT = 4u;
 
 // Request/response payload for GAME_EVENT_DAMAGE_POLICY. The kernel fills the
 // base values; a hot behavior sets `handled = 1` and may override `outDamage`
@@ -712,6 +915,51 @@ struct ProjectilePresentV1 {
     float outTrailEndSize;
     float outTrailAlpha;
     std::uint32_t handled;
+    std::uint32_t reserved;
+};
+
+// ── Generic projectile impact/expire policy (runtime event) ─────
+// Kernel -> behavior when a simulated projectile hits the world, an actor, or
+// exhausts its lifetime. The behavior decides the consequence; the kernel owns
+// simulation, collision, and networking. This is the seam that lets a new
+// projectile behavior exist without a kernel branch per projectile type.
+struct ProjectileImpactPolicyV1 {
+    std::uint64_t projectileEntity;
+    std::uint64_t ownerEntity;
+    std::uint64_t victimEntity;
+    std::uint64_t projectileTypeId;  // runtime type key (network id or package hash)
+    std::uint32_t ownerId;
+    std::uint32_t victimId;
+    std::uint32_t weaponNetworkId;
+    std::uint32_t hitKind;      // 0 none, 1 world, 2 player, 3 npc, 4 lifetime
+    float position[3];
+    float normal[3];
+    float age;
+    float lifetime;
+    // out
+    std::uint32_t outExplode;   // 1 = run the kernel explosion/damage path
+    std::uint32_t handled;
+    std::uint32_t reserved;
+};
+
+// ── Generic tool/action use policy (runtime event) ──────────────
+// Kernel -> behavior for one held primary or alternate use of a held tool.
+// The behavior reads the tool's components/relationships and may own the use
+// (outFire = 0 suppresses the built-in fire; = 1 allows it).
+struct ToolUsePolicyV1 {
+    std::uint64_t userEntity;
+    std::uint64_t toolEntity;
+    std::uint64_t toolId;       // runtime tool key (network id or package hash)
+    std::uint32_t ownerId;
+    std::uint32_t toolNetworkId;
+    std::uint32_t kind;         // 0 primary, 1 alt
+    std::uint32_t tick;
+    std::uint32_t baseFire;
+    std::uint32_t outFire;
+    std::uint32_t ammoCost;
+    std::uint32_t handled;
+    float origin[3];
+    float direction[3];
     std::uint32_t reserved;
 };
 
@@ -1039,7 +1287,9 @@ struct GameEditorModuleV1 {
 // entries generically; it does not know the names/ids inside the arrays. Adding
 // a system/event/schema/capability/command later must NOT require a new field in
 // this header — only appending to an existing array.
-static constexpr std::uint32_t MIMITA_PACKAGE_ABI_VERSION = 1;
+// v2: capability requirements carry a signature so activation can validate
+// provider compatibility generically (no capability enum).
+static constexpr std::uint32_t MIMITA_PACKAGE_ABI_VERSION = 2;
 
 // Compile-time FNV-1a so the kernel and packages hash names identically without
 // a runtime table.
@@ -1052,6 +1302,71 @@ constexpr std::uint64_t gameHash(const char* s, std::uint64_t h = 14695981039346
 // in their own hashed domains (which the kernel runs when it times that domain).
 static constexpr std::uint64_t GAME_DOMAIN_GAMEPLAY = gameHash("gameplay.60");
 static constexpr std::uint64_t GAME_DOMAIN_RENDER = gameHash("render.frame");
+// Runs once per fixed tick after movement (resolved generically by the kernel).
+static constexpr std::uint64_t GAME_DOMAIN_POST_MOVEMENT = gameHash("postmovement.60");
+
+// Kernel primitive capability ids resolved through GameplayContextV1::
+// resolveCapability. Generic and reusable; adding a primitive never adds a
+// context field.
+static constexpr std::uint64_t GAME_CAP_PHYSICS_MOVE = gameHash("physics.move");
+static constexpr std::uint64_t GAME_CAP_EFFECT_SPAWN = gameHash("effect.spawn");
+static constexpr std::uint64_t GAME_CAP_SKELETON_APPLY = gameHash("skeleton.apply");
+static constexpr std::uint64_t GAME_CAP_ANIMATION_UPDATE = gameHash("animation.update");
+// Generic authoritative server-context primitives. These let hot code mutate
+// authoritative world state through stable generic handles; the kernel keeps
+// ownership of the players/projectiles containers and networking.
+static constexpr std::uint64_t GAME_CAP_PROJECTILE_SPAWN = gameHash("projectile.spawn");
+static constexpr std::uint64_t GAME_CAP_DAMAGE_APPLY = gameHash("damage.apply");
+
+// Generic authoritative projectile spawn. The kernel owns id allocation,
+// simulation, collision, and replication; the spec carries only generic data
+// (no weapon/projectile enum). `typeId` is a runtime key the package chooses.
+struct GameProjectileSpawnSpecV1 {
+    std::uint64_t ownerEntity;
+    std::uint64_t typeId;
+    std::uint32_t ownerPlayerId;
+    std::uint32_t ownerNpcId;
+    std::uint32_t weaponNetworkId;
+    float position[3];
+    float velocity[3];
+    float radius;
+    float lifetime;
+    float gravity;
+    float drag;
+    float restitution;
+    std::uint32_t maxBounceCount;
+    std::uint32_t explodeOnPlayerImpact;
+    std::uint32_t explodeOnWorldImpact;
+    std::uint32_t explodeOnLifetime;
+    // Optional area effect (generic; zero = no splash).
+    float splashRadius;
+    float splashDamage;
+    float splashExponent;
+    float fullDamageRadius;
+    float edgeDamage;
+    float knockbackStrength;
+    float selfDamageMultiplier;
+    std::uint32_t splashEnabled;
+};
+using GameProjectileSpawnFn = bool (MIMITA_GAME_CALL *)(
+    void* host, const GameProjectileSpawnSpecV1* spec, std::uint64_t* outEntity);
+
+// Generic authoritative damage application by entity id. The caller supplies a
+// generic source kind; there are no weapon-specific damage callbacks.
+struct GameDamageApplyV1 {
+    std::uint64_t victimEntity;
+    std::uint64_t sourceEntity;
+    std::int32_t amount;
+    std::uint32_t sourceKind;   // GameDamageSource
+    float knockback[3];
+    // out
+    std::uint32_t applied;
+    std::uint32_t killed;
+    std::int32_t healthAfter;
+    std::uint32_t reserved;
+};
+using GameDamageApplyFn = bool (MIMITA_GAME_CALL *)(
+    void* host, GameDamageApplyV1* request);
 
 // Component copy policy lives in schema metadata so the editor never hardcodes
 // "if component == X".
@@ -1093,6 +1408,10 @@ struct GameComponentSchemaDescriptorV1 {
     std::uint32_t copyPolicy;    // GameCopyPolicy
     std::uint32_t networkPolicy;
     const char* name;
+    // Append-only (ABI v6): schema version drives migration on activation.
+    // 0 is treated as 1 for packages built before this field existed.
+    std::uint32_t version;
+    std::uint32_t reserved;
 };
 
 struct GameCapabilityDescriptorV1 {
@@ -1101,6 +1420,15 @@ struct GameCapabilityDescriptorV1 {
     std::uint64_t schemaHash;
     void* callable;           // provider callable; signature is by convention
     const char* name;
+};
+
+// A requirement is a capability id plus the signature the requester expects.
+// The kernel validates compatibility generically at activation; a mismatch
+// rejects the candidate and the last-good generation stays active.
+struct GameCapabilityRequirementV1 {
+    std::uint64_t id;
+    std::uint64_t signatureId;  // 0 = any
+    std::uint64_t schemaHash;   // 0 = any
 };
 
 struct GameCommandDescriptorV1 {
@@ -1140,7 +1468,7 @@ struct GamePackageDescriptorV1 {
     std::uint32_t componentSchemaCount;
     const GameCapabilityDescriptorV1* capabilityProviders;
     std::uint32_t capabilityProviderCount;
-    const std::uint64_t* capabilityRequirements;
+    const GameCapabilityRequirementV1* capabilityRequirements;
     std::uint32_t capabilityRequirementCount;
     const GameCommandDescriptorV1* commands;
     std::uint32_t commandCount;
@@ -1148,6 +1476,9 @@ struct GamePackageDescriptorV1 {
     std::uint32_t resourceCount;
     const GameMigrationDescriptorV1* migrations;
     std::uint32_t migrationCount;
+    // v7 additions (append-only): runtime-registered gamemodes (metadata only).
+    const GameModeDescriptorV1* modes;
+    std::uint32_t modeCount;
 };
 
 using MimitaGetPackageDescriptorFn = const GamePackageDescriptorV1* (MIMITA_GAME_CALL *)();

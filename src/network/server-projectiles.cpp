@@ -16,6 +16,8 @@
 #include "persistence/persistence-emit.h"
 #include "ecs/actor-entities.h"
 #include "ecs/entity-registry.h"
+#include "network/server-context.h"
+#include "live-code/live-behavior.h"
 #include "live-code/live-gameplay.h"
 #include "network/server-damage-policy.h"
 
@@ -1761,7 +1763,8 @@ void tickServerProjectiles(SOCKET sock,
 
         const bool sharedProjectile =
             projectile.weaponType == NETWORK_WEAPON_ROCKET_LAUNCHER ||
-            projectile.weaponType == NETWORK_WEAPON_GRENADE_LAUNCHER;
+            projectile.weaponType == NETWORK_WEAPON_GRENADE_LAUNCHER ||
+            projectile.genericMotion;
 
         if (sharedProjectile)
         {
@@ -1833,21 +1836,66 @@ void tickServerProjectiles(SOCKET sock,
                 }
                 }
 
-                if (step.type == ProjectileCollisionType::LifetimeExpired && projectile.explodeOnLifetime)
+                // Generic projectile impact policy: a hot behavior may own the
+                // consequence. When handled, its outExplode decides; otherwise
+                // the cold per-type flags below run (fallback).
+                bool impactHandled = false;
+                bool impactExplode = false;
+                if (step.type != ProjectileCollisionType::None)
+                {
+                    ProjectileImpactPolicyV1 impact{};
+                    impact.ownerId = projectile.ownerPlayerId != 0
+                        ? projectile.ownerPlayerId : projectile.ownerNpcId;
+                    impact.victimId = step.hitPlayerId;
+                    impact.weaponNetworkId = projectile.weaponType;
+                    impact.projectileTypeId = projectile.genericTypeId != 0
+                        ? projectile.genericTypeId : projectile.weaponType;
+                    if (impact.ownerId != 0)
+                        impact.ownerEntity = static_cast<std::uint64_t>(Ecs::ensure(
+                            EntityRealm::Server, EntityDomain::Player, impact.ownerId));
+                    if (step.hitPlayerId != 0)
+                        impact.victimEntity = static_cast<std::uint64_t>(Ecs::ensure(
+                            EntityRealm::Server, EntityDomain::Player, step.hitPlayerId));
+                    impact.hitKind =
+                        step.type == ProjectileCollisionType::WorldImpact ? 1u :
+                        step.type == ProjectileCollisionType::PlayerImpact ? 2u :
+                        step.type == ProjectileCollisionType::LifetimeExpired ? 4u : 0u;
+                    impact.position[0] = step.hitPosition.x;
+                    impact.position[1] = step.hitPosition.y;
+                    impact.position[2] = step.hitPosition.z;
+                    impact.age = projectile.age;
+                    impact.lifetime = projectile.lifetime;
+                    impactHandled = LiveBehavior::dispatchProjectileImpact(impact, stepTick);
+                    impactExplode = impact.outExplode != 0;
+                }
+
+                const bool coldExplode =
+                    (step.type == ProjectileCollisionType::LifetimeExpired && projectile.explodeOnLifetime) ||
+                    (step.type == ProjectileCollisionType::PlayerImpact && projectile.explodeOnPlayerImpact) ||
+                    (step.type == ProjectileCollisionType::WorldImpact && projectile.explodeOnWorldImpact);
+                const bool explodeNow = impactHandled ? impactExplode : coldExplode;
+
+                if (explodeNow && step.type == ProjectileCollisionType::LifetimeExpired)
                 {
                     explodeProjectile(sock, world, players, npcs, projectile, projectile.position,
                                       "lifetime", 0, tick, stepTick, totalPacketsOut);
                 }
-                else if (step.type == ProjectileCollisionType::PlayerImpact && projectile.explodeOnPlayerImpact)
+                else if (explodeNow && step.type == ProjectileCollisionType::PlayerImpact)
                 {
                     explodeProjectile(sock, world, players, npcs, projectile, step.hitPosition,
                                       "player", step.hitPlayerId, tick, stepTick,
                                       totalPacketsOut);
                 }
-                else if (step.type == ProjectileCollisionType::WorldImpact && projectile.explodeOnWorldImpact)
+                else if (explodeNow && step.type == ProjectileCollisionType::WorldImpact)
                 {
                     explodeProjectile(sock, world, players, npcs, projectile, step.hitPosition,
                                       "world", 0, tick, stepTick, totalPacketsOut);
+                }
+                else if (impactHandled && !impactExplode &&
+                         step.type == ProjectileCollisionType::LifetimeExpired)
+                {
+                    // A hot policy chose not to explode at end of life; despawn.
+                    projectile.exploded = true;
                 }
 
                 if (!projectile.exploded &&
@@ -2069,6 +2117,83 @@ void cancelDeadNpcProjectiles(
             EntityRealm::Server, EntityDomain::Projectile, projectile.id));
         it = projectiles.erase(it);
     }
+}
+
+// Generic authoritative projectile spawn from a package spec. The kernel keeps
+// id allocation, simulation, collision, and replication; hot code supplies only
+// generic data and gets back a stable projectile entity id.
+bool serverSpawnGenericProjectile(const GameProjectileSpawnSpecV1& spec,
+                                  std::uint64_t* outEntity)
+{
+    ServerContextV1* context = activeServerContext();
+    if (!context || !context->players || !context->projectiles ||
+        !context->nextProjectileId || !context->tick || !context->totalPacketsOut)
+        return false;
+    auto& players =
+        *static_cast<std::unordered_map<uint32_t, ServerPlayer>*>(context->players);
+    auto& projectiles =
+        *static_cast<std::unordered_map<uint32_t, ServerProjectile>*>(context->projectiles);
+    const uint32_t tick = *context->tick;
+
+    ServerProjectile projectile;
+    projectile.id = (*context->nextProjectileId)++;
+    if (*context->nextProjectileId == 0)
+        *context->nextProjectileId = 1;
+    projectile.ownerPlayerId = spec.ownerPlayerId;
+    projectile.ownerNpcId = spec.ownerNpcId;
+    projectile.weaponType = static_cast<std::uint8_t>(spec.weaponNetworkId);
+    projectile.weaponDefNetworkId = static_cast<std::uint16_t>(spec.weaponNetworkId);
+    projectile.position = glm::vec3(spec.position[0], spec.position[1], spec.position[2]);
+    projectile.previousPosition = projectile.position;
+    projectile.velocity = glm::vec3(spec.velocity[0], spec.velocity[1], spec.velocity[2]);
+    projectile.radius = spec.radius;
+    projectile.lifetime = spec.lifetime;
+    projectile.gravity = spec.gravity;
+    projectile.drag = spec.drag;
+    projectile.restitution = spec.restitution;
+    projectile.maxBounceCount = static_cast<int>(spec.maxBounceCount);
+    projectile.explodeOnPlayerImpact = spec.explodeOnPlayerImpact != 0;
+    projectile.explodeOnWorldImpact = spec.explodeOnWorldImpact != 0;
+    projectile.explodeOnLifetime = spec.explodeOnLifetime != 0;
+    projectile.splashRadius = spec.splashRadius;
+    projectile.splashDamage = spec.splashDamage;
+    projectile.splashExponent = spec.splashExponent > 0.0f ? spec.splashExponent : 2.0f;
+    projectile.fullDamageRadius = spec.fullDamageRadius;
+    projectile.edgeDamage = spec.edgeDamage;
+    projectile.knockbackStrength = spec.knockbackStrength;
+    projectile.selfDamageMultiplier = spec.selfDamageMultiplier > 0.0f
+        ? spec.selfDamageMultiplier : 1.0f;
+    projectile.splashEnabled = spec.splashEnabled != 0 && spec.splashRadius > 0.0f;
+    projectile.genericMotion = true;
+    projectile.genericTypeId = spec.typeId;
+    projectile.spawnTick = tick;
+    projectile.fireViewTick = tick;
+    projectile.simulationTick = tick;
+    projectiles[projectile.id] = projectile;
+
+    EntityId ownerEntity = static_cast<EntityId>(spec.ownerEntity);
+    if (ownerEntity == kInvalidEntityId && spec.ownerPlayerId != 0)
+        ownerEntity = Ecs::ensure(EntityRealm::Server, EntityDomain::Player,
+                                  spec.ownerPlayerId);
+    const EntityId projectileEntity = Ecs::spawnRocket(
+        EntityRealm::Server, projectile.id, ownerEntity, projectile.position,
+        projectile.velocity, projectile.weaponDefNetworkId, projectile.fireSerial,
+        projectile.lifetime, NetworkAuthority::Server);
+
+    ProjectileSpawnEventPacket spawn{};
+    spawn.header.type = PACKET_PROJECTILE_SPAWN_EVENT;
+    spawn.header.tick = tick;
+    fillProjectilePose(spawn, projectile);
+    broadcastPacket(static_cast<SOCKET>(context->sock), players, spawn,
+                    *context->totalPacketsOut, projectile.ownerPlayerId);
+
+    if (outEntity)
+        *outEntity = static_cast<std::uint64_t>(projectileEntity);
+    Debug::log(Debug::Category::Weapons,
+        "[GENERIC PROJECTILE SPAWN] id=%u type=%llu owner=%u pos=(%.2f,%.2f,%.2f)\n",
+        projectile.id, (unsigned long long)spec.typeId, spec.ownerPlayerId,
+        projectile.position.x, projectile.position.y, projectile.position.z);
+    return true;
 }
 
 } // namespace MimitaNet

@@ -14,6 +14,7 @@
 #include "perf/perf-spike.h"
 #include "input/input-state.h"
 #include "physics/physics-mini.h"
+#include "physics/config.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "npc/npc.h"
@@ -73,6 +74,12 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     MIMITA_PERF_SCOPE("Simulation::SimulateTick");
     if (!sim.player || !sim.world || !sim.npcSystem) return;
 
+    // The fixed-tick clock is owned here, independent of which movement path
+    // (built-in kernel or a hot override) runs this tick. It advances even when
+    // the player is dead so the client's reported simulation tick never freezes
+    // (a frozen tick makes the server reject all later reports as stale).
+    ++sim.player->movementSimulationTick;
+
     // Entity/component slice: the local human player is a stable entity with
     // identity, control source, live transform/health, and a movement intent.
     {
@@ -86,6 +93,9 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         Ecs::setMovementIntent(playerEntity, frame.moveX, frame.moveY,
                                frame.movementPressed, frame.jump, frame.dashPressed,
                                frame.downDashPressed, frame.freezeHeld);
+        // One source for the actor capsule so hot movement and the kernel solve
+        // agree on size (fixes the model sinking when the fallback was used).
+        Ecs::setBody(playerEntity, sim.player->sizeScale, PLAYER_RADIUS, PLAYER_HEIGHT);
     }
 
     // Publish shared editor/gameplay state and run gameplay-domain hot systems

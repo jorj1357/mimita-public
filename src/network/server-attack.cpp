@@ -476,6 +476,35 @@ void handleAttackRequest(
     // The weapon runtime state is read AFTER the cache check to avoid
     // mutating state for duplicate requests.
 
+    // ── Generic tool-use fact ──────────────────────────────────────────
+    // A hot behavior may own this use (for example a melee/contact tool). If it
+    // suppresses the built-in fire, report the shot as not fired.
+    {
+        ToolUsePolicyV1 use{};
+        use.ownerId = shooter.id;
+        use.toolNetworkId = req->weaponDefNetworkId;
+        use.toolId = networkWeaponTypeForDefinition(*def);
+        use.kind = 0;
+        use.tick = tick;
+        use.baseFire = 1;
+        use.outFire = 1;
+        use.ammoCost = 1;
+        use.origin[0] = req->muzzlePosX;
+        use.origin[1] = req->muzzlePosY;
+        use.origin[2] = req->muzzlePosZ;
+        use.direction[0] = req->aimDirX;
+        use.direction[1] = req->aimDirY;
+        use.direction[2] = req->aimDirZ;
+        LiveBehavior::dispatchToolUse(use, tick);
+        if (use.handled && use.outFire == 0)
+        {
+            sendAttackResult(sock, shooter, req, tick, false, 1, 0,
+                             rt.magazineAmmo, rt.reserveAmmo,
+                             rt.nextAllowedFireTick, rt.stateRevision);
+            return;
+        }
+    }
+
     // ── Dispatch by execution family ──────────────────────────────────
     if (def->executionType == WeaponExecutionType::Hitscan)
     {
@@ -1261,6 +1290,30 @@ void tickHeldFireIntents(
         if (player.dead || tick <= held.lastEmitTick)
             continue;
 
+        // Generic runtime tool path: no registered network weapon is required.
+        // The server resolves the equipped tool entity and dispatches the
+        // generic action; the hot behavior owns the authoritative consequence.
+        if (held.toolId != 0)
+        {
+            ToolUsePolicyV1 use{};
+            use.ownerId = player.id;
+            use.userEntity = static_cast<std::uint64_t>(
+                Ecs::ensure(EntityRealm::Server, EntityDomain::Player, player.id));
+            use.toolEntity = player.equippedToolEntity;
+            use.toolId = held.toolId;
+            use.toolNetworkId = held.weaponDefNetworkId;
+            use.kind = 0;
+            use.tick = tick;
+            use.baseFire = 1;
+            use.outFire = 1;
+            use.ammoCost = 0;
+            use.origin[0] = held.origin.x; use.origin[1] = held.origin.y; use.origin[2] = held.origin.z;
+            use.direction[0] = held.direction.x; use.direction[1] = held.direction.y; use.direction[2] = held.direction.z;
+            LiveBehavior::dispatchToolUse(use, tick);
+            held.lastEmitTick = tick;
+            continue;
+        }
+
         const std::string* weaponId =
             weaponIdForDefNetworkId(held.weaponDefNetworkId);
         if (!weaponId)
@@ -1283,6 +1336,30 @@ void tickHeldFireIntents(
         if (rtIt->second.magazineAmmo <= 0)
         {
             held.active = false;
+            continue;
+        }
+
+        // Generic tool-use fact: a hot behavior may own this held use.
+        ToolUsePolicyV1 use{};
+        use.ownerId = player.id;
+        use.toolNetworkId = held.weaponDefNetworkId;
+        use.toolId = networkWeaponTypeForDefinition(*def);
+        use.kind = 0;
+        use.tick = tick;
+        use.baseFire = 1;
+        use.outFire = 1;
+        use.ammoCost = 1;
+        {
+            const glm::vec3 useOrigin = player.pos + glm::vec3(0.0f, 0.0f, 0.8f);
+            const glm::vec3 useDir = glm::length(held.direction) > 0.001f
+                ? glm::normalize(held.direction) : glm::vec3(1.0f, 0.0f, 0.0f);
+            use.origin[0] = useOrigin.x; use.origin[1] = useOrigin.y; use.origin[2] = useOrigin.z;
+            use.direction[0] = useDir.x; use.direction[1] = useDir.y; use.direction[2] = useDir.z;
+        }
+        LiveBehavior::dispatchToolUse(use, tick);
+        if (use.handled && use.outFire == 0)
+        {
+            held.lastEmitTick = tick;
             continue;
         }
 

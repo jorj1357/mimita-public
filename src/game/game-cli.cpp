@@ -53,6 +53,10 @@
 #include "physics/movement/movement-parity-selftest.h"
 #include "ragdoll/ragdoll-slice-selftest.h"
 #include "ecs/entity-slice-selftest.h"
+#include "ecs/dynamic-lifecycle-selftest.h"
+#include "network/gamemode-hot-selftest.h"
+#include "network/hot-combat-selftest.h"
+#include "hot-reload/capability-selftest.h"
 
 extern DuelManager gDuelManager;
 extern bool gMainmenuDebug;
@@ -287,6 +291,37 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = runRagdollSliceSelfTest(report);
         printf("%s", report.c_str());
         printf("[RAGDOLL SLICE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--dynamic-lifecycle-selftest") {
+        std::string report;
+        const bool ok = runDynamicLifecycleSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[DYNAMIC LIFECYCLE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--gamemode-hot-selftest") {
+        std::string report;
+        const bool ok = runGamemodeHotSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[GAMEMODE HOT SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--hot-combat-selftest") {
+        std::string report;
+        const bool ok = runHotCombatSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[HOT COMBAT SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--capability-selftest") {
+        std::string report;
+        const bool ok = runCapabilitySelfTest(report);
+        printf("%s", report.c_str());
         std::exit(ok ? 0 : 1);
     }
 

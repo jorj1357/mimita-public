@@ -435,25 +435,6 @@ const MimitaHotPackage::CommandRegistrar s_modecreateCmd{
     {"modecreate", "modecreate [0|1] - creation/inspection mode", 0,
      MimitaModecreateCommand}};
 
-// Toggle hot movement (on by default; `hotmovement 0` opts into the built-in step).
-void MimitaHotMovementCommand(void* /*host*/, const char* args)
-{
-    if (!gShared) {
-        std::printf("[HOT MOVEMENT] not ready (no shared state yet)\n");
-        return;
-    }
-    const bool hot = (args && args[0] == '0') ? false : true;
-    if (hot)
-        gShared->modeFlags &= ~GAME_MODE_FLAG_LEGACY_MOVEMENT;
-    else
-        gShared->modeFlags |= GAME_MODE_FLAG_LEGACY_MOVEMENT;
-    std::printf("[HOT MOVEMENT] %s\n", hot ? "ON (hot)" : "OFF (legacy built-in)");
-}
-
-const MimitaHotPackage::CommandRegistrar s_hotMovementCmd{
-    {"hotmovement", "hotmovement [0|1] - use the hot movement step", 0,
-     MimitaHotMovementCommand}};
-
 // Kernel resolves the named "editor" module for the fixed-tick/overlay hooks.
 const GameModuleDescriptor* MimitaGetEditorModule()
 {

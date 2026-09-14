@@ -8,8 +8,71 @@
 
 # Hot kernel migration: next steps
 
-Status as of 2026-09-12 (session `20260912_153000` and follow-ups).
+Status as of 2026-09-14 (generic dynamic lifecycle pass).
 See `docs/architecture/live-development/hot-kernel.md` for the architecture.
+See `docs/architecture/live-development/hot-cold-audit.md` for the current map.
+
+## Round 7 (2026-09-14, generic dynamic entity/component lifecycle) — implemented
+
+- `GameplayContextV1` ABI v6 adds operation-generic capabilities:
+  `entity.create`, `entity.destroy`, dynamic `component.remove`,
+  `component.enumerate`, `component.typesOnEntity`, `component.schema`, and
+  `relationship.add/remove/query`; all registered as kernel capability ids.
+- `DynamicComponentStore` now owns schema versions, 64-bit-keyed migrations, an
+  atomic `applySchemaUpdate` at activation, deterministic enumeration, and
+  deterministic `serializeType`/`worldHash`.
+- `EntityRegistry::createGeneric` allocates package entity ids in
+  `EntityDomain::None`; `destroy` purges dynamic components and relationships.
+- `--dynamic-lifecycle-selftest` covers the full lifecycle, migration, safe
+  rejection, determinism, and destroy cleanup. New hot probe
+  `src/hot-reload/modules/banana-component.cpp` exercises it live.
+- Not done: dynamic-component replication, editor edit/copy-paste UI, and
+  removal of the typed legacy structs.
+
+## Round 8 (2026-09-14, gamemodes as runtime packages) — implemented
+
+- `GamePackageDescriptorV1` gained a metadata-only `modes[]` array
+  (`GameModeDescriptorV1`: id, display name, domain, match schema). `GenericRuntime`
+  stores modes, exposes `hasMode`/`modeDomain`, and routes an *active mode domain*
+  so a mode's systems and domain-scoped event handlers run only while active.
+- `GameplayContextV1` ABI v7 adds generic authoritative match capabilities:
+  `match.current`, `match.actorTeamRead`, `match.finish`, `match.setPhase`,
+  `match.respawn`, `match.setTeam`. General match facts `actor.killed` and
+  `match.evaluate` are emitted by the kernel via runtime event ids (no
+  `GameEventType` growth).
+- Real FFA scoring and the score-limit win live in
+  `src/hot-reload/modules/gamemodes/ffa.cpp`; the kernel skips its cold FFA
+  score/win branches when the handler sets `handled`. The legacy `DuelStatePacket`
+  is fed from package dynamic state through the temporary `match.score.snapshot`
+  bridge capability.
+- `src/hot-reload/modules/gamemodes/hot-test.cpp` is a mode identity unknown at
+  startup (`HotTestMatchState`), proving live mode creation.
+- `--gamemode-hot-selftest` covers mode discovery, domain routing, domain-scoped
+  events, hot scoring, the score bridge, `match.evaluate`, mode schema migration,
+  and last-good preservation.
+- Not done: timers/phase/respawn policy, TDM/duel/objective/wave migration,
+  team/role relationships, mode-defined UI, and generic replication of package
+  match state.
+
+## Round 9 (2026-09-14, hot combat policy) — implemented
+
+- Generic combat facts: `tool.primary-use`/`tool.alt-use` (one held use) and
+  `projectile.impact` (world/actor/lifetime hit) with generic payloads in
+  `game-api.h`; no `GameEventType` growth.
+- `live-behavior` dispatches them to the generic runtime; the DLL-side
+  `HotPackageBuilder` gained tool/projectile behavior tables and a router
+  (`modules/tools/combat-policy.cpp`) that dispatches by runtime key and leaves
+  unknown keys to the cold path.
+- Real rocket impact policy is hot (`modules/tools/rocket-policy.cpp`), bypassing
+  the cold `explodeOn*` flags when handled. A brand-new tool + projectile
+  (`modules/tools/banana-launcher.cpp`) is created after startup and composes
+  dynamic tool state, an owned tool entity, a relationship, and a fired fact.
+- `--hot-combat-selftest` covers tool-use routing, projectile-impact routing,
+  the new tool/projectile, package state persistence, and cold fallback.
+- Not done: authoritative item spawn from a hot behavior (`projectile.spawn`),
+  ammo/reload as generic state, a server-context damage capability, hitscan
+  ownership, and melee contact detection. Those need a **server context
+  capability provider** (players/projectiles are currently function locals).
 
 ## Round 2 (2026-09-12, repeated activation + observability) — implemented
 

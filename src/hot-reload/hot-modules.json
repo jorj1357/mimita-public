@@ -41,10 +41,14 @@
   "headers": [
     "src/hot-reload/game-api.h",
     "src/hot-reload/game-modules.h",
-    "src/hot-reload/hot-package.h"
+    "src/hot-reload/hot-package.h",
+    "src/hot-reload/hot-projectile.h",
+    "src/network/match-lifecycle.h"
   ],
   "globs": [
-    "src/hot-reload/modules/*.cpp"
+    "src/hot-reload/modules/*.cpp",
+    "src/hot-reload/modules/gamemodes/*.cpp",
+    "src/hot-reload/modules/tools/*.cpp"
   ],
   "cold": [
     "src/hot-reload/hot-reload-system.cpp",

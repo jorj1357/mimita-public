@@ -213,12 +213,16 @@ void testClientTickSemantics()
     check(result.reason == MimitaNet::MovementValidationReason::DuplicateSequence,
           "same tick with same seq rejected as duplicate");
 
-    // Lower tick than last accepted — stale
+    // Lower tick after a newer sequence — client simulation clock reset
+    // (respawn/map switch). Accepted and re-baselined instead of wedging the
+    // player at one server position forever.
     report = baseReport(freshPlayer, 2, 15);
     result = MimitaNet::validateClientMovementReport(
         freshPlayer, report, ctx, config);
-    check(result.reason == MimitaNet::MovementValidationReason::StaleClientTick,
-          "lower client tick than last accepted rejected as stale");
+    check(result.decision == MimitaNet::MovementValidationDecision::Accept,
+          "lower client tick after newer sequence accepted as clock reset");
+    MimitaNet::applyMovementValidationCounters(
+        freshPlayer.movementValidation, result, report);
 
     // Normal sequential progression — accepted
     report = baseReport(freshPlayer, 3, 21);

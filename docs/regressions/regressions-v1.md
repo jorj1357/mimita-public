@@ -37,6 +37,81 @@ Whats this
 
 newest at top 9 3 2026
 
+2026-09-14T16:45:00Z — RESOLUTION: movement works again; what fixed it
+
+1. Confirmed fixed (human report): ordinary movement, WASD relative to the
+   camera, dash, down-dash, and freeze all work again, and the server no longer
+   pins the player at one position after death.
+2. What fixed it:
+   1. `src/hot-reload/modules/movement-system.cpp`: WASD now consumes the
+      already camera-relative WORLD movement intent from `input-poll.cpp`
+      directly instead of rotating it by `tf.yaw` a second time.
+   2. `movement.main` became the only movement path, so
+      `player.movementSimulationTick` stops being frozen; the client reports the
+      advancing `ctx.clientSimulationTick`, which ends the server
+      `stale-client-tick` wedge.
+   3. The capsule/body source was fixed so the model no longer sinks: the local
+      player is given a `BodyComponent` (`simulate-tick.cpp`) and the capsule
+      size is resolved from it.
+3. Related specification: `docs/specs/movement/movement.md` §3, §7, §15.
+4. Related changelog:
+   `docs/changelog/2026-09-14/20260914_155540-hotmovement-only-stage1.md`.
+5. Still open at this time: walking/arm/weapon/equip/dash pose animation and the
+   dash/down-dash/freeze VFX. See the entry below for the animation seam work.
+
+2026-09-14T15:55:40Z — Hot movement default broke WASD, walking animation, and pinned the server at stale-client-tick after death
+
+1. Expected behavior: WASD moves relative to the camera, the local walk
+   animation plays, and movement keeps replicating after death/respawn.
+2. Actual behavior (human report): WASD was inconsistent and not camera-relative;
+   the local model never left the idle pose ("legs halfway into the ground"); and
+   after one death the server rejected every movement report as
+   `stale-client-tick` so the server position never changed.
+3. Exact specification: `docs/specs/movement/movement.md` (camera-relative WASD,
+   §3; instant horizontal control, §7; death/respawn clean state, §15) and
+   `docs/features/live-code-development/live-code-development.md` (EXE call
+   sites, hot policy).
+4. Exact wrong code:
+   1. `src/hot-reload/modules/movement-system.cpp` computed
+      `wishX = rx * mi.moveX + fx * mi.moveY` with `fx = sin(yaw)`, rotating an
+      intent that `input-poll.cpp:136-139` had already produced as camera-relative
+      WORLD XY.
+   2. The hot override skipped `physicsMainUpdate`, which was the only caller of
+      `Player::updateProceduralAnimation` (`src/physics/physics-mini.cpp:312`) and
+      the only incrementer of `player.movementSimulationTick`
+      (`src/physics/physics-mini.cpp:193`).
+5. Why wrong: the intent was rotated twice, so movement did not follow the
+   camera. Skipping `physicsMainUpdate` stopped both animation and the
+   fixed-tick clock; the frozen `movementSimulationTick` made the client report a
+   tick at or below `lastAcceptedClientTick`, which
+   `src/network/movement-validation.cpp:507` rejected as `StaleClientTick`
+   forever.
+6. Corrected code:
+   1. Stage 1 (hot, 2026-09-14): `movement.main` now consumes the world-space
+      intent directly (no yaw re-rotation), is the only movement path, and keeps
+      `movementSimulationTick` at 0 so the client reports the advancing
+      `ctx.clientSimulationTick`; `source`/`default` modes and a `movementmode`
+      command were added. `src/hot-reload/modules/movement-system.cpp`.
+   2. Stage 2 (pending, cold seam): kernel owns the actor fixed tick and drives a
+      hot animation system after any movement path, so animation can be fixed and
+      future edits stay hot. The staged source edits are in
+      `src/sim/simulate-tick.cpp`, `src/physics/physics-mini.cpp`,
+      `src/npc/npc.cpp`, `src/network/movement-validation.cpp`.
+7. Date and time first observed: 2026-09-14, human playtest of the hot-movement
+   default (commit `a1eb998`).
+8. Proof so far: source `-fsyntax-only` clean and
+   `python devscripts/live-build.py` -> `DLL build success`
+   (`build/hotreload/mimita-live-g000005.dll`). Runtime human confirmation of
+   WASD, no-wedge, and dash is still pending; animation remains broken until
+   Stage 2.
+9. Related changelog:
+   `docs/changelog/2026-09-14/20260914_155540-hotmovement-only-stage1.md`.
+10. What we learned: a hot system that replaces a kernel step silently removes
+    every side effect that step owned (here: the fixed-tick clock and the local
+    animation driver). When moving behavior behind the hot ABI, enumerate the
+    step's side effects and expose them as generic seams before deleting the
+    kernel path.
+
 2026-09-10T22:19:14Z — Ragdoll activation inherited the animated pose; rest-pose bind corrected it (source-built, awaiting playtest)
 
 1. Expected behavior: entering ragdoll mode resets each limb to the canonical

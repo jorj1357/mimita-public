@@ -32,6 +32,11 @@
 #include "persistence/persistence-emit.h"
 #include "config/spawn-velocity-config.h"
 #include "network/actor-lifecycle.h"
+#include "network/match-lifecycle.h"
+#include "ecs/entity-registry.h"
+#include "hot-reload/generic-runtime.h"
+#include "hot-reload/game-api.h"
+#include "live-code/live-behavior.h"
 
 namespace MimitaNet {
 
@@ -60,11 +65,142 @@ ServerGamemodeState& serverGamemodeState()
     return state;
 }
 
+// ── Generic authoritative match capabilities ────────────────────────────
+std::uint64_t serverMatchEntity()
+{
+    return serverGamemodeState().matchEntity;
+}
+
+void serverMatchResetEntity()
+{
+    ServerGamemodeState& d = serverGamemodeState();
+    if (d.matchEntity != 0) {
+        EntityRegistry::instance().destroy(static_cast<EntityId>(d.matchEntity));
+        d.matchEntity = 0;
+    }
+    d.matchEntity = static_cast<std::uint64_t>(
+        EntityRegistry::instance().createGeneric(EntityRealm::Server));
+    if (GameSharedStateV1* shared =
+            MimitaRuntime::GenericRuntime::instance().sharedState())
+        shared->matchEntity = d.matchEntity;
+}
+
+bool serverMatchFinish(std::uint32_t winnerKind, std::uint32_t winnerId,
+                       std::uint32_t victoryType)
+{
+    ServerGamemodeState& d = serverGamemodeState();
+    if (!d.enabled)
+        return false;
+    d.matchOver = true;
+    d.phase = DUEL_PHASE_RESULTS;
+    d.phaseTimer = d.resultsSeconds;
+    d.victoryType = static_cast<int>(victoryType);
+    if (winnerKind == 2) {
+        d.winnerTeam = static_cast<int>(winnerId);
+    } else if (winnerKind == 1) {
+        d.winnerPlayerId = winnerId;
+        d.winnerTeam = -1;
+    }
+    ++d.stateVersion;
+    d.stateBroadcastPending = true;
+    return true;
+}
+
+std::int32_t serverMatchActorTeam(std::uint32_t actorId)
+{
+    const ServerGamemodeState& d = serverGamemodeState();
+    auto it = d.matchTeams.find(actorId);
+    return it == d.matchTeams.end() ? -1 : it->second;
+}
+
+bool serverMatchSetTeam(std::uint32_t actorId, std::int32_t team)
+{
+    serverGamemodeState().matchTeams[actorId] = team;
+    return true;
+}
+
+bool serverMatchSetPhase(std::uint32_t phase)
+{
+    ServerGamemodeState& d = serverGamemodeState();
+    if (!d.enabled)
+        return false;
+    d.phase = static_cast<std::uint8_t>(phase);
+    ++d.stateVersion;
+    d.stateBroadcastPending = true;
+    return true;
+}
+
+bool serverMatchRespawn(std::uint64_t actorEntity)
+{
+    // Generic authoritative respawn: the shared actor lifecycle is wired here
+    // in the timer/respawn slice. Until then nothing to do.
+    (void)actorEntity;
+    return false;
+}
+
+// Data-driven active-mode routing: mode id -> registered descriptor -> domain.
+// The kernel never switches on a mode name; if the package registered a mode
+// with this id, its domain becomes active (and only then do its systems and
+// event handlers run). Otherwise the cold path owns the match.
+static void applyActiveHotMode(ServerGamemodeState& d, const std::string& modeId)
+{
+    MimitaRuntime::GenericRuntime& runtime = MimitaRuntime::GenericRuntime::instance();
+    const std::uint64_t hash = modeId.empty() ? 0 : gameHash(modeId.c_str());
+    if (hash != 0 && runtime.hasMode(hash)) {
+        d.activeModeId = hash;
+        d.activeModeDomain = runtime.modeDomain(hash);
+    } else {
+        d.activeModeId = 0;
+        d.activeModeDomain = 0;
+    }
+    runtime.setActiveModeDomain(d.activeModeDomain);
+}
+
 bool serverMatchRespawnsEnabled()
 {
     const ServerGamemodeState& d = serverGamemodeState();
     if (!d.enabled) return true;      // legacy / sandbox keeps instant respawn
     return d.respawnSeconds != 0.0f;  // 0 == one-life
+}
+
+// Generic match lifecycle policy: the kernel publishes the authoritative
+// defaults; the active mode domain may claim the policy by handling the event
+// and writing out-fields. No mode name is switched on here.
+static void dispatchMatchLifecyclePolicy(ServerGamemodeState& d, uint32_t tick)
+{
+    GameMatchLifecycleV1 policy{};
+    policy.matchEntity = d.matchEntity;
+    policy.tick = tick;
+    policy.phase = d.phase;
+    policy.participantCount = (std::uint32_t)d.participants.size();
+    policy.countdownSeconds = d.countdownSeconds;
+    policy.goSeconds = d.goSeconds;
+    policy.intermissionSeconds = d.intermissionSeconds;
+    policy.resultsSeconds = d.resultsSeconds;
+    policy.timeLimitSeconds = (float)d.timeLimitSeconds;
+    policy.respawnSeconds = d.respawnSeconds;
+    policy.respawnsEnabled = serverMatchRespawnsEnabled() ? 1u : 0u;
+
+    if (!LiveBehavior::dispatchGameplayEvent64(
+            GAME_EVENT_MATCH_LIFECYCLE, &policy, sizeof(policy), tick,
+            d.matchEntity, 0))
+        return;
+    if (!policy.handled)
+        return;
+
+    if (policy.outCountdownSeconds > 0.0f)
+        d.countdownSeconds = policy.outCountdownSeconds;
+    if (policy.outGoSeconds > 0.0f)
+        d.goSeconds = policy.outGoSeconds;
+    if (policy.outIntermissionSeconds > 0.0f)
+        d.intermissionSeconds = policy.outIntermissionSeconds;
+    if (policy.outResultsSeconds > 0.0f)
+        d.resultsSeconds = policy.outResultsSeconds;
+    if (policy.outTimeLimitSeconds > 0.0f)
+        d.timeLimitSeconds = (int)policy.outTimeLimitSeconds;
+    d.respawnSeconds = policy.outRespawnsEnabled
+        ? (policy.outRespawnSeconds >= 0.0f ? policy.outRespawnSeconds : 0.01f)
+        : 0.0f;
 }
 
 float serverMatchRespawnSeconds()
@@ -182,6 +318,7 @@ void serverStartMode(const ServerGamemodeState& rules)
     d.playerAId = 0;
     d.playerBId = 0;
     d.winnerPlayerId = 0;
+    applyActiveHotMode(d, rules.matchMode);
     d.spawnsAssigned = false;
     d.stateSent = false;
     d.spawnOffsetRadius = rules.spawnOffsetRadius;
@@ -360,11 +497,18 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     // ── Look up the community mode and resolve its gamemode_id ───────
     const CommunityServerConfig& communityConfig = CommunityServerConfig::instance();
     const CommunityMode* cm = communityConfig.modeById(d.communityMode);
-    if (!cm) return;  // unknown mode — cannot start
-
-    // Use gamemode_id to look up the actual gamemode config.
-    // This bridges onlinemodes.json (community menu) to gamemodes/*.json (gameplay rules).
-    const std::string& resolvedGamemodeId = cm->gamemodeId;
+    std::string resolvedGamemodeId;
+    if (cm) {
+        // Use gamemode_id to look up the actual gamemode config. This bridges
+        // onlinemodes.json (community menu) to gamemodes/*.json (gameplay rules).
+        resolvedGamemodeId = cm->gamemodeId;
+    } else if (MimitaRuntime::GenericRuntime::instance().hasMode(
+                   gameHash(d.communityMode.c_str()))) {
+        // A runtime-registered hot gamemode selected directly by its id.
+        resolvedGamemodeId = d.communityMode;
+    } else {
+        return;  // unknown mode — cannot start
+    }
 
     // Defer a live mode switch until the current mode has shown its results.
     if (!d.mapOnly && !d.matchMode.empty() && d.matchMode != resolvedGamemodeId &&
@@ -393,6 +537,7 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
 
     // Set match mode from community mode id (used for routing and state machine)
     d.matchMode = resolvedGamemodeId;
+    applyActiveHotMode(d, resolvedGamemodeId);
     // DEPRECATED: the old ServerMode enum and short-form matchMode strings
     // are kept for backward compatibility with duel/FFA/TDM code paths.
     // New modes should use matchMode directly (the community mode id).
@@ -620,9 +765,52 @@ void broadcastDuelState(SOCKET sock,
     pkt.healthbarShowBar = d.healthbarShowBar ? 1 : 0;
     pkt.healthbarMaxDistance = d.healthbarMaxDistance;
 
-    // FFA top-3 leaderboard
-    if (d.matchMode == "ffa") {
-        // Sort players by kills descending
+    // ── Generic score snapshot (temporary bridge to the legacy packet/UI) ──
+    // Authoritative score is owned by the active mode package (dynamic
+    // components). The mode provides `match.score.snapshot`; this bridge maps
+    // its generic entries onto the legacy fields. No provider => cold fields.
+    GameMatchScoreSnapshotV1 snapshot{};
+    {
+        void* provider = MimitaRuntime::GenericRuntime::instance().capability(
+            gameHash("match.score.snapshot"));
+        if (provider) {
+            GameplayContextV1* ctx = LiveBehavior::hostContext(d.currentServerTick);
+            if (ctx)
+                reinterpret_cast<GameMatchScoreSnapshotFn>(provider)(ctx, &snapshot);
+        }
+    }
+    if (snapshot.count > 0) {
+        std::vector<GameMatchScoreEntryV1> actors;
+        for (std::uint32_t i = 0; i < snapshot.count && i < GAME_MAX_MATCH_SCORES; ++i) {
+            const GameMatchScoreEntryV1& e = snapshot.entries[i];
+            if (e.kind == 1) {
+                if (e.ownerId == 0) pkt.redTeamKills = e.score;
+                else pkt.blueTeamKills = e.score;
+            } else {
+                actors.push_back(e);
+                if (e.ownerId == d.playerAId) pkt.scoreA = e.score;
+                if (e.ownerId == d.playerBId) pkt.scoreB = e.score;
+            }
+        }
+        std::sort(actors.begin(), actors.end(),
+                  [](const GameMatchScoreEntryV1& a, const GameMatchScoreEntryV1& b) {
+                      return a.score > b.score;
+                  });
+        for (int i = 0; i < 3 && i < (int)actors.size(); ++i) {
+            const uint32_t owner = (uint32_t)actors[i].ownerId;
+            pkt.ffaLeaderIds[i] = owner;
+            pkt.ffaLeaderScores[i] = actors[i].score;
+            auto nameIt = d.participantNames.find(owner);
+            if (nameIt != d.participantNames.end())
+                std::strncpy(pkt.ffaLeaderNames[i], nameIt->second.c_str(),
+                             sizeof(pkt.ffaLeaderNames[i]) - 1);
+            else
+                std::snprintf(pkt.ffaLeaderNames[i], sizeof(pkt.ffaLeaderNames[i]),
+                              "NPC-%u", owner);
+        }
+    }
+    // FFA top-3 leaderboard (cold fallback when no mode score provider)
+    else if (d.matchMode == "ffa") {
         std::vector<std::pair<uint32_t, int>> sorted;
         for (const auto& kv : d.ffaKills)
             sorted.push_back({kv.first, kv.second});
@@ -793,6 +981,7 @@ void beginGamemodeCountdown(ServerGamemodeState& d,
     d.scoreA = 0;
     d.scoreB = 0;
     d.winnerPlayerId = 0;
+    serverMatchResetEntity();
     d.phase = DUEL_PHASE_COUNTDOWN;
     d.countdown = d.countdownSeconds;
     Debug::log(Debug::Category::Duel,
@@ -1396,6 +1585,7 @@ void beginMatchCountdown(ServerGamemodeState& d,
     d.winnerPlayerId = 0;
     d.winnerTeam = -1;
     d.victoryType = 0;
+    serverMatchResetEntity();
     d.countdownStartTick = currentTick;
     d.matchStartTick = currentTick + (uint32_t)(d.countdownSeconds * 60.0f);
     d.countdown = d.countdownSeconds;
@@ -1526,6 +1716,25 @@ void checkMatchWinConditions(ServerGamemodeState& d, uint32_t tick,
                 "[ELIMINATION] last_team_standing winnerTeam=%d winnerActor=%u "
                 "aliveActors=%d mode=%s\n",
                 winnerTeam, winnerActor, aliveActors, d.matchMode.c_str());
+            return;
+        }
+    }
+
+    // ── Generic match evaluation (a hot mode owns the outcome) ─────────
+    // The active mode's domain handler may decide the match. When it handles,
+    // the cold mode-specific score-limit branches below are skipped.
+    {
+        GameMatchEvaluateV1 evaluate{};
+        evaluate.matchEntity = d.matchEntity;
+        evaluate.tick = tick;
+        evaluate.phase = d.phase;
+        if (LiveBehavior::dispatchMatchEvaluate(evaluate, tick)) {
+            if (evaluate.outEndMatch) {
+                serverMatchFinish(evaluate.outWinnerKind, evaluate.outWinnerId,
+                                  evaluate.outVictoryType);
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+                emitGamemodeMatchPersistence(d, tick, players);
+            }
             return;
         }
     }
@@ -2357,8 +2566,20 @@ void serverGamemodeTick(SOCKET sock,
             }
         }
 
+        // Generic occurrence fact. A hot mode handler that sets `handled` owns
+        // the authoritative scoring decision for this kill; otherwise the cold
+        // per-mode scoring below runs (fallback until each mode migrates).
+        GameActorKilledV1 killedEvent{};
+        killedEvent.killerId = killerId;
+        killedEvent.victimId = victimId;
+        killedEvent.killerIsNpc = d.pendingKillerIsNpc ? 1u : 0u;
+        killedEvent.victimIsNpc = d.pendingVictimIsNpc ? 1u : 0u;
+        killedEvent.tick = tick;
+        const bool hotScored = LiveBehavior::dispatchActorKilled(killedEvent, tick);
+
         // Score only counts during the active phase, and never for a suicide.
-        if (d.phase == DUEL_PHASE_ACTIVE && !d.matchOver && killerId != victimId)
+        if (!hotScored && d.phase == DUEL_PHASE_ACTIVE && !d.matchOver &&
+            killerId != victimId)
         {
             // Duel 1v1 scoring (original behavior)
             if (d.matchMode == "duel") {
@@ -2445,10 +2666,15 @@ void serverGamemodeTick(SOCKET sock,
 
     // ── Shared FFA/TDM/elimination match mode state machine ─────────
     // Any mode with a generic win condition (e.g. last_team_standing) uses the
-    // same lifecycle instead of requiring a mode-specific branch.
-    if (d.matchMode == "ffa" || d.matchMode == "tdm" ||
+    // same lifecycle instead of requiring a mode-specific branch. A registered
+    // hot mode (activeModeDomain != 0) owns its lifecycle policy; no mode name
+    // is switched on to enter this path.
+    const bool hotModeOwnsLifecycle = d.activeModeDomain != 0;
+    if (hotModeOwnsLifecycle ||
         d.winCondition == "last_team_standing" || d.objectiveRounds || d.npcWaves)
     {
+        if (hotModeOwnsLifecycle)
+            dispatchMatchLifecyclePolicy(d, tick);
         if (d.stateBroadcastPending)
         {
             // The command changed the authoritative mode/phase between ticks.

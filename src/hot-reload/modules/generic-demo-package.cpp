@@ -61,7 +61,7 @@ const MimitaHotPackage::EventRegistrar s_demoPing{
     {gameHash("demo.ping"), 0, 0, nullptr, "demo.ping"}};
 const MimitaHotPackage::SchemaRegistrar s_demoTag{
     {gameHash("DemoTag"), gameHash("DemoTag.v1"), 4, 4, GAME_COPY_AUTHORING, 0,
-     "DemoTag"}};
+     "DemoTag", 1, 0}};
 const MimitaHotPackage::CommandRegistrar s_demoCmd{
     {"hotdemo", "hotdemo [text] - generic runtime command demo", 0, demoCommand}};
 

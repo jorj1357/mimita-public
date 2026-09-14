@@ -11,6 +11,7 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "ecs/components.h"
 #include "ecs/entity-registry.h"
@@ -18,9 +19,18 @@
 #include "hot-reload/hot-reload-system.h"
 #include "hot-reload/generic-runtime.h"
 #include "ecs/dynamic-components.h"
+#include "ecs/relationship-store.h"
 #include "live-code/live-modules.h"
+#include "network/server-context.h"
+#include "network/server-gamemode.h"
 #include "physics/movement/move-capsule.h"
+#include "physics/movement/physics-collision.h"
+#include "physics/movement/physics-collision-shared.h"
 #include "world/world.h"
+#include "entities/player.h"
+#include "camera.h"
+#include "effects/effect-part.h"
+#include "terminal/terminal-state.h"
 
 #include <glm/gtc/quaternion.hpp>
 #include "physics/ray-utils.h"
@@ -340,6 +350,144 @@ bool MIMITA_GAME_CALL capDynamicWriteComponent(void*, std::uint64_t entity,
         (EntityId)entity, typeId, in, inSize);
 }
 
+// ── Generic entity / dynamic-component lifecycle capabilities (ABI v6) ──
+bool MIMITA_GAME_CALL capEntityCreate(void*, std::uint32_t realm,
+                                      std::uint64_t* outEntity)
+{
+    if (!outEntity)
+        return false;
+    const std::uint32_t maxRealm = static_cast<std::uint32_t>(EntityRealm::Local);
+    const EntityRealm r =
+        realm <= maxRealm ? static_cast<EntityRealm>(realm) : EntityRealm::Server;
+    const EntityId id = EntityRegistry::instance().createGeneric(r);
+    *outEntity = static_cast<std::uint64_t>(id);
+    return id != kInvalidEntityId;
+}
+
+bool MIMITA_GAME_CALL capEntityDestroy(void*, std::uint64_t entity)
+{
+    if (entity == 0)
+        return false;
+    EntityRegistry::instance().destroy(static_cast<EntityId>(entity));
+    return true;
+}
+
+bool MIMITA_GAME_CALL capDynamicRemoveComponent(void*, std::uint64_t entity,
+                                                std::uint64_t typeId)
+{
+    return MimitaRuntime::DynamicComponentStore::instance().remove(
+        static_cast<EntityId>(entity), typeId);
+}
+
+std::uint32_t MIMITA_GAME_CALL capDynamicEnumerateComponent(
+    void*, std::uint64_t typeId, std::uint64_t* out, std::uint32_t maxOut)
+{
+    if (!out)
+        return 0;
+    return static_cast<std::uint32_t>(
+        MimitaRuntime::DynamicComponentStore::instance().enumerate(
+            typeId, out, maxOut));
+}
+
+std::uint32_t MIMITA_GAME_CALL capDynamicComponentsOnEntity(
+    void*, std::uint64_t entity, std::uint64_t* out, std::uint32_t maxOut)
+{
+    if (!out)
+        return 0;
+    return static_cast<std::uint32_t>(
+        MimitaRuntime::DynamicComponentStore::instance().componentsOnEntity(
+            static_cast<EntityId>(entity), out, maxOut));
+}
+
+bool MIMITA_GAME_CALL capDynamicComponentInfo(void*, std::uint64_t typeId,
+                                              GameDynamicComponentInfoV1* out)
+{
+    if (!out)
+        return false;
+    const MimitaRuntime::DynamicComponentSchema* s =
+        MimitaRuntime::DynamicComponentStore::instance().schema(typeId);
+    if (!s)
+        return false;
+    *out = GameDynamicComponentInfoV1{};
+    out->typeId = s->typeId;
+    out->schemaHash = s->schemaHash;
+    out->version = s->version;
+    out->size = s->size;
+    out->align = s->align;
+    out->copyPolicy = s->copyPolicy;
+    out->networkPolicy = s->networkPolicy;
+    std::strncpy(out->name, s->name.c_str(), sizeof(out->name) - 1);
+    out->name[sizeof(out->name) - 1] = '\0';
+    return true;
+}
+
+bool MIMITA_GAME_CALL capRelationshipAdd(void*, std::uint64_t typeId,
+                                         std::uint64_t from, std::uint64_t to,
+                                         std::uint64_t value)
+{
+    return MimitaRuntime::RelationshipStore::instance().add(
+        typeId, static_cast<EntityId>(from), static_cast<EntityId>(to), value);
+}
+
+bool MIMITA_GAME_CALL capRelationshipRemove(void*, std::uint64_t typeId,
+                                            std::uint64_t from, std::uint64_t to)
+{
+    return MimitaRuntime::RelationshipStore::instance().remove(
+        typeId, static_cast<EntityId>(from), static_cast<EntityId>(to));
+}
+
+std::uint32_t MIMITA_GAME_CALL capRelationshipQuery(void*, std::uint64_t typeId,
+                                                    std::uint64_t from,
+                                                    std::uint64_t* outTo,
+                                                    std::uint64_t* outValue,
+                                                    std::uint32_t maxOut)
+{
+    return static_cast<std::uint32_t>(
+        MimitaRuntime::RelationshipStore::instance().query(
+            typeId, static_cast<EntityId>(from), outTo, outValue, maxOut));
+}
+
+// ── Generic authoritative match capabilities ────────────────────────────
+bool MIMITA_GAME_CALL capMatchCurrent(void*, std::uint64_t* outMatchEntity)
+{
+    if (!outMatchEntity)
+        return false;
+    *outMatchEntity = MimitaNet::serverMatchEntity();
+    return true;
+}
+
+bool MIMITA_GAME_CALL capMatchActorTeamRead(void*, std::uint32_t actorId,
+                                            std::int32_t* outTeam)
+{
+    if (!outTeam)
+        return false;
+    *outTeam = MimitaNet::serverMatchActorTeam(actorId);
+    return true;
+}
+
+bool MIMITA_GAME_CALL capMatchFinish(void*, std::uint32_t winnerKind,
+                                     std::uint32_t winnerId,
+                                     std::uint32_t victoryType)
+{
+    return MimitaNet::serverMatchFinish(winnerKind, winnerId, victoryType);
+}
+
+bool MIMITA_GAME_CALL capMatchSetPhase(void*, std::uint32_t phase)
+{
+    return MimitaNet::serverMatchSetPhase(phase);
+}
+
+bool MIMITA_GAME_CALL capMatchRespawn(void*, std::uint64_t actorEntity)
+{
+    return MimitaNet::serverMatchRespawn(actorEntity);
+}
+
+bool MIMITA_GAME_CALL capMatchSetTeam(void*, std::uint32_t actorId,
+                                      std::int32_t team)
+{
+    return MimitaNet::serverMatchSetTeam(actorId, team);
+}
+
 void MIMITA_GAME_CALL capRequestMovementOverride(void*, std::uint32_t flags,
                                                  const float position[3],
                                                  const float velocity[3], float yaw)
@@ -354,6 +502,222 @@ void MIMITA_GAME_CALL capMoveCapsule(void*, MovementStateV1* state, float dt)
         return;
     Physics::moveCapsuleStep(*state, static_cast<const World*>(gDispatchWorld), dt);
 }
+
+// ── Generic kernel primitives (ABI v8), resolved by id ──────────────────
+
+// physics.move: low-level, policy-free. The caller supplies capsule size,
+// velocity, and gravity scale; the kernel runs the shared built-in collision
+// pipeline (sweep/slide, step-up, floor recovery, contact-grounded) on the real
+// local player and writes the resolved state back. No movement-policy logic.
+void MIMITA_GAME_CALL capPhysicsMove(void*, MovementStateV1* s, float dt,
+                                     std::uint32_t /*flags*/)
+{
+    if (!s || dt <= 0.0f)
+        return;
+    const World* world = static_cast<const World*>(gDispatchWorld);
+
+    // The full pipeline operates on the real local player. When there is no
+    // local player (headless selftests, dedicated-server contexts), fall back to
+    // the generic capsule solve so the primitive is still usable and safe.
+    if (!gpPlayer)
+    {
+        Physics::moveCapsuleStep(*s, world, dt);
+        return;
+    }
+
+    Player& p = THE_PLAYER;
+
+    if (s->radius > 0.0f)
+        p.movementCapsule.radius = s->radius;
+    if (s->halfHeight > 0.0f)
+        p.movementCapsule.height = s->halfHeight * 2.0f;
+    p.pos = glm::vec3(s->position[0], s->position[1], s->position[2]);
+    p.movementCapsule.position = p.pos;
+    p.vel = glm::vec3(s->velocity[0], s->velocity[1], s->velocity[2]);
+    p.externalImpulse = glm::vec3(0.0f);
+
+    if (s->gravityScale > 0.0f)
+        p.vel.z -= 9.81f * s->gravityScale * dt;
+
+    bool grounded = false;
+    if (world)
+    {
+        setCollisionEntityContext("Player", 0, false);
+        p.movementContacts.clear();
+        doCollisions(p, *world, grounded, dt);
+        clearCollisionEntityContext();
+    }
+
+    s->position[0] = p.pos.x;
+    s->position[1] = p.pos.y;
+    s->position[2] = p.pos.z;
+    s->velocity[0] = p.vel.x;
+    s->velocity[1] = p.vel.y;
+    s->velocity[2] = p.vel.z;
+    s->grounded = grounded ? 1u : 0u;
+    s->collided = 1u;
+}
+
+// effect.spawn: ONE generic effect descriptor. Known movement kinds map to the
+// existing pooled emitters; every other kind uses the generic pooled path, so
+// blood/sparks/smoke/debris/muzzle in the future need no ABI change.
+void MIMITA_GAME_CALL capEffectSpawn(void*, const GameEffectSpawnV1* d)
+{
+    if (!d)
+        return;
+    const glm::vec3 pos(d->position[0], d->position[1], d->position[2]);
+    const float scale = d->scale > 0.0f ? d->scale : 1.0f;
+    EffectPartSystem& fx = EffectPartSystem::instance();
+
+    if (d->kind == gameHash("effect.footstep")) { fx.spawnFootstep(pos, scale); return; }
+    if (d->kind == gameHash("effect.dash"))     { fx.spawnDash(pos, scale); return; }
+    if (d->kind == gameHash("effect.downDash")) { fx.spawnDownDash(pos); return; }
+    if (d->kind == gameHash("effect.freeze"))   { fx.spawnFreeze(pos, d->lifetime > 0.0f ? d->lifetime : 5.0f); return; }
+    if (d->kind == gameHash("effect.freezeTrail")) { fx.spawnFreezeTrail(pos); return; }
+
+    EffectPart e;
+    e.position = pos;
+    e.velocity = glm::vec3(d->direction[0], d->direction[1], d->direction[2]) * d->speed;
+    e.color = glm::vec3(d->color[0], d->color[1], d->color[2]);
+    e.alpha = d->color[3] > 0.0f ? d->color[3] : 1.0f;
+    e.scale = scale;
+    e.endScale = d->endScale > 0.0f ? d->endScale : scale;
+    e.lifetime = d->lifetime > 0.0f ? d->lifetime : 0.5f;
+    e.maxLifetime = e.lifetime;
+    e.affectedByGravity = (d->flags & 1u) != 0;
+    fx.spawn(e);
+}
+
+glm::mat4 poseOffsetMatrix(const GamePosePartV1& part)
+{
+    glm::mat4 m(1.0f);
+    m = glm::translate(m, glm::vec3(part.translation[0], part.translation[1],
+                                    part.translation[2]));
+    m = glm::rotate(m, glm::radians(part.rotationEuler[0]), glm::vec3(1, 0, 0));
+    m = glm::rotate(m, glm::radians(part.rotationEuler[1]), glm::vec3(0, 1, 0));
+    m = glm::rotate(m, glm::radians(part.rotationEuler[2]), glm::vec3(0, 0, 1));
+    return m;
+}
+
+// skeleton.apply: generic pose application. The hot caller supplies per-part
+// euler offsets by part-name hash; the kernel owns rest pose, hierarchy, node
+// mapping, and world-transform update. Any future pose source can use this.
+void MIMITA_GAME_CALL capSkeletonApply(void*, const GameSkeletonPoseV1* pose)
+{
+    if (!pose || !gpPlayer)
+        return;
+    Player& p = THE_PLAYER;
+    if (p.perfectPoseSkeleton.nodes.empty() ||
+        p.perfectPoseSkeleton.restLocalTransforms.size() !=
+            p.perfectPoseSkeleton.nodes.size())
+        return;
+    for (std::uint32_t i = 0; i < pose->count && i < GAME_MAX_POSE_PARTS; ++i)
+    {
+        const GamePosePartV1& pp = pose->parts[i];
+        if (pp.part == 0)
+            continue;
+        for (PhysicalBodyPart& bp : p.physicalBody.parts)
+        {
+            if (gameHash(bp.name.c_str()) != pp.part)
+                continue;
+            if (bp.nodeIndex < 0 ||
+                bp.nodeIndex >= (int)p.perfectPoseSkeleton.nodes.size())
+                break;
+            bp.pose.translation =
+                glm::vec3(pp.translation[0], pp.translation[1], pp.translation[2]);
+            bp.pose.rotationEuler =
+                glm::vec3(pp.rotationEuler[0], pp.rotationEuler[1], pp.rotationEuler[2]);
+            const glm::mat4 restM =
+                p.perfectPoseSkeleton.restLocalTransforms[bp.nodeIndex];
+            p.perfectPoseSkeleton.nodes[bp.nodeIndex].localTransform =
+                restM * poseOffsetMatrix(pp);
+            break;
+        }
+    }
+    p.updateModelWorldTransforms();
+}
+
+// animation.update: temporary hot-invokable bridge to the existing procedural
+// animator, with hot ability transitions synced in first.
+void MIMITA_GAME_CALL capAnimationUpdate(void*, float dt, std::uint32_t flags)
+{
+    if (!gpPlayer || !gpCamera)
+        return;
+    Player& p = THE_PLAYER;
+    const bool movementPressed = (flags & 1u) != 0;
+    if (GameSharedStateV1* shared =
+            MimitaRuntime::GenericRuntime::instance().sharedState())
+    {
+        const EntityId e = (EntityId)shared->localPlayerEntity;
+        if (const MovementIntentComponent* mi =
+                EntityRegistry::instance().tryGet<MovementIntentComponent>(e))
+        {
+            p.dash.didDash = mi->dash;
+            p.freeze.freezeActive = mi->freeze;
+        }
+    }
+    p.updateProceduralAnimation(dt, THE_CAMERA.front, THE_CAMERA.pos,
+                                movementPressed);
+}
+
+// The single generic resolver. Package providers and kernel primitives live in
+// one registry table; the kernel does not switch on any capability's name.
+void* MIMITA_GAME_CALL capResolveCapability(void*, std::uint64_t id)
+{
+    return MimitaRuntime::GenericRuntime::instance().capability(id);
+}
+
+// Generic authoritative server-context primitives: spawn a package projectile
+// and apply damage by entity id. The server containers stay kernel-owned.
+bool MIMITA_GAME_CALL capProjectileSpawn(void*, const GameProjectileSpawnSpecV1* spec,
+                                         std::uint64_t* outEntity)
+{
+    if (!spec)
+        return false;
+    return MimitaNet::serverSpawnGenericProjectile(*spec, outEntity);
+}
+
+bool MIMITA_GAME_CALL capDamageApply(void*, GameDamageApplyV1* request)
+{
+    if (!request)
+        return false;
+    return MimitaNet::serverApplyEntityDamage(*request);
+}
+
+// Kernel primitives are registered as ordinary capability entries with a
+// signature. The mechanism is identical to a hot package provider; the only
+// difference is providerPackage == 0 (kernel).
+struct KernelCapabilityInit {
+    KernelCapabilityInit()
+    {
+        MimitaRuntime::GenericRuntime& rt = MimitaRuntime::GenericRuntime::instance();
+        rt.registerKernelCapability(GAME_CAP_PROJECTILE_SPAWN,
+                                    gameHash("sig.projectile.spawn.v1"), 0,
+                                    reinterpret_cast<void*>(&capProjectileSpawn),
+                                    "projectile.spawn");
+        rt.registerKernelCapability(GAME_CAP_DAMAGE_APPLY,
+                                    gameHash("sig.damage.apply.v1"), 0,
+                                    reinterpret_cast<void*>(&capDamageApply),
+                                    "damage.apply");
+        rt.registerKernelCapability(GAME_CAP_PHYSICS_MOVE,
+                                    gameHash("sig.physics.move.v1"), 0,
+                                    reinterpret_cast<void*>(&capPhysicsMove),
+                                    "physics.move");
+        rt.registerKernelCapability(GAME_CAP_EFFECT_SPAWN,
+                                    gameHash("sig.effect.spawn.v1"), 0,
+                                    reinterpret_cast<void*>(&capEffectSpawn),
+                                    "effect.spawn");
+        rt.registerKernelCapability(GAME_CAP_SKELETON_APPLY,
+                                    gameHash("sig.skeleton.apply.v1"), 0,
+                                    reinterpret_cast<void*>(&capSkeletonApply),
+                                    "skeleton.apply");
+        rt.registerKernelCapability(GAME_CAP_ANIMATION_UPDATE,
+                                    gameHash("sig.animation.update.v1"), 0,
+                                    reinterpret_cast<void*>(&capAnimationUpdate),
+                                    "animation.update");
+    }
+};
+const KernelCapabilityInit s_kernelCapabilities{};
 
 GameplayContextV1 makeContext(std::uint64_t tick)
 {
@@ -375,6 +739,22 @@ GameplayContextV1 makeContext(std::uint64_t tick)
     context.dynamicWriteComponent = &capDynamicWriteComponent;
     context.requestMovementOverride = &capRequestMovementOverride;
     context.moveCapsule = &capMoveCapsule;
+    context.entityCreate = &capEntityCreate;
+    context.entityDestroy = &capEntityDestroy;
+    context.dynamicRemoveComponent = &capDynamicRemoveComponent;
+    context.dynamicEnumerateComponent = &capDynamicEnumerateComponent;
+    context.dynamicComponentsOnEntity = &capDynamicComponentsOnEntity;
+    context.dynamicComponentInfo = &capDynamicComponentInfo;
+    context.relationshipAdd = &capRelationshipAdd;
+    context.relationshipRemove = &capRelationshipRemove;
+    context.relationshipQuery = &capRelationshipQuery;
+    context.matchCurrent = &capMatchCurrent;
+    context.matchActorTeamRead = &capMatchActorTeamRead;
+    context.matchFinish = &capMatchFinish;
+    context.matchSetPhase = &capMatchSetPhase;
+    context.matchRespawn = &capMatchRespawn;
+    context.matchSetTeam = &capMatchSetTeam;
+    context.resolveCapability = &capResolveCapability;
     GameMemory& memory = HotReloadSystem::instance().gameMemory();
     context.permanentStorage = memory.permanentStorage;
     context.permanentStorageSize = memory.permanentStorageSize;
@@ -427,6 +807,81 @@ bool dispatchEvent(const GameEventV1& event, std::uint64_t tick)
     return true;
 }
 
+bool dispatchActorKilled(GameActorKilledV1& payload, std::uint64_t tick)
+{
+    payload.handled = 0;
+    GameEventV1 event{};
+    event.typeId = gameHash("actor.killed");
+    event.schemaHash = gameHash("actor.killed.v1");
+    event.payloadVersion = 1;
+    event.payloadSize = sizeof(GameActorKilledV1);
+    event.sourceEntity = payload.killerEntity;
+    event.targetEntity = payload.victimEntity;
+    event.tick = tick;
+    event.payload = &payload;
+    GameplayContextV1 context = makeContext(tick);
+    MimitaRuntime::GenericRuntime::instance().dispatchEvent(event, &context);
+    return payload.handled != 0;
+}
+
+bool dispatchMatchEvaluate(GameMatchEvaluateV1& payload, std::uint64_t tick)
+{
+    payload.handled = 0;
+    GameEventV1 event{};
+    event.typeId = gameHash("match.evaluate");
+    event.schemaHash = gameHash("match.evaluate.v1");
+    event.payloadVersion = 1;
+    event.payloadSize = sizeof(GameMatchEvaluateV1);
+    event.tick = tick;
+    event.payload = &payload;
+    GameplayContextV1 context = makeContext(tick);
+    MimitaRuntime::GenericRuntime::instance().dispatchEvent(event, &context);
+    return payload.handled != 0;
+}
+
+bool dispatchProjectileImpact(ProjectileImpactPolicyV1& payload, std::uint64_t tick)
+{
+    payload.handled = 0;
+    GameEventV1 event{};
+    event.typeId = gameHash("projectile.impact");
+    event.schemaHash = gameHash("projectile.impact.v1");
+    event.payloadVersion = 1;
+    event.payloadSize = sizeof(ProjectileImpactPolicyV1);
+    event.sourceEntity = payload.ownerEntity;
+    event.targetEntity = payload.victimEntity;
+    event.tick = tick;
+    event.payload = &payload;
+    GameplayContextV1 context = makeContext(tick);
+    MimitaRuntime::GenericRuntime::instance().dispatchEvent(event, &context);
+    return payload.handled != 0;
+}
+
+bool dispatchToolUse(ToolUsePolicyV1& payload, std::uint64_t tick)
+{
+    payload.handled = 0;
+    // Per-entity behavior bindings take priority over the global keyed router:
+    // the equipped tool entity declares which behavior owns its use.
+    if (payload.toolEntity != 0) {
+        const std::uint32_t primaryUse =
+            static_cast<std::uint32_t>(gameHash("on.primary-use"));
+        if (runBehaviorBindings(payload.toolEntity, primaryUse, &payload,
+                                sizeof(payload), tick))
+            return payload.handled != 0;
+    }
+    GameEventV1 event{};
+    event.typeId = payload.kind == 1 ? gameHash("tool.alt-use") : gameHash("tool.primary-use");
+    event.schemaHash = gameHash("tool.use.v1");
+    event.payloadVersion = 1;
+    event.payloadSize = sizeof(ToolUsePolicyV1);
+    event.sourceEntity = payload.userEntity;
+    event.targetEntity = payload.toolEntity;
+    event.tick = tick;
+    event.payload = &payload;
+    GameplayContextV1 context = makeContext(tick);
+    MimitaRuntime::GenericRuntime::instance().dispatchEvent(event, &context);
+    return payload.handled != 0;
+}
+
 bool dispatchPayload(std::uint32_t typeId, void* payload,
                      std::uint32_t payloadSize, std::uint64_t tick,
                      std::uint64_t sourceEntity,
@@ -457,6 +912,53 @@ bool dispatchPayload(std::uint32_t typeId, void* payload,
     }
     drainEvents(16);
     return handled;
+}
+
+bool dispatchGameplayEvent64(std::uint64_t typeId, void* payload,
+                             std::uint32_t payloadSize, std::uint64_t tick,
+                             std::uint64_t sourceEntity,
+                             std::uint64_t targetEntity)
+{
+    GameEventV1 event{};
+    event.typeId = typeId;
+    event.schemaHash = 0;
+    event.payloadVersion = 1;
+    event.payloadSize = payloadSize;
+    event.sourceEntity = sourceEntity;
+    event.targetEntity = targetEntity;
+    event.tick = tick;
+    event.payload = payload;
+    GameplayContextV1 context = makeContext(tick);
+    bool handled = MimitaRuntime::GenericRuntime::instance().dispatchEvent(event, &context);
+    const GameGameplayModuleV1* module = gameplayModule();
+    if (module && module->onEvent) {
+        module->onEvent(&event, &context);
+        handled = true;
+    }
+    return handled;
+}
+
+bool runBehaviorBindings(std::uint64_t entity, std::uint32_t eventType,
+                         void* payload, std::uint32_t payloadSize,
+                         std::uint64_t tick)
+{
+    if (entity == 0 || !payload || payloadSize == 0)
+        return false;
+    const BehaviorBindingsComponent* bindings =
+        EntityRegistry::instance().tryGet<BehaviorBindingsComponent>(
+            static_cast<EntityId>(entity));
+    if (!bindings || bindings->count <= 0)
+        return false;
+    bool ran = false;
+    for (int i = 0; i < bindings->count; ++i) {
+        const BehaviorBinding& binding = bindings->bindings[i];
+        if (binding.eventType != eventType || binding.behaviorId == 0)
+            continue;
+        dispatchGameplayEvent64(binding.behaviorId, payload, payloadSize, tick,
+                                entity, 0);
+        ran = true;
+    }
+    return ran;
 }
 
 void setDispatchWorld(const void* world)

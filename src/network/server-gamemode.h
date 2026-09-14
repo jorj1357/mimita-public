@@ -48,6 +48,12 @@ struct ServerGamemodeState
     bool enabled = false;
     ServerMode mode = ServerMode::Sandbox;
     bool mapOnly = false;
+    // Generic runtime match: the kernel-owned match entity whose dynamic
+    // components hold package-declared match state, and the active mode's
+    // runtime hash + domain. 0 = no hot mode owns this match (cold fallback).
+    std::uint64_t matchEntity = 0;
+    std::uint64_t activeModeId = 0;
+    std::uint64_t activeModeDomain = 0;
     std::string communityMode = "sandbox";
     int communityWeaponSetId = 1;
     int appliedCommunityWeaponSetId = 0;
@@ -249,6 +255,19 @@ struct ServerGamemodeState
 
 // Singleton gamemode state for the current server process.
 ServerGamemodeState& serverGamemodeState();
+
+// ── Generic authoritative match capabilities (exposed to hot systems) ──
+// These are mode-neutral mechanism calls. Mode policy lives in hot packages.
+std::uint64_t serverMatchEntity();                       // 0 when no match is live
+bool serverMatchFinish(std::uint32_t winnerKind,          // 0 none, 1 actor, 2 team
+                       std::uint32_t winnerId,
+                       std::uint32_t victoryType);        // 0 score, 1 time
+std::int32_t serverMatchActorTeam(std::uint32_t actorId);
+bool serverMatchSetTeam(std::uint32_t actorId, std::int32_t team);
+bool serverMatchSetPhase(std::uint32_t phase);            // DuelStatePhase value
+bool serverMatchRespawn(std::uint64_t actorEntity);
+// Reset the kernel-owned match entity for a new match (fresh dynamic state).
+void serverMatchResetEntity();
 
 // Authoritative match lifecycle-rule queries. These read the active
 // ServerGamemodeState so damage/respawn/NPC code has one source of truth.

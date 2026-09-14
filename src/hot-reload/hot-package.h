@@ -17,6 +17,16 @@
 
 #include "hot-reload/game-api.h"
 
+// Hot-side (DLL-internal) composition tables. A tool or projectile is an
+// entity/composition; these tables let any module add a behavior for a runtime
+// key without a kernel enum, switch, or ABI change. The kernel emits one
+// generic fact per tool-use / projectile-impact; a single router handler in the
+// DLL dispatches to the registered behavior.
+using HotToolUseFn = void (MIMITA_GAME_CALL *)(const ToolUsePolicyV1* use,
+                                               GameplayContextV1* context);
+using HotProjectileImpactFn = void (MIMITA_GAME_CALL *)(
+    const ProjectileImpactPolicyV1* impact, GameplayContextV1* context);
+
 class HotPackageBuilder {
 public:
     static HotPackageBuilder& instance()
@@ -25,14 +35,42 @@ public:
         return builder;
     }
 
+    void addToolBehavior(std::uint64_t toolId, HotToolUseFn fn)
+    {
+        toolBehaviors_.push_back({toolId, fn});
+    }
+    void addProjectileBehavior(std::uint64_t typeId, HotProjectileImpactFn fn)
+    {
+        projectileBehaviors_.push_back({typeId, fn});
+    }
+    HotToolUseFn findToolBehavior(std::uint64_t toolId) const
+    {
+        for (const auto& entry : toolBehaviors_)
+            if (entry.id == toolId)
+                return entry.fn;
+        return nullptr;
+    }
+    HotProjectileImpactFn findProjectileBehavior(std::uint64_t typeId) const
+    {
+        for (const auto& entry : projectileBehaviors_)
+            if (entry.id == typeId)
+                return entry.fn;
+        return nullptr;
+    }
+
     void addSystem(const GameSystemDescriptorV1& s) { systems_.push_back(s); }
     void addEventType(const GameEventTypeDescriptorV1& e) { events_.push_back(e); }
     void addSchema(const GameComponentSchemaDescriptorV1& s) { schemas_.push_back(s); }
     void addCapabilityProvider(const GameCapabilityDescriptorV1& c) { providers_.push_back(c); }
-    void addCapabilityRequirement(std::uint64_t id) { requirements_.push_back(id); }
+    void addCapabilityRequirement(std::uint64_t id, std::uint64_t signatureId = 0,
+                                  std::uint64_t schemaHash = 0)
+    {
+        requirements_.push_back(GameCapabilityRequirementV1{id, signatureId, schemaHash});
+    }
     void addCommand(const GameCommandDescriptorV1& c) { commands_.push_back(c); }
     void addResource(const GameResourceDescriptorV1& r) { resources_.push_back(r); }
     void addMigration(const GameMigrationDescriptorV1& m) { migrations_.push_back(m); }
+    void addMode(const GameModeDescriptorV1& m) { modes_.push_back(m); }
 
     std::size_t systemCount() const { return systems_.size(); }
 
@@ -63,6 +101,8 @@ public:
         descriptor_.resourceCount = (std::uint32_t)resources_.size();
         descriptor_.migrations = migrations_.empty() ? nullptr : migrations_.data();
         descriptor_.migrationCount = (std::uint32_t)migrations_.size();
+        descriptor_.modes = modes_.empty() ? nullptr : modes_.data();
+        descriptor_.modeCount = (std::uint32_t)modes_.size();
         return &descriptor_;
     }
 
@@ -80,10 +120,15 @@ private:
     std::vector<GameEventTypeDescriptorV1> events_;
     std::vector<GameComponentSchemaDescriptorV1> schemas_;
     std::vector<GameCapabilityDescriptorV1> providers_;
-    std::vector<std::uint64_t> requirements_;
+    std::vector<GameCapabilityRequirementV1> requirements_;
     std::vector<GameCommandDescriptorV1> commands_;
     std::vector<GameResourceDescriptorV1> resources_;
     std::vector<GameMigrationDescriptorV1> migrations_;
+    std::vector<GameModeDescriptorV1> modes_;
+    struct ToolBehaviorEntry { std::uint64_t id; HotToolUseFn fn; };
+    struct ProjectileBehaviorEntry { std::uint64_t id; HotProjectileImpactFn fn; };
+    std::vector<ToolBehaviorEntry> toolBehaviors_;
+    std::vector<ProjectileBehaviorEntry> projectileBehaviors_;
     GamePackageDescriptorV1 descriptor_{};
     std::uint64_t packageId_ = gameHash("mimita.hot.package");
     std::uint64_t logicalHash_ = gameHash("mimita.hot.package.v1");
@@ -118,10 +163,38 @@ struct CapabilityRegistrar {
         HotPackageBuilder::instance().addCapabilityProvider(c);
     }
 };
+// Declares a capability requirement (id + expected signature) without adding a
+// provider. A package can require a capability another package/kernel provides.
+struct CapabilityRequirementRegistrar {
+    explicit CapabilityRequirementRegistrar(std::uint64_t id,
+                                            std::uint64_t signatureId = 0,
+                                            std::uint64_t schemaHash = 0)
+    {
+        HotPackageBuilder::instance().addCapabilityRequirement(id, signatureId, schemaHash);
+    }
+};
 struct CommandRegistrar {
     explicit CommandRegistrar(const GameCommandDescriptorV1& c)
     {
         HotPackageBuilder::instance().addCommand(c);
+    }
+};
+struct ModeRegistrar {
+    explicit ModeRegistrar(const GameModeDescriptorV1& m)
+    {
+        HotPackageBuilder::instance().addMode(m);
+    }
+};
+struct ToolBehaviorRegistrar {
+    ToolBehaviorRegistrar(std::uint64_t toolId, HotToolUseFn fn)
+    {
+        HotPackageBuilder::instance().addToolBehavior(toolId, fn);
+    }
+};
+struct ProjectileBehaviorRegistrar {
+    ProjectileBehaviorRegistrar(std::uint64_t typeId, HotProjectileImpactFn fn)
+    {
+        HotPackageBuilder::instance().addProjectileBehavior(typeId, fn);
     }
 };
 } // namespace MimitaHotPackage
