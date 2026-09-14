@@ -12,6 +12,7 @@
 #include <ctime>
 
 #include "config.h"
+#include "hot-reload/generic-runtime.h"
 #include "devtools/dev-config.h"
 #include "devtools/dev-overlay.h"
 #include "devtools/account-config.h"
@@ -465,6 +466,22 @@ void Terminal::execute(const std::string& input) {
     std::string arg;
     while (iss >> arg)
         args.push_back(arg);
+
+    // Hot-package commands take precedence so editor/tool commands can be
+    // added or overridden live (generic runtime registry).
+    {
+        MimitaRuntime::GenericRuntime& runtime = MimitaRuntime::GenericRuntime::instance();
+        if (runtime.hasCommand(cmdName)) {
+            const size_t pos = input.find(cmdName);
+            std::string rest = (pos == std::string::npos)
+                ? std::string()
+                : input.substr(pos + cmdName.size());
+            while (!rest.empty() && (rest.front() == ' ' || rest.front() == '\t'))
+                rest.erase(rest.begin());
+            runtime.runCommand(cmdName, rest.c_str(), nullptr);
+            return;
+        }
+    }
 
     auto it = mCommands.find(cmdName);
     if (it == mCommands.end()) {

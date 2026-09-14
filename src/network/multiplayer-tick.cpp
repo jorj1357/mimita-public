@@ -9,6 +9,7 @@
 */
 
 #include "network/multiplayer-context.h"
+#include "hot-reload/generic-runtime.h"
 #include "network/constraint-codec.h"
 #include "physics/constraints/constraint-store.h"
 #include "network/packets.h"
@@ -39,6 +40,7 @@
 #include "gui/password-popup.h"
 #include "utils/time-format.h"
 #include "hot-reload/hot-reload-system.h"
+#include "live-code/live-behavior.h"
 #include "live-code/live-code-events.h"
 #include "live-code/live-identity.h"
 #include "ragdoll/ragdoll-entities.h"
@@ -742,7 +744,10 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 report.codeHash = (report.codeHash << 8) |
                     (hexValue(liveStatus.activeHash[i]) << 4) |
                     hexValue(liveStatus.activeHash[i + 1]);
-            report.logicalCodeHash = report.codeHash;
+            report.moduleSetHash =
+                MimitaRuntime::GenericRuntime::instance().manifestHash();
+            report.logicalCodeHash =
+                report.codeHash ^ (report.moduleSetHash * 1099511628211ull);
             report.platformPackageHash = liveStatus.activeGeneration;
             mpSendPacket(ctx, &report, sizeof(report));
         }
@@ -833,7 +838,21 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         IceConnectStatus connect = mpIceConnectPoll();
         if (connect.active)
         {
-            ctx.connectionStatus = connect.message;
+            // Hot connection status/retry policy. The transport stays kernel, but
+            // the visible status text is a behavior so it can be edited live.
+            ConnectionStateV1 policy{};
+            policy.phase = 0;
+            policy.attempt = 0;
+            policy.maxAttempts = 5;
+            policy.elapsedMs = 0;
+            policy.lastError = 0;
+            policy.outBackoffScale = 1.0f;
+            std::snprintf(policy.outMessage, sizeof(policy.outMessage), "%s",
+                          connect.message.c_str());
+            LiveBehavior::dispatchPayload(GAME_EVENT_CONNECTION_STATE, &policy,
+                                          sizeof(policy), ctx.tick, 0, 0, 0);
+            ctx.connectionStatus = (policy.handled && policy.outMessage[0] != '\0')
+                ? std::string(policy.outMessage) : connect.message;
         }
         else if (connect.done)
         {
@@ -1445,6 +1464,12 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         {
             const CorpseSpawnPacket* spawn =
                 reinterpret_cast<const CorpseSpawnPacket*>(buffer);
+            // Reliable-event dedup: a retransmitted corpse spawn must not refresh
+            // the death identity repeatedly.
+            if (spawn->deathEventId != 0 &&
+                !mpAcceptReliableEventOnce(ctx, spawn->deathEventId,
+                                           ctx.reliableEventSessionId))
+                return;
             RagdollModeSystem::instance().noteNetworkDeath(
                 spawn->ownerActorId, spawn->deathTick, spawn->deathEventId);
         }

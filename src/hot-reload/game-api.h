@@ -20,7 +20,7 @@
 // (read/write/find/query/log) and the ragdoll-bind, movement, projectile,
 // death/respawn, and connection-state behavior seams, so those systems are
 // edited as hot behavior instead of cold kernel code.
-static constexpr std::uint32_t MIMITA_GAME_API_VERSION = 4;
+static constexpr std::uint32_t MIMITA_GAME_API_VERSION = 5;
 static constexpr std::uint32_t MIMITA_GAME_MAX_MODULES = 8;
 static constexpr std::size_t MIMITA_GAME_SELFTEST_MESSAGE = 128;
 
@@ -447,10 +447,15 @@ enum GameDamageSource : std::uint32_t {
 };
 
 struct GameEventV1 {
-    std::uint32_t typeId;
+    // 64-bit event identity: the full gameHash("package.event") id, so runtime
+    // event types are never truncated to 32 bits. `schemaHash` is the canonical
+    // payload-schema identity (0 = unspecified).
+    std::uint64_t typeId;
+    std::uint64_t schemaHash;
     std::uint32_t payloadVersion;
     std::uint32_t payloadSize;
     std::uint32_t flags;
+    std::uint32_t reserved;
     std::uint64_t sourceEntity;
     std::uint64_t targetEntity;
     std::uint64_t projectileEntity;
@@ -474,6 +479,40 @@ using GameQueryWorldRayFn = bool (MIMITA_GAME_CALL *)(
     float* outPoint, float* outNormal, float* outDistance);
 using GameLogCapFn = void (MIMITA_GAME_CALL *)(void* host, const char* message);
 
+// Dynamic (package-declared) component access, keyed by schema id hash. Lets a
+// package read/write its own component without a new typed enum entry.
+using GameDynamicComponentReadFn = bool (MIMITA_GAME_CALL *)(
+    void* host, std::uint64_t entity, std::uint64_t typeId, void* out, std::uint32_t outSize);
+using GameDynamicComponentWriteFn = bool (MIMITA_GAME_CALL *)(
+    void* host, std::uint64_t entity, std::uint64_t typeId, const void* in, std::uint32_t inSize);
+
+// A hot movement system requests a full local-player movement override for this
+// tick (free-fly/noclip). flags bit0 = active. The kernel applies the transform
+// and skips the built-in physics step when active.
+using GameRequestMovementOverrideFn = void (MIMITA_GAME_CALL *)(
+    void* host, std::uint32_t flags, const float position[3],
+    const float velocity[3], float yaw);
+
+// ── Movement state / capsule solve (hot movement groundwork) ────────
+// Plain-data movement state the kernel can read from and write back into the
+// real player, plus a kernel capsule-vs-world solve so hot movement systems do
+// not need the cold collision code. Append-only.
+static constexpr std::uint32_t MOVEMENT_STATE_VERSION = 1;
+struct MovementStateV1 {
+    float position[3];
+    float velocity[3];
+    float yaw;
+    float radius;
+    float halfHeight;
+    float sizeScale;
+    std::uint32_t grounded;
+    std::uint32_t collided;
+};
+// One fixed capsule move against the world: integrates velocity + gravity,
+// resolves world collision, and writes the resolved state back in place.
+using GameMoveCapsuleFn = void (MIMITA_GAME_CALL *)(
+    void* host, MovementStateV1* state, float dt);
+
 struct GameplayContextV1 {
     std::uint32_t abiVersion;
     std::uint32_t structSize;
@@ -487,7 +526,33 @@ struct GameplayContextV1 {
     GameFindEntitiesFn findEntities;
     GameQueryWorldRayFn queryWorldRay;
     GameLogCapFn log;
+    // v5 additions (append-only): dynamic component access.
+    GameDynamicComponentReadFn dynamicReadComponent;
+    GameDynamicComponentWriteFn dynamicWriteComponent;
+    // Kernel shared state + reload-persistent storage for cross-module
+    // coordination (e.g. editor mode visible to gameplay policy).
+    void* permanentStorage;
+    std::uint64_t permanentStorageSize;
+    // v5 additions (append-only): hot movement override.
+    GameRequestMovementOverrideFn requestMovementOverride;
+    // v6 additions (append-only): kernel capsule-vs-world solve.
+    GameMoveCapsuleFn moveCapsule;
 };
+
+// Small kernel-owned shared state area at the start of permanentStorage so hot
+// modules can coordinate without a dedicated ABI slot per concept. Fields are
+// intentionally generic; packages may extend within their own budget.
+static constexpr std::uint32_t GAME_SHARED_MAGIC = 0x45445348u;  // 'EDSH'
+struct GameSharedStateV1 {
+    std::uint32_t magic;
+    std::uint32_t modeFlags;       // bit0 = creation/inspection mode active
+    std::uint64_t selectedEntity;
+    std::uint64_t hoveredEntity;
+    std::uint64_t localPlayerEntity;
+    std::uint32_t reserved[4];
+};
+static constexpr std::uint32_t GAME_MODE_FLAG_CREATION = 1u;
+static constexpr std::uint32_t GAME_MODE_FLAG_HOT_MOVEMENT = 2u;
 
 // Request/response payload for GAME_EVENT_DAMAGE_POLICY. The kernel fills the
 // base values; a hot behavior sets `handled = 1` and may override `outDamage`
@@ -722,7 +787,10 @@ enum EditorHitKind : std::uint32_t {
     EDITOR_HIT_ENTITY = 2,
 };
 
-// One kernel query result (world triangle or entity bound) along the ray.
+// One kernel query result (world triangle/object or entity bound) along the ray.
+// Layout is frozen: extra per-candidate data arrives through separate
+// capabilities, never by growing this struct (keeps hot swaps into an older
+// EXE from mis-striding the array).
 struct EditorCandidateV1 {
     std::uint32_t kind;        // EditorHitKind
     std::uint32_t domain;      // EntityDomain when kind == ENTITY
@@ -739,6 +807,8 @@ struct EditorQueryV1 {
 };
 
 // POD component/constraint snapshot for one entity (kernel fills; hot formats).
+// Layout is frozen (see EditorCandidateV1); extended actor/weapon data arrives
+// through EditorInspectExFn.
 struct EditorInspectionV1 {
     std::uint32_t valid;
     std::uint32_t realm;
@@ -757,6 +827,41 @@ struct EditorInspectionV1 {
     std::uint64_t constraintBodyB;
     float constraintStrength;
     std::uint32_t linkedConstraintSerial;
+};
+
+// Extended entity inspection (kernel fills into a module-owned buffer). New
+// fields are appended only; the module only calls this when the host kernel
+// advertises the v2 capability block.
+struct EditorInspectionExV1 {
+    std::uint32_t valid;
+    std::uint32_t hasHealth;
+    std::int32_t health;
+    std::int32_t maxHealth;
+    std::uint32_t dead;
+    std::uint32_t hasControl;
+    std::uint32_t controlSource;
+    std::uint32_t authority;
+    std::uint64_t ownerEntity;
+    std::uint32_t hasWeapon;
+    std::uint32_t weaponNetworkId;
+    std::int32_t weaponSlot;
+    std::int32_t weaponAmmo;
+    char weaponName[48];
+    std::uint32_t isRagdollLimb;
+    std::uint32_t limbIndex;
+    std::uint32_t limbParent;
+    std::uint32_t reserved;
+};
+
+// World object at a hit point (kernel matches legacy block / GLB mesh batch by
+// AABB). Module-owned output buffer.
+struct EditorWorldObjectV1 {
+    std::uint32_t valid;
+    std::uint32_t kind;      // 0 none, 1 block, 2 glb batch, 3 triangle
+    std::uint32_t index;
+    float center[3];
+    float size[3];
+    char material[48];
 };
 
 // Kernel -> module per-tick input.
@@ -780,6 +885,70 @@ struct EditorResultV1 {
     EditorInspectionV1 inspection;
 };
 
+// Map-wide overview (kernel fills; hot formats).
+struct EditorMapInfoV1 {
+    std::uint32_t valid;
+    std::uint32_t blockCount;
+    std::uint32_t batchCount;
+    std::uint32_t spawnCount;
+    std::uint32_t triangleCount;
+    float boundsMin[3];
+    float boundsMax[3];
+    char mapPath[128];
+};
+
+// Edge-triggered input for the hot editor (kernel fills every tick).
+struct EditorInputV1 {
+    std::uint32_t enabled;
+    std::uint32_t dropPressed;      // backspace edge
+    std::uint32_t interactPressed;  // F edge
+    std::uint32_t confirmPressed;   // enter/left-click edge
+    std::uint32_t cancelPressed;    // escape/right-click edge
+    std::uint32_t copyPressed;
+    std::uint32_t pastePressed;
+    std::uint32_t deletePressed;
+    std::uint32_t rotatePressed;
+    std::uint32_t scalePressed;
+    // v5 additions: selection + overlap navigation.
+    std::uint32_t selectPressed;      // CTRL + left mouse edge
+    std::uint32_t cyclePrev;          // wheel up edge
+    std::uint32_t cycleNext;          // wheel down edge
+    std::uint32_t moveUp;             // vertical movement intent (create mode)
+    std::uint32_t moveDown;
+};
+
+// Generic fork editing: one op in, one result out. The kernel owns fork storage
+// and never rewrites the base map; the hot module owns edit policy/keys.
+enum EditorForkOp : std::uint32_t {
+    EDITOR_FORK_DUPLICATE = 0,
+    EDITOR_FORK_DELETE = 1,
+    EDITOR_FORK_SET_TRANSFORM = 2,
+    EDITOR_FORK_SET_LABEL = 3,
+    EDITOR_FORK_SET_MATERIAL = 4,
+    EDITOR_FORK_UNDO = 5,
+    EDITOR_FORK_REDO = 6,
+};
+
+struct EditorForkArgsV1 {
+    std::uint32_t op;             // EditorForkOp
+    std::uint32_t sourceKind;     // EditorHitKind (WORLD/ENTITY)
+    std::uint32_t sourceWorldKind;
+    std::uint32_t sourceWorldIndex;
+    std::uint64_t sourceEntity;
+    float position[3];
+    float rotation[3];
+    float scale[3];
+    float size[3];                // source object bounds (for fork visualization)
+    char label[48];
+    char material[48];
+    // out
+    std::uint32_t ok;
+    std::uint32_t reserved;
+    std::uint64_t outObjectId;
+    std::uint32_t opCount;
+    char forkHash[72];
+};
+
 using EditorQueryRayFn = void (MIMITA_GAME_CALL *)(
     void* host, const float origin[3], const float dir[3],
     float maxDistance, std::uint32_t maxHits, EditorQueryV1* out);
@@ -791,6 +960,30 @@ using EditorDrawRectFn = void (MIMITA_GAME_CALL *)(
     void* host, float x, float y, float w, float h, const float rgba[4]);
 using EditorScreenSizeFn = void (MIMITA_GAME_CALL *)(
     void* host, float* outWidth, float* outHeight);
+// World-space label projected from a world position (reuses the debug-label
+// primitive; the hot module owns the text and timing).
+using EditorDrawWorldLabelFn = void (MIMITA_GAME_CALL *)(
+    void* host, const float worldPos[3], const char* text, const float rgba[4]);
+// Generic outline for any selected identity (entity or world object). The
+// kernel owns the draw primitive; the hot module owns color/thickness/cycle.
+using EditorDrawOutlineFn = void (MIMITA_GAME_CALL *)(
+    void* host, std::uint32_t hitKind, std::uint64_t entity,
+    std::uint32_t worldKind, std::uint32_t worldIndex,
+    const float rgba[4], float thickness, std::uint32_t throughWalls);
+using EditorMapInfoFn = void (MIMITA_GAME_CALL *)(void* host, EditorMapInfoV1* out);
+// Generic 3D wire box (fork visualization / selection gizmos). Reuses the
+// kernel debug-draw primitive; the hot module owns color/usage.
+using EditorDrawWireBoxFn = void (MIMITA_GAME_CALL *)(
+    void* host, const float center[3], const float size[3], const float rgba[4]);
+// Fork enumeration so hot code can visualize recorded edits.
+using EditorForkOpCountFn = std::uint32_t (MIMITA_GAME_CALL *)(void* host);
+using EditorForkOpFn = std::uint32_t (MIMITA_GAME_CALL *)(
+    void* host, std::uint32_t index, EditorForkArgsV1* out);
+using EditorForkFn = void (MIMITA_GAME_CALL *)(void* host, EditorForkArgsV1* args);
+using EditorInspectExFn = std::uint32_t (MIMITA_GAME_CALL *)(
+    void* host, std::uint64_t entity, EditorInspectionExV1* out);
+using EditorWorldObjectInfoFn = void (MIMITA_GAME_CALL *)(
+    void* host, const float point[3], EditorWorldObjectV1* out);
 
 // Capabilities + kernel-owned state handle. `host` and `permanentStorage` are
 // valid only for the duration of the call; never cache them.
@@ -807,6 +1000,23 @@ struct EditorContextV1 {
     EditorScreenSizeFn screenSize;
     void* permanentStorage;        // survives hot reloads
     std::uint64_t permanentStorageSize;
+    // v2 additions (append-only).
+    EditorDrawWorldLabelFn drawWorldLabel;
+    EditorDrawOutlineFn drawOutline;
+    EditorMapInfoFn mapInfo;
+    EditorForkFn fork;
+    const EditorInputV1* input;    // valid for the current call
+    EditorInspectExFn inspectEx;
+    EditorWorldObjectInfoFn worldObjectInfo;
+    // v5 additions (append-only). Growing this struct is intentional: a new
+    // module loading into an older EXE sees structSize < sizeof and degrades to
+    // the legacy path instead of reading past the end.
+    std::uint32_t editorAbiVersion;  // 2 = Phase-1 selection/cycle input
+    std::uint32_t editorReserved;
+    // v6 additions (append-only): fork visualization primitives.
+    EditorDrawWireBoxFn drawWireBox;
+    EditorForkOpCountFn forkOpCount;
+    EditorForkOpFn forkOp;
 };
 
 using EditorOnTickFn = void (MIMITA_GAME_CALL *)(
@@ -820,6 +1030,124 @@ struct GameEditorModuleV1 {
     EditorOnTickFn onTick;
     EditorOnDrawFn onDraw;
 };
+
+// ── Generic runtime package ABI (v5) ────────────────────────────────
+// One descriptor per package generation. The kernel registers the descriptor's
+// entries generically; it does not know the names/ids inside the arrays. Adding
+// a system/event/schema/capability/command later must NOT require a new field in
+// this header — only appending to an existing array.
+static constexpr std::uint32_t MIMITA_PACKAGE_ABI_VERSION = 1;
+
+// Compile-time FNV-1a so the kernel and packages hash names identically without
+// a runtime table.
+constexpr std::uint64_t gameHash(const char* s, std::uint64_t h = 1469598103934665603ull)
+{
+    return (*s == '\0') ? h : gameHash(s + 1, (h ^ (std::uint64_t)(unsigned char)*s) * 1099511628211ull);
+}
+
+// Reserved domains the kernel times. Packages may register systems in these or
+// in their own hashed domains (which the kernel runs when it times that domain).
+static constexpr std::uint64_t GAME_DOMAIN_GAMEPLAY = gameHash("gameplay.60");
+static constexpr std::uint64_t GAME_DOMAIN_RENDER = gameHash("render.frame");
+
+// Component copy policy lives in schema metadata so the editor never hardcodes
+// "if component == X".
+enum GameCopyPolicy : std::uint32_t {
+    GAME_COPY_AUTHORING = 0,
+    GAME_COPY_IDENTITY_ONLY = 1,
+    GAME_COPY_RUNTIME_ONLY = 2,
+    GAME_COPY_DERIVED = 3,
+    GAME_COPY_NETWORK_TRANSIENT = 4,
+    GAME_COPY_DO_NOT_COPY = 5,
+};
+
+using GameSystemInvokeFn = void (MIMITA_GAME_CALL *)(void* host, std::uint64_t tick, float dt);
+using GameCommandInvokeFn = void (MIMITA_GAME_CALL *)(void* host, const char* args);
+using GameEventDispatchFn = void (MIMITA_GAME_CALL *)(void* host, const GameEventV1* event);
+
+struct GameSystemDescriptorV1 {
+    std::uint64_t id;         // gameHash("package.system")
+    std::uint64_t domainId;   // gameHash("domain")
+    std::uint32_t priority;   // lower runs first
+    std::uint32_t reserved;
+    GameSystemInvokeFn invoke;
+    const char* name;         // debug only
+};
+
+struct GameEventTypeDescriptorV1 {
+    std::uint64_t id;         // gameHash("package.event")
+    std::uint64_t schemaHash;
+    std::uint64_t domainId;   // 0 = immediate dispatch
+    GameEventDispatchFn dispatch;
+    const char* name;
+};
+
+struct GameComponentSchemaDescriptorV1 {
+    std::uint64_t id;         // gameHash("Component")
+    std::uint64_t schemaHash;
+    std::uint32_t size;
+    std::uint32_t align;
+    std::uint32_t copyPolicy;    // GameCopyPolicy
+    std::uint32_t networkPolicy;
+    const char* name;
+};
+
+struct GameCapabilityDescriptorV1 {
+    std::uint64_t id;         // gameHash("entity.spawn")
+    std::uint64_t signatureId;
+    std::uint64_t schemaHash;
+    void* callable;           // provider callable; signature is by convention
+    const char* name;
+};
+
+struct GameCommandDescriptorV1 {
+    const char* name;
+    const char* usage;
+    std::uint64_t systemId;   // 0 if invoke provided
+    GameCommandInvokeFn invoke;
+};
+
+struct GameResourceDescriptorV1 {
+    std::uint64_t id;
+    std::uint64_t contentHash;
+    std::uint32_t kind;
+    std::uint32_t reserved;
+    const char* logicalName;
+};
+
+struct GameMigrationDescriptorV1 {
+    std::uint64_t typeId;
+    std::uint32_t fromVersion;
+    std::uint32_t toVersion;
+    void* migrate;            // MigrationFn
+};
+
+struct GamePackageDescriptorV1 {
+    std::uint32_t structSize;
+    std::uint32_t abiVersion;
+    std::uint64_t packageId;
+    std::uint64_t logicalHash;
+    const char* name;
+
+    const GameSystemDescriptorV1* systems;
+    std::uint32_t systemCount;
+    const GameEventTypeDescriptorV1* eventTypes;
+    std::uint32_t eventTypeCount;
+    const GameComponentSchemaDescriptorV1* componentSchemas;
+    std::uint32_t componentSchemaCount;
+    const GameCapabilityDescriptorV1* capabilityProviders;
+    std::uint32_t capabilityProviderCount;
+    const std::uint64_t* capabilityRequirements;
+    std::uint32_t capabilityRequirementCount;
+    const GameCommandDescriptorV1* commands;
+    std::uint32_t commandCount;
+    const GameResourceDescriptorV1* resources;
+    std::uint32_t resourceCount;
+    const GameMigrationDescriptorV1* migrations;
+    std::uint32_t migrationCount;
+};
+
+using MimitaGetPackageDescriptorFn = const GamePackageDescriptorV1* (MIMITA_GAME_CALL *)();
 
 struct GameAPI {
     std::uint32_t version;
@@ -835,6 +1163,8 @@ struct GameAPI {
     std::uint32_t moduleCount;
     std::uint32_t reserved2;
     GameModuleDescriptor modules[MIMITA_GAME_MAX_MODULES];
+    // v5: generic package descriptor (may be null for legacy modules).
+    const GamePackageDescriptorV1* packageDescriptor;
 };
 
 using GetGameAPIFn = bool (MIMITA_GAME_CALL *)(

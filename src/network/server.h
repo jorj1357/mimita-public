@@ -292,6 +292,11 @@ struct ServerPlayer
     bool hasDuelSpawnPos = false;
     uint64_t lastHeardMs = 0;
     bool clientStateUpdated = false;
+    // Ragdoll body authority: set when a PACKET_RAGDOLL_STATE arrives. While
+    // fresh, the movement report is accepted as client body authority instead
+    // of being geometrically corrected back toward the pre-ragdoll position.
+    bool ragdollActive = false;
+    uint64_t ragdollLastSeenMs = 0;
 
     // ── Disconnect grace state (server keeps the slot alive) ──────────
     // True once the player has been silent longer than the stale threshold.

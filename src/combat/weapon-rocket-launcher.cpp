@@ -25,6 +25,7 @@
 #include "combat/projectile-render.h"
 #include "config/size-scaling-config.h"
 #include "entities/player.h"
+#include "live-code/live-behavior.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "debug/debug-log.h"
@@ -605,8 +606,33 @@ void render(const RocketLauncherState& state, const Camera& camera, const Weapon
 {
     const ProjectileVisualConfig cfg = projectileVisualConfigForWeapon(def.id);
     for (const RocketLauncherState::Rocket& rocket : state.activeRockets) {
-        if (!rocket.exploded)
-            renderProjectile(camera, rocket.position, rocket.orientation, cfg);
+        if (rocket.exploded)
+            continue;
+        // Hot projectile presentation seam: every rocket of every owner (local
+        // player, NPC, deterministic corpse path) flows through here, so a
+        // rocket is visible while it is in flight regardless of which weapon
+        // the shooter currently has equipped.
+        ProjectilePresentV1 present{};
+        present.projectileEntity = rocket.entityId;
+        present.ownerEntity = rocket.ownerEntity;
+        present.source = 0;
+        present.weaponNetworkId = 0;
+        present.position[0] = rocket.position.x;
+        present.position[1] = rocket.position.y;
+        present.position[2] = rocket.position.z;
+        present.velocity[0] = rocket.velocity.x;
+        present.velocity[1] = rocket.velocity.y;
+        present.velocity[2] = rocket.velocity.z;
+        present.age = state.gameTime - rocket.spawnTime;
+        present.lifetime = rocket.lifetime;
+        present.exploded = rocket.exploded ? 1u : 0u;
+        present.visible = 1u;
+        LiveBehavior::dispatchPayload(GAME_EVENT_PROJECTILE_PRESENT, &present,
+                                      sizeof(present), 0, rocket.ownerEntity, 0,
+                                      rocket.entityId);
+        if (present.handled && present.visible == 0)
+            continue;
+        renderProjectile(camera, rocket.position, rocket.orientation, cfg);
     }
 }
 

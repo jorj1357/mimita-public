@@ -27,19 +27,22 @@ struct WorldObjectRef {
     glm::vec3 position{0.0f};
     glm::vec3 rotation{0.0f};
     glm::vec3 scale{1.0f};
+    glm::vec3 size{0.0f};   // source bounds, for fork visualization
     std::string meshHash;
     std::string materialHash;
 };
 
 struct PatchOp {
-    enum class Kind { Duplicate, Transform, Delete, Material, Hide };
+    enum class Kind { Duplicate, Transform, Delete, Material, Hide, Label };
     Kind kind = Kind::Transform;
     std::uint64_t sourceEntity = 0;
     std::uint64_t newEntity = 0;
     glm::vec3 position{0.0f};
     glm::vec3 rotation{0.0f};
     glm::vec3 scale{1.0f};
+    glm::vec3 size{0.0f};   // source bounds, for fork visualization
     std::string material;
+    std::string label;
 };
 
 class CreationMode {
@@ -76,6 +79,10 @@ public:
     bool transform(std::uint64_t entity, const glm::vec3& position,
                    const glm::vec3& rotation, const glm::vec3& scale);
     bool remove(std::uint64_t entity);
+    bool setLabel(std::uint64_t entity, const std::string& label);
+    bool setMaterial(std::uint64_t entity, const std::string& material);
+    bool undo();
+    bool redo();
 
     const std::vector<PatchOp>& patch() const { return patch_; }
     std::string baseMapHash() const { return baseMapHash_; }
@@ -118,6 +125,7 @@ private:
     std::uint64_t lastLoggedEntity_ = 0;
     int lastLoggedTriangle_ = -1;
     std::vector<PatchOp> patch_;
+    std::vector<PatchOp> redoStack_;
     std::string baseMapHash_;
     Project::ChangeSet changeSet_;
     std::vector<Project::ProjectVersion> versionChain_;

@@ -81,6 +81,7 @@ const char* patchKindName(PatchOp::Kind kind)
     case PatchOp::Kind::Delete: return "delete";
     case PatchOp::Kind::Material: return "material";
     case PatchOp::Kind::Hide: return "hide";
+    case PatchOp::Kind::Label: return "label";
     }
     return "unknown";
 }
@@ -98,7 +99,7 @@ void CreationMode::setEnabled(bool on)
     if (enabled_ == on)
         return;
     enabled_ = on;
-    if (on) {
+    if (on && gpActiveMapPath) {
         const std::string mapPath = ACTIVE_MAP_PATH;
         if (!mapPath.empty()) {
             Project::ContentId id = Project::ContentId::fromFile(mapPath);
@@ -306,6 +307,7 @@ std::uint64_t CreationMode::duplicate(const WorldObjectRef& ref, const glm::vec3
     op.position = ref.position + offset;
     op.rotation = ref.rotation;
     op.scale = ref.scale;
+    op.size = ref.size;
     patch_.push_back(op);
     recordChange(Project::ChangeOp::Add, newId,
                  std::to_string(ref.entity), forkHash());
@@ -367,6 +369,52 @@ bool CreationMode::remove(std::uint64_t entity)
     return true;
 }
 
+bool CreationMode::setLabel(std::uint64_t entity, const std::string& label)
+{
+    if (entity == 0)
+        return false;
+    PatchOp op;
+    op.kind = PatchOp::Kind::Label;
+    op.sourceEntity = entity;
+    op.label = label;
+    patch_.push_back(op);
+    redoStack_.clear();
+    recordChange(Project::ChangeOp::Modify, entity, "", forkHash());
+    return true;
+}
+
+bool CreationMode::setMaterial(std::uint64_t entity, const std::string& material)
+{
+    if (entity == 0)
+        return false;
+    PatchOp op;
+    op.kind = PatchOp::Kind::Material;
+    op.sourceEntity = entity;
+    op.material = material;
+    patch_.push_back(op);
+    redoStack_.clear();
+    recordChange(Project::ChangeOp::Modify, entity, "", forkHash());
+    return true;
+}
+
+bool CreationMode::undo()
+{
+    if (patch_.empty())
+        return false;
+    redoStack_.push_back(patch_.back());
+    patch_.pop_back();
+    return true;
+}
+
+bool CreationMode::redo()
+{
+    if (redoStack_.empty())
+        return false;
+    patch_.push_back(redoStack_.back());
+    redoStack_.pop_back();
+    return true;
+}
+
 std::string CreationMode::forkHash() const
 {
     return forkHashFor(baseMapHash_, patch_);
@@ -390,6 +438,8 @@ std::string CreationMode::forkHashFor(const std::string& baseHash,
         canonical += vec3Text(op.scale);
         canonical += ':';
         canonical += op.material;
+        canonical += ':';
+        canonical += op.label;
         canonical += '\n';
     }
     return LiveCodeHash::sha256Bytes(canonical.data(), canonical.size());
@@ -440,6 +490,7 @@ Project::ProjectVersion CreationMode::commit(const std::string& label)
 void CreationMode::clear()
 {
     patch_.clear();
+    redoStack_.clear();
     selected_ = 0;
     nextEntitySerial_ = 1;
     changeSet_ = Project::ChangeSet{};

@@ -10,6 +10,8 @@
 #include "engine/engine-tick-ui.h"
 #include "engine/engine.h"
 #include "engine/engine-tick-creation.h"
+#include "hot-reload/generic-runtime.h"
+#include "live-code/live-behavior.h"
 #include "terminal/terminal-state.h"
 #include <cstdio>
 #include <GLFW/glfw3.h>
@@ -100,6 +102,16 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
         engineTickUIOverlays(engine, dt, worldPassRan);
 
     engineRenderCreationOverlay(camera);
+
+    // Generic runtime: render.frame systems registered by hot packages.
+    {
+        static std::uint64_t sRenderTick = 0;
+        void* host = LiveBehavior::hostContext(sRenderTick);
+        MimitaRuntime::GenericRuntime::instance().runDomain(
+            GAME_DOMAIN_RENDER, sRenderTick++, (float)dt, host);
+        // Deliver any generic events emitted by render systems this frame.
+        LiveBehavior::drainEvents(64);
+    }
 
     if (gReplayPlayer.totalTicks() > 0) {
         const ReplaySceneFrame* cleanupFrame = gReplayPlayer.currentSceneFrame();

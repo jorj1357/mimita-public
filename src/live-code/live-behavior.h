@@ -48,4 +48,7 @@ int drainEvents(int maxEvents);
 // True when the active gameplay module provides an event handler.
 bool available();
 
+// Kernel-owned capability context for generic runtime systems (dynamic
+// component read/write, entity find, log, emit). Valid for the current tick.
+GameplayContextV1* hostContext(std::uint64_t tick);
 } // namespace LiveBehavior

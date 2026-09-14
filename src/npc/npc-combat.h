@@ -45,4 +45,9 @@ bool rayCapsule(const glm::vec3& origin, const glm::vec3& dir,
 void updateNpcProjectiles(const World& world, NpcSystem& npcSystem,
                           Camera& camera, Player& player, float dt);
 
+// Render NPC-launched projectiles (rockets). Shares the player rocket renderer
+// and the hot projectile-presentation seam, so NPC rockets are visible while
+// they are in flight.
+void renderNpcProjectiles(const Camera& camera, NpcSystem& npcSystem);
+
 } // namespace NpcCombat

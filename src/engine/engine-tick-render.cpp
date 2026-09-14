@@ -21,6 +21,7 @@
 #include "avatar/cosmetic-system.h"
 #include "world/world.h"
 #include "npc/npc.h"
+#include "npc/npc-combat.h"
 #include "render/render-world.h"
 #include "render/skybox.h"
 #include "render/post-fx.h"
@@ -33,6 +34,7 @@
 #include "combat/weapon-registry.h"
 #include "combat/area-effect.h"
 #include "combat/death-system.h"
+#include "hot-reload/generic-runtime.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "ragdoll/ragdoll-presentation.h"
 #include "effects/effect-part.h"
@@ -470,6 +472,8 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         { MIMITA_PERF_SCOPE("Rendering::Actors::NPCSystem");
           Perf::state().renderPerf.actorNpcs += static_cast<uint32_t>(npcSystem.all().size());
           npcSystem.render(camera); }
+        if (!replayPlaybackActive)
+            NpcCombat::renderNpcProjectiles(camera, npcSystem);
         if (!replayPlaybackActive) {
             for (const Npc& npc : npcSystem.all()) {
                 if (npc.body.dead || npc.body.currentHp <= 0)

@@ -1,6 +1,7 @@
 #include "hot-reload/hot-reload-system.h"
 
 #include "hot-reload/game-api.h"
+#include "hot-reload/generic-runtime.h"
 #include "live-code/code-hash.h"
 #include "live-code/live-code-events.h"
 #include "live-code/live-journal.h"
@@ -105,6 +106,14 @@ HotReloadSystem::HotReloadSystem()
     }
     sourceDLL_ = root_ / "build" / "mimita-game.dll";
     permanentStorage_.assign(64 * 1024, 0);
+    if (permanentStorage_.size() >= sizeof(GameSharedStateV1)) {
+        GameSharedStateV1* shared =
+            reinterpret_cast<GameSharedStateV1*>(permanentStorage_.data());
+        shared->magic = GAME_SHARED_MAGIC;
+        shared->modeFlags = 0;
+        shared->selectedEntity = 0;
+        shared->hoveredEntity = 0;
+    }
     memory_.apiVersion = MIMITA_GAME_API_VERSION;
     memory_.platform.version = MIMITA_GAME_API_VERSION;
     memory_.platform.log = platformLog;
@@ -152,6 +161,19 @@ void HotReloadSystem::startup()
             active_ = initial;
             ++memory_.reloadCount;
             std::printf("[HOT RELOAD] initial generation=%u\n", active_.generation);
+
+            // Register the initial generation's generic package so systems,
+            // commands, schemas, and capabilities exist from startup, not only
+            // after the first hot rebuild.
+            std::string regError;
+            if (!MimitaRuntime::GenericRuntime::instance().activate(
+                    initial.api.packageDescriptor, regError)) {
+                std::printf("[HOT RELOAD] initial package registration failed: %s\n",
+                            regError.c_str());
+            } else {
+                std::printf("[HOT RELOAD] %s\n",
+                            MimitaRuntime::GenericRuntime::instance().describe().c_str());
+            }
         } else {
             lastError_ = error;
             std::printf("[HOT RELOAD] initial load failed: %s\n", error.c_str());
@@ -161,8 +183,10 @@ void HotReloadSystem::startup()
     workerStop_ = false;
     worker_ = std::thread(&HotReloadSystem::workerMain, this);
 
-    // Low-latency change signal; the hash scan remains the source of truth.
-    watcher_.start(root_ / "src" / "hot-reload");
+    // Low-latency change signal over the whole source tree; the hash scan
+    // remains the source of truth. Watching only sources avoids observing our
+    // own build output (build/...), which would loop.
+    watcher_.start(root_ / "src");
 }
 
 bool HotReloadSystem::pollAndAdvance()
@@ -212,6 +236,10 @@ bool HotReloadSystem::beginBuild(const std::string& reason)
     attemptedHash_ = hash;
     pendingHash_ = hash;
 
+    // Per-file diff for incremental compilation (hot graph). Empty on the
+    // first build so the compiler builds everything.
+    std::vector<std::string> changedSources = diffSourceHashes();
+
     const std::uint32_t generation = nextGeneration_++;
     const std::filesystem::path processDir =
         root_ / "build" / "hotreload" / ("p" + std::to_string(GetCurrentProcessId()));
@@ -232,6 +260,7 @@ bool HotReloadSystem::beginBuild(const std::string& reason)
     request.resultPath = dir / "build-result.json";
     request.logPath = dir / "build.log";
     request.reason = reason;
+    request.changedSources = std::move(changedSources);
     {
         std::lock_guard<std::mutex> lock(mutex_);
         request_ = request;
@@ -295,6 +324,18 @@ HotReloadSystem::BuildResult HotReloadSystem::runBuild(const BuildRequest& reque
     command += " --output \"" + request.outputPath.string() + "\"";
     command += " --result \"" + request.resultPath.string() + "\"";
     command += " --hot-modules \"" + manifest + "\"";
+    // Stable per-process object dir so incremental builds reuse unaffected TUs.
+    const std::filesystem::path processDir = request.outputPath.parent_path().parent_path();
+    command += " --obj \"" + (processDir / "obj").string() + "\"";
+    if (!request.changedSources.empty()) {
+        std::string changed;
+        for (std::size_t i = 0; i < request.changedSources.size(); ++i) {
+            if (i)
+                changed += ",";
+            changed += request.changedSources[i];
+        }
+        command += " --changed \"" + changed + "\"";
+    }
     command += " > \"" + request.logPath.string() + "\" 2>&1";
 
     const int exitCode = std::system(command.c_str());
@@ -388,6 +429,23 @@ bool HotReloadSystem::tryActivateCandidate()
         loaded.codeHash = result.codeHash;
         loaded.result = "loaded";
         LiveEventJournal::instance().record("candidate_loaded", loaded);
+    }
+
+    // Generic package registration (v5): validate the candidate's package
+    // descriptor before committing; a failure keeps the active generation.
+    {
+        std::string regError;
+        if (!MimitaRuntime::GenericRuntime::instance().activate(
+                candidate.api.packageDescriptor, regError)) {
+            lastError_ = "package registration failed: " + regError;
+            ++attemptFailures_;
+            const std::uint64_t backoffMs =
+                (std::uint64_t)std::min(10000, 2000 * attemptFailures_);
+            nextRetryMonoMs_ = MiMitaTime::monotonicMillis() + backoffMs;
+            LiveCodeEvents::notifyValidationFailed(result.generation, lastError_);
+            retireRecord(candidate);
+            return false;
+        }
     }
 
     retireRecord(previous_);
@@ -498,6 +556,12 @@ bool HotReloadSystem::rollback()
     previous_ = active_;
     active_ = target;
     ++memory_.reloadCount;
+    // Re-register the now-active generation's generic package.
+    {
+        std::string regError;
+        MimitaRuntime::GenericRuntime::instance().activate(
+            active_.api.packageDescriptor, regError);
+    }
     LiveCodeEvents::notifyRollbackActivated(active_.generation, active_.codeHash);
     return true;
 }
@@ -510,6 +574,7 @@ void HotReloadSystem::unloadGameDLL()
     if (worker_.joinable())
         worker_.join();
 
+    MimitaRuntime::GenericRuntime::instance().deactivate();
     retireRecord(previous_);
     retireRecord(active_);
 }
@@ -635,6 +700,23 @@ std::string HotReloadSystem::computeSourceHash() const
     if (combined.empty())
         return {};
     return LiveCodeHash::sha256Bytes(combined.data(), combined.size());
+}
+
+std::vector<std::string> HotReloadSystem::diffSourceHashes()
+{
+    std::vector<std::string> changed;
+    std::unordered_map<std::string, std::string> next;
+    for (const auto& relative : hotSources_) {
+        const std::string hash = LiveCodeHash::sha256File((root_ / relative).string());
+        if (hash.empty())
+            continue;
+        next[relative] = hash;
+        auto it = sourceHashes_.find(relative);
+        if (it == sourceHashes_.end() || it->second != hash)
+            changed.push_back(relative);
+    }
+    sourceHashes_ = std::move(next);
+    return changed;
 }
 
 std::string HotReloadSystem::manifestSummary() const

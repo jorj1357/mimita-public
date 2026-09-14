@@ -26,11 +26,14 @@
 #include "effects/hit-effects.h"
 #include "void-death/void-death.h"
 #include "ecs/actor-entities.h"
+#include "hot-reload/generic-runtime.h"
 #include "ragdoll/ragdoll-entities.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "ragdoll/ragdoll-mode-config.h"
 #include "editor/creation-mode.h"
 #include "engine/engine-tick-creation.h"
+#include "hot-reload/generic-runtime.h"
+#include "live-code/live-behavior.h"
 #include "live-code/live-editor.h"
 #include "terminal/terminal-state.h"
 
@@ -85,7 +88,42 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                                frame.downDashPressed, frame.freezeHeld);
     }
 
+    // Publish shared editor/gameplay state and run gameplay-domain hot systems
+    // BEFORE movement, so a hot movement system (free-fly) can override this
+    // tick. This is the generic seam; no per-feature kernel slot.
+    {
+        const EntityId localEntity = Ecs::ensureLocalPlayerEntity();
+        if (GameSharedStateV1* shared =
+                MimitaRuntime::GenericRuntime::instance().sharedState()) {
+            shared->magic = GAME_SHARED_MAGIC;
+            shared->localPlayerEntity = (std::uint64_t)localEntity;
+        }
+        MimitaRuntime::GenericRuntime& runtime = MimitaRuntime::GenericRuntime::instance();
+        const std::uint64_t runtimeTick = (std::uint64_t)sim.tick;
+        // Expose the world to movement/query capabilities for this tick.
+        LiveBehavior::setDispatchWorld(sim.world);
+        void* host = LiveBehavior::hostContext(runtimeTick);
+        runtime.beginMovementTick();
+        runtime.runDomain(GAME_DOMAIN_GAMEPLAY, runtimeTick, TICK_DT, host);
+        LiveBehavior::drainEvents(64);
+    }
+
     if (!sim.player->dead) {
+        // Hot movement override (free-fly/noclip): apply the requested transform
+        // and skip the built-in physics step for this tick.
+        float overridePos[3];
+        float overrideVel[3];
+        float overrideYaw = 0.0f;
+        if (MimitaRuntime::GenericRuntime::instance().consumeMovementOverride(
+                overridePos, overrideVel, overrideYaw))
+        {
+            sim.player->pos = glm::vec3(overridePos[0], overridePos[1], overridePos[2]);
+            sim.player->vel = glm::vec3(overrideVel[0], overrideVel[1], overrideVel[2]);
+            sim.player->yaw = overrideYaw;
+            sim.player->externalImpulse = glm::vec3(0.0f);
+            sim.player->ragdollModeActive = false;
+        }
+        else {
         // Handle ragdoll mode toggle
         static bool ragdollTogglePrev = false;
         bool ragdollToggleNow = frame.ragdollTogglePressed;
@@ -125,6 +163,7 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             physicsMainUpdate(*sim.player, *sim.world, inputStateFromFrame(frame), TICK_DT);
             clearCollisionEntityContext();
         }
+        } // end built-in movement (else of hot override)
     }
 
     {
@@ -183,6 +222,16 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         } else {
             engineTickCreationUpdate(*sim.world, THE_CAMERA);
         }
+    }
+
+    // Generic runtime: run package-declared custom domains (gameplay.60 already
+    // ran before movement).
+    {
+        MimitaRuntime::GenericRuntime& runtime = MimitaRuntime::GenericRuntime::instance();
+        const std::uint64_t runtimeTick = (std::uint64_t)sim.tick;
+        void* host = LiveBehavior::hostContext(runtimeTick);
+        runtime.runRegisteredDomains(runtimeTick, TICK_DT, host);
+        LiveBehavior::drainEvents(64);
     }
 
     if (sim.player->spawnFlashTimer > 0.0f)

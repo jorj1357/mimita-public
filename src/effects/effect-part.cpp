@@ -137,6 +137,7 @@ MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
     outAPI->beforeUnload = gameBeforeUnload;
     outAPI->updateEffects = gameUpdateEffects;
     outAPI->selfTest = gameSelfTest;
+    outAPI->packageDescriptor = MimitaGetPackageDescriptor();
 
     const GameModuleDescriptor* descriptors[] = {
         MimitaGetEffectModule(),

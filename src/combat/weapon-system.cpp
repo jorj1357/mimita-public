@@ -628,12 +628,15 @@ void WeaponSystem::render(const Camera& camera, const Player& player) const {
     };
 
     // ── Projectile rendering for rocket launcher ──
-    if (def->behaviorType == WeaponBehaviorType::RocketLauncher) {
-        ProjectileVisualConfig cfg = buildProjCfg(*def, true);
-        for (const auto& rocket : mRocketState.activeRockets) {
-            if (rocket.exploded) continue;
-            renderProjectile(camera, rocket.position, rocket.orientation, cfg);
-        }
+    // In-flight rockets render regardless of the currently equipped weapon, so
+    // switching weapons never hides a rocket that still damages. The rocket's
+    // own definition is used when the current weapon is not a rocket launcher.
+    if (!mRocketState.activeRockets.empty()) {
+        const WeaponDefinition* rocketDef =
+            (def->behaviorType == WeaponBehaviorType::RocketLauncher)
+                ? def : WeaponRegistry::instance().get("rocket_launcher");
+        if (rocketDef)
+            WeaponRocketLauncher::render(mRocketState, camera, *rocketDef);
     }
 
     // ── Projectile rendering for grenade launcher ──

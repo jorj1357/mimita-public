@@ -40,13 +40,16 @@
   ],
   "headers": [
     "src/hot-reload/game-api.h",
-    "src/hot-reload/game-modules.h"
+    "src/hot-reload/game-modules.h",
+    "src/hot-reload/hot-package.h"
   ],
   "globs": [
     "src/hot-reload/modules/*.cpp"
   ],
   "cold": [
     "src/hot-reload/hot-reload-system.cpp",
+    "src/hot-reload/generic-runtime.cpp",
+    "src/hot-reload/generic-runtime.h",
     "src/live-code/live-behavior.cpp",
     "src/live-code/live-behavior.h",
     "src/live-code/live-editor.cpp",
@@ -68,6 +71,16 @@
     "src/network/multiplayer-projectiles.cpp",
     "src/ecs/entity-registry.cpp",
     "src/ecs/actor-entities.cpp",
-    "src/sim/simulate-tick.cpp"
+    "src/sim/simulate-tick.cpp",
+    "src/ragdoll/ragdoll-body.cpp",
+    "src/network/multiplayer-reconcile.cpp",
+    "src/network/multiplayer-packets.cpp",
+    "src/network/multiplayer-tick.cpp",
+    "src/network/server-packets.cpp",
+    "src/npc/npc-combat.cpp",
+    "src/engine/engine-tick-render.cpp",
+    "src/combat/death-system.cpp",
+    "src/hot-reload/generic-runtime.cpp",
+    "src/project/capabilities.cpp"
   ]
 }

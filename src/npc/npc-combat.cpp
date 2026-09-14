@@ -545,3 +545,22 @@ void NpcCombat::updateNpcProjectiles(const World& world, NpcSystem& npcSystem,
         gNpcRocketState.gameTime += dt;
     }
 }
+
+void NpcCombat::renderNpcProjectiles(const Camera& camera, NpcSystem& npcSystem) {
+    if (gNpcRocketState.activeRockets.empty())
+        return;
+    const WeaponDefinition* def = nullptr;
+    for (Npc& npc : npcSystem.all()) {
+        if (npc.body.dead || npc.body.currentHp <= 0.0f) continue;
+        const WeaponDefinition* candidate =
+            WeaponRegistry::instance().get(npc.body.equippedWeaponId);
+        if (candidate && candidate->behaviorType == WeaponBehaviorType::RocketLauncher) {
+            def = candidate;
+            break;
+        }
+    }
+    if (!def)
+        def = WeaponRegistry::instance().get("rocket_launcher");
+    if (def)
+        WeaponRocketLauncher::render(gNpcRocketState, camera, *def);
+}

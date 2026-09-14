@@ -198,6 +198,12 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
            disconnectPolicyName(policy),
            ctx.connectionStatus.c_str());
 
+    // Any in-flight ICE connect job must be cancelled here, on every teardown
+    // path, not only mpShutdown. Otherwise the stale job keeps retrying
+    // "ICE: contacting coordinator..." into the next session. This is the
+    // single reset owner for the connect job.
+    mpIceConnectCancel();
+
     // CommunityMatchClient is a process-wide singleton, so clearing the
     // MultiplayerContext alone would leave an old server countdown cached.
     CommunityMatchClient::instance().reset();

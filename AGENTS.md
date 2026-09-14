@@ -86,6 +86,23 @@ Read these gates before doing anything else:
 - Deploy only committed local code, preserve pre-existing untracked files, and
   restart only the affected service.
 
+## Live-runtime direction (from 2026-09-13)
+
+- Governing principle: aim to make as much of the repo as possible hot
+  reloadable so it can be edited live. Prefer a generic runtime mechanism over a
+  new cold seam.
+- Do not add a subsystem-specific field, enum, switch case, or call site to
+  `mimita.exe` when an existing generic primitive (package, system, event,
+  component schema, capability, resource, command) can express it.
+- New gameplay/editor concepts should be registered packages/systems/schemas/
+  events/behaviors/commands, not new kernel slots. See
+  `docs/gold/2026-09-13-live-runtime-generic-bootstrap.md`.
+- Only a genuinely new OS/hardware/kernel primitive may require kernel
+  evolution; then add a generic provider, not a feature-specific slot.
+- `modecreate` is the first proof: its controls, selection, copy/paste,
+  free-fly, notifications, commands, and source structure must be changeable
+  while the same EXE/world/session/EntityIds stay alive.
+
 ## What belongs elsewhere
 
 The router is the single source for relative paths to detailed documentation.
@@ -94,5 +111,5 @@ procedures, deployment commands, asset rules, JSON inventories, focused review
 checklists, regression history, release instructions, and examples belong in
 the routed documents, not in this file.
 
-This draft intentionally does not change `AGENTS.md`. It is a proposed compact
-replacement for review and iteration.
+The live-runtime direction and the generic "no new slot" bootstrap plan are in
+`docs/gold/2026-09-13-live-runtime-generic-bootstrap.md`.

@@ -32,11 +32,14 @@ def parse_args(argv):
         "output_explicit": False,
         "result": None,
         "hot_modules": DEFAULT_MANIFEST,
+        "changed": [],
+        "obj": None,
     }
     index = 0
     while index < len(argv):
         arg = argv[index]
-        if arg in ("--generation", "--output", "--result", "--hot-modules"):
+        if arg in ("--generation", "--output", "--result", "--hot-modules",
+                   "--changed", "--obj"):
             if index + 1 >= len(argv):
                 raise SystemExit(f"[HOT RELOAD] {arg} requires a value")
             key = arg[2:].replace("-", "_")
@@ -46,7 +49,62 @@ def parse_args(argv):
             index += 2
             continue
         index += 1
+    if isinstance(args["changed"], str):
+        args["changed"] = [c for c in args["changed"].split(",") if c]
     return args
+
+
+def load_dep_edges(obj_dir):
+    """Parse .o.d files into {stem: set(normalized prereqs)}."""
+    edges = {}
+    if not os.path.isdir(obj_dir):
+        return edges
+    for name in os.listdir(obj_dir):
+        if not name.endswith(".o.d"):
+            continue
+        stem = name[:-4]  # strip ".d" -> "<stem>.o"; stem key = basename
+        path = os.path.join(obj_dir, name)
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+                text = handle.read()
+        except OSError:
+            continue
+        text = text.replace("\\\r\n", " ").replace("\\\n", " ")
+        prereqs = set()
+        for line in text.splitlines():
+            if ":" not in line:
+                continue
+            _, deps = line.split(":", 1)
+            for token in deps.split():
+                norm = token.replace("\\", "/")
+                prereqs.add(norm)
+        edges[stem] = prereqs
+    return edges
+
+
+def affected_stems(obj_dir, changed_rel, sources):
+    """Stems to recompile: changed sources plus any source whose .d lists a
+    changed file (e.g. a header). Unknown/new sources are always rebuilt."""
+    changed = {c.replace("\\", "/") for c in changed_rel}
+    changed_names = {os.path.basename(c) for c in changed}
+    edges = load_dep_edges(obj_dir)
+    stems = set()
+    for source in sources:
+        stem = os.path.basename(os.path.splitext(source)[0])
+        stems.add(stem)
+    # Baseline: recompile changed sources.
+    for source in sources:
+        rel = source.replace("\\", "/")
+        if rel in changed or os.path.basename(rel) in changed_names:
+            stems.add(os.path.basename(os.path.splitext(source)[0]))
+    # Recompile any source whose dependency list contains a changed file.
+    for stem, prereqs in edges.items():
+        for prereq in prereqs:
+            if prereq in changed or os.path.basename(prereq) in changed_names:
+                stems.add(stem)
+                break
+    return stems
+
 
 
 def load_manifest(path):
@@ -162,17 +220,25 @@ def main():
 
     # Compile each hot source separately so it emits a .d dependency file for
     # the live dependency graph, then link the objects into the package DLL.
-    obj_dir = os.path.join(os.path.dirname(output), "obj")
+    # A caller-supplied stable obj dir enables incremental reuse across builds.
+    obj_dir = os.path.abspath(args["obj"]) if args["obj"] else os.path.join(os.path.dirname(output), "obj")
     os.makedirs(obj_dir, exist_ok=True)
     objects = []
 
-    print(f"[HOT RELOAD] rebuilding DLL generation={generation} sources={len(sources)}")
+    changed = args["changed"]
+    recompile = affected_stems(obj_dir, changed, sources) if changed else None
+
+    print(f"[HOT RELOAD] rebuilding DLL generation={generation} sources={len(sources)}"
+          f" incremental={bool(changed)}")
     started = time.time()
 
     for source in sources:
         stem = os.path.splitext(os.path.basename(source))[0]
         obj = os.path.join(obj_dir, stem + ".o")
         dep = obj + ".d"
+        if recompile is not None and stem not in recompile and os.path.exists(obj):
+            objects.append(obj)
+            continue
         compile_command = ccache_prefix + base_flags + [
             "-c", os.path.join(ROOT, source), "-MMD", "-MF", dep, "-o", obj,
         ]

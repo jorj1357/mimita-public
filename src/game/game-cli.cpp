@@ -49,6 +49,7 @@
 #include "project/phase456-selftest.h"
 #include "telemetry/telemetry-selftest.h"
 #include "editor/creation-selftest.h"
+#include "physics/movement/movement-selftest.h"
 #include "ragdoll/ragdoll-slice-selftest.h"
 #include "ecs/entity-slice-selftest.h"
 
@@ -261,6 +262,14 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = runCreationSelfTest(report);
         printf("%s", report.c_str());
         printf("[CREATION SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--movement-selftest") {
+        std::string report;
+        const bool ok = runMovementSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[MOVEMENT SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

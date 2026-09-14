@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -76,12 +77,23 @@ public:
     CapabilityMask denied(const std::string& subject) const;
     bool allows(const std::string& subject, Capability capability) const;
 
+    // Generic id-based capabilities (runtime-registered packages). The fixed
+    // enum above covers kernel vocabulary; these sets cover arbitrary hot ids
+    // hashed from names like "entity.spawn" without extending the enum.
+    void provideId(const std::string& subject, std::uint64_t capabilityId);
+    void requestId(const std::string& subject, std::uint64_t capabilityId);
+    bool providesId(const std::string& subject, std::uint64_t capabilityId) const;
+    bool allowsId(const std::string& subject, std::uint64_t capabilityId) const;
+    std::size_t providedIdCount(const std::string& subject) const;
+
     std::size_t subjectCount() const { return grants_.size(); }
 
 private:
     CapabilityRegistry() = default;
     std::map<std::string, CapabilityMask> grants_;
     std::map<std::string, CapabilityMask> requests_;
+    std::map<std::string, std::set<std::uint64_t>> providedIds_;
+    std::map<std::string, std::set<std::uint64_t>> requestedIds_;
 };
 
 } // namespace Project

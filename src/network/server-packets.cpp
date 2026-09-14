@@ -13,6 +13,7 @@
 #include "network/server-gamemode.h"
 #include "network/server-constraints.h"
 #include "network/multiplayer-context.h"
+#include "live-code/live-behavior.h"
 #include "network/coordinator-client.h"
 #include "network/snapshot-chunks.h"
 #include "network/network-weapons.h"
@@ -1062,6 +1063,49 @@ void handleInputPacket(const char* buffer, int bytes,
 
     MovementValidationResult result =
         validateClientMovementReport(p, report, validationContext, validationConfig);
+
+    // Ragdoll body authority: while a ragdoll snapshot is fresh, accept the
+    // client's physics root instead of correcting it back toward the position
+    // the player toggled from. The decision is a hot behavior seam; the kernel
+    // enforces the ragdoll default even without a loaded behavior.
+    const bool ragdollAuthority =
+        p.ragdollActive && p.ragdollLastSeenMs != 0 &&
+        currentMs - p.ragdollLastSeenMs < 500;
+    if (ragdollAuthority && result.decision == MovementValidationDecision::Correct)
+    {
+        result.decision = MovementValidationDecision::Accept;
+        result.reason = MovementValidationReason::None;
+        result.acceptedState.position = report.position;
+        result.acceptedState.baseVelocity = report.baseVelocity;
+        result.acceptedState.externalImpulse = report.externalImpulse;
+    }
+    {
+        MovementValidationV1 policy{};
+        policy.ownerActor = p.id;
+        policy.serverTick = serverTick;
+        policy.ragdollActive = ragdollAuthority ? 1u : 0u;
+        policy.computedDecision = (std::uint32_t)result.decision;
+        policy.computedReason = (std::uint32_t)result.reason;
+        for (int k = 0; k < 3; ++k)
+        {
+            policy.reportPosition[k] = report.position[k];
+            policy.suggestedPosition[k] = result.acceptedState.position[k];
+            policy.suggestedVelocity[k] = result.acceptedState.baseVelocity[k];
+        }
+        policy.decision = policy.computedDecision;
+        LiveBehavior::dispatchPayload(GAME_EVENT_MOVEMENT_VALIDATION, &policy,
+                                      sizeof(policy), serverTick, p.id, 0, 0);
+        if (policy.handled)
+        {
+            result.decision = (MovementValidationDecision)policy.decision;
+            result.acceptedState.position = glm::vec3(policy.suggestedPosition[0],
+                                                      policy.suggestedPosition[1],
+                                                      policy.suggestedPosition[2]);
+            result.acceptedState.baseVelocity = glm::vec3(policy.suggestedVelocity[0],
+                                                          policy.suggestedVelocity[1],
+                                                          policy.suggestedVelocity[2]);
+        }
+    }
     applyMovementValidationCounters(p.movementValidation, result, report);
     logMovementValidation(p, report, result);
     if (connectionId)
@@ -2034,7 +2078,18 @@ ServerPacketProcessResult processServerPacket(
              bytes >= (int)sizeof(RagdollStatePacket))
     {
         // Ragdoll physics is still local in this slice; the server fans the
-        // snapshot out to every other peer so remote ragdolls replicate.
+        // snapshot out to every other peer so remote ragdolls replicate. The
+        // snapshot also marks this player as ragdoll-body-authority so their
+        // movement report is accepted rather than geometrically corrected back
+        // toward the position they toggled from.
+        {
+            auto owner = players.find(header->playerId);
+            if (owner != players.end())
+            {
+                owner->second.ragdollActive = true;
+                owner->second.ragdollLastSeenMs = nowMs();
+            }
+        }
         for (const auto& pe : players)
         {
             if (pe.first == header->playerId)

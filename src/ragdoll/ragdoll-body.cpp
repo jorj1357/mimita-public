@@ -126,7 +126,7 @@ void buildBody(const Player& player, const RagdollModeConfigData& cfg, RagdollBo
             axis = glm::vec3(0.0f, 0.0f, 1.0f);
 
         glm::vec3 comOffset(0.0f);
-        const CapsuleConfig* capCfg = nullptr;
+        const RagdollModeCapsuleConfig* capCfg = nullptr;
         auto capIt = cfg.capsules.find(d.name);
         if (capIt != cfg.capsules.end()) {
             capCfg = &capIt->second;

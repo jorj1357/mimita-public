@@ -33,6 +33,7 @@
 #include "game/spawn-override.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "live-code/live-behavior.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "terminal/terminal-state.h"
 #include "killfeed/killfeed.h"
@@ -108,12 +109,29 @@ bool DeathSystem::kill(
 
     // Step 2: spawn a SEPARATE death visual (fall-over clone) so the real
     // player body is never pinned, frozen, or hidden by the death anim.
-    // Only the first death presenter for a life spawns the ghost.
-    if (!victim.networkDeathPresented)
+    // Only the first death presenter for a life spawns the ghost. The
+    // presentation decision is a hot behavior seam.
     {
-        victim.networkDeathPresented = true;
-        RagdollModeSystem::instance().spawnCorpse(
-            victim, direction * lethalForce, actorId, 0);
+        ActorDeathV1 death{};
+        death.actorEntity = 0;
+        death.isNpc = (actorType == "npc") ? 1u : 0u;
+        death.authoritative = (gpMpContext && gpMpContext->active) ? 1u : 0u;
+        death.alreadyPresented = victim.networkDeathPresented ? 1u : 0u;
+        death.deathTick = (std::uint32_t)victim.movementSimulationTick;
+        death.position[0] = victimPos.x;
+        death.position[1] = victimPos.y;
+        death.position[2] = victimPos.z;
+        death.presentCorpse = death.alreadyPresented ? 0u : 1u;
+        LiveBehavior::dispatchPayload(GAME_EVENT_ACTOR_DEATH, &death, sizeof(death),
+                                      (std::uint64_t)victim.movementSimulationTick, 0, 0, 0);
+        const bool present = death.handled ? (death.presentCorpse != 0)
+                                           : (!victim.networkDeathPresented);
+        if (present && !victim.networkDeathPresented)
+        {
+            victim.networkDeathPresented = true;
+            RagdollModeSystem::instance().spawnCorpse(
+                victim, direction * lethalForce, actorId, 0);
+        }
     }
 
     // Step 3: mark the victim dead for gameplay only (respawn logic, hit
@@ -364,8 +382,24 @@ void DeathSystem::update(
 
         if (shouldRespawn)
         {
-            if (instantRespawnPressed ||
-                player.respawnTimer <= 0.0f)
+            // Hot respawn policy: a server-authoritative life owns the actor, so
+            // the local death system must not respawn it. That omission is the
+            // root cause of the once-per-tick death loop in multiplayer.
+            ActorRespawnV1 policy{};
+            policy.actorEntity = 0;
+            policy.isNpc = 0;
+            policy.authoritative = (gpMpContext && gpMpContext->active) ? 1u : 0u;
+            policy.duelActive = (duelModeActive || networkDuelActive) ? 1u : 0u;
+            policy.respawnTimer = player.respawnTimer;
+            policy.dt = dt;
+            policy.allowLocalRespawn = policy.authoritative ? 0u : 1u;
+            LiveBehavior::dispatchPayload(GAME_EVENT_ACTOR_RESPAWN, &policy, sizeof(policy),
+                                          (std::uint64_t)player.movementSimulationTick, 0, 0, 0);
+            const bool allowRespawn = policy.handled
+                ? (policy.allowLocalRespawn != 0)
+                : (policy.authoritative == 0);
+            if (allowRespawn &&
+                (instantRespawnPressed || player.respawnTimer <= 0.0f))
             {
                 respawn(
                     player,

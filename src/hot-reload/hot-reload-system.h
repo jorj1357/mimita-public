@@ -74,6 +74,7 @@ private:
         std::filesystem::path resultPath;
         std::filesystem::path logPath;
         std::string reason;
+        std::vector<std::string> changedSources;
     };
 
     struct BuildResult {
@@ -87,6 +88,8 @@ private:
 
     void loadManifest();
     std::string computeSourceHash() const;
+    // Per-file hash diff vs the previous build; returns changed relative paths.
+    std::vector<std::string> diffSourceHashes();
     std::string manifestSummary() const;
     std::filesystem::path manifestPath() const;
     void pollManifestReload();
@@ -106,6 +109,7 @@ private:
     std::filesystem::path sourceDLL_;
     std::string manifestHash_;
     std::unordered_map<std::string, std::uint64_t> coldMtimes_;
+    std::unordered_map<std::string, std::string> sourceHashes_;
     std::string coldPendingFile_;
     std::uint64_t lastColdNoticeMs_ = 0;
     Project::ProjectWatcher watcher_;

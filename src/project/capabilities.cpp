@@ -45,4 +45,31 @@ bool CapabilityRegistry::allows(const std::string& subject, Capability capabilit
     return hasCapability(granted(subject), capability);
 }
 
+void CapabilityRegistry::provideId(const std::string& subject, std::uint64_t capabilityId)
+{
+    providedIds_[subject].insert(capabilityId);
+}
+
+void CapabilityRegistry::requestId(const std::string& subject, std::uint64_t capabilityId)
+{
+    requestedIds_[subject].insert(capabilityId);
+}
+
+bool CapabilityRegistry::providesId(const std::string& subject, std::uint64_t capabilityId) const
+{
+    auto it = providedIds_.find(subject);
+    return it != providedIds_.end() && it->second.count(capabilityId) != 0;
+}
+
+bool CapabilityRegistry::allowsId(const std::string& subject, std::uint64_t capabilityId) const
+{
+    return providesId(subject, capabilityId) || providesId("*", capabilityId);
+}
+
+std::size_t CapabilityRegistry::providedIdCount(const std::string& subject) const
+{
+    auto it = providedIds_.find(subject);
+    return it == providedIds_.end() ? 0 : it->second.size();
+}
+
 } // namespace Project

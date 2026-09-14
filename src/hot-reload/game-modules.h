@@ -10,3 +10,8 @@ const GameModuleDescriptor* MimitaGetActorModule();
 const GameModuleDescriptor* MimitaGetPresentationModule();
 const GameModuleDescriptor* MimitaGetGameplayModule();
 const GameModuleDescriptor* MimitaGetEditorModule();
+
+// Generic runtime package descriptor for this DLL generation. The kernel
+// registers its systems/events/schemas/capabilities/commands generically so new
+// concepts do not require a new EXE slot.
+const GamePackageDescriptorV1* MimitaGetPackageDescriptor();

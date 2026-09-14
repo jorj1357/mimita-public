@@ -10,11 +10,19 @@
 #include <cstring>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include "ecs/components.h"
 #include "ecs/entity-registry.h"
+#include "hot-reload/generic-runtime.h"
 #include "hot-reload/hot-reload-system.h"
+#include "hot-reload/generic-runtime.h"
+#include "ecs/dynamic-components.h"
 #include "live-code/live-modules.h"
+#include "physics/movement/move-capsule.h"
+#include "world/world.h"
+
+#include <glm/gtc/quaternion.hpp>
 #include "physics/ray-utils.h"
 #include "ragdoll/ragdoll-components.h"
 #include "world/world.h"
@@ -316,6 +324,37 @@ void MIMITA_GAME_CALL capLog(void*, const char* message)
         std::printf("[HOT] %s\n", message);
 }
 
+bool MIMITA_GAME_CALL capDynamicReadComponent(void*, std::uint64_t entity,
+                                              std::uint64_t typeId, void* out,
+                                              std::uint32_t outSize)
+{
+    return MimitaRuntime::DynamicComponentStore::instance().read(
+        (EntityId)entity, typeId, out, outSize);
+}
+
+bool MIMITA_GAME_CALL capDynamicWriteComponent(void*, std::uint64_t entity,
+                                               std::uint64_t typeId, const void* in,
+                                               std::uint32_t inSize)
+{
+    return MimitaRuntime::DynamicComponentStore::instance().write(
+        (EntityId)entity, typeId, in, inSize);
+}
+
+void MIMITA_GAME_CALL capRequestMovementOverride(void*, std::uint32_t flags,
+                                                 const float position[3],
+                                                 const float velocity[3], float yaw)
+{
+    MimitaRuntime::GenericRuntime::instance().requestMovementOverride(
+        flags, position, velocity, yaw);
+}
+
+void MIMITA_GAME_CALL capMoveCapsule(void*, MovementStateV1* state, float dt)
+{
+    if (!state)
+        return;
+    Physics::moveCapsuleStep(*state, static_cast<const World*>(gDispatchWorld), dt);
+}
+
 GameplayContextV1 makeContext(std::uint64_t tick)
 {
     const HotReloadSystem::Status status = HotReloadSystem::instance().status();
@@ -332,6 +371,13 @@ GameplayContextV1 makeContext(std::uint64_t tick)
     context.findEntities = &capFindEntities;
     context.queryWorldRay = &capQueryWorldRay;
     context.log = &capLog;
+    context.dynamicReadComponent = &capDynamicReadComponent;
+    context.dynamicWriteComponent = &capDynamicWriteComponent;
+    context.requestMovementOverride = &capRequestMovementOverride;
+    context.moveCapsule = &capMoveCapsule;
+    GameMemory& memory = HotReloadSystem::instance().gameMemory();
+    context.permanentStorage = memory.permanentStorage;
+    context.permanentStorageSize = memory.permanentStorageSize;
     return context;
 }
 
@@ -343,6 +389,13 @@ bool available()
 {
     const GameGameplayModuleV1* module = gameplayModule();
     return module && module->onEvent != nullptr;
+}
+
+GameplayContextV1* hostContext(std::uint64_t tick)
+{
+    static thread_local GameplayContextV1 context;
+    context = makeContext(tick);
+    return &context;
 }
 
 void enqueueEvent(const GameEventV1& event)
@@ -363,9 +416,12 @@ void enqueueEvent(const GameEventV1& event)
 
 bool dispatchEvent(const GameEventV1& event, std::uint64_t tick)
 {
+    // Generic runtime subscribers first (runtime-registered event types are the
+    // forward path); the legacy gameplay module is kept as a fallback.
+    const bool generic = MimitaRuntime::GenericRuntime::instance().dispatchEvent(event, nullptr);
     const GameGameplayModuleV1* module = gameplayModule();
     if (!module || !module->onEvent)
-        return false;
+        return generic;
     GameplayContextV1 context = makeContext(tick);
     module->onEvent(&event, &context);
     return true;
@@ -377,8 +433,7 @@ bool dispatchPayload(std::uint32_t typeId, void* payload,
                      std::uint64_t targetEntity,
                      std::uint64_t projectileEntity)
 {
-    const GameGameplayModuleV1* module = gameplayModule();
-    if (!module || !module->onEvent || !payload || payloadSize == 0)
+    if (!payload || payloadSize == 0)
         return false;
 
     GameEventV1 event{};
@@ -392,10 +447,16 @@ bool dispatchPayload(std::uint32_t typeId, void* payload,
     event.tick = tick;
     event.payload = payload;
 
-    GameplayContextV1 context = makeContext(tick);
-    module->onEvent(&event, &context);
+    bool handled = MimitaRuntime::GenericRuntime::instance().dispatchEvent(event, nullptr);
+
+    const GameGameplayModuleV1* module = gameplayModule();
+    if (module && module->onEvent) {
+        GameplayContextV1 context = makeContext(tick);
+        module->onEvent(&event, &context);
+        handled = true;
+    }
     drainEvents(16);
-    return true;
+    return handled;
 }
 
 void setDispatchWorld(const void* world)

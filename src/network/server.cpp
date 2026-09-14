@@ -18,6 +18,7 @@
 #include "duel/duel-weapon-pool.h"
 #include "network/community-server-config.h"
 #include "network/multiplayer-context.h"
+#include "hot-reload/generic-runtime.h"
 #include "network/coordinator-client.h"
 #include "network/network-weapons.h"
 #include "network/ice-transport.h"
@@ -37,6 +38,7 @@
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "hot-reload/hot-reload-system.h"
+#include "live-code/live-behavior.h"
 #include "live-code/live-identity.h"
 #include "live-code/live-journal.h"
 #include "project/project-control.h"
@@ -684,7 +686,10 @@ int runServer(const LaunchOptions& options)
                     announce.codeHash = (announce.codeHash << 8) |
                         (hexValue(liveStatus.activeHash[i]) << 4) |
                         hexValue(liveStatus.activeHash[i + 1]);
-                announce.logicalCodeHash = announce.codeHash;
+                announce.moduleSetHash =
+                    MimitaRuntime::GenericRuntime::instance().manifestHash();
+                announce.logicalCodeHash =
+                    announce.codeHash ^ (announce.moduleSetHash * 1099511628211ull);
                 announce.platformPackageHash = liveStatus.activeGeneration;
                 for (auto& pe : players)
                 {
@@ -699,6 +704,19 @@ int runServer(const LaunchOptions& options)
                        liveStatus.activeHash.c_str(), announce.switchTick);
             }
             LiveIdentity::setSimulationTick(tick);
+
+            // Generic runtime systems execute in the server's fixed step too, so
+            // a hot-registered system runs authoritatively on the dedicated
+            // server with no per-system EXE call site.
+            {
+                MimitaRuntime::GenericRuntime& runtime =
+                    MimitaRuntime::GenericRuntime::instance();
+                void* runtimeHost = LiveBehavior::hostContext(tick);
+                runtime.runDomain(GAME_DOMAIN_GAMEPLAY, tick, (float)SERVER_DT, runtimeHost);
+                runtime.runRegisteredDomains(tick, (float)SERVER_DT, runtimeHost);
+                // Deliver any generic events emitted by those systems this tick.
+                LiveBehavior::drainEvents(64);
+            }
 
             handleClientTimeout(players, sock, tick, totalPacketsOut);
             for (auto& kv : players)

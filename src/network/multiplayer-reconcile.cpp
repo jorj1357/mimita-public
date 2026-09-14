@@ -11,6 +11,7 @@
 #include "network/multiplayer-context.h"
 #include "network/server.h"
 #include "network/disagreement-visuals.h"
+#include "live-code/live-behavior.h"
 #include "combat/weapon-runtime.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
@@ -141,7 +142,7 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         ctx.localPlayerReconciled &&
         ctx.localServerEpoch != ctx.lastAppliedEpoch &&
         ctx.localServerEpoch != 0;
-    const bool applyPosition =
+    bool applyPosition =
         initialSpawn || serverRespawnedPlayer || catastrophicDivergence ||
         postGapResyncActive || teleportCompletionResync || epochChanged;
 
@@ -149,6 +150,37 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     {
         ctx.teleportResync = false;
         ctx.postGapResync = false;
+    }
+
+    // Hot reconcile policy seam: while ragdoll physics owns the local root, the
+    // authoritative snap must not fight it. Otherwise the client snaps its
+    // reported position back to the stale server position every frame and the
+    // server (which takes validated client position) can never advance. The
+    // behavior owns the decision; the kernel enforces the ragdoll default even
+    // when no behavior is loaded.
+    if (applyPosition)
+    {
+        MovementReconcileV1 policy{};
+        policy.ownerActor = ctx.localPlayerId;
+        policy.clientPosition[0] = clientPosition.x;
+        policy.clientPosition[1] = clientPosition.y;
+        policy.clientPosition[2] = clientPosition.z;
+        policy.serverPosition[0] = ctx.localServerPosition.x;
+        policy.serverPosition[1] = ctx.localServerPosition.y;
+        policy.serverPosition[2] = ctx.localServerPosition.z;
+        policy.error = error;
+        policy.majorThreshold = correctionConfig.majorCorrectionDistance;
+        policy.epochReady = authoritativeEpochReady ? 1u : 0u;
+        policy.ragdollActive = player.ragdollModeActive ? 1u : 0u;
+        policy.teleportPending = ctx.awaitingTeleportAck ? 1u : 0u;
+        policy.dead = player.dead ? 1u : 0u;
+        policy.applyPosition = 1u;
+        LiveBehavior::dispatchPayload(GAME_EVENT_MOVEMENT_RECONCILE, &policy,
+                                      sizeof(policy), 0, 0, 0, 0);
+        if (policy.handled && policy.applyPosition == 0)
+            applyPosition = false;
+        else if (!policy.handled && policy.ragdollActive)
+            applyPosition = false;
     }
 
     if (applyPosition)

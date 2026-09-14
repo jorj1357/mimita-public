@@ -32,6 +32,7 @@ bool ProjectWatcher::start(const std::filesystem::path& root)
     }
 
     directory_ = handle;
+    root_ = root;
     running_ = true;
     worker_ = std::thread(&ProjectWatcher::run, this);
     return true;
@@ -52,7 +53,8 @@ void ProjectWatcher::stop()
 
 void ProjectWatcher::run()
 {
-    char buffer[4096];
+    // Larger buffer so a burst of edits is not split/truncated.
+    char buffer[16384];
     while (running_.load()) {
         DWORD bytes = 0;
         const BOOL ok = ReadDirectoryChangesW(
@@ -62,7 +64,40 @@ void ProjectWatcher::run()
             &bytes, nullptr, nullptr);
         if (!ok)
             break;
-        if (bytes > 0) {
+        if (bytes == 0)
+            continue;
+
+        std::vector<WatchEvent> batch;
+        const char* cursor = buffer;
+        for (;;) {
+            const FILE_NOTIFY_INFORMATION* info =
+                reinterpret_cast<const FILE_NOTIFY_INFORMATION*>(cursor);
+            if (info->FileNameLength > 0) {
+                const std::wstring wide(
+                    info->FileName, info->FileNameLength / sizeof(wchar_t));
+                std::string relative;
+                relative.reserve(wide.size());
+                for (wchar_t ch : wide)
+                    relative.push_back(ch == L'\\' ? '/' : (char)ch);
+                WatchAction action = WatchAction::Modified;
+                switch (info->Action) {
+                case FILE_ACTION_ADDED: action = WatchAction::Added; break;
+                case FILE_ACTION_REMOVED: action = WatchAction::Removed; break;
+                case FILE_ACTION_MODIFIED: action = WatchAction::Modified; break;
+                case FILE_ACTION_RENAMED_OLD_NAME: action = WatchAction::RenamedOld; break;
+                case FILE_ACTION_RENAMED_NEW_NAME: action = WatchAction::RenamedNew; break;
+                default: action = WatchAction::Modified; break;
+                }
+                batch.push_back({action, std::move(relative)});
+            }
+            if (info->NextEntryOffset == 0)
+                break;
+            cursor += info->NextEntryOffset;
+        }
+        if (!batch.empty()) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (WatchEvent& event : batch)
+                events_.push_back(std::move(event));
             dirty_ = true;
             ++changeCount_;
         }
@@ -71,11 +106,29 @@ void ProjectWatcher::run()
 
 bool ProjectWatcher::poll(std::vector<std::string>* outPaths)
 {
-    if (!dirty_.exchange(false))
+    std::vector<WatchEvent> events;
+    if (!pollEvents(events))
         return false;
-    if (outPaths)
+    if (outPaths) {
         outPaths->clear();
+        outPaths->reserve(events.size());
+        for (const WatchEvent& event : events)
+            outPaths->push_back(event.path);
+    }
     return true;
+}
+
+bool ProjectWatcher::pollEvents(std::vector<WatchEvent>& out)
+{
+    const bool had = dirty_.exchange(false);
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (had || !events_.empty()) {
+        out = std::move(events_);
+        events_.clear();
+        return true;
+    }
+    out.clear();
+    return false;
 }
 
 } // namespace Project

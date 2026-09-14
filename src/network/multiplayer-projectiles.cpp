@@ -10,6 +10,7 @@
 
 #include "network/multiplayer-context.h"
 #include "ecs/actor-entities.h"
+#include "live-code/live-behavior.h"
 #include "live-code/live-gameplay.h"
 #include "network/simulation-constants.h"
 #include "config/networking-config.h"
@@ -2147,6 +2148,28 @@ void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& cam
     {
         const NetworkProjectile& projectile = entry.second;
         if (projectile.exploded)
+            continue;
+        // Hot projectile presentation seam: the same visibility/style policy as
+        // every other owner. A network projectile is visible while in flight.
+        ProjectilePresentV1 present{};
+        present.projectileEntity = projectile.projectileId;
+        present.ownerEntity = projectile.ownerPlayerId;
+        present.source = 2;
+        present.weaponNetworkId = projectile.weaponDefNetworkId;
+        present.position[0] = projectile.renderPosition.x;
+        present.position[1] = projectile.renderPosition.y;
+        present.position[2] = projectile.renderPosition.z;
+        present.velocity[0] = projectile.renderVelocity.x;
+        present.velocity[1] = projectile.renderVelocity.y;
+        present.velocity[2] = projectile.renderVelocity.z;
+        present.age = projectile.age;
+        present.lifetime = projectile.lifetime;
+        present.exploded = projectile.exploded ? 1u : 0u;
+        present.visible = 1u;
+        LiveBehavior::dispatchPayload(GAME_EVENT_PROJECTILE_PRESENT, &present,
+                                      sizeof(present), 0, projectile.ownerPlayerId, 0,
+                                      projectile.projectileId);
+        if (present.handled && present.visible == 0)
             continue;
         ProjectileVisualConfig cfg = projectileVisualConfig(projectile.weaponType);
         renderProjectile(camera, projectile.renderPosition, projectile.renderRotation, cfg);

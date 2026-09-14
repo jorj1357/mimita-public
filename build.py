@@ -22,6 +22,8 @@ import sys
 import subprocess
 import shutil
 import time
+import json
+import datetime
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from build_toolchain import compiler, ccache, glfw_include, glfw_lib, runtime_path
@@ -77,6 +79,65 @@ try:
     BUILD_JOBS = max(1, int(os.environ.get("MIMITA_BUILD_JOBS", os.cpu_count() or 1)))
 except ValueError:
     BUILD_JOBS = os.cpu_count() or 1
+
+
+def write_build_record(status, return_code, elapsed):
+    """Record a cold build so progress is visible: changelog + structured record.
+
+    Covers every entry point that runs build.py, including buildv2.py. The live
+    path writes its own per-generation build-result.json under build/hotreload.
+    """
+    os.makedirs(BUILD_DIR, exist_ok=True)
+    now = datetime.datetime.now()
+    utc = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    record = {
+        "status": status,
+        "return_code": int(return_code),
+        "duration_s": round(float(elapsed), 2),
+        "utc": utc,
+        "mode": MODE,
+        "compiled": compiled_count,
+        "skipped": skipped_count,
+    }
+    try:
+        with open(os.path.join(BUILD_DIR, "build-result.json"), "w",
+                  encoding="utf-8") as handle:
+            json.dump(record, handle, indent=2)
+    except OSError:
+        pass
+    try:
+        with open(os.path.join(BUILD_DIR, "build-history.jsonl"), "a",
+                  encoding="utf-8") as handle:
+            handle.write(json.dumps(record) + "\n")
+    except OSError:
+        pass
+
+    timestamp = now.strftime("%m%d%Y %H%M%S")
+    changelog = os.path.join(BUILD_DIR, "changelog.txt")
+    history = []
+    try:
+        if os.path.exists(changelog):
+            with open(changelog, "r", encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    if line.startswith("Last 5 run times:"):
+                        history = [v.strip() for v in
+                                   line.split(":", 1)[1].split(",") if v.strip()]
+    except OSError:
+        history = []
+    history.append(timestamp)
+    history = history[-5:]
+    try:
+        with open(changelog, "w", encoding="utf-8") as handle:
+            handle.write("=== BUILD CHANGELOG ===\n")
+            handle.write("Current time: %s\n" % timestamp)
+            handle.write("Last 5 run times: %s\n" % ", ".join(history))
+            handle.write("Time: %s\n" % now.strftime("%Y-%m-%d %H:%M:%S"))
+            handle.write("Status: %s\n" % status)
+            handle.write("Return Code: %d\n" % int(return_code))
+            handle.write("Duration: %.2fs\n" % float(elapsed))
+    except OSError:
+        pass
 
 PCH_HEADER = os.path.join(SRC_DIR, "pch.h")
 
@@ -700,6 +761,7 @@ if result.returncode != 0:
     print("==================================================")
     print(" LINK FAILED")
     print("==================================================")
+    write_build_record("FAILED", 1, time.time() - start_time)
     sys.exit(1)
 
 stage_runtime_dlls()
@@ -719,6 +781,8 @@ print()
 print("Compiled:", compiled_count)
 print("Skipped :", skipped_count)
 print("Time    : %.2f sec" % elapsed)
+
+write_build_record("SUCCESS", 0, elapsed)
 
 if not RUN_AFTER_BUILD:
     sys.exit(0)

@@ -112,3 +112,68 @@ Changed: `src/hot-reload/game-api.h`, `src/hot-reload/game-modules.h`,
 
 ## Pre-existing edits preserved
 All unrelated working-tree changes were preserved.
+
+---
+
+## Follow-up pass (2026-09-13 20:18 EDT): editor ABI v2 + rich inspection + outline + fork edits
+
+### ABI additions (`src/hot-reload/game-api.h`)
+- New (append-only, module-owned buffers): `EditorMapInfoV1`, `EditorInputV1`,
+  `EditorForkOp`/`EditorForkArgsV1`, `EditorInspectionExV1`,
+  `EditorWorldObjectV1`.
+- `EditorContextV1`: appended `drawWorldLabel`, `drawOutline`, `mapInfo`, `fork`,
+  `input`, `inspectEx`, `worldObjectInfo` (v2 capability block).
+- **Hot-swap safety:** `EditorCandidateV1`, `EditorQueryV1`,
+  `EditorInspectionV1`, and `EditorResultV1` layouts stay **frozen** so a new
+  module can load in an older EXE without mis-striding arrays or overrunning the
+  result. Extended per-candidate/per-entity data travels through separate
+  capabilities (`worldObjectInfo`, `inspectEx`) into module-owned buffers. The
+  module gates every v2 field behind `context->structSize >= sizeof(context)`,
+  so an old kernel simply keeps the previous overlay behavior (no crash).
+
+### Kernel bridge (`src/live-code/live-editor.cpp`)
+- `queryRay` now resolves world hits to legacy blocks or GLB `Mesh::Batch`
+  (smallest containing AABB) with center/size/material.
+- `inspect` fills health/control/authority/owner/weapon/ragdoll fields.
+- New capabilities: `drawWorldLabel` (DebugVis label), `drawOutline` (wire
+  box/capsule/sphere via weapon-line primitives for any selected identity),
+  `mapInfo` (bounds, block/batch/triangle/spawn counts, map path), `fork`
+  (routes to `CreationMode`, returns op count + fork hash), and per-tick input
+  edge polling.
+
+### Hot module (`src/hot-reload/modules/editor-behavior.cpp`)
+- Selection outline **glow cycle** (0 at tick 0/60/120, peak between) with
+  selection start tick in `permanentStorage`.
+- Rich overlay: map overview; world target kind/index/center/size/material;
+  entity domain/legacy/generation/position/health/authority/weapon/components/
+  constraint.
+- World-space label above the selected object/entity.
+- Edit key policy: copy/paste (clipboard in persistent storage), delete.
+
+### Editor primitive reuse (`src/editor/creation-mode.*`)
+- Added `setLabel`, `setMaterial`, `undo`, `redo`; `PatchOp::Kind::Label`;
+  label included in the fork hash; redo stack. The fork capability reuses these
+  existing primitives (no parallel edit system).
+
+### Evidence
+- `-fsyntax-only` clean: `live-editor.cpp`, `creation-mode.cpp`,
+  `simulate-tick.cpp`, `creation-selftest.cpp`, `entity-inspector.cpp`.
+- DLL-side clean: `editor-behavior.cpp`, `effect-part.cpp`.
+- Hot DLL link success with 5 modules
+  (`build_game_dll.py --output build/verify-editor2-game.dll`).
+- Cold build still **blocked**: `mimita.exe` pids 15180/19528 running
+  (invariant: not killed).
+
+### Deferred
+- Weapon drop/pickup (item 1): designed (reuse `PersistentPhysicsObject` for the
+  dropped entity + a hot `weapon` module for drop/pickup/prompt policy +
+  server-authoritative spawn/pickup) but not implemented this pass.
+- Fork edits are logical only (recorded + hashed + journaled); visual fork
+  rendering of duplicates/deletes/transforms is not wired yet.
+- Networked fork edits and title/rename UI are deferred.
+
+### Bootstrap (still required once)
+`game-api.h`, `live-editor.*`, `creation-mode.*`, `simulate-tick.cpp` are
+EXE-owned. One relink installs the expanded editor. After that, all editor
+edits (selection policy, outline cycle, inspection layout, edit key policy)
+are hot.
