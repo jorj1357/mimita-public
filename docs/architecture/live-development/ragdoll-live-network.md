@@ -27,8 +27,10 @@ One owner per concern:
   `RagdollBody` workspace, solves, and writes the dynamic state back.
 - **Derived projection** — `RagdollBody` / `RagdollModePart` hold the static
   template (mesh mapping, anchors, rotation limits) and the render/skeleton
-  pose. They are rebuilt from components via
-  `RagdollEntities::syncToBody`, never solved directly.
+  pose. `Ragdoll::buildBody` / `Ragdoll::applyBodyToPlayer`
+  (`src/ragdoll/ragdoll-body.*`) are the one builder/applier, shared by the local
+  alive ragdoll, corpses, and remote presentation. They are never solved
+  directly.
 - **Clock** — `Sim::DomainScheduler` domain `ragdoll.solver`.
 - **`RagdollModeSystem`** — input/control mapping, body creation, camera,
   corpse lifecycle, and the render adapter only.
@@ -66,14 +68,30 @@ scales the joint position beta, damping relaxes limb velocity per substep,
 iterations and gravity feed the solver. Editing
 `src/hot-reload/modules/rocket-behavior.cpp` changes policy live; no relink.
 
-## Grabs as entity constraints
+## Grabs as generic constraints
 
 `GrabComponent` carries the hand, hand-local anchor, target entity
-(`kInvalidLimb` = world anchor), strength, and world point. `Solver::solveGrabs`
-resolves a same-body `targetPart` as a **two-body point constraint** (momentum
-exchanged) and otherwise pins to the world point. Wire format:
-`RagdollGrabStatePacket` inside `RagdollStatePacket`. `RagdollGrabState` is the
-derived copy.
+(`kInvalidLimb` = world anchor), strength, and world point. `RagdollEntities`
+also writes a generic `Physics::ConstraintComponent` on the same entity, and
+`Solver::solveGrabs` delegates to `Physics::solveConstraints` through a
+`Physics::SolveBodyTable`. The constraint module
+(`src/physics/constraints/constraint-components.h`, `constraint-solver.h/.cpp`)
+resolves Point/Distance/Grab constraints against any body table, so world,
+same-body, and future cross-body/object/vehicle constraints share one path
+instead of a grab special case. `RagdollGrabState` is the derived copy.
+
+## Remote presentation (interpolation)
+
+`src/ragdoll/ragdoll-presentation.*` buffers received authoritative limb frames
+per remote owner (`RagdollStatePacket` → `pushFrame`), ordered by `sourceTick`
+with same-tick replacement and a bounded window. On the render frame it
+interpolates to `firstTick + wallClock - delay` (delay =
+`remotePlayers.interpolationDelaySeconds`), extrapolates up to
+`maximumExtrapolationSeconds` when ahead, and holds otherwise. It then writes
+the remote `Player`'s `perfectPoseSkeleton` through the shared
+`Ragdoll::applyBodyToPlayer`. **Presentation is derived only**: it never writes
+authoritative components and never feeds the solver. A stale owner (no frame for
+0.5 s) falls back to procedural animation.
 
 ## Corpses
 
@@ -107,9 +125,10 @@ inspection (`CreationMode::describe`) prints limb, joint, grab, and root fields.
 ## Verification
 
 - `mimita.exe --ragdoll-slice-selftest`: limb entity ids distinct/stable,
-  limb/joint components, grab state, entity-to-entity target + snapshot codec,
-  solver policy read-back, `syncToBody`, remote reconstruction with stable ids,
-  network death identity round trip, snapshot round-trip, DLL reload identity.
+  limb/joint components, grab state, generic constraint component, snapshot
+  codec, solver policy read-back, `syncToBody`, remote reconstruction with
+  stable ids, presentation frame ordering/replacement, network death identity
+  round trip, and entity identity across a DLL reload cycle.
 - `--live-code-selftest`, `--hot-authoritative-selftest`, `--entity-slice-selftest`.
 
 ## Related

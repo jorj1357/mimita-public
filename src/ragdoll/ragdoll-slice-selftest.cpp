@@ -7,8 +7,12 @@
 
 #include "ecs/entity-registry.h"
 #include "hot-reload/hot-reload-system.h"
+#include "network/constraint-codec.h"
+#include "physics/constraints/constraint-components.h"
+#include "physics/constraints/constraint-store.h"
 #include "ragdoll/ragdoll-entities.h"
 #include "ragdoll/ragdoll-mode.h"
+#include "ragdoll/ragdoll-presentation.h"
 
 #include <string>
 
@@ -47,6 +51,7 @@ bool runRagdollSliceSelfTest(std::string& report)
 {
     bool ok = true;
     EntityRegistry::instance().destroyAll();
+    Physics::ConstraintStore::instance().clear();
     Ragdoll::RagdollEntities& entities = Ragdoll::RagdollEntities::instance();
     entities.unbind(7);
 
@@ -147,6 +152,102 @@ bool runRagdollSliceSelfTest(std::string& report)
                 "network death identity round trips", report);
     ok &= check(!RagdollModeSystem::instance().consumeNetworkDeath(55, rTick, rEvent),
                 "network death identity consumed once", report);
+
+    // Generic constraint view is written alongside the grab component.
+    RagdollGrabState targetedGrab;
+    targetedGrab.active = true;
+    targetedGrab.partIndex = 1;
+    targetedGrab.handLocalAnchor = glm::vec3(0.1f, 0.0f, 0.0f);
+    targetedGrab.targetPart = 2;
+    targetedGrab.targetLocalAnchor = glm::vec3(0.2f, 0.0f, 0.0f);
+    targetedGrab.strength = 0.8f;
+    entities.setGrab(7, true, targetedGrab);
+    const EntityId handGrabEntity = EntityRegistry::instance().find(
+        EntityRealm::Server, EntityDomain::RagdollLimb, (7u << 8) | 0xfeu);
+    const auto* handGrab = EntityRegistry::instance().tryGet<Ragdoll::GrabComponent>(
+        handGrabEntity);
+    ok &= check(handGrab && handGrab->constraintSerial != 0,
+                "grab allocates a dedicated constraint serial", report);
+    const auto* constraint = handGrab
+        ? Physics::ConstraintStore::instance().component(handGrab->constraintSerial)
+        : nullptr;
+    ok &= check(constraint && constraint->constraint.active &&
+                    constraint->constraint.bodyB == (std::uint32_t)entities.limbEntity(7, 2) &&
+                    constraint->constraint.strength == 0.8f,
+                "grab becomes a generic constraint entity", report);
+
+    // Constraint codec + store lifecycle.
+    Physics::ConstraintComponent source = *constraint;
+    MimitaNet::ConstraintWire wire;
+    MimitaNet::encodeConstraint(source, wire);
+    Physics::ConstraintComponent decoded;
+    MimitaNet::decodeConstraint(wire, decoded);
+    ok &= check(decoded.constraintSerial == source.constraintSerial &&
+                    decoded.constraint.bodyA == source.constraint.bodyA &&
+                    decoded.constraint.bodyB == source.constraint.bodyB &&
+                    decoded.constraint.strength == source.constraint.strength,
+                "constraint create codec round-trips", report);
+
+    const std::uint32_t codecSerial = 0x0007ABCDu;
+    Physics::ConstraintComponent wireComponent = source;
+    wireComponent.constraintSerial = codecSerial;
+    Physics::ConstraintStore::instance().create(EntityRealm::Server, wireComponent);
+    ok &= check(Physics::ConstraintStore::instance().active(codecSerial),
+                "constraint store creates a stable entity", report);
+    Physics::ConstraintStore::instance().release(codecSerial, 42, 0);
+    ok &= check(!Physics::ConstraintStore::instance().active(codecSerial) &&
+                    Physics::ConstraintStore::instance().tombstoned(codecSerial),
+                "constraint release tombstones the serial", report);
+    Physics::ConstraintStore::instance().create(EntityRealm::Server, wireComponent);
+    ok &= check(!Physics::ConstraintStore::instance().active(codecSerial),
+                "out-of-order create after release is dropped", report);
+
+    // Late-join active-set snapshot reconstructs the same serials.
+    Physics::ConstraintStore& store = Physics::ConstraintStore::instance();
+    store.clear();
+    Physics::ConstraintComponent c0 = source;
+    c0.constraintSerial = 0x00100001u;
+    c0.ownerActor = 0;
+    Physics::ConstraintComponent c1 = source;
+    c1.constraintSerial = 0x00100002u;
+    c1.ownerActor = 0;
+    store.create(EntityRealm::Server, c0);
+    store.create(EntityRealm::Server, c1);
+    MimitaNet::ConstraintSnapshotPacket snap{};
+    snap.constraintCount = 2;
+    MimitaNet::encodeConstraint(c0, snap.constraints[0]);
+    MimitaNet::encodeConstraint(c1, snap.constraints[1]);
+    store.clear();
+    for (int i = 0; i < (int)snap.constraintCount; ++i) {
+        Physics::ConstraintComponent rebuilt;
+        MimitaNet::decodeConstraint(snap.constraints[i], rebuilt);
+        store.create(EntityRealm::Server, rebuilt);
+    }
+    ok &= check(store.active(0x00100001u) && store.active(0x00100002u),
+                "late-join snapshot reconstructs active constraints", report);
+    store.clear();
+
+    // Remote presentation buffer: ordered insertion, same-tick replace, cap.
+    Ragdoll::RagdollPresentation& presentation = Ragdoll::RagdollPresentation::instance();
+    presentation.clearAll();
+    Ragdoll::Snapshot frameA;
+    frameA.ownerActorId = 7;
+    frameA.limbCount = 3;
+    frameA.tick = 100;
+    Ragdoll::Snapshot frameC = frameA;
+    frameC.tick = 102;
+    Ragdoll::Snapshot frameB = frameA;
+    frameB.tick = 101;
+    presentation.pushFrame(7, frameC);
+    presentation.pushFrame(7, frameA);
+    presentation.pushFrame(7, frameB);
+    ok &= check(presentation.bufferDepth(7) == 3,
+                "presentation buffers out-of-order frames by tick", report);
+    presentation.pushFrame(7, frameB);
+    ok &= check(presentation.bufferDepth(7) == 3,
+                "presentation replaces a same-tick frame", report);
+    presentation.clear(7);
+    ok &= check(presentation.bufferDepth(7) == 0, "presentation clears per owner", report);
 
     // Identity survives a hot-code reload cycle.
     HotReloadSystem::instance().startup();

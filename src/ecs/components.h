@@ -9,6 +9,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <glm/glm.hpp>
 
 #include "ecs/entity-types.h"
@@ -130,6 +131,17 @@ struct DamageComponent {
 struct ColliderComponent {
     float radius = 0.25f;
     float height = 0.25f;
+};
+
+// Authored map-object identity. `sourceIndex`/`nodeIndex` are the map source
+// locator; hashes identify the resource so a fork can reference it without
+// rewriting the original asset.
+struct WorldObjectComponent {
+    std::uint32_t sourceIndex = 0;
+    std::uint32_t nodeIndex = 0;
+    std::string sourcePath;
+    std::string meshHash;
+    std::string materialHash;
 };
 
 // A behavior is referenced by identity/hash, never duplicated per entity.

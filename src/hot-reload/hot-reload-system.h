@@ -111,6 +111,9 @@ private:
     Project::ProjectWatcher watcher_;
 
     GameMemory memory_{};
+    // Stable buffer that survives DLL unload/reload; exposed as
+    // GameMemory::permanentStorage so hot modules keep state across generations.
+    std::vector<unsigned char> permanentStorage_{};
     GenerationRecord active_;
     GenerationRecord previous_;
 

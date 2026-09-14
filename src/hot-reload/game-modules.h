@@ -9,3 +9,4 @@ const GameModuleDescriptor* MimitaGetEffectModule();
 const GameModuleDescriptor* MimitaGetActorModule();
 const GameModuleDescriptor* MimitaGetPresentationModule();
 const GameModuleDescriptor* MimitaGetGameplayModule();
+const GameModuleDescriptor* MimitaGetEditorModule();

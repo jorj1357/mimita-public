@@ -9,6 +9,8 @@
 */
 
 #include "network/multiplayer-context.h"
+#include "network/constraint-codec.h"
+#include "physics/constraints/constraint-store.h"
 #include "network/packets.h"
 #include "duel/duel-queue.h"
 #include "network/community-match-client.h"
@@ -42,6 +44,7 @@
 #include "ragdoll/ragdoll-entities.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "ragdoll/ragdoll-mode-config.h"
+#include "ragdoll/ragdoll-presentation.h"
 
 #include <algorithm>
 #include <chrono>
@@ -50,6 +53,8 @@
 #include <cstdlib>
 #include <ctime>
 #include <cstring>
+#include <unordered_set>
+#include <utility>
 
 namespace MimitaNet {
 
@@ -789,6 +794,34 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                         info.deathEventId, info.impulse, info.actorId);
             }
         }
+
+        // Generic constraint reconciliation (client prediction + server
+        // authority): advertise locally-active constraints until the server
+        // confirms; send a release for any serial that just ended.
+        {
+            Physics::ConstraintStore& store = Physics::ConstraintStore::instance();
+            const int cInterval = std::max(1,
+                RagdollModeConfig::instance().data().snapshotSendIntervalTicks);
+            const bool requestNow =
+                ctx.clientSimulationTick - ctx.lastConstraintRequestTick >=
+                (std::uint32_t)cInterval;
+            if (requestNow)
+                ctx.lastConstraintRequestTick = ctx.clientSimulationTick;
+            std::unordered_set<std::uint32_t> current;
+            for (std::uint32_t serial : store.activeSerialsForOwner(ctx.localPlayerId)) {
+                current.insert(serial);
+                if (ctx.confirmedConstraints.find(serial) == ctx.confirmedConstraints.end() &&
+                    requestNow) {
+                    if (const Physics::ConstraintComponent* c = store.component(serial))
+                        mpSendConstraintCreate(ctx, *c);
+                }
+            }
+            for (std::uint32_t serial : ctx.localConstraintsLastTick) {
+                if (current.find(serial) == current.end())
+                    mpSendConstraintRelease(ctx, serial, 0);
+            }
+            ctx.localConstraintsLastTick = std::move(current);
+        }
     }
 
     // ── Async ICE connect job ───────────────────────────────────────────
@@ -1404,6 +1437,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 }
             }
             Ragdoll::RagdollEntities::instance().applySnapshot(snapshot);
+            Ragdoll::RagdollPresentation::instance().pushFrame(
+                state->ownerActorId, snapshot);
         }
         else if (header->type == PACKET_CORPSE_SPAWN &&
                  bytes >= (int)sizeof(CorpseSpawnPacket))
@@ -1412,6 +1447,45 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 reinterpret_cast<const CorpseSpawnPacket*>(buffer);
             RagdollModeSystem::instance().noteNetworkDeath(
                 spawn->ownerActorId, spawn->deathTick, spawn->deathEventId);
+        }
+        else if (header->type == PACKET_CONSTRAINT_CREATE &&
+                 bytes >= (int)sizeof(ConstraintCreatePacket))
+        {
+            const ConstraintCreatePacket* cc =
+                reinterpret_cast<const ConstraintCreatePacket*>(buffer);
+            if (!mpAcceptReliableEventOnce(ctx, cc->eventId, cc->eventSessionId))
+                return;
+            Physics::ConstraintComponent component;
+            MimitaNet::decodeConstraint(cc->constraint, component);
+            Physics::ConstraintStore::instance().create(EntityRealm::Server, component);
+            ctx.confirmedConstraints.insert(component.constraintSerial);
+        }
+        else if (header->type == PACKET_CONSTRAINT_RELEASE &&
+                 bytes >= (int)sizeof(ConstraintReleasePacket))
+        {
+            const ConstraintReleasePacket* cr =
+                reinterpret_cast<const ConstraintReleasePacket*>(buffer);
+            if (!mpAcceptReliableEventOnce(ctx, cr->eventId, cr->eventSessionId))
+                return;
+            Physics::ConstraintStore::instance().release(
+                cr->constraintSerial, cr->releaseTick, cr->reason);
+            ctx.confirmedConstraints.erase(cr->constraintSerial);
+        }
+        else if (header->type == PACKET_CONSTRAINT_SNAPSHOT &&
+                 bytes >= (int)sizeof(ConstraintSnapshotPacket))
+        {
+            const ConstraintSnapshotPacket* cs =
+                reinterpret_cast<const ConstraintSnapshotPacket*>(buffer);
+            if (!mpAcceptReliableEventOnce(ctx, cs->eventId, cs->eventSessionId))
+                return;
+            const std::uint16_t count = std::min(
+                (std::uint16_t)cs->constraintCount, (std::uint16_t)MAX_ACTIVE_CONSTRAINTS);
+            for (std::uint16_t i = 0; i < count; ++i) {
+                Physics::ConstraintComponent component;
+                MimitaNet::decodeConstraint(cs->constraints[i], component);
+                Physics::ConstraintStore::instance().create(EntityRealm::Server, component);
+                ctx.confirmedConstraints.insert(component.constraintSerial);
+            }
         }
         else if (header->type == PACKET_KILL_EVENT &&
                  bytes >= (int)sizeof(KillEventPacket))

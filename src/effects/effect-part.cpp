@@ -143,6 +143,7 @@ MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
         MimitaGetActorModule(),
         MimitaGetPresentationModule(),
         MimitaGetGameplayModule(),
+        MimitaGetEditorModule(),
     };
     for (const GameModuleDescriptor* descriptor : descriptors) {
         if (descriptor && outAPI->moduleCount < MIMITA_GAME_MAX_MODULES)

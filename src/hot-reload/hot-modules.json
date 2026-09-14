@@ -29,6 +29,13 @@
       "sources": [
         "src/hot-reload/modules/rocket-behavior.cpp"
       ]
+    },
+    {
+      "name": "editor",
+      "abi": 1,
+      "sources": [
+        "src/hot-reload/modules/editor-behavior.cpp"
+      ]
     }
   ],
   "headers": [
@@ -42,6 +49,8 @@
     "src/hot-reload/hot-reload-system.cpp",
     "src/live-code/live-behavior.cpp",
     "src/live-code/live-behavior.h",
+    "src/live-code/live-editor.cpp",
+    "src/live-code/live-editor.h",
     "src/live-code/live-gameplay.cpp",
     "src/live-code/live-gameplay.h",
     "src/network/server-damage-policy.cpp",

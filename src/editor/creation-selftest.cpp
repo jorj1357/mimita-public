@@ -6,7 +6,10 @@
 */
 #include "editor/creation-selftest.h"
 
+#include "ecs/actor-entities.h"
+#include "ecs/entity-registry.h"
 #include "editor/creation-mode.h"
+#include "world/world.h"
 
 #include <string>
 #include <vector>
@@ -64,6 +67,28 @@ bool runCreationSelfTest(std::string& report)
     ok &= check(!fork.empty() && fork != mode.baseMapHash(),
                 "fork hash differs from base map hash", report);
 
+    // Per-tick continuous look-at selection.
+    EntityRegistry::instance().destroyAll();
+    World world;
     mode.clear();
+    mode.setEnabled(false);
+    mode.updateTick(world, glm::vec3(0.0f, 0.0f, -5.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ok &= check(!mode.hasPick(), "creation update idle when disabled", report);
+
+    const EntityId target = Ecs::ensure(
+        EntityRealm::ClientReplicated, EntityDomain::Player, 42);
+    Ecs::setTransform(target, glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f), 0.0f, 0.0f);
+    mode.setEnabled(true);
+    mode.updateTick(world, glm::vec3(0.0f, 0.0f, -5.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ok &= check(mode.hasPick() && mode.lastPick().entity == Ecs::raw(target) &&
+                    !mode.overlayText().empty(),
+                "creation update picks entity under crosshair per tick", report);
+
+    mode.setEnabled(false);
+    mode.updateTick(world, glm::vec3(0.0f, 0.0f, -5.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ok &= check(!mode.hasPick(), "creation update clears on disable", report);
+
+    mode.clear();
+    EntityRegistry::instance().destroyAll();
     return ok;
 }

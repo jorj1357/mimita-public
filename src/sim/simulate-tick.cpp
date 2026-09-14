@@ -29,6 +29,9 @@
 #include "ragdoll/ragdoll-entities.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "ragdoll/ragdoll-mode-config.h"
+#include "editor/creation-mode.h"
+#include "engine/engine-tick-creation.h"
+#include "live-code/live-editor.h"
 #include "terminal/terminal-state.h"
 
 #include <cmath>
@@ -154,6 +157,32 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     {
         MIMITA_PERF_SCOPE("RagdollCorpseUpdate");
         RagdollModeSystem::instance().updateCorpses(TICK_DT, *sim.world);
+    }
+
+    // Creation/inspection mode: continuous look-at pick at the fixed tick (not
+    // per render frame). Prefer the hot editor module; fall back to the kernel
+    // implementation when the module is absent or declines.
+    {
+        MIMITA_PERF_SCOPE("CreationModeUpdate");
+        Editor::CreationMode& mode = Editor::CreationMode::instance();
+        EditorStateV1 state{};
+        state.enabled = mode.enabled() ? 1u : 0u;
+        state.tick = (std::uint32_t)sim.tick;
+        state.maxDistance = 200.0f;
+        state.currentSelection = mode.selected();
+        state.origin[0] = THE_CAMERA.pos.x;
+        state.origin[1] = THE_CAMERA.pos.y;
+        state.origin[2] = THE_CAMERA.pos.z;
+        state.dir[0] = THE_CAMERA.front.x;
+        state.dir[1] = THE_CAMERA.front.y;
+        state.dir[2] = THE_CAMERA.front.z;
+
+        EditorResultV1 result{};
+        if (mode.enabled() && LiveEditor::tick(*sim.world, state, result)) {
+            mode.setExternalResult(result.selectedEntity, result.hitKind, result.distance);
+        } else {
+            engineTickCreationUpdate(*sim.world, THE_CAMERA);
+        }
     }
 
     if (sim.player->spawnFlashTimer > 0.0f)

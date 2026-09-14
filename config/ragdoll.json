@@ -6,8 +6,6 @@
     "body_angular_damping": 2.5,
     "stop_linear_speed": 0.1,
     "stop_angular_speed": 0.4,
-    "joint_stiffness": 2000.0,
-    "joint_damping": 80.0,
     "world_collision": true,
     "solver_hz": 120.0,
     "snapshot_send_interval_ticks": 3,
@@ -56,15 +54,15 @@
         "rightLeg": { "radius": 0.30, "half_height": 0.50, "axis": [0, 0, 1], "alpha": 0.1, "center_of_mass": [-0.1, 0, 0.1] }
     },
     "attachments": {
-        "head":      { "parent": "torso", "offset": [0, 0.0, 1.0], "cone_limit_deg": 999,
+        "head":      { "parent": "torso", "offset": [0, 0.0, 1.0],
                       "rotation_limit_deg": { "x": [-180, 180], "y": [-180, 180], "z": [-180, 180] } },
-        "leftArm":  { "parent": "torso", "offset": [0.2, 0.6, 0.4], "cone_limit_deg": 999,
+        "leftArm":  { "parent": "torso", "offset": [0.2, 0.6, 0.4],
                       "rotation_limit_deg": { "x": [-180, 180], "y": [-180, 180], "z": [-180, 180] } },
-        "rightArm": { "parent": "torso", "offset": [0.2, -0.6, 0.4], "cone_limit_deg": 999,
+        "rightArm": { "parent": "torso", "offset": [0.2, -0.6, 0.4],
                       "rotation_limit_deg": { "x": [-180, 180], "y": [-180, 180], "z": [-180, 180] } },
-        "leftLeg":  { "parent": "torso", "offset": [0.1, 0.3, -0.8], "cone_limit_deg": 50,
+        "leftLeg":  { "parent": "torso", "offset": [0.1, 0.3, -0.8],
                       "rotation_limit_deg": { "x": [-40, 40], "y": [-40, 40], "z": [-40, 40]} },
-        "rightLeg": { "parent": "torso", "offset": [0.1, -0.3, -0.8], "cone_limit_deg": 50,
+        "rightLeg": { "parent": "torso", "offset": [0.1, -0.3, -0.8],
                       "rotation_limit_deg": { "x": [-10, 10], "y": [-40, 40], "z": [-40, 40] } }
     },
     "aim": {

@@ -38,7 +38,6 @@ struct JointComponent {
     float stiffness = 1.0f;
     float damping = 1.0f;
     float positionBeta = 0.2f;
-    float coneLimitDeg = 0.0f;
 };
 
 struct GrabComponent {
@@ -54,8 +53,11 @@ struct GrabComponent {
     glm::vec3 handLocalAnchor{0.0f};
     // Entity-to-entity constraint target. 0xffffffff = world anchor only.
     std::uint32_t targetEntity = 0xffffffffu;
+    glm::vec3 targetLocalAnchor{0.0f};
     std::uint32_t grabbedActorId = 0;
     float strength = 1.0f;
+    // Dedicated networked constraint entity serial (0 = no active constraint).
+    std::uint32_t constraintSerial = 0;
 };
 
 struct RagdollRootComponent {

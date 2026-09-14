@@ -17,6 +17,7 @@
 #include "network/remote-entity-lifecycle.h"
 #include "network/connection-state.h"
 #include "entities/player.h"
+#include "physics/constraints/constraint-components.h"
 
 #include <string>
 #include <deque>
@@ -473,6 +474,11 @@ struct MultiplayerContext
     uint32_t fireIntentLastHeartbeatTick = 0;
     uint32_t lastRagdollSentTick = 0;
     uint64_t lastCorpseSerial = 0;
+    // Generic constraint reconciliation: serials confirmed by the server and
+    // the local owner's serials last tick (to detect releases).
+    std::unordered_set<uint32_t> confirmedConstraints;
+    std::unordered_set<uint32_t> localConstraintsLastTick;
+    uint32_t lastConstraintRequestTick = 0;
     // Newest server tick the monotonic render clock was anchored to. If the
     // server ever regresses its tick (map change / server restart), the clock
     // domain is invalid and must be reset instead of pinned by monotonicity.
@@ -904,6 +910,9 @@ void mpSendRagdollSnapshot(MultiplayerContext& ctx);
 void mpSendCorpseSpawn(MultiplayerContext& ctx, uint32_t ownerActorId,
     uint32_t deathTick, uint32_t deathEventId, const glm::vec3& impulse,
     const std::string& actorId);
+// Generic constraint lifecycle (client -> server intent).
+void mpSendConstraintCreate(MultiplayerContext& ctx, const Physics::ConstraintComponent& component);
+void mpSendConstraintRelease(MultiplayerContext& ctx, uint32_t constraintSerial, uint8_t reason);
 void mpSendServerCommand(MultiplayerContext& ctx, const std::string& command);
 uint32_t mpSendShotEvent(
     MultiplayerContext& ctx,

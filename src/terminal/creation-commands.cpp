@@ -9,10 +9,13 @@
 #include "camera.h"
 #include "devtools/terminal.h"
 #include "editor/creation-mode.h"
+#include "editor/entity-inspector.h"
+#include "physics/constraints/constraint-store.h"
 #include "terminal/terminal-state.h"
 #include "world/world.h"
 
 #include <cstdlib>
+#include <cstdint>
 #include <glm/glm.hpp>
 #include <string>
 #include <vector>
@@ -194,4 +197,59 @@ void registerCreationCommands()
             },
         },
         "2026-09-12", CommandCategory::Editor);
+
+    Terminal::instance().registerCommand(
+        {
+            "inspect", "Inspect an entity by id (default: current selection)",
+            "inspect [entityId]",
+            [](const std::vector<std::string>& args) {
+                std::uint64_t id = Editor::CreationMode::instance().selected();
+                if (!args.empty())
+                    id = std::strtoull(args[0].c_str(), nullptr, 10);
+                if (id == 0) {
+                    Terminal::instance().addLog("[INSPECT] no entity (use inspect <id>)");
+                    return;
+                }
+                Terminal::instance().addLog(Editor::inspectEntity((EntityId)id).toText());
+            },
+        },
+        "2026-09-13", CommandCategory::Editor);
+
+    Terminal::instance().registerCommand(
+        {
+            "select", "Select an entity by id for the inspector/editor",
+            "select <entityId>",
+            [](const std::vector<std::string>& args) {
+                if (args.empty()) {
+                    Terminal::instance().addLog("[SELECT] usage: select <entityId>");
+                    return;
+                }
+                const std::uint64_t id = std::strtoull(args[0].c_str(), nullptr, 10);
+                Editor::CreationMode::instance().setSelected(id);
+                Terminal::instance().addLog("[SELECT] entity=" + std::to_string(id));
+            },
+        },
+        "2026-09-13", CommandCategory::Editor);
+
+    Terminal::instance().registerCommand(
+        {
+            "constraint_list", "List active generic constraints (serial/owner/type)",
+            "constraint_list",
+            [](const std::vector<std::string>&) {
+                Physics::ConstraintStore& store = Physics::ConstraintStore::instance();
+                Terminal::instance().addLog("[CONSTRAINT] active=" +
+                    std::to_string(store.activeCount()));
+                for (std::uint32_t serial : store.activeSerials()) {
+                    const Physics::ConstraintComponent* c = store.component(serial);
+                    if (!c)
+                        continue;
+                    Terminal::instance().addLog("[CONSTRAINT] serial=" + std::to_string(serial) +
+                        " owner=" + std::to_string(c->ownerActor) +
+                        " type=" + std::to_string((int)c->constraint.type) +
+                        " bodyA=" + std::to_string(c->constraint.bodyA) +
+                        " bodyB=" + std::to_string(c->constraint.bodyB));
+                }
+            },
+        },
+        "2026-09-13", CommandCategory::Editor);
 }

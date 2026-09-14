@@ -32,6 +32,7 @@ enum class EntityDomain : std::uint8_t {
     Projectile = 3,
     WorldObject = 4,
     RagdollLimb = 5,
+    Constraint = 6,
 };
 
 // Bit layout (little-endian value):
@@ -81,6 +82,7 @@ inline const char* entityDomainName(EntityDomain domain)
     case EntityDomain::Projectile: return "projectile";
     case EntityDomain::WorldObject: return "world_object";
     case EntityDomain::RagdollLimb: return "ragdoll_limb";
+    case EntityDomain::Constraint: return "constraint";
     }
     return "unknown";
 }

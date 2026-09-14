@@ -9,6 +9,7 @@
 */
 #include "engine/engine-tick-ui.h"
 #include "engine/engine.h"
+#include "engine/engine-tick-creation.h"
 #include "terminal/terminal-state.h"
 #include <cstdio>
 #include <GLFW/glfw3.h>
@@ -97,6 +98,8 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
 
     if (player.spawnFlashTimer <= 0.0f)
         engineTickUIOverlays(engine, dt, worldPassRan);
+
+    engineRenderCreationOverlay(camera);
 
     if (gReplayPlayer.totalTicks() > 0) {
         const ReplaySceneFrame* cleanupFrame = gReplayPlayer.currentSceneFrame();

@@ -104,9 +104,12 @@ HotReloadSystem::HotReloadSystem()
         }
     }
     sourceDLL_ = root_ / "build" / "mimita-game.dll";
+    permanentStorage_.assign(64 * 1024, 0);
     memory_.apiVersion = MIMITA_GAME_API_VERSION;
     memory_.platform.version = MIMITA_GAME_API_VERSION;
     memory_.platform.log = platformLog;
+    memory_.permanentStorage = permanentStorage_.data();
+    memory_.permanentStorageSize = permanentStorage_.size();
 }
 
 HotReloadSystem::~HotReloadSystem()
@@ -122,6 +125,8 @@ void HotReloadSystem::startup()
     memory_.apiVersion = MIMITA_GAME_API_VERSION;
     memory_.platform.version = MIMITA_GAME_API_VERSION;
     memory_.platform.log = platformLog;
+    memory_.permanentStorage = permanentStorage_.data();
+    memory_.permanentStorageSize = permanentStorage_.size();
 
     loadManifest();
     observedSourceHash_ = computeSourceHash();

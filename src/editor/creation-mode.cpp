@@ -6,6 +6,8 @@
 */
 #include "editor/creation-mode.h"
 
+#include "debug/debug-log.h"
+#include "editor/entity-inspector.h"
 #include "ecs/actor-entities.h"
 #include "ecs/entity-registry.h"
 #include "hot-reload/hot-reload-system.h"
@@ -14,23 +16,54 @@
 #include "physics/physics-types.h"
 #include "physics/ray-utils.h"
 #include "project/project-types.h"
+#include "physics/constraints/constraint-components.h"
 #include "ragdoll/ragdoll-components.h"
 #include "telemetry/telemetry.h"
 #include "terminal/terminal-state.h"
 #include "world/world.h"
 
 #include <cstdio>
+#include <chrono>
+#include <cmath>
 #include <sstream>
 
 namespace Editor {
 
 namespace {
 
-std::uint64_t ensureWorldObjectEntity(std::uint32_t sourceIndex)
+std::uint64_t ensureWorldObjectEntity(std::uint32_t sourceIndex,
+                                      const std::string& meshHash,
+                                      const std::string& materialHash)
 {
     const EntityId id =
         Ecs::ensure(EntityRealm::Local, EntityDomain::WorldObject, sourceIndex);
+    WorldObjectComponent wo;
+    wo.sourceIndex = sourceIndex;
+    wo.nodeIndex = sourceIndex;
+    wo.meshHash = meshHash;
+    wo.materialHash = materialHash;
+    EntityRegistry::instance().add<WorldObjectComponent>(id, wo);
     return Ecs::raw(id);
+}
+
+// Ray vs sphere. Returns the nearest positive hit distance in `t`.
+bool raySphere(const glm::vec3& origin, const glm::vec3& dir,
+               const glm::vec3& center, float radius, float& t)
+{
+    const glm::vec3 oc = origin - center;
+    const float b = glm::dot(oc, dir);
+    const float c = glm::dot(oc, oc) - radius * radius;
+    const float disc = b * b - c;
+    if (disc < 0.0f)
+        return false;
+    const float s = std::sqrt(disc);
+    float hit = -b - s;
+    if (hit < 0.0f)
+        hit = -b + s;
+    if (hit < 0.0f)
+        return false;
+    t = hit;
+    return true;
 }
 
 std::string vec3Text(const glm::vec3& v)
@@ -82,29 +115,168 @@ void CreationMode::setEnabled(bool on)
 bool CreationMode::pick(const World& world, const glm::vec3& origin,
                         const glm::vec3& direction, WorldObjectRef& out) const
 {
-    const int triangle = selectWorldTriangle(world, origin, direction);
-    if (triangle < 0)
-        return false;
-
     out = WorldObjectRef{};
-    out.kind = "triangle";
-    out.sourceIndex = (std::uint32_t)triangle;
-    if (triangle < (int)world.collisionMesh.triangles.size()) {
-        const CollisionTriangle& tri = world.collisionMesh.triangles[triangle];
-        out.position = (tri.a + tri.b + tri.c) / 3.0f;
+    const glm::vec3 dir = glm::normalize(direction);
+
+    float bestT = 1e30f;
+    int bestTriangle = -1;
+    // 1) World geometry (collision triangles).
+    const int triangle = selectWorldTriangle(world, origin, direction);
+    if (triangle >= 0) {
+        bestTriangle = triangle;
+        if (triangle < (int)world.collisionMesh.triangles.size()) {
+            const CollisionTriangle& tri = world.collisionMesh.triangles[triangle];
+            bestT = glm::length((tri.a + tri.b + tri.c) / 3.0f - origin);
+        }
     }
-    out.entity = ensureWorldObjectEntity(out.sourceIndex);
-    out.label = "triangle_" + std::to_string(out.sourceIndex);
-    out.meshHash = baseMapHash_;
-    return true;
+
+    // 2) Entities with a body bound (players, NPCs, projectiles, limbs).
+    EntityId bestEntity = kInvalidEntityId;
+    glm::vec3 bestEntityPos(0.0f);
+    EntityDomain bestDomain = EntityDomain::None;
+    EntityRegistry& registry = EntityRegistry::instance();
+    for (EntityId id : registry.all()) {
+        const EntityIdentity* ident = registry.identity(id);
+        if (!ident)
+            continue;
+        if (ident->domain == EntityDomain::None ||
+            ident->domain == EntityDomain::WorldObject ||
+            ident->domain == EntityDomain::Constraint)
+            continue;
+        glm::vec3 center(0.0f);
+        float radius = 0.0f;
+        if (const auto* limb = registry.tryGet<Ragdoll::LimbComponent>(id)) {
+            center = limb->position;
+            radius = limb->radius + limb->halfHeight;
+        } else if (const auto* t = registry.tryGet<TransformComponent>(id)) {
+            center = t->position;
+            if (const auto* body = registry.tryGet<BodyComponent>(id))
+                radius = std::max(body->radius, body->height * 0.5f);
+            else if (const auto* col = registry.tryGet<ColliderComponent>(id))
+                radius = std::max(col->radius, col->height * 0.5f);
+            else
+                radius = 0.5f;
+        } else {
+            continue;
+        }
+        if (radius <= 0.0f)
+            radius = 0.5f;
+        float t = 0.0f;
+        if (raySphere(origin, dir, center, radius, t) && t < bestT) {
+            bestT = t;
+            bestEntity = id;
+            bestEntityPos = center;
+            bestDomain = ident->domain;
+            bestTriangle = -1;
+        }
+    }
+
+    if (bestEntity != kInvalidEntityId) {
+        out.entity = Ecs::raw(bestEntity);
+        out.kind = entityDomainName(bestDomain);
+        out.position = bestEntityPos;
+        out.label = out.kind + ":" + std::to_string(bestEntity);
+        return true;
+    }
+
+    if (bestTriangle >= 0) {
+        out.kind = "triangle";
+        out.sourceIndex = (std::uint32_t)bestTriangle;
+        if (bestTriangle < (int)world.collisionMesh.triangles.size()) {
+            const CollisionTriangle& tri = world.collisionMesh.triangles[bestTriangle];
+            out.position = (tri.a + tri.b + tri.c) / 3.0f;
+        }
+        out.entity = ensureWorldObjectEntity(out.sourceIndex, baseMapHash_, "");
+        out.label = "triangle_" + std::to_string(out.sourceIndex);
+        out.meshHash = baseMapHash_;
+        return true;
+    }
+    return false;
+}
+
+void CreationMode::setExternalResult(std::uint64_t entity, std::uint32_t hitKind,
+                                     float distance)
+{
+    hasPick_ = entity != 0 || hitKind != 0;
+    selected_ = entity;
+    lastPick_ = WorldObjectRef{};
+    lastPick_.entity = entity;
+    lastPick_.kind = hitKind == 2 ? "entity" : (hitKind == 1 ? "triangle" : "");
+    lastPickDistance_ = distance;
+}
+
+void CreationMode::updateTick(const World& world, const glm::vec3& origin,
+                              const glm::vec3& direction)
+{
+    if (!enabled_) {
+        if (lastLoggedEnabled_) {
+            lastLoggedEnabled_ = false;
+            hasPick_ = false;
+            overlayText_.clear();
+            Debug::log(Debug::Category::General,
+                "[CREATE] enabled=0 rayHit=none outputSink=overlay\n");
+        }
+        return;
+    }
+    lastLoggedEnabled_ = true;
+
+    WorldObjectRef ref;
+    const bool hit = pick(world, origin, direction, ref);
+    const bool isEntity = hit && ref.kind != "triangle";
+    if (hit) {
+        lastPick_ = ref;
+        hasPick_ = true;
+        lastPickDistance_ = glm::length(ref.position - origin);
+
+        // Compact always-on overlay built from the same inspection API.
+        const EntityInspection inspection = inspectEntity((EntityId)ref.entity);
+        std::ostringstream o;
+        o << "entity=" << ref.entity << " kind=" << ref.kind;
+        o << " dist=" << lastPickDistance_ << "\n";
+        o << "components:";
+        if (inspection.components.empty())
+            o << " (none)";
+        else
+            for (const std::string& c : inspection.components)
+                o << " " << c;
+        if (inspection.hasConstraint) {
+            const Physics::Constraint& c = inspection.constraint.constraint;
+            o << "\nconstraint serial=" << inspection.constraint.constraintSerial
+              << " bodyA=" << c.bodyA << " bodyB=" << c.bodyB
+              << " strength=" << c.strength;
+        } else if (inspection.linkedConstraintSerial != 0) {
+            o << "\nlinkedConstraint=" << inspection.linkedConstraintSerial;
+        }
+        overlayText_ = o.str();
+    } else {
+        hasPick_ = false;
+        lastPick_ = WorldObjectRef{};
+        lastPickDistance_ = 0.0f;
+        overlayText_ = "no target under crosshair";
+    }
+
+    // Change-only diagnostics (never per tick).
+    const bool changed = (hit != lastLoggedHit_) ||
+        (hit && ref.entity != lastLoggedEntity_) ||
+        (hit && (int)ref.sourceIndex != lastLoggedTriangle_);
+    if (changed) {
+        Debug::log(Debug::Category::General,
+            "[CREATE] enabled=1 rayHit=%s distance=%.2f entity=%llu kind=%s "
+            "triangle=%d inspectOk=%d outputSink=overlay\n",
+            hit ? (isEntity ? "entity" : "world") : "none",
+            (double)lastPickDistance_, (unsigned long long)(hit ? ref.entity : 0),
+            hit ? ref.kind.c_str() : "-", hit ? (int)ref.sourceIndex : -1,
+            hit ? 1 : 0);
+    }
+    lastLoggedHit_ = hit;
+    lastLoggedEntity_ = hit ? ref.entity : 0;
+    lastLoggedTriangle_ = hit ? (int)ref.sourceIndex : -1;
 }
 
 std::string CreationMode::describe(const WorldObjectRef& ref) const
 {
     std::ostringstream out;
     out << "[CREATE INSPECT]\n";
-    out << "entity=" << ref.entity << "\n";
-    out << "name=" << ref.label << "\n";
     out << "kind=" << ref.kind << " sourceIndex=" << ref.sourceIndex << "\n";
     out << "position=" << vec3Text(ref.position) << "\n";
     out << "rotation=" << vec3Text(ref.rotation) << "\n";
@@ -112,59 +284,9 @@ std::string CreationMode::describe(const WorldObjectRef& ref) const
     out << "baseMapHash=" << baseMapHash_ << "\n";
     out << "meshHash=" << ref.meshHash << "\n";
     out << "materialHash=" << ref.materialHash << "\n";
-
-    if (ref.entity != 0) {
-        EntityRegistry& registry = EntityRegistry::instance();
-        const EntityId id = (EntityId)ref.entity;
-        std::string components;
-        if (registry.has<TransformComponent>(id)) components += "Transform,";
-        if (registry.has<BodyComponent>(id)) components += "Body,";
-        if (registry.has<ColliderComponent>(id)) components += "Collider,";
-        if (registry.has<BehaviorBindingsComponent>(id)) components += "Behaviors,";
-        if (registry.has<Ragdoll::LimbComponent>(id)) components += "Limb,";
-        if (registry.has<Ragdoll::JointComponent>(id)) components += "Joint,";
-        if (registry.has<Ragdoll::GrabComponent>(id)) components += "Grab,";
-        if (registry.has<Ragdoll::RagdollRootComponent>(id)) components += "RagdollRoot,";
-        out << "components=" << (components.empty() ? "(none)" : components) << "\n";
-
-        if (const auto* limb = registry.tryGet<Ragdoll::LimbComponent>(id)) {
-            out << "ragdoll.limb=" << limb->limbIndex
-                << " parent=" << limb->parentIndex
-                << " mass=" << limb->mass
-                << " radius=" << limb->radius
-                << " pos=" << vec3Text(limb->position) << "\n";
-        }
-        if (const auto* joint = registry.tryGet<Ragdoll::JointComponent>(id)) {
-            out << "ragdoll.joint parent=" << joint->parentLimb
-                << " restLength=" << joint->restLength
-                << " maxStretch=" << joint->maxStretch
-                << " stiffness=" << joint->stiffness
-                << " damping=" << joint->damping << "\n";
-        }
-        if (const auto* grab = registry.tryGet<Ragdoll::GrabComponent>(id)) {
-            out << "ragdoll.grab active=" << (grab->active ? 1 : 0)
-                << " hand=" << grab->hand
-                << " target=" << grab->targetEntity
-                << " strength=" << grab->strength << "\n";
-        }
-        if (const auto* root = registry.tryGet<Ragdoll::RagdollRootComponent>(id)) {
-            out << "ragdoll.root owner=" << root->ownerActorId
-                << " limbs=" << root->limbCount
-                << " iterations=" << root->solverIterations
-                << " gravity=" << root->gravityScale
-                << " stiffness=" << root->stiffness
-                << " damping=" << root->damping
-                << " corpse=" << (root->corpse ? 1 : 0)
-                << " lastSolveTick=" << root->lastSolveTick << "\n";
-        }
-
-        const HotReloadSystem::Status status = HotReloadSystem::instance().status();
-        out << "generation=" << status.activeGeneration << " codeHash="
-            << status.activeHash << "\n";
-
-        out << "telemetry=" << Telemetry::Registry::instance().entityJson(ref.entity) << "\n";
-    }
-    out << "forkHash=" << forkHash();
+    if (ref.entity != 0)
+        out << inspectEntity((EntityId)ref.entity).toText();
+    out << "forkHash=" << forkHash() << "\n";
     return out.str();
 }
 
@@ -176,7 +298,7 @@ std::string CreationMode::describeSelection() const
 std::uint64_t CreationMode::duplicate(const WorldObjectRef& ref, const glm::vec3& offset)
 {
     const std::uint32_t serial = (std::uint32_t)nextEntitySerial_++;
-    const std::uint64_t newId = ensureWorldObjectEntity(0x40000000u | serial);
+    const std::uint64_t newId = ensureWorldObjectEntity(0x40000000u | serial, baseMapHash_, "");
     PatchOp op;
     op.kind = PatchOp::Kind::Duplicate;
     op.sourceEntity = ref.entity;
@@ -185,6 +307,8 @@ std::uint64_t CreationMode::duplicate(const WorldObjectRef& ref, const glm::vec3
     op.rotation = ref.rotation;
     op.scale = ref.scale;
     patch_.push_back(op);
+    recordChange(Project::ChangeOp::Add, newId,
+                 std::to_string(ref.entity), forkHash());
     selected_ = newId;
 
     LiveEventJournal::Fields fields;
@@ -210,6 +334,7 @@ bool CreationMode::transform(std::uint64_t entity, const glm::vec3& position,
     op.rotation = rotation;
     op.scale = scale;
     patch_.push_back(op);
+    recordChange(Project::ChangeOp::Modify, entity, "", forkHash());
 
     LiveEventJournal::Fields fields;
     fields.actorId = "creation";
@@ -229,6 +354,7 @@ bool CreationMode::remove(std::uint64_t entity)
     op.kind = PatchOp::Kind::Delete;
     op.sourceEntity = entity;
     patch_.push_back(op);
+    recordChange(Project::ChangeOp::Delete, entity, "", forkHash());
     if (selected_ == entity)
         selected_ = 0;
 
@@ -269,11 +395,56 @@ std::string CreationMode::forkHashFor(const std::string& baseHash,
     return LiveCodeHash::sha256Bytes(canonical.data(), canonical.size());
 }
 
+void CreationMode::recordChange(Project::ChangeOp op, std::uint64_t target,
+                                const std::string& before, const std::string& after)
+{
+    Project::ChangeEntry entry;
+    entry.op = op;
+    entry.path = "entity/" + std::to_string(target);
+    if (!before.empty())
+        entry.before = Project::ContentId{"sha256", before};
+    if (!after.empty())
+        entry.after = Project::ContentId{"sha256", after};
+    changeSet_.changes.push_back(entry);
+    changeSet_.parentTreeHash = versionChain_.empty() ? baseMapHash_
+                                                      : versionChain_.back().treeHash;
+    changeSet_.newTreeHash = forkHash();
+    if (changeSet_.changeId.empty())
+        changeSet_.changeId = "change-" + std::to_string(nextChangeSerial_++);
+}
+
+Project::ProjectVersion CreationMode::commit(const std::string& label)
+{
+    Project::ProjectVersion version;
+    version.parentHash = versionChain_.empty() ? baseMapHash_
+                                               : versionChain_.back().versionHash;
+    version.treeHash = forkHash();
+    version.changeSetHash = LiveCodeHash::sha256Bytes(
+        changeSet_.changeId.data(), changeSet_.changeId.size());
+    version.changeId = changeSet_.changeId;
+    version.label = label;
+    version.timestampMs = (std::uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    const std::string canonical = version.parentHash + "|" + version.treeHash + "|" +
+                                  version.changeId + "|" + std::to_string(version.timestampMs);
+    version.versionHash = LiveCodeHash::sha256Bytes(canonical.data(), canonical.size());
+    versionChain_.push_back(version);
+
+    // Start the next change set from the committed tree.
+    changeSet_ = Project::ChangeSet{};
+    changeSet_.parentTreeHash = version.treeHash;
+    nextChangeSerial_ = 1;
+    return version;
+}
+
 void CreationMode::clear()
 {
     patch_.clear();
     selected_ = 0;
     nextEntitySerial_ = 1;
+    changeSet_ = Project::ChangeSet{};
+    versionChain_.clear();
+    nextChangeSerial_ = 1;
 }
 
 } // namespace Editor

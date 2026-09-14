@@ -165,7 +165,15 @@ enum PacketType : uint8_t
     // Notifies peers of a death so each client deterministically derives the
     // same corpse from hash(owner, deathTick, deathEventId). Carries the death
     // identity and impulse, never the full corpse pose.
-    PACKET_CORPSE_SPAWN = 72
+    PACKET_CORPSE_SPAWN = 72,
+    // ── Generic constraint lifecycle (client -> server -> all) ──────
+    // Create intent, authoritative create, authoritative release, and the
+    // active-set snapshot sent to a joiner. Bodies are stable EntityIds; limbs
+    // are indices. One path for ragdoll/object/vehicle/world constraints.
+    PACKET_CONSTRAINT_CREATE_REQUEST = 73,
+    PACKET_CONSTRAINT_CREATE = 74,
+    PACKET_CONSTRAINT_RELEASE = 75,
+    PACKET_CONSTRAINT_SNAPSHOT = 76
 };
 
 enum FireIntentAction : std::uint8_t
@@ -1789,6 +1797,92 @@ struct CorpseSpawnPacket
     char actorId[32]{};
 };
 static_assert(sizeof(CorpseSpawnPacket) <= 96, "CorpseSpawnPacket is too large");
+
+// ── Generic constraint lifecycle ────────────────────────────────────
+// A constraint references two bodies by stable EntityId (bodyB = world when
+// worldTarget != 0). Its stable network identity is `constraintSerial` (owner
+// high bits + per-owner counter). `eventId`/`eventSessionId` must sit at the
+// fixed reliable-event offsets right after the header.
+struct ConstraintWire
+{
+    uint32_t constraintSerial = 0;
+    uint32_t ownerActorId = 0;
+    uint8_t type = 0;          // Physics::ConstraintType
+    uint8_t worldTarget = 1;   // 1 = bodyB is the world point
+    uint8_t reserved[2] = {};
+    uint32_t bodyA = 0;
+    int32_t limbA = -1;
+    float anchorA[3]{};
+    uint32_t bodyB = 0;        // 0xffffffff = world
+    int32_t limbB = -1;
+    float anchorB[3]{};
+    float worldPoint[3]{};
+    float strength = 1.0f;
+    float damping = 1.0f;
+    float minDistance = 0.0f;
+    float maxDistance = 0.0f;
+    uint32_t createdTick = 0;
+};
+
+// client -> server intent. `requestSerial` is the client-predicted serial.
+struct ConstraintCreateRequestPacket
+{
+    PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
+    uint32_t requestSerial = 0;
+    uint32_t ownerActorId = 0;
+    uint8_t type = 0;
+    uint8_t worldTarget = 1;
+    uint8_t reserved[2] = {};
+    uint32_t bodyA = 0;
+    int32_t limbA = -1;
+    float anchorA[3]{};
+    uint32_t bodyB = 0;
+    int32_t limbB = -1;
+    float anchorB[3]{};
+    float worldPoint[3]{};
+    float strength = 1.0f;
+    float damping = 1.0f;
+    float minDistance = 0.0f;
+    float maxDistance = 0.0f;
+    uint32_t createdTick = 0;
+};
+
+struct ConstraintCreatePacket
+{
+    PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
+    ConstraintWire constraint{};
+};
+static_assert(sizeof(ConstraintCreatePacket) <= 192, "ConstraintCreatePacket is too large");
+
+struct ConstraintReleasePacket
+{
+    PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
+    uint32_t constraintSerial = 0;
+    uint32_t releaseTick = 0;
+    uint8_t reason = 0;
+    uint8_t reserved[3] = {};
+};
+static_assert(sizeof(ConstraintReleasePacket) <= 48, "ConstraintReleasePacket is too large");
+
+inline constexpr int MAX_ACTIVE_CONSTRAINTS = 12;
+struct ConstraintSnapshotPacket
+{
+    PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
+    uint16_t constraintCount = 0;
+    uint16_t reserved = 0;
+    uint32_t serverTick = 0;
+    ConstraintWire constraints[MAX_ACTIVE_CONSTRAINTS];
+};
+static_assert(sizeof(ConstraintSnapshotPacket) <= 1100,
+              "ConstraintSnapshotPacket is too large");
 
 bool validHeader(const PacketHeader& header, uint8_t expectedType);
 

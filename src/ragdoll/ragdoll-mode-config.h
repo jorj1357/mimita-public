@@ -41,7 +41,6 @@ struct RagdollModeAttachmentConfig {
     // instead of the capsule center.
     glm::vec3 childOffset{0.0f};
     bool hasChildOffset = false;
-    float coneLimitDeg = 90.0f;
 
     // Optional per-axis rotation limits in the parent's local frame.
     bool hasRotationLimits = false;
@@ -55,8 +54,6 @@ struct RagdollModeConfigData {
     float gravityScale = 1.0f;
     float linearDamping = 0.15f;
     float angularDamping = 0.3f;
-    float jointStiffness = 2000.0f;
-    float jointDamping = 80.0f;
     bool worldCollision = true;
 
     // Corpse ragdolls (death presentation). The corpse reuses the same solver

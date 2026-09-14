@@ -8,6 +8,8 @@
 #include "ecs/actor-entities.h"
 #include "ecs/entity-registry.h"
 #include "live-code/live-behavior.h"
+#include "physics/constraints/constraint-components.h"
+#include "physics/constraints/constraint-store.h"
 #include "ragdoll/ragdoll-mode.h"
 
 namespace Ragdoll {
@@ -181,11 +183,48 @@ void RagdollEntities::setGrab(std::uint32_t ownerActorId, bool left,
     component.grabNormal = grab.grabNormal;
     component.handPosition = grab.handPosition;
     component.handLocalAnchor = grab.handLocalAnchor;
+    component.targetLocalAnchor = grab.targetLocalAnchor;
     component.strength = grab.strength;
+    component.limbEntity = (grab.partIndex >= 0 &&
+                            (std::size_t)grab.partIndex < it->second.limbs.size())
+        ? (std::uint32_t)it->second.limbs[(std::size_t)grab.partIndex]
+        : kInvalidLimb;
     if (grab.targetPart >= 0 && grab.targetPart < (int)it->second.limbs.size())
         component.targetEntity = (std::uint32_t)it->second.limbs[grab.targetPart];
-    EntityRegistry::instance().add<GrabComponent>(
-        left ? it->second.leftGrab : it->second.rightGrab, component);
+    EntityId grabEntity = left ? it->second.leftGrab : it->second.rightGrab;
+
+    // Maintain the dedicated networked constraint entity for this grab. The
+    // serial is allocated once on creation and cleared on release; the store is
+    // the single canonical active-constraint set (server realm on every peer so
+    // the EntityId is identical everywhere).
+    auto* existing = EntityRegistry::instance().tryGet<GrabComponent>(grabEntity);
+    std::uint32_t serial = existing ? existing->constraintSerial : 0;
+    if (grab.active) {
+        if (serial == 0)
+            serial = Physics::ConstraintStore::instance().allocateSerial(ownerActorId);
+        Physics::ConstraintComponent constraint;
+        constraint.constraint.type = Physics::ConstraintType::Grab;
+        constraint.constraint.active = true;
+        constraint.constraint.bodyA = component.limbEntity;
+        constraint.constraint.limbA = grab.partIndex;
+        constraint.constraint.anchorA = grab.handLocalAnchor;
+        constraint.constraint.strength = grab.strength;
+        if (component.targetEntity != kInvalidLimb) {
+            constraint.constraint.bodyB = component.targetEntity;
+            constraint.constraint.anchorB = grab.targetLocalAnchor;
+        } else {
+            constraint.constraint.bodyB = Physics::kWorldBody;
+            constraint.constraint.worldPoint = grab.grabPoint;
+        }
+        constraint.constraintSerial = serial;
+        constraint.ownerActor = ownerActorId;
+        Physics::ConstraintStore::instance().create(EntityRealm::Server, constraint);
+    } else if (serial != 0) {
+        Physics::ConstraintStore::instance().release(serial, 0, 0);
+        serial = 0;
+    }
+    component.constraintSerial = serial;
+    EntityRegistry::instance().add<GrabComponent>(grabEntity, component);
 }
 
 void RagdollEntities::setGrabTarget(std::uint32_t ownerActorId, bool left,
@@ -376,6 +415,8 @@ bool RagdollEntities::applySnapshot(const Snapshot& snapshot)
             grab->targetEntity = (std::uint32_t)it->second.limbs[gs.targetLimb];
         else
             grab->targetEntity = kInvalidLimb;
+        // Constraint entities are authoritative via PACKET_CONSTRAINT_*, not the
+        // ragdoll snapshot; only the derived grab view is updated here.
     }
     return true;
 }

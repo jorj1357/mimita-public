@@ -18,7 +18,6 @@ struct InputState;
 
 struct RagdollModePart {
     std::string name;
-    int configIndex = -1;
     RigidBody body;
 
     int parentIndex = -1;
@@ -199,7 +198,6 @@ private:
     glm::vec3 mCameraSmoothPos{0.0f};
     bool mCameraSmoothInit = false;
     uint64_t mAppliedConfigGeneration = 0;
-    uint32_t mNextCorpseSerial = 0;
     std::uint64_t mLastCorpseSeed = 0;
     std::uint64_t mCorpseSerial = 0;
     CorpseSpawnInfo mLastCorpseInfo;

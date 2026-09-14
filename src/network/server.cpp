@@ -147,7 +147,7 @@ bool isKnownPacketType(uint8_t type)
     // cannot be silently rejected by an outdated numeric range.
     // 2026-09-12: raised to the newest defined type so client->server
     // PACKET_CODE_GENERATION is accepted.
-    return type >= PACKET_HELLO && type <= PACKET_CORPSE_SPAWN;
+    return type >= PACKET_HELLO && type <= PACKET_CONSTRAINT_SNAPSHOT;
 }
 
 void recordServerLoopPerf(ServerLoopPerf& perf, uint64_t loopUs, bool cappedCatchup)

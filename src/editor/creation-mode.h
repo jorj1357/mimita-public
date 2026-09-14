@@ -13,6 +13,8 @@
 
 #include <glm/glm.hpp>
 
+#include "project/project-types.h"
+
 struct World;
 
 namespace Editor {
@@ -51,6 +53,20 @@ public:
     bool pick(const World& world, const glm::vec3& origin, const glm::vec3& direction,
               WorldObjectRef& out) const;
 
+    // Per-tick continuous look-at selection while creation mode is enabled.
+    // Runs from the fixed simulation tick (not the render frame). Updates the
+    // selected entity and the overlay text, and emits change-only diagnostics.
+    void updateTick(const World& world, const glm::vec3& origin, const glm::vec3& direction);
+
+    bool hasPick() const { return hasPick_; }
+    const WorldObjectRef& lastPick() const { return lastPick_; }
+    float lastPickDistance() const { return lastPickDistance_; }
+    const std::string& overlayText() const { return overlayText_; }
+
+    // Apply a selection computed by the hot editor module. The kernel keeps the
+    // cache so edit commands and non-hot consumers still see the selection.
+    void setExternalResult(std::uint64_t entity, std::uint32_t hitKind, float distance);
+
     // Human/agent text for the currently selected object. Same data a GUI reads.
     std::string describe(const WorldObjectRef& ref) const;
     std::string describeSelection() const;
@@ -66,6 +82,13 @@ public:
     std::string forkHash() const;
     void clear();
 
+    // Versioned authoring history, reusing the project vocabulary. Each edit
+    // records a ChangeEntry; commit() appends a ProjectVersion whose tree hash
+    // is the fork hash. The original asset is never rewritten.
+    const Project::ChangeSet& changeSet() const { return changeSet_; }
+    const std::vector<Project::ProjectVersion>& versionChain() const { return versionChain_; }
+    Project::ProjectVersion commit(const std::string& label = "");
+
     std::uint64_t selected() const { return selected_; }
     void setSelected(std::uint64_t entity) { selected_ = entity; }
 
@@ -78,11 +101,27 @@ private:
     CreationMode(const CreationMode&) = delete;
     CreationMode& operator=(const CreationMode&) = delete;
 
+    void recordChange(Project::ChangeOp op, std::uint64_t target,
+                      const std::string& before, const std::string& after);
+
     bool enabled_ = false;
     std::uint64_t selected_ = 0;
     std::uint64_t nextEntitySerial_ = 1;
+    // Last continuous look-at result (per-tick).
+    WorldObjectRef lastPick_;
+    bool hasPick_ = false;
+    float lastPickDistance_ = 0.0f;
+    std::string overlayText_;
+    // Change-only diagnostic keys.
+    bool lastLoggedEnabled_ = false;
+    bool lastLoggedHit_ = false;
+    std::uint64_t lastLoggedEntity_ = 0;
+    int lastLoggedTriangle_ = -1;
     std::vector<PatchOp> patch_;
     std::string baseMapHash_;
+    Project::ChangeSet changeSet_;
+    std::vector<Project::ProjectVersion> versionChain_;
+    std::uint32_t nextChangeSerial_ = 1;
 };
 
 } // namespace Editor

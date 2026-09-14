@@ -11,6 +11,7 @@
 #include <glm/gtx/quaternion.hpp>
 
 #include "physics/physical-body.h"
+#include "physics/constraints/constraint-solver.h"
 #include "ragdoll/ragdoll-mode-config.h"
 
 namespace Ragdoll {
@@ -18,6 +19,45 @@ namespace Solver {
 
 namespace {
 constexpr float kGravity = 9.81f;
+constexpr std::uint32_t kLocalBody = 1;
+
+// Single-body constraint table: ragdoll parts resolve by limb index; the world
+// is handled by the solver. Cross-body tables (corpses, objects, vehicles) plug
+// into the same Physics::SolveBodyTable interface later without a new system.
+class RagdollBodyTable : public Physics::SolveBodyTable {
+public:
+    explicit RagdollBodyTable(RagdollBody& body) : body_(body) {}
+    RigidBody* resolve(std::uint32_t, std::int32_t limb) override
+    {
+        if (limb < 0 || limb >= (int)body_.parts.size())
+            return nullptr;
+        return &body_.parts[limb].body;
+    }
+
+private:
+    RagdollBody& body_;
+};
+
+Physics::Constraint constraintFromGrab(const RagdollGrabState& grab, bool left)
+{
+    (void)left;
+    Physics::Constraint c;
+    c.type = Physics::ConstraintType::Grab;
+    c.active = grab.active;
+    c.bodyA = kLocalBody;
+    c.limbA = grab.partIndex;
+    c.anchorA = grab.handLocalAnchor;
+    c.strength = grab.strength;
+    if (grab.targetPart >= 0) {
+        c.bodyB = kLocalBody;
+        c.limbB = grab.targetPart;
+        c.anchorB = grab.targetLocalAnchor;
+    } else {
+        c.bodyB = Physics::kWorldBody;
+        c.worldPoint = grab.grabPoint;
+    }
+    return c;
+}
 
 glm::vec3 quatToRotationVector(const glm::quat& q)
 {
@@ -137,37 +177,16 @@ void solveRotationLimits(RagdollBody& b, float betaOverride,
 
 void solveGrabs(RagdollBody& b, const RagdollModeConfigData& cfg, int iterations)
 {
-    float beta = glm::clamp(0.9f - cfg.grabCompliance * 20.0f, 0.1f, 0.95f);
-
-    auto solve = [&](RagdollGrabState& grab) {
-        if (!grab.active || grab.partIndex < 0
-            || grab.partIndex >= (int)b.parts.size()) return;
-        RigidBody& body = b.parts[grab.partIndex].body;
-        const float grip = glm::clamp(grab.strength, 0.0f, 1.0f);
-        const float b2 = glm::clamp(beta * grip + 1.0f * (1.0f - grip), 0.0f, 1.0f);
-        for (int i = 0; i < iterations; ++i) {
-            glm::vec3 hand = body.position + body.orientation * grab.handLocalAnchor;
-            if (grab.targetPart >= 0 && grab.targetPart != grab.partIndex
-                && grab.targetPart < (int)b.parts.size()) {
-                // Entity-to-entity: a two-body point constraint. Cancel the
-                // relative velocity at the shared point, then pull the anchors
-                // together so momentum is exchanged instead of injected.
-                RigidBody& target = b.parts[grab.targetPart].body;
-                glm::vec3 targetAnchor = target.position
-                    + target.orientation * grab.targetLocalAnchor;
-                solvePointJointVelocity(body, hand, target, targetAnchor);
-                solvePointJointPosition(body, hand, target, targetAnchor, b2);
-            } else {
-                // Cancel the anchor velocity first so gravity cannot accumulate,
-                // then project the position so the grip stays effectively rigid.
-                solvePointToWorldVelocity(body, hand);
-                solvePointToWorld(body, hand, grab.grabPoint, b2);
-            }
-        }
+    // Grabs are generic physics constraints. The authored hand state maps to a
+    // Grab constraint; the solver path is shared with world/same-body and, via
+    // a wider body table, future cross-body/object/vehicle constraints.
+    Physics::Constraint constraints[2] = {
+        constraintFromGrab(b.leftGrab, true),
+        constraintFromGrab(b.rightGrab, false),
     };
-
-    solve(b.leftGrab);
-    solve(b.rightGrab);
+    RagdollBodyTable table(b);
+    const float baseBeta = glm::clamp(0.9f - cfg.grabCompliance * 20.0f, 0.1f, 0.95f);
+    Physics::solveConstraints(table, constraints, 2, baseBeta, iterations);
 }
 
 void selfCollision(RagdollBody& b, const RagdollModeConfigData& cfg)

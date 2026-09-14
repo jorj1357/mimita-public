@@ -74,8 +74,6 @@ bool RagdollModeConfig::load(const std::string& path)
         next.gravityScale = root.value("gravity_scale", 1.0f);
         next.linearDamping = root.value("linear_damping", 0.15f);
         next.angularDamping = root.value("angular_damping", 0.3f);
-        next.jointStiffness = root.value("joint_stiffness", 2000.0f);
-        next.jointDamping = root.value("joint_damping", 80.0f);
         next.worldCollision = root.value("world_collision", true);
 
         if (root.contains("corpse")) {
@@ -166,7 +164,6 @@ bool RagdollModeConfig::load(const std::string& path)
                     ac.childOffset = readJsonVec3(a, "child_offset", glm::vec3(0.0f));
                     ac.hasChildOffset = true;
                 }
-                ac.coneLimitDeg = a.value("cone_limit_deg", 90.0f);
 
                 if (a.contains("rotation_limit_deg")) {
                     const auto& rl = a["rotation_limit_deg"];

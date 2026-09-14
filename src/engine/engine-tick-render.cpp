@@ -34,6 +34,7 @@
 #include "combat/area-effect.h"
 #include "combat/death-system.h"
 #include "ragdoll/ragdoll-mode.h"
+#include "ragdoll/ragdoll-presentation.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 
@@ -445,13 +446,19 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
               weapons.render(camera, player); }
         if (mpContext.active) {
             Perf::ScopedTimer _networkEntities("Rendering::Actors::NetworkEntities");
+            const double ragdollDelay =
+                NetworkingConfig::instance().data().remotePlayers.interpolationDelaySeconds;
             for (auto& kv : mpContext.remotePlayers) {
                 Perf::state().renderPerf.actorRemotePlayers++;
+                Ragdoll::RagdollPresentation::instance().present(
+                    kv.first, kv.second, ragdollDelay);
                 renderNetworkPlayer(kv.second, camera, kv.first, false, player.matchTeam);
                 weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt);
             }
             for (auto& kv : mpContext.remoteNpcs) {
                 Perf::state().renderPerf.actorRemoteNpcs++;
+                Ragdoll::RagdollPresentation::instance().present(
+                    kv.first, kv.second, ragdollDelay);
                 renderNetworkPlayer(kv.second, camera, kv.first, false, player.matchTeam);
                 weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt);
             }

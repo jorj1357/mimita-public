@@ -11,6 +11,7 @@
 #include "network/server.h"
 #include "network/server-gamemode.h"
 #include "network/server-gamemode.h"
+#include "network/server-constraints.h"
 #include "network/multiplayer-context.h"
 #include "network/coordinator-client.h"
 #include "network/snapshot-chunks.h"
@@ -462,7 +463,7 @@ static bool isKnownPacketType(uint8_t type)
     // cannot be silently rejected by an outdated numeric range.
     // 2026-09-12: raised to the newest defined type so client->server
     // PACKET_CODE_GENERATION is accepted.
-    return type >= PACKET_HELLO && type <= PACKET_CORPSE_SPAWN;
+    return type >= PACKET_HELLO && type <= PACKET_CONSTRAINT_SNAPSHOT;
 }
 
 static void countPacketType(ServerPacketStats& stats, uint8_t type)
@@ -1588,6 +1589,9 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     if (sendToSourceOrPlayer(sock, from, &p, nullptr, &accept, sizeof(accept)))
         ++totalPacketsOut;
     sendStoredAvatarManifestsToPlayer(sock, p, players, totalPacketsOut);
+    // Late-join reconstruction: send the active generic constraint set so the
+    // new client rebuilds current state without an event-log replay.
+    sendActiveConstraintSnapshot(sock, p, tick, totalPacketsOut);
 
     // Broadcast the joining player's full VIP style so every client renders
     // exact colors for both the newcomer and the existing roster.
@@ -1690,6 +1694,7 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
             ++totalPacketsOut;
     }
     sendStoredAvatarManifestsToPlayer(sock, p, players, totalPacketsOut);
+    sendActiveConstraintSnapshot(sock, p, tick, totalPacketsOut);
 
     printf("%s [SERVER RECONNECT] %s id=%u name=\"%s\" health=%d copies=%d\n",
            serverTimestamp(), resendExistingAccept ? "resent" : "accepted",
@@ -2049,6 +2054,20 @@ ServerPacketProcessResult processServerPacket(
                 continue;
             serverSendToPlayer(sock, pe.second, buffer, bytes);
         }
+        result.handled = true;
+    }
+    else if (header->type == PACKET_CONSTRAINT_CREATE_REQUEST &&
+             bytes >= (int)sizeof(ConstraintCreateRequestPacket))
+    {
+        handleConstraintCreateRequest(sock, buffer, bytes, players, tick,
+                                      authenticatedPlayer, totalPacketsOut);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_CONSTRAINT_RELEASE &&
+             bytes >= (int)sizeof(ConstraintReleasePacket))
+    {
+        handleConstraintReleaseRequest(sock, buffer, bytes, players, tick,
+                                       authenticatedPlayer, totalPacketsOut);
         result.handled = true;
     }
     else if (header->type == PACKET_DUEL_REMATCH_REQUEST)

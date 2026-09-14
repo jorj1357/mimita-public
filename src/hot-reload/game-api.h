@@ -16,10 +16,11 @@
 #endif
 
 // v3 introduces versioned data envelopes, named module tables, and a
-// deterministic self-test hook. The replaceable DLL still ships as one coarse
-// module collection so function-level or per-module DLLs can arrive later
-// without changing the public contract.
-static constexpr std::uint32_t MIMITA_GAME_API_VERSION = 3;
+// deterministic self-test hook. v4 adds the generic component capability layer
+// (read/write/find/query/log) and the ragdoll-bind, movement, projectile,
+// death/respawn, and connection-state behavior seams, so those systems are
+// edited as hot behavior instead of cold kernel code.
+static constexpr std::uint32_t MIMITA_GAME_API_VERSION = 4;
 static constexpr std::uint32_t MIMITA_GAME_MAX_MODULES = 8;
 static constexpr std::size_t MIMITA_GAME_SELFTEST_MESSAGE = 128;
 
@@ -33,6 +34,156 @@ enum GameStateType : std::uint32_t {
     GAME_STATE_EFFECT = 4,
     GAME_STATE_UI = 5,
     GAME_STATE_CAMERA = 6,
+};
+
+// ── Generic component capability layer ─────────────────────
+// Stable component type ids for readComponent/writeComponent/findEntities. The
+// kernel maps each id to its ECS component; the POD projections below are the
+// only layouts that cross the boundary. Adding a projection does not add a new
+// call site: capabilities are generic over the id.
+enum GameComponentType : std::uint32_t {
+    GAME_COMPONENT_NONE = 0,
+    GAME_COMPONENT_TRANSFORM = 1,
+    GAME_COMPONENT_VELOCITY = 2,
+    GAME_COMPONENT_HEALTH = 3,
+    GAME_COMPONENT_MOVEMENT_INTENT = 4,
+    GAME_COMPONENT_AIM_INTENT = 5,
+    GAME_COMPONENT_FIRE_INTENT = 6,
+    GAME_COMPONENT_PROJECTILE = 7,
+    GAME_COMPONENT_COLLIDER = 8,
+    GAME_COMPONENT_BODY = 9,
+    GAME_COMPONENT_RAGDOLL_LIMB = 10,
+    GAME_COMPONENT_RAGDOLL_JOINT = 11,
+    GAME_COMPONENT_RAGDOLL_ROOT = 12,
+    GAME_COMPONENT_RAGDOLL_GRAB = 13,
+    GAME_COMPONENT_BEHAVIOR_BINDINGS = 14,
+};
+
+struct GameTransformComponentV1 {
+    float position[3];
+    float look[3];
+    float yaw;
+    float pitch;
+};
+
+struct GameVelocityComponentV1 {
+    float linear[3];
+    float externalImpulse[3];
+};
+
+struct GameHealthComponentV1 {
+    std::int32_t current;
+    std::int32_t max;
+    std::uint32_t dead;
+};
+
+struct GameMovementIntentComponentV1 {
+    float moveX;
+    float moveY;
+    std::uint32_t pressed;
+    std::uint32_t jump;
+    std::uint32_t dash;
+    std::uint32_t downDash;
+    std::uint32_t freeze;
+};
+
+struct GameAimIntentComponentV1 {
+    float direction[3];
+    float yaw;
+    float pitch;
+};
+
+struct GameFireIntentComponentV1 {
+    std::uint32_t weaponNetworkId;
+    std::uint32_t trigger;
+};
+
+struct GameProjectileComponentV1 {
+    std::uint32_t weaponDefNetworkId;
+    std::uint32_t fireSerial;
+    float spawnTime;
+    float lifetime;
+};
+
+struct GameColliderComponentV1 {
+    float radius;
+    float height;
+};
+
+struct GameBodyComponentV1 {
+    float sizeScale;
+    float radius;
+    float height;
+};
+
+struct GameRagdollLimbComponentV1 {
+    std::uint32_t limbIndex;
+    std::uint32_t parentIndex;
+    float position[3];
+    float orientation[4];
+    float linearVelocity[3];
+    float angularVelocity[3];
+    float mass;
+    float radius;
+    float halfHeight;
+    float inverseMass;
+};
+
+struct GameRagdollJointComponentV1 {
+    std::uint32_t limbIndex;
+    std::uint32_t parentLimb;
+    float parentLocalAnchor[3];
+    float childLocalAnchor[3];
+    float restLength;
+    float maxStretch;
+    float stiffness;
+    float damping;
+    float positionBeta;
+};
+
+struct GameRagdollRootComponentV1 {
+    std::uint32_t ownerActorId;
+    std::uint32_t limbCount;
+    std::uint32_t solverIterations;
+    float gravityScale;
+    float stiffness;
+    float damping;
+    std::uint32_t alive;
+    std::uint32_t corpse;
+    std::uint64_t lastSolveTick;
+};
+
+struct GameRagdollGrabComponentV1 {
+    std::uint32_t active;
+    std::uint32_t wasActive;
+    std::uint32_t hand;
+    std::uint32_t limbEntity;
+    float grabPoint[3];
+    float grabNormal[3];
+    float handPosition[3];
+    float handLocalAnchor[3];
+    std::uint32_t targetEntity;
+    float targetLocalAnchor[3];
+    std::uint32_t grabbedActorId;
+    float strength;
+    std::uint32_t constraintSerial;
+};
+
+static constexpr std::uint32_t GAME_MAX_BEHAVIOR_BINDINGS = 8;
+
+struct GameBehaviorBindingV1 {
+    std::uint32_t eventType;
+    std::uint32_t reserved;
+    std::uint64_t behaviorId;
+    std::uint64_t codeHash;
+    std::uint32_t generation;
+    std::uint32_t reserved2;
+};
+
+struct GameBehaviorBindingsComponentV1 {
+    std::uint32_t count;
+    std::uint32_t reserved;
+    GameBehaviorBindingV1 bindings[GAME_MAX_BEHAVIOR_BINDINGS];
 };
 
 // Versioned data envelope. Hot code receives state and returns decisions or
@@ -276,6 +427,15 @@ enum GameEventType : std::uint32_t {
     GAME_EVENT_DESTROY = 5,
     GAME_EVENT_FIRE_INTENT = 6,
     GAME_EVENT_RAGDOLL_SOLVE = 7,
+    // Generic behavior seams (ABI v4). The kernel fills the base payload and
+    // applies the result; hot behavior owns the policy.
+    GAME_EVENT_RAGDOLL_BIND = 8,          // mesh node -> ragdoll body frame
+    GAME_EVENT_MOVEMENT_RECONCILE = 9,    // client local-player snap policy
+    GAME_EVENT_MOVEMENT_VALIDATION = 10,  // server movement-report decision
+    GAME_EVENT_PROJECTILE_PRESENT = 11,   // projectile visibility/style
+    GAME_EVENT_ACTOR_DEATH = 12,          // death presentation policy
+    GAME_EVENT_ACTOR_RESPAWN = 13,        // respawn policy
+    GAME_EVENT_CONNECTION_STATE = 14,     // connection status/retry policy
 };
 
 // Damage source ids carried by DamagePolicyV1::source.
@@ -298,13 +458,35 @@ struct GameEventV1 {
     void* payload;  // mutable, kernel-owned plain data
 };
 
+// Generic kernel capabilities exposed to hot behavior. `host` is opaque and
+// only valid for the duration of the dispatch call; never cache it.
+using GameReadComponentFn = bool (MIMITA_GAME_CALL *)(
+    void* host, std::uint64_t entity, std::uint32_t componentType,
+    void* out, std::uint32_t outSize);
+using GameWriteComponentFn = bool (MIMITA_GAME_CALL *)(
+    void* host, std::uint64_t entity, std::uint32_t componentType,
+    const void* in, std::uint32_t inSize);
+using GameFindEntitiesFn = std::uint32_t (MIMITA_GAME_CALL *)(
+    void* host, std::uint32_t domain, std::uint32_t componentType,
+    std::uint64_t* out, std::uint32_t maxOut);
+using GameQueryWorldRayFn = bool (MIMITA_GAME_CALL *)(
+    void* host, const float origin[3], const float dir[3], float maxDistance,
+    float* outPoint, float* outNormal, float* outDistance);
+using GameLogCapFn = void (MIMITA_GAME_CALL *)(void* host, const char* message);
+
 struct GameplayContextV1 {
+    std::uint32_t abiVersion;
+    std::uint32_t structSize;
     void* host;
     std::uint64_t tick;
     std::uint64_t generation;
     std::uint64_t codeHash;
-    void* emitEvent;    // reserved capability (future nested events)
-    void* findEntities; // reserved capability (future queries)
+    void* emitEvent;    // emit a nested GameEventV1 (bounded FIFO queue)
+    GameReadComponentFn readComponent;
+    GameWriteComponentFn writeComponent;
+    GameFindEntitiesFn findEntities;
+    GameQueryWorldRayFn queryWorldRay;
+    GameLogCapFn log;
 };
 
 // Request/response payload for GAME_EVENT_DAMAGE_POLICY. The kernel fills the
@@ -363,6 +545,152 @@ struct RagdollPolicyV1 {
     std::uint32_t reserved;
 };
 
+// ── Ragdoll bind policy ─────────────────────────────────────
+// Kernel -> behavior, once per body part, while building a ragdoll body from
+// the model's rest pose. The kernel supplies the mesh node's world transform
+// and its collider bounds; the behavior returns the physics body frame. This
+// is the seam that keeps mirrored/scaled avatar nodes (negative scale) from
+// collapsing onto the wrong side, without a second build site.
+enum RagdollBindPartId : std::uint32_t {
+    RAGDOLL_BIND_TORSO = 0,
+    RAGDOLL_BIND_HEAD = 1,
+    RAGDOLL_BIND_LEFT_ARM = 2,
+    RAGDOLL_BIND_RIGHT_ARM = 3,
+    RAGDOLL_BIND_LEFT_LEG = 4,
+    RAGDOLL_BIND_RIGHT_LEG = 5,
+};
+
+struct RagdollBindPartV1 {
+    std::uint32_t partId;        // RagdollBindPartId
+    std::uint32_t hasCollider;
+    float nodePosition[3];
+    // Node world linear part, column-major 3x3 as glm stores it. May contain a
+    // reflection (negative determinant) for mirrored avatar parts.
+    float nodeLinear[9];
+    float colliderMin[3];
+    float colliderMax[3];
+    float cfgRadius;
+    float cfgHalfHeight;
+    float cfgOffset[3];
+    float cfgCenterOfMass[3];
+    std::uint32_t hasCfgAxis;
+    float cfgAxis[3];
+    // ── out (canonical body frame) ──
+    float outComLocal[3];        // center of mass offset from the node position
+    float outCapsuleCenter[3];   // capsule center relative to the body COM
+    float outCapsuleAxis[3];
+    float outRadius;
+    float outHalfHeight;
+    std::uint32_t handled;
+    std::uint32_t reserved;
+};
+
+// ── Client local-player movement reconcile policy ──────────
+struct MovementReconcileV1 {
+    std::uint64_t ownerActor;
+    float clientPosition[3];
+    float serverPosition[3];
+    float error;             // distance(client, server)
+    float majorThreshold;
+    std::uint32_t epochReady;
+    std::uint32_t ragdollActive;
+    std::uint32_t teleportPending;
+    std::uint32_t dead;
+    // out
+    std::uint32_t applyPosition;
+    std::uint32_t handled;
+    std::uint32_t reserved;
+};
+
+// ── Server movement-report validation policy ───────────────
+// The kernel performs the structural/lifecycle checks and fills the computed
+// decision + suggested correction; the behavior may override it (for example
+// to let a ragdoll's physics root move under client body authority).
+struct MovementValidationV1 {
+    std::uint64_t ownerActor;
+    std::uint32_t serverTick;
+    std::uint32_t ragdollActive;
+    std::uint32_t computedDecision;   // 0=accept 1=correct 2=reject
+    std::uint32_t computedReason;
+    float reportPosition[3];
+    float previousPosition[3];
+    float suggestedPosition[3];
+    float suggestedVelocity[3];
+    // out
+    std::uint32_t decision;
+    std::uint32_t handled;
+    std::uint32_t reserved;
+};
+
+// ── Projectile presentation policy ─────────────────────────
+// Kernel -> behavior for every active projectile of every owner (player, NPC,
+// network). The behavior decides whether it is visible and its trail style;
+// the kernel owns the draw. Fixes "invisible projectile that still damages"
+// by never gating presentation on the currently equipped weapon.
+struct ProjectilePresentV1 {
+    std::uint64_t projectileEntity;
+    std::uint64_t ownerEntity;
+    std::uint32_t source;        // 0=player, 1=npc, 2=network
+    std::uint32_t weaponNetworkId;
+    float position[3];
+    float velocity[3];
+    float age;
+    float lifetime;
+    std::uint32_t exploded;
+    // out
+    std::uint32_t visible;
+    float outTrailEmissionRate;
+    float outTrailSize;
+    float outTrailEndSize;
+    float outTrailAlpha;
+    std::uint32_t handled;
+    std::uint32_t reserved;
+};
+
+// ── Actor death / respawn policy ───────────────────────────
+// `authoritative` means a server-controlled life owns the actor, so local
+// respawn must not run (the death loop root cause).
+struct ActorDeathV1 {
+    std::uint64_t actorEntity;
+    std::uint32_t isNpc;
+    std::uint32_t authoritative;
+    std::uint32_t alreadyPresented;
+    std::uint32_t deathEventId;
+    std::uint32_t deathTick;
+    float position[3];
+    // out
+    std::uint32_t presentCorpse;
+    std::uint32_t handled;
+    std::uint32_t reserved;
+};
+
+struct ActorRespawnV1 {
+    std::uint64_t actorEntity;
+    std::uint32_t isNpc;
+    std::uint32_t authoritative;
+    std::uint32_t duelActive;
+    float respawnTimer;
+    float dt;
+    // out
+    std::uint32_t allowLocalRespawn;
+    std::uint32_t handled;
+    std::uint32_t reserved;
+};
+
+// ── Connection status / retry policy ───────────────────────
+struct ConnectionStateV1 {
+    std::uint32_t phase;         // 0=gather 1=coordinator 2=answer 3=connecting 4=done
+    std::uint32_t attempt;
+    std::uint32_t maxAttempts;
+    std::uint64_t elapsedMs;
+    std::int32_t lastError;
+    // out
+    float outBackoffScale;
+    char outMessage[96];
+    std::uint32_t handled;
+    std::uint32_t reserved;
+};
+
 using GameEmitEventFn = void (MIMITA_GAME_CALL *)(
     GameplayContextV1* context, const GameEventV1* event);
 
@@ -377,6 +705,120 @@ struct GameGameplayModuleV1 {
     std::uint32_t structSize;
     GameAdjustRocketFlightFn adjustRocketFlight;
     GameBehaviorOnEventFn onEvent;
+};
+
+// ── Editor module ───────────────────────────────────────────
+// A dedicated hot module that owns creation/inspection selection policy, the
+// inspector data formatting, and the overlay layout. The kernel owns the ECS,
+// world, spatial query, and UI primitives; the module receives capability
+// function pointers and plain data only (no live engine objects).
+static constexpr std::uint32_t EDITOR_STATE_VERSION = 1;
+static constexpr std::uint32_t EDITOR_MAX_CANDIDATES = 16;
+static constexpr std::uint32_t EDITOR_COMPONENT_COUNT = 20;
+
+enum EditorHitKind : std::uint32_t {
+    EDITOR_HIT_NONE = 0,
+    EDITOR_HIT_WORLD = 1,
+    EDITOR_HIT_ENTITY = 2,
+};
+
+// One kernel query result (world triangle or entity bound) along the ray.
+struct EditorCandidateV1 {
+    std::uint32_t kind;        // EditorHitKind
+    std::uint32_t domain;      // EntityDomain when kind == ENTITY
+    std::uint64_t entity;      // 0 for world
+    std::uint32_t worldTriangle;
+    float distance;
+    float point[3];
+};
+
+struct EditorQueryV1 {
+    std::uint32_t count;
+    std::uint32_t reserved;
+    EditorCandidateV1 hits[EDITOR_MAX_CANDIDATES];
+};
+
+// POD component/constraint snapshot for one entity (kernel fills; hot formats).
+struct EditorInspectionV1 {
+    std::uint32_t valid;
+    std::uint32_t realm;
+    std::uint32_t domain;
+    std::uint32_t legacyId;
+    std::uint32_t generation;
+    std::uint32_t componentCount;
+    char components[EDITOR_COMPONENT_COUNT][32];
+    float position[3];
+    float yaw;
+    std::uint32_t hasConstraint;
+    std::uint32_t constraintSerial;
+    std::uint32_t constraintActive;
+    std::uint32_t constraintType;
+    std::uint64_t constraintBodyA;
+    std::uint64_t constraintBodyB;
+    float constraintStrength;
+    std::uint32_t linkedConstraintSerial;
+};
+
+// Kernel -> module per-tick input.
+struct EditorStateV1 {
+    std::uint32_t enabled;
+    std::uint32_t tick;
+    float origin[3];
+    float dir[3];
+    float maxDistance;
+    std::uint64_t currentSelection;
+};
+
+// Module -> kernel result (applied to the kernel-owned editor cache).
+struct EditorResultV1 {
+    std::uint32_t handled;
+    std::uint32_t hitKind;      // EditorHitKind
+    std::uint64_t selectedEntity;
+    float distance;
+    std::uint32_t hasInspection;
+    std::uint32_t reserved;
+    EditorInspectionV1 inspection;
+};
+
+using EditorQueryRayFn = void (MIMITA_GAME_CALL *)(
+    void* host, const float origin[3], const float dir[3],
+    float maxDistance, std::uint32_t maxHits, EditorQueryV1* out);
+using EditorInspectFn = std::uint32_t (MIMITA_GAME_CALL *)(
+    void* host, std::uint64_t entity, EditorInspectionV1* out);
+using EditorDrawTextFn = void (MIMITA_GAME_CALL *)(
+    void* host, const char* text, float x, float y, float scale, const float rgba[4]);
+using EditorDrawRectFn = void (MIMITA_GAME_CALL *)(
+    void* host, float x, float y, float w, float h, const float rgba[4]);
+using EditorScreenSizeFn = void (MIMITA_GAME_CALL *)(
+    void* host, float* outWidth, float* outHeight);
+
+// Capabilities + kernel-owned state handle. `host` and `permanentStorage` are
+// valid only for the duration of the call; never cache them.
+struct EditorContextV1 {
+    std::uint32_t abiVersion;
+    std::uint32_t structSize;
+    void* host;
+    std::uint64_t tick;
+    std::uint64_t generation;
+    EditorQueryRayFn queryRay;
+    EditorInspectFn inspect;
+    EditorDrawTextFn drawText;
+    EditorDrawRectFn drawRect;
+    EditorScreenSizeFn screenSize;
+    void* permanentStorage;        // survives hot reloads
+    std::uint64_t permanentStorageSize;
+};
+
+using EditorOnTickFn = void (MIMITA_GAME_CALL *)(
+    const EditorStateV1* state, EditorContextV1* context, EditorResultV1* out);
+using EditorOnDrawFn = void (MIMITA_GAME_CALL *)(
+    const EditorStateV1* state, const EditorResultV1* result, EditorContextV1* context);
+
+struct GameEditorModuleV1 {
+    std::uint32_t abiVersion;
+    std::uint32_t structSize;
+    EditorOnTickFn onTick;
+    EditorOnDrawFn onDraw;
 };
 
 struct GameAPI {

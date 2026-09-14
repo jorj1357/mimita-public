@@ -14,6 +14,8 @@
 #include "network/packets.h"
 #include "ragdoll/ragdoll-entities.h"
 #include "ragdoll/ragdoll-mode.h"
+#include "ragdoll/ragdoll-presentation.h"
+#include "physics/constraints/constraint-store.h"
 #include "network/connection-health.h"
 #include "network/simulation-constants.h"
 #include "network/udp-transport.h"
@@ -240,6 +242,11 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.remotePlayerInterpolation.clear();
     ctx.remoteNpcInterpolation.clear();
     RagdollModeSystem::instance().clearCorpses();
+    Ragdoll::RagdollPresentation::instance().clearAll();
+    Physics::ConstraintStore::instance().clear();
+    ctx.confirmedConstraints.clear();
+    ctx.localConstraintsLastTick.clear();
+    ctx.lastConstraintRequestTick = 0;
     ctx.interpolationRenderTick = 0.0;
     ctx.interpolationClockStarted = false;
     ctx.interpolationClockLastUpdateMs = 0;
@@ -732,6 +739,49 @@ void mpSendCorpseSpawn(MultiplayerContext& ctx, uint32_t ownerActorId,
     packet.impulse[2] = impulse.z;
     std::memset(packet.actorId, 0, sizeof(packet.actorId));
     std::strncpy(packet.actorId, actorId.c_str(), sizeof(packet.actorId) - 1);
+    mpSendPacket(ctx, &packet, sizeof(packet));
+}
+
+void mpSendConstraintCreate(MultiplayerContext& ctx, const Physics::ConstraintComponent& c)
+{
+    if (!ctx.active || !ctx.localPlayerId)
+        return;
+    ConstraintCreateRequestPacket packet{};
+    packet.header.type = PACKET_CONSTRAINT_CREATE_REQUEST;
+    packet.header.tick = ctx.tick;
+    packet.header.playerId = ctx.localPlayerId;
+    packet.requestSerial = c.constraintSerial;
+    packet.ownerActorId = c.ownerActor ? c.ownerActor : ctx.localPlayerId;
+    packet.type = (uint8_t)c.constraint.type;
+    packet.worldTarget = (c.constraint.bodyB == Physics::kWorldBody) ? 1u : 0u;
+    packet.bodyA = c.constraint.bodyA;
+    packet.limbA = c.constraint.limbA;
+    packet.bodyB = c.constraint.bodyB;
+    packet.limbB = c.constraint.limbB;
+    packet.strength = c.constraint.strength;
+    packet.damping = c.constraint.damping;
+    packet.minDistance = c.constraint.minDistance;
+    packet.maxDistance = c.constraint.maxDistance;
+    packet.createdTick = c.createdTick;
+    for (int i = 0; i < 3; ++i) {
+        packet.anchorA[i] = c.constraint.anchorA[i];
+        packet.anchorB[i] = c.constraint.anchorB[i];
+        packet.worldPoint[i] = c.constraint.worldPoint[i];
+    }
+    mpSendPacket(ctx, &packet, sizeof(packet));
+}
+
+void mpSendConstraintRelease(MultiplayerContext& ctx, uint32_t constraintSerial, uint8_t reason)
+{
+    if (!ctx.active || !ctx.localPlayerId)
+        return;
+    ConstraintReleasePacket packet{};
+    packet.header.type = PACKET_CONSTRAINT_RELEASE;
+    packet.header.tick = ctx.tick;
+    packet.header.playerId = ctx.localPlayerId;
+    packet.constraintSerial = constraintSerial;
+    packet.releaseTick = ctx.clientSimulationTick;
+    packet.reason = reason;
     mpSendPacket(ctx, &packet, sizeof(packet));
 }
 

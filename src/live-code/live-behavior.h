@@ -28,6 +28,19 @@ bool dispatchRagdollPolicy(RagdollPolicyV1& payload, std::uint64_t tick);
 // Dispatch an arbitrary event to the active behavior table.
 bool dispatchEvent(const GameEventV1& event, std::uint64_t tick);
 
+// Generic dispatch for any event type with a mutable POD payload. This is the
+// single call site shape for all hot behavior seams: the kernel fills base
+// values, calls this, then applies the payload's `handled`/out fields. New
+// behavior for an existing event needs no new EXE call site.
+bool dispatchPayload(std::uint32_t typeId, void* payload,
+                     std::uint32_t payloadSize, std::uint64_t tick,
+                     std::uint64_t sourceEntity = 0,
+                     std::uint64_t targetEntity = 0,
+                     std::uint64_t projectileEntity = 0);
+
+// World used by the queryWorldRay capability while a dispatch is in flight.
+void setDispatchWorld(const void* world);
+
 // Kernel event queue used by the emitEvent capability. Bounded and FIFO.
 void enqueueEvent(const GameEventV1& event);
 int drainEvents(int maxEvents);
