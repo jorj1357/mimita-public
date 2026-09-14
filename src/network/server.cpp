@@ -10,6 +10,7 @@
 
 #include "network/server.h"
 #include "network/server-context.h"
+#include "network/dynamic-replication.h"
 #include "network/net_mode.h"
 #include "network/server-gamemode.h"
 #include "gamemode/gamemode.h"
@@ -781,7 +782,6 @@ int runServer(const LaunchOptions& options)
             simulateSharedNpcs(sock, players, npcs, npcSystem, npcWorld,
                                mirrorPlayer, npcIdsAlive, projectiles,
                                nextProjectileId, tick, totalPacketsOut);
-            tickServerProjectiles(sock, players, npcs, projectiles, world, SERVER_DT, tick, totalPacketsOut);
             tickServerPhysicalContactWeapons(sock, players, world, SERVER_DT, tick, totalPacketsOut);
 
             tickIcePeers(serverCode, dedicatedIceState.iceSessionId,
@@ -794,6 +794,7 @@ int runServer(const LaunchOptions& options)
 
             buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
             tickDisagreementRetransmit(sock, players, disagreementRetransmit, totalPacketsOut);
+            serverReplicateDynamicComponents(sock, players, tick, totalPacketsOut);
             tickReliableGameplayEvents(sock, players, totalPacketsOut);
             serverGamemodeTick(sock, players, world, npcWorld, npcs, npcSystem,
                            npcIdsAlive, tick, totalPacketsOut);
@@ -1259,10 +1260,6 @@ static void simulateOneServerTick(ListenServerState& state)
                            *state.npcSystem, *state.npcWorld, *state.mirrorPlayer,
                            state.npcIdsAlive, state.projectiles, state.nextProjectileId,
                            state.tick, state.totalPacketsOut);
-        tickServerProjectiles(state.sock, state.players, state.npcs, state.projectiles,
-                              state.world, SERVER_DT, state.tick,
-                              state.totalPacketsOut);
-
         tickServerPhysicalContactWeapons(state.sock, state.players,
                                          state.world, SERVER_DT, state.tick,
                                          state.totalPacketsOut);
@@ -1287,6 +1284,8 @@ static void simulateOneServerTick(ListenServerState& state)
         tickDisagreementRetransmit(state.sock, state.players,
                                    state.disagreementRetransmit,
                                    state.totalPacketsOut);
+        serverReplicateDynamicComponents(state.sock, state.players, state.tick,
+                                         state.totalPacketsOut);
         tickReliableGameplayEvents(state.sock, state.players,
                                    state.totalPacketsOut);
         serverGamemodeTick(state.sock, state.players, state.world, *state.npcWorld,

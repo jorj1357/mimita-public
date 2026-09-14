@@ -173,7 +173,12 @@ enum PacketType : uint8_t
     PACKET_CONSTRAINT_CREATE_REQUEST = 73,
     PACKET_CONSTRAINT_CREATE = 74,
     PACKET_CONSTRAINT_RELEASE = 75,
-    PACKET_CONSTRAINT_SNAPSHOT = 76
+    PACKET_CONSTRAINT_SNAPSHOT = 76,
+    // ── Generic dynamic-component replication (server -> clients) ────
+    // ONE opaque envelope for every dynamic component type: schema descriptors,
+    // upserts, and removals, selected by schema networkPolicy. There is no
+    // per-component packet or codec. Carried over the reliable event channel.
+    PACKET_DYNAMIC_COMPONENT = 77
 };
 
 enum FireIntentAction : std::uint8_t

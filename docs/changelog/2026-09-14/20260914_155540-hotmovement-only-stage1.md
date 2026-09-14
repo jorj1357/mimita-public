@@ -371,3 +371,37 @@ mission requires. No new GameAPI field, enum, or switch.
   policy. Next: migrate remaining spawners, delete the kernel per-type branch,
   then hitscan/melee, then ammo/cooldown/equip component state + relationships,
   then remove the global keyed router.
+
+---
+
+# Stage 8 (same session): grenade + request-path projectiles on canonical path
+
+- UTC timestamp: 2026-09-14T20:40:00Z; Result: PASS (builds + selftests)
+
+## What changed
+
+- `src/hot-reload/hot-projectile.h`: generic bounce fields/flag.
+- `src/hot-reload/modules/tools/hot-projectiles.cpp`: world-contact bounce.
+- `src/hot-reload/modules/tools/grenade-tool.cpp` (new): grenade launcher on the
+  canonical hot projectile path.
+- `src/network/server-attack.cpp`: projectile request branch dispatches the hot
+  tool/action seam before the kernel spawn; hot-owned attacks skip the kernel
+  container.
+- Preserved and adapted a concurrent session's generic fire-intent subsystem
+  (`handleFireIntentPacket`/`tickHeldFireIntents`); added `using namespace
+  MimitaNet;` to its selftest to restore compilation. Not claimed as my work.
+
+## Evidence
+
+- `MIMITA_EXE_NAME=mimita-next.exe python build.py build-only` -> BUILD SUCCESS.
+- `python devscripts/live-build.py` -> generation 13; `mimita-game.dll` rebuilt.
+- `--hot-combat-selftest`, `--live-code-selftest`, `--capability-selftest`,
+  `--gamemode-hot-selftest`, `--movement-parity-selftest` all PASS.
+
+## Limitations / next
+
+- NPC rocket (`server-npcs.cpp`) still uses the kernel container; the kernel
+  per-type sim still owns NPC/unmigrated projectiles. Migrate that, then delete
+  the kernel per-type branch. Then hitscan/melee via the same binding/behavior/
+  query/damage model; then ammo/cooldown/equip component state; then remove the
+  global keyed router.

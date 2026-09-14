@@ -11,6 +11,7 @@
 #include "network/server.h"
 #include "network/actor-lifecycle.h"
 #include "network/server-gamemode.h"
+#include "network/server-weapon-state.h"
 #include "ecs/actor-entities.h"
 #include "network/community-server-config.h"
 #include "network/network-weapons.h"
@@ -535,6 +536,8 @@ void tickWeaponRuntimes(std::unordered_map<uint32_t, ServerPlayer>& players, uin
         for (auto& rtKv : p.weaponRuntimes)
         {
             ServerPlayer::ServerWeaponRuntime& rt = rtKv.second;
+            // Migrated weapons: authoritative reload state is the tool component.
+            serverWeaponStateLoad(p, rtKv.first);
             if (!rt.initialized || !rt.reloading)
                 continue;
             if (currentTick >= rt.reloadCompleteTick)
@@ -543,6 +546,7 @@ void tickWeaponRuntimes(std::unordered_map<uint32_t, ServerPlayer>& players, uin
                 if (!def)
                 {
                     rt.reloading = false;
+                    serverWeaponStateStore(p, rtKv.first);
                     continue;
                 }
 
@@ -580,6 +584,7 @@ void tickWeaponRuntimes(std::unordered_map<uint32_t, ServerPlayer>& players, uin
                     rt.stateRevision++;
                     rt.reloading = false;
                 }
+                serverWeaponStateStore(p, rtKv.first);
             }
         }
     }

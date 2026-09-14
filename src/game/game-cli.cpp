@@ -56,6 +56,7 @@
 #include "ecs/dynamic-lifecycle-selftest.h"
 #include "network/gamemode-hot-selftest.h"
 #include "network/hot-combat-selftest.h"
+#include "network/dynamic-replication-selftest.h"
 #include "hot-reload/capability-selftest.h"
 
 extern DuelManager gDuelManager;
@@ -315,6 +316,14 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = runHotCombatSelfTest(report);
         printf("%s", report.c_str());
         printf("[HOT COMBAT SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--dynamic-replication-selftest") {
+        std::string report;
+        const bool ok = runDynamicReplicationSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[DYNAMIC REPLICATION SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

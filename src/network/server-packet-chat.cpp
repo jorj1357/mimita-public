@@ -387,6 +387,44 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         return;
     }
 
+    // Generic runtime-tool equip is a player action, not host administration.
+    if (commandStr.rfind("equiptool ", 0) == 0)
+    {
+        const std::string toolName = commandStr.substr(10);
+        const bool accepted = serverEquipRuntimeTool(players, it->second.id, toolName);
+        ack(accepted, accepted ? "tool equipped" : "rejected: unknown tool");
+        return;
+    }
+
+    // Generic item containment/equip lifecycle (player actions).
+    if (commandStr.rfind("invequip ", 0) == 0)
+    {
+        const std::uint64_t item = std::strtoull(commandStr.c_str() + 9, nullptr, 0);
+        const bool accepted = serverItemEquip(it->second.id, item);
+        ack(accepted, accepted ? "item equipped" : "rejected: no such item");
+        return;
+    }
+    if (commandStr.rfind("invpickup ", 0) == 0)
+    {
+        const std::uint64_t item = std::strtoull(commandStr.c_str() + 10, nullptr, 0);
+        const bool accepted = serverItemPickup(it->second.id, item);
+        ack(accepted, accepted ? "item picked up" : "rejected: no such item");
+        return;
+    }
+    if (commandStr.rfind("invdrop ", 0) == 0)
+    {
+        const std::uint64_t item = std::strtoull(commandStr.c_str() + 8, nullptr, 0);
+        const bool accepted = serverItemDrop(it->second.id, item);
+        ack(accepted, accepted ? "item dropped" : "rejected");
+        return;
+    }
+    if (commandStr == "invunequip")
+    {
+        const bool accepted = serverItemUnequip(it->second.id);
+        ack(accepted, accepted ? "item unequipped" : "nothing equipped");
+        return;
+    }
+
     // Host-gate: only the player whose name matches the server host (or the
     // first joiner when no host name is set) may issue server-authoritative
     // commands. This also stops any client from deleting all NPCs.

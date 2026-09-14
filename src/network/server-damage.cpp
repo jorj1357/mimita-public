@@ -13,6 +13,8 @@
 #include "network/server-context.h"
 #include "network/server-gamemode.h"
 #include "network/server-damage-policy.h"
+#include "ecs/components.h"
+#include "ecs/entity-registry.h"
 #include "ecs/entity-types.h"
 #include "persistence/persistence-emit.h"
 #include "combat/weapon-registry.h"
@@ -261,7 +263,24 @@ bool serverApplyEntityDamage(GameDamageApplyV1& request)
     const EntityId victimEntity = static_cast<EntityId>(request.victimEntity);
     if (victimEntity == kInvalidEntityId)
         return false;
-    const bool victimIsNpc = entityDomain(victimEntity) == EntityDomain::Npc;
+    const EntityDomain victimDomain = entityDomain(victimEntity);
+    const bool victimIsNpc = victimDomain == EntityDomain::Npc;
+
+    // Generic damageable entity (world object, destructible, future concept):
+    // authoritative health is component state, no actor plumbing required.
+    if (victimDomain != EntityDomain::Player && !victimIsNpc) {
+        if (auto* health =
+                EntityRegistry::instance().tryGet<HealthComponent>(victimEntity)) {
+            const int amount = request.amount > 0 ? request.amount : 1;
+            health->current = std::max(0, health->current - amount);
+            health->dead = health->current <= 0;
+            request.applied = 1;
+            request.killed = health->dead ? 1u : 0u;
+            request.healthAfter = health->current;
+            return true;
+        }
+        return false;
+    }
 
     ServerActorDamageRequest damageRequest;
     damageRequest.victim = findServerActor(
@@ -307,11 +326,31 @@ bool serverApplyEntityDamage(GameDamageApplyV1& request)
                                          attackerPlayerId, damageRequest.damage,
                                          damageRequest.knockback, damageRequest.source);
     } else {
-        // NPC victims migrate onto the shared boundary in a later phase.
-        request.applied = 0;
-        request.killed = 0;
-        request.healthAfter = 0;
-        return false;
+        // NPC victim: generic authoritative health on the NPC mirror, with the
+        // shared kill owner. No separate damageNpc capability is introduced.
+        auto nit = npcs.find(entityLegacyId(victimEntity));
+        if (nit == npcs.end()) {
+            request.applied = 0;
+            request.killed = 0;
+            request.healthAfter = 0;
+            return false;
+        }
+        const int amount = request.amount > 0 ? request.amount : 1;
+        nit->second.health -= amount;
+        const bool killed = nit->second.health <= 0;
+        if (killed)
+            nit->second.health = 0;
+        request.applied = 1;
+        request.killed = killed ? 1u : 0u;
+        request.healthAfter = nit->second.health;
+        if (killed && context->sock && context->totalPacketsOut && context->tick) {
+            serverGamemodeRecordKill(
+                static_cast<SOCKET>(context->sock), players, &npcs,
+                attackerPlayerId, ENTITY_PLAYER, nit->second.entityId, ENTITY_NPC,
+                "", "", 0, glm::vec3(0.0f), nit->second.pos, *context->tick,
+                *context->totalPacketsOut);
+        }
+        return true;
     }
     request.applied = result.applied ? 1u : 0u;
     request.killed = result.killed ? 1u : 0u;

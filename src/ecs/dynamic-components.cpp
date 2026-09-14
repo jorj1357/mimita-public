@@ -49,6 +49,8 @@ void DynamicComponentStore::clear()
     data_.clear();
     entityTypes_.clear();
     migrations_.clear();
+    removals_.clear();
+    revision_ = 0;
 }
 
 bool DynamicComponentStore::MigrationKey::operator<(const MigrationKey& other) const
@@ -173,6 +175,7 @@ bool DynamicComponentStore::write(EntityId entity, std::uint64_t typeId,
     blob.bytes.assign(static_cast<const std::uint8_t*>(data),
                       static_cast<const std::uint8_t*>(data) + size);
     blob.version = s->version;
+    blob.changeVersion = ++revision_;
     auto& types = entityTypes_[entity];
     if (std::find(types.begin(), types.end(), typeId) == types.end())
         types.push_back(typeId);
@@ -224,6 +227,9 @@ bool DynamicComponentStore::remove(EntityId entity, std::uint64_t typeId)
         auto& v = typesIt->second;
         v.erase(std::remove(v.begin(), v.end(), typeId), v.end());
     }
+    if (erased)
+        removals_.push_back(
+            Removal{entity, typeId, static_cast<std::uint32_t>(++revision_)});
     return erased;
 }
 
@@ -234,8 +240,9 @@ void DynamicComponentStore::eraseEntity(EntityId entity)
         return;
     for (std::uint64_t typeId : typesIt->second) {
         auto typeIt = data_.find(typeId);
-        if (typeIt != data_.end())
-            typeIt->second.erase(entity);
+        if (typeIt != data_.end() && typeIt->second.erase(entity) > 0)
+            removals_.push_back(
+                Removal{entity, typeId, static_cast<std::uint32_t>(++revision_)});
     }
     entityTypes_.erase(typesIt);
 }
@@ -310,6 +317,44 @@ std::vector<std::uint8_t> DynamicComponentStore::serializeType(std::uint64_t typ
         appendPod(out, size);
         appendBytes(out, blob.bytes.data(), blob.bytes.size());
     }
+    return out;
+}
+
+std::vector<std::uint64_t> DynamicComponentStore::typeIds() const
+{
+    std::vector<std::uint64_t> ids;
+    ids.reserve(schemas_.size());
+    for (const auto& entry : schemas_)
+        ids.push_back(entry.first);
+    std::sort(ids.begin(), ids.end());
+    return ids;
+}
+
+std::vector<std::uint8_t> DynamicComponentStore::blob(EntityId entity,
+                                                      std::uint64_t typeId) const
+{
+    auto typeIt = data_.find(typeId);
+    if (typeIt == data_.end())
+        return {};
+    auto entityIt = typeIt->second.find(entity);
+    return entityIt == typeIt->second.end() ? std::vector<std::uint8_t>{}
+                                            : entityIt->second.bytes;
+}
+
+std::uint32_t DynamicComponentStore::changeVersionOf(EntityId entity,
+                                                     std::uint64_t typeId) const
+{
+    auto typeIt = data_.find(typeId);
+    if (typeIt == data_.end())
+        return 0;
+    auto entityIt = typeIt->second.find(entity);
+    return entityIt == typeIt->second.end() ? 0 : entityIt->second.changeVersion;
+}
+
+std::vector<DynamicComponentStore::Removal> DynamicComponentStore::consumeRemovals()
+{
+    std::vector<Removal> out = std::move(removals_);
+    removals_.clear();
     return out;
 }
 

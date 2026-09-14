@@ -10,7 +10,7 @@
 
 #include "network/server.h"
 #include "network/server-gamemode.h"
-#include "network/server-gamemode.h"
+#include "network/server-weapon-state.h"
 #include "network/server-constraints.h"
 #include "network/multiplayer-context.h"
 #include "live-code/live-behavior.h"
@@ -2713,6 +2713,8 @@ void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
 
     ServerPlayer::ServerWeaponRuntime& rt = rtIt->second;
     const WeaponDefinition* def = WeaponRegistry::instance().get(*wepId);
+    // Migrated weapons: reload state is component-authoritative.
+    serverWeaponStateLoad(p, *wepId);
 
     // ── Adopt client-authoritative ammo ────────────────────────────
     // The client owns its clip; take its numbers so the "mag full"/"no
@@ -2778,6 +2780,7 @@ void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
     result.stateRevision = rt.stateRevision;
 
     // Cache so a retry re-sends this exact result, then send to this player only
+    serverWeaponStateStore(p, *wepId);
     cacheReloadResult(p, req, result.accepted, result.reason,
                       result.magazineAmmo, result.reserveAmmo,
                       result.reloadCompleteTick, result.nextAllowedFireTick,

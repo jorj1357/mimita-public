@@ -238,21 +238,27 @@ void engineTickCombat(Engine& engine, float dt)
         !bombTagEndVisible && !bombTagCountdown &&
         gameplayInputAllowed && InputCommandSystem::instance().isKeyboardEnabled() && mouseDown &&
         glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
-        if (isAutoProjectile && online) {
-            const uint16_t netId = MimitaNet::weaponDefNetworkIdFor(curDef->id);
-            if (netId != 0) {
+        const bool runtimeTool = player.runtimeToolId != 0;
+        if ((isAutoProjectile || runtimeTool) && online) {
+            const uint16_t netId = curDef
+                ? MimitaNet::weaponDefNetworkIdFor(curDef->id) : 0;
+            const uint64_t toolId = runtimeTool ? player.runtimeToolId : 0;
+            if (netId != 0 || toolId != 0) {
                 if (!mpContext.fireIntentActive) {
                     mpContext.fireIntentActive = true;
                     mpContext.fireIntentWeapon = netId;
-                    mpContext.fireIntentVariant = (uint16_t)curDef->slot;
+                    mpContext.fireIntentVariant =
+                        (uint16_t)(curDef ? curDef->slot : 0);
                     mpContext.fireIntentLastHeartbeatTick = mpContext.clientSimulationTick;
                     MimitaNet::mpSendFireIntent(mpContext, MimitaNet::FIRE_INTENT_START, netId,
-                        (uint16_t)curDef->slot, camera.pos, camera.front, 0);
+                        (uint16_t)(curDef ? curDef->slot : 0), camera.pos, camera.front, 0,
+                        toolId);
                 } else if (mpContext.clientSimulationTick -
                            mpContext.fireIntentLastHeartbeatTick >= 6) {
                     mpContext.fireIntentLastHeartbeatTick = mpContext.clientSimulationTick;
                     MimitaNet::mpSendFireIntent(mpContext, MimitaNet::FIRE_INTENT_HEARTBEAT, netId,
-                        (uint16_t)curDef->slot, camera.pos, camera.front, 0);
+                        (uint16_t)(curDef ? curDef->slot : 0), camera.pos, camera.front, 0,
+                        toolId);
                 }
             }
         } else {
@@ -271,9 +277,11 @@ void engineTickCombat(Engine& engine, float dt)
     }
 
     // Close the held-fire window on release, weapon change, or disconnect.
-    if (mpContext.fireIntentActive && (!mouseDown || !isAutoProjectile || !online)) {
+    if (mpContext.fireIntentActive &&
+        (!mouseDown || (!isAutoProjectile && player.runtimeToolId == 0) || !online)) {
         MimitaNet::mpSendFireIntent(mpContext, MimitaNet::FIRE_INTENT_STOP, mpContext.fireIntentWeapon,
-            mpContext.fireIntentVariant, camera.pos, camera.front, 0);
+            mpContext.fireIntentVariant, camera.pos, camera.front, 0,
+            player.runtimeToolId);
         mpContext.fireIntentActive = false;
     }
     mousePrev = mouseDown;

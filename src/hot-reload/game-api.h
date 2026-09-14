@@ -1370,6 +1370,14 @@ using GameDamageApplyFn = bool (MIMITA_GAME_CALL *)(
 
 // Component copy policy lives in schema metadata so the editor never hardcodes
 // "if component == X".
+// Generic dynamic-component network policy (schema metadata). Replication
+// eligibility is data on the schema; the network layer never switches on a
+// component name.
+static constexpr std::uint32_t GAME_NET_NONE = 0;         // never replicated
+static constexpr std::uint32_t GAME_NET_ALL = 1;          // to every client
+static constexpr std::uint32_t GAME_NET_OWNER = 2;        // only the owning player
+static constexpr std::uint32_t GAME_NET_SERVER_ONLY = 3;  // authoritative only
+
 enum GameCopyPolicy : std::uint32_t {
     GAME_COPY_AUTHORING = 0,
     GAME_COPY_IDENTITY_ONLY = 1,

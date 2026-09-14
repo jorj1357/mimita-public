@@ -9,8 +9,10 @@
 
 # Hot / warm / cold audit
 
-Last updated: 2026-09-14 (authoritative server-context pass: hot code can spawn
-authoritative projectiles and apply damage through generic capabilities).
+Last updated: 2026-09-14 (generic dynamic-component + relationship replication:
+a component type invented after startup is network-visible to clients without
+the EXE knowing its type; generic damage across entity types; generic item
+containment/equip; generic action input routing).
 
 Companion review: `docs/hot-warm-cold-review-09-14-2026.md` (full subsystem table).
 
@@ -40,6 +42,26 @@ Compiling into `mimita-live-gNNNNNN.dll` is not sufficient.
   `component.enumerate`, `component.typesOnEntity`, `component.schema`,
   `relationship.add/remove/query`, activation-time schema migration with safe
   failure, and deterministic dynamic-component serialization/hash.
+- **New 2026-09-14 (generic replication):** one opaque envelope (`PACKET_DYNAMIC_COMPONENT`)
+  replicates schema descriptors, component upserts/removals, and relationship
+  edges for ANY dynamic type invented after startup, selected by schema
+  `networkPolicy` (`ALL`/`OWNER`/`NONE`/`SERVER_ONLY`), over the reliable event
+  channel. Clients register unknown schemas, apply/remove state generically, and
+  migrate on version change via registered migrations; mismatched payloads are
+  rejected. `HotProjectileState` (a real gameplay component) uses the same path.
+  No per-component packet, struct, encoder, or decoder.
+- **New 2026-09-14 (generic damage + item containment):** `damage.apply` works
+  on players, NPCs, and non-actor damageable entities through one capability.
+  Items are owned by generic `contains-item`/`equips-item` relationships; the
+  same item EntityId survives inventory->equip->drop->pickup->re-equip, with
+  `on.equip`/`on.unequip`/`on.drop`/`on.pickup` behavior-binding dispatch.
+- **New 2026-09-14 (generic action input):** primary client input can carry a
+  generic runtime `toolId` (hash) instead of requiring a registered
+  `NETWORK_WEAPON_*`/`WeaponRegistry` weapon. The server lazily creates/links an
+  equipped tool entity (relationship + dynamic component) and dispatches the
+  generic action; per-entity `BehaviorBindingsComponent` or the runtime behavior
+  table owns the consequence. A tool created after startup is equipable and
+  usable from real input with no weapon registration.
 - **New 2026-09-14 (authoritative server context):** a generic
   `ServerContextV1` handle plus `projectile.spawn` and `damage.apply` capability
   primitives let hot behaviors mutate authoritative world state (spawn a
@@ -90,8 +112,10 @@ Compiling into `mimita-live-gNNNNNN.dll` is not sufficient.
 - Note: `enum class ServerMode` is dead (write-only); the `matchMode` string is
   the routing key and is now bridged to runtime mode ids.
 - Weapons/inventory/tools: `src/combat/*` (WARM): use/impact **policy** is hot
-  for registered keys; weapon-type selection (`projectileConfig`,
-  `weaponExecutionTypeForBehavior`), ammo/reload state, item spawn/containment,
+  for registered keys; the **revolver** ammo/cooldown/reload state is now
+  component-authoritative on its tool entity (one migrated weapon; the rest stay
+  on the string-keyed scratch map). Weapon-type selection (`projectileConfig`,
+  `weaponExecutionTypeForBehavior`), other weapons' ammo/reload state, item spawn/containment,
   hitscan, and melee contact detection remain cold. `server-projectiles.cpp`
   spawn/sim/collision stay kernel mechanisms.
 - Projectile spawn/simulation/collision/reconciliation: `server-projectiles.cpp`,
@@ -186,3 +210,87 @@ Compiling into `mimita-live-gNNNNNN.dll` is not sufficient.
   the per-type explode branch still exists as the non-hot fallback. Next:
   migrate remaining spawners onto the hot entity path and delete the kernel
   policy branch; then hitscan/melee; then ammo/cooldown/equip component state.
+
+## Update 2026-09-14 — grenade + request-path projectile attacks on canonical path
+
+- `hot-projectile.h` gained generic bounce data (`restitution`, `maxBounces`,
+  `bounces`, `HOT_PROJECTILE_BOUNCE_ON_WORLD`); the canonical `projectiles.60`
+  system reflects velocity on world contact when set.
+- New `tools/grenade-tool.cpp`: grenade launcher (network id 7) spawns the
+  canonical projectile entity with bouncy fuse semantics (no new path).
+- `server-attack.cpp` projectile request branch now routes through the hot tool
+  seam (`LiveBehavior::dispatchToolUse`) with real origin/direction and the
+  server player entity; handled + `outFire == 0` suppresses the kernel spawn.
+  Rocket and grenade player attacks therefore use the canonical entity path, not
+  the kernel container.
+- Proof: `--hot-combat-selftest` PASS, incl. "grenade uses the canonical hot
+  projectile path" and the generic fire-intent spawn check.
+- NPC projectile firing now dispatches `ToolUsePolicyV1` with the NPC entity as
+  `userEntity`; the hot rocket/grenade behavior creates the canonical entity
+  and `projectiles.60` owns its simulation. `server-npcs.cpp` no longer creates
+  a `ServerProjectile` or calls `Ecs::spawnRocket` for NPC firing.
+- Still cold: legacy player projectile packet handlers/fallbacks in
+  `server-projectiles.cpp`, client prediction/render compatibility paths, and
+  old local `RocketLauncherState` ownership. Next: remove the remaining normal
+  player/kernel producers and their per-type policy after replication parity.
+
+## Update 2026-09-14 — legacy authoritative projectile execution disconnected
+
+- Normal `AttackRequest` projectile fallback and held-fire projectile intent no
+  longer call `handleGenericProjectileAttack`; missing hot behavior rejects
+  instead of creating a second projectile architecture.
+- Both server-loop calls to `tickServerProjectiles` were removed. No normal
+  player or NPC producer now inserts an authoritative `ServerProjectile`.
+- Remaining `server-projectiles.cpp` code is compatibility-only: the disabled
+  legacy `PACKET_PROJECTILE_FIRE_REQUEST` body, its reject response, and dead
+  low-level/container helpers. Client prediction/render compatibility still
+  references `Ecs::spawnRocket`; the ECS slice selftest and local launcher do
+  too. The file is not yet deletable because compatibility code remains
+  compiled and the packet handler remains registered.
+
+## Update 2026-09-14 — generic runtime state replication (components + relationships)
+
+Replication stage map (server -> change detection -> serialization -> framing ->
+transport -> client decode -> client state):
+
+- Server authoritative state: `ServerPlayer`/`ServerNpc` structs (TYPE-SPECIFIC,
+  COLD), `DynamicComponentStore` + `RelationshipStore` (GENERIC), entities
+  (`EntityRegistry`, GENERIC).
+- Change detection: `DynamicComponentStore::changeVersion` + removals
+  (GENERIC); `RelationshipStore` per-edge `changeVersion` (GENERIC, new);
+  players/NPCs have no dirty tracking (COLD).
+- Serialization: one opaque `PACKET_DYNAMIC_COMPONENT` envelope
+  (`dynamic-replication.*`, GENERIC) carrying schema descriptors, component
+  upserts/removes, and relationship add/remove records. Player/NPC snapshots
+  remain per-type wire structs (TYPE-SPECIFIC).
+- Framing/transport: shared `PacketHeader` + reliable gameplay-event queue
+  (GENERIC).
+- Client decode: `mpTick` generic branch -> `dynamicReplicationDecode` ->
+  `dynamicReplicationApply` (GENERIC, no type switch).
+- Client state: `DynamicComponentStore` + `RelationshipStore` (GENERIC).
+
+- New: generic relationship replication in the same envelope. A relationship
+  type unknown to the EXE at startup becomes replicable the first time an edge
+  is added (`RelationshipStore::add` sets policy `GAME_NET_ALL`), so
+  `relationship.contains-item`, `relationship.equips-item`, and
+  `relationship.fired-projectile` replicate with no cold registration or
+  item-specific packet.
+- Per-client sender now sends component **and** relationship upserts, detects
+  removals by diffing its previously-sent set, `GAME_NET_OWNER` filters by source
+  entity, and batches across multiple reliable packets so no changed record is
+  silently dropped by truncation.
+- `serverReplicateDynamicComponents` is now wired in the listen/host server tick
+  as well as the dedicated server tick.
+- `HotProjectileStateV1` is registered `GAME_NET_ALL`; the dynamic-replication
+  selftest proves it flows through the generic path to a client store.
+- Proof: `--dynamic-replication-selftest` PASS (component + relationship add,
+  update, remove; schema distribution; payload-size rejection; v1->v2 migration;
+  failed migration keeps last-good). `--hot-combat-selftest`,
+  `--dynamic-lifecycle-selftest`, `--live-code-selftest`,
+  `--capability-selftest`, `--gamemode-hot-selftest`,
+  `--movement-parity-selftest`, `--hot-authoritative-selftest` PASS.
+- Honest boundary: arbitrary runtime entities are not yet network-visible as
+  entities; only their dynamic component and relationship records replicate
+  (applied to the client store). Generic `ENTITY_CREATE`/`ENTITY_DESTROY`
+  replication is still missing, as is live two-client network proof. No EXE
+  rebuild or new per-feature packet was required.

@@ -153,8 +153,28 @@ void MIMITA_GAME_CALL projectileTick(void* host, std::uint64_t /*tick*/, float d
                 if (ctx->queryWorldRay(ctx->host, prev, dir, len + s.radius, hit,
                                        nrm, &dist))
                 {
-                    at[0] = hit[0]; at[1] = hit[1]; at[2] = hit[2];
-                    exploded = true;
+                    const bool canBounce =
+                        (s.flags & HOT_PROJECTILE_BOUNCE_ON_WORLD) &&
+                        s.bounces < s.maxBounces;
+                    if (canBounce)
+                    {
+                        const float vn = s.velocity[0] * nrm[0] +
+                                         s.velocity[1] * nrm[1] +
+                                         s.velocity[2] * nrm[2];
+                        const float k = (1.0f + s.restitution) * vn;
+                        s.velocity[0] -= k * nrm[0];
+                        s.velocity[1] -= k * nrm[1];
+                        s.velocity[2] -= k * nrm[2];
+                        s.position[0] = hit[0] + nrm[0] * (s.radius + 0.01f);
+                        s.position[1] = hit[1] + nrm[1] * (s.radius + 0.01f);
+                        s.position[2] = hit[2] + nrm[2] * (s.radius + 0.01f);
+                        ++s.bounces;
+                    }
+                    else if (s.flags & HOT_PROJECTILE_EXPLODE_ON_WORLD)
+                    {
+                        at[0] = hit[0]; at[1] = hit[1]; at[2] = hit[2];
+                        exploded = true;
+                    }
                 }
             }
         }
@@ -234,7 +254,7 @@ void MIMITA_GAME_CALL projectileTick(void* host, std::uint64_t /*tick*/, float d
 
 const MimitaHotPackage::SchemaRegistrar s_hotProjectileSchema{
     {HOT_PROJECTILE_COMPONENT, gameHash("HotProjectileState.v1"),
-     sizeof(HotProjectileStateV1), 8, GAME_COPY_RUNTIME_ONLY, 0,
+     sizeof(HotProjectileStateV1), 8, GAME_COPY_RUNTIME_ONLY, GAME_NET_ALL,
      "HotProjectileState", 1, 0}};
 const MimitaHotPackage::SystemRegistrar s_hotProjectileSystem{
     {gameHash("hot.projectile-sim"), kDomain, 0, 0, projectileTick,

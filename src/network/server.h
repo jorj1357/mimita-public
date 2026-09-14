@@ -979,20 +979,6 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
                                  uint32_t& nextProjectileId,
                                  const HeadlessWorld& world,
                                  uint32_t tick, uint64_t& totalPacketsOut);
-ServerProjectileAttackResult handleGenericProjectileAttack(
-    SOCKET sock,
-    std::unordered_map<uint32_t, ServerPlayer>& players,
-    std::unordered_map<uint32_t, ServerNpc>& npcs,
-    std::unordered_map<uint32_t, ServerProjectile>& projectiles,
-    uint32_t& nextProjectileId,
-    ServerPlayer& shooter,
-    const WeaponDefinition& definition,
-    uint32_t requestId,
-    const glm::vec3& origin,
-    const glm::vec3& direction,
-    uint32_t clientSimulationTick,
-    uint32_t tick,
-    uint64_t& totalPacketsOut);
 // Held-fire intent (start/stop/heartbeat) and its per-tick authoritative driver.
 void handleFireIntentPacket(SOCKET sock, const char* buffer, int bytes,
                             std::unordered_map<uint32_t, ServerPlayer>& players,
@@ -1005,12 +991,6 @@ void tickHeldFireIntents(
     uint32_t& nextProjectileId,
     uint32_t tick,
     uint64_t& totalPacketsOut);
-void tickServerProjectiles(SOCKET sock,
-                           std::unordered_map<uint32_t, ServerPlayer>& players,
-                           std::unordered_map<uint32_t, ServerNpc>& npcs,
-                           std::unordered_map<uint32_t, ServerProjectile>& projectiles,
-                           const HeadlessWorld& world,
-                           float dt, uint32_t tick, uint64_t& totalPacketsOut);
 // Removes NPC-fired projectiles as soon as their owner is dead or missing and
 // sends the terminal event to clients so a dead NPC cannot keep attacking.
 void cancelDeadNpcProjectiles(
@@ -1197,6 +1177,19 @@ ServerDamageResult applyActorDamage(
     std::unordered_map<uint32_t, ServerPlayer>& players,
     std::unordered_map<uint32_t, ServerNpc>& npcs,
     const ServerActorDamageRequest& request);
+
+// Generic runtime-tool equip. Creates/links a tool entity the player owns and
+// equips; no registry weapon or NETWORK_WEAPON_* id is required.
+bool serverEquipRuntimeTool(std::unordered_map<uint32_t, ServerPlayer>& players,
+                            uint32_t playerId, const std::string& toolName);
+
+// Generic item containment/equip state (relationships + entity identity). The
+// same item EntityId survives inventory -> equip -> drop -> pickup -> re-equip.
+bool serverItemContains(std::uint32_t playerId, std::uint64_t itemEntity);
+bool serverItemEquip(std::uint32_t playerId, std::uint64_t itemEntity);
+bool serverItemUnequip(std::uint32_t playerId);
+bool serverItemDrop(std::uint32_t playerId, std::uint64_t itemEntity);
+bool serverItemPickup(std::uint32_t playerId, std::uint64_t itemEntity);
 
 // Phase-1 actor lookup used by the incremental damage migration. It returns
 // exactly one typed actor and never guesses that an ID is a player.

@@ -32,6 +32,7 @@ using json = nlohmann::json;
 #include "network/disagreement-visuals.h"
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
+#include "hot-reload/game-api.h"
 #include "entities/player-animation-config.h"
 #include "duel/duel-weapon-pool.h"
 #include "game/duel.h"
@@ -319,6 +320,20 @@ void registerWeaponCommands()
             }
 
             Terminal::instance().addLog(loaded ? "[WEAPON] reload complete" : "[WEAPON] reload unavailable");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "equiptool", "Equip a runtime tool by name (generic action path)", "equiptool <name>",
+        [](const std::vector<std::string>& args) {
+            Player& player = THE_PLAYER;
+            if (args.empty()) {
+                Terminal::instance().addLog("[TOOL] usage: equiptool <name>");
+                return;
+            }
+            player.runtimeToolId = gameHash(args[0].c_str());
+            Terminal::instance().addLog("[TOOL] equipped runtime tool " + args[0] +
+                " id=" + std::to_string(player.runtimeToolId));
         }
     });
 

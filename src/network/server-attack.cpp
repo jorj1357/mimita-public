@@ -14,6 +14,11 @@
 #include "network/server-gamemode.h"
 #include "network/server-damage-policy.h"
 #include "ecs/actor-entities.h"
+#include "network/server-context.h"
+#include "network/server-weapon-state.h"
+#include "ecs/dynamic-components.h"
+#include "ecs/entity-registry.h"
+#include "ecs/relationship-store.h"
 #include "live-code/live-behavior.h"
 #include "network/disagreement-visuals.h"
 #include "combat/weapon-execution.h"
@@ -415,6 +420,9 @@ void handleAttackRequest(
     }
 
     ServerPlayer::ServerWeaponRuntime& rt = rtIt->second;
+    // Migrated weapons: the authoritative ammo/cooldown/reload lives on the
+    // tool entity's component; this legacy view is refreshed from it.
+    serverWeaponStateLoad(shooter, *wepId);
 
     // ── Validate or reconcile equipped slot ───────────────────────────
     const int logicalSlot = serverCommunityWeaponLogicalSlot(def->id);
@@ -805,6 +813,8 @@ void handleAttackRequest(
         rt.reloading = false;
         rt.stateRevision++;
         shooter.shotsThisTick++;
+        // Persist the authoritative result back onto the tool entity.
+        serverWeaponStateStore(shooter, *wepId);
 
         const uint8_t netWeapon = networkWeaponTypeForDefinition(*def);
         for (const WeaponExecution::HitscanDamageAggregate& aggregate : trace.aggregates)
@@ -1200,28 +1210,46 @@ void handleAttackRequest(
             return;
         }
 
-        ServerProjectileAttackResult projectileResult =
-            handleGenericProjectileAttack(
-                sock, players, npcs, projectiles, nextProjectileId,
-                shooter, *def, req->requestId, origin, direction,
-                req->clientSimulationTick,
-                tick, totalPacketsOut);
-        sendAttackResult(sock, shooter, req, tick,
-                         projectileResult.accepted,
-                         projectileResult.reason,
-                         projectileResult.projectileId,
-                         projectileResult.magazineAmmo,
-                         projectileResult.reserveAmmo,
-                         projectileResult.nextAllowedFireTick,
-                         projectileResult.stateRevision);
+        // Generic action routing: a hot/per-entity tool behavior may own the
+        // projectile attack. handled + outFire == 0 suppresses the kernel spawn,
+        // so rocket/grenade use the canonical hot projectile entity path.
+        {
+            ToolUsePolicyV1 use{};
+            use.userEntity = static_cast<std::uint64_t>(
+                Ecs::ensure(EntityRealm::Server, EntityDomain::Player, shooter.id));
+            use.ownerId = shooter.id;
+            const std::uint8_t netWeapon = networkWeaponTypeForDefinition(*def);
+            use.toolId = static_cast<std::uint64_t>(netWeapon);
+            use.toolNetworkId = static_cast<std::uint32_t>(netWeapon);
+            use.kind = 0;
+            use.tick = tick;
+            use.baseFire = 1;
+            use.outFire = 1;
+            use.ammoCost = 1;
+            use.origin[0] = origin.x; use.origin[1] = origin.y; use.origin[2] = origin.z;
+            use.direction[0] = direction.x; use.direction[1] = direction.y; use.direction[2] = direction.z;
+            LiveBehavior::dispatchToolUse(use, tick);
+            if (use.handled && use.outFire == 0)
+            {
+                sendAttackResult(sock, shooter, req, tick, true, 0, 0,
+                                 rt.magazineAmmo, rt.reserveAmmo,
+                                 rt.nextAllowedFireTick, rt.stateRevision);
+                Debug::log(Debug::Category::Weapons,
+                    "[ATTACK PROJECTILE HOT] playerId=%u weapon=%s ownedByHot=1\n",
+                    shooter.id, def->id.c_str());
+                return;
+            }
+        }
+
+        // A migrated projectile must never fall back to the kernel container.
+        // Missing hot behavior is a rejected action, not a second architecture.
+        sendAttackResult(sock, shooter, req, tick, false, 7, 0,
+                         rt.magazineAmmo, rt.reserveAmmo,
+                         rt.nextAllowedFireTick, rt.stateRevision);
         Debug::log(Debug::Category::Weapons,
-            "[ATTACK PROJECTILE %s] playerId=%u requestId=%u weapon=%s projectileId=%u ammo=%d/%d stateRev=%u\n",
-            projectileResult.accepted ? "ACCEPT" : "REJECT",
+            "[ATTACK PROJECTILE REJECT] playerId=%u requestId=%u weapon=%s reason=hot-behavior-unavailable ammo=%d/%d stateRev=%u\n",
             shooter.id, req->requestId, def->id.c_str(),
-            projectileResult.projectileId,
-            projectileResult.magazineAmmo,
-            projectileResult.reserveAmmo,
-            projectileResult.stateRevision);
+            rt.magazineAmmo, rt.reserveAmmo, rt.stateRevision);
         return;
     }
 
@@ -1248,6 +1276,27 @@ void handleFireIntentPacket(SOCKET, const char* buffer, int bytes,
     if (player.dead)
         return;
 
+    // Generic runtime tool: lazily create/link the equipped tool entity on the
+    // first use. No registered network weapon is required.
+    if (req->toolId != 0 && player.equippedToolEntity == 0)
+    {
+        const EntityId playerEntity =
+            Ecs::ensure(EntityRealm::Server, EntityDomain::Player, player.id);
+        const EntityId toolEntity =
+            EntityRegistry::instance().createGeneric(EntityRealm::Server);
+        const std::uint64_t id = req->toolId;
+        MimitaRuntime::DynamicComponentStore::instance().write(
+            toolEntity, gameHash("EquippedTool"), &id, sizeof(id));
+        MimitaRuntime::RelationshipStore::instance().add(
+            gameHash("relationship.owns-tool"), playerEntity, toolEntity, req->toolId);
+        player.equippedToolEntity = static_cast<std::uint64_t>(toolEntity);
+        player.runtimeToolId = req->toolId;
+        Debug::log(Debug::Category::Weapons,
+            "[TOOL EQUIP] player=%u id=%llu entity=%llu (from action intent)\n",
+            player.id, (unsigned long long)req->toolId,
+            (unsigned long long)toolEntity);
+    }
+
     if (req->action == FIRE_INTENT_STOP)
     {
         player.heldFire.active = false;
@@ -1264,6 +1313,7 @@ void handleFireIntentPacket(SOCKET, const char* buffer, int bytes,
         held.lastEmitTick = tick - 1;  // allow an emission this tick
     }
     held.weaponDefNetworkId = req->weaponDefNetworkId;
+    held.toolId = req->toolId;
     held.attackVariant = req->attackVariant;
     held.deterministicSeed = req->deterministicSeed;
     held.origin = glm::vec3(req->originX, req->originY, req->originZ);
@@ -1385,15 +1435,132 @@ void tickHeldFireIntents(
         // Held fire enforces at most one projectile per tick itself.
         rtIt->second.nextAllowedFireTick = tick;
 
-        ServerProjectileAttackResult result = handleGenericProjectileAttack(
-            sock, players, npcs, projectiles, nextProjectileId, player, *def,
-            requestId, origin, direction, tick, tick, totalPacketsOut);
         held.lastEmitTick = tick;
-        if (result.accepted)
-            ++held.emittedCount;
-        else if (rtIt->second.magazineAmmo <= 0)
-            held.active = false;
+        // Projectile tools are edge-triggered through the generic action seam.
+        // Never revive the removed kernel-container fallback for held intent.
+        held.active = false;
     }
+}
+
+// ── Generic item containment / equip state ─────────────────────────────
+// Actor --contains-item--> Item entity and Actor --equips-item--> Item entity.
+// The SAME item EntityId survives inventory -> equip -> drop -> pickup ->
+// re-equip; behavior bindings fire on each lifecycle event. No weapon maps.
+namespace {
+const std::uint64_t kRelContainsItem = gameHash("relationship.contains-item");
+const std::uint64_t kRelEquipsItem = gameHash("relationship.equips-item");
+const std::uint64_t kCompEquippedTool = gameHash("EquippedTool");
+
+EntityId actorEntityForPlayer(uint32_t playerId)
+{
+    return Ecs::ensure(EntityRealm::Server, EntityDomain::Player, playerId);
+}
+
+void fireItemBinding(EntityId itemEntity, const char* eventName)
+{
+    ServerContextV1* context = activeServerContext();
+    const std::uint64_t tick = (context && context->tick) ? *context->tick : 0;
+    LiveBehavior::runBehaviorBindings(
+        static_cast<std::uint64_t>(itemEntity),
+        static_cast<std::uint32_t>(gameHash(eventName)), nullptr, 0, tick);
+}
+} // namespace
+
+bool serverItemContains(std::uint32_t playerId, std::uint64_t itemEntity)
+{
+    return MimitaRuntime::RelationshipStore::instance().has(
+        kRelContainsItem, static_cast<EntityId>(actorEntityForPlayer(playerId)),
+        static_cast<EntityId>(itemEntity));
+}
+
+bool serverItemEquip(std::uint32_t playerId, std::uint64_t itemEntity)
+{
+    const EntityId actor = actorEntityForPlayer(playerId);
+    const EntityId item = static_cast<EntityId>(itemEntity);
+    if (item == kInvalidEntityId || !EntityRegistry::instance().alive(item))
+        return false;
+    auto& rel = MimitaRuntime::RelationshipStore::instance();
+    if (!rel.has(kRelContainsItem, actor, item))
+        rel.add(kRelContainsItem, actor, item, 0);
+    // One equipped item per actor: clear any previous equip edge.
+    std::uint64_t previous[8] = {0};
+    const std::size_t count = rel.query(kRelEquipsItem, actor, previous, nullptr, 8);
+    for (std::size_t i = 0; i < count; ++i)
+        rel.remove(kRelEquipsItem, actor, previous[i]);
+    rel.add(kRelEquipsItem, actor, item, 0);
+    fireItemBinding(item, "on.equip");
+    return true;
+}
+
+bool serverItemUnequip(std::uint32_t playerId)
+{
+    const EntityId actor = actorEntityForPlayer(playerId);
+    auto& rel = MimitaRuntime::RelationshipStore::instance();
+    std::uint64_t equipped[8] = {0};
+    const std::size_t count = rel.query(kRelEquipsItem, actor, equipped, nullptr, 8);
+    for (std::size_t i = 0; i < count; ++i) {
+        rel.remove(kRelEquipsItem, actor, equipped[i]);
+        fireItemBinding(equipped[i], "on.unequip");
+    }
+    return count > 0;
+}
+
+bool serverItemDrop(std::uint32_t playerId, std::uint64_t itemEntity)
+{
+    const EntityId actor = actorEntityForPlayer(playerId);
+    const EntityId item = static_cast<EntityId>(itemEntity);
+    auto& rel = MimitaRuntime::RelationshipStore::instance();
+    rel.remove(kRelEquipsItem, actor, item);
+    rel.remove(kRelContainsItem, actor, item);
+    fireItemBinding(item, "on.drop");
+    return true;
+}
+
+bool serverItemPickup(std::uint32_t playerId, std::uint64_t itemEntity)
+{
+    const EntityId actor = actorEntityForPlayer(playerId);
+    const EntityId item = static_cast<EntityId>(itemEntity);
+    if (item == kInvalidEntityId || !EntityRegistry::instance().alive(item))
+        return false;
+    MimitaRuntime::RelationshipStore::instance().add(kRelContainsItem, actor, item, 0);
+    fireItemBinding(item, "on.pickup");
+    return true;
+}
+
+// Generic runtime-tool equip. No WeaponRegistry def or NETWORK_WEAPON_* id is
+// required: the tool becomes an entity the player owns and equips, and its
+// behavior is resolved generically at use time. This is the equip/containment
+// state that the legacy weapon slot maps are migrating to.
+bool serverEquipRuntimeTool(std::unordered_map<uint32_t, ServerPlayer>& players,
+                            uint32_t playerId, const std::string& toolName)
+{
+    auto it = players.find(playerId);
+    if (it == players.end() || toolName.empty())
+        return false;
+    ServerPlayer& player = it->second;
+    const std::uint64_t toolId = gameHash(toolName.c_str());
+    const EntityId playerEntity =
+        Ecs::ensure(EntityRealm::Server, EntityDomain::Player, player.id);
+
+    EntityId toolEntity = static_cast<EntityId>(player.equippedToolEntity);
+    if (toolEntity == kInvalidEntityId ||
+        !EntityRegistry::instance().alive(toolEntity)) {
+        toolEntity = EntityRegistry::instance().createGeneric(EntityRealm::Server);
+        // Persist the runtime tool identity as generic component state.
+        const std::uint64_t id = toolId;
+        MimitaRuntime::DynamicComponentStore::instance().write(
+            toolEntity, gameHash("EquippedTool"), &id, sizeof(id));
+    }
+    player.runtimeToolId = toolId;
+    player.equippedToolEntity = static_cast<std::uint64_t>(toolEntity);
+    MimitaRuntime::RelationshipStore::instance().add(
+        kRelContainsItem, playerEntity, toolEntity, toolId);
+    serverItemEquip(playerId, static_cast<std::uint64_t>(toolEntity));
+    Debug::log(Debug::Category::Weapons,
+        "[TOOL EQUIP] player=%u tool=%s id=%llu entity=%llu\n",
+        player.id, toolName.c_str(), (unsigned long long)toolId,
+        (unsigned long long)toolEntity);
+    return true;
 }
 
 } // namespace MimitaNet

@@ -546,6 +546,9 @@ public:
 
     // -------- Weapon system --------
     std::string equippedWeaponId;
+    // Generic runtime tool equipped via `equiptool <name>`. Non-zero selects the
+    // generic action path (no registered network weapon required).
+    uint64_t runtimeToolId = 0;
     std::string mCharacterName = "DefaultGuy";
     std::string mAvatarName;
     struct AvatarInstance* avatarInstance = nullptr;

@@ -651,7 +651,8 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
 
 void mpSendFireIntent(MultiplayerContext& ctx, uint32_t action,
     uint16_t weaponDefNetworkId, uint16_t attackVariant,
-    const glm::vec3& origin, const glm::vec3& direction, uint32_t count)
+    const glm::vec3& origin, const glm::vec3& direction, uint32_t count,
+    uint64_t toolId)
 {
     if (!ctx.active || !ctx.localPlayerId)
         return;
@@ -666,6 +667,7 @@ void mpSendFireIntent(MultiplayerContext& ctx, uint32_t action,
     packet.action = action;
     packet.weaponDefNetworkId = weaponDefNetworkId;
     packet.attackVariant = attackVariant;
+    packet.toolId = toolId;
     packet.startTick = ctx.clientSimulationTick;
     packet.endTick = ctx.clientSimulationTick;
     packet.count = count;

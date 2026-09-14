@@ -902,7 +902,8 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
 // Held-fire intent. One packet per window/heartbeat, never one per projectile.
 void mpSendFireIntent(MultiplayerContext& ctx, uint32_t action,
     uint16_t weaponDefNetworkId, uint16_t attackVariant,
-    const glm::vec3& origin, const glm::vec3& direction, uint32_t count);
+    const glm::vec3& origin, const glm::vec3& direction, uint32_t count,
+    uint64_t toolId = 0);
 
 // Replicate the local player's ragdoll limb snapshot (when active).
 void mpSendRagdollSnapshot(MultiplayerContext& ctx);

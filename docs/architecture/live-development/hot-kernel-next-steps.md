@@ -74,6 +74,30 @@ See `docs/architecture/live-development/hot-cold-audit.md` for the current map.
   ownership, and melee contact detection. Those need a **server context
   capability provider** (players/projectiles are currently function locals).
 
+## Round 10 (2026-09-14, generic runtime state replication) — implemented
+
+- One opaque envelope (`PACKET_DYNAMIC_COMPONENT`, `dynamic-replication.*`) carries
+  schema descriptors, component upserts/removes, and relationship add/remove
+  records for ANY dynamic component or relationship type. No per-component
+  packet, struct, encoder, or decoder, and no new `GameplayContextV1` field.
+- `DynamicComponentStore` already owned schema versions, migrations, and generic
+  change markers. `RelationshipStore` now owns per-edge `changeVersion` and a
+  per-type network policy: a relationship type unknown at startup becomes
+  replicable the first time an edge is added, so no cold registration is needed.
+- `serverReplicateDynamicComponents` sends per-client diffs of components AND
+  relationships, detects removals by diffing its sent set, honors `GAME_NET_OWNER`
+  by source entity, and batches across packets so truncation never drops a change.
+  Wired in both the dedicated and listen/host server ticks.
+- `--dynamic-replication-selftest` covers schema distribution, component and
+  relationship add/update/remove, payload-size rejection, and v1->v2 migration
+  with last-good preservation. `HotProjectileStateV1` is `GAME_NET_ALL` and is
+  proven to flow through the generic path.
+- Not done: generic `ENTITY_CREATE`/`ENTITY_DESTROY` replication (only component
+  and relationship records replicate today, applied to the client store); stale
+  component-record rejection on the client; two-client live network proof;
+  client rendering of replicated projectile state; and migrating the remaining
+  typed player/NPC/projectile snapshot structs onto the generic substrate.
+
 ## Round 2 (2026-09-12, repeated activation + observability) — implemented
 
 - Per-process build isolation: `build/hotreload/p<pid>/gen<gen>/` with

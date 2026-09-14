@@ -17,6 +17,7 @@
 #include "network/server-damage-policy.h"
 #include "ecs/actor-entities.h"
 #include "live-code/live-gameplay.h"
+#include "live-code/live-behavior.h"
 
 #include "npc/npc.h"
 #include "npc/npc-internal.h"
@@ -316,155 +317,30 @@ static void broadcastNpcFiring(SOCKET sock,
             hit = origin + dir * 100.0f;
         }
 
-        // For projectile weapons (rocket, grenade), create a ServerProjectile
-        // and broadcast a ProjectileSpawnEventPacket — same as player rockets.
-        // This is what makes the projectile visible on all clients.
+        // NPCs use the same generic tool/action seam as players. The hot tool
+        // behavior creates the canonical entity and projectiles.60 owns it.
         if (networkWeaponTypeIsProjectile(netWeapon))
         {
-            auto cp = [&](const char* key, float fallback) -> float {
-                auto it = wdef->customParams.find(key);
-                return it != wdef->customParams.end() ? it->second : fallback;
-            };
-
-            ServerProjectile projectile;
-            projectile.id = nextProjectileId++;
-            if (nextProjectileId == 0) nextProjectileId = 1;
-            projectile.ownerPlayerId = 0; // NPC (not a player)
-            projectile.ownerNpcId = n.id; // the NPC that fired this
-            projectile.fireSerial = 0;
-            projectile.weaponType = netWeapon;
-            projectile.position = origin;
-            projectile.previousPosition = origin;
-
-            float speed = wdef->projectileSpeed > 0.0f ? wdef->projectileSpeed : 40.0f;
-            float upBias = cp("upBias", 0.0f);
-            projectile.velocity = dir * speed + glm::vec3(0.0f, 0.0f, upBias);
-
-            projectile.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-            if (netWeapon == NETWORK_WEAPON_GRENADE_LAUNCHER)
-            {
-                glm::vec3 forward = glm::length(dir) > 0.0001f ? dir : glm::vec3(1.0f, 0.0f, 0.0f);
-                glm::vec3 refUp = std::fabs(forward.z) < 0.99f
-                    ? glm::vec3(0.0f, 0.0f, 1.0f)
-                    : glm::vec3(1.0f, 0.0f, 0.0f);
-                glm::vec3 right = glm::normalize(glm::cross(forward, refUp));
-                projectile.angularVelocity = right * cp("angSpeed", 6.0f);
-            }
-
-            projectile.lifetime = wdef->projectileLifetime > 0.0f ? wdef->projectileLifetime : 5.0f;
-            projectile.radius = wdef->projectileRadius > 0.0f ? wdef->projectileRadius : 0.3f;
-            projectile.splashRadius = cp("splashRadius", 8.0f);
-            projectile.splashDamage = cp("rocketDirectDamage", 150.0f);
-            projectile.splashExponent = cp("splashExponent", 2.0f);
-            projectile.knockbackStrength = cp("knockbackStrength", 160.0f);
-            projectile.selfKnockbackMultiplier = cp("selfKnockbackMultiplier", 1.0f);
-            projectile.gravity = cp("gravity", 20.0f);
-            projectile.drag = cp("drag", 0.15f);
-            projectile.restitution = cp("bounceRestitution", 0.35f);
-            projectile.friction = cp("bounceFriction", 0.5f);
-            projectile.armingDistance = cp("armingDistance", 2.0f);
-            projectile.armingTime = cp("armingTime", 0.0f);
-            projectile.minBounceSpeed = cp("minBounceSpeed", 0.1f);
-            projectile.angularDrag = cp("angularDrag", 0.3f);
-            projectile.maxBounceCount = (int)cp("maxBounceCount", 10.0f);
-            projectile.explodeOnPlayerImpact = cp("explodeOnPlayerImpact", 1.0f) > 0.0f;
-            projectile.explodeOnWorldImpact = cp("explodeOnWorldImpact", 0.0f) > 0.0f;
-            projectile.explodeOnLifetime = cp("explodeOnLifetime", 1.0f) > 0.0f;
-            projectile.splashLineOfSight = true;
-            projectile.spawnTick = tick;
-
-            // Live gameplay policy: apply the replaceable rocket policy to the
-            // authoritative NPC projectile exactly like the player path.
-            {
-                RocketFlightStateV1 flightState{};
-                flightState.position[0] = projectile.position.x;
-                flightState.position[1] = projectile.position.y;
-                flightState.position[2] = projectile.position.z;
-                flightState.velocity[0] = projectile.velocity.x;
-                flightState.velocity[1] = projectile.velocity.y;
-                flightState.velocity[2] = projectile.velocity.z;
-                flightState.age = 0.0f;
-                flightState.lifetime = projectile.lifetime;
-                flightState.weaponNetworkId = projectile.weaponDefNetworkId;
-                flightState.flags = 0;
-                RocketFlightParamsV1 flightBase{};
-                flightBase.speedScale = 1.0f;
-                flightBase.gravityScale = 1.0f;
-                flightBase.dragScale = 1.0f;
-                flightBase.upBias = upBias;
-                flightBase.lifetime = projectile.lifetime;
-                flightBase.bounces = static_cast<std::uint32_t>(projectile.maxBounceCount > 0 ? projectile.maxBounceCount : 0);
-                RocketFlightParamsV1 flightOut{};
-                if (LiveGameplay::rocketFlight(flightState, flightBase, flightOut))
-                {
-                    const float speedScale = std::max(0.0f, flightOut.speedScale);
-                    const float outSpeed = speed * speedScale;
-                    projectile.velocity = dir * outSpeed + glm::vec3(0.0f, 0.0f, flightOut.upBias);
-                    if (flightOut.lifetime > 0.0f)
-                        projectile.lifetime = flightOut.lifetime;
-                    projectile.gravity *= std::max(0.0f, flightOut.gravityScale);
-                    projectile.drag *= std::max(0.0f, flightOut.dragScale);
-                    LiveGameplay::journalPolicy("server", "npc_rocket_flight", projectile.id, n.id,
-                                                speed, outSpeed, 0.0f, 0.0f);
-                }
-            }
-
-            ProjectileSpawnEventPacket spawn{};
-            spawn.header.type = PACKET_PROJECTILE_SPAWN_EVENT;
-            spawn.header.tick = tick;
-            spawn.projectileId = projectile.id;
-            spawn.ownerPlayerId = 0;
-            spawn.fireSerial = 0;
-            spawn.weapon = netWeapon;
-            spawn.posX = projectile.position.x;
-            spawn.posY = projectile.position.y;
-            spawn.posZ = projectile.position.z;
-            spawn.velX = projectile.velocity.x;
-            spawn.velY = projectile.velocity.y;
-            spawn.velZ = projectile.velocity.z;
-            spawn.rotX = projectile.rotation.x;
-            spawn.rotY = projectile.rotation.y;
-            spawn.rotZ = projectile.rotation.z;
-            spawn.rotW = projectile.rotation.w;
-            spawn.angVelX = projectile.angularVelocity.x;
-            spawn.angVelY = projectile.angularVelocity.y;
-            spawn.angVelZ = projectile.angularVelocity.z;
-            spawn.spawnTick = tick;
-            spawn.lifetime = projectile.lifetime;
-            spawn.radius = projectile.radius;
-
-            projectiles[projectile.id] = projectile;
-
-            // Entity/component slice: authoritative rocket entity owned by the
-            // firing NPC entity, keyed by the network projectile id.
-            {
-                const EntityId ownerEntity =
-                    Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, n.id);
-                Ecs::setControlSource(ownerEntity, ControlSource::ServerNpc);
-                Ecs::setAuthority(ownerEntity, NetworkAuthority::Server);
-                Ecs::spawnRocket(EntityRealm::Server, projectile.id, ownerEntity,
-                                 projectile.position, projectile.velocity,
-                                 projectile.weaponDefNetworkId, projectile.fireSerial,
-                                 projectile.lifetime, NetworkAuthority::Server);
-            }
-
-            // Broadcast to ALL players (NPC has no "shooter client" to skip)
-            for (const auto& pe : players)
-            {
-                if (pe.second.transport)
-                    pe.second.transport->send(&spawn, sizeof(spawn));
-                else
-                    sendto(sock, (const char*)&spawn, sizeof(spawn), 0,
-                           (sockaddr*)&pe.second.addr,
-                           sizeof(pe.second.addr));
-                ++totalPacketsOut;
-            }
+            const EntityId ownerEntity =
+                Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, n.id);
+            Ecs::setControlSource(ownerEntity, ControlSource::ServerNpc);
+            Ecs::setAuthority(ownerEntity, NetworkAuthority::Server);
+            ToolUsePolicyV1 use{};
+            use.userEntity = Ecs::raw(ownerEntity);
+            use.toolId = netWeapon;
+            use.ownerId = n.id;
+            use.toolNetworkId = netWeapon;
+            use.tick = tick;
+            use.baseFire = 1;
+            use.outFire = 1;
+            use.origin[0] = origin.x; use.origin[1] = origin.y; use.origin[2] = origin.z;
+            use.direction[0] = dir.x; use.direction[1] = dir.y; use.direction[2] = dir.z;
+            LiveBehavior::dispatchToolUse(use, tick);
 
             DBG(NpcCombat, "npc=%u weapon=%s projectileId=%u "
                 "position=(%.2f,%.2f,%.2f) velocity=(%.2f,%.2f,%.2f)",
-                n.id, wdef->id.c_str(), projectile.id,
-                projectile.position.x, projectile.position.y, projectile.position.z,
-                projectile.velocity.x, projectile.velocity.y, projectile.velocity.z);
+                n.id, wdef->id.c_str(), 0u, origin.x, origin.y, origin.z,
+                dir.x, dir.y, dir.z);
         }
 
         // For multi-pellet weapons (shotgun), broadcast a PelletBlastEventPacket

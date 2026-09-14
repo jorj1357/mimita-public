@@ -18,6 +18,7 @@ static constexpr std::uint64_t HOT_PROJECTILE_COMPONENT =
 static constexpr std::uint32_t HOT_PROJECTILE_EXPLODE_ON_WORLD = 1u;
 static constexpr std::uint32_t HOT_PROJECTILE_EXPLODE_ON_ACTOR = 2u;
 static constexpr std::uint32_t HOT_PROJECTILE_EXPLODE_ON_LIFETIME = 4u;
+static constexpr std::uint32_t HOT_PROJECTILE_BOUNCE_ON_WORLD = 8u;
 
 struct HotProjectileStateV1 {
     float position[3];
@@ -34,9 +35,12 @@ struct HotProjectileStateV1 {
     float knockbackStrength;
     float selfDamageMultiplier;
     float fullDamageRadius;    // inside this radius, full splash damage
+    float restitution;         // bounce energy retention (0..1+)
     std::uint64_t ownerEntity;
     std::uint64_t toolEntity;
     std::uint64_t typeId;      // package projectile type key (presentation/impact)
-    std::uint32_t flags;       // HOT_PROJECTILE_EXPLODE_*
+    std::uint32_t flags;       // HOT_PROJECTILE_*
+    std::uint32_t maxBounces;
+    std::uint32_t bounces;
     std::uint32_t reserved;
 };

@@ -9,6 +9,9 @@
 */
 
 #include "network/multiplayer-context.h"
+#include "network/dynamic-replication.h"
+#include "ecs/dynamic-components.h"
+#include "ecs/relationship-store.h"
 #include "hot-reload/generic-runtime.h"
 #include "network/constraint-codec.h"
 #include "physics/constraints/constraint-store.h"
@@ -1548,6 +1551,26 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 RewardPopupSystem::instance().pushProgression(event->kind,
                     std::string(event->name, strnlen(event->name, sizeof(event->name))),
                     std::string(event->confirmedAt, strnlen(event->confirmedAt, sizeof(event->confirmedAt))));
+        }
+        else if (header->type == PACKET_DYNAMIC_COMPONENT &&
+                 bytes >= (int)(sizeof(PacketHeader) + 16))
+        {
+            const std::uint32_t eventId = *reinterpret_cast<const std::uint32_t*>(
+                buffer + sizeof(PacketHeader));
+            const std::uint32_t eventSession = *reinterpret_cast<const std::uint32_t*>(
+                buffer + sizeof(PacketHeader) + 4);
+            if (!mpAcceptReliableEventOnce(ctx, eventId, eventSession)) return;
+            std::vector<MimitaNet::DynamicComponentRecord> records;
+            std::vector<MimitaNet::RelationshipRecord> relationships;
+            std::string error;
+            if (MimitaNet::dynamicReplicationDecode(
+                    reinterpret_cast<const std::uint8_t*>(buffer),
+                    static_cast<std::size_t>(bytes), records, relationships, error)) {
+                MimitaNet::dynamicReplicationApply(
+                    records, relationships,
+                    MimitaRuntime::DynamicComponentStore::instance(),
+                    MimitaRuntime::RelationshipStore::instance(), error);
+            }
         }
         else if (header->type == PACKET_SERVER_NOTIFICATION &&
                  bytes >= (int)sizeof(ServerNotificationPacket))

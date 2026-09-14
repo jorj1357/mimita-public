@@ -83,12 +83,26 @@ public:
     std::vector<std::uint8_t> serializeType(std::uint64_t typeId) const;
     std::uint64_t worldHash() const;
 
+    // ── Generic change tracking for replication ─────────────────────
+    std::vector<std::uint64_t> typeIds() const;
+    std::vector<std::uint8_t> blob(EntityId entity, std::uint64_t typeId) const;
+    std::uint32_t changeVersionOf(EntityId entity, std::uint64_t typeId) const;
+    std::uint64_t revision() const { return revision_; }
+    struct Removal {
+        EntityId entity = kInvalidEntityId;
+        std::uint64_t typeId = 0;
+        std::uint32_t changeVersion = 0;
+    };
+    // Append-only removal log; the replication owner drains it.
+    std::vector<Removal> consumeRemovals();
+
 private:
     DynamicComponentStore() = default;
 
     struct Blob {
         std::vector<std::uint8_t> bytes;
         std::uint32_t version = 1;
+        std::uint32_t changeVersion = 0;
     };
 
     struct MigrationKey {
@@ -104,6 +118,8 @@ private:
     // entity -> typeIds present (for eraseEntity / inspect)
     std::unordered_map<EntityId, std::vector<std::uint64_t>> entityTypes_;
     std::map<MigrationKey, DynamicMigrationFn> migrations_;
+    std::uint64_t revision_ = 0;
+    std::vector<Removal> removals_;
 };
 
 } // namespace MimitaRuntime
