@@ -206,7 +206,9 @@ replacement activates.
   `hotmovement [0|1]`; create mode = free-fly) that uses them. `movement.freefly`
   is folded into `movement.main`. `Physics::moveCapsuleStep` extracted and
   covered by `--movement-selftest` (determinism, integrate parity, floor
-  collision). Bit-parity with the built-in step before default-on.
+  collision) and `--movement-parity-selftest` (drives the real hot `movement.main`
+  and checks determinism + landing vs the primitive; not yet bit-parity with the
+  full built-in step). Bit-parity with the built-in step before default-on.
 - Later: movement/ragdoll, tools/weapons, network policy, assets, audio/UI/NPC.
   Old cold implementations remain fallback until each package passes runtime proofs.
   Old cold implementations remain fallback until each package passes runtime proofs.

@@ -27,7 +27,8 @@ void moveCapsuleStep(MovementStateV1& state, const World* world, float dt)
     body.angularDamping = 0.0f;
     setBodyMass(body, 1.0f);
 
-    const glm::vec3 gravity(0.0f, 0.0f, -9.81f);
+    const float gravityScale = state.gravityScale > 0.0f ? state.gravityScale : 1.0f;
+    const glm::vec3 gravity(0.0f, 0.0f, -9.81f * gravityScale);
     integrate(body, gravity, dt);
 
     bool collided = false;

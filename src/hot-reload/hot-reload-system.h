@@ -25,8 +25,19 @@ public:
     // Load any existing DLL and start the background build worker.
     void startup();
     // Called each frame at the top of the fixed tick (the safe activation
-    // boundary). Returns true when a new generation became active.
-    bool pollAndAdvance();
+    // boundary). Returns true when a new generation became active. `tick` is the
+    // caller's simulation tick, used to honor a requested coordinated switch.
+    bool pollAndAdvance(std::uint32_t tick = 0);
+
+    // Coordinated switch (multiplayer): a validated candidate is held until
+    // `tick` so every peer activates the same generation at the same tick.
+    bool candidateReady() const { return candidateReady_.load(); }
+    bool switchPending() const { return switchPending_; }
+    std::uint32_t switchAtTick() const { return switchAtTick_; }
+    void requestSwitchAtTick(std::uint32_t tick);
+    // Identity of the ready-but-not-yet-active candidate (for the switch announce).
+    std::uint32_t candidateGeneration() const;
+    std::string candidateCodeHash() const;
 
     void unloadGameDLL();
 
@@ -125,6 +136,8 @@ private:
     std::atomic<bool> buildRequested_{false};
     std::atomic<bool> buildRunning_{false};
     std::atomic<bool> candidateReady_{false};
+    bool switchPending_ = false;
+    std::uint32_t switchAtTick_ = 0;
     std::thread worker_;
     mutable std::mutex mutex_;
     std::condition_variable cv_;

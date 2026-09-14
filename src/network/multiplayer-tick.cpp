@@ -1423,6 +1423,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 ctx.serverCodePhase = announce->phase;
                 ctx.serverLogicalHash = announce->logicalCodeHash;
                 ctx.serverPlatformHash = announce->platformPackageHash;
+                // Coordinated switch: hold our candidate until the shared tick.
+                if (announce->phase == 2 && announce->switchTick != 0)
+                    HotReloadSystem::instance().requestSwitchAtTick(announce->switchTick);
             }
         }
         else if (header->type == PACKET_RAGDOLL_STATE &&

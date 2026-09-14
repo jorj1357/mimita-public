@@ -82,7 +82,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
 {
     { MIMITA_PERF_SCOPE("Setup::HotReloadDLL");
       if (sHotReloadEnabled)
-          HotReloadSystem::instance().pollAndAdvance(); }
+          HotReloadSystem::instance().pollAndAdvance((std::uint32_t)THE_PLAYER.movementSimulationTick); }
     // gFramePacer.beginFrame() and Perf::beginFrame() are now called in
     // engineTick() BEFORE the first MIMITA_PERF_SCOPE so the scope stack
     // is empty when perfResetScopes() runs.

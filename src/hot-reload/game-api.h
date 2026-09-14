@@ -505,6 +505,7 @@ struct MovementStateV1 {
     float radius;
     float halfHeight;
     float sizeScale;
+    float gravityScale;   // multiplies 9.81 in the capsule solver (0/absent = 1)
     std::uint32_t grounded;
     std::uint32_t collided;
 };
@@ -553,6 +554,8 @@ struct GameSharedStateV1 {
 };
 static constexpr std::uint32_t GAME_MODE_FLAG_CREATION = 1u;
 static constexpr std::uint32_t GAME_MODE_FLAG_HOT_MOVEMENT = 2u;
+// Opt out of the hot movement step and use the built-in step instead.
+static constexpr std::uint32_t GAME_MODE_FLAG_LEGACY_MOVEMENT = 4u;
 
 // Request/response payload for GAME_EVENT_DAMAGE_POLICY. The kernel fills the
 // base values; a hot behavior sets `handled = 1` and may override `outDamage`

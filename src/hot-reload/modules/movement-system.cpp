@@ -32,12 +32,18 @@ struct MovementTuning {
     float groundFriction = 10.0f;
     float maxFallSpeed = 40.0f;
     float freeFlySpeed = 12.0f;
+    float dashSpeed = 16.0f;
+    float dashDuration = 0.15f;
+    float dashCooldown = 0.5f;
+    float downDashSpeed = 18.0f;
 };
 const MovementTuning kTune{};
 
 // Grounded has no component yet; carry it per local entity across ticks.
 std::uint64_t gGroundedEntity = 0;
 bool gGrounded = false;
+float gDashCooldown = 0.0f;
+float gDashTimer = 0.0f;
 
 GameSharedStateV1* sharedState(GameplayContextV1* ctx)
 {
@@ -61,12 +67,11 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t /*tick*/, float
     GameSharedStateV1* shared = sharedState(ctx);
     if (!shared || shared->localPlayerEntity == 0)
         return;
-    // Create mode = free-fly (always). Otherwise the hot step is opt-in until
-    // it reaches parity with the built-in step.
-    const bool createMode = (shared->modeFlags & GAME_MODE_FLAG_CREATION) != 0;
-    const bool hotMove = (shared->modeFlags & GAME_MODE_FLAG_HOT_MOVEMENT) != 0;
-    if (!createMode && !hotMove)
+    // Hot movement is the default. The legacy flag opts back into the built-in
+    // step (temporary escape hatch until full parity is proven).
+    if (shared->modeFlags & GAME_MODE_FLAG_LEGACY_MOVEMENT)
         return;
+    const bool createMode = (shared->modeFlags & GAME_MODE_FLAG_CREATION) != 0;
 
     const std::uint64_t e = shared->localPlayerEntity;
 
@@ -133,33 +138,60 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t /*tick*/, float
         const float wishX = rx * mi.moveX + fx * mi.moveY;
         const float wishY = ry * mi.moveX + fy * mi.moveY;
         const float wishLen = std::sqrt(wishX * wishX + wishY * wishY);
-        const float speed = kTune.walkSpeed;
-        float desiredVx = 0.0f;
-        float desiredVy = 0.0f;
-        if (mi.pressed && wishLen > 1e-4f) {
-            desiredVx = wishX / wishLen * speed;
-            desiredVy = wishY / wishLen * speed;
-        }
-        const float accel = gGrounded ? kTune.groundAccel : kTune.airAccel;
-        const float blend = std::min(1.0f, accel * dt / std::max(speed, 1e-3f));
-        vx += (desiredVx - vx) * blend;
-        vy += (desiredVy - vy) * blend;
-        if (gGrounded && !mi.pressed) {
-            const float friction = std::max(0.0f, 1.0f - kTune.groundFriction * dt);
-            vx *= friction;
-            vy *= friction;
-        }
-        if (gGrounded && mi.jump) {
-            vz = kTune.jumpSpeed;
+        const bool hasWish = mi.pressed && wishLen > 1e-4f;
+        const float wishDirX = hasWish ? wishX / wishLen : 0.0f;
+        const float wishDirY = hasWish ? wishY / wishLen : 0.0f;
+
+        gDashCooldown = std::max(0.0f, gDashCooldown - dt);
+
+        if (mi.freeze) {
+            // Freeze/hover: hold position in the air.
+            vx = 0.0f;
+            vy = 0.0f;
+            vz = 0.0f;
             gGrounded = false;
+            gDashTimer = 0.0f;
         } else {
-            vz -= kTune.gravity * dt;
-            if (vz < -kTune.maxFallSpeed)
-                vz = -kTune.maxFallSpeed;
+            // Horizontal acceleration: strong on the ground, weak in the air
+            // (air-strafe).
+            const float speed = kTune.walkSpeed;
+            const float accel = gGrounded ? kTune.groundAccel : kTune.airAccel;
+            const float blend = std::min(1.0f, accel * dt / std::max(speed, 1e-3f));
+            vx += (wishDirX * speed - vx) * blend;
+            vy += (wishDirY * speed - vy) * blend;
+            if (gGrounded && !hasWish) {
+                const float friction = std::max(0.0f, 1.0f - kTune.groundFriction * dt);
+                vx *= friction;
+                vy *= friction;
+            }
+
+            // Dash (grounded, on cooldown reset, with a movement direction).
+            if (mi.dash && gGrounded && gDashCooldown <= 0.0f && hasWish) {
+                gDashTimer = kTune.dashDuration;
+                gDashCooldown = kTune.dashCooldown;
+            }
+            if (gDashTimer > 0.0f) {
+                vx = wishDirX * kTune.dashSpeed;
+                vy = wishDirY * kTune.dashSpeed;
+                gDashTimer = std::max(0.0f, gDashTimer - dt);
+            }
+
+            // Down-dash (in the air).
+            if (mi.downDash && !gGrounded)
+                vz = -kTune.downDashSpeed;
+
+            // Jump.
+            if (gGrounded && mi.jump) {
+                vz = kTune.jumpSpeed;
+                gGrounded = false;
+            }
         }
+
         st.velocity[0] = vx;
         st.velocity[1] = vy;
         st.velocity[2] = vz;
+        // Gravity is applied once, inside the kernel capsule solve.
+        st.gravityScale = kTune.gravity / 9.81f;
         st.grounded = gGrounded ? 1u : 0u;
         ctx->moveCapsule(ctx->host, &st, dt);
         gGrounded = st.grounded != 0;

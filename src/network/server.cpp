@@ -662,35 +662,38 @@ int runServer(const LaunchOptions& options)
         int steps = 0;
         while (accumulator >= (double)SERVER_DT && steps < MAX_STEPS)
         {
-            // Safe authoritative boundary: activate any ready hot generation
-            // before simulating this fixed step. The game thread never blocks on
-            // compilation; the worker handles it in the background.
-            if (HotReloadSystem::instance().pollAndAdvance())
+            // Coordinated live-code switch: when a candidate is validated, hold
+            // it and announce the shared switch tick so the server and all
+            // connected clients activate the same generation at that tick. The
+            // old generation stays live until then.
+            HotReloadSystem& hotReload = HotReloadSystem::instance();
+            if (hotReload.candidateReady() && !hotReload.switchPending())
             {
-                const HotReloadSystem::Status liveStatus =
-                    HotReloadSystem::instance().status();
+                const std::uint32_t switchTick = tick + 30;
+                hotReload.requestSwitchAtTick(switchTick);
                 CodeGenerationPacket announce{};
                 announce.header.type = PACKET_CODE_GENERATION;
                 announce.header.tick = tick;
-                announce.generation = liveStatus.activeGeneration;
+                announce.generation = hotReload.candidateGeneration();
                 announce.direction = 1;  // server -> clients
-                announce.phase = 2;      // SWITCH: clients must match this generation
-                announce.switchTick = tick;
+                announce.phase = 2;      // SWITCH at switchTick
+                announce.switchTick = switchTick;
                 auto hexValue = [](char c) -> uint64_t {
                     if (c >= '0' && c <= '9') return (uint64_t)(c - '0');
                     if (c >= 'a' && c <= 'f') return (uint64_t)(c - 'a' + 10);
                     if (c >= 'A' && c <= 'F') return (uint64_t)(c - 'A' + 10);
                     return 0;
                 };
-                for (int i = 0; i + 1 < (int)liveStatus.activeHash.size() && i < 16; i += 2)
+                const std::string candidateHash = hotReload.candidateCodeHash();
+                for (int i = 0; i + 1 < (int)candidateHash.size() && i < 16; i += 2)
                     announce.codeHash = (announce.codeHash << 8) |
-                        (hexValue(liveStatus.activeHash[i]) << 4) |
-                        hexValue(liveStatus.activeHash[i + 1]);
+                        (hexValue(candidateHash[i]) << 4) |
+                        hexValue(candidateHash[i + 1]);
                 announce.moduleSetHash =
                     MimitaRuntime::GenericRuntime::instance().manifestHash();
                 announce.logicalCodeHash =
                     announce.codeHash ^ (announce.moduleSetHash * 1099511628211ull);
-                announce.platformPackageHash = liveStatus.activeGeneration;
+                announce.platformPackageHash = announce.generation;
                 for (auto& pe : players)
                 {
                     if (pe.second.transport)
@@ -699,9 +702,15 @@ int runServer(const LaunchOptions& options)
                         sendto(sock, (const char*)&announce, sizeof(announce), 0,
                                (sockaddr*)&pe.second.addr, sizeof(pe.second.addr));
                 }
-                printf("%s [SERVER LIVE CODE] announce generation=%u hash=%s switchTick=%u\n",
+                printf("%s [SERVER LIVE CODE] announce switch generation=%u switchTick=%u\n",
+                       serverTimestamp(), announce.generation, switchTick);
+            }
+            if (hotReload.pollAndAdvance(tick))
+            {
+                const HotReloadSystem::Status liveStatus = hotReload.status();
+                printf("%s [SERVER LIVE CODE] activated generation=%u hash=%s\n",
                        serverTimestamp(), liveStatus.activeGeneration,
-                       liveStatus.activeHash.c_str(), announce.switchTick);
+                       liveStatus.activeHash.c_str());
             }
             LiveIdentity::setSimulationTick(tick);
 

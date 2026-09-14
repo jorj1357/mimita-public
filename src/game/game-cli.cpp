@@ -50,6 +50,7 @@
 #include "telemetry/telemetry-selftest.h"
 #include "editor/creation-selftest.h"
 #include "physics/movement/movement-selftest.h"
+#include "physics/movement/movement-parity-selftest.h"
 #include "ragdoll/ragdoll-slice-selftest.h"
 #include "ecs/entity-slice-selftest.h"
 
@@ -270,6 +271,14 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = runMovementSelfTest(report);
         printf("%s", report.c_str());
         printf("[MOVEMENT SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--movement-parity-selftest") {
+        std::string report;
+        const bool ok = runMovementParitySelfTest(report);
+        printf("%s", report.c_str());
+        printf("[MOVEMENT PARITY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

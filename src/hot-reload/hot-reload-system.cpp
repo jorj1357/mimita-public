@@ -189,12 +189,20 @@ void HotReloadSystem::startup()
     watcher_.start(root_ / "src");
 }
 
-bool HotReloadSystem::pollAndAdvance()
+bool HotReloadSystem::pollAndAdvance(std::uint32_t tick)
 {
     if (!worker_.joinable())
         return false;
 
-    if (candidateReady_.exchange(false)) {
+    if (switchPending_) {
+        // Coordinated switch: hold the validated candidate until the agreed tick
+        // so peers activate together; the old generation stays live meanwhile.
+        if (tick >= switchAtTick_ && candidateReady_.exchange(false)) {
+            switchPending_ = false;
+            if (tryActivateCandidate())
+                return true;
+        }
+    } else if (candidateReady_.exchange(false)) {
         if (tryActivateCandidate())
             return true;
     }
@@ -683,6 +691,24 @@ void HotReloadSystem::pollColdBoundary()
             LiveCodeEvents::notifyColdRestartPending(coldPendingFile_);
         }
     }
+}
+
+void HotReloadSystem::requestSwitchAtTick(std::uint32_t tick)
+{
+    switchPending_ = true;
+    switchAtTick_ = tick;
+}
+
+std::uint32_t HotReloadSystem::candidateGeneration() const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return result_.generation;
+}
+
+std::string HotReloadSystem::candidateCodeHash() const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return result_.codeHash;
 }
 
 std::string HotReloadSystem::computeSourceHash() const

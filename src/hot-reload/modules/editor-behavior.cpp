@@ -435,19 +435,19 @@ const MimitaHotPackage::CommandRegistrar s_modecreateCmd{
     {"modecreate", "modecreate [0|1] - creation/inspection mode", 0,
      MimitaModecreateCommand}};
 
-// Toggle the hot movement step (movement.main takes over the built-in step).
+// Toggle hot movement (on by default; `hotmovement 0` opts into the built-in step).
 void MimitaHotMovementCommand(void* /*host*/, const char* args)
 {
     if (!gShared) {
         std::printf("[HOT MOVEMENT] not ready (no shared state yet)\n");
         return;
     }
-    const bool on = (args && args[0] == '0') ? false : true;
-    if (on)
-        gShared->modeFlags |= GAME_MODE_FLAG_HOT_MOVEMENT;
+    const bool hot = (args && args[0] == '0') ? false : true;
+    if (hot)
+        gShared->modeFlags &= ~GAME_MODE_FLAG_LEGACY_MOVEMENT;
     else
-        gShared->modeFlags &= ~GAME_MODE_FLAG_HOT_MOVEMENT;
-    std::printf("[HOT MOVEMENT] %s\n", on ? "ON" : "OFF");
+        gShared->modeFlags |= GAME_MODE_FLAG_LEGACY_MOVEMENT;
+    std::printf("[HOT MOVEMENT] %s\n", hot ? "ON (hot)" : "OFF (legacy built-in)");
 }
 
 const MimitaHotPackage::CommandRegistrar s_hotMovementCmd{
