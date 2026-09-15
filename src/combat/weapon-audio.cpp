@@ -5,11 +5,27 @@
 #include <cstdlib>
 #include <cstdio>
 #include "debug/debug-log.h"
+#include "live-code/live-behavior.h"
 
 namespace WeaponAudio {
 
 void playShootSound(const WeaponDefinition& def, const glm::vec3& position, float sizeScale) {
     if (def.soundShoot.empty()) return;
+
+    // Generic fire-sound fact: a hot audio policy may own sound choice/volume/
+    // pitch/falloff. When handled, the cold playback below yields (one owner).
+    {
+        EffectRequestV1 req{};
+        req.effectTypeId = gameHash("effect.weapon.fire.sound");
+        req.weaponNetworkId = gameHash(def.id.c_str());
+        req.position[0] = position.x;
+        req.position[1] = position.y;
+        req.position[2] = position.z;
+        req.scale = sizeScale;
+        std::snprintf(req.text, sizeof(req.text), "%s", def.soundShoot.c_str());
+        if (LiveBehavior::dispatchEffectRequest(req, 0))
+            return;
+    }
     const auto& sc = SizeScalingConfig::instance().data();
     float ss = std::max(sizeScale, 0.001f);
     float sVol = sc.scale(1.0f, sc.soundVolumeExponent, ss);

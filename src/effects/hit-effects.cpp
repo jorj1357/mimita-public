@@ -17,6 +17,7 @@
 #include "debug/debug-visuals.h"
 #include "debug/debug-log.h"
 #include "gui/ui-system.h"
+#include "live-code/live-behavior.h"
 #include "camera.h"
 #include "renderer/renderer.h"
 #include "replay/replay.h"
@@ -40,6 +41,24 @@ void HitEffects::onHit(const HitEvent& event)
     Perf::ScopedTimer _hitfx("HitFX");
     if (!gConfig.enabled) return;
     if (gShotProfiler) gShotProfiler->hitFxCalls++;
+
+    // Generic effect request: a hot effect behavior may own the hit/blood
+    // composition. When handled, the cold composition below yields (one owner).
+    // Cold code remains the renderer mechanism and the compatibility fallback.
+    {
+        EffectRequestV1 req{};
+        req.effectTypeId = gameHash(event.hitWorld ? "effect.hit.world"
+                                                   : "effect.hit.blood");
+        req.position[0] = event.position.x;
+        req.position[1] = event.position.y;
+        req.position[2] = event.position.z;
+        req.normal[0] = event.normal.x;
+        req.normal[1] = event.normal.y;
+        req.normal[2] = event.normal.z;
+        req.scale = 1.0f;
+        if (LiveBehavior::dispatchEffectRequest(req, 0))
+            return;
+    }
 
     // 1. Legacy contact sphere
     if (gConfig.legacyContactSphere.enabled) {

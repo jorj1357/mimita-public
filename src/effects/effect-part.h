@@ -95,6 +95,9 @@ struct SurfaceDecal
     float darkenStartSeconds = 1.0f;
     float darkenEndSeconds = 12.0f;
     bool darkenOverLifetime = false;
+    // Generic (hot-driven) mark: the renderer draws it from the requested
+    // color/size only and does not interpret a feature kind. `kind` is ignored.
+    bool generic = false;
 };
 
 class EffectPartSystem
@@ -146,6 +149,10 @@ public:
     
     void setWorld(const class World& world) { mWorld = &world; }
     void clear();
+
+    // Generic hot-driven surface mark (no feature kind): the kernel owns
+    // projection/storage/draw; hot policy supplies color/size/lifetime.
+    void spawnGenericSurfaceDecal(const SurfaceDecal& decal);
 
     // ── Per-frame caps and toggles ───────────────────────
     void beginFrame();  // call at start of engineTick to reset per-frame counters

@@ -40,6 +40,9 @@ bool dispatchMatchEvaluate(GameMatchEvaluateV1& payload, std::uint64_t tick);
 // behavior own one held use of a tool. Both return whether a handler handled it.
 bool dispatchProjectileImpact(ProjectileImpactPolicyV1& payload, std::uint64_t tick);
 bool dispatchToolUse(ToolUsePolicyV1& payload, std::uint64_t tick);
+// Generic effect request: a hot effect behavior may own the composition. Returns
+// true when handled (the cold fallback must not also compose).
+bool dispatchEffectRequest(EffectRequestV1& payload, std::uint64_t tick);
 
 // Generic dispatch for any event type with a mutable POD payload. This is the
 // single call site shape for all hot behavior seams: the kernel fills base
@@ -77,6 +80,18 @@ void flushRenderDebug();
 // Total skeleton.apply invocations (headless evidence that hot pose generation
 // reached the generic skeleton mechanism).
 std::uint64_t skeletonApplyCount();
+
+// Total audio.play invocations (headless evidence that hot audio policy reached
+// the cold audio backend).
+std::uint64_t audioPlayCount();
+
+// Total surface.effect invocations (headless evidence that hot decal policy
+// reached the cold surface mechanism).
+std::uint64_t surfaceEffectCount();
+
+// Total camera.effect invocations (headless evidence that hot camera-effect
+// policy reached the cold camera mechanism).
+std::uint64_t cameraEffectCount();
 
 // Kernel event queue used by the emitEvent capability. Bounded and FIFO.
 void enqueueEvent(const GameEventV1& event);

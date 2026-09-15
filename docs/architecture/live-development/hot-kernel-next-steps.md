@@ -340,6 +340,288 @@ See `docs/architecture/live-development/hot-cold-audit.md` for the current map.
 - Not done: full air parity (root-cause the late divergence), the live
   one-edit-changes-both observation, and live server/client proof.
 
+## Round 27 (2026-09-15, hot ground-move ownership) — implemented
+
+- One hot ground-move implementation `MimitaHotMovement::groundMove`
+  (`movement-ground.cpp`) owns friction + acceleration along wishdir.
+- Server `applySourceGround` dispatches `movement.ground-move`; local prediction
+  `movement.main` ground branch calls the same function. Cold Source math remains
+  as fallback when no hot handler is active.
+- `--movement-algorithm-selftest` PASS 11/11 (adds ground friction+accel and
+  friction-only checks); full suite 26/26.
+- Deferred (recorded, not chased): the tick-84 late air divergence
+  (maxDev 1.61); likely wish-speed derivation / speed-cap policy — next movement
+  owner.
+
+## Round 28 (2026-09-15, hot speed-policy derivation) — implemented
+
+- One hot speed/wish-speed derivation `MimitaHotMovement::speedPolicy`
+  (`movement-speed-policy.cpp`): size-scale factor, effective max speed (with
+  fixed speed limit), and the air wish-speed projection cap.
+- Server `sourceMaxSpeedValue` and the air `wishspd` derivation dispatch
+  `movement.speed-policy`; local prediction `movement.main` derives its max speed
+  through the same function. Cold math remains as fallback.
+- `--movement-algorithm-selftest` PASS 15/15; full suite 26/26.
+- Air-parity `[warn]` unchanged after the speed-policy move (maxDev 2.2699, first
+  divergent tick 68) → the divergence is NOT the max-speed/wish-speed derivation;
+  it is elsewhere (post-acceleration clamp or the client collision pipeline).
+  Recorded, not chased.
+- Next: jump, dash/down-dash, freeze, post-acceleration clamp, then generic
+  integrator authority.
+
+## Round 29 (2026-09-15, hot jump policy) — implemented
+
+- One hot jump policy `MimitaHotMovement::jumpPolicy` (`movement-jump.cpp`):
+  buffer, coyote, grounded/air jump eligibility, air-jump count/arm/lock, scaled
+  impulse, and the runtime jump-state transitions.
+- Server `applyBasicJump` dispatches `movement.jump` and applies the returned
+  state; local prediction `movement.main` calls the same function. Cold logic
+  remains as fallback. Persistent state stays in the existing generic
+  `MovementRuntimeStateComponent` (client) / `MovementJumpState` (server working
+  copy) — no new jump state store.
+- `--movement-algorithm-selftest` PASS 17/17 (adds grounded jump, air jump +
+  decrement, second-air-jump denial, determinism); full suite 26/26.
+- Air-parity `[warn]` unchanged (maxDev 2.2699, tick 68) — jump did not affect the
+  airborne divergence.
+- Next: dash/down-dash, freeze, post-acceleration clamp, then generic integrator.
+
+## Round 30 (2026-09-15, hot dash / down-dash policy) — implemented
+
+- One hot dash policy `MimitaHotMovement::dashPolicy` (`movement-dash.cpp`):
+  direction choice (move input + camera fallback), ground/air impulse
+  composition, availability consumption, and the down-dash vertical response.
+- Server `tryActivateDash`/`tryActivateDownDash` dispatch `movement.dash` and
+  apply the result (server wrapper keeps momentum-protection/grace bookkeeping);
+  local prediction `movement.main` calls the same function. Cold logic remains as
+  fallback.
+- `--movement-algorithm-selftest` PASS 22/22 (adds grounded dash, airborne dash,
+  unavailable denial, camera-fallback direction, down-dash); full suite 26/26.
+- Air-parity `[warn]` unchanged (maxDev 2.2699, tick 68) — dash did not affect the
+  airborne divergence.
+- Next: freeze, post-acceleration clamp, then generic integrator.
+- Ops note: concurrent EXE/DLL relinks occasionally cause spurious
+  selftest/parity failures mid-run (e.g. a tick-0 air divergence); re-running
+  after the rebuild gives the stable result.
+
+## Round 31 (2026-09-15, hot freeze + post-step speed clamp) — implemented
+
+- `MimitaHotMovement::freezePolicy` (`movement-freeze.cpp`): activation
+  eligibility, duration, velocity suppression while frozen, held/released
+  transitions, exit. `updateFreeze` and `movement.main` both call it.
+- `MimitaHotMovement::speedClamp` (`movement-speed-clamp.cpp`): the horizontal
+  post-acceleration clamp / preservation rule. `applySpeedLimitClamp` calls it;
+  the client path has no equivalent clamp (documented).
+- Air-parity `[warn]` unchanged after both (maxDev 2.2699, tick 68) — the clamp
+  did not remove the divergence (the air test runs with the clamp disabled), so
+  the remaining difference is elsewhere (client collision pipeline / preservation
+  in the shared air step). Recorded, not chased.
+- `--movement-algorithm-selftest` PASS 28/28; full suite 26/26.
+- Movement policy is now fully hot: air, ground, gravity, speed, jump, dash/
+  down-dash, freeze, clamp. Remaining movement item: the typed working-copy
+  integrator (direct generic Transform/Velocity authority), then networking/
+  simulation policy (reconciliation/interpolation/rewind/delivery).
+
+## Round 32 (2026-09-15, player collision on generic working state) — partial
+
+- The server player Phase-2 collision no longer calls the typed
+  `resolveWorldCollision(ServerPlayer&)`; it calls
+  `resolveCapsuleCollisionAgainstWorld` on the GENERIC working movement state
+  (`state.position`/`state.baseVelocity`), reports contact, and projects typed
+  fields from it. The typed `ServerPlayer` is no longer the collision input.
+- Still pending: the working `MovementState` is still populated from typed
+  (`movementStateFromServerPlayer`) even though typed is refreshed from generic at
+  the top of the tick; the full "read generic directly" working copy, the NPC/generic
+  actor path, and the runtime-generic-actor proof remain.
+- Air-parity `[warn]` unchanged (maxDev 2.2699, tick 68) — the air test does not
+  call `simulatePlayer`, so the collision flip is not exercised there.
+- Full suite 26/26.
+- Next: finish the generic working-copy read (no typed population), NPC + runtime
+  generic actor on the same substrate, then networking/simulation policy.
+
+## Round 33 (2026-09-15, generic integrator authority: player direct + typeless proof) — partial
+
+- Player movement now reads its authoritative position/velocity/yaw DIRECTLY from
+  the entity's generic Transform/Velocity (typed `ServerPlayer` no longer the
+  authoritative input); collision runs on the generic working state; the result
+  is written DIRECTLY to generic Transform/Velocity (typed is a projection). The
+  scope guard remains a compatibility failsafe.
+- New `--generic-integrator-selftest`: a TYPELESS runtime entity (domain None,
+  Entity + Transform + Velocity) runs the SAME movement pipeline and hot policies
+  and integrates/deterministically repeats — proving the substrate is
+  class-agnostic.
+- Still typed: grounded/contact (`ServerPlayer.onGround`) and the jump/dash/freeze
+  runtime working state; the NPC path is not yet on the same substrate.
+- Air-parity `[warn]` unchanged (maxDev 2.2699, tick 68); the harness bypasses
+  `simulatePlayer`.
+- Full suite 27/27.
+- Next: migrate grounded + runtime ability state generic, then one real NPC path;
+  then reconciliation/interpolation/rewind/delivery.
+
+## Round 34 (2026-09-15, generic grounded/contact authority) — partial
+
+- The server player's grounded/contact state is now read from the generic
+  `MovementRuntimeStateComponent` (ensured/seeded once per actor) instead of typed
+  `ServerPlayer.onGround`; collision writes the generic component and typed
+  `onGround` is a projection. Mutating typed `onGround` no longer authorizes
+  movement.
+- Reuses the kernel `MovementRuntimeStateComponent` (no new state store).
+- Still typed: the jump/dash/freeze runtime working state (`player.movement`) is
+  not yet read/written through the component; the real NPC path is not migrated.
+- Air-parity `[warn]` unchanged; full suite 27/27.
+- Ops note: a concurrent `live-behavior.cpp` edit broke the kernel build
+  (`pushSurfaceDecal`/`spawnGenericSurfaceDecal` private) for a while; the suite
+  showed 27 "NO-RESULT" until the build succeeded. Spurious `--gamemode-hot` /
+  `--hot-combat` FAILs also occurred during a concurrent relink; re-running gave
+  27/27.
+- Next: jump/dash/freeze runtime state on the component, then one real NPC path;
+  then reconciliation.
+
+## Round 35 (2026-09-15, generic jump/dash runtime-state authority) — partial
+
+- Server player jump/dash runtime state (grounded, airJumpsLeft, jump intent
+  timer, jumpHeldPreviously, airJumpArmed, dashAvailable, downDashAvailable,
+  dashGraceSeconds) is now read from and written to the generic
+  `MovementRuntimeStateComponent`; typed `player.movement` is a mirror and can no
+  longer re-authorize the next tick.
+- Uses existing component fields (no ABI change, no second state store).
+- Still typed/ephemeral: `coyoteTimerSeconds`, `airJumpLocked`, dash cooldown
+  (server has none; client-only) and freeze active/available/timer (no component
+  fields yet). The NPC path is not migrated.
+- Full suite 27/27; air-parity `[warn]` unchanged.
+- Discipline: I scoped this pass to the existing component fields (jump/dash) and
+  did not extend the shared component or rewrite the NPC physics in the same
+  patch; freeze fields + NPC remain the next slice.
+
+## Round 36 (2026-09-15, movement completion gate + reconciliation audit) — blocked/documentation
+
+- Re-audited remaining movement state. The gate is 13/15-ish: freeze state,
+  coyote timer, and air-jump lock still lack generic fields; the real NPC path is
+  not on the substrate.
+- **Stopped at the concurrency boundary:** completing 6/7 requires extending
+  `MovementRuntimeStateComponent` (ecs/components.h) + `GameMovementRuntimeStateComponentV1`
+  (game-api.h) + the read/write mapping in `live-behavior.cpp`; completing 11
+  requires the NPC physics path. A concurrent agent is actively editing exactly
+  those files. No duplicate/parallel change was created.
+- Added the movement completion-gate table and the reconciliation audit table to
+  `hot-cold-audit.md` (the audit is analysis-only, no source edits).
+- Next: when the concurrent agent's files settle, (a) extend the component +
+  mapping with freeze/coyote/airJumpLocked (schema-versioned defaults), (b)
+  migrate one real NPC path, (c) declare movement complete, (d) start real
+  reconciliation hot-policy migration.
+
+## Round 37 (2026-09-15, hot reconciliation policy) — implemented (new lane)
+
+- New lane per concurrency rule: did NOT touch the movement agent's
+  `game-api.h` movement component, `live-behavior.cpp` mapping, or
+  `movement-system.cpp`.
+- New `hot-reconciliation.h` (`GameReconcileV1` + `net.reconcile`) and
+  `modules/reconcile-policy.cpp`: hot error metric + thresholds (ignore/smooth/
+  medium/snap) and a conservative **generation-mismatch -> hard reset** rule.
+- Real shipping path wired: `mpReconcileLocalPlayer` dispatches `net.reconcile`
+  and maps the hot `correctionMode` back to `MovementCorrectionClass` (cold
+  `classifyMovementCorrection` remains the fallback). Cold still applies the
+  correction.
+- `--reconciliation-policy-selftest` PASS 7/7; suite 28 tests, 27 PASS.
+- Unrelated concurrent failure recorded (do not fix): `--hot-combat-selftest`
+  fails on "real explosion shake reaches the hot camera policy" / "hot
+  camera-effect command works" — the effects/camera agent's active files.
+- Next: interpolation policy (hot delay/sample/lerp/stale), then rewind policy,
+  then distributed generation delivery.
+
+## Round 38 (2026-09-15, hot interpolation policy) — implemented
+
+- New `hot-interpolation.h` (`GameInterpolateV1` + `net.interpolate`) and
+  `modules/interpolate-policy.cpp`: owns interpolation alpha (clamp/override) and
+  a generation-boundary hard-snap rule.
+- Real shipping path wired: `buildReceiveTimeRender`
+  (multiplayer-interpolation.cpp) dispatches `net.interpolate` after computing
+  alpha; on generation mismatch it hard-snaps to the newer sample. Cold still
+  stores samples and performs the numeric mix.
+- `--interpolation-policy-selftest` PASS 6/6; full suite 29/29 (the concurrent
+  camera/effects failure is resolved).
+- Next: extend interpolation policy (delay re-targeting, extrapolation decision,
+  stale handling), then rewind/lag-comp policy, then distributed generation.
+- Note: generation ids are structurally carried but currently 0; extend policy
+  once generations are populated.
+
+## Round 39 (2026-09-15, complete interpolation-policy ownership) — implemented
+
+- Extended `net.interpolate` to own: generation/lifecycle discontinuity snap,
+  packet-gap snap (>= 30 ticks), buffer-dry hold-vs-extrapolate, the
+  extrapolation cap, delay override (`outDelaySeconds`), and alpha. One dispatch
+  per entity/frame at the top of `buildReceiveTimeRender`; the cold path consults
+  the hot mode and keeps sample storage + numeric mix/extrapolation.
+- Removed the previous second (normal-branch) dispatch; exactly one policy owner.
+- `--interpolation-policy-selftest` PASS 10/10; full suite 29/29.
+- Interpolation policy is now hot enough except: the delay policy is a
+  pass-through placeholder (adaptive-delay measurement remains cold), and
+  generation ids are still 0.
+- Next: rewind / lag-comp policy, then distributed generation delivery + real
+  generation ids.
+
+## Round 40 (2026-09-15, adaptive interpolation-delay ownership) — implemented
+
+- `outDelaySeconds` is now a real hot policy result: `net.interpolate` owns the
+  adaptive delay (min/max bounds, jitter response, loss/starvation response,
+  increase/decrease convergence rate). Cold remains the measurement source
+  (`estimatedArrivalJitterMs`, `recentLossFraction`, effective base delay) and
+  stores the returned delay; when hot handles, cold convergence does not run.
+- Extension: `net.interpolate` handles a `delayQuery` mode (adaptive delay)
+  alongside the existing interpolation mode. Fallback unchanged.
+- `--interpolation-policy-selftest` PASS 15/15 (adds healthy/jitter/loss/
+  recovery/min-bound adaptive-delay cases); full suite 29/29.
+- INTERPOLATION CATEGORY COMPLETE (policy): alpha, generation/lifecycle snap,
+  packet-gap, buffer-dry, extrapolation allow/deny+cap, stale/hold/snap, adaptive
+  delay. Cold retains storage/clock/decode/measurement/numeric application.
+  Generation ids remain 0 (distributed-generation gap, not interpolation).
+- Rewind audit started: `estimateServerRewindTick` + `getPlayerPoseAtTick`/
+  `getNpcPoseAtTick` (server-attack.cpp) are the next cold policy owner.
+- Next: rewind/lag-comp policy, then distributed generation delivery.
+
+## Round 41 (2026-09-15, hot rewind / lag-comp policy) — implemented
+
+- New `hot-rewind.h` (`GameRewindPolicyV1` + `net.rewind`) and
+  `modules/rewind-policy.cpp`: owns the rewind target tick (latency +
+  interpolation-delay compensation), the max-rewind clamp, and a conservative
+  generation-mismatch reject. Cold executes the historical lookup.
+- Real shipping path wired: `estimateServerRewindTick` (server-players.cpp)
+  dispatches `net.rewind`; it feeds both hitscan (server-attack.cpp) and the
+  projectile fire-view tick (server-projectiles.cpp). Cold math is fallback.
+- `--rewind-policy-selftest` PASS 6/6; full suite 30/30.
+- Still cold/absent: the generic `historicalState(EntityId, T)` (player/NPC
+  `getPlayerPoseAtTick`/`getNpcPoseAtTick` remain parallel), and explosion
+  victim-pose rewind (known gap; substrate is prepared but not integrated).
+- Next: distributed generation delivery (logical generation id/hash + platform
+  artifact hash + READY/SWITCH), then optional generic historical-state +
+  explosion rewind.
+
+## Round 42 (2026-09-15, distributed generation bookkeeping) — partial
+
+- Audited the EXISTING pipeline: `HotReloadSystem` (source watch → local build →
+  candidate → safe-tick activation/rollback) and `CodeGenerationPacket`
+  (generation, direction, phase status/READY/SWITCH, switchTick, codeHash,
+  logicalCodeHash, platformPackageHash). The logical-vs-platform split already
+  exists in the packet.
+- Added the missing host bookkeeping: `GenerationDistribution`
+  (`generation-distribution.{h,cpp}`): per-peer state machine
+  (Unknown/Announced/Acquiring/Validating/Ready/Active/Failed), quorum over a
+  required-peer set for a logical generation, Active-counts-as-ready, multiple-
+  candidate supersede, peer removal, and switch scheduling/cancel. Mechanism
+  only (no build/load/transport).
+- `GenerationIdentityV1` keeps `logicalGenerationId`/`logicalBehaviorHash`
+  separate from `platformArtifactHash` + ABI.
+- Wired real generation ids into reconciliation:
+  `predictedGeneration = local activeGeneration`,
+  `authoritativeGeneration = ctx.serverCodeGeneration`. Interpolation/rewind
+  still pass 0 (they need per-sample generation storage — next).
+- `--generation-distribution-selftest` PASS 10/10; full suite 31/31.
+- NOT done: artifact acquisition over the network (content-addressed cache +
+  transfer), the ACQUIRE/VERIFY peer flow, per-sample generation tagging in
+  interpolation/rewind, and the real two-process server/client proof.
+  MILESTONE NOT COMPLETE.
+- Next: artifact acquisition + READY wire-up on the real client path, then the
+  server+client proof; optional generic `historicalState(EntityId,T)`.
+
 ## Round 10 (2026-09-14, generic runtime state replication) — implemented
 
 - One opaque envelope (`PACKET_DYNAMIC_COMPONENT`, `dynamic-replication.*`) carries
@@ -363,6 +645,265 @@ See `docs/architecture/live-development/hot-cold-audit.md` for the current map.
   component-record rejection on the client; two-client live network proof;
   client rendering of replicated projectile state; and migrating the remaining
   typed player/NPC/projectile snapshot structs onto the generic substrate.
+
+## Architecture-first migration rule (current phase)
+
+During the current migration phase, prioritize ownership transfer over behavior
+polish. A subsystem counts as **migrated** when:
+
+1. its ordinary behavior owner is hot;
+2. state is generic/persistent;
+3. cold code provides only low-level mechanism;
+4. a running generation can replace its algorithm;
+5. failure keeps last-good behavior;
+6. no concept-specific kernel ABI was added.
+
+Visual/feel parity can be improved afterward. Do not polish animation/blending
+before ownership has moved.
+
+## Round 40 (2026-09-15, generic attachment/socket + logical mesh resources + view space) — source implemented
+
+Approved generic primitives (no weapon/tool ABI):
+- `GAME_CAP_SOCKET_QUERY` (`socket.query`): entity + socket/bone hash + caller
+  local offset -> world transform. Cold composes the entity's canonical
+  transform with its current generic skeleton pose (SkeletonInstances) and the
+  drawn mesh's part bind (resolved live by logical id, never a raw handle);
+  non-skeletal parents fall back to entity transform + local offset; a missing
+  entity fails safe (`valid=0`).
+- `HOT_ATTACHMENT_COMPONENT` / `HotAttachmentStateV1`: generic presentation
+  attachment (parent entity, socket, local TRS, context). It is a presentation
+  override only - the child's authoritative Transform is never overwritten.
+  Hot system `hot.attachment` (RENDER, order 4) resolves it each frame; `hot.presentation-mesh`
+  (order 5) consumes the resolved transform and hides the entity when unresolved.
+- `GAME_CAP_RESOURCE_REGISTER` (`resource.register`): hot code registers an
+  arbitrary logical mesh/texture id backed by a path in the existing
+  generation-aware provider; `PresentationRender::poll()` re-applies file-backed
+  dynamic resources so a generation can swap while entities survive. Malformed
+  GLBs preserve last-good (no bad generation).
+- `GAME_RENDER_MESH_SPACE_VIEW` (flags bit0): a generic camera-relative (VIEW)
+  presentation space; the cold renderer uses an identity view and keeps the
+  projection/depth mechanism. No "this is the X viewmodel" branch.
+
+Runtime-unknown proof: `hotmesh <path>`, `hottool [path]` (third-person, world
+space, attached to a parent `rightArm` socket), `hottool1p [path]` (first-person,
+view space). All use `assets/objects/weapons/mimita-hafs-v1.glb` (the real
+swordsword model) but are driven by logical ids, never an enum.
+
+STOPPED before the real swordsword equip migration: it needs a generic tool->mesh
+data mapping (resource manifest) and a client possessed-tool bridge. Both are
+deliberate data/ownership decisions, not new mechanisms, so the primitives are
+complete and the migration is the next step. Cold weapon viewmodel remains the
+only owner for real weapons (no duplicate owner introduced).
+
+Proof: `--hot-combat-selftest` PASS incl. socket fallback/fail-safe,
+runtime-unknown logical mesh, malformed-mesh last-good, attachment resolve,
+first-person view space; full suite PASS.
+
+## Round 39 (2026-09-15, hot footstep/air-jump audio + effect-dispatch bug fix) — source implemented
+
+- Footstep audio: real local trigger `entities/player.cpp:313` now dispatches the
+  generic `effect.footstep.sound` fact; hot `hot.effect-composition` owns
+  cadence sound choice (honoring an arbitrary logical id in `EffectRequestV1.text`),
+  volume, pitch, and falloff and emits `audio.play`. Cold `playWorldSound` is the
+  fallback only (yields when handled).
+- Air-jump audio (second proof on the SAME substrate): `player.cpp:258` dispatches
+  `effect.jump.sound`; hot policy emits `audio.play` (`entity/player/doublejump`);
+  cold `playAirJumpSound` yields.
+- Landing: audit found **no** shipping cold landing sound (only VFX
+  `HitEffects::spawnLandingBurst`), so there is no policy to migrate; recorded.
+- Dead cold audio helpers with no callers: `playRandomFootstep` (`audio.cpp:430`),
+  `playFreezeBegin/Hold/EndSound` (`:449-462`).
+- Bug fixed (FIX NOW): `hot.effect-composition` `onEffectRequest` set
+  `handled = 1` for every fact and defaulted unknown facts to an explosion, which
+  would silently suppress any unmigrated cold owner. `handled` is now set only by
+  real branches; unknown facts stay unhandled so the cold owner runs (exactly one
+  owner). Selftest asserts this.
+- Proof: `--hot-combat-selftest` PASS incl. "grounded footstep audio policy is
+  hot", "arbitrary logical footstep sound id is hot", "air-jump audio uses the
+  same movement-fact substrate", "unmigrated landing audio stays cold-owned";
+  full suite PASS.
+- Weapon-presentation audit done (see `hot-cold-audit.md` item 3). Blocked on two
+  deliberate ABI decisions: generic socket/bone world-transform query, and weapon
+  GLB as a logical presentation mesh resource. First target chosen: `swordsword`.
+
+## Round 38 (2026-09-15, screen effect via hot UI + hot weapon-fire audio) — source implemented
+
+- Screen effect: no dedicated cold damage-flash owner exists; reused the hot UI
+  path. Hot `hot.screen-fx` (`ui.frame`) owns a fading full-screen panel; the
+  `hotscreenfx` command triggers a runtime-unknown screen effect. No compositor
+  duplication.
+- Weapon-fire audio: `WeaponAudio::playShootSound` (the common cold fire-sound
+  seam) now emits a generic `effect.weapon.fire.sound` fact; the hot
+  `hot.effect-composition` policy owns volume/pitch/falloff and emits
+  `audio.play`; the cold playback yields (one owner). `EffectRequestV1` gained a
+  generic `char text[64]` logical-name field.
+- Proof: `--hot-combat-selftest` PASS ("hot screen-effect command registered
+  (reuses hot UI)", "real weapon-fire sound policy is hot (audio.play)"); full
+  suite PASS.
+- Cold-restart item 2 reduced: explosion + weapon-fire sound policy hot;
+  footstep/UI/NPC/music remain.
+- Next: footstep/landing audio; then weapon presentation (tool entity +
+  PresentationState/AnimationState + attachment + effect/audio).
+
+## Round 37 (2026-09-15, generic camera-effect primitive + hot explosion shake) — source implemented
+
+- New generic `camera.effect` capability + `GameCameraEffectV1` (pitch/yaw
+  amplitude, falloffDistance/distance, source, runtimeKey). Kernel
+  `capCameraEffect` applies `camera.addPunch` with distance attenuation; it has
+  no explosion/damage branch.
+- Real explosion camera shake (`weapon-rocket-launcher.cpp`) now emits a generic
+  `effect.camera.shake` fact; the hot `hot.effect-composition` policy chooses
+  amplitude/falloff and emits `camera.effect`; the cold `camera.addPunch` is the
+  compatibility fallback. `hotcamerafx` proves runtime-unknown camera effects.
+- Proof: `--hot-combat-selftest` PASS ("real explosion shake reaches the hot
+  camera policy", "hot camera-effect command works (no enum)"); full suite PASS.
+- Note: a concurrent in-progress `reconcile-policy.cpp`/`hot-reconciliation.h`
+  briefly broke the DLL build (their area, since fixed), and a stale
+  `live-behavior.o` had to be invalidated.
+- Cold-restart item 1 reduced: explosion/hit/blood/surface/muzzle/camera-shake
+  hot; remaining screen flash / damage vignette.
+- Next: generic screen-effect primitive + one real screen path; then weapon-fire
+  audio; footstep audio; weapon presentation.
+
+## Round 36 (2026-09-15, muzzle flash hot) — source implemented
+
+- `EffectPartSystem::spawnMuzzleFlash` (the single cold owner called by all
+  weapon-fire paths) now emits a generic `effect.request` (`effect.muzzle`) with
+  the tool key as a runtime hash; the hot `hot.effect-composition` policy
+  composes a generic flash effect entity and sets `handled = 1`, so the cold
+  composition yields (one owner).
+- Proof: `--hot-combat-selftest` PASS ("real weapon-fire fact reaches the hot
+  muzzle policy (runtime tool key, no enum)"); full suite PASS.
+- Cold-restart item 1 reduced: explosion + hit/blood + surface + muzzle hot;
+  remaining screen flash and camera shake.
+- Next: camera/screen effect policy; weapon-fire audio; footstep audio; weapon
+  presentation.
+
+## Round 35 (2026-09-15, generic surface-effect/decal primitive) — source implemented
+
+- New generic `surface.effect` capability + `GameSurfaceEffectV1` (position/
+  normal/axis/color/radius/height/lifetime/persistence). Kernel
+  `capSurfaceEffect` pushes a generic `SurfaceDecal` (`generic = true`); the
+  renderer draws it from color/size only and never interprets a feature kind.
+- Hot `hot.effect-composition` emits a surface effect for `effect.hit.blood` /
+  `effect.hit.world`; `hotsurfaceeffect` command creates a runtime-unknown mark.
+- Proof: `--hot-combat-selftest` PASS ("hot surface-effect policy creates a
+  generic decal (no enum)"); full suite PASS.
+- Cold-restart item 1 reduced: hit/blood/world composition + surface marks hot;
+  remaining muzzle flash, screen flash, camera shake.
+- Next: muzzle flash; camera/screen policy; weapon-fire/footstep audio; then
+  weapon presentation.
+
+## Round 34 (2026-09-15, movement policy verification — already hot/shared) — verified, no changes
+
+- Verified (read-only) that air/ground/gravity/speed/jump/dash/down-dash/freeze/
+  speed-clamp are already shared hot policies (`hot-movement-policy.h`,
+  `modules/movement-dash.cpp`, `movement-freeze.cpp`, `movement-speed-clamp.cpp`,
+  `movement-system.cpp`), dispatched from the cold movement step and used by local
+  prediction identically. `--movement-algorithm-selftest` and
+  `--movement-parity-selftest` PASS.
+- No edits made: re-implementing would duplicate the concurrent movement agent's
+  ownership. Movement/integrator authority remains theirs.
+- This agent's next cold owners remain client/presentation: decal primitive,
+  muzzle flash, camera/screen policy, remaining audio policy, weapon presentation.
+
+## Round 33 (2026-09-15, real hit/blood composition hot) — source implemented
+
+- `effects/hit-effects.cpp::HitEffects::onHit` (the real client hit/blood/world
+  impact composition owner) now emits a generic `effect.request`
+  (`effect.hit.blood` / `effect.hit.world`); the hot `hot.effect-composition`
+  handler composes generic effect entities and sets `handled = 1`, so the cold
+  composition yields. Exactly one owner.
+- Proof: `--hot-combat-selftest` PASS ("real hit/blood fact reaches the hot effect
+  owner"); full suite PASS.
+- Cold-restart item 1 reduced again: explosion + hit/blood composition hot.
+  Remaining: muzzle flash, decals (no generic decal primitive yet), screen flash,
+  camera shake.
+- Next: generic surface-effect/decal primitive; bullet/impact via the same
+  substrate; muzzle flash; camera/screen policy; then weapon-fire audio.
+
+## Round 32 (2026-09-15, generic hot audio policy) — source implemented
+
+- New generic `audio.play` capability + `GameAudioCommandV1` (logical sound name,
+  position, volume, pitch, maxDistance, spatial). Kernel `capAudioPlay` calls the
+  cold `playWorldSound`/`playSoundPitched`; hot policy chooses everything else.
+  No per-weapon/feature audio ABI.
+- The real rocket/grenade explosion sound is now hot-owned
+  (`hot.effect-composition` emits it); the cold sound in `explosion-fx.cpp` moved
+  into the compatibility fallback. `hotaudiotest` plays a runtime sound.
+- Proof: `--hot-combat-selftest` PASS ("hot audio policy plays sounds via the
+  generic command"); full suite PASS.
+- Cold-restart item #2 reduced: explosion sound policy hot; weapon/footstep/UI/
+  music policy + sound resources still cold.
+- Next: blood/decal/bullet/muzzle-flash/camera-shake effects, then remaining audio
+  policy, then weapon presentation.
+
+## Round 31 (2026-09-15, real rocket/grenade explosion composition hot) — source implemented
+
+- `explosion-fx.cpp` (real client rocket/grenade explosion) now emits a generic
+  `effect.request` fact after the (temporary cold) sound; the hot
+  `hot.effect-composition` handler composes generic effect entities (flash,
+  smoke, debris) and sets `handled = 1`, so the cold composition yields.
+- Generic `EffectRequestV1` payload + `LiveBehavior::dispatchEffectRequest`
+  (cold -> hot). No effect enum, no ABI field.
+- Proof: `--hot-combat-selftest` PASS ("real explosion fact reaches the hot
+  effect owner and composes generic effects"); full suite PASS.
+- Cold-restart item #1 reduced again: rocket/grenade explosion composition and
+  lifetime are hot; remaining cold effect types: bullet impact, blood, muzzle
+  flash, decals, screen flash, camera shake. Sound stays cold temporarily.
+- Next: blood impact; generic decal primitive if needed; audio policy.
+
+## Round 30 (2026-09-15, generic hot effect lifecycle) — source implemented
+
+- New generic `EffectLifetime` (`hot-effect.h`, GAME_NET_NONE) + hot
+  `hot.effect-lifecycle` (`render.frame`, priority 3): owns age, Velocity
+  integration, scale growth, alpha fade, and expiry/destroy for any effect
+  entity. Creation uses the existing generic `effect.spawn`/entity primitives.
+- Runtime-unknown effect proof: `hoteffect` command creates a brand-new effect
+  (cube rises, grows, fades, expires) with no enum/switch/ABI field.
+- Proof: `--hot-combat-selftest` PASS ("runtime-unknown effect entity created (no
+  enum/switch)", "hot effect ages, integrates, and grows", "hot effect expires
+  and is destroyed"); full suite PASS.
+- Cold-restart item #1 (effects) partially reduced; remaining: client
+  `EffectPartSystem` composition branches (bullet impact, blood, muzzle flash,
+  decals, camera shake) still cold.
+- Next: wire the client rocket-explosion event to the hot effect entity so the
+  cold composition yields; then blood; then audio policy.
+
+## Round 29 (2026-09-15, client/presentation cold-owner audit + command registration) — source implemented
+
+- Added the client/presentation cold-owner audit table and the primary metric
+  section "BUGS THAT STILL REQUIRE A COLD EXE REBUILD" to `hot-cold-audit.md`.
+  Largest remaining client cold owners: effects, audio, weapon presentation,
+  nameplates, menus/UI interaction, clip/skeleton/font/sound resource
+  generations.
+- Command registration is already generic (`CommandRegistrar` ->
+  `GenericRuntime`); proved `hasCommand("posedebug"/"hotactor"/"hotpresent")`,
+  so runtime-new commands do not need a cold switch (post-startup dynamic
+  add/remove remains a future primitive, priority low).
+- Proof: `--hot-combat-selftest` PASS ("hot package registers commands without a
+  cold switch"); full suite PASS.
+- Next: effects hot ownership (effect behaviors emitting generic
+  `effect.spawn`/`render.debug` with logical resources).
+
+## Round 28 (2026-09-15, local player migrated to the generic pose path) — source implemented
+
+- THE_PLAYER now has a canonical generic entity (`Ecs::ensureLocalPlayerEntity`)
+  projected each frame with Transform/Velocity/Health + `PresentationState` +
+  `AnimationState`. The hot `hot.animation-policy` selects its clip and
+  `hot.pose-generation` writes `SkeletonInstances[localEntity]`.
+- `PresentationEntities::applyHotPoseToPlayer` maps the hot skeleton pose onto the
+  visible body parts; the typed renderer only draws the body (mechanism).
+- `animation.update` is no longer called by the local-player path
+  (`animation.main` is now a no-op); the capability remains for replay/legacy
+  compatibility (A/B).
+- Proof: `--hot-combat-selftest` PASS ("local player has a canonical generic
+  entity", "local player entity is driven by the hot pose path"); full suite PASS.
+- NOT claimed: LIVE HOT-EDIT PROVEN (no screen). Editing
+  `pose-generation.cpp` now changes THE_PLAYER at the architecture level.
+- Remaining cold Player owners: body meshes/skeleton/skinning/first-person draw
+  (mechanism); `updateProceduralAnimation` still exists but is not the local
+  animation policy owner.
 
 ## Round 27 (2026-09-15, live visual proof tooling) — source implemented
 

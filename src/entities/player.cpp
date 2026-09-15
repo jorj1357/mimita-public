@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "audio/audio.h"
+#include "live-code/live-behavior.h"
 #include "avatar/character-registry.h"
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
@@ -254,7 +255,14 @@ void Player::updateAudio(float dt)
 
     if (jump.didAirJump) {
         if (jump.jumpSoundTimer <= 0.0f) {
-            playAirJumpSound();
+            // Jump audio policy is hot via the same generic movement fact path.
+            EffectRequestV1 jsnd{};
+            jsnd.effectTypeId = gameHash("effect.jump.sound");
+            jsnd.position[0] = pos.x;
+            jsnd.position[1] = pos.y;
+            jsnd.position[2] = pos.z;
+            if (!LiveBehavior::dispatchEffectRequest(jsnd, 0))
+                playAirJumpSound();
             jump.jumpSoundTimer = 0.08f;
         }
         glm::vec3 jumpDir = glm::length(inputWishMove) > 0.001f
@@ -310,7 +318,16 @@ void Player::updateAudio(float dt)
     if (ground.stableOnGround && speed > 0.5f) {
         footstepTimer -= dt;
         if (footstepTimer <= 0.0f) {
-            playWorldSound("entity/player/walk" + std::to_string(1 + rand() % 4), pos, 0.8f, 1.0f, 22.0f);
+            // Footstep audio policy is hot (generic movement fact -> hot policy
+            // -> audio.play). Cold spatial playback is the fallback only.
+            EffectRequestV1 fstep{};
+            fstep.effectTypeId = gameHash("effect.footstep.sound");
+            fstep.position[0] = pos.x;
+            fstep.position[1] = pos.y;
+            fstep.position[2] = pos.z;
+            fstep.scale = sizeScale;
+            if (!LiveBehavior::dispatchEffectRequest(fstep, 0))
+                playWorldSound("entity/player/walk" + std::to_string(1 + rand() % 4), pos, 0.8f, 1.0f, 22.0f);
             Capsule cap = getCapsule();
             glm::vec3 footPos = cap.a;
             footPos.z -= cap.r;

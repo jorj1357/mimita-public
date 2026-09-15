@@ -535,6 +535,13 @@ void EffectPartSystem::render(const Camera& camera) const {
         const glm::vec3 n = glm::length(decal.normal) > 0.001f
             ? glm::normalize(decal.normal) : glm::vec3(0.0f, 0.0f, 1.0f);
 
+        // Generic hot-driven mark: no feature kind, draw from color/size only.
+        if (decal.generic) {
+            DebugVis::drawFilledDecal(camera, decal.position, n,
+                                      std::max(0.001f, decal.radius), color);
+            continue;
+        }
+
         const std::string& texture = decal.kind == SurfaceDecalKind::Blood
             ? decalCfg.blood.texture
             : (decal.kind == SurfaceDecalKind::BulletHole

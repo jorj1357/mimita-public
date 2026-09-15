@@ -18,7 +18,9 @@
 #include "ecs/components.h"
 #include "hot-reload/game-api.h"
 #include "hot-reload/hot-animation.h"
+#include "hot-reload/hot-effect.h"
 #include "hot-reload/hot-pose.h"
+#include "hot-reload/hot-presentation.h"
 #include "hot-reload/hot-prediction.h"
 #include "hot-reload/hot-projectile.h"
 #include "hot-reload/generic-runtime.h"
@@ -110,6 +112,11 @@ bool runHotCombatSelfTest(std::string& report)
     HotReloadSystem::instance().startup();
     GenericRuntime& runtime = GenericRuntime::instance();
     ok &= check(runtime.active(), "hot package active", report);
+    // Hot packages register commands generically (no cold command switch): the
+    // visual-proof commands added this session must be present.
+    ok &= check(runtime.hasCommand("posedebug") && runtime.hasCommand("hotactor") &&
+                    runtime.hasCommand("hotpresent"),
+                "hot package registers commands without a cold switch", report);
 
     // ── Generic hot presentation (render.debug capability + hot system) ──
     // An entity unknown to the EXE (only Transform + a package dynamic
@@ -492,6 +499,320 @@ bool runHotCombatSelfTest(std::string& report)
                     report);
         EntityRegistry::instance().destroy(skinnedEntity);
         EntityRegistry::instance().destroy(bareEntity);
+
+        // Local player (THE_PLAYER) participates in the same generic animation
+        // and pose path: its canonical entity is driven by hot pose generation.
+        const EntityId localEntity = Ecs::ensureLocalPlayerEntity();
+        ok &= check(localEntity != kInvalidEntityId,
+                    "local player has a canonical generic entity", report);
+        HotAnimationStateV1 localAnim{};
+        localAnim.clipId = HOT_ANIM_MOVE;
+        localAnim.playbackRate = 1.0f;
+        DynamicComponentStore::instance().write(
+            localEntity, HOT_ANIMATION_STATE_COMPONENT, &localAnim,
+            sizeof(localAnim));
+        runtime.runDomain(GAME_DOMAIN_RENDER, 10, 0.016f,
+                          LiveBehavior::hostContext(10));
+        SkeletonInstances::Instance* localInst = SkeletonInstances::get(localEntity);
+        ok &= check(localInst != nullptr && localInst->version > 0,
+                    "local player entity is driven by the hot pose path", report);
+    }
+
+    // ── Hot generic effect ownership ──────────────────────────────────
+    {
+        GameplayContextV1* fxHost = LiveBehavior::hostContext(11);
+        const bool ran = runtime.runCommand("hoteffect", "", fxHost);
+        std::uint64_t fx[8] = {0};
+        const std::uint32_t fxCount = DynamicComponentStore::instance().enumerate(
+            HOT_EFFECT_LIFETIME_COMPONENT, fx, 8);
+        ok &= check(ran && fxCount >= 1,
+                    "runtime-unknown effect entity created (no enum/switch)",
+                    report);
+        if (fxCount >= 1) {
+            const EntityId effect = static_cast<EntityId>(fx[0]);
+            for (int i = 0; i < 30; ++i)
+                runtime.runDomain(GAME_DOMAIN_RENDER, 200 + i, 1.0f / 60.0f,
+                                  LiveBehavior::hostContext(200 + i));
+            HotEffectLifetimeV1 life{};
+            HotPresentationStateV1 pres{};
+            const bool aged = DynamicComponentStore::instance().read(
+                effect, HOT_EFFECT_LIFETIME_COMPONENT, &life, sizeof(life));
+            DynamicComponentStore::instance().read(
+                effect, HOT_PRESENTATION_COMPONENT, &pres, sizeof(pres));
+            ok &= check(aged && life.age > 0.4f && pres.scale > 0.4f,
+                        "hot effect ages, integrates, and grows", report);
+            for (int i = 0; i < 90; ++i)
+                runtime.runDomain(GAME_DOMAIN_RENDER, 300 + i, 1.0f / 60.0f,
+                                  LiveBehavior::hostContext(300 + i));
+            ok &= check(!EntityRegistry::instance().alive(effect),
+                        "hot effect expires and is destroyed", report);
+        }
+
+        // Real shipping explosion fact reaches the hot effect owner, which
+        // composes generic effect entities; the cold composition yields.
+        std::uint64_t before[16] = {0};
+        const std::uint32_t beforeCount = DynamicComponentStore::instance().enumerate(
+            HOT_EFFECT_LIFETIME_COMPONENT, before, 16);
+        EffectRequestV1 req{};
+        req.effectTypeId = gameHash("effect.explosion.rocket");
+        req.position[0] = 1.0f;
+        req.position[1] = 1.0f;
+        req.position[2] = 1.0f;
+        req.scale = 1.0f;
+        const bool fxHandled = LiveBehavior::dispatchEffectRequest(req, 20);
+        std::uint64_t after[16] = {0};
+        const std::uint32_t afterCount = DynamicComponentStore::instance().enumerate(
+            HOT_EFFECT_LIFETIME_COMPONENT, after, 16);
+        ok &= check(fxHandled && afterCount > beforeCount,
+                    "real explosion fact reaches the hot effect owner and composes "
+                    "generic effects",
+                    report);
+
+        // Hot audio policy: the explosion handler emits a generic audio command,
+        // and a runtime-unknown sound plays through the same capability.
+        const std::uint64_t audioAfterFx = LiveBehavior::audioPlayCount();
+        GameplayContextV1* audioHost = LiveBehavior::hostContext(21);
+        const std::uint64_t audioBefore = LiveBehavior::audioPlayCount();
+        const bool ranAudio = runtime.runCommand("hotaudiotest", "", audioHost);
+        ok &= check(audioAfterFx > 0 && ranAudio &&
+                        LiveBehavior::audioPlayCount() > audioBefore,
+                    "hot audio policy plays sounds via the generic command",
+                    report);
+
+        // Real hit/blood fact reaches the hot effect owner.
+        std::uint64_t hitBefore[16] = {0};
+        const std::uint32_t hitBeforeCount =
+            DynamicComponentStore::instance().enumerate(
+                HOT_EFFECT_LIFETIME_COMPONENT, hitBefore, 16);
+        EffectRequestV1 hitReq{};
+        hitReq.effectTypeId = gameHash("effect.hit.blood");
+        hitReq.position[0] = 2.0f;
+        hitReq.position[1] = 2.0f;
+        hitReq.position[2] = 2.0f;
+        hitReq.scale = 1.0f;
+        const bool hitHandled = LiveBehavior::dispatchEffectRequest(hitReq, 22);
+        std::uint64_t hitAfter[16] = {0};
+        const std::uint32_t hitAfterCount =
+            DynamicComponentStore::instance().enumerate(
+                HOT_EFFECT_LIFETIME_COMPONENT, hitAfter, 16);
+        ok &= check(hitHandled && hitAfterCount > hitBeforeCount,
+                    "real hit/blood fact reaches the hot effect owner", report);
+
+        // Generic surface-effect/decal primitive: the hit path emits a generic
+        // mark, and a runtime-unknown effect creates one via the same capability.
+        GameplayContextV1* surfHost = LiveBehavior::hostContext(23);
+        const std::uint64_t surfBefore = LiveBehavior::surfaceEffectCount();
+        const bool ranSurface =
+            runtime.runCommand("hotsurfaceeffect", "", surfHost);
+        ok &= check(ranSurface && LiveBehavior::surfaceEffectCount() > surfBefore,
+                    "hot surface-effect policy creates a generic decal (no enum)",
+                    report);
+
+        // Real weapon-fire muzzle flash: the cold `spawnMuzzleFlash` owner emits
+        // a generic effect.request; the hot policy composes the flash.
+        std::uint64_t muzzleBefore[16] = {0};
+        const std::uint32_t muzzleBeforeCount =
+            DynamicComponentStore::instance().enumerate(
+                HOT_EFFECT_LIFETIME_COMPONENT, muzzleBefore, 16);
+        EffectRequestV1 muzzleReq{};
+        muzzleReq.effectTypeId = gameHash("effect.muzzle");
+        muzzleReq.weaponNetworkId = gameHash("runtime.tool.unknown");
+        muzzleReq.position[0] = 3.0f;
+        muzzleReq.position[1] = 1.0f;
+        muzzleReq.position[2] = 3.0f;
+        muzzleReq.scale = 1.0f;
+        const bool muzzleHandled = LiveBehavior::dispatchEffectRequest(muzzleReq, 24);
+        std::uint64_t muzzleAfter[16] = {0};
+        const std::uint32_t muzzleAfterCount =
+            DynamicComponentStore::instance().enumerate(
+                HOT_EFFECT_LIFETIME_COMPONENT, muzzleAfter, 16);
+        ok &= check(muzzleHandled && muzzleAfterCount > muzzleBeforeCount,
+                    "real weapon-fire fact reaches the hot muzzle policy (runtime "
+                    "tool key, no enum)",
+                    report);
+
+        // Real explosion camera shake: the launcher emits a generic camera fact;
+        // the hot policy applies it through the generic camera.effect backend.
+        EffectRequestV1 shakeReq{};
+        shakeReq.effectTypeId = gameHash("effect.camera.shake");
+        shakeReq.scale = 1.0f;
+        shakeReq.distance = 2.0f;
+        shakeReq.falloffDistance = 8.0f;
+        const std::uint64_t camBefore = LiveBehavior::cameraEffectCount();
+        const bool shakeHandled = LiveBehavior::dispatchEffectRequest(shakeReq, 25);
+        ok &= check(shakeHandled && LiveBehavior::cameraEffectCount() > camBefore,
+                    "real explosion shake reaches the hot camera policy", report);
+
+        // Runtime-unknown camera effect.
+        GameplayContextV1* camHost = LiveBehavior::hostContext(26);
+        const std::uint64_t camBefore2 = LiveBehavior::cameraEffectCount();
+        const bool ranCam = runtime.runCommand("hotcamerafx", "", camHost);
+        ok &= check(ranCam && LiveBehavior::cameraEffectCount() > camBefore2,
+                    "hot camera-effect command works (no enum)", report);
+
+        // Hot screen effect via the existing UI path + weapon-fire audio.
+        ok &= check(runtime.hasCommand("hotscreenfx"),
+                    "hot screen-effect command registered (reuses hot UI)", report);
+        EffectRequestV1 fireSound{};
+        fireSound.effectTypeId = gameHash("effect.weapon.fire.sound");
+        std::snprintf(fireSound.text, sizeof(fireSound.text),
+                      "rocketlauncher/rocketlaunchershoot");
+        const std::uint64_t audioBefore3 = LiveBehavior::audioPlayCount();
+        const bool fireHandled =
+            LiveBehavior::dispatchEffectRequest(fireSound, 27);
+        ok &= check(fireHandled && LiveBehavior::audioPlayCount() > audioBefore3,
+                    "real weapon-fire sound policy is hot (audio.play)", report);
+
+        // Footstep + air-jump audio use the same generic movement-fact substrate.
+        EffectRequestV1 stepReq{};
+        stepReq.effectTypeId = gameHash("effect.footstep.sound");
+        const std::uint64_t stepBefore = LiveBehavior::audioPlayCount();
+        const bool stepHandled = LiveBehavior::dispatchEffectRequest(stepReq, 28);
+        ok &= check(stepHandled && LiveBehavior::audioPlayCount() > stepBefore,
+                    "grounded footstep audio policy is hot (audio.play)", report);
+
+        EffectRequestV1 stepCustom{};
+        stepCustom.effectTypeId = gameHash("effect.footstep.sound");
+        std::snprintf(stepCustom.text, sizeof(stepCustom.text), "mod/custom_step");
+        const std::uint64_t custBefore = LiveBehavior::audioPlayCount();
+        const bool custHandled = LiveBehavior::dispatchEffectRequest(stepCustom, 29);
+        ok &= check(custHandled && LiveBehavior::audioPlayCount() > custBefore,
+                    "arbitrary logical footstep sound id is hot (no enum)", report);
+
+        EffectRequestV1 jumpReq{};
+        jumpReq.effectTypeId = gameHash("effect.jump.sound");
+        const std::uint64_t jumpBefore = LiveBehavior::audioPlayCount();
+        const bool jumpHandled = LiveBehavior::dispatchEffectRequest(jumpReq, 30);
+        ok &= check(jumpHandled && LiveBehavior::audioPlayCount() > jumpBefore,
+                    "air-jump audio uses the same movement-fact substrate", report);
+
+        // Unhandled movement facts must report unhandled so cold stays the owner.
+        EffectRequestV1 unknownReq{};
+        unknownReq.effectTypeId = gameHash("effect.landing.sound");
+        ok &= check(!LiveBehavior::dispatchEffectRequest(unknownReq, 31),
+                    "unmigrated landing audio stays cold-owned (no duplicate owner)", report);
+    }
+
+    // ── Generic attachment + logical mesh resources + view space ──────
+    {
+        GameplayContextV1* actx = LiveBehavior::hostContext(32);
+        ok &= check(runtime.hasCommand("hotmesh") && runtime.hasCommand("hottool") &&
+                        runtime.hasCommand("hottool1p"),
+                    "hot attachment/tool commands registered (no cold switch)",
+                    report);
+        auto sock = actx ? reinterpret_cast<GameSocketQueryFn>(
+                               actx->resolveCapability(actx->host,
+                                                       GAME_CAP_SOCKET_QUERY))
+                         : nullptr;
+        auto resReg = actx ? reinterpret_cast<GameResourceRegisterFn>(
+                                 actx->resolveCapability(actx->host,
+                                                         GAME_CAP_RESOURCE_REGISTER))
+                           : nullptr;
+        ok &= check(sock != nullptr, "socket.query capability resolves", report);
+        ok &= check(resReg != nullptr, "resource.register capability resolves",
+                    report);
+
+        // Non-skeletal parent: entity transform + caller local offset.
+        std::uint64_t parent = 0;
+        if (actx && actx->entityCreate) {
+            actx->entityCreate(actx->host, 0u, &parent);
+            if (parent != 0) {
+                GameTransformComponentV1 tf{};
+                tf.position[0] = 10.0f;
+                tf.position[1] = 2.0f;
+                tf.position[2] = 3.0f;
+                actx->writeComponent(actx->host, parent, GAME_COMPONENT_TRANSFORM,
+                                     &tf, sizeof(tf));
+            }
+        }
+        ok &= check(parent != 0, "attachment parent entity created", report);
+
+        GameSocketQueryV1 q{};
+        q.entity = parent;
+        q.socket = gameHash("rightArm");   // no skeleton yet -> fallback
+        q.localPosition[0] = 1.0f;
+        q.localRotation[3] = 1.0f;
+        q.localScale[0] = q.localScale[1] = q.localScale[2] = 1.0f;
+        const bool qok = sock && sock(actx->host, &q) && q.valid == 1 &&
+                         q.usedFallback == 1 && q.position[0] > 10.9f &&
+                         q.position[0] < 11.1f && q.position[2] > 2.9f &&
+                         q.position[2] < 3.1f;
+        ok &= check(qok,
+                    "socket query falls back to entity transform + local offset",
+                    report);
+
+        GameSocketQueryV1 qMissing{};
+        qMissing.entity = 9999999;
+        qMissing.localRotation[3] = 1.0f;
+        if (sock)
+            sock(actx->host, &qMissing);
+        ok &= check(sock && qMissing.valid == 0,
+                    "socket query on missing entity fails safe", report);
+
+        // Runtime-unknown logical mesh resource (arbitrary id + path).
+        GameResourceRegisterV1 reg{};
+        reg.logicalId = gameHash("mesh.selftest.unknown");
+        reg.kind = GAME_RESOURCE_MESH;
+        reg.applyNow = 1;
+        std::snprintf(reg.path, sizeof(reg.path), "%s",
+                      "assets/objects/weapons/mimita-hafs-v1.glb");
+        const bool regOk = resReg && resReg(actx->host, &reg) && reg.ok == 1;
+        ok &= check(regOk, "runtime-unknown logical mesh resource registers",
+                    report);
+
+        GameResourceRegisterV1 bad{};
+        bad.logicalId = gameHash("mesh.selftest.bad");
+        bad.kind = GAME_RESOURCE_MESH;
+        bad.applyNow = 1;
+        std::snprintf(bad.path, sizeof(bad.path), "%s",
+                      "src/hot-reload/hot-modules.json");   // not a GLB
+        if (resReg)
+            resReg(actx->host, &bad);
+        ok &= check(MimitaRuntime::PresentationResourceProvider::instance()
+                            .handleOf(bad.logicalId) == nullptr,
+                    "malformed mesh keeps no bad generation (last-good only)",
+                    report);
+
+        // Runtime-unknown attached tool: third-person (world) + first-person
+        // (view space). No weapon enum, no per-tool kernel field.
+        if (actx && actx->permanentStorage &&
+            actx->permanentStorageSize >= sizeof(GameSharedStateV1)) {
+            auto* shared =
+                reinterpret_cast<GameSharedStateV1*>(actx->permanentStorage);
+            if (shared->magic == GAME_SHARED_MAGIC)
+                shared->localPlayerEntity = parent;
+        }
+        const std::uint64_t meshesBeforeTool =
+            PresentationRender::submittedMeshCount();
+        runtime.runCommand("hottool", "", LiveBehavior::hostContext(33));
+        runtime.runDomain(GAME_DOMAIN_RENDER, 34, 0.016f,
+                          LiveBehavior::hostContext(34));
+        ok &= check(PresentationRender::submittedMeshCount() > meshesBeforeTool,
+                    "runtime-unknown attached tool presents via render.mesh",
+                    report);
+
+        std::uint64_t attEntities[16];
+        const std::uint32_t attCount = actx
+            ? actx->dynamicEnumerateComponent(actx->host,
+                                              HOT_ATTACHMENT_COMPONENT,
+                                              attEntities, 16)
+            : 0u;
+        HotAttachmentStateV1 att{};
+        const bool attRead = attCount >= 1 && actx &&
+            actx->dynamicReadComponent(actx->host, attEntities[0],
+                                       HOT_ATTACHMENT_COMPONENT, &att,
+                                       sizeof(att));
+        ok &= check(attRead && att.resolved == 1,
+                    "attachment resolves a socket world transform (fail-safe)",
+                    report);
+
+        const std::uint64_t viewBefore = PresentationRender::viewSpaceSubmissionCount();
+        runtime.runCommand("hottool1p", "", LiveBehavior::hostContext(35));
+        runtime.runDomain(GAME_DOMAIN_RENDER, 36, 0.016f,
+                          LiveBehavior::hostContext(36));
+        ok &= check(PresentationRender::viewSpaceSubmissionCount() > viewBefore,
+                    "first-person tool uses the generic view-space context",
+                    report);
     }
 
     // ── Generic generation-aware resource provider ────────────────────

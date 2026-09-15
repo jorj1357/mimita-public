@@ -17,41 +17,15 @@
 
 namespace {
 
-GameSharedStateV1* sharedState(GameplayContextV1* ctx)
+// The local player's animation is now owned by the generic hot path
+// (hot.animation-policy -> pose-generation -> skeleton.apply -> render). This
+// system no longer calls the typed `animation.update` bridge for the local
+// player: the typed procedural pose no longer owns THE_PLAYER's animation.
+// The bridge capability is retained for replay/legacy compatibility only.
+void MIMITA_GAME_CALL animationMainTick(void* /*host*/, std::uint64_t /*tick*/,
+                                        float /*dt*/)
 {
-    if (!ctx || !ctx->permanentStorage ||
-        ctx->permanentStorageSize < sizeof(GameSharedStateV1))
-        return nullptr;
-    GameSharedStateV1* shared =
-        reinterpret_cast<GameSharedStateV1*>(ctx->permanentStorage);
-    return shared->magic == GAME_SHARED_MAGIC ? shared : nullptr;
-}
-
-using AnimationUpdateFn = void (MIMITA_GAME_CALL *)(void*, float, std::uint32_t);
-
-void MIMITA_GAME_CALL animationMainTick(void* host, std::uint64_t /*tick*/, float dt)
-{
-    GameplayContextV1* ctx = static_cast<GameplayContextV1*>(host);
-    if (!ctx || !ctx->resolveCapability || !ctx->readComponent)
-        return;
-
-    std::uint32_t flags = 0;
-    if (GameSharedStateV1* shared = sharedState(ctx)) {
-        if (shared->localPlayerEntity != 0 &&
-            (shared->modeFlags & GAME_MODE_FLAG_CREATION) == 0) {
-            GameMovementIntentComponentV1 mi{};
-            if (ctx->readComponent(ctx->host, shared->localPlayerEntity,
-                                   GAME_COMPONENT_MOVEMENT_INTENT, &mi, sizeof(mi)) &&
-                mi.pressed) {
-                flags |= 1u;
-            }
-        }
-    }
-
-    auto fn = reinterpret_cast<AnimationUpdateFn>(
-        ctx->resolveCapability(ctx->host, GAME_CAP_ANIMATION_UPDATE));
-    if (fn)
-        fn(ctx->host, dt, flags);
+    // Intentionally empty: the generic hot pose path owns local animation now.
 }
 
 const MimitaHotPackage::SystemRegistrar s_animationMain{

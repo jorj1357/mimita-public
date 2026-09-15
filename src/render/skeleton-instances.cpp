@@ -27,7 +27,7 @@ glm::mat4 trs(const float translation[3], const float rotationEuler[3])
     return glm::translate(glm::mat4(1.0f), t) * glm::mat4_cast(q);
 }
 
-BonePose* findBone(Instance& inst, std::uint64_t part)
+BonePose* findBoneMutable(Instance& inst, std::uint64_t part)
 {
     for (std::uint32_t i = 0; i < inst.boneCount; ++i)
         if (inst.bones[i].part == part)
@@ -78,9 +78,15 @@ bool applyPose(EntityId entity, const GameSkeletonPoseV1& pose)
     for (std::uint32_t i = 0; i < n; ++i) {
         if (pose.parts[i].part == 0)
             continue;
-        BonePose* bone = findBone(*inst, pose.parts[i].part);
+        BonePose* bone = findBoneMutable(*inst, pose.parts[i].part);
         if (!bone)
             continue;  // too many parts; extra parts are skipped safely
+        bone->translation[0] = pose.parts[i].translation[0];
+        bone->translation[1] = pose.parts[i].translation[1];
+        bone->translation[2] = pose.parts[i].translation[2];
+        bone->rotationEuler[0] = pose.parts[i].rotationEuler[0];
+        bone->rotationEuler[1] = pose.parts[i].rotationEuler[1];
+        bone->rotationEuler[2] = pose.parts[i].rotationEuler[2];
         bone->local = trs(pose.parts[i].translation, pose.parts[i].rotationEuler);
         // Flat skeleton (all parts are direct children of the root), so world ==
         // local. A hierarchical mapping belongs to skeleton resource metadata.
@@ -88,6 +94,15 @@ bool applyPose(EntityId entity, const GameSkeletonPoseV1& pose)
     }
     ++inst->version;
     return true;
+}
+
+const BonePose* findBone(const Instance* instance, std::uint64_t part)
+{
+    if (!instance) return nullptr;
+    for (std::uint32_t i = 0; i < instance->boneCount; ++i)
+        if (instance->bones[i].part == part)
+            return &instance->bones[i];
+    return nullptr;
 }
 
 void purgeDead()

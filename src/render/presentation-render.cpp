@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -77,8 +78,21 @@ struct GpuVertex {
 std::uint64_t g_submitted = 0;
 std::uint64_t g_skinned = 0;
 std::uint64_t g_staticFallback = 0;
+std::uint64_t g_viewSpace = 0;
 bool g_initialized = false;
 std::unordered_map<std::uint64_t, GpuMesh*> g_debugMeshes;
+// EntityId -> last submitted logical mesh id (a hash, never a raw handle, so a
+// resource generation swap can never leave a dangling pointer here).
+std::unordered_map<EntityId, std::uint64_t> g_entityMeshId;
+// File-backed resources registered from hot code, re-polled for generation swaps.
+struct DynamicResource {
+    std::uint64_t logicalId = 0;
+    std::uint32_t kind = 0;
+    std::string path;
+};
+std::vector<DynamicResource> g_dynamicResources;
+// Stable path storage handed to the provider as loader `user` pointers.
+std::vector<std::unique_ptr<char[]>> g_dynamicPathStorage;
 
 std::uint64_t fnv1a(std::uint64_t hash, const void* data, std::size_t size)
 {
@@ -559,11 +573,89 @@ void poll()
     const std::uint64_t def = fileContentHash(kDefaultTexturePath);
     if (def != 0)
         provider.apply(kDefaultTexture, def);
+    // File-backed hot-registered resources: a content change swaps the generation
+    // while entities referencing the logical id survive.
+    for (const DynamicResource& r : g_dynamicResources) {
+        const std::uint64_t hash = fileContentHash(r.path.c_str());
+        if (hash != 0)
+            provider.apply(r.logicalId, hash);
+    }
+}
+
+bool registerLogicalResource(std::uint64_t logicalId, std::uint32_t kind,
+                             const char* path, bool applyNow,
+                             std::uint32_t* outGeneration)
+{
+    if (logicalId == 0 || !path || !*path)
+        return false;
+    MimitaRuntime::PresentationResourceProvider& provider =
+        MimitaRuntime::PresentationResourceProvider::instance();
+
+    // Stable path storage for the loader's `user` pointer.
+    const std::size_t len = std::strlen(path);
+    auto owned = std::make_unique<char[]>(len + 1);
+    std::memcpy(owned.get(), path, len + 1);
+    char* user = owned.get();
+    g_dynamicPathStorage.push_back(std::move(owned));
+
+    bool replaced = false;
+    for (DynamicResource& r : g_dynamicResources) {
+        if (r.logicalId == logicalId) {
+            r.kind = kind;
+            r.path.assign(path);
+            replaced = true;
+            break;
+        }
+    }
+    if (!replaced)
+        g_dynamicResources.push_back({logicalId, kind, path});
+
+    if (kind == GAME_RESOURCE_TEXTURE)
+        provider.setLoader(logicalId, &loadDefaultTexture, &retireDefaultTexture, user);
+    else
+        provider.setLoader(logicalId, &loadGlbMesh, &retireCubeMesh, user);
+
+    if (applyNow)
+        provider.apply(logicalId, fileContentHash(path));
+    if (outGeneration)
+        *outGeneration = provider.generationOf(logicalId);
+    return true;
+}
+
+bool meshPartBind(std::uint64_t entity, std::uint64_t part, float outMat16[16])
+{
+    auto it = g_entityMeshId.find(static_cast<EntityId>(entity));
+    if (it == g_entityMeshId.end())
+        return false;
+    GpuMesh* mesh = static_cast<GpuMesh*>(
+        MimitaRuntime::PresentationResourceProvider::instance().handleOf(it->second));
+    if (!mesh) {
+        auto dit = g_debugMeshes.find(it->second);
+        if (dit != g_debugMeshes.end())
+            mesh = dit->second;
+    }
+    if (!mesh)
+        return false;
+    for (const GpuMesh::Part& p : mesh->parts) {
+        if (p.bone == part) {
+            if (outMat16)
+                for (int c = 0; c < 4; ++c)
+                    for (int r = 0; r < 4; ++r)
+                        outMat16[c * 4 + r] = p.bind[c][r];
+            return true;
+        }
+    }
+    return false;
 }
 
 void submitMesh(const GameRenderMeshCommandV1& command)
 {
     ++g_submitted;
+    const bool viewSpace = (command.flags & GAME_RENDER_MESH_SPACE_VIEW) != 0;
+    if (viewSpace)
+        ++g_viewSpace;
+    if (command.entity != 0)
+        g_entityMeshId[static_cast<EntityId>(command.entity)] = command.meshResourceId;
     GpuMesh* mesh = static_cast<GpuMesh*>(
         MimitaRuntime::PresentationResourceProvider::instance().handleOf(
             command.meshResourceId));
@@ -607,7 +699,10 @@ void submitMesh(const GameRenderMeshCommandV1& command)
     glm::mat4 model = glm::translate(glm::mat4(1.0f), position) *
                       glm::mat4_cast(rotation) *
                       glm::scale(glm::mat4(1.0f), scale);
-    const glm::mat4 view = camera.getView();
+    // Presentation space: world by default; a VIEW-space command is drawn with
+    // an identity view so its transform is camera-relative. The kernel keeps the
+    // projection/depth mechanism; hot policy keeps the transform.
+    const glm::mat4 view = viewSpace ? glm::mat4(1.0f) : camera.getView();
     const glm::mat4 proj =
         camera.getProj((float)gRenderer->width, (float)gRenderer->height);
 
@@ -664,6 +759,11 @@ std::uint64_t skinnedSubmissionCount()
 std::uint64_t staticFallbackCount()
 {
     return g_staticFallback;
+}
+
+std::uint64_t viewSpaceSubmissionCount()
+{
+    return g_viewSpace;
 }
 
 bool debugInstallPartMesh(std::uint64_t logicalId, const std::uint64_t* boneHashes,

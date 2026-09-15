@@ -67,6 +67,11 @@
 #include "network/server-spatial-authority-selftest.h"
 #include "network/movement-algorithm-selftest.h"
 #include "network/air-movement-parity-selftest.h"
+#include "network/generic-integrator-selftest.h"
+#include "network/reconciliation-policy-selftest.h"
+#include "network/interpolation-policy-selftest.h"
+#include "network/rewind-policy-selftest.h"
+#include "hot-reload/generation-distribution-selftest.h"
 #include "hot-reload/capability-selftest.h"
 
 extern DuelManager gDuelManager;
@@ -382,6 +387,46 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = runCounterstrikeSelfTest(report);
         printf("%s", report.c_str());
         printf("[COUNTERSTRIKE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--generation-distribution-selftest") {
+        std::string report;
+        const bool ok = runGenerationDistributionSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[GENERATION DISTRIBUTION SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--rewind-policy-selftest") {
+        std::string report;
+        const bool ok = runRewindPolicySelfTest(report);
+        printf("%s", report.c_str());
+        printf("[REWIND POLICY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--interpolation-policy-selftest") {
+        std::string report;
+        const bool ok = runInterpolationPolicySelfTest(report);
+        printf("%s", report.c_str());
+        printf("[INTERPOLATION POLICY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--reconciliation-policy-selftest") {
+        std::string report;
+        const bool ok = runReconciliationPolicySelfTest(report);
+        printf("%s", report.c_str());
+        printf("[RECONCILIATION POLICY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--generic-integrator-selftest") {
+        std::string report;
+        const bool ok = runGenericIntegratorSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[GENERIC INTEGRATOR SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

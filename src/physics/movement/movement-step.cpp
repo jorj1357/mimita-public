@@ -953,6 +953,50 @@ bool tryActivateDash(MovementState& state,
         return false;
     }
 
+    // Hot dash policy: a hot handler owns direction, impulse, and availability.
+    {
+        GameDashPolicyV1 d{};
+        d.velocity[0] = state.baseVelocity.x;
+        d.velocity[1] = state.baseVelocity.y;
+        d.velocity[2] = state.baseVelocity.z;
+        d.moveAxes[0] = command.moveAxes.x;
+        d.moveAxes[1] = command.moveAxes.y;
+        d.cameraForward[0] = command.horizontalCameraForward.x;
+        d.cameraForward[1] = command.horizontalCameraForward.y;
+        d.groundDashImpulse = positiveOrDefault(config.groundDashImpulse,
+                                                movementDashImpulse(config));
+        d.airDashImpulse = positiveOrDefault(config.airDashImpulse,
+                                             movementDashImpulse(config));
+        d.dashPressed = 1u;
+        d.grounded = state.ground.onGround ? 1u : 0u;
+        d.dashAvailable = 1u;
+        d.dashEnabled = 1u;
+        d.handled = 0;
+        if (LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_DASH, &d,
+                                                  sizeof(d), 0, 0, 0) &&
+            d.handled) {
+            state.baseVelocity.x = d.outVelocity[0];
+            state.baseVelocity.y = d.outVelocity[1];
+            if (d.outDidDash == 0u)
+                return false;
+            state.dash.dashAvailable = false;
+            state.dash.didDash = true;
+            state.dash.frictionOverride = 1.0f;
+            state.dash.tickPerfectDash = false;
+            state.dash.dashGraceTimerSeconds = std::max(config.dashGraceSeconds, 0.0f);
+            state.jump.airJumpsLeft = 0;
+            const bool usedMoveInput = d.outUsedMoveInput != 0u;
+            state.dashMomentumProtection.active = true;
+            state.dashMomentumProtection.usedCameraForwardFallback = !usedMoveInput;
+            state.dashMomentumProtection.protectedMoveAxes =
+                usedMoveInput ? movementNormalizeDirectionOrZero(command.moveAxes)
+                              : glm::vec2(0.0f);
+            ++state.dashMomentumProtection.movementInputGeneration;
+            events.didDash = true;
+            return true;
+        }
+    }
+
     const glm::vec2 direction = movementDashDirection(command);
     if (!movementHasMoveInput(direction, MOVEMENT_INPUT_EPSILON))
         return false;
@@ -995,6 +1039,28 @@ bool tryActivateDownDash(MovementState& state,
     if (!state.downDash.available)
         return false;
 
+    // Hot down-dash policy.
+    GameDashPolicyV1 d{};
+    d.velocity[0] = state.baseVelocity.x;
+    d.velocity[1] = state.baseVelocity.y;
+    d.velocity[2] = state.baseVelocity.z;
+    d.downDashVerticalSpeed = config.downDashVerticalSpeed;
+    d.downDashPressed = 1u;
+    d.downDashEnabled = 1u;
+    d.downDashAvailable = 1u;
+    d.handled = 0;
+    if (LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_DASH, &d,
+                                              sizeof(d), 0, 0, 0) &&
+        d.handled) {
+        if (d.outDidDownDash == 0u)
+            return false;
+        state.baseVelocity.z = d.outVelocity[2];
+        state.downDash.available = false;
+        state.downDash.didDownDash = true;
+        events.didDownDash = true;
+        return true;
+    }
+
     state.baseVelocity.z = config.downDashVerticalSpeed;
     state.downDash.available = false;
     state.downDash.didDownDash = true;
@@ -1009,6 +1075,44 @@ void updateFreeze(MovementState& state,
                   MovementStepEvents& events)
 {
     const float dt = movementClampStepDelta(fixedDt, config);
+
+    // Hot freeze policy: a hot handler owns activation/duration/suppression/exit.
+    {
+        GameFreezePolicyV1 fp{};
+        fp.velocity[0] = state.baseVelocity.x;
+        fp.velocity[1] = state.baseVelocity.y;
+        fp.velocity[2] = state.baseVelocity.z;
+        fp.dt = dt;
+        fp.durationSeconds = config.freezeDurationSeconds;
+        fp.freezePressed = command.freezePressed ? 1u : 0u;
+        fp.freezeHeld = command.freezeHeld ? 1u : 0u;
+        fp.freezeHeldPreviously = state.freeze.heldPreviously ? 1u : 0u;
+        fp.freezeEnabled = config.freezeEnabled ? 1u : 0u;
+        fp.freezeActive = state.freeze.active ? 1u : 0u;
+        fp.freezeAvailable = state.freeze.available ? 1u : 0u;
+        fp.freezeTimerSeconds = state.freeze.timerSeconds;
+        fp.handled = 0;
+        if (LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_FREEZE, &fp,
+                                                  sizeof(fp), 0, 0, 0) &&
+            fp.handled) {
+            state.baseVelocity.x = fp.outVelocity[0];
+            state.baseVelocity.y = fp.outVelocity[1];
+            state.baseVelocity.z = fp.outVelocity[2];
+            state.freeze.active = fp.outFreezeActive != 0u;
+            state.freeze.available = fp.outFreezeAvailable != 0u;
+            state.freeze.heldPreviously = fp.outFreezeHeldPreviously != 0u;
+            state.freeze.timerSeconds = fp.outFreezeTimerSeconds;
+            if (fp.outDidFreeze != 0u) {
+                state.externalImpulse = glm::vec3(0.0f);
+                state.freeze.didFreeze = true;
+                events.didFreeze = true;
+                events.freezeStarted = true;
+            }
+            if (fp.outFreezeEnded != 0u)
+                events.freezeEnded = true;
+            return;
+        }
+    }
 
     if (!config.freezeEnabled) {
         // Toggle off mid-freeze: release the freeze so the player is not stuck.
@@ -1063,8 +1167,22 @@ void applyBasicGravity(MovementState& state,
                        float fixedDt)
 {
     const float dt = movementClampStepDelta(fixedDt, config);
-    state.baseVelocity.z = movementApplyGravityZ(
-        state.baseVelocity.z, config.gravityZ, config.maximumFallSpeed, dt);
+    // Hot gravity policy: a hot handler owns the vertical velocity change and
+    // terminal clamp; fallback keeps the built-in math.
+    GameGravityV1 g{};
+    g.velocityZ = state.baseVelocity.z;
+    g.gravityZ = config.gravityZ;
+    g.maximumFallSpeed = config.maximumFallSpeed;
+    g.dt = dt;
+    g.handled = 0;
+    if (LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_GRAVITY, &g,
+                                              sizeof(g), 0, 0, 0) &&
+        g.handled) {
+        state.baseVelocity.z = g.outVelocityZ;
+    } else {
+        state.baseVelocity.z = movementApplyGravityZ(
+            state.baseVelocity.z, config.gravityZ, config.maximumFallSpeed, dt);
+    }
 }
 
 void applyBasicExternalImpulseControl(MovementState& state,
@@ -1101,6 +1219,22 @@ static void applySpecialExternalImpulseControl(MovementState& state,
 
 float sourceMaxSpeedValue(const MovementConfig& config, float sizeScale)
 {
+    // Hot speed policy: the one shared derivation of effective max speed.
+    GameSpeedPolicyV1 p{};
+    p.baseMaxSpeed = config.sourceMaxSpeed;
+    p.baseFallbackSpeed = config.groundSpeed;
+    p.sizeScale = sizeScale;
+    p.sizeExponent = config.movementSpeedSizeExponent;
+    p.speedLimit = config.speedLimit;
+    p.airMaxWishspeed = 0.0f;
+    p.rawWishSpeed = 0.0f;
+    p.speedLimitFixed = 0u;
+    p.handled = 0;
+    if (LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_SPEED_POLICY, &p,
+                                              sizeof(p), 0, 0, 0) &&
+        p.handled)
+        return p.outMaxSpeed;
+
     const float base = config.sourceMaxSpeed > 0.0f
         ? config.sourceMaxSpeed
         : config.groundSpeed;
@@ -1113,6 +1247,21 @@ void applySpeedLimitClamp(MovementState& state, const MovementConfig& config)
 {
     if (!config.speedLimitEnabled || config.speedLimit <= 0.0f)
         return;
+
+    // Hot post-step speed clamp / preservation policy.
+    GameSpeedClampV1 c{};
+    c.velocity[0] = state.baseVelocity.x;
+    c.velocity[1] = state.baseVelocity.y;
+    c.speedLimit = config.speedLimit;
+    c.enabled = 1u;
+    c.handled = 0;
+    if (LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_SPEED_CLAMP, &c,
+                                              sizeof(c), 0, 0, 0) &&
+        c.handled) {
+        state.baseVelocity.x = c.outVelocity[0];
+        state.baseVelocity.y = c.outVelocity[1];
+        return;
+    }
 
     glm::vec2 vel(state.baseVelocity.x, state.baseVelocity.y);
     const float speed = glm::length(vel);
@@ -1196,29 +1345,54 @@ void applySourceGround(MovementState& state,
     if (state.jump.jumpIntentTimerSeconds > 0.0f)
         frictionAmount *= config.landingOverspeedBleed;
 
-    // PM_Friction (horizontal only, every grounded tick).
-    float speed = glm::length(vel);
-    if (speed > 0.1f) {
-        const float control = std::max(speed, config.stopspeed);
-        const float drop = control * frictionAmount * dt;
-        const float newSpeed = std::max(0.0f, speed - drop);
-        if (newSpeed != speed)
-            vel *= newSpeed / speed;
-    } else {
-        vel = glm::vec2(0.0f);
-    }
-
-    // PM_Accelerate along wishdir (wishspeed capped to maxspeed).
     const glm::vec2 wish = movementClampUnitOrZero(command.moveAxes);
-    if (movementHasMoveInput(wish)) {
-        const glm::vec2 wishDir = movementNormalizeDirectionOrZero(wish);
-        const float wishSpeed = maxSpeed;
-        const float currentSpeed = glm::dot(vel, wishDir);
-        const float addSpeed = wishSpeed - currentSpeed;
-        if (addSpeed > 0.0f) {
-            float accelSpeed = config.groundAcceleration * wishSpeed * dt;
-            accelSpeed = std::min(accelSpeed, addSpeed);
-            vel += wishDir * accelSpeed;
+    const bool hasInput = movementHasMoveInput(wish);
+    const glm::vec2 wishDir =
+        hasInput ? movementNormalizeDirectionOrZero(wish) : glm::vec2(0.0f);
+
+    // Hot ground-move algorithm: a hot handler owns friction + acceleration.
+    // Fallback keeps the built-in Source math when no hot handler is active.
+    {
+        GameGroundMoveV1 g{};
+        g.velocity[0] = vel.x;
+        g.velocity[1] = vel.y;
+        g.wishDir[0] = wishDir.x;
+        g.wishDir[1] = wishDir.y;
+        g.wishSpeed = maxSpeed;
+        g.groundAcceleration = config.groundAcceleration;
+        g.frictionAmount = frictionAmount;
+        g.stopspeed = config.stopspeed;
+        g.dt = dt;
+        g.hasInput = hasInput ? 1u : 0u;
+        g.handled = 0;
+        if (LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_GROUND_MOVE, &g,
+                                                  sizeof(g), 0, 0, 0) &&
+            g.handled) {
+            vel.x = g.outVelocity[0];
+            vel.y = g.outVelocity[1];
+        } else {
+            // PM_Friction (horizontal only, every grounded tick).
+            float speed = glm::length(vel);
+            if (speed > 0.1f) {
+                const float control = std::max(speed, config.stopspeed);
+                const float drop = control * frictionAmount * dt;
+                const float newSpeed = std::max(0.0f, speed - drop);
+                if (newSpeed != speed)
+                    vel *= newSpeed / speed;
+            } else {
+                vel = glm::vec2(0.0f);
+            }
+
+            // PM_Accelerate along wishdir (wishspeed capped to maxspeed).
+            if (hasInput) {
+                const float currentSpeed = glm::dot(vel, wishDir);
+                const float addSpeed = maxSpeed - currentSpeed;
+                if (addSpeed > 0.0f) {
+                    float accelSpeed = config.groundAcceleration * maxSpeed * dt;
+                    accelSpeed = std::min(accelSpeed, addSpeed);
+                    vel += wishDir * accelSpeed;
+                }
+            }
         }
     }
 
@@ -1292,11 +1466,33 @@ void applySourceAir(MovementState& state,
 
     // Source caps wishspd for projection. The original code still uses the
     // uncapped wishspeed in accelspeed; expose that historical quirk explicitly.
-    float wishspd = config.airMaxWishspeed > 0.0f
-        ? config.airMaxWishspeed *
-              movementSizeScaleFactor(state.sizeScale, config.movementSpeedSizeExponent)
-        : maxSpeed;
-    wishspd = std::min(wishspd, wishSpeed);
+    // Hot speed policy: the air wish-speed projection cap is derived by the same
+    // shared function the client uses.
+    float wishspd = maxSpeed;
+    {
+        GameSpeedPolicyV1 sp{};
+        sp.baseMaxSpeed = config.sourceMaxSpeed;
+        sp.baseFallbackSpeed = config.groundSpeed;
+        sp.sizeScale = state.sizeScale;
+        sp.sizeExponent = config.movementSpeedSizeExponent;
+        sp.speedLimit = config.speedLimit;
+        sp.airMaxWishspeed = config.airMaxWishspeed;
+        sp.rawWishSpeed = wishSpeed;
+        sp.speedLimitFixed = 0u;
+        sp.handled = 0;
+        if (LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_SPEED_POLICY,
+                                                  &sp, sizeof(sp), 0, 0, 0) &&
+            sp.handled) {
+            wishspd = sp.outWishspd;
+        } else {
+            wishspd = config.airMaxWishspeed > 0.0f
+                ? config.airMaxWishspeed *
+                      movementSizeScaleFactor(state.sizeScale,
+                                              config.movementSpeedSizeExponent)
+                : maxSpeed;
+            wishspd = std::min(wishspd, wishSpeed);
+        }
+    }
     state.airDebug.cappedWishSpeed = wishspd;
 
     state.airDebug.currentSpeed = glm::dot(vel, wishDir);
@@ -1476,6 +1672,53 @@ void applyBasicJump(MovementState& state,
                     MovementStepEvents* events)
 {
     const float dt = movementClampStepDelta(fixedDt, config);
+
+    // Hot jump policy: a hot handler owns the whole jump decision + state.
+    {
+        GameJumpPolicyV1 j{};
+        j.velocityZ = state.baseVelocity.z;
+        j.jumpSpeed = movementScaledJumpVelocity(config, state.sizeScale);
+        j.dt = dt;
+        j.coyoteSeconds = config.coyoteSeconds;
+        j.jumpBufferSeconds = config.jumpBufferSeconds;
+        j.grounded = state.ground.onGround ? 1u : 0u;
+        j.jumpPressed = command.jumpPressed ? 1u : 0u;
+        j.jumpHeld = command.jumpHeld ? 1u : 0u;
+        j.jumpHeldPreviously = state.jump.jumpHeldPreviously ? 1u : 0u;
+        j.autoBhopEnabled = config.autoBhopEnabled ? 1u : 0u;
+        j.maximumAirJumps = static_cast<std::uint32_t>(
+            config.maximumAirJumps > 0 ? config.maximumAirJumps : 0);
+        j.jumpIntentTimerSeconds = state.jump.jumpIntentTimerSeconds;
+        j.coyoteTimerSeconds = state.jump.coyoteTimerSeconds;
+        j.airJumpsLeft = state.jump.airJumpsLeft;
+        j.airJumpArmed = state.jump.airJumpArmed ? 1u : 0u;
+        j.airJumpLocked = state.jump.airJumpLocked ? 1u : 0u;
+        j.handled = 0;
+        if (LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_JUMP, &j,
+                                                  sizeof(j), 0, 0, 0) &&
+            j.handled) {
+            state.baseVelocity.z = j.outVelocityZ;
+            state.jump.jumpIntentTimerSeconds = j.jumpIntentTimerSeconds;
+            state.jump.coyoteTimerSeconds = j.coyoteTimerSeconds;
+            state.jump.airJumpsLeft = j.airJumpsLeft;
+            state.jump.airJumpArmed = j.airJumpArmed != 0u;
+            state.jump.airJumpLocked = j.airJumpLocked != 0u;
+            state.ground.onGround = j.outGrounded != 0u;
+            state.jump.jumpHeldPreviously = j.outJumpHeldPreviously != 0u;
+            state.jump.didGroundJump = j.outDidGroundJump != 0u;
+            state.jump.didAirJump = j.outDidAirJump != 0u;
+            if (j.outDidGroundJump != 0u)
+                state.dash.dashAvailable = true;
+            if (events) {
+                if (j.outDidGroundJump != 0u)
+                    events->didGroundJump = true;
+                if (j.outDidAirJump != 0u)
+                    events->didAirJump = true;
+            }
+            return;
+        }
+    }
+
     state.jump.jumpIntentTimerSeconds =
         std::max(0.0f, state.jump.jumpIntentTimerSeconds - dt);
     state.jump.coyoteTimerSeconds =

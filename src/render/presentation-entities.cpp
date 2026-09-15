@@ -16,12 +16,15 @@
 #include "ecs/dynamic-components.h"
 #include "ecs/entity-registry.h"
 #include "ecs/prediction-registry.h"
+#include "entities/player.h"
+#include "hot-reload/hot-animation.h"
 #include "hot-reload/hot-prediction.h"
 #include "hot-reload/hot-presentation.h"
 #include "hot-reload/hot-projectile.h"
 #include "network/packets.h"
 #include "project/presentation-resource.h"
 #include "render/presentation-render.h"
+#include "render/skeleton-instances.h"
 
 namespace PresentationEntities {
 namespace {
@@ -207,6 +210,52 @@ bool actorMeshReady()
 {
     return MimitaRuntime::PresentationResourceProvider::instance().handleOf(
                HOT_MESH_ACTOR) != nullptr;
+}
+
+void projectLocalPlayer(Player& player)
+{
+    ensureSchema();
+    const EntityId entity = Ecs::ensureLocalPlayerEntity();
+    const glm::vec3 look(std::cos(player.yaw), std::sin(player.yaw), 0.0f);
+    Ecs::setTransform(entity, player.pos, look, player.yaw, 0.0f);
+    Ecs::setVelocity(entity, player.vel, player.externalImpulse);
+    Ecs::setHealth(entity, player.currentHp, player.maxHp, player.dead);
+
+    MimitaRuntime::DynamicComponentStore& store =
+        MimitaRuntime::DynamicComponentStore::instance();
+    if (!store.has(entity, HOT_PRESENTATION_COMPONENT)) {
+        HotPresentationStateV1 present{};
+        present.meshResourceId = HOT_MESH_ACTOR;
+        present.textureResourceId = HOT_TEX_DEFAULT;
+        present.scale = 1.0f;
+        present.color[0] = present.color[1] = present.color[2] = present.color[3] = 1.0f;
+        store.write(entity, HOT_PRESENTATION_COMPONENT, &present, sizeof(present));
+    }
+    if (!store.has(entity, HOT_ANIMATION_STATE_COMPONENT)) {
+        HotAnimationStateV1 anim{};
+        anim.clipId = HOT_ANIM_IDLE;
+        anim.playbackRate = 1.0f;
+        anim.loop = 1;
+        store.write(entity, HOT_ANIMATION_STATE_COMPONENT, &anim, sizeof(anim));
+    }
+}
+
+void applyHotPoseToPlayer(Player& player)
+{
+    const EntityId entity = Ecs::ensureLocalPlayerEntity();
+    const SkeletonInstances::Instance* inst = SkeletonInstances::get(entity);
+    if (!inst || player.physicalBody.parts.empty())
+        return;
+    for (auto& part : player.physicalBody.parts) {
+        const SkeletonInstances::BonePose* bone =
+            SkeletonInstances::findBone(inst, gameHash(part.name.c_str()));
+        if (!bone)
+            continue;
+        part.pose.translation = glm::vec3(bone->translation[0], bone->translation[1],
+                                          bone->translation[2]);
+        part.pose.rotationEuler = glm::vec3(
+            bone->rotationEuler[0], bone->rotationEuler[1], bone->rotationEuler[2]);
+    }
 }
 
 std::uint64_t ensurePredicted(std::uint64_t predictionKey,

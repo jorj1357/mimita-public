@@ -43,6 +43,7 @@
     "src/hot-reload/game-modules.h",
     "src/hot-reload/hot-package.h",
     "src/hot-reload/hot-animation.h",
+    "src/hot-reload/hot-effect.h",
     "src/hot-reload/hot-pose.h",
     "src/hot-reload/hot-prediction.h",
     "src/hot-reload/hot-presentation.h",
@@ -51,7 +52,10 @@
     "src/hot-reload/hot-ui.h",
     "src/network/match-lifecycle.h",
     "src/network/objective-events.h",
-    "src/network/relevance.h"
+    "src/network/relevance.h",
+    "src/hot-reload/hot-reconciliation.h",
+    "src/hot-reload/hot-interpolation.h",
+    "src/hot-reload/hot-rewind.h"
   ],
   "globs": [
     "src/hot-reload/modules/*.cpp",

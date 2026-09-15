@@ -10,6 +10,8 @@
 
 #include "network/server.h"
 #include "network/server-context.h"
+#include "live-code/live-behavior.h"
+#include "hot-reload/hot-rewind.h"
 #include "ecs/components.h"
 #include "ecs/entity-registry.h"
 #include "network/actor-lifecycle.h"
@@ -820,27 +822,108 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
             : makeCurrentRuntimeMovementConfig();
         MovementState state = movementStateFromServerPlayer(p);
 
+        // Authoritative generic input: position/velocity/yaw come DIRECTLY from
+        // the entity's generic components, not from typed ServerPlayer fields.
+        // Typed state is no longer an authoritative input to movement.
+        {
+            const auto* tf =
+                EntityRegistry::instance().tryGet<TransformComponent>(playerEntity);
+            if (tf) {
+                state.position = tf->position;
+                state.yaw = tf->yaw;
+            }
+            const auto* gv =
+                EntityRegistry::instance().tryGet<VelocityComponent>(playerEntity);
+            if (gv) {
+                state.baseVelocity = gv->linear;
+                state.externalImpulse = gv->externalImpulse;
+            }
+        }
+        // Generic grounded/contact authority: ensure the generic movement runtime
+        // state exists (seeded once from typed), then read grounded from it — not
+        // from typed ServerPlayer.onGround.
+        MovementRuntimeStateComponent* runtimeState =
+            EntityRegistry::instance().tryGet<MovementRuntimeStateComponent>(
+                playerEntity);
+        if (!runtimeState) {
+            // Seed the generic runtime state once from the current working state.
+            MovementRuntimeStateComponent seeded;
+            seeded.grounded = p.onGround;
+            seeded.jumpHeldPreviously = state.jump.jumpHeldPreviously;
+            seeded.airJumpArmed = state.jump.airJumpArmed;
+            seeded.airJumpsLeft = state.jump.airJumpsLeft;
+            seeded.dashAvailable = state.dash.dashAvailable;
+            seeded.downDashAvailable = state.downDash.available;
+            seeded.jumpIntentSeconds = state.jump.jumpIntentTimerSeconds;
+            seeded.dashGraceSeconds = state.dash.dashGraceTimerSeconds;
+            runtimeState = &EntityRegistry::instance().add<MovementRuntimeStateComponent>(
+                playerEntity, seeded);
+        }
+        // Generic ability/contact runtime authority (typed player.movement is a
+        // mirror): grounded and jump/dash runtime state come from the component,
+        // not from typed fields.
+        state.ground.onGround = runtimeState->grounded;
+        state.jump.airJumpsLeft = runtimeState->airJumpsLeft;
+        state.jump.jumpIntentTimerSeconds = runtimeState->jumpIntentSeconds;
+        state.jump.jumpHeldPreviously = runtimeState->jumpHeldPreviously;
+        state.jump.airJumpArmed = runtimeState->airJumpArmed;
+        state.dash.dashAvailable = runtimeState->dashAvailable;
+        state.downDash.available = runtimeState->downDashAvailable;
+        state.dash.dashGraceTimerSeconds = runtimeState->dashGraceSeconds;
+
         // Phase 1: Pre-collision movement (gravity, walk, jump, dash)
         applyPreCollisionBasicMovement(state, cmd, cfg, SERVER_DT);
         MovementStepEvents preEvents;
         applySpecialMovementPreCollision(state, cmd, cfg, SERVER_DT, preEvents);
         applyMovementStateToServerPlayer(state, p);
 
-        // Phase 2: World collision resolve
-        resolveWorldCollision(p, world);
+        // Phase 2: World collision resolve on the GENERIC working movement state
+        // (the cold collision mechanism mutates position/velocity + contact; it
+        // does not require ServerPlayer). Typed fields are projected from it.
+        {
+            bool onGround = false;
+            resolveCapsuleCollisionAgainstWorld(world, state.position,
+                                                state.baseVelocity, PLAYER_RADIUS,
+                                                PLAYER_HEIGHT, onGround);
+            state.ground.onGround = onGround;
+            // Authoritative generic contact result + typed compatibility mirror.
+            if (runtimeState)
+                runtimeState->grounded = onGround;
+            applyMovementStateToServerPlayer(state, p);
+        }
 
-        // Phase 3: Build collision feedback and run post-collision movement
-        state = movementStateFromServerPlayer(p);
+        // Phase 3: Build collision feedback and run post-collision movement.
+        // Reuse the generic working state directly (no typed re-read).
         MovementCollisionFeedback collision;
-        collision.onGround = p.onGround;
-        collision.hasWorldContact = p.onGround;
-        collision.realWorldContactThisFrame = p.onGround;
+        collision.onGround = state.ground.onGround;
+        collision.hasWorldContact = state.ground.onGround;
+        collision.realWorldContactThisFrame = state.ground.onGround;
         collision.groundNormal = {0.0f, 0.0f, 1.0f};
         collision.simulationTick = cmd.clientSimulationTick;
 
         MovementStepResult stepResult = applyPostCollisionMovementWithSpecials(
             state, cmd, cfg, collision, SERVER_DT, preEvents);
         applyMovementStateToServerPlayer(stepResult.state, p);
+        // Authoritative generic OUTPUT: write the movement result directly to the
+        // entity's generic components (typed fields above are a projection).
+        Ecs::setTransform(playerEntity, stepResult.state.position,
+                          glm::vec3(1.0f, 0.0f, 0.0f), stepResult.state.yaw, 0.0f);
+        Ecs::setVelocity(playerEntity, stepResult.state.baseVelocity,
+                         stepResult.state.externalImpulse);
+        if (runtimeState) {
+            // Generic output: persist the ability/contact runtime state so typed
+            // player.movement can never re-authorize it next tick.
+            runtimeState->grounded = stepResult.state.ground.onGround;
+            runtimeState->airJumpsLeft = stepResult.state.jump.airJumpsLeft;
+            runtimeState->jumpIntentSeconds =
+                stepResult.state.jump.jumpIntentTimerSeconds;
+            runtimeState->jumpHeldPreviously = stepResult.state.jump.jumpHeldPreviously;
+            runtimeState->airJumpArmed = stepResult.state.jump.airJumpArmed;
+            runtimeState->dashAvailable = stepResult.state.dash.dashAvailable;
+            runtimeState->downDashAvailable = stepResult.state.downDash.available;
+            runtimeState->dashGraceSeconds =
+                stepResult.state.dash.dashGraceTimerSeconds;
+        }
         p.clientStateUpdated = false;
 
         {
@@ -1211,6 +1294,33 @@ uint32_t estimateServerRewindTick(const ServerPlayer& attacker,
                                   uint32_t clientSimulationTick,
                                   uint32_t serverTick)
 {
+    // Hot rewind/lag-compensation policy: cold supplies timing/history facts,
+    // hot owns the rewind target + clamp/reject. Cold executes the lookup.
+    {
+        GameRewindPolicyV1 rp{};
+        rp.currentTick = serverTick;
+        rp.commandTick = clientSimulationTick;
+        rp.acceptedClientTick = attacker.movementValidation.lastAcceptedClientTick;
+        rp.acceptedServerTick = attacker.lastAcceptedServerTick;
+        rp.measuredLatencySeconds = (float)(attacker.pingMs / 1000.0);
+        rp.interpolationDelaySeconds = (float)(
+            (double)REWIND_INTERP_DELAY_TICKS / (double)GAMEPLAY_SIMULATION_HZ);
+        rp.compensationSeconds = (float)NetworkingConfig::instance()
+            .data().remotePlayers.rewindCompensationSeconds;
+        rp.maxRewindTicks = NetworkingConfig::instance()
+            .data().remotePlayers.maxRewindTicks;
+        rp.handled = 0;
+        if (LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_REWIND, &rp,
+                                                  sizeof(rp), 0, 0, 0) &&
+            rp.handled) {
+            // Conservative generation-mismatch rejection: evaluate at the
+            // current authoritative tick instead of rewinding.
+            if (rp.reject != 0u || rp.allow == 0u)
+                return serverTick;
+            return rp.targetTick;
+        }
+    }
+
     // clientSimulationTick carries the newest server tick the attacker had
     // rendered (the client stamps it from the local-player snapshot tick), so
     // it is already in the server tick domain. Their view is that tick minus

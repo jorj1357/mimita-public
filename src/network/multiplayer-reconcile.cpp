@@ -12,6 +12,8 @@
 #include "network/server.h"
 #include "network/disagreement-visuals.h"
 #include "live-code/live-behavior.h"
+#include "hot-reload/hot-reconciliation.h"
+#include "hot-reload/hot-reload-system.h"
 #include "combat/weapon-runtime.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
@@ -72,8 +74,50 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     const glm::vec3 correction = ctx.localServerPosition - player.pos;
     const float error = glm::length(correction);
     const MovementValidationConfig correctionConfig;
-    const MovementCorrectionClass correctionClass =
+    MovementCorrectionClass correctionClass =
         classifyMovementCorrection(error, correctionConfig);
+
+    // Hot reconciliation policy: the hot handler owns the error metric,
+    // thresholds, and snap/smooth/hard-reset decision. Cold code executes it.
+    {
+        GameReconcileV1 rq{};
+        rq.predictedPosition[0] = player.pos.x;
+        rq.predictedPosition[1] = player.pos.y;
+        rq.predictedPosition[2] = player.pos.z;
+        rq.predictedVelocity[0] = player.vel.x;
+        rq.predictedVelocity[1] = player.vel.y;
+        rq.predictedVelocity[2] = player.vel.z;
+        rq.authoritativePosition[0] = ctx.localServerPosition.x;
+        rq.authoritativePosition[1] = ctx.localServerPosition.y;
+        rq.authoritativePosition[2] = ctx.localServerPosition.z;
+        rq.authoritativeVelocity[0] = ctx.localServerVelocity.x;
+        rq.authoritativeVelocity[1] = ctx.localServerVelocity.y;
+        rq.authoritativeVelocity[2] = ctx.localServerVelocity.z;
+        rq.positionError = error;
+        rq.velocityError =
+            glm::length(ctx.localServerVelocity - player.vel);
+        rq.smallDistance = correctionConfig.smallCorrectionDistance;
+        rq.mediumDistance = correctionConfig.mediumCorrectionDistance;
+        rq.majorDistance = correctionConfig.majorCorrectionDistance;
+        rq.predictedTick = ctx.latestLocalSnapshotTick;
+        // Real logical generation identity: predicted state is produced by the
+        // locally active generation; authoritative state by the server's.
+        rq.predictedGeneration =
+            (std::uint64_t)HotReloadSystem::instance().status().activeGeneration;
+        rq.authoritativeGeneration = (std::uint64_t)ctx.serverCodeGeneration;
+        rq.handled = 0;
+        if (LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_RECONCILE, &rq,
+                                                  sizeof(rq), 0, 0, 0) &&
+            rq.handled) {
+            switch (rq.correctionMode) {
+            case 1u: correctionClass = MovementCorrectionClass::Small; break;
+            case 2u: correctionClass = MovementCorrectionClass::Medium; break;
+            case 3u:
+            case 4u: correctionClass = MovementCorrectionClass::Major; break;
+            default: correctionClass = MovementCorrectionClass::None; break;
+            }
+        }
+    }
     constexpr float CORRECTION_LOG_DISTANCE = 0.5f;
     constexpr uint64_t TELEPORT_ACK_TIMEOUT_MS = 1500;
     const uint64_t currentMs = nowMs();

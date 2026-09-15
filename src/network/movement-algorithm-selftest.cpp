@@ -206,6 +206,345 @@ bool runMovementAlgorithmSelfTest(std::string& report)
                     report);
     }
 
+    // Ground-move shared implementation (friction + acceleration).
+    {
+        GameGroundMoveV1 g{};
+        g.velocity[0] = 10.0f;
+        g.velocity[1] = 0.0f;
+        g.wishDir[0] = 1.0f;
+        g.wishDir[1] = 0.0f;
+        g.wishSpeed = 20.0f;
+        g.groundAcceleration = 20.0f;
+        g.frictionAmount = 3.25f;
+        g.stopspeed = 0.0f;
+        g.dt = 1.0f / 60.0f;
+        g.hasInput = 1u;
+        g.handled = 0;
+        LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_GROUND_MOVE, &g,
+                                              sizeof(g), 0, 0, 0);
+        // friction: 10 * 3.25/60 = 0.54167 -> 9.45833; accel: min(20*20/60,
+        // 20-9.45833)=6.66667 -> 16.125.
+        ok &= check(g.handled == 1u && approx(g.outVelocity[0], 16.125f, 0.01f) &&
+                        approx(g.outVelocity[1], 0.0f),
+                    "hot ground-move owns the friction + acceleration function",
+                    report);
+
+        GameGroundMoveV1 g2{};
+        g2.velocity[0] = 3.0f;
+        g2.velocity[1] = 4.0f;
+        g2.wishDir[0] = 0.0f;
+        g2.wishDir[1] = 0.0f;
+        g2.wishSpeed = 20.0f;
+        g2.groundAcceleration = 20.0f;
+        g2.frictionAmount = 1.0f;
+        g2.stopspeed = 0.0f;
+        g2.dt = 1.0f / 60.0f;
+        g2.hasInput = 0u;
+        g2.handled = 0;
+        LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_GROUND_MOVE, &g2,
+                                              sizeof(g2), 0, 0, 0);
+        // No input: friction only. speed=5, drop=5/60=0.08333 -> scale 0.98333.
+        ok &= check(g2.handled == 1u && approx(g2.outVelocity[0], 2.95f, 0.01f) &&
+                        approx(g2.outVelocity[1], 3.93333f, 0.01f),
+                    "hot ground-move owns the friction-only function", report);
+    }
+
+    // Gravity shared implementation.
+    {
+        GameGravityV1 g{};
+        g.velocityZ = 0.0f;
+        g.gravityZ = -40.0f;
+        g.maximumFallSpeed = 175.0f;
+        g.dt = 1.0f / 60.0f;
+        g.handled = 0;
+        LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_GRAVITY, &g,
+                                              sizeof(g), 0, 0, 0);
+        ok &= check(g.handled == 1u && approx(g.outVelocityZ, -40.0f / 60.0f, 1e-3f),
+                    "hot gravity owns the vertical velocity change", report);
+
+        GameGravityV1 g2{};
+        g2.velocityZ = -200.0f;
+        g2.gravityZ = -40.0f;
+        g2.maximumFallSpeed = 175.0f;
+        g2.dt = 1.0f / 60.0f;
+        g2.handled = 0;
+        LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_GRAVITY, &g2,
+                                              sizeof(g2), 0, 0, 0);
+        ok &= check(g2.handled == 1u && approx(g2.outVelocityZ, -175.0f, 1e-3f),
+                    "hot gravity owns the terminal-speed clamp", report);
+    }
+
+    // Speed / wish-speed derivation shared implementation.
+    {
+        GameSpeedPolicyV1 sp{};
+        sp.baseMaxSpeed = 20.0f;
+        sp.baseFallbackSpeed = 20.0f;
+        sp.sizeScale = 4.0f;
+        sp.sizeExponent = 0.5f;
+        sp.speedLimit = 0.0f;
+        sp.airMaxWishspeed = 0.0f;
+        sp.rawWishSpeed = 40.0f;
+        sp.handled = 0;
+        LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_SPEED_POLICY, &sp,
+                                              sizeof(sp), 0, 0, 0);
+        // sizeScale 4 ^ 0.5 = 2 -> maxSpeed 40.
+        ok &= check(sp.handled == 1u && approx(sp.outMaxSpeed, 40.0f, 1e-3f),
+                    "hot speed policy derives size-scaled max speed", report);
+
+        GameSpeedPolicyV1 sp2{};
+        sp2.baseMaxSpeed = 20.0f;
+        sp2.baseFallbackSpeed = 20.0f;
+        sp2.sizeScale = 1.0f;
+        sp2.sizeExponent = 0.5f;
+        sp2.airMaxWishspeed = 10.0f;
+        sp2.rawWishSpeed = 20.0f;
+        sp2.handled = 0;
+        LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_SPEED_POLICY, &sp2,
+                                              sizeof(sp2), 0, 0, 0);
+        ok &= check(sp2.handled == 1u && approx(sp2.outWishspd, 10.0f, 1e-3f),
+                    "hot speed policy derives the air wish-speed cap", report);
+    }
+
+    // Jump shared implementation.
+    {
+        auto runJump = [](GameJumpPolicyV1 j) {
+            LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_JUMP, &j,
+                                                  sizeof(j), 0, 0, 0);
+            return j;
+        };
+        GameJumpPolicyV1 base{};
+        base.jumpSpeed = 15.0f;
+        base.dt = 1.0f / 60.0f;
+        base.jumpBufferSeconds = 0.1f;
+        base.maximumAirJumps = 1u;
+
+        // Grounded jump.
+        GameJumpPolicyV1 g = runJump([&] {
+            GameJumpPolicyV1 j = base;
+            j.grounded = 1u;
+            j.jumpPressed = 1u;
+            j.jumpHeld = 1u;
+            return j;
+        }());
+        ok &= check(g.handled == 1u && g.outDidGroundJump == 1u &&
+                        approx(g.outVelocityZ, 15.0f) && g.outGrounded == 0u &&
+                        g.airJumpsLeft == 1,
+                    "hot jump owns the grounded jump", report);
+
+        // Air jump (armed, one available).
+        GameJumpPolicyV1 a = runJump([&] {
+            GameJumpPolicyV1 j = base;
+            j.grounded = 0u;
+            j.jumpPressed = 1u;
+            j.jumpHeld = 1u;
+            j.airJumpsLeft = 1;
+            j.airJumpArmed = 1u;
+            return j;
+        }());
+        ok &= check(a.handled == 1u && a.outDidAirJump == 1u &&
+                        approx(a.outVelocityZ, 15.0f) && a.airJumpsLeft == 0,
+                    "hot jump owns the air jump and decrements count", report);
+
+        // Second air jump denied when none left.
+        GameJumpPolicyV1 d = runJump([&] {
+            GameJumpPolicyV1 j = base;
+            j.grounded = 0u;
+            j.jumpPressed = 1u;
+            j.jumpHeld = 1u;
+            j.airJumpsLeft = 0;
+            j.airJumpArmed = 1u;
+            return j;
+        }());
+        ok &= check(d.handled == 1u && d.outDidAirJump == 0u &&
+                        approx(d.outVelocityZ, 0.0f),
+                    "hot jump denies a second air jump", report);
+
+        // Deterministic repeat.
+        GameJumpPolicyV1 r1 = runJump([&] {
+            GameJumpPolicyV1 j = base;
+            j.grounded = 1u;
+            j.jumpPressed = 1u;
+            j.jumpHeld = 1u;
+            return j;
+        }());
+        GameJumpPolicyV1 r2 = runJump([&] {
+            GameJumpPolicyV1 j = base;
+            j.grounded = 1u;
+            j.jumpPressed = 1u;
+            j.jumpHeld = 1u;
+            return j;
+        }());
+        ok &= check(r1.outVelocityZ == r2.outVelocityZ &&
+                        r1.outDidGroundJump == r2.outDidGroundJump &&
+                        r1.airJumpsLeft == r2.airJumpsLeft,
+                    "hot jump is deterministic for identical input", report);
+    }
+
+    // Dash / down-dash shared implementation.
+    {
+        auto runDash = [](GameDashPolicyV1 d) {
+            LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_DASH, &d,
+                                                  sizeof(d), 0, 0, 0);
+            return d;
+        };
+        GameDashPolicyV1 base{};
+        base.groundDashImpulse = 20.0f;
+        base.airDashImpulse = 30.0f;
+        base.downDashVerticalSpeed = -50.0f;
+        base.dashEnabled = 1u;
+        base.downDashEnabled = 1u;
+
+        GameDashPolicyV1 g = runDash([&] {
+            GameDashPolicyV1 d = base;
+            d.moveAxes[0] = 1.0f;
+            d.grounded = 1u;
+            d.dashPressed = 1u;
+            d.dashAvailable = 1u;
+            return d;
+        }());
+        ok &= check(g.handled == 1u && g.outDidDash == 1u &&
+                        approx(g.outVelocity[0], 20.0f) && g.outDashAvailable == 0u,
+                    "hot dash owns the grounded dash", report);
+
+        GameDashPolicyV1 a = runDash([&] {
+            GameDashPolicyV1 d = base;
+            d.moveAxes[0] = 1.0f;
+            d.grounded = 0u;
+            d.dashPressed = 1u;
+            d.dashAvailable = 1u;
+            return d;
+        }());
+        ok &= check(a.handled == 1u && a.outDidDash == 1u &&
+                        approx(a.outVelocity[0], 30.0f),
+                    "hot dash owns the airborne dash", report);
+
+        GameDashPolicyV1 n = runDash([&] {
+            GameDashPolicyV1 d = base;
+            d.moveAxes[0] = 1.0f;
+            d.grounded = 1u;
+            d.dashPressed = 1u;
+            d.dashAvailable = 0u;
+            return d;
+        }());
+        ok &= check(n.handled == 1u && n.outDidDash == 0u &&
+                        approx(n.outVelocity[0], 0.0f),
+                    "hot dash denies when unavailable", report);
+
+        GameDashPolicyV1 c = runDash([&] {
+            GameDashPolicyV1 d = base;
+            d.cameraForward[0] = 0.0f;
+            d.cameraForward[1] = 1.0f;
+            d.grounded = 1u;
+            d.dashPressed = 1u;
+            d.dashAvailable = 1u;
+            return d;
+        }());
+        ok &= check(c.handled == 1u && c.outDidDash == 1u &&
+                        approx(c.outVelocity[1], 20.0f) && approx(c.outVelocity[0], 0.0f),
+                    "hot dash uses camera fallback direction", report);
+
+        GameDashPolicyV1 dd = runDash([&] {
+            GameDashPolicyV1 d = base;
+            d.downDashPressed = 1u;
+            d.downDashAvailable = 1u;
+            return d;
+        }());
+        ok &= check(dd.handled == 1u && dd.outDidDownDash == 1u &&
+                        approx(dd.outVelocity[2], -50.0f) &&
+                        dd.outDownDashAvailable == 0u,
+                    "hot dash owns the down-dash vertical response", report);
+    }
+
+    // Freeze shared implementation.
+    {
+        auto runFreeze = [](GameFreezePolicyV1 f) {
+            LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_FREEZE, &f,
+                                                  sizeof(f), 0, 0, 0);
+            return f;
+        };
+        GameFreezePolicyV1 base{};
+        base.velocity[0] = 5.0f;
+        base.velocity[1] = 2.0f;
+        base.velocity[2] = -3.0f;
+        base.dt = 1.0f / 60.0f;
+        base.freezeEnabled = 1u;
+        base.freezeAvailable = 1u;
+
+        GameFreezePolicyV1 e = runFreeze([&] {
+            GameFreezePolicyV1 f = base;
+            f.freezePressed = 1u;
+            f.freezeHeld = 1u;
+            return f;
+        }());
+        ok &= check(e.handled == 1u && e.outDidFreeze == 1u &&
+                        e.outFreezeActive == 1u && e.outFreezeAvailable == 0u &&
+                        approx(e.outVelocity[0], 0.0f) &&
+                        approx(e.outVelocity[2], 0.0f),
+                    "hot freeze owns activation and velocity suppression", report);
+
+        GameFreezePolicyV1 h = runFreeze([&] {
+            GameFreezePolicyV1 f = base;
+            f.freezeActive = 1u;
+            f.freezeAvailable = 0u;
+            f.freezeHeld = 1u;
+            f.freezeHeldPreviously = 1u;
+            return f;
+        }());
+        ok &= check(h.handled == 1u && h.outDidFreeze == 0u &&
+                        h.outFreezeActive == 1u && approx(h.outVelocity[0], 0.0f),
+                    "hot freeze keeps the actor frozen while held", report);
+
+        GameFreezePolicyV1 r = runFreeze([&] {
+            GameFreezePolicyV1 f = base;
+            f.freezeActive = 1u;
+            f.freezeHeld = 0u;
+            f.freezeHeldPreviously = 1u;
+            return f;
+        }());
+        ok &= check(r.handled == 1u && r.outFreezeEnded == 1u &&
+                        r.outFreezeActive == 0u,
+                    "hot freeze owns release/exit", report);
+
+        GameFreezePolicyV1 d = runFreeze([&] {
+            GameFreezePolicyV1 f = base;
+            f.freezeActive = 1u;
+            f.freezeHeld = 1u;
+            f.freezeHeldPreviously = 1u;
+            f.durationSeconds = 0.5f;
+            f.freezeTimerSeconds = 0.5f;
+            return f;
+        }());
+        ok &= check(d.handled == 1u && approx(d.outFreezeTimerSeconds, 0.5f),
+                    "hot freeze clamps timer to the max duration", report);
+    }
+
+    // Post-step speed clamp shared implementation.
+    {
+        GameSpeedClampV1 c{};
+        c.velocity[0] = 10.0f;
+        c.velocity[1] = 0.0f;
+        c.speedLimit = 5.0f;
+        c.enabled = 1u;
+        c.handled = 0;
+        LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_SPEED_CLAMP, &c,
+                                              sizeof(c), 0, 0, 0);
+        ok &= check(c.handled == 1u && approx(c.outVelocity[0], 5.0f) &&
+                        approx(c.outVelocity[1], 0.0f),
+                    "hot speed clamp owns horizontal max-speed enforcement",
+                    report);
+
+        GameSpeedClampV1 c2{};
+        c2.velocity[0] = 10.0f;
+        c2.velocity[1] = 0.0f;
+        c2.speedLimit = 5.0f;
+        c2.enabled = 0u;
+        c2.handled = 0;
+        LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_SPEED_CLAMP, &c2,
+                                              sizeof(c2), 0, 0, 0);
+        ok &= check(c2.handled == 1u && approx(c2.outVelocity[0], 10.0f),
+                    "hot speed clamp preserves velocity when disabled", report);
+    }
+
     HotReloadSystem::instance().unloadGameDLL();
     return ok;
 }

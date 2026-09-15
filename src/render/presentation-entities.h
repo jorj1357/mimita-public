@@ -13,6 +13,8 @@
 
 #include <cstdint>
 
+class Player;
+
 namespace PresentationEntities {
 
 // Data mapping from a legacy network weapon id to logical resources. Returns
@@ -57,6 +59,14 @@ std::uint64_t ensureActor(std::uint32_t actorId, const float position[3],
                           const float color[4]);
 void beginActorSync();
 void endActorSync();
+
+// ── Local player bridge (THE_PLAYER) ─────────────────────────────────
+// Projects the local player onto its canonical generic entity and applies the
+// hot-generated skeleton pose back onto its body parts. This is the same
+// EntityId-keyed architecture as remote actors; the typed Player is only the
+// visible body owner, not the animation/pose policy owner.
+void projectLocalPlayer(::Player& player);
+void applyHotPoseToPlayer(::Player& player);
 // True when the actor mesh resource is loaded and can be drawn, so the typed
 // renderer must yield ownership.
 bool actorMeshReady();

@@ -14,6 +14,7 @@
 #include "config/weapon-hitfx-config.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "live-code/live-behavior.h"
 
 void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
                       const std::string& attacker, float sizeScale, bool playSound)
@@ -24,6 +25,25 @@ void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
     const char* sound = weaponId == "grenade_launcher"
         ? "grenadelauncher/grenadelauncherexplode"
         : "rocketlauncher/rocketlauncherexplode";
+
+    // Generic effect request: a hot effect behavior owns the visual composition
+    // AND the audio policy (sound choice/volume/pitch/falloff). When it handles
+    // the fact, the cold composition and cold sound below yield (one owner).
+    {
+        EffectRequestV1 req{};
+        req.effectTypeId = gameHash(weaponId == "grenade_launcher"
+                                        ? "effect.explosion.grenade"
+                                        : "effect.explosion.rocket");
+        req.position[0] = position.x;
+        req.position[1] = position.y;
+        req.position[2] = position.z;
+        req.normal[2] = 1.0f;
+        req.scale = sizeScale;
+        if (LiveBehavior::dispatchEffectRequest(req, 0))
+            return;
+    }
+
+    // Compatibility fallback: cold sound + cold composition.
     if (playSound)
         playWorldSound(sound, position, 1.0f, 1.0f, 50.0f);
 

@@ -165,6 +165,7 @@ MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
 #include "debug/debug-log.h"
 #include "effects/hit-effects.h"
 #include "effects/muzzle-flash-config.h"
+#include "live-code/live-behavior.h"
 #include "render/dynamic-light.h"
 #include "render/dynamic-light-config.h"
 #include "config.h"
@@ -238,6 +239,21 @@ EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 nor
 EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId, float sizeScale, const std::string& weaponId, bool spawnVisual, bool spawnLighting) {
     const MuzzleFlashSettings& cfg = MuzzleFlashConfig::instance().data();
     if (!spawnVisual && !spawnLighting) return nullptr;
+
+    // Generic effect request: a hot muzzle policy may own the flash. When it
+    // handles the fact, the cold composition below yields (one owner). The
+    // tool/weapon key is a runtime hash, never a permanent enum branch.
+    {
+        EffectRequestV1 req{};
+        req.effectTypeId = gameHash("effect.muzzle");
+        req.weaponNetworkId = gameHash(weaponId.c_str());
+        req.position[0] = position.x;
+        req.position[1] = position.y;
+        req.position[2] = position.z;
+        req.scale = sizeScale;
+        if (LiveBehavior::dispatchEffectRequest(req, 0))
+            return nullptr;
+    }
     const auto& sc = SizeScalingConfig::instance().data();
     float ss = std::max(sizeScale, 0.001f);
     float sfx = sc.scale(1.0f, sc.hitfxRadiusExponent, ss);
@@ -471,6 +487,10 @@ void EffectPartSystem::spawnWorldCracks(glm::vec3 position, glm::vec3 normal,
                                   perpendicular * std::sin(glm::radians(turn)));
         }
     }
+}
+
+void EffectPartSystem::spawnGenericSurfaceDecal(const SurfaceDecal& decal) {
+    pushSurfaceDecal(decal, 512);
 }
 
 void EffectPartSystem::pushSurfaceDecal(const SurfaceDecal& decal, int maxCount) {

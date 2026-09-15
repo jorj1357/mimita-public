@@ -19,6 +19,7 @@
 
 #include "hot-reload/game-api.h"
 #include "hot-reload/hot-animation.h"
+#include "hot-reload/hot-effect.h"
 #include "hot-reload/hot-package.h"
 #include "hot-reload/hot-prediction.h"
 #include "hot-reload/hot-presentation.h"
@@ -103,34 +104,56 @@ void MIMITA_GAME_CALL presentationMeshTick(void* host, std::uint64_t /*tick*/,
                                        HOT_PRESENTATION_COMPONENT, &state,
                                        sizeof(state)))
             continue;
-        GameTransformComponentV1 tf{};
-        if (!ctx->readComponent(ctx->host, entities[i], GAME_COMPONENT_TRANSFORM,
-                                &tf, sizeof(tf)))
+        // An attached entity follows a named socket on its parent. The resolved
+        // presentation transform overrides the entity transform; the entity's
+        // authoritative Transform is never written. Unresolved => hidden.
+        HotAttachmentStateV1 att{};
+        const bool hasAtt = ctx->dynamicReadComponent(
+            ctx->host, entities[i], HOT_ATTACHMENT_COMPONENT, &att, sizeof(att));
+        if (hasAtt && att.resolved == 0)
             continue;
 
-        float forward[3] = {tf.look[0], tf.look[1], tf.look[2]};
-        GameVelocityComponentV1 vel{};
-        if (ctx->readComponent(ctx->host, entities[i], GAME_COMPONENT_VELOCITY,
-                               &vel, sizeof(vel))) {
-            const float speed = std::sqrt(vel.linear[0]*vel.linear[0] +
-                                          vel.linear[1]*vel.linear[1] +
-                                          vel.linear[2]*vel.linear[2]);
-            if (speed > 0.05f) {
-                forward[0] = vel.linear[0];
-                forward[1] = vel.linear[1];
-                forward[2] = vel.linear[2];
-            }
-        }
+        GameTransformComponentV1 tf{};
+        if (!hasAtt &&
+            !ctx->readComponent(ctx->host, entities[i], GAME_COMPONENT_TRANSFORM,
+                                &tf, sizeof(tf)))
+            continue;
 
         GameRenderMeshCommandV1 cmd{};
         cmd.entity = entities[i];
         cmd.meshResourceId = state.meshResourceId ? state.meshResourceId : HOT_MESH_CUBE;
         cmd.textureResourceId = state.textureResourceId;
-        cmd.position[0] = tf.position[0];
-        cmd.position[1] = tf.position[1];
-        cmd.position[2] = tf.position[2];
-        quatFromForward(forward[0], forward[1], forward[2], cmd.rotation);
-        const float scale = state.scale > 0.0f ? state.scale : 1.0f;
+        float scale = state.scale > 0.0f ? state.scale : 1.0f;
+        if (hasAtt) {
+            cmd.position[0] = att.worldPosition[0];
+            cmd.position[1] = att.worldPosition[1];
+            cmd.position[2] = att.worldPosition[2];
+            cmd.rotation[0] = att.worldRotation[0];
+            cmd.rotation[1] = att.worldRotation[1];
+            cmd.rotation[2] = att.worldRotation[2];
+            cmd.rotation[3] = att.worldRotation[3];
+            scale *= att.worldScale[0] > 0.0f ? att.worldScale[0] : 1.0f;
+            if (att.context == HOT_ATTACHMENT_CONTEXT_VIEW)
+                cmd.flags |= GAME_RENDER_MESH_SPACE_VIEW;
+        } else {
+            float forward[3] = {tf.look[0], tf.look[1], tf.look[2]};
+            GameVelocityComponentV1 vel{};
+            if (ctx->readComponent(ctx->host, entities[i],
+                                   GAME_COMPONENT_VELOCITY, &vel, sizeof(vel))) {
+                const float speed = std::sqrt(vel.linear[0]*vel.linear[0] +
+                                              vel.linear[1]*vel.linear[1] +
+                                              vel.linear[2]*vel.linear[2]);
+                if (speed > 0.05f) {
+                    forward[0] = vel.linear[0];
+                    forward[1] = vel.linear[1];
+                    forward[2] = vel.linear[2];
+                }
+            }
+            cmd.position[0] = tf.position[0];
+            cmd.position[1] = tf.position[1];
+            cmd.position[2] = tf.position[2];
+            quatFromForward(forward[0], forward[1], forward[2], cmd.rotation);
+        }
         cmd.scale[0] = cmd.scale[1] = cmd.scale[2] = scale;
         cmd.color[0] = state.color[0];
         cmd.color[1] = state.color[1];
@@ -237,6 +260,51 @@ void MIMITA_GAME_CALL hotactorCommand(void* host, const char* /*args*/)
     s_x += 1.5f;
 }
 
+// Command: spawn a runtime-unknown generic effect - an entity that rises while
+// growing and fading, then expires. No EXE enum/switch; the hot
+// `hot.effect-lifecycle` system owns its lifetime.
+void MIMITA_GAME_CALL hoteffectCommand(void* host, const char* /*args*/)
+{
+    GameplayContextV1* ctx = static_cast<GameplayContextV1*>(host);
+    if (!ctx || !ctx->entityCreate || !ctx->writeComponent ||
+        !ctx->dynamicWriteComponent)
+        return;
+    static float s_x = 2.0f;
+    std::uint64_t entity = 0;
+    if (!ctx->entityCreate(ctx->host, 0u, &entity) || entity == 0)
+        return;
+    GameTransformComponentV1 tf{};
+    tf.position[0] = s_x;
+    tf.position[1] = 1.0f;
+    tf.position[2] = 5.0f;
+    tf.look[0] = 1.0f;
+    ctx->writeComponent(ctx->host, entity, GAME_COMPONENT_TRANSFORM, &tf,
+                        sizeof(tf));
+    GameVelocityComponentV1 vel{};
+    vel.linear[2] = 2.0f;  // rises
+    ctx->writeComponent(ctx->host, entity, GAME_COMPONENT_VELOCITY, &vel,
+                        sizeof(vel));
+    HotPresentationStateV1 present{};
+    present.meshResourceId = HOT_MESH_CUBE;
+    present.textureResourceId = HOT_TEX_DEFAULT;
+    present.scale = 0.4f;
+    present.color[0] = 0.3f; present.color[1] = 0.7f;
+    present.color[2] = 1.0f; present.color[3] = 1.0f;
+    ctx->dynamicWriteComponent(ctx->host, entity, HOT_PRESENTATION_COMPONENT,
+                               &present, sizeof(present));
+    HotEffectLifetimeV1 life{};
+    life.age = 0.0f;
+    life.lifetime = 1.5f;
+    life.scale0 = 1.0f;
+    life.growth = 1.5f;
+    life.fadeStart = 0.5f;
+    ctx->dynamicWriteComponent(ctx->host, entity, HOT_EFFECT_LIFETIME_COMPONENT,
+                               &life, sizeof(life));
+    std::printf("[HOT EFFECT] entity=%llu at x=%.1f\n",
+                (unsigned long long)entity, s_x);
+    s_x += 1.5f;
+}
+
 // Generic predicted-entity tool behavior (non-projectile). Creates an arbitrary
 // entity and writes the generic PredictionLink from the action's predictionKey,
 // proving the server predicted-spawn path carries no projectile assumptions.
@@ -319,6 +387,9 @@ const MimitaHotPackage::CommandRegistrar s_presentationCommand{
 const MimitaHotPackage::CommandRegistrar s_actorCommand{
     {"hotactor", "hotactor - spawn a typeless actor entity (mesh.actor + pose)", 0,
      hotactorCommand}};
+const MimitaHotPackage::CommandRegistrar s_effectCommand{
+    {"hoteffect", "hoteffect - spawn a runtime-unknown generic effect entity", 0,
+     hoteffectCommand}};
 
 } // namespace
 

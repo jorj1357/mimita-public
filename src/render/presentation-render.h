@@ -33,11 +33,29 @@ void submitMesh(const GameRenderMeshCommandV1& command);
 // Number of generic mesh submissions observed (verified headlessly).
 std::uint64_t submittedMeshCount();
 
+// Register an arbitrary logical presentation resource (GLB mesh or image
+// texture) from hot code. The provider owns parsing, validation, generation
+// swap, and last-good preservation; a file-backed resource is re-polled so its
+// generation can change without recreating the entities that reference it.
+// Generic across tools/props/particles; no per-feature resource slot.
+bool registerLogicalResource(std::uint64_t logicalId, std::uint32_t kind,
+                             const char* path, bool applyNow,
+                             std::uint32_t* outGeneration);
+
+// Resolve the bind transform of a named part on the entity's current generic
+// mesh, relative to the entity model. Resolves the live resource generation each
+// call (never a raw handle), so a generation swap cannot leave a stale pointer.
+bool meshPartBind(std::uint64_t entity, std::uint64_t part, float outMat16[16]);
+
 // Generic skeleton consumption: a mesh whose parts carry bone hashes is drawn
 // per part using the entity's SkeletonInstances pose (looked up by EntityId).
 // Entities without an instance fall back to a single static draw.
 std::uint64_t skinnedSubmissionCount();
 std::uint64_t staticFallbackCount();
+
+// Number of generic mesh submissions drawn in camera-relative VIEW space (the
+// generic first-person/viewmodel presentation context).
+std::uint64_t viewSpaceSubmissionCount();
 
 // Headless test hook: install a part mesh (bone hashes, optional bind matrices)
 // without GPU buffers so the EntityId -> SkeletonInstances consumption and the

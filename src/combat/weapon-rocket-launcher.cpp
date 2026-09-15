@@ -84,7 +84,15 @@ static void doExplosion(
         float shakeStrength = std::clamp(1.0f - distToCam / splashRadius, 0.0f, 1.0f);
         const auto& ssc = SizeScalingConfig::instance().data();
         float shakeMul = ssc.scale(1.0f, ssc.cameraShakeExponent, std::max(owner.sizeScale, 0.001f));
-        camera.addPunch(shakeStrength * 4.0f * shakeMul, shakeStrength * 2.0f * shakeMul);
+        // Generic camera fact: a hot camera-effect policy may own the decision;
+        // otherwise the cold punch below is the compatibility fallback.
+        EffectRequestV1 req{};
+        req.effectTypeId = gameHash("effect.camera.shake");
+        req.scale = shakeStrength * shakeMul;
+        req.distance = distToCam;
+        req.falloffDistance = splashRadius;
+        if (!LiveBehavior::dispatchEffectRequest(req, 0))
+            camera.addPunch(shakeStrength * 4.0f * shakeMul, shakeStrength * 2.0f * shakeMul);
     }
 
     if (!presentationOnly) for (Npc& npc : npcs.all()) {

@@ -987,6 +987,47 @@ struct ToolUsePolicyV1 {
     std::uint64_t predictionKey;
 };
 
+// ── Generic surface effect / decal (hot policy -> cold mechanism) ──
+// Hot policy describes a mark on a world surface (blood, bullet hole, scorch,
+// paint, graffiti, arbitrary runtime mark). The kernel owns projection/geometry/
+// storage/draw; it never learns what the mark means. No feature-specific enum.
+struct GameSurfaceEffectV1 {
+    float position[3];
+    float normal[3];
+    float axis[3];          // in-plane orientation hint (0 = default)
+    float color[4];
+    float radius;           // decal radius
+    float height;           // used by strip-like marks
+    float rotation;
+    float lifetime;         // seconds (0 = backend default)
+    float fadeTime;         // seconds
+    std::uint64_t sourceEntity;
+    std::uint32_t flags;    // bit0 = persistent (survives, fades)
+    std::uint32_t reserved;
+};
+using GameSurfaceEffectFn = void (MIMITA_GAME_CALL *)(
+    void* host, const GameSurfaceEffectV1* request);
+
+// ── Generic effect request (cold -> hot) ────────────────────────
+// The client emits one generic fact when a visual effect should be composed.
+// A hot handler reads it, creates generic effect entities/commands, and sets
+// handled = 1 so the cold fallback composition yields. `effectTypeId` is a
+// runtime key (gameHash("effect.explosion") etc.); no effect enum exists.
+struct EffectRequestV1 {
+    std::uint64_t sourceEntity;
+    std::uint64_t effectTypeId;
+    std::uint64_t weaponNetworkId;
+    float position[3];
+    float normal[3];
+    float scale;
+    float color[4];
+    float distance;          // source->observer distance (for falloff policy)
+    float falloffDistance;   // 0 = none
+    char text[64];           // optional logical name (e.g. a sound)
+    std::uint32_t flags;
+    std::uint32_t handled;
+};
+
 // ── Actor death / respawn policy ───────────────────────────
 // `authoritative` means a server-controlled life owns the actor, so local
 // respawn must not run (the death loop root cause).
@@ -1355,6 +1396,93 @@ static constexpr std::uint64_t GAME_CAP_RENDER_MESH = gameHash("render.mesh");
 // Generic HUD/UI command surface. Hot ui.frame systems emit widgets; the kernel
 // owns the low-level font/rect/texture draw. No gamemode-specific UI type.
 static constexpr std::uint64_t GAME_CAP_RENDER_UI = gameHash("render.ui");
+// Generic audio command. Hot policy chooses the sound/volume/pitch/falloff; the
+// kernel owns the device/mixer/playback. No per-weapon/per-feature audio ABI.
+static constexpr std::uint64_t GAME_CAP_AUDIO_PLAY = gameHash("audio.play");
+// Generic surface-effect/decal primitive. Hot policy describes a mark; the kernel
+// projects/renders it without knowing what it means.
+static constexpr std::uint64_t GAME_CAP_SURFACE_EFFECT = gameHash("surface.effect");
+// Generic camera-effect primitive. Hot policy decides amplitude/falloff; the
+// kernel applies a temporary camera perturbation. No explosion/damage branch.
+static constexpr std::uint64_t GAME_CAP_CAMERA_EFFECT = gameHash("camera.effect");
+
+// Generic named-attachment-point query. "Give me the current world transform of
+// attachment point X on entity Y." The kernel composes the entity transform with
+// the entity's current generic skeleton pose (SkeletonInstances) and, when the
+// entity's drawn mesh tags that part, its mesh bind transform. When the named
+// point is absent the entity transform + caller local offset is used, so the
+// same primitive works for skeletal actors, plain props, and tool entities.
+// Generic across held tools, hats, carried props, muzzle points, bone particles.
+static constexpr std::uint64_t GAME_CAP_SOCKET_QUERY = gameHash("socket.query");
+struct GameSocketQueryV1 {
+    // in
+    std::uint64_t entity;          // parent entity
+    std::uint64_t socket;          // gameHash("rightArm") / gameHash("muzzle")
+    float localPosition[3];        // local offset applied after the socket
+    float localRotation[4];        // quaternion xyzw (identity = {0,0,0,1})
+    float localScale[3];           // <=0 treated as 1
+    // out
+    float position[3];
+    float rotation[4];
+    float scale[3];
+    std::uint32_t found;           // 1 = named socket/bone matched
+    std::uint32_t usedFallback;    // 1 = composed from entity transform only
+    std::uint32_t valid;           // 1 = a transform was produced
+    std::uint32_t reserved;
+};
+using GameSocketQueryFn = bool (MIMITA_GAME_CALL *)(
+    void* host, GameSocketQueryV1* query);
+
+// Generic logical-presentation-resource registration. Lets hot code register an
+// arbitrary logical mesh/texture id backed by an asset path in the existing
+// generation-aware provider; the kernel owns parsing, validation, generation
+// swap, and last-good preservation. No per-weapon/per-tool resource slot.
+enum GameResourceKind : std::uint32_t {
+    GAME_RESOURCE_MESH = 1,      // GLB mesh
+    GAME_RESOURCE_TEXTURE = 2,   // image texture
+};
+static constexpr std::uint64_t GAME_CAP_RESOURCE_REGISTER =
+    gameHash("resource.register");
+struct GameResourceRegisterV1 {
+    std::uint64_t logicalId;   // package-chosen logical resource id
+    std::uint32_t kind;        // GameResourceKind
+    std::uint32_t applyNow;    // 1 = load immediately, 0 = lazy
+    char path[192];            // asset path (mesh GLB / texture image)
+    // out
+    std::uint32_t ok;
+    std::uint32_t generation;
+    std::uint32_t reserved[2];
+};
+using GameResourceRegisterFn = bool (MIMITA_GAME_CALL *)(
+    void* host, GameResourceRegisterV1* request);
+
+struct GameCameraEffectV1 {
+    float pitch;              // rotational impulse (radians)
+    float yaw;
+    float falloffDistance;    // 0 = no distance attenuation
+    float distance;           // source->camera distance for falloff
+    std::uint64_t sourceEntity;
+    std::uint64_t runtimeKey; // e.g. gameHash("effect.camera.shake")
+    std::uint32_t flags;
+    std::uint32_t reserved;
+};
+using GameCameraEffectFn = void (MIMITA_GAME_CALL *)(
+    void* host, const GameCameraEffectV1* effect);
+
+// One audio command. `sound` is a logical sound name (resolved by the cold audio
+// backend); the remaining fields are policy the hot system owns. `spatial` uses
+// position + maxDistance falloff; otherwise it is a 2D/UI sound.
+struct GameAudioCommandV1 {
+    char sound[64];
+    float position[3];
+    float volume;
+    float pitch;
+    float maxDistance;
+    std::uint32_t spatial;
+    std::uint32_t action;   // reserved: 0 play (loop/stop later)
+};
+using GameAudioPlayFn = void (MIMITA_GAME_CALL *)(
+    void* host, const GameAudioCommandV1* command);
 // Generic round-based match mechanism: a hot mode records the winner of one
 // round. The kernel owns round tallying, the RESULTS transition, and the
 // match-over decision; no mode-specific finish callback or round field.
@@ -1479,6 +1607,11 @@ using GameRenderDebugFn = void (MIMITA_GAME_CALL *)(
 // Generic mesh presentation command for hot render systems. The command carries
 // logical resource ids; the kernel resolves the current generation handle and
 // draws with the shared shader. No Player/NPC/Projectile/weapon branch.
+// flags bit0: the command transform is camera-relative (VIEW space) instead of
+// world space. The cold renderer keeps the view/projection mechanism; hot policy
+// keeps position/rotation/visibility. No "this is the X viewmodel" branch.
+static constexpr std::uint32_t GAME_RENDER_MESH_SPACE_VIEW = 1u;
+
 struct GameRenderMeshCommandV1 {
     std::uint64_t entity;
     std::uint64_t meshResourceId;

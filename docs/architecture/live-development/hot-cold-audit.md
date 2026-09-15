@@ -18,6 +18,128 @@ containment/equip; generic action input routing).
 
 Companion review: `docs/hot-warm-cold-review-09-14-2026.md` (full subsystem table).
 
+## Repo-wide cold-owner audit (2026-09-15)
+Metric: "if this behavior has a bug, does fixing it still require rebuilding/restarting `mimita.exe`?" Drive this down.
+
+| Subsystem | Cold owner | Hot owner | State authority | Why still cold | Next step | Bug needs EXE restart? |
+|---|---|---|---|---|---|---|
+| movement air accel | `applySourceAir` fallback | `movement.air-accelerate` | generic Velocity | fallback only | done | no (policy) |
+| movement ground friction/accel | `applySourceGround` fallback | `movement.ground-move` | generic Velocity | fallback only | done | no (policy) |
+| movement gravity | `applyBasicGravity` fallback | `movement.gravity` | generic Velocity | fallback only | done | no (policy) |
+| movement jump | `applyBasicJump` fallback | `movement.jump` | generic `MovementRuntimeStateComponent` + Velocity | fallback only | done | no (policy) |
+| movement dash/down-dash | `tryActivateDash`/`tryActivateDownDash` fallback | `movement.dash` | generic runtime state + Velocity | fallback only | done | no (policy) |
+| movement freeze | `updateFreeze` fallback | `movement.freeze` | generic runtime state + Velocity | fallback only | done | no (policy) |
+| movement post-step speed clamp | `applySpeedLimitClamp` fallback | `movement.speed-clamp` | generic Velocity | fallback only | done | no (policy) |
+| speed cap / wish-speed | `sourceMaxSpeedValue` fallback + `applySpeedLimitClamp` | `movement.speed-policy` (derivation) | config | derivation hot; post-step clamp still cold | migrate clamp hot | partial |
+| movement integrator (player) | generic working `MovementState` + cold collision | hot policies (air/ground/gravity/speed/jump/dash/freeze/clamp) | generic Transform/Velocity + `MovementRuntimeStateComponent` (grounded + jump/dash runtime state); typed = mirror | freeze runtime + coyote/airJumpLocked still typed; NPC path | migrate freeze/coyote state; NPC path | partial |
+| movement integrator (NPC) | `npc.cpp` typed body physics | none (AI intent hot) | typed `Npc.body` | not migrated | route NPC via same substrate | yes |
+| movement integrator (generic actor) | n/a | same substrate | generic Transform/Velocity | PROVEN (typeless entity) | — | no |
+| prediction/reconciliation | cold prediction path | `movement.main` (local) | client state | reconciliation cold | migrate policy hot | yes |
+| interpolation | cold snapshot interp | none | typed snapshot | not migrated | migrate policy hot | yes |
+| rewind/lag-comp | `pushPositionHistory` (generic src) | none | generic Transform | policy cold | migrate policy hot | partial |
+| snapshot selection | cold `buildAndSendSnapshot` | `net.relevance` | generic Transform | policy hot, framing cold | done | no (selection) |
+| weapons | `weapon-system`/tool behaviors | hot tool modules | tool entities | mixed | continue hot tool policy | partial |
+| projectile sim | `server-projectiles` | hot projectile/hitscan | projectile entity | mixed | migrate spawn/policy hot | partial |
+| NPC AI/combat | `npc.cpp` fallback | `npc.combat-ai`/`npc.ai-state` | generic actor state | fallback only | done | no (policy) |
+| gamemodes | `serverGamemodeTick` fallback | hot modes (ffa/tdm/cs) | match entity | fallback for unmigrated | migrate remaining modes | partial |
+| objectives | cold bomb fallback | hot objective + CS | objective entity | fallback | done | no (policy) |
+| spawn | `beginMatchCountdown`/`resetGamemodeActorsAtMapSpawn` | `actor.spawn` (CS) | generic Transform/Velocity | cold for non-CS | migrate generic spawn policy | partial |
+| animation | procedural + `animation.update` bridge | hot pose generation | skeleton | bridge | migrate pose hot | partial |
+| effects | cold effect pool | `effect.spawn` capability | effect entities | mechanism | done | no |
+| audio | cold audio device | none | n/a | device cold by design | hot event policy | yes |
+| HUD | cold HUD draw | `render.ui` capability | n/a | draw cold by design | done | no (layout) |
+| UI interaction | cold menu code | `render.ui`/editor hot | n/a | mixed | migrate menus hot | yes |
+| commands/tools | terminal + capability registry | hot capability providers | package registry | mechanism | done | no |
+| resources | GLB/loader | `render.mesh` capability | resource provider | IO cold by design | done | no |
+| editor | cold editor cache | editor-behavior hot | entity registry | mechanism | done | no |
+| world generation | cold world loader | none | world | IO/geometry cold | migrate rules hot | yes |
+| multiplayer generation delivery | `HotReloadSystem` (local build/load/switch) + `CodeGenerationPacket` (announce/switch) | per-peer READY/quorum + switch scheduling (`GenerationDistribution`) | logical vs platform identity | artifact acquisition (network transfer) + live proof missing | implement ACQUIRE/VERIFY + wire generation ids per-sample | yes |
+
+"no (policy)" = the behavior policy is hot; the remaining cold code is mechanism/fallback.
+
+### Movement completion gate (2026-09-15) — NOT yet complete
+| # | Criterion | Status |
+|---|---|---|
+| 1 | Transform generic | yes |
+| 2 | Velocity generic | yes |
+| 3 | grounded/contact generic | yes |
+| 4 | jump state generic | yes |
+| 5 | dash/down-dash state generic | yes |
+| 6 | freeze state generic | **no** (fields missing on the component) |
+| 7 | coyote / air-jump lock generic | **no** (fields missing on the component) |
+| 8 | all major policies hot/shared | yes |
+| 9 | collision cold generic mechanism | yes |
+| 10 | real player uses generic authority | yes |
+| 11 | real NPC uses same substrate | **no** |
+| 12 | typeless actor uses same substrate | yes |
+| 13 | rewind reads generic state | yes |
+| 14 | snapshot derives from generic state | yes |
+| 15 | typed movement fields mirrors/ephemeral | partial (freeze/coyote/lock + ability mirrors) |
+
+**Blocked boundary (concurrency):** criteria 6/7 require extending
+`MovementRuntimeStateComponent` (ecs/components.h) + `GameMovementRuntimeStateComponentV1`
+(game-api.h) + the read/write mapping in `live-behavior.cpp`; criterion 11 requires
+the NPC physics path. A concurrent agent is actively editing those exact files
+(`game-api.h` 2:26 PM, `live-behavior.cpp` 2:31 PM, `movement-system.cpp` 2:10 PM).
+Per the concurrency rule, no parallel/duplicate change was made. Remaining work is
+purely additive to their component/mapping + an NPC adapter — not new architecture.
+
+### Reconciliation audit (next cold owner)
+Traced the real client reconciliation path (`src/network/multiplayer-reconcile.cpp`
+`mpReconcileLocalPlayer`).
+
+| Function/File | Current owner | State input | Policy or mechanism | Hot/Cold | Next migration |
+|---|---|---|---|---|---|
+| snapshot receipt / epoch | multiplayer-tick.cpp | snapshot bytes | mechanism | COLD | keep |
+| `mpReconcileLocalPlayer` | multiplayer-reconcile.cpp | predicted vs `ctx.localServerPosition` | control flow | COLD | move decision hot |
+| `classifyMovementCorrection` | movement validation | error distance | **policy** | **HOT** (`net.reconcile`) | done (cold fallback kept) |
+| correction application (snap/smooth/major) | multiplayer-reconcile.cpp | error class | **policy + apply** | COLD | split: policy hot, apply cold |
+| lifecycle snaps (spawn/respawn/teleport/reconnect) | multiplayer-reconcile.cpp | epoch/blackout | **policy + apply** | COLD | policy hot |
+| post-gap resync threshold | multiplayer-reconcile.cpp | error > 1.5 | **policy** | COLD | hot |
+| interpolation state storage | multiplayer-tick.cpp (`EntityInterpolationState`) | sample buffer | mechanism | COLD | keep |
+| interpolation policy | multiplayer-interpolation.cpp (`buildReceiveTimeRender`, `adaptiveDelaySeconds`) + multiplayer-tick.cpp | samples + render clock + gaps + jitter/loss | **policy** | **HOT** (`net.interpolate`: alpha, generation/lifecycle snap, packet-gap snap, buffer-dry hold/extrapolate, extrapolation cap, adaptive delay) | complete (generation ids pending distributed work) |
+| rewind/lag-comp policy | server-players.cpp `estimateServerRewindTick` fallback + `getPlayerPoseAtTick`/`getNpcPoseAtTick` | command tick, latency, interp delay, history bounds | **policy** | **HOT** (`net.rewind`: target tick, latency+interp compensation, max-rewind clamp, generation reject) | generic `historicalState(EntityId,T)` + explosion rewind still cold/absent |
+| rewind history storage | server-players.cpp (`pushPositionHistory`) | generic Transform | mechanism | COLD | keep |
+| rewind sample selection/clamp | `getPositionAtTick`/hit rewind | history | **policy** | COLD | hot |
+
+**Generic reconciliation payload sketch** (no `Player*`): predicted
+Transform/Velocity + authoritative Transform/Velocity + predicted/authoritative
+tick (+ optional generation ids) → `shouldCorrect`, `correctionMode`, target
+state, replay policy. Generation awareness: document which hot behavior
+generation produced predicted vs authoritative state before allowing cross-
+generation reconciliation.
+
+### Bugs that still require a cold EXE rebuild
+- Movement policy is now hot: air, ground, gravity, speed policy, jump,
+  dash/down-dash, freeze, and post-step speed clamp. A bug in any of those is
+  hot-fixable (edit the hot C++ + activate a generation), not a cold rebuild.
+- Still cold: the typed working-copy movement integrator (server-players.cpp) —
+  next migration; and the networking/simulation policy list below (prediction/
+  reconciliation/interpolation/rewind/snapshot schema/multiplayer delivery).
+- movement integrator (typed working copy) + prediction/reconciliation/
+  interpolation/rewind policy: still cold.
+- weapon/projectile/NPC/AI/worldgen/audio/UI/multiplayer-delivery: per table above.
+- Movement audio: **footstep** and **air-jump** sound policy are now hot
+  (`effect.footstep.sound` / `effect.jump.sound` → `audio.play`); a bug in their
+  choice/volume/pitch/falloff is hot-fixable. Landing has **no** shipping cold
+  sound (only VFX), so there is nothing to migrate there. Dead cold helpers
+  `playRandomFootstep` and `playFreezeBegin/Hold/EndSound` have no callers.
+- Weapon presentation (viewmodel/held mesh/equip/recoil/reload/muzzle socket):
+  still cold for real weapons, but the two previously-missing generic primitives
+  are now hot: `socket.query`/`AttachmentState` (attachment) and
+  `resource.register` + the `GAME_RENDER_MESH_SPACE_VIEW` world/view space, all
+  proven with a runtime-unknown tool in both contexts. The real swordsword
+  migration is pending a generic tool->mesh data mapping (manifest) + client
+  possessed-tool bridge; cold viewmodel remains the single owner until then (no
+  duplicate owner). A bug in the primitives (socket/skeleton resource/view-space
+  mechanism) is still cold; attachment/policy bugs are hot.
+- Fixed this pass (not a cold restart): the hot `effect.request` handler used to
+  set `handled = 1` for *any* fact and default unrecognized facts to an
+  explosion. It now marks handled only on real branches and leaves unknown facts
+  unhandled so the cold owner runs (one owner).
+- Air-parity divergence (maxDev 2.2699, first tick 68) is a feel/parity bug in
+  the shared hot path → fixable hot, does NOT require a cold restart.
+
 ## HOT criteria
 
 A subsystem is HOT only when all of these hold:
@@ -162,6 +284,14 @@ Compiling into `mimita-live-gNNNNNN.dll` is not sufficient.
   ticks, proving both paths feed the shared function identically, then diverge to
   maxDev 1.61 by tick 120 near the wish-speed cap — full air parity is NOT yet
   achieved and is reported, not hidden.
+- **New 2026-09-15 (hot ground-move ownership):** ground acceleration + friction
+  are now owned by one hot function `MimitaHotMovement::groundMove`
+  (`modules/movement-ground.cpp`, declared in `hot-movement-policy.h`). The server
+  ground step (`applySourceGround`) dispatches `movement.ground-move` and the
+  local prediction ground branch (`movement.main`) calls the SAME function; the
+  cold Source math remains as the fallback when no hot handler is active. It
+  takes plain numbers only. Not yet migrated: gravity, jump, dash/down-dash,
+  freeze, speed caps/wish-speed derivation.
 - **New 2026-09-14 (NPC hitscan/melee generic + action-handled gate):** hot
   `hitscan-tool`/`melee-tool` behaviors execute NPC hitscan/melee through the
   same generic tool/action path (kernel owns the ray/contact query; the behavior
@@ -990,3 +1120,162 @@ Pose path audit:
   agent cannot observe a screen. Human steps are recorded in the changelog
   `20260915_140000-live-visual-proof-tooling.md`.
 - No jump/attack/blend was added (gated behind the visible proof).
+
+## Movement policy is already hot and shared (concurrent agent — verified, not this agent's work)
+
+Read-only verification (2026-09-15): the movement policy list requested for
+architecture-first migration is already implemented as **shared hot policies** by
+the concurrent movement agent:
+
+- `hot-reload/modules/movement-dash.cpp` (`GameDashPolicyV1`),
+  `movement-freeze.cpp` (`GameFreezePolicyV1`),
+  `movement-speed-clamp.cpp` (`GameSpeedClampV1`),
+  `movement-system.cpp` (`movement.main`), plus air/ground/gravity/speed/jump.
+- The cold server movement step dispatches the generic events
+  (`GAME_EVENT_MOVEMENT_DASH`/`FREEZE`/`SPEED_CLAMP`) from
+  `physics/movement/movement-step.cpp`; local prediction calls the same
+  `MimitaHotMovement::*` functions. One shared implementation, no duplicated
+  math.
+- Headless proof: `--movement-algorithm-selftest` PASS (dash grounded/airborne/
+  unavailable/camera-fallback/down-dash; freeze activation/hold/exit/timer; speed
+  clamp enforce/preserve) and `--movement-parity-selftest` PASS.
+
+Therefore this agent did **not** re-migrate movement (no duplicate ownership).
+Movement/integrator authority remains the movement agent's area per the
+concurrency boundary.
+
+## Client/presentation cold-owner audit (architecture-first)
+
+Legend: **COLD OWNER** = where ordinary behavior policy lives today; **HOT
+OWNER** = where it should/does live; **STATE** = authority; **COLD MECH** = the
+legitimate low-level mechanism that stays; **FALLBACK** = compatibility path;
+**REBUILD?** = would an ordinary behavior bug still require an EXE relink; **NEXT**
+= next migration step.
+
+| Subsystem | Cold owner | Hot owner | State | Cold mech | Fallback | Rebuild? | Next |
+|---|---|---|---|---|---|---|---|
+| Local player body draw | `render-player.cpp`/`renderCurrentPose` | hot pose (done) | EntityId + components | mesh/skeleton/skin/draw | typed procedural pose | no (pose) | weapon view, visibility policy |
+| Remote NPC/actor presentation | `renderNetworkPlayer` | `hot.presentation-mesh` (done) | EntityId + components | GL draw | typed draw when mesh not ready | no | — |
+| Animation selection | typed `updateProceduralAnimation` | `hot.animation-policy` (done) | `AnimationState` | — | typed | no | jump/attack |
+| Pose generation | typed proc pose | `hot.pose-generation` (done) | `PoseState`/`SkeletonInstances` | skeleton apply | typed | no | blending |
+| Animation blending | typed Player springs | **cold (policy)** | — | — | — | **YES** | add hot blend fields |
+| Effects spawn/update | `EffectPartSystem`/`hit-effects*` (bullet impact, blood, muzzle flash, decals) | `effect.request` + `hot.effect-composition` + `hot.effect-lifecycle` (rocket/grenade explosion, new effects) | generic effect entity (Transform/Velocity/PresentationState/EffectLifetime) | particle draw | cold `spawnExplosionFx` composition when hot unavailable | no (explosion/new) / yes (remaining effect types) | migrate blood impact; generic decal primitive |
+| Decals/blood | `effect-part-*` | none | pools | GPU | — | **YES** | generic effect data |
+| Camera shake | `effect-part-system`/explosion callers | none | — | — | — | **YES** | hot camera effect |
+| Damage indicators | cold HUD/effect | none | — | — | — | **YES** | hot UI/effect |
+| Audio selection/spatial/music | `audio/audio.cpp` (`soundPath`, name-keyed cache); weapon/footstep/UI call sites | `audio.play` capability + `hot.effect-composition` explosion sound policy | logical sound name in command | miniaudio device/mixer | cold `playWorldSound` fallback in `explosion-fx.cpp` | no (new/explosion sound) / yes (other sound policy) | migrate weapon fire + footstep audio policy |
+| Weapon presentation/animation | `weapon-system`/`weapon-viewmodel`/`weapon-model-cache` | none | `server-weapon-state` (partial) | GL draw | typed | **YES** | tool entity PresentationState |
+| Nameplates/health overlays | `player-nameplates`/HUD | none | — | UI backend | — | **YES** | hot UI from actor state |
+| HUD composition | `engineTickUI*` (yielded) | `ui.frame` (done) | `MatchHudState` | immediate-mode UI | cold timer | no | mode-owned HUD state |
+| Menus/UI behavior | `gui/menus/*` cold C++ | none | — | UI backend | — | **YES** | hot UI systems |
+| UI interaction/input | `uiButton`/menu switches | none | — | raw input | — | **YES** | hot interaction |
+| Console commands | `terminal/*` cold switches | `CommandRegistrar` (generic) | runtime registry | arg parsing | cold builtins | no (new cmds) | runtime registration API |
+| Mesh/texture/shader resources | `TextureStore`/`gMeshCache`/`weapon-model-cache` | `PresentationResourceProvider` (mesh/texture/shader) | provider | GPU | static caches | partial | dependency graph |
+| Animation clips/skeleton resources | static caches | none | — | decode | — | **YES** | logical clip/skeleton ids |
+| Fonts | `font-loader` | none | — | rasterizer | — | **YES** | resource provider |
+| Sounds/music resources | name-keyed cache | none | — | decoder | — | **YES** | logical sound ids |
+| Replay presentation | `engine-tick-render` replay path | none | replay frames | GL | typed | **YES** | generic actor presentation |
+| Spectator presentation | cold | none | — | GL | — | **YES** | generic actor presentation |
+| Editor/client tools | `live-editor`/`gui-editor` | partial (`editor-behavior`) | — | draw primitives | — | partial | hot editor behaviors |
+
+Read: the client/presentation side is now mostly HOT for actor animation/pose,
+HUD composition, and mesh/texture/shader resources; **effects, audio, weapon
+presentation, nameplates, menus/UI interaction, and clip/skeleton/font/sound
+resource generations remain the largest cold behavior owners.**
+
+## BUGS THAT STILL REQUIRE A COLD EXE REBUILD
+
+Primary project metric. Each architecture pass must shrink this list. Each item:
+behavior/system, cold file/function, why cold, what must migrate, priority.
+
+1. **Effect selection/timing** — REDUCED AGAIN (2026-09-15): the **real client
+   rocket/grenade explosion visual composition is now hot-owned**.
+   `explosion-fx.cpp` plays sound (cold, temporary), then emits a generic
+   `effect.request` fact; the hot `hot.effect-composition` handler composes
+   generic effect entities (flash / smoke / debris) and sets `handled = 1`, so
+   the cold composition returns early (exactly one owner). Generic effect
+   entities + `hot.effect-lifecycle` own age/integration/growth/fade/expiry.
+   Camera shake policy is now hot too (`weapon-rocket-launcher.cpp` emits a
+   generic `effect.camera.shake` -> hot `camera.effect` command; cold
+   `camera.addPunch` is fallback). Still cold: `EffectPartSystem` composition for
+   screen flash / damage vignette.
+   **Hit/blood/world composition, surface marks, and muzzle flash are now hot**:
+   `HitEffects::onHit` and `EffectPartSystem::spawnMuzzleFlash` yield to the hot
+   `effect.request` owner, which emits generic effect entities / a generic
+   `surface.effect` request. The tool/weapon key is a runtime hash, never a
+   permanent enum branch. The kernel draws generic primitives with no feature
+   kind. Priority: high (diminishing).
+2. **Audio choice/volume/pitch/spatial/music** — LARGELY REDUCED
+   (2026-09-15): generic `audio.play` command exists; explosion, **weapon-fire**,
+   **footstep** (`effect.footstep.sound`, incl. arbitrary logical ids), and
+   **air-jump** (`effect.jump.sound`) policies are hot-owned, all driven by
+   generic movement/effect facts; runtime-unknown sounds play through the same
+   capability. Landing has no shipping cold sound (VFX only). Remaining (recorded
+   for a later category pass, not blocking): UI, NPC, ambient, and music policy,
+   plus the name-keyed `soundPath`/cache and generation-aware sound resources.
+   Priority: high (largely done).
+3. **Weapon presentation/animation** — `combat/weapon-system.cpp`,
+   `weapon-viewmodel.cpp`, `weapon-model-cache.cpp`. Why cold: weapon-type
+   branches choose models/muzzle/recoil. Audit (2026-09-15): muzzle flash + fire
+   sound already hot. The two previously-missing generic primitives are now
+   implemented and proven (2026-09-15, Round 40): `socket.query` +
+   `AttachmentState` (generic attachment), `resource.register` (arbitrary
+   logical GLB/texture) and the `GAME_RENDER_MESH_SPACE_VIEW` world/view
+   presentation space. Best first target remains `swordsword`
+   (`config/weapons.json:281`, hot melee tool `melee-tool.cpp:83`, no
+   reload/muzzle/sounds, cold render already a no-op `weapon-swordsword.cpp:652`).
+   Remaining before the real migration: a generic tool->mesh data mapping
+   (resource manifest, per #8/#10) and a client possessed-tool bridge so the
+   equipped tool identity (not a per-weapon hardcode) picks the logical mesh.
+   Cold branches to yield once migrated: `weapon-viewmodel.cpp:492-518`
+   (draw/visibility), `weapon-system.cpp:569-581`/`:1204-1224` (local/remote),
+   attachment `weapon-viewmodel.cpp:299-347`, muzzle `:411-412`. Priority: high.
+4. **Nameplates/health overlays** — `gui/hud/player-nameplates.cpp`,
+   `playerHealthbarAnchor`. Why cold: player/NPC-specific overlay code. Migrate:
+   hot UI systems reading `Transform`/`ActorHealthState`/identity. Priority:
+   medium.
+5. **Menus/UI behavior + interaction** — `gui/menus/*`, `ui-system` button
+   switches. Why cold: screen/menu flow in cold C++. Migrate: hot UI systems +
+   generic interaction commands. Priority: medium.
+6. **Animation blending policy** — typed `Player` springs /
+   `updateProceduralAnimation`. Why cold: blend math in typed Player. Migrate:
+   `AnimationState` previous/current clip + blend fields owned by hot pose.
+   Priority: medium.
+7. **Animation clip/skeleton resource generations** — static caches. Why cold:
+   no logical ids/generation. Migrate: `PresentationResourceProvider` clip/
+   skeleton loaders. Priority: medium.
+8. **Fonts / sounds / music resources** — static/name-keyed caches. Why cold: no
+   generation. Migrate: provider loaders + logical ids. Priority: low-medium.
+9. **Replay/spectator presentation** — cold replay render path. Why cold: typed
+   actor draw. Migrate: generic actor presentation consuming replay state.
+   Priority: low-medium.
+10. **Runtime command registration post-startup** — commands come from package
+    descriptors at activation; there is no runtime add/remove-command API. Why
+    cold: no such primitive. Migrate: a generic runtime command registration
+    capability (lower-level, reusable). Priority: low.
+
+## Update 2026-09-15 — local player (THE_PLAYER) on the generic pose path
+
+Old ownership chain: `THE_PLAYER` -> `animation.main` (hot) -> `animation.update`
+bridge -> `Player::updateProceduralAnimation` (cold animation policy + pose) ->
+`Player::renderCurrentPose` (skeleton/skinning/draw). So editing
+`pose-generation.cpp` did not affect the local player.
+
+Migrated:
+- `PresentationEntities::projectLocalPlayer(THE_PLAYER)` projects the local player
+  onto `Ecs::ensureLocalPlayerEntity()` (Transform/Velocity/Health +
+  `PresentationState` + `AnimationState`), same architecture as remote actors.
+- `hot.animation-policy` selects the local clip; `hot.pose-generation` writes
+  `SkeletonInstances[localEntity]`.
+- `PresentationEntities::applyHotPoseToPlayer` maps that pose onto
+  `physicalBody.parts[].pose` before the typed body draw.
+- `animation.main` no longer calls `animation.update` (no-op); `animation.update`
+  remains only for replay/legacy compatibility (A/B).
+- Proof: `--hot-combat-selftest` PASS ("local player has a canonical generic
+  entity", "local player entity is driven by the hot pose path"); full suite PASS.
+- NOT claimed: LIVE HOT-EDIT PROVEN (no screen). Camera/first-person visibility
+  stays in the typed body draw (mechanism), not animation policy.
+- Remaining cold Player responsibilities: body meshes, skeleton decode, skinning,
+  first-person/weapon draw; `updateProceduralAnimation` still exists but is no
+  longer the local animation policy owner (called only if a movement source path
+  runs it).

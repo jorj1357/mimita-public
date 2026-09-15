@@ -21,6 +21,8 @@ namespace SkeletonInstances {
 
 struct BonePose {
     std::uint64_t part = 0;       // gameHash("leftArm") etc.
+    float translation[3] = {0.0f, 0.0f, 0.0f};
+    float rotationEuler[3] = {0.0f, 0.0f, 0.0f};
     glm::mat4 local{1.0f};
     glm::mat4 world{1.0f};
 };
@@ -31,6 +33,9 @@ struct Instance {
     std::uint32_t version = 0;
     BonePose bones[GAME_MAX_POSE_PARTS];
 };
+
+// Find a bone by part hash (nullptr if absent).
+const BonePose* findBone(const Instance* instance, std::uint64_t part);
 
 // Create or return the skeleton instance for an entity. Identity pose initially.
 Instance* ensure(EntityId entity);

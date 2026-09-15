@@ -32,6 +32,7 @@
 #include "world/world.h"
 #include "entities/player.h"
 #include "camera.h"
+#include "audio/audio.h"
 #include "effects/effect-part.h"
 #include "debug/debug-visuals.h"
 #include "gui/ui-system.h"
@@ -65,6 +66,9 @@ int gCount = 0;
 bool gDraining = false;
 const void* gDispatchWorld = nullptr;
 std::uint64_t g_skeletonApplyCount = 0;
+std::uint64_t g_audioPlayCount = 0;
+std::uint64_t g_surfaceEffectCount = 0;
+std::uint64_t g_cameraEffectCount = 0;
 
 void MIMITA_GAME_CALL kernelEmitEvent(GameplayContextV1*, const GameEventV1* event);
 
@@ -820,12 +824,172 @@ void MIMITA_GAME_CALL capRenderMesh(void*, const GameRenderMeshCommandV1* comman
     PresentationRender::submitMesh(*command);
 }
 
+// Generic named-attachment-point query. Composes the entity's canonical
+// transform with its current generic skeleton pose (SkeletonInstances) and, when
+// the drawn mesh tags that part, its mesh bind. Falls back to the entity
+// transform + caller local offset for non-skeletal entities. Resolves the live
+// resource generation each call and never stores a pointer.
+bool MIMITA_GAME_CALL capSocketQuery(void*, GameSocketQueryV1* q)
+{
+    if (!q)
+        return false;
+    q->found = 0;
+    q->usedFallback = 0;
+    q->valid = 0;
+
+    glm::mat4 base(1.0f);
+    bool haveEntity = false;
+    const EntityId id = static_cast<EntityId>(q->entity);
+    if (id != kInvalidEntityId) {
+        const TransformComponent* t =
+            EntityRegistry::instance().tryGet<TransformComponent>(id);
+        if (t) {
+            haveEntity = true;
+            base = glm::translate(glm::mat4(1.0f), t->position);
+            const float cy = std::cos(t->yaw), sy = std::sin(t->yaw);
+            glm::mat4 rz(1.0f);   // world is Z-up; yaw rotates about Z
+            rz[0][0] = cy;  rz[0][1] = sy;
+            rz[1][0] = -sy; rz[1][1] = cy;
+            base *= rz;
+        }
+    }
+
+    glm::mat4 socket = base;
+    if (q->socket != 0 && id != kInvalidEntityId) {
+        const SkeletonInstances::BonePose* bone =
+            SkeletonInstances::findBone(SkeletonInstances::get(id), q->socket);
+        if (bone) {
+            socket = base * bone->world;
+            q->found = 1;
+        }
+        float bind16[16];
+        if (PresentationRender::meshPartBind(q->entity, q->socket, bind16)) {
+            glm::mat4 bind(1.0f);
+            for (int c = 0; c < 4; ++c)
+                for (int r = 0; r < 4; ++r)
+                    bind[c][r] = bind16[c * 4 + r];
+            socket = socket * bind;
+            q->found = 1;
+        }
+    }
+    if (q->found == 0)
+        q->usedFallback = 1;   // non-skeletal/unknown socket: transform + local
+
+    glm::mat4 local(1.0f);
+    local = glm::translate(local, glm::vec3(q->localPosition[0],
+                                            q->localPosition[1],
+                                            q->localPosition[2]));
+    const float rr = q->localRotation[0]*q->localRotation[0] +
+                     q->localRotation[1]*q->localRotation[1] +
+                     q->localRotation[2]*q->localRotation[2] +
+                     q->localRotation[3]*q->localRotation[3];
+    if (rr > 1e-6f) {
+        const glm::quat lr(q->localRotation[3], q->localRotation[0],
+                           q->localRotation[1], q->localRotation[2]);
+        local *= glm::mat4_cast(glm::normalize(lr));
+    }
+    const glm::vec3 ls(q->localScale[0] > 0.0f ? q->localScale[0] : 1.0f,
+                       q->localScale[1] > 0.0f ? q->localScale[1] : 1.0f,
+                       q->localScale[2] > 0.0f ? q->localScale[2] : 1.0f);
+    local *= glm::scale(glm::mat4(1.0f), ls);
+    if (!haveEntity && q->found == 0)
+        return false;   // no entity and no socket: nothing to resolve, fail safe
+    const glm::mat4 out = socket * local;
+
+    q->position[0] = out[3][0];
+    q->position[1] = out[3][1];
+    q->position[2] = out[3][2];
+    const glm::quat rq = glm::quat_cast(out);
+    q->rotation[0] = rq.x; q->rotation[1] = rq.y;
+    q->rotation[2] = rq.z; q->rotation[3] = rq.w;
+    q->scale[0] = glm::length(glm::vec3(out[0]));
+    q->scale[1] = glm::length(glm::vec3(out[1]));
+    q->scale[2] = glm::length(glm::vec3(out[2]));
+    q->valid = 1;
+    return true;
+}
+
+// Generic resource registration: hot code registers an arbitrary logical mesh or
+// texture id backed by a path; the kernel owns parse/validate/generation swap.
+bool MIMITA_GAME_CALL capResourceRegister(void*, GameResourceRegisterV1* req)
+{
+    if (!req || req->logicalId == 0 || req->path[0] == '\0')
+        return false;
+    req->ok = 0;
+    req->generation = 0;
+    const bool ok = PresentationRender::registerLogicalResource(
+        req->logicalId, req->kind, req->path, req->applyNow != 0,
+        &req->generation);
+    req->ok = ok ? 1u : 0u;
+    return ok;
+}
+
 // Generic HUD/UI: hot ui.frame systems emit widgets; the kernel draws them.
 void MIMITA_GAME_CALL capRenderUi(void*, const GameUiCommandV1* command)
 {
     if (!command)
         return;
     LiveUi::submit(*command);
+}
+
+// Generic surface effect: hot policy describes a mark; the kernel owns
+// projection/geometry/storage/draw and never interprets a feature kind.
+void MIMITA_GAME_CALL capSurfaceEffect(void*, const GameSurfaceEffectV1* request)
+{
+    if (!request)
+        return;
+    ++g_surfaceEffectCount;
+    SurfaceDecal d;
+    d.position = glm::vec3(request->position[0], request->position[1],
+                           request->position[2]);
+    d.normal = glm::vec3(request->normal[0], request->normal[1], request->normal[2]);
+    d.axis = glm::vec3(request->axis[0], request->axis[1], request->axis[2]);
+    d.color = glm::vec3(request->color[0], request->color[1], request->color[2]);
+    d.alpha = request->color[3] > 0.0f ? request->color[3] : 1.0f;
+    d.baseAlpha = d.alpha;
+    d.radius = request->radius > 0.0f ? request->radius : 0.05f;
+    d.height = request->height > 0.0f ? request->height : d.radius;
+    d.lifetime = request->lifetime > 0.0f ? request->lifetime : 30.0f;
+    d.fadeTime = request->fadeTime > 0.0f ? request->fadeTime : 5.0f;
+    d.generic = true;
+    EffectPartSystem::instance().spawnGenericSurfaceDecal(d);
+}
+
+// Generic camera effect: hot policy decides amplitude/falloff; the kernel applies
+// a temporary camera perturbation. No feature branch.
+void MIMITA_GAME_CALL capCameraEffect(void*, const GameCameraEffectV1* effect)
+{
+    if (!effect)
+        return;
+    ++g_cameraEffectCount;  // count the command even when no camera exists (tests)
+    if (!gpCamera)
+        return;
+    float atten = 1.0f;
+    if (effect->falloffDistance > 0.0f) {
+        atten = 1.0f - effect->distance / effect->falloffDistance;
+        atten = atten < 0.0f ? 0.0f : (atten > 1.0f ? 1.0f : atten);
+    }
+    THE_CAMERA.addPunch(effect->pitch * atten, effect->yaw * atten);
+}
+
+// Generic audio: hot policy emits a logical sound command; the kernel plays it.
+void MIMITA_GAME_CALL capAudioPlay(void*, const GameAudioCommandV1* command)
+{
+    if (!command || command->sound[0] == '\0')
+        return;
+    ++g_audioPlayCount;
+    const std::string name(command->sound,
+                           strnlen(command->sound, sizeof(command->sound)));
+    if (command->spatial != 0) {
+        playWorldSound(name, glm::vec3(command->position[0], command->position[1],
+                                       command->position[2]),
+                       command->volume > 0.0f ? command->volume : 1.0f,
+                       command->pitch > 0.0f ? command->pitch : 1.0f,
+                       command->maxDistance > 0.0f ? command->maxDistance : 50.0f);
+    } else {
+        playSoundPitched(name, command->volume > 0.0f ? command->volume : 1.0f,
+                         command->pitch > 0.0f ? command->pitch : 1.0f);
+    }
 }
 
 
@@ -869,6 +1033,26 @@ struct KernelCapabilityInit {
                                     gameHash("sig.render.ui.v1"), 0,
                                     reinterpret_cast<void*>(&capRenderUi),
                                     "render.ui");
+        rt.registerKernelCapability(GAME_CAP_AUDIO_PLAY,
+                                    gameHash("sig.audio.play.v1"), 0,
+                                    reinterpret_cast<void*>(&capAudioPlay),
+                                    "audio.play");
+        rt.registerKernelCapability(GAME_CAP_SURFACE_EFFECT,
+                                    gameHash("sig.surface.effect.v1"), 0,
+                                    reinterpret_cast<void*>(&capSurfaceEffect),
+                                    "surface.effect");
+        rt.registerKernelCapability(GAME_CAP_CAMERA_EFFECT,
+                                    gameHash("sig.camera.effect.v1"), 0,
+                                    reinterpret_cast<void*>(&capCameraEffect),
+                                    "camera.effect");
+        rt.registerKernelCapability(GAME_CAP_SOCKET_QUERY,
+                                    gameHash("sig.socket.query.v1"), 0,
+                                    reinterpret_cast<void*>(&capSocketQuery),
+                                    "socket.query");
+        rt.registerKernelCapability(GAME_CAP_RESOURCE_REGISTER,
+                                    gameHash("sig.resource.register.v1"), 0,
+                                    reinterpret_cast<void*>(&capResourceRegister),
+                                    "resource.register");
         rt.registerKernelCapability(GAME_CAP_PHYSICS_MOVE,
                                     gameHash("sig.physics.move.v1"), 0,
                                     reinterpret_cast<void*>(&capPhysicsMove),
@@ -1053,6 +1237,22 @@ bool dispatchToolUse(ToolUsePolicyV1& payload, std::uint64_t tick)
     return payload.handled != 0;
 }
 
+bool dispatchEffectRequest(EffectRequestV1& payload, std::uint64_t tick)
+{
+    payload.handled = 0;
+    GameEventV1 event{};
+    event.typeId = gameHash("effect.request");
+    event.schemaHash = gameHash("effect.request.v1");
+    event.payloadVersion = 1;
+    event.payloadSize = sizeof(EffectRequestV1);
+    event.sourceEntity = payload.sourceEntity;
+    event.tick = tick;
+    event.payload = &payload;
+    GameplayContextV1 context = makeContext(tick);
+    MimitaRuntime::GenericRuntime::instance().dispatchEvent(event, &context);
+    return payload.handled != 0;
+}
+
 bool dispatchPayload(std::uint32_t typeId, void* payload,
                      std::uint32_t payloadSize, std::uint64_t tick,
                      std::uint64_t sourceEntity,
@@ -1145,6 +1345,21 @@ void flushRenderDebug()
 std::uint64_t skeletonApplyCount()
 {
     return g_skeletonApplyCount;
+}
+
+std::uint64_t audioPlayCount()
+{
+    return g_audioPlayCount;
+}
+
+std::uint64_t surfaceEffectCount()
+{
+    return g_surfaceEffectCount;
+}
+
+std::uint64_t cameraEffectCount()
+{
+    return g_cameraEffectCount;
 }
 
 int drainEvents(int maxEvents)

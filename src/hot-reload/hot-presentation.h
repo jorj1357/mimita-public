@@ -27,6 +27,34 @@ struct HotPresentationStateV1 {
     float color[4];
 };
 
+// Generic attachment state. A presentation entity may carry it to follow a
+// named attachment point (socket/bone hash) on another entity. Hot policy owns
+// the local offset/rotation/scale and the presentation context; the kernel owns
+// the socket transform mechanism. It is a PRESENTATION override: the child's
+// authoritative Transform is never overwritten. The resolved world transform is
+// written back here and consumed by the render system.
+static constexpr std::uint64_t HOT_ATTACHMENT_COMPONENT = gameHash("AttachmentState");
+static constexpr std::uint32_t HOT_ATTACHMENT_CONTEXT_WORLD = 0;
+static constexpr std::uint32_t HOT_ATTACHMENT_CONTEXT_VIEW = 1;
+static constexpr std::uint32_t HOT_ATTACHMENT_FLAG_VISIBLE = 1u;
+
+struct HotAttachmentStateV1 {
+    // in
+    std::uint64_t parentEntity;
+    std::uint64_t socket;          // gameHash("rightArm") / gameHash("muzzle")
+    float localPosition[3];
+    float localRotation[4];        // quaternion xyzw
+    float localScale[3];
+    std::uint32_t context;         // HOT_ATTACHMENT_CONTEXT_*
+    std::uint32_t flags;           // HOT_ATTACHMENT_FLAG_*
+    // out (filled each frame by hot.attachment; presentation-only)
+    float worldPosition[3];
+    float worldRotation[4];
+    float worldScale[3];
+    std::uint32_t resolved;
+    std::uint32_t reserved;
+};
+
 // Logical resource ids registered by the cold presentation renderer through the
 // generation-aware PresentationResourceProvider.
 static constexpr std::uint64_t HOT_MESH_CUBE = gameHash("mesh.cube");

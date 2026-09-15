@@ -28,6 +28,8 @@
 #include "debug/structured-log.h"
 #include "terminal/terminal-state.h"
 #include "network/movement-validation.h"
+#include "live-code/live-behavior.h"
+#include "hot-reload/hot-interpolation.h"
 #include "world/world.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
@@ -122,6 +124,59 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
     const uint32_t newestTick = interpolation.buffer.back().serverTick;
     const double previousAlpha = interpolation.sampleAlpha;
 
+    // Hot interpolation policy owns delay retargeting, extrapolation allow/deny +
+    // cap, stale/buffer-dry handling, packet-gap response, and snap. Cold keeps
+    // sample storage and the numeric mix/extrapolation application.
+    GameInterpolateV1 hotIp{};
+    bool hotHandled = false;
+    double effectiveDelay = delaySeconds;
+    {
+        const SnapshotTransform& front = interpolation.buffer.front();
+        const SnapshotTransform& back = interpolation.buffer.back();
+        hotIp.aPosition[0] = front.position.x;
+        hotIp.aPosition[1] = front.position.y;
+        hotIp.aPosition[2] = front.position.z;
+        hotIp.aVelocity[0] = front.velocity.x;
+        hotIp.aVelocity[1] = front.velocity.y;
+        hotIp.aVelocity[2] = front.velocity.z;
+        hotIp.aTick = oldestTick;
+        hotIp.bPosition[0] = back.position.x;
+        hotIp.bPosition[1] = back.position.y;
+        hotIp.bPosition[2] = back.position.z;
+        hotIp.bVelocity[0] = back.velocity.x;
+        hotIp.bVelocity[1] = back.velocity.y;
+        hotIp.bVelocity[2] = back.velocity.z;
+        hotIp.bTick = newestTick;
+        hotIp.oldestTick = oldestTick;
+        hotIp.newestTick = newestTick;
+        hotIp.bufferDepth = (std::uint32_t)interpolation.buffer.size();
+        hotIp.renderTick = globalRenderTick;
+        hotIp.delaySeconds = delaySeconds;
+        hotIp.allowExtrapolation = allowExtrapolation ? 1u : 0u;
+        const double provisionalRender =
+            globalRenderTick - delaySeconds * (double)GAMEPLAY_SIMULATION_HZ;
+        hotIp.bufferDry = provisionalRender > (double)newestTick ? 1u : 0u;
+        hotIp.handled = 0;
+        if (LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_INTERPOLATE, &hotIp,
+                                                  sizeof(hotIp), 0, 0, 0) &&
+            hotIp.handled) {
+            hotHandled = true;
+            if (hotIp.outDelaySeconds > 0.0)
+                effectiveDelay = hotIp.outDelaySeconds;
+        }
+    }
+
+    // Hot snap (generation/lifecycle/gap discontinuity): render the newest
+    // authoritative sample directly, never blending across the discontinuity.
+    if (hotHandled && hotIp.mode == 3u) {
+        out = interpolation.buffer.back();
+        out.serverTick = newestTick;
+        interpolation.snappedOrCorrected = true;
+        interpolation.extrapolating = false;
+        ++interpolation.hardSnapCount;
+        return;
+    }
+
     // `linearSnapGapTicks` is 0 for every non-linear mode and nonzero for
     // linear mode (the caller passes motion.linearSnapAfterGapTicks there).
     // linear_never_skip: linear must never render the newest directly — both
@@ -133,7 +188,7 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
     const bool easeMode = linearMode && motionCfg.renderFilter == "ease";
     const bool linearNeverSkip = linearMode && !easeMode && motionCfg.linearNeverSkip;
 
-    const double delayTicks = delaySeconds * (double)GAMEPLAY_SIMULATION_HZ;
+    const double delayTicks = effectiveDelay * (double)GAMEPLAY_SIMULATION_HZ;
     const double desiredRenderTick = globalRenderTick - delayTicks;
     // Never render ahead of the newest buffered authoritative data. If the
     // render clock runs past the newest snapshot (a clock that ticks slightly
@@ -183,7 +238,9 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
         interpolation.sampleNewerTick = newestTick;
         interpolation.sampleAlpha = 1.0;
         interpolation.sampleAlphaDelta = interpolation.sampleAlpha - previousAlpha;
-        if (!allowExtrapolation)
+        const bool allowExtrap =
+            hotHandled ? (hotIp.mode == 1u) : allowExtrapolation;
+        if (!allowExtrap)
         {
             interpolation.extrapolating = false;
             interpolation.holding = true;
@@ -196,8 +253,9 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
         const double extraTicks = renderTick - (double)newestTick;
         const double extraMs =
             extraTicks / (double)GAMEPLAY_SIMULATION_HZ * 1000.0;
-        const double capMs =
-            interpCfg.maximumExtrapolationSeconds * 1000.0;
+        const double capMs = hotHandled
+            ? std::max(1.0, hotIp.outExtrapolationMs)
+            : interpCfg.maximumExtrapolationSeconds * 1000.0;
         double moveMs = extraMs;
         if (extraMs > capMs && interpCfg.extrapolationKeepMoving)
         {
@@ -274,6 +332,12 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
                 (double)(newer->serverTick - older->serverTick);
         alpha = std::clamp(alpha, 0.0, 1.0);
     }
+    // Hot alpha override (the top-of-function net.interpolate call already owned
+    // the snap/gap/buffer-dry decision; here the hot policy may also adjust the
+    // interpolation alpha). Cold still performs the numeric mix below.
+    if (hotHandled)
+        alpha = std::clamp(hotIp.outAlpha, 0.0, 1.0);
+
     interpolation.sampleOlderTick = older->serverTick;
     interpolation.sampleNewerTick = newer->serverTick;
     interpolation.sampleAlpha = alpha;
@@ -380,6 +444,33 @@ double adaptiveDelaySeconds(EntityInterpolationState& interpolation,
             adaptive.minimumDelaySeconds +
             interpolation.recentLossFraction * adaptive.lossDelayBudgetSeconds);
         desired = std::min(desired, adaptive.maximumDelaySeconds);
+    }
+
+    // Hot adaptive-delay policy: cold supplies measurements; hot owns the
+    // desired delay. When handled, cold must not run its own convergence after.
+    if (adaptive.enabled)
+    {
+        GameInterpolateV1 q{};
+        q.delayQuery = 1u;
+        q.currentAdaptiveDelaySeconds = (float)interpolation.adaptiveDelaySeconds;
+        q.baseDelaySeconds = (float)desired;
+        q.estimatedJitterMs = (float)interpolation.estimatedArrivalJitterMs;
+        q.recentLossFraction = (float)interpolation.recentLossFraction;
+        q.minDelaySeconds = (float)adaptive.minimumDelaySeconds;
+        q.maxDelaySeconds = (float)adaptive.maximumDelaySeconds;
+        q.increaseRateMsPerSecond = (float)adaptive.increaseRateMsPerSecond;
+        q.decreaseRateMsPerSecond = (float)adaptive.decreaseRateMsPerSecond;
+        q.jitterMultiplier = (float)adaptive.jitterMultiplier;
+        q.lossDelayBudgetSeconds = (float)adaptive.lossDelayBudgetSeconds;
+        q.deltaSeconds = (float)dt;
+        q.handled = 0;
+        if (LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_INTERPOLATE, &q,
+                                                  sizeof(q), 0, 0, 0) &&
+            q.handled && q.outDelaySeconds > 0.0)
+        {
+            interpolation.adaptiveDelaySeconds = q.outDelaySeconds;
+            return interpolation.adaptiveDelaySeconds;
+        }
     }
 
     if (interpolation.adaptiveDelaySeconds <= 0.0)

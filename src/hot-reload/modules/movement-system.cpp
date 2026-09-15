@@ -222,24 +222,59 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t /*tick*/, float
         float dashDirX = 0.0f;
         float dashDirY = 0.0f;
 
-        if (freezeNow) {
-            // Freeze: immediate full stop (horizontal and vertical).
-            vx = 0.0f;
-            vy = 0.0f;
-            vz = 0.0f;
+        // FREEZE: route through the ONE shared hot freeze policy.
+        GameFreezePolicyV1 fp{};
+        fp.velocity[0] = vx;
+        fp.velocity[1] = vy;
+        fp.velocity[2] = vz;
+        fp.dt = dt;
+        fp.durationSeconds = 0.0f;
+        fp.freezePressed = freezeEdge ? 1u : 0u;
+        fp.freezeHeld = freezeNow ? 1u : 0u;
+        fp.freezeHeldPreviously = rs.freezePreviously ? 1u : 0u;
+        fp.freezeEnabled = 1u;
+        fp.freezeActive = freezeNow ? 1u : 0u;
+        fp.freezeAvailable = 1u;
+        fp.freezeTimerSeconds = 0.0f;
+        MimitaHotMovement::freezePolicy(fp);
+        if (fp.outFreezeActive != 0u) {
+            // Frozen: velocity suppressed by the shared policy.
+            vx = fp.outVelocity[0];
+            vy = fp.outVelocity[1];
+            vz = fp.outVelocity[2];
         } else {
-            const float speed = m.walkSpeed;
+            // SPEED: one shared hot speed policy derives the effective max speed
+            // (size-scale aware), the same implementation the server uses.
+            GameSpeedPolicyV1 sp{};
+            sp.baseMaxSpeed = m.walkSpeed;
+            sp.baseFallbackSpeed = m.walkSpeed;
+            sp.sizeScale = body.sizeScale;
+            sp.sizeExponent = 0.0f;
+            sp.speedLimit = 0.0f;
+            sp.airMaxWishspeed = 0.0f;
+            sp.rawWishSpeed = m.walkSpeed;
+            float optMax = m.walkSpeed;
+            float optWish = m.walkSpeed;
+            MimitaHotMovement::speedPolicy(sp, optMax, optWish);
+            const float speed = optMax;
             if (rs.grounded) {
-                const float blend = std::min(
-                    1.0f, m.groundAccel * dt / std::max(speed, 1e-3f));
-                vx += (wishDirX * speed - vx) * blend;
-                vy += (wishDirY * speed - vy) * blend;
-                if (!hasWish) {
-                    const float friction =
-                        std::max(0.0f, 1.0f - m.groundFriction * dt);
-                    vx *= friction;
-                    vy *= friction;
-                }
+                // GROUND: route through the ONE shared hot ground-move policy
+                // (friction + acceleration; the same implementation as server).
+                GameGroundMoveV1 g{};
+                g.velocity[0] = vx;
+                g.velocity[1] = vy;
+                g.wishDir[0] = wishDirX;
+                g.wishDir[1] = wishDirY;
+                g.wishSpeed = speed;
+                g.groundAcceleration = m.groundAccel;
+                g.frictionAmount = m.groundFriction;
+                g.stopspeed = 0.0f;
+                g.dt = dt;
+                g.hasInput = hasWish ? 1u : 0u;
+                float out[2] = {vx, vy};
+                MimitaHotMovement::groundMove(g, out);
+                vx = out[0];
+                vy = out[1];
             } else if (hasWish) {
                 // AIR: route through the ONE shared hot air-acceleration policy
                 // (the same implementation the server authority uses).
@@ -265,48 +300,96 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t /*tick*/, float
 
             // Dash: additive horizontal impulse, ground or air, edge-triggered.
             // Falls back to camera-forward when no WASD is held.
-            if (dashEdge && rs.dashAvailable && rs.dashCooldownSeconds <= 0.0f) {
+            // DASH / DOWN-DASH: route through the ONE shared hot dash policy.
+            {
+                const float inVx = vx;
+                const float inVy = vy;
                 const float yawRad = yaw * 0.01745329252f;
-                const float camFx = std::cos(yawRad);
-                const float camFy = std::sin(yawRad);
-                dashDirX = hasWish ? wishDirX : camFx;
-                dashDirY = hasWish ? wishDirY : camFy;
-                vx += dashDirX * m.dashImpulse;
-                vy += dashDirY * m.dashImpulse;
-                rs.dashCooldownSeconds = m.dashCooldown;
-                rs.dashAvailable = 0;
-                didDash = true;
+                GameDashPolicyV1 dp{};
+                dp.velocity[0] = vx;
+                dp.velocity[1] = vy;
+                dp.velocity[2] = vz;
+                dp.moveAxes[0] = hasWish ? wishDirX : 0.0f;
+                dp.moveAxes[1] = hasWish ? wishDirY : 0.0f;
+                dp.cameraForward[0] = std::cos(yawRad);
+                dp.cameraForward[1] = std::sin(yawRad);
+                dp.groundDashImpulse = m.dashImpulse;
+                dp.airDashImpulse = m.dashImpulse;
+                dp.downDashVerticalSpeed = m.downDashSpeed;
+                dp.dashPressed = (dashEdge && rs.dashAvailable &&
+                                  rs.dashCooldownSeconds <= 0.0f) ? 1u : 0u;
+                dp.downDashPressed = (downDashEdge && rs.downDashAvailable) ? 1u : 0u;
+                dp.grounded = rs.grounded ? 1u : 0u;
+                dp.dashAvailable = rs.dashAvailable ? 1u : 0u;
+                dp.downDashAvailable = rs.downDashAvailable ? 1u : 0u;
+                dp.dashEnabled = 1u;
+                dp.downDashEnabled = 1u;
+                MimitaHotMovement::dashPolicy(dp);
+                vx = dp.outVelocity[0];
+                vy = dp.outVelocity[1];
+                vz = dp.outVelocity[2];
+                if (dp.outDidDash) {
+                    rs.dashAvailable = dp.outDashAvailable;
+                    rs.dashCooldownSeconds = m.dashCooldown;
+                    didDash = true;
+                    const float ddx = dp.outVelocity[0] - inVx;
+                    const float ddy = dp.outVelocity[1] - inVy;
+                    const float dl = std::sqrt(ddx * ddx + ddy * ddy);
+                    dashDirX = dl > 1e-4f ? ddx / dl : 0.0f;
+                    dashDirY = dl > 1e-4f ? ddy / dl : 0.0f;
+                }
+                if (dp.outDidDownDash) {
+                    rs.downDashAvailable = dp.outDownDashAvailable;
+                    didDownDash = true;
+                }
             }
 
-            // Down-dash replaces vertical velocity (air or ground).
-            if (downDashEdge && rs.downDashAvailable) {
-                vz = m.downDashSpeed;
-                rs.downDashAvailable = 0;
-                didDownDash = true;
-            }
-
-            // Jump (held): fires whenever a valid ground contact restores it.
-            if (rs.grounded && mi.jump) {
-                vz = m.jumpSpeed;
-                rs.grounded = 0;
-                rs.airJumpsLeft = 1;
-                rs.jumpAirJumpArmed = 1;
-            } else if (!rs.grounded && jumpEdge && rs.airJumpsLeft > 0 &&
-                       rs.jumpAirJumpArmed) {
-                vz = m.jumpSpeed;
-                --rs.airJumpsLeft;
-                rs.jumpAirJumpArmed = 0;
-            }
+            // JUMP: route through the ONE shared hot jump policy (the same
+            // implementation the server uses): eligibility, air jumps, impulse.
+            GameJumpPolicyV1 jp{};
+            jp.velocityZ = vz;
+            jp.jumpSpeed = m.jumpSpeed;
+            jp.dt = dt;
+            jp.coyoteSeconds = 0.0f;
+            jp.jumpBufferSeconds = 0.0f;
+            jp.grounded = rs.grounded ? 1u : 0u;
+            jp.jumpPressed = jumpEdge ? 1u : 0u;
+            jp.jumpHeld = mi.jump ? 1u : 0u;
+            jp.jumpHeldPreviously = rs.jumpHeldPreviously ? 1u : 0u;
+            jp.autoBhopEnabled = 1u;
+            jp.maximumAirJumps = 1u;
+            jp.jumpIntentTimerSeconds = 0.0f;
+            jp.coyoteTimerSeconds = 0.0f;
+            jp.airJumpsLeft = static_cast<std::int32_t>(rs.airJumpsLeft);
+            jp.airJumpArmed = rs.jumpAirJumpArmed ? 1u : 0u;
+            jp.airJumpLocked = 0u;
+            MimitaHotMovement::jumpPolicy(jp);
+            vz = jp.outVelocityZ;
+            rs.grounded = jp.outGrounded;
+            rs.airJumpsLeft = static_cast<std::uint32_t>(jp.airJumpsLeft);
+            rs.jumpAirJumpArmed = jp.airJumpArmed;
 
             if (vz < -m.maxFallSpeed)
                 vz = -m.maxFallSpeed;
         }
 
+        // GRAVITY: route through the ONE shared hot gravity policy (the same
+        // implementation the server uses). physics.move no longer applies it.
+        if (!freezeNow) {
+            GameGravityV1 gv{};
+            gv.velocityZ = vz;
+            gv.gravityZ = -m.gravity;
+            gv.maximumFallSpeed = m.maxFallSpeed;
+            gv.dt = dt;
+            float outZ = vz;
+            MimitaHotMovement::gravity(gv, outZ);
+            vz = outZ;
+        }
+
         st.velocity[0] = vx;
         st.velocity[1] = vy;
         st.velocity[2] = vz;
-        // Gravity is applied inside the generic physics.move primitive.
-        st.gravityScale = m.gravity / 9.81f;
+        st.gravityScale = 0.0f;
         st.grounded = rs.grounded;
         resolveCollisions(ctx, &st, dt);
         rs.grounded = st.grounded;

@@ -457,6 +457,12 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             glDrawArrays(GL_TRIANGLES, 0, 3);
             glEnable(GL_DEPTH_TEST);
         }
+        // Local player now participates in the generic entity/pose architecture:
+        // project THE_PLAYER onto its canonical EntityId, then apply the
+        // hot-generated skeleton pose to its body parts. The typed renderer only
+        // draws the visible body; it no longer owns animation policy.
+        PresentationEntities::projectLocalPlayer(player);
+        PresentationEntities::applyHotPoseToPlayer(player);
         { MIMITA_PERF_SCOPE("Rendering::Actors::LocalPlayer");
           Perf::state().renderPerf.actorLocal++;
           renderPlayer(player, camera); }
