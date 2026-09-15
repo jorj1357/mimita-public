@@ -15,6 +15,7 @@
 #if defined(MIMITA_GAME_DLL)
 
 #include "hot-reload/game-api.h"
+#include "hot-reload/hot-movement-policy.h"
 #include "hot-reload/hot-package.h"
 
 #include <algorithm>
@@ -62,12 +63,6 @@ const MovementMode& tune()
         gModeIndex = kDefaultModeIndex;
     return kModes[gModeIndex];
 }
-
-// Grounded has no component yet; carry it per local entity across ticks.
-std::uint64_t gGroundedEntity = 0;
-bool gGrounded = false;
-float gDashCooldown = 0.0f;
-bool gFreezePrev = false;
 
 // Captured each tick so terminal commands (host == nullptr) can reach shared
 // state, matching the editor module's command pattern.
@@ -145,20 +140,26 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t /*tick*/, float
     GameTransformComponentV1 tf{};
     GameVelocityComponentV1 vl{};
     GameMovementIntentComponentV1 mi{};
+    GameMovementRuntimeStateComponentV1 rs{};
     GameBodyComponentV1 body{};
     if (!ctx->readComponent(ctx->host, e, GAME_COMPONENT_TRANSFORM, &tf, sizeof(tf)))
         return;
     ctx->readComponent(ctx->host, e, GAME_COMPONENT_VELOCITY, &vl, sizeof(vl));
     ctx->readComponent(ctx->host, e, GAME_COMPONENT_MOVEMENT_INTENT, &mi, sizeof(mi));
+    if (!ctx->readComponent(ctx->host, e, GAME_COMPONENT_MOVEMENT_RUNTIME_STATE,
+                            &rs, sizeof(rs)) ||
+        rs.version != MOVEMENT_RUNTIME_STATE_VERSION) {
+        rs = GameMovementRuntimeStateComponentV1{};
+        rs.version = MOVEMENT_RUNTIME_STATE_VERSION;
+        rs.airJumpsLeft = 1;
+        rs.jumpAirJumpArmed = 1;
+        rs.dashAvailable = 1;
+        rs.downDashAvailable = 1;
+    }
     if (!ctx->readComponent(ctx->host, e, GAME_COMPONENT_BODY, &body, sizeof(body))) {
         body.radius = 0.4f;
         body.height = 1.8f;
         body.sizeScale = 1.0f;
-    }
-
-    if (gGroundedEntity != e) {
-        gGrounded = false;
-        gGroundedEntity = e;
     }
 
     const float yaw = tf.yaw;
@@ -209,10 +210,12 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t /*tick*/, float
         const float wishDirX = hasWish ? wishX / wishLen : 0.0f;
         const float wishDirY = hasWish ? wishY / wishLen : 0.0f;
 
-        gDashCooldown = std::max(0.0f, gDashCooldown - dt);
+        rs.dashCooldownSeconds = std::max(0.0f, rs.dashCooldownSeconds - dt);
         const bool freezeNow = mi.freeze != 0;
-        const bool freezeEdge = freezeNow && !gFreezePrev;
-        gFreezePrev = freezeNow;
+        const bool freezeEdge = freezeNow && !rs.freezePreviously;
+        const bool dashEdge = mi.dash != 0 && !rs.dashHeldPreviously;
+        const bool downDashEdge = mi.downDash != 0 && !rs.downDashHeldPreviously;
+        const bool jumpEdge = mi.jump != 0 && !rs.jumpHeldPreviously;
 
         bool didDash = false;
         bool didDownDash = false;
@@ -226,19 +229,43 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t /*tick*/, float
             vz = 0.0f;
         } else {
             const float speed = m.walkSpeed;
-            const float accel = gGrounded ? m.groundAccel : m.airAccel;
-            const float blend = std::min(1.0f, accel * dt / std::max(speed, 1e-3f));
-            vx += (wishDirX * speed - vx) * blend;
-            vy += (wishDirY * speed - vy) * blend;
-            if (gGrounded && !hasWish) {
-                const float friction = std::max(0.0f, 1.0f - m.groundFriction * dt);
-                vx *= friction;
-                vy *= friction;
+            if (rs.grounded) {
+                const float blend = std::min(
+                    1.0f, m.groundAccel * dt / std::max(speed, 1e-3f));
+                vx += (wishDirX * speed - vx) * blend;
+                vy += (wishDirY * speed - vy) * blend;
+                if (!hasWish) {
+                    const float friction =
+                        std::max(0.0f, 1.0f - m.groundFriction * dt);
+                    vx *= friction;
+                    vy *= friction;
+                }
+            } else if (hasWish) {
+                // AIR: route through the ONE shared hot air-acceleration policy
+                // (the same implementation the server authority uses).
+                GameAirAccelerateV1 air{};
+                air.velocity[0] = vx;
+                air.velocity[1] = vy;
+                air.wishDir[0] = wishDirX;
+                air.wishDir[1] = wishDirY;
+                air.wishSpeed = speed;
+                air.wishspd = speed;
+                air.maxSpeed = speed;
+                air.airAcceleration = m.airAccel;
+                air.surfaceFriction = 1.0f;
+                air.airSpeedGainMultiplier = 1.0f;
+                air.dt = dt;
+                air.currentSpeed = vx * wishDirX + vy * wishDirY;
+                air.blendedAddSpeed = air.wishspd - air.currentSpeed;
+                float out[2] = {vx, vy};
+                MimitaHotMovement::airAccelerate(air, out);
+                vx = out[0];
+                vy = out[1];
             }
 
             // Dash: additive horizontal impulse, ground or air, edge-triggered.
             // Falls back to camera-forward when no WASD is held.
-            if (mi.dash && gDashCooldown <= 0.0f) {
+            if (dashEdge && rs.dashAvailable && rs.dashCooldownSeconds <= 0.0f) {
                 const float yawRad = yaw * 0.01745329252f;
                 const float camFx = std::cos(yawRad);
                 const float camFy = std::sin(yawRad);
@@ -246,20 +273,29 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t /*tick*/, float
                 dashDirY = hasWish ? wishDirY : camFy;
                 vx += dashDirX * m.dashImpulse;
                 vy += dashDirY * m.dashImpulse;
-                gDashCooldown = m.dashCooldown;
+                rs.dashCooldownSeconds = m.dashCooldown;
+                rs.dashAvailable = 0;
                 didDash = true;
             }
 
             // Down-dash replaces vertical velocity (air or ground).
-            if (mi.downDash) {
+            if (downDashEdge && rs.downDashAvailable) {
                 vz = m.downDashSpeed;
+                rs.downDashAvailable = 0;
                 didDownDash = true;
             }
 
             // Jump (held): fires whenever a valid ground contact restores it.
-            if (gGrounded && mi.jump) {
+            if (rs.grounded && mi.jump) {
                 vz = m.jumpSpeed;
-                gGrounded = false;
+                rs.grounded = 0;
+                rs.airJumpsLeft = 1;
+                rs.jumpAirJumpArmed = 1;
+            } else if (!rs.grounded && jumpEdge && rs.airJumpsLeft > 0 &&
+                       rs.jumpAirJumpArmed) {
+                vz = m.jumpSpeed;
+                --rs.airJumpsLeft;
+                rs.jumpAirJumpArmed = 0;
             }
 
             if (vz < -m.maxFallSpeed)
@@ -271,9 +307,15 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t /*tick*/, float
         st.velocity[2] = vz;
         // Gravity is applied inside the generic physics.move primitive.
         st.gravityScale = m.gravity / 9.81f;
-        st.grounded = gGrounded ? 1u : 0u;
+        st.grounded = rs.grounded;
         resolveCollisions(ctx, &st, dt);
-        gGrounded = st.grounded != 0;
+        rs.grounded = st.grounded;
+        if (rs.grounded) {
+            rs.airJumpsLeft = 1;
+            rs.jumpAirJumpArmed = 1;
+            rs.dashAvailable = 1;
+            rs.downDashAvailable = 1;
+        }
 
         if (didDash) {
             const float dir[3] = {dashDirX, dashDirY, 0.0f};
@@ -286,6 +328,13 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t /*tick*/, float
         else if (freezeNow)
             spawnEffect(ctx, gameHash("effect.freezeTrail"), st.position, nullptr, st.sizeScale, 0.0f);
     }
+
+    rs.jumpHeldPreviously = mi.jump;
+    rs.dashHeldPreviously = mi.dash;
+    rs.downDashHeldPreviously = mi.downDash;
+    rs.freezePreviously = mi.freeze;
+    ctx->writeComponent(ctx->host, e, GAME_COMPONENT_MOVEMENT_RUNTIME_STATE,
+                        &rs, sizeof(rs));
 
     // Publish: kernel applies this transform and skips the built-in step.
     ctx->requestMovementOverride(ctx->host, 1u, st.position, st.velocity, yaw);

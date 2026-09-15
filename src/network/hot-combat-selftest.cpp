@@ -30,6 +30,7 @@
 #include "project/presentation-resource.h"
 #include "render/presentation-entities.h"
 #include "render/presentation-render.h"
+#include "render/skeleton-instances.h"
 #include "network/server-context.h"
 #include "network/server-gamemode.h"
 #include "network/server-weapon-state.h"
@@ -440,7 +441,57 @@ bool runHotCombatSelfTest(std::string& report)
                         mover, HOT_POSE_STATE_COMPONENT, &pose, sizeof(pose)) &&
                         pose.count > 0,
                     "hot pose publishes a generic PoseState on the entity", report);
+        // The same pose drives the entity's cold skeleton instance (keyed by
+        // EntityId, not by Player/Npc identity).
+        SkeletonInstances::Instance* inst = SkeletonInstances::get(mover);
+        ok &= check(inst != nullptr && inst->version > 0 && inst->boneCount > 0,
+                    "skeleton.apply drives the per-entity skeleton instance",
+                    report);
         EntityRegistry::instance().destroy(mover);
+        SkeletonInstances::purgeDead();
+        ok &= check(SkeletonInstances::get(mover) == nullptr,
+                    "destroyed entity skeleton instance is purged", report);
+
+        // Generic render.mesh consumes SkeletonInstances by EntityId, with a
+        // static fallback when no instance exists.
+        const std::uint64_t boneHashes[2] = {gameHash("leftArm"),
+                                             gameHash("rightArm")};
+        const std::uint64_t partMesh = gameHash("selftest.part-mesh");
+        ok &= check(PresentationRender::debugInstallPartMesh(partMesh, boneHashes, 2,
+                                                             nullptr),
+                    "part mesh installed for skinned consumption test", report);
+        const EntityId skinnedEntity = Ecs::ensure(EntityRealm::ClientReplicated,
+                                                   EntityDomain::Npc, 8401);
+        SkeletonInstances::ensure(skinnedEntity);
+        GameSkeletonPoseV1 skelPose{};
+        skelPose.entity = static_cast<std::uint64_t>(skinnedEntity);
+        skelPose.count = 1;
+        skelPose.parts[0].part = gameHash("leftArm");
+        skelPose.parts[0].rotationEuler[2] = 0.5f;
+        SkeletonInstances::applyPose(skinnedEntity, skelPose);
+        GameRenderMeshCommandV1 skCmd{};
+        skCmd.entity = static_cast<std::uint64_t>(skinnedEntity);
+        skCmd.meshResourceId = partMesh;
+        const std::uint64_t skinnedBefore =
+            PresentationRender::skinnedSubmissionCount();
+        PresentationRender::submitMesh(skCmd);
+        ok &= check(PresentationRender::skinnedSubmissionCount() ==
+                        skinnedBefore + 1,
+                    "generic render.mesh consumes SkeletonInstances by EntityId",
+                    report);
+        const EntityId bareEntity = Ecs::ensure(EntityRealm::ClientReplicated,
+                                                EntityDomain::Npc, 8402);
+        GameRenderMeshCommandV1 bareCmd{};
+        bareCmd.entity = static_cast<std::uint64_t>(bareEntity);
+        bareCmd.meshResourceId = partMesh;
+        const std::uint64_t fallbackBefore =
+            PresentationRender::staticFallbackCount();
+        PresentationRender::submitMesh(bareCmd);
+        ok &= check(PresentationRender::staticFallbackCount() == fallbackBefore + 1,
+                    "missing skeleton instance falls back to a static draw",
+                    report);
+        EntityRegistry::instance().destroy(skinnedEntity);
+        EntityRegistry::instance().destroy(bareEntity);
     }
 
     // ── Generic generation-aware resource provider ────────────────────
@@ -522,6 +573,21 @@ bool runHotCombatSelfTest(std::string& report)
         ok &= check(!PresentationRender::validateGlbFile(badPath, error) &&
                         !error.empty(),
                     "malformed GLB is rejected (last-good preserved)", report);
+
+        // The real actor GLB is rigid multipart: its named nodes must parse into
+        // generic bone-hashed parts so hot PoseState can pose them.
+        std::uint64_t partHashes[16] = {0};
+        const std::uint32_t partCount = PresentationRender::inspectGlbParts(
+            "assets/entity/player/default/mimita-char-no-animations-v4.glb",
+            partHashes, 16);
+        bool hasTorso = false;
+        bool hasLeftArm = false;
+        for (std::uint32_t i = 0; i < partCount && i < 16; ++i) {
+            if (partHashes[i] == gameHash("torso")) hasTorso = true;
+            if (partHashes[i] == gameHash("leftArm")) hasLeftArm = true;
+        }
+        ok &= check(partCount >= 4 && hasTorso && hasLeftArm,
+                    "real actor GLB parses into named body parts", report);
     }
 
     // ── Hot ui.frame HUD composition ──────────────────────────────────

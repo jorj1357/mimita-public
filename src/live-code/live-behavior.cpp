@@ -23,6 +23,7 @@
 #include "live-code/live-modules.h"
 #include "live-code/live-ui.h"
 #include "hot-reload/hot-pose.h"
+#include "render/skeleton-instances.h"
 #include "network/server-context.h"
 #include "network/server-gamemode.h"
 #include "physics/movement/move-capsule.h"
@@ -109,6 +110,24 @@ bool MIMITA_GAME_CALL capReadComponent(void*, std::uint64_t entity,
         o->moveX=c->moveX; o->moveY=c->moveY; o->pressed=c->pressed?1u:0u;
         o->jump=c->jump?1u:0u; o->dash=c->dash?1u:0u; o->downDash=c->downDash?1u:0u;
         o->freeze=c->freeze?1u:0u; return true; }
+    case GAME_COMPONENT_MOVEMENT_RUNTIME_STATE: {
+        if (outSize < sizeof(GameMovementRuntimeStateComponentV1)) return false;
+        const auto* c = registry.tryGet<MovementRuntimeStateComponent>(id);
+        if (!c) return false;
+        auto* o = static_cast<GameMovementRuntimeStateComponentV1*>(out);
+        o->version=c->version; o->grounded=c->grounded?1u:0u;
+        o->jumpHeldPreviously=c->jumpHeldPreviously?1u:0u;
+        o->jumpAirJumpArmed=c->airJumpArmed?1u:0u;
+        o->airJumpsLeft=c->airJumpsLeft;
+        o->dashHeldPreviously=c->dashHeldPreviously?1u:0u;
+        o->downDashHeldPreviously=c->downDashHeldPreviously?1u:0u;
+        o->dashAvailable=c->dashAvailable?1u:0u;
+        o->downDashAvailable=c->downDashAvailable?1u:0u;
+        o->dashCooldownSeconds=c->dashCooldownSeconds;
+        o->jumpIntentSeconds=c->jumpIntentSeconds;
+        o->dashGraceSeconds=c->dashGraceSeconds;
+        o->freezePreviously=c->freezePreviously?1u:0u;
+        return true; }
     case GAME_COMPONENT_AIM_INTENT: {
         if (outSize < sizeof(GameAimIntentComponentV1)) return false;
         const auto* c = registry.tryGet<AimIntentComponent>(id);
@@ -237,6 +256,21 @@ bool MIMITA_GAME_CALL capWriteComponent(void*, std::uint64_t entity,
         auto& c = registry.add<MovementIntentComponent>(id);
         c.moveX=i->moveX; c.moveY=i->moveY; c.pressed=i->pressed!=0;
         c.jump=i->jump!=0; c.dash=i->dash!=0; c.downDash=i->downDash!=0; c.freeze=i->freeze!=0; return true; }
+    case GAME_COMPONENT_MOVEMENT_RUNTIME_STATE: {
+        if (inSize < sizeof(GameMovementRuntimeStateComponentV1)) return false;
+        const auto* i = static_cast<const GameMovementRuntimeStateComponentV1*>(in);
+        auto& c = registry.add<MovementRuntimeStateComponent>(id);
+        c.version=i->version; c.grounded=i->grounded!=0;
+        c.jumpHeldPreviously=i->jumpHeldPreviously!=0;
+        c.airJumpArmed=i->jumpAirJumpArmed!=0; c.airJumpsLeft=i->airJumpsLeft;
+        c.dashHeldPreviously=i->dashHeldPreviously!=0;
+        c.downDashHeldPreviously=i->downDashHeldPreviously!=0;
+        c.dashAvailable=i->dashAvailable!=0; c.downDashAvailable=i->downDashAvailable!=0;
+        c.dashCooldownSeconds=i->dashCooldownSeconds;
+        c.jumpIntentSeconds=i->jumpIntentSeconds;
+        c.dashGraceSeconds=i->dashGraceSeconds;
+        c.freezePreviously=i->freezePreviously!=0;
+        return true; }
     case GAME_COMPONENT_AIM_INTENT: {
         if (inSize < sizeof(GameAimIntentComponentV1)) return false;
         const auto* i = static_cast<const GameAimIntentComponentV1*>(in);
@@ -633,6 +667,9 @@ void MIMITA_GAME_CALL capSkeletonApply(void*, const GameSkeletonPoseV1* pose)
         MimitaRuntime::DynamicComponentStore::instance().write(
             static_cast<EntityId>(pose->entity), HOT_POSE_STATE_COMPONENT, &state,
             sizeof(state));
+        // Drive the real per-entity skeleton instance (cold mechanism, keyed by
+        // EntityId; not by Player/Npc identity).
+        SkeletonInstances::applyPose(static_cast<EntityId>(pose->entity), *pose);
     }
     if (!gpPlayer)
         return;

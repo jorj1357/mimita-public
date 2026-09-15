@@ -30,6 +30,18 @@ const std::uint64_t kRightLeg = gameHash("rightLeg");
 using SkeletonApplyFn = void (MIMITA_GAME_CALL *)(void*,
                                                   const GameSkeletonPoseV1*);
 
+// TEMPORARY visual-proof switch. Toggled with the `posedebug 1|0` command.
+// When on, every animated entity gets an unmistakable pose so the live visual
+// chain (hot pose -> PoseState -> skeleton.apply -> SkeletonInstances ->
+// render.mesh -> actor part) is easy to see. Default off.
+bool g_debugExtreme = false;
+
+void MIMITA_GAME_CALL poseDebugCommand(void* /*host*/, const char* args)
+{
+    g_debugExtreme = args && args[0] == '1';
+    std::printf("[POSE] debug extreme = %d\n", (int)g_debugExtreme);
+}
+
 void addPart(GameSkeletonPoseV1& pose, std::uint64_t part, float tx, float ty,
              float tz, float rx, float ry, float rz)
 {
@@ -83,7 +95,16 @@ void MIMITA_GAME_CALL poseGenerationTick(void* host, std::uint64_t /*tick*/,
             const float sway = std::sin(t * 1.5f);
             addPart(pose, kLeftArm, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, sway * 0.08f);
             addPart(pose, kRightArm, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, -sway * 0.08f);
-            addPart(pose, kTorso, 0.0f, 0.0f, 0.0f, 0.0f, sway * 0.05f, 0.0f);
+            addPart(pose, kTorso, 0.5f, 0.0f, 0.0f, 0.0f, sway * 0.05f, 0.0f);
+        }
+
+        if (g_debugExtreme) {
+            // Unmistakable pose for live visual proof of the hot pose chain.
+            pose.count = 0;
+            addPart(pose, kLeftArm, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.5708f);
+            addPart(pose, kRightArm, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.5708f);
+            addPart(pose, kTorso, 0.0f, 0.0f, 0.0f, 0.6f, 0.0f, 0.0f);
+            addPart(pose, kHead, 0.0f, 0.0f, 0.0f, 0.0f, 0.8f, 0.0f);
         }
 
         apply(ctx->host, &pose);
@@ -96,6 +117,9 @@ const MimitaHotPackage::SchemaRegistrar s_poseStateSchema{
 const MimitaHotPackage::SystemRegistrar s_poseSystem{
     {gameHash("hot.pose-generation"), GAME_DOMAIN_RENDER, 2, 0,
      poseGenerationTick, "hot.pose-generation"}};
+const MimitaHotPackage::CommandRegistrar s_poseDebugCommand{
+    {"posedebug", "posedebug 1|0 - temporary extreme pose for visual proof", 0,
+     poseDebugCommand}};
 
 } // namespace
 

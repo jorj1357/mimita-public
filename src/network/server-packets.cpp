@@ -2248,6 +2248,16 @@ void beginAuthoritativeTransform(ServerPlayer& player,
     player.pos = position;
     player.vel = velocity;
     player.yaw = yaw;
+    // Generic authoritative spatial state: every authoritative transform
+    // assignment (join/respawn/teleport) writes the generic components so
+    // movement and hot systems read the same truth.
+    {
+        const EntityId spatialEntity = Ecs::ensure(
+            EntityRealm::Server, EntityDomain::Player, player.id);
+        Ecs::setTransform(spatialEntity, position, glm::vec3(1.0f, 0.0f, 0.0f), yaw,
+                          0.0f);
+        Ecs::setVelocity(spatialEntity, velocity, player.movement.externalImpulse);
+    }
     ++player.transformEpoch;
     player.awaitingAuthoritativeTransformAck = true;
     player.authoritativeTransformPosition = position;

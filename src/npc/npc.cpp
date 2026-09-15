@@ -422,6 +422,17 @@ void applyLiveActorBehavior(Npc& npc, InputState& input, float dt, double now)
     const EntityId entity = Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npc.id);
     Ecs::setControlSource(entity, ControlSource::ServerNpc);
     Ecs::setAuthority(entity, NetworkAuthority::Server);
+    // Generic authoritative spatial state: an external writer (actor.spawn/
+    // teleport) may have moved the entity; refresh the typed body from the
+    // generic Transform/Velocity before the hot actor decision, then project.
+    if (const auto* gt = EntityRegistry::instance().tryGet<TransformComponent>(entity)) {
+        npc.body.pos = gt->position;
+        npc.body.yaw = gt->yaw;
+    }
+    if (const auto* gv = EntityRegistry::instance().tryGet<VelocityComponent>(entity)) {
+        npc.body.vel = gv->linear;
+        npc.body.externalImpulse = gv->externalImpulse;
+    }
     Ecs::setTransform(entity, npc.body.pos, npc.currentFacing,
                       npc.body.yaw, npc.body.aimBodyPitch);
     Ecs::setVelocity(entity, npc.body.vel, npc.body.externalImpulse);

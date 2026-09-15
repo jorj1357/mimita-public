@@ -203,6 +203,86 @@ std::uint32_t serverMapAnchors(GameMapAnchorV1* out, std::uint32_t maxOut)
     return count;
 }
 
+// Generic authoritative spatial bridge. The generic Transform/Velocity
+// components are the source of truth; typed ServerPlayer/ServerNpc fields are
+// refreshed from them (FromGeneric) or projected back (ToGeneric).
+bool serverProjectActorSpatialFromGeneric(std::uint64_t actorEntity)
+{
+    const EntityId entity = static_cast<EntityId>(actorEntity);
+    const auto* tf = EntityRegistry::instance().tryGet<TransformComponent>(entity);
+    if (!tf)
+        return false;
+    const auto* v = EntityRegistry::instance().tryGet<VelocityComponent>(entity);
+    const std::uint32_t actorId = entityLegacyId(entity);
+    MimitaNet::ServerContextV1* ctx = MimitaNet::activeServerContext();
+    bool done = false;
+    if (ctx && ctx->players) {
+        auto* players = static_cast<std::unordered_map<uint32_t, ServerPlayer>*>(
+            ctx->players);
+        auto it = players->find(actorId);
+        if (it != players->end()) {
+            it->second.pos = tf->position;
+            it->second.yaw = tf->yaw;
+            if (v) {
+                it->second.vel = v->linear;
+                it->second.movement.externalImpulse = v->externalImpulse;
+            }
+            done = true;
+        }
+    }
+    if (ctx && ctx->npcs) {
+        auto* npcs = static_cast<std::unordered_map<uint32_t, ServerNpc>*>(ctx->npcs);
+        auto it = npcs->find(actorId);
+        if (it != npcs->end()) {
+            it->second.pos = tf->position;
+            if (v)
+                it->second.vel = v->linear;
+            done = true;
+        }
+    }
+    return done;
+}
+
+bool serverProjectActorSpatialToGeneric(std::uint64_t actorEntity)
+{
+    const EntityId entity = static_cast<EntityId>(actorEntity);
+    if (!EntityRegistry::instance().alive(entity))
+        return false;
+    const std::uint32_t actorId = entityLegacyId(entity);
+    MimitaNet::ServerContextV1* ctx = MimitaNet::activeServerContext();
+    glm::vec3 pos(0.0f);
+    glm::vec3 vel(0.0f);
+    glm::vec3 impulse(0.0f);
+    float yaw = 0.0f;
+    bool have = false;
+    if (ctx && ctx->players) {
+        auto* players = static_cast<std::unordered_map<uint32_t, ServerPlayer>*>(
+            ctx->players);
+        auto it = players->find(actorId);
+        if (it != players->end()) {
+            pos = it->second.pos;
+            vel = it->second.vel;
+            impulse = it->second.movement.externalImpulse;
+            yaw = it->second.yaw;
+            have = true;
+        }
+    }
+    if (!have && ctx && ctx->npcs) {
+        auto* npcs = static_cast<std::unordered_map<uint32_t, ServerNpc>*>(ctx->npcs);
+        auto it = npcs->find(actorId);
+        if (it != npcs->end()) {
+            pos = it->second.pos;
+            vel = it->second.vel;
+            have = true;
+        }
+    }
+    if (!have)
+        return false;
+    Ecs::setTransform(entity, pos, glm::vec3(1.0f, 0.0f, 0.0f), yaw, 0.0f);
+    Ecs::setVelocity(entity, vel, impulse);
+    return true;
+}
+
 bool serverSpawnOrResetActor(GameActorSpawnV1& r)
 {
     if (r.actorEntity == 0)

@@ -110,6 +110,10 @@ void setMovementIntent(EntityId id, float moveX, float moveY, bool pressed,
     intent.downDash = downDash;
     intent.freeze = freeze;
     EntityRegistry::instance().add<MovementIntentComponent>(id, intent);
+    // Persistent movement policy state belongs to the EXE/ECS, not the hot
+    // DLL. Create it once; subsequent input updates must not reset abilities.
+    if (!EntityRegistry::instance().tryGet<MovementRuntimeStateComponent>(id))
+        EntityRegistry::instance().add<MovementRuntimeStateComponent>(id);
 }
 
 void setAimIntent(EntityId id, const glm::vec3& direction, float yaw, float pitch)

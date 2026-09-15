@@ -9,6 +9,8 @@
 */
 
 #include "physics/movement/movement-step.h"
+#include "hot-reload/hot-movement-policy.h"
+#include "live-code/live-behavior.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1326,6 +1328,38 @@ void applySourceAir(MovementState& state,
         blendedAddSpeed = wishspd - state.airDebug.currentSpeed;
     }
     state.airDebug.addSpeed = blendedAddSpeed;
+
+    // Hot movement algorithm: a hot handler owns the air-acceleration math. If
+    // it handles this step, its velocity replaces the built-in formula. Inputs
+    // are plain numbers, so the same hot function serves server + prediction.
+    {
+        GameAirAccelerateV1 policy{};
+        policy.velocity[0] = vel.x;
+        policy.velocity[1] = vel.y;
+        policy.wishDir[0] = wishDir.x;
+        policy.wishDir[1] = wishDir.y;
+        policy.wishSpeed = wishSpeed;
+        policy.wishspd = wishspd;
+        policy.maxSpeed = maxSpeed;
+        policy.airAcceleration = config.airAcceleration;
+        policy.surfaceFriction = config.surfaceFriction;
+        policy.airSpeedGainMultiplier = config.airSpeedGainMultiplier;
+        policy.dt = dt;
+        policy.currentSpeed = state.airDebug.currentSpeed;
+        policy.blendedAddSpeed = blendedAddSpeed;
+        policy.handled = 0;
+        if (LiveBehavior::dispatchGameplayEvent64(
+                GAME_EVENT_MOVEMENT_AIR_ACCELERATE, &policy, sizeof(policy), 0, 0, 0) &&
+            policy.handled) {
+            vel.x = policy.outVelocity[0];
+            vel.y = policy.outVelocity[1];
+            state.baseVelocity.x = vel.x;
+            state.baseVelocity.y = vel.y;
+            state.airDebug.applied = true;
+            state.airDebug.finalHorizontalSpeed = glm::length(vel);
+            return;
+        }
+    }
 
     if (blendedAddSpeed > 0.0f) {
         const float accelerationWishSpeed =

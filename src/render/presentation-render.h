@@ -33,8 +33,25 @@ void submitMesh(const GameRenderMeshCommandV1& command);
 // Number of generic mesh submissions observed (verified headlessly).
 std::uint64_t submittedMeshCount();
 
+// Generic skeleton consumption: a mesh whose parts carry bone hashes is drawn
+// per part using the entity's SkeletonInstances pose (looked up by EntityId).
+// Entities without an instance fall back to a single static draw.
+std::uint64_t skinnedSubmissionCount();
+std::uint64_t staticFallbackCount();
+
+// Headless test hook: install a part mesh (bone hashes, optional bind matrices)
+// without GPU buffers so the EntityId -> SkeletonInstances consumption and the
+// static fallback can be verified without a GL context.
+bool debugInstallPartMesh(std::uint64_t logicalId, const std::uint64_t* boneHashes,
+                          std::uint32_t boneCount, const float* bindMatrices16);
+
 // Validate a GLB container (magic/version/length) without parsing or uploading.
 // Used headlessly to prove malformed files are rejected while last-good stays.
 bool validateGlbFile(const char* path, std::string& error);
+
+// Parse a GLB and report its articulated part count / bone hashes without GPU
+// upload, so the real actor mesh's part structure can be verified headlessly.
+std::uint32_t inspectGlbParts(const char* path, std::uint64_t* outPartHashes,
+                              std::uint32_t maxOut);
 
 } // namespace PresentationRender

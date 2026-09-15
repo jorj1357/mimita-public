@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <glad/glad.h>
@@ -26,7 +27,9 @@
 #include "renderer/renderer.h"
 #include "map/map_common.h"
 #include "map/map_loader.h"
+#include "tinygltf/tiny_gltf.h"
 #include "project/presentation-resource.h"
+#include "render/skeleton-instances.h"
 #include "utils/path_utils.h"
 #include "stb_image.h"
 
@@ -51,10 +54,18 @@ const char* const kRocketTexturePath = "assets/textureshq/colorful2.png";
 const char* const kGrenadeTexturePath = "assets/textureshq/meat1.png";
 
 struct GpuMesh {
+    struct Part {
+        std::uint64_t bone = 0;      // gameHash(node/part name)
+        std::uint32_t indexOffset = 0;  // into the shared index buffer
+        std::uint32_t indexCount = 0;
+        glm::mat4 bind{1.0f};        // node world bind transform
+    };
     GLuint vao = 0;
     GLuint vbo = 0;
     GLuint ebo = 0;
     GLsizei indexCount = 0;
+    std::vector<Part> parts;   // empty = static (non-skinned) mesh
+    bool debugOnly = false;    // test hook: no GPU buffers
 };
 
 struct GpuVertex {
@@ -64,7 +75,10 @@ struct GpuVertex {
 };
 
 std::uint64_t g_submitted = 0;
+std::uint64_t g_skinned = 0;
+std::uint64_t g_staticFallback = 0;
 bool g_initialized = false;
+std::unordered_map<std::uint64_t, GpuMesh*> g_debugMeshes;
 
 std::uint64_t fnv1a(std::uint64_t hash, const void* data, std::size_t size)
 {
@@ -248,9 +262,157 @@ bool loadGrenadeMesh(void* /*user*/, void** outHandle)
     return true;
 }
 
-// Real GLB loader: reuses the existing map loader's tinygltf parse, then uploads
-// vertices/indices through the same GpuMesh path. One more loader type for the
-// generation-aware provider; no separate GLB subsystem.
+// ── Part-aware GLB parse ─────────────────────────────────────────────
+// The actor GLB is rigid multipart: each body part is a named node with its own
+// mesh and a local bind transform. We preserve those boundaries as GpuMesh
+// parts (bone = gameHash(node name), index range, world bind transform) so the
+// generic render.mesh path can pose each part from SkeletonInstances. Ordinary
+// (non-multipart) GLBs still fall through to a single static mesh.
+struct GlbPartRange {
+    std::uint64_t bone = 0;
+    std::uint32_t firstIndex = 0;
+    std::uint32_t indexCount = 0;
+    glm::mat4 bind{1.0f};
+};
+
+glm::mat4 glbNodeMatrix(const tinygltf::Node& node)
+{
+    if (node.matrix.size() == 16) {
+        glm::mat4 m(1.0f);
+        for (int col = 0; col < 4; ++col)
+            for (int row = 0; row < 4; ++row)
+                m[col][row] = (float)node.matrix[col * 4 + row];
+        return m;
+    }
+    glm::vec3 t(0.0f), s(1.0f);
+    glm::quat r(1.0f, 0.0f, 0.0f, 0.0f);
+    if (node.translation.size() == 3)
+        t = {(float)node.translation[0], (float)node.translation[1],
+             (float)node.translation[2]};
+    if (node.rotation.size() == 4)
+        r = glm::quat((float)node.rotation[3], (float)node.rotation[0],
+                      (float)node.rotation[1], (float)node.rotation[2]);
+    if (node.scale.size() == 3)
+        s = {(float)node.scale[0], (float)node.scale[1], (float)node.scale[2]};
+    return glm::translate(glm::mat4(1.0f), t) * glm::mat4_cast(r) *
+           glm::scale(glm::mat4(1.0f), s);
+}
+
+const unsigned char* glbAccessorPtr(const tinygltf::Model& model,
+                                    const tinygltf::Accessor& accessor)
+{
+    const tinygltf::BufferView& view = model.bufferViews[accessor.bufferView];
+    const tinygltf::Buffer& buffer = model.buffers[view.buffer];
+    return buffer.data.data() + view.byteOffset + accessor.byteOffset;
+}
+
+glm::vec3 glbReadVec3(const tinygltf::Model& model,
+                      const tinygltf::Accessor& accessor, std::size_t index)
+{
+    const unsigned char* base = glbAccessorPtr(model, accessor);
+    const std::size_t stride = accessor.ByteStride(model.bufferViews[accessor.bufferView]);
+    const float* f = reinterpret_cast<const float*>(base + stride * index);
+    return glm::vec3(f[0], f[1], f[2]);
+}
+
+glm::vec2 glbReadVec2(const tinygltf::Model& model,
+                      const tinygltf::Accessor& accessor, std::size_t index)
+{
+    const unsigned char* base = glbAccessorPtr(model, accessor);
+    const std::size_t stride = accessor.ByteStride(model.bufferViews[accessor.bufferView]);
+    const float* f = reinterpret_cast<const float*>(base + stride * index);
+    return glm::vec2(f[0], f[1]);
+}
+
+unsigned int glbReadIndex(const tinygltf::Model& model,
+                          const tinygltf::Accessor& accessor, std::size_t index)
+{
+    const unsigned char* base = glbAccessorPtr(model, accessor);
+    const std::size_t stride = accessor.ByteStride(model.bufferViews[accessor.bufferView]);
+    const unsigned char* p = base + stride * index;
+    switch (accessor.componentType) {
+    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT: {
+        unsigned short v; std::memcpy(&v, p, 2); return v;
+    }
+    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT: {
+        unsigned int v; std::memcpy(&v, p, 4); return v;
+    }
+    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
+        return *p;
+    default:
+        return 0;
+    }
+}
+
+void collectGlbNode(const tinygltf::Model& model, int nodeIndex,
+                    const glm::mat4& parent, std::vector<GpuVertex>& verts,
+                    std::vector<std::uint32_t>& indices,
+                    std::vector<GlbPartRange>& parts)
+{
+    if (nodeIndex < 0 || nodeIndex >= (int)model.nodes.size())
+        return;
+    const tinygltf::Node& node = model.nodes[nodeIndex];
+    const glm::mat4 world = parent * glbNodeMatrix(node);
+    if (node.mesh >= 0 && node.mesh < (int)model.meshes.size()) {
+        const tinygltf::Mesh& mesh = model.meshes[node.mesh];
+        const std::uint64_t bone = gameHash(node.name.c_str());
+        const std::uint32_t firstIndex = (std::uint32_t)indices.size();
+        for (const tinygltf::Primitive& prim : mesh.primitives) {
+            auto posIt = prim.attributes.find("POSITION");
+            if (posIt == prim.attributes.end())
+                continue;
+            const tinygltf::Accessor& posAcc = model.accessors[posIt->second];
+            auto nrmIt = prim.attributes.find("NORMAL");
+            auto uvIt = prim.attributes.find("TEXCOORD_0");
+            const std::uint32_t base = (std::uint32_t)verts.size();
+            for (std::size_t v = 0; v < posAcc.count; ++v) {
+                GpuVertex gv{};
+                gv.pos = glbReadVec3(model, posAcc, v);
+                gv.normal = nrmIt != prim.attributes.end()
+                                ? glbReadVec3(model, model.accessors[nrmIt->second], v)
+                                : glm::vec3(0.0f, 0.0f, 1.0f);
+                gv.uv = uvIt != prim.attributes.end()
+                            ? glbReadVec2(model, model.accessors[uvIt->second], v)
+                            : glm::vec2(0.0f);
+                verts.push_back(gv);
+            }
+            if (prim.indices >= 0) {
+                const tinygltf::Accessor& idxAcc = model.accessors[prim.indices];
+                for (std::size_t i = 0; i < idxAcc.count; ++i)
+                    indices.push_back(base + glbReadIndex(model, idxAcc, i));
+            } else {
+                for (std::uint32_t i = 0; i < (std::uint32_t)posAcc.count; ++i)
+                    indices.push_back(base + i);
+            }
+        }
+        const std::uint32_t indexCount = (std::uint32_t)indices.size() - firstIndex;
+        if (indexCount > 0)
+            parts.push_back({bone, firstIndex, indexCount, world});
+    }
+    for (int child : node.children)
+        collectGlbNode(model, child, world, verts, indices, parts);
+}
+
+bool buildPartAwareGlb(const std::string& path, std::vector<GpuVertex>& verts,
+                       std::vector<std::uint32_t>& indices,
+                       std::vector<GlbPartRange>& parts)
+{
+    tinygltf::TinyGLTF loader;
+    tinygltf::Model model;
+    std::string err, warn;
+    if (!loader.LoadBinaryFromFile(&model, &err, &warn, resolveAssetPath(path)))
+        return false;
+    const int sceneIndex = model.defaultScene >= 0 ? model.defaultScene : 0;
+    if (sceneIndex < 0 || sceneIndex >= (int)model.scenes.size())
+        return false;
+    for (int nodeIndex : model.scenes[sceneIndex].nodes)
+        collectGlbNode(model, nodeIndex, glm::mat4(1.0f), verts, indices, parts);
+    return !parts.empty() && !indices.empty();
+}
+
+// Real GLB loader. A part-aware parse first (rigid multipart actor), else the
+// existing merged static parse. One loader type for the generation-aware
+// provider; no separate GLB subsystem.
 bool loadGlbMesh(void* user, void** outHandle)
 {
     if (!gRenderer)
@@ -270,6 +432,18 @@ bool loadGlbMesh(void* user, void** outHandle)
         std::memcpy(&version, bytes.data() + 4, 4);
         if (magic != 0x46546C67u || version != 2u)
             return false;
+    }
+    {
+        std::vector<GpuVertex> pv;
+        std::vector<std::uint32_t> pi;
+        std::vector<GlbPartRange> pr;
+        if (buildPartAwareGlb(path, pv, pi, pr)) {
+            GpuMesh* mesh = uploadMesh(pv, pi);
+            for (const GlbPartRange& r : pr)
+                mesh->parts.push_back({r.bone, r.firstIndex, r.indexCount, r.bind});
+            *outHandle = mesh;
+            return true;
+        }
     }
     Mesh mesh = loadGLB(path, false);
     if (mesh.verts.empty())
@@ -390,12 +564,35 @@ void poll()
 void submitMesh(const GameRenderMeshCommandV1& command)
 {
     ++g_submitted;
-    if (!gRenderer || !gRenderer->shaderProgram || !gpCamera)
-        return;
-    auto* mesh = static_cast<GpuMesh*>(
+    GpuMesh* mesh = static_cast<GpuMesh*>(
         MimitaRuntime::PresentationResourceProvider::instance().handleOf(
             command.meshResourceId));
+    if (!mesh) {
+        auto it = g_debugMeshes.find(command.meshResourceId);
+        if (it != g_debugMeshes.end())
+            mesh = it->second;
+    }
     if (!mesh)
+        return;
+
+    // Generic skeleton consumption: resolve the entity's skeleton instance by
+    // EntityId (never by a Player/Npc pointer). A mesh with bone-tagged parts is
+    // drawn per part with the current pose; an entity with no instance falls
+    // back to a single static draw.
+    const EntityId entity = static_cast<EntityId>(command.entity);
+    SkeletonInstances::Instance* skel =
+        command.entity != 0 ? SkeletonInstances::get(entity) : nullptr;
+    const bool skinned = !mesh->parts.empty() && skel != nullptr;
+    if (!mesh->parts.empty()) {
+        if (skinned)
+            ++g_skinned;
+        else
+            ++g_staticFallback;
+    }
+
+    if (mesh->debugOnly)
+        return;  // headless test hook: counters only
+    if (!gRenderer || !gRenderer->shaderProgram || !gpCamera)
         return;
     const GLuint texture = static_cast<GLuint>(reinterpret_cast<std::uintptr_t>(
         MimitaRuntime::PresentationResourceProvider::instance().handleOf(
@@ -433,15 +630,85 @@ void submitMesh(const GameRenderMeshCommandV1& command)
                      1, command.color);
     }
     glBindVertexArray(mesh->vao);
-    glDrawElements(GL_TRIANGLES, mesh->indexCount, GL_UNSIGNED_INT, nullptr);
+    if (skinned) {
+        for (const GpuMesh::Part& part : mesh->parts) {
+            glm::mat4 partModel = model;
+            for (std::uint32_t b = 0; b < skel->boneCount; ++b) {
+                if (skel->bones[b].part == part.bone) {
+                    // entity transform * hot bone pose * node bind/rest.
+                    partModel = model * skel->bones[b].world * part.bind;
+                    break;
+                }
+            }
+            glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE,
+                               glm::value_ptr(partModel));
+            glDrawElements(GL_TRIANGLES, (GLsizei)part.indexCount, GL_UNSIGNED_INT,
+                           (void*)(std::uintptr_t)(part.indexOffset *
+                                                   sizeof(std::uint32_t)));
+        }
+    } else {
+        glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE,
+                           glm::value_ptr(model));
+        glDrawElements(GL_TRIANGLES, mesh->indexCount, GL_UNSIGNED_INT, nullptr);
+    }
     glBindVertexArray(0);
     if (texture != 0)
         glBindTexture(GL_TEXTURE_2D, 0);
 }
 
+std::uint64_t skinnedSubmissionCount()
+{
+    return g_skinned;
+}
+
+std::uint64_t staticFallbackCount()
+{
+    return g_staticFallback;
+}
+
+bool debugInstallPartMesh(std::uint64_t logicalId, const std::uint64_t* boneHashes,
+                          std::uint32_t boneCount, const float* bindMatrices16)
+{
+    if (logicalId == 0 || !boneHashes || boneCount == 0)
+        return false;
+    auto* mesh = new GpuMesh();
+    mesh->debugOnly = true;
+    for (std::uint32_t i = 0; i < boneCount; ++i) {
+        GpuMesh::Part part;
+        part.bone = boneHashes[i];
+        part.indexOffset = 0;
+        part.indexCount = 1;
+        if (bindMatrices16) {
+            for (int k = 0; k < 16; ++k)
+                part.bind[k / 4][k % 4] = bindMatrices16[i * 16 + k];
+        }
+        mesh->parts.push_back(part);
+    }
+    g_debugMeshes[logicalId] = mesh;
+    return true;
+}
+
 std::uint64_t submittedMeshCount()
 {
     return g_submitted;
+}
+
+std::uint32_t inspectGlbParts(const char* path, std::uint64_t* outPartHashes,
+                              std::uint32_t maxOut)
+{
+    if (!path || !*path)
+        return 0;
+    std::vector<GpuVertex> verts;
+    std::vector<std::uint32_t> indices;
+    std::vector<GlbPartRange> parts;
+    if (!buildPartAwareGlb(path, verts, indices, parts))
+        return 0;
+    const std::uint32_t n = parts.size() < maxOut ? (std::uint32_t)parts.size()
+                                                  : maxOut;
+    if (outPartHashes)
+        for (std::uint32_t i = 0; i < n; ++i)
+            outPartHashes[i] = parts[i].bone;
+    return (std::uint32_t)parts.size();
 }
 
 bool validateGlbFile(const char* path, std::string& error)

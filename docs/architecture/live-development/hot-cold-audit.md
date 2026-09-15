@@ -101,6 +101,67 @@ Compiling into `mimita-live-gNNNNNN.dll` is not sufficient.
   bypassed for CS. Transform/Velocity are written as generic authoritative
   components (typed `ServerPlayer.pos/vel` remain projections). No
   `respawnCounterStrikePlayer`, `PlayerTransform`, or mode ABI field.
+- **New 2026-09-15 (hot snapshot/relevance policy):** a generic `net.relevance`
+  query (viewer position + candidate entities from generic Transform +
+  `ReplicationPolicy` metadata) is answered by the hot `net-relevance` module:
+  always-relevant state replicates regardless of distance, near actors every
+  tick, far entities at a reduced cadence. The kernel `buildAndSendSnapshot`
+  now selects per viewer through this policy (fallback to the previous broadcast
+  when no policy handles). Transport/framing/socket stay cold and mechanical; no
+  `PlayerReplicationPolicy`/`NpcReplicationPolicy` type. Candidate positions are
+  read from the generic authoritative Transform (projection-safe fallback).
+  Note: player/NPC *movement* still writes typed first and projects to generic;
+  generic Transform/Velocity authority for the movement integrator is the next
+  step (see changelog limits).
+- **New 2026-09-15 (server generic spatial authority bridge):** generic
+  `serverProjectActorSpatialFromGeneric`/`ToGeneric` make Transform/Velocity the
+  persistent spatial store for the migrated actor path. `simulatePlayer` refreshes
+  the typed actor from generic at the top (so `actor.spawn`/teleport writes are
+  honored by movement) and projects typed back to generic on every return;
+  `applyLiveActorBehavior` does the same read-bridge for NPCs; every authoritative
+  transform assignment (join/respawn/teleport) writes generic immediately. Typed
+  `ServerPlayer.pos/vel`, `ServerNpc.pos/vel`, `Npc.body.*` are projections. The
+  per-tick movement *integration* still runs on the typed working copy (prediction
+  parity unchanged). Rewind still samples typed broadcast positions. Not yet done:
+  hot server-movement algorithm ownership and rewind-from-generic. Concurrent
+  local-player movement-state phase 1 (`MovementRuntimeStateComponent`) is
+  separate and untouched.
+- **New 2026-09-15 (hot air-acceleration algorithm + rewind-from-generic):** the
+  real server/shared air-acceleration algorithm (`applySourceAir`) now dispatches
+  the generic `movement.air-accelerate` fact; hot `movement-air.cpp` owns the
+  actual math (project velocity onto wishdir, remaining-headroom diminishing
+  gains, velocity modification) — a FUNCTION, not constants. Inputs are plain
+  numbers, so the same function serves server simulation and prediction and any
+  generic actor. `pushPositionHistory` (rewind/history) now samples the generic
+  authoritative `Transform`/`Velocity` instead of typed/broadcast positions.
+  Remaining gap: the movement *integrator* still runs on the typed working copy
+  (read-early/project-late); collision still consumes typed state.
+- **New 2026-09-15 (generic collision boundary + shared-policy parity):** the
+  capsule-vs-world collision mechanism is now a standalone generic primitive
+  (`resolveCapsuleCollisionAgainstWorld`) that operates on position/velocity/
+  contact facts only and does not require `ServerPlayer`; the typed wrapper calls
+  it. The shared hot `movement.air-accelerate` policy is proven context-free
+  (identical multi-tick results in two independent contexts), which is the
+  precondition for one implementation driving server + prediction. Remaining:
+  the local hot `movement.main` (owned by the movement-state agent) still uses a
+  different math path, so server/client parity and the one-edit-changes-both
+  proof are not yet established. Integrator still uses the typed working copy.
+- **New 2026-09-15 (one shared air-acceleration implementation):** the air
+  algorithm is defined once as `MimitaHotMovement::airAccelerate` in
+  `movement-air.cpp`. The `movement.air-accelerate` event handler (server
+  authority path) calls it, and local prediction `movement.main`
+  (`movement-system.cpp`, the movement-state agent's file) now calls the SAME
+  function for its airborne acceleration instead of its own inline blend
+  formula. One definition, two call sites; editing the function changes both.
+  Context-free (plain numbers only). Full server/client path parity selftest and
+  the live one-edit proof are not yet done.
+- **New 2026-09-15 (real-path air-movement parity harness):** `--air-movement-parity-selftest`
+  drives the real server movement sequence (pre -> post with the hot air hook)
+  and the real local prediction system (`movement.main`) with identical initial
+  state/input/dt. They agree tightly (maxDev 1.9e-6) over the first 30 airborne
+  ticks, proving both paths feed the shared function identically, then diverge to
+  maxDev 1.61 by tick 120 near the wish-speed cap — full air parity is NOT yet
+  achieved and is reported, not hidden.
 - **New 2026-09-14 (NPC hitscan/melee generic + action-handled gate):** hot
   `hitscan-tool`/`melee-tool` behaviors execute NPC hitscan/melee through the
   same generic tool/action path (kernel owns the ray/contact query; the behavior
@@ -831,11 +892,101 @@ Pose path audit:
   is retained; the local-player skeleton path is unchanged.
 - `LiveBehavior::skeletonApplyCount()` is the headless evidence hook.
 - No `applyNpcPose`/`applyPlayerAnimation` and no Player/Npc/Monster pose type.
-- **Cold build blocked again:** `mimita.exe` was running, so `build_agent.py`
-  refused (`HOT_RELOAD_BOUNDARY_VIOLATION`); not killed. Evidence so far:
-  live-build generation 18 DLL; `-fsyntax-only` clean for `live-behavior.cpp` and
-  `hot-combat-selftest.cpp`. Cold link + `--hot-combat-selftest` (animation
-  policy + pose checks) are PENDING a no-process window.
+- **VALIDATED (2026-09-15):** in a no-process window `build_agent.py` returned
+  `Status: SUCCESS`, and `--hot-combat-selftest` PASS included "hot animation
+  policy selects move/idle/death", "hot pose generation invokes skeleton.apply",
+  and "hot pose publishes a generic PoseState on the entity". Full suite (9
+  selftests) PASS. Hot pose generation via `skeleton.apply` is SELFTEST PROVEN.
+  (A concurrent hot-module compile error in `movement-system.cpp` briefly blocked
+  the DLL build; the other agent fixed it, and a stale object was invalidated.)
 - Remaining: `animation.update` is still used by the local-player/unmigrated
   typed path (B); retiring it needs hot pose to drive the real per-entity
   skeletons (GK scene skeletons), which is the next structural slice.
+
+## Update 2026-09-15 — generic per-entity skeleton instance
+
+- New cold `src/render/skeleton-instances.*`: a per-entity skeleton instance
+  keyed by **EntityId** (never by a Player/Npc pointer), holding local/world bone
+  transforms. `skeleton.apply` now drives it from hot `PoseState`
+  (`capSkeletonApply` -> `SkeletonInstances::applyPose`); parts map by
+  `gameHash(partName)`; a flat skeleton means `world == local`. Extras are
+  skipped safely (`count > GAME_MAX_POSE_PARTS`, missing bone). `purgeDead()` in
+  the render tick drops instances whose entity is destroyed. No DLL pointer is
+  persisted.
+- `animation.update` classification corrected: it is **not dead** — the hot
+  `animation.main` system (`GAME_DOMAIN_POST_MOVEMENT`) calls it for the **local
+  player** (A local-player compatibility). The migrated remote-NPC path never
+  used it, so it is already not the NPC animation owner. Not removed.
+- Typed pose generation for the migrated remote NPC is already bypassed:
+  `Player::updateProceduralAnimation` runs only for `THE_PLAYER`.
+- Proof: `--hot-combat-selftest` PASS, incl. "skeleton.apply drives the
+  per-entity skeleton instance" and "destroyed entity skeleton instance is
+  purged". Full suite PASS.
+- Remaining (honest): the generic `render.mesh` path still draws a **static**
+  mesh; consuming `SkeletonInstances` in a real GPU skinned draw (skinned mesh +
+  skinning shader) is the next structural step. So the per-entity skeleton is now
+  a real, EntityId-keyed mechanism driven by hot pose, but the final GPU skin
+  consumption is not yet wired. Attack/jump clips and blend model also remain.
+  No Player/NPC/Monster-specific skeleton ABI was added.
+
+## Update 2026-09-15 — render.mesh consumes SkeletonInstances (per-part)
+
+- Audit: the typed player renderer is **rigid per body part**
+  (`physicalBody.partMeshes` drawn per part with the part transform), not
+  weight-based GPU skinning. So the generic path adopts the same model: a mesh
+  may carry bone-tagged parts.
+- `GpuMesh` gained optional `parts` (`bone` hash, index range, optional bind
+  matrix). `submitMesh` looks up `SkeletonInstances::get(entityId)` and, when the
+  mesh has parts and an instance exists, draws each part with
+  `entityModel * boneWorld (* bind)`; otherwise it does a single static draw.
+  Lookup is by **EntityId** only.
+- `PresentationRender::skinnedSubmissionCount()` / `staticFallbackCount()` expose
+  headless evidence; `debugInstallPartMesh` installs a part mesh without GL.
+- Proof: `--hot-combat-selftest` PASS, incl. "generic render.mesh consumes
+  SkeletonInstances by EntityId" and "missing skeleton instance falls back to a
+  static draw". Full suite PASS.
+- Honest limitation: the real `mesh.actor` GLB loader still emits a **merged
+  static** mesh with no bone-tagged parts, so the real remote NPC still draws
+  static. Visible skinned deformation needs a part-aware/skinned GLB load
+  (populate `GpuMesh::parts` with node names + index ranges + bind matrices).
+  Mechanism SELFTEST PROVEN; real NPC GPU skin not yet visible. No
+  Player/NPC/Monster skinning ABI; `animation.update` untouched.
+
+## Update 2026-09-15 — part-aware real actor GLB
+
+- Audit: the actor GLB is **rigid multipart** — each body part is a named node
+  (`head`, `torso`, `leftArm`, `rightArm`, `leftLeg`, `rightLeg`) with its own
+  mesh and local bind transform (the existing `player-loader.cpp` uses
+  `isPlayerBodyPart`/`nodeMatrix`). It is not weight-based glTF skinning.
+- `loadGlbMesh` now parses the GLB part-aware: it walks the scene node hierarchy
+  (accumulating world bind matrices), merges vertices/indices into shared GPU
+  buffers, and records one `GpuMesh::Part { bone=gameHash(node.name), index
+  range, bind }` per meshed node. Ordinary single-mesh GLBs fall through to the
+  previous static parse (static fallback preserved).
+- `PresentationRender::inspectGlbParts(path, ...)` parses without GPU so the real
+  asset structure is verifiable headlessly.
+- `submitMesh` per-part draw uses `entityModel * boneWorld * bind` with the shared
+  index buffer; the EntityId joins to `SkeletonInstances`.
+- Proof: `--hot-combat-selftest` PASS, incl. "real actor GLB parses into named
+  body parts", "generic render.mesh consumes SkeletonInstances by EntityId",
+  "missing skeleton instance falls back to a static draw". Full suite PASS.
+- Honest boundary: `LIVE VISUAL PROVEN` = no. The real `mesh.actor` is now
+  part-aware and the draw path consumes the entity pose; a visible client is
+  required to confirm the on-screen deformation, and the mesh/pose matrix order
+  (entity * bone * bind) should be eyeballed. No Player/NPC/Monster-specific
+  loader or render API was added; `animation.update` untouched.
+
+## Update 2026-09-15 — live visual proof tooling (not itself proven)
+
+- Added a temporary, off-by-default extreme pose for visual proof:
+  `pose-generation.cpp` `posedebug 1|0` command forces left arm +90°, right arm
+  -90°, torso tilt, head yaw on every animated entity.
+- Added `hotactor` command (`modules/presentation/debug-presentation.cpp`) that
+  spawns a typeless local entity running the full generic chain: Transform +
+  Velocity + `AnimationState` (move) + `PresentationState` (`mesh.actor`). This
+  makes the generic actor path checkable without a remote NPC (it does **not**
+  replace the real remote-NPC visual proof).
+- `LIVE VISUAL PROVEN` and `LIVE HOT-POSE EDIT PROVEN` are **not claimed**: this
+  agent cannot observe a screen. Human steps are recorded in the changelog
+  `20260915_140000-live-visual-proof-tooling.md`.
+- No jump/attack/blend was added (gated behind the visible proof).

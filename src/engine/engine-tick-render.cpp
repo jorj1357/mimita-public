@@ -29,6 +29,7 @@
 #include "render/render-player.h"
 #include "render/presentation-entities.h"
 #include "render/presentation-render.h"
+#include "render/skeleton-instances.h"
 #include "shadow/shadow-render.h"
 #include "shadow/shadow-config.h"
 #include "render/lighting-config.h"
@@ -325,6 +326,8 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     // Associate predicted provisional entities with their authoritative
     // counterparts by generic prediction key.
     PresentationEntities::associateByLink(0);
+    // Drop per-entity skeleton instances whose entity was destroyed.
+    SkeletonInstances::purgeDead();
 
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
     const bool isExporting = getReplayExportJob().state == ReplayExportJob::Capturing;

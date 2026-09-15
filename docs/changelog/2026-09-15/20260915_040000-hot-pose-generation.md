@@ -2,7 +2,7 @@
 
 Date: 2026-09-15 04:00 EST (UTC 2026-09-15T08:00:00Z)
 Branch: `8292026stash` (worktree, uncommitted)
-Result: source complete; cold build + selftests PENDING (running `mimita.exe`)
+Result: `PASS_WITH_HUMAN_REVIEW` (validated 2026-09-15)
 
 ## 1. Animation/pose ownership before
 
@@ -56,12 +56,14 @@ Not reached; animation clips/skeletons are still static caches (documented next)
 
 ## Evidence and blocker
 
-- `python devscripts/live-build.py` -> generation 18 DLL.
-- `-fsyntax-only` clean: `live-behavior.cpp`, `hot-combat-selftest.cpp`.
-- **Cold build blocked:** `mimita.exe` was running; `build_agent.py` refused with
-  `HOT_RELOAD_BOUNDARY_VIOLATION` and the process was not killed. Cold link +
-  `--hot-combat-selftest` (animation policy + pose checks) PENDING the next
-  no-process window.
+- `python build_agent.py` -> `Status: SUCCESS` (2026-09-15 no-process window).
+- `--hot-combat-selftest` -> PASS incl. "hot animation policy selects move/idle/
+  death", "hot pose generation invokes skeleton.apply", and "hot pose publishes a
+  generic PoseState on the entity".
+- Full suite (9 selftests) -> PASS.
+- A concurrent hot-module compile error in `movement-system.cpp` briefly blocked
+  the DLL build; the other agent fixed it and a stale object was invalidated.
+  `mimita.exe` was never killed.
 
 ## Added selftests (pending execution)
 
@@ -70,8 +72,10 @@ skeleton.apply"; "hot pose publishes a generic PoseState on the entity".
 
 ## Classification
 
-- SELFTEST PROVEN: none for this pass (not executed; cold link pending).
-- COMPILED INTEGRATION: source + syntax-check clean; live DLL generation 18.
+- SELFTEST PROVEN: hot animation clip selection; hot pose generation invoking
+  `skeleton.apply`; generic `PoseState` published on the entity; full suite.
+- COMPILED INTEGRATION: `hot.pose-generation` system; `PoseState` schema;
+  `capSkeletonApply` POD pose publication.
 - LIVE MULTIPLAYER PROVEN: no.
 - LIVE VISUAL PROVEN: no.
 - HUMAN VERIFICATION NEEDED: run the cold build + selftests in a no-process

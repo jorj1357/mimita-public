@@ -18,6 +18,7 @@
 #if defined(MIMITA_GAME_DLL)
 
 #include "hot-reload/game-api.h"
+#include "hot-reload/hot-animation.h"
 #include "hot-reload/hot-package.h"
 #include "hot-reload/hot-prediction.h"
 #include "hot-reload/hot-presentation.h"
@@ -194,6 +195,48 @@ void MIMITA_GAME_CALL debugPresentationTick(void* host, std::uint64_t /*tick*/,
     render(ctx->host, &hud);
 }
 
+// Command: create a local typeless actor entity that runs the FULL generic
+// presentation chain (mesh.actor + AnimationState + PresentationState) so the
+// hot pose -> render.mesh path can be checked visually without a remote NPC.
+void MIMITA_GAME_CALL hotactorCommand(void* host, const char* /*args*/)
+{
+    GameplayContextV1* ctx = static_cast<GameplayContextV1*>(host);
+    if (!ctx || !ctx->entityCreate || !ctx->writeComponent ||
+        !ctx->dynamicWriteComponent)
+        return;
+    static float s_x = 2.0f;
+    std::uint64_t entity = 0;
+    if (!ctx->entityCreate(ctx->host, 0u, &entity) || entity == 0)
+        return;
+    GameTransformComponentV1 tf{};
+    tf.position[0] = s_x;
+    tf.position[1] = 1.0f;
+    tf.position[2] = 6.0f;
+    tf.look[0] = 1.0f;
+    ctx->writeComponent(ctx->host, entity, GAME_COMPONENT_TRANSFORM, &tf,
+                        sizeof(tf));
+    GameVelocityComponentV1 vel{};
+    vel.linear[0] = 2.0f;  // moving -> move clip
+    ctx->writeComponent(ctx->host, entity, GAME_COMPONENT_VELOCITY, &vel,
+                        sizeof(vel));
+    HotAnimationStateV1 anim{};
+    anim.clipId = HOT_ANIM_MOVE;
+    anim.playbackRate = 1.0f;
+    anim.loop = 1;
+    ctx->dynamicWriteComponent(ctx->host, entity, HOT_ANIMATION_STATE_COMPONENT,
+                               &anim, sizeof(anim));
+    HotPresentationStateV1 present{};
+    present.meshResourceId = HOT_MESH_ACTOR;
+    present.textureResourceId = HOT_TEX_DEFAULT;
+    present.scale = 1.0f;
+    present.color[0] = present.color[1] = present.color[2] = present.color[3] = 1.0f;
+    ctx->dynamicWriteComponent(ctx->host, entity, HOT_PRESENTATION_COMPONENT,
+                               &present, sizeof(present));
+    std::printf("[HOT ACTOR] entity=%llu at x=%.1f\n",
+                (unsigned long long)entity, s_x);
+    s_x += 1.5f;
+}
+
 // Generic predicted-entity tool behavior (non-projectile). Creates an arbitrary
 // entity and writes the generic PredictionLink from the action's predictionKey,
 // proving the server predicted-spawn path carries no projectile assumptions.
@@ -273,6 +316,9 @@ const MimitaHotPackage::ToolBehaviorRegistrar s_predictedTestTool{
 const MimitaHotPackage::CommandRegistrar s_presentationCommand{
     {"hotpresent", "hotpresent - create a generic-presented runtime entity", 0,
      hotpresentCommand}};
+const MimitaHotPackage::CommandRegistrar s_actorCommand{
+    {"hotactor", "hotactor - spawn a typeless actor entity (mesh.actor + pose)", 0,
+     hotactorCommand}};
 
 } // namespace
 

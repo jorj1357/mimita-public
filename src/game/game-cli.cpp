@@ -64,6 +64,9 @@
 #include "network/objective-generic-selftest.h"
 #include "network/counterstrike-selftest.h"
 #include "network/relevance-policy-selftest.h"
+#include "network/server-spatial-authority-selftest.h"
+#include "network/movement-algorithm-selftest.h"
+#include "network/air-movement-parity-selftest.h"
 #include "hot-reload/capability-selftest.h"
 
 extern DuelManager gDuelManager;
@@ -379,6 +382,30 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = runCounterstrikeSelfTest(report);
         printf("%s", report.c_str());
         printf("[COUNTERSTRIKE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--air-movement-parity-selftest") {
+        std::string report;
+        const bool ok = runAirMovementParitySelfTest(report);
+        printf("%s", report.c_str());
+        printf("[AIR MOVEMENT PARITY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--movement-algorithm-selftest") {
+        std::string report;
+        const bool ok = runMovementAlgorithmSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[MOVEMENT ALGORITHM SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--server-spatial-authority-selftest") {
+        std::string report;
+        const bool ok = runServerSpatialAuthoritySelfTest(report);
+        printf("%s", report.c_str());
+        printf("[SERVER SPATIAL AUTHORITY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

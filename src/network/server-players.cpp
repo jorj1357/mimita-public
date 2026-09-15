@@ -9,6 +9,9 @@
 */
 
 #include "network/server.h"
+#include "network/server-context.h"
+#include "ecs/components.h"
+#include "ecs/entity-registry.h"
 #include "network/actor-lifecycle.h"
 #include "network/server-gamemode.h"
 #include "network/server-weapon-state.h"
@@ -137,27 +140,34 @@ glm::vec3 closestPointTriangle(glm::vec3 p, glm::vec3 a, glm::vec3 b, glm::vec3 
     return a + ab * v + ac * w;
 }
 
-void resolveWorldCollision(ServerPlayer& p, const HeadlessWorld& world)
+// Generic collision mechanism: operates ONLY on position, velocity, and contact
+// facts (no ServerPlayer). The cold physics owns the sweep/penetration/slide; a
+// hot movement policy supplies the position/velocity and reads the contact back.
+bool resolveCapsuleCollisionAgainstWorld(const HeadlessWorld& world,
+                                         glm::vec3& pos, glm::vec3& vel,
+                                         float radius, float height,
+                                         bool& onGround)
 {
-    p.onGround = false;
+    onGround = false;
+    bool touched = false;
 
     for (int pass = 0; pass < 3; ++pass)
     {
         glm::vec3 samples[3] = {
-            p.pos + glm::vec3(0, 0, -PLAYER_HEIGHT * 0.5f + PLAYER_RADIUS),
-            p.pos,
-            p.pos + glm::vec3(0, 0, PLAYER_HEIGHT * 0.5f - PLAYER_RADIUS)
+            pos + glm::vec3(0, 0, -height * 0.5f + radius),
+            pos,
+            pos + glm::vec3(0, 0, height * 0.5f - radius)
         };
 
         for (glm::vec3 sample : samples)
         {
             // Broadphase: gather only triangles near the sample point
             AABB queryBounds;
-            queryBounds.min = sample - glm::vec3(PLAYER_RADIUS + 0.1f);
-            queryBounds.max = sample + glm::vec3(PLAYER_RADIUS + 0.1f);
+            queryBounds.min = sample - glm::vec3(radius + 0.1f);
+            queryBounds.max = sample + glm::vec3(radius + 0.1f);
             thread_local std::vector<int> s_candidates;
             s_candidates.clear();
-            gatherHeadlessTrianglesForAABB(world, queryBounds, PLAYER_RADIUS * 0.1f, s_candidates);
+            gatherHeadlessTrianglesForAABB(world, queryBounds, radius * 0.1f, s_candidates);
 
             for (int triIdx : s_candidates)
             {
@@ -168,22 +178,33 @@ void resolveWorldCollision(ServerPlayer& p, const HeadlessWorld& world)
                 glm::vec3 cp = closestPointTriangle(sample, tri.a, tri.b, tri.c);
                 glm::vec3 delta = sample - cp;
                 float dist = glm::length(delta);
-                if (dist >= PLAYER_RADIUS || dist < 0.00001f)
+                if (dist >= radius || dist < 0.00001f)
                     continue;
 
                 glm::vec3 n = delta / dist;
                 if (glm::dot(n, tri.normal) < 0.0f)
                     n = -n;
-                float penetration = PLAYER_RADIUS - dist;
-                p.pos += n * (penetration + 0.001f);
-                float into = glm::dot(p.vel, n);
+                float penetration = radius - dist;
+                pos += n * (penetration + 0.001f);
+                float into = glm::dot(vel, n);
                 if (into < 0.0f)
-                    p.vel -= n * into;
-                if (n.z > 0.35f)
-                    p.onGround = true;
+                    vel -= n * into;
+                if (n.z > 0.35f) {
+                    onGround = true;
+                    touched = true;
+                }
             }
         }
     }
+    return touched;
+}
+
+void resolveWorldCollision(ServerPlayer& p, const HeadlessWorld& world)
+{
+    bool onGround = false;
+    resolveCapsuleCollisionAgainstWorld(world, p.pos, p.vel, PLAYER_RADIUS,
+                                        PLAYER_HEIGHT, onGround);
+    p.onGround = onGround;
 
     // Debug log when a real triangle collision resolves below the map bounds
     if (p.pos.z < world.boundsMin.z)
@@ -594,14 +615,32 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
 {
     // Entity/component slice: keep the server player entity, identity, authority,
     // and live state in sync for the migrated slice.
+    const EntityId playerEntity =
+        Ecs::ensure(EntityRealm::Server, EntityDomain::Player, p.id);
     {
-        const EntityId playerEntity =
-            Ecs::ensure(EntityRealm::Server, EntityDomain::Player, p.id);
         Ecs::setAuthority(playerEntity, NetworkAuthority::Server);
-        Ecs::setTransform(playerEntity, p.pos, glm::vec3(1.0f, 0.0f, 0.0f), p.yaw, 0.0f);
-        Ecs::setVelocity(playerEntity, p.vel, p.movement.externalImpulse);
+        // Generic authoritative spatial state: if the entity already has generic
+        // Transform/Velocity, refresh the typed actor from it (an external writer
+        // such as actor.spawn/teleport may have moved it); otherwise seed generic
+        // from the typed actor on first sight.
+        if (!MimitaNet::serverProjectActorSpatialFromGeneric(Ecs::raw(playerEntity))) {
+            Ecs::setTransform(playerEntity, p.pos, glm::vec3(1.0f, 0.0f, 0.0f), p.yaw, 0.0f);
+            Ecs::setVelocity(playerEntity, p.vel, p.movement.externalImpulse);
+        }
         Ecs::setHealth(playerEntity, p.health, p.maxHealth, p.dead);
     }
+    // Project the integrated typed state back onto the generic authority on every
+    // return path: the generic Transform/Velocity are the single spatial store.
+    struct SpatialProjection {
+        EntityId entity;
+        ServerPlayer* player;
+        ~SpatialProjection()
+        {
+            MimitaNet::serverProjectActorSpatialToGeneric(
+                static_cast<std::uint64_t>(entity));
+            Ecs::setHealth(entity, player->health, player->maxHealth, player->dead);
+        }
+    } spatialProjection{playerEntity, &p};
 
     // Apply input yaw BEFORE any non-dead early return.
     // Orientation comes from current input and must update every frame,
@@ -841,6 +880,17 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
 
 void pushPositionHistory(ServerPlayer& p, uint32_t tick)
 {
+    // Rewind/history now samples the generic authoritative Transform/Velocity
+    // (the spatial source of truth); typed fields are projections.
+    glm::vec3 authPos = p.pos;
+    glm::vec3 authVel = p.vel;
+    {
+        const EntityId pe = Ecs::ensure(EntityRealm::Server, EntityDomain::Player, p.id);
+        if (const auto* tf = EntityRegistry::instance().tryGet<TransformComponent>(pe))
+            authPos = tf->position;
+        if (const auto* v = EntityRegistry::instance().tryGet<VelocityComponent>(pe))
+            authVel = v->linear;
+    }
     const auto& netCfg = NetworkingConfig::instance().data();
     // Record the position actually broadcast to clients (the smoothed
     // interpolated one), so hit rewind reads exactly what attackers saw.
@@ -854,31 +904,30 @@ void pushPositionHistory(ServerPlayer& p, uint32_t tick)
     // tiny per-tick resting jitter from the collision solver). Real movement
     // passes through with ~server_sim_smooth_ticks of easing (negligible lag).
     const uint32_t smoothTicks = netCfg.remotePlayers.serverSimSmoothTicks;
-    glm::vec3 simBroadcast = p.pos;
+    glm::vec3 simBroadcast = authPos;
     if (serverSimBroadcast)
     {
         if (!p.hasSimBroadcastPos)
         {
-            p.simBroadcastPos = p.pos;
+            p.simBroadcastPos = authPos;
             p.hasSimBroadcastPos = true;
         }
         if (smoothTicks > 0)
         {
             const float k = 1.0f / (float)(smoothTicks + 1);
-            p.simBroadcastPos += (p.pos - p.simBroadcastPos) * k;
+            p.simBroadcastPos += (authPos - p.simBroadcastPos) * k;
         }
         else
         {
-            p.simBroadcastPos = p.pos;
+            p.simBroadcastPos = authPos;
         }
         simBroadcast = p.simBroadcastPos;
     }
 
-    const glm::vec3 histPos = serverSimBroadcast ? simBroadcast
-        : (p.hasBroadcastTransform ? p.broadcastPosition : p.pos);
+    const glm::vec3 histPos = serverSimBroadcast ? simBroadcast : authPos;
     const glm::vec3 histVel = serverSimBroadcast
-        ? (p.hasAcceptedClientTransform ? p.lastAcceptedClientVelocity : p.vel)
-        : (p.hasBroadcastTransform ? p.broadcastVelocity : p.vel);
+        ? (p.hasAcceptedClientTransform ? p.lastAcceptedClientVelocity : authVel)
+        : authVel;
     p.posHistory.push_back({histPos, histVel, p.yaw, tick});
     const std::size_t historyLimit = NetworkingConfig::instance()
         .data().bufferLimits.serverPositionHistoryTicks;

@@ -42,5 +42,12 @@ std::uint32_t serverMapAnchors(GameMapAnchorV1* out, std::uint32_t maxOut);
 // Velocity/health/dead state and keeps the typed projections in sync. The mode
 // decides where/when; the kernel only performs the mutation.
 bool serverSpawnOrResetActor(GameActorSpawnV1& request);
+// Generic authoritative spatial bridge for the migrated actor path.
+// serverProjectActorSpatialFromGeneric: generic Transform/Velocity -> typed
+// actor fields (the typed mirrors are refreshed from the authority).
+// serverProjectActorSpatialToGeneric: typed actor fields -> generic
+// Transform/Velocity (the single authoritative spatial store).
+bool serverProjectActorSpatialFromGeneric(std::uint64_t actorEntity);
+bool serverProjectActorSpatialToGeneric(std::uint64_t actorEntity);
 
 } // namespace MimitaNet

@@ -248,6 +248,98 @@ See `docs/architecture/live-development/hot-cold-audit.md` for the current map.
   simulation still writes typed movement then projects to Transform (full
   generic-authority simulation is the transform snapshot pass).
 
+## Round 21 (2026-09-15, hot snapshot/relevance policy) — implemented
+
+- Generic `net.relevance` query (`network/relevance.h`): viewer position +
+  candidate entities (generic Transform + `ReplicationPolicy` metadata). Hot
+  `net-relevance.cpp` answers: always-relevant -> high tier; near (<= 30)
+  -> every tick; far -> low tier at 1/6 cadence.
+- `buildAndSendSnapshot` selects relevant entities per viewer via the hot policy
+  (deterministic order: tier then entity id) and falls back to the previous
+  broadcast when no policy handles. Transport/framing/socket unchanged.
+- `--relevance-policy-selftest` PASS 9/9; full suite 23/23.
+- Not done: generic Transform/Velocity authority for the movement integrator
+  (player/NPC movement still writes typed first and projects to generic);
+  per-viewer relevance needs live multiplayer verification.
+
+## Round 22 (2026-09-15, server generic spatial authority bridge) — partial
+
+- Generic `serverProjectActorSpatialFromGeneric`/`ToGeneric` added; Transform/
+  Velocity are the persistent spatial store for the migrated actor path.
+  `simulatePlayer` refreshes typed from generic at the top (honoring
+  `actor.spawn`/teleport) and projects typed back on every return;
+  `applyLiveActorBehavior` read-bridges NPCs; `beginAuthoritativeTransform`
+  (join/respawn/teleport) writes generic immediately.
+- Typed `ServerPlayer.pos/vel`, `ServerNpc.pos/vel`, `Npc.body.*` are
+  projections of generic state.
+- `--server-spatial-authority-selftest` PASS 9/9; full suite 24/24.
+- Not done (success-bar gaps): the per-tick movement *integration* still runs on
+  the typed working copy; rewind/history still samples typed broadcast positions;
+  the server movement *algorithm* is not yet hot-owned (no algorithm hot-edit
+  proof). Concurrent `MovementRuntimeStateComponent` phase 1 (local player) left
+  untouched. These are the next movement steps.
+
+## Round 23 (2026-09-15, hot air-acceleration algorithm + rewind-from-generic) — partial
+
+- Real algorithm migrated hot: `applySourceAir` dispatches
+  `movement.air-accelerate` (`hot-movement-policy.h`); hot `movement-air.cpp`
+  owns the actual air-acceleration math (projected-speed diminishing gains,
+  velocity modification), not constants. Generic numeric inputs -> reusable for
+  server/prediction/any actor.
+- `pushPositionHistory` (rewind/history) now samples the generic authoritative
+  Transform/Velocity.
+- `--movement-algorithm-selftest` PASS 6/6; full suite 25/25.
+- Not done (success-bar gaps): the movement *integrator* still runs on the typed
+  working copy (read-early/project-late); collision still consumes typed state;
+  no live hot-edit proof; wire snapshot payload still typed (derives from
+  generic). Behavior change from the hot air algorithm needs human verification.
+
+## Round 24 (2026-09-15, generic collision boundary + shared-policy parity) — partial
+
+- Collision mechanism extracted to `resolveCapsuleCollisionAgainstWorld(world,
+  pos, vel, radius, height, onGround)` — no `ServerPlayer`; typed wrapper calls
+  it. Cold physics still owns sweep/slide/penetration.
+- The shared hot `movement.air-accelerate` policy is proven context-free
+  (identical multi-tick results in two independent contexts) — the structural
+  precondition for one implementation driving server + prediction.
+- `--movement-algorithm-selftest` PASS 8/8; full suite 25/25.
+- Not done / blocked: the local hot `movement.main` (`movement-system.cpp`, owned
+  by the movement-state agent) still implements different movement math, so
+  server/client parity (#6/#7) and the one-edit-changes-both proof (#8) are not
+  established. The integrator still uses the typed working copy (#1/#2). Per the
+  concurrency rule this boundary is documented rather than independently
+  rewritten.
+
+## Round 25 (2026-09-15, one shared air-acceleration implementation) — partial
+
+- The air algorithm is now defined ONCE as `MimitaHotMovement::airAccelerate`
+  (`movement-air.cpp`, declared in `hot-movement-policy.h`).
+- `movement.main` (`movement-system.cpp`) now routes its airborne acceleration
+  through that shared function (its separate inline blend formula for the air
+  case is removed; ground/friction unchanged). The server hook handler calls the
+  same function.
+- `--movement-algorithm-selftest` PASS 9/9 including "event path == shared
+  function"; full suite 25/25.
+- Not done: a real server/client PATH parity selftest (driving `movement.main`
+  through collision) and the live one-edit-changes-both observation. The
+  single shared definition is structural; both call sites reference it.
+
+## Round 26 (2026-09-15, real-path air-movement parity harness) — partial
+
+- New `--air-movement-parity-selftest` drives BOTH real paths with identical
+  initial state/input/dt and aligned air tuning over 120 airborne ticks:
+  (A) the server sequence `applyPreCollisionBasicMovement` ->
+  `applySpecialMovementPreCollision` -> `applyPostCollisionMovementWithSpecials`
+  (the walk/air step calls the hot hook), and (B) the local prediction system
+  `movement.main` via `GAME_DOMAIN_GAMEPLAY`.
+- Result: both paths use the shared air function identically over the first 30
+  ticks (maxDev 1.9e-6). **Full-sequence air parity is NOT achieved**: divergence
+  begins at tick 84 and grows to maxDev 1.61 by tick 120 as the projected speed
+  approaches the wish-speed cap — reported as a `[warn]`, not hidden.
+- Full suite 26/26.
+- Not done: full air parity (root-cause the late divergence), the live
+  one-edit-changes-both observation, and live server/client proof.
+
 ## Round 10 (2026-09-14, generic runtime state replication) — implemented
 
 - One opaque envelope (`PACKET_DYNAMIC_COMPONENT`, `dynamic-replication.*`) carries
@@ -272,15 +364,60 @@ See `docs/architecture/live-development/hot-cold-audit.md` for the current map.
   client rendering of replicated projectile state; and migrating the remaining
   typed player/NPC/projectile snapshot structs onto the generic substrate.
 
-## Round 23 (2026-09-15, hot pose generation via skeleton.apply) — source implemented, cold build pending
+## Round 27 (2026-09-15, live visual proof tooling) — source implemented
+
+- `posedebug 1|0` forces an unmistakable pose for visual proof; `hotactor`
+  spawns a typeless local entity on the full generic chain (`mesh.actor` +
+  AnimationState + PresentationState).
+- Proof: build SUCCESS; `--hot-combat-selftest` + full suite PASS.
+- NOT claimed: `LIVE VISUAL PROVEN`, `LIVE HOT-POSE EDIT PROVEN` (no screen
+  access). Human steps in the changelog. Jump/attack/blend gated behind it.
+
+## Round 26 (2026-09-15, part-aware real actor GLB) — source implemented
+
+- The actor GLB is rigid multipart (named nodes with local binds). `loadGlbMesh`
+  now parses part-aware and populates `GpuMesh::parts` (bone hash, index range,
+  world bind); non-articulated GLBs keep the static parse. `inspectGlbParts`
+  exposes the structure headlessly.
+- Proof: `--hot-combat-selftest` PASS ("real actor GLB parses into named body
+  parts", plus the skinned consumption + fallback checks); full suite PASS.
+- Remaining: LIVE visual confirmation of on-screen deformation; attack/jump;
+  blend model; generation-aware skeleton/clip resources.
+
+## Round 25 (2026-09-15, render.mesh consumes SkeletonInstances) — source implemented
+
+- `GpuMesh` gained optional bone-tagged `parts`; `submitMesh` looks up
+  `SkeletonInstances::get(entityId)` and draws per part with
+  `entityModel * boneWorld (* bind)`, else a static fallback. Lookup by EntityId
+  only. `skinnedSubmissionCount`/`staticFallbackCount` + `debugInstallPartMesh`
+  are the headless hooks.
+- Proof: `--hot-combat-selftest` PASS (skinned consumption by EntityId; static
+  fallback); full suite PASS.
+- Remaining: populate `GpuMesh::parts` from a real (part-aware/skinned) GLB load
+  so the real remote NPC visually deforms; then attack/jump + blend; then
+  generation-aware skeleton/clip resources. `animation.update` intentionally kept
+  (local-player compatibility).
+
+## Round 24 (2026-09-15, generic per-entity skeleton instance) — source implemented
+
+- New cold `render/skeleton-instances.*`: EntityId-keyed skeleton instance driven
+  by `skeleton.apply` from hot `PoseState`. `purgeDead()` on entity destroy.
+- `animation.update` is NOT dead (local-player `animation.main`); the migrated
+  remote NPC never used it. Classified A.
+- Proof: `--hot-combat-selftest` PASS (skeleton instance driven; purged on
+  destroy); full suite PASS.
+- Remaining: consume `SkeletonInstances` in a real GPU skinned draw (skinned mesh
+  + shader); attack/jump clips; blend model.
+
+## Round 23 (2026-09-15, hot pose generation via skeleton.apply) — VALIDATED
 
 - New generic `PoseState` (`hot-pose.h`) + hot `hot.pose-generation`
   (`render.frame`, priority 2): generates idle/move/dead local bone poses from
   `AnimationState` and publishes them through `skeleton.apply`. The kernel stores
   the POD pose on the entity (`capSkeletonApply`); no DLL pointers retained.
-- Evidence so far: live-build generation 18; `-fsyntax-only` clean for
-  `live-behavior.cpp`, `hot-combat-selftest.cpp`. Cold link + `--hot-combat-selftest`
-  PENDING (running `mimita.exe`; not killed). Run in the next no-process window.
+- VALIDATED (2026-09-15): `build_agent.py` SUCCESS; `--hot-combat-selftest` PASS
+  incl. "hot pose generation invokes skeleton.apply" and "hot pose publishes a
+  generic PoseState on the entity"; full suite PASS.
 - Remaining: attack/jump poses; driving real per-entity skeletons; retiring
   `animation.update` for the typed path.
 
