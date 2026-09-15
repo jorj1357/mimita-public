@@ -706,6 +706,21 @@ void submitMesh(const GameRenderMeshCommandV1& command)
     const glm::mat4 proj =
         camera.getProj((float)gRenderer->width, (float)gRenderer->height);
 
+    // Generic 3D-in-UI: bind the draw to a UI clip rect (viewport + scissor)
+    // when requested, so a mesh can render inside a UI region (avatar/inventory
+    // preview). Restored after the draw.
+    const bool clipped = command.uiClip[2] > 0.0f && command.uiClip[3] > 0.0f;
+    if (clipped) {
+        const int x = (int)command.uiClip[0];
+        const int y = (int)command.uiClip[1];
+        const int w = (int)command.uiClip[2];
+        const int h = (int)command.uiClip[3];
+        const int fbH = gRenderer->height;
+        glViewport(x, fbH - y - h, w, h);
+        glEnable(GL_SCISSOR_TEST);
+        glScissor(x, fbH - y - h, w, h);
+    }
+
     const GLuint shader = gRenderer->shaderProgram;
     glUseProgram(shader);
     glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE,
@@ -749,6 +764,10 @@ void submitMesh(const GameRenderMeshCommandV1& command)
     glBindVertexArray(0);
     if (texture != 0)
         glBindTexture(GL_TEXTURE_2D, 0);
+    if (clipped) {
+        glDisable(GL_SCISSOR_TEST);
+        glViewport(0, 0, gRenderer->width, gRenderer->height);
+    }
 }
 
 std::uint64_t skinnedSubmissionCount()

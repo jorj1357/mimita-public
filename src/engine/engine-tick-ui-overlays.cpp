@@ -10,6 +10,7 @@
 
 #include "engine/engine-tick-ui.h"
 #include "engine/engine.h"
+#include "gui/hud/mode-hud-bridge.h"
 #include "terminal/terminal-state.h"
 #include <cstdio>
 #include <cctype>
@@ -604,6 +605,9 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
     if (!gReplayExportRenderMode && gameState == GAME_PLAYING)
     {
         // ── FFA/TDM intermission + countdown HUD ──────────────────
+        // Yields to the hot composition when the generic mode-HUD claim says
+        // hot owns the active mode's HUD (one owner; cold otherwise).
+        if (!ModeHud::hotOwned())
         {
             const MimitaNet::CommunityMatchClient& match =
                 MimitaNet::CommunityMatchClient::instance();

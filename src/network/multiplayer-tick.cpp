@@ -13,6 +13,7 @@
 #include "ecs/dynamic-components.h"
 #include "ecs/relationship-store.h"
 #include "hot-reload/generic-runtime.h"
+#include "hot-reload/generation-verify.h"
 #include "network/constraint-codec.h"
 #include "physics/constraints/constraint-store.h"
 #include "network/packets.h"
@@ -43,7 +44,16 @@
 #include "gui/password-popup.h"
 #include "utils/time-format.h"
 #include "hot-reload/hot-reload-system.h"
+#include "hot-reload/artifact-transfer.h"
+#include "hot-reload/artifact-cache.h"
+#include "hot-reload/generation-switch-mapping.h"
 #include "live-code/live-behavior.h"
+
+namespace {
+// Client-side distributed artifact acquisition (single in-flight transfer, v1).
+MimitaRuntime::ArtifactReceiver gGenerationArtifactReceiver;
+std::uint64_t gRequestedArtifactHash = 0;
+} // namespace
 #include "live-code/live-code-events.h"
 #include "live-code/live-identity.h"
 #include "ragdoll/ragdoll-entities.h"
@@ -141,7 +151,8 @@ static void processSnapshotEntities(
     uint32_t entityCount,
     uint32_t serverTick,
     float dt,
-    const char* sourceName)
+    const char* sourceName,
+    uint32_t logicalGenerationId = 0)
 {
     // ── Authoritative membership ordering gate ──────────────────────────
     // A snapshot older than the newest already-applied membership snapshot
@@ -436,7 +447,8 @@ static void processSnapshotEntities(
             }
         }
 
-        if (!pushInterpolationTarget(interpolation, entity, serverTick))
+        if (!pushInterpolationTarget(interpolation, entity, serverTick,
+                                     logicalGenerationId))
             continue;
         p.spawnGeneration = entity.spawnGeneration;
         if (isNew)
@@ -736,7 +748,11 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             report.header.playerId = ctx.localPlayerId;
             report.generation = liveStatus.activeGeneration;
             report.direction = 0;  // client -> server
-            report.phase = liveStatus.loaded ? 1 : 0;  // 1 = READY
+            // READY only when the local build is loaded AND the server's
+            // advertised hot ABI is compatible with our cold kernel ABI.
+            const bool abiCompatible = ctx.serverHotAbiVersion == 0 ||
+                ctx.serverHotAbiVersion == (uint32_t)MIMITA_GAME_API_VERSION;
+            report.phase = (liveStatus.loaded && abiCompatible) ? 1 : 0;  // 1 = READY
             auto hexValue = [](char c) -> uint64_t {
                 if (c >= '0' && c <= '9') return (uint64_t)(c - '0');
                 if (c >= 'a' && c <= 'f') return (uint64_t)(c - 'a' + 10);
@@ -1246,7 +1262,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             }
 
             std::vector<CompactEntityData> outEntities;
-            if (!reassembleSnapshotChunks(sorted, outEntities))
+            std::uint32_t snapshotGeneration = 0;
+            if (!reassembleSnapshotChunks(sorted, outEntities, nullptr,
+                                          &snapshotGeneration))
             {
                 ctx.snapshotChunkBuffers.erase(chunk.header.tick);
                 return;
@@ -1284,7 +1302,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
 
             processSnapshotEntities(ctx, snapshotEntities.data(),
                                     (uint32_t)snapshotEntities.size(),
-                                    chunk.header.tick, dt, "chunk");
+                                    chunk.header.tick, dt, "chunk",
+                                    snapshotGeneration);
 
             ctx.snapshotChunkBuffers.erase(chunk.header.tick);
         }
@@ -1426,9 +1445,154 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 ctx.serverCodePhase = announce->phase;
                 ctx.serverLogicalHash = announce->logicalCodeHash;
                 ctx.serverPlatformHash = announce->platformPackageHash;
-                // Coordinated switch: hold our candidate until the shared tick.
-                if (announce->phase == 2 && announce->switchTick != 0)
-                    HotReloadSystem::instance().requestSwitchAtTick(announce->switchTick);
+                ctx.serverHotAbiVersion = announce->hotAbiVersion;
+                // Coordinated switch: hold our candidate until the shared tick,
+                // mapped from the authoritative SERVER tick domain into our local
+                // simulation tick domain (delta-based; the counters are not
+                // assumed equal). Never activate a candidate we have not
+                // validated: ignore SWITCH for an unready generation.
+                if (announce->phase == 2 && announce->switchTick != 0 &&
+                    (HotReloadSystem::instance().candidateReady() ||
+                     MimitaRuntime::ArtifactCache::instance().contains(
+                         announce->platformPackageHash)))
+                {
+                    const std::uint32_t localBoundary =
+                        MimitaRuntime::mapServerSwitchTickToClientLocal(
+                            announce->header.tick, ctx.clientSimulationTick,
+                            announce->switchTick);
+                    HotReloadSystem::instance().requestSwitchAtTick(localBoundary);
+                }
+                // Distributed artifact acquisition: request the artifact by
+                // content hash when we do not already have it cached. Acquire
+                // never activates; activation happens only at the switch tick.
+                if (announce->platformPackageHash != 0 &&
+                    !MimitaRuntime::ArtifactCache::instance().contains(
+                        announce->platformPackageHash) &&
+                    gRequestedArtifactHash != announce->platformPackageHash)
+                {
+                    gRequestedArtifactHash = announce->platformPackageHash;
+                    MimitaNet::ArtifactRequestPacket req{};
+                    req.header.type = MimitaNet::PACKET_ARTIFACT_REQUEST;
+                    req.header.tick = ctx.clientSimulationTick;
+                    req.header.playerId = ctx.localPlayerId;
+                    req.logicalGenerationId = announce->logicalCodeHash;
+                    req.platformArtifactHash = announce->platformPackageHash;
+                    mpSendPacket(ctx, &req, sizeof(req));
+                }
+            }
+        }
+        else if (header->type == MimitaNet::PACKET_GENERATION_MANIFEST &&
+                 bytes >= (int)sizeof(MimitaNet::GenerationManifestPacket))
+        {
+            const MimitaNet::GenerationManifestPacket* mp =
+                reinterpret_cast<const MimitaNet::GenerationManifestPacket*>(buffer);
+            // Never trust the wire: bounded arrays only, explicit version.
+            const bool countsOk =
+                mp->manifestVersion == MimitaNet::GENERATION_MANIFEST_VERSION &&
+                mp->requiredCapabilityCount <=
+                    MimitaNet::GENERATION_MANIFEST_MAX_REQUIREMENTS &&
+                mp->requiredSchemaCount <=
+                    MimitaNet::GENERATION_MANIFEST_MAX_REQUIREMENTS &&
+                mp->requiredDependencyCount <=
+                    MimitaNet::GENERATION_MANIFEST_MAX_REQUIREMENTS;
+            // Supersede safety: bind a manifest only to the generation the server
+            // most recently announced. A late manifest for a superseded G cannot
+            // validate H.
+            if (countsOk &&
+                (uint32_t)mp->logicalGenerationId == ctx.serverCodeGeneration)
+            {
+                ctx.pendingManifest = *mp;
+                ctx.pendingManifestGeneration = (uint32_t)mp->logicalGenerationId;
+                ctx.pendingManifestValid = true;
+                ctx.pendingVerifyFailure = 0;
+            }
+        }
+        else if (header->type == MimitaNet::PACKET_ARTIFACT_BEGIN &&
+                 bytes >= (int)sizeof(MimitaNet::ArtifactBeginPacket))
+        {
+            const MimitaNet::ArtifactBeginPacket* begin =
+                reinterpret_cast<const MimitaNet::ArtifactBeginPacket*>(buffer);
+            if (begin->platformArtifactHash != 0 &&
+                begin->platformArtifactHash == gRequestedArtifactHash)
+                gGenerationArtifactReceiver.begin(*begin);
+        }
+        else if (header->type == MimitaNet::PACKET_ARTIFACT_CHUNK &&
+                 bytes >= (int)sizeof(MimitaNet::ArtifactChunkPacket))
+        {
+            const MimitaNet::ArtifactChunkPacket* chunk =
+                reinterpret_cast<const MimitaNet::ArtifactChunkPacket*>(buffer);
+            if (chunk->platformArtifactHash == gRequestedArtifactHash &&
+                gGenerationArtifactReceiver.onChunk(*chunk) &&
+                gGenerationArtifactReceiver.complete())
+            {
+                // Reconstruct + verify + store (immutable). Still inactive.
+                std::string artifactError;
+                const bool verified = gGenerationArtifactReceiver.commit(artifactError);
+                // Hash validity alone is NOT compatibility. Verify the manifest the
+                // SERVER associated with this exact generation against REAL local
+                // peer facts (kernel ABI, capability registry, schema registry,
+                // dependencies) before READY. No manifest => no READY.
+                MimitaRuntime::GenerationManifestV1 manifest{};
+                bool haveManifest = false;
+                if (ctx.pendingManifestValid &&
+                    ctx.pendingManifestGeneration ==
+                        (uint32_t)gGenerationArtifactReceiver.logicalGenerationId())
+                {
+                    const MimitaNet::GenerationManifestPacket& mp = ctx.pendingManifest;
+                    manifest.logicalGenerationId = mp.logicalGenerationId;
+                    manifest.logicalBehaviorHash = mp.logicalBehaviorHash;
+                    manifest.platformArtifactHash = mp.platformArtifactHash;
+                    manifest.platformArtifactSize = mp.platformArtifactSize;
+                    manifest.hotAbiVersion = mp.hotAbiVersion;
+                    manifest.requiredCapabilityCount = mp.requiredCapabilityCount;
+                    manifest.requiredSchemaCount = mp.requiredSchemaCount;
+                    manifest.requiredDependencyCount = mp.requiredDependencyCount;
+                    for (uint32_t i = 0;
+                         i < mp.requiredCapabilityCount &&
+                         i < MimitaNet::GENERATION_MANIFEST_MAX_REQUIREMENTS; ++i)
+                        manifest.requiredCapabilities[i] = mp.requiredCapabilities[i];
+                    for (uint32_t i = 0;
+                         i < mp.requiredSchemaCount &&
+                         i < MimitaNet::GENERATION_MANIFEST_MAX_REQUIREMENTS; ++i)
+                        manifest.requiredSchemas[i] = mp.requiredSchemas[i];
+                    for (uint32_t i = 0;
+                         i < mp.requiredDependencyCount &&
+                         i < MimitaNet::GENERATION_MANIFEST_MAX_REQUIREMENTS; ++i)
+                        manifest.requiredDependencies[i] = mp.requiredDependencies[i];
+                    haveManifest = true;
+                }
+                MimitaRuntime::GenerationLocalFactsV1 facts{};
+                facts.artifactHash = gGenerationArtifactReceiver.hash();
+                facts.artifactSize = gGenerationArtifactReceiver.totalSize();
+                facts.coldAbiVersion = (uint32_t)MIMITA_GAME_API_VERSION;
+                facts.hasCapability = [](void*, uint64_t id) {
+                    return MimitaRuntime::GenericRuntime::instance().hasCapability(id);
+                };
+                facts.hasSchema = [](void*, uint64_t id) {
+                    return MimitaRuntime::DynamicComponentStore::instance().schema(id) !=
+                        nullptr;
+                };
+                facts.hasDependency = [](void*, uint64_t) { return true; };
+                const MimitaRuntime::VerifyFailure vf = haveManifest
+                    ? MimitaRuntime::verifyGeneration(manifest, facts)
+                    : MimitaRuntime::VerifyFailure::HashMismatch;
+                ctx.pendingVerifyFailure = (uint32_t)vf;
+                if (verified && vf == MimitaRuntime::VerifyFailure::None)
+                {
+                    // Report READY for the exact logical generation.
+                    CodeGenerationPacket ready{};
+                    ready.header.type = PACKET_CODE_GENERATION;
+                    ready.header.tick = ctx.clientSimulationTick;
+                    ready.header.playerId = ctx.localPlayerId;
+                    ready.generation =
+                        (uint32_t)gGenerationArtifactReceiver.logicalGenerationId();
+                    ready.direction = 0;  // client -> server
+                    ready.phase = 1;      // READY
+                    ready.platformPackageHash = gGenerationArtifactReceiver.hash();
+                    ready.hotAbiVersion = (uint32_t)MIMITA_GAME_API_VERSION;
+                    mpSendPacket(ctx, &ready, sizeof(ready));
+                }
+                gRequestedArtifactHash = 0;
             }
         }
         else if (header->type == PACKET_RAGDOLL_STATE &&

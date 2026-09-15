@@ -21,7 +21,9 @@
 #include "hot-reload/hot-prediction.h"
 #include "hot-reload/hot-presentation.h"
 #include "hot-reload/hot-projectile.h"
+#include "network/actor-state.h"
 #include "network/packets.h"
+#include "ecs/entity-types.h"
 #include "project/presentation-resource.h"
 #include "render/presentation-render.h"
 #include "render/skeleton-instances.h"
@@ -186,6 +188,34 @@ std::uint64_t ensureActor(std::uint32_t actorId, const float position[3],
     return static_cast<std::uint64_t>(entity);
 }
 
+std::uint64_t actorEntityFor(std::uint32_t actorId, bool isPlayer)
+{
+    if (actorId == 0)
+        return 0;
+    if (isPlayer)
+        return static_cast<std::uint64_t>(Ecs::ensure(EntityRealm::ClientReplicated,
+                                                      EntityDomain::Player, actorId));
+    return static_cast<std::uint64_t>(Ecs::ensure(EntityRealm::ClientReplicated,
+                                                  EntityDomain::Npc, actorId));
+}
+
+void projectActorOverlayState(std::uint32_t actorId, bool isPlayer,
+                              const Player& player)
+{
+    if (actorId == 0)
+        return;
+    const EntityId entity =
+        static_cast<EntityId>(actorEntityFor(actorId, isPlayer));
+    if (entity == kInvalidEntityId)
+        return;
+    const glm::vec3 look(std::cos(player.yaw), std::sin(player.yaw), 0.0f);
+    Ecs::setTransform(entity, player.pos, look, player.yaw, 0.0f);
+    Ecs::setHealth(entity, player.currentHp, player.maxHp, player.dead);
+    if (!player.username.empty())
+        MimitaNet::actorStateWriteIdentity(static_cast<std::uint64_t>(entity),
+                                           player.username.c_str());
+}
+
 void beginActorSync()
 {
     s_actorSyncActive = true;
@@ -237,6 +267,29 @@ void projectLocalPlayer(Player& player)
         anim.playbackRate = 1.0f;
         anim.loop = 1;
         store.write(entity, HOT_ANIMATION_STATE_COMPONENT, &anim, sizeof(anim));
+    }
+
+    // Generic actor identity for hot overlays/chat/scoreboard (no typed Player
+    // needed downstream).
+    if (!player.username.empty())
+        MimitaNet::actorStateWriteIdentity(static_cast<std::uint64_t>(entity),
+                                           player.username.c_str());
+
+    // Lifecycle reconciliation for the local actor's generic equip identity: on
+    // spawn/respawn/join/reconnect the typed mirror may already name a weapon
+    // while the generic `equips-item` edge has not been (re)created yet. Only
+    // write when it disagrees, so the generic edge stays the cross-system
+    // identity and this never fights it every frame.
+    if (player.hasValidWeapon && !player.equippedWeaponId.empty()) {
+        const std::uint64_t key = gameHash(player.equippedWeaponId.c_str());
+        std::uint64_t tool = 0, tkey = 0;
+        if (!MimitaNet::actorStateGetEquippedTool(
+                static_cast<std::uint64_t>(entity), &tool, &tkey) ||
+            tkey != key) {
+            MimitaNet::actorStateEquipWeaponKey(
+                static_cast<std::uint64_t>(entity), key,
+                static_cast<std::uint32_t>(EntityRealm::Local));
+        }
     }
 }
 

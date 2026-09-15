@@ -61,6 +61,21 @@ RenderMeshFn resolveRenderMesh(GameplayContextV1* ctx)
         ctx->resolveCapability(ctx->host, GAME_CAP_RENDER_MESH));
 }
 
+// The local possessed actor's BODY is drawn by the cold typed body mechanism
+// (hot pose policy -> SkeletonInstances -> cold body draw). The generic mesh
+// path must not also draw it, or the body is submitted twice (two owners). This
+// only skips the local actor's own PresentationState; tools, attachments,
+// effects, and arbitrary runtime entities on other EntityIds still draw here.
+std::uint64_t localPossessedActor(GameplayContextV1* ctx)
+{
+    if (!ctx || !ctx->permanentStorage ||
+        ctx->permanentStorageSize < sizeof(GameSharedStateV1))
+        return 0;
+    const auto* shared =
+        reinterpret_cast<const GameSharedStateV1*>(ctx->permanentStorage);
+    return shared->magic == GAME_SHARED_MAGIC ? shared->localPlayerEntity : 0;
+}
+
 void quatFromForward(float x, float y, float z, float out[4])
 {
     const float len = std::sqrt(x * x + y * y + z * z);
@@ -95,10 +110,13 @@ void MIMITA_GAME_CALL presentationMeshTick(void* host, std::uint64_t /*tick*/,
     if (!renderMesh)
         return;
 
+    const std::uint64_t localActor = localPossessedActor(ctx);
     std::uint64_t entities[256];
     const std::uint32_t count = ctx->dynamicEnumerateComponent(
         ctx->host, HOT_PRESENTATION_COMPONENT, entities, 256);
     for (std::uint32_t i = 0; i < count; ++i) {
+        if (localActor != 0 && entities[i] == localActor)
+            continue;   // local body: cold body mechanism is the one owner
         HotPresentationStateV1 state{};
         if (!ctx->dynamicReadComponent(ctx->host, entities[i],
                                        HOT_PRESENTATION_COMPONENT, &state,

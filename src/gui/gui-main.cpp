@@ -9,6 +9,15 @@
 */
 
 #include "gui-main.h"
+#include "ecs/actor-entities.h"
+#include "ecs/dynamic-components.h"
+#include "ecs/entity-types.h"
+#include "gui/hud/menu-shell-bridge.h"
+#include "hot-reload/game-api.h"
+#include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-ui.h"
+#include "live-code/live-behavior.h"
+#include "live-code/live-ui.h"
 #include "menus/main-menu.h"
 #include "menus/menu-avatar-preview.h"
 #include "menus/play-menu.h"
@@ -567,6 +576,49 @@ static bool pollPendingServerRoomCode()
     return false;
 }
 
+// Consume a hot UI pending action (logical id) and perform the cold secure/
+// screen transition. Tokens/passwords and screen enum transitions stay cold;
+// hot only names the action. Generation-safe (id, not a callback pointer).
+static void consumeHotUiPendingAction(GLFWwindow* win)
+{
+    const EntityId entity = Ecs::ensureLocalPlayerEntity();
+    if (entity == kInvalidEntityId)
+        return;
+    MimitaRuntime::DynamicComponentStore& store =
+        MimitaRuntime::DynamicComponentStore::instance();
+    HotUiPendingActionV1 pending{};
+    if (!store.read(entity, HOT_UI_PENDING_ACTION_COMPONENT, &pending,
+                    sizeof(pending)) ||
+        pending.actionId == 0)
+        return;
+    const std::uint64_t id = pending.actionId;
+    pending.actionId = 0;   // consume once
+    store.write(entity, HOT_UI_PENDING_ACTION_COMPONENT, &pending,
+                sizeof(pending));
+
+    AuthSystem& auth = AuthSystem::instance();
+    if (id == gameHash("menu.play")) {
+        onlineMenuSetActive(true);
+        gGuiMenuState = GUI_MENU_SERVERS;
+    } else if (id == gameHash("menu.settings")) {
+        gGuiMenuState = GUI_MENU_SETTINGS;
+    } else if (id == gameHash("menu.quit")) {
+        glfwSetWindowShouldClose(win, GLFW_TRUE);
+    } else if (id == gameHash("account.signin")) {
+        authPopupStartCodeInput();
+    } else if (id == gameHash("account.signup")) {
+        ShellExecuteA(nullptr, "open", "https://www.mimita.fun/signup", nullptr,
+                      nullptr, SW_SHOWNORMAL);
+    } else if (id == gameHash("account.switch")) {
+        auth.clearSession();
+        authPopupReset();
+        ShellExecuteA(nullptr, "open", "https://mimita.fun/clientsignin",
+                      nullptr, nullptr, SW_SHOWNORMAL);
+    } else if (id == gameHash("account.logout")) {
+        auth.logout();
+    }
+}
+
 void guiMain(GLFWwindow* win, GameState& state)
 {
     AuthSystem& auth = AuthSystem::instance();
@@ -625,6 +677,21 @@ void guiMain(GLFWwindow* win, GameState& state)
     GuiLayoutManager::instance().pollReload();
     uiBeginFrame(win, "menu");
     GuiEditor::instance().setActiveLayout(layoutFileForMenu(gGuiMenuState));
+
+    // Hot UI (render.ui) runs while the menu shell is active so hot-composed
+    // screens (menu/settings/...) can render and be interacted with here too;
+    // the cold legacy composition yields per-screen when hot claims ownership.
+    {
+        MenuShell::project();
+        static std::uint64_t sMenuUiTick = 0;
+        LiveUi::beginFrame();
+        MimitaRuntime::GenericRuntime::instance().runDomain(
+            GAME_DOMAIN_UI, sMenuUiTick++, 1.0f / 60.0f,
+            LiveBehavior::hostContext(sMenuUiTick));
+        LiveUi::endFrameAndDraw();
+        LiveBehavior::drainEvents(64);
+    }
+    consumeHotUiPendingAction(win);
 
     switch (gGuiMenuState)
     {

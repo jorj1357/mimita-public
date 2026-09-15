@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "hot-reload/game-api.h"
+#include "hot-reload/generation-verify.h"
 #include "project/project-watcher.h"
 
 // Owns the live replaceable-code pipeline: hash-based change detection, a
@@ -38,6 +39,18 @@ public:
     // Identity of the ready-but-not-yet-active candidate (for the switch announce).
     std::uint32_t candidateGeneration() const;
     std::string candidateCodeHash() const;
+
+    // Distributed artifact stream: read the ready candidate's platform artifact
+    // bytes + canonical identity. Returns false when no successful candidate
+    // exists. Read-only; never activates anything.
+    bool readCandidateArtifact(std::vector<unsigned char>& out,
+                               std::uint32_t& logicalGeneration,
+                               std::uint64_t& platformArtifactHash) const;
+
+    // Build the bounded requirement manifest the server associates with the
+    // ready candidate: identity + ABI + the package's real declared capability
+    // requirements and registered schemas. Returns false when no candidate.
+    bool buildCandidateManifest(MimitaRuntime::GenerationManifestV1& out) const;
 
     void unloadGameDLL();
 

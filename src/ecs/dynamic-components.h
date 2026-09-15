@@ -55,6 +55,13 @@ public:
     // type id (the project state-schema registry keys by 32 bits).
     void registerMigration(std::uint64_t typeId, std::uint32_t fromVersion,
                            std::uint32_t toVersion, DynamicMigrationFn fn);
+    // True when a migration path exists for this exact type transition.
+    bool hasMigration(std::uint64_t typeId, std::uint32_t fromVersion,
+                      std::uint32_t toVersion) const;
+    // Highest stored blob version for a type across all entities (0 = none
+    // stored). Lets migration preparation compare live state to a target schema
+    // without mutating it.
+    std::uint32_t maxStoredVersion(std::uint64_t typeId) const;
 
     // Atomically applies a new schema set. Every stored blob whose version
     // differs from its new schema version is migrated first; on any failure

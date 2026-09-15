@@ -178,8 +178,19 @@ enum PacketType : uint8_t
     // ONE opaque envelope for every dynamic component type: schema descriptors,
     // upserts, and removals, selected by schema networkPolicy. There is no
     // per-component packet or codec. Carried over the reliable event channel.
-    PACKET_DYNAMIC_COMPONENT = 77
+    PACKET_DYNAMIC_COMPONENT = 77,
+    // ── Distributed hot-generation artifact transfer ────────────────────
+    // A peer requests a platform artifact by content hash; the host streams it
+    // in bounded, indexed chunks. ACQUIRE is separate from ACTIVATE.
+    PACKET_ARTIFACT_REQUEST = 78,  // client -> server
+    PACKET_ARTIFACT_BEGIN = 79,    // server -> client (header: size/chunk count)
+    PACKET_ARTIFACT_CHUNK = 80,    // server -> client (indexed payload)
+    // Bounded generation manifest metadata (requirements the peer must satisfy
+    // before READY). Metadata only, not artifact bytes.
+    PACKET_GENERATION_MANIFEST = 81
 };
+
+static constexpr uint32_t ARTIFACT_CHUNK_BYTES = 1000;
 
 enum FireIntentAction : std::uint8_t
 {
@@ -595,12 +606,15 @@ struct SnapshotChunkPacket
     uint16_t chunkCount = 1;
     uint16_t entityCount = 0;
     uint16_t payloadBytes = 0;
-    CompactEntityData entities[7]; // 7 * 156 + header(32) = 1124 < 1200
+    // Canonical logical hot-generation id that produced this authoritative
+    // state. Carried so clients stamp samples at source (no receive-time guess).
+    uint32_t logicalGenerationId = 0;
+    CompactEntityData entities[7]; // 7 * 156 + header(36) = 1128 < 1200
 };
 
 static_assert(sizeof(SnapshotChunkPacket) < MAX_GAME_DATAGRAM_BYTES,
               "SnapshotChunkPacket exceeds safe datagram limit");
-static_assert(sizeof(SnapshotChunkPacket) == 1124, "SnapshotChunkPacket wire size changed");
+static_assert(sizeof(SnapshotChunkPacket) == 1128, "SnapshotChunkPacket wire size changed");
 
 struct SpawnNpcRequestPacket
 {
@@ -1733,8 +1747,74 @@ struct CodeGenerationPacket
     uint64_t logicalCodeHash = 0;      // platform-independent source/IR hash
     uint64_t platformPackageHash = 0;  // local compiled package hash
     uint64_t moduleSetHash = 0;        // reserved module-set hash
+    // Hot ABI version the generation was built against. A peer must not READY a
+    // generation whose required hot ABI differs from its cold kernel ABI.
+    uint32_t hotAbiVersion = 0;
+    uint32_t reserved2 = 0;
 };
 static_assert(sizeof(CodeGenerationPacket) <= 96, "CodeGenerationPacket is too large");
+
+// ── Distributed hot-generation artifact transfer ────────────────────
+// ACQUIRE is separate from ACTIVATE: these carry immutable platform-artifact
+// bytes addressed by content hash.
+// Client requests the platform artifact for a logical generation by hash.
+struct ArtifactRequestPacket
+{
+    PacketHeader header;
+    uint64_t logicalGenerationId = 0;
+    uint64_t platformArtifactHash = 0;
+};
+
+// Server begins an artifact stream (immutable, content-addressed).
+struct ArtifactBeginPacket
+{
+    PacketHeader header;
+    uint64_t logicalGenerationId = 0;
+    uint64_t platformArtifactHash = 0;
+    uint32_t totalSize = 0;
+    uint32_t chunkCount = 0;
+    uint16_t chunkSize = 0;
+    uint16_t reserved = 0;
+};
+
+// One indexed chunk. Duplicate/reordered delivery is safe; the receiver tracks
+// received indices and only commits when the full set is present and hashes.
+struct ArtifactChunkPacket
+{
+    PacketHeader header;
+    uint64_t platformArtifactHash = 0;
+    uint32_t chunkIndex = 0;
+    uint32_t offset = 0;
+    uint16_t size = 0;
+    uint16_t reserved = 0;
+    uint8_t payload[ARTIFACT_CHUNK_BYTES] = {};
+};
+
+// ── Bounded generation manifest metadata ───────────────────────────
+// The exact requirements the server associated with logical generation G. The
+// peer must verify THIS manifest (not one it reconstructs) before sending READY.
+// Bounded arrays only; malformed/oversized counts are rejected on decode.
+static constexpr uint32_t GENERATION_MANIFEST_VERSION = 1;
+static constexpr uint32_t GENERATION_MANIFEST_MAX_REQUIREMENTS = 8;
+struct GenerationManifestPacket
+{
+    PacketHeader header;
+    uint32_t manifestVersion = GENERATION_MANIFEST_VERSION;
+    uint64_t logicalGenerationId = 0;
+    uint64_t logicalBehaviorHash = 0;
+    uint64_t platformArtifactHash = 0;
+    uint32_t platformArtifactSize = 0;
+    uint32_t hotAbiVersion = 0;
+    uint32_t requiredCapabilityCount = 0;
+    uint32_t requiredSchemaCount = 0;
+    uint32_t requiredDependencyCount = 0;
+    uint32_t reserved = 0;
+    uint64_t requiredCapabilities[GENERATION_MANIFEST_MAX_REQUIREMENTS] = {};
+    uint64_t requiredSchemas[GENERATION_MANIFEST_MAX_REQUIREMENTS] = {};
+    uint64_t requiredDependencies[GENERATION_MANIFEST_MAX_REQUIREMENTS] = {};
+};
+static_assert(sizeof(GenerationManifestPacket) <= 320,
+              "GenerationManifestPacket is too large");
 
 // Held-fire intent. The server simulates one authoritative projectile per
 // gameplay tick while the window is open, subject to ammo and rate.

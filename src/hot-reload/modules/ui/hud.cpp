@@ -83,6 +83,15 @@ void MIMITA_GAME_CALL matchHudTick(void* host, std::uint64_t /*tick*/, float /*d
                                    &hud, sizeof(hud)))
         return;
 
+    // One owner: only compose when the generic claim says hot covers this mode's
+    // HUD. Otherwise the cold client HUD remains the owner.
+    HotModeHudClaimV1 claim{};
+    if (!ctx->dynamicReadComponent(ctx->host, owners[0],
+                                   HOT_MODE_HUD_CLAIM_COMPONENT, &claim,
+                                   sizeof(claim)) ||
+        claim.owned != 1)
+        return;
+
     // Timer (top center).
     char timer[32];
     const int total = hud.timerSeconds > 0.0f ? (int)(hud.timerSeconds + 0.5f) : 0;
@@ -110,6 +119,10 @@ const MimitaHotPackage::SchemaRegistrar s_matchHudSchema{
     {HOT_MATCH_HUD_COMPONENT, gameHash("MatchHudState.v1"),
      sizeof(HotMatchHudStateV1), 4, GAME_COPY_RUNTIME_ONLY, GAME_NET_ALL,
      "MatchHudState", 1, 0}};
+const MimitaHotPackage::SchemaRegistrar s_modeHudClaimSchema{
+    {HOT_MODE_HUD_CLAIM_COMPONENT, gameHash("ModeHudClaim.v1"),
+     sizeof(HotModeHudClaimV1), 4, GAME_COPY_RUNTIME_ONLY, GAME_NET_NONE,
+     "ModeHudClaim", 1, 0}};
 const MimitaHotPackage::SystemRegistrar s_matchHudSystem{
     {gameHash("hot.match-hud"), GAME_DOMAIN_UI, 10, 0, matchHudTick,
      "hot.match-hud"}};

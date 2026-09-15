@@ -108,6 +108,32 @@ public:
     std::size_t schemaCount() const { return schemas_.size(); }
     std::size_t capabilityProviderCount() const { return capabilityProviders_.size(); }
     std::size_t capabilityRequirementCount() const { return capabilityRequirements_.size(); }
+    // Per-entry metadata for the generation manifest. Returns false when the
+    // index is out of range. Any out pointer may be null.
+    bool capabilityRequirementAt(std::size_t index, std::uint64_t* outId,
+                                 std::uint64_t* outSignatureId = nullptr,
+                                 std::uint64_t* outSchemaHash = nullptr) const
+    {
+        if (index >= capabilityRequirements_.size())
+            return false;
+        const CapabilityRequirement& r = capabilityRequirements_[index];
+        if (outId) *outId = r.id;
+        if (outSignatureId) *outSignatureId = r.signatureId;
+        if (outSchemaHash) *outSchemaHash = r.schemaHash;
+        return true;
+    }
+    bool schemaAt(std::size_t index, std::uint64_t* outId,
+                  std::uint32_t* outSize = nullptr,
+                  std::uint32_t* outVersion = nullptr) const
+    {
+        if (index >= schemas_.size())
+            return false;
+        const SchemaEntry& s = schemas_[index];
+        if (outId) *outId = s.id;
+        if (outSize) *outSize = s.size;
+        if (outVersion) *outVersion = s.version;
+        return true;
+    }
     std::string describe() const;
 
 private:
@@ -144,6 +170,7 @@ private:
         std::uint32_t size = 0;
         std::uint32_t align = 1;
         std::uint32_t copyPolicy = 0;
+        std::uint32_t version = 1;
         std::string name;
     };
     struct CapabilityEntry {

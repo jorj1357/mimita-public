@@ -622,6 +622,259 @@ See `docs/architecture/live-development/hot-cold-audit.md` for the current map.
 - Next: artifact acquisition + READY wire-up on the real client path, then the
   server+client proof; optional generic `historicalState(EntityId,T)`.
 
+## Round 43 (2026-09-15, content-addressed artifact acquisition) — partial
+
+- New `artifact-cache.{h,cpp}`: content-addressed **immutable** cache
+  (`<root>/<hash>.bin`, dedupe, never overwrite) + `hashArtifactBytes` +
+  `ArtifactAcquirer` receive/verify state machine (Idle/CheckingCache/Requesting/
+  Receiving/Verifying/Complete/Failed). ACQUIRE is separate from ACTIVATE:
+  committing an artifact never activates a generation.
+- `--artifact-cache-selftest` PASS 13/13 (verify, immutable dedupe, no-overwrite,
+  read-back, wrong-hash reject, acquirer transitions, mismatch failure,
+  cache-hit short-circuit); full suite 32/32.
+- Still missing (documented): network transfer/chunking over the wire, wiring
+  VERIFY->READY into the real client path, authoritative tick-domain mapping
+  proof, per-sample generation tags in interpolation/rewind, late join, and the
+  live two-process proof.
+- Audit (live Creation): hot glob re-resolution already supports add/delete/
+  rename of hot .cpp under the globbed dirs; `CommandRegistrar` is hot; content is
+  C++-first (JSON optional). Asset hot-upload, shared/multi-user source editing,
+  and ChangeSets are missing.
+- Next: wire ACQUIRE/VERIFY/READY into the real client path + tick mapping, then
+  the two-process proof; then asset/resource hot-upload + ChangeSet model.
+
+## Round 44 (2026-09-15, chunked artifact wire transfer) — partial
+
+- New packet types/structs: `PACKET_ARTIFACT_REQUEST`/`BEGIN`/`CHUNK`
+  (`ArtifactRequestPacket`, `ArtifactBeginPacket`, `ArtifactChunkPacket`,
+  bounded 1000-byte chunks).
+- New `artifact-transfer.{h,cpp}`: `ArtifactStreamer` (server chunks a verified
+  artifact) and `ArtifactReceiver` (client indexed, duplicate-safe, order-
+  tolerant reassembly; commits only when all chunks present and hashes; feeds
+  `ArtifactAcquirer`/`ArtifactCache`). Acquire stays separate from activate.
+- `--artifact-transfer-selftest` PASS 13/13 (in-order, duplicate, out-of-order,
+  missing, wrong size/hash, disconnect, invalid begin, cache commit); full suite
+  33/33.
+- NOT wired into the live client/server packet handlers yet (no
+  REQUEST→BEGIN→CHUNK send/receive in `multiplayer-tick.cpp`/
+  `server-packet-handlers.cpp`), and no tick-domain mapping or two-process proof.
+- Next: wire the live handler path + READY, audit/prove the tick domain, run the
+  two-process proof.
+
+## Round 45 (2026-09-15, live artifact wire path) — compiled integration
+
+- Server now serves `PACKET_ARTIFACT_REQUEST` by streaming the ready candidate
+  artifact (`HotReloadSystem::readCandidateArtifact` → `ArtifactStreamer`) as
+  BEGIN + CHUNKs; only the matching content hash is served (no client-supplied
+  path).
+- Server announce advertises the REAL platform artifact hash
+  (`readCandidateArtifact` FNV hash) and registers each peer in
+  `GenerationDistribution`.
+- Client: on announce, requests the artifact by hash if not cached; reassembles
+  BEGIN/CHUNK via `ArtifactReceiver`; on complete commits (verify+immutable store)
+  and sends `READY(G)` (phase=1 with the exact logical generation).
+- Server: on phase=1 READY, records per-peer readiness for the exact announced
+  generation (`GenerationDistribution::setPhase` only when the candidate id
+  matches).
+- Full suite 33/33; cold build SUCCESS.
+- TICK DOMAIN AUDIT (unresolved): the server schedules `switchTick = serverTick+30`
+  in SERVER tick space; the client applies it against its local
+  `clientSimulationTick` (`pollAndAdvance`) and has NOT been proven to equal the
+  authoritative tick. This must be mapped explicitly before a live switch.
+- Not proven live: no two-process run. Interpolation/rewind generation ids still 0;
+  late join and superseded-transfer cancellation not wired.
+- Next: explicit tick-domain mapping + two-process proof.
+
+## Round 46 (2026-09-15, tick-domain mapping + quorum-gated switch) — compiled integration
+
+- Explicit tick-domain mapping: `generation-switch-mapping.h`
+  `mapServerSwitchTickToClientLocal(latestServerTick, localSimTickAtReceipt,
+  serverSwitchTick)` — DELTA-based (not equality). The client maps the
+  authoritative `SWITCH(G,T)` into its own local simulation boundary using the
+  announce's server tick and its local tick at receipt. Wired into
+  `multiplayer-tick.cpp` (replaces the raw `switchTick` comparison). It also
+  refuses to schedule a SWITCH for a generation it has not validated.
+- Quorum-gated switch (`server.cpp`): the server now (1) announces the candidate
+  (phase 0) with the real artifact hash + registers per-peer identity, holding
+  its OWN activation with a far-future switch tick; (2) only after
+  `GenerationDistribution::quorumReady(required, G)` schedules the shared
+  `SWITCH(G, tick+30)`. No SWITCH before quorum.
+- `--generation-switch-mapping-selftest` PASS 6/6; full suite 34/34.
+- TICK DOMAIN AUDIT: server `tick` (authoritative fixed step) vs client
+  `clientSimulationTick` (local prediction counter) are NOT proven identical; no
+  explicit offset existed. The delta mapping now defines the relationship.
+- Still pending: socket-level integration test, live two-process proof,
+  interpolation/rewind provenance (ids still 0), peer ABI/capability/schema/
+  dependency verify gate, late join, superseded-transaction rule, ACTIVE ack.
+- Next: socket integration test + provenance, then two-process proof.
+
+## Round 47 (2026-09-15, generation provenance scaffolding + committed-switch rule) — partial
+
+- Canonical provenance: added `logicalGenerationId` to `SnapshotTransform`
+  (interpolation samples) and fed `net.interpolate` `aGeneration`/`bGeneration`/
+  `currentGeneration` from the samples (replacing hardcoded 0). Cross-boundary
+  pairs now trigger the hot snap policy **when samples are stamped**.
+- Committed-switch supersede rule enforced in `server.cpp`: pre-commit a newer
+  candidate may supersede the announced one; once a SWITCH is committed
+  (`switchCommitted`), H does not cancel G — G activates, then H is the next
+  candidate. Flags reset on activation.
+- Full suite 34/34; cold build SUCCESS.
+- STILL NOT POPULATED: samples are not yet stamped with the server's **active**
+  generation per snapshot (needs a per-snapshot wire `generation` field so
+  receive-time guessing is avoided). Rewind history and predicted-state
+  provenance are not tagged. So provenance is structurally wired but not yet real
+  end to end.
+- Next: add the per-snapshot generation field + stamp on receipt; tag rewind
+  history + predicted state; then the socket integration test and two-process
+  proof.
+
+## Round 48 (2026-09-15, authoritative snapshot generation provenance) — implemented
+
+- The authoritative snapshot wire now carries the canonical logical generation:
+  `SnapshotChunkPacket.logicalGenerationId` (wire size 1124→1128), set in
+  `buildSnapshotChunks` from `HotReloadSystem::status().activeGeneration` (the
+  generation that actually executed the tick — activation happens at the safe
+  boundary before simulation, so T<switch → F, T>=switch → G).
+- `reassembleSnapshotChunks` verifies all chunks agree (`mixed-generations`
+  rejected) and returns the generation; the client threads it through
+  `processSnapshotEntities` → `pushInterpolationTarget` and stamps
+  `SnapshotTransform.logicalGenerationId`.
+- `buildReceiveTimeRender` already feeds `net.interpolate` a/b/current generation
+  from the samples, so a cross-boundary pair now snaps instead of lerping — real
+  provenance, no receive-time inference.
+- Full suite 34/34 minus one unrelated concurrent UI failure (see below).
+- NOT done: rewind/history sample tagging, predicted-state per-sample tagging,
+  socket integration test, verify gate, late join, live proof.
+- Next: tag rewind history + predicted state; then the socket integration test.
+- Concurrent: `--hot-combat-selftest` fails "hot ui.frame fails safe without match
+  HUD state" (UI/HUD agent's active work) — recorded, not touched.
+
+## Round 49 (2026-09-15, prediction + rewind generation provenance) — implemented
+
+- Rewind history provenance: `PositionHistoryEntry` gained
+  `logicalGenerationId`, stamped at insertion in `pushPositionHistory` from
+  `HotReloadSystem::status().activeGeneration` (the generation that produced that
+  authoritative tick). `getPositionAtTick`/`getPlayerPoseAtTick` now CLAMP to the
+  newer side when the two bracketing samples straddle an F/G boundary instead of
+  interpolating across generations. `net.rewind` receives real
+  attacker/target/current generation ids (previously 0).
+- Prediction provenance: the client does not store per-tick predicted history (it
+  reconciles by snapping to the authoritative snapshot), so there is no predicted
+  state to tag retroactively; reconciliation already compares the authoritative
+  snapshot generation (stamped) against the local active generation. Documented,
+  not invented.
+- NOT done: NPC rewind-history provenance (`getNpcPoseAtTick`), socket
+  integration test, verify gate, late join, live proof.
+- Suite 34/34 minus the unrelated concurrent `--hot-combat-selftest` UI failure.
+- Next: NPC rewind provenance, then the socket integration test.
+
+## Round 50 (2026-09-15, NPC rewind provenance + provenance complete-enough) — implemented
+
+- NPC rewind history provenance: `ServerNpcPositionSample.logicalGenerationId`,
+  stamped at insertion in `pushNpcPositionHistory` from the active generation;
+  both NPC pose lookups clamp to the newer sample across an F/G boundary (same
+  semantics as player rewind).
+- Generation provenance is now complete-enough: authoritative snapshots,
+  interpolation samples, player rewind history, NPC rewind history, and the
+  rewind policy inputs all carry the canonical logical generation id; cross-
+  generation interpolation/rewind clamp/snap instead of mixing. Prediction has no
+  per-tick history by design (reconcile snaps to the stamped authoritative
+  snapshot) — documented, not invented.
+- Full suite 34/34.
+- Next (primary): the actual transport-level end-to-end generation test
+  (encode/send/receive/decode for ANNOUNCE/REQUEST/BEGIN/CHUNK/READY/SWITCH +
+  snapshot generation), then the verify gate, late join, and two-process proof.
+- LIVE-PROOF DEBT: unchanged; no live socket transaction observed yet.
+
+## Round 51 (2026-09-15, transport-level generation transaction test) — implemented
+
+- New `--transport-generation-selftest`: serializes the REAL packet structs and
+  sends them over an actual OS loopback UDP socket (sendto/recvfrom), decodes the
+  received bytes back into packets, and drives the real `ArtifactStreamer`/
+  `ArtifactReceiver`/`ArtifactCache`:
+  - ANNOUNCE, ARTIFACT_REQUEST, ARTIFACT_BEGIN, ARTIFACT_CHUNKs, READY, SWITCH
+    all cross the real transport;
+  - 3000 artifact bytes reassemble and hash-verify and commit to the immutable
+    cache; cache-hit verifies with zero chunk bytes;
+  - SWITCH tick mapping is exercised in the transport path (server tick 1000,
+    client local 1004, T=1030 -> mapped 1034, not 1030);
+  - snapshot generation crosses the transport (`parseSnapshotChunk` returns the
+    stamped generation).
+  - Reported byte accounting: artifact=3000, chunks=3, transportBytes=3200.
+- `--transport-generation-selftest` PASS 12/12; full suite 35/35.
+- Honest scope: this is a packet/transport integration over a loopback socket
+  using the real structs/streamer/receiver; it does NOT boot the full game
+  server/client loop. Verify gate, late join, and the two-process proof remain.
+- Next: verify gate (ABI/capability/schema/dependency), late join, then a
+  full-loop/two-process proof; then distributed assets.
+- LIVE-PROOF DEBT: full-loop/two-process not observed.
+
+## Round 52 (2026-09-15, generation verify gate + ABI wire) — implemented
+
+- New `generation-verify.h`: `GenerationManifestV1` +
+  `GenerationLocalFactsV1` + `verifyGeneration()` returning an explicit
+  `VerifyFailure` reason (HashMismatch / LogicalGenerationMismatch / AbiMismatch /
+  MissingCapability / SchemaMismatch / DependencyMissing / LoadFailed /
+  MigrationFailed). Checks artifact hash + size, logical generation association,
+  hot ABI, required capabilities, required schemas, and required dependencies via
+  generic probes (no feature-specific tables).
+- ABI crossed the wire: `CodeGenerationPacket.hotAbiVersion` set by the server
+  announce; the client stores `ctx.serverHotAbiVersion` and now sends READY
+  (phase=1) **only** when the local build is loaded AND the server's hot ABI is
+  compatible with `MIMITA_GAME_API_VERSION`. Incompatible ABI → never READY.
+- `--generation-verify-selftest` PASS 8/8 (valid + each failure reason);
+  full suite 36/36.
+- NOT done: schema/dependency requirement population on the real wire (the gate
+  is ready but the announce carries only ABI + hashes today), migration
+  preparation, socket-level quorum with 2 clients, late join, full-loop/two-
+  process proof.
+- NEXT CATEGORY (planned): distributed resource/asset generations reusing the
+  content-addressed cache + chunk transfer + verify + last-good.
+- NEXT LARGEST COLD OWNER: populate schema/dependency requirements on the wire and
+  wire `verifyGeneration` into the client READY path; then late join; then the
+  full-loop proof; then assets.
+
+## Round 53 (2026-09-15, real manifest population) — implemented
+
+- The verify manifest is now populated from REAL package registration, not only
+  synthetic test data: `GenericRuntime::capabilityRequirementAt`/`schemaAt`
+  expose per-entry metadata, and the verify selftest builds a
+  `GenerationManifestV1` from the live package's capability requirements and
+  registered schemas, then verifies it against the live registry
+  (`GenericRuntime::hasCapability` + `DynamicComponentStore::schema`). This proves
+  the manifest describes what the package actually requires.
+- `--generation-verify-selftest` PASS 12/12; full suite 36/36.
+- Still missing: carrying the populated requirement arrays over the wire, wiring
+  `verifyGeneration` into the client READY path, migration preparation,
+  multi-peer quorum over real transport, late join, and the full-loop/two-process
+  proof.
+- NEXT CATEGORY (queued): distributed resource/asset generations reusing the
+  content-addressed cache + chunk transfer + verify + last-good, with a
+  `ContentArtifactV1 { logicalResourceId, resourceKind, contentHash, byteSize }`.
+
+## Round 54 (2026-09-15, real manifest over the wire + verify-gated READY) — implemented
+
+- The server now transmits the REAL manifest: `HotReloadSystem::buildCandidateManifest`
+  builds a `GenerationManifestV1` (identity + ABI + the package's declared
+  capability requirements + registered schemas), and `server.cpp` sends it as a
+  bounded `GenerationManifestPacket` (type 81) alongside the announce.
+- The client stores it keyed by exact logical generation (`pendingManifest`,
+  `pendingManifestGeneration`) and runs `verifyGeneration` on the received
+  manifest with REAL local facts (kernel ABI, `GenericRuntime::hasCapability`,
+  `DynamicComponentStore::schema`, dependency probe). READY is sent only when the
+  hash verifies AND `verifyGeneration == None`. Hash validity alone no longer
+  produces READY.
+- Bounded + versioned: explicit `GENERATION_MANIFEST_VERSION`, capped arrays
+  (`GENERATION_MANIFEST_MAX_REQUIREMENTS = 8`), counts rejected on decode.
+- `--transport-generation-selftest` now crosses the socket with the manifest
+  arrays and proves: verify -> READY, and (artifact valid but) MissingCapability /
+  AbiMismatch / SchemaMismatch / HashMismatch -> no READY. PASS (19 checks).
+- Concurrent, unrelated: a UI agent's in-progress "hot navigation state" change
+  makes `--hot-combat-selftest` fail its nav-migration check (not caused by this
+  work; that selftest file is modified in the working tree by that agent).
+- Still missing: migration preparation, multi-peer quorum over real transport,
+  late join, full-loop transaction, two-process/raw-cpp proof.
+
 ## Round 10 (2026-09-14, generic runtime state replication) — implemented
 
 - One opaque envelope (`PACKET_DYNAMIC_COMPONENT`, `dynamic-replication.*`) carries
@@ -660,6 +913,264 @@ polish. A subsystem counts as **migrated** when:
 
 Visual/feel parity can be improved afterward. Do not polish animation/blending
 before ownership has moved.
+
+## Round 50 (2026-09-15, hot main menu is the default shipping owner) — MILESTONE
+
+- Hot main menu claim is ON by default (`g_menuEnabled = true`); cold
+  `drawMainMenu` yields as the fallback. Shell coverage: background + logo via
+  logical texture resources (`resource.register`), title, account name/stats
+  (MMR/W/L/K/D), VIP tier colour, primary nav, account/auth entry buttons, and an
+  approximate 3D avatar preview via the generic `uiClip` + view-space
+  `render.mesh`.
+- Generic pending-action bridge: hot UI routes logical account/screen actions
+  (`menu.play`, `menu.settings`, `menu.quit`, `account.signin/signup/switch/logout`)
+  through `HotUiPendingActionV1`; the cold menu layer consumes it and performs the
+  secure/screen transition (tokens/passwords/screen enum stay cold). Id-based,
+  generation-safe.
+- `HotMenuShellStateV1` extended with profile stats + tier; cold projection
+  populates it.
+- Hot UI runs in `GAME_MENU`; nav state is migratable; claim recomputed per frame.
+- Proof: `--hot-combat-selftest` PASS; full suite PASS. Live appearance not
+  screen-verified (debt).
+- STILL COLD (recorded): settings/loadout/spectate/scoreboard/CS objective+HUD;
+  audio policy; resource generations. Avatar preview framing is approximate.
+
+## Round 49 (2026-09-15, migratable hot UI nav state + generation-safe claim) — source implemented
+
+- Hot UI navigation state moved out of the module static into a migratable
+  dynamic component `HOT_UI_NAV_COMPONENT` / `HotUiNavigationStateV1`
+  (screenId/previousScreenId/modalId/focusId). A hot generation swap no longer
+  resets the current screen to main.
+- Generation-safe claim: `LiveUi::beginFrame()` clears `HotUiClaim` each frame, so
+  the active generation must re-assert ownership; a new generation that removes/
+  renames a screen leaves no claim and the cold owner recovers (no blank UI, no
+  permanent cold-yield).
+- UI action routing reads/writes the migratable nav component (no static).
+- Proof: `--hot-combat-selftest` PASS incl. "hot navigation state is migratable
+  component state" and "hot screen claim is recomputed per frame
+  (generation-safe)". Full suite PASS.
+- STILL OPEN for the main-menu flip (recorded): shell coverage (avatar preview via
+  uiClip, logo/background images, account stats, VIP style, auth entry points,
+  modals). Claim remains OFF by default until coverage is sufficient.
+
+## Round 48 (2026-09-15, hot UI in the menu + shell data + 3D-in-UI primitive) — source implemented
+
+- Fixed `GAME_UI_BUTTON`: it was hit-tested but never drawn (invisible buttons).
+  `LiveUi::endFrameAndDraw` now draws the button rect + border + centered label.
+- Hot UI now runs while `GAME_MENU` is active (`gui-main.cpp` runs the UI domain +
+  `LiveUi::beginFrame/endFrameAndDraw` around the menu switch). Before this the
+  hot menu could never render live (engineTickUI is game-only), so the claim was
+  moot.
+- Generic menu-shell data: `HOT_MENU_SHELL_COMPONENT` / `HotMenuShellStateV1`
+  (username/version/avatar/flags/connection) projected once by cold
+  `MenuShell::project()` from typed auth/avatar/version. Hot menu policy composes
+  usernames/status without reading cold GUI/account objects.
+- Hot `hot.main-menu` now composes shell chrome (background panel, title,
+  username, version) + PLAY/SETTINGS/QUIT.
+- New generic 3D-in-UI primitive: `GameRenderMeshCommandV1.uiClip` binds a mesh
+  draw to a UI rect (viewport + scissor) in `submitMesh`; reusable for avatar/
+  inventory previews, editor viewports, spectator thumbnails.
+- Claim still OFF by default: the shell still lacks avatar/logo/account-stats/auth
+  entry points, so flipping now would drop required UI. Remaining to flip: hot
+  avatar preview (primitive now exists), logo/background images, account stats,
+  and the sign-in/sign-up/switch/logout entry points.
+- Proof: full suite PASS incl. hot main menu emits widgets, generic ui.action,
+  claim, navigation. `build_agent.py` SUCCESS.
+
+## Round 47 (2026-09-15, generic UI action event + hot menu composition) — source implemented
+
+- Generic UI interaction ABI (no per-widget callbacks): `GAME_UI_BUTTON` widget
+  kind + `elementId` on `GameUiCommandV1`; `GAME_EVENT_UI_ACTION` + `GameUiActionV1`
+  {elementId, actionType, value, pointerX/Y, handled}; `GameUiActionType`.
+- Backend: `LiveUi` stores only logical element ids + rects (generation-safe, no
+  hot function pointers), hit-tests on click, and dispatches the generic
+  `ui.action` event via `LiveBehavior::dispatchGameplayEvent64`. Wired into
+  `uiBeginFrame` on the mouse click edge.
+- Hot policy: `hot.ui-actions` event handler maps element ids (`menu.play`,
+  `menu.settings`, `menu.quit`) to navigation; `hot.main-menu` composes panel +
+  interactive buttons via render.ui and writes `HotUiClaim` (screenId). The
+  `uiscreen` command sets the screen (dev/selftest).
+- Cold yield: `LiveUi::hotOwnsScreen(screenId)` gates the cold `drawMainMenu`.
+- Safety: the hot main menu is OFF by default (`uiscreen` enables it) because it
+  currently covers only the buttons; claiming the live screen would drop the cold
+  background/account/avatar panels. Cold remains the single live owner until
+  coverage is complete.
+- Proof: `--hot-combat-selftest` PASS incl. hot main menu emits widgets, backend
+  reports the click as a generic ui.action, hot UI claims the screen, and hot
+  navigation moved off the main menu after the action. Full suite PASS.
+- Recorded next: CS HUD objective facts, scoreboard, remaining menus/settings/
+  loadout/spectate, audio policy, resource generations.
+
+## Round 46 (2026-09-15, TDM/FFA mode HUD hot-owned via generic state) — source implemented
+
+- Generic mode-HUD claim: `HOT_MODE_HUD_CLAIM_COMPONENT` / `HotModeHudClaimV1`
+  (registered by the hot package). `hot.match-hud` now composes only when the
+  claim says hot owns the mode's HUD (otherwise the cold client HUD owns).
+- Transitional cold projection: `gui/hud/mode-hud-bridge.{h,cpp}`
+  `ModeHud::projectFromClient()` projects the typed cold `CommunityMatchClient`
+  match state ONCE into generic `MatchHudState` + `ModeHudClaim` on the generic
+  match entity. Hot code never reads `CommunityMatchClient`; the projection is a
+  compatibility bridge, not the long-term authority (forward path: authoritative
+  hot mode writes/replicates generic state).
+- Cold yield: `ModeHud::hotOwned()` gates the cold FFA/TDM HUD block
+  (`engine-tick-ui-overlays.cpp`) and the cold `MatchTimer`
+  (`engine-tick-ui-hud.cpp`) — the latter also fixes a latent coupling where the
+  always-on overlays made `hotOwnsHud()` true and would have starved the timer.
+- Coverage this pass: TDM + FFA (timer/scores/phase text/team labels). The claim
+  is written `owned=0` for other modes, so CS/duel HUDs stay cold (no duplicate,
+  no loss).
+- Proof: `--hot-combat-selftest` PASS incl. "cold owns the mode HUD when the
+  claim is not owned" and "hot mode HUD composes when the claim is owned"; full
+  suite PASS.
+- Recorded next: CS HUD needs generic objective facts (bomb/defuse) before it can
+  be claimed; scoreboard needs generic row data; both stay cold.
+
+## Round 45 (2026-09-15, actor overlays hot-owned per-actor) — source implemented
+
+- Actor overlay coverage: generic `ActorIdentityState` (+ `GameHealthComponentV1`,
+  `ActorTeamState`) is now projected for local, network players and network NPCs
+  onto the shared actor EntityId (`PresentationEntities::projectActorOverlayState`
+  / `actorEntityFor`; NPC generic actors via `ensureActor`).
+- `hot.actor-overlays` now enumerates `ActorIdentityState` (one generic path, no
+  per-player/per-NPC loop), projects the head via `world.project`, and emits
+  name + team-coloured health bar + HP text via `render.ui`. It is ON by default
+  and writes `ActorOverlayClaim` on every actor it handles.
+- Per-actor cold yield: `drawPlayerHealthbar` gains `actorEntity` and returns
+  early when the actor carries `ActorOverlayClaim` (exactly one owner; partial
+  coverage stays safe — uncovered actors keep cold). Local NpcSystem bodies pass
+  0 (still cold) until they are on the generic actor path.
+- Proof: `--hot-combat-selftest` PASS incl. world.project front/behind, generic
+  actor overlay via render.ui, and "hot overlay claims the actor (cold yields
+  per-actor)". Full suite PASS.
+
+## Round 45b (2026-09-15, mode HUD) — BLOCKED on generic client match-state exposure
+
+Recorded, not implemented to avoid a duplicate owner: the cold FFA/TDM/CS HUD
+(`engine-tick-ui-overlays.cpp:606-683`, `gamemode-manager.cpp`) is driven by the
+typed cold `CommunityMatchClient` (redScore/blueScore/phase/phaseTimer/mode) and
+does NOT yield on `hotOwnsHud()` (only the cold `MatchTimer` does). Writing a hot
+`MatchHudState` from this requires a generic exposure of client match state (or a
+replicated `MatchHudState` written by the hot mode), plus a mode-HUD claim so the
+cold JSON HUD yields. That is a deliberate primitive/bridge decision; a partial
+writer would duplicate or drop the HUD, so it was not wired.
+
+## Round 44 (2026-09-15, weapon batch + equip lifecycle + overlays substrate) — source implemented
+
+- Weapon presentation batch (no new ABI): shotgun / rocket_launcher /
+  grenade_launcher added to the hot `g_bindings` (tool key = `gameHash(weaponId)`
+  -> logical mesh -> GLB). Every standard weapon now has a generic tool identity
+  and hot presentation.
+- Equip lifecycle: `PresentationEntities::projectLocalPlayer` reconciles the
+  local actor's generic `equips-item` identity from the typed mirror when they
+  disagree (spawn/respawn/join/reconnect), so the identity reconstructs without a
+  manual re-equip. `WeaponSystem::equip`/`unequip` remain the authoritative
+  action; typed fields are mirrors.
+- New generic primitive `GAME_CAP_WORLD_PROJECT` (`world.project`): world position
+  -> screen x/y + in-front flag + depth, using the live camera and kernel
+  viewport. Legitimate cold mechanism; headless-capable (kernel viewport
+  fallback). Reusable for nameplates, prompts, objective labels, damage
+  indicators, editor gizmos.
+- New generic component `ActorIdentityState` (actor-state): display name,
+  `GAME_NET_ALL`; one cross-system source for nameplates/chat/killfeed/scoreboard.
+  Populated for the local actor from the typed username.
+- New hot system `hot.actor-overlays` (`ui.frame`): enumerates generic actors
+  (PresentationState + Health + optional Identity), projects the head point, and
+  emits a health bar + HP text + name via `render.ui`. No typed player/npc.
+- Ownership gating: cold `player-nameplates.cpp` remains the live owner (this
+  is off by default, toggled with `hotoverlays 1|0`) because a full flip needs a
+  per-actor ownership gate and remote/NPC identity coverage; this avoids a
+  duplicate owner. Recorded as the next overlay step.
+- Proof: `--hot-combat-selftest` PASS incl. world.project front/behind, generic
+  actor overlay via render.ui, equip lifecycle/bridge/switch/unequip, weapon
+  batch. Full suite PASS.
+- Audits recorded (not implemented): audio policy owners (NPC/UI/ambient/music),
+  UI composition owners (CS/TDM/FFA HUD, scoreboard, menus), and resource classes
+  (sounds/clips/skeleton/fonts) — see hot-cold-audit.md.
+
+## Round 43 (2026-09-15, standard weapon-slot equip -> generic tool identity) — source implemented
+
+Option A (staged): the real weapon-slot equip now produces the generic tool
+identity. Tool key = `gameHash(weaponId)` (no enum, mod-friendly), matching the
+key runtime tools already use.
+- `actor-state`: `actorStateEquipWeaponKey(actor, toolKey, realm)` reuses a
+  persistent generic tool entity per (actor, key), writes `ToolRefState`, and
+  equips it (one equipped tool per actor). `actorStateUnequipTool(actor)` removes
+  the edge; the tool entity persists.
+- `WeaponSystem::equip`/`unequip` (`weapon-system-equip.cpp`) call these. Typed
+  `Player.equippedWeaponId`/`equippedSlot` stay as compatibility mirrors
+  (authority: generic edge; typed mirrors follow).
+- Hot bindings re-keyed to `gameHash("swordsword")` / `gameHash("revolver")`.
+- One-frame double owner avoided by running `hot.tool-presentation` in
+  `GAME_DOMAIN_POST_MOVEMENT` (before the cold render pass) so the claim is fresh
+  when `WeaponViewModel::render` decides to yield the same frame.
+- Selftest: standard weapon-slot bridge creates identity + real swordsword
+  reaches hot presentation; switch keeps one equipped tool and the old identity
+  persists; unequip removes the edge with no stale claim; unmigrated shotgun
+  keeps the generic identity but cold fallback (migrated==0); revolver same
+  substrate. Full suite PASS.
+- Remaining (staged): the bridge is client-local (Local realm). The
+  server-authoritative counterpart so REMOTE observers see other players' tools
+  is not wired yet, and NPC standard weapons remain typed-only. No new ABI.
+
+## Round 42 (2026-09-15, second weapon no new ABI + live-equip blocker traced) — BLOCKED at gate
+
+- Second weapon (revolver, tool key 1) migrated on the SAME substrate: one hot
+  binding entry (`mesh.tool.revolver` -> `assets/objects/weapons/mimita-revolver-v1.glb`).
+  No kernel/ABI change, no new context field, no per-weapon registry. Selftest
+  proves the real revolver carries its logical mesh + claim via the real generic
+  equip API.
+- Ordering safety: an `equips-item` edge without `ToolRefState` yields no claim
+  and no presentation (no crash, cold stays owner). Missing socket/parent hides.
+- Runtime-unknown tool uses the same real path (entity + equips-item +
+  ToolRefState; presentation system does the rest).
+- **LIVE-EQUIP BLOCKER (exact, with evidence):** the standard weapon-slot equip
+  path never creates a generic tool entity or `equips-item` relationship.
+  `WeaponSystem::equip`/`unequip` (`src/combat/weapon-system-equip.cpp:84-170`)
+  only mutate `Player.equippedWeaponId`/`equippedSlot`; the generic tool entity +
+  `equips-item` is created only for items/runtime tools
+  (`serverItemEquip`/`serverEquipRuntimeTool`, `src/network/server-attack.cpp:1482,1540`)
+  or on a runtime-tool use with `toolId != 0` (`:1285`). So `hot.tool-presentation`
+  sees nothing for a normally-equipped swordsword; the cold viewmodel stays the
+  owner. Replication itself is generic and fine (`dynamic-replication.cpp`).
+- STOPPED at the tool-presentation gate (#19 items 1-3 not met). Fix requires an
+  equip-authority decision: (A) route weapon-slot equip through the existing
+  generic tool entity + `equips-item` (true convergence, touches equip authority),
+  or (B) a client presentation projection for the local equipped weapon
+  (analogous to `projectLocalPlayer`). I did not pick unilaterally because (A)
+  materially changes gameplay/equip authority and neither is verifiable live here.
+- Proof: `--hot-combat-selftest` PASS (revolver same substrate, ordering safe,
+  unmigrated shotgun fallback); full suite PASS (artifact-transfer transiently
+  broke from concurrent work, then went green).
+
+## Round 41 (2026-09-15, real equip flow on the generic substrate + local body owner) — source implemented
+
+- Local body duplicate owner resolved: `hot.presentation-mesh` skips the local
+  possessed actor entity (`GameSharedStateV1.localPlayerEntity`), so the cold
+  body mechanism is the one local-body draw owner. Tools/attachments/effects on
+  other EntityIds still draw generically. Regression test: submission delta with
+  the actor visible == delta with it skipped + 1.
+- Real equip bridge uses the EXISTING generic substrate; no new ABI:
+  `relationship.equips-item` + `ToolRefState.toolKey` (cold generic equip API
+  `actorStateEquipTool`/`actorStateGetEquippedTool`). Hot `hot.tool-presentation`
+  (RENDER, order 3) reads the actor's equipped tool EntityId, hot policy maps the
+  tool key -> logical mesh (hot C++, not a kernel weapon DB), and writes
+  `PresentationState` + `AttachmentState` onto the REAL tool EntityId. Local
+  possessed actor -> VIEW (first person); other actors -> WORLD.
+- Cold `WeaponViewModel::render` yields when the local actor carries a hot
+  `ToolPresentationClaim` matching the equipped tool key (one owner). Unmigrated
+  weapons have no claim and keep the cold path.
+- Runtime-unknown tool uses the SAME real path: `hottool` only creates the entity
+  + `equips-item` + `ToolRefState`; presentation then flows through
+  `hot.tool-presentation -> hot.attachment -> render.mesh`. No debug-only draw.
+- Proof (`--hot-combat-selftest` PASS): local body submitted once; real equip API
+  resolves the tool EntityId; real swordsword tool carries `mesh.tool.swordsword`;
+  attachment resolves; tool EntityId preserved across presentation changes;
+  unmigrated (revolver) keeps cold fallback; runtime-unknown tool via real
+  substrate; view-space context. Full suite PASS.
+- HONEST LIMITATION: the "real equip" proof is headless via the real generic
+  equip API, not an interactive equip. Whether the live client populates
+  `equips-item` for the local actor (so the cold viewmodel actually yields) is not
+  yet verified on screen; until then cold is the safe fallback (no regression).
 
 ## Round 40 (2026-09-15, generic attachment/socket + logical mesh resources + view space) — source implemented
 

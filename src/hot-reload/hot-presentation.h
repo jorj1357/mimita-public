@@ -55,6 +55,29 @@ struct HotAttachmentStateV1 {
     std::uint32_t reserved;
 };
 
+// Written by hot actor-overlay policy on an actor entity to declare that the
+// generic overlay path owns that actor's name/health rendering. The cold
+// nameplate/healthbar path yields per-actor (no duplicate owner, partial
+// coverage stays safe).
+static constexpr std::uint64_t HOT_OVERLAY_CLAIM_COMPONENT =
+    gameHash("ActorOverlayClaim");
+struct HotOverlayClaimV1 {
+    std::uint32_t owned;      // 1 = hot overlay owns this actor
+    std::uint32_t reserved;
+};
+
+// Written by hot tool-presentation policy on a possessed actor to declare that
+// the equipped tool's presentation is hot-owned. Cold weapon presentation reads
+// it and yields for that toolKey (one owner). Generic: a tool key hash, never a
+// weapon enum.
+static constexpr std::uint64_t HOT_TOOL_CLAIM_COMPONENT =
+    gameHash("ToolPresentationClaim");
+struct HotToolClaimV1 {
+    std::uint64_t toolKey;    // equipped tool identity (network id/hash)
+    std::uint32_t context;    // HOT_ATTACHMENT_CONTEXT_*
+    std::uint32_t migrated;   // 1 = hot presentation owns this tool
+};
+
 // Logical resource ids registered by the cold presentation renderer through the
 // generation-aware PresentationResourceProvider.
 static constexpr std::uint64_t HOT_MESH_CUBE = gameHash("mesh.cube");

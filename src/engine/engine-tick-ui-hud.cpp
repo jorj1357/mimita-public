@@ -1,6 +1,7 @@
 #include "engine/engine-tick-ui.h"
 #include "engine/engine.h"
 #include "live-code/live-ui.h"
+#include "gui/hud/mode-hud-bridge.h"
 #include "terminal/terminal-state.h"
 #include <cstdio>
 #include <algorithm>
@@ -84,9 +85,11 @@ void engineTickUIHUD(Engine& engine, float dt)
     MatchLeaderboard::instance().update(dt);
     MatchLeaderboard::instance().render();
     MatchTimer::instance().update(dt);
-    // Cold timer composition is now a compatibility fallback: when a hot
-    // ui.frame system composes the match HUD, the cold draw yields ownership.
-    if (!LiveUi::hotOwnsHud() && MatchTimer::instance().isActive()) {
+    // Transitional bridge: project the typed client match state into generic
+    // MatchHudState + a mode-HUD claim, then yield the cold timer/composition
+    // when the hot path owns the active mode's HUD.
+    ModeHud::projectFromClient();
+    if (!ModeHud::hotOwned() && MatchTimer::instance().isActive()) {
         std::string timer = MatchTimer::instance().formatElapsed();
         float timerW = uiMeasureText(timer.c_str(), 0.40f);
         uiDrawText(timer.c_str(), uiScreenW() * 0.5f - timerW * 0.5f, 18.0f, 0.40f,

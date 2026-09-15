@@ -9,6 +9,7 @@
 */
 
 #include "main-menu.h"
+#include "live-code/live-ui.h"
 #include "account-panel.h"
 #include "menu-avatar-preview.h"
 #include "../ui-system.h"
@@ -45,6 +46,11 @@ void openBrowser(const char* url)
 MainMenuResult drawMainMenu(GLFWwindow* win)
 {
     MainMenuResult r{};
+    // One owner: when hot UI policy owns the main-menu screen, the cold legacy
+    // composition (and input) yields. The hot composition draws through render.ui
+    // and handles clicks via the generic ui.action event.
+    if (LiveUi::hotOwnsScreen(gameHash("screen.main-menu")))
+        return r;
     AuthSystem& auth = AuthSystem::instance();
 
     int fbW = 0, fbH = 0;

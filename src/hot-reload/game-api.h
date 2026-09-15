@@ -455,6 +455,9 @@ enum GameEventType : std::uint32_t {
     GAME_EVENT_ACTOR_DEATH = 12,          // death presentation policy
     GAME_EVENT_ACTOR_RESPAWN = 13,        // respawn policy
     GAME_EVENT_CONNECTION_STATE = 14,     // connection status/retry policy
+    // Generic UI interaction. The cold backend hit-tests a hot-emitted widget
+    // (logical element id) and emits this; hot code owns what the action means.
+    GAME_EVENT_UI_ACTION = 15,
 };
 
 // Damage source ids carried by DamagePolicyV1::source.
@@ -1433,6 +1436,25 @@ struct GameSocketQueryV1 {
 using GameSocketQueryFn = bool (MIMITA_GAME_CALL *)(
     void* host, GameSocketQueryV1* query);
 
+// Generic world->screen projection mechanism. Hot overlay/UI policy supplies a
+// world position; the kernel projects it through the live camera and returns a
+// screen position + in-front flag. The kernel never knows what the overlay is
+// (nameplate, health bar, objective label, damage indicator, editor gizmo).
+static constexpr std::uint64_t GAME_CAP_WORLD_PROJECT = gameHash("world.project");
+struct GameWorldProjectV1 {
+    float worldPosition[3];
+    float viewportWidth;    // 0 = kernel viewport
+    float viewportHeight;
+    // out
+    float screenX;
+    float screenY;
+    float depth;            // clip-space w (eye distance)
+    std::uint32_t visible;  // 1 = in front of the camera
+    std::uint32_t reserved;
+};
+using GameWorldProjectFn = bool (MIMITA_GAME_CALL *)(
+    void* host, GameWorldProjectV1* project);
+
 // Generic logical-presentation-resource registration. Lets hot code register an
 // arbitrary logical mesh/texture id backed by an asset path in the existing
 // generation-aware provider; the kernel owns parsing, validation, generation
@@ -1621,8 +1643,12 @@ struct GameRenderMeshCommandV1 {
     float rotation[4];                  // quaternion xyzw
     float scale[3];
     float color[4];
-    std::uint32_t flags;                // reserved
+    std::uint32_t flags;                // GAME_RENDER_MESH_SPACE_VIEW etc.
     std::uint32_t reserved;
+    // Optional UI clip rect (x,y,w,h; w/h <= 0 = none). Generic 3D-in-UI: a mesh
+    // draw bound to a UI rectangle (viewport + scissor). Reusable for avatar/
+    // inventory previews, editor viewports, spectator thumbnails.
+    float uiClip[4];
 };
 using GameRenderMeshFn = void (MIMITA_GAME_CALL *)(
     void* host, const GameRenderMeshCommandV1* command);
@@ -1635,6 +1661,10 @@ enum GameUiKind : std::uint32_t {
     GAME_UI_PANEL = 2,
     GAME_UI_BAR = 3,
     GAME_UI_IMAGE = 4,
+    // Interactive widget: the cold backend hit-tests the rect and emits a
+    // GAME_EVENT_UI_ACTION carrying elementId when interacted with. Hot code owns
+    // the element's meaning; the backend only knows the id.
+    GAME_UI_BUTTON = 5,
 };
 struct GameUiCommandV1 {
     std::uint32_t kind;     // GameUiKind
@@ -1645,9 +1675,30 @@ struct GameUiCommandV1 {
     float scale;            // text scale
     std::uint64_t resourceId;  // logical image resource (GAME_UI_IMAGE)
     char text[64];          // text, or image path fallback
+    std::uint64_t elementId;   // logical element id (GAME_UI_BUTTON)
 };
 using GameRenderUiFn = void (MIMITA_GAME_CALL *)(
     void* host, const GameUiCommandV1* command);
+
+// Generic UI interaction payload. The cold backend reports WHICH logical element
+// was interacted with and HOW; hot code maps that to behavior. No per-widget
+// callback ABI, no cached function pointers (generation-safe by construction).
+enum GameUiActionType : std::uint32_t {
+    GAME_UI_ACTION_CLICK = 1,
+    GAME_UI_ACTION_HOVER = 2,
+    GAME_UI_ACTION_VALUE_CHANGED = 3,
+    GAME_UI_ACTION_FOCUS = 4,
+};
+struct GameUiActionV1 {
+    std::uint64_t elementId;   // gameHash("menu.play") etc.
+    std::uint32_t actionType;  // GameUiActionType
+    float value;               // e.g. slider value
+    float pointerX;
+    float pointerY;
+    std::uint32_t handled;     // set by a hot handler that owns the action
+    std::uint32_t reserved;
+};
+using GameUiActionFn = void (MIMITA_GAME_CALL *)(void* host, GameUiActionV1* action);
 
 // Component copy policy lives in schema metadata so the editor never hardcodes
 // "if component == X".

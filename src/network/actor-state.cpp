@@ -5,11 +5,13 @@
 */
 #include "network/actor-state.h"
 
+#include <cstdio>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 #include "ecs/dynamic-components.h"
+#include "ecs/entity-registry.h"
 #include "ecs/entity-types.h"
 #include "ecs/relationship-store.h"
 #include "hot-reload/game-api.h"
@@ -21,6 +23,7 @@ namespace {
 constexpr std::uint64_t kTeamId = gameHash("ActorTeamState");
 constexpr std::uint64_t kRoleId = gameHash("ActorRoleState");
 constexpr std::uint64_t kProfileId = gameHash("ActorProfileState");
+constexpr std::uint64_t kIdentityId = gameHash("ActorIdentityState");
 constexpr std::uint64_t kTargetsRel = gameHash("relationship.targets");
 constexpr std::uint64_t kToolRefId = gameHash("ToolRefState");
 constexpr std::uint64_t kContainsItemRel = gameHash("relationship.contains-item");
@@ -65,6 +68,34 @@ void actorStateEnsureSchemas()
                  sizeof(ActorProfileStateV1), 8, "ActorProfileState");
     ensureSchema(kToolRefId, gameHash("ToolRefState.v1"), sizeof(ToolRefStateV1), 8,
                  "ToolRefState");
+    ensureSchema(kIdentityId, gameHash("ActorIdentityState.v1"),
+                 sizeof(ActorIdentityStateV1), 4, "ActorIdentityState");
+}
+
+bool actorStateWriteIdentity(std::uint64_t entity, const char* name)
+{
+    if (entity == 0)
+        return false;
+    actorStateEnsureSchemas();
+    ActorIdentityStateV1 state{};
+    if (name && name[0])
+        std::snprintf(state.name, sizeof(state.name), "%s", name);
+    return MimitaRuntime::DynamicComponentStore::instance().write(
+        static_cast<EntityId>(entity), kIdentityId, &state, sizeof(state));
+}
+
+bool actorStateReadIdentity(std::uint64_t entity, char* outName,
+                            std::uint32_t outSize)
+{
+    if (entity == 0 || !outName || outSize == 0)
+        return false;
+    actorStateEnsureSchemas();
+    ActorIdentityStateV1 state{};
+    if (!MimitaRuntime::DynamicComponentStore::instance().read(
+            static_cast<EntityId>(entity), kIdentityId, &state, sizeof(state)))
+        return false;
+    std::snprintf(outName, outSize, "%s", state.name);
+    return true;
 }
 
 bool actorStateWriteTeam(std::uint64_t entity, std::int32_t team)
@@ -202,6 +233,55 @@ bool actorStateEquipTool(std::uint64_t actorEntity, std::uint64_t toolEntity,
         rel.remove(kEquipsItemRel, static_cast<EntityId>(actorEntity), previous[i]);
     return rel.add(kEquipsItemRel, static_cast<EntityId>(actorEntity),
                    static_cast<EntityId>(toolEntity), toolKey);
+}
+
+bool actorStateUnequipTool(std::uint64_t actorEntity)
+{
+    if (actorEntity == 0)
+        return false;
+    MimitaRuntime::RelationshipStore& rel = MimitaRuntime::RelationshipStore::instance();
+    std::uint64_t previous[8] = {0};
+    const std::size_t count = rel.query(kEquipsItemRel,
+                                        static_cast<EntityId>(actorEntity), previous,
+                                        nullptr, 8);
+    for (std::size_t i = 0; i < count; ++i)
+        rel.remove(kEquipsItemRel, static_cast<EntityId>(actorEntity), previous[i]);
+    return count > 0;
+}
+
+// Standard weapon-slot equip bridge: ensure a generic tool entity exists for the
+// weapon/tool key and make it the actor's one equipped tool. The tool entity is
+// reused across equips (weapon identity persists), so switching never churns
+// EntityIds. Presentation/gameplay/effects all read the same tool identity; the
+// typed Player fields remain compatibility mirrors.
+std::uint64_t actorStateEquipWeaponKey(std::uint64_t actorEntity,
+                                       std::uint64_t toolKey,
+                                       std::uint32_t realm)
+{
+    if (actorEntity == 0 || toolKey == 0)
+        return 0;
+    // Reuse the already-equipped tool when it already represents this key.
+    std::uint64_t current = 0, currentKey = 0;
+    if (actorStateGetEquippedTool(actorEntity, &current, &currentKey) &&
+        current != 0 && currentKey == toolKey &&
+        EntityRegistry::instance().alive(static_cast<EntityId>(current)))
+        return current;
+
+    // Reuse a persistent tool entity per (actor, key); create on first use.
+    static std::unordered_map<std::uint64_t, std::uint64_t> s_toolByActorKey;
+    const std::uint64_t mapKey = actorEntity ^ (toolKey * 0x9E3779B97F4A7C15ull);
+    std::uint64_t tool = 0;
+    auto it = s_toolByActorKey.find(mapKey);
+    if (it != s_toolByActorKey.end() &&
+        EntityRegistry::instance().alive(static_cast<EntityId>(it->second)))
+        tool = it->second;
+    if (tool == 0) {
+        tool = static_cast<std::uint64_t>(
+            EntityRegistry::instance().createGeneric(static_cast<EntityRealm>(realm)));
+        s_toolByActorKey[mapKey] = tool;
+    }
+    actorStateEquipTool(actorEntity, tool, toolKey);
+    return tool;
 }
 
 bool actorStateGetEquippedTool(std::uint64_t actorEntity, std::uint64_t* toolEntity,

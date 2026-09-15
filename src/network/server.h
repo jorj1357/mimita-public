@@ -226,6 +226,9 @@ struct PositionHistoryEntry
     glm::vec3 vel{0.0f};
     float yaw = 0.0f;
     uint32_t tick = 0;
+    // Canonical logical hot generation that produced this authoritative sample.
+    // Rewind must not interpolate across an F/G boundary as ordinary history.
+    uint32_t logicalGenerationId = 0;
 };
 
 // Continuous held-fire window. The server simulates one authoritative
@@ -577,6 +580,9 @@ struct ServerNpcPositionSample {
     glm::vec3 vel{0.0f};
     float yaw = 0.0f;
     uint32_t tick = 0;
+    // Canonical logical hot generation that produced this NPC sample; rewind
+    // must not interpolate across an F/G boundary (matches player history).
+    uint32_t logicalGenerationId = 0;
     // The NPC's rendered body-part AABBs at this tick, matching the client's
     // collideBeam hitboxes so the server re-trace (and hit rewind) validate
     // against exactly what attackers saw — no invisible capsule.

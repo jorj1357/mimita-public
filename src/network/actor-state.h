@@ -60,6 +60,26 @@ bool actorStateEquipTool(std::uint64_t actorEntity, std::uint64_t toolEntity,
 bool actorStateGetEquippedTool(std::uint64_t actorEntity, std::uint64_t* toolEntity,
                                std::uint64_t* toolKey);
 bool actorStateHasEquippedTool(std::uint64_t actorEntity);
+// Remove the equipped-tool edge (unequip). The tool entity persists.
+bool actorStateUnequipTool(std::uint64_t actorEntity);
+// Standard weapon-slot equip bridge: ensure a persistent generic tool entity for
+// `toolKey` and equip it on the actor (one equipped tool per actor). `realm` is
+// the EntityRealm the tool entity is created in. Returns the tool EntityId.
+std::uint64_t actorStateEquipWeaponKey(std::uint64_t actorEntity,
+                                       std::uint64_t toolKey,
+                                       std::uint32_t realm);
+
+// Generic actor identity (display name). One cross-system source for nameplates,
+// chat, killfeed, scoreboard, and spectator UI; no Player*/Npc* needed. GAME_NET_ALL
+// so a joining client learns names generically.
+static constexpr std::uint32_t ACTOR_IDENTITY_NAME_MAX = 32;
+struct ActorIdentityStateV1 {
+    char name[ACTOR_IDENTITY_NAME_MAX];
+    std::uint32_t reserved;
+};
+bool actorStateWriteIdentity(std::uint64_t entity, const char* name);
+bool actorStateReadIdentity(std::uint64_t entity, char* outName,
+                            std::uint32_t outSize);
 
 // Generic action-handling gate: the hot action router records on the actor that
 // it handled a runtime action at a tick. The cold legacy fallback consults this

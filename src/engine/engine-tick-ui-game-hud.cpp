@@ -30,6 +30,8 @@
 #include "gui/gui-layout.h"
 #include "gui/gui-element-render.h"
 #include "gui/hud/player-nameplates.h"
+#include "ecs/actor-entities.h"
+#include "render/presentation-entities.h"
 #include "gui/hud/chat-bubble.h"
 #include "gui/hud/chat-window.h"
 #include "gui/gui-editor.h"
@@ -372,13 +374,17 @@ void engineTickUIGameHUD(Engine& engine, float dt)
             "[HEALTHBAR SELF] calling drawPlayerHealthbar hp=%d/%d pos=(%.2f %.2f %.2f)\n",
             player.currentHp, player.maxHp,
             player.pos.x, player.pos.y, player.pos.z);
-        drawPlayerHealthbar(player, camera, "self-hp", "live_world");
+        drawPlayerHealthbar(player, camera, "self-hp", "live_world",
+                            static_cast<std::uint64_t>(
+                                Ecs::ensureLocalPlayerEntity()));
     }
     for (const Npc& npc : npcSystem.all()) {
         if (npc.body.dead) {
             continue;
         }
-        drawPlayerHealthbar(npc.body, camera, "npc-hp", "live_world");
+        // Local NpcSystem bodies are not on the generic actor path yet: 0 keeps
+        // cold ownership (safe fallback, no duplicate owner).
+        drawPlayerHealthbar(npc.body, camera, "npc-hp", "live_world", 0);
     }
 
     if (!gReplayExportRenderMode || ReplayExportUI::showChatBubbles()) {
@@ -421,7 +427,8 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         {
             const HealthbarRenderResult result =
                 drawPlayerHealthbar(
-                    kv.second, camera, "network-player-hp", "live_world");
+                    kv.second, camera, "network-player-hp", "live_world",
+                    PresentationEntities::actorEntityFor(kv.first, true));
             if (logHealthbars)
             {
                 printf(
@@ -444,7 +451,10 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         for (const auto& kv : mpContext.remoteNpcs)
         {
             if (kv.second.dead || kv.second.currentHp <= 0) continue;
-            drawPlayerHealthbar(kv.second, camera, "network-npc-hp", "live_world");
+            drawPlayerHealthbar(kv.second, camera, "network-npc-hp",
+                                "live_world",
+                                PresentationEntities::actorEntityFor(kv.first,
+                                                                     false));
         }
 
         if (logHealthbars)

@@ -90,6 +90,27 @@ void DynamicComponentStore::registerMigration(std::uint64_t typeId,
     migrations_[MigrationKey{typeId, fromVersion, toVersion}] = fn;
 }
 
+bool DynamicComponentStore::hasMigration(std::uint64_t typeId,
+                                         std::uint32_t fromVersion,
+                                         std::uint32_t toVersion) const
+{
+    if (typeId == 0 || fromVersion == toVersion)
+        return false;
+    return migrations_.find(MigrationKey{typeId, fromVersion, toVersion}) !=
+        migrations_.end();
+}
+
+std::uint32_t DynamicComponentStore::maxStoredVersion(std::uint64_t typeId) const
+{
+    const auto it = data_.find(typeId);
+    if (it == data_.end())
+        return 0;
+    std::uint32_t maxVersion = 0;
+    for (const auto& kv : it->second)
+        maxVersion = std::max(maxVersion, kv.second.version);
+    return maxVersion;
+}
+
 bool DynamicComponentStore::applySchemaUpdate(
     const std::vector<DynamicComponentSchema>& schemas, std::string& error)
 {

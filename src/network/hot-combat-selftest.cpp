@@ -36,6 +36,10 @@
 #include "network/server-context.h"
 #include "network/server-gamemode.h"
 #include "network/server-weapon-state.h"
+#include "network/actor-state.h"
+#include "camera.h"
+
+extern Camera* gpCamera;
 
 using namespace MimitaNet;
 
@@ -695,9 +699,19 @@ bool runHotCombatSelfTest(std::string& report)
 
     // ── Generic attachment + logical mesh resources + view space ──────
     {
+        // The real equip state's ToolRefState schema is cold-owned.
+        MimitaNet::actorStateEnsureSchemas();
         GameplayContextV1* actx = LiveBehavior::hostContext(32);
-        ok &= check(runtime.hasCommand("hotmesh") && runtime.hasCommand("hottool") &&
-                        runtime.hasCommand("hottool1p"),
+        // Tool presentation runs in post-movement (before the cold render pass)
+        // then the attachment/mesh systems run in the render domain; mirror the
+        // real frame order.
+        auto runPresentation = [&](std::uint64_t t) {
+            runtime.runDomain(GAME_DOMAIN_POST_MOVEMENT, t, 0.016f,
+                              LiveBehavior::hostContext(t));
+            runtime.runDomain(GAME_DOMAIN_RENDER, t, 0.016f,
+                              LiveBehavior::hostContext(t));
+        };
+        ok &= check(runtime.hasCommand("hotmesh") && runtime.hasCommand("hottool"),
                     "hot attachment/tool commands registered (no cold switch)",
                     report);
         auto sock = actx ? reinterpret_cast<GameSocketQueryFn>(
@@ -773,45 +787,523 @@ bool runHotCombatSelfTest(std::string& report)
                     "malformed mesh keeps no bad generation (last-good only)",
                     report);
 
-        // Runtime-unknown attached tool: third-person (world) + first-person
-        // (view space). No weapon enum, no per-tool kernel field.
+        // Local-player duplicate body owner: the local possessed actor's own
+        // PresentationState must NOT be submitted by the generic mesh path (the
+        // cold body mechanism is the one owner). Compare submission deltas with
+        // and without localPlayerEntity pointing at the actor.
+        std::uint64_t localActor = 0;
+        if (actx && actx->entityCreate) {
+            actx->entityCreate(actx->host, 0u, &localActor);
+            GameTransformComponentV1 tf{};
+            tf.position[0] = 20.0f;
+            actx->writeComponent(actx->host, localActor, GAME_COMPONENT_TRANSFORM,
+                                 &tf, sizeof(tf));
+            HotPresentationStateV1 ps{};
+            ps.meshResourceId = gameHash("mesh.cube");
+            ps.textureResourceId = gameHash("texture.default");
+            ps.scale = 1.0f;
+            ps.color[0] = ps.color[1] = ps.color[2] = ps.color[3] = 1.0f;
+            actx->dynamicWriteComponent(actx->host, localActor,
+                                        HOT_PRESENTATION_COMPONENT, &ps,
+                                        sizeof(ps));
+        }
         if (actx && actx->permanentStorage &&
             actx->permanentStorageSize >= sizeof(GameSharedStateV1)) {
             auto* shared =
                 reinterpret_cast<GameSharedStateV1*>(actx->permanentStorage);
             if (shared->magic == GAME_SHARED_MAGIC)
-                shared->localPlayerEntity = parent;
+                shared->localPlayerEntity = 0;   // baseline: nothing skipped
         }
-        const std::uint64_t meshesBeforeTool =
-            PresentationRender::submittedMeshCount();
-        runtime.runCommand("hottool", "", LiveBehavior::hostContext(33));
-        runtime.runDomain(GAME_DOMAIN_RENDER, 34, 0.016f,
-                          LiveBehavior::hostContext(34));
-        ok &= check(PresentationRender::submittedMeshCount() > meshesBeforeTool,
-                    "runtime-unknown attached tool presents via render.mesh",
+        const std::uint64_t base0 = PresentationRender::submittedMeshCount();
+        runPresentation(50);
+        const std::uint64_t withActorVisible =
+            PresentationRender::submittedMeshCount() - base0;
+        if (actx && actx->permanentStorage &&
+            actx->permanentStorageSize >= sizeof(GameSharedStateV1)) {
+            auto* shared =
+                reinterpret_cast<GameSharedStateV1*>(actx->permanentStorage);
+            if (shared->magic == GAME_SHARED_MAGIC)
+                shared->localPlayerEntity = localActor;
+        }
+        const std::uint64_t base1 = PresentationRender::submittedMeshCount();
+        runPresentation(51);
+        const std::uint64_t withActorSkipped =
+            PresentationRender::submittedMeshCount() - base1;
+        ok &= check(localActor != 0 && withActorVisible >= 1 &&
+                        withActorVisible == withActorSkipped + 1,
+                    "local possessed body is submitted exactly once (generic path yields)",
                     report);
 
-        std::uint64_t attEntities[16];
-        const std::uint32_t attCount = actx
-            ? actx->dynamicEnumerateComponent(actx->host,
-                                              HOT_ATTACHMENT_COMPONENT,
-                                              attEntities, 16)
+        // Runtime-unknown tool via the REAL equip substrate: the command only
+        // creates the entity + equips-item relationship + ToolRefState; the
+        // shared hot.tool-presentation -> hot.attachment -> render.mesh path
+        // does the rest (no debug-only rendering shortcut).
+        const std::uint64_t viewBefore =
+            PresentationRender::viewSpaceSubmissionCount();
+        runtime.runCommand("hottool", "", LiveBehavior::hostContext(33));
+        std::uint64_t equipped[4] = {0, 0, 0, 0};
+        const std::uint32_t eqCount = actx
+            ? actx->relationshipQuery(actx->host,
+                                      gameHash("relationship.equips-item"),
+                                      localActor, equipped, nullptr, 4)
             : 0u;
+        ok &= check(eqCount == 1 && equipped[0] != 0,
+                    "runtime-unknown tool registered via equips-item relationship",
+                    report);
+
+        const std::uint64_t meshesBeforeTool =
+            PresentationRender::submittedMeshCount();
+        runPresentation(34);
+        ok &= check(PresentationRender::submittedMeshCount() > meshesBeforeTool,
+                    "equipped tool presents via generic attachment render.mesh",
+                    report);
+
+        // The real tool EntityId carries the generic PresentationState.
+        HotPresentationStateV1 toolPres{};
+        const bool toolPresRead = actx && equipped[0] != 0 &&
+            actx->dynamicReadComponent(actx->host, equipped[0],
+                                       HOT_PRESENTATION_COMPONENT, &toolPres,
+                                       sizeof(toolPres));
+        ok &= check(toolPresRead &&
+                        toolPres.meshResourceId == gameHash("mesh.runtime.tool"),
+                    "tool entity carries its logical mesh resource", report);
+
         HotAttachmentStateV1 att{};
-        const bool attRead = attCount >= 1 && actx &&
-            actx->dynamicReadComponent(actx->host, attEntities[0],
+        const bool attRead = actx && equipped[0] != 0 &&
+            actx->dynamicReadComponent(actx->host, equipped[0],
                                        HOT_ATTACHMENT_COMPONENT, &att,
                                        sizeof(att));
-        ok &= check(attRead && att.resolved == 1,
+        ok &= check(attRead && att.resolved == 1 &&
+                        att.parentEntity == localActor,
                     "attachment resolves a socket world transform (fail-safe)",
                     report);
 
-        const std::uint64_t viewBefore = PresentationRender::viewSpaceSubmissionCount();
-        runtime.runCommand("hottool1p", "", LiveBehavior::hostContext(35));
-        runtime.runDomain(GAME_DOMAIN_RENDER, 36, 0.016f,
-                          LiveBehavior::hostContext(36));
+        HotToolClaimV1 claim{};
+        const bool claimRead = actx &&
+            actx->dynamicReadComponent(actx->host, localActor,
+                                       HOT_TOOL_CLAIM_COMPONENT, &claim,
+                                       sizeof(claim));
+        ok &= check(claimRead && claim.migrated == 1 && claim.toolKey != 0,
+                    "hot tool claim declares single presentation owner", report);
+
         ok &= check(PresentationRender::viewSpaceSubmissionCount() > viewBefore,
-                    "first-person tool uses the generic view-space context",
+                    "local equipped tool uses the generic view-space context",
+                    report);
+
+        // REAL equip path: the cold generic equip API is the source of truth;
+        // hot tool-presentation consumes it. This is the real swordsword, driven
+        // by the real equip state (not a debug-only shortcut).
+        std::uint64_t swordActor = 0;
+        std::uint64_t swordTool = 0;
+        if (actx && actx->entityCreate) {
+            actx->entityCreate(actx->host, 0u, &swordActor);
+            actx->entityCreate(actx->host, 0u, &swordTool);
+            GameTransformComponentV1 tf{};
+            tf.position[0] = 30.0f;
+            actx->writeComponent(actx->host, swordActor, GAME_COMPONENT_TRANSFORM,
+                                 &tf, sizeof(tf));
+        }
+        const bool equippedReal =
+            swordActor != 0 && swordTool != 0 &&
+            MimitaNet::actorStateEquipTool(swordActor, swordTool,
+                                           gameHash("swordsword"));
+        std::uint64_t eqTool = 0, eqKey = 0;
+        ok &= check(equippedReal &&
+                        MimitaNet::actorStateGetEquippedTool(swordActor, &eqTool,
+                                                             &eqKey) &&
+                        eqTool == swordTool && eqKey == gameHash("swordsword"),
+                    "real equip API resolves the equipped tool EntityId", report);
+
+        if (actx && actx->permanentStorage &&
+            actx->permanentStorageSize >= sizeof(GameSharedStateV1)) {
+            auto* shared =
+                reinterpret_cast<GameSharedStateV1*>(actx->permanentStorage);
+            if (shared->magic == GAME_SHARED_MAGIC)
+                shared->localPlayerEntity = swordActor;
+        }
+        runPresentation(60);
+        HotPresentationStateV1 swordPres{};
+        const bool swordPresRead = actx &&
+            actx->dynamicReadComponent(actx->host, swordTool,
+                                       HOT_PRESENTATION_COMPONENT, &swordPres,
+                                       sizeof(swordPres));
+        ok &= check(swordPresRead &&
+                        swordPres.meshResourceId == gameHash("mesh.tool.swordsword"),
+                    "real swordsword tool carries its logical mesh (hot policy)",
+                    report);
+        HotAttachmentStateV1 swAtt{};
+        const bool swAttRead = actx &&
+            actx->dynamicReadComponent(actx->host, swordTool,
+                                       HOT_ATTACHMENT_COMPONENT, &swAtt,
+                                       sizeof(swAtt));
+        ok &= check(swAttRead && swAtt.resolved == 1 &&
+                        swAtt.parentEntity == swordActor,
+                    "real swordsword attachment resolves to the actor socket",
+                    report);
+
+        // Identity survives further presentation changes.
+        runPresentation(61);
+        std::uint64_t eqTool2 = 0, eqKey2 = 0;
+        ok &= check(MimitaNet::actorStateGetEquippedTool(swordActor, &eqTool2,
+                                                         &eqKey2) &&
+                        eqTool2 == swordTool,
+                    "presentation changes preserve the tool EntityId", report);
+
+        // SECOND WEAPON, NO NEW ABI: the real revolver (tool key 1) uses the
+        // exact same substrate (binding + attachment + mesh), only hot policy
+        // data differs.
+        std::uint64_t revActor = 0, revTool = 0;
+        if (actx && actx->entityCreate) {
+            actx->entityCreate(actx->host, 0u, &revActor);
+            actx->entityCreate(actx->host, 0u, &revTool);
+            MimitaNet::actorStateEquipTool(revActor, revTool,
+                                           gameHash("revolver"));
+        }
+        if (actx && actx->permanentStorage &&
+            actx->permanentStorageSize >= sizeof(GameSharedStateV1)) {
+            auto* shared =
+                reinterpret_cast<GameSharedStateV1*>(actx->permanentStorage);
+            if (shared->magic == GAME_SHARED_MAGIC)
+                shared->localPlayerEntity = revActor;
+        }
+        runPresentation(62);
+        HotPresentationStateV1 revPres{};
+        const bool revPresRead = actx &&
+            actx->dynamicReadComponent(actx->host, revTool,
+                                       HOT_PRESENTATION_COMPONENT, &revPres,
+                                       sizeof(revPres));
+        HotToolClaimV1 revClaim{};
+        const bool revClaimRead = actx &&
+            actx->dynamicReadComponent(actx->host, revActor,
+                                       HOT_TOOL_CLAIM_COMPONENT, &revClaim,
+                                       sizeof(revClaim));
+        ok &= check(revPresRead &&
+                        revPres.meshResourceId == gameHash("mesh.tool.revolver") &&
+                        revClaimRead && revClaim.migrated == 1 &&
+                        revClaim.toolKey == gameHash("revolver"),
+                    "second weapon (revolver) uses the same substrate (no new ABI)",
+                    report);
+
+        // Ordering safety: relationship present but the tool component state has
+        // not arrived yet -> no crash, no false claim, cold stays the owner.
+        std::uint64_t ghostActor = 0, ghostTool = 0;
+        if (actx && actx->entityCreate) {
+            actx->entityCreate(actx->host, 0u, &ghostActor);
+            actx->entityCreate(actx->host, 0u, &ghostTool);
+            // Equip edge without a ToolRefState write.
+            actx->relationshipAdd(actx->host,
+                                  gameHash("relationship.equips-item"),
+                                  ghostActor, ghostTool, 4);
+        }
+        if (actx && actx->permanentStorage &&
+            actx->permanentStorageSize >= sizeof(GameSharedStateV1)) {
+            auto* shared =
+                reinterpret_cast<GameSharedStateV1*>(actx->permanentStorage);
+            if (shared->magic == GAME_SHARED_MAGIC)
+                shared->localPlayerEntity = ghostActor;
+        }
+        runPresentation(63);
+        HotToolClaimV1 ghostClaim{};
+        const bool ghostClaimRead = actx &&
+            actx->dynamicReadComponent(actx->host, ghostActor,
+                                       HOT_TOOL_CLAIM_COMPONENT, &ghostClaim,
+                                       sizeof(ghostClaim));
+        HotPresentationStateV1 ghostPres{};
+        const bool ghostPresRead = actx &&
+            actx->dynamicReadComponent(actx->host, ghostTool,
+                                       HOT_PRESENTATION_COMPONENT, &ghostPres,
+                                       sizeof(ghostPres));
+        ok &= check(ghostClaimRead && ghostClaim.migrated == 0 &&
+                        !ghostPresRead,
+                    "incomplete tool state waits safely (no false claim/crash)",
+                    report);
+
+        // Unmigrated weapon (no hot binding): generic identity exists but no
+        // hot claim, so cold fallback stays the owner.
+        std::uint64_t sgActor = 0, sgTool = 0;
+        if (actx && actx->entityCreate) {
+            actx->entityCreate(actx->host, 0u, &sgActor);
+            actx->entityCreate(actx->host, 0u, &sgTool);
+            MimitaNet::actorStateEquipTool(sgActor, sgTool,
+                                           gameHash("weapon.selftest.cold"));
+        }
+        if (actx && actx->permanentStorage &&
+            actx->permanentStorageSize >= sizeof(GameSharedStateV1)) {
+            auto* shared =
+                reinterpret_cast<GameSharedStateV1*>(actx->permanentStorage);
+            if (shared->magic == GAME_SHARED_MAGIC)
+                shared->localPlayerEntity = sgActor;
+        }
+        runPresentation(64);
+        HotToolClaimV1 sgClaim{};
+        const bool sgClaimRead = actx &&
+            actx->dynamicReadComponent(actx->host, sgActor,
+                                       HOT_TOOL_CLAIM_COMPONENT, &sgClaim,
+                                       sizeof(sgClaim));
+        ok &= check(sgClaimRead && sgClaim.migrated == 0,
+                    "unmigrated weapon falls back to cold presentation", report);
+
+        // STANDARD WEAPON-SLOT BRIDGE: the exact function the real
+        // WeaponSystem::equip calls. It must create the generic tool identity
+        // (persistent per actor+key) and equip it, with the typed mirror
+        // agreeing. No manual actorStateEquipTool substitution here.
+        std::uint64_t bridgeActor = 0;
+        if (actx && actx->entityCreate)
+            actx->entityCreate(actx->host, 0u, &bridgeActor);
+        const std::uint64_t swordTool2 = MimitaNet::actorStateEquipWeaponKey(
+            bridgeActor, gameHash("swordsword"),
+            static_cast<std::uint32_t>(EntityRealm::Local));
+        std::uint64_t bt = 0, bk = 0;
+        ok &= check(swordTool2 != 0 && bridgeActor != 0 &&
+                        MimitaNet::actorStateGetEquippedTool(bridgeActor, &bt, &bk) &&
+                        bt == swordTool2 && bk == gameHash("swordsword"),
+                    "standard weapon-slot equip creates the generic tool identity",
+                    report);
+
+        if (actx && actx->permanentStorage &&
+            actx->permanentStorageSize >= sizeof(GameSharedStateV1)) {
+            auto* shared =
+                reinterpret_cast<GameSharedStateV1*>(actx->permanentStorage);
+            if (shared->magic == GAME_SHARED_MAGIC)
+                shared->localPlayerEntity = bridgeActor;
+        }
+        runPresentation(70);
+        HotToolClaimV1 bClaim{};
+        HotPresentationStateV1 bSwordPres{};
+        const bool bSwordRead = actx &&
+            actx->dynamicReadComponent(actx->host, swordTool2,
+                                       HOT_PRESENTATION_COMPONENT, &bSwordPres,
+                                       sizeof(bSwordPres));
+        const bool bClaimRead = actx &&
+            actx->dynamicReadComponent(actx->host, bridgeActor,
+                                       HOT_TOOL_CLAIM_COMPONENT, &bClaim,
+                                       sizeof(bClaim));
+        ok &= check(bSwordRead &&
+                        bSwordPres.meshResourceId == gameHash("mesh.tool.swordsword") &&
+                        bClaimRead && bClaim.migrated == 1 &&
+                        bClaim.toolKey == gameHash("swordsword"),
+                    "real standard-equip swordsword reaches hot presentation",
+                    report);
+
+        // Switch swordsword -> revolver: exactly one equipped tool; the sword
+        // tool identity persists but is no longer equipped.
+        const std::uint64_t revTool2 = MimitaNet::actorStateEquipWeaponKey(
+            bridgeActor, gameHash("revolver"),
+            static_cast<std::uint32_t>(EntityRealm::Local));
+        std::uint64_t bt2 = 0, bk2 = 0;
+        std::uint64_t edges[4] = {0, 0, 0, 0};
+        const std::uint32_t edgeCount = actx
+            ? actx->relationshipQuery(actx->host,
+                                      gameHash("relationship.equips-item"),
+                                      bridgeActor, edges, nullptr, 4)
+            : 0u;
+        ok &= check(revTool2 != 0 && revTool2 != swordTool2 &&
+                        MimitaNet::actorStateGetEquippedTool(bridgeActor, &bt2,
+                                                             &bk2) &&
+                        bk2 == gameHash("revolver") && edgeCount == 1 &&
+                        edges[0] == revTool2 &&
+                        EntityRegistry::instance().alive(
+                            static_cast<EntityId>(swordTool2)),
+                    "weapon switch keeps one equipped tool; old identity persists",
+                    report);
+
+        // Unequip: edge removed, no claim, tool entities persist.
+        MimitaNet::actorStateUnequipTool(bridgeActor);
+        runPresentation(71);
+        std::uint64_t bt3 = 0, bk3 = 0;
+        HotToolClaimV1 uClaim{};
+        const bool uClaimRead = actx &&
+            actx->dynamicReadComponent(actx->host, bridgeActor,
+                                       HOT_TOOL_CLAIM_COMPONENT, &uClaim,
+                                       sizeof(uClaim));
+        ok &= check(!MimitaNet::actorStateGetEquippedTool(bridgeActor, &bt3, &bk3) &&
+                        uClaimRead && uClaim.migrated == 0 &&
+                        EntityRegistry::instance().alive(
+                            static_cast<EntityId>(swordTool2)),
+                    "unequip removes the generic edge; no stale claim", report);
+    }
+
+    // ── Generic world->screen projection + hot actor overlays ─────────
+    {
+        GameplayContextV1* actx = LiveBehavior::hostContext(80);
+        auto project = actx ? reinterpret_cast<GameWorldProjectFn>(
+                                  actx->resolveCapability(actx->host,
+                                                          GAME_CAP_WORLD_PROJECT))
+                            : nullptr;
+        ok &= check(project != nullptr, "world.project capability resolves",
+                    report);
+        static Camera testCam;
+        testCam.pos = glm::vec3(0.0f);
+        testCam.front = glm::vec3(1.0f, 0.0f, 0.0f);
+        testCam.up = glm::vec3(0.0f, 0.0f, 1.0f);
+        testCam.right = glm::vec3(0.0f, -1.0f, 0.0f);
+        testCam.yaw = 0.0f;
+        testCam.pitch = 0.0f;
+        Camera* const savedCamera = gpCamera;
+        gpCamera = &testCam;
+        if (project) {
+            GameWorldProjectV1 front{};
+            front.worldPosition[0] = 5.0f;
+            const bool frontOk = project(actx->host, &front) && front.visible == 1;
+            GameWorldProjectV1 behind{};
+            behind.worldPosition[0] = -5.0f;
+            project(actx->host, &behind);
+            ok &= check(frontOk && behind.visible == 0,
+                        "world.project projects front and rejects behind", report);
+        }
+
+        // Hot actor overlays compose through render.ui for a generic actor that
+        // has only Transform + Health + PresentationState + identity.
+        std::uint64_t overlayActor = 0;
+        if (actx && actx->entityCreate) {
+            actx->entityCreate(actx->host, 0u, &overlayActor);
+            GameTransformComponentV1 tf{};
+            tf.position[0] = 5.0f;  // in front of the test camera
+            actx->writeComponent(actx->host, overlayActor,
+                                 GAME_COMPONENT_TRANSFORM, &tf, sizeof(tf));
+            GameHealthComponentV1 hp{};
+            hp.current = 42;
+            hp.max = 100;
+            actx->writeComponent(actx->host, overlayActor, GAME_COMPONENT_HEALTH,
+                                 &hp, sizeof(hp));
+            HotPresentationStateV1 ps{};
+            ps.meshResourceId = HOT_MESH_ACTOR;
+            ps.scale = 1.0f;
+            actx->dynamicWriteComponent(actx->host, overlayActor,
+                                        HOT_PRESENTATION_COMPONENT, &ps,
+                                        sizeof(ps));
+            MimitaNet::actorStateWriteIdentity(overlayActor, "RuntimeActor");
+        }
+        ok &= check(runtime.hasCommand("hotoverlays"),
+                    "hot overlay command registered (no cold switch)", report);
+        const std::uint64_t uiBefore = LiveUi::commandCount();
+        runtime.runDomain(GAME_DOMAIN_UI, 82, 0.016f,
+                          LiveBehavior::hostContext(82));
+        ok &= check(LiveUi::commandCount() > uiBefore,
+                    "generic actor gets a hot overlay via render.ui", report);
+        // Per-actor ownership: the hot path claims the actor so the cold
+        // nameplate/healthbar policy yields for it (exactly one owner).
+        HotOverlayClaimV1 claim{};
+        const bool claimed = overlayActor != 0 &&
+            actx->dynamicReadComponent(actx->host, overlayActor,
+                                       HOT_OVERLAY_CLAIM_COMPONENT, &claim,
+                                       sizeof(claim));
+        ok &= check(claimed && claim.owned == 1,
+                    "hot overlay claims the actor (cold yields per-actor)",
+                    report);
+        gpCamera = savedCamera;
+        runtime.runCommand("hotoverlays", "0", LiveBehavior::hostContext(84));
+    }
+
+    // ── Generic mode HUD claim (MatchHudState + ModeHudClaim) ─────────
+    {
+        GameplayContextV1* ctx = LiveBehavior::hostContext(90);
+        // Move hot UI off the main menu so only the match HUD can emit here.
+        runtime.runCommand("uiscreen", "screen.play", LiveBehavior::hostContext(90));
+        std::uint64_t hudEntity = 0;
+        if (ctx && ctx->entityCreate)
+            ctx->entityCreate(ctx->host, 0u, &hudEntity);
+        HotMatchHudStateV1 hud{};
+        hud.timerSeconds = 90.0f;
+        hud.scoreA = 3;
+        hud.scoreB = 5;
+        hud.phase = 2;
+        std::snprintf(hud.labelA, sizeof(hud.labelA), "RED");
+        std::snprintf(hud.labelB, sizeof(hud.labelB), "BLUE");
+        HotModeHudClaimV1 claim{};
+        claim.owned = 0;
+        if (ctx && hudEntity != 0) {
+            ctx->dynamicWriteComponent(ctx->host, hudEntity,
+                                       HOT_MATCH_HUD_COMPONENT, &hud,
+                                       sizeof(hud));
+            ctx->dynamicWriteComponent(ctx->host, hudEntity,
+                                       HOT_MODE_HUD_CLAIM_COMPONENT, &claim,
+                                       sizeof(claim));
+        }
+        const std::uint64_t beforeCold = LiveUi::commandCount();
+        runtime.runDomain(GAME_DOMAIN_UI, 91, 0.016f,
+                          LiveBehavior::hostContext(91));
+        ok &= check(LiveUi::commandCount() == beforeCold,
+                    "cold owns the mode HUD when the claim is not owned", report);
+
+        claim.owned = 1;
+        if (ctx && hudEntity != 0)
+            ctx->dynamicWriteComponent(ctx->host, hudEntity,
+                                       HOT_MODE_HUD_CLAIM_COMPONENT, &claim,
+                                       sizeof(claim));
+        const std::uint64_t beforeHot = LiveUi::commandCount();
+        runtime.runDomain(GAME_DOMAIN_UI, 92, 0.016f,
+                          LiveBehavior::hostContext(92));
+        ok &= check(LiveUi::commandCount() > beforeHot,
+                    "hot mode HUD composes when the claim is owned", report);
+        // Cleanup so later "no state" checks are deterministic.
+        if (ctx && hudEntity != 0) {
+            ctx->dynamicRemoveComponent(ctx->host, hudEntity,
+                                        HOT_MATCH_HUD_COMPONENT);
+            ctx->dynamicRemoveComponent(ctx->host, hudEntity,
+                                        HOT_MODE_HUD_CLAIM_COMPONENT);
+        }
+    }
+
+    // ── Generic UI action event + hot menu composition ────────────────
+    {
+        ok &= check(runtime.hasCommand("uiscreen"),
+                    "hot UI command registered (no cold switch)", report);
+        runtime.runCommand("uiscreen", "screen.main-menu",
+                           LiveBehavior::hostContext(95));
+        GameplayContextV1* uiCtx = LiveBehavior::hostContext(95);
+        std::uint64_t uiActor = 0;
+        if (uiCtx && uiCtx->entityCreate)
+            uiCtx->entityCreate(uiCtx->host, 0u, &uiActor);
+        if (uiCtx && uiCtx->permanentStorage &&
+            uiCtx->permanentStorageSize >= sizeof(GameSharedStateV1)) {
+            auto* shared =
+                reinterpret_cast<GameSharedStateV1*>(uiCtx->permanentStorage);
+            if (shared->magic == GAME_SHARED_MAGIC)
+                shared->localPlayerEntity = uiActor;  // claim carrier
+        }
+        LiveUi::beginFrame();
+        runtime.runDomain(GAME_DOMAIN_UI, 96, 0.016f,
+                          LiveBehavior::hostContext(96));
+        ok &= check(LiveUi::buttonCount() == 3,
+                    "hot main menu emits interactive widgets", report);
+
+        // Synthetic click on the PLAY button center.
+        const bool consumed = LiveUi::handlePointerClick(640.0f, 212.0f, 96);
+        ok &= check(consumed,
+                    "cold backend reports the click as a generic ui.action", report);
+
+        HotUiClaimV1 uiClaim{};
+        const bool claimRead = uiCtx && uiActor != 0 &&
+            uiCtx->dynamicReadComponent(uiCtx->host, uiActor,
+                                        HOT_UI_CLAIM_COMPONENT, &uiClaim,
+                                        sizeof(uiClaim));
+        ok &= check(claimRead && uiClaim.owned == 1 &&
+                        uiClaim.screenId == gameHash("screen.main-menu"),
+                    "hot UI claims the screen (cold legacy menu yields)", report);
+
+        // Navigation state lives in a migratable dynamic component (not a module
+        // static), so it survives a hot generation swap.
+        HotUiNavigationStateV1 nav{};
+        const bool navRead = uiCtx && uiActor != 0 &&
+            uiCtx->dynamicReadComponent(uiCtx->host, uiActor,
+                                        HOT_UI_NAV_COMPONENT, &nav, sizeof(nav));
+        ok &= check(navRead && nav.screenId == gameHash("screen.play"),
+                    "hot navigation state is migratable component state", report);
+
+        // The action changed hot navigation: main menu no longer composes.
+        LiveUi::beginFrame();
+        runtime.runDomain(GAME_DOMAIN_UI, 97, 0.016f,
+                          LiveBehavior::hostContext(97));
+        ok &= check(LiveUi::buttonCount() == 0,
+                    "hot navigation moved off the main menu after the action",
+                    report);
+
+        // Generation safety: beginFrame clears any stale claim, so a generation
+        // that fails to re-claim falls back to the cold owner (no blank UI).
+        LiveUi::beginFrame();
+        ok &= check(!LiveUi::hotOwnsScreen(gameHash("screen.main-menu")),
+                    "hot screen claim is recomputed per frame (generation-safe)",
                     report);
     }
 
@@ -948,10 +1440,15 @@ bool runHotCombatSelfTest(std::string& report)
         std::uint64_t hudMatch = 0;
         if (uiCtx && uiCtx->entityCreate)
             uiCtx->entityCreate(uiCtx->host, 0u, &hudMatch);
+        HotModeHudClaimV1 hudClaim{};
+        hudClaim.owned = 1;   // hot composition owns this mode's HUD
         const bool wroteHud =
             hudMatch != 0 &&
             DynamicComponentStore::instance().write(hudMatch, HOT_MATCH_HUD_COMPONENT,
-                                                     &hud, sizeof(hud));
+                                                     &hud, sizeof(hud)) &&
+            DynamicComponentStore::instance().write(
+                hudMatch, HOT_MODE_HUD_CLAIM_COMPONENT, &hudClaim,
+                sizeof(hudClaim));
         std::uint64_t hudFound[4] = {0};
         const std::uint32_t hudStored = DynamicComponentStore::instance().enumerate(
             HOT_MATCH_HUD_COMPONENT, hudFound, 4);

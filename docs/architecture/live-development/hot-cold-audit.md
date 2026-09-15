@@ -53,7 +53,8 @@ Metric: "if this behavior has a bug, does fixing it still require rebuilding/res
 | resources | GLB/loader | `render.mesh` capability | resource provider | IO cold by design | done | no |
 | editor | cold editor cache | editor-behavior hot | entity registry | mechanism | done | no |
 | world generation | cold world loader | none | world | IO/geometry cold | migrate rules hot | yes |
-| multiplayer generation delivery | `HotReloadSystem` (local build/load/switch) + `CodeGenerationPacket` (announce/switch) | per-peer READY/quorum + switch scheduling (`GenerationDistribution`) | logical vs platform identity | artifact acquisition (network transfer) + live proof missing | implement ACQUIRE/VERIFY + wire generation ids per-sample | yes |
+| multiplayer generation delivery | `HotReloadSystem` (local build/load/switch) + `CodeGenerationPacket` (announce/switch) | per-peer READY/quorum + switch scheduling (`GenerationDistribution`) | logical vs platform identity | migration prep + multi-peer quorum over transport + late join + full-loop/live proof missing | implement migration prep, then late join and the full-loop proof | yes |
+| generation manifest verify | `HotReloadSystem::buildCandidateManifest` + `GenerationManifestPacket` (bounded metadata) | `verifyGeneration` (ABI/capability/schema/dependency) + `GenerationLocalFactsV1` | logical generation id | real facts + wire + gate **done**; migration stage pending | next: `prepareMigration(F,G)` gates READY | no |
 
 "no (policy)" = the behavior policy is hot; the remaining cold code is mechanism/fallback.
 
@@ -124,6 +125,13 @@ generation reconciliation.
   choice/volume/pitch/falloff is hot-fixable. Landing has **no** shipping cold
   sound (only VFX), so there is nothing to migrate there. Dead cold helpers
   `playRandomFootstep` and `playFreezeBegin/Hold/EndSound` have no callers.
+- Weapon equip identity (Round 43): the standard weapon-slot path
+  (`weapon-system-equip.cpp`) now creates the generic tool entity + `ToolRefState`
+  + `equips-item` via `actorStateEquipWeaponKey` (client Local realm). Tool key =
+  `gameHash(weaponId)`. Typed `Player.equippedWeaponId`/`equippedSlot` remain
+  compatibility mirrors (generic edge is the cross-system identity). Segmented:
+  server-authoritative counterpart for remote observers and NPC standard weapons
+  still typed-only.
 - Weapon presentation (viewmodel/held mesh/equip/recoil/reload/muzzle socket):
   still cold for real weapons, but the two previously-missing generic primitives
   are now hot: `socket.query`/`AttachmentState` (attachment) and
@@ -1166,9 +1174,9 @@ legitimate low-level mechanism that stays; **FALLBACK** = compatibility path;
 | Audio selection/spatial/music | `audio/audio.cpp` (`soundPath`, name-keyed cache); weapon/footstep/UI call sites | `audio.play` capability + `hot.effect-composition` explosion sound policy | logical sound name in command | miniaudio device/mixer | cold `playWorldSound` fallback in `explosion-fx.cpp` | no (new/explosion sound) / yes (other sound policy) | migrate weapon fire + footstep audio policy |
 | Weapon presentation/animation | `weapon-system`/`weapon-viewmodel`/`weapon-model-cache` | none | `server-weapon-state` (partial) | GL draw | typed | **YES** | tool entity PresentationState |
 | Nameplates/health overlays | `player-nameplates`/HUD | none | — | UI backend | — | **YES** | hot UI from actor state |
-| HUD composition | `engineTickUI*` (yielded) | `ui.frame` (done) | `MatchHudState` | immediate-mode UI | cold timer | no | mode-owned HUD state |
-| Menus/UI behavior | `gui/menus/*` cold C++ | none | — | UI backend | — | **YES** | hot UI systems |
-| UI interaction/input | `uiButton`/menu switches | none | — | raw input | — | **YES** | hot interaction |
+| HUD composition | `engineTickUI*` (yielded for tdm/ffa) | `ui.frame` (done) | `MatchHudState` + `ModeHudClaim` | immediate-mode UI | cold for CS/scoreboard | partial | generic match state + hot composition |
+| Menus/UI behavior | `gui/menus/*` cold C++ (yieldable per-screen) | `ui.frame` buttons + shell chrome (Round 48) | `HotUiClaim` + `MenuShellState` | UI backend (now runs in GAME_MENU) | partial | complete shell then flip claim |
+| UI interaction/input | `uiButton`/menu switches | `ui.action` generic event | `GameUiActionV1` | raw input | partial | hot action handlers |
 | Console commands | `terminal/*` cold switches | `CommandRegistrar` (generic) | runtime registry | arg parsing | cold builtins | no (new cmds) | runtime registration API |
 | Mesh/texture/shader resources | `TextureStore`/`gMeshCache`/`weapon-model-cache` | `PresentationResourceProvider` (mesh/texture/shader) | provider | GPU | static caches | partial | dependency graph |
 | Animation clips/skeleton resources | static caches | none | — | decode | — | **YES** | logical clip/skeleton ids |
@@ -1224,16 +1232,26 @@ behavior/system, cold file/function, why cold, what must migrate, priority.
    presentation space. Best first target remains `swordsword`
    (`config/weapons.json:281`, hot melee tool `melee-tool.cpp:83`, no
    reload/muzzle/sounds, cold render already a no-op `weapon-swordsword.cpp:652`).
-   Remaining before the real migration: a generic tool->mesh data mapping
-   (resource manifest, per #8/#10) and a client possessed-tool bridge so the
-   equipped tool identity (not a per-weapon hardcode) picks the logical mesh.
-   Cold branches to yield once migrated: `weapon-viewmodel.cpp:492-518`
-   (draw/visibility), `weapon-system.cpp:569-581`/`:1204-1224` (local/remote),
+   Round 41 closes the bridge: hot `hot.tool-presentation` reads the REAL generic
+   equip state (`relationship.equips-item` + `ToolRefState.toolKey`, written by
+   the cold generic API `actorStateEquipTool`) and writes `PresentationState` +
+   `AttachmentState` onto the REAL tool EntityId; hot C++ maps tool key ->
+   logical mesh (no kernel weapon DB). Cold `WeaponViewModel::render` yields when
+   the local actor carries a `ToolPresentationClaim` matching the equipped key.
+   Local body duplicate owner fixed (generic mesh path skips the possessed
+   actor). Verified headlessly; interactive client equip population + visual
+   yield still to be confirmed on screen. Cold branches to yield once confirmed:
+   `weapon-viewmodel.cpp:492-518`, `weapon-system.cpp:569-581`/`:1204-1224`,
    attachment `weapon-viewmodel.cpp:299-347`, muzzle `:411-412`. Priority: high.
-4. **Nameplates/health overlays** — `gui/hud/player-nameplates.cpp`,
-   `playerHealthbarAnchor`. Why cold: player/NPC-specific overlay code. Migrate:
-   hot UI systems reading `Transform`/`ActorHealthState`/identity. Priority:
-   medium.
+4. **Nameplates/health overlays** — HOT (2026-09-15 Round 45), per-actor.
+   `hot.actor-overlays` enumerates generic `ActorIdentityState`, projects via
+   `world.project`, and emits name + team-coloured health bar + HP text via
+   `render.ui`; it writes `ActorOverlayClaim` on each handled actor. Cold
+   `drawPlayerHealthbar` (`gui/hud/player-nameplates.cpp`) yields per-actor when
+   the claim is present; uncovered actors (local NpcSystem bodies) keep cold.
+   Coverage: local player + network players + network NPCs. Remaining cold policy:
+   the smoke-occlusion check and distance-fade tuning were not re-implemented hot
+   (deferred cosmetic), and local NpcSystem bodies still cold. Priority: done.
 5. **Menus/UI behavior + interaction** — `gui/menus/*`, `ui-system` button
    switches. Why cold: screen/menu flow in cold C++. Migrate: hot UI systems +
    generic interaction commands. Priority: medium.

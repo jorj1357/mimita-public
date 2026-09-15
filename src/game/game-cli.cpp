@@ -72,6 +72,11 @@
 #include "network/interpolation-policy-selftest.h"
 #include "network/rewind-policy-selftest.h"
 #include "hot-reload/generation-distribution-selftest.h"
+#include "hot-reload/artifact-cache-selftest.h"
+#include "hot-reload/artifact-transfer-selftest.h"
+#include "hot-reload/generation-switch-mapping-selftest.h"
+#include "network/transport-generation-selftest.h"
+#include "hot-reload/generation-verify-selftest.h"
 #include "hot-reload/capability-selftest.h"
 
 extern DuelManager gDuelManager;
@@ -387,6 +392,46 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = runCounterstrikeSelfTest(report);
         printf("%s", report.c_str());
         printf("[COUNTERSTRIKE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--generation-verify-selftest") {
+        std::string report;
+        const bool ok = runGenerationVerifySelfTest(report);
+        printf("%s", report.c_str());
+        printf("[GENERATION VERIFY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--transport-generation-selftest") {
+        std::string report;
+        const bool ok = runTransportGenerationSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[TRANSPORT GENERATION SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--generation-switch-mapping-selftest") {
+        std::string report;
+        const bool ok = runGenerationSwitchMappingSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[GENERATION SWITCH MAPPING SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--artifact-transfer-selftest") {
+        std::string report;
+        const bool ok = runArtifactTransferSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[ARTIFACT TRANSFER SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--artifact-cache-selftest") {
+        std::string report;
+        const bool ok = runArtifactCacheSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[ARTIFACT CACHE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

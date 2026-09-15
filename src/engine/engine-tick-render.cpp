@@ -482,6 +482,10 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                 Perf::state().renderPerf.actorRemotePlayers++;
                 Ragdoll::RagdollPresentation::instance().present(
                     kv.first, kv.second, ragdollDelay);
+                // Generic overlay state on the shared actor EntityId so the hot
+                // overlay path can own this remote player's name/health.
+                PresentationEntities::projectActorOverlayState(kv.first, true,
+                                                               kv.second);
                 renderNetworkPlayer(kv.second, camera, kv.first, false, player.matchTeam);
                 weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt);
             }
@@ -498,6 +502,8 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                 Perf::state().renderPerf.actorRemoteNpcs++;
                 Ragdoll::RagdollPresentation::instance().present(
                     kv.first, kv.second, ragdollDelay);
+                PresentationEntities::projectActorOverlayState(kv.first, false,
+                                                               kv.second);
                 if (genericActors) {
                     const Player& npc = kv.second;
                     const float pos[3] = {npc.pos.x, npc.pos.y, npc.pos.z};

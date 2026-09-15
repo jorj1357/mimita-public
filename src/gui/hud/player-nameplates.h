@@ -28,11 +28,15 @@ glm::vec3 playerHealthbarAnchor(
     const Player& player,
     bool* usedHeadTransform = nullptr);
 
+// `actorEntity` is the actor's generic presentation EntityId (0 = unknown). When
+// the hot overlay path owns that actor (ActorOverlayClaim), this cold policy
+// yields for that actor (one owner); 0 keeps cold ownership.
 HealthbarRenderResult drawPlayerHealthbar(
     const Player& player,
     const Camera& camera,
     const char* debugPrefix,
-    const char* sourceTag = "live_world");
+    const char* sourceTag = "live_world",
+    std::uint64_t actorEntity = 0);
 
 const char* healthbarCullReasonName(HealthbarCullReason reason);
 void resetHealthbarCounters();

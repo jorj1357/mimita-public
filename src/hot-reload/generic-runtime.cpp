@@ -148,6 +148,7 @@ bool GenericRuntime::activate(const GamePackageDescriptorV1* package, std::strin
             e.size = cs.size;
             e.align = cs.align ? cs.align : 1;
             e.copyPolicy = cs.copyPolicy;
+            e.version = cs.version ? cs.version : 1;
             e.name = cs.name ? cs.name : "";
             schemas.push_back(std::move(e));
 

@@ -12,6 +12,7 @@
 
 #include "network/server.h"
 #include "network/actor-lifecycle.h"
+#include "hot-reload/hot-reload-system.h"
 #include "network/server-gamemode.h"
 #include "network/network-weapons.h"
 #include "network/server-damage-policy.h"
@@ -561,6 +562,8 @@ void pushNpcPositionHistory(ServerNpc& npc, uint32_t tick)
     sample.vel = npc.vel;
     sample.yaw = npc.yaw;
     sample.tick = tick;
+    sample.logicalGenerationId =
+        HotReloadSystem::instance().status().activeGeneration;
     sample.partCount = npc.bodyPartCount;
     for (uint8_t i = 0; i < npc.bodyPartCount && i < sample.parts.size(); ++i)
         sample.parts[i] = npc.bodyParts[i];
@@ -629,6 +632,12 @@ bool getNpcPositionAtTick(const ServerNpc& npc, uint32_t targetTick, glm::vec3& 
         {
             const auto& a = npc.posHistory[i];
             const auto& b = npc.posHistory[i + 1];
+            // Generation boundary: no cross-generation interpolation.
+            if (a.logicalGenerationId != b.logicalGenerationId)
+            {
+                outPos = b.pos;
+                return true;
+            }
             const float frac = float(targetTick - a.tick) / float(b.tick - a.tick);
             outPos = glm::mix(a.pos, b.pos, frac);
             return true;
@@ -671,6 +680,14 @@ bool getNpcPoseAtTick(const ServerNpc& npc, uint32_t targetTick,
     }
     const auto& a = npc.posHistory[lo];
     const auto& b = npc.posHistory[lo + 1];
+    // Generation boundary: clamp to the newer authoritative sample (matches
+    // player rewind) instead of interpolating across F/G.
+    if (a.logicalGenerationId != b.logicalGenerationId)
+    {
+        outPos = b.pos;
+        outYaw = b.yaw;
+        return true;
+    }
     const float frac = (b.tick > a.tick)
         ? float(targetTick - a.tick) / float(b.tick - a.tick)
         : 0.0f;

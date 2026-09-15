@@ -12,6 +12,7 @@
 #include "debug/gl-debug.h"
 #include "gui/gui-media.h"
 #include "gui/gui-coord.h"
+#include "live-code/live-ui.h"
 #include "gui/ui-tooltip.h"
 
 #include "audio/audio.h"
@@ -88,6 +89,14 @@ void uiBeginFrame(GLFWwindow* win, const char* passName)
     gHoverOwnerKey.clear();
     gMouseDown = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
     gMouseClickEdge = gMouseDown && !gMousePrev;
+    // Generic hot UI interaction: report a click on a hot-emitted widget as a
+    // generic ui.action event. The hot handler owns the meaning; if it consumed
+    // the click, cold legacy widgets for that element must not also act.
+    if (gMouseClickEdge) {
+        double hx = 0.0, hy = 0.0;
+        glfwGetCursorPos(win, &hx, &hy);
+        LiveUi::handlePointerClick((float)hx, (float)hy, 0);
+    }
 
     MIMITA_GL_CLEAR_STAGE("uiBeginFrame");
     MIMITA_GL_CALL(glViewport(0, 0, gFbW, gFbH));

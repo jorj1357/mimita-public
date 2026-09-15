@@ -67,6 +67,15 @@ void endActorSync();
 // visible body owner, not the animation/pose policy owner.
 void projectLocalPlayer(::Player& player);
 void applyHotPoseToPlayer(::Player& player);
+
+// ── Generic actor overlay state ──────────────────────────────────────
+// Canonical actor EntityId for a replicated actor id (idempotent ensure).
+std::uint64_t actorEntityFor(std::uint32_t actorId, bool isPlayer);
+// Project Transform + Health + generic ActorIdentityState for a replicated actor
+// so the hot overlay path can own its nameplate/health without a second actor
+// identity. Body draw ownership is unchanged (no PresentationState written here).
+void projectActorOverlayState(std::uint32_t actorId, bool isPlayer,
+                              const ::Player& player);
 // True when the actor mesh resource is loaded and can be drawn, so the typed
 // renderer must yield ownership.
 bool actorMeshReady();

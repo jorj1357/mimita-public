@@ -14,6 +14,9 @@
 #include "network/server-constraints.h"
 #include "network/multiplayer-context.h"
 #include "live-code/live-behavior.h"
+#include "hot-reload/hot-reload-system.h"
+#include "hot-reload/artifact-transfer.h"
+#include "hot-reload/generation-distribution.h"
 #include "network/coordinator-client.h"
 #include "network/snapshot-chunks.h"
 #include "network/relevance.h"
@@ -2070,6 +2073,58 @@ ServerPacketProcessResult processServerPacket(
             it->second.reportedCodePhase = report->phase;
             it->second.reportedLogicalCodeHash = report->logicalCodeHash;
             it->second.reportedPlatformPackageHash = report->platformPackageHash;
+            // READY(G): record exact per-peer readiness for THIS logical
+            // generation (READY for an older generation must not satisfy a
+            // newer one; setPhase checks the peer's announced candidate id).
+            if (report->phase == 1 && report->generation != 0)
+            {
+                MimitaRuntime::GenerationDistribution& dist =
+                    MimitaRuntime::GenerationDistribution::instance();
+                if (dist.candidateGenerationOf(report->header.playerId) ==
+                    report->generation)
+                    dist.setPhase(report->header.playerId,
+                                  MimitaRuntime::GenerationPhase::Ready);
+            }
+        }
+        result.handled = true;
+    }
+    else if (header->type == PACKET_ARTIFACT_REQUEST &&
+             bytes >= (int)sizeof(ArtifactRequestPacket))
+    {
+        // Distributed artifact stream: serve the requested platform artifact by
+        // content hash ONLY if it matches the ready candidate. No filesystem
+        // path is accepted from the client; the hash is the lookup key.
+        const ArtifactRequestPacket* req =
+            reinterpret_cast<const ArtifactRequestPacket*>(buffer);
+        std::vector<unsigned char> artifact;
+        std::uint32_t genId = 0;
+        std::uint64_t hash = 0;
+        const bool haveCandidate =
+            HotReloadSystem::instance().readCandidateArtifact(artifact, genId, hash);
+        if (haveCandidate && hash == req->platformArtifactHash)
+        {
+            MimitaRuntime::ArtifactStreamer streamer;
+            if (streamer.begin(req->logicalGenerationId, hash, artifact.data(),
+                               artifact.size()))
+            {
+                ArtifactBeginPacket begin{};
+                streamer.makeBegin(begin);
+                begin.header.playerId = req->header.playerId;
+                begin.header.tick = tick;
+                sendto(sock, (const char*)&begin, (int)sizeof(begin), 0,
+                       (sockaddr*)&from, sizeof(from));
+                for (std::uint32_t i = 0; i < streamer.chunkCount(); ++i)
+                {
+                    ArtifactChunkPacket chunk{};
+                    streamer.makeChunk(i, chunk);
+                    chunk.header.playerId = req->header.playerId;
+                    chunk.header.tick = tick;
+                    sendto(sock, (const char*)&chunk, (int)sizeof(chunk), 0,
+                           (sockaddr*)&from, sizeof(from));
+                    ++totalPacketsOut;
+                }
+                ++totalPacketsOut;
+            }
         }
         result.handled = true;
     }
@@ -2500,9 +2555,10 @@ void buildAndSendSnapshot(SOCKET sock,
                 if (pit == players.end() || perViewer[v].empty())
                     continue;
                 std::vector<std::vector<uint8_t>> vchunks;
-                if (!buildSnapshotChunks(perViewer[v].data(),
-                                         (uint32_t)perViewer[v].size(), tick, 0,
-                                         vchunks))
+                if (!buildSnapshotChunks(
+                        perViewer[v].data(), (uint32_t)perViewer[v].size(), tick, 0,
+                        HotReloadSystem::instance().status().activeGeneration,
+                        vchunks))
                     continue;
                 for (const auto& chunk : vchunks) {
                     if (pit->second.transport)
@@ -2531,7 +2587,9 @@ void buildAndSendSnapshot(SOCKET sock,
 
     // Build chunks from compact entities
     std::vector<std::vector<uint8_t>> chunks;
-    if (!buildSnapshotChunks(entities, entityCount, tick, 0, chunks))
+    if (!buildSnapshotChunks(
+            entities, entityCount, tick, 0,
+            HotReloadSystem::instance().status().activeGeneration, chunks))
     {
         printf("%s [SERVER SNAPSHOT] chunk build failed for tick=%u\n",
                serverTimestamp(), tick);

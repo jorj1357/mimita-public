@@ -232,6 +232,7 @@ bool buildSnapshotChunks(const CompactEntityData* entities,
                          uint32_t entityCount,
                          uint32_t serverTick,
                          uint32_t ownerPlayerId,
+                         uint32_t logicalGenerationId,
                          std::vector<std::vector<uint8_t>>& outChunks,
                          std::string* error)
 {
@@ -276,6 +277,7 @@ bool buildSnapshotChunks(const CompactEntityData* entities,
         packet.chunkCount = static_cast<uint16_t>(chunkCount);
         packet.entityCount = count;
         packet.payloadBytes = static_cast<uint16_t>(count * sizeof(CompactEntityData));
+        packet.logicalGenerationId = logicalGenerationId;
         if (count > 0)
         {
             std::memcpy(packet.entities, entities + first,
@@ -373,9 +375,12 @@ bool parseSnapshotChunk(const void* data,
 
 bool reassembleSnapshotChunks(const std::vector<SnapshotChunkPacket>& chunks,
                               std::vector<CompactEntityData>& outEntities,
-                              std::string* error)
+                              std::string* error,
+                              uint32_t* outLogicalGenerationId)
 {
     outEntities.clear();
+    if (outLogicalGenerationId)
+        *outLogicalGenerationId = 0;
     if (chunks.empty())
     {
         setError(error, "no-chunks");
@@ -401,6 +406,11 @@ bool reassembleSnapshotChunks(const std::vector<SnapshotChunkPacket>& chunks,
         if (chunk.chunkCount != chunkCount || chunk.chunkIndex >= chunkCount)
         {
             setError(error, "inconsistent-chunk");
+            return false;
+        }
+        if (chunk.logicalGenerationId != chunks[0].logicalGenerationId)
+        {
+            setError(error, "mixed-generations");
             return false;
         }
         if (ordered[chunk.chunkIndex])
@@ -434,6 +444,8 @@ bool reassembleSnapshotChunks(const std::vector<SnapshotChunkPacket>& chunks,
             outEntities.push_back(entity);
         }
     }
+    if (outLogicalGenerationId)
+        *outLogicalGenerationId = chunks[0].logicalGenerationId;
     return true;
 }
 
@@ -481,7 +493,7 @@ bool runSnapshotChunkSelfTest(std::string* report)
 
         std::vector<std::vector<uint8_t>> encoded;
         std::string error;
-        if (!buildSnapshotChunks(source.data(), count, 1000 + count, 7, encoded, &error))
+        if (!buildSnapshotChunks(source.data(), count, 1000 + count, 7, 0, encoded, &error))
         {
             out << "[SNAPSHOT CHUNK SELFTEST] build failed count=" << count
                 << " error=" << error << "\n";
@@ -557,7 +569,7 @@ bool runSnapshotChunkSelfTest(std::string* report)
     std::vector<CompactEntityData> one = {makeTestEntity(1)};
     std::vector<std::vector<uint8_t>> encoded;
     std::string error;
-    if (buildSnapshotChunks(one.data(), (uint32_t)one.size(), 42, 1, encoded, &error) &&
+    if (buildSnapshotChunks(one.data(), (uint32_t)one.size(), 42, 1, 0, encoded, &error) &&
         !encoded.empty())
     {
         std::vector<uint8_t> bad = encoded[0];

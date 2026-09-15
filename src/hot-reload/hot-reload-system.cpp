@@ -2,6 +2,7 @@
 
 #include "hot-reload/game-api.h"
 #include "hot-reload/generic-runtime.h"
+#include "hot-reload/artifact-cache.h"
 #include "live-code/code-hash.h"
 #include "live-code/live-code-events.h"
 #include "live-code/live-journal.h"
@@ -703,6 +704,61 @@ std::uint32_t HotReloadSystem::candidateGeneration() const
 {
     std::lock_guard<std::mutex> lock(mutex_);
     return result_.generation;
+}
+
+bool HotReloadSystem::readCandidateArtifact(std::vector<unsigned char>& out,
+                                            std::uint32_t& logicalGeneration,
+                                            std::uint64_t& platformArtifactHash) const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!result_.success || result_.outputPath.empty())
+        return false;
+    std::ifstream in(result_.outputPath, std::ios::binary);
+    if (!in)
+        return false;
+    out.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    if (out.empty())
+        return false;
+    logicalGeneration = result_.generation;
+    platformArtifactHash =
+        MimitaRuntime::hashArtifactBytes(out.data(), out.size());
+    return true;
+}
+
+bool HotReloadSystem::buildCandidateManifest(
+    MimitaRuntime::GenerationManifestV1& out) const
+{
+    std::vector<unsigned char> bytes;
+    std::uint32_t generation = 0;
+    std::uint64_t artifactHash = 0;
+    if (!readCandidateArtifact(bytes, generation, artifactHash))
+        return false;
+
+    out = MimitaRuntime::GenerationManifestV1{};
+    out.logicalGenerationId = generation;
+    out.logicalBehaviorHash = 0;
+    out.platformArtifactHash = artifactHash;
+    out.platformArtifactSize = static_cast<std::uint32_t>(bytes.size());
+    out.hotAbiVersion = MIMITA_GAME_API_VERSION;
+
+    MimitaRuntime::GenericRuntime& rt = MimitaRuntime::GenericRuntime::instance();
+    for (std::size_t i = 0;
+         i < rt.capabilityRequirementCount() &&
+         out.requiredCapabilityCount < MimitaRuntime::kMaxVerifyRequirements;
+         ++i) {
+        std::uint64_t id = 0;
+        if (rt.capabilityRequirementAt(i, &id))
+            out.requiredCapabilities[out.requiredCapabilityCount++] = id;
+    }
+    for (std::size_t i = 0;
+         i < rt.schemaCount() &&
+         out.requiredSchemaCount < MimitaRuntime::kMaxVerifyRequirements;
+         ++i) {
+        std::uint64_t id = 0;
+        if (rt.schemaAt(i, &id))
+            out.requiredSchemas[out.requiredSchemaCount++] = id;
+    }
+    return true;
 }
 
 std::string HotReloadSystem::candidateCodeHash() const

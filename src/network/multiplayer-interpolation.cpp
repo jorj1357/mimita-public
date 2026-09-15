@@ -147,6 +147,12 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
         hotIp.bVelocity[1] = back.velocity.y;
         hotIp.bVelocity[2] = back.velocity.z;
         hotIp.bTick = newestTick;
+        // Real generation provenance: each sample carries the canonical logical
+        // hot generation that produced it. A cross-boundary pair triggers the
+        // hot snap policy instead of an ordinary lerp.
+        hotIp.aGeneration = front.logicalGenerationId;
+        hotIp.bGeneration = back.logicalGenerationId;
+        hotIp.currentGeneration = back.logicalGenerationId;
         hotIp.oldestTick = oldestTick;
         hotIp.newestTick = newestTick;
         hotIp.bufferDepth = (std::uint32_t)interpolation.buffer.size();
@@ -651,7 +657,8 @@ void logInterpolationState(EntityInterpolationState& interpolation,
 bool pushInterpolationTarget(
     EntityInterpolationState& interpolation,
     const SnapshotEntity& entity,
-    uint32_t serverTick)
+    uint32_t serverTick,
+    uint32_t logicalGenerationId)
 {
     if (interpolation.hasTarget)
     {
@@ -685,6 +692,7 @@ bool pushInterpolationTarget(
 
     SnapshotTransform next = transformFromEntity(entity);
     next.serverTick = serverTick;
+    next.logicalGenerationId = logicalGenerationId;
     if (interpolation.hasTarget)
     {
         if (serverTick < interpolation.lastServerTick)

@@ -25,6 +25,9 @@
 #include "network/packets.h"
 #include "world/texture-store.h"
 #include "world/world.h"
+#include "ecs/actor-entities.h"
+#include "ecs/dynamic-components.h"
+#include "hot-reload/hot-presentation.h"
 
 static float customParamOr(const WeaponDefinition* def, const char* key, float fallback)
 {
@@ -489,8 +492,30 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
     disturbance = std::max(0.0f, disturbance - dt * 8.0f);
 }
 
+// One owner: if hot tool-presentation owns the currently equipped tool, the
+// cold viewmodel yields. Generic claim (tool key hash), never a weapon branch.
+static bool hotOwnsEquippedTool(const Player& player)
+{
+    const EntityId actor = Ecs::ensureLocalPlayerEntity();
+    if (actor == kInvalidEntityId)
+        return false;
+    HotToolClaimV1 claim{};
+    if (!MimitaRuntime::DynamicComponentStore::instance().read(
+            actor, HOT_TOOL_CLAIM_COMPONENT, &claim, sizeof(claim)))
+        return false;
+    if (claim.migrated == 0 || claim.toolKey == 0)
+        return false;
+    if (player.runtimeToolId != 0 && claim.toolKey == player.runtimeToolId)
+        return true;
+    if (!player.equippedWeaponId.empty() &&
+        claim.toolKey == gameHash(player.equippedWeaponId.c_str()))
+        return true;
+    return false;
+}
+
 void WeaponViewModel::render(const Camera& camera, const Player& player, int equippedSlot) const {
-    if (player.equippedSlot != equippedSlot || !gRenderer || !gRenderer->shaderProgram || !vao || heldMesh.verts.empty())
+    if (player.equippedSlot != equippedSlot || hotOwnsEquippedTool(player) ||
+        !gRenderer || !gRenderer->shaderProgram || !vao || heldMesh.verts.empty())
         return;
 
     const unsigned int shader = gRenderer->shaderProgram;

@@ -37,6 +37,9 @@
 #include "debug/debug-visuals.h"
 #include "gui/ui-system.h"
 #include "render/presentation-render.h"
+#include "renderer/renderer.h"
+
+extern Renderer* gRenderer;
 #include "terminal/terminal-state.h"
 
 #include <glm/gtc/quaternion.hpp>
@@ -824,6 +827,39 @@ void MIMITA_GAME_CALL capRenderMesh(void*, const GameRenderMeshCommandV1* comman
     PresentationRender::submitMesh(*command);
 }
 
+// Generic world->screen projection: hot overlay/UI policy supplies a world
+// position; the kernel projects it through the live camera. No overlay kind is
+// known to the kernel.
+bool MIMITA_GAME_CALL capWorldProject(void*, GameWorldProjectV1* p)
+{
+    if (!p)
+        return false;
+    p->visible = 0;
+    p->screenX = p->screenY = 0.0f;
+    p->depth = 0.0f;
+    if (!gpCamera)
+        return false;
+    const Camera& cam = THE_CAMERA;
+    const float w = p->viewportWidth > 0.0f
+                        ? p->viewportWidth
+                        : (gRenderer ? (float)gRenderer->width : 1920.0f);
+    const float h = p->viewportHeight > 0.0f
+                        ? p->viewportHeight
+                        : (gRenderer ? (float)gRenderer->height : 1080.0f);
+    const glm::vec4 clip =
+        cam.getProj(w, h) * cam.getView() *
+        glm::vec4(p->worldPosition[0], p->worldPosition[1], p->worldPosition[2],
+                  1.0f);
+    if (clip.w <= 0.001f)
+        return false;
+    const glm::vec3 ndc = glm::vec3(clip) / clip.w;
+    p->screenX = (ndc.x * 0.5f + 0.5f) * w;
+    p->screenY = (1.0f - (ndc.y * 0.5f + 0.5f)) * h;
+    p->depth = clip.w;
+    p->visible = 1;
+    return true;
+}
+
 // Generic named-attachment-point query. Composes the entity's canonical
 // transform with its current generic skeleton pose (SkeletonInstances) and, when
 // the drawn mesh tags that part, its mesh bind. Falls back to the entity
@@ -1049,6 +1085,10 @@ struct KernelCapabilityInit {
                                     gameHash("sig.socket.query.v1"), 0,
                                     reinterpret_cast<void*>(&capSocketQuery),
                                     "socket.query");
+        rt.registerKernelCapability(GAME_CAP_WORLD_PROJECT,
+                                    gameHash("sig.world.project.v1"), 0,
+                                    reinterpret_cast<void*>(&capWorldProject),
+                                    "world.project");
         rt.registerKernelCapability(GAME_CAP_RESOURCE_REGISTER,
                                     gameHash("sig.resource.register.v1"), 0,
                                     reinterpret_cast<void*>(&capResourceRegister),

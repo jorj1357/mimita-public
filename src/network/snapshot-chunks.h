@@ -28,6 +28,7 @@ bool buildSnapshotChunks(const CompactEntityData* entities,
                          uint32_t entityCount,
                          uint32_t serverTick,
                          uint32_t ownerPlayerId,
+                         uint32_t logicalGenerationId,
                          std::vector<std::vector<uint8_t>>& outChunks,
                          std::string* error = nullptr);
 
@@ -38,7 +39,8 @@ bool parseSnapshotChunk(const void* data,
 
 bool reassembleSnapshotChunks(const std::vector<SnapshotChunkPacket>& chunks,
                               std::vector<CompactEntityData>& outEntities,
-                              std::string* error = nullptr);
+                              std::string* error = nullptr,
+                              uint32_t* outLogicalGenerationId = nullptr);
 
 void clearSnapshotPacket(SnapshotPacket& snapshot, uint32_t serverTick);
 bool appendSnapshotChunkToPacket(const SnapshotChunkPacket& chunk,

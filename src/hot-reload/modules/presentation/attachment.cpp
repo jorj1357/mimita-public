@@ -1,34 +1,77 @@
 // 09 15 2026
 /* purpose
-* Hot generic attachment + runtime tool presentation. A `render.frame` system
-* resolves every entity carrying `AttachmentState` through the generic
-* `socket.query` capability (parent entity + socket/bone hash + hot local
-* offset) and writes the presentation world transform back; `hot.presentation-mesh`
-* consumes it and emits `render.mesh`, optionally in VIEW space. Hot code also
-* registers arbitrary logical mesh resources through `resource.register`.
-* This is presentation-only: gameplay Transform/authority is never overwritten,
-* and no weapon/tool enum or per-tool ABI slot exists.
+* Hot generic attachment + tool presentation. Two render.frame systems:
+*  - `hot.tool-presentation` (order 3) consumes the REAL generic equip state
+*    (`relationship.equips-item` + the tool entity's `ToolRefState.toolKey`) and
+*    writes `PresentationState` + `AttachmentState` onto the REAL tool EntityId.
+*    Hot policy chooses the logical mesh for a tool key (hot C++, not a kernel
+*    database). Local possessed actor -> VIEW context, other actors -> WORLD.
+*    Unmigrated tools are untouched (cold fallback). No typed player/weapon
+*    pointer is used.
+*  - `hot.attachment` (order 4) resolves every `AttachmentState` through the
+*    generic `socket.query` capability and writes the presentation world
+*    transform back; `hot.presentation-mesh` (order 5) consumes it.
+* Raw hot C++ can also register arbitrary logical mesh resources through
+* `resource.register`; `hottool` uses the SAME real path (equip relationship).
 * Does NOT link into the EXE; only into the replaceable game DLL.
 */
 #if defined(MIMITA_GAME_DLL)
 
 #include "hot-reload/game-api.h"
+#include "hot-reload/hot-animation.h"
 #include "hot-reload/hot-package.h"
 #include "hot-reload/hot-presentation.h"
 
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <string>
 
 namespace {
 
 const std::uint64_t kRightArm = gameHash("rightArm");
-const std::uint64_t kRuntimeMesh = gameHash("mesh.runtime.tool");
-const char* const kDefaultToolGlb = "assets/objects/weapons/mimita-hafs-v1.glb";
+const std::uint64_t kEquipsItemRel = gameHash("relationship.equips-item");
+const std::uint64_t kToolRefState = gameHash("ToolRefState");
 
 using SocketQueryFn = bool (MIMITA_GAME_CALL *)(void*, GameSocketQueryV1*);
 using ResourceRegisterFn = bool (MIMITA_GAME_CALL *)(void*, GameResourceRegisterV1*);
+
+struct ToolRefStateV1 {
+    std::uint64_t toolKey;
+    std::uint64_t reserved;
+};
+
+// ── Hot tool-presentation policy data (hot C++, no kernel weapon database) ──
+struct ToolMeshBinding {
+    std::uint64_t toolKey;
+    std::uint64_t meshId;
+    const char* path;
+    bool registered;
+};
+ToolMeshBinding g_bindings[] = {
+    // Real shipping swordsword: logical tool key -> logical mesh + GLB. The key
+    // is gameHash(weapon id), the same generic key the standard equip bridge and
+    // runtime tools write into ToolRefState.toolKey (no enum, mod-friendly).
+    {gameHash("swordsword"), gameHash("mesh.tool.swordsword"),
+     "assets/objects/weapons/mimita-hafs-v1.glb", false},
+    // Real shipping revolver: a different presentation behavior (firearm) on the
+    // same substrate - no new ABI, just a logical-mesh binding.
+    {gameHash("revolver"), gameHash("mesh.tool.revolver"),
+     "assets/objects/weapons/mimita-revolver-v1.glb", false},
+    // Remaining standard weapons: mechanical batch, same substrate.
+    {gameHash("shotgun"), gameHash("mesh.tool.shotgun"),
+     "assets/objects/weapons/mimita-shotgun-v1.glb", false},
+    {gameHash("rocket_launcher"), gameHash("mesh.tool.rocket_launcher"),
+     "assets/objects/weapons/mimita-rpg-v3.glb", false},
+    {gameHash("grenade_launcher"), gameHash("mesh.tool.grenade_launcher"),
+     "assets/objects/weapons/mimita-nadelauncher-v1.glb", false},
+};
+constexpr std::uint32_t kBindingCount =
+    (std::uint32_t)(sizeof(g_bindings) / sizeof(g_bindings[0]));
+// Runtime-unknown tool binding (used by the `hottool` proof; same real path).
+ToolMeshBinding g_runtimeBinding{gameHash("tool.runtime.unknown"),
+                                 gameHash("mesh.runtime.tool"),
+                                 "assets/objects/weapons/mimita-hafs-v1.glb",
+                                 false};
 
 GameSharedStateV1* sharedState(GameplayContextV1* ctx)
 {
@@ -40,28 +83,129 @@ GameSharedStateV1* sharedState(GameplayContextV1* ctx)
     return shared->magic == GAME_SHARED_MAGIC ? shared : nullptr;
 }
 
-// Register a logical mesh resource from hot code (no per-tool kernel code).
-std::uint32_t registerMesh(GameplayContextV1* ctx, std::uint64_t logicalId,
-                           const char* path)
+void registerBindingMesh(GameplayContextV1* ctx, ToolMeshBinding& b)
 {
-    if (!ctx || !ctx->resolveCapability || !path || !*path)
-        return 0;
+    if (b.registered || !ctx->resolveCapability)
+        return;
     auto reg = reinterpret_cast<ResourceRegisterFn>(
         ctx->resolveCapability(ctx->host, GAME_CAP_RESOURCE_REGISTER));
     if (!reg)
-        return 0;
+        return;
     GameResourceRegisterV1 req{};
-    req.logicalId = logicalId;
+    req.logicalId = b.meshId;
     req.kind = GAME_RESOURCE_MESH;
     req.applyNow = 1;
-    std::snprintf(req.path, sizeof(req.path), "%s", path);
+    std::snprintf(req.path, sizeof(req.path), "%s", b.path);
     reg(ctx->host, &req);
-    return req.ok ? req.generation : 0;
+    b.registered = true;
 }
 
-// Resolve every AttachmentState entity through the generic socket query. The
-// resolved transform is stored in the component's out fields; the child's
-// authoritative Transform is untouched. A missing parent/socket fails safe.
+// Hot policy: logical mesh id for a tool key (0 = not hot-migrated).
+std::uint64_t toolMeshFor(GameplayContextV1* ctx, std::uint64_t toolKey)
+{
+    for (std::uint32_t i = 0; i < kBindingCount; ++i) {
+        if (g_bindings[i].toolKey == toolKey) {
+            registerBindingMesh(ctx, g_bindings[i]);
+            return g_bindings[i].meshId;
+        }
+    }
+    if (g_runtimeBinding.toolKey == toolKey) {
+        registerBindingMesh(ctx, g_runtimeBinding);
+        return g_runtimeBinding.meshId;
+    }
+    return 0;
+}
+
+void writeToolPresentation(GameplayContextV1* ctx, std::uint64_t toolEntity,
+                           std::uint64_t meshId, std::uint64_t actor,
+                           std::uint32_t context)
+{
+    HotPresentationStateV1 present{};
+    present.meshResourceId = meshId;
+    present.textureResourceId = HOT_TEX_DEFAULT;
+    present.scale = 1.0f;
+    present.color[0] = present.color[1] = present.color[2] = present.color[3] = 1.0f;
+    ctx->dynamicWriteComponent(ctx->host, toolEntity,
+                               HOT_PRESENTATION_COMPONENT, &present,
+                               sizeof(present));
+
+    HotAttachmentStateV1 att{};
+    att.parentEntity = actor;
+    att.socket = kRightArm;
+    att.context = context;
+    att.flags = HOT_ATTACHMENT_FLAG_VISIBLE;
+    att.localRotation[3] = 1.0f;
+    att.localScale[0] = att.localScale[1] = att.localScale[2] = 1.0f;
+    if (context == HOT_ATTACHMENT_CONTEXT_VIEW) {
+        att.localPosition[0] = 0.35f;
+        att.localPosition[1] = 0.10f;
+        att.localPosition[2] = -0.45f;
+    } else {
+        att.localPosition[0] = 0.30f;
+    }
+    ctx->dynamicWriteComponent(ctx->host, toolEntity, HOT_ATTACHMENT_COMPONENT,
+                               &att, sizeof(att));
+}
+
+// Resolve an actor's equipped tools through the REAL generic equip substrate.
+void presentActorTools(GameplayContextV1* ctx, std::uint64_t actor,
+                       std::uint32_t context, bool claimOnActor)
+{
+    std::uint64_t tools[4] = {0, 0, 0, 0};
+    const std::uint32_t n = ctx->relationshipQuery(
+        ctx->host, kEquipsItemRel, actor, tools, nullptr, 4);
+    std::uint64_t claimed = 0;
+    for (std::uint32_t i = 0; i < n; ++i) {
+        if (tools[i] == 0)
+            continue;
+        ToolRefStateV1 ref{};
+        if (!ctx->dynamicReadComponent(ctx->host, tools[i], kToolRefState, &ref,
+                                       sizeof(ref)))
+            continue;
+        const std::uint64_t meshId = toolMeshFor(ctx, ref.toolKey);
+        if (meshId == 0)
+            continue;   // unmigrated: cold owns it
+        writeToolPresentation(ctx, tools[i], meshId, actor, context);
+        claimed = ref.toolKey;
+    }
+    if (claimOnActor) {
+        HotToolClaimV1 claim{};
+        claim.toolKey = claimed;
+        claim.context = context;
+        claim.migrated = claimed != 0 ? 1u : 0u;
+        ctx->dynamicWriteComponent(ctx->host, actor, HOT_TOOL_CLAIM_COMPONENT,
+                                   &claim, sizeof(claim));
+    }
+}
+
+void MIMITA_GAME_CALL toolPresentationTick(void* host, std::uint64_t /*tick*/,
+                                           float /*dt*/)
+{
+    GameplayContextV1* ctx = static_cast<GameplayContextV1*>(host);
+    if (!ctx || !ctx->dynamicEnumerateComponent || !ctx->relationshipQuery ||
+        !ctx->dynamicReadComponent || !ctx->dynamicWriteComponent ||
+        !ctx->resolveCapability)
+        return;
+
+    GameSharedStateV1* shared = sharedState(ctx);
+    const std::uint64_t localActor = shared ? shared->localPlayerEntity : 0;
+
+    // Local possessed actor: first-person (VIEW) presentation context.
+    if (localActor != 0)
+        presentActorTools(ctx, localActor, HOT_ATTACHMENT_CONTEXT_VIEW, true);
+
+    // Other actors that participate in hot animation: third-person (WORLD).
+    std::uint64_t actors[128];
+    const std::uint32_t count = ctx->dynamicEnumerateComponent(
+        ctx->host, HOT_ANIMATION_STATE_COMPONENT, actors, 128);
+    for (std::uint32_t i = 0; i < count; ++i) {
+        if (actors[i] == localActor || actors[i] == 0)
+            continue;
+        presentActorTools(ctx, actors[i], HOT_ATTACHMENT_CONTEXT_WORLD, false);
+    }
+}
+
+// ── Attachment resolution ────────────────────────────────────────────
 void MIMITA_GAME_CALL attachmentTick(void* host, std::uint64_t /*tick*/,
                                      float /*dt*/)
 {
@@ -109,94 +253,67 @@ void MIMITA_GAME_CALL attachmentTick(void* host, std::uint64_t /*tick*/,
     }
 }
 
-// Create a runtime-unknown tool entity: arbitrary logical mesh + attachment to a
-// parent socket. `context` selects world (third-person) or view (first-person).
-std::uint64_t spawnTool(GameplayContextV1* ctx, const char* path,
-                        std::uint32_t context)
-{
-    if (!ctx || !ctx->entityCreate || !ctx->writeComponent ||
-        !ctx->dynamicWriteComponent || !ctx->resolveCapability)
-        return 0;
-    GameSharedStateV1* shared = sharedState(ctx);
-    const std::uint64_t parent =
-        shared ? (shared->localPlayerEntity ? shared->localPlayerEntity
-                                            : shared->selectedEntity)
-               : 0;
-    if (parent == 0)
-        return 0;
-    registerMesh(ctx, kRuntimeMesh, (path && *path) ? path : kDefaultToolGlb);
-
-    std::uint64_t entity = 0;
-    if (!ctx->entityCreate(ctx->host, 0u, &entity) || entity == 0)
-        return 0;
-
-    GameTransformComponentV1 tf{};
-    ctx->writeComponent(ctx->host, entity, GAME_COMPONENT_TRANSFORM, &tf,
-                        sizeof(tf));
-
-    HotPresentationStateV1 present{};
-    present.meshResourceId = kRuntimeMesh;
-    present.textureResourceId = HOT_TEX_DEFAULT;
-    present.scale = 1.0f;
-    present.color[0] = present.color[1] = present.color[2] = 1.0f;
-    present.color[3] = 1.0f;
-    ctx->dynamicWriteComponent(ctx->host, entity, HOT_PRESENTATION_COMPONENT,
-                               &present, sizeof(present));
-
-    HotAttachmentStateV1 att{};
-    att.parentEntity = parent;
-    att.socket = kRightArm;
-    att.context = context;
-    att.flags = HOT_ATTACHMENT_FLAG_VISIBLE;
-    if (context == HOT_ATTACHMENT_CONTEXT_VIEW) {
-        // Eye-space offset for the first-person presentation context.
-        att.localPosition[0] = 0.35f;
-        att.localPosition[1] = 0.10f;
-        att.localPosition[2] = -0.45f;
-    } else {
-        // Hand offset for the third-person presentation context.
-        att.localPosition[0] = 0.30f;
-        att.localPosition[1] = 0.0f;
-        att.localPosition[2] = 0.0f;
-    }
-    att.localRotation[3] = 1.0f;
-    att.localScale[0] = att.localScale[1] = att.localScale[2] = 1.0f;
-    ctx->dynamicWriteComponent(ctx->host, entity, HOT_ATTACHMENT_COMPONENT, &att,
-                               sizeof(att));
-    return entity;
-}
-
+// ── Runtime-unknown tool proof command (same real equip path) ─────────
 void MIMITA_GAME_CALL hotMeshCommand(void* host, const char* args)
 {
     GameplayContextV1* ctx = static_cast<GameplayContextV1*>(host);
-    const char* path = (args && *args) ? args : kDefaultToolGlb;
-    const std::uint32_t gen = registerMesh(ctx, kRuntimeMesh, path);
-    std::printf("[TOOL] resource.register id=mesh.runtime.tool gen=%u path=%s\n",
-                (unsigned)gen, path);
+    if (args && *args)
+        g_runtimeBinding.path = args;
+    g_runtimeBinding.registered = false;
+    registerBindingMesh(ctx, g_runtimeBinding);
+    std::printf("[TOOL] registered runtime mesh '%s'\n", g_runtimeBinding.path);
 }
 
+// The debug command only creates the entity + generic equip state; presentation
+// then flows through the same hot.tool-presentation system as a real tool.
 void MIMITA_GAME_CALL hotToolCommand(void* host, const char* args)
 {
-    auto* ctx = static_cast<GameplayContextV1*>(host);
-    const std::uint64_t e = spawnTool(ctx, args, HOT_ATTACHMENT_CONTEXT_WORLD);
-    std::printf("[TOOL] third-person tool entity=%llu\n",
-                (unsigned long long)e);
-}
+    GameplayContextV1* ctx = static_cast<GameplayContextV1*>(host);
+    if (!ctx || !ctx->entityCreate || !ctx->writeComponent ||
+        !ctx->dynamicWriteComponent || !ctx->relationshipAdd)
+        return;
+    if (args && *args)
+        g_runtimeBinding.path = args;
+    g_runtimeBinding.registered = false;
 
-void MIMITA_GAME_CALL hotToolFirstPersonCommand(void* host, const char* args)
-{
-    auto* ctx = static_cast<GameplayContextV1*>(host);
-    const std::uint64_t e = spawnTool(ctx, args, HOT_ATTACHMENT_CONTEXT_VIEW);
-    std::printf("[TOOL] first-person tool entity=%llu\n",
-                (unsigned long long)e);
+    GameSharedStateV1* shared = sharedState(ctx);
+    const std::uint64_t actor =
+        shared ? (shared->localPlayerEntity ? shared->localPlayerEntity
+                                            : shared->selectedEntity)
+               : 0;
+    if (actor == 0)
+        return;
+
+    std::uint64_t entity = 0;
+    if (!ctx->entityCreate(ctx->host, 0u, &entity) || entity == 0)
+        return;
+    GameTransformComponentV1 tf{};
+    ctx->writeComponent(ctx->host, entity, GAME_COMPONENT_TRANSFORM, &tf,
+                        sizeof(tf));
+    ToolRefStateV1 ref{};
+    ref.toolKey = g_runtimeBinding.toolKey;
+    ctx->dynamicWriteComponent(ctx->host, entity, kToolRefState, &ref,
+                               sizeof(ref));
+    ctx->relationshipAdd(ctx->host, kEquipsItemRel, actor, entity, 0);
+    std::printf("[TOOL] runtime tool entity=%llu equips actor=%llu\n",
+                (unsigned long long)entity, (unsigned long long)actor);
 }
 
 const MimitaHotPackage::SchemaRegistrar s_attachmentSchema{
     {HOT_ATTACHMENT_COMPONENT, gameHash("AttachmentState.v1"),
      sizeof(HotAttachmentStateV1), 8, GAME_COPY_RUNTIME_ONLY, GAME_NET_NONE,
      "AttachmentState", 1, 0}};
-// Order 4: runs after pose-generation (2) and before presentation-mesh (5) so
-// the resolved transform is ready when the mesh is submitted.
+const MimitaHotPackage::SchemaRegistrar s_claimSchema{
+    {HOT_TOOL_CLAIM_COMPONENT, gameHash("ToolPresentationClaim.v1"),
+     sizeof(HotToolClaimV1), 8, GAME_COPY_RUNTIME_ONLY, GAME_NET_NONE,
+     "ToolPresentationClaim", 1, 0}};
+// Runs in post-movement (before the cold render pass) so the owner claim and the
+// tool PresentationState/AttachmentState are fresh when the cold WeaponViewModel
+// decides whether to yield this same frame (no one-frame double owner). The
+// attachment resolver + mesh submission still run later in the RENDER domain.
+const MimitaHotPackage::SystemRegistrar s_toolPresentationSystem{
+    {gameHash("hot.tool-presentation"), GAME_DOMAIN_POST_MOVEMENT, 1, 0,
+     toolPresentationTick, "hot.tool-presentation"}};
 const MimitaHotPackage::SystemRegistrar s_attachmentSystem{
     {gameHash("hot.attachment"), GAME_DOMAIN_RENDER, 4, 0, attachmentTick,
      "hot.attachment"}};
@@ -204,12 +321,8 @@ const MimitaHotPackage::CommandRegistrar s_hotMeshCommand{
     {"hotmesh", "hotmesh <glb path> - register a runtime-unknown logical mesh", 0,
      hotMeshCommand}};
 const MimitaHotPackage::CommandRegistrar s_hotToolCommand{
-    {"hottool", "hottool [glb path] - runtime-unknown third-person attached tool",
+    {"hottool", "hottool [glb path] - runtime-unknown tool via real equip path",
      0, hotToolCommand}};
-const MimitaHotPackage::CommandRegistrar s_hotTool1pCommand{
-    {"hottool1p",
-     "hottool1p [glb path] - runtime-unknown first-person (view-space) tool", 0,
-     hotToolFirstPersonCommand}};
 
 } // namespace
 

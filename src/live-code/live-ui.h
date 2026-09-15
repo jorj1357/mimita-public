@@ -30,6 +30,20 @@ std::size_t commandCount();
 // composition should yield ownership of the migrated HUD regions.
 bool hotOwnsHud();
 
+// Generic UI interaction mechanism. Hot systems emit GAME_UI_BUTTON widgets with
+// logical element ids; the backend hit-tests them and reports a generic
+// GAME_EVENT_UI_ACTION. Generation-safe: only element ids are stored, never hot
+// function pointers.
+// Returns true when a hot handler consumed the click (the cold legacy UI for
+// that element must not also act).
+bool handlePointerClick(float x, float y, std::uint64_t tick);
+// Number of interactive widgets emitted in the last completed frame.
+std::size_t buttonCount();
+
+// True when hot UI policy owns the given screen (screenId 0 = any screen), so
+// the cold legacy composition for that screen must yield (one owner).
+bool hotOwnsScreen(std::uint64_t screenId);
+
 // Resolve a UI image logical resource id to the current generation handle (0 if
 // unknown). Exposed for headless verification of generation-aware UI resources.
 std::uint64_t resolveUiImageHandle(std::uint64_t resourceId);

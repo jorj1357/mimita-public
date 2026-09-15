@@ -21,6 +21,8 @@
 
 #include "camera.h"
 #include "combat/area-effect.h"
+#include "ecs/dynamic-components.h"
+#include "hot-reload/hot-presentation.h"
 #include "debug/debug-visuals.h"
 #include "entities/player.h"
 #include "gui/ui-system.h"
@@ -135,9 +137,20 @@ HealthbarRenderResult drawPlayerHealthbar(
     const Player& player,
     const Camera& camera,
     const char* debugPrefix,
-    const char* sourceTag)
+    const char* sourceTag,
+    std::uint64_t actorEntity)
 {
     HealthbarRenderResult result;
+    // Per-actor ownership: the hot overlay path owns this actor's name/health
+    // when it wrote a claim, so the cold policy yields (exactly one owner).
+    if (actorEntity != 0) {
+        HotOverlayClaimV1 claim{};
+        if (MimitaRuntime::DynamicComponentStore::instance().read(
+                static_cast<EntityId>(actorEntity),
+                HOT_OVERLAY_CLAIM_COMPONENT, &claim, sizeof(claim)) &&
+            claim.owned == 1)
+            return result;   // rendered = false; hot owns it
+    }
     result.anchor = playerHealthbarAnchor(
         player, &result.usedHeadTransform);
 

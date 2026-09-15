@@ -40,6 +40,7 @@
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "hot-reload/hot-reload-system.h"
+#include "hot-reload/generation-distribution.h"
 #include "live-code/live-behavior.h"
 #include "live-code/live-identity.h"
 #include "live-code/live-journal.h"
@@ -686,17 +687,61 @@ int runServer(const LaunchOptions& options)
             // connected clients activate the same generation at that tick. The
             // old generation stays live until then.
             HotReloadSystem& hotReload = HotReloadSystem::instance();
-            if (hotReload.candidateReady() && !hotReload.switchPending())
+            // Quorum-gated coordinated switch. Phase 0 announces a candidate so
+            // peers acquire/verify and report READY; the switch is scheduled ONLY
+            // once every required peer is READY for the exact generation. The
+            // server holds its own activation (far-future switch tick) until then.
+            static std::uint32_t announcedCandidateGen = 0;
+            static bool switchCommitted = false;  // post-quorum SWITCH scheduled
+            constexpr std::uint32_t kHoldSwitchTick = 0x7FFFFFFFu;
+            bool doAnnounce = false;
+            bool isSwitch = false;
+            std::uint32_t switchTick = 0;
+            if (hotReload.candidateReady())
             {
-                const std::uint32_t switchTick = tick + 30;
-                hotReload.requestSwitchAtTick(switchTick);
+                const std::uint32_t candGen = hotReload.candidateGeneration();
+                std::vector<std::uint64_t> required;
+                for (auto& pe : players)
+                    required.push_back(pe.first);
+                const bool quorum = !required.empty() &&
+                    MimitaRuntime::GenerationDistribution::instance().quorumReady(
+                        required, candGen);
+                // Pre-commit: a newer candidate may supersede the announced one.
+                // Post-commit (switchCommitted): do NOT cancel a coordinated
+                // SWITCH; let G activate, then H becomes the next candidate.
+                if (candGen != announcedCandidateGen && !switchCommitted)
+                {
+                    doAnnounce = true;
+                    isSwitch = false;
+                    hotReload.requestSwitchAtTick(kHoldSwitchTick);  // hold
+                    announcedCandidateGen = candGen;
+                }
+                else if (candGen == announcedCandidateGen && quorum &&
+                         !switchCommitted &&
+                         (!hotReload.switchPending() ||
+                          hotReload.switchAtTick() == kHoldSwitchTick))
+                {
+                    doAnnounce = true;
+                    isSwitch = true;
+                    switchCommitted = true;
+                    switchTick = tick + 30;
+                }
+            }
+            if (doAnnounce)
+            {
+                if (isSwitch)
+                {
+                    hotReload.requestSwitchAtTick(switchTick);
+                    MimitaRuntime::GenerationDistribution::instance().scheduleSwitch(
+                        hotReload.candidateGeneration(), switchTick);
+                }
                 CodeGenerationPacket announce{};
                 announce.header.type = PACKET_CODE_GENERATION;
                 announce.header.tick = tick;
                 announce.generation = hotReload.candidateGeneration();
                 announce.direction = 1;  // server -> clients
-                announce.phase = 2;      // SWITCH at switchTick
-                announce.switchTick = switchTick;
+                announce.phase = isSwitch ? 2u : 0u;  // 0 acquire/verify, 2 switch
+                announce.switchTick = isSwitch ? switchTick : 0u;
                 auto hexValue = [](char c) -> uint64_t {
                     if (c >= '0' && c <= '9') return (uint64_t)(c - '0');
                     if (c >= 'a' && c <= 'f') return (uint64_t)(c - 'a' + 10);
@@ -710,9 +755,61 @@ int runServer(const LaunchOptions& options)
                         hexValue(candidateHash[i + 1]);
                 announce.moduleSetHash =
                     MimitaRuntime::GenericRuntime::instance().manifestHash();
+                announce.hotAbiVersion = MIMITA_GAME_API_VERSION;
                 announce.logicalCodeHash =
                     announce.codeHash ^ (announce.moduleSetHash * 1099511628211ull);
-                announce.platformPackageHash = announce.generation;
+                // Advertise the REAL platform artifact hash so peers can request
+                // the exact immutable artifact by content identity.
+                {
+                    std::vector<unsigned char> candidateArtifact;
+                    std::uint32_t candGen = 0;
+                    std::uint64_t candHash = 0;
+                    if (hotReload.readCandidateArtifact(candidateArtifact, candGen,
+                                                        candHash))
+                        announce.platformPackageHash = candHash;
+                    else
+                        announce.platformPackageHash = announce.generation;
+                }
+                // Carry the REAL bounded manifest (identity + ABI + declared
+                // capability/schema/dependency requirements) so the peer verifies
+                // the exact facts the server associated with G. Metadata only;
+                // artifact bytes travel on the separate content-addressed stream.
+                GenerationManifestPacket manifestPkt{};
+                bool haveManifest = false;
+                if (!isSwitch)
+                {
+                    MimitaRuntime::GenerationManifestV1 m{};
+                    if (hotReload.buildCandidateManifest(m))
+                    {
+                        manifestPkt.header.type = PACKET_GENERATION_MANIFEST;
+                        manifestPkt.header.tick = tick;
+                        manifestPkt.manifestVersion = GENERATION_MANIFEST_VERSION;
+                        manifestPkt.logicalGenerationId = m.logicalGenerationId;
+                        manifestPkt.logicalBehaviorHash = m.logicalBehaviorHash;
+                        manifestPkt.platformArtifactHash = m.platformArtifactHash;
+                        manifestPkt.platformArtifactSize = m.platformArtifactSize;
+                        manifestPkt.hotAbiVersion = m.hotAbiVersion;
+                        manifestPkt.requiredCapabilityCount = m.requiredCapabilityCount;
+                        manifestPkt.requiredSchemaCount = m.requiredSchemaCount;
+                        manifestPkt.requiredDependencyCount = m.requiredDependencyCount;
+                        for (uint32_t i = 0;
+                             i < m.requiredCapabilityCount &&
+                             i < GENERATION_MANIFEST_MAX_REQUIREMENTS;
+                             ++i)
+                            manifestPkt.requiredCapabilities[i] = m.requiredCapabilities[i];
+                        for (uint32_t i = 0;
+                             i < m.requiredSchemaCount &&
+                             i < GENERATION_MANIFEST_MAX_REQUIREMENTS;
+                             ++i)
+                            manifestPkt.requiredSchemas[i] = m.requiredSchemas[i];
+                        for (uint32_t i = 0;
+                             i < m.requiredDependencyCount &&
+                             i < GENERATION_MANIFEST_MAX_REQUIREMENTS;
+                             ++i)
+                            manifestPkt.requiredDependencies[i] = m.requiredDependencies[i];
+                        haveManifest = true;
+                    }
+                }
                 for (auto& pe : players)
                 {
                     if (pe.second.transport)
@@ -720,12 +817,30 @@ int runServer(const LaunchOptions& options)
                     else
                         sendto(sock, (const char*)&announce, sizeof(announce), 0,
                                (sockaddr*)&pe.second.addr, sizeof(pe.second.addr));
+                    if (haveManifest)
+                    {
+                        if (pe.second.transport)
+                            pe.second.transport->send(&manifestPkt, sizeof(manifestPkt));
+                        else
+                            sendto(sock, (const char*)&manifestPkt, sizeof(manifestPkt), 0,
+                                   (sockaddr*)&pe.second.addr, sizeof(pe.second.addr));
+                    }
+                    // Track per-peer readiness for THIS logical generation.
+                    MimitaRuntime::GenerationIdentityV1 ident{};
+                    ident.logicalGenerationId = announce.generation;
+                    ident.logicalBehaviorHash = announce.logicalCodeHash;
+                    ident.platformArtifactHash = announce.platformPackageHash;
+                    ident.abiVersion = MIMITA_GAME_API_VERSION;
+                    MimitaRuntime::GenerationDistribution::instance().announce(
+                        pe.first, ident);
                 }
                 printf("%s [SERVER LIVE CODE] announce switch generation=%u switchTick=%u\n",
                        serverTimestamp(), announce.generation, switchTick);
             }
             if (hotReload.pollAndAdvance(tick))
             {
+                switchCommitted = false;
+                announcedCandidateGen = 0;
                 const HotReloadSystem::Status liveStatus = hotReload.status();
                 printf("%s [SERVER LIVE CODE] activated generation=%u hash=%s\n",
                        serverTimestamp(), liveStatus.activeGeneration,

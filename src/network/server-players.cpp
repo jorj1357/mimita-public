@@ -12,6 +12,7 @@
 #include "network/server-context.h"
 #include "live-code/live-behavior.h"
 #include "hot-reload/hot-rewind.h"
+#include "hot-reload/hot-reload-system.h"
 #include "ecs/components.h"
 #include "ecs/entity-registry.h"
 #include "network/actor-lifecycle.h"
@@ -1011,7 +1012,14 @@ void pushPositionHistory(ServerPlayer& p, uint32_t tick)
     const glm::vec3 histVel = serverSimBroadcast
         ? (p.hasAcceptedClientTransform ? p.lastAcceptedClientVelocity : authVel)
         : authVel;
-    p.posHistory.push_back({histPos, histVel, p.yaw, tick});
+    PositionHistoryEntry histEntry{};
+    histEntry.pos = histPos;
+    histEntry.vel = histVel;
+    histEntry.yaw = p.yaw;
+    histEntry.tick = tick;
+    histEntry.logicalGenerationId =
+        HotReloadSystem::instance().status().activeGeneration;
+    p.posHistory.push_back(histEntry);
     const std::size_t historyLimit = NetworkingConfig::instance()
         .data().bufferLimits.serverPositionHistoryTicks;
     while (p.posHistory.size() > historyLimit)
@@ -1043,6 +1051,13 @@ bool getPositionAtTick(const ServerPlayer& p, uint32_t targetTick, glm::vec3& ou
         {
             const auto& a = p.posHistory[i];
             const auto& b = p.posHistory[i + 1];
+            // Generation boundary: never interpolate F state into G state as
+            // ordinary history. Clamp to the newer (authoritative) side.
+            if (a.logicalGenerationId != b.logicalGenerationId)
+            {
+                outPos = b.pos;
+                return true;
+            }
             float frac = float(targetTick - a.tick) / float(b.tick - a.tick);
             outPos = glm::mix(a.pos, b.pos, frac);
             return true;
@@ -1086,6 +1101,14 @@ bool getPlayerPoseAtTick(const ServerPlayer& p, uint32_t targetTick,
     }
     const auto& a = p.posHistory[lo];
     const auto& b = p.posHistory[lo + 1];
+    // Generation boundary: clamp to the newer authoritative sample instead of
+    // interpolating across incompatible behavior generations.
+    if (a.logicalGenerationId != b.logicalGenerationId)
+    {
+        outPos = b.pos;
+        outYaw = b.yaw;
+        return true;
+    }
     const float frac = (b.tick > a.tick)
         ? float(targetTick - a.tick) / float(b.tick - a.tick)
         : 0.0f;
@@ -1309,6 +1332,12 @@ uint32_t estimateServerRewindTick(const ServerPlayer& attacker,
             .data().remotePlayers.rewindCompensationSeconds;
         rp.maxRewindTicks = NetworkingConfig::instance()
             .data().remotePlayers.maxRewindTicks;
+        // Canonical generation provenance (same id as snapshots/interpolation).
+        const std::uint32_t rewindGen =
+            HotReloadSystem::instance().status().activeGeneration;
+        rp.attackerGeneration = rewindGen;
+        rp.targetGeneration = rewindGen;
+        rp.currentGeneration = rewindGen;
         rp.handled = 0;
         if (LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_REWIND, &rp,
                                                   sizeof(rp), 0, 0, 0) &&

@@ -132,6 +132,10 @@ struct SnapshotTransform
     bool godballActive = false;
     glm::vec3 godballPosition{0.0f};
     glm::vec3 godballVelocity{0.0f};
+    // Canonical logical hot-generation id that produced this sample (0 until
+    // stamped from the server-advertised active generation). Used by
+    // net.interpolate/net.rewind to detect a real F->G boundary.
+    uint32_t logicalGenerationId = 0;
 };
 
 struct NetworkShotEvent
@@ -464,7 +468,19 @@ struct MultiplayerContext
     uint32_t serverCodePhase = 0;
     uint64_t serverLogicalHash = 0;
     uint64_t serverPlatformHash = 0;
+    // Hot ABI version advertised by the server for its announced generation.
+    // A peer must not report READY for an incompatible hot ABI.
+    uint32_t serverHotAbiVersion = 0;
     uint32_t lastCodeGenerationSentTick = 0;
+    // Bounded generation manifest received for the pending candidate, keyed by
+    // exact logical generation so a supersede cannot cross-validate. The client
+    // verifies THIS manifest (never a locally reconstructed one) before READY.
+    GenerationManifestPacket pendingManifest{};
+    uint32_t pendingManifestGeneration = 0;
+    bool pendingManifestValid = false;
+    // Last verifyGeneration failure reason (VerifyFailure cast to uint32) for the
+    // pending candidate; 0 = none/verified. Reported, never gating on hash alone.
+    uint32_t pendingVerifyFailure = 0;
 
     // Held-fire intent state (START while held; HEARTBEAT; STOP on release).
     bool fireIntentActive = false;
@@ -1029,7 +1045,7 @@ void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& cam
 void mpProcessChatPacket(MultiplayerContext& ctx, const ChatPacket* chat);
 
 // Interpolation helpers (defined in multiplayer-interpolation.cpp)
-bool pushInterpolationTarget(EntityInterpolationState& interpolation, const SnapshotEntity& entity, uint32_t serverTick);
+bool pushInterpolationTarget(EntityInterpolationState& interpolation, const SnapshotEntity& entity, uint32_t serverTick, uint32_t logicalGenerationId = 0);
 void updateRenderedReplica(Player& player, EntityInterpolationState& interpolation,
                            double renderTick, float dt, bool spawnDeathEffects);
 void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt);

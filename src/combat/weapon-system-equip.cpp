@@ -9,6 +9,10 @@
 #include "duel/duel-weapon-pool.h"
 #include "game/duel.h"
 #include "pobjects/persistent-physics.h"
+#include "ecs/actor-entities.h"
+#include "ecs/entity-types.h"
+#include "hot-reload/game-api.h"
+#include "network/actor-state.h"
 
 #include <cstdio>
 
@@ -106,6 +110,17 @@ std::string WeaponSystem::equip(Player& player, int slot) {
         player.equippedWeaponId = def->id;
         mCurrentSlot = slot;
         mCurrentWeaponId = def->id;
+        // Generic equip identity: the standard weapon-slot path now produces the
+        // same Tool Entity + equips-item/ToolRefState state as items/runtime
+        // tools. Typed Player fields remain compatibility mirrors. Presentation
+        // and gameplay read the generic tool identity.
+        {
+            const std::uint64_t actor =
+                static_cast<std::uint64_t>(Ecs::ensureLocalPlayerEntity());
+            MimitaNet::actorStateEquipWeaponKey(
+                actor, gameHash(def->id.c_str()),
+                static_cast<std::uint32_t>(EntityRealm::Local));
+        }
         if (WeaponRuntime* rt = getCurrentRuntime(player)) {
             auto it = def->customParams.find("equipPoseTime");
             rt->customFloats["equipTimer"] =
@@ -152,6 +167,9 @@ std::string WeaponSystem::unequip(Player& player) {
     player.weaponModelTransform = glm::mat4(1.0f);
     mCurrentSlot = 0;
     mCurrentWeaponId.clear();
+    // Remove the generic equipped-tool edge; the tool entity persists.
+    MimitaNet::actorStateUnequipTool(
+        static_cast<std::uint64_t>(Ecs::ensureLocalPlayerEntity()));
     for (PhysicalBodyPart& part : player.physicalBody.parts) {
         if (part.name == "leftArm" || part.name == "rightArm") {
             part.translationSpring = SpringState{};
