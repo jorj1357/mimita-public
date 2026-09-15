@@ -24,6 +24,13 @@ struct Renderer {
     void endFrame();
     bool shouldClose();
     void shutdown();
+
+    // Generation-aware shader resource. `pollShaderReload` recompiles
+    // shaders/basic.* only when its content hash changes; a compile/link
+    // failure keeps the last-good program active. Returns true when a new
+    // generation activated this call.
+    bool pollShaderReload();
+    static void registerBasicShaderResource(Renderer* renderer, GLuint initialProgram);
     void applyVideoMode(int w, int h, bool fullscreen);
     void setVSync(bool on);
     bool vsync() const { return mVSync; }

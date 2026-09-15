@@ -35,5 +35,12 @@ void setActiveServerContext(ServerContextV1* context);
 bool serverSpawnGenericProjectile(const GameProjectileSpawnSpecV1& spec,
                                   std::uint64_t* outEntity);
 bool serverApplyEntityDamage(GameDamageApplyV1& request);
+// Generic map spatial anchors (kernel-owned projection of map metadata) for hot
+// modes that create their own site entities. Returns the anchor count written.
+std::uint32_t serverMapAnchors(GameMapAnchorV1* out, std::uint32_t maxOut);
+// Generic authoritative actor spawn/reset. Mutates the generic Transform/
+// Velocity/health/dead state and keeps the typed projections in sync. The mode
+// decides where/when; the kernel only performs the mutation.
+bool serverSpawnOrResetActor(GameActorSpawnV1& request);
 
 } // namespace MimitaNet

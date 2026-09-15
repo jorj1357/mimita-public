@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "ecs/dynamic-components.h"
+#include "ecs/entity-registry.h"
 #include "ecs/relationship-store.h"
 #include "hot-reload/game-api.h"
 #include "hot-reload/hot-projectile.h"
@@ -121,7 +122,9 @@ bool runDynamicReplicationSelfTest(std::string& report)
 
     std::vector<MimitaNet::DynamicComponentRecord> serverRecords;
     std::vector<MimitaNet::RelationshipRecord> serverRelationRecords;
-    MimitaNet::dynamicReplicationCollectServer(serverRecords, serverRelationRecords);
+    std::vector<MimitaNet::EntityLifecycleRecord> serverLifecycles;
+    MimitaNet::dynamicReplicationCollectServer(serverRecords, serverRelationRecords,
+                                               serverLifecycles);
     bool hasRep = false, hasHot = false;
     for (const auto& r : serverRecords) {
         if (r.typeId == kRep) hasRep = true;
@@ -150,15 +153,19 @@ bool runDynamicReplicationSelfTest(std::string& report)
             outbound.push_back(r);
 
     const std::vector<std::uint8_t> bytes =
-        MimitaNet::dynamicReplicationEncode(outbound, serverRelationRecords);
+        MimitaNet::dynamicReplicationEncode(outbound, serverRelationRecords,
+                                            serverLifecycles);
     std::vector<MimitaNet::DynamicComponentRecord> decoded;
     std::vector<MimitaNet::RelationshipRecord> decodedRelations;
+    std::vector<MimitaNet::EntityLifecycleRecord> decodedLifecycles;
     std::string error;
-    ok &= check(MimitaNet::dynamicReplicationDecode(bytes.data(), bytes.size(),
-                                                    decoded, decodedRelations, error),
+    ok &= check(MimitaNet::dynamicReplicationDecode(
+                    bytes.data(), bytes.size(), decoded, decodedRelations,
+                    decodedLifecycles, error),
                 "generic envelope decodes", report);
     ok &= check(decoded.size() == outbound.size() &&
-                    decodedRelations.size() == serverRelationRecords.size(),
+                    decodedRelations.size() == serverRelationRecords.size() &&
+                    decodedLifecycles.size() == serverLifecycles.size(),
                 "record count round-trips", report);
 
     // Simulate a fresh client: clear and apply the received records.
@@ -166,9 +173,13 @@ bool runDynamicReplicationSelfTest(std::string& report)
     MimitaRuntime::RelationshipStore& clientRelations =
         MimitaRuntime::RelationshipStore::instance();
     clientRelations.clear();
-    ok &= check(MimitaNet::dynamicReplicationApply(decoded, decodedRelations, store,
+    ok &= check(MimitaNet::dynamicReplicationApply(decoded, decodedRelations,
+                                                   decodedLifecycles, store,
                                                    clientRelations, error),
                 "client applies replicated records: " + error, report);
+    ok &= check(decodedLifecycles.size() >= 2 &&
+                    EntityRegistry::instance().alive(static_cast<EntityId>(kRepEntity)),
+                "client learned the entities' generic lifecycle (CREATE)", report);
     ok &= check(clientRelations.has(kRepRelation, kRepEntity, kRepRelationTarget),
                 "client received the new relationship edge", report);
     RepTestState received{};
@@ -197,7 +208,7 @@ bool runDynamicReplicationSelfTest(std::string& report)
                              sizeof(updated));
         update.push_back(r);
     }
-    MimitaNet::dynamicReplicationApply(update, {}, store, clientRelations, error);
+    MimitaNet::dynamicReplicationApply(update, {}, {}, store, clientRelations, error);
     store.read(kRepEntity, kRep, &received, sizeof(received));
     ok &= check(received.value == 9 && received.counter == 2,
                 "component update propagates", report);
@@ -211,7 +222,7 @@ bool runDynamicReplicationSelfTest(std::string& report)
         r.typeId = kRep;
         removal.push_back(r);
     }
-    ok &= check(MimitaNet::dynamicReplicationApply(removal, {}, store,
+    ok &= check(MimitaNet::dynamicReplicationApply(removal, {}, {}, store,
                                                    clientRelations, error) &&
                     !store.has(kRepEntity, kRep),
                 "component remove propagates", report);
@@ -231,7 +242,7 @@ bool runDynamicReplicationSelfTest(std::string& report)
         r.value = 11u;
         r.changeVersion = 9u;
         relUpdate.push_back(r);
-        MimitaNet::dynamicReplicationApply({}, relUpdate, store, clientRelations,
+        MimitaNet::dynamicReplicationApply({}, relUpdate, {}, store, clientRelations,
                                            error);
         EntityId outTo = 0;
         std::uint64_t value = 0;
@@ -247,7 +258,7 @@ bool runDynamicReplicationSelfTest(std::string& report)
         r.target = kRepRelationTarget;
         r.typeId = kRepRelation;
         relRemove.push_back(r);
-        MimitaNet::dynamicReplicationApply({}, relRemove, store, clientRelations,
+        MimitaNet::dynamicReplicationApply({}, relRemove, {}, store, clientRelations,
                                            error);
         ok &= check(!clientRelations.has(kRepRelation, kRepEntity, kRepRelationTarget),
                     "relationship remove propagates", report);
@@ -266,7 +277,7 @@ bool runDynamicReplicationSelfTest(std::string& report)
         bad.push_back(r);
     }
     const bool badApplied =
-        MimitaNet::dynamicReplicationApply(bad, {}, store, clientRelations, error);
+        MimitaNet::dynamicReplicationApply(bad, {}, {}, store, clientRelations, error);
     store.read(kRepEntity, kRep, &received, sizeof(received));
     ok &= check(!badApplied && received.value == 7,
                 "mismatched payload rejected and state preserved", report);
@@ -277,7 +288,7 @@ bool runDynamicReplicationSelfTest(std::string& report)
     migration.push_back(schemaDescriptor(kRep, gameHash("RepTestState.v2"), 2,
                                          sizeof(RepTestStateV2), "RepTestState"));
     error.clear();
-    ok &= check(MimitaNet::dynamicReplicationApply(migration, {}, store,
+    ok &= check(MimitaNet::dynamicReplicationApply(migration, {}, {}, store,
                                                    clientRelations, error),
                 "client applies v2 schema with migration", report);
     RepTestStateV2 migrated{};
@@ -291,11 +302,74 @@ bool runDynamicReplicationSelfTest(std::string& report)
                                             "RepTestState"));
     error.clear();
     const bool migratedV3 = MimitaNet::dynamicReplicationApply(
-        badMigration, {}, store, clientRelations, error);
+        badMigration, {}, {}, store, clientRelations, error);
     store.read(kRepEntity, kRep, &migrated, sizeof(migrated));
     ok &= check(!migratedV3 && migrated.value == 7,
                 "failed schema migration preserves last-good state", report);
 
+    // ── Generic entity lifecycle + falsification ─────────────────────
+    {
+        std::string lifeError;
+        std::vector<MimitaNet::EntityLifecycleRecord> create;
+        MimitaNet::EntityLifecycleRecord c;
+        c.op = 0;
+        c.entity = kRepEntity;
+        c.generation = 0;
+        create.push_back(c);
+        create.push_back(c);  // duplicate CREATE is idempotent
+        ok &= check(MimitaNet::dynamicReplicationApply({}, {}, create, store,
+                                                       clientRelations, lifeError) &&
+                        EntityRegistry::instance().alive(
+                            static_cast<EntityId>(kRepEntity)),
+                    "client creates the entity from a generic CREATE record", report);
+
+        store.write(kRepEntity, kRep, &server, sizeof(server));
+        std::vector<MimitaNet::EntityLifecycleRecord> destroy;
+        MimitaNet::EntityLifecycleRecord d;
+        d.op = 1;
+        d.entity = kRepEntity;
+        destroy.push_back(d);
+        destroy.push_back(d);  // duplicate DESTROY is a no-op
+        ok &= check(MimitaNet::dynamicReplicationApply({}, {}, destroy, store,
+                                                       clientRelations, lifeError) &&
+                        !EntityRegistry::instance().alive(
+                            static_cast<EntityId>(kRepEntity)) &&
+                        !store.has(kRepEntity, kRep),
+                    "client destroys the entity and clears its state", report);
+
+        RepTestState stale{123, 1};
+        std::vector<MimitaNet::DynamicComponentRecord> late;
+        MimitaNet::DynamicComponentRecord lr;
+        lr.op = 0;
+        lr.entity = kRepEntity;
+        lr.typeId = kRep;
+        lr.schemaHash = kRepHashV1;
+        lr.schemaVersion = 1;
+        lr.payload.assign(reinterpret_cast<const std::uint8_t*>(&stale),
+                          reinterpret_cast<const std::uint8_t*>(&stale) +
+                              sizeof(stale));
+        late.push_back(lr);
+        MimitaNet::dynamicReplicationApply(late, {}, {}, store, clientRelations,
+                                           lifeError);
+        ok &= check(!store.has(kRepEntity, kRep),
+                    "stale UPDATE after DESTROY cannot resurrect the entity", report);
+
+        const EntityId regen = makeEntityId(
+            EntityRealm::Server, EntityDomain::None,
+            entityLegacyId(static_cast<EntityId>(kRepEntity)), 3);
+        std::vector<MimitaNet::EntityLifecycleRecord> recreate;
+        MimitaNet::EntityLifecycleRecord rc;
+        rc.op = 0;
+        rc.entity = regen;
+        rc.generation = 3;
+        recreate.push_back(rc);
+        ok &= check(MimitaNet::dynamicReplicationApply({}, {}, recreate, store,
+                                                       clientRelations, lifeError) &&
+                        EntityRegistry::instance().alive(regen),
+                    "id reuse with a new generation adopts the new identity", report);
+    }
+
     store.clear();
     return ok;
 }
+

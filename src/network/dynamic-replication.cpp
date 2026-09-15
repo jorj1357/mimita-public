@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "ecs/dynamic-components.h"
+#include "ecs/entity-registry.h"
 #include "ecs/entity-types.h"
 #include "ecs/relationship-store.h"
 #include "hot-reload/game-api.h"
@@ -77,11 +78,16 @@ bool replicatedPolicy(std::uint32_t policy)
     return policy == GAME_NET_ALL || policy == GAME_NET_OWNER;
 }
 
+// Generic entities explicitly marked for lifecycle replication before they own
+// a replicated component.
+std::unordered_set<std::uint64_t> g_explicitReplicatedEntities;
+
 } // namespace
 
 std::vector<std::uint8_t> dynamicReplicationEncode(
     const std::vector<DynamicComponentRecord>& records,
-    const std::vector<RelationshipRecord>& relationships)
+    const std::vector<RelationshipRecord>& relationships,
+    const std::vector<EntityLifecycleRecord>& lifecycles)
 {
     std::vector<std::uint8_t> out;
     out.reserve(sizeof(PacketHeader) + 20 + records.size() * (kRecordFixedBytes + 32) +
@@ -131,16 +137,29 @@ std::vector<std::uint8_t> dynamicReplicationEncode(
         appendPod(out, r.typeId);
         appendPod(out, r.target);
     }
+
+    appendPod(out, static_cast<std::uint32_t>(lifecycles.size()));
+    for (const EntityLifecycleRecord& r : lifecycles) {
+        appendPod(out, r.op);
+        appendPod(out, std::uint8_t{0});
+        appendPod(out, std::uint8_t{0});
+        appendPod(out, std::uint8_t{0});
+        appendPod(out, r.changeVersion);
+        appendPod(out, r.entity);
+        appendPod(out, r.generation);
+    }
     return out;
 }
 
 bool dynamicReplicationDecode(
     const std::uint8_t* data, std::size_t size,
     std::vector<DynamicComponentRecord>& out,
-    std::vector<RelationshipRecord>& outRelationships, std::string& error)
+    std::vector<RelationshipRecord>& outRelationships,
+    std::vector<EntityLifecycleRecord>& outLifecycles, std::string& error)
 {
     out.clear();
     outRelationships.clear();
+    outLifecycles.clear();
     if (!data || size < sizeof(PacketHeader) + 16) {
         error = "short packet";
         return false;
@@ -204,20 +223,69 @@ bool dynamicReplicationDecode(
             outRelationships.push_back(r);
         }
     }
+
+    // Lifecycle section is optional so older bodies still decode.
+    if (reader.pos + sizeof(std::uint32_t) <= reader.size) {
+        const std::uint32_t lifeCount = reader.read<std::uint32_t>();
+        if (!reader.ok) { error = "truncated lifecycle count"; return false; }
+        for (std::uint32_t i = 0; i < lifeCount; ++i) {
+            EntityLifecycleRecord r;
+            r.op = reader.read<std::uint8_t>();
+            reader.read<std::uint8_t>();
+            reader.read<std::uint8_t>();
+            reader.read<std::uint8_t>();
+            r.changeVersion = reader.read<std::uint32_t>();
+            r.entity = reader.read<std::uint64_t>();
+            r.generation = reader.read<std::uint64_t>();
+            if (!reader.ok) { error = "truncated lifecycle record"; return false; }
+            outLifecycles.push_back(r);
+        }
+    }
     return true;
 }
 
 bool dynamicReplicationApply(const std::vector<DynamicComponentRecord>& records,
                              const std::vector<RelationshipRecord>& relationships,
+                             const std::vector<EntityLifecycleRecord>& lifecycles,
                              MimitaRuntime::DynamicComponentStore& store,
                              MimitaRuntime::RelationshipStore& relations,
                              std::string& error)
 {
+    // Persistent client-side knowledge: an entity is "known" once created and
+    // "retired" once destroyed. Retired entities reject later state so old data
+    // can never resurrect a destroyed entity; a new CREATE clears the retire.
+    static std::unordered_set<std::uint64_t> s_knownEntities;
+    static std::unordered_set<std::uint64_t> s_retiredEntities;
+    const bool lifecycleManaged = !lifecycles.empty();
+
+    // Entity lifecycle first: create the shell before any component/edge applies.
+    for (const EntityLifecycleRecord& l : lifecycles) {
+        if (l.entity == 0)
+            continue;
+        const EntityId entity = static_cast<EntityId>(l.entity);
+        if (l.op == 0) {
+            EntityRegistry::instance().adopt(entity);
+            s_knownEntities.insert(l.entity);
+            s_retiredEntities.erase(l.entity);
+        } else {
+            EntityRegistry::instance().destroy(entity);
+            store.eraseEntity(entity);
+            relations.eraseEntity(entity);
+            s_knownEntities.erase(l.entity);
+            s_retiredEntities.insert(l.entity);
+        }
+    }
+
     for (const RelationshipRecord& r : relationships) {
         if (r.source == 0 || r.target == 0 || r.typeId == 0) {
             error = "invalid relationship ids";
             return false;
         }
+        if (s_retiredEntities.count(r.source) || s_retiredEntities.count(r.target))
+            continue;  // stale after destroy
+        if (lifecycleManaged && (!s_knownEntities.count(r.source) ||
+                                 !s_knownEntities.count(r.target)))
+            continue;  // created later; drop before create
         if (r.op == 4) {
             relations.remove(r.typeId, static_cast<EntityId>(r.source),
                              static_cast<EntityId>(r.target));
@@ -257,6 +325,11 @@ bool dynamicReplicationApply(const std::vector<DynamicComponentRecord>& records,
             error = "invalid entity id";
             return false;
         }
+        if (s_retiredEntities.count(r.entity))
+            continue;  // stale after destroy
+        if (lifecycleManaged && !s_knownEntities.count(r.entity) &&
+            !EntityRegistry::instance().alive(static_cast<EntityId>(r.entity)))
+            continue;  // update before create; applied on the next sync
         if (r.op == 1) {
             store.remove(static_cast<EntityId>(r.entity), r.typeId);
             continue;
@@ -279,7 +352,8 @@ bool dynamicReplicationApply(const std::vector<DynamicComponentRecord>& records,
 
 void dynamicReplicationCollectServer(
     std::vector<DynamicComponentRecord>& out,
-    std::vector<RelationshipRecord>& outRelationships)
+    std::vector<RelationshipRecord>& outRelationships,
+    std::vector<EntityLifecycleRecord>& outLifecycles)
 {
     MimitaRuntime::DynamicComponentStore& store =
         MimitaRuntime::DynamicComponentStore::instance();
@@ -323,6 +397,41 @@ void dynamicReplicationCollectServer(
             outRelationships.push_back(r);
         }
     }
+
+    // Lifecycle: emit a CREATE for every distinct entity referenced by a
+    // replicated component or relationship, so a client learns the entity
+    // before its state/edges.
+    std::unordered_set<std::uint64_t> candidates;
+    for (const DynamicComponentRecord& r : out)
+        if (r.op == 0 && r.entity != 0)
+            candidates.insert(r.entity);
+    for (const RelationshipRecord& r : outRelationships) {
+        if (r.source != 0) candidates.insert(r.source);
+        if (r.target != 0) candidates.insert(r.target);
+    }
+    for (std::uint64_t entity : candidates) {
+        EntityLifecycleRecord life;
+        life.op = 0;
+        life.entity = entity;
+        life.generation = entityGeneration(static_cast<EntityId>(entity));
+        outLifecycles.push_back(life);
+    }
+
+    // Destroyed entities: emit a generic DESTROY from the ECS destroy log.
+    for (EntityId destroyed : EntityRegistry::instance().consumeDestroyed()) {
+        EntityLifecycleRecord life;
+        life.op = 1;
+        life.entity = static_cast<std::uint64_t>(destroyed);
+        life.generation = entityGeneration(destroyed);
+        outLifecycles.push_back(life);
+    }
+}
+
+void serverReplicateEntity(std::uint64_t entity)
+{
+    // Explicit lifecycle replication for a generic entity with no replicated
+    // component yet. Consumed by the next serverReplicateDynamicComponents call.
+    g_explicitReplicatedEntities.insert(entity);
 }
 
 void serverReplicateDynamicComponents(std::uintptr_t sock,
@@ -342,15 +451,23 @@ void serverReplicateDynamicComponents(std::uintptr_t sock,
         std::unordered_set<std::uint64_t> knownSchemas;
         // (typeId, source, target) -> changeVersion for edges already sent.
         std::map<std::tuple<std::uint64_t, std::uint64_t, std::uint64_t>, std::uint32_t> sentEdges;
+        // Entities whose lifecycle (CREATE) this client already knows.
+        std::unordered_set<std::uint64_t> sentEntities;
     };
     static std::unordered_map<uint32_t, PerClient> s_clients;
 
+    // Drain explicit lifecycle marks once for all clients.
+    std::unordered_set<std::uint64_t> explicitEntities;
+    explicitEntities.swap(g_explicitReplicatedEntities);
+
     auto flush = [&](const std::vector<DynamicComponentRecord>& comps,
                      const std::vector<RelationshipRecord>& rels,
+                     const std::vector<EntityLifecycleRecord>& life,
                      ServerPlayer& player) {
-        if (comps.empty() && rels.empty())
+        if (comps.empty() && rels.empty() && life.empty())
             return;
-        const std::vector<std::uint8_t> bytes = dynamicReplicationEncode(comps, rels);
+        const std::vector<std::uint8_t> bytes =
+            dynamicReplicationEncode(comps, rels, life);
         queueReliableGameplayEventToPlayer(
             static_cast<SOCKET>(sock), player, bytes.data(), bytes.size(),
             nextReliableGameplayEventId(),
@@ -364,6 +481,62 @@ void serverReplicateDynamicComponents(std::uintptr_t sock,
         PerClient& client = s_clients[player.id];
         std::vector<DynamicComponentRecord> records;
         std::vector<RelationshipRecord> edgeRecords;
+        std::vector<EntityLifecycleRecord> lifecycles;
+
+        // ── Entity lifecycle: CREATE before state, DESTROY on absence ──
+        std::unordered_set<std::uint64_t> candidates = explicitEntities;
+        for (std::uint64_t typeId : componentTypes) {
+            const MimitaRuntime::DynamicComponentSchema* schema = store.schema(typeId);
+            if (!schema || !replicatedPolicy(schema->networkPolicy))
+                continue;
+            EntityId ents[128] = {0};
+            const std::size_t n = store.enumerate(typeId, ents, 128);
+            for (std::size_t i = 0; i < n; ++i) {
+                if (schema->networkPolicy == GAME_NET_OWNER &&
+                    (entityDomain(ents[i]) != EntityDomain::Player ||
+                     entityLegacyId(ents[i]) != player.id))
+                    continue;
+                candidates.insert(static_cast<std::uint64_t>(ents[i]));
+            }
+        }
+        for (std::uint64_t typeId : relationshipTypes) {
+            const std::uint32_t policy = relations.networkPolicy(typeId);
+            if (!replicatedPolicy(policy))
+                continue;
+            MimitaRuntime::RelationshipEdge edges[128] = {};
+            const std::size_t n = relations.edgesOfType(typeId, edges, 128);
+            for (std::size_t i = 0; i < n; ++i) {
+                if (policy == GAME_NET_OWNER &&
+                    (entityDomain(edges[i].from) != EntityDomain::Player ||
+                     entityLegacyId(edges[i].from) != player.id))
+                    continue;
+                if (edges[i].from != 0)
+                    candidates.insert(static_cast<std::uint64_t>(edges[i].from));
+                if (edges[i].to != 0)
+                    candidates.insert(static_cast<std::uint64_t>(edges[i].to));
+            }
+        }
+        for (std::uint64_t e : candidates) {
+            if (client.sentEntities.insert(e).second) {
+                EntityLifecycleRecord l;
+                l.op = 0;
+                l.entity = e;
+                l.generation = entityGeneration(static_cast<EntityId>(e));
+                lifecycles.push_back(l);
+            }
+        }
+        for (auto it = client.sentEntities.begin(); it != client.sentEntities.end();) {
+            if (EntityRegistry::instance().alive(static_cast<EntityId>(*it))) {
+                ++it;
+                continue;
+            }
+            EntityLifecycleRecord l;
+            l.op = 1;
+            l.entity = *it;
+            l.generation = entityGeneration(static_cast<EntityId>(*it));
+            lifecycles.push_back(l);
+            it = client.sentEntities.erase(it);
+        }
 
         // ── Components: schema descriptors + changed upserts ───────────
         for (std::uint64_t typeId : componentTypes) {
@@ -479,9 +652,17 @@ void serverReplicateDynamicComponents(std::uintptr_t sock,
             it = client.sentEdges.erase(it);
         }
 
-        // Send in bounded batches so no changed record is silently dropped.
+        // Lifecycle-only update (e.g. an entity with no replicated components).
+        if (records.empty() && edgeRecords.empty() && !lifecycles.empty()) {
+            flush({}, {}, lifecycles, player);
+            continue;
+        }
+
+        // Send in bounded batches so no changed record is silently dropped. The
+        // lifecycle records ride the first batch so CREATE precedes state.
         std::size_t compIndex = 0;
         std::size_t edgeIndex = 0;
+        bool firstBatch = true;
         while (compIndex < records.size() || edgeIndex < edgeRecords.size()) {
             const std::size_t compTake =
                 std::min(kMaxRecordsPerPacket, records.size() - compIndex);
@@ -493,7 +674,10 @@ void serverReplicateDynamicComponents(std::uintptr_t sock,
             std::vector<RelationshipRecord> edgeBatch(
                 edgeRecords.begin() + edgeIndex,
                 edgeRecords.begin() + edgeIndex + edgeTake);
-            flush(compBatch, edgeBatch, player);
+            flush(compBatch, edgeBatch,
+                  firstBatch ? lifecycles : std::vector<EntityLifecycleRecord>{},
+                  player);
+            firstBatch = false;
             compIndex += compTake;
             edgeIndex += edgeTake;
         }

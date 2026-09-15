@@ -71,8 +71,182 @@ See `docs/architecture/live-development/hot-cold-audit.md` for the current map.
   the new tool/projectile, package state persistence, and cold fallback.
 - Not done: authoritative item spawn from a hot behavior (`projectile.spawn`),
   ammo/reload as generic state, a server-context damage capability, hitscan
-  ownership, and melee contact detection. Those need a **server context
-  capability provider** (players/projectiles are currently function locals).
+  ownership, and melee contact detection.
+
+## Round 10 (2026-09-14, generic entity + state replication) — implemented
+
+- Generic replication envelope (`PACKET_DYNAMIC_COMPONENT`) carries schema
+  descriptors, component upserts/removals, relationship edges, and
+  **entity CREATE/DESTROY** records for any runtime type, selected by
+  `networkPolicy` (`ALL`/`OWNER`/`NONE`/`SERVER_ONLY`), over the reliable event
+  channel. No per-component/entity packet, struct, encoder, or decoder.
+- `DynamicComponentStore`/`RelationshipStore` track generic change versions;
+  the server sends only changes and diffs per client for removals.
+- Client apply registers unknown schemas, migrates on version change, applies
+  components/relationships, and processes lifecycle first: CREATE adopts the
+  exact `EntityId` (`EntityRegistry::adopt`), DESTROY clears state and retires
+  the id so stale records cannot resurrect it.
+- `--dynamic-replication-selftest` PASS 23/23 (schema/component/relationship
+  replication, migration, lifecycle create/destroy, duplicate/stale/id-reuse
+  falsifications). The real `HotProjectileState` entity uses the generic
+  lifecycle + component path.
+- Not done: generic entity-lifecycle replication for players/NPCs/legacy
+  projectiles (typed bridges remain), automatic marking of every created generic
+  entity, presentation, and the live two-client run.
+
+## Round 11 (2026-09-14, NPC generic health + lifecycle) — implemented
+
+- `ActorHealthState` (dynamic component, `networkPolicy ALL`) is the
+  authoritative health for NPC/monster-like entities; `ServerNpc.health` and the
+  typed `HealthComponent` are projections. `finalizeServerNpcSpawn` initialises
+  it and marks the NPC entity for generic lifecycle replication;
+  `rebuildServerNpcMap` projects from it.
+- `damage.apply` mutates the component generically and emits a generic
+  `actor.killed` on the alive->dead transition; no NPC-specific callback.
+- `EntityRegistry::destroy` feeds a generic destroyed-id log that emits DESTROY.
+- `--npc-entity-selftest` PASS 11/11 (authority, damage, replication, lethal,
+  destroy, stale rejection, runtime monster-like entity). Full suite 15/15.
+- Not done: transform/AI/weapon slices, removing the cold `ServerNpc.health`
+  write in the projectile explosion path, and the live two-client run.
+
+## Round 12 (2026-09-14, NPC generic actor state) — implemented
+
+- Generic authoritative `ActorTeamState`/`ActorRoleState`/`ActorProfileState`
+  dynamic components + `relationship.targets`, written for every participant
+  entity (player/NPC) at assignment and for NPC targeting; typed match/Npc
+  fields are projections.
+- Hot module `npc-ai-state.cpp` (`gameplay.60`) consumes the generic role/team/
+  profile and derives `NpcAiSelection` — a real hot consumer of generic state.
+- `--npc-actor-state-selftest` PASS 11/11 (authority, replication, hot
+  consumption, stale rejection, monster-like composition). Full suite 16/16.
+- Not done: `serverResolveActorSpawnProfile` still reads the typed role
+  projection; NPC tool/equipment state remains typed; transform/velocity out of
+  scope; no live two-client run.
+
+## Round 13 (2026-09-14, authoritative gameplay.60 + hot NPC combat) — implemented
+
+- `serverResolveActorSpawnProfile` resolves the role from the entity's
+  `ActorRoleState` (typed descriptor role is a fallback projection).
+- One `gameplay.60` domain execution per authoritative server fixed tick (already
+  wired; documented order: context -> domain -> low-level sim -> replication).
+- New hot `npc.combat-ai` (`gameplay.60`, priority 650): reads generic
+  health/team/Transform, chooses a target, writes `relationship.targets`, and
+  performs authoritative damage via `damage.apply` on a generic cooldown.
+- Cold NPC target selection now follows `relationship.targets` for generic
+  actors (orchestrator bypassed; nearest-enemy search is fallback).
+- `--gameplay-boundary-selftest` PASS 8/8; full suite 17/17.
+- Not done: the cold NPC weapon/attack owner is not yet bypassed; transform
+  snapshot migration; live two-client run.
+
+## Round 14 (2026-09-14, cold NPC weapon owner removed) — implemented
+
+- Generic NPC tool ownership: NPC projectile weapons get a tool entity
+  (`contains-item`/`equips-item` + `ToolRefState`); `Npc.hotToolOwned` gates
+  `NpcCombat::tryFire` so there is exactly one attack owner.
+- Hot `npc.combat-ai` emits the generic `tool.primary-use` action; the DLL
+  router dispatches to the hot tool behavior, which spawns the canonical
+  composition projectile. Tool-owned cooldown decides cadence.
+- Kernel fixes: queued events dispatch with a capability context; generic schema
+  registration survives a store clear.
+- `--gameplay-boundary-selftest` PASS 11/11; full suite 17/17.
+- Not done: hitscan/melee NPC attacks still cold (need hot behaviors + a kernel
+  query for whether a hot behavior exists for a tool key); transform migration;
+  live two-client run.
+
+## Round 15 (2026-09-14, NPC hitscan/melee generic + handled gate) — implemented
+
+- Hot `hitscan-tool`/`melee-tool` behaviors; all armed NPCs equip a tool entity;
+  attacks flow through the one generic tool/action path with tool-owned cooldown.
+- Generic action-handled gate: the hot action router records `ActorActionState`;
+  `npc.cpp` bypasses cold `NpcCombat::tryFire` from that generic record.
+  `Npc.hotToolOwned` deleted; no category query added.
+- `--gameplay-boundary-selftest` PASS 15/15; full suite 17/17.
+- Not done: match/team/objective/respawn genericization (next pass); transform
+  migration; live two-client run.
+
+## Round 16 (2026-09-14, hot match phase ownership + TDM) — implemented
+
+- Generic phase-ownership gate: `MatchPhaseOwnership` on the match entity makes
+  `serverGamemodeTick` skip its cold phase transitions.
+- Hot `gamemode.tdm`: owns countdown->active, team scoring (`actor.killed`),
+  score-limit finish (`match.finish`), win (`match.evaluate`), and respawn policy
+  (`match.lifecycle`). No mode enum.
+- `--match-policy-selftest` PASS 8/8; full suite 18/18.
+
+## Round 17 (2026-09-14, hot participant assignment + full TDM lifecycle) — implemented
+
+- Hot `gamemode.tdm` now owns participant team/role assignment (deterministic
+  over sorted EntityIds; writes generic `ActorTeamState`/`ActorRoleState`) and
+  the complete lifecycle: countdown -> active -> results -> intermission -> next
+  round, with score limit, time limit, tie handling, win/end, and per-round
+  score reset. It calls `match.setPhase`/`match.finish`; the cold phase machine
+  stays bypassed via `MatchPhaseOwnership`.
+- Generic team authority: `serverMatchActorTeam` reads the generic
+  `ActorTeamState` component (source of truth) and `projectGenericActorTeams`
+  projects it onto the typed `matchTeams`/participant roster for the
+  scoreboard/broadcast. `serverMatchSetTeam` mirrors to the generic component.
+  `serverMatchSetPhase` clears the match-over lock when a fresh round starts.
+- No `match.assign-participants` slot was added: generic entity discovery
+  (`ActorHealthState`) + dynamic components + `match.setTeam`/`match.setPhase`
+  already express assignment, per the live-runtime generic-bootstrap rule.
+- `--match-policy-selftest` PASS 14/14; full suite 20/20.
+
+## Round 18 (2026-09-14, generic objective entities + events) — implemented
+
+- An objective is an entity + package-private dynamic components
+  (`ObjectiveState`, `ObjectiveProgress`) + relationships
+  (`objective.carried-by`, `objective.at-site`). The kernel never knows "bomb"
+  and no `ObjectiveType`/`BombManager`/ABI field was added.
+- Generic facts: `objective.interact` (actor/objective/site/action/tick) and
+  `objective.state-changed` (emitted by hot code via `emitEvent`). Two
+  independent hot runtime modes (`objective.carry`, `objective.hold`) use the
+  same entity/component/relationship/event primitives; completion calls
+  `match.finish`. Generic replication carries the objective components,
+  relationships, and entity lifecycle; no objective packet.
+- Generic `ObjectiveOwnership` component on the match entity bypasses the cold
+  `updateObjectiveBomb`/`checkObjectiveRoundEnd` policy for hot-owned objectives.
+- `--objective-generic-selftest` PASS 17/17; full suite 21/21.
+
+## Round 19 (2026-09-14, shipping CS-like objective round migrated hot) — implemented
+
+- Generic kernel mechanisms added (no bomb ABI): `GAME_CAP_MATCH_ROUND_RESULT`
+  (hot mode records a round winner; kernel tallies/transitions), `GAME_CAP_MAP_ANCHORS`
+  (map metadata -> generic site anchors), `GAME_EVENT_MATCH_ROUND_START`
+  (round lifecycle fact), and a generic `ObjectiveOwnership` bypass of the cold
+  objective policy.
+- Hot `gamemode.counterstrike.cpp` (runtime mode id `counterstrike`) owns real
+  carrier/plant/defuse/bomb-timer/explosion, elimination/timeout/objective wins,
+  no-mid-round-respawn dead markers, and round reset. Sites are entities created
+  from generic anchors; positions come from the generic Transform component;
+  `objective.interact` is the interaction fact.
+- Shipping `objective_rounds` (`counterstrike.json`) now routes to the hot mode:
+  `applyActiveHotMode(gameHash("counterstrike"))` activates its domain and it
+  claims `ObjectiveOwnership`, so `updateObjectiveBomb`/`checkObjectiveRoundEnd`
+  are compatibility fallback only.
+- `--counterstrike-selftest` PASS 17/17; full suite 22/22 (one unrelated
+  presentation-agent check fails transiently, see changelog).
+- Not done: live hot-edit/reload during a CS round; live two-client run;
+  transform/velocity generic state.
+
+## Round 20 (2026-09-15, generic actor spawn/reset + full CS phase ownership) — implemented
+
+- Generic `GAME_CAP_ACTOR_SPAWN` (`actor.spawn`) mutates the generic
+  Transform/Velocity/health/dead state and keeps typed projections in sync; the
+  mode decides where/when. `GAME_CAP_MAP_ANCHORS` also emits `spawn.team`
+  anchors (team tag + yaw) from map metadata.
+- Hot `gamemode.counterstrike.cpp` owns countdown timing, participant team
+  assignment, round-start spawn/reset, and the full phase cycle
+  (countdown/active/results/intermission/next round) via `match.setPhase`,
+  claiming `MatchPhaseOwnership` + `ObjectiveOwnership`. The cold phase machine +
+  `beginMatchCountdown`/`resetGamemodeActorsAtMapSpawn` are bypassed for CS
+  (compatibility fallback for unmigrated modes).
+- Transform/Velocity are now written as generic authoritative components on the
+  migrated actor path; typed `ServerPlayer.pos/vel`/`ServerNpc.pos/vel` are
+  projections (updated by `serverSpawnOrResetActor`).
+- `--counterstrike-selftest` PASS 22/22; full suite 22/22.
+- Not done: live hot-edit/reload during a CS round; live two-client run; the
+  simulation still writes typed movement then projects to Transform (full
+  generic-authority simulation is the transform snapshot pass).
 
 ## Round 10 (2026-09-14, generic runtime state replication) — implemented
 
@@ -97,6 +271,208 @@ See `docs/architecture/live-development/hot-cold-audit.md` for the current map.
   component-record rejection on the client; two-client live network proof;
   client rendering of replicated projectile state; and migrating the remaining
   typed player/NPC/projectile snapshot structs onto the generic substrate.
+
+## Round 23 (2026-09-15, hot pose generation via skeleton.apply) — source implemented, cold build pending
+
+- New generic `PoseState` (`hot-pose.h`) + hot `hot.pose-generation`
+  (`render.frame`, priority 2): generates idle/move/dead local bone poses from
+  `AnimationState` and publishes them through `skeleton.apply`. The kernel stores
+  the POD pose on the entity (`capSkeletonApply`); no DLL pointers retained.
+- Evidence so far: live-build generation 18; `-fsyntax-only` clean for
+  `live-behavior.cpp`, `hot-combat-selftest.cpp`. Cold link + `--hot-combat-selftest`
+  PENDING (running `mimita.exe`; not killed). Run in the next no-process window.
+- Remaining: attack/jump poses; driving real per-entity skeletons; retiring
+  `animation.update` for the typed path.
+
+## Round 22 (2026-09-15, generic hot animation policy) — source implemented
+
+- New generic `AnimationState` (`hot-animation.h`, GAME_NET_ALL) and hot
+  `hot.animation-policy` (`render.frame`) selecting idle/move/dead from Velocity
+  + Health and advancing playback. Cold skeleton/skinning/draw untouched.
+- Proof: `--hot-combat-selftest` PASS (move/idle/death clip selection); full
+  suite PASS. Round 21 NPC presentation also validated (cold build SUCCESS).
+- Remaining: attack/jump transitions; typed `updateProceduralAnimation` still
+  owns pose generation/skinning (compatibility + mechanism); animation clips are
+  not yet logical provider resources.
+
+## Round 21 (2026-09-15, real remote-NPC presentation bridge) — VALIDATED
+
+- `build_agent.py` SUCCESS in a no-process window; `--hot-combat-selftest` and
+  the full suite PASS, including the NPC projection/persist/retire checks.
+
+- `PresentationEntities::ensureActor` projects a real client NPC replica into a
+  generic presentation entity; `engine-tick-render.cpp` yields typed NPC draw to
+  the hot path when `mesh.actor` is loaded. Ownership gate prevents double draw
+  and prevents invisible NPCs.
+- Evidence so far: live-build generation 17; `-fsyntax-only` clean for all
+  changed cold TUs. Cold link + `--hot-combat-selftest` PENDING because
+  `mimita.exe` was running (`HOT_RELOAD_BOUNDARY_VIOLATION`); it was not killed.
+- Next: run the cold build + selftests in a no-process window; then animation
+  presentation.
+
+## Round 20 (2026-09-15, UI image resources + actor-like generic presentation) — source implemented
+
+- `GAME_UI_IMAGE` resolves generation-aware logical resource ids through the
+  provider; new cold `uiDrawTexture` backend primitive.
+- Typeless actor-like entity (Transform + Health + PresentationState team color)
+  presents via the hot `hot.presentation-mesh` system and `render.mesh`.
+- Proof: `--hot-combat-selftest` PASS ("ui image resolves a generation-aware
+  resource handle", "typeless actor-like entity presents via render.mesh (team
+  color as data)"). Full suite PASS.
+- Not done: mode package populating `MatchHudState`; migrating typed
+  player/NPC renderers (`NpcSystem::render` / `render-player.cpp`) to generic
+  PresentationState (next slice); animation presentation.
+
+## Round 19 (2026-09-14, generic hot HUD/UI composition) — source implemented
+
+- New generic `render.ui` capability + `GAME_DOMAIN_UI` (`ui.frame`). `LiveUi`
+  buffers hot-emitted widgets (text/panel/bar/image) and draws them through the
+  cold immediate-mode UI backend. The engine only knows "run ui.frame".
+- New hot module `modules/ui/hud.cpp` (`hot.match-hud`) composes timer + score
+  panel + phase + round bar from a generic replicated `MatchHudState`. Cold
+  `MatchTimer` draw yields via `LiveUi::hotOwnsHud()` (compatibility fallback).
+- Proof: `--hot-combat-selftest` PASS (capability buffers; ui.frame fails safe;
+  emits HUD commands; deterministic). Full suite PASS.
+- Not done: `MatchHudState` population by the mode package; UI image logical
+  resource resolution; kernel stack/anchor primitives (currently hot-side
+  arithmetic); live visual proof.
+
+## Round 18 (2026-09-14, GLB mesh loading via the resource provider) — source implemented
+
+- `mesh.demo.glb` is a GLB loader in the existing `PresentationResourceProvider`:
+  container validate -> reuse `loadGLB` (tinygltf) -> same `GpuMesh` upload.
+  `PresentationState` keeps logical ids only; swap needs no entity recreation.
+- Proof: `--hot-combat-selftest` PASS ("valid GLB container is accepted",
+  "malformed GLB is rejected (last-good preserved)"). Full suite PASS.
+- Not done: per-frame GLB hash polling (init-time only), live visual proof, GLB
+  material/texture dependency graph, hot HUD widget tree.
+
+## Round 17 (2026-09-14, real prediction key transport) — source implemented
+
+- `ToolUsePolicyV1.predictionKey` (generic, append-only); server-attack populates
+  it from the client request id / held intent id. Hot rocket/grenade tools write
+  the generic `PredictionLink` on the created entity; a non-projectile test tool
+  (`hot.predicted-test`) proves the path is generic. Replication is the existing
+  generic dynamic-component envelope.
+- Proof: `--hot-combat-selftest` PASS (authoritative projectile carries the
+  prediction key; non-projectile predicted entity carries PredictionLink). Full
+  suite PASS.
+- Classified redundant (not removed): `PresentationEntities::ensure` bridge,
+  write-only `predictedProjectileIds`.
+- Next: GLB loading through `PresentationResourceProvider`, then hot HUD tree.
+
+## Round 16 (2026-09-14, generic predicted -> authoritative entity association) — source implemented
+
+- New ECS `PredictionRegistry` (type-agnostic): prediction key -> provisional /
+  authoritative entity + status, with safe handling of every arrival order and
+  automatic provisional retirement. Proven with a non-projectile entity.
+- New generic `PredictionLink` hot component; client `ensurePredicted` +
+  `associateByLink`. `PresentationEntities` is now a thin projection/prediction
+  helper, not an identity owner.
+- Proof: `--hot-combat-selftest` PASS (assoc: prediction-first, authority-first,
+  destroyed authority, stale prune, client link). Full suite PASS.
+- Missing server hook (documented, owned by server-combat agent):
+  `ToolUsePolicyV1.predictionKey` populated from the attack request id and the
+  hot projectile tools writing `PredictionLink` on the created entity. No context
+  field added.
+- Remaining: GLB loading, hot HUD tree, single-player/replay presentation.
+
+## Round 15 (2026-09-14, projectile identity unified on the replicated EntityId) — source implemented
+
+- New `PresentationEntities::projectReplicatedProjectiles()` projects replicated
+  `HotProjectileState` position/velocity into typed Transform/Velocity on the
+  REAL replicated EntityId, so the authoritative entity presents itself through
+  the hot `hot.presentation-mesh` system. No parallel bridge identity for remote
+  projectiles. Join-in-progress works from replicated state alone.
+- `PresentationEntities::ensure()` is now prediction-only; it no longer owns a
+  parallel normal-projectile identity. It remains a thin prediction adapter.
+- Proof: `--hot-combat-selftest` PASS (replicated projectile projects onto the
+  authoritative entity; presents via its own EntityId). Full suite PASS.
+- Remaining: generic predicted->authoritative association key (needed to retire
+  the provisional predicted entity exactly when the authoritative entity
+  appears); single-player and replay compatibility; GLB loading; hot HUD tree.
+  No `ProjectileType` switch or new game-api field.
+
+## Round 14 (2026-09-14, client projectile presentation bridge removed) — source implemented
+
+- New `src/render/presentation-entities.*`: materializes/updates/retires a generic
+  client entity (Transform + Velocity + PresentationState) per live
+  network/predicted projectile, tied to the projectile id.
+- `mpRenderNetworkProjectiles` materializes the generic entity for rocket/grenade
+  and suppresses the typed `renderProjectile` draw when the bridge owns the
+  projectile; the hot `hot.presentation-mesh` system draws it via `render.mesh`.
+- Proof: `--hot-combat-selftest` PASS (materialize, generic submit, typed
+  suppression, persist, retire). Full suite PASS.
+- Remaining typed owners: single-player `weapon-system.cpp`/`npc-combat.cpp`
+  (inactive in MP) and the replay rocket path; `projectile-render.cpp` is a
+  fallback for those. Not yet deleted.
+- Not done / not visually proven: two-client visual handoff, unifying the bridge
+  entity with a future replicated projectile entity, GLB loading, hot HUD tree.
+
+## Round 13 (2026-09-14, real projectile presentation generic) — source implemented
+
+- Server-side hot projectile entities (player/NPC rocket and grenade) now carry
+  the shared generic `PresentationState` (`hot-reload/hot-presentation.h`) with
+  logical resource ids, plus a `Transform`. `hot.presentation-mesh` orients them
+  from `Velocity` (generic data, no renderer branch).
+- `PresentationRender` registers `mesh.rocket` (cylinder), `mesh.grenade`
+  (sphere), `texture.rocket`/`texture.grenade` through the generation-aware
+  provider with per-frame polling.
+- Proof: `--hot-combat-selftest` PASS (rocket and grenade projectiles carry
+  `PresentationState`; render.mesh + provider checks). Full suite PASS.
+- Classification: `weapon-system.cpp` (player rocket/grenade), `npc-combat.cpp`
+  (NPC rocket), `multiplayer-projectiles.cpp` (network) and the replay rocket
+  draw remain the client compatibility renderer for predicted/legacy
+  projectiles; `projectile-render.cpp` is compatibility-only for now and has
+  DEAD members (`clearProjectileMeshes`, `replay_rocket` branch).
+- Not done / not visually proven: client predicted/network projectile entities
+  carrying `PresentationState` (needs the other agent's client entity lifecycle +
+  id mapping), deleting `projectile-render.cpp`, GLB model loading.
+
+## Round 12 (2026-09-14, generic presentation of runtime entities) — source implemented
+
+- New generic `render.mesh` capability + `GameRenderMeshCommandV1`: hot systems
+  submit **logical** mesh/texture resource ids; the kernel resolves the
+  generation handle and draws. No `GameplayContextV1` field.
+- New `PresentationState` hot schema; `hot.presentation-mesh` presents any entity
+  carrying it (Transform + PresentationState). Typeless runtime entities now draw
+  through one generic path. `hot.debug-presentation` also composes a generic HUD
+  panel (`GAME_RENDER_DEBUG_HUD_TEXT` -> `uiDrawText`) — one hot UI path.
+- New cold `src/render/presentation-render.*`: real procedural-mesh and PNG
+  texture loaders through the generation-aware provider (hash, swap, last-good,
+  retire). `PresentationRender::poll()` runs per frame.
+- Proof: `--hot-combat-selftest` PASS (render.mesh resolves; hot system presents
+  a meshed generic entity; provider generation/no-op/swap/last-good). Full suite
+  PASS.
+- Not done / not visually proven: GLB model loader, wiring texture/mesh swap
+  into a typed render path, migrating projectile rendering, replicated-entity →
+  presentation end-to-end, full hot HUD widget tree, animation/effect/audio
+  presentation.
+
+## Round 11 (2026-09-14, generation-aware presentation + resources) — source implemented
+
+- New generic `render.debug` capability (`GAME_CAP_RENDER_DEBUG`,
+  `GameRenderDebugCommandV1`): hot render systems submit lines / wire boxes /
+  wire spheres / world labels; the kernel owns the draw. Append-only, no
+  `GameplayContextV1` field.
+- New hot module `src/hot-reload/modules/presentation/debug-presentation.cpp`: a
+  `render.frame` system owns debug/wireframe policy and presents any entity
+  carrying the package `PresentationDebug` dynamic component (no type switch),
+  plus a `hotpresent` command that creates such an entity. Wired via a new
+  `modules/presentation/*.cpp` glob.
+- New `PresentationResourceProvider` (`src/project/presentation-resource.*`):
+  one generic logical-id -> content-hash -> immutable generation -> opaque
+  handle mechanism with atomic swap, last-good preservation on failure, and
+  retire-at-swap. Type-agnostic loader/retire callbacks.
+- `Renderer::pollShaderReload()` routes `shaders/basic.*` through the provider
+  (content-hash gated, last-good on failure), called once per frame.
+- Proof: `--hot-combat-selftest` PASS (render.debug resolves; command reaches the
+  kernel buffer; hot render.frame presents a generic entity; provider load /
+  no-op / swap / last-good). Full suite PASS.
+- Not done / not proven: live visual edit proof (wireframe and shader), texture
+  and model/GLB loaders wired to the provider, generic entity presentation
+  driven by replicated entities, HUD hot composition, animation/effect/audio
+  presentation. Those are the next presentation-side owners.
 
 ## Round 2 (2026-09-12, repeated activation + observability) — implemented
 

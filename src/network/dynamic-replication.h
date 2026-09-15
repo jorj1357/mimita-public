@@ -48,30 +48,49 @@ struct RelationshipRecord {
     std::uint64_t value = 0;
 };
 
+// Generic entity lifecycle record carried in the same envelope. One path for
+// every conceptual entity kind; no monster/projectile/item spawn packet exists.
+struct EntityLifecycleRecord {
+    std::uint8_t op = 0;   // 0 = create, 1 = destroy
+    std::uint32_t changeVersion = 0;
+    std::uint64_t entity = 0;      // full packed EntityId
+    std::uint64_t generation = 0;  // generation guard for stale/reuse safety
+};
+
 // Opaque wire body: PacketHeader + eventId/session + component records +
-// relationship records.
+// relationship records + entity lifecycle records.
 std::vector<std::uint8_t> dynamicReplicationEncode(
     const std::vector<DynamicComponentRecord>& records,
-    const std::vector<RelationshipRecord>& relationships = {});
+    const std::vector<RelationshipRecord>& relationships = {},
+    const std::vector<EntityLifecycleRecord>& lifecycles = {});
 bool dynamicReplicationDecode(
     const std::uint8_t* data, std::size_t size,
     std::vector<DynamicComponentRecord>& out,
-    std::vector<RelationshipRecord>& outRelationships, std::string& error);
+    std::vector<RelationshipRecord>& outRelationships,
+    std::vector<EntityLifecycleRecord>& outLifecycles, std::string& error);
 
-// Generic client apply. Registers unknown schemas from descriptors, attaches/
-// updates/removes components by id, applies relationship edges, and rejects
-// mismatched payload sizes and incompatible schemas without reinterpreting
-// bytes. No switch on component or relationship type.
+// Generic client apply. Processes entity lifecycle first (create/destroy),
+// then registers unknown schemas, attaches/updates/removes components by id,
+// and applies relationship edges. Records for unknown or destroyed entities are
+// skipped, not applied, so stale/out-of-order data cannot resurrect an entity.
+// No switch on entity, component, or relationship type.
 bool dynamicReplicationApply(const std::vector<DynamicComponentRecord>& records,
                              const std::vector<RelationshipRecord>& relationships,
+                             const std::vector<EntityLifecycleRecord>& lifecycles,
                              MimitaRuntime::DynamicComponentStore& store,
                              MimitaRuntime::RelationshipStore& relations,
                              std::string& error);
 
-// Server-side collection of every replicated component and relationship.
+// Explicitly mark an authoritative generic entity for lifecycle replication,
+// even before it has a replicated component (destroy is detected by absence).
+void serverReplicateEntity(std::uint64_t entity);
+
+// Server-side collection of every replicated component, relationship, and
+// lifecycle record.
 void dynamicReplicationCollectServer(
     std::vector<DynamicComponentRecord>& out,
-    std::vector<RelationshipRecord>& outRelationships);
+    std::vector<RelationshipRecord>& outRelationships,
+    std::vector<EntityLifecycleRecord>& outLifecycles);
 
 // Server tick: send changed replicated components to each connected player over
 // the existing reliable gameplay-event channel. `sock` is a native SOCKET

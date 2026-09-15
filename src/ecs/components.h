@@ -97,6 +97,22 @@ struct MovementIntentComponent {
     bool freeze = false;
 };
 
+struct MovementRuntimeStateComponent {
+    std::uint32_t version = 1;
+    bool grounded = false;
+    bool jumpHeldPreviously = false;
+    bool airJumpArmed = true;
+    int airJumpsLeft = 1;
+    bool dashHeldPreviously = false;
+    bool downDashHeldPreviously = false;
+    bool dashAvailable = true;
+    bool downDashAvailable = true;
+    float dashCooldownSeconds = 0.0f;
+    float jumpIntentSeconds = 0.0f;
+    float dashGraceSeconds = 0.0f;
+    bool freezePreviously = false;
+};
+
 struct AimIntentComponent {
     glm::vec3 direction{1.0f, 0.0f, 0.0f};
     float yaw = 0.0f;

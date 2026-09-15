@@ -14,6 +14,7 @@
 */
 #pragma once
 #include <glm/glm.hpp>
+#include <cstddef>
 #include <string>
 #include <vector>
 #ifndef GLFW_INCLUDE_NONE
@@ -169,6 +170,15 @@ namespace DebugVis {
     bool projectToScreen(const Camera& camera, glm::vec3 worldPos, float& x, float& y);
 }
 
+
+// Flush accumulated debug lines immediately (used by the generic hot
+// presentation capability after the render.frame domain run). Defined in
+// debug-visuals-lines.cpp at global scope.
+void flushDebugLines(const Camera& camera);
+
+// Number of accumulated debug line vertices, for headless verification that a
+// generic presentation command reached the kernel draw buffer.
+std::size_t debugLineVertexCount();
 
 // goes here or in world.h? idk jan 30 2026 
 struct ChunkDebug {

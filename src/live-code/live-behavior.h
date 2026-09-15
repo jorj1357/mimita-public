@@ -69,6 +69,15 @@ bool runBehaviorBindings(std::uint64_t entity, std::uint32_t eventType,
 // World used by the queryWorldRay capability while a dispatch is in flight.
 void setDispatchWorld(const void* world);
 
+// Flush generic presentation geometry submitted through the render.debug
+// capability during the render.frame domain run. Called once per frame by the
+// UI/render pass so hot presentation appears in the same frame.
+void flushRenderDebug();
+
+// Total skeleton.apply invocations (headless evidence that hot pose generation
+// reached the generic skeleton mechanism).
+std::uint64_t skeletonApplyCount();
+
 // Kernel event queue used by the emitEvent capability. Bounded and FIFO.
 void enqueueEvent(const GameEventV1& event);
 int drainEvents(int maxEvents);

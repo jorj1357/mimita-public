@@ -38,6 +38,7 @@
 #include "combat/area-effect.h"
 #include "combat/explosion-fx.h"
 #include "combat/projectile-render.h"
+#include "render/presentation-entities.h"
 #include "combat/projectile-simulation.h"
 #include "combat/weapon-system.h"
 #include "combat/weapon-fire.h"
@@ -2144,6 +2145,11 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
 
 void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& camera)
 {
+    // Generic presentation owns migrated projectiles: materialize a client
+    // entity (Transform + Velocity + PresentationState) per live projectile and
+    // let the hot presentation system draw it through render.mesh. The typed
+    // renderer is only a fallback for unmigrated weapon types.
+    PresentationEntities::beginSync();
     for (const auto& entry : ctx.networkProjectiles)
     {
         const NetworkProjectile& projectile = entry.second;
@@ -2171,9 +2177,34 @@ void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& cam
                                       projectile.projectileId);
         if (present.handled && present.visible == 0)
             continue;
+
+        // Local prediction only: the local shooter owns a provisional entity
+        // for its own projectile. Remote/authoritative projectiles are rendered
+        // from the real replicated EntityId (see projectReplicatedProjectiles),
+        // so the bridge never creates a parallel identity for them.
+        std::uint64_t meshId = 0, textureId = 0;
+        float scale = 1.0f;
+        if (projectile.predicted &&
+            PresentationEntities::resourcesForWeapon(projectile.weaponType, meshId,
+                                                     textureId, scale))
+        {
+            const float pos[3] = {projectile.renderPosition.x,
+                                  projectile.renderPosition.y,
+                                  projectile.renderPosition.z};
+            const float vel[3] = {projectile.renderVelocity.x,
+                                  projectile.renderVelocity.y,
+                                  projectile.renderVelocity.z};
+            PresentationEntities::ensurePredicted(
+                projectile.fireSerial, projectile.projectileId, pos, vel, meshId,
+                textureId, scale, 0);
+            if (PresentationEntities::has(projectile.projectileId))
+                continue;  // hot presentation owns the draw; no typed duplicate
+        }
+
         ProjectileVisualConfig cfg = projectileVisualConfig(projectile.weaponType);
         renderProjectile(camera, projectile.renderPosition, projectile.renderRotation, cfg);
     }
+    PresentationEntities::endSync();
 }
 
 } // namespace MimitaNet

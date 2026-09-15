@@ -1,5 +1,6 @@
 #include "engine/engine-tick-ui.h"
 #include "engine/engine.h"
+#include "live-code/live-ui.h"
 #include "terminal/terminal-state.h"
 #include <cstdio>
 #include <algorithm>
@@ -83,7 +84,9 @@ void engineTickUIHUD(Engine& engine, float dt)
     MatchLeaderboard::instance().update(dt);
     MatchLeaderboard::instance().render();
     MatchTimer::instance().update(dt);
-    if (MatchTimer::instance().isActive()) {
+    // Cold timer composition is now a compatibility fallback: when a hot
+    // ui.frame system composes the match HUD, the cold draw yields ownership.
+    if (!LiveUi::hotOwnsHud() && MatchTimer::instance().isActive()) {
         std::string timer = MatchTimer::instance().formatElapsed();
         float timerW = uiMeasureText(timer.c_str(), 0.40f);
         uiDrawText(timer.c_str(), uiScreenW() * 0.5f - timerW * 0.5f, 18.0f, 0.40f,

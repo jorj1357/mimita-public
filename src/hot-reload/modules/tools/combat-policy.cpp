@@ -28,6 +28,23 @@ void MIMITA_GAME_CALL onToolUse(void* host, const GameEventV1* event)
     use->handled = 1;
     use->outFire = use->baseFire;
     behavior(use, context);
+
+    // Generic handling record: the actor's action was handled by hot code this
+    // tick, so the cold legacy fallback can skip without knowing any weapon
+    // category. No tool-specific kernel query exists.
+    if (context->dynamicWriteComponent && use->userEntity != 0) {
+        struct ActorActionStateV1 {
+            std::uint64_t lastHandledTick;
+            std::uint32_t handled;
+            std::uint32_t reserved;
+        };
+        ActorActionStateV1 state{};
+        state.lastHandledTick = use->tick;
+        state.handled = 1;
+        context->dynamicWriteComponent(context->host, use->userEntity,
+                                       gameHash("ActorActionState"), &state,
+                                       sizeof(state));
+    }
 }
 
 void MIMITA_GAME_CALL onProjectileImpact(void* host, const GameEventV1* event)
@@ -58,5 +75,9 @@ const MimitaHotPackage::EventRegistrar s_combatToolAlt{
 const MimitaHotPackage::EventRegistrar s_combatProjectileImpact{
     {gameHash("projectile.impact"), gameHash("projectile.impact.v1"), 0,
      onProjectileImpact, "combat.projectile-impact"}};
+// Generic handling record schema (no weapon/component category).
+const MimitaHotPackage::SchemaRegistrar s_actorActionStateSchema{
+    {gameHash("ActorActionState"), gameHash("ActorActionState.v1"), 16, 8,
+     GAME_COPY_RUNTIME_ONLY, GAME_NET_NONE, "ActorActionState", 1, 0}};
 
 #endif

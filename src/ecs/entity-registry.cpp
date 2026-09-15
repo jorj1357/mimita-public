@@ -61,6 +61,32 @@ EntityId EntityRegistry::createGeneric(EntityRealm realm, std::uint32_t legacyId
     return create(realm, EntityDomain::None, legacyId);
 }
 
+EntityId EntityRegistry::adopt(EntityId id)
+{
+    if (id == kInvalidEntityId)
+        return id;
+    if (alive(id))
+        return id;
+    const EntityRealm realm = entityRealm(id);
+    const EntityDomain domain = entityDomain(id);
+    const std::uint32_t legacyId = entityLegacyId(id);
+    const std::uint16_t generation = entityGeneration(id);
+    const std::uint64_t key = entityLookupKey(realm, domain, legacyId);
+    auto found = mLookup.find(key);
+    if (found != mLookup.end() && alive(found->second) && found->second != id)
+        destroy(found->second);  // generation reuse: retire the old identity
+
+    EntityIdentity identity;
+    identity.realm = realm;
+    identity.domain = domain;
+    identity.legacyId = legacyId;
+    identity.generation = generation;
+    mIdentities[id] = identity;
+    mLookup[key] = id;
+    journalEntity("entity_adopted", id, identity);
+    return id;
+}
+
 void EntityRegistry::destroy(EntityId id)
 {
     if (id == kInvalidEntityId)
@@ -71,6 +97,7 @@ void EntityRegistry::destroy(EntityId id)
     journalEntity("entity_destroyed", id, it->second);
     mLookup.erase(entityLookupKey(it->second.realm, it->second.domain, it->second.legacyId));
     mIdentities.erase(it);
+    mDestroyed.push_back(id);
     for (auto& entry : mStores)
         entry.second->erase(id);
     // Entity lifetime owns every component storage: purge the dynamic component
@@ -79,10 +106,18 @@ void EntityRegistry::destroy(EntityId id)
     MimitaRuntime::RelationshipStore::instance().eraseEntity(id);
 }
 
+std::vector<EntityId> EntityRegistry::consumeDestroyed()
+{
+    std::vector<EntityId> out = std::move(mDestroyed);
+    mDestroyed.clear();
+    return out;
+}
+
 void EntityRegistry::destroyAll()
 {
     mIdentities.clear();
     mLookup.clear();
+    mDestroyed.clear();
     for (auto& entry : mStores)
         entry.second = nullptr;
     mStores.clear();

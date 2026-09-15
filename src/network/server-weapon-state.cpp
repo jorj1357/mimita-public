@@ -34,10 +34,7 @@ const std::uint64_t kRelContains = gameHash("relationship.contains-item");
 
 void ensureSchemas()
 {
-    static bool done = false;
-    if (done)
-        return;
-    done = true;
+    // Always (re)register: a store clear must not leave the schema missing.
     MimitaRuntime::DynamicComponentSchema state;
     state.typeId = kStateId;
     state.schemaHash = gameHash("WeaponToolState.v1");

@@ -12,6 +12,7 @@
 #include "engine/engine-tick-creation.h"
 #include "hot-reload/generic-runtime.h"
 #include "live-code/live-behavior.h"
+#include "live-code/live-ui.h"
 #include "terminal/terminal-state.h"
 #include <cstdio>
 #include <GLFW/glfw3.h>
@@ -110,6 +111,22 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
         MimitaRuntime::GenericRuntime::instance().runDomain(
             GAME_DOMAIN_RENDER, sRenderTick++, (float)dt, host);
         // Deliver any generic events emitted by render systems this frame.
+        LiveBehavior::drainEvents(64);
+        // Draw generic geometry submitted through the render.debug capability
+        // (hot presentation systems) in the same frame.
+        LiveBehavior::flushRenderDebug();
+    }
+
+    // Generic runtime: ui.frame systems compose HUD/UI through generic
+    // commands. The kernel only draws primitives; a gamemode's package owns
+    // its own HUD composition.
+    {
+        static std::uint64_t sUiTick = 0;
+        void* uiHost = LiveBehavior::hostContext(sUiTick);
+        LiveUi::beginFrame();
+        MimitaRuntime::GenericRuntime::instance().runDomain(
+            GAME_DOMAIN_UI, sUiTick++, (float)dt, uiHost);
+        LiveUi::endFrameAndDraw();
         LiveBehavior::drainEvents(64);
     }
 

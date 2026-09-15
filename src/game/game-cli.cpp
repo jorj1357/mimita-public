@@ -57,6 +57,13 @@
 #include "network/gamemode-hot-selftest.h"
 #include "network/hot-combat-selftest.h"
 #include "network/dynamic-replication-selftest.h"
+#include "network/npc-entity-selftest.h"
+#include "network/npc-actor-state-selftest.h"
+#include "network/gameplay-boundary-selftest.h"
+#include "network/match-policy-selftest.h"
+#include "network/objective-generic-selftest.h"
+#include "network/counterstrike-selftest.h"
+#include "network/relevance-policy-selftest.h"
 #include "hot-reload/capability-selftest.h"
 
 extern DuelManager gDuelManager;
@@ -324,6 +331,62 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = runDynamicReplicationSelfTest(report);
         printf("%s", report.c_str());
         printf("[DYNAMIC REPLICATION SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--npc-entity-selftest") {
+        std::string report;
+        const bool ok = runNpcEntitySelfTest(report);
+        printf("%s", report.c_str());
+        printf("[NPC ENTITY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--npc-actor-state-selftest") {
+        std::string report;
+        const bool ok = runNpcActorStateSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[NPC ACTOR STATE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--gameplay-boundary-selftest") {
+        std::string report;
+        const bool ok = runGameplayBoundarySelfTest(report);
+        printf("%s", report.c_str());
+        printf("[GAMEPLAY BOUNDARY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--match-policy-selftest") {
+        std::string report;
+        const bool ok = runMatchPolicySelfTest(report);
+        printf("%s", report.c_str());
+        printf("[MATCH POLICY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--objective-generic-selftest") {
+        std::string report;
+        const bool ok = runObjectiveGenericSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[OBJECTIVE GENERIC SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--counterstrike-selftest") {
+        std::string report;
+        const bool ok = runCounterstrikeSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[COUNTERSTRIKE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--relevance-policy-selftest") {
+        std::string report;
+        const bool ok = runRelevancePolicySelfTest(report);
+        printf("%s", report.c_str());
+        printf("[RELEVANCE POLICY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

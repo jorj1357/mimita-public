@@ -1562,12 +1562,14 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             if (!mpAcceptReliableEventOnce(ctx, eventId, eventSession)) return;
             std::vector<MimitaNet::DynamicComponentRecord> records;
             std::vector<MimitaNet::RelationshipRecord> relationships;
+            std::vector<MimitaNet::EntityLifecycleRecord> lifecycles;
             std::string error;
             if (MimitaNet::dynamicReplicationDecode(
                     reinterpret_cast<const std::uint8_t*>(buffer),
-                    static_cast<std::size_t>(bytes), records, relationships, error)) {
+                    static_cast<std::size_t>(bytes), records, relationships,
+                    lifecycles, error)) {
                 MimitaNet::dynamicReplicationApply(
-                    records, relationships,
+                    records, relationships, lifecycles,
                     MimitaRuntime::DynamicComponentStore::instance(),
                     MimitaRuntime::RelationshipStore::instance(), error);
             }

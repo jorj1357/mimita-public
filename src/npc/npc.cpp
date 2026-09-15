@@ -28,6 +28,10 @@
 #include "physics/movement/physics-collision-subgrid.h"
 #include "render/render-player.h"
 #include "world/world.h"
+#include "ecs/actor-entities.h"
+#include "ecs/entity-registry.h"
+#include "live-code/live-identity.h"
+#include "network/actor-state.h"
 #include "audio/audio.h"
 #include "effects/effect-part.h"
 #include "devtools/dev-npc-selection.h"
@@ -1302,6 +1306,20 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         npc.reactionTimer = std::max(0.0f, npc.reactionTimer - safeDt);
     }
     npc.prevHadTarget = npc.sensors.hasTarget;
+
+    // Generic action-handling gate: if the hot action router handled a runtime
+    // action for this actor at the current simulation tick, the legacy cold
+    // fire path is bypassed (exactly one attack owner). No weapon/type category
+    // is consulted — only generic dispatch/handling state.
+    {
+        const EntityId actorEntity = EntityRegistry::instance().find(
+            EntityRealm::Server, EntityDomain::Npc, npc.id);
+        if (actorEntity != kInvalidEntityId &&
+            MimitaNet::actorStateActionHandled(
+                Ecs::raw(actorEntity),
+                LiveIdentity::simulationTick()))
+            return;
+    }
 
     if (attack && npc.attackCooldown <= 0.0f && npc.reactionTimer <= 0.0f)
     {

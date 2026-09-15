@@ -57,6 +57,7 @@ enum GameComponentType : std::uint32_t {
     GAME_COMPONENT_RAGDOLL_ROOT = 12,
     GAME_COMPONENT_RAGDOLL_GRAB = 13,
     GAME_COMPONENT_BEHAVIOR_BINDINGS = 14,
+    GAME_COMPONENT_MOVEMENT_RUNTIME_STATE = 15,
 };
 
 struct GameTransformComponentV1 {
@@ -85,6 +86,24 @@ struct GameMovementIntentComponentV1 {
     std::uint32_t dash;
     std::uint32_t downDash;
     std::uint32_t freeze;
+};
+
+static constexpr std::uint32_t MOVEMENT_RUNTIME_STATE_VERSION = 1;
+struct GameMovementRuntimeStateComponentV1 {
+    std::uint32_t version;
+    std::uint32_t grounded;
+    std::uint32_t jumpHeldPreviously;
+    std::uint32_t jumpAirJumpArmed;
+    std::int32_t airJumpsLeft;
+    std::uint32_t dashHeldPreviously;
+    std::uint32_t downDashHeldPreviously;
+    std::uint32_t dashAvailable;
+    std::uint32_t downDashAvailable;
+    float dashCooldownSeconds;
+    float jumpIntentSeconds;
+    float dashGraceSeconds;
+    std::uint32_t freezePreviously;
+    std::uint32_t reserved[3];
 };
 
 struct GameAimIntentComponentV1 {
@@ -961,6 +980,11 @@ struct ToolUsePolicyV1 {
     float origin[3];
     float direction[3];
     std::uint32_t reserved;
+    // Generic prediction correlation key (0 = not a predicted action). Carried
+    // unchanged from the originating client request so a tool behavior can link
+    // the authoritative entity it creates back to the predicted one. Opaque and
+    // type-agnostic; no weapon category is implied.
+    std::uint64_t predictionKey;
 };
 
 // ── Actor death / respawn policy ───────────────────────────
@@ -1302,6 +1326,9 @@ constexpr std::uint64_t gameHash(const char* s, std::uint64_t h = 14695981039346
 // in their own hashed domains (which the kernel runs when it times that domain).
 static constexpr std::uint64_t GAME_DOMAIN_GAMEPLAY = gameHash("gameplay.60");
 static constexpr std::uint64_t GAME_DOMAIN_RENDER = gameHash("render.frame");
+// Runs once per frame so hot systems can compose HUD/UI. The kernel only draws
+// the generic UI commands they emit; it never knows a gamemode's HUD.
+static constexpr std::uint64_t GAME_DOMAIN_UI = gameHash("ui.frame");
 // Runs once per fixed tick after movement (resolved generically by the kernel).
 static constexpr std::uint64_t GAME_DOMAIN_POST_MOVEMENT = gameHash("postmovement.60");
 
@@ -1317,6 +1344,62 @@ static constexpr std::uint64_t GAME_CAP_ANIMATION_UPDATE = gameHash("animation.u
 // ownership of the players/projectiles containers and networking.
 static constexpr std::uint64_t GAME_CAP_PROJECTILE_SPAWN = gameHash("projectile.spawn");
 static constexpr std::uint64_t GAME_CAP_DAMAGE_APPLY = gameHash("damage.apply");
+// Generic presentation command surface. A hot render.frame system resolves this
+// capability and submits generic debug/presentation geometry (lines, wire boxes,
+// wire spheres, world labels); the kernel owns the low-level draw. Adding a new
+// shape kind is a new `shape` value, never a new context field or call site.
+static constexpr std::uint64_t GAME_CAP_RENDER_DEBUG = gameHash("render.debug");
+// Generic mesh presentation primitive. Hot systems submit logical resource ids;
+// the kernel resolves handles and draws. No new context field.
+static constexpr std::uint64_t GAME_CAP_RENDER_MESH = gameHash("render.mesh");
+// Generic HUD/UI command surface. Hot ui.frame systems emit widgets; the kernel
+// owns the low-level font/rect/texture draw. No gamemode-specific UI type.
+static constexpr std::uint64_t GAME_CAP_RENDER_UI = gameHash("render.ui");
+// Generic round-based match mechanism: a hot mode records the winner of one
+// round. The kernel owns round tallying, the RESULTS transition, and the
+// match-over decision; no mode-specific finish callback or round field.
+struct GameMatchRoundResultV1 {
+    std::uint32_t winnerTeam;
+    std::uint32_t reasonHash;   // advisory gameHash("objective.exploded") etc.
+    std::uint32_t tick;
+    std::uint32_t handled;
+    std::uint32_t outMatchOver;
+    std::uint32_t reserved;
+};
+using GameMatchRoundResultFn = bool (MIMITA_GAME_CALL *)(
+    void* host, GameMatchRoundResultV1* request);
+static constexpr std::uint64_t GAME_CAP_MATCH_ROUND_RESULT =
+    gameHash("match.round-result");
+// Generic map spatial anchors: the kernel projects map metadata (currently
+// objective sites) as plain points + radius + kind. Hot modes create their own
+// entities from these; the kernel never owns an objective site or a site slot.
+static constexpr std::uint32_t GAME_MAX_MAP_ANCHORS = 32;
+struct GameMapAnchorV1 {
+    float position[3];
+    float radius;
+    std::uint64_t kind;   // gameHash("objective.site") / gameHash("spawn.team")
+    std::uint32_t tag;    // generic per-kind index (e.g. team index); 0 = none
+    float yaw;            // optional facing for spawn anchors
+};
+using GameMapAnchorsFn = std::uint32_t (MIMITA_GAME_CALL *)(
+    void* host, GameMapAnchorV1* out, std::uint32_t maxOut);
+static constexpr std::uint64_t GAME_CAP_MAP_ANCHORS = gameHash("map.anchors");
+// Generic authoritative actor spawn/reset mechanism: the mode supplies where and
+// the kernel performs the mutation (generic Transform/Velocity/health/dead and
+// the typed projections the client snapshot still reads). No mode/player/NPC
+// specific spawn function.
+struct GameActorSpawnV1 {
+    std::uint64_t actorEntity;
+    float position[3];
+    float velocity[3];
+    float yaw;
+    std::int32_t health;     // 0 = keep current
+    std::uint32_t flags;     // bit0 reset velocity, bit1 clear dead, bit2 reset health
+    std::uint32_t applied;
+    std::uint32_t reserved;
+};
+using GameActorSpawnFn = bool (MIMITA_GAME_CALL *)(void* host, GameActorSpawnV1* request);
+static constexpr std::uint64_t GAME_CAP_ACTOR_SPAWN = gameHash("actor.spawn");
 
 // Generic authoritative projectile spawn. The kernel owns id allocation,
 // simulation, collision, and replication; the spec carries only generic data
@@ -1367,6 +1450,71 @@ struct GameDamageApplyV1 {
 };
 using GameDamageApplyFn = bool (MIMITA_GAME_CALL *)(
     void* host, GameDamageApplyV1* request);
+
+// Generic presentation command for hot render systems. One shape vocabulary so
+// wireframe/debug/outline policy can live in hot code while the kernel keeps the
+// GPU mechanism: hot decides what/where/color; the kernel draws.
+enum GameRenderDebugShape : std::uint32_t {
+    GAME_RENDER_DEBUG_LINE = 1,
+    GAME_RENDER_DEBUG_WIRE_BOX = 2,
+    GAME_RENDER_DEBUG_WIRE_SPHERE = 3,
+    GAME_RENDER_DEBUG_WORLD_LABEL = 4,
+    // Screen-space HUD text. a[0]/a[1] = screen x/y, radius = scale, text = text.
+    GAME_RENDER_DEBUG_HUD_TEXT = 5,
+};
+struct GameRenderDebugCommandV1 {
+    std::uint32_t shape;      // GameRenderDebugShape
+    std::uint32_t flags;      // reserved
+    float a[3];               // line start / box center / sphere center / label pos
+    float b[3];               // line end
+    float half[3];            // box half extents
+    float radius;             // sphere radius
+    float color[4];           // rgba
+    std::uint64_t ownerEntity;
+    char text[64];            // world label
+};
+using GameRenderDebugFn = void (MIMITA_GAME_CALL *)(
+    void* host, const GameRenderDebugCommandV1* command);
+
+// Generic mesh presentation command for hot render systems. The command carries
+// logical resource ids; the kernel resolves the current generation handle and
+// draws with the shared shader. No Player/NPC/Projectile/weapon branch.
+struct GameRenderMeshCommandV1 {
+    std::uint64_t entity;
+    std::uint64_t meshResourceId;
+    std::uint64_t textureResourceId;    // 0 = untextured solid color
+    std::uint64_t shaderResourceId;     // 0 = shared basic shader
+    float position[3];
+    float rotation[4];                  // quaternion xyzw
+    float scale[3];
+    float color[4];
+    std::uint32_t flags;                // reserved
+    std::uint32_t reserved;
+};
+using GameRenderMeshFn = void (MIMITA_GAME_CALL *)(
+    void* host, const GameRenderMeshCommandV1* command);
+
+// Generic UI/HUD widget command. Hot ui.frame systems emit a list of these; the
+// kernel draws them with the immediate-mode UI backend. Layout (stack/row/
+// anchor) is data the hot system computes; the kernel only draws primitives.
+enum GameUiKind : std::uint32_t {
+    GAME_UI_TEXT = 1,
+    GAME_UI_PANEL = 2,
+    GAME_UI_BAR = 3,
+    GAME_UI_IMAGE = 4,
+};
+struct GameUiCommandV1 {
+    std::uint32_t kind;     // GameUiKind
+    std::uint32_t flags;    // reserved
+    float x, y, w, h;       // screen-space rect (w/h for panels/bars/images)
+    float color[4];
+    float value;            // bar fill fraction 0..1
+    float scale;            // text scale
+    std::uint64_t resourceId;  // logical image resource (GAME_UI_IMAGE)
+    char text[64];          // text, or image path fallback
+};
+using GameRenderUiFn = void (MIMITA_GAME_CALL *)(
+    void* host, const GameUiCommandV1* command);
 
 // Component copy policy lives in schema metadata so the editor never hardcodes
 // "if component == X".

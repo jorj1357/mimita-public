@@ -11,6 +11,7 @@
 #include "engine/engine-tick-camera.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
+#include <cmath>
 #include <cstdio>
 #include <cstdint>
 #include <memory>
@@ -26,6 +27,8 @@
 #include "render/skybox.h"
 #include "render/post-fx.h"
 #include "render/render-player.h"
+#include "render/presentation-entities.h"
+#include "render/presentation-render.h"
 #include "shadow/shadow-render.h"
 #include "shadow/shadow-config.h"
 #include "render/lighting-config.h"
@@ -307,6 +310,22 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     auto& mpContext = MP_CONTEXT;
     auto& gReplayPlayer = REPLAY_PLAYER;
 
+    // Generation-aware shader resource: hot-swap shaders/basic.* when its
+    // content changes; a bad edit keeps the last-good program active.
+    if (engine.renderer)
+        engine.renderer->pollShaderReload();
+    // Generic presentation resources (procedural mesh + texture) through the
+    // same generation-aware provider.
+    PresentationRender::init();
+    PresentationRender::poll();
+    // Project replicated authoritative projectile state (HotProjectileState)
+    // into typed Transform/Velocity so the real replicated EntityId presents
+    // itself through the hot presentation system. No parallel bridge identity.
+    PresentationEntities::projectReplicatedProjectiles();
+    // Associate predicted provisional entities with their authoritative
+    // counterparts by generic prediction key.
+    PresentationEntities::associateByLink(0);
+
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
     const bool isExporting = getReplayExportJob().state == ReplayExportJob::Capturing;
     bool replayRenderActive = replayPlaybackActive ||
@@ -457,13 +476,36 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                 renderNetworkPlayer(kv.second, camera, kv.first, false, player.matchTeam);
                 weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt);
             }
+            // Remote NPC presentation is now generic when the actor mesh is
+            // loaded: project the interpolated replica into a generic
+            // presentation entity (Transform + PresentationState) and let the hot
+            // presentation system draw it. The typed renderer yields ownership so
+            // exactly one path draws an NPC. Falls back to typed when the mesh is
+            // not ready, so there is never an invisible NPC.
+            const bool genericActors = PresentationEntities::actorMeshReady();
+            if (genericActors)
+                PresentationEntities::beginActorSync();
             for (auto& kv : mpContext.remoteNpcs) {
                 Perf::state().renderPerf.actorRemoteNpcs++;
                 Ragdoll::RagdollPresentation::instance().present(
                     kv.first, kv.second, ragdollDelay);
+                if (genericActors) {
+                    const Player& npc = kv.second;
+                    const float pos[3] = {npc.pos.x, npc.pos.y, npc.pos.z};
+                    const float look[3] = {std::cos(npc.yaw), std::sin(npc.yaw), 0.0f};
+                    float color[4] = {0.8f, 0.8f, 0.8f, 1.0f};
+                    if (npc.matchTeam == 0) { color[0]=1.0f; color[1]=0.25f; color[2]=0.25f; }
+                    else if (npc.matchTeam == 1) { color[0]=0.30f; color[1]=0.50f; color[2]=1.0f; }
+                    PresentationEntities::ensureActor(
+                        kv.first, pos, look, gameHash("mesh.actor"),
+                        gameHash("texture.default"), 1.0f, color);
+                    continue;  // generic presentation owns this NPC
+                }
                 renderNetworkPlayer(kv.second, camera, kv.first, false, player.matchTeam);
                 weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt);
             }
+            if (genericActors)
+                PresentationEntities::endActorSync();
             { Perf::ScopedTimer _networkProjectiles("Rendering::Actors::NetworkProjectiles");
               MimitaNet::mpRenderNetworkProjectiles(mpContext, camera); }
             // Render server position ghost if enabled

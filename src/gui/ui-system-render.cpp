@@ -413,6 +413,19 @@ void uiDrawImage(const char* path, UIRect r, glm::vec4 color)
     drawTexturedQuad(verts, 6, texture, color);
 }
 
+// Draw an already-resolved GL texture (for generation-aware logical resources).
+// The hot UI never holds the handle; it passes a logical id the kernel resolves.
+void uiDrawTexture(GLuint texture, UIRect r, glm::vec4 color)
+{
+    if (!texture || r.w <= 0.0f || r.h <= 0.0f)
+        return;
+    float verts[] = {
+        r.x, r.y, 0, 0, r.x + r.w, r.y, 1, 0, r.x + r.w, r.y + r.h, 1, 1,
+        r.x, r.y, 0, 0, r.x + r.w, r.y + r.h, 1, 1, r.x, r.y + r.h, 0, 1
+    };
+    drawTexturedQuad(verts, 6, texture, color);
+}
+
 // Draw image scaled to fit within rect, preserving aspect ratio, centered, with optional checkerboard
 void uiDrawImageFit(const char* path, UIRect r, bool checkerboard, glm::vec4 color)
 {

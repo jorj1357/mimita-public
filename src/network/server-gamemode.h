@@ -266,6 +266,11 @@ std::int32_t serverMatchActorTeam(std::uint32_t actorId);
 bool serverMatchSetTeam(std::uint32_t actorId, std::int32_t team);
 bool serverMatchSetPhase(std::uint32_t phase);            // DuelStatePhase value
 bool serverMatchRespawn(std::uint64_t actorEntity);
+// Generic round-based match mechanism: a hot mode records one round winner.
+// Increments the round tally, sets the round winner, transitions to RESULTS,
+// and declares the match over at the goal value. No mode-specific policy.
+bool serverMatchRecordRoundResult(std::uint32_t winnerTeam,
+                                  std::uint64_t reasonHash);
 // Reset the kernel-owned match entity for a new match (fresh dynamic state).
 void serverMatchResetEntity();
 

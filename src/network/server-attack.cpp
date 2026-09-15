@@ -503,6 +503,9 @@ void handleAttackRequest(
         use.direction[0] = req->aimDirX;
         use.direction[1] = req->aimDirY;
         use.direction[2] = req->aimDirZ;
+        // Generic prediction key: the client's request id, so the authoritative
+        // entity a hot tool creates can be linked back to the prediction.
+        use.predictionKey = req->requestId;
         LiveBehavior::dispatchToolUse(use, tick);
         if (use.handled && use.outFire == 0)
         {
@@ -1228,6 +1231,7 @@ void handleAttackRequest(
             use.ammoCost = 1;
             use.origin[0] = origin.x; use.origin[1] = origin.y; use.origin[2] = origin.z;
             use.direction[0] = direction.x; use.direction[1] = direction.y; use.direction[2] = direction.z;
+            use.predictionKey = req->requestId;
             LiveBehavior::dispatchToolUse(use, tick);
             if (use.handled && use.outFire == 0)
             {
@@ -1359,6 +1363,7 @@ void tickHeldFireIntents(
             use.ammoCost = 0;
             use.origin[0] = held.origin.x; use.origin[1] = held.origin.y; use.origin[2] = held.origin.z;
             use.direction[0] = held.direction.x; use.direction[1] = held.direction.y; use.direction[2] = held.direction.z;
+            use.predictionKey = held.intentId;
             LiveBehavior::dispatchToolUse(use, tick);
             held.lastEmitTick = tick;
             continue;
@@ -1406,6 +1411,7 @@ void tickHeldFireIntents(
             use.origin[0] = useOrigin.x; use.origin[1] = useOrigin.y; use.origin[2] = useOrigin.z;
             use.direction[0] = useDir.x; use.direction[1] = useDir.y; use.direction[2] = useDir.z;
         }
+        use.predictionKey = held.intentId;
         LiveBehavior::dispatchToolUse(use, tick);
         if (use.handled && use.outFire == 0)
         {

@@ -18,6 +18,10 @@
 #include "ecs/actor-entities.h"
 #include "live-code/live-gameplay.h"
 #include "live-code/live-behavior.h"
+#include "ecs/entity-registry.h"
+#include "network/actor-health.h"
+#include "network/actor-state.h"
+#include "network/dynamic-replication.h"
 
 #include "npc/npc.h"
 #include "npc/npc-internal.h"
@@ -233,6 +237,37 @@ void finalizeServerNpcSpawn(Npc& npc, ActorSpawnReason reason)
     npc.body.respawnTimer = 0.0f;
     npc.body.syncLegacyStateToLayers();
     npc.body.updateModelWorldTransforms();
+
+    // Generic NPC entity: the ActorHealthState dynamic component is the
+    // authoritative health store; the typed HealthComponent is a mirror. Mark
+    // the entity for generic lifecycle replication (CREATE) so clients learn it
+    // without an NPC-specific spawn packet.
+    const EntityId npcEntity =
+        Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npc.id);
+    Ecs::setControlSource(npcEntity, ControlSource::ServerNpc);
+    Ecs::setAuthority(npcEntity, NetworkAuthority::Server);
+    actorHealthInit(Ecs::raw(npcEntity), npc.body.maxHp);
+    Ecs::setHealth(npcEntity, npc.body.currentHp, npc.body.maxHp, false);
+    serverReplicateEntity(Ecs::raw(npcEntity));
+
+    // Generic NPC tool ownership: every armed actor gets an equipped tool
+    // entity carrying its runtime key. The hot action router decides whether a
+    // behavior handles the action; if it does, the generic handled gate bypasses
+    // the legacy cold fire path. Unknown tools are left to the compatibility
+    // fallback. No weapon/type category is known to the kernel.
+    {
+        const WeaponDefinition* wdef =
+            WeaponRegistry::instance().get(npc.body.equippedWeaponId);
+        if (wdef) {
+            const std::uint8_t netWeapon = networkWeaponTypeForDefinition(*wdef);
+            if (netWeapon != NETWORK_WEAPON_NONE) {
+                const EntityId toolEntity =
+                    EntityRegistry::instance().createGeneric(EntityRealm::Server);
+                actorStateEquipTool(Ecs::raw(npcEntity), Ecs::raw(toolEntity),
+                                    netWeapon);
+            }
+        }
+    }
 }
 
 // Reset a killed server NPC body back to full health at its spawn point so the
@@ -476,7 +511,21 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
             ? glm::normalize(n.currentFacing)
             : glm::vec3(1.0f, 0.0f, 0.0f);
         sn.yaw = n.body.yaw;
-        sn.health = n.body.currentHp;
+        // Health projection: the generic ActorHealthState component is the
+        // authority; ServerNpc.health is a bridge mirrored from it.
+        {
+            const EntityId npcEntity =
+                Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, n.id);
+            std::int32_t componentHealth = 0;
+            if (actorHealthRead(Ecs::raw(npcEntity), &componentHealth, nullptr, nullptr))
+                sn.health = componentHealth;
+            else
+                sn.health = n.body.currentHp;
+            // Transform/velocity projection onto the generic entity so hot
+            // gameplay systems can read it. Networking remains snapshot-based.
+            Ecs::setTransform(npcEntity, n.body.pos, sn.aim, n.body.yaw, 0.0f);
+            Ecs::setVelocity(npcEntity, n.body.vel, n.body.externalImpulse);
+        }
         sn.onGround = n.body.ground.hasWorldContact;
         sn.difficulty = n.difficulty;
         sn.equippedSlot = n.body.equippedSlot;
@@ -763,6 +812,35 @@ void simulateSharedNpcs(SOCKET sock,
             }
         }
 
+        // Generic target authority: the hot gameplay.60 AI writes
+        // relationship.targets; when present it wins over the cold
+        // nearest-enemy fallback here. The typed serverTargetId remains a
+        // projection so the cold combat path follows the hot-chosen target.
+        {
+            const EntityId npcEntity =
+                Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, n.id);
+            std::uint64_t chosen = 0;
+            if (actorStateGetTarget(Ecs::raw(npcEntity), &chosen) && chosen != 0) {
+                const EntityId te = static_cast<EntityId>(chosen);
+                if (entityDomain(te) == EntityDomain::Player) {
+                    auto it = players.find(entityLegacyId(te));
+                    if (it != players.end() && !it->second.dead) {
+                        nearestPlayer = &it->second;
+                        nearestNpc = nullptr;
+                    }
+                } else if (entityDomain(te) == EntityDomain::Npc) {
+                    for (Npc& candidate : npcSystem.all()) {
+                        if (candidate.id != entityLegacyId(te))
+                            continue;
+                        if (!candidate.body.dead && candidate.body.currentHp > 0) {
+                            nearestNpc = &candidate;
+                            nearestPlayer = nullptr;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
         n.serverTargetId = nearestPlayer ? nearestPlayer->id
                         : (nearestNpc ? nearestNpc->id : 0);
         if (n.serverTargetId != prevTarget)

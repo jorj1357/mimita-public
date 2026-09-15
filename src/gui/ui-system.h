@@ -46,6 +46,8 @@ void uiDrawTriangle(float cx, float cy, float size, bool pointDown, glm::vec4 co
 void uiDrawText(const char* text, float x, float y, float scale, glm::vec4 color,
                 float italicShear = 0.0f);
 void uiDrawImage(const char* path, UIRect r, glm::vec4 color = glm::vec4(1.0f));
+// Draw an already-resolved GL texture handle (generation-aware logical resource).
+void uiDrawTexture(unsigned int texture, UIRect r, glm::vec4 color = glm::vec4(1.0f));
 void uiDrawImageFit(const char* path, UIRect r, bool checkerboard = true, glm::vec4 color = glm::vec4(1.0f));
 void uiDrawMedia(const char* path, UIRect r, glm::vec4 color = glm::vec4(1.0f));
 void uiUpdateMedia(float dt);

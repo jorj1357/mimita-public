@@ -16,6 +16,8 @@
 #include "ecs/components.h"
 #include "ecs/entity-registry.h"
 #include "ecs/entity-types.h"
+#include "live-code/live-behavior.h"
+#include "network/actor-health.h"
 #include "persistence/persistence-emit.h"
 #include "combat/weapon-registry.h"
 #include "network/network-weapons.h"
@@ -266,9 +268,24 @@ bool serverApplyEntityDamage(GameDamageApplyV1& request)
     const EntityDomain victimDomain = entityDomain(victimEntity);
     const bool victimIsNpc = victimDomain == EntityDomain::Npc;
 
-    // Generic damageable entity (world object, destructible, future concept):
-    // authoritative health is component state, no actor plumbing required.
+    // Generic damageable entity (world object, destructible, runtime monster):
+    // authoritative health is the generic ActorHealthState dynamic component
+    // when present (replicated), otherwise the typed HealthComponent.
     if (victimDomain != EntityDomain::Player && !victimIsNpc) {
+        if (actorHealthHas(victimEntity)) {
+            std::int32_t after = 0;
+            bool dead = false;
+            if (!actorHealthApplyDamage(victimEntity, request.amount, &after, &dead))
+                return false;
+            if (auto* health = EntityRegistry::instance().tryGet<HealthComponent>(victimEntity)) {
+                health->current = after;
+                health->dead = dead;
+            }
+            request.applied = 1;
+            request.killed = dead ? 1u : 0u;
+            request.healthAfter = after;
+            return true;
+        }
         if (auto* health =
                 EntityRegistry::instance().tryGet<HealthComponent>(victimEntity)) {
             const int amount = request.amount > 0 ? request.amount : 1;
@@ -326,8 +343,10 @@ bool serverApplyEntityDamage(GameDamageApplyV1& request)
                                          attackerPlayerId, damageRequest.damage,
                                          damageRequest.knockback, damageRequest.source);
     } else {
-        // NPC victim: generic authoritative health on the NPC mirror, with the
-        // shared kill owner. No separate damageNpc capability is introduced.
+        // NPC victim: generic ActorHealthState on the NPC entity is the
+        // authoritative store. The ServerNpc mirror and the typed
+        // HealthComponent are projections (bridges), not owners. No separate
+        // damageNpc capability or NPC-specific packet is introduced.
         auto nit = npcs.find(entityLegacyId(victimEntity));
         if (nit == npcs.end()) {
             request.applied = 0;
@@ -335,20 +354,44 @@ bool serverApplyEntityDamage(GameDamageApplyV1& request)
             request.healthAfter = 0;
             return false;
         }
-        const int amount = request.amount > 0 ? request.amount : 1;
-        nit->second.health -= amount;
-        const bool killed = nit->second.health <= 0;
-        if (killed)
-            nit->second.health = 0;
+        if (!actorHealthHas(victimEntity))
+            actorHealthInit(victimEntity,
+                            nit->second.health > 0 ? nit->second.health : 100);
+        std::int32_t before = 0;
+        bool wasDead = false;
+        actorHealthRead(victimEntity, &before, nullptr, &wasDead);
+        std::int32_t after = 0;
+        bool dead = false;
+        if (!actorHealthApplyDamage(victimEntity, request.amount, &after, &dead)) {
+            request.applied = 0;
+            return false;
+        }
+        // Projections (bridges).
+        nit->second.health = after;
+        if (auto* health = EntityRegistry::instance().tryGet<HealthComponent>(victimEntity)) {
+            health->current = after;
+            health->dead = dead;
+        }
         request.applied = 1;
-        request.killed = killed ? 1u : 0u;
-        request.healthAfter = nit->second.health;
-        if (killed && context->sock && context->totalPacketsOut && context->tick) {
-            serverGamemodeRecordKill(
-                static_cast<SOCKET>(context->sock), players, &npcs,
-                attackerPlayerId, ENTITY_PLAYER, nit->second.entityId, ENTITY_NPC,
-                "", "", 0, glm::vec3(0.0f), nit->second.pos, *context->tick,
-                *context->totalPacketsOut);
+        request.killed = dead ? 1u : 0u;
+        request.healthAfter = after;
+
+        // Generic death fact: one runtime event, no NPC-specific callback.
+        if (dead && !wasDead) {
+            GameActorKilledV1 killedEvent{};
+            killedEvent.victimEntity = request.victimEntity;
+            killedEvent.victimId = entityLegacyId(victimEntity);
+            killedEvent.victimIsNpc = 1;
+            killedEvent.killerId = attackerPlayerId;
+            killedEvent.tick = context->tick ? *context->tick : 0;
+            LiveBehavior::dispatchActorKilled(killedEvent, killedEvent.tick);
+            if (context->sock && context->totalPacketsOut && context->tick) {
+                serverGamemodeRecordKill(
+                    static_cast<SOCKET>(context->sock), players, &npcs,
+                    attackerPlayerId, ENTITY_PLAYER, nit->second.entityId, ENTITY_NPC,
+                    "", "", 0, glm::vec3(0.0f), nit->second.pos, *context->tick,
+                    *context->totalPacketsOut);
+            }
         }
         return true;
     }

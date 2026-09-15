@@ -1,3 +1,7 @@
+SUPERSEDED BY C:\mimita-priv-v8\docs\hot-warm-cold-review-9-14-2026-v2.md
+SUPERSEDED BY C:\mimita-priv-v8\docs\hot-warm-cold-review-9-14-2026-v2.md
+SUPERSEDED BY C:\mimita-priv-v8\docs\hot-warm-cold-review-9-14-2026-v2.md
+
 The repo is currently at **Level 2, partially approaching Level 3**.
 
 MiMITA can keep the EXE and world alive while rebuilding and activating a replaceable DLL. The GenericRuntime can register systems, events, commands, schemas, capabilities, and domains by ID. However, most gameplay still runs through cold EXE call sites, dynamic schemas are only byte storage, migrations are registered but not executed, and multiplayer activation is only a protocol seed.

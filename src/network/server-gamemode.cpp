@@ -33,9 +33,13 @@
 #include "config/spawn-velocity-config.h"
 #include "network/actor-lifecycle.h"
 #include "network/match-lifecycle.h"
+#include "network/server-context.h"
+#include "ecs/actor-entities.h"
+#include "ecs/dynamic-components.h"
 #include "ecs/entity-registry.h"
 #include "hot-reload/generic-runtime.h"
 #include "hot-reload/game-api.h"
+#include "network/actor-state.h"
 #include "live-code/live-behavior.h"
 
 namespace MimitaNet {
@@ -106,8 +110,31 @@ bool serverMatchFinish(std::uint32_t winnerKind, std::uint32_t winnerId,
     return true;
 }
 
+// Resolve an actor id (player/NPC) to its server entity. Entity ids are
+// domain-tagged; a hot package may also create generic (domain-less) actors, so
+// match on the legacy id rather than assuming a domain.
+static EntityId resolveActorEntity(std::uint32_t actorId)
+{
+    for (EntityId entity : EntityRegistry::instance().all()) {
+        if (entityRealm(entity) != EntityRealm::Server)
+            continue;
+        if (entityLegacyId(entity) == actorId)
+            return entity;
+    }
+    return 0;
+}
+
 std::int32_t serverMatchActorTeam(std::uint32_t actorId)
 {
+    // Generic ActorTeamState (the actor entity's component) is the source of
+    // truth; the typed map below is only the projection for the scoreboard and
+    // wire broadcast.
+    const EntityId entity = resolveActorEntity(actorId);
+    if (entity != 0) {
+        std::int32_t team = -2;
+        if (actorStateReadTeam(Ecs::raw(entity), &team))
+            return team;
+    }
     const ServerGamemodeState& d = serverGamemodeState();
     auto it = d.matchTeams.find(actorId);
     return it == d.matchTeams.end() ? -1 : it->second;
@@ -116,7 +143,147 @@ std::int32_t serverMatchActorTeam(std::uint32_t actorId)
 bool serverMatchSetTeam(std::uint32_t actorId, std::int32_t team)
 {
     serverGamemodeState().matchTeams[actorId] = team;
+    // Mirror the decision into the generic component for the actor entity.
+    const EntityId entity = resolveActorEntity(actorId);
+    if (entity != 0)
+        actorStateWriteTeam(Ecs::raw(entity), team);
     return true;
+}
+
+bool serverMatchRecordRoundResult(std::uint32_t winnerTeam,
+                                  std::uint64_t reasonHash)
+{
+    ServerGamemodeState& d = serverGamemodeState();
+    if (!d.enabled || winnerTeam > 1u)
+        return false;
+    ++d.roundWins[winnerTeam];
+    d.roundOver = true;
+    d.winnerTeam = static_cast<int>(winnerTeam);
+    d.matchOver = d.roundWins[winnerTeam] >= d.goalValue;
+    d.victoryType = 0;
+    d.phase = DUEL_PHASE_RESULTS;
+    d.phaseTimer = d.resultsSeconds;
+    ++d.stateVersion;
+    d.stateBroadcastPending = true;
+    Debug::warn(Debug::Category::Duel,
+        "[ROUND] hot round result winner=%u reason=%llu score=%d-%d matchOver=%d\n",
+        winnerTeam, (unsigned long long)reasonHash, d.roundWins[0], d.roundWins[1],
+        (int)d.matchOver);
+    return true;
+}
+
+std::uint32_t serverMapAnchors(GameMapAnchorV1* out, std::uint32_t maxOut)
+{
+    if (!out || maxOut == 0)
+        return 0;
+    const ServerGamemodeState& d = serverGamemodeState();
+    const MapConfig& mc = MapConfigRegistry::instance().get(d.mapId);
+    const std::uint64_t siteKind = gameHash("objective.site");
+    const std::uint64_t spawnKind = gameHash("spawn.team");
+    std::uint32_t count = 0;
+    auto emit = [&](const glm::vec3& p, float radius, std::uint64_t kind,
+                    std::uint32_t tag, float yaw) {
+        if (count >= maxOut)
+            return;
+        out[count].position[0] = p.x;
+        out[count].position[1] = p.y;
+        out[count].position[2] = p.z;
+        out[count].radius = radius;
+        out[count].kind = kind;
+        out[count].tag = tag;
+        out[count].yaw = yaw;
+        ++count;
+    };
+    for (const MapBombSite& site : mc.bombSites)
+        emit(site.center, site.radius, siteKind, 0u, 0.0f);
+    // Team spawn points are map-authored generic anchors (tag = team index).
+    for (std::uint32_t team = 0; team < 2; ++team)
+        for (const MapTeamSpawn& sp : mc.teamSpawns[team])
+            emit(sp.position, 0.0f, spawnKind, team, sp.yaw);
+    return count;
+}
+
+bool serverSpawnOrResetActor(GameActorSpawnV1& r)
+{
+    if (r.actorEntity == 0)
+        return false;
+    const EntityId entity = static_cast<EntityId>(r.actorEntity);
+    if (!EntityRegistry::instance().alive(entity))
+        return false;
+    const std::uint32_t actorId = entityLegacyId(entity);
+    const glm::vec3 pos(r.position[0], r.position[1], r.position[2]);
+    const glm::vec3 vel(r.velocity[0], r.velocity[1], r.velocity[2]);
+
+    // Generic authoritative components first: the actor's spatial/health truth.
+    Ecs::setTransform(entity, pos, glm::vec3(1.0f, 0.0f, 0.0f), r.yaw, 0.0f);
+    Ecs::setVelocity(entity, vel, glm::vec3(0.0f));
+    if ((r.flags & 4u) != 0 && r.health > 0)
+        Ecs::setHealth(entity, r.health, r.health, false);
+    else if ((r.flags & 2u) != 0)
+        Ecs::setHealth(entity, r.health > 0 ? r.health : 1, r.health > 0 ? r.health : 1,
+                       false);
+
+    // Typed projections the client snapshot still reads (until the snapshot pass).
+    MimitaNet::ServerContextV1* ctx = MimitaNet::activeServerContext();
+    bool mirrored = false;
+    if (ctx && ctx->players) {
+        auto* players = static_cast<std::unordered_map<uint32_t, ServerPlayer>*>(
+            ctx->players);
+        auto it = players->find(actorId);
+        if (it != players->end()) {
+            ServerPlayer& p = it->second;
+            p.pos = pos;
+            p.vel = vel;
+            p.yaw = r.yaw;
+            if ((r.flags & 2u) != 0)
+                p.dead = false;
+            if ((r.flags & 4u) != 0 && r.health > 0)
+                p.health = r.health;
+            p.respawnSeconds = 0.0f;
+            p.justRespawned = true;
+            ++p.transformEpoch;
+            mirrored = true;
+        }
+    }
+    if (ctx && ctx->npcs) {
+        auto* npcs = static_cast<std::unordered_map<uint32_t, ServerNpc>*>(ctx->npcs);
+        auto it = npcs->find(actorId);
+        if (it != npcs->end()) {
+            ServerNpc& n = it->second;
+            n.pos = pos;
+            n.vel = vel;
+            if ((r.flags & 4u) != 0 && r.health > 0)
+                n.health = r.health;
+            mirrored = true;
+        }
+    }
+    r.applied = 1u;
+    (void)mirrored;
+    return true;
+}
+
+// Project the generic actor team components (source of truth) onto the typed
+// matchTeams map and participant roster. This keeps the scoreboard/broadcast
+// alive when a hot mode owns assignment and the cold assign path was skipped.
+static void projectGenericActorTeams(ServerGamemodeState& d)
+{
+    bool added = false;
+    for (EntityId entity : EntityRegistry::instance().all()) {
+        if (entityRealm(entity) != EntityRealm::Server)
+            continue;
+        std::int32_t team = -2;
+        if (!actorStateReadTeam(Ecs::raw(entity), &team))
+            continue;
+        const std::uint32_t id = entityLegacyId(entity);
+        d.matchTeams[id] = team;
+        if (std::find(d.participants.begin(), d.participants.end(), id) ==
+            d.participants.end()) {
+            d.participants.push_back(id);
+            added = true;
+        }
+    }
+    if (added)
+        std::sort(d.participants.begin(), d.participants.end());
 }
 
 bool serverMatchSetPhase(std::uint32_t phase)
@@ -125,6 +292,11 @@ bool serverMatchSetPhase(std::uint32_t phase)
     if (!d.enabled)
         return false;
     d.phase = static_cast<std::uint8_t>(phase);
+    // Starting a fresh round clears the previous match-over lock so a hot mode
+    // can run multiple rounds via generic phase changes.
+    if (phase == DUEL_PHASE_WAITING || phase == DUEL_PHASE_COUNTDOWN ||
+        phase == DUEL_PHASE_ACTIVE || phase == DUEL_PHASE_GO)
+        d.matchOver = false;
     ++d.stateVersion;
     d.stateBroadcastPending = true;
     return true;
@@ -229,12 +401,34 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
     };
     applyMovementPreset(d.movementPreset);
 
-    auto it = d.matchActors.find(actorId);
-    if (it == d.matchActors.end() || it->second.roleId.empty())
+    // Generic authority: the role comes from the actor entity's ActorRoleState
+    // component when set (players, NPCs, runtime monsters alike). The typed
+    // ActorMatchDescriptor.roleId is a compatibility projection/fallback.
+    std::string roleId;
+    {
+        EntityId actorEntity = EntityRegistry::instance().find(
+            EntityRealm::Server, EntityDomain::Player, actorId);
+        if (actorEntity == kInvalidEntityId)
+            actorEntity = EntityRegistry::instance().find(
+                EntityRealm::Server, EntityDomain::Npc, actorId);
+        if (actorEntity != kInvalidEntityId) {
+            std::uint64_t roleHash = 0;
+            if (actorStateReadRoleHash(Ecs::raw(actorEntity), &roleHash) && roleHash != 0) {
+                const char* id = actorStateRoleIdForHash(roleHash);
+                if (id)
+                    roleId = id;
+            }
+        }
+    }
+    if (roleId.empty()) {
+        auto it = d.matchActors.find(actorId);
+        if (it != d.matchActors.end())
+            roleId = it->second.roleId;
+    }
+    if (roleId.empty())
         return out;  // no role: mode-level overrides still apply
 
-    const MatchRoleDefinition* def =
-        MatchRoleRegistry::instance().get(it->second.roleId);
+    const MatchRoleDefinition* def = MatchRoleRegistry::instance().get(roleId);
     if (!def)
         return out;
 
@@ -1368,6 +1562,20 @@ void assignMatchParticipants(ServerGamemodeState& d,
         }
     }
 
+    // Generic actor state (players and NPCs alike): team/role/profile become
+    // entity dynamic components. The typed match/snapshot fields above are
+    // projections (bridges), not the long-term owners.
+    for (uint32_t id : d.participants) {
+        const ActorMatchDescriptor& desc = d.matchActors[id];
+        const EntityDomain domain = (desc.controller == ActorController::Npc)
+            ? EntityDomain::Npc : EntityDomain::Player;
+        const EntityId entity = Ecs::ensure(EntityRealm::Server, domain, id);
+        actorStateWriteTeam(Ecs::raw(entity), desc.teamId);
+        actorStateWriteRole(Ecs::raw(entity), desc.roleId.c_str());
+        actorStateWriteProfile(Ecs::raw(entity), desc.movementProfileId.c_str(),
+                               desc.behaviorProfileId.c_str());
+    }
+
     if (d.matchMode == "tdm") {
         Debug::log(Debug::Category::Duel,
             "[FFA/TDM] Assigned %zu players to teams (red=%d blue=%d)\n",
@@ -2176,6 +2384,15 @@ static void beginObjectiveRound(ServerGamemodeState& d,
     if (d.objectiveBombCarrierId == 0)
         d.objectiveBombState = BOMB_OBJ_DROPPED;
     d.stateBroadcastPending = true;
+    // Generic round-start fact: a hot objective/round mode resets its own state
+    // from this; the kernel does not know the mode's round policy.
+    GameMatchRoundStartV1 rs{};
+    rs.matchEntity = d.matchEntity;
+    rs.roundNumber = d.roundNumber;
+    rs.tick = tick;
+    rs.phase = d.phase;
+    LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MATCH_ROUND_START, &rs,
+                                          sizeof(rs), tick, d.matchEntity, 0);
     Debug::warn(Debug::Category::Duel,
         "[CS ROUND] starting round=%d carrier=%u score=%d-%d\n",
         d.roundNumber, d.objectiveBombCarrierId, d.roundWins[0], d.roundWins[1]);
@@ -2685,6 +2902,21 @@ void serverGamemodeTick(SOCKET sock,
                 broadcastBombTagState(sock, d, players, totalPacketsOut);
             d.stateBroadcastPending = false;
         }
+        // Generic phase ownership: a hot mode may own the phase clock entirely.
+        // It writes MatchPhaseOwnership on the match entity and drives phases
+        // through match.setPhase; the cold transitions below are then skipped.
+        // No mode name is consulted.
+        if (d.matchEntity != 0) {
+            std::uint32_t phaseOwned = 0;
+            if (MimitaRuntime::DynamicComponentStore::instance().read(
+                    static_cast<EntityId>(d.matchEntity),
+                    gameHash("MatchPhaseOwnership"), &phaseOwned,
+                    sizeof(phaseOwned)) &&
+                phaseOwned != 0) {
+                projectGenericActorTeams(d);
+                return;
+            }
+        }
         switch (d.phase)
         {
         case DUEL_PHASE_WAITING:
@@ -2758,20 +2990,35 @@ void serverGamemodeTick(SOCKET sock,
             }
             break;
 
-        case DUEL_PHASE_ACTIVE:
+        case DUEL_PHASE_ACTIVE: {
             // NPC waves, objective rounds, and scored modes each own their
             // round/win resolution behind the shared lifecycle.
+            // Generic objective ownership: a hot objective behavior may own the
+            // whole objective state machine. It writes ObjectiveOwnership on the
+            // match entity; the cold bomb policy below is then bypassed. No mode
+            // or objective-type name is consulted.
+            std::uint32_t objectiveOwned = 0;
+            if (d.matchEntity != 0 &&
+                MimitaRuntime::DynamicComponentStore::instance().read(
+                    static_cast<EntityId>(d.matchEntity),
+                    gameHash("ObjectiveOwnership"), &objectiveOwned,
+                    sizeof(objectiveOwned)) &&
+                objectiveOwned != 0)
+                projectGenericActorTeams(d);
             if (d.npcWaves) {
                 checkWaveConditions(d, tick, sock, players, totalPacketsOut);
             } else if (d.objectiveRounds) {
-                updateObjectiveBomb(d, players, npcs);
-                checkObjectiveRoundEnd(d, tick, sock, players, totalPacketsOut);
+                if (objectiveOwned == 0) {
+                    updateObjectiveBomb(d, players, npcs);
+                    checkObjectiveRoundEnd(d, tick, sock, players, totalPacketsOut);
+                }
             } else {
                 checkMatchWinConditions(d, tick, sock, players, totalPacketsOut);
             }
             if (d.phase != DUEL_PHASE_ACTIVE) break;  // win condition triggered
             // Objective bomb state is fairly volatile; keep clients in sync.
-            if (d.objectiveRounds && tick - d.objectiveBombBroadcastTick >= 30) {
+            if (d.objectiveRounds && objectiveOwned == 0 &&
+                tick - d.objectiveBombBroadcastTick >= 30) {
                 d.objectiveBombBroadcastTick = tick;
                 broadcastBombTagState(sock, d, players, totalPacketsOut);
             }
@@ -2798,6 +3045,7 @@ void serverGamemodeTick(SOCKET sock,
                 }
             }
             break;
+        }
 
         case DUEL_PHASE_RESULTS:
             d.phaseTimer -= SERVER_DT;

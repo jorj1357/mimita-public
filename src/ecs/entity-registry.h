@@ -31,7 +31,15 @@ public:
     // id, so it never collides with player/npc/projectile/world-object ids and
     // requires no new enum. Pass a non-zero legacyId to request a stable id.
     EntityId createGeneric(EntityRealm realm, std::uint32_t legacyId = 0);
+    // Registers the exact packed EntityId (used by generic replication so a
+    // client materializes the server's identity verbatim). If a different
+    // generation currently owns the same (realm, domain, legacyId) key, the old
+    // identity is retired first so the new generation cannot alias it.
+    EntityId adopt(EntityId id);
     void destroy(EntityId id);
+    // Append-only destroyed-id log drained by generic entity lifecycle
+    // replication so a DESTROY can be emitted without coupling ECS to network.
+    std::vector<EntityId> consumeDestroyed();
     void destroyAll();
     bool alive(EntityId id) const;
     EntityId find(EntityRealm realm, EntityDomain domain, std::uint32_t legacyId) const;
@@ -123,5 +131,6 @@ private:
     std::unordered_map<EntityId, EntityIdentity> mIdentities;
     std::unordered_map<std::uint64_t, EntityId> mLookup;
     std::unordered_map<std::type_index, std::unique_ptr<IComponentStore>> mStores;
+    std::vector<EntityId> mDestroyed;
     std::uint32_t nextDynamicId_ = 1;
 };

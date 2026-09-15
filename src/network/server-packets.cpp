@@ -16,6 +16,11 @@
 #include "live-code/live-behavior.h"
 #include "network/coordinator-client.h"
 #include "network/snapshot-chunks.h"
+#include "network/relevance.h"
+#include "ecs/actor-entities.h"
+#include "ecs/components.h"
+#include "ecs/dynamic-components.h"
+#include "ecs/entity-registry.h"
 #include "network/network-weapons.h"
 #include "network/disagreement-visuals.h"
 #include "config/networking-config.h"
@@ -2348,8 +2353,11 @@ void buildAndSendSnapshot(SOCKET sock,
                           const std::unordered_map<uint32_t, ServerNpc>& npcs,
                           uint32_t tick, uint64_t& totalPacketsOut)
 {
-    // Build compact entity list
+    // Build compact entity list (cold snapshot representation) plus the generic
+    // candidate identity/position used by the hot relevance policy.
     CompactEntityData entities[MAX_SNAPSHOT_ENTITIES];
+    std::uint64_t candEntity[MAX_SNAPSHOT_ENTITIES];
+    float candPos[MAX_SNAPSHOT_ENTITIES][3];
     uint32_t entityCount = 0;
 
     for (const auto& kv : players)
@@ -2372,13 +2380,137 @@ void buildAndSendSnapshot(SOCKET sock,
             }
             continue;
         }
-        entities[entityCount++] = compactEntityFromSnapshot(makePlayerEntity(kv.second));
+        const SnapshotEntity se = makePlayerEntity(kv.second);
+        entities[entityCount] = compactEntityFromSnapshot(se);
+        const EntityId ce = Ecs::ensure(EntityRealm::Server, EntityDomain::Player,
+                                        kv.first);
+        candEntity[entityCount] = Ecs::raw(ce);
+        // Relevance reads the generic authoritative Transform (projection-safe
+        // fallback to the cold snapshot position when absent).
+        if (const auto* tf = EntityRegistry::instance().tryGet<TransformComponent>(ce)) {
+            candPos[entityCount][0] = tf->position.x;
+            candPos[entityCount][1] = tf->position.y;
+            candPos[entityCount][2] = tf->position.z;
+        } else {
+            candPos[entityCount][0] = se.px;
+            candPos[entityCount][1] = se.py;
+            candPos[entityCount][2] = se.pz;
+        }
+        ++entityCount;
     }
     for (const auto& kv : npcs)
     {
         if (entityCount >= MAX_SNAPSHOT_ENTITIES)
             break;
-        entities[entityCount++] = compactEntityFromSnapshot(makeNpcEntity(kv.second));
+        const SnapshotEntity se = makeNpcEntity(kv.second);
+        entities[entityCount] = compactEntityFromSnapshot(se);
+        const EntityId ce = Ecs::ensure(EntityRealm::Server, EntityDomain::Npc,
+                                        kv.first);
+        candEntity[entityCount] = Ecs::raw(ce);
+        if (const auto* tf = EntityRegistry::instance().tryGet<TransformComponent>(ce)) {
+            candPos[entityCount][0] = tf->position.x;
+            candPos[entityCount][1] = tf->position.y;
+            candPos[entityCount][2] = tf->position.z;
+        } else {
+            candPos[entityCount][0] = se.px;
+            candPos[entityCount][1] = se.py;
+            candPos[entityCount][2] = se.pz;
+        }
+        ++entityCount;
+    }
+
+    // ── Hot relevance policy (per viewer) ─────────────────────────────
+    // Candidates are classified by the hot net.relevance policy using generic
+    // Transform state; the cold transport still builds chunks and sends bytes.
+    // If no hot policy handles the query, the original broadcast path runs.
+    {
+        std::vector<std::uint32_t> viewerIds;
+        viewerIds.reserve(players.size());
+        for (const auto& kv : players)
+            if (kv.second.spawned)
+                viewerIds.push_back(kv.first);
+        std::sort(viewerIds.begin(), viewerIds.end());
+
+        bool policyActive = false;
+        std::vector<std::vector<CompactEntityData>> perViewer(viewerIds.size());
+        for (std::size_t v = 0; v < viewerIds.size(); ++v) {
+            auto pit = players.find(viewerIds[v]);
+            if (pit == players.end())
+                continue;
+            GameRelevanceQueryV1 q{};
+            q.viewerEntity = Ecs::raw(Ecs::ensure(EntityRealm::Server,
+                                                  EntityDomain::Player,
+                                                  viewerIds[v]));
+            q.viewerPosition[0] = pit->second.pos.x;
+            q.viewerPosition[1] = pit->second.pos.y;
+            q.viewerPosition[2] = pit->second.pos.z;
+            q.tick = tick;
+            q.candidateCount = entityCount;
+            for (std::uint32_t i = 0; i < entityCount; ++i) {
+                q.candidates[i].entity = candEntity[i];
+                q.candidates[i].position[0] = candPos[i][0];
+                q.candidates[i].position[1] = candPos[i][1];
+                q.candidates[i].position[2] = candPos[i][2];
+                std::uint32_t flags = 0;
+                MimitaRuntime::DynamicComponentStore::instance().read(
+                    static_cast<EntityId>(candEntity[i]),
+                    GAME_COMPONENT_REPLICATION_POLICY, &flags, sizeof(flags));
+                q.candidates[i].flags = flags;
+            }
+            q.handled = 0;
+            LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_NET_RELEVANCE, &q,
+                                                  sizeof(q), tick, q.viewerEntity, 0);
+            if (!q.handled)
+                continue;
+            policyActive = true;
+
+            // Deterministic order: tier first, then stable entity id.
+            std::vector<std::uint32_t> order(entityCount);
+            for (std::uint32_t i = 0; i < entityCount; ++i)
+                order[i] = i;
+            std::stable_sort(order.begin(), order.end(),
+                [&](std::uint32_t a, std::uint32_t b) {
+                    if (q.outTier[a] != q.outTier[b])
+                        return q.outTier[a] < q.outTier[b];
+                    return candEntity[a] < candEntity[b];
+                });
+            for (std::uint32_t i : order) {
+                if (!q.outInclude[i])
+                    continue;
+                if (q.outTier[i] == 1u && q.outLowTierEveryNTicks > 0 &&
+                    (tick % q.outLowTierEveryNTicks) != 0)
+                    continue;
+                perViewer[v].push_back(entities[i]);
+            }
+        }
+
+        if (policyActive) {
+            for (std::size_t v = 0; v < viewerIds.size(); ++v) {
+                auto pit = players.find(viewerIds[v]);
+                if (pit == players.end() || perViewer[v].empty())
+                    continue;
+                std::vector<std::vector<uint8_t>> vchunks;
+                if (!buildSnapshotChunks(perViewer[v].data(),
+                                         (uint32_t)perViewer[v].size(), tick, 0,
+                                         vchunks))
+                    continue;
+                for (const auto& chunk : vchunks) {
+                    if (pit->second.transport)
+                        pit->second.transport->send(chunk.data(), chunk.size());
+                    else
+                        sendto(sock, (const char*)chunk.data(), (int)chunk.size(), 0,
+                               (sockaddr*)&pit->second.addr, sizeof(pit->second.addr));
+                    ++totalPacketsOut;
+                }
+            }
+            if (tick % 360 == 0) {
+                for (const auto& kv : players)
+                    if (kv.second.vipStyleEpoch != 0)
+                        broadcastVipStyleEvent(sock, kv.second, players, tick,
+                                               totalPacketsOut);
+            }
+            return;
+        }
     }
 
     if (tick % 120 == 0)

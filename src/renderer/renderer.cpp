@@ -24,15 +24,19 @@
 #include "utils/path_utils.h"
 #include "debug/gl-debug.h"
 #include "debug/debug-log.h"
+#include "hot-reload/game-api.h"
+#include "project/presentation-resource.h"
 
-static std::string readTextFile(const char* path)
+static std::string readTextFileImpl(const char* path, bool verbose)
 {
     std::string resolved = resolveAssetPath(path);
-    printf("[RENDERER] opening file: %s\n", resolved.c_str());
+    if (verbose)
+        printf("[RENDERER] opening file: %s\n", resolved.c_str());
 
     FILE* f = fopen(resolved.c_str(), "rb");
     if (!f) {
-        printf("[RENDERER] fopen failed\n");
+        if (verbose)
+            printf("[RENDERER] fopen failed\n");
         return "";
     }
 
@@ -46,9 +50,21 @@ static std::string readTextFile(const char* path)
     fread(text.data(), 1, size, f);
     fclose(f);
 
-    printf("[RENDERER] loaded %ld bytes\n", size);
+    if (verbose)
+        printf("[RENDERER] loaded %ld bytes\n", size);
 
     return text;
+}
+
+static std::string readTextFile(const char* path)
+{
+    return readTextFileImpl(path, true);
+}
+
+// Quiet read used by per-frame generation polling (no console spam).
+static std::string readTextFileQuiet(const char* path)
+{
+    return readTextFileImpl(path, false);
 }
 
 static GLuint compileShader(GLenum type, const char* src, const char* debugName)
@@ -122,6 +138,48 @@ static GLuint createProgramFromFiles(const char* vertPath, const char* fragPath)
     MIMITA_GL_CALL(glDeleteShader(vs));
     MIMITA_GL_CALL(glDeleteShader(fs));
 
+    return program;
+}
+
+// Strict variant: returns 0 (and does not leak) on compile OR link failure.
+static GLuint createProgramStrict(const std::string& vertText,
+                                  const std::string& fragText,
+                                  std::string* error)
+{
+    if (vertText.empty() || fragText.empty()) {
+        if (error) *error = "shader source missing";
+        return 0;
+    }
+    GLuint vs = compileShader(GL_VERTEX_SHADER, vertText.c_str(), "live.vert");
+    GLuint fs = compileShader(GL_FRAGMENT_SHADER, fragText.c_str(), "live.frag");
+    if (!vs || !fs) {
+        if (vs) MIMITA_GL_CALL(glDeleteShader(vs));
+        if (fs) MIMITA_GL_CALL(glDeleteShader(fs));
+        if (error) *error = "compile failed";
+        return 0;
+    }
+    GLuint program = glCreateProgram();
+    if (!program) {
+        MIMITA_GL_CALL(glDeleteShader(vs));
+        MIMITA_GL_CALL(glDeleteShader(fs));
+        if (error) *error = "program create failed";
+        return 0;
+    }
+    MIMITA_GL_CALL(glAttachShader(program, vs));
+    MIMITA_GL_CALL(glAttachShader(program, fs));
+    MIMITA_GL_CALL(glLinkProgram(program));
+    GLint ok = 0;
+    MIMITA_GL_CALL(glGetProgramiv(program, GL_LINK_STATUS, &ok));
+    MIMITA_GL_CALL(glDeleteShader(vs));
+    MIMITA_GL_CALL(glDeleteShader(fs));
+    if (!ok) {
+        char log[2048];
+        MIMITA_GL_CALL(glGetProgramInfoLog(program, sizeof(log), nullptr, log));
+        printf("[RENDERER] live shader link failed:\n%s\n", log);
+        MIMITA_GL_CALL(glDeleteProgram(program));
+        if (error) *error = log;
+        return 0;
+    }
     return program;
 }
 
@@ -212,6 +270,92 @@ Renderer::Renderer(int w, int h, const char* title) {
     // );
 
     printf("[RENDERER] shaderProgram=%u\n", shaderProgram);
+
+    // Register the basic shader as a generation-aware presentation resource so
+    // edits to shaders/basic.* can hot-swap at runtime with last-good fallback.
+    registerBasicShaderResource(this, shaderProgram);
+}
+
+namespace {
+
+const std::uint64_t kBasicShaderLogical = gameHash("shader.basic");
+
+void appendHash(std::uint64_t& hash, const std::string& text)
+{
+    for (unsigned char c : text) {
+        hash ^= static_cast<std::uint64_t>(c);
+        hash *= 1099511628211ull;
+    }
+}
+
+std::uint64_t basicShaderContentHash()
+{
+    const std::string vert = readTextFileQuiet("shaders/basic.vert");
+    const std::string frag = readTextFileQuiet("shaders/basic.frag");
+    if (vert.empty() || frag.empty())
+        return 0;
+    std::uint64_t hash = 1469598103934665603ull;
+    appendHash(hash, vert);
+    appendHash(hash, frag);
+    return hash;
+}
+
+bool loadBasicShaderResource(void* /*user*/, void** outHandle)
+{
+    const std::string vert = readTextFile("shaders/basic.vert");
+    const std::string frag = readTextFile("shaders/basic.frag");
+    std::string error;
+    GLuint program = createProgramStrict(vert, frag, &error);
+    if (!program)
+        return false;
+    *outHandle = reinterpret_cast<void*>(static_cast<std::uintptr_t>(program));
+    return true;
+}
+
+void retireBasicShaderResource(void* /*user*/, void* handle)
+{
+    GLuint program = static_cast<GLuint>(reinterpret_cast<std::uintptr_t>(handle));
+    if (program)
+        MIMITA_GL_CALL(glDeleteProgram(program));
+}
+
+} // namespace
+
+void Renderer::registerBasicShaderResource(Renderer* renderer, GLuint initialProgram)
+{
+    MimitaRuntime::PresentationResourceProvider& provider =
+        MimitaRuntime::PresentationResourceProvider::instance();
+    provider.setLoader(kBasicShaderLogical, &loadBasicShaderResource,
+                       &retireBasicShaderResource, renderer);
+    provider.adopt(kBasicShaderLogical, basicShaderContentHash(),
+                   reinterpret_cast<void*>(static_cast<std::uintptr_t>(initialProgram)));
+}
+
+bool Renderer::pollShaderReload()
+{
+    const std::uint64_t hash = basicShaderContentHash();
+    if (hash == 0)
+        return false;
+    MimitaRuntime::PresentationResourceProvider& provider =
+        MimitaRuntime::PresentationResourceProvider::instance();
+    const MimitaRuntime::ResourceGeneration* state =
+        provider.current(kBasicShaderLogical);
+    if (state && state->valid && state->contentHash == hash)
+        return false;
+    std::string error;
+    if (!provider.apply(kBasicShaderLogical, hash, &error))
+        return false;
+    const MimitaRuntime::ResourceGeneration* after =
+        provider.current(kBasicShaderLogical);
+    if (after && after->valid && after->handle) {
+        shaderProgram =
+            static_cast<GLuint>(reinterpret_cast<std::uintptr_t>(after->handle));
+        Debug::log(Debug::Category::Render,
+                   "[SHADER] live reload generation=%u hash=%llu\n",
+                   after->generation, (unsigned long long)hash);
+        return true;
+    }
+    return false;
 }
 
 bool Renderer::installCustomCursor(const char* path, bool centeredHotspot)

@@ -177,6 +177,11 @@ void drawLine(const Camera& camera, glm::vec3 a, glm::vec3 b, glm::vec4 color)
     gLineVerts.push_back({ b, color });
 }
 
+std::size_t debugLineVertexCount()
+{
+    return gLineVerts.size();
+}
+
 void drawPointCross(const Camera& camera, glm::vec3 p, float size, glm::vec4 color)
 {
     drawLine(camera, p + glm::vec3(-size, 0, 0), p + glm::vec3(size, 0, 0), color);

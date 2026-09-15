@@ -11,7 +11,9 @@
 
 #include "hot-reload/game-api.h"
 #include "hot-reload/hot-package.h"
+#include "hot-reload/hot-prediction.h"
 #include "hot-reload/hot-projectile.h"
+#include "hot-reload/hot-presentation.h"
 
 #include <cmath>
 #include <cstdio>
@@ -68,6 +70,40 @@ void MIMITA_GAME_CALL rocketUse(const ToolUsePolicyV1* use, GameplayContextV1* c
                  HOT_PROJECTILE_EXPLODE_ON_LIFETIME;
     ctx->dynamicWriteComponent(ctx->host, projectileEntity, HOT_PROJECTILE_COMPONENT,
                                &proj, sizeof(proj));
+
+    // Generic presentation: logical resource ids only. The canonical hot
+    // presentation system draws this entity through render.mesh; no rocket
+    // branch exists anywhere in the renderer.
+    if (ctx->writeComponent) {
+        GameTransformComponentV1 tf{};
+        tf.position[0] = use->origin[0];
+        tf.position[1] = use->origin[1];
+        tf.position[2] = use->origin[2];
+        tf.look[0] = dx;
+        tf.look[1] = dy;
+        tf.look[2] = dz;
+        ctx->writeComponent(ctx->host, projectileEntity, GAME_COMPONENT_TRANSFORM,
+                            &tf, sizeof(tf));
+    }
+    if (ctx->dynamicWriteComponent) {
+        HotPresentationStateV1 present{};
+        present.meshResourceId = HOT_MESH_ROCKET;
+        present.textureResourceId = HOT_TEX_ROCKET;
+        present.scale = 1.0f;
+        present.color[0] = present.color[1] = present.color[2] = present.color[3] = 1.0f;
+        ctx->dynamicWriteComponent(ctx->host, projectileEntity,
+                                   HOT_PRESENTATION_COMPONENT, &present,
+                                   sizeof(present));
+    }
+    // Generic predicted -> authoritative link: the authoritative entity carries
+    // the originating prediction key so the client can retire its provisional.
+    if (ctx->dynamicWriteComponent && use->predictionKey != 0) {
+        HotPredictionLinkV1 link{};
+        link.predictionKey = use->predictionKey;
+        ctx->dynamicWriteComponent(ctx->host, projectileEntity,
+                                   HOT_PREDICTION_LINK_COMPONENT, &link,
+                                   sizeof(link));
+    }
     if (ctx->relationshipAdd && use->userEntity != 0)
         ctx->relationshipAdd(ctx->host, gameHash("relationship.fired-projectile"),
                              use->userEntity, projectileEntity, kRocketNetworkId);

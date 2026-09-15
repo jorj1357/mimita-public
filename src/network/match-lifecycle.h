@@ -42,3 +42,16 @@ struct GameMatchLifecycleV1 {
 
 static constexpr std::uint64_t GAME_EVENT_MATCH_LIFECYCLE =
     gameHash("match.lifecycle");
+
+// Generic round-start fact: published whenever a new round/round-equivalent
+// begins. A hot round/objective mode resets its own state from this; the kernel
+// never knows the mode's round policy.
+struct GameMatchRoundStartV1 {
+    std::uint64_t matchEntity;
+    std::uint32_t roundNumber;
+    std::uint32_t tick;
+    std::uint32_t phase;        // DuelStatePhase value
+    std::uint32_t reserved;
+};
+static constexpr std::uint64_t GAME_EVENT_MATCH_ROUND_START =
+    gameHash("match.round-start");

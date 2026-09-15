@@ -21,6 +21,8 @@
 #include "ecs/dynamic-components.h"
 #include "ecs/relationship-store.h"
 #include "live-code/live-modules.h"
+#include "live-code/live-ui.h"
+#include "hot-reload/hot-pose.h"
 #include "network/server-context.h"
 #include "network/server-gamemode.h"
 #include "physics/movement/move-capsule.h"
@@ -30,6 +32,9 @@
 #include "entities/player.h"
 #include "camera.h"
 #include "effects/effect-part.h"
+#include "debug/debug-visuals.h"
+#include "gui/ui-system.h"
+#include "render/presentation-render.h"
 #include "terminal/terminal-state.h"
 
 #include <glm/gtc/quaternion.hpp>
@@ -58,6 +63,7 @@ int gHead = 0;
 int gCount = 0;
 bool gDraining = false;
 const void* gDispatchWorld = nullptr;
+std::uint64_t g_skeletonApplyCount = 0;
 
 void MIMITA_GAME_CALL kernelEmitEvent(GameplayContextV1*, const GameEventV1* event);
 
@@ -604,7 +610,31 @@ glm::mat4 poseOffsetMatrix(const GamePosePartV1& part)
 // mapping, and world-transform update. Any future pose source can use this.
 void MIMITA_GAME_CALL capSkeletonApply(void*, const GameSkeletonPoseV1* pose)
 {
-    if (!pose || !gpPlayer)
+    if (!pose)
+        return;
+    ++g_skeletonApplyCount;
+    // Generic pose publication: copy the POD pose onto the entity so any
+    // presenter (and headless tests) can read it. Never retains hot pointers.
+    if (pose->entity != 0) {
+        HotPoseStateV1 state{};
+        state.version = pose->flags;
+        const std::uint32_t n =
+            pose->count < HOT_POSE_MAX_PARTS ? pose->count : HOT_POSE_MAX_PARTS;
+        state.count = n;
+        for (std::uint32_t i = 0; i < n; ++i) {
+            state.part[i] = pose->parts[i].part;
+            state.translation[i][0] = pose->parts[i].translation[0];
+            state.translation[i][1] = pose->parts[i].translation[1];
+            state.translation[i][2] = pose->parts[i].translation[2];
+            state.rotationEuler[i][0] = pose->parts[i].rotationEuler[0];
+            state.rotationEuler[i][1] = pose->parts[i].rotationEuler[1];
+            state.rotationEuler[i][2] = pose->parts[i].rotationEuler[2];
+        }
+        MimitaRuntime::DynamicComponentStore::instance().write(
+            static_cast<EntityId>(pose->entity), HOT_POSE_STATE_COMPONENT, &state,
+            sizeof(state));
+    }
+    if (!gpPlayer)
         return;
     Player& p = THE_PLAYER;
     if (p.perfectPoseSkeleton.nodes.empty() ||
@@ -684,6 +714,85 @@ bool MIMITA_GAME_CALL capDamageApply(void*, GameDamageApplyV1* request)
     return MimitaNet::serverApplyEntityDamage(*request);
 }
 
+// Generic round-based match mechanism: a hot mode records one round winner.
+bool MIMITA_GAME_CALL capMatchRoundResult(void*, GameMatchRoundResultV1* request)
+{
+    if (!request)
+        return false;
+    const bool ok = MimitaNet::serverMatchRecordRoundResult(request->winnerTeam,
+                                                            request->reasonHash);
+    request->handled = ok ? 1u : 0u;
+    request->outMatchOver = MimitaNet::serverGamemodeState().matchOver ? 1u : 0u;
+    return ok;
+}
+
+// Generic map anchors (kernel-owned projection of map metadata).
+std::uint32_t MIMITA_GAME_CALL capMapAnchors(void*, GameMapAnchorV1* out,
+                                             std::uint32_t maxOut)
+{
+    return MimitaNet::serverMapAnchors(out, maxOut);
+}
+
+// Generic authoritative actor spawn/reset.
+bool MIMITA_GAME_CALL capActorSpawn(void*, GameActorSpawnV1* request)
+{
+    if (!request)
+        return false;
+    return MimitaNet::serverSpawnOrResetActor(*request);
+}
+
+// Generic presentation command: hot render systems describe geometry; the
+// kernel owns the low-level debug draw. No entity/weapon/mode type switch.
+void MIMITA_GAME_CALL capRenderDebug(void*, const GameRenderDebugCommandV1* cmd)
+{
+    if (!cmd)
+        return;
+    const Camera& camera = THE_CAMERA;
+    const glm::vec4 color(cmd->color[0], cmd->color[1], cmd->color[2], cmd->color[3]);
+    const glm::vec3 a(cmd->a[0], cmd->a[1], cmd->a[2]);
+    const glm::vec3 b(cmd->b[0], cmd->b[1], cmd->b[2]);
+    const glm::vec3 half(cmd->half[0], cmd->half[1], cmd->half[2]);
+    switch (cmd->shape) {
+    case GAME_RENDER_DEBUG_LINE:
+        DebugVis::drawLine(camera, a, b, color);
+        break;
+    case GAME_RENDER_DEBUG_WIRE_BOX:
+        DebugVis::drawWireBox(camera, a, half, color);
+        break;
+    case GAME_RENDER_DEBUG_WIRE_SPHERE:
+        DebugVis::drawWireSphere(camera, a, cmd->radius, color);
+        break;
+    case GAME_RENDER_DEBUG_WORLD_LABEL:
+        DebugVis::drawWorldLabel(a, cmd->text, color);
+        break;
+    case GAME_RENDER_DEBUG_HUD_TEXT:
+        uiDrawText(cmd->text, a.x, a.y, cmd->radius > 0.0f ? cmd->radius : 0.3f,
+                   color);
+        break;
+    default:
+        break;
+    }
+}
+
+// Generic mesh presentation: forward the logical-resource command to the cold
+// presentation renderer (which resolves the generation-aware handle and draws).
+void MIMITA_GAME_CALL capRenderMesh(void*, const GameRenderMeshCommandV1* command)
+{
+    if (!command)
+        return;
+    PresentationRender::submitMesh(*command);
+}
+
+// Generic HUD/UI: hot ui.frame systems emit widgets; the kernel draws them.
+void MIMITA_GAME_CALL capRenderUi(void*, const GameUiCommandV1* command)
+{
+    if (!command)
+        return;
+    LiveUi::submit(*command);
+}
+
+
+
 // Kernel primitives are registered as ordinary capability entries with a
 // signature. The mechanism is identical to a hot package provider; the only
 // difference is providerPackage == 0 (kernel).
@@ -699,6 +808,30 @@ struct KernelCapabilityInit {
                                     gameHash("sig.damage.apply.v1"), 0,
                                     reinterpret_cast<void*>(&capDamageApply),
                                     "damage.apply");
+        rt.registerKernelCapability(GAME_CAP_MATCH_ROUND_RESULT,
+                                    gameHash("sig.match.round-result.v1"), 0,
+                                    reinterpret_cast<void*>(&capMatchRoundResult),
+                                    "match.round-result");
+        rt.registerKernelCapability(GAME_CAP_MAP_ANCHORS,
+                                    gameHash("sig.map.anchors.v1"), 0,
+                                    reinterpret_cast<void*>(&capMapAnchors),
+                                    "map.anchors");
+        rt.registerKernelCapability(GAME_CAP_ACTOR_SPAWN,
+                                    gameHash("sig.actor.spawn.v1"), 0,
+                                    reinterpret_cast<void*>(&capActorSpawn),
+                                    "actor.spawn");
+        rt.registerKernelCapability(GAME_CAP_RENDER_DEBUG,
+                                    gameHash("sig.render.debug.v1"), 0,
+                                    reinterpret_cast<void*>(&capRenderDebug),
+                                    "render.debug");
+        rt.registerKernelCapability(GAME_CAP_RENDER_MESH,
+                                    gameHash("sig.render.mesh.v1"), 0,
+                                    reinterpret_cast<void*>(&capRenderMesh),
+                                    "render.mesh");
+        rt.registerKernelCapability(GAME_CAP_RENDER_UI,
+                                    gameHash("sig.render.ui.v1"), 0,
+                                    reinterpret_cast<void*>(&capRenderUi),
+                                    "render.ui");
         rt.registerKernelCapability(GAME_CAP_PHYSICS_MOVE,
                                     gameHash("sig.physics.move.v1"), 0,
                                     reinterpret_cast<void*>(&capPhysicsMove),
@@ -797,12 +930,13 @@ void enqueueEvent(const GameEventV1& event)
 bool dispatchEvent(const GameEventV1& event, std::uint64_t tick)
 {
     // Generic runtime subscribers first (runtime-registered event types are the
-    // forward path); the legacy gameplay module is kept as a fallback.
-    const bool generic = MimitaRuntime::GenericRuntime::instance().dispatchEvent(event, nullptr);
+    // forward path); the legacy gameplay module is kept as a fallback. Handlers
+    // receive a capability context so queued events can perform real work.
+    GameplayContextV1 context = makeContext(tick);
+    const bool generic = MimitaRuntime::GenericRuntime::instance().dispatchEvent(event, &context);
     const GameGameplayModuleV1* module = gameplayModule();
     if (!module || !module->onEvent)
         return generic;
-    GameplayContextV1 context = makeContext(tick);
     module->onEvent(&event, &context);
     return true;
 }
@@ -901,12 +1035,12 @@ bool dispatchPayload(std::uint32_t typeId, void* payload,
     event.projectileEntity = projectileEntity;
     event.tick = tick;
     event.payload = payload;
-
-    bool handled = MimitaRuntime::GenericRuntime::instance().dispatchEvent(event, nullptr);
+    GameplayContextV1 context = makeContext(tick);
+    bool handled = MimitaRuntime::GenericRuntime::instance().dispatchEvent(event,
+                                                                            &context);
 
     const GameGameplayModuleV1* module = gameplayModule();
     if (module && module->onEvent) {
-        GameplayContextV1 context = makeContext(tick);
         module->onEvent(&event, &context);
         handled = true;
     }
@@ -964,6 +1098,16 @@ bool runBehaviorBindings(std::uint64_t entity, std::uint32_t eventType,
 void setDispatchWorld(const void* world)
 {
     gDispatchWorld = world;
+}
+
+void flushRenderDebug()
+{
+    ::flushDebugLines(THE_CAMERA);
+}
+
+std::uint64_t skeletonApplyCount()
+{
+    return g_skeletonApplyCount;
 }
 
 int drainEvents(int maxEvents)
