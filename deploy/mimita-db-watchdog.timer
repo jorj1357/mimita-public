@@ -1,0 +1,10 @@
+[Unit]
+Description=Check MiMITA PostgreSQL every minute
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+Unit=mimita-db-watchdog.service
+
+[Install]
+WantedBy=timers.target

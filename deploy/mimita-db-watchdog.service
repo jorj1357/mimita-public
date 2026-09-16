@@ -1,0 +1,6 @@
+[Unit]
+Description=MiMITA PostgreSQL availability check and recovery
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/mimita-db-watchdog.sh

@@ -62,7 +62,15 @@ export default function Auth({ mode }) {
             navigate(returnTo)
         }
         catch (error) {
-            setMessage(error.message)
+            if (error.status === 503 || error.data?.code === "database_unavailable") {
+                setMessage("account service is temporarily unavailable. your account was not changed. please try again in a minute.")
+            }
+            else if (error.status === 0) {
+                setMessage("the website could not reach the account service. please check your connection and try again.")
+            }
+            else {
+                setMessage(error.message)
+            }
         }
         finally {
             setLoading(false)
@@ -178,4 +186,4 @@ export default function Auth({ mode }) {
             </section>
         </Layout>
     )
-}  
+}

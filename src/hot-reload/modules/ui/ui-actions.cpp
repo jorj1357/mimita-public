@@ -65,11 +65,11 @@ void registerMenuResources(GameplayContextV1* ctx)
     g_menuResourcesRegistered = true;
 }
 
-// ON by default: the hot shell now covers background/logo/title, account
-// name/stats/VIP colour, primary nav and account/auth entry actions, so it is the
-// shipping owner. `uiscreen off` disables it (dev/fallback). Cold auth modals and
-// the actual auth/screen transitions remain cold via the pending-action bridge.
-bool g_menuEnabled = true;
+// The gameplay session must not show the standalone hot main-menu shell. The
+// cold menu flow remains available when GAME_MENU is active, while the Esc
+// pause menu is composed by the dedicated hot pause module. `uiscreen <id>` can
+// still explicitly enable this legacy/dev screen for isolated hot-UI testing.
+bool g_menuEnabled = false;
 
 GameSharedStateV1* sharedState(GameplayContextV1* ctx);
 void requestColdAction(GameplayContextV1* ctx, std::uint64_t actionId,

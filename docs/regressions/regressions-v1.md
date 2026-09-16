@@ -1425,3 +1425,13 @@ jorj - this not official format not good but  when we edit netowkring stuff or d
    killing them.
 7. Lessons learned: independent processes must never share build artifact
    paths, and a failed build must be retryable without another source edit.
+2026-09-16T17:14:31Z — Website sign-in/sign-up unavailable while API remained online — CONFIRMED
+
+Detailed record: [2026-09-16 website auth database outage](2026-09-16-website-auth-database-outage.md).
+
+1. Expected behavior: account endpoints remain usable, or clearly report a temporary account-service outage without implying that an account changed.
+2. Actual behavior: `mimita-api` was online but PostgreSQL `14/main` was down with no listener on port 5432; sign-in returned HTTP 500 `server error`, and sign-up used the same unavailable database path.
+3. Root cause: PostgreSQL was not supervised/recovered with the API, and the application mapped `ECONNREFUSED` to a generic HTTP 500 with no structured client state.
+4. Evidence: VPS `pg_lsclusters` showed `14 main 5432 down`; `ss` showed no 5432 listener; PM2 showed `mimita-api online`; after starting PostgreSQL and restarting the API, a correctly encoded invalid sign-in returned HTTP 401.
+5. Fix staged locally: database errors now return HTTP 503 with `code: database_unavailable`; the auth UI shows a temporary-service message; `deploy/mimita-db-watchdog.{sh,service,timer}` provides non-AI systemd recovery and alert hooks for deployment.
+6. Deployment remains required: install and enable the watchdog on the VPS through the reviewed deployment path, then verify service recovery and the 401 probe after a controlled database stop/start test.

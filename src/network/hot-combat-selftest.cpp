@@ -1317,6 +1317,11 @@ bool runHotCombatSelfTest(std::string& report)
     {
         ok &= check(runtime.hasCommand("uiscreen"),
                     "hot UI command registered (no cold switch)", report);
+        // The standalone hot main menu is disabled during normal gameplay so
+        // it cannot cover the world. Enable it explicitly here to retain a
+        // focused hot-UI composition test without changing runtime behavior.
+        runtime.runCommand("uiscreen", "screen.main-menu",
+                           LiveBehavior::hostContext(94));
         runtime.runCommand("uiscreen", "screen.main-menu",
                            LiveBehavior::hostContext(95));
         GameplayContextV1* uiCtx = LiveBehavior::hostContext(95);

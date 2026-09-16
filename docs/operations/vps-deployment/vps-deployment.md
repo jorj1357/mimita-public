@@ -49,6 +49,27 @@ cache or package-cache data only after verifying it is not needed by a running
 service.
 * Test locally before deployment.
 
+## Website editing safety: preserve database recovery
+
+Website changes must not make PostgreSQL availability failures harder to detect,
+recover, or explain. Before changing auth, sessions, migrations, database access,
+startup, or error handling:
+
+1. Keep the API/database dependency explicit. Do not turn a database failure into
+   a successful-looking login, signup, empty profile, or generic HTTP 200.
+2. Preserve a structured temporary-unavailable response and a clear user-facing
+   message that no account change was confirmed.
+3. Do not make the API appear healthy merely because the Node process is alive;
+   verify PostgreSQL readiness and a non-mutating auth probe separately.
+4. Keep recovery owned by ordinary operations/systemd/monitoring, not by an AI
+   loop or an undocumented manual step.
+5. Any auth/database edit must include focused local validation plus deployment
+   verification of database health, API status, and the invalid-login 401 probe.
+
+The permanent lesson from the 2026-09-16 outage is that `mimita-api online`
+does not prove PostgreSQL is available. Future website edits must preserve the
+database watchdog, structured 503 contract, and recovery evidence.
+
 ## Validation before deployment
 
 Use the task-specific focused skills under `docs/skills/` and record their

@@ -1533,9 +1533,10 @@ app.use((error, req, res, next) => {
         console.log("[SERVER] Database connection refused.")
         console.log("[SERVER] Ensure PostgreSQL is running and accessible.")
         console.log("[SERVER] Check .env for: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME")
-        return res.status(500).json({
+        return res.status(503).json({
             success: false,
-            message: "database connection failed. check server logs."
+            code: "database_unavailable",
+            message: "account service is temporarily unavailable. please try again in a minute."
         })
     }
 
