@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -39,6 +40,7 @@ struct WidgetHit {
     float value, minValue, maxValue, step;
 };
 std::vector<WidgetHit> g_buttons;
+std::uint64_t g_focusedTextId = 0;
 
 glm::vec4 colorOf(const GameUiCommandV1& c)
 {
@@ -111,6 +113,24 @@ void drawToggle(const GameUiCommandV1& c)
                    {0.9f, 0.9f, 0.9f, 1.0f});
 }
 
+void drawTextInput(const GameUiCommandV1& c)
+{
+    UIRect r{c.x, c.y, c.w, c.h};
+    uiDrawRect(r, {0.10f, 0.11f, 0.14f, 1.0f}, "hotui.textinput");
+    uiDrawRectOutline(r, {0.6f, 0.7f, 0.9f, 0.9f}, "hotui.textinput.border");
+    char buf[80];
+    if (c.flags & 1u) {   // masked
+        const std::size_t n = std::strlen(c.text);
+        for (std::size_t i = 0; i < n && i < sizeof(buf) - 1; ++i)
+            buf[i] = '*';
+        buf[n] = '\0';
+    } else {
+        std::snprintf(buf, sizeof(buf), "%s", c.text);
+    }
+    uiDrawText(buf, c.x + 8.0f, c.y + c.h * 0.5f - 8.0f,
+               c.scale > 0.0f ? c.scale : 0.34f, {1.0f, 1.0f, 1.0f, 1.0f});
+}
+
 void drawSelect(const GameUiCommandV1& c)
 {
     UIRect r{c.x, c.y, c.w, c.h};
@@ -162,12 +182,50 @@ void submit(const GameUiCommandV1& command)
     if (g_commands.size() >= kMaxCommands)
         return;
     if ((command.kind == GAME_UI_BUTTON || command.kind == GAME_UI_SLIDER ||
-         command.kind == GAME_UI_TOGGLE || command.kind == GAME_UI_SELECT) &&
+         command.kind == GAME_UI_TOGGLE || command.kind == GAME_UI_SELECT ||
+         command.kind == GAME_UI_TEXT_INPUT) &&
         command.elementId != 0)
         g_buttons.push_back({command.elementId, command.kind, command.x,
                              command.y, command.w, command.h, command.value,
                              command.minValue, command.maxValue, command.step});
     g_commands.push_back(command);
+}
+
+void handleTextChar(unsigned int codepoint)
+{
+    if (g_focusedTextId == 0)
+        return;
+    GameUiActionV1 a{};
+    a.elementId = g_focusedTextId;
+    a.actionType = GAME_UI_ACTION_TEXT_INPUT;
+    a.value = (float)codepoint;
+    LiveBehavior::dispatchGameplayEvent64(gameHash("ui.action"), &a, sizeof(a), 0);
+}
+
+void handleTextBackspace()
+{
+    if (g_focusedTextId == 0)
+        return;
+    GameUiActionV1 a{};
+    a.elementId = g_focusedTextId;
+    a.actionType = GAME_UI_ACTION_TEXT_INPUT;
+    a.value = 0.0f;   // codepoint 0 = backspace
+    LiveBehavior::dispatchGameplayEvent64(gameHash("ui.action"), &a, sizeof(a), 0);
+}
+
+void handleTextSubmit()
+{
+    if (g_focusedTextId == 0)
+        return;
+    GameUiActionV1 a{};
+    a.elementId = g_focusedTextId;
+    a.actionType = GAME_UI_ACTION_TEXT_SUBMIT;
+    LiveBehavior::dispatchGameplayEvent64(gameHash("ui.action"), &a, sizeof(a), 0);
+}
+
+bool textInputFocused()
+{
+    return g_focusedTextId != 0;
 }
 
 bool handlePointerClick(float x, float y, std::uint64_t tick)
@@ -194,6 +252,9 @@ bool handlePointerClick(float x, float y, std::uint64_t tick)
         } else if (it->kind == GAME_UI_TOGGLE) {
             action.actionType = GAME_UI_ACTION_VALUE_CHANGED;
             action.value = it->value > 0.5f ? 0.0f : 1.0f;
+        } else if (it->kind == GAME_UI_TEXT_INPUT) {
+            g_focusedTextId = it->elementId;
+            action.actionType = GAME_UI_ACTION_FOCUS;
         } else if (it->kind == GAME_UI_SELECT) {
             const int count = (int)it->maxValue + 1;
             const int next = count > 0 ? ((int)it->value + 1) % count : 0;
@@ -240,6 +301,7 @@ void endFrameAndDraw()
         case GAME_UI_SLIDER: drawSlider(c); break;
         case GAME_UI_TOGGLE: drawToggle(c); break;
         case GAME_UI_SELECT: drawSelect(c); break;
+        case GAME_UI_TEXT_INPUT: drawTextInput(c); break;
         default: break;
         }
     }

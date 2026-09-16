@@ -12,6 +12,41 @@ Status as of 2026-09-14 (generic dynamic lifecycle pass).
 See `docs/architecture/live-development/hot-kernel.md` for the architecture.
 See `docs/architecture/live-development/hot-cold-audit.md` for the current map.
 
+## Round 66 (2026-09-15, real ECS Tool Entity resource continuity) — implemented
+
+- `--tool-entity-continuity-selftest` PASS: creates a REAL actor `P` and tool `E`
+  through `ctx->entityCreate`, establishes the REAL production edges
+  (`relationship.owns-tool` + `actorStateEquipTool` → `ToolRefState` +
+  `contains-item` + `equips-item`), and attaches the real `PresentationState`
+  (`meshResourceId = HOT_MESH_ROCKET`) plus a gameplay component.
+- GLB A→B is published ONLY through the canonical content path
+  (`ContentArtifact`/`ArtifactCache` → kind validation → `publishContentArtifact`
+  → `PresentationResourceProvider::apply`). A and B are distinct valid GLBs.
+- The REAL hot render path runs each version (`hot.presentation-mesh` →
+  `render.mesh` → `submitMesh`); a new cold hook
+  `PresentationRender::entityMeshResourceId(E)` reports the logical id the
+  production path resolved for that exact EntityId. It stays `HOT_MESH_ROCKET`
+  while `handleOf` is A, then B.
+- Continuity is asserted across A→B (and F→G): E/P EntityIds, owns/contains/
+  equips edges, `ToolRefState` key, `meshResourceId`, and the gameplay value all
+  unchanged — no recreation, respawn, re-equip, or inventory rebuild. Malformed C
+  and a failing loader keep last-good B with the entity graph intact. Handle A is
+  observed retired exactly at the A→B swap; the render path keeps only a logical
+  id, so no raw handle outlives the swap (no explicit GPU fence for a hypothetical
+  multi-threaded renderer — documented gap).
+- Real F→G switch transaction with B active (F=1 → G=2) keeps E/P/edges/state and
+  B, and the render path still resolves B for E; a valid D published after G
+  replaces B on the same logical id and entity. Unknown `mesh.user.test-object`
+  resolves with no cold enum/case; `mesh.does.not.exist` is a safe skipped draw.
+- New cold test hooks only: `PresentationRender::debugCreateMesh`,
+  `debugRetireMesh`, `entityMeshResourceId`. No new registry, packet, enum,
+  rocket-specific reload path, or GC system.
+- Honest boundary: HEADLESS/SELFTEST EVIDENCE, not a rendered frame.
+- NEXT: real PNG consumer (`ui.menu.logo`), real WAV consumer
+  (`audio.weapon.rocket.fire`), resource late-join current-state sync,
+  cross-kind unresolved fallback; then the rocket multi-axis + runtime-unknown
+  tool falsifications.
+
 ## Round 7 (2026-09-14, generic dynamic entity/component lifecycle) — implemented
 
 - `GameplayContextV1` ABI v6 adds operation-generic capabilities:
@@ -1017,6 +1052,67 @@ See `docs/architecture/live-development/hot-cold-audit.md` for the current map.
   on the existing Tool Entity; then the rocket multi-axis + runtime-unknown-tool
   falsifications; then trace the cold weapon/NPC enums.
 
+## Round 65 (2026-09-15, tool-entity continuity trace) — audit
+
+- Traced the real tool-entity production path: hot tools create their tool entity
+  via `ctx->entityCreate(host, realm, &outEntity)` and own it via
+  `ctx->relationshipAdd(host, gameHash("relationship.owns-tool"), userEntity,
+  toolEntity, toolKind)` (`modules/tools/banana-launcher.cpp:55-61`); the rocket
+  sets `present.meshResourceId = HOT_MESH_ROCKET` (`rocket-tool.cpp:90`).
+- The real-ECS Tool Entity continuity proof (same EntityId/owner/equip across
+  A->B, production `handleOf` for that exact entity, malformed C, F->G with the
+  entity attached) was NOT completed this pass.
+- NEXT: a headless selftest that creates a real Tool Entity + `owns-tool`
+  relationship through the generic capability context and runs the already-proven
+  canonical content path against it.
+
+## Round 64 (2026-09-15, real GLB consumer path) — implemented
+
+- `--glb-consumer-selftest` PASS: the REAL logical mesh id
+  `HOT_MESH_ROCKET = gameHash("mesh.rocket")` publishes A then B through the
+  canonical content path (`publishContentArtifact`), and the SAME production
+  consumer call the renderer uses
+  (`PresentationResourceProvider::handleOf(HOT_MESH_ROCKET)`) resolves B with a NEW
+  handle while the logical id is unchanged. Malformed bytes keep last-good B in the
+  consumer path; a failing loader (runtime preparation failure) also keeps B; a
+  post-code-swap publish D works on the same logical id.
+- Honest gaps: a real ECS Tool Entity (with `HOT_PRESENTATION_COMPONENT`
+  `meshResourceId`) owner/equip continuity is NOT yet asserted (no live object
+  graph this pass); retirement/fence audit not done; F->G with the resource active
+  not run (provider is a cold singleton with no DLL pointer, so the risk is low but
+  unproven); unknown `mesh.user.test-object` and unresolved fallback not run.
+- NEXT: assert an actual Tool Entity's continuity (same EntityId/owner/equip
+  across A->B), retirement audit, then PNG/WAV consumers through the same bridge,
+  then resource late join.
+
+## Round 63 (2026-09-15, ONE resource authority) — implemented
+
+- Unified the two overlapping resource-version systems onto a single authority:
+  `MimitaRuntime::PresentationResourceProvider` (`project/presentation-resource.h`)
+  is now the ONLY owner of the active logical mapping + prepared handle +
+  last-good + retirement (it was already the real render path's resolver).
+- `hot-reload/content-artifact.h` `ResourceRegistry` SHRANK to transport/acquisition
+  metadata only (announceCandidate, pendingLogicalIdForHash, candidateHashOf,
+  descriptorOf, acknowledgePublished); its authoritative `activeHash`/`lastGoodHash`/
+  `versions_`/`publishCandidate` state was removed. `ResourceRegistry::resolve` is
+  now a thin read of the provider (one truth).
+- New canonical bridge `publishContentArtifact(...)` / `publishContentArtifactFromCache(...)`:
+  supersede check (advertised candidate) -> hash verify -> kind validator ->
+  `PresentationResourceProvider::apply(logicalId, contentHash)`. The provider's
+  `apply` is a no-op for the same hash and keeps the previous generation on loader
+  failure (last-good), and retires the old handle on success.
+- `--content-resource-selftest` PASS 20/20: PNG/GLB/WAV publish A->B land in the
+  provider; `resolve` reads the provider; cache hit; malformed keeps provider
+  last-good; superseded candidate rejected; "one canonical authority" assertion.
+- Transport content section updated to the bridge + provider; PASS.
+- Not yet proven: live in-world Tool Entity GLB swap with same EntityId/equip
+  (production path already resolves through `handleOf`, so the seam now exists),
+  retirement safety audit, F->G-with-resource-active, unknown logical resource,
+  unresolved fallback.
+- NEXT: prove the live GLB swap on an equipped Tool Entity + entity/equip
+  continuity + malformed last-good in the real render path; then PNG/WAV consumers
+  through the SAME bridge; then resource late join.
+
 ## Round 62 (2026-09-15, tool render-path trace + registry collision) — audit
 
 - Traced the real tool render path: `PresentationState.meshResourceId` is the
@@ -1095,6 +1191,123 @@ polish. A subsystem counts as **migrated** when:
 
 Visual/feel parity can be improved afterward. Do not polish animation/blending
 before ownership has moved.
+
+## Round 64 (2026-09-15, NPC spawn audio hot + audio-leak classification) — source implemented
+
+- NPC spawn audio: `npc-spawn.cpp` now emits the generic `effect.actor.sound` fact
+  (key "actor.spawn") for both spawn paths; hot maps it to `audio.play`
+  (`npc_spawn`), cold `AudioManager::play` is fallback. (NPC weapon fire was
+  already hot; NPC dash hot in Round 62.) All NPC one-shot selection is now hot.
+- Owner position-follow: audited; no real shipping persistent spatial NPC loop
+  was found (spawn is one-shot; music is streamed separately). Per the mission,
+  NOT implemented; recorded as a future generic extension.
+- Music: `MusicManager` streams tracks (menu random / ingame playlist) via
+  miniaudio — a real policy leak but tied to a streaming mechanism the current
+  `audio.play` (cached one-shot) does not express. Recorded; not migrated (would
+  need streaming in the generic slot path).
+- Ambient/interaction: audited; no separate cold ambient loop owner or
+  interaction-sound manager found beyond the existing one-shot paths. Recorded.
+- Weapon fire sound: confirmed hot (no cold per-weapon sound branch).
+- Proof: `--hot-combat-selftest` PASS incl. "NPC spawn audio policy is hot
+  (actor.spawn -> audio.play)" + the Round 63 slot tests; full suite PASS.
+
+## Round 63 (2026-09-15, generic audio slot lifecycle mechanism) — source implemented
+
+- ABI: `GameAudioCommandV1` gained `ownerEntity`, `slotId`, `op`
+  (`GameAudioOp`: PLAY_ONESHOT/SET_SLOT/STOP_SLOT) and `loop`. Slots are opaque
+  logical ids (hash); no enum.
+- Cold mechanism (`capAudioPlay`): a voice registry keyed by (ownerEntity,
+  slotId); SET_SLOT is idempotent (same desired sound = no restart), a changed
+  sound replaces the voice, STOP_SLOT is a safe no-op when absent, and slots
+  whose owner entity dies are terminated. Physical voices use `AudioManager`
+  owner ids; no handle crosses the hot boundary. `AudioEvent.loop` added
+  (`ma_sound_set_looping`).
+- Proof (`--hot-combat-selftest` PASS): SET_SLOT starts a persistent voice;
+  identical SET is idempotent; A->B replaces; runtime-unknown slot + sound
+  accepted; STOP of a nonexistent slot is a safe no-op. Full suite PASS.
+- NOT YET MIGRATED (mechanism exists): hot NPC-owner loops, music/ambient policy
+  (global owner 0 slots). Position-follow for owner loops is a recorded
+  limitation (position fixed at SET).
+
+## Round 62 (2026-09-15, Help classification + NPC action audio) — source implemented
+
+- Help: audited; `help-menu.cpp` is a 49-line generic JSON-layout renderer
+  (`config/gui/help-menu.json`) already hot-reloadable through `GuiLayoutManager`
+  and containing no feature policy. Classified LOW-VALUE DEBT (D): migrating it
+  would duplicate a generic renderer, so it was NOT migrated. Pause/global Help
+  share the same renderer.
+- NPC action audio: `npc.cpp` dash sound now emits a generic
+  `effect.actor.sound` fact (logical key "actor.dash" + position); hot
+  `hot.effect-composition` maps the key to `audio.play` (cold `playWorldSound` is
+  fallback). NPC weapon-fire audio already routed through the hot
+  `effect.weapon.fire.sound` seam.
+- MECHANISM GAP (recorded): NPC/`AudioManager` sounds with owner/loop semantics
+  (e.g. `npc_spawn`, music) cannot be expressed by `audio.play` (fire-and-forget);
+  they need owner/loop fields or reuse of the AudioManager owner path. AudioManager
+  is used by 1 proxy audio.cpp + npc.cpp/npc-spawn.cpp.
+- Proof: `--hot-combat-selftest` PASS incl. "NPC action audio policy is hot
+  (actor.dash -> audio.play)"; full suite PASS.
+- UI ARCHITECTURE: declared COMPLETE ENOUGH (see audit). Remaining cold UI is
+  secure/resource/narrow debt.
+
+## Round 61 (2026-09-15, pause Settings/ConfirmLeave + first UI-audio batch) — source implemented
+
+- Pause Settings: `pause.settings` now routes to the existing hot settings screen
+  with a generic return target (`HotUiNavigationStateV1.previousScreenId =
+  screen.pause`); `menu.back` returns to pause when the previous screen is pause.
+  No duplicate pause-settings implementation.
+- ConfirmLeave: hot pause composes the confirm modal (`pause.confirm-leave` view:
+  "Leave this game?" + CONFIRM/CANCEL) and claims the screen; actions
+  `pause.leave.confirm`/`pause.leave.cancel` route to the cold mechanism
+  (leaveRoom / view Main). Cold Help view stays cold.
+- First UI-audio batch (hot policy): `ui.action` CLICK maps element ids to
+  logical sound ids (`audio.ui.back`, `audio.ui.confirm`, `audio.ui.click`) played
+  through `audio.play`. Cold keeps decode/mix/device. Falsification: the mapping
+  is hot C++ (change the id without an EXE rebuild).
+- Proof: `--hot-combat-selftest` PASS incl. "hot UI-sound policy plays through
+  audio.play" and "pause Settings routes to hot settings with return"; full suite
+  PASS.
+- Recorded: global Help, replay browser, avatar creator, login composition,
+  notification/consent/music overlays classified but not migrated.
+
+## Round 60 (2026-09-15, real input wiring + browser ownership flip) — source implemented
+
+- Real keyboard wiring: the cold GLFW char/key callbacks (`main-init.cpp`) route
+  to `LiveUi::handleTextChar/handleTextBackspace/handleTextSubmit` while a hot
+  text field is focused, before any cold text widget; cold keeps OS/unicode/
+  clipboard/repeat. No server-browser keyboard polling.
+- Connect glue: `consumeHotUiPendingAction` maps `serverbrowser.connect` /
+  `serverbrowser.join-code` (bounded value = room code) to the existing
+  `gPendingConnect` room-code connection path (no second join implementation).
+  Stale/invalid codes fail in that path (hot state advisory).
+- Ownership FLIP: `menu.play` now routes to `screen.server-browser` (hot owns the
+  browser by default); cold `drawOnlineMenu` yields via `hotOwnsScreen` and is the
+  fallback. Host is not part of the shipping online menu (only a host-name column),
+  so no host form was required/invented.
+- Navigation: BACK -> main menu; REFRESH -> cold refresh.
+- Proof: `--hot-combat-selftest` PASS incl. PLAY routes to the hot browser and
+  text input; full suite PASS.
+- Remaining: pause Settings/Help/ConfirmLeave; help; then audio policy.
+
+## Round 59 (2026-09-15, generic text input + join-by-code) — source implemented
+
+- New generic widget `GAME_UI_TEXT_INPUT` + action types TEXT_INPUT/TEXT_SUBMIT.
+  The backend tracks only the focused element id and reports keystrokes as
+  generic `ui.action` events (TEXT_INPUT with codepoint, 0 = backspace;
+  TEXT_SUBMIT on enter). It never owns the text value.
+- Hot-owned migratable text state: `HOT_UI_TEXT_COMPONENT` / `HotUiTextStateV1`
+  (elementId + bounded text[32]) on the local actor entity. Hot updates it from
+  the events and re-emits the widget; bounded by HOT_UI_TEXT_MAX (no overflow).
+- Hot server browser now emits a join-by-code field + JOIN CODE button; submit
+  routes `serverbrowser.join-code` (bounded value) through the generic pending
+  action. Masked flag supported; secrets stay cold (this pass is non-secret).
+- Proof: `--hot-combat-selftest` PASS incl. "generic text input updates
+  hot-owned bounded text state" (focus -> type AB -> state == "AB"); full suite
+  PASS.
+- STILL PENDING (recorded): wiring the real cold char/key callback to
+  `LiveUi::handleTextChar/Backspace/Submit`; host flow; the `serverbrowser.connect`/
+  `join-code` cold connect glue; flipping the browser claim to default. Cold
+  online menu remains the shipping owner.
 
 ## Round 58 (2026-09-15, generic server listings + hot server browser) — source implemented
 

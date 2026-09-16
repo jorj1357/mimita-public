@@ -23,6 +23,7 @@ const std::uint64_t kScreenBrowser = gameHash("screen.server-browser");
 const std::uint64_t kScreenMain = gameHash("screen.main-menu");
 const std::uint64_t kBack = gameHash("menu.back");
 const std::uint64_t kRefresh = gameHash("serverbrowser.refresh");
+const std::uint64_t kJoinCode = gameHash("serverbrowser.join-code");
 
 using RenderUiFn = void (MIMITA_GAME_CALL *)(void*, const GameUiCommandV1*);
 
@@ -139,6 +140,27 @@ void MIMITA_GAME_CALL browserTick(void* host, std::uint64_t /*tick*/,
         emitButton(ui, ctx->host, rows[i].listingId, "JOIN", 900.0f, y - 4.0f,
                    120.0f, 24.0f, 0.2f, 0.6f, 0.3f);
         y += 30.0f;
+    }
+    // Join-by-code field (generic text input; hot owns the text value).
+    {
+        HotUiTextStateV1 t{};
+        if (ctx->dynamicReadComponent &&
+            sharedState(ctx) && sharedState(ctx)->localPlayerEntity != 0)
+            ctx->dynamicReadComponent(ctx->host,
+                                      sharedState(ctx)->localPlayerEntity,
+                                      HOT_UI_TEXT_COMPONENT, &t, sizeof(t));
+        GameUiCommandV1 ti{};
+        ti.kind = GAME_UI_TEXT_INPUT;
+        ti.elementId = kJoinCode;
+        ti.x = 40.0f; ti.y = 600.0f; ti.w = 200.0f; ti.h = 34.0f;
+        ti.scale = 0.34f;
+        ti.maxValue = (float)HOT_UI_TEXT_MAX;
+        ti.color[0] = ti.color[1] = ti.color[2] = ti.color[3] = 1.0f;
+        std::snprintf(ti.text, sizeof(ti.text), "%s",
+                      (t.elementId == kJoinCode) ? t.text : "");
+        ui(ctx->host, &ti);
+        emitButton(ui, ctx->host, kJoinCode, "JOIN CODE", 250.0f, 600.0f, 140.0f,
+                   34.0f, 0.2f, 0.6f, 0.3f);
     }
     emitButton(ui, ctx->host, kRefresh, "REFRESH", 40.0f, 660.0f, 140.0f, 40.0f,
                0.3f, 0.4f, 0.7f);

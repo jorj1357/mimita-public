@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 namespace {
 
@@ -172,6 +173,34 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
         emitSurfaceEffect(ctx, pos, req->normal, blood ? 0.7f : 0.9f,
                           blood ? 0.05f : 0.7f, blood ? 0.05f : 0.4f,
                           0.15f * scale, blood ? 20.0f : 30.0f);
+        return;
+    }
+
+    // Generic actor/NPC action audio (hot policy): a logical actor-sound key in,
+    // audio.play out. Cold picks no NPC sound.
+    if (req->effectTypeId == gameHash("effect.actor.sound")) {
+        req->handled = 1;
+        if (ctx->resolveCapability && req->text[0] != '\0') {
+            auto audio = reinterpret_cast<AudioPlayFn>(
+                ctx->resolveCapability(ctx->host, GAME_CAP_AUDIO_PLAY));
+            if (audio) {
+                const char* sound =
+                    std::strcmp(req->text, "actor.dash") == 0
+                        ? "entity/player/dash"
+                    : std::strcmp(req->text, "actor.spawn") == 0
+                        ? "npc_spawn" : req->text;
+                GameAudioCommandV1 c{};
+                std::snprintf(c.sound, sizeof(c.sound), "%s", sound);
+                c.position[0] = req->position[0];
+                c.position[1] = req->position[1];
+                c.position[2] = req->position[2];
+                c.volume = 1.0f;
+                c.pitch = 1.0f;
+                c.maxDistance = 36.0f;
+                c.spatial = 1;
+                audio(ctx->host, &c);
+            }
+        }
         return;
     }
 

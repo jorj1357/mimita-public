@@ -38,6 +38,14 @@ bool check(bool condition, const std::string& name, std::string& report)
     return condition;
 }
 
+std::uintptr_t g_contentHandles = 0;
+bool contentLoad(void*, void** outHandle)
+{
+    *outHandle = reinterpret_cast<void*>(++g_contentHandles);
+    return true;
+}
+void contentRetire(void*, void*) {}
+
 std::vector<unsigned char> makeBytes(std::size_t n)
 {
     std::vector<unsigned char> v(n);
@@ -622,6 +630,7 @@ bool runTransportGenerationSelfTest(std::string& report)
     // ── Content descriptor over the real socket (PNG/GLB shape) ────────
     {
         MimitaRuntime::ResourceRegistry::instance().clear();
+        MimitaRuntime::PresentationResourceProvider::instance().clear();
         std::vector<unsigned char> glbA(24, 0x30);
         glbA[0] = 'g'; glbA[1] = 'l'; glbA[2] = 'T'; glbA[3] = 'F';
         glbA[4] = 2; glbA[5] = 0; glbA[6] = 0; glbA[7] = 0;
@@ -629,6 +638,8 @@ bool runTransportGenerationSelfTest(std::string& report)
             MimitaRuntime::hashArtifactBytes(glbA.data(), glbA.size());
         const std::uint64_t resId =
             MimitaRuntime::resourceIdFromLogicalName("mesh.tool.rocket");
+        MimitaRuntime::PresentationResourceProvider::instance().setLoader(
+            resId, &contentLoad, &contentRetire, nullptr);
 
         ContentArtifactPacket desc{};
         desc.header.type = PACKET_CONTENT_ARTIFACT;
@@ -676,12 +687,12 @@ bool runTransportGenerationSelfTest(std::string& report)
         std::string perr;
         bool published = false;
         if (rr.complete() && rr.commit(commitErr)) {
-            published = MimitaRuntime::ResourceRegistry::instance()
-                .publishCandidateFromCache(resId, perr);
+            published = MimitaRuntime::publishContentArtifactFromCache(resId, perr);
         }
-        ok &= check(published && contentBytes > 0 &&
-                        MimitaRuntime::ResourceRegistry::instance().resolve(resId) ==
-                            hashA,
+        const MimitaRuntime::ResourceGeneration* rg =
+            MimitaRuntime::PresentationResourceProvider::instance().current(resId);
+        ok &= check(published && contentBytes > 0 && rg != nullptr &&
+                        rg->contentHash == hashA,
                     "content cache miss: transfer -> validate -> publish [" +
                         commitErr + perr + "]", report);
 
@@ -694,8 +705,7 @@ bool runTransportGenerationSelfTest(std::string& report)
                     "content cache hit: descriptor announces with bytes cached",
                     report);
         std::string hitErr;
-        ok &= check(MimitaRuntime::ResourceRegistry::instance()
-                        .publishCandidateFromCache(resId, hitErr),
+        ok &= check(MimitaRuntime::publishContentArtifactFromCache(resId, hitErr),
                     "content cache hit publishes with zero chunks", report);
 
         // Stale descriptor: B announced, C supersedes, late B publish rejected.
@@ -714,10 +724,15 @@ bool runTransportGenerationSelfTest(std::string& report)
                                hashC, (std::uint32_t)glbC.size()});
         std::string serr;
         const bool lateRejected =
-            !reg.publishCandidate(resId, hashB, glbB.data(), glbB.size(), serr);
+            !MimitaRuntime::publishContentArtifact(resId, hashB, glbB.data(),
+                                                   glbB.size(), serr);
         const bool newerPublished =
-            reg.publishCandidate(resId, hashC, glbC.data(), glbC.size(), serr);
-        ok &= check(lateRejected && newerPublished && reg.resolve(resId) == hashC,
+            MimitaRuntime::publishContentArtifact(resId, hashC, glbC.data(),
+                                                  glbC.size(), serr);
+        const MimitaRuntime::ResourceGeneration* rgC =
+            MimitaRuntime::PresentationResourceProvider::instance().current(resId);
+        ok &= check(lateRejected && newerPublished && rgC != nullptr &&
+                        rgC->contentHash == hashC,
                     "stale descriptor cannot overwrite the newer content version",
                     report);
     }

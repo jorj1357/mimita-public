@@ -33,6 +33,9 @@
 #include "live-code/live-identity.h"
 #include "network/actor-state.h"
 #include "audio/audio.h"
+#include "live-code/live-behavior.h"
+#include "hot-reload/game-api.h"
+#include <cstdio>
 #include "effects/effect-part.h"
 #include "devtools/dev-npc-selection.h"
 #include "npc/npc-navigation.h"
@@ -1283,7 +1286,18 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     {
         npc.dashCooldown = 0.80f - difficulty01(npc.difficulty) * 0.62f;
         EffectPartSystem::instance().spawnDash(npc.body.pos);
-        playWorldSound("entity/player/dash", npc.body.pos, 1.0f, 1.0f, 36.0f);
+        // NPC action audio policy is hot (generic actor-sound fact). Cold world
+        // playback is the fallback only.
+        {
+            EffectRequestV1 snd{};
+            snd.effectTypeId = gameHash("effect.actor.sound");
+            snd.position[0] = npc.body.pos.x;
+            snd.position[1] = npc.body.pos.y;
+            snd.position[2] = npc.body.pos.z;
+            std::snprintf(snd.text, sizeof(snd.text), "%s", "actor.dash");
+            if (!LiveBehavior::dispatchEffectRequest(snd, 0))
+                playWorldSound("entity/player/dash", npc.body.pos, 1.0f, 1.0f, 36.0f);
+        }
     }
 
     if (wantDownDash && downDashAvailableBefore && !npc.body.dash.downDashAvailable)

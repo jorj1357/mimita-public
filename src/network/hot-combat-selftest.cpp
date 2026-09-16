@@ -683,6 +683,74 @@ bool runHotCombatSelfTest(std::string& report)
         ok &= check(custHandled && LiveBehavior::audioPlayCount() > custBefore,
                     "arbitrary logical footstep sound id is hot (no enum)", report);
 
+        EffectRequestV1 actorSnd{};
+        actorSnd.effectTypeId = gameHash("effect.actor.sound");
+        std::snprintf(actorSnd.text, sizeof(actorSnd.text), "%s", "actor.dash");
+        const std::uint64_t actorBefore = LiveBehavior::audioPlayCount();
+        const bool actorHandled =
+            LiveBehavior::dispatchEffectRequest(actorSnd, 30);
+        ok &= check(actorHandled && LiveBehavior::audioPlayCount() > actorBefore,
+                    "NPC action audio policy is hot (actor.dash -> audio.play)",
+                    report);
+
+        EffectRequestV1 spawnSnd{};
+        spawnSnd.effectTypeId = gameHash("effect.actor.sound");
+        std::snprintf(spawnSnd.text, sizeof(spawnSnd.text), "%s", "actor.spawn");
+        const std::uint64_t spawnBefore = LiveBehavior::audioPlayCount();
+        const bool spawnHandled = LiveBehavior::dispatchEffectRequest(spawnSnd, 31);
+        ok &= check(spawnHandled && LiveBehavior::audioPlayCount() > spawnBefore,
+                    "NPC spawn audio policy is hot (actor.spawn -> audio.play)",
+                    report);
+
+        // Generic persistent audio slots: SET_SLOT / idempotence / change / STOP,
+        // with runtime-unknown slot + sound ids (no cold enum).
+        {
+            GameplayContextV1* actx = LiveBehavior::hostContext(30);
+            auto audio = actx ? reinterpret_cast<GameAudioPlayFn>(
+                                    actx->resolveCapability(actx->host,
+                                                            GAME_CAP_AUDIO_PLAY))
+                              : nullptr;
+            ok &= check(audio != nullptr, "audio.play capability resolves", report);
+            if (audio) {
+                GameAudioCommandV1 c{};
+                std::snprintf(c.sound, sizeof(c.sound), "entity/player/dash");
+                c.slotId = gameHash("selftest.loop");
+                c.op = GAME_AUDIO_SET_SLOT;
+                c.loop = 1;
+                c.volume = 0.5f;
+                c.pitch = 1.0f;
+                const std::uint64_t b1 = LiveBehavior::audioPlayCount();
+                audio(actx->host, &c);
+                ok &= check(LiveBehavior::audioPlayCount() > b1,
+                            "audio SET_SLOT starts a persistent slot voice", report);
+                const std::uint64_t b2 = LiveBehavior::audioPlayCount();
+                audio(actx->host, &c);
+                ok &= check(LiveBehavior::audioPlayCount() == b2,
+                            "identical SET_SLOT is idempotent (no restart)", report);
+                std::snprintf(c.sound, sizeof(c.sound), "entity/player/walk1");
+                const std::uint64_t b3 = LiveBehavior::audioPlayCount();
+                audio(actx->host, &c);
+                ok &= check(LiveBehavior::audioPlayCount() > b3,
+                            "slot sound change A->B replaces the voice", report);
+                // Runtime-unknown slot + sound id.
+                std::snprintf(c.sound, sizeof(c.sound), "audio.user.weird");
+                c.slotId = gameHash("user.weird.loop");
+                const std::uint64_t b4 = LiveBehavior::audioPlayCount();
+                audio(actx->host, &c);
+                ok &= check(LiveBehavior::audioPlayCount() > b4,
+                            "runtime-unknown audio slot + logical sound accepted",
+                            report);
+                c.op = GAME_AUDIO_STOP_SLOT;
+                audio(actx->host, &c);   // safe stop; no crash
+                const std::uint64_t b5 = LiveBehavior::audioPlayCount();
+                c.slotId = gameHash("never.existed");
+                audio(actx->host, &c);   // stopping a nonexistent slot is a no-op
+                ok &= check(LiveBehavior::audioPlayCount() == b5,
+                            "STOP_SLOT on a nonexistent slot is a safe no-op",
+                            report);
+            }
+        }
+
         EffectRequestV1 jumpReq{};
         jumpReq.effectTypeId = gameHash("effect.jump.sound");
         const std::uint64_t jumpBefore = LiveBehavior::audioPlayCount();
@@ -1288,10 +1356,11 @@ bool runHotCombatSelfTest(std::string& report)
         const bool navRead = uiCtx && uiActor != 0 &&
             uiCtx->dynamicReadComponent(uiCtx->host, uiActor,
                                         HOT_UI_NAV_COMPONENT, &nav, sizeof(nav));
-        ok &= check(navRead && nav.screenId == 0,
+        ok &= check(navRead && nav.screenId == gameHash("screen.server-browser"),
                     "hot navigation state is migratable component state", report);
 
-        // PLAY leaves to a cold screen: hot no longer owns the main menu.
+        // PLAY now routes to the hot server browser (default owner): hot no
+        // longer owns the main menu.
         runtime.runCommand("hotoverlays", "0", LiveBehavior::hostContext(97));
         LiveUi::beginFrame();
         runtime.runDomain(GAME_DOMAIN_UI, 97, 0.016f,
@@ -1501,9 +1570,37 @@ bool runHotCombatSelfTest(std::string& report)
         ok &= check(pRead && pClaim.owned == 1 &&
                         pClaim.screenId == gameHash("screen.pause"),
                     "hot pause claims the screen (cold Main view yields)", report);
-        if (ctx && actor != 0)
+        // Hot UI-sound policy: a click plays a logical sound via audio.play.
+        {
+            GameUiActionV1 snd{};
+            snd.elementId = gameHash("pause.resume");
+            snd.actionType = GAME_UI_ACTION_CLICK;
+            const std::uint64_t before = LiveBehavior::audioPlayCount();
+            LiveBehavior::dispatchGameplayEvent64(gameHash("ui.action"), &snd,
+                                                  sizeof(snd), 122);
+            ok &= check(LiveBehavior::audioPlayCount() > before,
+                        "hot UI-sound policy plays through audio.play", report);
+        }
+        // Pause Settings routes to the hot settings screen with a return target.
+        {
+            GameUiActionV1 go{};
+            go.elementId = gameHash("pause.settings");
+            go.actionType = GAME_UI_ACTION_CLICK;
+            LiveBehavior::dispatchGameplayEvent64(gameHash("ui.action"), &go,
+                                                  sizeof(go), 123);
+            HotUiNavigationStateV1 nav{};
+            const bool navRead = ctx && actor != 0 &&
+                ctx->dynamicReadComponent(ctx->host, actor,
+                                          HOT_UI_NAV_COMPONENT, &nav, sizeof(nav));
+            ok &= check(navRead && nav.screenId == gameHash("screen.settings") &&
+                            nav.previousScreenId == gameHash("screen.pause"),
+                        "pause Settings routes to hot settings with return", report);
+        }
+        if (ctx && actor != 0) {
             ctx->dynamicRemoveComponent(ctx->host, actor,
                                         HOT_PAUSE_STATE_COMPONENT);
+            ctx->dynamicRemoveComponent(ctx->host, actor, HOT_UI_NAV_COMPONENT);
+        }
         LiveUi::beginFrame();
     }
 
@@ -1552,9 +1649,23 @@ bool runHotCombatSelfTest(std::string& report)
         ok &= check(bRead && bClaim.owned == 1 &&
                         bClaim.screenId == gameHash("screen.server-browser"),
                     "hot server browser claims the screen (cold yields)", report);
-        if (ctx && actor != 0)
+        // Generic text input: focus the join-code field, type, and verify the
+        // hot-owned migratable text state updates (backend never owns the text).
+        LiveUi::handlePointerClick(100.0f, 610.0f, 132);
+        LiveUi::handleTextChar('A');
+        LiveUi::handleTextChar('B');
+        HotUiTextStateV1 t{};
+        const bool tRead = ctx && actor != 0 &&
+            ctx->dynamicReadComponent(ctx->host, actor, HOT_UI_TEXT_COMPONENT, &t,
+                                      sizeof(t));
+        ok &= check(tRead && std::strcmp(t.text, "AB") == 0,
+                    "generic text input updates hot-owned bounded text state",
+                    report);
+        if (ctx && actor != 0) {
+            ctx->dynamicRemoveComponent(ctx->host, actor, HOT_UI_TEXT_COMPONENT);
             ctx->dynamicRemoveComponent(ctx->host, actor,
                                         HOT_SERVER_LISTING_COMPONENT);
+        }
         runtime.runCommand("uiscreen", "none", LiveBehavior::hostContext(132));
         LiveUi::beginFrame();
     }

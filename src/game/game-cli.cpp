@@ -83,6 +83,8 @@
 #include "hot-reload/artifact-install-selftest.h"
 #include "hot-reload/production-loop-selftest.h"
 #include "hot-reload/content-resource-selftest.h"
+#include "hot-reload/glb-consumer-selftest.h"
+#include "hot-reload/tool-entity-continuity-selftest.h"
 #include "hot-reload/capability-selftest.h"
 
 extern DuelManager gDuelManager;
@@ -454,6 +456,22 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = runContentResourceSelfTest(report);
         printf("%s", report.c_str());
         printf("[CONTENT RESOURCE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--glb-consumer-selftest") {
+        std::string report;
+        const bool ok = runGlbConsumerSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[GLB CONSUMER SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--tool-entity-continuity-selftest") {
+        std::string report;
+        const bool ok = runToolEntityContinuitySelfTest(report);
+        printf("%s", report.c_str());
+        printf("[TOOL ENTITY CONTINUITY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

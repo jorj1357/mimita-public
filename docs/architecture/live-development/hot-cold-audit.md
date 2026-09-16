@@ -59,7 +59,7 @@ Metric: "if this behavior has a bug, does fixing it still require rebuilding/res
 | late-join bootstrap | server join-accept active-generation + manifest | `GenerationBootstrapV1` gate (client) | logical generation id | gates + cache miss/hit transport + real artifact install **done** | full production-loop F->G | no |
 | remote artifact install | `ArtifactCache` bytes -> `HotReloadSystem::installCandidateArtifact` -> same `loadCandidateFromFile` path | same switch transaction as local builds | content hash + logical generation | real 16.8 MB DLL installs as inactive candidate (selftest) | full-loop two-process proof | no |
 | production loop F->G | real loader + artifact bytes + verify + migration + switch | `--production-loop-selftest` | logical generation id | F=1 -> G=2, entity/component survived | two-process live run | no |
-| logical resource (consumer) | `PresentationResourceProvider` (`project/presentation-resource.h`) — pre-existing logicalId -> contentHash -> handle + loader/retire; render resolves via `handleOf(logicalId)` at use | `ContentArtifactV1`/`ContentArtifactPacket` (`content-artifact.h`) — DUPLICATES the provider | logical resource id -> active content hash | descriptor wire + version/last-good **done**, but TWO OWNERS exist | **UNIFY**: route content publication through `PresentationResourceProvider::apply`; then prove in-world GLB swap | no |
+| logical resource | `PresentationResourceProvider` (single authority) | `ContentArtifactV1`/wire + `publishContentArtifact` bridge; `ResourceRegistry` = transport metadata | logical resource id -> active content hash | unified; publish/cache/last-good/supersede + production `handleOf(HOT_MESH_ROCKET)` A->B + real ECS Tool Entity continuity (same EntityId/actor/owns/equips/ToolRef/gameplay state), malformed/prep last-good, retirement observation, F->G-with-entity, D-after-G, unknown id, unresolved fallback **done** (headless selftest) | PNG + WAV real consumers, resource late-join current-state sync | no |
 | weapon/NPC cold enums | `WeaponBehaviorType`/`WeaponExecutionType`/`WeaponFireMode`, `NpcGoalKind` in cold `weapon-system.cpp`/`server-attack.cpp`/`npc-combat.cpp`/`npc-navigator.cpp`/`npc.cpp` | — | enum values | **closed-world candidate**; authority vs legacy projection unresolved | trace whether cold branches still run | yes |
 
 "no (policy)" = the behavior policy is hot; the remaining cold code is mechanism/fallback.
@@ -1303,3 +1303,55 @@ Migrated:
   first-person/weapon draw; `updateProceduralAnimation` still exists but is no
   longer the local animation policy owner (called only if a movement source path
   runs it).
+
+## Update 2026-09-15 — real ECS Tool Entity resource continuity (GLB A→B)
+
+Proves the GLB consumer gate end-to-end with a REAL object graph, headlessly:
+`--tool-entity-continuity-selftest` PASS.
+
+- REAL TOOL ENTITY: actor `P` and tool `E` are created with the generic
+  `ctx->entityCreate` capability; `E` carries the real `ToolRefState` (tool key),
+  `PresentationState.meshResourceId = HOT_MESH_ROCKET`, and a gameplay component
+  (`ToolContinuityState.shotsFired`). Ownership/equip are the REAL production
+  edges: `relationship.owns-tool` plus `actorStateEquipTool` (which writes
+  `ToolRefState` + `relationship.contains-item` + `relationship.equips-item`).
+- A→B PUBLICATION: only the canonical content path is used —
+  `ContentArtifact` descriptor + `ArtifactCache` bytes → kind validation →
+  `publishContentArtifact` → `PresentationResourceProvider::apply`. The provider
+  `current()->contentHash == B` and `handleOf(HOT_MESH_ROCKET)` returns a new
+  handle B.
+- PRODUCTION RENDER PATH: after each publication the real hot frame order runs
+  (`GAME_DOMAIN_POST_MOVEMENT` → `GAME_DOMAIN_RENDER`), i.e.
+  `hot.presentation-mesh` → `render.mesh` → `submitMesh`, which resolves
+  `handleOf(meshResourceId)`. The new cold hook
+  `PresentationRender::entityMeshResourceId(E)` reports the logical mesh id the
+  production path last resolved for that exact EntityId; it stays
+  `HOT_MESH_ROCKET` while the resolved handle is B.
+- ENTITY CONTINUITY: E/P EntityIds, owns/contains/equips edges, `ToolRefState`
+  key, `meshResourceId`, and the gameplay value are all unchanged across A→B (no
+  recreation, respawn, re-equip, or inventory rebuild). Continues unchanged across
+  the real F→G switch transaction (F=1 → G=2) with B active, and a valid D
+  published after G replaces B on the same logical id and same entity.
+- MALFORMED LAST-GOOD: malformed GLB C is rejected at validation; provider stays
+  B, handle stays B, the entity graph is unchanged, and the render path still
+  resolves B. RUNTIME PREP FAILURE: a deliberately failing loader makes
+  publication fail; B remains active and the entity graph is untouched.
+- RETIREMENT SAFETY: `PresentationResourceProvider::apply` retires the previous
+  handle synchronously at the committed swap boundary; the test observes handle A
+  retired exactly on A→B. The generic render path stores only a **logical** id per
+  entity (`g_entityMeshId`) and resolves `handleOf` at use, so no raw handle can
+  outlive the swap in the single-threaded main loop (GL deletion is
+  driver-deferred). **No explicit GPU fence exists** for a hypothetical future
+  multi-threaded renderer; that is a documented gap, not a current bug, so no
+  GC/fence architecture was added.
+- UNKNOWN LOGICAL RESOURCE: `mesh.user.test-object` (never known at EXE build
+  time) published through the canonical path; a generic entity referencing it
+  resolves in the production render path with no cold enum/case. UNRESOLVED
+  FALLBACK: `mesh.does.not.exist` is a safe skipped draw — the submission is
+  counted, no handle exists, no crash.
+- New cold test hooks (no gameplay semantics): `PresentationRender::debugCreateMesh`,
+  `debugRetireMesh`, `entityMeshResourceId`.
+- Honest boundary: HEADLESS/SELFTEST EVIDENCE ONLY. No rendered frame was
+  observed; retirement has no multi-thread fence; PNG/WAV consumers and resource
+  late-join current-state sync remain. NEXT: PNG (`ui.menu.logo`), WAV
+  (`audio.weapon.rocket.fire`), resource late join, cross-kind unresolved fallback.

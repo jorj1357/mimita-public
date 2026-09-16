@@ -20,6 +20,9 @@ namespace {
 
 const std::uint64_t kScreenPause = gameHash("screen.pause");
 const std::uint64_t kPauseMain = gameHash("pause.main");
+const std::uint64_t kPauseConfirm = gameHash("pause.confirm-leave");
+const std::uint64_t kPauseLeaveConfirm = gameHash("pause.leave.confirm");
+const std::uint64_t kPauseLeaveCancel = gameHash("pause.leave.cancel");
 const std::uint64_t kPauseResume = gameHash("pause.resume");
 const std::uint64_t kPauseSettings = gameHash("pause.settings");
 const std::uint64_t kPauseHelp = gameHash("pause.help");
@@ -66,7 +69,8 @@ void MIMITA_GAME_CALL pauseTick(void* host, std::uint64_t /*tick*/,
     HotPauseStateV1 st{};
     if (!ctx->dynamicReadComponent(ctx->host, entity, HOT_PAUSE_STATE_COMPONENT,
                                    &st, sizeof(st)) ||
-        st.visible == 0 || st.viewHash != kPauseMain)
+        st.visible == 0 || (st.viewHash != kPauseMain &&
+                            st.viewHash != kPauseConfirm))
         return;
     auto ui = reinterpret_cast<RenderUiFn>(
         ctx->resolveCapability(ctx->host, GAME_CAP_RENDER_UI));
@@ -79,12 +83,23 @@ void MIMITA_GAME_CALL pauseTick(void* host, std::uint64_t /*tick*/,
     bg.color[0] = 0.0f; bg.color[1] = 0.0f; bg.color[2] = 0.0f; bg.color[3] = 0.55f;
     ui(ctx->host, &bg);
 
-    emitButton(ui, ctx->host, kPauseResume, "RESUME", 200.0f, 0.2f, 0.6f, 0.3f);
-    emitButton(ui, ctx->host, kPauseSettings, "SETTINGS", 256.0f, 0.3f, 0.4f, 0.7f);
-    emitButton(ui, ctx->host, kPauseHelp, "HELP", 312.0f, 0.4f, 0.4f, 0.5f);
-    emitButton(ui, ctx->host, kPauseDiscord, "DISCORD", 368.0f, 0.4f, 0.3f, 0.6f);
-    emitButton(ui, ctx->host, kPauseInvite, "INVITE", 424.0f, 0.4f, 0.3f, 0.6f);
-    emitButton(ui, ctx->host, kPauseLeave, "LEAVE", 480.0f, 0.7f, 0.3f, 0.3f);
+    if (st.viewHash == kPauseConfirm) {
+        GameUiCommandV1 t{};
+        t.kind = GAME_UI_TEXT;
+        t.x = 500.0f; t.y = 300.0f; t.scale = 0.5f;
+        t.color[0] = t.color[1] = t.color[2] = t.color[3] = 1.0f;
+        std::snprintf(t.text, sizeof(t.text), "Leave this game?");
+        ui(ctx->host, &t);
+        emitButton(ui, ctx->host, kPauseLeaveConfirm, "CONFIRM", 280.0f, 0.7f, 0.3f, 0.3f);
+        emitButton(ui, ctx->host, kPauseLeaveCancel, "CANCEL", 340.0f, 0.4f, 0.4f, 0.5f);
+    } else {
+        emitButton(ui, ctx->host, kPauseResume, "RESUME", 200.0f, 0.2f, 0.6f, 0.3f);
+        emitButton(ui, ctx->host, kPauseSettings, "SETTINGS", 256.0f, 0.3f, 0.4f, 0.7f);
+        emitButton(ui, ctx->host, kPauseHelp, "HELP", 312.0f, 0.4f, 0.4f, 0.5f);
+        emitButton(ui, ctx->host, kPauseDiscord, "DISCORD", 368.0f, 0.4f, 0.3f, 0.6f);
+        emitButton(ui, ctx->host, kPauseInvite, "INVITE", 424.0f, 0.4f, 0.3f, 0.6f);
+        emitButton(ui, ctx->host, kPauseLeave, "LEAVE", 480.0f, 0.7f, 0.3f, 0.3f);
+    }
 
     HotUiClaimV1 claim{};
     claim.screenId = kScreenPause;

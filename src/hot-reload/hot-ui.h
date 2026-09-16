@@ -89,6 +89,17 @@ struct HotServerListingV1 {
     char mode[16];
 };
 
+// Generic hot-owned text-field state (one focused field). The backend never owns
+// the text; hot updates this from ui.action TEXT_INPUT/TEXT_SUBMIT and re-emits
+// the GAME_UI_TEXT_INPUT widget. Bounded (no char* across generations).
+static constexpr std::uint64_t HOT_UI_TEXT_COMPONENT = gameHash("HotUiTextState");
+static constexpr std::uint32_t HOT_UI_TEXT_MAX = 32;
+struct HotUiTextStateV1 {
+    std::uint64_t elementId;   // which field is focused/edited
+    char text[HOT_UI_TEXT_MAX];
+    std::uint32_t reserved;
+};
+
 static constexpr std::uint64_t HOT_PAUSE_STATE_COMPONENT = gameHash("PauseMenuState");
 struct HotPauseStateV1 {
     std::uint64_t viewHash;

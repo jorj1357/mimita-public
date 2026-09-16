@@ -581,7 +581,7 @@ static bool pollPendingServerRoomCode()
 // Consume a hot UI pending action (logical id) and perform the cold secure/
 // screen transition. Tokens/passwords and screen enum transitions stay cold;
 // hot only names the action. Generation-safe (id, not a callback pointer).
-static void consumeHotUiPendingAction(GLFWwindow* win)
+static void consumeHotUiPendingAction(GLFWwindow* win, GameState& state)
 {
     const EntityId entity = Ecs::ensureLocalPlayerEntity();
     if (entity == kInvalidEntityId)
@@ -620,6 +620,18 @@ static void consumeHotUiPendingAction(GLFWwindow* win)
         auth.logout();
     } else if (id == gameHash("serverbrowser.refresh")) {
         MimitaNet::serverBrowserRequestRefresh();
+    } else if (id == gameHash("serverbrowser.connect") ||
+               id == gameHash("serverbrowser.join-code")) {
+        // Cold glue: reuse the existing room-code connect mechanism. The code is
+        // revalidated by the connect path (stale/no-longer-existing code fails
+        // safely there); hot state is advisory.
+        if (pending.value[0] != '\0') {
+            gPendingConnect = {};
+            gPendingConnect.shouldConnect = true;
+            gPendingConnect.roomCode = pending.value;
+            onlineMenuSetActive(false);
+            state = GAME_PLAYING;
+        }
     }
 }
 
@@ -696,7 +708,7 @@ void guiMain(GLFWwindow* win, GameState& state)
         LiveUi::endFrameAndDraw();
         LiveBehavior::drainEvents(64);
     }
-    consumeHotUiPendingAction(win);
+    consumeHotUiPendingAction(win, state);
 
     switch (gGuiMenuState)
     {

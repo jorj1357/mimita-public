@@ -22,6 +22,7 @@ struct AudioEvent {
     float pitch = 1.0f;
     float maxDistance = 30.0f;
     unsigned int ownerId = 0;
+    bool loop = false;
 };
 
 class AudioManager {

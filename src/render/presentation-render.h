@@ -33,6 +33,15 @@ void submitMesh(const GameRenderMeshCommandV1& command);
 // Number of generic mesh submissions observed (verified headlessly).
 std::uint64_t submittedMeshCount();
 
+// Headless test hooks for the resource-version/entity-continuity proof. They
+// allocate/free a debugOnly GpuMesh (no GPU buffers) so a fake provider loader
+// can return a handle that submitMesh can safely inspect, and expose the
+// logical mesh id the production render path last resolved for an entity. No
+// gameplay semantics; the real path is unchanged.
+void* debugCreateMesh();
+void debugRetireMesh(void* handle);
+std::uint64_t entityMeshResourceId(std::uint64_t entity);
+
 // Register an arbitrary logical presentation resource (GLB mesh or image
 // texture) from hot code. The provider owns parsing, validation, generation
 // swap, and last-good preservation; a file-backed resource is re-polled so its

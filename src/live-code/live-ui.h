@@ -40,6 +40,14 @@ bool handlePointerClick(float x, float y, std::uint64_t tick);
 // Number of interactive widgets emitted in the last completed frame.
 std::size_t buttonCount();
 
+// Generic text input: the backend tracks only which hot-emitted text field is
+// focused and turns keystrokes into generic ui.action events. It never owns the
+// text value (hot does). Codepoint 0 = backspace.
+void handleTextChar(unsigned int codepoint);
+void handleTextBackspace();
+void handleTextSubmit();
+bool textInputFocused();
+
 // True when hot UI policy owns the given screen (screenId 0 = any screen), so
 // the cold legacy composition for that screen must yield (one owner).
 bool hotOwnsScreen(std::uint64_t screenId);

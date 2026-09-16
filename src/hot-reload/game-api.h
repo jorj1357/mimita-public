@@ -1520,6 +1520,14 @@ using GameCameraEffectFn = void (MIMITA_GAME_CALL *)(
 // One audio command. `sound` is a logical sound name (resolved by the cold audio
 // backend); the remaining fields are policy the hot system owns. `spatial` uses
 // position + maxDistance falloff; otherwise it is a 2D/UI sound.
+// Generic audio lifecycle ops. One-shot playback plus a logical persistent slot
+// keyed by (ownerEntity, slotId): the hot side owns desired state, the cold side
+// maps it to a physical voice (idempotent SET, safe STOP, entity-death cleanup).
+enum GameAudioOp : std::uint32_t {
+    GAME_AUDIO_PLAY_ONESHOT = 0,   // fire-and-forget
+    GAME_AUDIO_SET_SLOT = 1,       // desired loop state for (owner,slot)
+    GAME_AUDIO_STOP_SLOT = 2,      // stop (owner,slot)
+};
 struct GameAudioCommandV1 {
     char sound[64];
     float position[3];
@@ -1528,6 +1536,11 @@ struct GameAudioCommandV1 {
     float maxDistance;
     std::uint32_t spatial;
     std::uint32_t action;   // reserved: 0 play (loop/stop later)
+    // Generic slot lifecycle (append-only). slotId == 0 => PLAY_ONESHOT.
+    std::uint64_t ownerEntity;  // 0 = global/none
+    std::uint64_t slotId;       // opaque logical slot id (hash), no enum
+    std::uint32_t op;           // GameAudioOp
+    std::uint32_t loop;         // SET_SLOT: 1 = loop
 };
 using GameAudioPlayFn = void (MIMITA_GAME_CALL *)(
     void* host, const GameAudioCommandV1* command);
@@ -1696,6 +1709,11 @@ enum GameUiKind : std::uint32_t {
     GAME_UI_SLIDER = 6,
     // Boolean control. Interaction emits VALUE_CHANGED (0/1) or CLICK.
     GAME_UI_TOGGLE = 7,
+    // Bounded text field. `text` is the current value emitted by hot policy;
+    // `maxValue` is the max length; flags bit0 = masked (password). The backend
+    // tracks only the focused element id and reports keystrokes as generic
+    // ui.action TEXT_INPUT/TEXT_SUBMIT events; it never owns the text value.
+    GAME_UI_TEXT_INPUT = 9,
     // Discrete-choice control: displays `text` (the current option label);
     // `value` is the current option index, `maxValue` = optionCount-1. Clicking
     // emits VALUE_CHANGED with the next index. Hot code owns the option ids and
@@ -1727,6 +1745,9 @@ enum GameUiActionType : std::uint32_t {
     GAME_UI_ACTION_HOVER = 2,
     GAME_UI_ACTION_VALUE_CHANGED = 3,
     GAME_UI_ACTION_FOCUS = 4,
+    // Text keystroke for the focused field: `value` = codepoint (0 = backspace).
+    GAME_UI_ACTION_TEXT_INPUT = 5,
+    GAME_UI_ACTION_TEXT_SUBMIT = 6,
 };
 struct GameUiActionV1 {
     std::uint64_t elementId;   // gameHash("menu.play") etc.

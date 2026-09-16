@@ -812,6 +812,24 @@ std::uint64_t submittedMeshCount()
     return g_submitted;
 }
 
+void* debugCreateMesh()
+{
+    auto* mesh = new GpuMesh();
+    mesh->debugOnly = true;
+    return mesh;
+}
+
+void debugRetireMesh(void* handle)
+{
+    delete static_cast<GpuMesh*>(handle);
+}
+
+std::uint64_t entityMeshResourceId(std::uint64_t entity)
+{
+    auto it = g_entityMeshId.find(static_cast<EntityId>(entity));
+    return it == g_entityMeshId.end() ? 0 : it->second;
+}
+
 std::uint32_t inspectGlbParts(const char* path, std::uint64_t* outPartHashes,
                               std::uint32_t maxOut)
 {

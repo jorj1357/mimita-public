@@ -1132,14 +1132,92 @@ void MIMITA_GAME_CALL capCameraEffect(void*, const GameCameraEffectV1* effect)
     THE_CAMERA.addPunch(effect->pitch * atten, effect->yaw * atten);
 }
 
+// Generic persistent audio slots: desired state keyed by (ownerEntity, slotId);
+// the cold side owns the physical voice (idempotent SET, safe STOP, cleanup on
+// entity death). No raw voice handle crosses the hot boundary.
+struct AudioSlotVoice {
+    std::uint64_t owner;
+    std::uint64_t slot;
+    unsigned int synth;
+    std::string sound;
+};
+static std::vector<AudioSlotVoice> g_audioSlots;
+static unsigned int g_nextSynthOwner = 0x40000000u;
+
 // Generic audio: hot policy emits a logical sound command; the kernel plays it.
 void MIMITA_GAME_CALL capAudioPlay(void*, const GameAudioCommandV1* command)
 {
     if (!command || command->sound[0] == '\0')
         return;
-    ++g_audioPlayCount;
     const std::string name(command->sound,
                            strnlen(command->sound, sizeof(command->sound)));
+
+    if (command->slotId != 0) {
+        EntityRegistry& reg = EntityRegistry::instance();
+        // Entity-death cleanup: terminate slots whose owner no longer exists.
+        for (auto it = g_audioSlots.begin(); it != g_audioSlots.end();) {
+            if (it->owner != 0 &&
+                !reg.alive(static_cast<EntityId>(it->owner))) {
+                AudioManager::instance().stopOwner(it->synth);
+                it = g_audioSlots.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        if (command->op == GAME_AUDIO_STOP_SLOT) {
+            for (auto it = g_audioSlots.begin(); it != g_audioSlots.end(); ++it) {
+                if (it->owner == command->ownerEntity &&
+                    it->slot == command->slotId) {
+                    AudioManager::instance().stopOwner(it->synth);
+                    g_audioSlots.erase(it);
+                    break;
+                }
+            }
+            return;
+        }
+        // SET_SLOT (idempotent): same desired sound => no-op; else replace.
+        for (AudioSlotVoice& v : g_audioSlots) {
+            if (v.owner != command->ownerEntity || v.slot != command->slotId)
+                continue;
+            if (v.sound == name)
+                return;   // already playing this desired state
+            AudioManager::instance().stopOwner(v.synth);
+            v.sound = name;
+            v.synth = ++g_nextSynthOwner;
+            AudioEvent e;
+            e.name = name;
+            e.world = command->spatial != 0;
+            e.position = glm::vec3(command->position[0], command->position[1],
+                                   command->position[2]);
+            e.volume = command->volume > 0.0f ? command->volume : 1.0f;
+            e.pitch = command->pitch > 0.0f ? command->pitch : 1.0f;
+            e.maxDistance = command->maxDistance > 0.0f ? command->maxDistance : 50.0f;
+            e.ownerId = v.synth;
+            e.loop = command->loop != 0;
+            AudioManager::instance().play(e);
+            ++g_audioPlayCount;   // replaced voice
+            return;
+        }
+        const unsigned int synth = ++g_nextSynthOwner;
+        AudioEvent e;
+        e.name = name;
+        e.world = command->spatial != 0;
+        e.position = glm::vec3(command->position[0], command->position[1],
+                               command->position[2]);
+        e.volume = command->volume > 0.0f ? command->volume : 1.0f;
+        e.pitch = command->pitch > 0.0f ? command->pitch : 1.0f;
+        e.maxDistance = command->maxDistance > 0.0f ? command->maxDistance : 50.0f;
+        e.ownerId = synth;
+        e.loop = command->loop != 0;
+        AudioManager::instance().play(e);
+        g_audioSlots.push_back(
+            {command->ownerEntity, command->slotId, synth, name});
+        ++g_audioPlayCount;   // started voice
+        return;
+    }
+    // One-shot playback.
+    ++g_audioPlayCount;
+
     if (command->spatial != 0) {
         playWorldSound(name, glm::vec3(command->position[0], command->position[1],
                                        command->position[2]),

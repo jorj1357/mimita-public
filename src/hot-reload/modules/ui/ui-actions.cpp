@@ -17,6 +17,8 @@
 #include <cstdio>
 #include <cstring>
 
+// (cstring used for strlen in text handling)
+
 namespace {
 
 // Logical screens (hashes only; no kernel enum).
@@ -160,6 +162,41 @@ void MIMITA_GAME_CALL onUiAction(void* host, const GameEventV1* event)
     if (!ctx || !action)
         return;
 
+    // Text keystroke / submit for the focused field: hot owns the text value.
+    if (action->actionType == GAME_UI_ACTION_TEXT_INPUT ||
+        action->actionType == GAME_UI_ACTION_TEXT_SUBMIT) {
+        GameSharedStateV1* shared = sharedState(ctx);
+        const std::uint64_t e = shared ? shared->localPlayerEntity : 0;
+        if (e == 0 || !ctx->dynamicWriteComponent)
+            return;
+        HotUiTextStateV1 t{};
+        if (!ctx->dynamicReadComponent ||
+            !ctx->dynamicReadComponent(ctx->host, e, HOT_UI_TEXT_COMPONENT, &t,
+                                       sizeof(t)))
+            t = HotUiTextStateV1{};
+        if (t.elementId != action->elementId) {
+            t.elementId = action->elementId;
+            t.text[0] = '\0';
+        }
+        if (action->actionType == GAME_UI_ACTION_TEXT_INPUT) {
+            const std::size_t len = std::strlen(t.text);
+            const int cp = (int)action->value;
+            if (cp == 0) {
+                if (len > 0)
+                    t.text[len - 1] = '\0';
+            } else if (cp >= 32 && cp < 127 && len < HOT_UI_TEXT_MAX - 1) {
+                t.text[len] = (char)cp;
+                t.text[len + 1] = '\0';
+            }
+        }
+        ctx->dynamicWriteComponent(ctx->host, e, HOT_UI_TEXT_COMPONENT, &t,
+                                   sizeof(t));
+        if (action->actionType == GAME_UI_ACTION_TEXT_SUBMIT)
+            requestColdAction(ctx, gameHash("serverbrowser.join-code"), t.text);
+        action->handled = 1;
+        return;
+    }
+
     // Setting VALUE_CHANGED: write through the generic setting seam (the kernel
     // validates/clamps; the value stays engine-owned).
     if (action->actionType == GAME_UI_ACTION_VALUE_CHANGED) {
@@ -194,20 +231,85 @@ void MIMITA_GAME_CALL onUiAction(void* host, const GameEventV1* event)
     if (action->actionType != GAME_UI_ACTION_CLICK)
         return;
     const std::uint64_t id = action->elementId;
+
+    // Hot UI-sound policy: pick the logical sound id here (no cold widget knows
+    // product sounds). Cold owns decode/mix/device only.
+    if (ctx->resolveCapability) {
+        using AudioPlayFn = void (MIMITA_GAME_CALL *)(void*,
+                                                      const GameAudioCommandV1*);
+        auto play = reinterpret_cast<AudioPlayFn>(
+            ctx->resolveCapability(ctx->host, GAME_CAP_AUDIO_PLAY));
+        if (play) {
+            const char* sound = "audio.ui.click";
+            if (id == gameHash("menu.back") ||
+                id == gameHash("pause.leave.cancel"))
+                sound = "audio.ui.back";
+            else if (id == gameHash("menu.play") ||
+                     id == gameHash("serverbrowser.connect") ||
+                     id == gameHash("serverbrowser.join-code") ||
+                     id == gameHash("pause.resume"))
+                sound = "audio.ui.confirm";
+            GameAudioCommandV1 cmd{};
+            std::snprintf(cmd.sound, sizeof(cmd.sound), "%s", sound);
+            cmd.volume = 0.8f;
+            cmd.pitch = 1.0f;
+            cmd.spatial = 0;
+            play(ctx->host, &cmd);
+        }
+    }
     if (id == gameHash("menu.back")) {
-        writeScreen(ctx, kScreenMainMenu);
+        // Generic return navigation: settings opened from pause returns to pause.
+        GameSharedStateV1* shared = sharedState(ctx);
+        const std::uint64_t e = shared ? shared->localPlayerEntity : 0;
+        HotUiNavigationStateV1 nav{};
+        if (e != 0 && ctx->dynamicReadComponent)
+            ctx->dynamicReadComponent(ctx->host, e, HOT_UI_NAV_COMPONENT, &nav,
+                                      sizeof(nav));
+        if (nav.previousScreenId == gameHash("screen.pause"))
+            writeScreen(ctx, gameHash("screen.pause"));
+        else
+            writeScreen(ctx, kScreenMainMenu);
         action->handled = 1;
         return;
     }
-    if (id == gameHash("pause.resume") || id == gameHash("pause.settings") ||
-        id == gameHash("pause.help") || id == gameHash("pause.leave") ||
-        id == gameHash("pause.discord") || id == gameHash("pause.invite")) {
+    if (id == gameHash("pause.settings")) {
+        // Route to the existing hot settings screen, remembering the return.
+        GameSharedStateV1* shared = sharedState(ctx);
+        const std::uint64_t e = shared ? shared->localPlayerEntity : 0;
+        HotUiNavigationStateV1 nav{};
+        if (e != 0 && ctx->dynamicReadComponent)
+            ctx->dynamicReadComponent(ctx->host, e, HOT_UI_NAV_COMPONENT, &nav,
+                                      sizeof(nav));
+        nav.previousScreenId = gameHash("screen.pause");
+        nav.screenId = kScreenSettings;
+        if (e != 0 && ctx->dynamicWriteComponent)
+            ctx->dynamicWriteComponent(ctx->host, e, HOT_UI_NAV_COMPONENT, &nav,
+                                       sizeof(nav));
+        action->handled = 1;
+        return;
+    }
+    if (id == gameHash("pause.resume") || id == gameHash("pause.help") ||
+        id == gameHash("pause.leave") || id == gameHash("pause.discord") ||
+        id == gameHash("pause.invite") || id == gameHash("pause.leave.confirm") ||
+        id == gameHash("pause.leave.cancel")) {
         requestColdAction(ctx, id);   // cold modal mechanism performs it
         action->handled = 1;
         return;
     }
     if (id == gameHash("serverbrowser.refresh")) {
         requestColdAction(ctx, id);   // cold discovery refresh
+        action->handled = 1;
+        return;
+    }
+    if (id == gameHash("serverbrowser.join-code")) {
+        GameSharedStateV1* shared = sharedState(ctx);
+        const std::uint64_t e = shared ? shared->localPlayerEntity : 0;
+        HotUiTextStateV1 t{};
+        if (e != 0 && ctx->dynamicReadComponent &&
+            ctx->dynamicReadComponent(ctx->host, e, HOT_UI_TEXT_COMPONENT, &t,
+                                      sizeof(t)) &&
+            t.text[0] != '\0')
+            requestColdAction(ctx, gameHash("serverbrowser.join-code"), t.text);
         action->handled = 1;
         return;
     }
@@ -230,10 +332,12 @@ void MIMITA_GAME_CALL onUiAction(void* host, const GameEventV1* event)
     }
     if (id == kMenuSettings) {
         writeScreen(ctx, kScreenSettings);   // hot owns settings composition
-    } else if (id == kMenuPlay || id == kMenuQuit) {
-        // Leaving to a cold screen: drop the hot screen so the hot shell does not
-        // overlap the cold screen; cold performs the transition.
-        writeScreen(ctx, 0);
+    } else if (id == kMenuPlay) {
+        // Hot owns the server browser by default (list + join + join-by-code +
+        // refresh). Cold online-menu yields when hot owns the screen.
+        writeScreen(ctx, gameHash("screen.server-browser"));
+    } else if (id == kMenuQuit) {
+        writeScreen(ctx, 0);   // leaving to a cold mechanism
         requestColdAction(ctx, id);
     } else if (id == kAccountSignIn || id == kAccountSignUp ||
                id == kAccountSwitch || id == kAccountLogout) {
@@ -431,6 +535,10 @@ const MimitaHotPackage::SchemaRegistrar s_menuShellSchema{
     {HOT_MENU_SHELL_COMPONENT, gameHash("MenuShellState.v1"),
      sizeof(MenuShellStateV1), 4, GAME_COPY_RUNTIME_ONLY, GAME_NET_NONE,
      "MenuShellState", 1, 0}};
+const MimitaHotPackage::SchemaRegistrar s_uiTextSchema{
+    {HOT_UI_TEXT_COMPONENT, gameHash("HotUiTextState.v1"),
+     sizeof(HotUiTextStateV1), 8, GAME_COPY_RUNTIME_ONLY, GAME_NET_NONE,
+     "HotUiTextState", 1, 0}};
 const MimitaHotPackage::SchemaRegistrar s_pendingActionSchema{
     {HOT_UI_PENDING_ACTION_COMPONENT, gameHash("HotUiPendingAction.v1"),
      sizeof(HotUiPendingActionV1), 8, GAME_COPY_RUNTIME_ONLY, GAME_NET_NONE,

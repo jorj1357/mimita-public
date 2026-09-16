@@ -4,6 +4,7 @@
 #include "gui/gui-bindings.h"
 #include "gui/hud/chat-window.h"
 #include "auth/auth-popup.h"
+#include "live-code/live-ui.h"
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -192,6 +193,11 @@ void gameInit(int argc, char** argv, Engine& engine)
     glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 
     glfwSetCharCallback(engine.window(), [](GLFWwindow*, unsigned int codepoint) {
+        // A focused hot text field owns character input (generic ui.action).
+        if (LiveUi::textInputFocused()) {
+            LiveUi::handleTextChar(codepoint);
+            return;
+        }
         authPopupHandleChar(codepoint);
         signInMenuHandleChar(codepoint);
         if (avatarEditorHandleChar(codepoint)) return;
@@ -208,6 +214,17 @@ void gameInit(int argc, char** argv, Engine& engine)
         (void)scancode;
         (void)win;
         if (action == GLFW_PRESS || action == GLFW_REPEAT) {
+            // A focused hot text field owns backspace/enter (generic ui.action).
+            if (LiveUi::textInputFocused()) {
+                if (key == GLFW_KEY_BACKSPACE) {
+                    LiveUi::handleTextBackspace();
+                    return;
+                }
+                if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
+                    LiveUi::handleTextSubmit();
+                    return;
+                }
+            }
             authPopupHandleKey(key, action);
             signInMenuHandleKey(key, action);
             if (avatarEditorHandleKey(key, action, mods)) return;

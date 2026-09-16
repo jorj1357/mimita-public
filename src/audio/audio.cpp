@@ -143,7 +143,8 @@ static const std::vector<uint8_t>& getCachedSoundData(const std::string& name)
 }
 
 static void startSound(const std::string& name, float volume, float pitch,
-                       const glm::vec3* position, float maxDistance)
+                       const glm::vec3* position, float maxDistance,
+                       bool loop = false)
 {
     MIMITA_PERF_SCOPE("Audio::StartSound");
     { MIMITA_PERF_SCOPE("Audio::StartSound::InitAudio"); initAudioOnce(); }
@@ -181,6 +182,8 @@ static void startSound(const std::string& name, float volume, float pitch,
     active->pitch = pitch;
     active->maxDistance = maxDistance;
     active->createdTime = gAudioTime;
+    if (loop)
+        ma_sound_set_looping(&active->sound, MA_TRUE);
     { MIMITA_PERF_SCOPE("Audio::StartSound::ConfigureVoice");
       const PlayerSettings& settings = GetPlayerSettings();
       ma_sound_set_volume(&active->sound, std::max(0.0f, volume * settings.masterVolume * settings.sfxVolume));
@@ -323,11 +326,13 @@ void AudioManager::play(const AudioEvent& event)
                 listenerFwd.x, listenerFwd.y, listenerFwd.z);
 
     if (event.world) {
-        startSound(event.name, event.volume, event.pitch, &event.position, event.maxDistance);
+        startSound(event.name, event.volume, event.pitch, &event.position,
+                   event.maxDistance, event.loop);
         if (!gActiveSounds.empty())
             gActiveSounds.back()->ownerId = event.ownerId;
     } else {
-        startSound(event.name, event.volume, event.pitch, nullptr, 0.0f);
+        startSound(event.name, event.volume, event.pitch, nullptr, 0.0f,
+                   event.loop);
     }
 }
 

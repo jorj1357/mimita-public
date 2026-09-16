@@ -181,8 +181,10 @@ bool requestAction(GLFWwindow* window, std::uint64_t actionId)
     if (actionId == gameHash("pause.settings")) { gView = View::Settings; return true; }
     if (actionId == gameHash("pause.help")) { gView = View::Help; return true; }
     if (actionId == gameHash("pause.leave")) { gView = View::ConfirmLeave; return true; }
-    if (actionId == gameHash("pause.leave-confirm")) { leaveRoom(window); return true; }
-    if (actionId == gameHash("pause.cancel")) { gView = View::Main; return true; }
+    if (actionId == gameHash("pause.leave-confirm") ||
+        actionId == gameHash("pause.leave.confirm")) { leaveRoom(window); return true; }
+    if (actionId == gameHash("pause.cancel") ||
+        actionId == gameHash("pause.leave.cancel")) { gView = View::Main; return true; }
     if (actionId == gameHash("pause.discord")) {
         ShellExecuteA(nullptr, "open", "https://discord.gg/sY8QHbfG9D", nullptr,
                       nullptr, SW_SHOWNORMAL);

@@ -24,6 +24,9 @@
 #include "physics/config.h"
 #include "game/spawn-override.h"
 #include "audio/audio.h"
+#include "live-code/live-behavior.h"
+#include "hot-reload/game-api.h"
+#include <cstdio>
 #include "effects/effect-part.h"
 #include "devtools/dev-npc-selection.h"
 #include "combat/weapon-registry.h"
@@ -317,7 +320,17 @@ void NpcSystem::spawnNpc(float difficulty)
                    overridePos.x, overridePos.y, overridePos.z);
     }
     npcs.emplace_back(id, d, spawnPos);
-    AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, spawnPos, 0.8f, 1.0f, 35.0f, id});
+    // NPC spawn audio policy is hot (generic actor-sound fact); cold falls back.
+    {
+        EffectRequestV1 snd{};
+        snd.effectTypeId = gameHash("effect.actor.sound");
+        snd.position[0] = spawnPos.x;
+        snd.position[1] = spawnPos.y;
+        snd.position[2] = spawnPos.z;
+        std::snprintf(snd.text, sizeof(snd.text), "%s", "actor.spawn");
+        if (!LiveBehavior::dispatchEffectRequest(snd, 0))
+            AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, spawnPos, 0.8f, 1.0f, 35.0f, id});
+    }
     Debug::log(Debug::Category::General, "[NPC] spawned id=%u at (%.2f, %.2f, %.2f) (global diff=%.1f)\n",
                id, spawnPos.x, spawnPos.y, spawnPos.z, d);
 }
@@ -328,7 +341,16 @@ void NpcSystem::spawnNpc(uint32_t id, float difficulty, glm::vec3 spawnPos,
     Perf::ScopedTimer _spawnTimer("NpcSpawn");
     float d = globalDifficulty_ > 0.0f ? globalDifficulty_ : difficulty;
     npcs.emplace_back(id, d, spawnPos, "revolver", customName);
-    AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, spawnPos, 0.8f, 1.0f, 35.0f, id});
+    {
+        EffectRequestV1 snd{};
+        snd.effectTypeId = gameHash("effect.actor.sound");
+        snd.position[0] = spawnPos.x;
+        snd.position[1] = spawnPos.y;
+        snd.position[2] = spawnPos.z;
+        std::snprintf(snd.text, sizeof(snd.text), "%s", "actor.spawn");
+        if (!LiveBehavior::dispatchEffectRequest(snd, 0))
+            AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, spawnPos, 0.8f, 1.0f, 35.0f, id});
+    }
     Debug::log(Debug::Category::General, "[NPC] spawned id=%u at (%.2f, %.2f, %.2f) (network, diff=%.1f)\n",
                id, spawnPos.x, spawnPos.y, spawnPos.z, d);
 }
