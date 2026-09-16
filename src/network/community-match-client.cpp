@@ -201,6 +201,11 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         identity.team = packet.participantTeams[i];
         identity.roleIndex = packet.participantRoles[i];
         identity.state = packet.participantStates[i];
+        identity.kills = packet.participantKills[i];
+        identity.deaths = packet.participantDeaths[i];
+        identity.score = packet.participantScores[i];
+        std::snprintf(identity.name, sizeof(identity.name), "%s",
+                      packet.participantNames[i]);
         mActors.push_back(identity);
     }
 

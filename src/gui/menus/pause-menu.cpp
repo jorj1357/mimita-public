@@ -20,6 +20,7 @@
 #include <shellapi.h>
 
 #include "debug/debug-log.h"
+#include "hot-reload/game-api.h"
 #include "duel/duel-history.h"
 #include "duel/duel-queue.h"
 #include "game/game-state.h"
@@ -161,6 +162,40 @@ void handleKey(GLFWwindow* window, int key, int action)
     if (gView == View::ConfirmLeave) gView = View::Main;
     else if (gView == View::Settings) gView = View::Main;
     else close(window);
+}
+
+std::uint64_t viewHash()
+{
+    switch (gView) {
+    case View::ConfirmLeave: return gameHash("pause.confirm-leave");
+    case View::Settings: return gameHash("pause.settings");
+    case View::Help: return gameHash("pause.help");
+    case View::Main:
+    default: return gameHash("pause.main");
+    }
+}
+
+bool requestAction(GLFWwindow* window, std::uint64_t actionId)
+{
+    if (actionId == gameHash("pause.resume")) { close(window); return true; }
+    if (actionId == gameHash("pause.settings")) { gView = View::Settings; return true; }
+    if (actionId == gameHash("pause.help")) { gView = View::Help; return true; }
+    if (actionId == gameHash("pause.leave")) { gView = View::ConfirmLeave; return true; }
+    if (actionId == gameHash("pause.leave-confirm")) { leaveRoom(window); return true; }
+    if (actionId == gameHash("pause.cancel")) { gView = View::Main; return true; }
+    if (actionId == gameHash("pause.discord")) {
+        ShellExecuteA(nullptr, "open", "https://discord.gg/sY8QHbfG9D", nullptr,
+                      nullptr, SW_SHOWNORMAL);
+        return true;
+    }
+    if (actionId == gameHash("pause.invite")) {
+        glfwSetClipboardString(window, "https://www.mimita.fun/download");
+        NotificationSystem::instance().push("Code copied!",
+                                            "Code: https://www.mimita.fun/download",
+                                            180, {});
+        return true;
+    }
+    return false;
 }
 
 void render(GLFWwindow* window)

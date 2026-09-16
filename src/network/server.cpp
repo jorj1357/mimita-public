@@ -801,7 +801,11 @@ int runServer(const LaunchOptions& options)
                              i < m.requiredSchemaCount &&
                              i < GENERATION_MANIFEST_MAX_REQUIREMENTS;
                              ++i)
+                        {
                             manifestPkt.requiredSchemas[i] = m.requiredSchemas[i];
+                            manifestPkt.requiredSchemaVersions[i] =
+                                m.requiredSchemaVersions[i];
+                        }
                         for (uint32_t i = 0;
                              i < m.requiredDependencyCount &&
                              i < GENERATION_MANIFEST_MAX_REQUIREMENTS;

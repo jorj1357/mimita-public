@@ -875,6 +875,188 @@ See `docs/architecture/live-development/hot-cold-audit.md` for the current map.
 - Still missing: migration preparation, multi-peer quorum over real transport,
   late join, full-loop transaction, two-process/raw-cpp proof.
 
+## Round 55 (2026-09-15, migration preparation + multi-peer quorum transport) — implemented
+
+- **Migration preparation is real and gates READY**: `hot-reload/migration-prep.h`
+  (`prepareMigration(F,G,facts)` → `NoMigrationRequired | Prepared(plan) | Failed`).
+  It reuses the EXISTING `DynamicComponentStore` schema/version + migration
+  substrate: it compares the candidate's declared schema versions against LIVE
+  stored versions (`maxStoredVersion`) and resolves whether a registered path
+  exists (`hasMigration`). Plans store only LOGICAL identities (schema id +
+  from/to version), never function pointers, so they cannot dangle across an
+  unload; commit resolves against the still-registered migrations atomically via
+  the existing `applySchemaUpdate`.
+- Manifest now carries `requiredSchemaVersions[]` (from `GameComponentSchemaDescriptorV1.version`
+  via `GenericRuntime::schemaAt`), so the peer prepares against the candidate's
+  declared target versions.
+- Client READY path: hash → manifest verify → `verifyGeneration` → `prepareMigration`
+  against the ACTIVE generation F → READY only if verify passes AND prepare is not
+  `Failed`. Server likewise gates its own switch on a local prepare.
+- REAL multi-peer quorum over sockets (server + A + B) in
+  `--transport-generation-selftest`: A READY + B not → no quorum, no SWITCH; B
+  READY → quorum true → SWITCH scheduled; disconnect after commit does not cancel
+  G; disconnect before commit recomputes quorum over survivors.
+- `--migration-prep-selftest` PASS 14/14; transport PASS 21; full suite 37 tests,
+  only the concurrent UI-agent `--hot-combat-selftest` (hot navigation) fails.
+- Still missing: late join, full game-loop transaction, live/two-process proof.
+
+## Round 56 (2026-09-15, plan explicitly in the switch transaction) — implemented
+
+- `hot-reload/switch-transaction.h`: `validateSwitchTransaction` — a missing,
+  stale, or invalid plan is an explicit rejection (`PlanMissing` / `PlanStale` /
+  `PlanInvalid` / `NoCandidate`). A no-op plan is still validated for its exact
+  F->G identity; only an initial load (no active source) needs no plan.
+- `HotReloadSystem::tryActivateCandidate` now runs the switch transaction before
+  any registration/state commit: it registers the candidate's dynamic migrations
+  (additive), builds the authoritative local F->G plan from the loaded candidate's
+  declared schemas vs LIVE stored versions, cross-checks any peer-supplied plan
+  (`setCandidateMigrationPlan`), and rejects the switch on mismatch. Only then does
+  `GenericRuntime::activate` apply the atomic schema update and the generation get
+  published.
+- Atomicity: `applySchemaUpdate` stages migrated blobs and returns false WITHOUT
+  mutation on failure, and it runs before any registration commit — so G can never
+  execute against F state and F survives a failed commit.
+- `--switch-transaction-selftest` PASS 11/11 (validation matrix, T-1/T/T+1 atomic
+  migration+publication, stale/missing rejection with no mutation, no-op switch).
+  Full suite 38/38.
+- Still missing: late join, full game-loop transaction, live/two-process proof.
+
+## Round 57 (2026-09-15, late-join generation bootstrap) — implemented
+
+- `hot-reload/generation-bootstrap.h`: `GenerationBootstrapV1` state machine
+  (Idle/AwaitingMetadata/Acquiring/Verifying/Ready/Failed). Bootstrap means "become
+  locally ACTIVE on the generation the server is ALREADY running" — NOT the READY
+  path (no fake SWITCH for a late joiner). Stale packets/generations cannot advance
+  or complete a bootstrap; `onServerActiveChanged` re-targets and a late completion
+  for the old target cannot activate.
+- Server: on join-accept it advertises the ACTIVE generation
+  (`CODE_GENERATION_PHASE_ACTIVE_BOOTSTRAP = 3`) + the ACTIVE manifest
+  (`HotReloadSystem::buildActiveManifest`). Client enters bootstrap, acquires the
+  artifact by hash, verifies the manifest against real local facts, and only then
+  can participate.
+- Client gating: `processSnapshotEntities` ignores world snapshots and the input
+  sender blocks while bootstrap is active/failed; participation requires
+  `state == Ready && localActive == serverActive`. A fresh joiner runs no F->G
+  migration (load/activate G then sync G world).
+- `--generation-bootstrap-selftest` PASS 16/16; real transport late join (cache
+  miss transfers bytes; cache hit transfers zero chunks and still verifies) PASS.
+  Full suite 39/39.
+- Honest gap: the client does not yet install the downloaded artifact into
+  `HotReloadSystem` (so `codeLoaded` is only true once that exists) — the bootstrap
+  gates and server advertisement are real; the artifact-install step and the full
+  production-loop transaction remain.
+- Next: artifact install into the loader, then the full production-loop F->G
+  transaction; then distributed resources.
+
+## Round 58 (2026-09-15, remote artifact install into the real loader) — implemented
+
+- `HotReloadSystem::installCandidateArtifact(bytes, logicalGeneration, hash, err)`:
+  hash-gates the bytes, stages an immutable generation-specific DLL copy, and
+  loads it through the SAME `loadCandidateFromFile` path as a local build
+  (API/ABI + self-test) as a real INACTIVE candidate. No remote-only loader; the
+  candidate representation is identical (module, api, package descriptor) so the
+  switch transaction, migration plan, and activation all apply unchanged.
+- `pollAndAdvance` coordinated-switch branch now activates either a locally built
+  `candidateReady_` candidate or a `remoteCandidateInstalled_` downloaded one at
+  the agreed tick. The immediate path is unchanged, so a remote candidate is never
+  activated before its switch boundary.
+- Client wiring: after artifact commit, the verified bytes are installed into the
+  loader; late-join bootstrap `codeLoaded` now comes from the REAL install
+  (`hasInstalledCandidate()`), and a coordinated READY additionally requires the
+  install to have succeeded.
+- `--artifact-install-selftest` PASS: the actual 16.8 MB `build/mimita-game.dll`
+  installs as a real inactive candidate via the loader; a tampered artifact is
+  rejected before load. Full suite 40/40.
+- Still missing: full production-loop F->G with same-session/entity assertions;
+  raw-cpp/two-process proof. Then distributed content (`ContentArtifactV1`).
+
+## Round 59 (2026-09-15, production-loop F->G + primitive cold-boundary audit)
+
+- `--production-loop-selftest` PASS: real `HotReloadSystem` startup (F active),
+  real artifact bytes (build/mimita-game.dll), real manifest + `verifyGeneration`,
+  real `prepareMigration` against live state, real `installCandidateArtifact`,
+  real coordinated switch + `tryActivateCandidate`, F=1 -> G=2, and the persistent
+  dynamic component on its EntityId SURVIVED the generation change. This is the
+  in-process production-loop proof (no handler shortcuts).
+- Still no two-process interactive raw-cpp run (live-proof debt).
+- Primitive audit (first pass): capabilities are 20 and mechanism-shaped
+  (physics.move, effect.spawn, projectile.spawn, damage.apply, render.mesh/ui,
+  audio.play, socket.query, setting.get/set, world.project, resource.register,
+  match.round-result, map.anchors, actor.spawn, ...). No `rocket.fire` /
+  `bomb.defuse` / `zombie.spawn` capability.
+- Cold closed-world candidates found: `combat/weapon-types.h`
+  (`WeaponBehaviorType`/`WeaponExecutionType`/`WeaponFireMode`) still used by cold
+  `weapon-system.cpp`, `server-attack.cpp`, `npc-combat.cpp`, `weapon-data.cpp`;
+  `npc/npc-goal.h` (`NpcGoalKind`) used by cold `npc-navigator.cpp`/`npc.cpp`.
+  Whether these are still authoritative (vs legacy projection) is the next audit
+  question and the largest likely cold owner.
+- ArtifactCache/transport: opaque content-hash bytes; no code-specific transport
+  assumptions observed (DLL vs PNG/GLB/WAV agnostic).
+- Next: `ContentArtifactV1` + PNG live publication + malformed last-good; then GLB,
+  WAV; then trace the weapon/NPC enums to decide whether they are real cold owners.
+
+## Round 60 (2026-09-15, generic content artifact primitive) — implemented
+
+- `hot-reload/content-artifact.h`: `ContentArtifactV1 { logicalResourceId,
+  resourceKind, contentHash, byteSize }`, `ResourceVersionState { activeHash,
+  candidateHash, lastGoodHash }`, `ResourceRegistry` (`announceCandidate`,
+  `publishCandidate` / `publishCandidateFromCache`, `resolve`), and low-level
+  structural validators for Code (MZ), PNG (signature+IHDR), GLB (glTF v2), WAV
+  (RIFF/WAVE). `resourceKind` selects only the validator; no gameplay semantics.
+- Reuses the EXISTING `ArtifactCache` for immutable bytes: no new transfer, no
+  Texture/Mesh/Audio transfer stacks. The existing `ArtifactRequestPacket` /
+  `ArtifactBegin` / `ArtifactChunk` already carry an opaque content hash, so the
+  descriptor rides the same path (logical id in `logicalGenerationId`).
+- Publication is atomic from `resolve()`'s perspective; a superseded or malformed
+  candidate cannot overwrite the active mapping; last-good is preserved.
+- `--content-resource-selftest` PASS 17/17: PNG/GLB/WAV live publish A->B
+  (last-good A), cache-hit publish with zero chunks, malformed candidate keeps
+  last-good, superseded candidate rejected, stable logical identity, generic kind
+  validator selection.
+- Next: carry the descriptor over the real socket and publish a real in-world GLB
+  on the existing Tool Entity; then the rocket multi-axis + runtime-unknown-tool
+  falsifications; then trace the cold weapon/NPC enums.
+
+## Round 62 (2026-09-15, tool render-path trace + registry collision) — audit
+
+- Traced the real tool render path: `PresentationState.meshResourceId` is the
+  authoritative LOGICAL identity; the draw path resolves it at use via
+  `PresentationResourceProvider::instance().handleOf(meshResourceId)`
+  (`presentation-render.cpp:631,660,690`; `presentation-entities.cpp:318`). The
+  required invariant (logical id kept, handle resolved at use) largely already
+  holds.
+- **COLLISION FOUND:** `MimitaRuntime::PresentationResourceProvider`
+  (`project/presentation-resource.h`) is ALREADY the generic logical-resource
+  resolver (logicalId -> contentHash -> opaque handle + loader/retire + apply).
+  My Round 60/61 `MimitaRuntime::ResourceRegistry` (`hot-reload/content-artifact.h`)
+  DUPLICATES it. Must UNIFY: route `ContentArtifactV1` publication through
+  `PresentationResourceProvider::apply(logicalId, contentHash)`; keep one owner.
+- GLB in-world consumer NOT proven this pass; no runtime change.
+- NEXT (immediate): unify the resource owner, then prove the live GLB swap on an
+  equipped Tool Entity (same EntityId/equip), malformed last-good in the real
+  render path, F->G with the resource active, and unknown `mesh.user.test-object`.
+
+## Round 61 (2026-09-15, content descriptor on the real wire) — implemented
+
+- `ContentArtifactPacket` (PACKET_CONTENT_ARTIFACT = 82), bounded: logical
+  resource id + kind + byteSize + contentHash + monotonic token. Distinct from
+  `CodeGenerationPacket` (no ABI/capabilities/schemas/coordinated switch).
+- Client routing: on descriptor receipt, `ResourceRegistry::announceCandidate`;
+  cache hit -> validate/publish immediately; cache miss -> request via the
+  EXISTING `ArtifactRequest`/`Begin`/`Chunk` path (logical id in
+  `logicalGenerationId`). Completed bytes for a pending logical resource route to
+  `publishCandidateFromCache` instead of the code loader
+  (`pendingLogicalIdForHash`).
+- Transport selftest: descriptor crosses a real OS loopback socket; content cache
+  miss transfers bytes -> validate -> publish; cache hit publishes with zero
+  chunks; a superseded descriptor cannot overwrite the newer content version.
+  (All 5 content-wire checks PASS; `--transport-generation-selftest` PASS.)
+- Still missing (next): real in-world consumers (Tool Entity GLB swap with same
+  EntityId/equip, live UI PNG, live WAV), renderer per-frame logical re-resolution
+  audit, resource late-join current-mapping manifest, resource fallback when
+  unresolved, rocket multi-axis + unknown-tool falsifications, weapon/NPC enum
+  classification.
+
 ## Round 10 (2026-09-14, generic runtime state replication) — implemented
 
 - One opaque envelope (`PACKET_DYNAMIC_COMPONENT`, `dynamic-replication.*`) carries
@@ -913,6 +1095,165 @@ polish. A subsystem counts as **migrated** when:
 
 Visual/feel parity can be improved afterward. Do not polish animation/blending
 before ownership has moved.
+
+## Round 58 (2026-09-15, generic server listings + hot server browser) — source implemented
+
+- Generic listing representation (entity/component projection, per the mission's
+  preferred option): cold `PresentationEntities::projectServerListings()` projects
+  each discovered `ServerBrowserEntry` as a presentation entity carrying
+  `HOT_SERVER_LISTING_COMPONENT` / `HotServerListingV1` (opaque listingId =
+  gameHash(code), players/max/ping/flags + name/map/mode/code). Removed listings
+  have the component cleared (no stale rows/pointers).
+- Hot `hot.server-browser` composes rows + JOIN per listing + REFRESH + BACK,
+  sorts by hot policy (ping asc, unreachable last), and claims
+  `screen.server-browser`. Cold `drawOnlineMenu` yields when hot owns; discovery
+  still ticks cold so listings keep flowing.
+- Connect bridge: a listingId ui.action resolves back to the cold room code and
+  is routed through the generic pending action (`HotUiPendingActionV1` gained a
+  bounded `value[32]`); REFRESH -> cold `serverBrowserRequestRefresh()`.
+- Runtime-unknown listing proof: a listing entity with only generic facts appears
+  in the hot browser and the claim is owned (selftest PASS).
+- OWNERSHIP FLIP PENDING (recorded): the cold online menu also ships host/hosting
+  and join-by-code (needs a generic text-input primitive) so hot does not yet
+  default-claim the screen; cold remains the shipping owner until those are
+  covered. Not invented/removed.
+- Proof: full suite PASS.
+
+## Round 57 (2026-09-15, hot pause Main view) — source implemented
+
+- Audit: `gui/menus/pause-menu.cpp` (namespace `PauseMenu`) owns the Esc modal
+  with views Main/ConfirmLeave/Settings/Help. Main has resume/settings/help/
+  discord/invite/leave; Settings reuses the cold `drawSettingsMenu`, Help reuses
+  `drawHelpMenu`, Leave uses a cold confirm modal.
+- Generic bridge: `HOT_PAUSE_STATE_COMPONENT` / `HotPauseStateV1`
+  (viewHash + visible), written from the cold modal in `engine-tick-ui.cpp`.
+- Hot `hot.pause-menu` composes the Main view (RESUME/SETTINGS/HELP/DISCORD/
+  INVITE/LEAVE) and claims `screen.pause`; cold `PauseMenu::render` yields via
+  `hotOwnsScreen("screen.pause")`. Per-view ownership: hot claims only when
+  viewHash == pause.main, so Settings/Help/ConfirmLeave stay cold (no feature
+  loss).
+- Actions: pause.* ui.action ids -> `HotUiPendingAction`; the in-game UI tick
+  consumes them and calls `PauseMenu::requestAction` (cold modal mechanism:
+  close/set view/leave/discord/invite). No callback pointers.
+- Generation safety: pause visibility lives in a dynamic component; a generation
+  that stops claiming falls back to the cold view (no trapped state).
+- Proof: `--hot-combat-selftest` PASS (pause bridge + Main widgets + claim);
+  full suite PASS.
+- Recorded next: server browser; then remaining UI re-audit; then audio policy.
+
+## Round 56 (2026-09-15, discrete settings SELECT + resolution/preset) — source implemented
+
+- New generic widget `GAME_UI_SELECT`: displays the current option label; click
+  emits `VALUE_CHANGED` with the next option index. Hot owns option ids/labels;
+  the backend only reports an index (generation-safe; no cached pointers).
+- `GameSettingType::GAME_SETTING_OPTION` + `GameSettingV1.optionCount/optionLabel`:
+  the kernel provides the valid option list; hot sets by index; the kernel
+  validates/clamps and applies.
+- `setting.get/set` now covers `video.resolution` and `video.graphicsPreset`
+  (kernel lists: resolutions 1280x960/1600x900/1920x1080, presets Low/Medium/High).
+- Hot `hot.settings-screen` emits SELECT rows for both; `ui.action VALUE_CHANGED`
+  routes the index to `setting.set`.
+- Settings now hot for all user-facing values: fov, master/music/sfx volume,
+  sensitivity, mute, resolution, graphicsPreset.
+- Proof: `--hot-combat-selftest` PASS incl. "discrete option setting get/set
+  works (kernel list)"; full suite PASS.
+- Recorded next: pause menu; server browser; then audio policy.
+
+## Round 55 (2026-09-15, scoreboard show/hide bridge) — source implemented
+
+- Real Tab scoreboard found: `mpContext.showPlayerList` (`engine-tick-net.cpp:821`,
+  Tab hold) rendered by the cold tab player list (`engine-tick-ui-overlays`).
+- Generic visibility state: `HOT_SCOREBOARD_VISIBLE_COMPONENT` /
+  `HotScoreboardVisibleV1`; cold `PresentationEntities::projectScoreboardVisible()`
+  bridges the physical Tab hold into it.
+- Hot `hot.scoreboard` now composes only while visible AND real generic rows
+  exist, claiming `screen.scoreboard`; the cold tab player list yields via
+  `hotOwnsScreen("screen.scoreboard")`. Hold semantics preserved (no toggle).
+- With Round 54's real per-actor stats, the hot scoreboard is now the shipping
+  owner while Tab is held; cold remains the fallback when stats are absent.
+- Proof: `--hot-combat-selftest` PASS (visibility-gated scoreboard + claim); full
+  suite PASS.
+- Recorded next: discrete settings SELECT (resolution/preset); pause menu; server
+  browser; then audio.
+
+## Round 54 (2026-09-15, real per-actor stats wire bridge) — source implemented
+
+- Authoritative source: server `ServerGamemodeState::ffaKills/ffaDeaths` +
+  `matchTeams` (per actor). The client previously received only FFA top-3 and TDM
+  team kills.
+- Wire: the existing match-state packet already carried `participantIds/Teams/
+  Roles/States`; added `participantKills/Deaths/Scores/Names[32]` (minimal
+  extension of the participant array). Server fills them from the authoritative
+  mode counters + `ServerPlayer.name`.
+- Client: `ReplicatedActorIdentity` now stores kills/deaths/score/name.
+- Projection: `PresentationEntities::projectMatchStats()` writes generic
+  `ActorIdentityState` + `ActorTeamState` + `ActorMatchStatsState` onto the SAME
+  actor EntityId used by overlays/presentation (no shadow id), called from the
+  match HUD tick.
+- Result: the hot `hot.scoreboard` now receives real shipping per-actor stats, so
+  its claim (already written whenever it composes rows) becomes the default
+  owner; cold `MatchLeaderboard` yields via `hotOwnsScreen("screen.scoreboard")`.
+- Proof: full suite PASS; the runtime-unknown actor hot-scoreboard test still
+  passes. Live network appearance is debt.
+- Deferred: discrete settings SELECT (resolution/preset); scoreboard show/hide
+  generic action (cold Tab input not yet surfaced).
+
+## Round 53 (2026-09-15, generic actor match-stats + hot scoreboard) — source implemented
+
+- Generic `HOT_ACTOR_STATS_COMPONENT` / `HotActorMatchStatsV1` (score/rank/flags)
+  — actor match FACTS, joined by EntityId with `ActorIdentityState` +
+  `ActorTeamState`. No scoreboard-only row type.
+- Hot `hot.scoreboard` (ui.frame, order 14): enumerates actors with generic
+  stats, sorts by score desc, groups/colours by team, highlights the local actor
+  via flags, emits rows with repeated `render.ui` (no table ABI), and claims
+  `screen.scoreboard`.
+- Cold `MatchLeaderboard::render()` yields when `hotOwnsScreen(screen.scoreboard)`.
+- Claim is written only when the hot scoreboard actually composed rows, so the
+  cold leaderboard remains the live owner until generic stats are projected (no
+  regression). Runtime-unknown actor proof: an entity with only Identity/Team/
+  Stats appears in the hot scoreboard (selftest PASS).
+- DATA GAP (recorded): the client only receives top-3 FFA rows + TDM team kills
+  (`CommunityMatchClient`), so a full per-actor scoreboard needs a generic
+  stats projection/replication (networking follow-up). Recorded, not blocking.
+- Deferred: discrete settings SELECT (resolution/preset).
+
+## Round 52 (2026-09-15, generic objective state + CS HUD hot-owned) — source implemented
+
+- AUDIT FINDING: there is **no shipping loadout or spectate menu** in the repo
+  (mirrors the agent instruction to audit and not invent settings/features).
+  Weapon selection is in-game via the existing generic equip substrate; spectate is
+  camera mechanism only. Building those screens would be a new feature, not an
+  ownership migration, so they were not created.
+- Generic objective primitive: `HOT_OBJECTIVE_COMPONENT` /
+  `HotObjectiveStateV1` (objectiveId/stateHash/ownerTeam/progress/timer/flags).
+  Reusable for bomb, capture point, payload, flag, control zone. No CS primitive.
+- Transitional cold projection: `ModeHud::projectFromClient` now also writes the
+  objective from `CommunityMatchClient` bomb state, and marks `counterstrike` as
+  hot-covered.
+- `hot.match-hud` renders the objective line + progress bar by interpreting the
+  generic `stateHash` (bomb.carried/planted/defusing).
+- Cold CS HUD (`gGamemodeManager.renderHud`) now yields when `ModeHud::hotOwned()`.
+- Proof: full suite PASS (incl. counterstrike selftest). Live appearance is debt.
+
+## Round 51 (2026-09-15, settings hot-owned via generic setting seam) — source implemented
+
+- Generic setting seam: `GAME_CAP_SETTING_GET`/`SET` + `GameSettingV1`
+  (`setting.get`/`setting.set`). Logical ids map to real `PlayerSettings` fields;
+  the kernel clamps/validates (fov 60..140, volumes 0..1, sensitivity 0.01..1).
+  Hot code never sees a settings object; values stay engine-authoritative.
+- Generic widgets: `GAME_UI_SLIDER` (min/max/step) + `GAME_UI_TOGGLE`; the backend
+  hit-tests and emits `VALUE_CHANGED` with the new value. No setting-specific ABI.
+- Hot `hot.settings-screen`: composes sliders/toggles for fov/master/music/sfx/
+  sensitivity/mute from `setting.get`, handles `VALUE_CHANGED` -> `setting.set`
+  (kernel validates), BACK -> nav main, and writes the `screen.settings` claim.
+- Navigation: `menu.settings` now routes hot (`screen.settings`); PLAY/QUIT leave
+  hot screens so the hot shell never overlaps cold screens. Cold `drawMainMenu`
+  yields whenever hot owns any screen.
+- Proof: `--hot-combat-selftest` PASS incl. get/set round-trip, clamp validation,
+  settings composition + claim, and a `VALUE_CHANGED` action modifying the real
+  setting. Full suite PASS.
+- Recorded next: a generic SELECT for discrete settings (resolution/window mode/
+  preset); then loadout, spectate, scoreboard, CS objective state; then audio.
 
 ## Round 50 (2026-09-15, hot main menu is the default shipping owner) — MILESTONE
 

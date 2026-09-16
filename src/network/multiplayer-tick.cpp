@@ -14,6 +14,8 @@
 #include "ecs/relationship-store.h"
 #include "hot-reload/generic-runtime.h"
 #include "hot-reload/generation-verify.h"
+#include "hot-reload/migration-prep.h"
+#include "hot-reload/content-artifact.h"
 #include "network/constraint-codec.h"
 #include "physics/constraints/constraint-store.h"
 #include "network/packets.h"
@@ -145,6 +147,19 @@ static void eraseLocalReplica(MultiplayerContext& ctx, uint32_t entityId,
 // Called by both legacy (SnapshotPacket) and chunked (CompactEntityData)
 // snapshot paths.  Handles local-player state, remote-player/NPC creation,
 // interpolation, and cleanup of missing entities.
+// Generation gating: while a late-join bootstrap is in progress (or has failed),
+// this peer must not consume ordinary world snapshots. Idle means steady state.
+static bool mpGenerationWorldAllowed(const MultiplayerContext& ctx)
+{
+    const MimitaRuntime::GenerationBootstrapV1& b = ctx.generationBootstrap;
+    if (b.state == MimitaRuntime::BootstrapState::Idle)
+        return true;
+    const std::uint64_t local = (std::uint64_t)
+        HotReloadSystem::instance().status().activeGeneration;
+    const std::uint64_t server = (std::uint64_t)ctx.serverCodeGeneration;
+    return b.worldParticipationAllowed(server, local);
+}
+
 static void processSnapshotEntities(
     MultiplayerContext& ctx,
     const SnapshotEntity* entities,
@@ -154,6 +169,14 @@ static void processSnapshotEntities(
     const char* sourceName,
     uint32_t logicalGenerationId = 0)
 {
+    if (!mpGenerationWorldAllowed(ctx))
+    {
+        Debug::logThrottled(Debug::Category::General, "generation-bootstrap", 2.0f,
+                            "world snapshot ignored: generation bootstrap %s",
+                            MimitaRuntime::bootstrapStateName(
+                                ctx.generationBootstrap.state));
+        return;
+    }
     // ── Authoritative membership ordering gate ──────────────────────────
     // A snapshot older than the newest already-applied membership snapshot
     // must NOT create, destroy, remove, or revive remote entities. It may
@@ -1446,6 +1469,13 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 ctx.serverLogicalHash = announce->logicalCodeHash;
                 ctx.serverPlatformHash = announce->platformPackageHash;
                 ctx.serverHotAbiVersion = announce->hotAbiVersion;
+                // Late-join bootstrap: the server advertised the generation its
+                // authoritative world is ALREADY running. Enter bootstrap (never a
+                // coordinated switch) so we become locally ACTIVE on it before
+                // participating. The acquisition path below fetches the artifact.
+                if (announce->phase == CODE_GENERATION_PHASE_ACTIVE_BOOTSTRAP)
+                    ctx.generationBootstrap.onServerActiveChanged(
+                        (std::uint64_t)announce->generation);
                 // Coordinated switch: hold our candidate until the shared tick,
                 // mapped from the authoritative SERVER tick domain into our local
                 // simulation tick domain (delta-based; the counters are not
@@ -1505,6 +1535,43 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 ctx.pendingManifestGeneration = (uint32_t)mp->logicalGenerationId;
                 ctx.pendingManifestValid = true;
                 ctx.pendingVerifyFailure = 0;
+                if (ctx.generationBootstrap.active())
+                    ctx.generationBootstrap.onMetadata(
+                        mp->logicalGenerationId, mp->platformArtifactHash,
+                        MimitaRuntime::ArtifactCache::instance().contains(
+                            mp->platformArtifactHash));
+            }
+        }
+        else if (header->type == MimitaNet::PACKET_CONTENT_ARTIFACT &&
+                 bytes >= (int)sizeof(MimitaNet::ContentArtifactPacket))
+        {
+            const MimitaNet::ContentArtifactPacket* d =
+                reinterpret_cast<const MimitaNet::ContentArtifactPacket*>(buffer);
+            MimitaRuntime::ContentArtifactV1 art{};
+            art.logicalResourceId = d->logicalResourceId;
+            art.resourceKind = d->resourceKind;
+            art.contentHash = d->contentHash;
+            art.byteSize = d->byteSize;
+            if (MimitaRuntime::ResourceRegistry::instance().announceCandidate(art))
+            {
+                if (MimitaRuntime::ArtifactCache::instance().contains(art.contentHash))
+                {
+                    // Cache hit: validate/publish without any payload transfer.
+                    std::string resourceError;
+                    MimitaRuntime::publishContentArtifactFromCache(
+                        art.logicalResourceId, resourceError);
+                }
+                else if (gRequestedArtifactHash != art.contentHash)
+                {
+                    gRequestedArtifactHash = art.contentHash;
+                    MimitaNet::ArtifactRequestPacket req{};
+                    req.header.type = MimitaNet::PACKET_ARTIFACT_REQUEST;
+                    req.header.tick = ctx.clientSimulationTick;
+                    req.header.playerId = ctx.localPlayerId;
+                    req.logicalGenerationId = art.logicalResourceId;
+                    req.platformArtifactHash = art.contentHash;
+                    mpSendPacket(ctx, &req, sizeof(req));
+                }
             }
         }
         else if (header->type == MimitaNet::PACKET_ARTIFACT_BEGIN &&
@@ -1528,6 +1595,41 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 // Reconstruct + verify + store (immutable). Still inactive.
                 std::string artifactError;
                 const bool verified = gGenerationArtifactReceiver.commit(artifactError);
+                // Content artifact: completed bytes for a logical resource route
+                // to the resource registry (validate + atomic publish), not the
+                // code loader.
+                const std::uint64_t contentLogical =
+                    MimitaRuntime::ResourceRegistry::instance()
+                        .pendingLogicalIdForHash(gGenerationArtifactReceiver.hash());
+                if (verified && contentLogical != 0)
+                {
+                    std::string resourceError;
+                    MimitaRuntime::publishContentArtifactFromCache(
+                        contentLogical, resourceError);
+                }
+                // Install the verified bytes as a REAL inactive candidate through
+                // the same loader path as a local build (no remote-only loader).
+                bool artifactInstalled = false;
+                if (verified && contentLogical == 0)
+                {
+                    std::vector<unsigned char> cachedBytes;
+                    if (MimitaRuntime::ArtifactCache::instance().read(
+                            gGenerationArtifactReceiver.hash(), cachedBytes))
+                    {
+                        std::string installError;
+                        artifactInstalled =
+                            HotReloadSystem::instance().installCandidateArtifact(
+                                cachedBytes,
+                                (std::uint32_t)
+                                    gGenerationArtifactReceiver.logicalGenerationId(),
+                                gGenerationArtifactReceiver.hash(), installError);
+                        if (!artifactInstalled)
+                            Debug::logThrottled(
+                                Debug::Category::General, "artifact-install", 2.0f,
+                                "remote artifact install failed: %s",
+                                installError.c_str());
+                    }
+                }
                 // Hash validity alone is NOT compatibility. Verify the manifest the
                 // SERVER associated with this exact generation against REAL local
                 // peer facts (kernel ABI, capability registry, schema registry,
@@ -1577,7 +1679,65 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                     ? MimitaRuntime::verifyGeneration(manifest, facts)
                     : MimitaRuntime::VerifyFailure::HashMismatch;
                 ctx.pendingVerifyFailure = (uint32_t)vf;
-                if (verified && vf == MimitaRuntime::VerifyFailure::None)
+                // READY also means "I can safely transition the current active
+                // generation F to G". Prepare (never mutate) against live state.
+                MimitaRuntime::MigrationPrepareFactsV1 mfacts{};
+                mfacts.candidateSchemaCount = haveManifest
+                    ? manifest.requiredSchemaCount : 0;
+                for (uint32_t i = 0;
+                     i < mfacts.candidateSchemaCount &&
+                     i < MimitaRuntime::kMaxVerifyRequirements; ++i)
+                {
+                    mfacts.candidateSchemaIds[i] = manifest.requiredSchemas[i];
+                    mfacts.candidateSchemaVersions[i] =
+                        manifest.requiredSchemaVersions[i];
+                }
+                mfacts.storedSchemaVersion = [](void*, std::uint64_t id) {
+                    return MimitaRuntime::DynamicComponentStore::instance()
+                        .maxStoredVersion(id);
+                };
+                mfacts.hasMigrationPath =
+                    [](void*, std::uint64_t id, std::uint32_t from,
+                       std::uint32_t to) {
+                        return MimitaRuntime::DynamicComponentStore::instance()
+                            .hasMigration(id, from, to);
+                    };
+                const std::uint64_t activeGeneration =
+                    (std::uint64_t)HotReloadSystem::instance()
+                        .status().activeGeneration;
+                const MimitaRuntime::MigrationPlanV1 migrationPlan =
+                    MimitaRuntime::prepareMigration(
+                        activeGeneration,
+                        haveManifest ? manifest.logicalGenerationId : 0, mfacts);
+                ctx.pendingMigrationPrepared =
+                    migrationPlan.outcome != MimitaRuntime::MigrationOutcome::Failed;
+                ctx.pendingMigrationFailure = (uint32_t)migrationPlan.failure;
+                // Bind the prepared plan to the exact candidate so the switch
+                // transaction can validate F -> G identity before activation.
+                HotReloadSystem::instance().setCandidateMigrationPlan(migrationPlan);
+                // Late-join bootstrap: this artifact is the ACTIVE generation we
+                // must become locally running. Complete bootstrap (verify + load);
+                // do not send READY (that means "prepared for a FUTURE switch").
+                if (ctx.generationBootstrap.active())
+                {
+                    const std::uint64_t bootstrapGen =
+                        gGenerationArtifactReceiver.logicalGenerationId();
+                    ctx.generationBootstrap.onArtifactAcquired(bootstrapGen);
+                    ctx.generationBootstrap.complete(
+                        bootstrapGen,
+                        haveManifest && artifactInstalled &&
+                            HotReloadSystem::instance().hasInstalledCandidate(),
+                        manifest, facts);
+                    // Activate the installed candidate at the next safe tick so
+                    // this peer becomes locally ACTIVE on the server's generation.
+                    if (ctx.generationBootstrap.state ==
+                        MimitaRuntime::BootstrapState::Ready)
+                        HotReloadSystem::instance().requestSwitchAtTick(
+                            ctx.clientSimulationTick);
+                }
+                else if (verified && artifactInstalled &&
+                    vf == MimitaRuntime::VerifyFailure::None &&
+                    migrationPlan.outcome != MimitaRuntime::MigrationOutcome::Failed)
                 {
                     // Report READY for the exact logical generation.
                     CodeGenerationPacket ready{};
@@ -2241,7 +2401,13 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     const bool inputDue =
         ctx.lastInputSentMs == 0 ||
         (double)(currentMs - ctx.lastInputSentMs) >= inputIntervalMs;
-    if (ctx.connected && ctx.localPlayerId && input && inputDue)
+    // Bootstrap completes once the local active generation matches the server's:
+    // clear the phase so normal simulation resumes.
+    if (ctx.generationBootstrap.state == MimitaRuntime::BootstrapState::Ready &&
+        mpGenerationWorldAllowed(ctx))
+        ctx.generationBootstrap = MimitaRuntime::GenerationBootstrapV1{};
+    if (ctx.connected && ctx.localPlayerId && input && inputDue &&
+        mpGenerationWorldAllowed(ctx))
     {
         InputPacket in{};
         in.header.type = PACKET_INPUT;

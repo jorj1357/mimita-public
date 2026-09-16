@@ -77,6 +77,12 @@
 #include "hot-reload/generation-switch-mapping-selftest.h"
 #include "network/transport-generation-selftest.h"
 #include "hot-reload/generation-verify-selftest.h"
+#include "hot-reload/migration-prep-selftest.h"
+#include "hot-reload/switch-transaction-selftest.h"
+#include "hot-reload/generation-bootstrap-selftest.h"
+#include "hot-reload/artifact-install-selftest.h"
+#include "hot-reload/production-loop-selftest.h"
+#include "hot-reload/content-resource-selftest.h"
 #include "hot-reload/capability-selftest.h"
 
 extern DuelManager gDuelManager;
@@ -400,6 +406,54 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = runGenerationVerifySelfTest(report);
         printf("%s", report.c_str());
         printf("[GENERATION VERIFY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--migration-prep-selftest") {
+        std::string report;
+        const bool ok = runMigrationPrepSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[MIGRATION PREP SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--switch-transaction-selftest") {
+        std::string report;
+        const bool ok = runSwitchTransactionSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[SWITCH TRANSACTION SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--generation-bootstrap-selftest") {
+        std::string report;
+        const bool ok = runGenerationBootstrapSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[GENERATION BOOTSTRAP SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--artifact-install-selftest") {
+        std::string report;
+        const bool ok = runArtifactInstallSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[ARTIFACT INSTALL SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--production-loop-selftest") {
+        std::string report;
+        const bool ok = runProductionLoopSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[PRODUCTION LOOP SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--content-resource-selftest") {
+        std::string report;
+        const bool ok = runContentResourceSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[CONTENT RESOURCE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

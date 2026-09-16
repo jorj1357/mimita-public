@@ -1288,14 +1288,15 @@ bool runHotCombatSelfTest(std::string& report)
         const bool navRead = uiCtx && uiActor != 0 &&
             uiCtx->dynamicReadComponent(uiCtx->host, uiActor,
                                         HOT_UI_NAV_COMPONENT, &nav, sizeof(nav));
-        ok &= check(navRead && nav.screenId == gameHash("screen.play"),
+        ok &= check(navRead && nav.screenId == 0,
                     "hot navigation state is migratable component state", report);
 
-        // The action changed hot navigation: main menu no longer composes.
+        // PLAY leaves to a cold screen: hot no longer owns the main menu.
+        runtime.runCommand("hotoverlays", "0", LiveBehavior::hostContext(97));
         LiveUi::beginFrame();
         runtime.runDomain(GAME_DOMAIN_UI, 97, 0.016f,
                           LiveBehavior::hostContext(97));
-        ok &= check(LiveUi::buttonCount() == 0,
+        ok &= check(!LiveUi::hotOwnsScreen(gameHash("screen.main-menu")),
                     "hot navigation moved off the main menu after the action",
                     report);
 
@@ -1305,6 +1306,257 @@ bool runHotCombatSelfTest(std::string& report)
         ok &= check(!LiveUi::hotOwnsScreen(gameHash("screen.main-menu")),
                     "hot screen claim is recomputed per frame (generation-safe)",
                     report);
+    }
+
+    // ── Generic setting seam + hot settings screen ────────────────────
+    {
+        GameplayContextV1* ctx = LiveBehavior::hostContext(100);
+        auto get = ctx ? reinterpret_cast<GameSettingGetFn>(
+                             ctx->resolveCapability(ctx->host, GAME_CAP_SETTING_GET))
+                       : nullptr;
+        auto set = ctx ? reinterpret_cast<GameSettingSetFn>(
+                             ctx->resolveCapability(ctx->host, GAME_CAP_SETTING_SET))
+                       : nullptr;
+        ok &= check(get && set, "setting.get/set capabilities resolve", report);
+        if (get && set) {
+            GameSettingV1 s{};
+            s.settingId = gameHash("video.fov");
+            s.type = GAME_SETTING_FLOAT;
+            s.floatValue = 123.0f;
+            set(ctx->host, &s);
+            GameSettingV1 g{};
+            g.settingId = gameHash("video.fov");
+            get(ctx->host, &g);
+            ok &= check(g.ok && g.floatValue > 122.9f && g.floatValue < 123.1f,
+                        "setting.get reflects setting.set (engine-authoritative)",
+                        report);
+            // Validation is the kernel's, not presentation's.
+            GameSettingV1 bad{};
+            bad.settingId = gameHash("video.fov");
+            bad.type = GAME_SETTING_FLOAT;
+            bad.floatValue = 999999.0f;
+            set(ctx->host, &bad);
+            GameSettingV1 g2{};
+            g2.settingId = gameHash("video.fov");
+            get(ctx->host, &g2);
+            ok &= check(g2.ok && g2.floatValue <= 140.0f,
+                        "setting.set clamps invalid values (kernel validation)",
+                        report);
+            // Discrete option setting (graphics preset): index <-> option list.
+            GameSettingV1 opt{};
+            opt.settingId = gameHash("video.graphicsPreset");
+            opt.type = GAME_SETTING_OPTION;
+            opt.intValue = 0;
+            set(ctx->host, &opt);
+            GameSettingV1 og{};
+            og.settingId = gameHash("video.graphicsPreset");
+            get(ctx->host, &og);
+            ok &= check(og.ok && og.type == GAME_SETTING_OPTION &&
+                            og.intValue == 0 && og.optionCount >= 3 &&
+                            og.optionLabel[0] != '\0',
+                        "discrete option setting get/set works (kernel list)",
+                        report);
+        }
+
+        // Hot settings composition + ownership.
+        std::uint64_t sActor = 0;
+        if (ctx && ctx->entityCreate)
+            ctx->entityCreate(ctx->host, 0u, &sActor);
+        if (ctx && ctx->permanentStorage &&
+            ctx->permanentStorageSize >= sizeof(GameSharedStateV1)) {
+            auto* shared = reinterpret_cast<GameSharedStateV1*>(
+                ctx->permanentStorage);
+            if (shared->magic == GAME_SHARED_MAGIC)
+                shared->localPlayerEntity = sActor;
+        }
+        runtime.runCommand("uiscreen", "screen.settings",
+                           LiveBehavior::hostContext(100));
+        LiveUi::beginFrame();
+        runtime.runDomain(GAME_DOMAIN_UI, 101, 0.016f,
+                          LiveBehavior::hostContext(101));
+        ok &= check(LiveUi::buttonCount() >= 6,
+                    "hot settings screen emits controls (sliders/toggles/back)",
+                    report);
+        HotUiClaimV1 sClaim{};
+        const bool sClaimRead = ctx && sActor != 0 &&
+            ctx->dynamicReadComponent(ctx->host, sActor,
+                                      HOT_UI_CLAIM_COMPONENT, &sClaim,
+                                      sizeof(sClaim));
+        ok &= check(sClaimRead && sClaim.owned == 1 &&
+                        sClaim.screenId == gameHash("screen.settings"),
+                    "hot settings claims the screen (cold settings yields)",
+                    report);
+
+        // A UI VALUE_CHANGED action writes through to the engine setting.
+        GameUiActionV1 change{};
+        change.elementId = gameHash("video.fov");
+        change.actionType = GAME_UI_ACTION_VALUE_CHANGED;
+        change.value = 130.0f;
+        LiveBehavior::dispatchGameplayEvent64(gameHash("ui.action"), &change,
+                                              sizeof(change), 101);
+        GameSettingV1 g3{};
+        g3.settingId = gameHash("video.fov");
+        if (get)
+            get(ctx->host, &g3);
+        ok &= check(change.handled == 1 && g3.ok && g3.floatValue > 129.9f &&
+                        g3.floatValue < 130.1f,
+                    "hot settings action modifies the real setting", report);
+        // Leave no hot screen so later "no state" checks stay deterministic.
+        runtime.runCommand("uiscreen", "none", LiveBehavior::hostContext(102));
+    }
+
+    // ── Hot scoreboard from generic actor stats ───────────────────────
+    {
+        GameplayContextV1* ctx = LiveBehavior::hostContext(110);
+        runtime.runCommand("uiscreen", "none", LiveBehavior::hostContext(110));
+        runtime.runCommand("hotoverlays", "0", LiveBehavior::hostContext(110));
+        std::uint64_t actor = 0;
+        if (ctx && ctx->entityCreate)
+            ctx->entityCreate(ctx->host, 0u, &actor);
+        if (ctx && actor != 0) {
+            // Runtime-unknown actor: only generic identity/team/stats.
+            MimitaNet::actorStateWriteIdentity(actor, "RuntimeActor");
+            MimitaNet::actorStateWriteTeam(actor, 1);
+            HotActorMatchStatsV1 st{};
+            st.score = 7;
+            st.flags = 1;   // local highlight
+            ctx->dynamicWriteComponent(ctx->host, actor,
+                                       HOT_ACTOR_STATS_COMPONENT, &st,
+                                       sizeof(st));
+            HotScoreboardVisibleV1 vis{};
+            vis.visible = 1;   // cold Tab input bridged to generic state
+            ctx->dynamicWriteComponent(ctx->host, actor,
+                                       HOT_SCOREBOARD_VISIBLE_COMPONENT, &vis,
+                                       sizeof(vis));
+        }
+        if (ctx && ctx->permanentStorage &&
+            ctx->permanentStorageSize >= sizeof(GameSharedStateV1)) {
+            auto* shared = reinterpret_cast<GameSharedStateV1*>(
+                ctx->permanentStorage);
+            if (shared->magic == GAME_SHARED_MAGIC)
+                shared->localPlayerEntity = actor;
+        }
+        const std::uint64_t before = LiveUi::commandCount();
+        runtime.runDomain(GAME_DOMAIN_UI, 111, 0.016f,
+                          LiveBehavior::hostContext(111));
+        ok &= check(LiveUi::commandCount() > before,
+                    "runtime-unknown actor appears in the hot scoreboard", report);
+        HotUiClaimV1 sbClaim{};
+        const bool sbRead = ctx && actor != 0 &&
+            ctx->dynamicReadComponent(ctx->host, actor,
+                                      HOT_UI_CLAIM_COMPONENT, &sbClaim,
+                                      sizeof(sbClaim));
+        ok &= check(sbRead && sbClaim.owned == 1 &&
+                        sbClaim.screenId == gameHash("screen.scoreboard"),
+                    "hot scoreboard claims ownership (cold leaderboard yields)",
+                    report);
+        // Cleanup so later checks are deterministic.
+        if (ctx && actor != 0) {
+            ctx->dynamicRemoveComponent(ctx->host, actor,
+                                        HOT_ACTOR_STATS_COMPONENT);
+            ctx->dynamicRemoveComponent(ctx->host, actor,
+                                        HOT_SCOREBOARD_VISIBLE_COMPONENT);
+        }
+        LiveUi::beginFrame();
+    }
+
+    // ── Hot pause menu (Main view) ────────────────────────────────────
+    {
+        GameplayContextV1* ctx = LiveBehavior::hostContext(120);
+        runtime.runCommand("uiscreen", "none", LiveBehavior::hostContext(120));
+        std::uint64_t actor = 0;
+        if (ctx && ctx->entityCreate)
+            ctx->entityCreate(ctx->host, 0u, &actor);
+        if (ctx && actor != 0) {
+            HotPauseStateV1 ps{};
+            ps.viewHash = gameHash("pause.main");
+            ps.visible = 1;
+            ctx->dynamicWriteComponent(ctx->host, actor, HOT_PAUSE_STATE_COMPONENT,
+                                       &ps, sizeof(ps));
+        }
+        if (ctx && ctx->permanentStorage &&
+            ctx->permanentStorageSize >= sizeof(GameSharedStateV1)) {
+            auto* shared = reinterpret_cast<GameSharedStateV1*>(
+                ctx->permanentStorage);
+            if (shared->magic == GAME_SHARED_MAGIC)
+                shared->localPlayerEntity = actor;
+        }
+        HotPauseStateV1 psRead{};
+        const bool psWrote = ctx && actor != 0 &&
+            ctx->dynamicReadComponent(ctx->host, actor, HOT_PAUSE_STATE_COMPONENT,
+                                      &psRead, sizeof(psRead));
+        ok &= check(psWrote && psRead.visible == 1 &&
+                        psRead.viewHash == gameHash("pause.main"),
+                    "pause state bridge writes generic state", report);
+        LiveUi::beginFrame();
+        runtime.runDomain(GAME_DOMAIN_UI, 121, 0.016f,
+                          LiveBehavior::hostContext(121));
+        ok &= check(LiveUi::buttonCount() >= 6,
+                    "hot pause menu emits its Main-view widgets", report);
+        HotUiClaimV1 pClaim{};
+        const bool pRead = ctx && actor != 0 &&
+            ctx->dynamicReadComponent(ctx->host, actor,
+                                      HOT_UI_CLAIM_COMPONENT, &pClaim,
+                                      sizeof(pClaim));
+        ok &= check(pRead && pClaim.owned == 1 &&
+                        pClaim.screenId == gameHash("screen.pause"),
+                    "hot pause claims the screen (cold Main view yields)", report);
+        if (ctx && actor != 0)
+            ctx->dynamicRemoveComponent(ctx->host, actor,
+                                        HOT_PAUSE_STATE_COMPONENT);
+        LiveUi::beginFrame();
+    }
+
+    // ── Hot server browser from generic listing facts ─────────────────
+    {
+        GameplayContextV1* ctx = LiveBehavior::hostContext(130);
+        runtime.runCommand("hotoverlays", "0", LiveBehavior::hostContext(130));
+        std::uint64_t actor = 0;
+        if (ctx && ctx->entityCreate)
+            ctx->entityCreate(ctx->host, 0u, &actor);
+        if (ctx && actor != 0) {
+            HotServerListingV1 l{};
+            l.listingId = gameHash("selftest-room-1");
+            l.players = 3;
+            l.maxPlayers = 16;
+            l.pingMs = 42;
+            l.flags = HOT_SERVER_LISTING_REACHABLE;
+            std::snprintf(l.code, sizeof(l.code), "ABCD");
+            std::snprintf(l.name, sizeof(l.name), "Runtime Server");
+            std::snprintf(l.map, sizeof(l.map), "arena");
+            std::snprintf(l.mode, sizeof(l.mode), "tdm");
+            ctx->dynamicWriteComponent(ctx->host, actor,
+                                       HOT_SERVER_LISTING_COMPONENT, &l,
+                                       sizeof(l));
+        }
+        if (ctx && ctx->permanentStorage &&
+            ctx->permanentStorageSize >= sizeof(GameSharedStateV1)) {
+            auto* shared = reinterpret_cast<GameSharedStateV1*>(
+                ctx->permanentStorage);
+            if (shared->magic == GAME_SHARED_MAGIC)
+                shared->localPlayerEntity = actor;
+        }
+        runtime.runCommand("uiscreen", "screen.server-browser",
+                           LiveBehavior::hostContext(130));
+        LiveUi::beginFrame();
+        runtime.runDomain(GAME_DOMAIN_UI, 131, 0.016f,
+                          LiveBehavior::hostContext(131));
+        ok &= check(LiveUi::buttonCount() >= 2,
+                    "runtime-unknown server listing appears in the hot browser",
+                    report);
+        HotUiClaimV1 bClaim{};
+        const bool bRead = ctx && actor != 0 &&
+            ctx->dynamicReadComponent(ctx->host, actor,
+                                      HOT_UI_CLAIM_COMPONENT, &bClaim,
+                                      sizeof(bClaim));
+        ok &= check(bRead && bClaim.owned == 1 &&
+                        bClaim.screenId == gameHash("screen.server-browser"),
+                    "hot server browser claims the screen (cold yields)", report);
+        if (ctx && actor != 0)
+            ctx->dynamicRemoveComponent(ctx->host, actor,
+                                        HOT_SERVER_LISTING_COMPONENT);
+        runtime.runCommand("uiscreen", "none", LiveBehavior::hostContext(132));
+        LiveUi::beginFrame();
     }
 
     // ── Generic generation-aware resource provider ────────────────────
@@ -1424,10 +1676,12 @@ bool runHotCombatSelfTest(std::string& report)
                         HOT_MATCH_HUD_COMPONENT) != nullptr,
                     "MatchHudState schema registered", report);
 
+        runtime.runCommand("hotoverlays", "0", LiveBehavior::hostContext(1));
         LiveUi::beginFrame();
         runtime.runDomain(GAME_DOMAIN_UI, 1, 0.016f, LiveBehavior::hostContext(1));
-        ok &= check(LiveUi::commandCount() == 0,
-                    "hot ui.frame fails safe without match HUD state", report);
+        ok &= check(!LiveUi::hotOwnsScreen(0),
+                    "hot ui.frame fails safe without match HUD state (no hot owner)",
+                    report);
 
         HotMatchHudStateV1 hud{};
         hud.timerSeconds = 95.0f;

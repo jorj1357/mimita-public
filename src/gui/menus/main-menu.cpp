@@ -49,7 +49,9 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
     // One owner: when hot UI policy owns the main-menu screen, the cold legacy
     // composition (and input) yields. The hot composition draws through render.ui
     // and handles clicks via the generic ui.action event.
-    if (LiveUi::hotOwnsScreen(gameHash("screen.main-menu")))
+    // Yield whenever hot UI owns a menu screen (main or settings); the hot shell
+    // composes the current screen. No claim -> cold owns.
+    if (LiveUi::hotOwnsScreen(0))
         return r;
     AuthSystem& auth = AuthSystem::instance();
 

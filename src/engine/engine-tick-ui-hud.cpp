@@ -1,6 +1,7 @@
 #include "engine/engine-tick-ui.h"
 #include "engine/engine.h"
 #include "live-code/live-ui.h"
+#include "render/presentation-entities.h"
 #include "gui/hud/mode-hud-bridge.h"
 #include "terminal/terminal-state.h"
 #include <cstdio>
@@ -82,8 +83,14 @@ void engineTickUIHUD(Engine& engine, float dt)
         kf.render();
 
     // Online match HUD: leaderboard + timer
+    // Real per-actor match stats + scoreboard visibility -> generic actor state.
+    PresentationEntities::projectMatchStats();
+    PresentationEntities::projectScoreboardVisible();
     MatchLeaderboard::instance().update(dt);
-    MatchLeaderboard::instance().render();
+    // One owner: when the hot scoreboard has composed rows (generic actor
+    // stats), the cold leaderboard yields.
+    if (!LiveUi::hotOwnsScreen(gameHash("screen.scoreboard")))
+        MatchLeaderboard::instance().render();
     MatchTimer::instance().update(dt);
     // Transitional bridge: project the typed client match state into generic
     // MatchHudState + a mode-HUD claim, then yield the cold timer/composition

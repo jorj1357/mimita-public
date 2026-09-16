@@ -21,8 +21,13 @@
 #include "hot-reload/hot-prediction.h"
 #include "hot-reload/hot-presentation.h"
 #include "hot-reload/hot-projectile.h"
+#include "hot-reload/hot-ui.h"
 #include "network/actor-state.h"
+#include "network/community-match-client.h"
+#include "network/server-browser.h"
+#include "network/multiplayer-context.h"
 #include "network/packets.h"
+#include "terminal/terminal-state.h"
 #include "ecs/entity-types.h"
 #include "project/presentation-resource.h"
 #include "render/presentation-render.h"
@@ -197,6 +202,78 @@ std::uint64_t actorEntityFor(std::uint32_t actorId, bool isPlayer)
                                                       EntityDomain::Player, actorId));
     return static_cast<std::uint64_t>(Ecs::ensure(EntityRealm::ClientReplicated,
                                                   EntityDomain::Npc, actorId));
+}
+
+void projectScoreboardVisible()
+{
+    const std::uint64_t entity = actorEntityFor(MP_CONTEXT.localPlayerId, true);
+    if (entity == 0)
+        return;
+    HotScoreboardVisibleV1 v{};
+    v.visible = MP_CONTEXT.showPlayerList ? 1u : 0u;
+    MimitaRuntime::DynamicComponentStore::instance().write(
+        static_cast<EntityId>(entity), HOT_SCOREBOARD_VISIBLE_COMPONENT, &v,
+        sizeof(v));
+}
+
+void projectServerListings()
+{
+    std::vector<MimitaNet::ServerBrowserEntry> entries;
+    MimitaNet::serverBrowserEntries(entries);
+    MimitaRuntime::DynamicComponentStore& store =
+        MimitaRuntime::DynamicComponentStore::instance();
+    std::unordered_set<EntityId> touched;
+    for (const MimitaNet::ServerBrowserEntry& e : entries) {
+        const std::uint32_t key =
+            (std::uint32_t)(gameHash(e.code.c_str()) & 0xFFFFFFFFu);
+        const EntityId entity =
+            Ecs::ensure(EntityRealm::ClientReplicated, EntityDomain::None, key);
+        HotServerListingV1 lst{};
+        lst.listingId = gameHash(e.code.c_str());
+        lst.players = e.players;
+        lst.maxPlayers = e.maxPlayers;
+        lst.pingMs = e.ping.reachable ? (std::int32_t)e.ping.pingMs : -1;
+        lst.flags = (e.ping.reachable ? HOT_SERVER_LISTING_REACHABLE : 0u) |
+                    (e.passwordProtected ? HOT_SERVER_LISTING_PASSWORD : 0u);
+        std::snprintf(lst.code, sizeof(lst.code), "%s", e.code.c_str());
+        std::snprintf(lst.name, sizeof(lst.name), "%s", e.serverName.c_str());
+        std::snprintf(lst.map, sizeof(lst.map), "%s", e.map.c_str());
+        std::snprintf(lst.mode, sizeof(lst.mode), "%s", e.gamemode.c_str());
+        store.write(entity, HOT_SERVER_LISTING_COMPONENT, &lst, sizeof(lst));
+        touched.insert(entity);
+    }
+    // Remove listings that disappeared (no stale rows/pointers).
+    EntityId live[128] = {};
+    const std::uint32_t count =
+        store.enumerate(HOT_SERVER_LISTING_COMPONENT, live, 128);
+    for (std::uint32_t i = 0; i < count; ++i)
+        if (touched.find(live[i]) == touched.end())
+            store.remove(live[i], HOT_SERVER_LISTING_COMPONENT);
+}
+
+void projectMatchStats()
+{
+    const auto& actors =
+        MimitaNet::CommunityMatchClient::instance().actorIdentities();
+    if (actors.empty())
+        return;
+    MimitaRuntime::DynamicComponentStore& store =
+        MimitaRuntime::DynamicComponentStore::instance();
+    for (const auto& a : actors) {
+        if (a.actorId == 0)
+            continue;
+        const std::uint64_t entity = actorEntityFor(a.actorId, true);
+        if (entity == 0)
+            continue;
+        if (a.name[0] != '\0')
+            MimitaNet::actorStateWriteIdentity(entity, a.name);
+        MimitaNet::actorStateWriteTeam(entity, a.team);
+        HotActorMatchStatsV1 st{};
+        st.score = a.score;
+        st.flags = (a.actorId == MP_CONTEXT.localPlayerId) ? 1u : 0u;
+        store.write(static_cast<EntityId>(entity), HOT_ACTOR_STATS_COMPONENT, &st,
+                    sizeof(st));
+    }
 }
 
 void projectActorOverlayState(std::uint32_t actorId, bool isPlayer,

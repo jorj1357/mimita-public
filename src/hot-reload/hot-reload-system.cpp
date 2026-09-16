@@ -2,7 +2,9 @@
 
 #include "hot-reload/game-api.h"
 #include "hot-reload/generic-runtime.h"
+#include "hot-reload/migration-prep.h"
 #include "hot-reload/artifact-cache.h"
+#include "ecs/dynamic-components.h"
 #include "live-code/code-hash.h"
 #include "live-code/live-code-events.h"
 #include "live-code/live-journal.h"
@@ -198,7 +200,12 @@ bool HotReloadSystem::pollAndAdvance(std::uint32_t tick)
     if (switchPending_) {
         // Coordinated switch: hold the validated candidate until the agreed tick
         // so peers activate together; the old generation stays live meanwhile.
-        if (tick >= switchAtTick_ && candidateReady_.exchange(false)) {
+        // A candidate may be locally built (candidateReady_) or a downloaded
+        // remote artifact installed through the same loader path.
+        if (tick >= switchAtTick_ &&
+            (candidateReady_.load() || remoteCandidateInstalled_.load())) {
+            candidateReady_ = false;
+            remoteCandidateInstalled_ = false;
             switchPending_ = false;
             if (tryActivateCandidate())
                 return true;
@@ -386,7 +393,7 @@ bool HotReloadSystem::tryActivateCandidate()
     }
     const std::string summary = manifestSummary();
 
-    if (!result.success) {
+    if (!result.success && !haveInstalledCandidate_) {
         lastError_ = result.error;
         ++attemptFailures_;
         const std::uint64_t backoffMs =
@@ -409,35 +416,80 @@ bool HotReloadSystem::tryActivateCandidate()
         return false;
     }
 
-    LiveEventJournal::Fields built;
-    built.generation = result.generation;
-    built.hasGeneration = true;
-    built.codeHash = result.codeHash;
-    built.result = "ok";
-    LiveEventJournal::instance().record("compile_finished", built);
-
     GenerationRecord candidate;
     std::string error;
-    if (!loadCandidateFromFile(result.outputPath, candidate, error)) {
-        lastError_ = error;
-        ++attemptFailures_;
-        const std::uint64_t backoffMs =
-            (std::uint64_t)std::min(10000, 2000 * attemptFailures_);
-        nextRetryMonoMs_ = MiMitaTime::monotonicMillis() + backoffMs;
-        LiveCodeEvents::notifyValidationFailed(result.generation, error);
-        return false;
-    }
-    candidate.generation = result.generation;
-    candidate.codeHash = result.codeHash;
+    // A remotely downloaded artifact was loaded as a real inactive candidate at
+    // install time through the SAME loader path; consume it now. Otherwise this
+    // is a locally built generation.
+    const bool fromInstall = haveInstalledCandidate_;
+    if (fromInstall) {
+        candidate = installedCandidate_;
+        haveInstalledCandidate_ = false;
+        remoteCandidateInstalled_ = false;
+    } else {
+        LiveEventJournal::Fields built;
+        built.generation = result.generation;
+        built.hasGeneration = true;
+        built.codeHash = result.codeHash;
+        built.result = "ok";
+        LiveEventJournal::instance().record("compile_finished", built);
 
-    LiveCodeEvents::notifyCandidateReady(result.generation, result.codeHash);
-    {
+        if (!loadCandidateFromFile(result.outputPath, candidate, error)) {
+            lastError_ = error;
+            ++attemptFailures_;
+            const std::uint64_t backoffMs =
+                (std::uint64_t)std::min(10000, 2000 * attemptFailures_);
+            nextRetryMonoMs_ = MiMitaTime::monotonicMillis() + backoffMs;
+            LiveCodeEvents::notifyValidationFailed(result.generation, error);
+            return false;
+        }
+        candidate.generation = result.generation;
+        candidate.codeHash = result.codeHash;
+
+        LiveCodeEvents::notifyCandidateReady(result.generation, result.codeHash);
         LiveEventJournal::Fields loaded;
         loaded.generation = result.generation;
         loaded.hasGeneration = true;
         loaded.codeHash = result.codeHash;
         loaded.result = "loaded";
         LiveEventJournal::instance().record("candidate_loaded", loaded);
+    }
+
+    // Switch transaction: explicitly validate the F -> G migration plan against
+    // the REAL active generation BEFORE any registration or state commit. A
+    // missing, stale, or invalid plan rejects the switch and keeps F live.
+    {
+        registerDynamicMigrations(candidate.api.packageDescriptor);
+        MimitaRuntime::MigrationPlanV1 plan{};
+        const bool havePlan = buildMigrationPlan(
+            (std::uint64_t)active_.generation, (std::uint64_t)candidate.generation,
+            candidate.api.packageDescriptor, plan);
+        if (candidatePlanPresent_ &&
+            candidatePlan_.toGeneration == (std::uint64_t)candidate.generation &&
+            !(candidatePlan_.valid && plan.valid &&
+              candidatePlan_.fromGeneration == plan.fromGeneration &&
+              candidatePlan_.toGeneration == plan.toGeneration &&
+              candidatePlan_.outcome == plan.outcome)) {
+            lastSwitchRejection_ = MimitaRuntime::SwitchRejection::PlanStale;
+            lastError_ = std::string("switch rejected: ") +
+                MimitaRuntime::switchRejectionName(lastSwitchRejection_);
+            retireRecord(candidate);
+            return false;
+        }
+        MimitaRuntime::SwitchTransactionFactsV1 facts{};
+        facts.activeGeneration = (std::uint64_t)active_.generation;
+        facts.candidateGeneration = (std::uint64_t)candidate.generation;
+        facts.plan = havePlan ? &plan : nullptr;
+        lastSwitchRejection_ = MimitaRuntime::validateSwitchTransaction(facts);
+        if (lastSwitchRejection_ != MimitaRuntime::SwitchRejection::None) {
+            lastError_ = std::string("switch rejected: ") +
+                MimitaRuntime::switchRejectionName(lastSwitchRejection_);
+            ++attemptFailures_;
+            nextRetryMonoMs_ = MiMitaTime::monotonicMillis() + 2000;
+            LiveCodeEvents::notifyValidationFailed(candidate.generation, lastError_);
+            retireRecord(candidate);
+            return false;
+        }
     }
 
     // Generic package registration (v5): validate the candidate's package
@@ -460,6 +512,10 @@ bool HotReloadSystem::tryActivateCandidate()
     retireRecord(previous_);
     previous_ = active_;
     active_ = candidate;
+    // The plan was consumed by this exact F -> G transaction.
+    candidatePlan_ = MimitaRuntime::MigrationPlanV1{};
+    candidatePlanPresent_ = false;
+    lastSwitchRejection_ = MimitaRuntime::SwitchRejection::None;
     ++memory_.reloadCount;
     lastError_.clear();
 
@@ -725,6 +781,132 @@ bool HotReloadSystem::readCandidateArtifact(std::vector<unsigned char>& out,
     return true;
 }
 
+void HotReloadSystem::registerDynamicMigrations(
+    const GamePackageDescriptorV1* descriptor) const
+{
+    if (!descriptor || !descriptor->migrations)
+        return;
+    for (std::uint32_t i = 0; i < descriptor->migrationCount; ++i) {
+        const GameMigrationDescriptorV1& m = descriptor->migrations[i];
+        if (!m.migrate || m.toVersion <= m.fromVersion)
+            continue;
+        bool isDynamic = false;
+        for (std::uint32_t s = 0; s < descriptor->componentSchemaCount; ++s) {
+            if (descriptor->componentSchemas[s].id == m.typeId) {
+                isDynamic = true;
+                break;
+            }
+        }
+        if (isDynamic) {
+            MimitaRuntime::DynamicComponentStore::instance().registerMigration(
+                m.typeId, m.fromVersion, m.toVersion,
+                reinterpret_cast<MimitaRuntime::DynamicMigrationFn>(m.migrate));
+        }
+    }
+}
+
+bool HotReloadSystem::buildMigrationPlan(
+    std::uint64_t from, std::uint64_t to,
+    const GamePackageDescriptorV1* descriptor,
+    MimitaRuntime::MigrationPlanV1& out) const
+{
+    if (descriptor == nullptr)
+        return false;
+    if (from == 0) {
+        // Initial load: no prior persistent state to migrate.
+        out = MimitaRuntime::MigrationPlanV1{};
+        out.fromGeneration = 0;
+        out.toGeneration = to;
+        out.valid = true;
+        out.outcome = MimitaRuntime::MigrationOutcome::NoMigrationRequired;
+        return true;
+    }
+    MimitaRuntime::MigrationPrepareFactsV1 facts{};
+    std::uint32_t n = descriptor->componentSchemaCount;
+    if (n > MimitaRuntime::kMaxVerifyRequirements)
+        n = MimitaRuntime::kMaxVerifyRequirements;
+    facts.candidateSchemaCount = n;
+    for (std::uint32_t i = 0; i < n; ++i) {
+        facts.candidateSchemaIds[i] = descriptor->componentSchemas[i].id;
+        facts.candidateSchemaVersions[i] =
+            descriptor->componentSchemas[i].version
+                ? descriptor->componentSchemas[i].version : 1;
+    }
+    facts.storedSchemaVersion = [](void*, std::uint64_t id) {
+        return MimitaRuntime::DynamicComponentStore::instance()
+            .maxStoredVersion(id);
+    };
+    facts.hasMigrationPath = [](void*, std::uint64_t id, std::uint32_t f,
+                                std::uint32_t t) {
+        return MimitaRuntime::DynamicComponentStore::instance().hasMigration(
+            id, f, t);
+    };
+    out = MimitaRuntime::prepareMigration(from, to, facts);
+    return true;
+}
+
+void HotReloadSystem::setCandidateMigrationPlan(
+    const MimitaRuntime::MigrationPlanV1& plan)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    candidatePlan_ = plan;
+    candidatePlanPresent_ = plan.toGeneration != 0;
+}
+
+bool HotReloadSystem::installCandidateArtifact(
+    const std::vector<unsigned char>& bytes, std::uint32_t logicalGeneration,
+    std::uint64_t platformArtifactHash, std::string& error)
+{
+    if (bytes.empty()) {
+        error = "empty artifact";
+        return false;
+    }
+    if (logicalGeneration == 0) {
+        error = "no logical generation";
+        return false;
+    }
+    if (MimitaRuntime::hashArtifactBytes(bytes.data(), bytes.size()) !=
+        platformArtifactHash) {
+        error = "artifact hash mismatch";
+        return false;
+    }
+
+    // Immutable, generation-specific staging copy (never overwrite a loaded DLL).
+    const std::filesystem::path staged = makeUniqueTempDLLPath();
+    {
+        std::ofstream out(staged, std::ios::binary);
+        if (!out) {
+            error = "cannot stage artifact";
+            return false;
+        }
+        out.write(reinterpret_cast<const char*>(bytes.data()),
+                  (std::streamsize)bytes.size());
+        if (!out) {
+            error = "cannot write staged artifact";
+            return false;
+        }
+    }
+
+    // SAME load/validate path as a local build: API/ABI + self-test.
+    GenerationRecord candidate;
+    if (!loadCandidateFromFile(staged, candidate, error)) {
+        std::error_code ec;
+        std::filesystem::remove(staged, ec);
+        return false;
+    }
+    candidate.generation = logicalGeneration;
+    candidate.codeHash = std::to_string(platformArtifactHash);
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (haveInstalledCandidate_)
+        retireRecord(installedCandidate_);
+    installedCandidate_ = candidate;
+    haveInstalledCandidate_ = true;
+    remoteCandidateInstalled_ = true;
+    error.clear();
+    return true;
+}
+
 bool HotReloadSystem::buildCandidateManifest(
     MimitaRuntime::GenerationManifestV1& out) const
 {
@@ -755,8 +937,65 @@ bool HotReloadSystem::buildCandidateManifest(
          out.requiredSchemaCount < MimitaRuntime::kMaxVerifyRequirements;
          ++i) {
         std::uint64_t id = 0;
-        if (rt.schemaAt(i, &id))
-            out.requiredSchemas[out.requiredSchemaCount++] = id;
+        std::uint32_t version = 0;
+        if (rt.schemaAt(i, &id, nullptr, &version)) {
+            out.requiredSchemas[out.requiredSchemaCount] = id;
+            out.requiredSchemaVersions[out.requiredSchemaCount] = version;
+            ++out.requiredSchemaCount;
+        }
+    }
+    return true;
+}
+
+bool HotReloadSystem::buildActiveManifest(
+    MimitaRuntime::GenerationManifestV1& out) const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (active_.generation == 0)
+        return false;
+
+    out = MimitaRuntime::GenerationManifestV1{};
+    out.logicalGenerationId = active_.generation;
+    out.hotAbiVersion = MIMITA_GAME_API_VERSION;
+
+    // The active artifact bytes are the last successful build when it matches the
+    // active generation (the common case; the active DLL came from that build).
+    if (result_.success && result_.generation == active_.generation &&
+        !result_.outputPath.empty()) {
+        std::ifstream in(result_.outputPath, std::ios::binary);
+        if (in) {
+            std::vector<unsigned char> bytes(
+                (std::istreambuf_iterator<char>(in)),
+                std::istreambuf_iterator<char>());
+            if (!bytes.empty()) {
+                out.platformArtifactHash =
+                    MimitaRuntime::hashArtifactBytes(bytes.data(), bytes.size());
+                out.platformArtifactSize = (std::uint32_t)bytes.size();
+            }
+        }
+    }
+
+    MimitaRuntime::GenericRuntime& rt =
+        MimitaRuntime::GenericRuntime::instance();
+    for (std::size_t i = 0;
+         i < rt.capabilityRequirementCount() &&
+         out.requiredCapabilityCount < MimitaRuntime::kMaxVerifyRequirements;
+         ++i) {
+        std::uint64_t id = 0;
+        if (rt.capabilityRequirementAt(i, &id))
+            out.requiredCapabilities[out.requiredCapabilityCount++] = id;
+    }
+    for (std::size_t i = 0;
+         i < rt.schemaCount() &&
+         out.requiredSchemaCount < MimitaRuntime::kMaxVerifyRequirements;
+         ++i) {
+        std::uint64_t id = 0;
+        std::uint32_t version = 0;
+        if (rt.schemaAt(i, &id, nullptr, &version)) {
+            out.requiredSchemas[out.requiredSchemaCount] = id;
+            out.requiredSchemaVersions[out.requiredSchemaCount] = version;
+            ++out.requiredSchemaCount;
+        }
     }
     return true;
 }

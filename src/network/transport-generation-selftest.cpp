@@ -23,6 +23,10 @@
 #include "hot-reload/generation-switch-mapping.h"
 #include "hot-reload/generation-verify.h"
 #include "hot-reload/game-api.h"
+#include "hot-reload/migration-prep.h"
+#include "hot-reload/generation-distribution.h"
+#include "hot-reload/generation-bootstrap.h"
+#include "hot-reload/content-artifact.h"
 
 using namespace MimitaNet;
 
@@ -215,6 +219,7 @@ bool runTransportGenerationSelfTest(std::string& report)
         m.requiredCapabilities[0] = 0xABC;
         m.requiredSchemaCount = 1;
         m.requiredSchemas[0] = 0x123;
+        m.requiredSchemaVersions[0] = 2;
         m.requiredDependencyCount = 1;
         m.requiredDependencies[0] = 0x777;
         GenerationManifestPacket got{};
@@ -225,6 +230,7 @@ bool runTransportGenerationSelfTest(std::string& report)
                         got.requiredCapabilityCount == 1 &&
                         got.requiredCapabilities[0] == 0xABC &&
                         got.requiredSchemas[0] == 0x123 &&
+                        got.requiredSchemaVersions[0] == 2 &&
                         got.requiredDependencies[0] == 0x777,
                     "manifest requirement arrays traverse the real transport",
                     report);
@@ -284,6 +290,27 @@ bool runTransportGenerationSelfTest(std::string& report)
                             MimitaRuntime::VerifyFailure::SchemaMismatch,
                     "artifact valid but schema mismatch -> SchemaMismatch, no READY",
                     report);
+
+        // Migration preparation is part of READY semantics: verification passes
+        // but no migration path exists for a stored version change -> no READY.
+        {
+            MimitaRuntime::MigrationPrepareFactsV1 mf{};
+            mf.candidateSchemaCount = 1;
+            mf.candidateSchemaIds[0] = 0x2222;
+            mf.candidateSchemaVersions[0] = 2;
+            mf.storedSchemaVersion = [](void*, std::uint64_t) { return 1u; };
+            mf.hasMigrationPath = [](void*, std::uint64_t, std::uint32_t,
+                                     std::uint32_t) { return false; };
+            const MimitaRuntime::MigrationPlanV1 plan =
+                MimitaRuntime::prepareMigration(5, gen, mf);
+            ok &= check(MimitaRuntime::verifyGeneration(vman, facts) ==
+                                MimitaRuntime::VerifyFailure::None &&
+                            plan.outcome == MimitaRuntime::MigrationOutcome::Failed &&
+                            plan.failure ==
+                                MimitaRuntime::MigrationFailure::MissingMigration,
+                        "verify passes but migration missing -> no READY",
+                        report);
+        }
 
         MimitaRuntime::GenerationManifestV1 other = vman;
         other.platformArtifactHash = hash ^ 0x55u;
@@ -356,6 +383,343 @@ bool runTransportGenerationSelfTest(std::string& report)
         std::string err;
         ok &= check(acq.commit(err) && cache.contains(hash),
                     "cache hit verifies without transferring bytes", report);
+    }
+
+    // ── REAL multi-peer quorum over sockets (server + A + B) ──────────
+    {
+        auto makeSock = []() -> SOCKET {
+            SOCKET sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+            sockaddr_in a{};
+            a.sin_family = AF_INET;
+            a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+            a.sin_port = 0;
+            if (sock != INVALID_SOCKET)
+                bind(sock, (const sockaddr*)&a, sizeof(a));
+            return sock;
+        };
+        auto addrOf = [](SOCKET sock) {
+            sockaddr_in a{};
+            int len = sizeof(a);
+            getsockname(sock, (sockaddr*)&a, &len);
+            return a;
+        };
+        SOCKET aSock = makeSock();
+        SOCKET bSock = makeSock();
+        const sockaddr_in aAddr = addrOf(aSock);
+        const sockaddr_in bAddr = addrOf(bSock);
+
+        auto serverSend = [&](const sockaddr_in& to) {
+            CodeGenerationPacket announce{};
+            announce.header.type = PACKET_CODE_GENERATION;
+            announce.generation = (uint32_t)gen;
+            announce.direction = 1;
+            announce.platformPackageHash = hash;
+            sendto(s, (const char*)&announce, sizeof(announce), 0,
+                   (const sockaddr*)&to, sizeof(to));
+            GenerationManifestPacket man{};
+            man.header.type = PACKET_GENERATION_MANIFEST;
+            man.logicalGenerationId = gen;
+            man.platformArtifactHash = hash;
+            man.requiredCapabilityCount = 1;
+            man.requiredCapabilities[0] = 0xABC;
+            sendto(s, (const char*)&man, sizeof(man), 0, (const sockaddr*)&to,
+                   sizeof(to));
+        };
+        auto clientRecvAnnounce = [&](SOCKET client) {
+            char buf[512];
+            sockaddr_in from{};
+            int len = sizeof(from);
+            const int n = recvfrom(client, buf, sizeof(buf), 0, (sockaddr*)&from,
+                                   &len);
+            return n >= (int)sizeof(CodeGenerationPacket) &&
+                reinterpret_cast<CodeGenerationPacket*>(buf)->generation ==
+                    (uint32_t)gen;
+        };
+        auto clientSendReady = [&](SOCKET client) {
+            CodeGenerationPacket ready{};
+            ready.header.type = PACKET_CODE_GENERATION;
+            ready.generation = (uint32_t)gen;
+            ready.direction = 0;
+            ready.phase = 1;
+            ready.platformPackageHash = hash;
+            sendto(client, (const char*)&ready, sizeof(ready), 0,
+                   (const sockaddr*)&addr, sizeof(addr));
+        };
+        auto serverRecvReady = [&](uint64_t peerId) {
+            char buf[512];
+            sockaddr_in from{};
+            int len = sizeof(from);
+            const int n = recvfrom(s, buf, sizeof(buf), 0, (sockaddr*)&from, &len);
+            if (n < (int)sizeof(CodeGenerationPacket))
+                return false;
+            const CodeGenerationPacket* got =
+                reinterpret_cast<const CodeGenerationPacket*>(buf);
+            if (got->phase != 1 || got->generation != (uint32_t)gen)
+                return false;
+            MimitaRuntime::GenerationIdentityV1 ident{};
+            ident.logicalGenerationId = gen;
+            ident.platformArtifactHash = hash;
+            ident.abiVersion = (uint32_t)MIMITA_GAME_API_VERSION;
+            auto& dist = MimitaRuntime::GenerationDistribution::instance();
+            dist.announce(peerId, ident);
+            dist.setPhase(peerId, MimitaRuntime::GenerationPhase::Ready);
+            return true;
+        };
+
+        auto& dist = MimitaRuntime::GenerationDistribution::instance();
+        dist.reset();
+        serverSend(aAddr);
+        serverSend(bAddr);
+        const bool aAnnounced = clientRecvAnnounce(aSock);
+        const bool bAnnounced = clientRecvAnnounce(bSock);
+
+        clientSendReady(aSock);
+        const bool aReady = serverRecvReady(1);
+        ok &= check(aAnnounced && bAnnounced && aReady &&
+                        !dist.quorumReady({1, 2}, gen),
+                    "A READY, B not -> no quorum, no SWITCH", report);
+
+        clientSendReady(bSock);
+        const bool bReady = serverRecvReady(2);
+        const bool quorum = dist.quorumReady({1, 2}, gen);
+        const bool scheduled = quorum && dist.scheduleSwitch(gen, 1030);
+        ok &= check(bReady && quorum && scheduled && dist.switchScheduled(),
+                    "B READY -> quorum true -> SWITCH scheduled", report);
+
+        // Disconnect AFTER commit: committed G must not be cancelled.
+        dist.removePeer(2);
+        ok &= check(dist.switchScheduled() &&
+                        dist.scheduledGeneration() == gen,
+                    "disconnect after commit does not cancel G", report);
+        dist.reset();
+
+        // Disconnect BEFORE commit: recompute quorum over remaining peers.
+        dist.announce(1, {gen, 0, hash, (uint32_t)MIMITA_GAME_API_VERSION});
+        dist.setPhase(1, MimitaRuntime::GenerationPhase::Ready);
+        dist.announce(2, {gen, 0, hash, (uint32_t)MIMITA_GAME_API_VERSION});
+        const bool blocked = !dist.quorumReady({1, 2}, gen);
+        dist.removePeer(2);
+        const bool recomputed = dist.quorumReady({1}, gen);
+        ok &= check(blocked && recomputed,
+                    "disconnect before commit recomputes quorum over survivors",
+                    report);
+        dist.reset();
+
+        closesocket(aSock);
+        closesocket(bSock);
+    }
+
+    // ── Late-join generation bootstrap over the real transport ─────────
+    {
+        auto makeManifest = [](std::uint64_t g, std::uint64_t h, std::uint32_t sz) {
+            MimitaRuntime::GenerationManifestV1 m{};
+            m.logicalGenerationId = g;
+            m.platformArtifactHash = h;
+            m.platformArtifactSize = sz;
+            m.hotAbiVersion = (std::uint32_t)MIMITA_GAME_API_VERSION;
+            return m;
+        };
+        auto makeFacts = [](std::uint64_t h, std::uint32_t sz) {
+            MimitaRuntime::GenerationLocalFactsV1 f{};
+            f.artifactHash = h;
+            f.artifactSize = sz;
+            f.coldAbiVersion = (std::uint32_t)MIMITA_GAME_API_VERSION;
+            return f;
+        };
+
+        // Server already active on a generation the client does not have.
+        const std::vector<unsigned char> bytes2 = makeBytes(2500);
+        const std::uint64_t hash2 =
+            MimitaRuntime::hashArtifactBytes(bytes2.data(), bytes2.size());
+        const std::uint64_t gen2 = 0x6B6B;
+        MimitaRuntime::ArtifactStreamer streamer2;
+        streamer2.begin(gen2, hash2, bytes2.data(), bytes2.size());
+
+        // ── Cache miss ────────────────────────────────────────────────
+        {
+            MimitaRuntime::GenerationBootstrapV1 boot;
+            boot.begin(gen2);
+            CodeGenerationPacket bootPkt{};
+            bootPkt.header.type = PACKET_CODE_GENERATION;
+            bootPkt.generation = (std::uint32_t)gen2;
+            bootPkt.direction = 1;
+            bootPkt.phase = CODE_GENERATION_PHASE_ACTIVE_BOOTSTRAP;
+            bootPkt.platformPackageHash = hash2;
+            CodeGenerationPacket got{};
+            std::string err;
+            const bool advertised =
+                loopbackSendRecv(s, addr, bootPkt, got, err) &&
+                got.phase == CODE_GENERATION_PHASE_ACTIVE_BOOTSTRAP;
+            boot.onMetadata(got.generation, got.platformPackageHash,
+                            cache.contains(hash2));
+            const bool blockedBefore =
+                !boot.worldParticipationAllowed(gen2, gen2);
+
+            MimitaRuntime::ArtifactReceiver rx2;
+            std::uint32_t transferred = 0;
+            ArtifactBeginPacket begin{};
+            streamer2.makeBegin(begin);
+            begin.header.type = PACKET_ARTIFACT_BEGIN;
+            ArtifactBeginPacket gotBegin{};
+            bool okTransfer = loopbackSendRecv(s, addr, begin, gotBegin, err);
+            rx2.begin(gotBegin);
+            transferred += (std::uint32_t)sizeof(ArtifactBeginPacket);
+            for (std::uint32_t i = 0; okTransfer && i < streamer2.chunkCount(); ++i) {
+                ArtifactChunkPacket chunk{};
+                streamer2.makeChunk(i, chunk);
+                chunk.header.type = PACKET_ARTIFACT_CHUNK;
+                ArtifactChunkPacket gotChunk{};
+                okTransfer = loopbackSendRecv(s, addr, chunk, gotChunk, err) &&
+                    rx2.onChunk(gotChunk);
+                transferred += (std::uint32_t)sizeof(ArtifactChunkPacket);
+            }
+            boot.onArtifactAcquired(gen2);
+            std::string commitErr;
+            const bool committed = okTransfer && rx2.complete() &&
+                rx2.commit(commitErr);
+            boot.complete(gen2, /*codeLoaded=*/true, makeManifest(gen2, hash2,
+                          (std::uint32_t)bytes2.size()),
+                          makeFacts(hash2, (std::uint32_t)bytes2.size()));
+            ok &= check(advertised && blockedBefore &&
+                            boot.state == MimitaRuntime::BootstrapState::Ready &&
+                            boot.worldParticipationAllowed(gen2, gen2) &&
+                            transferred > 0 && committed,
+                        "late join cache miss: acquire -> verify -> world", report);
+        }
+
+        // ── Cache hit (artifact now cached): zero chunk bytes ─────────
+        {
+            MimitaRuntime::GenerationBootstrapV1 boot;
+            boot.begin(gen2);
+            boot.onMetadata(gen2, hash2, cache.contains(hash2));
+            const bool verifying = boot.state == MimitaRuntime::BootstrapState::Verifying;
+            const std::uint32_t transferred = 0;  // no chunks requested
+            boot.complete(gen2, true, makeManifest(gen2, hash2,
+                          (std::uint32_t)bytes2.size()),
+                          makeFacts(hash2, (std::uint32_t)bytes2.size()));
+            ok &= check(verifying && transferred == 0 && cache.contains(hash2) &&
+                            boot.state == MimitaRuntime::BootstrapState::Ready &&
+                            boot.worldParticipationAllowed(gen2, gen2),
+                        "late join cache hit: zero chunks, still verified", report);
+        }
+
+        // ── Generation changes during bootstrap ───────────────────────
+        {
+            MimitaRuntime::GenerationBootstrapV1 boot;
+            boot.begin(gen2);
+            boot.onMetadata(gen2, hash2, true);
+            boot.onServerActiveChanged((std::uint64_t)gen);  // server moved on
+            boot.complete(gen2, true, makeManifest(gen2, hash2,
+                          (std::uint32_t)bytes2.size()),
+                          makeFacts(hash2, (std::uint32_t)bytes2.size()));
+            ok &= check(boot.targetGeneration == (std::uint64_t)gen &&
+                            boot.state != MimitaRuntime::BootstrapState::Ready,
+                        "stale bootstrap cannot activate after active gen changes",
+                        report);
+        }
+    }
+
+    // ── Content descriptor over the real socket (PNG/GLB shape) ────────
+    {
+        MimitaRuntime::ResourceRegistry::instance().clear();
+        std::vector<unsigned char> glbA(24, 0x30);
+        glbA[0] = 'g'; glbA[1] = 'l'; glbA[2] = 'T'; glbA[3] = 'F';
+        glbA[4] = 2; glbA[5] = 0; glbA[6] = 0; glbA[7] = 0;
+        const std::uint64_t hashA =
+            MimitaRuntime::hashArtifactBytes(glbA.data(), glbA.size());
+        const std::uint64_t resId =
+            MimitaRuntime::resourceIdFromLogicalName("mesh.tool.rocket");
+
+        ContentArtifactPacket desc{};
+        desc.header.type = PACKET_CONTENT_ARTIFACT;
+        desc.logicalResourceId = resId;
+        desc.resourceKind = (std::uint32_t)MimitaRuntime::ResourceKind::Glb;
+        desc.contentHash = hashA;
+        desc.byteSize = (std::uint32_t)glbA.size();
+        ContentArtifactPacket gotDesc{};
+        std::string err;
+        const bool descended = loopbackSendRecv(s, addr, desc, gotDesc, err) &&
+            gotDesc.logicalResourceId == resId && gotDesc.contentHash == hashA &&
+            gotDesc.resourceKind == (std::uint32_t)MimitaRuntime::ResourceKind::Glb;
+
+        // Identity binding: bytes for a different hash cannot satisfy this.
+        ok &= check(descended &&
+                        MimitaRuntime::ResourceRegistry::instance().announceCandidate(
+                            {gotDesc.logicalResourceId, gotDesc.resourceKind,
+                             gotDesc.contentHash, gotDesc.byteSize}),
+                    "content descriptor traverses the real transport", report);
+
+        // Cache miss: transfer bytes through the existing artifact path.
+        MimitaRuntime::ArtifactStreamer rs;
+        rs.begin(resId, hashA, glbA.data(), glbA.size());
+        MimitaRuntime::ArtifactReceiver rr;
+        std::uint32_t contentBytes = 0;
+        {
+            ArtifactBeginPacket begin{};
+            rs.makeBegin(begin);
+            begin.header.type = PACKET_ARTIFACT_BEGIN;
+            ArtifactBeginPacket gotBegin{};
+            bool tr = loopbackSendRecv(s, addr, begin, gotBegin, err);
+            rr.begin(gotBegin);
+            contentBytes += (std::uint32_t)sizeof(ArtifactBeginPacket);
+            for (std::uint32_t i = 0; tr && i < rs.chunkCount(); ++i) {
+                ArtifactChunkPacket chunk{};
+                rs.makeChunk(i, chunk);
+                chunk.header.type = PACKET_ARTIFACT_CHUNK;
+                ArtifactChunkPacket gotChunk{};
+                tr = loopbackSendRecv(s, addr, chunk, gotChunk, err) &&
+                    rr.onChunk(gotChunk);
+                contentBytes += (std::uint32_t)sizeof(ArtifactChunkPacket);
+            }
+        }
+        std::string commitErr;
+        std::string perr;
+        bool published = false;
+        if (rr.complete() && rr.commit(commitErr)) {
+            published = MimitaRuntime::ResourceRegistry::instance()
+                .publishCandidateFromCache(resId, perr);
+        }
+        ok &= check(published && contentBytes > 0 &&
+                        MimitaRuntime::ResourceRegistry::instance().resolve(resId) ==
+                            hashA,
+                    "content cache miss: transfer -> validate -> publish [" +
+                        commitErr + perr + "]", report);
+
+        // Cache hit: republishing the same descriptor needs zero bytes.
+        ok &= check(MimitaRuntime::ArtifactCache::instance().contains(hashA) &&
+                        MimitaRuntime::ResourceRegistry::instance()
+                            .announceCandidate({resId, (std::uint32_t)
+                                MimitaRuntime::ResourceKind::Glb, hashA,
+                                (std::uint32_t)glbA.size()}),
+                    "content cache hit: descriptor announces with bytes cached",
+                    report);
+        std::string hitErr;
+        ok &= check(MimitaRuntime::ResourceRegistry::instance()
+                        .publishCandidateFromCache(resId, hitErr),
+                    "content cache hit publishes with zero chunks", report);
+
+        // Stale descriptor: B announced, C supersedes, late B publish rejected.
+        std::vector<unsigned char> glbB(24, 0x40);
+        glbB[0]='g'; glbB[1]='l'; glbB[2]='T'; glbB[3]='F'; glbB[4]=2; glbB[5]=0; glbB[6]=0; glbB[7]=0;
+        std::vector<unsigned char> glbC(24, 0x50);
+        glbC[0]='g'; glbC[1]='l'; glbC[2]='T'; glbC[3]='F'; glbC[4]=2; glbC[5]=0; glbC[6]=0; glbC[7]=0;
+        const std::uint64_t hashB =
+            MimitaRuntime::hashArtifactBytes(glbB.data(), glbB.size());
+        const std::uint64_t hashC =
+            MimitaRuntime::hashArtifactBytes(glbC.data(), glbC.size());
+        auto& reg = MimitaRuntime::ResourceRegistry::instance();
+        reg.announceCandidate({resId, (std::uint32_t)MimitaRuntime::ResourceKind::Glb,
+                               hashB, (std::uint32_t)glbB.size()});
+        reg.announceCandidate({resId, (std::uint32_t)MimitaRuntime::ResourceKind::Glb,
+                               hashC, (std::uint32_t)glbC.size()});
+        std::string serr;
+        const bool lateRejected =
+            !reg.publishCandidate(resId, hashB, glbB.data(), glbB.size(), serr);
+        const bool newerPublished =
+            reg.publishCandidate(resId, hashC, glbC.data(), glbC.size(), serr);
+        ok &= check(lateRejected && newerPublished && reg.resolve(resId) == hashC,
+                    "stale descriptor cannot overwrite the newer content version",
+                    report);
     }
 
     report += "  [info] artifact bytes=" + std::to_string(bytes.size()) +

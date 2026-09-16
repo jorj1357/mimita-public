@@ -40,7 +40,8 @@ void projectFromClient()
 
     const std::string mode = match.mode();
     // Hot composition fully covers these modes' HUD; others stay cold.
-    const bool hotCovers = (mode == "tdm" || mode == "ffa");
+    const bool hotCovers = (mode == "tdm" || mode == "ffa" ||
+                            mode == "counterstrike");
 
     HotMatchHudStateV1 hud{};
     float timer = match.phaseTimer();
@@ -67,6 +68,25 @@ void projectFromClient()
             std::snprintf(hud.phaseText, sizeof(hud.phaseText), "INTERMISSION");
     }
     store.write(entity, HOT_MATCH_HUD_COMPONENT, &hud, sizeof(hud));
+
+    // Generic objective presentation (transitional projection from the typed
+    // client match state). Hot HUD interprets stateHash; no CS primitive.
+    HotObjectiveStateV1 obj{};
+    const std::uint8_t bombState = match.objectiveBombState();
+    if (bombState != 0 || match.objectiveBombActive()) {
+        obj.objectiveId = gameHash("objective.bomb");
+        obj.stateHash = bombState >= 2 ? gameHash("bomb.defusing")
+                        : bombState >= 1 ? gameHash("bomb.planted")
+                                         : gameHash("bomb.carried");
+        obj.progress = (float)match.objectivePlantPercent() / 100.0f;
+        if (bombState >= 2)
+            obj.progress = (float)match.objectiveDefusePercent() / 100.0f;
+        obj.timer = match.bombSecondsRemaining();
+        obj.flags = 1;   // present
+        store.write(entity, HOT_OBJECTIVE_COMPONENT, &obj, sizeof(obj));
+    } else {
+        store.remove(entity, HOT_OBJECTIVE_COMPONENT);
+    }
 
     HotModeHudClaimV1 claim{};
     claim.owned = hotCovers ? 1u : 0u;

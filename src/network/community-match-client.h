@@ -77,6 +77,11 @@ public:
         uint8_t team = 0xFF;
         uint8_t roleIndex = 0;
         uint8_t state = 0;
+        // Generic per-actor match stats (server-authoritative).
+        int32_t kills = 0;
+        int32_t deaths = 0;
+        int32_t score = 0;
+        char name[64] = {};
     };
     const std::vector<ReplicatedActorIdentity>& actorIdentities() const { return mActors; }
 

@@ -11,8 +11,13 @@
 #include "engine/engine.h"
 #include "engine/engine-tick-creation.h"
 #include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-ui.h"
 #include "live-code/live-behavior.h"
 #include "live-code/live-ui.h"
+#include "ecs/actor-entities.h"
+#include "ecs/dynamic-components.h"
+#include "ecs/entity-types.h"
+#include "gui/menus/pause-menu.h"
 #include "terminal/terminal-state.h"
 #include <cstdio>
 #include <GLFW/glfw3.h>
@@ -121,6 +126,16 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
     // commands. The kernel only draws primitives; a gamemode's package owns
     // its own HUD composition.
     {
+        // Bridge the cold pause modal state (open + logical view) to generic
+        // hot state so hot policy can compose the pause Main view.
+        const EntityId pe = Ecs::ensureLocalPlayerEntity();
+        if (pe != kInvalidEntityId) {
+            HotPauseStateV1 ps{};
+            ps.viewHash = PauseMenu::viewHash();
+            ps.visible = PauseMenu::isOpen() ? 1u : 0u;
+            MimitaRuntime::DynamicComponentStore::instance().write(
+                pe, HOT_PAUSE_STATE_COMPONENT, &ps, sizeof(ps));
+        }
         static std::uint64_t sUiTick = 0;
         void* uiHost = LiveBehavior::hostContext(sUiTick);
         LiveUi::beginFrame();
@@ -128,6 +143,21 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
             GAME_DOMAIN_UI, sUiTick++, (float)dt, uiHost);
         LiveUi::endFrameAndDraw();
         LiveBehavior::drainEvents(64);
+        // Consume a hot pause action and perform the cold modal mechanism.
+        if (pe != kInvalidEntityId) {
+            MimitaRuntime::DynamicComponentStore& store =
+                MimitaRuntime::DynamicComponentStore::instance();
+            HotUiPendingActionV1 pending{};
+            if (store.read(pe, HOT_UI_PENDING_ACTION_COMPONENT, &pending,
+                           sizeof(pending)) &&
+                pending.actionId != 0) {
+                const std::uint64_t id = pending.actionId;
+                pending.actionId = 0;
+                store.write(pe, HOT_UI_PENDING_ACTION_COMPONENT, &pending,
+                            sizeof(pending));
+                PauseMenu::requestAction(engine.window(), id);
+            }
+        }
     }
 
     if (gReplayPlayer.totalTicks() > 0) {
@@ -170,8 +200,10 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
             getReplayExportJob().capturedTicks, (int)gReplayExportRenderMode);
     }
     // The pause modal is deliberately last in the gameplay UI pass: it must
-    // cover the HUD and world without relying on depth ordering.
-    PauseMenu::render(engine.window());
+    // cover the HUD and world without relying on depth ordering. Yields to the
+    // hot composition for the Main view (one owner); other views stay cold.
+    if (!LiveUi::hotOwnsScreen(gameHash("screen.pause")))
+        PauseMenu::render(engine.window());
     uiEndFrame();
 
     if (GuiEditor::instance().isEnabled()) {

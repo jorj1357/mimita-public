@@ -187,7 +187,12 @@ enum PacketType : uint8_t
     PACKET_ARTIFACT_CHUNK = 80,    // server -> client (indexed payload)
     // Bounded generation manifest metadata (requirements the peer must satisfy
     // before READY). Metadata only, not artifact bytes.
-    PACKET_GENERATION_MANIFEST = 81
+    PACKET_GENERATION_MANIFEST = 81,
+    // Bounded content descriptor: binds a logical resource id to an exact
+    // immutable content version. Payload bytes ride the existing
+    // ArtifactRequest/Begin/Chunk path (logicalResourceId in the request's
+    // logicalGenerationId field). Metadata only.
+    PACKET_CONTENT_ARTIFACT = 82
 };
 
 static constexpr uint32_t ARTIFACT_CHUNK_BYTES = 1000;
@@ -1178,6 +1183,12 @@ struct DuelStatePacket
     // Actor identity: 1-based MatchRoleRegistry index (0 = none), and ActorState.
     uint8_t participantRoles[32] = {};
     uint8_t participantStates[32] = {};
+    // Per-participant match stats (generic per-actor scoreboard facts). Server
+    // authoritative; consumed generically client-side (ActorMatchStatsState).
+    int32_t participantKills[32] = {};
+    int32_t participantDeaths[32] = {};
+    int32_t participantScores[32] = {};
+    char participantNames[32][64] = {};
     // ── Gamemode visual overrides ───────────────────────────────────
     float cameraFov = 0.0f;         // 0 = no override
     uint8_t ragdollEnabled = 0;     // 0=no override, 1=disabled, 2=enabled
@@ -1736,12 +1747,16 @@ static_assert(sizeof(BombTagPassEventPacket) <= 96, "BombTagPassEventPacket is t
 // protocol. direction: 0 = client report, 1 = server announce. phase: 0 =
 // status, 1 = READY, 2 = SWITCH at switchTick. codeHash is the low 64 bits of
 // the active code hash; moduleSetHash is reserved for the module-set hash.
+// Server -> newly connected peer: the generation the authoritative world is
+// ALREADY running. Not a candidate; the peer must become locally ACTIVE on it
+// (bootstrap) before participating. See generation-bootstrap.h.
+static constexpr uint32_t CODE_GENERATION_PHASE_ACTIVE_BOOTSTRAP = 3;
 struct CodeGenerationPacket
 {
     PacketHeader header;
     uint32_t generation = 0;
     uint32_t direction = 0;   // 0 = client report, 1 = server announce
-    uint32_t phase = 0;       // 0 = status, 1 = READY, 2 = SWITCH at switchTick
+    uint32_t phase = 0;       // 0 = status, 1 = READY, 2 = SWITCH, 3 = active bootstrap
     uint32_t switchTick = 0;
     uint64_t codeHash = 0;             // low 64 bits of the canonical hash
     uint64_t logicalCodeHash = 0;      // platform-independent source/IR hash
@@ -1811,10 +1826,25 @@ struct GenerationManifestPacket
     uint32_t reserved = 0;
     uint64_t requiredCapabilities[GENERATION_MANIFEST_MAX_REQUIREMENTS] = {};
     uint64_t requiredSchemas[GENERATION_MANIFEST_MAX_REQUIREMENTS] = {};
+    uint32_t requiredSchemaVersions[GENERATION_MANIFEST_MAX_REQUIREMENTS] = {};
     uint64_t requiredDependencies[GENERATION_MANIFEST_MAX_REQUIREMENTS] = {};
 };
 static_assert(sizeof(GenerationManifestPacket) <= 320,
               "GenerationManifestPacket is too large");
+
+// Logical resource -> exact content version. Distinct from code generations:
+// no ABI/capabilities/schemas/coordinated switch; only logical identity + kind +
+// hash + size (+ a monotonic token for stale ordering).
+struct ContentArtifactPacket
+{
+    PacketHeader header;
+    uint64_t logicalResourceId = 0;
+    uint32_t resourceKind = 0;
+    uint32_t byteSize = 0;
+    uint64_t contentHash = 0;
+    uint64_t publicationToken = 0;
+};
+static_assert(sizeof(ContentArtifactPacket) <= 64, "ContentArtifactPacket too large");
 
 // Held-fire intent. The server simulates one authoritative projectile per
 // gameplay tick while the window is open, subject to ammo and rate.

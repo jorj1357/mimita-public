@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 struct GLFWwindow;
 
 namespace PauseMenu {
@@ -19,5 +21,12 @@ void toggle(GLFWwindow* window);
 void close(GLFWwindow* window);
 void handleKey(GLFWwindow* window, int key, int action);
 void render(GLFWwindow* window);
+
+// Generic bridge for hot UI: the active view as a logical hash
+// (gameHash("pause.main") etc.), and a logical action dispatcher mapping
+// gameHash("pause.resume"/"pause.settings"/...) to the cold mechanism.
+// Returns false for an unknown id.
+std::uint64_t viewHash();
+bool requestAction(GLFWwindow* window, std::uint64_t actionId);
 
 } // namespace PauseMenu

@@ -1118,6 +1118,17 @@ void broadcastDuelState(SOCKET sock,
             pkt.participantRoles[i] = 0;
             pkt.participantStates[i] = (uint8_t)ActorState::Alive;
         }
+        // Per-actor match stats from the authoritative mode counters.
+        auto killIt = d.ffaKills.find(actorId);
+        auto deathIt = d.ffaDeaths.find(actorId);
+        pkt.participantKills[i] = killIt != d.ffaKills.end() ? killIt->second : 0;
+        pkt.participantDeaths[i] = deathIt != d.ffaDeaths.end() ? deathIt->second : 0;
+        pkt.participantScores[i] = pkt.participantKills[i];
+        auto playerIt = players.find(actorId);
+        if (playerIt != players.end())
+            std::snprintf(pkt.participantNames[i],
+                          sizeof(pkt.participantNames[i]), "%s",
+                          playerIt->second.name.c_str());
     }
 
     for (const auto& kv : players) {

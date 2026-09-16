@@ -7,6 +7,7 @@
 #include "live-code/live-ui.h"
 
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -31,11 +32,13 @@ bool g_hotOwnsHud = false;
 
 // Interactive widgets from the last completed frame: logical ids + rects only
 // (never hot function pointers), so this is generation-safe.
-struct ButtonHit {
+struct WidgetHit {
     std::uint64_t elementId;
+    std::uint32_t kind;
     float x, y, w, h;
+    float value, minValue, maxValue, step;
 };
-std::vector<ButtonHit> g_buttons;
+std::vector<WidgetHit> g_buttons;
 
 glm::vec4 colorOf(const GameUiCommandV1& c)
 {
@@ -79,6 +82,46 @@ void drawButton(const GameUiCommandV1& c)
     }
 }
 
+void drawSlider(const GameUiCommandV1& c)
+{
+    UIRect track{c.x, c.y, c.w, c.h};
+    uiDrawRect(track, {0.12f, 0.14f, 0.18f, 1.0f}, "hotui.slider.track");
+    const float span = (c.maxValue - c.minValue) != 0.0f
+                           ? (c.maxValue - c.minValue) : 1.0f;
+    float frac = (c.value - c.minValue) / span;
+    frac = frac < 0.0f ? 0.0f : (frac > 1.0f ? 1.0f : frac);
+    uiDrawRect({c.x, c.y, c.w * frac, c.h}, colorOf(c), "hotui.slider.fill");
+    if (c.text[0] != '\0') {
+        char buf[96];
+        std::snprintf(buf, sizeof(buf), "%s %.2f", c.text, c.value);
+        uiDrawText(buf, c.x, c.y - 26.0f, c.scale > 0.0f ? c.scale : 0.34f,
+                   {0.9f, 0.9f, 0.9f, 1.0f});
+    }
+}
+
+void drawToggle(const GameUiCommandV1& c)
+{
+    const bool on = c.value > 0.5f;
+    UIRect r{c.x, c.y, c.h, c.h};
+    uiDrawRect(r, on ? glm::vec4(0.2f, 0.7f, 0.3f, 1.0f)
+                     : glm::vec4(0.35f, 0.35f, 0.35f, 1.0f),
+               "hotui.toggle");
+    if (c.text[0] != '\0')
+        uiDrawText(c.text, c.x + c.h + 10.0f, c.y, 0.34f,
+                   {0.9f, 0.9f, 0.9f, 1.0f});
+}
+
+void drawSelect(const GameUiCommandV1& c)
+{
+    UIRect r{c.x, c.y, c.w, c.h};
+    uiDrawRect(r, colorOf(c), "hotui.select");
+    uiDrawRectOutline(r, {1.0f, 1.0f, 1.0f, 0.7f}, "hotui.select.border");
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "%s >", c.text[0] ? c.text : "?");
+    uiDrawText(buf, c.x + 8.0f, c.y + c.h * 0.5f - 8.0f,
+               c.scale > 0.0f ? c.scale : 0.34f, {1.0f, 1.0f, 1.0f, 1.0f});
+}
+
 void drawImage(const GameUiCommandV1& c)
 {
     // Prefer a generation-aware logical resource: the provider resolves the
@@ -118,9 +161,12 @@ void submit(const GameUiCommandV1& command)
 {
     if (g_commands.size() >= kMaxCommands)
         return;
-    if (command.kind == GAME_UI_BUTTON && command.elementId != 0)
-        g_buttons.push_back({command.elementId, command.x, command.y, command.w,
-                             command.h});
+    if ((command.kind == GAME_UI_BUTTON || command.kind == GAME_UI_SLIDER ||
+         command.kind == GAME_UI_TOGGLE || command.kind == GAME_UI_SELECT) &&
+        command.elementId != 0)
+        g_buttons.push_back({command.elementId, command.kind, command.x,
+                             command.y, command.w, command.h, command.value,
+                             command.minValue, command.maxValue, command.step});
     g_commands.push_back(command);
 }
 
@@ -132,9 +178,30 @@ bool handlePointerClick(float x, float y, std::uint64_t tick)
             continue;
         GameUiActionV1 action{};
         action.elementId = it->elementId;
-        action.actionType = GAME_UI_ACTION_CLICK;
         action.pointerX = x;
         action.pointerY = y;
+        if (it->kind == GAME_UI_SLIDER) {
+            const float span = (it->maxValue - it->minValue) != 0.0f
+                                   ? (it->maxValue - it->minValue) : 1.0f;
+            float v = it->minValue +
+                      ((x - it->x) / (it->w != 0.0f ? it->w : 1.0f)) * span;
+            if (it->step > 0.0f)
+                v = it->minValue +
+                    std::round((v - it->minValue) / it->step) * it->step;
+            v = std::clamp(v, it->minValue, it->maxValue);
+            action.actionType = GAME_UI_ACTION_VALUE_CHANGED;
+            action.value = v;
+        } else if (it->kind == GAME_UI_TOGGLE) {
+            action.actionType = GAME_UI_ACTION_VALUE_CHANGED;
+            action.value = it->value > 0.5f ? 0.0f : 1.0f;
+        } else if (it->kind == GAME_UI_SELECT) {
+            const int count = (int)it->maxValue + 1;
+            const int next = count > 0 ? ((int)it->value + 1) % count : 0;
+            action.actionType = GAME_UI_ACTION_VALUE_CHANGED;
+            action.value = (float)next;   // option index
+        } else {
+            action.actionType = GAME_UI_ACTION_CLICK;
+        }
         LiveBehavior::dispatchGameplayEvent64(gameHash("ui.action"), &action,
                                               sizeof(action), tick);
         return action.handled != 0;
@@ -170,6 +237,9 @@ void endFrameAndDraw()
         case GAME_UI_BAR: drawBar(c); break;
         case GAME_UI_IMAGE: drawImage(c); break;
         case GAME_UI_BUTTON: drawButton(c); break;
+        case GAME_UI_SLIDER: drawSlider(c); break;
+        case GAME_UI_TOGGLE: drawToggle(c); break;
+        case GAME_UI_SELECT: drawSelect(c); break;
         default: break;
         }
     }

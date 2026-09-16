@@ -1,4 +1,6 @@
 #include "online-menu.h"
+#include "live-code/live-ui.h"
+#include "hot-reload/game-api.h"
 #include "../gui-layout.h"
 #include "../gui-element-render.h"
 #include "../gui-bindings.h"
@@ -320,6 +322,13 @@ void onlineMenuHandleKey(int key, int action) {
 OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
 {
     OnlineMenuResult r{};
+
+    // Discovery still ticks cold (facts); when hot UI owns the browser screen the
+    // cold composition yields (one owner). Refresh/connect/back go hot->cold via
+    // the generic pending-action bridge.
+    MimitaNet::serverBrowserTick();
+    if (LiveUi::hotOwnsScreen(gameHash("screen.server-browser")))
+        return r;
 
     // Sync bindings with actual state
     GuiBindings& b = GuiBindings::instance();

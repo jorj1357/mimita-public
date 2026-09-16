@@ -11,6 +11,7 @@
 #include "engine/engine-tick-ui.h"
 #include "engine/engine.h"
 #include "gui/hud/mode-hud-bridge.h"
+#include "live-code/live-ui.h"
 #include "terminal/terminal-state.h"
 #include <cstdio>
 #include <cctype>
@@ -197,11 +198,16 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         if (gDuelManager.enabled())
             gDuelManager.renderHud();
         // Community match HUD: rendered from server-authoritative replicated state
-        if (gGamemodeManager.enabled())
+        // Yields to the hot match HUD when the generic mode-HUD claim is owned
+        // (one owner); cold otherwise.
+        if (gGamemodeManager.enabled() && !ModeHud::hotOwned())
             gGamemodeManager.renderHud();
     }
 
+    // One owner: the hot scoreboard owns this while visible + generic stats
+    // exist; otherwise the cold tab list remains the fallback.
     if (mpContext.active && mpContext.showPlayerList &&
+        !LiveUi::hotOwnsScreen(gameHash("screen.scoreboard")) &&
         (!gReplayExportRenderMode || ReplayExportUI::showPlayerList()))
     {
         GuiLayout& tabLayout =

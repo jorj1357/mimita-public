@@ -101,6 +101,25 @@ void MIMITA_GAME_CALL matchHudTick(void* host, std::uint64_t /*tick*/, float /*d
     if (hud.phaseText[0] != '\0')
         submitText(render, ctx->host, hud.phaseText, 560.0f, 62.0f, 0.28f, 0.9f, 0.9f, 0.6f, 1.0f);
 
+    // Generic objective line (bomb/plant/defuse/capture). Hot interprets the
+    // state hash; the kernel knows no objective kind.
+    HotObjectiveStateV1 obj{};
+    if (ctx->dynamicReadComponent(ctx->host, owners[0], HOT_OBJECTIVE_COMPONENT,
+                                  &obj, sizeof(obj)) &&
+        obj.flags != 0) {
+        const char* state = obj.stateHash == gameHash("bomb.defusing") ? "DEFUSING"
+                            : obj.stateHash == gameHash("bomb.planted") ? "PLANTED"
+                            : obj.stateHash == gameHash("bomb.carried") ? "CARRIED"
+                                                                       : "OBJECTIVE";
+        char line[64];
+        std::snprintf(line, sizeof(line), "%s %d%% %.1fs", state,
+                      (int)(obj.progress * 100.0f + 0.5f), obj.timer);
+        submitText(render, ctx->host, line, 560.0f, 92.0f, 0.34f, 1.0f, 0.8f,
+                   0.3f, 1.0f);
+        submitBar(render, ctx->host, 560.0f, 112.0f, 160.0f, 6.0f, obj.progress,
+                  0.9f, 0.6f, 0.2f, 1.0f);
+    }
+
     // Score panel (top left).
     submitPanel(render, ctx->host, 12.0f, 12.0f, 220.0f, 72.0f, 0.0f, 0.0f, 0.0f, 0.45f);
     char lineA[64];
@@ -119,6 +138,10 @@ const MimitaHotPackage::SchemaRegistrar s_matchHudSchema{
     {HOT_MATCH_HUD_COMPONENT, gameHash("MatchHudState.v1"),
      sizeof(HotMatchHudStateV1), 4, GAME_COPY_RUNTIME_ONLY, GAME_NET_ALL,
      "MatchHudState", 1, 0}};
+const MimitaHotPackage::SchemaRegistrar s_objectiveSchema{
+    {HOT_OBJECTIVE_COMPONENT, gameHash("ObjectivePresentationState.v1"),
+     sizeof(HotObjectiveStateV1), 8, GAME_COPY_RUNTIME_ONLY, GAME_NET_NONE,
+     "ObjectivePresentationState", 1, 0}};
 const MimitaHotPackage::SchemaRegistrar s_modeHudClaimSchema{
     {HOT_MODE_HUD_CLAIM_COMPONENT, gameHash("ModeHudClaim.v1"),
      sizeof(HotModeHudClaimV1), 4, GAME_COPY_RUNTIME_ONLY, GAME_NET_NONE,

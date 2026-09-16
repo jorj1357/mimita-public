@@ -38,6 +38,7 @@
 #include "gui/ui-system.h"
 #include "render/presentation-render.h"
 #include "renderer/renderer.h"
+#include "config/player-settings.h"
 
 extern Renderer* gRenderer;
 #include "terminal/terminal-state.h"
@@ -945,6 +946,129 @@ bool MIMITA_GAME_CALL capSocketQuery(void*, GameSocketQueryV1* q)
     return true;
 }
 
+// Generic setting access seam: hot UI reads/writes real engine settings by
+// logical id. The kernel owns the mapping + validity constraints.
+// Kernel-provided discrete option lists for option-type settings. Hot code owns
+// labels/layout; the kernel owns which values are valid.
+const char* const kGraphicsPresets[] = {"Low", "Medium", "High"};
+const char* const kResolutions[] = {"1280x960", "1600x900", "1920x1080"};
+constexpr std::uint32_t kGraphicsPresetCount = 3;
+constexpr std::uint32_t kResolutionCount = 3;
+
+int indexOfOption(const char* const* list, std::uint32_t count,
+                  const std::string& value)
+{
+    for (std::uint32_t i = 0; i < count; ++i)
+        if (value == list[i])
+            return (int)i;
+    return -1;
+}
+
+bool MIMITA_GAME_CALL capSettingGet(void*, GameSettingV1* s)
+{
+    if (!s)
+        return false;
+    s->ok = 0;
+    PlayerSettings& ps = GetPlayerSettings();
+    const std::uint64_t id = s->settingId;
+    if (id == gameHash("video.graphicsPreset")) {
+        int idx = indexOfOption(kGraphicsPresets, kGraphicsPresetCount,
+                                ps.graphicsPreset);
+        if (idx < 0) idx = 2;
+        s->type = GAME_SETTING_OPTION;
+        s->intValue = idx;
+        s->optionCount = kGraphicsPresetCount;
+        std::snprintf(s->optionLabel, sizeof(s->optionLabel), "%s",
+                      kGraphicsPresets[idx]);
+        s->ok = 1;
+        return true;
+    }
+    if (id == gameHash("video.resolution")) {
+        int idx = indexOfOption(kResolutions, kResolutionCount, ps.resolution);
+        if (idx < 0) idx = 0;
+        s->type = GAME_SETTING_OPTION;
+        s->intValue = idx;
+        s->optionCount = kResolutionCount;
+        std::snprintf(s->optionLabel, sizeof(s->optionLabel), "%s",
+                      kResolutions[idx]);
+        s->ok = 1;
+        return true;
+    }
+    if (id == gameHash("video.fov")) {
+        s->type = GAME_SETTING_FLOAT; s->floatValue = ps.fov; s->ok = 1;
+    } else if (id == gameHash("audio.master")) {
+        s->type = GAME_SETTING_FLOAT; s->floatValue = ps.masterVolume; s->ok = 1;
+    } else if (id == gameHash("audio.music")) {
+        s->type = GAME_SETTING_FLOAT; s->floatValue = ps.musicVolume; s->ok = 1;
+    } else if (id == gameHash("audio.sfx")) {
+        s->type = GAME_SETTING_FLOAT; s->floatValue = ps.sfxVolume; s->ok = 1;
+    } else if (id == gameHash("input.sensitivity")) {
+        s->type = GAME_SETTING_FLOAT; s->floatValue = ps.sensitivity; s->ok = 1;
+    } else if (id == gameHash("audio.muted")) {
+        s->type = GAME_SETTING_BOOL; s->intValue = ps.musicMuted ? 1 : 0; s->ok = 1;
+    }
+    return s->ok != 0;
+}
+
+bool MIMITA_GAME_CALL capSettingSet(void*, GameSettingV1* s)
+{
+    if (!s)
+        return false;
+    s->ok = 0;
+    PlayerSettings& ps = GetPlayerSettings();
+    const std::uint64_t id = s->settingId;
+    auto clampf = [](float v, float lo, float hi) {
+        return v < lo ? lo : (v > hi ? hi : v);
+    };
+    if (id == gameHash("video.graphicsPreset")) {
+        int idx = s->intValue;
+        idx = idx < 0 ? 0 : (idx >= (int)kGraphicsPresetCount
+                                 ? (int)kGraphicsPresetCount - 1 : idx);
+        ps.graphicsPreset = kGraphicsPresets[idx];
+        s->type = GAME_SETTING_OPTION;
+        s->intValue = idx;
+        s->optionCount = kGraphicsPresetCount;
+        std::snprintf(s->optionLabel, sizeof(s->optionLabel), "%s",
+                      kGraphicsPresets[idx]);
+        s->ok = 1;
+        return true;
+    }
+    if (id == gameHash("video.resolution")) {
+        int idx = s->intValue;
+        idx = idx < 0 ? 0
+                      : (idx >= (int)kResolutionCount ? (int)kResolutionCount - 1
+                                                      : idx);
+        ps.resolution = kResolutions[idx];
+        s->type = GAME_SETTING_OPTION;
+        s->intValue = idx;
+        s->optionCount = kResolutionCount;
+        std::snprintf(s->optionLabel, sizeof(s->optionLabel), "%s",
+                      kResolutions[idx]);
+        s->ok = 1;
+        return true;
+    }
+    if (id == gameHash("video.fov")) {
+        ps.fov = clampf(s->floatValue, 60.0f, 140.0f);
+        s->type = GAME_SETTING_FLOAT; s->floatValue = ps.fov; s->ok = 1;
+    } else if (id == gameHash("audio.master")) {
+        ps.masterVolume = clampf(s->floatValue, 0.0f, 1.0f);
+        s->type = GAME_SETTING_FLOAT; s->floatValue = ps.masterVolume; s->ok = 1;
+    } else if (id == gameHash("audio.music")) {
+        ps.musicVolume = clampf(s->floatValue, 0.0f, 1.0f);
+        s->type = GAME_SETTING_FLOAT; s->floatValue = ps.musicVolume; s->ok = 1;
+    } else if (id == gameHash("audio.sfx")) {
+        ps.sfxVolume = clampf(s->floatValue, 0.0f, 1.0f);
+        s->type = GAME_SETTING_FLOAT; s->floatValue = ps.sfxVolume; s->ok = 1;
+    } else if (id == gameHash("input.sensitivity")) {
+        ps.sensitivity = clampf(s->floatValue, 0.01f, 1.0f);
+        s->type = GAME_SETTING_FLOAT; s->floatValue = ps.sensitivity; s->ok = 1;
+    } else if (id == gameHash("audio.muted")) {
+        ps.musicMuted = s->intValue != 0;
+        s->type = GAME_SETTING_BOOL; s->intValue = ps.musicMuted ? 1 : 0; s->ok = 1;
+    }
+    return s->ok != 0;
+}
+
 // Generic resource registration: hot code registers an arbitrary logical mesh or
 // texture id backed by a path; the kernel owns parse/validate/generation swap.
 bool MIMITA_GAME_CALL capResourceRegister(void*, GameResourceRegisterV1* req)
@@ -1089,6 +1213,14 @@ struct KernelCapabilityInit {
                                     gameHash("sig.world.project.v1"), 0,
                                     reinterpret_cast<void*>(&capWorldProject),
                                     "world.project");
+        rt.registerKernelCapability(GAME_CAP_SETTING_GET,
+                                    gameHash("sig.setting.get.v1"), 0,
+                                    reinterpret_cast<void*>(&capSettingGet),
+                                    "setting.get");
+        rt.registerKernelCapability(GAME_CAP_SETTING_SET,
+                                    gameHash("sig.setting.set.v1"), 0,
+                                    reinterpret_cast<void*>(&capSettingSet),
+                                    "setting.set");
         rt.registerKernelCapability(GAME_CAP_RESOURCE_REGISTER,
                                     gameHash("sig.resource.register.v1"), 0,
                                     reinterpret_cast<void*>(&capResourceRegister),

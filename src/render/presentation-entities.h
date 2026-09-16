@@ -76,6 +76,16 @@ std::uint64_t actorEntityFor(std::uint32_t actorId, bool isPlayer);
 // identity. Body draw ownership is unchanged (no PresentationState written here).
 void projectActorOverlayState(std::uint32_t actorId, bool isPlayer,
                               const ::Player& player);
+// Project real per-actor match stats (from the generic match packet) onto the
+// same actor EntityId used by overlays/presentation, so the hot scoreboard has
+// shipping data. No scoreboard-only entity or shadow id.
+void projectMatchStats();
+// Bridge the cold physical scoreboard input (Tab hold) into generic visibility
+// state so hot scoreboard policy owns what appears.
+void projectScoreboardVisible();
+// Project discovered server listings as generic presentation entities
+// (ServerListingState). Discovery/sockets/ping/connect stay cold.
+void projectServerListings();
 // True when the actor mesh resource is loaded and can be drawn, so the typed
 // renderer must yield ownership.
 bool actorMeshReady();

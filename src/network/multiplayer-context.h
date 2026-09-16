@@ -16,6 +16,7 @@
 #include "network/movement-validation.h"
 #include "network/remote-entity-lifecycle.h"
 #include "network/connection-state.h"
+#include "hot-reload/generation-bootstrap.h"
 #include "entities/player.h"
 #include "physics/constraints/constraint-components.h"
 
@@ -481,6 +482,13 @@ struct MultiplayerContext
     // Last verifyGeneration failure reason (VerifyFailure cast to uint32) for the
     // pending candidate; 0 = none/verified. Reported, never gating on hash alone.
     uint32_t pendingVerifyFailure = 0;
+    // Migration preparation result for the pending candidate (0 = none/failure).
+    uint32_t pendingMigrationFailure = 0;
+    bool pendingMigrationPrepared = false;
+    // Late-join generation bootstrap: while this peer's local active generation
+    // does not match the server's ACTIVE generation, it must not participate in
+    // ordinary simulation (no input, no world snapshots).
+    MimitaRuntime::GenerationBootstrapV1 generationBootstrap;
 
     // Held-fire intent state (START while held; HEARTBEAT; STOP on release).
     bool fireIntentActive = false;

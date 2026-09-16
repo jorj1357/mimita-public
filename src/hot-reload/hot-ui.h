@@ -66,6 +66,72 @@ struct HotMenuShellStateV1 {
     std::uint32_t reserved;
 };
 
+// Generic pause-menu state bridged from the cold modal: whether it is open and
+// which logical view (pause.main / pause.settings / ...) is active. Hot policy
+// composes the view; cold keeps the modal/focus mechanism. Not pause-specific
+// rendering ABI.
+// Generic server-listing facts (presentation entity per discovered server). Hot
+// server-browser policy enumerates these; discovery/sockets/ping/connect stay
+// cold. listingId is an opaque stable id; code is the cold connect key.
+static constexpr std::uint64_t HOT_SERVER_LISTING_COMPONENT =
+    gameHash("ServerListingState");
+static constexpr std::uint32_t HOT_SERVER_LISTING_REACHABLE = 1u;
+static constexpr std::uint32_t HOT_SERVER_LISTING_PASSWORD = 2u;
+struct HotServerListingV1 {
+    std::uint64_t listingId;
+    std::int32_t players;
+    std::int32_t maxPlayers;
+    std::int32_t pingMs;
+    std::uint32_t flags;      // HOT_SERVER_LISTING_*
+    char code[16];
+    char name[40];
+    char map[24];
+    char mode[16];
+};
+
+static constexpr std::uint64_t HOT_PAUSE_STATE_COMPONENT = gameHash("PauseMenuState");
+struct HotPauseStateV1 {
+    std::uint64_t viewHash;
+    std::uint32_t visible;
+    std::uint32_t reserved;
+};
+
+// Generic "scoreboard should be shown" state. Cold input maps the physical key
+// (Tab hold) into this; hot owns what appears. Not scoreboard-specific beyond
+// the logical visibility fact.
+static constexpr std::uint64_t HOT_SCOREBOARD_VISIBLE_COMPONENT =
+    gameHash("ScoreboardVisible");
+struct HotScoreboardVisibleV1 {
+    std::uint32_t visible;
+    std::uint32_t reserved;
+};
+
+// Generic per-actor match stats (actor match FACTS, not UI rows). Joined by
+// EntityId with ActorIdentityState/ActorTeamState for scoreboard composition.
+static constexpr std::uint64_t HOT_ACTOR_STATS_COMPONENT =
+    gameHash("ActorMatchStatsState");
+struct HotActorMatchStatsV1 {
+    std::int32_t score;
+    std::int32_t rank;    // 0-based presentation rank hint
+    std::uint32_t flags;  // bit0 = local player
+    std::uint32_t reserved;
+};
+
+// Generic objective presentation state. One reusable component for any
+// objective (bomb, capture point, payload, flag, control zone). Hot UI
+// interprets stateHash; the kernel/backend never knows the objective kind.
+static constexpr std::uint64_t HOT_OBJECTIVE_COMPONENT =
+    gameHash("ObjectivePresentationState");
+struct HotObjectiveStateV1 {
+    std::uint64_t objectiveId;
+    std::uint64_t stateHash;   // gameHash("bomb.planted") etc.
+    std::uint32_t ownerTeam;
+    float progress;            // 0..1 (plant/defuse/capture)
+    float timer;               // seconds (detonation/capture)
+    std::uint32_t flags;
+    std::uint32_t reserved;
+};
+
 // Generic pending UI action for COLD secure/screen transitions. Hot UI routes a
 // logical action id here; the cold menu layer (which runs every menu frame)
 // consumes it and performs the actual auth/screen work (tokens/passwords stay
@@ -76,6 +142,7 @@ struct HotUiPendingActionV1 {
     std::uint64_t actionId;
     std::uint32_t seq;   // increments per request; cold clears after handling
     std::uint32_t reserved;
+    char value[32];      // optional bounded payload (e.g. server code)
 };
 
 struct HotMatchHudStateV1 {

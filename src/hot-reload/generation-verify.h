@@ -52,7 +52,8 @@ struct GenerationManifestV1 {
 
     std::uint64_t requiredCapabilities[kMaxVerifyRequirements] = {};
     std::uint32_t requiredCapabilityCount = 0;
-    std::uint64_t requiredSchemas[kMaxVerifyRequirements] = {};  // schema hash
+    std::uint64_t requiredSchemas[kMaxVerifyRequirements] = {};  // schema id
+    std::uint32_t requiredSchemaVersions[kMaxVerifyRequirements] = {};  // target
     std::uint32_t requiredSchemaCount = 0;
     std::uint64_t requiredDependencies[kMaxVerifyRequirements] = {};
     std::uint32_t requiredDependencyCount = 0;

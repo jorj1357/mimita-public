@@ -1640,6 +1640,57 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     std::strncpy(accept.mapId, gServerMapId.c_str(), sizeof(accept.mapId) - 1);
     if (sendToSourceOrPlayer(sock, from, &p, nullptr, &accept, sizeof(accept)))
         ++totalPacketsOut;
+    // Late-join generation bootstrap: advertise the ACTIVE generation (not a
+    // candidate) so the peer becomes locally ACTIVE on it before participating.
+    {
+        const uint32_t activeGen =
+            HotReloadSystem::instance().status().activeGeneration;
+        if (activeGen != 0)
+        {
+            MimitaRuntime::GenerationManifestV1 activeManifest{};
+            const bool haveManifest =
+                HotReloadSystem::instance().buildActiveManifest(activeManifest);
+            CodeGenerationPacket boot{};
+            boot.header.type = PACKET_CODE_GENERATION;
+            boot.header.tick = tick;
+            boot.generation = activeGen;
+            boot.direction = 1;
+            boot.phase = CODE_GENERATION_PHASE_ACTIVE_BOOTSTRAP;
+            boot.hotAbiVersion = MIMITA_GAME_API_VERSION;
+            if (haveManifest)
+                boot.platformPackageHash = activeManifest.platformArtifactHash;
+            if (sendToSourceOrPlayer(sock, from, &p, nullptr, &boot, sizeof(boot)))
+                ++totalPacketsOut;
+            if (haveManifest)
+            {
+                GenerationManifestPacket man{};
+                man.header.type = PACKET_GENERATION_MANIFEST;
+                man.header.tick = tick;
+                man.logicalGenerationId = activeManifest.logicalGenerationId;
+                man.platformArtifactHash = activeManifest.platformArtifactHash;
+                man.platformArtifactSize = activeManifest.platformArtifactSize;
+                man.hotAbiVersion = activeManifest.hotAbiVersion;
+                man.requiredCapabilityCount = activeManifest.requiredCapabilityCount;
+                man.requiredSchemaCount = activeManifest.requiredSchemaCount;
+                for (uint32_t i = 0;
+                     i < activeManifest.requiredCapabilityCount &&
+                     i < GENERATION_MANIFEST_MAX_REQUIREMENTS; ++i)
+                    man.requiredCapabilities[i] =
+                        activeManifest.requiredCapabilities[i];
+                for (uint32_t i = 0;
+                     i < activeManifest.requiredSchemaCount &&
+                     i < GENERATION_MANIFEST_MAX_REQUIREMENTS; ++i)
+                {
+                    man.requiredSchemas[i] = activeManifest.requiredSchemas[i];
+                    man.requiredSchemaVersions[i] =
+                        activeManifest.requiredSchemaVersions[i];
+                }
+                if (sendToSourceOrPlayer(sock, from, &p, nullptr, &man,
+                                         sizeof(man)))
+                    ++totalPacketsOut;
+            }
+        }
+    }
     sendStoredAvatarManifestsToPlayer(sock, p, players, totalPacketsOut);
     // Late-join reconstruction: send the active generic constraint set so the
     // new client rebuilds current state without an event-log replay.

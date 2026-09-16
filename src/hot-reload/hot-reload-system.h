@@ -12,6 +12,7 @@
 
 #include "hot-reload/game-api.h"
 #include "hot-reload/generation-verify.h"
+#include "hot-reload/switch-transaction.h"
 #include "project/project-watcher.h"
 
 // Owns the live replaceable-code pipeline: hash-based change detection, a
@@ -51,6 +52,33 @@ public:
     // ready candidate: identity + ABI + the package's real declared capability
     // requirements and registered schemas. Returns false when no candidate.
     bool buildCandidateManifest(MimitaRuntime::GenerationManifestV1& out) const;
+    // Manifest for the generation the authoritative world is ALREADY running,
+    // for late-join bootstrap. Returns false when nothing is active.
+    bool buildActiveManifest(MimitaRuntime::GenerationManifestV1& out) const;
+
+    // Bind the peer-prepared migration plan to the pending candidate. The switch
+    // transaction validates it against the REAL active generation before G may
+    // activate; a stale/missing/invalid plan rejects the switch and keeps F live.
+    void setCandidateMigrationPlan(const MimitaRuntime::MigrationPlanV1& plan);
+
+    // Install a remotely downloaded platform artifact as a REAL inactive
+    // candidate through the SAME load/validate path used by a local build. Does
+    // not activate; the candidate activates at the coordinated switch tick (or an
+    // explicit requestSwitchAtTick for late-join bootstrap). Returns false and
+    // leaves the active generation untouched on any mismatch/load failure.
+    bool installCandidateArtifact(const std::vector<unsigned char>& bytes,
+                                  std::uint32_t logicalGeneration,
+                                  std::uint64_t platformArtifactHash,
+                                  std::string& error);
+    bool hasInstalledCandidate() const { return haveInstalledCandidate_; }
+    std::uint32_t installedCandidateGeneration() const
+    {
+        return installedCandidate_.generation;
+    }
+    MimitaRuntime::SwitchRejection lastSwitchRejection() const
+    {
+        return lastSwitchRejection_;
+    }
 
     void unloadGameDLL();
 
@@ -122,6 +150,14 @@ private:
     void workerMain();
     BuildResult runBuild(const BuildRequest& request);
     bool tryActivateCandidate();
+    // Build the authoritative F -> G migration plan from the loaded candidate's
+    // declared schemas against LIVE stored state. Never mutates anything.
+    bool buildMigrationPlan(std::uint64_t from, std::uint64_t to,
+                            const GamePackageDescriptorV1* descriptor,
+                            MimitaRuntime::MigrationPlanV1& out) const;
+    // Register the candidate's dynamic-component migrations (additive; harmless
+    // if the switch is later rejected) so the plan can resolve real paths.
+    void registerDynamicMigrations(const GamePackageDescriptorV1* descriptor) const;
     bool loadCandidateFromFile(const std::filesystem::path& sourceDLL,
                                GenerationRecord& out, std::string& error);
     void retireRecord(GenerationRecord& record);
@@ -144,6 +180,11 @@ private:
     std::vector<unsigned char> permanentStorage_{};
     GenerationRecord active_;
     GenerationRecord previous_;
+    // A downloaded remote artifact loaded as a real inactive candidate. Consumed
+    // by the next activation; never activated before its switch boundary.
+    GenerationRecord installedCandidate_{};
+    bool haveInstalledCandidate_ = false;
+    std::atomic<bool> remoteCandidateInstalled_{false};
 
     std::atomic<bool> workerStop_{false};
     std::atomic<bool> buildRequested_{false};
@@ -156,6 +197,11 @@ private:
     std::condition_variable cv_;
     BuildRequest request_;
     BuildResult result_;
+
+    MimitaRuntime::MigrationPlanV1 candidatePlan_{};
+    bool candidatePlanPresent_ = false;
+    MimitaRuntime::SwitchRejection lastSwitchRejection_ =
+        MimitaRuntime::SwitchRejection::None;
 
     std::string observedSourceHash_;
     std::string attemptedHash_;

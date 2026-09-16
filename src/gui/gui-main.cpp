@@ -13,6 +13,8 @@
 #include "ecs/dynamic-components.h"
 #include "ecs/entity-types.h"
 #include "gui/hud/menu-shell-bridge.h"
+#include "network/server-browser.h"
+#include "render/presentation-entities.h"
 #include "hot-reload/game-api.h"
 #include "hot-reload/generic-runtime.h"
 #include "hot-reload/hot-ui.h"
@@ -616,6 +618,8 @@ static void consumeHotUiPendingAction(GLFWwindow* win)
                       nullptr, nullptr, SW_SHOWNORMAL);
     } else if (id == gameHash("account.logout")) {
         auth.logout();
+    } else if (id == gameHash("serverbrowser.refresh")) {
+        MimitaNet::serverBrowserRequestRefresh();
     }
 }
 
@@ -683,6 +687,7 @@ void guiMain(GLFWwindow* win, GameState& state)
     // the cold legacy composition yields per-screen when hot claims ownership.
     {
         MenuShell::project();
+        PresentationEntities::projectServerListings();
         static std::uint64_t sMenuUiTick = 0;
         LiveUi::beginFrame();
         MimitaRuntime::GenericRuntime::instance().runDomain(

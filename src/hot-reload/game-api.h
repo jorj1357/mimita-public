@@ -1436,6 +1436,32 @@ struct GameSocketQueryV1 {
 using GameSocketQueryFn = bool (MIMITA_GAME_CALL *)(
     void* host, GameSocketQueryV1* query);
 
+// Generic setting access seam. Hot UI reads/writes real engine settings by
+// logical id; the kernel maps the id to the actual config field and applies
+// validity constraints (clamp/reject). Hot code never sees a SettingsManager*.
+enum GameSettingType : std::uint32_t {
+    GAME_SETTING_FLOAT = 1,
+    GAME_SETTING_INT = 2,
+    GAME_SETTING_BOOL = 3,
+    // Discrete option identified by an index into the kernel-provided option
+    // list (optionCount + optionLabel). Not a formatted string value.
+    GAME_SETTING_OPTION = 4,
+};
+static constexpr std::uint64_t GAME_CAP_SETTING_GET = gameHash("setting.get");
+static constexpr std::uint64_t GAME_CAP_SETTING_SET = gameHash("setting.set");
+struct GameSettingV1 {
+    std::uint64_t settingId;   // gameHash("video.fov") etc.
+    std::uint32_t type;        // GameSettingType (out for GET, in for SET)
+    float floatValue;
+    std::int32_t intValue;     // option index for GAME_SETTING_OPTION
+    std::uint32_t ok;          // 1 = known setting / applied
+    std::uint32_t optionCount; // out (GET, OPTION): number of choices
+    char optionLabel[24];      // out (GET, OPTION): current option label
+    std::uint32_t reserved;
+};
+using GameSettingGetFn = bool (MIMITA_GAME_CALL *)(void* host, GameSettingV1* s);
+using GameSettingSetFn = bool (MIMITA_GAME_CALL *)(void* host, GameSettingV1* s);
+
 // Generic world->screen projection mechanism. Hot overlay/UI policy supplies a
 // world position; the kernel projects it through the live camera and returns a
 // screen position + in-front flag. The kernel never knows what the overlay is
@@ -1665,6 +1691,16 @@ enum GameUiKind : std::uint32_t {
     // GAME_EVENT_UI_ACTION carrying elementId when interacted with. Hot code owns
     // the element's meaning; the backend only knows the id.
     GAME_UI_BUTTON = 5,
+    // Numeric range control (minValue..maxValue, step). Interaction emits
+    // VALUE_CHANGED with the new value. The backend knows no setting meaning.
+    GAME_UI_SLIDER = 6,
+    // Boolean control. Interaction emits VALUE_CHANGED (0/1) or CLICK.
+    GAME_UI_TOGGLE = 7,
+    // Discrete-choice control: displays `text` (the current option label);
+    // `value` is the current option index, `maxValue` = optionCount-1. Clicking
+    // emits VALUE_CHANGED with the next index. Hot code owns the option ids and
+    // semantics; the backend only reports the index.
+    GAME_UI_SELECT = 8,
 };
 struct GameUiCommandV1 {
     std::uint32_t kind;     // GameUiKind
@@ -1675,7 +1711,10 @@ struct GameUiCommandV1 {
     float scale;            // text scale
     std::uint64_t resourceId;  // logical image resource (GAME_UI_IMAGE)
     char text[64];          // text, or image path fallback
-    std::uint64_t elementId;   // logical element id (GAME_UI_BUTTON)
+    std::uint64_t elementId;   // logical element id (GAME_UI_BUTTON/SLIDER/TOGGLE)
+    float minValue;         // GAME_UI_SLIDER range
+    float maxValue;
+    float step;
 };
 using GameRenderUiFn = void (MIMITA_GAME_CALL *)(
     void* host, const GameUiCommandV1* command);

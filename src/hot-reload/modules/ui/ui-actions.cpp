@@ -70,7 +70,26 @@ void registerMenuResources(GameplayContextV1* ctx)
 bool g_menuEnabled = true;
 
 GameSharedStateV1* sharedState(GameplayContextV1* ctx);
-void requestColdAction(GameplayContextV1* ctx, std::uint64_t actionId);
+void requestColdAction(GameplayContextV1* ctx, std::uint64_t actionId,
+                       const char* value = nullptr);
+
+using SettingSetFn2 = bool (MIMITA_GAME_CALL *)(void*, GameSettingV1*);
+void applySetting(GameplayContextV1* ctx, std::uint64_t settingId,
+                  std::uint32_t type, float f, std::int32_t i)
+{
+    if (!ctx || !ctx->resolveCapability)
+        return;
+    auto set = reinterpret_cast<SettingSetFn2>(
+        ctx->resolveCapability(ctx->host, GAME_CAP_SETTING_SET));
+    if (!set)
+        return;
+    GameSettingV1 s{};
+    s.settingId = settingId;
+    s.type = type;
+    s.floatValue = f;
+    s.intValue = i;
+    set(ctx->host, &s);
+}
 
 // Navigation state is migratable dynamic state (NOT a module static), so a hot
 // generation swap keeps the current screen instead of resetting to main.
@@ -138,15 +157,83 @@ void MIMITA_GAME_CALL onUiAction(void* host, const GameEventV1* event)
 {
     auto* ctx = static_cast<GameplayContextV1*>(host);
     auto* action = event ? static_cast<GameUiActionV1*>(event->payload) : nullptr;
-    if (!ctx || !action || action->actionType != GAME_UI_ACTION_CLICK)
+    if (!ctx || !action)
+        return;
+
+    // Setting VALUE_CHANGED: write through the generic setting seam (the kernel
+    // validates/clamps; the value stays engine-owned).
+    if (action->actionType == GAME_UI_ACTION_VALUE_CHANGED) {
+        static const std::uint64_t kFloats[] = {
+            gameHash("video.fov"), gameHash("audio.master"),
+            gameHash("audio.music"), gameHash("audio.sfx"),
+            gameHash("input.sensitivity")};
+        bool known = false;
+        for (std::uint64_t sid : kFloats)
+            if (sid == action->elementId) known = true;
+        if (action->elementId == gameHash("audio.muted")) {
+            applySetting(ctx, action->elementId, GAME_SETTING_BOOL, 0.0f,
+                         action->value > 0.5f ? 1 : 0);
+            action->handled = 1;
+            return;
+        }
+        if (action->elementId == gameHash("video.resolution") ||
+            action->elementId == gameHash("video.graphicsPreset")) {
+            applySetting(ctx, action->elementId, GAME_SETTING_OPTION, 0.0f,
+                         (std::int32_t)(action->value + 0.5f));
+            action->handled = 1;
+            return;
+        }
+        if (known) {
+            applySetting(ctx, action->elementId, GAME_SETTING_FLOAT,
+                         action->value, 0);
+            action->handled = 1;
+        }
+        return;
+    }
+
+    if (action->actionType != GAME_UI_ACTION_CLICK)
         return;
     const std::uint64_t id = action->elementId;
-    if (id == kMenuPlay || id == kMenuSettings || id == kMenuQuit) {
-        // Hot owns the logical screen id; cold still performs the actual screen
-        // transition until each screen is migrated hot.
-        writeScreen(ctx, id == kMenuPlay       ? kScreenPlay
-                         : id == kMenuSettings ? kScreenSettings
-                                               : kScreenMainMenu);
+    if (id == gameHash("menu.back")) {
+        writeScreen(ctx, kScreenMainMenu);
+        action->handled = 1;
+        return;
+    }
+    if (id == gameHash("pause.resume") || id == gameHash("pause.settings") ||
+        id == gameHash("pause.help") || id == gameHash("pause.leave") ||
+        id == gameHash("pause.discord") || id == gameHash("pause.invite")) {
+        requestColdAction(ctx, id);   // cold modal mechanism performs it
+        action->handled = 1;
+        return;
+    }
+    if (id == gameHash("serverbrowser.refresh")) {
+        requestColdAction(ctx, id);   // cold discovery refresh
+        action->handled = 1;
+        return;
+    }
+    // A listing id -> resolve the cold room code and request connect.
+    if (ctx->dynamicEnumerateComponent && ctx->dynamicReadComponent) {
+        std::uint64_t lists[128];
+        const std::uint32_t ln = ctx->dynamicEnumerateComponent(
+            ctx->host, HOT_SERVER_LISTING_COMPONENT, lists, 128);
+        for (std::uint32_t i = 0; i < ln; ++i) {
+            HotServerListingV1 l{};
+            if (ctx->dynamicReadComponent(ctx->host, lists[i],
+                                          HOT_SERVER_LISTING_COMPONENT, &l,
+                                          sizeof(l)) &&
+                l.listingId == id && l.code[0] != '\0') {
+                requestColdAction(ctx, gameHash("serverbrowser.connect"), l.code);
+                action->handled = 1;
+                return;
+            }
+        }
+    }
+    if (id == kMenuSettings) {
+        writeScreen(ctx, kScreenSettings);   // hot owns settings composition
+    } else if (id == kMenuPlay || id == kMenuQuit) {
+        // Leaving to a cold screen: drop the hot screen so the hot shell does not
+        // overlap the cold screen; cold performs the transition.
+        writeScreen(ctx, 0);
         requestColdAction(ctx, id);
     } else if (id == kAccountSignIn || id == kAccountSignUp ||
                id == kAccountSwitch || id == kAccountLogout) {
@@ -195,7 +282,8 @@ void emitImage(RenderUiFn ui, void* host, std::uint64_t resourceId, float x,
 
 // Route a logical UI action to the cold secure/screen mechanism (tokens and
 // screen transitions stay cold). Writes an id, never a callback pointer.
-void requestColdAction(GameplayContextV1* ctx, std::uint64_t actionId)
+void requestColdAction(GameplayContextV1* ctx, std::uint64_t actionId,
+                       const char* value)
 {
     GameSharedStateV1* shared = sharedState(ctx);
     const std::uint64_t entity = shared ? shared->localPlayerEntity : 0;
@@ -203,6 +291,8 @@ void requestColdAction(GameplayContextV1* ctx, std::uint64_t actionId)
         return;
     HotUiPendingActionV1 pending{};
     pending.actionId = actionId;
+    if (value && value[0])
+        std::snprintf(pending.value, sizeof(pending.value), "%s", value);
     if (ctx->dynamicReadComponent) {
         HotUiPendingActionV1 prev{};
         if (ctx->dynamicReadComponent(ctx->host, entity,
@@ -354,6 +444,11 @@ void MIMITA_GAME_CALL uiScreenCommand(void* host, const char* args)
     if (args && *args) {
         if (std::strcmp(args, "off") == 0) {
             g_menuEnabled = false;
+            return;
+        }
+        if (std::strcmp(args, "none") == 0) {
+            if (ctx)
+                writeScreen(ctx, 0);   // no hot screen; cold owns
             return;
         }
         if (ctx)
