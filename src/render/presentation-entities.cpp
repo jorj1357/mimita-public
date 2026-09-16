@@ -11,6 +11,7 @@
 #include <unordered_set>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "ecs/actor-entities.h"
 #include "ecs/components.h"
@@ -415,10 +416,9 @@ bool actorMeshReady()
                HOT_MESH_ACTOR) != nullptr;
 }
 
-void projectLocalPlayer(Player& player)
+static void projectPlayerEntity(Player& player, EntityId entity)
 {
     ensureSchema();
-    const EntityId entity = Ecs::ensureLocalPlayerEntity();
     const glm::vec3 look(std::cos(player.yaw), std::sin(player.yaw), 0.0f);
     Ecs::setTransform(entity, player.pos, look, player.yaw, 0.0f);
     Ecs::setVelocity(entity, player.vel, player.externalImpulse);
@@ -470,9 +470,19 @@ void projectLocalPlayer(Player& player)
     }
 }
 
-void applyHotPoseToPlayer(Player& player)
+void projectLocalPlayer(Player& player)
 {
-    const EntityId entity = Ecs::ensureLocalPlayerEntity();
+    projectPlayerEntity(player, Ecs::ensureLocalPlayerEntity());
+}
+
+void projectPreviewPlayer(Player& player)
+{
+    projectPlayerEntity(player,
+                        Ecs::ensure(EntityRealm::Local, EntityDomain::Player, 2));
+}
+
+static void applyHotPoseEntity(Player& player, EntityId entity)
+{
     const SkeletonInstances::Instance* inst = SkeletonInstances::get(entity);
     if (!inst || player.physicalBody.parts.empty())
         return;
@@ -487,7 +497,35 @@ void applyHotPoseToPlayer(Player& player)
         // typed field is degrees, so convert rather than copy.
         part.pose.rotationEuler = glm::degrees(glm::vec3(
             bone->rotationEuler[0], bone->rotationEuler[1], bone->rotationEuler[2]));
+        // Write the local node transform so the typed renderer (which uses
+        // perfectPoseSkeleton world transforms) reflects the hot pose.
+        if (part.nodeIndex >= 0 &&
+            part.nodeIndex < (int)player.perfectPoseSkeleton.nodes.size()) {
+            const glm::mat4 restM =
+                player.perfectPoseSkeleton.restLocalTransforms[part.nodeIndex];
+            glm::mat4 m = glm::translate(
+                glm::mat4(1.0f),
+                glm::vec3(bone->translation[0], bone->translation[1],
+                          bone->translation[2]));
+            m = glm::rotate(m, bone->rotationEuler[0], glm::vec3(1, 0, 0));
+            m = glm::rotate(m, bone->rotationEuler[1], glm::vec3(0, 1, 0));
+            m = glm::rotate(m, bone->rotationEuler[2], glm::vec3(0, 0, 1));
+            player.perfectPoseSkeleton.nodes[part.nodeIndex].localTransform =
+                restM * m;
+        }
     }
+    player.updateModelWorldTransforms();
+}
+
+void applyHotPoseToPlayer(Player& player)
+{
+    applyHotPoseEntity(player, Ecs::ensureLocalPlayerEntity());
+}
+
+void applyHotPoseToPreview(Player& player)
+{
+    applyHotPoseEntity(player,
+                       Ecs::ensure(EntityRealm::Local, EntityDomain::Player, 2));
 }
 
 std::uint64_t ensurePredicted(std::uint64_t predictionKey,

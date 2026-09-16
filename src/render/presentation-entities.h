@@ -68,6 +68,11 @@ void endActorSync();
 void projectLocalPlayer(::Player& player);
 void applyHotPoseToPlayer(::Player& player);
 
+// Menu avatar-preview variant: a dedicated ECS entity so the preview character
+// is posed by the same hot animation path without touching the live player.
+void projectPreviewPlayer(::Player& player);
+void applyHotPoseToPreview(::Player& player);
+
 // ── Generic actor overlay state ──────────────────────────────────────
 // Canonical actor EntityId for a replicated actor id (idempotent ensure).
 std::uint64_t actorEntityFor(std::uint32_t actorId, bool isPlayer);

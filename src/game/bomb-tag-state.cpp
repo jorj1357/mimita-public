@@ -54,7 +54,5 @@ void updateBombTagNpcFlags(Player& player, NpcSystem& npcs) {
             npc.bombTagHasBomb = false;
             npc.bombTagChaseTarget = player.pos;
         }
-
-        setArmToWeaponPose(npc.body, npc.bombTagHasBomb);
     }
 }

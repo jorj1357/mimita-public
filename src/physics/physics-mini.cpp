@@ -311,14 +311,6 @@ static void physicsMainUpdate_Internal(
 
     updateVisualFacingFromCamera(p, camForward, dt);
 
-    // Legacy procedural animator is the fallback only. When hot animation owns
-    // gameplay (default), the hot pose path drives this actor's visible pose.
-    if (!gHotAnimationOwnsGameplay) {
-        p.updateProceduralAnimation(dt,
-                                    camForward,
-                                    debugCamera ? debugCamera->pos : p.pos,
-                                    command.movementDirectionPressed);
-    }
 
     // debug override
     if (debugEnabled && debugWindow && debugCamera) {

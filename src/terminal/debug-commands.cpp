@@ -32,21 +32,6 @@
 void registerDebugCommands()
 {
     Terminal::instance().registerCommand({
-        "hotanim", "Toggle hot animation ownership: 1 = hot owns gameplay animation, 0 = legacy procedural fallback.", "hotanim <0|1>",
-        [](const std::vector<std::string>& args) {
-            if (args.empty()) {
-                Terminal::instance().addLog(std::string("[HOTANIM] ") +
-                    (gHotAnimationOwnsGameplay ? "1 (hot owns gameplay animation)"
-                                               : "0 (legacy procedural fallback)"));
-                return;
-            }
-            gHotAnimationOwnsGameplay = args[0] == "1";
-            Terminal::instance().addLog(std::string("[HOTANIM] ") +
-                (gHotAnimationOwnsGameplay ? "hot ownership ON"
-                                           : "legacy fallback ON"));
-        }
-    });
-    Terminal::instance().registerCommand({
         "modestartnow", "Start a community mode at the 3-2-1 countdown; host only.", "modestartnow <number>",
         [](const std::vector<std::string>& args) {
             if (args.empty()) { Terminal::instance().addLog("[MODESTARTNOW] Usage: modestartnow <number>"); return; }

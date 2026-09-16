@@ -32,29 +32,6 @@
 
 using namespace MimitaNet;
 
-// ── Arm pose for bomb holder ──────────────────────────────────────────
-void setArmToWeaponPose(Player& p, bool hasBomb) {
-    if (!hasBomb) return;
-    for (PhysicalBodyPart& part : p.physicalBody.parts) {
-        if (part.name == "rightArm") {
-            WeaponPoseConfig* revPose = nullptr;
-            auto it = gPlayerProcedural.weaponPoses.find("revolver");
-            if (it != gPlayerProcedural.weaponPoses.end())
-                revPose = &it->second;
-            if (revPose && revPose->useWeaponPose) {
-                ProceduralPose target;
-                target.rotationEuler = revPose->rightArm.rotation;
-                target.translation = revPose->rightArm.translation;
-                part.perfectPose = target;
-                part.pose = target;
-                part.translationSpring = SpringState{};
-                part.rotationSpring = SpringState{};
-            }
-            break;
-        }
-    }
-}
-
 // ── Helper: get current gamemode features ──────────────────────────────
 static const GamemodeFeatures& currentFeatures() {
     static const GamemodeFeatures empty;
@@ -185,7 +162,6 @@ void GamemodeManager::update(float dt, Player& player) {
     // Force arm pose on bomb holder if the mode has bomb_holder_text feature
     const Gamemode& gm = GamemodeRegistry::instance().get(c.mode());
     if (gm.features.bombHolderText) {
-        setArmToWeaponPose(player, playerIsBombHolder(MP_CONTEXT.localPlayerId));
     }
 
     // ── Bomb sound playback (client-side, from replicated state) ────

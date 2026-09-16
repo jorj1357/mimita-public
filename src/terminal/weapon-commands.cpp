@@ -33,7 +33,6 @@ using json = nlohmann::json;
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
 #include "hot-reload/game-api.h"
-#include "entities/player-animation-config.h"
 #include "duel/duel-weapon-pool.h"
 #include "game/duel.h"
 extern DuelManager gDuelManager;
@@ -537,36 +536,6 @@ void registerWeaponCommands()
         },
         std::string(),
         CommandCategory::Weapon
-    });
-
-    Terminal::instance().registerCommand({
-        "animation_config_reload",
-        "Reload config/animations.json",
-        "animation_config_reload",
-        [](const std::vector<std::string>&) {
-            if (reloadPlayerProceduralConfig()) {
-                Terminal::instance().addLog("[ANIMATION CONFIG] Reloaded config/animations.json");
-            } else {
-                Terminal::instance().addLog("[ANIMATION CONFIG] Reload failed");
-            }
-        },
-        std::string(),
-        CommandCategory::Player
-    });
-
-    Terminal::instance().registerCommand({
-        "animation_config_inspect",
-        "List loaded animation config counts",
-        "animation_config_inspect",
-        [](const std::vector<std::string>&) {
-            Terminal::instance().addLog(
-                "[ANIMATION CONFIG] clips=" + std::to_string(gPlayerProcedural.layers.animations.size()) +
-                " weaponPoses=" + std::to_string(gPlayerProcedural.weaponPoses.size()));
-            for (const auto& pair : gPlayerProcedural.layers.animations)
-                Terminal::instance().addLog("  clip " + pair.first);
-        },
-        std::string(),
-        CommandCategory::Player
     });
 
 }

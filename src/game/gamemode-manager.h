@@ -79,4 +79,3 @@ private:
     void renderWorldTimer(const glm::vec3& pos, float seconds);
 };
 
-void setArmToWeaponPose(Player& p, bool hasBomb);

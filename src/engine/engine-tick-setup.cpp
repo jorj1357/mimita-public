@@ -88,7 +88,6 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     // is empty when perfResetScopes() runs.
     { MIMITA_PERF_SCOPE("Setup::BeginFrame"); dt = engine.beginFrame(); }
     { MIMITA_PERF_SCOPE("Setup::Analytics"); AnalyticsManager::instance().update(dt); }
-    { MIMITA_PERF_SCOPE("Setup::PlayerHotReload"); updatePlayerProceduralHotReload(dt); }
     { MIMITA_PERF_SCOPE("Setup::AvatarBackgroundResults");
       AvatarSystem::instance().pollBackgroundAvatarLoads(); }
 

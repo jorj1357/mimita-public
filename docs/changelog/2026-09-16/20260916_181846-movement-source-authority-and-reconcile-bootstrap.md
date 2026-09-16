@@ -306,3 +306,47 @@ movement are all hot-editable live. Built and selftested.
 Packet layout/protocol, transport, entity/component storage, the hot-result
 yield check, and the collision primitive. If the input=0 root cause is a
 structural send-block bug, that one line is the only remaining cold repair.
+
+---
+
+# Bridge addendum 3 — server adopts client movement + contact reset (2026-09-16T17:09:00Z)
+
+Fixes the "server position error grows forever / disagreement beam" by making the
+server adopt the validated client movement as authoritative, and makes abilities
+contact-reset-only (no time cooldown).
+
+## Cold
+- `game-api.h`: `InputReceivePolicyV1` extended with `playerEntity`, `serverTick`,
+  `reportPosition/Velocity`, `reportGrounded`, out `adoptState`.
+- `server.h`: `ServerPlayer.adoptClientMovement`.
+- `server-packets.cpp`: fills the receive-policy report facts; records
+  `adoptClientMovement` from the hot decision.
+- `server-players.cpp`: at the top of `simulatePlayer`, when
+  `adoptClientMovement` is set, project the accepted typed state to the generic
+  Transform/Velocity/Health and skip kernel simulation (server tracks the client
+  exactly, no drift).
+- `live-behavior.cpp`: `MovementStateV1.collided` now means "any real world
+  contact" (`grounded || !movementContacts.empty()`), enabling universal reset.
+
+## Hot
+- `input-receive-policy.cpp`: `adoptState = 1` (spec phase 1 client-trusting).
+  Flip to 0 live to return to server simulation.
+- `actor-movement-system.cpp`: `kSimulateServerActors = false` while adopting
+  (no fighting); dash cooldown set to 0.
+- `movement-system.cpp` (local client):
+  - dash has **no time cooldown** (restored only by contact);
+  - abilities reset on **any contact** (`grounded || collided`), not just ground;
+  - jump eligibility uses grounded-or-recent-contact, so wall/ledge touch lets
+    you jump; contact state is carried in the runtime-state flag bits.
+
+## Validation
+- `python build_game_dll.py` -> success (62 sources).
+- `python build_agent.py` -> BUILD SUCCESS (166 files).
+- Selftests PASS: server-spatial-authority, movement-parity, air-movement-parity,
+  reconciliation-policy, movement-selftest.
+
+## Evidence driving it (user session)
+- Spawn policy fixed NPC-on-spawn (`spawned=0`, no NPC kills).
+- Input send policy fixed `input=0` (`input=10762`).
+- Remaining: `[SERVER MOVEMENT DECISION] correct reason=blocking-geometry`
+  with `serverPos` ~60 units from `reportPos` -> server simulation drift.

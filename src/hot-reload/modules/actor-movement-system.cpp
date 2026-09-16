@@ -21,6 +21,11 @@
 
 namespace {
 
+// Server-side simulation toggle. While the input-receive policy adopts the
+// client's validated movement (spec phase 1), the actor system must not fight
+// it. Set true to return to server-authoritative simulation live.
+constexpr bool kSimulateServerActors = false;
+
 using PhysicsMoveFn = void (MIMITA_GAME_CALL *)(void*, MovementStateV1*, float,
                                                 std::uint32_t);
 
@@ -162,7 +167,7 @@ void simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
         rs.dashAvailable = dp.outDashAvailable;
         rs.downDashAvailable = dp.outDownDashAvailable;
         if (dp.outDidDash)
-            rs.dashCooldownSeconds = m.dashCooldown;
+            rs.dashCooldownSeconds = 0.0f;
     }
 
     {
@@ -263,6 +268,8 @@ void simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
 
 void MIMITA_GAME_CALL actorMovementTick(void* host, std::uint64_t tick, float dt)
 {
+    if (!kSimulateServerActors)
+        return;
     GameplayContextV1* ctx = static_cast<GameplayContextV1*>(host);
     if (!ctx || ctx->structSize < sizeof(GameplayContextV1))
         return;

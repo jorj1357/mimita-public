@@ -916,32 +916,6 @@ bool MIMITA_GAME_CALL capSkeletonValidate(void*, GameSkeletonValidateV1* q)
     return true;
 }
 
-// animation.update: temporary hot-invokable bridge to the existing procedural
-// animator, with hot ability transitions synced in first.
-void MIMITA_GAME_CALL capAnimationUpdate(void*, float dt, std::uint32_t flags)
-{
-    if (gHotAnimationOwnsGameplay)
-        return;  // hot animation owns gameplay actors; legacy bridge is fallback
-    ++g_animationUpdateCount;
-    if (!gpPlayer || !gpCamera)
-        return;
-    Player& p = THE_PLAYER;
-    const bool movementPressed = (flags & 1u) != 0;
-    if (GameSharedStateV1* shared =
-            MimitaRuntime::GenericRuntime::instance().sharedState())
-    {
-        const EntityId e = (EntityId)shared->localPlayerEntity;
-        if (const MovementIntentComponent* mi =
-                EntityRegistry::instance().tryGet<MovementIntentComponent>(e))
-        {
-            p.dash.didDash = mi->dash;
-            p.freeze.freezeActive = mi->freeze;
-        }
-    }
-    p.updateProceduralAnimation(dt, THE_CAMERA.front, THE_CAMERA.pos,
-                                movementPressed);
-}
-
 // The single generic resolver. Package providers and kernel primitives live in
 // one registry table; the kernel does not switch on any capability's name.
 void* MIMITA_GAME_CALL capResolveCapability(void*, std::uint64_t id)
@@ -1552,10 +1526,6 @@ struct KernelCapabilityInit {
                                     gameHash("sig.skeleton.validate.v1"), 0,
                                     reinterpret_cast<void*>(&capSkeletonValidate),
                                     "skeleton.validate");
-        rt.registerKernelCapability(GAME_CAP_ANIMATION_UPDATE,
-                                    gameHash("sig.animation.update.v1"), 0,
-                                    reinterpret_cast<void*>(&capAnimationUpdate),
-                                    "animation.update");
     }
 };
 const KernelCapabilityInit s_kernelCapabilities{};

@@ -1682,11 +1682,8 @@ void updateRenderedReplica(
     player.ground.onGround = render.onGround;
 
     // ── Freeze state ─────────────────────────────────────────────────
-    // Set freezeActive for the freeze pose state machine in
-    // updateProceduralAnimation. Do NOT set proceduralFrozen — that
-    // field causes updateProceduralAnimation to return early and skip
-    // the freeze pose code entirely. proceduralFrozen is reserved for
-    // pause/replay/cinematic use.
+    // Freeze is mirrored into the generic action facts; the hot state machine
+    // selects the freeze animation.
     player.freeze.freezeActive =
         (render.stateFlags & NET_STATE_FREEZING) != 0;
 
@@ -1820,15 +1817,8 @@ void updateRenderedReplica(
     }
 
     // ── Procedural animation ───────────────────────────────────────
-    // Fallback only; the hot animation/pose path owns gameplay actors.
-    if (!gHotAnimationOwnsGameplay) {
-        player.updateProceduralAnimation(
-            dt,
-            player.aimDirection,
-            player.pos,
-            remoteWalking
-        );
-    }
+    // The hot animation/pose path owns gameplay actors; there is no legacy
+    // procedural animator.
 }
 
 glm::vec3 mpRemoteShooterRenderDelta(const MultiplayerContext& ctx, uint32_t shooterId)

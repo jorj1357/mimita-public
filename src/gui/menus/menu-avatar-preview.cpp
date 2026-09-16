@@ -12,6 +12,7 @@
 #include "entities/player.h"
 #include "camera.h"
 #include "render/render-player.h"
+#include "render/presentation-entities.h"
 #include "renderer/renderer.h"
 #include "gui/ui-system.h"
 #include "gui/hud/player-nameplates.h"
@@ -281,7 +282,11 @@ void MenuAvatarPreview::update(float dt, const glm::vec3& camForward)
 
     p->pos.z = mConfig.floorOffset;
     p->ground.onGround = true;
-    p->updateProceduralAnimation(speedDt, camForward, glm::vec3(0.0f), false);
+    // Hot animation owns the pose: project the preview player onto its own
+    // generic entity (the hot systems pose it), then copy the resulting
+    // skeleton pose onto the typed body for the typed renderer.
+    PresentationEntities::projectPreviewPlayer(*p);
+    PresentationEntities::applyHotPoseToPreview(*p);
 
     p->username = AuthSystem::instance().displayName();
     p->vipAppearance = AuthSystem::instance().user().vipAppearance;

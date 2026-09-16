@@ -290,19 +290,6 @@ void registerDebugToggleCommands()
     });
 
     term.registerCommand({
-        "idle_test",
-        "Set idle animation debug strength multiplier",
-        "idle_test <multiplier>",
-        [](const std::vector<std::string>& args) {
-            if (args.empty()) {
-                Terminal::instance().addLog("[OK] idle_test strength = " + std::to_string(gPlayerProcedural.idleDebugStrength));
-                return;
-            }
-            gPlayerProcedural.idleDebugStrength = std::max(0.0f, (float)std::atof(args[0].c_str()));
-            Terminal::instance().addLog("[OK] idle_test strength set to " + std::to_string(gPlayerProcedural.idleDebugStrength));
-        }
-    });
-    term.registerCommand({
         "weapon_collision_debug",
         "Toggle weapon collision debug visualization (0=off, 1=on)",
         "weapon_collision_debug <0|1>",

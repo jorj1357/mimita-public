@@ -2117,11 +2117,6 @@
       "sha256": "90c5a35e808157eb3e86c37047c06a3a534f20bba9e76206340e998e3a44a2f2"
     },
     {
-      "path": "config/animations.json",
-      "size": 33340,
-      "sha256": "30960825459c8045bfecd6da74701e2fc072dfb8c75495a255d677314e92ad0f"
-    },
-    {
       "path": "config/avatar-editor-ui.json",
       "size": 8602,
       "sha256": "b75f3c5aa602dd37ca1768927875fcf5dc5cdbdadf28ee52374cce06f0623a8b"
@@ -2205,11 +2200,6 @@
       "path": "config/main_menu_character_preview.json",
       "size": 495,
       "sha256": "1abc6f65292c46681ea396dde6256608c49fc6b3df2a9b78beeffcecc75b840a"
-    },
-    {
-      "path": "config/player-procedural.json",
-      "size": 2116,
-      "sha256": "2a45d9db9870ecb240e1b3aa6fe200a3eba05502c7fcd57ba53179bc25d42724"
     },
     {
       "path": "config/postfx.json",

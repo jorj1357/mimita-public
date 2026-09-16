@@ -383,7 +383,9 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t /*tick*/, float
                 vz = dp.outVelocity[2];
                 if (dp.outDidDash) {
                     rs.dashAvailable = dp.outDashAvailable;
-                    rs.dashCooldownSeconds = m.dashCooldown;
+                    // No time-based cooldown: dash is restored only by touching
+                    // the world (universal contact reset), per the movement spec.
+                    rs.dashCooldownSeconds = 0.0f;
                     didDash = true;
                     const float ddx = dp.outVelocity[0] - inVx;
                     const float ddy = dp.outVelocity[1] - inVy;
@@ -405,7 +407,10 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t /*tick*/, float
             jp.dt = dt;
             jp.coyoteSeconds = 0.0f;
             jp.jumpBufferSeconds = 0.0f;
-            jp.grounded = rs.grounded ? 1u : 0u;
+            // Touch anything (ground/wall/ceiling/prop) and the jump is eligible.
+            const bool contactLastTick =
+                (rs.reserved[GAME_MOVEMENT_STAMP_FLAGS] & 2u) != 0u;
+            jp.grounded = (rs.grounded || contactLastTick) ? 1u : 0u;
             jp.jumpPressed = jumpEdge ? 1u : 0u;
             jp.jumpHeld = mi.jump ? 1u : 0u;
             jp.jumpHeldPreviously = rs.jumpHeldPreviously ? 1u : 0u;
@@ -448,12 +453,19 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t /*tick*/, float
         st.grounded = rs.grounded;
         resolveCollisions(ctx, &st, dt);
         rs.grounded = st.grounded;
-        if (rs.grounded) {
+        // Universal contact reset (movement spec): touching anything restores
+        // every touch-reset ability. No time-based ability cooldowns.
+        const bool contactNow = (st.grounded != 0) || (st.collided != 0);
+        if (contactNow) {
             rs.airJumpsLeft = 1;
             rs.jumpAirJumpArmed = 1;
             rs.dashAvailable = 1;
             rs.downDashAvailable = 1;
         }
+        if (contactNow)
+            rs.reserved[GAME_MOVEMENT_STAMP_FLAGS] |= 2u;
+        else
+            rs.reserved[GAME_MOVEMENT_STAMP_FLAGS] &= ~2u;
 
         if (didDash) {
             const float dir[3] = {dashDirX, dashDirY, 0.0f};
